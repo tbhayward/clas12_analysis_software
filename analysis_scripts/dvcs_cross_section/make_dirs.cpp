@@ -24,6 +24,24 @@ void makeOutputDirs() {
                 "Sp18_Out", "Sp19_Inb"
             }
         },
+        {"output/signal_yield_plots",
+            {"Fa18_Inb", "Fa18_Out", "Sp18_Inb",
+                "Sp18_Out", "Sp19_Inb"
+            }
+        },
+        {"output/acceptance",
+            {"Fa18_Inb", "Fa18_Out", "Sp18_Inb",
+                "Sp18_Out", "Sp19_Inb"
+            }
+        },
+        {"output/unfolded_yields",
+            {"Fa18_Inb", "Fa18_Out", "Sp18_Inb",
+                "Sp18_Out", "Sp19_Inb", "Fa18", "Sp18",
+                "10.6_GeV"
+            }
+        },
+        {"output/radiative_correction_plots",
+            {"10.60","10.2"}},
         // {"output/pi0_corrected_counts",
         //     {"sp18_inb","sp18_out","fa18_inb_supplemental",
         //      "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},

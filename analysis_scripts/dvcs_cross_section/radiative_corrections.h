@@ -1,28 +1,39 @@
-// radiative_corrections.h
 #ifndef RADIATIVE_CORRECTIONS_H
 #define RADIATIVE_CORRECTIONS_H
 
 #include <map>
 #include <string>
-#include <vector>
 
 class TTree;
 
-// Use the canonical Binning definition
-#include "load_binning_scheme.h"
+/**
+ * Compute radiative correction factors Frad for the DVCS bins defined
+ * in dvcs_pass2_analysis.csv, and write them into the columns
+ *
+ *   "Frad, 10.6 GeV"
+ *   "Frad, 10.2 GeV"
+ *
+ * as three-tuples "(value, stat, sys)" with sys = 0.0 for now.
+ *
+ * The 10.6 GeV factor is filled only for rows that have a non-empty
+ * "xBavg, 10.6 GeV" entry.
+ *
+ * The 10.2 GeV factor is filled only for rows that have a non-empty
+ * "xBavg, Sp19 Inb" entry.
+ *
+ * genMcTrees:    generator MC (no-rad), keys like "DVCS_Sp18_inb_gen"
+ * radGenMcTrees: generator MC (radiative), keys like "DVCS_Sp18_inb_gen_rad"
+ *
+ * out_root_dir:  base output directory (e.g. "output"), used to place
+ *                diagnostic radiative_correction_plots.
+ *
+ * Returns true on success, false on any fatal problem (missing columns,
+ * missing MC trees, etc.).
+ */
+bool update_radiative_corrections_csv(
+    const std::string& csv_path,
+    const std::map<std::string, TTree*>& genMcTrees,
+    const std::map<std::string, TTree*>& radGenMcTrees,
+    const std::string& out_root_dir);
 
-// Compute radiative corrections using GENERATED trees only:
-//   RC(phi) = (N_gen_rad(cell,phi)/N_gen_rad_total) / (N_gen_born(cell,phi)/N_gen_born_total)
-//
-// Notes:
-// - 'topologies' kept for API compatibility (ignored in implementation).
-// - recMcTrees_* and combined_cuts_json_path are also ignored.
-void compute_radiative_corrections(
-  const std::vector<std::string>& periods,
-  const std::vector<Binning>& binning_scheme,
-  const std::map<std::string, TTree*>& genMcTrees,     // Born (no-rad), keys: "<tag>_gen"
-  const std::map<std::string, TTree*>& radGenMcTrees,  // Rad, keys: "<tag>_gen_rad"
-  const std::string& out_root_dir                      // "output"
-);
-
-#endif // RADIATIVE_CORRECTIONS_H
+#endif

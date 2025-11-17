@@ -1,16 +1,30 @@
 // radiative_corrections.cpp
-#include "radiative_corrections.h"
-#include "load_binning_scheme.h"
+//
+// Compute radiative correction factors Frad from generator MC and write
+// them into dvcs_pass2_analysis.csv as three-tuples "(value, stat, sys)"
+// in the columns:
+//
+//   "Frad, 10.6 GeV"
+//   "Frad, 10.2 GeV"
+//
+// using the Lee CSV binning (xBmin/xBmax, Q2min/Q2max, t_abs_min/t_abs_max, phimin/phimax).
+//
+// Beam energies:
+//   10.6 GeV: DVCS_Sp18_inb, DVCS_Sp18_out, DVCS_Fa18_inb, DVCS_Fa18_out
+//   10.2 GeV: DVCS_Sp19_inb
+//
+// The 10.6 GeV factors are filled only when "xBavg, 10.6 GeV" is non-empty.
+// The 10.2 GeV factors are filled only when "xBavg, Sp19 Inb" is non-empty.
 
-#include <TCanvas.h>
-#include <TLegend.h>
-#include <TLatex.h>
-#include <TStyle.h>
+#include "radiative_corrections.h"
+
 #include <TTree.h>
-#include <TGaxis.h>
-#include <TH1.h>
+#include <TStyle.h>
+#include <TCanvas.h>
 #include <TGraphErrors.h>
 #include <TPad.h>
+#include <TH1.h>
+#include <TLatex.h>
 
 #include <algorithm>
 #include <cctype>
@@ -50,118 +64,264 @@ struct StyleInit {
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
-static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
-    std::set<std::pair<double,double>> s;
-    for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
-    }
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
+// -------------------------- small helpers --------------------------
+
+static inline std::string trim(const std::string& s) {
+    size_t i = 0;
+    while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+    size_t j = s.size();
+    while (j > i && std::isspace(static_cast<unsigned char>(s[j - 1]))) --j;
+    return s.substr(i, j - i);
 }
 
-static inline int findIndex(const std::pair<double,double>& range,
-                            const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < (int)ranges.size(); ++i) if (ranges[i] == range) return i;
+static inline bool is_empty(const std::string& s) {
+    return trim(s).empty();
+}
+
+static inline int find_column(const std::vector<std::string>& header,
+                              const std::string& name) {
+    for (size_t i = 0; i < header.size(); ++i) {
+        if (header[i] == name) return static_cast<int>(i);
+    }
     return -1;
 }
 
-// "DVCS_Fa18_inb" -> "fa18_inb" (used for pretty name below)
-static inline std::string periodToRunTagKey(const std::string& period) {
-    auto pos = period.find('_');
-    std::string tail = (pos == std::string::npos || pos + 1 >= period.size())
-        ? period : period.substr(pos + 1);
-    std::transform(tail.begin(), tail.end(), tail.begin(), ::tolower);
-    return tail;
-}
-
-// "sp18_inb" -> "DVCS_Sp18_inb" (preserve previous pretty JSON filenames)
-static inline std::string runTagToPretty(const std::string& runTagLower) {
-    std::string p = "DVCS_";
-    bool upNext = true;
-    for (char c : runTagLower) {
-        if (upNext) { p.push_back(std::toupper(c)); upNext = false; }
-        else if (c == '_') { p.push_back('_'); upNext = true; }
-        else { p.push_back(c); }
+static inline double parse_double_or_nan(const std::string& s) {
+    std::string t = trim(s);
+    if (t.empty()) return std::numeric_limits<double>::quiet_NaN();
+    try {
+        return std::stod(t);
+    } catch (...) {
+        return std::numeric_limits<double>::quiet_NaN();
     }
-    return p;
 }
 
-static inline std::vector<double> phiCentersDeg() {
-    std::vector<double> d(N_PHI_BINS);
-    const double step = 360.0 / double(N_PHI_BINS);
-    for (int i = 0; i < N_PHI_BINS; ++i) d[i] = (i + 0.5) * step;
-    return d;
+static inline int range_index(const std::pair<double,double>& r,
+                              std::vector<std::pair<double,double>>& ranges) {
+    for (int i = 0; i < static_cast<int>(ranges.size()); ++i) {
+        if (ranges[i].first == r.first && ranges[i].second == r.second) return i;
+    }
+    ranges.push_back(r);
+    return static_cast<int>(ranges.size()) - 1;
 }
 
-static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize) {
-    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
-    ax->SetLabelFont(42);
-    ax->SetLabelSize(labelSize);
-    ax->SetLabelOffset(0.012);
-    ax->SetTitle("");
-    ax->SetTickSize(0.02);
-    ax->Draw();
+static inline int findBin1D(double v, const std::vector<std::pair<double,double>>& ranges) {
+    for (int k = 0; k < static_cast<int>(ranges.size()); ++k) {
+        const double lo = ranges[k].first;
+        const double hi = ranges[k].second;
+        if (v >= lo && v < hi) return k;
+    }
+    // allow right edge to land in the last bin
+    if (!ranges.empty()) {
+        const int last = static_cast<int>(ranges.size()) - 1;
+        if (v == ranges[last].second) return last;
+    }
+    return -1;
 }
 
-// --------- branch binder for GENERATED trees ----------
-struct GenBranch {
-    double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = 0.0;
-    bool has_x = false, has_Q2 = false, has_t1 = false, has_phi = false;
+// ------------------------ CSV read / write ------------------------
+
+struct CsvTable {
+    std::vector<std::string> header;
+    std::vector< std::vector<std::string> > rows;
+};
+
+static std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> out;
+    std::string field;
+    bool in_quotes = false;
+    for (size_t i = 0; i < line.size(); ++i) {
+        char c = line[i];
+        if (in_quotes) {
+            if (c == '"') {
+                if (i + 1 < line.size() && line[i + 1] == '"') {
+                    field.push_back('"');
+                    ++i;
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                field.push_back(c);
+            }
+        } else {
+            if (c == ',') {
+                out.push_back(field);
+                field.clear();
+            } else if (c == '"') {
+                in_quotes = true;
+            } else {
+                field.push_back(c);
+            }
+        }
+    }
+    out.push_back(field);
+    return out;
+}
+
+static bool read_csv(const std::string& path, CsvTable& table) {
+    std::ifstream ifs(path);
+    if (!ifs) {
+        std::cerr << "[radcorr] ERROR: cannot open CSV \"" << path << "\" for reading.\n";
+        return false;
+    }
+    std::string line;
+    if (!std::getline(ifs, line)) {
+        std::cerr << "[radcorr] ERROR: CSV \"" << path << "\" appears to be empty.\n";
+        return false;
+    }
+    table.header = split_csv_line(line);
+
+    while (std::getline(ifs, line)) {
+        if (line.empty()) continue;
+        table.rows.push_back(split_csv_line(line));
+    }
+
+    // Normalize row width
+    const size_t ncols = table.header.size();
+    for (auto& r : table.rows) {
+        if (r.size() < ncols) r.resize(ncols);
+        else if (r.size() > ncols) r.resize(ncols);
+    }
+    return true;
+}
+
+static std::string csv_escape(const std::string& field) {
+    bool need_quotes = false;
+    for (char c : field) {
+        if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+            need_quotes = true;
+            break;
+        }
+    }
+    if (!need_quotes) return field;
+    std::string out;
+    out.push_back('"');
+    for (char c : field) {
+        if (c == '"') out.push_back('"');
+        out.push_back(c);
+    }
+    out.push_back('"');
+    return out;
+}
+
+static bool write_csv_atomic(const std::string& path, const CsvTable& table) {
+    namespace fs = std::filesystem;
+    fs::path p(path);
+    fs::path tmp = p;
+    tmp += ".tmp";
+
+    {
+        std::ofstream ofs(tmp.string());
+        if (!ofs) {
+            std::cerr << "[radcorr] ERROR: cannot open temp CSV \"" << tmp.string()
+                      << "\" for writing.\n";
+            return false;
+        }
+        // header
+        for (size_t i = 0; i < table.header.size(); ++i) {
+            if (i) ofs << ",";
+            ofs << csv_escape(table.header[i]);
+        }
+        ofs << "\n";
+        // rows
+        for (const auto& row : table.rows) {
+            for (size_t i = 0; i < row.size(); ++i) {
+                if (i) ofs << ",";
+                ofs << csv_escape(row[i]);
+            }
+            ofs << "\n";
+        }
+    }
+
+    std::error_code ec;
+    fs::rename(tmp, p, ec);
+    if (ec) {
+        std::cerr << "[radcorr] ERROR: failed to replace \"" << path
+                  << "\" with temp file \"" << tmp.string() << "\": " << ec.message() << "\n";
+        return false;
+    }
+    return true;
+}
+
+// ------------------- MC accumulation and RC -------------------
+
+struct BranchesGen {
+    double x = 0.0;
+    double Q2 = 0.0;
+    double t1 = 0.0;
+    double phi2 = 0.0;
+    bool has_x   = false;
+    bool has_Q2  = false;
+    bool has_t1  = false;
+    bool has_phi = false;
+
     void bind(TTree* t) {
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+        if (!t) return;
+        auto bindD = [&](const char* name, double* addr, bool& flag) {
+            if (t->GetBranch(name)) {
+                t->SetBranchAddress(name, addr);
+                flag = true;
+            }
+        };
         bindD("x",   &x,   has_x);
         bindD("Q2",  &Q2,  has_Q2);
         bindD("t1",  &t1,  has_t1);
         bindD("phi2",&phi2,has_phi);
     }
+
+    bool ready() const {
+        return has_x && has_Q2 && has_t1 && has_phi;
+    }
 };
 
-// --------- accumulation structs ----------
 struct CountsStore {
-    std::map<std::tuple<int,int,int,int>, double> born_phi;
-    std::map<std::tuple<int,int,int,int>, double> rad_phi;
-    std::map<std::tuple<int,int,int>,     double> born_tot;
-    std::map<std::tuple<int,int,int>,     double> rad_tot;
+    std::map< std::tuple<int,int,int,int>, double > born_phi;
+    std::map< std::tuple<int,int,int,int>, double > rad_phi;
+    std::map< std::tuple<int,int,int>,     double > born_tot;
+    std::map< std::tuple<int,int,int>,     double > rad_tot;
 };
-
-static inline int phiBinIndex(double phi) {
-    double w = std::fmod(phi, TWO_PI); if (w < 0) w += TWO_PI;
-    const double width = TWO_PI / double(N_PHI_BINS);
-    int ip = int(std::floor(w / width));
-    if (ip < 0) ip = 0; if (ip >= N_PHI_BINS) ip = N_PHI_BINS - 1;
-    return ip;
-}
-
-static inline int findBin1D(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int k = 0; k < (int)ranges.size(); ++k) if (v >= ranges[k].first && v < ranges[k].second) return k;
-    return -1;
-}
 
 static void accumulate_generated(
     TTree* t,
     bool isBorn,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
+    const std::vector<std::pair<double,double>>& xB_ranges,
+    const std::vector<std::pair<double,double>>& Q2_ranges,
+    const std::vector<std::pair<double,double>>& t_ranges,
     CountsStore& acc)
 {
     if (!t) return;
-    GenBranch b; b.bind(t);
+    BranchesGen b;
+    b.bind(t);
+    if (!b.ready()) {
+        std::cerr << "[radcorr] WARNING: generated tree is missing one or more branches "
+                  << "(x, Q2, t1, phi2); this tree will be skipped.\n";
+        return;
+    }
+
     const Long64_t n = t->GetEntries();
     for (Long64_t i = 0; i < n; ++i) {
         t->GetEntry(i);
-        if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi)) continue;
-        const double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi2;
 
-        int ix = findBin1D(xB, xB_bins);
-        int iQ = findBin1D(Q2, Q2_bins);
-        int it = findBin1D(tt,  t_bins);
+        const double xB = b.x;
+        const double Q2 = b.Q2;
+        const double tt = std::fabs(b.t1);
+
+        // phi2 is in radians
+        double phi = b.phi2;
+        double w   = std::fmod(phi, TWO_PI);
+        if (w < 0.0) w += TWO_PI;
+        const double width = TWO_PI / static_cast<double>(N_PHI_BINS);
+        int iphi = static_cast<int>(std::floor(w / width));
+        if (iphi < 0) iphi = 0;
+        if (iphi >= N_PHI_BINS) iphi = N_PHI_BINS - 1;
+
+        int ix = findBin1D(xB, xB_ranges);
+        int iQ = findBin1D(Q2, Q2_ranges);
+        int it = findBin1D(tt,  t_ranges);
         if (ix < 0 || iQ < 0 || it < 0) continue;
 
-        int ip = phiBinIndex(phi);
-        auto key4 = std::make_tuple(ix, iQ, it, ip);
         auto key3 = std::make_tuple(ix, iQ, it);
+        auto key4 = std::make_tuple(ix, iQ, it, iphi);
 
         if (isBorn) {
             acc.born_phi[key4] += 1.0;
@@ -173,134 +333,179 @@ static void accumulate_generated(
     }
 }
 
+static std::vector<double> phi_centers_deg() {
+    std::vector<double> v(N_PHI_BINS);
+    const double step = 360.0 / static_cast<double>(N_PHI_BINS);
+    for (int i = 0; i < N_PHI_BINS; ++i) {
+        v[i] = (i + 0.5) * step;
+    }
+    return v;
+}
+
 struct PhiArrays {
     std::vector<double> phi_deg;
     std::vector<double> rc;
     std::vector<double> rc_err;
-    std::vector<double> a_born;
-    std::vector<double> b_rad;
     double A_born = 0.0;
     double B_rad  = 0.0;
 };
-using RCPerCell = std::map<std::tuple<int,int,int>, PhiArrays>;
+
+using RCPerCell = std::map< std::tuple<int,int,int>, PhiArrays >;
 
 static RCPerCell compute_rc_per_cell(
     const CountsStore& acc,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins)
+    const std::vector<std::pair<double,double>>& xB_ranges,
+    const std::vector<std::pair<double,double>>& Q2_ranges,
+    const std::vector<std::pair<double,double>>& t_ranges)
 {
     RCPerCell out;
-    const auto PHI_DEG = phiCentersDeg();
+    const auto PHI_DEG = phi_centers_deg();
 
-    for (int ix = 0; ix < (int)xB_bins.size(); ++ix)
-    for (int iQ = 0; iQ < (int)Q2_bins.size(); ++iQ)
-    for (int it = 0; it < (int)t_bins.size();  ++it) {
-        auto key3 = std::make_tuple(ix, iQ, it);
-        double A = acc.born_tot.count(key3) ? acc.born_tot.at(key3) : 0.0;
-        double B = acc.rad_tot.count(key3)  ? acc.rad_tot.at(key3)  : 0.0;
+    for (int ix = 0; ix < static_cast<int>(xB_ranges.size()); ++ix) {
+        for (int iQ = 0; iQ < static_cast<int>(Q2_ranges.size()); ++iQ) {
+            for (int it = 0; it < static_cast<int>(t_ranges.size()); ++it) {
+                auto key3 = std::make_tuple(ix, iQ, it);
+                double A = 0.0;
+                double B = 0.0;
 
-        PhiArrays pa;
-        pa.phi_deg = PHI_DEG;
-        pa.rc.resize(N_PHI_BINS, 1.0);
-        pa.rc_err.resize(N_PHI_BINS, 0.0);
-        pa.a_born.resize(N_PHI_BINS, 0.0);
-        pa.b_rad.resize(N_PHI_BINS, 0.0);
-        pa.A_born = A; pa.B_rad = B;
+                auto itA = acc.born_tot.find(key3);
+                if (itA != acc.born_tot.end()) A = itA->second;
+                auto itB = acc.rad_tot.find(key3);
+                if (itB != acc.rad_tot.end()) B = itB->second;
 
-        for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-            auto key4 = std::make_tuple(ix, iQ, it, ip);
-            double a = acc.born_phi.count(key4) ? acc.born_phi.at(key4) : 0.0;
-            double b = acc.rad_phi.count(key4)  ? acc.rad_phi.at(key4)  : 0.0;
+                PhiArrays pa;
+                pa.phi_deg = PHI_DEG;
+                pa.rc.assign(N_PHI_BINS, 1.0);
+                pa.rc_err.assign(N_PHI_BINS, 0.0);
+                pa.A_born = A;
+                pa.B_rad  = B;
 
-            pa.a_born[ip] = a; pa.b_rad[ip] = b;
+                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
+                    auto key4 = std::make_tuple(ix, iQ, it, ip);
+                    double a = 0.0;
+                    double b = 0.0;
+                    auto ia = acc.born_phi.find(key4);
+                    if (ia != acc.born_phi.end()) a = ia->second;
+                    auto ib = acc.rad_phi.find(key4);
+                    if (ib != acc.rad_phi.end()) b = ib->second;
 
-            double RC = 1.0, sRC = 0.0;
-            if (A > 0.0 && B > 0.0 && a > 0.0 && b > 0.0) {
-                RC  = (a * B) / (b * A);
-                sRC = RC * std::sqrt((1.0 / std::max(a, 1.0)) + (1.0 / std::max(A, 1.0))
-                                   + (1.0 / std::max(b, 1.0)) + (1.0 / std::max(B, 1.0)));
-            } else if (A > 0.0 && B > 0.0) {
-                RC  = 1.0;
-                sRC = 0.0;
+                    double RC  = 1.0;
+                    double sRC = 0.0;
+
+                    if (A > 0.0 && B > 0.0 && a > 0.0 && b > 0.0) {
+                        RC = (a * B) / (b * A);
+                        double aSafe = std::max(a, 1.0);
+                        double ASafe = std::max(A, 1.0);
+                        double bSafe = std::max(b, 1.0);
+                        double BSafe = std::max(B, 1.0);
+                        sRC = RC * std::sqrt(1.0 / aSafe + 1.0 / ASafe
+                                           + 1.0 / bSafe + 1.0 / BSafe);
+                    } else if (A > 0.0 && B > 0.0) {
+                        RC  = 1.0;
+                        sRC = 0.0;
+                    }
+
+                    if (!std::isfinite(RC)) RC = 1.0;
+                    RC = std::max(0.0, std::min(RC, 2.0));
+
+                    pa.rc[ip]     = RC;
+                    pa.rc_err[ip] = sRC;
+                }
+
+                out[key3] = pa;
             }
-            if (!std::isfinite(RC)) RC = 1.0;
-            RC = std::clamp(RC, 0.0, 2.0);
-
-            pa.rc[ip]     = RC;
-            pa.rc_err[ip] = sRC;
         }
-
-        out[key3] = std::move(pa);
     }
 
     return out;
 }
 
+// ---------------------- plotting helpers ----------------------
+
+struct RowBinKey {
+    int ix   = -1;
+    int iQ   = -1;
+    int it   = -1;
+    int iphi = -1;
+};
+
 static void plot_group_rc(
-    const std::string& energy_label,   // "10.59", "10.60", "10.2"
-    const std::vector<Binning>& binning_scheme,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
+    const std::string& energy_label_for_title,   // "10.60" or "10.2"
+    const std::vector<std::pair<double,double>>& xB_ranges,
+    const std::vector<std::pair<double,double>>& Q2_ranges,
+    const std::vector<std::pair<double,double>>& t_ranges,
+    const std::vector<RowBinKey>& row_keys,
     const RCPerCell& rcPerCell,
     const std::string& out_dir_plots)
 {
-    using std::filesystem::create_directories;
+    namespace fs = std::filesystem;
     std::error_code ec;
-    create_directories(out_dir_plots, ec);
+    fs::create_directories(out_dir_plots, ec);
 
-    for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-        const auto xb = xB_bins[ix];
+    // For each xB range, determine which Q2 and t indices are actually used
+    const int nx = static_cast<int>(xB_ranges.size());
 
-        std::set<std::pair<double,double>> qs, ts;
-        for (const auto& b : binning_scheme) {
-            if (std::make_pair(b.xBmin, b.xBmax) == xb) {
-                qs.emplace(b.Q2min, b.Q2max);
-                ts.emplace(b.tmin,  b.tmax);
+    for (int ix = 0; ix < nx; ++ix) {
+        std::set<int> usedQ;
+        std::set<int> usedT;
+        for (const auto& rk : row_keys) {
+            if (rk.ix == ix) {
+                if (rk.iQ >= 0) usedQ.insert(rk.iQ);
+                if (rk.it >= 0) usedT.insert(rk.it);
             }
         }
-        std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
-        std::vector<std::pair<double,double>> t_slice(ts.begin(), ts.end());
-        if (Q2_slice.empty() || t_slice.empty()) continue;
+        if (usedQ.empty() || usedT.empty()) continue;
 
-        const int nrows = (int)t_slice.size();
-        const int ncols = (int)Q2_slice.size();
+        std::vector<int> qIdx(usedQ.begin(), usedQ.end());
+        std::vector<int> tIdx(usedT.begin(), usedT.end());
+
+        // sort Q2 and t by their low edge
+        std::sort(qIdx.begin(), qIdx.end(),
+                  [&](int a, int b){ return Q2_ranges[a].first < Q2_ranges[b].first; });
+        std::sort(tIdx.begin(), tIdx.end(),
+                  [&](int a, int b){ return t_ranges[a].first < t_ranges[b].first; });
+
+        const int ncols = static_cast<int>(qIdx.size());
+        const int nrows = static_cast<int>(tIdx.size());
 
         const int W = 280 * ncols + 160;
         const int H = 240 * nrows + 170;
 
-        std::ostringstream cname; cname << "c_rc_E" << energy_label << "_xB" << ix;
+        std::ostringstream cname;
+        cname << "c_rc_E" << energy_label_for_title << "_xB" << ix;
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
-        pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+        TPad* pTop  = new TPad("pTop", "pTop", 0.0, 0.915, 1.0, 1.0);
+        pTop->SetFillStyle(0);
+        pTop->SetBorderSize(0);
+        pTop->Draw();
 
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
-        pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
+        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.915);
+        pGrid->SetFillStyle(0);
+        pGrid->SetBorderSize(0);
+        pGrid->Draw();
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
         pTop->cd();
         TLatex head;
-        head.SetNDC(); head.SetTextAlign(22);
+        head.SetNDC();
+        head.SetTextAlign(22);
         head.SetTextFont(42);
         head.SetTextSize(0.36);
         std::ostringstream tit;
-        tit << Form("Radiative correction  E_{beam}=%s GeV   x_{B} #in [%.2g, %.2g]",
-                    energy_label.c_str(), xb.first, xb.second);
+        tit << "Radiative correction  E_{beam}=" << energy_label_for_title
+            << " GeV   x_{B} #in [" << std::setprecision(2) << std::fixed
+            << xB_ranges[ix].first << ", " << xB_ranges[ix].second << "]";
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
         for (int r = 0; r < nrows; ++r) {
-            const int it_global = findIndex(t_slice[r], t_bins);
-            if (it_global < 0) continue;
-
+            const int it = tIdx[r];
             for (int ccol = 0; ccol < ncols; ++ccol) {
-                const int iQ_global = findIndex(Q2_slice[ccol], Q2_bins);
-                if (iQ_global < 0) continue;
-
+                const int iQ = qIdx[ccol];
                 pGrid->cd(r * ncols + ccol + 1);
-                gPad->SetGrid(1,1);
+
+                gPad->SetGrid(1, 1);
                 gPad->SetTopMargin(0.08);
                 gPad->SetBottomMargin(0.18);
                 gPad->SetLeftMargin(0.15);
@@ -310,10 +515,11 @@ static void plot_group_rc(
                 TAxis* ax = frame->GetXaxis();
                 TAxis* ay = frame->GetYaxis();
 
-                ax->SetLabelSize(0.0001);
                 ax->SetTitle("#phi (deg)");
                 ay->SetTitle("Born/Rad");
-                ax->CenterTitle(); ay->CenterTitle();
+                ax->CenterTitle();
+                ay->CenterTitle();
+
                 ax->SetNdivisions(505);
                 ax->SetTitleSize(0.060);
                 ay->SetTitleSize(0.060);
@@ -321,13 +527,11 @@ static void plot_group_rc(
                 ax->SetTitleOffset(1.25);
                 ay->SetTitleOffset(1.35);
 
-                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
-
-                auto itCell = rcPerCell.find(std::make_tuple(ix, iQ_global, it_global));
+                auto itCell = rcPerCell.find(std::make_tuple(ix, iQ, it));
                 if (itCell == rcPerCell.end()) continue;
                 const auto& pa = itCell->second;
 
-                int npt = (int)pa.phi_deg.size();
+                int npt = static_cast<int>(pa.phi_deg.size());
                 std::vector<double> ex(npt, 0.0);
                 TGraphErrors* gr = new TGraphErrors(
                     npt,
@@ -342,204 +546,278 @@ static void plot_group_rc(
                 gr->Draw("P SAME");
 
                 TLatex lab;
-                lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
+                lab.SetNDC();
+                lab.SetTextSize(0.040);
+                lab.SetTextAlign(11);
                 lab.SetTextFont(42);
                 lab.DrawLatex(0.15, 0.94,
-                    Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
-                         Q2_slice[ccol].first, Q2_slice[ccol].second,
-                         t_slice[r].first,    t_slice[r].second));
+                    Form("Q^{2} #in [%.2g, %.2g],   |t| #in [%.2g, %.2g]",
+                        Q2_ranges[iQ].first, Q2_ranges[iQ].second,
+                        t_ranges[it].first,  t_ranges[it].second));
             }
         }
 
         std::ostringstream fout;
-        fout << out_dir_plots << "/rc_E" << energy_label << "_xB_" << ix << ".png";
+        fout << out_dir_plots << "/rc_E" << energy_label_for_title << "_xB_" << ix << ".png";
         c->SaveAs(fout.str().c_str());
         delete c;
     }
 }
 
-static void write_period_json(
-    const std::string& out_path,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const RCPerCell& rcPerCell)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[radcorr] Cannot open " << out_path << "\n"; return; }
-    ofs << std::fixed << std::setprecision(8);
-    ofs << "{\n";
-    ofs << "  \"binning_meta\": {\"phi_bins\": " << N_PHI_BINS
-        << ", \"xB_bins\": " << xB_bins.size()
-        << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\": "  << t_bins.size()  << "},\n";
-    ofs << "  \"bins\": {\n";
-    bool first = true;
-    for (const auto& kv : rcPerCell) {
-        if (!first) ofs << ",\n"; first = false;
-        int ix,iQ,it; std::tie(ix,iQ,it) = kv.first;
-        const auto& pa = kv.second;
-        ofs << "    \"(" << ix << "," << iQ << "," << it << ")\": {";
-        ofs << "\"phi\":[";
-        for (int i=0;i<(int)pa.phi_deg.size();++i){ if(i) ofs<<","; ofs<<pa.phi_deg[i]; }
-        ofs << "], \"rc\":[";
-        for (int i=0;i<(int)pa.rc.size();++i){ if(i) ofs<<","; ofs<<pa.rc[i]; }
-        ofs << "], \"rc_err\":[";
-        for (int i=0;i<(int)pa.rc_err.size();++i){ if(i) ofs<<","; ofs<<pa.rc_err[i]; }
-        ofs << "], \"counts_born_phi\":[";
-        for (int i=0;i<(int)pa.a_born.size();++i){ if(i) ofs<<","; ofs<<pa.a_born[i]; }
-        ofs << "], \"counts_rad_phi\":[";
-        for (int i=0;i<(int)pa.b_rad.size();++i){ if(i) ofs<<","; ofs<<pa.b_rad[i]; }
-        ofs << "], \"total_born\": " << pa.A_born << ", \"total_rad\": " << pa.B_rad << "}";
-    }
-    ofs << "\n  }\n}\n";
-}
+// ---------------------- main driver ----------------------
 
-static void write_all_groups_json(
-    const std::string& out_path,
-    const std::map<std::string, RCPerCell>& groupResults)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[radcorr] Cannot open " << out_path << "\n"; return; }
-    ofs << std::fixed << std::setprecision(8);
-    ofs << "{\n  \"groups\": {\n";
-    bool firstG = true;
-    for (const auto& g : groupResults) {
-        if (!firstG) ofs << ",\n"; firstG = false;
-        ofs << "    \"" << g.first << "\": {\"bins\": {";
-        bool firstB = true;
-        for (const auto& kv : g.second) {
-            if (!firstB) ofs << ","; firstB = false;
-            int ix,iQ,it; std::tie(ix,iQ,it) = kv.first;
-            const auto& pa = kv.second;
-            ofs << "\"(" << ix << "," << iQ << "," << it << ")\": {";
-            ofs << "\"phi\":[";
-            for (int i=0;i<(int)pa.phi_deg.size();++i){ if(i) ofs<<","; ofs<<pa.phi_deg[i]; }
-            ofs << "], \"rc\":[";
-            for (int i=0;i<(int)pa.rc.size();++i){ if(i) ofs<<","; ofs<<pa.rc[i]; }
-            ofs << "], \"rc_err\":[";
-            for (int i=0;i<(int)pa.rc_err.size();++i){ if(i) ofs<<","; ofs<<pa.rc_err[i]; }
-            ofs << "], \"counts_born_phi\":[";
-            for (int i=0;i<(int)pa.a_born.size();++i){ if(i) ofs<<","; ofs<<pa.a_born[i]; }
-            ofs << "], \"counts_rad_phi\":[";
-            for (int i=0;i<(int)pa.b_rad.size();++i){ if(i) ofs<<","; ofs<<pa.b_rad[i]; }
-            ofs << "], \"total_born\": " << pa.A_born << ", \"total_rad\": " << pa.B_rad << "}";
-        }
-        ofs << "}}";
-    }
-    ofs << "\n  }\n}\n";
-}
+struct EnergyConfig {
+    std::string energy_label_column;   // used only for messages
+    std::string xBavg_col_name;        // gate column (non-empty => fill Frad)
+    std::string frad_col_name;         // output column "(val,stat,sys)"
+    std::string plot_dir_suffix;       // "10.60" or "10.2"
+    std::vector<std::string> period_tags; // DVCS_Sp18_inb, etc.
+};
 
 } // anon
 
-// =====================================================================
-// Public driver
-// =====================================================================
-void compute_radiative_corrections(
-    const std::vector<std::string>& periods,                 // canonical: "DVCS_Sp18_inb", etc.
-    const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& genMcTrees,         // keys: "DVCS_<Tag>_gen"
-    const std::map<std::string, TTree*>& radGenMcTrees,      // keys: "DVCS_<Tag>_gen_rad"
+bool update_radiative_corrections_csv(
+    const std::string& csv_path,
+    const std::map<std::string, TTree*>& genMcTrees,
+    const std::map<std::string, TTree*>& radGenMcTrees,
     const std::string& out_root_dir)
 {
+    CsvTable table;
+    if (!read_csv(csv_path, table)) {
+        return false;
+    }
+
+    // Required columns
+    std::vector<std::string> missing;
+
+    auto require_col = [&](const std::string& name) -> int {
+        int idx = find_column(table.header, name);
+        if (idx < 0) missing.push_back(name);
+        return idx;
+    };
+
+    int c_xb_min   = require_col("xBmin");
+    int c_xb_max   = require_col("xBmax");
+    int c_q2_min   = require_col("Q2min");
+    int c_q2_max   = require_col("Q2max");
+    int c_t_min    = require_col("t_abs_min");
+    int c_t_max    = require_col("t_abs_max");
+    int c_phi_min  = require_col("phimin");
+    int c_phi_max  = require_col("phimax");
+
+    int c_xbavg_106 = require_col("xBavg, 10.6 GeV");
+    int c_xbavg_sp19 = require_col("xBavg, Sp19 Inb");
+
+    int c_frad_106 = require_col("Frad, 10.6 GeV");
+    int c_frad_102 = require_col("Frad, 10.2 GeV");
+
+    if (!missing.empty()) {
+        std::cerr << "[radcorr][FATAL] CSV \"" << csv_path
+                  << "\" is missing required columns:\n";
+        for (const auto& name : missing) {
+            std::cerr << "  - " << name << "\n";
+        }
+        return false;
+    }
+
+    const size_t nrows = table.rows.size();
+    if (nrows == 0) {
+        std::cerr << "[radcorr][FATAL] CSV \"" << csv_path
+                  << "\" has no data rows.\n";
+        return false;
+    }
+
+    // Build bin ranges and row->(ix,iQ,it,iphi) mapping
+    std::vector<std::pair<double,double>> xB_ranges;
+    std::vector<std::pair<double,double>> Q2_ranges;
+    std::vector<std::pair<double,double>> t_ranges;
+    std::vector<RowBinKey> row_keys(nrows);
+
+    for (size_t i = 0; i < nrows; ++i) {
+        const auto& row = table.rows[i];
+        double xbmin  = parse_double_or_nan(row[c_xb_min]);
+        double xbmax  = parse_double_or_nan(row[c_xb_max]);
+        double q2min  = parse_double_or_nan(row[c_q2_min]);
+        double q2max  = parse_double_or_nan(row[c_q2_max]);
+        double tmin   = parse_double_or_nan(row[c_t_min]);
+        double tmax   = parse_double_or_nan(row[c_t_max]);
+        double phimin = parse_double_or_nan(row[c_phi_min]);
+        double phimax = parse_double_or_nan(row[c_phi_max]);
+
+        if (!std::isfinite(xbmin) || !std::isfinite(xbmax) ||
+            !std::isfinite(q2min) || !std::isfinite(q2max) ||
+            !std::isfinite(tmin)  || !std::isfinite(tmax)  ||
+            !std::isfinite(phimin)|| !std::isfinite(phimax)) {
+            row_keys[i] = RowBinKey();
+            continue;
+        }
+
+        int ix = range_index(std::make_pair(xbmin, xbmax), xB_ranges);
+        int iQ = range_index(std::make_pair(q2min, q2max), Q2_ranges);
+        int it = range_index(std::make_pair(tmin,  tmax),  t_ranges);
+
+        // map phimin/phimax to phi bin index
+        const double center = 0.5 * (phimin + phimax);
+        const double step   = 360.0 / static_cast<double>(N_PHI_BINS);
+        int iphi = static_cast<int>(std::floor(center / step));
+        if (iphi < 0) iphi = 0;
+        if (iphi >= N_PHI_BINS) iphi = N_PHI_BINS - 1;
+
+        row_keys[i].ix   = ix;
+        row_keys[i].iQ   = iQ;
+        row_keys[i].it   = it;
+        row_keys[i].iphi = iphi;
+    }
+
+    // Define energy groups
+    std::vector<EnergyConfig> energies;
+    energies.push_back(EnergyConfig{
+        "10.6 GeV",
+        "xBavg, 10.6 GeV",
+        "Frad, 10.6 GeV",
+        "10.60",
+        {"DVCS_Sp18_inb", "DVCS_Sp18_out", "DVCS_Fa18_inb", "DVCS_Fa18_out"}
+    });
+    energies.push_back(EnergyConfig{
+        "10.2 GeV",
+        "xBavg, Sp19 Inb",
+        "Frad, 10.2 GeV",
+        "10.2",
+        {"DVCS_Sp19_inb"}
+    });
+
+    // Precompute which rows are active for each energy
+    std::map<std::string, std::vector<bool> > row_active;
+    for (const auto& E : energies) {
+        int idx_xbavg = find_column(table.header, E.xBavg_col_name);
+        if (idx_xbavg < 0) {
+            std::cerr << "[radcorr][FATAL] Missing xBavg gating column \""
+                      << E.xBavg_col_name << "\" for " << E.energy_label_column << ".\n";
+            return false;
+        }
+        std::vector<bool> active(nrows, false);
+        for (size_t i = 0; i < nrows; ++i) {
+            const std::string val = table.rows[i][idx_xbavg];
+            if (!is_empty(val)) active[i] = true;
+        }
+        row_active[E.energy_label_column] = std::move(active);
+    }
+
+    // For each energy, accumulate MC, compute RC per cell, and then fill CSV
     namespace fs = std::filesystem;
+    fs::path plot_root = fs::path(out_root_dir) / "radiative_correction_plots";
 
-    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
-    const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
-    const auto t_bins  = uniqueRanges(binning_scheme, 't');
+    // We keep the RCPerCell per energy so we can also make plots.
+    std::map<std::string, RCPerCell> rc_by_energy;
 
-    const fs::path json_dir  = fs::path(out_root_dir) / "jsons";
-    const fs::path plot_root = fs::path(out_root_dir) / "radiative_correction_plots";
-    std::error_code ec;
-    fs::create_directories(json_dir, ec);
-    fs::create_directories(plot_root, ec);
-    fs::create_directories(plot_root / "10.59", ec);
-    fs::create_directories(plot_root / "10.60", ec);
-    fs::create_directories(plot_root / "10.2",  ec);
-
-    // Hard-coded canonical period tags per beam energy (matching load_trees.cpp keys)
-    struct Group { std::string label; std::vector<std::string> periodTags; };
-    Group g1059{"10.59", {"DVCS_Sp18_inb", "DVCS_Sp18_out"}};
-    Group g1060{"10.60", {"DVCS_Fa18_inb", "DVCS_Fa18_out"}};
-    Group g1020{"10.2",  {"DVCS_Sp19_inb"}};
-
-    std::vector<Group> groups = {g1059, g1060, g1020};
-    std::map<std::string, RCPerCell> groupResults; // label -> RCPerCell
-
-    // Compute RC per group (pooled across canonical periods in that beam energy)
-    for (const auto& G : groups) {
+    for (const auto& E : energies) {
         CountsStore acc;
-        bool anyPairInGroup = false;
 
-        for (const auto& periodTag : G.periodTags) {
-            const std::string bornKey = periodTag + "_gen";
-            const std::string radKey  = periodTag + "_gen_rad";
+        // Accumulate over all periods in this energy group
+        for (const auto& tag : E.period_tags) {
+            const std::string bornKey = tag + "_gen";
+            const std::string radKey  = tag + "_gen_rad";
 
             auto itB = genMcTrees.find(bornKey);
             auto itR = radGenMcTrees.find(radKey);
 
-            TTree* tBorn = (itB != genMcTrees.end())    ? itB->second : nullptr;
-            TTree* tRad  = (itR != radGenMcTrees.end()) ? itR->second : nullptr;
-
-            if (!tBorn || !tRad) {
-                std::cerr << "[radcorr] WARNING: missing generator trees for canonical period \""
-                          << periodTag << "\" in group " << G.label
-                          << " (expected keys \"" << bornKey << "\" and \"" << radKey << "\")\n";
-                continue;
+            if (itB == genMcTrees.end() || itR == radGenMcTrees.end()) {
+                std::cerr << "[radcorr][FATAL] Missing generator MC trees for period \""
+                          << tag << "\" in energy group " << E.energy_label_column
+                          << ". Expected keys \"" << bornKey << "\" and \""
+                          << radKey << "\".\n";
+                return false;
             }
 
-            anyPairInGroup = true;
-            accumulate_generated(tBorn, /*isBorn=*/true,  xB_bins, Q2_bins, t_bins, acc);
-            accumulate_generated(tRad,  /*isBorn=*/false, xB_bins, Q2_bins, t_bins, acc);
+            TTree* tBorn = itB->second;
+            TTree* tRad  = itR->second;
+
+            accumulate_generated(tBorn, true,
+                                 xB_ranges, Q2_ranges, t_ranges,
+                                 acc);
+            accumulate_generated(tRad, false,
+                                 xB_ranges, Q2_ranges, t_ranges,
+                                 acc);
         }
 
-        if (!anyPairInGroup) {
-            std::ostringstream msg;
-            msg << "[radcorr][FATAL] No (Born, Rad) generator trees were found for ANY canonical period in group "
-                << G.label << ".\n"
-                << "  Expected keys like \"DVCS_Sp18_inb_gen\" and \"DVCS_Sp18_inb_gen_rad\" etc.\n";
-            throw std::runtime_error(msg.str());
+        RCPerCell rc = compute_rc_per_cell(acc, xB_ranges, Q2_ranges, t_ranges);
+        rc_by_energy[E.energy_label_column] = rc;
+
+        // Diagnostic plots
+        {
+            std::error_code ec;
+            fs::create_directories(plot_root / E.plot_dir_suffix, ec);
+            plot_group_rc(E.plot_dir_suffix,
+                          xB_ranges, Q2_ranges, t_ranges,
+                          row_keys,
+                          rc,
+                          (plot_root / E.plot_dir_suffix).string());
         }
 
-        RCPerCell rc = compute_rc_per_cell(acc, xB_bins, Q2_bins, t_bins);
-        groupResults[G.label] = rc;
-
-        // Plots per beam energy
-        plot_group_rc(G.label, binning_scheme, xB_bins, Q2_bins, t_bins, rc,
-                      (plot_root / G.label).string());
-
-        // Per-group JSON
-        const fs::path outG = json_dir / ("radiative_corrections_group_" + G.label + ".json");
-        write_period_json(outG.string(), xB_bins, Q2_bins, t_bins, rc);
-        std::cout << "[radcorr] Wrote group JSON: " << outG.string() << "\n";
+        std::cout << "[radcorr] Computed radiative corrections for "
+                  << E.energy_label_column << ".\n";
     }
 
-    // Per-period JSONs (duplicate the corresponding group result, as before)
-    for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period); // e.g. "fa18_inb_supp", "sp18_inb"
-        std::string energyLabel;
-        if      (period.find("DVCS_Sp18_") == 0) energyLabel = "10.59";
-        else if (period.find("DVCS_Fa18_") == 0) energyLabel = "10.60";
-        else if (period.find("DVCS_Sp19_") == 0) energyLabel = "10.2";
-        else                                      energyLabel = "10.60"; // conservative default
+    // Now fill the CSV columns with "(value, stat, 0.0)"
+    for (const auto& E : energies) {
+        RCPerCell& rc = rc_by_energy[E.energy_label_column];
 
-        const auto itG = groupResults.find(energyLabel);
-        if (itG == groupResults.end()) {
-            std::cerr << "[radcorr] WARNING: no group result found for period " << period
-                      << " (E=" << energyLabel << ")\n";
-            continue;
+        int idx_frad = find_column(table.header, E.frad_col_name);
+        if (idx_frad < 0) {
+            std::cerr << "[radcorr][FATAL] Missing output column \""
+                      << E.frad_col_name << "\" while filling "
+                      << E.energy_label_column << " radiative corrections.\n";
+            return false;
         }
 
-        const std::string pretty = runTagToPretty(runTag); // "DVCS_Sp18_inb" or "..._Supp"
-        const fs::path outP = fs::path(out_root_dir) / "jsons" / ("radiative_corrections_" + pretty + ".json");
-        write_period_json(outP.string(), xB_bins, Q2_bins, t_bins, itG->second);
-        std::cout << "[radcorr] Wrote period JSON (from group " << energyLabel << "): "
-                  << outP.string() << "\n";
+        const std::vector<bool>& active = row_active[E.energy_label_column];
+
+        for (size_t i = 0; i < nrows; ++i) {
+            if (!active[i]) continue;
+
+            const RowBinKey& rk = row_keys[i];
+            if (rk.ix < 0 || rk.iQ < 0 || rk.it < 0 || rk.iphi < 0) {
+                std::cerr << "[radcorr][FATAL] Row " << i
+                          << " has invalid bin indices while trying to fill "
+                          << E.frad_col_name << ".\n";
+                return false;
+            }
+
+            auto itCell = rc.find(std::make_tuple(rk.ix, rk.iQ, rk.it));
+            if (itCell == rc.end()) {
+                std::cerr << "[radcorr][FATAL] No RC cell found for row " << i
+                          << " in " << E.energy_label_column
+                          << " (ix=" << rk.ix << ", iQ=" << rk.iQ
+                          << ", it=" << rk.it << ").\n";
+                return false;
+            }
+            const PhiArrays& pa = itCell->second;
+            if (rk.iphi < 0 || rk.iphi >= static_cast<int>(pa.rc.size()) ||
+                rk.iphi >= static_cast<int>(pa.rc_err.size())) {
+                std::cerr << "[radcorr][FATAL] Invalid phi index " << rk.iphi
+                          << " for row " << i << " in " << E.energy_label_column << ".\n";
+                return false;
+            }
+
+            double val  = pa.rc[rk.iphi];
+            double stat = pa.rc_err[rk.iphi];
+            if (!std::isfinite(val))  val  = 1.0;
+            if (!std::isfinite(stat)) stat = 0.0;
+
+            std::ostringstream buf;
+            buf << "("
+                << std::setprecision(6) << std::fixed << val
+                << ", "
+                << std::setprecision(6) << std::fixed << stat
+                << ", 0.0)";
+            table.rows[i][idx_frad] = buf.str();
+        }
     }
 
-    // All-groups container (unchanged)
-    write_all_groups_json((fs::path(out_root_dir) / "jsons" / "radiative_corrections_all_groups.json").string(),
-                          groupResults);
+    if (!write_csv_atomic(csv_path, table)) {
+        return false;
+    }
 
-    std::cout << "[radcorr] Radiative corrections (Born/Rad, generated-only) complete.\n";
+    std::cout << "[radcorr] Updated radiative correction columns in \"" << csv_path << "\".\n";
+    return true;
 }
