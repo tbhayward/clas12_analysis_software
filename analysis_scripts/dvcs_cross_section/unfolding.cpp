@@ -728,6 +728,7 @@ static void draw_unfolded_canvases(
 
         std::vector<CellData> cells(nrows * ncols);
         double canvas_max = 1.0;
+        double canvas_min = std::numeric_limits<double>::infinity();
 
         std::vector<double> xbmeans;
         for (int r = 0; r < NR; ++r) {
@@ -816,8 +817,14 @@ static void draw_unfolded_canvases(
                     C.q2means.push_back(q2m);
                     C.tmeans.push_back(tm);
 
-                    if (std::isfinite(Yp)) canvas_max = std::max(canvas_max, Yp);
-                    if (std::isfinite(Ym)) canvas_max = std::max(canvas_max, Ym);
+                    if (std::isfinite(Yp) && Yp > 0.0) {
+                        canvas_max = std::max(canvas_max, Yp);
+                        canvas_min = std::min(canvas_min, Yp);
+                    }
+                    if (std::isfinite(Ym) && Ym > 0.0) {
+                        canvas_max = std::max(canvas_max, Ym);
+                        canvas_min = std::min(canvas_min, Ym);
+                    }
                 }
             }
         }
@@ -842,8 +849,18 @@ static void draw_unfolded_canvases(
                             label.c_str(),
                             xb_mean_for_title));
 
-        const double y_lo = 0.0;
-        const double y_hi = std::max(1.0, canvas_max * 1.15);
+        // Common log-scale y-range per canvas
+        double y_lo = 1.0;
+        double y_hi = 1.0;
+        if (std::isfinite(canvas_min) && canvas_min > 0.0) {
+            y_lo = std::max(1.0, 0.5 * canvas_min);
+        }
+        if (canvas_max > 0.0) {
+            y_hi = canvas_max * 1.15;
+        }
+        if (y_hi <= y_lo) {
+            y_hi = y_lo * 10.0;
+        }
 
         for (int rr = 0; rr < nrows; ++rr) {
             for (int cc = 0; cc < ncols; ++cc) {
@@ -851,10 +868,11 @@ static void draw_unfolded_canvases(
                 gPad->SetGrid(1, 1);
                 gPad->SetTopMargin(0.24);
                 gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.160); // keep >= 0.160 for y-labels
+                gPad->SetLeftMargin(0.20);  // larger left margin to avoid label clipping
                 gPad->SetRightMargin(0.07);
                 gPad->SetTickx(1);
                 gPad->SetTicky(1);
+                gPad->SetLogy(1);           // log-scale y axis
 
                 TH1* frame = gPad->DrawFrame(0.0, y_lo, 360.0, y_hi);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -866,7 +884,7 @@ static void draw_unfolded_canvases(
                 frame->GetYaxis()->SetTitleSize(title_sz);
                 frame->GetXaxis()->SetLabelSize(label_sz);
                 frame->GetYaxis()->SetLabelSize(label_sz);
-                frame->GetYaxis()->SetTitleOffset(1.25);
+                frame->GetYaxis()->SetTitleOffset(1.8); // push label further left
                 frame->GetXaxis()->SetTitleOffset(1.05);
 
                 const CellData& C = cells[rr * ncols + cc];
