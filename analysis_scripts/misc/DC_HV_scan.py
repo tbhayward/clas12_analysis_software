@@ -278,7 +278,7 @@ for path in file_paths:
             (line,) = plt.plot(x_fit, y_fit, color=color, linewidth=2.0)
 
             # Legend line label with #sigma
-            label_text = rf"{hv}; $\#\sigma = {sigma:.4f} \pm {sigma_err:.4f}$"
+            label_text = rf"{hv}; $\sigma = {sigma:.4f} \pm {sigma_err:.4f}$"
             handles.append(line)
             labels.append(label_text)
             any_plotted = True
@@ -432,7 +432,7 @@ for cat, bins, row in binned_rows:
                         # Save to binned CSV rows (only sigma)
                         bin_label = f"[{int(lo)},{int(hi)})"
                         binned_sigma_rows.append({
-                            'Category': 'e_theta' if cat == 'e_theta' else 'p_theta',
+                            'Category': 'e- theta' if cat == 'e_theta' else 'pi theta',
                             'Bin': bin_label,
                             'HV_Settings': hv,
                             'Sigma': round(float(sigma), 4)
