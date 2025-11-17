@@ -78,7 +78,7 @@ def gaussian_linear(x, a, mu, sigma, b, c):
     return gaussian + linear
 # endif
 
-# Common histogram settings for Mx
+# Common histogram settings for Mx (inclusive)
 MX_MIN, MX_MAX = 0.95, 1.00
 MX_NBINS = 80
 
@@ -118,8 +118,8 @@ for file_path in file_paths:
             e_theta_deg = np.degrees(e_theta)
             p_theta_deg = np.degrees(p_theta)
 
-            # Universal cuts for the combined kinematics display
-            mask = (Mx > MX_MIN) & (Mx < MX_MAX)
+            # Universal cuts for the combined kinematics display (inclusive)
+            mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
             if REQ_DETECTOR_1:
                 mask &= (detector == 1)
             # endif
@@ -183,7 +183,7 @@ if len(all_Mx) > 0:
                                        float(np.max(all_e_theta))]],
                                cmap='viridis', norm=colors.LogNorm())
         axes[1, 0].set_xlabel(r'$e_{p}$ (GeV)')
-        axes[1, 0].set_ylabel(r'$e_{\theta}$ (^\circ)')
+        axes[1, 0].set_ylabel(r'$e_{\theta}$ ($^{\circ}$)')
         axes[1, 0].grid(True, alpha=0.3)
         axes[1, 0].set_title(r'Electron $\theta$ vs Electron Momentum')
         axes[1, 0].set_xlim(2.0, 5.0)
@@ -195,7 +195,7 @@ if len(all_Mx) > 0:
         h3 = axes[1, 1].hist2d(all_p_p, all_p_theta, bins=100,
                                cmap='viridis', norm=colors.LogNorm())
         axes[1, 1].set_xlabel(r'$\pi^{+}_{p}$ (GeV)')
-        axes[1, 1].set_ylabel(r'$\pi^{+}_{\theta}$ (^\circ)')
+        axes[1, 1].set_ylabel(r'$\pi^{+}_{\theta}$ ($^{\circ}$)')
         axes[1, 1].grid(True, alpha=0.3)
         axes[1, 1].set_title(r'$\pi^{+}$ $\theta$ vs $\pi^{+}$ Momentum')
         plt.colorbar(h3[3], ax=axes[1, 1])
@@ -233,7 +233,7 @@ for path in file_paths:
             Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
             p_theta_deg = np.degrees(p_theta)
 
-            mask = (Mx > MX_MIN) & (Mx < MX_MAX)
+            mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
             if REQ_DETECTOR_1:
                 mask &= (detector == 1)
             # endif
@@ -277,8 +277,8 @@ for path in file_paths:
             y_fit = gaussian_linear(x_fit, *popt)
             (line,) = plt.plot(x_fit, y_fit, color=color, linewidth=2.0)
 
-            # Legend line label with #sigma
-            label_text = rf"{hv}; $\sigma = {sigma:.4f} \pm {sigma_err:.4f}$"
+            # Legend line label with literal "#sigma" per your style
+            label_text = f"{hv}; #sigma = {sigma:.4f} +/- {sigma_err:.4f}"
             handles.append(line)
             labels.append(label_text)
             any_plotted = True
@@ -376,7 +376,7 @@ for cat, bins, row in binned_rows:
                     e_deg = np.degrees(e_theta)
                     p_deg = np.degrees(p_theta)
 
-                    mask = (Mx > MX_MIN) & (Mx < MX_MAX)
+                    mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
                     if REQ_DETECTOR_1:
                         mask &= (detector == 1)
                     # endif
@@ -423,8 +423,8 @@ for cat, bins, row in binned_rows:
                         y_fit = gaussian_linear(x_fit, *popt)
                         (line,) = ax.plot(x_fit, y_fit, color=color, linewidth=2.0)
 
-                        # Legend label with #sigma
-                        lbl = rf"{hv}; $\#\sigma = {sigma:.4f} \pm {sigma_err:.4f}$"
+                        # Legend label with literal "#sigma"
+                        lbl = f"{hv}; #sigma = {sigma:.4f} +/- {sigma_err:.4f}"
                         handles_loc.append(line)
                         labels_loc.append(lbl)
                         any_here = True
@@ -432,7 +432,7 @@ for cat, bins, row in binned_rows:
                         # Save to binned CSV rows (only sigma)
                         bin_label = f"[{int(lo)},{int(hi)})"
                         binned_sigma_rows.append({
-                            'Category': 'e- theta' if cat == 'e_theta' else 'pi theta',
+                            'Category': 'e_theta' if cat == 'e_theta' else 'p_theta',
                             'Bin': bin_label,
                             'HV_Settings': hv,
                             'Sigma': round(float(sigma), 4)
@@ -453,10 +453,11 @@ for cat, bins, row in binned_rows:
         ax.grid(True, alpha=0.3)
         ax.set_xlim(MX_MIN, MX_MAX)
 
+        # Titles: ensure math mode and ASCII-only degree via ^{\circ}
         if cat == 'e_theta':
-            ax.set_title(rf'$e_{{\theta}} \in [{lo:.0f}, {hi:.0f})^\circ$')
+            ax.set_title(rf'$e_{{\theta}} \in [{lo:.0f}, {hi:.0f})^{{\circ}}$')
         else:
-            ax.set_title(rf'$p_{{\theta}} \in [{lo:.0f}, {hi:.0f})^\circ$')
+            ax.set_title(rf'$p_{{\theta}} \in [{lo:.0f}, {hi:.0f})^{{\circ}}$')
         # endif
 
         if any_here:
