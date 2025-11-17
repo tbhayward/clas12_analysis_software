@@ -373,10 +373,9 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     }
 
     for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD"
+        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD" or maybe pi0 keys
         const json& block = it.value();
 
-        // We want the DATA cuts to define the 3-sigma windows.
         if (!block.contains("data") || !block["data"].is_object()) continue;
 
         VarCutMap m;
@@ -396,16 +395,6 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     std::cout << "[acceptance] Loaded sigma cuts for " << out.size()
               << " topology keys from " << path << "\n";
     return out;
-}
-
-static std::set<std::string> all_cut_variables(const TopoCutMap& m) {
-    std::set<std::string> vars;
-    for (const auto& kv : m) {
-        for (const auto& vv : kv.second) {
-            vars.insert(vv.first);
-        }
-    }
-    return vars;
 }
 
 // ---------------- topology (FD_FD, CD_FD, CD_FT) ----------------
@@ -428,7 +417,7 @@ struct TopologyResolver {
     bool have2 = false;
 
     void enable_and_bind(TTree* t, const std::string& period_label) {
-        t->SetBranchStatus("*", 1); // we are not doing fine-grained enable here
+        t->SetBranchStatus("*", 1);
 
         have1 = (t->GetBranch("detector1") != nullptr);
         have2 = (t->GetBranch("detector2") != nullptr);
@@ -462,7 +451,6 @@ struct RowBin {
 
 // We only build RowBin entries for "standard" phi bins,
 // NOT for phi-integrated bins (phi width >= 360 degrees).
-// That avoids double counting and meaningless acceptance.
 static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
     const int c_xb_min  = csv.col_index("xBmin");
     const int c_xb_max  = csv.col_index("xBmax");
@@ -501,12 +489,10 @@ static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
             continue;
         }
 
-        // Skip "phi-integrated" or pathological bins that span (approximately) full 0-360.
         if (std::fabs(phi_width) >= 359.0) {
             continue;
         }
 
-        // Require normal, increasing bin edges.
         if (!(b.xbmax > b.xbmin &&
               b.q2max > b.q2min &&
               b.tmax  > b.tmin  &&
@@ -530,8 +516,6 @@ static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
 }
 
 // For each period, mark which CSV rows actually have data for that period.
-// We follow your request: only compute acceptance where the period-specific
-// averages exist; we use "xBavg, <period>" as the flag.
 static std::map<std::string, std::vector<bool>>
 build_row_has_data(const CsvDoc& csv)
 {
@@ -563,9 +547,7 @@ build_row_has_data(const CsvDoc& csv)
     return has_data;
 }
 
-// Find which CSV row (if any) an event belongs to, given xB, Q2, |t|, phiDeg.
-// We search only through the compact list of RowBin entries, which map
-// directly back to CSV row indices.
+// Find which CSV row an event belongs to, given xB, Q2, |t|, phiDeg.
 static int find_row_for_event(double xB,
                               double Q2,
                               double tAbs,
@@ -621,6 +603,34 @@ static bool rec_passes_exclusivity(double t1,
     return true;
 }
 
+// Build the set of branch names we actually need for a given period:
+//   - union of variables in DVCS_<PeriodDir>_FD_FD / CD_FD / CD_FT
+//   - plus "pTmiss" for the global cut.
+static std::set<std::string>
+build_cut_branches_for_period(const std::string& period_label,
+                              const TopoCutMap& sigmaCuts)
+{
+    std::set<std::string> vars;
+    const std::string period_dir = period_dir_for_label(period_label);
+
+    for (int topo_idx = 0; topo_idx <= 2; ++topo_idx) {
+        const Topology T = (Topology)topo_idx;
+        const std::string key =
+            std::string("DVCS_") + period_dir + "_" + topo_dir(T);
+
+        auto it = sigmaCuts.find(key);
+        if (it == sigmaCuts.end()) continue;
+
+        for (const auto& kv : it->second) {
+            vars.insert(kv.first);
+        }
+    }
+
+    // Always include pTmiss for global exclusivity
+    vars.insert("pTmiss");
+    return vars;
+}
+
 // ------------- MC counting per period -------------
 
 static void accumulate_counts_for_period(const std::string& period_label,
@@ -630,7 +640,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
                                          TTree* genTree,
                                          TTree* recTree,
                                          const TopoCutMap& sigmaCuts,
-                                         const std::set<std::string>& cutBranches,
                                          std::vector<double>& gen_counts,
                                          std::vector<double>& rec_counts)
 {
@@ -690,8 +699,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
     const Long64_t Ngen = genTree->GetEntries();
     Long64_t used_gen = 0;
 
-    // Progress cadence for gen MC: about 10 percent steps
-    const Long64_t report_step_gen = (Ngen > 0) ? std::max<Long64_t>(1, Ngen / 10) : 0;
+    int next_pct_gen = 10;
 
     for (Long64_t i = 0; i < Ngen; ++i) {
         genTree->GetEntry(i);
@@ -703,18 +711,19 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
         int row = find_row_for_event(xB, Q2, tAbs, phiD, bins);
         if (row < 0 || row >= NR) continue;
-
-        // Only consider bins where this period actually has data
         if (!row_has_data[row]) continue;
 
         gen_counts[row] += 1.0;
         ++used_gen;
 
-        if (report_step_gen > 0 && (i % report_step_gen == 0)) {
-            double pct = (Ngen > 0) ? (100.0 * (double)i / (double)Ngen) : 100.0;
-            std::cout << "[acceptance] Period " << period_label
-                      << " gen progress: " << std::fixed << std::setprecision(1)
-                      << pct << "% (" << (long long)i << "/" << (long long)Ngen << ")\n";
+        if (Ngen > 0 && next_pct_gen <= 100) {
+            double pct = 100.0 * (double)(i + 1) / (double)Ngen;
+            while (pct >= (double)next_pct_gen && next_pct_gen <= 100) {
+                std::cout << "[acceptance] Period " << period_label
+                          << " gen progress: " << (double)next_pct_gen << "% ("
+                          << (long long)(i + 1) << "/" << (long long)Ngen << ")\n";
+                next_pct_gen += 10;
+            }
         }
     }
 
@@ -735,8 +744,12 @@ static void accumulate_counts_for_period(const std::string& period_label,
     recTree->SetBranchAddress(br_phi2,   &r_phi2);
     recTree->SetBranchAddress(br_oa_ep2, &r_oa);
 
-    // Bind all variables needed for 3-sigma cuts and pTmiss
+    // Build the *period-specific* set of branches needed for 3-sigma cuts + pTmiss
+    const std::set<std::string> cutBranches =
+        build_cut_branches_for_period(period_label, sigmaCuts);
+
     std::map<std::string,double> recVars;
+    recVars.clear();
     for (const auto& vname : cutBranches) {
         if (!recTree->GetBranch(vname.c_str())) {
             std::cerr << "[acceptance] FATAL: recTree for period " << period_label
@@ -754,15 +767,22 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
     const std::string period_dir = period_dir_for_label(period_label);
 
-    // Progress cadence for rec MC: about 10 percent steps
-    const Long64_t report_step_rec = (Nrec > 0) ? std::max<Long64_t>(1, Nrec / 10) : 0;
+    int next_pct_rec = 10;
 
     for (Long64_t i = 0; i < Nrec; ++i) {
         recTree->GetEntry(i);
 
         const int topo_idx = topo.index();
         if (topo_idx < 0 || topo_idx > 2) {
-            // Unknown or non-DVCS topology; skip.
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
+            }
             continue;
         }
         const Topology T = (Topology)topo_idx;
@@ -776,6 +796,15 @@ static void accumulate_counts_for_period(const std::string& period_label,
         }
 
         if (!rec_passes_exclusivity(r_t1, r_oa, recVars, cutsForTopo)) {
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
+            }
             continue;
         }
         ++passed_excl;
@@ -786,18 +815,43 @@ static void accumulate_counts_for_period(const std::string& period_label,
         const double phiD = wrap_deg(RAD2DEG(r_phi2));
 
         int row = find_row_for_event(xB, Q2, tAbs, phiD, bins);
-        if (row < 0 || row >= NR) continue;
+        if (row < 0 || row >= NR) {
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
+            }
+            continue;
+        }
 
-        if (!row_has_data[row]) continue;
+        if (!row_has_data[row]) {
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
+            }
+            continue;
+        }
 
         rec_counts[row] += 1.0;
         ++used_rec;
 
-        if (report_step_rec > 0 && (i % report_step_rec == 0)) {
-            double pct = (Nrec > 0) ? (100.0 * (double)i / (double)Nrec) : 100.0;
-            std::cout << "[acceptance] Period " << period_label
-                      << " rec progress: " << std::fixed << std::setprecision(1)
-                      << pct << "% (" << (long long)i << "/" << (long long)Nrec << ")\n";
+        if (Nrec > 0 && next_pct_rec <= 100) {
+            double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+            while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                std::cout << "[acceptance] Period " << period_label
+                          << " rec progress: " << (double)next_pct_rec << "% ("
+                          << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                next_pct_rec += 10;
+            }
         }
     }
 
@@ -858,8 +912,6 @@ static bool fill_acceptance_columns(CsvDoc& csv,
 
         for (int r = 0; r < NR; ++r) {
             if (!has[r]) {
-                // This period has no data in this bin (xBavg, period is empty);
-                // leave acceptance cell unchanged / empty.
                 continue;
             }
 
@@ -870,14 +922,11 @@ static bool fill_acceptance_columns(CsvDoc& csv,
             period_rec_sum += Nr;
 
             if (Ng <= 0.0) {
-                // No generated MC in this bin: we cannot define acceptance.
-                // Leave this cell empty.
                 continue;
             }
 
             const double acc = (Nr > 0.0) ? (Nr / Ng) : 0.0;
 
-            // Binomial error on ratio: sqrt(a * (1 - a) / Ng)
             const double var = acc * (1.0 - acc) / Ng;
             const double acc_stat = (var > 0.0) ? std::sqrt(var) : 0.0;
 
@@ -1139,7 +1188,6 @@ static void draw_acceptance_canvases(const std::string& period_label,
                 const CellData& C = cells[rr * ncols + cc];
 
                 if (C.X.empty()) {
-                    // leave pad blank (as requested when there is no data)
                     continue;
                 }
 
@@ -1206,17 +1254,10 @@ bool update_acceptance_csv(const std::string& csv_path,
         return false;
     }
 
-    // Build bin list and per-period "has data" flags once
     std::vector<RowBin> bins = build_row_bins(csv);
     std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
-    // Load topology-dependent 3-sigma cuts (from DATA) once
     const TopoCutMap sigmaCuts = load_sigma_cuts_data(cuts_json);
-
-    // Determine which variables we must bind in rec MC for 3-sigma and global cuts.
-    // Always require pTmiss for the global cut, whether or not it appears in the JSON.
-    std::set<std::string> cutBranches = all_cut_variables(sigmaCuts);
-    cutBranches.insert("pTmiss");
 
     const auto tagMap = build_mc_tag_map();
     std::map<std::string, std::vector<double>> gen_all;
@@ -1251,7 +1292,6 @@ bool update_acceptance_csv(const std::string& csv_path,
                                      itG->second,
                                      itR->second,
                                      sigmaCuts,
-                                     cutBranches,
                                      gen_counts,
                                      rec_counts);
         gen_all[per] = gen_counts;
