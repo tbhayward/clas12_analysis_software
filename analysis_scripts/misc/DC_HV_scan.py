@@ -79,7 +79,7 @@ def gaussian_quadratic(x, a, mu, sigma, b, c, d):
 # endif
 
 # Common histogram settings for Mx
-MX_MIN, MX_MAX = 0.94, 1.02
+MX_MIN, MX_MAX = 0.95, 1.01
 MX_NBINS = 80
 
 # Universal selection toggles
@@ -302,10 +302,9 @@ plt.xlabel(r'$M_{x}$ (GeV)')
 plt.ylabel('Counts')
 plt.title(r'Missing Mass Distributions with Gaussian + Quadratic Fits')
 plt.grid(True, alpha=0.3)
+plt.xlim(MX_MIN, MX_MAX)  # Force axis to 0.95–1.01
 
 if any_plotted:
-    # Linear scale as requested
-    # Legend includes lines only (fitted curves)
     plt.legend(handles, labels, loc='upper right', fontsize=9)
 # endif
 
@@ -359,7 +358,7 @@ for ibin, (emin, emax) in enumerate(e_bins):
                 p_theta  = np_branch(t, 'p_theta')   # radians
                 detector = np_branch(t, 'detector')
 
-                Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
+                Mx   = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
                 e_deg = np.degrees(e_theta)
                 p_deg = np.degrees(p_theta)
 
@@ -392,17 +391,13 @@ for ibin, (emin, emax) in enumerate(e_bins):
         ax.set_ylabel('Counts')
     # endif
     ax.grid(True, alpha=0.3)
-    ax.set_title(r'$e_{\theta} \in [{:.0f}, {:.0f})^\circ$'.format(emin, emax))
+    # Escape LaTeX braces with double {{ }} when using f-strings
+    ax.set_title(rf'$e_{{\theta}} \in [{emin:.0f}, {emax:.0f})^\circ$')
     ax.set_xlim(MX_MIN, MX_MAX)
-    if plotted_any:
-        # Only build a single legend on the last subplot to avoid clutter
-        pass
-    # endif
 # endfor
 
-# Single legend (outside) using handles from the last axes that has labels
+# Single legend (outside) using handles from HV order
 handles_leg, labels_leg = [], []
-# Gather unique labels in input order
 seen = set()
 for hv in HV_LABELS:
     if hv not in seen:
@@ -428,7 +423,6 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), sharey=True)
 
 for ibin, (pmin, pmax) in enumerate(p_bins):
     ax = axes[ibin]
-    plotted_any = False
     for path in file_paths:
         try:
             with uproot.open(path) as f:
@@ -441,7 +435,7 @@ for ibin, (pmin, pmax) in enumerate(p_bins):
                 p_theta  = np_branch(t, 'p_theta')   # radians
                 detector = np_branch(t, 'detector')
 
-                Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
+                Mx   = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
                 e_deg = np.degrees(e_theta)
                 p_deg = np.degrees(p_theta)
 
@@ -463,7 +457,6 @@ for ibin, (pmin, pmax) in enumerate(p_bins):
                 ax.hist(data, bins=MX_NBINS, range=(MX_MIN, MX_MAX),
                         histtype='step', linewidth=1.1, color=color, alpha=0.95,
                         label=hv)
-                plotted_any = True
             # endwith
         except Exception:
             continue
@@ -474,11 +467,8 @@ for ibin, (pmin, pmax) in enumerate(p_bins):
         ax.set_ylabel('Counts')
     # endif
     ax.grid(True, alpha=0.3)
-    ax.set_title(r'$p_{\theta} \in [{:.0f}, {:.0f})^\circ$'.format(pmin, pmax))
+    ax.set_title(rf'$p_{{\theta}} \in [{pmin:.0f}, {pmax:.0f})^\circ$')
     ax.set_xlim(MX_MIN, MX_MAX)
-    if plotted_any:
-        pass
-    # endif
 # endfor
 
 # Single consolidated legend outside the last subplot
