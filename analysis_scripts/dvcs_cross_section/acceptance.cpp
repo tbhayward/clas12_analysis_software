@@ -690,6 +690,9 @@ static void accumulate_counts_for_period(const std::string& period_label,
     const Long64_t Ngen = genTree->GetEntries();
     Long64_t used_gen = 0;
 
+    // Progress cadence for gen MC: about 10 percent steps
+    const Long64_t report_step_gen = (Ngen > 0) ? std::max<Long64_t>(1, Ngen / 10) : 0;
+
     for (Long64_t i = 0; i < Ngen; ++i) {
         genTree->GetEntry(i);
 
@@ -706,6 +709,13 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
         gen_counts[row] += 1.0;
         ++used_gen;
+
+        if (report_step_gen > 0 && (i % report_step_gen == 0)) {
+            double pct = (Ngen > 0) ? (100.0 * (double)i / (double)Ngen) : 100.0;
+            std::cout << "[acceptance] Period " << period_label
+                      << " gen progress: " << std::fixed << std::setprecision(1)
+                      << pct << "% (" << (long long)i << "/" << (long long)Ngen << ")\n";
+        }
     }
 
     std::cout << "[acceptance] Period " << period_label
@@ -744,6 +754,9 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
     const std::string period_dir = period_dir_for_label(period_label);
 
+    // Progress cadence for rec MC: about 10 percent steps
+    const Long64_t report_step_rec = (Nrec > 0) ? std::max<Long64_t>(1, Nrec / 10) : 0;
+
     for (Long64_t i = 0; i < Nrec; ++i) {
         recTree->GetEntry(i);
 
@@ -779,6 +792,13 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
         rec_counts[row] += 1.0;
         ++used_rec;
+
+        if (report_step_rec > 0 && (i % report_step_rec == 0)) {
+            double pct = (Nrec > 0) ? (100.0 * (double)i / (double)Nrec) : 100.0;
+            std::cout << "[acceptance] Period " << period_label
+                      << " rec progress: " << std::fixed << std::setprecision(1)
+                      << pct << "% (" << (long long)i << "/" << (long long)Nrec << ")\n";
+        }
     }
 
     std::cout << "[acceptance] Period " << period_label
