@@ -373,14 +373,14 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     }
 
     for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD" or pi0 keys
+        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD" or maybe pi0 keys
         const json& block = it.value();
 
         if (!block.contains("data") || !block["data"].is_object()) continue;
 
         VarCutMap m;
         for (auto vit = block["data"].begin(); vit != block["data"].end(); ++vit) {
-            const std::string vname = vit.key();
+            const std::string vname = vit.key(); // Emiss2, Mx2, ...
             const json& vs = vit.value();
             SigmaCut sc;
             if (vs.contains("mean") && vs["mean"].is_number()) sc.mean = vs["mean"].get<double>();
@@ -417,6 +417,8 @@ struct TopologyResolver {
     bool have2 = false;
 
     void enable_and_bind(TTree* t, const std::string& period_label) {
+        t->SetBranchStatus("*", 1);
+
         have1 = (t->GetBranch("detector1") != nullptr);
         have2 = (t->GetBranch("detector2") != nullptr);
         if (!(have1 && have2)) {
@@ -437,41 +439,19 @@ struct TopologyResolver {
     }
 };
 
-// ------------- 4D binning index (xB, Q2, |t|, phi) -------------
+// ------------- bin specification per CSV row -------------
 
-struct RowSpec {
+struct RowBin {
     double xbmin, xbmax;
     double q2min, q2max;
     double tmin,  tmax;
     double phimin, phimax;
-    int    row;
+    int    row_index;   // index into CsvDoc::rows
 };
 
-struct BinningIndex {
-    std::vector<double> xb_edges;
-    std::vector<double> q2_edges;
-    std::vector<double> t_edges;
-    std::vector<double> phi_edges;
-
-    int Nx = 0;
-    int NQ = 0;
-    int NT = 0;
-    int NPhi = 0;
-
-    // row_for_slot[ (((ix * NQ + iq) * NT + it) * NPhi + ip) ] = row_index (or -1)
-    std::vector<int> row_for_slot;
-};
-
-static int find_edge_index(double v, const std::vector<double>& edges) {
-    if (edges.size() < 2) return -1;
-    auto it = std::upper_bound(edges.begin(), edges.end(), v);
-    if (it == edges.begin() || it == edges.end()) return -1;
-    int idx = (int)(it - edges.begin()) - 1;
-    if (idx < 0 || idx >= (int)edges.size() - 1) return -1;
-    return idx;
-}
-
-static BinningIndex build_binning_index(const CsvDoc& csv) {
+// We only build RowBin entries for "standard" phi bins,
+// NOT for phi-integrated bins (phi width >= 360 degrees).
+static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
     const int c_xb_min  = csv.col_index("xBmin");
     const int c_xb_max  = csv.col_index("xBmax");
     const int c_q2_min  = csv.col_index("Q2min");
@@ -490,174 +470,49 @@ static BinningIndex build_binning_index(const CsvDoc& csv) {
         std::exit(EXIT_FAILURE);
     }
 
+    std::vector<RowBin> bins;
     const int NR = csv.nrows();
-
-    std::vector<RowSpec> specs;
-    specs.reserve(NR);
-
-    std::set<double> xb_edges_set;
-    std::set<double> q2_edges_set;
-    std::set<double> t_edges_set;
-    std::set<double> phi_edges_set;
-
     for (int r = 0; r < NR; ++r) {
-        RowSpec s;
-        s.xbmin  = csv.as_double(r, c_xb_min);
-        s.xbmax  = csv.as_double(r, c_xb_max);
-        s.q2min  = csv.as_double(r, c_q2_min);
-        s.q2max  = csv.as_double(r, c_q2_max);
-        s.tmin   = csv.as_double(r, c_tab_min);
-        s.tmax   = csv.as_double(r, c_tab_max);
-        s.phimin = csv.as_double(r, c_phi_min);
-        s.phimax = csv.as_double(r, c_phi_max);
-        s.row    = r;
+        RowBin b;
+        b.xbmin  = csv.as_double(r, c_xb_min);
+        b.xbmax  = csv.as_double(r, c_xb_max);
+        b.q2min  = csv.as_double(r, c_q2_min);
+        b.q2max  = csv.as_double(r, c_q2_max);
+        b.tmin   = csv.as_double(r, c_tab_min);
+        b.tmax   = csv.as_double(r, c_tab_max);
+        b.phimin = csv.as_double(r, c_phi_min);
+        b.phimax = csv.as_double(r, c_phi_max);
+        b.row_index = r;
 
-        if (!std::isfinite(s.xbmin)  || !std::isfinite(s.xbmax) ||
-            !std::isfinite(s.q2min)  || !std::isfinite(s.q2max) ||
-            !std::isfinite(s.tmin)   || !std::isfinite(s.tmax)  ||
-            !std::isfinite(s.phimin) || !std::isfinite(s.phimax)) {
+        const double phi_width = b.phimax - b.phimin;
+        if (!std::isfinite(phi_width)) {
             continue;
         }
 
-        const double phi_width = s.phimax - s.phimin;
-        if (!std::isfinite(phi_width)) continue;
-
-        // Skip phi-integrated (full 0-360) or pathological bins
         if (std::fabs(phi_width) >= 359.0) {
             continue;
         }
 
-        if (!(s.xbmax > s.xbmin &&
-              s.q2max > s.q2min &&
-              s.tmax  > s.tmin  &&
-              s.phimax > s.phimin)) {
+        if (!(b.xbmax > b.xbmin &&
+              b.q2max > b.q2min &&
+              b.tmax  > b.tmin  &&
+              b.phimax > b.phimin)) {
             continue;
         }
 
-        xb_edges_set.insert(s.xbmin);
-        xb_edges_set.insert(s.xbmax);
-        q2_edges_set.insert(s.q2min);
-        q2_edges_set.insert(s.q2max);
-        t_edges_set.insert(s.tmin);
-        t_edges_set.insert(s.tmax);
-        phi_edges_set.insert(s.phimin);
-        phi_edges_set.insert(s.phimax);
-
-        specs.push_back(s);
+        bins.push_back(b);
     }
 
-    BinningIndex bi;
-    bi.xb_edges.assign(xb_edges_set.begin(), xb_edges_set.end());
-    bi.q2_edges.assign(q2_edges_set.begin(), q2_edges_set.end());
-    bi.t_edges.assign(t_edges_set.begin(), t_edges_set.end());
-    bi.phi_edges.assign(phi_edges_set.begin(), phi_edges_set.end());
+    std::cout << "[acceptance] Built " << bins.size()
+              << " RowBin entries out of " << NR << " CSV rows "
+              << "(skipped phi-integrated or invalid bins).\n";
 
-    if (bi.xb_edges.size() < 2 || bi.q2_edges.size() < 2 ||
-        bi.t_edges.size()  < 2 || bi.phi_edges.size() < 2) {
-        std::cerr << "[acceptance] FATAL: not enough edges to define 4D binning.\n";
+    if (bins.empty()) {
+        std::cerr << "[acceptance] FATAL: no usable bins found in CSV.\n";
         std::exit(EXIT_FAILURE);
     }
 
-    bi.Nx   = (int)bi.xb_edges.size()  - 1;
-    bi.NQ   = (int)bi.q2_edges.size()  - 1;
-    bi.NT   = (int)bi.t_edges.size()   - 1;
-    bi.NPhi = (int)bi.phi_edges.size() - 1;
-
-    const std::size_t total_slots = (std::size_t)bi.Nx * (std::size_t)bi.NQ *
-                                    (std::size_t)bi.NT * (std::size_t)bi.NPhi;
-    bi.row_for_slot.assign(total_slots, -1);
-
-    // Map each CSV row spec to a unique slot in the 4D grid
-    for (const auto& s : specs) {
-        int ix = -1, iq = -1, it = -1, ip = -1;
-
-        auto itx1 = std::find(bi.xb_edges.begin(), bi.xb_edges.end(), s.xbmin);
-        auto itx2 = std::find(bi.xb_edges.begin(), bi.xb_edges.end(), s.xbmax);
-        auto iq1  = std::find(bi.q2_edges.begin(), bi.q2_edges.end(), s.q2min);
-        auto iq2  = std::find(bi.q2_edges.begin(), bi.q2_edges.end(), s.q2max);
-        auto it1  = std::find(bi.t_edges.begin(),  bi.t_edges.end(),  s.tmin);
-        auto it2  = std::find(bi.t_edges.begin(),  bi.t_edges.end(),  s.tmax);
-        auto ip1  = std::find(bi.phi_edges.begin(),bi.phi_edges.end(),s.phimin);
-        auto ip2  = std::find(bi.phi_edges.begin(),bi.phi_edges.end(),s.phimax);
-
-        if (itx1 == bi.xb_edges.end() || itx2 == bi.xb_edges.end() ||
-            iq1  == bi.q2_edges.end() || iq2  == bi.q2_edges.end() ||
-            it1  == bi.t_edges.end()  || it2  == bi.t_edges.end()  ||
-            ip1  == bi.phi_edges.end()|| ip2  == bi.phi_edges.end()) {
-            std::cerr << "[acceptance] FATAL: bin edges for row " << s.row
-                      << " do not match global edge sets.\n";
-            std::exit(EXIT_FAILURE);
-        }
-
-        ix = (int)(itx1 - bi.xb_edges.begin());
-        iq = (int)(iq1  - bi.q2_edges.begin());
-        it = (int)(it1  - bi.t_edges.begin());
-        ip = (int)(ip1  - bi.phi_edges.begin());
-
-        if (ix < 0 || iq < 0 || it < 0 || ip < 0) {
-            std::cerr << "[acceptance] FATAL: negative index while mapping row " << s.row << ".\n";
-            std::exit(EXIT_FAILURE);
-        }
-
-        if (ix + 1 != (int)(itx2 - bi.xb_edges.begin()) ||
-            iq + 1 != (int)(iq2  - bi.q2_edges.begin()) ||
-            it + 1 != (int)(it2  - bi.t_edges.begin())  ||
-            ip + 1 != (int)(ip2  - bi.phi_edges.begin())) {
-            std::cerr << "[acceptance] FATAL: non-adjacent edges for row " << s.row
-                      << " (bin must be one interval in each dimension).\n";
-            std::exit(EXIT_FAILURE);
-        }
-
-        std::size_t slot = (((std::size_t)ix * (std::size_t)bi.NQ + (std::size_t)iq) *
-                             (std::size_t)bi.NT + (std::size_t)it) * (std::size_t)bi.NPhi +
-                           (std::size_t)ip;
-
-        if (slot >= bi.row_for_slot.size()) {
-            std::cerr << "[acceptance] FATAL: slot index out of range for row " << s.row << ".\n";
-            std::exit(EXIT_FAILURE);
-        }
-
-        if (bi.row_for_slot[slot] != -1) {
-            std::cerr << "[acceptance] FATAL: multiple CSV rows map to same (xB,Q2,t,phi) bin.\n";
-            std::exit(EXIT_FAILURE);
-        }
-
-        bi.row_for_slot[slot] = s.row;
-    }
-
-    std::cout << "[acceptance] Binning index: Nx=" << bi.Nx
-              << " NQ=" << bi.NQ
-              << " NT=" << bi.NT
-              << " NPhi=" << bi.NPhi
-              << " ; filled slots=" << specs.size() << "\n";
-
-    if (specs.empty()) {
-        std::cerr << "[acceptance] FATAL: no usable bins found in CSV (after skipping phi-integrated).\n";
-        std::exit(EXIT_FAILURE);
-    }
-
-    return bi;
-}
-
-static int find_row_for_event(double xB,
-                              double Q2,
-                              double tAbs,
-                              double phiDeg,
-                              const BinningIndex& bi)
-{
-    int ix = find_edge_index(xB,   bi.xb_edges);
-    int iq = find_edge_index(Q2,   bi.q2_edges);
-    int it = find_edge_index(tAbs, bi.t_edges);
-    int ip = find_edge_index(phiDeg, bi.phi_edges);
-
-    if (ix < 0 || iq < 0 || it < 0 || ip < 0) return -1;
-
-    std::size_t slot = (((std::size_t)ix * (std::size_t)bi.NQ + (std::size_t)iq) *
-                         (std::size_t)bi.NT + (std::size_t)it) * (std::size_t)bi.NPhi +
-                       (std::size_t)ip;
-
-    if (slot >= bi.row_for_slot.size()) return -1;
-    return bi.row_for_slot[slot];
+    return bins;
 }
 
 // For each period, mark which CSV rows actually have data for that period.
@@ -690,6 +545,23 @@ build_row_has_data(const CsvDoc& csv)
     }
 
     return has_data;
+}
+
+// Find which CSV row an event belongs to, given xB, Q2, |t|, phiDeg.
+static int find_row_for_event(double xB,
+                              double Q2,
+                              double tAbs,
+                              double phiDeg,
+                              const std::vector<RowBin>& bins)
+{
+    for (const auto& b : bins) {
+        if (!(xB >= b.xbmin && xB < b.xbmax)) continue;
+        if (!(Q2 >= b.q2min && Q2 < b.q2max)) continue;
+        if (!(tAbs >= b.tmin && tAbs < b.tmax)) continue;
+        if (!(phiDeg >= b.phimin && phiDeg < b.phimax)) continue;
+        return b.row_index;
+    }
+    return -1;
 }
 
 // ------------- exclusivity for reconstructed MC (global + 3-sigma) -------------
@@ -754,6 +626,7 @@ build_cut_branches_for_period(const std::string& period_label,
         }
     }
 
+    // Always include pTmiss for global exclusivity
     vars.insert("pTmiss");
     return vars;
 }
@@ -762,7 +635,7 @@ build_cut_branches_for_period(const std::string& period_label,
 
 static void accumulate_counts_for_period(const std::string& period_label,
                                          const CsvDoc& csv,
-                                         const BinningIndex& bindex,
+                                         const std::vector<RowBin>& bins,
                                          const std::vector<bool>& row_has_data,
                                          TTree* genTree,
                                          TTree* recTree,
@@ -786,13 +659,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
     const char* br_phi2   = "phi2";
     const char* br_oa_ep2 = "open_angle_ep2";
 
-    // Limit branches for generated MC
-    genTree->SetBranchStatus("*", 0);
-    genTree->SetBranchStatus(br_x,    1);
-    genTree->SetBranchStatus(br_Q2,   1);
-    genTree->SetBranchStatus(br_t1,   1);
-    genTree->SetBranchStatus(br_phi2, 1);
-
+    // Required branches in generated MC
     if (!genTree->GetBranch(br_x) ||
         !genTree->GetBranch(br_Q2) ||
         !genTree->GetBranch(br_t1) ||
@@ -802,16 +669,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
         std::exit(EXIT_FAILURE);
     }
 
-    // Limit branches for reconstructed MC
-    recTree->SetBranchStatus("*", 0);
-    recTree->SetBranchStatus(br_x,      1);
-    recTree->SetBranchStatus(br_Q2,     1);
-    recTree->SetBranchStatus(br_t1,     1);
-    recTree->SetBranchStatus(br_phi2,   1);
-    recTree->SetBranchStatus(br_oa_ep2, 1);
-    recTree->SetBranchStatus("detector1", 1);
-    recTree->SetBranchStatus("detector2", 1);
-
+    // Required branches in reconstructed MC (kinematics + topology + exclusivity vars)
     if (!recTree->GetBranch(br_x) ||
         !recTree->GetBranch(br_Q2) ||
         !recTree->GetBranch(br_t1) ||
@@ -821,13 +679,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
                   << period_label
                   << " (expected: x, Q2, t1, phi2, open_angle_ep2).\n";
         std::exit(EXIT_FAILURE);
-    }
-
-    const std::set<std::string> cutBranches =
-        build_cut_branches_for_period(period_label, sigmaCuts);
-
-    for (const auto& vname : cutBranches) {
-        recTree->SetBranchStatus(vname.c_str(), 1);
     }
 
     // Bind topology resolver (detector1/detector2) for rec MC
@@ -847,6 +698,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
     const Long64_t Ngen = genTree->GetEntries();
     Long64_t used_gen = 0;
+
     int next_pct_gen = 10;
 
     for (Long64_t i = 0; i < Ngen; ++i) {
@@ -857,14 +709,13 @@ static void accumulate_counts_for_period(const std::string& period_label,
         const double tAbs = std::fabs(g_t1);
         const double phiD = wrap_deg(RAD2DEG(g_phi2));
 
-        int row = find_row_for_event(xB, Q2, tAbs, phiD, bindex);
-        if (row < 0 || row >= NR) goto progress_gen;
-        if (!row_has_data[row]) goto progress_gen;
+        int row = find_row_for_event(xB, Q2, tAbs, phiD, bins);
+        if (row < 0 || row >= NR) continue;
+        if (!row_has_data[row]) continue;
 
         gen_counts[row] += 1.0;
         ++used_gen;
 
-    progress_gen:
         if (Ngen > 0 && next_pct_gen <= 100) {
             double pct = 100.0 * (double)(i + 1) / (double)Ngen;
             while (pct >= (double)next_pct_gen && next_pct_gen <= 100) {
@@ -893,6 +744,10 @@ static void accumulate_counts_for_period(const std::string& period_label,
     recTree->SetBranchAddress(br_phi2,   &r_phi2);
     recTree->SetBranchAddress(br_oa_ep2, &r_oa);
 
+    // Build the *period-specific* set of branches needed for 3-sigma cuts + pTmiss
+    const std::set<std::string> cutBranches =
+        build_cut_branches_for_period(period_label, sigmaCuts);
+
     std::map<std::string,double> recVars;
     recVars.clear();
     for (const auto& vname : cutBranches) {
@@ -911,45 +766,84 @@ static void accumulate_counts_for_period(const std::string& period_label,
     Long64_t passed_excl = 0;
 
     const std::string period_dir = period_dir_for_label(period_label);
+
     int next_pct_rec = 10;
 
     for (Long64_t i = 0; i < Nrec; ++i) {
         recTree->GetEntry(i);
 
         const int topo_idx = topo.index();
-        if (topo_idx < 0 || topo_idx > 2) goto progress_rec;
-
-        {
-            const Topology T = (Topology)topo_idx;
-            const std::string topo_key =
-                std::string("DVCS_") + period_dir + "_" + topo_dir(T);
-
-            const VarCutMap* cutsForTopo = nullptr;
-            auto itTopoCuts = sigmaCuts.find(topo_key);
-            if (itTopoCuts != sigmaCuts.end()) {
-                cutsForTopo = &itTopoCuts->second;
+        if (topo_idx < 0 || topo_idx > 2) {
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
             }
+            continue;
+        }
+        const Topology T = (Topology)topo_idx;
+        const std::string topo_key =
+            std::string("DVCS_") + period_dir + "_" + topo_dir(T);
 
-            if (!rec_passes_exclusivity(r_t1, r_oa, recVars, cutsForTopo)) goto progress_rec;
+        const VarCutMap* cutsForTopo = nullptr;
+        auto itTopoCuts = sigmaCuts.find(topo_key);
+        if (itTopoCuts != sigmaCuts.end()) {
+            cutsForTopo = &itTopoCuts->second;
         }
 
+        if (!rec_passes_exclusivity(r_t1, r_oa, recVars, cutsForTopo)) {
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
+            }
+            continue;
+        }
         ++passed_excl;
 
-        {
-            const double xB   = r_x;
-            const double Q2   = r_Q2;
-            const double tAbs = std::fabs(r_t1);
-            const double phiD = wrap_deg(RAD2DEG(r_phi2));
+        const double xB   = r_x;
+        const double Q2   = r_Q2;
+        const double tAbs = std::fabs(r_t1);
+        const double phiD = wrap_deg(RAD2DEG(r_phi2));
 
-            int row = find_row_for_event(xB, Q2, tAbs, phiD, bindex);
-            if (row < 0 || row >= NR) goto progress_rec;
-            if (!row_has_data[row]) goto progress_rec;
-
-            rec_counts[row] += 1.0;
-            ++used_rec;
+        int row = find_row_for_event(xB, Q2, tAbs, phiD, bins);
+        if (row < 0 || row >= NR) {
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
+            }
+            continue;
         }
 
-    progress_rec:
+        if (!row_has_data[row]) {
+            if (Nrec > 0 && next_pct_rec <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)Nrec;
+                while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
+                    std::cout << "[acceptance] Period " << period_label
+                              << " rec progress: " << (double)next_pct_rec << "% ("
+                              << (long long)(i + 1) << "/" << (long long)Nrec << ")\n";
+                    next_pct_rec += 10;
+                }
+            }
+            continue;
+        }
+
+        rec_counts[row] += 1.0;
+        ++used_rec;
+
         if (Nrec > 0 && next_pct_rec <= 100) {
             double pct = 100.0 * (double)(i + 1) / (double)Nrec;
             while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
@@ -1050,7 +944,7 @@ static bool fill_acceptance_columns(CsvDoc& csv,
     return true;
 }
 
-// ------------- plotting (unchanged logic, just using csv) -------------
+// ------------- plotting -------------
 
 struct CellData {
     std::vector<double> X;
@@ -1360,11 +1254,9 @@ bool update_acceptance_csv(const std::string& csv_path,
         return false;
     }
 
-    // Build fast 4D bin index and per-period "has data" flags once
-    BinningIndex bindex = build_binning_index(csv);
+    std::vector<RowBin> bins = build_row_bins(csv);
     std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
-    // Load topology-dependent 3-sigma cuts (from DATA) once
     const TopoCutMap sigmaCuts = load_sigma_cuts_data(cuts_json);
 
     const auto tagMap = build_mc_tag_map();
@@ -1395,7 +1287,7 @@ bool update_acceptance_csv(const std::string& csv_path,
         std::vector<double> rec_counts;
         accumulate_counts_for_period(per,
                                      csv,
-                                     bindex,
+                                     bins,
                                      flags,
                                      itG->second,
                                      itR->second,
