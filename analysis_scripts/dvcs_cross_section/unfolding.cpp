@@ -1,793 +1,979 @@
-// unfolding.cpp - uses pi0_corrected_counts_all_groups.json as the canonical source
-// Reads corrected helicity counts (value, err) and unfolds by acceptance.
-// Acceptance files are expected at: <out_root_dir>/jsons/acceptance_<PERIOD>.json
-//
-// Per-period outputs:
-//   - <out_root_dir>/jsons/unfolded_<PERIOD>.json
-//   - <out_root_dir>/unfolding/<PERIOD>/plot_unfolded_<PERIOD>_xB_<ix>.png
-//
-// Combined outputs (this file also produces):
-//   - <out_root_dir>/jsons/unfolded_Fa18.json
-//   - <out_root_dir>/jsons/unfolded_Sp18.json
-//   - <out_root_dir>/jsons/unfolded_10p6GeV.json
-//   - Plots to corresponding directories under <out_root_dir>/unfolding/.
-//
-// Notes:
-//   - Unfolding: U = N / A with error propagation from both N and A.
-//   - Combination: inverse-variance weighting on the unfolded U across requested periods.
-//   - PERIOD names are DVCS_* tokens for acceptance files; pi0-corrected master is keyed by runTags.
+// unfolding.cpp
+// Acceptance-corrected (unfolded) DVCS signal yields:
+//   - Uses existing CSV columns:
+//       signal yield, ep->epg, exp, <period>, <hel>  (triples)
+//       acceptance, <period>                         (triples)
+//   - Fills (for periods and combined groups):
+//       acceptance corrected yield, ep->epg, exp, <label>, <hel>  (triples)
+//     where <label> is one of:
+//       Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out,
+//       Fa18, Sp18, 2018 (10.6 GeV)
+//   - Periods are corrected bin by bin using:
+//       U = S / A
+//       Var(U) = (dU/dS)^2 Var(S) + (dU/dA)^2 Var(A)
+//               = (1/A^2) sigma_S^2 + (S^2 / A^4) sigma_A^2
+//   - Combined groups are simple sums of unfolded yields across member periods,
+//     with variances added in quadrature.
+//   - Produces xB-sliced canvases vs phi for pos/neg helicities (unpol skipped)
+//     into output/unfolded_yields/<PeriodOrGroupDir>/.
 
 #include "unfolding.h"
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
-#include <TGaxis.h>
 #include <TLatex.h>
-#include <TLegend.h>
-#include <TStyle.h>
 #include <TPad.h>
 #include <TH1.h>
+#include <TLegend.h>
+#include <TROOT.h>
+#include <TStyle.h>
+#include <TError.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
-#include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cstdio>
 
 namespace {
 
-constexpr int    N_PHI_BINS = 12;
-constexpr double TWO_PI     = 2.0 * M_PI;
+struct CsvDoc {
+    std::vector<std::string> header;
+    std::unordered_map<std::string,int> index;
+    std::vector<std::vector<std::string>> rows;
 
-struct StyleInit {
-    StyleInit() {
-        gStyle->SetOptTitle(0);
-        gStyle->SetOptStat(0);
-        gStyle->SetFrameLineWidth(2);
-        gStyle->SetLineWidth(2);
-        gStyle->SetPadTickX(1);
-        gStyle->SetPadTickY(1);
-        gStyle->SetLegendBorderSize(1);
-        const int rf = 42; // Helvetica
-        gStyle->SetTitleFont(rf, "XYZ");
-        gStyle->SetLabelFont(rf, "XYZ");
-        gStyle->SetTextFont(rf);
+    static std::vector<std::string> split_csv_line(const std::string& line) {
+        std::vector<std::string> out;
+        std::string cur;
+        bool inq = false;
+        for (char c : line) {
+            if (c == '"') {
+                inq = !inq;
+                continue;
+            }
+            if (c == ',' && !inq) {
+                out.push_back(cur);
+                cur.clear();
+            } else {
+                cur.push_back(c);
+            }
+        }
+        out.push_back(cur);
+        return out;
     }
-} _style_bootstrap;
 
-using BinKey4 = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
+    static void write_field(std::ostream& os, const std::string& s) {
+        bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
+        if (!needq) {
+            os << s;
+            return;
+        }
+        os << '"';
+        for (char ch : s) {
+            if (ch == '"') {
+                os << "\"\"";
+            } else {
+                os << ch;
+            }
+        }
+        os << '"';
+    }
 
-static inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
+    static double to_double(const std::string& s) {
+        if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+        char* e = nullptr;
+        double v = std::strtod(s.c_str(), &e);
+        if (e == s.c_str()) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        return v;
+    }
+
+    bool load(const std::string& path) {
+        std::ifstream fin(path);
+        if (!fin.is_open()) {
+            std::cerr << "[unfolding] ERROR: cannot open CSV: " << path << "\n";
+            return false;
+        }
+        std::string line;
+        if (!std::getline(fin, line)) {
+            std::cerr << "[unfolding] ERROR: empty CSV: " << path << "\n";
+            return false;
+        }
+        header = split_csv_line(line);
+        index.clear();
+        for (int i = 0; i < (int)header.size(); ++i) {
+            index[header[i]] = i;
+        }
+        rows.clear();
+        while (std::getline(fin, line)) {
+            if (line.empty()) continue;
+            rows.push_back(split_csv_line(line));
+        }
+        for (auto& r : rows) {
+            r.resize(header.size());
+        }
+        return true;
+    }
+
+    bool save_atomic(const std::string& path) const {
+        const std::string tmp = path + ".tmp";
+        {
+            std::ofstream fout(tmp);
+            if (!fout.is_open()) {
+                std::cerr << "[unfolding] ERROR: cannot write CSV tmp: " << tmp << "\n";
+                return false;
+            }
+            // header
+            for (size_t i = 0; i < header.size(); ++i) {
+                write_field(fout, header[i]);
+                if (i + 1 < header.size()) fout << ',';
+            }
+            fout << "\n";
+            // rows
+            for (const auto& row : rows) {
+                for (size_t i = 0; i < row.size(); ++i) {
+                    write_field(fout, row[i]);
+                    if (i + 1 < row.size()) fout << ',';
+                }
+                fout << "\n";
+            }
+        }
+        std::error_code ec;
+        std::filesystem::rename(tmp, path, ec);
+        if (ec) {
+            std::remove(path.c_str());
+            std::filesystem::rename(tmp, path, ec);
+            if (ec) {
+                std::cerr << "[unfolding] ERROR: atomic rename failed ("
+                          << ec.message() << ")\n";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    int nrows() const { return (int)rows.size(); }
+
+    bool has_col(const std::string& name) const {
+        return index.find(name) != index.end();
+    }
+
+    int col_index(const std::string& name) const {
+        auto it = index.find(name);
+        return (it == index.end()) ? -1 : it->second;
+    }
+
+    double as_double(int r, int c) const {
+        if (r < 0 || r >= nrows()) return std::numeric_limits<double>::quiet_NaN();
+        if (c < 0 || c >= (int)header.size()) return std::numeric_limits<double>::quiet_NaN();
+        return to_double(rows[r][c]);
+    }
+};
+
+// basic helpers
+static inline std::string to_lower_nospace(std::string s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == ' ' || c == '\t' || c == '_') continue;
+        out.push_back((char)std::tolower((unsigned char)c));
+    }
+    return out;
+}
+
+static std::string canonical_period_dir(const std::string& L) {
+    const std::string k = to_lower_nospace(L);
+    if (k == "fa18inb") return "Fa18_Inb";
+    if (k == "fa18out") return "Fa18_Out";
+    if (k == "fa18inbsupp") return "Fa18_Inb_Supp";
+    if (k == "sp18inb") return "Sp18_Inb";
+    if (k == "sp18out") return "Sp18_Out";
+    if (k == "sp19inb") return "Sp19_Inb";
+    std::string s = L;
+    for (char& c : s) {
+        if (c == ' ') c = '_';
+    }
     return s;
 }
 
-static std::string periodToRunTagKey(const std::string& period) {
-    // "DVCS_Fa18_inb" -> "fa18_inb"
-    auto pos = period.find('_');
-    if (pos == std::string::npos || pos + 1 >= period.size()) return toLower(period);
-    return toLower(period.substr(pos + 1));
-}
-
-// ---------- helpers for bin edges and indices ----------
-static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
-    std::set<std::pair<double,double>> s;
-    for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
+// For periods and groups (Fa18, Sp18, 2018 (10.6 GeV)) -> directory name
+static std::string canonical_dir_for_label(const std::string& L) {
+    const std::string k = to_lower_nospace(L);
+    if (k == "fa18inb" || k == "fa18out" ||
+        k == "fa18inbsupp" || k == "sp18inb" ||
+        k == "sp18out" || k == "sp19inb") {
+        return canonical_period_dir(L);
     }
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
-}
+    if (k == "fa18") return "Fa18";
+    if (k == "sp18") return "Sp18";
+    // CSV label is "2018 (10.6 GeV)", output dir should be "10.6_GeV"
+    if (L == "2018 (10.6 GeV)" || k == "2018(10.6gev)") return "10.6_GeV";
 
-static inline int findIndex(const std::pair<double,double>& range,
-                            const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < (int)ranges.size(); ++i) if (ranges[i] == range) return i;
-    return -1;
-}
-
-static inline std::vector<double> phiCentersDeg() {
-    std::vector<double> d(N_PHI_BINS);
-    const double step = 360.0 / double(N_PHI_BINS);
-    for (int i = 0; i < N_PHI_BINS; ++i) d[i] = (i + 0.5) * step;
-    return d;
-}
-
-static inline void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize) {
-    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
-    ax->SetLabelFont(42);
-    ax->SetLabelSize(labelSize);
-    ax->SetLabelOffset(0.012);
-    ax->SetTitle("");
-    ax->SetTickSize(0.02);
-    ax->Draw();
-}
-
-static inline bool parse_tuple_key4(const std::string& s, BinKey4& out) {
-    int ix, iQ, it, ip;
-    if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)", &ix, &iQ, &it, &ip) != 4) return false;
-    out = BinKey4(ix, iQ, it, ip);
-    return true;
-}
-
-static inline bool parse_tuple_key3(const std::string& s, std::tuple<int,int,int>& out) {
-    int ix, iQ, it;
-    if (std::sscanf(s.c_str(),"(%d,%d,%d)", &ix, &iQ, &it) != 3) return false;
-    out = std::make_tuple(ix, iQ, it);
-    return true;
-}
-
-// ---------- acceptance_<PERIOD>.json loader ----------
-struct AccCell {
-    std::vector<double> phi_deg, acc, acc_err;
-};
-using AccMap3 = std::map<std::tuple<int,int,int>, AccCell>; // (ix,iQ,it)
-
-static bool load_acceptance_json(const std::string& path, AccMap3& out) {
-    std::ifstream ifs(path);
-    if (!ifs) {
-        std::cerr << "[unf][WARN] Cannot open acceptance JSON: " << path << "\n";
-        return false;
+    // fallback: spaces to underscore
+    std::string s = L;
+    for (char& c : s) {
+        if (c == ' ') c = '_';
     }
-    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-
-    size_t bpos = s.find("\"bins\"");
-    if (bpos == std::string::npos) return false;
-    size_t br = s.find('{', bpos); if (br == std::string::npos) return false;
-    int d = 0; size_t i = br;
-    for (; i < s.size(); ++i) {
-        if (s[i] == '{') ++d;
-        else if (s[i] == '}') { --d; if (!d) { ++i; break; } }
-    }
-    std::string binsObj = s.substr(br, i - br);
-
-    auto parseArray = [&](const std::string& obj, const char* key)->std::vector<double>{
-        std::vector<double> v;
-        size_t p = obj.find(key); if (p == std::string::npos) return v;
-        p = obj.find('[', p); if (p == std::string::npos) return v;
-        size_t q = obj.find(']', p); if (q == std::string::npos) return v;
-        std::string arr = obj.substr(p + 1, q - p - 1);
-        std::stringstream ss(arr);
-        while (ss.good()) {
-            std::string tok; std::getline(ss, tok, ',');
-            tok.erase(std::remove_if(tok.begin(), tok.end(), ::isspace), tok.end());
-            if (tok.empty()) continue;
-            try { v.push_back(std::stod(tok)); } catch (...) {}
-        }
-        return v;
-    };
-
-    size_t kpos = 0;
-    while (true) {
-        size_t q1 = binsObj.find('"', kpos); if (q1 == std::string::npos) break;
-        size_t q2 = binsObj.find('"', q1 + 1); if (q2 == std::string::npos) break;
-        std::string key = binsObj.substr(q1 + 1, q2 - q1 - 1);
-        std::tuple<int,int,int> k3;
-        if (!parse_tuple_key3(key, k3)) { kpos = q2 + 1; continue; }
-
-        size_t objS = binsObj.find('{', q2); if (objS == std::string::npos) break;
-        int d2 = 0; size_t j = objS;
-        for (; j < binsObj.size(); ++j) {
-            if (binsObj[j] == '{') ++d2;
-            else if (binsObj[j] == '}') { --d2; if (!d2) { ++j; break; } }
-        }
-        std::string obj = binsObj.substr(objS, j - objS);
-
-        AccCell cell;
-        cell.phi_deg = parseArray(obj, "\"phi\":[");
-        cell.acc     = parseArray(obj, "\"acc\":[");
-        cell.acc_err = parseArray(obj, "\"acc_err\":[");
-        if (!cell.phi_deg.empty() && cell.acc.size() == cell.phi_deg.size() && cell.acc_err.size() == cell.phi_deg.size())
-            out[k3] = std::move(cell);
-
-        kpos = j;
-    }
-    return !out.empty();
+    return s;
 }
 
-// ---------- corrected-counts master loader (pi0_corrected_counts_all_groups.json) ----------
-struct HelVals {
-    double plus   = 0.0;
-    double minus  = 0.0;
-    double eplus  = 0.0;  // sigma on plus
-    double eminus = 0.0;  // sigma on minus
-};
-using GroupHelMap = std::map<std::string, std::map<BinKey4, HelVals>>;
-
-static bool extract_braced_block_after_key(const std::string& s, const std::string& quotedKey, std::string& outObj) {
-    size_t pkey = s.find(quotedKey);
-    if (pkey == std::string::npos) return false;
-    size_t pcolon = s.find(':', pkey + quotedKey.size());
-    if (pcolon == std::string::npos) return false;
-    size_t lbrace = s.find('{', pcolon);
-    if (lbrace == std::string::npos) return false;
-    int depth = 0;
-    for (size_t i = lbrace; i < s.size(); ++i) {
-        if (s[i] == '{') ++depth;
-        else if (s[i] == '}') {
-            --depth;
-            if (depth == 0) {
-                outObj = s.substr(lbrace, i - lbrace + 1);
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-static std::string extract_object_member(const std::string& obj, const char* memberKey) {
-    size_t p = obj.find(memberKey);
-    if (p == std::string::npos) return std::string();
-    size_t colon = obj.find(':', p);
-    if (colon == std::string::npos) return std::string();
-    size_t lbrace = obj.find('{', colon);
-    if (lbrace == std::string::npos) return std::string();
-    int depth = 0;
-    for (size_t i = lbrace; i < obj.size(); ++i) {
-        if (obj[i] == '{') ++depth;
-        else if (obj[i] == '}') {
-            --depth;
-            if (depth == 0) {
-                return obj.substr(lbrace, i - lbrace + 1);
-            }
-        }
-    }
-    return std::string();
-}
-
-static double find_numeric_field(const std::string& src, const char* keyname) {
-    size_t p = src.find(keyname); if (p == std::string::npos) return 0.0;
-    p = src.find(':', p); if (p == std::string::npos) return 0.0;
-    size_t a = p + 1; while (a < src.size() && std::isspace((unsigned char)src[a])) ++a;
-    size_t b = a; while (b < src.size() && (std::isdigit((unsigned char)src[b]) || src[b]=='+' || src[b]=='-' || src[b]=='.' || src[b]=='e' || src[b]=='E')) ++b;
-    try { return std::stod(src.substr(a, b - a)); } catch(...) { return 0.0; }
-}
-
-static bool load_pi0_corrected_master(const std::string& path,
-                                      const std::vector<std::string>& groupsWanted,
-                                      GroupHelMap& outGroups) {
-    std::ifstream ifs(path);
-    if (!ifs) {
-        std::cerr << "[unf][ERROR] Cannot open pi0_corrected_counts_all_groups JSON: " << path << "\n";
-        return false;
-    }
-    const std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-
-    bool any = false;
-    for (const auto& gname : groupsWanted) {
-        const std::string quoted = "\"" + gname + "\"";
-        std::string groupObj;
-        if (!extract_braced_block_after_key(s, quoted, groupObj)) {
-            std::cerr << "[unf][WARN] Group '" << gname << "' not found in corrected master.\n";
-            continue;
-        }
-
-        std::string binsObj = extract_object_member(groupObj, "\"bins\"");
-        if (binsObj.empty()) {
-            std::cerr << "[unf][WARN] Group '" << gname << "' has no 'bins' object — skipping.\n";
-            continue;
-        }
-
-        std::map<BinKey4, HelVals> gmap;
-
-        size_t cursor = 0;
-        while (true) {
-            size_t q1 = binsObj.find('"', cursor); if (q1 == std::string::npos) break;
-            size_t q2 = binsObj.find('"', q1 + 1);   if (q2 == std::string::npos) break;
-            const std::string key = binsObj.substr(q1 + 1, q2 - q1 - 1);
-
-            BinKey4 bk;
-            if (!parse_tuple_key4(key, bk)) { cursor = q2 + 1; continue; }
-
-            size_t lbrace = binsObj.find('{', q2);
-            if (lbrace == std::string::npos) break;
-            int depth = 0; size_t i = lbrace;
-            for (; i < binsObj.size(); ++i) {
-                if (binsObj[i] == '{') ++depth;
-                else if (binsObj[i] == '}') { --depth; if (depth == 0) { ++i; break; } }
-            }
-            if (i >= binsObj.size()) break;
-            const std::string entryObj = binsObj.substr(lbrace, i - lbrace);
-
-            const std::string helObj = extract_object_member(entryObj, "\"helicity\"");
-            if (helObj.empty()) { cursor = i; continue; }
-
-            const std::string plusBlk  = extract_object_member(helObj, "\"+1\"");
-            const std::string minusBlk = extract_object_member(helObj, "\"-1\"");
-
-            HelVals hv;
-            hv.plus   = find_numeric_field(plusBlk,  "\"value\"");
-            hv.eplus  = find_numeric_field(plusBlk,  "\"err\"");
-            hv.minus  = find_numeric_field(minusBlk, "\"value\"");
-            hv.eminus = find_numeric_field(minusBlk, "\"err\"");
-
-            gmap[bk] = hv;
-            cursor = i;
-        }
-
-        if (!gmap.empty()) {
-            outGroups[gname] = std::move(gmap);
-            any = true;
-        } else {
-            std::cerr << "[unf][WARN] Group '" << gname << "' parsed but no bins found.\n";
-        }
-    }
-
-    if (!any) {
-        std::cerr << "[unf][ERROR] No groups parsed from corrected master.\n";
-    }
-    return any;
-}
-
-// ---------- per-cell result ----------
-struct UnfoldCell {
-    std::vector<double> phi_deg;
-
-    std::vector<double> yield_p;     // +1
-    std::vector<double> yield_p_err;
-
-    std::vector<double> yield_m;     // -1
-    std::vector<double> yield_m_err;
-
-    std::vector<double> acc, acc_err; // optional for debug
-};
-
-// ---------- JSON writer ----------
-static void write_unfolded_json(
-    const std::string& out_path,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, UnfoldCell>& cells) {
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[unf][ERROR] Cannot open " << out_path << "\n"; return; }
-    ofs << std::fixed << std::setprecision(8);
-    ofs << "{\n";
-    ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
-        << ", \"xB_bins\": " << xB_bins.size()
-        << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\": " << t_bins.size() << "},\n";
-    ofs << "  \"bins\": {\n";
-    bool first = true;
-    for (const auto& kv : cells) {
-        if (!first) ofs << ",\n"; first = false;
-        int ix, iQ, it; std::tie(ix, iQ, it) = kv.first;
-        const auto& c = kv.second;
-        ofs << "    \"(" << ix << "," << iQ << "," << it << ")\": {";
-        auto dumpA=[&](const char* name,const std::vector<double>& v){
-            ofs << "\"" << name << "\":[";
-            for (size_t i = 0; i < v.size(); ++i) { if (i) ofs << ","; ofs << v[i]; }
-            ofs << "],";
-        };
-        dumpA("phi", c.phi_deg);
-        dumpA("yield_plus", c.yield_p);
-        dumpA("yield_plus_err", c.yield_p_err);
-        dumpA("yield_minus", c.yield_m);
-        dumpA("yield_minus_err", c.yield_m_err);
-        dumpA("acc", c.acc);
-        ofs << "\"acc_err\":[";
-        for (size_t i = 0; i < c.acc_err.size(); ++i) { if (i) ofs << ","; ofs << c.acc_err[i]; }
-        ofs << "]";
-        ofs << "}";
-    }
-    ofs << "\n  }\n}\n";
-}
-
-// ---------- slice helpers for plotting ----------
-static void uniqueQT_for_xB(
-    const std::vector<Binning>& scheme,
-    const std::pair<double,double>& xBrange,
-    std::vector<std::pair<double,double>>& Q2_list,
-    std::vector<std::pair<double,double>>& t_list) {
-    std::set<std::pair<double,double>> qs, ts;
-    for (const auto& b : scheme) {
-        if (std::make_pair(b.xBmin, b.xBmax) == xBrange) {
-            qs.emplace(b.Q2min, b.Q2max);
-            ts.emplace(b.tmin,  b.tmax);
-        }
-    }
-    Q2_list.assign(qs.begin(), qs.end());
-    t_list.assign(ts.begin(), ts.end());
-}
-
-// ---------- plotting ----------
-static void plot_cells_for_group(
-    const std::string& group,
-    const std::vector<Binning>& binning_scheme,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, UnfoldCell>& cells,
-    const std::string& out_dir_plots) {
-    using std::filesystem::create_directories;
+static void ensure_dir(const std::string& p) {
+    namespace fs = std::filesystem;
     std::error_code ec;
-    create_directories(out_dir_plots, ec);
+    if (!fs::exists(p)) {
+        fs::create_directories(p, ec);
+        if (ec) {
+            std::cerr << "[unfolding] FATAL: could not create directory: "
+                      << p << " (" << ec.message() << ")\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+}
 
-    static const auto PHI_DEG = phiCentersDeg();
+static double safe_mean(const std::vector<double>& v) {
+    double s = 0.0;
+    int n = 0;
+    for (double x : v) {
+        if (std::isfinite(x)) {
+            s += x;
+            ++n;
+        }
+    }
+    return n ? s / n : std::numeric_limits<double>::quiet_NaN();
+}
 
-    for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-        const auto xb = xB_bins[ix];
+// generic triple parser: "(value, stat, sys)"
+static bool parse_triple(const std::string& s,
+                         double& value,
+                         double& stat,
+                         double& sys)
+{
+    value = std::numeric_limits<double>::quiet_NaN();
+    stat  = std::numeric_limits<double>::quiet_NaN();
+    sys   = std::numeric_limits<double>::quiet_NaN();
 
-        std::vector<std::pair<double,double>> Q2_slice, t_slice;
-        uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
-        if (Q2_slice.empty() || t_slice.empty()) continue;
+    std::string trimmed;
+    trimmed.reserve(s.size());
+    for (char c : s) {
+        if (!std::isspace((unsigned char)c)) trimmed.push_back(c);
+    }
+    if (trimmed.empty()) {
+        return false;
+    }
 
-        const int nrows = (int)t_slice.size();
-        const int ncols = (int)Q2_slice.size();
+    if (trimmed.front() == '(' && trimmed.back() == ')') {
+        trimmed = trimmed.substr(1, trimmed.size() - 2);
+    }
 
-        const int W = 280 * ncols + 160;
-        const int H = 240 * nrows + 170;
+    std::vector<std::string> parts;
+    std::string cur;
+    for (char c : trimmed) {
+        if (c == ',') {
+            parts.push_back(cur);
+            cur.clear();
+        } else {
+            cur.push_back(c);
+        }
+    }
+    parts.push_back(cur);
 
-        std::ostringstream cname; cname << "c_unf_" << group << "_xB" << ix;
-        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+    if (parts.size() != 3) {
+        std::cerr << "[unfolding] ERROR: triple has "
+                  << parts.size() << " fields (expected 3): '" << s << "'\n";
+        return false;
+    }
 
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
-        pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+    char* e1 = nullptr;
+    char* e2 = nullptr;
+    char* e3 = nullptr;
 
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
-        pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-        pGrid->cd();
-        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+    value = std::strtod(parts[0].c_str(), &e1);
+    stat  = std::strtod(parts[1].c_str(), &e2);
+    sys   = std::strtod(parts[2].c_str(), &e3);
 
-        // Title
-        pTop->cd();
-        TLatex head;
-        head.SetNDC(); head.SetTextAlign(22);
-        head.SetTextFont(42);
-        head.SetTextSize(0.36);
-        std::ostringstream tit;
-        tit << Form("Unfolded Yields  %s   x_{B} in (%.2g, %.2g)",
-                    group.c_str(), xb.first, xb.second);
-        head.DrawLatex(0.5, 0.55, tit.str().c_str());
+    if (e1 == parts[0].c_str()) return false;
+    if (e2 == parts[1].c_str()) return false;
+    if (e3 == parts[2].c_str()) return false;
 
-        // Panels
-        for (int r = 0; r < nrows; ++r) {
-            const int it_global = findIndex(t_slice[r], t_bins);
-            if (it_global < 0) continue;
+    return true;
+}
 
-            for (int ccol = 0; ccol < ncols; ++ccol) {
-                const int iQ_global = findIndex(Q2_slice[ccol], Q2_bins);
-                if (iQ_global < 0) continue;
+static std::string format_triple(double v, double s_stat, double s_sys) {
+    std::ostringstream oss;
+    oss.setf(std::ios::fixed);
+    oss << "("
+        << std::setprecision(8) << v << ", "
+        << std::setprecision(8) << s_stat << ", "
+        << std::setprecision(8) << s_sys
+        << ")";
+    return oss.str();
+}
 
-                pGrid->cd(r * ncols + ccol + 1);
-                gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.08);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.125);
-                gPad->SetRightMargin(0.10);
+// U = S/A, Var(U) = (1/A^2) Var(S) + (S^2/A^4) Var(A)
+static void compute_unfolded(double S, double S_stat,
+                             double A, double A_stat,
+                             double& U, double& U_stat)
+{
+    if (!std::isfinite(S) || !std::isfinite(S_stat) ||
+        !std::isfinite(A) || !std::isfinite(A_stat) ||
+        A <= 0.0) {
+        U = std::numeric_limits<double>::quiet_NaN();
+        U_stat = std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
 
-                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 0.0);
-                TAxis* ax = frame->GetXaxis();
-                TAxis* ay = frame->GetYaxis();
+    const double varS = S_stat * S_stat;
+    const double varA = A_stat * A_stat;
 
-                ax->SetLabelSize(0.0001);
-                ax->SetTitle("#phi (deg)");
-                ay->SetTitle("Unfolded yield");
-                ax->CenterTitle(); ay->CenterTitle();
-                ax->SetNdivisions(505);
-                ax->SetTitleSize(0.060);
-                ay->SetTitleSize(0.060);
-                ay->SetLabelSize(0.048);
-                ax->SetTitleOffset(1.25);
-                ay->SetTitleOffset(1.35);
+    const double invA  = 1.0 / A;
+    const double invA2 = invA * invA;
 
-                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+    const double varU = varS * invA2 + (S * S) * varA * invA2 * invA2;
 
-                auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
-                if (itCell == cells.end()) continue;
-                const auto& uc = itCell->second;
+    U = S * invA;
+    U_stat = (varU > 0.0) ? std::sqrt(varU) : 0.0;
+}
 
-                std::vector<double> x, yp, ymp, ym, ymm;
-                x.reserve(N_PHI_BINS); yp.reserve(N_PHI_BINS); ymp.reserve(N_PHI_BINS);
-                ym.reserve(N_PHI_BINS); ymm.reserve(N_PHI_BINS);
+// periods, helicities, groups
+static const std::vector<std::string> kPeriods = {
+    "Fa18 Inb",
+    "Fa18 Out",
+    "Sp19 Inb",
+    "Sp18 Inb",
+    "Sp18 Out"
+};
 
-                double ymax = 0.0;
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    x.push_back(PHI_DEG[ip]);
-                    double vp = uc.yield_p[ip];
-                    double vm = uc.yield_m[ip];
-                    double ep = std::max(1e-12, uc.yield_p_err[ip]);
-                    double em = std::max(1e-12, uc.yield_m_err[ip]);
-                    yp.push_back(vp); ymp.push_back(ep);
-                    ym.push_back(vm); ymm.push_back(em);
-                    ymax = std::max(ymax, std::max(vp + ep, vm + em));
+static const std::vector<std::string> kGroups = {
+    "Fa18",
+    "Sp18",
+    "2018 (10.6 GeV)"
+};
+
+static const std::map<std::string,std::vector<std::string>> kGroupMembers = {
+    {"Fa18", {"Fa18 Inb", "Fa18 Out"}},
+    {"Sp18", {"Sp18 Inb", "Sp18 Out"}},
+    {"2018 (10.6 GeV)", {"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"}}
+};
+
+static const std::vector<std::string> kHelicities = {
+    "unpol",
+    "pos",
+    "neg"
+};
+
+struct CellData {
+    std::vector<double> X;
+    std::vector<double> Yp;
+    std::vector<double> Ym;
+    std::vector<double> EX;
+    std::vector<double> EYp;
+    std::vector<double> EYm;
+    std::vector<double> q2means;
+    std::vector<double> tmeans;
+};
+
+// Core CSV update:
+//   - fills all "acceptance corrected yield, ep->epg, exp, <label>, <hel>" columns
+//   - builds in-memory unfolded values/uncertainties for plotting.
+static bool fill_unfolded_yields(
+    CsvDoc& csv,
+    std::map<std::string, std::map<std::string,std::vector<double>>>& unfolded_val,
+    std::map<std::string, std::map<std::string,std::vector<double>>>& unfolded_stat)
+{
+    const int NR = csv.nrows();
+
+    // indices for signal yield per period/helicity
+    std::map<std::string, std::map<std::string,int>> sig_idx;
+    for (const auto& per : kPeriods) {
+        for (const auto& hel : kHelicities) {
+            std::ostringstream name;
+            name << "signal yield, ep->epg, exp, " << per << ", " << hel;
+            int idx = csv.col_index(name.str());
+            if (idx < 0) {
+                std::cerr << "[unfolding] FATAL: missing signal-yield column '"
+                          << name.str() << "'. Did you run pi0_corrected_counts?\n";
+                return false;
+            }
+            sig_idx[per][hel] = idx;
+        }
+    }
+
+    // indices for acceptance triples per period
+    std::map<std::string,int> acc_idx;
+    for (const auto& per : kPeriods) {
+        std::string cname = "acceptance, " + per;
+        int idx = csv.col_index(cname);
+        if (idx < 0) {
+            std::cerr << "[unfolding] FATAL: missing acceptance column '"
+                      << cname << "'. Did you run acceptance?\n";
+            return false;
+        }
+        acc_idx[per] = idx;
+    }
+
+    // indices for unfolded-yield columns per label (periods + groups) and helicity
+    std::map<std::string, std::map<std::string,int>> unf_idx;
+    std::vector<std::string> allLabels;
+    allLabels.insert(allLabels.end(), kPeriods.begin(), kPeriods.end());
+    allLabels.insert(allLabels.end(), kGroups.begin(),  kGroups.end());
+
+    for (const auto& lab : allLabels) {
+        for (const auto& hel : kHelicities) {
+            std::ostringstream nm;
+            nm << "acceptance corrected yield, ep->epg, exp, "
+               << lab << ", " << hel;
+            int idx = csv.col_index(nm.str());
+            if (idx < 0) {
+                std::cerr << "[unfolding] FATAL: missing unfolded-yield column '"
+                          << nm.str() << "' in CSV header.\n";
+                return false;
+            }
+            unf_idx[lab][hel] = idx;
+        }
+    }
+
+    // initialize in-memory storage: unfolded_val[label][hel][row]
+    for (const auto& lab : allLabels) {
+        for (const auto& hel : kHelicities) {
+            unfolded_val[lab][hel].assign(NR,
+                std::numeric_limits<double>::quiet_NaN());
+            unfolded_stat[lab][hel].assign(NR,
+                std::numeric_limits<double>::quiet_NaN());
+        }
+    }
+
+    std::size_t cells_written = 0;
+
+    // First: per-period unfolding S/A
+    for (const auto& per : kPeriods) {
+        const int c_acc = acc_idx[per];
+
+        for (int r = 0; r < NR; ++r) {
+            const std::string& sA = csv.rows[r][c_acc];
+
+            if (sA.empty()) {
+                // No acceptance for this bin/period: clear unfolded cells
+                for (const auto& hel : kHelicities) {
+                    csv.rows[r][unf_idx[per][hel]].clear();
+                    unfolded_val[per][hel][r]  =
+                        std::numeric_limits<double>::quiet_NaN();
+                    unfolded_stat[per][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
+                }
+                continue;
+            }
+
+            double A_val  = 0.0;
+            double A_stat = 0.0;
+            double A_sys  = 0.0;
+            if (!parse_triple(sA, A_val, A_stat, A_sys)) {
+                std::cerr << "[unfolding] FATAL: failed to parse acceptance '"
+                          << sA << "' for period " << per
+                          << " row " << r << "\n";
+                return false;
+            }
+
+            if (!std::isfinite(A_val) || A_val <= 0.0) {
+                // Non-physical or zero acceptance: clear unfolded cells
+                for (const auto& hel : kHelicities) {
+                    csv.rows[r][unf_idx[per][hel]].clear();
+                    unfolded_val[per][hel][r]  =
+                        std::numeric_limits<double>::quiet_NaN();
+                    unfolded_stat[per][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
+                }
+                continue;
+            }
+
+            for (const auto& hel : kHelicities) {
+                int c_sig = sig_idx[per][hel];
+                const std::string& sS = csv.rows[r][c_sig];
+
+                if (sS.empty()) {
+                    // No signal yield: clear unfolded cell for this hel
+                    csv.rows[r][unf_idx[per][hel]].clear();
+                    unfolded_val[per][hel][r]  =
+                        std::numeric_limits<double>::quiet_NaN();
+                    unfolded_stat[per][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
+                    continue;
                 }
 
-                if (ymax <= 0.0) ymax = 1.0;
-                frame->GetYaxis()->SetRangeUser(0.0, ymax * 1.20);
+                double S_val  = 0.0;
+                double S_stat = 0.0;
+                double S_sys  = 0.0;
+                if (!parse_triple(sS, S_val, S_stat, S_sys)) {
+                    std::cerr << "[unfolding] FATAL: failed to parse signal-yield '"
+                              << sS << "' for period " << per
+                              << " helicity " << hel
+                              << " row " << r << "\n";
+                    return false;
+                }
 
-                TGraphErrors* grP = new TGraphErrors(N_PHI_BINS, x.data(), yp.data(), nullptr, ymp.data());
-                grP->SetMarkerStyle(20);
-                grP->SetMarkerSize(1.0);
-                grP->SetLineWidth(2);
-                grP->SetLineColor(kBlue+1);
-                grP->SetMarkerColor(kBlue+1);
-                grP->Draw("P SAME");
+                double U = 0.0;
+                double U_stat = 0.0;
+                compute_unfolded(S_val, S_stat, A_val, A_stat, U, U_stat);
 
-                TGraphErrors* grM = new TGraphErrors(N_PHI_BINS, x.data(), ym.data(), nullptr, ymm.data());
-                grM->SetMarkerStyle(25);
-                grM->SetMarkerSize(1.0);
-                grM->SetLineWidth(2);
-                grM->SetLineColor(kRed+1);
-                grM->SetMarkerColor(kRed+1);
-                grM->Draw("P SAME");
+                unfolded_val[per][hel][r]  = U;
+                unfolded_stat[per][hel][r] = U_stat;
 
-                TLatex lab;
-                lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
-                lab.SetTextFont(42);
-                lab.DrawLatex(0.15, 0.94,
-                    Form("Q^{2} in (%.2g, %.2g),   -t in (%.2g, %.2g)",
-                         Q2_slice[ccol].first, Q2_slice[ccol].second,
-                         t_slice[r].first,    t_slice[r].second));
+                csv.rows[r][unf_idx[per][hel]] = format_triple(U, U_stat, 0.0);
+                ++cells_written;
+            }
+        }
+    }
 
-                TLegend* leg = new TLegend(0.50, 0.72, 0.90, 0.92);
-                leg->SetBorderSize(1);
-                leg->SetLineColor(kBlack);
-                leg->SetFillColor(kWhite);
-                leg->SetFillStyle(1001);
-                leg->SetTextFont(42);
-                leg->SetTextSize(0.040);
-                leg->AddEntry(grP, "+ helicity", "lep");
-                leg->AddEntry(grM, "- helicity", "lep");
-                leg->Draw();
+    // Next: combined groups = sums over member-period unfolded yields
+    for (const auto& grp : kGroups) {
+        auto itMembers = kGroupMembers.find(grp);
+        if (itMembers == kGroupMembers.end()) {
+            std::cerr << "[unfolding] FATAL: no member-period list for group '"
+                      << grp << "'.\n";
+            return false;
+        }
+        const std::vector<std::string>& members = itMembers->second;
+
+        for (int r = 0; r < NR; ++r) {
+            for (const auto& hel : kHelicities) {
+                double sum_val = 0.0;
+                double sum_var = 0.0;
+                int    count   = 0;
+
+                for (const auto& per : members) {
+                    double v = unfolded_val[per][hel][r];
+                    double s = unfolded_stat[per][hel][r];
+                    if (!std::isfinite(v) || !std::isfinite(s)) {
+                        continue;
+                    }
+                    sum_val += v;
+                    sum_var += s * s;
+                    ++count;
+                }
+
+                if (count == 0) {
+                    // No contributing periods in this bin: clear cell
+                    csv.rows[r][unf_idx[grp][hel]].clear();
+                    unfolded_val[grp][hel][r]  =
+                        std::numeric_limits<double>::quiet_NaN();
+                    unfolded_stat[grp][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
+                    continue;
+                }
+
+                const double U   = sum_val;
+                const double U_s = (sum_var > 0.0) ? std::sqrt(sum_var) : 0.0;
+
+                unfolded_val[grp][hel][r]  = U;
+                unfolded_stat[grp][hel][r] = U_s;
+
+                csv.rows[r][unf_idx[grp][hel]] = format_triple(U, U_s, 0.0);
+                ++cells_written;
+            }
+        }
+    }
+
+    std::cout << "[unfolding] Filled acceptance-corrected yield triple columns; cells written: "
+              << cells_written << "\n";
+
+    return true;
+}
+
+// Draw per-label unfolded-yield canvases (pos/neg helicities only)
+static void draw_unfolded_canvases(
+    const std::string& label,
+    const CsvDoc& csv,
+    const std::map<std::string,std::vector<double>>& val_by_hel,
+    const std::map<std::string,std::vector<double>>& stat_by_hel,
+    const std::string& out_root_dir)
+{
+    namespace fs = std::filesystem;
+
+    const int NR = csv.nrows();
+
+    const int c_xb_min  = csv.col_index("xBmin");
+    const int c_xb_max  = csv.col_index("xBmax");
+    const int c_q2_min  = csv.col_index("Q2min");
+    const int c_q2_max  = csv.col_index("Q2max");
+    const int c_tab_min = csv.col_index("t_abs_min");
+    const int c_tab_max = csv.col_index("t_abs_max");
+    const int c_phi_min = csv.col_index("phimin");
+    const int c_phi_max = csv.col_index("phimax");
+
+    if (c_xb_min < 0 || c_xb_max < 0 ||
+        c_q2_min < 0 || c_q2_max < 0 ||
+        c_tab_min < 0 || c_tab_max < 0 ||
+        c_phi_min < 0 || c_phi_max < 0) {
+        std::cerr << "[unfolding] FATAL: missing bin-edge columns needed for plotting.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Bin-mean columns for this label (from bin_means stage)
+    int c_phiavg = csv.col_index("phiavg, " + label);
+    int c_q2avg  = csv.col_index("Q2avg, " + label);
+    int c_tabavg = csv.col_index("t_abs_avg, " + label);
+    int c_xbavg  = csv.col_index("xBavg, " + label);
+
+    if (c_xbavg < 0) {
+        std::cerr << "[unfolding] FATAL: missing xBavg column for label '"
+                  << label << "' (expected 'xBavg, " << label << "').\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // We only plot pos/neg helicities
+    auto itPosVal = val_by_hel.find("pos");
+    auto itNegVal = val_by_hel.find("neg");
+    auto itPosErr = stat_by_hel.find("pos");
+    auto itNegErr = stat_by_hel.find("neg");
+
+    if (itPosVal == val_by_hel.end() || itNegVal == val_by_hel.end() ||
+        itPosErr == stat_by_hel.end() || itNegErr == stat_by_hel.end()) {
+        std::cerr << "[unfolding] FATAL: internal error: missing pos/neg arrays for label '"
+                  << label << "'.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    const std::vector<double>& posVal = itPosVal->second;
+    const std::vector<double>& negVal = itNegVal->second;
+    const std::vector<double>& posErr = itPosErr->second;
+    const std::vector<double>& negErr = itNegErr->second;
+
+    if ((int)posVal.size() != NR || (int)negVal.size() != NR ||
+        (int)posErr.size() != NR || (int)negErr.size() != NR) {
+        std::cerr << "[unfolding] FATAL: size mismatch in val/stat arrays for label '"
+                  << label << "'.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // distinct xB bins across the CSV
+    std::set<std::pair<double,double>> xb_set;
+    for (int r = 0; r < NR; ++r) {
+        xb_set.emplace(csv.as_double(r, c_xb_min), csv.as_double(r, c_xb_max));
+    }
+
+    const double head_size = 0.14;
+    const double label_sz  = 0.050;
+    const double title_sz  = 0.045;
+    const double leg_txt   = 0.050;
+
+    const std::string dir_name  = canonical_dir_for_label(label);
+    const std::string base_dir  =
+        (fs::path(out_root_dir) / "unfolded_yields" / dir_name).string();
+    ensure_dir(base_dir);
+
+    for (auto xb : xb_set) {
+        // group Q2 and t_abs bins within this xB bin
+        std::set<std::pair<double,double>> q2set;
+        std::set<std::pair<double,double>> tset_all;
+
+        for (int r = 0; r < NR; ++r) {
+            const double xbmin = csv.as_double(r, c_xb_min);
+            const double xbmax = csv.as_double(r, c_xb_max);
+            if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                std::fabs(xbmax - xb.second) < 1e-9) {
+                q2set.emplace(csv.as_double(r, c_q2_min),
+                              csv.as_double(r, c_q2_max));
+            }
+        }
+        for (auto q2r : q2set) {
+            for (int r = 0; r < NR; ++r) {
+                const double xbmin = csv.as_double(r, c_xb_min);
+                const double xbmax = csv.as_double(r, c_xb_max);
+                const double q2min = csv.as_double(r, c_q2_min);
+                const double q2max = csv.as_double(r, c_q2_max);
+                if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                    std::fabs(xbmax - xb.second) < 1e-9 &&
+                    std::fabs(q2min - q2r.first) < 1e-9 &&
+                    std::fabs(q2max - q2r.second) < 1e-9) {
+                    tset_all.emplace(csv.as_double(r, c_tab_min),
+                                     csv.as_double(r, c_tab_max));
+                }
             }
         }
 
-        std::ostringstream fout;
-        fout << out_dir_plots << "/plot_unfolded_" << group << "_xB_" << ix << ".png";
-        c->SaveAs(fout.str().c_str());
+        std::vector<std::pair<double,double>> Q2s(q2set.begin(), q2set.end());
+        std::vector<std::pair<double,double>> Ts (tset_all.begin(), tset_all.end());
+        if (Q2s.empty() || Ts.empty()) continue;
+
+        const int nrows = (int)Q2s.size();
+        const int ncols = (int)Ts.size();
+        const int W = 300 * ncols + 160;
+        const int H = 260 * nrows + 240;
+
+        std::vector<CellData> cells(nrows * ncols);
+        double canvas_max = 1.0;
+
+        std::vector<double> xbmeans;
+        for (int r = 0; r < NR; ++r) {
+            const double xbmin = csv.as_double(r, c_xb_min);
+            const double xbmax = csv.as_double(r, c_xb_max);
+            if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                std::fabs(xbmax - xb.second) < 1e-9) {
+                if (c_xbavg >= 0) {
+                    xbmeans.push_back(csv.as_double(r, c_xbavg));
+                } else {
+                    xbmeans.push_back(0.5 * (xb.first + xb.second));
+                }
+            }
+        }
+        const double xb_mean_for_title = safe_mean(xbmeans);
+
+        // build per-cell datasets
+        for (int rr = 0; rr < nrows; ++rr) {
+            for (int cc = 0; cc < ncols; ++cc) {
+                const auto& qpair = Q2s[rr];
+                const auto& tpair = Ts[cc];
+
+                std::vector<int> rows_for_cell;
+                for (int r = 0; r < NR; ++r) {
+                    const double xbmin = csv.as_double(r, c_xb_min);
+                    const double xbmax = csv.as_double(r, c_xb_max);
+                    const double q2min = csv.as_double(r, c_q2_min);
+                    const double q2max = csv.as_double(r, c_q2_max);
+                    const double tmin  = csv.as_double(r, c_tab_min);
+                    const double tmax  = csv.as_double(r, c_tab_max);
+                    if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                        std::fabs(xbmax - xb.second) < 1e-9 &&
+                        std::fabs(q2min - qpair.first) < 1e-9 &&
+                        std::fabs(q2max - qpair.second) < 1e-9 &&
+                        std::fabs(tmin  - tpair.first) < 1e-9 &&
+                        std::fabs(tmax  - tpair.second) < 1e-9) {
+                        rows_for_cell.push_back(r);
+                    }
+                }
+
+                std::sort(rows_for_cell.begin(), rows_for_cell.end(),
+                          [&](int a, int b) {
+                              return csv.as_double(a, c_phi_min) <
+                                     csv.as_double(b, c_phi_min);
+                          });
+
+                CellData& C = cells[rr * ncols + cc];
+                C.X.reserve(rows_for_cell.size());
+                C.EX.assign(rows_for_cell.size(), 0.0);
+
+                for (int r : rows_for_cell) {
+                    const double pmin = csv.as_double(r, c_phi_min);
+                    const double pmax = csv.as_double(r, c_phi_max);
+                    double xphi = 0.5 * (pmin + pmax);
+                    if (c_phiavg >= 0) {
+                        const double pav = csv.as_double(r, c_phiavg);
+                        if (std::isfinite(pav) && pav > 0.0 && pav < 360.0) {
+                            xphi = pav;
+                        }
+                    }
+
+                    const double Yp  = posVal[r];
+                    const double Ym  = negVal[r];
+                    const double Ep  = posErr[r];
+                    const double Em  = negErr[r];
+
+                    // Only use bins where both pos and neg are defined
+                    if (!std::isfinite(Yp) || !std::isfinite(Ym) ||
+                        !std::isfinite(Ep) || !std::isfinite(Em)) {
+                        continue;
+                    }
+
+                    C.X.push_back(xphi);
+                    C.Yp.push_back(Yp);
+                    C.Ym.push_back(Ym);
+                    C.EYp.push_back(Ep);
+                    C.EYm.push_back(Em);
+                    C.EX.push_back(0.0);
+
+                    const double q2m = (c_q2avg >= 0)
+                        ? csv.as_double(r, c_q2avg)
+                        : 0.5 * (qpair.first + qpair.second);
+                    const double tm  = (c_tabavg >= 0)
+                        ? csv.as_double(r, c_tabavg)
+                        : 0.5 * (tpair.first + tpair.second);
+                    C.q2means.push_back(q2m);
+                    C.tmeans.push_back(tm);
+
+                    if (std::isfinite(Yp)) canvas_max = std::max(canvas_max, Yp);
+                    if (std::isfinite(Ym)) canvas_max = std::max(canvas_max, Ym);
+                }
+            }
+        }
+
+        std::string cname = "c_unf_" + dir_name + "_xB_" +
+                            std::to_string((int)std::round(xb.first * 1000.0));
+        TCanvas* c = new TCanvas(cname.c_str(), "", W, H);
+
+        TPad* pTop  = new TPad("pTop", "pTop", 0.0, 0.86, 1.0, 1.0);
+        TPad* pGrid = new TPad("pGrid","pGrid",0.0, 0.00, 1.0, 0.86);
+        pTop->SetFillStyle(0);  pTop->Draw();
+        pGrid->SetFillStyle(0); pGrid->Draw();
+        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        pTop->cd();
+        TLatex head;
+        head.SetNDC();
+        head.SetTextSize(head_size);
+        head.SetTextAlign(22);
+        head.DrawLatex(0.5, 0.58,
+                       Form("%s   <xB>=%.2f",
+                            label.c_str(),
+                            xb_mean_for_title));
+
+        const double y_lo = 0.0;
+        const double y_hi = std::max(1.0, canvas_max * 1.15);
+
+        for (int rr = 0; rr < nrows; ++rr) {
+            for (int cc = 0; cc < ncols; ++cc) {
+                pGrid->cd(rr * ncols + cc + 1);
+                gPad->SetGrid(1, 1);
+                gPad->SetTopMargin(0.24);
+                gPad->SetBottomMargin(0.18);
+                gPad->SetLeftMargin(0.160); // keep >= 0.160 for y-labels
+                gPad->SetRightMargin(0.07);
+                gPad->SetTickx(1);
+                gPad->SetTicky(1);
+
+                TH1* frame = gPad->DrawFrame(0.0, y_lo, 360.0, y_hi);
+                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetYaxis()->SetTitle("Unfolded yield");
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->SetTitleSize(title_sz);
+                frame->GetYaxis()->SetTitleSize(title_sz);
+                frame->GetXaxis()->SetLabelSize(label_sz);
+                frame->GetYaxis()->SetLabelSize(label_sz);
+                frame->GetYaxis()->SetTitleOffset(1.25);
+                frame->GetXaxis()->SetTitleOffset(1.05);
+
+                const CellData& C = cells[rr * ncols + cc];
+
+                if (C.X.empty()) {
+                    continue;
+                }
+
+                TGraphErrors* gp = new TGraphErrors(
+                    (int)C.X.size(),
+                    (double*)C.X.data(),
+                    (double*)C.Yp.data(),
+                    (double*)C.EX.data(),
+                    (double*)C.EYp.data());
+
+                TGraphErrors* gm = new TGraphErrors(
+                    (int)C.X.size(),
+                    (double*)C.X.data(),
+                    (double*)C.Ym.data(),
+                    (double*)C.EX.data(),
+                    (double*)C.EYm.data());
+
+                gp->SetMarkerStyle(24);
+                gp->SetMarkerColor(kRed);
+                gp->SetLineColor(kRed);
+                gp->SetLineWidth(1);
+
+                gm->SetMarkerStyle(20);
+                gm->SetMarkerColor(kBlue);
+                gm->SetLineColor(kBlue);
+                gm->SetLineWidth(1);
+
+                gp->Draw("PE1 SAME");
+                gm->Draw("PE1 SAME");
+
+                TLegend* leg = new TLegend(0.60, 0.72, 0.93, 0.92);
+                leg->SetBorderSize(1);
+                leg->SetLineColor(kBlack);
+                leg->SetFillStyle(1001);
+                leg->SetFillColor(kWhite);
+                leg->SetTextSize(leg_txt);
+                leg->AddEntry(gp, "+ helicity", "PE");
+                leg->AddEntry(gm, "- helicity", "PE");
+                leg->Draw();
+
+                TLatex lab;
+                lab.SetNDC();
+                lab.SetTextSize(0.058);
+                lab.SetTextAlign(13);
+                const double q2m = safe_mean(C.q2means);
+                const double tm  = safe_mean(C.tmeans);
+                lab.DrawLatex(0.16, 0.88,
+                              Form("Q^{2}=%.2f  |t|=%.2f", q2m, tm));
+            }
+        }
+
+        const std::string fpath =
+            (fs::path(base_dir) /
+             ("plot_unfolded_yield_" +
+              dir_name + "_xB_" +
+              std::to_string((int)std::round(xb.first * 1000.0)) +
+              ".png")).string();
+
+        c->SaveAs(fpath.c_str());
         delete c;
     }
 }
 
-// ---------- inverse-variance combiner for unfolded cells ----------
-static bool combine_cells_inverse_variance(
-    const std::vector<const std::map<std::tuple<int,int,int>, UnfoldCell>*>& parts,
-    std::map<std::tuple<int,int,int>, UnfoldCell>& combined) {
+} // end anonymous namespace
 
-    if (parts.empty()) return false;
-
-    // Find union of all keys
-    std::set<std::tuple<int,int,int>> keys;
-    for (const auto* m : parts) for (const auto& kv : *m) keys.insert(kv.first);
-
-    const int nphi = N_PHI_BINS;
-    for (const auto& key : keys) {
-        UnfoldCell out;
-        out.phi_deg = phiCentersDeg();
-        out.yield_p.assign(nphi, 0.0);
-        out.yield_p_err.assign(nphi, 0.0);
-        out.yield_m.assign(nphi, 0.0);
-        out.yield_m_err.assign(nphi, 0.0);
-        out.acc.assign(nphi, 0.0);
-        out.acc_err.assign(nphi, 0.0);
-
-        for (int ip = 0; ip < nphi; ++ip) {
-            double wsum_p = 0.0, wval_p = 0.0;
-            double wsum_m = 0.0, wval_m = 0.0;
-
-            double wsum_a = 0.0, wval_a = 0.0; // acceptance "debug" average
-            for (const auto* m : parts) {
-                auto it = m->find(key);
-                if (it == m->end()) continue;
-                const auto& c = it->second;
-
-                if (ip < (int)c.yield_p.size()) {
-                    double s = std::max(0.0, c.yield_p_err[ip]);
-                    if (s > 0.0) { double w = 1.0 / (s*s); wsum_p += w; wval_p += w * c.yield_p[ip]; }
-                }
-                if (ip < (int)c.yield_m.size()) {
-                    double s = std::max(0.0, c.yield_m_err[ip]);
-                    if (s > 0.0) { double w = 1.0 / (s*s); wsum_m += w; wval_m += w * c.yield_m[ip]; }
-                }
-                if (ip < (int)c.acc.size()) {
-                    double sa = std::max(0.0, (ip < (int)c.acc_err.size() ? c.acc_err[ip] : 0.0));
-                    if (sa > 0.0) { double w = 1.0 / (sa*sa); wsum_a += w; wval_a += w * c.acc[ip]; }
-                }
-            }
-
-            if (wsum_p > 0.0) { out.yield_p[ip] = wval_p / wsum_p; out.yield_p_err[ip] = std::sqrt(1.0 / wsum_p); }
-            if (wsum_m > 0.0) { out.yield_m[ip] = wval_m / wsum_m; out.yield_m_err[ip] = std::sqrt(1.0 / wsum_m); }
-            if (wsum_a > 0.0) { out.acc[ip]     = wval_a / wsum_a; out.acc_err[ip]     = std::sqrt(1.0 / wsum_a); }
-        }
-
-        combined[key] = std::move(out);
-    }
-    return !combined.empty();
-}
-
-// ---------- main driver ----------
-} // anon
-
-void compute_and_plot_unfolding(
-    const std::vector<std::string>& periods,           // DVCS_* names for acceptance files
-    const std::vector<Binning>& binning_scheme,
-    const std::string& total_counts_json_path,         // path to pi0_corrected_counts_all_groups.json
-    const std::string& out_root_dir) {
+bool update_unfolded_yields_csv(const std::string& csv_path,
+                                const std::string& out_root_dir)
+{
     namespace fs = std::filesystem;
 
-    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
-    const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
-    const auto t_bins  = uniqueRanges(binning_scheme, 't');
-
-    // Build the runTag list corresponding to DVCS_* periods
-    std::vector<std::string> runTagGroups;
-    runTagGroups.reserve(periods.size());
-    for (const auto& p : periods) runTagGroups.push_back(periodToRunTagKey(p));
-
-    // Load corrected master (value, err per helicity) for the requested runTags.
-    GroupHelMap groups;
-    if (!load_pi0_corrected_master(total_counts_json_path, runTagGroups, groups)) {
-        std::cerr << "[unf][ERROR] Failed to load corrected master json.\n";
-        return;
-    }
-
-    const fs::path json_dir  = fs::path(out_root_dir) / "jsons";
+    const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
-    fs::create_directories(json_dir, ec);
+    const uintmax_t size_before =
+        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
 
-    // Store per-period unfolded cells to allow post-facto combinations
-    std::map<std::string, std::map<std::tuple<int,int,int>, UnfoldCell>> perPeriodCells;
+    std::cout << "[unfolding] CSV: " << csv_abs
+              << " (size=" << size_before << ")\n";
 
-    auto getGroup = [&](const std::string& runTag)->const std::map<BinKey4,HelVals>*{
-        auto it = groups.find(runTag);
-        if (it == groups.end()) return nullptr;
-        return &it->second;
-    };
-
-    // ---------- per-period unfolding ----------
-    for (size_t idx = 0; idx < periods.size(); ++idx) {
-        const std::string& periodDVCS = periods[idx];          // e.g. DVCS_Fa18_out
-        const std::string& runTag     = runTagGroups[idx];     // e.g. fa18_out
-
-        const auto* gmap = getGroup(runTag);
-        if (!gmap) {
-            std::cerr << "[unf][WARN] No runTag '" << runTag << "' in corrected master — skipping\n";
-            continue;
-        }
-
-        // acceptance JSON for this DVCS_* period
-        const fs::path acc_path = fs::path(out_root_dir) / "jsons" / ("acceptance_" + periodDVCS + ".json");
-        AccMap3 accCells;
-        if (!load_acceptance_json(acc_path.string(), accCells)) {
-            std::cerr << "[unf][WARN] Missing/invalid acceptance for " << periodDVCS << " — skipping.\n";
-            continue;
-        }
-
-        std::map<std::tuple<int,int,int>, UnfoldCell> outCells;
-
-        for (int ix = 0; ix < (int)xB_bins.size(); ++ix)
-        for (int iQ = 0; iQ < (int)Q2_bins.size(); ++iQ)
-        for (int it = 0; it < (int)t_bins.size();  ++it) {
-            UnfoldCell uc;
-            uc.phi_deg = phiCentersDeg();
-            uc.yield_p.assign(N_PHI_BINS, 0.0);
-            uc.yield_p_err.assign(N_PHI_BINS, 0.0);
-            uc.yield_m.assign(N_PHI_BINS, 0.0);
-            uc.yield_m_err.assign(N_PHI_BINS, 0.0);
-            uc.acc.assign(N_PHI_BINS, 0.0);
-            uc.acc_err.assign(N_PHI_BINS, 0.0);
-
-            auto itAcc = accCells.find(std::make_tuple(ix, iQ, it));
-            if (itAcc == accCells.end()) {
-                outCells[std::make_tuple(ix, iQ, it)] = std::move(uc);
-                continue;
-            }
-            const auto& ac = itAcc->second;
-
-            for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                double A  = (ip < (int)ac.acc.size()     ? ac.acc[ip]     : 0.0);
-                double sA = (ip < (int)ac.acc_err.size() ? ac.acc_err[ip] : 0.0);
-                A = std::max(0.0, A);
-                const double A_clamp = std::max(A, 1e-12);
-
-                uc.acc[ip]     = A;
-                uc.acc_err[ip] = sA;
-
-                BinKey4 k4(ix, iQ, it, ip);
-                auto itC = gmap->find(k4);
-
-                double Np = 0.0, Nm = 0.0, sNp = 0.0, sNm = 0.0;
-                if (itC != gmap->end()) {
-                    Np  = std::max(0.0, itC->second.plus);
-                    Nm  = std::max(0.0, itC->second.minus);
-                    sNp = std::max(0.0, itC->second.eplus);
-                    sNm = std::max(0.0, itC->second.eminus);
-                }
-
-                if (A > 0.0) {
-                    double Up   = Np / A_clamp;
-                    double vN   = sNp * sNp;
-                    double vA   = sA * sA;
-                    double varU = (vN / (A_clamp*A_clamp)) + ((Np*Np) / (A_clamp*A_clamp*A_clamp*A_clamp)) * vA;
-                    uc.yield_p[ip]     = Up;
-                    uc.yield_p_err[ip] = std::sqrt(std::max(0.0, varU));
-                }
-
-                if (A > 0.0) {
-                    double Um   = Nm / A_clamp;
-                    double vN   = sNm * sNm;
-                    double vA   = sA * sA;
-                    // FIX: use Nm*Nm
-                    double varU = (vN / (A_clamp*A_clamp)) + ((Nm*Nm) / (A_clamp*A_clamp*A_clamp*A_clamp)) * vA;
-                    uc.yield_m[ip]     = Um;
-                    uc.yield_m_err[ip] = std::sqrt(std::max(0.0, varU));
-                }
-            }
-
-            outCells[std::make_tuple(ix, iQ, it)] = std::move(uc);
-        }
-
-        // Persist per-period
-        perPeriodCells[periodDVCS] = outCells;
-
-        // JSON and plots
-        const fs::path outJ = fs::path(out_root_dir) / "jsons" / ("unfolded_" + periodDVCS + ".json");
-        write_unfolded_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, perPeriodCells[periodDVCS]);
-        std::cout << "[unf] Wrote unfolded JSON: " << outJ.string() << "\n";
-
-        const fs::path outPlots = fs::path(out_root_dir) / "unfolding" / periodDVCS;
-        std::error_code ec2; fs::create_directories(outPlots, ec2);
-        plot_cells_for_group(periodDVCS, binning_scheme, xB_bins, Q2_bins, t_bins, perPeriodCells[periodDVCS], outPlots.string());
+    CsvDoc csv;
+    if (!csv.load(csv_path)) {
+        return false;
     }
 
-    // ---------- build combined sets ----------
-    auto have = [&](const char* p)->bool {
-        return perPeriodCells.find(p) != perPeriodCells.end();
-    };
+    // in-memory unfolded yields for plotting
+    std::map<std::string, std::map<std::string,std::vector<double>>> unfolded_val;
+    std::map<std::string, std::map<std::string,std::vector<double>>> unfolded_stat;
 
-    auto combine_and_write = [&](const std::string& label,
-                                 const std::vector<std::string>& members) {
-        std::vector<const std::map<std::tuple<int,int,int>, UnfoldCell>*> parts;
-        parts.reserve(members.size());
-        for (const auto& m : members) {
-            auto it = perPeriodCells.find(m);
-            if (it != perPeriodCells.end()) parts.push_back(&it->second);
-        }
-        if (parts.empty()) return;
-
-        std::map<std::tuple<int,int,int>, UnfoldCell> combined;
-        if (!combine_cells_inverse_variance(parts, combined)) return;
-
-        const fs::path outJ = fs::path(out_root_dir) / "jsons" / ("unfolded_" + label + ".json");
-        write_unfolded_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combined);
-        std::cout << "[unf] Wrote unfolded JSON (combined): " << outJ.string() << "\n";
-
-        const fs::path outPlots = fs::path(out_root_dir) / "unfolding" / label;
-        std::error_code ec3; fs::create_directories(outPlots, ec3);
-        plot_cells_for_group(label, binning_scheme, xB_bins, Q2_bins, t_bins, combined, outPlots.string());
-    };
-
-    // Fa18 = inb + out
-    if (have("DVCS_Fa18_inb") || have("DVCS_Fa18_out")) {
-        combine_and_write("Fa18", {"DVCS_Fa18_inb","DVCS_Fa18_out"});
+    if (!fill_unfolded_yields(csv, unfolded_val, unfolded_stat)) {
+        std::cerr << "[unfolding] ERROR: fill_unfolded_yields failed.\n";
+        return false;
     }
 
-    // Sp18 = inb + out
-    if (have("DVCS_Sp18_inb") || have("DVCS_Sp18_out")) {
-        combine_and_write("Sp18", {"DVCS_Sp18_inb","DVCS_Sp18_out"});
+    // save CSV
+    if (!csv.save_atomic(csv_path)) {
+        std::cerr << "[unfolding] ERROR: failed to save updated CSV.\n";
+        return false;
     }
 
-    // 10.6 GeV = Sp18 plus Fa18 (ignore Sp19 at 10.2 GeV)
-    std::vector<std::string> tenSixMembers;
-    if (have("DVCS_Sp18_inb")) tenSixMembers.push_back("DVCS_Sp18_inb");
-    if (have("DVCS_Sp18_out")) tenSixMembers.push_back("DVCS_Sp18_out");
-    if (have("DVCS_Fa18_inb")) tenSixMembers.push_back("DVCS_Fa18_inb");
-    if (have("DVCS_Fa18_out")) tenSixMembers.push_back("DVCS_Fa18_out");
-    if (!tenSixMembers.empty()) {
-        combine_and_write("10p6GeV", tenSixMembers);
+    const uintmax_t size_after =
+        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
+
+    std::cout << "[unfolding] Updated CSV: " << csv_abs
+              << " (size " << size_before << " -> " << size_after << ")\n";
+
+    // plotting: periods and combined groups
+    std::vector<std::string> labels;
+    labels.insert(labels.end(), kPeriods.begin(), kPeriods.end());
+    labels.insert(labels.end(), kGroups.begin(),  kGroups.end());
+
+    for (const auto& lab : labels) {
+        draw_unfolded_canvases(lab, csv,
+                               unfolded_val.at(lab),
+                               unfolded_stat.at(lab),
+                               out_root_dir);
     }
 
-    std::cout << "[unf] Unfolding complete (per-period and combined).\n";
+    std::cout << "[unfolding] Unfolded-yield plotting finished.\n";
+    return true;
 }
