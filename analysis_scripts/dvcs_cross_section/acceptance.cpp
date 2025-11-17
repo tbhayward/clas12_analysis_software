@@ -2,7 +2,7 @@
 // DVCS acceptance from non-radiative MC:
 //   - acceptance, <period> = N_rec / N_gen per (xB, Q2, |t|, phi) bin
 //   - N_rec from reconstructed MC with global DVCS exclusivity cuts
-//     AND 3 sigma cuts loaded from combined_cuts.json
+//     AND 3 sigma pTmiss cuts loaded from combined_cuts.json (data section)
 //   - N_gen from generated MC without exclusivity cuts
 //   - Periods: Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out
 //   - Acceptance is stored as "(value, stat, sys)" triple
@@ -327,49 +327,41 @@ static std::map<std::string, McTags> build_mc_tag_map() {
     return m;
 }
 
-// ------------- 3 sigma config (pTmiss only, for now) -------------
+// ------------- 3 sigma cuts loaded like total_counts (per period) -------------
 
-struct ThreeSigmaConfig {
-    bool have_pTmiss;
-    double mean_pTmiss;
-    double sigma_pTmiss;
+struct SigmaCut {
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std  = std::numeric_limits<double>::quiet_NaN();
 };
 
-static void find_pTmiss_node(const json& j,
-                             bool& found,
-                             double& mean,
-                             double& sigma,
-                             int& count)
-{
-    if (found && count > 1) return;
+using VarCutMap    = std::unordered_map<std::string, SigmaCut>; // var -> {mean,std}
+using PeriodCutMap = std::map<std::string, VarCutMap>;          // "Fa18 Inb" -> VarCutMap
 
-    if (j.is_object()) {
-        auto it = j.find("pTmiss");
-        if (it != j.end() && it->is_object()) {
-            const json& node = *it;
-            if (node.contains("mean") && node.contains("sigma") &&
-                node["mean"].is_number() && node["sigma"].is_number()) {
-                ++count;
-                mean  = node["mean"].get<double>();
-                sigma = node["sigma"].get<double>();
-                found = true;
+// Extract period label ("Fa18 Inb", etc.) from a DVCS key like "DVCS_Fa18_Inb_CD_FD"
+static std::string period_label_from_dvcs_key(const std::string& key) {
+    if (key.rfind("DVCS_", 0) != 0) return "";
+
+    static const std::vector<std::string> topo_suffixes = {
+        "_FD_FD",
+        "_CD_FD",
+        "_CD_FT"
+    };
+
+    for (const auto& suf : topo_suffixes) {
+        if (key.size() <= 5 + suf.size()) continue;
+        if (key.compare(key.size() - suf.size(), suf.size(), suf) == 0) {
+            std::string period_dir = key.substr(5, key.size() - 5 - suf.size()); // e.g. "Fa18_Inb"
+            for (char& c : period_dir) {
+                if (c == '_') c = ' ';
             }
-        }
-        for (auto it2 = j.begin(); it2 != j.end(); ++it2) {
-            find_pTmiss_node(it2.value(), found, mean, sigma, count);
-        }
-    } else if (j.is_array()) {
-        for (const auto& el : j) {
-            find_pTmiss_node(el, found, mean, sigma, count);
+            return period_dir; // "Fa18 Inb"
         }
     }
+    return "";
 }
 
-static ThreeSigmaConfig load_three_sigma_config(const std::string& cuts_json_path) {
-    ThreeSigmaConfig cfg;
-    cfg.have_pTmiss   = false;
-    cfg.mean_pTmiss   = 0.0;
-    cfg.sigma_pTmiss  = 0.0;
+static PeriodCutMap load_sigma_cuts_for_periods(const std::string& cuts_json_path) {
+    PeriodCutMap out;
 
     std::ifstream fin(cuts_json_path);
     if (!fin.is_open()) {
@@ -387,36 +379,63 @@ static ThreeSigmaConfig load_three_sigma_config(const std::string& cuts_json_pat
         std::exit(EXIT_FAILURE);
     }
 
-    bool found = false;
-    double mean = 0.0;
-    double sigma = 0.0;
-    int count = 0;
-    find_pTmiss_node(j, found, mean, sigma, count);
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string key = it.key();
+        const std::string period_label = period_label_from_dvcs_key(key);
+        if (period_label.empty()) {
+            continue; // not a DVCS_* key in the format we care about
+        }
 
-    if (!found) {
-        std::cerr << "[acceptance] FATAL: no pTmiss entry with mean and sigma "
-                  << "found in cuts JSON " << cuts_json_path << "\n";
-        std::exit(EXIT_FAILURE);
+        const json& block = it.value();
+        if (!block.contains("data") || !block["data"].is_object()) {
+            continue;
+        }
+        const json& data_node = block["data"];
+
+        VarCutMap& varmap = out[period_label];
+
+        for (auto vit = data_node.begin(); vit != data_node.end(); ++vit) {
+            const std::string vname = vit.key();
+            const json& vs = vit.value();
+
+            if (!vs.contains("mean") || !vs.contains("std")) continue;
+            if (!vs["mean"].is_number() || !vs["std"].is_number()) continue;
+
+            double mean = vs["mean"].get<double>();
+            double sdev = vs["std"].get<double>();
+
+            if (!std::isfinite(mean) || !std::isfinite(sdev) || !(sdev > 0.0)) {
+                continue;
+            }
+
+            auto itExisting = varmap.find(vname);
+            if (itExisting == varmap.end()) {
+                SigmaCut sc;
+                sc.mean = mean;
+                sc.std  = sdev;
+                varmap[vname] = sc;
+            } else {
+                const SigmaCut& old = itExisting->second;
+                double dMean = std::fabs(old.mean - mean);
+                double dStd  = std::fabs(old.std  - sdev);
+                double tolMean = 1e-6 * (1.0 + std::fabs(old.mean));
+                double tolStd  = 1e-6 * (1.0 + std::fabs(old.std));
+                if (dMean > tolMean || dStd > tolStd) {
+                    std::cerr << "[acceptance] FATAL: inconsistent 3-sigma cuts for variable '"
+                              << vname << "' in period '" << period_label
+                              << "' across DVCS topologies. One had mean=" << old.mean
+                              << " std=" << old.std << ", another has mean=" << mean
+                              << " std=" << sdev << ".\n";
+                    std::exit(EXIT_FAILURE);
+                }
+            }
+        }
     }
-    if (count > 1) {
-        std::cerr << "[acceptance] FATAL: multiple pTmiss entries with mean and sigma "
-                  << "found in cuts JSON " << cuts_json_path << "\n";
-        std::exit(EXIT_FAILURE);
-    }
-    if (!(sigma > 0.0)) {
-        std::cerr << "[acceptance] FATAL: non-positive sigma for pTmiss in cuts JSON\n";
-        std::exit(EXIT_FAILURE);
-    }
 
-    cfg.have_pTmiss  = true;
-    cfg.mean_pTmiss  = mean;
-    cfg.sigma_pTmiss = sigma;
+    std::cout << "[acceptance] Loaded sigma cuts for " << out.size()
+              << " DVCS periods from " << cuts_json_path << "\n";
 
-    std::cout << "[acceptance] Loaded 3 sigma pTmiss cuts: mean="
-              << cfg.mean_pTmiss << " sigma=" << cfg.sigma_pTmiss
-              << " (3 sigma window will be applied)\n";
-
-    return cfg;
+    return out;
 }
 
 // ------------- bin specification per CSV row -------------
@@ -551,12 +570,12 @@ static int find_row_for_event(double xB,
     return -1;
 }
 
-// ------------- exclusivity for reconstructed MC (global + 3 sigma) -------------
+// ------------- exclusivity for reconstructed MC (global + pTmiss 3 sigma) -------------
 
 static bool rec_passes_exclusivity(double t1,
                                    double open_angle_ep2_deg,
                                    double pTmiss,
-                                   const ThreeSigmaConfig& cfg)
+                                   const SigmaCut* pTmiss_cut)
 {
     const double t_abs = std::fabs(t1);
     if (!std::isfinite(t_abs) || t_abs <= 0.0 || t_abs >= 1.0) return false;
@@ -564,9 +583,9 @@ static bool rec_passes_exclusivity(double t1,
     if (!std::isfinite(pTmiss)) return false;
     if (pTmiss > 0.20) return false;
 
-    if (cfg.have_pTmiss) {
-        const double dev = pTmiss - cfg.mean_pTmiss;
-        if (std::fabs(dev) > 3.0 * cfg.sigma_pTmiss) return false;
+    if (pTmiss_cut) {
+        const double dev = pTmiss - pTmiss_cut->mean;
+        if (std::fabs(dev) > 3.0 * pTmiss_cut->std) return false;
     }
 
     return true;
@@ -580,7 +599,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
                                          const std::vector<bool>& row_has_data,
                                          TTree* genTree,
                                          TTree* recTree,
-                                         const ThreeSigmaConfig& cfg,
+                                         const SigmaCut* pTmiss_cut,
                                          std::vector<double>& gen_counts,
                                          std::vector<double>& rec_counts)
 {
@@ -680,7 +699,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
     for (Long64_t i = 0; i < Nrec; ++i) {
         recTree->GetEntry(i);
 
-        if (!rec_passes_exclusivity(r_t1, r_oa, r_pTmiss, cfg)) {
+        if (!rec_passes_exclusivity(r_t1, r_oa, r_pTmiss, pTmiss_cut)) {
             continue;
         }
         ++passed_excl;
@@ -960,8 +979,6 @@ static void draw_acceptance_canvases(const std::string& period_label,
                     double acc_stat = 0.0;
                     double acc_sys = 0.0;
                     if (!parse_triple(acc_cell, acc_val, acc_stat, acc_sys)) {
-                        // If some cells contain a plain number (e.g. from an older run),
-                        // fall back to simple parsing.
                         double tmp = CsvDoc::to_double(acc_cell);
                         if (!std::isfinite(tmp)) continue;
                         acc_val  = tmp;
@@ -1110,8 +1127,39 @@ bool update_acceptance_csv(const std::string& csv_path,
     std::vector<RowBin> bins = build_row_bins(csv);
     std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
-    // Load 3 sigma config (pTmiss) once and use for all periods
-    ThreeSigmaConfig cfg = load_three_sigma_config(cuts_json);
+    // Load 3 sigma cuts from combined_cuts.json (per period, using data section)
+    PeriodCutMap periodCuts = load_sigma_cuts_for_periods(cuts_json);
+
+    // Ensure we have pTmiss cuts for all periods we are about to process
+    std::vector<std::string> missing_pt;
+    for (const auto& per : kPeriods) {
+        auto itP = periodCuts.find(per);
+        if (itP == periodCuts.end()) {
+            missing_pt.push_back(per + " (no DVCS cuts found)");
+            continue;
+        }
+        const VarCutMap& vm = itP->second;
+        auto itVar = vm.find("pTmiss");
+        if (itVar == vm.end()) {
+            missing_pt.push_back(per + " (no pTmiss cuts)");
+        }
+    }
+    if (!missing_pt.empty()) {
+        std::cerr << "[acceptance] FATAL: no pTmiss entry with mean and std found in cuts JSON "
+                  << cuts_json << " for the following periods:\n";
+        for (const auto& s : missing_pt) {
+            std::cerr << "  - " << s << "\n";
+        }
+        return false;
+    }
+
+    for (const auto& per : kPeriods) {
+        const SigmaCut& c = periodCuts[per].at("pTmiss");
+        std::cout << "[acceptance] Period " << per
+                  << " pTmiss 3-sigma window: mean=" << c.mean
+                  << " std=" << c.std
+                  << " (3 sigma window will be applied)\n";
+    }
 
     const auto tagMap = build_mc_tag_map();
     std::map<std::string, std::vector<double>> gen_all;
@@ -1137,6 +1185,10 @@ bool update_acceptance_csv(const std::string& csv_path,
 
         const std::vector<bool>& flags = has_data[per];
 
+        const VarCutMap& vm = periodCuts[per];
+        auto itVar = vm.find("pTmiss");
+        const SigmaCut* pTcut = (itVar != vm.end()) ? &itVar->second : nullptr;
+
         std::vector<double> gen_counts;
         std::vector<double> rec_counts;
         accumulate_counts_for_period(per,
@@ -1145,7 +1197,7 @@ bool update_acceptance_csv(const std::string& csv_path,
                                      flags,
                                      itG->second,
                                      itR->second,
-                                     cfg,
+                                     pTcut,
                                      gen_counts,
                                      rec_counts);
         gen_all[per] = gen_counts;
