@@ -71,15 +71,15 @@ file_paths = sorted(file_paths, key=hv_sort_key)
 HV_LABELS = [parse_hv_label(p) for p in file_paths]
 color_map = dict(zip(HV_LABELS, plt.cm.tab10(np.linspace(0, 1, len(HV_LABELS)))))
 
-# Fit function: Gaussian + quadratic background
-def gaussian_quadratic(x, a, mu, sigma, b, c, d):
+# Fit function: Gaussian + linear background
+def gaussian_linear(x, a, mu, sigma, b, c):
     gaussian = a * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
-    quadratic = b + c * x + d * x ** 2
-    return gaussian + quadratic
+    linear   = b + c * x
+    return gaussian + linear
 # endif
 
 # Common histogram settings for Mx
-MX_MIN, MX_MAX = 0.95, 1.01
+MX_MIN, MX_MAX = 0.95, 1.00
 MX_NBINS = 80
 
 # Universal selection toggles
@@ -119,7 +119,7 @@ for file_path in file_paths:
             p_theta_deg = np.degrees(p_theta)
 
             # Universal cuts for the combined kinematics display
-            mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
+            mask = (Mx > MX_MIN) & (Mx < MX_MAX)
             if REQ_DETECTOR_1:
                 mask &= (detector == 1)
             # endif
@@ -183,7 +183,7 @@ if len(all_Mx) > 0:
                                        float(np.max(all_e_theta))]],
                                cmap='viridis', norm=colors.LogNorm())
         axes[1, 0].set_xlabel(r'$e_{p}$ (GeV)')
-        axes[1, 0].set_ylabel(r'$e_{\theta}$ (degrees)')
+        axes[1, 0].set_ylabel(r'$e_{\theta}$ (^\circ)')
         axes[1, 0].grid(True, alpha=0.3)
         axes[1, 0].set_title(r'Electron $\theta$ vs Electron Momentum')
         axes[1, 0].set_xlim(2.0, 5.0)
@@ -195,7 +195,7 @@ if len(all_Mx) > 0:
         h3 = axes[1, 1].hist2d(all_p_p, all_p_theta, bins=100,
                                cmap='viridis', norm=colors.LogNorm())
         axes[1, 1].set_xlabel(r'$\pi^{+}_{p}$ (GeV)')
-        axes[1, 1].set_ylabel(r'$\pi^{+}_{\theta}$ (degrees)')
+        axes[1, 1].set_ylabel(r'$\pi^{+}_{\theta}$ (^\circ)')
         axes[1, 1].grid(True, alpha=0.3)
         axes[1, 1].set_title(r'$\pi^{+}$ $\theta$ vs $\pi^{+}$ Momentum')
         plt.colorbar(h3[3], ax=axes[1, 1])
@@ -233,7 +233,7 @@ for path in file_paths:
             Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
             p_theta_deg = np.degrees(p_theta)
 
-            mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
+            mask = (Mx > MX_MIN) & (Mx < MX_MAX)
             if REQ_DETECTOR_1:
                 mask &= (detector == 1)
             # endif
@@ -249,18 +249,19 @@ for path in file_paths:
             hist, edges = np.histogram(data, bins=MX_NBINS, range=(MX_MIN, MX_MAX))
             centers = 0.5 * (edges[:-1] + edges[1:])
 
-            p0 = [float(np.max(hist)), 0.98, 0.02, float(np.min(hist)), 0.0, 0.0]
-            lb = [0.0, MX_MIN, 0.005, -np.inf, -np.inf, -np.inf]
-            ub = [np.inf, MX_MAX, 0.060,  np.inf,  np.inf,  np.inf]
+            # Gaussian + linear initial guesses/bounds
+            p0 = [float(np.max(hist)), 0.975, 0.015, float(np.min(hist)), 0.0]
+            lb = [0.0, MX_MIN, 0.003, -np.inf, -np.inf]
+            ub = [np.inf, MX_MAX, 0.040,  np.inf,  np.inf]
 
             popt, pcov = curve_fit(
-                gaussian_quadratic,
+                gaussian_linear,
                 centers.astype(np.float64),
                 hist.astype(np.float64),
                 p0=p0, bounds=(lb, ub), maxfev=20000
             )
 
-            a, mu, sigma, b, c, d = popt
+            a, mu, sigma, b, c = popt
             sigma_err = float(np.sqrt(abs(pcov[2, 2]))) if np.isfinite(pcov[2, 2]) else np.nan
             mu_err    = float(np.sqrt(abs(pcov[1, 1]))) if np.isfinite(pcov[1, 1]) else np.nan
             a_err     = float(np.sqrt(abs(pcov[0, 0]))) if np.isfinite(pcov[0, 0]) else np.nan
@@ -273,10 +274,11 @@ for path in file_paths:
                      histtype='step', linewidth=1.2, color=color, alpha=0.9)
 
             x_fit = np.linspace(MX_MIN, MX_MAX, 250)
-            y_fit = gaussian_quadratic(x_fit, *popt)
+            y_fit = gaussian_linear(x_fit, *popt)
             (line,) = plt.plot(x_fit, y_fit, color=color, linewidth=2.0)
 
-            label_text = f"{hv}; sigma = {sigma:.4f} +/- {sigma_err:.4f}"
+            # Legend line label with #sigma
+            label_text = rf"{hv}; $\#\sigma = {sigma:.4f} \pm {sigma_err:.4f}$"
             handles.append(line)
             labels.append(label_text)
             any_plotted = True
@@ -300,9 +302,9 @@ for path in file_paths:
 
 plt.xlabel(r'$M_{x}$ (GeV)')
 plt.ylabel('Counts')
-plt.title(r'Missing Mass Distributions with Gaussian + Quadratic Fits')
+plt.title(r'Missing Mass Distributions with Gaussian + Linear Fits')
 plt.grid(True, alpha=0.3)
-plt.xlim(MX_MIN, MX_MAX)  # Force axis to 0.95–1.01
+plt.xlim(MX_MIN, MX_MAX)
 
 if any_plotted:
     plt.legend(handles, labels, loc='upper right', fontsize=9)
@@ -336,156 +338,164 @@ if fit_results:
 # endif
 
 # -----------------------------
-# PART 3: Overlayed Mx by e_theta bins (1x3)
+# PART 3: 2x3 canvas with e_theta (top) and p_theta (bottom), with fits
 # -----------------------------
-print("\nCreating Mx overlays in e_theta bins...")
+print("\nCreating 2x3 binned overlays with fits...")
 
 e_bins = [(12.0, 15.0), (15.0, 20.0), (20.0, 35.0)]  # degrees
-fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), sharey=True)
+p_bins = [(9.0, 16.0), (16.0, 24.0), (24.0, 40.0)]   # degrees
 
-for ibin, (emin, emax) in enumerate(e_bins):
-    ax = axes[ibin]
-    plotted_any = False
-    for path in file_paths:
-        try:
-            with uproot.open(path) as f:
-                if 'PhysicsEvents' not in f:
-                    continue
-                t = f['PhysicsEvents']
+fig, axes = plt.subplots(2, 3, figsize=(18, 9), sharey='row')
 
-                Mx2      = np_branch(t, 'Mx2')
-                e_theta  = np_branch(t, 'e_theta')   # radians
-                p_theta  = np_branch(t, 'p_theta')   # radians
-                detector = np_branch(t, 'detector')
+binned_rows = [
+    ('e_theta', e_bins, 0),
+    ('p_theta', p_bins, 1),
+]
 
-                Mx   = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
-                e_deg = np.degrees(e_theta)
-                p_deg = np.degrees(p_theta)
+binned_sigma_rows = []  # will accumulate rows for the binned CSV
 
-                mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
-                if REQ_DETECTOR_1:
-                    mask &= (detector == 1)
-                # endif
-                if REQ_PTHETA_LT_40:
-                    mask &= (p_deg < 40.0)
-                # endif
-                mask &= (e_deg >= emin) & (e_deg < emax)
+for cat, bins, row in binned_rows:
+    for col, (lo, hi) in enumerate(bins):
+        ax = axes[row, col]
+        handles_loc, labels_loc = [], []
+        any_here = False
 
-                data = Mx[mask]
-                if data.size == 0:
-                    continue
+        for path in file_paths:
+            try:
+                with uproot.open(path) as f:
+                    if 'PhysicsEvents' not in f:
+                        continue
+                    t = f['PhysicsEvents']
 
-                hv = parse_hv_label(path)
-                color = color_map[hv]
-                ax.hist(data, bins=MX_NBINS, range=(MX_MIN, MX_MAX),
-                        histtype='step', linewidth=1.1, color=color, alpha=0.95,
-                        label=hv)
-                plotted_any = True
-            # endwith
-        except Exception:
-            continue
+                    Mx2      = np_branch(t, 'Mx2')
+                    e_theta  = np_branch(t, 'e_theta')   # radians
+                    p_theta  = np_branch(t, 'p_theta')   # radians
+                    detector = np_branch(t, 'detector')
+
+                    Mx   = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
+                    e_deg = np.degrees(e_theta)
+                    p_deg = np.degrees(p_theta)
+
+                    mask = (Mx > MX_MIN) & (Mx < MX_MAX)
+                    if REQ_DETECTOR_1:
+                        mask &= (detector == 1)
+                    # endif
+                    if REQ_PTHETA_LT_40:
+                        mask &= (p_deg < 40.0)
+                    # endif
+
+                    if cat == 'e_theta':
+                        mask &= (e_deg >= lo) & (e_deg < hi)
+                    else:
+                        mask &= (p_deg >= lo) & (p_deg < hi)
+                    # endif
+
+                    data = Mx[mask]
+                    if data.size == 0:
+                        continue
+
+                    hv = parse_hv_label(path)
+                    color = color_map[hv]
+
+                    # Draw histogram
+                    ax.hist(data, bins=MX_NBINS, range=(MX_MIN, MX_MAX),
+                            histtype='step', linewidth=1.1, color=color, alpha=0.95)
+
+                    # Fit (Gaussian + linear)
+                    hist, edges = np.histogram(data, bins=MX_NBINS, range=(MX_MIN, MX_MAX))
+                    centers = 0.5 * (edges[:-1] + edges[1:])
+
+                    p0 = [float(np.max(hist)), 0.975, 0.015, float(np.min(hist)), 0.0]
+                    lb = [0.0, MX_MIN, 0.003, -np.inf, -np.inf]
+                    ub = [np.inf, MX_MAX, 0.040,  np.inf,  np.inf]
+
+                    try:
+                        popt, pcov = curve_fit(
+                            gaussian_linear,
+                            centers.astype(np.float64),
+                            hist.astype(np.float64),
+                            p0=p0, bounds=(lb, ub), maxfev=20000
+                        )
+                        a, mu, sigma, b, c = popt
+                        sigma_err = float(np.sqrt(abs(pcov[2, 2]))) if np.isfinite(pcov[2, 2]) else np.nan
+
+                        x_fit = np.linspace(MX_MIN, MX_MAX, 250)
+                        y_fit = gaussian_linear(x_fit, *popt)
+                        (line,) = ax.plot(x_fit, y_fit, color=color, linewidth=2.0)
+
+                        # Legend label with #sigma
+                        lbl = rf"{hv}; $\#\sigma = {sigma:.4f} \pm {sigma_err:.4f}$"
+                        handles_loc.append(line)
+                        labels_loc.append(lbl)
+                        any_here = True
+
+                        # Save to binned CSV rows (only sigma)
+                        bin_label = f"[{int(lo)},{int(hi)})"
+                        binned_sigma_rows.append({
+                            'Category': 'e_theta' if cat == 'e_theta' else 'p_theta',
+                            'Bin': bin_label,
+                            'HV_Settings': hv,
+                            'Sigma': round(float(sigma), 4)
+                        })
+                    except Exception:
+                        # If fit fails, skip adding curve/legend for this HV/bin
+                        continue
+                    # endif
+                # endwith
+            except Exception:
+                continue
+        # endfor
+
+        ax.set_xlabel(r'$M_{x}$ (GeV)')
+        if col == 0:
+            ax.set_ylabel('Counts')
+        # endif
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(MX_MIN, MX_MAX)
+
+        if cat == 'e_theta':
+            ax.set_title(rf'$e_{{\theta}} \in [{lo:.0f}, {hi:.0f})^\circ$')
+        else:
+            ax.set_title(rf'$p_{{\theta}} \in [{lo:.0f}, {hi:.0f})^\circ$')
+        # endif
+
+        if any_here:
+            ax.legend(handles_loc, labels_loc, loc='upper right', fontsize=8)
+        # endif
     # endfor
-
-    ax.set_xlabel(r'$M_{x}$ (GeV)')
-    if ibin == 0:
-        ax.set_ylabel('Counts')
-    # endif
-    ax.grid(True, alpha=0.3)
-    # Escape LaTeX braces with double {{ }} when using f-strings
-    ax.set_title(rf'$e_{{\theta}} \in [{emin:.0f}, {emax:.0f})^\circ$')
-    ax.set_xlim(MX_MIN, MX_MAX)
 # endfor
 
-# Single legend (outside) using handles from HV order
-handles_leg, labels_leg = [], []
-seen = set()
-for hv in HV_LABELS:
-    if hv not in seen:
-        handles_leg.append(plt.Line2D([], [], color=color_map[hv], lw=2))
-        labels_leg.append(hv)
-        seen.add(hv)
-# endfor
-axes[-1].legend(handles_leg, labels_leg, loc='upper left', bbox_to_anchor=(1.02, 1.0), fontsize=8)
-
-plt.tight_layout(rect=[0, 0, 0.82, 1])
-plt.savefig(os.path.join(OUT_DIR, 'integrated_by_e_theta.png'),
-            dpi=300, bbox_inches='tight')
+plt.tight_layout()
+binned_png = os.path.join(OUT_DIR, 'mx_binned_theta_2x3.png')
+plt.savefig(binned_png, dpi=300, bbox_inches='tight')
 plt.close()
-print(f"Saved {OUT_DIR}/integrated_by_e_theta.png")
+print(f"Saved {binned_png}")
 
-# -----------------------------
-# PART 4: Overlayed Mx by p_theta bins (1x3)
-# -----------------------------
-print("\nCreating Mx overlays in p_theta bins...")
-
-p_bins = [(9.0, 16.0), (16.0, 24.0), (24.0, 40.0)]  # degrees
-fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), sharey=True)
-
-for ibin, (pmin, pmax) in enumerate(p_bins):
-    ax = axes[ibin]
-    for path in file_paths:
-        try:
-            with uproot.open(path) as f:
-                if 'PhysicsEvents' not in f:
-                    continue
-                t = f['PhysicsEvents']
-
-                Mx2      = np_branch(t, 'Mx2')
-                e_theta  = np_branch(t, 'e_theta')   # radians
-                p_theta  = np_branch(t, 'p_theta')   # radians
-                detector = np_branch(t, 'detector')
-
-                Mx   = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
-                e_deg = np.degrees(e_theta)
-                p_deg = np.degrees(p_theta)
-
-                mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
-                if REQ_DETECTOR_1:
-                    mask &= (detector == 1)
-                # endif
-                if REQ_PTHETA_LT_40:
-                    mask &= (p_deg < 40.0)
-                # endif
-                mask &= (p_deg >= pmin) & (p_deg < pmax)
-
-                data = Mx[mask]
-                if data.size == 0:
-                    continue
-
-                hv = parse_hv_label(path)
-                color = color_map[hv]
-                ax.hist(data, bins=MX_NBINS, range=(MX_MIN, MX_MAX),
-                        histtype='step', linewidth=1.1, color=color, alpha=0.95,
-                        label=hv)
-            # endwith
-        except Exception:
-            continue
-    # endfor
-
-    ax.set_xlabel(r'$M_{x}$ (GeV)')
-    if ibin == 0:
-        ax.set_ylabel('Counts')
+# Write binned CSV with only sigma
+if binned_sigma_rows:
+    bdf = pd.DataFrame(binned_sigma_rows)
+    # Sort: by Category (e_theta first), then bin order, then HV with 9,10,10 first
+    cat_order = {'e_theta': 0, 'p_theta': 1}
+    def bin_key(s):
+        # s like "[12,15)"; extract numbers
+        s = s.strip('[]')
+        lo, hi = s.replace(')', '').split(',')
+        return (int(lo), int(hi))
     # endif
-    ax.grid(True, alpha=0.3)
-    ax.set_title(rf'$p_{{\theta}} \in [{pmin:.0f}, {pmax:.0f})^\circ$')
-    ax.set_xlim(MX_MIN, MX_MAX)
-# endfor
+    def hv_key(hv):
+        return (0 if hv == '9,10,10' else 1, hv_tuple(hv), hv)
 
-# Single consolidated legend outside the last subplot
-handles_leg, labels_leg = [], []
-seen = set()
-for hv in HV_LABELS:
-    if hv not in seen:
-        handles_leg.append(plt.Line2D([], [], color=color_map[hv], lw=2))
-        labels_leg.append(hv)
-        seen.add(hv)
-# endfor
-axes[-1].legend(handles_leg, labels_leg, loc='upper left', bbox_to_anchor=(1.02, 1.0), fontsize=8)
-
-plt.tight_layout(rect=[0, 0, 0.82, 1])
-plt.savefig(os.path.join(OUT_DIR, 'integrated_by_p_theta.png'),
-            dpi=300, bbox_inches='tight')
-plt.close()
-print(f"Saved {OUT_DIR}/integrated_by_p_theta.png")
+    bdf = bdf.sort_values(
+        by=['Category', 'Bin', 'HV_Settings'],
+        key=lambda col: (
+            col.map(cat_order) if col.name == 'Category'
+            else col.map(lambda x: bin_key(x)) if col.name == 'Bin'
+            else col.map(hv_key)
+        )
+    )
+    binned_csv = os.path.join(OUT_DIR, 'binned_fit_sigmas.csv')
+    bdf.to_csv(binned_csv, index=False)
+    print(f"Binned sigmas saved to {binned_csv}")
+# endif
 
 print("\nAll tasks completed successfully!")
