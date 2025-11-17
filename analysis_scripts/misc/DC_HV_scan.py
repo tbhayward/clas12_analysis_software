@@ -424,7 +424,7 @@ for cat, bins, row in binned_rows:
                         (line,) = ax.plot(x_fit, y_fit, color=color, linewidth=2.0)
 
                         # Legend label with literal "#sigma"
-                        lbl = f"{hv}; #sigma = {sigma:.4f} +/- {sigma_err:.4f}"
+                        lbl = f"{hv}; \sigma = {sigma:.4f} +/- {sigma_err:.4f}"
                         handles_loc.append(line)
                         labels_loc.append(lbl)
                         any_here = True
