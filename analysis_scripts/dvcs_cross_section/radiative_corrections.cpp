@@ -6,15 +6,26 @@
 //
 // Binning comes from dvcs_pass2_analysis.csv (Lee-style).
 // No exclusivity or 3-sigma cuts (generated MC only).
+// Frad is defined as Born/Rad with global MC normalizations per energy group:
+//   Frad_i = (a_i / N_born) / (b_i / N_rad) = a_i * N_rad / (b_i * N_born)
+//
 // Also produces Frad vs phi canvases per beam energy and xB bin under
 //   output/radiative_correction_plots/10.60
 //   output/radiative_correction_plots/10.2
+//
+// Parallelization:
+//   - 4 worker threads:
+//       (10.6 GeV, Born), (10.6 GeV, Rad),
+//       (10.2 GeV, Born), (10.2 GeV, Rad)
+//   - Each worker loops over its MC trees, accumulates row-wise counts and
+//     a global N_total, then returns. CSV writes and plotting occur only
+//     after all workers complete.
 
 #include "radiative_corrections.h"
 
 #include <TTree.h>
 #include <TCanvas.h>
-#include <TGraphErrors.h>
+#include <TGraphAsymmErrors.h>
 #include <TLatex.h>
 #include <TPad.h>
 #include <TH1.h>
@@ -35,6 +46,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -45,7 +57,7 @@ namespace {
 struct CsvDoc {
     std::vector<std::string> header;
     std::unordered_map<std::string,int> index;
-    std::vector<std::vector<std::string>> rows;
+    std::vector<std::vector<std::string> > rows;
 
     static std::vector<std::string> split_csv_line(const std::string& line) {
         std::vector<std::string> out;
@@ -375,37 +387,14 @@ static int find_row_for_event(double xB,
     return -1;
 }
 
-// Per-cell totals (A = total Born, B = total Rad over phi for that xB,Q2,t cell)
-
-struct CellKey {
-    double xbmin, xbmax;
-    double q2min, q2max;
-    double tmin,  tmax;
-
-    bool operator<(const CellKey& o) const {
-        if (xbmin != o.xbmin) return xbmin < o.xbmin;
-        if (xbmax != o.xbmax) return xbmax < o.xbmax;
-        if (q2min != o.q2min) return q2min < o.q2min;
-        if (q2max != o.q2max) return q2max < o.q2max;
-        if (tmin  != o.tmin)  return tmin  < o.tmin;
-        return tmax < o.tmax;
-    }
-};
-
-struct CellTotals {
-    double A_born;
-    double B_rad;
-    CellTotals() : A_born(0.0), B_rad(0.0) {}
-};
-
 // MC accumulation with progress prints
-
-static void accumulate_counts_for_tree(const std::string& group_label,
-                                       const std::string& tree_label,
-                                       TTree* tree,
-                                       const std::vector<RowBin>& bins,
-                                       const std::vector<bool>& row_has_data,
-                                       std::vector<double>& counts)
+// Returns N_total = total number of entries in this tree (global, not only binned).
+static double accumulate_counts_for_tree(const std::string& group_label,
+                                         const std::string& tree_label,
+                                         TTree* tree,
+                                         const std::vector<RowBin>& bins,
+                                         const std::vector<bool>& row_has_data,
+                                         std::vector<double>& counts)
 {
     if (!tree) {
         std::cerr << "[radcorr] FATAL: null TTree pointer for "
@@ -415,7 +404,9 @@ static void accumulate_counts_for_tree(const std::string& group_label,
 
     const int NR = (int)row_has_data.size();
     if ((int)counts.size() != NR) {
-        counts.assign(NR, 0.0);
+        std::cerr << "[radcorr] FATAL: counts vector size mismatch in accumulate_counts_for_tree "
+                  << "for " << group_label << " (" << tree_label << ").\n";
+        std::exit(EXIT_FAILURE);
     }
 
     const char* br_x    = "x";
@@ -458,7 +449,6 @@ static void accumulate_counts_for_tree(const std::string& group_label,
 
         int row = find_row_for_event(xB, Q2, tAbs, phiD, bins);
         if (row < 0 || row >= NR) {
-            // progress print
             if (N > 0 && next_pct <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)N;
                 while (pct >= (double)next_pct && next_pct <= 100) {
@@ -508,16 +498,19 @@ static void accumulate_counts_for_tree(const std::string& group_label,
               << ", tree " << tree_label
               << ": total entries = " << (long long)N
               << " ; binned (with group-data flag) = " << (long long)used << "\n";
+
+    return (double)N;
 }
 
-// Fill one Frad column for a given energy group.
+// Fill one Frad column for a given energy group using global N_born, N_rad.
 static bool fill_frad_for_group(const std::string& group_label,
                                 const std::string& frad_col_name,
                                 CsvDoc& csv,
-                                const std::vector<RowBin>& bins,
                                 const std::vector<bool>& row_has_data,
                                 const std::vector<double>& born_counts,
-                                const std::vector<double>& rad_counts)
+                                const std::vector<double>& rad_counts,
+                                double N_born,
+                                double N_rad)
 {
     const int NR = csv.nrows();
     if ((int)row_has_data.size() != NR ||
@@ -528,6 +521,13 @@ static bool fill_frad_for_group(const std::string& group_label,
         return false;
     }
 
+    if (N_born <= 0.0 || N_rad <= 0.0) {
+        std::cerr << "[radcorr] FATAL: non-positive global N_born or N_rad in fill_frad_for_group for "
+                  << group_label << " (N_born=" << N_born
+                  << ", N_rad=" << N_rad << ").\n";
+        return false;
+    }
+
     const int c_frad = csv.col_index(frad_col_name);
     if (c_frad < 0) {
         std::cerr << "[radcorr] FATAL: missing Frad column '"
@@ -535,80 +535,34 @@ static bool fill_frad_for_group(const std::string& group_label,
         return false;
     }
 
-    // Build per-cell totals A (Born) and B (Rad)
-    std::map<CellKey, CellTotals> cell_totals;
-
-    for (std::size_t i = 0; i < bins.size(); ++i) {
-        const RowBin& b = bins[i];
-        const int r = b.row_index;
-        if (r < 0 || r >= NR) continue;
-        if (!row_has_data[r]) continue;
-
-        CellKey key;
-        key.xbmin = b.xbmin;
-        key.xbmax = b.xbmax;
-        key.q2min = b.q2min;
-        key.q2max = b.q2max;
-        key.tmin  = b.tmin;
-        key.tmax  = b.tmax;
-
-        CellTotals& ct = cell_totals[key];
-        ct.A_born += born_counts[r];
-        ct.B_rad  += rad_counts[r];
-    }
-
     std::size_t cells_written = 0;
 
-    for (std::size_t i = 0; i < bins.size(); ++i) {
-        const RowBin& b = bins[i];
-        const int r = b.row_index;
-        if (r < 0 || r >= NR) continue;
+    for (int r = 0; r < NR; ++r) {
         if (!row_has_data[r]) continue;
 
-        CellKey key;
-        key.xbmin = b.xbmin;
-        key.xbmax = b.xbmax;
-        key.q2min = b.q2min;
-        key.q2max = b.q2max;
-        key.tmin  = b.tmin;
-        key.tmax  = b.tmax;
-
-        std::map<CellKey,CellTotals>::const_iterator itCell = cell_totals.find(key);
-        if (itCell == cell_totals.end()) continue;
-
-        const CellTotals& ct = itCell->second;
-        const double A = ct.A_born;
-        const double B = ct.B_rad;
-
         const double a = born_counts[r];
-        const double b_rad = rad_counts[r];
+        const double b = rad_counts[r];
 
-        double RC = 1.0;
-        double sRC = 0.0;
-
-        if (A > 0.0 && B > 0.0 && a > 0.0 && b_rad > 0.0) {
-            RC = (a * B) / (b_rad * A);
-            double inv_a   = 1.0 / std::max(a,   1.0);
-            double inv_A   = 1.0 / std::max(A,   1.0);
-            double inv_b   = 1.0 / std::max(b_rad, 1.0);
-            double inv_B   = 1.0 / std::max(B,   1.0);
-            double var_rel = inv_a + inv_A + inv_b + inv_B;
-            if (var_rel > 0.0) {
-                sRC = RC * std::sqrt(var_rel);
-            } else {
-                sRC = 0.0;
-            }
-        } else if (A > 0.0 && B > 0.0) {
-            RC = 1.0;
-            sRC = 0.0;
-        } else {
-            // No information in this cell; leave CSV entry empty
+        if (a <= 0.0 || b <= 0.0) {
+            // No usable information in this row
             continue;
         }
 
-        if (!std::isfinite(RC)) RC = 1.0;
-        if (RC < 0.0) RC = 0.0;
-        if (RC > 2.0) RC = 2.0;
+        const double RC = (a * N_rad) / (b * N_born); // Born/Rad with global norms
+
+        if (!std::isfinite(RC)) {
+            // Do not store NaN or inf
+            continue;
+        }
+
+        double rel_var = 0.0;
+        const double a_eff = std::max(a, 1.0);
+        const double b_eff = std::max(b, 1.0);
+        rel_var = 1.0 / a_eff + 1.0 / b_eff;
+        double sRC = 0.0;
+        if (rel_var > 0.0) {
+            sRC = std::fabs(RC) * std::sqrt(rel_var);
+        }
 
         csv.rows[r][c_frad] = format_triple(RC, sRC, 0.0);
         ++cells_written;
@@ -616,7 +570,9 @@ static bool fill_frad_for_group(const std::string& group_label,
 
     std::cout << "[radcorr] Group " << group_label
               << ": filled Frad column '" << frad_col_name
-              << "' ; cells written: " << cells_written << "\n";
+              << "' with global N_born=" << N_born
+              << " N_rad=" << N_rad
+              << " ; cells written: " << cells_written << "\n";
 
     return true;
 }
@@ -624,10 +580,11 @@ static bool fill_frad_for_group(const std::string& group_label,
 // plotting
 
 struct CellData {
-    std::vector<double> X;
-    std::vector<double> Y;
-    std::vector<double> EX;
-    std::vector<double> EY;
+    std::vector<double> X;    // phi position (deg)
+    std::vector<double> Y;    // Frad
+    std::vector<double> EXL;  // left x error (deg)
+    std::vector<double> EXH;  // right x error (deg)
+    std::vector<double> EY;   // y error (stat, symmetric)
     std::vector<double> q2means;
     std::vector<double> tmeans;
 };
@@ -748,7 +705,8 @@ static void draw_radiative_canvases(const std::string& group_label,
         const int H = 260 * nrows + 240;
 
         std::vector<CellData> cells(nrows * ncols);
-        double canvas_max = 0.0;
+        double canvas_max = -std::numeric_limits<double>::infinity();
+        double canvas_min =  std::numeric_limits<double>::infinity();
 
         std::vector<double> xbmeans;
         for (int r = 0; r < csv.nrows(); ++r) {
@@ -798,7 +756,9 @@ static void draw_radiative_canvases(const std::string& group_label,
 
                 CellData& C = cells[rr * ncols + cc];
                 C.X.reserve(rows_for_cell.size());
-                C.EX.assign(rows_for_cell.size(), 0.0);
+                C.EXL.reserve(rows_for_cell.size());
+                C.EXH.reserve(rows_for_cell.size());
+                C.EY.reserve(rows_for_cell.size());
 
                 for (std::size_t k = 0; k < rows_for_cell.size(); ++k) {
                     int r = rows_for_cell[k];
@@ -826,10 +786,19 @@ static void draw_radiative_canvases(const std::string& group_label,
                         frad_stat = 0.0;
                     }
 
+                    if (!std::isfinite(frad_val)) continue;
+
+                    // Horizontal errors: asymmetric, to show full bin width around phiavg.
+                    double exl = xphi - pmin;
+                    double exh = pmax - xphi;
+                    if (exl < 0.0) exl = 0.0;
+                    if (exh < 0.0) exh = 0.0;
+
                     C.X.push_back(xphi);
                     C.Y.push_back(frad_val);
                     C.EY.push_back(frad_stat);
-                    C.EX.push_back(0.0);
+                    C.EXL.push_back(exl);
+                    C.EXH.push_back(exh);
 
                     const double q2m = (c_q2avg >= 0)
                         ? csv.as_double(r, c_q2avg)
@@ -840,12 +809,32 @@ static void draw_radiative_canvases(const std::string& group_label,
                     C.q2means.push_back(q2m);
                     C.tmeans.push_back(tm);
 
-                    if (std::isfinite(frad_val)) {
-                        if (frad_val > canvas_max) canvas_max = frad_val;
-                    }
+                    if (frad_val > canvas_max) canvas_max = frad_val;
+                    if (frad_val < canvas_min) canvas_min = frad_val;
                 }
             }
         }
+
+        // If no points for this xB, skip.
+        if (!std::isfinite(canvas_max) || !std::isfinite(canvas_min)) {
+            continue;
+        }
+
+        // Build common y-range for all pads on this xB canvas.
+        double y_min = canvas_min;
+        double y_max = canvas_max;
+
+        if (y_min == y_max) {
+            double base = (y_min == 0.0) ? 1.0 : std::fabs(y_min);
+            y_min -= 0.1 * base;
+            y_max += 0.1 * base;
+        }
+
+        double span = y_max - y_min;
+        if (span <= 0.0) span = 1.0;
+        double pad = 0.15 * span;
+        double y_lo = y_min - pad;
+        double y_hi = y_max + pad;
 
         std::ostringstream cname;
         cname << "c_frad_" << energy_dir << "_xB_"
@@ -868,16 +857,13 @@ static void draw_radiative_canvases(const std::string& group_label,
                             group_label.c_str(),
                             xb_mean_for_title));
 
-        const double y_lo = 0.0;
-        const double y_hi = std::max(1.0, canvas_max * 1.15);
-
         for (int rr = 0; rr < nrows; ++rr) {
             for (int cc = 0; cc < ncols; ++cc) {
                 pGrid->cd(rr * ncols + cc + 1);
                 gPad->SetGrid(1, 1);
                 gPad->SetTopMargin(0.24);
                 gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.125);
+                gPad->SetLeftMargin(0.160);
                 gPad->SetRightMargin(0.07);
                 gPad->SetTickx(1);
                 gPad->SetTicky(1);
@@ -901,12 +887,15 @@ static void draw_radiative_canvases(const std::string& group_label,
                     continue;
                 }
 
-                TGraphErrors* gfrad = new TGraphErrors(
+                TGraphAsymmErrors* gfrad = new TGraphAsymmErrors(
                     (int)C.X.size(),
                     (double*)C.X.data(),
                     (double*)C.Y.data(),
-                    (double*)C.EX.data(),
-                    (double*)C.EY.data());
+                    (double*)C.EXL.data(),
+                    (double*)C.EXH.data(),
+                    (double*)C.EY.data(),   // EY low
+                    (double*)C.EY.data()    // EY high (symmetric)
+                );
 
                 gfrad->SetMarkerStyle(20);
                 gfrad->SetMarkerColor(kBlack);
@@ -955,6 +944,59 @@ struct RCGroup {
     std::string energy_dir;   // "10.60" or "10.2"
     std::vector<McPair> mc_pairs;
 };
+
+struct GroupAccum {
+    std::vector<double> born_counts;
+    std::vector<double> rad_counts;
+    double N_born;
+    double N_rad;
+    GroupAccum() : N_born(0.0), N_rad(0.0) {}
+};
+
+// Worker function for a single (group, type) pair.
+// isBorn == true  -> use genMcTrees (Born), fill born_counts and N_born.
+// isBorn == false -> use radGenMcTrees (Rad), fill rad_counts and N_rad.
+static void accumulate_group_type(const RCGroup& G,
+                                  const std::vector<RowBin>& bins,
+                                  const std::vector<bool>& row_has_data,
+                                  const std::map<std::string, TTree*>& treeMap,
+                                  bool isBorn,
+                                  std::vector<double>& counts_out,
+                                  double& Ntotal_out)
+{
+    const std::string type_label = isBorn ? "Born" : "Rad";
+    const int NR = (int)row_has_data.size();
+
+    counts_out.assign(NR, 0.0);
+    Ntotal_out = 0.0;
+
+    for (std::size_t ip = 0; ip < G.mc_pairs.size(); ++ip) {
+        const McPair& P = G.mc_pairs[ip];
+        const std::string tag = isBorn ? P.bornTag : P.radTag;
+
+        std::map<std::string,TTree*>::const_iterator itT = treeMap.find(tag);
+        if (itT == treeMap.end()) {
+            std::cerr << "[radcorr] FATAL: missing MC tree with tag '"
+                      << tag << "' for group " << G.label
+                      << " (" << type_label << ", period " << P.period_label << ").\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        TTree* tree = itT->second;
+        const std::string tree_label = P.period_label + " " + type_label;
+
+        double N_here = accumulate_counts_for_tree(G.label,
+                                                   tree_label,
+                                                   tree,
+                                                   bins,
+                                                   row_has_data,
+                                                   counts_out);
+        Ntotal_out += N_here;
+    }
+
+    std::cout << "[radcorr] Group " << G.label << " " << type_label
+              << ": global N_total (all periods) = " << Ntotal_out << "\n";
+}
 
 } // end anonymous namespace
 
@@ -1012,79 +1054,145 @@ bool update_radiative_corrections_csv(
     groups.push_back(g10p6);
     groups.push_back(g10p2);
 
+    // Pre-check: ensure all required trees exist before launching threads.
     for (std::size_t ig = 0; ig < groups.size(); ++ig) {
         const RCGroup& G = groups[ig];
-
-        std::cout << "[radcorr] Processing group " << G.label << "\n";
-
-        std::vector<bool> row_has_data = build_row_has_data(csv, G.xbavg_col);
-        const int NR = csv.nrows();
-
-        std::vector<double> born_counts(NR, 0.0);
-        std::vector<double> rad_counts (NR, 0.0);
-
-        bool any_pair_ok = false;
-
         for (std::size_t ip = 0; ip < G.mc_pairs.size(); ++ip) {
             const McPair& P = G.mc_pairs[ip];
-
-            std::map<std::string,TTree*>::const_iterator itB = genMcTrees.find(P.bornTag);
-            std::map<std::string,TTree*>::const_iterator itR = radGenMcTrees.find(P.radTag);
-
-            if (itB == genMcTrees.end() || itR == radGenMcTrees.end()) {
-                std::cerr << "[radcorr] FATAL: missing MC tree(s) for group "
-                          << G.label << " period " << P.period_label
-                          << " (expected tags: born=" << P.bornTag
-                          << " rad=" << P.radTag << ").\n";
+            if (genMcTrees.find(P.bornTag) == genMcTrees.end()) {
+                std::cerr << "[radcorr] FATAL: missing Born MC tree with tag '"
+                          << P.bornTag << "' for group " << G.label
+                          << " (period " << P.period_label << ").\n";
                 return false;
             }
-
-            any_pair_ok = true;
-
-            accumulate_counts_for_tree(G.label,
-                                       P.period_label + " Born",
-                                       itB->second,
-                                       bins,
-                                       row_has_data,
-                                       born_counts);
-
-            accumulate_counts_for_tree(G.label,
-                                       P.period_label + " Rad",
-                                       itR->second,
-                                       bins,
-                                       row_has_data,
-                                       rad_counts);
+            if (radGenMcTrees.find(P.radTag) == radGenMcTrees.end()) {
+                std::cerr << "[radcorr] FATAL: missing Rad MC tree with tag '"
+                          << P.radTag << "' for group " << G.label
+                          << " (period " << P.period_label << ").\n";
+                return false;
+            }
         }
-
-        if (!any_pair_ok) {
-            std::cerr << "[radcorr] FATAL: no valid MC pairs for group "
-                      << G.label << ".\n";
-            return false;
-        }
-
-        if (!fill_frad_for_group(G.label,
-                                 G.frad_col,
-                                 csv,
-                                 bins,
-                                 row_has_data,
-                                 born_counts,
-                                 rad_counts)) {
-            std::cerr << "[radcorr] ERROR: fill_frad_for_group failed for "
-                      << G.label << ".\n";
-            return false;
-        }
-
-        draw_radiative_canvases(G.label,
-                                G.xbavg_col,
-                                G.phiavg_col,
-                                G.q2avg_col,
-                                G.tabavg_col,
-                                G.frad_col,
-                                csv,
-                                row_has_data,
-                                out_root_dir,
-                                G.energy_dir);
     }
+
+    // Enable ROOT thread safety for concurrent TTree access.
+    ROOT::EnableThreadSafety();
+
+    // Build row_has_data for each group (decides where we compute Frad).
+    std::vector<bool> row_has_data_10p6 = build_row_has_data(csv, g10p6.xbavg_col);
+    std::vector<bool> row_has_data_10p2 = build_row_has_data(csv, g10p2.xbavg_col);
+
+    const int NR = csv.nrows();
+    (void)NR;
+
+    GroupAccum acc10p6;
+    GroupAccum acc10p2;
+
+    // Launch 4 worker threads:
+    //   - 10.6 GeV Born
+    //   - 10.6 GeV Rad
+    //   - 10.2 GeV Born
+    //   - 10.2 GeV Rad
+
+    std::thread t_10p6_born(
+        accumulate_group_type,
+        std::cref(g10p6),
+        std::cref(bins),
+        std::cref(row_has_data_10p6),
+        std::cref(genMcTrees),
+        true,
+        std::ref(acc10p6.born_counts),
+        std::ref(acc10p6.N_born)
+    );
+
+    std::thread t_10p6_rad(
+        accumulate_group_type,
+        std::cref(g10p6),
+        std::cref(bins),
+        std::cref(row_has_data_10p6),
+        std::cref(radGenMcTrees),
+        false,
+        std::ref(acc10p6.rad_counts),
+        std::ref(acc10p6.N_rad)
+    );
+
+    std::thread t_10p2_born(
+        accumulate_group_type,
+        std::cref(g10p2),
+        std::cref(bins),
+        std::cref(row_has_data_10p2),
+        std::cref(genMcTrees),
+        true,
+        std::ref(acc10p2.born_counts),
+        std::ref(acc10p2.N_born)
+    );
+
+    std::thread t_10p2_rad(
+        accumulate_group_type,
+        std::cref(g10p2),
+        std::cref(bins),
+        std::cref(row_has_data_10p2),
+        std::cref(radGenMcTrees),
+        false,
+        std::ref(acc10p2.rad_counts),
+        std::ref(acc10p2.N_rad)
+    );
+
+    // Wait for all workers to finish before touching CSV or producing plots.
+    t_10p6_born.join();
+    t_10p6_rad.join();
+    t_10p2_born.join();
+    t_10p2_rad.join();
+
+    // Now fill Frad columns and draw plots in the main thread.
+
+    if (!fill_frad_for_group(g10p6.label,
+                             g10p6.frad_col,
+                             csv,
+                             row_has_data_10p6,
+                             acc10p6.born_counts,
+                             acc10p6.rad_counts,
+                             acc10p6.N_born,
+                             acc10p6.N_rad)) {
+        std::cerr << "[radcorr] ERROR: fill_frad_for_group failed for "
+                  << g10p6.label << ".\n";
+        return false;
+    }
+
+    if (!fill_frad_for_group(g10p2.label,
+                             g10p2.frad_col,
+                             csv,
+                             row_has_data_10p2,
+                             acc10p2.born_counts,
+                             acc10p2.rad_counts,
+                             acc10p2.N_born,
+                             acc10p2.N_rad)) {
+        std::cerr << "[radcorr] ERROR: fill_frad_for_group failed for "
+                  << g10p2.label << ".\n";
+        return false;
+    }
+
+    // Draw canvases (sequential, no threads).
+    draw_radiative_canvases(g10p6.label,
+                            g10p6.xbavg_col,
+                            g10p6.phiavg_col,
+                            g10p6.q2avg_col,
+                            g10p6.tabavg_col,
+                            g10p6.frad_col,
+                            csv,
+                            row_has_data_10p6,
+                            out_root_dir,
+                            g10p6.energy_dir);
+
+    draw_radiative_canvases(g10p2.label,
+                            g10p2.xbavg_col,
+                            g10p2.phiavg_col,
+                            g10p2.q2avg_col,
+                            g10p2.tabavg_col,
+                            g10p2.frad_col,
+                            csv,
+                            row_has_data_10p2,
+                            out_root_dir,
+                            g10p2.energy_dir);
 
     if (!csv.save_atomic(csv_path)) {
         std::cerr << "[radcorr] ERROR: failed to save updated CSV.\n";
