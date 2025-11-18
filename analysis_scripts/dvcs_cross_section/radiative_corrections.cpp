@@ -524,7 +524,32 @@ static bool fill_frad_for_group(const std::string& group_label,
         return false;
     }
 
+    // Column indices for kinematic bin edges (for debug printing).
+    const int c_xb_min  = csv.col_index("xBmin");
+    const int c_xb_max  = csv.col_index("xBmax");
+    const int c_q2_min  = csv.col_index("Q2min");
+    const int c_q2_max  = csv.col_index("Q2max");
+    const int c_tab_min = csv.col_index("t_abs_min");
+    const int c_tab_max = csv.col_index("t_abs_max");
+    const int c_phi_min = csv.col_index("phimin");
+    const int c_phi_max = csv.col_index("phimax");
+
+    if (c_xb_min < 0 || c_xb_max < 0 ||
+        c_q2_min < 0 || c_q2_max < 0 ||
+        c_tab_min < 0 || c_tab_max < 0 ||
+        c_phi_min < 0 || c_phi_max < 0) {
+        std::cerr << "[radcorr] FATAL: missing bin-edge columns in fill_frad_for_group for "
+                  << group_label << ".\n";
+        return false;
+    }
+
     std::size_t cells_written = 0;
+    int debug_printed = 0;
+    const int debug_limit = 20;
+
+    std::cout << "[radcorr] Debug: per-bin Frad construction for group "
+              << group_label << " (up to " << debug_limit << " bins):\n";
+    std::cout << std::fixed << std::setprecision(4);
 
     for (int r = 0; r < NR; ++r) {
         if (!row_has_data[r]) continue;
@@ -551,6 +576,32 @@ static bool fill_frad_for_group(const std::string& group_label,
         double sRC = 0.0;
         if (rel_var > 0.0) {
             sRC = std::fabs(RC) * std::sqrt(rel_var);
+        }
+
+        // Debug print for the first debug_limit bins where we actually write Frad.
+        if (debug_printed < debug_limit) {
+            const double xbmin  = csv.as_double(r, c_xb_min);
+            const double xbmax  = csv.as_double(r, c_xb_max);
+            const double q2min  = csv.as_double(r, c_q2_min);
+            const double q2max  = csv.as_double(r, c_q2_max);
+            const double tmin   = csv.as_double(r, c_tab_min);
+            const double tmax   = csv.as_double(r, c_tab_max);
+            const double phimin = csv.as_double(r, c_phi_min);
+            const double phimax = csv.as_double(r, c_phi_max);
+
+            std::cout << "[radcorr]   row " << r
+                      << " : xB=[" << xbmin << "," << xbmax << "]"
+                      << " Q2=[" << q2min << "," << q2max << "]"
+                      << " |t|=[" << tmin << "," << tmax << "]"
+                      << " phi=[" << phimin << "," << phimax << "]"
+                      << " ; a=" << a
+                      << " b=" << b
+                      << " N_born=" << N_born
+                      << " N_rad=" << N_rad
+                      << " => Frad=" << RC
+                      << " +/- " << sRC
+                      << "\n";
+            ++debug_printed;
         }
 
         csv.rows[r][c_frad] = format_triple(RC, sRC, 0.0);
