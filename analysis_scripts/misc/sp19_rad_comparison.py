@@ -5,30 +5,40 @@ import sys
 import ROOT
 
 
-def fill_hist_from_tree(tree, hist, branch_name, max_events=None, label=""):
-    """Loop over a TTree and fill a histogram with -t1, with -t<1 cut.
+def fill_three_hists_from_tree(tree,
+                               h_x, h_q2, h_t,
+                               max_events=None,
+                               label=""):
+    """
+    Fill x, Q2, and -t1 histograms from a TTree, applying -t1 < 1.0 cut.
 
     Parameters
     ----------
     tree : ROOT.TTree
-        Input tree.
-    hist : ROOT.TH1
-        Histogram to fill.
-    branch_name : str
-        Name of the branch to read (e.g. 't1').
+        Input tree (PhysicsEvents).
+    h_x : ROOT.TH1
+        Histogram for x.
+    h_q2 : ROOT.TH1
+        Histogram for Q2.
+    h_t : ROOT.TH1
+        Histogram for -t1.
     max_events : int or None
-        If not None, cap the number of entries processed at this value.
+        If not None, cap the number of entries processed.
     label : str
-        Label for debug printouts (e.g. 'gen_born').
+        Label for debug printouts.
     """
-    # Make sure branch/leaf exists
-    leaf = tree.GetLeaf(branch_name)
-    if not leaf:
-        raise RuntimeError(
-            "Leaf/branch '{0}' not found in tree '{1}'".format(
-                branch_name, tree.GetName()
-            )
-        )
+    leaf_t1 = tree.GetLeaf("t1")
+    leaf_x  = tree.GetLeaf("x")
+    leaf_q2 = tree.GetLeaf("Q2")
+
+    if not leaf_t1:
+        raise RuntimeError("Leaf 't1' not found in tree '{0}'".format(tree.GetName()))
+    #endif
+    if not leaf_x:
+        raise RuntimeError("Leaf 'x' not found in tree '{0}'".format(tree.GetName()))
+    #endif
+    if not leaf_q2:
+        raise RuntimeError("Leaf 'Q2' not found in tree '{0}'".format(tree.GetName()))
     #endif
 
     n_entries_total = tree.GetEntries()
@@ -38,52 +48,42 @@ def fill_hist_from_tree(tree, hist, branch_name, max_events=None, label=""):
         n_entries = n_entries_total
     #endif
 
-    print("[{0}] Filling histogram '{1}' from branch '{2}' with up to {3} entries "
-          "(tree has {4})"
-          .format(label, hist.GetName(), branch_name, n_entries, n_entries_total))
+    print("[{0}] Filling hists from tree '{1}' with up to {2} entries (tree has {3})"
+          .format(label, tree.GetName(), n_entries, n_entries_total))
 
-    debug_print_limit = 10
-    debug_values = []
+    debug_limit = 10
+    debug_triplets = []
 
-    vmin = None
-    vmax = None
     n_kept = 0
 
     for i in range(n_entries):
         tree.GetEntry(i)
-        # Read the branch value and negate it: we plot -t1
-        t_val = float(leaf.GetValue())
-        value = -t_val  # this is -t1
 
-        # Apply cut: -t < 1.0 (and also require value >= 0 just in case)
-        if value < 0.0 or value >= 1.0:
+        t_raw = float(leaf_t1.GetValue())
+        t_minus = -t_raw    # -t1
+
+        # Apply -t < 1.0 cut, and require -t >= 0
+        if t_minus < 0.0 or t_minus >= 1.0:
             continue
         #endif
 
-        hist.Fill(value)
+        x_val  = float(leaf_x.GetValue())
+        q2_val = float(leaf_q2.GetValue())
+
+        # Fill histograms (ranges are set by histogram binning)
+        h_t.Fill(t_minus)
+        h_x.Fill(x_val)
+        h_q2.Fill(q2_val)
         n_kept += 1
 
-        if len(debug_values) < debug_print_limit:
-            debug_values.append(value)
-        #endif
-
-        if vmin is None or value < vmin:
-            vmin = value
-        #endif
-        if vmax is None or value > vmax:
-            vmax = value
+        if len(debug_triplets) < debug_limit:
+            debug_triplets.append((x_val, q2_val, t_minus))
         #endif
     #endfor
 
     print("[{0}] Kept {1} events after -t<1 cut".format(label, n_kept))
-    print("[{0}] First {1} filled -{2} values (after cut): {3}"
-          .format(label, len(debug_values), branch_name, debug_values))
-    if n_kept > 0:
-        print("[{0}] Min(-{1})={2:.6g}, Max(-{1})={3:.6g}"
-              .format(label, branch_name, vmin, vmax))
-    else:
-        print("[{0}] WARNING: no events passed the -t<1 cut".format(label))
-    #endif
+    print("[{0}] First {1} (x, Q2, -t1) triplets after cut: {2}"
+          .format(label, len(debug_triplets), debug_triplets))
 #enddef
 
 
@@ -148,55 +148,109 @@ def main():
         raise RuntimeError("One or more 'PhysicsEvents' trees could not be found.")
     #endif
 
-    # Histogram settings: -t in [0,1)
-    nbins = 100
-    x_min = 0.0
-    x_max = 1.0
+    # Histogram settings
+    nbins_x  = 100
+    nbins_q2 = 100
+    nbins_t  = 100
+
+    x_min, x_max     = 0.0, 1.0
+    q2_min, q2_max   = 1.0, 8.0
+    t_min, t_max     = 0.0, 1.0   # -t1 range
 
     # Generated MC histograms
-    h_gen_born = ROOT.TH1D("h_gen_born", "Generated MC; -t1 (GeV^{2}); Normalized counts", nbins, x_min, x_max)
-    h_gen_rad  = ROOT.TH1D("h_gen_rad",  "Generated MC; -t1 (GeV^{2}); Normalized counts", nbins, x_min, x_max)
+    h_gen_born_x  = ROOT.TH1D("h_gen_born_x",  "Generated MC; x; Normalized counts", nbins_x,  x_min,  x_max)
+    h_gen_rad_x   = ROOT.TH1D("h_gen_rad_x",   "Generated MC; x; Normalized counts", nbins_x,  x_min,  x_max)
+
+    h_gen_born_q2 = ROOT.TH1D("h_gen_born_q2", "Generated MC; Q^{2} (GeV^{2}); Normalized counts", nbins_q2, q2_min, q2_max)
+    h_gen_rad_q2  = ROOT.TH1D("h_gen_rad_q2",  "Generated MC; Q^{2} (GeV^{2}); Normalized counts", nbins_q2, q2_min, q2_max)
+
+    h_gen_born_t  = ROOT.TH1D("h_gen_born_t",  "Generated MC; -t1 (GeV^{2}); Normalized counts", nbins_t,  t_min,  t_max)
+    h_gen_rad_t   = ROOT.TH1D("h_gen_rad_t",   "Generated MC; -t1 (GeV^{2}); Normalized counts", nbins_t,  t_min,  t_max)
 
     # Reconstructed MC histograms
-    h_rec_born = ROOT.TH1D("h_rec_born", "Reconstructed MC; -t1 (GeV^{2}); Normalized counts", nbins, x_min, x_max)
-    h_rec_rad  = ROOT.TH1D("h_rec_rad",  "Reconstructed MC; -t1 (GeV^{2}); Normalized counts", nbins, x_min, x_max)
+    h_rec_born_x  = ROOT.TH1D("h_rec_born_x",  "Reconstructed MC; x; Normalized counts", nbins_x,  x_min,  x_max)
+    h_rec_rad_x   = ROOT.TH1D("h_rec_rad_x",   "Reconstructed MC; x; Normalized counts", nbins_x,  x_min,  x_max)
+
+    h_rec_born_q2 = ROOT.TH1D("h_rec_born_q2", "Reconstructed MC; Q^{2} (GeV^{2}); Normalized counts", nbins_q2, q2_min, q2_max)
+    h_rec_rad_q2  = ROOT.TH1D("h_rec_rad_q2",  "Reconstructed MC; Q^{2} (GeV^{2}); Normalized counts", nbins_q2, q2_min, q2_max)
+
+    h_rec_born_t  = ROOT.TH1D("h_rec_born_t",  "Reconstructed MC; -t1 (GeV^{2}); Normalized counts", nbins_t,  t_min,  t_max)
+    h_rec_rad_t   = ROOT.TH1D("h_rec_rad_t",   "Reconstructed MC; -t1 (GeV^{2}); Normalized counts", nbins_t,  t_min,  t_max)
 
     # Style
-    for h in (h_gen_born, h_gen_rad, h_rec_born, h_rec_rad):
+    all_hists = [
+        h_gen_born_x, h_gen_rad_x, h_gen_born_q2, h_gen_rad_q2, h_gen_born_t, h_gen_rad_t,
+        h_rec_born_x, h_rec_rad_x, h_rec_born_q2, h_rec_rad_q2, h_rec_born_t, h_rec_rad_t
+    ]
+    for h in all_hists:
         h.SetStats(0)
     #endfor
 
-    h_gen_born.SetLineColor(ROOT.kBlack)
-    h_gen_born.SetLineWidth(2)
-    h_gen_rad.SetLineColor(ROOT.kRed)
-    h_gen_rad.SetLineWidth(2)
+    # Colors: Born black, Rad red
+    for h in (h_gen_born_x, h_gen_born_q2, h_gen_born_t,
+              h_rec_born_x, h_rec_born_q2, h_rec_born_t):
+        h.SetLineColor(ROOT.kBlack)
+        h.SetLineWidth(2)
+    #endfor
+    for h in (h_gen_rad_x, h_gen_rad_q2, h_gen_rad_t,
+              h_rec_rad_x, h_rec_rad_q2, h_rec_rad_t):
+        h.SetLineColor(ROOT.kRed)
+        h.SetLineWidth(2)
+    #endfor
 
-    h_rec_born.SetLineColor(ROOT.kBlack)
-    h_rec_born.SetLineWidth(2)
-    h_rec_rad.SetLineColor(ROOT.kRed)
-    h_rec_rad.SetLineWidth(2)
-
-    # Fill histograms (with optional max_events cap), printing debugging info
-    fill_hist_from_tree(t_gen_born, h_gen_born, "t1", max_events=max_events, label="gen_born")
-    fill_hist_from_tree(t_gen_rad,  h_gen_rad,  "t1", max_events=max_events, label="gen_rad")
-    fill_hist_from_tree(t_rec_born, h_rec_born, "t1", max_events=max_events, label="rec_born")
-    fill_hist_from_tree(t_rec_rad,  h_rec_rad,  "t1", max_events=max_events, label="rec_rad")
+    # Fill histograms from each tree
+    fill_three_hists_from_tree(t_gen_born,
+                               h_gen_born_x, h_gen_born_q2, h_gen_born_t,
+                               max_events=max_events,
+                               label="gen_born")
+    fill_three_hists_from_tree(t_gen_rad,
+                               h_gen_rad_x, h_gen_rad_q2, h_gen_rad_t,
+                               max_events=max_events,
+                               label="gen_rad")
+    fill_three_hists_from_tree(t_rec_born,
+                               h_rec_born_x, h_rec_born_q2, h_rec_born_t,
+                               max_events=max_events,
+                               label="rec_born")
+    fill_three_hists_from_tree(t_rec_rad,
+                               h_rec_rad_x, h_rec_rad_q2, h_rec_rad_t,
+                               max_events=max_events,
+                               label="rec_rad")
 
     # Summaries before normalization
-    summarize_hist(h_gen_born, "gen_born (before norm)")
-    summarize_hist(h_gen_rad,  "gen_rad (before norm)")
-    summarize_hist(h_rec_born, "rec_born (before norm)")
-    summarize_hist(h_rec_rad,  "rec_rad (before norm)")
-
-    # Normalize to unit area so shapes can be compared
     for h, label in (
-        (h_gen_born, "gen_born"),
-        (h_gen_rad,  "gen_rad"),
-        (h_rec_born, "rec_born"),
-        (h_rec_rad,  "rec_rad"),
+        (h_gen_born_x,  "gen_born_x (before norm)"),
+        (h_gen_rad_x,   "gen_rad_x (before norm)"),
+        (h_gen_born_q2, "gen_born_q2 (before norm)"),
+        (h_gen_rad_q2,  "gen_rad_q2 (before norm)"),
+        (h_gen_born_t,  "gen_born_t (before norm)"),
+        (h_gen_rad_t,   "gen_rad_t (before norm)"),
+        (h_rec_born_x,  "rec_born_x (before norm)"),
+        (h_rec_rad_x,   "rec_rad_x (before norm)"),
+        (h_rec_born_q2, "rec_born_q2 (before norm)"),
+        (h_rec_rad_q2,  "rec_rad_q2 (before norm)"),
+        (h_rec_born_t,  "rec_born_t (before norm)"),
+        (h_rec_rad_t,   "rec_rad_t (before norm)"),
+    ):
+        summarize_hist(h, label)
+    #endfor
+
+    # Normalize each histogram to unit area
+    for h, label in (
+        (h_gen_born_x,  "gen_born_x"),
+        (h_gen_rad_x,   "gen_rad_x"),
+        (h_gen_born_q2, "gen_born_q2"),
+        (h_gen_rad_q2,  "gen_rad_q2"),
+        (h_gen_born_t,  "gen_born_t"),
+        (h_gen_rad_t,   "gen_rad_t"),
+        (h_rec_born_x,  "rec_born_x"),
+        (h_rec_rad_x,   "rec_rad_x"),
+        (h_rec_born_q2, "rec_born_q2"),
+        (h_rec_rad_q2,  "rec_rad_q2"),
+        (h_rec_born_t,  "rec_born_t"),
+        (h_rec_rad_t,   "rec_rad_t"),
     ):
         integral = h.Integral()
-        if integral > 0:
+        if integral > 0.0:
             h.Scale(1.0 / integral)
         #endif
         summarize_hist(h, label + " (after norm)")
@@ -208,49 +262,126 @@ def main():
         os.makedirs(out_dir)
     #endif
 
-    # Canvas: 1x2
-    c = ROOT.TCanvas("c_sp19_rad_comparison", "sp19_rad_comparison", 1200, 600)
-    c.Divide(2, 1)
+    # Canvas: 3 rows (x, Q2, t), 2 columns (gen, rec)
+    c = ROOT.TCanvas("c_sp19_rad_comparison", "sp19_rad_comparison", 1200, 900)
+    c.Divide(2, 3)
 
-    # Left pad: generated MC
+    # ---------- Row 1: x ----------
+    # Left: generated
     c.cd(1)
     ROOT.gPad.SetGrid()
-    h_gen_born.SetTitle("Generated MC")
-    # Set y range based on max of the two generated histograms
-    gen_max = max(h_gen_born.GetMaximum(), h_gen_rad.GetMaximum())
-    if gen_max > 0:
-        h_gen_born.SetMinimum(0.0)
-        h_gen_born.SetMaximum(1.1 * gen_max)
+    h_gen_born_x.SetTitle("Generated MC")
+    max_x_gen = max(h_gen_born_x.GetMaximum(), h_gen_rad_x.GetMaximum())
+    if max_x_gen > 0.0:
+        h_gen_born_x.SetMinimum(0.0)
+        h_gen_born_x.SetMaximum(1.1 * max_x_gen)
     #endif
-    h_gen_born.Draw("HIST")
-    h_gen_rad.Draw("HIST SAME")
+    h_gen_born_x.Draw("HIST")
+    h_gen_rad_x.Draw("HIST SAME")
 
-    leg1 = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
-    leg1.SetBorderSize(0)
-    leg1.SetFillStyle(0)
-    leg1.AddEntry(h_gen_born, "Born", "l")
-    leg1.AddEntry(h_gen_rad,  "Rad",  "l")
-    leg1.Draw()
+    leg_x_gen = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
+    leg_x_gen.SetBorderSize(0)
+    leg_x_gen.SetFillStyle(0)
+    leg_x_gen.AddEntry(h_gen_born_x, "Born", "l")
+    leg_x_gen.AddEntry(h_gen_rad_x,  "Rad",  "l")
+    leg_x_gen.Draw()
 
-    # Right pad: reconstructed MC
+    # Right: reconstructed
     c.cd(2)
     ROOT.gPad.SetGrid()
-    h_rec_born.SetTitle("Reconstructed MC")
-    # Set y range based on max of the two reconstructed histograms
-    rec_max = max(h_rec_born.GetMaximum(), h_rec_rad.GetMaximum())
-    if rec_max > 0:
-        h_rec_born.SetMinimum(0.0)
-        h_rec_born.SetMaximum(1.1 * rec_max)
+    h_rec_born_x.SetTitle("Reconstructed MC")
+    max_x_rec = max(h_rec_born_x.GetMaximum(), h_rec_rad_x.GetMaximum())
+    if max_x_rec > 0.0:
+        h_rec_born_x.SetMinimum(0.0)
+        h_rec_born_x.SetMaximum(1.1 * max_x_rec)
     #endif
-    h_rec_born.Draw("HIST")
-    h_rec_rad.Draw("HIST SAME")
+    h_rec_born_x.Draw("HIST")
+    h_rec_rad_x.Draw("HIST SAME")
 
-    leg2 = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
-    leg2.SetBorderSize(0)
-    leg2.SetFillStyle(0)
-    leg2.AddEntry(h_rec_born, "Born", "l")
-    leg2.AddEntry(h_rec_rad,  "Rad",  "l")
-    leg2.Draw()
+    leg_x_rec = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
+    leg_x_rec.SetBorderSize(0)
+    leg_x_rec.SetFillStyle(0)
+    leg_x_rec.AddEntry(h_rec_born_x, "Born", "l")
+    leg_x_rec.AddEntry(h_rec_rad_x,  "Rad",  "l")
+    leg_x_rec.Draw()
+
+    # ---------- Row 2: Q2 ----------
+    # Left: generated
+    c.cd(3)
+    ROOT.gPad.SetGrid()
+    h_gen_born_q2.SetTitle("Generated MC")
+    max_q2_gen = max(h_gen_born_q2.GetMaximum(), h_gen_rad_q2.GetMaximum())
+    if max_q2_gen > 0.0:
+        h_gen_born_q2.SetMinimum(0.0)
+        h_gen_born_q2.SetMaximum(1.1 * max_q2_gen)
+    #endif
+    h_gen_born_q2.Draw("HIST")
+    h_gen_rad_q2.Draw("HIST SAME")
+
+    leg_q2_gen = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
+    leg_q2_gen.SetBorderSize(0)
+    leg_q2_gen.SetFillStyle(0)
+    leg_q2_gen.AddEntry(h_gen_born_q2, "Born", "l")
+    leg_q2_gen.AddEntry(h_gen_rad_q2,  "Rad",  "l")
+    leg_q2_gen.Draw()
+
+    # Right: reconstructed
+    c.cd(4)
+    ROOT.gPad.SetGrid()
+    h_rec_born_q2.SetTitle("Reconstructed MC")
+    max_q2_rec = max(h_rec_born_q2.GetMaximum(), h_rec_rad_q2.GetMaximum())
+    if max_q2_rec > 0.0:
+        h_rec_born_q2.SetMinimum(0.0)
+        h_rec_born_q2.SetMaximum(1.1 * max_q2_rec)
+    #endif
+    h_rec_born_q2.Draw("HIST")
+    h_rec_rad_q2.Draw("HIST SAME")
+
+    leg_q2_rec = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
+    leg_q2_rec.SetBorderSize(0)
+    leg_q2_rec.SetFillStyle(0)
+    leg_q2_rec.AddEntry(h_rec_born_q2, "Born", "l")
+    leg_q2_rec.AddEntry(h_rec_rad_q2,  "Rad",  "l")
+    leg_q2_rec.Draw()
+
+    # ---------- Row 3: -t1 ----------
+    # Left: generated
+    c.cd(5)
+    ROOT.gPad.SetGrid()
+    h_gen_born_t.SetTitle("Generated MC")
+    max_t_gen = max(h_gen_born_t.GetMaximum(), h_gen_rad_t.GetMaximum())
+    if max_t_gen > 0.0:
+        h_gen_born_t.SetMinimum(0.0)
+        h_gen_born_t.SetMaximum(1.1 * max_t_gen)
+    #endif
+    h_gen_born_t.Draw("HIST")
+    h_gen_rad_t.Draw("HIST SAME")
+
+    leg_t_gen = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
+    leg_t_gen.SetBorderSize(0)
+    leg_t_gen.SetFillStyle(0)
+    leg_t_gen.AddEntry(h_gen_born_t, "Born", "l")
+    leg_t_gen.AddEntry(h_gen_rad_t,  "Rad",  "l")
+    leg_t_gen.Draw()
+
+    # Right: reconstructed
+    c.cd(6)
+    ROOT.gPad.SetGrid()
+    h_rec_born_t.SetTitle("Reconstructed MC")
+    max_t_rec = max(h_rec_born_t.GetMaximum(), h_rec_rad_t.GetMaximum())
+    if max_t_rec > 0.0:
+        h_rec_born_t.SetMinimum(0.0)
+        h_rec_born_t.SetMaximum(1.1 * max_t_rec)
+    #endif
+    h_rec_born_t.Draw("HIST")
+    h_rec_rad_t.Draw("HIST SAME")
+
+    leg_t_rec = ROOT.TLegend(0.60, 0.70, 0.88, 0.88)
+    leg_t_rec.SetBorderSize(0)
+    leg_t_rec.SetFillStyle(0)
+    leg_t_rec.AddEntry(h_rec_born_t, "Born", "l")
+    leg_t_rec.AddEntry(h_rec_rad_t,  "Rad",  "l")
+    leg_t_rec.Draw()
 
     # Save output
     out_path = os.path.join(out_dir, "sp19_rad_comparison.png")
