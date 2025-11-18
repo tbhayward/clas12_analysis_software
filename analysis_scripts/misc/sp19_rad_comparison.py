@@ -6,7 +6,7 @@ import ROOT
 
 
 def fill_hist_from_tree(tree, hist, branch_name, max_events=None, label=""):
-    """Loop over a TTree and fill a histogram with -t1.
+    """Loop over a TTree and fill a histogram with -t1, with -t<1 cut.
 
     Parameters
     ----------
@@ -31,27 +31,39 @@ def fill_hist_from_tree(tree, hist, branch_name, max_events=None, label=""):
         )
     #endif
 
-    n_entries = tree.GetEntries()
+    n_entries_total = tree.GetEntries()
     if max_events is not None and max_events > 0:
-        n_entries = min(n_entries, max_events)
+        n_entries = min(n_entries_total, max_events)
+    else:
+        n_entries = n_entries_total
     #endif
 
-    print("[{0}] Filling histogram '{1}' from branch '{2}' with {3} entries"
-          .format(label, hist.GetName(), branch_name, n_entries))
+    print("[{0}] Filling histogram '{1}' from branch '{2}' with up to {3} entries "
+          "(tree has {4})"
+          .format(label, hist.GetName(), branch_name, n_entries, n_entries_total))
 
     debug_print_limit = 10
     debug_values = []
 
     vmin = None
     vmax = None
+    n_kept = 0
 
     for i in range(n_entries):
         tree.GetEntry(i)
-        # Read the branch value from the leaf and negate it: we plot -t1
-        value = -float(leaf.GetValue())
-        hist.Fill(value)
+        # Read the branch value and negate it: we plot -t1
+        t_val = float(leaf.GetValue())
+        value = -t_val  # this is -t1
 
-        if i < debug_print_limit:
+        # Apply cut: -t < 1.0 (and also require value >= 0 just in case)
+        if value < 0.0 or value >= 1.0:
+            continue
+        #endif
+
+        hist.Fill(value)
+        n_kept += 1
+
+        if len(debug_values) < debug_print_limit:
             debug_values.append(value)
         #endif
 
@@ -63,10 +75,15 @@ def fill_hist_from_tree(tree, hist, branch_name, max_events=None, label=""):
         #endif
     #endfor
 
-    print("[{0}] First {1} filled -{2} values: {3}"
+    print("[{0}] Kept {1} events after -t<1 cut".format(label, n_kept))
+    print("[{0}] First {1} filled -{2} values (after cut): {3}"
           .format(label, len(debug_values), branch_name, debug_values))
-    print("[{0}] Min(-{1})={2:.6g}, Max(-{1})={3:.6g}"
-          .format(label, branch_name, vmin, vmax))
+    if n_kept > 0:
+        print("[{0}] Min(-{1})={2:.6g}, Max(-{1})={3:.6g}"
+              .format(label, branch_name, vmin, vmax))
+    else:
+        print("[{0}] WARNING: no events passed the -t<1 cut".format(label))
+    #endif
 #enddef
 
 
@@ -131,10 +148,10 @@ def main():
         raise RuntimeError("One or more 'PhysicsEvents' trees could not be found.")
     #endif
 
-    # Histogram settings
+    # Histogram settings: -t in [0,1)
     nbins = 100
     x_min = 0.0
-    x_max = 2.0
+    x_max = 1.0
 
     # Generated MC histograms
     h_gen_born = ROOT.TH1D("h_gen_born", "Generated MC; -t1 (GeV^{2}); Normalized counts", nbins, x_min, x_max)
@@ -199,6 +216,12 @@ def main():
     c.cd(1)
     ROOT.gPad.SetGrid()
     h_gen_born.SetTitle("Generated MC")
+    # Set y range based on max of the two generated histograms
+    gen_max = max(h_gen_born.GetMaximum(), h_gen_rad.GetMaximum())
+    if gen_max > 0:
+        h_gen_born.SetMinimum(0.0)
+        h_gen_born.SetMaximum(1.1 * gen_max)
+    #endif
     h_gen_born.Draw("HIST")
     h_gen_rad.Draw("HIST SAME")
 
@@ -213,6 +236,12 @@ def main():
     c.cd(2)
     ROOT.gPad.SetGrid()
     h_rec_born.SetTitle("Reconstructed MC")
+    # Set y range based on max of the two reconstructed histograms
+    rec_max = max(h_rec_born.GetMaximum(), h_rec_rad.GetMaximum())
+    if rec_max > 0:
+        h_rec_born.SetMinimum(0.0)
+        h_rec_born.SetMaximum(1.1 * rec_max)
+    #endif
     h_rec_born.Draw("HIST")
     h_rec_rad.Draw("HIST SAME")
 
