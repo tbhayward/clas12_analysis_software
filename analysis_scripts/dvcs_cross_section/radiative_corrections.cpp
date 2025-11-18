@@ -463,20 +463,9 @@ static double accumulate_counts_for_tree(const std::string& group_label,
             continue;
         }
 
-        if (!row_has_data[row]) {
-            if (N > 0 && next_pct <= 100) {
-                double pct = 100.0 * (double)(i + 1) / (double)N;
-                while (pct >= (double)next_pct && next_pct <= 100) {
-                    std::cout << "[radcorr] Group " << group_label
-                              << ", tree " << tree_label
-                              << " progress: " << (double)next_pct << "% ("
-                              << (long long)(i + 1) << "/"
-                              << (long long)N << ")\n";
-                    next_pct += 10;
-                }
-            }
-            continue;
-        }
+        // NOTE: we *no longer* gate on row_has_data[row] here.
+        // Generator MC should be counted for any analysis bin, regardless of
+        // whether that energy group has reconstructed data in that bin.
 
         counts[row] += 1.0;
         ++used;
@@ -497,7 +486,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     std::cout << "[radcorr] Group " << group_label
               << ", tree " << tree_label
               << ": total entries = " << (long long)N
-              << " ; binned (with group-data flag) = " << (long long)used << "\n";
+              << " ; binned (any DVCS bin) = " << (long long)used << "\n";
 
     return (double)N;
 }
