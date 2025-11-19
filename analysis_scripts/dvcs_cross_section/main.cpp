@@ -256,37 +256,42 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Bin-centering corrections (Fbin) ----------
+    // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
     {
-        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        // Make a dedicated backup before Fbin modifications
+        // Make a dedicated backup before modifying Fbin columns.
         try {
             std::filesystem::copy_file(
                 csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_fbin.csv",
+                "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
                 std::filesystem::copy_options::overwrite_existing
             );
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_fbin.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: could not back up CSV for Fbin: "
-                      << e.what() << "\n";
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
+        } catch (const std::exception& ex) {
+            std::cerr << "[main] WARNING: failed to create bin-centering backup: "
+                      << ex.what() << "\n";
         }
 
-        ModelPaths model_paths; // use defaults / env (DVCSGEN_PATH, KM15_CLI)
-
-        const int  n_substeps    = 3;   // 3x3x3x3 grid in (xB,Q2,|t|,phi) per row
-        const bool vgg_globalfit = false;
+        ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
+        const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
+        const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
 
         if (!update_bin_centering_corrections_csv(
                 csv_main,
-                "output",
-                n_substeps,
+                n_steps,
                 model_paths,
-                vgg_globalfit)) {
-            std::cerr << "[main] ERROR: update_bin_centering_corrections_csv failed.\n";
+                vgg_globalfit,
+                ModelChoice::Both)) {
+            std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
             return 1;
         }
+
+        // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
+        // Uses Fbin triples and phiavg columns from the updated CSV.
+        plot_bin_centering_fbin_vs_phi(
+            csv_main,
+            "output/bin_volume");
     }
 
 
