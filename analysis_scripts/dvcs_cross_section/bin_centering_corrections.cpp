@@ -1,6 +1,7 @@
 #include "bin_centering_corrections.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -93,6 +94,7 @@ struct CsvDoc {
     }
 
     bool load(const std::string& path) {
+        std::cout << "[bincenter] Loading CSV: " << path << "\n";
         std::ifstream fin(path.c_str());
         if (!fin.is_open()) {
             std::cerr << "[bincenter] ERROR: cannot open CSV: " << path << "\n";
@@ -108,18 +110,23 @@ struct CsvDoc {
         for (int i = 0; i < (int)header.size(); ++i) {
             index[header[i]] = i;
         }
+        std::cout << "[bincenter] Header has " << header.size() << " columns.\n";
         rows.clear();
+        int n_read = 0;
         while (std::getline(fin, line)) {
             if (line.empty()) continue;
             rows.push_back(split_csv_line(line));
+            ++n_read;
         }
         for (std::size_t r = 0; r < rows.size(); ++r) {
             rows[r].resize(header.size());
         }
+        std::cout << "[bincenter] Loaded " << n_read << " data rows.\n";
         return true;
     }
 
     bool save_atomic(const std::string& path) const {
+        std::cout << "[bincenter] Saving updated CSV (atomic write) to: " << path << "\n";
         const std::string tmp = path + ".tmp";
         {
             std::ofstream fout(tmp.c_str());
@@ -144,6 +151,8 @@ struct CsvDoc {
         std::error_code ec;
         fs::rename(tmp, path, ec);
         if (ec) {
+            std::cerr << "[bincenter] First rename attempt failed (" << ec.message()
+                      << "), trying to remove target and retry.\n";
             std::remove(path.c_str());
             fs::rename(tmp, path, ec);
             if (ec) {
@@ -152,6 +161,7 @@ struct CsvDoc {
                 return false;
             }
         }
+        std::cout << "[bincenter] CSV save complete.\n";
         return true;
     }
 
@@ -251,6 +261,7 @@ build_row_has_data(const CsvDoc& csv, const std::string& xbavg_col_name) {
     }
 
     std::vector<bool> flags(NR, false);
+    int count_true = 0;
     for (int r = 0; r < NR; ++r) {
         const std::string& cell = csv.rows[r][c];
         if (cell.empty()) {
@@ -259,7 +270,10 @@ build_row_has_data(const CsvDoc& csv, const std::string& xbavg_col_name) {
             double v = CsvDoc::to_double(cell);
             flags[r] = std::isfinite(v);
         }
+        if (flags[r]) ++count_true;
     }
+    std::cout << "[bincenter] Rows with non-empty '" << xbavg_col_name
+              << "': " << count_true << " / " << NR << "\n";
     return flags;
 }
 
@@ -500,13 +514,23 @@ bool update_bin_centering_corrections_csv(
     bool vgg_globalfit,
     ModelChoice model_choice)
 {
+    std::cout << "============================================================\n";
+    std::cout << "[bincenter] Starting bin-centering corrections.\n";
+    std::cout << "[bincenter] Input CSV: " << csv_path << "\n";
+    std::cout << "[bincenter] n_steps (per dimension) = " << n_steps
+              << " (total model calls per row per model ~ n_steps^4)\n";
+    std::cout << "[bincenter] Model choice = "
+              << (model_choice == ModelChoice::Both ? "Both"
+                  : (model_choice == ModelChoice::VGGOnly ? "VGGOnly" : "KM15Only"))
+              << ", vgg_globalfit = " << (vgg_globalfit ? "true" : "false") << "\n";
+
     const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
     const uintmax_t size_before =
         fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
 
-    std::cout << "[bincenter] CSV: " << csv_abs
-              << " (size=" << size_before << ")\n";
+    std::cout << "[bincenter] CSV absolute path: " << csv_abs
+              << " (size = " << size_before << " bytes)\n";
 
     if (n_steps < 2) {
         std::cerr << "[bincenter] FATAL: n_steps must be >= 2 (got "
@@ -525,6 +549,7 @@ bool update_bin_centering_corrections_csv(
         std::cerr << "[bincenter] FATAL: CSV has no data rows.\n";
         return false;
     }
+    std::cout << "[bincenter] Total rows to inspect: " << NR << "\n";
 
     // Bin-edge columns (must exist).
     const int c_xb_min  = csv.col_index("xBmin");
@@ -597,6 +622,8 @@ bool update_bin_centering_corrections_csv(
         return false;
     }
 
+    std::cout << "[bincenter] All required columns found. Building row masks...\n";
+
     // Determine which rows actually carry data for each group,
     // based on whether xBavg column is populated.
     std::vector<bool> row_has_data_10p6 = build_row_has_data(csv, col_xbavg_10p6);
@@ -619,6 +646,11 @@ bool update_bin_centering_corrections_csv(
 
     const double Ebeam_10p6 = 10.6;
     const double Ebeam_10p2 = 10.2;
+
+    std::cout << "[bincenter] Beam energies: 10.6 GeV and 10.2 GeV.\n";
+    std::cout << "[bincenter] Beginning Fbin computation over all rows...\n";
+
+    std::atomic<int> processed_rows(0);
 
     // Parallel loop over rows. For each row, we may compute 10.6, 10.2, both, or neither.
 #pragma omp parallel for schedule(dynamic)
@@ -676,7 +708,19 @@ bool update_bin_centering_corrections_csv(
 
             res_10p2[r] = fr;
         }
+
+        int done = processed_rows.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (done % 50 == 0 || done == NR) {
+#pragma omp critical
+            {
+                std::cout << "[bincenter] Progress: " << done << " / " << NR
+                          << " rows processed.\n";
+            }
+        }
     } // end parallel for
+
+    std::cout << "[bincenter] Finished Fbin model evaluations for all rows.\n";
+    std::cout << "[bincenter] Writing results back into CSV columns...\n";
 
     // Fill CSV with Fbin triples.
     std::size_t write_10p6 = 0;
@@ -695,6 +739,9 @@ bool update_bin_centering_corrections_csv(
         }
     }
 
+    std::cout << "[bincenter] Rows with valid Fbin, 10.6 GeV: " << write_10p6 << "\n";
+    std::cout << "[bincenter] Rows with valid Fbin, 10.2 GeV: " << write_10p2 << "\n";
+
     if (!csv.save_atomic(csv_path)) {
         std::cerr << "[bincenter] ERROR: failed to save updated CSV.\n";
         return false;
@@ -703,11 +750,10 @@ bool update_bin_centering_corrections_csv(
     const uintmax_t size_after =
         fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
 
-    std::cout << "[bincenter] Wrote Fbin for 10.6 GeV in " << write_10p6
-              << " rows and for 10.2 GeV in " << write_10p2 << " rows.\n";
     std::cout << "[bincenter] Updated CSV: " << csv_abs
-              << " (size " << size_before << " -> " << size_after << ")\n";
+              << " (size " << size_before << " -> " << size_after << " bytes)\n";
     std::cout << "[bincenter] Bin-centering corrections complete.\n";
+    std::cout << "============================================================\n";
 
     return true;
 }
@@ -719,6 +765,11 @@ void plot_bin_centering_fbin_vs_phi(
     const std::string& csv_path,
     const std::string& out_root_dir)
 {
+    std::cout << "============================================================\n";
+    std::cout << "[bincenter-plot] Starting Fbin vs phi debug plot generation.\n";
+    std::cout << "[bincenter-plot] CSV: " << csv_path << "\n";
+    std::cout << "[bincenter-plot] Output root directory: " << out_root_dir << "\n";
+
     CsvDoc csv;
     if (!csv.load(csv_path)) {
         std::cerr << "[bincenter-plot] ERROR: failed to load CSV: "
@@ -787,10 +838,20 @@ void plot_bin_centering_fbin_vs_phi(
     fs::create_directories(dir_10p6, ec);
     fs::create_directories(dir_10p2, ec);
 
+    if (ec) {
+        std::cerr << "[bincenter-plot] WARNING: error while creating directories: "
+                  << ec.message() << "\n";
+    }
+
     // Unique ranges for xB, Q2, t.
     std::vector<std::pair<double,double> > xb_ranges  = gather_unique_ranges(csv, c_xb_min,  c_xb_max);
     std::vector<std::pair<double,double> > q2_ranges  = gather_unique_ranges(csv, c_q2_min,  c_q2_max);
     std::vector<std::pair<double,double> > t_ranges   = gather_unique_ranges(csv, c_tab_min, c_tab_max);
+
+    std::cout << "[bincenter-plot] Found "
+              << xb_ranges.size() << " xB ranges, "
+              << q2_ranges.size() << " Q2 ranges, "
+              << t_ranges.size()  << " t ranges.\n";
 
     if (xb_ranges.empty() || q2_ranges.empty() || t_ranges.empty()) {
         std::cerr << "[bincenter-plot] No non-empty (xB,Q2,t) ranges found.\n";
@@ -805,15 +866,17 @@ void plot_bin_centering_fbin_vs_phi(
     gStyle->SetLabelFont(42, "XYZ");
     gStyle->SetTextFont(42);
 
-    auto build_row_has_data = [&](const std::string& col_name)->std::vector<bool> {
+    auto build_row_has_data_local = [&](const std::string& col_name)->std::vector<bool> {
         if (csv.col_index(col_name) < 0) {
+            std::cout << "[bincenter-plot] Column '" << col_name
+                      << "' not found; treating all rows as empty for this group.\n";
             return std::vector<bool>(NR, false);
         }
         return ::build_row_has_data(csv, col_name);
     };
 
-    std::vector<bool> row_has_data_10p6 = build_row_has_data(col_xbavg_10p6);
-    std::vector<bool> row_has_data_10p2 = build_row_has_data(col_xbavg_10p2);
+    std::vector<bool> row_has_data_10p6 = build_row_has_data_local(col_xbavg_10p6);
+    std::vector<bool> row_has_data_10p2 = build_row_has_data_local(col_xbavg_10p2);
 
     // Make a helper lambda that, for a given energy group, makes canvases
     // for all xB ranges and saves them under a given directory.
@@ -826,8 +889,17 @@ void plot_bin_centering_fbin_vs_phi(
             const std::vector<bool>& row_has_data)
     {
         if (c_xbavg < 0 || c_phiavg < 0 || c_fbin < 0) {
+            std::cout << "[bincenter-plot] Skipping energy " << energy_label
+                      << " GeV: required columns not present.\n";
             return;
         }
+
+        std::cout << "[bincenter-plot] ------------------------------------------------------------\n";
+        std::cout << "[bincenter-plot] Building Fbin vs phi plots for energy " << energy_label
+                  << " GeV.\n";
+
+        int canvases_made = 0;
+        int pads_with_data = 0;
 
         // For each xB range, we build a canvas of Q2 (columns) vs t (rows).
         for (std::size_t ix = 0; ix < xb_ranges.size(); ++ix) {
@@ -871,6 +943,12 @@ void plot_bin_centering_fbin_vs_phi(
             const int ncols = (int)q2_slice.size();
             const int nrows = (int)t_slice.size();
 
+            std::cout << "[bincenter-plot] Energy " << energy_label
+                      << " GeV, xB bin index " << ix
+                      << " with xB in [" << xb.first << ", " << xb.second
+                      << "]: Q2 bins = " << ncols
+                      << ", t bins = " << nrows << ".\n";
+
             // Determine y-range over all Fbin values in this xB bin.
             double fmin = std::numeric_limits<double>::infinity();
             double fmax = 0.0;
@@ -895,7 +973,7 @@ void plot_bin_centering_fbin_vs_phi(
             }
 
             if (!std::isfinite(fmin) || fmax <= 0.0) {
-                // No valid Fbin in this xB bin for this energy.
+                std::cout << "[bincenter-plot]   No valid Fbin values in this xB bin; skipping canvas.\n";
                 continue;
             }
 
@@ -906,6 +984,10 @@ void plot_bin_centering_fbin_vs_phi(
                 ymin = 0.8;
                 ymax = 1.2;
             }
+
+            std::cout << "[bincenter-plot]   Global Fbin range in this xB bin: ["
+                      << fmin << ", " << fmax << "], frame y-range = ["
+                      << ymin << ", " << ymax << "].\n";
 
             // Canvas dimensions: consistent with your other modules.
             const int W = 300 * ncols + 160;
@@ -1029,6 +1111,8 @@ void plot_bin_centering_fbin_vs_phi(
                         continue;
                     }
 
+                    ++pads_with_data;
+
                     TGraphAsymmErrors* gr =
                         new TGraphAsymmErrors((int)vx.size(),
                                               vx.data(), vy.data(),
@@ -1069,8 +1153,14 @@ void plot_bin_centering_fbin_vs_phi(
             fname << "Fbin_vs_phi_" << energy_label << "_xB_" << ix << ".png";
             const fs::path outP = out_dir / fname.str();
             c->SaveAs(outP.string().c_str());
+            ++canvases_made;
+            std::cout << "[bincenter-plot]   Saved canvas: " << outP.string() << "\n";
             delete c;
         } // ix
+
+        std::cout << "[bincenter-plot] Finished energy " << energy_label
+                  << " GeV: " << canvases_made << " canvases with "
+                  << pads_with_data << " non-empty pads.\n";
     };
 
     // Make plots for 10.6 GeV and 10.2 GeV.
@@ -1084,4 +1174,5 @@ void plot_bin_centering_fbin_vs_phi(
 
     std::cout << "[bincenter-plot] Finished Fbin vs phi debug plots into "
               << out_root_dir << "/10.60 and /10.2\n";
+    std::cout << "============================================================\n";
 }
