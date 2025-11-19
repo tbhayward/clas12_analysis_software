@@ -22,40 +22,72 @@
 
 import sys
 import math
+import warnings
+
+# Suppress the noisy RuntimeWarnings (invalid value in sqrt, etc.)
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 try:
     import gepard as g
     from gepard.fits import th_KM15
 except Exception:
+    # If KM15 is not available, just return 0.0 so the caller can fall back.
     print("0.0")
     sys.exit(0)
 
-def km15_value(xB, Q2, t_pos, phi_deg, Ebeam, helicity):
-    t_km15     = -abs(t_pos)
-    phi_rad    = math.radians(phi_deg)
-    phi_trento = math.pi - phi_rad
 
-    pt = g.DataPoint(
-        xB        = xB,
-        t         = t_km15,
-        Q2        = Q2,
-        phi       = phi_trento,
-        observable= "XS",
-        frame     = "trento",
-        process   = "ep2epgamma",
-        exptype   = "fixed target",
-        in1energy = Ebeam,
-        in1charge = -1,
-        in1polarization = helicity  # -1, 0, +1
-    )
-    pt.prepare()
-    return th_KM15.predict(pt)
+def km15_value(xB, Q2, t_pos, phi_deg, Ebeam, helicity):
+    """
+    Safe wrapper around KM15 prediction.
+    Returns 0.0 if KM15 gives a non-finite or negative value, or if
+    the kinematics are obviously unphysical.
+    """
+    try:
+        # Quick sanity checks to avoid clearly unphysical calls.
+        if not (0.0 < xB < 1.0):
+            return 0.0
+        if Q2 <= 0.0:
+            return 0.0
+        if t_pos <= 0.0:
+            return 0.0
+
+        t_km15     = -abs(t_pos)
+        phi_rad    = math.radians(phi_deg)
+        phi_trento = math.pi - phi_rad
+
+        pt = g.DataPoint(
+            xB        = xB,
+            t         = t_km15,
+            Q2        = Q2,
+            phi       = phi_trento,
+            observable= "XS",
+            frame     = "trento",
+            process   = "ep2epgamma",
+            exptype   = "fixed target",
+            in1energy = Ebeam,
+            in1charge = -1,
+            in1polarization = helicity  # -1, 0, +1
+        )
+        pt.prepare()
+
+        # Compute prediction
+        val = th_KM15.predict(pt)
+
+        # Guard against NaN, inf, or negative values
+        if not math.isfinite(val) or val <= 0.0:
+            return 0.0
+
+        return val
+    except Exception:
+        return 0.0
 #enddef
+
 
 def main():
     if len(sys.argv) < 7:
         print("0.0")
         return
+
     try:
         xB      = float(sys.argv[1])
         Q2      = float(sys.argv[2])
@@ -77,14 +109,21 @@ def main():
             sp = km15_value(xB, Q2, t_pos, phi_deg, Ebeam, +1)
             sm = km15_value(xB, Q2, t_pos, phi_deg, Ebeam, -1)
             val = sp - sm
+            # Even here, make sure final value is finite
+            if not math.isfinite(val):
+                val = 0.0
             print(f"{val:.12g}")
             return
-        # default: total cross section for requested helicity
+
+        # Default: total cross section for requested helicity
         val = km15_value(xB, Q2, t_pos, phi_deg, Ebeam, helicity)
+        if not math.isfinite(val):
+            val = 0.0
         print(f"{val:.12g}")
     except Exception:
         print("0.0")
 #enddef
+
 
 if __name__ == "__main__":
     main()
