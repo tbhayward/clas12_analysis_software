@@ -233,25 +233,58 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Kinematic bin volumes into CSV + plots ----------
-    {
-        const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string out_root_dir = "output";
+    // // --------- Kinematic bin volumes into CSV + plots ----------
+    // {
+    //     const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string out_root_dir = "output";
 
-        // Make a backup specific to the bin-volume step
+    //     // Make a backup specific to the bin-volume step
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
+    //                   << e.what() << "\n";
+    //     }
+
+    //     if (!update_bin_volume_csv(csv_main, out_root_dir)) {
+    //         std::cerr << "[main] ERROR: bin_volume step failed.\n";
+    //         return 1;
+    //     }
+    // }
+
+    // --------- Bin-centering corrections (Fbin) ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+
+        // Make a dedicated backup before Fbin modifications
         try {
             std::filesystem::copy_file(
                 csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
+                "output/csvs/dvcs_pass2_analysis_backup_fbin.csv",
                 std::filesystem::copy_options::overwrite_existing
             );
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_fbin.csv\n";
         } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
+            std::cerr << "[main] WARNING: could not back up CSV for Fbin: "
                       << e.what() << "\n";
         }
 
-        if (!update_bin_volume_csv(csv_main, out_root_dir)) {
-            std::cerr << "[main] ERROR: bin_volume step failed.\n";
+        ModelPaths model_paths; // use defaults / env (DVCSGEN_PATH, KM15_CLI)
+
+        const int  n_substeps    = 3;   // 3x3x3x3 grid in (xB,Q2,|t|,phi) per row
+        const bool vgg_globalfit = false;
+
+        if (!update_bin_centering_corrections_csv(
+                csv_main,
+                "output",
+                n_substeps,
+                model_paths,
+                vgg_globalfit)) {
+            std::cerr << "[main] ERROR: update_bin_centering_corrections_csv failed.\n";
             return 1;
         }
     }

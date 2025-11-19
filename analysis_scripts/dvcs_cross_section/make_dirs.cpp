@@ -44,6 +44,8 @@ void makeOutputDirs() {
             {"10.60","10.2"}},
         {"output/bin_volume",
             {"10.60","10.2"}},
+        {"output/bin_centering_plots",
+            {"10.60","10.2"}},
         // {"output/pi0_corrected_counts",
         //     {"sp18_inb","sp18_out","fa18_inb_supplemental",
         //      "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},

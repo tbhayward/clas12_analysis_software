@@ -1,692 +1,724 @@
+// bin_centering_corrections.cpp
+// --------------------------------------------
+// Bin-centering corrections Fbin written into dvcs_pass2_analysis.csv
+//
+// Columns filled:
+//   "Fbin, 10.6 GeV"   (combined 10.6 group: Sp18/Fa18 periods)
+//   "Fbin, 10.2 GeV"   (Sp19 Inb)
+//
+// Logic:
+//   * Bins are taken from dvcs_pass2_analysis.csv (Lee-style) via bin-edge
+//     columns: xBmin/xBmax, Q2min/Q2max, t_abs_min/t_abs_max, phimin/phimax.
+//   * Only phi-binned rows are used (phimax - phimin < 359).
+//   * We use "xBavg, 10.6 GeV" and "xBavg, Sp19 Inb" as masks to decide
+//     which rows belong to each energy group.
+//   * For each energy group and row, we compute Fbin using model predictions:
+//       - Two models: KM15 and VGG (Helicity::Unpol).
+//       - Define bin center (xB_c, Q2_c, t_pos_c, phi_c) at midpoints
+//         of the bin edges.
+//       - Compute sigma_center^model at the center.
+//       - Compute <sigma>_bin^model as the average over a uniform
+//         sub-grid of size n_substeps^4 in (xB, Q2, |t|, phi).
+//       - Fbin^model = sigma_center^model / <sigma>_bin^model.
+//       - Final Fbin:
+//             Fbin = 0.5 * (Fbin_KM15 + Fbin_VGG)
+//             stat = 0.0
+//             sys  = std(Fbin_KM15, Fbin_VGG)
+//         where the std is the sample standard deviation for N=2.
+//   * If only one model is usable (the other fails or returns non-positive/
+//     non-finite values), we fall back to that single model with sys = 0.
+//     If both fail, the row is left unchanged.
+//
+// Parallelization:
+//   * OpenMP parallel-for over (group,row) tasks, with omp_set_num_threads
+//     hard-capped at 5 workers.
+//
+// CSV policy:
+//   * We DO NOT create or rename columns.
+//   * We require the columns:
+//       xBmin, xBmax, Q2min, Q2max, t_abs_min, t_abs_max, phimin, phimax
+//       xBavg, 10.6 GeV
+//       xBavg, Sp19 Inb
+//       Fbin, 10.6 GeV
+//       Fbin, 10.2 GeV
+//     and we fail fast if any are missing.
+//   * Updated CSV is written atomically using a tmp file and rename.
+
 #include "bin_centering_corrections.h"
 
-#include <TCanvas.h>
-#include <TGraphErrors.h>
-#include <TLatex.h>
-#include <TLegend.h>
-#include <TStyle.h>
-#include <TPad.h>
-#include <TH1.h>
-#include <TAxis.h>
-#include <TGaxis.h>
-
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <map>
-#include <set>
+#include <limits>
 #include <sstream>
 #include <string>
-#include <tuple>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
-// OpenMP for parallel processing (hard-capped to 5 threads)
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
-#include <nlohmann/json.hpp>
-using json = nlohmann::json;
+namespace {
+
 namespace fs = std::filesystem;
 
-namespace {
-constexpr int    N_PHI_BINS = 12;
-constexpr double TWO_PI     = 2.0 * M_PI;
+// -----------------------------
+// Simple CSV document helper
+// -----------------------------
+struct CsvDoc {
+    std::vector<std::string> header;
+    std::unordered_map<std::string,int> index;
+    std::vector<std::vector<std::string> > rows;
 
-// ------------ style ------------
-struct StyleInit {
-    StyleInit() {
-        gStyle->SetOptTitle(0);
-        gStyle->SetOptStat(0);
-        gStyle->SetLineWidth(2);
-        gStyle->SetFrameLineWidth(2);
-        gStyle->SetPadTickX(1);
-        gStyle->SetPadTickY(1);
-        const int rf = 42;
-        gStyle->SetTitleFont(rf, "XYZ");
-        gStyle->SetLabelFont(rf, "XYZ");
-        gStyle->SetTextFont(rf);
-    }
-} _style_guard;
+    static std::vector<std::string> split_csv_line(const std::string& line) {
+        std::vector<std::string> out;
+        std::string cur;
+        bool inq = false;
+        for (char c : line) {
+            if (c == '"') {
+                inq = !inq;
+                continue;
+            }
+            if (c == ',' && !inq) {
+                out.push_back(cur);
+                cur.clear();
+            } else {
+                cur.push_back(c);
+            }
+        }
+        out.push_back(cur);
+        return out;
+    } //enddef
 
-// ---------- small helpers ----------
-static inline std::vector<double> phiCentersDeg() {
-    std::vector<double> d(N_PHI_BINS);
-    const double step = 360.0 / double(N_PHI_BINS);
-    for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
-    return d;
-} //enddef
+    static void write_field(std::ostream& os, const std::string& s) {
+        bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
+        if (!needq) {
+            os << s;
+            return;
+        }
+        os << '"';
+        for (char ch : s) {
+            if (ch == '"') {
+                os << "\"\"";
+            } else {
+                os << ch;
+            }
+        }
+        os << '"';
+    } //enddef
 
-static inline std::pair<double,double> phiEdgesDegForBin(int ip) {
-    const double step = 360.0 / double(N_PHI_BINS);
-    const double lo = ip * step;
-    const double hi = (ip+1) * step;
-    return {lo, hi};
-} //enddef
-
-static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
-    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
-    ax->SetLabelFont(42);
-    ax->SetLabelSize(labelSize);
-    ax->SetLabelOffset(0.012);
-    ax->SetTitle("");
-    ax->SetTickSize(0.02);
-    ax->Draw();
-} //enddef
-
-// bin helpers
-static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
-    std::set<std::pair<double,double>> s;
-    for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
-    } //endfor
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
-} //enddef
-
-static inline int findIndex(const std::pair<double,double>& range,
-                            const std::vector<std::pair<double,double>>& ranges) {
-    for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i; //endfor
-    return -1;
-} //enddef
-
-// ---------- I/O helpers ----------
-static json load_json(const std::string& path) {
-    std::ifstream f(path);
-    if (!f.is_open()) {
-        std::cerr << "[json] Failed to open " << path << "\n";
-        return json();
-    } //endif
-    json j; f >> j; return j;
-} //enddef
-
-static void save_json(const json& j, const std::string& path) {
-    std::ofstream ofs(path);
-    if (!ofs.is_open()) {
-        std::cerr << "[json] Failed to write " << path << "\n";
-        return;
-    } //endif
-    ofs << std::setw(2) << j << "\n";
-} //enddef
-
-static inline bool has_bins12(const json& h){
-    return h.contains("phi") && h.contains("xsec") && h.contains("xsec_err")
-        && h["phi"].size()==N_PHI_BINS && h["xsec"].size()==N_PHI_BINS && h["xsec_err"].size()==N_PHI_BINS;
-} //enddef
-
-static inline bool has_bc_cell(const json& cell){
-    return cell.contains("helicity_plus") || cell.contains("helicity_minus");
-} //enddef
-
-// safe read double from json index
-static inline double jgetd(const json& a, size_t i, double def=0.0){
-    try { return a[i].get<double>(); } catch(...) { return def; }
-} //enddef
-
-static inline double midpoint(double a, double b){ return 0.5*(a+b); } //enddef
-static inline bool   finite_pos(double v){ return std::isfinite(v) && v>0.0; } //enddef
-
-// ------------------------------------------------------------
-// Optimized helper: compute fbin for one (xB,Q2,t,phi-bin,helicity)
-// ------------------------------------------------------------
-static void compute_fbin_for_point(
-    // bin ranges and centers
-    double xBmin, double xBmax,
-    double Q2min, double Q2max,
-    double tmin_pos, double tmax_pos,   // positive convention for |t|
-    double phi_center_deg,
-    std::pair<double,double> phi_edges_deg,
-    // model config
-    int n_steps,
-    double Ebeam,
-    Helicity hel,
-    const ModelPaths& paths,
-    bool vgg_globalfit,
-    ModelChoice model_choice,
-    // outputs
-    double& fbin_km15, double& fbin_vgg
-) {
-    fbin_km15 = 0.0;
-    fbin_vgg  = 0.0;
-
-    // centers
-    const double xB_c   = midpoint(xBmin, xBmax);
-    const double Q2_c   = midpoint(Q2min, Q2max);
-    const double tpos_c = midpoint(tmin_pos, tmax_pos);
-
-    // Only compute center values for models we're actually using
-    double km15_center = 0.0;
-    double vgg_center  = 0.0;
-
-    if (model_choice == ModelChoice::Both || model_choice == ModelChoice::KM15Only) {
-        km15_center = km15_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths);
-    }
-    if (model_choice == ModelChoice::Both || model_choice == ModelChoice::VGGOnly) {
-        vgg_center  = vgg_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths, vgg_globalfit);
-    }
-
-    const bool need_km15 = (model_choice == ModelChoice::Both || model_choice == ModelChoice::KM15Only) && finite_pos(km15_center);
-    const bool need_vgg  = (model_choice == ModelChoice::Both || model_choice == ModelChoice::VGGOnly)   && finite_pos(vgg_center);
-    if (!need_km15 && !need_vgg) return;
-
-    // sub-binning grids (uniform)
-    const int nx = std::max(2, n_steps);
-    const int nQ = std::max(2, n_steps);
-    const int nt = std::max(2, n_steps);
-    const int np = std::max(2, n_steps);
-
-    auto linspace = [](double lo, double hi, int n){
-        std::vector<double> v(n);
-        if (n==1) { v[0]=0.5*(lo+hi); return v; } //endif
-        const double step = (hi - lo) / double(n-1);
-        for (int i=0;i<n;++i) v[i] = lo + i*step; //endfor
+    static double to_double(const std::string& s) {
+        if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+        char* e = 0;
+        double v = std::strtod(s.c_str(), &e);
+        if (e == s.c_str()) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         return v;
-    }; //enddef
+    } //enddef
 
-    const auto xs = linspace(xBmin, xBmax, nx);
-    const auto Qs = linspace(Q2min, Q2max, nQ);
-    const auto ts = linspace(tmin_pos, tmax_pos, nt);
-    const auto ps = linspace(phi_edges_deg.first, phi_edges_deg.second, np);
+    bool load(const std::string& path) {
+        std::ifstream fin(path.c_str());
+        if (!fin.is_open()) {
+            std::cerr << "[fbin] ERROR: cannot open CSV: " << path << "\n";
+            return false;
+        }
+        std::string line;
+        if (!std::getline(fin, line)) {
+            std::cerr << "[fbin] ERROR: empty CSV: " << path << "\n";
+            return false;
+        }
+        header = split_csv_line(line);
+        index.clear();
+        for (int i = 0; i < (int)header.size(); ++i) {
+            index[header[i]] = i;
+        }
+        rows.clear();
+        while (std::getline(fin, line)) {
+            if (line.empty()) continue;
+            rows.push_back(split_csv_line(line));
+        }
+        for (std::size_t r = 0; r < rows.size(); ++r) {
+            rows[r].resize(header.size());
+        }
+        return true;
+    } //enddef
 
-    double sum_km15 = 0.0; int cnt_km15 = 0;
-    double sum_vgg  = 0.0; int cnt_vgg  = 0;
-
-    for (double xb : xs){
-        for (double q2 : Qs){
-            for (double tp : ts){
-                for (double ph : ps){
-                    if (need_km15) {
-                        const double vk = km15_xs(xb, q2, tp, ph, Ebeam, hel, paths);
-                        if (finite_pos(vk)) { sum_km15 += vk; ++cnt_km15; } //endif
-                    }
-                    if (need_vgg) {
-                        const double vv = vgg_xs(xb, q2, tp, ph, Ebeam, hel, paths, vgg_globalfit);
-                        if (finite_pos(vv)) { sum_vgg  += vv; ++cnt_vgg; } //endif
-                    }
-                } //endfor
-            } //endfor
-        } //endfor
-    } //endfor
-
-    if (need_km15 && cnt_km15 > 0) {
-        const double avg_km15 = sum_km15 / double(cnt_km15);
-        if (finite_pos(avg_km15)) fbin_km15 = km15_center / avg_km15;
-    }
-    if (need_vgg && cnt_vgg > 0) {
-        const double avg_vgg = sum_vgg / double(cnt_vgg);
-        if (finite_pos(avg_vgg)) fbin_vgg = vgg_center / avg_vgg;
-    }
-} //enddef
-
-// ---------------- plotting helpers (shared with plotter) ----------------
-static TGraphErrors* draw_hel_curve(const json& h, int mstyle, int color){
-    if (!has_bins12(h)) return nullptr; //endif
-    const auto& xp = h["phi"];
-    const auto& yp = h["xsec"];
-    const auto& ep = h["xsec_err"];
-    std::vector<double> x(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
-    for (int i=0;i<N_PHI_BINS;++i){
-        x[i]=xp[i].get<double>();
-        y[i]=yp[i].get<double>();
-        e[i]=std::max(1e-12, ep[i].get<double>());
-    } //endfor
-    auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
-    gr->SetMarkerStyle(mstyle);
-    gr->SetMarkerSize(1.0);
-    gr->SetLineWidth(2);
-    gr->SetLineColor(color);
-    gr->SetMarkerColor(color);
-    gr->Draw("P SAME");
-    return gr;
-} //enddef
-
-// For log-scale y-range across a whole canvas (like rad_corrected_cross_section.cpp)
-static std::pair<double, double> calculateYRangeForCanvas(const json& jb_after_bins,
-                                                         const json& jb_before_bins,
-                                                         const std::vector<std::string>& bin_keys,
-                                                         bool overlay) {
-    double global_min = 1e10;
-    double global_max = -1e10;
-
-    auto scanHel = [&](const json& H){
-        if (!H.contains("xsec") || !H.contains("xsec_err")) return;
-        const auto& yp = H["xsec"];
-        const auto& ep = H["xsec_err"];
-        for (int i=0;i<N_PHI_BINS;++i){
-            const double y = jgetd(yp, i, 0.0);
-            const double e = jgetd(ep, i, 0.0);
-            if (y > 0.0) {
-                global_min = std::min(global_min, std::max(1e-10, y - e));
-                global_max = std::max(global_max, y + e);
+    bool save_atomic(const std::string& path) const {
+        const std::string tmp = path + ".tmp";
+        {
+            std::ofstream fout(tmp.c_str());
+            if (!fout.is_open()) {
+                std::cerr << "[fbin] ERROR: cannot write CSV tmp: " << tmp << "\n";
+                return false;
+            }
+            // header
+            for (std::size_t i = 0; i < header.size(); ++i) {
+                write_field(fout, header[i]);
+                if (i + 1 < header.size()) fout << ',';
+            }
+            fout << "\n";
+            // rows
+            for (std::size_t r = 0; r < rows.size(); ++r) {
+                const std::vector<std::string>& row = rows[r];
+                for (std::size_t i = 0; i < row.size(); ++i) {
+                    write_field(fout, row[i]);
+                    if (i + 1 < row.size()) fout << ',';
+                }
+                fout << "\n";
             }
         }
-    }; //enddef
-
-    for (const auto& bkey : bin_keys) {
-        if (jb_after_bins.contains(bkey)) {
-            const json& after = jb_after_bins[bkey];
-            if (after.contains("helicity_plus"))  scanHel(after["helicity_plus"]);
-            if (after.contains("helicity_minus")) scanHel(after["helicity_minus"]);
+        std::error_code ec;
+        fs::rename(tmp, path, ec);
+        if (ec) {
+            std::remove(path.c_str());
+            fs::rename(tmp, path, ec);
+            if (ec) {
+                std::cerr << "[fbin] ERROR: atomic rename failed ("
+                          << ec.message() << ")\n";
+                return false;
+            }
         }
-        if (overlay && jb_before_bins.contains(bkey)) {
-            const json& before = jb_before_bins[bkey];
-            if (before.contains("helicity_plus"))  scanHel(before["helicity_plus"]);
-            if (before.contains("helicity_minus")) scanHel(before["helicity_minus"]);
-        }
-    } //endfor
+        return true;
+    } //enddef
 
-    if (global_max <= 0) {
-        global_min = 1e-4;
-        global_max = 1.0;
-    } else {
-        double ymin10 = std::pow(10.0, std::floor(std::log10(global_min)));
-        double ymax10 = std::pow(10.0, std::ceil (std::log10(global_max)));
-        global_min = std::max(1e-4, ymin10*0.5);
-        global_max = ymax10*2.0;
+    int nrows() const { return (int)rows.size(); }
+
+    int col_index(const std::string& name) const {
+        std::unordered_map<std::string,int>::const_iterator it = index.find(name);
+        return (it == index.end()) ? -1 : it->second;
     }
-    return {global_min, global_max};
+
+    double as_double(int r, int c) const {
+        if (r < 0 || r >= nrows()) return std::numeric_limits<double>::quiet_NaN();
+        if (c < 0 || c >= (int)header.size()) return std::numeric_limits<double>::quiet_NaN();
+        return to_double(rows[r][c]);
+    }
+}; //endstruct CsvDoc
+
+// "(value, stat, sys)" formatting
+static std::string format_triple(double v, double s_stat, double s_sys) {
+    std::ostringstream oss;
+    oss.setf(std::ios::fixed);
+    oss << "("
+        << std::setprecision(8) << v << ", "
+        << std::setprecision(8) << s_stat << ", "
+        << std::setprecision(8) << s_sys
+        << ")";
+    return oss.str();
 } //enddef
 
-} // anon
+static inline bool finite_pos(double x) {
+    return std::isfinite(x) && x > 0.0;
+} //enddef
 
-// ============================================================
-// COMPUTE-ONLY: writes bin_centered_xsec_<E>.json (no plots)
-// ============================================================
-void compute_bin_centered_cross_sections(
-    const std::vector<Binning>& binning_scheme,
-    const std::string& radcorr_xsec_json_dir,  // where rad_corrected_xsec_<E>.json lives (input)
-    const std::string& output_dir,             // base output dir; JSONs go to output_dir/jsons
+// --------------------------------------
+// Binning from CSV: one RowBin per row
+// --------------------------------------
+struct RowBin {
+    double xbmin, xbmax;
+    double q2min, q2max;
+    double tmin,  tmax;   // positive |t|
+    double phimin, phimax;
+    int    row_index;
+}; //endstruct
+
+static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
+    const int c_xb_min  = csv.col_index("xBmin");
+    const int c_xb_max  = csv.col_index("xBmax");
+    const int c_q2_min  = csv.col_index("Q2min");
+    const int c_q2_max  = csv.col_index("Q2max");
+    const int c_tab_min = csv.col_index("t_abs_min");
+    const int c_tab_max = csv.col_index("t_abs_max");
+    const int c_phi_min = csv.col_index("phimin");
+    const int c_phi_max = csv.col_index("phimax");
+
+    if (c_xb_min < 0 || c_xb_max < 0 ||
+        c_q2_min < 0 || c_q2_max < 0 ||
+        c_tab_min < 0 || c_tab_max < 0 ||
+        c_phi_min < 0 || c_phi_max < 0) {
+        std::cerr << "[fbin] FATAL: missing one or more bin-edge columns "
+                  << "(xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax)\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::vector<RowBin> bins;
+    const int NR = csv.nrows();
+    bins.reserve(NR);
+
+    for (int r = 0; r < NR; ++r) {
+        RowBin b;
+        b.xbmin  = csv.as_double(r, c_xb_min);
+        b.xbmax  = csv.as_double(r, c_xb_max);
+        b.q2min  = csv.as_double(r, c_q2_min);
+        b.q2max  = csv.as_double(r, c_q2_max);
+        b.tmin   = csv.as_double(r, c_tab_min);
+        b.tmax   = csv.as_double(r, c_tab_max);
+        b.phimin = csv.as_double(r, c_phi_min);
+        b.phimax = csv.as_double(r, c_phi_max);
+        b.row_index = r;
+
+        const double phi_width = b.phimax - b.phimin;
+        if (!std::isfinite(phi_width)) continue;
+
+        // Skip phi-integrated bins; Fbin is defined only for phi-binned rows.
+        if (std::fabs(phi_width) >= 359.0) continue;
+
+        if (!(b.xbmax > b.xbmin &&
+              b.q2max > b.q2min &&
+              b.tmax  > b.tmin  &&
+              b.phimax > b.phimin)) {
+            continue;
+        }
+
+        bins.push_back(b);
+    }
+
+    std::cout << "[fbin] Built " << bins.size()
+              << " RowBin entries out of " << csv.nrows()
+              << " CSV rows (skipped phi-integrated or invalid bins).\n";
+
+    if (bins.empty()) {
+        std::cerr << "[fbin] FATAL: no usable bins found in CSV.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    return bins;
+} //enddef
+
+// For each energy group, mark which CSV rows should get Fbin.
+// We only care about whether the gating column has a finite numeric value.
+static std::vector<bool>
+build_row_has_data(const CsvDoc& csv, const std::string& xbavg_col_name)
+{
+    const int NR = csv.nrows();
+    int c = csv.col_index(xbavg_col_name);
+    if (c < 0) {
+        std::cerr << "[fbin] FATAL: missing column '" << xbavg_col_name
+                  << "' needed to decide where to compute Fbin.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::vector<bool> flags(NR, false);
+    for (int r = 0; r < NR; ++r) {
+        const std::string& cell = csv.rows[r][c];
+        if (cell.empty()) {
+            flags[r] = false;
+        } else {
+            double v = CsvDoc::to_double(cell);
+            flags[r] = std::isfinite(v);
+        }
+    }
+    return flags;
+} //enddef
+
+// ---------------------------
+// Model evaluation per row
+// ---------------------------
+//
+// For a single row (one DVCS bin) and one beam energy, compute
+//   Fbin_KM15 and Fbin_VGG via sub-binning in xB,Q2,|t|,phi.
+//
+// Inputs:
+//   b         : RowBin with edges in xB, Q2, |t|, phi (deg)
+//   Ebeam     : beam energy (GeV)
+//   n_steps   : sub-binning steps per dimension (>= 1)
+//   paths     : ModelPaths for dvcsgen/km15
+//   vgg_globalfit : flag passed through to vgg_xs
+//
+// Outputs:
+//   fbin_mean_out : combined Fbin
+//   fbin_sys_out  : systematic (std between models)
+// Returns:
+//   true if at least one model produced a valid Fbin; false otherwise.
+static bool compute_fbin_for_row(
+    const RowBin& b,
+    double Ebeam,
     int n_steps,
     const ModelPaths& paths,
     bool vgg_globalfit,
-    ModelChoice model_choice
+    double& fbin_mean_out,
+    double& fbin_sys_out
 ) {
-    std::cout << "[bincenter] Starting bin-centering computation..." << std::endl;
-    std::cout << "[bincenter] Model choice = "
-              << (model_choice==ModelChoice::Both? "Both" : (model_choice==ModelChoice::VGGOnly? "VGGOnly" : "KM15Only"))
-              << ", n_steps = " << n_steps << std::endl;
+    fbin_mean_out = std::numeric_limits<double>::quiet_NaN();
+    fbin_sys_out  = std::numeric_limits<double>::quiet_NaN();
 
-    #ifdef _OPENMP
-    int hard_cap = 5;
-    int want     = omp_get_max_threads();
-    int use      = std::min(hard_cap, std::max(1, want));
-    omp_set_num_threads(use);
-    std::cout << "[bincenter] OpenMP enabled with " << use << " worker(s) (hard-capped at 5)\n";
-    #else
-    std::cout << "[bincenter] OpenMP not available; running single-threaded\n";
-    #endif
+    // Bin centers
+    const double xb_c   = 0.5 * (b.xbmin  + b.xbmax);
+    const double Q2_c   = 0.5 * (b.q2min  + b.q2max);
+    const double tpos_c = 0.5 * (b.tmin   + b.tmax);    // positive |t|
+    const double phi_c  = 0.5 * (b.phimin + b.phimax);  // mid-bin center (deg)
 
-    fs::create_directories(output_dir);
-    fs::create_directories(fs::path(output_dir)/"jsons");
+    if (!(xb_c > 0.0 && Q2_c > 0.0 && tpos_c > 0.0)) {
+        return false;
+    }
 
-    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
-    const auto Q2_all  = uniqueRanges(binning_scheme, 'Q');
-    const auto t_all   = uniqueRanges(binning_scheme, 't');
-    const auto PHI_DEG = phiCentersDeg();
+    // Center cross sections (unpolarized)
+    double km15_center = km15_xs(xb_c, Q2_c, tpos_c, phi_c, Ebeam,
+                                 Helicity::Unpol, paths);
+    double vgg_center  = vgg_xs (xb_c, Q2_c, tpos_c, phi_c, Ebeam,
+                                 Helicity::Unpol, paths, vgg_globalfit);
 
-    // energies we attempt (skip missing quietly)
-    const std::vector<std::string> energies = {"10.59","10.60","10.2"};
+    const bool have_center_km15 = finite_pos(km15_center);
+    const bool have_center_vgg  = finite_pos(vgg_center);
 
-    int e_idx = 0;
-    for (const auto& E : energies) {
-        ++e_idx;
-        const std::string rc_path = (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
-        if (!fs::exists(rc_path)) {
-            std::cout << "[bincenter] Skip E=" << E << " (missing " << rc_path << ")\n";
-            continue;
+    if (!have_center_km15 && !have_center_vgg) {
+        return false;
+    }
+
+    const int nx   = std::max(1, n_steps);
+    const int nQ   = std::max(1, n_steps);
+    const int nt   = std::max(1, n_steps);
+    const int nphi = std::max(1, n_steps);
+
+    const double dx   = (b.xbmax  - b.xbmin ) / double(nx);
+    const double dQ   = (b.q2max  - b.q2min ) / double(nQ);
+    const double dt   = (b.tmax   - b.tmin  ) / double(nt);
+    const double dphi = (b.phimax - b.phimin) / double(nphi);
+
+    if (!(dx > 0.0 && dQ > 0.0 && dt > 0.0 && dphi > 0.0)) {
+        return false;
+    }
+
+    double sum_km15 = 0.0;
+    double sum_vgg  = 0.0;
+    int    cnt_k    = 0;
+    int    cnt_v    = 0;
+
+    for (int ix = 0; ix < nx; ++ix) {
+        const double xB = b.xbmin + (ix + 0.5) * dx;
+        for (int iQ = 0; iQ < nQ; ++iQ) {
+            const double Q2 = b.q2min + (iQ + 0.5) * dQ;
+            for (int it = 0; it < nt; ++it) {
+                const double tpos = b.tmin + (it + 0.5) * dt;
+                for (int ip = 0; ip < nphi; ++ip) {
+                    const double phi = b.phimin + (ip + 0.5) * dphi;
+
+                    if (have_center_km15) {
+                        double v = km15_xs(xB, Q2, tpos, phi, Ebeam,
+                                           Helicity::Unpol, paths);
+                        if (finite_pos(v)) {
+                            sum_km15 += v;
+                            ++cnt_k;
+                        }
+                    }
+                    if (have_center_vgg) {
+                        double v = vgg_xs(xB, Q2, tpos, phi, Ebeam,
+                                          Helicity::Unpol, paths, vgg_globalfit);
+                        if (finite_pos(v)) {
+                            sum_vgg += v;
+                            ++cnt_v;
+                        }
+                    }
+                } //endfor ip
+            } //endfor it
+        } //endfor iQ
+    } //endfor ix
+
+    double f_km15 = std::numeric_limits<double>::quiet_NaN();
+    double f_vgg  = std::numeric_limits<double>::quiet_NaN();
+    bool   ok_k   = false;
+    bool   ok_v   = false;
+
+    if (have_center_km15 && cnt_k > 0) {
+        const double avg_k = sum_km15 / double(cnt_k);
+        if (finite_pos(avg_k)) {
+            f_km15 = km15_center / avg_k;
+            if (finite_pos(f_km15)) ok_k = true;
         }
-        std::cout << "[bincenter] ===========================================\n";
-        std::cout << "[bincenter] Energy " << E << " (" << e_idx << "/" << energies.size() << ") -> " << rc_path << "\n";
+    }
 
-        json j_rc = load_json(rc_path);
-        if (j_rc.is_null() || j_rc.empty() || !j_rc.contains("bins")) {
-            std::cout << "[bincenter] JSON malformed for E=" << E << " (no bins). Skipping.\n";
-            continue;
+    if (have_center_vgg && cnt_v > 0) {
+        const double avg_v = sum_vgg / double(cnt_v);
+        if (finite_pos(avg_v)) {
+            f_vgg = vgg_center / avg_v;
+            if (finite_pos(f_vgg)) ok_v = true;
         }
+    }
 
-        json jout; // result for this energy
-        jout["energy"] = E;
-        jout["bins"]   = json::object();
+    if (!ok_k && !ok_v) {
+        return false;
+    }
 
-        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-            const auto xb = xB_bins[ix];
+    // Combine models:
+    // If both are valid:
+    //   Fbin = mean, sys = std(Fbin_KM15, Fbin_VGG) with N=2.
+    // If only one is valid:
+    //   Fbin = that model, sys = 0.
+    if (ok_k && ok_v) {
+        const double mean = 0.5 * (f_km15 + f_vgg);
+        const double diff = f_km15 - f_vgg;
+        const double var  = (diff * diff) / 2.0; // sample variance for N=2
+        const double stdv = std::sqrt(var);
 
-            std::set<std::pair<double,double>> qs, ts;
-            for (const auto& b : binning_scheme) {
-                if (std::make_pair(b.xBmin,b.xBmax) == xb) {
-                    qs.emplace(b.Q2min,b.Q2max);
-                    ts.emplace(b.tmin,b.tmax);
-                } //endif
-            } //endfor
-            std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
-            std::vector<std::pair<double,double>> t_slice(ts.begin(),  ts.end());
+        fbin_mean_out = mean;
+        fbin_sys_out  = stdv;
+    } else if (ok_k) {
+        fbin_mean_out = f_km15;
+        fbin_sys_out  = 0.0;
+    } else { // ok_v only
+        fbin_mean_out = f_vgg;
+        fbin_sys_out  = 0.0;
+    }
 
-            // Gather (Q2,t) tasks
-            std::vector<std::pair<std::pair<double,double>, std::pair<double,double>>> tasks;
-            tasks.reserve(Q2_slice.size()*t_slice.size());
-            for (const auto& q2r : Q2_slice) {
-                for (const auto& tr : t_slice) {
-                    tasks.emplace_back(q2r, tr);
-                }
-            }
-
-            #pragma omp parallel for schedule(dynamic)
-            for (size_t it = 0; it < tasks.size(); ++it) {
-                const auto q2r = tasks[it].first;
-                const auto tr  = tasks[it].second;
-
-                const int iQ_global = findIndex(q2r, Q2_all);
-                const int it_global = findIndex(tr,  t_all);
-                if (iQ_global < 0 || it_global < 0) continue;
-
-                const std::string bkey =
-                    "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
-
-                if (!j_rc["bins"].contains(bkey)) continue;
-                const json& cell_in = j_rc["bins"][bkey];
-                if (!has_bc_cell(cell_in)) continue;
-
-                auto do_one_hel = [&](const char* node, Helicity hel)->json{
-                    json out;
-                    if (!cell_in.contains(node)) return out;
-                    const json& h = cell_in[node];
-                    if (!has_bins12(h)) return out;
-
-                    const auto& phi = h["phi"];
-                    const auto& xs  = h["xsec"];
-                    const auto& xe  = h["xsec_err"];
-
-                    std::vector<double> phi_bc(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
-                    std::vector<double> fbin_used(N_PHI_BINS, 1.0), fbin_km15(N_PHI_BINS, 1.0), fbin_vgg(N_PHI_BINS, 1.0), fbin_sys(N_PHI_BINS, 0.0);
-
-                    for (int ip=0; ip<N_PHI_BINS; ++ip){
-                        const double phi_c = jgetd(phi, ip, PHI_DEG[ip]);
-                        const auto   phi_edges = phiEdgesDegForBin(ip);
-
-                        double fkm = 0.0, fvg = 0.0;
-                        compute_fbin_for_point(
-                            xb.first, xb.second,
-                            q2r.first, q2r.second,
-                            tr.first,  tr.second,
-                            phi_c, phi_edges,
-                            n_steps,
-                            std::stod(E), hel,
-                            paths, vgg_globalfit,
-                            model_choice,
-                            fkm, fvg
-                        );
-
-                        // determine final factor
-                        double f_final = 1.0;
-                        double f_sys   = 0.0;
-                        switch (model_choice) {
-                            case ModelChoice::Both:
-                                if (finite_pos(fkm) && finite_pos(fvg)) {
-                                    f_final = 0.5*(fkm + fvg);
-                                    f_sys   = std::fabs(fkm - fvg);
-                                } else if (finite_pos(fkm)) {
-                                    f_final = fkm; f_sys = 1.0;
-                                } else if (finite_pos(fvg)) {
-                                    f_final = fvg; f_sys = 1.0;
-                                }
-                                break;
-                            case ModelChoice::VGGOnly:
-                                if (finite_pos(fvg)) f_final = fvg;
-                                break;
-                            case ModelChoice::KM15Only:
-                                if (finite_pos(fkm)) f_final = fkm;
-                                break;
-                        } //endswitch
-
-                        const double x  = jgetd(xs, ip, 0.0);
-                        const double ex = std::max(0.0, jgetd(xe, ip, 0.0));
-
-                        phi_bc[ip]   = phi_c;
-                        y[ip]        = f_final * x;
-                        e[ip]        = f_final * ex;  // scale stat error
-                        fbin_used[ip]= f_final;
-                        fbin_km15[ip]= (finite_pos(fkm) ? fkm : 0.0);
-                        fbin_vgg[ip] = (finite_pos(fvg) ? fvg : 0.0);
-                        fbin_sys[ip] = f_sys;
-                    } //endfor
-
-                    out["phi"]       = phi_bc;
-                    out["xsec"]      = y;
-                    out["xsec_err"]  = e;
-                    out["fbin_used"] = fbin_used;
-                    out["fbin_km15"] = fbin_km15;
-                    out["fbin_vgg"]  = fbin_vgg;
-                    out["fbin_sys"]  = fbin_sys;
-                    return out;
-                }; //enddef
-
-                json hp_bc = do_one_hel("helicity_plus",  Helicity::Plus);
-                json hm_bc = do_one_hel("helicity_minus", Helicity::Minus);
-                if (hp_bc.is_null() && hm_bc.is_null()) continue;
-
-                #ifdef _OPENMP
-                #pragma omp critical
-                #endif
-                {
-                    jout["bins"][bkey] = {
-                        {"helicity_plus",  hp_bc},
-                        {"helicity_minus", hm_bc}
-                    };
-                }
-            } //end parallel for
-        } //endfor xB
-
-        // Write out JSON for this energy
-        const std::string out_json = (fs::path(output_dir)/"jsons"/("bin_centered_xsec_"+E+".json")).string();
-        save_json(jout, out_json);
-        std::cout << "[bincenter] Wrote " << out_json << "\n";
-    } //endfor energies
-
-    std::cout << "[bincenter] Finished bin-centering computation.\n";
+    return finite_pos(fbin_mean_out);
 } //enddef
 
-// ============================================================
-// PLOT-ONLY: reads bin_centered_xsec_<E>.json (+ before BC)
-// makes corrected-only and overlay plots
-// ============================================================
-void plot_bin_centered_cross_sections(
-    const std::vector<Binning>& binning_scheme,
-    const std::string& radcorr_xsec_json_dir, // input: before-BC "rad_corrected_xsec_<E>.json"
-    const std::string& bincenter_json_dir,    // input: after-BC  "bin_centered_xsec_<E>.json"
-    const std::string& plots_output_dir       // output: plots go here
+// -------------------------------------
+// Group and fill helpers
+// -------------------------------------
+struct FbinGroup {
+    std::string label;      // "10.6 GeV" or "10.2 GeV"
+    std::string xbavg_col;  // "xBavg, 10.6 GeV" or "xBavg, Sp19 Inb"
+    std::string fbin_col;   // "Fbin, 10.6 GeV" or "Fbin, 10.2 GeV"
+    double      Ebeam;      // 10.6 or 10.2
+}; //endstruct
+
+struct Task {
+    int group_index;   // index into groups vector
+    int bin_index;     // index into RowBin vector
+}; //endstruct
+
+static bool fill_fbin_for_group(const FbinGroup& G,
+                                const CsvDoc& csv,
+                                const std::vector<bool>& row_has_data,
+                                const std::vector<double>& fbin_vals,
+                                const std::vector<double>& fbin_sys,
+                                CsvDoc& csv_out)
+{
+    const int NR = csv.nrows();
+    if ((int)row_has_data.size() != NR ||
+        (int)fbin_vals.size()    != NR ||
+        (int)fbin_sys.size()     != NR) {
+        std::cerr << "[fbin] FATAL: size mismatch in fill_fbin_for_group for "
+                  << G.label << ".\n";
+        return false;
+    }
+
+    const int c_fbin = csv.col_index(G.fbin_col);
+    if (c_fbin < 0) {
+        std::cerr << "[fbin] FATAL: missing Fbin column '"
+                  << G.fbin_col << "' in CSV header.\n";
+        return false;
+    }
+
+    std::size_t written = 0;
+
+    for (int r = 0; r < NR; ++r) {
+        if (!row_has_data[r]) continue;
+
+        const double v  = fbin_vals[r];
+        const double es = fbin_sys[r];
+
+        if (!std::isfinite(v) || v <= 0.0) {
+            continue;
+        }
+
+        // Stat uncertainty is 0.0 (model-based); sys is between-model std.
+        csv_out.rows[r][c_fbin] = format_triple(v, 0.0, std::max(0.0, es));
+        ++written;
+    }
+
+    std::cout << "[fbin] Group " << G.label
+              << ": filled column '" << G.fbin_col
+              << "' ; cells written: " << written << "\n";
+
+    return true;
+} //enddef
+
+} // anonymous namespace
+
+// --------------------------------------------------------
+// Public entry point
+// --------------------------------------------------------
+bool update_bin_centering_corrections_csv(
+    const std::string& csv_path,
+    const std::string& out_root_dir,
+    int n_substeps,
+    const ModelPaths& model_paths,
+    bool vgg_globalfit
 ) {
-    fs::create_directories(plots_output_dir);
+    (void)out_root_dir; // currently unused; kept for interface symmetry
 
-    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
-    const auto Q2_all  = uniqueRanges(binning_scheme, 'Q');
-    const auto t_all   = uniqueRanges(binning_scheme, 't');
+    const std::string csv_abs = fs::absolute(csv_path).string();
+    std::error_code ec;
+    const uintmax_t size_before =
+        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
 
-    const std::vector<std::string> energies = {"10.59","10.60","10.2"};
+    std::cout << "[fbin] CSV: " << csv_abs
+              << " (size=" << size_before << ")\n";
 
-    auto makeCanvasSet = [&](const std::string& E, const json& j_before, const json& j_after, bool overlay){
-        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-            const auto xb = xB_bins[ix];
+    CsvDoc csv;
+    if (!csv.load(csv_path)) {
+        std::cerr << "[fbin] ERROR: failed to load CSV.\n";
+        return false;
+    }
 
-            std::set<std::pair<double,double>> qs, ts;
-            for (const auto& b : binning_scheme) {
-                if (std::make_pair(b.xBmin,b.xBmax) == xb) {
-                    qs.emplace(b.Q2min,b.Q2max);
-                    ts.emplace(b.tmin,b.tmax);
-                } //endif
-            } //endfor
-            std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
-            std::vector<std::pair<double,double>> t_slice(ts.begin(),  ts.end());
-            if (Q2_slice.empty() || t_slice.empty()) continue;
+    // Build row bins (phi-binned only)
+    std::vector<RowBin> bins = build_row_bins(csv);
+    const int NR = csv.nrows();
+    (void)NR;
 
-            const int nrows = (int)t_slice.size();
-            const int ncols = (int)Q2_slice.size();
-            const int W = 280*ncols + 160;
-            const int H = 240*nrows + 170;
+    // Define groups: 10.6 GeV (combined) and 10.2 GeV (Sp19 Inb)
+    FbinGroup g10p6;
+    g10p6.label     = "10.6 GeV";
+    g10p6.xbavg_col = "xBavg, 10.6 GeV";
+    g10p6.fbin_col  = "Fbin, 10.6 GeV";
+    g10p6.Ebeam     = 10.6;
 
-            std::ostringstream cname;
-            cname << "c_bincenter_"<<E<<"_xB"<<ix<<(overlay ? "_overlay" : "_bc");
-            TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+    FbinGroup g10p2;
+    g10p2.label     = "10.2 GeV";
+    g10p2.xbavg_col = "xBavg, Sp19 Inb";
+    g10p2.fbin_col  = "Fbin, 10.2 GeV";
+    g10p2.Ebeam     = 10.2;
 
-            TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
-            pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+    std::vector<FbinGroup> groups;
+    groups.push_back(g10p6);
+    groups.push_back(g10p2);
 
-            TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
-            pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-            pGrid->cd();
-            pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+    // Build row_has_data masks for each group
+    std::vector<bool> row_has_data_10p6 = build_row_has_data(csv, g10p6.xbavg_col);
+    std::vector<bool> row_has_data_10p2 = build_row_has_data(csv, g10p2.xbavg_col);
 
-            // Title (match rad_corrected_cross_section.cpp sizing/position)
-            pTop->cd();
-            TLatex head;
-            head.SetNDC(); head.SetTextAlign(22);
-            head.SetTextFont(42);
-            head.SetTextSize(0.22);
-            std::ostringstream tit;
-            tit << (overlay ? "unc vs. bin-centered d#sigma/d#phi"
-                            : "bin-centered d#sigma/d#phi");
-            tit << Form("  %s GeV x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
-            head.DrawLatex(0.5, 0.55, tit.str().c_str());
+    // Sanity check that the Fbin columns exist up front (fail fast if not).
+    if (csv.col_index(g10p6.fbin_col) < 0) {
+        std::cerr << "[fbin] FATAL: missing column '" << g10p6.fbin_col
+                  << "' in CSV header.\n";
+        return false;
+    }
+    if (csv.col_index(g10p2.fbin_col) < 0) {
+        std::cerr << "[fbin] FATAL: missing column '" << g10p2.fbin_col
+                  << "' in CSV header.\n";
+        return false;
+    }
 
-            // First pass: collect all bin keys for this canvas to determine y-range
-            std::vector<std::string> canvas_bin_keys;
-            for (int r=0; r<nrows; ++r) {
-                const int it_global = findIndex(t_slice[r], t_all);
-                if (it_global < 0) continue;
-                for (int cc=0; cc<ncols; ++cc) {
-                    const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
-                    if (iQ_global < 0) continue;
-                    const std::string bkey =
-                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
-                    canvas_bin_keys.push_back(bkey);
-                }
-            }
+    // Prepare storage for Fbin values per group and row.
+    std::vector<double> fbin_vals_10p6(NR, std::numeric_limits<double>::quiet_NaN());
+    std::vector<double> fbin_sys_10p6 (NR, 0.0);
+    std::vector<double> fbin_vals_10p2(NR, std::numeric_limits<double>::quiet_NaN());
+    std::vector<double> fbin_sys_10p2 (NR, 0.0);
 
-            // Compute common y-range for the canvas
-            auto [ymin_canvas, ymax_canvas] = calculateYRangeForCanvas(
-                j_after["bins"],
-                j_before.contains("bins") ? j_before["bins"] : json::object(),
-                canvas_bin_keys,
-                overlay
-            );
+    // Build task list: (group, bin)
+    std::vector<Task> tasks;
+    tasks.reserve(bins.size() * groups.size());
 
-            // Draw panels
-            for (int r=0; r<nrows; ++r) {
-                const int it_global = findIndex(t_slice[r], t_all);
-                if (it_global < 0) continue;
-                for (int cc=0; cc<ncols; ++cc) {
-                    const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
-                    if (iQ_global < 0) continue;
+    for (std::size_t ib = 0; ib < bins.size(); ++ib) {
+        const RowBin& b = bins[ib];
+        if (b.row_index < 0 || b.row_index >= NR) continue;
 
-                    pGrid->cd(r*ncols + cc + 1);
-                    gPad->SetGrid(1,1);
-                    gPad->SetTopMargin(0.08);
-                    gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.15);
-                    gPad->SetRightMargin(0.10);
-                    gPad->SetLogy();
-
-                    TH1* frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
-                    frame->GetXaxis()->SetLabelSize(0.0001);
-                    frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle(overlay ? "d#sigma/d#phi" : "d#sigma/d#phi (bin-centered)");
-                    frame->GetXaxis()->CenterTitle();
-                    frame->GetYaxis()->CenterTitle();
-                    frame->GetXaxis()->SetNdivisions(505);
-                    frame->GetXaxis()->SetTitleSize(0.060);
-                    frame->GetYaxis()->SetTitleSize(0.060);
-                    frame->GetYaxis()->SetLabelSize(0.048);
-                    frame->GetXaxis()->SetTitleOffset(1.25);
-                    frame->GetYaxis()->SetTitleOffset(1.35);
-
-                    drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
-
-                    const std::string bkey =
-                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
-
-                    // after-BC (required)
-                    if (!j_after["bins"].contains(bkey)) continue;
-                    const json& jb_after = j_after["bins"][bkey];
-
-                    // before-BC (optional overlay)
-                    const bool   have_before = overlay && j_before.contains("bins") && j_before["bins"].contains(bkey);
-                    const json&  jb_before  = (have_before ? j_before["bins"][bkey] : json::object());
-
-                    // draw order: before first (grey open), after second (colored filled)
-                    TGraphErrors* gup = nullptr;
-                    TGraphErrors* gum = nullptr;
-                    if (have_before) {
-                        if (jb_before.contains("helicity_plus"))
-                            gup = draw_hel_curve(jb_before["helicity_plus"],  24 /*open circle*/,   kGray+2);
-                        if (jb_before.contains("helicity_minus"))
-                            gum = draw_hel_curve(jb_before["helicity_minus"], 26 /*open triangle*/, kGray+2);
-                    }
-                    TGraphErrors* gcp = nullptr;
-                    TGraphErrors* gcm = nullptr;
-                    if (jb_after.contains("helicity_plus"))
-                        gcp = draw_hel_curve(jb_after["helicity_plus"],  20 /*filled circle*/,  kBlue+1);
-                    if (jb_after.contains("helicity_minus"))
-                        gcm = draw_hel_curve(jb_after["helicity_minus"], 25 /*filled square*/,  kRed+1);
-
-                    // per-panel label (Q2,t) — match sizes/placement from rad code
-                    TLatex lab;
-                    lab.SetNDC(); lab.SetTextSize(0.07); lab.SetTextAlign(11);
-                    lab.SetTextFont(42);
-                    lab.DrawLatex(0.15, 0.94,
-                        Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
-                             Q2_slice[cc].first, Q2_slice[cc].second,
-                             t_slice[r].first,   t_slice[r].second));
-
-                    // bottom-left legend (match rad code)
-                    if (gcp || gcm || gup || gum){
-                        double x1=0.16, y1=0.18, x2=0.68, y2=0.42;
-                        TLegend* leg = new TLegend(x1,y1,x2,y2);
-                        leg->SetBorderSize(1);
-                        leg->SetLineColor(kBlack);
-                        leg->SetFillColor(kWhite);
-                        leg->SetFillStyle(1001);
-                        leg->SetTextFont(42);
-                        leg->SetTextSize(0.048);
-                        if (gcp) leg->AddEntry(gcp, "bin-centered  + helicity", "lep");
-                        if (gcm) leg->AddEntry(gcm, "bin-centered  - helicity", "lep");
-                        if (gup) leg->AddEntry(gup, "before BC     + helicity", "lep");
-                        if (gum) leg->AddEntry(gum, "before BC     - helicity", "lep");
-                        leg->Draw();
-                    } //endif
-                } //endfor cols
-            } //endfor rows
-
-            const std::string outP =
-                (fs::path(plots_output_dir) / (std::string("bin_centered_xsec_") + E + "_xB_" + std::to_string(ix) + (overlay ? "_overlay.png" : ".png"))).string();
-            c->SaveAs(outP.c_str());
-            delete c;
-        } //endfor xB
-    }; //end lambda makeCanvasSet
-
-    for (const auto& E : energies) {
-        const std::string before_path = (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
-        const std::string after_path  = (fs::path(bincenter_json_dir)    / ("bin_centered_xsec_" + E + ".json")).string();
-
-        if (!fs::exists(after_path)) {
-            std::cout << "[bincenter-plot] Skip E=" << E << " (missing " << after_path << ")\n";
-            continue;
+        if (row_has_data_10p6[b.row_index]) {
+            Task t;
+            t.group_index = 0;
+            t.bin_index   = (int)ib;
+            tasks.push_back(t);
         }
-
-        json j_before = load_json(before_path); // may be empty if missing; overlay will just omit
-        json j_after  = load_json(after_path);
-
-        if (j_after.is_null() || !j_after.contains("bins")) {
-            std::cout << "[bincenter-plot] Malformed after-BC JSON for E=" << E << "\n";
-            continue;
+        if (row_has_data_10p2[b.row_index]) {
+            Task t;
+            t.group_index = 1;
+            t.bin_index   = (int)ib;
+            tasks.push_back(t);
         }
+    }
 
-        std::cout << "[bincenter-plot] Plotting E=" << E << "\n";
-        makeCanvasSet(E, j_before, j_after, false); // corrected-only
-        makeCanvasSet(E, j_before, j_after, true);  // before vs after
-    } //endfor energies
+    std::cout << "[fbin] Total tasks (group,row) to compute: "
+              << tasks.size() << "\n";
 
-    std::cout << "[bincenter-plot] Finished plotting bin-centered cross sections.\n";
+    if (tasks.empty()) {
+        std::cout << "[fbin] No rows require Fbin; nothing to do.\n";
+        return true;
+    }
+
+    // Configure OpenMP (hard cap at 5 workers)
+#ifdef _OPENMP
+    {
+        int want = omp_get_max_threads();
+        int use  = std::min(5, std::max(1, want));
+        omp_set_num_threads(use);
+        std::cout << "[fbin] OpenMP enabled with " << use
+                  << " worker(s) (hard-capped at 5)\n";
+    }
+#else
+    std::cout << "[fbin] OpenMP not available; running single-threaded\n";
+#endif
+
+    const int n_steps = std::max(1, n_substeps);
+
+    // Parallel loop over tasks
+#pragma omp parallel for schedule(dynamic)
+    for (std::size_t it = 0; it < tasks.size(); ++it) {
+        const Task& T = tasks[it];
+        const int gidx = T.group_index;
+        const int bidx = T.bin_index;
+
+        const RowBin& b = bins[bidx];
+        double fval = std::numeric_limits<double>::quiet_NaN();
+        double fsys = std::numeric_limits<double>::quiet_NaN();
+
+        const FbinGroup& G = groups[gidx];
+
+        bool ok = compute_fbin_for_row(
+            b,
+            G.Ebeam,
+            n_steps,
+            model_paths,
+            vgg_globalfit,
+            fval,
+            fsys
+        );
+
+        if (!ok) continue;
+
+        if (gidx == 0) {
+            fbin_vals_10p6[b.row_index] = fval;
+            fbin_sys_10p6 [b.row_index] = fsys;
+        } else if (gidx == 1) {
+            fbin_vals_10p2[b.row_index] = fval;
+            fbin_sys_10p2 [b.row_index] = fsys;
+        }
+    } //end parallel for
+
+    // Fill CSV columns for each group (sequential)
+    if (!fill_fbin_for_group(g10p6,
+                             csv,
+                             row_has_data_10p6,
+                             fbin_vals_10p6,
+                             fbin_sys_10p6,
+                             csv)) {
+        std::cerr << "[fbin] ERROR: fill_fbin_for_group failed for "
+                  << g10p6.label << ".\n";
+        return false;
+    }
+
+    if (!fill_fbin_for_group(g10p2,
+                             csv,
+                             row_has_data_10p2,
+                             fbin_vals_10p2,
+                             fbin_sys_10p2,
+                             csv)) {
+        std::cerr << "[fbin] ERROR: fill_fbin_for_group failed for "
+                  << g10p2.label << ".\n";
+        return false;
+    }
+
+    // Save updated CSV atomically
+    if (!csv.save_atomic(csv_path)) {
+        std::cerr << "[fbin] ERROR: failed to save updated CSV.\n";
+        return false;
+    }
+
+    const uintmax_t size_after =
+        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
+
+    std::cout << "[fbin] Updated CSV: " << csv_abs
+              << " (size " << size_before << " -> " << size_after << ")\n";
+    std::cout << "[fbin] Bin-centering corrections (Fbin) complete.\n";
+
+    return true;
 } //enddef
