@@ -710,7 +710,7 @@ bool update_bin_centering_corrections_csv(
         }
 
         int done = processed_rows.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (done % 50 == 0 || done == NR) {
+        if (done % 1 == 0 || done == NR) {
 #pragma omp critical
             {
                 std::cout << "[bincenter] Progress: " << done << " / " << NR
