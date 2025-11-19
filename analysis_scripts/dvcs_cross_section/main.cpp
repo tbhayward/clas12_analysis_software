@@ -233,6 +233,29 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
+    // --------- Kinematic bin volumes into CSV + plots ----------
+    {
+        const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string out_root_dir = "output";
+
+        // Make a backup specific to the bin-volume step
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
+                std::filesystem::copy_options::overwrite_existing
+            );
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
+                      << e.what() << "\n";
+        }
+
+        if (!update_bin_volume_csv(csv_main, out_root_dir)) {
+            std::cerr << "[main] ERROR: bin_volume step failed.\n";
+            return 1;
+        }
+    }
+
 
     // // --------- π0-corrected helicity counts (per φ) ----------
     // const std::string total_counts_json        = "output/jsons/total_counts.json";

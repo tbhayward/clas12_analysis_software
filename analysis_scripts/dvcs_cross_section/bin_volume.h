@@ -1,23 +1,23 @@
 #ifndef BIN_VOLUME_H
 #define BIN_VOLUME_H
 
-#include <map>
 #include <string>
-#include <vector>
 
-#include "load_binning_scheme.h"  // Binning struct
-
-class TTree; // (unused now, but kept so the signature matches your current main)
-
-/// Computes kinematic bin volumes (independent of generator) and
-/// produces per-energy JSON + plots:
-///   JSON:  output/jsons/bin_volume_<energy>.json       (energy in {"10.59","10.60","10.2"})
-///   Plots: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
-///
-/// NOTE: genMcTrees is no longer used (kept in signature for compatibility).
-void compute_and_plot_bin_volume(
-    const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& genMcTrees, // unused
-    const std::string& out_root_dir);
+// Compute kinematic bin volumes for each phi-binned row in the CSV and
+// write them into the columns:
+//   "bin_volume, 10.6 GeV"
+//   "bin_volume, 10.2 GeV"
+//
+// Binning comes from dvcs_pass2_analysis.csv (Lee-style).
+// No event input is needed; volumes are computed by deterministic
+// integration over (xB, Q2, |t|, phi) with y, W, and t_min masks.
+//
+// Also produces bin-volume vs phi canvases per beam energy and xB bin under
+//   output/bin_volume/10.60
+//   output/bin_volume/10.2
+//
+// Returns true on success, false on failure.
+bool update_bin_volume_csv(const std::string& csv_path,
+                           const std::string& out_root_dir);
 
 #endif // BIN_VOLUME_H
