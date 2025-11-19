@@ -21,7 +21,7 @@
 #include "bin_volume.h"
 #include "model_predictions.h"
 #include "bin_centering_corrections.h"
-#include "cross_section.h"
+#include "cross_sections.h"
 #include "models_vs_data_plots.h"
 
 int main(int argc, char* argv[]) {
