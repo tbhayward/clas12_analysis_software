@@ -64,6 +64,7 @@
 #include <TStyle.h>
 #include <TAxis.h>
 #include <TString.h>
+#include <TH1.h>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
