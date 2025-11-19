@@ -275,14 +275,14 @@ int main(int argc, char* argv[]) {
 
         ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
         const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
-        const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
+        const int  n_steps       = 2;      // sub-bins per dimension (xB,Q2,t,phi)
 
         if (!update_bin_centering_corrections_csv(
                 csv_main,
                 n_steps,
                 model_paths,
                 vgg_globalfit,
-                ModelChoice::Both)) {
+                ModelChoice::VGGonly)) {
             std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
             return 1;
         }
