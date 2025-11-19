@@ -50,6 +50,7 @@
 #include <TPad.h>
 #include <TROOT.h>
 #include <TStyle.h>
+#include <TAxis.h>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
