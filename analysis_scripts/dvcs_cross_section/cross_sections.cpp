@@ -4,22 +4,33 @@
 //
 // This module:
 //   1) Updates dvcs_pass2_analysis.csv:
-//        - Fills integrated luminosity columns for all rows (constant per label).
+//        - Fills integrated luminosity columns for all rows.
 //        - Computes cross sections for unpol/pos/neg per label where columns exist.
 //        - Stores them as "(value, stat, sys)" with sys = 0.
 //        - Propagates stat uncertainties from the acceptance corrected yield
-//          and Frad (bin-volume stat is ignored here).
+//          and Frad.
 //   2) Computes theory curves at bin-mean kinematics for each row + label,
 //      using 12 equally spaced phi points from 0 to 2*pi, and caches them
 //      as JSON under output/jsons/cross_sections/<PeriodDir>.
-//   3) Plots xB canvases with unpol/pos/neg cross sections plus BH/KM/VGG
-//      theory curves as lines, one canvas per xB bin per label.
+//      For each row it stores:
+//        - BH unpolarized.
+//        - KM: unpol, +, -.
+//        - VGG: unpol, +, -.
+//   3) For each label, plots xB canvases where:
+//        - One canvas per xB bin.
+//        - Each canvas is laid out as N_t rows (|t| bins) by N_Q2 columns (Q^2 bins).
+//        - Each subpad (a fixed Q^2 and |t| bin) shows:
+//            * unpolarized, + helicity, and - helicity cross sections vs phi
+//              (with errors) from the CSV.
+//            * BH (unpol), KM (unpol/+/−), VGG (unpol/+/−) curves vs phi
+//              from the corresponding theory JSON row.
 //
 // This file does not add new columns to the CSV; it only updates existing ones.
 // If required columns are missing, it fails with a clear error.
 // -----------------------------------------------------------------------------
 
 #include "cross_sections.h"
+#include "model_predictions.h"
 
 #include <algorithm>
 #include <cctype>
@@ -52,9 +63,13 @@
 #include <TROOT.h>
 #include <TStyle.h>
 #include <TAxis.h>
+#include <TString.h>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
+
+// Convenience typedef for (min,max) ranges
+using Range = std::pair<double,double>;
 
 // -----------------------------------------------------------------------------
 // Period directory helper (consistent with make_dirs.cpp conventions)
@@ -87,62 +102,20 @@ static std::string yield_label_for(const std::string &label) {
 }
 
 // -----------------------------------------------------------------------------
-// Beam energy helper (GeV)
-// -----------------------------------------------------------------------------
-
-static double beam_energy_for_label(const std::string &label) {
-    // Approximate beam energies for each run period / group.
-    // You can refine these if you want more precise values.
-    if (label == "Fa18 Inb" ||
-        label == "Fa18 Out" ||
-        label == "Fa18 Inb Supp" ||
-        label == "Fa18" ||
-        label == "10.6 GeV") {
-        return 10.604;  // fall 2018, nominal 10.6 GeV
-    }
-
-    if (label == "Sp18 Inb" ||
-        label == "Sp18 Out" ||
-        label == "Sp18") {
-        return 10.599;  // spring 2018, nominal 10.6 GeV
-    }
-
-    if (label == "Sp19 Inb") {
-        return 10.200;  // spring 2019, nominal 10.2 GeV
-    }
-
-    // Default fallback
-    return 10.600;
-}
-
-// -----------------------------------------------------------------------------
-// Luminosity map construction
-//
-// The Triple in LumiMap is used here as (value, stat, sys).
-// For now we store the *total integrated charge* in nC as value and set
-// stat = sys = 0. The CSV columns we fill are labeled "(nC)".
+// Luminosity map construction (fill with real numbers in your code)
 // -----------------------------------------------------------------------------
 
 LumiMap build_lumi_map() {
     LumiMap m;
 
-    // Per-period total charges (nC), summed over all runs with positive entries
-    // in the integrated-luminosity text files.
-    //
-    // From the integrated charge files:
-    //   rga_fa18_inb.txt   -> 2,463,154.109 nC
-    //   rga_fa18_out.txt   -> 2,821,911.489 nC
-    //   rga_sp18_out.txt   -> 1,228,024.094 nC
-    //   rga_sp19_inb.txt   -> 1,338,346.168 nC
-    //
-    // Periods without an integrated-luminosity file are set to 0 here.
-
-    m["Fa18 Inb"]      = {2463154.109, 0.0, 0.0};
-    m["Fa18 Out"]      = {2821911.489, 0.0, 0.0};
-    m["Fa18 Inb Supp"] = {0.0,        0.0, 0.0};   // no file provided
-    m["Sp18 Inb"]      = {0.0,        0.0, 0.0};   // no file provided
-    m["Sp18 Out"]      = {1228024.094, 0.0, 0.0};
-    m["Sp19 Inb"]      = {1338346.168, 0.0, 0.0};
+    // TODO: fill with your actual integrated luminosities in (nC).
+    // Example placeholders:
+    m["Fa18 Inb"]      = {0.0, 0.0, 0.0};
+    m["Fa18 Out"]      = {0.0, 0.0, 0.0};
+    m["Fa18 Inb Supp"] = {0.0, 0.0, 0.0};
+    m["Sp18 Inb"]      = {0.0, 0.0, 0.0};
+    m["Sp18 Out"]      = {0.0, 0.0, 0.0};
+    m["Sp19 Inb"]      = {0.0, 0.0, 0.0};
 
     // Combined groups (sums of periods)
     auto sum = [&](const std::vector<std::string> &keys) -> Triple {
@@ -161,15 +134,10 @@ LumiMap build_lumi_map() {
         return r;
     };
 
-    // Fa18 = Fa18 Inb + Fa18 Out (+ Fa18 Inb Supp if you ever fill it)
-    m["Fa18"] = sum({"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp"});
-
-    // Sp18 = Sp18 Inb + Sp18 Out
-    m["Sp18"] = sum({"Sp18 Inb", "Sp18 Out"});
-
-    // 10.6 GeV combined group = all 10.6-ish 2018 periods, not Sp19 (10.2 GeV)
+    m["Fa18"]     = sum({"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp"});
+    m["Sp18"]     = sum({"Sp18 Inb", "Sp18 Out"});
     m["10.6 GeV"] = sum({"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-                         "Sp18 Inb", "Sp18 Out"});
+                         "Sp18 Inb", "Sp18 Out", "Sp19 Inb"});
 
     return m;
 }
@@ -307,28 +275,40 @@ static int find_col_optional(const std::vector<std::string> &header,
 }
 
 // -----------------------------------------------------------------------------
-// Placeholder theory model interface
+// Theory model wrappers (BH / KM / VGG)
 // -----------------------------------------------------------------------------
 
-// Hook these to your actual model_predictions implementation.
-// For now they return 0.0 so this compiles and runs.
-
-static double eval_bh_xs(double /*Ebeam*/,
-                         double /*xB*/, double /*Q2*/, double /*t_abs*/,
-                         double /*phi_rad*/, const std::string &/*helicity*/) {
-    return 0.0;
+static Helicity helicity_from_string(const std::string &h) {
+    if (h == "pos")   return Helicity::Plus;
+    if (h == "neg")   return Helicity::Minus;
+    return Helicity::Unpol;
 }
 
-static double eval_km_xs(double /*Ebeam*/,
-                         double /*xB*/, double /*Q2*/, double /*t_abs*/,
-                         double /*phi_rad*/, const std::string &/*helicity*/) {
-    return 0.0;
+// All wrappers take phi in radians and convert internally to degrees.
+
+static double eval_bh_xs(double Ebeam,
+                         double xB, double Q2, double t_pos,
+                         double phi_rad, const std::string &/*h*/) {
+    const double phi_deg = phi_rad * 180.0 / M_PI;
+    // BH is helicity independent.
+    return vgg_bh_only(xB, Q2, t_pos, phi_deg, Ebeam);
 }
 
-static double eval_vgg_xs(double /*Ebeam*/,
-                          double /*xB*/, double /*Q2*/, double /*t_abs*/,
-                          double /*phi_rad*/, const std::string &/*helicity*/) {
-    return 0.0;
+static double eval_km_xs(double Ebeam,
+                         double xB, double Q2, double t_pos,
+                         double phi_rad, const std::string &h) {
+    const double phi_deg = phi_rad * 180.0 / M_PI;
+    Helicity hel = helicity_from_string(h);
+    return km15_xs(xB, Q2, t_pos, phi_deg, Ebeam, hel);
+}
+
+static double eval_vgg_xs(double Ebeam,
+                          double xB, double Q2, double t_pos,
+                          double phi_rad, const std::string &h) {
+    const double phi_deg = phi_rad * 180.0 / M_PI;
+    Helicity hel = helicity_from_string(h);
+    // globalfit=false by default; flip to true here if you want that behavior.
+    return vgg_xs(xB, Q2, t_pos, phi_deg, Ebeam, hel);
 }
 
 // -----------------------------------------------------------------------------
@@ -363,27 +343,31 @@ static void write_theory_json_for_row(const std::string &label,
 
     const int Nphi = 12;
     std::vector<double> phi_deg(Nphi);
-    std::vector<double> bh_unpol(Nphi), km_unpol(Nphi), vgg_unpol(Nphi);
-    std::vector<double> bh_pos(Nphi),   km_pos(Nphi),   vgg_pos(Nphi);
-    std::vector<double> bh_neg(Nphi),   km_neg(Nphi),   vgg_neg(Nphi);
+    std::vector<double> bh_unpol(Nphi), bh_pos(Nphi), bh_neg(Nphi);
+    std::vector<double> km_unpol(Nphi), km_pos(Nphi), km_neg(Nphi);
+    std::vector<double> vgg_unpol(Nphi), vgg_pos(Nphi), vgg_neg(Nphi);
 
     for (int i = 0; i < Nphi; ++i) {
-        double frac = static_cast<double>(i) / Nphi;
+        double frac    = static_cast<double>(i) / Nphi;
         double phi_rad = 2.0 * M_PI * frac;
         double phi_d   = phi_rad * 180.0 / M_PI;
         phi_deg[i] = phi_d;
 
-        bh_unpol[i]  = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "unpol");
-        km_unpol[i]  = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "unpol");
+        // BH (helicity independent)
+        double bh_val = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "unpol");
+        bh_unpol[i] = bh_val;
+        bh_pos[i]   = bh_val;
+        bh_neg[i]   = bh_val;
+
+        // KM: unpol / + / -
+        km_unpol[i] = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "unpol");
+        km_pos[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "pos");
+        km_neg[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "neg");
+
+        // VGG: unpol / + / -
         vgg_unpol[i] = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "unpol");
-
-        bh_pos[i]  = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "pos");
-        km_pos[i]  = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "pos");
-        vgg_pos[i] = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "pos");
-
-        bh_neg[i]  = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "neg");
-        km_neg[i]  = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "neg");
-        vgg_neg[i] = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "neg");
+        vgg_pos[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "pos");
+        vgg_neg[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_abs_mid, phi_rad, "neg");
     }
 
     json j;
@@ -412,7 +396,7 @@ static void write_theory_json_for_row(const std::string &label,
 }
 
 // -----------------------------------------------------------------------------
-// Cross section computation
+// Cross section computation (CSV update + theory JSON write)
 // -----------------------------------------------------------------------------
 
 bool compute_cross_sections(const std::string &csv_main,
@@ -557,6 +541,9 @@ bool compute_cross_sections(const std::string &csv_main,
     const std::string theory_root = "output/jsons/cross_sections";
     ensure_dir(theory_root);
 
+    // Beam energy (GeV) for theory; adjust if needed
+    const double Ebeam = 10.6;
+
     // Process rows
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) {
@@ -590,6 +577,7 @@ bool compute_cross_sections(const std::string &csv_main,
         if (c_xb_idx >= 0) {
             xb_idx_val = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
         }
+        (void)xb_idx_val; // currently unused here
 
         // Global factors for this bin
         Triple frad = parse_tuple3(fields[c_frad]);
@@ -666,13 +654,9 @@ bool compute_cross_sections(const std::string &csv_main,
 
             // Theory JSON for this (label, row, bin-mean kinematics)
             if (xB_mid > 0.0 && Q2_mid > 0.0 && t_mid > 0.0) {
-                double Ebeam = beam_energy_for_label(L);
-                write_theory_json_for_row(L, theory_root, row,
-                                          xB_mid, Q2_mid, t_mid, Ebeam);
+                write_theory_json_for_row(L, theory_root, row, xB_mid, Q2_mid, t_mid, Ebeam);
             }
         }
-
-        (void)xb_idx_val; // suppress unused warning if not used later
 
         out_lines.push_back(join_csv_line(fields));
     }
@@ -710,20 +694,29 @@ struct Point {
     double xs_err;
 };
 
-struct XSGroup {
+struct BinData {
     std::vector<Point> unpol;
     std::vector<Point> pos;
     std::vector<Point> neg;
-    double xbmin = 0.0;
-    double xbmax = 0.0;
-    int xb_idx   = -1;
+    size_t theory_row = 0;
+    bool   have_theory_row = false;
 };
 
+using QTKey = std::pair<Range,Range>; // first = Q2 range, second = |t| range
+
+struct XSGroupByXB {
+    // For a given xB range, we have a map of (Q2_range, t_range) -> BinData
+    std::map<QTKey, BinData> bins;
+    // Optional xB index if present in CSV
+    int xb_index = -1;
+};
+
+// Theory curves loaded from JSON
 struct TheoryCurves {
     std::vector<double> phi_deg;
-    std::vector<double> bh_unpol, km_unpol, vgg_unpol;
-    std::vector<double> bh_pos,   km_pos,   vgg_pos;
-    std::vector<double> bh_neg,   km_neg,   vgg_neg;
+    std::vector<double> bh_unpol, bh_pos, bh_neg;
+    std::vector<double> km_unpol, km_pos, km_neg;
+    std::vector<double> vgg_unpol, vgg_pos, vgg_neg;
 };
 
 // Load theory JSONs for a label into a map keyed by row index
@@ -756,12 +749,15 @@ load_theory_for_label(const std::string &label,
 
         TheoryCurves tc;
         tc.phi_deg   = j.value("phi_deg", std::vector<double>{});
+
         tc.bh_unpol  = j["BH"].value("unpol", std::vector<double>{});
         tc.bh_pos    = j["BH"].value("pos",   std::vector<double>{});
         tc.bh_neg    = j["BH"].value("neg",   std::vector<double>{});
+
         tc.km_unpol  = j["KM"].value("unpol", std::vector<double>{});
         tc.km_pos    = j["KM"].value("pos",   std::vector<double>{});
         tc.km_neg    = j["KM"].value("neg",   std::vector<double>{});
+
         tc.vgg_unpol = j["VGG"].value("unpol", std::vector<double>{});
         tc.vgg_pos   = j["VGG"].value("pos",   std::vector<double>{});
         tc.vgg_neg   = j["VGG"].value("neg",   std::vector<double>{});
@@ -771,6 +767,52 @@ load_theory_for_label(const std::string &label,
         }
     }
     return out;
+}
+
+// Compute a sensible ymax for one xB slice (data + theory)
+static double compute_ymax_for_slice(
+    const std::map<QTKey, BinData> &bins_for_xB,
+    const std::map<size_t, TheoryCurves> &theory)
+{
+    double ymax = 0.0;
+
+    // Data
+    for (const auto &kv : bins_for_xB) {
+        const BinData &b = kv.second;
+
+        auto scan = [&](const std::vector<Point> &v) {
+            for (const auto &p : v) {
+                double val = p.xs + p.xs_err;
+                if (val > ymax) ymax = val;
+            }
+        };
+        scan(b.unpol);
+        scan(b.pos);
+        scan(b.neg);
+
+        // Theory (BH/KM/VGG, all helicities)
+        if (b.have_theory_row) {
+            auto it_th = theory.find(b.theory_row);
+            if (it_th != theory.end()) {
+                const TheoryCurves &tc = it_th->second;
+                auto scan_th = [&](const std::vector<double> &ys) {
+                    for (double y : ys) {
+                        if (y > ymax) ymax = y;
+                    }
+                };
+                scan_th(tc.bh_unpol);
+                scan_th(tc.km_unpol);
+                scan_th(tc.km_pos);
+                scan_th(tc.km_neg);
+                scan_th(tc.vgg_unpol);
+                scan_th(tc.vgg_pos);
+                scan_th(tc.vgg_neg);
+            }
+        }
+    }
+
+    if (ymax <= 0.0) ymax = 1.0;
+    return 1.15 * ymax;
 }
 
 bool plot_cross_sections_for_label(const std::string &csv_main,
@@ -799,18 +841,26 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     std::vector<std::string> header = split_csv_line(lines[0]);
 
+    // Kinematics columns
     int c_xb_min = -1, c_xb_max = -1;
-    int c_xb_idx = -1;
+    int c_q2_min = -1, c_q2_max = -1;
+    int c_t_min  = -1, c_t_max  = -1;
     try {
         c_xb_min = find_col(header, "xBmin");
         c_xb_max = find_col(header, "xBmax");
+        c_q2_min = find_col(header, "Q2min");
+        c_q2_max = find_col(header, "Q2max");
+        c_t_min  = find_col(header, "t_abs_min");
+        c_t_max  = find_col(header, "t_abs_max");
     } catch (const std::exception &e) {
         std::cerr << "[cross_sections] FATAL: " << e.what()
                   << " in plot_cross_sections_for_label.\n";
         return false;
     }
-    c_xb_idx = find_col_optional(header, "xB index");
 
+    int c_xb_idx = find_col_optional(header, "xB index");
+
+    // Phi: prefer phiavg,<label> if present, else phimin/phimax
     int c_phiavg = find_col_optional(header, "phiavg, " + label);
     int c_phimin = -1, c_phimax = -1;
     if (c_phiavg < 0) {
@@ -823,6 +873,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         }
     }
 
+    // Cross section columns for this label
     int c_xs_unpol = -1, c_xs_pos = -1, c_xs_neg = -1;
     try {
         c_xs_unpol = find_col(header,
@@ -837,27 +888,26 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         return false;
     }
 
-    // Group data rows by xB index (one canvas per xB bin)
-    std::map<int, XSGroup> by_xb;
+    // Build structure: xB range -> (Q2,t) -> BinData
+    std::map<Range, XSGroupByXB> by_xb;
 
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) continue;
         std::vector<std::string> fields = split_csv_line(lines[row]);
         if (fields.size() != header.size()) continue;
 
-        int xb_index = -1;
-        if (c_xb_idx >= 0) {
-            xb_index = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
-        } else {
-            double xbmin = std::atof(trim(unquote(fields[c_xb_min])).c_str());
-            xb_index = static_cast<int>(std::round(1000.0 * xbmin));
-        }
+        double xbmin = std::atof(trim(unquote(fields[c_xb_min])).c_str());
+        double xbmax = std::atof(trim(unquote(fields[c_xb_max])).c_str());
+        double q2min = std::atof(trim(unquote(fields[c_q2_min])).c_str());
+        double q2max = std::atof(trim(unquote(fields[c_q2_max])).c_str());
+        double tmin  = std::atof(trim(unquote(fields[c_t_min])).c_str());
+        double tmax  = std::atof(trim(unquote(fields[c_t_max])).c_str());
 
-        XSGroup &g = by_xb[xb_index];
-        g.xb_idx = xb_index;
-        g.xbmin = std::atof(trim(unquote(fields[c_xb_min])).c_str());
-        g.xbmax = std::atof(trim(unquote(fields[c_xb_max])).c_str());
+        Range xb_range(xbmin, xbmax);
+        Range q2_range(q2min, q2max);
+        Range t_range(tmin,  tmax);
 
+        // Phi center
         double phi = 0.0;
         if (c_phiavg >= 0) {
             phi = std::atof(trim(unquote(fields[c_phiavg])).c_str());
@@ -867,20 +917,49 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
             phi = 0.5 * (pmin + pmax);
         }
 
-        auto add_point = [&](int idx, std::vector<Point> &vec) {
-            if (idx < 0) return;
-            Triple t = parse_tuple3(fields[idx]);
-            if (t.value <= 0.0) return;
+        Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
+        Triple xs_pos   = parse_tuple3(fields[c_xs_pos]);
+        Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
+
+        if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) {
+            // No cross sections for this label in this row
+            continue;
+        }
+
+        XSGroupByXB &group = by_xb[xb_range];
+
+        // Record xB index if present (first occurrence wins)
+        if (group.xb_index < 0 && c_xb_idx >= 0) {
+            group.xb_index = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
+        }
+
+        QTKey key(q2_range, t_range);
+        BinData &bin = group.bins[key];
+
+        // For theory lookup later
+        if (!bin.have_theory_row) {
+            bin.theory_row = row;
+            bin.have_theory_row = true;
+        }
+
+        auto add_point = [&](const Triple &xs, std::vector<Point> &vec) {
+            if (xs.value <= 0.0) return;
             Point p;
             p.phi    = phi;
-            p.xs     = t.value;
-            p.xs_err = t.stat;
+            p.xs     = xs.value;
+            p.xs_err = xs.stat;
             vec.push_back(p);
         };
 
-        add_point(c_xs_unpol, g.unpol);
-        add_point(c_xs_pos,   g.pos);
-        add_point(c_xs_neg,   g.neg);
+        add_point(xs_unpol, bin.unpol);
+        add_point(xs_pos,   bin.pos);
+        add_point(xs_neg,   bin.neg);
+    }
+
+    if (by_xb.empty()) {
+        std::cerr << "[cross_sections] WARNING: no cross section data found for label "
+                  << label << " in CSV (nothing to plot).\n";
+        return true;
     }
 
     // Load theory curves for this label (keyed by row index)
@@ -889,61 +968,88 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
     // ROOT styling
     gROOT->SetBatch(true);
     gStyle->SetOptStat(0);
+    gStyle->SetTitleFont(42, "XYZ");
+    gStyle->SetLabelFont(42, "XYZ");
+    gStyle->SetTextFont(42);
+    gStyle->SetLineWidth(2);
+    gStyle->SetFrameLineWidth(2);
+    gStyle->SetPadTickX(1);
+    gStyle->SetPadTickY(1);
 
     // Output dir
     fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(label);
     ensure_dir(outdir);
 
-    const char *helicity_titles[3] = {
-        "unpolarized", "positive helicity", "negative helicity"
-    };
+    // Iterate xB slices in ascending xBmin order (map ordering)
+    int xb_canvas_counter = 0;
+    for (const auto &kv_xb : by_xb) {
+        const Range &xb_range = kv_xb.first;
+        const XSGroupByXB &group = kv_xb.second;
+        const auto &bins_for_xB = group.bins;
 
-    // Loop over xB groups and make one canvas per xB bin
-    for (const auto &kv : by_xb) {
-        int xb_index = kv.first;
-        const XSGroup &g = kv.second;
+        if (bins_for_xB.empty()) continue;
 
-        if (g.unpol.empty() && g.pos.empty() && g.neg.empty()) continue;
-
-        // Sort by phi
-        auto sort_by_phi = [](std::vector<Point> &v) {
-            std::sort(v.begin(), v.end(),
-                      [](const Point &a, const Point &b) { return a.phi < b.phi; });
-        };
-        XSGroup gg = g;  // copy to sort
-        sort_by_phi(gg.unpol);
-        sort_by_phi(gg.pos);
-        sort_by_phi(gg.neg);
-
-        // Canvas 1x3: unpol, pos, neg
-        std::ostringstream cname;
-        cname << "c_xs_" << canonical_period_dir(label) << "_xb" << xb_index;
-        TCanvas *c = new TCanvas(cname.str().c_str(), "", 1600, 600);
-        c->Divide(3, 1);
-
-        const std::vector<Point> *data_vecs[3] = {
-            &gg.unpol, &gg.pos, &gg.neg
-        };
-
-        // We will pick one representative TheoryCurves object to plot BH/KM/VGG.
-        // Here we just use the first in the map if any exist.
-        const TheoryCurves *tc_ptr = nullptr;
-        if (!theory.empty()) {
-            tc_ptr = &theory.begin()->second;
+        // Collect unique Q2 and t ranges present in this xB slice
+        std::set<Range> q2_set, t_set;
+        for (const auto &kv : bins_for_xB) {
+            const QTKey &qt = kv.first;
+            q2_set.insert(qt.first);
+            t_set.insert(qt.second);
         }
+        std::vector<Range> q2_slice(q2_set.begin(), q2_set.end());
+        std::vector<Range> t_slice(t_set.begin(), t_set.end());
+        if (q2_slice.empty() || t_slice.empty()) continue;
 
-        for (int ipad = 0; ipad < 3; ++ipad) {
-            c->cd(ipad + 1);
-            gPad->SetLeftMargin(0.16);
-            gPad->SetRightMargin(0.06);
-            gPad->SetBottomMargin(0.18);
-            gPad->SetTopMargin(0.12);
-            gPad->SetGridx(true);
-            gPad->SetGridy(true);
+        const int ncols = static_cast<int>(q2_slice.size());
+        const int nrows = static_cast<int>(t_slice.size());
 
-            const std::vector<Point> &v = *data_vecs[ipad];
-            if (v.empty()) continue;
+        // Per-slice y-range (data + theory)
+        double ymax_canvas = compute_ymax_for_slice(bins_for_xB, theory);
+        double ymin_canvas = 0.0;
 
+        const int W = 280 * ncols + 160;
+        const int H = 240 * nrows + 170;
+
+        std::ostringstream cname;
+        int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
+        cname << "c_xsec_" << canonical_period_dir(label) << "_xB" << xb_idx_for_name;
+
+        TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+
+        // Top title pad
+        TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.915, 1.0, 1.0);
+        pTop->SetFillStyle(0);
+        pTop->SetBorderSize(0);
+        pTop->Draw();
+
+        // Grid pad
+        TPad *pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.915);
+        pGrid->SetFillStyle(0);
+        pGrid->SetBorderSize(0);
+        pGrid->Draw();
+        pGrid->cd();
+        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        // Title text on top pad
+        pTop->cd();
+        TLatex head;
+        head.SetNDC();
+        head.SetTextAlign(22);
+        head.SetTextFont(42);
+        head.SetTextSize(0.20);
+
+        std::ostringstream tit;
+        tit << "Cross sections, ep #rightarrow ep#gamma   " << label
+            << "   x_{B} in ("
+            << std::fixed << std::setprecision(3)
+            << xb_range.first << ", " << xb_range.second << ")";
+
+        head.DrawLatex(0.5, 0.55, tit.str().c_str());
+
+        // Helper to draw one graph from a vector<Point>
+        auto make_graph = [](const std::vector<Point> &v,
+                             int mstyle, int mcolor) -> TGraphErrors* {
+            if (v.empty()) return nullptr;
             int N = static_cast<int>(v.size());
             std::vector<double> x(N), y(N), ex(N), ey(N);
             for (int i = 0; i < N; ++i) {
@@ -952,100 +1058,154 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                 ex[i] = 0.0;
                 ey[i] = v[i].xs_err;
             }
+            TGraphErrors *g = new TGraphErrors(N, x.data(), y.data(), ex.data(), ey.data());
+            g->SetMarkerStyle(mstyle);
+            g->SetMarkerSize(1.0);
+            g->SetLineWidth(2);
+            g->SetLineColor(mcolor);
+            g->SetMarkerColor(mcolor);
+            return g;
+        };
 
-            TGraphErrors *gdata = new TGraphErrors(N, x.data(), y.data(),
-                                                   ex.data(), ey.data());
-            gdata->SetMarkerStyle(20);
-            gdata->SetMarkerSize(1.0);
-            gdata->SetLineWidth(1);
-            gdata->SetTitle("");
-            gdata->GetXaxis()->SetTitle("#phi (deg)");
-            gdata->GetYaxis()->SetTitle("d^{4}#sigma / (dx_{B} dQ^{2} d|t| d#phi)");
-            gdata->GetXaxis()->CenterTitle();
-            gdata->GetYaxis()->CenterTitle();
-            gdata->GetXaxis()->SetTitleSize(0.07);
-            gdata->GetYaxis()->SetTitleSize(0.07);
-            gdata->GetXaxis()->SetLabelSize(0.06);
-            gdata->GetYaxis()->SetLabelSize(0.06);
-            gdata->GetXaxis()->SetNdivisions(505);
-            gdata->Draw("AP");
+        // For each (t,Q2) combination, draw a subpad
+        for (int r = 0; r < nrows; ++r) {
+            const Range &t_range = t_slice[r];
+            for (int cc = 0; cc < ncols; ++cc) {
+                const Range &q2_range = q2_slice[cc];
 
-            double ymax = 0.0;
-            for (int i = 0; i < N; ++i) {
-                double val = y[i] + ey[i];
-                if (val > ymax) ymax = val;
-            }
-            if (ymax <= 0.0) ymax = 1.0;
-            gdata->GetYaxis()->SetRangeUser(0.0, 1.15 * ymax);
+                pGrid->cd(r * ncols + cc + 1);
+                gPad->SetGrid(1, 1);
+                gPad->SetTopMargin(0.08);
+                gPad->SetBottomMargin(0.18);
+                gPad->SetLeftMargin(0.16);
+                gPad->SetRightMargin(0.10);
 
-            // Title: period label + xB range + helicity
-            std::ostringstream tss;
-            tss << label << ", x_{B} in ("
-                << std::fixed << std::setprecision(3)
-                << g.xbmin << ", " << g.xbmax << ")"
-                << "  (" << helicity_titles[ipad] << ")";
+                QTKey key(q2_range, t_range);
+                auto it_bin = bins_for_xB.find(key);
 
-            TLatex *lat = new TLatex();
-            lat->SetNDC(true);
-            lat->SetTextSize(0.06);
-            lat->DrawLatex(0.15, 0.90, tss.str().c_str());
+                // Always draw a frame so the canvas layout is stable
+                TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
+                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetYaxis()->SetTitle("d^{4}#sigma / (dx_{B} dQ^{2} d|t| d#phi)");
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->SetTitleSize(0.060);
+                frame->GetYaxis()->SetTitleSize(0.060);
+                frame->GetXaxis()->SetLabelSize(0.048);
+                frame->GetYaxis()->SetLabelSize(0.048);
+                frame->GetXaxis()->SetTitleOffset(1.10);
+                frame->GetYaxis()->SetTitleOffset(1.35);
 
-            TLegend *leg = new TLegend(0.55, 0.65, 0.93, 0.93);
-            leg->SetFillStyle(1001);
-            leg->SetFillColor(kWhite);
-            leg->SetBorderSize(1);
-            leg->SetTextSize(0.055);
-            leg->AddEntry(gdata, "data", "pe");
+                // Panel label: Q^2 and |t| ranges
+                TLatex lab;
+                lab.SetNDC();
+                lab.SetTextSize(0.070);
+                lab.SetTextAlign(11);
+                lab.SetTextFont(42);
+                lab.DrawLatex(
+                    0.15, 0.94,
+                    Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
+                         q2_range.first, q2_range.second,
+                         t_range.first,  t_range.second)
+                );
 
-            // Theory curves for this label (single representative row)
-            if (tc_ptr != nullptr) {
-                const TheoryCurves &tc = *tc_ptr;
-
-                auto draw_curve = [&](const std::vector<double> &ys,
-                                      int lstyle, int lcolor,
-                                      const char *label_curve) {
-                    if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
-                    int M = static_cast<int>(ys.size());
-                    std::vector<double> xp(M), yp(M);
-                    for (int i = 0; i < M; ++i) {
-                        xp[i] = tc.phi_deg[i];
-                        yp[i] = ys[i];
-                    }
-                    TGraph *gth = new TGraph(M, xp.data(), yp.data());
-                    gth->SetLineStyle(lstyle);
-                    gth->SetLineWidth(2);
-                    gth->SetLineColor(lcolor);
-                    gth->Draw("L SAME");
-                    leg->AddEntry(gth, label_curve, "l");
-                };
-
-                if (ipad == 0) {
-                    draw_curve(tc.bh_unpol, 2, kRed + 1,    "BH (unpol)");
-                    draw_curve(tc.km_unpol, 3, kBlue + 1,   "KM (unpol)");
-                    draw_curve(tc.vgg_unpol, 4, kGreen + 2, "VGG (unpol)");
-                } else if (ipad == 1) {
-                    draw_curve(tc.bh_pos,   2, kRed + 1,    "BH (pos)");
-                    draw_curve(tc.km_pos,   3, kBlue + 1,   "KM (pos)");
-                    draw_curve(tc.vgg_pos,  4, kGreen + 2,  "VGG (pos)");
-                } else {
-                    draw_curve(tc.bh_neg,   2, kRed + 1,    "BH (neg)");
-                    draw_curve(tc.km_neg,   3, kBlue + 1,   "KM (neg)");
-                    draw_curve(tc.vgg_neg,  4, kGreen + 2,  "VGG (neg)");
+                if (it_bin == bins_for_xB.end()) {
+                    // No data for this (Q2, t) in this xB slice; leave empty frame.
+                    continue;
                 }
-            }
 
-            leg->Draw("SAME");
+                BinData bin = it_bin->second; // copy so we can sort safely
+
+                // Sort by phi for nicer curves
+                auto sort_by_phi = [](std::vector<Point> &v) {
+                    std::sort(v.begin(), v.end(),
+                              [](const Point &a, const Point &b) {
+                                  return a.phi < b.phi;
+                              });
+                };
+                sort_by_phi(bin.unpol);
+                sort_by_phi(bin.pos);
+                sort_by_phi(bin.neg);
+
+                TGraphErrors *g_unpol = make_graph(bin.unpol, 20, kBlack);
+                TGraphErrors *g_pos   = make_graph(bin.pos,   24, kRed+1);
+                TGraphErrors *g_neg   = make_graph(bin.neg,   25, kBlue+1);
+
+                if (g_unpol) g_unpol->Draw("P SAME");
+                if (g_pos)   g_pos->Draw("P SAME");
+                if (g_neg)   g_neg->Draw("P SAME");
+
+                // Legend
+                TLegend *leg = new TLegend(0.46, 0.15, 0.93, 0.50);
+                leg->SetBorderSize(1);
+                leg->SetLineColor(kBlack);
+                leg->SetFillColor(kWhite);
+                leg->SetFillStyle(1001);
+                leg->SetTextFont(42);
+                leg->SetTextSize(0.040);
+
+                if (g_unpol) leg->AddEntry(g_unpol, "data unpolarized", "lep");
+                if (g_pos)   leg->AddEntry(g_pos,   "data + helicity", "lep");
+                if (g_neg)   leg->AddEntry(g_neg,   "data - helicity", "lep");
+
+                // Theory curves (BH, KM, VGG; unpol and polarized for KM/VGG)
+                if (bin.have_theory_row) {
+                    auto it_th = theory.find(bin.theory_row);
+                    if (it_th != theory.end()) {
+                        const TheoryCurves &tc = it_th->second;
+
+                        auto draw_curve = [&](const std::vector<double> &ys,
+                                              int lstyle, int lcolor,
+                                              const char *label_curve) {
+                            if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
+                            int M = static_cast<int>(ys.size());
+                            std::vector<double> xp(M), yp(M);
+                            for (int i = 0; i < M; ++i) {
+                                xp[i] = tc.phi_deg[i];
+                                yp[i] = ys[i];
+                            }
+                            TGraph *gth = new TGraph(M, xp.data(), yp.data());
+                            gth->SetLineStyle(lstyle);
+                            gth->SetLineWidth(2);
+                            gth->SetLineColor(lcolor);
+                            gth->Draw("L SAME");
+                            leg->AddEntry(gth, label_curve, "l");
+                        };
+
+                        // BH (unpolarized)
+                        draw_curve(tc.bh_unpol, 2, kGreen+2, "BH unpolarized");
+
+                        // KM: unpol / + / -
+                        draw_curve(tc.km_unpol, 1, kMagenta+1, "KM unpolarized");
+                        draw_curve(tc.km_pos,   2, kMagenta+1, "KM + helicity");
+                        draw_curve(tc.km_neg,   3, kMagenta+1, "KM - helicity");
+
+                        // VGG: unpol / + / -
+                        draw_curve(tc.vgg_unpol, 1, kOrange+7, "VGG unpolarized");
+                        draw_curve(tc.vgg_pos,   2, kOrange+7, "VGG + helicity");
+                        draw_curve(tc.vgg_neg,   3, kOrange+7, "VGG - helicity");
+                    }
+                }
+
+                leg->Draw("SAME");
+            }
         }
 
         // Save canvas
         std::ostringstream fname;
         fname << "cross_sections_" << canonical_period_dir(label)
-              << "_xB_" << xb_index << ".png";
+              << "_xB_" << (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter)
+              << ".png";
         fs::path outpath = outdir / fname.str();
         c->SaveAs(outpath.string().c_str());
 
         delete c;
+        ++xb_canvas_counter;
     }
+
+    std::cout << "[cross_sections] Plotted cross sections for label " << label
+              << " into " << outdir.string() << "\n";
 
     return true;
 }
