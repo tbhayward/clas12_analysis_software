@@ -19,10 +19,9 @@
 #include "acceptance.h"
 #include "unfolding.h"
 #include "bin_volume.h"
-#include "uncorrected_cross_section.h"
-#include "rad_corrected_cross_section.h"
 #include "model_predictions.h"
 #include "bin_centering_corrections.h"
+#include "cross_section.h"
 #include "models_vs_data_plots.h"
 
 int main(int argc, char* argv[]) {
@@ -209,29 +208,29 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Radiative corrections (Frad factors) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
+    // // --------- Radiative corrections (Frad factors) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
 
-        // Make a backup before modifying the radiative-correction columns
-        try {
-            std::filesystem::copy_file(
-                csv_main,
-                csv_backup,
-                std::filesystem::copy_options::overwrite_existing
-            );
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup for radiative corrections failed ("
-                      << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup before modifying the radiative-correction columns
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             csv_backup,
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup for radiative corrections failed ("
+    //                   << e.what() << "). Continuing.\n";
+    //     }
 
-        if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
-            std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
+    //         std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- Kinematic bin volumes into CSV + plots ----------
     // {
@@ -294,6 +293,36 @@ int main(int argc, char* argv[]) {
     //         "output/bin_centering_plots");
     // }
 
+
+    // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    {
+        const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string theory_json_root = "output/jsons/cross_sections";
+        const std::string xs_out_root      = "output/cross_sections";
+
+        // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
+        LumiMap lumi_map = build_lumi_map();
+
+        // Step 1: heavy numerical work (CSV cross sections + theory JSON)
+        if (!compute_cross_sections(csv_main, lumi_map)) {
+            std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+        }
+
+        // Step 2: plotting only (can be rerun freely to adjust aesthetics)
+        const std::vector<std::string> labels_to_plot = {
+            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+            "Fa18", "Sp18", "10.6 GeV"
+        };
+
+        for (const auto &label : labels_to_plot) {
+            if (!plot_cross_sections_for_label(csv_main, label,
+                                               theory_json_root, xs_out_root)) {
+                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
+                          << label << "\n";
+            }
+        }
+    }
 
     // // --------- π0-corrected helicity counts (per φ) ----------
     // const std::string total_counts_json        = "output/jsons/total_counts.json";
