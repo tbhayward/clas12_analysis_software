@@ -11,11 +11,13 @@
 //          and Frad.
 //   2) Computes theory curves at bin-mean kinematics for each row + label,
 //      using 12 equally spaced phi points from 0 to 2*pi, and caches them
-//      as JSON under output/jsons/cross_sections/<PeriodDir>.
+//      under output/jsons/cross_sections/<PeriodDir>/xs_phi_all.json.
 //      For each row it stores:
 //        - BH unpolarized.
 //        - KM: unpol, +, -.
 //        - VGG: unpol, +, -.
+//      NOTE: model calls are ONLY done for the grouped labels
+//            "10.6 GeV" (2018) and "10.2 GeV" (Sp19), not for each individual period.
 //   3) For each label, plots xB canvases where:
 //        - One canvas per xB bin.
 //        - Each canvas is laid out as N_t rows (|t| bins) by N_Q2 columns (Q^2 bins).
@@ -86,6 +88,7 @@ static std::string canonical_period_dir(const std::string &label) {
     if (label == "Fa18")           return "Fa18";
     if (label == "Sp18")           return "Sp18";
     if (label == "10.6 GeV")       return "10.6_GeV";
+    if (label == "10.2 GeV")       return "10.2_GeV";
 
     // Fallback: replace spaces with underscores (should not normally be used)
     std::string out = label;
@@ -98,6 +101,10 @@ static std::string canonical_period_dir(const std::string &label) {
 static std::string yield_label_for(const std::string &label) {
     if (label == "10.6 GeV") {
         return "2018 (10.6 GeV)";
+    }
+    if (label == "10.2 GeV") {
+        // 10.2 GeV is just Sp19 Inb, so we reuse that yield column.
+        return "Sp19 Inb";
     }
     return label;
 }
@@ -118,7 +125,7 @@ LumiMap build_lumi_map() {
     m["Sp18 Out"]      = {0.0, 0.0, 0.0};
     m["Sp19 Inb"]      = {0.0, 0.0, 0.0};
 
-    // Combined groups (sums of periods)
+    // Combined groups
     auto sum = [&](const std::vector<std::string> &keys) -> Triple {
         Triple r{0.0, 0.0, 0.0};
         for (const auto &k : keys) {
@@ -137,8 +144,15 @@ LumiMap build_lumi_map() {
 
     m["Fa18"]     = sum({"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp"});
     m["Sp18"]     = sum({"Sp18 Inb", "Sp18 Out"});
-    m["10.6 GeV"] = sum({"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-                         "Sp18 Inb", "Sp18 Out", "Sp19 Inb"});
+
+    // 10.6 GeV = all 2018 10.6 periods (Fa18 + Sp18).
+    m["10.6 GeV"] = sum({
+        "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+        "Sp18 Inb", "Sp18 Out"
+    });
+
+    // 10.2 GeV = Sp19 Inb only.
+    m["10.2 GeV"] = sum({"Sp19 Inb"});
 
     return m;
 }
@@ -322,26 +336,14 @@ static void ensure_dir(const fs::path &p) {
     }
 }
 
-// For each (label, row) we write a JSON file under:
-//   output/jsons/cross_sections/<PeriodDir>/xs_phi_row<row>.json
-//
-// containing phi_deg and BH/KM/VGG arrays for unpol/pos/neg.
-// Phi sampling: 12 equally spaced points from 0 to 2*pi.
-static void write_theory_json_for_row(const std::string &label,
-                                      const std::string &theory_root,
-                                      size_t row_index_in_csv,
-                                      double xB_mid,
-                                      double Q2_mid,
-                                      double t_abs_mid,
-                                      double Ebeam) {
-    const std::string period_dir = canonical_period_dir(label);
-    fs::path outdir = fs::path(theory_root) / period_dir;
-    ensure_dir(outdir);
-
-    std::ostringstream fname;
-    fname << "xs_phi_row" << row_index_in_csv << ".json";
-    fs::path fpath = outdir / fname.str();
-
+// Build the JSON object for one theory row (do not write to disk here).
+// We will aggregate all such rows and write a single xs_phi_all.json per label.
+static json build_theory_json_row(const std::string &label,
+                                  size_t row_index_in_csv,
+                                  double xB_mid,
+                                  double Q2_mid,
+                                  double t_abs_mid,
+                                  double Ebeam) {
     const int Nphi = 12;
     std::vector<double> phi_deg(Nphi);
     std::vector<double> bh_unpol(Nphi), bh_pos(Nphi), bh_neg(Nphi);
@@ -392,8 +394,7 @@ static void write_theory_json_for_row(const std::string &label,
     j["VGG"]["pos"]   = vgg_pos;
     j["VGG"]["neg"]   = vgg_neg;
 
-    std::ofstream ofs(fpath);
-    ofs << std::setw(2) << j << "\n";
+    return j;
 }
 
 // -----------------------------------------------------------------------------
@@ -424,6 +425,13 @@ bool compute_cross_sections(const std::string &csv_main,
 
     // Header
     std::vector<std::string> header = split_csv_line(lines[0]);
+
+    // Progress bookkeeping
+    const size_t total_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
+    std::cout << "[cross_sections] compute_cross_sections: total data rows = "
+              << total_rows << " (excluding header)\n";
+    int next_progress_pct = 10;
+    size_t theory_written = 0;
 
     // Required kinematic columns (for computing bin means)
     int c_xb_min  = -1, c_xb_max  = -1;
@@ -467,7 +475,8 @@ bool compute_cross_sections(const std::string &csv_main,
         "integrated luminosity, Sp18 Out (nC)",
         "integrated luminosity, Fa18 (nC)",
         "integrated luminosity, Sp18 (nC)",
-        "integrated luminosity, 10.6 GeV (nC)"
+        "integrated luminosity, 10.6 GeV (nC)",
+        "integrated luminosity, 10.2 GeV (nC)"
     };
     const std::string lumi_col_fa18_supp =
         "integrated luminosity, Fa18 Inb Supp (nC)";
@@ -496,7 +505,7 @@ bool compute_cross_sections(const std::string &csv_main,
     const std::vector<std::string> labels = {
         "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
         "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-        "Fa18", "Sp18", "10.6 GeV"
+        "Fa18", "Sp18", "10.6 GeV", "10.2 GeV"
     };
 
     // Map of columns for each label+helicity:
@@ -542,8 +551,8 @@ bool compute_cross_sections(const std::string &csv_main,
     const std::string theory_root = "output/jsons/cross_sections";
     ensure_dir(theory_root);
 
-    // Beam energy (GeV) for theory; adjust if needed
-    const double Ebeam = 10.6;
+    // Accumulate theory rows per label; we will write one xs_phi_all.json per label.
+    std::map<std::string, std::vector<json>> theory_rows_by_label;
 
     // Process rows
     for (size_t row = 1; row < lines.size(); ++row) {
@@ -601,12 +610,16 @@ bool compute_cross_sections(const std::string &csv_main,
             else if (L == "Fa18")     lumi_col_name = "integrated luminosity, Fa18 (nC)";
             else if (L == "Sp18")     lumi_col_name = "integrated luminosity, Sp18 (nC)";
             else if (L == "10.6 GeV") lumi_col_name = "integrated luminosity, 10.6 GeV (nC)";
+            else if (L == "10.2 GeV") lumi_col_name = "integrated luminosity, 10.2 GeV (nC)";
 
             auto it_lumi_col = lumi_col_idx.find(lumi_col_name);
             if (it_lumi_col != lumi_col_idx.end()) {
                 fields[it_lumi_col->second] =
                     tuple3_to_cell(Lumi.value, Lumi.stat, Lumi.sys);
             }
+
+            // Track whether this label actually has non-zero cross sections
+            bool label_has_xs = false;
 
             // Now compute cross sections for each helicity where we have columns
             for (const auto &h : helicities) {
@@ -651,18 +664,40 @@ bool compute_cross_sections(const std::string &csv_main,
                 double sigma_sys = 0.0;
 
                 fields[ix] = tuple3_to_cell(sigma, sigma_stat, sigma_sys);
+                label_has_xs = true;
             }
 
             // Theory JSON for this (label, row, bin-mean kinematics)
-            if (xB_mid > 0.0 && Q2_mid > 0.0 && t_mid > 0.0) {
-                write_theory_json_for_row(L, theory_root, row, xB_mid, Q2_mid, t_mid, Ebeam);
+            // Only do model calls for grouped labels 10.6 GeV / 10.2 GeV,
+            // and only if this label actually has non-zero cross sections here.
+            if (label_has_xs && xB_mid > 0.0 && Q2_mid > 0.0 && t_mid > 0.0) {
+                if (L == "10.6 GeV" || L == "10.2 GeV") {
+                    double Ebeam = (L == "10.6 GeV") ? 10.6 : 10.2;
+                    json rowj = build_theory_json_row(L, row, xB_mid, Q2_mid, t_mid, Ebeam);
+                    theory_rows_by_label[L].push_back(std::move(rowj));
+                    ++theory_written;
+                }
             }
         }
 
         out_lines.push_back(join_csv_line(fields));
+
+        // Progress printouts ~every 10% of CSV rows
+        if (total_rows > 0 && next_progress_pct <= 100) {
+            double frac = static_cast<double>(row - 1) / static_cast<double>(total_rows);
+            int pct = static_cast<int>(std::floor(frac * 100.0));
+            if (pct >= next_progress_pct) {
+                std::cout << "[cross_sections] compute_cross_sections progress: "
+                          << pct << "% of rows processed (row "
+                          << (row - 1) << "/" << total_rows
+                          << "), theory row objects so far = "
+                          << theory_written << "\n";
+                next_progress_pct += 10;
+            }
+        }
     }
 
-    // Atomic write-back
+    // Atomic write-back for CSV
     fs::path csv_path(csv_main);
     fs::path tmp_path = csv_path;
     tmp_path += ".tmp";
@@ -681,6 +716,40 @@ bool compute_cross_sections(const std::string &csv_main,
     fs::rename(tmp_path, csv_path);
     std::cout << "[cross_sections] Updated CSV with cross sections and luminosities: "
               << csv_main << "\n";
+
+    // Now write aggregated theory JSON: one xs_phi_all.json per label
+    for (const auto &kv : theory_rows_by_label) {
+        const std::string &L = kv.first;
+        const std::vector<json> &rows = kv.second;
+        if (rows.empty()) continue;
+
+        const std::string period_dir = canonical_period_dir(L);
+        fs::path dir = fs::path(theory_root) / period_dir;
+        ensure_dir(dir);
+
+        json root;
+        root["label"]      = L;
+        root["period_dir"] = period_dir;
+        root["rows"]       = rows;
+
+        fs::path fpath = dir / "xs_phi_all.json";
+        std::ofstream ofs_th(fpath);
+        if (!ofs_th) {
+            std::cerr << "[cross_sections] ERROR: cannot open "
+                      << fpath.string() << " for writing theory JSON.\n";
+            continue;
+        }
+        ofs_th << std::setw(2) << root << "\n";
+        ofs_th.close();
+
+        std::cout << "[cross_sections] Wrote theory JSON for label " << L
+                  << " with " << rows.size()
+                  << " rows to " << fpath.string() << "\n";
+    }
+
+    std::cout << "[cross_sections] compute_cross_sections: built "
+              << theory_written
+              << " theory-row objects total for labels 10.6 GeV / 10.2 GeV.\n";
 
     return true;
 }
@@ -721,52 +790,77 @@ struct TheoryCurves {
 };
 
 // Load theory JSONs for a label into a map keyed by row index
+// Now expects a single xs_phi_all.json file per label.
 static std::map<size_t, TheoryCurves>
 load_theory_for_label(const std::string &label,
                       const std::string &theory_root) {
     std::map<size_t, TheoryCurves> out;
 
-    fs::path dir = fs::path(theory_root) / canonical_period_dir(label);
-    if (!fs::exists(dir) || !fs::is_directory(dir)) {
-        std::cerr << "[cross_sections] WARNING: no theory JSON dir for label \""
-                  << label << "\" at " << dir.string() << "\n";
+    fs::path dir   = fs::path(theory_root) / canonical_period_dir(label);
+    fs::path fpath = dir / "xs_phi_all.json";
+
+    if (!fs::exists(fpath)) {
+        std::cerr << "[cross_sections] WARNING: no theory JSON file for label \""
+                  << label << "\" at " << fpath.string() << "\n";
         return out;
     }
 
-    for (const auto &entry : fs::directory_iterator(dir)) {
-        if (!entry.is_regular_file()) continue;
-        if (entry.path().extension() != ".json") continue;
+    std::ifstream ifs(fpath);
+    if (!ifs) {
+        std::cerr << "[cross_sections] WARNING: cannot open theory JSON file "
+                  << fpath.string() << " for label \"" << label << "\"\n";
+        return out;
+    }
 
-        std::ifstream ifs(entry.path());
-        if (!ifs) continue;
-        json j;
-        try {
-            ifs >> j;
-        } catch (...) {
-            continue;
-        }
+    json root;
+    try {
+        ifs >> root;
+    } catch (...) {
+        std::cerr << "[cross_sections] WARNING: failed to parse JSON from "
+                  << fpath.string() << " for label \"" << label << "\"\n";
+        return out;
+    }
 
-        size_t row_index = j.value("row_index", static_cast<size_t>(0));
+    if (!root.contains("rows") || !root["rows"].is_array()) {
+        std::cerr << "[cross_sections] WARNING: theory JSON for label \""
+                  << label << "\" at " << fpath.string()
+                  << " has no \"rows\" array.\n";
+        return out;
+    }
+
+    const auto &rows = root["rows"];
+    size_t nrows = rows.size();
+    size_t n_ok = 0;
+
+    for (const auto &jr : rows) {
+        size_t row_index = jr.value("row_index", static_cast<size_t>(0));
 
         TheoryCurves tc;
-        tc.phi_deg   = j.value("phi_deg", std::vector<double>{});
+        tc.phi_deg   = jr.value("phi_deg", std::vector<double>{});
 
-        tc.bh_unpol  = j["BH"].value("unpol", std::vector<double>{});
-        tc.bh_pos    = j["BH"].value("pos",   std::vector<double>{});
-        tc.bh_neg    = j["BH"].value("neg",   std::vector<double>{});
+        tc.bh_unpol  = jr["BH"].value("unpol", std::vector<double>{});
+        tc.bh_pos    = jr["BH"].value("pos",   std::vector<double>{});
+        tc.bh_neg    = jr["BH"].value("neg",   std::vector<double>{});
 
-        tc.km_unpol  = j["KM"].value("unpol", std::vector<double>{});
-        tc.km_pos    = j["KM"].value("pos",   std::vector<double>{});
-        tc.km_neg    = j["KM"].value("neg",   std::vector<double>{});
+        tc.km_unpol  = jr["KM"].value("unpol", std::vector<double>{});
+        tc.km_pos    = jr["KM"].value("pos",   std::vector<double>{});
+        tc.km_neg    = jr["KM"].value("neg",   std::vector<double>{});
 
-        tc.vgg_unpol = j["VGG"].value("unpol", std::vector<double>{});
-        tc.vgg_pos   = j["VGG"].value("pos",   std::vector<double>{});
-        tc.vgg_neg   = j["VGG"].value("neg",   std::vector<double>{});
+        tc.vgg_unpol = jr["VGG"].value("unpol", std::vector<double>{});
+        tc.vgg_pos   = jr["VGG"].value("pos",   std::vector<double>{});
+        tc.vgg_neg   = jr["VGG"].value("neg",   std::vector<double>{});
 
         if (!tc.phi_deg.empty()) {
             out[row_index] = std::move(tc);
+            ++n_ok;
         }
     }
+
+    std::cout << "[cross_sections] load_theory_for_label(\"" << label
+              << "\") loaded " << n_ok
+              << " usable theory rows out of " << nrows
+              << " from " << fpath.string() << "\n";
+
     return out;
 }
 
