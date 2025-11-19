@@ -627,7 +627,7 @@ bool compute_cross_sections(const std::string &csv_main,
     };
 
     // Precompute phi grid (12 points from 0 to 360 deg)
-    const int Nphi = 12;
+    const int Nphi = 4;
     std::vector<double> phi_deg(Nphi);
     for (int i = 0; i < Nphi; ++i) {
         double frac = (i + 0.5) / static_cast<double>(Nphi);
@@ -655,7 +655,7 @@ bool compute_cross_sections(const std::string &csv_main,
     std::cout << "[cross_sections] compute_cross_sections: total data rows = "
               << n_data_rows << " (excluding header)\n";
 
-    int next_pct = 10;
+    int next_pct = 1;
 
     // Process rows
     for (size_t row = 1; row < lines.size(); ++row) {
