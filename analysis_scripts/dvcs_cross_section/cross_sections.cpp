@@ -4,22 +4,27 @@
 //
 // This module:
 //   1) Updates dvcs_pass2_analysis.csv:
-//        - Fills integrated luminosity columns for all rows.
-//        - Computes cross sections for unpol/pos/neg per label where columns exist.
+//        - Fills integrated luminosity columns for all rows (where such
+//          columns already exist).
+//        - Computes cross sections for unpol/pos/neg per label where both
+//          the acceptance corrected yield column and the cross section
+//          column exist.
 //        - Stores them as "(value, stat, sys)" with sys = 0.
 //        - Propagates stat uncertainties from the acceptance corrected yield
 //          and Frad.
 //   2) Computes theory curves at bin-mean kinematics for each row for
 //      10.6 GeV and 10.2 GeV only, using 12 equally spaced phi points
-//      from 0 to 360 degrees, and caches them as JSON under
-//      output/jsons/cross_sections/<PeriodDir>/xs_phi_all.json.
+//      from 0 to 360 degrees, and caches them as a single JSON per label:
+//          output/jsons/cross_sections/<PeriodDir>/xs_phi_all.json
 //      For each CSV row it stores:
 //        - BH unpolarized.
 //        - KM: unpol, +, -.
 //        - VGG: unpol, +, -.
+//      For 10.2 GeV we use Sp19 Inb kinematics (it is the only 10.2 period).
 //   3) For each label, plots xB canvases where:
 //        - One canvas per xB bin.
-//        - Each canvas is laid out as N_t rows (|t| bins) by N_Q2 columns (Q^2 bins).
+//        - Each canvas is laid out as N_t rows (|t| bins) by N_Q2 columns
+//          (Q^2 bins).
 //        - Each subpad (a fixed Q^2 and |t| bin) shows:
 //            * unpolarized, + helicity, and - helicity cross sections vs phi
 //              (with errors) from the CSV.
@@ -27,9 +32,12 @@
 //              from the theory JSON for that label (if present).
 //        - Y axis is drawn in log scale.
 //        - A single legend is drawn once at the top of the canvas.
-//
-// This file does not add new columns to the CSV; it only updates existing ones.
-// If required columns are missing, it fails with a clear error.
+//        - Empty (Q^2, |t|) bins show only an annotated frame.
+//   4) This file does not add new columns to the CSV; it only updates
+//      existing ones. If truly required columns are missing, it fails with
+//      a clear error; optional combined-group columns such as
+//      "integrated luminosity, 10.2 GeV (nC)" are treated as optional
+//      and simply not filled if absent.
 // -----------------------------------------------------------------------------
 
 #include "cross_sections.h"
@@ -104,8 +112,8 @@ static std::string yield_label_for(const std::string &label) {
         return "2018 (10.6 GeV)";
     }
     if (label == "10.2 GeV") {
-        // For now this is just Sp19 Inb; if you later add a separate combined label
-        // you can adjust this mapping.
+        // For now this is just Sp19 Inb; if you later add a separate combined
+        // label/columns, you can adjust this mapping.
         return "Sp19 Inb";
     }
     return label;
@@ -252,11 +260,18 @@ static int find_col_optional(const std::vector<std::string> &header,
 // Expected line format (comma-separated, no header, one line per run):
 //   run, total, pos, neg, ...
 //
+// Arguments:
+//   total_from_pos_neg = if true, we ignore the "total" column and instead
+//                        compute total = pos + neg. This is what you want
+//                        for RGA Fa18 Inb, RGA Fa18 Out, and RGA Sp19 Inb.
+//                        If false, we use the "total" column directly.
+//
 // We:
 //   - ignore empty lines and lines starting with '#'
 //   - sum column 2 (total), column 3 (pos), column 4 (neg)
-//   - store them as Triple{total, pos, neg}
-static Triple load_rga_lumi_file(const std::string &path) {
+//   - return Triple{total, pos, neg} with total defined as above.
+static Triple load_rga_lumi_file(const std::string &path,
+                                 bool total_from_pos_neg) {
     std::ifstream ifs(path);
     if (!ifs) {
         std::cerr << "[cross_sections] FATAL: cannot open lumi file: "
@@ -264,9 +279,9 @@ static Triple load_rga_lumi_file(const std::string &path) {
         throw std::runtime_error("cannot open lumi file: " + path);
     }
 
-    double sum_total = 0.0;
-    double sum_pos   = 0.0;
-    double sum_neg   = 0.0;
+    double sum_total_col = 0.0;
+    double sum_pos       = 0.0;
+    double sum_neg       = 0.0;
 
     std::string line;
     size_t n_lines = 0;
@@ -294,22 +309,24 @@ static Triple load_rga_lumi_file(const std::string &path) {
         double pos   = std::atof(fields[2].c_str()); // column 3
         double neg   = std::atof(fields[3].c_str()); // column 4
 
-        sum_total += total;
-        sum_pos   += pos;
-        sum_neg   += neg;
+        sum_total_col += total;
+        sum_pos       += pos;
+        sum_neg       += neg;
         ++n_lines;
     }
 
+    double final_total = total_from_pos_neg ? (sum_pos + sum_neg) : sum_total_col;
+
     std::cout << "[cross_sections] Loaded lumi from " << path
               << " over " << n_lines << " runs: "
-              << "total=" << sum_total
+              << "total=" << final_total
               << " pos="   << sum_pos
               << " neg="   << sum_neg << "\n";
 
     Triple out;
-    out.value = sum_total; // total unpolarized charge
-    out.stat  = sum_pos;   // + helicity charge
-    out.sys   = sum_neg;   // - helicity charge
+    out.value = final_total; // total unpolarized charge
+    out.stat  = sum_pos;     // + helicity charge
+    out.sys   = sum_neg;     // - helicity charge
     return out;
 }
 
@@ -317,9 +334,9 @@ static Triple load_rga_lumi_file(const std::string &path) {
 // Luminosity map construction
 //
 // For each label L, we store:
-//   Lumi.value = total accumulated charge (unpolarized, column 2)
-//   Lumi.stat  = + helicity accumulated charge (column 3)
-//   Lumi.sys   = - helicity accumulated charge (column 4)
+//   Lumi.value = total accumulated charge (unpolarized)
+//   Lumi.stat  = + helicity accumulated charge
+//   Lumi.sys   = - helicity accumulated charge
 //
 // The RGA text files live in imports/integrated_luminosity/:
 //
@@ -333,6 +350,12 @@ static Triple load_rga_lumi_file(const std::string &path) {
 //   "Sp18"     = Sp18 Inb + Sp18 Out
 //   "10.6 GeV" = all 2018 10.6 periods (Fa18 + Sp18)
 //   "10.2 GeV" = Sp19 Inb only
+//
+// Special cases from your note:
+//   - For RGA Fa18 Inb, RGA Fa18 Out, and RGA Sp19 Inb we do not trust
+//     the "total" column; total is taken as pos + neg.
+//   - For RGA Sp18 Out we only have the total column; pos and neg are zero.
+//   - For RGA Sp18 Inb we currently have no file; everything is zero.
 // -----------------------------------------------------------------------------
 
 LumiMap build_lumi_map() {
@@ -341,9 +364,9 @@ LumiMap build_lumi_map() {
     const std::string base = "imports/integrated_luminosity";
 
     try {
-        // Fall 2018
-        m["Fa18 Inb"]      = load_rga_lumi_file(base + "/rga_fa18_inb.txt");
-        m["Fa18 Out"]      = load_rga_lumi_file(base + "/rga_fa18_out.txt");
+        // Fall 2018 (use total = pos + neg)
+        m["Fa18 Inb"]      = load_rga_lumi_file(base + "/rga_fa18_inb.txt",  true);
+        m["Fa18 Out"]      = load_rga_lumi_file(base + "/rga_fa18_out.txt",  true);
         // If you have a separate file for Fa18 Inb Supp, load it here.
         // For now we set it to zero and keep it explicit.
         m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
@@ -351,10 +374,11 @@ LumiMap build_lumi_map() {
         // Spring 2018
         // If you have rga_sp18_inb.txt, load it here. For now set to zero.
         m["Sp18 Inb"]      = Triple{0.0, 0.0, 0.0};
-        m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt");
+        // Sp18 Out has only total (no helicity splitting).
+        m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt", false);
 
-        // Spring 2019 (10.2 GeV)
-        m["Sp19 Inb"]      = load_rga_lumi_file(base + "/rga_sp19_inb.txt");
+        // Spring 2019 (10.2 GeV, use total = pos + neg)
+        m["Sp19 Inb"]      = load_rga_lumi_file(base + "/rga_sp19_inb.txt", true);
     } catch (const std::exception &e) {
         std::cerr << "[cross_sections] FATAL in build_lumi_map: "
                   << e.what() << "\n";
@@ -503,7 +527,7 @@ bool compute_cross_sections(const std::string &csv_main,
     }
 
     // Integrated luminosity columns
-    // These must already exist in the CSV; we only fill them.
+    // These must already exist in the CSV for the named periods; we only fill them.
     const std::vector<std::string> lumi_col_names_required = {
         "integrated luminosity, Fa18 Inb (nC)",
         "integrated luminosity, Fa18 Out (nC)",
@@ -512,11 +536,14 @@ bool compute_cross_sections(const std::string &csv_main,
         "integrated luminosity, Sp18 Out (nC)",
         "integrated luminosity, Fa18 (nC)",
         "integrated luminosity, Sp18 (nC)",
-        "integrated luminosity, 10.6 GeV (nC)",
-        "integrated luminosity, 10.2 GeV (nC)"
+        "integrated luminosity, 10.6 GeV (nC)"
+        // Note: "integrated luminosity, 10.2 GeV (nC)" is optional and
+        // handled separately below.
     };
     const std::string lumi_col_fa18_supp =
         "integrated luminosity, Fa18 Inb Supp (nC)";
+    const std::string lumi_col_10p2 =
+        "integrated luminosity, 10.2 GeV (nC)";
 
     std::map<std::string, int> lumi_col_idx;
     try {
@@ -528,10 +555,14 @@ bool compute_cross_sections(const std::string &csv_main,
         std::cerr << "[cross_sections] FATAL: " << e.what() << "\n";
         return false;
     }
-    // Optional Fa18 Inb Supp column
+    // Optional Fa18 Inb Supp and 10.2 GeV columns
     int idx_fa18_supp = find_col_optional(header, lumi_col_fa18_supp);
     if (idx_fa18_supp >= 0) {
         lumi_col_idx[lumi_col_fa18_supp] = idx_fa18_supp;
+    }
+    int idx_10p2 = find_col_optional(header, lumi_col_10p2);
+    if (idx_10p2 >= 0) {
+        lumi_col_idx[lumi_col_10p2] = idx_10p2;
     }
 
     // Helicity labels used in column names
@@ -554,6 +585,14 @@ bool compute_cross_sections(const std::string &csv_main,
     std::map<std::string, ColPair> colmap;  // key = label + "|" + helicity
 
     for (const auto &L : labels) {
+        // For the combined "10.2 GeV" label we do not maintain separate
+        // cross section columns in the CSV; cross sections live on Sp19 Inb.
+        // We still compute theory curves for 10.2 GeV below, but skip
+        // cross section CSV columns for this label explicitly.
+        if (L == "10.2 GeV") {
+            continue;
+        }
+
         const std::string YL = yield_label_for(L);
         for (const auto &h : helicities) {
             std::string key = L + "|" + h;
@@ -1098,18 +1137,25 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         }
     }
 
-    // Cross section columns for this label
-    int c_xs_unpol = -1, c_xs_pos = -1, c_xs_neg = -1;
-    try {
-        c_xs_unpol = find_col(header,
-            "cross sections, ep->epg, exp, " + label + ", unpol");
-        c_xs_pos   = find_col(header,
-            "cross sections, ep->epg, exp, " + label + ", pos");
-        c_xs_neg   = find_col(header,
-            "cross sections, ep->epg, exp, " + label + ", neg");
-    } catch (const std::exception &e) {
-        std::cerr << "[cross_sections] FATAL: " << e.what()
-                  << " in plot_cross_sections_for_label.\n";
+    // Cross section columns for this label.
+    // If none of the three exist, this label simply has no data to plot.
+    int c_xs_unpol = find_col_optional(
+        header, "cross sections, ep->epg, exp, " + label + ", unpol");
+    int c_xs_pos   = find_col_optional(
+        header, "cross sections, ep->epg, exp, " + label + ", pos");
+    int c_xs_neg   = find_col_optional(
+        header, "cross sections, ep->epg, exp, " + label + ", neg");
+
+    if (c_xs_unpol < 0 && c_xs_pos < 0 && c_xs_neg < 0) {
+        std::cerr << "[cross_sections] INFO: no cross section columns found for label "
+                  << label << " in CSV; nothing to plot.\n";
+        return true;
+    }
+
+    // If any exist, require all three for a clean plot.
+    if (c_xs_unpol < 0 || c_xs_pos < 0 || c_xs_neg < 0) {
+        std::cerr << "[cross_sections] FATAL: cross section columns for label "
+                  << label << " are incomplete; expected unpol/pos/neg.\n";
         return false;
     }
 
