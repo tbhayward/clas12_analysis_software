@@ -282,7 +282,7 @@ int main(int argc, char* argv[]) {
                 n_steps,
                 model_paths,
                 vgg_globalfit,
-                ModelChoice::VGGonly)) {
+                ModelChoice::VGGOnly)) {
             std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
             return 1;
         }
