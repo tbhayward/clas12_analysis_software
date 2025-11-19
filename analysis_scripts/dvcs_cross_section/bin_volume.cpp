@@ -561,7 +561,7 @@ static void draw_bin_volume_canvases(const VolumeGroup& G,
         return;
     }
 
-    const double head_size = 0.36;
+    const double head_size = 0.20;
     const double label_sz  = 0.048;
     const double title_sz  = 0.060;
 
