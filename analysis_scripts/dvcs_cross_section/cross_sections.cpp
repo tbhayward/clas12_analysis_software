@@ -13,8 +13,9 @@
 //        - Propagates stat uncertainties from the acceptance corrected yield
 //          and Frad.
 //   2) Computes theory curves at bin-mean kinematics for each row for
-//      10.6 GeV and 10.2 GeV only, using 12 equally spaced phi points
-//      from 0 to 360 degrees, and caches them as a single JSON per label:
+//      10.6 GeV and 10.2 GeV only, using Nphi equally spaced phi points
+//      from 0 to 360 degrees (currently Nphi = 4 for debugging), and
+//      caches them as a single JSON per label:
 //          output/jsons/cross_sections/<PeriodDir>/xs_phi_all.json
 //      For each CSV row it stores:
 //        - BH unpolarized.
@@ -197,6 +198,13 @@ static std::string join_csv_line(const std::vector<std::string> &fields) {
     return oss.str();
 }
 
+// Representation for "(value, stat, sys)"
+struct Triple {
+    double value;
+    double stat;
+    double sys;
+};
+
 // Parse "(value, stat, sys)" -> Triple.
 static Triple parse_tuple3(const std::string &cell) {
     std::string s = trim(unquote(cell));
@@ -329,6 +337,9 @@ static Triple load_rga_lumi_file(const std::string &path,
     out.sys   = sum_neg;     // - helicity charge
     return out;
 }
+
+// Map label -> lumi triple
+using LumiMap = std::map<std::string, Triple>;
 
 // -----------------------------------------------------------------------------
 // Luminosity map construction
@@ -626,7 +637,7 @@ bool compute_cross_sections(const std::string &csv_main,
         "10.6 GeV", "10.2 GeV"
     };
 
-    // Precompute phi grid (12 points from 0 to 360 deg)
+    // Precompute phi grid (Nphi points from 0 to 360 deg; currently Nphi = 4 for debug)
     const int Nphi = 4;
     std::vector<double> phi_deg(Nphi);
     for (int i = 0; i < Nphi; ++i) {
@@ -664,7 +675,7 @@ bool compute_cross_sections(const std::string &csv_main,
             continue;
         }
 
-        // Progress print ~every 10%
+        // Progress print
         if (n_data_rows > 0 && next_pct <= 100) {
             double frac = 100.0 * static_cast<double>(row) /
                           static_cast<double>(n_data_rows);
@@ -812,8 +823,9 @@ bool compute_cross_sections(const std::string &csv_main,
                     std::vector<double> vgg_unpol(Nphi), vgg_pos(Nphi), vgg_neg(Nphi);
 
                     for (int i = 0; i < Nphi; ++i) {
-                        double frac    = (i + 0.5) / static_cast<double>(Nphi);
-                        double phi_rad = 2.0 * M_PI * frac;
+                        double frac       = (i + 0.5) / static_cast<double>(Nphi);
+                        double phi_rad    = 2.0 * M_PI * frac;
+                        double phi_deg_pt = 360.0 * frac;
 
                         // BH (helicity independent)
                         double bh_val = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad);
@@ -821,15 +833,75 @@ bool compute_cross_sections(const std::string &csv_main,
                         bh_pos[i]   = bh_val;
                         bh_neg[i]   = bh_val;
 
+                        std::cout << "[cross_sections] BH:   label=" << L
+                                  << " row=" << row
+                                  << " phi_deg=" << phi_deg_pt
+                                  << " xB=" << xB_mid
+                                  << " Q2=" << Q2_mid
+                                  << " |t|=" << t_mid
+                                  << " sigma=" << bh_val << "\n";
+
                         // KM
-                        km_unpol[i] = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "unpol");
-                        km_pos[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "pos");
-                        km_neg[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "neg");
+                        double km_un = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "unpol");
+                        double km_p  = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "pos");
+                        double km_m  = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "neg");
+
+                        km_unpol[i] = km_un;
+                        km_pos[i]   = km_p;
+                        km_neg[i]   = km_m;
+
+                        std::cout << "[cross_sections] KM unpol: label=" << L
+                                  << " row=" << row
+                                  << " phi_deg=" << phi_deg_pt
+                                  << " xB=" << xB_mid
+                                  << " Q2=" << Q2_mid
+                                  << " |t|=" << t_mid
+                                  << " sigma=" << km_un << "\n";
+                        std::cout << "[cross_sections] KM +:     label=" << L
+                                  << " row=" << row
+                                  << " phi_deg=" << phi_deg_pt
+                                  << " xB=" << xB_mid
+                                  << " Q2=" << Q2_mid
+                                  << " |t|=" << t_mid
+                                  << " sigma=" << km_p << "\n";
+                        std::cout << "[cross_sections] KM -:     label=" << L
+                                  << " row=" << row
+                                  << " phi_deg=" << phi_deg_pt
+                                  << " xB=" << xB_mid
+                                  << " Q2=" << Q2_mid
+                                  << " |t|=" << t_mid
+                                  << " sigma=" << km_m << "\n";
 
                         // VGG
-                        vgg_unpol[i] = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "unpol");
-                        vgg_pos[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "pos");
-                        vgg_neg[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "neg");
+                        double vgg_un = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "unpol");
+                        double vgg_p  = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "pos");
+                        double vgg_m  = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "neg");
+
+                        vgg_unpol[i] = vgg_un;
+                        vgg_pos[i]   = vgg_p;
+                        vgg_neg[i]   = vgg_m;
+
+                        std::cout << "[cross_sections] VGG unpol: label=" << L
+                                  << " row=" << row
+                                  << " phi_deg=" << phi_deg_pt
+                                  << " xB=" << xB_mid
+                                  << " Q2=" << Q2_mid
+                                  << " |t|=" << t_mid
+                                  << " sigma=" << vgg_un << "\n";
+                        std::cout << "[cross_sections] VGG +:     label=" << L
+                                  << " row=" << row
+                                  << " phi_deg=" << phi_deg_pt
+                                  << " xB=" << xB_mid
+                                  << " Q2=" << Q2_mid
+                                  << " |t|=" << t_mid
+                                  << " sigma=" << vgg_p << "\n";
+                        std::cout << "[cross_sections] VGG -:     label=" << L
+                                  << " row=" << row
+                                  << " phi_deg=" << phi_deg_pt
+                                  << " xB=" << xB_mid
+                                  << " Q2=" << Q2_mid
+                                  << " |t|=" << t_mid
+                                  << " sigma=" << vgg_m << "\n";
                     }
 
                     rowj["BH"]["unpol"] = bh_unpol;
