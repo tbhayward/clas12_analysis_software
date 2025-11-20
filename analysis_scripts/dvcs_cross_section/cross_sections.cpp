@@ -198,12 +198,13 @@ static std::string join_csv_line(const std::vector<std::string> &fields) {
     return oss.str();
 }
 
-// Representation for "(value, stat, sys)"
-struct Triple {
-    double value;
-    double stat;
-    double sys;
-};
+// NOTE: Triple is defined in cross_sections.h and reused here.
+// It should look like:
+// struct Triple {
+//     double value;
+//     double stat;
+//     double sys;
+// };
 
 // Parse "(value, stat, sys)" -> Triple.
 static Triple parse_tuple3(const std::string &cell) {
