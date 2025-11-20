@@ -638,8 +638,8 @@ bool compute_cross_sections(const std::string &csv_main,
         "10.6 GeV", "10.2 GeV"
     };
 
-    // Precompute phi grid (Nphi points from 0 to 360 deg; currently Nphi = 4 for debug)
-    const int Nphi = 4;
+    // Precompute phi grid (Nphi points from 0 to 360 deg; currently Nphi = 6 for debug)
+    const int Nphi = 8;
     std::vector<double> phi_deg(Nphi);
     for (int i = 0; i < Nphi; ++i) {
         double frac = (i + 0.5) / static_cast<double>(Nphi);
