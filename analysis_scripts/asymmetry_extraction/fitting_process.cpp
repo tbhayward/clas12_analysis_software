@@ -3981,7 +3981,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   std::ofstream binExport;
   if (g_ge_write_bin_export) {
     const std::string exportPath = "output/results/GE_bin_export_" + prefix + "_" + suffix + ".txt";
-    binExport.open(exportPath, std::ios::out | std::ios::trunc);
+    binExport.open(exportPath.c_str(), std::ios::out | std::ios::trunc);
     if (binExport) {
       binExport << std::fixed << std::setprecision(3);
       binExport
@@ -3996,8 +3996,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
   // Containers for LaTeX fit-results table
   std::vector<double> meanVars;
-  std::vector<std::vector<double>> all_pvals;
-  std::vector<std::vector<double>> all_perrs;
+  std::vector<std::vector<double> > all_pvals;
+  std::vector<std::vector<double> > all_perrs;
 
   // Parameter names/order (11 total)
   const int npar = 11;
@@ -4052,39 +4052,41 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       const double vmin = allBins[currentFits][i];
       const double vmax = allBins[currentFits][i+1];
 
-      auto upd_minmax = [](double v, double& mn, double& mx) {
-        if (v < mn) mn = v;
-        if (v > mx) mx = v;
+      struct MinMaxUpdater {
+        static void upd(double v, double& mn, double& mx) {
+          if (v < mn) mn = v;
+          if (v > mx) mx = v;
+        }
       };
 
       while (dataReader.Next()){
         if (!kinematicCuts->applyCuts(currentFits,false)) continue;
         if (*currentVariable < vmin || *currentVariable >= vmax) continue;
 
-        sumQ2 += *Q2;
-        sumW  += *W;
-        sumx  += *x;
-        sumy  += *y;
-        sumz  += *z;
-        sumt  += *t;
+        sumQ2   += *Q2;
+        sumW    += *W;
+        sumx    += *x;
+        sumy    += *y;
+        sumz    += *z;
+        sumt    += *t;
         sumtmin += *tmin;
-        sumVar += *currentVariable;
-        nEvt   += 1.0;
+        sumVar  += *currentVariable;
+        nEvt    += 1.0;
 
-        upd_minmax(*Q2, q2min, q2max);
-        upd_minmax(*x,  xmin,  xmax);
-        upd_minmax(*y,  ymin,  ymax);
-        upd_minmax(*z,  zmin,  zmax);
-        upd_minmax(*W,  wmin,  wmax);   // track W range
+        MinMaxUpdater::upd(*Q2, q2min, q2max);
+        MinMaxUpdater::upd(*x,  xmin,  xmax);
+        MinMaxUpdater::upd(*y,  ymin,  ymax);
+        MinMaxUpdater::upd(*z,  zmin,  zmax);
+        MinMaxUpdater::upd(*W,  wmin,  wmax);   // track W range
 
         // −t′ and −t (tprime = t - tmin ⇒ −t′ = −tprime)
         const double mtp = -(*tprime);
         sum_mtp += mtp;
-        upd_minmax(mtp, mtp_min, mtp_max);
+        MinMaxUpdater::upd(mtp, mtp_min, mtp_max);
 
         const double mt = -(*t);
         sum_mt += mt;
-        upd_minmax(mt, mt_min, mt_max); // track -t range
+        MinMaxUpdater::upd(mt, mt_min, mt_max); // track -t range
 
         const double cphi = std::cos(*phi);
         sum_cosphi  += cphi;
@@ -4205,7 +4207,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         arglist[0] = 2000;          minuit.mnexcm("SIMPLEX", arglist, 1, ier);
         arglist[0] = 5000; arglist[1] = 0.1;  minuit.mnexcm("MIGRAD", arglist, 2, ier);
       }
-      minuit.mnexcm("HESSE", nullptr, 0, ier);
+      minuit.mnexcm("HESSE", 0, 0, ier);
     }
 
     // Results
@@ -4216,16 +4218,20 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     for (int ip=0; ip<npar; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
 
     // GLOBAL dof
-    auto count_valid_points = [](TH1D* h){
-      int n=0; if (!h) return n;
-      const int nb = h->GetNbinsX();
-      for (int i=1;i<=nb;++i){
-        const double y=h->GetBinContent(i), e=h->GetBinError(i);
-        if (std::isfinite(y) && std::isfinite(e) && e>0) ++n;
+    struct ValidPointCounter {
+      static int count(TH1D* h) {
+        int n=0; if (!h) return n;
+        const int nb = h->GetNbinsX();
+        for (int i=1;i<=nb;++i){
+          const double y=h->GetBinContent(i), e=h->GetBinError(i);
+          if (std::isfinite(y) && std::isfinite(e) && e>0) ++n;
+        }
+        return n;
       }
-      return n;
     };
-    const int npts_total = count_valid_points(hALU) + count_valid_points(hAUL) + count_valid_points(hALL);
+    const int npts_total = ValidPointCounter::count(hALU)
+                         + ValidPointCounter::count(hAUL)
+                         + ValidPointCounter::count(hALL);
     const int ndf_global = std::max(0, npts_total - npar);
     const double chi2_global = fmin;
 
@@ -4252,8 +4258,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     {
       std::vector<double> pv(11), pe(11);
       for (int k=0;k<11;++k){ pv[k]=pval[k]; pe[k]=perr[k]; }
-      all_pvals.push_back(std::move(pv));
-      all_perrs.push_back(std::move(pe));
+      all_pvals.push_back(pv);
+      all_perrs.push_back(pe);
     }
 
     if (i < numBins - 1) {
@@ -4263,37 +4269,39 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     }
 
     // LaTeX row helper: [min, mean, max] rounded to 2 decimals
-    auto triple = [](double mn, double mu, double mx){
-      std::ostringstream o; o.setf(std::ios::fixed);
-      o << std::setprecision(2)
-        << "[" << mn << ", " << mu << ", " << mx << "]";
-      return o.str();
-    };
-    auto scalar3 = [](double v){
-      std::ostringstream o; o.setf(std::ios::fixed);
-      o << std::setprecision(3) << v;
-      return o.str();
+    struct TripleHelper {
+      static std::string triple(double mn, double mu, double mx) {
+        std::ostringstream o; o.setf(std::ios::fixed);
+        o << std::setprecision(2)
+          << "[" << mn << ", " << mu << ", " << mx << "]";
+        return o.str();
+      }
+      static std::string scalar3(double v) {
+        std::ostringstream o; o.setf(std::ios::fixed);
+        o << std::setprecision(3) << v;
+        return o.str();
+      }
     };
 
     // Original LaTeX kinematics table row (Q2, xB, y, z, -t')
     kinLatex << (i+1) << " ~&~ "
-             << triple(q2min,  meanQ2,  q2max)   << " ~&~ "
-             << triple(xmin,   meanx,   xmax)    << " ~&~ "
-             << triple(ymin,   meany,   ymax)    << " ~&~ "
-             << triple(zmin,   meanz,   zmax)    << " ~&~ "
-             << triple(mtp_min, mean_mtp, mtp_max)
+             << TripleHelper::triple(q2min,  meanQ2,  q2max)   << " ~&~ "
+             << TripleHelper::triple(xmin,   meanx,   xmax)    << " ~&~ "
+             << TripleHelper::triple(ymin,   meany,   ymax)    << " ~&~ "
+             << TripleHelper::triple(zmin,   meanz,   zmax)    << " ~&~ "
+             << TripleHelper::triple(mtp_min, mean_mtp, mtp_max)
              << " \\\\ \\hline\n";
 
     // Extended kinematics2_ table row: same + -t, W, DepB/DepA
     kinLatex2 << (i+1) << " ~&~ "
-              << triple(q2min,  meanQ2,  q2max)   << " ~&~ "
-              << triple(xmin,   meanx,   xmax)    << " ~&~ "
-              << triple(ymin,   meany,   ymax)    << " ~&~ "
-              << triple(zmin,   meanz,   zmax)    << " ~&~ "
-              << triple(mtp_min, mean_mtp, mtp_max) << " ~&~ "
-              << triple(mt_min,  mean_mt, mt_max)   << " ~&~ "
-              << triple(wmin,    meanW,  wmax)      << " ~&~ "
-              << scalar3(depB_over_depA)
+              << TripleHelper::triple(q2min,  meanQ2,  q2max)   << " ~&~ "
+              << TripleHelper::triple(xmin,   meanx,   xmax)    << " ~&~ "
+              << TripleHelper::triple(ymin,   meany,   ymax)    << " ~&~ "
+              << TripleHelper::triple(zmin,   meanz,   zmax)    << " ~&~ "
+              << TripleHelper::triple(mtp_min, mean_mtp, mtp_max) << " ~&~ "
+              << TripleHelper::triple(mt_min,  mean_mt, mt_max)   << " ~&~ "
+              << TripleHelper::triple(wmin,    meanW,  wmax)      << " ~&~ "
+              << TripleHelper::scalar3(depB_over_depA)
               << " \\\\ \\hline\n";
 
     // Keep kinList content (means) unchanged
@@ -4303,7 +4311,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     // Save covariance/correlation blocks
     std::vector<double> cov(npar*npar, 0.0);
-    minuit.mnemat(cov.data(), npar);
+    minuit.mnemat(&cov[0], npar);
 
     std::vector<double> errv(npar);
     for (int ip=0; ip<npar; ++ip) errv[ip] = std::sqrt(std::max(cov[ip*npar+ip], 0.0));
@@ -4312,7 +4320,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const double vmaxB = allBins[currentFits][i+1];
 
     {
-      std::ofstream of(covPath, std::ios::out | std::ios::app);
+      std::ofstream of(covPath.c_str(), std::ios::out | std::ios::app);
       of << std::setprecision(9);
       of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt
          << "  npts=" << npts_total << "  npar=" << npar << "  ndf=" << ndf_global
@@ -4328,7 +4336,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       of << "\n";
     }
     {
-      std::ofstream of(corrPath, std::ios::out | std::ios::app);
+      std::ofstream of(corrPath.c_str(), std::ios::out | std::ios::app);
       of << std::setprecision(9);
       of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt << "\n";
       of << std::left << std::setw(22) << "#";
@@ -4439,27 +4447,40 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
             << "\\label{table:GE_kinematics2_" << prefix << "}\n"
             << "\\end{table}\n\n\n";
   {
-    std::filesystem::path kinPath(kinematic_file ? kinematic_file : "");
-    std::filesystem::path kin2Path;
+    // Build kin2 filename from kinematic_file using only std::string
+    std::string kin2_file;
+    if (kinematic_file && kinematic_file[0] != '\0') {
+      std::string full(kinematic_file);
+      std::string dir;
+      std::string fname;
 
-    if (!kinPath.empty()) {
-      std::filesystem::path dir  = kinPath.parent_path();
-      std::string base = kinPath.filename().string();
-      const std::string pfx = "kinematics_";
-      if (base.rfind(pfx, 0) == 0) {
-        std::string rest = base.substr(pfx.size());
-        kin2Path = dir / (std::string("kinematics2_") + rest);
+      // split directory and filename
+      std::string::size_type pos = full.find_last_of("/\\");
+      if (pos == std::string::npos) {
+        dir   = "";
+        fname = full;
       } else {
-        kin2Path = dir / (std::string("kinematics2_") + base);
+        dir   = full.substr(0, pos + 1);
+        fname = full.substr(pos + 1);
       }
+
+      const std::string pfx = "kinematics_";
+      if (fname.compare(0, pfx.size(), pfx) == 0) {
+        std::string rest = fname.substr(pfx.size());
+        fname = "kinematics2_" + rest;
+      } else {
+        fname = "kinematics2_" + fname;
+      }
+
+      kin2_file = dir + fname;
     } else {
-      kin2Path = std::filesystem::path("kinematics2_GE_" + prefix + ".tex");
+      kin2_file = "kinematics2_GE_" + prefix + ".tex";
     }
 
-    std::ofstream k2(kin2Path.string(), std::ios::app);
+    std::ofstream k2(kin2_file.c_str(), std::ios::app);
     if (!k2) {
       std::cerr << "[performChi2Fits_GeneralExclusive] WARNING: could not open extended kinematics file "
-                << kin2Path.string() << " for writing.\n";
+                << kin2_file << " for writing.\n";
     } else {
       k2 << kinLatex2.str() << std::endl;
     }
@@ -4471,12 +4492,28 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     kp << kinList.str() << "\n";
   }
 
-  // Fit-results LaTeX table block (unchanged from your version) ...
+  // Fit-results LaTeX table block (unchanged)
   {
     std::string varName = propertyNames[currentFits];
-    auto toLower = [](std::string s){ for (auto& ch : s) ch = (char)std::tolower((unsigned char)ch); return s; };
-    auto compact = [](std::string s){ std::string out; out.reserve(s.size()); for (char ch : s) if (ch!=' ' && ch!='_' && ch!='-') out.push_back(ch); return out; };
-    const std::string key = compact(toLower(varName));
+    struct StringHelpers {
+      static std::string toLower(std::string s) {
+        for (size_t i = 0; i < s.size(); ++i) {
+          s[i] = (char)std::tolower((unsigned char)s[i]);
+        }
+        return s;
+      }
+      static std::string compact(std::string s) {
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size(); ++i) {
+          char ch = s[i];
+          if (ch!=' ' && ch!='_' && ch!='-') out.push_back(ch);
+        }
+        return out;
+      }
+    };
+
+    const std::string key = StringHelpers::compact(StringHelpers::toLower(varName));
 
     const bool is_tprime = (key=="tprime" || key=="t'" || key=="tminustmin");
     const bool is_t      = (!is_tprime && (key=="t"));
@@ -4484,41 +4521,53 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::string varLabel;
     if (is_tprime)      varLabel = "$\\langle -t' \\rangle$";
     else if (is_t)      varLabel = "$\\langle -t \\rangle$";
-    else { try { varLabel = "$\\langle " + formatLabelName(varName) + " \\rangle$"; }
-           catch (...) { varLabel = "$\\langle " + varName + " \\rangle$"; } }
+    else {
+      try {
+        varLabel = "$\\langle " + formatLabelName(varName) + " \\rangle$";
+      } catch (...) {
+        varLabel = "$\\langle " + varName + " \\rangle$";
+      }
+    }
 
     struct Col { int idx; const char* label; double sysFrac; bool showSyst; };
-    std::vector<Col> cols_spin = {
-      { 2, "$F_{LU}^{\\sin\\phi}/F_{UU}$",           0.06, true },
-      { 3, "$F_{UL}^{\\sin\\phi}/F_{UU}$",           0.08, true },
-      { 4, "$F_{UL}^{\\sin2\\phi}/F_{UU}$",          0.08, true },
-      { 5, "$F_{LL}/F_{UU}$",                        0.10, true },
-      { 6, "$F_{LL}^{\\cos\\phi}/F_{UU}$",           0.10, true }
-    };
+    std::vector<Col> cols_spin;
+    cols_spin.push_back(Col{ 2, "$F_{LU}^{\\sin\\phi}/F_{UU}$",           0.06, true });
+    cols_spin.push_back(Col{ 3, "$F_{UL}^{\\sin\\phi}/F_{UU}$",           0.08, true });
+    cols_spin.push_back(Col{ 4, "$F_{UL}^{\\sin2\\phi}/F_{UU}$",          0.08, true });
+    cols_spin.push_back(Col{ 5, "$F_{LL}/F_{UU}$",                        0.10, true });
+    cols_spin.push_back(Col{ 6, "$F_{LL}^{\\cos\\phi}/F_{UU}$",           0.10, true });
 
     std::vector<Col> cols_full = cols_spin;
-    cols_full.push_back({ 7, "$F_{UU}^{\\cos\\phi}/F_{UU}$",        0.00, false });
-    cols_full.push_back({ 8, "$F_{UU}^{\\cos2\\phi}/F_{UU}$",       0.00, false });
-    cols_full.push_back({ 9, "$A_{T\\text{-}UL}^{\\sin\\phi}$",     0.08, false });
-    cols_full.push_back({10, "$A_{T\\text{-}LL}^{\\sin\\phi}$",     0.10, false });
+    cols_full.push_back(Col{ 7, "$F_{UU}^{\\cos\\phi}/F_{UU}$",        0.00, false });
+    cols_full.push_back(Col{ 8, "$F_{UU}^{\\cos2\\phi}/F_{UU}$",       0.00, false });
+    cols_full.push_back(Col{ 9, "$A_{T\\text{-}UL}^{\\sin\\phi}$",     0.08, false });
+    cols_full.push_back(Col{10, "$A_{T\\text{-}LL}^{\\sin\\phi}$",     0.10, false });
 
-    const auto& cols = g_ge_write_all_results ? cols_full : cols_spin;
+    const std::vector<Col>& cols = g_ge_write_all_results ? cols_full : cols_spin;
 
     std::string varToken = varName;
-    for (auto& ch : varToken) if (ch==' ' || ch=='\'') ch = '_';
+    for (size_t i = 0; i < varToken.size(); ++i) {
+      char& ch = varToken[i];
+      if (ch==' ' || ch=='\'') ch = '_';
+    }
     const std::string fitOutPath = "output/results/fit_results_GE_" + varToken + "_" + suffix + ".tex";
-    std::ofstream out(fitOutPath, std::ios::out | std::ios::trunc);
-    if (!out) { std::cerr << "[performChi2Fits_GeneralExclusive] Failed to open " << fitOutPath << " for writing.\n"; return; }
+    std::ofstream out(fitOutPath.c_str(), std::ios::out | std::ios::trunc);
+    if (!out) {
+      std::cerr << "[performChi2Fits_GeneralExclusive] Failed to open " << fitOutPath << " for writing.\n";
+      return;
+    }
 
-    auto entry = [](double v, double eStat, double fracSys, bool showSyst) {
-      std::ostringstream s; s.setf(std::ios::fixed);
-      s << std::setprecision(3) << v
-        << "^{\\pm " << std::setprecision(3) << eStat << "}";
-      if (showSyst) {
-        const double eSys = std::fabs(v) * fracSys;
-        s << "_{\\pm " << std::setprecision(3) << eSys << "}";
+    struct EntryHelper {
+      static std::string entry(double v, double eStat, double fracSys, bool showSyst) {
+        std::ostringstream s; s.setf(std::ios::fixed);
+        s << std::setprecision(3) << v
+          << "^{\\pm " << std::setprecision(3) << eStat << "}";
+        if (showSyst) {
+          const double eSys = std::fabs(v) * fracSys;
+          s << "_{\\pm " << std::setprecision(3) << eSys << "}";
+        }
+        return s.str();
       }
-      return s.str();
     };
 
     std::ostringstream header;
@@ -4529,7 +4578,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     header << "|} \\hline\n";
 
     header << varLabel;
-    for (const auto& c : cols) header << " & " << c.label;
+    for (size_t ic=0; ic<cols.size(); ++ic) header << " & " << cols[ic].label;
     header << " \\\\ \\hline\n";
     out << header.str();
 
@@ -4538,10 +4587,11 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
       std::ostringstream row; row.setf(std::ios::fixed);
       row << std::setprecision(3) << meanDisplay;
-      for (const auto& c : cols) {
+      for (size_t jc=0; jc<cols.size(); ++jc) {
+        const Col& c = cols[jc];
         const double v  = all_pvals[ib][c.idx];
         const double es = all_perrs[ib][c.idx];
-        row << " ~&~ " << entry(v, es, c.sysFrac, c.showSyst);
+        row << " ~&~ " << EntryHelper::entry(v, es, c.sysFrac, c.showSyst);
       }
       row << " \\\\ \\hline\n";
       out << row.str();
