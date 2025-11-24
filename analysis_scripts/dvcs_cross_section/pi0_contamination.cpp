@@ -22,6 +22,8 @@
 #include <TROOT.h>
 #include <TString.h>
 #include <TVirtualPad.h>
+#include <TBranch.h>
+#include <TLeaf.h>
 
 #include <algorithm>
 #include <array>
@@ -392,61 +394,120 @@ static bool passes_cuts(const VarCutMap& cuts, const std::map<std::string,double
     return true;
 }
 
-// -------- Branch binders --------
-struct BinderCommon {
-    int detector1=0, detector2=0;
-    double t1=0, open_angle_ep2=0, pTmiss=0;
-    double x=0, Q2=0, phi2=0;
+// -------- Branch binders (Robust Float/Double handling) --------
 
-    double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
-    double theta_pi0_pi0=0;
+// Helper to handle the type complexity
+struct VarBinding {
+    double val_d = 0.0;
+    float  val_f = 0.0;
+    bool   is_float = false;
+    bool   active = false;
 
-    std::set<std::string> have;
+    void bind(TTree* t, const char* name) {
+        TBranch* b = t->GetBranch(name);
+        if (!b) return; 
+        
+        TLeaf* leaf = b->GetLeaf(name);
+        if (!leaf) leaf = (TLeaf*)b->GetListOfLeaves()->First(); // fallback
+        if (!leaf) return;
 
-    static void bindI(TTree* t, const char* n, int* a) {
-        if (!t->GetBranch(n)) fatal(std::string("Missing int branch '") + n + "'");
-        t->SetBranchAddress(n, a);
+        std::string type = leaf->GetTypeName();
+        if (type == "Float_t" || type == "float") {
+            is_float = true;
+            t->SetBranchAddress(name, &val_f);
+        } else {
+            is_float = false;
+            t->SetBranchAddress(name, &val_d);
+        }
+        active = true;
     }
-    static void bindD(TTree* t, const char* n, double* a) {
-        if (!t->GetBranch(n)) fatal(std::string("Missing double branch '") + n + "'");
+
+    double get() const {
+        if (!active) return std::numeric_limits<double>::quiet_NaN();
+        return is_float ? (double)val_f : val_d;
+    }
+};
+
+struct BinderCommon {
+    // Integers are usually consistent, but let's be safe with standard Int_t
+    int detector1=0, detector2=0;
+    
+    // Kinematics (Critical - use robust binding)
+    VarBinding t1, open_angle_ep2, pTmiss;
+    VarBinding x, Q2, phi2;
+
+    // Cuts variables
+    VarBinding Emiss2, Mx2, Mx2_1, Mx2_2, theta_gamma_gamma, xF;
+    VarBinding theta_pi0_pi0;
+
+    // Helper to bind ints (usually safe as Int_t)
+    void bindI(TTree* t, const char* n, int* a) {
+        if (!t->GetBranch(n)) fatal(std::string("Missing int branch '") + n + "'");
         t->SetBranchAddress(n, a);
     }
 
     void bind_core(TTree* t) {
+        // Detectors are integers
         bindI(t, "detector1", &detector1);
         bindI(t, "detector2", &detector2);
-        bindD(t, "t1",       &t1);
-        bindD(t, "open_angle_ep2", &open_angle_ep2);
-        bindD(t, "pTmiss",   &pTmiss);
-        bindD(t, "x",        &x);
-        bindD(t, "Q2",       &Q2);
-        bindD(t, "phi2",     &phi2);
 
-        auto tryD = [&](const char* n, double* a){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); have.insert(n); }
-        };
-        tryD("Emiss2", &Emiss2);
-        tryD("Mx2",    &Mx2);
-        tryD("Mx2_1",  &Mx2_1);
-        tryD("Mx2_2",  &Mx2_2);
-        tryD("theta_gamma_gamma", &theta_gamma_gamma);
-        tryD("xF",     &xF);
-        tryD("theta_pi0_pi0", &theta_pi0_pi0);
+        // Bind kinematics checking for Float/Double
+        t1.bind(t, "t1");
+        open_angle_ep2.bind(t, "open_angle_ep2");
+        pTmiss.bind(t, "pTmiss");
+        
+        // Try 'x' first, if missing try 'xB'
+        if (t->GetBranch("x")) {
+            x.bind(t, "x");
+        } else if (t->GetBranch("xB")) {
+            x.bind(t, "xB");
+        } else {
+            fatal("Missing branch 'x' or 'xB'");
+        }
+
+        Q2.bind(t, "Q2");
+        phi2.bind(t, "phi2");
+
+        // Bind optional cut variables
+        Emiss2.bind(t, "Emiss2");
+        Mx2.bind(t, "Mx2");
+        Mx2_1.bind(t, "Mx2_1");
+        Mx2_2.bind(t, "Mx2_2");
+        theta_gamma_gamma.bind(t, "theta_gamma_gamma");
+        xF.bind(t, "xF");
+        theta_pi0_pi0.bind(t, "theta_pi0_pi0");
+        
+        // Validation for critical vars
+        if (!t1.active) fatal("Missing branch t1");
+        if (!open_angle_ep2.active) fatal("Missing branch open_angle_ep2");
+        if (!pTmiss.active) fatal("Missing branch pTmiss");
+        if (!x.active) fatal("Missing branch x (or xB)");
+        if (!Q2.active) fatal("Missing branch Q2");
+        if (!phi2.active) fatal("Missing branch phi2");
     }
+
+    // Values used in the loop - mapped to the getters
+    double get_x() const { return x.get(); }
+    double get_Q2() const { return Q2.get(); }
+    double get_t1() const { return t1.get(); }
+    double get_phi2() const { return phi2.get(); }
+    double get_open() const { return open_angle_ep2.get(); }
+    double get_pT() const { return pTmiss.get(); }
 
     std::map<std::string,double> cut_vals() const {
         std::map<std::string,double> v;
-        v["pTmiss"] = pTmiss;
-        if (have.count("Emiss2"))            v["Emiss2"] = Emiss2;
-        if (have.count("Mx2"))               v["Mx2"]    = Mx2;
-        if (have.count("Mx2_1"))             v["Mx2_1"]  = Mx2_1;
-        if (have.count("Mx2_2"))             v["Mx2_2"]  = Mx2_2;
-        if (have.count("theta_gamma_gamma")) v["theta_gamma_gamma"] = theta_gamma_gamma;
-        if (have.count("xF"))                v["xF"] = xF;
-        if (have.count("theta_pi0_pi0"))     v["theta_pi0_pi0"] = theta_pi0_pi0;
+        v["pTmiss"] = pTmiss.get();
+        if (Emiss2.active)            v["Emiss2"] = Emiss2.get();
+        if (Mx2.active)               v["Mx2"]    = Mx2.get();
+        if (Mx2_1.active)             v["Mx2_1"]  = Mx2_1.get();
+        if (Mx2_2.active)             v["Mx2_2"]  = Mx2_2.get();
+        if (theta_gamma_gamma.active) v["theta_gamma_gamma"] = theta_gamma_gamma.get();
+        if (xF.active)                v["xF"] = xF.get();
+        if (theta_pi0_pi0.active)     v["theta_pi0_pi0"] = theta_pi0_pi0.get();
         return v;
     }
 };
+
 struct BinderEppi0Data : public BinderCommon {
     int helicity=0;
     void bind(TTree* t) {
@@ -455,6 +516,7 @@ struct BinderEppi0Data : public BinderCommon {
         t->SetBranchAddress("helicity", &helicity);
     }
 };
+
 struct BinderMC : public BinderCommon {
     void bind(TTree* t) { bind_core(t); }
 };
@@ -787,9 +849,9 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tD->GetEntries(); dbgD.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tD->GetEntry(i);
-                if (!(b.open_angle_ep2 > 5.0)) continue; dbgD.pass_global++;
-                if (!((-b.t1) < 1.0)) continue;
-                if (!(b.pTmiss <= 0.20)) continue;
+                if (!(b.get_open() > 5.0)) continue; dbgD.pass_global++;
+                if (!((-b.get_t1()) < 1.0)) continue;
+                if (!(b.get_pT() <= 0.20)) continue;
 
                 std::string matched_topo;
                 int topo_idx=-1;
@@ -803,8 +865,8 @@ bool compute_pi0_contamination_overall(
                 const auto& CP = cuts_for("eppi0", topoKey);
                 if (!passes_cuts(CP.data, b.cut_vals())) continue; dbgD.pass_cuts++;
 
-                const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI_CONST);
+                const double xB=b.get_x(), Q2=b.get_Q2(), tt=std::fabs(b.get_t1());
+                const double phi_deg = wrap_deg(b.get_phi2() * 180.0 / PI_CONST);
                 bool matched=false;
                 for (size_t r=0;r<rows.size();++r) {
                     if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_data++; matched=true; break; }
@@ -819,9 +881,9 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tR->GetEntries(); dbgR.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tR->GetEntry(i);
-                if (!(b.open_angle_ep2 > 5.0)) continue; dbgR.pass_global++;
-                if (!((-b.t1) < 1.0)) continue;
-                if (!(b.pTmiss <= 0.20)) continue;
+                if (!(b.get_open() > 5.0)) continue; dbgR.pass_global++;
+                if (!((-b.get_t1()) < 1.0)) continue;
+                if (!(b.get_pT() <= 0.20)) continue;
 
                 std::string matched_topo;
                 int topo_idx=-1;
@@ -835,8 +897,8 @@ bool compute_pi0_contamination_overall(
                 const auto& CP = cuts_for("eppi0", topoKey);
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgR.pass_cuts++;
 
-                const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI_CONST);
+                const double xB=b.get_x(), Q2=b.get_Q2(), tt=std::fabs(b.get_t1());
+                const double phi_deg = wrap_deg(b.get_phi2() * 180.0 / PI_CONST);
                 bool matched=false;
                 for (size_t r=0;r<rows.size();++r) {
                     if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_reco++; matched=true; break; }
@@ -851,9 +913,9 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tB->GetEntries(); dbgB.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tB->GetEntry(i);
-                if (!(b.open_angle_ep2 > 5.0)) continue; dbgB.pass_global++;
-                if (!((-b.t1) < 1.0)) continue;
-                if (!(b.pTmiss <= 0.20)) continue;
+                if (!(b.get_open() > 5.0)) continue; dbgB.pass_global++;
+                if (!((-b.get_t1()) < 1.0)) continue;
+                if (!(b.get_pT() <= 0.20)) continue;
 
                 std::string matched_topo;
                 int topo_idx=-1;
@@ -867,8 +929,8 @@ bool compute_pi0_contamination_overall(
                 const auto& CP = cuts_for("DVCS", topoKey);
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgB.pass_cuts++;
 
-                const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI_CONST);
+                const double xB=b.get_x(), Q2=b.get_Q2(), tt=std::fabs(b.get_t1());
+                const double phi_deg = wrap_deg(b.get_phi2() * 180.0 / PI_CONST);
                 bool matched=false;
                 for (size_t r=0;r<rows.size();++r) {
                     if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_bkg++; matched=true; break; }

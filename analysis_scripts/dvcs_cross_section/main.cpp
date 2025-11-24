@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
 
-    initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
+    // initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
@@ -53,58 +53,58 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // Run exclusivity cut extraction 
-    // Record the exact global cuts used:
-    write_global_cuts_config_json("output/jsons");
-    runAllExclusivityCuts(
-        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 1
-    );
-    std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // // Run exclusivity cut extraction 
+    // // Record the exact global cuts used:
+    // write_global_cuts_config_json("output/jsons");
+    // runAllExclusivityCuts(
+    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+    //     "output/jsons", "output/exclusivity_plots", 1
+    // );
+    // std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // --------- Global bin-averaged kinematics (CSV update) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // // --------- Global bin-averaged kinematics (CSV update) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-        // Make a simple backup before modifying
-        try {
-            std::filesystem::copy_file(csv_main, csv_backup,
-                                       std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-        }
+    //     // Make a simple backup before modifying
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //                                    std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+    //     }
 
-        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- Raw yields (counts) into CSV + plots ----------
-    {
-        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // // --------- Raw yields (counts) into CSV + plots ----------
+    // {
+    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make a backup (the function also backs up to ..._total_counts.csv)
-        try {
-            std::filesystem::copy_file(csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup (the function also backs up to ..._total_counts.csv)
+    //     try {
+    //         std::filesystem::copy_file(csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+    //     }
 
-        // update_total_counts_csv() now discovers periods/topologies internally
-        if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
-                /*max_workers=*/5)) {
-            std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     // update_total_counts_csv() now discovers periods/topologies internally
+    //     if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
+    //             /*max_workers=*/5)) {
+    //         std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // --------- pi0 contamination (helicity-averaged; DVCS counts from CSV; eppi0 counts re-counted) ----------
     {
@@ -164,343 +164,166 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // // --------- DVCS MC acceptance (CSV + plots) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json  = "output/jsons/combined_cuts.json";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+    // --------- DVCS MC acceptance (CSV + plots) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json  = "output/jsons/combined_cuts.json";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
 
-    //     // Make a backup before modifying the acceptance columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for acceptance failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the acceptance columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for acceptance failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_acceptance_csv(csv_main, genMcTrees, recMcTrees,
-    //                                cuts_json, output_root)) {
-    //         std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_acceptance_csv(csv_main, genMcTrees, recMcTrees,
+                                   cuts_json, output_root)) {
+            std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Unfolding: acceptance-corrected DVCS yields ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_unfolding.csv";
+    // --------- Unfolding: acceptance-corrected DVCS yields ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_unfolding.csv";
 
-    //     // Make a backup before modifying the unfolded-yield columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_unfolding.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for unfolding failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the unfolded-yield columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_unfolding.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for unfolding failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_unfolded_yields_csv(csv_main, output_root)) {
-    //         std::cerr << "[main] ERROR: update_unfolded_yields_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_unfolded_yields_csv(csv_main, output_root)) {
+            std::cerr << "[main] ERROR: update_unfolded_yields_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Radiative corrections (Frad factors) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
+    // --------- Radiative corrections (Frad factors) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
 
-    //     // Make a backup before modifying the radiative-correction columns
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing
-    //         );
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for radiative corrections failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the radiative-correction columns
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                csv_backup,
+                std::filesystem::copy_options::overwrite_existing
+            );
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for radiative corrections failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
-    //         std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
+            std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Kinematic bin volumes into CSV + plots ----------
-    // {
-    //     const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string out_root_dir = "output";
+    // --------- Kinematic bin volumes into CSV + plots ----------
+    {
+        const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string out_root_dir = "output";
 
-    //     // Make a backup specific to the bin-volume step
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
-    //             std::filesystem::copy_options::overwrite_existing
-    //         );
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
-    //                   << e.what() << "\n";
-    //     }
+        // Make a backup specific to the bin-volume step
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
+                std::filesystem::copy_options::overwrite_existing
+            );
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
+                      << e.what() << "\n";
+        }
 
-    //     if (!update_bin_volume_csv(csv_main, out_root_dir)) {
-    //         std::cerr << "[main] ERROR: bin_volume step failed.\n";
-    //         return 1;
-    //     }
-    // }
+        if (!update_bin_volume_csv(csv_main, out_root_dir)) {
+            std::cerr << "[main] ERROR: bin_volume step failed.\n";
+            return 1;
+        }
+    }
 
-    // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     // Make a dedicated backup before modifying Fbin columns.
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
-    //             std::filesystem::copy_options::overwrite_existing
-    //         );
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
-    //     } catch (const std::exception& ex) {
-    //         std::cerr << "[main] WARNING: failed to create bin-centering backup: "
-    //                   << ex.what() << "\n";
-    //     }
+        // Make a dedicated backup before modifying Fbin columns.
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
+                std::filesystem::copy_options::overwrite_existing
+            );
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
+        } catch (const std::exception& ex) {
+            std::cerr << "[main] WARNING: failed to create bin-centering backup: "
+                      << ex.what() << "\n";
+        }
 
-    //     ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
-    //     const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
-    //     const int  n_steps       = 2;      // sub-bins per dimension (xB,Q2,t,phi)
+        ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
+        const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
+        const int  n_steps       = 2;      // sub-bins per dimension (xB,Q2,t,phi)
 
-    //     if (!update_bin_centering_corrections_csv(
-    //             csv_main,
-    //             n_steps,
-    //             model_paths,
-    //             vgg_globalfit,
-    //             ModelChoice::VGGOnly)) {
-    //         std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
-    //         return 1;
-    //     }
+        if (!update_bin_centering_corrections_csv(
+                csv_main,
+                n_steps,
+                model_paths,
+                vgg_globalfit,
+                ModelChoice::VGGOnly)) {
+            std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
+            return 1;
+        }
 
-    //     // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
-    //     // Uses Fbin triples and phiavg columns from the updated CSV.
-    //     plot_bin_centering_fbin_vs_phi(
-    //         csv_main,
-    //         "output/bin_centering_plots");
-    // }
-
-
-    // // --------- Cross sections (CSV update + theory JSON + plots) ----------
-    // {
-    //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string theory_json_root = "output/jsons/cross_sections";
-    //     const std::string xs_out_root      = "output/cross_sections";
-
-    //     // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
-    //     LumiMap lumi_map = build_lumi_map();
-
-    //     // Step 1: heavy numerical work (CSV cross sections + theory JSON)
-    //     if (!compute_cross_sections(csv_main, lumi_map)) {
-    //         std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
-    //     }
-
-    //     // Step 2: plotting only (can be rerun freely to adjust aesthetics)
-    //     const std::vector<std::string> labels_to_plot = {
-    //         "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-    //         "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-    //         "Fa18", "Sp18", "10.6 GeV"
-    //     };
-
-    //     for (const auto &label : labels_to_plot) {
-    //         if (!plot_cross_sections_for_label(csv_main, label,
-    //                                            theory_json_root, xs_out_root)) {
-    //             std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
-    //                       << label << "\n";
-    //         }
-    //     }
-    // }
-
-    // // --------- π0-corrected helicity counts (per φ) ----------
-    // const std::string total_counts_json        = "output/jsons/total_counts.json";
-    // const std::string contamination_dir_counts = "output/jsons/contamination";
-    // const std::string contamination_combined   = "output/jsons/pi0_contamination_combined.json";
-
-    // compute_pi0_corrected_counts(
-    //     dvcs_periods,
-    //     binning_scheme,
-    //     total_counts_json,        // from compute_total_counts()
-    //     contamination_dir_counts, // per-period contamination_*.json live here
-    //     contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
-    //     output_root               // "output"
-    // );
-    // std::cout << "π0-corrected counts stage finished." << std::endl;
-
-    // // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
-    // // Writes:
-    // //   - per-group JSONs: output/jsons/radiative_corrections_group_<energy>.json
-    // //   - per-period JSONs: output/jsons/radiative_corrections_<period>.json
-    // //   - all-groups file: output/jsons/radiative_corrections_all_groups.json
-    // //   - plots (ONLY per beam energy): output/radiative_correction_plots/{10.59,10.60,10.2}/...
-    // compute_radiative_corrections(
-    //     dvcs_periods,
-    //     binning_scheme,
-    //     genMcTrees,
-    //     radGenMcTrees,
-    //     output_root
-    // );
-
-    // // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
-    // // Writes per-period JSONs: output/jsons/acceptance_<period>.json
-    // // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
-    // {
-    //     std::vector<std::string> acc_periods = {
-    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
-    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
-    //         "DVCS_Sp19_inb"
-    //     }; // intentionally skipping DVCS_Fa18_inb_supp
-    //     compute_and_plot_acceptance(
-    //         acc_periods,
-    //         topologies,
-    //         binning_scheme,
-    //         genMcTrees,
-    //         recMcTrees,
-    //         cuts_json_path,
-    //         output_root
-    //     );
-    // }
-
-    // // --------- Unfolding (counts / acceptance), helicity-resolved ----------
-    // // Writes per-period JSONs: output/jsons/unfolded_<period>.json
-    // // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
-    // {
-    //     std::vector<std::string> unf_periods = {
-    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
-    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
-    //         "DVCS_Sp19_inb"
-    //     }; // skip DVCS_Fa18_inb_supp on purpose
-    //     // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
-    //     const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
-    //     compute_and_plot_unfolding(
-    //         unf_periods,
-    //         binning_scheme,
-    //         total_counts_js,
-    //         output_root
-    //     );
-    // }
-
-    // // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
-    // // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
-    // // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
-    // compute_and_plot_bin_volume(
-    //     binning_scheme,
-    //     genMcTrees,
-    //     output_root
-    // );
-
-    // // For polarized cross sections (existing functionality, but now with proper luminosity calculation)
-    // compute_uncorrected_cross_sections(
-    //     binning_scheme,
-    //     "output/jsons",                    // bin volume JSON directory
-    //     "output/jsons",                    // unfolded counts per helicity
-    //     "imports/integrated_luminosity",   // luminosity text files
-    //     "output/uncorrected_cross_section" // output dir
-    // );
-
-    // // NEW: For unpolarized cross sections using total charge
-    // compute_unpolarized_cross_sections(
-    //     binning_scheme,
-    //     "output/jsons",                    // bin volume JSON directory  
-    //     "output/jsons",                    // unfolded counts
-    //     "imports/integrated_luminosity",   // luminosity text files
-    //     "output/uncorrected_cross_section" // output dir
-    // );
-
-    // // Comparison function (uses the new luminosity calculation)
-    // compare_unpolarized_cross_sections_sp18out_vs_fa18out(
-    //     binning_scheme,
-    //     "output/jsons",
-    //     "output/jsons", 
-    //     "imports/integrated_luminosity",
-    //     "output/uncorrected_cross_section"
-    // );
+        // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
+        // Uses Fbin triples and phiavg columns from the updated CSV.
+        plot_bin_centering_fbin_vs_phi(
+            csv_main,
+            "output/bin_centering_plots");
+    }
 
 
-    // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
-    // const std::string unx_dir = "output/jsons";                    // reads: uncorrected_xsec_<E>.json
-    // const std::string rc_dir  = "output/jsons";                    // reads: radiative_corrections_group_<E>.json
-    // const std::string out_dir = "output/rad_corrected_cross_section"; // writes plots here
-    // compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
+    // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    {
+        const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string theory_json_root = "output/jsons/cross_sections";
+        const std::string xs_out_root      = "output/cross_sections";
 
+        // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
+        LumiMap lumi_map = build_lumi_map();
 
-    // // Beam-Spin Asymmetry:
-    // // - reads total_counts.json and contamination JSONs
-    // // - writes per-period fits to output/jsons/BSA_fits/BSA_fits_<period>.json
-    // // - writes all-periods file to output/jsons/BSA_fits_all_periods.json
-    // // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
-    // // - plots to output/bsa_plots/<runTag>/...
-    // namespace fs = std::filesystem;
-    // compute_and_plot_bsa_helicity(
-    //     dvcs_periods,                                               
-    //     topologies,
-    //     binning_scheme,
-    //     dataTrees,       
-    //     (fs::path(output_root) / "jsons" / "pi0_corrected_counts_all_groups.json").string(),
-    //     output_root,  
-    //     (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
-    // );
+        // Step 1: heavy numerical work (CSV cross sections + theory JSON)
+        if (!compute_cross_sections(csv_main, lumi_map)) {
+            std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+        }
 
-    // // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
-    // ModelPaths paths; // leave empty to use env/defaults
-    // double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 180;
-    // double xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths, /*globalfit=*/false);
-    // double xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.604, paths, /*globalfit=*/false);
-    // double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths);
-    // std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
-    // xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.594, Helicity::Plus, paths, /*globalfit=*/false);
-    // xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.594, paths, /*globalfit=*/false);
-    // xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.594, Helicity::Plus, paths);
-    // std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
+        // Step 2: plotting only (can be rerun freely to adjust aesthetics)
+        const std::vector<std::string> labels_to_plot = {
+            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+            "Fa18", "Sp18", "10.6 GeV"
+        };
 
-    // // --------- Bin-centering corrections using VGG ONLY (compute only) ----------
-    // compute_bin_centered_cross_sections(
-    //     binning_scheme,
-    //     "output/jsons",           // rad_corrected_xsec_<E>.json input
-    //     "output/bin_centering",   // JSONs saved to output/bin_centering/jsons
-    //     4,
-    //     ModelPaths(),
-    //     true,
-    //     ModelChoice::Both      // VGGOnly, KM15Only, Both
-    // );
-    // // --------- Bin-centering plots only (no recompute) ----------
-    // plot_bin_centered_cross_sections(
-    //     binning_scheme,
-    //     "output/jsons",                // where rad_corrected_xsec_<E>.json lives (before BC)
-    //     "output/bin_centering/jsons",  // where bin_centered_xsec_<E>.json lives (after BC)
-    //     "output/bin_centering/plots"   // where to write the PNGs
-    // );
+        for (const auto &label : labels_to_plot) {
+            if (!plot_cross_sections_for_label(csv_main, label,
+                                               theory_json_root, xs_out_root)) {
+                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
+                          << label << "\n";
+            }
+        }
+    }
 
-    // // --------- 1) Compute and save model predictions (run once, or when you change models/phi grid) ----------
-    // compute_model_predictions(
-    //     binning_scheme,
-    //     "output/bin_centering/jsons",        // reads bin_centered_xsec_<E>.json to know which bins exist
-    //     "output/model_predictions",          // will write jsons/model_predictions_<E>.json here
-    //     ModelPaths(),                        // configure as needed
-    //     true,                                // vgg_globalfit flag
-    //     24                                  // phi sampling density (0..360 by 1 deg)
-    // );
-
-    // // --------- 2) Plot using the saved predictions (fast; tweak aesthetics without recomputing) ----------
-    // plot_models_vs_bincentered(
-    //     binning_scheme,
-    //     "output/bin_centering/jsons",        // where bin_centered_xsec_<E>.json live (data points)
-    //     "output/model_predictions/jsons",    // where model_predictions_<E>.json live (precomputed curves)
-    //     "output/bin_centering",              // PNGs go under output/bin_centering/plots
-    //     0                                     // unused (predictions carry their own phi grid)
-    // );
 
     std::cout << "All done." << std::endl;
     return 0;
