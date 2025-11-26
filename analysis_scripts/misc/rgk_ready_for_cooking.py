@@ -2,6 +2,7 @@ import uproot
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from scipy.optimize import curve_fit
 
 # Create output directory if it doesn't exist
 output_dir = "output/RGK_ready_for_cooking/"
@@ -55,7 +56,6 @@ print(f"Saved: {os.path.join(output_dir, 'epsilon_vs_Q2.png')}")
 
 # Plot 2: Beam spin asymmetry for all datasets on one plot
 print("\nCreating beam spin asymmetry plot...")
-from scipy.optimize import curve_fit
 
 # Define the fit function: A*sin(phi)
 def sin_fit(phi, A):
@@ -137,7 +137,6 @@ for idx, (file_path, label, color) in enumerate(zip(files, labels, colors)):
         # Fit to A*sin(phi)
         try:
             # Use weights based on uncertainties (avoid division by zero)
-            weights = 1.0 / np.where(asymmetry_err > 0, asymmetry_err, 1.0)
             popt, pcov = curve_fit(sin_fit, phi_centers, asymmetry, sigma=asymmetry_err, 
                                    absolute_sigma=True, p0=[0.1])
             A_fit = popt[0]
@@ -162,15 +161,7 @@ ax.legend(fontsize=10)
 
 # Set x-axis ticks to show multiples of pi
 ax.set_xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi])
-ax.set_xticklabels(['0', r'$\pi/2
-
-print("\nAll plots created successfully!"), r'$\pi
-
-print("\nAll plots created successfully!"), r'$3\pi/2
-
-print("\nAll plots created successfully!"), r'$2\pi
-
-print("\nAll plots created successfully!")])
+ax.set_xticklabels(['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
 
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir, "beam_spin_asymmetry.png"), dpi=300)
