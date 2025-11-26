@@ -153,13 +153,13 @@ public static void main(String[] args) {
 
             boolean process_event = filter.isValid(research_Event) && 
                 (runnum == 11 ||  // MC
-                // runnum > 19000 || 
+                runnum > 19000 || 
                 userProvidedOverride == 1 || // skip QADB
                 runnum < 3087 || // RGA Sp18 Inb
                 (runnum > 3306 && runnum < 3817) || // RGA Sp18 Inb
                 (runnum > 4003 && runnum < 5020) || // RGA Sp18 Inb
                 qa.pass(runnum, evnum));
-            if (runnum > 17768) process_event = false
+            // if (runnum > 17768) process_event = false
             if ([17331, 16987, 17079, 17190, 17639].contains(runnum)) process_event = false
             if ([16850, 16851, 16852, 16855, 16879].contains(runnum)) process_event = false
 
