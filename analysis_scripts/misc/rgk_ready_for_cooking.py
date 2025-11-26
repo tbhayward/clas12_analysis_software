@@ -17,38 +17,47 @@ files = [
 labels = ["RGA 5-pass", "RGK 4-pass", "RGK 3-pass"]
 colors = ['red', 'blue', 'green']
 
-# Plot 1: 2D distribution of epsilon vs Q2 for 0.20 < x < 0.22
+# Plot 1: 2D distribution of epsilon vs Q2 for two x bins
 print("Creating 2D distribution plot...")
-fig, ax = plt.subplots(figsize=(10, 8))
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-for file_path, label, color in zip(files, labels, colors):
-    with uproot.open(file_path) as file:
-        tree = file["PhysicsEvents"]
-        
-        # Load branches
-        DepA = tree["DepA"].array(library="np")
-        DepB = tree["DepB"].array(library="np")
-        Q2 = tree["Q2"].array(library="np")
-        x = tree["x"].array(library="np")
-        
-        # Calculate epsilon
-        epsilon = DepB / DepA
-        
-        # Apply x cut
-        mask = (x > 0.20) & (x < 0.22)
-        epsilon_cut = epsilon[mask]
-        Q2_cut = Q2[mask]
-        
-        # Plot as scatter
-        ax.scatter(Q2_cut, epsilon_cut, c=color, label=label, alpha=0.5, s=1)
+# Define x ranges and Q2 ranges for the two subplots
+x_ranges = [(0.20, 0.22), (0.30, 0.32)]
+q2_ranges = [(1, 4), (1, 6)]
 
-ax.set_xlabel(r"$Q^{2}$ (GeV$^{2}$)", fontsize=14)
-ax.set_ylabel(r"$\epsilon$", fontsize=14)
-ax.set_xlim(1, 6)
-ax.set_ylim(0.2, 1)
-ax.set_title(r"$0.20 < x_{B} < 0.22$", fontsize=16)
-ax.legend(fontsize=12)
-ax.grid(True, alpha=0.3)
+for ax_idx, (x_min, x_max) in enumerate(x_ranges):
+    ax = axes[ax_idx]
+    q2_min, q2_max = q2_ranges[ax_idx]
+    
+    for file_path, label, color in zip(files, labels, colors):
+        with uproot.open(file_path) as file:
+            tree = file["PhysicsEvents"]
+            
+            # Load branches
+            DepA = tree["DepA"].array(library="np")
+            DepB = tree["DepB"].array(library="np")
+            Q2 = tree["Q2"].array(library="np")
+            x = tree["x"].array(library="np")
+            
+            # Calculate epsilon
+            epsilon = DepB / DepA
+            
+            # Apply x cut
+            mask = (x > x_min) & (x < x_max)
+            epsilon_cut = epsilon[mask]
+            Q2_cut = Q2[mask]
+            
+            # Plot as scatter
+            ax.scatter(Q2_cut, epsilon_cut, c=color, label=label, alpha=0.5, s=1)
+    
+    ax.set_xlabel(r"$Q^{2}$ (GeV$^{2}$)", fontsize=14)
+    ax.set_ylabel(r"$\epsilon$", fontsize=14)
+    ax.set_xlim(q2_min, q2_max)
+    ax.set_ylim(0.2, 1)
+    ax.set_title(r"$%.2f < x_{B} < %.2f$" % (x_min, x_max), fontsize=16)
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir, "epsilon_vs_Q2.png"), dpi=300)
 plt.close()
