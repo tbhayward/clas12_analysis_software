@@ -1429,7 +1429,8 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         fname << "cross_sections_" << canonical_period_dir(label)
               << "_xB_" << (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter)
               << ".png";
-        fs::path outpath = outdir << "/" << fname.str();
+
+        fs::path outpath = outdir / fname.str();
         c->SaveAs(outpath.string().c_str());
 
         delete c;
