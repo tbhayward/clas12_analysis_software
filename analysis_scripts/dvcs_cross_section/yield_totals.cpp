@@ -11,7 +11,11 @@
 //       * Fa18 Out: 5, 40, 50 nA (explicit run lists +
 //                    your extra runs mapped below).
 //       * Sp18 Out: 30 nA (3211-3293), 45 nA (3867-3987).
-//       * Sp18 Inb: 35 nA (3306-3411), 50 nA (3431-4325).
+//       * Sp18 Inb: 35 nA (3306-3411),
+//                   50 nA (3431-4325),
+//                   plus explicit overrides for runs
+//                   3418 (70 nA), 3421 (35 nA),
+//                   3422 (35 nA), 3429 (50 nA).
 //       * Sp19 Inb: all runs treated as 50 nA.
 //   - Other periods are counted but placed in an "uncategorized"
 //     bucket since we do not have a current map.
@@ -265,7 +269,7 @@ static TopoCutMap load_sigma_cuts_both(const std::string& path) {
     fin >> j;
 
     for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key();       // e.g. "DVCS_Fa18_Inb_FD_FD"
+        const std::string key = it.key();
         const json& block = it.value();
 
         TopoSigma ts;
@@ -308,12 +312,11 @@ static TopoCutMap load_sigma_cuts_both(const std::string& path) {
 
 static inline bool within_3sigma(double val, const SigmaCut& sc) {
     if (!std::isfinite(val) || !std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) {
-        return true; // treat missing or invalid as pass (no additional restriction)
+        return true;
     }
     return std::fabs(val - sc.mean) <= 3.0 * sc.std;
 }
 
-// Evaluate 3 sigma cuts for either data or mc, given a TopoSigma entry.
 static bool passes_sigma_cuts(
     const TopoSigma& ts,
     bool is_mc,
@@ -390,7 +393,7 @@ static int current_fa18_inb(int run, bool& ok) {
         {5356, 50}, {5357, 50}, {5358, 50}, {5359, 50}, {5360, 50}, {5361, 50},
         {5362, 50}, {5366, 50},
 
-        // 55 nA (5356-5407 are 55; 5400 was missing and is added here)
+        // 55 nA (5356-5407 are 55; 5400 included)
         {5368, 55}, {5369, 55}, {5372, 55}, {5373, 55}, {5374, 55}, {5375, 55},
         {5376, 55}, {5377, 55}, {5378, 55}, {5379, 55}, {5380, 55}, {5381, 55},
         {5382, 55}, {5383, 55}, {5386, 55}, {5390, 55}, {5391, 55}, {5392, 55},
@@ -461,8 +464,6 @@ static int current_fa18_out(int run, bool& ok) {
 }
 
 // Resolve current for a given period label and run number.
-// Returns true if a current is known and sets current_nA.
-// Returns false if run is uncategorized for that period.
 static bool resolve_current_for_label(
     const std::string& period_label,
     int runnum,
@@ -477,6 +478,7 @@ static bool resolve_current_for_label(
         current_nA = cur;
         return true;
     }
+
     if (k == "fa18out") {
         bool ok = false;
         int cur = current_fa18_out(runnum, ok);
@@ -484,6 +486,7 @@ static bool resolve_current_for_label(
         current_nA = cur;
         return true;
     }
+
     if (k == "sp18out") {
         // RGA Sp18 Out: 30 nA from 3211-3293, 45 nA from 3867-3987.
         if (runnum >= 3211 && runnum <= 3293) {
@@ -496,8 +499,23 @@ static bool resolve_current_for_label(
         }
         return false;
     }
+
     if (k == "sp18inb") {
-        // RGA Sp18 Inb:
+        // Explicit overrides first (your new info):
+        if (runnum == 3418) {
+            current_nA = 70;
+            return true;
+        }
+        if (runnum == 3421 || runnum == 3422) {
+            current_nA = 35;
+            return true;
+        }
+        if (runnum == 3429) {
+            current_nA = 50;
+            return true;
+        }
+
+        // RGA Sp18 Inb ranges:
         //  - 35 nA from 3306-3411
         //  - 50 nA from 3431-4325
         if (runnum >= 3306 && runnum <= 3411) {
@@ -508,30 +526,27 @@ static bool resolve_current_for_label(
             current_nA = 50;
             return true;
         }
+
         // Other Sp18 Inb runs: unknown current (stay uncategorized)
         return false;
     }
+
     if (k == "sp19inb") {
-        // All Sp19 Inb runs are 50 nA (per your note).
+        // All Sp19 Inb runs are 50 nA.
         current_nA = 50;
         return true;
     }
 
-    // For other periods (Fa18 Inb Supp, etc.) we do not know
-    // the current map. Count them, but mark as uncategorized.
+    // Other periods (Fa18 Inb Supp, etc.) -> uncategorized.
     return false;
 }
 
 // ---------------- core worker ----------------
 
 struct Totals {
-    // Data: period -> current_nA -> count
     std::map<std::string, std::map<int, long long>> data_by_period_current;
-    // Data events whose run does not map to a known current
     std::map<std::string, long long> data_uncategorized;
-    // Unique run numbers for which current could not be resolved
     std::map<std::string, std::set<int>> data_uncategorized_runs;
-    // MC: period -> count
     std::map<std::string, long long> mc_by_period;
 };
 
