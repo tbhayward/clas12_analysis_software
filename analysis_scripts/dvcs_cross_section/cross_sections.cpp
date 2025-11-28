@@ -789,30 +789,41 @@ struct TheoryCurves {
     std::vector<double> vgg_unpol, vgg_pos, vgg_neg;
 };
 
-// Load xs_phi_all.json, always using the precomputed 10.6 GeV curves.
-// The label argument is only used for logging; all labels reuse the same file.
+// Decide which theory energy JSON to use for a given CSV label.
+// All 2018 periods and combinations use 10.6 GeV.
+// Sp19 Inb and the combined "10.2 GeV" label use 10.2 GeV.
+static std::string theory_energy_label_for(const std::string &label) {
+    if (label == "Sp19 Inb" || label == "10.2 GeV") {
+        return "10.2 GeV";
+    }
+    return "10.6 GeV";
+}
+
+// Load xs_phi_all.json for the appropriate theory energy corresponding
+// to this label. Most labels use the 10.6 GeV JSON; Sp19 Inb and
+// "10.2 GeV" use the 10.2 GeV JSON.
 static std::map<size_t, TheoryCurves>
 load_theory_for_label(const std::string &label,
                       const std::string &theory_root) {
     std::map<size_t, TheoryCurves> out;
 
-    // Always source theory curves from the 10.6 GeV JSON:
-    const std::string src_label = "10.6 GeV";
-    fs::path dir  = fs::path(theory_root) / canonical_period_dir(src_label);
-    fs::path file = dir / "xs_phi_all.json";
+    // Map label -> energy-tag label ("10.6 GeV" or "10.2 GeV")
+    std::string energy_label = theory_energy_label_for(label);
 
+    fs::path dir  = fs::path(theory_root) / canonical_period_dir(energy_label);
+    fs::path file = dir / "xs_phi_all.json";
     if (!fs::exists(file)) {
-        std::cerr << "[cross_sections] WARNING: no theory JSON file at "
-                  << file.string()
-                  << " (needed for label \"" << label << "\").\n";
+        std::cerr << "[cross_sections] WARNING: no theory JSON file for label \""
+                  << label << "\" (energy \"" << energy_label
+                  << "\") at " << file.string() << "\n";
         return out;
     }
 
     std::ifstream ifs(file);
     if (!ifs) {
-        std::cerr << "[cross_sections] WARNING: failed to open theory JSON at "
-                  << file.string()
-                  << " (needed for label \"" << label << "\").\n";
+        std::cerr << "[cross_sections] WARNING: failed to open theory JSON for label \""
+                  << label << "\" (energy \"" << energy_label
+                  << "\") at " << file.string() << "\n";
         return out;
     }
 
@@ -820,24 +831,24 @@ load_theory_for_label(const std::string &label,
     try {
         ifs >> j;
     } catch (...) {
-        std::cerr << "[cross_sections] WARNING: malformed theory JSON at "
-                  << file.string()
-                  << " (used for all labels, including \"" << label << "\").\n";
+        std::cerr << "[cross_sections] WARNING: malformed theory JSON for label \""
+                  << label << "\" (energy \"" << energy_label
+                  << "\") at " << file.string() << "\n";
         return out;
     }
 
     std::vector<double> phi_deg = j.value("phi_deg", std::vector<double>{});
     if (phi_deg.empty()) {
-        std::cerr << "[cross_sections] WARNING: theory JSON at "
-                  << file.string()
-                  << " has empty phi_deg.\n";
+        std::cerr << "[cross_sections] WARNING: theory JSON for label \""
+                  << label << "\" (energy \"" << energy_label
+                  << "\") has empty phi_deg.\n";
         return out;
     }
 
     if (!j.contains("rows") || !j["rows"].is_object()) {
-        std::cerr << "[cross_sections] WARNING: theory JSON at "
-                  << file.string()
-                  << " has no 'rows' object.\n";
+        std::cerr << "[cross_sections] WARNING: theory JSON for label \""
+                  << label << "\" (energy \"" << energy_label
+                  << "\") has no 'rows' object.\n";
         return out;
     }
 
@@ -872,9 +883,10 @@ load_theory_for_label(const std::string &label,
         }
     }
 
-    std::cout << "[cross_sections] Loaded theory curves from 10.6 GeV JSON ("
-              << file.string() << ") for plotting label \"" << label
-              << "\"; rows=" << out.size() << ".\n";
+    std::cout << "[cross_sections] Loaded theory for label \"" << label
+              << "\" using energy \"" << energy_label << "\" from "
+              << file.string()
+              << " with " << out.size() << " rows.\n";
 
     return out;
 }
