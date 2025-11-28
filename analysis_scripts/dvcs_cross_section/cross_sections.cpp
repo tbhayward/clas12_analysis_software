@@ -889,7 +889,7 @@ load_theory_for_label(const std::string &label,
               << " with " << out.size() << " rows.\n";
 
     return out;
-}
+// }
 
 // Compute y-range for one bin (data + theory) for log scale
 static std::pair<double,double> compute_yrange_for_bin(
