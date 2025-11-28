@@ -1139,10 +1139,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         const int nrows = static_cast<int>(t_slice.size());
         const int nPads = ncols * nrows;
 
-        // -----------------------------------------------------------------
-        // Canvas size: keep per-cell scaling, but enforce minimum W/H so
-        // 1xN or 2xN layouts do not become too small and cramped.
-        // -----------------------------------------------------------------
+        // Canvas size with minimums
         int W = 280 * ncols + 160;
         int H = 260 * nrows + 260;
 
@@ -1151,13 +1148,12 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         if (W < MIN_W) W = MIN_W;
         if (H < MIN_H) H = MIN_H;
 
-        // Simple heuristic for title/legend font sizes based on grid size
+        // Base font sizes
         double titleSize = 0.18;
         double legendTextSize = 0.11;
         double cellLabelSize = 0.070;
 
         if (nPads <= 4) {
-            // Few pads -> shrink title/legend so they do not dominate
             titleSize = 0.14;
             legendTextSize = 0.09;
             cellLabelSize = 0.060;
@@ -1168,13 +1164,17 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
             cellLabelSize = 0.055;
         }
 
+        // NEW: halve title and legend font sizes
+        titleSize *= 0.5;
+        legendTextSize *= 0.5;
+
         std::ostringstream cname;
         int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
         cname << "c_xsec_" << canonical_period_dir(label) << "_xB" << xb_idx_for_name;
 
         TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-        // Make top pad a bit taller so the title and three legends have room.
+        // Top pad (title + legends)
         TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
         pTop->SetFillStyle(0);
         pTop->SetBorderSize(0);
@@ -1252,7 +1252,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         dummy_vgg_neg.SetLineStyle(3);
         dummy_vgg_neg.SetLineColor(kOrange+7);
 
-        // Legends: keep x-positions but scale text size
+        // Legends
         TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.80);
         legData->SetBorderSize(1);
         legData->SetLineColor(kBlack);
@@ -1320,7 +1320,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                 pGrid->cd(r * ncols + cc + 1);
                 gPad->SetGrid(1, 1);
 
-                // Slightly larger top margin to give the per-cell label space.
                 gPad->SetTopMargin(0.12);
                 gPad->SetBottomMargin(0.18);
                 gPad->SetLeftMargin(0.16);
