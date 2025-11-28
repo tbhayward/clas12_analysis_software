@@ -485,32 +485,31 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
                                          const std::string &theory_json_root,
                                          double Ebeam,
                                          const std::string &energy_label) {
-    // Optional verbose per-row logging controlled by env var.
-    const char *verbose_env = std::getenv("CROSS_SECTIONS_VERBOSE");
-    const bool verbose_rows = (verbose_env && std::string(verbose_env) == "1");
-
     // --- Choose phi grid ---
     //
-    // Here we use a simple uniform grid:
-    //   phi = 0.5, 5.5, ..., 395.5 degrees
+    // New scheme:
+    //   - 12 uniform mid-bin points over 0-360 degrees:
+    //       15, 45, 75, ..., 345
+    //   - Plus two guard points at:
+    //       0.5 and 395.5 degrees
     //
-    // That is:
-    //   phi_start = 0.5
-    //   phi_step  = 5.0
-    //   n_phi     = 80
-    //
-    // If you later want a different grid (e.g. stop at 359.5, change step,
-    // etc.), edit these three constants.
-    const double phi_start = 0.5;
-    const double phi_step  = 5.0;
-    const int    n_phi     = 80;   // gives last point at 0.5 + 5*(79) = 395.5
-
+    // Total: 14 phi points.
     std::vector<double> phi_deg;
-    phi_deg.reserve(n_phi);
-    for (int i = 0; i < n_phi; ++i) {
-        double phi = phi_start + phi_step * static_cast<double>(i);
+    phi_deg.reserve(14);
+
+    // Guard point just above 0
+    phi_deg.push_back(0.5);
+
+    // 12 uniform mid-bin points (30-degree steps)
+    for (int k = 0; k < 12; ++k) {
+        double phi = 15.0 + 30.0 * static_cast<double>(k);
         phi_deg.push_back(phi);
     }
+
+    // Guard point just above 360
+    phi_deg.push_back(395.5);
+
+    const int n_phi = static_cast<int>(phi_deg.size());
 
     // --- Read CSV and locate kinematic columns ---
     std::ifstream ifs(csv_main);
@@ -560,11 +559,9 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
     json rows_json = json::object();
 
     const size_t n_rows = lines.size();
-    const size_t n_data_rows = (n_rows > 0 ? n_rows - 1 : 0);
-
     std::cout << "[cross_sections] Generating theory JSON for energy \""
               << energy_label << "\" (Ebeam=" << Ebeam
-              << ") for " << n_data_rows
+              << ") for " << (n_rows > 0 ? n_rows - 1 : 0)
               << " data rows.\n";
 
     int next_pct = 1;
@@ -572,7 +569,7 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
     for (size_t row = 1; row < n_rows; ++row) {
         if (lines[row].empty()) continue;
 
-        if (n_data_rows > 0 && next_pct <= 100) {
+        if (n_rows > 1 && next_pct <= 100) {
             double frac = 100.0 * static_cast<double>(row)
                           / static_cast<double>(n_rows - 1);
             if (frac >= next_pct) {
@@ -654,14 +651,6 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
         row_json["VGG"] = vgg_json;
 
         rows_json[std::to_string(row)] = std::move(row_json);
-
-        if (verbose_rows) {
-            std::cout << "[cross_sections] theory JSON (" << energy_label
-                      << ") completed row " << row << " / " << (n_rows - 1)
-                      << " with xB_mid=" << xB_mid
-                      << ", Q2_mid=" << Q2_mid
-                      << ", |t|_mid=" << t_mid << "\n";
-        }
     }
 
     j["rows"] = std::move(rows_json);
