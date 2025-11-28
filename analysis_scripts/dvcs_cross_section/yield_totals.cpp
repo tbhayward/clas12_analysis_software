@@ -25,6 +25,7 @@
 //
 // Output:
 //   - Prints to stdout and writes to a text file (output_txt).
+//   - Also prints unique uncategorized run numbers per period.
 // ------------------------------------------------------------
 
 #include "yield_totals.h"
@@ -504,6 +505,8 @@ struct Totals {
     std::map<std::string, std::map<int, long long>> data_by_period_current;
     // Data events whose run does not map to a known current
     std::map<std::string, long long> data_uncategorized;
+    // Unique run numbers for which current could not be resolved
+    std::map<std::string, std::set<int>> data_uncategorized_runs;
     // MC: period -> count
     std::map<std::string, long long> mc_by_period;
 };
@@ -609,6 +612,7 @@ static Totals compute_totals_internal(
                         totals.data_by_period_current[label][current] += 1;
                     } else {
                         totals.data_uncategorized[label] += 1;
+                        totals.data_uncategorized_runs[label].insert(run);
                     }
 
                     kept++;
@@ -723,6 +727,15 @@ static void write_totals_to_stream(
         auto it_unc = totals.data_uncategorized.find(period);
         if (it_unc != totals.data_uncategorized.end() && it_unc->second > 0) {
             os << "    current (uncategorized): " << it_unc->second << "\n";
+            auto it_runs = totals.data_uncategorized_runs.find(period);
+            if (it_runs != totals.data_uncategorized_runs.end() &&
+                !it_runs->second.empty()) {
+                os << "    uncategorized runs:";
+                for (int run : it_runs->second) {
+                    os << " " << run;
+                }
+                os << "\n";
+            }
         }
         os << "\n";
     }
@@ -732,7 +745,17 @@ static void write_totals_to_stream(
         const std::string& period = uk.first;
         if (totals.data_by_period_current.count(period) == 0 && uk.second > 0) {
             os << "  Period: " << period << "\n";
-            os << "    current (uncategorized): " << uk.second << "\n\n";
+            os << "    current (uncategorized): " << uk.second << "\n";
+            auto it_runs = totals.data_uncategorized_runs.find(period);
+            if (it_runs != totals.data_uncategorized_runs.end() &&
+                !it_runs->second.empty()) {
+                os << "    uncategorized runs:";
+                for (int run : it_runs->second) {
+                    os << " " << run;
+                }
+                os << "\n";
+            }
+            os << "\n";
         }
     }
 
