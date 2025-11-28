@@ -1101,7 +1101,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    // Load theory curves for this label (always from 10.6 GeV JSON)
+    // Load theory curves for this label
     std::map<size_t, TheoryCurves> theory = load_theory_for_label(label, theory_json_root);
 
     gROOT->SetBatch(true);
@@ -1137,9 +1137,36 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
         const int ncols = static_cast<int>(q2_slice.size());
         const int nrows = static_cast<int>(t_slice.size());
+        const int nPads = ncols * nrows;
 
-        const int W = 280 * ncols + 160;
-        const int H = 260 * nrows + 220;
+        // -----------------------------------------------------------------
+        // Canvas size: keep per-cell scaling, but enforce minimum W/H so
+        // 1xN or 2xN layouts do not become too small and cramped.
+        // -----------------------------------------------------------------
+        int W = 280 * ncols + 160;
+        int H = 260 * nrows + 260;
+
+        const int MIN_W = 1200;
+        const int MIN_H = 900;
+        if (W < MIN_W) W = MIN_W;
+        if (H < MIN_H) H = MIN_H;
+
+        // Simple heuristic for title/legend font sizes based on grid size
+        double titleSize = 0.18;
+        double legendTextSize = 0.11;
+        double cellLabelSize = 0.070;
+
+        if (nPads <= 4) {
+            // Few pads -> shrink title/legend so they do not dominate
+            titleSize = 0.14;
+            legendTextSize = 0.09;
+            cellLabelSize = 0.060;
+        }
+        if (nPads == 1) {
+            titleSize = 0.12;
+            legendTextSize = 0.085;
+            cellLabelSize = 0.055;
+        }
 
         std::ostringstream cname;
         int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
@@ -1147,24 +1174,26 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
         TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-        TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.82, 1.0, 1.0);
+        // Make top pad a bit taller so the title and three legends have room.
+        TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
         pTop->SetFillStyle(0);
         pTop->SetBorderSize(0);
         pTop->Draw();
 
-        TPad *pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.82);
+        TPad *pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.78);
         pGrid->SetFillStyle(0);
         pGrid->SetBorderSize(0);
         pGrid->Draw();
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
+        // --- Top pad: title + legends ---
         pTop->cd();
         TLatex head;
         head.SetNDC();
         head.SetTextAlign(22);
         head.SetTextFont(42);
-        head.SetTextSize(0.20);
+        head.SetTextSize(titleSize);
 
         std::ostringstream tit;
         tit << "Cross sections, ep #rightarrow ep#gamma   " << label
@@ -1172,8 +1201,9 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
             << std::fixed << std::setprecision(3)
             << xb_range.first << ", " << xb_range.second << ")";
 
-        head.DrawLatex(0.5, 0.87, tit.str().c_str());
+        head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
+        // Data dummy graphs
         TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
         dummy_unpol.SetMarkerStyle(20);
         dummy_unpol.SetLineWidth(2);
@@ -1190,6 +1220,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         dummy_neg.SetMarkerColor(kBlue+1);
         dummy_neg.SetLineColor(kBlue+1);
 
+        // Theory dummy graphs
         TGraph dummy_bh, dummy_km_unpol, dummy_km_pos, dummy_km_neg;
         TGraph dummy_vgg_unpol, dummy_vgg_pos, dummy_vgg_neg;
 
@@ -1221,36 +1252,37 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         dummy_vgg_neg.SetLineStyle(3);
         dummy_vgg_neg.SetLineColor(kOrange+7);
 
-        TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.75);
+        // Legends: keep x-positions but scale text size
+        TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.80);
         legData->SetBorderSize(1);
         legData->SetLineColor(kBlack);
         legData->SetFillColor(kWhite);
         legData->SetFillStyle(1001);
         legData->SetTextFont(42);
-        legData->SetTextSize(0.11);
+        legData->SetTextSize(legendTextSize);
         legData->AddEntry(&dummy_unpol, "data unpolarized", "lep");
         legData->AddEntry(&dummy_pos,   "data + helicity", "lep");
         legData->AddEntry(&dummy_neg,   "data - helicity", "lep");
 
-        TLegend *legKM = new TLegend(0.35, 0.05, 0.65, 0.75);
+        TLegend *legKM = new TLegend(0.35, 0.05, 0.65, 0.80);
         legKM->SetBorderSize(1);
         legKM->SetLineColor(kBlack);
         legKM->SetFillColor(kWhite);
         legKM->SetFillStyle(1001);
         legKM->SetTextFont(42);
-        legKM->SetTextSize(0.11);
+        legKM->SetTextSize(legendTextSize);
         legKM->AddEntry(&dummy_bh,       "BH unpolarized",  "l");
         legKM->AddEntry(&dummy_km_unpol, "KM unpolarized",  "l");
         legKM->AddEntry(&dummy_km_pos,   "KM + helicity",   "l");
         legKM->AddEntry(&dummy_km_neg,   "KM - helicity",   "l");
 
-        TLegend *legVGG = new TLegend(0.68, 0.05, 0.98, 0.75);
+        TLegend *legVGG = new TLegend(0.68, 0.05, 0.98, 0.80);
         legVGG->SetBorderSize(1);
         legVGG->SetLineColor(kBlack);
         legVGG->SetFillColor(kWhite);
         legVGG->SetFillStyle(1001);
         legVGG->SetTextFont(42);
-        legVGG->SetTextSize(0.11);
+        legVGG->SetTextSize(legendTextSize);
         legVGG->AddEntry(&dummy_vgg_unpol, "VGG unpolarized", "l");
         legVGG->AddEntry(&dummy_vgg_pos,   "VGG + helicity",  "l");
         legVGG->AddEntry(&dummy_vgg_neg,   "VGG - helicity",  "l");
@@ -1279,6 +1311,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
             return g;
         };
 
+        // --- Grid pads ---
         for (int r = 0; r < nrows; ++r) {
             const Range &t_range = t_slice[r];
             for (int cc = 0; cc < ncols; ++cc) {
@@ -1286,7 +1319,9 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
                 pGrid->cd(r * ncols + cc + 1);
                 gPad->SetGrid(1, 1);
-                gPad->SetTopMargin(0.08);
+
+                // Slightly larger top margin to give the per-cell label space.
+                gPad->SetTopMargin(0.12);
                 gPad->SetBottomMargin(0.18);
                 gPad->SetLeftMargin(0.16);
                 gPad->SetRightMargin(0.10);
@@ -1313,6 +1348,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
+
                 frame->GetXaxis()->SetTitleSize(0.060);
                 frame->GetYaxis()->SetTitleSize(0.060);
                 frame->GetXaxis()->SetLabelSize(0.048);
@@ -1322,11 +1358,11 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
                 TLatex lab;
                 lab.SetNDC();
-                lab.SetTextSize(0.070);
+                lab.SetTextSize(cellLabelSize);
                 lab.SetTextAlign(11);
                 lab.SetTextFont(42);
                 lab.DrawLatex(
-                    0.15, 0.94,
+                    0.14, 0.93,
                     Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
                          q2_range.first, q2_range.second,
                          t_range.first,  t_range.second)
@@ -1393,7 +1429,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         fname << "cross_sections_" << canonical_period_dir(label)
               << "_xB_" << (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter)
               << ".png";
-        fs::path outpath = outdir / fname.str();
+        fs::path outpath = outdir << "/" << fname.str();
         c->SaveAs(outpath.string().c_str());
 
         delete c;
