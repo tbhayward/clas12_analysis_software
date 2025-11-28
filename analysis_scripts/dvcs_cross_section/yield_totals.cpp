@@ -6,10 +6,13 @@
 //
 // Data:
 //   - Uses run-by-run current maps:
-//       * Fa18 Inb: 40, 45, 50, 55 nA (explicit run lists)
-//       * Fa18 Out: 5, 40, 50 nA (explicit run lists)
-//       * Sp18 Out: 30 nA (3211-3293), 45 nA (3867-3987)
-//       * Sp19 Inb: 35 nA (3306-3411), 50 nA (3431-4325)
+//       * Fa18 Inb: 40, 45, 50, 55 nA (explicit run lists +
+//                    your extra runs mapped below).
+//       * Fa18 Out: 5, 40, 50 nA (explicit run lists +
+//                    your extra runs mapped below).
+//       * Sp18 Out: 30 nA (3211-3293), 45 nA (3867-3987).
+//       * Sp18 Inb: 35 nA (3306-3411), 50 nA (3431-4325).
+//       * Sp19 Inb: all runs treated as 50 nA.
 //   - Other periods are counted but placed in an "uncategorized"
 //     bucket since we do not have a current map.
 //
@@ -324,8 +327,6 @@ static bool passes_sigma_cuts(
 {
     const VarCutMap& m = is_mc ? ts.mc : ts.data;
     if (m.empty()) {
-        // If there is no block at all for this side (data/mc), treat as no
-        // additional cuts. This is deliberate and explicit.
         return true;
     }
 
@@ -334,17 +335,14 @@ static bool passes_sigma_cuts(
         const SigmaCut& sc = kv.second;
         double val = std::numeric_limits<double>::quiet_NaN();
 
-        if (vname == "Emiss2")            val = Emiss2;
-        else if (vname == "Mx2")          val = Mx2;
-        else if (vname == "Mx2_1")        val = Mx2_1;
-        else if (vname == "Mx2_2")        val = Mx2_2;
-        else if (vname == "pTmiss")       val = pTmiss;
-        else if (vname == "xF")           val = xF;
+        if (vname == "Emiss2")                 val = Emiss2;
+        else if (vname == "Mx2")               val = Mx2;
+        else if (vname == "Mx2_1")             val = Mx2_1;
+        else if (vname == "Mx2_2")             val = Mx2_2;
+        else if (vname == "pTmiss")            val = pTmiss;
+        else if (vname == "xF")                val = xF;
         else if (vname == "theta_gamma_gamma") val = theta_gg;
-        else {
-            // Variable present in JSON that we are not using. Ignore.
-            continue;
-        }
+        else continue;
 
         if (!within_3sigma(val, sc)) return false;
     }
@@ -354,7 +352,7 @@ static bool passes_sigma_cuts(
 
 // ---------------- run -> current maps ----------------
 
-// Fa18 Inb (Inb in the table)
+// Fa18 Inb
 static int current_fa18_inb(int run, bool& ok) {
     static const std::unordered_map<int, int> m = {
         // 40 nA
@@ -377,17 +375,27 @@ static int current_fa18_inb(int run, bool& ok) {
         {5320, 45}, {5323, 45}, {5324, 45}, {5333, 45}, {5334, 45}, {5346, 45},
         {5347, 45}, {5349, 45}, {5351, 45}, {5354, 45}, {5355, 45}, {5367, 45},
 
-        // 50 nA
-        {5340, 50}, {5342, 50}, {5343, 50}, {5344, 50}, {5345, 50}, {5356, 50},
-        {5357, 50}, {5358, 50}, {5359, 50}, {5360, 50}, {5361, 50}, {5362, 50},
-        {5366, 50},
+        // Your extra Fa18 Inb 45 nA runs
+        {5046, 45}, {5047, 45}, {5051, 45},
+        {5128, 45}, {5129, 45}, {5130, 45},
+        {5159, 45}, {5160, 45},
+        {5165, 45}, {5166, 45}, {5167, 45}, {5168, 45}, {5169, 45},
+        {5180, 45}, {5182, 45}, {5183, 45},
+        {5190, 45},
+        {5239, 45},
+        {5336, 45},
 
-        // 55 nA
+        // 50 nA (including 5340-5345)
+        {5340, 50}, {5342, 50}, {5343, 50}, {5344, 50}, {5345, 50},
+        {5356, 50}, {5357, 50}, {5358, 50}, {5359, 50}, {5360, 50}, {5361, 50},
+        {5362, 50}, {5366, 50},
+
+        // 55 nA (5356-5407 are 55; 5400 was missing and is added here)
         {5368, 55}, {5369, 55}, {5372, 55}, {5373, 55}, {5374, 55}, {5375, 55},
         {5376, 55}, {5377, 55}, {5378, 55}, {5379, 55}, {5380, 55}, {5381, 55},
         {5382, 55}, {5383, 55}, {5386, 55}, {5390, 55}, {5391, 55}, {5392, 55},
-        {5393, 55}, {5398, 55}, {5401, 55}, {5403, 55}, {5404, 55}, {5406, 55},
-        {5407, 55}
+        {5393, 55}, {5398, 55}, {5400, 55}, {5401, 55}, {5403, 55}, {5404, 55},
+        {5406, 55}, {5407, 55}
     };
     auto it = m.find(run);
     if (it == m.end()) {
@@ -398,7 +406,7 @@ static int current_fa18_inb(int run, bool& ok) {
     return it->second;
 }
 
-// Fa18 Out (Outb in the table)
+// Fa18 Out
 static int current_fa18_out(int run, bool& ok) {
     static const std::unordered_map<int, int> m = {
         // 5 nA
@@ -414,6 +422,9 @@ static int current_fa18_out(int run, bool& ok) {
         {5474, 40}, {5475, 40}, {5476, 40}, {5478, 40}, {5479, 40}, {5480, 40},
         {5481, 40}, {5482, 40}, {5483, 40}, {5485, 40}, {5486, 40}, {5487, 40},
         {5497, 40}, {5498, 40}, {5499, 40}, {5500, 40}, {5504, 40},
+
+        // Your extra Fa18 Out 40 nA runs
+        {5448, 40}, {5495, 40}, {5496, 40},
 
         // 50 nA
         {5507, 50}, {5516, 50}, {5517, 50}, {5518, 50}, {5519, 50}, {5520, 50},
@@ -432,7 +443,13 @@ static int current_fa18_out(int run, bool& ok) {
         {5637, 50}, {5638, 50}, {5639, 50}, {5641, 50}, {5643, 50}, {5644, 50},
         {5645, 50}, {5646, 50}, {5647, 50}, {5648, 50}, {5649, 50}, {5650, 50},
         {5651, 50}, {5652, 50}, {5654, 50}, {5655, 50}, {5656, 50}, {5662, 50},
-        {5663, 50}, {5664, 50}, {5665, 50}, {5666, 50}
+        {5663, 50}, {5664, 50}, {5665, 50}, {5666, 50},
+
+        // Your extra Fa18 Out 50 nA runs
+        {5505, 50}, {5567, 50}, {5617, 50}, {5621, 50}, {5623, 50},
+
+        // Your extra Fa18 Out 5 nA run
+        {5610, 5}
     };
     auto it = m.find(run);
     if (it == m.end()) {
@@ -451,7 +468,6 @@ static bool resolve_current_for_label(
     int runnum,
     int& current_nA)
 {
-    // Normalize label so we accept "Fa18 Inb", "fa18_inb", "FA18INB", etc.
     const std::string k = to_lower_nospace(period_label);
 
     if (k == "fa18inb") {
@@ -480,8 +496,10 @@ static bool resolve_current_for_label(
         }
         return false;
     }
-    if (k == "sp19inb") {
-        // RGA Sp19 Inb: 35 nA from 3306-3411, 50 nA from 3431-4325.
+    if (k == "sp18inb") {
+        // RGA Sp18 Inb:
+        //  - 35 nA from 3306-3411
+        //  - 50 nA from 3431-4325
         if (runnum >= 3306 && runnum <= 3411) {
             current_nA = 35;
             return true;
@@ -490,10 +508,16 @@ static bool resolve_current_for_label(
             current_nA = 50;
             return true;
         }
+        // Other Sp18 Inb runs: unknown current (stay uncategorized)
         return false;
     }
+    if (k == "sp19inb") {
+        // All Sp19 Inb runs are 50 nA (per your note).
+        current_nA = 50;
+        return true;
+    }
 
-    // For other periods (Sp18 Inb, Fa18 Inb Supp, etc.) we do not know
+    // For other periods (Fa18 Inb Supp, etc.) we do not know
     // the current map. Count them, but mark as uncategorized.
     return false;
 }
@@ -518,7 +542,6 @@ static Totals compute_totals_internal(
 {
     Totals totals;
 
-    // Convenience to find sigma cuts entry; if missing, treat as fatal.
     auto find_topo_sigma = [&](const std::string& topo_key) -> const TopoSigma& {
         auto it = sigmaCuts.find(topo_key);
         if (it == sigmaCuts.end()) {
@@ -528,10 +551,9 @@ static Totals compute_totals_internal(
         return it->second;
     };
 
-    // Process DATA and MC period-by-period using CANONICAL_PERIODS
     for (const auto& P : CANONICAL_PERIODS()) {
-        const std::string tree_key = P.tree_key; // e.g. "DVCS_Fa18_inb"
-        const std::string label    = P.label;    // may be "fa18_inb", "Fa18 Inb", etc.
+        const std::string tree_key = P.tree_key;
+        const std::string label    = P.label;
 
         // Skip Fa18 Inb Supp entirely (no sigma cuts defined for this period)
         if (period_dir_for_label(label) == "Fa18_Inb_Supp") {
@@ -576,14 +598,10 @@ static Totals compute_totals_internal(
                     const double open_deg  = bb_as_double(b_open);
                     const double pT        = bb_as_double(b_pTmiss);
 
-                    if (!passes_global_cuts(t1, open_deg, pT)) {
-                        continue;
-                    }
+                    if (!passes_global_cuts(t1, open_deg, pT)) continue;
 
                     const int topo_idx = topo.index();
-                    if (topo_idx < 0 || topo_idx > 2) {
-                        continue;
-                    }
+                    if (topo_idx < 0 || topo_idx > 2) continue;
 
                     const std::string topo_key =
                         std::string("DVCS_") + period_dir_for_label(label) +
@@ -659,14 +677,10 @@ static Totals compute_totals_internal(
                     const double open_deg  = bb_as_double(b_open);
                     const double pT        = bb_as_double(b_pTmiss);
 
-                    if (!passes_global_cuts(t1, open_deg, pT)) {
-                        continue;
-                    }
+                    if (!passes_global_cuts(t1, open_deg, pT)) continue;
 
                     const int topo_idx = topo.index();
-                    if (topo_idx < 0 || topo_idx > 2) {
-                        continue;
-                    }
+                    if (topo_idx < 0 || topo_idx > 2) continue;
 
                     const std::string topo_key =
                         std::string("DVCS_") + period_dir_for_label(label) +
@@ -708,7 +722,6 @@ static void write_totals_to_stream(
 {
     os << "================ Yield totals after exclusivity cuts ================\n\n";
 
-    // Aggregate per-current across all periods for convenience
     std::map<int, long long> global_by_current;
 
     os << "DATA totals by period and current (nA):\n";
@@ -740,7 +753,6 @@ static void write_totals_to_stream(
         os << "\n";
     }
 
-    // Periods that had data but only uncategorized runs (no known currents)
     for (const auto& uk : totals.data_uncategorized) {
         const std::string& period = uk.first;
         if (totals.data_by_period_current.count(period) == 0 && uk.second > 0) {
@@ -799,7 +811,6 @@ bool compute_yield_totals(
 
         Totals totals = compute_totals_internal(dvcsDataTrees, dvcsRecMcTrees, sigmaCuts);
 
-        // Write to file
         {
             std::ofstream ofs(output_txt);
             if (!ofs.is_open()) {
@@ -811,7 +822,6 @@ bool compute_yield_totals(
             std::cout << "[yield_totals] Wrote summary to " << output_txt << std::endl;
         }
 
-        // Also print to stdout
         write_totals_to_stream(std::cout, totals);
         return true;
     } catch (const std::exception& ex) {
