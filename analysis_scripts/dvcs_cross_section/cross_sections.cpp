@@ -26,7 +26,7 @@
 //            * unpolarized, + helicity, and - helicity cross sections vs phi
 //              (with errors) from the CSV.
 //            * BH (unpol), KM (unpol/+/−), VGG (unpol/+/−) curves vs phi
-//              from the *10.6 GeV* theory JSON.
+//              from the *10.6 GeV* or *10.2 GeV* theory JSON.
 //        - Y axis is in log scale, but each subpad has its own dynamic
 //          y-range determined from its data + theory.
 //        - A single title plus three separate legend boxes (Data / BH+KM / VGG)
@@ -37,6 +37,12 @@
 //      error; optional combined-group lumi columns such as
 //      "integrated luminosity, 10.2 GeV (nC)" are treated as optional and
 //      simply not filled if absent.
+//   5) In addition to the full "all helicities" canvases, we also make
+//      three extra versions for each xB bin:
+//        - Unpolarized only (data unpol + BH/KM/VGG unpol).
+//        - + helicity only (data + helicity + BH unpol + KM/VGG +).
+//        - - helicity only (data - helicity + BH unpol + KM/VGG -).
+//      These are saved with suffixes _unpol, _pos, and _neg in the filename.
 // -----------------------------------------------------------------------------
 
 #include "cross_sections.h"
@@ -891,10 +897,22 @@ load_theory_for_label(const std::string &label,
     return out;
 }
 
-// Compute y-range for one bin (data + theory) for log scale
+// -----------------------------------------------------------------------------
+// View mode for canvases (all helicities / unpol-only / pos-only / neg-only)
+// -----------------------------------------------------------------------------
+
+enum class XSecPanelMode {
+    All,
+    UnpolOnly,
+    PosOnly,
+    NegOnly
+};
+
+// Compute y-range for one bin (data + theory) for log scale, for a given mode.
 static std::pair<double,double> compute_yrange_for_bin(
     const BinData *bin,
-    const std::map<size_t, TheoryCurves> &theory)
+    const std::map<size_t, TheoryCurves> &theory,
+    XSecPanelMode mode)
 {
     double ymin = std::numeric_limits<double>::max();
     double ymax = 0.0;
@@ -919,21 +937,43 @@ static std::pair<double,double> compute_yrange_for_bin(
     };
 
     if (bin) {
-        update_from_points(bin->unpol);
-        update_from_points(bin->pos);
-        update_from_points(bin->neg);
+        if (mode == XSecPanelMode::All || mode == XSecPanelMode::UnpolOnly) {
+            update_from_points(bin->unpol);
+        }
+        if (mode == XSecPanelMode::All || mode == XSecPanelMode::PosOnly) {
+            update_from_points(bin->pos);
+        }
+        if (mode == XSecPanelMode::All || mode == XSecPanelMode::NegOnly) {
+            update_from_points(bin->neg);
+        }
 
         if (bin->have_theory_row) {
             auto it_th = theory.find(bin->theory_row);
             if (it_th != theory.end()) {
                 const TheoryCurves &tc = it_th->second;
-                update_from_curve(tc.bh_unpol);
-                update_from_curve(tc.km_unpol);
-                update_from_curve(tc.km_pos);
-                update_from_curve(tc.km_neg);
-                update_from_curve(tc.vgg_unpol);
-                update_from_curve(tc.vgg_pos);
-                update_from_curve(tc.vgg_neg);
+
+                if (mode == XSecPanelMode::All) {
+                    update_from_curve(tc.bh_unpol);
+                    update_from_curve(tc.km_unpol);
+                    update_from_curve(tc.km_pos);
+                    update_from_curve(tc.km_neg);
+                    update_from_curve(tc.vgg_unpol);
+                    update_from_curve(tc.vgg_pos);
+                    update_from_curve(tc.vgg_neg);
+                } else if (mode == XSecPanelMode::UnpolOnly) {
+                    update_from_curve(tc.bh_unpol);
+                    update_from_curve(tc.km_unpol);
+                    update_from_curve(tc.vgg_unpol);
+                } else if (mode == XSecPanelMode::PosOnly) {
+                    // BH is helicity independent; use unpolarized BH baseline
+                    update_from_curve(tc.bh_unpol);
+                    update_from_curve(tc.km_pos);
+                    update_from_curve(tc.vgg_pos);
+                } else if (mode == XSecPanelMode::NegOnly) {
+                    update_from_curve(tc.bh_unpol);
+                    update_from_curve(tc.km_neg);
+                    update_from_curve(tc.vgg_neg);
+                }
             }
         }
     }
@@ -953,6 +993,389 @@ static std::pair<double,double> compute_yrange_for_bin(
 
     return std::make_pair(ymin, 1.2 * ymax);
 }
+
+// Helper to build a TGraphErrors from Point vector
+static TGraphErrors* make_xsec_graph(const std::vector<Point> &v,
+                                     int mstyle, int mcolor) {
+    if (v.empty()) return nullptr;
+    int N = static_cast<int>(v.size());
+    std::vector<double> x(N), y(N), ex(N), ey(N);
+    for (int i = 0; i < N; ++i) {
+        x[i]  = v[i].phi;
+        y[i]  = v[i].xs;
+        ex[i] = 0.0;
+        ey[i] = v[i].xs_err;
+    }
+    TGraphErrors *g = new TGraphErrors(N, x.data(), y.data(), ex.data(), ey.data());
+    g->SetMarkerStyle(mstyle);
+    g->SetMarkerSize(1.0);
+    g->SetLineWidth(2);
+    g->SetLineColor(mcolor);
+    g->SetMarkerColor(mcolor);
+    return g;
+}
+
+// -----------------------------------------------------------------------------
+// Canvas builder for a given xB bin and view mode
+// -----------------------------------------------------------------------------
+
+static void make_xsec_canvas_for_mode(
+    const std::string &label,
+    const Range &xb_range,
+    const XSGroupByXB &group,
+    const std::vector<Range> &q2_slice,
+    const std::vector<Range> &t_slice,
+    const std::map<size_t, TheoryCurves> &theory,
+    const fs::path &outdir,
+    int xb_idx_for_name,
+    XSecPanelMode mode,
+    int ncols,
+    int nrows,
+    int nPads)
+{
+    const auto &bins_for_xB = group.bins;
+    if (bins_for_xB.empty()) return;
+
+    // Canvas size with minimums
+    int W = 280 * ncols + 160;
+    int H = 260 * nrows + 260;
+
+    const int MIN_W = 1200;
+    const int MIN_H = 900;
+    if (W < MIN_W) W = MIN_W;
+    if (H < MIN_H) H = MIN_H;
+
+    // Base font sizes
+    double titleSize = 0.18;
+    double legendTextSize = 0.11;
+    double cellLabelSize = 0.070;
+
+    if (nPads <= 4) {
+        titleSize = 0.14;
+        legendTextSize = 0.09;
+        cellLabelSize = 0.060;
+    }
+    if (nPads == 1) {
+        titleSize = 0.12;
+        legendTextSize = 0.085;
+        cellLabelSize = 0.055;
+    }
+
+    // Halve title and legend font sizes (as tuned earlier)
+    titleSize *= 0.5;
+    legendTextSize *= 0.5;
+
+    // Canvas name prefix based on mode
+    std::ostringstream cname;
+    cname << "c_xsec_";
+    if (mode == XSecPanelMode::UnpolOnly) cname << "unpol_";
+    else if (mode == XSecPanelMode::PosOnly) cname << "pos_";
+    else if (mode == XSecPanelMode::NegOnly) cname << "neg_";
+    cname << canonical_period_dir(label) << "_xB" << xb_idx_for_name;
+
+    TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+
+    // Top pad (title + legends)
+    TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
+    pTop->SetFillStyle(0);
+    pTop->SetBorderSize(0);
+    pTop->Draw();
+
+    TPad *pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.78);
+    pGrid->SetFillStyle(0);
+    pGrid->SetBorderSize(0);
+    pGrid->Draw();
+    pGrid->cd();
+    pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+    // --- Top pad: title + legends ---
+    pTop->cd();
+    TLatex head;
+    head.SetNDC();
+    head.SetTextAlign(22);
+    head.SetTextFont(42);
+    head.SetTextSize(titleSize);
+
+    std::ostringstream tit;
+    tit << "Cross sections, ep #rightarrow ep#gamma   " << label
+        << "   x_{B} in ("
+        << std::fixed << std::setprecision(3)
+        << xb_range.first << ", " << xb_range.second << ")";
+
+    if (mode == XSecPanelMode::UnpolOnly) {
+        tit << "   (unpolarized only)";
+    } else if (mode == XSecPanelMode::PosOnly) {
+        tit << "   (+ helicity only)";
+    } else if (mode == XSecPanelMode::NegOnly) {
+        tit << "   (- helicity only)";
+    }
+
+    head.DrawLatex(0.5, 0.86, tit.str().c_str());
+
+    // Dummy graphs for legends
+    TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
+    dummy_unpol.SetMarkerStyle(20);
+    dummy_unpol.SetLineWidth(2);
+    dummy_unpol.SetMarkerColor(kBlack);
+    dummy_unpol.SetLineColor(kBlack);
+
+    dummy_pos.SetMarkerStyle(24);
+    dummy_pos.SetLineWidth(2);
+    dummy_pos.SetMarkerColor(kRed+1);
+    dummy_pos.SetLineColor(kRed+1);
+
+    dummy_neg.SetMarkerStyle(25);
+    dummy_neg.SetLineWidth(2);
+    dummy_neg.SetMarkerColor(kBlue+1);
+    dummy_neg.SetLineColor(kBlue+1);
+
+    // Theory dummy graphs
+    TGraph dummy_bh, dummy_km_unpol, dummy_km_pos, dummy_km_neg;
+    TGraph dummy_vgg_unpol, dummy_vgg_pos, dummy_vgg_neg;
+
+    dummy_bh.SetLineWidth(2);
+    dummy_bh.SetLineStyle(2);
+    dummy_bh.SetLineColor(kGreen+2);
+
+    dummy_km_unpol.SetLineWidth(2);
+    dummy_km_unpol.SetLineStyle(1);
+    dummy_km_unpol.SetLineColor(kMagenta+1);
+
+    dummy_km_pos.SetLineWidth(2);
+    dummy_km_pos.SetLineStyle(2);
+    dummy_km_pos.SetLineColor(kMagenta+1);
+
+    dummy_km_neg.SetLineWidth(2);
+    dummy_km_neg.SetLineStyle(3);
+    dummy_km_neg.SetLineColor(kMagenta+1);
+
+    dummy_vgg_unpol.SetLineWidth(2);
+    dummy_vgg_unpol.SetLineStyle(1);
+    dummy_vgg_unpol.SetLineColor(kOrange+7);
+
+    dummy_vgg_pos.SetLineWidth(2);
+    dummy_vgg_pos.SetLineStyle(2);
+    dummy_vgg_pos.SetLineColor(kOrange+7);
+
+    dummy_vgg_neg.SetLineWidth(2);
+    dummy_vgg_neg.SetLineStyle(3);
+    dummy_vgg_neg.SetLineColor(kOrange+7);
+
+    // Legends (content depends on mode)
+    TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.80);
+    legData->SetBorderSize(1);
+    legData->SetLineColor(kBlack);
+    legData->SetFillColor(kWhite);
+    legData->SetFillStyle(1001);
+    legData->SetTextFont(42);
+    legData->SetTextSize(legendTextSize);
+
+    TLegend *legKM = new TLegend(0.35, 0.05, 0.65, 0.80);
+    legKM->SetBorderSize(1);
+    legKM->SetLineColor(kBlack);
+    legKM->SetFillColor(kWhite);
+    legKM->SetFillStyle(1001);
+    legKM->SetTextFont(42);
+    legKM->SetTextSize(legendTextSize);
+
+    TLegend *legVGG = new TLegend(0.68, 0.05, 0.98, 0.80);
+    legVGG->SetBorderSize(1);
+    legVGG->SetLineColor(kBlack);
+    legVGG->SetFillColor(kWhite);
+    legVGG->SetFillStyle(1001);
+    legVGG->SetTextFont(42);
+    legVGG->SetTextSize(legendTextSize);
+
+    if (mode == XSecPanelMode::All) {
+        legData->AddEntry(&dummy_unpol, "data unpolarized", "lep");
+        legData->AddEntry(&dummy_pos,   "data + helicity", "lep");
+        legData->AddEntry(&dummy_neg,   "data - helicity", "lep");
+
+        legKM->AddEntry(&dummy_bh,       "BH unpolarized",  "l");
+        legKM->AddEntry(&dummy_km_unpol, "KM unpolarized",  "l");
+        legKM->AddEntry(&dummy_km_pos,   "KM + helicity",   "l");
+        legKM->AddEntry(&dummy_km_neg,   "KM - helicity",   "l");
+
+        legVGG->AddEntry(&dummy_vgg_unpol, "VGG unpolarized", "l");
+        legVGG->AddEntry(&dummy_vgg_pos,   "VGG + helicity",  "l");
+        legVGG->AddEntry(&dummy_vgg_neg,   "VGG - helicity",  "l");
+    } else if (mode == XSecPanelMode::UnpolOnly) {
+        legData->AddEntry(&dummy_unpol, "data unpolarized", "lep");
+
+        legKM->AddEntry(&dummy_bh,       "BH unpolarized", "l");
+        legKM->AddEntry(&dummy_km_unpol, "KM unpolarized", "l");
+
+        legVGG->AddEntry(&dummy_vgg_unpol, "VGG unpolarized", "l");
+    } else if (mode == XSecPanelMode::PosOnly) {
+        legData->AddEntry(&dummy_pos, "data + helicity", "lep");
+
+        legKM->AddEntry(&dummy_bh,     "BH",             "l");
+        legKM->AddEntry(&dummy_km_pos, "KM + helicity",  "l");
+
+        legVGG->AddEntry(&dummy_vgg_pos, "VGG + helicity", "l");
+    } else if (mode == XSecPanelMode::NegOnly) {
+        legData->AddEntry(&dummy_neg, "data - helicity", "lep");
+
+        legKM->AddEntry(&dummy_bh,     "BH",             "l");
+        legKM->AddEntry(&dummy_km_neg, "KM - helicity",  "l");
+
+        legVGG->AddEntry(&dummy_vgg_neg, "VGG - helicity", "l");
+    }
+
+    legData->Draw();
+    legKM->Draw();
+    legVGG->Draw();
+
+    // --- Grid pads ---
+    for (int r = 0; r < nrows; ++r) {
+        const Range &t_range = t_slice[r];
+        for (int cc = 0; cc < ncols; ++cc) {
+            const Range &q2_range = q2_slice[cc];
+
+            pGrid->cd(r * ncols + cc + 1);
+            gPad->SetGrid(1, 1);
+
+            gPad->SetTopMargin(0.12);
+            gPad->SetBottomMargin(0.18);
+            gPad->SetLeftMargin(0.16);
+            gPad->SetRightMargin(0.10);
+            gPad->SetLogy(true);
+
+            QTKey key(q2_range, t_range);
+            auto it_bin = bins_for_xB.find(key);
+            const BinData *bin_ptr = nullptr;
+            if (it_bin != bins_for_xB.end()) {
+                bin_ptr = &(it_bin->second);
+            }
+
+            double ymin_canvas = 1e-4;
+            double ymax_canvas = 1.0;
+            {
+                auto yr = compute_yrange_for_bin(bin_ptr, theory, mode);
+                ymin_canvas = yr.first;
+                ymax_canvas = yr.second;
+            }
+
+            TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
+            frame->GetXaxis()->SetTitle("#phi (deg)");
+            frame->GetYaxis()->SetTitle("d^{4}#sigma / (dx_{B} dQ^{2} d|t| d#phi)");
+            frame->GetXaxis()->CenterTitle();
+            frame->GetYaxis()->CenterTitle();
+            frame->GetXaxis()->SetNdivisions(505);
+
+            frame->GetXaxis()->SetTitleSize(0.060);
+            frame->GetYaxis()->SetTitleSize(0.060);
+            frame->GetXaxis()->SetLabelSize(0.048);
+            frame->GetYaxis()->SetLabelSize(0.048);
+            frame->GetXaxis()->SetTitleOffset(1.10);
+            frame->GetYaxis()->SetTitleOffset(1.35);
+
+            TLatex lab;
+            lab.SetNDC();
+            lab.SetTextSize(cellLabelSize);
+            lab.SetTextAlign(11);
+            lab.SetTextFont(42);
+            lab.DrawLatex(
+                0.14, 0.93,
+                Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
+                     q2_range.first, q2_range.second,
+                     t_range.first,  t_range.second)
+            );
+
+            if (!bin_ptr) {
+                continue;
+            }
+
+            BinData bin = *bin_ptr;
+
+            auto sort_by_phi = [](std::vector<Point> &v) {
+                std::sort(v.begin(), v.end(),
+                          [](const Point &a, const Point &b) {
+                              return a.phi < b.phi;
+                          });
+            };
+            sort_by_phi(bin.unpol);
+            sort_by_phi(bin.pos);
+            sort_by_phi(bin.neg);
+
+            if (mode == XSecPanelMode::All || mode == XSecPanelMode::UnpolOnly) {
+                TGraphErrors *g_unpol = make_xsec_graph(bin.unpol, 20, kBlack);
+                if (g_unpol) g_unpol->Draw("P SAME");
+            }
+            if (mode == XSecPanelMode::All || mode == XSecPanelMode::PosOnly) {
+                TGraphErrors *g_pos = make_xsec_graph(bin.pos, 24, kRed+1);
+                if (g_pos) g_pos->Draw("P SAME");
+            }
+            if (mode == XSecPanelMode::All || mode == XSecPanelMode::NegOnly) {
+                TGraphErrors *g_neg = make_xsec_graph(bin.neg, 25, kBlue+1);
+                if (g_neg) g_neg->Draw("P SAME");
+            }
+
+            if (bin.have_theory_row) {
+                auto it_th = theory.find(bin.theory_row);
+                if (it_th != theory.end()) {
+                    const TheoryCurves &tc = it_th->second;
+
+                    auto draw_curve = [&](const std::vector<double> &ys,
+                                          int lstyle, int lcolor) {
+                        if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
+                        int M = static_cast<int>(ys.size());
+                        std::vector<double> xp(M), yp(M);
+                        for (int i = 0; i < M; ++i) {
+                            xp[i] = tc.phi_deg[i];
+                            yp[i] = ys[i];
+                        }
+                        TGraph *gth = new TGraph(M, xp.data(), yp.data());
+                        gth->SetLineStyle(lstyle);
+                        gth->SetLineWidth(2);
+                        gth->SetLineColor(lcolor);
+                        gth->Draw("L SAME");
+                    };
+
+                    if (mode == XSecPanelMode::All) {
+                        draw_curve(tc.bh_unpol, 2, kGreen+2);
+                        draw_curve(tc.km_unpol, 1, kMagenta+1);
+                        draw_curve(tc.km_pos,   2, kMagenta+1);
+                        draw_curve(tc.km_neg,   3, kMagenta+1);
+                        draw_curve(tc.vgg_unpol, 1, kOrange+7);
+                        draw_curve(tc.vgg_pos,   2, kOrange+7);
+                        draw_curve(tc.vgg_neg,   3, kOrange+7);
+                    } else if (mode == XSecPanelMode::UnpolOnly) {
+                        draw_curve(tc.bh_unpol, 2, kGreen+2);
+                        draw_curve(tc.km_unpol, 1, kMagenta+1);
+                        draw_curve(tc.vgg_unpol, 1, kOrange+7);
+                    } else if (mode == XSecPanelMode::PosOnly) {
+                        draw_curve(tc.bh_unpol, 2, kGreen+2);
+                        draw_curve(tc.km_pos,   2, kMagenta+1);
+                        draw_curve(tc.vgg_pos,  2, kOrange+7);
+                    } else if (mode == XSecPanelMode::NegOnly) {
+                        draw_curve(tc.bh_unpol, 2, kGreen+2);
+                        draw_curve(tc.km_neg,   3, kMagenta+1);
+                        draw_curve(tc.vgg_neg,  3, kOrange+7);
+                    }
+                }
+            }
+        }
+    }
+
+    // Filename
+    std::ostringstream fname;
+    fname << "cross_sections_";
+    if (mode == XSecPanelMode::UnpolOnly) fname << "unpol_";
+    else if (mode == XSecPanelMode::PosOnly) fname << "pos_";
+    else if (mode == XSecPanelMode::NegOnly) fname << "neg_";
+    fname << canonical_period_dir(label)
+          << "_xB_" << xb_idx_for_name << ".png";
+
+    fs::path outpath = outdir / fname.str();
+    c->SaveAs(outpath.string().c_str());
+
+    delete c;
+}
+
+// -----------------------------------------------------------------------------
+// Main plotting entry point
+// -----------------------------------------------------------------------------
 
 bool plot_cross_sections_for_label(const std::string &csv_main,
                                    const std::string &label,
@@ -1139,305 +1562,42 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         const int nrows = static_cast<int>(t_slice.size());
         const int nPads = ncols * nrows;
 
-        // Canvas size with minimums
-        int W = 280 * ncols + 160;
-        int H = 260 * nrows + 260;
-
-        const int MIN_W = 1200;
-        const int MIN_H = 900;
-        if (W < MIN_W) W = MIN_W;
-        if (H < MIN_H) H = MIN_H;
-
-        // Base font sizes
-        double titleSize = 0.18;
-        double legendTextSize = 0.11;
-        double cellLabelSize = 0.070;
-
-        if (nPads <= 4) {
-            titleSize = 0.14;
-            legendTextSize = 0.09;
-            cellLabelSize = 0.060;
-        }
-        if (nPads == 1) {
-            titleSize = 0.12;
-            legendTextSize = 0.085;
-            cellLabelSize = 0.055;
-        }
-
-        // NEW: halve title and legend font sizes
-        titleSize *= 0.5;
-        legendTextSize *= 0.5;
-
-        std::ostringstream cname;
         int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
-        cname << "c_xsec_" << canonical_period_dir(label) << "_xB" << xb_idx_for_name;
 
-        TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+        // Make the four canvases: all, unpol-only, pos-only, neg-only
+        make_xsec_canvas_for_mode(label, xb_range, group,
+                                  q2_slice, t_slice,
+                                  theory, outdir,
+                                  xb_idx_for_name,
+                                  XSecPanelMode::All,
+                                  ncols, nrows, nPads);
 
-        // Top pad (title + legends)
-        TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
-        pTop->SetFillStyle(0);
-        pTop->SetBorderSize(0);
-        pTop->Draw();
+        make_xsec_canvas_for_mode(label, xb_range, group,
+                                  q2_slice, t_slice,
+                                  theory, outdir,
+                                  xb_idx_for_name,
+                                  XSecPanelMode::UnpolOnly,
+                                  ncols, nrows, nPads);
 
-        TPad *pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.78);
-        pGrid->SetFillStyle(0);
-        pGrid->SetBorderSize(0);
-        pGrid->Draw();
-        pGrid->cd();
-        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+        make_xsec_canvas_for_mode(label, xb_range, group,
+                                  q2_slice, t_slice,
+                                  theory, outdir,
+                                  xb_idx_for_name,
+                                  XSecPanelMode::PosOnly,
+                                  ncols, nrows, nPads);
 
-        // --- Top pad: title + legends ---
-        pTop->cd();
-        TLatex head;
-        head.SetNDC();
-        head.SetTextAlign(22);
-        head.SetTextFont(42);
-        head.SetTextSize(titleSize);
+        make_xsec_canvas_for_mode(label, xb_range, group,
+                                  q2_slice, t_slice,
+                                  theory, outdir,
+                                  xb_idx_for_name,
+                                  XSecPanelMode::NegOnly,
+                                  ncols, nrows, nPads);
 
-        std::ostringstream tit;
-        tit << "Cross sections, ep #rightarrow ep#gamma   " << label
-            << "   x_{B} in ("
-            << std::fixed << std::setprecision(3)
-            << xb_range.first << ", " << xb_range.second << ")";
-
-        head.DrawLatex(0.5, 0.86, tit.str().c_str());
-
-        // Data dummy graphs
-        TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
-        dummy_unpol.SetMarkerStyle(20);
-        dummy_unpol.SetLineWidth(2);
-        dummy_unpol.SetMarkerColor(kBlack);
-        dummy_unpol.SetLineColor(kBlack);
-
-        dummy_pos.SetMarkerStyle(24);
-        dummy_pos.SetLineWidth(2);
-        dummy_pos.SetMarkerColor(kRed+1);
-        dummy_pos.SetLineColor(kRed+1);
-
-        dummy_neg.SetMarkerStyle(25);
-        dummy_neg.SetLineWidth(2);
-        dummy_neg.SetMarkerColor(kBlue+1);
-        dummy_neg.SetLineColor(kBlue+1);
-
-        // Theory dummy graphs
-        TGraph dummy_bh, dummy_km_unpol, dummy_km_pos, dummy_km_neg;
-        TGraph dummy_vgg_unpol, dummy_vgg_pos, dummy_vgg_neg;
-
-        dummy_bh.SetLineWidth(2);
-        dummy_bh.SetLineStyle(2);
-        dummy_bh.SetLineColor(kGreen+2);
-
-        dummy_km_unpol.SetLineWidth(2);
-        dummy_km_unpol.SetLineStyle(1);
-        dummy_km_unpol.SetLineColor(kMagenta+1);
-
-        dummy_km_pos.SetLineWidth(2);
-        dummy_km_pos.SetLineStyle(2);
-        dummy_km_pos.SetLineColor(kMagenta+1);
-
-        dummy_km_neg.SetLineWidth(2);
-        dummy_km_neg.SetLineStyle(3);
-        dummy_km_neg.SetLineColor(kMagenta+1);
-
-        dummy_vgg_unpol.SetLineWidth(2);
-        dummy_vgg_unpol.SetLineStyle(1);
-        dummy_vgg_unpol.SetLineColor(kOrange+7);
-
-        dummy_vgg_pos.SetLineWidth(2);
-        dummy_vgg_pos.SetLineStyle(2);
-        dummy_vgg_pos.SetLineColor(kOrange+7);
-
-        dummy_vgg_neg.SetLineWidth(2);
-        dummy_vgg_neg.SetLineStyle(3);
-        dummy_vgg_neg.SetLineColor(kOrange+7);
-
-        // Legends
-        TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.80);
-        legData->SetBorderSize(1);
-        legData->SetLineColor(kBlack);
-        legData->SetFillColor(kWhite);
-        legData->SetFillStyle(1001);
-        legData->SetTextFont(42);
-        legData->SetTextSize(legendTextSize);
-        legData->AddEntry(&dummy_unpol, "data unpolarized", "lep");
-        legData->AddEntry(&dummy_pos,   "data + helicity", "lep");
-        legData->AddEntry(&dummy_neg,   "data - helicity", "lep");
-
-        TLegend *legKM = new TLegend(0.35, 0.05, 0.65, 0.80);
-        legKM->SetBorderSize(1);
-        legKM->SetLineColor(kBlack);
-        legKM->SetFillColor(kWhite);
-        legKM->SetFillStyle(1001);
-        legKM->SetTextFont(42);
-        legKM->SetTextSize(legendTextSize);
-        legKM->AddEntry(&dummy_bh,       "BH unpolarized",  "l");
-        legKM->AddEntry(&dummy_km_unpol, "KM unpolarized",  "l");
-        legKM->AddEntry(&dummy_km_pos,   "KM + helicity",   "l");
-        legKM->AddEntry(&dummy_km_neg,   "KM - helicity",   "l");
-
-        TLegend *legVGG = new TLegend(0.68, 0.05, 0.98, 0.80);
-        legVGG->SetBorderSize(1);
-        legVGG->SetLineColor(kBlack);
-        legVGG->SetFillColor(kWhite);
-        legVGG->SetFillStyle(1001);
-        legVGG->SetTextFont(42);
-        legVGG->SetTextSize(legendTextSize);
-        legVGG->AddEntry(&dummy_vgg_unpol, "VGG unpolarized", "l");
-        legVGG->AddEntry(&dummy_vgg_pos,   "VGG + helicity",  "l");
-        legVGG->AddEntry(&dummy_vgg_neg,   "VGG - helicity",  "l");
-
-        legData->Draw();
-        legKM->Draw();
-        legVGG->Draw();
-
-        auto make_graph = [](const std::vector<Point> &v,
-                             int mstyle, int mcolor) -> TGraphErrors* {
-            if (v.empty()) return nullptr;
-            int N = static_cast<int>(v.size());
-            std::vector<double> x(N), y(N), ex(N), ey(N);
-            for (int i = 0; i < N; ++i) {
-                x[i]  = v[i].phi;
-                y[i]  = v[i].xs;
-                ex[i] = 0.0;
-                ey[i] = v[i].xs_err;
-            }
-            TGraphErrors *g = new TGraphErrors(N, x.data(), y.data(), ex.data(), ey.data());
-            g->SetMarkerStyle(mstyle);
-            g->SetMarkerSize(1.0);
-            g->SetLineWidth(2);
-            g->SetLineColor(mcolor);
-            g->SetMarkerColor(mcolor);
-            return g;
-        };
-
-        // --- Grid pads ---
-        for (int r = 0; r < nrows; ++r) {
-            const Range &t_range = t_slice[r];
-            for (int cc = 0; cc < ncols; ++cc) {
-                const Range &q2_range = q2_slice[cc];
-
-                pGrid->cd(r * ncols + cc + 1);
-                gPad->SetGrid(1, 1);
-
-                gPad->SetTopMargin(0.12);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.16);
-                gPad->SetRightMargin(0.10);
-                gPad->SetLogy(true);
-
-                QTKey key(q2_range, t_range);
-                auto it_bin = bins_for_xB.find(key);
-                const BinData *bin_ptr = nullptr;
-                if (it_bin != bins_for_xB.end()) {
-                    bin_ptr = &(it_bin->second);
-                }
-
-                double ymin_canvas = 1e-4;
-                double ymax_canvas = 1.0;
-                {
-                    auto yr = compute_yrange_for_bin(bin_ptr, theory);
-                    ymin_canvas = yr.first;
-                    ymax_canvas = yr.second;
-                }
-
-                TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
-                frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("d^{4}#sigma / (dx_{B} dQ^{2} d|t| d#phi)");
-                frame->GetXaxis()->CenterTitle();
-                frame->GetYaxis()->CenterTitle();
-                frame->GetXaxis()->SetNdivisions(505);
-
-                frame->GetXaxis()->SetTitleSize(0.060);
-                frame->GetYaxis()->SetTitleSize(0.060);
-                frame->GetXaxis()->SetLabelSize(0.048);
-                frame->GetYaxis()->SetLabelSize(0.048);
-                frame->GetXaxis()->SetTitleOffset(1.10);
-                frame->GetYaxis()->SetTitleOffset(1.35);
-
-                TLatex lab;
-                lab.SetNDC();
-                lab.SetTextSize(cellLabelSize);
-                lab.SetTextAlign(11);
-                lab.SetTextFont(42);
-                lab.DrawLatex(
-                    0.14, 0.93,
-                    Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
-                         q2_range.first, q2_range.second,
-                         t_range.first,  t_range.second)
-                );
-
-                if (!bin_ptr) {
-                    continue;
-                }
-
-                BinData bin = *bin_ptr;
-
-                auto sort_by_phi = [](std::vector<Point> &v) {
-                    std::sort(v.begin(), v.end(),
-                              [](const Point &a, const Point &b) {
-                                  return a.phi < b.phi;
-                              });
-                };
-                sort_by_phi(bin.unpol);
-                sort_by_phi(bin.pos);
-                sort_by_phi(bin.neg);
-
-                TGraphErrors *g_unpol = make_graph(bin.unpol, 20, kBlack);
-                TGraphErrors *g_pos   = make_graph(bin.pos,   24, kRed+1);
-                TGraphErrors *g_neg   = make_graph(bin.neg,   25, kBlue+1);
-
-                if (g_unpol) g_unpol->Draw("P SAME");
-                if (g_pos)   g_pos->Draw("P SAME");
-                if (g_neg)   g_neg->Draw("P SAME");
-
-                if (bin.have_theory_row) {
-                    auto it_th = theory.find(bin.theory_row);
-                    if (it_th != theory.end()) {
-                        const TheoryCurves &tc = it_th->second;
-
-                        auto draw_curve = [&](const std::vector<double> &ys,
-                                              int lstyle, int lcolor) {
-                            if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
-                            int M = static_cast<int>(ys.size());
-                            std::vector<double> xp(M), yp(M);
-                            for (int i = 0; i < M; ++i) {
-                                xp[i] = tc.phi_deg[i];
-                                yp[i] = ys[i];
-                            }
-                            TGraph *gth = new TGraph(M, xp.data(), yp.data());
-                            gth->SetLineStyle(lstyle);
-                            gth->SetLineWidth(2);
-                            gth->SetLineColor(lcolor);
-                            gth->Draw("L SAME");
-                        };
-
-                        draw_curve(tc.bh_unpol, 2, kGreen+2);
-                        draw_curve(tc.km_unpol, 1, kMagenta+1);
-                        draw_curve(tc.km_pos,   2, kMagenta+1);
-                        draw_curve(tc.km_neg,   3, kMagenta+1);
-                        draw_curve(tc.vgg_unpol, 1, kOrange+7);
-                        draw_curve(tc.vgg_pos,   2, kOrange+7);
-                        draw_curve(tc.vgg_neg,   3, kOrange+7);
-                    }
-                }
-            }
-        }
-
-        std::ostringstream fname;
-        fname << "cross_sections_" << canonical_period_dir(label)
-              << "_xB_" << (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter)
-              << ".png";
-
-        fs::path outpath = outdir / fname.str();
-        c->SaveAs(outpath.string().c_str());
-
-        delete c;
         ++xb_canvas_counter;
     }
 
-    std::cout << "[cross_sections] Plotted cross sections for label " << label
-              << " into " << outdir.string() << "\n";
+    std::cout << "[cross_sections] Plotted cross sections (all modes) for label "
+              << label << " into " << outdir.string() << "\n";
 
     return true;
 }
