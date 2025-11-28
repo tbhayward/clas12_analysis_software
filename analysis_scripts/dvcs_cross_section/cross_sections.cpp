@@ -463,6 +463,238 @@ static void ensure_dir(const fs::path &p) {
 }
 
 // -----------------------------------------------------------------------------
+// Theory JSON generator: xs_phi_all.json for 10.6 GeV and 10.2 GeV
+// -----------------------------------------------------------------------------
+//
+// We build one JSON per beam energy (10.6 and 10.2 GeV), each with:
+//
+// {
+//   "phi_deg": [ ... ],
+//   "rows": {
+//      "1": { "BH": {unpol,pos,neg}, "KM": {...}, "VGG": {...} },
+//      "2": { ... },
+//      ...
+//   }
+// }
+//
+// The row keys ("1", "2", ...) are the CSV row indices, matching
+// plot_cross_sections_for_label() which uses row numbers as theory_row.
+// -----------------------------------------------------------------------------
+
+static bool write_theory_json_for_energy(const std::string &csv_main,
+                                         const std::string &theory_json_root,
+                                         double Ebeam,
+                                         const std::string &energy_label) {
+    // --- Choose phi grid ---
+    //
+    // Here we use a simple uniform grid:
+    //   phi = 0.5, 5.5, ..., 395.5 degrees
+    //
+    // That is:
+    //   phi_start = 0.5
+    //   phi_step  = 5.0
+    //   n_phi     = 80
+    //
+    // If you later want a different grid (e.g. stop at 359.5, change step,
+    // etc.), edit these three constants.
+    const double phi_start = 0.5;
+    const double phi_step  = 5.0;
+    const int    n_phi     = 80;   // gives last point at 0.5 + 5*(79) = 395.5
+
+    std::vector<double> phi_deg;
+    phi_deg.reserve(n_phi);
+    for (int i = 0; i < n_phi; ++i) {
+        double phi = phi_start + phi_step * static_cast<double>(i);
+        phi_deg.push_back(phi);
+    }
+
+    // --- Read CSV and locate kinematic columns ---
+    std::ifstream ifs(csv_main);
+    if (!ifs) {
+        std::cerr << "[cross_sections] FATAL: cannot open " << csv_main
+                  << " for theory JSON generation (energy " << energy_label
+                  << ", Ebeam=" << Ebeam << ").\n";
+        return false;
+    }
+
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        lines.push_back(line);
+    }
+    ifs.close();
+
+    if (lines.empty()) {
+        std::cerr << "[cross_sections] FATAL: CSV " << csv_main
+                  << " is empty in write_theory_json_for_energy (energy "
+                  << energy_label << ").\n";
+        return false;
+    }
+
+    std::vector<std::string> header = split_csv_line(lines[0]);
+
+    int c_xb_min = -1, c_xb_max = -1;
+    int c_q2_min = -1, c_q2_max = -1;
+    int c_t_min  = -1, c_t_max  = -1;
+    try {
+        c_xb_min = find_col(header, "xBmin");
+        c_xb_max = find_col(header, "xBmax");
+        c_q2_min = find_col(header, "Q2min");
+        c_q2_max = find_col(header, "Q2max");
+        c_t_min  = find_col(header, "t_abs_min");
+        c_t_max  = find_col(header, "t_abs_max");
+    } catch (const std::exception &e) {
+        std::cerr << "[cross_sections] FATAL: " << e.what()
+                  << " in write_theory_json_for_energy (energy "
+                  << energy_label << ").\n";
+        return false;
+    }
+
+    // --- Build JSON structure in memory ---
+    json j;
+    j["phi_deg"] = phi_deg;
+    json rows_json = json::object();
+
+    const size_t n_rows = lines.size();
+    std::cout << "[cross_sections] Generating theory JSON for energy \""
+              << energy_label << "\" (Ebeam=" << Ebeam
+              << ") for " << (n_rows > 0 ? n_rows - 1 : 0)
+              << " data rows.\n";
+
+    int next_pct = 1;
+
+    for (size_t row = 1; row < n_rows; ++row) {
+        if (lines[row].empty()) continue;
+
+        if (n_rows > 1 && next_pct <= 100) {
+            double frac = 100.0 * static_cast<double>(row)
+                          / static_cast<double>(n_rows - 1);
+            if (frac >= next_pct) {
+                std::cout << "[cross_sections] theory JSON ("
+                          << energy_label << "): ~" << next_pct
+                          << "% of rows processed (row " << row
+                          << " / " << (n_rows - 1) << ")\n";
+                next_pct += 10;
+            }
+        }
+
+        std::vector<std::string> fields = split_csv_line(lines[row]);
+        if (fields.size() != header.size()) {
+            std::cerr << "[cross_sections] WARNING: row " << row
+                      << " has " << fields.size() << " fields, expected "
+                      << header.size() << " (skipping for theory JSON "
+                      << energy_label << ").\n";
+            continue;
+        }
+
+        double xbmin = std::atof(trim(unquote(fields[c_xb_min])).c_str());
+        double xbmax = std::atof(trim(unquote(fields[c_xb_max])).c_str());
+        double q2min = std::atof(trim(unquote(fields[c_q2_min])).c_str());
+        double q2max = std::atof(trim(unquote(fields[c_q2_max])).c_str());
+        double tmin  = std::atof(trim(unquote(fields[c_t_min])).c_str());
+        double tmax  = std::atof(trim(unquote(fields[c_t_max])).c_str());
+
+        double xB_mid = 0.5 * (xbmin + xbmax);
+        double Q2_mid = 0.5 * (q2min + q2max);
+        double t_mid  = 0.5 * (tmin  + tmax);  // this is |t| (positive)
+
+        // Skip obviously invalid bins (e.g. empty rows)
+        if (!(xB_mid > 0.0) || !(Q2_mid > 0.0) || !(t_mid > 0.0)) {
+            continue;
+        }
+
+        // Allocate arrays for this row
+        std::vector<double> bh_unpol(n_phi), bh_pos(n_phi), bh_neg(n_phi);
+        std::vector<double> km_unpol(n_phi), km_pos(n_phi), km_neg(n_phi);
+        std::vector<double> vgg_unpol(n_phi), vgg_pos(n_phi), vgg_neg(n_phi);
+
+        for (int i = 0; i < n_phi; ++i) {
+            double phi_d = phi_deg[i];
+            double phi_r = phi_d * M_PI / 180.0;
+
+            // BH: helicity independent, store under "unpol"
+            double bh = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r);
+            bh_unpol[i] = bh;
+            bh_pos[i]   = bh;   // keep simple: copy same curve
+            bh_neg[i]   = bh;
+
+            // KM
+            km_unpol[i] = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "unpol");
+            km_pos[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "pos");
+            km_neg[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "neg");
+
+            // VGG
+            vgg_unpol[i] = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "unpol");
+            vgg_pos[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "pos");
+            vgg_neg[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "neg");
+        }
+
+        json bh_json, km_json, vgg_json;
+        bh_json["unpol"] = bh_unpol;
+        bh_json["pos"]   = bh_pos;
+        bh_json["neg"]   = bh_neg;
+
+        km_json["unpol"] = km_unpol;
+        km_json["pos"]   = km_pos;
+        km_json["neg"]   = km_neg;
+
+        vgg_json["unpol"] = vgg_unpol;
+        vgg_json["pos"]   = vgg_pos;
+        vgg_json["neg"]   = vgg_neg;
+
+        json row_json;
+        row_json["BH"]  = bh_json;
+        row_json["KM"]  = km_json;
+        row_json["VGG"] = vgg_json;
+
+        rows_json[std::to_string(row)] = std::move(row_json);
+    }
+
+    j["rows"] = std::move(rows_json);
+
+    // --- Write JSON to disk ---
+    fs::path dir  = fs::path(theory_json_root) / canonical_period_dir(energy_label);
+    ensure_dir(dir);
+    fs::path file = dir / "xs_phi_all.json";
+
+    std::ofstream ofs(file);
+    if (!ofs) {
+        std::cerr << "[cross_sections] FATAL: cannot open "
+                  << file.string()
+                  << " for writing theory JSON (energy "
+                  << energy_label << ").\n";
+        return false;
+    }
+
+    ofs << std::setw(2) << j << "\n";
+    ofs.close();
+
+    std::cout << "[cross_sections] Wrote theory JSON xs_phi_all.json for energy \""
+              << energy_label << "\" at " << file.string() << "\n";
+
+    return true;
+}
+
+// Public wrapper: generate JSONs for both 10.6 and 10.2 GeV.
+bool regenerate_theory_jsons(const std::string &csv_main,
+                             const std::string &theory_json_root) {
+    bool ok_106 = write_theory_json_for_energy(csv_main, theory_json_root,
+                                               10.6, "10.6 GeV");
+    bool ok_102 = write_theory_json_for_energy(csv_main, theory_json_root,
+                                               10.2, "10.2 GeV");
+
+    if (!ok_106 || !ok_102) {
+        std::cerr << "[cross_sections] ERROR: regenerate_theory_jsons encountered "
+                  << "a failure (10.6 ok=" << ok_106
+                  << ", 10.2 ok=" << ok_102 << ").\n";
+        return false;
+    }
+
+    std::cout << "[cross_sections] regenerate_theory_jsons completed successfully.\n";
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 // Cross section computation (CSV update + optional theory generation)
 // -----------------------------------------------------------------------------
 
