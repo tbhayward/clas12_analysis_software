@@ -165,16 +165,16 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Quick yield totals by current (data) and by period (MC) ----------
-    {
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
-        const std::string out_txt   = "output/yield_totals.txt";
+    // // --------- Quick yield totals by current (data) and by period (MC) ----------
+    // {
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    //     const std::string out_txt   = "output/yield_totals.txt";
 
-        if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
-            std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
+    //         std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- DVCS MC acceptance (CSV + plots) ----------
     // {
@@ -311,6 +311,17 @@ int main(int argc, char* argv[]) {
         const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string theory_json_root = "output/jsons/cross_sections";
         const std::string xs_out_root      = "output/cross_sections";
+
+        // --------- Theory grids (xs_phi_all.json generation) ----------
+        {
+            const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+            const std::string theory_json_root = "output/jsons/cross_sections";
+
+            if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
+                std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
+                return 1;
+            }
+        }
 
         // // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
         // LumiMap lumi_map = build_lumi_map();

@@ -52,4 +52,13 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                                    const std::string &theory_json_root,
                                    const std::string &out_root_dir);
 
+
+// Regenerate BH / KM / VGG theory curves vs phi and write:
+//   output/jsons/cross_sections/10.6_GeV/xs_phi_all.json
+//   output/jsons/cross_sections/10.2_GeV/xs_phi_all.json
+//
+// This function overwrites any existing files. It does NOT modify the CSV.
+bool regenerate_theory_jsons(const std::string &csv_main,
+                             const std::string &theory_json_root);
+
 #endif // CROSS_SECTIONS_H
