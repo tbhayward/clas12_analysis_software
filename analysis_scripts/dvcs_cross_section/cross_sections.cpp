@@ -12,16 +12,12 @@
 //        - Stores them as "(value, stat, sys)" with sys = 0.
 //        - Propagates stat uncertainties from the acceptance corrected yield
 //          and Frad.
-//   2) Computes theory curves at bin-mean kinematics for each row for
-//      10.6 GeV and 10.2 GeV only, using Nphi equally spaced phi points
-//      from 0 to 360 degrees (currently Nphi = 4 for debugging), and
-//      caches them as a single JSON per label:
-//          output/jsons/cross_sections/<PeriodDir>/xs_phi_all.json
-//      For each CSV row it stores:
-//        - BH unpolarized.
-//        - KM: unpol, +, -.
-//        - VGG: unpol, +, -.
-//      For 10.2 GeV we use Sp19 Inb kinematics (it is the only 10.2 period).
+//   2) Assumes the BH / KM / VGG theory curves as a function of phi have
+//      already been computed at 10.6 GeV and stored in a single JSON file:
+//          output/jsons/cross_sections/10.6_GeV/xs_phi_all.json
+//      When plotting *any* label (Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out,
+//      Sp19 Inb, Fa18, Sp18, 10.6 GeV, 10.2 GeV, ...), we simply reuse those
+//      10.6 GeV curves. No new theory JSONs are generated.
 //   3) For each label, plots xB canvases where:
 //        - One canvas per xB bin.
 //        - Each canvas is laid out as N_t rows (|t| bins) by N_Q2 columns
@@ -30,15 +26,17 @@
 //            * unpolarized, + helicity, and - helicity cross sections vs phi
 //              (with errors) from the CSV.
 //            * BH (unpol), KM (unpol/+/−), VGG (unpol/+/−) curves vs phi
-//              from the theory JSON for that label (if present).
-//        - Y axis is drawn in log scale.
-//        - A single legend is drawn once at the top of the canvas.
+//              from the *10.6 GeV* theory JSON.
+//        - Y axis is in log scale, but each subpad has its own dynamic
+//          y-range determined from its data + theory.
+//        - A single title plus three separate legend boxes (Data / BH+KM / VGG)
+//          are drawn in the top pad of the canvas.
 //        - Empty (Q^2, |t|) bins show only an annotated frame.
 //   4) This file does not add new columns to the CSV; it only updates
-//      existing ones. If truly required columns are missing, it fails with
-//      a clear error; optional combined-group columns such as
-//      "integrated luminosity, 10.2 GeV (nC)" are treated as optional
-//      and simply not filled if absent.
+//      existing ones. If required columns are missing, it fails with a clear
+//      error; optional combined-group lumi columns such as
+//      "integrated luminosity, 10.2 GeV (nC)" are treated as optional and
+//      simply not filled if absent.
 // -----------------------------------------------------------------------------
 
 #include "cross_sections.h"
@@ -120,6 +118,15 @@ static std::string yield_label_for(const std::string &label) {
     return label;
 }
 
+// Beam energy mapping for theory curves (used only when generating theory,
+// not for the current plotting-only usage of 10.6 GeV curves).
+static double beam_energy_for_label(const std::string &label) {
+    if (label == "Sp19 Inb" || label == "10.2 GeV") {
+        return 10.2;
+    }
+    return 10.6;
+}
+
 // -----------------------------------------------------------------------------
 // CSV helpers
 // -----------------------------------------------------------------------------
@@ -198,13 +205,8 @@ static std::string join_csv_line(const std::vector<std::string> &fields) {
     return oss.str();
 }
 
-// NOTE: Triple is defined in cross_sections.h and reused here.
-// It should look like:
-// struct Triple {
-//     double value;
-//     double stat;
-//     double sys;
-// };
+// Triple is defined in cross_sections.h:
+//   struct Triple { double value; double stat; double sys; };
 
 // Parse "(value, stat, sys)" -> Triple.
 static Triple parse_tuple3(const std::string &cell) {
@@ -344,30 +346,6 @@ using LumiMap = std::map<std::string, Triple>;
 
 // -----------------------------------------------------------------------------
 // Luminosity map construction
-//
-// For each label L, we store:
-//   Lumi.value = total accumulated charge (unpolarized)
-//   Lumi.stat  = + helicity accumulated charge
-//   Lumi.sys   = - helicity accumulated charge
-//
-// The RGA text files live in imports/integrated_luminosity/:
-//
-//   rga_fa18_inb.txt   -> "Fa18 Inb"
-//   rga_fa18_out.txt   -> "Fa18 Out"
-//   rga_sp18_out.txt   -> "Sp18 Out"
-//   rga_sp19_inb.txt   -> "Sp19 Inb" (10.2 GeV period)
-//
-// Combined entries:
-//   "Fa18"     = Fa18 Inb + Fa18 Out + Fa18 Inb Supp
-//   "Sp18"     = Sp18 Inb + Sp18 Out
-//   "10.6 GeV" = all 2018 10.6 periods (Fa18 + Sp18)
-//   "10.2 GeV" = Sp19 Inb only
-//
-// Special cases from your note:
-//   - For RGA Fa18 Inb, RGA Fa18 Out, and RGA Sp19 Inb we do not trust
-//     the "total" column; total is taken as pos + neg.
-//   - For RGA Sp18 Out we only have the total column; pos and neg are zero.
-//   - For RGA Sp18 Inb we currently have no file; everything is zero.
 // -----------------------------------------------------------------------------
 
 LumiMap build_lumi_map() {
@@ -479,7 +457,7 @@ static void ensure_dir(const fs::path &p) {
 }
 
 // -----------------------------------------------------------------------------
-// Cross section computation (CSV update + theory JSON write)
+// Cross section computation (CSV update + optional theory generation)
 // -----------------------------------------------------------------------------
 
 bool compute_cross_sections(const std::string &csv_main,
@@ -539,7 +517,6 @@ bool compute_cross_sections(const std::string &csv_main,
     }
 
     // Integrated luminosity columns
-    // These must already exist in the CSV for the named periods; we only fill them.
     const std::vector<std::string> lumi_col_names_required = {
         "integrated luminosity, Fa18 Inb (nC)",
         "integrated luminosity, Fa18 Out (nC)",
@@ -549,8 +526,6 @@ bool compute_cross_sections(const std::string &csv_main,
         "integrated luminosity, Fa18 (nC)",
         "integrated luminosity, Sp18 (nC)",
         "integrated luminosity, 10.6 GeV (nC)"
-        // Note: "integrated luminosity, 10.2 GeV (nC)" is optional and
-        // handled separately below.
     };
     const std::string lumi_col_fa18_supp =
         "integrated luminosity, Fa18 Inb Supp (nC)";
@@ -588,8 +563,6 @@ bool compute_cross_sections(const std::string &csv_main,
     };
 
     // Map of columns for each label+helicity:
-    //   acceptance corrected yield, ep->epg, exp, <yield_label>, <helicity>
-    //   cross sections, ep->epg, exp, <label>, <helicity>
     struct ColPair {
         int yield_idx;
         int xs_idx;
@@ -599,8 +572,8 @@ bool compute_cross_sections(const std::string &csv_main,
     for (const auto &L : labels) {
         // For the combined "10.2 GeV" label we do not maintain separate
         // cross section columns in the CSV; cross sections live on Sp19 Inb.
-        // We still compute theory curves for 10.2 GeV below, but skip
-        // cross section CSV columns for this label explicitly.
+        // We still might compute theory curves for 10.2 GeV separately in
+        // the future, but currently plotting reuses 10.6 GeV curves.
         if (L == "10.2 GeV") {
             continue;
         }
@@ -625,37 +598,7 @@ bool compute_cross_sections(const std::string &csv_main,
                           << "\" exists. Please add the cross sections column.\n";
                 return false;
             }
-            // If neither exists, we simply do not compute that combination.
         }
-    }
-
-    // Theory JSON root
-    const std::string theory_root = "output/jsons/cross_sections";
-    ensure_dir(theory_root);
-
-    // Labels for which we actually evaluate BH/KM/VGG
-    const std::vector<std::string> theory_labels = {
-        "10.6 GeV", "10.2 GeV"
-    };
-
-    // Precompute phi grid (Nphi points from 0 to 360 deg; currently Nphi = 6 for debug)
-    const int Nphi = 8;
-    std::vector<double> phi_deg(Nphi);
-    for (int i = 0; i < Nphi; ++i) {
-        double frac = (i + 0.5) / static_cast<double>(Nphi);
-        phi_deg[i] = 360.0 * frac;
-    }
-
-    // Per-label theory JSON accumulator
-    std::map<std::string, json> theory_json;
-    for (const auto &L : theory_labels) {
-        double Ebeam = (L == "10.2 GeV") ? 10.2 : 10.6;
-        json j;
-        j["label"]   = L;
-        j["Ebeam"]   = Ebeam;
-        j["phi_deg"] = phi_deg;
-        j["rows"]    = json::object();
-        theory_json[L] = j;
     }
 
     // Output lines
@@ -669,14 +612,12 @@ bool compute_cross_sections(const std::string &csv_main,
 
     int next_pct = 1;
 
-    // Process rows
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) {
             out_lines.push_back(lines[row]);
             continue;
         }
 
-        // Progress print
         if (n_data_rows > 0 && next_pct <= 100) {
             double frac = 100.0 * static_cast<double>(row) /
                           static_cast<double>(n_data_rows);
@@ -697,7 +638,6 @@ bool compute_cross_sections(const std::string &csv_main,
             continue;
         }
 
-        // Bin means for theory
         double xbmin = std::atof(trim(unquote(fields[c_xb_min])).c_str());
         double xbmax = std::atof(trim(unquote(fields[c_xb_max])).c_str());
         double q2min = std::atof(trim(unquote(fields[c_q2_min])).c_str());
@@ -709,24 +649,18 @@ bool compute_cross_sections(const std::string &csv_main,
         double Q2_mid = 0.5 * (q2min + q2max);
         double t_mid  = 0.5 * (tmin  + tmax);
 
-        // xB index (if present) is used only for naming plots later
-        int xb_idx_val = -1;
-        if (c_xb_idx >= 0) {
-            xb_idx_val = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
-        }
-        (void)xb_idx_val;
+        (void)xB_mid;
+        (void)Q2_mid;
+        (void)t_mid;
 
-        // Global factors for this bin
         Triple frad = parse_tuple3(fields[c_frad]);
         Triple vbin = parse_tuple3(fields[c_vbin]);
 
-        // For each label, compute cross sections and fill lumi
         for (const auto &L : labels) {
             auto lumi_it = lumi_map.find(L);
             if (lumi_it == lumi_map.end()) continue;
             const Triple &Lumi = lumi_it->second;
 
-            // Fill integrated luminosity columns for this label if the CSV has them
             std::string lumi_col_name;
             if (L == "Fa18 Inb")      lumi_col_name = "integrated luminosity, Fa18 Inb (nC)";
             else if (L == "Fa18 Out") lumi_col_name = "integrated luminosity, Fa18 Out (nC)";
@@ -745,11 +679,6 @@ bool compute_cross_sections(const std::string &csv_main,
                     tuple3_to_cell(Lumi.value, Lumi.stat, Lumi.sys);
             }
 
-            // Now compute cross sections for each helicity where we have columns.
-            // IMPORTANT: use helicity-specific luminosity:
-            //   unpol -> Lumi.value (total charge)
-            //   pos   -> Lumi.stat  (+ helicity)
-            //   neg   -> Lumi.sys   (- helicity)
             for (const auto &h : helicities) {
                 std::string key = L + "|" + h;
                 auto it = colmap.find(key);
@@ -760,10 +689,7 @@ bool compute_cross_sections(const std::string &csv_main,
                 if (iy < 0 || ix < 0) continue;
 
                 Triple Y = parse_tuple3(fields[iy]);
-                if (Y.value <= 0.0) {
-                    // Leave cross section cell as-is (likely empty)
-                    continue;
-                }
+                if (Y.value <= 0.0) continue;
 
                 double lumi_val = 0.0;
                 if (h == "unpol")      lumi_val = Lumi.value;
@@ -786,10 +712,8 @@ bool compute_cross_sections(const std::string &csv_main,
                     continue;
                 }
 
-                // sigma = yield * Frad / (bin_volume * Lumi_h)
                 double sigma = Y.value * frad.value / denom;
 
-                // Stat error from Y and Frad
                 double rel2 = 0.0;
                 if (Y.value > 0.0 && Y.stat > 0.0) {
                     double r = Y.stat / Y.value;
@@ -801,153 +725,15 @@ bool compute_cross_sections(const std::string &csv_main,
                 }
                 double sigma_stat = (rel2 > 0.0) ? sigma * std::sqrt(rel2) : 0.0;
 
-                // Sys set to 0 for now; you will edit CSV later.
                 double sigma_sys = 0.0;
 
                 fields[ix] = tuple3_to_cell(sigma, sigma_stat, sigma_sys);
-            }
-
-            // Theory JSON for this (label, row, bin-mean kinematics).
-            // We only compute theory for "10.6 GeV" and "10.2 GeV".
-            auto th_it = theory_json.find(L);
-            if (th_it != theory_json.end()) {
-                if (xB_mid > 0.0 && Q2_mid > 0.0 && t_mid > 0.0) {
-                    double Ebeam = th_it->second.value("Ebeam", (L == "10.2 GeV" ? 10.2 : 10.6));
-                    json rowj;
-                    rowj["row_index"] = row;
-                    rowj["xB_mid"]    = xB_mid;
-                    rowj["Q2_mid"]    = Q2_mid;
-                    rowj["t_abs_mid"] = t_mid;
-
-                    std::vector<double> bh_unpol(Nphi), bh_pos(Nphi), bh_neg(Nphi);
-                    std::vector<double> km_unpol(Nphi), km_pos(Nphi), km_neg(Nphi);
-                    std::vector<double> vgg_unpol(Nphi), vgg_pos(Nphi), vgg_neg(Nphi);
-
-                    for (int i = 0; i < Nphi; ++i) {
-                        double frac       = (i + 0.5) / static_cast<double>(Nphi);
-                        double phi_rad    = 2.0 * M_PI * frac;
-                        double phi_deg_pt = 360.0 * frac;
-
-                        // BH (helicity independent)
-                        double bh_val = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad);
-                        bh_unpol[i] = bh_val;
-                        bh_pos[i]   = bh_val;
-                        bh_neg[i]   = bh_val;
-
-                        std::cout << "[cross_sections] BH:   label=" << L
-                                  << " row=" << row
-                                  << " phi_deg=" << phi_deg_pt
-                                  << " xB=" << xB_mid
-                                  << " Q2=" << Q2_mid
-                                  << " |t|=" << t_mid
-                                  << " sigma=" << bh_val << "\n";
-
-                        // KM
-                        double km_un = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "unpol");
-                        double km_p  = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "pos");
-                        double km_m  = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "neg");
-
-                        km_unpol[i] = km_un;
-                        km_pos[i]   = km_p;
-                        km_neg[i]   = km_m;
-
-                        std::cout << "[cross_sections] KM unpol: label=" << L
-                                  << " row=" << row
-                                  << " phi_deg=" << phi_deg_pt
-                                  << " xB=" << xB_mid
-                                  << " Q2=" << Q2_mid
-                                  << " |t|=" << t_mid
-                                  << " sigma=" << km_un << "\n";
-                        std::cout << "[cross_sections] KM +:     label=" << L
-                                  << " row=" << row
-                                  << " phi_deg=" << phi_deg_pt
-                                  << " xB=" << xB_mid
-                                  << " Q2=" << Q2_mid
-                                  << " |t|=" << t_mid
-                                  << " sigma=" << km_p << "\n";
-                        std::cout << "[cross_sections] KM -:     label=" << L
-                                  << " row=" << row
-                                  << " phi_deg=" << phi_deg_pt
-                                  << " xB=" << xB_mid
-                                  << " Q2=" << Q2_mid
-                                  << " |t|=" << t_mid
-                                  << " sigma=" << km_m << "\n";
-
-                        // VGG
-                        double vgg_un = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "unpol");
-                        double vgg_p  = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "pos");
-                        double vgg_m  = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_rad, "neg");
-
-                        vgg_unpol[i] = vgg_un;
-                        vgg_pos[i]   = vgg_p;
-                        vgg_neg[i]   = vgg_m;
-
-                        std::cout << "[cross_sections] VGG unpol: label=" << L
-                                  << " row=" << row
-                                  << " phi_deg=" << phi_deg_pt
-                                  << " xB=" << xB_mid
-                                  << " Q2=" << Q2_mid
-                                  << " |t|=" << t_mid
-                                  << " sigma=" << vgg_un << "\n";
-                        std::cout << "[cross_sections] VGG +:     label=" << L
-                                  << " row=" << row
-                                  << " phi_deg=" << phi_deg_pt
-                                  << " xB=" << xB_mid
-                                  << " Q2=" << Q2_mid
-                                  << " |t|=" << t_mid
-                                  << " sigma=" << vgg_p << "\n";
-                        std::cout << "[cross_sections] VGG -:     label=" << L
-                                  << " row=" << row
-                                  << " phi_deg=" << phi_deg_pt
-                                  << " xB=" << xB_mid
-                                  << " Q2=" << Q2_mid
-                                  << " |t|=" << t_mid
-                                  << " sigma=" << vgg_m << "\n";
-                    }
-
-                    rowj["BH"]["unpol"] = bh_unpol;
-                    rowj["BH"]["pos"]   = bh_pos;
-                    rowj["BH"]["neg"]   = bh_neg;
-
-                    rowj["KM"]["unpol"] = km_unpol;
-                    rowj["KM"]["pos"]   = km_pos;
-                    rowj["KM"]["neg"]   = km_neg;
-
-                    rowj["VGG"]["unpol"] = vgg_unpol;
-                    rowj["VGG"]["pos"]   = vgg_pos;
-                    rowj["VGG"]["neg"]   = vgg_neg;
-
-                    std::string row_key = std::to_string(row);
-                    th_it->second["rows"][row_key] = rowj;
-                }
             }
         }
 
         out_lines.push_back(join_csv_line(fields));
     }
 
-    // Write theory JSONs once per label
-    for (const auto &L : theory_labels) {
-        auto it = theory_json.find(L);
-        if (it == theory_json.end()) continue;
-
-        const std::string period_dir = canonical_period_dir(L);
-        fs::path outdir = fs::path(theory_root) / period_dir;
-        ensure_dir(outdir);
-
-        fs::path fpath = outdir / "xs_phi_all.json";
-        std::ofstream ofs_json(fpath);
-        if (!ofs_json) {
-            std::cerr << "[cross_sections] ERROR: cannot open "
-                      << fpath.string() << " for writing theory JSON.\n";
-        } else {
-            ofs_json << std::setw(2) << it->second << "\n";
-            std::cout << "[cross_sections] Wrote theory JSON for label \""
-                      << L << "\" to " << fpath.string() << "\n";
-        }
-    }
-
-    // Atomic write-back of CSV
     fs::path csv_path(csv_main);
     fs::path tmp_path = csv_path;
     tmp_path += ".tmp";
@@ -991,9 +777,7 @@ struct BinData {
 using QTKey = std::pair<Range,Range>; // first = Q2 range, second = |t| range
 
 struct XSGroupByXB {
-    // For a given xB range, we have a map of (Q2_range, t_range) -> BinData
     std::map<QTKey, BinData> bins;
-    // Optional xB index if present in CSV
     int xb_index = -1;
 };
 
@@ -1005,24 +789,30 @@ struct TheoryCurves {
     std::vector<double> vgg_unpol, vgg_pos, vgg_neg;
 };
 
-// Load single xs_phi_all.json for a label
+// Load xs_phi_all.json, always using the precomputed 10.6 GeV curves.
+// The label argument is only used for logging; all labels reuse the same file.
 static std::map<size_t, TheoryCurves>
 load_theory_for_label(const std::string &label,
                       const std::string &theory_root) {
     std::map<size_t, TheoryCurves> out;
 
-    fs::path dir  = fs::path(theory_root) / canonical_period_dir(label);
+    // Always source theory curves from the 10.6 GeV JSON:
+    const std::string src_label = "10.6 GeV";
+    fs::path dir  = fs::path(theory_root) / canonical_period_dir(src_label);
     fs::path file = dir / "xs_phi_all.json";
+
     if (!fs::exists(file)) {
-        std::cerr << "[cross_sections] WARNING: no theory JSON file for label \""
-                  << label << "\" at " << file.string() << "\n";
+        std::cerr << "[cross_sections] WARNING: no theory JSON file at "
+                  << file.string()
+                  << " (needed for label \"" << label << "\").\n";
         return out;
     }
 
     std::ifstream ifs(file);
     if (!ifs) {
-        std::cerr << "[cross_sections] WARNING: failed to open theory JSON for label \""
-                  << label << "\" at " << file.string() << "\n";
+        std::cerr << "[cross_sections] WARNING: failed to open theory JSON at "
+                  << file.string()
+                  << " (needed for label \"" << label << "\").\n";
         return out;
     }
 
@@ -1030,21 +820,24 @@ load_theory_for_label(const std::string &label,
     try {
         ifs >> j;
     } catch (...) {
-        std::cerr << "[cross_sections] WARNING: malformed theory JSON for label \""
-                  << label << "\" at " << file.string() << "\n";
+        std::cerr << "[cross_sections] WARNING: malformed theory JSON at "
+                  << file.string()
+                  << " (used for all labels, including \"" << label << "\").\n";
         return out;
     }
 
     std::vector<double> phi_deg = j.value("phi_deg", std::vector<double>{});
     if (phi_deg.empty()) {
-        std::cerr << "[cross_sections] WARNING: theory JSON for label \""
-                  << label << "\" has empty phi_deg.\n";
+        std::cerr << "[cross_sections] WARNING: theory JSON at "
+                  << file.string()
+                  << " has empty phi_deg.\n";
         return out;
     }
 
     if (!j.contains("rows") || !j["rows"].is_object()) {
-        std::cerr << "[cross_sections] WARNING: theory JSON for label \""
-                  << label << "\" has no 'rows' object.\n";
+        std::cerr << "[cross_sections] WARNING: theory JSON at "
+                  << file.string()
+                  << " has no 'rows' object.\n";
         return out;
     }
 
@@ -1079,16 +872,16 @@ load_theory_for_label(const std::string &label,
         }
     }
 
-    std::cout << "[cross_sections] Loaded theory for label \"" << label
-              << "\" from " << file.string()
-              << " with " << out.size() << " rows.\n";
+    std::cout << "[cross_sections] Loaded theory curves from 10.6 GeV JSON ("
+              << file.string() << ") for plotting label \"" << label
+              << "\"; rows=" << out.size() << ".\n";
 
     return out;
 }
 
-// Compute a sensible (ymin,ymax) for one xB slice (data + theory) for log scale
-static std::pair<double,double> compute_yrange_for_slice(
-    const std::map<QTKey, BinData> &bins_for_xB,
+// Compute y-range for one bin (data + theory) for log scale
+static std::pair<double,double> compute_yrange_for_bin(
+    const BinData *bin,
     const std::map<size_t, TheoryCurves> &theory)
 {
     double ymin = std::numeric_limits<double>::max();
@@ -1113,16 +906,13 @@ static std::pair<double,double> compute_yrange_for_slice(
         }
     };
 
-    // Data
-    for (const auto &kv : bins_for_xB) {
-        const BinData &b = kv.second;
-        update_from_points(b.unpol);
-        update_from_points(b.pos);
-        update_from_points(b.neg);
+    if (bin) {
+        update_from_points(bin->unpol);
+        update_from_points(bin->pos);
+        update_from_points(bin->neg);
 
-        // Theory (BH/KM/VGG, all helicities)
-        if (b.have_theory_row) {
-            auto it_th = theory.find(b.theory_row);
+        if (bin->have_theory_row) {
+            auto it_th = theory.find(bin->theory_row);
             if (it_th != theory.end()) {
                 const TheoryCurves &tc = it_th->second;
                 update_from_curve(tc.bh_unpol);
@@ -1211,7 +1001,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
     }
 
     // Cross section columns for this label.
-    // If none of the three exist, this label simply has no data to plot.
     int c_xs_unpol = find_col_optional(
         header, "cross sections, ep->epg, exp, " + label + ", unpol");
     int c_xs_pos   = find_col_optional(
@@ -1225,14 +1014,12 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    // If any exist, require all three for a clean plot.
     if (c_xs_unpol < 0 || c_xs_pos < 0 || c_xs_neg < 0) {
         std::cerr << "[cross_sections] FATAL: cross section columns for label "
                   << label << " are incomplete; expected unpol/pos/neg.\n";
         return false;
     }
 
-    // Build structure: xB range -> (Q2,t) -> BinData
     std::map<Range, XSGroupByXB> by_xb;
 
     for (size_t row = 1; row < lines.size(); ++row) {
@@ -1251,7 +1038,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         Range q2_range(q2min, q2max);
         Range t_range(tmin,  tmax);
 
-        // Phi center
         double phi = 0.0;
         if (c_phiavg >= 0) {
             phi = std::atof(trim(unquote(fields[c_phiavg])).c_str());
@@ -1266,13 +1052,11 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
 
         if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) {
-            // No cross sections for this label in this row
             continue;
         }
 
         XSGroupByXB &group = by_xb[xb_range];
 
-        // Record xB index if present (first occurrence wins)
         if (group.xb_index < 0 && c_xb_idx >= 0) {
             group.xb_index = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
         }
@@ -1280,7 +1064,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         QTKey key(q2_range, t_range);
         BinData &bin = group.bins[key];
 
-        // For theory lookup later
         if (!bin.have_theory_row) {
             bin.theory_row = row;
             bin.have_theory_row = true;
@@ -1306,10 +1089,9 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    // Load theory curves for this label (keyed by row index)
+    // Load theory curves for this label (always from 10.6 GeV JSON)
     std::map<size_t, TheoryCurves> theory = load_theory_for_label(label, theory_json_root);
 
-    // ROOT styling
     gROOT->SetBatch(true);
     gStyle->SetOptStat(0);
     gStyle->SetTitleFont(42, "XYZ");
@@ -1320,11 +1102,9 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
     gStyle->SetPadTickX(1);
     gStyle->SetPadTickY(1);
 
-    // Output dir
     fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(label);
     ensure_dir(outdir);
 
-    // Iterate xB slices in ascending xBmin order
     int xb_canvas_counter = 0;
     for (const auto &kv_xb : by_xb) {
         const Range &xb_range = kv_xb.first;
@@ -1333,7 +1113,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
         if (bins_for_xB.empty()) continue;
 
-        // Collect unique Q2 and t ranges present in this xB slice
         std::set<Range> q2_set, t_set;
         for (const auto &kv : bins_for_xB) {
             const QTKey &qt = kv.first;
@@ -1347,15 +1126,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         const int ncols = static_cast<int>(q2_slice.size());
         const int nrows = static_cast<int>(t_slice.size());
 
-        // Per-slice y-range (data + theory), log scale
-        double ymin_canvas = 1e-4;
-        double ymax_canvas = 1.0;
-        {
-            auto yr = compute_yrange_for_slice(bins_for_xB, theory);
-            ymin_canvas = yr.first;
-            ymax_canvas = yr.second;
-        }
-
         const int W = 280 * ncols + 160;
         const int H = 260 * nrows + 220;
 
@@ -1365,27 +1135,24 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
         TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-        // Top title and legend pad (slightly taller to hold legend)
-        TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.85, 1.0, 1.0);
+        TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.82, 1.0, 1.0);
         pTop->SetFillStyle(0);
         pTop->SetBorderSize(0);
         pTop->Draw();
 
-        // Grid pad
-        TPad *pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.85);
+        TPad *pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.82);
         pGrid->SetFillStyle(0);
         pGrid->SetBorderSize(0);
         pGrid->Draw();
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        // Title text + single legend on top pad
         pTop->cd();
         TLatex head;
         head.SetNDC();
         head.SetTextAlign(22);
         head.SetTextFont(42);
-        head.SetTextSize(0.22);
+        head.SetTextSize(0.20);
 
         std::ostringstream tit;
         tit << "Cross sections, ep #rightarrow ep#gamma   " << label
@@ -1393,18 +1160,8 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
             << std::fixed << std::setprecision(3)
             << xb_range.first << ", " << xb_range.second << ")";
 
-        head.DrawLatex(0.5, 0.70, tit.str().c_str());
+        head.DrawLatex(0.5, 0.87, tit.str().c_str());
 
-        // Canvas-level legend (no per-subpad legends)
-        TLegend *legTop = new TLegend(0.02, 0.05, 0.98, 0.65);
-        legTop->SetBorderSize(1);
-        legTop->SetLineColor(kBlack);
-        legTop->SetFillColor(kWhite);
-        legTop->SetFillStyle(1001);
-        legTop->SetTextFont(42);
-        legTop->SetTextSize(0.12);
-
-        // Dummy objects to register styles in the top legend
         TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
         dummy_unpol.SetMarkerStyle(20);
         dummy_unpol.SetLineWidth(2);
@@ -1452,20 +1209,44 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         dummy_vgg_neg.SetLineStyle(3);
         dummy_vgg_neg.SetLineColor(kOrange+7);
 
-        legTop->AddEntry(&dummy_unpol, "data unpolarized", "lep");
-        legTop->AddEntry(&dummy_pos,   "data + helicity", "lep");
-        legTop->AddEntry(&dummy_neg,   "data - helicity", "lep");
-        legTop->AddEntry(&dummy_bh,    "BH unpolarized",  "l");
-        legTop->AddEntry(&dummy_km_unpol, "KM unpolarized", "l");
-        legTop->AddEntry(&dummy_km_pos,   "KM + helicity",  "l");
-        legTop->AddEntry(&dummy_km_neg,   "KM - helicity",  "l");
-        legTop->AddEntry(&dummy_vgg_unpol, "VGG unpolarized", "l");
-        legTop->AddEntry(&dummy_vgg_pos,   "VGG + helicity",  "l");
-        legTop->AddEntry(&dummy_vgg_neg,   "VGG - helicity",  "l");
+        TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.75);
+        legData->SetBorderSize(1);
+        legData->SetLineColor(kBlack);
+        legData->SetFillColor(kWhite);
+        legData->SetFillStyle(1001);
+        legData->SetTextFont(42);
+        legData->SetTextSize(0.11);
+        legData->AddEntry(&dummy_unpol, "data unpolarized", "lep");
+        legData->AddEntry(&dummy_pos,   "data + helicity", "lep");
+        legData->AddEntry(&dummy_neg,   "data - helicity", "lep");
 
-        legTop->Draw();
+        TLegend *legKM = new TLegend(0.35, 0.05, 0.65, 0.75);
+        legKM->SetBorderSize(1);
+        legKM->SetLineColor(kBlack);
+        legKM->SetFillColor(kWhite);
+        legKM->SetFillStyle(1001);
+        legKM->SetTextFont(42);
+        legKM->SetTextSize(0.11);
+        legKM->AddEntry(&dummy_bh,       "BH unpolarized",  "l");
+        legKM->AddEntry(&dummy_km_unpol, "KM unpolarized",  "l");
+        legKM->AddEntry(&dummy_km_pos,   "KM + helicity",   "l");
+        legKM->AddEntry(&dummy_km_neg,   "KM - helicity",   "l");
 
-        // Helper to draw one graph from a vector<Point>
+        TLegend *legVGG = new TLegend(0.68, 0.05, 0.98, 0.75);
+        legVGG->SetBorderSize(1);
+        legVGG->SetLineColor(kBlack);
+        legVGG->SetFillColor(kWhite);
+        legVGG->SetFillStyle(1001);
+        legVGG->SetTextFont(42);
+        legVGG->SetTextSize(0.11);
+        legVGG->AddEntry(&dummy_vgg_unpol, "VGG unpolarized", "l");
+        legVGG->AddEntry(&dummy_vgg_pos,   "VGG + helicity",  "l");
+        legVGG->AddEntry(&dummy_vgg_neg,   "VGG - helicity",  "l");
+
+        legData->Draw();
+        legKM->Draw();
+        legVGG->Draw();
+
         auto make_graph = [](const std::vector<Point> &v,
                              int mstyle, int mcolor) -> TGraphErrors* {
             if (v.empty()) return nullptr;
@@ -1486,7 +1267,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
             return g;
         };
 
-        // For each (t,Q2) combination, draw a subpad
         for (int r = 0; r < nrows; ++r) {
             const Range &t_range = t_slice[r];
             for (int cc = 0; cc < ncols; ++cc) {
@@ -1502,8 +1282,19 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
                 QTKey key(q2_range, t_range);
                 auto it_bin = bins_for_xB.find(key);
+                const BinData *bin_ptr = nullptr;
+                if (it_bin != bins_for_xB.end()) {
+                    bin_ptr = &(it_bin->second);
+                }
 
-                // Always draw a frame so the canvas layout is stable
+                double ymin_canvas = 1e-4;
+                double ymax_canvas = 1.0;
+                {
+                    auto yr = compute_yrange_for_bin(bin_ptr, theory);
+                    ymin_canvas = yr.first;
+                    ymax_canvas = yr.second;
+                }
+
                 TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("d^{4}#sigma / (dx_{B} dQ^{2} d|t| d#phi)");
@@ -1517,7 +1308,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                 frame->GetXaxis()->SetTitleOffset(1.10);
                 frame->GetYaxis()->SetTitleOffset(1.35);
 
-                // Panel label: Q^2 and |t| ranges
                 TLatex lab;
                 lab.SetNDC();
                 lab.SetTextSize(0.070);
@@ -1530,14 +1320,12 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                          t_range.first,  t_range.second)
                 );
 
-                if (it_bin == bins_for_xB.end()) {
-                    // No data for this (Q2, t) in this xB slice; leave empty frame.
+                if (!bin_ptr) {
                     continue;
                 }
 
-                BinData bin = it_bin->second; // copy so we can sort safely
+                BinData bin = *bin_ptr;
 
-                // Sort by phi for nicer curves
                 auto sort_by_phi = [](std::vector<Point> &v) {
                     std::sort(v.begin(), v.end(),
                               [](const Point &a, const Point &b) {
@@ -1556,7 +1344,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                 if (g_pos)   g_pos->Draw("P SAME");
                 if (g_neg)   g_neg->Draw("P SAME");
 
-                // Theory curves (BH, KM, VGG; unpol and polarized for KM/VGG)
                 if (bin.have_theory_row) {
                     auto it_th = theory.find(bin.theory_row);
                     if (it_th != theory.end()) {
@@ -1578,15 +1365,10 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                             gth->Draw("L SAME");
                         };
 
-                        // BH (unpolarized)
                         draw_curve(tc.bh_unpol, 2, kGreen+2);
-
-                        // KM: unpol / + / -
                         draw_curve(tc.km_unpol, 1, kMagenta+1);
                         draw_curve(tc.km_pos,   2, kMagenta+1);
                         draw_curve(tc.km_neg,   3, kMagenta+1);
-
-                        // VGG: unpol / + / -
                         draw_curve(tc.vgg_unpol, 1, kOrange+7);
                         draw_curve(tc.vgg_pos,   2, kOrange+7);
                         draw_curve(tc.vgg_neg,   3, kOrange+7);
@@ -1595,7 +1377,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
             }
         }
 
-        // Save canvas
         std::ostringstream fname;
         fname << "cross_sections_" << canonical_period_dir(label)
               << "_xB_" << (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter)
