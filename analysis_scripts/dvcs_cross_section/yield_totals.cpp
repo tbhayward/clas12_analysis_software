@@ -527,6 +527,13 @@ static Totals compute_totals_internal(
         const std::string tree_key = P.tree_key; // e.g. "DVCS_Fa18_inb"
         const std::string label    = P.label;    // e.g. "Fa18 Inb"
 
+        // Skip Fa18 Inb Supp entirely (no sigma cuts defined for this period)
+        if (period_dir_for_label(label) == "Fa18_Inb_Supp") {
+            std::cout << "[yield_totals] Skipping period " << label
+                      << " (Fa18 Inb Supp; no sigma cuts defined)." << std::endl;
+            continue;
+        }
+
         // ---------------- DATA ----------------
         {
             auto itT = dvcsDataTrees.find(tree_key);
