@@ -450,21 +450,24 @@ static bool resolve_current_for_label(
     int runnum,
     int& current_nA)
 {
-    if (period_label == "Fa18 Inb") {
+    // Normalize label so we accept "Fa18 Inb", "fa18_inb", "FA18INB", etc.
+    const std::string k = to_lower_nospace(period_label);
+
+    if (k == "fa18inb") {
         bool ok = false;
         int cur = current_fa18_inb(runnum, ok);
         if (!ok) return false;
         current_nA = cur;
         return true;
     }
-    if (period_label == "Fa18 Out") {
+    if (k == "fa18out") {
         bool ok = false;
         int cur = current_fa18_out(runnum, ok);
         if (!ok) return false;
         current_nA = cur;
         return true;
     }
-    if (period_label == "Sp18 Out") {
+    if (k == "sp18out") {
         // RGA Sp18 Out: 30 nA from 3211-3293, 45 nA from 3867-3987.
         if (runnum >= 3211 && runnum <= 3293) {
             current_nA = 30;
@@ -476,7 +479,7 @@ static bool resolve_current_for_label(
         }
         return false;
     }
-    if (period_label == "Sp19 Inb") {
+    if (k == "sp19inb") {
         // RGA Sp19 Inb: 35 nA from 3306-3411, 50 nA from 3431-4325.
         if (runnum >= 3306 && runnum <= 3411) {
             current_nA = 35;
@@ -525,7 +528,7 @@ static Totals compute_totals_internal(
     // Process DATA and MC period-by-period using CANONICAL_PERIODS
     for (const auto& P : CANONICAL_PERIODS()) {
         const std::string tree_key = P.tree_key; // e.g. "DVCS_Fa18_inb"
-        const std::string label    = P.label;    // e.g. "Fa18 Inb"
+        const std::string label    = P.label;    // may be "fa18_inb", "Fa18 Inb", etc.
 
         // Skip Fa18 Inb Supp entirely (no sigma cuts defined for this period)
         if (period_dir_for_label(label) == "Fa18_Inb_Supp") {
