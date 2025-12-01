@@ -97,7 +97,7 @@ def hv_sort_key(path):
 file_paths = sorted(file_paths, key=hv_sort_key)
 
 # Common histogram settings for Mx (inclusive) - defined early for diagnostics
-MX_MIN, MX_MAX = 0.88, 1.3
+MX_MIN, MX_MAX = 0.88, 7
 MX_NBINS = 80
 
 # Universal selection toggles
