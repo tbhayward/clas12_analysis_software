@@ -6,6 +6,7 @@
 #include "load_csv.h"
 #include "raw_signal_cross_check.h"
 #include "pi0_contamination_cross_check.h"
+#include "rad_correction_cross_check.h"
 
 
 namespace fs = std::filesystem;
