@@ -14,7 +14,8 @@ DVCS_BIN = dvcs_analysis
 # ---------- cross_check_lee ----------
 LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp raw_signal_cross_check.cpp \
            pi0_contamination_cross_check.cpp rad_correction_cross_check.cpp \
-           load_binning_scheme.cpp unfolded_yields_cross_check.cpp bin_centering_cross_check.cpp 
+           load_binning_scheme.cpp unfolded_yields_cross_check.cpp bin_centering_cross_check.cpp \
+           bin_volume_cross_check.cpp
 LEE_OBJ  = $(LEE_SRC:.cpp=.o)
 LEE_BIN  = cross_check_lee
 # Build both by default

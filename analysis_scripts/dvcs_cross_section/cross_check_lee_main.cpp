@@ -9,6 +9,7 @@
 #include "rad_correction_cross_check.h"
 #include "unfolded_yields_cross_check.h"
 #include "bin_centering_cross_check.h"
+#include "bin_volume_cross_check.h"
 
 
 namespace fs = std::filesystem;
@@ -61,11 +62,18 @@ int main() {
     //     "output/cross_check/lee/unfolding"
     // );
 
-    // Bin-centering correction cross-check (Fbin vs bin_volume)
-    plot_bin_centering_cross_checks(
+    // // Bin-centering correction cross-check (Fbin vs bin_volume)
+    // plot_bin_centering_cross_checks(
+    //     lee_csv,
+    //     hayward_csv,
+    //     "output/cross_check/lee/bin_centering"
+    // );
+
+    // Bin volume cross-check
+    plot_bin_volume_cross_checks(
         lee_csv,
         hayward_csv,
-        "output/cross_check/lee/bin_centering"
+        "output/cross_check/lee/bin_volume"
     );
 
     std::cout << "[lee] cross_check_lee complete.\n";
