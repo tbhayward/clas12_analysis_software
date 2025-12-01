@@ -639,8 +639,8 @@ static void draw_one_canvas(const std::string& title,
             PanelData hayward, lee;
             fetchBoth(ccol, r, hayward, lee);
 
-            // Compute per-panel y-max
-            double panel_ymax = compute_panel_ymax(draw_ratio_only, hayward, lee);
+            // Fixed y-axis: 0 to 1 for contamination, 0 to 2 for ratio
+            double panel_ymax = draw_ratio_only ? 2.0 : 1.0;
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, panel_ymax);
             frame->GetXaxis()->SetTitle("#phi (deg)");
