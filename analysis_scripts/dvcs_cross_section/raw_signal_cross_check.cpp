@@ -75,6 +75,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -98,6 +99,19 @@ static inline std::string slower(std::string s) {
         c = (char)std::tolower((unsigned char)c);
     }
     return s;
+}
+
+// trim leading/trailing whitespace
+static inline std::string trim(const std::string& s) {
+    size_t i0 = 0;
+    while (i0 < s.size() && std::isspace((unsigned char)s[i0])) {
+        ++i0;
+    }
+    size_t i1 = s.size();
+    while (i1 > i0 && std::isspace((unsigned char)s[i1 - 1])) {
+        --i1;
+    }
+    return s.substr(i0, i1 - i0);
 }
 
 // ---------- CSV helpers ----------
@@ -183,6 +197,114 @@ static void require_columns(const std::unordered_map<std::string,int>& idx,
         }
         fatal(oss.str());
     }
+}
+
+// ---------- Lee CSV column aliases and detection ----------
+
+struct LeeCsvCols {
+    int c_bin;
+    int c_xb_min;
+    int c_xb_max;
+    int c_q2_min;
+    int c_q2_max;
+    int c_t_min;
+    int c_t_max;
+    int c_phi_min;
+    int c_phi_max;
+    int c_phiavg;
+};
+
+static int find_col_alias(const std::vector<std::string>& header,
+                          const std::vector<std::string>& names) {
+    for (size_t i = 0; i < header.size(); ++i) {
+        std::string h = slower(trim(header[i]));
+        for (const auto& raw_name : names) {
+            std::string n = slower(trim(raw_name));
+            if (!n.empty() && h == n) {
+                return (int)i;
+            }
+        }
+        // endfor
+    }
+    // endfor
+    return -1;
+}
+
+static LeeCsvCols detect_lee_columns(const std::vector<std::string>& header) {
+    if (header.empty()) {
+        fatal("[cross][FATAL] Empty header row in Lee CSV");
+    }
+
+    LeeCsvCols cols;
+    cols.c_bin     = -1;
+    cols.c_xb_min  = -1;
+    cols.c_xb_max  = -1;
+    cols.c_q2_min  = -1;
+    cols.c_q2_max  = -1;
+    cols.c_t_min   = -1;
+    cols.c_t_max   = -1;
+    cols.c_phi_min = -1;
+    cols.c_phi_max = -1;
+    cols.c_phiavg  = -1;
+
+    // 1) Bin index: try named column first, then unlabeled first column
+    cols.c_bin = find_col_alias(header, { "bin index", "bin", "idx" });
+    if (cols.c_bin < 0) {
+        std::string h0 = trim(header[0]);
+        if (h0.empty()) {
+            // Lee pass-1: first column is bin index, header cell is blank
+            cols.c_bin = 0;
+        } else {
+            std::ostringstream oss;
+            oss << "[cross][FATAL] Could not locate bin index column in Lee CSV. "
+                << "Tried names: \"bin index\", \"bin\", \"idx\" and unlabeled first column.\n"
+                << "Header[0] is \"" << header[0] << "\".";
+            fatal(oss.str());
+        }
+    }
+
+    // 2) xB, Q2, phi
+    cols.c_xb_min  = find_col_alias(header, { "xBmin", "xbmin", "xB_min", "xb_min" });
+    cols.c_xb_max  = find_col_alias(header, { "xBmax", "xbmax", "xB_max", "xb_max" });
+    cols.c_q2_min  = find_col_alias(header, { "Q2min", "q2min", "Q2_min", "q2_min" });
+    cols.c_q2_max  = find_col_alias(header, { "Q2max", "q2max", "Q2_max", "q2_max" });
+    cols.c_phi_min = find_col_alias(header, { "phimin", "phi_min", "phi_minimum" });
+    cols.c_phi_max = find_col_alias(header, { "phimax", "phi_max", "phi_maximum" });
+    cols.c_phiavg  = find_col_alias(header, { "phiavg", "phi_avg", "phi_average" });
+
+    // 3) |t| min and max: accept both our names and Lee's pass-1 names.
+    cols.c_t_min   = find_col_alias(header, { "tmin", "t_min", "t_abs_min" });
+    cols.c_t_max   = find_col_alias(header, { "tmax", "t_max", "t_abs_max" });
+
+    // 4) Validate required columns and give a clear fatal if something is missing.
+    std::vector<std::string> missing;
+
+    if (cols.c_bin     < 0) missing.push_back("bin index");
+    if (cols.c_xb_min  < 0) missing.push_back("xBmin");
+    if (cols.c_xb_max  < 0) missing.push_back("xBmax");
+    if (cols.c_q2_min  < 0) missing.push_back("Q2min");
+    if (cols.c_q2_max  < 0) missing.push_back("Q2max");
+    if (cols.c_t_min   < 0) missing.push_back("tmin/t_abs_min");
+    if (cols.c_t_max   < 0) missing.push_back("tmax/t_abs_max");
+    if (cols.c_phi_min < 0) missing.push_back("phimin");
+    if (cols.c_phi_max < 0) missing.push_back("phimax");
+    if (cols.c_phiavg  < 0) missing.push_back("phiavg");
+
+    if (!missing.empty()) {
+        std::ostringstream oss;
+        oss << "[cross][FATAL] Missing required columns in Lee CSV: ";
+        for (size_t i = 0; i < missing.size(); ++i) {
+            if (i) oss << ", ";
+            oss << "\"" << missing[i] << "\"";
+        }
+        oss << ".\nHeader row is:";
+        for (size_t i = 0; i < header.size(); ++i) {
+            oss << "\n  [" << i << "] \"" << header[i] << "\"";
+        }
+        fatal(oss.str());
+    }
+
+    return cols;
 }
 
 // ---------- bin / axis structs ----------
@@ -558,16 +680,18 @@ static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
         fatal("Lee CSV appears empty: " + lee_csv_path);
     }
     std::vector<std::string> header = split_csv_line(header_line);
+
+    // Detect bin / kinematic columns using aliases and Lee conventions.
+    LeeCsvCols cols_lee = detect_lee_columns(header);
+
+    // Build header index for named columns like "valid bin" and yield columns.
     auto H = build_header_index(header);
 
+    // Only "valid bin" is required by name here; bin index and kinematic
+    // ranges are handled by detect_lee_columns above.
     const std::vector<std::string> required = {
-        "bin index", "valid bin",
-        "xBmin", "xBmax",
-        "Q2min", "Q2max",
-        "tmin", "tmax",
-        "phiavg"
+        "valid bin"
     };
-
     require_columns(H, required, "Lee CSV");
 
     const std::vector<std::string> lee_inb_cols = {
@@ -597,19 +721,24 @@ static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
         if (line.empty()) continue;
 
         std::vector<std::string> cols = split_csv_line(line);
+
         const std::string& valid_s = get_col_ref(cols, H, "valid bin");
         int valid = ToInt(valid_s);
         if (valid != 1) continue;
 
+        if ((int)cols.size() <= cols_lee.c_phiavg) {
+            fatal("Row in Lee CSV has fewer columns than expected based on header detection.");
+        }
+
         BinRow r;
-        r.bin_index = ToInt(get_col_ref(cols, H, "bin index"));
-        r.xBmin     = ToDouble(get_col_ref(cols, H, "xBmin"));
-        r.xBmax     = ToDouble(get_col_ref(cols, H, "xBmax"));
-        r.Q2min     = ToDouble(get_col_ref(cols, H, "Q2min"));
-        r.Q2max     = ToDouble(get_col_ref(cols, H, "Q2max"));
-        r.tmin      = ToDouble(get_col_ref(cols, H, "tmin"));
-        r.tmax      = ToDouble(get_col_ref(cols, H, "tmax"));
-        r.phiavg    = ToDouble(get_col_ref(cols, H, "phiavg"));
+        r.bin_index = ToInt(cols[cols_lee.c_bin]);
+        r.xBmin     = ToDouble(cols[cols_lee.c_xb_min]);
+        r.xBmax     = ToDouble(cols[cols_lee.c_xb_max]);
+        r.Q2min     = ToDouble(cols[cols_lee.c_q2_min]);
+        r.Q2max     = ToDouble(cols[cols_lee.c_q2_max]);
+        r.tmin      = ToDouble(cols[cols_lee.c_t_min]);
+        r.tmax      = ToDouble(cols[cols_lee.c_t_max]);
+        r.phiavg    = ToDouble(cols[cols_lee.c_phiavg]);
 
         double lee_inb_sum = 0.0;
         for (const auto& c : lee_inb_cols) {
