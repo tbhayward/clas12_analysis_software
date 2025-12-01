@@ -507,6 +507,51 @@ static std::string safe_canvas_name(const std::string& out_png) {
     return fs::path(out_png).filename().string();
 }
 
+// Compute per-panel y-max (not global)
+static double compute_panel_ymax(
+    bool ratio_mode,
+    const PanelData& hayward,
+    const PanelData& lee
+) {
+    double ymax = 0.0;
+
+    if (!ratio_mode) {
+        // Just find max of both series (including error bars for hayward)
+        for (size_t i = 0; i < hayward.val.size(); ++i) {
+            ymax = std::max(ymax, hayward.val[i] + hayward.err[i]);
+        }
+        for (size_t i = 0; i < lee.val.size(); ++i) {
+            ymax = std::max(ymax, lee.val[i]);
+        }
+    } else {
+        // Ratio mode: match by phi (within tolerance), compute ratio
+        const double tol = 20.0; // degrees
+        for (size_t i = 0; i < hayward.phi.size(); ++i) {
+            double best_dist = 1e9;
+            int jbest = -1;
+            for (size_t j = 0; j < lee.phi.size(); ++j) {
+                double d = std::fabs(lee.phi[j] - hayward.phi[i]);
+                if (d < best_dist) {
+                    best_dist = d;
+                    jbest = (int)j;
+                }
+            }
+            if (jbest >= 0 && best_dist <= tol && lee.val[jbest] > 0.0) {
+                double R = (hayward.val[i] <= 0.0) ? 0.0 : hayward.val[i] / lee.val[jbest];
+                double eR = 0.0;
+                if (hayward.val[i] > 0.0 && hayward.err[i] > 0.0) {
+                    eR = R * (hayward.err[i] / hayward.val[i]);
+                }
+                ymax = std::max(ymax, R + eR);
+            }
+        }
+    }
+
+    if (ymax <= 0.0) ymax = ratio_mode ? 1.5 : 0.1;
+    if (ratio_mode) ymax = std::max(ymax, 1.5);
+    return ymax * 1.1; // Add 10% padding
+}
+
 static void draw_one_canvas(const std::string& title,
                             const std::vector<std::pair<double,double>>& Q2s,
                             const std::vector<std::pair<double,double>>& Ts,
@@ -594,8 +639,8 @@ static void draw_one_canvas(const std::string& title,
             PanelData hayward, lee;
             fetchBoth(ccol, r, hayward, lee);
 
-            // Fixed y-axis: 0 to 1 for contamination, 0 to 2 for ratio
-            double panel_ymax = draw_ratio_only ? 2.0 : 1.0;
+            // Compute per-panel y-max
+            double panel_ymax = compute_panel_ymax(draw_ratio_only, hayward, lee);
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, panel_ymax);
             frame->GetXaxis()->SetTitle("#phi (deg)");
