@@ -32,12 +32,12 @@ int main() {
 
     mkoutdirs();
 
-    // Raw yield cross-check (reads directly from CSVs)
-    plot_raw_yield_cross_checks(
-        lee_csv,                                  // Lee pass-1 CSV
-        hayward_csv,                              // Hayward pass-2 CSV
-        "output/cross_check/lee/raw_yield"        // output directory
-    );
+    // // Raw yield cross-check (reads directly from CSVs)
+    // plot_raw_yield_cross_checks(
+    //     lee_csv,                                  // Lee pass-1 CSV
+    //     hayward_csv,                              // Hayward pass-2 CSV
+    //     "output/cross_check/lee/raw_yield"        // output directory
+    // );
 
     // // Pi0 contamination cross-check (reads directly from CSVs)
     // plot_pi0_contam_cross_checks(

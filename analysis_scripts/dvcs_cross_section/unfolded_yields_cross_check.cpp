@@ -506,8 +506,6 @@ static void draw_one_canvas(const std::string& title,
     const int ncols = (int)Q2s.size();
     if (nrows == 0 || ncols == 0) return;
 
-    const double canvas_ymax = compute_canvas_ymax(draw_ratio_only, Q2s, Ts, fillBoth);
-
     const int W = 320 * ncols + 220;
     const int H = 260 * nrows + 260;
 
@@ -582,10 +580,33 @@ static void draw_one_canvas(const std::string& title,
             gPad->SetLeftMargin(0.18);
             gPad->SetRightMargin(0.08);
 
-            std::vector<double> phi, A, B;
-            fillBoth(ccol, r, phi, A, B);
+            // Per-cell data
+            std::vector<double> phi;
+            std::vector<double> hay_val;
+            std::vector<double> hay_stat;
+            std::vector<double> lee_val;
 
-            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, canvas_ymax);
+            fillBoth(ccol, r, phi, hay_val, hay_stat, lee_val);
+
+            // Choose y-range per pad
+            double ymax = 1.0;
+            if (!draw_ratio_only) {
+                ymax = 0.0;
+                for (size_t i = 0; i < hay_val.size(); ++i) {
+                    ymax = std::max(ymax, hay_val[i]);
+                }
+                for (size_t i = 0; i < lee_val.size(); ++i) {
+                    ymax = std::max(ymax, lee_val[i]);
+                }
+                if (ymax <= 0.0) {
+                    ymax = 1.0;
+                }
+            } else {
+                // Ratio plots: fixed 0–1
+                ymax = 1.0;
+            }
+
+            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle(draw_ratio_only ? "Hayward / Lee"
                                                         : "Unfolded acc.-corr. yield");
@@ -617,22 +638,37 @@ static void draw_one_canvas(const std::string& title,
             }
 
             if (draw_ratio_only) {
-                std::vector<double> x, y, ey;
-                const size_t n = std::min(A.size(), B.size());
+                std::vector<double> x;
+                std::vector<double> y;
+                std::vector<double> ey;
+
+                const size_t n = std::min(hay_val.size(), lee_val.size());
                 x.reserve(n);
                 y.reserve(n);
                 ey.reserve(n);
 
                 for (size_t i = 0; i < n; ++i) {
-                    const double NL = B[i];
-                    const double NH = A[i];
+                    const double NL = lee_val[i];
+                    const double NH = hay_val[i];
                     if (NL <= 0.0) continue;
+
                     const double R = (NH <= 0.0) ? 0.0 : NH / NL;
+
+                    // Errors: Hayward stat from CSV; Lee Poisson (sqrt(N))
+                    const double sigma_H = (i < hay_stat.size()) ? hay_stat[i] : 0.0;
+                    const double sigma_L = (NL > 0.0) ? std::sqrt(NL) : 0.0;
+
                     double eR = 0.0;
-                    if (NH > 0.0) {
-                        // Poisson-style propagation using yields
-                        eR = R * std::sqrt(1.0 / NH + 1.0 / NL);
+                    if (NL > 0.0) {
+                        // Propagate: Var(R) = (dR/dH)^2 Var(H) + (dR/dL)^2 Var(L)
+                        // dR/dH = 1/L, dR/dL = -H/L^2
+                        const double invL   = 1.0 / NL;
+                        const double invL2  = invL * invL;
+                        const double term_H = sigma_H * sigma_H * invL2;
+                        const double term_L = (sigma_L * sigma_L) * (NH * NH) * invL2 * invL2;
+                        eR = std::sqrt(term_H + term_L);
                     }
+
                     x.push_back(phi[i]);
                     y.push_back(R);
                     ey.push_back(eR);
@@ -649,15 +685,19 @@ static void draw_one_canvas(const std::string& title,
                 }
             } else {
                 const size_t n = phi.size();
-                std::vector<double> eyA(n, 0.0), eyB(n, 0.0);
+                std::vector<double> eyH(n, 0.0);
+                std::vector<double> eyL(n, 0.0);
+
                 for (size_t i = 0; i < n; ++i) {
-                    // For counts code we used sqrt(N); here we keep the same
-                    // Poisson-style scaling using yields as proxies.
-                    eyA[i] = (A[i] > 0.0) ? std::sqrt(A[i]) : 0.0;
-                    eyB[i] = (B[i] > 0.0) ? std::sqrt(B[i]) : 0.0;
+                    // Hayward: stat from CSV triple
+                    eyH[i] = (i < hay_stat.size()) ? hay_stat[i] : 0.0;
+                    // Lee: keep Poisson (sqrt(N)) as in raw_signal_cross_check
+                    const double NL = (i < lee_val.size()) ? lee_val[i] : 0.0;
+                    eyL[i] = (NL > 0.0) ? std::sqrt(NL) : 0.0;
                 }
-                graph_pe1(phi, A, eyA, 20, black);   // Hayward (pass-2)
-                graph_pe1(phi, B, eyB, 24, orange);  // Lee (pass-1)
+
+                graph_pe1(phi, hay_val, eyH, 20, black);   // Hayward (pass-2), stat from CSV
+                graph_pe1(phi, lee_val, eyL, 24, orange);  // Lee (pass-1), Poisson
             }
         }
     }
