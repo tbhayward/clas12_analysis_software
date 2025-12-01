@@ -24,29 +24,26 @@ static inline void mkoutdirs() {
 int main() {
     std::cout << "[lee] cross_check_lee starting...\n";
 
-    // Hard-coded locations as requested
-    const std::string all_bin_v3 = "imports/all_bin_v3.csv";
-    const std::string full_acc   = "imports/full_acc.csv";
+    // Hard-coded CSV locations
+    const std::string lee_csv     = "imports/all_bin_v3.csv";
+    const std::string hayward_csv = "output/csvs/dvcs_pass2_analysis.csv";
 
     mkoutdirs();
 
-    int acc_ok = 0, acc_bad = 0;
-    auto rows = load_lee_csvs(all_bin_v3, full_acc, acc_ok, acc_bad);
-
-    std::cout << "[lee] Loaded rows: " << rows.size() << "\n";
-    std::cout << "[lee] First pass complete.\n";
-
-    // make the raw-yield comparison/ratio canvases
+    // Raw yield cross-check (reads directly from CSVs)
     plot_raw_yield_cross_checks(
-        all_bin_v3,                               // Lee pass-1 CSV
-        "output/csvs/dvcs_pass2_analysis.csv",    // Hayward pass-2 CSV
-        "output/cross_check/lee/raw_yield"       // output directory
+        lee_csv,                                  // Lee pass-1 CSV
+        hayward_csv,                              // Hayward pass-2 CSV
+        "output/cross_check/lee/raw_yield"        // output directory
     );
 
-    // // NEW: pi0 contamination comparisons
-    // plot_pi0_contam_cross_checks(rows,
-    //     "output/jsons/pi0_contamination_combined.json",
-    //     "output/cross_check/lee/pi0_contamination");
+    // Pi0 contamination cross-check (reads directly from CSVs)
+    plot_pi0_contam_cross_checks(
+        lee_csv,                                  // Lee pass-1 CSV
+        hayward_csv,                              // Hayward pass-2 CSV
+        "output/cross_check/lee/pi0_contamination" // output directory
+    );
 
+    std::cout << "[lee] cross_check_lee complete.\n";
     return 0;
 }

@@ -2,22 +2,24 @@
 #define PI0_CONTAMINATION_CROSS_CHECK_H
 
 #include <string>
-#include <vector>
-
-// Forward: uses LeeRow from load_csv.h
-struct LeeRow;
 
 /**
- * Compare our helicity-averaged pi0 contamination (from JSON)
- * to colleague values (from all_bin_v3.csv).
+ * Compare pi0 contamination ratios between Hayward (pass-2) and Lee (pass-1).
  *
- * - pi0_combined_json must be the combined JSON produced by your
- *   regular analysis (pi0_contamination_combined.json).
- * - output_base_dir is where plots are written, e.g.
- *   output/cross_check/lee/pi0_contamination
+ * Reads directly from CSVs:
+ *   - Lee CSV columns: "contamination ratio, inbending", "contamination ratio, outbending"
+ *   - Hayward CSV columns: "contamination ratio, Fa18 Inb", "contamination ratio, Fa18 Out"
+ *     (these are three-tuples "(value, stat_err, syst_err)" - we extract value and stat_err)
+ *
+ * Produces comparison plots (counts overlay and ratio) for Fa18 Inb and Fa18 Out,
+ * organized by xB bins with panels for each (Q2, t) combination.
+ *
+ * @param lee_csv_path      Path to Lee's pass-1 CSV (e.g. imports/all_bin_v3.csv)
+ * @param hayward_csv_path  Path to Hayward's pass-2 CSV (e.g. output/csvs/dvcs_pass2_analysis.csv)
+ * @param output_base_dir   Directory for output plots (e.g. output/cross_check/lee/pi0_contamination)
  */
-void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
-                                  const std::string& pi0_combined_json,
+void plot_pi0_contam_cross_checks(const std::string& lee_csv_path,
+                                  const std::string& hayward_csv_path,
                                   const std::string& output_base_dir);
 
 #endif // PI0_CONTAMINATION_CROSS_CHECK_H

@@ -26,16 +26,15 @@
 //      "raw yield, ep->epg, (CD, FD), exp, Fa18 Out, unpol"
 //      "raw yield, ep->epg, (CD, FT), exp, Fa18 Out, unpol"
 //
-// We then map each row into index space (ix, iQ, it, ip), with:
-//   ix  : xB bin index (unique [xBmin,xBmax])
-//   iQ  : Q^2 bin index within ix (unique [Q2min,Q2max])
-//   it  : -t bin index within ix (unique [tmin,tmax])
-//   ip  : phi bin index from phiavg into 12 uniform bins
+// We then build axis sets in (xB, Q^2, -t). For each (xB, Q^2, -t) cell,
+// we take *all* rows matching those ranges and use their provided phiavg
+// values directly as the x-coordinates. We do NOT rebin phi into 12
+// uniform bins.
 //
 // Finally we produce, for each xB bin and for Fa18 Inb / Fa18 Out:
 //
-//   1) Raw counts vs phi: Hayward (black) vs Lee (orange)
-//   2) Ratio Hayward/Lee vs phi with Poisson errors and a y=1 line
+//   1) Raw counts vs phiavg: Hayward (black) vs Lee (orange)
+//   2) Ratio Hayward/Lee vs phiavg with Poisson errors and a y=1 line
 //
 // Output filenames:
 //   raw_counts_fa18_inb_xB_<ix>.png
@@ -309,29 +308,6 @@ static LeeCsvCols detect_lee_columns(const std::vector<std::string>& header) {
 
 // ---------- bin / axis structs ----------
 
-static constexpr int N_PHI_BINS = 12;
-
-static inline int phiBinFromDeg(double phi_deg) {
-    if (!std::isfinite(phi_deg)) return -1;
-    double p = std::fmod(phi_deg, 360.0);
-    if (p < 0.0) p += 360.0;
-    const double w = 360.0 / double(N_PHI_BINS);
-    int ip = (int)std::floor(p / w);
-    if (ip < 0) ip = 0;
-    if (ip >= N_PHI_BINS) ip = N_PHI_BINS - 1;
-    return ip;
-}
-
-static inline std::vector<double> phiCentersDeg() {
-    std::vector<double> v(N_PHI_BINS);
-    const double step = 360.0 / double(N_PHI_BINS);
-    for (int i = 0; i < N_PHI_BINS; ++i) {
-        v[i] = (i + 0.5) * step;
-    }
-    return v;
-}
-
-// Axis sets derived from xB/Q2/t ranges
 struct AxisSets {
     std::vector<std::pair<double,double>> xB;
     std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix;
@@ -387,45 +363,6 @@ static inline int find_index(const std::pair<double,double>& r,
     return -1;
 }
 
-// Per-bin maps in index space
-struct PerBin {
-    // key = (ix, iQ, it, ip)
-    std::map<std::tuple<int,int,int,int>, double> lee_inb;
-    std::map<std::tuple<int,int,int,int>, double> lee_out;
-    std::map<std::tuple<int,int,int,int>, double> my_inb;
-    std::map<std::tuple<int,int,int,int>, double> my_out;
-};
-
-static PerBin map_to_indices(const std::vector<BinRow>& rows,
-                             const AxisSets& ax) {
-    PerBin pb;
-
-    for (const auto& r : rows) {
-        const auto xb = std::make_pair(r.xBmin, r.xBmax);
-        const int ix  = find_index(xb, ax.xB);
-        if (ix < 0) continue;
-
-        const auto& Q2s = ax.Q2_by_ix.at(ix);
-        const auto& Ts  = ax.t_by_ix.at(ix);
-
-        const int iQ = find_index({r.Q2min, r.Q2max}, Q2s);
-        const int it = find_index({r.tmin,   r.tmax},  Ts);
-        if (iQ < 0 || it < 0) continue;
-
-        const int ip = phiBinFromDeg(r.phiavg);
-        if (ip < 0) continue;
-
-        auto key = std::make_tuple(ix, iQ, it, ip);
-
-        pb.lee_inb[key] += r.lee_inb;
-        pb.lee_out[key] += r.lee_out;
-        pb.my_inb[key]  += r.my_inb;
-        pb.my_out[key]  += r.my_out;
-    }
-
-    return pb;
-}
-
 // ---------- plotting helpers ----------
 
 static inline void degreeTicks(double xmin, double ymin, double xmax, double labelSize) {
@@ -465,11 +402,18 @@ static std::string safe_canvas_name(const std::string& out_png) {
     return fs::path(out_png).filename().string();
 }
 
+// Fill function type: for given (Q2 index, t index) returns variable-length
+// vectors of phiavg, Hayward counts, and Lee counts.
+using FillFunc = std::function<void(int,int,
+                                    std::vector<double>&,
+                                    std::vector<double>&,
+                                    std::vector<double>&)>;
+
 static double compute_canvas_ymax(
     bool ratio_mode,
     const std::vector<std::pair<double,double>>& Q2s,
     const std::vector<std::pair<double,double>>& Ts,
-    const std::function<bool(int,int,std::vector<double>&,std::vector<double>&)>& fillBoth
+    const FillFunc& fillBoth
 ) {
     double ymax = 0.0;
     const int nrows = (int)Ts.size();
@@ -477,18 +421,21 @@ static double compute_canvas_ymax(
 
     for (int r = 0; r < nrows; ++r) {
         for (int ccol = 0; ccol < ncols; ++ccol) {
-            std::vector<double> A(N_PHI_BINS, 0.0), B(N_PHI_BINS, 0.0);
-            (void)fillBoth(ccol, r, A, B);
+            std::vector<double> phi, A, B;
+            fillBoth(ccol, r, phi, A, B);
 
             if (!ratio_mode) {
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    ymax = std::max(ymax, A[ip]);
-                    ymax = std::max(ymax, B[ip]);
+                for (size_t i = 0; i < A.size(); ++i) {
+                    ymax = std::max(ymax, A[i]);
+                }
+                for (size_t i = 0; i < B.size(); ++i) {
+                    ymax = std::max(ymax, B[i]);
                 }
             } else {
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    const double NL = B[ip];
-                    const double NH = A[ip];
+                const size_t n = std::min(A.size(), B.size());
+                for (size_t i = 0; i < n; ++i) {
+                    const double NL = B[i];
+                    const double NH = A[i];
                     if (NL <= 0.0) continue;
                     const double R = (NH <= 0.0) ? 0.0 : NH / NL;
                     double eR = 0.0;
@@ -509,7 +456,7 @@ static double compute_canvas_ymax(
 static void draw_one_canvas(const std::string& title,
                             const std::vector<std::pair<double,double>>& Q2s,
                             const std::vector<std::pair<double,double>>& Ts,
-                            const std::function<bool(int,int,std::vector<double>&,std::vector<double>&)>& fillBoth,
+                            const FillFunc& fillBoth,
                             const std::string& out_png,
                             bool draw_ratio_only) {
     const int nrows = (int)Ts.size();
@@ -579,7 +526,6 @@ static void draw_one_canvas(const std::string& title,
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.00, 0.00);
 
-    const auto phiC = phiCentersDeg();
     const int black  = kBlack;
     const int orange = kOrange + 7;
 
@@ -593,8 +539,8 @@ static void draw_one_canvas(const std::string& title,
             gPad->SetLeftMargin(0.18);
             gPad->SetRightMargin(0.08);
 
-            std::vector<double> A(N_PHI_BINS, 0.0), B(N_PHI_BINS, 0.0);
-            (void)fillBoth(ccol, r, A, B);
+            std::vector<double> phi, A, B;
+            fillBoth(ccol, r, phi, A, B);
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, canvas_ymax);
             frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -621,41 +567,50 @@ static void draw_one_canvas(const std::string& title,
                      Q2s[ccol].first, Q2s[ccol].second,
                      Ts[r].first,     Ts[r].second));
 
+            if (phi.empty()) {
+                // No bins for this (Q2, t) cell; leave the frame empty.
+                continue;
+            }
+
             if (draw_ratio_only) {
                 std::vector<double> x, y, ey;
-                x.reserve(N_PHI_BINS);
-                y.reserve(N_PHI_BINS);
-                ey.reserve(N_PHI_BINS);
+                const size_t n = std::min(A.size(), B.size());
+                x.reserve(n);
+                y.reserve(n);
+                ey.reserve(n);
 
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    const double NL = B[ip];
-                    const double NH = A[ip];
+                for (size_t i = 0; i < n; ++i) {
+                    const double NL = B[i];
+                    const double NH = A[i];
                     if (NL <= 0.0) continue;
                     const double R = (NH <= 0.0) ? 0.0 : NH / NL;
                     double eR = 0.0;
                     if (NH > 0.0) {
                         eR = R * std::sqrt(1.0 / NH + 1.0 / NL);
                     }
-                    x.push_back(phiC[ip]);
+                    x.push_back(phi[i]);
                     y.push_back(R);
                     ey.push_back(eR);
                 }
 
-                graph_pe1(x, y, ey, 20, black);
+                if (!x.empty()) {
+                    graph_pe1(x, y, ey, 20, black);
 
-                TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
-                one->SetLineStyle(2);
-                one->SetLineWidth(2);
-                one->SetLineColor(orange);
-                one->Draw("SAME");
-            } else {
-                std::vector<double> eyA(N_PHI_BINS, 0.0), eyB(N_PHI_BINS, 0.0);
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    eyA[ip] = (A[ip] > 0.0) ? std::sqrt(A[ip]) : 0.0;
-                    eyB[ip] = (B[ip] > 0.0) ? std::sqrt(B[ip]) : 0.0;
+                    TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
+                    one->SetLineStyle(2);
+                    one->SetLineWidth(2);
+                    one->SetLineColor(orange);
+                    one->Draw("SAME");
                 }
-                graph_pe1(phiC, A, eyA, 20, black);   // Hayward (pass-2)
-                graph_pe1(phiC, B, eyB, 24, orange);  // Lee (pass-1)
+            } else {
+                const size_t n = phi.size();
+                std::vector<double> eyA(n, 0.0), eyB(n, 0.0);
+                for (size_t i = 0; i < n; ++i) {
+                    eyA[i] = (A[i] > 0.0) ? std::sqrt(A[i]) : 0.0;
+                    eyB[i] = (B[i] > 0.0) ? std::sqrt(B[i]) : 0.0;
+                }
+                graph_pe1(phi, A, eyA, 20, black);   // Hayward (pass-2)
+                graph_pe1(phi, B, eyB, 24, orange);  // Lee (pass-1)
             }
         }
     }
@@ -843,6 +798,72 @@ static void fill_hayward_counts(const std::string& hayward_csv_path,
     info("Hayward valid rows matched to Lee bins: " + std::to_string(matched));
 }
 
+// ---------- helpers to gather per-(Q2,t) data ----------
+
+static void gather_phi_rows(const std::vector<BinRow>& rows,
+                            const AxisSets& ax,
+                            int ix,
+                            int iQ,
+                            int it,
+                            bool use_inb,
+                            std::vector<double>& phi,
+                            std::vector<double>& my_counts,
+                            std::vector<double>& lee_counts) {
+    phi.clear();
+    my_counts.clear();
+    lee_counts.clear();
+
+    const auto xb  = ax.xB[ix];
+    const auto& Q2s = ax.Q2_by_ix.at(ix);
+    const auto& Ts  = ax.t_by_ix.at(ix);
+
+    if (iQ < 0 || iQ >= (int)Q2s.size()) return;
+    if (it < 0 || it >= (int)Ts.size())  return;
+
+    const auto q2r = Q2s[iQ];
+    const auto tr  = Ts[it];
+
+    for (const auto& r : rows) {
+        if (r.xBmin == xb.first && r.xBmax == xb.second &&
+            r.Q2min == q2r.first && r.Q2max == q2r.second &&
+            r.tmin  == tr.first  && r.tmax  == tr.second) {
+
+            phi.push_back(r.phiavg);
+            if (use_inb) {
+                my_counts.push_back(r.my_inb);
+                lee_counts.push_back(r.lee_inb);
+            } else {
+                my_counts.push_back(r.my_out);
+                lee_counts.push_back(r.lee_out);
+            }
+        }
+    }
+
+    // Sort by phi so the graphs look nice.
+    std::vector<size_t> order(phi.size());
+    for (size_t i = 0; i < order.size(); ++i) {
+        order[i] = i;
+    }
+    std::sort(order.begin(), order.end(),
+              [&](size_t a, size_t b){ return phi[a] < phi[b]; });
+
+    std::vector<double> phi_s, my_s, lee_s;
+    phi_s.reserve(order.size());
+    my_s.reserve(order.size());
+    lee_s.reserve(order.size());
+
+    for (size_t k = 0; k < order.size(); ++k) {
+        size_t idx = order[k];
+        phi_s.push_back(phi[idx]);
+        my_s.push_back(my_counts[idx]);
+        lee_s.push_back(lee_counts[idx]);
+    }
+
+    phi.swap(phi_s);
+    my_counts.swap(my_s);
+    lee_counts.swap(lee_s);
+}
+
 // ---------- driver ----------
 
 void plot_raw_yield_cross_checks(const std::string& lee_csv_path,
@@ -867,37 +888,10 @@ void plot_raw_yield_cross_checks(const std::string& lee_csv_path,
     // 2) Load Hayward CSV and fill my_inb/my_out for matching bins
     fill_hayward_counts(hayward_csv_path, bin_to_index, rows);
 
-    // 3) Build axis sets and per-bin maps
+    // 3) Build axis sets
     AxisSets ax = build_axes_from_rows(rows);
-    PerBin pb   = map_to_indices(rows, ax);
 
     info("Axis xB bins: " + std::to_string(ax.xB.size()));
-
-    auto make_fillBoth = [&](const std::map<std::tuple<int,int,int,int>, double>& ours,
-                             const std::map<std::tuple<int,int,int,int>, double>& lee_side,
-                             int ix) {
-        return [&, ix](int iQcol, int irow,
-                       std::vector<double>& A,
-                       std::vector<double>& B)->bool {
-            bool any = false;
-            for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                auto key = std::make_tuple(ix, iQcol, irow, ip);
-                double a = 0.0;
-                double b = 0.0;
-
-                auto itA = ours.find(key);
-                if (itA != ours.end()) a = itA->second;
-
-                auto itB = lee_side.find(key);
-                if (itB != lee_side.end()) b = itB->second;
-
-                A[ip] = a;
-                B[ip] = b;
-                any  |= (a > 0.0 || b > 0.0);
-            }
-            return any;
-        };
-    };
 
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
         const auto& Q2s = ax.Q2_by_ix[ix];
@@ -914,15 +908,20 @@ void plot_raw_yield_cross_checks(const std::string& lee_csv_path,
             const std::string title_ratio  =
                 Form("Raw yields ratio (Hayward/Lee): Fa18 Inb   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
 
-            auto fillBoth_inb = make_fillBoth(pb.my_inb, pb.lee_inb, ix);
+            FillFunc fill_inb = [&](int iQcol, int irow,
+                                    std::vector<double>& phi,
+                                    std::vector<double>& A,
+                                    std::vector<double>& B) {
+                gather_phi_rows(rows, ax, ix, iQcol, irow, true, phi, A, B);
+            };
 
             const std::string f_counts =
                 (fs::path(output_base_dir) / Form("raw_counts_fa18_inb_xB_%d.png", ix)).string();
             const std::string f_ratio  =
                 (fs::path(output_base_dir) / Form("raw_ratio_fa18_inb_xB_%d.png",  ix)).string();
 
-            draw_one_canvas(title_counts, Q2s, Ts, fillBoth_inb, f_counts, /*draw_ratio_only=*/false);
-            draw_one_canvas(title_ratio,  Q2s, Ts, fillBoth_inb, f_ratio,   /*draw_ratio_only=*/true);
+            draw_one_canvas(title_counts, Q2s, Ts, fill_inb, f_counts, /*draw_ratio_only=*/false);
+            draw_one_canvas(title_ratio,  Q2s, Ts, fill_inb, f_ratio,   /*draw_ratio_only=*/true);
 
             info("Saved: " + f_counts);
             info("Saved: " + f_ratio);
@@ -935,15 +934,20 @@ void plot_raw_yield_cross_checks(const std::string& lee_csv_path,
             const std::string title_ratio  =
                 Form("Raw yields ratio (Hayward/Lee): Fa18 Out   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
 
-            auto fillBoth_out = make_fillBoth(pb.my_out, pb.lee_out, ix);
+            FillFunc fill_out = [&](int iQcol, int irow,
+                                    std::vector<double>& phi,
+                                    std::vector<double>& A,
+                                    std::vector<double>& B) {
+                gather_phi_rows(rows, ax, ix, iQcol, irow, false, phi, A, B);
+            };
 
             const std::string f_counts =
                 (fs::path(output_base_dir) / Form("raw_counts_fa18_out_xB_%d.png", ix)).string();
             const std::string f_ratio  =
                 (fs::path(output_base_dir) / Form("raw_ratio_fa18_out_xB_%d.png",  ix)).string();
 
-            draw_one_canvas(title_counts, Q2s, Ts, fillBoth_out, f_counts, /*draw_ratio_only=*/false);
-            draw_one_canvas(title_ratio,  Q2s, Ts, fillBoth_out, f_ratio,   /*draw_ratio_only=*/true);
+            draw_one_canvas(title_counts, Q2s, Ts, fill_out, f_counts, /*draw_ratio_only=*/false);
+            draw_one_canvas(title_ratio,  Q2s, Ts, fill_out, f_ratio,   /*draw_ratio_only=*/true);
 
             info("Saved: " + f_counts);
             info("Saved: " + f_ratio);
