@@ -22,7 +22,7 @@
 //
 //   1) Unfolded (acceptance-corrected) yields vs phiavg:
 //        Hayward (black) vs Lee (orange)
-//   2) Ratio Hayward/Lee vs phiavg with Poisson-style errors and a y=1 line
+//   2) Ratio Hayward/Lee vs phiavg with errors and a y=1 line
 //
 // Output filenames:
 //   unfolded_counts_fa18_xB_<ix>.png
@@ -371,6 +371,8 @@ struct BinRow {
 
     double lee_val   = 0.0; // Lee acceptance-corrected yield
     double my_val    = 0.0; // Hayward Fa18, unpol acceptance-corrected yield
+    double my_stat   = 0.0; // Hayward statistical uncertainty
+    double my_sys    = 0.0; // Hayward systematic uncertainty (not used here)
 };
 
 static AxisSets build_axes_from_rows(const std::vector<BinRow>& rows) {
@@ -445,56 +447,12 @@ static std::string safe_canvas_name(const std::string& out_png) {
 }
 
 // Fill function type: for given (Q2 index, t index) returns variable-length
-// vectors of phiavg, Hayward yields, and Lee yields.
+// vectors of phiavg, Hayward yields, Hayward stat errors, and Lee yields.
 using FillFunc = std::function<void(int,int,
                                     std::vector<double>&,
                                     std::vector<double>&,
+                                    std::vector<double>&,
                                     std::vector<double>&)>;
-
-static double compute_canvas_ymax(
-    bool ratio_mode,
-    const std::vector<std::pair<double,double>>& Q2s,
-    const std::vector<std::pair<double,double>>& Ts,
-    const FillFunc& fillBoth
-) {
-    double ymax = 0.0;
-    const int nrows = (int)Ts.size();
-    const int ncols = (int)Q2s.size();
-
-    for (int r = 0; r < nrows; ++r) {
-        for (int ccol = 0; ccol < ncols; ++ccol) {
-            std::vector<double> phi, A, B;
-            fillBoth(ccol, r, phi, A, B);
-
-            if (!ratio_mode) {
-                for (size_t i = 0; i < A.size(); ++i) {
-                    ymax = std::max(ymax, A[i]);
-                }
-                for (size_t i = 0; i < B.size(); ++i) {
-                    ymax = std::max(ymax, B[i]);
-                }
-            } else {
-                const size_t n = std::min(A.size(), B.size());
-                for (size_t i = 0; i < n; ++i) {
-                    const double NL = B[i];
-                    const double NH = A[i];
-                    if (NL <= 0.0) continue;
-                    const double R = (NH <= 0.0) ? 0.0 : NH / NL;
-                    double eR = 0.0;
-                    if (NH > 0.0) {
-                        // Poisson-like relative error using yields as proxies
-                        eR = R * std::sqrt(1.0 / NH + 1.0 / NL);
-                    }
-                    ymax = std::max(ymax, R + eR);
-                }
-            }
-        }
-    }
-
-    if (ymax <= 0.0) ymax = 1.0;
-    if (ratio_mode)  ymax = std::max(ymax, 1.0);
-    return ymax;
-}
 
 static void draw_one_canvas(const std::string& title,
                             const std::vector<std::pair<double,double>>& Q2s,
@@ -602,7 +560,7 @@ static void draw_one_canvas(const std::string& title,
                     ymax = 1.0;
                 }
             } else {
-                // Ratio plots: fixed 0–1
+                // Ratio plots: fixed 0–1 (by request)
                 ymax = 1.0;
             }
 
@@ -691,7 +649,7 @@ static void draw_one_canvas(const std::string& title,
                 for (size_t i = 0; i < n; ++i) {
                     // Hayward: stat from CSV triple
                     eyH[i] = (i < hay_stat.size()) ? hay_stat[i] : 0.0;
-                    // Lee: keep Poisson (sqrt(N)) as in raw_signal_cross_check
+                    // Lee: Poisson sqrt(N)
                     const double NL = (i < lee_val.size()) ? lee_val[i] : 0.0;
                     eyL[i] = (NL > 0.0) ? std::sqrt(NL) : 0.0;
                 }
@@ -776,6 +734,8 @@ static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
         const std::string& s_val = get_col_ref(cols, H, col_lee_val);
         r.lee_val = ToDouble(s_val);
         r.my_val  = 0.0;
+        r.my_stat = 0.0;
+        r.my_sys  = 0.0;
 
         if (bin_to_index.find(r.bin_index) != bin_to_index.end()) {
             fatal("Duplicate bin index in Lee CSV: " + std::to_string(r.bin_index));
@@ -845,6 +805,8 @@ static void fill_hayward_counts(const std::string& hayward_csv_path,
 
         BinRow& r = rows[it->second];
         r.my_val  = t.val;
+        r.my_stat = t.stat;
+        r.my_sys  = t.sys;
         ++matched;
     }
 
@@ -861,9 +823,11 @@ static void gather_phi_rows(const std::vector<BinRow>& rows,
                             int it,
                             std::vector<double>& phi,
                             std::vector<double>& my_vals,
+                            std::vector<double>& my_stats,
                             std::vector<double>& lee_vals) {
     phi.clear();
     my_vals.clear();
+    my_stats.clear();
     lee_vals.clear();
 
     const auto xb  = ax.xB[ix];
@@ -883,6 +847,7 @@ static void gather_phi_rows(const std::vector<BinRow>& rows,
 
             phi.push_back(r.phiavg);
             my_vals.push_back(r.my_val);
+            my_stats.push_back(r.my_stat);
             lee_vals.push_back(r.lee_val);
         }
     }
@@ -895,20 +860,23 @@ static void gather_phi_rows(const std::vector<BinRow>& rows,
     std::sort(order.begin(), order.end(),
               [&](size_t a, size_t b){ return phi[a] < phi[b]; });
 
-    std::vector<double> phi_s, my_s, lee_s;
+    std::vector<double> phi_s, my_s, mystat_s, lee_s;
     phi_s.reserve(order.size());
     my_s.reserve(order.size());
+    mystat_s.reserve(order.size());
     lee_s.reserve(order.size());
 
     for (size_t k = 0; k < order.size(); ++k) {
         size_t idx = order[k];
         phi_s.push_back(phi[idx]);
         my_s.push_back(my_vals[idx]);
+        mystat_s.push_back(my_stats[idx]);
         lee_s.push_back(lee_vals[idx]);
     }
 
     phi.swap(phi_s);
     my_vals.swap(my_s);
+    my_stats.swap(mystat_s);
     lee_vals.swap(lee_s);
 }
 
@@ -933,7 +901,7 @@ void plot_unfolded_yields_cross_checks(const std::string& lee_csv_path,
     std::unordered_map<int,size_t> bin_to_index;
     auto rows = load_lee_rows(lee_csv_path, bin_to_index);
 
-    // 2) Load Hayward CSV and fill my_val for matching bins
+    // 2) Load Hayward CSV and fill my_val/my_stat for matching bins
     fill_hayward_counts(hayward_csv_path, bin_to_index, rows);
 
     // 3) Build axis sets
@@ -957,9 +925,10 @@ void plot_unfolded_yields_cross_checks(const std::string& lee_csv_path,
         FillFunc fill = [&](int iQcol, int irow,
                             std::vector<double>& phi,
                             std::vector<double>& A,
+                            std::vector<double>& Astat,
                             std::vector<double>& B) {
-            // A = Hayward (pass-2), B = Lee (pass-1)
-            gather_phi_rows(rows, ax, ix, iQcol, irow, phi, A, B);
+            // A = Hayward (pass-2), Astat = Hayward stat, B = Lee (pass-1)
+            gather_phi_rows(rows, ax, ix, iQcol, irow, phi, A, Astat, B);
         };
 
         const std::string f_counts =
