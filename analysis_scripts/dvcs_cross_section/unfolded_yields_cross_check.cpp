@@ -4,15 +4,16 @@
 // Hayward pass-2) using *only* CSVs.
 //
 // Lee CSV (imports/all_bin_v3.csv):
-//   - scalar column:
+//   - scalar column (no uncertainty):
 //       "acceptance corrected yield, ep->epg, exp"
+//   - "bin index" is *not* labeled in the header; it's just the first column.
 //
 // Hayward CSV (output/csvs/dvcs_pass2_analysis.csv):
 //   - tuple column (value, stat, sys):
 //       "acceptance corrected yield, ep->epg, exp, Fa18, unpol"
 //
-// We match rows by "bin index" (with "valid bin" == 1 in both CSVs) and build
-// TGraphErrors of:
+// We match rows by "bin index" (first column in Lee, named column in Hayward)
+// with "valid bin" == 1 in both CSVs and build TGraphErrors of:
 //
 //   y_Lee(bin)      = Lee acceptance-corrected yield
 //   y_Hayward(bin)  = Hayward acceptance-corrected yield
@@ -104,6 +105,8 @@ static std::unordered_map<std::string,int>
 build_header_index(const std::vector<std::string> &header) {
     std::unordered_map<std::string,int> m;
     for (int i = 0; i < (int)header.size(); ++i) {
+        // We keep the raw header text as-is for key, including empty strings.
+        // Empty headers simply never get used in lookups.
         m[header[i]] = i;
     }
     return m;
@@ -245,13 +248,16 @@ void plot_unfolded_yields_cross_checks(const std::string &lee_csv_path,
     std::vector<std::string> header_lee = split_csv_line(header_line);
     auto H_lee = build_header_index(header_lee);
 
-    const std::string col_bin_lee  = "bin index";
+    // In Lee CSV, "bin index" is the *first column*; header cell can be empty.
+    const int idx_bin_lee = 0;
+
     const std::string col_valid_lee = "valid bin";
     const std::string col_y_lee =
         "acceptance corrected yield, ep->epg, exp";
 
+    // Only require the named columns; bin index is position-based.
     require_columns(H_lee,
-                    { col_bin_lee, col_valid_lee, col_y_lee },
+                    { col_valid_lee, col_y_lee },
                     "Lee CSV");
 
     std::map<int,double> lee_yield_by_bin;
@@ -265,11 +271,18 @@ void plot_unfolded_yields_cross_checks(const std::string &lee_csv_path,
         if (line.empty()) continue;
 
         std::vector<std::string> cols = split_csv_line(line);
+        if ((int)cols.size() <= idx_bin_lee) {
+            // Row malformed; skip.
+            continue;
+        }
+
         const std::string &s_valid = get_col_ref(cols, H_lee, col_valid_lee);
         int valid = ToInt(s_valid);
         if (valid != 1) continue;
 
-        int bin = ToInt(get_col_ref(cols, H_lee, col_bin_lee));
+        // Bin index from the first column, regardless of header name.
+        int bin = ToInt(cols[idx_bin_lee]);
+
         const std::string &s_y = get_col_ref(cols, H_lee, col_y_lee);
         double y = ToDouble(s_y);
 
@@ -316,6 +329,7 @@ void plot_unfolded_yields_cross_checks(const std::string &lee_csv_path,
         if (line.empty()) continue;
 
         std::vector<std::string> cols = split_csv_line(line);
+
         const std::string &s_valid = get_col_ref(cols, H_hay, col_valid_hay);
         int valid = ToInt(s_valid);
         if (valid != 1) continue;
@@ -446,10 +460,9 @@ void plot_unfolded_yields_cross_checks(const std::string &lee_csv_path,
         "Pass-2 error bars = stat component from (value, stat, sys)");
 
     // Axis ranges
-    g_hay->GetXaxis()->SetLimits(
-        std::min_element(x.begin(), x.end())[0] - 1.0,
-        std::max_element(x.begin(), x.end())[0] + 1.0
-    );
+    double xmin = *std::min_element(x.begin(), x.end());
+    double xmax = *std::max_element(x.begin(), x.end());
+    g_hay->GetXaxis()->SetLimits(xmin - 1.0, xmax + 1.0);
 
     double ymin = std::min(
         *std::min_element(y_lee.begin(), y_lee.end()),
