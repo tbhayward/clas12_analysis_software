@@ -1,85 +1,107 @@
 // unfolded_yields_cross_check.cpp
 // -----------------------------------------------------------------------------
-// Cross-check of unfolded / acceptance-corrected yields (Lee pass-1 vs
-// Hayward pass-2) using *only* CSVs.
+// Cross-check of unfolded / acceptance-corrected yields (Hayward pass-2 vs
+// Lee pass-1) using *only* CSVs.
+// - Lee CSV (pass-1): e.g. imports/all_bin_v3.csv
+// - Hayward CSV (pass-2): e.g. output/csvs/dvcs_pass2_analysis.csv
 //
-// Lee CSV (imports/all_bin_v3.csv):
-//   - scalar column (no uncertainty):
-//       "acceptance corrected yield, ep->epg, exp"
-//   - "bin index" is *not* labeled in the header; it's just the first column.
+// For each valid bin, we take:
 //
-// Hayward CSV (output/csvs/dvcs_pass2_analysis.csv):
-//   - tuple column (value, stat, sys):
-//       "acceptance corrected yield, ep->epg, exp, Fa18, unpol"
+//   Lee  = "acceptance corrected yield, ep->epg, exp"
 //
-// We match rows by "bin index" (first column in Lee, named column in Hayward)
-// with "valid bin" == 1 in both CSVs and build TGraphErrors of:
+//   Hayward Fa18 (unpol) =
+//      "acceptance corrected yield, ep->epg, exp, Fa18, unpol"
+//      (stored as a tuple "(value, stat, sys)" )
 //
-//   y_Lee(bin)      = Lee acceptance-corrected yield
-//   y_Hayward(bin)  = Hayward acceptance-corrected yield
-//   ey_Lee(bin)     = 0
-//   ey_Hayward(bin) = stat component from the (value, stat, sys) tuple
+// We then build axis sets in (xB, Q^2, -t). For each (xB, Q^2, -t) cell,
+// we take *all* rows matching those ranges and use their provided phiavg
+// values directly as the x-coordinates. We do NOT rebin phi into 12
+// uniform bins.
 //
-// Output:
-//   <out_dir>/unfolded_yields_Fa18.png
+// Finally we produce, for each xB bin:
+//
+//   1) Unfolded (acceptance-corrected) yields vs phiavg:
+//        Hayward (black) vs Lee (orange)
+//   2) Ratio Hayward/Lee vs phiavg with Poisson-style errors and a y=1 line
+//
+// Output filenames:
+//   unfolded_counts_fa18_xB_<ix>.png
+//   unfolded_ratio_fa18_xB_<ix>.png
+//
 // -----------------------------------------------------------------------------
 
 #include "unfolded_yields_cross_check.h"
 
 #include <TCanvas.h>
-#include <TError.h>
+#include <TGraph.h>
 #include <TGraphErrors.h>
-#include <TLegend.h>
-#include <TAxis.h>
-#include <TROOT.h>
-#include <TStyle.h>
 #include <TLatex.h>
+#include <TLegend.h>
+#include <TLine.h>
+#include <TMarker.h>
+#include <TPad.h>
+#include <TH1.h>
+#include <TStyle.h>
+#include <TGaxis.h>
+#include <TString.h>
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
-#include <cstdlib>
+#include <cctype>
+#include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
+#include <set>
 #include <sstream>
-#include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+#include <stdexcept>
 
-// -------------------------
-// Small utilities
-// -------------------------
+namespace fs = std::filesystem;
 
-static inline void info(const std::string &s) {
-    std::cout << "[unfolded_yields] " << s << std::endl;
+// ---------- small utilities ----------
+
+static inline void info(const std::string& s) {
+    std::cout << "[cross] " << s << std::endl;
 }
 
-static inline void fatal(const std::string &s) {
-    std::cerr << "[unfolded_yields][FATAL] " << s << std::endl;
+static inline void warn(const std::string& s) {
+    std::cout << "[cross][warn] " << s << std::endl;
+}
+
+static inline void fatal(const std::string& s) {
+    std::cerr << "[cross][FATAL] " << s << std::endl;
     throw std::runtime_error(s);
 }
 
-// Trim whitespace from both ends
-static inline std::string trim(const std::string &s) {
-    std::size_t i0 = 0;
+static inline std::string slower(std::string s) {
+    for (auto& c : s) {
+        c = (char)std::tolower((unsigned char)c);
+    }
+    return s;
+}
+
+// trim leading/trailing whitespace
+static inline std::string trim(const std::string& s) {
+    size_t i0 = 0;
     while (i0 < s.size() && std::isspace((unsigned char)s[i0])) {
         ++i0;
     }
-    std::size_t i1 = s.size();
+    size_t i1 = s.size();
     while (i1 > i0 && std::isspace((unsigned char)s[i1 - 1])) {
         --i1;
     }
     return s.substr(i0, i1 - i0);
 }
 
-// -------------------------
-// CSV helpers (same style as raw_signal_cross_check.cpp)
-// -------------------------
+// ---------- CSV helpers ----------
 
-// Split a CSV line into cells, handling double quotes.
-static std::vector<std::string> split_csv_line(const std::string &line) {
+static std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> out;
     std::string cur;
     cur.reserve(line.size());
@@ -101,55 +123,52 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
     return out;
 }
 
-static std::unordered_map<std::string,int>
-build_header_index(const std::vector<std::string> &header) {
-    std::unordered_map<std::string,int> m;
+static std::unordered_map<std::string, int>
+build_header_index(const std::vector<std::string>& header) {
+    std::unordered_map<std::string, int> m;
     for (int i = 0; i < (int)header.size(); ++i) {
-        // We keep the raw header text as-is for key, including empty strings.
-        // Empty headers simply never get used in lookups.
         m[header[i]] = i;
     }
     return m;
 }
 
-static const std::string &get_col_ref(const std::vector<std::string> &row,
-                                      const std::unordered_map<std::string,int> &idx,
-                                      const std::string &name) {
+static const std::string& get_col_ref(const std::vector<std::string>& row,
+                                      const std::unordered_map<std::string,int>& idx,
+                                      const std::string& name) {
     auto it = idx.find(name);
-    static const std::string empty;
     if (it == idx.end()) {
+        static const std::string empty;
         return empty;
     }
     int j = it->second;
     if (j < 0 || j >= (int)row.size()) {
+        static const std::string empty;
         return empty;
     }
     return row[j];
 }
 
-static double ToDouble(const std::string &s) {
-    std::string t = trim(s);
-    if (t.empty()) return 0.0;
-    char *endp = nullptr;
-    double v = std::strtod(t.c_str(), &endp);
-    if (endp == t.c_str()) return 0.0;
+static double ToDouble(const std::string& s) {
+    if (s.empty()) return 0.0;
+    char* endp = nullptr;
+    double v = std::strtod(s.c_str(), &endp);
+    if (endp == s.c_str()) return 0.0;
     return v;
 }
 
-static int ToInt(const std::string &s) {
-    std::string t = trim(s);
-    if (t.empty()) return 0;
-    char *endp = nullptr;
-    long v = std::strtol(t.c_str(), &endp, 10);
-    if (endp == t.c_str()) return 0;
+static int ToInt(const std::string& s) {
+    if (s.empty()) return 0;
+    char* endp = nullptr;
+    long v = std::strtol(s.c_str(), &endp, 10);
+    if (endp == s.c_str()) return 0;
     return (int)v;
 }
 
-static void require_columns(const std::unordered_map<std::string,int> &idx,
-                            const std::vector<std::string> &cols,
-                            const std::string &which_csv) {
+static void require_columns(const std::unordered_map<std::string,int>& idx,
+                            const std::vector<std::string>& cols,
+                            const std::string& which_csv) {
     std::vector<std::string> missing;
-    for (const auto &c : cols) {
+    for (const auto& c : cols) {
         if (idx.find(c) == idx.end()) {
             missing.push_back(c);
         }
@@ -157,7 +176,7 @@ static void require_columns(const std::unordered_map<std::string,int> &idx,
     if (!missing.empty()) {
         std::ostringstream oss;
         oss << "Missing columns in " << which_csv << ": ";
-        for (std::size_t i = 0; i < missing.size(); ++i) {
+        for (size_t i = 0; i < missing.size(); ++i) {
             if (i > 0) oss << ", ";
             oss << '"' << missing[i] << '"';
         }
@@ -165,9 +184,7 @@ static void require_columns(const std::unordered_map<std::string,int> &idx,
     }
 }
 
-// -------------------------
-// Tuple parser for Hayward triple "(val, stat, sys)"
-// -------------------------
+// ---------- tuple parser for Hayward triple "(val, stat, sys)" ----------
 
 struct Triple {
     double val;
@@ -175,8 +192,8 @@ struct Triple {
     double sys;
 };
 
-// Simple comma split (no quotes handling needed inside tuple)
-static std::vector<std::string> split_commas(const std::string &s) {
+// Simple comma split (no quotes handling needed for inside tuple)
+static std::vector<std::string> split_commas(const std::string& s) {
     std::vector<std::string> out;
     std::string cur;
     for (char c : s) {
@@ -193,7 +210,7 @@ static std::vector<std::string> split_commas(const std::string &s) {
     return out;
 }
 
-static bool parse_triple(const std::string &raw, Triple &out) {
+static bool parse_triple(const std::string& raw, Triple& out) {
     std::string s = trim(raw);
     if (s.empty()) return false;
 
@@ -217,270 +234,703 @@ static bool parse_triple(const std::string &raw, Triple &out) {
         if (parts.size() >= 3) {
             out.sys = std::stod(parts[2]);
         }
-    } catch (const std::exception &e) {
-        std::cerr << "[unfolded_yields] WARNING: failed to parse triple from \""
+    } catch (const std::exception& e) {
+        std::cerr << "[cross][warn] failed to parse triple from \""
                   << raw << "\" (" << e.what() << ")\n";
         return false;
     }
     return true;
 }
 
-// -------------------------
-// Main cross-check function
-// -------------------------
+// ---------- Lee CSV column aliases and detection ----------
 
-void plot_unfolded_yields_cross_checks(const std::string &lee_csv_path,
-                                       const std::string &hayward_csv_path,
-                                       const std::string &out_dir) {
-    info("Loading Lee CSV: " + lee_csv_path);
-    info("Loading Hayward CSV: " + hayward_csv_path);
+struct LeeCsvCols {
+    int c_bin;
+    int c_xb_min;
+    int c_xb_max;
+    int c_q2_min;
+    int c_q2_max;
+    int c_t_min;
+    int c_t_max;
+    int c_phi_min;
+    int c_phi_max;
+    int c_phiavg;
+};
 
-    // --------- 1. Load Lee CSV and collect scalar yields by bin index ---------
-    std::ifstream fin_lee(lee_csv_path);
-    if (!fin_lee.is_open()) {
+static int find_col_alias(const std::vector<std::string>& header,
+                          const std::vector<std::string>& names) {
+    for (size_t i = 0; i < header.size(); ++i) {
+        std::string h = slower(trim(header[i]));
+        for (const auto& raw_name : names) {
+            std::string n = slower(trim(raw_name));
+            if (!n.empty() && h == n) {
+                return (int)i;
+            }
+        }
+        // endfor
+    }
+    // endfor
+    return -1;
+}
+
+static LeeCsvCols detect_lee_columns(const std::vector<std::string>& header) {
+    if (header.empty()) {
+        fatal("[cross][FATAL] Empty header row in Lee CSV");
+    }
+
+    LeeCsvCols cols;
+    cols.c_bin     = -1;
+    cols.c_xb_min  = -1;
+    cols.c_xb_max  = -1;
+    cols.c_q2_min  = -1;
+    cols.c_q2_max  = -1;
+    cols.c_t_min   = -1;
+    cols.c_t_max   = -1;
+    cols.c_phi_min = -1;
+    cols.c_phi_max = -1;
+    cols.c_phiavg  = -1;
+
+    // 1) Bin index: try named column first, then unlabeled first column
+    cols.c_bin = find_col_alias(header, { "bin index", "bin", "idx" });
+    if (cols.c_bin < 0) {
+        std::string h0 = trim(header[0]);
+        if (h0.empty()) {
+            // Lee pass-1: first column is bin index, header cell is blank
+            cols.c_bin = 0;
+        } else {
+            std::ostringstream oss;
+            oss << "[cross][FATAL] Could not locate bin index column in Lee CSV. "
+                << "Tried names: \"bin index\", \"bin\", \"idx\" and unlabeled first column.\n"
+                << "Header[0] is \"" << header[0] << "\".";
+            fatal(oss.str());
+        }
+    }
+
+    // 2) xB, Q2, phi
+    cols.c_xb_min  = find_col_alias(header, { "xBmin", "xbmin", "xB_min", "xb_min" });
+    cols.c_xb_max  = find_col_alias(header, { "xBmax", "xbmax", "xB_max", "xb_max" });
+    cols.c_q2_min  = find_col_alias(header, { "Q2min", "q2min", "Q2_min", "q2_min" });
+    cols.c_q2_max  = find_col_alias(header, { "Q2max", "q2max", "Q2_max", "q2_max" });
+    cols.c_phi_min = find_col_alias(header, { "phimin", "phi_min", "phi_minimum" });
+    cols.c_phi_max = find_col_alias(header, { "phimax", "phi_max", "phi_maximum" });
+    cols.c_phiavg  = find_col_alias(header, { "phiavg", "phi_avg", "phi_average" });
+
+    // 3) |t| min and max: accept both our names and Lee's pass-1 names.
+    cols.c_t_min   = find_col_alias(header, { "tmin", "t_min", "t_abs_min" });
+    cols.c_t_max   = find_col_alias(header, { "tmax", "t_max", "t_abs_max" });
+
+    // 4) Validate required columns and give a clear fatal if something is missing.
+    std::vector<std::string> missing;
+
+    if (cols.c_bin     < 0) missing.push_back("bin index");
+    if (cols.c_xb_min  < 0) missing.push_back("xBmin");
+    if (cols.c_xb_max  < 0) missing.push_back("xBmax");
+    if (cols.c_q2_min  < 0) missing.push_back("Q2min");
+    if (cols.c_q2_max  < 0) missing.push_back("Q2max");
+    if (cols.c_t_min   < 0) missing.push_back("tmin/t_abs_min");
+    if (cols.c_t_max   < 0) missing.push_back("tmax/t_abs_max");
+    if (cols.c_phi_min < 0) missing.push_back("phimin");
+    if (cols.c_phi_max < 0) missing.push_back("phimax");
+    if (cols.c_phiavg  < 0) missing.push_back("phiavg");
+
+    if (!missing.empty()) {
+        std::ostringstream oss;
+        oss << "[cross][FATAL] Missing required columns in Lee CSV: ";
+        for (size_t i = 0; i < missing.size(); ++i) {
+            if (i) oss << ", ";
+            oss << "\"" << missing[i] << "\"";
+        }
+        oss << ".\nHeader row is:";
+        for (size_t i = 0; i < header.size(); ++i) {
+            oss << "\n  [" << i << "] \"" << header[i] << "\"";
+        }
+        fatal(oss.str());
+    }
+
+    return cols;
+}
+
+// ---------- bin / axis structs ----------
+
+struct AxisSets {
+    std::vector<std::pair<double,double>> xB;
+    std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix;
+    std::map<int, std::vector<std::pair<double,double>>> t_by_ix;
+};
+
+// Row struct combining bin definition and both analyses' unfolded yields
+struct BinRow {
+    int    bin_index = 0;
+    double xBmin     = 0.0;
+    double xBmax     = 0.0;
+    double Q2min     = 0.0;
+    double Q2max     = 0.0;
+    double tmin      = 0.0;
+    double tmax      = 0.0;
+    double phiavg    = 0.0;
+
+    double lee_val   = 0.0; // Lee acceptance-corrected yield
+    double my_val    = 0.0; // Hayward Fa18, unpol acceptance-corrected yield
+};
+
+static AxisSets build_axes_from_rows(const std::vector<BinRow>& rows) {
+    std::set<std::pair<double,double>> xbset;
+    std::map<std::pair<double,double>, std::set<std::pair<double,double>>> q2set_by_xb;
+    std::map<std::pair<double,double>, std::set<std::pair<double,double>>> tset_by_xb;
+
+    for (const auto& r : rows) {
+        const auto xb = std::make_pair(r.xBmin, r.xBmax);
+        xbset.insert(xb);
+        q2set_by_xb[xb].insert({r.Q2min, r.Q2max});
+        tset_by_xb[xb].insert({r.tmin,  r.tmax});
+    }
+
+    AxisSets ax;
+    ax.xB.assign(xbset.begin(), xbset.end());
+    for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
+        const auto& xb = ax.xB[ix];
+        const auto& q2set = q2set_by_xb[xb];
+        const auto& tset  = tset_by_xb[xb];
+        ax.Q2_by_ix[ix] = { q2set.begin(), q2set.end() };
+        ax.t_by_ix[ix]  = { tset.begin(),  tset.end()  };
+    }
+    return ax;
+}
+
+static inline int find_index(const std::pair<double,double>& r,
+                             const std::vector<std::pair<double,double>>& v) {
+    for (int i = 0; i < (int)v.size(); ++i) {
+        if (v[i] == r) return i;
+    }
+    return -1;
+}
+
+// ---------- plotting helpers ----------
+
+static inline void degreeTicks(double xmin, double ymin, double xmax, double labelSize) {
+    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
+    ax->SetLabelFont(42);
+    ax->SetLabelSize(labelSize);
+    ax->SetLabelOffset(0.012);
+    ax->SetTitle("");
+    ax->SetTickSize(0.02);
+    ax->Draw();
+}
+
+static void draw_degree_ticks_here(double labelSize) {
+    degreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
+}
+
+// Markers + error bars only (no connecting line)
+static TGraphErrors* graph_pe1(const std::vector<double>& X,
+                               const std::vector<double>& Y,
+                               const std::vector<double>& EY,
+                               int markerStyle, int color) {
+    std::vector<double> ex(X.size(), 0.0);
+    auto* g = new TGraphErrors((int)X.size(),
+                               const_cast<double*>(X.data()),
+                               const_cast<double*>(Y.data()),
+                               ex.data(),
+                               const_cast<double*>(EY.data()));
+    g->SetMarkerStyle(markerStyle);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(1);
+    g->Draw("PE1 SAME");
+    return g;
+}
+
+static std::string safe_canvas_name(const std::string& out_png) {
+    return fs::path(out_png).filename().string();
+}
+
+// Fill function type: for given (Q2 index, t index) returns variable-length
+// vectors of phiavg, Hayward yields, and Lee yields.
+using FillFunc = std::function<void(int,int,
+                                    std::vector<double>&,
+                                    std::vector<double>&,
+                                    std::vector<double>&)>;
+
+static double compute_canvas_ymax(
+    bool ratio_mode,
+    const std::vector<std::pair<double,double>>& Q2s,
+    const std::vector<std::pair<double,double>>& Ts,
+    const FillFunc& fillBoth
+) {
+    double ymax = 0.0;
+    const int nrows = (int)Ts.size();
+    const int ncols = (int)Q2s.size();
+
+    for (int r = 0; r < nrows; ++r) {
+        for (int ccol = 0; ccol < ncols; ++ccol) {
+            std::vector<double> phi, A, B;
+            fillBoth(ccol, r, phi, A, B);
+
+            if (!ratio_mode) {
+                for (size_t i = 0; i < A.size(); ++i) {
+                    ymax = std::max(ymax, A[i]);
+                }
+                for (size_t i = 0; i < B.size(); ++i) {
+                    ymax = std::max(ymax, B[i]);
+                }
+            } else {
+                const size_t n = std::min(A.size(), B.size());
+                for (size_t i = 0; i < n; ++i) {
+                    const double NL = B[i];
+                    const double NH = A[i];
+                    if (NL <= 0.0) continue;
+                    const double R = (NH <= 0.0) ? 0.0 : NH / NL;
+                    double eR = 0.0;
+                    if (NH > 0.0) {
+                        // Poisson-like relative error using yields as proxies
+                        eR = R * std::sqrt(1.0 / NH + 1.0 / NL);
+                    }
+                    ymax = std::max(ymax, R + eR);
+                }
+            }
+        }
+    }
+
+    if (ymax <= 0.0) ymax = 1.0;
+    if (ratio_mode)  ymax = std::max(ymax, 1.0);
+    return ymax;
+}
+
+static void draw_one_canvas(const std::string& title,
+                            const std::vector<std::pair<double,double>>& Q2s,
+                            const std::vector<std::pair<double,double>>& Ts,
+                            const FillFunc& fillBoth,
+                            const std::string& out_png,
+                            bool draw_ratio_only) {
+    const int nrows = (int)Ts.size();
+    const int ncols = (int)Q2s.size();
+    if (nrows == 0 || ncols == 0) return;
+
+    const double canvas_ymax = compute_canvas_ymax(draw_ratio_only, Q2s, Ts, fillBoth);
+
+    const int W = 320 * ncols + 220;
+    const int H = 260 * nrows + 260;
+
+    const std::string cname = safe_canvas_name(out_png);
+    TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
+    c->cd();
+
+    // Top band
+    TPad* pTop = new TPad("pTop", "pTop", 0.0, 0.90, 1.0, 1.0);
+    pTop->SetFillStyle(0);
+    pTop->SetBorderSize(0);
+    pTop->Draw();
+    pTop->cd();
+
+    TLatex head;
+    head.SetNDC();
+    head.SetTextAlign(22);
+    head.SetTextFont(42);
+    head.SetTextSize(0.18);
+    head.DrawLatex(0.50, 0.65, title.c_str());
+
+    // Legend
+    std::vector<TObject*> legend_keepalive;
+    TLegend* legTop = new TLegend(0.08, 0.10, 0.92, 0.56);
+    legTop->SetNColumns(2);
+    legTop->SetBorderSize(0);
+    legTop->SetFillStyle(0);
+    legTop->SetTextFont(42);
+    legTop->SetTextSize(0.22);
+    if (draw_ratio_only) {
+        auto* mRatio = new TMarker(0.0, 0.0, 20);
+        mRatio->SetMarkerColor(kBlack);
+        auto* lnY1   = new TLine(0.0, 0.0, 1.0, 0.0);
+        lnY1->SetLineStyle(2);
+        lnY1->SetLineWidth(2);
+        lnY1->SetLineColor(kOrange + 7);
+        legend_keepalive.push_back(mRatio);
+        legend_keepalive.push_back(lnY1);
+        legTop->AddEntry(mRatio, "Hayward/Lee", "p");
+        legTop->AddEntry(lnY1,   "y = 1",       "l");
+    } else {
+        auto* mH = new TMarker(0.0, 0.0, 20);
+        mH->SetMarkerColor(kBlack);
+        auto* mL = new TMarker(0.0, 0.0, 24);
+        mL->SetMarkerColor(kOrange + 7);
+        legend_keepalive.push_back(mH);
+        legend_keepalive.push_back(mL);
+        legTop->AddEntry(mH, "Hayward (pass-2)", "p");
+        legTop->AddEntry(mL, "Lee (pass-1)",     "p");
+    }
+    legTop->Draw();
+
+    // Grid
+    c->cd();
+    TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.90);
+    pGrid->SetFillStyle(0);
+    pGrid->SetBorderSize(0);
+    pGrid->Draw();
+    pGrid->cd();
+    pGrid->Divide(ncols, nrows, 0.00, 0.00);
+
+    const int black  = kBlack;
+    const int orange = kOrange + 7;
+
+    for (int r = 0; r < nrows; ++r) {
+        for (int ccol = 0; ccol < ncols; ++ccol) {
+            pGrid->cd(r * ncols + ccol + 1);
+            gPad->SetGrid(1, 1);
+            gPad->SetTicks(1, 1);
+            gPad->SetTopMargin(0.12);
+            gPad->SetBottomMargin(0.18);
+            gPad->SetLeftMargin(0.18);
+            gPad->SetRightMargin(0.08);
+
+            std::vector<double> phi, A, B;
+            fillBoth(ccol, r, phi, A, B);
+
+            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, canvas_ymax);
+            frame->GetXaxis()->SetTitle("#phi (deg)");
+            frame->GetYaxis()->SetTitle(draw_ratio_only ? "Hayward / Lee"
+                                                        : "Unfolded acc.-corr. yield");
+            frame->GetXaxis()->CenterTitle();
+            frame->GetYaxis()->CenterTitle();
+            frame->GetXaxis()->SetNdivisions(505);
+            frame->GetXaxis()->SetTitleSize(0.060);
+            frame->GetYaxis()->SetTitleSize(0.060);
+            frame->GetYaxis()->SetLabelSize(0.050);
+            frame->GetXaxis()->SetLabelSize(0.050);
+            frame->GetXaxis()->SetTitleOffset(1.10);
+            frame->GetYaxis()->SetTitleOffset(1.55);
+
+            draw_degree_ticks_here(0.050);
+
+            TLatex lab;
+            lab.SetNDC();
+            lab.SetTextSize(0.070);
+            lab.SetTextAlign(11);
+            lab.SetTextFont(42);
+            lab.DrawLatex(0.15, 0.92,
+                Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                     Q2s[ccol].first, Q2s[ccol].second,
+                     Ts[r].first,     Ts[r].second));
+
+            if (phi.empty()) {
+                // No bins for this (Q2, t) cell; leave the frame empty.
+                continue;
+            }
+
+            if (draw_ratio_only) {
+                std::vector<double> x, y, ey;
+                const size_t n = std::min(A.size(), B.size());
+                x.reserve(n);
+                y.reserve(n);
+                ey.reserve(n);
+
+                for (size_t i = 0; i < n; ++i) {
+                    const double NL = B[i];
+                    const double NH = A[i];
+                    if (NL <= 0.0) continue;
+                    const double R = (NH <= 0.0) ? 0.0 : NH / NL;
+                    double eR = 0.0;
+                    if (NH > 0.0) {
+                        // Poisson-style propagation using yields
+                        eR = R * std::sqrt(1.0 / NH + 1.0 / NL);
+                    }
+                    x.push_back(phi[i]);
+                    y.push_back(R);
+                    ey.push_back(eR);
+                }
+
+                if (!x.empty()) {
+                    graph_pe1(x, y, ey, 20, black);
+
+                    TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
+                    one->SetLineStyle(2);
+                    one->SetLineWidth(2);
+                    one->SetLineColor(orange);
+                    one->Draw("SAME");
+                }
+            } else {
+                const size_t n = phi.size();
+                std::vector<double> eyA(n, 0.0), eyB(n, 0.0);
+                for (size_t i = 0; i < n; ++i) {
+                    // For counts code we used sqrt(N); here we keep the same
+                    // Poisson-style scaling using yields as proxies.
+                    eyA[i] = (A[i] > 0.0) ? std::sqrt(A[i]) : 0.0;
+                    eyB[i] = (B[i] > 0.0) ? std::sqrt(B[i]) : 0.0;
+                }
+                graph_pe1(phi, A, eyA, 20, black);   // Hayward (pass-2)
+                graph_pe1(phi, B, eyB, 24, orange);  // Lee (pass-1)
+            }
+        }
+    }
+
+    c->SaveAs(out_png.c_str());
+
+    delete legTop;
+    delete c;
+}
+
+// ---------- CSV loaders for Lee and Hayward ----------
+
+static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
+                                         std::unordered_map<int,size_t>& bin_to_index) {
+    std::ifstream fin(lee_csv_path);
+    if (!fin.is_open()) {
         fatal("Cannot open Lee CSV: " + lee_csv_path);
     }
 
     std::string header_line;
-    if (!std::getline(fin_lee, header_line)) {
+    if (!std::getline(fin, header_line)) {
         fatal("Lee CSV appears empty: " + lee_csv_path);
     }
-    std::vector<std::string> header_lee = split_csv_line(header_line);
-    auto H_lee = build_header_index(header_lee);
+    std::vector<std::string> header = split_csv_line(header_line);
 
-    // In Lee CSV, "bin index" is the *first column*; header cell can be empty.
-    const int idx_bin_lee = 0;
+    // Detect bin / kinematic columns using aliases and Lee conventions.
+    LeeCsvCols cols_lee = detect_lee_columns(header);
+
+    // Build header index for named columns like "valid bin" and yield columns.
+    auto H = build_header_index(header);
 
     const std::string col_valid_lee = "valid bin";
-    const std::string col_y_lee =
+    const std::string col_lee_val =
         "acceptance corrected yield, ep->epg, exp";
 
-    // Only require the named columns; bin index is position-based.
-    require_columns(H_lee,
-                    { col_valid_lee, col_y_lee },
-                    "Lee CSV");
+    // Only "valid bin" and the acceptance-corrected yield column
+    // are required by name here; bin index and kinematic ranges
+    // are handled by detect_lee_columns above.
+    const std::vector<std::string> required = {
+        col_valid_lee,
+        col_lee_val
+    };
+    require_columns(H, required, "Lee CSV");
 
-    std::map<int,double> lee_yield_by_bin;
+    std::vector<BinRow> rows;
+    rows.reserve(3000);
 
     std::string line;
-    int lee_rows_read  = 0;
-    int lee_rows_kept  = 0;
+    int input_rows = 0;
+    int kept_rows  = 0;
 
-    while (std::getline(fin_lee, line)) {
-        ++lee_rows_read;
+    while (std::getline(fin, line)) {
+        ++input_rows;
         if (line.empty()) continue;
 
         std::vector<std::string> cols = split_csv_line(line);
-        if ((int)cols.size() <= idx_bin_lee) {
-            // Row malformed; skip.
-            continue;
-        }
 
-        const std::string &s_valid = get_col_ref(cols, H_lee, col_valid_lee);
-        int valid = ToInt(s_valid);
+        const std::string& valid_s = get_col_ref(cols, H, col_valid_lee);
+        int valid = ToInt(valid_s);
         if (valid != 1) continue;
 
-        // Bin index from the first column, regardless of header name.
-        int bin = ToInt(cols[idx_bin_lee]);
+        if ((int)cols.size() <= cols_lee.c_phiavg) {
+            fatal("Row in Lee CSV has fewer columns than expected based on header detection.");
+        }
 
-        const std::string &s_y = get_col_ref(cols, H_lee, col_y_lee);
-        double y = ToDouble(s_y);
+        BinRow r;
+        r.bin_index = ToInt(cols[cols_lee.c_bin]);
+        r.xBmin     = ToDouble(cols[cols_lee.c_xb_min]);
+        r.xBmax     = ToDouble(cols[cols_lee.c_xb_max]);
+        r.Q2min     = ToDouble(cols[cols_lee.c_q2_min]);
+        r.Q2max     = ToDouble(cols[cols_lee.c_q2_max]);
+        r.tmin      = ToDouble(cols[cols_lee.c_t_min]);
+        r.tmax      = ToDouble(cols[cols_lee.c_t_max]);
+        r.phiavg    = ToDouble(cols[cols_lee.c_phiavg]);
 
-        lee_yield_by_bin[bin] = y;
-        ++lee_rows_kept;
+        const std::string& s_val = get_col_ref(cols, H, col_lee_val);
+        r.lee_val = ToDouble(s_val);
+        r.my_val  = 0.0;
+
+        if (bin_to_index.find(r.bin_index) != bin_to_index.end()) {
+            fatal("Duplicate bin index in Lee CSV: " + std::to_string(r.bin_index));
+        }
+
+        bin_to_index[r.bin_index] = rows.size();
+        rows.push_back(r);
+        ++kept_rows;
     }
 
-    info("Lee rows read: " + std::to_string(lee_rows_read));
-    info("Lee valid rows kept: " + std::to_string(lee_rows_kept));
+    info("Lee CSV rows read: " + std::to_string(input_rows));
+    info("Lee valid rows kept (valid bin == 1): " + std::to_string(kept_rows));
+    return rows;
+}
 
-    // --------- 2. Load Hayward CSV and collect triple yields by bin index -----
-    std::ifstream fin_hay(hayward_csv_path);
-    if (!fin_hay.is_open()) {
+static void fill_hayward_counts(const std::string& hayward_csv_path,
+                                const std::unordered_map<int,size_t>& bin_to_index,
+                                std::vector<BinRow>& rows) {
+    std::ifstream fin(hayward_csv_path);
+    if (!fin.is_open()) {
         fatal("Cannot open Hayward CSV: " + hayward_csv_path);
     }
 
-    if (!std::getline(fin_hay, header_line)) {
+    std::string header_line;
+    if (!std::getline(fin, header_line)) {
         fatal("Hayward CSV appears empty: " + hayward_csv_path);
     }
-    std::vector<std::string> header_hay = split_csv_line(header_line);
-    auto H_hay = build_header_index(header_hay);
+    std::vector<std::string> header = split_csv_line(header_line);
+    auto H = build_header_index(header);
 
     const std::string col_bin_hay   = "bin index";
     const std::string col_valid_hay = "valid bin";
-    const std::string col_y_hay =
+    const std::string col_hay_val =
         "acceptance corrected yield, ep->epg, exp, Fa18, unpol";
 
-    require_columns(H_hay,
-                    { col_bin_hay, col_valid_hay, col_y_hay },
-                    "Hayward CSV");
-
-    struct HayVal {
-        double val;
-        double stat;
+    const std::vector<std::string> required = {
+        col_bin_hay, col_valid_hay, col_hay_val
     };
+    require_columns(H, required, "Hayward CSV");
 
-    std::map<int,HayVal> hay_yield_by_bin;
+    std::string line;
+    int input_rows = 0;
+    int matched    = 0;
 
-    int hay_rows_read = 0;
-    int hay_rows_kept = 0;
-
-    while (std::getline(fin_hay, line)) {
-        ++hay_rows_read;
+    while (std::getline(fin, line)) {
+        ++input_rows;
         if (line.empty()) continue;
 
         std::vector<std::string> cols = split_csv_line(line);
-
-        const std::string &s_valid = get_col_ref(cols, H_hay, col_valid_hay);
-        int valid = ToInt(s_valid);
+        const std::string& valid_s = get_col_ref(cols, H, col_valid_hay);
+        int valid = ToInt(valid_s);
         if (valid != 1) continue;
 
-        int bin = ToInt(get_col_ref(cols, H_hay, col_bin_hay));
-        const std::string &s_y = get_col_ref(cols, H_hay, col_y_hay);
+        int bin_index = ToInt(get_col_ref(cols, H, col_bin_hay));
+        auto it = bin_to_index.find(bin_index);
+        if (it == bin_to_index.end()) {
+            fatal("Hayward CSV has bin index not present in Lee CSV: " + std::to_string(bin_index));
+        }
 
+        const std::string& s_val = get_col_ref(cols, H, col_hay_val);
         Triple t;
-        if (!parse_triple(s_y, t)) {
-            // If we cannot parse the triple, skip this bin.
-            std::cerr << "[unfolded_yields] WARNING: skipping bin " << bin
-                      << " (cannot parse tuple \"" << s_y << "\")\n";
+        if (!parse_triple(s_val, t)) {
+            std::cerr << "[cross][warn] Skipping bin " << bin_index
+                      << " (cannot parse tuple \"" << s_val << "\")\n";
             continue;
         }
 
-        HayVal hv;
-        hv.val  = t.val;
-        hv.stat = t.stat;
-        hay_yield_by_bin[bin] = hv;
-        ++hay_rows_kept;
+        BinRow& r = rows[it->second];
+        r.my_val  = t.val;
+        ++matched;
     }
 
-    info("Hayward rows read: " + std::to_string(hay_rows_read));
-    info("Hayward valid rows kept (parsed triple): " + std::to_string(hay_rows_kept));
+    info("Hayward CSV rows read: " + std::to_string(input_rows));
+    info("Hayward valid rows matched to Lee bins: " + std::to_string(matched));
+}
 
-    // --------- 3. Build intersection of bins and vectors for plotting ---------
-    std::vector<int> bins;
-    bins.reserve(std::min(lee_yield_by_bin.size(), hay_yield_by_bin.size()));
+// ---------- helpers to gather per-(Q2,t) data ----------
 
-    for (const auto &kv : lee_yield_by_bin) {
-        int bin = kv.first;
-        if (hay_yield_by_bin.find(bin) != hay_yield_by_bin.end()) {
-            bins.push_back(bin);
+static void gather_phi_rows(const std::vector<BinRow>& rows,
+                            const AxisSets& ax,
+                            int ix,
+                            int iQ,
+                            int it,
+                            std::vector<double>& phi,
+                            std::vector<double>& my_vals,
+                            std::vector<double>& lee_vals) {
+    phi.clear();
+    my_vals.clear();
+    lee_vals.clear();
+
+    const auto xb  = ax.xB[ix];
+    const auto& Q2s = ax.Q2_by_ix.at(ix);
+    const auto& Ts  = ax.t_by_ix.at(ix);
+
+    if (iQ < 0 || iQ >= (int)Q2s.size()) return;
+    if (it < 0 || it >= (int)Ts.size())  return;
+
+    const auto q2r = Q2s[iQ];
+    const auto tr  = Ts[it];
+
+    for (const auto& r : rows) {
+        if (r.xBmin == xb.first && r.xBmax == xb.second &&
+            r.Q2min == q2r.first && r.Q2max == q2r.second &&
+            r.tmin  == tr.first  && r.tmax  == tr.second) {
+
+            phi.push_back(r.phiavg);
+            my_vals.push_back(r.my_val);
+            lee_vals.push_back(r.lee_val);
         }
     }
 
-    if (bins.empty()) {
-        std::cerr << "[unfolded_yields] WARNING: no overlapping bins between Lee and Hayward.\n";
-        return;
+    // Sort by phi so the graphs look nice.
+    std::vector<size_t> order(phi.size());
+    for (size_t i = 0; i < order.size(); ++i) {
+        order[i] = i;
+    }
+    std::sort(order.begin(), order.end(),
+              [&](size_t a, size_t b){ return phi[a] < phi[b]; });
+
+    std::vector<double> phi_s, my_s, lee_s;
+    phi_s.reserve(order.size());
+    my_s.reserve(order.size());
+    lee_s.reserve(order.size());
+
+    for (size_t k = 0; k < order.size(); ++k) {
+        size_t idx = order[k];
+        phi_s.push_back(phi[idx]);
+        my_s.push_back(my_vals[idx]);
+        lee_s.push_back(lee_vals[idx]);
     }
 
-    std::sort(bins.begin(), bins.end());
+    phi.swap(phi_s);
+    my_vals.swap(my_s);
+    lee_vals.swap(lee_s);
+}
 
-    std::vector<double> x;
-    std::vector<double> y_lee;
-    std::vector<double> y_hay;
-    std::vector<double> ey_lee;
-    std::vector<double> ey_hay;
+// ---------- driver ----------
 
-    x.reserve(bins.size());
-    y_lee.reserve(bins.size());
-    y_hay.reserve(bins.size());
-    ey_lee.reserve(bins.size());
-    ey_hay.reserve(bins.size());
+void plot_unfolded_yields_cross_checks(const std::string& lee_csv_path,
+                                       const std::string& hayward_csv_path,
+                                       const std::string& output_base_dir) {
+    fs::create_directories(output_base_dir);
 
-    for (int bin : bins) {
-        double lee_val = lee_yield_by_bin[bin];
-        HayVal hv      = hay_yield_by_bin[bin];
-
-        x.push_back((double)bin);
-        y_lee.push_back(lee_val);
-        y_hay.push_back(hv.val);
-        ey_lee.push_back(0.0);        // Lee CSV has no stat error for this column
-        ey_hay.push_back(hv.stat);    // stat uncertainty from (value, stat, sys)
-    }
-
-    info("Number of bins used for plot: " + std::to_string(x.size()));
-
-    if (x.empty()) {
-        std::cerr << "[unfolded_yields] WARNING: nothing to plot.\n";
-        return;
-    }
-
-    // --------- 4. ROOT plotting ---------
-    gErrorIgnoreLevel = kWarning;
+    gStyle->SetOptTitle(0);
     gStyle->SetOptStat(0);
+    gStyle->SetLineWidth(2);
+    gStyle->SetFrameLineWidth(2);
+    gStyle->SetPadTickX(1);
+    gStyle->SetPadTickY(1);
+    gStyle->SetTitleFont(42, "XYZ");
+    gStyle->SetLabelFont(42, "XYZ");
+    gStyle->SetTextFont(42);
 
-    TCanvas *c = new TCanvas("c_unfolded_yields",
-                             "Unfolded acceptance-corrected yields cross-check",
-                             900, 700);
-    c->SetGrid(1, 1);
+    // 1) Load Lee CSV and build BinRow list + bin-index map
+    std::unordered_map<int,size_t> bin_to_index;
+    auto rows = load_lee_rows(lee_csv_path, bin_to_index);
 
-    const int n_points = (int)x.size();
+    // 2) Load Hayward CSV and fill my_val for matching bins
+    fill_hayward_counts(hayward_csv_path, bin_to_index, rows);
 
-    TGraphErrors *g_lee = new TGraphErrors(
-        n_points,
-        x.data(), y_lee.data(),
-        nullptr,          // x-errors = 0
-        ey_lee.data()
-    );
+    // 3) Build axis sets
+    AxisSets ax = build_axes_from_rows(rows);
 
-    TGraphErrors *g_hay = new TGraphErrors(
-        n_points,
-        x.data(), y_hay.data(),
-        nullptr,          // x-errors = 0
-        ey_hay.data()
-    );
+    info("Axis xB bins: " + std::to_string(ax.xB.size()));
 
-    g_lee->SetName("g_lee_unfolded");
-    g_hay->SetName("g_hay_unfolded");
+    for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
+        const auto& Q2s = ax.Q2_by_ix[ix];
+        const auto& Ts  = ax.t_by_ix[ix];
+        if (Q2s.empty() || Ts.empty()) continue;
 
-    // Styles: Lee = orange open, Hayward = black solid with error bars
-    g_lee->SetMarkerStyle(24);
-    g_lee->SetMarkerSize(0.9);
-    g_lee->SetLineWidth(1);
+        const double xb_lo = ax.xB[ix].first;
+        const double xb_hi = ax.xB[ix].second;
 
-    g_hay->SetMarkerStyle(20);
-    g_hay->SetMarkerSize(0.9);
-    g_hay->SetLineWidth(1);
+        const std::string title_counts =
+            Form("Unfolded acc.-corr. yields: Fa18   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
+        const std::string title_ratio  =
+            Form("Unfolded yields ratio (Hayward/Lee): Fa18   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
 
-    g_hay->SetTitle("Unfolded acceptance-corrected yields: Lee vs Hayward;Bin index;Acceptance-corrected yield");
-    g_hay->Draw("AP");
-    g_lee->Draw("P SAME");
+        FillFunc fill = [&](int iQcol, int irow,
+                            std::vector<double>& phi,
+                            std::vector<double>& A,
+                            std::vector<double>& B) {
+            // A = Hayward (pass-2), B = Lee (pass-1)
+            gather_phi_rows(rows, ax, ix, iQcol, irow, phi, A, B);
+        };
 
-    // Legend
-    TLegend *leg = new TLegend(0.15, 0.75, 0.45, 0.90);
-    leg->SetBorderSize(0);
-    leg->SetFillStyle(0);
-    leg->AddEntry(g_hay, "Hayward pass-2 (Fa18, unpol)", "pe");
-    leg->AddEntry(g_lee, "Lee pass-1 (unfolded)",        "p");
-    leg->Draw();
+        const std::string f_counts =
+            (fs::path(output_base_dir) / Form("unfolded_counts_fa18_xB_%d.png", ix)).string();
+        const std::string f_ratio  =
+            (fs::path(output_base_dir) / Form("unfolded_ratio_fa18_xB_%d.png",  ix)).string();
 
-    // Explain error bars
-    TLatex latex;
-    latex.SetNDC();
-    latex.SetTextSize(0.035);
-    latex.DrawLatex(0.15, 0.70,
-        "Pass-2 error bars = stat component from (value, stat, sys)");
+        draw_one_canvas(title_counts, Q2s, Ts, fill, f_counts, /*draw_ratio_only=*/false);
+        draw_one_canvas(title_ratio,  Q2s, Ts, fill, f_ratio,   /*draw_ratio_only=*/true);
 
-    // Axis ranges
-    double xmin = *std::min_element(x.begin(), x.end());
-    double xmax = *std::max_element(x.begin(), x.end());
-    g_hay->GetXaxis()->SetLimits(xmin - 1.0, xmax + 1.0);
-
-    double ymin = std::min(
-        *std::min_element(y_lee.begin(), y_lee.end()),
-        *std::min_element(y_hay.begin(), y_hay.end())
-    );
-    double ymax = std::max(
-        *std::max_element(y_lee.begin(), y_lee.end()),
-        *std::max_element(y_hay.begin(), y_hay.end())
-    );
-    double dy = (ymax - ymin) * 0.10;
-    if (dy <= 0.0) dy = std::abs(ymax) * 0.10;
-
-    g_hay->GetYaxis()->SetRangeUser(ymin - dy, ymax + dy);
-
-    std::string out_file = out_dir + "/unfolded_yields_Fa18.png";
-    c->SaveAs(out_file.c_str());
-    info("Saved plot to " + out_file);
-
-    delete leg;
-    delete c;
+        info("Saved: " + f_counts);
+        info("Saved: " + f_ratio);
+    }
 }
