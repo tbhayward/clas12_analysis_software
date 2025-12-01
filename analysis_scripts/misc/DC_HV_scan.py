@@ -5,6 +5,15 @@ import os
 from matplotlib import colors
 from scipy.optimize import curve_fit
 import pandas as pd
+import argparse
+
+# -----------------------------
+# Command Line Arguments
+# -----------------------------
+parser = argparse.ArgumentParser(description='DC HV Scan Analysis')
+parser.add_argument('--fall18', action='store_true',
+                    help='Include Fall 2018 data (run 5886) in the analysis')
+args = parser.parse_args()
 
 # -----------------------------
 # Config / Output
@@ -26,6 +35,15 @@ file_paths = [
     '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_9_10_10.root'
 ]
 
+# Add Fall 2018 file if requested
+FALL18_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_fall2018.root'
+FALL18_LABEL = 'run 5886'
+
+if args.fall18:
+    file_paths.append(FALL18_PATH)
+    print(f"Including Fall 2018 data ({FALL18_LABEL})")
+# endif
+
 # -----------------------------
 # Helpers
 # -----------------------------
@@ -39,7 +57,11 @@ def np_branch(tree, name):
 # endif
 
 def parse_hv_label(path):
-    """Extract the trailing three underscore-separated tokens before .root, joined by commas."""
+    """Extract the trailing three underscore-separated tokens before .root, joined by commas.
+       Special case for Fall 2018 file."""
+    if 'fall2018' in path:
+        return FALL18_LABEL
+    # endif
     base = os.path.basename(path).replace('.root', '')
     toks = base.split('_')
     if len(toks) >= 3:
@@ -60,16 +82,32 @@ def hv_tuple(hv_str):
 
 def hv_sort_key(path):
     hv = parse_hv_label(path)
-    # Put 9,10,10 first; then sort numerically
-    return (0 if hv == '9,10,10' else 1, hv_tuple(hv), hv)
+    # Put 9,10,10 first; fall2018 (run 5886) last; then sort numerically
+    if hv == '9,10,10':
+        return (0, (0, 0, 0), hv)
+    elif hv == FALL18_LABEL:
+        return (2, (999, 999, 999), hv)  # Sort to end
+    else:
+        return (1, hv_tuple(hv), hv)
 # endif
 
-# Reorder files so 9,10,10 is first
+# Reorder files so 9,10,10 is first, fall2018 is last
 file_paths = sorted(file_paths, key=hv_sort_key)
 
 # Consistent color assignment per HV across all plots
 HV_LABELS = [parse_hv_label(p) for p in file_paths]
-color_map = dict(zip(HV_LABELS, plt.cm.tab10(np.linspace(0, 1, len(HV_LABELS)))))
+# Use a distinct color for fall2018 if present
+num_colors = len(HV_LABELS)
+base_colors = plt.cm.tab10(np.linspace(0, 1, num_colors))
+color_map = {}
+for i, label in enumerate(HV_LABELS):
+    if label == FALL18_LABEL:
+        # Use a distinctive color (black) for fall2018
+        color_map[label] = 'black'
+    else:
+        color_map[label] = base_colors[i]
+    # endif
+# endfor
 
 # Fit function: Gaussian + linear background
 def gaussian_linear(x, a, mu, sigma, b, c):
@@ -323,9 +361,14 @@ if fit_results:
     num_cols = ['Sigma', 'Sigma_Error', 'Mean', 'Mean_Error', 'Amplitude', 'Amplitude_Error']
     df[num_cols] = df[num_cols].round(4)
 
-    # Sort: 9,10,10 first, then numeric hv ordering
+    # Sort: 9,10,10 first, then numeric hv ordering, fall2018 last
     def df_hv_key(hv):
-        return (0 if hv == '9,10,10' else 1, hv_tuple(hv), hv)
+        if hv == '9,10,10':
+            return (0, (0, 0, 0), hv)
+        elif hv == FALL18_LABEL:
+            return (2, (999, 999, 999), hv)
+        else:
+            return (1, hv_tuple(hv), hv)
     # endif
     df = df.sort_values(by='HV_Settings', key=lambda col: col.map(df_hv_key))
 
@@ -475,7 +518,7 @@ print(f"Saved {binned_png}")
 # Write binned CSV with only sigma
 if binned_sigma_rows:
     bdf = pd.DataFrame(binned_sigma_rows)
-    # Sort: by Category (e_theta first), then bin order, then HV with 9,10,10 first
+    # Sort: by Category (e_theta first), then bin order, then HV with 9,10,10 first, fall2018 last
     cat_order = {'e_theta': 0, 'p_theta': 1}
     def bin_key(s):
         # s like "[12,15)"; extract numbers
@@ -484,7 +527,12 @@ if binned_sigma_rows:
         return (int(lo), int(hi))
     # endif
     def hv_key(hv):
-        return (0 if hv == '9,10,10' else 1, hv_tuple(hv), hv)
+        if hv == '9,10,10':
+            return (0, (0, 0, 0), hv)
+        elif hv == FALL18_LABEL:
+            return (2, (999, 999, 999), hv)
+        else:
+            return (1, hv_tuple(hv), hv)
 
     bdf = bdf.sort_values(
         by=['Category', 'Bin', 'HV_Settings'],
