@@ -577,26 +577,49 @@ static void draw_one_canvas_xs(const std::string& title,
             double ymax = 1.0;
 
             if (!draw_ratio_only) {
-                // Counts: auto-scale to cover both Lee and Hayward with errors
+                // Cross-section overlays: LOG y-scale with per-panel autoscaling.
+                // First find min positive value and max (including error bar).
                 ymax = 0.0;
-                auto update_ymax = [&](const PanelData_xs& pd) {
+                double ymin_pos = 0.0;
+
+                auto update_minmax = [&](const PanelData_xs& pd) {
                     for (size_t i = 0; i < pd.val.size(); ++i) {
-                        double vup = pd.val[i];
+                        double v = pd.val[i];
+                        double vup = v;
                         if (i < pd.err.size()) {
-                            vup = pd.val[i] + pd.err[i];
+                            vup = v + pd.err[i];
                         }
-                        if (vup > ymax) ymax = vup;
+                        if (vup > ymax) {
+                            ymax = vup;
+                        }
+                        if (v > 0.0) {
+                            if (ymin_pos == 0.0 || v < ymin_pos) {
+                                ymin_pos = v;
+                            }
+                        }
                     }
                 };
-                update_ymax(hayward);
-                update_ymax(lee);
 
-                if (ymax <= 0.0) {
+                update_minmax(hayward);
+                update_minmax(lee);
+
+                if (ymax <= 0.0 || ymin_pos <= 0.0) {
+                    // No positive entries: fall back to linear scale [0,1]
+                    gPad->SetLogy(0);
                     ymin = 0.0;
                     ymax = 1.0;
                 } else {
-                    ymin = 0.0;
+                    // Use log scale; pad the range slightly.
+                    gPad->SetLogy(1);
+                    ymin = 0.1 * ymin_pos;    // one decade below smallest positive
+                    if (ymin <= 0.0) {
+                        ymin = ymin_pos * 0.5;
+                        if (ymin <= 0.0) ymin = ymin_pos * 0.1;
+                    }
                     ymax = 1.10 * ymax;
+                    if (ymax <= ymin) {
+                        ymax = ymin * 10.0;
+                    }
                 }
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
@@ -625,10 +648,13 @@ static void draw_one_canvas_xs(const std::string& title,
                          Ts[r].first,     Ts[r].second));
 
                 // Plot both series
-                graph_pe1_xs(hayward.phi, hayward.val, hayward.err, 20, black);  // Hayward with errors
-                graph_pe1_xs(lee.phi,     lee.val,     lee.err,     24, orange); // Lee (errors are 0)
+                graph_pe1_xs(hayward.phi, hayward.val, hayward.err, 20, black);   // Hayward with errors
+                graph_pe1_xs(lee.phi,     lee.val,     lee.err,     24, orange);  // Lee (errors are 0)
             } else {
-                // Ratio: compute R = H/L and eR from Hayward error
+                // Ratio: keep linear y
+                gPad->SetLogy(0);
+
+                // Compute R = H/L and eR from Hayward error
                 const double tol = 20.0;
                 std::vector<double> x, y, ey;
 
