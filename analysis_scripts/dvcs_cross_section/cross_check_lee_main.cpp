@@ -36,15 +36,17 @@ int main() {
     std::cout << "[lee] Loaded rows: " << rows.size() << "\n";
     std::cout << "[lee] First pass complete.\n";
 
-    // // NEW: make the raw-yield comparison/ratio canvases
-    // plot_raw_yield_cross_checks(rows,
-    //     "output/jsons/total_counts.json",
-    //     "output/cross_check/lee/raw_yield");
+    // make the raw-yield comparison/ratio canvases
+    plot_raw_yield_cross_checks(
+        all_bin_v3,                               // Lee pass-1 CSV
+        "output/csvs/dvcs_pass2_analysis.csv",    // Hayward pass-2 CSV
+        "output/cross_check/lee/raw_yield"       // output directory
+    );
 
-    // NEW: pi0 contamination comparisons
-    plot_pi0_contam_cross_checks(rows,
-        "output/jsons/pi0_contamination_combined.json",
-        "output/cross_check/lee/pi0_contamination");
+    // // NEW: pi0 contamination comparisons
+    // plot_pi0_contam_cross_checks(rows,
+    //     "output/jsons/pi0_contamination_combined.json",
+    //     "output/cross_check/lee/pi0_contamination");
 
     return 0;
 }
