@@ -7,6 +7,7 @@
 #include "raw_signal_cross_check.h"
 #include "pi0_contamination_cross_check.h"
 #include "rad_correction_cross_check.h"
+#include "unfolded_yields_cross_check.h"
 
 
 namespace fs = std::filesystem;
@@ -31,25 +32,32 @@ int main() {
 
     mkoutdirs();
 
-    // Raw yield cross-check (reads directly from CSVs)
-    plot_raw_yield_cross_checks(
-        lee_csv,                                  // Lee pass-1 CSV
-        hayward_csv,                              // Hayward pass-2 CSV
-        "output/cross_check/lee/raw_yield"        // output directory
-    );
+    // // Raw yield cross-check (reads directly from CSVs)
+    // plot_raw_yield_cross_checks(
+    //     lee_csv,                                  // Lee pass-1 CSV
+    //     hayward_csv,                              // Hayward pass-2 CSV
+    //     "output/cross_check/lee/raw_yield"        // output directory
+    // );
 
-    // Pi0 contamination cross-check (reads directly from CSVs)
-    plot_pi0_contam_cross_checks(
-        lee_csv,                                  // Lee pass-1 CSV
-        hayward_csv,                              // Hayward pass-2 CSV
-        "output/cross_check/lee/pi0_contamination" // output directory
-    );
+    // // Pi0 contamination cross-check (reads directly from CSVs)
+    // plot_pi0_contam_cross_checks(
+    //     lee_csv,                                  // Lee pass-1 CSV
+    //     hayward_csv,                              // Hayward pass-2 CSV
+    //     "output/cross_check/lee/pi0_contamination" // output directory
+    // );
 
-    // Radiative correction (Frad) cross-check
-    plot_rad_correction_cross_checks(
+    // // Radiative correction (Frad) cross-check
+    // plot_rad_correction_cross_checks(
+    //     lee_csv,
+    //     hayward_csv,
+    //     "output/cross_check/lee/rad_corrections"
+    // );
+
+    // Unfolded acceptance-corrected yield cross-check
+    plot_unfolded_yields_cross_checks(
         lee_csv,
         hayward_csv,
-        "output/cross_check/lee/rad_corrections"
+        "output/cross_check/lee/unfolding"
     );
 
     std::cout << "[lee] cross_check_lee complete.\n";

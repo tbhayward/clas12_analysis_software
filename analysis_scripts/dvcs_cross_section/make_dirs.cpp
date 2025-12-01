@@ -46,27 +46,12 @@ void makeOutputDirs() {
             {"10.60","10.2"}},
         {"output/bin_centering_plots",
             {"10.60","10.2"}},
-        // {"output/pi0_corrected_counts",
-        //     {"sp18_inb","sp18_out","fa18_inb_supplemental",
-        //      "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},
-        // {"output/radiative_correction_plots",
-        //     {"10.59","10.60","10.2"}},
-        // {"output/bsa_plots",
-        //     {"sp18_inb","sp18_out","fa18_inb_supplemental",
-        //      "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},
-        // {"output/acceptance",
-        //     {"sp18_inb","sp18_out",
-        //     "fa18_inb","fa18_out","sp19_inb"}},
-        // {"output/bin_volume",
-        //     {"10.59","10.60","10.2"}},
-        // {"output/uncorrected_cross_section",
-        //     {"10.59","10.60","10.2"}},
-        // {"output/rad_corrected_cross_section",
-        //     {"10.59","10.60","10.2"}},
-        // {"output/cross_check/lee",
-        //     {"raw_yield","pi0_contamination","signal_yield",
-        //     "rad_corrections", "acceptance", "unfolding",
-        //     "bin_volume", "cross_sections"}},
+        {"output/cross_sections",
+            {"Fa18_Inb", "Fa18_Out", "Sp18_Inb",
+                "Sp18_Out", "Sp19_Inb", "Fa18", "Sp18",
+                "10.6_GeV"
+            }
+        },
     };
 
     for (const auto& cat : cats) {
