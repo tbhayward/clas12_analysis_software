@@ -700,7 +700,8 @@ static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
         r.tmax        = ToDouble(cols[cols_lee.c_t_max]);
         r.phiavg      = ToDouble(cols[cols_lee.c_phi_avg]);
 
-        r.lee_frad    = ToDouble(get_col_ref(cols, H, "Frad"));
+        double lee_raw = ToDouble(get_col_ref(cols, H, "Frad"));
+        r.lee_frad    = (lee_raw > 0.0) ? (1.0 / lee_raw) : 0.0;
         r.my_frad     = 0.0;
         r.my_frad_err = 0.0;
 
