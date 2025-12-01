@@ -44,6 +44,13 @@ int main() {
         "output/cross_check/lee/pi0_contamination" // output directory
     );
 
+    // Radiative correction (Frad) cross-check
+    plot_rad_correction_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/rad_corrections"
+    );
+
     std::cout << "[lee] cross_check_lee complete.\n";
     return 0;
 }

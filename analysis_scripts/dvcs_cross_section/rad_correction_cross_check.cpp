@@ -1,29 +1,25 @@
-// pi0_contamination_cross_check.cpp
+// rad_correction_cross_check.cpp
 // -----------------------------------------------------------------------------
-// Cross-check of pi0 contamination ratios (Hayward pass-2 vs Lee pass-1) using *only* CSVs.
+// Cross-check of radiative correction factors Frad (Hayward pass-2 vs Lee pass-1)
+// using *only* CSVs.
 // - Lee CSV (pass-1): e.g. imports/all_bin_v3.csv
 // - Hayward CSV (pass-2): e.g. output/csvs/dvcs_pass2_analysis.csv
 //
 // For each valid bin, we compare:
 //
-//   Lee Fa18 Inb  = "contamination ratio, inbending"
-//   Lee Fa18 Out  = "contamination ratio, outbending"
+//   Lee:     "Frad" (single value)
+//   Hayward: "Frad, 10.6 GeV" (three-tuple: value, stat_err, syst_err)
 //
-//   Hayward Fa18 Inb = "contamination ratio, Fa18 Inb"  (three-tuple: value, stat_err, syst_err)
-//   Hayward Fa18 Out = "contamination ratio, Fa18 Out"  (three-tuple: value, stat_err, syst_err)
-//
-// We map each row into index space (ix, iQ, it) based on kinematic ranges, then
-// collect points at their actual phiavg values (not discretized).
+// Since radiative corrections depend on beam energy (not magnet polarity),
+// there is no inbending/outbending split - just one overall comparison.
 //
 // Output filenames:
-//   pi0_contam_counts_fa18_inb_xB_<ix>.png
-//   pi0_contam_ratio_fa18_inb_xB_<ix>.png
-//   pi0_contam_counts_fa18_out_xB_<ix>.png
-//   pi0_contam_ratio_fa18_out_xB_<ix>.png
+//   frad_counts_xB_<ix>.png
+//   frad_ratio_xB_<ix>.png
 //
 // -----------------------------------------------------------------------------
 
-#include "pi0_contamination_cross_check.h"
+#include "rad_correction_cross_check.h"
 
 #include <TCanvas.h>
 #include <TGraph.h>
@@ -60,15 +56,15 @@ namespace fs = std::filesystem;
 // ---------- small utilities ----------
 
 static inline void info(const std::string& s) {
-    std::cout << "[pi0x] " << s << std::endl;
+    std::cout << "[frad] " << s << std::endl;
 }
 
 static inline void warn(const std::string& s) {
-    std::cout << "[pi0x][warn] " << s << std::endl;
+    std::cout << "[frad][warn] " << s << std::endl;
 }
 
 static inline void fatal(const std::string& s) {
-    std::cerr << "[pi0x][FATAL] " << s << std::endl;
+    std::cerr << "[frad][FATAL] " << s << std::endl;
     throw std::runtime_error(s);
 }
 
@@ -177,30 +173,27 @@ static void require_columns(const std::unordered_map<std::string,int>& idx,
     }
 }
 
-// ---------- Three-tuple parser for Hayward contamination columns ----------
+// ---------- Three-tuple parser for Hayward Frad column ----------
 // Format: "(value, stat_err, syst_err)" - we extract value and stat_err
 
-struct ContamValue {
+struct FradValue {
     double value    = 0.0;
     double stat_err = 0.0;
     bool   valid    = false;
 };
 
-static ContamValue parse_contam_triplet(const std::string& s) {
-    ContamValue cv;
-    if (s.empty()) return cv;
+static FradValue parse_frad_triplet(const std::string& s) {
+    FradValue fv;
+    if (s.empty()) return fv;
 
-    // Find opening and closing parentheses
     size_t p0 = s.find('(');
     size_t p1 = s.find(')');
     if (p0 == std::string::npos || p1 == std::string::npos || p1 <= p0) {
-        return cv;
+        return fv;
     }
 
-    // Extract content between parentheses
     std::string inner = s.substr(p0 + 1, p1 - p0 - 1);
 
-    // Split by comma
     std::vector<std::string> parts;
     std::string cur;
     for (char c : inner) {
@@ -214,15 +207,15 @@ static ContamValue parse_contam_triplet(const std::string& s) {
     parts.push_back(trim(cur));
 
     if (parts.size() >= 2) {
-        cv.value    = ToDouble(parts[0]);
-        cv.stat_err = ToDouble(parts[1]);
-        cv.valid    = true;
+        fv.value    = ToDouble(parts[0]);
+        fv.stat_err = ToDouble(parts[1]);
+        fv.valid    = true;
     }
 
-    return cv;
+    return fv;
 }
 
-// ---------- Lee CSV column aliases and detection ----------
+// ---------- Lee CSV column detection ----------
 
 struct LeeCsvCols {
     int c_bin;
@@ -269,7 +262,6 @@ static LeeCsvCols detect_lee_columns(const std::vector<std::string>& header) {
     if (cols.c_bin < 0) {
         std::string h0 = trim(header[0]);
         if (h0.empty()) {
-            // Lee pass-1: first column is bin index, header cell is blank
             cols.c_bin = 0;
         } else {
             std::ostringstream oss;
@@ -287,7 +279,7 @@ static LeeCsvCols detect_lee_columns(const std::vector<std::string>& header) {
     cols.c_q2_max  = find_col_alias(header, { "Q2max", "q2max", "Q2_max", "q2_max" });
     cols.c_phi_avg = find_col_alias(header, { "phiavg", "phi_avg", "phi_average" });
 
-    // 3) |t| min and max: accept both naming conventions
+    // 3) |t| min and max
     cols.c_t_min = find_col_alias(header, { "t_abs_min", "tmin", "t_min" });
     cols.c_t_max = find_col_alias(header, { "t_abs_max", "tmax", "t_max" });
 
@@ -321,30 +313,25 @@ static LeeCsvCols detect_lee_columns(const std::vector<std::string>& header) {
 
 // ---------- bin / axis structs ----------
 
-// Axis sets derived from xB/Q2/t ranges
 struct AxisSets {
     std::vector<std::pair<double,double>> xB;
     std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix;
     std::map<int, std::vector<std::pair<double,double>>> t_by_ix;
 };
 
-// Row struct combining bin definition and both analyses' contamination values
 struct BinRow {
-    int    bin_index = 0;
-    double xBmin     = 0.0;
-    double xBmax     = 0.0;
-    double Q2min     = 0.0;
-    double Q2max     = 0.0;
-    double tmin      = 0.0;
-    double tmax      = 0.0;
-    double phiavg    = 0.0;
+    int    bin_index   = 0;
+    double xBmin       = 0.0;
+    double xBmax       = 0.0;
+    double Q2min       = 0.0;
+    double Q2max       = 0.0;
+    double tmin        = 0.0;
+    double tmax        = 0.0;
+    double phiavg      = 0.0;
 
-    double lee_inb     = 0.0;  // Lee Fa18 Inb contamination
-    double lee_out     = 0.0;  // Lee Fa18 Out contamination
-    double my_inb      = 0.0;  // Hayward Fa18 Inb contamination value
-    double my_inb_err  = 0.0;  // Hayward Fa18 Inb contamination stat error
-    double my_out      = 0.0;  // Hayward Fa18 Out contamination value
-    double my_out_err  = 0.0;  // Hayward Fa18 Out contamination stat error
+    double lee_frad    = 0.0;  // Lee Frad (single value, no error)
+    double my_frad     = 0.0;  // Hayward Frad, 10.6 GeV (value)
+    double my_frad_err = 0.0;  // Hayward Frad stat error
 };
 
 static AxisSets build_axes_from_rows(const std::vector<BinRow>& rows) {
@@ -379,7 +366,7 @@ static inline int find_index(const std::pair<double,double>& r,
     return -1;
 }
 
-// Per-panel data: vectors of (phi, value, error) for each (ix, iQ, it)
+// Per-panel data
 struct PanelData {
     std::vector<double> phi;
     std::vector<double> val;
@@ -388,10 +375,8 @@ struct PanelData {
 
 struct PerPanel {
     // key = (ix, iQ, it)
-    std::map<std::tuple<int,int,int>, PanelData> lee_inb;
-    std::map<std::tuple<int,int,int>, PanelData> lee_out;
-    std::map<std::tuple<int,int,int>, PanelData> my_inb;
-    std::map<std::tuple<int,int,int>, PanelData> my_out;
+    std::map<std::tuple<int,int,int>, PanelData> lee;
+    std::map<std::tuple<int,int,int>, PanelData> hayward;
 };
 
 static PerPanel map_to_panels(const std::vector<BinRow>& rows,
@@ -413,27 +398,17 @@ static PerPanel map_to_panels(const std::vector<BinRow>& rows,
         auto key = std::make_tuple(ix, iQ, it);
 
         // Lee data (no error bars)
-        if (r.lee_inb > 0.0) {
-            pp.lee_inb[key].phi.push_back(r.phiavg);
-            pp.lee_inb[key].val.push_back(r.lee_inb);
-            pp.lee_inb[key].err.push_back(0.0);
-        }
-        if (r.lee_out > 0.0) {
-            pp.lee_out[key].phi.push_back(r.phiavg);
-            pp.lee_out[key].val.push_back(r.lee_out);
-            pp.lee_out[key].err.push_back(0.0);
+        if (r.lee_frad > 0.0) {
+            pp.lee[key].phi.push_back(r.phiavg);
+            pp.lee[key].val.push_back(r.lee_frad);
+            pp.lee[key].err.push_back(0.0);
         }
 
         // Hayward data (with error bars)
-        if (r.my_inb > 0.0) {
-            pp.my_inb[key].phi.push_back(r.phiavg);
-            pp.my_inb[key].val.push_back(r.my_inb);
-            pp.my_inb[key].err.push_back(r.my_inb_err);
-        }
-        if (r.my_out > 0.0) {
-            pp.my_out[key].phi.push_back(r.phiavg);
-            pp.my_out[key].val.push_back(r.my_out);
-            pp.my_out[key].err.push_back(r.my_out_err);
+        if (r.my_frad > 0.0) {
+            pp.hayward[key].phi.push_back(r.phiavg);
+            pp.hayward[key].val.push_back(r.my_frad);
+            pp.hayward[key].err.push_back(r.my_frad_err);
         }
     }
 
@@ -459,10 +434,8 @@ static PerPanel map_to_panels(const std::vector<BinRow>& rows,
         pd.err = std::move(err2);
     };
 
-    for (auto& kv : pp.lee_inb) sort_panel(kv.second);
-    for (auto& kv : pp.lee_out) sort_panel(kv.second);
-    for (auto& kv : pp.my_inb)  sort_panel(kv.second);
-    for (auto& kv : pp.my_out)  sort_panel(kv.second);
+    for (auto& kv : pp.lee)     sort_panel(kv.second);
+    for (auto& kv : pp.hayward) sort_panel(kv.second);
 
     return pp;
 }
@@ -483,7 +456,7 @@ static void draw_degree_ticks_here(double labelSize) {
     degreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
 }
 
-// Markers + error bars only (no connecting line)
+// Markers + error bars
 static TGraphErrors* graph_pe1(const std::vector<double>& X,
                                const std::vector<double>& Y,
                                const std::vector<double>& EY,
@@ -594,12 +567,14 @@ static void draw_one_canvas(const std::string& title,
             PanelData hayward, lee;
             fetchBoth(ccol, r, hayward, lee);
 
-            // Fixed y-axis: 0 to 1 for contamination, 0 to 2 for ratio
-            double panel_ymax = draw_ratio_only ? 2.0 : 1.0;
+            // Fixed y-axis range
+            // Frad is typically close to 1, so use 0.8 to 1.2 for values, 0.8 to 1.2 for ratio
+            double ymin = draw_ratio_only ? 0.8 : 0.8;
+            double ymax = draw_ratio_only ? 1.2 : 1.2;
 
-            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, panel_ymax);
+            TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
             frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle(draw_ratio_only ? "Hayward / Lee" : "#pi^{0} contamination");
+            frame->GetYaxis()->SetTitle(draw_ratio_only ? "Hayward / Lee" : "F_{rad}");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
@@ -658,8 +633,8 @@ static void draw_one_canvas(const std::string& title,
                 one->Draw("SAME");
             } else {
                 // Plot both series
-                graph_pe1(hayward.phi, hayward.val, hayward.err, 20, black);   // Hayward (pass-2)
-                graph_pe1(lee.phi, lee.val, lee.err, 24, orange);              // Lee (pass-1)
+                graph_pe1(hayward.phi, hayward.val, hayward.err, 20, black);  // Hayward with errors
+                graph_pe1(lee.phi, lee.val, lee.err, 24, orange);             // Lee (errors are 0)
             }
         }
     }
@@ -670,7 +645,7 @@ static void draw_one_canvas(const std::string& title,
     delete c;
 }
 
-// ---------- CSV loaders for Lee and Hayward ----------
+// ---------- CSV loaders ----------
 
 static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
                                          std::unordered_map<int,size_t>& bin_to_index) {
@@ -685,17 +660,12 @@ static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
     }
     std::vector<std::string> header = split_csv_line(header_line);
 
-    // Detect bin / kinematic columns
     LeeCsvCols cols_lee = detect_lee_columns(header);
-
-    // Build header index for named columns
     auto H = build_header_index(header);
 
-    // Required columns
     const std::vector<std::string> required = {
         "valid bin",
-        "contamination ratio, inbending",
-        "contamination ratio, outbending"
+        "Frad"
     };
     require_columns(H, required, "Lee CSV");
 
@@ -721,23 +691,18 @@ static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
         }
 
         BinRow r;
-        r.bin_index = ToInt(cols[cols_lee.c_bin]);
-        r.xBmin     = ToDouble(cols[cols_lee.c_xb_min]);
-        r.xBmax     = ToDouble(cols[cols_lee.c_xb_max]);
-        r.Q2min     = ToDouble(cols[cols_lee.c_q2_min]);
-        r.Q2max     = ToDouble(cols[cols_lee.c_q2_max]);
-        r.tmin      = ToDouble(cols[cols_lee.c_t_min]);
-        r.tmax      = ToDouble(cols[cols_lee.c_t_max]);
-        r.phiavg    = ToDouble(cols[cols_lee.c_phi_avg]);
+        r.bin_index   = ToInt(cols[cols_lee.c_bin]);
+        r.xBmin       = ToDouble(cols[cols_lee.c_xb_min]);
+        r.xBmax       = ToDouble(cols[cols_lee.c_xb_max]);
+        r.Q2min       = ToDouble(cols[cols_lee.c_q2_min]);
+        r.Q2max       = ToDouble(cols[cols_lee.c_q2_max]);
+        r.tmin        = ToDouble(cols[cols_lee.c_t_min]);
+        r.tmax        = ToDouble(cols[cols_lee.c_t_max]);
+        r.phiavg      = ToDouble(cols[cols_lee.c_phi_avg]);
 
-        r.lee_inb = ToDouble(get_col_ref(cols, H, "contamination ratio, inbending"));
-        r.lee_out = ToDouble(get_col_ref(cols, H, "contamination ratio, outbending"));
-
-        // Hayward values will be filled later
-        r.my_inb     = 0.0;
-        r.my_inb_err = 0.0;
-        r.my_out     = 0.0;
-        r.my_out_err = 0.0;
+        r.lee_frad    = ToDouble(get_col_ref(cols, H, "Frad"));
+        r.my_frad     = 0.0;
+        r.my_frad_err = 0.0;
 
         if (bin_to_index.find(r.bin_index) != bin_to_index.end()) {
             fatal("Duplicate bin index in Lee CSV: " + std::to_string(r.bin_index));
@@ -753,9 +718,9 @@ static std::vector<BinRow> load_lee_rows(const std::string& lee_csv_path,
     return rows;
 }
 
-static void fill_hayward_counts(const std::string& hayward_csv_path,
-                                const std::unordered_map<int,size_t>& bin_to_index,
-                                std::vector<BinRow>& rows) {
+static void fill_hayward_frad(const std::string& hayward_csv_path,
+                              const std::unordered_map<int,size_t>& bin_to_index,
+                              std::vector<BinRow>& rows) {
     std::ifstream fin(hayward_csv_path);
     if (!fin.is_open()) {
         fatal("Cannot open Hayward CSV: " + hayward_csv_path);
@@ -771,8 +736,7 @@ static void fill_hayward_counts(const std::string& hayward_csv_path,
     const std::vector<std::string> required = {
         "bin index",
         "valid bin",
-        "contamination ratio, Fa18 Inb",
-        "contamination ratio, Fa18 Out"
+        "Frad, 10.6 GeV"
     };
     require_columns(H, required, "Hayward CSV");
 
@@ -792,22 +756,15 @@ static void fill_hayward_counts(const std::string& hayward_csv_path,
         int bin_index = ToInt(get_col_ref(cols, H, "bin index"));
         auto it = bin_to_index.find(bin_index);
         if (it == bin_to_index.end()) {
-            // Bin not in Lee CSV - skip silently (could be a new bin in pass-2)
             continue;
         }
 
-        // Parse the three-tuple contamination values
-        ContamValue cv_inb = parse_contam_triplet(get_col_ref(cols, H, "contamination ratio, Fa18 Inb"));
-        ContamValue cv_out = parse_contam_triplet(get_col_ref(cols, H, "contamination ratio, Fa18 Out"));
+        FradValue fv = parse_frad_triplet(get_col_ref(cols, H, "Frad, 10.6 GeV"));
 
         BinRow& r = rows[it->second];
-        if (cv_inb.valid) {
-            r.my_inb     = cv_inb.value;
-            r.my_inb_err = cv_inb.stat_err;
-        }
-        if (cv_out.valid) {
-            r.my_out     = cv_out.value;
-            r.my_out_err = cv_out.stat_err;
+        if (fv.valid) {
+            r.my_frad     = fv.value;
+            r.my_frad_err = fv.stat_err;
         }
         ++matched;
     }
@@ -818,9 +775,9 @@ static void fill_hayward_counts(const std::string& hayward_csv_path,
 
 // ---------- driver ----------
 
-void plot_pi0_contam_cross_checks(const std::string& lee_csv_path,
-                                  const std::string& hayward_csv_path,
-                                  const std::string& output_base_dir) {
+void plot_rad_correction_cross_checks(const std::string& lee_csv_path,
+                                      const std::string& hayward_csv_path,
+                                      const std::string& output_base_dir) {
     fs::create_directories(output_base_dir);
 
     gStyle->SetOptTitle(0);
@@ -833,12 +790,12 @@ void plot_pi0_contam_cross_checks(const std::string& lee_csv_path,
     gStyle->SetLabelFont(42, "XYZ");
     gStyle->SetTextFont(42);
 
-    // 1) Load Lee CSV and build BinRow list + bin-index map
+    // 1) Load Lee CSV
     std::unordered_map<int,size_t> bin_to_index;
     auto rows = load_lee_rows(lee_csv_path, bin_to_index);
 
-    // 2) Load Hayward CSV and fill contamination values for matching bins
-    fill_hayward_counts(hayward_csv_path, bin_to_index, rows);
+    // 2) Load Hayward CSV
+    fill_hayward_frad(hayward_csv_path, bin_to_index, rows);
 
     // 3) Build axis sets and per-panel maps
     AxisSets ax = build_axes_from_rows(rows);
@@ -846,23 +803,21 @@ void plot_pi0_contam_cross_checks(const std::string& lee_csv_path,
 
     info("Axis xB bins: " + std::to_string(ax.xB.size()));
 
-    auto make_fetchBoth = [&](const std::map<std::tuple<int,int,int>, PanelData>& ours,
-                              const std::map<std::tuple<int,int,int>, PanelData>& lee_side,
-                              int ix) {
+    auto make_fetchBoth = [&](int ix) {
         return [&, ix](int iQcol, int irow,
                        PanelData& hayward,
                        PanelData& lee) {
             auto key = std::make_tuple(ix, iQcol, irow);
 
-            auto itH = ours.find(key);
-            if (itH != ours.end()) {
+            auto itH = pp.hayward.find(key);
+            if (itH != pp.hayward.end()) {
                 hayward = itH->second;
             } else {
                 hayward = PanelData();
             }
 
-            auto itL = lee_side.find(key);
-            if (itL != lee_side.end()) {
+            auto itL = pp.lee.find(key);
+            if (itL != pp.lee.end()) {
                 lee = itL->second;
             } else {
                 lee = PanelData();
@@ -878,46 +833,22 @@ void plot_pi0_contam_cross_checks(const std::string& lee_csv_path,
         const double xb_lo = ax.xB[ix].first;
         const double xb_hi = ax.xB[ix].second;
 
-        // Fa18 Inb
-        {
-            const std::string title_counts =
-                Form("#pi^{0} contamination: Fa18 Inb   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
-            const std::string title_ratio  =
-                Form("#pi^{0} contamination ratio (Hayward/Lee): Fa18 Inb   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
+        const std::string title_counts =
+            Form("Radiative correction F_{rad}: 10.6 GeV   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
+        const std::string title_ratio  =
+            Form("F_{rad} ratio (Hayward/Lee): 10.6 GeV   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
 
-            auto fetchBoth_inb = make_fetchBoth(pp.my_inb, pp.lee_inb, ix);
+        auto fetchBoth = make_fetchBoth(ix);
 
-            const std::string f_counts =
-                (fs::path(output_base_dir) / Form("pi0_contam_counts_fa18_inb_xB_%d.png", ix)).string();
-            const std::string f_ratio  =
-                (fs::path(output_base_dir) / Form("pi0_contam_ratio_fa18_inb_xB_%d.png",  ix)).string();
+        const std::string f_counts =
+            (fs::path(output_base_dir) / Form("frad_counts_xB_%d.png", ix)).string();
+        const std::string f_ratio  =
+            (fs::path(output_base_dir) / Form("frad_ratio_xB_%d.png",  ix)).string();
 
-            draw_one_canvas(title_counts, Q2s, Ts, fetchBoth_inb, f_counts, /*draw_ratio_only=*/false);
-            draw_one_canvas(title_ratio,  Q2s, Ts, fetchBoth_inb, f_ratio,   /*draw_ratio_only=*/true);
+        draw_one_canvas(title_counts, Q2s, Ts, fetchBoth, f_counts, /*draw_ratio_only=*/false);
+        draw_one_canvas(title_ratio,  Q2s, Ts, fetchBoth, f_ratio,   /*draw_ratio_only=*/true);
 
-            info("Saved: " + f_counts);
-            info("Saved: " + f_ratio);
-        }
-
-        // Fa18 Out
-        {
-            const std::string title_counts =
-                Form("#pi^{0} contamination: Fa18 Out   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
-            const std::string title_ratio  =
-                Form("#pi^{0} contamination ratio (Hayward/Lee): Fa18 Out   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
-
-            auto fetchBoth_out = make_fetchBoth(pp.my_out, pp.lee_out, ix);
-
-            const std::string f_counts =
-                (fs::path(output_base_dir) / Form("pi0_contam_counts_fa18_out_xB_%d.png", ix)).string();
-            const std::string f_ratio  =
-                (fs::path(output_base_dir) / Form("pi0_contam_ratio_fa18_out_xB_%d.png",  ix)).string();
-
-            draw_one_canvas(title_counts, Q2s, Ts, fetchBoth_out, f_counts, /*draw_ratio_only=*/false);
-            draw_one_canvas(title_ratio,  Q2s, Ts, fetchBoth_out, f_ratio,   /*draw_ratio_only=*/true);
-
-            info("Saved: " + f_counts);
-            info("Saved: " + f_ratio);
-        }
+        info("Saved: " + f_counts);
+        info("Saved: " + f_ratio);
     }
 }
