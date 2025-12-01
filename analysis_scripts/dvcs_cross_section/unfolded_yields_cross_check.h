@@ -3,13 +3,8 @@
 
 #include <string>
 
-// Compare Lee/pass-1 acceptance-corrected yields to
-// Hayward/pass-2 unfolded (acceptance-corrected) yields and
-// make a ROOT plot.
-//
-// - lee_csv     : Lee/pass-1 CSV (e.g. imports/all_bin_v3.csv)
-// - hayward_csv : Hayward/pass-2 CSV (dvcs_pass2_analysis.csv)
-// - out_dir     : output directory for plots (e.g. output/cross_check/lee/unfolding)
+// Compare unfolded acceptance-corrected yields between Lee/pass-1 CSV
+// and Hayward/pass-2 CSV (Fa18, unpolarized). Produces a single 1D plot.
 void plot_unfolded_yields_cross_checks(const std::string &lee_csv,
                                        const std::string &hayward_csv,
                                        const std::string &out_dir);

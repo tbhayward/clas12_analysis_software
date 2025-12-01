@@ -1,379 +1,322 @@
-// unfolded_yields_cross_check.cpp
-// ------------------------------------------------------------
-// Cross-check of unfolded (acceptance-corrected) yields:
-//
-//   Lee/pass-1 CSV column:
-//     "acceptance corrected yield, ep->epg, exp"
-//
-//   Hayward/pass-2 CSV column (Fa18, unpolarized):
-//     "acceptance corrected yield, ep->epg, exp, Fa18, unpol"
-//
-// The Hayward/pass-2 column is a three-tuple "(value, stat, sys)".
-// We plot the central value with the stat error as TGraphErrors.
-//
-// Rows are compared by row index (imported binning identical).
-// Output: one ROOT canvas saved to out_dir, plus console diagnostics.
-// ------------------------------------------------------------
-
 #include "unfolded_yields_cross_check.h"
 
-#include "load_csv.h"  // your existing CSV helper
+#include "load_csv.h"  // CsvTable + load_csv
 
 #include <TCanvas.h>
+#include <TError.h>
 #include <TGraphErrors.h>
 #include <TLegend.h>
-#include <TLatex.h>
-#include <TStyle.h>
 #include <TAxis.h>
+#include <TROOT.h>
+#include <TStyle.h>
+#include <TLatex.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
-#include <filesystem>
-#include <iomanip>
+#include <cstdlib>
 #include <iostream>
-#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
-namespace fs = std::filesystem;
+// -------------------------
+// Local helpers
+// -------------------------
 
-// We assume load_csv.h provides a structure like:
-//
-//   struct CsvTable {
-//       std::vector<std::string> header;
-//       std::vector< std::vector<std::string> > rows;
-//   };
-//
-//   bool load_csv(const std::string &path, CsvTable &out);
-//
-// which is what the other *_cross_check modules use.
-
-// ---------------------- helpers -----------------------------
-
-static std::string trim(const std::string &s) {
-    std::size_t first = 0;
-    while (first < s.size() && std::isspace(static_cast<unsigned char>(s[first]))) {
-        ++first;
-    }
-    if (first == s.size()) {
-        return std::string();
-    }
-    std::size_t last = s.size() - 1;
-    while (last > first && std::isspace(static_cast<unsigned char>(s[last]))) {
-        --last;
-    }
-    return s.substr(first, last - first + 1);
-}
-
-static int find_column_index(const std::vector<std::string> &header,
-                             const std::string &name) {
-    for (std::size_t i = 0; i < header.size(); ++i) {
-        if (header[i] == name) {
+// Find a column index by exact header match; throw if not found
+static int find_column_index(const CsvTable &table, const std::string &name) {
+    for (std::size_t i = 0; i < table.header.size(); ++i) {
+        if (table.header[i] == name) {
             return static_cast<int>(i);
         }
     }
-
-    std::cerr << "[lee] FATAL (unfold): column not found: \"" << name << "\"\n";
-    std::cerr << "[lee]   Available columns:\n";
-    for (std::size_t i = 0; i < header.size(); ++i) {
-        std::cerr << "    [" << i << "] \"" << header[i] << "\"\n";
+    std::cerr << "[unfolded_yields] ERROR: column \"" << name
+              << "\" not found in CSV header.\n";
+    std::cerr << "[unfolded_yields] Header columns:\n";
+    for (std::size_t i = 0; i < table.header.size(); ++i) {
+        std::cerr << "  [" << i << "] " << table.header[i] << "\n";
     }
-    return -1;
+    throw std::runtime_error("Required column not found: " + name);
 }
 
-// Parse a triple "(val, stat, sys)" or "val,stat,sys".
-// On success, fills val/stat/sys and returns true.
-// If parsing fails, returns false and leaves outputs unchanged.
-static bool parse_triple_value_stat_sys(const std::string &cell,
-                                        double &val,
-                                        double &stat,
-                                        double &sys) {
-    std::string t = cell;
-    // Strip whitespace
-    t.erase(std::remove_if(t.begin(), t.end(),
-                           [](unsigned char c){ return std::isspace(c); }),
-            t.end());
+// Trim whitespace from both ends (simple)
+static std::string trim(const std::string &s) {
+    std::size_t i0 = 0;
+    while (i0 < s.size() && std::isspace(static_cast<unsigned char>(s[i0]))) {
+        ++i0;
+    }
+    std::size_t i1 = s.size();
+    while (i1 > i0 && std::isspace(static_cast<unsigned char>(s[i1 - 1]))) {
+        --i1;
+    }
+    return s.substr(i0, i1 - i0);
+}
 
-    if (t.empty()) {
+// Simple comma split (no quotes handling needed for our tuple)
+static std::vector<std::string> split_commas(const std::string &s) {
+    std::vector<std::string> out;
+    std::string current;
+    for (char c : s) {
+        if (c == ',') {
+            out.push_back(trim(current));
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty()) {
+        out.push_back(trim(current));
+    }
+    return out;
+}
+
+struct Triple {
+    double val;
+    double stat;
+    double sys;
+};
+
+// Parse a "(val, stat, sys)"-style triple; tolerate missing sys, extra spaces, etc.
+// Returns true on success, false on failure.
+static bool parse_triple(const std::string &raw, Triple &out) {
+    std::string s = trim(raw);
+    if (s.empty()) {
         return false;
     }
 
-    // Strip surrounding parentheses if present
-    if (!t.empty() && t.front() == '(') {
-        t.erase(t.begin());
-    }
-    if (!t.empty() && t.back() == ')') {
-        t.pop_back();
+    // Strip leading/trailing parentheses if present
+    if (!s.empty() && s.front() == '(' && s.back() == ')') {
+        s = s.substr(1, s.size() - 2);
+        s = trim(s);
     }
 
-    std::vector<double> parts;
-    std::stringstream ss(t);
-    std::string token;
-    while (std::getline(ss, token, ',')) {
-        if (token.empty()) {
-            continue;
-        }
-        try {
-            parts.push_back(std::stod(token));
-        } catch (const std::exception &) {
-            return false;
-        }
-    }
-
-    if (parts.size() < 2) {
-        // Need at least value + stat
+    if (s.empty()) {
         return false;
     }
 
-    val  = parts[0];
-    stat = parts[1];
-    sys  = (parts.size() > 2) ? parts[2] : 0.0;
+    std::vector<std::string> parts = split_commas(s);
+    if (parts.empty()) {
+        return false;
+    }
+
+    try {
+        out.val = std::stod(parts[0]);
+        out.stat = 0.0;
+        out.sys  = 0.0;
+
+        if (parts.size() >= 2) {
+            out.stat = std::stod(parts[1]);
+        }
+        if (parts.size() >= 3) {
+            out.sys = std::stod(parts[2]);
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "[unfolded_yields] WARNING: failed to parse triple from \""
+                  << raw << "\" (" << e.what() << ")\n";
+        return false;
+    }
+
     return true;
 }
 
-// Parse a "single" value (Lee column):
-// - If it's already numeric, just stod.
-// - If it's in triple form, take the first component.
-static bool parse_single_or_first_component(const std::string &cell,
-                                            double &val_out) {
-    std::string t = trim(cell);
-    if (t.empty()) {
-        val_out = 0.0;
-        return true;
+// Parse a simple scalar double. Return true on success, false on failure.
+static bool parse_double(const std::string &raw, double &val) {
+    std::string s = trim(raw);
+    if (s.empty()) {
+        return false;
     }
-
-    // Try direct stod first
     try {
-        val_out = std::stod(t);
-        return true;
-    } catch (const std::exception &) {
-        // Fall back to triple parsing and use first component
-        double v = 0.0;
-        double s = 0.0;
-        double y = 0.0;
-        if (parse_triple_value_stat_sys(t, v, s, y)) {
-            val_out = v;
-            return true;
-        }
+        val = std::stod(s);
+    } catch (const std::exception &e) {
+        std::cerr << "[unfolded_yields] WARNING: failed to parse double from \""
+                  << raw << "\" (" << e.what() << ")\n";
+        return false;
     }
-
-    return false;
+    return true;
 }
 
-// ---------------------- main API ----------------------------
+// -------------------------
+// Main cross-check function
+// -------------------------
 
 void plot_unfolded_yields_cross_checks(const std::string &lee_csv,
                                        const std::string &hayward_csv,
                                        const std::string &out_dir) {
-    std::cout << "[lee] unfolded-yields cross-check starting...\n";
-    std::cout << "[lee]   Lee CSV     : " << lee_csv     << "\n";
-    std::cout << "[lee]   Hayward CSV : " << hayward_csv << "\n";
-
-    // Make sure the output directory exists
-    try {
-        fs::create_directories(out_dir);
-    } catch (const std::exception &e) {
-        std::cerr << "[lee] WARNING (unfold): failed to create output dir "
-                  << out_dir << " : " << e.what() << "\n";
-    }
+    std::cout << "[unfolded_yields] Loading CSVs...\n";
 
     CsvTable lee;
     CsvTable hay;
 
     if (!load_csv(lee_csv, lee)) {
-        std::cerr << "[lee] ERROR (unfold): failed to load Lee CSV.\n";
+        std::cerr << "[unfolded_yields] ERROR: failed to load Lee CSV from "
+                  << lee_csv << "\n";
         return;
     }
     if (!load_csv(hayward_csv, hay)) {
-        std::cerr << "[lee] ERROR (unfold): failed to load Hayward CSV.\n";
+        std::cerr << "[unfolded_yields] ERROR: failed to load Hayward CSV from "
+                  << hayward_csv << "\n";
+        return;
+    }
+
+    // Required columns
+    const std::string col_lee =
+        "acceptance corrected yield, ep->epg, exp";
+    const std::string col_hay =
+        "acceptance corrected yield, ep->epg, exp, Fa18, unpol";
+
+    int idx_lee = -1;
+    int idx_hay = -1;
+
+    try {
+        idx_lee = find_column_index(lee, col_lee);
+        idx_hay = find_column_index(hay, col_hay);
+    } catch (const std::exception &ex) {
+        std::cerr << "[unfolded_yields] FATAL: " << ex.what() << "\n";
         return;
     }
 
     const std::size_t n_rows_lee = lee.rows.size();
     const std::size_t n_rows_hay = hay.rows.size();
+    const std::size_t n_rows     = std::min(n_rows_lee, n_rows_hay);
 
-    if (n_rows_lee == 0 || n_rows_hay == 0) {
-        std::cerr << "[lee] FATAL (unfold): one CSV has zero rows.\n";
-        std::cerr << "[lee]   Lee rows     : " << n_rows_lee << "\n";
-        std::cerr << "[lee]   Hayward rows : " << n_rows_hay << "\n";
-        return;
-    }
-
-    const std::size_t n_rows = std::min(n_rows_lee, n_rows_hay);
-    if (n_rows_lee != n_rows_hay) {
-        std::cerr << "[lee] WARNING (unfold): row counts differ (Lee="
-                  << n_rows_lee << ", Hayward=" << n_rows_hay
-                  << "). Using " << n_rows << " rows.\n";
-    }
-
-    const std::string lee_col_name   = "acceptance corrected yield, ep->epg, exp";
-    const std::string hay_col_name   = "acceptance corrected yield, ep->epg, exp, Fa18, unpol";
-
-    const int idx_lee = find_column_index(lee.header, lee_col_name);
-    if (idx_lee < 0) {
-        std::cerr << "[lee] ERROR (unfold): required Lee column missing.\n";
-        return;
-    }
-
-    const int idx_hay = find_column_index(hay.header, hay_col_name);
-    if (idx_hay < 0) {
-        std::cerr << "[lee] ERROR (unfold): required Hayward column missing.\n";
-        return;
-    }
+    std::cout << "[unfolded_yields] rows(Lee) = " << n_rows_lee
+              << ", rows(Hayward) = " << n_rows_hay
+              << ", using n_rows = " << n_rows << "\n";
 
     std::vector<double> x;
-    std::vector<double> lee_val;
-    std::vector<double> lee_err;  // set to zero
-    std::vector<double> hay_val;
-    std::vector<double> hay_stat; // from tuple
-    std::vector<double> hay_sys;  // unused here, but parsed for completeness
+    std::vector<double> y_lee;
+    std::vector<double> y_hay;
+    std::vector<double> ey_lee;
+    std::vector<double> ey_hay;
 
     x.reserve(n_rows);
-    lee_val.reserve(n_rows);
-    lee_err.reserve(n_rows);
-    hay_val.reserve(n_rows);
-    hay_stat.reserve(n_rows);
-    hay_sys.reserve(n_rows);
-
-    double max_y = 0.0;
-    double max_diff = 0.0;
-    std::size_t max_diff_row = 0;
+    y_lee.reserve(n_rows);
+    y_hay.reserve(n_rows);
+    ey_lee.reserve(n_rows);
+    ey_hay.reserve(n_rows);
 
     for (std::size_t i = 0; i < n_rows; ++i) {
         const auto &row_lee = lee.rows[i];
         const auto &row_hay = hay.rows[i];
 
-        if (idx_lee >= static_cast<int>(row_lee.size()) ||
-            idx_hay >= static_cast<int>(row_hay.size())) {
-            std::cerr << "[lee] WARNING (unfold): row " << (i + 1)
-                      << " has insufficient columns; skipping.\n";
+        if (row_lee.size() <= static_cast<std::size_t>(idx_lee) ||
+            row_hay.size() <= static_cast<std::size_t>(idx_hay)) {
             continue;
         }
 
-        const std::string &cell_lee = row_lee[idx_lee];
-        const std::string &cell_hay = row_hay[idx_hay];
+        const std::string &s_lee = row_lee[idx_lee];
+        const std::string &s_hay = row_hay[idx_hay];
 
-        double v_lee = 0.0;
-        if (!parse_single_or_first_component(cell_lee, v_lee)) {
-            std::cerr << "[lee] WARNING (unfold): non-numeric Lee cell at row "
-                      << (i + 1) << " : \"" << cell_lee << "\"; treating as 0.\n";
-            v_lee = 0.0;
+        double lee_val = 0.0;
+        if (!parse_double(s_lee, lee_val)) {
+            continue;  // skip if Lee value is missing/unparseable
         }
 
-        double v_hay = 0.0;
-        double e_stat = 0.0;
-        double e_sys  = 0.0;
-        if (!parse_triple_value_stat_sys(cell_hay, v_hay, e_stat, e_sys)) {
-            // Fallback: try to parse as single numeric
-            if (!parse_single_or_first_component(cell_hay, v_hay)) {
-                std::cerr << "[lee] WARNING (unfold): non-numeric Hayward cell at row "
-                          << (i + 1) << " : \"" << cell_hay << "\"; treating as 0.\n";
-                v_hay   = 0.0;
-                e_stat  = 0.0;
-                e_sys   = 0.0;
-            } else {
-                e_stat = 0.0;
-                e_sys  = 0.0;
-            }
+        Triple hay_triple;
+        if (!parse_triple(s_hay, hay_triple)) {
+            continue;  // skip if Hayward triple is missing/unparseable
         }
 
-        const double diff = v_hay - v_lee;
-        if (std::fabs(diff) > max_diff) {
-            max_diff = std::fabs(diff);
-            max_diff_row = i + 1; // 1-based
-        }
+        // Row index as x-value (1-based to match human row numbering)
+        double xval = static_cast<double>(i + 1);
 
-        max_y = std::max(max_y, std::max(v_lee, v_hay));
+        x.push_back(xval);
+        y_lee.push_back(lee_val);
+        y_hay.push_back(hay_triple.val);
 
-        x.push_back(static_cast<double>(i + 1)); // bin index on x-axis
-        lee_val.push_back(v_lee);
-        lee_err.push_back(0.0);   // we don't have Lee stat errors here
-        hay_val.push_back(v_hay);
-        hay_stat.push_back(e_stat); // this is what you asked to plot
-        hay_sys.push_back(e_sys);
+        // Lee CSV doesn't encode uncertainties for this column, so set 0
+        ey_lee.push_back(0.0);
+
+        // Pass-2: use the statistical component as requested
+        ey_hay.push_back(hay_triple.stat);
     }
 
-    const int n_points = static_cast<int>(x.size());
-    if (n_points <= 0) {
-        std::cerr << "[lee] FATAL (unfold): no valid rows to plot.\n";
+    if (x.empty()) {
+        std::cerr << "[unfolded_yields] WARNING: no valid points to plot.\n";
         return;
     }
 
-    std::cout << "[lee] unfolded-yields rows used: " << n_points << "\n";
-    std::cout << "[lee] max |Hayward - Lee| = " << max_diff
-              << " at row " << max_diff_row << "\n";
-
-    // ----------------- Build TGraphErrors --------------------
-
-    TGraphErrors *g_lee = new TGraphErrors(n_points);
-    TGraphErrors *g_hay = new TGraphErrors(n_points);
-
-    for (int i = 0; i < n_points; ++i) {
-        g_lee->SetPoint(i, x[i], lee_val[i]);
-        g_lee->SetPointError(i, 0.0, lee_err[i]);
-
-        g_hay->SetPoint(i, x[i], hay_val[i]);
-        g_hay->SetPointError(i, 0.0, hay_stat[i]);
-    }
-
-    g_lee->SetMarkerStyle(20);
-    g_lee->SetMarkerSize(0.9);
-    g_lee->SetMarkerColor(kBlue + 1);
-    g_lee->SetLineColor(kBlue + 1);
-
-    g_hay->SetMarkerStyle(24);
-    g_hay->SetMarkerSize(0.9);
-    g_hay->SetMarkerColor(kRed + 1);
-    g_hay->SetLineColor(kRed + 1);
-
-    // ----------------- Canvas and aesthetics -----------------
-
+    // -------------------------
+    // ROOT plotting
+    // -------------------------
+    gErrorIgnoreLevel = kWarning;
     gStyle->SetOptStat(0);
 
     TCanvas *c = new TCanvas("c_unfolded_yields",
                              "Unfolded acceptance-corrected yields cross-check",
-                             1200, 800);
-
+                             900, 700);
     c->SetGrid();
 
+    const int n_points = static_cast<int>(x.size());
+
+    TGraphErrors *g_lee = new TGraphErrors(
+        n_points,
+        x.data(), y_lee.data(),
+        nullptr,  // x-errors = 0
+        ey_lee.data()
+    );
+
+    TGraphErrors *g_hay = new TGraphErrors(
+        n_points,
+        x.data(), y_hay.data(),
+        nullptr,  // x-errors = 0
+        ey_hay.data()
+    );
+
+    g_lee->SetName("g_lee_unfolded");
+    g_hay->SetName("g_hay_unfolded");
+
+    g_lee->SetMarkerStyle(20);
+    g_lee->SetMarkerSize(0.9);
+    g_lee->SetLineWidth(1);
+
+    g_hay->SetMarkerStyle(24);
+    g_hay->SetMarkerSize(0.9);
+    g_hay->SetLineWidth(1);
+
+    // Draw Hayward first so Lee can overlay if you prefer
+    g_hay->SetTitle("Unfolded acceptance-corrected yields: Lee vs Hayward;Row index;Acceptance-corrected yield");
     g_hay->Draw("AP");
-    g_hay->GetXaxis()->SetTitle("Bin index");
-    g_hay->GetYaxis()->SetTitle("Acceptance-corrected yield");
-
-    g_hay->GetXaxis()->CenterTitle(true);
-    g_hay->GetYaxis()->CenterTitle(true);
-
-    g_hay->GetXaxis()->SetTitleSize(0.05);
-    g_hay->GetYaxis()->SetTitleSize(0.05);
-    g_hay->GetXaxis()->SetLabelSize(0.045);
-    g_hay->GetYaxis()->SetLabelSize(0.045);
-
-    double ymin = 0.0;
-    double ymax = (max_y <= 0.0) ? 1.0 : 1.2 * max_y;
-    g_hay->GetYaxis()->SetRangeUser(ymin, ymax);
-
     g_lee->Draw("P SAME");
 
-    TLegend *leg = new TLegend(0.15, 0.75, 0.55, 0.90);
+    // Legend
+    TLegend *leg = new TLegend(0.15, 0.75, 0.45, 0.90);
     leg->SetBorderSize(0);
     leg->SetFillStyle(0);
-    leg->SetTextSize(0.04);
-    leg->AddEntry(g_lee, "Lee pass-1: acc. corr. yield (exp)", "p");
-    leg->AddEntry(g_hay, "Hayward pass-2: unfolded yield (Fa18, unpol)", "pe");
+    leg->AddEntry(g_lee, "Lee pass-1 (unfolded)", "p");
+    leg->AddEntry(g_hay, "Hayward pass-2 (Fa18, unpol)", "pe");
     leg->Draw();
 
-    TLatex label;
-    label.SetNDC(true);
-    label.SetTextSize(0.045);
-    label.DrawLatex(0.15, 0.93,
-                    "Unfolded acceptance-corrected yields: Lee vs Hayward (Fa18, unpol)");
+    // Optionally annotate that Hayward includes stat uncertainties
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextSize(0.035);
+    latex.DrawLatex(0.15, 0.70,
+        "Pass-2 error bars = stat uncertainty from (value, stat, sys)");
 
-    // ----------------- Save plot -----------------------------
+    // Adjust axis ranges a bit
+    g_hay->GetXaxis()->SetLimits(0.0, static_cast<double>(n_points) + 1.0);
 
-    std::string out_png = (fs::path(out_dir) / "unfolded_yields_fa18_unpol.png").string();
-    c->SaveAs(out_png.c_str());
+    double ymin = std::min(
+        *std::min_element(y_lee.begin(), y_lee.end()),
+        *std::min_element(y_hay.begin(), y_hay.end())
+    );
+    double ymax = std::max(
+        *std::max_element(y_lee.begin(), y_lee.end()),
+        *std::max_element(y_hay.begin(), y_hay.end())
+    );
 
-    std::cout << "[lee] unfolded-yields cross-check plot saved to " << out_png << "\n";
+    // Add a little padding
+    const double dy = (ymax - ymin) * 0.1;
+    g_hay->GetYaxis()->SetRangeUser(ymin - dy, ymax + dy);
 
-    // ROOT will take ownership on exit; explicit delete is optional in this short-lived program.
+    // Save
+    std::string out_file = out_dir + "/unfolded_yields_Fa18Inb.png";
+    c->SaveAs(out_file.c_str());
+
+    std::cout << "[unfolded_yields] Saved plot to " << out_file << "\n";
+
+    // Clean up (ROOT will usually own them, but be explicit)
+    delete c;
 }
