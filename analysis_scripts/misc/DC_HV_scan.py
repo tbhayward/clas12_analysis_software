@@ -96,6 +96,14 @@ def hv_sort_key(path):
 # Reorder files so 9,10,10 is first, fall2018 is last
 file_paths = sorted(file_paths, key=hv_sort_key)
 
+# Common histogram settings for Mx (inclusive) - defined early for diagnostics
+MX_MIN, MX_MAX = 0.95, 1.00
+MX_NBINS = 80
+
+# Universal selection toggles
+REQ_DETECTOR_1 = True
+REQ_PTHETA_LT_40 = True
+
 # -----------------------------
 # Diagnostic Mode
 # -----------------------------
@@ -189,14 +197,6 @@ def gaussian_linear(x, a, mu, sigma, b, c):
     linear   = b + c * x
     return gaussian + linear
 # endif
-
-# Common histogram settings for Mx (inclusive)
-MX_MIN, MX_MAX = 0.95, 1.00
-MX_NBINS = 80
-
-# Universal selection toggles
-REQ_DETECTOR_1 = True
-REQ_PTHETA_LT_40 = True
 
 # -----------------------------
 # PART 1: Kinematics Plots (Combined Data)
