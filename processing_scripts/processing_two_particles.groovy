@@ -87,6 +87,8 @@ public static void main(String[] args) {
     } else {
         userProvidedOverride = Integer.parseInt(args[6]);
     }
+    println(); println("There are: ");
+    println(args.length)
 
     // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
     int helicity, detector
