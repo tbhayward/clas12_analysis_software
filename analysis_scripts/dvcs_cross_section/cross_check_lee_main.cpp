@@ -8,6 +8,7 @@
 #include "pi0_contamination_cross_check.h"
 #include "rad_correction_cross_check.h"
 #include "unfolded_yields_cross_check.h"
+#include "bin_centering_cross_check.h"
 
 
 namespace fs = std::filesystem;
@@ -17,7 +18,7 @@ static inline void mkoutdirs() {
     const char* subdirs[] = {
         "raw_yield", "pi0_contamination", "signal_yield",
         "rad_corrections", "acceptance", "unfolding",
-        "bin_volume", "cross_sections"
+        "bin_volume", "bin_centering", "cross_sections"
     };
     fs::create_directories(base);
     for (auto s : subdirs) fs::create_directories(fs::path(base) / s);
@@ -53,11 +54,18 @@ int main() {
     //     "output/cross_check/lee/rad_corrections"
     // );
 
-    // Unfolded acceptance-corrected yield cross-check
-    plot_unfolded_yields_cross_checks(
+    // // Unfolded acceptance-corrected yield cross-check
+    // plot_unfolded_yields_cross_checks(
+    //     lee_csv,
+    //     hayward_csv,
+    //     "output/cross_check/lee/unfolding"
+    // );
+
+    // Bin-centering correction cross-check (Fbin vs bin_volume)
+    plot_bin_centering_cross_checks(
         lee_csv,
         hayward_csv,
-        "output/cross_check/lee/unfolding"
+        "output/cross_check/lee/bin_centering"
     );
 
     std::cout << "[lee] cross_check_lee complete.\n";
