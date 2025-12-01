@@ -14,16 +14,16 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 # List of root files (we'll reorder to put 9,10,10 first)
 file_paths = [
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_10_10_10.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_10_10_11.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_10_11_10.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_10_11_11.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_10_11_12.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_10_12_10.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_10_12_11.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_11_11_11.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_12_13_13.root',
-    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi-_9_10_10.root'
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_10_10_10.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_10_10_11.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_10_11_10.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_10_11_11.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_10_11_12.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_10_12_10.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_10_12_11.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_11_11_11.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_12_13_13.root',
+    '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_9_10_10.root'
 ]
 
 # -----------------------------
