@@ -13,6 +13,8 @@ import argparse
 parser = argparse.ArgumentParser(description='DC HV Scan Analysis')
 parser.add_argument('--fall18', action='store_true',
                     help='Include Fall 2018 data (run 5886) in the analysis')
+parser.add_argument('--diag', action='store_true',
+                    help='Run diagnostic mode: print detector and cut distributions for each file')
 args = parser.parse_args()
 
 # -----------------------------
@@ -93,6 +95,78 @@ def hv_sort_key(path):
 
 # Reorder files so 9,10,10 is first, fall2018 is last
 file_paths = sorted(file_paths, key=hv_sort_key)
+
+# -----------------------------
+# Diagnostic Mode
+# -----------------------------
+if args.diag:
+    print("=" * 70)
+    print("DIAGNOSTIC MODE: Checking detector values and cut effects per file")
+    print("=" * 70)
+    
+    for path in file_paths:
+        hv = parse_hv_label(path)
+        print(f"\n{'='*70}")
+        print(f"File: {os.path.basename(path)} ({hv})")
+        print("-" * 70)
+        
+        try:
+            with uproot.open(path) as f:
+                if 'PhysicsEvents' not in f:
+                    print("  ERROR: 'PhysicsEvents' tree not found!")
+                    continue
+                t = f['PhysicsEvents']
+                
+                # List available branches
+                branch_names = t.keys()
+                print(f"  Total branches: {len(branch_names)}")
+                
+                # Read key branches
+                Mx2      = np_branch(t, 'Mx2')
+                detector = np_branch(t, 'detector')
+                p_theta  = np_branch(t, 'p_theta')
+                
+                Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
+                p_theta_deg = np.degrees(p_theta)
+                
+                n_total = len(Mx)
+                print(f"  Total events: {n_total}")
+                
+                # Detector distribution
+                print(f"\n  Detector values:")
+                unique_det, counts_det = np.unique(detector, return_counts=True)
+                for val, cnt in zip(unique_det, counts_det):
+                    pct = 100.0 * cnt / n_total if n_total > 0 else 0
+                    print(f"    detector={int(val):3d}: {cnt:8d} events ({pct:5.1f}%)")
+                
+                # Cut flow
+                print(f"\n  Cut flow:")
+                print(f"    Initial:                        {n_total:8d}")
+                
+                mask_mx = (Mx >= MX_MIN) & (Mx <= MX_MAX)
+                n_mx = np.sum(mask_mx)
+                print(f"    After Mx in [{MX_MIN}, {MX_MAX}]:       {n_mx:8d} ({100.0*n_mx/n_total:.1f}%)")
+                
+                mask_det = (detector == 1)
+                n_det = np.sum(mask_mx & mask_det)
+                print(f"    After detector==1:              {n_det:8d} ({100.0*n_det/n_total:.1f}%)")
+                
+                mask_ptheta = (p_theta_deg < 40.0)
+                n_ptheta = np.sum(mask_mx & mask_det & mask_ptheta)
+                print(f"    After p_theta < 40 deg:         {n_ptheta:8d} ({100.0*n_ptheta/n_total:.1f}%)")
+                
+                # Also show Mx range
+                print(f"\n  Mx range: [{Mx.min():.4f}, {Mx.max():.4f}]")
+                print(f"  p_theta range: [{p_theta_deg.min():.1f}, {p_theta_deg.max():.1f}] deg")
+                
+        except Exception as e:
+            print(f"  ERROR: {e}")
+    # endfor
+    
+    print("\n" + "=" * 70)
+    print("DIAGNOSTIC COMPLETE")
+    print("=" * 70 + "\n")
+# endif
 
 # Consistent color assignment per HV across all plots
 HV_LABELS = [parse_hv_label(p) for p in file_paths]
