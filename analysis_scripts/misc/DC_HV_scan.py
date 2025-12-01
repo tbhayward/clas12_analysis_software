@@ -15,6 +15,8 @@ parser.add_argument('--fall18', action='store_true',
                     help='Include Fall 2018 data (run 5886) in the analysis')
 parser.add_argument('--diag', action='store_true',
                     help='Run diagnostic mode: print detector and cut distributions for each file')
+parser.add_argument('--no-detector', action='store_true',
+                    help='Disable the detector==1 requirement')
 args = parser.parse_args()
 
 # -----------------------------
@@ -97,12 +99,16 @@ def hv_sort_key(path):
 file_paths = sorted(file_paths, key=hv_sort_key)
 
 # Common histogram settings for Mx (inclusive) - defined early for diagnostics
-MX_MIN, MX_MAX = 0.88, 7
+MX_MIN, MX_MAX = 0.88, 1.02
 MX_NBINS = 80
 
 # Universal selection toggles
-REQ_DETECTOR_1 = True
+REQ_DETECTOR_1 = not args.no_detector  # Controlled by --no-detector flag
 REQ_PTHETA_LT_40 = True
+
+if args.no_detector:
+    print("Detector==1 requirement DISABLED")
+# endif
 
 # -----------------------------
 # Diagnostic Mode
@@ -174,6 +180,75 @@ if args.diag:
     print("\n" + "=" * 70)
     print("DIAGNOSTIC COMPLETE")
     print("=" * 70 + "\n")
+# endif
+
+# -----------------------------
+# Fall 2018 Mx2 Distribution Plot
+# -----------------------------
+if args.fall18:
+    print("Creating Fall 2018 Mx2 distribution plot...")
+    
+    try:
+        with uproot.open(FALL18_PATH) as f:
+            if 'PhysicsEvents' in f:
+                t = f['PhysicsEvents']
+                
+                Mx2      = np_branch(t, 'Mx2')
+                detector = np_branch(t, 'detector')
+                p_theta  = np_branch(t, 'p_theta')
+                
+                p_theta_deg = np.degrees(p_theta)
+                
+                # Apply cuts (except Mx cut, since we want to see the full distribution)
+                mask = np.ones(len(Mx2), dtype=bool)
+                if REQ_DETECTOR_1:
+                    mask &= (detector == 1)
+                # endif
+                if REQ_PTHETA_LT_40:
+                    mask &= (p_theta_deg < 40.0)
+                # endif
+                
+                Mx2_cut = Mx2[mask]
+                Mx_cut = np.sqrt(np.clip(Mx2_cut, a_min=0.0, a_max=None))
+                
+                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                
+                # Left: Mx2 distribution
+                axes[0].hist(Mx2_cut, bins=150, range=(0.0, 1.5), 
+                            histtype='step', linewidth=1.5, color='black')
+                axes[0].axvline(x=MX_MIN**2, color='red', linestyle='--', linewidth=1.5, 
+                               label=f'Mx² = {MX_MIN**2:.4f} (Mx = {MX_MIN})')
+                axes[0].axvline(x=MX_MAX**2, color='red', linestyle='--', linewidth=1.5,
+                               label=f'Mx² = {MX_MAX**2:.4f} (Mx = {MX_MAX})')
+                axes[0].set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
+                axes[0].set_ylabel('Counts')
+                axes[0].set_title(f'Fall 2018 ({FALL18_LABEL}) $M_{{x}}^{{2}}$ Distribution')
+                axes[0].grid(True, alpha=0.3)
+                axes[0].legend(loc='upper right', fontsize=9)
+                
+                # Right: Mx distribution (sqrt of Mx2)
+                axes[1].hist(Mx_cut, bins=150, range=(0.0, 1.5), 
+                            histtype='step', linewidth=1.5, color='black')
+                axes[1].axvline(x=MX_MIN, color='red', linestyle='--', linewidth=1.5, 
+                               label=f'Mx = {MX_MIN}')
+                axes[1].axvline(x=MX_MAX, color='red', linestyle='--', linewidth=1.5,
+                               label=f'Mx = {MX_MAX}')
+                axes[1].set_xlabel(r'$M_{x}$ (GeV)')
+                axes[1].set_ylabel('Counts')
+                axes[1].set_title(f'Fall 2018 ({FALL18_LABEL}) $M_{{x}}$ Distribution')
+                axes[1].grid(True, alpha=0.3)
+                axes[1].legend(loc='upper right', fontsize=9)
+                
+                plt.tight_layout()
+                fall18_mx2_png = os.path.join(OUT_DIR, 'fall2018_Mx2_distribution.png')
+                plt.savefig(fall18_mx2_png, dpi=300, bbox_inches='tight')
+                plt.close()
+                print(f"Fall 2018 Mx2 distribution saved to {fall18_mx2_png}")
+            else:
+                print(f"Error: 'PhysicsEvents' not found in {FALL18_PATH}")
+            # endif
+    except Exception as e:
+        print(f"Error creating Fall 2018 Mx2 plot: {e}")
 # endif
 
 # Consistent color assignment per HV across all plots
