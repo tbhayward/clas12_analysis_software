@@ -641,7 +641,7 @@ static void draw_one_canvas(const std::string& title,
 
              
 
-            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, panel_ymax);
+            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1);
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle(draw_ratio_only ? "Hayward / Lee" : "#pi^{0} contamination");
             frame->GetXaxis()->CenterTitle();
