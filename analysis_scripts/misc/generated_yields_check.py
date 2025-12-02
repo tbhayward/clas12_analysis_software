@@ -111,7 +111,8 @@ def make_p2p_hists(tree, name_prefix, max_events=MAX_EVENTS):
         # y < 0.8
         # W > 2
         # Q2 > 1
-        if (-t1 < 1.0 and
+        if (-t1 < 1.0 
+            # and
             # open_angle_ep2 < 5.0 and
             # pTmiss < 0.2 and
             # y < 0.8 and
