@@ -12,7 +12,7 @@ import argparse
 # -----------------------------
 parser = argparse.ArgumentParser(description='DC HV Scan Analysis')
 parser.add_argument('--fall18', action='store_true',
-                    help='Include Fall 2018 data (run 5875 and run 5572) in the analysis')
+                    help='Include Fall 2018 data (run 5875, run 5572, and run 5231) in the analysis')
 parser.add_argument('--diag', action='store_true',
                     help='Run diagnostic mode: print detector and cut distributions for each file')
 parser.add_argument('--no-detector', action='store_true',
@@ -44,14 +44,17 @@ FALL18_RGK_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_
 FALL18_RGK_LABEL = 'run 5875'
 FALL18_RGA_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rga_epi+_fall2018.root'
 FALL18_RGA_LABEL = 'run 5572'
+FALL18_RGA_INB_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rga_epi+_fall2018inb.root'
+FALL18_RGA_INB_LABEL = 'run 5231'
 
 # List of Fall 2018 labels for special handling
-FALL18_LABELS = [FALL18_RGK_LABEL, FALL18_RGA_LABEL]
+FALL18_LABELS = [FALL18_RGK_LABEL, FALL18_RGA_LABEL, FALL18_RGA_INB_LABEL]
 
 if args.fall18:
     file_paths.append(FALL18_RGK_PATH)
     file_paths.append(FALL18_RGA_PATH)
-    print(f"Including Fall 2018 data ({FALL18_RGK_LABEL} and {FALL18_RGA_LABEL})")
+    file_paths.append(FALL18_RGA_INB_PATH)
+    print(f"Including Fall 2018 data ({FALL18_RGK_LABEL}, {FALL18_RGA_LABEL}, and {FALL18_RGA_INB_LABEL})")
 # endif
 
 # -----------------------------
@@ -71,6 +74,8 @@ def parse_hv_label(path):
        Special case for Fall 2018 files."""
     if 'rgk_epi+_fall2018' in path:
         return FALL18_RGK_LABEL
+    elif 'rga_epi+_fall2018inb' in path:
+        return FALL18_RGA_INB_LABEL
     elif 'rga_epi+_fall2018' in path:
         return FALL18_RGA_LABEL
     # endif
@@ -107,7 +112,7 @@ def hv_sort_key(path):
 file_paths = sorted(file_paths, key=hv_sort_key)
 
 # Common histogram settings for Mx (inclusive) - defined early for diagnostics
-MX_MIN, MX_MAX = 0.94, 1.02
+MX_MIN, MX_MAX = 0.88, 1.02
 MX_NBINS = 80
 
 # Universal selection toggles
@@ -198,7 +203,8 @@ if args.fall18:
     
     fall18_files = [
         (FALL18_RGK_PATH, FALL18_RGK_LABEL, 'black'),
-        (FALL18_RGA_PATH, FALL18_RGA_LABEL, 'darkred')
+        (FALL18_RGA_PATH, FALL18_RGA_LABEL, 'darkred'),
+        (FALL18_RGA_INB_PATH, FALL18_RGA_INB_LABEL, 'darkblue')
     ]
     
     for fall18_path, fall18_label, fall18_color in fall18_files:
@@ -281,6 +287,9 @@ for i, label in enumerate(HV_LABELS):
     elif label == FALL18_RGA_LABEL:
         # Use dark red for RGA fall2018
         color_map[label] = 'darkred'
+    elif label == FALL18_RGA_INB_LABEL:
+        # Use dark blue for RGA fall2018 inbending
+        color_map[label] = 'darkblue'
     else:
         color_map[label] = base_colors[i]
     # endif
