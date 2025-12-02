@@ -21,14 +21,6 @@ DVCS_FILES = {
     "Sp19 Inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp19_inb_10200MeV.root",
 }
 
-PI0_FILES = {
-    "Sp18 Inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_inb_10594MeV.root",
-    "Sp18 Out": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_out_10594MeV.root",
-    "Fa18 Inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_inb_10604MeV.root",
-    "Fa18 Out": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_out_10604MeV.root",
-    "Sp19 Inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp19_inb_10200MeV.root",
-}
-
 TREE_NAME = "PhysicsEvents"
 MAX_EVENTS = 100000
 
@@ -139,20 +131,18 @@ def sanitize_name(label):
 
 
 # ----------------------------------------------------------------------
-# Plot 1: y vs W (2D) for DVCS (top) and e p -> e p pi0 (bottom)
+# Plot 1: y vs W (2D) for DVCS generated MC (1x5)
 # ----------------------------------------------------------------------
 
-def plot_y_vs_W(dvcs_trees, pi0_trees, output_dir):
-    canvas = ROOT.TCanvas("c_y_vs_W", "y vs W (generated MC)", 2500, 900)
-    canvas.Divide(5, 2)
+def plot_y_vs_W(dvcs_trees, output_dir):
+    canvas = ROOT.TCanvas("c_y_vs_W", "y vs W (generated DVCS MC)", 2500, 500)
+    canvas.Divide(5, 1)
 
     dvcs_hists = []
-    pi0_hists = []
 
     for idx, period in enumerate(PERIODS):
-        # DVCS row (top)
-        pad_index_top = idx + 1
-        canvas.cd(pad_index_top)
+        pad_index = idx + 1
+        canvas.cd(pad_index)
 
         hist_name_dvcs = "h_y_vs_W_dvcs_{0}".format(sanitize_name(period))
         title_dvcs = "DVCS {0}; W (GeV); y".format(period)
@@ -173,52 +163,26 @@ def plot_y_vs_W(dvcs_trees, pi0_trees, output_dir):
         )
         dvcs_hists.append(h_dvcs)
         h_dvcs.Draw("COLZ")
-
-        # pi0 row (bottom)
-        pad_index_bottom = idx + 1 + 5
-        canvas.cd(pad_index_bottom)
-
-        hist_name_pi0 = "h_y_vs_W_pi0_{0}".format(sanitize_name(period))
-        title_pi0 = "e p -> e p #pi_{0} {0}; W (GeV); y".format(period)
-        h_pi0 = make_2d_hist(
-            pi0_trees[period],
-            hist_name_pi0,
-            title_pi0,
-            x_branch="W",
-            y_branch="y",
-            x_bins=100,
-            x_min=0.0,
-            x_max=6.0,
-            y_bins=100,
-            y_min=0.0,
-            y_max=1.0,
-            max_events=MAX_EVENTS,
-            negate_y=False
-        )
-        pi0_hists.append(h_pi0)
-        h_pi0.Draw("COLZ")
     #endfor
 
-    out_path = os.path.join(output_dir, "generated_yields_y_vs_W.png")
+    out_path = os.path.join(output_dir, "generated_dvcs_y_vs_W.png")
     canvas.SaveAs(out_path)
 #enddef
 
 
 # ----------------------------------------------------------------------
-# Plot 2: y vs Q2 (2D)
+# Plot 2: y vs Q2 (2D), DVCS only (1x5)
 # ----------------------------------------------------------------------
 
-def plot_y_vs_Q2(dvcs_trees, pi0_trees, output_dir):
-    canvas = ROOT.TCanvas("c_y_vs_Q2", "y vs Q2 (generated MC)", 2500, 900)
-    canvas.Divide(5, 2)
+def plot_y_vs_Q2(dvcs_trees, output_dir):
+    canvas = ROOT.TCanvas("c_y_vs_Q2", "y vs Q2 (generated DVCS MC)", 2500, 500)
+    canvas.Divide(5, 1)
 
     dvcs_hists = []
-    pi0_hists = []
 
     for idx, period in enumerate(PERIODS):
-        # DVCS row (top)
-        pad_index_top = idx + 1
-        canvas.cd(pad_index_top)
+        pad_index = idx + 1
+        canvas.cd(pad_index)
 
         hist_name_dvcs = "h_y_vs_Q2_dvcs_{0}".format(sanitize_name(period))
         title_dvcs = "DVCS {0}; Q^{{2}} (GeV^{{2}}); y".format(period)
@@ -239,52 +203,27 @@ def plot_y_vs_Q2(dvcs_trees, pi0_trees, output_dir):
         )
         dvcs_hists.append(h_dvcs)
         h_dvcs.Draw("COLZ")
-
-        # pi0 row (bottom)
-        pad_index_bottom = idx + 1 + 5
-        canvas.cd(pad_index_bottom)
-
-        hist_name_pi0 = "h_y_vs_Q2_pi0_{0}".format(sanitize_name(period))
-        title_pi0 = "e p -> e p #pi_{0} {0}; Q^{{2}} (GeV^{{2}}); y".format(period)
-        h_pi0 = make_2d_hist(
-            pi0_trees[period],
-            hist_name_pi0,
-            title_pi0,
-            x_branch="Q2",
-            y_branch="y",
-            x_bins=100,
-            x_min=0.0,
-            x_max=8.0,
-            y_bins=100,
-            y_min=0.0,
-            y_max=1.0,
-            max_events=MAX_EVENTS,
-            negate_y=False
-        )
-        pi0_hists.append(h_pi0)
-        h_pi0.Draw("COLZ")
     #endfor
 
-    out_path = os.path.join(output_dir, "generated_yields_y_vs_Q2.png")
+    out_path = os.path.join(output_dir, "generated_dvcs_y_vs_Q2.png")
     canvas.SaveAs(out_path)
 #enddef
 
 
 # ----------------------------------------------------------------------
-# Plot 3: -t1 vs Q2 (2D), y-axis is -t1, x-axis is Q2
+# Plot 3: -t1 vs Q2 (2D), DVCS only (1x5)
+#         y-axis is -t1, range -0.1 to 1.1
 # ----------------------------------------------------------------------
 
-def plot_minust_vs_Q2(dvcs_trees, pi0_trees, output_dir):
-    canvas = ROOT.TCanvas("c_minust_vs_Q2", "-t1 vs Q2 (generated MC)", 2500, 900)
-    canvas.Divide(5, 2)
+def plot_minust_vs_Q2(dvcs_trees, output_dir):
+    canvas = ROOT.TCanvas("c_minust_vs_Q2", "-t1 vs Q2 (generated DVCS MC)", 2500, 500)
+    canvas.Divide(5, 1)
 
     dvcs_hists = []
-    pi0_hists = []
 
     for idx, period in enumerate(PERIODS):
-        # DVCS row (top)
-        pad_index_top = idx + 1
-        canvas.cd(pad_index_top)
+        pad_index = idx + 1
+        canvas.cd(pad_index)
 
         hist_name_dvcs = "h_minust_vs_Q2_dvcs_{0}".format(sanitize_name(period))
         title_dvcs = "DVCS {0}; Q^{{2}} (GeV^{{2}}); -t1 (GeV^{{2}})".format(period)
@@ -298,59 +237,32 @@ def plot_minust_vs_Q2(dvcs_trees, pi0_trees, output_dir):
             x_min=0.0,
             x_max=8.0,
             y_bins=100,
-            y_min=-1.0,
-            y_max=3.0,
+            y_min=-0.1,
+            y_max=1.1,
             max_events=MAX_EVENTS,
             negate_y=True
         )
         dvcs_hists.append(h_dvcs)
         h_dvcs.Draw("COLZ")
-
-        # pi0 row (bottom)
-        pad_index_bottom = idx + 1 + 5
-        canvas.cd(pad_index_bottom)
-
-        hist_name_pi0 = "h_minust_vs_Q2_pi0_{0}".format(sanitize_name(period))
-        title_pi0 = "e p -> e p #pi_{0} {0}; Q^{{2}} (GeV^{{2}}); -t1 (GeV^{{2}})".format(period)
-        h_pi0 = make_2d_hist(
-            pi0_trees[period],
-            hist_name_pi0,
-            title_pi0,
-            x_branch="Q2",
-            y_branch="t1",
-            x_bins=100,
-            x_min=0.0,
-            x_max=8.0,
-            y_bins=100,
-            y_min=-1.0,
-            y_max=3.0,
-            max_events=MAX_EVENTS,
-            negate_y=True
-        )
-        pi0_hists.append(h_pi0)
-        h_pi0.Draw("COLZ")
     #endfor
 
-    out_path = os.path.join(output_dir, "generated_yields_minust_vs_Q2.png")
+    out_path = os.path.join(output_dir, "generated_dvcs_minust_vs_Q2.png")
     canvas.SaveAs(out_path)
 #enddef
 
 
 # ----------------------------------------------------------------------
-# Plot 4: p2_p distributions before/after cuts, 2x5
+# Plot 4: p2_p distributions before/after cuts, DVCS only (1x5)
 # ----------------------------------------------------------------------
 
-def plot_p2p_before_after(dvcs_trees, pi0_trees, output_dir):
-    canvas = ROOT.TCanvas("c_p2p", "p2_p before/after cuts (generated MC)", 2500, 900)
-    canvas.Divide(5, 2)
+def plot_p2p_before_after(dvcs_trees, output_dir):
+    canvas = ROOT.TCanvas("c_p2p", "p2_p before/after cuts (generated DVCS MC)", 2500, 500)
+    canvas.Divide(5, 1)
 
     dvcs_all_hists = []
     dvcs_cut_hists = []
-    pi0_all_hists = []
-    pi0_cut_hists = []
 
     for idx, period in enumerate(PERIODS):
-        # DVCS row (top)
         pad_index_top = idx + 1
         canvas.cd(pad_index_top)
 
@@ -382,42 +294,9 @@ def plot_p2p_before_after(dvcs_trees, pi0_trees, output_dir):
         leg_top.AddEntry(h_all_dvcs, "Before cuts", "l")
         leg_top.AddEntry(h_cut_dvcs, "After cuts", "l")
         leg_top.Draw()
-
-        # pi0 row (bottom)
-        pad_index_bottom = idx + 1 + 5
-        canvas.cd(pad_index_bottom)
-
-        name_prefix_pi0 = "h_p2p_pi0_{0}".format(sanitize_name(period))
-        h_all_pi0, h_cut_pi0 = make_p2p_hists(pi0_trees[period], name_prefix_pi0)
-        pi0_all_hists.append(h_all_pi0)
-        pi0_cut_hists.append(h_cut_pi0)
-
-        h_all_pi0.SetLineColor(ROOT.kBlack)
-        h_all_pi0.SetLineWidth(2)
-        h_cut_pi0.SetLineColor(ROOT.kRed)
-        h_cut_pi0.SetLineWidth(2)
-
-        title_pi0 = "e p -> e p #pi_{0} {0}; p2_p (GeV); Counts".format(period)
-        h_all_pi0.SetTitle(title_pi0)
-
-        max_y_pi0 = max(h_all_pi0.GetMaximum(), h_cut_pi0.GetMaximum())
-        if max_y_pi0 <= 0.0:
-            max_y_pi0 = 1.0
-        #endif
-        h_all_pi0.SetMaximum(1.2 * max_y_pi0)
-
-        h_all_pi0.Draw("HIST")
-        h_cut_pi0.Draw("HIST SAME")
-
-        leg_bottom = ROOT.TLegend(0.60, 0.70, 0.90, 0.88)
-        leg_bottom.SetBorderSize(0)
-        leg_bottom.SetFillStyle(0)
-        leg_bottom.AddEntry(h_all_pi0, "Before cuts", "l")
-        leg_bottom.AddEntry(h_cut_pi0, "After cuts", "l")
-        leg_bottom.Draw()
     #endfor
 
-    out_path = os.path.join(output_dir, "generated_yields_p2p_before_after_cuts.png")
+    out_path = os.path.join(output_dir, "generated_dvcs_p2p_before_after_cuts.png")
     canvas.SaveAs(out_path)
 #enddef
 
@@ -430,17 +309,16 @@ def main():
     output_dir = "output/generated_yields_check"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load trees
+    # Load DVCS trees
     dvcs_files, dvcs_trees = load_trees(DVCS_FILES)
-    pi0_files, pi0_trees = load_trees(PI0_FILES)
 
     # Make plots
-    plot_y_vs_W(dvcs_trees, pi0_trees, output_dir)
-    plot_y_vs_Q2(dvcs_trees, pi0_trees, output_dir)
-    plot_minust_vs_Q2(dvcs_trees, pi0_trees, output_dir)
-    plot_p2p_before_after(dvcs_trees, pi0_trees, output_dir)
+    plot_y_vs_W(dvcs_trees, output_dir)
+    plot_y_vs_Q2(dvcs_trees, output_dir)
+    plot_minust_vs_Q2(dvcs_trees, output_dir)
+    plot_p2p_before_after(dvcs_trees, output_dir)
 
-    print("All plots written to {0}".format(output_dir))
+    print("All DVCS plots written to {0}".format(output_dir))
 #enddef
 
 
