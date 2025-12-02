@@ -112,7 +112,7 @@ def hv_sort_key(path):
 file_paths = sorted(file_paths, key=hv_sort_key)
 
 # Common histogram settings for Mx (inclusive) - defined early for diagnostics
-MX_MIN, MX_MAX = 0.92, 0.98
+MX_MIN, MX_MAX = 0.94, 1.02
 MX_NBINS = 80
 
 # Universal selection toggles
@@ -149,11 +149,11 @@ if args.diag:
                 print(f"  Total branches: {len(branch_names)}")
                 
                 # Read key branches
-                Mx2      = np_branch(t, 'Mx2')
+                # Note: Mx2 branch is actually Mx (not squared)
+                Mx       = np_branch(t, 'Mx2')
                 detector = np_branch(t, 'detector')
                 p_theta  = np_branch(t, 'p_theta')
                 
-                Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
                 p_theta_deg = np.degrees(p_theta)
                 
                 n_total = len(Mx)
@@ -196,10 +196,10 @@ if args.diag:
 # endif
 
 # -----------------------------
-# Fall 2018 Mx2 Distribution Plots
+# Fall 2018 Mx Distribution Plots
 # -----------------------------
 if args.fall18:
-    print("Creating Fall 2018 Mx2 distribution plots...")
+    print("Creating Fall 2018 Mx distribution plots...")
     
     fall18_files = [
         (FALL18_RGK_PATH, FALL18_RGK_LABEL, 'black'),
@@ -213,14 +213,15 @@ if args.fall18:
                 if 'PhysicsEvents' in f:
                     t = f['PhysicsEvents']
                     
-                    Mx2      = np_branch(t, 'Mx2')
+                    # Note: Mx2 branch is actually Mx (not squared)
+                    Mx       = np_branch(t, 'Mx2')
                     detector = np_branch(t, 'detector')
                     p_theta  = np_branch(t, 'p_theta')
                     
                     p_theta_deg = np.degrees(p_theta)
                     
                     # Apply cuts (except Mx cut, since we want to see the full distribution)
-                    mask = np.ones(len(Mx2), dtype=bool)
+                    mask = np.ones(len(Mx), dtype=bool)
                     if REQ_DETECTOR_1:
                         mask &= (detector == 1)
                     # endif
@@ -228,49 +229,35 @@ if args.fall18:
                         mask &= (p_theta_deg < 40.0)
                     # endif
                     
-                    Mx2_cut = Mx2[mask]
-                    Mx_cut = np.sqrt(np.clip(Mx2_cut, a_min=0.0, a_max=None))
+                    Mx_cut = Mx[mask]
                     
-                    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
                     
-                    # Left: Mx2 distribution
-                    axes[0].hist(Mx2_cut, bins=150, range=(0.0, 1.5), 
-                                histtype='step', linewidth=1.5, color=fall18_color)
-                    axes[0].axvline(x=MX_MIN**2, color='red', linestyle='--', linewidth=1.5, 
-                                   label=f'Mx² = {MX_MIN**2:.4f} (Mx = {MX_MIN})')
-                    axes[0].axvline(x=MX_MAX**2, color='red', linestyle='--', linewidth=1.5,
-                                   label=f'Mx² = {MX_MAX**2:.4f} (Mx = {MX_MAX})')
-                    axes[0].set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
-                    axes[0].set_ylabel('Counts')
-                    axes[0].set_title(f'Fall 2018 ({fall18_label}) $M_{{x}}^{{2}}$ Distribution')
-                    axes[0].grid(True, alpha=0.3)
-                    axes[0].legend(loc='upper right', fontsize=9)
-                    
-                    # Right: Mx distribution (sqrt of Mx2)
-                    axes[1].hist(Mx_cut, bins=150, range=(0.0, 1.5), 
-                                histtype='step', linewidth=1.5, color=fall18_color)
-                    axes[1].axvline(x=MX_MIN, color='red', linestyle='--', linewidth=1.5, 
-                                   label=f'Mx = {MX_MIN}')
-                    axes[1].axvline(x=MX_MAX, color='red', linestyle='--', linewidth=1.5,
-                                   label=f'Mx = {MX_MAX}')
-                    axes[1].set_xlabel(r'$M_{x}$ (GeV)')
-                    axes[1].set_ylabel('Counts')
-                    axes[1].set_title(f'Fall 2018 ({fall18_label}) $M_{{x}}$ Distribution')
-                    axes[1].grid(True, alpha=0.3)
-                    axes[1].legend(loc='upper right', fontsize=9)
+                    # Mx distribution
+                    ax.hist(Mx_cut, bins=150, range=(0.0, 1.5), 
+                            histtype='step', linewidth=1.5, color=fall18_color)
+                    ax.axvline(x=MX_MIN, color='red', linestyle='--', linewidth=1.5, 
+                               label=f'Mx = {MX_MIN}')
+                    ax.axvline(x=MX_MAX, color='red', linestyle='--', linewidth=1.5,
+                               label=f'Mx = {MX_MAX}')
+                    ax.set_xlabel(r'$M_{x}$ (GeV)')
+                    ax.set_ylabel('Counts')
+                    ax.set_title(f'Fall 2018 ({fall18_label}) $M_{{x}}$ Distribution')
+                    ax.grid(True, alpha=0.3)
+                    ax.legend(loc='upper right', fontsize=9)
                     
                     plt.tight_layout()
                     # Create filename based on label (replace space with underscore)
                     safe_label = fall18_label.replace(' ', '_')
-                    fall18_mx2_png = os.path.join(OUT_DIR, f'fall2018_{safe_label}_Mx2_distribution.png')
-                    plt.savefig(fall18_mx2_png, dpi=300, bbox_inches='tight')
+                    fall18_mx_png = os.path.join(OUT_DIR, f'fall2018_{safe_label}_Mx_distribution.png')
+                    plt.savefig(fall18_mx_png, dpi=300, bbox_inches='tight')
                     plt.close()
-                    print(f"Fall 2018 ({fall18_label}) Mx2 distribution saved to {fall18_mx2_png}")
+                    print(f"Fall 2018 ({fall18_label}) Mx distribution saved to {fall18_mx_png}")
                 else:
                     print(f"Error: 'PhysicsEvents' not found in {fall18_path}")
                 # endif
         except Exception as e:
-            print(f"Error creating Fall 2018 ({fall18_label}) Mx2 plot: {e}")
+            print(f"Error creating Fall 2018 ({fall18_label}) Mx plot: {e}")
     # endfor
 # endif
 
@@ -320,7 +307,8 @@ for file_path in file_paths:
             tree = f['PhysicsEvents']
 
             # Read required branches as NumPy
-            Mx2      = np_branch(tree, 'Mx2')
+            # Note: Mx2 branch is actually Mx (not squared)
+            Mx       = np_branch(tree, 'Mx2')
             Q2       = np_branch(tree, 'Q2')
             x        = np_branch(tree, 'x')
             e_theta  = np_branch(tree, 'e_theta')   # radians
@@ -330,7 +318,6 @@ for file_path in file_paths:
             detector = np_branch(tree, 'detector')  # int
 
             # Derived
-            Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
             e_theta_deg = np.degrees(e_theta)
             p_theta_deg = np.degrees(p_theta)
 
@@ -442,11 +429,11 @@ for path in file_paths:
                 continue
             t = f['PhysicsEvents']
 
-            Mx2      = np_branch(t, 'Mx2')
+            # Note: Mx2 branch is actually Mx (not squared)
+            Mx       = np_branch(t, 'Mx2')
             detector = np_branch(t, 'detector')
             p_theta  = np_branch(t, 'p_theta')   # radians
 
-            Mx = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
             p_theta_deg = np.degrees(p_theta)
 
             mask = (Mx >= MX_MIN) & (Mx <= MX_MAX)
@@ -588,12 +575,12 @@ for cat, bins, row in binned_rows:
                         continue
                     t = f['PhysicsEvents']
 
-                    Mx2      = np_branch(t, 'Mx2')
+                    # Note: Mx2 branch is actually Mx (not squared)
+                    Mx       = np_branch(t, 'Mx2')
                     e_theta  = np_branch(t, 'e_theta')   # radians
                     p_theta  = np_branch(t, 'p_theta')   # radians
                     detector = np_branch(t, 'detector')
 
-                    Mx   = np.sqrt(np.clip(Mx2, a_min=0.0, a_max=None))
                     e_deg = np.degrees(e_theta)
                     p_deg = np.degrees(p_theta)
 
