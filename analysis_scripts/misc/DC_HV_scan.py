@@ -12,7 +12,7 @@ import argparse
 # -----------------------------
 parser = argparse.ArgumentParser(description='DC HV Scan Analysis')
 parser.add_argument('--fall18', action='store_true',
-                    help='Include Fall 2018 data (run 5875) in the analysis')
+                    help='Include Fall 2018 data (run 5875 and run 5572) in the analysis')
 parser.add_argument('--diag', action='store_true',
                     help='Run diagnostic mode: print detector and cut distributions for each file')
 parser.add_argument('--no-detector', action='store_true',
@@ -39,13 +39,19 @@ file_paths = [
     '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_9_10_10.root'
 ]
 
-# Add Fall 2018 file if requested
-FALL18_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_fall2018.root'
-FALL18_LABEL = 'run 5875'
+# Add Fall 2018 files if requested
+FALL18_RGK_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_fall2018.root'
+FALL18_RGK_LABEL = 'run 5875'
+FALL18_RGA_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rga_epi+_fall2018.root'
+FALL18_RGA_LABEL = 'run 5572'
+
+# List of Fall 2018 labels for special handling
+FALL18_LABELS = [FALL18_RGK_LABEL, FALL18_RGA_LABEL]
 
 if args.fall18:
-    file_paths.append(FALL18_PATH)
-    print(f"Including Fall 2018 data ({FALL18_LABEL})")
+    file_paths.append(FALL18_RGK_PATH)
+    file_paths.append(FALL18_RGA_PATH)
+    print(f"Including Fall 2018 data ({FALL18_RGK_LABEL} and {FALL18_RGA_LABEL})")
 # endif
 
 # -----------------------------
@@ -62,9 +68,11 @@ def np_branch(tree, name):
 
 def parse_hv_label(path):
     """Extract the trailing three underscore-separated tokens before .root, joined by commas.
-       Special case for Fall 2018 file."""
-    if 'fall2018' in path:
-        return FALL18_LABEL
+       Special case for Fall 2018 files."""
+    if 'rgk_epi+_fall2018' in path:
+        return FALL18_RGK_LABEL
+    elif 'rga_epi+_fall2018' in path:
+        return FALL18_RGA_LABEL
     # endif
     base = os.path.basename(path).replace('.root', '')
     toks = base.split('_')
@@ -86,10 +94,10 @@ def hv_tuple(hv_str):
 
 def hv_sort_key(path):
     hv = parse_hv_label(path)
-    # Put 9,10,10 first; fall2018 (run 5875) last; then sort numerically
+    # Put 9,10,10 first; fall2018 files last; then sort numerically
     if hv == '9,10,10':
         return (0, (0, 0, 0), hv)
-    elif hv == FALL18_LABEL:
+    elif hv in FALL18_LABELS:
         return (2, (999, 999, 999), hv)  # Sort to end
     else:
         return (1, hv_tuple(hv), hv)
@@ -99,7 +107,7 @@ def hv_sort_key(path):
 file_paths = sorted(file_paths, key=hv_sort_key)
 
 # Common histogram settings for Mx (inclusive) - defined early for diagnostics
-MX_MIN, MX_MAX = 0.94, 1.02
+MX_MIN, MX_MAX = 0.88, 1.02
 MX_NBINS = 80
 
 # Universal selection toggles
@@ -183,84 +191,96 @@ if args.diag:
 # endif
 
 # -----------------------------
-# Fall 2018 Mx2 Distribution Plot
+# Fall 2018 Mx2 Distribution Plots
 # -----------------------------
 if args.fall18:
-    print("Creating Fall 2018 Mx2 distribution plot...")
+    print("Creating Fall 2018 Mx2 distribution plots...")
     
-    try:
-        with uproot.open(FALL18_PATH) as f:
-            if 'PhysicsEvents' in f:
-                t = f['PhysicsEvents']
-                
-                Mx2      = np_branch(t, 'Mx2')
-                detector = np_branch(t, 'detector')
-                p_theta  = np_branch(t, 'p_theta')
-                
-                p_theta_deg = np.degrees(p_theta)
-                
-                # Apply cuts (except Mx cut, since we want to see the full distribution)
-                mask = np.ones(len(Mx2), dtype=bool)
-                if REQ_DETECTOR_1:
-                    mask &= (detector == 1)
+    fall18_files = [
+        (FALL18_RGK_PATH, FALL18_RGK_LABEL, 'black'),
+        (FALL18_RGA_PATH, FALL18_RGA_LABEL, 'darkred')
+    ]
+    
+    for fall18_path, fall18_label, fall18_color in fall18_files:
+        try:
+            with uproot.open(fall18_path) as f:
+                if 'PhysicsEvents' in f:
+                    t = f['PhysicsEvents']
+                    
+                    Mx2      = np_branch(t, 'Mx2')
+                    detector = np_branch(t, 'detector')
+                    p_theta  = np_branch(t, 'p_theta')
+                    
+                    p_theta_deg = np.degrees(p_theta)
+                    
+                    # Apply cuts (except Mx cut, since we want to see the full distribution)
+                    mask = np.ones(len(Mx2), dtype=bool)
+                    if REQ_DETECTOR_1:
+                        mask &= (detector == 1)
+                    # endif
+                    if REQ_PTHETA_LT_40:
+                        mask &= (p_theta_deg < 40.0)
+                    # endif
+                    
+                    Mx2_cut = Mx2[mask]
+                    Mx_cut = np.sqrt(np.clip(Mx2_cut, a_min=0.0, a_max=None))
+                    
+                    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                    
+                    # Left: Mx2 distribution
+                    axes[0].hist(Mx2_cut, bins=150, range=(0.0, 1.5), 
+                                histtype='step', linewidth=1.5, color=fall18_color)
+                    axes[0].axvline(x=MX_MIN**2, color='red', linestyle='--', linewidth=1.5, 
+                                   label=f'Mx² = {MX_MIN**2:.4f} (Mx = {MX_MIN})')
+                    axes[0].axvline(x=MX_MAX**2, color='red', linestyle='--', linewidth=1.5,
+                                   label=f'Mx² = {MX_MAX**2:.4f} (Mx = {MX_MAX})')
+                    axes[0].set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
+                    axes[0].set_ylabel('Counts')
+                    axes[0].set_title(f'Fall 2018 ({fall18_label}) $M_{{x}}^{{2}}$ Distribution')
+                    axes[0].grid(True, alpha=0.3)
+                    axes[0].legend(loc='upper right', fontsize=9)
+                    
+                    # Right: Mx distribution (sqrt of Mx2)
+                    axes[1].hist(Mx_cut, bins=150, range=(0.0, 1.5), 
+                                histtype='step', linewidth=1.5, color=fall18_color)
+                    axes[1].axvline(x=MX_MIN, color='red', linestyle='--', linewidth=1.5, 
+                                   label=f'Mx = {MX_MIN}')
+                    axes[1].axvline(x=MX_MAX, color='red', linestyle='--', linewidth=1.5,
+                                   label=f'Mx = {MX_MAX}')
+                    axes[1].set_xlabel(r'$M_{x}$ (GeV)')
+                    axes[1].set_ylabel('Counts')
+                    axes[1].set_title(f'Fall 2018 ({fall18_label}) $M_{{x}}$ Distribution')
+                    axes[1].grid(True, alpha=0.3)
+                    axes[1].legend(loc='upper right', fontsize=9)
+                    
+                    plt.tight_layout()
+                    # Create filename based on label (replace space with underscore)
+                    safe_label = fall18_label.replace(' ', '_')
+                    fall18_mx2_png = os.path.join(OUT_DIR, f'fall2018_{safe_label}_Mx2_distribution.png')
+                    plt.savefig(fall18_mx2_png, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    print(f"Fall 2018 ({fall18_label}) Mx2 distribution saved to {fall18_mx2_png}")
+                else:
+                    print(f"Error: 'PhysicsEvents' not found in {fall18_path}")
                 # endif
-                if REQ_PTHETA_LT_40:
-                    mask &= (p_theta_deg < 40.0)
-                # endif
-                
-                Mx2_cut = Mx2[mask]
-                Mx_cut = np.sqrt(np.clip(Mx2_cut, a_min=0.0, a_max=None))
-                
-                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-                
-                # Left: Mx2 distribution
-                axes[0].hist(Mx2_cut, bins=150, range=(0.0, 1.5), 
-                            histtype='step', linewidth=1.5, color='black')
-                axes[0].axvline(x=MX_MIN**2, color='red', linestyle='--', linewidth=1.5, 
-                               label=f'Mx² = {MX_MIN**2:.4f} (Mx = {MX_MIN})')
-                axes[0].axvline(x=MX_MAX**2, color='red', linestyle='--', linewidth=1.5,
-                               label=f'Mx² = {MX_MAX**2:.4f} (Mx = {MX_MAX})')
-                axes[0].set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
-                axes[0].set_ylabel('Counts')
-                axes[0].set_title(f'Fall 2018 ({FALL18_LABEL}) $M_{{x}}^{{2}}$ Distribution')
-                axes[0].grid(True, alpha=0.3)
-                axes[0].legend(loc='upper right', fontsize=9)
-                
-                # Right: Mx distribution (sqrt of Mx2)
-                axes[1].hist(Mx_cut, bins=150, range=(0.0, 1.5), 
-                            histtype='step', linewidth=1.5, color='black')
-                axes[1].axvline(x=MX_MIN, color='red', linestyle='--', linewidth=1.5, 
-                               label=f'Mx = {MX_MIN}')
-                axes[1].axvline(x=MX_MAX, color='red', linestyle='--', linewidth=1.5,
-                               label=f'Mx = {MX_MAX}')
-                axes[1].set_xlabel(r'$M_{x}$ (GeV)')
-                axes[1].set_ylabel('Counts')
-                axes[1].set_title(f'Fall 2018 ({FALL18_LABEL}) $M_{{x}}$ Distribution')
-                axes[1].grid(True, alpha=0.3)
-                axes[1].legend(loc='upper right', fontsize=9)
-                
-                plt.tight_layout()
-                fall18_mx2_png = os.path.join(OUT_DIR, 'fall2018_Mx2_distribution.png')
-                plt.savefig(fall18_mx2_png, dpi=300, bbox_inches='tight')
-                plt.close()
-                print(f"Fall 2018 Mx2 distribution saved to {fall18_mx2_png}")
-            else:
-                print(f"Error: 'PhysicsEvents' not found in {FALL18_PATH}")
-            # endif
-    except Exception as e:
-        print(f"Error creating Fall 2018 Mx2 plot: {e}")
+        except Exception as e:
+            print(f"Error creating Fall 2018 ({fall18_label}) Mx2 plot: {e}")
+    # endfor
 # endif
 
 # Consistent color assignment per HV across all plots
 HV_LABELS = [parse_hv_label(p) for p in file_paths]
-# Use a distinct color for fall2018 if present
+# Use a distinct color for fall2018 files if present
 num_colors = len(HV_LABELS)
 base_colors = plt.cm.tab10(np.linspace(0, 1, num_colors))
 color_map = {}
 for i, label in enumerate(HV_LABELS):
-    if label == FALL18_LABEL:
-        # Use a distinctive color (black) for fall2018
+    if label == FALL18_RGK_LABEL:
+        # Use black for RGK fall2018
         color_map[label] = 'black'
+    elif label == FALL18_RGA_LABEL:
+        # Use dark red for RGA fall2018
+        color_map[label] = 'darkred'
     else:
         color_map[label] = base_colors[i]
     # endif
@@ -510,11 +530,11 @@ if fit_results:
     num_cols = ['Sigma', 'Sigma_Error', 'Mean', 'Mean_Error', 'Amplitude', 'Amplitude_Error']
     df[num_cols] = df[num_cols].round(4)
 
-    # Sort: 9,10,10 first, then numeric hv ordering, fall2018 last
+    # Sort: 9,10,10 first, then numeric hv ordering, fall2018 files last
     def df_hv_key(hv):
         if hv == '9,10,10':
             return (0, (0, 0, 0), hv)
-        elif hv == FALL18_LABEL:
+        elif hv in FALL18_LABELS:
             return (2, (999, 999, 999), hv)
         else:
             return (1, hv_tuple(hv), hv)
@@ -678,7 +698,7 @@ if binned_sigma_rows:
     def hv_key(hv):
         if hv == '9,10,10':
             return (0, (0, 0, 0), hv)
-        elif hv == FALL18_LABEL:
+        elif hv in FALL18_LABELS:
             return (2, (999, 999, 999), hv)
         else:
             return (1, hv_tuple(hv), hv)
