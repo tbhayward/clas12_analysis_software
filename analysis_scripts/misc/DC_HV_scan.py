@@ -12,7 +12,7 @@ import argparse
 # -----------------------------
 parser = argparse.ArgumentParser(description='DC HV Scan Analysis')
 parser.add_argument('--fall18', action='store_true',
-                    help='Include Fall 2018 data (run 5886) in the analysis')
+                    help='Include Fall 2018 data (run 5875) in the analysis')
 parser.add_argument('--diag', action='store_true',
                     help='Run diagnostic mode: print detector and cut distributions for each file')
 parser.add_argument('--no-detector', action='store_true',
@@ -41,7 +41,7 @@ file_paths = [
 
 # Add Fall 2018 file if requested
 FALL18_PATH = '/volatile/clas12/thayward/RGK_DC_HV_scan/processed_files/rgk_epi+_fall2018.root'
-FALL18_LABEL = 'run 5886'
+FALL18_LABEL = 'run 5875'
 
 if args.fall18:
     file_paths.append(FALL18_PATH)
@@ -86,7 +86,7 @@ def hv_tuple(hv_str):
 
 def hv_sort_key(path):
     hv = parse_hv_label(path)
-    # Put 9,10,10 first; fall2018 (run 5886) last; then sort numerically
+    # Put 9,10,10 first; fall2018 (run 5875) last; then sort numerically
     if hv == '9,10,10':
         return (0, (0, 0, 0), hv)
     elif hv == FALL18_LABEL:
