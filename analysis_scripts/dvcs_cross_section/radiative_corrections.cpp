@@ -1,7 +1,8 @@
 // radiative_corrections.cpp
 // Frad from generated Born and radiative MC, written into CSV as
 // "(value, stat, sys)" triples in the columns:
-//   "Frad, 10.6 GeV"   (Sp18 Inb + Sp18 Out + Fa18 Inb + Fa18 Out)
+//   "Frad, 10.6 GeV"   (Sp18 Inb + Sp18 Out + Fa18 Inb + Fa18 Out,
+//                       with Fa18 Inb optionally skippable via a boolean)
 //   "Frad, 10.2 GeV"   (Sp19 Inb)
 //
 // Binning comes from dvcs_pass2_analysis.csv (Lee-style).
@@ -1050,6 +1051,15 @@ bool update_radiative_corrections_csv(
 {
     namespace fs = std::filesystem;
 
+    // -------------------------------------------------------------------------
+    // Temporary toggle:
+    //   - Set SKIP_FA18_INB_10P6 = true to *omit* the Fa18 Inb period from the
+    //     10.6 GeV Frad calculation (both Born and Rad).
+    //   - When your Fa18 Inb MC is fixed, set this back to false to restore
+    //     the full four-period combination.
+    // -------------------------------------------------------------------------
+    const bool SKIP_FA18_INB_10P6 = true;
+
     const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
     const uintmax_t size_before =
@@ -1077,7 +1087,14 @@ bool update_radiative_corrections_csv(
     g10p6.energy_dir = "10.60";
     g10p6.mc_pairs.push_back(McPair{"DVCS_Sp18_inb_gen",  "DVCS_Sp18_inb_gen_rad",  "Sp18 Inb"});
     g10p6.mc_pairs.push_back(McPair{"DVCS_Sp18_out_gen",  "DVCS_Sp18_out_gen_rad",  "Sp18 Out"});
-    g10p6.mc_pairs.push_back(McPair{"DVCS_Fa18_inb_gen",  "DVCS_Fa18_inb_gen_rad",  "Fa18 Inb"});
+
+    if (SKIP_FA18_INB_10P6) {
+        std::cout << "[radcorr] NOTE: SKIP_FA18_INB_10P6=true, omitting Fa18 Inb "
+                  << "from 10.6 GeV Frad (using Sp18 Inb, Sp18 Out, Fa18 Out only).\n";
+    } else {
+        g10p6.mc_pairs.push_back(McPair{"DVCS_Fa18_inb_gen",  "DVCS_Fa18_inb_gen_rad",  "Fa18 Inb"});
+    }
+
     g10p6.mc_pairs.push_back(McPair{"DVCS_Fa18_out_gen",  "DVCS_Fa18_out_gen_rad",  "Fa18 Out"});
 
     RCGroup g10p2;

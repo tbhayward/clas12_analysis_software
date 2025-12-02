@@ -220,29 +220,29 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // --------- Radiative corrections (Frad factors) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
+    // --------- Radiative corrections (Frad factors) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
 
-    //     // Make a backup before modifying the radiative-correction columns
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing
-    //         );
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for radiative corrections failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the radiative-correction columns
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                csv_backup,
+                std::filesystem::copy_options::overwrite_existing
+            );
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for radiative corrections failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
-    //         std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
+            std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- Kinematic bin volumes into CSV + plots ----------
     // {
