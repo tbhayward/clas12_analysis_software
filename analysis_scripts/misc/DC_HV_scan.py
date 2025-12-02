@@ -225,7 +225,8 @@ if args.fall18:
                         mask &= (detector == 1)
                     # endif
                     if REQ_PTHETA_LT_40:
-                        mask &= (p_theta_deg < 40.0)
+                        # mask &= (p_theta_deg < 40.0)
+                        mask &= (p_theta_deg < 238440.0)
                     # endif
                     
                     Mx2_cut = Mx2[mask]
