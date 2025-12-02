@@ -47,7 +47,7 @@ def main():
     draw_expr = "Mx2>>hMx2"
     cut_expr = (
         "Mx2 >= 0.8 && Mx2 <= 1.1 && "
-        "detector1 == 1 && "
+        "detector == 1 && "
         "p_theta < 0.69"
     )
     tree.Draw(draw_expr, cut_expr, "goff")
