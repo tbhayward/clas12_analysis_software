@@ -112,11 +112,12 @@ def make_p2p_hists(tree, name_prefix, max_events=MAX_EVENTS):
         # W > 2
         # Q2 > 1
         if (-t1 < 1.0 and
-            open_angle_ep2 < 5.0 and
-            pTmiss < 0.2 and
-            y < 0.8 and
-            W > 2.0 and
-            Q2 > 1.0):
+            # open_angle_ep2 < 5.0 and
+            # pTmiss < 0.2 and
+            # y < 0.8 and
+            # W > 2.0 and
+            # Q2 > 1.0
+            ):
             h_cut.Fill(p2_p)
         #endif
     #endfor
