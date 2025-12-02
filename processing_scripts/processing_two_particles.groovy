@@ -169,7 +169,7 @@ public static void main(String[] args) {
             BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/false)
 
             double Ebeam = (runnum == 11) ? beam_energy : Eb.Eb()
-        
+
             // If radiative sampling requested, prepare one-shot correction for TwoParticles
             boolean applyInverseISR = Eb.isRadiativeApplied() && Eb.getEgammaGeV() > 0.0
             double Egamma = 0.0, isrTheta = 0.0, isrPhi = 0.0
@@ -211,8 +211,7 @@ public static void main(String[] args) {
                         t = variables.t()
                         tmin = variables.tmin()
                         y = variables.y()
-                        // Mx2 = variables.Mx2()
-                        Mx2 = variables.Mx()
+                        Mx2 = variables.Mx2()
                         z = variables.z()
                         xF = variables.xF()
                         pT = variables.pT()
