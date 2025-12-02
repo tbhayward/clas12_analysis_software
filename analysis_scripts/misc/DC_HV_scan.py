@@ -481,7 +481,7 @@ for path in file_paths:
             (line,) = plt.plot(x_fit, y_fit, color=color, linewidth=2.0)
 
             # Legend line label with literal "#sigma" per your style
-            label_text = f"{hv}; #sigma = {sigma:.4f} +/- {sigma_err:.4f}"
+            label_text = f"{hv}; $\sigma$ = {sigma:.4f} +/- {sigma_err:.4f}"
             handles.append(line)
             labels.append(label_text)
             any_plotted = True
