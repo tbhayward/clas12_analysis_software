@@ -23,14 +23,16 @@ def main():
     f = ROOT.TFile.Open(infile)
     if not f or f.IsZombie():
         print("Error: could not open file:", infile)
-        return 1  # endif
+        return 1
+    #endif
 
     # Get tree
     tree = f.Get(treename)
     if not tree:
         print("Error: could not find tree '{}' in file".format(treename))
         f.Close()
-        return 1  # endif
+        return 1
+    #endif
 
     # Define histogram: 100 bins from 0.8 to 1.1
     nbins = 100
@@ -38,9 +40,11 @@ def main():
     xmax = 1.1
     hist = ROOT.TH1F("hMx2", ";Mx2 (GeV^{2});Counts", nbins, xmin, xmax)
 
-    # Draw Mx2 into the histogram with a simple cut on the same range
+    # Draw Mx2 into the histogram with cuts:
+    # - 0.8 <= Mx2 <= 1.1
+    # - detector1 == 1
     draw_expr = "Mx2>>hMx2"
-    cut_expr = "Mx2 >= 0.8 && Mx2 <= 1.1"
+    cut_expr = "Mx2 >= 0.8 && Mx2 <= 1.1 && detector1 == 1"
     tree.Draw(draw_expr, cut_expr, "goff")
 
     # Make canvas and draw histogram
@@ -55,6 +59,8 @@ def main():
     # Clean up
     f.Close()
     return 0
+#endif
 
 if __name__ == "__main__":
-    sys.exit(main())  # endif
+    sys.exit(main())
+#endif
