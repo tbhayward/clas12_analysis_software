@@ -43,8 +43,13 @@ def main():
     # Draw Mx2 into the histogram with cuts:
     # - 0.8 <= Mx2 <= 1.1
     # - detector1 == 1
+    # - p_theta (rad) converted to degrees is < 40
     draw_expr = "Mx2>>hMx2"
-    cut_expr = "Mx2 >= 0.8 && Mx2 <= 1.1 && detector == 1"
+    cut_expr = (
+        "Mx2 >= 0.8 && Mx2 <= 1.1 && "
+        "detector1 == 1 && "
+        "(p_theta*180.0/TMath::Pi()) < 40.0"
+    )
     tree.Draw(draw_expr, cut_expr, "goff")
 
     # Make canvas and draw histogram
