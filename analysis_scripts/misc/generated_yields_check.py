@@ -75,7 +75,7 @@ def make_2d_hist(tree, name, title,
 
 
 def make_p2p_hists(tree, name_prefix, max_events=MAX_EVENTS):
-    # You can tune binning/range if needed
+    # Binning/range for p2_p
     h_all = ROOT.TH1D(
         "{0}_all".format(name_prefix),
         "p2_p; p2_p (GeV); Counts",
@@ -106,7 +106,7 @@ def make_p2p_hists(tree, name_prefix, max_events=MAX_EVENTS):
 
         # Cuts:
         # -t1 < 1
-        # open_angle_ep2 < 5
+        # open_angle_ep2 > 5   (note the change)
         # pTmiss < 0.2
         # y < 0.8
         # W > 2
@@ -116,8 +116,7 @@ def make_p2p_hists(tree, name_prefix, max_events=MAX_EVENTS):
             pTmiss < 0.2 and
             y < 0.8 and
             W > 2.0 and
-            Q2 > 1.0
-            ):
+            Q2 > 1.0):
             h_cut.Fill(p2_p)
         #endif
     #endfor
@@ -131,6 +130,18 @@ def sanitize_name(label):
 #enddef
 
 
+def set_pad_margins(canvas, n_pads):
+    # Give a bit of breathing room for y-axis titles/labels
+    for i in range(1, n_pads + 1):
+        pad = canvas.cd(i)
+        pad.SetLeftMargin(0.16)
+        pad.SetRightMargin(0.05)
+        pad.SetBottomMargin(0.16)
+        pad.SetTopMargin(0.08)
+    #endfor
+#enddef
+
+
 # ----------------------------------------------------------------------
 # Plot 1: y vs W (2D) for DVCS generated MC (1x5)
 # ----------------------------------------------------------------------
@@ -138,6 +149,7 @@ def sanitize_name(label):
 def plot_y_vs_W(dvcs_trees, output_dir):
     canvas = ROOT.TCanvas("c_y_vs_W", "y vs W (generated DVCS MC)", 2500, 500)
     canvas.Divide(5, 1)
+    set_pad_margins(canvas, 5)
 
     dvcs_hists = []
 
@@ -178,6 +190,7 @@ def plot_y_vs_W(dvcs_trees, output_dir):
 def plot_y_vs_Q2(dvcs_trees, output_dir):
     canvas = ROOT.TCanvas("c_y_vs_Q2", "y vs Q2 (generated DVCS MC)", 2500, 500)
     canvas.Divide(5, 1)
+    set_pad_margins(canvas, 5)
 
     dvcs_hists = []
 
@@ -219,6 +232,7 @@ def plot_y_vs_Q2(dvcs_trees, output_dir):
 def plot_minust_vs_Q2(dvcs_trees, output_dir):
     canvas = ROOT.TCanvas("c_minust_vs_Q2", "-t1 vs Q2 (generated DVCS MC)", 2500, 500)
     canvas.Divide(5, 1)
+    set_pad_margins(canvas, 5)
 
     dvcs_hists = []
 
@@ -254,18 +268,20 @@ def plot_minust_vs_Q2(dvcs_trees, output_dir):
 
 # ----------------------------------------------------------------------
 # Plot 4: p2_p distributions before/after cuts, DVCS only (1x5)
+#         Legends show counts before/after cuts for each period
 # ----------------------------------------------------------------------
 
 def plot_p2p_before_after(dvcs_trees, output_dir):
     canvas = ROOT.TCanvas("c_p2p", "p2_p before/after cuts (generated DVCS MC)", 2500, 500)
     canvas.Divide(5, 1)
+    set_pad_margins(canvas, 5)
 
     dvcs_all_hists = []
     dvcs_cut_hists = []
 
     for idx, period in enumerate(PERIODS):
-        pad_index_top = idx + 1
-        canvas.cd(pad_index_top)
+        pad_index = idx + 1
+        canvas.cd(pad_index)
 
         name_prefix_dvcs = "h_p2p_dvcs_{0}".format(sanitize_name(period))
         h_all_dvcs, h_cut_dvcs = make_p2p_hists(dvcs_trees[period], name_prefix_dvcs)
@@ -289,12 +305,17 @@ def plot_p2p_before_after(dvcs_trees, output_dir):
         h_all_dvcs.Draw("HIST")
         h_cut_dvcs.Draw("HIST SAME")
 
-        leg_top = ROOT.TLegend(0.60, 0.70, 0.90, 0.88)
-        leg_top.SetBorderSize(0)
-        leg_top.SetFillStyle(0)
-        leg_top.AddEntry(h_all_dvcs, "Before cuts", "l")
-        leg_top.AddEntry(h_cut_dvcs, "After cuts", "l")
-        leg_top.Draw()
+        # Counts in each histogram
+        n_all = int(h_all_dvcs.Integral())
+        n_cut = int(h_cut_dvcs.Integral())
+
+        leg = ROOT.TLegend(0.55, 0.70, 0.90, 0.89)
+        leg.SetBorderSize(0)
+        leg.SetFillStyle(0)
+        leg.SetTextSize(0.045)
+        leg.AddEntry(h_all_dvcs, "Before cuts (N={0})".format(n_all), "l")
+        leg.AddEntry(h_cut_dvcs, "After cuts (N={0})".format(n_cut), "l")
+        leg.Draw()
     #endfor
 
     out_path = os.path.join(output_dir, "generated_dvcs_p2p_before_after_cuts.png")
