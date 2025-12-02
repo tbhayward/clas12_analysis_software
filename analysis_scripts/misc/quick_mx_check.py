@@ -48,7 +48,7 @@ def main():
     cut_expr = (
         "Mx2 >= 0.8 && Mx2 <= 1.1 && "
         "detector1 == 1 && "
-        "(p_theta*180.0/TMath::Pi()) < 40.0"
+        "p_theta < 0.69"
     )
     tree.Draw(draw_expr, cut_expr, "goff")
 
