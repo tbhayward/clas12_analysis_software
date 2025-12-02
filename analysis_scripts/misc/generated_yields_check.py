@@ -106,7 +106,7 @@ def make_p2p_hists(tree, name_prefix, max_events=MAX_EVENTS):
 
         # Cuts:
         # -t1 < 1
-        # open_angle_ep2 > 5   (note the change)
+        # open_angle_ep2 > 5
         # pTmiss < 0.2
         # y < 0.8
         # W > 2
@@ -192,7 +192,7 @@ def plot_y_vs_Q2(dvcs_trees, output_dir):
     canvas.Divide(5, 1)
     set_pad_margins(canvas, 5)
 
-    dvcs_hists = []
+    dvcs_hists = {}
 
     for idx, period in enumerate(PERIODS):
         pad_index = idx + 1
@@ -215,7 +215,7 @@ def plot_y_vs_Q2(dvcs_trees, output_dir):
             max_events=MAX_EVENTS,
             negate_y=False
         )
-        dvcs_hists.append(h_dvcs)
+        dvcs_hists[period] = h_dvcs
         h_dvcs.Draw("COLZ")
     #endfor
 
@@ -234,7 +234,7 @@ def plot_minust_vs_Q2(dvcs_trees, output_dir):
     canvas.Divide(5, 1)
     set_pad_margins(canvas, 5)
 
-    dvcs_hists = []
+    dvcs_hists = {}
 
     for idx, period in enumerate(PERIODS):
         pad_index = idx + 1
@@ -257,7 +257,7 @@ def plot_minust_vs_Q2(dvcs_trees, output_dir):
             max_events=MAX_EVENTS,
             negate_y=True
         )
-        dvcs_hists.append(h_dvcs)
+        dvcs_hists[period] = h_dvcs
         h_dvcs.Draw("COLZ")
     #endfor
 
@@ -268,7 +268,7 @@ def plot_minust_vs_Q2(dvcs_trees, output_dir):
 
 # ----------------------------------------------------------------------
 # Plot 4: p2_p distributions before/after cuts, DVCS only (1x5)
-#         Legends show counts before/after cuts for each period
+#         Legend per subplot, plus terminal printout of counts
 # ----------------------------------------------------------------------
 
 def plot_p2p_before_after(dvcs_trees, output_dir):
@@ -276,8 +276,7 @@ def plot_p2p_before_after(dvcs_trees, output_dir):
     canvas.Divide(5, 1)
     set_pad_margins(canvas, 5)
 
-    dvcs_all_hists = []
-    dvcs_cut_hists = []
+    print("=== p2_p counts before/after cuts (first {0} events) ===".format(MAX_EVENTS))
 
     for idx, period in enumerate(PERIODS):
         pad_index = idx + 1
@@ -285,8 +284,6 @@ def plot_p2p_before_after(dvcs_trees, output_dir):
 
         name_prefix_dvcs = "h_p2p_dvcs_{0}".format(sanitize_name(period))
         h_all_dvcs, h_cut_dvcs = make_p2p_hists(dvcs_trees[period], name_prefix_dvcs)
-        dvcs_all_hists.append(h_all_dvcs)
-        dvcs_cut_hists.append(h_cut_dvcs)
 
         h_all_dvcs.SetLineColor(ROOT.kBlack)
         h_all_dvcs.SetLineWidth(2)
@@ -305,10 +302,14 @@ def plot_p2p_before_after(dvcs_trees, output_dir):
         h_all_dvcs.Draw("HIST")
         h_cut_dvcs.Draw("HIST SAME")
 
-        # Counts in each histogram
+        # Counts in each histogram (per subplot)
         n_all = int(h_all_dvcs.Integral())
         n_cut = int(h_cut_dvcs.Integral())
 
+        # Print to terminal
+        print("Period {0:8s}: N_before = {1:7d}, N_after = {2:7d}".format(period, n_all, n_cut))
+
+        # Legend for this subplot with its own numbers
         leg = ROOT.TLegend(0.55, 0.70, 0.90, 0.89)
         leg.SetBorderSize(0)
         leg.SetFillStyle(0)
