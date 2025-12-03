@@ -305,26 +305,47 @@ for period_label, root_path in period_files:
         vals_sorted = vals_arr[sort_idx]
         errs_sorted = errs_arr[sort_idx]
 
-        # Mean (still across runs at this current)
+        # -------------------------
+        # Stage 1: initial mean and >5σ (per-run) extreme outliers
+        # -------------------------
         if len(vals_sorted) > 1:
-            mean_val = np.mean(vals_sorted)
-            sigma_spread = np.std(vals_sorted, ddof=1)
+            mean0 = np.mean(vals_sorted)
         else:
-            mean_val = vals_sorted[0]
+            mean0 = vals_sorted[0]
+        #endif
+
+        extreme_mask = np.abs(vals_sorted - mean0) > 5.0 * errs_sorted
+
+        # If all points are extreme, fall back to no trimming
+        if np.any(~extreme_mask):
+            trimmed_vals = vals_sorted[~extreme_mask]
+        else:
+            trimmed_vals = vals_sorted
+            extreme_mask = np.zeros_like(extreme_mask, dtype=bool)
+        #endif
+
+        # -------------------------
+        # Stage 2: trimmed mean and 2.5σ (per-run) outliers
+        # -------------------------
+        if len(trimmed_vals) > 1:
+            mean_trimmed = np.mean(trimmed_vals)
+            sigma_spread = np.std(trimmed_vals, ddof=1)
+        else:
+            mean_trimmed = trimmed_vals[0]
             sigma_spread = 0.0
         #endif
 
-        # Outlier mask: |value - mean| > 2.5 * (per-run stat error)
-        # If error == 0, this degenerates to check > 0; in practice count>0 so error>0.
-        outlier_mask = np.abs(vals_sorted - mean_val) > 2.5 * errs_sorted
+        mild_mask = np.abs(vals_sorted - mean_trimmed) > 2.5 * errs_sorted
+        final_outlier_mask = extreme_mask | mild_mask
 
         per_current_stats[current] = {
             "runs": runs_sorted,
             "vals": vals_sorted,
             "errs": errs_sorted,
-            "mean": mean_val,
+            "mean": mean_trimmed,
             "sigma_spread": sigma_spread,
-            "outliers": outlier_mask,
+            "extreme_mask": extreme_mask,
+            "outliers": final_outlier_mask,
         }
         total_valid_runs += len(runs_sorted)
     #endfor
@@ -335,14 +356,14 @@ for period_label, root_path in period_files:
         st = per_current_stats[current]
         print(
             f"  Current {current} nA: "
-            f"mean(events/nC) = {st['mean']:.6f}, "
-            f"sigma(spread) = {st['sigma_spread']:.6f}, "
+            f"mean_trimmed(events/nC) = {st['mean']:.6f}, "
+            f"sigma(spread, trimmed) = {st['sigma_spread']:.6f}, "
             f"N_runs = {len(st['runs'])}"
         )
     #endfor
 
     # Print outliers
-    print("\nRuns more than 2.5 sigma (per-run stat error) away from their current's mean (in events/nC):")
+    print("\nRuns more than 2.5 sigma (per-run stat error) from the trimmed mean (and >5σ extremes):")
     any_outliers = False
     for current in sorted(per_current_stats.keys()):
         st = per_current_stats[current]
@@ -350,13 +371,15 @@ for period_label, root_path in period_files:
         vals = st["vals"]
         errs = st["errs"]
         outmask = st["outliers"]
+        extreme_mask = st["extreme_mask"]
 
-        for run, val, err, is_out in zip(runs, vals, errs, outmask):
+        for run, val, err, is_out, is_extreme in zip(runs, vals, errs, outmask, extreme_mask):
             if is_out:
                 if not any_outliers:
                     any_outliers = True
                 #endif
-                print(f"  Run {int(run)} (current {current} nA): {val:.6f} +/- {err:.6f} events/nC")
+                tag = "EXTREME(>5σ)" if is_extreme else ">2.5σ"
+                print(f"  Run {int(run)} (current {current} nA): {val:.6f} +/- {err:.6f} events/nC  [{tag}]")
             #endif
         #endfor
     #endfor
@@ -417,7 +440,7 @@ for period_label, root_path in period_files:
             )
         #endif
 
-        # Mean line for this current
+        # Mean line for this current (trimmed mean)
         plt.axhline(st["mean"], color=color, linestyle="--", linewidth=1.0)
     #endfor
 
