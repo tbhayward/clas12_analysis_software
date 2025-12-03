@@ -33,6 +33,19 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <unordered_set>
+
+// -------------------- run blacklist (runs to remove) --------------------
+// Add any additional run numbers you want to exclude to this set.
+static const std::unordered_set<int> EXCLUDED_RUNS = {
+    3867, 5046, 5047, 5051, 5128, 5129, 5130, 5160, 5163, 5165, 5166, 5167, 5168, 5169,
+    5180, 5181, 5182, 5183, 5247, 5448, 5495, 5496, 5615, 5567
+    // , 1234, 5678, ...
+};
+
+static bool isExcludedRun(int runnum) {
+    return EXCLUDED_RUNS.find(runnum) != EXCLUDED_RUNS.end();
+}
 
 // -------------------- helpers: strings and keys --------------------
 
@@ -118,7 +131,9 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
 // -------------------- branch binder --------------------
 
 struct BranchBinder {
-    int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
+    int runnum = 0;       bool has_runnum = false;
+    int detector1 = 0;    bool has_detector1 = false;
+    int detector2 = 0;    bool has_detector2 = false;
 
     double t1 = 0.0;                bool has_t1 = false;
     double open_angle_ep2 = 0.0;    bool has_open_angle_ep2 = false;
@@ -140,6 +155,7 @@ struct BranchBinder {
 
         auto ena = [&](const char* n){ if (t->GetBranch(n)) t->SetBranchStatus(n, 1); };
 
+        ena("runnum");
         ena("detector1");
         ena("detector2");
         ena("t1");
@@ -162,6 +178,7 @@ struct BranchBinder {
             if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kDouble_t, false); f = true; }
         };
 
+        bI("runnum",    &runnum,    has_runnum);
         bI("detector1", &detector1, has_detector1);
         bI("detector2", &detector2, has_detector2);
 
@@ -230,7 +247,7 @@ static void normalizeHist(TH1D* h) {
 static std::string formatLabelName(const std::string& var, Channel ch) {
     if (var == "Delta_phi")          return "#Delta#phi (rad)";
     if (var == "theta_gamma_gamma")  return "#theta_{#gamma#gamma} (rad)";
-    if (var == "theta_pi0_pi0")      return "#theta_{#pi^{0}#pi^{0}} (rad)";
+    if (var == "theta_pi0_pi0")      return "#theta_{#pi_{0}#pi_{0}} (rad)";
     if (var == "pTmiss")             return "p_{T}^{miss} (GeV)";
     if (var == "xF")                 return "x_{F}";
     if (var == "Emiss2")             return "E_{miss}^{2} (GeV^{2})";
@@ -270,6 +287,10 @@ static FilledHists fillStageHists(
         Long64_t n = dataTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             dataTree->GetEntry(i);
+
+            // Drop excluded runs if runnum is available
+            if (b.has_runnum && isExcludedRun(b.runnum)) continue;
+
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
             // Must have all three to apply the universal cuts
@@ -292,6 +313,11 @@ static FilledHists fillStageHists(
         Long64_t n = mcTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             mcTree->GetEntry(i);
+
+            // Drop excluded runs if runnum is available (usually only for data,
+            // but this check is harmless for MC).
+            if (b.has_runnum && isExcludedRun(b.runnum)) continue;
+
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
             if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) continue;
