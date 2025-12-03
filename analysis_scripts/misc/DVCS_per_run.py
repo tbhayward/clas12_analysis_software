@@ -64,7 +64,7 @@ FA18_INB_CURRENT = {
     5356: 50, 5357: 50, 5358: 50, 5359: 50, 5360: 50, 5361: 50,
     5362: 50, 5366: 50,
 
-    # 55 nA (5356-5407 are 55; 5400 included)
+    # 55 nA
     5368: 55, 5369: 55, 5372: 55, 5373: 55, 5374: 55, 5375: 55,
     5376: 55, 5377: 55, 5378: 55, 5379: 55, 5380: 55, 5381: 55,
     5382: 55, 5383: 55, 5386: 55, 5390: 55, 5391: 55, 5392: 55,
@@ -152,7 +152,7 @@ def resolve_current(period_label, runnum):
         return False, None
     #endif
 
-    # Sp18 Inb: with overrides, then ranges
+    # Sp18 Inb: overrides, then ranges
     if label == "rga_sp18_inb":
         if runnum == 3418:
             return True, 70
@@ -173,7 +173,6 @@ def resolve_current(period_label, runnum):
             return True, 50
         #endif
 
-        # Other Sp18 Inb runs: unknown current
         return False, None
     #endif
 
@@ -306,27 +305,25 @@ for period_label, root_path in period_files:
         vals_sorted = vals_arr[sort_idx]
         errs_sorted = errs_arr[sort_idx]
 
-        # Mean and sigma for this current
+        # Mean (still across runs at this current)
         if len(vals_sorted) > 1:
             mean_val = np.mean(vals_sorted)
-            sigma_val = np.std(vals_sorted, ddof=1)
+            sigma_spread = np.std(vals_sorted, ddof=1)
         else:
             mean_val = vals_sorted[0]
-            sigma_val = 0.0
+            sigma_spread = 0.0
         #endif
 
-        if sigma_val > 0.0:
-            outlier_mask = np.abs(vals_sorted - mean_val) > 2.0 * sigma_val
-        else:
-            outlier_mask = np.zeros_like(vals_sorted, dtype=bool)
-        #endif
+        # Outlier mask: |value - mean| > 2.5 * (per-run stat error)
+        # If error == 0, this degenerates to check > 0; in practice count>0 so error>0.
+        outlier_mask = np.abs(vals_sorted - mean_val) > 2.5 * errs_sorted
 
         per_current_stats[current] = {
             "runs": runs_sorted,
             "vals": vals_sorted,
             "errs": errs_sorted,
             "mean": mean_val,
-            "sigma": sigma_val,
+            "sigma_spread": sigma_spread,
             "outliers": outlier_mask,
         }
         total_valid_runs += len(runs_sorted)
@@ -339,13 +336,13 @@ for period_label, root_path in period_files:
         print(
             f"  Current {current} nA: "
             f"mean(events/nC) = {st['mean']:.6f}, "
-            f"sigma = {st['sigma']:.6f}, "
+            f"sigma(spread) = {st['sigma_spread']:.6f}, "
             f"N_runs = {len(st['runs'])}"
         )
     #endfor
 
     # Print outliers
-    print("\nRuns more than 2 sigma away from their current's mean (in events/nC):")
+    print("\nRuns more than 2.5 sigma (per-run stat error) away from their current's mean (in events/nC):")
     any_outliers = False
     for current in sorted(per_current_stats.keys()):
         st = per_current_stats[current]
