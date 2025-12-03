@@ -306,7 +306,7 @@ for period_label, root_path in period_files:
         errs_sorted = errs_arr[sort_idx]
 
         # -------------------------
-        # Stage 1: initial mean and >5σ (per-run) extreme outliers
+        # Stage 1: initial mean and >10 sigma (per-run) extreme outliers
         # -------------------------
         if len(vals_sorted) > 1:
             mean0 = np.mean(vals_sorted)
@@ -314,7 +314,7 @@ for period_label, root_path in period_files:
             mean0 = vals_sorted[0]
         #endif
 
-        extreme_mask = np.abs(vals_sorted - mean0) > 5.0 * errs_sorted
+        extreme_mask = np.abs(vals_sorted - mean0) > 10.0 * errs_sorted
 
         # If all points are extreme, fall back to no trimming
         if np.any(~extreme_mask):
@@ -325,7 +325,7 @@ for period_label, root_path in period_files:
         #endif
 
         # -------------------------
-        # Stage 2: trimmed mean and 2.5σ (per-run) outliers
+        # Stage 2: trimmed mean and 5 sigma (per-run) outliers
         # -------------------------
         if len(trimmed_vals) > 1:
             mean_trimmed = np.mean(trimmed_vals)
@@ -335,7 +335,7 @@ for period_label, root_path in period_files:
             sigma_spread = 0.0
         #endif
 
-        mild_mask = np.abs(vals_sorted - mean_trimmed) > 2.5 * errs_sorted
+        mild_mask = np.abs(vals_sorted - mean_trimmed) > 5.0 * errs_sorted
         final_outlier_mask = extreme_mask | mild_mask
 
         per_current_stats[current] = {
@@ -363,7 +363,7 @@ for period_label, root_path in period_files:
     #endfor
 
     # Print outliers
-    print("\nRuns more than 2.5 sigma (per-run stat error) from the trimmed mean (and >5σ extremes):")
+    print("\nRuns more than 5 sigma (per-run stat error) from the trimmed mean (and >10 sigma extremes):")
     any_outliers = False
     for current in sorted(per_current_stats.keys()):
         st = per_current_stats[current]
@@ -378,7 +378,7 @@ for period_label, root_path in period_files:
                 if not any_outliers:
                     any_outliers = True
                 #endif
-                tag = "EXTREME(>5σ)" if is_extreme else ">2.5σ"
+                tag = "EXTREME(>10sigma)" if is_extreme else ">5sigma"
                 print(f"  Run {int(run)} (current {current} nA): {val:.6f} +/- {err:.6f} events/nC  [{tag}]")
             #endif
         #endfor
