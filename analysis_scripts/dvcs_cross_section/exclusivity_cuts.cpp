@@ -33,19 +33,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <unordered_set>
-
-// -------------------- run blacklist (runs to remove) --------------------
-// Add any additional run numbers you want to exclude to this set.
-static const std::unordered_set<int> EXCLUDED_RUNS = {
-    3867, 5046, 5047, 5051, 5128, 5129, 5130, 5160, 5163, 5165, 5166, 5167, 5168, 5169,
-    5180, 5181, 5182, 5183, 5247, 5448, 5495, 5496, 5615, 5567
-    // , 1234, 5678, ...
-};
-
-static bool isExcludedRun(int runnum) {
-    return EXCLUDED_RUNS.find(runnum) != EXCLUDED_RUNS.end();
-}
 
 // -------------------- helpers: strings and keys --------------------
 
@@ -288,8 +275,8 @@ static FilledHists fillStageHists(
         for (Long64_t i = 0; i < n; ++i) {
             dataTree->GetEntry(i);
 
-            // Drop excluded runs if runnum is available
-            if (b.has_runnum && isExcludedRun(b.runnum)) continue;
+            // Drop excluded runs if runnum is available (GLOBAL blacklist).
+            if (b.has_runnum && is_excluded_run(b.runnum)) continue;
 
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
@@ -316,7 +303,7 @@ static FilledHists fillStageHists(
 
             // Drop excluded runs if runnum is available (usually only for data,
             // but this check is harmless for MC).
-            if (b.has_runnum && isExcludedRun(b.runnum)) continue;
+            if (b.has_runnum && is_excluded_run(b.runnum)) continue;
 
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;

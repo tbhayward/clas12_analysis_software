@@ -63,107 +63,107 @@ int main(int argc, char* argv[]) {
     );
     std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // --------- Global bin-averaged kinematics (CSV update) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // // --------- Global bin-averaged kinematics (CSV update) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-        // Make a simple backup before modifying
-        try {
-            std::filesystem::copy_file(csv_main, csv_backup,
-                                       std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-        }
+    //     // Make a simple backup before modifying
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //                                    std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+    //     }
 
-        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- Raw yields (counts) into CSV + plots ----------
-    {
-        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // // --------- Raw yields (counts) into CSV + plots ----------
+    // {
+    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make a backup (the function also backs up to ..._total_counts.csv)
-        try {
-            std::filesystem::copy_file(csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup (the function also backs up to ..._total_counts.csv)
+    //     try {
+    //         std::filesystem::copy_file(csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+    //     }
 
-        // update_total_counts_csv() now discovers periods/topologies internally
-        if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
-                /*max_workers=*/5)) {
-            std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     // update_total_counts_csv() now discovers periods/topologies internally
+    //     if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
+    //             /*max_workers=*/5)) {
+    //         std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- pi0 contamination (helicity-averaged; DVCS counts from CSV; eppi0 counts re-counted) ----------
-    {
-        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // // --------- pi0 contamination (helicity-averaged; DVCS counts from CSV; eppi0 counts re-counted) ----------
+    // {
+    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make dirs up front (preferred place)
-        makeOutputDirs();
+    //     // Make dirs up front (preferred place)
+    //     makeOutputDirs();
 
-        // Make a backup (the function also backs up to ..._total_counts.csv)
-        try {
-            std::filesystem::copy_file(
-                csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup (the function also backs up to ..._total_counts.csv)
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+    //     }
 
-        // Parallelize across periods (<=0 means auto thread count)
-        const int max_workers = 1;
+    //     // Parallelize across periods (<=0 means auto thread count)
+    //     const int max_workers = 1;
 
-        if (!compute_pi0_contamination_overall(
-                eppi0DataTrees,
-                eppi0RecMcTrees,
-                eppi0BkgTrees,
-                cuts_json,
-                csv_main,
-                output_root,
-                max_workers))
-        {
-            std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-        std::cout << "pi0 contamination stage finished.\n";
-    }
+    //     if (!compute_pi0_contamination_overall(
+    //             eppi0DataTrees,
+    //             eppi0RecMcTrees,
+    //             eppi0BkgTrees,
+    //             cuts_json,
+    //             csv_main,
+    //             output_root,
+    //             max_workers))
+    //     {
+    //         std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    //     std::cout << "pi0 contamination stage finished.\n";
+    // }
 
-    // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
+    // // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
 
-        // Make a backup before modifying the signal-yield columns
-        try {
-            std::filesystem::copy_file(csv_main, csv_backup,
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup for signal yields failed ("
-                      << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup before modifying the signal-yield columns
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup for signal yields failed ("
+    //                   << e.what() << "). Continuing.\n";
+    //     }
 
-        if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
-            std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
+    //         std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- Quick yield totals by current (data) and by period (MC) ----------
     // {
@@ -176,49 +176,49 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- DVCS MC acceptance (CSV + plots) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json  = "output/jsons/combined_cuts.json";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+    // // --------- DVCS MC acceptance (CSV + plots) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json  = "output/jsons/combined_cuts.json";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
 
-        // Make a backup before modifying the acceptance columns
-        try {
-            std::filesystem::copy_file(csv_main, csv_backup,
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup for acceptance failed ("
-                      << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup before modifying the acceptance columns
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup for acceptance failed ("
+    //                   << e.what() << "). Continuing.\n";
+    //     }
 
-        if (!update_acceptance_csv(csv_main, genMcTrees, recMcTrees,
-                                   cuts_json, output_root)) {
-            std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_acceptance_csv(csv_main, genMcTrees, recMcTrees,
+    //                                cuts_json, output_root)) {
+    //         std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- Unfolding: acceptance-corrected DVCS yields ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_unfolding.csv";
+    // // --------- Unfolding: acceptance-corrected DVCS yields ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_unfolding.csv";
 
-        // Make a backup before modifying the unfolded-yield columns
-        try {
-            std::filesystem::copy_file(csv_main, csv_backup,
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_unfolding.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup for unfolding failed ("
-                      << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup before modifying the unfolded-yield columns
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_unfolding.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup for unfolding failed ("
+    //                   << e.what() << "). Continuing.\n";
+    //     }
 
-        if (!update_unfolded_yields_csv(csv_main, output_root)) {
-            std::cerr << "[main] ERROR: update_unfolded_yields_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_unfolded_yields_csv(csv_main, output_root)) {
+    //         std::cerr << "[main] ERROR: update_unfolded_yields_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- Radiative corrections (Frad factors) ----------
     // {
@@ -306,46 +306,46 @@ int main(int argc, char* argv[]) {
     // }
 
 
-    // --------- Cross sections (CSV update + theory JSON + plots) ----------
-    {
-        const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root = "output/jsons/cross_sections";
-        const std::string xs_out_root      = "output/cross_sections";
+    // // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    // {
+    //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string theory_json_root = "output/jsons/cross_sections";
+    //     const std::string xs_out_root      = "output/cross_sections";
 
-        // // --------- Theory grids (xs_phi_all.json generation) ----------
-        // {
-        //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-        //     const std::string theory_json_root = "output/jsons/cross_sections";
+    //     // // --------- Theory grids (xs_phi_all.json generation) ----------
+    //     // {
+    //     //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+    //     //     const std::string theory_json_root = "output/jsons/cross_sections";
 
-        //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
-        //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
-        //         return 1;
-        //     }
-        // }
+    //     //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
+    //     //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
+    //     //         return 1;
+    //     //     }
+    //     // }
 
-        // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
-        LumiMap lumi_map = build_lumi_map();
+    //     // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
+    //     LumiMap lumi_map = build_lumi_map();
 
-        // Step 1: heavy numerical work (CSV cross sections + theory JSON)
-        if (!compute_cross_sections(csv_main, lumi_map)) {
-            std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
-        }
+    //     // Step 1: heavy numerical work (CSV cross sections + theory JSON)
+    //     if (!compute_cross_sections(csv_main, lumi_map)) {
+    //         std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+    //     }
 
-        // Step 2: plotting only (can be rerun freely to adjust aesthetics)
-        const std::vector<std::string> labels_to_plot = {
-            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-            "Fa18", "Sp18", "10.6 GeV"
-        };
+    //     // Step 2: plotting only (can be rerun freely to adjust aesthetics)
+    //     const std::vector<std::string> labels_to_plot = {
+    //         "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+    //         "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+    //         "Fa18", "Sp18", "10.6 GeV"
+    //     };
 
-        for (const auto &label : labels_to_plot) {
-            if (!plot_cross_sections_for_label(csv_main, label,
-                theory_json_root, xs_out_root)) {
-                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
-                          << label << "\n";
-            }
-        }
-    }
+    //     for (const auto &label : labels_to_plot) {
+    //         if (!plot_cross_sections_for_label(csv_main, label,
+    //             theory_json_root, xs_out_root)) {
+    //             std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
+    //                       << label << "\n";
+    //         }
+    //     }
+    // }
 
 
     std::cout << "All done." << std::endl;

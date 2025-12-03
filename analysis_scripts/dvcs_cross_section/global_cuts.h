@@ -2,6 +2,7 @@
 #define GLOBAL_CUTS_H
 
 #include <string>
+#include <vector>
 
 /**
  * Global, universal event-level cuts for DVCS analysis.
@@ -25,6 +26,13 @@ struct GlobalCutConfig {
 
     // Require pTmiss <= pTmiss_max.
     double pTmiss_max = 0.20;    // GeV
+
+    // NEW: runs to exclude globally (data quality blacklist).
+    // Default-initialize with your known bad runs.
+    std::vector<int> excluded_runs = {
+        3867, 5046, 5047, 5051, 5128, 5129, 5130, 5160, 5163, 5165, 5166, 5167, 5168, 5169,
+        5180, 5181, 5182, 5183, 5247, 5448, 5495, 5496, 5615, 5567
+    };
 };
 
 // Returns a reference to a process-wide default configuration.
@@ -35,6 +43,10 @@ bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
                         double pTmiss,
                         const GlobalCutConfig& cfg = default_global_cuts());
+
+// NEW: check if a run is globally blacklisted.
+bool is_excluded_run(int runnum,
+                     const GlobalCutConfig& cfg = default_global_cuts());
 
 // Convenience: ROOT-style TCut string for Draw/Project workflows.
 // Example: "(-t1) < 1.0 && open_angle_ep2 > 5.0 && pTmiss <= 0.20"
