@@ -49,19 +49,19 @@ int main() {
     //     "output/cross_check/lee/pi0_contamination" // output directory
     // );
 
-    // // Radiative correction (Frad) cross-check
-    // plot_rad_correction_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/rad_corrections"
-    // );
-
-    // Acceptance cross-check (Lee vs Fa18 Inb/Out)
-    plot_acceptance_cross_checks(
+    // Radiative correction (Frad) cross-check
+    plot_rad_correction_cross_checks(
         lee_csv,
         hayward_csv,
-        "output/cross_check/lee/acceptance"
+        "output/cross_check/lee/rad_corrections"
     );
+
+    // // Acceptance cross-check (Lee vs Fa18 Inb/Out)
+    // plot_acceptance_cross_checks(
+    //     lee_csv,
+    //     hayward_csv,
+    //     "output/cross_check/lee/acceptance"
+    // );
 
     // // Unfolded acceptance-corrected yield cross-check
     // plot_unfolded_yields_cross_checks(
