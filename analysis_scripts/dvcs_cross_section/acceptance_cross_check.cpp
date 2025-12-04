@@ -17,6 +17,8 @@
 // For each xB bin we produce two canvases:
 //   - acceptance_counts_xB_<ix>.png  : Lee + Fa18 Inb + Fa18 Out
 //   - acceptance_ratio_xB_<ix>.png   : (Fa18 Inb / Lee) and (Fa18 Out / Lee)
+//
+// Within each canvas, all subplots share the same y-axis range for consistency.
 // -----------------------------------------------------------------------------
 
 #include "acceptance_cross_check.h"
@@ -176,7 +178,10 @@ static void require_columns_acc(const std::unordered_map<std::string,int>& idx,
 }
 
 // ---------- Three-tuple parser for Hayward acceptance columns ----------
-// Format: "(value, stat_err, syst_err)" - we extract value and stat_err
+// Format: "(value, stat_err, syst_err)"
+// We extract:
+//   - value    = parts[0]
+//   - stat_err = parts[1]
 
 struct AccValue_acc {
     double value    = 0.0;
@@ -324,20 +329,20 @@ struct AxisSets_acc {
 };
 
 struct BinRow_acc {
-    int    bin_index     = 0;
-    double xBmin         = 0.0;
-    double xBmax         = 0.0;
-    double Q2min         = 0.0;
-    double Q2max         = 0.0;
-    double tmin          = 0.0;
-    double tmax          = 0.0;
-    double phiavg        = 0.0;
+    int    bin_index       = 0;
+    double xBmin           = 0.0;
+    double xBmax           = 0.0;
+    double Q2min           = 0.0;
+    double Q2max           = 0.0;
+    double tmin            = 0.0;
+    double tmax            = 0.0;
+    double phiavg          = 0.0;
 
-    double lee_acc       = 0.0;  // Lee acceptance (single value, no error)
-    double my_acc_inb    = 0.0;  // Hayward Fa18 Inb acceptance
-    double my_acc_inb_err = 0.0; // Hayward Fa18 Inb stat error
-    double my_acc_out    = 0.0;  // Hayward Fa18 Out acceptance
-    double my_acc_out_err = 0.0; // Hayward Fa18 Out stat error
+    double lee_acc         = 0.0;  // Lee acceptance (single value, no error)
+    double my_acc_inb      = 0.0;  // Hayward Fa18 Inb acceptance
+    double my_acc_inb_err  = 0.0;  // Hayward Fa18 Inb stat error
+    double my_acc_out      = 0.0;  // Hayward Fa18 Out acceptance
+    double my_acc_out_err  = 0.0;  // Hayward Fa18 Out stat error
 };
 
 static AxisSets_acc build_axes_from_rows_acc(const std::vector<BinRow_acc>& rows) {
@@ -495,6 +500,61 @@ static std::string safe_canvas_name_acc(const std::string& out_png) {
     return fs::path(out_png).filename().string();
 }
 
+// Helper to compute the maximum y (including error) for counts in one panel
+static double panel_counts_max_acc(const PanelData_acc& lee,
+                                   const PanelData_acc& inb,
+                                   const PanelData_acc& out) {
+    double ymax = 0.0;
+    auto update = [&](const PanelData_acc& pd) {
+        for (size_t i = 0; i < pd.val.size(); ++i) {
+            double vup = pd.val[i];
+            if (i < pd.err.size()) {
+                vup = pd.val[i] + pd.err[i];
+            }
+            if (vup > ymax) ymax = vup;
+        }
+    };
+    update(lee);
+    update(inb);
+    update(out);
+    return ymax;
+}
+
+// Helper to compute max ratio (including error) for a single Hayward series vs Lee
+static double panel_ratio_max_one_acc(const PanelData_acc& pd,
+                                      const PanelData_acc& lee,
+                                      double tol_deg) {
+    double local_max = 0.0;
+    for (size_t i = 0; i < pd.phi.size(); ++i) {
+        double best_dist = 1e9;
+        int jbest = -1;
+        for (size_t j = 0; j < lee.phi.size(); ++j) {
+            double d = std::fabs(lee.phi[j] - pd.phi[i]);
+            if (d < best_dist) {
+                best_dist = d;
+                jbest = (int)j;
+            }
+        }
+        if (jbest >= 0 && best_dist <= tol_deg && lee.val[jbest] > 0.0) {
+            double H = pd.val[i];
+            double L = lee.val[jbest];
+            double R = (H <= 0.0) ? 0.0 : H / L;
+
+            double sigma_H = (i < pd.err.size()) ? pd.err[i] : 0.0;
+            double eR = 0.0;
+            if (H > 0.0 && sigma_H > 0.0) {
+                eR = R * (sigma_H / H);
+            }
+
+            if (R + eR > local_max) {
+                local_max = R + eR;
+            }
+        }
+    }
+    return local_max;
+}
+
+// Main canvas drawing function with per-canvas y-range standardization
 static void draw_one_canvas_acc(
     const std::string& title,
     const std::vector<std::pair<double,double>>& Q2s,
@@ -585,6 +645,57 @@ static void draw_one_canvas_acc(
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.00, 0.00);
 
+    // ---------- First pass: determine per-canvas y-range ----------
+    double global_ymin = 0.0;
+    double global_ymax = 0.0;
+    const double phi_match_tol = 20.0; // degrees, for ratio matching
+
+    if (!draw_ratio_only) {
+        // Counts: scan all panels for max(value + err)
+        double max_counts = 0.0;
+        for (int r = 0; r < nrows; ++r) {
+            for (int ccol = 0; ccol < ncols; ++ccol) {
+                PanelData_acc inb, out, lee;
+                fetchAll(ccol, r, inb, out, lee);
+                double local_max = panel_counts_max_acc(lee, inb, out);
+                if (local_max > max_counts) max_counts = local_max;
+            }
+        }
+        if (max_counts <= 0.0) {
+            global_ymin = 0.0;
+            global_ymax = 1.0;
+        } else {
+            global_ymin = 0.0;
+            global_ymax = 1.10 * max_counts;
+        }
+    } else {
+        // Ratios: scan all panels for max(R + eR) for Inb and Out
+        double max_ratio = 0.0;
+        for (int r = 0; r < nrows; ++r) {
+            for (int ccol = 0; ccol < ncols; ++ccol) {
+                PanelData_acc inb, out, lee;
+                fetchAll(ccol, r, inb, out, lee);
+
+                double local_inb = panel_ratio_max_one_acc(inb, lee, phi_match_tol);
+                double local_out = panel_ratio_max_one_acc(out, lee, phi_match_tol);
+
+                if (local_inb > max_ratio) max_ratio = local_inb;
+                if (local_out > max_ratio) max_ratio = local_out;
+            }
+        }
+        if (max_ratio <= 0.0) {
+            global_ymin = 0.0;
+            global_ymax = 1.0;
+        } else {
+            global_ymin = 0.0;
+            global_ymax = 1.10 * max_ratio;
+            if (global_ymax < 1.0) {
+                global_ymax = 1.0;
+            }
+        }
+    }
+
+    // ---------- Second pass: draw all pads with common y-range ----------
     for (int r = 0; r < nrows; ++r) {
         for (int ccol = 0; ccol < ncols; ++ccol) {
             pGrid->cd(r * ncols + ccol + 1);
@@ -598,34 +709,8 @@ static void draw_one_canvas_acc(
             PanelData_acc inb, out, lee;
             fetchAll(ccol, r, inb, out, lee);
 
-            double ymin = 0.0;
-            double ymax = 1.0;
-
             if (!draw_ratio_only) {
-                // Acceptance: auto-scale to cover Lee + Inb + Out with errors
-                ymax = 0.0;
-                auto update_ymax = [&](const PanelData_acc& pd) {
-                    for (size_t i = 0; i < pd.val.size(); ++i) {
-                        double vup = pd.val[i];
-                        if (i < pd.err.size()) {
-                            vup = pd.val[i] + pd.err[i];
-                        }
-                        if (vup > ymax) ymax = vup;
-                    }
-                };
-                update_ymax(lee);
-                update_ymax(inb);
-                update_ymax(out);
-
-                if (ymax <= 0.0) {
-                    ymin = 0.0;
-                    ymax = 1.0;
-                } else {
-                    ymin = 0.0;
-                    ymax = 1.10 * ymax;
-                }
-
-                TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
+                TH1* frame = gPad->DrawFrame(0.0, global_ymin, 360.0, global_ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Acceptance");
                 frame->GetXaxis()->CenterTitle();
@@ -655,15 +740,11 @@ static void draw_one_canvas_acc(
                 graph_pe1_acc(out.phi, out.val, out.err, 21, color_out);
                 graph_pe1_acc(lee.phi, lee.val, lee.err, 24, color_lee);
             } else {
-                // Ratio: compute R_inb = Inb/Lee and R_out = Out/Lee, eR from Hayward errors
-                const double tol = 20.0;
+                // Ratio: compute arrays for Inb/Lee and Out/Lee and draw in common range
                 std::vector<double> x_inb, y_inb, ey_inb;
                 std::vector<double> x_out, y_out, ey_out;
 
-                double local_max = 0.0;
-
-                // Helper to match phi vs Lee and fill ratio vectors
-                auto make_ratio = [&](const PanelData_acc& pd,
+                auto fill_ratio = [&](const PanelData_acc& pd,
                                       std::vector<double>& X,
                                       std::vector<double>& Y,
                                       std::vector<double>& EY) {
@@ -677,7 +758,7 @@ static void draw_one_canvas_acc(
                                 jbest = (int)j;
                             }
                         }
-                        if (jbest >= 0 && best_dist <= tol && lee.val[jbest] > 0.0) {
+                        if (jbest >= 0 && best_dist <= phi_match_tol && lee.val[jbest] > 0.0) {
                             double H = pd.val[i];
                             double L = lee.val[jbest];
                             double R = (H <= 0.0) ? 0.0 : H / L;
@@ -691,27 +772,14 @@ static void draw_one_canvas_acc(
                             X.push_back(pd.phi[i]);
                             Y.push_back(R);
                             EY.push_back(eR);
-
-                            if (R + eR > local_max) {
-                                local_max = R + eR;
-                            }
                         }
                     }
                 };
 
-                make_ratio(inb, x_inb, y_inb, ey_inb);
-                make_ratio(out, x_out, y_out, ey_out);
+                fill_ratio(inb, x_inb, y_inb, ey_inb);
+                fill_ratio(out, x_out, y_out, ey_out);
 
-                if (local_max <= 0.0) {
-                    ymin = 0.0;
-                    ymax = 1.0;
-                } else {
-                    ymin = 0.0;
-                    ymax = 1.10 * local_max;
-                    if (ymax < 1.0) ymax = 1.0;
-                }
-
-                TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
+                TH1* frame = gPad->DrawFrame(0.0, global_ymin, 360.0, global_ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Hayward / Lee");
                 frame->GetXaxis()->CenterTitle();
@@ -816,11 +884,11 @@ static std::vector<BinRow_acc> load_lee_rows_acc(const std::string& lee_csv_path
         double lee_raw = ToDouble_acc(
             get_col_ref_acc(cols, H, "acceptance, ep->epg, sim(KM15)")
         );
-        r.lee_acc       = lee_raw;
-        r.my_acc_inb    = 0.0;
-        r.my_acc_inb_err = 0.0;
-        r.my_acc_out    = 0.0;
-        r.my_acc_out_err = 0.0;
+        r.lee_acc         = lee_raw;
+        r.my_acc_inb      = 0.0;
+        r.my_acc_inb_err  = 0.0;
+        r.my_acc_out      = 0.0;
+        r.my_acc_out_err  = 0.0;
 
         if (bin_to_index.find(r.bin_index) != bin_to_index.end()) {
             fatal_acc("Duplicate bin index in Lee CSV: " + std::to_string(r.bin_index));
