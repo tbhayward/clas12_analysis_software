@@ -6,7 +6,22 @@
 //   "Frad, 10.2 GeV"   (Sp19 Inb)
 //
 // Binning comes from dvcs_pass2_analysis.csv (Lee-style).
-// No exclusivity or 3-sigma cuts (generated MC only).
+//
+// NEW BEHAVIOR:
+//   - We now apply the *DVCS global kinematic cuts* from global_cuts.h
+//     to the generated Born and Radiative MC before binning and
+//     normalization:
+//         * (-t1) < t1_abs_max
+//         * open_angle_ep2 > open_angle_min_deg
+//         * pTmiss <= pTmiss_max
+//     via passes_global_cuts(t1, open_angle_ep2, pTmiss).
+//
+//   - The global normalizations N_born and N_rad used in
+//       Frad_i = (a_i / N_born) / (b_i / N_rad)
+//     are now defined as the total number of generated events that:
+//         * pass the DVCS global cuts, and
+//         * fall into any DVCS analysis bin (xB, Q2, |t|, phi).
+//
 // Frad is defined as Born/Rad with global MC normalizations per energy group:
 //   Frad_i = (a_i / N_born) / (b_i / N_rad) = a_i * N_rad / (b_i * N_born)
 //
@@ -18,11 +33,13 @@
 //   - 4 worker threads:
 //       (10.6 GeV, Born), (10.6 GeV, Rad),
 //       (10.2 GeV, Born), (10.2 GeV, Rad)
-//   - Each worker loops over its MC trees, accumulates row-wise counts and
-//     a global N_total, then returns. CSV writes and plotting occur only
-//     after all workers complete.
+//   - Each worker loops over its MC trees, applies DVCS global cuts,
+//     accumulates row-wise counts and a global N_total (post-cut, in-bin),
+//     then returns. CSV writes and plotting occur only after all workers
+//     complete.
 
 #include "radiative_corrections.h"
+#include "global_cuts.h"
 
 #include <TTree.h>
 #include <TCanvas.h>
@@ -388,8 +405,10 @@ static int find_row_for_event(double xB,
     return -1;
 }
 
-// MC accumulation with progress prints
-// Returns N_total = total number of entries in this tree (global, not only binned).
+// MC accumulation with DVCS global cuts and progress prints.
+// Returns N_accepted = total number of entries that:
+//   - pass passes_global_cuts, and
+//   - fall into any DVCS analysis bin.
 static double accumulate_counts_for_tree(const std::string& group_label,
                                          const std::string& tree_label,
                                          TTree* tree,
@@ -410,30 +429,41 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         std::exit(EXIT_FAILURE);
     }
 
-    const char* br_x    = "x";
-    const char* br_Q2   = "Q2";
-    const char* br_t1   = "t1";
-    const char* br_phi2 = "phi2";
+    const char* br_x        = "x";
+    const char* br_Q2       = "Q2";
+    const char* br_t1       = "t1";
+    const char* br_phi2     = "phi2";
+    const char* br_oa_ep2   = "open_angle_ep2";
+    const char* br_pTmiss   = "pTmiss";
 
+    // Required branches in generated MC:
+    //   - x, Q2, t1, phi2 for binning
+    //   - open_angle_ep2, pTmiss for DVCS global cuts
     if (!tree->GetBranch(br_x) ||
         !tree->GetBranch(br_Q2) ||
         !tree->GetBranch(br_t1) ||
-        !tree->GetBranch(br_phi2)) {
+        !tree->GetBranch(br_phi2) ||
+        !tree->GetBranch(br_oa_ep2) ||
+        !tree->GetBranch(br_pTmiss)) {
         std::cerr << "[radcorr] FATAL: missing one or more branches in tree for "
                   << group_label << " (" << tree_label
-                  << ") (expected: x, Q2, t1, phi2).\n";
+                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss).\n";
         std::exit(EXIT_FAILURE);
     }
 
-    double g_x    = 0.0;
-    double g_Q2   = 0.0;
-    double g_t1   = 0.0;
-    double g_phi2 = 0.0;
+    double g_x            = 0.0;
+    double g_Q2           = 0.0;
+    double g_t1           = 0.0;
+    double g_phi2         = 0.0;
+    double g_open_angle   = 0.0;
+    double g_pTmiss       = 0.0;
 
-    tree->SetBranchAddress(br_x,    &g_x);
-    tree->SetBranchAddress(br_Q2,   &g_Q2);
-    tree->SetBranchAddress(br_t1,   &g_t1);
-    tree->SetBranchAddress(br_phi2, &g_phi2);
+    tree->SetBranchAddress(br_x,          &g_x);
+    tree->SetBranchAddress(br_Q2,         &g_Q2);
+    tree->SetBranchAddress(br_t1,         &g_t1);
+    tree->SetBranchAddress(br_phi2,       &g_phi2);
+    tree->SetBranchAddress(br_oa_ep2,     &g_open_angle);
+    tree->SetBranchAddress(br_pTmiss,     &g_pTmiss);
 
     const Long64_t N = tree->GetEntries();
     Long64_t used = 0;
@@ -442,6 +472,26 @@ static double accumulate_counts_for_tree(const std::string& group_label,
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+
+        // Apply DVCS global kinematic cuts at generator level:
+        //   (-t1) < t1_abs_max
+        //   open_angle_ep2 > open_angle_min_deg
+        //   pTmiss <= pTmiss_max
+        if (!passes_global_cuts(g_t1, g_open_angle, g_pTmiss)) {
+            // Still count toward progress percentage, but not toward N_accepted.
+            if (N > 0 && next_pct <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)N;
+                while (pct >= (double)next_pct && next_pct <= 100) {
+                    std::cout << "[radcorr] Group " << group_label
+                              << ", tree " << tree_label
+                              << " progress: " << (double)next_pct << "% ("
+                              << (long long)(i + 1) << "/"
+                              << (long long)N << ")\n";
+                    next_pct += 10;
+                }
+            }
+            continue;
+        }
 
         const double xB   = g_x;
         const double Q2   = g_Q2;
@@ -464,7 +514,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
             continue;
         }
 
-        // NOTE: we *no longer* gate on row_has_data[row] here.
+        // NOTE: we *still* do not gate on row_has_data[row] here.
         // Generator MC should be counted for any analysis bin, regardless of
         // whether that energy group has reconstructed data in that bin.
 
@@ -487,9 +537,12 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     std::cout << "[radcorr] Group " << group_label
               << ", tree " << tree_label
               << ": total entries = " << (long long)N
-              << " ; binned (any DVCS bin) = " << (long long)used << "\n";
+              << " ; passed DVCS global cuts and binned (any DVCS bin) = "
+              << (long long)used << "\n";
 
-    return (double)N;
+    // Return N_accepted (post-cuts, in-bin) for use as N_born / N_rad
+    // global normalizations at the group level.
+    return (double)used;
 }
 
 // Fill one Frad column for a given energy group using global N_born, N_rad.
@@ -1036,7 +1089,8 @@ static void accumulate_group_type(const RCGroup& G,
     }
 
     std::cout << "[radcorr] Group " << G.label << " " << type_label
-              << ": global N_total (all periods) = " << Ntotal_out << "\n";
+              << ": global N_total (all periods, post-cuts, in-bin) = "
+              << Ntotal_out << "\n";
 }
 
 } // end anonymous namespace
