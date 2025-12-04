@@ -16,10 +16,19 @@
 //         * pTmiss <= pTmiss_max
 //     via passes_global_cuts(t1, open_angle_ep2, pTmiss).
 //
+//   - We also apply a generator-level Emiss2 3-sigma cut. The Emiss2
+//     band is defined by scanning combined_cuts.json over all DVCS
+//     topology keys ("DVCS_<PeriodDir>_<TopoDir>") and taking the
+//     Emiss2 SigmaCut with the *largest std* in the "data" block.
+//     That SigmaCut (mean, std_max) is then used to require:
+//         |Emiss2 - mean| <= 3 * std_max
+//     for *all* generated Born and Radiative MC events.
+//
 //   - The global normalizations N_born and N_rad used in
 //       Frad_i = (a_i / N_born) / (b_i / N_rad)
 //     are now defined as the total number of generated events that:
-//         * pass the DVCS global cuts, and
+//         * pass the DVCS global cuts,
+//         * pass the Emiss2 3-sigma band, and
 //         * fall into any DVCS analysis bin (xB, Q2, |t|, phi).
 //
 // Frad is defined as Born/Rad with global MC normalizations per energy group:
@@ -33,13 +42,15 @@
 //   - 4 worker threads:
 //       (10.6 GeV, Born), (10.6 GeV, Rad),
 //       (10.2 GeV, Born), (10.2 GeV, Rad)
-//   - Each worker loops over its MC trees, applies DVCS global cuts,
-//     accumulates row-wise counts and a global N_total (post-cut, in-bin),
-//     then returns. CSV writes and plotting occur only after all workers
-//     complete.
+//   - Each worker loops over its MC trees, applies DVCS global cuts
+//     AND the Emiss2 3-sigma cut, accumulates row-wise counts and a
+//     global N_total (post-cut, in-bin), then returns. CSV writes and
+//     plotting occur only after all workers complete.
 
 #include "radiative_corrections.h"
 #include "global_cuts.h"
+
+#include <nlohmann/json.hpp>
 
 #include <TTree.h>
 #include <TCanvas.h>
@@ -71,6 +82,10 @@
 #include <cstdio>
 
 namespace {
+
+using nlohmann::json;
+
+// ---------------- CSV helper ----------------
 
 struct CsvDoc {
     std::vector<std::string> header;
@@ -201,7 +216,7 @@ struct CsvDoc {
     }
 };
 
-// basic helpers
+// ------------- basic helpers -------------
 
 static inline double PI() { return 3.14159265358979323846; }
 static inline double RAD2DEG(double r) { return r * 180.0 / PI(); }
@@ -291,7 +306,105 @@ static bool parse_triple(const std::string& s,
     return true;
 }
 
-// binning from CSV: one RowBin per phi-binned row
+// ------------- Emiss2 3-sigma cut (from combined_cuts.json) -------------
+
+struct SigmaCut {
+    double mean;
+    double std;
+    SigmaCut() : mean(std::numeric_limits<double>::quiet_NaN()),
+                 std (std::numeric_limits<double>::quiet_NaN()) {}
+};
+
+static inline bool within_3sigma(double val, const SigmaCut& sc) {
+    if (!std::isfinite(val) ||
+        !std::isfinite(sc.mean) ||
+        !std::isfinite(sc.std)  ||
+        sc.std <= 0.0) {
+        // If the cut is not well-defined we treat it as pass, but for this
+        // module we will *not* allow that to happen: we fail earlier if we
+        // cannot determine a valid Emiss2 SigmaCut.
+        return true;
+    }
+    return std::fabs(val - sc.mean) <= 3.0 * sc.std;
+}
+
+// Load Emiss2 SigmaCut for DVCS MC by scanning combined_cuts.json over
+// all keys of the form "DVCS_*" and looking in the "data" block. We
+// collect all Emiss2 SigmaCuts and choose the one with the *largest* std.
+// This defines a single global Emiss2 band for generated MC.
+static SigmaCut load_global_emiss2_cut(const std::string& path) {
+    if (path.empty()) {
+        std::cerr << "[radcorr] FATAL: combined_cuts JSON path is empty "
+                  << "for Emiss2 3-sigma definition.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::ifstream fin(path.c_str());
+    if (!fin.is_open()) {
+        std::cerr << "[radcorr] FATAL: could not open combined cuts JSON: "
+                  << path << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    json j;
+    try {
+        fin >> j;
+    } catch (const std::exception& e) {
+        std::cerr << "[radcorr] FATAL: failed to parse combined cuts JSON ("
+                  << e.what() << ")\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    bool found = false;
+    SigmaCut best;
+    double best_std = -1.0;
+
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD", "pi0_..."
+        // Only consider DVCS keys
+        if (key.size() < 5 || key.compare(0, 5, "DVCS_") != 0) continue;
+
+        const json& block = it.value();
+        if (!block.contains("data") || !block["data"].is_object()) continue;
+
+        const json& data = block["data"];
+        auto vit = data.find("Emiss2");
+        if (vit == data.end() || !vit->is_object()) continue;
+
+        const json& vs = *vit;
+        SigmaCut sc;
+        if (vs.contains("mean") && vs["mean"].is_number()) {
+            sc.mean = vs["mean"].get<double>();
+        }
+        if (vs.contains("std") && vs["std"].is_number()) {
+            sc.std = vs["std"].get<double>();
+        }
+
+        if (!std::isfinite(sc.std) || sc.std <= 0.0) {
+            continue;
+        }
+
+        if (sc.std > best_std) {
+            best = sc;
+            best_std = sc.std;
+            found = true;
+        }
+    }
+
+    if (!found) {
+        std::cerr << "[radcorr] FATAL: could not find a valid Emiss2 SigmaCut "
+                  << "for DVCS in combined_cuts JSON.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::cout << "[radcorr] Using global Emiss2 3-sigma cut from combined_cuts: "
+              << "mean=" << best.mean << " std=" << best.std
+              << " (largest std among DVCS topologies, path=" << path << ")\n";
+
+    return best;
+}
+
+// ------------- binning from CSV: one RowBin per phi-binned row -------------
 
 struct RowBin {
     double xbmin, xbmax;
@@ -405,16 +518,17 @@ static int find_row_for_event(double xB,
     return -1;
 }
 
-// MC accumulation with DVCS global cuts and progress prints.
+// MC accumulation with DVCS global cuts + Emiss2 3-sigma cut and progress prints.
 // Returns N_accepted = total number of entries that:
-//   - pass passes_global_cuts, and
+//   - pass passes_global_cuts(t1, open_angle_ep2, pTmiss),
+//   - pass the Emiss2 3-sigma band, and
 //   - fall into any DVCS analysis bin.
 static double accumulate_counts_for_tree(const std::string& group_label,
                                          const std::string& tree_label,
                                          TTree* tree,
                                          const std::vector<RowBin>& bins,
                                          const std::vector<bool>& row_has_data,
-                                         std::vector<double>& counts)
+                                         const SigmaCut& emiss2_cut)
 {
     if (!tree) {
         std::cerr << "[radcorr] FATAL: null TTree pointer for "
@@ -423,11 +537,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     }
 
     const int NR = (int)row_has_data.size();
-    if ((int)counts.size() != NR) {
-        std::cerr << "[radcorr] FATAL: counts vector size mismatch in accumulate_counts_for_tree "
-                  << "for " << group_label << " (" << tree_label << ").\n";
-        std::exit(EXIT_FAILURE);
-    }
+    // counts vector must already be allocated by caller
 
     const char* br_x        = "x";
     const char* br_Q2       = "Q2";
@@ -435,19 +545,22 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     const char* br_phi2     = "phi2";
     const char* br_oa_ep2   = "open_angle_ep2";
     const char* br_pTmiss   = "pTmiss";
+    const char* br_Emiss2   = "Emiss2";
 
     // Required branches in generated MC:
     //   - x, Q2, t1, phi2 for binning
     //   - open_angle_ep2, pTmiss for DVCS global cuts
+    //   - Emiss2 for generator-level 3-sigma exclusivity band
     if (!tree->GetBranch(br_x) ||
         !tree->GetBranch(br_Q2) ||
         !tree->GetBranch(br_t1) ||
         !tree->GetBranch(br_phi2) ||
         !tree->GetBranch(br_oa_ep2) ||
-        !tree->GetBranch(br_pTmiss)) {
-        std::cerr << "[radcorr] FATAL: missing one or more branches in tree for "
+        !tree->GetBranch(br_pTmiss) ||
+        !tree->GetBranch(br_Emiss2)) {
+        std::cerr << "[radcorr] FATAL: missing one or more branches in generated MC tree for "
                   << group_label << " (" << tree_label
-                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss).\n";
+                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss, Emiss2).\n";
         std::exit(EXIT_FAILURE);
     }
 
@@ -457,6 +570,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     double g_phi2         = 0.0;
     double g_open_angle   = 0.0;
     double g_pTmiss       = 0.0;
+    double g_Emiss2       = 0.0;
 
     tree->SetBranchAddress(br_x,          &g_x);
     tree->SetBranchAddress(br_Q2,         &g_Q2);
@@ -464,6 +578,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     tree->SetBranchAddress(br_phi2,       &g_phi2);
     tree->SetBranchAddress(br_oa_ep2,     &g_open_angle);
     tree->SetBranchAddress(br_pTmiss,     &g_pTmiss);
+    tree->SetBranchAddress(br_Emiss2,     &g_Emiss2);
 
     const Long64_t N = tree->GetEntries();
     Long64_t used = 0;
@@ -478,7 +593,22 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         //   open_angle_ep2 > open_angle_min_deg
         //   pTmiss <= pTmiss_max
         if (!passes_global_cuts(g_t1, g_open_angle, g_pTmiss)) {
-            // Still count toward progress percentage, but not toward N_accepted.
+            if (N > 0 && next_pct <= 100) {
+                double pct = 100.0 * (double)(i + 1) / (double)N;
+                while (pct >= (double)next_pct && next_pct <= 100) {
+                    std::cout << "[radcorr] Group " << group_label
+                              << ", tree " << tree_label
+                              << " progress: " << (double)next_pct << "% ("
+                              << (long long)(i + 1) << "/"
+                              << (long long)N << ")\n";
+                    next_pct += 10;
+                }
+            }
+            continue;
+        }
+
+        // Apply Emiss2 3-sigma exclusivity band defined from combined_cuts.json
+        if (!within_3sigma(g_Emiss2, emiss2_cut)) {
             if (N > 0 && next_pct <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)N;
                 while (pct >= (double)next_pct && next_pct <= 100) {
@@ -537,7 +667,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     std::cout << "[radcorr] Group " << group_label
               << ", tree " << tree_label
               << ": total entries = " << (long long)N
-              << " ; passed DVCS global cuts and binned (any DVCS bin) = "
+              << " ; passed DVCS global cuts + Emiss2 3-sigma and binned (any DVCS bin) = "
               << (long long)used << "\n";
 
     // Return N_accepted (post-cuts, in-bin) for use as N_born / N_rad
@@ -1055,6 +1185,7 @@ static void accumulate_group_type(const RCGroup& G,
                                   const std::vector<bool>& row_has_data,
                                   const std::map<std::string, TTree*>& treeMap,
                                   bool isBorn,
+                                  const SigmaCut& emiss2_cut,
                                   std::vector<double>& counts_out,
                                   double& Ntotal_out)
 {
@@ -1084,7 +1215,7 @@ static void accumulate_group_type(const RCGroup& G,
                                                    tree,
                                                    bins,
                                                    row_has_data,
-                                                   counts_out);
+                                                   emiss2_cut);
         Ntotal_out += N_here;
     }
 
@@ -1129,6 +1260,17 @@ bool update_radiative_corrections_csv(
     }
 
     std::vector<RowBin> bins = build_row_bins(csv);
+
+    // ---------------------------------------------------------------------
+    // Load Emiss2 3-sigma band from combined_cuts.json by scanning DVCS
+    // topology-dependent cuts and choosing the Emiss2 SigmaCut with the
+    // largest std.
+    //
+    // NOTE: Path is hard-coded here; if you prefer, you can promote this
+    // into a function argument and pass it from main (similar to acceptance).
+    // ---------------------------------------------------------------------
+    const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+    const SigmaCut emiss2_cut = load_global_emiss2_cut(combined_cuts_json);
 
     // Define groups: 10.6 GeV (4 periods) and 10.2 GeV (Sp19 Inb only)
     RCGroup g10p6;
@@ -1211,6 +1353,7 @@ bool update_radiative_corrections_csv(
         std::cref(row_has_data_10p6),
         std::cref(genMcTrees),
         true,
+        std::cref(emiss2_cut),
         std::ref(acc10p6.born_counts),
         std::ref(acc10p6.N_born)
     );
@@ -1222,6 +1365,7 @@ bool update_radiative_corrections_csv(
         std::cref(row_has_data_10p6),
         std::cref(radGenMcTrees),
         false,
+        std::cref(emiss2_cut),
         std::ref(acc10p6.rad_counts),
         std::ref(acc10p6.N_rad)
     );
@@ -1233,6 +1377,7 @@ bool update_radiative_corrections_csv(
         std::cref(row_has_data_10p2),
         std::cref(genMcTrees),
         true,
+        std::cref(emiss2_cut),
         std::ref(acc10p2.born_counts),
         std::ref(acc10p2.N_born)
     );
@@ -1244,6 +1389,7 @@ bool update_radiative_corrections_csv(
         std::cref(row_has_data_10p2),
         std::cref(radGenMcTrees),
         false,
+        std::cref(emiss2_cut),
         std::ref(acc10p2.rad_counts),
         std::ref(acc10p2.N_rad)
     );
