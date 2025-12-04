@@ -11,7 +11,7 @@
 #include "bin_centering_cross_check.h"
 #include "bin_volume_cross_check.h"
 #include "cross_section_cross_check.h"
-
+#include "acceptance_cross_check.h"
 
 namespace fs = std::filesystem;
 
@@ -56,6 +56,13 @@ int main() {
     //     "output/cross_check/lee/rad_corrections"
     // );
 
+    // Acceptance cross-check (Lee vs Fa18 Inb/Out)
+    plot_acceptance_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/acceptance"
+    );
+
     // // Unfolded acceptance-corrected yield cross-check
     // plot_unfolded_yields_cross_checks(
     //     lee_csv,
@@ -77,12 +84,12 @@ int main() {
     //     "output/cross_check/lee/bin_volume"
     // );
 
-    // Cross section cross-check
-    plot_cross_section_cross_checks(
-        lee_csv,
-        hayward_csv,
-        "output/cross_check/lee/cross_sections"
-    );
+    // // Cross section cross-check
+    // plot_cross_section_cross_checks(
+    //     lee_csv,
+    //     hayward_csv,
+    //     "output/cross_check/lee/cross_sections"
+    // );
 
     std::cout << "[lee] cross_check_lee complete.\n";
     return 0;

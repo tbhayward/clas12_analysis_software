@@ -63,26 +63,26 @@ int main(int argc, char* argv[]) {
     );
     std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // // --------- Global bin-averaged kinematics (CSV update) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-    //     // Make a simple backup before modifying
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //                                    std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-    //     }
+        // Make a simple backup before modifying
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
 
-    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- Raw yields (counts) into CSV + plots ----------
     // {
@@ -178,9 +178,10 @@ int main(int argc, char* argv[]) {
 
     // // --------- DVCS MC acceptance (CSV + plots) ----------
     // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json  = "output/jsons/combined_cuts.json";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+    //     const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     const std::string global_cuts_json   = "output/jsons/global_cuts.json";
+    //     const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
 
     //     // Make a backup before modifying the acceptance columns
     //     try {
@@ -192,8 +193,12 @@ int main(int argc, char* argv[]) {
     //                   << e.what() << "). Continuing.\n";
     //     }
 
-    //     if (!update_acceptance_csv(csv_main, genMcTrees, recMcTrees,
-    //                                cuts_json, output_root)) {
+    //     if (!update_acceptance_csv(csv_main,
+    //                                genMcTrees,
+    //                                recMcTrees,
+    //                                combined_cuts_json,
+    //                                global_cuts_json,
+    //                                output_root)) {
     //         std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
     //         std::exit(EXIT_FAILURE);
     //     }

@@ -8,6 +8,7 @@
 #include "pi0_contamination.h"
 #include "periods.h"
 #include "label_aliases.h"  // provides topology_aliases(), period_aliases(), helicity_aliases(), find_col_alias()
+#include "global_cuts.h"
 
 #include <nlohmann/json.hpp>
 
@@ -431,6 +432,8 @@ struct VarBinding {
 struct BinderCommon {
     // Integers are usually consistent, but let's be safe with standard Int_t
     int detector1=0, detector2=0;
+    int runnum=0;
+    bool have_runnum=false;
     
     // Kinematics (Critical - use robust binding)
     VarBinding t1, open_angle_ep2, pTmiss;
@@ -450,6 +453,14 @@ struct BinderCommon {
         // Detectors are integers
         bindI(t, "detector1", &detector1);
         bindI(t, "detector2", &detector2);
+
+        // runnum is optional (some MC might not have it)
+        if (t->GetBranch("runnum")) {
+            bindI(t, "runnum", &runnum);
+            have_runnum = true;
+        } else {
+            have_runnum = false;
+        }
 
         // Bind kinematics checking for Float/Double
         t1.bind(t, "t1");
@@ -849,9 +860,11 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tD->GetEntries(); dbgD.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tD->GetEntry(i);
-                if (!(b.get_open() > 5.0)) continue; dbgD.pass_global++;
-                if (!((-b.get_t1()) < 1.0)) continue;
-                if (!(b.get_pT() <= 0.20)) continue;
+
+                // Global run blacklist + global cuts (same policy as total_counts)
+                if (b.have_runnum && is_excluded_run(b.runnum)) continue;
+                if (!passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT())) continue;
+                dbgD.pass_global++;
 
                 std::string matched_topo;
                 int topo_idx=-1;
@@ -881,9 +894,11 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tR->GetEntries(); dbgR.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tR->GetEntry(i);
-                if (!(b.get_open() > 5.0)) continue; dbgR.pass_global++;
-                if (!((-b.get_t1()) < 1.0)) continue;
-                if (!(b.get_pT() <= 0.20)) continue;
+
+                // Global run blacklist + global cuts
+                if (b.have_runnum && is_excluded_run(b.runnum)) continue;
+                if (!passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT())) continue;
+                dbgR.pass_global++;
 
                 std::string matched_topo;
                 int topo_idx=-1;
@@ -913,9 +928,11 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tB->GetEntries(); dbgB.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tB->GetEntry(i);
-                if (!(b.get_open() > 5.0)) continue; dbgB.pass_global++;
-                if (!((-b.get_t1()) < 1.0)) continue;
-                if (!(b.get_pT() <= 0.20)) continue;
+
+                // Global run blacklist + global cuts
+                if (b.have_runnum && is_excluded_run(b.runnum)) continue;
+                if (!passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT())) continue;
+                dbgB.pass_global++;
 
                 std::string matched_topo;
                 int topo_idx=-1;
