@@ -523,12 +523,14 @@ static int find_row_for_event(double xB,
 //   - pass passes_global_cuts(t1, open_angle_ep2, pTmiss),
 //   - pass the Emiss2 3-sigma band, and
 //   - fall into any DVCS analysis bin.
+// The 'counts' vector must be pre-sized to NR = row_has_data.size() by the caller.
 static double accumulate_counts_for_tree(const std::string& group_label,
                                          const std::string& tree_label,
                                          TTree* tree,
                                          const std::vector<RowBin>& bins,
                                          const std::vector<bool>& row_has_data,
-                                         const SigmaCut& emiss2_cut)
+                                         const SigmaCut& emiss2_cut,
+                                         std::vector<double>& counts)
 {
     if (!tree) {
         std::cerr << "[radcorr] FATAL: null TTree pointer for "
@@ -537,7 +539,14 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     }
 
     const int NR = (int)row_has_data.size();
-    // counts vector must already be allocated by caller
+
+    if ((int)counts.size() != NR) {
+        std::cerr << "[radcorr] FATAL: counts vector size mismatch in "
+                  << "accumulate_counts_for_tree for " << group_label
+                  << " (" << tree_label << "): expected " << NR
+                  << " got " << counts.size() << "\n";
+        std::exit(EXIT_FAILURE);
+    }
 
     const char* br_x        = "x";
     const char* br_Q2       = "Q2";
@@ -1215,7 +1224,8 @@ static void accumulate_group_type(const RCGroup& G,
                                                    tree,
                                                    bins,
                                                    row_has_data,
-                                                   emiss2_cut);
+                                                   emiss2_cut,
+                                                   counts_out);
         Ntotal_out += N_here;
     }
 
@@ -1451,13 +1461,14 @@ bool update_radiative_corrections_csv(
                             out_root_dir,
                             g10p2.energy_dir);
 
+    std::error_code ec2;
     if (!csv.save_atomic(csv_path)) {
         std::cerr << "[radcorr] ERROR: failed to save updated CSV.\n";
         return false;
     }
 
     const uintmax_t size_after =
-        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
+        fs::exists(csv_path, ec2) ? fs::file_size(csv_path, ec2) : 0;
 
     std::cout << "[radcorr] Updated CSV: " << csv_abs
               << " (size " << size_before << " -> " << size_after << ")\n";
