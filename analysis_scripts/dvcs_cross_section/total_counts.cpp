@@ -9,6 +9,7 @@
 #include "periods.h"
 #include "load_binning_scheme.h"
 #include "label_aliases.h"
+#include "global_cuts.h"
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
@@ -214,9 +215,25 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     return out;
 }
 
-static inline bool within_3sigma(double val, const SigmaCut& sc) {
-    if (!std::isfinite(val) || !std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) return true;
-    return std::fabs(val - sc.mean) <= 3.0 * sc.std;
+enum class CutMode { TwoSided, UpperOnly };
+
+static inline CutMode var_mode(const std::string& vname) {
+    if (vname == "Emiss2" || vname == "pTmiss" || vname == "theta_gamma_gamma") {
+        return CutMode::UpperOnly;
+    }
+    return CutMode::TwoSided;
+}
+
+static inline bool within_3sigma(double val, const SigmaCut& sc, CutMode mode) {
+    if (!std::isfinite(val) || !std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) {
+        return true; // if we cannot evaluate, do not cut
+    }
+
+    if (mode == CutMode::UpperOnly) {
+        return (val <= sc.mean + 3.0 * sc.std);
+    } else {
+        return std::fabs(val - sc.mean) <= 3.0 * sc.std;
+    }
 }
 
 static std::string to_lower_nospace(std::string s) {
@@ -466,14 +483,6 @@ static void bind_one_exact_enable(TTree* t, const std::string& bname, BranchBind
     else { fatal("Unsupported leaf type '"+tn+"' for branch '"+bname+"'"); }
 }
 
-// ---------------- simple exclusivity policy ----------------
-static inline bool passes_global(double open_angle_ep2_deg, double t1, double pTmiss) {
-    if (!(open_angle_ep2_deg > 5.0)) return false;
-    if (!((-t1) < 1.0)) return false;
-    if (!(pTmiss <= 0.20)) return false;
-    return true;
-}
-
 // ---------------- diagnostics and row counts ----------------
 struct DebugCounts {
     long long total=0, bad_helicity=0, bad_nan=0, cut_fail=0, topo_bad=0, no_row_match=0;
@@ -575,7 +584,7 @@ static void draw_group_canvases(
         c_phiavg = csv.col_index("phiavg, "+display_label);
         c_q2avg  = csv.col_index("Q2avg, " +display_label);
         c_tabavg = csv.col_index("t_abs_avg, "+display_label);
-        c_xbavg  = csv.col_index("xBavg, "+display_label);
+        c_xbavg  = csv.col_index("xBavg, " +display_label);
         if (c_phiavg<0 || c_q2avg<0 || c_tabavg<0 || c_xbavg<0) {
             for (const auto& alt : period_aliases(display_label)) {
                 if (c_phiavg<0) { int ci = csv.col_index("phiavg, "+alt); if (ci>=0) c_phiavg=ci; }
@@ -887,8 +896,10 @@ bool update_total_counts_csv(
 
         TopologyResolver topo; topo.enable_and_bind(t);
 
+        BranchBinding b_runnum;
         BranchBinding b_helicity, b_x, b_Q2, b_t1, b_phi2, b_open_angle, b_pTmiss;
-        bind_one_exact_enable(t, "helicity",       b_helicity);
+        bind_one_exact_enable(t, "runnum",          b_runnum);
+        bind_one_exact_enable(t, "helicity",        b_helicity);
         bind_one_exact_enable(t, "x",              b_x);
         bind_one_exact_enable(t, "Q2",             b_Q2);
         bind_one_exact_enable(t, "t1",             b_t1);
@@ -924,6 +935,7 @@ bool update_total_counts_csv(
             const long long hel = bb_as_ll(b_helicity);
             if (hel!=+1 && hel!=-1) { dbg.bad_helicity++; continue; }
 
+            const int runnum = (int)bb_as_ll(b_runnum);
             const double x   = bb_as_double(b_x);
             const double Q2  = bb_as_double(b_Q2);
             const double t1  = bb_as_double(b_t1);
@@ -937,7 +949,10 @@ bool update_total_counts_csv(
             }
             ++seen;
 
-            if (!passes_global(open_angle_deg, t1, pTmiss)) { dbg.cut_fail++; continue; }
+            // Global run blacklist + global cuts from global_cuts.h
+            if (is_excluded_run(runnum)) { dbg.cut_fail++; continue; }
+            if (!passes_global_cuts(t1, open_angle_deg, pTmiss)) { dbg.cut_fail++; continue; }
+
             const int topo_idx = topo.index();
             if (topo_idx < 0 || topo_idx > 2) { dbg.topo_bad++; continue; }
             const std::string topoS = topo_str((Topology)topo_idx);
@@ -946,7 +961,6 @@ bool update_total_counts_csv(
             const std::string topo_key = std::string("DVCS_") + period_dir_for_label(display_label) + "_" + topo_dir((Topology)topo_idx);
             auto itTopoCuts = sigmaCuts.find(topo_key);
             if (itTopoCuts != sigmaCuts.end()) {
-                // Only check vars that appear in the JSON block; missing vars are ignored.
                 auto getv = [&](const std::string& v)->double {
                     if (v=="Emiss2")            return bb_as_double(b_Emiss2);
                     if (v=="Mx2")               return bb_as_double(b_Mx2);
@@ -954,7 +968,7 @@ bool update_total_counts_csv(
                     if (v=="Mx2_2")             return bb_as_double(b_Mx2_2);
                     if (v=="theta_gamma_gamma") return bb_as_double(b_theta_gg);
                     if (v=="xF")                return bb_as_double(b_xF);
-                    if (v=="pTmiss")            return pTmiss; // also enforce 3σ on pTmiss if provided
+                    if (v=="pTmiss")            return pTmiss;
                     return std::numeric_limits<double>::quiet_NaN();
                 };
 
@@ -963,7 +977,8 @@ bool update_total_counts_csv(
                     const std::string& vname = kv.first;
                     const SigmaCut&    sc    = kv.second;
                     const double val = getv(vname);
-                    if (!within_3sigma(val, sc)) { ok = false; break; }
+                    const CutMode mode = var_mode(vname);
+                    if (!within_3sigma(val, sc, mode)) { ok = false; break; }
                 }
                 if (!ok) continue; // fail the 3σ exclusivity for this topology
             }

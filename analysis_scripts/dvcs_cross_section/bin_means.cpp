@@ -6,6 +6,7 @@
 #include "bin_means.h"
 #include "periods.h"
 #include "load_binning_scheme.h"
+#include "global_cuts.h"
 
 #include <TTree.h>
 #include <TStopwatch.h>
@@ -221,20 +222,28 @@ static std::mutex g_root_bind_mutex;
 
 // ---------------- branch binder ----------------
 struct BranchBinder {
+    // run info
+    int runnum = 0;              bool has_runnum = false;
+
+    // topology info
+    int detector1 = 0;           bool has_det1 = false;
+    int detector2 = 0;           bool has_det2 = false;
+
     // global/exclusivity inputs
-    double t1 = 0.0;               bool has_t1 = false;
-    double open_angle_ep2 = 0.0;   bool has_open = false; // degrees
-    double pTmiss = 0.0;           bool has_pT = false;
-    double Emiss2 = 0.0;           bool has_Em2 = false;
-    double Mx2 = 0.0;              bool has_Mx2 = false;
-    double Mx2_1 = 0.0;            bool has_Mx2_1 = false;
-    double Mx2_2 = 0.0;            bool has_Mx2_2 = false;
-    double xF = 0.0;               bool has_xF = false;
+    double t1 = 0.0;             bool has_t1 = false;
+    double open_angle_ep2 = 0.0; bool has_open = false; // degrees
+    double pTmiss = 0.0;         bool has_pT = false;
+    double Emiss2 = 0.0;         bool has_Em2 = false;
+    double Mx2 = 0.0;            bool has_Mx2 = false;
+    double Mx2_1 = 0.0;          bool has_Mx2_1 = false;
+    double Mx2_2 = 0.0;          bool has_Mx2_2 = false;
+    double xF = 0.0;             bool has_xF = false;
+    double theta_gamma_gamma = 0.0; bool has_theta_gg = false;
 
     // binning vars
-    double x = 0.0;                bool has_x = false;
-    double Q2 = 0.0;               bool has_Q2 = false;
-    double phi2_rad = 0.0;         bool has_phi2 = false;  // radians
+    double x = 0.0;              bool has_x = false;
+    double Q2 = 0.0;             bool has_Q2 = false;
+    double phi2_rad = 0.0;       bool has_phi2 = false;  // radians
 
     void bind(TTree* t) {
         if (!t) return;
@@ -250,6 +259,9 @@ struct BranchBinder {
         };
 
         // Exclusivity/global cuts
+        enable("runnum");
+        enable("detector1");
+        enable("detector2");
         enable("t1");
         enable("open_angle_ep2");
         enable("pTmiss");
@@ -258,6 +270,7 @@ struct BranchBinder {
         enable("Mx2_1");
         enable("Mx2_2");
         enable("xF");
+        enable("theta_gamma_gamma");
 
         // Binning variables
         enable("x");
@@ -270,18 +283,26 @@ struct BranchBinder {
         auto bindD = [&](const char* n, double* a, bool& f){
             if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
         };
+        auto bindI = [&](const char* n, int* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
+        };
 
-        bindD("t1", &t1, has_t1);
-        bindD("open_angle_ep2", &open_angle_ep2, has_open);
-        bindD("pTmiss", &pTmiss, has_pT);
-        bindD("Emiss2", &Emiss2, has_Em2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bindD("xF", &xF, has_xF);
+        bindI("runnum",    &runnum,    has_runnum);
+        bindI("detector1", &detector1, has_det1);
+        bindI("detector2", &detector2, has_det2);
 
-        bindD("x", &x, has_x);
-        bindD("Q2", &Q2, has_Q2);
+        bindD("t1",                &t1,                has_t1);
+        bindD("open_angle_ep2",    &open_angle_ep2,    has_open);
+        bindD("pTmiss",            &pTmiss,            has_pT);
+        bindD("Emiss2",            &Emiss2,            has_Em2);
+        bindD("Mx2",               &Mx2,               has_Mx2);
+        bindD("Mx2_1",             &Mx2_1,             has_Mx2_1);
+        bindD("Mx2_2",             &Mx2_2,             has_Mx2_2);
+        bindD("xF",                &xF,                has_xF);
+        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
+
+        bindD("x",    &x,    has_x);
+        bindD("Q2",   &Q2,   has_Q2);
         bindD("phi2", &phi2_rad, has_phi2);
     }
 
@@ -298,18 +319,32 @@ struct BranchBinder {
         if (deg >= 360.0) deg = std::nextafter(360.0, 0.0);
         return deg;
     }
+    int topology_index() const {
+        if (!has_det1 || !has_det2) return -1;
+        if (detector1 == 1 && detector2 == 1) return (int)Topology::FD_FD;
+        if (detector1 == 2 && detector2 == 1) return (int)Topology::CD_FD;
+        if (detector1 == 2 && detector2 == 0) return (int)Topology::CD_FT;
+        return -1;
+    }
 };
 
 // ---------------- cuts ----------------
 static inline bool passes_global(const BranchBinder& b) {
     if (!b.readyForCuts()) return false;
-    if (b.open_angle_ep2 <= 5.0) return false;    // degrees threshold
-    if ((-b.t1) > 1.0)          return false;     // |t| < 1.0
-    if (b.pTmiss > 0.20)        return false;     // (GeV)
+
+    // Global run blacklist (from global_cuts.h), if runnum is available.
+    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
+
+    // Use shared global cuts configuration (t1, open_angle_ep2_deg, pTmiss).
+    if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss)) return false;
+
     return true;
 }
 
-struct Sigmas { double mean = std::numeric_limits<double>::quiet_NaN(); double std = std::numeric_limits<double>::quiet_NaN(); };
+struct Sigmas {
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std  = std::numeric_limits<double>::quiet_NaN();
+};
 using VarMap = std::unordered_map<std::string, Sigmas>;
 static std::unordered_map<std::string, VarMap> g_sigma_cache;
 static std::once_flag g_sigma_once;
@@ -356,10 +391,14 @@ static void load_sigmas_once() {
     }
     std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
 
-    const std::vector<std::string> P = { "DVCS_Fa18_Inb", "DVCS_Fa18_Out", "DVCS_Sp19_Inb",
-                                         "DVCS_Sp18_Inb", "DVCS_Sp18_Out" };
+    const std::vector<std::string> P = {
+        "DVCS_Fa18_Inb", "DVCS_Fa18_Out",
+        "DVCS_Sp19_Inb", "DVCS_Sp18_Inb", "DVCS_Sp18_Out"
+    };
     const std::vector<std::string> T = { "FD_FD", "CD_FD", "CD_FT" };
-    const std::vector<std::string> VARS = { "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "theta_gamma_gamma", "xF" };
+    const std::vector<std::string> VARS = {
+        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "theta_gamma_gamma", "xF"
+    };
 
     for (const auto& p : P) {
         for (const auto& t : T) {
@@ -375,11 +414,14 @@ static void load_sigmas_once() {
         }
     }
 }
+
 enum class CutMode { TwoSided, UpperOnly };
+
 static CutMode var_mode(const std::string& var) {
     if (var == "Emiss2" || var == "pTmiss" || var == "theta_gamma_gamma") return CutMode::UpperOnly;
     return CutMode::TwoSided;
 }
+
 static bool passes_3sigma_for_topo(const std::string& period_json_tag,
                                    Topology topo,
                                    const BranchBinder& b) {
@@ -396,7 +438,7 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
         if (itv == vm.end()) return true;
         if (!has_val) return true;
         const Sigmas s = itv->second;
-        if (!std::isfinite(s.mean) || !std::isfinite(s.std)) return true;
+        if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) return true;
 
         const CutMode mode = var_mode(var);
         if (mode == CutMode::UpperOnly) {
@@ -407,21 +449,15 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
         }
     };
 
-    const bool ok_theta = check("theta_gamma_gamma", b.has_open, b.open_angle_ep2 * DEG2RAD);
-    const bool ok_pT    = check("pTmiss",           b.has_pT,   b.pTmiss);
-    const bool ok_Em2   = check("Emiss2",           b.has_Em2,  b.Emiss2);
-    const bool ok_Mx2   = check("Mx2",              b.has_Mx2,  b.Mx2);
-    const bool ok_Mx21  = check("Mx2_1",            b.has_Mx2_1,b.Mx2_1);
-    const bool ok_Mx22  = check("Mx2_2",            b.has_Mx2_2,b.Mx2_2);
-    const bool ok_xF    = check("xF",               b.has_xF,   b.xF);
+    const bool ok_theta = check("theta_gamma_gamma", b.has_theta_gg, b.theta_gamma_gamma);
+    const bool ok_pT    = check("pTmiss",           b.has_pT,       b.pTmiss);
+    const bool ok_Em2   = check("Emiss2",           b.has_Em2,      b.Emiss2);
+    const bool ok_Mx2   = check("Mx2",              b.has_Mx2,      b.Mx2);
+    const bool ok_Mx21  = check("Mx2_1",            b.has_Mx2_1,    b.Mx2_1);
+    const bool ok_Mx22  = check("Mx2_2",            b.has_Mx2_2,    b.Mx2_2);
+    const bool ok_xF    = check("xF",               b.has_xF,       b.xF);
 
     return ok_theta && ok_pT && ok_Em2 && ok_Mx2 && ok_Mx21 && ok_Mx22 && ok_xF;
-}
-// Accept if ANY topology gate passes.
-static bool passes_all_exclusivity(const std::string& period_json_tag, const BranchBinder& b) {
-    return passes_3sigma_for_topo(period_json_tag, Topology::FD_FD, b)
-        || passes_3sigma_for_topo(period_json_tag, Topology::CD_FD, b)
-        || passes_3sigma_for_topo(period_json_tag, Topology::CD_FT, b);
 }
 
 static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
@@ -455,6 +491,11 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
     if (!b.readyForCuts() || !b.readyForAverages()) {
         std::cerr << "[bin_means] FATAL: Tree for '" << period_key
                   << "' missing branches (t1/open_angle_ep2/pTmiss/x/Q2/phi2)." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    if (!b.has_det1 || !b.has_det2) {
+        std::cerr << "[bin_means] FATAL: Tree for '" << period_key
+                  << "' missing detector1/detector2 for topology determination." << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
@@ -515,13 +556,22 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
                       << " open_angle_ep2=" << b.open_angle_ep2
                       << " pTmiss=" << b.pTmiss
                       << " x=" << b.x << " Q2=" << b.Q2
-                      << " phi2(rad)=" << b.phi2_rad << std::endl;
+                      << " phi2(rad)=" << b.phi2_rad
+                      << " theta_gamma_gamma=" << b.theta_gamma_gamma
+                      << " det1=" << (b.has_det1 ? b.detector1 : -1)
+                      << " det2=" << (b.has_det2 ? b.detector2 : -1)
+                      << " runnum=" << (b.has_runnum ? b.runnum : -1)
+                      << std::endl;
         }
 
         if (!passes_global(b)) continue;
         ++n_pass_global;
 
-        if (!passes_all_exclusivity(tags.json_tag, b)) continue;
+        int topo_idx = b.topology_index();
+        if (topo_idx < 0 || topo_idx > 2) continue;
+        Topology topo = static_cast<Topology>(topo_idx);
+
+        if (!passes_3sigma_for_topo(tags.json_tag, topo, b)) continue;
         ++n_pass_3sig;
 
         const double phi_deg = b.phi_deg();
