@@ -180,7 +180,7 @@ int main(int argc, char* argv[]) {
     {
         const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
-        const std::string global_cuts_json   = "output/jsons/global_cuts.json";
+        const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
         const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
 
         // Make a backup before modifying the acceptance columns
