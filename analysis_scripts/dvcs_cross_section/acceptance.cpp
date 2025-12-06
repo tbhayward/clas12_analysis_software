@@ -3,7 +3,7 @@
 //   - acceptance, <period> = N_rec / N_gen per (xB, Q2, |t|, phi) bin
 //   - N_rec from reconstructed MC with:
 //       * hard global DVCS exclusivity cuts (t1, open_angle_ep2, pTmiss),
-//       * run-number–dependent global cuts from global_cuts.json,
+//       * global run-blacklist and global cuts from global_cuts.h,
 //       * AND 3-sigma cuts loaded from combined_cuts.json, applied
 //         topology-by-topology (FD_FD, CD_FD, CD_FT) via detector1/2.
 //   - N_gen from generated MC without exclusivity cuts
@@ -15,6 +15,7 @@
 //     xB by (Q2, |t|) canvas layout under output/acceptance/<PeriodDir>/.
 
 #include "acceptance.h"
+#include "global_cuts.h"   // <- reuse the same GLOBAL cuts as total_counts.cpp
 
 #include <nlohmann/json.hpp>
 
@@ -399,126 +400,6 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     return out;
 }
 
-// ----------------- run-number–dependent global cuts -----------------
-
-struct RunRangeCut {
-    int    run_min = 0;
-    int    run_max = 0;
-    double lo      = std::numeric_limits<double>::quiet_NaN();
-    double hi      = std::numeric_limits<double>::quiet_NaN();
-};
-
-// var -> vector of run ranges
-using GlobalVarMap = std::unordered_map<std::string, std::vector<RunRangeCut>>;
-// key "DVCS_<PeriodDir>" -> (var -> run-range cuts)
-using GlobalCutMap = std::unordered_map<std::string, GlobalVarMap>;
-
-static GlobalCutMap load_global_cuts_data(const std::string& path) {
-    GlobalCutMap out;
-
-    if (path.empty()) {
-        std::cerr << "[acceptance] FATAL: global cuts JSON path is empty.\n";
-        std::exit(EXIT_FAILURE);
-    }
-
-    std::ifstream fin(path);
-    if (!fin.is_open()) {
-        std::cerr << "[acceptance] FATAL: could not open global cuts JSON: " << path << "\n";
-        std::exit(EXIT_FAILURE);
-    }
-
-    json j;
-    try {
-        fin >> j;
-    } catch (const std::exception& e) {
-        std::cerr << "[acceptance] FATAL: failed to parse global cuts JSON ("
-                  << e.what() << ")\n";
-        std::exit(EXIT_FAILURE);
-    }
-
-    // Expected structure:
-    // {
-    //   "DVCS_Fa18_Inb": {
-    //      "Emiss2": [
-    //         { "run_min": 5050, "run_max": 5150, "min": -0.5, "max": 0.5 },
-    //         ...
-    //      ],
-    //      "Mx2": [ ... ]
-    //   },
-    //   ...
-    // }
-    for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key();   // "DVCS_<PeriodDir>"
-        const json& block = it.value();
-        if (!block.is_object()) continue;
-
-        GlobalVarMap varMap;
-
-        for (auto vit = block.begin(); vit != block.end(); ++vit) {
-            const std::string varName = vit.key();
-            const json& arr = vit.value();
-            if (!arr.is_array()) continue;
-
-            std::vector<RunRangeCut> cuts;
-            for (const auto& elem : arr) {
-                if (!elem.is_object()) continue;
-
-                RunRangeCut c;
-
-                if (!elem.contains("run_min") || !elem.contains("run_max") ||
-                    !elem.contains("min")     || !elem.contains("max")) {
-                    std::cerr << "[acceptance] FATAL: global_cuts entry for key '"
-                              << key << "', var '" << varName
-                              << "' is missing run_min/run_max/min/max.\n";
-                    std::exit(EXIT_FAILURE);
-                }
-
-                if (!elem["run_min"].is_number_integer() ||
-                    !elem["run_max"].is_number_integer() ||
-                    !elem["min"].is_number() ||
-                    !elem["max"].is_number()) {
-                    std::cerr << "[acceptance] FATAL: global_cuts entry for key '"
-                              << key << "', var '" << varName
-                              << "' has non-numeric fields.\n";
-                    std::exit(EXIT_FAILURE);
-                }
-
-                c.run_min = elem["run_min"].get<int>();
-                c.run_max = elem["run_max"].get<int>();
-                c.lo      = elem["min"].get<double>();
-                c.hi      = elem["max"].get<double>();
-
-                if (c.run_max < c.run_min) {
-                    std::cerr << "[acceptance] FATAL: global_cuts entry for key '"
-                              << key << "', var '" << varName
-                              << "' has run_max < run_min.\n";
-                    std::exit(EXIT_FAILURE);
-                }
-                if (!(c.hi > c.lo)) {
-                    std::cerr << "[acceptance] FATAL: global_cuts entry for key '"
-                              << key << "', var '" << varName
-                              << "' has max <= min.\n";
-                    std::exit(EXIT_FAILURE);
-                }
-
-                cuts.push_back(c);
-            }
-
-            if (!cuts.empty()) {
-                varMap[varName] = std::move(cuts);
-            }
-        }
-
-        if (!varMap.empty()) {
-            out[key] = std::move(varMap);
-        }
-    }
-
-    std::cout << "[acceptance] Loaded global cuts for " << out.size()
-              << " period keys from " << path << "\n";
-    return out;
-}
-
 // ---------------- topology (FD_FD, CD_FD, CD_FT) ----------------
 
 enum class Topology { FD_FD = 0, CD_FD = 1, CD_FT = 2 };
@@ -686,59 +567,13 @@ static int find_row_for_event(double xB,
     return -1;
 }
 
-// ------------- exclusivity for reconstructed MC (global + run cuts + 3-sigma) -------------
-
-// Run-number–dependent global cuts for one period:
-// returns true if the event passes all defined cuts for this run.
-static bool passes_global_run_cuts(int runnum,
-                                   const std::map<std::string,double>& recVars,
-                                   const GlobalVarMap* globalForPeriod)
-{
-    if (!globalForPeriod) {
-        return true;
-    }
-
-    for (const auto& kv : *globalForPeriod) {
-        const std::string& vname = kv.first;
-        const std::vector<RunRangeCut>& ranges = kv.second;
-
-        auto iv = recVars.find(vname);
-        if (iv == recVars.end()) {
-            std::cerr << "[acceptance] FATAL: missing branch value for variable '"
-                      << vname << "' while applying run-number global cuts.\n";
-            std::exit(EXIT_FAILURE);
-        }
-        const double val = iv->second;
-        if (!std::isfinite(val)) {
-            return false;
-        }
-
-        bool any_for_this_run = false;
-
-        for (const auto& rc : ranges) {
-            if (runnum < rc.run_min || runnum > rc.run_max) {
-                continue;
-            }
-            any_for_this_run = true;
-            if (val < rc.lo || val > rc.hi) {
-                return false;
-            }
-        }
-
-        // If no range applies to this run for this variable, we do not
-        // impose an additional cut on that variable for this run.
-        (void)any_for_this_run;
-    }
-
-    return true;
-}
+// ------------- exclusivity for reconstructed MC (global + 3-sigma) -------------
 
 static bool rec_passes_exclusivity(double t1,
                                    double open_angle_ep2_deg,
                                    int runnum,
                                    const std::map<std::string,double>& recVars,
-                                   const VarCutMap* cutsForTopo,
-                                   const GlobalVarMap* globalForPeriod)
+                                   const VarCutMap* cutsForTopo)
 {
     auto itP = recVars.find("pTmiss");
     if (itP == recVars.end()) {
@@ -747,17 +582,9 @@ static bool rec_passes_exclusivity(double t1,
     }
     const double pTmiss = itP->second;
 
-    // Hard global DVCS exclusivity cuts common to all modules
-    const double t_abs = std::fabs(t1);
-    if (!std::isfinite(t_abs) || t_abs <= 0.0 || t_abs >= 1.0) return false;
-    if (!std::isfinite(open_angle_ep2_deg) || open_angle_ep2_deg <= 5.0) return false;
-    if (!std::isfinite(pTmiss)) return false;
-    if (pTmiss > 0.20) return false;
-
-    // Run-number–dependent global cuts from global_cuts.json
-    if (!passes_global_run_cuts(runnum, recVars, globalForPeriod)) {
-        return false;
-    }
+    // Global run blacklist + global cuts (same as total_counts.cpp)
+    if (is_excluded_run(runnum)) return false;
+    if (!passes_global_cuts(t1, open_angle_ep2_deg, pTmiss)) return false;
 
     // Topology-dependent 3-sigma cuts from combined_cuts.json
     if (cutsForTopo) {
@@ -779,14 +606,11 @@ static bool rec_passes_exclusivity(double t1,
     return true;
 }
 
-// Build the set of branch names we actually need for a given period:
-//   - union of variables in DVCS_<PeriodDir>_FD_FD / CD_FD / CD_FT (3-sigma)
-//   - union of variables in DVCS_<PeriodDir> (global run cuts)
-//   - plus "pTmiss" for the global exclusivity.
+// Build the set of branch names we actually need for the 3-sigma cuts
+// plus pTmiss for the global exclusivity.
 static std::set<std::string>
 build_cut_branches_for_period(const std::string& period_label,
-                              const TopoCutMap& sigmaCuts,
-                              const GlobalCutMap& globalCuts)
+                              const TopoCutMap& sigmaCuts)
 {
     std::set<std::string> vars;
     const std::string period_dir = period_dir_for_label(period_label);
@@ -805,20 +629,7 @@ build_cut_branches_for_period(const std::string& period_label,
         }
     }
 
-    // Run-number–dependent global cuts variables
-    const std::string gkey = std::string("DVCS_") + period_dir;
-    auto itG = globalCuts.find(gkey);
-    if (itG != globalCuts.end()) {
-        for (const auto& kv : itG->second) {
-            vars.insert(kv.first);
-        }
-    } else {
-        std::cerr << "[acceptance] FATAL: global_cuts JSON is missing key '"
-                  << gkey << "' needed for period '" << period_label << "'.\n";
-        std::exit(EXIT_FAILURE);
-    }
-
-    // Always include pTmiss for the global exclusivity cut
+    // Always include pTmiss for the hard global cut
     vars.insert("pTmiss");
     return vars;
 }
@@ -832,7 +643,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
                                          TTree* genTree,
                                          TTree* recTree,
                                          const TopoCutMap& sigmaCuts,
-                                         const GlobalCutMap& globalCuts,
                                          std::vector<double>& gen_counts,
                                          std::vector<double>& rec_counts)
 {
@@ -941,34 +751,18 @@ static void accumulate_counts_for_period(const std::string& period_label,
     recTree->SetBranchAddress(br_oa_ep2, &r_oa);
     recTree->SetBranchAddress(br_runnum, &r_run);
 
-    // Build the *period-specific* set of branches needed for:
-    //   - 3-sigma cuts (combined_cuts.json),
-    //   - run-number global cuts (global_cuts.json),
-    //   - plus pTmiss for the hard global cut.
+    // Build the set of branches needed for 3-sigma cuts + pTmiss
     const std::set<std::string> cutBranches =
-        build_cut_branches_for_period(period_label, sigmaCuts, globalCuts);
+        build_cut_branches_for_period(period_label, sigmaCuts);
 
-    // Get the run-number–dependent global cuts for this period
-    const std::string period_dir = period_dir_for_label(period_label);
-    const std::string gkey = std::string("DVCS_") + period_dir;
-    const GlobalVarMap* globalForPeriod = nullptr;
-    {
-        auto itG = globalCuts.find(gkey);
-        if (itG == globalCuts.end()) {
-            std::cerr << "[acceptance] FATAL: internal error: global_cuts missing key '"
-                      << gkey << "' for period '" << period_label << "'.\n";
-            std::exit(EXIT_FAILURE);
-        }
-        globalForPeriod = &itG->second;
-    }
-
+    // Map for recVars
     std::map<std::string,double> recVars;
     recVars.clear();
     for (const auto& vname : cutBranches) {
         if (!recTree->GetBranch(vname.c_str())) {
             std::cerr << "[acceptance] FATAL: recTree for period " << period_label
                       << " is missing branch '" << vname
-                      << "' required for global or 3-sigma exclusivity.\n";
+                      << "' required for exclusivity / 3-sigma cuts.\n";
             std::exit(EXIT_FAILURE);
         }
         recVars[vname] = 0.0;
@@ -980,6 +774,8 @@ static void accumulate_counts_for_period(const std::string& period_label,
     Long64_t passed_excl = 0;
 
     int next_pct_rec = 10;
+
+    const std::string period_dir = period_dir_for_label(period_label);
 
     for (Long64_t i = 0; i < Nrec; ++i) {
         recTree->GetEntry(i);
@@ -1011,8 +807,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
                                     r_oa,
                                     r_run,
                                     recVars,
-                                    cutsForTopo,
-                                    globalForPeriod)) {
+                                    cutsForTopo)) {
             if (Nrec > 0 && next_pct_rec <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)Nrec;
                 while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
@@ -1074,7 +869,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
     std::cout << "[acceptance] Period " << period_label
               << " rec MC: total entries = " << Nrec
-              << " ; passed exclusivity = " << passed_excl
+              << " ; passed global+3sigma exclusivity = " << passed_excl
               << " ; binned (with period-data flag) = " << used_rec << "\n";
 }
 
@@ -1453,10 +1248,12 @@ bool update_acceptance_csv(const std::string& csv_path,
                            const std::map<std::string, TTree*>& genMcTrees,
                            const std::map<std::string, TTree*>& recMcTrees,
                            const std::string& combined_cuts_json,
-                           const std::string& global_cuts_json,
+                           const std::string& global_cuts_json, // unused, kept for API symmetry
                            const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
+
+    (void)global_cuts_json; // global cuts handled via global_cuts.h
 
     const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
@@ -1476,7 +1273,6 @@ bool update_acceptance_csv(const std::string& csv_path,
     std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
     const TopoCutMap sigmaCuts   = load_sigma_cuts_data(combined_cuts_json);
-    const GlobalCutMap globalCuts = load_global_cuts_data(global_cuts_json);
 
     const auto tagMap = build_mc_tag_map();
     std::map<std::string, std::vector<double>> gen_all;
@@ -1511,7 +1307,6 @@ bool update_acceptance_csv(const std::string& csv_path,
                                      itG->second,
                                      itR->second,
                                      sigmaCuts,
-                                     globalCuts,
                                      gen_counts,
                                      rec_counts);
         gen_all[per] = gen_counts;
