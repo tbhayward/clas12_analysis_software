@@ -127,7 +127,6 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-                //                && p > 0.4
                                 && (passesCentralDetector ? p > 0.3 : true)
                                 && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
                                 && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
