@@ -12,6 +12,9 @@
 //        - Stores them as "(value, stat, sys)" with sys = 0.
 //        - Propagates stat uncertainties from the acceptance corrected yield
 //          and Frad.
+//        - By default, uses Lee's original Frad/Fbin columns ("Frad", "Fbin")
+//          (copied from all_bin_v3.csv) but **inverts** those values internally
+//          to recover the standard Frad and bin-volume definitions.
 //   2) Assumes the BH / KM / VGG theory curves as a function of phi have
 //      already been computed at 10.6 GeV and stored in a single JSON file:
 //          output/jsons/cross_sections/10.6_GeV/xs_phi_all.json
@@ -89,6 +92,23 @@ using json = nlohmann::json;
 using Range = std::pair<double,double>;
 
 // -----------------------------------------------------------------------------
+// Configuration toggles
+// -----------------------------------------------------------------------------
+//
+// If true, use Lee's original Frad / Fbin columns ("Frad", "Fbin") when
+// computing cross sections, instead of the new per-energy columns
+// "Frad, 10.6 GeV" and "bin_volume, 10.6 GeV".
+//
+// These "Frad" and "Fbin" columns are copied directly from Lee's
+// all_bin_v3.csv; we **invert** those values internally to obtain the
+// Frad and bin-volume definitions compatible with the pass-2 cross section
+// formula.
+//
+// This applies to all labels, including Sp19 Inb (10.2 GeV).
+// To switch behavior, change this to true/false and recompile.
+static const bool kUseLeeFradFbin = true;
+
+// -----------------------------------------------------------------------------
 // Period directory helper (consistent with make_dirs.cpp conventions)
 // -----------------------------------------------------------------------------
 
@@ -104,7 +124,7 @@ static std::string canonical_period_dir(const std::string &label) {
     if (label == "10.6 GeV")       return "10.6_GeV";
     if (label == "10.2 GeV")       return "10.2_GeV";
 
-    // Fallback: replace spaces with underscores (should not normally be used)
+    // Fallback: replace spaces with underscores (should not normally be used).
     std::string out = label;
     std::replace(out.begin(), out.end(), ' ', '_');
     return out;
@@ -246,6 +266,28 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
     return oss.str();
 }
 
+// Invert a Triple treating value as x -> 1/x and propagating errors
+// using simple derivative propagation: if y = 1/x then
+// sigma_y = |dy/dx| * sigma_x = (1/x^2) * sigma_x.
+static Triple invert_triple(const Triple &in) {
+    Triple out{0.0, 0.0, 0.0};
+    if (in.value == 0.0) {
+        return out;
+    }
+
+    const double inv = 1.0 / in.value;
+    const double factor = std::fabs(1.0 / (in.value * in.value));
+
+    out.value = inv;
+    if (in.stat > 0.0) {
+        out.stat = factor * in.stat;
+    }
+    if (in.sys > 0.0) {
+        out.sys = factor * in.sys;
+    }
+    return out;
+}
+
 // Find column index; fatal if missing.
 static int find_col(const std::vector<std::string> &header,
                     const std::string &target) {
@@ -280,7 +322,8 @@ static int find_col_optional(const std::vector<std::string> &header,
 // Arguments:
 //   total_from_pos_neg = if true, we ignore the "total" column and instead
 //                        compute total = pos + neg. This is what you want
-//                        for RGA Fa18 Inb, RGA Fa18 Out, and RGA Sp19 Inb.
+//                        for RGA Fa18 Inb, RGA Fa18 Out, RGA Sp18 Inb,
+//                        and RGA Sp19 Inb when those splits exist.
 //                        If false, we use the "total" column directly.
 //
 // We:
@@ -368,8 +411,9 @@ LumiMap build_lumi_map() {
         m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
 
         // Spring 2018
-        // If you have rga_sp18_inb.txt, load it here. For now set to zero.
-        m["Sp18 Inb"]      = Triple{0.0, 0.0, 0.0};
+        // Now that rga_sp18_inb.txt exists, use it here and
+        // construct total from pos + neg.
+        m["Sp18 Inb"]      = load_rga_lumi_file(base + "/rga_sp18_inb.txt", false);
         // Sp18 Out has only total (no helicity splitting).
         m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt", false);
 
@@ -411,6 +455,7 @@ LumiMap build_lumi_map() {
     std::cout << "[cross_sections] build_lumi_map summary:"
               << " Fa18 Inb total=" << m["Fa18 Inb"].value
               << " Sp19 Inb total=" << m["Sp19 Inb"].value
+              << " Sp18 Inb total=" << m["Sp18 Inb"].value
               << " (10.6 GeV total=" << m["10.6 GeV"].value
               << ", 10.2 GeV total=" << m["10.2 GeV"].value << ")\n";
 
@@ -746,15 +791,45 @@ bool compute_cross_sections(const std::string &csv_main,
 
     int c_xb_idx = find_col_optional(header, "xB index");
 
-    // Radiative and bin-volume columns (10.6 GeV currently)
-    int c_frad = -1;
-    int c_vbin = -1;
-    try {
-        c_frad = find_col(header, "Frad, 10.6 GeV");
-        c_vbin = find_col(header, "bin_volume, 10.6 GeV");
-    } catch (const std::exception &e) {
-        std::cerr << "[cross_sections] FATAL: " << e.what() << "\n";
-        return false;
+    // Radiative and bin-volume columns:
+    //
+    // - New per-energy columns from your radiative_corrections module:
+    //       "Frad, 10.6 GeV"
+    //       "bin_volume, 10.6 GeV"
+    // - Original Lee-style columns in the pass1 CSV:
+    //       "Frad"
+    //       "Fbin"
+    //
+    // The global toggle kUseLeeFradFbin selects which pair is used.
+    int c_frad_new = find_col_optional(header, "Frad, 10.6 GeV");
+    int c_vbin_new = find_col_optional(header, "bin_volume, 10.6 GeV");
+    int c_frad_lee = find_col_optional(header, "Frad");
+    int c_vbin_lee = find_col_optional(header, "Fbin");
+
+    if (kUseLeeFradFbin) {
+        // Using Lee's original Frad/Fbin columns (for ALL labels, including Sp19).
+        if (c_frad_lee < 0) {
+            std::cerr << "[cross_sections] FATAL: Missing required column \"Frad\" "
+                      << "while kUseLeeFradFbin is true.\n";
+            return false;
+        }
+        if (c_vbin_lee < 0) {
+            std::cerr << "[cross_sections] FATAL: Missing required column \"Fbin\" "
+                      << "while kUseLeeFradFbin is true.\n";
+            return false;
+        }
+    } else {
+        // Using new per-energy columns ("Frad, 10.6 GeV" / "bin_volume, 10.6 GeV").
+        if (c_frad_new < 0) {
+            std::cerr << "[cross_sections] FATAL: Missing required column "
+                      << "\"Frad, 10.6 GeV\" while kUseLeeFradFbin is false.\n";
+            return false;
+        }
+        if (c_vbin_new < 0) {
+            std::cerr << "[cross_sections] FATAL: Missing required column "
+                      << "\"bin_volume, 10.6 GeV\" while kUseLeeFradFbin is false.\n";
+            return false;
+        }
     }
 
     // Integrated luminosity columns
@@ -894,8 +969,23 @@ bool compute_cross_sections(const std::string &csv_main,
         (void)Q2_mid;
         (void)t_mid;
 
-        Triple frad = parse_tuple3(fields[c_frad]);
-        Triple vbin = parse_tuple3(fields[c_vbin]);
+        // Choose which Frad/Fbin source we use for this row.
+        // When kUseLeeFradFbin is true, we read Lee's Frad/Fbin columns
+        // (copied directly from all_bin_v3.csv) and then **invert** them
+        // to obtain Frad and bin volume compatible with the pass-2 formula.
+        Triple frad_row{0.0, 0.0, 0.0};
+        Triple vbin_row{0.0, 0.0, 0.0};
+
+        if (kUseLeeFradFbin) {
+            Triple frad_raw = parse_tuple3(fields[c_frad_lee]); // "Frad"
+            Triple vbin_raw = parse_tuple3(fields[c_vbin_lee]); // "Fbin"
+
+            frad_row = invert_triple(frad_raw);
+            vbin_row = invert_triple(vbin_raw);
+        } else {
+            frad_row = parse_tuple3(fields[c_frad_new]); // "Frad, 10.6 GeV"
+            vbin_row = parse_tuple3(fields[c_vbin_new]); // "bin_volume, 10.6 GeV"
+        }
 
         for (const auto &L : labels) {
             auto lumi_it = lumi_map.find(L);
@@ -945,7 +1035,15 @@ bool compute_cross_sections(const std::string &csv_main,
                     continue;
                 }
 
-                double denom = vbin.value * lumi_val;
+                if (vbin_row.value <= 0.0) {
+                    std::cerr << "[cross_sections] WARNING: zero or negative "
+                              << "bin volume at row " << row
+                              << " for label=" << L
+                              << " helicity=" << h << ".\n";
+                    continue;
+                }
+
+                double denom = vbin_row.value * lumi_val;
                 if (denom <= 0.0) {
                     std::cerr << "[cross_sections] WARNING: zero or negative denom "
                               << "(vbin * lumi) at row " << row
@@ -953,15 +1051,15 @@ bool compute_cross_sections(const std::string &csv_main,
                     continue;
                 }
 
-                double sigma = Y.value * frad.value / denom;
+                double sigma = Y.value * frad_row.value / denom;
 
                 double rel2 = 0.0;
                 if (Y.value > 0.0 && Y.stat > 0.0) {
                     double r = Y.stat / Y.value;
                     rel2 += r * r;
                 }
-                if (frad.value > 0.0 && frad.stat > 0.0) {
-                    double r = frad.stat / frad.value;
+                if (frad_row.value > 0.0 && frad_row.stat > 0.0) {
+                    double r = frad_row.stat / frad_row.value;
                     rel2 += r * r;
                 }
                 double sigma_stat = (rel2 > 0.0) ? sigma * std::sqrt(rel2) : 0.0;
@@ -1200,7 +1298,7 @@ static std::pair<double,double> compute_yrange_for_bin(
                     update_from_curve(tc.km_unpol);
                     update_from_curve(tc.vgg_unpol);
                 } else if (mode == XSecPanelMode::PosOnly) {
-                    // BH is helicity independent; use unpolarized BH baseline
+                    // BH is helicity independent; use unpolarized BH baseline.
                     update_from_curve(tc.bh_unpol);
                     update_from_curve(tc.km_pos);
                     update_from_curve(tc.vgg_pos);
