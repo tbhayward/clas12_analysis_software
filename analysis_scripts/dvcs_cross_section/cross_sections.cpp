@@ -10,17 +10,33 @@
 //          the acceptance corrected yield column and the cross section
 //          column exist.
 //        - Stores them as "(value, stat, sys)" with sys = 0.
-//        - Propagates stat uncertainties from the acceptance corrected yield
-//          and Frad.
+//        - Propagates stat uncertainties from the acceptance corrected yield,
+//          Frad, and (optionally) Fbin.
 //        - By default, uses Lee's original Frad/Fbin columns ("Frad", "Fbin")
 //          (copied from all_bin_v3.csv) but **inverts** those values internally
-//          to recover the standard Frad and bin-volume definitions.
+//          to recover the standard multiplicative Frad and bin-centering
+//          corrections. The **bin volume** is always taken from the pass-2
+//          per-energy bin_volume columns ("bin_volume, 10.6 GeV" /
+//          "bin_volume, 10.2 GeV").
+//
+//          Summary of behavior:
+//            * kUseLeeFradFbin == true:
+//                 - Use Lee's "Frad" and "Fbin" (inverted) as multiplicative
+//                   Frad and Fbin bin-centering corrections.
+//                 - Use bin_volume from pass-2 per energy (10.6 / 10.2).
+//            * kUseLeeFradFbin == false:
+//                 - Use pass-2 per-energy Frad columns:
+//                      "Frad, 10.6 GeV", "Frad, 10.2 GeV".
+//                 - Set Fbin = 1 (no bin-centering from Lee).
+//                 - Use bin_volume from pass-2 per energy.
+//
 //   2) Assumes the BH / KM / VGG theory curves as a function of phi have
-//      already been computed at 10.6 GeV and stored in a single JSON file:
+//      already been computed at 10.6 GeV and 10.2 GeV and stored in JSON files:
 //          output/jsons/cross_sections/10.6_GeV/xs_phi_all.json
+//          output/jsons/cross_sections/10.2_GeV/xs_phi_all.json
 //      When plotting *any* label (Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out,
-//      Sp19 Inb, Fa18, Sp18, 10.6 GeV, 10.2 GeV, ...), we simply reuse those
-//      10.6 GeV curves. No new theory JSONs are generated.
+//      Sp19 Inb, Fa18, Sp18, 10.6 GeV, 10.2 GeV, ...), we select the theory
+//      JSON based on the beam energy (10.6 vs 10.2).
 //   3) For each label, plots xB canvases where:
 //        - One canvas per xB bin.
 //        - Each canvas is laid out as N_t rows (|t| bins) by N_Q2 columns
@@ -29,7 +45,7 @@
 //            * unpolarized, + helicity, and - helicity cross sections vs phi
 //              (with errors) from the CSV.
 //            * BH (unpol), KM (unpol/+/−), VGG (unpol/+/−) curves vs phi
-//              from the *10.6 GeV* or *10.2 GeV* theory JSON.
+//              from the theory JSON (10.6 or 10.2 GeV as appropriate).
 //        - Y axis is in log scale, but each subpad has its own dynamic
 //          y-range determined from its data + theory.
 //        - A single title plus three separate legend boxes (Data / BH+KM / VGG)
@@ -97,12 +113,15 @@ using Range = std::pair<double,double>;
 //
 // If true, use Lee's original Frad / Fbin columns ("Frad", "Fbin") when
 // computing cross sections, instead of the new per-energy columns
-// "Frad, 10.6 GeV" and "bin_volume, 10.6 GeV".
+// "Frad, 10.6 GeV" / "Frad, 10.2 GeV".
 //
 // These "Frad" and "Fbin" columns are copied directly from Lee's
 // all_bin_v3.csv; we **invert** those values internally to obtain the
-// Frad and bin-volume definitions compatible with the pass-2 cross section
-// formula.
+// multiplicative Frad and Fbin corrections compatible with the pass-2
+// cross section formula.
+//
+// The bin volume is **always** taken from the pass-2 per-energy bin_volume
+// columns ("bin_volume, 10.6 GeV", "bin_volume, 10.2 GeV").
 //
 // This applies to all labels, including Sp19 Inb (10.2 GeV).
 // To switch behavior, change this to true/false and recompile.
@@ -144,8 +163,7 @@ static std::string yield_label_for(const std::string &label) {
     return label;
 }
 
-// Beam energy mapping for theory curves (used only when generating theory,
-// not for the current plotting-only usage of 10.6 GeV curves).
+// Beam energy mapping for theory curves and bin-volume/Frad selection.
 static double beam_energy_for_label(const std::string &label) {
     if (label == "Sp19 Inb" || label == "10.2 GeV") {
         return 10.2;
@@ -412,7 +430,7 @@ LumiMap build_lumi_map() {
 
         // Spring 2018
         // Now that rga_sp18_inb.txt exists, use it here and
-        // construct total from pos + neg.
+        // construct total from pos + neg or total depending on file.
         m["Sp18 Inb"]      = load_rga_lumi_file(base + "/rga_sp18_inb.txt", false);
         // Sp18 Out has only total (no helicity splitting).
         m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt", false);
@@ -791,20 +809,24 @@ bool compute_cross_sections(const std::string &csv_main,
 
     int c_xb_idx = find_col_optional(header, "xB index");
 
-    // Radiative and bin-volume columns:
+    // Radiative and bin-volume / bin-centering columns:
     //
     // - New per-energy columns from your radiative_corrections module:
     //       "Frad, 10.6 GeV"
     //       "bin_volume, 10.6 GeV"
-    // - Original Lee-style columns in the pass1 CSV:
-    //       "Frad"
-    //       "Fbin"
+    //       "Frad, 10.2 GeV"
+    //       "bin_volume, 10.2 GeV"
     //
-    // The global toggle kUseLeeFradFbin selects which pair is used.
-    int c_frad_new = find_col_optional(header, "Frad, 10.6 GeV");
-    int c_vbin_new = find_col_optional(header, "bin_volume, 10.6 GeV");
-    int c_frad_lee = find_col_optional(header, "Frad");
-    int c_vbin_lee = find_col_optional(header, "Fbin");
+    // - Original Lee-style columns in the pass1 CSV copy:
+    //       "Frad"
+    //       "Fbin"   (bin-centering correction, not a bin volume)
+    //
+    int c_frad_new_106 = find_col_optional(header, "Frad, 10.6 GeV");
+    int c_vbin_106     = find_col_optional(header, "bin_volume, 10.6 GeV");
+    int c_frad_new_102 = find_col_optional(header, "Frad, 10.2 GeV");
+    int c_vbin_102     = find_col_optional(header, "bin_volume, 10.2 GeV");
+    int c_frad_lee     = find_col_optional(header, "Frad");
+    int c_fbin_lee     = find_col_optional(header, "Fbin");
 
     if (kUseLeeFradFbin) {
         // Using Lee's original Frad/Fbin columns (for ALL labels, including Sp19).
@@ -813,23 +835,35 @@ bool compute_cross_sections(const std::string &csv_main,
                       << "while kUseLeeFradFbin is true.\n";
             return false;
         }
-        if (c_vbin_lee < 0) {
+        if (c_fbin_lee < 0) {
             std::cerr << "[cross_sections] FATAL: Missing required column \"Fbin\" "
                       << "while kUseLeeFradFbin is true.\n";
             return false;
         }
     } else {
-        // Using new per-energy columns ("Frad, 10.6 GeV" / "bin_volume, 10.6 GeV").
-        if (c_frad_new < 0) {
+        // Using new per-energy columns ("Frad, 10.6 GeV" / "Frad, 10.2 GeV").
+        if (c_frad_new_106 < 0) {
             std::cerr << "[cross_sections] FATAL: Missing required column "
                       << "\"Frad, 10.6 GeV\" while kUseLeeFradFbin is false.\n";
             return false;
         }
-        if (c_vbin_new < 0) {
+        if (c_frad_new_102 < 0) {
             std::cerr << "[cross_sections] FATAL: Missing required column "
-                      << "\"bin_volume, 10.6 GeV\" while kUseLeeFradFbin is false.\n";
+                      << "\"Frad, 10.2 GeV\" while kUseLeeFradFbin is false.\n";
             return false;
         }
+    }
+
+    // Bin volume columns (always pass-2, per energy)
+    if (c_vbin_106 < 0) {
+        std::cerr << "[cross_sections] FATAL: Missing required column "
+                  << "\"bin_volume, 10.6 GeV\".\n";
+        return false;
+    }
+    if (c_vbin_102 < 0) {
+        std::cerr << "[cross_sections] FATAL: Missing required column "
+                  << "\"bin_volume, 10.2 GeV\".\n";
+        return false;
     }
 
     // Integrated luminosity columns
@@ -889,7 +923,7 @@ bool compute_cross_sections(const std::string &csv_main,
         // For the combined "10.2 GeV" label we do not maintain separate
         // cross section columns in the CSV; cross sections live on Sp19 Inb.
         // We still might compute theory curves for 10.2 GeV separately in
-        // the future, but currently plotting reuses 10.6 GeV curves.
+        // the future, but currently plotting reuses the 10.2 JSON directly.
         if (L == "10.2 GeV") {
             continue;
         }
@@ -914,6 +948,43 @@ bool compute_cross_sections(const std::string &csv_main,
                           << "\" exists. Please add the cross sections column.\n";
                 return false;
             }
+        }
+    }
+
+    // Determine which energies are actually needed based on which labels
+    // have yield/xs columns present.
+    bool need_106 = false;
+    bool need_102 = false;
+    for (const auto &kv : colmap) {
+        const std::string &key = kv.first;
+        std::string label = key.substr(0, key.find('|'));
+        double E = beam_energy_for_label(label);
+        if (E > 10.3) need_106 = true;
+        else          need_102 = true;
+    }
+
+    // Sanity: ensure we have the bin_volume and Frad columns we need.
+    if (need_106 && c_vbin_106 < 0) {
+        std::cerr << "[cross_sections] FATAL: need bin_volume, 10.6 GeV but "
+                  << "column is missing.\n";
+        return false;
+    }
+    if (need_102 && c_vbin_102 < 0) {
+        std::cerr << "[cross_sections] FATAL: need bin_volume, 10.2 GeV but "
+                  << "column is missing.\n";
+        return false;
+    }
+
+    if (!kUseLeeFradFbin) {
+        if (need_106 && c_frad_new_106 < 0) {
+            std::cerr << "[cross_sections] FATAL: need Frad, 10.6 GeV but "
+                      << "column is missing.\n";
+            return false;
+        }
+        if (need_102 && c_frad_new_102 < 0) {
+            std::cerr << "[cross_sections] FATAL: need Frad, 10.2 GeV but "
+                      << "column is missing.\n";
+            return false;
         }
     }
 
@@ -969,29 +1040,52 @@ bool compute_cross_sections(const std::string &csv_main,
         (void)Q2_mid;
         (void)t_mid;
 
-        // Choose which Frad/Fbin source we use for this row.
-        // When kUseLeeFradFbin is true, we read Lee's Frad/Fbin columns
-        // (copied directly from all_bin_v3.csv) and then **invert** them
-        // to obtain Frad and bin volume compatible with the pass-2 formula.
-        Triple frad_row{0.0, 0.0, 0.0};
-        Triple vbin_row{0.0, 0.0, 0.0};
+        // Row-level Frad/Fbin/bin-volume inputs:
+        //
+        // - frad_lee_eff, fbin_lee_eff: multiplicative corrections obtained
+        //   from Lee's "Frad" and "Fbin" (inverted), independent of energy.
+        // - frad_106, frad_102: per-energy Frad from pass-2.
+        // - vbin_106, vbin_102: per-energy bin_volume from pass-2.
+        Triple frad_lee_eff{0.0, 0.0, 0.0};
+        Triple fbin_lee_eff{1.0, 0.0, 0.0};
+        Triple frad_106{0.0, 0.0, 0.0};
+        Triple frad_102{0.0, 0.0, 0.0};
+        Triple vbin_106{0.0, 0.0, 0.0};
+        Triple vbin_102{0.0, 0.0, 0.0};
 
-        if (kUseLeeFradFbin) {
-            Triple frad_raw = parse_tuple3(fields[c_frad_lee]); // "Frad"
-            Triple vbin_raw = parse_tuple3(fields[c_vbin_lee]); // "Fbin"
-
-            frad_row = invert_triple(frad_raw);
-            vbin_row = invert_triple(vbin_raw);
-        } else {
-            frad_row = parse_tuple3(fields[c_frad_new]); // "Frad, 10.6 GeV"
-            vbin_row = parse_tuple3(fields[c_vbin_new]); // "bin_volume, 10.6 GeV"
+        // Always parse pass-2 bin volumes (per energy).
+        if (c_vbin_106 >= 0) {
+            vbin_106 = parse_tuple3(fields[c_vbin_106]);
+        }
+        if (c_vbin_102 >= 0) {
+            vbin_102 = parse_tuple3(fields[c_vbin_102]);
         }
 
+        if (kUseLeeFradFbin) {
+            // Lee's Frad and Fbin, inverted to give multiplicative corrections.
+            Triple frad_raw = parse_tuple3(fields[c_frad_lee]); // "Frad"
+            Triple fbin_raw = parse_tuple3(fields[c_fbin_lee]); // "Fbin"
+
+            frad_lee_eff = invert_triple(frad_raw);
+            fbin_lee_eff = invert_triple(fbin_raw);
+        } else {
+            // New per-energy Frad (already in the "standard" multiplicative
+            // convention used in your radiative_corrections module).
+            if (c_frad_new_106 >= 0) {
+                frad_106 = parse_tuple3(fields[c_frad_new_106]);
+            }
+            if (c_frad_new_102 >= 0) {
+                frad_102 = parse_tuple3(fields[c_frad_new_102]);
+            }
+        }
+
+        // Fill lumi and cross sections for each label and helicity.
         for (const auto &L : labels) {
             auto lumi_it = lumi_map.find(L);
             if (lumi_it == lumi_map.end()) continue;
             const Triple &Lumi = lumi_it->second;
 
+            // --- Integrated luminosity columns ---
             std::string lumi_col_name;
             if (L == "Fa18 Inb")      lumi_col_name = "integrated luminosity, Fa18 Inb (nC)";
             else if (L == "Fa18 Out") lumi_col_name = "integrated luminosity, Fa18 Out (nC)";
@@ -1010,6 +1104,7 @@ bool compute_cross_sections(const std::string &csv_main,
                     tuple3_to_cell(Lumi.value, Lumi.stat, Lumi.sys);
             }
 
+            // --- Cross sections ---
             for (const auto &h : helicities) {
                 std::string key = L + "|" + h;
                 auto it = colmap.find(key);
@@ -1022,6 +1117,7 @@ bool compute_cross_sections(const std::string &csv_main,
                 Triple Y = parse_tuple3(fields[iy]);
                 if (Y.value <= 0.0) continue;
 
+                // Choose appropriate luminosity component for this helicity
                 double lumi_val = 0.0;
                 if (h == "unpol")      lumi_val = Lumi.value;
                 else if (h == "pos")   lumi_val = Lumi.stat;
@@ -1035,15 +1131,56 @@ bool compute_cross_sections(const std::string &csv_main,
                     continue;
                 }
 
-                if (vbin_row.value <= 0.0) {
+                // Select energy (10.6 vs 10.2) for this label.
+                double E = beam_energy_for_label(L);
+                const Triple *vbin_ptr  = nullptr;
+                const Triple *frad_ptr  = nullptr;
+                Triple        fbin_eff{1.0, 0.0, 0.0};
+
+                if (E > 10.3) {
+                    // 10.6 GeV
+                    vbin_ptr = &vbin_106;
+                    if (kUseLeeFradFbin) {
+                        frad_ptr = &frad_lee_eff;
+                        fbin_eff = fbin_lee_eff;
+                    } else {
+                        frad_ptr = &frad_106;
+                    }
+                } else {
+                    // 10.2 GeV
+                    vbin_ptr = &vbin_102;
+                    if (kUseLeeFradFbin) {
+                        frad_ptr = &frad_lee_eff;
+                        fbin_eff = fbin_lee_eff;
+                    } else {
+                        frad_ptr = &frad_102;
+                    }
+                }
+
+                if (!vbin_ptr || !frad_ptr) {
+                    std::cerr << "[cross_sections] WARNING: missing vbin/frad "
+                              << "for label=" << L
+                              << " helicity=" << h
+                              << " at row " << row << ".\n";
+                    continue;
+                }
+
+                if (vbin_ptr->value <= 0.0) {
                     std::cerr << "[cross_sections] WARNING: zero or negative "
                               << "bin volume at row " << row
                               << " for label=" << L
                               << " helicity=" << h << ".\n";
                     continue;
                 }
+                if (frad_ptr->value <= 0.0) {
+                    std::cerr << "[cross_sections] WARNING: zero or negative "
+                              << "Frad at row " << row
+                              << " for label=" << L
+                              << " helicity=" << h << ".\n";
+                    continue;
+                }
 
-                double denom = vbin_row.value * lumi_val;
+                double denom = vbin_ptr->value * lumi_val;
                 if (denom <= 0.0) {
                     std::cerr << "[cross_sections] WARNING: zero or negative denom "
                               << "(vbin * lumi) at row " << row
@@ -1051,17 +1188,30 @@ bool compute_cross_sections(const std::string &csv_main,
                     continue;
                 }
 
-                double sigma = Y.value * frad_row.value / denom;
+                // Cross section:
+                //    sigma = Y * Frad * Fbin / (bin_volume * lumi)
+                //
+                // With:
+                //   - Frad: either Lee-based (inverted) or pass-2 per energy
+                //   - Fbin: Lee-based (inverted) when kUseLeeFradFbin is true,
+                //           or 1 when kUseLeeFradFbin is false.
+                double sigma = Y.value * frad_ptr->value * fbin_eff.value / denom;
 
+                // Propagate stat uncertainties from Y, Frad, and Fbin (if any).
                 double rel2 = 0.0;
                 if (Y.value > 0.0 && Y.stat > 0.0) {
                     double r = Y.stat / Y.value;
                     rel2 += r * r;
                 }
-                if (frad_row.value > 0.0 && frad_row.stat > 0.0) {
-                    double r = frad_row.stat / frad_row.value;
+                if (frad_ptr->value > 0.0 && frad_ptr->stat > 0.0) {
+                    double r = frad_ptr->stat / frad_ptr->value;
                     rel2 += r * r;
                 }
+                if (fbin_eff.value > 0.0 && fbin_eff.stat > 0.0) {
+                    double r = fbin_eff.stat / fbin_eff.value;
+                    rel2 += r * r;
+                }
+
                 double sigma_stat = (rel2 > 0.0) ? sigma * std::sqrt(rel2) : 0.0;
 
                 double sigma_sys = 0.0;
@@ -1139,8 +1289,7 @@ static std::string theory_energy_label_for(const std::string &label) {
 }
 
 // Load xs_phi_all.json for the appropriate theory energy corresponding
-// to this label. Most labels use the 10.6 GeV JSON; Sp19 Inb and
-// "10.2 GeV" use the 10.2 GeV JSON.
+// to this label.
 static std::map<size_t, TheoryCurves>
 load_theory_for_label(const std::string &label,
                       const std::string &theory_root) {
