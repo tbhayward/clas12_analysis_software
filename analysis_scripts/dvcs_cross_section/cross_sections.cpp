@@ -128,6 +128,96 @@ using Range = std::pair<double,double>;
 static const bool kUseLeeFradFbin = true;
 
 // -----------------------------------------------------------------------------
+// Lee pass-1 Frad/Fbin table loader
+// -----------------------------------------------------------------------------
+
+struct LeeFradFbinRow {
+    double frad;
+    double fbin;
+};
+
+using LeeFradFbinTable = std::vector<LeeFradFbinRow>;
+
+// Path to Lee's all_bin_v3.csv (relative to your run directory).
+static const std::string kLeeAllBinCsvPath = "imports/all_bin_v3.csv";
+
+static LeeFradFbinTable load_lee_frad_fbin_table(const std::string &path) {
+    std::ifstream ifs(path);
+    if (!ifs) {
+        std::cerr << "[cross_sections] FATAL: cannot open Lee Frad/Fbin file: "
+                  << path << "\n";
+        throw std::runtime_error("cannot open Lee Frad/Fbin file: " + path);
+    }
+
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        lines.push_back(line);
+    }
+    ifs.close();
+
+    if (lines.empty()) {
+        std::cerr << "[cross_sections] FATAL: Lee Frad/Fbin file "
+                  << path << " is empty.\n";
+        throw std::runtime_error("Lee Frad/Fbin file empty: " + path);
+    }
+
+    std::vector<std::string> header = split_csv_line(lines[0]);
+
+    int c_frad = -1;
+    int c_fbin = -1;
+    try {
+        c_frad = find_col(header, "Frad");
+        c_fbin = find_col(header, "Fbin");
+    } catch (const std::exception &e) {
+        std::cerr << "[cross_sections] FATAL while reading Lee Frad/Fbin file "
+                  << path << ": " << e.what() << "\n";
+        throw;
+    }
+
+    LeeFradFbinTable table;
+    table.reserve(lines.size() - 1);
+
+    for (size_t row = 1; row < lines.size(); ++row) {
+        if (lines[row].empty()) {
+            // Keep alignment; treat empty row as zeros (should not normally happen).
+            table.push_back({0.0, 0.0});
+            continue;
+        }
+
+        std::vector<std::string> fields = split_csv_line(lines[row]);
+        if (fields.size() != header.size()) {
+            std::ostringstream oss;
+            oss << "Line " << row << " in " << path
+                << " has " << fields.size()
+                << " columns, expected " << header.size();
+            std::cerr << "[cross_sections] FATAL: " << oss.str() << "\n";
+            throw std::runtime_error(oss.str());
+        }
+
+        std::string frad_str = trim(unquote(fields[c_frad]));
+        std::string fbin_str = trim(unquote(fields[c_fbin]));
+
+        double frad_val = 0.0;
+        double fbin_val = 0.0;
+
+        if (!frad_str.empty()) {
+            frad_val = std::atof(frad_str.c_str());
+        }
+        if (!fbin_str.empty()) {
+            fbin_val = std::atof(fbin_str.c_str());
+        }
+
+        table.push_back({frad_val, fbin_val});
+    }
+
+    std::cout << "[cross_sections] Loaded Lee Frad/Fbin table from "
+              << path << " with " << table.size() << " data rows.\n";
+
+    return table;
+}
+
+// -----------------------------------------------------------------------------
 // Period directory helper (consistent with make_dirs.cpp conventions)
 // -----------------------------------------------------------------------------
 
@@ -787,6 +877,29 @@ bool compute_cross_sections(const std::string &csv_main,
     }
 
     std::vector<std::string> header = split_csv_line(lines[0]);
+    const size_t n_data_rows = (lines.size() > 0) ? (lines.size() - 1) : 0;
+
+    // If we are in "Lee mode", load Frad/Fbin from imports/all_bin_v3.csv.
+    LeeFradFbinTable lee_table;
+    if (kUseLeeFradFbin) {
+        try {
+            lee_table = load_lee_frad_fbin_table(kLeeAllBinCsvPath);
+        } catch (const std::exception &e) {
+            std::cerr << "[cross_sections] FATAL: failed to load Lee Frad/Fbin "
+                      << "table from " << kLeeAllBinCsvPath << ": "
+                      << e.what() << "\n";
+            return false;
+        }
+
+        if (lee_table.size() != n_data_rows) {
+            std::cerr << "[cross_sections] FATAL: row-count mismatch between "
+                      << csv_main << " (" << n_data_rows << " data rows) and "
+                      << kLeeAllBinCsvPath << " (" << lee_table.size()
+                      << " data rows). These files must have one-to-one row "
+                      << "correspondence.\n";
+            return false;
+        }
+    }
 
     // Required kinematic columns (for computing bin means)
     int c_xb_min  = -1, c_xb_max  = -1;
@@ -809,50 +922,25 @@ bool compute_cross_sections(const std::string &csv_main,
 
     int c_xb_idx = find_col_optional(header, "xB index");
 
-    // Radiative and bin-volume / bin-centering columns:
+    // Radiative, bin-volume, and bin-centering (Fbin) columns for pass-2:
     //
-    // - New per-energy columns from your radiative_corrections module:
+    // - New per-energy columns from your radiative_corrections / bin_volume modules:
     //       "Frad, 10.6 GeV"
     //       "bin_volume, 10.6 GeV"
+    //       "Fbin, 10.6 GeV"
     //       "Frad, 10.2 GeV"
     //       "bin_volume, 10.2 GeV"
+    //       "Fbin, 10.2 GeV"
     //
-    // - Original Lee-style columns in the pass1 CSV copy:
-    //       "Frad"
-    //       "Fbin"   (bin-centering correction, not a bin volume)
+    // - Lee-style columns ("Frad", "Fbin") live in imports/all_bin_v3.csv and are
+    //   handled via lee_table when kUseLeeFradFbin == true.
     //
     int c_frad_new_106 = find_col_optional(header, "Frad, 10.6 GeV");
     int c_vbin_106     = find_col_optional(header, "bin_volume, 10.6 GeV");
+    int c_fbin_new_106 = find_col_optional(header, "Fbin, 10.6 GeV");
     int c_frad_new_102 = find_col_optional(header, "Frad, 10.2 GeV");
     int c_vbin_102     = find_col_optional(header, "bin_volume, 10.2 GeV");
-    int c_frad_lee     = find_col_optional(header, "Frad");
-    int c_fbin_lee     = find_col_optional(header, "Fbin");
-
-    if (kUseLeeFradFbin) {
-        // Using Lee's original Frad/Fbin columns (for ALL labels, including Sp19).
-        if (c_frad_lee < 0) {
-            std::cerr << "[cross_sections] FATAL: Missing required column \"Frad\" "
-                      << "while kUseLeeFradFbin is true.\n";
-            return false;
-        }
-        if (c_fbin_lee < 0) {
-            std::cerr << "[cross_sections] FATAL: Missing required column \"Fbin\" "
-                      << "while kUseLeeFradFbin is true.\n";
-            return false;
-        }
-    } else {
-        // Using new per-energy columns ("Frad, 10.6 GeV" / "Frad, 10.2 GeV").
-        if (c_frad_new_106 < 0) {
-            std::cerr << "[cross_sections] FATAL: Missing required column "
-                      << "\"Frad, 10.6 GeV\" while kUseLeeFradFbin is false.\n";
-            return false;
-        }
-        if (c_frad_new_102 < 0) {
-            std::cerr << "[cross_sections] FATAL: Missing required column "
-                      << "\"Frad, 10.2 GeV\" while kUseLeeFradFbin is false.\n";
-            return false;
-        }
-    }
+    int c_fbin_new_102 = find_col_optional(header, "Fbin, 10.2 GeV");
 
     // Bin volume columns (always pass-2, per energy)
     if (c_vbin_106 < 0) {
@@ -922,8 +1010,6 @@ bool compute_cross_sections(const std::string &csv_main,
     for (const auto &L : labels) {
         // For the combined "10.2 GeV" label we do not maintain separate
         // cross section columns in the CSV; cross sections live on Sp19 Inb.
-        // We still might compute theory curves for 10.2 GeV separately in
-        // the future, but currently plotting reuses the 10.2 JSON directly.
         if (L == "10.2 GeV") {
             continue;
         }
@@ -963,27 +1049,27 @@ bool compute_cross_sections(const std::string &csv_main,
         else          need_102 = true;
     }
 
-    // Sanity: ensure we have the bin_volume and Frad columns we need.
-    if (need_106 && c_vbin_106 < 0) {
-        std::cerr << "[cross_sections] FATAL: need bin_volume, 10.6 GeV but "
-                  << "column is missing.\n";
-        return false;
-    }
-    if (need_102 && c_vbin_102 < 0) {
-        std::cerr << "[cross_sections] FATAL: need bin_volume, 10.2 GeV but "
-                  << "column is missing.\n";
-        return false;
-    }
-
+    // If we are *not* in Lee mode, we require the per-energy Frad/Fbin columns
+    // that are actually needed.
     if (!kUseLeeFradFbin) {
         if (need_106 && c_frad_new_106 < 0) {
-            std::cerr << "[cross_sections] FATAL: need Frad, 10.6 GeV but "
-                      << "column is missing.\n";
+            std::cerr << "[cross_sections] FATAL: Missing required column "
+                      << "\"Frad, 10.6 GeV\" while kUseLeeFradFbin is false.\n";
+            return false;
+        }
+        if (need_106 && c_fbin_new_106 < 0) {
+            std::cerr << "[cross_sections] FATAL: Missing required column "
+                      << "\"Fbin, 10.6 GeV\" while kUseLeeFradFbin is false.\n";
             return false;
         }
         if (need_102 && c_frad_new_102 < 0) {
-            std::cerr << "[cross_sections] FATAL: need Frad, 10.2 GeV but "
-                      << "column is missing.\n";
+            std::cerr << "[cross_sections] FATAL: Missing required column "
+                      << "\"Frad, 10.2 GeV\" while kUseLeeFradFbin is false.\n";
+            return false;
+        }
+        if (need_102 && c_fbin_new_102 < 0) {
+            std::cerr << "[cross_sections] FATAL: Missing required column "
+                      << "\"Fbin, 10.2 GeV\" while kUseLeeFradFbin is false.\n";
             return false;
         }
     }
@@ -993,7 +1079,6 @@ bool compute_cross_sections(const std::string &csv_main,
     out_lines.reserve(lines.size());
     out_lines.push_back(lines[0]);  // header
 
-    const size_t n_data_rows = (lines.size() > 0) ? (lines.size() - 1) : 0;
     std::cout << "[cross_sections] compute_cross_sections: total data rows = "
               << n_data_rows << " (excluding header)\n";
 
@@ -1045,11 +1130,14 @@ bool compute_cross_sections(const std::string &csv_main,
         // - frad_lee_eff, fbin_lee_eff: multiplicative corrections obtained
         //   from Lee's "Frad" and "Fbin" (inverted), independent of energy.
         // - frad_106, frad_102: per-energy Frad from pass-2.
+        // - fbin_106, fbin_102: per-energy Fbin (bin-centering) from pass-2.
         // - vbin_106, vbin_102: per-energy bin_volume from pass-2.
         Triple frad_lee_eff{0.0, 0.0, 0.0};
         Triple fbin_lee_eff{1.0, 0.0, 0.0};
         Triple frad_106{0.0, 0.0, 0.0};
         Triple frad_102{0.0, 0.0, 0.0};
+        Triple fbin_106{1.0, 0.0, 0.0};
+        Triple fbin_102{1.0, 0.0, 0.0};
         Triple vbin_106{0.0, 0.0, 0.0};
         Triple vbin_102{0.0, 0.0, 0.0};
 
@@ -1063,19 +1151,42 @@ bool compute_cross_sections(const std::string &csv_main,
 
         if (kUseLeeFradFbin) {
             // Lee's Frad and Fbin, inverted to give multiplicative corrections.
-            Triple frad_raw = parse_tuple3(fields[c_frad_lee]); // "Frad"
-            Triple fbin_raw = parse_tuple3(fields[c_fbin_lee]); // "Fbin"
+            const LeeFradFbinRow &lr = lee_table[row - 1];
 
-            frad_lee_eff = invert_triple(frad_raw);
-            fbin_lee_eff = invert_triple(fbin_raw);
+            if (lr.frad == 0.0) {
+                std::cerr << "[cross_sections] FATAL: Lee Frad is zero at row "
+                          << row << " in " << kLeeAllBinCsvPath
+                          << ". This makes Frad ill-defined.\n";
+                return false;
+            }
+            if (lr.fbin == 0.0) {
+                std::cerr << "[cross_sections] FATAL: Lee Fbin is zero at row "
+                          << row << " in " << kLeeAllBinCsvPath
+                          << ". This makes Fbin ill-defined.\n";
+                return false;
+            }
+
+            frad_lee_eff.value = 1.0 / lr.frad;
+            frad_lee_eff.stat  = 0.0;
+            frad_lee_eff.sys   = 0.0;
+
+            fbin_lee_eff.value = 1.0 / lr.fbin;
+            fbin_lee_eff.stat  = 0.0;
+            fbin_lee_eff.sys   = 0.0;
         } else {
-            // New per-energy Frad (already in the "standard" multiplicative
-            // convention used in your radiative_corrections module).
+            // New per-energy Frad/Fbin (already in the "standard" multiplicative
+            // convention used in your pass-2 modules).
             if (c_frad_new_106 >= 0) {
                 frad_106 = parse_tuple3(fields[c_frad_new_106]);
             }
             if (c_frad_new_102 >= 0) {
                 frad_102 = parse_tuple3(fields[c_frad_new_102]);
+            }
+            if (c_fbin_new_106 >= 0) {
+                fbin_106 = parse_tuple3(fields[c_fbin_new_106]);
+            }
+            if (c_fbin_new_102 >= 0) {
+                fbin_102 = parse_tuple3(fields[c_fbin_new_102]);
             }
         }
 
@@ -1145,6 +1256,7 @@ bool compute_cross_sections(const std::string &csv_main,
                         fbin_eff = fbin_lee_eff;
                     } else {
                         frad_ptr = &frad_106;
+                        fbin_eff = fbin_106;
                     }
                 } else {
                     // 10.2 GeV
@@ -1154,6 +1266,7 @@ bool compute_cross_sections(const std::string &csv_main,
                         fbin_eff = fbin_lee_eff;
                     } else {
                         frad_ptr = &frad_102;
+                        fbin_eff = fbin_102;
                     }
                 }
 
@@ -1194,7 +1307,7 @@ bool compute_cross_sections(const std::string &csv_main,
                 // With:
                 //   - Frad: either Lee-based (inverted) or pass-2 per energy
                 //   - Fbin: Lee-based (inverted) when kUseLeeFradFbin is true,
-                //           or 1 when kUseLeeFradFbin is false.
+                //           or per-energy pass-2 Fbin columns when false.
                 double sigma = Y.value * frad_ptr->value * fbin_eff.value / denom;
 
                 // Propagate stat uncertainties from Y, Frad, and Fbin (if any).
@@ -1213,8 +1326,7 @@ bool compute_cross_sections(const std::string &csv_main,
                 }
 
                 double sigma_stat = (rel2 > 0.0) ? sigma * std::sqrt(rel2) : 0.0;
-
-                double sigma_sys = 0.0;
+                double sigma_sys  = 0.0;
 
                 fields[ix] = tuple3_to_cell(sigma, sigma_stat, sigma_sys);
             }
