@@ -25,9 +25,9 @@
 //                   Frad and Fbin bin-centering corrections.
 //                 - Use bin_volume from pass-2 per energy (10.6 / 10.2).
 //            * kUseLeeFradFbin == false:
-//                 - Use pass-2 per-energy Frad columns:
-//                      "Frad, 10.6 GeV", "Frad, 10.2 GeV".
-//                 - Set Fbin = 1 (no bin-centering from Lee).
+//                 - Use pass-2 per-energy Frad and Fbin columns:
+//                      "Frad, 10.6 GeV" / "Frad, 10.2 GeV",
+//                      "Fbin, 10.6 GeV" / "Fbin, 10.2 GeV".
 //                 - Use bin_volume from pass-2 per energy.
 //
 //   2) Assumes the BH / KM / VGG theory curves as a function of phi have
@@ -140,6 +140,16 @@ using LeeFradFbinTable = std::vector<LeeFradFbinRow>;
 
 // Path to Lee's all_bin_v3.csv (relative to your run directory).
 static const std::string kLeeAllBinCsvPath = "imports/all_bin_v3.csv";
+
+// -----------------------------------------------------------------------------
+// Forward declarations for CSV helpers used before their full definitions
+// -----------------------------------------------------------------------------
+
+static std::vector<std::string> split_csv_line(const std::string &line);
+static std::string trim(const std::string &s);
+static std::string unquote(const std::string &s);
+static int find_col(const std::vector<std::string> &header,
+                    const std::string &target);
 
 static LeeFradFbinTable load_lee_frad_fbin_table(const std::string &path) {
     std::ifstream ifs(path);
