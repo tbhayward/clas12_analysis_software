@@ -3,9 +3,10 @@
 import os
 import ROOT
 
-def parent_label(p1_parent):
+def category_for_parent(p1_parent):
     """
-    Map mc_p1_parent PDG codes to human-readable legend labels.
+    Map mc_p1_parent PDG codes to the categories we care about.
+    Returns a string label or None if we want to ignore this parent.
     """
     if p1_parent == 91 or p1_parent == 92:
         return "string"
@@ -22,12 +23,13 @@ def parent_label(p1_parent):
     if p1_parent == 2212:
         return "exclusive"
     #endif
-    return "mc_p1_parent={}".format(p1_parent)
+    return None
 #endif
 
 def main():
     # Run in batch mode (no GUI)
     ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)  # remove stat box globally
 
     input_file = "/volatile/clas12/thayward/clasdis_rga_fa18_inb_ek+k-.root"
     tree_name = "PhysicsEvents"
@@ -50,22 +52,23 @@ def main():
 
     # Histogram settings
     nbins = 100
-    xmin = 0.3
-    xmax = 2.0
+    xmin = 0.8
+    xmax = 2.4
 
     # Total Mh histogram
     h_total = ROOT.TH1F(
         "h_mh_total",
-        "Mh for selected events;Mh (GeV);Counts",
+        "k^{+} parent;Mh (GeV);Counts",
         nbins,
         xmin,
         xmax
     )
+    h_total.SetStats(False)
 
-    # One histogram per unique mc_p1_parent
-    hists_by_p1_parent = {}
+    # One histogram per category (string, K*0, K*+, phi, exclusive)
+    hists_by_category = {}
 
-    # Colors to cycle through for different parent IDs
+    # Colors to cycle through for different categories
     color_list = [
         ROOT.kRed + 1,
         ROOT.kBlue + 1,
@@ -102,31 +105,42 @@ def main():
             seen_p1_parents.add(p1_parent)
         #endif
 
-        # Lazily create a histogram for this mc_p1_parent
-        if p1_parent not in hists_by_p1_parent:
-            idx = len(hists_by_p1_parent)
-            hist_name = "h_mh_p1parent_{}".format(p1_parent)
-            hist_title = "Mh;Mh (GeV);Counts"
+        # Determine category for this parent
+        category = category_for_parent(p1_parent)
+
+        # Always fill total histogram
+        h_total.Fill(mh)
+
+        # Skip if this parent is not one of the specified categories
+        if category is None:
+            continue
+        #endif
+
+        # Lazily create a histogram for this category
+        if category not in hists_by_category:
+            idx = len(hists_by_category)
+            hist_name = "h_mh_cat_{}".format(category.replace("^", "").replace("{", "").replace("}", ""))
+            hist_title = "k^{+} parent;Mh (GeV);Counts"
             h = ROOT.TH1F(hist_name, hist_title, nbins, xmin, xmax)
+            h.SetStats(False)
 
             color = color_list[idx % len(color_list)]
             h.SetLineColor(color)
             h.SetMarkerColor(color)
             h.SetLineWidth(2)
 
-            hists_by_p1_parent[p1_parent] = h
+            hists_by_category[category] = h
         #endif
 
-        # Fill histograms
-        h_total.Fill(mh)
-        hists_by_p1_parent[p1_parent].Fill(mh)
+        # Fill category histogram
+        hists_by_category[category].Fill(mh)
     #endfor
 
     # Make sure output directory exists
     os.makedirs("output", exist_ok=True)
 
     # Canvas setup
-    canvas = ROOT.TCanvas("c_mh", "Mh dikaon parents (by mc_p1_parent)", 800, 600)
+    canvas = ROOT.TCanvas("c_mh", "k^{+} parent", 800, 600)
     canvas.SetLeftMargin(0.125)
     canvas.cd()
 
@@ -140,8 +154,8 @@ def main():
     # Track max for y-axis scaling
     max_y = h_total.GetMaximum()
 
-    # Draw each mc_p1_parent histogram
-    for p1_parent, hist in hists_by_p1_parent.items():
+    # Draw each category histogram
+    for category, hist in hists_by_category.items():
         hist.Draw("HIST SAME")
         if hist.GetMaximum() > max_y:
             max_y = hist.GetMaximum()
@@ -151,15 +165,20 @@ def main():
     # Rescale y-axis to fit everything nicely
     h_total.SetMaximum(1.2 * max_y if max_y > 0 else 1.0)
 
-    # Legend
+    # Legend with a box around it
     legend = ROOT.TLegend(0.60, 0.60, 0.88, 0.88)
-    legend.SetBorderSize(0)
-    legend.SetFillStyle(0)
+    legend.SetBorderSize(1)       # box border
+    legend.SetFillStyle(1001)     # solid fill
+    legend.SetFillColor(ROOT.kWhite)
 
     legend.AddEntry(h_total, "All parents", "l")
-    for p1_parent, hist in hists_by_p1_parent.items():
-        label = parent_label(p1_parent)
-        legend.AddEntry(hist, label, "l")
+
+    # Fixed order for legend entries
+    label_order = ["string", "K^{*0}", "K^{*+}", "#phi", "exclusive"]
+    for label in label_order:
+        if label in hists_by_category:
+            legend.AddEntry(hists_by_category[label], label, "l")
+        #endif
     #endfor
 
     legend.Draw()
