@@ -110,21 +110,7 @@ using Range = std::pair<double,double>;
 // -----------------------------------------------------------------------------
 // Configuration toggles
 // -----------------------------------------------------------------------------
-//
-// If true, use Lee's original Frad / Fbin columns ("Frad", "Fbin") when
-// computing cross sections, instead of the new per-energy columns
-// "Frad, 10.6 GeV" / "Frad, 10.2 GeV".
-//
-// These "Frad" and "Fbin" columns are copied directly from Lee's
-// all_bin_v3.csv; we **invert** those values internally to obtain the
-// multiplicative Frad and Fbin corrections compatible with the pass-2
-// cross section formula.
-//
-// The bin volume is **always** taken from the pass-2 per-energy bin_volume
-// columns ("bin_volume, 10.6 GeV", "bin_volume, 10.2 GeV").
-//
-// This applies to all labels, including Sp19 Inb (10.2 GeV).
-// To switch behavior, change this to true/false and recompile.
+
 static const bool kUseLeeFradFbin = true;
 
 // -----------------------------------------------------------------------------
@@ -190,7 +176,6 @@ static LeeFradFbinTable load_lee_frad_fbin_table(const std::string &path) {
 
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) {
-            // Keep alignment; treat empty row as zeros (should not normally happen).
             table.push_back({0.0, 0.0});
             continue;
         }
@@ -228,7 +213,7 @@ static LeeFradFbinTable load_lee_frad_fbin_table(const std::string &path) {
 }
 
 // -----------------------------------------------------------------------------
-// Period directory helper (consistent with make_dirs.cpp conventions)
+// Period directory helper
 // -----------------------------------------------------------------------------
 
 static std::string canonical_period_dir(const std::string &label) {
@@ -243,27 +228,21 @@ static std::string canonical_period_dir(const std::string &label) {
     if (label == "10.6 GeV")       return "10.6_GeV";
     if (label == "10.2 GeV")       return "10.2_GeV";
 
-    // Fallback: replace spaces with underscores (should not normally be used).
     std::string out = label;
     std::replace(out.begin(), out.end(), ' ', '_');
     return out;
 }
 
-// The acceptance corrected yield columns use exactly these period labels,
-// except for the combined 10.6 group which uses "2018 (10.6 GeV)".
 static std::string yield_label_for(const std::string &label) {
     if (label == "10.6 GeV") {
         return "2018 (10.6 GeV)";
     }
     if (label == "10.2 GeV") {
-        // For now this is just Sp19 Inb; if you later add a separate combined
-        // label/columns, you can adjust this mapping.
         return "Sp19 Inb";
     }
     return label;
 }
 
-// Beam energy mapping for theory curves and bin-volume/Frad selection.
 static double beam_energy_for_label(const std::string &label) {
     if (label == "Sp19 Inb" || label == "10.2 GeV") {
         return 10.2;
@@ -298,9 +277,9 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
 
 static std::string trim(const std::string &s) {
     size_t b = 0;
-    while (b < s.size() && std::isspace(static_cast<unsigned char>(s[b]))) ++b;
+    while (b < s.size() && std::isspace((unsigned char)s[b])) ++b;
     size_t e = s.size();
-    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1]))) --e;
+    while (e > b && std::isspace((unsigned char)s[e - 1])) --e;
     return s.substr(b, e - b);
 }
 
@@ -324,7 +303,7 @@ static std::string unquote(const std::string &s) {
 static std::string quote_if_needed(const std::string &s) {
     bool need = false;
     for (char c : s) {
-        if (c == ',' || c == '"' || std::isspace(static_cast<unsigned char>(c))) {
+        if (c == ',' || c == '"' || std::isspace((unsigned char)c)) {
             need = true;
             break;
         }
@@ -352,7 +331,6 @@ static std::string join_csv_line(const std::vector<std::string> &fields) {
 // Triple is defined in cross_sections.h:
 //   struct Triple { double value; double stat; double sys; };
 
-// Parse "(value, stat, sys)" -> Triple.
 static Triple parse_tuple3(const std::string &cell) {
     std::string s = trim(unquote(cell));
     Triple out{0.0, 0.0, 0.0};
@@ -384,9 +362,6 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
     return oss.str();
 }
 
-// Invert a Triple treating value as x -> 1/x and propagating errors
-// using simple derivative propagation: if y = 1/x then
-// sigma_y = |dy/dx| * sigma_x = (1/x^2) * sigma_x.
 static Triple invert_triple(const Triple &in) {
     Triple out{0.0, 0.0, 0.0};
     if (in.value == 0.0) {
@@ -406,23 +381,21 @@ static Triple invert_triple(const Triple &in) {
     return out;
 }
 
-// Find column index; fatal if missing.
 static int find_col(const std::vector<std::string> &header,
                     const std::string &target) {
     for (size_t i = 0; i < header.size(); ++i) {
         if (trim(unquote(header[i])) == target) {
-            return static_cast<int>(i);
+            return (int)i;
         }
     }
     throw std::runtime_error("Missing required column: \"" + target + "\"");
 }
 
-// Try to find column; return -1 if missing.
 static int find_col_optional(const std::vector<std::string> &header,
                              const std::string &target) {
     for (size_t i = 0; i < header.size(); ++i) {
         if (trim(unquote(header[i])) == target) {
-            return static_cast<int>(i);
+            return (int)i;
         }
     }
     return -1;
@@ -432,22 +405,6 @@ static int find_col_optional(const std::vector<std::string> &header,
 // Luminosity helpers
 // -----------------------------------------------------------------------------
 
-// Helper: load one RGA integrated-luminosity file
-//
-// Expected line format (comma-separated, no header, one line per run):
-//   run, total, pos, neg, ...
-//
-// Arguments:
-//   total_from_pos_neg = if true, we ignore the "total" column and instead
-//                        compute total = pos + neg. This is what you want
-//                        for RGA Fa18 Inb, RGA Fa18 Out, RGA Sp18 Inb,
-//                        and RGA Sp19 Inb when those splits exist.
-//                        If false, we use the "total" column directly.
-//
-// We:
-//   - ignore empty lines and lines starting with '#'
-//   - sum column 2 (total), column 3 (pos), column 4 (neg)
-//   - return Triple{total, pos, neg} with total defined as above.
 static Triple load_rga_lumi_file(const std::string &path,
                                  bool total_from_pos_neg) {
     std::ifstream ifs(path);
@@ -483,9 +440,9 @@ static Triple load_rga_lumi_file(const std::string &path,
             continue;
         }
 
-        double total = std::atof(fields[1].c_str()); // column 2
-        double pos   = std::atof(fields[2].c_str()); // column 3
-        double neg   = std::atof(fields[3].c_str()); // column 4
+        double total = std::atof(fields[1].c_str());
+        double pos   = std::atof(fields[2].c_str());
+        double neg   = std::atof(fields[3].c_str());
 
         sum_total_col += total;
         sum_pos       += pos;
@@ -502,13 +459,12 @@ static Triple load_rga_lumi_file(const std::string &path,
               << " neg="   << sum_neg << "\n";
 
     Triple out;
-    out.value = final_total; // total unpolarized charge
-    out.stat  = sum_pos;     // + helicity charge
-    out.sys   = sum_neg;     // - helicity charge
+    out.value = final_total;
+    out.stat  = sum_pos;
+    out.sys   = sum_neg;
     return out;
 }
 
-// Map label -> lumi triple
 using LumiMap = std::map<std::string, Triple>;
 
 // -----------------------------------------------------------------------------
@@ -521,21 +477,11 @@ LumiMap build_lumi_map() {
     const std::string base = "imports/integrated_luminosity";
 
     try {
-        // Fall 2018 (use total = pos + neg)
         m["Fa18 Inb"]      = load_rga_lumi_file(base + "/rga_fa18_inb.txt",  true);
         m["Fa18 Out"]      = load_rga_lumi_file(base + "/rga_fa18_out.txt",  true);
-        // If you have a separate file for Fa18 Inb Supp, load it here.
-        // For now we set it to zero and keep it explicit.
         m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
-
-        // Spring 2018
-        // Now that rga_sp18_inb.txt exists, use it here and
-        // construct total from pos + neg or total depending on file.
         m["Sp18 Inb"]      = load_rga_lumi_file(base + "/rga_sp18_inb.txt", false);
-        // Sp18 Out has only total (no helicity splitting).
         m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt", false);
-
-        // Spring 2019 (10.2 GeV, use total = pos + neg)
         m["Sp19 Inb"]      = load_rga_lumi_file(base + "/rga_sp19_inb.txt", true);
     } catch (const std::exception &e) {
         std::cerr << "[cross_sections] FATAL in build_lumi_map: "
@@ -559,7 +505,6 @@ LumiMap build_lumi_map() {
         return r;
     };
 
-    // Combined 2018 periods (10.6 GeV)
     m["Fa18"]     = sum_labels({"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp"});
     m["Sp18"]     = sum_labels({"Sp18 Inb", "Sp18 Out"});
     m["10.6 GeV"] = sum_labels({
@@ -567,7 +512,6 @@ LumiMap build_lumi_map() {
         "Sp18 Inb", "Sp18 Out"
     });
 
-    // 10.2 GeV = Sp19 Inb only
     m["10.2 GeV"] = sum_labels({"Sp19 Inb"});
 
     std::cout << "[cross_sections] build_lumi_map summary:"
@@ -581,7 +525,7 @@ LumiMap build_lumi_map() {
 }
 
 // -----------------------------------------------------------------------------
-// Theory model wrappers (BH / KM / VGG)
+// Theory model wrappers
 // -----------------------------------------------------------------------------
 
 static Helicity helicity_from_string(const std::string &h) {
@@ -589,8 +533,6 @@ static Helicity helicity_from_string(const std::string &h) {
     if (h == "neg")   return Helicity::Minus;
     return Helicity::Unpol;
 }
-
-// All wrappers take phi in radians and convert internally to degrees.
 
 static double eval_bh_xs(double Ebeam,
                          double xB, double Q2, double t_pos,
@@ -626,55 +568,25 @@ static void ensure_dir(const fs::path &p) {
 }
 
 // -----------------------------------------------------------------------------
-// Theory JSON generator: xs_phi_all.json for 10.6 GeV and 10.2 GeV
-// -----------------------------------------------------------------------------
-//
-// We build one JSON per beam energy (10.6 and 10.2 GeV), each with:
-//
-// {
-//   "phi_deg": [ ... ],
-//   "rows": {
-//      "1": { "BH": {unpol,pos,neg}, "KM": {...}, "VGG": {...} },
-//      "2": { ... },
-//      ...
-//   }
-// }
-//
-// The row keys ("1", "2", ...) are the CSV row indices, matching
-// plot_cross_sections_for_label() which uses row numbers as theory_row.
+// Theory JSON generator
 // -----------------------------------------------------------------------------
 
 static bool write_theory_json_for_energy(const std::string &csv_main,
                                          const std::string &theory_json_root,
                                          double Ebeam,
                                          const std::string &energy_label) {
-    // --- Choose phi grid ---
-    //
-    // New scheme:
-    //   - 12 uniform mid-bin points over 0-360 degrees:
-    //       15, 45, 75, ..., 345
-    //   - Plus two guard points at:
-    //       0.5 and 395.5 degrees
-    //
-    // Total: 14 phi points.
     std::vector<double> phi_deg;
     phi_deg.reserve(14);
 
-    // Guard point just above 0
     phi_deg.push_back(0.5);
-
-    // 12 uniform mid-bin points (30-degree steps)
     for (int k = 0; k < 12; ++k) {
-        double phi = 15.0 + 30.0 * static_cast<double>(k);
+        double phi = 15.0 + 30.0 * (double)k;
         phi_deg.push_back(phi);
     }
-
-    // Guard point just above 360
     phi_deg.push_back(395.5);
 
-    const int n_phi = static_cast<int>(phi_deg.size());
+    const int n_phi = (int)phi_deg.size();
 
-    // --- Read CSV and locate kinematic columns ---
     std::ifstream ifs(csv_main);
     if (!ifs) {
         std::cerr << "[cross_sections] FATAL: cannot open " << csv_main
@@ -716,7 +628,6 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
         return false;
     }
 
-    // --- Build JSON structure in memory ---
     json j;
     j["phi_deg"] = phi_deg;
     json rows_json = json::object();
@@ -733,8 +644,8 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
         if (lines[row].empty()) continue;
 
         if (n_rows > 1 && next_pct <= 100) {
-            double frac = 100.0 * static_cast<double>(row)
-                          / static_cast<double>(n_rows - 1);
+            double frac = 100.0 * (double)row
+                          / (double)(n_rows - 1);
             if (frac >= next_pct) {
                 std::cout << "[cross_sections] theory JSON ("
                           << energy_label << "): ~" << next_pct
@@ -762,14 +673,12 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
         double xB_mid = 0.5 * (xbmin + xbmax);
         double Q2_mid = 0.5 * (q2min + q2max);
-        double t_mid  = 0.5 * (tmin  + tmax);  // this is |t| (positive)
+        double t_mid  = 0.5 * (tmin  + tmax);
 
-        // Skip obviously invalid bins (e.g. empty rows)
         if (!(xB_mid > 0.0) || !(Q2_mid > 0.0) || !(t_mid > 0.0)) {
             continue;
         }
 
-        // Allocate arrays for this row
         std::vector<double> bh_unpol(n_phi), bh_pos(n_phi), bh_neg(n_phi);
         std::vector<double> km_unpol(n_phi), km_pos(n_phi), km_neg(n_phi);
         std::vector<double> vgg_unpol(n_phi), vgg_pos(n_phi), vgg_neg(n_phi);
@@ -778,18 +687,15 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
             double phi_d = phi_deg[i];
             double phi_r = phi_d * M_PI / 180.0;
 
-            // BH: helicity independent, store under "unpol"
             double bh = eval_bh_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r);
             bh_unpol[i] = bh;
-            bh_pos[i]   = bh;   // keep simple: copy same curve
+            bh_pos[i]   = bh;
             bh_neg[i]   = bh;
 
-            // KM
             km_unpol[i] = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "unpol");
             km_pos[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "pos");
             km_neg[i]   = eval_km_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "neg");
 
-            // VGG
             vgg_unpol[i] = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "unpol");
             vgg_pos[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "pos");
             vgg_neg[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phi_r, "neg");
@@ -818,7 +724,6 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
     j["rows"] = std::move(rows_json);
 
-    // --- Write JSON to disk ---
     fs::path dir  = fs::path(theory_json_root) / canonical_period_dir(energy_label);
     ensure_dir(dir);
     fs::path file = dir / "xs_phi_all.json";
@@ -841,7 +746,6 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
     return true;
 }
 
-// Public wrapper: generate JSONs for both 10.6 and 10.2 GeV.
 bool regenerate_theory_jsons(const std::string &csv_main,
                              const std::string &theory_json_root) {
     bool ok_106 = write_theory_json_for_energy(csv_main, theory_json_root,
@@ -861,7 +765,7 @@ bool regenerate_theory_jsons(const std::string &csv_main,
 }
 
 // -----------------------------------------------------------------------------
-// Cross section computation (CSV update + optional theory generation)
+// Cross section computation
 // -----------------------------------------------------------------------------
 
 bool compute_cross_sections(const std::string &csv_main,
@@ -889,7 +793,6 @@ bool compute_cross_sections(const std::string &csv_main,
     std::vector<std::string> header = split_csv_line(lines[0]);
     const size_t n_data_rows = (lines.size() > 0) ? (lines.size() - 1) : 0;
 
-    // If we are in "Lee mode", load Frad/Fbin from imports/all_bin_v3.csv.
     LeeFradFbinTable lee_table;
     if (kUseLeeFradFbin) {
         try {
@@ -901,17 +804,26 @@ bool compute_cross_sections(const std::string &csv_main,
             return false;
         }
 
-        if (lee_table.size() != n_data_rows) {
-            std::cerr << "[cross_sections] FATAL: row-count mismatch between "
-                      << csv_main << " (" << n_data_rows << " data rows) and "
-                      << kLeeAllBinCsvPath << " (" << lee_table.size()
-                      << " data rows). These files must have one-to-one row "
-                      << "correspondence.\n";
+        if (lee_table.size() < n_data_rows) {
+            std::cerr << "[cross_sections] FATAL: Lee Frad/Fbin table has fewer rows ("
+                      << lee_table.size()
+                      << ") than dvcs_pass2_analysis.csv (" << n_data_rows
+                      << " data rows). Need at least one row per data bin.\n";
             return false;
+        }
+
+        if (lee_table.size() > n_data_rows) {
+            std::cout << "[cross_sections] INFO: Lee Frad/Fbin table has "
+                      << lee_table.size()
+                      << " rows while " << csv_main
+                      << " has " << n_data_rows
+                      << " data rows. Assuming the first "
+                      << n_data_rows
+                      << " rows correspond one-to-one to valid bins and "
+                      << "ignoring the extra trailing rows (valid_bin==0).\n";
         }
     }
 
-    // Required kinematic columns (for computing bin means)
     int c_xb_min  = -1, c_xb_max  = -1;
     int c_q2_min  = -1, c_q2_max  = -1;
     int c_t_min   = -1, c_t_max   = -1;
@@ -932,19 +844,6 @@ bool compute_cross_sections(const std::string &csv_main,
 
     int c_xb_idx = find_col_optional(header, "xB index");
 
-    // Radiative, bin-volume, and bin-centering (Fbin) columns for pass-2:
-    //
-    // - New per-energy columns from your radiative_corrections / bin_volume modules:
-    //       "Frad, 10.6 GeV"
-    //       "bin_volume, 10.6 GeV"
-    //       "Fbin, 10.6 GeV"
-    //       "Frad, 10.2 GeV"
-    //       "bin_volume, 10.2 GeV"
-    //       "Fbin, 10.2 GeV"
-    //
-    // - Lee-style columns ("Frad", "Fbin") live in imports/all_bin_v3.csv and are
-    //   handled via lee_table when kUseLeeFradFbin == true.
-    //
     int c_frad_new_106 = find_col_optional(header, "Frad, 10.6 GeV");
     int c_vbin_106     = find_col_optional(header, "bin_volume, 10.6 GeV");
     int c_fbin_new_106 = find_col_optional(header, "Fbin, 10.6 GeV");
@@ -952,7 +851,6 @@ bool compute_cross_sections(const std::string &csv_main,
     int c_vbin_102     = find_col_optional(header, "bin_volume, 10.2 GeV");
     int c_fbin_new_102 = find_col_optional(header, "Fbin, 10.2 GeV");
 
-    // Bin volume columns (always pass-2, per energy)
     if (c_vbin_106 < 0) {
         std::cerr << "[cross_sections] FATAL: Missing required column "
                   << "\"bin_volume, 10.6 GeV\".\n";
@@ -964,7 +862,6 @@ bool compute_cross_sections(const std::string &csv_main,
         return false;
     }
 
-    // Integrated luminosity columns
     const std::vector<std::string> lumi_col_names_required = {
         "integrated luminosity, Fa18 Inb (nC)",
         "integrated luminosity, Fa18 Out (nC)",
@@ -990,7 +887,7 @@ bool compute_cross_sections(const std::string &csv_main,
         std::cerr << "[cross_sections] FATAL: " << e.what() << "\n";
         return false;
     }
-    // Optional Fa18 Inb Supp and 10.2 GeV columns
+
     int idx_fa18_supp = find_col_optional(header, lumi_col_fa18_supp);
     if (idx_fa18_supp >= 0) {
         lumi_col_idx[lumi_col_fa18_supp] = idx_fa18_supp;
@@ -1000,26 +897,21 @@ bool compute_cross_sections(const std::string &csv_main,
         lumi_col_idx[lumi_col_10p2] = idx_10p2;
     }
 
-    // Helicity labels used in column names
     const std::vector<std::string> helicities = {"unpol", "pos", "neg"};
 
-    // Labels (periods and combined groups) we care about
     const std::vector<std::string> labels = {
         "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
         "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
         "Fa18", "Sp18", "10.6 GeV", "10.2 GeV"
     };
 
-    // Map of columns for each label+helicity:
     struct ColPair {
         int yield_idx;
         int xs_idx;
     };
-    std::map<std::string, ColPair> colmap;  // key = label + "|" + helicity
+    std::map<std::string, ColPair> colmap;
 
     for (const auto &L : labels) {
-        // For the combined "10.2 GeV" label we do not maintain separate
-        // cross section columns in the CSV; cross sections live on Sp19 Inb.
         if (L == "10.2 GeV") {
             continue;
         }
@@ -1047,8 +939,6 @@ bool compute_cross_sections(const std::string &csv_main,
         }
     }
 
-    // Determine which energies are actually needed based on which labels
-    // have yield/xs columns present.
     bool need_106 = false;
     bool need_102 = false;
     for (const auto &kv : colmap) {
@@ -1059,8 +949,6 @@ bool compute_cross_sections(const std::string &csv_main,
         else          need_102 = true;
     }
 
-    // If we are *not* in Lee mode, we require the per-energy Frad/Fbin columns
-    // that are actually needed.
     if (!kUseLeeFradFbin) {
         if (need_106 && c_frad_new_106 < 0) {
             std::cerr << "[cross_sections] FATAL: Missing required column "
@@ -1084,10 +972,9 @@ bool compute_cross_sections(const std::string &csv_main,
         }
     }
 
-    // Output lines
     std::vector<std::string> out_lines;
     out_lines.reserve(lines.size());
-    out_lines.push_back(lines[0]);  // header
+    out_lines.push_back(lines[0]);
 
     std::cout << "[cross_sections] compute_cross_sections: total data rows = "
               << n_data_rows << " (excluding header)\n";
@@ -1101,8 +988,8 @@ bool compute_cross_sections(const std::string &csv_main,
         }
 
         if (n_data_rows > 0 && next_pct <= 100) {
-            double frac = 100.0 * static_cast<double>(row) /
-                          static_cast<double>(n_data_rows);
+            double frac = 100.0 * (double)row /
+                          (double)n_data_rows;
             if (frac >= next_pct) {
                 std::cout << "[cross_sections] compute_cross_sections: ~"
                           << next_pct << "% of rows processed (row "
@@ -1135,13 +1022,6 @@ bool compute_cross_sections(const std::string &csv_main,
         (void)Q2_mid;
         (void)t_mid;
 
-        // Row-level Frad/Fbin/bin-volume inputs:
-        //
-        // - frad_lee_eff, fbin_lee_eff: multiplicative corrections obtained
-        //   from Lee's "Frad" and "Fbin" (inverted), independent of energy.
-        // - frad_106, frad_102: per-energy Frad from pass-2.
-        // - fbin_106, fbin_102: per-energy Fbin (bin-centering) from pass-2.
-        // - vbin_106, vbin_102: per-energy bin_volume from pass-2.
         Triple frad_lee_eff{0.0, 0.0, 0.0};
         Triple fbin_lee_eff{1.0, 0.0, 0.0};
         Triple frad_106{0.0, 0.0, 0.0};
@@ -1151,7 +1031,6 @@ bool compute_cross_sections(const std::string &csv_main,
         Triple vbin_106{0.0, 0.0, 0.0};
         Triple vbin_102{0.0, 0.0, 0.0};
 
-        // Always parse pass-2 bin volumes (per energy).
         if (c_vbin_106 >= 0) {
             vbin_106 = parse_tuple3(fields[c_vbin_106]);
         }
@@ -1160,7 +1039,6 @@ bool compute_cross_sections(const std::string &csv_main,
         }
 
         if (kUseLeeFradFbin) {
-            // Lee's Frad and Fbin, inverted to give multiplicative corrections.
             const LeeFradFbinRow &lr = lee_table[row - 1];
 
             if (lr.frad == 0.0) {
@@ -1184,8 +1062,6 @@ bool compute_cross_sections(const std::string &csv_main,
             fbin_lee_eff.stat  = 0.0;
             fbin_lee_eff.sys   = 0.0;
         } else {
-            // New per-energy Frad/Fbin (already in the "standard" multiplicative
-            // convention used in your pass-2 modules).
             if (c_frad_new_106 >= 0) {
                 frad_106 = parse_tuple3(fields[c_frad_new_106]);
             }
@@ -1200,13 +1076,11 @@ bool compute_cross_sections(const std::string &csv_main,
             }
         }
 
-        // Fill lumi and cross sections for each label and helicity.
         for (const auto &L : labels) {
             auto lumi_it = lumi_map.find(L);
             if (lumi_it == lumi_map.end()) continue;
             const Triple &Lumi = lumi_it->second;
 
-            // --- Integrated luminosity columns ---
             std::string lumi_col_name;
             if (L == "Fa18 Inb")      lumi_col_name = "integrated luminosity, Fa18 Inb (nC)";
             else if (L == "Fa18 Out") lumi_col_name = "integrated luminosity, Fa18 Out (nC)";
@@ -1225,7 +1099,6 @@ bool compute_cross_sections(const std::string &csv_main,
                     tuple3_to_cell(Lumi.value, Lumi.stat, Lumi.sys);
             }
 
-            // --- Cross sections ---
             for (const auto &h : helicities) {
                 std::string key = L + "|" + h;
                 auto it = colmap.find(key);
@@ -1238,7 +1111,6 @@ bool compute_cross_sections(const std::string &csv_main,
                 Triple Y = parse_tuple3(fields[iy]);
                 if (Y.value <= 0.0) continue;
 
-                // Choose appropriate luminosity component for this helicity
                 double lumi_val = 0.0;
                 if (h == "unpol")      lumi_val = Lumi.value;
                 else if (h == "pos")   lumi_val = Lumi.stat;
@@ -1252,14 +1124,12 @@ bool compute_cross_sections(const std::string &csv_main,
                     continue;
                 }
 
-                // Select energy (10.6 vs 10.2) for this label.
                 double E = beam_energy_for_label(L);
                 const Triple *vbin_ptr  = nullptr;
                 const Triple *frad_ptr  = nullptr;
                 Triple        fbin_eff{1.0, 0.0, 0.0};
 
                 if (E > 10.3) {
-                    // 10.6 GeV
                     vbin_ptr = &vbin_106;
                     if (kUseLeeFradFbin) {
                         frad_ptr = &frad_lee_eff;
@@ -1269,7 +1139,6 @@ bool compute_cross_sections(const std::string &csv_main,
                         fbin_eff = fbin_106;
                     }
                 } else {
-                    // 10.2 GeV
                     vbin_ptr = &vbin_102;
                     if (kUseLeeFradFbin) {
                         frad_ptr = &frad_lee_eff;
@@ -1311,16 +1180,8 @@ bool compute_cross_sections(const std::string &csv_main,
                     continue;
                 }
 
-                // Cross section:
-                //    sigma = Y * Frad * Fbin / (bin_volume * lumi)
-                //
-                // With:
-                //   - Frad: either Lee-based (inverted) or pass-2 per energy
-                //   - Fbin: Lee-based (inverted) when kUseLeeFradFbin is true,
-                //           or per-energy pass-2 Fbin columns when false.
                 double sigma = Y.value * frad_ptr->value * fbin_eff.value / denom;
 
-                // Propagate stat uncertainties from Y, Frad, and Fbin (if any).
                 double rel2 = 0.0;
                 if (Y.value > 0.0 && Y.stat > 0.0) {
                     double r = Y.stat / Y.value;
@@ -1385,14 +1246,13 @@ struct BinData {
     bool   have_theory_row = false;
 };
 
-using QTKey = std::pair<Range,Range>; // first = Q2 range, second = |t| range
+using QTKey = std::pair<Range,Range>;
 
 struct XSGroupByXB {
     std::map<QTKey, BinData> bins;
     int xb_index = -1;
 };
 
-// Theory curves loaded from JSON
 struct TheoryCurves {
     std::vector<double> phi_deg;
     std::vector<double> bh_unpol, bh_pos, bh_neg;
@@ -1400,9 +1260,6 @@ struct TheoryCurves {
     std::vector<double> vgg_unpol, vgg_pos, vgg_neg;
 };
 
-// Decide which theory energy JSON to use for a given CSV label.
-// All 2018 periods and combinations use 10.6 GeV.
-// Sp19 Inb and the combined "10.2 GeV" label use 10.2 GeV.
 static std::string theory_energy_label_for(const std::string &label) {
     if (label == "Sp19 Inb" || label == "10.2 GeV") {
         return "10.2 GeV";
@@ -1410,14 +1267,11 @@ static std::string theory_energy_label_for(const std::string &label) {
     return "10.6 GeV";
 }
 
-// Load xs_phi_all.json for the appropriate theory energy corresponding
-// to this label.
 static std::map<size_t, TheoryCurves>
 load_theory_for_label(const std::string &label,
                       const std::string &theory_root) {
     std::map<size_t, TheoryCurves> out;
 
-    // Map label -> energy-tag label ("10.6 GeV" or "10.2 GeV")
     std::string energy_label = theory_energy_label_for(label);
 
     fs::path dir  = fs::path(theory_root) / canonical_period_dir(energy_label);
@@ -1468,7 +1322,7 @@ load_theory_for_label(const std::string &label,
 
         size_t row_index = 0;
         try {
-            row_index = static_cast<size_t>(std::stoul(row_key));
+            row_index = (size_t)std::stoul(row_key);
         } catch (...) {
             continue;
         }
@@ -1502,7 +1356,7 @@ load_theory_for_label(const std::string &label,
 }
 
 // -----------------------------------------------------------------------------
-// View mode for canvases (all helicities / unpol-only / pos-only / neg-only)
+// View mode for canvases
 // -----------------------------------------------------------------------------
 
 enum class XSecPanelMode {
@@ -1512,7 +1366,6 @@ enum class XSecPanelMode {
     NegOnly
 };
 
-// Compute y-range for one bin (data + theory) for log scale, for a given mode.
 static std::pair<double,double> compute_yrange_for_bin(
     const BinData *bin,
     const std::map<size_t, TheoryCurves> &theory,
@@ -1569,7 +1422,6 @@ static std::pair<double,double> compute_yrange_for_bin(
                     update_from_curve(tc.km_unpol);
                     update_from_curve(tc.vgg_unpol);
                 } else if (mode == XSecPanelMode::PosOnly) {
-                    // BH is helicity independent; use unpolarized BH baseline.
                     update_from_curve(tc.bh_unpol);
                     update_from_curve(tc.km_pos);
                     update_from_curve(tc.vgg_pos);
@@ -1598,11 +1450,10 @@ static std::pair<double,double> compute_yrange_for_bin(
     return std::make_pair(ymin, 1.2 * ymax);
 }
 
-// Helper to build a TGraphErrors from Point vector
 static TGraphErrors* make_xsec_graph(const std::vector<Point> &v,
                                      int mstyle, int mcolor) {
     if (v.empty()) return nullptr;
-    int N = static_cast<int>(v.size());
+    int N = (int)v.size();
     std::vector<double> x(N), y(N), ex(N), ey(N);
     for (int i = 0; i < N; ++i) {
         x[i]  = v[i].phi;
@@ -1620,7 +1471,7 @@ static TGraphErrors* make_xsec_graph(const std::vector<Point> &v,
 }
 
 // -----------------------------------------------------------------------------
-// Canvas builder for a given xB bin and view mode
+// Canvas builder
 // -----------------------------------------------------------------------------
 
 static void make_xsec_canvas_for_mode(
@@ -1640,7 +1491,6 @@ static void make_xsec_canvas_for_mode(
     const auto &bins_for_xB = group.bins;
     if (bins_for_xB.empty()) return;
 
-    // Canvas size with minimums
     int W = 280 * ncols + 160;
     int H = 260 * nrows + 260;
 
@@ -1649,7 +1499,6 @@ static void make_xsec_canvas_for_mode(
     if (W < MIN_W) W = MIN_W;
     if (H < MIN_H) H = MIN_H;
 
-    // Base font sizes
     double titleSize = 0.18;
     double legendTextSize = 0.11;
     double cellLabelSize = 0.070;
@@ -1665,11 +1514,9 @@ static void make_xsec_canvas_for_mode(
         cellLabelSize = 0.055;
     }
 
-    // Halve title and legend font sizes (as tuned earlier)
     titleSize *= 0.5;
     legendTextSize *= 0.5;
 
-    // Canvas name prefix based on mode
     std::ostringstream cname;
     cname << "c_xsec_";
     if (mode == XSecPanelMode::UnpolOnly) cname << "unpol_";
@@ -1679,7 +1526,6 @@ static void make_xsec_canvas_for_mode(
 
     TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-    // Top pad (title + legends)
     TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
@@ -1692,7 +1538,6 @@ static void make_xsec_canvas_for_mode(
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-    // --- Top pad: title + legends ---
     pTop->cd();
     TLatex head;
     head.SetNDC();
@@ -1716,7 +1561,6 @@ static void make_xsec_canvas_for_mode(
 
     head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
-    // Dummy graphs for legends
     TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
     dummy_unpol.SetMarkerStyle(20);
     dummy_unpol.SetLineWidth(2);
@@ -1733,7 +1577,6 @@ static void make_xsec_canvas_for_mode(
     dummy_neg.SetMarkerColor(kBlue+1);
     dummy_neg.SetLineColor(kBlue+1);
 
-    // Theory dummy graphs
     TGraph dummy_bh, dummy_km_unpol, dummy_km_pos, dummy_km_neg;
     TGraph dummy_vgg_unpol, dummy_vgg_pos, dummy_vgg_neg;
 
@@ -1765,7 +1608,6 @@ static void make_xsec_canvas_for_mode(
     dummy_vgg_neg.SetLineStyle(3);
     dummy_vgg_neg.SetLineColor(kOrange+7);
 
-    // Legends (content depends on mode)
     TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.80);
     legData->SetBorderSize(1);
     legData->SetLineColor(kBlack);
@@ -1830,7 +1672,6 @@ static void make_xsec_canvas_for_mode(
     legKM->Draw();
     legVGG->Draw();
 
-    // --- Grid pads ---
     for (int r = 0; r < nrows; ++r) {
         const Range &t_range = t_slice[r];
         for (int cc = 0; cc < ncols; ++cc) {
@@ -1923,7 +1764,7 @@ static void make_xsec_canvas_for_mode(
                     auto draw_curve = [&](const std::vector<double> &ys,
                                           int lstyle, int lcolor) {
                         if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
-                        int M = static_cast<int>(ys.size());
+                        int M = (int)ys.size();
                         std::vector<double> xp(M), yp(M);
                         for (int i = 0; i < M; ++i) {
                             xp[i] = tc.phi_deg[i];
@@ -1962,7 +1803,6 @@ static void make_xsec_canvas_for_mode(
         }
     }
 
-    // Filename
     std::ostringstream fname;
     fname << "cross_sections_";
     if (mode == XSecPanelMode::UnpolOnly) fname << "unpol_";
@@ -2007,7 +1847,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     std::vector<std::string> header = split_csv_line(lines[0]);
 
-    // Kinematics columns
     int c_xb_min = -1, c_xb_max = -1;
     int c_q2_min = -1, c_q2_max = -1;
     int c_t_min  = -1, c_t_max  = -1;
@@ -2026,7 +1865,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     int c_xb_idx = find_col_optional(header, "xB index");
 
-    // Phi: prefer phiavg,<label> if present, else phimin/phimax
     int c_phiavg = find_col_optional(header, "phiavg, " + label);
     int c_phimin = -1, c_phimax = -1;
     if (c_phiavg < 0) {
@@ -2039,7 +1877,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         }
     }
 
-    // Cross section columns for this label.
     int c_xs_unpol = find_col_optional(
         header, "cross sections, ep->epg, exp, " + label + ", unpol");
     int c_xs_pos   = find_col_optional(
@@ -2128,7 +1965,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    // Load theory curves for this label
     std::map<size_t, TheoryCurves> theory = load_theory_for_label(label, theory_json_root);
 
     gROOT->SetBatch(true);
@@ -2162,13 +1998,12 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         std::vector<Range> t_slice(t_set.begin(), t_set.end());
         if (q2_slice.empty() || t_slice.empty()) continue;
 
-        const int ncols = static_cast<int>(q2_slice.size());
-        const int nrows = static_cast<int>(t_slice.size());
+        const int ncols = (int)q2_slice.size();
+        const int nrows = (int)t_slice.size();
         const int nPads = ncols * nrows;
 
         int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
 
-        // Make the four canvases: all, unpol-only, pos-only, neg-only
         make_xsec_canvas_for_mode(label, xb_range, group,
                                   q2_slice, t_slice,
                                   theory, outdir,
