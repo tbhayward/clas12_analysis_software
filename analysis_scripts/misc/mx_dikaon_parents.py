@@ -3,6 +3,28 @@
 import os
 import ROOT
 
+def parent_label(p1_parent):
+    """
+    Map mc_p1_parent PDG codes to human-readable legend labels.
+    """
+    if p1_parent == 91 or p1_parent == 92:
+        return "string"
+    #endif
+    if p1_parent == 313:
+        return "K^{*0}"
+    #endif
+    if p1_parent == 323:
+        return "K^{*+}"
+    #endif
+    if p1_parent == 333:
+        return "#phi"
+    #endif
+    if p1_parent == 2212:
+        return "exclusive"
+    #endif
+    return "mc_p1_parent={}".format(p1_parent)
+#endif
+
 def main():
     # Run in batch mode (no GUI)
     ROOT.gROOT.SetBatch(True)
@@ -31,19 +53,19 @@ def main():
     xmin = 0.3
     xmax = 2.0
 
-    # Total Mx histogram
+    # Total Mh histogram
     h_total = ROOT.TH1F(
-        "h_mx_total",
-        "Mx for selected events;Mx (GeV);Counts",
+        "h_mh_total",
+        "Mh for selected events;Mh (GeV);Counts",
         nbins,
         xmin,
         xmax
     )
 
-    # One histogram per unique (mc_p1_parent, mc_p2_parent) pair
-    hists_by_parent = {}
+    # One histogram per unique mc_p1_parent
+    hists_by_p1_parent = {}
 
-    # Colors to cycle through for different parent combinations
+    # Colors to cycle through for different parent IDs
     color_list = [
         ROOT.kRed + 1,
         ROOT.kBlue + 1,
@@ -55,8 +77,8 @@ def main():
         ROOT.kAzure + 2,
     ]
 
-    # Track unique parent pairs so we only print each once
-    seen_pairs = set()
+    # Track unique mc_p1_parent so we only print each once
+    seen_p1_parents = set()
 
     # Loop over events
     for entry in tree:
@@ -68,32 +90,23 @@ def main():
             continue
         #endif
 
-        # Grab Mx
-        mx = float(entry.Mx)
+        # Grab Mh
+        mh = float(entry.Mh)
 
-        # Parent IDs
+        # Parent ID of particle 1
         p1_parent = int(entry.mc_p1_parent)
-        p2_parent = int(entry.mc_p2_parent)
-        pair = (p1_parent, p2_parent)
 
-        # Print each unique pair once, in the order encountered
-        if pair not in seen_pairs:
-            print(
-                "Found new parent pair: mc_p1_parent = {}, mc_p2_parent = {}".format(
-                    p1_parent,
-                    p2_parent
-                )
-            )
-            seen_pairs.add(pair)
+        # Print each unique mc_p1_parent once, in the order encountered
+        if p1_parent not in seen_p1_parents:
+            print("Found new mc_p1_parent: {}".format(p1_parent))
+            seen_p1_parents.add(p1_parent)
         #endif
 
-        # Lazily create a histogram for this (parent1, parent2) pair
-        if pair not in hists_by_parent:
-            idx = len(hists_by_parent)
-            hist_name = "h_mx_parent_{}_{}".format(p1_parent, p2_parent)
-            hist_title = (
-                "Mx;Mx (GeV);Counts"
-            )
+        # Lazily create a histogram for this mc_p1_parent
+        if p1_parent not in hists_by_p1_parent:
+            idx = len(hists_by_p1_parent)
+            hist_name = "h_mh_p1parent_{}".format(p1_parent)
+            hist_title = "Mh;Mh (GeV);Counts"
             h = ROOT.TH1F(hist_name, hist_title, nbins, xmin, xmax)
 
             color = color_list[idx % len(color_list)]
@@ -101,19 +114,19 @@ def main():
             h.SetMarkerColor(color)
             h.SetLineWidth(2)
 
-            hists_by_parent[pair] = h
+            hists_by_p1_parent[p1_parent] = h
         #endif
 
         # Fill histograms
-        h_total.Fill(mx)
-        hists_by_parent[pair].Fill(mx)
+        h_total.Fill(mh)
+        hists_by_p1_parent[p1_parent].Fill(mh)
     #endfor
 
     # Make sure output directory exists
     os.makedirs("output", exist_ok=True)
 
     # Canvas setup
-    canvas = ROOT.TCanvas("c_mx", "Mx dikaon parents", 800, 600)
+    canvas = ROOT.TCanvas("c_mh", "Mh dikaon parents (by mc_p1_parent)", 800, 600)
     canvas.SetLeftMargin(0.125)
     canvas.cd()
 
@@ -127,8 +140,8 @@ def main():
     # Track max for y-axis scaling
     max_y = h_total.GetMaximum()
 
-    # Draw each parent-combination histogram
-    for pair, hist in hists_by_parent.items():
+    # Draw each mc_p1_parent histogram
+    for p1_parent, hist in hists_by_p1_parent.items():
         hist.Draw("HIST SAME")
         if hist.GetMaximum() > max_y:
             max_y = hist.GetMaximum()
@@ -144,20 +157,20 @@ def main():
     legend.SetFillStyle(0)
 
     legend.AddEntry(h_total, "All parents", "l")
-    for pair, hist in hists_by_parent.items():
-        label = "mc_p1_parent={}, mc_p2_parent={}".format(pair[0], pair[1])
+    for p1_parent, hist in hists_by_p1_parent.items():
+        label = parent_label(p1_parent)
         legend.AddEntry(hist, label, "l")
     #endfor
 
     legend.Draw()
 
     # Save canvas
-    out_name = "output/mx_dikaon_parents.png"
+    out_name = "output/mh_dikaon_parents.png"
     canvas.SaveAs(out_name)
     print("Saved canvas to {}".format(out_name))
 
     f.Close()
-#endfor
+#endif
 
 if __name__ == "__main__":
     main()
