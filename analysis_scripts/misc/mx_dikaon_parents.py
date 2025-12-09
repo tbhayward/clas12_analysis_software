@@ -140,7 +140,7 @@ def main():
     os.makedirs("output", exist_ok=True)
 
     # Canvas setup
-    canvas = ROOT.TCanvas("c_mh", "k^{+} parent", 800, 600)
+    canvas = ROOT.TCanvas("c_mh", "K^{+} parent", 800, 600)
     canvas.SetLeftMargin(0.125)
     canvas.cd()
 
