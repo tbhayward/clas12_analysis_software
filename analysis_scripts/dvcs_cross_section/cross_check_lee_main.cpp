@@ -84,12 +84,12 @@ int main() {
     //     "output/cross_check/lee/bin_volume"
     // );
 
-    // // Cross section cross-check
-    // plot_cross_section_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/cross_sections"
-    // );
+    // Cross section cross-check
+    plot_cross_section_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/cross_sections"
+    );
 
     std::cout << "[lee] cross_check_lee complete.\n";
     return 0;
