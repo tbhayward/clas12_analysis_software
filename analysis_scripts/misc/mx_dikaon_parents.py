@@ -58,7 +58,7 @@ def main():
     # Total Mh histogram
     h_total = ROOT.TH1F(
         "h_mh_total",
-        "k^{+} parent;Mh (GeV);Counts",
+        "K^{+} parent;Mh (GeV);Counts",
         nbins,
         xmin,
         xmax
@@ -80,8 +80,10 @@ def main():
         ROOT.kAzure + 2,
     ]
 
-    # Track unique mc_p1_parent so we only print each once
+    # Sets for unique parents and combinations
     seen_p1_parents = set()
+    seen_p2_parents = set()
+    seen_pairs = set()
 
     # Loop over events
     for entry in tree:
@@ -96,20 +98,20 @@ def main():
         # Grab Mh
         mh = float(entry.Mh)
 
-        # Parent ID of particle 1
+        # Parent IDs
         p1_parent = int(entry.mc_p1_parent)
+        p2_parent = int(entry.mc_p2_parent)
 
-        # Print each unique mc_p1_parent once, in the order encountered
-        if p1_parent not in seen_p1_parents:
-            print("Found new mc_p1_parent: {}".format(p1_parent))
-            seen_p1_parents.add(p1_parent)
-        #endif
-
-        # Determine category for this parent
-        category = category_for_parent(p1_parent)
+        # Update sets
+        seen_p1_parents.add(p1_parent)
+        seen_p2_parents.add(p2_parent)
+        seen_pairs.add((p1_parent, p2_parent))
 
         # Always fill total histogram
         h_total.Fill(mh)
+
+        # Determine category for this parent (for K^{+})
+        category = category_for_parent(p1_parent)
 
         # Skip if this parent is not one of the specified categories
         if category is None:
@@ -119,8 +121,11 @@ def main():
         # Lazily create a histogram for this category
         if category not in hists_by_category:
             idx = len(hists_by_category)
-            hist_name = "h_mh_cat_{}".format(category.replace("^", "").replace("{", "").replace("}", ""))
-            hist_title = "k^{+} parent;Mh (GeV);Counts"
+            # Clean up name to avoid braces in internal ROOT name
+            hist_name = "h_mh_cat_{}".format(
+                category.replace("^", "").replace("{", "").replace("}", "")
+            )
+            hist_title = "K^{+} parent;Mh (GeV);Counts"
             h = ROOT.TH1F(hist_name, hist_title, nbins, xmin, xmax)
             h.SetStats(False)
 
@@ -134,6 +139,22 @@ def main():
 
         # Fill category histogram
         hists_by_category[category].Fill(mh)
+    #endfor
+
+    # After the loop: print unique parents and combinations
+    print("\nUnique mc_p1_parent values:")
+    for val in sorted(seen_p1_parents):
+        print("  {}".format(val))
+    #endfor
+
+    print("\nUnique mc_p2_parent values:")
+    for val in sorted(seen_p2_parents):
+        print("  {}".format(val))
+    #endfor
+
+    print("\nUnique (mc_p1_parent, mc_p2_parent) combinations:")
+    for p1, p2 in sorted(seen_pairs):
+        print("  ({}, {})".format(p1, p2))
     #endfor
 
     # Make sure output directory exists
@@ -186,7 +207,7 @@ def main():
     # Save canvas
     out_name = "output/mh_dikaon_parents.png"
     canvas.SaveAs(out_name)
-    print("Saved canvas to {}".format(out_name))
+    print("\nSaved canvas to {}".format(out_name))
 
     f.Close()
 #endif
