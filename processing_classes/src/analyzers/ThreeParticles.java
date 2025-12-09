@@ -30,6 +30,7 @@ public class ThreeParticles {
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
     protected double Q2, W, gamma, nu, x, y, t, t1, t2, tmin, z, z1, z2;
+    protected double Mx;
     protected double Mx2, Mx2_1, Mx2_2; // Mx is the Mx(ep1p2), Mx1 is Mx(ep1), Mx2 is Mx(ep2), Mx3 is Mx(e)
     protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta, zeta1, zeta2, xi, xi1, xi2;
     protected double eta, eta1, eta2, eta_gN, eta1_gN, eta2_gN;
@@ -243,6 +244,7 @@ public class ThreeParticles {
         lv_target.setPxPyPzM(0,0,0,kinematic_variables.particle_mass(2212));
         
         // missing mass calculations
+        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p1, lv_p2);
         Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1, lv_p2);
         Mx2_1 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
         Mx2_2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
@@ -251,10 +253,10 @@ public class ThreeParticles {
         // Simulate Fermi motion
 //        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
 //        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
-        
-        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1, lv_p2);
-        Mx2_1 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
-        Mx2_2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
+//        
+//        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1, lv_p2);
+//        Mx2_1 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
+//        Mx2_2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
 
 
         // kinematics of electron
@@ -683,6 +685,10 @@ public class ThreeParticles {
         return Double.valueOf(Math.round(z2 * 100000)) / 100000;
     }// returns z2
 
+    public double Mx() {
+        return Double.valueOf(Math.round(Mx * 100000)) / 100000;
+    }// returns Mx(ep1p2)
+    
     public double Mx2() {
         return Double.valueOf(Math.round(Mx2 * 100000)) / 100000;
     }// returns Mx(ep1p2)
