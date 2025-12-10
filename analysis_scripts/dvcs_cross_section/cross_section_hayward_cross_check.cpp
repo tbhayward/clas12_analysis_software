@@ -24,7 +24,9 @@
 // We organize the comparison by xB, Q^{2}, and -t using the Lee-style
 // binning columns in dvcs_pass2_analysis.csv:
 //
-//   "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max", "phiavg"
+//   "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max",
+//   and a common phi coordinate from:
+//   "phiavg, 10.6 GeV"
 //
 // For each xB bin index ix, we produce:
 //
@@ -233,7 +235,7 @@ struct BinRow_h {
     double Q2max       = 0.0;
     double tmin        = 0.0;
     double tmax        = 0.0;
-    double phiavg      = 0.0;
+    double phiavg      = 0.0;   // from "phiavg, 10.6 GeV"
 
     // Cross section values for each column of interest
     std::unordered_map<std::string,XsValue_h> xs;
@@ -261,7 +263,7 @@ static AxisSets_h build_axes_from_rows_xs_h(const std::vector<BinRow_h>& rows) {
     AxisSets_h ax;
     ax.xB.assign(xbset.begin(), xbset.end());
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
-        const auto& xb   = ax.xB[ix];
+        const auto& xb    = ax.xB[ix];
         const auto& q2set = q2set_by_xb[xb];
         const auto& tset  = tset_by_xb[xb];
         ax.Q2_by_ix[ix] = { q2set.begin(), q2set.end() };
@@ -694,7 +696,8 @@ load_hayward_rows_xs_h(const std::string& hayward_csv_path,
         "Q2max",
         "t_abs_min",
         "t_abs_max",
-        "phiavg"
+        // Common phi coordinate for 10.6 GeV
+        "phiavg, 10.6 GeV"
     };
 
     // Append all xs_columns to required
@@ -730,7 +733,7 @@ load_hayward_rows_xs_h(const std::string& hayward_csv_path,
         r.Q2max     = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "Q2max"));
         r.tmin      = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "t_abs_min"));
         r.tmax      = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "t_abs_max"));
-        r.phiavg    = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "phiavg"));
+        r.phiavg    = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "phiavg, 10.6 GeV"));
 
         bool has_any_xs = false;
 
