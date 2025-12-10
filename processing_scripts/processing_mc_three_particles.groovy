@@ -211,7 +211,6 @@ public static void main(String[] args) {
 							double mc_W = mc_variables.W(); 
 							double mc_y = mc_variables.y();
 							double mc_Mx2 = mc_variables.Mx2();
-							// double mc_Mx2 = mc_variables.Mx();
 							double mc_Mx2_1 = mc_variables.Mx2_1();
 							double mc_Mx2_2 = mc_variables.Mx2_2();
 
