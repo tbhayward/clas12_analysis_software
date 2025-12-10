@@ -807,7 +807,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
                                     r_oa,
                                     r_run,
                                     recVars,
-                                    cutsForTopo)) {
+                                    true)) {
             if (Nrec > 0 && next_pct_rec <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)Nrec;
                 while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
