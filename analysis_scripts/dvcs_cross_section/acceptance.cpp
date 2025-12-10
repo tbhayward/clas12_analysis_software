@@ -352,8 +352,7 @@ static inline bool within_3sigma(double val, const SigmaCut& sc) {
     return std::fabs(val - sc.mean) <= 3.0 * sc.std;
 }
 
-// NOTE: now loading **MC** cuts instead of data cuts.
-// We leave the function name the same to avoid changing callers.
+// Load **MC** sigma cuts and print details for each topology key.
 static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     TopoCutMap out;
 
@@ -378,7 +377,7 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     }
 
     for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD" or maybe pi0 keys
+        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD"
         const json& block = it.value();
 
         // For acceptance we want the MC stats, not the data stats.
@@ -397,7 +396,18 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
                 m[vname] = sc;
             }
         }
-        if (!m.empty()) out[key] = std::move(m);
+
+        if (!m.empty()) {
+            // Debug print so you can see exactly what was loaded.
+            std::cout << "[acceptance] MC sigma cuts for key " << key << ":\n";
+            for (const auto& kv : m) {
+                const SigmaCut& sc = kv.second;
+                std::cout << "  - " << kv.first
+                          << " : mean=" << sc.mean
+                          << " std="  << sc.std << "\n";
+            }
+            out[key] = std::move(m);
+        }
     }
 
     std::cout << "[acceptance] Loaded MC sigma cuts for " << out.size()
@@ -591,9 +601,13 @@ static bool rec_passes_exclusivity(double t1,
     if (is_excluded_run(runnum)) return false;
     if (!passes_global_cuts(t1, open_angle_ep2_deg, pTmiss)) return false;
 
-    // Topology-dependent 3-sigma cuts from combined_cuts.json (now MC branch)
+    // Topology-dependent 3-sigma cuts from combined_cuts.json (MC branch)
     if (cutsForTopo) {
-        std::cout << "Made it into cutsForTopo" << std::endl;
+        static bool printed_once = false;
+        if (!printed_once) {
+            std::cout << "[acceptance] rec_passes_exclusivity: applying 3-sigma MC cuts for at least one topology.\n";
+            printed_once = true;
+        }
         for (const auto& kv : *cutsForTopo) {
             const std::string& vname = kv.first;
             const SigmaCut&    sc    = kv.second;
@@ -1278,7 +1292,7 @@ bool update_acceptance_csv(const std::string& csv_path,
     std::vector<RowBin> bins = build_row_bins(csv);
     std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
-    // Now loads **MC** cuts from combined_cuts.json
+    // Load MC cuts from combined_cuts.json with detailed printout
     const TopoCutMap sigmaCuts   = load_sigma_cuts_data(combined_cuts_json);
 
     const auto tagMap = build_mc_tag_map();
