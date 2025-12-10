@@ -16,10 +16,11 @@
 //   "cross sections, ep->epg, exp, Sp18 Out, unpol"
 //   "cross sections, ep->epg, exp, Fa18, unpol"
 //   "cross sections, ep->epg, exp, Sp18, unpol"
-//   "cross sections, ep->epg, exp, Fa18, pos"
-//   "cross sections, ep->epg, exp, Sp18, pos"
-//   "cross sections, ep->epg, exp, Fa18, neg"
-//   "cross sections, ep->epg, exp, Sp18, neg"
+//   "cross sections, ep->epg, exp, Sp19 Inb, unpol"
+//   "cross sections, ep->epg, exp, Fa18 Inb, pos"
+//   "cross sections, ep->epg, exp, Fa18 Out, pos"
+//   "cross sections, ep->epg, exp, Fa18 Inb, neg"
+//   "cross sections, ep->epg, exp, Fa18 Out, neg"
 //
 // We organize the comparison by xB, Q^{2}, and -t using the Lee-style
 // binning columns in dvcs_pass2_analysis.csv:
@@ -857,16 +858,19 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
 
     // All unique cross section columns we will require
     const std::vector<std::string> xs_columns = {
+        // unpolarized
         "cross sections, ep->epg, exp, Fa18 Inb, unpol",
         "cross sections, ep->epg, exp, Fa18 Out, unpol",
         "cross sections, ep->epg, exp, Sp18 Inb, unpol",
         "cross sections, ep->epg, exp, Sp18 Out, unpol",
         "cross sections, ep->epg, exp, Fa18, unpol",
         "cross sections, ep->epg, exp, Sp18, unpol",
-        "cross sections, ep->epg, exp, Fa18, pos",
-        "cross sections, ep->epg, exp, Sp18, pos",
-        "cross sections, ep->epg, exp, Fa18, neg",
-        "cross sections, ep->epg, exp, Sp18, neg"
+        "cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        // helicity-separated Fa18
+        "cross sections, ep->epg, exp, Fa18 Inb, pos",
+        "cross sections, ep->epg, exp, Fa18 Out, pos",
+        "cross sections, ep->epg, exp, Fa18 Inb, neg",
+        "cross sections, ep->epg, exp, Fa18 Out, neg"
     };
 
     // 1) Load Hayward rows (axis info + all needed cross-section columns)
@@ -891,8 +895,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
 
     // Fa18 Inb vs Fa18 Out (unpolarized)
     comps.push_back({
-        "Fa18 Inb",
-        "Fa18 Out",
+        "Fa18 Inb (unpol)",
+        "Fa18 Out (unpol)",
         "cross sections, ep->epg, exp, Fa18 Inb, unpol",
         "cross sections, ep->epg, exp, Fa18 Out, unpol",
         "Fa18Inb_vs_Fa18Out_unpol"
@@ -900,8 +904,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
 
     // Fa18 Inb vs Sp18 Inb (unpolarized)
     comps.push_back({
-        "Fa18 Inb",
-        "Sp18 Inb",
+        "Fa18 Inb (unpol)",
+        "Sp18 Inb (unpol)",
         "cross sections, ep->epg, exp, Fa18 Inb, unpol",
         "cross sections, ep->epg, exp, Sp18 Inb, unpol",
         "Fa18Inb_vs_Sp18Inb_unpol"
@@ -909,8 +913,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
 
     // Fa18 Out vs Sp18 Out (unpolarized)
     comps.push_back({
-        "Fa18 Out",
-        "Sp18 Out",
+        "Fa18 Out (unpol)",
+        "Sp18 Out (unpol)",
         "cross sections, ep->epg, exp, Fa18 Out, unpol",
         "cross sections, ep->epg, exp, Sp18 Out, unpol",
         "Fa18Out_vs_Sp18Out_unpol"
@@ -918,8 +922,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
 
     // Sp18 Inb vs Sp18 Out (unpolarized)
     comps.push_back({
-        "Sp18 Inb",
-        "Sp18 Out",
+        "Sp18 Inb (unpol)",
+        "Sp18 Out (unpol)",
         "cross sections, ep->epg, exp, Sp18 Inb, unpol",
         "cross sections, ep->epg, exp, Sp18 Out, unpol",
         "Sp18Inb_vs_Sp18Out_unpol"
@@ -934,22 +938,31 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
         "Fa18_vs_Sp18_unpol"
     });
 
-    // Fa18 vs Sp18 (pos helicity)
+    // Fa18 Inb vs Sp19 Inb (unpolarized)
     comps.push_back({
-        "Fa18 (pos)",
-        "Sp18 (pos)",
-        "cross sections, ep->epg, exp, Fa18, pos",
-        "cross sections, ep->epg, exp, Sp18, pos",
-        "Fa18_vs_Sp18_pos"
+        "Fa18 Inb (unpol)",
+        "Sp19 Inb (unpol)",
+        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        "Fa18Inb_vs_Sp19Inb_unpol"
     });
 
-    // Fa18 vs Sp18 (neg helicity)
+    // Fa18 Inb vs Fa18 Out (pos helicity)
     comps.push_back({
-        "Fa18 (neg)",
-        "Sp18 (neg)",
-        "cross sections, ep->epg, exp, Fa18, neg",
-        "cross sections, ep->epg, exp, Sp18, neg",
-        "Fa18_vs_Sp18_neg"
+        "Fa18 Inb (pos)",
+        "Fa18 Out (pos)",
+        "cross sections, ep->epg, exp, Fa18 Inb, pos",
+        "cross sections, ep->epg, exp, Fa18 Out, pos",
+        "Fa18Inb_vs_Fa18Out_pos"
+    });
+
+    // Fa18 Inb vs Fa18 Out (neg helicity)
+    comps.push_back({
+        "Fa18 Inb (neg)",
+        "Fa18 Out (neg)",
+        "cross sections, ep->epg, exp, Fa18 Inb, neg",
+        "cross sections, ep->epg, exp, Fa18 Out, neg",
+        "Fa18Inb_vs_Fa18Out_neg"
     });
 
     // 4) Run all comparisons
