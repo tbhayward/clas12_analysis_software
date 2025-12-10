@@ -588,6 +588,7 @@ static bool rec_passes_exclusivity(double t1,
 
     // Topology-dependent 3-sigma cuts from combined_cuts.json
     if (cutsForTopo) {
+        std::cout << "Made it into cutsForTopo" << std::endl;
         for (const auto& kv : *cutsForTopo) {
             const std::string& vname = kv.first;
             const SigmaCut&    sc    = kv.second;
@@ -807,7 +808,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
                                     r_oa,
                                     r_run,
                                     recVars,
-                                    true)) {
+                                    cutsForTopo)) {
             if (Nrec > 0 && next_pct_rec <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)Nrec;
                 while (pct >= (double)next_pct_rec && next_pct_rec <= 100) {
