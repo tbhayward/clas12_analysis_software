@@ -1,0 +1,114 @@
+{
+  "periods": {
+    "fa18_inb": {
+      "efficiency_scheme": "rga_default",
+      "currents": [
+        { "current_nA": 40, "counts": 1533, "period_fraction": 0.007624, "period_fraction_percent": 0.76 },
+        { "current_nA": 45, "counts": 139499, "period_fraction": 0.693756, "period_fraction_percent": 69.38 },
+        { "current_nA": 50, "counts": 22996, "period_fraction": 0.114364, "period_fraction_percent": 11.44 },
+        { "current_nA": 55, "counts": 37050, "period_fraction": 0.184257, "period_fraction_percent": 18.43 }
+      ]
+    },
+    "fa18_out": {
+      "efficiency_scheme": "rga_default",
+      "currents": [
+        { "current_nA": 40, "counts": 165577, "period_fraction": 0.366141, "period_fraction_percent": 36.61 },
+        { "current_nA": 50, "counts": 286645, "period_fraction": 0.633859, "period_fraction_percent": 63.39 }
+      ]
+    },
+    "sp18_inb": {
+      "efficiency_scheme": "rga_sp18",
+      "currents": [
+        { "current_nA": 35, "counts": 18095, "period_fraction": 0.069823, "period_fraction_percent": 6.98 },
+        { "current_nA": 50, "counts": 241059, "period_fraction": 0.930177, "period_fraction_percent": 93.02 }
+      ]
+    },
+    "sp18_out": {
+      "efficiency_scheme": "rga_sp18",
+      "currents": [
+        { "current_nA": 30, "counts": 29066, "period_fraction": 0.188287, "period_fraction_percent": 18.83 },
+        { "current_nA": 45, "counts": 125305, "period_fraction": 0.811713, "period_fraction_percent": 81.17 }
+      ]
+    },
+    "sp19_inb": {
+      "efficiency_scheme": "rga_default",
+      "currents": [
+        { "current_nA": 50, "counts": 278526, "period_fraction": 1.0, "period_fraction_percent": 100.0 }
+      ]
+    }
+  },
+
+  "efficiency_schemes": {
+    "rga_default": {
+      "description": "Efficiency vs current for Fa18 Inb, Fa18 Out, Sp19 Inb (currently using common RGA values).",
+      "efficiency_by_current": {
+        "35": {
+          "efficiency_percent": 84.3,
+          "efficiency_fraction": 0.843,
+          "uncertainty_percent": 10.0,
+          "uncertainty_fraction": 0.10
+        },
+        "40": {
+          "efficiency_percent": 82.0,
+          "efficiency_fraction": 0.820,
+          "uncertainty_percent": 4.8,
+          "uncertainty_fraction": 0.048
+        },
+        "45": {
+          "efficiency_percent": 79.8,
+          "efficiency_fraction": 0.798,
+          "uncertainty_percent": 5.4,
+          "uncertainty_fraction": 0.054
+        },
+        "50": {
+          "efficiency_percent": 77.5,
+          "efficiency_fraction": 0.775,
+          "uncertainty_percent": 6.0,
+          "uncertainty_fraction": 0.060
+        },
+        "55": {
+          "efficiency_percent": 75.3,
+          "efficiency_fraction": 0.753,
+          "uncertainty_percent": 6.6,
+          "uncertainty_fraction": 0.066
+        }
+      }
+    },
+
+    "rga_sp18": {
+      "description": "Efficiency vs current for Sp18 Inb and Sp18 Out (currently using same values as rga_default; replace later with Sp18-specific results).",
+      "efficiency_by_current": {
+        "35": {
+          "efficiency_percent": 84.3,
+          "efficiency_fraction": 0.843,
+          "uncertainty_percent": 10.0,
+          "uncertainty_fraction": 0.10
+        },
+        "40": {
+          "efficiency_percent": 82.0,
+          "efficiency_fraction": 0.820,
+          "uncertainty_percent": 4.8,
+          "uncertainty_fraction": 0.048
+        },
+        "45": {
+          "efficiency_percent": 79.8,
+          "efficiency_fraction": 0.798,
+          "uncertainty_percent": 5.4,
+          "uncertainty_fraction": 0.054
+        },
+        "50": {
+          "efficiency_percent": 77.5,
+          "efficiency_fraction": 0.775,
+          "uncertainty_percent": 6.0,
+          "uncertainty_fraction": 0.060
+        },
+        "55": {
+          "efficiency_percent": 75.3,
+          "efficiency_fraction": 0.753,
+          "uncertainty_percent": 6.6,
+          "uncertainty_fraction": 0.066
+        }
+      }
+    }
+  }
+}
