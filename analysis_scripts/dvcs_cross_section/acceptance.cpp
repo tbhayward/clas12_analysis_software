@@ -352,6 +352,8 @@ static inline bool within_3sigma(double val, const SigmaCut& sc) {
     return std::fabs(val - sc.mean) <= 3.0 * sc.std;
 }
 
+// NOTE: now loading **MC** cuts instead of data cuts.
+// We leave the function name the same to avoid changing callers.
 static TopoCutMap load_sigma_cuts_data(const std::string& path) {
     TopoCutMap out;
 
@@ -379,10 +381,13 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD" or maybe pi0 keys
         const json& block = it.value();
 
-        if (!block.contains("data") || !block["data"].is_object()) continue;
+        // For acceptance we want the MC stats, not the data stats.
+        if (!block.contains("mc") || !block["mc"].is_object()) continue;
+
+        const json& mc_block = block["mc"];
 
         VarCutMap m;
-        for (auto vit = block["data"].begin(); vit != block["data"].end(); ++vit) {
+        for (auto vit = mc_block.begin(); vit != mc_block.end(); ++vit) {
             const std::string vname = vit.key(); // Emiss2, Mx2, ...
             const json& vs = vit.value();
             SigmaCut sc;
@@ -395,7 +400,7 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         if (!m.empty()) out[key] = std::move(m);
     }
 
-    std::cout << "[acceptance] Loaded sigma cuts for " << out.size()
+    std::cout << "[acceptance] Loaded MC sigma cuts for " << out.size()
               << " topology keys from " << path << "\n";
     return out;
 }
@@ -586,7 +591,7 @@ static bool rec_passes_exclusivity(double t1,
     if (is_excluded_run(runnum)) return false;
     if (!passes_global_cuts(t1, open_angle_ep2_deg, pTmiss)) return false;
 
-    // Topology-dependent 3-sigma cuts from combined_cuts.json
+    // Topology-dependent 3-sigma cuts from combined_cuts.json (now MC branch)
     if (cutsForTopo) {
         std::cout << "Made it into cutsForTopo" << std::endl;
         for (const auto& kv : *cutsForTopo) {
@@ -1273,6 +1278,7 @@ bool update_acceptance_csv(const std::string& csv_path,
     std::vector<RowBin> bins = build_row_bins(csv);
     std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
+    // Now loads **MC** cuts from combined_cuts.json
     const TopoCutMap sigmaCuts   = load_sigma_cuts_data(combined_cuts_json);
 
     const auto tagMap = build_mc_tag_map();
