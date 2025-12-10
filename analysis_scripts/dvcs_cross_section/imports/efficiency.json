@@ -42,6 +42,12 @@
     "rga_default": {
       "description": "Efficiency vs current for Fa18 Inb, Fa18 Out, Sp19 Inb (currently using common RGA values).",
       "efficiency_by_current": {
+        "30": {
+          "efficiency_percent": 86.5,
+          "efficiency_fraction": 0.865,
+          "uncertainty_percent": 10.0,
+          "uncertainty_fraction": 0.10
+        },
         "35": {
           "efficiency_percent": 84.3,
           "efficiency_fraction": 0.843,
@@ -78,6 +84,12 @@
     "rga_sp18": {
       "description": "Efficiency vs current for Sp18 Inb and Sp18 Out (currently using same values as rga_default; replace later with Sp18-specific results).",
       "efficiency_by_current": {
+        "30": {
+          "efficiency_percent": 86.5,
+          "efficiency_fraction": 0.865,
+          "uncertainty_percent": 10.0,
+          "uncertainty_fraction": 0.10
+        },
         "35": {
           "efficiency_percent": 84.3,
           "efficiency_fraction": 0.843,
