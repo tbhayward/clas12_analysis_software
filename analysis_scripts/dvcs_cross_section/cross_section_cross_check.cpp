@@ -16,7 +16,7 @@
 //   Hayward:
 //      "cross sections, ep->epg, exp, Fa18, unpol"       (three-tuple:
 //                                                        value, stat_err,
-//                                                        syst_err [unused here])
+//                                                        syst_err [ignored here])
 //
 // We organize the comparison by xB, Q^{2}, and -t. For each (xB, Q^{2}, -t)
 // cell, we take all rows matching those ranges and use their provided phiavg
@@ -33,15 +33,19 @@
 //           1e-1, 1e-2, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-4
 //       * Per-canvas global y-max (from all subplots, including error bars),
 //         used for all subplots on that canvas. For Lee, this includes
-//         stat + syst(up) on top of the central value.
+//         stat⊕syst(up) in quadrature on top of the central value.
 //   - For ratio canvases (Hayward/Lee):
 //       * Linear y-scale, fixed range [0, 3] for all subplots.
+//       * Two sets of error bars per point:
+//           1) "stat": propagate stat errors from BOTH Hayward and Lee.
+//           2) "stat + Lee syst": propagate Hayward stat and Lee (stat⊕syst)
+//              with asymmetric up/down uncertainties.
 //
 // Additionally:
-//   - Lee cross sections are now drawn with:
+//   - Lee cross sections are now drawn with on the counts canvases:
 //        * Stat error bars (TGraphErrors, orange).
-//        * Systematic asymmetric error bars (TGraphAsymmErrors, slightly
-//          different orange, thicker line, no marker).
+//        * Larger asymmetric stat⊕syst error bars (TGraphAsymmErrors,
+//          slightly different orange, thicker line, no marker).
 //
 // -----------------------------------------------------------------------------
 
@@ -476,9 +480,9 @@ static PerPanel_xs map_to_panels_xs(const std::vector<BinRow_xs>& rows,
             e_sup2.push_back(pd.err_syst_up[i]);
             e_sdn2.push_back(pd.err_syst_dn[i]);
         }
-        pd.phi        = std::move(phi2);
-        pd.val        = std::move(val2);
-        pd.err_stat   = std::move(e_stat2);
+        pd.phi         = std::move(phi2);
+        pd.val         = std::move(val2);
+        pd.err_stat    = std::move(e_stat2);
         pd.err_syst_up = std::move(e_sup2);
         pd.err_syst_dn = std::move(e_sdn2);
     };
@@ -525,7 +529,7 @@ static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
     return g;
 }
 
-// Asymmetric error bars (for Lee systematics)
+// Asymmetric error bars (for Lee stat⊕syst on counts, and ratio if needed)
 static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
                                            const std::vector<double>& Y,
                                            const std::vector<double>& EY_low,
@@ -608,10 +612,22 @@ static void draw_one_canvas_xs(const std::string& title,
                 auto update_minmax = [&](const PanelData_xs& pd, bool include_syst) {
                     for (size_t i = 0; i < pd.val.size(); ++i) {
                         double v   = pd.val[i];
-                        double es  = (i < pd.err_stat.size())   ? pd.err_stat[i]   : 0.0;
-                        double esu = (include_syst && i < pd.err_syst_up.size())
-                                     ? pd.err_syst_up[i] : 0.0;
-                        double vup = v + es + esu;
+                        double es  = (i < pd.err_stat.size()) ? pd.err_stat[i] : 0.0;
+
+                        double esu = 0.0;
+                        if (include_syst && i < pd.err_syst_up.size()) {
+                            esu = pd.err_syst_up[i];
+                        }
+
+                        double vup = v;
+                        if (include_syst) {
+                            // Use stat⊕syst(up) in quadrature
+                            double e_tot_up = std::sqrt(es * es + esu * esu);
+                            vup = v + e_tot_up;
+                        } else {
+                            vup = v + es;
+                        }
+
                         if (vup > global_max_counts) {
                             global_max_counts = vup;
                         }
@@ -623,7 +639,7 @@ static void draw_one_canvas_xs(const std::string& title,
 
                 // Hayward: stat only
                 update_minmax(hayward_tmp, false);
-                // Lee: stat + syst(up)
+                // Lee: stat⊕syst(up)
                 update_minmax(lee_tmp, true);
             }
         }
@@ -647,30 +663,39 @@ static void draw_one_canvas_xs(const std::string& title,
     head.SetTextSize(0.18);
     head.DrawLatex(0.50, 0.65, title.c_str());
 
+    const int black       = kBlack;
+    const int orange      = kOrange + 7;
+    const int orange_syst = kOrange + 2;
+
     // Legend
     std::vector<TObject*> legend_keepalive;
     TLegend* legTop = new TLegend(0.08, 0.10, 0.92, 0.56);
-    legTop->SetNColumns(draw_ratio_only ? 2 : 3);
+    legTop->SetNColumns(3);
     legTop->SetBorderSize(0);
     legTop->SetFillStyle(0);
     legTop->SetTextFont(42);
     legTop->SetTextSize(0.22);
 
-    const int black  = kBlack;
-    const int orange = kOrange + 7;
-    const int orange_syst = kOrange + 2;
-
     if (draw_ratio_only) {
-        auto* mRatio = new TMarker(0.0, 0.0, 20);
-        mRatio->SetMarkerColor(kBlack);
-        auto* lnY1   = new TLine(0.0, 0.0, 1.0, 0.0);
+        auto* mRatioStat = new TMarker(0.0, 0.0, 20);
+        mRatioStat->SetMarkerColor(black);
+
+        auto* lnRatioTot = new TLine(0.0, 0.0, 1.0, 0.0);
+        lnRatioTot->SetLineColor(orange_syst);
+        lnRatioTot->SetLineWidth(2);
+
+        auto* lnY1 = new TLine(0.0, 0.0, 1.0, 0.0);
         lnY1->SetLineStyle(2);
         lnY1->SetLineWidth(2);
         lnY1->SetLineColor(orange);
-        legend_keepalive.push_back(mRatio);
+
+        legend_keepalive.push_back(mRatioStat);
+        legend_keepalive.push_back(lnRatioTot);
         legend_keepalive.push_back(lnY1);
-        legTop->AddEntry(mRatio, "Hayward/Lee", "p");
-        legTop->AddEntry(lnY1,   "y = 1",       "l");
+
+        legTop->AddEntry(mRatioStat, "Hayward/Lee (stat)",             "p");
+        legTop->AddEntry(lnRatioTot, "Hayward/Lee (stat + Lee syst)",  "l");
+        legTop->AddEntry(lnY1,       "y = 1",                          "l");
     } else {
         auto* mH        = new TMarker(0.0, 0.0, 20);
         auto* mL_stat   = new TMarker(0.0, 0.0, 24);
@@ -685,9 +710,9 @@ static void draw_one_canvas_xs(const std::string& title,
         legend_keepalive.push_back(mL_stat);
         legend_keepalive.push_back(lnL_syst);
 
-        legTop->AddEntry(mH,      "Hayward (pass-2), stat", "p");
-        legTop->AddEntry(mL_stat, "Lee (pass-1), stat",     "p");
-        legTop->AddEntry(lnL_syst,"Lee (pass-1), syst",     "l");
+        legTop->AddEntry(mH,       "Hayward (pass-2), stat",          "p");
+        legTop->AddEntry(mL_stat,  "Lee (pass-1), stat",              "p");
+        legTop->AddEntry(lnL_syst, "Lee (pass-1), stat + syst",       "l");
     }
     legTop->Draw();
 
@@ -765,25 +790,43 @@ static void draw_one_canvas_xs(const std::string& title,
                 // Plot Hayward (stat)
                 graph_pe1_xs(hayward.phi, hayward.val, hayward.err_stat, 20, black);
 
-                // Plot Lee stat
+                // Plot Lee stat (symmetric)
                 graph_pe1_xs(lee.phi, lee.val, lee.err_stat, 24, orange);
 
-                // Plot Lee syst (asymmetric, larger bars, different orange)
+                // Plot Lee stat⊕syst as asymmetric bars
+                std::vector<double> lee_comb_dn;
+                std::vector<double> lee_comb_up;
+                lee_comb_dn.reserve(lee.val.size());
+                lee_comb_up.reserve(lee.val.size());
+                for (size_t i = 0; i < lee.val.size(); ++i) {
+                    double es   = (i < lee.err_stat.size())    ? lee.err_stat[i]    : 0.0;
+                    double esdn = (i < lee.err_syst_dn.size()) ? lee.err_syst_dn[i] : 0.0;
+                    double esup = (i < lee.err_syst_up.size()) ? lee.err_syst_up[i] : 0.0;
+                    lee_comb_dn.push_back(std::sqrt(es * es + esdn * esdn));
+                    lee_comb_up.push_back(std::sqrt(es * es + esup * esup));
+                }
+
                 graph_asymm_y_xs(lee.phi, lee.val,
-                                 lee.err_syst_dn,
-                                 lee.err_syst_up,
+                                 lee_comb_dn,
+                                 lee_comb_up,
                                  orange_syst);
             } else {
                 // -----------------------------------------------------------------
                 // RATIO CANVAS: OFFICIAL INSTRUCTIONS
                 //   - Linear y-scale
                 //   - y-range fixed to [0, 3]
+                //   - Two error sets:
+                //       * stat-only (H and L stat)
+                //       * stat + Lee syst (H stat, L stat⊕syst)
                 // -----------------------------------------------------------------
                 gPad->SetLogy(0);
 
-                // Compute R = H/L and eR from Hayward stat error only
                 const double tol = 20.0;
-                std::vector<double> x, y, ey;
+                std::vector<double> x;
+                std::vector<double> y;
+                std::vector<double> ey_stat;
+                std::vector<double> ey_tot_up;
+                std::vector<double> ey_tot_dn;
 
                 for (size_t i = 0; i < hayward.phi.size(); ++i) {
                     double best_dist = 1e9;
@@ -795,21 +838,53 @@ static void draw_one_canvas_xs(const std::string& title,
                             jbest = (int)j;
                         }
                     }
-                    if (jbest >= 0 && best_dist <= tol && lee.val[jbest] > 0.0) {
-                        double H = hayward.val[i];
-                        double L = lee.val[jbest];
-                        double R = (H <= 0.0) ? 0.0 : H / L;
-
-                        double sigma_H = (i < hayward.err_stat.size()) ? hayward.err_stat[i] : 0.0;
-                        double eR = 0.0;
-                        if (H > 0.0 && sigma_H > 0.0) {
-                            eR = R * (sigma_H / H);
-                        }
-
-                        x.push_back(hayward.phi[i]);
-                        y.push_back(R);
-                        ey.push_back(eR);
+                    if (jbest < 0 || best_dist > tol) {
+                        continue;
                     }
+
+                    double H = hayward.val[i];
+                    double L = lee.val[jbest];
+                    if (H <= 0.0 || L <= 0.0) {
+                        continue;
+                    }
+
+                    double R = H / L;
+
+                    double sigma_H_stat = (i < hayward.err_stat.size())    ? hayward.err_stat[i]    : 0.0;
+                    double sigma_L_stat = (jbest < (int)lee.err_stat.size())    ? lee.err_stat[jbest]    : 0.0;
+                    double sigma_L_su   = (jbest < (int)lee.err_syst_up.size()) ? lee.err_syst_up[jbest] : 0.0;
+                    double sigma_L_sd   = (jbest < (int)lee.err_syst_dn.size()) ? lee.err_syst_dn[jbest] : 0.0;
+
+                    double rel_H_stat = (H > 0.0) ? (sigma_H_stat / H) : 0.0;
+                    double rel_L_stat = (L > 0.0) ? (sigma_L_stat / L) : 0.0;
+
+                    // Stat-only ratio error
+                    double relR_stat = std::sqrt(rel_H_stat * rel_H_stat +
+                                                 rel_L_stat * rel_L_stat);
+                    double eR_stat   = R * relR_stat;
+
+                    // Stat + Lee syst (up/down separately)
+                    double sigma_L_tot_up = std::sqrt(sigma_L_stat * sigma_L_stat +
+                                                      sigma_L_su   * sigma_L_su);
+                    double sigma_L_tot_dn = std::sqrt(sigma_L_stat * sigma_L_stat +
+                                                      sigma_L_sd   * sigma_L_sd);
+
+                    double rel_L_tot_up = (L > 0.0) ? (sigma_L_tot_up / L) : 0.0;
+                    double rel_L_tot_dn = (L > 0.0) ? (sigma_L_tot_dn / L) : 0.0;
+
+                    double relR_tot_up = std::sqrt(rel_H_stat * rel_H_stat +
+                                                   rel_L_tot_up * rel_L_tot_up);
+                    double relR_tot_dn = std::sqrt(rel_H_stat * rel_H_stat +
+                                                   rel_L_tot_dn * rel_L_tot_dn);
+
+                    double eR_tot_up = R * relR_tot_up;
+                    double eR_tot_dn = R * relR_tot_dn;
+
+                    x.push_back(hayward.phi[i]);
+                    y.push_back(R);
+                    ey_stat.push_back(eR_stat);
+                    ey_tot_up.push_back(eR_tot_up);
+                    ey_tot_dn.push_back(eR_tot_dn);
                 }
 
                 ymin = 0.0;
@@ -841,8 +916,25 @@ static void draw_one_canvas_xs(const std::string& title,
                          Ts[r].first,     Ts[r].second));
 
                 if (!x.empty()) {
-                    graph_pe1_xs(x, y, ey, 20, black);
+                    // Stat-only ratio error bars
+                    graph_pe1_xs(x, y, ey_stat, 20, black);
 
+                    // Stat + Lee syst ratio error bars (asymmetric, line only)
+                    const int n = (int)x.size();
+                    auto* gTot = new TGraphAsymmErrors(n);
+                    for (int i = 0; i < n; ++i) {
+                        double el = (i < (int)ey_tot_dn.size()) ? ey_tot_dn[i] : 0.0;
+                        double eh = (i < (int)ey_tot_up.size()) ? ey_tot_up[i] : 0.0;
+                        gTot->SetPoint(i, x[i], y[i]);
+                        gTot->SetPointError(i, 0.0, 0.0, el, eh);
+                    }
+                    gTot->SetLineColor(orange_syst);
+                    gTot->SetLineWidth(2);
+                    gTot->SetMarkerStyle(1);
+                    gTot->SetMarkerSize(0.0);
+                    gTot->Draw("E1 SAME");
+
+                    // y = 1 line
                     TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
                     one->SetLineStyle(2);
                     one->SetLineWidth(2);
