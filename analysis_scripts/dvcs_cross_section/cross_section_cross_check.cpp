@@ -25,7 +25,6 @@
 // Output filenames (per xB index ix):
 //   cross_section_counts_xB_<ix>.png
 //   cross_section_ratio_xB_<ix>.png
-//   cross_section_staterr_xB_<ix>.png   (NEW: stat. uncertainties vs phi)
 //
 // OFFICIAL INSTRUCTIONS IMPLEMENTED:
 //   - For counts canvases (cross sections):
@@ -48,8 +47,6 @@
 //        * Larger asymmetric stat⊕syst error bars (TGraphAsymmErrors,
 //          slightly different orange, thicker line, no marker).
 //
-//   - NEW: third canvas directly comparing the *sizes* of the statistical
-//          uncertainties (absolute sigma) vs phi, for Lee and Hayward.
 // -----------------------------------------------------------------------------
 
 #include "cross_section_cross_check.h"
@@ -548,9 +545,7 @@ static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
         double eh = (i < (int)EY_high.size()) ? EY_high[i] : 0.0;
         g->SetPoint(i, x, y);
         g->SetPointError(i, 0.0, 0.0, el, eh);
-        // endfor
     }
-    // endfor
     g->SetLineColor(lineColor);
     g->SetLineWidth(2);
     g->SetMarkerStyle(1);
@@ -585,9 +580,6 @@ static double get_xb_ymin_floor_xs(int ix_xb) {
     return floors[ix_xb];
 }
 
-// -----------------------------------------------------------------------------
-// Counts or ratio canvas (original two canvases)
-// -----------------------------------------------------------------------------
 static void draw_one_canvas_xs(const std::string& title,
                                const std::vector<std::pair<double,double>>& Q2s,
                                const std::vector<std::pair<double,double>>& Ts,
@@ -643,9 +635,7 @@ static void draw_one_canvas_xs(const std::string& title,
                             any_positive = true;
                         }
                     }
-                    // endfor
                 };
-                // end lambda
 
                 // Hayward: stat only
                 update_minmax(hayward_tmp, false);
@@ -937,9 +927,7 @@ static void draw_one_canvas_xs(const std::string& title,
                         double eh = (i < (int)ey_tot_up.size()) ? ey_tot_up[i] : 0.0;
                         gTot->SetPoint(i, x[i], y[i]);
                         gTot->SetPointError(i, 0.0, 0.0, el, eh);
-                        // endfor
                     }
-                    // endfor
                     gTot->SetLineColor(orange_syst);
                     gTot->SetLineWidth(2);
                     gTot->SetMarkerStyle(1);
@@ -952,181 +940,6 @@ static void draw_one_canvas_xs(const std::string& title,
                     one->SetLineWidth(2);
                     one->SetLineColor(orange);
                     one->Draw("SAME");
-                }
-            }
-        }
-    }
-
-    c->SaveAs(out_png.c_str());
-
-    delete legTop;
-    delete c;
-}
-
-// -----------------------------------------------------------------------------
-// NEW: Canvas that directly compares |statistical uncertainties| vs phi
-//      (Hayward vs Lee) per xB bin, with same panel layout.
-// -----------------------------------------------------------------------------
-static void draw_uncert_canvas_xs(const std::string& title,
-                                  const std::vector<std::pair<double,double>>& Q2s,
-                                  const std::vector<std::pair<double,double>>& Ts,
-                                  const std::function<void(int,int,PanelData_xs&,PanelData_xs&)>& fetchBoth,
-                                  const std::string& out_png) {
-    const int nrows = (int)Ts.size();
-    const int ncols = (int)Q2s.size();
-    if (nrows == 0 || ncols == 0) return;
-
-    const int W = 320 * ncols + 220;
-    const int H = 260 * nrows + 260;
-
-    // Global y-range for stat. uncertainties (absolute sigma)
-    double global_max_sigma = 0.0;
-
-    for (int r = 0; r < nrows; ++r) {
-        for (int ccol = 0; ccol < ncols; ++ccol) {
-            PanelData_xs hayward_tmp, lee_tmp;
-            fetchBoth(ccol, r, hayward_tmp, lee_tmp);
-
-            auto update_max = [&](const PanelData_xs& pd) {
-                for (size_t i = 0; i < pd.err_stat.size(); ++i) {
-                    double s = std::fabs(pd.err_stat[i]);
-                    if (s > global_max_sigma) {
-                        global_max_sigma = s;
-                    }
-                }
-                // endfor
-            };
-            // end lambda
-
-            update_max(hayward_tmp);
-            update_max(lee_tmp);
-        }
-    }
-
-    if (global_max_sigma <= 0.0) {
-        // Nothing meaningful to draw
-        info_xs("draw_uncert_canvas_xs: no positive stat. uncertainties found, skipping " + out_png);
-        return;
-    }
-
-    const std::string cname = safe_canvas_name_xs(out_png);
-    TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
-    c->cd();
-
-    // Top band
-    TPad* pTop = new TPad("pTop_unc", "pTop_unc", 0.0, 0.90, 1.0, 1.0);
-    pTop->SetFillStyle(0);
-    pTop->SetBorderSize(0);
-    pTop->Draw();
-    pTop->cd();
-
-    TLatex head;
-    head.SetNDC();
-    head.SetTextAlign(22);
-    head.SetTextFont(42);
-    head.SetTextSize(0.18);
-    head.DrawLatex(0.50, 0.65, title.c_str());
-
-    const int black  = kBlack;
-    const int orange = kOrange + 7;
-
-    // Legend
-    std::vector<TObject*> legend_keepalive;
-    TLegend* legTop = new TLegend(0.10, 0.10, 0.90, 0.60);
-    legTop->SetNColumns(2);
-    legTop->SetBorderSize(0);
-    legTop->SetFillStyle(0);
-    legTop->SetTextFont(42);
-    legTop->SetTextSize(0.22);
-
-    auto* mH_unc  = new TMarker(0.0, 0.0, 20);
-    auto* mL_unc  = new TMarker(0.0, 0.0, 24);
-
-    mH_unc->SetMarkerColor(black);
-    mL_unc->SetMarkerColor(orange);
-
-    legend_keepalive.push_back(mH_unc);
-    legend_keepalive.push_back(mL_unc);
-
-    legTop->AddEntry(mH_unc, "Hayward (pass-2), stat unc.", "p");
-    legTop->AddEntry(mL_unc, "Lee (pass-1), stat unc.",     "p");
-    legTop->Draw();
-
-    // Grid
-    c->cd();
-    TPad* pGrid = new TPad("pGrid_unc", "pGrid_unc", 0.0, 0.00, 1.0, 0.90);
-    pGrid->SetFillStyle(0);
-    pGrid->SetBorderSize(0);
-    pGrid->Draw();
-    pGrid->cd();
-    pGrid->Divide(ncols, nrows, 0.00, 0.00);
-
-    const double ymin = 0.0;
-    double ymax = 1.10 * global_max_sigma;
-    if (ymax <= 0.0) {
-        ymax = 1.0;
-    }
-
-    for (int r = 0; r < nrows; ++r) {
-        for (int ccol = 0; ccol < ncols; ++ccol) {
-            pGrid->cd(r * ncols + ccol + 1);
-            gPad->SetGrid(1, 1);
-            gPad->SetTicks(1, 1);
-            gPad->SetTopMargin(0.12);
-            gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.18);
-            gPad->SetRightMargin(0.08);
-            gPad->SetLogy(0);
-
-            PanelData_xs hayward, lee;
-            fetchBoth(ccol, r, hayward, lee);
-
-            TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
-            frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("Stat. uncertainty");
-            frame->GetXaxis()->CenterTitle();
-            frame->GetYaxis()->CenterTitle();
-            frame->GetXaxis()->SetNdivisions(505);
-            frame->GetXaxis()->SetTitleSize(0.060);
-            frame->GetYaxis()->SetTitleSize(0.060);
-            frame->GetYaxis()->SetLabelSize(0.050);
-            frame->GetXaxis()->SetLabelSize(0.050);
-            frame->GetXaxis()->SetTitleOffset(1.10);
-            frame->GetYaxis()->SetTitleOffset(1.55);
-
-            draw_degree_ticks_here_xs(0.050);
-
-            TLatex lab;
-            lab.SetNDC();
-            lab.SetTextSize(0.070);
-            lab.SetTextAlign(11);
-            lab.SetTextFont(42);
-            lab.DrawLatex(0.15, 0.92,
-                Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
-                     Q2s[ccol].first, Q2s[ccol].second,
-                     Ts[r].first,     Ts[r].second));
-
-            // Plot absolute stat uncertainties as Y-values.
-            if (!hayward.phi.empty() || !lee.phi.empty()) {
-                std::vector<double> zeros_H(hayward.err_stat.size(), 0.0);
-                std::vector<double> zeros_L(lee.err_stat.size(), 0.0);
-
-                // Hayward
-                if (!hayward.phi.empty()) {
-                    graph_pe1_xs(hayward.phi,
-                                 hayward.err_stat,
-                                 zeros_H,
-                                 20,  // marker
-                                 black);
-                }
-
-                // Lee
-                if (!lee.phi.empty()) {
-                    graph_pe1_xs(lee.phi,
-                                 lee.err_stat,
-                                 zeros_L,
-                                 24,  // marker
-                                 orange);
                 }
             }
         }
@@ -1348,9 +1161,6 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
         const std::string title_ratio  =
             Form("Cross section ratio (Hayward/Lee): 10.6 GeV   x_{B} #in [%.3g, %.3g]",
                  xb_lo, xb_hi);
-        const std::string title_uncert =
-            Form("Stat. uncertainties vs #phi: 10.6 GeV   x_{B} #in [%.3g, %.3g]",
-                 xb_lo, xb_hi);
 
         auto fetchBoth = make_fetchBoth(ix);
 
@@ -1358,20 +1168,13 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
             (fs::path(output_base_dir) / Form("cross_section_counts_xB_%d.png", ix)).string();
         const std::string f_ratio  =
             (fs::path(output_base_dir) / Form("cross_section_ratio_xB_%d.png",  ix)).string();
-        const std::string f_uncert =
-            (fs::path(output_base_dir) / Form("cross_section_staterr_xB_%d.png", ix)).string();
 
-        // Original two canvases
         draw_one_canvas_xs(title_counts, Q2s, Ts, fetchBoth, f_counts,
                            /*draw_ratio_only=*/false, ix);
         draw_one_canvas_xs(title_ratio,  Q2s, Ts, fetchBoth, f_ratio,
                            /*draw_ratio_only=*/true, ix);
 
-        // NEW: stat. uncertainties vs phi
-        draw_uncert_canvas_xs(title_uncert, Q2s, Ts, fetchBoth, f_uncert);
-
         info_xs("Saved: " + f_counts);
         info_xs("Saved: " + f_ratio);
-        info_xs("Saved: " + f_uncert);
     }
 }

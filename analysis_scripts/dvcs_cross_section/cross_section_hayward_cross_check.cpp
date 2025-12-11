@@ -1,63 +1,56 @@
-// cross_section_cross_check.cpp
+// cross_section_hayward_cross_check.cpp
 // -----------------------------------------------------------------------------
-// Cross-check of experimental cross sections (Hayward pass-2 vs Lee pass-1)
-// using *only* CSVs.
-// - Lee CSV (pass-1): e.g. imports/all_bin_v3.csv
-// - Hayward CSV (pass-2): e.g. output/csvs/dvcs_pass2_analysis.csv
+// Cross-check of experimental cross sections *within* Hayward pass-2,
+// comparing different run periods / helicities for 10.6 GeV.
 //
-// For each valid bin, we compare:
+// Input:
+//   - Hayward CSV (pass-2): e.g. output/csvs/dvcs_pass2_analysis.csv
 //
-//   Lee:
-//      "cross sections, ep->epg, exp"                    (central value)
-//      "cross sections, ep->epg, exp, stat. unc."        (statistical error)
-//      "cross sections, ep->epg, exp, syst. unc. (up)"   (systematic up)
-//      "cross sections, ep->epg, exp, syst. unc. (down)" (systematic down)
+// For each valid bin we compare pairs of three-tuples
+//   "(value, stat_err, syst_err)"
+// in columns like:
 //
-//   Hayward:
-//      "cross sections, ep->epg, exp, Fa18, unpol"       (three-tuple:
-//                                                        value, stat_err,
-//                                                        syst_err [ignored here])
+//   "cross sections, ep->epg, exp, Fa18 Inb, unpol"
+//   "cross sections, ep->epg, exp, Fa18 Out, unpol"
+//   "cross sections, ep->epg, exp, Sp18 Inb, unpol"
+//   "cross sections, ep->epg, exp, Sp18 Out, unpol"
+//   "cross sections, ep->epg, exp, Fa18, unpol"
+//   "cross sections, ep->epg, exp, Sp18, unpol"
+//   "cross sections, ep->epg, exp, Sp19 Inb, unpol"
+//   "cross sections, ep->epg, exp, Fa18 Inb, pos"
+//   "cross sections, ep->epg, exp, Fa18 Out, pos"
+//   "cross sections, ep->epg, exp, Fa18 Inb, neg"
+//   "cross sections, ep->epg, exp, Fa18 Out, neg"
 //
-// We organize the comparison by xB, Q^{2}, and -t. For each (xB, Q^{2}, -t)
-// cell, we take all rows matching those ranges and use their provided phiavg
-// values as the x-coordinates. We do NOT rebin phi.
+// We organize the comparison by xB, Q^{2}, and -t using the Lee-style
+// binning columns in dvcs_pass2_analysis.csv:
 //
-// Output filenames (per xB index ix):
+//   "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max",
+//   and a common phi coordinate from:
+//   "phiavg, 10.6 GeV"
+//
+// For each xB bin index ix, we produce:
+//
 //   cross_section_counts_xB_<ix>.png
 //   cross_section_ratio_xB_<ix>.png
-//   cross_section_staterr_xB_<ix>.png   (NEW: stat. uncertainties vs phi)
 //
-// OFFICIAL INSTRUCTIONS IMPLEMENTED:
+// in a subdirectory per comparison under output_base_dir.
+//
+// STANDARD INSTRUCTIONS (DVCS cross-section cross-checks):
 //   - For counts canvases (cross sections):
 //       * Log y-scale.
 //       * Per-xB-bin y-min floors (lowest to highest xB):
 //           1e-1, 1e-2, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-4
 //       * Per-canvas global y-max (from all subplots, including error bars),
-//         used for all subplots on that canvas. For Lee, this includes
-//         stat⊕syst(up) in quadrature on top of the central value.
-//   - For ratio canvases (Hayward/Lee):
+//         used for all subplots on that canvas.
+//   - For ratio canvases (A/B):
 //       * Linear y-scale, fixed range [0, 3] for all subplots.
-//       * Two sets of error bars per point:
-//           1) "stat": propagate stat errors from BOTH Hayward and Lee.
-//           2) "stat + Lee syst": propagate Hayward stat and Lee (stat⊕syst)
-//              with asymmetric up/down uncertainties.
-//
-// Additionally:
-//   - Lee cross sections are now drawn with on the counts canvases:
-//        * Stat error bars (TGraphErrors, orange).
-//        * Larger asymmetric stat⊕syst error bars (TGraphAsymmErrors,
-//          slightly different orange, thicker line, no marker).
-//
-//   - NEW: third canvas directly comparing the *sizes* of the statistical
-//          uncertainties (absolute sigma) vs phi, for Lee and Hayward.
 // -----------------------------------------------------------------------------
 
-#include "cross_section_cross_check.h"
+#include "cross_section_hayward_cross_check.h"
 
 #include <TCanvas.h>
-#include <TGraph.h>
 #include <TGraphErrors.h>
-#include <TGraphAsymmErrors.h>
 #include <TLatex.h>
 #include <TLegend.h>
 #include <TLine.h>
@@ -69,48 +62,36 @@
 #include <TString.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <iostream>
 #include <map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <stdexcept>
 
 namespace fs = std::filesystem;
 
 // ---------- small utilities ----------
 
-static inline void info_xs(const std::string& s) {
-    std::cout << "[xs] " << s << std::endl;
+static inline void info_xs_h(const std::string& s) {
+    std::cout << "[xs-hayward] " << s << std::endl;
 }
 
-static inline void warn_xs(const std::string& s) {
-    std::cout << "[xs][warn] " << s << std::endl;
-}
-
-static inline void fatal_xs(const std::string& s) {
-    std::cerr << "[xs][FATAL] " << s << std::endl;
+static inline void fatal_xs_h(const std::string& s) {
+    std::cerr << "[xs-hayward][FATAL] " << s << std::endl;
     throw std::runtime_error(s);
 }
 
-static inline std::string slower_xs(std::string s) {
-    for (auto& c : s) {
-        c = (char)std::tolower((unsigned char)c);
-    }
-    return s;
-}
-
 // trim leading/trailing whitespace
-static inline std::string trim_xs(const std::string& s) {
+static inline std::string trim_xs_h(const std::string& s) {
     size_t i0 = 0;
     while (i0 < s.size() && std::isspace((unsigned char)s[i0])) {
         ++i0;
@@ -124,7 +105,7 @@ static inline std::string trim_xs(const std::string& s) {
 
 // ---------- CSV helpers ----------
 
-static std::vector<std::string> split_csv_line_xs(const std::string& line) {
+static std::vector<std::string> split_csv_line_xs_h(const std::string& line) {
     std::vector<std::string> out;
     std::string cur;
     cur.reserve(line.size());
@@ -142,22 +123,24 @@ static std::vector<std::string> split_csv_line_xs(const std::string& line) {
             cur.push_back(c);
         }
     }
+    // endfor
     out.push_back(cur);
     return out;
 }
 
-static std::unordered_map<std::string, int>
-build_header_index_xs(const std::vector<std::string>& header) {
-    std::unordered_map<std::string, int> m;
+static std::unordered_map<std::string,int>
+build_header_index_xs_h(const std::vector<std::string>& header) {
+    std::unordered_map<std::string,int> m;
     for (int i = 0; i < (int)header.size(); ++i) {
         m[header[i]] = i;
     }
+    // endfor
     return m;
 }
 
-static const std::string& get_col_ref_xs(const std::vector<std::string>& row,
-                                         const std::unordered_map<std::string,int>& idx,
-                                         const std::string& name) {
+static const std::string& get_col_ref_xs_h(const std::vector<std::string>& row,
+                                           const std::unordered_map<std::string,int>& idx,
+                                           const std::string& name) {
     auto it = idx.find(name);
     if (it == idx.end()) {
         static const std::string empty;
@@ -171,7 +154,7 @@ static const std::string& get_col_ref_xs(const std::vector<std::string>& row,
     return row[j];
 }
 
-static double ToDouble_xs(const std::string& s) {
+static double ToDouble_xs_h(const std::string& s) {
     if (s.empty()) return 0.0;
     char* endp = nullptr;
     double v = std::strtod(s.c_str(), &endp);
@@ -179,7 +162,7 @@ static double ToDouble_xs(const std::string& s) {
     return v;
 }
 
-static int ToInt_xs(const std::string& s) {
+static int ToInt_xs_h(const std::string& s) {
     if (s.empty()) return 0;
     char* endp = nullptr;
     long v = std::strtol(s.c_str(), &endp, 10);
@@ -187,9 +170,9 @@ static int ToInt_xs(const std::string& s) {
     return (int)v;
 }
 
-static void require_columns_xs(const std::unordered_map<std::string,int>& idx,
-                               const std::vector<std::string>& cols,
-                               const std::string& which_csv) {
+static void require_columns_xs_h(const std::unordered_map<std::string,int>& idx,
+                                 const std::vector<std::string>& cols,
+                                 const std::string& which_csv) {
     std::vector<std::string> missing;
     for (const auto& c : cols) {
         if (idx.find(c) == idx.end()) {
@@ -205,21 +188,21 @@ static void require_columns_xs(const std::unordered_map<std::string,int>& idx,
             if (i > 0) oss << ", ";
             oss << '"' << missing[i] << '"';
         }
-        fatal_xs(oss.str());
+        fatal_xs_h(oss.str());
     }
 }
 
-// ---------- Three-tuple parser for Hayward cross section column ----------
+// ---------- three-tuple parser for Hayward cross section columns ----------
 // Format: "(value, stat_err, syst_err)" - we extract value and stat_err
 
-struct XsValue_xs {
+struct XsValue_h {
     double value    = 0.0;
     double stat_err = 0.0;
     bool   valid    = false;
 };
 
-static XsValue_xs parse_xs_triplet_xs(const std::string& s) {
-    XsValue_xs xv;
+static XsValue_h parse_xs_triplet_xs_h(const std::string& s) {
+    XsValue_h xv;
     if (s.empty()) return xv;
 
     size_t p0 = s.find('(');
@@ -234,130 +217,27 @@ static XsValue_xs parse_xs_triplet_xs(const std::string& s) {
     std::string cur;
     for (char c : inner) {
         if (c == ',') {
-            parts.push_back(trim_xs(cur));
+            parts.push_back(trim_xs_h(cur));
             cur.clear();
         } else {
             cur.push_back(c);
         }
     }
-    parts.push_back(trim_xs(cur));
+    // endfor
+    parts.push_back(trim_xs_h(cur));
 
     if (parts.size() >= 2) {
-        xv.value    = ToDouble_xs(parts[0]);
-        xv.stat_err = ToDouble_xs(parts[1]);
+        xv.value    = ToDouble_xs_h(parts[0]);
+        xv.stat_err = ToDouble_xs_h(parts[1]);
         xv.valid    = true;
     }
 
     return xv;
 }
 
-// ---------- Lee CSV column detection ----------
-
-struct LeeCsvCols_xs {
-    int c_bin;
-    int c_xb_min;
-    int c_xb_max;
-    int c_q2_min;
-    int c_q2_max;
-    int c_t_min;
-    int c_t_max;
-    int c_phi_avg;
-};
-
-static int find_col_alias_xs(const std::vector<std::string>& header,
-                             const std::vector<std::string>& names) {
-    for (size_t i = 0; i < header.size(); ++i) {
-        std::string h = slower_xs(trim_xs(header[i]));
-        for (const auto& raw_name : names) {
-            std::string n = slower_xs(trim_xs(raw_name));
-            if (!n.empty() && h == n) {
-                return (int)i;
-            }
-        }
-        // endfor
-    }
-    // endfor
-    return -1;
-}
-
-static LeeCsvCols_xs detect_lee_columns_xs(const std::vector<std::string>& header) {
-    if (header.empty()) {
-        fatal_xs("Empty header row in Lee CSV");
-    }
-
-    LeeCsvCols_xs cols;
-    cols.c_bin     = -1;
-    cols.c_xb_min  = -1;
-    cols.c_xb_max  = -1;
-    cols.c_q2_min  = -1;
-    cols.c_q2_max  = -1;
-    cols.c_t_min   = -1;
-    cols.c_t_max   = -1;
-    cols.c_phi_avg = -1;
-
-    // 1) Bin index: try named column first, then unlabeled first column
-    cols.c_bin = find_col_alias_xs(header, { "bin index", "bin", "idx" });
-    if (cols.c_bin < 0) {
-        std::string h0 = trim_xs(header[0]);
-        if (h0.empty()) {
-            cols.c_bin = 0;
-        } else {
-            std::ostringstream oss;
-            oss << "Could not locate bin index column in Lee CSV. "
-                << "Tried names: \"bin index\", \"bin\", \"idx\" and unlabeled first column.\n"
-                << "Header[0] is \"" << header[0] << "\".";
-            fatal_xs(oss.str());
-        }
-    }
-
-    // 2) xB, Q2, phi
-    cols.c_xb_min  = find_col_alias_xs(header, { "xBmin", "xbmin", "xB_min", "xb_min" });
-    cols.c_xb_max  = find_col_alias_xs(header, { "xBmax", "xbmax", "xB_max", "xb_max" });
-    cols.c_q2_min  = find_col_alias_xs(header, { "Q2min", "q2min", "Q2_min", "q2_min" });
-    cols.c_q2_max  = find_col_alias_xs(header, { "Q2max", "q2max", "Q2_max", "q2_max" });
-    cols.c_phi_avg = find_col_alias_xs(header, { "phiavg", "phi_avg", "phi_average" });
-
-    // 3) |t| min and max
-    cols.c_t_min = find_col_alias_xs(header, { "t_abs_min", "tmin", "t_min" });
-    cols.c_t_max = find_col_alias_xs(header, { "t_abs_max", "tmax", "t_max" });
-
-    // 4) Validate required columns (binning only)
-    std::vector<std::string> missing;
-    if (cols.c_bin     < 0) missing.push_back("bin index");
-    if (cols.c_xb_min  < 0) missing.push_back("xBmin");
-    if (cols.c_xb_max  < 0) missing.push_back("xBmax");
-    if (cols.c_q2_min  < 0) missing.push_back("Q2min");
-    if (cols.c_q2_max  < 0) missing.push_back("Q2max");
-    if (cols.c_t_min   < 0) missing.push_back("t_abs_min/tmin");
-    if (cols.c_t_max   < 0) missing.push_back("t_abs_max/tmax");
-    if (cols.c_phi_avg < 0) missing.push_back("phiavg");
-
-    if (!missing.empty()) {
-        std::ostringstream oss;
-        oss << "Missing required columns in Lee CSV: ";
-        for (size_t i = 0; i < missing.size(); ++i) {
-            if (i) oss << ", ";
-            oss << "\"" << missing[i] << "\"";
-        }
-        oss << ".\nHeader row is:";
-        for (size_t i = 0; i < header.size(); ++i) {
-            oss << "\n  [" << i << "] \"" << header[i] << "\"";
-        }
-        fatal_xs(oss.str());
-    }
-
-    return cols;
-}
-
 // ---------- bin / axis structs ----------
 
-struct AxisSets_xs {
-    std::vector<std::pair<double,double>> xB;
-    std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix;
-    std::map<int, std::vector<std::pair<double,double>>> t_by_ix;
-};
-
-struct BinRow_xs {
+struct BinRow_h {
     int    bin_index   = 0;
     double xBmin       = 0.0;
     double xBmax       = 0.0;
@@ -365,18 +245,19 @@ struct BinRow_xs {
     double Q2max       = 0.0;
     double tmin        = 0.0;
     double tmax        = 0.0;
-    double phiavg      = 0.0;
+    double phiavg      = 0.0;   // from "phiavg, 10.6 GeV"
 
-    double lee_xs      = 0.0;  // Lee central value
-    double lee_stat    = 0.0;  // Lee statistical uncertainty
-    double lee_syst_up = 0.0;  // Lee systematic up
-    double lee_syst_dn = 0.0;  // Lee systematic down
-
-    double my_xs       = 0.0;  // Hayward cross section (value)
-    double my_xs_err   = 0.0;  // Hayward cross section stat error
+    // Cross section values for each column of interest
+    std::unordered_map<std::string,XsValue_h> xs;
 };
 
-static AxisSets_xs build_axes_from_rows_xs(const std::vector<BinRow_xs>& rows) {
+struct AxisSets_h {
+    std::vector<std::pair<double,double>> xB;
+    std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix;
+    std::map<int, std::vector<std::pair<double,double>>> t_by_ix;
+};
+
+static AxisSets_h build_axes_from_rows_xs_h(const std::vector<BinRow_h>& rows) {
     std::set<std::pair<double,double>> xbset;
     std::map<std::pair<double,double>, std::set<std::pair<double,double>>> q2set_by_xb;
     std::map<std::pair<double,double>, std::set<std::pair<double,double>>> tset_by_xb;
@@ -387,8 +268,9 @@ static AxisSets_xs build_axes_from_rows_xs(const std::vector<BinRow_xs>& rows) {
         q2set_by_xb[xb].insert({r.Q2min, r.Q2max});
         tset_by_xb[xb].insert({r.tmin,  r.tmax});
     }
+    // endfor
 
-    AxisSets_xs ax;
+    AxisSets_h ax;
     ax.xB.assign(xbset.begin(), xbset.end());
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
         const auto& xb    = ax.xB[ix];
@@ -397,108 +279,103 @@ static AxisSets_xs build_axes_from_rows_xs(const std::vector<BinRow_xs>& rows) {
         ax.Q2_by_ix[ix] = { q2set.begin(), q2set.end() };
         ax.t_by_ix[ix]  = { tset.begin(),  tset.end()  };
     }
+    // endfor
     return ax;
 }
 
-static inline int find_index_xs(const std::pair<double,double>& r,
-                                const std::vector<std::pair<double,double>>& v) {
+static inline int find_index_xs_h(const std::pair<double,double>& r,
+                                  const std::vector<std::pair<double,double>>& v) {
     for (int i = 0; i < (int)v.size(); ++i) {
         if (v[i] == r) return i;
     }
+    // endfor
     return -1;
 }
 
 // Per-panel data
-struct PanelData_xs {
+struct PanelData_h {
     std::vector<double> phi;
     std::vector<double> val;
-    std::vector<double> err_stat;
-    std::vector<double> err_syst_up;
-    std::vector<double> err_syst_dn;
+    std::vector<double> err;
 };
 
-struct PerPanel_xs {
+struct PerPanelPair_h {
     // key = (ix, iQ, it)
-    std::map<std::tuple<int,int,int>, PanelData_xs> lee;
-    std::map<std::tuple<int,int,int>, PanelData_xs> hayward;
+    std::map<std::tuple<int,int,int>, PanelData_h> A;
+    std::map<std::tuple<int,int,int>, PanelData_h> B;
 };
 
-static PerPanel_xs map_to_panels_xs(const std::vector<BinRow_xs>& rows,
-                                    const AxisSets_xs& ax) {
-    PerPanel_xs pp;
+// ---------- panel mapper for a given column pair ----------
+
+static PerPanelPair_h map_to_panels_pair_xs_h(const std::vector<BinRow_h>& rows,
+                                              const AxisSets_h& ax,
+                                              const std::string& colA,
+                                              const std::string& colB) {
+    PerPanelPair_h pp;
 
     for (const auto& r : rows) {
         const auto xb = std::make_pair(r.xBmin, r.xBmax);
-        const int ix  = find_index_xs(xb, ax.xB);
+        const int ix  = find_index_xs_h(xb, ax.xB);
         if (ix < 0) continue;
 
         const auto& Q2s = ax.Q2_by_ix.at(ix);
         const auto& Ts  = ax.t_by_ix.at(ix);
 
-        const int iQ = find_index_xs({r.Q2min, r.Q2max}, Q2s);
-        const int it = find_index_xs({r.tmin,   r.tmax},  Ts);
+        const int iQ = find_index_xs_h({r.Q2min, r.Q2max}, Q2s);
+        const int it = find_index_xs_h({r.tmin,   r.tmax},  Ts);
         if (iQ < 0 || it < 0) continue;
 
         auto key = std::make_tuple(ix, iQ, it);
 
-        // Lee data (central + stat + syst)
-        if (r.lee_xs > 0.0) {
-            PanelData_xs& pdL = pp.lee[key];
-            pdL.phi.push_back(r.phiavg);
-            pdL.val.push_back(r.lee_xs);
-            pdL.err_stat.push_back(r.lee_stat);
-            pdL.err_syst_up.push_back(r.lee_syst_up);
-            pdL.err_syst_dn.push_back(r.lee_syst_dn);
+        auto itA = r.xs.find(colA);
+        if (itA != r.xs.end() && itA->second.valid && itA->second.value > 0.0) {
+            PanelData_h& pdA = pp.A[key];
+            pdA.phi.push_back(r.phiavg);
+            pdA.val.push_back(itA->second.value);
+            pdA.err.push_back(itA->second.stat_err);
         }
 
-        // Hayward data (central + stat only)
-        if (r.my_xs > 0.0) {
-            PanelData_xs& pdH = pp.hayward[key];
-            pdH.phi.push_back(r.phiavg);
-            pdH.val.push_back(r.my_xs);
-            pdH.err_stat.push_back(r.my_xs_err);
-            pdH.err_syst_up.push_back(0.0);
-            pdH.err_syst_dn.push_back(0.0);
+        auto itB = r.xs.find(colB);
+        if (itB != r.xs.end() && itB->second.valid && itB->second.value > 0.0) {
+            PanelData_h& pdB = pp.B[key];
+            pdB.phi.push_back(r.phiavg);
+            pdB.val.push_back(itB->second.value);
+            pdB.err.push_back(itB->second.stat_err);
         }
     }
+    // endfor
 
     // Sort each panel's data by phi
-    auto sort_panel = [](PanelData_xs& pd) {
+    auto sort_panel = [](PanelData_h& pd) {
         if (pd.phi.empty()) return;
         std::vector<size_t> idx(pd.phi.size());
         for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
         std::sort(idx.begin(), idx.end(), [&](size_t a, size_t b) {
             return pd.phi[a] < pd.phi[b];
         });
-        std::vector<double> phi2, val2, e_stat2, e_sup2, e_sdn2;
+        std::vector<double> phi2, val2, err2;
         phi2.reserve(idx.size());
         val2.reserve(idx.size());
-        e_stat2.reserve(idx.size());
-        e_sup2.reserve(idx.size());
-        e_sdn2.reserve(idx.size());
+        err2.reserve(idx.size());
         for (size_t i : idx) {
             phi2.push_back(pd.phi[i]);
             val2.push_back(pd.val[i]);
-            e_stat2.push_back(pd.err_stat[i]);
-            e_sup2.push_back(pd.err_syst_up[i]);
-            e_sdn2.push_back(pd.err_syst_dn[i]);
+            err2.push_back(pd.err[i]);
         }
-        pd.phi         = std::move(phi2);
-        pd.val         = std::move(val2);
-        pd.err_stat    = std::move(e_stat2);
-        pd.err_syst_up = std::move(e_sup2);
-        pd.err_syst_dn = std::move(e_sdn2);
+        pd.phi = std::move(phi2);
+        pd.val = std::move(val2);
+        pd.err = std::move(err2);
     };
 
-    for (auto& kv : pp.lee)     sort_panel(kv.second);
-    for (auto& kv : pp.hayward) sort_panel(kv.second);
+    for (auto& kv : pp.A) sort_panel(kv.second);
+    for (auto& kv : pp.B) sort_panel(kv.second);
 
     return pp;
 }
 
 // ---------- plotting helpers ----------
 
-static inline void degreeTicks_xs(double xmin, double ymin, double xmax, double labelSize) {
+static inline void degreeTicks_xs_h(double xmin, double ymin, double xmax, double labelSize) {
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
     ax->SetLabelSize(labelSize);
@@ -508,15 +385,15 @@ static inline void degreeTicks_xs(double xmin, double ymin, double xmax, double 
     ax->Draw();
 }
 
-static void draw_degree_ticks_here_xs(double labelSize) {
-    degreeTicks_xs(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
+static void draw_degree_ticks_here_xs_h(double labelSize) {
+    degreeTicks_xs_h(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
 }
 
-// Symmetric error bars (stat)
-static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
-                                  const std::vector<double>& Y,
-                                  const std::vector<double>& EY,
-                                  int markerStyle, int color) {
+// Markers + error bars
+static TGraphErrors* graph_pe1_xs_h(const std::vector<double>& X,
+                                    const std::vector<double>& Y,
+                                    const std::vector<double>& EY,
+                                    int markerStyle, int color) {
     if (X.empty()) return nullptr;
     std::vector<double> ex(X.size(), 0.0);
     auto* g = new TGraphErrors((int)X.size(),
@@ -532,39 +409,12 @@ static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
     return g;
 }
 
-// Asymmetric error bars (for Lee stat⊕syst on counts, and ratio if needed)
-static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
-                                           const std::vector<double>& Y,
-                                           const std::vector<double>& EY_low,
-                                           const std::vector<double>& EY_high,
-                                           int lineColor) {
-    if (X.empty()) return nullptr;
-    const int n = (int)X.size();
-    auto* g = new TGraphAsymmErrors(n);
-    for (int i = 0; i < n; ++i) {
-        double x  = X[i];
-        double y  = Y[i];
-        double el = (i < (int)EY_low.size())  ? EY_low[i]  : 0.0;
-        double eh = (i < (int)EY_high.size()) ? EY_high[i] : 0.0;
-        g->SetPoint(i, x, y);
-        g->SetPointError(i, 0.0, 0.0, el, eh);
-        // endfor
-    }
-    // endfor
-    g->SetLineColor(lineColor);
-    g->SetLineWidth(2);
-    g->SetMarkerStyle(1);
-    g->SetMarkerSize(0.0);
-    g->Draw("E1 SAME");
-    return g;
-}
-
-static std::string safe_canvas_name_xs(const std::string& out_png) {
+static std::string safe_canvas_name_xs_h(const std::string& out_png) {
     return fs::path(out_png).filename().string();
 }
 
 // OFFICIAL y-min floors for xB bins (lowest to highest xB)
-static double get_xb_ymin_floor_xs(int ix_xb) {
+static double get_xb_ymin_floor_xs_h(int ix_xb) {
     static const double floors[] = {
         1e-1,  // xB bin 0
         1e-2,  // xB bin 1
@@ -585,16 +435,17 @@ static double get_xb_ymin_floor_xs(int ix_xb) {
     return floors[ix_xb];
 }
 
-// -----------------------------------------------------------------------------
-// Counts or ratio canvas (original two canvases)
-// -----------------------------------------------------------------------------
-static void draw_one_canvas_xs(const std::string& title,
-                               const std::vector<std::pair<double,double>>& Q2s,
-                               const std::vector<std::pair<double,double>>& Ts,
-                               const std::function<void(int,int,PanelData_xs&,PanelData_xs&)>& fetchBoth,
-                               const std::string& out_png,
-                               bool draw_ratio_only,
-                               int ix_xb) {
+static void draw_one_canvas_pair_xs_h(
+    const std::string& title,
+    const std::vector<std::pair<double,double>>& Q2s,
+    const std::vector<std::pair<double,double>>& Ts,
+    const std::function<void(int,int,PanelData_h&,PanelData_h&)>& fetchBoth,
+    const std::string& out_png,
+    bool draw_ratio_only,
+    const std::string& labelA,
+    const std::string& labelB,
+    int ix_xb
+) {
     const int nrows = (int)Ts.size();
     const int ncols = (int)Q2s.size();
     if (nrows == 0 || ncols == 0) return;
@@ -603,39 +454,25 @@ static void draw_one_canvas_xs(const std::string& title,
     const int H = 260 * nrows + 260;
 
     // -------------------------------------------------------------------------
-    // OFFICIAL INSTRUCTIONS: Precompute global y-range for counts canvases
+    // STANDARD INSTRUCTIONS: Precompute global y-range for counts canvases
     // -------------------------------------------------------------------------
     double global_max_counts = 0.0;
     bool   any_positive      = false;
     double y_floor           = 0.0;
 
     if (!draw_ratio_only) {
-        y_floor = get_xb_ymin_floor_xs(ix_xb);
+        y_floor = get_xb_ymin_floor_xs_h(ix_xb);
 
         for (int r = 0; r < nrows; ++r) {
             for (int ccol = 0; ccol < ncols; ++ccol) {
-                PanelData_xs hayward_tmp, lee_tmp;
-                fetchBoth(ccol, r, hayward_tmp, lee_tmp);
+                PanelData_h A_tmp, B_tmp;
+                fetchBoth(ccol, r, A_tmp, B_tmp);
 
-                auto update_minmax = [&](const PanelData_xs& pd, bool include_syst) {
+                auto update_minmax = [&](const PanelData_h& pd) {
                     for (size_t i = 0; i < pd.val.size(); ++i) {
                         double v   = pd.val[i];
-                        double es  = (i < pd.err_stat.size()) ? pd.err_stat[i] : 0.0;
-
-                        double esu = 0.0;
-                        if (include_syst && i < pd.err_syst_up.size()) {
-                            esu = pd.err_syst_up[i];
-                        }
-
-                        double vup = v;
-                        if (include_syst) {
-                            // Use stat⊕syst(up) in quadrature
-                            double e_tot_up = std::sqrt(es * es + esu * esu);
-                            vup = v + e_tot_up;
-                        } else {
-                            vup = v + es;
-                        }
-
+                        double es  = (i < pd.err.size()) ? pd.err[i] : 0.0;
+                        double vup = v + es;
                         if (vup > global_max_counts) {
                             global_max_counts = vup;
                         }
@@ -645,17 +482,14 @@ static void draw_one_canvas_xs(const std::string& title,
                     }
                     // endfor
                 };
-                // end lambda
 
-                // Hayward: stat only
-                update_minmax(hayward_tmp, false);
-                // Lee: stat⊕syst(up)
-                update_minmax(lee_tmp, true);
+                update_minmax(A_tmp);
+                update_minmax(B_tmp);
             }
         }
     }
 
-    const std::string cname = safe_canvas_name_xs(out_png);
+    const std::string cname = safe_canvas_name_xs_h(out_png);
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
 
@@ -673,56 +507,35 @@ static void draw_one_canvas_xs(const std::string& title,
     head.SetTextSize(0.18);
     head.DrawLatex(0.50, 0.65, title.c_str());
 
-    const int black       = kBlack;
-    const int orange      = kOrange + 7;
-    const int orange_syst = kOrange + 2;
-
     // Legend
     std::vector<TObject*> legend_keepalive;
     TLegend* legTop = new TLegend(0.08, 0.10, 0.92, 0.56);
-    legTop->SetNColumns(3);
+    legTop->SetNColumns(2);
     legTop->SetBorderSize(0);
     legTop->SetFillStyle(0);
     legTop->SetTextFont(42);
     legTop->SetTextSize(0.22);
-
     if (draw_ratio_only) {
-        auto* mRatioStat = new TMarker(0.0, 0.0, 20);
-        mRatioStat->SetMarkerColor(black);
-
-        auto* lnRatioTot = new TLine(0.0, 0.0, 1.0, 0.0);
-        lnRatioTot->SetLineColor(orange_syst);
-        lnRatioTot->SetLineWidth(2);
-
-        auto* lnY1 = new TLine(0.0, 0.0, 1.0, 0.0);
+        auto* mRatio = new TMarker(0.0, 0.0, 20);
+        mRatio->SetMarkerColor(kBlack);
+        auto* lnY1   = new TLine(0.0, 0.0, 1.0, 0.0);
         lnY1->SetLineStyle(2);
         lnY1->SetLineWidth(2);
-        lnY1->SetLineColor(orange);
-
-        legend_keepalive.push_back(mRatioStat);
-        legend_keepalive.push_back(lnRatioTot);
+        lnY1->SetLineColor(kOrange + 7);
+        legend_keepalive.push_back(mRatio);
         legend_keepalive.push_back(lnY1);
-
-        legTop->AddEntry(mRatioStat, "Hayward/Lee (stat)",             "p");
-        legTop->AddEntry(lnRatioTot, "Hayward/Lee (stat + Lee syst)",  "l");
-        legTop->AddEntry(lnY1,       "y = 1",                          "l");
+        std::string ratioLabel = labelA + "/" + labelB;
+        legTop->AddEntry(mRatio, ratioLabel.c_str(), "p");
+        legTop->AddEntry(lnY1,   "y = 1",             "l");
     } else {
-        auto* mH        = new TMarker(0.0, 0.0, 20);
-        auto* mL_stat   = new TMarker(0.0, 0.0, 24);
-        auto* lnL_syst  = new TLine(0.0, 0.0, 1.0, 0.0);
-
-        mH->SetMarkerColor(black);
-        mL_stat->SetMarkerColor(orange);
-        lnL_syst->SetLineColor(orange_syst);
-        lnL_syst->SetLineWidth(2);
-
-        legend_keepalive.push_back(mH);
-        legend_keepalive.push_back(mL_stat);
-        legend_keepalive.push_back(lnL_syst);
-
-        legTop->AddEntry(mH,       "Hayward (pass-2), stat",          "p");
-        legTop->AddEntry(mL_stat,  "Lee (pass-1), stat",              "p");
-        legTop->AddEntry(lnL_syst, "Lee (pass-1), stat + syst",       "l");
+        auto* mA = new TMarker(0.0, 0.0, 20);
+        mA->SetMarkerColor(kBlack);
+        auto* mB = new TMarker(0.0, 0.0, 24);
+        mB->SetMarkerColor(kOrange + 7);
+        legend_keepalive.push_back(mA);
+        legend_keepalive.push_back(mB);
+        legTop->AddEntry(mA, labelA.c_str(), "p");
+        legTop->AddEntry(mB, labelB.c_str(), "p");
     }
     legTop->Draw();
 
@@ -735,6 +548,9 @@ static void draw_one_canvas_xs(const std::string& title,
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.00, 0.00);
 
+    const int black  = kBlack;
+    const int orange = kOrange + 7;
+
     for (int r = 0; r < nrows; ++r) {
         for (int ccol = 0; ccol < ncols; ++ccol) {
             pGrid->cd(r * ncols + ccol + 1);
@@ -745,15 +561,15 @@ static void draw_one_canvas_xs(const std::string& title,
             gPad->SetLeftMargin(0.18);
             gPad->SetRightMargin(0.08);
 
-            PanelData_xs hayward, lee;
-            fetchBoth(ccol, r, hayward, lee);
+            PanelData_h A, B;
+            fetchBoth(ccol, r, A, B);
 
             double ymin = 0.0;
             double ymax = 1.0;
 
             if (!draw_ratio_only) {
                 // -----------------------------------------------------------------
-                // COUNTS CANVAS: OFFICIAL INSTRUCTIONS
+                // COUNTS CANVAS: STANDARD INSTRUCTIONS
                 //   - Log y-scale
                 //   - y-min = per-xB-bin floor (same for all subplots)
                 //   - y-max = global max over all panels * 1.1
@@ -785,7 +601,7 @@ static void draw_one_canvas_xs(const std::string& title,
                 frame->GetXaxis()->SetTitleOffset(1.10);
                 frame->GetYaxis()->SetTitleOffset(1.55);
 
-                draw_degree_ticks_here_xs(0.050);
+                draw_degree_ticks_here_xs_h(0.050);
 
                 TLatex lab;
                 lab.SetNDC();
@@ -797,112 +613,57 @@ static void draw_one_canvas_xs(const std::string& title,
                          Q2s[ccol].first, Q2s[ccol].second,
                          Ts[r].first,     Ts[r].second));
 
-                // Plot Hayward (stat)
-                graph_pe1_xs(hayward.phi, hayward.val, hayward.err_stat, 20, black);
-
-                // Plot Lee stat (symmetric)
-                graph_pe1_xs(lee.phi, lee.val, lee.err_stat, 24, orange);
-
-                // Plot Lee stat⊕syst as asymmetric bars
-                std::vector<double> lee_comb_dn;
-                std::vector<double> lee_comb_up;
-                lee_comb_dn.reserve(lee.val.size());
-                lee_comb_up.reserve(lee.val.size());
-                for (size_t i = 0; i < lee.val.size(); ++i) {
-                    double es   = (i < lee.err_stat.size())    ? lee.err_stat[i]    : 0.0;
-                    double esdn = (i < lee.err_syst_dn.size()) ? lee.err_syst_dn[i] : 0.0;
-                    double esup = (i < lee.err_syst_up.size()) ? lee.err_syst_up[i] : 0.0;
-                    lee_comb_dn.push_back(std::sqrt(es * es + esdn * esdn));
-                    lee_comb_up.push_back(std::sqrt(es * es + esup * esup));
-                }
-
-                graph_asymm_y_xs(lee.phi, lee.val,
-                                 lee_comb_dn,
-                                 lee_comb_up,
-                                 orange_syst);
+                // Plot both series
+                graph_pe1_xs_h(A.phi, A.val, A.err, 20, black);
+                graph_pe1_xs_h(B.phi, B.val, B.err, 24, orange);
             } else {
                 // -----------------------------------------------------------------
-                // RATIO CANVAS: OFFICIAL INSTRUCTIONS
+                // RATIO CANVAS: STANDARD INSTRUCTIONS
                 //   - Linear y-scale
                 //   - y-range fixed to [0, 3]
-                //   - Two error sets:
-                //       * stat-only (H and L stat)
-                //       * stat + Lee syst (H stat, L stat⊕syst)
                 // -----------------------------------------------------------------
                 gPad->SetLogy(0);
 
+                // Compute R = A/B and eR from A error
                 const double tol = 20.0;
-                std::vector<double> x;
-                std::vector<double> y;
-                std::vector<double> ey_stat;
-                std::vector<double> ey_tot_up;
-                std::vector<double> ey_tot_dn;
+                std::vector<double> x, y, ey;
 
-                for (size_t i = 0; i < hayward.phi.size(); ++i) {
+                for (size_t i = 0; i < A.phi.size(); ++i) {
                     double best_dist = 1e9;
                     int jbest = -1;
-                    for (size_t j = 0; j < lee.phi.size(); ++j) {
-                        double d = std::fabs(lee.phi[j] - hayward.phi[i]);
+                    for (size_t j = 0; j < B.phi.size(); ++j) {
+                        double d = std::fabs(B.phi[j] - A.phi[i]);
                         if (d < best_dist) {
                             best_dist = d;
                             jbest = (int)j;
                         }
                     }
-                    if (jbest < 0 || best_dist > tol) {
-                        continue;
+                    // endfor
+                    if (jbest >= 0 && best_dist <= tol && B.val[jbest] > 0.0) {
+                        double H = A.val[i];           // numerator (A)
+                        double L = B.val[jbest];       // denominator (B)
+                        double R = (H <= 0.0) ? 0.0 : H / L;
+
+                        double sigma_H = (i < A.err.size()) ? A.err[i] : 0.0;
+                        double eR = 0.0;
+                        if (H > 0.0 && sigma_H > 0.0) {
+                            eR = R * (sigma_H / H);
+                        }
+
+                        x.push_back(A.phi[i]);
+                        y.push_back(R);
+                        ey.push_back(eR);
                     }
-
-                    double H = hayward.val[i];
-                    double L = lee.val[jbest];
-                    if (H <= 0.0 || L <= 0.0) {
-                        continue;
-                    }
-
-                    double R = H / L;
-
-                    double sigma_H_stat = (i < hayward.err_stat.size())    ? hayward.err_stat[i]    : 0.0;
-                    double sigma_L_stat = (jbest < (int)lee.err_stat.size())    ? lee.err_stat[jbest]    : 0.0;
-                    double sigma_L_su   = (jbest < (int)lee.err_syst_up.size()) ? lee.err_syst_up[jbest] : 0.0;
-                    double sigma_L_sd   = (jbest < (int)lee.err_syst_dn.size()) ? lee.err_syst_dn[jbest] : 0.0;
-
-                    double rel_H_stat = (H > 0.0) ? (sigma_H_stat / H) : 0.0;
-                    double rel_L_stat = (L > 0.0) ? (sigma_L_stat / L) : 0.0;
-
-                    // Stat-only ratio error
-                    double relR_stat = std::sqrt(rel_H_stat * rel_H_stat +
-                                                 rel_L_stat * rel_L_stat);
-                    double eR_stat   = R * relR_stat;
-
-                    // Stat + Lee syst (up/down separately)
-                    double sigma_L_tot_up = std::sqrt(sigma_L_stat * sigma_L_stat +
-                                                      sigma_L_su   * sigma_L_su);
-                    double sigma_L_tot_dn = std::sqrt(sigma_L_stat * sigma_L_stat +
-                                                      sigma_L_sd   * sigma_L_sd);
-
-                    double rel_L_tot_up = (L > 0.0) ? (sigma_L_tot_up / L) : 0.0;
-                    double rel_L_tot_dn = (L > 0.0) ? (sigma_L_tot_dn / L) : 0.0;
-
-                    double relR_tot_up = std::sqrt(rel_H_stat * rel_H_stat +
-                                                   rel_L_tot_up * rel_L_tot_up);
-                    double relR_tot_dn = std::sqrt(rel_H_stat * rel_H_stat +
-                                                   rel_L_tot_dn * rel_L_tot_dn);
-
-                    double eR_tot_up = R * relR_tot_up;
-                    double eR_tot_dn = R * relR_tot_dn;
-
-                    x.push_back(hayward.phi[i]);
-                    y.push_back(R);
-                    ey_stat.push_back(eR_stat);
-                    ey_tot_up.push_back(eR_tot_up);
-                    ey_tot_dn.push_back(eR_tot_dn);
                 }
+                // endfor
 
                 ymin = 0.0;
-                ymax = 3.0;  // Fixed by OFFICIAL INSTRUCTIONS
+                ymax = 3.0;  // Fixed by STANDARD INSTRUCTIONS
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("Hayward / Lee");
+                std::string ytitle = labelA + "/" + labelB;
+                frame->GetYaxis()->SetTitle(ytitle.c_str());
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
@@ -913,7 +674,7 @@ static void draw_one_canvas_xs(const std::string& title,
                 frame->GetXaxis()->SetTitleOffset(1.10);
                 frame->GetYaxis()->SetTitleOffset(1.55);
 
-                draw_degree_ticks_here_xs(0.050);
+                draw_degree_ticks_here_xs_h(0.050);
 
                 TLatex lab;
                 lab.SetNDC();
@@ -926,27 +687,8 @@ static void draw_one_canvas_xs(const std::string& title,
                          Ts[r].first,     Ts[r].second));
 
                 if (!x.empty()) {
-                    // Stat-only ratio error bars
-                    graph_pe1_xs(x, y, ey_stat, 20, black);
+                    graph_pe1_xs_h(x, y, ey, 20, black);
 
-                    // Stat + Lee syst ratio error bars (asymmetric, line only)
-                    const int n = (int)x.size();
-                    auto* gTot = new TGraphAsymmErrors(n);
-                    for (int i = 0; i < n; ++i) {
-                        double el = (i < (int)ey_tot_dn.size()) ? ey_tot_dn[i] : 0.0;
-                        double eh = (i < (int)ey_tot_up.size()) ? ey_tot_up[i] : 0.0;
-                        gTot->SetPoint(i, x[i], y[i]);
-                        gTot->SetPointError(i, 0.0, 0.0, el, eh);
-                        // endfor
-                    }
-                    // endfor
-                    gTot->SetLineColor(orange_syst);
-                    gTot->SetLineWidth(2);
-                    gTot->SetMarkerStyle(1);
-                    gTot->SetMarkerSize(0.0);
-                    gTot->Draw("E1 SAME");
-
-                    // y = 1 line
                     TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
                     one->SetLineStyle(2);
                     one->SetLineWidth(2);
@@ -963,209 +705,46 @@ static void draw_one_canvas_xs(const std::string& title,
     delete c;
 }
 
-// -----------------------------------------------------------------------------
-// NEW: Canvas that directly compares |statistical uncertainties| vs phi
-//      (Hayward vs Lee) per xB bin, with same panel layout.
-// -----------------------------------------------------------------------------
-static void draw_uncert_canvas_xs(const std::string& title,
-                                  const std::vector<std::pair<double,double>>& Q2s,
-                                  const std::vector<std::pair<double,double>>& Ts,
-                                  const std::function<void(int,int,PanelData_xs&,PanelData_xs&)>& fetchBoth,
-                                  const std::string& out_png) {
-    const int nrows = (int)Ts.size();
-    const int ncols = (int)Q2s.size();
-    if (nrows == 0 || ncols == 0) return;
+// ---------- CSV loader for Hayward rows ----------
 
-    const int W = 320 * ncols + 220;
-    const int H = 260 * nrows + 260;
-
-    // Global y-range for stat. uncertainties (absolute sigma)
-    double global_max_sigma = 0.0;
-
-    for (int r = 0; r < nrows; ++r) {
-        for (int ccol = 0; ccol < ncols; ++ccol) {
-            PanelData_xs hayward_tmp, lee_tmp;
-            fetchBoth(ccol, r, hayward_tmp, lee_tmp);
-
-            auto update_max = [&](const PanelData_xs& pd) {
-                for (size_t i = 0; i < pd.err_stat.size(); ++i) {
-                    double s = std::fabs(pd.err_stat[i]);
-                    if (s > global_max_sigma) {
-                        global_max_sigma = s;
-                    }
-                }
-                // endfor
-            };
-            // end lambda
-
-            update_max(hayward_tmp);
-            update_max(lee_tmp);
-        }
-    }
-
-    if (global_max_sigma <= 0.0) {
-        // Nothing meaningful to draw
-        info_xs("draw_uncert_canvas_xs: no positive stat. uncertainties found, skipping " + out_png);
-        return;
-    }
-
-    const std::string cname = safe_canvas_name_xs(out_png);
-    TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
-    c->cd();
-
-    // Top band
-    TPad* pTop = new TPad("pTop_unc", "pTop_unc", 0.0, 0.90, 1.0, 1.0);
-    pTop->SetFillStyle(0);
-    pTop->SetBorderSize(0);
-    pTop->Draw();
-    pTop->cd();
-
-    TLatex head;
-    head.SetNDC();
-    head.SetTextAlign(22);
-    head.SetTextFont(42);
-    head.SetTextSize(0.18);
-    head.DrawLatex(0.50, 0.65, title.c_str());
-
-    const int black  = kBlack;
-    const int orange = kOrange + 7;
-
-    // Legend
-    std::vector<TObject*> legend_keepalive;
-    TLegend* legTop = new TLegend(0.10, 0.10, 0.90, 0.60);
-    legTop->SetNColumns(2);
-    legTop->SetBorderSize(0);
-    legTop->SetFillStyle(0);
-    legTop->SetTextFont(42);
-    legTop->SetTextSize(0.22);
-
-    auto* mH_unc  = new TMarker(0.0, 0.0, 20);
-    auto* mL_unc  = new TMarker(0.0, 0.0, 24);
-
-    mH_unc->SetMarkerColor(black);
-    mL_unc->SetMarkerColor(orange);
-
-    legend_keepalive.push_back(mH_unc);
-    legend_keepalive.push_back(mL_unc);
-
-    legTop->AddEntry(mH_unc, "Hayward (pass-2), stat unc.", "p");
-    legTop->AddEntry(mL_unc, "Lee (pass-1), stat unc.",     "p");
-    legTop->Draw();
-
-    // Grid
-    c->cd();
-    TPad* pGrid = new TPad("pGrid_unc", "pGrid_unc", 0.0, 0.00, 1.0, 0.90);
-    pGrid->SetFillStyle(0);
-    pGrid->SetBorderSize(0);
-    pGrid->Draw();
-    pGrid->cd();
-    pGrid->Divide(ncols, nrows, 0.00, 0.00);
-
-    const double ymin = 0.0;
-    double ymax = 1.10 * global_max_sigma;
-    if (ymax <= 0.0) {
-        ymax = 1.0;
-    }
-
-    for (int r = 0; r < nrows; ++r) {
-        for (int ccol = 0; ccol < ncols; ++ccol) {
-            pGrid->cd(r * ncols + ccol + 1);
-            gPad->SetGrid(1, 1);
-            gPad->SetTicks(1, 1);
-            gPad->SetTopMargin(0.12);
-            gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.18);
-            gPad->SetRightMargin(0.08);
-            gPad->SetLogy(0);
-
-            PanelData_xs hayward, lee;
-            fetchBoth(ccol, r, hayward, lee);
-
-            TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
-            frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("Stat. uncertainty");
-            frame->GetXaxis()->CenterTitle();
-            frame->GetYaxis()->CenterTitle();
-            frame->GetXaxis()->SetNdivisions(505);
-            frame->GetXaxis()->SetTitleSize(0.060);
-            frame->GetYaxis()->SetTitleSize(0.060);
-            frame->GetYaxis()->SetLabelSize(0.050);
-            frame->GetXaxis()->SetLabelSize(0.050);
-            frame->GetXaxis()->SetTitleOffset(1.10);
-            frame->GetYaxis()->SetTitleOffset(1.55);
-
-            draw_degree_ticks_here_xs(0.050);
-
-            TLatex lab;
-            lab.SetNDC();
-            lab.SetTextSize(0.070);
-            lab.SetTextAlign(11);
-            lab.SetTextFont(42);
-            lab.DrawLatex(0.15, 0.92,
-                Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
-                     Q2s[ccol].first, Q2s[ccol].second,
-                     Ts[r].first,     Ts[r].second));
-
-            // Plot absolute stat uncertainties as Y-values.
-            if (!hayward.phi.empty() || !lee.phi.empty()) {
-                std::vector<double> zeros_H(hayward.err_stat.size(), 0.0);
-                std::vector<double> zeros_L(lee.err_stat.size(), 0.0);
-
-                // Hayward
-                if (!hayward.phi.empty()) {
-                    graph_pe1_xs(hayward.phi,
-                                 hayward.err_stat,
-                                 zeros_H,
-                                 20,  // marker
-                                 black);
-                }
-
-                // Lee
-                if (!lee.phi.empty()) {
-                    graph_pe1_xs(lee.phi,
-                                 lee.err_stat,
-                                 zeros_L,
-                                 24,  // marker
-                                 orange);
-                }
-            }
-        }
-    }
-
-    c->SaveAs(out_png.c_str());
-
-    delete legTop;
-    delete c;
-}
-
-// ---------- CSV loaders ----------
-
-static std::vector<BinRow_xs> load_lee_rows_xs(const std::string& lee_csv_path,
-                                               std::unordered_map<int,size_t>& bin_to_index) {
-    std::ifstream fin(lee_csv_path);
+static std::vector<BinRow_h>
+load_hayward_rows_xs_h(const std::string& hayward_csv_path,
+                       const std::vector<std::string>& xs_columns) {
+    std::ifstream fin(hayward_csv_path);
     if (!fin.is_open()) {
-        fatal_xs("Cannot open Lee CSV: " + lee_csv_path);
+        fatal_xs_h("Cannot open Hayward CSV: " + hayward_csv_path);
     }
 
     std::string header_line;
     if (!std::getline(fin, header_line)) {
-        fatal_xs("Lee CSV appears empty: " + lee_csv_path);
+        fatal_xs_h("Hayward CSV appears empty: " + hayward_csv_path);
     }
-    std::vector<std::string> header = split_csv_line_xs(header_line);
+    std::vector<std::string> header = split_csv_line_xs_h(header_line);
+    auto H = build_header_index_xs_h(header);
 
-    LeeCsvCols_xs cols_lee = detect_lee_columns_xs(header);
-    auto H = build_header_index_xs(header);
-
-    const std::vector<std::string> required = {
+    // Axis + housekeeping columns required
+    std::vector<std::string> required = {
+        "bin index",
         "valid bin",
-        "cross sections, ep->epg, exp",
-        "cross sections, ep->epg, exp, stat. unc.",
-        "cross sections, ep->epg, exp, syst. unc. (up)",
-        "cross sections, ep->epg, exp, syst. unc. (down)"
+        "xBmin",
+        "xBmax",
+        "Q2min",
+        "Q2max",
+        "t_abs_min",
+        "t_abs_max",
+        // Common phi coordinate for 10.6 GeV
+        "phiavg, 10.6 GeV"
     };
-    require_columns_xs(H, required, "Lee CSV");
 
-    std::vector<BinRow_xs> rows;
+    // Append all xs_columns to required
+    for (const auto& c : xs_columns) {
+        required.push_back(c);
+    }
+    // endfor
+
+    require_columns_xs_h(H, required, "Hayward CSV");
+
+    std::vector<BinRow_h> rows;
     rows.reserve(3000);
 
     std::string line;
@@ -1176,118 +755,130 @@ static std::vector<BinRow_xs> load_lee_rows_xs(const std::string& lee_csv_path,
         ++input_rows;
         if (line.empty()) continue;
 
-        std::vector<std::string> cols = split_csv_line_xs(line);
+        std::vector<std::string> cols = split_csv_line_xs_h(line);
 
-        const std::string& valid_s = get_col_ref_xs(cols, H, "valid bin");
-        int valid = ToInt_xs(valid_s);
+        const std::string& valid_s = get_col_ref_xs_h(cols, H, "valid bin");
+        int valid = ToInt_xs_h(valid_s);
         if (valid != 1) continue;
 
-        if ((int)cols.size() <= cols_lee.c_phi_avg) {
-            fatal_xs("Row in Lee CSV has fewer columns than expected based on header detection.");
+        BinRow_h r;
+        r.bin_index = ToInt_xs_h(get_col_ref_xs_h(cols, H, "bin index"));
+        r.xBmin     = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "xBmin"));
+        r.xBmax     = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "xBmax"));
+        r.Q2min     = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "Q2min"));
+        r.Q2max     = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "Q2max"));
+        r.tmin      = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "t_abs_min"));
+        r.tmax      = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "t_abs_max"));
+        r.phiavg    = ToDouble_xs_h(get_col_ref_xs_h(cols, H, "phiavg, 10.6 GeV"));
+
+        bool has_any_xs = false;
+
+        for (const auto& cname : xs_columns) {
+            const std::string& cell = get_col_ref_xs_h(cols, H, cname);
+            XsValue_h xv = parse_xs_triplet_xs_h(cell);
+            if (xv.valid) {
+                has_any_xs = true;
+            }
+            r.xs[cname] = xv;
         }
+        // endfor
 
-        BinRow_xs r;
-        r.bin_index   = ToInt_xs(cols[cols_lee.c_bin]);
-        r.xBmin       = ToDouble_xs(cols[cols_lee.c_xb_min]);
-        r.xBmax       = ToDouble_xs(cols[cols_lee.c_xb_max]);
-        r.Q2min       = ToDouble_xs(cols[cols_lee.c_q2_min]);
-        r.Q2max       = ToDouble_xs(cols[cols_lee.c_q2_max]);
-        r.tmin        = ToDouble_xs(cols[cols_lee.c_t_min]);
-        r.tmax        = ToDouble_xs(cols[cols_lee.c_t_max]);
-        r.phiavg      = ToDouble_xs(cols[cols_lee.c_phi_avg]);
+        // Skip bins with no cross section in any of the requested columns.
+        if (!has_any_xs) continue;
 
-        r.lee_xs = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp")
-        );
-        r.lee_stat = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, stat. unc.")
-        );
-        r.lee_syst_up = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (up)")
-        );
-        r.lee_syst_dn = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (down)")
-        );
-
-        r.my_xs      = 0.0;
-        r.my_xs_err  = 0.0;
-
-        if (bin_to_index.find(r.bin_index) != bin_to_index.end()) {
-            fatal_xs("Duplicate bin index in Lee CSV: " + std::to_string(r.bin_index));
-        }
-
-        bin_to_index[r.bin_index] = rows.size();
         rows.push_back(r);
         ++kept_rows;
     }
+    // end while
 
-    info_xs("Lee CSV rows read: " + std::to_string(input_rows));
-    info_xs("Lee valid rows kept (valid bin == 1): " + std::to_string(kept_rows));
+    info_xs_h("Hayward CSV rows read: " + std::to_string(input_rows));
+    info_xs_h("Hayward valid rows with any cross section: " + std::to_string(kept_rows));
     return rows;
 }
 
-static void fill_hayward_xs(const std::string& hayward_csv_path,
-                            const std::unordered_map<int,size_t>& bin_to_index,
-                            std::vector<BinRow_xs>& rows) {
-    std::ifstream fin(hayward_csv_path);
-    if (!fin.is_open()) {
-        fatal_xs("Cannot open Hayward CSV: " + hayward_csv_path);
-    }
+// ---------- one comparison driver ----------
 
-    std::string header_line;
-    if (!std::getline(fin, header_line)) {
-        fatal_xs("Hayward CSV appears empty: " + hayward_csv_path);
-    }
-    std::vector<std::string> header = split_csv_line_xs(header_line);
-    auto H = build_header_index_xs(header);
+static void run_one_comparison_xs_h(
+    const std::string& labelA,
+    const std::string& labelB,
+    const std::string& colA,
+    const std::string& colB,
+    const std::string& subdir_name,
+    const std::vector<BinRow_h>& rows,
+    const AxisSets_h& ax,
+    const std::string& output_base_dir
+) {
+    fs::path out_dir = fs::path(output_base_dir) / subdir_name;
+    fs::create_directories(out_dir);
 
-    const std::vector<std::string> required = {
-        "bin index",
-        "valid bin",
-        "cross sections, ep->epg, exp, Fa18, unpol"
+    info_xs_h("Running cross-section comparison: " + labelA + " vs " + labelB +
+              " -> " + out_dir.string());
+
+    PerPanelPair_h pp = map_to_panels_pair_xs_h(rows, ax, colA, colB);
+
+    auto make_fetchBoth = [&](int ix) {
+        return [&, ix](int iQcol, int irow,
+                       PanelData_h& A,
+                       PanelData_h& B) {
+            auto key = std::make_tuple(ix, iQcol, irow);
+
+            auto itA = pp.A.find(key);
+            if (itA != pp.A.end()) {
+                A = itA->second;
+            } else {
+                A = PanelData_h();
+            }
+
+            auto itB = pp.B.find(key);
+            if (itB != pp.B.end()) {
+                B = itB->second;
+            } else {
+                B = PanelData_h();
+            }
+        };
     };
-    require_columns_xs(H, required, "Hayward CSV");
 
-    std::string line;
-    int input_rows = 0;
-    int matched    = 0;
+    for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
+        const auto& Q2s = ax.Q2_by_ix.at(ix);
+        const auto& Ts  = ax.t_by_ix.at(ix);
+        if (Q2s.empty() || Ts.empty()) continue;
 
-    while (std::getline(fin, line)) {
-        ++input_rows;
-        if (line.empty()) continue;
+        const double xb_lo = ax.xB[ix].first;
+        const double xb_hi = ax.xB[ix].second;
 
-        std::vector<std::string> cols = split_csv_line_xs(line);
-        const std::string& valid_s = get_col_ref_xs(cols, H, "valid bin");
-        int valid = ToInt_xs(valid_s);
-        if (valid != 1) continue;
-
-        int bin_index = ToInt_xs(get_col_ref_xs(cols, H, "bin index"));
-        auto it = bin_to_index.find(bin_index);
-        if (it == bin_to_index.end()) {
-            continue;
-        }
-
-        XsValue_xs xv = parse_xs_triplet_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, Fa18, unpol")
+        std::string title_counts = Form(
+            "Cross sections: 10.6 GeV   %s vs %s   x_{B} #in [%.3g, %.3g]",
+            labelA.c_str(), labelB.c_str(), xb_lo, xb_hi
+        );
+        std::string title_ratio = Form(
+            "Cross section ratio: 10.6 GeV   %s/%s   x_{B} #in [%.3g, %.3g]",
+            labelA.c_str(), labelB.c_str(), xb_lo, xb_hi
         );
 
-        BinRow_xs& r = rows[it->second];
-        if (xv.valid) {
-            r.my_xs     = xv.value;
-            r.my_xs_err = xv.stat_err;
-        }
-        ++matched;
-    }
+        auto fetchBoth = make_fetchBoth(ix);
 
-    info_xs("Hayward CSV rows read: " + std::to_string(input_rows));
-    info_xs("Hayward valid rows matched to Lee bins: " + std::to_string(matched));
+        fs::path f_counts = out_dir / Form("cross_section_counts_xB_%d.png", ix);
+        fs::path f_ratio  = out_dir / Form("cross_section_ratio_xB_%d.png",  ix);
+
+        draw_one_canvas_pair_xs_h(
+            title_counts, Q2s, Ts, fetchBoth, f_counts.string(),
+            /*draw_ratio_only=*/false, labelA, labelB, ix
+        );
+        draw_one_canvas_pair_xs_h(
+            title_ratio,  Q2s, Ts, fetchBoth, f_ratio.string(),
+            /*draw_ratio_only=*/true,  labelA, labelB, ix
+        );
+
+        info_xs_h("Saved: " + f_counts.string());
+        info_xs_h("Saved: " + f_ratio.string());
+    }
+    // endfor
 }
 
-// ---------- driver ----------
+// ---------- top-level driver ----------
 
-void plot_cross_section_cross_checks(const std::string& lee_csv_path,
-                                     const std::string& hayward_csv_path,
-                                     const std::string& output_base_dir) {
+void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path,
+                                             const std::string& output_base_dir) {
     fs::create_directories(output_base_dir);
 
     gStyle->SetOptTitle(0);
@@ -1300,78 +891,123 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
     gStyle->SetLabelFont(42, "XYZ");
     gStyle->SetTextFont(42);
 
-    // 1) Load Lee CSV
-    std::unordered_map<int,size_t> bin_to_index;
-    auto rows = load_lee_rows_xs(lee_csv_path, bin_to_index);
-
-    // 2) Load Hayward CSV
-    fill_hayward_xs(hayward_csv_path, bin_to_index, rows);
-
-    // 3) Build axis sets and per-panel maps
-    AxisSets_xs ax = build_axes_from_rows_xs(rows);
-    PerPanel_xs pp = map_to_panels_xs(rows, ax);
-
-    info_xs("Axis xB bins: " + std::to_string(ax.xB.size()));
-
-    auto make_fetchBoth = [&](int ix) {
-        return [&, ix](int iQcol, int irow,
-                       PanelData_xs& hayward,
-                       PanelData_xs& lee) {
-            auto key = std::make_tuple(ix, iQcol, irow);
-
-            auto itH = pp.hayward.find(key);
-            if (itH != pp.hayward.end()) {
-                hayward = itH->second;
-            } else {
-                hayward = PanelData_xs();
-            }
-
-            auto itL = pp.lee.find(key);
-            if (itL != pp.lee.end()) {
-                lee = itL->second;
-            } else {
-                lee = PanelData_xs();
-            }
-        };
+    // All unique cross section columns we will require
+    const std::vector<std::string> xs_columns = {
+        // unpolarized
+        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "cross sections, ep->epg, exp, Fa18 Out, unpol",
+        "cross sections, ep->epg, exp, Sp18 Inb, unpol",
+        "cross sections, ep->epg, exp, Sp18 Out, unpol",
+        "cross sections, ep->epg, exp, Fa18, unpol",
+        "cross sections, ep->epg, exp, Sp18, unpol",
+        "cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        // helicity-separated Fa18
+        "cross sections, ep->epg, exp, Fa18 Inb, pos",
+        "cross sections, ep->epg, exp, Fa18 Out, pos",
+        "cross sections, ep->epg, exp, Fa18 Inb, neg",
+        "cross sections, ep->epg, exp, Fa18 Out, neg"
     };
 
-    for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
-        const auto& Q2s = ax.Q2_by_ix[ix];
-        const auto& Ts  = ax.t_by_ix[ix];
-        if (Q2s.empty() || Ts.empty()) continue;
+    // 1) Load Hayward rows (axis info + all needed cross-section columns)
+    auto rows = load_hayward_rows_xs_h(hayward_csv_path, xs_columns);
 
-        const double xb_lo = ax.xB[ix].first;
-        const double xb_hi = ax.xB[ix].second;
+    // 2) Build axis sets from these rows
+    AxisSets_h ax = build_axes_from_rows_xs_h(rows);
 
-        const std::string title_counts =
-            Form("Cross sections: 10.6 GeV   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
-        const std::string title_ratio  =
-            Form("Cross section ratio (Hayward/Lee): 10.6 GeV   x_{B} #in [%.3g, %.3g]",
-                 xb_lo, xb_hi);
-        const std::string title_uncert =
-            Form("Stat. uncertainties vs #phi: 10.6 GeV   x_{B} #in [%.3g, %.3g]",
-                 xb_lo, xb_hi);
+    info_xs_h("Axis xB bins: " + std::to_string(ax.xB.size()));
 
-        auto fetchBoth = make_fetchBoth(ix);
+    // 3) Define the specific comparisons you requested
 
-        const std::string f_counts =
-            (fs::path(output_base_dir) / Form("cross_section_counts_xB_%d.png", ix)).string();
-        const std::string f_ratio  =
-            (fs::path(output_base_dir) / Form("cross_section_ratio_xB_%d.png",  ix)).string();
-        const std::string f_uncert =
-            (fs::path(output_base_dir) / Form("cross_section_staterr_xB_%d.png", ix)).string();
+    struct Comparison {
+        std::string labelA;
+        std::string labelB;
+        std::string colA;
+        std::string colB;
+        std::string subdir;
+    };
 
-        // Original two canvases
-        draw_one_canvas_xs(title_counts, Q2s, Ts, fetchBoth, f_counts,
-                           /*draw_ratio_only=*/false, ix);
-        draw_one_canvas_xs(title_ratio,  Q2s, Ts, fetchBoth, f_ratio,
-                           /*draw_ratio_only=*/true, ix);
+    std::vector<Comparison> comps;
 
-        // NEW: stat. uncertainties vs phi
-        draw_uncert_canvas_xs(title_uncert, Q2s, Ts, fetchBoth, f_uncert);
+    // Fa18 Inb vs Fa18 Out (unpolarized)
+    comps.push_back({
+        "Fa18 Inb (unpol)",
+        "Fa18 Out (unpol)",
+        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "cross sections, ep->epg, exp, Fa18 Out, unpol",
+        "Fa18Inb_vs_Fa18Out_unpol"
+    });
 
-        info_xs("Saved: " + f_counts);
-        info_xs("Saved: " + f_ratio);
-        info_xs("Saved: " + f_uncert);
+    // Fa18 Inb vs Sp18 Inb (unpolarized)
+    comps.push_back({
+        "Fa18 Inb (unpol)",
+        "Sp18 Inb (unpol)",
+        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "cross sections, ep->epg, exp, Sp18 Inb, unpol",
+        "Fa18Inb_vs_Sp18Inb_unpol"
+    });
+
+    // Fa18 Out vs Sp18 Out (unpolarized)
+    comps.push_back({
+        "Fa18 Out (unpol)",
+        "Sp18 Out (unpol)",
+        "cross sections, ep->epg, exp, Fa18 Out, unpol",
+        "cross sections, ep->epg, exp, Sp18 Out, unpol",
+        "Fa18Out_vs_Sp18Out_unpol"
+    });
+
+    // Sp18 Inb vs Sp18 Out (unpolarized)
+    comps.push_back({
+        "Sp18 Inb (unpol)",
+        "Sp18 Out (unpol)",
+        "cross sections, ep->epg, exp, Sp18 Inb, unpol",
+        "cross sections, ep->epg, exp, Sp18 Out, unpol",
+        "Sp18Inb_vs_Sp18Out_unpol"
+    });
+
+    // Fa18 vs Sp18 (unpolarized combined)
+    comps.push_back({
+        "Fa18 (unpol)",
+        "Sp18 (unpol)",
+        "cross sections, ep->epg, exp, Fa18, unpol",
+        "cross sections, ep->epg, exp, Sp18, unpol",
+        "Fa18_vs_Sp18_unpol"
+    });
+
+    // Fa18 Inb vs Sp19 Inb (unpolarized)
+    comps.push_back({
+        "Fa18 Inb (unpol)",
+        "Sp19 Inb (unpol)",
+        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        "Fa18Inb_vs_Sp19Inb_unpol"
+    });
+
+    // Fa18 Inb vs Fa18 Out (pos helicity)
+    comps.push_back({
+        "Fa18 Inb (pos)",
+        "Fa18 Out (pos)",
+        "cross sections, ep->epg, exp, Fa18 Inb, pos",
+        "cross sections, ep->epg, exp, Fa18 Out, pos",
+        "Fa18Inb_vs_Fa18Out_pos"
+    });
+
+    // Fa18 Inb vs Fa18 Out (neg helicity)
+    comps.push_back({
+        "Fa18 Inb (neg)",
+        "Fa18 Out (neg)",
+        "cross sections, ep->epg, exp, Fa18 Inb, neg",
+        "cross sections, ep->epg, exp, Fa18 Out, neg",
+        "Fa18Inb_vs_Fa18Out_neg"
+    });
+
+    // 4) Run all comparisons
+    for (const auto& cmp : comps) {
+        run_one_comparison_xs_h(
+            cmp.labelA, cmp.labelB,
+            cmp.colA,   cmp.colB,
+            cmp.subdir,
+            rows, ax,
+            output_base_dir
+        );
     }
 }
