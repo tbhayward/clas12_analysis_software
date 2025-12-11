@@ -36,6 +36,15 @@
 //
 // in a subdirectory per comparison under output_base_dir.
 //
+// STANDARD INSTRUCTIONS (DVCS cross-section cross-checks):
+//   - For counts canvases (cross sections):
+//       * Log y-scale.
+//       * Per-xB-bin y-min floors (lowest to highest xB):
+//           1e-1, 1e-2, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-4
+//       * Per-canvas global y-max (from all subplots, including error bars),
+//         used for all subplots on that canvas.
+//   - For ratio canvases (A/B):
+//       * Linear y-scale, fixed range [0, 3] for all subplots.
 // -----------------------------------------------------------------------------
 
 #include "cross_section_hayward_cross_check.h"
@@ -404,6 +413,28 @@ static std::string safe_canvas_name_xs_h(const std::string& out_png) {
     return fs::path(out_png).filename().string();
 }
 
+// OFFICIAL y-min floors for xB bins (lowest to highest xB)
+static double get_xb_ymin_floor_xs_h(int ix_xb) {
+    static const double floors[] = {
+        1e-1,  // xB bin 0
+        1e-2,  // xB bin 1
+        1e-3,  // xB bin 2
+        1e-3,  // xB bin 3
+        1e-3,  // xB bin 4
+        1e-3,  // xB bin 5
+        1e-3,  // xB bin 6
+        1e-4   // xB bin 7
+    };
+    const int n = (int)(sizeof(floors) / sizeof(floors[0]));
+    if (ix_xb < 0) {
+        return floors[0];
+    }
+    if (ix_xb >= n) {
+        return floors[n - 1];
+    }
+    return floors[ix_xb];
+}
+
 static void draw_one_canvas_pair_xs_h(
     const std::string& title,
     const std::vector<std::pair<double,double>>& Q2s,
@@ -412,7 +443,8 @@ static void draw_one_canvas_pair_xs_h(
     const std::string& out_png,
     bool draw_ratio_only,
     const std::string& labelA,
-    const std::string& labelB
+    const std::string& labelB,
+    int ix_xb
 ) {
     const int nrows = (int)Ts.size();
     const int ncols = (int)Q2s.size();
@@ -420,6 +452,42 @@ static void draw_one_canvas_pair_xs_h(
 
     const int W = 320 * ncols + 220;
     const int H = 260 * nrows + 260;
+
+    // -------------------------------------------------------------------------
+    // STANDARD INSTRUCTIONS: Precompute global y-range for counts canvases
+    // -------------------------------------------------------------------------
+    double global_max_counts = 0.0;
+    bool   any_positive      = false;
+    double y_floor           = 0.0;
+
+    if (!draw_ratio_only) {
+        y_floor = get_xb_ymin_floor_xs_h(ix_xb);
+
+        for (int r = 0; r < nrows; ++r) {
+            for (int ccol = 0; ccol < ncols; ++ccol) {
+                PanelData_h A_tmp, B_tmp;
+                fetchBoth(ccol, r, A_tmp, B_tmp);
+
+                auto update_minmax = [&](const PanelData_h& pd) {
+                    for (size_t i = 0; i < pd.val.size(); ++i) {
+                        double v   = pd.val[i];
+                        double es  = (i < pd.err.size()) ? pd.err[i] : 0.0;
+                        double vup = v + es;
+                        if (vup > global_max_counts) {
+                            global_max_counts = vup;
+                        }
+                        if (vup > 0.0) {
+                            any_positive = true;
+                        }
+                    }
+                    // endfor
+                };
+
+                update_minmax(A_tmp);
+                update_minmax(B_tmp);
+            }
+        }
+    }
 
     const std::string cname = safe_canvas_name_xs_h(out_png);
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
@@ -500,46 +568,21 @@ static void draw_one_canvas_pair_xs_h(
             double ymax = 1.0;
 
             if (!draw_ratio_only) {
-                // Cross-section overlays: LOG y-scale with per-panel autoscaling.
-                ymax = 0.0;
-                double ymin_pos = 0.0;
-
-                auto update_minmax = [&](const PanelData_h& pd) {
-                    for (size_t i = 0; i < pd.val.size(); ++i) {
-                        double v = pd.val[i];
-                        double vup = v;
-                        if (i < pd.err.size()) {
-                            vup = v + pd.err[i];
-                        }
-                        if (vup > ymax) {
-                            ymax = vup;
-                        }
-                        if (v > 0.0) {
-                            if (ymin_pos == 0.0 || v < ymin_pos) {
-                                ymin_pos = v;
-                            }
-                        }
-                    }
-                    // endfor
-                };
-
-                update_minmax(A);
-                update_minmax(B);
-
-                if (ymax <= 0.0 || ymin_pos <= 0.0) {
-                    // No positive entries: fall back to linear scale [0,1]
+                // -----------------------------------------------------------------
+                // COUNTS CANVAS: STANDARD INSTRUCTIONS
+                //   - Log y-scale
+                //   - y-min = per-xB-bin floor (same for all subplots)
+                //   - y-max = global max over all panels * 1.1
+                // -----------------------------------------------------------------
+                if (!any_positive || global_max_counts <= 0.0) {
+                    // No positive entries anywhere on the canvas: fall back to linear [0,1]
                     gPad->SetLogy(0);
                     ymin = 0.0;
                     ymax = 1.0;
                 } else {
-                    // Use log scale; pad the range slightly.
                     gPad->SetLogy(1);
-                    ymin = 0.1 * ymin_pos;    // one decade below smallest positive
-                    if (ymin <= 0.0) {
-                        ymin = ymin_pos * 0.5;
-                        if (ymin <= 0.0) ymin = ymin_pos * 0.1;
-                    }
-                    ymax = 1.10 * ymax;
+                    ymin = y_floor;
+                    ymax = 1.10 * global_max_counts;
                     if (ymax <= ymin) {
                         ymax = ymin * 10.0;
                     }
@@ -574,14 +617,16 @@ static void draw_one_canvas_pair_xs_h(
                 graph_pe1_xs_h(A.phi, A.val, A.err, 20, black);
                 graph_pe1_xs_h(B.phi, B.val, B.err, 24, orange);
             } else {
-                // Ratio: keep linear y
+                // -----------------------------------------------------------------
+                // RATIO CANVAS: STANDARD INSTRUCTIONS
+                //   - Linear y-scale
+                //   - y-range fixed to [0, 3]
+                // -----------------------------------------------------------------
                 gPad->SetLogy(0);
 
                 // Compute R = A/B and eR from A error
                 const double tol = 20.0;
                 std::vector<double> x, y, ey;
-
-                double local_max = 0.0;
 
                 for (size_t i = 0; i < A.phi.size(); ++i) {
                     double best_dist = 1e9;
@@ -608,22 +653,12 @@ static void draw_one_canvas_pair_xs_h(
                         x.push_back(A.phi[i]);
                         y.push_back(R);
                         ey.push_back(eR);
-
-                        if (R + eR > local_max) {
-                            local_max = R + eR;
-                        }
                     }
                 }
                 // endfor
 
-                if (local_max <= 0.0) {
-                    ymin = 0.0;
-                    ymax = 1.0;
-                } else {
-                    ymin = 0.0;
-                    ymax = 1.10 * local_max;
-                    if (ymax < 1.0) ymax = 1.0;
-                }
+                ymin = 0.0;
+                ymax = 3.0;  // Fixed by STANDARD INSTRUCTIONS
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -827,11 +862,11 @@ static void run_one_comparison_xs_h(
 
         draw_one_canvas_pair_xs_h(
             title_counts, Q2s, Ts, fetchBoth, f_counts.string(),
-            /*draw_ratio_only=*/false, labelA, labelB
+            /*draw_ratio_only=*/false, labelA, labelB, ix
         );
         draw_one_canvas_pair_xs_h(
             title_ratio,  Q2s, Ts, fetchBoth, f_ratio.string(),
-            /*draw_ratio_only=*/true,  labelA, labelB
+            /*draw_ratio_only=*/true,  labelA, labelB, ix
         );
 
         info_xs_h("Saved: " + f_counts.string());
