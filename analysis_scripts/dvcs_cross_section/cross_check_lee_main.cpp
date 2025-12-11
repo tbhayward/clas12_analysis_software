@@ -58,19 +58,19 @@ int main() {
     //     "output/cross_check/lee/rad_corrections"
     // );
 
-    // Acceptance cross-check (Lee vs Fa18 Inb/Out)
-    plot_acceptance_cross_checks(
-        lee_csv,
-        hayward_csv,
-        "output/cross_check/lee/acceptance"
-    );
+    // // Acceptance cross-check (Lee vs Fa18 Inb/Out)
+    // plot_acceptance_cross_checks(
+    //     lee_csv,
+    //     hayward_csv,
+    //     "output/cross_check/lee/acceptance"
+    // );
 
-    // Unfolded acceptance-corrected yield cross-check
-    plot_unfolded_yields_cross_checks(
-        lee_csv,
-        hayward_csv,
-        "output/cross_check/lee/unfolding"
-    );
+    // // Unfolded acceptance-corrected yield cross-check
+    // plot_unfolded_yields_cross_checks(
+    //     lee_csv,
+    //     hayward_csv,
+    //     "output/cross_check/lee/unfolding"
+    // );
 
     // // Bin-centering correction cross-check (Fbin vs bin_volume)
     // plot_bin_centering_cross_checks(
