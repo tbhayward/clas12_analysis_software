@@ -219,25 +219,81 @@ static int find_col_optional(const std::vector<std::string> &header,
 // Triple is declared in cross_sections.h:
 //   struct Triple { double value; double stat; double sys; };
 
+// Helper: strip all outer quote layers (CSV and nested quotes)
+static std::string strip_all_outer_quotes(std::string s) {
+    // First remove CSV-style outer quotes (and collapses double quotes)
+    s = unquote(s);
+    s = trim(s);
+
+    bool changed = true;
+    while (changed && s.size() >= 2) {
+        changed = false;
+        char first = s.front();
+        char last  = s.back();
+        if ((first == '"' && last == '"') ||
+            (first == '\'' && last == '\'')) {
+            s = s.substr(1, s.size() - 2);
+            s = trim(s);
+            changed = true;
+        }
+    }
+    return s;
+}
+
 static Triple parse_tuple3(const std::string &cell) {
-    std::string s = trim(unquote(cell));
-    Triple out{0.0, 0.0, 0.0};
-    if (s.empty()) return out;
+    Triple out;
+    out.value = 0.0;
+    out.stat  = 0.0;
+    out.sys   = 0.0;
 
-    if (!s.empty() && s.front() == '(' && s.back() == ')') {
+    // Robustly strip CSV and nested quotes
+    std::string s = strip_all_outer_quotes(cell);
+    s = trim(s);
+    if (s.empty()) {
+        return out;
+    }
+
+    // Optional surrounding parentheses "(...)" -> "..."
+    if (s.front() == '(' && s.back() == ')') {
         s = s.substr(1, s.size() - 2);
+        s = trim(s);
+        if (s.empty()) {
+            return out;
+        }
     }
 
-    std::vector<double> vals;
+    // Split on commas into up to 3 parts
+    std::vector<std::string> parts;
     std::string token;
-    std::istringstream iss(s);
-    while (std::getline(iss, token, ',')) {
-        token = trim(token);
-        if (!token.empty()) vals.push_back(std::atof(token.c_str()));
+    for (char c : s) {
+        if (c == ',') {
+            parts.push_back(trim(token));
+            token.clear();
+        } else {
+            token.push_back(c);
+        }
     }
-    if (!vals.empty()) out.value = vals[0];
-    if (vals.size() > 1) out.stat = vals[1];
-    if (vals.size() > 2) out.sys  = vals[2];
+    if (!token.empty()) {
+        parts.push_back(trim(token));
+    }
+
+    auto to_double_or_zero = [](const std::string &str) -> double {
+        if (str.empty()) {
+            return 0.0;
+        }
+        return std::atof(str.c_str());
+    };
+
+    if (!parts.empty()) {
+        out.value = to_double_or_zero(parts[0]);
+    }
+    if (parts.size() > 1U) {
+        out.stat = to_double_or_zero(parts[1]);
+    }
+    if (parts.size() > 2U) {
+        out.sys = to_double_or_zero(parts[2]);
+    }
+
     return out;
 }
 
@@ -573,7 +629,7 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
         t.stat  = (var > 0.0) ? std::sqrt(var) : 0.0;
         t.sys   = 0.0;
 
-        eff[label]         = t;
+        eff[label]           = t;
         period_counts[label] = total_counts;
 
         std::cout << "[cross_sections] Period efficiency for " << label
