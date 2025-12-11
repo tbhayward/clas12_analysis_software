@@ -7,9 +7,16 @@
 //
 // For each valid bin, we compare:
 //
-//   Lee:     "cross sections, ep->epg, exp"                  (single value)
-//   Hayward: "cross sections, ep->epg, exp, Fa18, unpol"    (three-tuple:
-//                                                            value, stat_err, syst_err)
+//   Lee:
+//      "cross sections, ep->epg, exp"                    (central value)
+//      "cross sections, ep->epg, exp, stat. unc."        (statistical error)
+//      "cross sections, ep->epg, exp, syst. unc. (up)"   (systematic up)
+//      "cross sections, ep->epg, exp, syst. unc. (down)" (systematic down)
+//
+//   Hayward:
+//      "cross sections, ep->epg, exp, Fa18, unpol"       (three-tuple:
+//                                                        value, stat_err,
+//                                                        syst_err [unused here])
 //
 // We organize the comparison by xB, Q^{2}, and -t. For each (xB, Q^{2}, -t)
 // cell, we take all rows matching those ranges and use their provided phiavg
@@ -25,9 +32,16 @@
 //       * Per-xB-bin y-min floors (lowest to highest xB):
 //           1e-1, 1e-2, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-4
 //       * Per-canvas global y-max (from all subplots, including error bars),
-//         used for all subplots on that canvas.
+//         used for all subplots on that canvas. For Lee, this includes
+//         stat + syst(up) on top of the central value.
 //   - For ratio canvases (Hayward/Lee):
 //       * Linear y-scale, fixed range [0, 3] for all subplots.
+//
+// Additionally:
+//   - Lee cross sections are now drawn with:
+//        * Stat error bars (TGraphErrors, orange).
+//        * Systematic asymmetric error bars (TGraphAsymmErrors, slightly
+//          different orange, thicker line, no marker).
 //
 // -----------------------------------------------------------------------------
 
@@ -36,6 +50,7 @@
 #include <TCanvas.h>
 #include <TGraph.h>
 #include <TGraphErrors.h>
+#include <TGraphAsymmErrors.h>
 #include <TLatex.h>
 #include <TLegend.h>
 #include <TLine.h>
@@ -299,7 +314,7 @@ static LeeCsvCols_xs detect_lee_columns_xs(const std::vector<std::string>& heade
     cols.c_t_min = find_col_alias_xs(header, { "t_abs_min", "tmin", "t_min" });
     cols.c_t_max = find_col_alias_xs(header, { "t_abs_max", "tmax", "t_max" });
 
-    // 4) Validate required columns
+    // 4) Validate required columns (binning only)
     std::vector<std::string> missing;
     if (cols.c_bin     < 0) missing.push_back("bin index");
     if (cols.c_xb_min  < 0) missing.push_back("xBmin");
@@ -345,7 +360,11 @@ struct BinRow_xs {
     double tmax        = 0.0;
     double phiavg      = 0.0;
 
-    double lee_xs      = 0.0;  // Lee cross section (single value, no error)
+    double lee_xs      = 0.0;  // Lee central value
+    double lee_stat    = 0.0;  // Lee statistical uncertainty
+    double lee_syst_up = 0.0;  // Lee systematic up
+    double lee_syst_dn = 0.0;  // Lee systematic down
+
     double my_xs       = 0.0;  // Hayward cross section (value)
     double my_xs_err   = 0.0;  // Hayward cross section stat error
 };
@@ -365,7 +384,7 @@ static AxisSets_xs build_axes_from_rows_xs(const std::vector<BinRow_xs>& rows) {
     AxisSets_xs ax;
     ax.xB.assign(xbset.begin(), xbset.end());
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
-        const auto& xb = ax.xB[ix];
+        const auto& xb    = ax.xB[ix];
         const auto& q2set = q2set_by_xb[xb];
         const auto& tset  = tset_by_xb[xb];
         ax.Q2_by_ix[ix] = { q2set.begin(), q2set.end() };
@@ -386,7 +405,9 @@ static inline int find_index_xs(const std::pair<double,double>& r,
 struct PanelData_xs {
     std::vector<double> phi;
     std::vector<double> val;
-    std::vector<double> err;
+    std::vector<double> err_stat;
+    std::vector<double> err_syst_up;
+    std::vector<double> err_syst_dn;
 };
 
 struct PerPanel_xs {
@@ -413,18 +434,24 @@ static PerPanel_xs map_to_panels_xs(const std::vector<BinRow_xs>& rows,
 
         auto key = std::make_tuple(ix, iQ, it);
 
-        // Lee data (no error bars)
+        // Lee data (central + stat + syst)
         if (r.lee_xs > 0.0) {
-            pp.lee[key].phi.push_back(r.phiavg);
-            pp.lee[key].val.push_back(r.lee_xs);
-            pp.lee[key].err.push_back(0.0);
+            PanelData_xs& pdL = pp.lee[key];
+            pdL.phi.push_back(r.phiavg);
+            pdL.val.push_back(r.lee_xs);
+            pdL.err_stat.push_back(r.lee_stat);
+            pdL.err_syst_up.push_back(r.lee_syst_up);
+            pdL.err_syst_dn.push_back(r.lee_syst_dn);
         }
 
-        // Hayward data (with error bars)
+        // Hayward data (central + stat only)
         if (r.my_xs > 0.0) {
-            pp.hayward[key].phi.push_back(r.phiavg);
-            pp.hayward[key].val.push_back(r.my_xs);
-            pp.hayward[key].err.push_back(r.my_xs_err);
+            PanelData_xs& pdH = pp.hayward[key];
+            pdH.phi.push_back(r.phiavg);
+            pdH.val.push_back(r.my_xs);
+            pdH.err_stat.push_back(r.my_xs_err);
+            pdH.err_syst_up.push_back(0.0);
+            pdH.err_syst_dn.push_back(0.0);
         }
     }
 
@@ -436,18 +463,24 @@ static PerPanel_xs map_to_panels_xs(const std::vector<BinRow_xs>& rows,
         std::sort(idx.begin(), idx.end(), [&](size_t a, size_t b) {
             return pd.phi[a] < pd.phi[b];
         });
-        std::vector<double> phi2, val2, err2;
+        std::vector<double> phi2, val2, e_stat2, e_sup2, e_sdn2;
         phi2.reserve(idx.size());
         val2.reserve(idx.size());
-        err2.reserve(idx.size());
+        e_stat2.reserve(idx.size());
+        e_sup2.reserve(idx.size());
+        e_sdn2.reserve(idx.size());
         for (size_t i : idx) {
             phi2.push_back(pd.phi[i]);
             val2.push_back(pd.val[i]);
-            err2.push_back(pd.err[i]);
+            e_stat2.push_back(pd.err_stat[i]);
+            e_sup2.push_back(pd.err_syst_up[i]);
+            e_sdn2.push_back(pd.err_syst_dn[i]);
         }
-        pd.phi = std::move(phi2);
-        pd.val = std::move(val2);
-        pd.err = std::move(err2);
+        pd.phi        = std::move(phi2);
+        pd.val        = std::move(val2);
+        pd.err_stat   = std::move(e_stat2);
+        pd.err_syst_up = std::move(e_sup2);
+        pd.err_syst_dn = std::move(e_sdn2);
     };
 
     for (auto& kv : pp.lee)     sort_panel(kv.second);
@@ -472,7 +505,7 @@ static void draw_degree_ticks_here_xs(double labelSize) {
     degreeTicks_xs(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
 }
 
-// Markers + error bars
+// Symmetric error bars (stat)
 static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
                                   const std::vector<double>& Y,
                                   const std::vector<double>& EY,
@@ -489,6 +522,31 @@ static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
     g->SetLineColor(color);
     g->SetLineWidth(1);
     g->Draw("PE1 SAME");
+    return g;
+}
+
+// Asymmetric error bars (for Lee systematics)
+static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
+                                           const std::vector<double>& Y,
+                                           const std::vector<double>& EY_low,
+                                           const std::vector<double>& EY_high,
+                                           int lineColor) {
+    if (X.empty()) return nullptr;
+    const int n = (int)X.size();
+    auto* g = new TGraphAsymmErrors(n);
+    for (int i = 0; i < n; ++i) {
+        double x  = X[i];
+        double y  = Y[i];
+        double el = (i < (int)EY_low.size())  ? EY_low[i]  : 0.0;
+        double eh = (i < (int)EY_high.size()) ? EY_high[i] : 0.0;
+        g->SetPoint(i, x, y);
+        g->SetPointError(i, 0.0, 0.0, el, eh);
+    }
+    g->SetLineColor(lineColor);
+    g->SetLineWidth(2);
+    g->SetMarkerStyle(1);
+    g->SetMarkerSize(0.0);
+    g->Draw("E1 SAME");
     return g;
 }
 
@@ -547,13 +605,13 @@ static void draw_one_canvas_xs(const std::string& title,
                 PanelData_xs hayward_tmp, lee_tmp;
                 fetchBoth(ccol, r, hayward_tmp, lee_tmp);
 
-                auto update_minmax = [&](const PanelData_xs& pd) {
+                auto update_minmax = [&](const PanelData_xs& pd, bool include_syst) {
                     for (size_t i = 0; i < pd.val.size(); ++i) {
                         double v   = pd.val[i];
-                        double vup = v;
-                        if (i < pd.err.size()) {
-                            vup = v + pd.err[i];
-                        }
+                        double es  = (i < pd.err_stat.size())   ? pd.err_stat[i]   : 0.0;
+                        double esu = (include_syst && i < pd.err_syst_up.size())
+                                     ? pd.err_syst_up[i] : 0.0;
+                        double vup = v + es + esu;
                         if (vup > global_max_counts) {
                             global_max_counts = vup;
                         }
@@ -563,8 +621,10 @@ static void draw_one_canvas_xs(const std::string& title,
                     }
                 };
 
-                update_minmax(hayward_tmp);
-                update_minmax(lee_tmp);
+                // Hayward: stat only
+                update_minmax(hayward_tmp, false);
+                // Lee: stat + syst(up)
+                update_minmax(lee_tmp, true);
             }
         }
     }
@@ -590,31 +650,44 @@ static void draw_one_canvas_xs(const std::string& title,
     // Legend
     std::vector<TObject*> legend_keepalive;
     TLegend* legTop = new TLegend(0.08, 0.10, 0.92, 0.56);
-    legTop->SetNColumns(2);
+    legTop->SetNColumns(draw_ratio_only ? 2 : 3);
     legTop->SetBorderSize(0);
     legTop->SetFillStyle(0);
     legTop->SetTextFont(42);
     legTop->SetTextSize(0.22);
+
+    const int black  = kBlack;
+    const int orange = kOrange + 7;
+    const int orange_syst = kOrange + 2;
+
     if (draw_ratio_only) {
         auto* mRatio = new TMarker(0.0, 0.0, 20);
         mRatio->SetMarkerColor(kBlack);
         auto* lnY1   = new TLine(0.0, 0.0, 1.0, 0.0);
         lnY1->SetLineStyle(2);
         lnY1->SetLineWidth(2);
-        lnY1->SetLineColor(kOrange + 7);
+        lnY1->SetLineColor(orange);
         legend_keepalive.push_back(mRatio);
         legend_keepalive.push_back(lnY1);
         legTop->AddEntry(mRatio, "Hayward/Lee", "p");
         legTop->AddEntry(lnY1,   "y = 1",       "l");
     } else {
-        auto* mH = new TMarker(0.0, 0.0, 20);
-        mH->SetMarkerColor(kBlack);
-        auto* mL = new TMarker(0.0, 0.0, 24);
-        mL->SetMarkerColor(kOrange + 7);
+        auto* mH        = new TMarker(0.0, 0.0, 20);
+        auto* mL_stat   = new TMarker(0.0, 0.0, 24);
+        auto* lnL_syst  = new TLine(0.0, 0.0, 1.0, 0.0);
+
+        mH->SetMarkerColor(black);
+        mL_stat->SetMarkerColor(orange);
+        lnL_syst->SetLineColor(orange_syst);
+        lnL_syst->SetLineWidth(2);
+
         legend_keepalive.push_back(mH);
-        legend_keepalive.push_back(mL);
-        legTop->AddEntry(mH, "Hayward (pass-2)", "p");
-        legTop->AddEntry(mL, "Lee (pass-1)",     "p");
+        legend_keepalive.push_back(mL_stat);
+        legend_keepalive.push_back(lnL_syst);
+
+        legTop->AddEntry(mH,      "Hayward (pass-2), stat", "p");
+        legTop->AddEntry(mL_stat, "Lee (pass-1), stat",     "p");
+        legTop->AddEntry(lnL_syst,"Lee (pass-1), syst",     "l");
     }
     legTop->Draw();
 
@@ -626,9 +699,6 @@ static void draw_one_canvas_xs(const std::string& title,
     pGrid->Draw();
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.00, 0.00);
-
-    const int black  = kBlack;
-    const int orange = kOrange + 7;
 
     for (int r = 0; r < nrows; ++r) {
         for (int ccol = 0; ccol < ncols; ++ccol) {
@@ -692,9 +762,17 @@ static void draw_one_canvas_xs(const std::string& title,
                          Q2s[ccol].first, Q2s[ccol].second,
                          Ts[r].first,     Ts[r].second));
 
-                // Plot both series
-                graph_pe1_xs(hayward.phi, hayward.val, hayward.err, 20, black);   // Hayward with errors
-                graph_pe1_xs(lee.phi,     lee.val,     lee.err,     24, orange);  // Lee (errors are 0)
+                // Plot Hayward (stat)
+                graph_pe1_xs(hayward.phi, hayward.val, hayward.err_stat, 20, black);
+
+                // Plot Lee stat
+                graph_pe1_xs(lee.phi, lee.val, lee.err_stat, 24, orange);
+
+                // Plot Lee syst (asymmetric, larger bars, different orange)
+                graph_asymm_y_xs(lee.phi, lee.val,
+                                 lee.err_syst_dn,
+                                 lee.err_syst_up,
+                                 orange_syst);
             } else {
                 // -----------------------------------------------------------------
                 // RATIO CANVAS: OFFICIAL INSTRUCTIONS
@@ -703,7 +781,7 @@ static void draw_one_canvas_xs(const std::string& title,
                 // -----------------------------------------------------------------
                 gPad->SetLogy(0);
 
-                // Compute R = H/L and eR from Hayward error
+                // Compute R = H/L and eR from Hayward stat error only
                 const double tol = 20.0;
                 std::vector<double> x, y, ey;
 
@@ -722,7 +800,7 @@ static void draw_one_canvas_xs(const std::string& title,
                         double L = lee.val[jbest];
                         double R = (H <= 0.0) ? 0.0 : H / L;
 
-                        double sigma_H = (i < hayward.err.size()) ? hayward.err[i] : 0.0;
+                        double sigma_H = (i < hayward.err_stat.size()) ? hayward.err_stat[i] : 0.0;
                         double eR = 0.0;
                         if (H > 0.0 && sigma_H > 0.0) {
                             eR = R * (sigma_H / H);
@@ -801,7 +879,10 @@ static std::vector<BinRow_xs> load_lee_rows_xs(const std::string& lee_csv_path,
 
     const std::vector<std::string> required = {
         "valid bin",
-        "cross sections, ep->epg, exp"
+        "cross sections, ep->epg, exp",
+        "cross sections, ep->epg, exp, stat. unc.",
+        "cross sections, ep->epg, exp, syst. unc. (up)",
+        "cross sections, ep->epg, exp, syst. unc. (down)"
     };
     require_columns_xs(H, required, "Lee CSV");
 
@@ -836,10 +917,19 @@ static std::vector<BinRow_xs> load_lee_rows_xs(const std::string& lee_csv_path,
         r.tmax        = ToDouble_xs(cols[cols_lee.c_t_max]);
         r.phiavg      = ToDouble_xs(cols[cols_lee.c_phi_avg]);
 
-        double lee_raw = ToDouble_xs(
+        r.lee_xs = ToDouble_xs(
             get_col_ref_xs(cols, H, "cross sections, ep->epg, exp")
         );
-        r.lee_xs     = lee_raw;
+        r.lee_stat = ToDouble_xs(
+            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, stat. unc.")
+        );
+        r.lee_syst_up = ToDouble_xs(
+            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (up)")
+        );
+        r.lee_syst_dn = ToDouble_xs(
+            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (down)")
+        );
+
         r.my_xs      = 0.0;
         r.my_xs_err  = 0.0;
 
