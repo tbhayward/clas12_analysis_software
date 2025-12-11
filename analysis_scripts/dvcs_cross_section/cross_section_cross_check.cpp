@@ -25,6 +25,7 @@
 // Output filenames (per xB index ix):
 //   cross_section_counts_xB_<ix>.png
 //   cross_section_ratio_xB_<ix>.png
+//   cross_section_staterr_xB_<ix>.png   <-- NEW: stat. unc. vs phi for both
 //
 // OFFICIAL INSTRUCTIONS IMPLEMENTED:
 //   - For counts canvases (cross sections):
@@ -42,11 +43,12 @@
 //              with asymmetric up/down uncertainties.
 //
 // Additionally:
-//   - Lee cross sections are now drawn with on the counts canvases:
+//   - Lee cross sections are now drawn on the counts canvases with:
 //        * Stat error bars (TGraphErrors, orange).
 //        * Larger asymmetric stat⊕syst error bars (TGraphAsymmErrors,
 //          slightly different orange, thicker line, no marker).
-//
+//   - NEW: A third canvas per xB bin showing the statistical uncertainties
+//          themselves vs phi, for Hayward and Lee.
 // -----------------------------------------------------------------------------
 
 #include "cross_section_cross_check.h"
@@ -529,6 +531,23 @@ static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
     return g;
 }
 
+// Simple points (no y-error) — useful for plotting the *size* of stat errors
+static TGraph* graph_points_xs(const std::vector<double>& X,
+                               const std::vector<double>& Y,
+                               int markerStyle, int color) {
+    if (X.empty() || Y.empty()) return nullptr;
+    const int n = (int)std::min(X.size(), Y.size());
+    auto* g = new TGraph(n,
+                         const_cast<double*>(X.data()),
+                         const_cast<double*>(Y.data()));
+    g->SetMarkerStyle(markerStyle);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(1);
+    g->Draw("P SAME");
+    return g;
+}
+
 // Asymmetric error bars (for Lee stat⊕syst on counts, and ratio if needed)
 static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
                                            const std::vector<double>& Y,
@@ -580,12 +599,19 @@ static double get_xb_ymin_floor_xs(int ix_xb) {
     return floors[ix_xb];
 }
 
+// Canvas mode selector: counts, ratio, or stat-uncertainty comparison
+enum CanvasMode_xs {
+    CANVAS_COUNTS,
+    CANVAS_RATIO,
+    CANVAS_STATERR
+};
+
 static void draw_one_canvas_xs(const std::string& title,
                                const std::vector<std::pair<double,double>>& Q2s,
                                const std::vector<std::pair<double,double>>& Ts,
                                const std::function<void(int,int,PanelData_xs&,PanelData_xs&)>& fetchBoth,
                                const std::string& out_png,
-                               bool draw_ratio_only,
+                               CanvasMode_xs mode,
                                int ix_xb) {
     const int nrows = (int)Ts.size();
     const int ncols = (int)Q2s.size();
@@ -595,14 +621,17 @@ static void draw_one_canvas_xs(const std::string& title,
     const int H = 260 * nrows + 260;
 
     // -------------------------------------------------------------------------
-    // OFFICIAL INSTRUCTIONS: Precompute global y-range for counts canvases
+    // Precompute global y-ranges for counts and stat-unc canvases
     // -------------------------------------------------------------------------
     double global_max_counts = 0.0;
-    bool   any_positive      = false;
-    double y_floor           = 0.0;
+    bool   any_positive_counts = false;
+    double y_floor_counts = 0.0;
 
-    if (!draw_ratio_only) {
-        y_floor = get_xb_ymin_floor_xs(ix_xb);
+    double global_max_stat = 0.0;
+    bool   any_positive_stat = false;
+
+    if (mode == CANVAS_COUNTS) {
+        y_floor_counts = get_xb_ymin_floor_xs(ix_xb);
 
         for (int r = 0; r < nrows; ++r) {
             for (int ccol = 0; ccol < ncols; ++ccol) {
@@ -632,7 +661,7 @@ static void draw_one_canvas_xs(const std::string& title,
                             global_max_counts = vup;
                         }
                         if (vup > 0.0) {
-                            any_positive = true;
+                            any_positive_counts = true;
                         }
                     }
                 };
@@ -641,6 +670,28 @@ static void draw_one_canvas_xs(const std::string& title,
                 update_minmax(hayward_tmp, false);
                 // Lee: stat⊕syst(up)
                 update_minmax(lee_tmp, true);
+            }
+        }
+    } else if (mode == CANVAS_STATERR) {
+        for (int r = 0; r < nrows; ++r) {
+            for (int ccol = 0; ccol < ncols; ++ccol) {
+                PanelData_xs hayward_tmp, lee_tmp;
+                fetchBoth(ccol, r, hayward_tmp, lee_tmp);
+
+                auto update_stat = [&](const PanelData_xs& pd) {
+                    for (size_t i = 0; i < pd.err_stat.size(); ++i) {
+                        double es = pd.err_stat[i];
+                        if (es > global_max_stat) {
+                            global_max_stat = es;
+                        }
+                        if (es > 0.0) {
+                            any_positive_stat = true;
+                        }
+                    }
+                };
+
+                update_stat(hayward_tmp);
+                update_stat(lee_tmp);
             }
         }
     }
@@ -676,7 +727,7 @@ static void draw_one_canvas_xs(const std::string& title,
     legTop->SetTextFont(42);
     legTop->SetTextSize(0.22);
 
-    if (draw_ratio_only) {
+    if (mode == CANVAS_RATIO) {
         auto* mRatioStat = new TMarker(0.0, 0.0, 20);
         mRatioStat->SetMarkerColor(black);
 
@@ -696,7 +747,7 @@ static void draw_one_canvas_xs(const std::string& title,
         legTop->AddEntry(mRatioStat, "Hayward/Lee (stat)",             "p");
         legTop->AddEntry(lnRatioTot, "Hayward/Lee (stat + Lee syst)",  "l");
         legTop->AddEntry(lnY1,       "y = 1",                          "l");
-    } else {
+    } else if (mode == CANVAS_COUNTS) {
         auto* mH        = new TMarker(0.0, 0.0, 20);
         auto* mL_stat   = new TMarker(0.0, 0.0, 24);
         auto* lnL_syst  = new TLine(0.0, 0.0, 1.0, 0.0);
@@ -713,6 +764,18 @@ static void draw_one_canvas_xs(const std::string& title,
         legTop->AddEntry(mH,       "Hayward (pass-2), stat",          "p");
         legTop->AddEntry(mL_stat,  "Lee (pass-1), stat",              "p");
         legTop->AddEntry(lnL_syst, "Lee (pass-1), stat + syst",       "l");
+    } else if (mode == CANVAS_STATERR) {
+        auto* mH_stat  = new TMarker(0.0, 0.0, 20);
+        auto* mL_stat  = new TMarker(0.0, 0.0, 24);
+
+        mH_stat->SetMarkerColor(black);
+        mL_stat->SetMarkerColor(orange);
+
+        legend_keepalive.push_back(mH_stat);
+        legend_keepalive.push_back(mL_stat);
+
+        legTop->AddEntry(mH_stat, "Hayward (pass-2), stat unc.", "p");
+        legTop->AddEntry(mL_stat, "Lee (pass-1), stat unc.",     "p");
     }
     legTop->Draw();
 
@@ -741,21 +804,21 @@ static void draw_one_canvas_xs(const std::string& title,
             double ymin = 0.0;
             double ymax = 1.0;
 
-            if (!draw_ratio_only) {
+            if (mode == CANVAS_COUNTS) {
                 // -----------------------------------------------------------------
                 // COUNTS CANVAS: OFFICIAL INSTRUCTIONS
                 //   - Log y-scale
                 //   - y-min = per-xB-bin floor (same for all subplots)
                 //   - y-max = global max over all panels * 1.1
                 // -----------------------------------------------------------------
-                if (!any_positive || global_max_counts <= 0.0) {
+                if (!any_positive_counts || global_max_counts <= 0.0) {
                     // No positive entries anywhere on the canvas: fall back to linear [0,1]
                     gPad->SetLogy(0);
                     ymin = 0.0;
                     ymax = 1.0;
                 } else {
                     gPad->SetLogy(1);
-                    ymin = y_floor;
+                    ymin = y_floor_counts;
                     ymax = 1.10 * global_max_counts;
                     if (ymax <= ymin) {
                         ymax = ymin * 10.0;
@@ -810,7 +873,7 @@ static void draw_one_canvas_xs(const std::string& title,
                                  lee_comb_dn,
                                  lee_comb_up,
                                  orange_syst);
-            } else {
+            } else if (mode == CANVAS_RATIO) {
                 // -----------------------------------------------------------------
                 // RATIO CANVAS: OFFICIAL INSTRUCTIONS
                 //   - Linear y-scale
@@ -941,6 +1004,59 @@ static void draw_one_canvas_xs(const std::string& title,
                     one->SetLineColor(orange);
                     one->Draw("SAME");
                 }
+            } else if (mode == CANVAS_STATERR) {
+                // -----------------------------------------------------------------
+                // STAT-UNCERTAINTY CANVAS:
+                //   - Linear y-scale
+                //   - y-min = 0 (or 0..1 if all zero)
+                //   - y-max = global max over all stat errors * 1.1
+                //   - Plot:
+                //       * Hayward: sigma_stat(H) vs phi
+                //       * Lee:     sigma_stat(L) vs phi
+                // -----------------------------------------------------------------
+                gPad->SetLogy(0);
+
+                if (!any_positive_stat || global_max_stat <= 0.0) {
+                    ymin = 0.0;
+                    ymax = 1.0;
+                } else {
+                    ymin = 0.0;
+                    ymax = 1.10 * global_max_stat;
+                    if (ymax <= ymin) {
+                        ymax = 1.0;
+                    }
+                }
+
+                TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
+                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetYaxis()->SetTitle("Statistical uncertainty");
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->SetTitleSize(0.060);
+                frame->GetYaxis()->SetTitleSize(0.060);
+                frame->GetYaxis()->SetLabelSize(0.050);
+                frame->GetXaxis()->SetLabelSize(0.050);
+                frame->GetXaxis()->SetTitleOffset(1.10);
+                frame->GetYaxis()->SetTitleOffset(1.55);
+
+                draw_degree_ticks_here_xs(0.050);
+
+                TLatex lab;
+                lab.SetNDC();
+                lab.SetTextSize(0.070);
+                lab.SetTextAlign(11);
+                lab.SetTextFont(42);
+                lab.DrawLatex(0.15, 0.92,
+                    Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                         Q2s[ccol].first, Q2s[ccol].second,
+                         Ts[r].first,     Ts[r].second));
+
+                // Plot Hayward stat errors as points vs phi
+                graph_points_xs(hayward.phi, hayward.err_stat, 20, black);
+
+                // Plot Lee stat errors as points vs phi
+                graph_points_xs(lee.phi, lee.err_stat, 24, orange);
             }
         }
     }
@@ -1161,20 +1277,28 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
         const std::string title_ratio  =
             Form("Cross section ratio (Hayward/Lee): 10.6 GeV   x_{B} #in [%.3g, %.3g]",
                  xb_lo, xb_hi);
+        const std::string title_staterr =
+            Form("Cross section stat. unc.: 10.6 GeV   x_{B} #in [%.3g, %.3g]",
+                 xb_lo, xb_hi);
 
         auto fetchBoth = make_fetchBoth(ix);
 
         const std::string f_counts =
-            (fs::path(output_base_dir) / Form("cross_section_counts_xB_%d.png", ix)).string();
+            (fs::path(output_base_dir) / Form("cross_section_counts_xB_%d.png",   ix)).string();
         const std::string f_ratio  =
-            (fs::path(output_base_dir) / Form("cross_section_ratio_xB_%d.png",  ix)).string();
+            (fs::path(output_base_dir) / Form("cross_section_ratio_xB_%d.png",    ix)).string();
+        const std::string f_staterr =
+            (fs::path(output_base_dir) / Form("cross_section_staterr_xB_%d.png",  ix)).string();
 
-        draw_one_canvas_xs(title_counts, Q2s, Ts, fetchBoth, f_counts,
-                           /*draw_ratio_only=*/false, ix);
-        draw_one_canvas_xs(title_ratio,  Q2s, Ts, fetchBoth, f_ratio,
-                           /*draw_ratio_only=*/true, ix);
+        draw_one_canvas_xs(title_counts,  Q2s, Ts, fetchBoth, f_counts,
+                           CANVAS_COUNTS,  ix);
+        draw_one_canvas_xs(title_ratio,   Q2s, Ts, fetchBoth, f_ratio,
+                           CANVAS_RATIO,   ix);
+        draw_one_canvas_xs(title_staterr, Q2s, Ts, fetchBoth, f_staterr,
+                           CANVAS_STATERR, ix);
 
         info_xs("Saved: " + f_counts);
         info_xs("Saved: " + f_ratio);
+        info_xs("Saved: " + f_staterr);
     }
 }
