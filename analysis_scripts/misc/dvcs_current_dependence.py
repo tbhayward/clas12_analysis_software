@@ -10,12 +10,12 @@
 #       (1) counts/nC vs current with fits
 #       (2) percent-of-intercept vs current, where intercept b is defined as 100%
 #
-# Updates requested by user:
+# Requirements implemented:
 #   - Chronological order: Sp18 Inb, Sp18 Out, Fa18 Inb, Fa18 Out, Sp19 Inb
-#   - Drop Sp18 Inb points at 5 nA, 10 nA, and 75 nA
-#   - Legends: remove extra descriptive text; no scientific notation; 5 decimals
+#   - Sp18 Inb: dataset already excludes 5 nA, 10 nA, 75 nA (per your updated list)
+#   - Legends: no extra descriptive text; no scientific notation; 5 decimals
 #   - Overlay panels MUST use the same per-period colors as the individual panels
-#   - Standardize Canvas 2 y-axis range to [0, 150]
+#   - Canvas 2 y-axis range standardized to [0, 150]
 #
 # Output:
 #   output/dvcs_counts_per_nc_vs_current.png
@@ -201,11 +201,18 @@ def f5(val):
 def main():
     os.makedirs("output", exist_ok=True)
 
+    # -------------------------------------------------------------------------
+    # DATA (UPDATED): copied verbatim from your latest message.
+    # -------------------------------------------------------------------------
     data = {
         "Fa18 Inb": {
             5: {
                 "counts": 2348,
                 "charge": "18691.954+18474.5485+13923.970+13817.2078",
+            },
+            40: {
+                "counts": 5949,
+                "charge": "6737.49755859375+6771.6488037109375+45574.68096923828+45481.48861694336+62822.611572265625+62409.57879638672",
             },
             45: {
                 "counts": 39075,
@@ -220,6 +227,7 @@ def main():
                 "charge": "52638.2290+52297.98364+3856.1777+3793.7708+188675.4283+188555.84970+185352.695+184093.51965+196134.55081+195204.362823+199060.8468+199012.79614+148373.1586+148479.6847+6656.71997+6607.21667",
             },
         },
+
         "Fa18 Out": {
             20: {"counts": 8811, "charge": "64156.3185+64410.056869"},
             40: {
@@ -232,6 +240,7 @@ def main():
             },
             70: {"counts": 5197, "charge": "45040.08001+45273.50250"},
         },
+
         "Sp19 Inb": {
             5: {"counts": 867, "charge": "11384.66637+11332.34575"},
             10: {"counts": 3415, "charge": "67845.5772+67673.031265"},
@@ -240,9 +249,8 @@ def main():
                 "charge": "323344.4873+323692.674255+291200.93087+292563.48767+316595.28671+316518.92312+120891.25866+120788.63574+235832.3674+235687.911804+261436.456359+260771.4342041",
             },
         },
+
         "Sp18 Inb": {
-            5: {"counts": 872, "charge": "2922.5921+3090.34080+2803.08867"},
-            10: {"counts": 2504, "charge": "10381.05239+11344.23962"},
             35: {
                 "counts": 22628,
                 "charge": "143041.3698+180455.1287+99198.28764+215819.24902+253604.037+256674.04077",
@@ -256,11 +264,8 @@ def main():
                 "counts": 25812,
                 "charge": "494237.94639999996+492764.5799800001+68830.43074000001+253110.41491+236823.99630479995+61038.981349999995",
             },
-            75: {
-                "counts": 2406,
-                "charge": "7457.454999999996+6046.243000000002+10627.161851500001",
-            },
         },
+
         "Sp18 Out": {
             25: {"counts": 6089, "charge": "107432.82072000002"},
             30: {
@@ -276,10 +281,12 @@ def main():
 
     period_order = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 
-    drop_currents_by_period = {
-        "Sp18 Inb": {5, 10, 75},
-    }
+    # Dataset already reflects the removals you requested for Sp18 Inb, so no filtering here.
+    drop_currents_by_period = {}
 
+    # -------------------------------------------------------------------------
+    # Choose a consistent color per period (same in individual panels and overlays)
+    # -------------------------------------------------------------------------
     default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     if len(default_colors) < len(period_order):
         raise RuntimeError("Matplotlib default color cycle is shorter than number of periods.")
@@ -290,7 +297,9 @@ def main():
         period_color[period] = default_colors[i]
     #endfor
 
-    # ---------------- Canvas 1 ----------------
+    # -------------------------------------------------------------------------
+    # Canvas 1: counts per nC vs current with y = m x + b fits.
+    # -------------------------------------------------------------------------
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs1 = axs1.flatten()
 
@@ -336,6 +345,7 @@ def main():
         ax.legend(frameon=True)
     #endfor
 
+    # Sixth subplot: combined overlay
     axc = axs1[5]
     axc.set_title("All periods (overlay)")
     axc.set_xlim(0.0, 100.0)
@@ -371,7 +381,9 @@ def main():
     print("")
     print(f"[saved] {out1}")
 
-    # ---------------- Canvas 2 ----------------
+    # -------------------------------------------------------------------------
+    # Canvas 2: percent-of-intercept vs current.
+    # -------------------------------------------------------------------------
     fig2, axs2 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs2 = axs2.flatten()
 
@@ -423,6 +435,7 @@ def main():
         ax.legend(frameon=True)
     #endfor
 
+    # Sixth subplot: combined overlay
     axc2 = axs2[5]
     axc2.set_title("All periods (overlay)")
     axc2.set_xlim(0.0, 100.0)
