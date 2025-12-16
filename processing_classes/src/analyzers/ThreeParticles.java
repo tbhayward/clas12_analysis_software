@@ -95,6 +95,9 @@ public class ThreeParticles {
         else if (variables.y() > 0.85) {
             return false;
         } 
+        else if (variables.y() < 0.19) {
+            return false;
+        } 
         return true;
     }
     
