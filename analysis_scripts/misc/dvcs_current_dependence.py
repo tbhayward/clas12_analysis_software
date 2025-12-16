@@ -10,6 +10,13 @@
 #       (1) counts/nC vs current with fits
 #       (2) percent-of-intercept vs current, where intercept b is defined as 100%
 #
+# Updates requested by user:
+#   - Chronological order: Sp18 Inb, Sp18 Out, Fa18 Inb, Fa18 Out, Sp19 Inb
+#   - Drop Sp18 Inb points at 5 nA, 10 nA, and 75 nA
+#   - Legends:
+#       * remove "data (Poisson)" and "data / b (b -> 100)" text
+#       * DO NOT use scientific notation; print all legend numbers to 5 decimals
+#
 # Output:
 #   output/dvcs_counts_per_nc_vs_current.png
 #   output/dvcs_percent_of_intercept_vs_current.png
@@ -68,7 +75,6 @@ def weighted_linear_fit(x, y, sy):
     y = np.asarray(y, dtype=float)
     sy = np.asarray(sy, dtype=float)
 
-    # Guard: need at least 2 points
     if x.size < 2:
         return {
             "m": float("nan"),
@@ -105,10 +111,6 @@ def weighted_linear_fit(x, y, sy):
     m = (S * Sxy - Sx * Sy) / D
     b = (Sxx * Sy - Sx * Sxy) / D
 
-    # Parameter covariance for weighted LS:
-    #   Var(m) = S / D
-    #   Var(b) = Sxx / D
-    #   Cov(m,b) = -Sx / D
     var_m = S / D
     var_b = Sxx / D
     cov_mb = -Sx / D
@@ -132,17 +134,19 @@ def weighted_linear_fit(x, y, sy):
 #endif
 
 
-def period_points_from_dict(period_block):
+def period_points_from_dict(period_block, drop_currents=None):
     """
-    period_block: dict like
-      {
-        5: {"counts": 2348, "charge": "1+2+3"},
-        45: {"counts": 123, "charge": "4+5"}
-      }
+    period_block: dict mapping current (nA) -> {"counts": int, "charge": "a+b+c"}.
+
+    drop_currents: optional set of currents (nA) to exclude.
 
     Returns:
       x (currents), y (counts/nC), sy (Poisson propagated), raw_counts, raw_charge
     """
+    if drop_currents is None:
+        drop_currents = set()
+    #endif
+
     currents = sorted(period_block.keys())
     x = []
     y = []
@@ -151,6 +155,10 @@ def period_points_from_dict(period_block):
     raw_charge = []
 
     for I in currents:
+        if I in drop_currents:
+            continue
+        #endif
+
         counts = float(period_block[I]["counts"])
         charge = sum_charge_expr(period_block[I]["charge"])
 
@@ -178,12 +186,21 @@ def period_points_from_dict(period_block):
 #endif
 
 
+def f5(val):
+    """
+    Format a float with 5 digits after the decimal, no scientific notation.
+    """
+    try:
+        return f"{float(val):.5f}"
+    except Exception:
+        return "nan"
+    #endif
+#endif
+
+
 def main():
     os.makedirs("output", exist_ok=True)
 
-    # -------------------------------------------------------------------------
-    # Hard-coded inputs (exactly from your message, charges expressed as sums).
-    # -------------------------------------------------------------------------
     data = {
         "Fa18 Inb": {
             5: {
@@ -257,11 +274,12 @@ def main():
         },
     }
 
-    period_order = ["Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb"]
+    period_order = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 
-    # -------------------------------------------------------------------------
-    # First canvas: counts per nC vs current with y = m x + b fits.
-    # -------------------------------------------------------------------------
+    drop_currents_by_period = {
+        "Sp18 Inb": {5, 10, 75},
+    }
+
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs1 = axs1.flatten()
 
@@ -274,7 +292,9 @@ def main():
     for i, period in enumerate(period_order):
         ax = axs1[i]
 
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period])
+        drop = drop_currents_by_period.get(period, set())
+        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
+
         fr = weighted_linear_fit(x, y, sy)
         fit_results[period] = fr
 
@@ -285,13 +305,13 @@ def main():
         chi2 = fr["chi2"]
         ndof = fr["ndof"]
 
-        print(f"{period}: m = {m:.6e} +/- {sm:.6e}, b = {b:.6e} +/- {sb:.6e}, chi2/ndof = {chi2:.2f}/{ndof}")
+        print(f"{period}: m = {m:.10f} +/- {sm:.10f}, b = {b:.10f} +/- {sb:.10f}, chi2/ndof = {chi2:.2f}/{ndof}")
 
         eb = ax.errorbar(
             x, y, yerr=sy,
             fmt="o",
             capsize=3,
-            label=f"data (Poisson)\n m={m:.3e} +/- {sm:.1e}\n b={b:.3e} +/- {sb:.1e}"
+            label=f"m={f5(m)} +/- {f5(sm)}\n b={f5(b)} +/- {f5(sb)}"
         )
         color = eb[0].get_color()
         ax.plot(xfit, m * xfit + b, color=color)
@@ -312,7 +332,9 @@ def main():
     axc.grid(True, alpha=0.3)
 
     for period in period_order:
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period])
+        drop = drop_currents_by_period.get(period, set())
+        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
+
         fr = fit_results[period]
         m = fr["m"]
         b = fr["b"]
@@ -323,7 +345,7 @@ def main():
             x, y, yerr=sy,
             fmt="o",
             capsize=3,
-            label=f"{period}: m={m:.2e} +/- {sm:.1e}, b={b:.2e} +/- {sb:.1e}"
+            label=f"{period}: m={f5(m)} +/- {f5(sm)}, b={f5(b)} +/- {f5(sb)}"
         )
         color = eb[0].get_color()
         axc.plot(xfit, m * xfit + b, color=color)
@@ -336,13 +358,6 @@ def main():
     print("")
     print(f"[saved] {out1}")
 
-    # -------------------------------------------------------------------------
-    # Second canvas: percent-of-intercept vs current.
-    #
-    # Define:
-    #   percent(x) = 100 * ( y(x) / b )
-    # where b is the fitted y-intercept from canvas 1.
-    # -------------------------------------------------------------------------
     fig2, axs2 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs2 = axs2.flatten()
 
@@ -352,44 +367,34 @@ def main():
     for i, period in enumerate(period_order):
         ax = axs2[i]
 
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period])
-        fr = fit_results[period]
+        drop = drop_currents_by_period.get(period, set())
+        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
 
+        fr = fit_results[period]
         m = fr["m"]
         b = fr["b"]
         sm = fr["sm"]
         sb = fr["sb"]
         cov_mb = fr["cov_mb"]
 
-        # Percent values for data points: 100 * y / b
         pct = 100.0 * (y / b)
-
-        # Uncertainty on pct from y and b:
-        #   pct = 100*y/b
         pct_err = 100.0 * np.sqrt((sy / b) ** 2 + ((y * sb) / (b * b)) ** 2)
-
-        # Percent fit line
         pct_fit = 100.0 * ((m * xfit + b) / b)
 
-        # Slope in percent per nA:
         slope_pct = 100.0 * (m / b)
 
-        # Uncertainty on slope_pct including covariance:
-        #   p = 100*m/b
-        #   dp/dm = 100/b
-        #   dp/db = -100*m/b^2
         dp_dm = 100.0 / b
         dp_db = -100.0 * m / (b * b)
         var_p = dp_dm * dp_dm * (sm * sm) + dp_db * dp_db * (sb * sb) + 2.0 * dp_dm * dp_db * cov_mb
         slope_pct_err = math.sqrt(var_p) if var_p >= 0.0 else float("nan")
 
-        print(f"{period}: b = {b:.6e} +/- {sb:.6e}, slope = {slope_pct:.6e} +/- {slope_pct_err:.6e} (% per nA)")
+        print(f"{period}: b = {b:.10f} +/- {sb:.10f}, slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
 
         eb = ax.errorbar(
             x, pct, yerr=pct_err,
             fmt="o",
             capsize=3,
-            label=f"data / b (b->100)\n b={b:.3e} +/- {sb:.1e}\n slope={slope_pct:.2e} +/- {slope_pct_err:.1e} (%/nA)"
+            label=f"b={f5(b)} +/- {f5(sb)}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)"
         )
         color = eb[0].get_color()
         ax.plot(xfit, pct_fit, color=color)
@@ -410,9 +415,10 @@ def main():
     axc2.grid(True, alpha=0.3)
 
     for period in period_order:
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period])
-        fr = fit_results[period]
+        drop = drop_currents_by_period.get(period, set())
+        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
 
+        fr = fit_results[period]
         m = fr["m"]
         b = fr["b"]
         sm = fr["sm"]
@@ -433,7 +439,7 @@ def main():
             x, pct, yerr=pct_err,
             fmt="o",
             capsize=3,
-            label=f"{period}: slope={slope_pct:.2e} +/- {slope_pct_err:.1e} (%/nA)"
+            label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)"
         )
         color = eb[0].get_color()
         axc2.plot(xfit, pct_fit, color=color)
