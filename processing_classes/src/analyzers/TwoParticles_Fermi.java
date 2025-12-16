@@ -60,7 +60,7 @@ public class TwoParticles_Fermi {
         nextPhiRad = phiRad;
     }
 
-    public static boolean channel_test(TwoParticles variables) {
+    public static boolean channel_test(TwoParticles_Fermi variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
         } else if (variables.Q2() < 1.00) {
