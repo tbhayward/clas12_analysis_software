@@ -24,7 +24,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def sum_charge_expr(expr) {
+def sum_charge_expr(expr):
     """
     Sum a string expression like:
       "123.4+56.7+89.0"
@@ -48,11 +48,12 @@ def sum_charge_expr(expr) {
         #endif
         total += float(pp)
     #endfor
+
     return total
-}  #endif
+#endif
 
 
-def weighted_linear_fit(x, y, sy) {
+def weighted_linear_fit(x, y, sy):
     """
     Weighted least squares fit for y = m*x + b.
 
@@ -80,7 +81,6 @@ def weighted_linear_fit(x, y, sy) {
         }
     #endif
 
-    # Weights
     w = 1.0 / (sy * sy)
 
     S = np.sum(w)
@@ -105,7 +105,7 @@ def weighted_linear_fit(x, y, sy) {
     m = (S * Sxy - Sx * Sy) / D
     b = (Sxx * Sy - Sx * Sxy) / D
 
-    # Parameter covariance matrix elements for weighted LS:
+    # Parameter covariance for weighted LS:
     #   Var(m) = S / D
     #   Var(b) = Sxx / D
     #   Cov(m,b) = -Sx / D
@@ -116,7 +116,6 @@ def weighted_linear_fit(x, y, sy) {
     sm = math.sqrt(var_m) if var_m >= 0.0 else float("nan")
     sb = math.sqrt(var_b) if var_b >= 0.0 else float("nan")
 
-    # Chi2
     yfit = m * x + b
     chi2 = np.sum(((y - yfit) / sy) ** 2)
     ndof = int(x.size - 2)
@@ -130,10 +129,10 @@ def weighted_linear_fit(x, y, sy) {
         "chi2": chi2,
         "ndof": ndof,
     }
-}  #endif
+#endif
 
 
-def period_points_from_dict(period_block) {
+def period_points_from_dict(period_block):
     """
     period_block: dict like
       {
@@ -155,13 +154,12 @@ def period_points_from_dict(period_block) {
         counts = float(period_block[I]["counts"])
         charge = sum_charge_expr(period_block[I]["charge"])
 
-        # Skip any malformed points
         if charge <= 0.0:
-            continue
+            raise RuntimeError(f"Charge <= 0 encountered for current {I} nA")
         #endif
 
         rate = counts / charge
-        rate_err = math.sqrt(counts) / charge if counts > 0.0 else 1.0 / charge
+        rate_err = math.sqrt(counts) / charge if counts > 0.0 else 0.0
 
         x.append(float(I))
         y.append(rate)
@@ -177,10 +175,10 @@ def period_points_from_dict(period_block) {
         np.asarray(raw_counts, dtype=float),
         np.asarray(raw_charge, dtype=float),
     )
-}  #endif
+#endif
 
 
-def main() {
+def main():
     os.makedirs("output", exist_ok=True)
 
     # -------------------------------------------------------------------------
@@ -205,7 +203,6 @@ def main() {
                 "charge": "52638.2290+52297.98364+3856.1777+3793.7708+188675.4283+188555.84970+185352.695+184093.51965+196134.55081+195204.362823+199060.8468+199012.79614+148373.1586+148479.6847+6656.71997+6607.21667",
             },
         },
-
         "Fa18 Out": {
             20: {"counts": 8811, "charge": "64156.3185+64410.056869"},
             40: {
@@ -218,7 +215,6 @@ def main() {
             },
             70: {"counts": 5197, "charge": "45040.08001+45273.50250"},
         },
-
         "Sp19 Inb": {
             5: {"counts": 867, "charge": "11384.66637+11332.34575"},
             10: {"counts": 3415, "charge": "67845.5772+67673.031265"},
@@ -227,7 +223,6 @@ def main() {
                 "charge": "323344.4873+323692.674255+291200.93087+292563.48767+316595.28671+316518.92312+120891.25866+120788.63574+235832.3674+235687.911804+261436.456359+260771.4342041",
             },
         },
-
         "Sp18 Inb": {
             5: {"counts": 872, "charge": "2922.5921+3090.34080+2803.08867"},
             10: {"counts": 2504, "charge": "10381.05239+11344.23962"},
@@ -249,7 +244,6 @@ def main() {
                 "charge": "7457.454999999996+6046.243000000002+10627.161851500001",
             },
         },
-
         "Sp18 Out": {
             25: {"counts": 6089, "charge": "107432.82072000002"},
             30: {
@@ -271,12 +265,12 @@ def main() {
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs1 = axs1.flatten()
 
-    fit_results = {}  # store m,b,sm,sb,cov for re-use in canvas 2
-
+    fit_results = {}
     xfit = np.linspace(0.0, 100.0, 300)
 
     print("")
     print("=== Canvas 1 fits: y = m*x + b for counts_per_nC vs current ===")
+
     for i, period in enumerate(period_order):
         ax = axs1[i]
 
@@ -291,7 +285,6 @@ def main() {
         chi2 = fr["chi2"]
         ndof = fr["ndof"]
 
-        # Print a compact summary
         print(f"{period}: m = {m:.6e} +/- {sm:.6e}, b = {b:.6e} +/- {sb:.6e}, chi2/ndof = {chi2:.2f}/{ndof}")
 
         eb = ax.errorbar(
@@ -311,7 +304,6 @@ def main() {
         ax.legend(frameon=True)
     #endfor
 
-    # Sixth subplot: combined
     axc = axs1[5]
     axc.set_title("All periods (overlay)")
     axc.set_xlim(0.0, 100.0)
@@ -350,16 +342,13 @@ def main() {
     # Define:
     #   percent(x) = 100 * ( y(x) / b )
     # where b is the fitted y-intercept from canvas 1.
-    #
-    # Error propagation includes both:
-    #   - point uncertainty sy
-    #   - intercept uncertainty sb
     # -------------------------------------------------------------------------
     fig2, axs2 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs2 = axs2.flatten()
 
     print("")
     print("=== Canvas 2 derived slopes: percent(x) = 100*(m*x+b)/b ===")
+
     for i, period in enumerate(period_order):
         ax = axs2[i]
 
@@ -372,24 +361,20 @@ def main() {
         sb = fr["sb"]
         cov_mb = fr["cov_mb"]
 
-        # Percent values for data points
+        # Percent values for data points: 100 * y / b
         pct = 100.0 * (y / b)
 
-        # Propagate uncertainty from y and b:
-        #   pct = 100 * y / b
-        #   d(pct)/dy = 100/b
-        #   d(pct)/db = -100*y/b^2
+        # Uncertainty on pct from y and b:
+        #   pct = 100*y/b
         pct_err = 100.0 * np.sqrt((sy / b) ** 2 + ((y * sb) / (b * b)) ** 2)
 
         # Percent fit line
         pct_fit = 100.0 * ((m * xfit + b) / b)
 
         # Slope in percent per nA:
-        #   pct_fit = 100 * (1 + (m/b)*x)
-        #   slope_pct = 100 * (m/b)
         slope_pct = 100.0 * (m / b)
 
-        # Uncertainty on slope_pct with covariance:
+        # Uncertainty on slope_pct including covariance:
         #   p = 100*m/b
         #   dp/dm = 100/b
         #   dp/db = -100*m/b^2
@@ -417,7 +402,6 @@ def main() {
         ax.legend(frameon=True)
     #endfor
 
-    # Sixth subplot: combined overlay
     axc2 = axs2[5]
     axc2.set_title("All periods (overlay)")
     axc2.set_xlim(0.0, 100.0)
@@ -462,9 +446,9 @@ def main() {
     print("")
     print(f"[saved] {out2}")
     print("")
-}  #endif
+#endif
 
 
-if __name__ == "__main__" {
+if __name__ == "__main__":
     main()
-}  #endif
+#endif
