@@ -15,6 +15,7 @@
 #   - Drop Sp18 Inb points at 5 nA, 10 nA, and 75 nA
 #   - Legends: remove extra descriptive text; no scientific notation; 5 decimals
 #   - Overlay panels MUST use the same per-period colors as the individual panels
+#   - Standardize Canvas 2 y-axis range to [0, 150]
 #
 # Output:
 #   output/dvcs_counts_per_nc_vs_current.png
@@ -279,9 +280,6 @@ def main():
         "Sp18 Inb": {5, 10, 75},
     }
 
-    # -------------------------------------------------------------------------
-    # Choose a consistent color per period (same in individual panels and overlays)
-    # -------------------------------------------------------------------------
     default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     if len(default_colors) < len(period_order):
         raise RuntimeError("Matplotlib default color cycle is shorter than number of periods.")
@@ -292,9 +290,7 @@ def main():
         period_color[period] = default_colors[i]
     #endfor
 
-    # -------------------------------------------------------------------------
-    # Canvas 1: counts per nC vs current with y = m x + b fits.
-    # -------------------------------------------------------------------------
+    # ---------------- Canvas 1 ----------------
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs1 = axs1.flatten()
 
@@ -340,7 +336,6 @@ def main():
         ax.legend(frameon=True)
     #endfor
 
-    # Sixth subplot: combined overlay
     axc = axs1[5]
     axc.set_title("All periods (overlay)")
     axc.set_xlim(0.0, 100.0)
@@ -376,9 +371,7 @@ def main():
     print("")
     print(f"[saved] {out1}")
 
-    # -------------------------------------------------------------------------
-    # Canvas 2: percent-of-intercept vs current.
-    # -------------------------------------------------------------------------
+    # ---------------- Canvas 2 ----------------
     fig2, axs2 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs2 = axs2.flatten()
 
@@ -423,16 +416,17 @@ def main():
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
+        ax.set_ylim(0.0, 150.0)
         ax.set_xlabel("Beam current (nA)")
         ax.set_ylabel("Percent of intercept b (%)")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
     #endfor
 
-    # Sixth subplot: combined overlay
     axc2 = axs2[5]
     axc2.set_title("All periods (overlay)")
     axc2.set_xlim(0.0, 100.0)
+    axc2.set_ylim(0.0, 150.0)
     axc2.set_xlabel("Beam current (nA)")
     axc2.set_ylabel("Percent of intercept b (%)")
     axc2.grid(True, alpha=0.3)
