@@ -13,9 +13,8 @@
 # Updates requested by user:
 #   - Chronological order: Sp18 Inb, Sp18 Out, Fa18 Inb, Fa18 Out, Sp19 Inb
 #   - Drop Sp18 Inb points at 5 nA, 10 nA, and 75 nA
-#   - Legends:
-#       * remove "data (Poisson)" and "data / b (b -> 100)" text
-#       * DO NOT use scientific notation; print all legend numbers to 5 decimals
+#   - Legends: remove extra descriptive text; no scientific notation; 5 decimals
+#   - Overlay panels MUST use the same per-period colors as the individual panels
 #
 # Output:
 #   output/dvcs_counts_per_nc_vs_current.png
@@ -280,6 +279,22 @@ def main():
         "Sp18 Inb": {5, 10, 75},
     }
 
+    # -------------------------------------------------------------------------
+    # Choose a consistent color per period (same in individual panels and overlays)
+    # -------------------------------------------------------------------------
+    default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if len(default_colors) < len(period_order):
+        raise RuntimeError("Matplotlib default color cycle is shorter than number of periods.")
+    #endif
+
+    period_color = {}
+    for i, period in enumerate(period_order):
+        period_color[period] = default_colors[i]
+    #endfor
+
+    # -------------------------------------------------------------------------
+    # Canvas 1: counts per nC vs current with y = m x + b fits.
+    # -------------------------------------------------------------------------
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs1 = axs1.flatten()
 
@@ -307,14 +322,15 @@ def main():
 
         print(f"{period}: m = {m:.10f} +/- {sm:.10f}, b = {b:.10f} +/- {sb:.10f}, chi2/ndof = {chi2:.2f}/{ndof}")
 
-        eb = ax.errorbar(
+        c = period_color[period]
+        ax.errorbar(
             x, y, yerr=sy,
             fmt="o",
             capsize=3,
+            color=c,
             label=f"m={f5(m)} +/- {f5(sm)}\n b={f5(b)} +/- {f5(sb)}"
         )
-        color = eb[0].get_color()
-        ax.plot(xfit, m * xfit + b, color=color)
+        ax.plot(xfit, m * xfit + b, color=c)
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
@@ -324,6 +340,7 @@ def main():
         ax.legend(frameon=True)
     #endfor
 
+    # Sixth subplot: combined overlay
     axc = axs1[5]
     axc.set_title("All periods (overlay)")
     axc.set_xlim(0.0, 100.0)
@@ -341,14 +358,15 @@ def main():
         sm = fr["sm"]
         sb = fr["sb"]
 
-        eb = axc.errorbar(
+        c = period_color[period]
+        axc.errorbar(
             x, y, yerr=sy,
             fmt="o",
             capsize=3,
+            color=c,
             label=f"{period}: m={f5(m)} +/- {f5(sm)}, b={f5(b)} +/- {f5(sb)}"
         )
-        color = eb[0].get_color()
-        axc.plot(xfit, m * xfit + b, color=color)
+        axc.plot(xfit, m * xfit + b, color=c)
     #endfor
 
     axc.legend(frameon=True, fontsize=9)
@@ -358,6 +376,9 @@ def main():
     print("")
     print(f"[saved] {out1}")
 
+    # -------------------------------------------------------------------------
+    # Canvas 2: percent-of-intercept vs current.
+    # -------------------------------------------------------------------------
     fig2, axs2 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs2 = axs2.flatten()
 
@@ -390,14 +411,15 @@ def main():
 
         print(f"{period}: b = {b:.10f} +/- {sb:.10f}, slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
 
-        eb = ax.errorbar(
+        c = period_color[period]
+        ax.errorbar(
             x, pct, yerr=pct_err,
             fmt="o",
             capsize=3,
+            color=c,
             label=f"b={f5(b)} +/- {f5(sb)}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)"
         )
-        color = eb[0].get_color()
-        ax.plot(xfit, pct_fit, color=color)
+        ax.plot(xfit, pct_fit, color=c)
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
@@ -407,6 +429,7 @@ def main():
         ax.legend(frameon=True)
     #endfor
 
+    # Sixth subplot: combined overlay
     axc2 = axs2[5]
     axc2.set_title("All periods (overlay)")
     axc2.set_xlim(0.0, 100.0)
@@ -435,14 +458,15 @@ def main():
         var_p = dp_dm * dp_dm * (sm * sm) + dp_db * dp_db * (sb * sb) + 2.0 * dp_dm * dp_db * cov_mb
         slope_pct_err = math.sqrt(var_p) if var_p >= 0.0 else float("nan")
 
-        eb = axc2.errorbar(
+        c = period_color[period]
+        axc2.errorbar(
             x, pct, yerr=pct_err,
             fmt="o",
             capsize=3,
+            color=c,
             label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)"
         )
-        color = eb[0].get_color()
-        axc2.plot(xfit, pct_fit, color=color)
+        axc2.plot(xfit, pct_fit, color=c)
     #endfor
 
     axc2.legend(frameon=True, fontsize=9)
