@@ -54,14 +54,14 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction 
-    // // Record the exact global cuts used:
-    // write_global_cuts_config_json("output/jsons");
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction 
+    // Record the exact global cuts used:
+    write_global_cuts_config_json("output/jsons");
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // // --------- Global bin-averaged kinematics (CSV update) ----------
     // {
@@ -165,16 +165,16 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // --------- Quick yield totals by current (data) and by period (MC) ----------
-    // {
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string out_txt   = "output/yield_totals.txt";
+    // --------- Quick yield totals by current (data) and by period (MC) ----------
+    {
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
+        const std::string out_txt   = "output/yield_totals.txt";
 
-    //     if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
-    //         std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
+            std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- DVCS MC acceptance (CSV + plots) ----------
     // {
