@@ -12,7 +12,6 @@
 #
 # Requirements implemented:
 #   - Chronological order: Sp18 Inb, Sp18 Out, Fa18 Inb, Fa18 Out, Sp19 Inb
-#   - Sp18 Inb: dataset already excludes 5 nA, 10 nA, 75 nA (per your updated list)
 #   - Legends: no extra descriptive text; no scientific notation; 5 decimals
 #   - Overlay panels MUST use the same per-period colors as the individual panels
 #   - Canvas 2 y-axis range standardized to [0, 150]
@@ -57,6 +56,24 @@ def sum_charge_expr(expr):
     #endfor
 
     return total
+#endif
+
+
+def count_charge_terms(expr):
+    """
+    Count how many "+"-separated charge terms appear in the expression.
+    """
+    if expr is None:
+        return 0
+    #endif
+
+    s = str(expr).replace("\n", "").replace("\t", "").strip()
+    if s == "":
+        return 0
+    #endif
+
+    parts = [p.strip() for p in s.split("+") if p.strip() != ""]
+    return len(parts)
 #endif
 
 
@@ -134,31 +151,19 @@ def weighted_linear_fit(x, y, sy):
 #endif
 
 
-def period_points_from_dict(period_block, drop_currents=None):
+def period_points_from_dict(period_block):
     """
     period_block: dict mapping current (nA) -> {"counts": int, "charge": "a+b+c"}.
 
-    drop_currents: optional set of currents (nA) to exclude.
-
     Returns:
-      x (currents), y (counts/nC), sy (Poisson propagated), raw_counts, raw_charge
+      x (currents), y (counts/nC), sy (Poisson propagated)
     """
-    if drop_currents is None:
-        drop_currents = set()
-    #endif
-
     currents = sorted(period_block.keys())
     x = []
     y = []
     sy = []
-    raw_counts = []
-    raw_charge = []
 
     for I in currents:
-        if I in drop_currents:
-            continue
-        #endif
-
         counts = float(period_block[I]["counts"])
         charge = sum_charge_expr(period_block[I]["charge"])
 
@@ -172,16 +177,12 @@ def period_points_from_dict(period_block, drop_currents=None):
         x.append(float(I))
         y.append(rate)
         sy.append(rate_err)
-        raw_counts.append(counts)
-        raw_charge.append(charge)
     #endfor
 
     return (
         np.asarray(x, dtype=float),
         np.asarray(y, dtype=float),
         np.asarray(sy, dtype=float),
-        np.asarray(raw_counts, dtype=float),
-        np.asarray(raw_charge, dtype=float),
     )
 #endif
 
@@ -202,7 +203,7 @@ def main():
     os.makedirs("output", exist_ok=True)
 
     # -------------------------------------------------------------------------
-    # DATA (UPDATED): copied verbatim from your latest message.
+    # DATA (UPDATED): copied from your latest message.
     # -------------------------------------------------------------------------
     data = {
         "Fa18 Inb": {
@@ -220,7 +221,7 @@ def main():
             },
             50: {
                 "counts": 59234,
-                "charge": "193667.2073+193616.37136+196779.37792+196386.098205+196626.8271+196294.92504+192402.17398+191979.34851+14640.9625+14810.92419+202062.1233+201417.8885",
+                "charge": "193667.20733642578+193616.3713684082+196779.3779296875+196386.0982055664+196626.8271484375+196294.92504882812+192402.1739807129+191979.3485107422+194890.67308044434+194327.9188232422+14640.962524414062+14810.924194335938+202062.1233062744+201417.88856506348",
             },
             55: {
                 "counts": 48611,
@@ -255,7 +256,6 @@ def main():
                 "counts": 22628,
                 "charge": "143041.3698+180455.1287+99198.28764+215819.24902+253604.037+256674.04077",
             },
-            45: {"counts": 3649, "charge": "247575.2544"},
             50: {
                 "counts": 29985,
                 "charge": "86823.20456+53875.207720000006+462365.5763500001+155942.65868+30313.130000000005+190978.2245096+57414.873250000004+299534.5488+15610.063702499998+336045.59401999996",
@@ -273,7 +273,7 @@ def main():
                 "charge": "113278.01032+11124.354809999999+93134.14310000002+128407.92089999998+34088.218689999994+55631.41555+87828.17699999998+125198.45608000002+114118.60385999999+95226.42483999998+107480.42574000002",
             },
             45: {
-                "counts": 82697,
+                "counts": 92032,
                 "charge": "53094.88620000001+296750.10305000003+292795.32966000005+146204.13000000003+294288.15236000007+259937.71113000007+129771.95737+290971.9334",
             },
         },
@@ -281,8 +281,20 @@ def main():
 
     period_order = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 
-    # Dataset already reflects the removals you requested for Sp18 Inb, so no filtering here.
-    drop_currents_by_period = {}
+    # -------------------------------------------------------------------------
+    # Sanity printout for transcription checking.
+    # -------------------------------------------------------------------------
+    print("")
+    print("=== Sanity table (period, current, counts, n_terms, charge_sum_nC) ===")
+    for period in period_order:
+        for I in sorted(data[period].keys()):
+            counts = int(data[period][I]["counts"])
+            expr = data[period][I]["charge"]
+            n_terms = count_charge_terms(expr)
+            qsum = sum_charge_expr(expr)
+            print(f"{period:8s}  {I:3d}  {counts:6d}  {n_terms:2d}  {qsum:.5f}")
+        #endfor
+    #endfor
 
     # -------------------------------------------------------------------------
     # Choose a consistent color per period (same in individual panels and overlays)
@@ -312,8 +324,7 @@ def main():
     for i, period in enumerate(period_order):
         ax = axs1[i]
 
-        drop = drop_currents_by_period.get(period, set())
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
+        x, y, sy = period_points_from_dict(data[period])
 
         fr = weighted_linear_fit(x, y, sy)
         fit_results[period] = fr
@@ -345,7 +356,6 @@ def main():
         ax.legend(frameon=True)
     #endfor
 
-    # Sixth subplot: combined overlay
     axc = axs1[5]
     axc.set_title("All periods (overlay)")
     axc.set_xlim(0.0, 100.0)
@@ -354,8 +364,7 @@ def main():
     axc.grid(True, alpha=0.3)
 
     for period in period_order:
-        drop = drop_currents_by_period.get(period, set())
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
+        x, y, sy = period_points_from_dict(data[period])
 
         fr = fit_results[period]
         m = fr["m"]
@@ -393,8 +402,7 @@ def main():
     for i, period in enumerate(period_order):
         ax = axs2[i]
 
-        drop = drop_currents_by_period.get(period, set())
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
+        x, y, sy = period_points_from_dict(data[period])
 
         fr = fit_results[period]
         m = fr["m"]
@@ -435,7 +443,6 @@ def main():
         ax.legend(frameon=True)
     #endfor
 
-    # Sixth subplot: combined overlay
     axc2 = axs2[5]
     axc2.set_title("All periods (overlay)")
     axc2.set_xlim(0.0, 100.0)
@@ -445,8 +452,7 @@ def main():
     axc2.grid(True, alpha=0.3)
 
     for period in period_order:
-        drop = drop_currents_by_period.get(period, set())
-        x, y, sy, raw_counts, raw_charge = period_points_from_dict(data[period], drop_currents=drop)
+        x, y, sy = period_points_from_dict(data[period])
 
         fr = fit_results[period]
         m = fr["m"]
