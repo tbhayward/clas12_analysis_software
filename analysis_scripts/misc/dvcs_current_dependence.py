@@ -15,6 +15,8 @@
 #   - Legends: no extra descriptive text; no scientific notation; 5 decimals
 #   - Overlay panels MUST use the same per-period colors as the individual panels
 #   - Canvas 2 y-axis range standardized to [0, 150]
+#   - Add semi-transparent 1-sigma band around each fitted line (slope-only):
+#       band uses lines with (m +/- sm) at fixed b
 #
 # Output:
 #   output/dvcs_counts_per_nc_vs_current.png
@@ -203,7 +205,7 @@ def main():
     os.makedirs("output", exist_ok=True)
 
     # -------------------------------------------------------------------------
-    # DATA (UPDATED): matches your latest corrections, including Sp18 Out @ 45 nA.
+    # DATA (UPDATED)
     # -------------------------------------------------------------------------
     data = {
         "Fa18 Inb": {
@@ -309,6 +311,9 @@ def main():
         period_color[period] = default_colors[i]
     #endfor
 
+    # Band transparency
+    band_alpha = 0.20
+
     # -------------------------------------------------------------------------
     # Canvas 1: counts per nC vs current with y = m x + b fits.
     # -------------------------------------------------------------------------
@@ -339,6 +344,16 @@ def main():
         print(f"{period}: m = {m:.10f} +/- {sm:.10f}, b = {b:.10f} +/- {sb:.10f}, chi2/ndof = {chi2:.2f}/{ndof}")
 
         c = period_color[period]
+
+        # Central fit line
+        yfit = m * xfit + b
+
+        # 1-sigma slope-only band: (m +/- sm)*x + b
+        yfit_lo = (m - sm) * xfit + b
+        yfit_hi = (m + sm) * xfit + b
+
+        ax.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
+
         ax.errorbar(
             x, y, yerr=sy,
             fmt="o",
@@ -346,7 +361,7 @@ def main():
             color=c,
             label=f"m={f5(m)} +/- {f5(sm)}\n b={f5(b)} +/- {f5(sb)}"
         )
-        ax.plot(xfit, m * xfit + b, color=c)
+        ax.plot(xfit, yfit, color=c)
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
@@ -373,6 +388,13 @@ def main():
         sb = fr["sb"]
 
         c = period_color[period]
+
+        yfit = m * xfit + b
+        yfit_lo = (m - sm) * xfit + b
+        yfit_hi = (m + sm) * xfit + b
+
+        axc.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
+
         axc.errorbar(
             x, y, yerr=sy,
             fmt="o",
@@ -380,7 +402,7 @@ def main():
             color=c,
             label=f"{period}: m={f5(m)} +/- {f5(sm)}, b={f5(b)} +/- {f5(sb)}"
         )
-        axc.plot(xfit, m * xfit + b, color=c)
+        axc.plot(xfit, yfit, color=c)
     #endfor
 
     axc.legend(frameon=True, fontsize=9)
@@ -413,7 +435,12 @@ def main():
 
         pct = 100.0 * (y / b)
         pct_err = 100.0 * np.sqrt((sy / b) ** 2 + ((y * sb) / (b * b)) ** 2)
+
         pct_fit = 100.0 * ((m * xfit + b) / b)
+
+        # 1-sigma slope-only band propagated through the same transform
+        pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
+        pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
 
         slope_pct = 100.0 * (m / b)
 
@@ -425,6 +452,9 @@ def main():
         print(f"{period}: b = {b:.10f} +/- {sb:.10f}, slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
 
         c = period_color[period]
+
+        ax.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
+
         ax.errorbar(
             x, pct, yerr=pct_err,
             fmt="o",
@@ -463,7 +493,10 @@ def main():
 
         pct = 100.0 * (y / b)
         pct_err = 100.0 * np.sqrt((sy / b) ** 2 + ((y * sb) / (b * b)) ** 2)
+
         pct_fit = 100.0 * ((m * xfit + b) / b)
+        pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
+        pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
 
         slope_pct = 100.0 * (m / b)
         dp_dm = 100.0 / b
@@ -472,6 +505,9 @@ def main():
         slope_pct_err = math.sqrt(var_p) if var_p >= 0.0 else float("nan")
 
         c = period_color[period]
+
+        axc2.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
+
         axc2.errorbar(
             x, pct, yerr=pct_err,
             fmt="o",
