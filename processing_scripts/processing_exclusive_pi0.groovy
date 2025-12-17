@@ -174,7 +174,6 @@ public static void main(String[] args) {
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
 		    // do not use the qa if it is MC (runnum = 11) 
-		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    // boolean process_event = filter.isValid(research_Event);
 		    // boolean process_event = filter.isValid(research_Event) && 
 		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
@@ -188,6 +187,7 @@ public static void main(String[] args) {
 		     	(runnum > 4003 && runnum < 5020) || // RGA Sp18 Inb
 		    	qa.pass(runnum, evnum));
 		    if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
+	    	if (runnum == 3867) process_event = false; // low yields
 	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
 	    	if (runnum == 17331 || runnum == 16987 || runnum == 17079 || runnum == 17190 || runnum == 17639) process_event = false; // low live time
 	    	if (runnum == 16850 || runnum == 16851 || runnum == 16852 || runnum == 16855 || runnum == 16879) process_event = false; // luminosity scans
