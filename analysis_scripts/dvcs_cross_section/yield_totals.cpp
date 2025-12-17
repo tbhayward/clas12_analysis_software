@@ -412,8 +412,6 @@ static int current_fa18_inb(int run, bool& ok) {
 // Fa18 Out
 static int current_fa18_out(int run, bool& ok) {
     static const std::unordered_map<int, int> m = {
-        // 5 nA
-        {5615, 5},
 
         // 40 nA
         {5423, 40}, {5424, 40}, {5425, 40}, {5426, 40}, {5428, 40}, {5429, 40},
@@ -447,6 +445,7 @@ static int current_fa18_out(int run, bool& ok) {
         {5645, 50}, {5646, 50}, {5647, 50}, {5648, 50}, {5649, 50}, {5650, 50},
         {5651, 50}, {5652, 50}, {5654, 50}, {5655, 50}, {5656, 50}, {5662, 50},
         {5663, 50}, {5664, 50}, {5665, 50}, {5666, 50},
+        {5615, 50}, // redefined as 50 nA
 
         // Your extra Fa18 Out 50 nA runs
         {5505, 50}, {5567, 50}, {5617, 50}, {5621, 50}, {5623, 50},
