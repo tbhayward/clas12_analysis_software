@@ -1,125 +1,89 @@
 {
   "periods": {
     "fa18_inb": {
-      "efficiency_scheme": "rga_default",
+      "efficiency_scheme": "rga_fa18_inb",
       "currents": [
-        { "current_nA": 40, "counts": 1533, "period_fraction": 0.007624, "period_fraction_percent": 0.76 },
-        { "current_nA": 45, "counts": 139499, "period_fraction": 0.693756, "period_fraction_percent": 69.38 },
-        { "current_nA": 50, "counts": 22996, "period_fraction": 0.114364, "period_fraction_percent": 11.44 },
-        { "current_nA": 55, "counts": 37050, "period_fraction": 0.184257, "period_fraction_percent": 18.43 }
+        { "current_nA": 40, "counts": 7270, "period_fraction": 0.033818, "period_fraction_percent": 3.38 },
+        { "current_nA": 45, "counts": 149107, "period_fraction": 0.693608, "period_fraction_percent": 69.36 },
+        { "current_nA": 50, "counts": 18947, "period_fraction": 0.088137, "period_fraction_percent": 8.81 },
+        { "current_nA": 55, "counts": 39649, "period_fraction": 0.184437, "period_fraction_percent": 18.44 }
       ]
     },
+
     "fa18_out": {
-      "efficiency_scheme": "rga_default",
+      "efficiency_scheme": "rga_fa18_out",
       "currents": [
-        { "current_nA": 40, "counts": 165577, "period_fraction": 0.366141, "period_fraction_percent": 36.61 },
-        { "current_nA": 50, "counts": 286645, "period_fraction": 0.633859, "period_fraction_percent": 63.39 }
+        { "current_nA": 40, "counts": 171688, "period_fraction": 0.363290, "period_fraction_percent": 36.33 },
+        { "current_nA": 50, "counts": 300904, "period_fraction": 0.636710, "period_fraction_percent": 63.67 }
       ]
     },
+
     "sp18_inb": {
-      "efficiency_scheme": "rga_sp18",
+      "efficiency_scheme": "rga_sp18_inb",
       "currents": [
-        { "current_nA": 35, "counts": 18095, "period_fraction": 0.069823, "period_fraction_percent": 6.98 },
-        { "current_nA": 50, "counts": 241059, "period_fraction": 0.930177, "period_fraction_percent": 93.02 }
+        { "current_nA": 35, "counts": 20372, "period_fraction": 0.081020, "period_fraction_percent": 8.10 },
+        { "current_nA": 50, "counts": 231071, "period_fraction": 0.918980, "period_fraction_percent": 91.90 }
       ]
     },
+
     "sp18_out": {
-      "efficiency_scheme": "rga_sp18",
+      "efficiency_scheme": "rga_sp18_out",
       "currents": [
-        { "current_nA": 30, "counts": 29066, "period_fraction": 0.188287, "period_fraction_percent": 18.83 },
-        { "current_nA": 45, "counts": 125305, "period_fraction": 0.811713, "period_fraction_percent": 81.17 }
+        { "current_nA": 30, "counts": 30415, "period_fraction": 0.191164, "period_fraction_percent": 19.12 },
+        { "current_nA": 45, "counts": 128689, "period_fraction": 0.808836, "period_fraction_percent": 80.88 }
       ]
     },
+
     "sp19_inb": {
-      "efficiency_scheme": "rga_default",
+      "efficiency_scheme": "rga_sp19_inb",
       "currents": [
-        { "current_nA": 50, "counts": 278526, "period_fraction": 1.0, "period_fraction_percent": 100.0 }
+        { "current_nA": 50, "counts": 291279, "period_fraction": 1.0, "period_fraction_percent": 100.0 }
       ]
     }
   },
 
   "efficiency_schemes": {
-    "rga_default": {
-      "description": "Efficiency vs current for Fa18 Inb, Fa18 Out, Sp19 Inb (currently using common RGA values).",
+    "rga_fa18_inb": {
+      "description": "Efficiency vs current for Fa18 Inb (placeholder values; update with period-specific results).",
       "efficiency_by_current": {
-        "30": {
-          "efficiency_percent": 86.5,
-          "efficiency_fraction": 0.865,
-          "uncertainty_percent": 10.0,
-          "uncertainty_fraction": 0.10
-        },
-        "35": {
-          "efficiency_percent": 84.3,
-          "efficiency_fraction": 0.843,
-          "uncertainty_percent": 10.0,
-          "uncertainty_fraction": 0.10
-        },
-        "40": {
-          "efficiency_percent": 82.0,
-          "efficiency_fraction": 0.820,
-          "uncertainty_percent": 4.8,
-          "uncertainty_fraction": 0.048
-        },
-        "45": {
-          "efficiency_percent": 79.8,
-          "efficiency_fraction": 0.798,
-          "uncertainty_percent": 5.4,
-          "uncertainty_fraction": 0.054
-        },
-        "50": {
-          "efficiency_percent": 77.5,
-          "efficiency_fraction": 0.775,
-          "uncertainty_percent": 6.0,
-          "uncertainty_fraction": 0.060
-        },
-        "55": {
-          "efficiency_percent": 75.3,
-          "efficiency_fraction": 0.753,
-          "uncertainty_percent": 6.6,
-          "uncertainty_fraction": 0.066
-        }
+        "30": { "efficiency_percent": 87.24, "efficiency_fraction": 0.8724, "uncertainty_percent": 0.8331, "uncertainty_fraction": 0.008331 },
+        "35": { "efficiency_percent": 85.11, "efficiency_fraction": 0.8511, "uncertainty_percent": 0.9712, "uncertainty_fraction": 0.009712 },
+        "40": { "efficiency_percent": 82.99, "efficiency_fraction": 0.8299, "uncertainty_percent": 1.1110, "uncertainty_fraction": 0.01111 },
+        "45": { "efficiency_percent": 80.86, "efficiency_fraction": 0.8086, "uncertainty_percent": 1.2497, "uncertainty_fraction": 0.012497 },
+        "50": { "efficiency_percent": 78.73, "efficiency_fraction": 0.7873, "uncertainty_percent": 1.3885, "uncertainty_fraction": 0.013885 },
+        "55": { "efficiency_percent": 76.61, "efficiency_fraction": 0.7661, "uncertainty_percent": 1.5274, "uncertainty_fraction": 0.015274 }
       }
     },
 
-    "rga_sp18": {
-      "description": "Efficiency vs current for Sp18 Inb and Sp18 Out (currently using same values as rga_default; replace later with Sp18-specific results).",
+    "rga_fa18_out": {
+      "description": "Efficiency vs current for Fa18 Out (placeholder values; update with period-specific results).",
       "efficiency_by_current": {
-        "30": {
-          "efficiency_percent": 86.5,
-          "efficiency_fraction": 0.865,
-          "uncertainty_percent": 10.0,
-          "uncertainty_fraction": 0.10
-        },
-        "35": {
-          "efficiency_percent": 84.3,
-          "efficiency_fraction": 0.843,
-          "uncertainty_percent": 10.0,
-          "uncertainty_fraction": 0.10
-        },
-        "40": {
-          "efficiency_percent": 82.0,
-          "efficiency_fraction": 0.820,
-          "uncertainty_percent": 4.8,
-          "uncertainty_fraction": 0.048
-        },
-        "45": {
-          "efficiency_percent": 79.8,
-          "efficiency_fraction": 0.798,
-          "uncertainty_percent": 5.4,
-          "uncertainty_fraction": 0.054
-        },
-        "50": {
-          "efficiency_percent": 77.5,
-          "efficiency_fraction": 0.775,
-          "uncertainty_percent": 6.0,
-          "uncertainty_fraction": 0.060
-        },
-        "55": {
-          "efficiency_percent": 75.3,
-          "efficiency_fraction": 0.753,
-          "uncertainty_percent": 6.6,
-          "uncertainty_fraction": 0.066
-        }
+        "40": { "efficiency_percent": 91.00, "efficiency_fraction": 0.9100, "uncertainty_percent": 0.8168, "uncertainty_fraction": 0.008168 },
+        "50": { "efficiency_percent": 88.75, "efficiency_fraction": 0.8875, "uncertainty_percent": 1.0210, "uncertainty_fraction": 0.012100 }
+      }
+    },
+
+    "rga_sp18_inb": {
+      "description": "Efficiency vs current for Sp18 Inb (placeholder values; update with period-specific results).",
+      "efficiency_by_current": {
+        "35": { "efficiency_percent": 76.52, "efficiency_fraction": 0.7652, "uncertainty_percent": 0.742, "uncertainty_fraction": 0.00742 },
+        "50": { "efficiency_percent": 66.42, "efficiency_fraction": 0.6642, "uncertainty_percent": 1.060, "uncertainty_fraction": 0.01060 },
+        "70": { "efficiency_percent": 53.04, "efficiency_fraction": 0.5304, "uncertainty_percent": 1.484, "uncertainty_fraction": 0.01484 }
+      }
+    },
+
+    "rga_sp18_out": {
+      "description": "Efficiency vs current for Sp18 Out (placeholder values; update with period-specific results).",
+      "efficiency_by_current": {
+        "30": { "efficiency_percent": 82.06, "efficiency_fraction": 0.8206, "uncertainty_percent": 0.6390, "uncertainty_fraction": 0.006390 },
+        "45": { "efficiency_percent": 73.13, "efficiency_fraction": 0.7313, "uncertainty_percent": 0.9585, "uncertainty_fraction": 0.009585 }
+      }
+    },
+
+    "rga_sp19_inb": {
+      "description": "Efficiency vs current for Sp19 Inb (placeholder values; update with period-specific results).",
+      "efficiency_by_current": {
+        "50": { "efficiency_percent": 82.10, "efficiency_fraction": 0.8210, "uncertainty_percent": 1.548, "uncertainty_fraction": 0.01548 }
       }
     }
   }

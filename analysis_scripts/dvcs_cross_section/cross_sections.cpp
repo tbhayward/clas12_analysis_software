@@ -10,8 +10,9 @@
 //   imports/efficiency.json when kApplyEfficiencyCorrections is true.
 //   The efficiency map is built by:
 //     * For each period {Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out, Sp19 Inb}:
+//         - Each period points to its own unique efficiency_scheme key.
 //         - For each current in that period, take "efficiency_fraction" and
-//           "uncertainty_fraction" from the relevant efficiency_scheme.
+//           "uncertainty_fraction" from that period's scheme.
 //         - Weight by "counts" from the JSON to get a counts-weighted mean
 //           efficiency and its uncertainty.
 //     * For combined labels {Fa18, Sp18, 10.6 GeV, 10.2 GeV}:
@@ -539,8 +540,8 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
         throw std::runtime_error("efficiency JSON missing \"efficiency_schemes\" object");
     }
 
-    const json &periods  = j["periods"];
-    const json &schemes  = j["efficiency_schemes"];
+    const json &periods = j["periods"];
+    const json &schemes = j["efficiency_schemes"];
 
     auto compute_period_eff = [&](const std::string &label,
                                   const std::string &period_key) -> Triple {
@@ -549,7 +550,8 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
             oss << "efficiency JSON missing period \"" << period_key << "\"";
             throw std::runtime_error(oss.str());
         }
-        const json &p      = periods[period_key];
+        const json &p = periods[period_key];
+
         std::string scheme = p.value("efficiency_scheme", "");
         if (scheme.empty()) {
             std::ostringstream oss;
@@ -579,7 +581,7 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
 
         struct Slice {
             double counts;
-            double eff;
+            double effv;
             double sigma;
         };
         std::vector<Slice> slices;
@@ -588,8 +590,9 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
         for (const auto &cur : p["currents"]) {
             if (!cur.is_object()) continue;
             double counts = cur.value("counts", 0.0);
-            int    curr_n = cur.value("current_nA", -1);
+            int curr_n    = cur.value("current_nA", -1);
             if (counts <= 0.0 || curr_n <= 0) continue;
+
             std::string ckey = std::to_string(curr_n);
             if (!ebc.contains(ckey) || !ebc[ckey].is_object()) {
                 std::ostringstream oss;
@@ -597,6 +600,7 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
                 throw std::runtime_error(oss.str());
             }
             const json &cspec = ebc[ckey];
+
             double eff_frac = cspec.value("efficiency_fraction", 0.0);
             double unc_frac = cspec.value("uncertainty_fraction", 0.0);
             if (eff_frac <= 0.0) {
@@ -605,6 +609,7 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
                     << " in scheme \"" << scheme << "\"";
                 throw std::runtime_error(oss.str());
             }
+
             double sigma = eff_frac * unc_frac;
             slices.push_back({counts, eff_frac, sigma});
             total_counts += counts;
@@ -620,7 +625,7 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
         double var   = 0.0;
         for (const auto &s : slices) {
             double w = s.counts / total_counts;
-            value += w * s.eff;
+            value += w * s.effv;
             var   += w * w * s.sigma * s.sigma;
         }
 
@@ -633,7 +638,8 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
         period_counts[label] = total_counts;
 
         std::cout << "[cross_sections] Period efficiency for " << label
-                  << " (key=" << period_key << "): value=" << t.value
+                  << " (key=" << period_key
+                  << ", scheme=" << scheme << "): value=" << t.value
                   << " stat=" << t.stat
                   << " (total_counts=" << total_counts << ")\n";
 
@@ -2056,8 +2062,9 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
         Triple xs_pos   = parse_tuple3(fields[c_xs_pos]);
         Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
-        if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0)
+        if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) {
             continue;
+        }
 
         XSGroupByXB &group = by_xb[xb_range];
         if (group.xb_index < 0 && c_xb_idx >= 0) {
@@ -2067,7 +2074,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         QTKey key(q2_range, t_range);
         BinData &bin = group.bins[key];
         if (!bin.have_theory_row) {
-            bin.theory_row     = row;
+            bin.theory_row      = row;
             bin.have_theory_row = true;
         }
 
