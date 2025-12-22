@@ -3,11 +3,18 @@
 // pi0 contamination estimator with tuple CSV writes: "(value, stat, sys)"
 // Strict CSV policy: do not add columns; resolve existing columns via aliases.
 // Uses label_aliases.h (same helpers as total_counts.cpp).
+//
+// DEBUG/DIAGNOSTICS (all optional, no functional changes when unset):
+//   - PI0_CONTAM_DEBUG: enable verbose diagnostics + summaries
+//   - PI0_CONTAM_TRACE: keep existing row-level traces (fine-grained)
+//   - PI0_CONTAM_DEBUG_EVENTS: integer, number of sample events to print per block (default 5)
+//   - PI0_CONTAM_DEBUG_PROGRESS: integer, print progress every N events (default 0 = off)
+//   - PI0_CONTAM_DEBUG_ROWS: integer, number of sample CSV rows to print (default 5)
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
 #include "periods.h"
-#include "label_aliases.h"  // provides topology_aliases(), period_aliases(), helicity_aliases(), find_col_alias()
+#include "label_aliases.h"
 #include "global_cuts.h"
 
 #include <nlohmann/json.hpp>
@@ -15,7 +22,6 @@
 #include <TTree.h>
 #include <TCanvas.h>
 #include <TGraphErrors.h>
-#include <TLegend.h>
 #include <TLatex.h>
 #include <TPad.h>
 #include <TH1.h>
@@ -58,6 +64,16 @@ static constexpr double PI_CONST = 3.14159265358979323846;
 static inline bool is_debug() { return std::getenv("PI0_CONTAM_DEBUG") != nullptr; }
 static inline bool trace_rows_env() { return std::getenv("PI0_CONTAM_TRACE") != nullptr; }
 
+static int env_int(const char* name, int defv) {
+    const char* s = std::getenv(name);
+    if (!s || !*s) return defv;
+    return std::atoi(s);
+}
+
+static int debug_sample_events() { return env_int("PI0_CONTAM_DEBUG_EVENTS", 5); }
+static int debug_progress_every() { return env_int("PI0_CONTAM_DEBUG_PROGRESS", 0); }
+static int debug_sample_rows() { return env_int("PI0_CONTAM_DEBUG_ROWS", 5); }
+
 static int resolve_threads(int max_workers) {
     int threads = 1;
 #ifdef _OPENMP
@@ -77,6 +93,16 @@ static int resolve_threads(int max_workers) {
     std::exit(EXIT_FAILURE);
 }
 
+static void dbg(const std::string& s) {
+    if (is_debug()) std::cout << s << std::flush;
+}
+
+static void dbgln(const std::string& s) {
+    if (is_debug()) std::cout << s << "\n";
+}
+
+static std::string yn(bool v) { return v ? "YES" : "NO"; }
+
 // ---------- CSV doc ----------
 struct CsvDoc {
     std::vector<std::string> header;
@@ -95,39 +121,66 @@ struct CsvDoc {
         out.emplace_back(cur);
         return out;
     }
+
     static void write_field(std::ostream& os, const std::string& s) {
-        bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
+        bool needq = (s.find(',') != std::string::npos) || (s.find('"') != std::string::npos);
         if (!needq) { os << s; return; }
         os << '"';
-        for (char ch : s) { if (ch=='"') os << "\"\""; else os << ch; }
+        for (char ch : s) {
+            if (ch=='"') os << "\"\"";
+            else os << ch;
+        }
         os << '"';
     }
+
     static double toD(const std::string& s) {
         if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
-        char* e=nullptr; double v = std::strtod(s.c_str(), &e);
+        char* e=nullptr;
+        double v = std::strtod(s.c_str(), &e);
         return (e==s.c_str()) ? std::numeric_limits<double>::quiet_NaN() : v;
     }
+
     bool load(const std::string& path) {
         std::ifstream fin(path);
-        if (!fin.is_open()) { std::cerr << "[pi0_contamination] cannot open CSV: " << path << "\n"; return false; }
+        if (!fin.is_open()) {
+            std::cerr << "[pi0_contamination] cannot open CSV: " << path << "\n";
+            return false;
+        }
         std::string line;
-        if (!std::getline(fin, line)) { std::cerr << "[pi0_contamination] empty CSV: " << path << "\n"; return false; }
+        if (!std::getline(fin, line)) {
+            std::cerr << "[pi0_contamination] empty CSV: " << path << "\n";
+            return false;
+        }
         header = split_csv_line(line);
-        index.clear(); for (int i=0;i<(int)header.size();++i) index[header[i]] = i;
+        index.clear();
+        for (int i=0; i<(int)header.size(); ++i) index[header[i]] = i;
+
         rows.clear();
-        while (std::getline(fin, line)) if (!line.empty()) rows.push_back(split_csv_line(line));
+        while (std::getline(fin, line)) {
+            if (!line.empty()) rows.push_back(split_csv_line(line));
+        }
         for (auto& r : rows) r.resize(header.size());
         return true;
     }
+
     bool save_atomic(const std::string& path) const {
         const std::string tmp = path + ".tmp";
         {
             std::ofstream fout(tmp);
-            if (!fout.is_open()) { std::cerr << "[pi0_contamination] cannot write CSV tmp: " << tmp << "\n"; return false; }
-            for (size_t i=0;i<header.size();++i) { write_field(fout, header[i]); if (i+1<header.size()) fout<<','; }
+            if (!fout.is_open()) {
+                std::cerr << "[pi0_contamination] cannot write CSV tmp: " << tmp << "\n";
+                return false;
+            }
+            for (size_t i=0; i<header.size(); ++i) {
+                write_field(fout, header[i]);
+                if (i+1<header.size()) fout << ',';
+            }
             fout << "\n";
             for (const auto& row : rows) {
-                for (size_t i=0;i<row.size();++i) { write_field(fout, row[i]); if (i+1<row.size()) fout<<','; }
+                for (size_t i=0; i<row.size(); ++i) {
+                    write_field(fout, row[i]);
+                    if (i+1<row.size()) fout << ',';
+                }
                 fout << "\n";
             }
         }
@@ -136,17 +189,26 @@ struct CsvDoc {
         if (ec) {
             std::remove(path.c_str());
             std::filesystem::rename(tmp, path, ec);
-            if (ec) { std::cerr << "[pi0_contamination] ERROR: atomic rename failed (" << ec.message() << ")\n"; return false; }
+            if (ec) {
+                std::cerr << "[pi0_contamination] ERROR: atomic rename failed (" << ec.message() << ")\n";
+                return false;
+            }
         }
         return true;
     }
+
     int col(const std::string& name) const {
-        auto it=index.find(name); return (it==index.end())? -1 : it->second;
+        auto it=index.find(name);
+        return (it==index.end()) ? -1 : it->second;
     }
+
     double as_double(int r, int c) const {
-        if (r<0 || r>=(int)rows.size() || c<0 || c>=(int)header.size()) return std::numeric_limits<double>::quiet_NaN();
+        if (r<0 || r>=(int)rows.size() || c<0 || c>=(int)header.size()) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         return toD(rows[r][c]);
     }
+
     void set_string(int r, int c, const std::string& s) {
         if (r<0 || r>=(int)rows.size() || c<0 || c>=(int)header.size()) return;
         rows[r][c] = s;
@@ -164,7 +226,9 @@ static inline std::string tuple_string(double v, double sv, double sy, int prec=
 
 static void require_columns_or_die(const CsvDoc& csv, const std::vector<std::string>& names, const std::string& ctx) {
     std::vector<std::string> missing;
-    for (const auto& n : names) if (csv.col(n) < 0) missing.push_back(n);
+    for (const auto& n : names) {
+        if (csv.col(n) < 0) missing.push_back(n);
+    }
     if (!missing.empty()) {
         std::ostringstream oss;
         oss << "Missing required CSV columns for " << ctx << ":\n";
@@ -178,30 +242,37 @@ static std::string title_case_token(const std::string& tok) {
     if (tok.empty()) return tok;
     std::string out = tok;
     out[0] = (char)std::toupper((unsigned char)out[0]);
-    for (size_t i=1;i<out.size();++i) out[i] = (char)std::tolower((unsigned char)out[i]);
+    for (size_t i=1; i<out.size(); ++i) out[i] = (char)std::tolower((unsigned char)out[i]);
     return out;
 }
+
 static std::string to_title_space(const std::string& p) {
     std::string out; out.reserve(p.size()+2);
     std::string cur;
     for (char c : p) {
-        if (c=='_') { if (!cur.empty()) { out += title_case_token(cur); out += ' '; cur.clear(); } }
-        else cur.push_back(c);
+        if (c=='_') {
+            if (!cur.empty()) { out += title_case_token(cur); out += ' '; cur.clear(); }
+        } else {
+            cur.push_back(c);
+        }
     }
-    if (!cur.empty()) { out += title_case_token(cur); }
+    if (!cur.empty()) out += title_case_token(cur);
     return out;
 }
 
 // -------- alias-aware column resolvers --------
-static int col_alias(const CsvDoc& csv, const std::vector<std::string>& candidates) {
+static int col_alias(const CsvDoc& csv, const std::vector<std::string>& candidates, std::string* used_name=nullptr) {
     for (const auto& n : candidates) {
         int c = csv.col(n);
-        if (c >= 0) return c;
+        if (c >= 0) {
+            if (used_name) *used_name = n;
+            return c;
+        }
     }
     return -1;
 }
 
-static int dvcs_unpol_col_alias(const CsvDoc& csv, const std::string& topo_label, const std::string& period_display) {
+static int dvcs_unpol_col_alias(const CsvDoc& csv, const std::string& topo_label, const std::string& period_display, std::string* used_name=nullptr) {
     std::vector<std::string> names;
     const auto tops = topology_aliases(topo_label);
     const auto pers = period_aliases(period_display);
@@ -215,16 +286,14 @@ static int dvcs_unpol_col_alias(const CsvDoc& csv, const std::string& topo_label
             }
         }
     }
-    return col_alias(csv, names);
+    return col_alias(csv, names, used_name);
 }
 
-static int avg_col_alias(const CsvDoc& csv, const std::string& base, const std::string& period_display) {
+static int avg_col_alias(const CsvDoc& csv, const std::string& base, const std::string& period_display, std::string* used_name=nullptr) {
     std::vector<std::string> names;
     const auto pers = period_aliases(period_display);
-    for (const auto& p : pers) {
-        names.push_back(base + ", " + p);
-    }
-    return col_alias(csv, names);
+    for (const auto& p : pers) names.push_back(base + ", " + p);
+    return col_alias(csv, names, used_name);
 }
 
 // -------- CSV row materialization (alias-aware) --------
@@ -238,11 +307,26 @@ struct CsvRow {
     long long n_dvcs_csv=0;
 };
 
-static std::vector<CsvRow> materialize_rows_for_period(
-    const CsvDoc& csv,
-    const std::string& period_display)
-{
-    // base scalars (no aliases expected for these names)
+static void debug_print_csv_overview(const CsvDoc& csv) {
+    if (!is_debug()) return;
+
+    std::ostringstream oss;
+    oss << "[pi0_contamination][DEBUG] CSV header columns = " << csv.header.size() << "\n";
+    oss << "[pi0_contamination][DEBUG] CSV data rows       = " << csv.rows.size() << "\n";
+    oss << "[pi0_contamination][DEBUG] CSV sample header names:\n";
+    int n = (int)csv.header.size();
+    int show = std::min(n, 30);
+    for (int i=0; i<show; ++i) oss << "  [" << i << "] " << csv.header[i] << "\n";
+    if (n > show) oss << "  ... (" << (n-show) << " more)\n";
+    dbg(oss.str());
+}
+
+static std::vector<CsvRow> materialize_rows_for_period(const CsvDoc& csv, const std::string& period_display) {
+    const std::vector<std::string> need_base = {
+        "xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"
+    };
+    require_columns_or_die(csv, need_base, "base ranges");
+
     const int c_xb_min   = csv.col("xBmin");
     const int c_xb_max   = csv.col("xBmax");
     const int c_q2_min   = csv.col("Q2min");
@@ -252,33 +336,45 @@ static std::vector<CsvRow> materialize_rows_for_period(
     const int c_phi_min  = csv.col("phimin");
     const int c_phi_max  = csv.col("phimax");
 
-    const std::vector<std::string> need_base = {
-        "xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"
-    };
-    require_columns_or_die(csv, need_base, "base ranges");
+    std::string used_phiavg, used_xbavg, used_q2avg, used_tabavg;
+    const int c_phi_avg  = avg_col_alias(csv, "phiavg", period_display, &used_phiavg);
+    const int c_xb_avg   = avg_col_alias(csv, "xBavg", period_display, &used_xbavg);
+    const int c_q2_avg   = avg_col_alias(csv, "Q2avg", period_display, &used_q2avg);
+    const int c_tab_avg  = avg_col_alias(csv, "t_abs_avg", period_display, &used_tabavg);
 
-    // alias-aware averages that are period-tagged
-    const int c_phi_avg  = avg_col_alias(csv, "phiavg", period_display);
-    const int c_xb_avg   = avg_col_alias(csv, "xBavg", period_display);
-    const int c_q2_avg   = avg_col_alias(csv, "Q2avg", period_display);
-    const int c_tab_avg  = avg_col_alias(csv, "t_abs_avg", period_display);
     if (c_phi_avg < 0 || c_xb_avg < 0 || c_q2_avg < 0 || c_tab_avg < 0) {
         fatal("Missing one of period-tagged average columns (phiavg,xBavg,Q2avg,t_abs_avg) for period aliases of \"" + period_display + "\".");
     }
 
-    // alias-aware DVCS counts per topology
-    const int c_fd_fd    = dvcs_unpol_col_alias(csv, "(FD, FD)", period_display);
-    const int c_cd_fd    = dvcs_unpol_col_alias(csv, "(CD, FD)", period_display);
-    const int c_cd_ft    = dvcs_unpol_col_alias(csv, "(CD, FT)", period_display);
+    std::string used_fd_fd, used_cd_fd, used_cd_ft;
+    const int c_fd_fd    = dvcs_unpol_col_alias(csv, "(FD, FD)", period_display, &used_fd_fd);
+    const int c_cd_fd    = dvcs_unpol_col_alias(csv, "(CD, FD)", period_display, &used_cd_fd);
+    const int c_cd_ft    = dvcs_unpol_col_alias(csv, "(CD, FT)", period_display, &used_cd_ft);
+
     if (c_fd_fd < 0 && c_cd_fd < 0 && c_cd_ft < 0) {
         fatal("Could not resolve any DVCS unpolarized columns via aliases for period \"" + period_display + "\".");
     }
 
+    if (is_debug()) {
+        std::ostringstream oss;
+        oss << "[pi0_contamination][DEBUG] materialize_rows_for_period(\"" << period_display << "\") resolved columns:\n";
+        oss << "  phiavg     -> col " << c_phi_avg << " name=\"" << used_phiavg << "\"\n";
+        oss << "  xBavg      -> col " << c_xb_avg  << " name=\"" << used_xbavg  << "\"\n";
+        oss << "  Q2avg      -> col " << c_q2_avg  << " name=\"" << used_q2avg  << "\"\n";
+        oss << "  t_abs_avg  -> col " << c_tab_avg << " name=\"" << used_tabavg << "\"\n";
+        oss << "  DVCS (FD,FD) -> " << c_fd_fd << (c_fd_fd>=0 ? (" name=\"" + used_fd_fd + "\"") : " (missing)") << "\n";
+        oss << "  DVCS (CD,FD) -> " << c_cd_fd << (c_cd_fd>=0 ? (" name=\"" + used_cd_fd + "\"") : " (missing)") << "\n";
+        oss << "  DVCS (CD,FT) -> " << c_cd_ft << (c_cd_ft>=0 ? (" name=\"" + used_cd_ft + "\"") : " (missing)") << "\n";
+        dbg(oss.str());
+    }
+
     std::vector<CsvRow> rows;
     rows.reserve(csv.rows.size());
+
     for (int r=0; r<(int)csv.rows.size(); ++r) {
         CsvRow cr;
         cr.row_index = r;
+
         cr.xb_min  = csv.as_double(r, c_xb_min);
         cr.xb_max  = csv.as_double(r, c_xb_max);
         cr.q2_min  = csv.as_double(r, c_q2_min);
@@ -288,8 +384,8 @@ static std::vector<CsvRow> materialize_rows_for_period(
 
         cr.phimin  = csv.as_double(r, c_phi_min);
         cr.phimax  = csv.as_double(r, c_phi_max);
-        cr.phiavg  = csv.as_double(r, c_phi_avg);
 
+        cr.phiavg  = csv.as_double(r, c_phi_avg);
         cr.xb_avg  = csv.as_double(r, c_xb_avg);
         cr.q2_avg  = csv.as_double(r, c_q2_avg);
         cr.tab_avg = csv.as_double(r, c_tab_avg);
@@ -311,7 +407,27 @@ static std::vector<CsvRow> materialize_rows_for_period(
 
         rows.push_back(cr);
     }
+
     if (rows.empty()) fatal("DVCS CSV has no data rows.");
+
+    if (is_debug()) {
+        int show = std::min((int)rows.size(), debug_sample_rows());
+        std::ostringstream oss;
+        oss << "[pi0_contamination][DEBUG] CSV row samples for period \"" << period_display << "\" (first " << show << "):\n";
+        for (int i=0; i<show; ++i) {
+            const auto& R = rows[i];
+            oss << "  row=" << R.row_index
+                << " xB[" << R.xb_min << "," << R.xb_max << "]"
+                << " Q2[" << R.q2_min << "," << R.q2_max << "]"
+                << " |t|[" << R.tab_min << "," << R.tab_max << "]"
+                << " phi[" << R.phimin << "," << R.phimax << "]"
+                << " Nd(DVCS sum)=" << R.n_dvcs_csv
+                << " phiavg=" << R.phiavg
+                << "\n";
+        }
+        dbg(oss.str());
+    }
+
     return rows;
 }
 
@@ -355,7 +471,9 @@ static inline std::string to_cased_period_key(const std::string& tree_key) {
 static CutTable load_cuts(const std::string& path) {
     std::ifstream in(path);
     if (!in) fatal("Cannot open cuts JSON: " + path);
-    nlohmann::json j; in >> j;
+
+    nlohmann::json j;
+    in >> j;
 
     CutTable out;
     for (auto it = j.begin(); it != j.end(); ++it) {
@@ -363,7 +481,7 @@ static CutTable load_cuts(const std::string& path) {
         const auto& blk = it.value();
         CutPair cp;
 
-        auto fill_one = [&](const char* which, VarCutMap& dst){
+        auto fill_one = [&](const char* which, VarCutMap& dst) {
             if (!blk.contains(which) || !blk[which].is_object()) return;
             for (auto vit = blk[which].begin(); vit != blk[which].end(); ++vit) {
                 const std::string vname = vit.key();
@@ -378,38 +496,76 @@ static CutTable load_cuts(const std::string& path) {
 
         fill_one("data", cp.data);
         fill_one("mc",   cp.mc);
+
         if (!cp.data.empty() || !cp.mc.empty()) out[key] = std::move(cp);
     }
+
     if (out.empty()) fatal("Cuts JSON contains no usable blocks with numeric mean/std.");
+
+    if (is_debug()) {
+        std::ostringstream oss;
+        oss << "[pi0_contamination][DEBUG] Loaded cuts JSON: " << path << "\n";
+        oss << "[pi0_contamination][DEBUG] Cuts blocks (usable) = " << out.size() << "\n";
+        int show = 0;
+        for (const auto& kv : out) {
+            oss << "  key=\"" << kv.first << "\" data_vars=" << kv.second.data.size() << " mc_vars=" << kv.second.mc.size() << "\n";
+            if (++show >= 10) break;
+        }
+        if ((int)out.size() > 10) oss << "  ... (" << ((int)out.size()-10) << " more)\n";
+        dbg(oss.str());
+    }
+
     return out;
 }
+
 static inline bool within3(double v, const Stats& s) {
     return (v >= s.mean - 3.0*s.std) && (v <= s.mean + 3.0*s.std);
 }
-static bool passes_cuts(const VarCutMap& cuts, const std::map<std::string,double>& vals) {
+
+// Same decision as before; adds (optional) failure reporting for debug.
+struct CutFailInfo {
+    std::string var;
+    double value=0.0;
+    double mean=0.0;
+    double std=0.0;
+};
+
+static bool passes_cuts_with_reason(const VarCutMap& cuts, const std::map<std::string,double>& vals, CutFailInfo* fail) {
     for (const auto& kv : cuts) {
         auto it = vals.find(kv.first);
-        if (it == vals.end()) fatal("Cuts reference variable '" + kv.first + "' not available in tree.");
-        if (!within3(it->second, kv.second)) return false;
+        if (it == vals.end()) {
+            fatal("Cuts reference variable '" + kv.first + "' not available in tree.");
+        }
+        const double v = it->second;
+        const Stats& s = kv.second;
+        if (!within3(v, s)) {
+            if (fail) {
+                fail->var = kv.first;
+                fail->value = v;
+                fail->mean = s.mean;
+                fail->std = s.std;
+            }
+            return false;
+        }
     }
     return true;
 }
 
 // -------- Branch binders (Robust Float/Double handling) --------
-
-// Helper to handle the type complexity
 struct VarBinding {
     double val_d = 0.0;
-    float  val_f = 0.0;
+    float  val_f = 0.0f;
     bool   is_float = false;
     bool   active = false;
+    std::string bound_name;
 
     void bind(TTree* t, const char* name) {
+        bound_name.clear();
         TBranch* b = t->GetBranch(name);
-        if (!b) return; 
-        
+        if (!b) return;
+
         TLeaf* leaf = b->GetLeaf(name);
-        if (!leaf) leaf = (TLeaf*)b->GetListOfLeaves()->First(); // fallback
+        if (!leaf) leaf = (TLeaf*)b->GetListOfLeaves()->First();
         if (!leaf) return;
 
         std::string type = leaf->GetTypeName();
@@ -421,6 +577,7 @@ struct VarBinding {
             t->SetBranchAddress(name, &val_d);
         }
         active = true;
+        bound_name = name;
     }
 
     double get() const {
@@ -429,32 +586,89 @@ struct VarBinding {
     }
 };
 
+static std::string leaf_type_name(TTree* t, const char* br) {
+    if (!t) return "(null tree)";
+    TBranch* b = t->GetBranch(br);
+    if (!b) return "(missing)";
+    TLeaf* leaf = b->GetLeaf(br);
+    if (!leaf) leaf = (TLeaf*)b->GetListOfLeaves()->First();
+    if (!leaf) return "(no leaf)";
+    return leaf->GetTypeName();
+}
+
+static void debug_tree_brief(TTree* t, const std::string& tag) {
+    if (!is_debug()) return;
+    if (!t) {
+        dbgln("[pi0_contamination][DEBUG] " + tag + " tree is NULL");
+        return;
+    }
+    std::ostringstream oss;
+    oss << "[pi0_contamination][DEBUG] " << tag
+        << " name=\"" << (t->GetName() ? t->GetName() : "(null)") << "\""
+        << " entries=" << t->GetEntries()
+        << "\n";
+    dbg(oss.str());
+}
+
+static void debug_branch_probe(TTree* t, const std::string& tag, const std::vector<std::string>& branches) {
+    if (!is_debug()) return;
+    if (!t) return;
+
+    std::ostringstream oss;
+    oss << "[pi0_contamination][DEBUG] " << tag << " branch probe:\n";
+    for (const auto& br : branches) {
+        bool has = (t->GetBranch(br.c_str()) != nullptr);
+        oss << "  " << br << " : present=" << yn(has);
+        if (has) oss << " type=" << leaf_type_name(t, br.c_str());
+        oss << "\n";
+    }
+    dbg(oss.str());
+}
+
+// Heuristic-only debug: does not change behavior.
+static void debug_phi_units_guess(TTree* t, const std::string& tag, const char* phi_branch) {
+    if (!is_debug() || !t) return;
+    if (!t->GetBranch(phi_branch)) return;
+
+    double mn = t->GetMinimum(phi_branch);
+    double mx = t->GetMaximum(phi_branch);
+
+    std::string guess = "UNKNOWN";
+    if (std::isfinite(mn) && std::isfinite(mx)) {
+        if (mx <= 7.0 && mn >= -7.0) guess = "LIKELY_RADIANS";
+        else if (mx > 7.0 && mx <= 400.0) guess = "LIKELY_DEGREES";
+        else if (mx > 400.0) guess = "LIKELY_DEGREES_OR_SCALED";
+    }
+
+    std::ostringstream oss;
+    oss << "[pi0_contamination][DEBUG] " << tag << " phi units probe: branch=\"" << phi_branch
+        << "\" min=" << mn << " max=" << mx << " guess=" << guess
+        << " (NOTE: code assumes radians and converts *180/pi)\n";
+    dbg(oss.str());
+}
+
 struct BinderCommon {
-    // Integers are usually consistent, but let's be safe with standard Int_t
     int detector1=0, detector2=0;
     int runnum=0;
     bool have_runnum=false;
-    
-    // Kinematics (Critical - use robust binding)
+
     VarBinding t1, open_angle_ep2, pTmiss;
     VarBinding x, Q2, phi2;
 
-    // Cuts variables
     VarBinding Emiss2, Mx2, Mx2_1, Mx2_2, theta_gamma_gamma, xF;
     VarBinding theta_pi0_pi0;
 
-    // Helper to bind ints (usually safe as Int_t)
+    std::string bound_x_name;
+
     void bindI(TTree* t, const char* n, int* a) {
         if (!t->GetBranch(n)) fatal(std::string("Missing int branch '") + n + "'");
         t->SetBranchAddress(n, a);
     }
 
     void bind_core(TTree* t) {
-        // Detectors are integers
         bindI(t, "detector1", &detector1);
         bindI(t, "detector2", &detector2);
 
-        // runnum is optional (some MC might not have it)
         if (t->GetBranch("runnum")) {
             bindI(t, "runnum", &runnum);
             have_runnum = true;
@@ -462,16 +676,17 @@ struct BinderCommon {
             have_runnum = false;
         }
 
-        // Bind kinematics checking for Float/Double
         t1.bind(t, "t1");
         open_angle_ep2.bind(t, "open_angle_ep2");
         pTmiss.bind(t, "pTmiss");
-        
-        // Try 'x' first, if missing try 'xB'
+
+        bound_x_name.clear();
         if (t->GetBranch("x")) {
             x.bind(t, "x");
+            bound_x_name = "x";
         } else if (t->GetBranch("xB")) {
             x.bind(t, "xB");
+            bound_x_name = "xB";
         } else {
             fatal("Missing branch 'x' or 'xB'");
         }
@@ -479,7 +694,6 @@ struct BinderCommon {
         Q2.bind(t, "Q2");
         phi2.bind(t, "phi2");
 
-        // Bind optional cut variables
         Emiss2.bind(t, "Emiss2");
         Mx2.bind(t, "Mx2");
         Mx2_1.bind(t, "Mx2_1");
@@ -487,17 +701,28 @@ struct BinderCommon {
         theta_gamma_gamma.bind(t, "theta_gamma_gamma");
         xF.bind(t, "xF");
         theta_pi0_pi0.bind(t, "theta_pi0_pi0");
-        
-        // Validation for critical vars
+
         if (!t1.active) fatal("Missing branch t1");
         if (!open_angle_ep2.active) fatal("Missing branch open_angle_ep2");
         if (!pTmiss.active) fatal("Missing branch pTmiss");
         if (!x.active) fatal("Missing branch x (or xB)");
         if (!Q2.active) fatal("Missing branch Q2");
         if (!phi2.active) fatal("Missing branch phi2");
+
+        if (is_debug()) {
+            std::ostringstream oss;
+            oss << "[pi0_contamination][DEBUG] Bound branches:\n";
+            oss << "  detector1(int) detector2(int) runnum_present=" << yn(have_runnum) << "\n";
+            oss << "  t1            : active=" << yn(t1.active) << " type=" << leaf_type_name(t, "t1") << "\n";
+            oss << "  open_angle_ep2: active=" << yn(open_angle_ep2.active) << " type=" << leaf_type_name(t, "open_angle_ep2") << "\n";
+            oss << "  pTmiss        : active=" << yn(pTmiss.active) << " type=" << leaf_type_name(t, "pTmiss") << "\n";
+            oss << "  x             : bound_name=\"" << bound_x_name << "\" type=" << leaf_type_name(t, bound_x_name.c_str()) << "\n";
+            oss << "  Q2            : active=" << yn(Q2.active) << " type=" << leaf_type_name(t, "Q2") << "\n";
+            oss << "  phi2          : active=" << yn(phi2.active) << " type=" << leaf_type_name(t, "phi2") << "\n";
+            dbg(oss.str());
+        }
     }
 
-    // Values used in the loop - mapped to the getters
     double get_x() const { return x.get(); }
     double get_Q2() const { return Q2.get(); }
     double get_t1() const { return t1.get(); }
@@ -537,9 +762,15 @@ template <typename MapT>
 static TTree* getTreeOrDie(const MapT& m, const std::string& key, const char* human) {
     auto it = m.find(key);
     if (it != m.end() && it->second) return it->second;
+
     std::ostringstream oss;
     oss << "Missing " << human << " tree under key \"" << key << "\". Available: {";
-    bool first=true; for (const auto& kv : m) { if (!first) oss << ", "; first=false; oss << "\"" << kv.first << "\""; }
+    bool first=true;
+    for (const auto& kv : m) {
+        if (!first) oss << ", ";
+        first=false;
+        oss << "\"" << kv.first << "\"";
+    }
     oss << "}";
     fatal(oss.str());
     return nullptr;
@@ -553,11 +784,6 @@ struct RowCounts {
     long long n_pi0_bkg=0;
     double    phi_center=std::numeric_limits<double>::quiet_NaN();
 };
-
-static bool dir_exists(const std::string& d) {
-    std::error_code ec;
-    return std::filesystem::exists(d, ec);
-}
 
 static void ensure_dir(const std::string& d) {
     std::error_code ec;
@@ -578,14 +804,16 @@ struct CellMeans {
     double tab=std::numeric_limits<double>::quiet_NaN();
 };
 
-// Compute cell means across the set of row indices
 static CellMeans compute_cell_means(const std::vector<int>& ridxs, const std::vector<CsvRow>& rows, double xb_lo, double xb_hi) {
-    double xb_m=0, q2_m=0, t_m=0; int nxb=0,nq2=0,nt=0;
+    double xb_m=0, q2_m=0, t_m=0;
+    int nxb=0, nq2=0, nt=0;
+
     for (int r : ridxs) {
         if (is_fin(rows[r].xb_avg))  { xb_m += rows[r].xb_avg;  ++nxb; }
         if (is_fin(rows[r].q2_avg))  { q2_m += rows[r].q2_avg;  ++nq2; }
         if (is_fin(rows[r].tab_avg)) { t_m  += rows[r].tab_avg; ++nt;  }
     }
+
     CellMeans cm;
     cm.xb  = (nxb>0) ? (xb_m/nxb) : avg_if_finite_or_midbin(std::numeric_limits<double>::quiet_NaN(), xb_lo, xb_hi);
     cm.q2  = (nq2>0) ? (q2_m/nq2) : std::numeric_limits<double>::quiet_NaN();
@@ -604,7 +832,7 @@ static void plot_period(
     double xb_lo, double xb_hi,
     int slice_index)
 {
-    auto uniq_ranges = [](const std::vector<int>& idxs, const std::vector<CsvRow>& V, char which){
+    auto uniq_ranges = [](const std::vector<int>& idxs, const std::vector<CsvRow>& V, char which) {
         std::set<std::pair<double,double>> st;
         for (int r : idxs) {
             if (which=='Q') st.emplace(V[r].q2_min,  V[r].q2_max);
@@ -612,22 +840,27 @@ static void plot_period(
         }
         return std::vector<std::pair<double,double>>(st.begin(), st.end());
     };
+
     const auto Qs = uniq_ranges(rows_in_slice, rows, 'Q');
     const auto Ts = uniq_ranges(rows_in_slice, rows, 't');
 
-    auto find_idx = [](const std::pair<double,double>& r, const std::vector<std::pair<double,double>>& V){
-        for (int i=0;i<(int)V.size();++i) if (V[i]==r) return i; return -1;
+    auto find_idx = [](const std::pair<double,double>& r, const std::vector<std::pair<double,double>>& V) {
+        for (int i=0; i<(int)V.size(); ++i) if (V[i]==r) return i;
+        return -1;
     };
 
-    auto lessK = [](const Key& a, const Key& b){
+    auto lessK = [](const Key& a, const Key& b) {
         if (a.iQ != b.iQ) return a.iQ < b.iQ;
         return a.it < b.it;
     };
+
     std::map<Key, std::vector<int>, decltype(lessK)> by_k(lessK);
 
     for (int ridx : rows_in_slice) {
-        Key K{find_idx({rows[ridx].q2_min,rows[ridx].q2_max}, Qs),
-              find_idx({rows[ridx].tab_min,rows[ridx].tab_max}, Ts)};
+        Key K{
+            find_idx({rows[ridx].q2_min, rows[ridx].q2_max}, Qs),
+            find_idx({rows[ridx].tab_min, rows[ridx].tab_max}, Ts)
+        };
         if (K.iQ>=0 && K.it>=0) by_k[K].push_back(ridx);
     }
 
@@ -643,33 +876,25 @@ static void plot_period(
     TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.90, 1.0, 1.0);
     pTop->SetFillStyle(0); pTop->Draw();
     TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.90);
-    pGrid->SetFillStyle(0); pGrid->Draw(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+    pGrid->SetFillStyle(0); pGrid->Draw();
+    pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-    // Canvas title: PERIOD   xB in [lo, hi]
     pTop->cd();
     TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.16);
-    head.DrawLatex(0.5, 0.50,
-        Form("%s   xB in [%.4f, %.4f]", period_dir.c_str(), xb_lo, xb_hi));
+    head.DrawLatex(0.5, 0.50, Form("%s   xB in [%.4f, %.4f]", period_dir.c_str(), xb_lo, xb_hi));
 
     for (int rr=0; rr<nrows; ++rr) {
         for (int cc=0; cc<ncols; ++cc) {
             pGrid->cd(rr*ncols+cc+1);
 
             auto it = by_k.find(Key{rr, cc});
-            if (it == by_k.end()) {
-                // No rows correspond to this (Q2, t) cell -> leave pad blank
-                continue;
-            }
+            if (it == by_k.end()) continue;
 
-            // Criterion for drawing anything: at least one row in this cell has finite Q2avg and t_abs_avg
             bool has_avg = false;
             for (int ridx : it->second) {
                 if (is_fin(rows[ridx].q2_avg) && is_fin(rows[ridx].tab_avg)) { has_avg = true; break; }
             }
-            if (!has_avg) {
-                // No averages in CSV for this cell -> leave pad completely blank
-                continue;
-            }
+            if (!has_avg) continue;
 
             gPad->SetGrid(1,1);
             gPad->SetTopMargin(0.24);
@@ -702,17 +927,18 @@ static void plot_period(
 
                 double val=std::numeric_limits<double>::quiet_NaN();
                 double err=0.0;
+
                 if (Nb>0.0 && Nd>0.0 && Ne>0.0 && Nr>0.0) {
                     val = (Nb/Nd) * (Ne/Nr);
-                    auto rel = [](double n){ return (n>0.0) ? 1.0/std::sqrt(n) : 0.0; };
+                    auto rel = [](double n) { return (n>0.0) ? 1.0/std::sqrt(n) : 0.0; };
                     const double rel2 = std::pow(rel(Nb),2) + std::pow(rel(Nd),2)
                                       + std::pow(rel(Ne),2) + std::pow(rel(Nr),2);
                     err = (std::isfinite(val) ? val : 0.0) * std::sqrt(rel2);
                 } else {
                     if (trace_rows_env()) {
-                        std::cout << "[pi0_contamination][TRACE_PLOT] skip row="<<R.row_index
-                                  << " {Nd="<< (long long)Nd << ", Nr="<<(long long)Nr
-                                  << ", Nb="<<(long long)Nb << ", Ne="<<(long long)Ne << "}\n";
+                        std::cout << "[pi0_contamination][TRACE_PLOT] skip row=" << R.row_index
+                                  << " {Nd=" << (long long)Nd << ", Nr=" << (long long)Nr
+                                  << ", Nb=" << (long long)Nb << ", Ne=" << (long long)Ne << "}\n";
                     }
                 }
 
@@ -729,6 +955,7 @@ static void plot_period(
                 X.reserve(pts.size()); Y.reserve(pts.size()); eY.reserve(pts.size());
                 for (const auto& p : pts) { X.push_back(p.x); Y.push_back(p.y); eY.push_back(p.ey); }
                 eX.assign(pts.size(), 0.0);
+
                 TGraphErrors* gr = new TGraphErrors((int)X.size(), X.data(), Y.data(), eX.data(), eY.data());
                 gr->SetMarkerStyle(20);
                 gr->SetMarkerSize(0.7);
@@ -738,9 +965,7 @@ static void plot_period(
 
             const auto cm = compute_cell_means(it->second, rows, xb_lo, xb_hi);
             TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.055);
-            // Rounded to hundredths; units removed; ensure no stray space in Q^{2}.
-            lab.DrawLatex(0.12, 0.83,
-                Form("<xB>=%.2f   <Q^{2}>=%.2f   <-t>=%.2f", cm.xb, cm.q2, cm.tab));
+            lab.DrawLatex(0.12, 0.83, Form("<xB>=%.2f   <Q^{2}>=%.2f   <-t>=%.2f", cm.xb, cm.q2, cm.tab));
         }
     }
 
@@ -754,16 +979,132 @@ static void plot_period(
 struct BlockDbg {
     long long entries=0, pass_global=0, pass_topo=0, pass_cuts=0, matched=0;
     std::array<long long,3> by_topo{{0,0,0}};
+
+    // extra diagnostics (all debug-only)
+    long long miss_row=0;
+    long long miss_x=0, miss_Q2=0, miss_t=0, miss_phi=0; // why no row matched (approx classification)
+    long long nan_x=0, nan_Q2=0, nan_t=0, nan_phi=0;
+
+    long long fail_global=0;
+    long long fail_topo=0;
+    long long fail_cuts=0;
+
     void print(const std::string& tag, const std::string& period) const {
-        std::cout << "[pi0_contamination]["<<period<<"] " << tag
-                  << " entries="<<entries
-                  << " pass_global="<<pass_global
-                  << " pass_topo="<<pass_topo
-                  << " pass_cuts="<<pass_cuts
-                  << " matched_rows="<<matched
-                  << " topo_counts=("<<by_topo[0]<<","<<by_topo[1]<<","<<by_topo[2]<<")\n";
+        std::cout << "[pi0_contamination][" << period << "] " << tag
+                  << " entries=" << entries
+                  << " pass_global=" << pass_global
+                  << " pass_topo=" << pass_topo
+                  << " pass_cuts=" << pass_cuts
+                  << " matched_rows=" << matched
+                  << " topo_counts=(" << by_topo[0] << "," << by_topo[1] << "," << by_topo[2] << ")\n";
+        if (is_debug()) {
+            std::cout << "[pi0_contamination][" << period << "][DEBUG] " << tag
+                      << " fail_global=" << fail_global
+                      << " fail_topo=" << fail_topo
+                      << " fail_cuts=" << fail_cuts
+                      << " miss_row=" << miss_row
+                      << " miss_reason_counts(x,Q2,t,phi)=(" << miss_x << "," << miss_Q2 << "," << miss_t << "," << miss_phi << ")"
+                      << " nan_counts(x,Q2,t,phi)=(" << nan_x << "," << nan_Q2 << "," << nan_t << "," << nan_phi << ")"
+                      << "\n";
+        }
     }
 };
+
+struct AxisEnvelope {
+    double xb_min=+1e99, xb_max=-1e99;
+    double q2_min=+1e99, q2_max=-1e99;
+    double t_min =+1e99, t_max =-1e99;
+    double phi_min=+1e99, phi_max=-1e99;
+};
+
+static AxisEnvelope compute_envelope(const std::vector<CsvRow>& rows) {
+    AxisEnvelope E;
+    for (const auto& r : rows) {
+        E.xb_min = std::min(E.xb_min, r.xb_min);
+        E.xb_max = std::max(E.xb_max, r.xb_max);
+        E.q2_min = std::min(E.q2_min, r.q2_min);
+        E.q2_max = std::max(E.q2_max, r.q2_max);
+        E.t_min  = std::min(E.t_min,  r.tab_min);
+        E.t_max  = std::max(E.t_max,  r.tab_max);
+        E.phi_min= std::min(E.phi_min,r.phimin);
+        E.phi_max= std::max(E.phi_max,r.phimax);
+    }
+    return E;
+}
+
+static bool value_in_any_range(double v, const std::vector<std::pair<double,double>>& ranges) {
+    for (const auto& rr : ranges) {
+        if (v >= rr.first && v < rr.second) return true;
+    }
+    return false;
+}
+
+static std::vector<std::pair<double,double>> unique_ranges_q2(const std::vector<CsvRow>& rows) {
+    std::set<std::pair<double,double>> st;
+    for (const auto& r : rows) st.emplace(r.q2_min, r.q2_max);
+    return std::vector<std::pair<double,double>>(st.begin(), st.end());
+}
+
+static std::vector<std::pair<double,double>> unique_ranges_t(const std::vector<CsvRow>& rows) {
+    std::set<std::pair<double,double>> st;
+    for (const auto& r : rows) st.emplace(r.tab_min, r.tab_max);
+    return std::vector<std::pair<double,double>>(st.begin(), st.end());
+}
+
+static std::vector<std::pair<double,double>> unique_ranges_xb(const std::vector<CsvRow>& rows) {
+    std::set<std::pair<double,double>> st;
+    for (const auto& r : rows) st.emplace(r.xb_min, r.xb_max);
+    return std::vector<std::pair<double,double>>(st.begin(), st.end());
+}
+
+static std::vector<std::pair<double,double>> unique_ranges_phi(const std::vector<CsvRow>& rows) {
+    std::set<std::pair<double,double>> st;
+    for (const auto& r : rows) st.emplace(r.phimin, r.phimax);
+    return std::vector<std::pair<double,double>>(st.begin(), st.end());
+}
+
+static int find_matching_row_linear(const std::vector<CsvRow>& rows, double xB, double Q2, double t_abs, double phi_deg) {
+    for (size_t r=0; r<rows.size(); ++r) {
+        if (row_accepts(rows[r], xB, Q2, t_abs, phi_deg)) return (int)r;
+    }
+    return -1;
+}
+
+static void debug_event_line(const std::string& period, const std::string& tag, Long64_t i,
+                             int det1, int det2,
+                             double xB, double Q2, double t1, double t_abs,
+                             double phi2_raw, double phi_deg,
+                             bool pass_global, bool pass_topo, bool pass_cuts, int row_idx) {
+    if (!is_debug()) return;
+    std::ostringstream oss;
+    oss << "[pi0_contamination][" << period << "][DEBUG_EVT][" << tag << "] i=" << (long long)i
+        << " det=(" << det1 << "," << det2 << ")"
+        << " xB=" << xB
+        << " Q2=" << Q2
+        << " t1=" << t1
+        << " |t|=" << t_abs
+        << " phi2_raw=" << phi2_raw
+        << " phi_deg=" << phi_deg
+        << " pass_global=" << yn(pass_global)
+        << " pass_topo=" << yn(pass_topo)
+        << " pass_cuts=" << yn(pass_cuts)
+        << " row_idx=" << row_idx
+        << "\n";
+    dbg(oss.str());
+}
+
+static void maybe_print_progress(const std::string& period, const std::string& tag, Long64_t i, Long64_t N) {
+    if (!is_debug()) return;
+    int step = debug_progress_every();
+    if (step <= 0) return;
+    if (i > 0 && (i % (Long64_t)step) == 0) {
+        double frac = (N > 0) ? (100.0 * (double)i / (double)N) : 0.0;
+        std::ostringstream oss;
+        oss << "[pi0_contamination][" << period << "][DEBUG_PROGRESS][" << tag << "] "
+            << (long long)i << "/" << (long long)N << " (" << std::fixed << std::setprecision(1) << frac << "%)\n";
+        dbg(oss.str());
+    }
+}
 
 } // end anon ns
 
@@ -779,8 +1120,24 @@ bool compute_pi0_contamination_overall(
     gROOT->SetBatch(kTRUE);
     ROOT::EnableThreadSafety();
 
+    if (is_debug()) {
+        std::ostringstream oss;
+        oss << "[pi0_contamination][DEBUG] Starting compute_pi0_contamination_overall\n";
+        oss << "[pi0_contamination][DEBUG] Inputs:\n";
+        oss << "  combined_cuts_json = " << combined_cuts_json << "\n";
+        oss << "  dvcs_csv_path      = " << dvcs_csv_path << "\n";
+        oss << "  out_root_dir       = " << out_root_dir << "\n";
+        oss << "  max_workers        = " << max_workers << "\n";
+        oss << "  PI0_CONTAM_TRACE   = " << yn(trace_rows_env()) << "\n";
+        oss << "  PI0_CONTAM_DEBUG_EVENTS   = " << debug_sample_events() << "\n";
+        oss << "  PI0_CONTAM_DEBUG_PROGRESS = " << debug_progress_every() << "\n";
+        oss << "  PI0_CONTAM_DEBUG_ROWS     = " << debug_sample_rows() << "\n";
+        dbg(oss.str());
+    }
+
     CsvDoc csv;
     if (!csv.load(dvcs_csv_path)) return false;
+    debug_print_csv_overview(csv);
 
     const CutTable cuts = load_cuts(combined_cuts_json);
 
@@ -791,12 +1148,25 @@ bool compute_pi0_contamination_overall(
         const std::string key_data = tree_key + "_eppi0";
         const std::string key_rec  = tree_key + "_rec_mc";
         const std::string key_bkg  = tree_key + "_bkg";
-        if (eppi0DataTrees.count(key_data) && eppi0DataTrees.at(key_data) &&
-            eppi0RecMcTrees.count(key_rec) && eppi0RecMcTrees.at(key_rec) &&
-            eppi0BkgTrees.count(key_bkg)   && eppi0BkgTrees.at(key_bkg)) {
-            jobs.push_back({tree_key, P.label, P.label});
+
+        bool hasD = (eppi0DataTrees.count(key_data) && eppi0DataTrees.at(key_data));
+        bool hasR = (eppi0RecMcTrees.count(key_rec) && eppi0RecMcTrees.at(key_rec));
+        bool hasB = (eppi0BkgTrees.count(key_bkg) && eppi0BkgTrees.at(key_bkg));
+
+        if (is_debug()) {
+            std::ostringstream oss;
+            oss << "[pi0_contamination][DEBUG] Period candidate \"" << P.label << "\""
+                << " tree_key=\"" << tree_key << "\""
+                << " has_data=" << yn(hasD)
+                << " has_rec_mc=" << yn(hasR)
+                << " has_bkg=" << yn(hasB)
+                << "\n";
+            dbg(oss.str());
         }
+
+        if (hasD && hasR && hasB) jobs.push_back({tree_key, P.label, P.label});
     }
+
     if (jobs.empty()) {
         std::cerr << "[pi0_contamination] Nothing to do: no periods with all three trees present.\n";
         return true;
@@ -806,9 +1176,17 @@ bool compute_pi0_contamination_overall(
     for (const auto& J : jobs) {
         const auto per_aliases = period_aliases(J.display);
         bool ok=false;
+        std::string found_name;
         for (const auto& p : per_aliases) {
             const std::string colname = "contamination ratio, " + p;
-            if (csv.col(colname) >= 0) { ok=true; break; }
+            if (csv.col(colname) >= 0) { ok=true; found_name = colname; break; }
+        }
+        if (is_debug()) {
+            std::ostringstream oss;
+            oss << "[pi0_contamination][DEBUG] Output column check for period \"" << J.display << "\": ok=" << yn(ok);
+            if (ok) oss << " using=\"" << found_name << "\"";
+            oss << "\n";
+            dbg(oss.str());
         }
         if (!ok) fatal("CSV missing output contamination column for period aliases of \"" + J.display + "\".");
     }
@@ -827,12 +1205,32 @@ bool compute_pi0_contamination_overall(
         std::string period_dir = J.display;
         for (char& c : period_dir) if (c==' ') c='_';
 
+        // Materialize CSV row definitions for this period
         std::vector<CsvRow> rows = materialize_rows_for_period(csv, J.display);
+        const AxisEnvelope Env = compute_envelope(rows);
+
+        if (is_debug()) {
+            std::ostringstream oss;
+            oss << "[pi0_contamination][" << J.display << "][DEBUG] CSV envelope:"
+                << " xB[" << Env.xb_min << "," << Env.xb_max << "]"
+                << " Q2[" << Env.q2_min << "," << Env.q2_max << "]"
+                << " |t|[" << Env.t_min << "," << Env.t_max << "]"
+                << " phi[" << Env.phi_min << "," << Env.phi_max << "]"
+                << "\n";
+            dbg(oss.str());
+        }
+
         std::vector<RowCounts> counts(rows.size());
-        for (size_t i=0;i<rows.size();++i) {
+        for (size_t i=0; i<rows.size(); ++i) {
             counts[i].n_dvcs_csv = rows[i].n_dvcs_csv;
             counts[i].phi_center = rows[i].phiavg;
         }
+
+        // Precompute unique ranges for debug classification of "no row matched"
+        const auto xb_ranges  = unique_ranges_xb(rows);
+        const auto q2_ranges  = unique_ranges_q2(rows);
+        const auto t_ranges   = unique_ranges_t(rows);
+        const auto phi_ranges = unique_ranges_phi(rows);
 
         auto topo_to_key = [](const std::string& s)->std::string {
             if (s=="(FD, FD)") return "FD_FD";
@@ -841,6 +1239,7 @@ bool compute_pi0_contamination_overall(
             fatal("Unknown topology string: " + s);
             return "";
         };
+
         auto cuts_for = [&](const char* which, const std::string& topoKey)->const CutPair& {
             const std::string k = std::string(which) + "_" + period_cased + "_" + topoKey;
             auto it = cuts.find(k);
@@ -848,22 +1247,52 @@ bool compute_pi0_contamination_overall(
             return it->second;
         };
 
+        // Resolve trees
         TTree* tD = getTreeOrDie(eppi0DataTrees, J.tree_key + "_eppi0", "eppi0 DATA");
         TTree* tR = getTreeOrDie(eppi0RecMcTrees, J.tree_key + "_rec_mc", "eppi0 RECO MC");
         TTree* tB = getTreeOrDie(eppi0BkgTrees,   J.tree_key + "_bkg",    "BKG->DVCS MC");
 
+        if (is_debug()) {
+            debug_tree_brief(tD, J.display + " DATA");
+            debug_tree_brief(tR, J.display + " RECO_MC");
+            debug_tree_brief(tB, J.display + " BKG_MC");
+
+            std::vector<std::string> probe = {
+                "detector1","detector2","runnum","helicity",
+                "t1","open_angle_ep2","pTmiss","x","xB","Q2","phi2",
+                "Emiss2","Mx2","Mx2_1","Mx2_2","theta_gamma_gamma","xF","theta_pi0_pi0"
+            };
+            debug_branch_probe(tD, J.display + " DATA", probe);
+            debug_branch_probe(tR, J.display + " RECO_MC", probe);
+            debug_branch_probe(tB, J.display + " BKG_MC", probe);
+
+            debug_phi_units_guess(tD, J.display + " DATA", "phi2");
+            debug_phi_units_guess(tR, J.display + " RECO_MC", "phi2");
+            debug_phi_units_guess(tB, J.display + " BKG_MC", "phi2");
+        }
+
         BlockDbg dbgD, dbgR, dbgB;
 
-        // eppi0 DATA
+        // ---------- eppi0 DATA ----------
         {
-            BinderEppi0Data b; b.bind(tD);
-            const Long64_t N = tD->GetEntries(); dbgD.entries = (long long)N;
-            for (Long64_t i=0;i<N;++i) {
-                tD->GetEntry(i);
+            BinderEppi0Data b;
+            b.bind(tD);
 
-                // Global run blacklist + global cuts (same policy as total_counts)
-                if (b.have_runnum && is_excluded_run(b.runnum)) continue;
-                if (!passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT())) continue;
+            const Long64_t N = tD->GetEntries();
+            dbgD.entries = (long long)N;
+
+            int printed = 0;
+            int printed_cutfails = 0;
+
+            for (Long64_t i=0; i<N; ++i) {
+                tD->GetEntry(i);
+                maybe_print_progress(J.display, "DATA", i, N);
+
+                // Run blacklist
+                if (b.have_runnum && is_excluded_run(b.runnum)) { dbgD.fail_global++; continue; }
+
+                const bool pass_global = passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT());
+                if (!pass_global) { dbgD.fail_global++; continue; }
                 dbgD.pass_global++;
 
                 std::string matched_topo;
@@ -871,33 +1300,97 @@ bool compute_pi0_contamination_overall(
                 if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
                 else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
                 else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
-                else { continue; }
-                dbgD.pass_topo++; dbgD.by_topo[(topo_idx<0?0:topo_idx)]++;
+                else { dbgD.fail_topo++; continue; }
+
+                dbgD.pass_topo++;
+                dbgD.by_topo[(topo_idx<0?0:topo_idx)]++;
 
                 const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("eppi0", topoKey);
-                if (!passes_cuts(CP.data, b.cut_vals())) continue; dbgD.pass_cuts++;
 
-                const double xB=b.get_x(), Q2=b.get_Q2(), tt=std::fabs(b.get_t1());
-                const double phi_deg = wrap_deg(b.get_phi2() * 180.0 / PI_CONST);
-                bool matched=false;
-                for (size_t r=0;r<rows.size();++r) {
-                    if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_data++; matched=true; break; }
+                CutFailInfo fi;
+                const bool pass_cuts = passes_cuts_with_reason(CP.data, b.cut_vals(), is_debug() ? &fi : nullptr);
+                if (!pass_cuts) {
+                    dbgD.fail_cuts++;
+                    if (is_debug() && printed_cutfails < 5) {
+                        std::ostringstream oss;
+                        oss << "[pi0_contamination][" << J.display << "][DEBUG_CUTF] DATA topo=" << topoKey
+                            << " fail_var=\"" << fi.var << "\" value=" << fi.value
+                            << " mean=" << fi.mean << " std=" << fi.std
+                            << "\n";
+                        dbg(oss.str());
+                        printed_cutfails++;
+                    }
+                    continue;
                 }
-                if (matched) dbgD.matched++;
+                dbgD.pass_cuts++;
+
+                const double xB = b.get_x();
+                const double Q2 = b.get_Q2();
+                const double t1 = b.get_t1();
+                const double t_abs = std::fabs(t1);
+
+                const double phi2_raw = b.get_phi2();
+                const double phi_deg = wrap_deg(phi2_raw * 180.0 / PI_CONST);
+
+                if (!std::isfinite(xB)) dbgD.nan_x++;
+                if (!std::isfinite(Q2)) dbgD.nan_Q2++;
+                if (!std::isfinite(t_abs)) dbgD.nan_t++;
+                if (!std::isfinite(phi_deg)) dbgD.nan_phi++;
+
+                int row_idx = find_matching_row_linear(rows, xB, Q2, t_abs, phi_deg);
+                const bool matched = (row_idx >= 0);
+
+                if (!matched) {
+                    dbgD.miss_row++;
+
+                    // Classify likely reason (debug only)
+                    bool in_x  = value_in_any_range(xB,  xb_ranges);
+                    bool in_Q2 = value_in_any_range(Q2,  q2_ranges);
+                    bool in_t  = value_in_any_range(t_abs, t_ranges);
+                    bool in_p  = value_in_any_range(wrap_deg(phi_deg), phi_ranges);
+
+                    // Choose the first failing dimension in a deterministic order
+                    if (!in_x) dbgD.miss_x++;
+                    else if (!in_Q2) dbgD.miss_Q2++;
+                    else if (!in_t) dbgD.miss_t++;
+                    else if (!in_p) dbgD.miss_phi++;
+                    else dbgD.miss_phi++; // default bucket if ranges overlap oddly
+                } else {
+                    counts[(size_t)row_idx].n_pi0_data++;
+                    dbgD.matched++;
+                }
+
+                if (is_debug() && printed < debug_sample_events()) {
+                    debug_event_line(J.display, "DATA", i,
+                                     b.detector1, b.detector2,
+                                     xB, Q2, t1, t_abs,
+                                     phi2_raw, phi_deg,
+                                     pass_global, true, pass_cuts, row_idx);
+                    printed++;
+                }
             }
         }
 
-        // eppi0 RECO MC
+        // ---------- eppi0 RECO MC ----------
         {
-            BinderMC b; b.bind(tR);
-            const Long64_t N = tR->GetEntries(); dbgR.entries = (long long)N;
-            for (Long64_t i=0;i<N;++i) {
-                tR->GetEntry(i);
+            BinderMC b;
+            b.bind(tR);
 
-                // Global run blacklist + global cuts
-                if (b.have_runnum && is_excluded_run(b.runnum)) continue;
-                if (!passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT())) continue;
+            const Long64_t N = tR->GetEntries();
+            dbgR.entries = (long long)N;
+
+            int printed = 0;
+            int printed_cutfails = 0;
+
+            for (Long64_t i=0; i<N; ++i) {
+                tR->GetEntry(i);
+                maybe_print_progress(J.display, "RECO_MC", i, N);
+
+                if (b.have_runnum && is_excluded_run(b.runnum)) { dbgR.fail_global++; continue; }
+
+                const bool pass_global = passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT());
+                if (!pass_global) { dbgR.fail_global++; continue; }
                 dbgR.pass_global++;
 
                 std::string matched_topo;
@@ -905,33 +1398,95 @@ bool compute_pi0_contamination_overall(
                 if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
                 else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
                 else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
-                else { continue; }
-                dbgR.pass_topo++; dbgR.by_topo[(topo_idx<0?0:topo_idx)]++;
+                else { dbgR.fail_topo++; continue; }
+
+                dbgR.pass_topo++;
+                dbgR.by_topo[(topo_idx<0?0:topo_idx)]++;
 
                 const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("eppi0", topoKey);
-                if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgR.pass_cuts++;
 
-                const double xB=b.get_x(), Q2=b.get_Q2(), tt=std::fabs(b.get_t1());
-                const double phi_deg = wrap_deg(b.get_phi2() * 180.0 / PI_CONST);
-                bool matched=false;
-                for (size_t r=0;r<rows.size();++r) {
-                    if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_reco++; matched=true; break; }
+                CutFailInfo fi;
+                const bool pass_cuts = passes_cuts_with_reason(CP.mc, b.cut_vals(), is_debug() ? &fi : nullptr);
+                if (!pass_cuts) {
+                    dbgR.fail_cuts++;
+                    if (is_debug() && printed_cutfails < 5) {
+                        std::ostringstream oss;
+                        oss << "[pi0_contamination][" << J.display << "][DEBUG_CUTF] RECO_MC topo=" << topoKey
+                            << " fail_var=\"" << fi.var << "\" value=" << fi.value
+                            << " mean=" << fi.mean << " std=" << fi.std
+                            << "\n";
+                        dbg(oss.str());
+                        printed_cutfails++;
+                    }
+                    continue;
                 }
-                if (matched) dbgR.matched++;
+                dbgR.pass_cuts++;
+
+                const double xB = b.get_x();
+                const double Q2 = b.get_Q2();
+                const double t1 = b.get_t1();
+                const double t_abs = std::fabs(t1);
+
+                const double phi2_raw = b.get_phi2();
+                const double phi_deg = wrap_deg(phi2_raw * 180.0 / PI_CONST);
+
+                if (!std::isfinite(xB)) dbgR.nan_x++;
+                if (!std::isfinite(Q2)) dbgR.nan_Q2++;
+                if (!std::isfinite(t_abs)) dbgR.nan_t++;
+                if (!std::isfinite(phi_deg)) dbgR.nan_phi++;
+
+                int row_idx = find_matching_row_linear(rows, xB, Q2, t_abs, phi_deg);
+                const bool matched = (row_idx >= 0);
+
+                if (!matched) {
+                    dbgR.miss_row++;
+
+                    bool in_x  = value_in_any_range(xB,  xb_ranges);
+                    bool in_Q2 = value_in_any_range(Q2,  q2_ranges);
+                    bool in_t  = value_in_any_range(t_abs, t_ranges);
+                    bool in_p  = value_in_any_range(wrap_deg(phi_deg), phi_ranges);
+
+                    if (!in_x) dbgR.miss_x++;
+                    else if (!in_Q2) dbgR.miss_Q2++;
+                    else if (!in_t) dbgR.miss_t++;
+                    else if (!in_p) dbgR.miss_phi++;
+                    else dbgR.miss_phi++;
+                } else {
+                    counts[(size_t)row_idx].n_pi0_reco++;
+                    dbgR.matched++;
+                }
+
+                if (is_debug() && printed < debug_sample_events()) {
+                    debug_event_line(J.display, "RECO_MC", i,
+                                     b.detector1, b.detector2,
+                                     xB, Q2, t1, t_abs,
+                                     phi2_raw, phi_deg,
+                                     pass_global, true, pass_cuts, row_idx);
+                    printed++;
+                }
             }
         }
 
-        // pi0->DVCS BKG MC (apply DVCS mc cuts)
+        // ---------- pi0->DVCS BKG MC (apply DVCS mc cuts) ----------
         {
-            BinderMC b; b.bind(tB);
-            const Long64_t N = tB->GetEntries(); dbgB.entries = (long long)N;
-            for (Long64_t i=0;i<N;++i) {
-                tB->GetEntry(i);
+            BinderMC b;
+            b.bind(tB);
 
-                // Global run blacklist + global cuts
-                if (b.have_runnum && is_excluded_run(b.runnum)) continue;
-                if (!passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT())) continue;
+            const Long64_t N = tB->GetEntries();
+            dbgB.entries = (long long)N;
+
+            int printed = 0;
+            int printed_cutfails = 0;
+
+            for (Long64_t i=0; i<N; ++i) {
+                tB->GetEntry(i);
+                maybe_print_progress(J.display, "BKG_MC", i, N);
+
+                if (b.have_runnum && is_excluded_run(b.runnum)) { dbgB.fail_global++; continue; }
+
+                const bool pass_global = passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT());
+                if (!pass_global) { dbgB.fail_global++; continue; }
                 dbgB.pass_global++;
 
                 std::string matched_topo;
@@ -939,57 +1494,119 @@ bool compute_pi0_contamination_overall(
                 if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
                 else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
                 else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
-                else { continue; }
-                dbgB.pass_topo++; dbgB.by_topo[(topo_idx<0?0:topo_idx)]++;
+                else { dbgB.fail_topo++; continue; }
+
+                dbgB.pass_topo++;
+                dbgB.by_topo[(topo_idx<0?0:topo_idx)]++;
 
                 const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("DVCS", topoKey);
-                if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgB.pass_cuts++;
 
-                const double xB=b.get_x(), Q2=b.get_Q2(), tt=std::fabs(b.get_t1());
-                const double phi_deg = wrap_deg(b.get_phi2() * 180.0 / PI_CONST);
-                bool matched=false;
-                for (size_t r=0;r<rows.size();++r) {
-                    if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_bkg++; matched=true; break; }
+                CutFailInfo fi;
+                const bool pass_cuts = passes_cuts_with_reason(CP.mc, b.cut_vals(), is_debug() ? &fi : nullptr);
+                if (!pass_cuts) {
+                    dbgB.fail_cuts++;
+                    if (is_debug() && printed_cutfails < 5) {
+                        std::ostringstream oss;
+                        oss << "[pi0_contamination][" << J.display << "][DEBUG_CUTF] BKG_MC topo=" << topoKey
+                            << " fail_var=\"" << fi.var << "\" value=" << fi.value
+                            << " mean=" << fi.mean << " std=" << fi.std
+                            << "\n";
+                        dbg(oss.str());
+                        printed_cutfails++;
+                    }
+                    continue;
                 }
-                if (matched) dbgB.matched++;
+                dbgB.pass_cuts++;
+
+                const double xB = b.get_x();
+                const double Q2 = b.get_Q2();
+                const double t1 = b.get_t1();
+                const double t_abs = std::fabs(t1);
+
+                const double phi2_raw = b.get_phi2();
+                const double phi_deg = wrap_deg(phi2_raw * 180.0 / PI_CONST);
+
+                if (!std::isfinite(xB)) dbgB.nan_x++;
+                if (!std::isfinite(Q2)) dbgB.nan_Q2++;
+                if (!std::isfinite(t_abs)) dbgB.nan_t++;
+                if (!std::isfinite(phi_deg)) dbgB.nan_phi++;
+
+                int row_idx = find_matching_row_linear(rows, xB, Q2, t_abs, phi_deg);
+                const bool matched = (row_idx >= 0);
+
+                if (!matched) {
+                    dbgB.miss_row++;
+
+                    bool in_x  = value_in_any_range(xB,  xb_ranges);
+                    bool in_Q2 = value_in_any_range(Q2,  q2_ranges);
+                    bool in_t  = value_in_any_range(t_abs, t_ranges);
+                    bool in_p  = value_in_any_range(wrap_deg(phi_deg), phi_ranges);
+
+                    if (!in_x) dbgB.miss_x++;
+                    else if (!in_Q2) dbgB.miss_Q2++;
+                    else if (!in_t) dbgB.miss_t++;
+                    else if (!in_p) dbgB.miss_phi++;
+                    else dbgB.miss_phi++;
+                } else {
+                    counts[(size_t)row_idx].n_pi0_bkg++;
+                    dbgB.matched++;
+                }
+
+                if (is_debug() && printed < debug_sample_events()) {
+                    debug_event_line(J.display, "BKG_MC", i,
+                                     b.detector1, b.detector2,
+                                     xB, Q2, t1, t_abs,
+                                     phi2_raw, phi_deg,
+                                     pass_global, true, pass_cuts, row_idx);
+                    printed++;
+                }
             }
         }
 
+        // Summaries
         long long Nd_sum=0, Ne_sum=0, Nr_sum=0, Nb_sum=0;
         int rows_with_dvcs=0, rows_with_vals=0;
-        for (size_t r=0;r<rows.size();++r) {
+
+        for (size_t r=0; r<rows.size(); ++r) {
             Nd_sum += counts[r].n_dvcs_csv;
             Ne_sum += counts[r].n_pi0_data;
             Nr_sum += counts[r].n_pi0_reco;
             Nb_sum += counts[r].n_pi0_bkg;
+
             if (counts[r].n_dvcs_csv > 0) rows_with_dvcs++;
             if (counts[r].n_pi0_data>0 || counts[r].n_pi0_reco>0 || counts[r].n_pi0_bkg>0) rows_with_vals++;
         }
+
 #ifdef _OPENMP
         #pragma omp critical
 #endif
         {
             std::cout << "[pi0_contamination] Period " << J.display
-                      << " rows="<<rows.size()
-                      << " DVCS_sum="<<Nd_sum<<" rows_with_dvcs="<<rows_with_dvcs
-                      << " data_sum="<<Ne_sum<<" reco_sum="<<Nr_sum<<" bkg_sum="<<Nb_sum
-                      << " rows_with_any_count="<<rows_with_vals << "\n";
+                      << " rows=" << rows.size()
+                      << " DVCS_sum=" << Nd_sum << " rows_with_dvcs=" << rows_with_dvcs
+                      << " data_sum=" << Ne_sum << " reco_sum=" << Nr_sum << " bkg_sum=" << Nb_sum
+                      << " rows_with_any_count=" << rows_with_vals << "\n";
             dbgD.print("DATA", J.display);
             dbgR.print("RECO_MC", J.display);
             dbgB.print("BKG_MC", J.display);
+
+            if (is_debug()) {
+                std::cout << "[pi0_contamination][" << J.display << "][DEBUG] Note: matched_rows counts events that both pass cuts AND land in at least one CSV bin.\n";
+                std::cout << "[pi0_contamination][" << J.display << "][DEBUG] If DATA/RECO_MC matched_rows=0 but BKG_MC matched_rows>0, suspect a units/branch mismatch (x vs xB, phi2 units, or Q2 units) in DATA/RECO trees.\n";
+            }
         }
 
         // Row-level diagnostics if desired
         if (trace_rows_env()) {
-            for (size_t i=0;i<rows.size();++i) {
+            for (size_t i=0; i<rows.size(); ++i) {
                 const auto& R = rows[i];
                 const auto& C = counts[i];
                 if (C.n_pi0_data>0 && (C.n_dvcs_csv==0 || C.n_pi0_reco==0 || C.n_pi0_bkg==0)) {
-                    std::cout << "[pi0_contamination][TRACE_MISS] row="<<R.row_index
-                              << " Ne>0 but Nd="<<C.n_dvcs_csv
-                              << " Nr="<<C.n_pi0_reco
-                              << " Nb="<<C.n_pi0_bkg << "\n";
+                    std::cout << "[pi0_contamination][TRACE_MISS] row=" << R.row_index
+                              << " Ne>0 but Nd=" << C.n_dvcs_csv
+                              << " Nr=" << C.n_pi0_reco
+                              << " Nb=" << C.n_pi0_bkg << "\n";
                 }
             }
         }
@@ -997,10 +1614,11 @@ bool compute_pi0_contamination_overall(
         // Write contamination tuples
         const auto per_aliases = period_aliases(J.display);
         int c_contam = -1;
+        std::string used_contam_name;
+
         for (const auto& p : per_aliases) {
             const std::string colname = "contamination ratio, " + p;
-            c_contam = csv.col(colname);
-            if (c_contam >= 0) break;
+            if (csv.col(colname) >= 0) { c_contam = csv.col(colname); used_contam_name = colname; break; }
         }
         if (c_contam < 0) fatal("CSV missing output contamination column for period \"" + J.display + "\".");
 
@@ -1010,7 +1628,15 @@ bool compute_pi0_contamination_overall(
 #endif
         {
             std::lock_guard<std::mutex> lock(csv_mtx);
-            for (size_t i=0;i<rows.size();++i) {
+
+            if (is_debug()) {
+                std::ostringstream oss;
+                oss << "[pi0_contamination][" << J.display << "][DEBUG] Writing tuples into column index " << c_contam
+                    << " name=\"" << used_contam_name << "\"\n";
+                dbg(oss.str());
+            }
+
+            for (size_t i=0; i<rows.size(); ++i) {
                 const auto& R = rows[i];
                 const auto& C = counts[i];
 
@@ -1021,17 +1647,18 @@ bool compute_pi0_contamination_overall(
 
                 if (Nb>0.0 && Nd>0.0 && Ne>0.0 && Nr>0.0) {
                     const double val = (Nb/Nd) * (Ne/Nr);
-                    auto rel = [](double n){ return (n>0.0) ? 1.0/std::sqrt(n) : 0.0; };
+
+                    auto rel = [](double n) { return (n>0.0) ? 1.0/std::sqrt(n) : 0.0; };
                     const double rel2 = std::pow(rel(Nb),2) + std::pow(rel(Nd),2)
                                       + std::pow(rel(Ne),2) + std::pow(rel(Nr),2);
                     const double estat = val * std::sqrt(rel2);
                     const double esys  = 0.0;
+
                     csv.set_string(R.row_index, c_contam, tuple_string(val, estat, esys, 8));
                     ++wrote;
-                } else {
-                    // leave blank
                 }
             }
+
             if (!csv.save_atomic(dvcs_csv_path)) {
                 fatal("Failed to save updated CSV: " + dvcs_csv_path);
             }
@@ -1060,8 +1687,7 @@ bool compute_pi0_contamination_overall(
                 const double xb_hi = kv.first.second;
 
                 ++slice_counter_local;
-                plot_period(period_dir, rows, counts, out_root_dir, idxs,
-                            xb_lo, xb_hi, slice_counter_local);
+                plot_period(period_dir, rows, counts, out_root_dir, idxs, xb_lo, xb_hi, slice_counter_local);
             }
         }
     } // end ip
