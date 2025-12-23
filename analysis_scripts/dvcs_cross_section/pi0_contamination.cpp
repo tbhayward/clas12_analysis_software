@@ -260,6 +260,28 @@ static std::string to_title_space(const std::string& p) {
     return out;
 }
 
+// Identity-first wrapper: ensures the exact string we pass (e.g. "Fa18 Inb")
+// is always tried first, even if period_aliases() returns only variants.
+static std::vector<std::string> period_aliases_identity_first(const std::string& period_display) {
+    std::vector<std::string> v;
+    v.reserve(8);
+
+    // Always try the literal input first
+    v.push_back(period_display);
+
+    // Then add whatever label_aliases.h provides (if any), skipping duplicates
+    const auto extra = period_aliases(period_display);
+    for (const auto& s : extra) {
+        bool dup = false;
+        for (const auto& already : v) {
+            if (already == s) { dup = true; break; }
+        }
+        if (!dup) v.push_back(s);
+    }
+
+    return v;
+}
+
 // -------- alias-aware column resolvers --------
 static int col_alias(const CsvDoc& csv, const std::vector<std::string>& candidates, std::string* used_name=nullptr) {
     for (const auto& n : candidates) {
@@ -275,7 +297,10 @@ static int col_alias(const CsvDoc& csv, const std::vector<std::string>& candidat
 static int dvcs_unpol_col_alias(const CsvDoc& csv, const std::string& topo_label, const std::string& period_display, std::string* used_name=nullptr) {
     std::vector<std::string> names;
     const auto tops = topology_aliases(topo_label);
-    const auto pers = period_aliases(period_display);
+
+    // CHANGE: identity-first period aliases
+    const auto pers = period_aliases_identity_first(period_display);
+
     const auto hels = helicity_aliases("unpol");
     for (const auto& t : tops) {
         for (const auto& p : pers) {
@@ -291,7 +316,10 @@ static int dvcs_unpol_col_alias(const CsvDoc& csv, const std::string& topo_label
 
 static int avg_col_alias(const CsvDoc& csv, const std::string& base, const std::string& period_display, std::string* used_name=nullptr) {
     std::vector<std::string> names;
-    const auto pers = period_aliases(period_display);
+
+    // CHANGE: identity-first period aliases
+    const auto pers = period_aliases_identity_first(period_display);
+
     for (const auto& p : pers) names.push_back(base + ", " + p);
     return col_alias(csv, names, used_name);
 }
@@ -351,8 +379,31 @@ static std::vector<CsvRow> materialize_rows_for_period(const CsvDoc& csv, const 
     const int c_cd_fd    = dvcs_unpol_col_alias(csv, "(CD, FD)", period_display, &used_cd_fd);
     const int c_cd_ft    = dvcs_unpol_col_alias(csv, "(CD, FT)", period_display, &used_cd_ft);
 
-    if (c_fd_fd < 0 && c_cd_fd < 0 && c_cd_ft < 0) {
-        fatal("Could not resolve any DVCS unpolarized columns via aliases for period \"" + period_display + "\".");
+    // CHANGE: fail fast with explicit "expected exact" names if anything is missing.
+    // This makes the failure mode unambiguous and prevents silent Nd_sum=0.
+    {
+        std::vector<std::string> missing;
+
+        // These are the *canonical* headers you showed (exactly as in your CSV).
+        const std::string expect_fd = "raw yield, ep->epg, (FD, FD), exp, " + period_display + ", unpol";
+        const std::string expect_cd = "raw yield, ep->epg, (CD, FD), exp, " + period_display + ", unpol";
+        const std::string expect_ft = "raw yield, ep->epg, (CD, FT), exp, " + period_display + ", unpol";
+
+        // If alias resolution fails, force a fatal that prints what we expected.
+        // We check the resolved indices directly (because aliases may map to variants).
+        if (c_fd_fd < 0) missing.push_back(expect_fd);
+        if (c_cd_fd < 0) missing.push_back(expect_cd);
+        if (c_cd_ft < 0) missing.push_back(expect_ft);
+
+        if (!missing.empty()) {
+            std::ostringstream oss;
+            oss << "Could not resolve required DVCS unpolarized raw-yield columns for period \"" << period_display << "\".\n";
+            oss << "Expected (canonical) columns:\n";
+            for (const auto& m : missing) oss << "  - " << m << "\n";
+            oss << "NOTE: This typically indicates a period alias mismatch (e.g., period_aliases(\"" << period_display
+                << "\") not including the literal \"" << period_display << "\").\n";
+            fatal(oss.str());
+        }
     }
 
     if (is_debug()) {
@@ -1202,7 +1253,7 @@ bool compute_pi0_contamination_overall(
 
     // Ensure the output contamination column exists (do not add)
     for (const auto& J : jobs) {
-        const auto per_aliases = period_aliases(J.display);
+        const auto per_aliases = period_aliases_identity_first(J.display);
         bool ok=false;
         std::string found_name;
         for (const auto& p : per_aliases) {
@@ -1640,7 +1691,7 @@ bool compute_pi0_contamination_overall(
         }
 
         // Write contamination tuples
-        const auto per_aliases = period_aliases(J.display);
+        const auto per_aliases = period_aliases_identity_first(J.display);
         int c_contam = -1;
         std::string used_contam_name;
 
