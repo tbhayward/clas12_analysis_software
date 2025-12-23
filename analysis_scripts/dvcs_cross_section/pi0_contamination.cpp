@@ -368,6 +368,34 @@ static std::vector<CsvRow> materialize_rows_for_period(const CsvDoc& csv, const 
         dbg(oss.str());
     }
 
+    if (is_debug()) {
+        struct Stat { long long nnz=0; double maxv=0.0; double sumv=0.0; };
+        auto scan = [&](int col)->Stat {
+            Stat s;
+            if (col < 0) return s;
+            for (int r=0; r<(int)csv.rows.size(); ++r) {
+                double v = csv.as_double(r, col);
+                if (std::isfinite(v)) {
+                    s.sumv += v;
+                    if (v > s.maxv) s.maxv = v;
+                    if (v > 0.0) s.nnz++;
+                }
+            }
+            return s;
+        };
+
+        const Stat s_fd = scan(c_fd_fd);
+        const Stat s_cd = scan(c_cd_fd);
+        const Stat s_ft = scan(c_cd_ft);
+
+        std::ostringstream os;
+        os << "[pi0_contamination][DEBUG] DVCS column content scan (period=\"" << period_display << "\"):\n";
+        os << "  (FD,FD): nnz=" << s_fd.nnz << " sum=" << s_fd.sumv << " max=" << s_fd.maxv << "\n";
+        os << "  (CD,FD): nnz=" << s_cd.nnz << " sum=" << s_cd.sumv << " max=" << s_cd.maxv << "\n";
+        os << "  (CD,FT): nnz=" << s_ft.nnz << " sum=" << s_ft.sumv << " max=" << s_ft.maxv << "\n";
+        dbg(os.str());
+    }
+
     std::vector<CsvRow> rows;
     rows.reserve(csv.rows.size());
 
