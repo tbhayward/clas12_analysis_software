@@ -84,28 +84,28 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // --------- Raw yields (counts) into CSV + plots ----------
-    // {
-    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // --------- Raw yields (counts) into CSV + plots ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-    //     // Make a backup (the function also backs up to ..._total_counts.csv)
-    //     try {
-    //         std::filesystem::copy_file(csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup (the function also backs up to ..._total_counts.csv)
+        try {
+            std::filesystem::copy_file(csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
 
-    //     // update_total_counts_csv() now discovers periods/topologies internally
-    //     if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
-    //             /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // update_total_counts_csv() now discovers periods/topologies internally
+        if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
+                /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // --------- pi0 contamination (helicity-averaged; DVCS counts from CSV; eppi0 counts re-counted) ----------
     {
