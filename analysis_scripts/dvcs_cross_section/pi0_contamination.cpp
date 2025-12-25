@@ -10,6 +10,17 @@
 //   - PI0_CONTAM_DEBUG_EVENTS: integer, number of sample events to print per block (default 5)
 //   - PI0_CONTAM_DEBUG_PROGRESS: integer, print progress every N events (default 0 = off)
 //   - PI0_CONTAM_DEBUG_ROWS: integer, number of sample CSV rows to print (default 5)
+//
+// ADDITIONAL STEP-BY-STEP DUMPS (new; diagnostic only):
+//   - PI0_CONTAM_DUMP_EVENTS: integer, dump first N events per block (default 1000 when PI0_CONTAM_DEBUG is set; else 0)
+//     The dump prints a single-line record for each processed event showing:
+//       * raw values (x/Q2/t1/phi2, etc.)
+//       * topology selection
+//       * global cut pass/fail
+//       * 3-sigma pass/fail (and failing variable/thresholds when available)
+//       * CSV row match index
+//
+// NOTE: This file intentionally "fails fast" when cuts reference a variable not present.
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
@@ -74,6 +85,13 @@ static int debug_sample_events() { return env_int("PI0_CONTAM_DEBUG_EVENTS", 5);
 static int debug_progress_every() { return env_int("PI0_CONTAM_DEBUG_PROGRESS", 0); }
 static int debug_sample_rows() { return env_int("PI0_CONTAM_DEBUG_ROWS", 5); }
 
+// New: step-by-step event dump limit
+static int dump_events_limit() {
+    // Default behavior: if PI0_CONTAM_DEBUG is set, dump 1000 events; otherwise dump 0.
+    if (!is_debug()) return env_int("PI0_CONTAM_DUMP_EVENTS", 0);
+    return env_int("PI0_CONTAM_DUMP_EVENTS", 1000);
+}
+
 static int resolve_threads(int max_workers) {
     int threads = 1;
 #ifdef _OPENMP
@@ -102,6 +120,23 @@ static void dbgln(const std::string& s) {
 }
 
 static std::string yn(bool v) { return v ? "YES" : "NO"; }
+
+static inline bool is_fin(double v) { return std::isfinite(v); }
+
+// Keep debug prints readable even under OpenMP
+static std::mutex g_print_mtx;
+
+static void dbg_locked(const std::string& s) {
+    if (!is_debug()) return;
+    std::lock_guard<std::mutex> lock(g_print_mtx);
+    std::cout << s << std::flush;
+}
+
+static void dbgln_locked(const std::string& s) {
+    if (!is_debug()) return;
+    std::lock_guard<std::mutex> lock(g_print_mtx);
+    std::cout << s << "\n";
+}
 
 // ---------- CSV doc ----------
 struct CsvDoc {
@@ -380,17 +415,13 @@ static std::vector<CsvRow> materialize_rows_for_period(const CsvDoc& csv, const 
     const int c_cd_ft    = dvcs_unpol_col_alias(csv, "(CD, FT)", period_display, &used_cd_ft);
 
     // CHANGE: fail fast with explicit "expected exact" names if anything is missing.
-    // This makes the failure mode unambiguous and prevents silent Nd_sum=0.
     {
         std::vector<std::string> missing;
 
-        // These are the *canonical* headers you showed (exactly as in your CSV).
         const std::string expect_fd = "raw yield, ep->epg, (FD, FD), exp, " + period_display + ", unpol";
         const std::string expect_cd = "raw yield, ep->epg, (CD, FD), exp, " + period_display + ", unpol";
         const std::string expect_ft = "raw yield, ep->epg, (CD, FT), exp, " + period_display + ", unpol";
 
-        // If alias resolution fails, force a fatal that prints what we expected.
-        // We check the resolved indices directly (because aliases may map to variants).
         if (c_fd_fd < 0) missing.push_back(expect_fd);
         if (c_cd_fd < 0) missing.push_back(expect_cd);
         if (c_cd_ft < 0) missing.push_back(expect_ft);
@@ -535,6 +566,13 @@ using VarCutMap = std::map<std::string, Stats>;
 struct CutPair { VarCutMap data, mc; };
 using CutTable = std::map<std::string, CutPair>;
 
+// NOTE: This helper exists to map a *tree_key* to the *cut-key* period segment.
+// The combined_cuts.json keys are expected to look like:
+//   DVCS_<PeriodCased>_<TopoKey>
+//   eppi0_<PeriodCased>_<TopoKey>
+//
+// If you have a mismatch here (case/format), you will see it immediately in
+// the debug prints below (we print attempted key + list similarly-named keys).
 static inline std::string to_cased_period_key(const std::string& tree_key) {
     if (tree_key.rfind("DVCS_", 0) == 0) {
         std::string tail = tree_key.substr(5);
@@ -585,12 +623,13 @@ static CutTable load_cuts(const std::string& path) {
         std::ostringstream oss;
         oss << "[pi0_contamination][DEBUG] Loaded cuts JSON: " << path << "\n";
         oss << "[pi0_contamination][DEBUG] Cuts blocks (usable) = " << out.size() << "\n";
+
         int show = 0;
         for (const auto& kv : out) {
             oss << "  key=\"" << kv.first << "\" data_vars=" << kv.second.data.size() << " mc_vars=" << kv.second.mc.size() << "\n";
-            if (++show >= 10) break;
+            if (++show >= 20) break;
         }
-        if ((int)out.size() > 10) oss << "  ... (" << ((int)out.size()-10) << " more)\n";
+        if ((int)out.size() > 20) oss << "  ... (" << ((int)out.size()-20) << " more)\n";
         dbg(oss.str());
     }
 
@@ -617,6 +656,17 @@ static bool passes_cuts_with_reason(const VarCutMap& cuts, const std::map<std::s
         }
         const double v = it->second;
         const Stats& s = kv.second;
+
+        if (!std::isfinite(v)) {
+            if (fail) {
+                fail->var = kv.first;
+                fail->value = v;
+                fail->mean = s.mean;
+                fail->std = s.std;
+            }
+            return false;
+        }
+
         if (!within3(v, s)) {
             if (fail) {
                 fail->var = kv.first;
@@ -678,7 +728,7 @@ static std::string leaf_type_name(TTree* t, const char* br) {
 static void debug_tree_brief(TTree* t, const std::string& tag) {
     if (!is_debug()) return;
     if (!t) {
-        dbgln("[pi0_contamination][DEBUG] " + tag + " tree is NULL");
+        dbgln_locked("[pi0_contamination][DEBUG] " + tag + " tree is NULL");
         return;
     }
     std::ostringstream oss;
@@ -686,7 +736,7 @@ static void debug_tree_brief(TTree* t, const std::string& tag) {
         << " name=\"" << (t->GetName() ? t->GetName() : "(null)") << "\""
         << " entries=" << t->GetEntries()
         << "\n";
-    dbg(oss.str());
+    dbg_locked(oss.str());
 }
 
 static void debug_branch_probe(TTree* t, const std::string& tag, const std::vector<std::string>& branches) {
@@ -701,7 +751,7 @@ static void debug_branch_probe(TTree* t, const std::string& tag, const std::vect
         if (has) oss << " type=" << leaf_type_name(t, br.c_str());
         oss << "\n";
     }
-    dbg(oss.str());
+    dbg_locked(oss.str());
 }
 
 // Heuristic-only debug: does not change behavior.
@@ -723,7 +773,20 @@ static void debug_phi_units_guess(TTree* t, const std::string& tag, const char* 
     oss << "[pi0_contamination][DEBUG] " << tag << " phi units probe: branch=\"" << phi_branch
         << "\" min=" << mn << " max=" << mx << " guess=" << guess
         << " (NOTE: code assumes radians and converts *180/pi)\n";
-    dbg(oss.str());
+    dbg_locked(oss.str());
+}
+
+static void debug_numeric_minmax(TTree* t, const std::string& tag, const std::vector<std::string>& branches) {
+    if (!is_debug() || !t) return;
+    std::ostringstream oss;
+    oss << "[pi0_contamination][DEBUG] " << tag << " branch min/max (TTree::GetMinimum/GetMaximum):\n";
+    for (const auto& br : branches) {
+        if (!t->GetBranch(br.c_str())) continue;
+        double mn = t->GetMinimum(br.c_str());
+        double mx = t->GetMaximum(br.c_str());
+        oss << "  " << br << " : min=" << mn << " max=" << mx << "\n";
+    }
+    dbg_locked(oss.str());
 }
 
 struct BinderCommon {
@@ -798,7 +861,14 @@ struct BinderCommon {
             oss << "  x             : bound_name=\"" << bound_x_name << "\" type=" << leaf_type_name(t, bound_x_name.c_str()) << "\n";
             oss << "  Q2            : active=" << yn(Q2.active) << " type=" << leaf_type_name(t, "Q2") << "\n";
             oss << "  phi2          : active=" << yn(phi2.active) << " type=" << leaf_type_name(t, "phi2") << "\n";
-            dbg(oss.str());
+            oss << "  Emiss2        : active=" << yn(Emiss2.active) << "\n";
+            oss << "  Mx2           : active=" << yn(Mx2.active) << "\n";
+            oss << "  Mx2_1         : active=" << yn(Mx2_1.active) << "\n";
+            oss << "  Mx2_2         : active=" << yn(Mx2_2.active) << "\n";
+            oss << "  theta_gamma_gamma: active=" << yn(theta_gamma_gamma.active) << "\n";
+            oss << "  theta_pi0_pi0     : active=" << yn(theta_pi0_pi0.active) << "\n";
+            oss << "  xF            : active=" << yn(xF.active) << "\n";
+            dbg_locked(oss.str());
         }
     }
 
@@ -868,8 +938,6 @@ static void ensure_dir(const std::string& d) {
     std::error_code ec;
     std::filesystem::create_directories(d, ec);
 }
-
-static inline bool is_fin(double v) { return std::isfinite(v); }
 
 static double avg_if_finite_or_midbin(double avg, double lo, double hi) {
     if (is_fin(avg)) return avg;
@@ -1169,7 +1237,7 @@ static void debug_event_line(const std::string& period, const std::string& tag, 
         << " pass_cuts=" << yn(pass_cuts)
         << " row_idx=" << row_idx
         << "\n";
-    dbg(oss.str());
+    dbg_locked(oss.str());
 }
 
 static void maybe_print_progress(const std::string& period, const std::string& tag, Long64_t i, Long64_t N) {
@@ -1181,8 +1249,141 @@ static void maybe_print_progress(const std::string& period, const std::string& t
         std::ostringstream oss;
         oss << "[pi0_contamination][" << period << "][DEBUG_PROGRESS][" << tag << "] "
             << (long long)i << "/" << (long long)N << " (" << std::fixed << std::setprecision(1) << frac << "%)\n";
-        dbg(oss.str());
+        dbg_locked(oss.str());
     }
+}
+
+// New: single-line dump for first N events per block, showing all relevant values and stage.
+// This is specifically intended to debug "why Ne/Nr appear to be zero".
+static void dump_event_step_line(
+    const std::string& period,
+    const std::string& tag,
+    Long64_t i,
+    const BinderCommon& b,
+    const std::string& topoKey,
+    bool pass_blacklist,
+    bool pass_global,
+    bool pass_topo,
+    bool pass_cuts,
+    const CutFailInfo* fi,
+    double xB, double Q2, double t1, double t_abs,
+    double phi2_raw, double phi_deg,
+    int row_idx)
+{
+    if (!is_debug()) return;
+
+    std::ostringstream oss;
+    oss.setf(std::ios::fixed);
+    oss << std::setprecision(6);
+
+    oss << "[pi0_contamination][" << period << "][DUMP][" << tag << "]"
+        << " i=" << (long long)i;
+
+    if (b.have_runnum) oss << " run=" << b.runnum;
+    oss << " det=(" << b.detector1 << "," << b.detector2 << ")"
+        << " topo=" << topoKey
+        << " pass_blacklist=" << yn(pass_blacklist)
+        << " pass_global=" << yn(pass_global)
+        << " pass_topo=" << yn(pass_topo)
+        << " pass_cuts=" << yn(pass_cuts);
+
+    if (fi && !fi->var.empty()) {
+        oss << " fail_var=\"" << fi->var << "\""
+            << " fail_val=" << fi->value
+            << " mean=" << fi->mean
+            << " std=" << fi->std;
+    }
+
+    // core kinematics used for bin-matching
+    oss << " xB=" << xB
+        << " Q2=" << Q2
+        << " t1=" << t1
+        << " t_abs=" << t_abs
+        << " phi2_raw=" << phi2_raw
+        << " phi_deg=" << phi_deg
+        << " row_idx=" << row_idx;
+
+    // exclusivity vars (if bound)
+    const auto vals = b.cut_vals();
+    auto getv = [&](const char* name)->double {
+        auto it = vals.find(name);
+        return (it==vals.end()) ? std::numeric_limits<double>::quiet_NaN() : it->second;
+    };
+
+    // print any commonly-cut vars that might be the culprit
+    oss << " Emiss2=" << getv("Emiss2")
+        << " Mx2=" << getv("Mx2")
+        << " Mx2_1=" << getv("Mx2_1")
+        << " Mx2_2=" << getv("Mx2_2")
+        << " theta_gamma_gamma=" << getv("theta_gamma_gamma")
+        << " theta_pi0_pi0=" << getv("theta_pi0_pi0")
+        << " xF=" << getv("xF")
+        << " pTmiss=" << getv("pTmiss");
+
+    oss << "\n";
+    dbg_locked(oss.str());
+}
+
+// New: when a cuts key is missing, print helpful nearby keys before fatal.
+// This is designed to catch subtle casing/format mismatches between:
+//   to_cased_period_key(tree_key) vs the keys actually stored in combined_cuts.json.
+static void fatal_missing_cuts_block_with_suggestions(const CutTable& cuts, const std::string& want_key) {
+    std::ostringstream oss;
+    oss << "Missing cuts block: " << want_key << "\n";
+
+    if (is_debug()) {
+        // Suggest keys that share the same suffix tokens after the first underscore.
+        // Example want: "eppi0_Fa18_Inb_FD_FD"
+        // We will search for any key that ends with "_Fa18_Inb_FD_FD" etc.
+        std::string suffix;
+        {
+            const size_t pos = want_key.find('_');
+            if (pos != std::string::npos) suffix = want_key.substr(pos); // includes leading underscore
+        }
+
+        int shown = 0;
+        oss << "Available keys with matching suffix (if any):\n";
+        for (const auto& kv : cuts) {
+            const std::string& k = kv.first;
+            if (!suffix.empty() && k.size() >= suffix.size() && k.compare(k.size()-suffix.size(), suffix.size(), suffix) == 0) {
+                oss << "  - " << k << "\n";
+                if (++shown >= 30) break;
+            }
+        }
+
+        if (shown == 0) {
+            // Fall back: show keys containing the topoKey at least.
+            std::string topoGuess;
+            if (want_key.size() >= 5) {
+                // Try to extract last token after last underscore group: "..._<TopoKey>"
+                const size_t last = want_key.rfind('_');
+                if (last != std::string::npos) topoGuess = want_key.substr(last+1);
+            }
+            oss << "No suffix matches found. Showing first 30 keys for context:\n";
+            int n = 0;
+            for (const auto& kv : cuts) {
+                oss << "  - " << kv.first << "\n";
+                if (++n >= 30) break;
+            }
+        }
+    }
+
+    fatal(oss.str());
+}
+
+static void debug_print_cut_block(const std::string& period, const std::string& tag, const std::string& key, const CutPair& cp) {
+    if (!is_debug()) return;
+    std::ostringstream oss;
+    oss << "[pi0_contamination][" << period << "][DEBUG_CUTBLOCK][" << tag << "] key=\"" << key << "\"\n";
+    oss << "  data vars (" << cp.data.size() << "):\n";
+    for (const auto& kv : cp.data) {
+        oss << "    " << kv.first << " mean=" << kv.second.mean << " std=" << kv.second.std << "\n";
+    }
+    oss << "  mc vars (" << cp.mc.size() << "):\n";
+    for (const auto& kv : cp.mc) {
+        oss << "    " << kv.first << " mean=" << kv.second.mean << " std=" << kv.second.std << "\n";
+    }
+    dbg_locked(oss.str());
 }
 
 } // end anon ns
@@ -1211,7 +1412,8 @@ bool compute_pi0_contamination_overall(
         oss << "  PI0_CONTAM_DEBUG_EVENTS   = " << debug_sample_events() << "\n";
         oss << "  PI0_CONTAM_DEBUG_PROGRESS = " << debug_progress_every() << "\n";
         oss << "  PI0_CONTAM_DEBUG_ROWS     = " << debug_sample_rows() << "\n";
-        dbg(oss.str());
+        oss << "  PI0_CONTAM_DUMP_EVENTS    = " << dump_events_limit() << "\n";
+        dbg_locked(oss.str());
     }
 
     CsvDoc csv;
@@ -1240,7 +1442,7 @@ bool compute_pi0_contamination_overall(
                 << " has_rec_mc=" << yn(hasR)
                 << " has_bkg=" << yn(hasB)
                 << "\n";
-            dbg(oss.str());
+            dbg_locked(oss.str());
         }
 
         if (hasD && hasR && hasB) jobs.push_back({tree_key, P.label, P.label});
@@ -1265,7 +1467,7 @@ bool compute_pi0_contamination_overall(
             oss << "[pi0_contamination][DEBUG] Output column check for period \"" << J.display << "\": ok=" << yn(ok);
             if (ok) oss << " using=\"" << found_name << "\"";
             oss << "\n";
-            dbg(oss.str());
+            dbg_locked(oss.str());
         }
         if (!ok) fatal("CSV missing output contamination column for period aliases of \"" + J.display + "\".");
     }
@@ -1279,6 +1481,8 @@ bool compute_pi0_contamination_overall(
 #endif
     for (int ip=0; ip<(int)jobs.size(); ++ip) {
         const auto& J = jobs[ip];
+
+        // IMPORTANT: This is the period string used to compose cut keys.
         const std::string period_cased = to_cased_period_key(J.tree_key);
 
         std::string period_dir = J.display;
@@ -1296,7 +1500,8 @@ bool compute_pi0_contamination_overall(
                 << " |t|[" << Env.t_min << "," << Env.t_max << "]"
                 << " phi[" << Env.phi_min << "," << Env.phi_max << "]"
                 << "\n";
-            dbg(oss.str());
+            oss << "[pi0_contamination][" << J.display << "][DEBUG] period_cased_for_cuts=\"" << period_cased << "\" (from tree_key=\"" << J.tree_key << "\")\n";
+            dbg_locked(oss.str());
         }
 
         std::vector<RowCounts> counts(rows.size());
@@ -1322,7 +1527,12 @@ bool compute_pi0_contamination_overall(
         auto cuts_for = [&](const char* which, const std::string& topoKey)->const CutPair& {
             const std::string k = std::string(which) + "_" + period_cased + "_" + topoKey;
             auto it = cuts.find(k);
-            if (it == cuts.end()) fatal("Missing cuts block: " + k);
+            if (it == cuts.end()) {
+                fatal_missing_cuts_block_with_suggestions(cuts, k);
+            }
+            if (is_debug()) {
+                debug_print_cut_block(J.display, which, k, it->second);
+            }
             return it->second;
         };
 
@@ -1348,9 +1558,20 @@ bool compute_pi0_contamination_overall(
             debug_phi_units_guess(tD, J.display + " DATA", "phi2");
             debug_phi_units_guess(tR, J.display + " RECO_MC", "phi2");
             debug_phi_units_guess(tB, J.display + " BKG_MC", "phi2");
+
+            // Min/max to quickly see if e.g. x is in 0..1, Q2 in plausible range, phi in rad/deg, etc.
+            std::vector<std::string> mm = {
+                "x","xB","Q2","t1","phi2","open_angle_ep2","pTmiss",
+                "Emiss2","Mx2","Mx2_1","Mx2_2","theta_gamma_gamma","theta_pi0_pi0","xF"
+            };
+            debug_numeric_minmax(tD, J.display + " DATA", mm);
+            debug_numeric_minmax(tR, J.display + " RECO_MC", mm);
+            debug_numeric_minmax(tB, J.display + " BKG_MC", mm);
         }
 
         BlockDbg dbgD, dbgR, dbgB;
+
+        const int dumpN = dump_events_limit();
 
         // ---------- eppi0 DATA ----------
         {
@@ -1362,43 +1583,79 @@ bool compute_pi0_contamination_overall(
 
             int printed = 0;
             int printed_cutfails = 0;
+            long long dumped = 0;
 
             for (Long64_t i=0; i<N; ++i) {
                 tD->GetEntry(i);
                 maybe_print_progress(J.display, "DATA", i, N);
 
-                // Run blacklist
-                if (b.have_runnum && is_excluded_run(b.runnum)) { dbgD.fail_global++; continue; }
+                const bool pass_blacklist = !(b.have_runnum && is_excluded_run(b.runnum));
+                if (!pass_blacklist) { dbgD.fail_global++; if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "DATA", i, b, "NA", false, false, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    } continue; }
 
                 const bool pass_global = passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT());
-                if (!pass_global) { dbgD.fail_global++; continue; }
+                if (!pass_global) { dbgD.fail_global++; if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "DATA", i, b, "NA", true, false, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    } continue; }
                 dbgD.pass_global++;
 
                 std::string matched_topo;
+                std::string topoKey="NA";
                 int topo_idx=-1;
                 if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
                 else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
                 else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
-                else { dbgD.fail_topo++; continue; }
+                else {
+                    dbgD.fail_topo++;
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "DATA", i, b, "NA", true, true, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    }
+                    continue;
+                }
+
+                topoKey = topo_to_key(matched_topo);
 
                 dbgD.pass_topo++;
                 dbgD.by_topo[(topo_idx<0?0:topo_idx)]++;
 
-                const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("eppi0", topoKey);
 
                 CutFailInfo fi;
                 const bool pass_cuts = passes_cuts_with_reason(CP.data, b.cut_vals(), is_debug() ? &fi : nullptr);
                 if (!pass_cuts) {
                     dbgD.fail_cuts++;
-                    if (is_debug() && printed_cutfails < 5) {
+                    if (is_debug() && printed_cutfails < 10) {
                         std::ostringstream oss;
                         oss << "[pi0_contamination][" << J.display << "][DEBUG_CUTF] DATA topo=" << topoKey
                             << " fail_var=\"" << fi.var << "\" value=" << fi.value
                             << " mean=" << fi.mean << " std=" << fi.std
                             << "\n";
-                        dbg(oss.str());
+                        dbg_locked(oss.str());
                         printed_cutfails++;
+                    }
+                    if (is_debug() && dumped < dumpN) {
+                        const double xB = b.get_x();
+                        const double Q2 = b.get_Q2();
+                        const double t1 = b.get_t1();
+                        const double t_abs = std::fabs(t1);
+                        const double phi2_raw = b.get_phi2();
+                        const double phi_deg = wrap_deg(phi2_raw * 180.0 / PI_CONST);
+                        dump_event_step_line(J.display, "DATA", i, b, topoKey, true, true, true, false, &fi,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, -1);
+                        dumped++;
                     }
                     continue;
                 }
@@ -1423,21 +1680,43 @@ bool compute_pi0_contamination_overall(
                 if (!matched) {
                     dbgD.miss_row++;
 
-                    // Classify likely reason (debug only)
                     bool in_x  = value_in_any_range(xB,  xb_ranges);
                     bool in_Q2 = value_in_any_range(Q2,  q2_ranges);
                     bool in_t  = value_in_any_range(t_abs, t_ranges);
                     bool in_p  = value_in_any_range(wrap_deg(phi_deg), phi_ranges);
 
-                    // Choose the first failing dimension in a deterministic order
                     if (!in_x) dbgD.miss_x++;
                     else if (!in_Q2) dbgD.miss_Q2++;
                     else if (!in_t) dbgD.miss_t++;
                     else if (!in_p) dbgD.miss_phi++;
-                    else dbgD.miss_phi++; // default bucket if ranges overlap oddly
+                    else dbgD.miss_phi++;
+
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi_ok;
+                        dump_event_step_line(J.display, "DATA", i, b, topoKey, true, true, true, true, &fi_ok,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, -1);
+
+                        std::ostringstream oss;
+                        oss << "[pi0_contamination][" << J.display << "][DUMP][DATA] row_match_failed_details"
+                            << " in_x=" << yn(in_x) << " in_Q2=" << yn(in_Q2) << " in_t=" << yn(in_t) << " in_phi=" << yn(in_p)
+                            << " Env_xB=[" << Env.xb_min << "," << Env.xb_max << "]"
+                            << " Env_Q2=[" << Env.q2_min << "," << Env.q2_max << "]"
+                            << " Env_t=[" << Env.t_min << "," << Env.t_max << "]"
+                            << " Env_phi=[" << Env.phi_min << "," << Env.phi_max << "]"
+                            << "\n";
+                        dbg_locked(oss.str());
+                        dumped++;
+                    }
                 } else {
                     counts[(size_t)row_idx].n_pi0_data++;
                     dbgD.matched++;
+
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi_ok;
+                        dump_event_step_line(J.display, "DATA", i, b, topoKey, true, true, true, true, &fi_ok,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, row_idx);
+                        dumped++;
+                    }
                 }
 
                 if (is_debug() && printed < debug_sample_events()) {
@@ -1461,42 +1740,79 @@ bool compute_pi0_contamination_overall(
 
             int printed = 0;
             int printed_cutfails = 0;
+            long long dumped = 0;
 
             for (Long64_t i=0; i<N; ++i) {
                 tR->GetEntry(i);
                 maybe_print_progress(J.display, "RECO_MC", i, N);
 
-                if (b.have_runnum && is_excluded_run(b.runnum)) { dbgR.fail_global++; continue; }
+                const bool pass_blacklist = !(b.have_runnum && is_excluded_run(b.runnum));
+                if (!pass_blacklist) { dbgR.fail_global++; if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "RECO_MC", i, b, "NA", false, false, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    } continue; }
 
                 const bool pass_global = passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT());
-                if (!pass_global) { dbgR.fail_global++; continue; }
+                if (!pass_global) { dbgR.fail_global++; if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "RECO_MC", i, b, "NA", true, false, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    } continue; }
                 dbgR.pass_global++;
 
                 std::string matched_topo;
+                std::string topoKey="NA";
                 int topo_idx=-1;
                 if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
                 else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
                 else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
-                else { dbgR.fail_topo++; continue; }
+                else {
+                    dbgR.fail_topo++;
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "RECO_MC", i, b, "NA", true, true, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    }
+                    continue;
+                }
+
+                topoKey = topo_to_key(matched_topo);
 
                 dbgR.pass_topo++;
                 dbgR.by_topo[(topo_idx<0?0:topo_idx)]++;
 
-                const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("eppi0", topoKey);
 
                 CutFailInfo fi;
                 const bool pass_cuts = passes_cuts_with_reason(CP.mc, b.cut_vals(), is_debug() ? &fi : nullptr);
                 if (!pass_cuts) {
                     dbgR.fail_cuts++;
-                    if (is_debug() && printed_cutfails < 5) {
+                    if (is_debug() && printed_cutfails < 10) {
                         std::ostringstream oss;
                         oss << "[pi0_contamination][" << J.display << "][DEBUG_CUTF] RECO_MC topo=" << topoKey
                             << " fail_var=\"" << fi.var << "\" value=" << fi.value
                             << " mean=" << fi.mean << " std=" << fi.std
                             << "\n";
-                        dbg(oss.str());
+                        dbg_locked(oss.str());
                         printed_cutfails++;
+                    }
+                    if (is_debug() && dumped < dumpN) {
+                        const double xB = b.get_x();
+                        const double Q2 = b.get_Q2();
+                        const double t1 = b.get_t1();
+                        const double t_abs = std::fabs(t1);
+                        const double phi2_raw = b.get_phi2();
+                        const double phi_deg = wrap_deg(phi2_raw * 180.0 / PI_CONST);
+                        dump_event_step_line(J.display, "RECO_MC", i, b, topoKey, true, true, true, false, &fi,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, -1);
+                        dumped++;
                     }
                     continue;
                 }
@@ -1531,9 +1847,33 @@ bool compute_pi0_contamination_overall(
                     else if (!in_t) dbgR.miss_t++;
                     else if (!in_p) dbgR.miss_phi++;
                     else dbgR.miss_phi++;
+
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi_ok;
+                        dump_event_step_line(J.display, "RECO_MC", i, b, topoKey, true, true, true, true, &fi_ok,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, -1);
+
+                        std::ostringstream oss;
+                        oss << "[pi0_contamination][" << J.display << "][DUMP][RECO_MC] row_match_failed_details"
+                            << " in_x=" << yn(in_x) << " in_Q2=" << yn(in_Q2) << " in_t=" << yn(in_t) << " in_phi=" << yn(in_p)
+                            << " Env_xB=[" << Env.xb_min << "," << Env.xb_max << "]"
+                            << " Env_Q2=[" << Env.q2_min << "," << Env.q2_max << "]"
+                            << " Env_t=[" << Env.t_min << "," << Env.t_max << "]"
+                            << " Env_phi=[" << Env.phi_min << "," << Env.phi_max << "]"
+                            << "\n";
+                        dbg_locked(oss.str());
+                        dumped++;
+                    }
                 } else {
                     counts[(size_t)row_idx].n_pi0_reco++;
                     dbgR.matched++;
+
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi_ok;
+                        dump_event_step_line(J.display, "RECO_MC", i, b, topoKey, true, true, true, true, &fi_ok,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, row_idx);
+                        dumped++;
+                    }
                 }
 
                 if (is_debug() && printed < debug_sample_events()) {
@@ -1557,42 +1897,79 @@ bool compute_pi0_contamination_overall(
 
             int printed = 0;
             int printed_cutfails = 0;
+            long long dumped = 0;
 
             for (Long64_t i=0; i<N; ++i) {
                 tB->GetEntry(i);
                 maybe_print_progress(J.display, "BKG_MC", i, N);
 
-                if (b.have_runnum && is_excluded_run(b.runnum)) { dbgB.fail_global++; continue; }
+                const bool pass_blacklist = !(b.have_runnum && is_excluded_run(b.runnum));
+                if (!pass_blacklist) { dbgB.fail_global++; if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "BKG_MC", i, b, "NA", false, false, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    } continue; }
 
                 const bool pass_global = passes_global_cuts(b.get_t1(), b.get_open(), b.get_pT());
-                if (!pass_global) { dbgB.fail_global++; continue; }
+                if (!pass_global) { dbgB.fail_global++; if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "BKG_MC", i, b, "NA", true, false, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    } continue; }
                 dbgB.pass_global++;
 
                 std::string matched_topo;
+                std::string topoKey="NA";
                 int topo_idx=-1;
                 if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
                 else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
                 else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
-                else { dbgB.fail_topo++; continue; }
+                else {
+                    dbgB.fail_topo++;
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi;
+                        dump_event_step_line(J.display, "BKG_MC", i, b, "NA", true, true, false, false, &fi,
+                                             b.get_x(), b.get_Q2(), b.get_t1(), std::fabs(b.get_t1()),
+                                             b.get_phi2(), wrap_deg(b.get_phi2()*180.0/PI_CONST), -1);
+                        dumped++;
+                    }
+                    continue;
+                }
+
+                topoKey = topo_to_key(matched_topo);
 
                 dbgB.pass_topo++;
                 dbgB.by_topo[(topo_idx<0?0:topo_idx)]++;
 
-                const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("DVCS", topoKey);
 
                 CutFailInfo fi;
                 const bool pass_cuts = passes_cuts_with_reason(CP.mc, b.cut_vals(), is_debug() ? &fi : nullptr);
                 if (!pass_cuts) {
                     dbgB.fail_cuts++;
-                    if (is_debug() && printed_cutfails < 5) {
+                    if (is_debug() && printed_cutfails < 10) {
                         std::ostringstream oss;
                         oss << "[pi0_contamination][" << J.display << "][DEBUG_CUTF] BKG_MC topo=" << topoKey
                             << " fail_var=\"" << fi.var << "\" value=" << fi.value
                             << " mean=" << fi.mean << " std=" << fi.std
                             << "\n";
-                        dbg(oss.str());
+                        dbg_locked(oss.str());
                         printed_cutfails++;
+                    }
+                    if (is_debug() && dumped < dumpN) {
+                        const double xB = b.get_x();
+                        const double Q2 = b.get_Q2();
+                        const double t1 = b.get_t1();
+                        const double t_abs = std::fabs(t1);
+                        const double phi2_raw = b.get_phi2();
+                        const double phi_deg = wrap_deg(phi2_raw * 180.0 / PI_CONST);
+                        dump_event_step_line(J.display, "BKG_MC", i, b, topoKey, true, true, true, false, &fi,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, -1);
+                        dumped++;
                     }
                     continue;
                 }
@@ -1627,9 +2004,33 @@ bool compute_pi0_contamination_overall(
                     else if (!in_t) dbgB.miss_t++;
                     else if (!in_p) dbgB.miss_phi++;
                     else dbgB.miss_phi++;
+
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi_ok;
+                        dump_event_step_line(J.display, "BKG_MC", i, b, topoKey, true, true, true, true, &fi_ok,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, -1);
+
+                        std::ostringstream oss;
+                        oss << "[pi0_contamination][" << J.display << "][DUMP][BKG_MC] row_match_failed_details"
+                            << " in_x=" << yn(in_x) << " in_Q2=" << yn(in_Q2) << " in_t=" << yn(in_t) << " in_phi=" << yn(in_p)
+                            << " Env_xB=[" << Env.xb_min << "," << Env.xb_max << "]"
+                            << " Env_Q2=[" << Env.q2_min << "," << Env.q2_max << "]"
+                            << " Env_t=[" << Env.t_min << "," << Env.t_max << "]"
+                            << " Env_phi=[" << Env.phi_min << "," << Env.phi_max << "]"
+                            << "\n";
+                        dbg_locked(oss.str());
+                        dumped++;
+                    }
                 } else {
                     counts[(size_t)row_idx].n_pi0_bkg++;
                     dbgB.matched++;
+
+                    if (is_debug() && dumped < dumpN) {
+                        CutFailInfo fi_ok;
+                        dump_event_step_line(J.display, "BKG_MC", i, b, topoKey, true, true, true, true, &fi_ok,
+                                             xB, Q2, t1, t_abs, phi2_raw, phi_deg, row_idx);
+                        dumped++;
+                    }
                 }
 
                 if (is_debug() && printed < debug_sample_events()) {
@@ -1672,7 +2073,12 @@ bool compute_pi0_contamination_overall(
 
             if (is_debug()) {
                 std::cout << "[pi0_contamination][" << J.display << "][DEBUG] Note: matched_rows counts events that both pass cuts AND land in at least one CSV bin.\n";
-                std::cout << "[pi0_contamination][" << J.display << "][DEBUG] If DATA/RECO_MC matched_rows=0 but BKG_MC matched_rows>0, suspect a units/branch mismatch (x vs xB, phi2 units, or Q2 units) in DATA/RECO trees.\n";
+                std::cout << "[pi0_contamination][" << J.display << "][DEBUG] If DATA/RECO_MC matched_rows=0 but BKG_MC matched_rows>0, suspect:\n";
+                std::cout << "  - period_cased mismatch for eppi0 cut keys (wrong case/format)\n";
+                std::cout << "  - phi2 units mismatch (deg treated as rad -> phi_deg nonsense)\n";
+                std::cout << "  - x/xB mismatch or scaling (x in %, etc.)\n";
+                std::cout << "  - Q2 units mismatch\n";
+                std::cout << "  - t1 meaning differs vs your CSV t_abs binning\n";
             }
         }
 
@@ -1712,7 +2118,7 @@ bool compute_pi0_contamination_overall(
                 std::ostringstream oss;
                 oss << "[pi0_contamination][" << J.display << "][DEBUG] Writing tuples into column index " << c_contam
                     << " name=\"" << used_contam_name << "\"\n";
-                dbg(oss.str());
+                dbg_locked(oss.str());
             }
 
             for (size_t i=0; i<rows.size(); ++i) {
