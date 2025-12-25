@@ -1,5 +1,6 @@
 #include "pi0_contamination.h"
 
+// ROOT includes (must include concrete histogram/axis headers, not just forward decls)
 #include <TTree.h>
 #include <TCanvas.h>
 #include <TPad.h>
@@ -8,6 +9,8 @@
 #include <TLatex.h>
 #include <TStyle.h>
 #include <TSystem.h>
+#include <TH1F.h>
+#include <TAxis.h>
 
 #include <nlohmann/json.hpp>
 
