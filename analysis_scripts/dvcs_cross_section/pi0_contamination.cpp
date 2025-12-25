@@ -5,7 +5,6 @@
 #include <TCanvas.h>
 #include <TPad.h>
 #include <TGraphErrors.h>
-#include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
 #include <TSystem.h>
@@ -972,13 +971,6 @@ static void plot_contamination_for_period(const std::string &period_display,
                 lab << "Q^{2}=[" << std::fixed << std::setprecision(2) << ck.Q2min << "," << ck.Q2max
                     << "]  |t|=[" << ck.tmin << "," << ck.tmax << "]";
                 a.DrawLatex(0.12, 0.83, lab.str().c_str());
-
-                TLegend *leg = new TLegend(0.60, 0.73, 0.93, 0.92);
-                leg->SetFillStyle(1001);
-                leg->SetBorderSize(1);
-                leg->SetTextSize(0.055);
-                leg->AddEntry(g, "#pi_{0} contamination ratio", "p");
-                leg->Draw();
             } //endfor
         } //endfor
 
