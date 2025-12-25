@@ -279,10 +279,20 @@ static std::string format_triple(const Triple &t) {
 // ----------------------
 struct CutVar {
     double mean;
-    double sigma;
+    double std; // IMPORTANT: combined_cuts.json uses "std", not "sigma"
 };
 
-using CutMap = std::unordered_map<std::string, std::unordered_map<std::string, CutVar>>;
+// CutMap layout matches JSON:
+//
+// cutmap[block_key]["data"][var] -> CutVar{mean,std}
+// cutmap[block_key]["mc"][var]   -> CutVar{mean,std}
+using CutMap = std::unordered_map<
+    std::string,
+    std::unordered_map<
+        std::string,
+        std::unordered_map<std::string, CutVar>
+    >
+>;
 
 static CutMap load_cutmap_strict(const std::string &json_path) {
     std::ifstream in(json_path);
@@ -296,28 +306,46 @@ static CutMap load_cutmap_strict(const std::string &json_path) {
     CutMap out;
 
     for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key();
+        const std::string block_key = it.key();
         const json &block = it.value();
         if (!block.is_object()) {
-            fatal("Cut block '" + key + "' is not an object");
+            fatal("Cut block '" + block_key + "' is not an object");
         }
 
-        std::unordered_map<std::string, CutVar> vars;
-
-        for (auto iv = block.begin(); iv != block.end(); ++iv) {
-            const std::string varname = iv.key();
-            const json &cfg = iv.value();
-
-            if (!cfg.is_object()) fatal("Cut var '" + varname + "' in block '" + key + "' is not an object");
-            if (!cfg.contains("mean") || !cfg.contains("sigma")) {
-                fatal("Cut var '" + varname + "' in block '" + key + "' missing mean/sigma");
+        // Expect at least "data" and/or "mc" objects. We do not invent them.
+        for (const std::string dataset : std::vector<std::string>{"data", "mc"}) {
+            if (!block.contains(dataset)) continue;
+            const json &ds = block[dataset];
+            if (!ds.is_object()) {
+                fatal("Cut block '" + block_key + "' dataset '" + dataset + "' is not an object");
             }
-            const double mean = cfg["mean"].get<double>();
-            const double sig  = cfg["sigma"].get<double>();
-            vars[varname] = CutVar{mean, sig};
+
+            std::unordered_map<std::string, CutVar> vars;
+
+            for (auto iv = ds.begin(); iv != ds.end(); ++iv) {
+                const std::string varname = iv.key();
+                const json &cfg = iv.value();
+
+                if (!cfg.is_object()) {
+                    fatal("Cut var '" + varname + "' in block '" + block_key + "' dataset '" + dataset + "' is not an object");
+                }
+                if (!cfg.contains("mean") || !cfg.contains("std")) {
+                    fatal("Cut var '" + varname + "' in block '" + block_key + "' dataset '" + dataset + "' missing mean/std");
+                }
+
+                const double mean = cfg["mean"].get<double>();
+                const double st   = cfg["std"].get<double>();
+                vars[varname] = CutVar{mean, st};
+            } //endfor
+
+            out[block_key][dataset] = vars;
         } //endfor
 
-        out[key] = vars;
+        // We do not require both datasets at load-time, but we WILL require
+        // the requested dataset at use-time (fail-fast).
+        if (out.find(block_key) == out.end()) {
+            fatal("Internal error: block '" + block_key + "' was not loaded");
+        }
     } //endfor
 
     return out;
@@ -383,7 +411,13 @@ static bool passes_cutblock_3sigma(const std::unordered_map<std::string, CutVar>
         }
 
         const double x = it->second;
-        if (!(std::fabs(x - cv.mean) <= 3.0 * cv.sigma)) return false;
+
+        // Fail fast if std is non-positive (this should not happen for real cut blocks)
+        if (!(cv.std > 0.0)) {
+            fatal("Cut var '" + name + "' has non-positive std in cut map");
+        }
+
+        if (!(std::fabs(x - cv.mean) <= 3.0 * cv.std)) return false;
     } //endfor
     return true;
 }
@@ -405,8 +439,13 @@ static void accumulate_counts_for_tree(TTree *t,
                                        const CutMap &cutmap,
                                        const std::string &cut_prefix,
                                        const std::string &period_display,
+                                       const std::string &dataset,       // "data" or "mc"
                                        const std::string &which_counter,
                                        Counts &acc) {
+    if (!(dataset == "data" || dataset == "mc")) {
+        fatal("Internal error: dataset must be 'data' or 'mc' (got '" + dataset + "')");
+    }
+
     BaseVars v = setup_base_vars(t);
 
     const std::vector<std::string> topo_keys = {"FD_FD", "CD_FD", "CD_FT"};
@@ -418,7 +457,12 @@ static void accumulate_counts_for_tree(TTree *t,
         if (it == cutmap.end()) {
             fatal("Missing cut-block key in JSON: '" + key + "'");
         }
-        for (const auto &vv : it->second) {
+        auto itds = it->second.find(dataset);
+        if (itds == it->second.end()) {
+            fatal("Cut block '" + key + "' is missing dataset '" + dataset + "'");
+        }
+
+        for (const auto &vv : itds->second) {
             required_cut_vars.insert(vv.first);
         } //endfor
     } //endfor
@@ -440,6 +484,7 @@ static void accumulate_counts_for_tree(TTree *t,
               << " entries=" << n
               << " using cut-prefix=" << cut_prefix
               << " period=" << period_display
+              << " dataset=" << dataset
               << "\n";
 
     for (Long64_t i = 0; i < n; ++i) {
@@ -450,10 +495,19 @@ static void accumulate_counts_for_tree(TTree *t,
 
         if (!passes_global_cuts(v.open_angle_ep2, v.t1, v.pTmiss)) continue;
 
-        cut_values.clear();
         const std::string ck = cutblock_key(cut_prefix, period_display, topo_key);
-        const auto &vars_for_topo = cutmap.at(ck);
 
+        auto itck = cutmap.find(ck);
+        if (itck == cutmap.end()) {
+            fatal("Missing cut-block key in JSON: '" + ck + "'");
+        }
+        auto itds = itck->second.find(dataset);
+        if (itds == itck->second.end()) {
+            fatal("Cut block '" + ck + "' is missing dataset '" + dataset + "'");
+        }
+        const auto &vars_for_topo = itds->second;
+
+        cut_values.clear();
         for (const auto &kv : vars_for_topo) {
             const std::string &varname = kv.first;
             cut_values[varname] = cut_storage.at(varname);
@@ -788,49 +842,68 @@ bool compute_pi0_contamination_overall(
         if (!t_pi0_sim)  fatal("Missing eppi0 RECO MC tree for period '" + period_display + "'");
         if (!t_pi0_mis)  fatal("Missing eppi0 BKG-as-epg tree for period '" + period_display + "'");
 
+        // Fail-fast: ensure that each topo has the dataset blocks we will use.
         for (const std::string &tk : std::vector<std::string>{"FD_FD","CD_FD","CD_FT"}) {
             const std::string k_dvcs  = cutblock_key("DVCS",  period_display, tk);
             const std::string k_eppi0 = cutblock_key("eppi0", period_display, tk);
-            if (cutmap.find(k_dvcs) == cutmap.end())  fatal("Missing cut block key: " + k_dvcs);
-            if (cutmap.find(k_eppi0) == cutmap.end()) fatal("Missing cut block key: " + k_eppi0);
-            std::cout << "[pi0_contamination] Using cut keys: " << k_dvcs << " and " << k_eppi0 << "\n";
+
+            auto itd = cutmap.find(k_dvcs);
+            if (itd == cutmap.end()) fatal("Missing cut block key: " + k_dvcs);
+            if (itd->second.find("data") == itd->second.end()) fatal("Cut block '" + k_dvcs + "' missing dataset 'data'");
+
+            auto ite = cutmap.find(k_eppi0);
+            if (ite == cutmap.end()) fatal("Missing cut block key: " + k_eppi0);
+            if (ite->second.find("data") == ite->second.end()) fatal("Cut block '" + k_eppi0 + "' missing dataset 'data'");
+            if (ite->second.find("mc")   == ite->second.end()) fatal("Cut block '" + k_eppi0 + "' missing dataset 'mc'");
+
+            std::cout << "[pi0_contamination] Using cut keys: "
+                      << k_dvcs  << " (data) and "
+                      << k_eppi0 << " (data/mc)\n";
         } //endfor
 
         Counts acc;
 
+        // DATA cuts for DATA-like trees
         accumulate_counts_for_tree(t_dvcs_exp,
                                    "dvcsData:" + period_display,
                                    bins,
                                    cutmap,
                                    "DVCS",
                                    period_display,
+                                   "data",
                                    "Ndvcs_exp",
                                    acc);
 
+        // pi0 background mis-ID counted with DVCS DATA cuts (still data-like)
         accumulate_counts_for_tree(t_pi0_mis,
                                    "pi0BkgAsEpg:" + period_display,
                                    bins,
                                    cutmap,
                                    "DVCS",
                                    period_display,
+                                   "data",
                                    "Npi0_mis",
                                    acc);
 
+        // eppi0 DATA counted with eppi0 DATA cuts
         accumulate_counts_for_tree(t_pi0_exp,
                                    "pi0Data:" + period_display,
                                    bins,
                                    cutmap,
                                    "eppi0",
                                    period_display,
+                                   "data",
                                    "Npi0_exp",
                                    acc);
 
+        // reconstructed eppi0 MC counted with eppi0 MC cuts
         accumulate_counts_for_tree(t_pi0_sim,
                                    "pi0RecMc:" + period_display,
                                    bins,
                                    cutmap,
                                    "eppi0",
                                    period_display,
+                                   "mc",
                                    "Npi0_sim",
                                    acc);
 
