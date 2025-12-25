@@ -46,7 +46,6 @@ static void fatal(const std::string &msg) {
 }
 
 static std::string canonical_period_dir(const std::string &period_display) {
-    // Fa18 Inb -> Fa18_Inb, etc.
     std::string s = period_display;
     for (char &c : s) {
         if (c == ' ') c = '_';
@@ -55,7 +54,6 @@ static std::string canonical_period_dir(const std::string &period_display) {
 }
 
 static std::string period_display_from_tag_strict(const std::string &tag) {
-    // Strict mapping based on tag content. Extend ONLY if you truly have more.
     if (tag.find("Fa18_inb") != std::string::npos || tag.find("fa18_inb") != std::string::npos) return "Fa18 Inb";
     if (tag.find("Fa18_out") != std::string::npos || tag.find("fa18_out") != std::string::npos) return "Fa18 Out";
     if (tag.find("Sp18_inb") != std::string::npos || tag.find("sp18_inb") != std::string::npos) return "Sp18 Inb";
@@ -66,7 +64,6 @@ static std::string period_display_from_tag_strict(const std::string &tag) {
 }
 
 static std::string topo_key_from_det(int detector1, int detector2) {
-    // detector: 1=FD, 2=CD, 3=FT (your established convention)
     if (detector1 == 1 && detector2 == 1) return "FD_FD";
     if (detector1 == 2 && detector2 == 1) return "CD_FD";
     if (detector1 == 2 && detector2 == 3) return "CD_FT";
@@ -81,7 +78,6 @@ static std::string contamination_colname_strict(const std::string &period_displa
 static std::string cutblock_key(const std::string &prefix,
                                 const std::string &period_display,
                                 const std::string &topo_key) {
-    // Explicit keys like: DVCS_Fa18_Inb_FD_FD  or  eppi0_Sp18_Out_CD_FT
     return prefix + "_" + canonical_period_dir(period_display) + "_" + topo_key;
 }
 
@@ -103,7 +99,7 @@ static bool row_accepts_phi(double phi_deg, double phimin, double phimax) {
     if (lo <= hi) {
         return (p >= lo && p < hi);
     }
-    return (p >= lo || p < hi); // wrap-around bin
+    return (p >= lo || p < hi);
 }
 
 static std::vector<std::string> split_csv_line(const std::string &line) {
@@ -196,7 +192,7 @@ struct RowBin {
     int row_idx; // index in csv rows vector
     double xBmin, xBmax;
     double Q2min, Q2max;
-    double tmin, tmax;       // |t|
+    double tmin, tmax;       // |t| bins from t_abs_min/t_abs_max
     double phimin, phimax;   // degrees
 };
 
@@ -207,8 +203,11 @@ static std::vector<RowBin> load_row_bins_from_csv(const std::vector<std::vector<
     const int c_xBmax  = find_column_exact(hdr, "xBmax");
     const int c_Q2min  = find_column_exact(hdr, "Q2min");
     const int c_Q2max  = find_column_exact(hdr, "Q2max");
-    const int c_tmin   = find_column_exact(hdr, "tmin");
-    const int c_tmax   = find_column_exact(hdr, "tmax");
+
+    // IMPORTANT: Your schema uses t_abs_min/t_abs_max (not tmin/tmax)
+    const int c_tmin   = find_column_exact(hdr, "t_abs_min");
+    const int c_tmax   = find_column_exact(hdr, "t_abs_max");
+
     const int c_phimin = find_column_exact(hdr, "phimin");
     const int c_phimax = find_column_exact(hdr, "phimax");
 
@@ -217,10 +216,11 @@ static std::vector<RowBin> load_row_bins_from_csv(const std::vector<std::vector<
     if (c_xBmax  < 0) missing.push_back("xBmax");
     if (c_Q2min  < 0) missing.push_back("Q2min");
     if (c_Q2max  < 0) missing.push_back("Q2max");
-    if (c_tmin   < 0) missing.push_back("tmin");
-    if (c_tmax   < 0) missing.push_back("tmax");
+    if (c_tmin   < 0) missing.push_back("t_abs_min");
+    if (c_tmax   < 0) missing.push_back("t_abs_max");
     if (c_phimin < 0) missing.push_back("phimin");
     if (c_phimax < 0) missing.push_back("phimax");
+
     if (!missing.empty()) {
         std::ostringstream os;
         os << "CSV missing required bin columns:";
@@ -242,8 +242,8 @@ static std::vector<RowBin> load_row_bins_from_csv(const std::vector<std::vector<
         b.xBmax  = to_double_strict(row[c_xBmax],  "xBmax");
         b.Q2min  = to_double_strict(row[c_Q2min],  "Q2min");
         b.Q2max  = to_double_strict(row[c_Q2max],  "Q2max");
-        b.tmin   = to_double_strict(row[c_tmin],   "tmin");
-        b.tmax   = to_double_strict(row[c_tmax],   "tmax");
+        b.tmin   = to_double_strict(row[c_tmin],   "t_abs_min");
+        b.tmax   = to_double_strict(row[c_tmax],   "t_abs_max");
         b.phimin = to_double_strict(row[c_phimin], "phimin");
         b.phimax = to_double_strict(row[c_phimax], "phimax");
         bins.push_back(b);
@@ -283,7 +283,6 @@ struct CutVar {
 };
 
 using CutMap = std::unordered_map<std::string, std::unordered_map<std::string, CutVar>>;
-//            key="DVCS_Fa18_Inb_FD_FD" -> ( var -> {mean,sigma} )
 
 static CutMap load_cutmap_strict(const std::string &json_path) {
     std::ifstream in(json_path);
@@ -390,7 +389,6 @@ static bool passes_cutblock_3sigma(const std::unordered_map<std::string, CutVar>
 }
 
 struct Counts {
-    // per row index (CSV row)
     std::unordered_map<int, double> Ndvcs_exp;
     std::unordered_map<int, double> Npi0_exp;
     std::unordered_map<int, double> Npi0_sim;
@@ -411,9 +409,6 @@ static void accumulate_counts_for_tree(TTree *t,
                                        Counts &acc) {
     BaseVars v = setup_base_vars(t);
 
-    // We will dynamically bind all cut variables required for any topology for this period/prefix.
-    // To keep behavior explicit and deterministic, we bind exactly the union of vars across the 3 topo keys
-    // that exist in JSON; if any required var is missing in the tree, we fatal.
     const std::vector<std::string> topo_keys = {"FD_FD", "CD_FD", "CD_FT"};
     std::set<std::string> required_cut_vars;
 
@@ -431,7 +426,6 @@ static void accumulate_counts_for_tree(TTree *t,
     std::unordered_map<std::string, double> cut_values;
     cut_values.reserve(required_cut_vars.size());
 
-    // Storage for branch addresses (must stay alive)
     std::unordered_map<std::string, double> cut_storage;
     cut_storage.reserve(required_cut_vars.size());
 
@@ -456,7 +450,6 @@ static void accumulate_counts_for_tree(TTree *t,
 
         if (!passes_global_cuts(v.open_angle_ep2, v.t1, v.pTmiss)) continue;
 
-        // Build per-event cut-values map for the vars required by this topology
         cut_values.clear();
         const std::string ck = cutblock_key(cut_prefix, period_display, topo_key);
         const auto &vars_for_topo = cutmap.at(ck);
@@ -495,7 +488,6 @@ static double get_count(const std::unordered_map<int,double> &m, int row_idx) {
 }
 
 static Triple compute_contamination(double Nmis, double Nexp, double Nsim, double Ndvcs) {
-    // c = (Nmis * Nexp) / (Nsim * Ndvcs)
     Triple out{0.0, 0.0, 0.0};
 
     if (Nsim <= 0.0) return out;
@@ -503,7 +495,6 @@ static Triple compute_contamination(double Nmis, double Nexp, double Nsim, doubl
 
     const double c = (Nmis * Nexp) / (Nsim * Ndvcs);
 
-    // Poisson stats
     const double sNmis = (Nmis > 0.0) ? std::sqrt(Nmis) : 0.0;
     const double sNexp = (Nexp > 0.0) ? std::sqrt(Nexp) : 0.0;
     const double sNsim = (Nsim > 0.0) ? std::sqrt(Nsim) : 0.0;
@@ -557,7 +548,6 @@ static void plot_contamination_for_period(const std::string &period_display,
                                           const std::vector<RowBin> &bins,
                                           const std::unordered_map<int, Triple> &c_by_row,
                                           const std::string &output_root_dir) {
-    // Group per xB, then per (Q2,t) cell, points vs phi
     std::map<XBinKey, std::map<CellKey, std::vector<std::pair<double, Triple>>>> table;
 
     for (const auto &b : bins) {
@@ -567,7 +557,6 @@ static void plot_contamination_for_period(const std::string &period_display,
         XBinKey xb{b.xBmin, b.xBmax};
         CellKey ck{b.Q2min, b.Q2max, b.tmin, b.tmax};
 
-        // phi center: for wrap bins this is approximate; acceptable for plotting
         double phi_center = 0.5 * (b.phimin + b.phimax);
         table[xb][ck].push_back({phi_center, it->second});
     } //endfor
@@ -582,7 +571,6 @@ static void plot_contamination_for_period(const std::string &period_display,
         const XBinKey &xb = xb_it.first;
         const auto &cells = xb_it.second;
 
-        // Determine unique Q2 and t bins for a grid layout
         std::vector<std::pair<double,double>> Q2bins;
         std::vector<std::pair<double,double>> tbins;
 
@@ -601,14 +589,12 @@ static void plot_contamination_for_period(const std::string &period_display,
         const int nrows = (int)Q2bins.size();
         if (ncols <= 0 || nrows <= 0) continue;
 
-        // Canvas sizing similar to your grid conventions
         const int W = 300 * ncols + 160;
         const int H = 260 * nrows + 240;
 
         const std::string cname = "c_pi0_contam_" + period_dir + "_xB_" + std::to_string((int)std::round(xb.xBmin * 1000.0));
         TCanvas *c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
 
-        // Title pad + grid pad
         TPad *ptitle = new TPad("ptitle", "ptitle", 0.0, 0.88, 1.0, 1.0);
         ptitle->SetMargin(0.0, 0.0, 0.0, 0.0);
         ptitle->Draw();
@@ -629,7 +615,6 @@ static void plot_contamination_for_period(const std::string &period_display,
         pgrid->cd();
         pgrid->Divide(ncols, nrows);
 
-        // Find common ymax for this canvas
         double ymax = 0.0;
         for (const auto &cc : cells) {
             for (const auto &pp : cc.second) {
@@ -657,7 +642,6 @@ static void plot_contamination_for_period(const std::string &period_display,
 
                 auto itcell = cells.find(ck);
                 if (itcell == cells.end()) {
-                    // Empty pad: draw frame and label
                     TH1F *h = new TH1F("hframe","",1,0.0,360.0);
                     h->SetMinimum(0.0);
                     h->SetMaximum(ymax);
@@ -692,7 +676,7 @@ static void plot_contamination_for_period(const std::string &period_display,
                 g->SetMarkerSize(0.9);
                 g->SetLineWidth(1);
 
-                TH1F *frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
+                TH1F *frame = (TH1F*)gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Contamination ratio");
                 frame->GetXaxis()->CenterTitle();
@@ -705,7 +689,6 @@ static void plot_contamination_for_period(const std::string &period_display,
 
                 g->Draw("PE1");
 
-                // Per-pad annotation
                 TLatex a;
                 a.SetNDC(true);
                 a.SetTextSize(0.060);
@@ -714,7 +697,6 @@ static void plot_contamination_for_period(const std::string &period_display,
                     << "]  |t|=[" << ck.tmin << "," << ck.tmax << "]";
                 a.DrawLatex(0.12, 0.83, lab.str().c_str());
 
-                // Legend
                 TLegend *leg = new TLegend(0.60, 0.73, 0.93, 0.92);
                 leg->SetFillStyle(1001);
                 leg->SetBorderSize(1);
@@ -744,15 +726,11 @@ bool compute_pi0_contamination_overall(
     const std::string &output_root_dir,
     int /*max_workers*/) {
 
-    // Load CSV + bins
     auto csv = read_csv(csv_main);
     const auto bins = load_row_bins_from_csv(csv);
 
-    // Load cut blocks
     const CutMap cutmap = load_cutmap_strict(combined_cuts_json);
 
-    // Periods present are determined from dvcsDataTrees tags (strict).
-    // For each period, we require corresponding keys exist in all four maps.
     std::set<std::string> periods;
     for (const auto &kv : dvcsDataTrees) {
         periods.insert(period_display_from_tag_strict(kv.first));
@@ -762,7 +740,6 @@ bool compute_pi0_contamination_overall(
         fatal("No DVCS data trees provided to pi0 contamination stage.");
     }
 
-    // Validate columns exist for all periods we will write
     auto &hdr = csv[0];
     std::unordered_map<std::string, int> col_for_period;
 
@@ -775,9 +752,7 @@ bool compute_pi0_contamination_overall(
         col_for_period[p] = idx;
     } //endfor
 
-    // For each period, count 4 quantities and compute contamination per row
     for (const auto &period_display : periods) {
-        // Find the matching trees (strictly one per period for each category)
         TTree *t_dvcs_exp = nullptr;
         TTree *t_pi0_exp  = nullptr;
         TTree *t_pi0_sim  = nullptr;
@@ -813,7 +788,6 @@ bool compute_pi0_contamination_overall(
         if (!t_pi0_sim)  fatal("Missing eppi0 RECO MC tree for period '" + period_display + "'");
         if (!t_pi0_mis)  fatal("Missing eppi0 BKG-as-epg tree for period '" + period_display + "'");
 
-        // Explicit debug print of cut keys that will be used
         for (const std::string &tk : std::vector<std::string>{"FD_FD","CD_FD","CD_FT"}) {
             const std::string k_dvcs  = cutblock_key("DVCS",  period_display, tk);
             const std::string k_eppi0 = cutblock_key("eppi0", period_display, tk);
@@ -824,7 +798,6 @@ bool compute_pi0_contamination_overall(
 
         Counts acc;
 
-        // NDVCS_exp: DVCS selection on DVCS data
         accumulate_counts_for_tree(t_dvcs_exp,
                                    "dvcsData:" + period_display,
                                    bins,
@@ -834,7 +807,6 @@ bool compute_pi0_contamination_overall(
                                    "Ndvcs_exp",
                                    acc);
 
-        // Npi0mis: DVCS selection on eppi0-bkg-as-epg
         accumulate_counts_for_tree(t_pi0_mis,
                                    "pi0BkgAsEpg:" + period_display,
                                    bins,
@@ -844,7 +816,6 @@ bool compute_pi0_contamination_overall(
                                    "Npi0_mis",
                                    acc);
 
-        // Npi0_exp: eppi0 selection on eppi0 data
         accumulate_counts_for_tree(t_pi0_exp,
                                    "pi0Data:" + period_display,
                                    bins,
@@ -854,7 +825,6 @@ bool compute_pi0_contamination_overall(
                                    "Npi0_exp",
                                    acc);
 
-        // Npi0_sim: eppi0 selection on eppi0 reco MC
         accumulate_counts_for_tree(t_pi0_sim,
                                    "pi0RecMc:" + period_display,
                                    bins,
@@ -864,7 +834,6 @@ bool compute_pi0_contamination_overall(
                                    "Npi0_sim",
                                    acc);
 
-        // Compute per-row contamination and write into CSV
         std::unordered_map<int, Triple> c_by_row;
         c_by_row.reserve(bins.size());
 
@@ -886,11 +855,9 @@ bool compute_pi0_contamination_overall(
             csv[r][cidx] = format_triple(tr);
         } //endfor
 
-        // Plots
         plot_contamination_for_period(period_display, bins, c_by_row, output_root_dir);
     } //endfor
 
-    // Save CSV once at end (atomic)
     write_csv_atomic(csv_main, csv);
 
     std::cout << "[pi0_contamination] Done. Updated CSV and wrote plots under "
