@@ -34,6 +34,18 @@ namespace {
 
 using json = nlohmann::json;
 
+// -----------------------------------------------------------------------------
+// DEBUG CONTROLS (first period only)
+// -----------------------------------------------------------------------------
+static const bool kDebugFirstPeriodOnly          = true;
+static const bool kDebugPrintCutVarLists         = true;
+static const bool kDebugPrintBinTable            = true;
+static const bool kDebugPrintBinTableAllRows     = true;   // if false, prints only rows with any nonzero counts
+static const bool kDebugPrintEventExamples       = true;
+static const long long kDebugMaxEventPrint       = 30;     // per tree
+static const long long kDebugMaxSigmaFailPrint   = 30;     // per tree
+static const long long kDebugMaxRowFailPrint     = 30;     // per tree
+
 struct Triple {
     double v;
     double stat;
@@ -204,7 +216,7 @@ static std::vector<RowBin> load_row_bins_from_csv(const std::vector<std::vector<
     const int c_Q2min  = find_column_exact(hdr, "Q2min");
     const int c_Q2max  = find_column_exact(hdr, "Q2max");
 
-    // IMPORTANT: Your schema uses t_abs_min/t_abs_max (not tmin/tmax)
+    // IMPORTANT: schema uses t_abs_min/t_abs_max (not tmin/tmax)
     const int c_tmin   = find_column_exact(hdr, "t_abs_min");
     const int c_tmax   = find_column_exact(hdr, "t_abs_max");
 
@@ -279,13 +291,9 @@ static std::string format_triple(const Triple &t) {
 // ----------------------
 struct CutVar {
     double mean;
-    double std; // IMPORTANT: combined_cuts.json uses "std", not "sigma"
+    double std; // combined_cuts.json uses "std"
 };
 
-// CutMap layout matches JSON:
-//
-// cutmap[block_key]["data"][var] -> CutVar{mean,std}
-// cutmap[block_key]["mc"][var]   -> CutVar{mean,std}
 using CutMap = std::unordered_map<
     std::string,
     std::unordered_map<
@@ -312,7 +320,6 @@ static CutMap load_cutmap_strict(const std::string &json_path) {
             fatal("Cut block '" + block_key + "' is not an object");
         }
 
-        // Expect at least "data" and/or "mc" objects. We do not invent them.
         for (const std::string dataset : std::vector<std::string>{"data", "mc"}) {
             if (!block.contains(dataset)) continue;
             const json &ds = block[dataset];
@@ -417,8 +424,13 @@ static double get_base_double_value_strict(const BaseVars &v, const std::string 
     return 0.0;
 }
 
-static bool passes_cutblock_3sigma(const std::unordered_map<std::string, CutVar> &vars,
-                                   const std::unordered_map<std::string, double> &values) {
+static bool passes_cutblock_3sigma_debug(const std::unordered_map<std::string, CutVar> &vars,
+                                         const std::unordered_map<std::string, double> &values,
+                                         std::string *fail_var,
+                                         double *fail_x,
+                                         double *fail_mean,
+                                         double *fail_std,
+                                         double *fail_nsig) {
     for (const auto &kv : vars) {
         const std::string &name = kv.first;
         const CutVar &cv = kv.second;
@@ -434,7 +446,15 @@ static bool passes_cutblock_3sigma(const std::unordered_map<std::string, CutVar>
             fatal("Cut var '" + name + "' has non-positive std in cut map");
         }
 
-        if (!(std::fabs(x - cv.mean) <= 3.0 * cv.std)) return false;
+        const double nsig = std::fabs(x - cv.mean) / cv.std;
+        if (!(nsig <= 3.0)) {
+            if (fail_var)  *fail_var  = name;
+            if (fail_x)    *fail_x    = x;
+            if (fail_mean) *fail_mean = cv.mean;
+            if (fail_std)  *fail_std  = cv.std;
+            if (fail_nsig) *fail_nsig = nsig;
+            return false;
+        }
     } //endfor
     return true;
 }
@@ -456,15 +476,38 @@ static double sum_map_counts(const std::unordered_map<int,double> &m) {
     return s;
 }
 
+static void print_cut_vars_for_block(const CutMap &cutmap,
+                                     const std::string &block_key,
+                                     const std::string &dataset) {
+    auto it = cutmap.find(block_key);
+    if (it == cutmap.end()) fatal("Internal error: missing block key: " + block_key);
+    auto itds = it->second.find(dataset);
+    if (itds == it->second.end()) fatal("Internal error: missing dataset '" + dataset + "' in block key: " + block_key);
+
+    std::vector<std::string> names;
+    names.reserve(itds->second.size());
+    for (const auto &kv : itds->second) names.push_back(kv.first);
+    std::sort(names.begin(), names.end());
+
+    std::cout << "[pi0_contamination][DEBUG] Cut vars for block '" << block_key
+              << "' dataset '" << dataset << "' (n=" << names.size() << "): ";
+    for (size_t i = 0; i < names.size(); ++i) {
+        std::cout << names[i];
+        if (i + 1 < names.size()) std::cout << ", ";
+    }
+    std::cout << "\n";
+}
+
 static void accumulate_counts_for_tree(TTree *t,
                                        const std::string &tree_tag,
                                        const std::vector<RowBin> &bins,
                                        const CutMap &cutmap,
                                        const std::string &cut_prefix,
                                        const std::string &period_display,
-                                       const std::string &dataset,       // "data" or "mc"
+                                       const std::string &dataset,
                                        const std::string &which_counter,
-                                       Counts &acc) {
+                                       Counts &acc,
+                                       bool debug) {
     if (!(dataset == "data" || dataset == "mc")) {
         fatal("Internal error: dataset must be 'data' or 'mc' (got '" + dataset + "')");
     }
@@ -490,18 +533,19 @@ static void accumulate_counts_for_tree(TTree *t,
         } //endfor
     } //endfor
 
-    // IMPORTANT FIX:
-    // Do NOT re-bind branches already bound into BaseVars. If any 3-sigma cut
-    // variable shares a name with a base branch (e.g. open_angle_ep2), rebinding
-    // would freeze BaseVars values at defaults, causing global cuts and binning
-    // to fail and produce all-zero outputs.
+    if (debug && kDebugPrintCutVarLists) {
+        for (const auto &tk : topo_keys) {
+            const std::string key = cutblock_key(cut_prefix, period_display, tk);
+            print_cut_vars_for_block(cutmap, key, dataset);
+        } //endfor
+    }
+
+    // IMPORTANT:
+    // Never bind branches already bound into BaseVars.
     std::vector<std::string> extra_names;
     extra_names.reserve(required_cut_vars.size());
-
     for (const auto &name : required_cut_vars) {
-        if (!is_base_double_var(name)) {
-            extra_names.push_back(name);
-        }
+        if (!is_base_double_var(name)) extra_names.push_back(name);
     } //endfor
 
     std::vector<double> extra_vals(extra_names.size(), 0.0);
@@ -524,20 +568,50 @@ static void accumulate_counts_for_tree(TTree *t,
               << " using cut-prefix=" << cut_prefix
               << " period=" << period_display
               << " dataset=" << dataset
+              << (debug ? " (DEBUG ENABLED)" : "")
               << "\n";
 
-    long long global_pass = 0;
-    long long sig_pass    = 0;
-    long long used        = 0;
+    long long n_total      = 0;
+    long long n_topo_ok    = 0;
+    long long n_global_ok  = 0;
+    long long n_sigma_ok   = 0;
+    long long n_row_ok     = 0;
+    long long n_counted    = 0;
+
+    std::unordered_map<std::string, long long> topo_counts;
+    std::unordered_map<std::string, long long> topo_counts_after_global;
+    std::unordered_map<std::string, long long> sigma_fail_var_counts;
+
+    long long printed_event = 0;
+    long long printed_sigma_fail = 0;
+    long long printed_row_fail = 0;
 
     for (Long64_t i = 0; i < n; ++i) {
         t->GetEntry(i);
+        ++n_total;
 
         const std::string topo_key = topo_key_from_det(v.detector1, v.detector2);
         if (topo_key.empty()) continue;
+        ++n_topo_ok;
+        topo_counts[topo_key]++;
 
-        if (!passes_global_cuts(v.open_angle_ep2, v.t1, v.pTmiss)) continue;
-        ++global_pass;
+        const bool pass_global = passes_global_cuts(v.open_angle_ep2, v.t1, v.pTmiss);
+        if (!pass_global) {
+            if (debug && kDebugPrintEventExamples && printed_event < kDebugMaxEventPrint) {
+                const double open_deg = v.open_angle_ep2 * 180.0 / M_PI;
+                std::cout << "[pi0_contamination][DEBUG][" << which_counter << "] evt=" << i
+                          << " topo=" << topo_key
+                          << " FAIL_GLOBAL open_angle_deg=" << std::fixed << std::setprecision(4) << open_deg
+                          << " t1=" << v.t1
+                          << " |t|=" << std::fabs(v.t1)
+                          << " pTmiss=" << v.pTmiss
+                          << "\n";
+                ++printed_event;
+            }
+            continue;
+        }
+        ++n_global_ok;
+        topo_counts_after_global[topo_key]++;
 
         const std::string ck = cutblock_key(cut_prefix, period_display, topo_key);
 
@@ -565,14 +639,60 @@ static void accumulate_counts_for_tree(TTree *t,
             }
         } //endfor
 
-        if (!passes_cutblock_3sigma(vars_for_topo, cut_values)) continue;
-        ++sig_pass;
+        std::string fail_var;
+        double fail_x = 0.0, fail_mean = 0.0, fail_std = 0.0, fail_nsig = 0.0;
+        const bool pass_sigma = passes_cutblock_3sigma_debug(vars_for_topo, cut_values,
+                                                             debug ? &fail_var : nullptr,
+                                                             debug ? &fail_x : nullptr,
+                                                             debug ? &fail_mean : nullptr,
+                                                             debug ? &fail_std : nullptr,
+                                                             debug ? &fail_nsig : nullptr);
+        if (!pass_sigma) {
+            if (debug) {
+                sigma_fail_var_counts[fail_var]++;
+
+                if (kDebugPrintEventExamples && printed_sigma_fail < kDebugMaxSigmaFailPrint) {
+                    const double open_deg = v.open_angle_ep2 * 180.0 / M_PI;
+                    const double phi_deg = phi_deg_from_phi2(v.phi2);
+                    std::cout << "[pi0_contamination][DEBUG][" << which_counter << "] evt=" << i
+                              << " topo=" << topo_key
+                              << " FAIL_3SIGMA var=" << fail_var
+                              << " x=" << std::fixed << std::setprecision(6) << fail_x
+                              << " mean=" << fail_mean
+                              << " std=" << fail_std
+                              << " nsig=" << fail_nsig
+                              << " (xB=" << v.x
+                              << " Q2=" << v.Q2
+                              << " |t|=" << std::fabs(v.t1)
+                              << " phi_deg=" << phi_deg
+                              << " open_deg=" << open_deg
+                              << " pTmiss=" << v.pTmiss
+                              << ")\n";
+                    ++printed_sigma_fail;
+                }
+            }
+            continue;
+        }
+        ++n_sigma_ok;
 
         const double phi_deg = phi_deg_from_phi2(v.phi2);
         const double t_abs = std::fabs(v.t1);
 
         const int row_idx = find_row_index_linear(bins, v.x, v.Q2, t_abs, phi_deg);
-        if (row_idx < 0) continue;
+        if (row_idx < 0) {
+            if (debug && kDebugPrintEventExamples && printed_row_fail < kDebugMaxRowFailPrint) {
+                std::cout << "[pi0_contamination][DEBUG][" << which_counter << "] evt=" << i
+                          << " topo=" << topo_key
+                          << " FAIL_ROW_MATCH xB=" << std::fixed << std::setprecision(6) << v.x
+                          << " Q2=" << v.Q2
+                          << " |t|=" << t_abs
+                          << " phi_deg=" << phi_deg
+                          << "\n";
+                ++printed_row_fail;
+            }
+            continue;
+        }
+        ++n_row_ok;
 
         if (which_counter == "Ndvcs_exp") {
             add_count(acc.Ndvcs_exp, row_idx);
@@ -585,16 +705,62 @@ static void accumulate_counts_for_tree(TTree *t,
         } else {
             fatal("Unknown counter name: " + which_counter);
         }
+        ++n_counted;
 
-        ++used;
+        if (debug && kDebugPrintEventExamples && printed_event < kDebugMaxEventPrint) {
+            std::cout << "[pi0_contamination][DEBUG][" << which_counter << "] evt=" << i
+                      << " topo=" << topo_key
+                      << " PASS_ALL row_idx=" << row_idx
+                      << " xB=" << std::fixed << std::setprecision(6) << v.x
+                      << " Q2=" << v.Q2
+                      << " |t|=" << std::fabs(v.t1)
+                      << " phi_deg=" << phi_deg
+                      << "\n";
+            ++printed_event;
+        }
     } //endfor
 
     std::cout << "[pi0_contamination] Done " << which_counter
               << " tag=" << tree_tag
-              << " global_pass=" << global_pass
-              << " sig_pass=" << sig_pass
-              << " used=" << used
+              << " totals:"
+              << " n_total=" << n_total
+              << " n_topo_ok=" << n_topo_ok
+              << " n_global_ok=" << n_global_ok
+              << " n_sigma_ok=" << n_sigma_ok
+              << " n_row_ok=" << n_row_ok
+              << " n_counted=" << n_counted
               << "\n";
+
+    if (debug) {
+        std::cout << "[pi0_contamination][DEBUG] Topology counts (after topo filter): ";
+        for (const auto &kv : topo_counts) {
+            std::cout << kv.first << "=" << kv.second << " ";
+        }
+        std::cout << "\n";
+
+        std::cout << "[pi0_contamination][DEBUG] Topology counts (after global cuts): ";
+        for (const auto &kv : topo_counts_after_global) {
+            std::cout << kv.first << "=" << kv.second << " ";
+        }
+        std::cout << "\n";
+
+        if (!sigma_fail_var_counts.empty()) {
+            std::vector<std::pair<std::string,long long>> vv;
+            vv.reserve(sigma_fail_var_counts.size());
+            for (const auto &kv : sigma_fail_var_counts) vv.push_back(kv);
+            std::sort(vv.begin(), vv.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+
+            std::cout << "[pi0_contamination][DEBUG] 3-sigma failure var ranking (top 20): ";
+            const size_t nshow = std::min<size_t>(20, vv.size());
+            for (size_t i = 0; i < nshow; ++i) {
+                std::cout << vv[i].first << "=" << vv[i].second;
+                if (i + 1 < nshow) std::cout << ", ";
+            }
+            std::cout << "\n";
+        } else {
+            std::cout << "[pi0_contamination][DEBUG] No 3-sigma failures recorded (sigma_fail_var_counts empty).\n";
+        }
+    }
 }
 
 static double get_count(const std::unordered_map<int,double> &m, int row_idx) {
@@ -783,16 +949,16 @@ static void plot_contamination_for_period(const std::string &period_display,
                 std::sort(pts.begin(), pts.end(),
                           [](const auto &a, const auto &b) { return a.first < b.first; });
 
-                const int n = (int)pts.size();
-                std::vector<double> x(n), y(n), ex(n), ey(n);
-                for (int k = 0; k < n; ++k) {
+                const int npt = (int)pts.size();
+                std::vector<double> x(npt), y(npt), ex(npt), ey(npt);
+                for (int k = 0; k < npt; ++k) {
                     x[k]  = pts[k].first;
                     y[k]  = pts[k].second.v;
                     ex[k] = 0.0;
                     ey[k] = pts[k].second.stat;
                 } //endfor
 
-                TGraphErrors *g = new TGraphErrors(n, x.data(), y.data(), ex.data(), ey.data());
+                TGraphErrors *g = new TGraphErrors(npt, x.data(), y.data(), ex.data(), ey.data());
                 g->SetMarkerStyle(20);
                 g->SetMarkerSize(0.9);
                 g->SetLineWidth(1);
@@ -824,6 +990,52 @@ static void plot_contamination_for_period(const std::string &period_display,
     } //endfor
 }
 
+static void debug_print_bin_by_bin(const std::string &period_display,
+                                  const std::vector<RowBin> &bins,
+                                  const Counts &acc) {
+    std::cout << "[pi0_contamination][DEBUG] Bin-by-bin table for period '" << period_display << "':\n";
+    std::cout << "[pi0_contamination][DEBUG] Columns:\n";
+    std::cout << "[pi0_contamination][DEBUG] row  xBmin xBmax  Q2min Q2max  tmin tmax  phimin phimax"
+              << "  Ndvcs  Nmis  Nexp  Nsim"
+              << "  (Nmis/Nsim)  (Nexp/Ndvcs)  contam\n";
+
+    for (const auto &b : bins) {
+        const int r = b.row_idx;
+        const double Ndvcs = get_count(acc.Ndvcs_exp, r);
+        const double Nmis  = get_count(acc.Npi0_mis,  r);
+        const double Nexp  = get_count(acc.Npi0_exp,  r);
+        const double Nsim  = get_count(acc.Npi0_sim,  r);
+
+        const bool any_nonzero = (Ndvcs > 0.0 || Nmis > 0.0 || Nexp > 0.0 || Nsim > 0.0);
+        if (!kDebugPrintBinTableAllRows && !any_nonzero) continue;
+
+        double a = 0.0;
+        double bfac = 0.0;
+        if (Nsim > 0.0) a = Nmis / Nsim;
+        if (Ndvcs > 0.0) bfac = Nexp / Ndvcs;
+
+        const Triple tr = compute_contamination(Nmis, Nexp, Nsim, Ndvcs);
+
+        std::cout << "[pi0_contamination][DEBUG] "
+                  << std::setw(5) << r << "  "
+                  << std::fixed << std::setprecision(3)
+                  << std::setw(5) << b.xBmin << " " << std::setw(5) << b.xBmax << "  "
+                  << std::setw(5) << b.Q2min << " " << std::setw(5) << b.Q2max << "  "
+                  << std::setw(5) << b.tmin  << " " << std::setw(5) << b.tmax  << "  "
+                  << std::setw(6) << b.phimin << " " << std::setw(6) << b.phimax << "  "
+                  << std::setprecision(0)
+                  << std::setw(5) << Ndvcs << " "
+                  << std::setw(5) << Nmis  << " "
+                  << std::setw(5) << Nexp  << " "
+                  << std::setw(5) << Nsim  << "  "
+                  << std::setprecision(6)
+                  << std::setw(12) << a << "  "
+                  << std::setw(12) << bfac << "  "
+                  << std::setprecision(8) << tr.v
+                  << "\n";
+    } //endfor
+}
+
 } // anonymous namespace
 
 bool compute_pi0_contamination_overall(
@@ -850,6 +1062,13 @@ bool compute_pi0_contamination_overall(
         fatal("No DVCS data trees provided to pi0 contamination stage.");
     }
 
+    // Choose the first processed period (set is sorted) for heavy debug.
+    const std::string debug_period = *periods.begin();
+    std::cout << "[pi0_contamination] Periods to process (n=" << periods.size() << "): ";
+    for (const auto &p : periods) std::cout << p << " ";
+    std::cout << "\n";
+    std::cout << "[pi0_contamination] Debug period = '" << debug_period << "'\n";
+
     auto &hdr = csv[0];
     std::unordered_map<std::string, int> col_for_period;
 
@@ -863,6 +1082,8 @@ bool compute_pi0_contamination_overall(
     } //endfor
 
     for (const auto &period_display : periods) {
+        const bool debug = (kDebugFirstPeriodOnly && period_display == debug_period);
+
         TTree *t_dvcs_exp = nullptr;
         TTree *t_pi0_exp  = nullptr;
         TTree *t_pi0_sim  = nullptr;
@@ -919,7 +1140,6 @@ bool compute_pi0_contamination_overall(
 
         Counts acc;
 
-        // DATA cuts for DATA-like trees
         accumulate_counts_for_tree(t_dvcs_exp,
                                    "dvcsData:" + period_display,
                                    bins,
@@ -928,9 +1148,9 @@ bool compute_pi0_contamination_overall(
                                    period_display,
                                    "data",
                                    "Ndvcs_exp",
-                                   acc);
+                                   acc,
+                                   debug);
 
-        // pi0 background mis-ID counted with DVCS DATA cuts (still data-like)
         accumulate_counts_for_tree(t_pi0_mis,
                                    "pi0BkgAsEpg:" + period_display,
                                    bins,
@@ -939,9 +1159,9 @@ bool compute_pi0_contamination_overall(
                                    period_display,
                                    "data",
                                    "Npi0_mis",
-                                   acc);
+                                   acc,
+                                   debug);
 
-        // eppi0 DATA counted with eppi0 DATA cuts
         accumulate_counts_for_tree(t_pi0_exp,
                                    "pi0Data:" + period_display,
                                    bins,
@@ -950,9 +1170,9 @@ bool compute_pi0_contamination_overall(
                                    period_display,
                                    "data",
                                    "Npi0_exp",
-                                   acc);
+                                   acc,
+                                   debug);
 
-        // reconstructed eppi0 MC counted with eppi0 MC cuts
         accumulate_counts_for_tree(t_pi0_sim,
                                    "pi0RecMc:" + period_display,
                                    bins,
@@ -961,7 +1181,8 @@ bool compute_pi0_contamination_overall(
                                    period_display,
                                    "mc",
                                    "Npi0_sim",
-                                   acc);
+                                   acc,
+                                   debug);
 
         std::cout << "[pi0_contamination] Period summary: " << period_display
                   << " totals: Ndvcs=" << sum_map_counts(acc.Ndvcs_exp)
@@ -969,6 +1190,10 @@ bool compute_pi0_contamination_overall(
                   << " Nexp=" << sum_map_counts(acc.Npi0_exp)
                   << " Nsim=" << sum_map_counts(acc.Npi0_sim)
                   << "\n";
+
+        if (debug && kDebugPrintBinTable) {
+            debug_print_bin_by_bin(period_display, bins, acc);
+        }
 
         std::unordered_map<int, Triple> c_by_row;
         c_by_row.reserve(bins.size());
