@@ -341,8 +341,6 @@ static CutMap load_cutmap_strict(const std::string &json_path) {
             out[block_key][dataset] = vars;
         } //endfor
 
-        // We do not require both datasets at load-time, but we WILL require
-        // the requested dataset at use-time (fail-fast).
         if (out.find(block_key) == out.end()) {
             fatal("Internal error: block '" + block_key + "' was not loaded");
         }
@@ -399,6 +397,26 @@ static bool passes_global_cuts(double open_angle_ep2_rad, double t1, double pTmi
     return true;
 }
 
+static bool is_base_double_var(const std::string &name) {
+    return (name == "x" ||
+            name == "Q2" ||
+            name == "t1" ||
+            name == "phi2" ||
+            name == "open_angle_ep2" ||
+            name == "pTmiss");
+}
+
+static double get_base_double_value_strict(const BaseVars &v, const std::string &name) {
+    if (name == "x") return v.x;
+    if (name == "Q2") return v.Q2;
+    if (name == "t1") return v.t1;
+    if (name == "phi2") return v.phi2;
+    if (name == "open_angle_ep2") return v.open_angle_ep2;
+    if (name == "pTmiss") return v.pTmiss;
+    fatal("Internal error: requested base var '" + name + "' is not a base double var");
+    return 0.0;
+}
+
 static bool passes_cutblock_3sigma(const std::unordered_map<std::string, CutVar> &vars,
                                    const std::unordered_map<std::string, double> &values) {
     for (const auto &kv : vars) {
@@ -412,7 +430,6 @@ static bool passes_cutblock_3sigma(const std::unordered_map<std::string, CutVar>
 
         const double x = it->second;
 
-        // Fail fast if std is non-positive (this should not happen for real cut blocks)
         if (!(cv.std > 0.0)) {
             fatal("Cut var '" + name + "' has non-positive std in cut map");
         }
@@ -431,6 +448,12 @@ struct Counts {
 
 static void add_count(std::unordered_map<int,double> &m, int row_idx) {
     m[row_idx] += 1.0;
+}
+
+static double sum_map_counts(const std::unordered_map<int,double> &m) {
+    double s = 0.0;
+    for (const auto &kv : m) s += kv.second;
+    return s;
 }
 
 static void accumulate_counts_for_tree(TTree *t,
@@ -467,16 +490,32 @@ static void accumulate_counts_for_tree(TTree *t,
         } //endfor
     } //endfor
 
-    std::unordered_map<std::string, double> cut_values;
-    cut_values.reserve(required_cut_vars.size());
-
-    std::unordered_map<std::string, double> cut_storage;
-    cut_storage.reserve(required_cut_vars.size());
+    // IMPORTANT FIX:
+    // Do NOT re-bind branches already bound into BaseVars. If any 3-sigma cut
+    // variable shares a name with a base branch (e.g. open_angle_ep2), rebinding
+    // would freeze BaseVars values at defaults, causing global cuts and binning
+    // to fail and produce all-zero outputs.
+    std::vector<std::string> extra_names;
+    extra_names.reserve(required_cut_vars.size());
 
     for (const auto &name : required_cut_vars) {
-        cut_storage[name] = 0.0;
-        bind_required_branch(t, name.c_str(), &cut_storage[name]);
+        if (!is_base_double_var(name)) {
+            extra_names.push_back(name);
+        }
     } //endfor
+
+    std::vector<double> extra_vals(extra_names.size(), 0.0);
+    std::unordered_map<std::string, size_t> extra_index;
+    extra_index.reserve(extra_names.size());
+
+    for (size_t i = 0; i < extra_names.size(); ++i) {
+        const std::string &nm = extra_names[i];
+        extra_index[nm] = i;
+        bind_required_branch(t, nm.c_str(), &extra_vals[i]);
+    } //endfor
+
+    std::unordered_map<std::string, double> cut_values;
+    cut_values.reserve(required_cut_vars.size());
 
     const Long64_t n = t->GetEntries();
     std::cout << "[pi0_contamination] Counting " << which_counter
@@ -487,6 +526,10 @@ static void accumulate_counts_for_tree(TTree *t,
               << " dataset=" << dataset
               << "\n";
 
+    long long global_pass = 0;
+    long long sig_pass    = 0;
+    long long used        = 0;
+
     for (Long64_t i = 0; i < n; ++i) {
         t->GetEntry(i);
 
@@ -494,6 +537,7 @@ static void accumulate_counts_for_tree(TTree *t,
         if (topo_key.empty()) continue;
 
         if (!passes_global_cuts(v.open_angle_ep2, v.t1, v.pTmiss)) continue;
+        ++global_pass;
 
         const std::string ck = cutblock_key(cut_prefix, period_display, topo_key);
 
@@ -510,10 +554,19 @@ static void accumulate_counts_for_tree(TTree *t,
         cut_values.clear();
         for (const auto &kv : vars_for_topo) {
             const std::string &varname = kv.first;
-            cut_values[varname] = cut_storage.at(varname);
+            if (is_base_double_var(varname)) {
+                cut_values[varname] = get_base_double_value_strict(v, varname);
+            } else {
+                auto itx = extra_index.find(varname);
+                if (itx == extra_index.end()) {
+                    fatal("Internal error: missing bound storage for cut var '" + varname + "'");
+                }
+                cut_values[varname] = extra_vals[itx->second];
+            }
         } //endfor
 
         if (!passes_cutblock_3sigma(vars_for_topo, cut_values)) continue;
+        ++sig_pass;
 
         const double phi_deg = phi_deg_from_phi2(v.phi2);
         const double t_abs = std::fabs(v.t1);
@@ -532,7 +585,16 @@ static void accumulate_counts_for_tree(TTree *t,
         } else {
             fatal("Unknown counter name: " + which_counter);
         }
+
+        ++used;
     } //endfor
+
+    std::cout << "[pi0_contamination] Done " << which_counter
+              << " tag=" << tree_tag
+              << " global_pass=" << global_pass
+              << " sig_pass=" << sig_pass
+              << " used=" << used
+              << "\n";
 }
 
 static double get_count(const std::unordered_map<int,double> &m, int row_idx) {
@@ -694,21 +756,26 @@ static void plot_contamination_for_period(const std::string &period_display,
                 const auto &tb  = tbins[ic];
                 CellKey ck{Q2b.first, Q2b.second, tb.first, tb.second};
 
+                TH1F *frame = (TH1F*)gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
+                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetYaxis()->SetTitle("Contamination ratio");
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->SetLabelSize(0.060);
+                frame->GetYaxis()->SetLabelSize(0.060);
+                frame->GetXaxis()->SetTitleSize(0.070);
+                frame->GetYaxis()->SetTitleSize(0.070);
+
                 auto itcell = cells.find(ck);
                 if (itcell == cells.end()) {
-                    TH1F *h = new TH1F("hframe","",1,0.0,360.0);
-                    h->SetMinimum(0.0);
-                    h->SetMaximum(ymax);
-                    h->GetXaxis()->SetTitle("#phi (deg)");
-                    h->GetYaxis()->SetTitle("Contamination ratio");
-                    h->GetXaxis()->CenterTitle();
-                    h->GetYaxis()->CenterTitle();
-                    h->GetXaxis()->SetNdivisions(505);
-                    h->GetXaxis()->SetLabelSize(0.060);
-                    h->GetYaxis()->SetLabelSize(0.060);
-                    h->GetXaxis()->SetTitleSize(0.070);
-                    h->GetYaxis()->SetTitleSize(0.070);
-                    h->Draw("AXIS");
+                    TLatex a;
+                    a.SetNDC(true);
+                    a.SetTextSize(0.060);
+                    std::ostringstream lab;
+                    lab << "Q^{2}=[" << std::fixed << std::setprecision(2) << ck.Q2min << "," << ck.Q2max
+                        << "]  |t|=[" << ck.tmin << "," << ck.tmax << "]";
+                    a.DrawLatex(0.12, 0.83, lab.str().c_str());
                     continue;
                 }
 
@@ -729,17 +796,6 @@ static void plot_contamination_for_period(const std::string &period_display,
                 g->SetMarkerStyle(20);
                 g->SetMarkerSize(0.9);
                 g->SetLineWidth(1);
-
-                TH1F *frame = (TH1F*)gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
-                frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("Contamination ratio");
-                frame->GetXaxis()->CenterTitle();
-                frame->GetYaxis()->CenterTitle();
-                frame->GetXaxis()->SetNdivisions(505);
-                frame->GetXaxis()->SetLabelSize(0.060);
-                frame->GetYaxis()->SetLabelSize(0.060);
-                frame->GetXaxis()->SetTitleSize(0.070);
-                frame->GetYaxis()->SetTitleSize(0.070);
 
                 g->Draw("PE1");
 
@@ -906,6 +962,13 @@ bool compute_pi0_contamination_overall(
                                    "mc",
                                    "Npi0_sim",
                                    acc);
+
+        std::cout << "[pi0_contamination] Period summary: " << period_display
+                  << " totals: Ndvcs=" << sum_map_counts(acc.Ndvcs_exp)
+                  << " Nmis=" << sum_map_counts(acc.Npi0_mis)
+                  << " Nexp=" << sum_map_counts(acc.Npi0_exp)
+                  << " Nsim=" << sum_map_counts(acc.Npi0_sim)
+                  << "\n";
 
         std::unordered_map<int, Triple> c_by_row;
         c_by_row.reserve(bins.size());
