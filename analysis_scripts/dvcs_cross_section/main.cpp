@@ -107,15 +107,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- pi0 contamination (helicity-averaged; DVCS counts from CSV; eppi0 counts re-counted) ----------
+    // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make dirs up front (preferred place)
         makeOutputDirs();
 
-        // Make a backup (the function also backs up to ..._total_counts.csv)
         try {
             std::filesystem::copy_file(
                 csv_main,
@@ -126,10 +124,10 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
         }
 
-        // Parallelize across periods (<=0 means auto thread count)
         const int max_workers = 1;
 
         if (!compute_pi0_contamination_overall(
+                dataTrees,
                 eppi0DataTrees,
                 eppi0RecMcTrees,
                 eppi0BkgTrees,
