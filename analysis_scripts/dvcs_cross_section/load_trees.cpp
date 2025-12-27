@@ -193,11 +193,11 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
 
     // ---------------- DVCS generated MC (no radiative) ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root"},
-        {"DVCS_Sp18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_out_10594MeV.root"},
-        {"DVCS_Fa18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_inb_10604MeV.root"},
-        {"DVCS_Fa18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_10604MeV.root"},
-        {"DVCS_Sp19_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp19_inb_10200MeV.root"}
+        {"DVCS_Sp18_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_sp18_inb.root"},
+        {"DVCS_Sp18_out_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_sp18_out.root"},
+        {"DVCS_Fa18_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_fa18_inb.root"},
+        {"DVCS_Fa18_out_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_fa18_out.root"},
+        {"DVCS_Sp19_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_sp19_inb.root"}
     }, genMcTrees);
 
     // ---------------- DVCS reconstructed MC (no radiative) ----------------
@@ -239,11 +239,11 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
 
     // ---------------- eπ0 generated MC ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_inb_10594MeV.root"},
-        {"DVCS_Sp18_out_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_out_10594MeV.root"},
-        {"DVCS_Fa18_inb_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_inb_10604MeV.root"},
-        {"DVCS_Fa18_out_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_out_10604MeV.root"},
-        {"DVCS_Sp19_inb_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp19_inb_10200MeV.root"}
+        {"DVCS_Sp18_inb_gen_mc", "/volatile/clas12/thayward/dvcs_event_builder_test/gen_aaogen_sp18_inb.root"},
+        {"DVCS_Sp18_out_gen_mc", "/volatile/clas12/thayward/dvcs_event_builder_test/gen_aaogen_sp18_out.root"},
+        {"DVCS_Fa18_inb_gen_mc", "/volatile/clas12/thayward/dvcs_event_builder_test/gen_aaogen_fa18_inb.root"},
+        {"DVCS_Fa18_out_gen_mc", "/volatile/clas12/thayward/dvcs_event_builder_test/gen_aaogen_fa18_out.root"},
+        {"DVCS_Sp19_inb_gen_mc", "/volatile/clas12/thayward/dvcs_event_builder_test/gen_aaogen_sp19_inb.root"}
     }, eppi0GenMcTrees);
 
     // ---------------- eπ0 reconstructed MC ----------------
