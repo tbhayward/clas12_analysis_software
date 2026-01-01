@@ -52,6 +52,25 @@ namespace {
 
 using nlohmann::json;
 
+// -----------------------------------------------------------------------------
+// Toggle: which sigma-cuts object to use from combined_cuts.json
+//   - CutSource::kMC   uses top_key["mc"]
+//   - CutSource::kDATA uses top_key["data"]
+//
+// For your current experiment, this defaults to kDATA.
+// -----------------------------------------------------------------------------
+enum class CutSource {
+    kMC,
+    kDATA
+};
+
+static constexpr CutSource kSigmaCutSource = CutSource::kDATA;
+// static constexpr CutSource kSigmaCutSource = CutSource::kMC;
+
+static inline const char* cut_source_label(CutSource s) {
+    return (s == CutSource::kDATA) ? "data" : "mc";
+}
+
 // ---------------- CSV helper ----------------
 
 struct CsvDoc {
@@ -355,8 +374,10 @@ static inline bool within_3sigma(double val, const SigmaCut& sc) {
     return std::fabs(val - sc.mean) <= 3.0 * sc.std;
 }
 
-// Load **MC** sigma cuts and print details for each topology key.
-static TopoCutMap load_sigma_cuts_data(const std::string& path) {
+// Load sigma cuts from combined_cuts.json selecting either the "mc" or "data" object,
+// controlled by kSigmaCutSource. This fails fast if any top-level key is missing
+// the requested object (no silent fallback).
+static TopoCutMap load_sigma_cuts_selected(const std::string& path) {
     TopoCutMap out;
 
     if (path.empty()) {
@@ -379,10 +400,14 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         std::exit(EXIT_FAILURE);
     }
 
+    const std::string which = cut_source_label(kSigmaCutSource);
+
     std::size_t n_total_keys = 0;
-    std::size_t n_mc_keys = 0;
+    std::size_t n_obj_keys = 0;
     std::size_t n_dvcs_keys = 0;
     std::size_t n_nondvcs_keys = 0;
+
+    std::vector<std::string> missing_object_keys;
 
     for (auto it = j.begin(); it != j.end(); ++it) {
         ++n_total_keys;
@@ -390,18 +415,27 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD"
         const json& block = it.value();
 
-        // For acceptance we want the MC stats, not the data stats.
-        if (!block.contains("mc") || !block["mc"].is_object()) continue;
-        ++n_mc_keys;
+        if (!block.is_object()) {
+            std::cerr << "[acceptance] FATAL: combined_cuts.json top-level key '"
+                      << key << "' is not an object.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        if (!block.contains(which) || !block[which].is_object()) {
+            missing_object_keys.push_back(key);
+            continue;
+        }
+
+        ++n_obj_keys;
 
         const bool is_dvcs = (key.rfind("DVCS_", 0) == 0);
         if (is_dvcs) ++n_dvcs_keys;
         else ++n_nondvcs_keys;
 
-        const json& mc_block = block["mc"];
+        const json& src_block = block[which];
 
         VarCutMap m;
-        for (auto vit = mc_block.begin(); vit != mc_block.end(); ++vit) {
+        for (auto vit = src_block.begin(); vit != src_block.end(); ++vit) {
             const std::string vname = vit.key(); // Emiss2, Mx2, ...
             const json& vs = vit.value();
             SigmaCut sc;
@@ -415,8 +449,7 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         }
 
         if (!m.empty()) {
-            // Debug print so you can see exactly what was loaded.
-            std::cout << "[acceptance] MC sigma cuts for key " << key << ":\n";
+            std::cout << "[acceptance] " << which << " sigma cuts for key " << key << ":\n";
             for (const auto& kv : m) {
                 const SigmaCut& sc = kv.second;
                 std::cout << "  - " << kv.first
@@ -427,13 +460,24 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         }
     }
 
-    std::cout << "[acceptance] combined_cuts.json summary:\n";
-    std::cout << "  - total top-level keys = " << n_total_keys << "\n";
-    std::cout << "  - keys with an 'mc' object = " << n_mc_keys << "\n";
-    std::cout << "  - DVCS_* keys with 'mc' = " << n_dvcs_keys << "\n";
-    std::cout << "  - non-DVCS keys with 'mc' (ignored by acceptance) = " << n_nondvcs_keys << "\n";
+    if (!missing_object_keys.empty()) {
+        std::cerr << "[acceptance] FATAL: combined_cuts.json is missing a '" << which
+                  << "' object for " << missing_object_keys.size()
+                  << " top-level keys:\n";
+        for (const auto& k : missing_object_keys) {
+            std::cerr << "  - " << k << "\n";
+        }
+        std::cerr << "[acceptance] Aborting (no silent fallback between data/mc).\n";
+        std::exit(EXIT_FAILURE);
+    }
 
-    std::cout << "[acceptance] Loaded MC sigma cuts for " << out.size()
+    std::cout << "[acceptance] combined_cuts.json summary (" << which << "):\n";
+    std::cout << "  - total top-level keys = " << n_total_keys << "\n";
+    std::cout << "  - keys with a '" << which << "' object = " << n_obj_keys << "\n";
+    std::cout << "  - DVCS_* keys with '" << which << "' = " << n_dvcs_keys << "\n";
+    std::cout << "  - non-DVCS keys with '" << which << "' (ignored by acceptance) = " << n_nondvcs_keys << "\n";
+
+    std::cout << "[acceptance] Loaded " << which << " sigma cuts for " << out.size()
               << " topology keys from " << path << "\n";
 
     if (out.empty()) {
@@ -505,11 +549,10 @@ static void validate_sigma_cuts_for_period_or_die(const std::string& period_labe
         std::exit(EXIT_FAILURE);
     }
 
-    // Validate variable completeness per topology, and print a concise summary.
     const std::vector<std::string> required_vars = expected_dvcs_cut_vars();
 
     std::cout << "[acceptance] Period " << period_label
-              << " sigma-cuts validation (DVCS):\n";
+              << " sigma-cuts validation (DVCS, source=" << cut_source_label(kSigmaCutSource) << "):\n";
 
     for (const auto& k : expected_keys) {
         const auto& m = sigmaCuts.at(k);
@@ -574,8 +617,6 @@ struct RowBin {
     int    row_index;   // index into CsvDoc::rows
 };
 
-// We only build RowBin entries for "standard" phi bins,
-// NOT for phi-integrated bins (phi width >= 360 degrees).
 static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
     const int c_xb_min  = csv.col_index("xBmin");
     const int c_xb_max  = csv.col_index("xBmax");
@@ -640,7 +681,6 @@ static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
     return bins;
 }
 
-// For each period, mark which CSV rows actually have data for that period.
 static std::map<std::string, std::vector<bool>>
 build_row_has_data(const CsvDoc& csv)
 {
@@ -672,7 +712,6 @@ build_row_has_data(const CsvDoc& csv)
     return has_data;
 }
 
-// Find which CSV row an event belongs to, given xB, Q2, |t|, phiDeg.
 static int find_row_for_event(double xB,
                               double Q2,
                               double tAbs,
@@ -707,11 +746,9 @@ static bool rec_passes_exclusivity(const std::string& period_label,
     }
     const double pTmiss = itP->second;
 
-    // Global run blacklist + global cuts (same as total_counts.cpp)
     if (is_excluded_run(runnum)) return false;
     if (!passes_global_cuts(t1, open_angle_ep2_deg, pTmiss)) return false;
 
-    // Topology-dependent 3-sigma cuts from combined_cuts.json (MC branch)
     if (!cutsForTopo) {
         std::cerr << "[acceptance] FATAL: cutsForTopo is nullptr for topo_key=" << topo_key
                   << " (period=" << period_label << ", entry=" << (long long)entry_index << ").\n";
@@ -721,7 +758,8 @@ static bool rec_passes_exclusivity(const std::string& period_label,
 
     static bool printed_once = false;
     if (!printed_once) {
-        std::cout << "[acceptance] rec_passes_exclusivity: applying topology-dependent 3-sigma MC cuts.\n";
+        std::cout << "[acceptance] rec_passes_exclusivity: applying topology-dependent 3-sigma "
+                  << cut_source_label(kSigmaCutSource) << " cuts.\n";
         printed_once = true;
     }
 
@@ -741,7 +779,6 @@ static bool rec_passes_exclusivity(const std::string& period_label,
 
         const double val = iv->second;
 
-        // Fail-fast on NaNs / invalid cut parameters (no silent passing).
         if (!std::isfinite(val) || !std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) {
             std::cerr << "[acceptance] FATAL: invalid value or cut stats while applying 3-sigma cuts.\n";
             std::cerr << "  period=" << period_label << "\n";
@@ -758,8 +795,6 @@ static bool rec_passes_exclusivity(const std::string& period_label,
     return true;
 }
 
-// Build the set of branch names we actually need for the 3-sigma cuts
-// plus pTmiss for the global exclusivity.
 static std::set<std::string>
 build_cut_branches_for_period(const std::string& period_label,
                               const TopoCutMap& sigmaCuts)
@@ -767,7 +802,6 @@ build_cut_branches_for_period(const std::string& period_label,
     std::set<std::string> vars;
     const std::string period_dir = period_dir_for_label(period_label);
 
-    // Topology-dependent 3-sigma variables
     for (int topo_idx = 0; topo_idx <= 2; ++topo_idx) {
         const Topology T = (Topology)topo_idx;
         const std::string key =
@@ -781,7 +815,6 @@ build_cut_branches_for_period(const std::string& period_label,
         }
     }
 
-    // Always include pTmiss for the hard global cut
     vars.insert("pTmiss");
     return vars;
 }
@@ -804,7 +837,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
         std::exit(EXIT_FAILURE);
     }
 
-    // Fail-fast validation that we actually have the three topology keys and all required vars.
     validate_sigma_cuts_for_period_or_die(period_label, sigmaCuts);
 
     const int NR = csv.nrows();
@@ -818,7 +850,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
     const char* br_oa_ep2 = "open_angle_ep2";
     const char* br_runnum = "runnum";
 
-    // Required branches in generated MC
     if (!genTree->GetBranch(br_x) ||
         !genTree->GetBranch(br_Q2) ||
         !genTree->GetBranch(br_t1) ||
@@ -828,7 +859,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
         std::exit(EXIT_FAILURE);
     }
 
-    // Required branches in reconstructed MC (kinematics + topology + exclusivity vars + runnum)
     if (!recTree->GetBranch(br_x) ||
         !recTree->GetBranch(br_Q2) ||
         !recTree->GetBranch(br_t1) ||
@@ -841,11 +871,9 @@ static void accumulate_counts_for_period(const std::string& period_label,
         std::exit(EXIT_FAILURE);
     }
 
-    // Bind topology resolver (detector1/detector2) for rec MC
     TopologyResolver topo;
     topo.enable_and_bind(recTree, period_label);
 
-    // Bind generated MC branches
     double g_x    = 0.0;
     double g_Q2   = 0.0;
     double g_t1   = 0.0;
@@ -891,7 +919,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
               << " gen MC: total entries = " << Ngen
               << " ; binned (with period-data flag) = " << used_gen << "\n";
 
-    // Bind reconstructed MC branches
     double r_x      = 0.0;
     double r_Q2     = 0.0;
     double r_t1     = 0.0;
@@ -906,11 +933,9 @@ static void accumulate_counts_for_period(const std::string& period_label,
     recTree->SetBranchAddress(br_oa_ep2, &r_oa);
     recTree->SetBranchAddress(br_runnum, &r_run);
 
-    // Build the set of branches needed for 3-sigma cuts + pTmiss
     const std::set<std::string> cutBranches =
         build_cut_branches_for_period(period_label, sigmaCuts);
 
-    // Print exactly which branches we will bind for cut evaluation.
     std::cout << "[acceptance] Period " << period_label
               << " will bind " << cutBranches.size()
               << " exclusivity/cut branches:\n";
@@ -918,7 +943,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
         std::cout << "  - " << vname << "\n";
     }
 
-    // Map for recVars
     std::map<std::string,double> recVars;
     recVars.clear();
     for (const auto& vname : cutBranches) {
@@ -940,7 +964,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
     const std::string period_dir = period_dir_for_label(period_label);
 
-    // Diagnostics: how many events per topology, and confirm cuts pointer is never null.
     Long64_t topo_seen[3] = {0, 0, 0};
     Long64_t topo_pass_global[3] = {0, 0, 0};
     Long64_t topo_pass_sigma[3] = {0, 0, 0};
@@ -981,8 +1004,6 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
         const VarCutMap* cutsForTopo = &itTopoCuts->second;
 
-        // Separate global pass accounting (for debugging):
-        // We can only do this deterministically if pTmiss exists (it must).
         const double pTmiss = recVars.at("pTmiss");
         if (!is_excluded_run(r_run) && passes_global_cuts(r_t1, r_oa, pTmiss)) {
             ++topo_pass_global[topo_idx];
@@ -1475,8 +1496,7 @@ bool update_acceptance_csv(const std::string& csv_path,
     std::vector<RowBin> bins = build_row_bins(csv);
     std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
-    // Load MC cuts from combined_cuts.json with detailed printout + validation
-    const TopoCutMap sigmaCuts = load_sigma_cuts_data(combined_cuts_json);
+    const TopoCutMap sigmaCuts = load_sigma_cuts_selected(combined_cuts_json);
 
     const auto tagMap = build_mc_tag_map();
     std::map<std::string, std::vector<double>> gen_all;
