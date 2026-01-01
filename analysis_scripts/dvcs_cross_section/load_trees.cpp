@@ -193,11 +193,11 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
 
     // ---------------- DVCS generated MC (no radiative) ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_sp18_inb.root"},
-        {"DVCS_Sp18_out_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_sp18_out.root"},
-        {"DVCS_Fa18_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_fa18_inb.root"},
-        {"DVCS_Fa18_out_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_fa18_out.root"},
-        {"DVCS_Sp19_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/rec_dvcsgen_sp19_inb.root"}
+        {"DVCS_Sp18_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/gen_dvcsgen_sp18_inb.root"},
+        {"DVCS_Sp18_out_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/gen_dvcsgen_sp18_out.root"},
+        {"DVCS_Fa18_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/gen_dvcsgen_fa18_inb.root"},
+        {"DVCS_Fa18_out_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/gen_dvcsgen_fa18_out.root"},
+        {"DVCS_Sp19_inb_gen",  "/volatile/clas12/thayward/dvcs_event_builder_test/gen_dvcsgen_sp19_inb.root"}
     }, genMcTrees);
 
     // ---------------- DVCS reconstructed MC (no radiative) ----------------

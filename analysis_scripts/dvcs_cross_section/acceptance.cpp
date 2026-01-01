@@ -64,8 +64,8 @@ enum class CutSource {
     kDATA
 };
 
-static constexpr CutSource kSigmaCutSource = CutSource::kDATA;
-// static constexpr CutSource kSigmaCutSource = CutSource::kMC;
+// static constexpr CutSource kSigmaCutSource = CutSource::kDATA;
+static constexpr CutSource kSigmaCutSource = CutSource::kMC;
 
 static inline const char* cut_source_label(CutSource s) {
     return (s == CutSource::kDATA) ? "data" : "mc";
