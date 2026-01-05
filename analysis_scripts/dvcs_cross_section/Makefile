@@ -7,7 +7,7 @@ DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp exclus
 		   global_cuts.cpp load_binning_scheme.cpp \
            bin_means.cpp total_counts.cpp yield_totals.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
            bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \
-           cross_sections.cpp model_predictions.cpp \
+           cross_sections.cpp model_predictions.cpp overall_normalization_study.cpp \
            bin_centering_corrections.cpp models_vs_data_plots.cpp
 DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
 DVCS_BIN = dvcs_analysis
