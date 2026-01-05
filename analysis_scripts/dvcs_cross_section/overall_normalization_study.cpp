@@ -11,6 +11,7 @@
 #include <TStyle.h>
 #include <TSystem.h>
 #include <TH1F.h>
+#include <TLine.h>
 
 #include <algorithm>
 #include <cctype>
@@ -182,7 +183,7 @@ static double beam_energy_for_label(const std::string &label) {
 struct BestPhiRow {
     double xb_c;
     double q2_c;
-    double t_c;   // positive |t|
+    double t_c;
     double phi_deg;
     double dist_to_edge;
     double xs;
@@ -242,7 +243,6 @@ static std::string sanitize_filename_component(const std::string &s) {
 }
 
 static void ensure_dir_or_throw(const std::string &dir) {
-    // kTRUE => recursive
     int rc = gSystem->mkdir(dir.c_str(), kTRUE);
     if (rc != 0) {
         throw std::runtime_error("Failed to create output directory: " + dir);
@@ -384,7 +384,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
         std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
 
-        // Collect points for plotting
         std::vector<NormPoint> pts;
         pts.reserve(best.size());
 
@@ -437,7 +436,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
 
-            // For plots, we require the two key quantities to be finite.
             if (std::isfinite(br.dist_to_edge) && std::isfinite(bh_over_km) && std::isfinite(xs_over_bh)) {
                 NormPoint p;
                 p.d_edge = br.dist_to_edge;
@@ -464,7 +462,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
             const std::string safe_label = sanitize_filename_component(label);
             const std::string safe_hel   = sanitize_filename_component(helicity);
 
-            // Some guardrails if weird ranges occur
             if (!(std::isfinite(min_d) && std::isfinite(max_d) && max_d > min_d)) {
                 min_d = 0.0;
                 max_d = 180.0;
@@ -478,7 +475,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 max_xsb = 3.0;
             }
 
-            // Expand ranges slightly for aesthetics
             const double d_pad   = 0.05 * (max_d - min_d);
             const double bhk_pad = 0.10 * (max_bhk - min_bhk);
 
@@ -487,7 +483,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
             const double bhk_lo = std::max(0.0, min_bhk - bhk_pad);
             const double bhk_hi = max_bhk + bhk_pad;
 
-            // ROOT style
             gStyle->SetOptStat(0);
             gStyle->SetTitleFontSize(0.045);
 
@@ -525,11 +520,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 latex.SetNDC();
                 latex.SetTextSize(0.035);
                 latex.DrawLatex(0.12, 0.93, (std::string("label: ") + label + "    hel: " + helicity).c_str());
-                {
-                    std::ostringstream oss;
-                    oss << "N=" << (int)pts.size();
-                    latex.DrawLatex(0.12, 0.89, oss.str().c_str());
-                }
+                // N=... removed
 
                 const std::string out = outdir + "/norm_heatmap_xsOverBH__label_" + safe_label + "__hel_" + safe_hel + ".png";
                 c->SaveAs(out.c_str());
@@ -540,8 +531,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
             // -------- Plot B: 1D scatter xs/BH vs d_edge, grouped by BH/KM15 ranges --------
             {
-                // You can tune these category boundaries as you like.
-                // The goal is: quickly see whether xs/BH anomalies correlate with BH/KM15 being "low" or "high".
                 const double edges[] = {0.0, 0.70, 0.85, 1.00, 1.15, 1e9};
                 const int ncat = 5;
 
@@ -567,10 +556,9 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     gr[ci]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
                 }
 
-                // Frame y-range: auto from observed with padding (but keep >=0)
-                double y_lo = 0.0;
-                double y_hi = (max_xsb > 0.0 ? 1.10 * max_xsb : 1.0);
-                if (!std::isfinite(y_hi) || y_hi <= 0.0) y_hi = 1.0;
+                // Force y-range [0, 3] as requested
+                const double y_lo = 0.0;
+                const double y_hi = 3.0;
 
                 TCanvas *c = new TCanvas("c_norm_scatter", "c_norm_scatter", 1100, 750);
                 c->SetLeftMargin(0.12);
@@ -588,10 +576,15 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 frame->SetMaximum(y_hi);
                 frame->Draw("AXIS");
 
-                // Style each category differently (marker color/style only; lines off)
-                // If you want a more “analysis-standard” look, we can adopt your usual marker conventions.
+                // Add dashed gray line at y = 1
+                TLine *line = new TLine(d_lo, 1.0, d_hi, 1.0);
+                line->SetLineStyle(2);
+                line->SetLineWidth(2);
+                line->SetLineColor(16); // gray-ish (ROOT palette index)
+                line->Draw("SAME");
+
                 const int mstyles[ncat] = {20, 21, 22, 23, 24};
-                const int mcolors[ncat] = {4, 38, 1, 2, 6}; // blue, light blue, black, red, magenta-ish
+                const int mcolors[ncat] = {4, 38, 1, 2, 6};
 
                 TLegend *leg = new TLegend(0.62, 0.70, 0.92, 0.90);
                 leg->SetFillStyle(1001);
@@ -605,7 +598,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     gr[i]->SetMarkerColor(mcolors[i]);
                     gr[i]->SetLineColor(mcolors[i]);
 
-                    // draw only if there are points
                     if (gr[i]->GetN() > 0) {
                         gr[i]->Draw("P SAME");
                     }
@@ -626,16 +618,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 latex.SetNDC();
                 latex.SetTextSize(0.035);
                 latex.DrawLatex(0.12, 0.93, (std::string("label: ") + label + "    hel: " + helicity).c_str());
-                {
-                    std::ostringstream oss;
-                    oss << "N=" << (int)pts.size();
-                    latex.DrawLatex(0.12, 0.89, oss.str().c_str());
-                }
+                // N=... removed
 
                 const std::string out = outdir + "/norm_scatter_xsOverBH_vs_dedge__label_" + safe_label + "__hel_" + safe_hel + ".png";
                 c->SaveAs(out.c_str());
 
                 delete leg;
+                delete line;
                 delete frame;
                 for (int i = 0; i < ncat; ++i) {
                     delete gr[i];
