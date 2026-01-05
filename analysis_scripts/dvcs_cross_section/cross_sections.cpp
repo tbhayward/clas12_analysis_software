@@ -78,7 +78,7 @@ using Range = std::pair<double, double>;
 static const bool kUseLeeFradFbin = true;
 
 // Global toggle for efficiency corrections from imports/efficiency.json.
-static const bool kApplyEfficiencyCorrections = false;
+static const bool kApplyEfficiencyCorrections = true;
 
 // Path to the efficiency JSON.
 static const std::string kEfficiencyJsonPath = "imports/efficiency.json";
