@@ -340,7 +340,7 @@ static void make_normalization_plots(const std::string &out_dir,
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
     // Determine x-range (log scale requires x_min > 0)
-    const double x_min = 0.1; // requested
+    const double x_min = 1; // requested
     double x_max = x_min * 10.0;
     for (size_t i = 0; i < pts.size(); ++i) {
         if (std::isfinite(pts[i].d_edge_deg) && pts[i].d_edge_deg > x_max) {
