@@ -2,6 +2,16 @@
 
 #include "model_predictions.h"
 
+// ROOT includes
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TLegend.h>
+#include <TLatex.h>
+#include <TProfile2D.h>
+#include <TStyle.h>
+#include <TSystem.h>
+#include <TH1F.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -90,7 +100,6 @@ static int require_col(const std::vector<std::string> &header,
     return idx;
 }
 
-// Robust tuple parser for cells like "(value, stat, sys)" possibly with extra quoting.
 static std::string strip_all_outer_quotes(std::string s) {
     s = unquote(s);
     s = trim(s);
@@ -171,17 +180,13 @@ static double beam_energy_for_label(const std::string &label) {
 }
 
 struct BestPhiRow {
-    // Kinematic centers (preferred: avg columns for the label)
     double xb_c;
     double q2_c;
     double t_c;   // positive |t|
-    // Selected phi point (still used internally)
     double phi_deg;
-    double dist_to_edge; // min(|phi-0|, |phi-360|)
-    // Measured cross section at that phi
+    double dist_to_edge;
     double xs;
     double xs_stat;
-    // Track original CSV row index (1-based w.r.t. the file lines after header)
     size_t csv_row_index;
 
     BestPhiRow() :
@@ -207,8 +212,6 @@ static std::string cell_key_for_kin_bin(const std::string &xbmin_s,
                                         const std::string &q2max_s,
                                         const std::string &tmin_s,
                                         const std::string &tmax_s) {
-    // Use the raw (trimmed, unquoted) strings so we do not introduce float-rounding keys.
-    // This relies on the CSV having exact repeated textual values across phi rows.
     std::string k;
     k.reserve(xbmin_s.size() + xbmax_s.size() + q2min_s.size() + q2max_s.size() +
               tmin_s.size() + tmax_s.size() + 16);
@@ -220,6 +223,38 @@ static std::string cell_key_for_kin_bin(const std::string &xbmin_s,
     k += tmax_s;
     return k;
 }
+
+static std::string sanitize_filename_component(const std::string &s) {
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        const unsigned char c = (unsigned char)s[i];
+        if (std::isalnum(c)) {
+            out.push_back((char)c);
+        } else if (c == ' ' || c == '-' || c == '_' ) {
+            out.push_back('_');
+        } else {
+            // drop other punctuation
+        }
+    }
+    if (out.empty()) out = "NA";
+    return out;
+}
+
+static void ensure_dir_or_throw(const std::string &dir) {
+    // kTRUE => recursive
+    int rc = gSystem->mkdir(dir.c_str(), kTRUE);
+    if (rc != 0) {
+        throw std::runtime_error("Failed to create output directory: " + dir);
+    }
+}
+
+struct NormPoint {
+    double d_edge;
+    double bh_over_km15;
+    double xs_over_bh;
+    double xs_over_bh_err;
+};
 
 } // end anonymous namespace
 
@@ -279,7 +314,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] Ebeam    : " << Ebeam << "\n";
         std::cout << "------------------------------------------------------------\n";
 
-        // Map from kinematic bin key -> best (closest-to-0/360) phi row
         std::map<std::string, BestPhiRow> best;
 
         size_t n_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
@@ -324,7 +358,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 br.dist_to_edge = dist;
                 br.xs = xs.value;
                 br.xs_stat = xs.stat;
-                br.csv_row_index = r; // line index in "lines"
+                br.csv_row_index = r;
                 best[key] = br;
             }
         }
@@ -337,7 +371,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] Unique kinematic bins found: " << best.size()
                   << " (from " << n_rows << " CSV data rows)\n\n";
 
-        // Header row (fixed-width)
         std::cout
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
@@ -351,7 +384,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
         std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
 
-        // Iterate in key order (stable/consistent)
+        // Collect points for plotting
+        std::vector<NormPoint> pts;
+        pts.reserve(best.size());
+
+        double min_d = 1e300, max_d = -1e300;
+        double min_bhk = 1e300, max_bhk = -1e300;
+        double min_xsb = 1e300, max_xsb = -1e300;
+
         for (std::map<std::string, BestPhiRow>::const_iterator it = best.begin();
              it != best.end(); ++it) {
 
@@ -369,9 +409,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
             double xs_over_bh  = 0.0;
             double bh_over_vgg = 0.0;
             double bh_over_km  = 0.0;
+            double xs_over_bh_err = 0.0;
 
             if (finite_pos(bh)) {
                 xs_over_bh = br.xs / bh;
+                if (br.xs_stat > 0.0 && std::isfinite(br.xs_stat)) {
+                    xs_over_bh_err = br.xs_stat / bh;
+                }
             }
             if (finite_pos(vgg)) {
                 bh_over_vgg = bh / vgg;
@@ -380,7 +424,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 bh_over_km = bh / km;
             }
 
-            // Print -t (negative)
             const double tneg = -tpos;
 
             std::cout
@@ -393,7 +436,214 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_vgg
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
+
+            // For plots, we require the two key quantities to be finite.
+            if (std::isfinite(br.dist_to_edge) && std::isfinite(bh_over_km) && std::isfinite(xs_over_bh)) {
+                NormPoint p;
+                p.d_edge = br.dist_to_edge;
+                p.bh_over_km15 = bh_over_km;
+                p.xs_over_bh = xs_over_bh;
+                p.xs_over_bh_err = xs_over_bh_err;
+
+                pts.push_back(p);
+
+                if (p.d_edge < min_d) min_d = p.d_edge;
+                if (p.d_edge > max_d) max_d = p.d_edge;
+                if (p.bh_over_km15 < min_bhk) min_bhk = p.bh_over_km15;
+                if (p.bh_over_km15 > max_bhk) max_bhk = p.bh_over_km15;
+                if (p.xs_over_bh < min_xsb) min_xsb = p.xs_over_bh;
+                if (p.xs_over_bh > max_xsb) max_xsb = p.xs_over_bh;
+            }
         }
+
+        // ---------------- Plotting block ----------------
+        {
+            const std::string outdir = "output/normalization_study";
+            ensure_dir_or_throw(outdir);
+
+            const std::string safe_label = sanitize_filename_component(label);
+            const std::string safe_hel   = sanitize_filename_component(helicity);
+
+            // Some guardrails if weird ranges occur
+            if (!(std::isfinite(min_d) && std::isfinite(max_d) && max_d > min_d)) {
+                min_d = 0.0;
+                max_d = 180.0;
+            }
+            if (!(std::isfinite(min_bhk) && std::isfinite(max_bhk) && max_bhk > min_bhk)) {
+                min_bhk = 0.0;
+                max_bhk = 1.5;
+            }
+            if (!(std::isfinite(min_xsb) && std::isfinite(max_xsb) && max_xsb > min_xsb)) {
+                min_xsb = 0.0;
+                max_xsb = 3.0;
+            }
+
+            // Expand ranges slightly for aesthetics
+            const double d_pad   = 0.05 * (max_d - min_d);
+            const double bhk_pad = 0.10 * (max_bhk - min_bhk);
+
+            const double d_lo   = std::max(0.0, min_d - d_pad);
+            const double d_hi   = max_d + d_pad;
+            const double bhk_lo = std::max(0.0, min_bhk - bhk_pad);
+            const double bhk_hi = max_bhk + bhk_pad;
+
+            // ROOT style
+            gStyle->SetOptStat(0);
+            gStyle->SetTitleFontSize(0.045);
+
+            // -------- Plot A: 2D heatmap (BH/KM15 vs d_edge), color = xs/BH --------
+            {
+                const int nx = 60;
+                const int ny = 60;
+
+                TCanvas *c = new TCanvas("c_norm_heatmap", "c_norm_heatmap", 1000, 800);
+                c->SetLeftMargin(0.12);
+                c->SetRightMargin(0.14);
+                c->SetBottomMargin(0.12);
+                c->SetTopMargin(0.10);
+
+                std::ostringstream title;
+                title << "Normalization study: xs/BH color; label=" << label << "; hel=" << helicity;
+
+                TProfile2D *p = new TProfile2D(
+                    "p_norm_xsOverBH",
+                    title.str().c_str(),
+                    nx, d_lo, d_hi,
+                    ny, bhk_lo, bhk_hi
+                );
+                p->GetXaxis()->SetTitle("d_edge (deg)");
+                p->GetYaxis()->SetTitle("BH/KM15");
+                p->GetZaxis()->SetTitle("xs/BH");
+
+                for (size_t i = 0; i < pts.size(); ++i) {
+                    p->Fill(pts[i].d_edge, pts[i].bh_over_km15, pts[i].xs_over_bh);
+                }
+
+                p->Draw("COLZ");
+
+                TLatex latex;
+                latex.SetNDC();
+                latex.SetTextSize(0.035);
+                latex.DrawLatex(0.12, 0.93, (std::string("label: ") + label + "    hel: " + helicity).c_str());
+                {
+                    std::ostringstream oss;
+                    oss << "N=" << (int)pts.size();
+                    latex.DrawLatex(0.12, 0.89, oss.str().c_str());
+                }
+
+                const std::string out = outdir + "/norm_heatmap_xsOverBH__label_" + safe_label + "__hel_" + safe_hel + ".png";
+                c->SaveAs(out.c_str());
+
+                delete p;
+                delete c;
+            }
+
+            // -------- Plot B: 1D scatter xs/BH vs d_edge, grouped by BH/KM15 ranges --------
+            {
+                // You can tune these category boundaries as you like.
+                // The goal is: quickly see whether xs/BH anomalies correlate with BH/KM15 being "low" or "high".
+                const double edges[] = {0.0, 0.70, 0.85, 1.00, 1.15, 1e9};
+                const int ncat = 5;
+
+                TGraphErrors *gr[ncat];
+                for (int i = 0; i < ncat; ++i) {
+                    std::ostringstream name;
+                    name << "gr_norm_cat_" << i;
+                    gr[i] = new TGraphErrors();
+                    gr[i]->SetName(name.str().c_str());
+                }
+
+                auto cat_index = [&](double bhk) -> int {
+                    for (int i = 0; i < ncat; ++i) {
+                        if (bhk >= edges[i] && bhk < edges[i + 1]) return i;
+                    }
+                    return ncat - 1;
+                };
+
+                for (size_t i = 0; i < pts.size(); ++i) {
+                    const int ci = cat_index(pts[i].bh_over_km15);
+                    const int n  = gr[ci]->GetN();
+                    gr[ci]->SetPoint(n, pts[i].d_edge, pts[i].xs_over_bh);
+                    gr[ci]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
+                }
+
+                // Frame y-range: auto from observed with padding (but keep >=0)
+                double y_lo = 0.0;
+                double y_hi = (max_xsb > 0.0 ? 1.10 * max_xsb : 1.0);
+                if (!std::isfinite(y_hi) || y_hi <= 0.0) y_hi = 1.0;
+
+                TCanvas *c = new TCanvas("c_norm_scatter", "c_norm_scatter", 1100, 750);
+                c->SetLeftMargin(0.12);
+                c->SetRightMargin(0.05);
+                c->SetBottomMargin(0.12);
+                c->SetTopMargin(0.10);
+
+                std::ostringstream frame_title;
+                frame_title << "Normalization study: xs/BH vs d_edge; label=" << label << "; hel=" << helicity;
+
+                TH1F *frame = new TH1F("frame_norm_scatter", frame_title.str().c_str(), 100, d_lo, d_hi);
+                frame->GetXaxis()->SetTitle("d_edge (deg)");
+                frame->GetYaxis()->SetTitle("xs/BH");
+                frame->SetMinimum(y_lo);
+                frame->SetMaximum(y_hi);
+                frame->Draw("AXIS");
+
+                // Style each category differently (marker color/style only; lines off)
+                // If you want a more “analysis-standard” look, we can adopt your usual marker conventions.
+                const int mstyles[ncat] = {20, 21, 22, 23, 24};
+                const int mcolors[ncat] = {4, 38, 1, 2, 6}; // blue, light blue, black, red, magenta-ish
+
+                TLegend *leg = new TLegend(0.62, 0.70, 0.92, 0.90);
+                leg->SetFillStyle(1001);
+                leg->SetFillColor(0);
+                leg->SetBorderSize(1);
+                leg->SetTextSize(0.030);
+
+                for (int i = 0; i < ncat; ++i) {
+                    gr[i]->SetMarkerStyle(mstyles[i]);
+                    gr[i]->SetMarkerSize(1.0);
+                    gr[i]->SetMarkerColor(mcolors[i]);
+                    gr[i]->SetLineColor(mcolors[i]);
+
+                    // draw only if there are points
+                    if (gr[i]->GetN() > 0) {
+                        gr[i]->Draw("P SAME");
+                    }
+
+                    std::ostringstream lab;
+                    if (i < ncat - 1 && edges[i + 1] < 1e8) {
+                        lab << "BH/KM15 in [" << std::fixed << std::setprecision(2) << edges[i]
+                            << ", " << edges[i + 1] << ")";
+                    } else {
+                        lab << "BH/KM15 >= " << std::fixed << std::setprecision(2) << edges[i];
+                    }
+                    leg->AddEntry(gr[i], lab.str().c_str(), "p");
+                }
+
+                leg->Draw();
+
+                TLatex latex;
+                latex.SetNDC();
+                latex.SetTextSize(0.035);
+                latex.DrawLatex(0.12, 0.93, (std::string("label: ") + label + "    hel: " + helicity).c_str());
+                {
+                    std::ostringstream oss;
+                    oss << "N=" << (int)pts.size();
+                    latex.DrawLatex(0.12, 0.89, oss.str().c_str());
+                }
+
+                const std::string out = outdir + "/norm_scatter_xsOverBH_vs_dedge__label_" + safe_label + "__hel_" + safe_hel + ".png";
+                c->SaveAs(out.c_str());
+
+                delete leg;
+                delete frame;
+                for (int i = 0; i < ncat; ++i) {
+                    delete gr[i];
+                }
+                delete c;
+            }
+        }
+        // ---------------- End plotting block ----------------
 
         std::cout << "\n";
         std::cout << "[overall_norm] Done.\n";
