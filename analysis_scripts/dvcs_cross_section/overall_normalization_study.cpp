@@ -243,8 +243,18 @@ static std::string sanitize_filename_component(const std::string &s) {
 }
 
 static void ensure_dir_or_throw(const std::string &dir) {
+    // AccessPathName() returns false (0) if the path exists and is accessible,
+    // true (nonzero) if it does NOT exist / is not accessible.
+    if (!gSystem->AccessPathName(dir.c_str())) {
+        return;
+    }
+
+    // Try to create recursively.
     int rc = gSystem->mkdir(dir.c_str(), kTRUE);
-    if (rc != 0) {
+
+    // Some ROOT/platform combos may return nonzero even if the directory
+    // now exists. So we verify existence after attempting creation.
+    if (rc != 0 && gSystem->AccessPathName(dir.c_str())) {
         throw std::runtime_error("Failed to create output directory: " + dir);
     }
 }
