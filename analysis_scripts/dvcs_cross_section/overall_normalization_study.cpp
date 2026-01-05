@@ -242,7 +242,6 @@ static std::string sanitize_for_filename(const std::string &s) {
             // drop other punctuation deterministically
         }
     }
-    // collapse multiple underscores
     std::string collapsed;
     collapsed.reserve(out.size());
     bool prev_us = false;
@@ -259,7 +258,6 @@ static std::string sanitize_for_filename(const std::string &s) {
     return collapsed;
 }
 
-// Create output directory; do not fail if it already exists.
 static void ensure_output_dir_or_throw(const std::string &dir) {
     std::error_code ec;
     if (std::filesystem::exists(dir, ec)) {
@@ -272,50 +270,56 @@ static void ensure_output_dir_or_throw(const std::string &dir) {
         if (ec) {
             throw std::runtime_error("Failed to create output directory: " + dir);
         }
-        // If create_directories returns false with no error, it generally means it already exists.
-        // We already checked exists() above, but keep this non-fatal.
     }
 }
 
-// Group definition: BH/KM15 bins (these are what your legend shows).
-struct RatioGroupDef {
-    double lo;
-    double hi;
-    bool   hi_inclusive;
-    int    marker_style;
-    int    marker_color;
+// New grouping: 5% bands around 1.00, with symmetric paired bins.
+enum class BhKmGroup {
+    G_95_105 = 0,
+    G_90_95_OR_105_110,
+    G_85_90_OR_110_115,
+    G_OUTSIDE_15PCT,
+    G_INVALID
+};
+
+static BhKmGroup categorize_bh_over_km15(double r) {
+    if (!std::isfinite(r) || r <= 0.0) return BhKmGroup::G_INVALID;
+
+    // Central 5% band: inclusive
+    if (r >= 0.95 && r <= 1.05) return BhKmGroup::G_95_105;
+
+    // Next band: [0.90, 0.95) and (1.05, 1.10]
+    if ((r >= 0.90 && r < 0.95) || (r > 1.05 && r <= 1.10)) return BhKmGroup::G_90_95_OR_105_110;
+
+    // Next band: (0.85, 0.90) and (1.10, 1.15)
+    // (Note: endpoints 0.85 and 1.15 are treated as "outside 15%" per your "inclusive" request.)
+    if ((r > 0.85 && r < 0.90) || (r > 1.10 && r < 1.15)) return BhKmGroup::G_85_90_OR_110_115;
+
+    // Outside 15% inclusive
+    if (r <= 0.85 || r >= 1.15) return BhKmGroup::G_OUTSIDE_15PCT;
+
+    return BhKmGroup::G_INVALID;
+}
+
+struct GroupStyle {
+    BhKmGroup group;
+    int marker_style;
+    int marker_color;
     std::string label;
 };
 
-static std::vector<RatioGroupDef> make_bh_over_km15_groups() {
-    std::vector<RatioGroupDef> g;
-
-    // Marker/color choices are cosmetic; bins are the important part.
-    // Bins match what was shown in your screenshot.
-    g.push_back({0.00, 0.70, false, 20, kBlue+1,   "BH/KM15 in [0.00, 0.70)"});
-    g.push_back({0.70, 0.85, false, 21, kAzure+2,  "BH/KM15 in [0.70, 0.85)"});
-    g.push_back({0.85, 1.00, false, 22, kBlack,    "BH/KM15 in [0.85, 1.00)"});
-    g.push_back({1.00, 1.15, false, 23, kRed+1,    "BH/KM15 in [1.00, 1.15)"});
-    g.push_back({1.15, 1e9,  true,  24, kMagenta+1,"BH/KM15 >= 1.15"});
-
-    return g;
+static std::vector<GroupStyle> make_group_styles() {
+    std::vector<GroupStyle> s;
+    s.push_back({BhKmGroup::G_95_105,             20, kBlack,     "BH/KM15 in [0.95, 1.05]"});
+    s.push_back({BhKmGroup::G_90_95_OR_105_110,   21, kBlue+1,    "BH/KM15 in [0.90, 0.95) or (1.05, 1.10]"});
+    s.push_back({BhKmGroup::G_85_90_OR_110_115,   22, kRed+1,     "BH/KM15 in (0.85, 0.90) or (1.10, 1.15)"});
+    s.push_back({BhKmGroup::G_OUTSIDE_15PCT,      24, kMagenta+1, "BH/KM15 <= 0.85 or >= 1.15"});
+    return s;
 }
 
-static int pick_group_index(double bh_over_km15,
-                            const std::vector<RatioGroupDef> &groups) {
-    for (size_t i = 0; i < groups.size(); ++i) {
-        const bool ge_lo = (bh_over_km15 >= groups[i].lo);
-        const bool lt_hi = (bh_over_km15 <  groups[i].hi);
-        const bool le_hi = (bh_over_km15 <= groups[i].hi);
-        bool in = false;
-
-        if (groups[i].hi_inclusive) {
-            in = ge_lo && le_hi;
-        } else {
-            in = ge_lo && lt_hi;
-        }
-
-        if (in) return (int)i;
+static int style_index_for_group(BhKmGroup g, const std::vector<GroupStyle> &styles) {
+    for (size_t i = 0; i < styles.size(); ++i) {
+        if (styles[i].group == g) return (int)i;
     }
     return -1;
 }
@@ -339,57 +343,55 @@ static void make_normalization_plots(const std::string &out_dir,
     const std::string label_tag = sanitize_for_filename(label);
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
-    // Determine x-range (log scale requires x_min > 0)
-    const double x_min = 1; // requested
+    const double x_min = 0.1;
     double x_max = x_min * 10.0;
     for (size_t i = 0; i < pts.size(); ++i) {
         if (std::isfinite(pts[i].d_edge_deg) && pts[i].d_edge_deg > x_max) {
             x_max = pts[i].d_edge_deg;
         }
     }
-    // small padding
     x_max *= 1.10;
 
     // -------------------------------------------------------------------------
-    // 1D: xs/BH vs d_edge, grouped by BH/KM15 bins
+    // 1D: xs/BH vs d_edge, grouped by BH/KM15 new bins
     // -------------------------------------------------------------------------
     {
-        std::vector<RatioGroupDef> groups = make_bh_over_km15_groups();
+        const std::vector<GroupStyle> styles = make_group_styles();
 
-        std::vector<TGraphErrors*> graphs(groups.size(), (TGraphErrors*)nullptr);
-        std::vector<int> n_in_group(groups.size(), 0);
+        std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
+        std::vector<int> n_in(styles.size(), 0);
 
-        for (size_t gi = 0; gi < groups.size(); ++gi) {
-            graphs[gi] = new TGraphErrors();
-            graphs[gi]->SetName(Form("gr_%zu", gi));
-            graphs[gi]->SetMarkerStyle(groups[gi].marker_style);
-            graphs[gi]->SetMarkerColor(groups[gi].marker_color);
-            graphs[gi]->SetLineColor(groups[gi].marker_color);
-            graphs[gi]->SetLineWidth(1);
+        for (size_t si = 0; si < styles.size(); ++si) {
+            graphs[si] = new TGraphErrors();
+            graphs[si]->SetName(Form("gr_%zu", si));
+            graphs[si]->SetMarkerStyle(styles[si].marker_style);
+            graphs[si]->SetMarkerColor(styles[si].marker_color);
+            graphs[si]->SetLineColor(styles[si].marker_color);
+            graphs[si]->SetLineWidth(1);
         }
 
         for (size_t i = 0; i < pts.size(); ++i) {
-            const int gi = pick_group_index(pts[i].bh_over_km15, groups);
-            if (gi < 0) continue;
+            const BhKmGroup g = categorize_bh_over_km15(pts[i].bh_over_km15);
+            const int si = style_index_for_group(g, styles);
+            if (si < 0) continue;
 
-            const int n = n_in_group[(size_t)gi];
-            graphs[(size_t)gi]->SetPoint(n, pts[i].d_edge_deg, pts[i].xs_over_bh);
-            graphs[(size_t)gi]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
-            n_in_group[(size_t)gi] += 1;
+            const int n = n_in[(size_t)si];
+            graphs[(size_t)si]->SetPoint(n, pts[i].d_edge_deg, pts[i].xs_over_bh);
+            graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
+            n_in[(size_t)si] += 1;
         }
 
         TCanvas *c = new TCanvas("c_norm_1d", "c_norm_1d", 950, 700);
-        c->SetLogx(1); // requested
+        c->SetLogx(1);
         c->SetLeftMargin(0.14);
         c->SetRightMargin(0.05);
         c->SetBottomMargin(0.12);
         c->SetTopMargin(0.10);
 
-        // Draw an empty frame via the first non-empty graph
         int first_nonempty = -1;
-        for (size_t gi = 0; gi < graphs.size(); ++gi) {
-            if (graphs[gi] && graphs[gi]->GetN() > 0) {
-                first_nonempty = (int)gi;
+        for (size_t si = 0; si < graphs.size(); ++si) {
+            if (graphs[si] && graphs[si]->GetN() > 0) {
+                first_nonempty = (int)si;
                 break;
             }
         }
@@ -399,39 +401,35 @@ static void make_normalization_plots(const std::string &out_dir,
             graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle("d_edge (deg)");
             graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
             graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
-            graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 3.0); // requested
+            graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 3.0);
 
-            // Title (no N=...)
             TLatex tl;
             tl.SetNDC(kTRUE);
             tl.SetTextSize(0.040);
             tl.DrawLatex(0.14, 0.93, Form("Normalization study (1D): %s, %s", label.c_str(), helicity.c_str()));
 
-            // y = 1 reference line (dashed gray)
             TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
             l->SetLineStyle(2);
             l->SetLineColor(kGray+2);
             l->SetLineWidth(2);
             l->Draw("same");
 
-            // Draw remaining graphs
-            for (size_t gi = 0; gi < graphs.size(); ++gi) {
-                if ((int)gi == first_nonempty) continue;
-                if (graphs[gi] && graphs[gi]->GetN() > 0) {
-                    graphs[gi]->Draw("P same");
+            for (size_t si = 0; si < graphs.size(); ++si) {
+                if ((int)si == first_nonempty) continue;
+                if (graphs[si] && graphs[si]->GetN() > 0) {
+                    graphs[si]->Draw("P same");
                 }
             }
 
-            // Legend
-            TLegend *leg = new TLegend(0.16, 0.68, 0.55, 0.88);
+            TLegend *leg = new TLegend(0.16, 0.66, 0.70, 0.88);
             leg->SetBorderSize(1);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
-            leg->SetTextSize(0.030);
+            leg->SetTextSize(0.028);
 
-            for (size_t gi = 0; gi < graphs.size(); ++gi) {
-                if (graphs[gi] && graphs[gi]->GetN() > 0) {
-                    leg->AddEntry(graphs[gi], groups[gi].label.c_str(), "p");
+            for (size_t si = 0; si < graphs.size(); ++si) {
+                if (graphs[si] && graphs[si]->GetN() > 0) {
+                    leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
                 }
             }
             leg->Draw();
@@ -442,9 +440,8 @@ static void make_normalization_plots(const std::string &out_dir,
             std::cerr << "[overall_norm] WARNING: no points available for 1D plot.\n";
         }
 
-        // Cleanup
-        for (size_t gi = 0; gi < graphs.size(); ++gi) {
-            delete graphs[gi];
+        for (size_t si = 0; si < graphs.size(); ++si) {
+            delete graphs[si];
         }
         delete c;
     }
@@ -462,27 +459,23 @@ static void make_normalization_plots(const std::string &out_dir,
             if (!std::isfinite(pts[i].bh_over_km15)) continue;
             if (!std::isfinite(pts[i].xs_over_bh)) continue;
 
-            // x = d_edge, y = BH/KM15, z = xs/BH (color)
             g2->SetPoint(n, pts[i].d_edge_deg, pts[i].bh_over_km15, pts[i].xs_over_bh);
             n += 1;
         }
 
         if (g2->GetN() > 0) {
             TCanvas *c = new TCanvas("c_norm_2d", "c_norm_2d", 980, 720);
-            c->SetLogx(1); // consistent with request
+            c->SetLogx(1);
             c->SetLeftMargin(0.14);
-            c->SetRightMargin(0.16); // for colorbar
+            c->SetRightMargin(0.16);
             c->SetBottomMargin(0.12);
             c->SetTopMargin(0.10);
 
-            // ROOT's TGraph2D axis objects are created after Draw.
             g2->Draw("PCOLZ");
 
-            // Attempt to enforce x-range (log safe)
             if (g2->GetXaxis()) g2->GetXaxis()->SetLimits(x_min, x_max);
 
             g2->SetTitle("");
-
             if (g2->GetXaxis()) g2->GetXaxis()->SetTitle("d_edge (deg)");
             if (g2->GetYaxis()) g2->GetYaxis()->SetTitle("BH/KM15");
             if (g2->GetZaxis()) g2->GetZaxis()->SetTitle("xs/BH");
@@ -631,9 +624,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
             << "\n";
         std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
 
-        // Collect points for plotting
         std::vector<PlotPoint> plot_pts;
         plot_pts.reserve(best.size());
+
+        // Weighted mean accumulator for BH/KM15 in [0.95, 1.05]
+        double sumw = 0.0;
+        double sumwx = 0.0;
+        int n_weighted_used = 0;
+        int n_in_95_105_total = 0;
 
         for (std::map<std::string, BestPhiRow>::const_iterator it = best.begin();
              it != best.end(); ++it) {
@@ -691,11 +689,41 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 p.bh_over_km15    = bh_over_km;
                 plot_pts.push_back(p);
             }
+
+            // Weighted mean for BH/KM15 in [0.95, 1.05] inclusive
+            if (std::isfinite(bh_over_km) && bh_over_km >= 0.95 && bh_over_km <= 1.05) {
+                n_in_95_105_total += 1;
+
+                if (std::isfinite(xs_over_bh_err) && xs_over_bh_err > 0.0 &&
+                    std::isfinite(xs_over_bh)) {
+
+                    const double w = 1.0 / (xs_over_bh_err * xs_over_bh_err);
+                    sumw  += w;
+                    sumwx += w * xs_over_bh;
+                    n_weighted_used += 1;
+                }
+            }
         }
 
-        // Make plots
         const std::string out_dir = "output/normalization_study";
         make_normalization_plots(out_dir, label, helicity, plot_pts);
+
+        // Print weighted mean summary at the very end
+        std::cout << "\n";
+        std::cout << "------------------------------------------------------------\n";
+        std::cout << "[overall_norm] Weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
+        std::cout << "[overall_norm] Points in range (total) : " << n_in_95_105_total << "\n";
+        std::cout << "[overall_norm] Points used (err>0)     : " << n_weighted_used << "\n";
+
+        if (sumw > 0.0) {
+            const double mean = sumwx / sumw;
+            const double err  = std::sqrt(1.0 / sumw);
+            std::cout << "[overall_norm] Weighted mean xs/BH     : " << std::fixed << std::setprecision(6) << mean << "\n";
+            std::cout << "[overall_norm] Weighted stat unc       : " << std::fixed << std::setprecision(6) << err  << "\n";
+        } else {
+            std::cout << "[overall_norm] Weighted mean xs/BH     : N/A (no usable uncertainties)\n";
+        }
+        std::cout << "------------------------------------------------------------\n";
 
         std::cout << "\n";
         std::cout << "[overall_norm] Done.\n";
