@@ -175,7 +175,7 @@ struct BestPhiRow {
     double xb_c;
     double q2_c;
     double t_c;   // positive |t|
-    // Selected phi point
+    // Selected phi point (still used internally)
     double phi_deg;
     double dist_to_edge; // min(|phi-0|, |phi-360|)
     // Measured cross section at that phi
@@ -342,18 +342,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
             << std::setw(12) << "-t"
-            << std::setw(10) << "phi"
             << std::setw(10) << "d_edge"
             << std::setw(14) << "xs"
-            << std::setw(14) << "BH"
-            << std::setw(14) << "VGG"
-            << std::setw(14) << "KM15"
             << std::setw(14) << "xs/BH"
             << std::setw(14) << "BH/VGG"
             << std::setw(14) << "BH/KM15"
             << "\n";
 
-        std::cout << std::string(8+10+12+10+10+14*7, '-') << "\n";
+        std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
 
         // Iterate in key order (stable/consistent)
         for (std::map<std::string, BestPhiRow>::const_iterator it = best.begin();
@@ -391,12 +387,8 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(8)  << std::fixed << std::setprecision(3) << xb
                 << std::setw(10) << std::fixed << std::setprecision(2) << q2
                 << std::setw(12) << std::fixed << std::setprecision(3) << tneg
-                << std::setw(10) << std::fixed << std::setprecision(1) << phi
                 << std::setw(10) << std::fixed << std::setprecision(1) << br.dist_to_edge
                 << std::setw(14) << std::scientific << std::setprecision(3) << br.xs
-                << std::setw(14) << std::scientific << std::setprecision(3) << bh
-                << std::setw(14) << std::scientific << std::setprecision(3) << vgg
-                << std::setw(14) << std::scientific << std::setprecision(3) << km
                 << std::setw(14) << std::fixed << std::setprecision(3) << xs_over_bh
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_vgg
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
