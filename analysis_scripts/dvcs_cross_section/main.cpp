@@ -354,14 +354,26 @@ int main(int argc, char* argv[]) {
     {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
+        // // 10.6 GeV combined group (unpolarized) normalization study
+        // if (!print_bh_normalization_study(csv_main, "Fa18 Inb", "unpol")) {
+        //     std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+        //     return 1;
+        // }
+
+        // // 10.6 GeV combined group (unpolarized) normalization study
+        // if (!print_bh_normalization_study(csv_main, "Fa18 Out", "unpol")) {
+        //     std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+        //     return 1;
+        // }
+
         // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Inb", "unpol")) {
+        if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
             std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
             return 1;
         }
 
         // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Out", "unpol")) {
+        if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
             std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
             return 1;
         }
