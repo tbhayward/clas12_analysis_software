@@ -276,8 +276,13 @@ static void ensure_output_dir_or_throw(const std::string &dir) {
 }
 
 // -----------------------------------------------------------------------------
-// Grouping by BH/KM15
+// Grouping by BH/model
 // -----------------------------------------------------------------------------
+
+enum class BhGroupMetric {
+    KM15 = 0,
+    VGG  = 1
+};
 
 enum class BhKmGroup {
     G_95_105 = 0,
@@ -287,7 +292,7 @@ enum class BhKmGroup {
     G_INVALID
 };
 
-static BhKmGroup categorize_bh_over_km15(double r) {
+static BhKmGroup categorize_bh_over_model(double r) {
     if (!std::isfinite(r) || r <= 0.0) return BhKmGroup::G_INVALID;
 
     if (r >= 0.95 && r <= 1.05) return BhKmGroup::G_95_105;
@@ -308,12 +313,12 @@ struct GroupStyle {
     std::string label;
 };
 
-static std::vector<GroupStyle> make_group_styles() {
+static std::vector<GroupStyle> make_group_styles(const std::string &ratio_name) {
     std::vector<GroupStyle> s;
-    s.push_back({BhKmGroup::G_95_105,             20, kBlack,     "BH/KM15 in [0.95, 1.05]"});
-    s.push_back({BhKmGroup::G_90_95_OR_105_110,   21, kBlue+1,    "BH/KM15 in [0.90, 0.95) or (1.05, 1.10]"});
-    s.push_back({BhKmGroup::G_85_90_OR_110_115,   22, kRed+1,     "BH/KM15 in (0.85, 0.90) or (1.10, 1.15)"});
-    s.push_back({BhKmGroup::G_OUTSIDE_15PCT,      24, kMagenta+1, "BH/KM15 <= 0.85 or >= 1.15"});
+    s.push_back({BhKmGroup::G_95_105,             20, kBlack,     ratio_name + " in [0.95, 1.05]"});
+    s.push_back({BhKmGroup::G_90_95_OR_105_110,   21, kBlue+1,    ratio_name + " in [0.90, 0.95) or (1.05, 1.10]"});
+    s.push_back({BhKmGroup::G_85_90_OR_110_115,   22, kRed+1,     ratio_name + " in (0.85, 0.90) or (1.10, 1.15)"});
+    s.push_back({BhKmGroup::G_OUTSIDE_15PCT,      24, kMagenta+1, ratio_name + " <= 0.85 or >= 1.15"});
     return s;
 }
 
@@ -325,7 +330,7 @@ static int style_index_for_group(BhKmGroup g, const std::vector<GroupStyle> &sty
 }
 
 // -----------------------------------------------------------------------------
-// Data containers for plots
+// Data containers
 // -----------------------------------------------------------------------------
 
 struct PlotPoint {
@@ -333,6 +338,7 @@ struct PlotPoint {
     double xs_over_bh;
     double xs_over_bh_err;
     double bh_over_km15;
+    double bh_over_vgg;
 };
 
 struct DepPoint {
@@ -340,17 +346,139 @@ struct DepPoint {
     double y;
     double ey;
     double bh_over_km15;
+    double bh_over_vgg;
 };
 
+static double ratio_for_metric(const PlotPoint &p, BhGroupMetric m) {
+    return (m == BhGroupMetric::KM15 ? p.bh_over_km15 : p.bh_over_vgg);
+}
+
+static double ratio_for_metric(const DepPoint &p, BhGroupMetric m) {
+    return (m == BhGroupMetric::KM15 ? p.bh_over_km15 : p.bh_over_vgg);
+}
+
+static std::string ratio_name_for_metric(BhGroupMetric m) {
+    if (m == BhGroupMetric::VGG) return "BH/VGG";
+    return "BH/KM15";
+}
+
 // -----------------------------------------------------------------------------
-// Legacy 1D plot: xs/BH vs d_edge (log x), grouped by BH/KM15 bins.
-// x-axis starts at 1 deg; y-axis capped at 2 (per request).
+// d_edge plot: now 1x2
+//   Left: grouped by BH/KM15
+//   Right: grouped by BH/VGG
+//
+// x-axis starts at 1 deg (log scale); y capped at 2.
 // -----------------------------------------------------------------------------
 
-static void make_normalization_plot_dedge(const std::string &out_dir,
-                                         const std::string &label,
-                                         const std::string &helicity,
-                                         const std::vector<PlotPoint> &pts) {
+static void draw_dedge_panel(TPad *pad,
+                            const std::vector<PlotPoint> &pts,
+                            const std::string &label,
+                            const std::string &helicity,
+                            double x_min,
+                            double x_max,
+                            BhGroupMetric metric) {
+    pad->SetLogx(1);
+    pad->SetLeftMargin(0.14);
+    pad->SetRightMargin(0.05);
+    pad->SetBottomMargin(0.12);
+    pad->SetTopMargin(0.12);
+
+    const std::string ratio_name = ratio_name_for_metric(metric);
+    const std::vector<GroupStyle> styles = make_group_styles(ratio_name);
+
+    std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
+    std::vector<int> n_in(styles.size(), 0);
+
+    for (size_t si = 0; si < styles.size(); ++si) {
+        graphs[si] = new TGraphErrors();
+        graphs[si]->SetName(Form("gr_dedge_%s_%zu", sanitize_for_filename(ratio_name).c_str(), si));
+        graphs[si]->SetMarkerStyle(styles[si].marker_style);
+        graphs[si]->SetMarkerColor(styles[si].marker_color);
+        graphs[si]->SetLineColor(styles[si].marker_color);
+        graphs[si]->SetLineWidth(1);
+        graphs[si]->SetMarkerSize(0.85);
+    }
+
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const double r = ratio_for_metric(pts[i], metric);
+        const BhKmGroup g = categorize_bh_over_model(r);
+        const int si = style_index_for_group(g, styles);
+        if (si < 0) continue;
+
+        const int n = n_in[(size_t)si];
+        graphs[(size_t)si]->SetPoint(n, pts[i].d_edge_deg, pts[i].xs_over_bh);
+        graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
+        n_in[(size_t)si] += 1;
+    } //endfor
+
+    int first_nonempty = -1;
+    for (size_t si = 0; si < graphs.size(); ++si) {
+        if (graphs[si] && graphs[si]->GetN() > 0) {
+            first_nonempty = (int)si;
+            break;
+        }
+    }
+
+    if (first_nonempty >= 0) {
+        graphs[(size_t)first_nonempty]->Draw("AP");
+        graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle("d_edge (deg)");
+        graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
+        graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
+        graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 2.0);
+
+        TLatex tl;
+        tl.SetNDC(kTRUE);
+        tl.SetTextSize(0.030);
+        tl.DrawLatex(0.14, 0.93, Form("%s, %s   (%s)", label.c_str(), helicity.c_str(), ratio_name.c_str()));
+
+        TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
+        l->SetLineStyle(2);
+        l->SetLineColor(kGray+2);
+        l->SetLineWidth(2);
+        l->Draw("same");
+
+        for (size_t si = 0; si < graphs.size(); ++si) {
+            if ((int)si == first_nonempty) continue;
+            if (graphs[si] && graphs[si]->GetN() > 0) {
+                graphs[si]->Draw("P same");
+            }
+        } //endfor
+
+        // Legend (this is the "color coding label" you wanted)
+        TLegend *leg = new TLegend(0.16, 0.62, 0.74, 0.88);
+        leg->SetBorderSize(1);
+        leg->SetFillStyle(1001);
+        leg->SetFillColor(kWhite);
+        leg->SetTextSize(0.024);
+
+        for (size_t si = 0; si < graphs.size(); ++si) {
+            if (graphs[si] && graphs[si]->GetN() > 0) {
+                leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
+            }
+        } //endfor
+        leg->Draw();
+
+        pad->Update();
+
+        delete leg;
+        delete l;
+    } else {
+        TLatex tl;
+        tl.SetNDC(kTRUE);
+        tl.SetTextSize(0.055);
+        tl.DrawLatex(0.18, 0.70, "No points");
+        pad->Update();
+    } //endif
+
+    for (size_t si = 0; si < graphs.size(); ++si) {
+        delete graphs[si];
+    }
+}
+
+static void make_normalization_plot_dedge_1x2(const std::string &out_dir,
+                                             const std::string &label,
+                                             const std::string &helicity,
+                                             const std::vector<PlotPoint> &pts) {
     ensure_output_dir_or_throw(out_dir);
 
     gROOT->SetBatch(kTRUE);
@@ -370,37 +498,92 @@ static void make_normalization_plot_dedge(const std::string &out_dir,
     }
     x_max *= 1.10;
 
-    const std::vector<GroupStyle> styles = make_group_styles();
+    TCanvas *c = new TCanvas("c_norm_dedge_1x2", "c_norm_dedge_1x2", 1350, 620);
+    c->Divide(2, 1, 0.001, 0.001);
 
+    // Left: KM15
+    {
+        TPad *p = (TPad*)c->cd(1);
+        draw_dedge_panel(p, pts, label, helicity, x_min, x_max, BhGroupMetric::KM15);
+    }
+
+    // Right: VGG
+    {
+        TPad *p = (TPad*)c->cd(2);
+        draw_dedge_panel(p, pts, label, helicity, x_min, x_max, BhGroupMetric::VGG);
+    }
+
+    const std::string out_png = out_dir + "/norm_1d_xs_over_bh_vs_dedge_" + label_tag + "_" + hel_tag + ".png";
+    c->SaveAs(out_png.c_str());
+
+    delete c;
+}
+
+// -----------------------------------------------------------------------------
+// Dependence plots: now 2x2
+//   Row 1: KM15 (left all-groups, right clean+fit)
+//   Row 2: VGG  (left all-groups, right clean+fit)
+//
+// y capped at 2; fit info in top-right legend of each right pad.
+// Left pads include the group legend (color coding label).
+// -----------------------------------------------------------------------------
+
+static void draw_all_groups_dep_pad(TPad *p,
+                                   const std::vector<DepPoint> &pts,
+                                   const std::string &label,
+                                   const std::string &helicity,
+                                   const std::string &x_title,
+                                   double x_min,
+                                   double x_max,
+                                   BhGroupMetric metric) {
+    p->SetLeftMargin(0.13);
+    p->SetRightMargin(0.05);
+    p->SetBottomMargin(0.14);
+    p->SetTopMargin(0.12);
+    p->SetGrid(1, 1);
+
+    const std::string ratio_name = ratio_name_for_metric(metric);
+    const std::vector<GroupStyle> styles = make_group_styles(ratio_name);
+
+    // frame
+    TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 2.0);
+    frame->SetTitle("");
+    frame->GetXaxis()->SetTitle(x_title.c_str());
+    frame->GetYaxis()->SetTitle("xs/BH");
+    frame->GetXaxis()->SetNdivisions(505);
+    frame->GetXaxis()->CenterTitle();
+    frame->GetYaxis()->CenterTitle();
+
+    TLatex tl;
+    tl.SetNDC(kTRUE);
+    tl.SetTextSize(0.030);
+    tl.DrawLatex(0.12, 0.93, Form("%s, %s   (%s)", label.c_str(), helicity.c_str(), ratio_name.c_str()));
+
+    // graphs by group
     std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
     std::vector<int> n_in(styles.size(), 0);
 
     for (size_t si = 0; si < styles.size(); ++si) {
         graphs[si] = new TGraphErrors();
-        graphs[si]->SetName(Form("gr_dedge_%zu", si));
+        graphs[si]->SetName(Form("gr_dep_%s_%zu", sanitize_for_filename(ratio_name).c_str(), si));
         graphs[si]->SetMarkerStyle(styles[si].marker_style);
         graphs[si]->SetMarkerColor(styles[si].marker_color);
         graphs[si]->SetLineColor(styles[si].marker_color);
         graphs[si]->SetLineWidth(1);
+        graphs[si]->SetMarkerSize(0.85);
     }
 
     for (size_t i = 0; i < pts.size(); ++i) {
-        const BhKmGroup g = categorize_bh_over_km15(pts[i].bh_over_km15);
+        const double r = ratio_for_metric(pts[i], metric);
+        const BhKmGroup g = categorize_bh_over_model(r);
         const int si = style_index_for_group(g, styles);
         if (si < 0) continue;
 
         const int n = n_in[(size_t)si];
-        graphs[(size_t)si]->SetPoint(n, pts[i].d_edge_deg, pts[i].xs_over_bh);
-        graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
+        graphs[(size_t)si]->SetPoint(n, pts[i].x, pts[i].y);
+        graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].ey);
         n_in[(size_t)si] += 1;
-    }
-
-    TCanvas *c = new TCanvas("c_norm_dedge", "c_norm_dedge", 950, 700);
-    c->SetLogx(1);
-    c->SetLeftMargin(0.14);
-    c->SetRightMargin(0.05);
-    c->SetBottomMargin(0.12);
-    c->SetTopMargin(0.10);
+    } //endfor
 
     int first_nonempty = -1;
     for (size_t si = 0; si < graphs.size(); ++si) {
@@ -411,68 +594,145 @@ static void make_normalization_plot_dedge(const std::string &out_dir,
     }
 
     if (first_nonempty >= 0) {
-        graphs[(size_t)first_nonempty]->Draw("AP");
-        graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle("d_edge (deg)");
-        graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
-        graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
-        graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 2.0); // CHANGED
-
-        TLatex tl;
-        tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.034);
-        tl.DrawLatex(0.14, 0.93, Form("Normalization study: %s, %s", label.c_str(), helicity.c_str()));
-
-        TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
-        l->SetLineStyle(2);
-        l->SetLineColor(kGray+2);
-        l->SetLineWidth(2);
-        l->Draw("same");
-
+        graphs[(size_t)first_nonempty]->Draw("PE1 SAME");
         for (size_t si = 0; si < graphs.size(); ++si) {
             if ((int)si == first_nonempty) continue;
             if (graphs[si] && graphs[si]->GetN() > 0) {
-                graphs[si]->Draw("P same");
+                graphs[si]->Draw("PE1 SAME");
             }
-        }
-
-        TLegend *leg = new TLegend(0.16, 0.66, 0.70, 0.88);
-        leg->SetBorderSize(1);
-        leg->SetFillStyle(1001);
-        leg->SetFillColor(kWhite);
-        leg->SetTextSize(0.026);
-
-        for (size_t si = 0; si < graphs.size(); ++si) {
-            if (graphs[si] && graphs[si]->GetN() > 0) {
-                leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
-            }
-        }
-        leg->Draw();
-
-        const std::string out_png = out_dir + "/norm_1d_xs_over_bh_vs_dedge_" + label_tag + "_" + hel_tag + ".png";
-        c->SaveAs(out_png.c_str());
-
-        delete leg;
-        delete l;
+        } //endfor
     } else {
-        std::cerr << "[overall_norm] WARNING: no points available for d_edge plot.\n";
-    }
+        TLatex t0;
+        t0.SetNDC(kTRUE);
+        t0.SetTextSize(0.050);
+        t0.DrawLatex(0.18, 0.70, "No points");
+    } //endif
 
+    // Legend (explicitly included; this was missing on your xB/Q2/-t plots)
+    TLegend *leg = new TLegend(0.16, 0.62, 0.78, 0.88);
+    leg->SetBorderSize(1);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetTextSize(0.024);
+
+    for (size_t si = 0; si < graphs.size(); ++si) {
+        if (graphs[si] && graphs[si]->GetN() > 0) {
+            leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
+        }
+    } //endfor
+    leg->Draw();
+
+    p->Update();
+
+    delete leg;
     for (size_t si = 0; si < graphs.size(); ++si) {
         delete graphs[si];
     }
-    delete c;
 }
 
-// -----------------------------------------------------------------------------
-// New dependence plots: 1x2
-//   Left: all groups (same color coding)
-//   Right: only BH/KM15 in [0.95,1.05], plus linear fit (dashed red) + legend
-//
-// y-axis capped at 2 (per request).
-// Fit info is now placed in a legend box in the top-right of the right pad.
-// -----------------------------------------------------------------------------
+static void draw_clean_fit_dep_pad(TPad *p,
+                                  const std::vector<DepPoint> &pts,
+                                  const std::string &label,
+                                  const std::string &helicity,
+                                  const std::string &x_title,
+                                  double x_min,
+                                  double x_max,
+                                  BhGroupMetric metric,
+                                  std::unique_ptr<TF1> &keep_fit,
+                                  std::unique_ptr<TLegend> &keep_legfit) {
+    p->SetLeftMargin(0.13);
+    p->SetRightMargin(0.05);
+    p->SetBottomMargin(0.14);
+    p->SetTopMargin(0.12);
+    p->SetGrid(1, 1);
 
-static void make_dependence_plot_1x2(const std::string &out_dir,
+    const std::string ratio_name = ratio_name_for_metric(metric);
+
+    TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 2.0);
+    frame->SetTitle("");
+    frame->GetXaxis()->SetTitle(x_title.c_str());
+    frame->GetYaxis()->SetTitle("xs/BH");
+    frame->GetXaxis()->SetNdivisions(505);
+    frame->GetXaxis()->CenterTitle();
+    frame->GetYaxis()->CenterTitle();
+
+    TLatex tl;
+    tl.SetNDC(kTRUE);
+    tl.SetTextSize(0.030);
+    tl.DrawLatex(0.12, 0.93, Form("%s, %s   (%s)", label.c_str(), helicity.c_str(), ratio_name.c_str()));
+
+    // Clean points: only in [0.95, 1.05] for this metric
+    std::unique_ptr<TGraphErrors> gr_clean = std::make_unique<TGraphErrors>();
+    gr_clean->SetName(Form("gr_clean_%s", sanitize_for_filename(ratio_name).c_str()));
+    gr_clean->SetMarkerStyle(20);
+    gr_clean->SetMarkerColor(kBlack);
+    gr_clean->SetLineColor(kBlack);
+    gr_clean->SetLineWidth(1);
+    gr_clean->SetMarkerSize(0.85);
+
+    int n = 0;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const double r = ratio_for_metric(pts[i], metric);
+        const BhKmGroup g = categorize_bh_over_model(r);
+        if (g != BhKmGroup::G_95_105) continue;
+
+        gr_clean->SetPoint(n, pts[i].x, pts[i].y);
+        gr_clean->SetPointError(n, 0.0, pts[i].ey);
+        n += 1;
+    } //endfor
+
+    if (gr_clean->GetN() <= 0) {
+        TLatex t0;
+        t0.SetNDC(kTRUE);
+        t0.SetTextSize(0.050);
+        t0.DrawLatex(0.18, 0.70, "No points in [0.95, 1.05]");
+        p->Update();
+        return;
+    } //endif
+
+    gr_clean->Draw("PE1 SAME");
+
+    if (gr_clean->GetN() >= 2) {
+        keep_fit = std::make_unique<TF1>(Form("f_lin_%s", sanitize_for_filename(ratio_name).c_str()), "pol1", x_min, x_max);
+
+        // Fit quietly, do not auto-draw
+        gr_clean->Fit(keep_fit.get(), "Q0");
+
+        keep_fit->SetLineColor(kRed+1);
+        keep_fit->SetLineStyle(2);
+        keep_fit->SetLineWidth(2);
+
+        // Explicit draw so it appears
+        keep_fit->Draw("SAME");
+
+        const double p0 = keep_fit->GetParameter(0);
+        const double p1 = keep_fit->GetParameter(1);
+        const double e0 = keep_fit->GetParError(0);
+        const double e1 = keep_fit->GetParError(1);
+
+        // Fit info in a legend box (top-right)
+        keep_legfit = std::make_unique<TLegend>(0.58, 0.72, 0.93, 0.88);
+        keep_legfit->SetBorderSize(1);
+        keep_legfit->SetFillStyle(1001);
+        keep_legfit->SetFillColor(kWhite);
+        keep_legfit->SetTextSize(0.028);
+
+        keep_legfit->AddEntry((TObject*)0, "Linear fit (pol1)", "");
+        keep_legfit->AddEntry((TObject*)0, Form("p0 = %.4f #pm %.4f", p0, e0), "");
+        keep_legfit->AddEntry((TObject*)0, Form("p1 = %.4f #pm %.4f", p1, e1), "");
+
+        keep_legfit->Draw();
+    } else {
+        TLatex t1;
+        t1.SetNDC(kTRUE);
+        t1.SetTextSize(0.050);
+        t1.DrawLatex(0.18, 0.70, "Too few points to fit");
+    } //endif
+
+    p->Update();
+}
+
+static void make_dependence_plot_2x2(const std::string &out_dir,
                                     const std::string &label,
                                     const std::string &helicity,
                                     const std::string &x_title,
@@ -489,205 +749,51 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
     const std::string label_tag = sanitize_for_filename(label);
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
-    const std::vector<GroupStyle> styles = make_group_styles();
+    TCanvas *c = new TCanvas(Form("c_dep_%s_2x2", file_tag.c_str()),
+                             Form("c_dep_%s_2x2", file_tag.c_str()),
+                             1200, 980);
+    c->Divide(2, 2, 0.001, 0.001);
 
-    // Left: all groups
-    std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
-    std::vector<int> n_in(styles.size(), 0);
+    // Keep fits/fit legends alive through SaveAs
+    std::unique_ptr<TF1> f_fit_tr;
+    std::unique_ptr<TLegend> leg_fit_tr;
 
-    for (size_t si = 0; si < styles.size(); ++si) {
-        graphs[si] = new TGraphErrors();
-        graphs[si]->SetName(Form("gr_%s_all_%zu", file_tag.c_str(), si));
-        graphs[si]->SetMarkerStyle(styles[si].marker_style);
-        graphs[si]->SetMarkerColor(styles[si].marker_color);
-        graphs[si]->SetLineColor(styles[si].marker_color);
-        graphs[si]->SetLineWidth(1);
-        graphs[si]->SetMarkerSize(0.85);
-    }
+    std::unique_ptr<TF1> f_fit_br;
+    std::unique_ptr<TLegend> leg_fit_br;
 
-    // Right: clean (only 0.95-1.05)
-    TGraphErrors *gr_clean = new TGraphErrors();
-    gr_clean->SetName(Form("gr_%s_clean", file_tag.c_str()));
-    gr_clean->SetMarkerStyle(20);
-    gr_clean->SetMarkerColor(kBlack);
-    gr_clean->SetLineColor(kBlack);
-    gr_clean->SetLineWidth(1);
-    gr_clean->SetMarkerSize(0.85);
-
-    int n_clean = 0;
-
-    for (size_t i = 0; i < pts.size(); ++i) {
-        const BhKmGroup g = categorize_bh_over_km15(pts[i].bh_over_km15);
-        const int si = style_index_for_group(g, styles);
-
-        if (si >= 0) {
-            const int n = n_in[(size_t)si];
-            graphs[(size_t)si]->SetPoint(n, pts[i].x, pts[i].y);
-            graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].ey);
-            n_in[(size_t)si] += 1;
-        } //endif
-
-        if (g == BhKmGroup::G_95_105) {
-            gr_clean->SetPoint(n_clean, pts[i].x, pts[i].y);
-            gr_clean->SetPointError(n_clean, 0.0, pts[i].ey);
-            n_clean += 1;
-        } //endif
-    } //endfor
-
-    TCanvas *c = new TCanvas(Form("c_dep_%s", file_tag.c_str()), Form("c_dep_%s", file_tag.c_str()), 1200, 520);
-    c->Divide(2, 1, 0.001, 0.001);
-
-    // ---------------- Left pad ----------------
+    // Top-left: KM15 all
     {
         TPad *p = (TPad*)c->cd(1);
-        p->SetLeftMargin(0.13);
-        p->SetRightMargin(0.05);
-        p->SetBottomMargin(0.14);
-        p->SetTopMargin(0.12);
-        p->SetGrid(1, 1);
-
-        TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 2.0); // CHANGED
-        frame->SetTitle("");
-        frame->GetXaxis()->SetTitle(x_title.c_str());
-        frame->GetYaxis()->SetTitle("xs/BH");
-        frame->GetXaxis()->SetNdivisions(505);
-        frame->GetXaxis()->CenterTitle();
-        frame->GetYaxis()->CenterTitle();
-
-        TLatex tl;
-        tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.034);
-        tl.DrawLatex(0.12, 0.93, Form("%s, %s", label.c_str(), helicity.c_str()));
-
-        int first_nonempty = -1;
-        for (size_t si = 0; si < graphs.size(); ++si) {
-            if (graphs[si] && graphs[si]->GetN() > 0) {
-                first_nonempty = (int)si;
-                break;
-            }
-        }
-
-        if (first_nonempty >= 0) {
-            graphs[(size_t)first_nonempty]->Draw("PE1 SAME");
-            for (size_t si = 0; si < graphs.size(); ++si) {
-                if ((int)si == first_nonempty) continue;
-                if (graphs[si] && graphs[si]->GetN() > 0) {
-                    graphs[si]->Draw("PE1 SAME");
-                }
-            } //endfor
-        } //endif
-
-        TLegend *leg = new TLegend(0.16, 0.66, 0.78, 0.88);
-        leg->SetBorderSize(1);
-        leg->SetFillStyle(1001);
-        leg->SetFillColor(kWhite);
-        leg->SetTextSize(0.026);
-
-        for (size_t si = 0; si < graphs.size(); ++si) {
-            if (graphs[si] && graphs[si]->GetN() > 0) {
-                leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
-            }
-        }
-        leg->Draw();
-        p->Update();
-
-        delete leg;
+        draw_all_groups_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::KM15);
     }
 
-    // ---------------- Right pad ----------------
-    TF1 *f_lin = nullptr;         // keep alive until after SaveAs
-    TLegend *leg_fit = nullptr;   // keep alive until after SaveAs
+    // Top-right: KM15 clean+fit
     {
         TPad *p = (TPad*)c->cd(2);
-        p->SetLeftMargin(0.13);
-        p->SetRightMargin(0.05);
-        p->SetBottomMargin(0.14);
-        p->SetTopMargin(0.12);
-        p->SetGrid(1, 1);
-
-        TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 2.0); // CHANGED
-        frame->SetTitle("");
-        frame->GetXaxis()->SetTitle(x_title.c_str());
-        frame->GetYaxis()->SetTitle("xs/BH");
-        frame->GetXaxis()->SetNdivisions(505);
-        frame->GetXaxis()->CenterTitle();
-        frame->GetYaxis()->CenterTitle();
-
-        TLatex tl;
-        tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.034);
-        tl.DrawLatex(0.12, 0.93, Form("%s, %s", label.c_str(), helicity.c_str()));
-
-        if (gr_clean->GetN() > 0) {
-            gr_clean->Draw("PE1 SAME");
-        } else {
-            TLatex t0;
-            t0.SetNDC(kTRUE);
-            t0.SetTextSize(0.045);
-            t0.DrawLatex(0.18, 0.70, "No points in [0.95, 1.05]");
-            p->Update();
-            goto SAVE_AND_CLEANUP;
-        } //endif
-
-        // Linear fit on the clean points
-        if (gr_clean->GetN() >= 2) {
-            f_lin = new TF1(Form("f_lin_%s", file_tag.c_str()), "pol1", x_min, x_max);
-
-            // Quiet fit; do not auto-draw; we will explicitly Draw("SAME")
-            gr_clean->Fit(f_lin, "Q0");
-
-            f_lin->SetLineColor(kRed+1);
-            f_lin->SetLineStyle(2);
-            f_lin->SetLineWidth(2);
-
-            // Explicit draw so it appears
-            f_lin->Draw("SAME");
-
-            // Fit info -> legend box in top-right
-            const double p0 = f_lin->GetParameter(0);
-            const double p1 = f_lin->GetParameter(1);
-            const double e0 = f_lin->GetParError(0);
-            const double e1 = f_lin->GetParError(1);
-
-            leg_fit = new TLegend(0.58, 0.72, 0.93, 0.88);
-            leg_fit->SetBorderSize(1);
-            leg_fit->SetFillStyle(1001);
-            leg_fit->SetFillColor(kWhite);
-            leg_fit->SetTextSize(0.030);
-
-            leg_fit->AddEntry((TObject*)0, "Linear fit (pol1)", "");
-            leg_fit->AddEntry((TObject*)0, Form("p0 = %.4f #pm %.4f", p0, e0), "");
-            leg_fit->AddEntry((TObject*)0, Form("p1 = %.4f #pm %.4f", p1, e1), "");
-
-            leg_fit->Draw();
-        } else {
-            TLatex t1;
-            t1.SetNDC(kTRUE);
-            t1.SetTextSize(0.045);
-            t1.DrawLatex(0.18, 0.70, "Too few points to fit");
-        } //endif
-
-        p->Update();
+        draw_clean_fit_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::KM15, f_fit_tr, leg_fit_tr);
     }
 
-SAVE_AND_CLEANUP:
-
-    // Save
+    // Bottom-left: VGG all
     {
-        const std::string out_png = out_dir + "/norm_xs_over_bh_vs_" + file_tag + "_" + label_tag + "_" + hel_tag + ".png";
-        c->SaveAs(out_png.c_str());
+        TPad *p = (TPad*)c->cd(3);
+        draw_all_groups_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::VGG);
     }
 
-    // Cleanup
-    delete leg_fit;
-    delete f_lin;
-    delete gr_clean;
-
-    for (size_t si = 0; si < graphs.size(); ++si) {
-        delete graphs[si];
+    // Bottom-right: VGG clean+fit
+    {
+        TPad *p = (TPad*)c->cd(4);
+        draw_clean_fit_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::VGG, f_fit_br, leg_fit_br);
     }
+
+    const std::string out_png = out_dir + "/norm_xs_over_bh_vs_" + file_tag + "_" + label_tag + "_" + hel_tag + ".png";
+    c->SaveAs(out_png.c_str());
+
     delete c;
 }
+
+// -----------------------------------------------------------------------------
+// Main entry
+// -----------------------------------------------------------------------------
 
 } // end anonymous namespace
 
@@ -879,19 +985,22 @@ bool print_bh_normalization_study(const std::string &csv_path,
             // d_edge plot points: require dist_to_edge > 0.0
             if (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0 &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
-                std::isfinite(bh_over_km) && bh_over_km > 0.0) {
+                std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
+                std::isfinite(bh_over_vgg) && bh_over_vgg > 0.0) {
 
                 PlotPoint p;
                 p.d_edge_deg      = br.dist_to_edge;
                 p.xs_over_bh      = xs_over_bh;
                 p.xs_over_bh_err  = xs_over_bh_err;
                 p.bh_over_km15    = bh_over_km;
+                p.bh_over_vgg     = bh_over_vgg;
                 plot_pts_dedge.push_back(p);
             } //endif
 
             // Dependence plots (no dist_to_edge requirement)
             if (std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
+                std::isfinite(bh_over_vgg) && bh_over_vgg > 0.0 &&
                 std::isfinite(xb) && std::isfinite(q2) && std::isfinite(tpos)) {
 
                 DepPoint px;
@@ -899,6 +1008,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 px.y = xs_over_bh;
                 px.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                 px.bh_over_km15 = bh_over_km;
+                px.bh_over_vgg  = bh_over_vgg;
                 dep_xb.push_back(px);
 
                 DepPoint pq;
@@ -906,6 +1016,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 pq.y = xs_over_bh;
                 pq.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                 pq.bh_over_km15 = bh_over_km;
+                pq.bh_over_vgg  = bh_over_vgg;
                 dep_q2.push_back(pq);
 
                 DepPoint pt;
@@ -913,6 +1024,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 pt.y = xs_over_bh;
                 pt.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                 pt.bh_over_km15 = bh_over_km;
+                pt.bh_over_vgg  = bh_over_vgg;
                 dep_t.push_back(pt);
             } //endif
 
@@ -933,24 +1045,25 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const std::string out_dir = "output/normalization_study";
         ensure_output_dir_or_throw(out_dir);
 
-        // d_edge (log x) plot
-        make_normalization_plot_dedge(out_dir, label, helicity, plot_pts_dedge);
+        // d_edge plot is now 1x2: KM15 vs VGG grouping
+        make_normalization_plot_dedge_1x2(out_dir, label, helicity, plot_pts_dedge);
 
-        // Dependence plots: standardized x ranges
-        make_dependence_plot_1x2(out_dir, label, helicity,
+        // Dependence plots are now 2x2: KM15 row + VGG row
+        make_dependence_plot_2x2(out_dir, label, helicity,
                                 "xB",
                                 "xb",
                                 0.0, 0.6,
                                 dep_xb);
 
-        make_dependence_plot_1x2(out_dir, label, helicity,
+        make_dependence_plot_2x2(out_dir, label, helicity,
                                 "Q^{2}",
                                 "q2",
                                 1.0, 6.0,
                                 dep_q2);
 
-        make_dependence_plot_1x2(out_dir, label, helicity,
-                                "t_{abs}",
+        // Label changed from t_abs to -t (values are already positive)
+        make_dependence_plot_2x2(out_dir, label, helicity,
+                                "-t",
                                 "t",
                                 0.0, 1.0,
                                 dep_t);
