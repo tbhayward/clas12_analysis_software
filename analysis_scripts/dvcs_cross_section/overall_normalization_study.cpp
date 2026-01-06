@@ -10,6 +10,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -626,7 +627,7 @@ static bool fit_cos_series(const std::vector<PhiPoint> &pts_in,
         return false;
     }
 
-    // Build graph
+    // Build graph (stack object is fine here; not drawn/persisted)
     TGraphErrors gr;
     gr.SetName("gr_fit");
     gr.SetMarkerStyle(20);
@@ -753,6 +754,11 @@ static void draw_pad_text_only(const std::string &line1,
     }
 }
 
+// NOTE: This function previously created TGraphErrors and TF1 per-pad,
+// drew them, and then deleted them before saving the canvas.
+// ROOT pads store pointers to primitives; deleting them early results in
+// a canvas with only axes/text. The fix is to keep graphs/functions alive
+// until after c->SaveAs(...).
 static void make_normalization_grids(const std::string &out_dir_grid,
                                      const std::string &label,
                                      const std::string &helicity,
@@ -836,6 +842,10 @@ static void make_normalization_grids(const std::string &out_dir_grid,
         const std::string cname = "c_grid_" + fmt_edge_fname(xbk.xbmin_s) + "_" + fmt_edge_fname(xbk.xbmax_s);
         TCanvas *c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
 
+        // IMPORTANT: keep per-canvas objects alive through SaveAs
+        std::vector<std::unique_ptr<TGraphErrors> > keep_graphs;
+        std::vector<std::unique_ptr<TF1> >         keep_fits;
+
         // Title pad
         TPad *ptitle = new TPad((cname + "_title").c_str(), "title", 0.0, 0.92, 1.0, 1.0);
         ptitle->SetFillStyle(0);
@@ -900,9 +910,11 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     continue;
                 }
 
-                // Build graph for drawing (include points even if xs_stat<=0; but they won't be used in fit)
-                TGraphErrors *gr = new TGraphErrors();
-                gr->SetName(Form("gr_%d_%d", ir, ic));
+                // Keep graph alive via keep_graphs
+                keep_graphs.emplace_back(std::make_unique<TGraphErrors>());
+                TGraphErrors *gr = keep_graphs.back().get();
+
+                gr->SetName(Form("gr_%s_r%d_c%d", cname.c_str(), ir, ic));
                 gr->SetMarkerStyle(20);
                 gr->SetMarkerSize(0.85);
                 gr->SetMarkerColor(kBlack);
@@ -924,18 +936,17 @@ static void make_normalization_grids(const std::string &out_dir_grid,
 
                     const double top = pts[i].xs + ey;
                     if (top > y_max) y_max = top;
-                }
+                } //endfor
 
                 if (np_draw <= 0) {
-                    delete gr;
                     draw_pad_text_only("No usable points", q2line, tline);
                     continue;
-                }
+                } //endif
 
                 if (!(y_max > 0.0)) y_max = 1.0;
                 y_max *= 1.20;
 
-                // Draw an explicit frame so pads cannot end up "text-only"
+                // Draw an explicit frame
                 TH1F *frame = (TH1F*)pad->DrawFrame(0.0, 0.0, 360.0, y_max);
                 frame->SetTitle("");
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -948,8 +959,8 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
 
-                // Draw points
-                gr->Draw("P same");
+                // Draw points (with errors)
+                gr->Draw("PE1 SAME");
 
                 // Fit harmonics with iterative reduction
                 int usedH = -1;
@@ -988,16 +999,22 @@ static void make_normalization_grids(const std::string &out_dir_grid,
 
                 // If fit ok, draw fitted function and annotate numbers
                 if (ok_fit) {
-                    // Draw fit curve on the pad using the same harmonic order
+                    // Keep fit function alive via keep_fits
                     const std::string fstr = build_cos_series_formula(usedH);
-                    TF1 *fdraw = new TF1(Form("fdraw_%d_%d", ir, ic), fstr.c_str(), 0.0, 360.0);
+                    keep_fits.emplace_back(std::make_unique<TF1>(
+                        Form("fdraw_%s_r%d_c%d", cname.c_str(), ir, ic),
+                        fstr.c_str(),
+                        0.0, 360.0
+                    ));
+                    TF1 *fdraw = keep_fits.back().get();
+
                     fdraw->SetNpx(720);
                     for (int ip = 0; ip <= usedH; ++ip) {
                         fdraw->SetParameter(ip, pars[(size_t)ip]);
-                    }
+                    } //endfor
                     fdraw->SetLineColor(kRed+1);
                     fdraw->SetLineWidth(2);
-                    fdraw->Draw("same");
+                    fdraw->Draw("SAME");
 
                     double xs_fit0 = std::numeric_limits<double>::quiet_NaN();
                     double dxs_fit0 = std::numeric_limits<double>::quiet_NaN();
@@ -1026,12 +1043,11 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                             << "\n";
                     }
 
-                    // Annotate in the pad (avoid the old "Fit: xs(phi)=N*BH(phi)" text entirely)
+                    // Annotate in the pad
                     TLatex tl;
                     tl.SetNDC(kTRUE);
                     tl.SetTextSize(0.055);
 
-                    // Put q2/t lines at top right as in your examples
                     tl.DrawLatex(0.12, 0.92, q2line.c_str());
                     tl.DrawLatex(0.12, 0.80, tline.c_str());
 
@@ -1054,10 +1070,8 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                             std::ostringstream sn;
                             sn << "dxs_fit/BH0 = " << std::fixed << std::setprecision(5) << dnorm;
                             tl.DrawLatex(0.12, 0.22, sn.str().c_str());
-                        }
-                    }
-
-                    delete fdraw;
+                        } //endif
+                    } //endif
                 } else {
                     // Fit failed: keep the data points visible (already drawn), annotate failure
                     TLatex tl;
@@ -1069,12 +1083,10 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     if (!fit_msg.empty()) {
                         tl.SetTextSize(0.045);
                         tl.DrawLatex(0.12, 0.48, fit_msg.c_str());
-                    }
-                }
-
-                delete gr;
-            } // endfor ic
-        } // endfor ir
+                    } //endif
+                } //endif
+            } //endfor ic
+        } //endfor ir
 
         // Save
         const std::string label_tag = sanitize_for_filename(label);
@@ -1090,10 +1102,12 @@ static void make_normalization_grids(const std::string &out_dir_grid,
 
         c->SaveAs(out_png.c_str());
 
+        // Now it is safe to destroy canvas/pads; graphs/TF1 objects are destroyed
+        // after SaveAs when keep_graphs/keep_fits go out of scope.
         delete pgrid;
         delete ptitle;
         delete c;
-    }
+    } //endfor xB bins
 
     std::cout << "------------------------------------------------------------\n";
 }
@@ -1245,7 +1259,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     bin_meta[kk] = bm;
                 }
             }
-        }
+        } //endfor rows
 
         if (best.empty()) {
             std::cerr << "[overall_norm] WARNING: no bins found with positive cross section values.\n";
@@ -1350,7 +1364,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     n_weighted_used += 1;
                 }
             }
-        }
+        } //endfor best bins
 
         // ---------------------------------------------------------------------
         // Legacy plots (unchanged behavior/ranges)
