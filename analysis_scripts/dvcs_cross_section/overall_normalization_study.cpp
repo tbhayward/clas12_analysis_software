@@ -740,6 +740,12 @@ static std::string fmt_edge_fname(const std::string &s) {
     return sanitize_for_filename(fmt_edge(s));
 }
 
+static std::string neg_edge_str(const std::string &s) {
+    std::string a = fmt_edge(s);
+    if (!a.empty() && a[0] == '-') return a;
+    return "-" + a;
+}
+
 static void draw_pad_text_only(const std::string &line1,
                                const std::string &line2,
                                const std::string &line3) {
@@ -754,11 +760,8 @@ static void draw_pad_text_only(const std::string &line1,
     }
 }
 
-// NOTE: This function previously created TGraphErrors and TF1 per-pad,
-// drew them, and then deleted them before saving the canvas.
-// ROOT pads store pointers to primitives; deleting them early results in
-// a canvas with only axes/text. The fix is to keep graphs/functions alive
-// until after c->SaveAs(...).
+// NOTE: Keep per-pad TGraphErrors / TF1 / TLegend objects alive until after SaveAs.
+// ROOT pads store pointers to primitives; deleting them early results in blank pads.
 static void make_normalization_grids(const std::string &out_dir_grid,
                                      const std::string &label,
                                      const std::string &helicity,
@@ -845,6 +848,7 @@ static void make_normalization_grids(const std::string &out_dir_grid,
         // IMPORTANT: keep per-canvas objects alive through SaveAs
         std::vector<std::unique_ptr<TGraphErrors> > keep_graphs;
         std::vector<std::unique_ptr<TF1> >         keep_fits;
+        std::vector<std::unique_ptr<TLegend> >     keep_legs;
 
         // Title pad
         TPad *ptitle = new TPad((cname + "_title").c_str(), "title", 0.0, 0.92, 1.0, 1.0);
@@ -895,18 +899,20 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                 pad->SetBottomMargin(0.18);
                 pad->SetGrid(1, 1);
 
-                const std::string q2line = "Q2 in [" + fmt_edge(q2k.q2min_s) + ", " + fmt_edge(q2k.q2max_s) + "]";
-                const std::string tline  = "|t| in [" + fmt_edge(tk.tmin_s) + ", " + fmt_edge(tk.tmax_s) + "]";
+                // Subplot title line: Q2 and -t on one line
+                const std::string q2tline =
+                    "Q^{2} in [" + fmt_edge(q2k.q2min_s) + ", " + fmt_edge(q2k.q2max_s) + "], "
+                    + "-t in [" + neg_edge_str(tk.tmax_s) + ", " + neg_edge_str(tk.tmin_s) + "]";
 
                 std::map<KinKey, std::vector<PhiPoint> >::const_iterator itp = bin_points.find(kk);
                 if (itp == bin_points.end()) {
-                    draw_pad_text_only("No bin", q2line, tline);
+                    draw_pad_text_only("No bin", q2tline, "");
                     continue;
                 }
 
                 const std::vector<PhiPoint> &pts = itp->second;
                 if (pts.empty()) {
-                    draw_pad_text_only("No points", q2line, tline);
+                    draw_pad_text_only("No points", q2tline, "");
                     continue;
                 }
 
@@ -939,7 +945,7 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                 } //endfor
 
                 if (np_draw <= 0) {
-                    draw_pad_text_only("No usable points", q2line, tline);
+                    draw_pad_text_only("No usable points", q2tline, "");
                     continue;
                 } //endif
 
@@ -958,6 +964,14 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                 frame->GetYaxis()->SetTitleSize(0.070);
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
+
+                // Subplot title (single line)
+                {
+                    TLatex tl;
+                    tl.SetNDC(kTRUE);
+                    tl.SetTextSize(0.055);
+                    tl.DrawLatex(0.12, 0.92, q2tline.c_str());
+                }
 
                 // Draw points (with errors)
                 gr->Draw("PE1 SAME");
@@ -1020,9 +1034,9 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     double dxs_fit0 = std::numeric_limits<double>::quiet_NaN();
                     const bool ok_eval = eval_fit_and_unc_at_phi0(phi0_deg, usedH, pars, cov, xs_fit0, dxs_fit0);
 
-                    double dnorm = std::numeric_limits<double>::quiet_NaN();
+                    double sigma_over_bh0 = std::numeric_limits<double>::quiet_NaN();
                     if (finite_pos(bh0) && std::isfinite(dxs_fit0)) {
-                        dnorm = dxs_fit0 / bh0;
+                        sigma_over_bh0 = dxs_fit0 / bh0;
                     }
 
                     // Print row in summary table
@@ -1039,50 +1053,52 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                             << std::setw(12) << (std::isfinite(bh_over_km0) ? bh_over_km0 : 0.0)
                             << std::setw(12) << xs_fit0
                             << std::setw(12) << dxs_fit0
-                            << std::setw(14) << (std::isfinite(dnorm) ? dnorm : 0.0)
+                            << std::setw(14) << (std::isfinite(sigma_over_bh0) ? sigma_over_bh0 : 0.0)
                             << "\n";
                     }
 
-                    // Annotate in the pad
-                    TLatex tl;
-                    tl.SetNDC(kTRUE);
-                    tl.SetTextSize(0.055);
+                    // Per-subplot legend: top-center, bordered, slightly smaller font
+                    if (ok_eval && std::isfinite(bh_over_km0) && std::isfinite(dxs_fit0) && std::isfinite(sigma_over_bh0)) {
+                        keep_legs.emplace_back(std::make_unique<TLegend>(0.24, 0.68, 0.76, 0.88));
+                        TLegend *leg = keep_legs.back().get();
 
-                    tl.DrawLatex(0.12, 0.92, q2line.c_str());
-                    tl.DrawLatex(0.12, 0.80, tline.c_str());
+                        leg->SetBorderSize(1);
+                        leg->SetFillStyle(1001);
+                        leg->SetFillColor(kWhite);
+                        leg->SetTextSize(0.045);
 
-                    std::ostringstream sA;
-                    sA << "A = " << std::fixed << std::setprecision(5) << A << " +/- " << dA;
-                    tl.DrawLatex(0.12, 0.64, sA.str().c_str());
+                        {
+                            std::ostringstream s1;
+                            s1 << "BH/KM15(#phi_{0}) = " << std::fixed << std::setprecision(3) << bh_over_km0;
+                            leg->AddEntry((TObject*)0, s1.str().c_str(), "");
+                        }
+                        {
+                            std::ostringstream s2;
+                            s2 << "#sigma(#phi_{0}) = " << std::fixed << std::setprecision(5) << dxs_fit0;
+                            leg->AddEntry((TObject*)0, s2.str().c_str(), "");
+                        }
+                        {
+                            std::ostringstream s3;
+                            s3 << "#sigma/BH(#phi_{0}) = " << std::fixed << std::setprecision(5) << sigma_over_bh0;
+                            leg->AddEntry((TObject*)0, s3.str().c_str(), "");
+                        }
 
-                    std::ostringstream sbhkm;
-                    sbhkm << "BH/KM15 at  #phi=" << std::fixed << std::setprecision(3) << phi0_deg << " deg: "
-                          << (std::isfinite(bh_over_km0) ? bh_over_km0 : 0.0);
-                    tl.DrawLatex(0.12, 0.50, sbhkm.str().c_str());
-
-                    if (ok_eval && std::isfinite(xs_fit0) && std::isfinite(dxs_fit0)) {
-                        std::ostringstream sfit;
-                        sfit << "xs_fit(#phi=" << std::fixed << std::setprecision(3) << phi0_deg << " deg) = "
-                             << std::fixed << std::setprecision(5) << xs_fit0 << " +/- " << dxs_fit0;
-                        tl.DrawLatex(0.12, 0.36, sfit.str().c_str());
-
-                        if (finite_pos(bh0) && std::isfinite(dnorm)) {
-                            std::ostringstream sn;
-                            sn << "dxs_fit/BH0 = " << std::fixed << std::setprecision(5) << dnorm;
-                            tl.DrawLatex(0.12, 0.22, sn.str().c_str());
-                        } //endif
+                        leg->Draw();
+                    } else {
+                        TLatex tl;
+                        tl.SetNDC(kTRUE);
+                        tl.SetTextSize(0.050);
+                        tl.DrawLatex(0.12, 0.80, "Eval failed");
                     } //endif
                 } else {
                     // Fit failed: keep the data points visible (already drawn), annotate failure
                     TLatex tl;
                     tl.SetNDC(kTRUE);
-                    tl.SetTextSize(0.060);
-                    tl.DrawLatex(0.12, 0.92, q2line.c_str());
-                    tl.DrawLatex(0.12, 0.80, tline.c_str());
-                    tl.DrawLatex(0.12, 0.62, "Fit failed");
+                    tl.SetTextSize(0.055);
+                    tl.DrawLatex(0.12, 0.80, "Fit failed");
                     if (!fit_msg.empty()) {
                         tl.SetTextSize(0.045);
-                        tl.DrawLatex(0.12, 0.48, fit_msg.c_str());
+                        tl.DrawLatex(0.12, 0.68, fit_msg.c_str());
                     } //endif
                 } //endif
             } //endfor ic
@@ -1102,8 +1118,6 @@ static void make_normalization_grids(const std::string &out_dir_grid,
 
         c->SaveAs(out_png.c_str());
 
-        // Now it is safe to destroy canvas/pads; graphs/TF1 objects are destroyed
-        // after SaveAs when keep_graphs/keep_fits go out of scope.
         delete pgrid;
         delete ptitle;
         delete c;
