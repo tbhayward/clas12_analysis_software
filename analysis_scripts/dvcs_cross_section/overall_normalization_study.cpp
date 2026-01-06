@@ -757,7 +757,7 @@ static void draw_pad_text_only(const std::string &line1,
     tl.DrawLatex(0.12, 0.62, line2.c_str());
     if (!line3.empty()) {
         tl.DrawLatex(0.12, 0.46, line3.c_str());
-    }
+    } //endif
 }
 
 // NOTE: Keep per-pad TGraphErrors / TF1 / TLegend objects alive until after SaveAs.
@@ -837,7 +837,64 @@ static void make_normalization_grids(const std::string &out_dir_grid,
 
         if (nrows <= 0 || ncols <= 0) {
             continue;
-        }
+        } //endif
+
+        // ---------------------------------------------------------------------
+        // NEW: determine shared log-y range for this entire xB canvas
+        // ---------------------------------------------------------------------
+        double y_min_pos = std::numeric_limits<double>::infinity();
+        double y_max_all = 0.0;
+        bool any_points = false;
+
+        for (int ir = 0; ir < nrows; ++ir) {
+            for (int ic = 0; ic < ncols; ++ic) {
+                const Q2BinKey &q2k = q2_bins[(size_t)ir];
+                const TBinKey  &tk  = t_bins[(size_t)ic];
+
+                KinKey kk;
+                kk.xbmin_s = xbk.xbmin_s;
+                kk.xbmax_s = xbk.xbmax_s;
+                kk.q2min_s = q2k.q2min_s;
+                kk.q2max_s = q2k.q2max_s;
+                kk.tmin_s  = tk.tmin_s;
+                kk.tmax_s  = tk.tmax_s;
+
+                std::map<KinKey, std::vector<PhiPoint> >::const_iterator itp = bin_points.find(kk);
+                if (itp == bin_points.end()) continue;
+
+                const std::vector<PhiPoint> &pts = itp->second;
+                for (size_t i = 0; i < pts.size(); ++i) {
+                    if (!std::isfinite(pts[i].phi_deg)) continue;
+                    if (!std::isfinite(pts[i].xs) || pts[i].xs <= 0.0) continue;
+
+                    const double ey = (std::isfinite(pts[i].xs_stat) && pts[i].xs_stat > 0.0 ? pts[i].xs_stat : 0.0);
+
+                    const double hi = pts[i].xs + ey;
+                    if (hi > y_max_all) y_max_all = hi;
+
+                    const double lo_candidate = pts[i].xs - ey;
+                    const double lo = (lo_candidate > 0.0 ? lo_candidate : pts[i].xs);
+                    if (lo > 0.0 && lo < y_min_pos) y_min_pos = lo;
+
+                    any_points = true;
+                } //endfor
+            } //endfor
+        } //endfor
+
+        if (!any_points || !(y_max_all > 0.0) || !std::isfinite(y_min_pos) || !(y_min_pos > 0.0)) {
+            std::cerr << "[overall_norm] WARNING: no usable positive xs points for xB canvas "
+                      << "[" << fmt_edge(xbk.xbmin_s) << ", " << fmt_edge(xbk.xbmax_s) << "]. Skipping.\n";
+            continue;
+        } //endif
+
+        // Pad the shared range; enforce strict positivity for log-scale
+        double y_min_global = y_min_pos * 0.80;
+        double y_max_global = y_max_all * 1.25;
+
+        if (!(y_min_global > 0.0)) y_min_global = y_min_pos * 0.50;
+        if (!(y_min_global > 0.0)) y_min_global = 1e-12;
+
+        if (!(y_max_global > y_min_global)) y_max_global = y_min_global * 10.0;
 
         const int W = 320 * ncols + 220;
         const int H = 260 * nrows + 180;
@@ -863,7 +920,8 @@ static void make_normalization_grids(const std::string &out_dir_grid,
         std::ostringstream title;
         title << "Normalization grids: " << label << ", " << helicity
               << "   xB in [" << fmt_edge(xbk.xbmin_s) << ", " << fmt_edge(xbk.xbmax_s) << "]"
-              << "   Ebeam=" << std::fixed << std::setprecision(1) << Ebeam;
+              << "   Ebeam=" << std::fixed << std::setprecision(1) << Ebeam
+              << "   (log y)";
         tlt.DrawLatex(0.02, 0.20, title.str().c_str());
 
         c->cd();
@@ -899,6 +957,9 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                 pad->SetBottomMargin(0.18);
                 pad->SetGrid(1, 1);
 
+                // NEW: log-y per subplot
+                pad->SetLogy(1);
+
                 // Subplot title line: Q2 and -t on one line
                 const std::string q2tline =
                     "Q^{2} in [" + fmt_edge(q2k.q2min_s) + ", " + fmt_edge(q2k.q2max_s) + "], "
@@ -908,13 +969,13 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                 if (itp == bin_points.end()) {
                     draw_pad_text_only("No bin", q2tline, "");
                     continue;
-                }
+                } //endif
 
                 const std::vector<PhiPoint> &pts = itp->second;
                 if (pts.empty()) {
                     draw_pad_text_only("No points", q2tline, "");
                     continue;
-                }
+                } //endif
 
                 // Keep graph alive via keep_graphs
                 keep_graphs.emplace_back(std::make_unique<TGraphErrors>());
@@ -928,7 +989,6 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                 gr->SetLineWidth(1);
 
                 int np_draw = 0;
-                double y_max = 0.0;
 
                 for (size_t i = 0; i < pts.size(); ++i) {
                     if (!std::isfinite(pts[i].phi_deg)) continue;
@@ -939,9 +999,6 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     gr->SetPoint(np_draw, pts[i].phi_deg, pts[i].xs);
                     gr->SetPointError(np_draw, 0.0, ey);
                     np_draw += 1;
-
-                    const double top = pts[i].xs + ey;
-                    if (top > y_max) y_max = top;
                 } //endfor
 
                 if (np_draw <= 0) {
@@ -949,11 +1006,8 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     continue;
                 } //endif
 
-                if (!(y_max > 0.0)) y_max = 1.0;
-                y_max *= 1.20;
-
-                // Draw an explicit frame
-                TH1F *frame = (TH1F*)pad->DrawFrame(0.0, 0.0, 360.0, y_max);
+                // Draw an explicit frame using the shared y-range
+                TH1F *frame = (TH1F*)pad->DrawFrame(0.0, y_min_global, 360.0, y_max_global);
                 frame->SetTitle("");
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("xs");
@@ -996,7 +1050,7 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     xb_c = itm->second.xb_c;
                     q2_c = itm->second.q2_c;
                     t_c  = itm->second.t_c;
-                }
+                } //endif
 
                 // Evaluate BH/KM15 at phi0
                 double bh0 = std::numeric_limits<double>::quiet_NaN();
@@ -1008,8 +1062,8 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     km0 = km15_xs(xb_c, q2_c, t_c, phi0_deg, Ebeam, hel);
                     if (finite_pos(bh0) && finite_pos(km0)) {
                         bh_over_km0 = bh0 / km0;
-                    }
-                }
+                    } //endif
+                } //endif
 
                 // If fit ok, draw fitted function and annotate numbers
                 if (ok_fit) {
@@ -1037,7 +1091,7 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                     double sigma_over_bh0 = std::numeric_limits<double>::quiet_NaN();
                     if (finite_pos(bh0) && std::isfinite(dxs_fit0)) {
                         sigma_over_bh0 = dxs_fit0 / bh0;
-                    }
+                    } //endif
 
                     // Print row in summary table
                     if (finite_pos(xb_c) && finite_pos(q2_c) && finite_pos(t_c) &&
@@ -1055,7 +1109,7 @@ static void make_normalization_grids(const std::string &out_dir_grid,
                             << std::setw(12) << dxs_fit0
                             << std::setw(14) << (std::isfinite(sigma_over_bh0) ? sigma_over_bh0 : 0.0)
                             << "\n";
-                    }
+                    } //endif
 
                     // Per-subplot legend: top-center, bordered, slightly smaller font
                     if (ok_eval && std::isfinite(bh_over_km0) && std::isfinite(dxs_fit0) && std::isfinite(sigma_over_bh0)) {
@@ -1218,12 +1272,12 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
             if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
                 continue;
-            }
+            } //endif
 
             TripleCell xs = parse_tuple3(fields[c_xs]);
             if (!(xs.value > 0.0) || !std::isfinite(xs.value)) {
                 continue;
-            }
+            } //endif
 
             // -----------------------------------------------------------------
             // Legacy best-phi selection (unchanged)
@@ -1271,14 +1325,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     bm.q2_c = q2_c;
                     bm.t_c  = t_c;
                     bin_meta[kk] = bm;
-                }
+                } //endif
             }
         } //endfor rows
 
         if (best.empty()) {
             std::cerr << "[overall_norm] WARNING: no bins found with positive cross section values.\n";
             return true;
-        }
+        } //endif
 
         std::cout << "[overall_norm] Unique kinematic bins found (legacy best-phi): " << best.size()
                   << " (from " << n_rows << " CSV data rows)\n\n";
@@ -1330,14 +1384,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 xs_over_bh = br.xs / bh;
                 if (std::isfinite(br.xs_stat) && br.xs_stat >= 0.0) {
                     xs_over_bh_err = br.xs_stat / bh;
-                }
-            }
+                } //endif
+            } //endif
             if (finite_pos(vgg)) {
                 bh_over_vgg = bh / vgg;
-            }
+            } //endif
             if (finite_pos(km)) {
                 bh_over_km = bh / km;
-            }
+            } //endif
 
             const double tneg = -tpos;
 
@@ -1364,7 +1418,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 p.xs_over_bh_err  = xs_over_bh_err;
                 p.bh_over_km15    = bh_over_km;
                 plot_pts.push_back(p);
-            }
+            } //endif
 
             if (std::isfinite(bh_over_km) && bh_over_km >= 0.95 && bh_over_km <= 1.05) {
                 n_in_95_105_total += 1;
@@ -1376,8 +1430,8 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     sumw  += w;
                     sumwx += w * xs_over_bh;
                     n_weighted_used += 1;
-                }
-            }
+                } //endif
+            } //endif
         } //endfor best bins
 
         // ---------------------------------------------------------------------
@@ -1388,7 +1442,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         make_normalization_plots_legacy(out_dir, label, helicity, plot_pts);
 
         // ---------------------------------------------------------------------
-        // New grids
+        // New grids (now: log-y + shared y-range per canvas)
         // ---------------------------------------------------------------------
         const std::string out_dir_grid = out_dir + "/grid";
         make_normalization_grids(out_dir_grid, label, helicity, Ebeam, hel, bin_points, bin_meta);
@@ -1407,7 +1461,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
             std::cout << "[overall_norm] Weighted stat unc       : " << std::fixed << std::setprecision(6) << err  << "\n";
         } else {
             std::cout << "[overall_norm] Weighted mean xs/BH     : N/A (no usable uncertainties)\n";
-        }
+        } //endif
         std::cout << "------------------------------------------------------------\n";
 
         std::cout << "\n";
