@@ -17,10 +17,9 @@
 #include <utility>
 #include <vector>
 
-// ROOT (legacy plots only; all fitting/grid machinery removed)
+// ROOT (legacy + new 1D dependence plots; 2D plot removed)
 #include <TCanvas.h>
 #include <TGraphErrors.h>
-#include <TGraph2D.h>
 #include <TAxis.h>
 #include <TLegend.h>
 #include <TLine.h>
@@ -274,7 +273,7 @@ static void ensure_output_dir_or_throw(const std::string &dir) {
 }
 
 // -----------------------------------------------------------------------------
-// Legacy grouping for the 1D xs/BH vs d_edge plot (kept exactly as-is)
+// Grouping for the xs/BH plots: by BH/KM15 range (kept exactly as-is)
 // -----------------------------------------------------------------------------
 
 enum class BhKmGroup {
@@ -329,10 +328,17 @@ struct PlotPoint {
     double bh_over_km15;
 };
 
-static void make_normalization_plots_legacy(const std::string &out_dir,
-                                            const std::string &label,
-                                            const std::string &helicity,
-                                            const std::vector<PlotPoint> &pts) {
+struct DepPoint {
+    double x;
+    double y;
+    double ey;
+    double bh_over_km15;
+};
+
+static void make_normalization_plots_legacy_1d_only(const std::string &out_dir,
+                                                    const std::string &label,
+                                                    const std::string &helicity,
+                                                    const std::vector<PlotPoint> &pts) {
     ensure_output_dir_or_throw(out_dir);
 
     gROOT->SetBatch(kTRUE);
@@ -341,7 +347,8 @@ static void make_normalization_plots_legacy(const std::string &out_dir,
     const std::string label_tag = sanitize_for_filename(label);
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
-    const double x_min = 0.1;
+    // USER REQUEST: x-axis (d_edge) should start at 1 degree (instead of 0.1)
+    const double x_min = 1.0;
     double x_max = x_min * 10.0;
     for (size_t i = 0; i < pts.size(); ++i) {
         if (std::isfinite(pts[i].d_edge_deg) && pts[i].d_edge_deg > x_max) {
@@ -350,149 +357,225 @@ static void make_normalization_plots_legacy(const std::string &out_dir,
     }
     x_max *= 1.10;
 
-    // -------------------------------------------------------------------------
-    // 1D: xs/BH vs d_edge, grouped by BH/KM15 bins
-    // -------------------------------------------------------------------------
-    {
-        const std::vector<GroupStyle> styles = make_group_styles();
+    const std::vector<GroupStyle> styles = make_group_styles();
 
-        std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
-        std::vector<int> n_in(styles.size(), 0);
+    std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
+    std::vector<int> n_in(styles.size(), 0);
 
-        for (size_t si = 0; si < styles.size(); ++si) {
-            graphs[si] = new TGraphErrors();
-            graphs[si]->SetName(Form("gr_%zu", si));
-            graphs[si]->SetMarkerStyle(styles[si].marker_style);
-            graphs[si]->SetMarkerColor(styles[si].marker_color);
-            graphs[si]->SetLineColor(styles[si].marker_color);
-            graphs[si]->SetLineWidth(1);
+    for (size_t si = 0; si < styles.size(); ++si) {
+        graphs[si] = new TGraphErrors();
+        graphs[si]->SetName(Form("gr_%zu", si));
+        graphs[si]->SetMarkerStyle(styles[si].marker_style);
+        graphs[si]->SetMarkerColor(styles[si].marker_color);
+        graphs[si]->SetLineColor(styles[si].marker_color);
+        graphs[si]->SetLineWidth(1);
+    }
+
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const BhKmGroup g = categorize_bh_over_km15(pts[i].bh_over_km15);
+        const int si = style_index_for_group(g, styles);
+        if (si < 0) continue;
+
+        const int n = n_in[(size_t)si];
+        graphs[(size_t)si]->SetPoint(n, pts[i].d_edge_deg, pts[i].xs_over_bh);
+        graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
+        n_in[(size_t)si] += 1;
+    }
+
+    TCanvas *c = new TCanvas("c_norm_1d", "c_norm_1d", 950, 700);
+    c->SetLogx(1);
+    c->SetLeftMargin(0.14);
+    c->SetRightMargin(0.05);
+    c->SetBottomMargin(0.12);
+    c->SetTopMargin(0.10);
+
+    int first_nonempty = -1;
+    for (size_t si = 0; si < graphs.size(); ++si) {
+        if (graphs[si] && graphs[si]->GetN() > 0) {
+            first_nonempty = (int)si;
+            break;
+        }
+    }
+
+    if (first_nonempty >= 0) {
+        graphs[(size_t)first_nonempty]->Draw("AP");
+        graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle("d_edge (deg)");
+        graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
+        graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
+        graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 3.0);
+
+        TLatex tl;
+        tl.SetNDC(kTRUE);
+        tl.SetTextSize(0.040);
+        tl.DrawLatex(0.14, 0.93, Form("Normalization study (1D): %s, %s", label.c_str(), helicity.c_str()));
+
+        TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
+        l->SetLineStyle(2);
+        l->SetLineColor(kGray+2);
+        l->SetLineWidth(2);
+        l->Draw("same");
+
+        for (size_t si = 0; si < graphs.size(); ++si) {
+            if ((int)si == first_nonempty) continue;
+            if (graphs[si] && graphs[si]->GetN() > 0) {
+                graphs[si]->Draw("P same");
+            }
         }
 
-        for (size_t i = 0; i < pts.size(); ++i) {
-            const BhKmGroup g = categorize_bh_over_km15(pts[i].bh_over_km15);
-            const int si = style_index_for_group(g, styles);
-            if (si < 0) continue;
+        TLegend *leg = new TLegend(0.16, 0.66, 0.70, 0.88);
+        leg->SetBorderSize(1);
+        leg->SetFillStyle(1001);
+        leg->SetFillColor(kWhite);
+        leg->SetTextSize(0.028);
 
-            const int n = n_in[(size_t)si];
-            graphs[(size_t)si]->SetPoint(n, pts[i].d_edge_deg, pts[i].xs_over_bh);
-            graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
-            n_in[(size_t)si] += 1;
-        }
-
-        TCanvas *c = new TCanvas("c_norm_1d", "c_norm_1d", 950, 700);
-        c->SetLogx(1);
-        c->SetLeftMargin(0.14);
-        c->SetRightMargin(0.05);
-        c->SetBottomMargin(0.12);
-        c->SetTopMargin(0.10);
-
-        int first_nonempty = -1;
         for (size_t si = 0; si < graphs.size(); ++si) {
             if (graphs[si] && graphs[si]->GetN() > 0) {
-                first_nonempty = (int)si;
-                break;
+                leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
             }
         }
+        leg->Draw();
 
-        if (first_nonempty >= 0) {
-            graphs[(size_t)first_nonempty]->Draw("AP");
-            graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle("d_edge (deg)");
-            graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
-            graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
-            graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 3.0);
+        const std::string out_png = out_dir + "/norm_1d_xs_over_bh_vs_dedge_" + label_tag + "_" + hel_tag + ".png";
+        c->SaveAs(out_png.c_str());
+    } else {
+        std::cerr << "[overall_norm] WARNING: no points available for 1D plot.\n";
+    }
 
-            TLatex tl;
-            tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.040);
-            tl.DrawLatex(0.14, 0.93, Form("Normalization study (1D): %s, %s", label.c_str(), helicity.c_str()));
+    for (size_t si = 0; si < graphs.size(); ++si) {
+        delete graphs[si];
+    }
+    delete c;
+}
 
-            TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
-            l->SetLineStyle(2);
-            l->SetLineColor(kGray+2);
-            l->SetLineWidth(2);
-            l->Draw("same");
+static void make_dependence_plot(const std::string &out_dir,
+                                 const std::string &label,
+                                 const std::string &helicity,
+                                 const std::string &x_title,
+                                 const std::string &plot_tag,
+                                 const std::vector<DepPoint> &pts) {
+    ensure_output_dir_or_throw(out_dir);
 
-            for (size_t si = 0; si < graphs.size(); ++si) {
-                if ((int)si == first_nonempty) continue;
-                if (graphs[si] && graphs[si]->GetN() > 0) {
-                    graphs[si]->Draw("P same");
-                }
-            }
+    gROOT->SetBatch(kTRUE);
+    gStyle->SetOptStat(0);
 
-            TLegend *leg = new TLegend(0.16, 0.66, 0.70, 0.88);
-            leg->SetBorderSize(1);
-            leg->SetFillStyle(1001);
-            leg->SetFillColor(kWhite);
-            leg->SetTextSize(0.028);
+    const std::string label_tag = sanitize_for_filename(label);
+    const std::string hel_tag   = sanitize_for_filename(helicity);
 
-            for (size_t si = 0; si < graphs.size(); ++si) {
-                if (graphs[si] && graphs[si]->GetN() > 0) {
-                    leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
-                }
-            }
-            leg->Draw();
+    const std::vector<GroupStyle> styles = make_group_styles();
 
-            const std::string out_png = out_dir + "/norm_1d_xs_over_bh_vs_dedge_" + label_tag + "_" + hel_tag + ".png";
-            c->SaveAs(out_png.c_str());
-        } else {
-            std::cerr << "[overall_norm] WARNING: no points available for 1D plot.\n";
-        }
+    std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
+    std::vector<int> n_in(styles.size(), 0);
 
+    double x_min = std::numeric_limits<double>::infinity();
+    double x_max = -std::numeric_limits<double>::infinity();
+    bool any_x = false;
+
+    for (size_t si = 0; si < styles.size(); ++si) {
+        graphs[si] = new TGraphErrors();
+        graphs[si]->SetName(Form("gr_dep_%zu_%s", si, plot_tag.c_str()));
+        graphs[si]->SetMarkerStyle(styles[si].marker_style);
+        graphs[si]->SetMarkerColor(styles[si].marker_color);
+        graphs[si]->SetLineColor(styles[si].marker_color);
+        graphs[si]->SetLineWidth(1);
+    }
+
+    for (size_t i = 0; i < pts.size(); ++i) {
+        if (!std::isfinite(pts[i].x)) continue;
+        if (!std::isfinite(pts[i].y) || pts[i].y < 0.0) continue;
+
+        const BhKmGroup g = categorize_bh_over_km15(pts[i].bh_over_km15);
+        const int si = style_index_for_group(g, styles);
+        if (si < 0) continue;
+
+        const int n = n_in[(size_t)si];
+        graphs[(size_t)si]->SetPoint(n, pts[i].x, pts[i].y);
+        graphs[(size_t)si]->SetPointError(n, 0.0, (std::isfinite(pts[i].ey) && pts[i].ey >= 0.0 ? pts[i].ey : 0.0));
+        n_in[(size_t)si] += 1;
+
+        if (pts[i].x < x_min) x_min = pts[i].x;
+        if (pts[i].x > x_max) x_max = pts[i].x;
+        any_x = true;
+    }
+
+    if (!any_x || !(x_max > x_min)) {
+        std::cerr << "[overall_norm] WARNING: no usable points for dependence plot: " << plot_tag << "\n";
         for (size_t si = 0; si < graphs.size(); ++si) {
             delete graphs[si];
         }
-        delete c;
+        return;
     }
 
-    // -------------------------------------------------------------------------
-    // 2D: BH/KM15 vs d_edge, colored by xs/BH
-    // -------------------------------------------------------------------------
-    {
-        TGraph2D *g2 = new TGraph2D();
-        g2->SetName("g2_norm");
+    // Pad x-range a bit
+    const double dx = x_max - x_min;
+    x_min -= 0.05 * dx;
+    x_max += 0.05 * dx;
 
-        int n = 0;
-        for (size_t i = 0; i < pts.size(); ++i) {
-            if (!std::isfinite(pts[i].d_edge_deg)) continue;
-            if (!std::isfinite(pts[i].bh_over_km15)) continue;
-            if (!std::isfinite(pts[i].xs_over_bh)) continue;
+    TCanvas *c = new TCanvas(Form("c_dep_%s", plot_tag.c_str()),
+                             Form("c_dep_%s", plot_tag.c_str()),
+                             950, 700);
+    c->SetLeftMargin(0.14);
+    c->SetRightMargin(0.05);
+    c->SetBottomMargin(0.12);
+    c->SetTopMargin(0.10);
 
-            g2->SetPoint(n, pts[i].d_edge_deg, pts[i].bh_over_km15, pts[i].xs_over_bh);
-            n += 1;
+    int first_nonempty = -1;
+    for (size_t si = 0; si < graphs.size(); ++si) {
+        if (graphs[si] && graphs[si]->GetN() > 0) {
+            first_nonempty = (int)si;
+            break;
         }
-
-        if (g2->GetN() > 0) {
-            TCanvas *c = new TCanvas("c_norm_2d", "c_norm_2d", 980, 720);
-            c->SetLogx(1);
-            c->SetLeftMargin(0.14);
-            c->SetRightMargin(0.16);
-            c->SetBottomMargin(0.12);
-            c->SetTopMargin(0.10);
-
-            g2->Draw("PCOLZ");
-
-            if (g2->GetXaxis()) g2->GetXaxis()->SetLimits(0.1, x_max);
-
-            g2->SetTitle("");
-            if (g2->GetXaxis()) g2->GetXaxis()->SetTitle("d_edge (deg)");
-            if (g2->GetYaxis()) g2->GetYaxis()->SetTitle("BH/KM15");
-            if (g2->GetZaxis()) g2->GetZaxis()->SetTitle("xs/BH");
-
-            TLatex tl;
-            tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.040);
-            tl.DrawLatex(0.14, 0.93, Form("Normalization study (2D): %s, %s", label.c_str(), helicity.c_str()));
-
-            const std::string out_png = out_dir + "/norm_2d_bh_over_km15_vs_dedge_color_xs_over_bh_" + label_tag + "_" + hel_tag + ".png";
-            c->SaveAs(out_png.c_str());
-
-            delete c;
-        } else {
-            std::cerr << "[overall_norm] WARNING: no points available for 2D plot.\n";
-        }
-
-        delete g2;
     }
+
+    if (first_nonempty >= 0) {
+        graphs[(size_t)first_nonempty]->Draw("AP");
+        graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle(x_title.c_str());
+        graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
+        graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
+        graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 3.0);
+
+        TLatex tl;
+        tl.SetNDC(kTRUE);
+        tl.SetTextSize(0.040);
+        tl.DrawLatex(0.14, 0.93, Form("Normalization study: xs/BH vs %s (%s, %s)",
+                                      x_title.c_str(), label.c_str(), helicity.c_str()));
+
+        TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
+        l->SetLineStyle(2);
+        l->SetLineColor(kGray+2);
+        l->SetLineWidth(2);
+        l->Draw("same");
+
+        for (size_t si = 0; si < graphs.size(); ++si) {
+            if ((int)si == first_nonempty) continue;
+            if (graphs[si] && graphs[si]->GetN() > 0) {
+                graphs[si]->Draw("P same");
+            }
+        }
+
+        TLegend *leg = new TLegend(0.16, 0.66, 0.70, 0.88);
+        leg->SetBorderSize(1);
+        leg->SetFillStyle(1001);
+        leg->SetFillColor(kWhite);
+        leg->SetTextSize(0.028);
+
+        for (size_t si = 0; si < graphs.size(); ++si) {
+            if (graphs[si] && graphs[si]->GetN() > 0) {
+                leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
+            }
+        }
+        leg->Draw();
+
+        const std::string out_png =
+            out_dir + "/norm_1d_xs_over_bh_vs_" + plot_tag + "_" + label_tag + "_" + hel_tag + ".png";
+        c->SaveAs(out_png.c_str());
+    } else {
+        std::cerr << "[overall_norm] WARNING: no points available for dependence plot: " << plot_tag << "\n";
+    }
+
+    for (size_t si = 0; si < graphs.size(); ++si) {
+        delete graphs[si];
+    }
+    delete c;
 }
 
 } // end anonymous namespace
@@ -528,6 +611,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const int c_tmin  = require_col(header, "t_abs_min");
         const int c_tmax  = require_col(header, "t_abs_max");
 
+        // NOTE: Use per-period center columns as requested
         const std::string col_xbavg  = "xBavg, " + label;
         const std::string col_q2avg  = "Q2avg, " + label;
         const std::string col_tavg   = "t_abs_avg, " + label;
@@ -553,9 +637,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] Ebeam    : " << Ebeam << "\n";
         std::cout << "------------------------------------------------------------\n";
 
-        // ---------------------------------------------------------------------
-        // Legacy selection: best phi (closest to 0/360) per (xB,Q2,t) bin
-        // ---------------------------------------------------------------------
+        // Best phi (closest to 0/360) per (xB,Q2,t) bin
         std::map<std::string, BestPhiRow> best;
 
         size_t n_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
@@ -612,9 +694,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] Unique kinematic bins found (legacy best-phi): " << best.size()
                   << " (from " << n_rows << " CSV data rows)\n\n";
 
-        // ---------------------------------------------------------------------
-        // Legacy printing and legacy plot-point creation (unchanged behavior)
-        // ---------------------------------------------------------------------
         std::cout
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
@@ -629,6 +708,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
         std::vector<PlotPoint> plot_pts;
         plot_pts.reserve(best.size());
+
+        std::vector<DepPoint> dep_xb;
+        std::vector<DepPoint> dep_q2;
+        std::vector<DepPoint> dep_t;
+
+        dep_xb.reserve(best.size());
+        dep_q2.reserve(best.size());
+        dep_t.reserve(best.size());
 
         // Weighted mean accumulator for legacy xs/BH in BH/KM15 in [0.95,1.05]
         double sumw = 0.0;
@@ -681,8 +768,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
 
-            // Legacy plot-point selection: keep behavior identical:
-            // require dist_to_edge > 0.0 (no explicit floor added)
+            // Legacy plot-point selection (unchanged): dist_to_edge > 0.0
             if (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0 &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0) {
@@ -693,6 +779,39 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 p.xs_over_bh_err  = xs_over_bh_err;
                 p.bh_over_km15    = bh_over_km;
                 plot_pts.push_back(p);
+            }
+
+            // New dependence points: xs/BH as a function of xB, Q2, and -t
+            if (std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
+                std::isfinite(xs_over_bh_err) && xs_over_bh_err >= 0.0 &&
+                std::isfinite(bh_over_km) && bh_over_km > 0.0) {
+
+                if (std::isfinite(xb)) {
+                    DepPoint d;
+                    d.x = xb;
+                    d.y = xs_over_bh;
+                    d.ey = xs_over_bh_err;
+                    d.bh_over_km15 = bh_over_km;
+                    dep_xb.push_back(d);
+                }
+
+                if (std::isfinite(q2)) {
+                    DepPoint d;
+                    d.x = q2;
+                    d.y = xs_over_bh;
+                    d.ey = xs_over_bh_err;
+                    d.bh_over_km15 = bh_over_km;
+                    dep_q2.push_back(d);
+                }
+
+                if (std::isfinite(tneg)) {
+                    DepPoint d;
+                    d.x = tneg;
+                    d.y = xs_over_bh;
+                    d.ey = xs_over_bh_err;
+                    d.bh_over_km15 = bh_over_km;
+                    dep_t.push_back(d);
+                }
             }
 
             if (std::isfinite(bh_over_km) && bh_over_km >= 0.95 && bh_over_km <= 1.05) {
@@ -709,14 +828,19 @@ bool print_bh_normalization_study(const std::string &csv_path,
             }
         }
 
-        // ---------------------------------------------------------------------
-        // Legacy plots (unchanged behavior/ranges)
-        // ---------------------------------------------------------------------
+        // Output directory
         const std::string out_dir = "output/normalization_study";
         ensure_output_dir_or_throw(out_dir);
-        make_normalization_plots_legacy(out_dir, label, helicity, plot_pts);
 
-        // Legacy weighted mean summary (unchanged)
+        // Legacy 1D plot (xs/BH vs d_edge), with x-axis starting at 1 deg, and 2D plot removed
+        make_normalization_plots_legacy_1d_only(out_dir, label, helicity, plot_pts);
+
+        // New dependence plots (xs/BH vs xB, Q2, -t), color-coded by BH/KM15 group
+        make_dependence_plot(out_dir, label, helicity, "x_{B}", "xb", dep_xb);
+        make_dependence_plot(out_dir, label, helicity, "Q^{2} (GeV^{2})", "q2", dep_q2);
+        make_dependence_plot(out_dir, label, helicity, "-t (GeV^{2})", "t", dep_t);
+
+        // Weighted mean summary (unchanged)
         std::cout << "\n";
         std::cout << "------------------------------------------------------------\n";
         std::cout << "[overall_norm] Weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
