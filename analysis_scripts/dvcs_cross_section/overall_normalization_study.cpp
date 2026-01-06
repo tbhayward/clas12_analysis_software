@@ -11,6 +11,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -19,7 +20,6 @@
 
 // ROOT
 #include <TCanvas.h>
-#include <TGraph.h>
 #include <TGraphErrors.h>
 #include <TGraph2D.h>
 #include <TAxis.h>
@@ -30,11 +30,39 @@
 #include <TSystem.h>
 #include <TColor.h>
 #include <TROOT.h>
-#include <TPad.h>
+#include <TF1.h>
+#include <TFitResultPtr.h>
+#include <TFitResult.h>
+#include <TMatrixDSym.h>
+#include <TMath.h>
 
 #include <filesystem>
 
 namespace {
+
+// -----------------------------------------------------------------------------
+// User-controlled constants for the new grid fits (explicit, no hidden fallback)
+// -----------------------------------------------------------------------------
+static const double kPhi0Deg = 0.001;
+
+// Fit model:
+//   xs(phi) = A * (1 + B cos(phi) + C cos(2 phi) + D cos(3 phi))
+// with phi in degrees.
+static double xs_harmonic_model_deg(double *x, double *p) {
+    const double phi_deg = x[0];
+    const double phi_rad = phi_deg * TMath::DegToRad();
+
+    const double A = p[0];
+    const double B = p[1];
+    const double C = p[2];
+    const double D = p[3];
+
+    const double c1 = std::cos(1.0 * phi_rad);
+    const double c2 = std::cos(2.0 * phi_rad);
+    const double c3 = std::cos(3.0 * phi_rad);
+
+    return A * (1.0 + B * c1 + C * c2 + D * c3);
+}
 
 struct TripleCell {
     double value;
@@ -100,7 +128,7 @@ static int find_col_optional(const std::vector<std::string> &header,
 
 static int require_col(const std::vector<std::string> &header,
                        const std::string &target) {
-    int idx = find_col_optional(header, target);
+    const int idx = find_col_optional(header, target);
     if (idx < 0) {
         throw std::runtime_error("Missing required column: \"" + target + "\"");
     }
@@ -114,8 +142,8 @@ static std::string strip_all_outer_quotes(std::string s) {
     bool changed = true;
     while (changed && s.size() >= 2) {
         changed = false;
-        char first = s.front();
-        char last  = s.back();
+        const char first = s.front();
+        const char last  = s.back();
         if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
             s = s.substr(1, s.size() - 2);
             s = trim(s);
@@ -231,21 +259,6 @@ static std::string cell_key_for_kin_bin(const std::string &xbmin_s,
     return k;
 }
 
-static std::string xb_key_for_edges(const std::string &xbmin_s,
-                                    const std::string &xbmax_s) {
-    return xbmin_s + "|" + xbmax_s;
-}
-
-static std::string q2_key_for_edges(const std::string &q2min_s,
-                                    const std::string &q2max_s) {
-    return q2min_s + "|" + q2max_s;
-}
-
-static std::string t_key_for_edges(const std::string &tmin_s,
-                                   const std::string &tmax_s) {
-    return tmin_s + "|" + tmax_s;
-}
-
 static std::string sanitize_for_filename(const std::string &s) {
     std::string out;
     out.reserve(s.size());
@@ -290,7 +303,9 @@ static void ensure_output_dir_or_throw(const std::string &dir) {
     }
 }
 
-// Legacy grouping: 5% bands around 1.00, with symmetric paired bins.
+// -----------------------------------------------------------------------------
+// Legacy 1D/2D grouping by BH/KM15 (unchanged behavior)
+// -----------------------------------------------------------------------------
 enum class BhKmGroup {
     G_95_105 = 0,
     G_90_95_OR_105_110,
@@ -302,16 +317,12 @@ enum class BhKmGroup {
 static BhKmGroup categorize_bh_over_km15(double r) {
     if (!std::isfinite(r) || r <= 0.0) return BhKmGroup::G_INVALID;
 
-    // Central 5% band: inclusive
     if (r >= 0.95 && r <= 1.05) return BhKmGroup::G_95_105;
 
-    // Next band: [0.90, 0.95) and (1.05, 1.10]
     if ((r >= 0.90 && r < 0.95) || (r > 1.05 && r <= 1.10)) return BhKmGroup::G_90_95_OR_105_110;
 
-    // Next band: (0.85, 0.90) and (1.10, 1.15)
     if ((r > 0.85 && r < 0.90) || (r > 1.10 && r < 1.15)) return BhKmGroup::G_85_90_OR_110_115;
 
-    // Outside 15% inclusive
     if (r <= 0.85 || r >= 1.15) return BhKmGroup::G_OUTSIDE_15PCT;
 
     return BhKmGroup::G_INVALID;
@@ -347,147 +358,10 @@ struct PlotPoint {
     double bh_over_km15;
 };
 
-struct PhiPoint {
-    double phi_deg;
-    double xs;
-    double xs_stat;
-    double dist_to_edge;
-
-    PhiPoint() :
-        phi_deg(std::numeric_limits<double>::quiet_NaN()),
-        xs(0.0),
-        xs_stat(0.0),
-        dist_to_edge(std::numeric_limits<double>::infinity()) {}
-};
-
-struct KinBinData {
-    // Edge strings (from CSV) used for deterministic bin identity and labeling
-    std::string xbmin_s;
-    std::string xbmax_s;
-    std::string q2min_s;
-    std::string q2max_s;
-    std::string tmin_s;
-    std::string tmax_s;
-
-    // Numeric edges for sorting and pad labeling
-    double xbmin;
-    double xbmax;
-    double q2min;
-    double q2max;
-    double tmin;
-    double tmax;
-
-    // Centers (from CSV)
-    double xb_c;
-    double q2_c;
-    double t_c; // positive |t|
-
-    std::vector<PhiPoint> points;
-
-    KinBinData() :
-        xbmin(0.0), xbmax(0.0),
-        q2min(0.0), q2max(0.0),
-        tmin(0.0),  tmax(0.0),
-        xb_c(std::numeric_limits<double>::quiet_NaN()),
-        q2_c(std::numeric_limits<double>::quiet_NaN()),
-        t_c(std::numeric_limits<double>::quiet_NaN()) {}
-};
-
-struct FitResult {
-    bool ok;
-    double N;
-    double N_stat;
-    double phi_eval_deg;
-    double xs_fit_phi_eval;
-    double xs_fit_phi_eval_stat;
-    double bh_phi_eval;
-    double km15_phi_eval;
-    double bh_over_km15_phi_eval;
-
-    FitResult() :
-        ok(false),
-        N(0.0),
-        N_stat(0.0),
-        phi_eval_deg(0.001),
-        xs_fit_phi_eval(0.0),
-        xs_fit_phi_eval_stat(0.0),
-        bh_phi_eval(0.0),
-        km15_phi_eval(0.0),
-        bh_over_km15_phi_eval(0.0) {}
-};
-
-static FitResult fit_norm_to_bh_and_eval_at_phi(const KinBinData &kb,
-                                                double Ebeam,
-                                                Helicity hel,
-                                                double phi_eval_deg) {
-    FitResult fr;
-    fr.ok = false;
-    fr.phi_eval_deg = phi_eval_deg;
-
-    if (!finite_pos(kb.xb_c) || !finite_pos(kb.q2_c) || !finite_pos(kb.t_c)) {
-        return fr;
-    }
-
-    // Weighted least squares for model: xs_i = N * BH_i
-    //
-    // Minimize sum_i (xs_i - N*BH_i)^2 / err_i^2
-    //
-    // N = sum_i (BH_i * xs_i / err_i^2) / sum_i (BH_i^2 / err_i^2)
-    // Var(N) = 1 / sum_i (BH_i^2 / err_i^2)
-    double num = 0.0;
-    double den = 0.0;
-    int n_used = 0;
-
-    for (size_t i = 0; i < kb.points.size(); ++i) {
-        const PhiPoint &p = kb.points[i];
-        if (!std::isfinite(p.phi_deg)) continue;
-        if (!(p.xs > 0.0) || !std::isfinite(p.xs)) continue;
-        if (!(p.xs_stat > 0.0) || !std::isfinite(p.xs_stat)) continue;
-
-        const double bh = vgg_bh_only(kb.xb_c, kb.q2_c, kb.t_c, p.phi_deg, Ebeam);
-        if (!finite_pos(bh)) continue;
-
-        const double w = 1.0 / (p.xs_stat * p.xs_stat);
-        num += w * bh * p.xs;
-        den += w * bh * bh;
-        n_used += 1;
-    }
-
-    if (!(den > 0.0) || n_used < 2) {
-        return fr;
-    }
-
-    fr.N = num / den;
-    fr.N_stat = std::sqrt(1.0 / den);
-
-    const double bh0 = vgg_bh_only(kb.xb_c, kb.q2_c, kb.t_c, phi_eval_deg, Ebeam);
-    fr.bh_phi_eval = (std::isfinite(bh0) ? bh0 : 0.0);
-
-    const double km0 = km15_xs(kb.xb_c, kb.q2_c, kb.t_c, phi_eval_deg, Ebeam, hel);
-    fr.km15_phi_eval = (std::isfinite(km0) ? km0 : 0.0);
-
-    if (finite_pos(fr.bh_phi_eval) && finite_pos(fr.km15_phi_eval)) {
-        fr.bh_over_km15_phi_eval = fr.bh_phi_eval / fr.km15_phi_eval;
-    } else {
-        fr.bh_over_km15_phi_eval = 0.0;
-    }
-
-    if (finite_pos(fr.bh_phi_eval) && std::isfinite(fr.N) && fr.N > 0.0) {
-        fr.xs_fit_phi_eval = fr.N * fr.bh_phi_eval;
-        fr.xs_fit_phi_eval_stat = fr.N_stat * fr.bh_phi_eval;
-    } else {
-        fr.xs_fit_phi_eval = 0.0;
-        fr.xs_fit_phi_eval_stat = 0.0;
-    }
-
-    fr.ok = std::isfinite(fr.N) && fr.N > 0.0 && std::isfinite(fr.N_stat) && fr.N_stat >= 0.0;
-    return fr;
-}
-
-static void make_normalization_plots_legacy(const std::string &out_dir,
-                                            const std::string &label,
-                                            const std::string &helicity,
-                                            const std::vector<PlotPoint> &pts) {
+static void make_normalization_plots(const std::string &out_dir,
+                                     const std::string &label,
+                                     const std::string &helicity,
+                                     const std::vector<PlotPoint> &pts) {
     ensure_output_dir_or_throw(out_dir);
 
     gROOT->SetBatch(kTRUE);
@@ -496,7 +370,6 @@ static void make_normalization_plots_legacy(const std::string &out_dir,
     const std::string label_tag = sanitize_for_filename(label);
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
-    // Legacy behavior: keep x_min at 0.1 for log-x plots.
     const double x_min = 0.1;
     double x_max = x_min * 10.0;
     for (size_t i = 0; i < pts.size(); ++i) {
@@ -506,9 +379,7 @@ static void make_normalization_plots_legacy(const std::string &out_dir,
     }
     x_max *= 1.10;
 
-    // -------------------------------------------------------------------------
-    // Legacy 1D: xs/BH vs d_edge, grouped by BH/KM15 bins
-    // -------------------------------------------------------------------------
+    // 1D: xs/BH vs d_edge, grouped by BH/KM15 bins (legacy behavior)
     {
         const std::vector<GroupStyle> styles = make_group_styles();
 
@@ -588,10 +459,11 @@ static void make_normalization_plots_legacy(const std::string &out_dir,
             }
             leg->Draw();
 
-            const std::string out_png = out_dir + "/norm_1d_xs_over_bh_vs_dedge_" + label_tag + "_" + hel_tag + ".png";
+            const std::string out_png =
+                out_dir + "/norm_1d_xs_over_bh_vs_dedge_" + label_tag + "_" + hel_tag + ".png";
             c->SaveAs(out_png.c_str());
         } else {
-            std::cerr << "[overall_norm] WARNING: no points available for legacy 1D plot.\n";
+            std::cerr << "[overall_norm] WARNING: no points available for 1D plot.\n";
         }
 
         for (size_t si = 0; si < graphs.size(); ++si) {
@@ -600,9 +472,7 @@ static void make_normalization_plots_legacy(const std::string &out_dir,
         delete c;
     }
 
-    // -------------------------------------------------------------------------
-    // Legacy 2D: BH/KM15 vs d_edge, colored by xs/BH
-    // -------------------------------------------------------------------------
+    // 2D: BH/KM15 vs d_edge, colored by xs/BH (legacy behavior)
     {
         TGraph2D *g2 = new TGraph2D();
         g2->SetName("g2_norm");
@@ -639,315 +509,395 @@ static void make_normalization_plots_legacy(const std::string &out_dir,
             tl.SetTextSize(0.040);
             tl.DrawLatex(0.14, 0.93, Form("Normalization study (2D): %s, %s", label.c_str(), helicity.c_str()));
 
-            const std::string out_png = out_dir + "/norm_2d_bh_over_km15_vs_dedge_color_xs_over_bh_" + label_tag + "_" + hel_tag + ".png";
+            const std::string out_png =
+                out_dir + "/norm_2d_bh_over_km15_vs_dedge_color_xs_over_bh_" + label_tag + "_" + hel_tag + ".png";
             c->SaveAs(out_png.c_str());
 
             delete c;
         } else {
-            std::cerr << "[overall_norm] WARNING: no points available for legacy 2D plot.\n";
+            std::cerr << "[overall_norm] WARNING: no points available for 2D plot.\n";
         }
 
         delete g2;
     }
 }
 
-static std::vector<std::string> sorted_keys_by_numeric_minmax(const std::map<std::string, std::pair<double, double> > &key_to_edges) {
-    std::vector<std::string> keys;
-    keys.reserve(key_to_edges.size());
-    for (std::map<std::string, std::pair<double, double> >::const_iterator it = key_to_edges.begin();
-         it != key_to_edges.end(); ++it) {
-        keys.push_back(it->first);
-    }
+// -----------------------------------------------------------------------------
+// New grid plotting: per (xB, Q2, |t|) bin fit xs(phi) with harmonic model,
+// evaluate at phi0=0.001 deg, compare to BH(phi0), print & annotate.
+// -----------------------------------------------------------------------------
+struct PhiPointRow {
+    double phi_deg;
+    double xs;
+    double xs_stat;
+};
 
-    std::sort(keys.begin(), keys.end(),
-              [&key_to_edges](const std::string &a, const std::string &b) {
-                  const std::pair<double, double> ea = key_to_edges.find(a)->second;
-                  const std::pair<double, double> eb = key_to_edges.find(b)->second;
-                  if (ea.first < eb.first) return true;
-                  if (ea.first > eb.first) return false;
-                  return ea.second < eb.second;
-              });
+struct BinEdges {
+    double min;
+    double max;
+};
 
-    return keys;
+static bool edges_equal(const BinEdges &a, const BinEdges &b) {
+    // CSV edges are strings; we compare doubles here. Require exact equality
+    // after atof-based parsing is not reliable; instead compare with a strict
+    // tolerance small enough for typical bin edge formatting.
+    const double tol = 1e-12;
+    return (std::fabs(a.min - b.min) <= tol) && (std::fabs(a.max - b.max) <= tol);
 }
 
-static void make_grid_canvases(const std::string &out_dir,
-                               const std::string &label,
-                               const std::string &helicity,
-                               double Ebeam,
-                               Helicity hel,
-                               const std::map<std::string, KinBinData> &bins,
-                               const std::map<std::string, FitResult> &fits) {
+static double eval_fit_uncertainty_at_phi0(const TFitResultPtr &res, const TF1 *f, double phi0_deg) {
+    if (!res.Get()) return std::numeric_limits<double>::quiet_NaN();
+    if (!f) return std::numeric_limits<double>::quiet_NaN();
+
+    const TMatrixDSym cov = res->GetCovarianceMatrix();
+    if (cov.GetNrows() < 4) return std::numeric_limits<double>::quiet_NaN();
+
+    const double A = f->GetParameter(0);
+    const double B = f->GetParameter(1);
+    const double C = f->GetParameter(2);
+    const double D = f->GetParameter(3);
+
+    const double phi_rad = phi0_deg * TMath::DegToRad();
+    const double c1 = std::cos(1.0 * phi_rad);
+    const double c2 = std::cos(2.0 * phi_rad);
+    const double c3 = std::cos(3.0 * phi_rad);
+
+    // F = A*(1 + B*c1 + C*c2 + D*c3)
+    const double dFdA = (1.0 + B * c1 + C * c2 + D * c3);
+    const double dFdB = A * c1;
+    const double dFdC = A * c2;
+    const double dFdD = A * c3;
+
+    const double g[4] = {dFdA, dFdB, dFdC, dFdD};
+
+    double var = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            var += g[i] * cov(i, j) * g[j];
+        }
+    }
+
+    if (!(var >= 0.0) || !std::isfinite(var)) return std::numeric_limits<double>::quiet_NaN();
+    return std::sqrt(var);
+}
+
+static void draw_grid_for_xb_bin(const std::string &out_dir,
+                                 const std::string &label,
+                                 const std::string &helicity,
+                                 double Ebeam,
+                                 Helicity hel,
+                                 const BinEdges &xb_edges,
+                                 const std::vector<BinEdges> &q2_bins,
+                                 const std::vector<BinEdges> &t_bins,
+                                 const std::map<std::string, std::vector<PhiPointRow> > &phi_points_by_key,
+                                 const std::map<std::string, double> &xbavg_by_key,
+                                 const std::map<std::string, double> &q2avg_by_key,
+                                 const std::map<std::string, double> &tavg_by_key) {
     ensure_output_dir_or_throw(out_dir);
 
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
 
+    const int nrows = (int)q2_bins.size();
+    const int ncols = (int)t_bins.size();
+    if (nrows <= 0 || ncols <= 0) {
+        return;
+    }
+
+    const int W = 420 * ncols + 200;
+    const int H = 320 * nrows + 220;
+
     const std::string label_tag = sanitize_for_filename(label);
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
-    // Group kinematic bins by xB edges
-    std::map<std::string, std::vector<std::string> > xb_to_bin_keys;
-    std::map<std::string, std::pair<double, double> > xb_key_edges;
+    const std::string xb_tag =
+        Form("xb_%0.4f_%0.4f", xb_edges.min, xb_edges.max);
 
-    for (std::map<std::string, KinBinData>::const_iterator it = bins.begin();
-         it != bins.end(); ++it) {
-        const std::string &kin_key = it->first;
-        const KinBinData &kb = it->second;
+    TCanvas *c = new TCanvas(Form("c_grid_%s_%s_%s", xb_tag.c_str(), label_tag.c_str(), hel_tag.c_str()),
+                             "c_grid",
+                             W, H);
 
-        const std::string xb_key = xb_key_for_edges(kb.xbmin_s, kb.xbmax_s);
-        xb_to_bin_keys[xb_key].push_back(kin_key);
-        xb_key_edges[xb_key] = std::make_pair(kb.xbmin, kb.xbmax);
-    }
+    c->SetLeftMargin(0.08);
+    c->SetRightMargin(0.02);
+    c->SetBottomMargin(0.08);
+    c->SetTopMargin(0.10);
 
-    const std::vector<std::string> xb_keys_sorted = sorted_keys_by_numeric_minmax(xb_key_edges);
+    c->Divide(ncols, nrows, 0.001, 0.001);
 
-    for (size_t ix = 0; ix < xb_keys_sorted.size(); ++ix) {
-        const std::string &xb_key = xb_keys_sorted[ix];
-        const std::vector<std::string> &kin_keys = xb_to_bin_keys[xb_key];
+    // Global title
+    c->cd(1);
+    TLatex title;
+    title.SetNDC(kTRUE);
+    title.SetTextSize(0.060);
+    title.DrawLatex(0.10, 0.97,
+        Form("Normalization grids: %s, %s   xB in [%0.3f, %0.3f]   Ebeam=%0.1f",
+             label.c_str(), helicity.c_str(), xb_edges.min, xb_edges.max, Ebeam));
 
-        // For this xB slice, collect unique Q2 and |t| bins
-        std::map<std::string, std::pair<double, double> > q2_key_edges;
-        std::map<std::string, std::pair<double, double> > t_key_edges;
+    // Iterate pads row-major: q2 row, t col
+    for (int r = 0; r < nrows; ++r) {
+        for (int ccol = 0; ccol < ncols; ++ccol) {
+            const int ipad = r * ncols + ccol + 1;
+            c->cd(ipad);
 
-        // And build a lookup from (q2_key, t_key) -> kin_key
-        std::map<std::string, std::string> q2t_to_kin;
+            gPad->SetLeftMargin(0.14);
+            gPad->SetRightMargin(0.04);
+            gPad->SetBottomMargin(0.14);
+            gPad->SetTopMargin(0.18);
 
-        // Also keep representative edge strings for labeling
-        std::map<std::string, std::pair<std::string, std::string> > q2_key_edge_strings;
-        std::map<std::string, std::pair<std::string, std::string> > t_key_edge_strings;
+            const BinEdges q2e = q2_bins[(size_t)r];
+            const BinEdges te  = t_bins[(size_t)ccol];
 
-        double xbmin_val = xb_key_edges[xb_key].first;
-        double xbmax_val = xb_key_edges[xb_key].second;
+            // Build key using the same string formatting style as CSV fields is not safe here.
+            // Instead, scan phi_points_by_key and match by xb/q2/t avg maps is not allowed (implicit).
+            // So we require exact bin-edge matching by reconstructing key strings from numeric edges
+            // using a deterministic format consistent with typical CSV.
+            //
+            // IMPORTANT: If your CSV uses different formatting (e.g. "0.1" vs "0.10"),
+            // you must keep the CSV strings and use those. This code avoids fallbacks.
+            //
+            // Therefore: we do NOT synthesize keys here. We search for matching bins by comparing
+            // parsed numeric edges stored in the key maps built in print_bh_normalization_study,
+            // and we store a direct lookup map there. That is handled upstream by `phi_points_by_key`
+            // containing only exact keys; here we search by numeric edges via a separate map.
+            //
+            // In this implementation, we pass only the `phi_points_by_key` keyed by the canonical
+            // string key and additionally pass avg maps; for finding the correct key we will do a
+            // deterministic scan over keys and compare the bin edges encoded in the key.
+            //
+            // This is explicit and deterministic (O(Nkeys)), and avoids silent formatting hacks.
 
-        for (size_t k = 0; k < kin_keys.size(); ++k) {
-            const std::string &kin_key = kin_keys[k];
-            std::map<std::string, KinBinData>::const_iterator itb = bins.find(kin_key);
-            if (itb == bins.end()) continue;
+            std::string matched_key;
+            bool found = false;
 
-            const KinBinData &kb = itb->second;
+            for (std::map<std::string, std::vector<PhiPointRow> >::const_iterator it = phi_points_by_key.begin();
+                 it != phi_points_by_key.end(); ++it) {
 
-            const std::string q2_key = q2_key_for_edges(kb.q2min_s, kb.q2max_s);
-            const std::string t_key  = t_key_for_edges(kb.tmin_s, kb.tmax_s);
+                const std::string &key = it->first;
 
-            q2_key_edges[q2_key] = std::make_pair(kb.q2min, kb.q2max);
-            t_key_edges[t_key]   = std::make_pair(kb.tmin, kb.tmax);
-
-            q2_key_edge_strings[q2_key] = std::make_pair(kb.q2min_s, kb.q2max_s);
-            t_key_edge_strings[t_key]   = std::make_pair(kb.tmin_s,  kb.tmax_s);
-
-            const std::string q2t_key = q2_key + "||" + t_key;
-            q2t_to_kin[q2t_key] = kin_key;
-        }
-
-        const std::vector<std::string> q2_keys_sorted = sorted_keys_by_numeric_minmax(q2_key_edges);
-        const std::vector<std::string> t_keys_sorted  = sorted_keys_by_numeric_minmax(t_key_edges);
-
-        const int nrows = (int)q2_keys_sorted.size();
-        const int ncols = (int)t_keys_sorted.size();
-
-        if (nrows <= 0 || ncols <= 0) {
-            std::cerr << "[overall_norm] WARNING: no (Q2,|t|) bins found for xB slice " << xb_key << "\n";
-            continue;
-        }
-
-        // Canvas sizing: keep readable, similar scale per pad.
-        const int pad_w = 360;
-        const int pad_h = 300;
-        const int W = pad_w * ncols + 200;
-        const int H = pad_h * nrows + 180;
-
-        const std::string cname = "c_grid_xb_" + sanitize_for_filename(xb_key) + "_" + label_tag + "_" + hel_tag;
-        TCanvas *c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
-        c->SetLeftMargin(0.06);
-        c->SetRightMargin(0.02);
-        c->SetBottomMargin(0.06);
-        c->SetTopMargin(0.08);
-
-        c->Divide(ncols, nrows, 0.001, 0.001);
-
-        // Title at top (NDC on canvas): we do it once using a transparent overlay pad.
-        TPad *title_pad = new TPad("title_pad", "title_pad", 0.0, 0.92, 1.0, 1.0);
-        title_pad->SetFillStyle(4000);
-        title_pad->SetFrameFillStyle(4000);
-        title_pad->SetLeftMargin(0.06);
-        title_pad->SetRightMargin(0.02);
-        title_pad->SetTopMargin(0.10);
-        title_pad->SetBottomMargin(0.10);
-        title_pad->Draw();
-        title_pad->cd();
-
-        TLatex ttl;
-        ttl.SetNDC(kTRUE);
-        ttl.SetTextSize(0.45);
-        ttl.DrawLatex(0.02, 0.40,
-                      Form("Normalization grids: %s, %s   xB in [%.3f, %.3f]   Ebeam=%.1f",
-                           label.c_str(), helicity.c_str(), xbmin_val, xbmax_val, Ebeam));
-
-        c->cd();
-
-        // Build pads: row major with Q2 increasing downward is typical, but ROOT divide uses:
-        // pad index = col + ncols*(row-1), with row starting at 1 from top.
-        // We will map row=0 (lowest Q2) to bottom or top? Prefer top is lowest Q2 or vice versa.
-        // For determinism, use Q2 sorted ascending with row=0 at top (ROOT's row 1 is top).
-        for (int ir = 0; ir < nrows; ++ir) {
-            const std::string &q2_key = q2_keys_sorted[(size_t)ir];
-            const std::pair<std::string, std::string> q2_es = q2_key_edge_strings[q2_key];
-
-            for (int ic = 0; ic < ncols; ++ic) {
-                const std::string &t_key = t_keys_sorted[(size_t)ic];
-                const std::pair<std::string, std::string> t_es = t_key_edge_strings[t_key];
-
-                const int pad_idx = 1 + ic + ncols * ir;
-                TPad *p = (TPad*)c->cd(pad_idx);
-                if (!p) continue;
-
-                p->SetLeftMargin(0.14);
-                p->SetRightMargin(0.06);
-                p->SetBottomMargin(0.16);
-                p->SetTopMargin(0.18);
-                p->SetTicks(1, 1);
-
-                const std::string q2t_key = q2_key + "||" + t_key;
-                std::map<std::string, std::string>::const_iterator itk = q2t_to_kin.find(q2t_key);
-
-                // Empty pad if no bin exists
-                if (itk == q2t_to_kin.end()) {
-                    TLatex te;
-                    te.SetNDC(kTRUE);
-                    te.SetTextSize(0.070);
-                    te.DrawLatex(0.15, 0.75, "No bin");
-                    te.SetTextSize(0.055);
-                    te.DrawLatex(0.15, 0.62, Form("Q2 in [%s,%s]", q2_es.first.c_str(), q2_es.second.c_str()));
-                    te.DrawLatex(0.15, 0.50, Form("|t| in [%s,%s]", t_es.first.c_str(), t_es.second.c_str()));
-                    continue;
+                // key format: xbmin|xbmax|q2min|q2max|tmin|tmax
+                std::vector<std::string> parts;
+                {
+                    std::string tok;
+                    for (size_t i = 0; i < key.size(); ++i) {
+                        const char ch = key[i];
+                        if (ch == '|') {
+                            parts.push_back(tok);
+                            tok.clear();
+                        } else {
+                            tok.push_back(ch);
+                        }
+                    }
+                    parts.push_back(tok);
                 }
 
-                const std::string &kin_key = itk->second;
+                if (parts.size() != 6) continue;
 
-                std::map<std::string, KinBinData>::const_iterator itb = bins.find(kin_key);
-                std::map<std::string, FitResult>::const_iterator itf = fits.find(kin_key);
+                const double xbmin = std::atof(parts[0].c_str());
+                const double xbmax = std::atof(parts[1].c_str());
+                const double q2min = std::atof(parts[2].c_str());
+                const double q2max = std::atof(parts[3].c_str());
+                const double tmin  = std::atof(parts[4].c_str());
+                const double tmax  = std::atof(parts[5].c_str());
 
-                if (itb == bins.end() || itf == fits.end() || !itf->second.ok) {
-                    TLatex te;
-                    te.SetNDC(kTRUE);
-                    te.SetTextSize(0.070);
-                    te.DrawLatex(0.15, 0.75, "Fit failed");
-                    te.SetTextSize(0.055);
-                    te.DrawLatex(0.15, 0.62, Form("Q2 in [%s,%s]", q2_es.first.c_str(), q2_es.second.c_str()));
-                    te.DrawLatex(0.15, 0.50, Form("|t| in [%s,%s]", t_es.first.c_str(), t_es.second.c_str()));
-                    continue;
-                }
+                const BinEdges xb_test = {xbmin, xbmax};
+                const BinEdges q2_test = {q2min, q2max};
+                const BinEdges t_test  = {tmin,  tmax};
 
-                const KinBinData &kb = itb->second;
-                const FitResult &fr  = itf->second;
+                if (!edges_equal(xb_test, xb_edges)) continue;
+                if (!edges_equal(q2_test, q2e)) continue;
+                if (!edges_equal(t_test, te)) continue;
 
-                // Build data graph (xs vs phi)
-                TGraphErrors *gr = new TGraphErrors();
-                gr->SetName(Form("gr_data_%d_%d", ir, ic));
-                gr->SetMarkerStyle(20);
-                gr->SetMarkerSize(0.8);
-                gr->SetMarkerColor(kBlack);
-                gr->SetLineColor(kBlack);
-                gr->SetLineWidth(1);
-
-                int np = 0;
-                double y_max = 0.0;
-                for (size_t ip = 0; ip < kb.points.size(); ++ip) {
-                    const PhiPoint &pp = kb.points[ip];
-                    if (!std::isfinite(pp.phi_deg)) continue;
-                    if (!(pp.xs > 0.0) || !std::isfinite(pp.xs)) continue;
-                    if (!(pp.xs_stat >= 0.0) || !std::isfinite(pp.xs_stat)) continue;
-
-                    gr->SetPoint(np, pp.phi_deg, pp.xs);
-                    gr->SetPointError(np, 0.0, pp.xs_stat);
-                    if (pp.xs > y_max) y_max = pp.xs;
-                    np += 1;
-                }
-
-                // Model curve: xs_model(phi) = N * BH(phi)
-                // Use a modest sampling to keep it light but smooth.
-                TGraph *gm = new TGraph();
-                gm->SetName(Form("gr_model_%d_%d", ir, ic));
-                gm->SetLineColor(kRed+1);
-                gm->SetLineWidth(2);
-
-                int nm = 0;
-                for (int ph = 0; ph <= 360; ph += 2) {
-                    const double phi_deg = (double)ph;
-                    const double bh = vgg_bh_only(kb.xb_c, kb.q2_c, kb.t_c, phi_deg, Ebeam);
-                    if (!finite_pos(bh)) continue;
-                    const double y = fr.N * bh;
-                    gm->SetPoint(nm, phi_deg, y);
-                    if (y > y_max) y_max = y;
-                    nm += 1;
-                }
-
-                // Axis frame via drawing data graph first
-                gr->Draw("AP");
-                gr->SetTitle("");
-                if (gr->GetXaxis()) {
-                    gr->GetXaxis()->SetTitle("#phi (deg)");
-                    gr->GetXaxis()->SetLimits(0.0, 360.0);
-                    gr->GetXaxis()->SetNdivisions(505);
-                    gr->GetXaxis()->SetLabelSize(0.055);
-                    gr->GetXaxis()->SetTitleSize(0.065);
-                    gr->GetXaxis()->CenterTitle(true);
-                }
-                if (gr->GetYaxis()) {
-                    gr->GetYaxis()->SetTitle("cross section");
-                    gr->GetYaxis()->SetLabelSize(0.055);
-                    gr->GetYaxis()->SetTitleSize(0.065);
-                    gr->GetYaxis()->CenterTitle(true);
-                    gr->GetYaxis()->SetRangeUser(0.0, (y_max > 0.0 ? 1.25 * y_max : 1.0));
-                }
-
-                gm->Draw("L same");
-                gr->Draw("P same");
-
-                // Mark phi evaluation point explicitly
-                const double phi0 = fr.phi_eval_deg;
-                TLine *lphi = new TLine(phi0, 0.0, phi0, (y_max > 0.0 ? 1.25 * y_max : 1.0));
-                lphi->SetLineStyle(2);
-                lphi->SetLineColor(kGray+2);
-                lphi->SetLineWidth(2);
-                lphi->Draw("same");
-
-                // Annotate kinematics and fit output
-                TLatex tx;
-                tx.SetNDC(kTRUE);
-                tx.SetTextSize(0.055);
-
-                // Pad header
-                tx.DrawLatex(0.14, 0.92, Form("Q2 in [%s,%s]   |t| in [%s,%s]", q2_es.first.c_str(), q2_es.second.c_str(),
-                                              t_es.first.c_str(), t_es.second.c_str()));
-
-                // Key output requested:
-                // - Fitted normalization N +/- stat
-                // - BH/KM15 evaluated at phi=0.001 deg
-                tx.SetTextSize(0.060);
-                tx.DrawLatex(0.14, 0.82, Form("Fit: xs(#phi) = N * BH(#phi)"));
-                tx.DrawLatex(0.14, 0.74, Form("N = %.6f +/- %.6f", fr.N, fr.N_stat));
-                tx.DrawLatex(0.14, 0.66, Form("BH/KM15 at #phi=%.3f deg: %.6f", fr.phi_eval_deg, fr.bh_over_km15_phi_eval));
-
-                // Also show the fitted xs at phi=0.001 deg (often useful when eyeballing scale)
-                tx.SetTextSize(0.055);
-                tx.DrawLatex(0.14, 0.58, Form("xs_fit(#phi=%.3f deg) = %.3e +/- %.3e",
-                                              fr.phi_eval_deg, fr.xs_fit_phi_eval, fr.xs_fit_phi_eval_stat));
-
-                // Clean up per-pad heap objects (ROOT owns some drawables, but we delete explicitly)
-                delete lphi;
-                delete gm;
-                delete gr;
+                matched_key = key;
+                found = true;
+                break;
             }
+
+            TLatex tl;
+            tl.SetNDC(kTRUE);
+            tl.SetTextSize(0.055);
+
+            tl.DrawLatex(0.12, 0.92, Form("Q2 in [%0.3f,%0.3f]   |t| in [%0.3f,%0.3f]",
+                                          q2e.min, q2e.max, te.min, te.max));
+
+            if (!found) {
+                tl.DrawLatex(0.12, 0.70, "No bin");
+                continue;
+            }
+
+            const std::vector<PhiPointRow> &pts = phi_points_by_key.find(matched_key)->second;
+            if (pts.empty()) {
+                tl.DrawLatex(0.12, 0.70, "No points");
+                continue;
+            }
+
+            // Build graph
+            TGraphErrors *gr = new TGraphErrors();
+            gr->SetName(Form("gr_%d_%d", r, ccol));
+            gr->SetMarkerStyle(20);
+            gr->SetMarkerSize(0.9);
+            gr->SetLineWidth(1);
+
+            int n = 0;
+            for (size_t i = 0; i < pts.size(); ++i) {
+                if (!std::isfinite(pts[i].phi_deg)) continue;
+                if (!std::isfinite(pts[i].xs)) continue;
+                if (!(pts[i].xs > 0.0)) continue;
+
+                gr->SetPoint(n, pts[i].phi_deg, pts[i].xs);
+                const double ey = (std::isfinite(pts[i].xs_stat) && pts[i].xs_stat >= 0.0) ? pts[i].xs_stat : 0.0;
+                gr->SetPointError(n, 0.0, ey);
+                n += 1;
+            }
+
+            if (gr->GetN() <= 0) {
+                tl.DrawLatex(0.12, 0.70, "No valid points");
+                delete gr;
+                continue;
+            }
+
+            // Draw axes and points
+            gr->Draw("AP");
+            gr->GetXaxis()->SetTitle("#phi (deg)");
+            gr->GetYaxis()->SetTitle("xs");
+            gr->GetXaxis()->SetLimits(0.0, 360.0);
+
+            // Set a reasonable y-range
+            double ymax = 0.0;
+            for (int i = 0; i < gr->GetN(); ++i) {
+                double x, y;
+                gr->GetPoint(i, x, y);
+                if (std::isfinite(y) && y > ymax) ymax = y;
+            }
+            if (ymax <= 0.0) ymax = 1.0;
+            gr->GetYaxis()->SetRangeUser(0.0, 1.25 * ymax);
+
+            // Fit harmonic model if enough points
+            // 4 parameters -> need at least 4 points, but realistically >= 5
+            const int npts = gr->GetN();
+            if (npts < 5) {
+                tl.DrawLatex(0.12, 0.80, Form("Too few points to fit (N=%d)", npts));
+                delete gr;
+                continue;
+            }
+
+            TF1 *f = new TF1(Form("f_%d_%d", r, ccol), xs_harmonic_model_deg, 0.0, 360.0, 4);
+            f->SetParNames("A", "B", "C", "D");
+
+            // Initial values: A ~ mean y, others 0
+            double sumy = 0.0;
+            for (int i = 0; i < npts; ++i) {
+                double x, y;
+                gr->GetPoint(i, x, y);
+                sumy += y;
+            }
+            const double A0 = (npts > 0) ? (sumy / (double)npts) : 1.0;
+
+            f->SetParameter(0, (A0 > 0.0 ? A0 : 1.0));
+            f->SetParameter(1, 0.0);
+            f->SetParameter(2, 0.0);
+            f->SetParameter(3, 0.0);
+
+            // Quiet fit but keep result; draw the function
+            const TFitResultPtr res = gr->Fit(f, "QS");
+
+            const int fit_status = res.Get() ? res->Status() : 999;
+            if (fit_status != 0) {
+                tl.DrawLatex(0.12, 0.80, "Fit failed");
+                delete f;
+                delete gr;
+                continue;
+            }
+
+            const double A  = f->GetParameter(0);
+            const double dA = f->GetParError(0);
+
+            // Evaluate xs_fit at phi0 and uncertainty (full covariance)
+            const double xs_phi0 = f->Eval(kPhi0Deg);
+            const double dxs_phi0 = eval_fit_uncertainty_at_phi0(res, f, kPhi0Deg);
+
+            // Model BH and KM15 at phi0
+            // t input for model functions is positive |t|
+            double xb_c = std::numeric_limits<double>::quiet_NaN();
+            double q2_c = std::numeric_limits<double>::quiet_NaN();
+            double t_c  = std::numeric_limits<double>::quiet_NaN();
+
+            {
+                std::map<std::string, double>::const_iterator itx = xbavg_by_key.find(matched_key);
+                std::map<std::string, double>::const_iterator itq = q2avg_by_key.find(matched_key);
+                std::map<std::string, double>::const_iterator itt = tavg_by_key.find(matched_key);
+                if (itx != xbavg_by_key.end()) xb_c = itx->second;
+                if (itq != q2avg_by_key.end()) q2_c = itq->second;
+                if (itt != tavg_by_key.end()) t_c  = itt->second;
+            }
+
+            double bh_phi0 = std::numeric_limits<double>::quiet_NaN();
+            double km_phi0 = std::numeric_limits<double>::quiet_NaN();
+            double bh_over_km_phi0 = std::numeric_limits<double>::quiet_NaN();
+            double xs_over_bh_phi0 = std::numeric_limits<double>::quiet_NaN();
+
+            if (finite_pos(xb_c) && finite_pos(q2_c) && finite_pos(t_c)) {
+                bh_phi0 = vgg_bh_only(xb_c, q2_c, t_c, kPhi0Deg, Ebeam);
+                km_phi0 = km15_xs(xb_c, q2_c, t_c, kPhi0Deg, Ebeam, hel);
+
+                if (finite_pos(km_phi0) && finite_pos(bh_phi0)) {
+                    bh_over_km_phi0 = bh_phi0 / km_phi0;
+                }
+                if (finite_pos(bh_phi0) && std::isfinite(xs_phi0)) {
+                    xs_over_bh_phi0 = xs_phi0 / bh_phi0;
+                }
+            }
+
+            // Annotate (no "Fit:" line)
+            TLatex ann;
+            ann.SetNDC(kTRUE);
+            ann.SetTextSize(0.055);
+
+            ann.DrawLatex(0.12, 0.82, Form("A = %0.6g +/- %0.3g", A, dA));
+
+            if (std::isfinite(bh_phi0)) {
+                ann.DrawLatex(0.12, 0.74, Form("BH(#phi=%.3g deg) = %0.6g", kPhi0Deg, bh_phi0));
+            } else {
+                ann.DrawLatex(0.12, 0.74, Form("BH(#phi=%.3g deg) = N/A", kPhi0Deg));
+            }
+
+            if (std::isfinite(km_phi0)) {
+                ann.DrawLatex(0.12, 0.66, Form("KM15(#phi=%.3g deg) = %0.6g", kPhi0Deg, km_phi0));
+            } else {
+                ann.DrawLatex(0.12, 0.66, Form("KM15(#phi=%.3g deg) = N/A", kPhi0Deg));
+            }
+
+            if (std::isfinite(bh_over_km_phi0)) {
+                ann.DrawLatex(0.12, 0.58, Form("BH/KM15 at #phi=%.3g deg: %0.6g", kPhi0Deg, bh_over_km_phi0));
+            } else {
+                ann.DrawLatex(0.12, 0.58, Form("BH/KM15 at #phi=%.3g deg: N/A", kPhi0Deg));
+            }
+
+            if (std::isfinite(xs_phi0)) {
+                if (std::isfinite(dxs_phi0)) {
+                    ann.DrawLatex(0.12, 0.50, Form("xs_fit(#phi=%.3g deg) = %0.6g +/- %0.3g", kPhi0Deg, xs_phi0, dxs_phi0));
+                } else {
+                    ann.DrawLatex(0.12, 0.50, Form("xs_fit(#phi=%.3g deg) = %0.6g", kPhi0Deg, xs_phi0));
+                }
+            } else {
+                ann.DrawLatex(0.12, 0.50, Form("xs_fit(#phi=%.3g deg) = N/A", kPhi0Deg));
+            }
+
+            if (std::isfinite(xs_over_bh_phi0)) {
+                ann.DrawLatex(0.12, 0.42, Form("xs_fit/BH at #phi=%.3g deg: %0.6g", kPhi0Deg, xs_over_bh_phi0));
+            } else {
+                ann.DrawLatex(0.12, 0.42, Form("xs_fit/BH at #phi=%.3g deg: N/A", kPhi0Deg));
+            }
+
+            delete f;
+            delete gr;
         }
-
-        const std::string out_png = out_dir + "/norm_grid_xb_" + sanitize_for_filename(xb_key) + "_" + label_tag + "_" + hel_tag + ".png";
-        c->SaveAs(out_png.c_str());
-
-        delete title_pad;
-        delete c;
     }
+
+    const std::string out_png =
+        out_dir + "/norm_grid_" + xb_tag + "_" + label_tag + "_" + hel_tag + ".png";
+    c->SaveAs(out_png.c_str());
+
+    delete c;
 }
 
 } // end anonymous namespace
@@ -1000,20 +950,30 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const double Ebeam = beam_energy_for_label(label);
         const Helicity hel = helicity_from_string(helicity);
 
-        // Hard-coded evaluation point (deg), per your request.
-        const double phi_eval_deg = 0.001;
-
         std::cout << "============================================================\n";
         std::cout << "[overall_norm] BH normalization study\n";
         std::cout << "[overall_norm] CSV      : " << csv_path << "\n";
         std::cout << "[overall_norm] label    : " << label << "\n";
         std::cout << "[overall_norm] helicity : " << helicity << "\n";
         std::cout << "[overall_norm] Ebeam    : " << Ebeam << "\n";
-        std::cout << "[overall_norm] phi_eval : " << std::fixed << std::setprecision(3) << phi_eval_deg << " (deg)\n";
         std::cout << "------------------------------------------------------------\n";
 
-        // Build full (xB,Q2,|t|) bins with all phi points for fitting.
-        std::map<std::string, KinBinData> bins;
+        // Legacy: pick best (closest-to-edge) row per kinematic bin
+        std::map<std::string, BestPhiRow> best;
+
+        // New: keep all phi points per kinematic bin for harmonic fits
+        std::map<std::string, std::vector<PhiPointRow> > phi_points_by_key;
+
+        // For grid diagnostics and BH/KM15 at phi0, keep per-bin central values
+        std::map<std::string, double> xbavg_by_key;
+        std::map<std::string, double> q2avg_by_key;
+        std::map<std::string, double> tavg_by_key;
+
+        // Track unique xB bins, and within each xB bin the unique Q2 and |t| bins
+        std::vector<BinEdges> xb_bins;
+        std::map<std::string, BinEdges> xb_edges_by_key;
+        std::map<std::string, BinEdges> q2_edges_by_key;
+        std::map<std::string, BinEdges> t_edges_by_key;
 
         size_t n_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
         for (size_t r = 1; r < lines.size(); ++r) {
@@ -1029,12 +989,25 @@ bool print_bh_normalization_study(const std::string &csv_path,
             const std::string tmin_s  = trim(unquote(fields[c_tmin]));
             const std::string tmax_s  = trim(unquote(fields[c_tmax]));
 
-            const std::string key = cell_key_for_kin_bin(xbmin_s, xbmax_s, q2min_s, q2max_s, tmin_s, tmax_s);
+            const std::string key =
+                cell_key_for_kin_bin(xbmin_s, xbmax_s, q2min_s, q2max_s, tmin_s, tmax_s);
 
-            const double xb_c   = std::atof(trim(unquote(fields[c_xbavg])).c_str());
-            const double q2_c   = std::atof(trim(unquote(fields[c_q2avg])).c_str());
-            const double t_c    = std::atof(trim(unquote(fields[c_tavg])).c_str());
-            const double phi    = std::atof(trim(unquote(fields[c_phiavg])).c_str());
+            const double xbmin = std::atof(xbmin_s.c_str());
+            const double xbmax = std::atof(xbmax_s.c_str());
+            const double q2min = std::atof(q2min_s.c_str());
+            const double q2max = std::atof(q2max_s.c_str());
+            const double tmin  = std::atof(tmin_s.c_str());
+            const double tmax  = std::atof(tmax_s.c_str());
+
+            xb_edges_by_key[key] = BinEdges{xbmin, xbmax};
+            q2_edges_by_key[key] = BinEdges{q2min, q2max};
+            t_edges_by_key[key]  = BinEdges{tmin,  tmax};
+
+            // central values and phi
+            const double xb_c  = std::atof(trim(unquote(fields[c_xbavg])).c_str());
+            const double q2_c  = std::atof(trim(unquote(fields[c_q2avg])).c_str());
+            const double t_c   = std::atof(trim(unquote(fields[c_tavg])).c_str());
+            const double phi   = std::atof(trim(unquote(fields[c_phiavg])).c_str());
 
             if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
                 continue;
@@ -1045,79 +1018,48 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 continue;
             }
 
-            KinBinData &kb = bins[key];
-            if (kb.points.empty()) {
-                kb.xbmin_s = xbmin_s;
-                kb.xbmax_s = xbmax_s;
-                kb.q2min_s = q2min_s;
-                kb.q2max_s = q2max_s;
-                kb.tmin_s  = tmin_s;
-                kb.tmax_s  = tmax_s;
+            xbavg_by_key[key] = xb_c;
+            q2avg_by_key[key] = q2_c;
+            tavg_by_key[key]  = t_c;
 
-                kb.xbmin = std::atof(xbmin_s.c_str());
-                kb.xbmax = std::atof(xbmax_s.c_str());
-                kb.q2min = std::atof(q2min_s.c_str());
-                kb.q2max = std::atof(q2max_s.c_str());
-                kb.tmin  = std::atof(tmin_s.c_str());
-                kb.tmax  = std::atof(tmax_s.c_str());
-
-                kb.xb_c = xb_c;
-                kb.q2_c = q2_c;
-                kb.t_c  = t_c;
+            // Save point for harmonic fit map
+            {
+                PhiPointRow pr;
+                pr.phi_deg = phi;
+                pr.xs      = xs.value;
+                pr.xs_stat = xs.stat;
+                phi_points_by_key[key].push_back(pr);
             }
 
-            PhiPoint pp;
-            pp.phi_deg = phi;
-            pp.xs = xs.value;
-            pp.xs_stat = xs.stat;
-            pp.dist_to_edge = min_dist_to_0_or_360(phi);
+            // Legacy "best edge point" selection
+            const double dist = min_dist_to_0_or_360(phi);
 
-            kb.points.push_back(pp);
-        }
-
-        if (bins.empty()) {
-            std::cerr << "[overall_norm] WARNING: no bins found with positive cross section values.\n";
-            return true;
-        }
-
-        // Derive legacy "best phi near 0/360" selection for the original 1D/2D plots and printout.
-        std::map<std::string, BestPhiRow> best;
-        for (std::map<std::string, KinBinData>::const_iterator it = bins.begin();
-             it != bins.end(); ++it) {
-            const std::string &key = it->first;
-            const KinBinData &kb = it->second;
-
-            BestPhiRow br;
-            br.xb_c = kb.xb_c;
-            br.q2_c = kb.q2_c;
-            br.t_c  = kb.t_c;
-
-            // Pick the phi point closest to 0 or 360 (true distance, no floor).
-            for (size_t i = 0; i < kb.points.size(); ++i) {
-                const PhiPoint &pp = kb.points[i];
-                if (!std::isfinite(pp.phi_deg)) continue;
-                if (!(pp.xs > 0.0) || !std::isfinite(pp.xs)) continue;
-
-                if (pp.dist_to_edge < br.dist_to_edge) {
-                    br.phi_deg = pp.phi_deg;
-                    br.dist_to_edge = pp.dist_to_edge;
-                    br.xs = pp.xs;
-                    br.xs_stat = pp.xs_stat;
-                    br.csv_row_index = 0; // not used in this version
-                }
-            }
-
-            if (finite_pos(br.xb_c) && finite_pos(br.q2_c) && finite_pos(br.t_c) &&
-                std::isfinite(br.phi_deg) && std::isfinite(br.dist_to_edge) &&
-                br.xs > 0.0) {
+            std::map<std::string, BestPhiRow>::iterator it = best.find(key);
+            if (it == best.end() || dist < it->second.dist_to_edge) {
+                BestPhiRow br;
+                br.xb_c = xb_c;
+                br.q2_c = q2_c;
+                br.t_c  = t_c;
+                br.phi_deg = phi;
+                br.dist_to_edge = dist;
+                br.xs = xs.value;
+                br.xs_stat = xs.stat;
+                br.csv_row_index = r;
                 best[key] = br;
             }
         }
 
-        std::cout << "[overall_norm] Unique kinematic bins found: " << bins.size()
+        if (best.empty()) {
+            std::cerr << "[overall_norm] WARNING: no bins found with positive cross section values.\n";
+            return true;
+        }
+
+        std::cout << "[overall_norm] Unique kinematic bins found: " << best.size()
                   << " (from " << n_rows << " CSV data rows)\n\n";
 
-        // Legacy table header
+        // ---------------------------------------------------------------------
+        // Legacy printout (closest-to-edge point) + legacy plots
+        // ---------------------------------------------------------------------
         std::cout
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
@@ -1133,8 +1075,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::vector<PlotPoint> plot_pts;
         plot_pts.reserve(best.size());
 
-        // Weighted mean accumulator for legacy summary (based on best-phi selection):
-        // xs/BH for BH/KM15 in [0.95, 1.05] inclusive.
+        // Weighted mean accumulator for xs/BH in BH/KM15 in [0.95,1.05]
         double sumw = 0.0;
         double sumwx = 0.0;
         int n_weighted_used = 0;
@@ -1197,7 +1138,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 plot_pts.push_back(p);
             }
 
-            // Legacy weighted mean summary (based on best-phi selection)
             if (std::isfinite(bh_over_km) && bh_over_km >= 0.95 && bh_over_km <= 1.05) {
                 n_in_95_105_total += 1;
 
@@ -1212,69 +1152,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
             }
         }
 
-        // Legacy plots (unchanged behavior/ranges)
-        const std::string out_dir_legacy = "output/normalization_study";
-        make_normalization_plots_legacy(out_dir_legacy, label, helicity, plot_pts);
+        const std::string out_dir = "output/normalization_study";
+        make_normalization_plots(out_dir, label, helicity, plot_pts);
 
-        // New: per-bin fit to xs(phi) = N * BH(phi) using all phi bins, and evaluation at phi=0.001 deg.
-        std::map<std::string, FitResult> fits;
-        fits.clear();
-
-        for (std::map<std::string, KinBinData>::const_iterator it = bins.begin();
-             it != bins.end(); ++it) {
-            const std::string &kin_key = it->first;
-            const KinBinData &kb = it->second;
-
-            FitResult fr = fit_norm_to_bh_and_eval_at_phi(kb, Ebeam, hel, phi_eval_deg);
-            fits[kin_key] = fr;
-        }
-
-        // Print a dedicated summary for the fitted normalization constants and BH/KM15 at phi=0.001 deg
+        // Legacy weighted-mean summary
         std::cout << "\n";
         std::cout << "------------------------------------------------------------\n";
-        std::cout << "[overall_norm] Per-bin fits: xs(#phi) = N * BH(#phi)\n";
-        std::cout << "[overall_norm] Evaluation at #phi = " << std::fixed << std::setprecision(3) << phi_eval_deg << " (deg)\n";
-        std::cout
-            << std::setw(8)  << "xB"
-            << std::setw(10) << "Q2"
-            << std::setw(12) << "-t"
-            << std::setw(14) << "N"
-            << std::setw(14) << "dN(stat)"
-            << std::setw(16) << "BH/KM15(phi0)"
-            << "\n";
-        std::cout << std::string(8+10+12+14+14+16, '-') << "\n";
-
-        for (std::map<std::string, KinBinData>::const_iterator it = bins.begin();
-             it != bins.end(); ++it) {
-            const std::string &kin_key = it->first;
-            const KinBinData &kb = it->second;
-
-            const FitResult &fr = fits[kin_key];
-            if (!fr.ok) continue;
-
-            const double tneg = -kb.t_c;
-
-            std::cout
-                << std::setw(8)  << std::fixed << std::setprecision(3) << kb.xb_c
-                << std::setw(10) << std::fixed << std::setprecision(2) << kb.q2_c
-                << std::setw(12) << std::fixed << std::setprecision(3) << tneg
-                << std::setw(14) << std::fixed << std::setprecision(6) << fr.N
-                << std::setw(14) << std::fixed << std::setprecision(6) << fr.N_stat
-                << std::setw(16) << std::fixed << std::setprecision(6) << fr.bh_over_km15_phi_eval
-                << "\n";
-        }
-
-        std::cout << "------------------------------------------------------------\n";
-
-        // New grid canvases (xB canvases, rows=Q2, cols=|t|), each pad shows xs(phi), N*BH(phi),
-        // and annotates N +/- stat and BH/KM15 at phi=0.001 deg.
-        const std::string out_dir_grids = "output/normalization_study/grids";
-        make_grid_canvases(out_dir_grids, label, helicity, Ebeam, hel, bins, fits);
-
-        // Legacy weighted mean summary (unchanged)
-        std::cout << "\n";
-        std::cout << "------------------------------------------------------------\n";
-        std::cout << "[overall_norm] Legacy weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
+        std::cout << "[overall_norm] Weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
         std::cout << "[overall_norm] Points in range (total) : " << n_in_95_105_total << "\n";
         std::cout << "[overall_norm] Points used (err>0)     : " << n_weighted_used << "\n";
 
@@ -1288,7 +1172,193 @@ bool print_bh_normalization_study(const std::string &csv_path,
         }
         std::cout << "------------------------------------------------------------\n";
 
+        // ---------------------------------------------------------------------
+        // New: per-bin harmonic fits evaluated at phi0 and printed (with BH/KM15)
+        // ---------------------------------------------------------------------
         std::cout << "\n";
+        std::cout << "------------------------------------------------------------\n";
+        std::cout << "[overall_norm] Per-bin harmonic fits: xs(#phi) = A*(1 + B cos#phi + C cos2#phi + D cos3#phi)\n";
+        std::cout << "[overall_norm] Evaluation at #phi = " << kPhi0Deg << " (deg)\n";
+        std::cout
+            << std::setw(8)  << "xB"
+            << std::setw(10) << "Q2"
+            << std::setw(12) << "-t"
+            << std::setw(14) << "A"
+            << std::setw(14) << "dA(stat)"
+            << std::setw(14) << "BH(phi0)"
+            << std::setw(14) << "KM15(phi0)"
+            << std::setw(14) << "BH/KM15"
+            << std::setw(14) << "xs_fit(phi0)"
+            << std::setw(14) << "dxs_fit"
+            << "\n";
+        std::cout << std::string(8+10+12+14*7, '-') << "\n";
+
+        // Build unique xB bins from keys
+        {
+            std::set<std::string> xb_seen;
+            for (std::map<std::string, BinEdges>::const_iterator it = xb_edges_by_key.begin();
+                 it != xb_edges_by_key.end(); ++it) {
+
+                const std::string &key = it->first;
+                std::map<std::string, BinEdges>::const_iterator itx = xb_edges_by_key.find(key);
+                if (itx == xb_edges_by_key.end()) continue;
+
+                const BinEdges xb = itx->second;
+                const std::string tag = Form("%0.12g|%0.12g", xb.min, xb.max);
+
+                if (xb_seen.find(tag) == xb_seen.end()) {
+                    xb_seen.insert(tag);
+                    xb_bins.push_back(xb);
+                }
+            }
+            std::sort(xb_bins.begin(), xb_bins.end(),
+                [](const BinEdges &a, const BinEdges &b) -> bool {
+                    if (a.min < b.min) return true;
+                    if (a.min > b.min) return false;
+                    return a.max < b.max;
+                });
+        }
+
+        // Create grids per xB bin
+        const std::string grid_dir = out_dir + "/grids";
+        ensure_output_dir_or_throw(grid_dir);
+
+        for (size_t ix = 0; ix < xb_bins.size(); ++ix) {
+            const BinEdges xbE = xb_bins[ix];
+
+            // Collect Q2 and t bins for this xB
+            std::vector<BinEdges> q2_bins;
+            std::vector<BinEdges> t_bins;
+
+            {
+                std::set<std::string> q2_seen;
+                std::set<std::string> t_seen;
+
+                for (std::map<std::string, std::vector<PhiPointRow> >::const_iterator it = phi_points_by_key.begin();
+                     it != phi_points_by_key.end(); ++it) {
+
+                    const std::string &key = it->first;
+
+                    std::map<std::string, BinEdges>::const_iterator itxb = xb_edges_by_key.find(key);
+                    std::map<std::string, BinEdges>::const_iterator itq2 = q2_edges_by_key.find(key);
+                    std::map<std::string, BinEdges>::const_iterator itt  = t_edges_by_key.find(key);
+
+                    if (itxb == xb_edges_by_key.end() || itq2 == q2_edges_by_key.end() || itt == t_edges_by_key.end()) {
+                        continue;
+                    }
+
+                    if (!edges_equal(itxb->second, xbE)) continue;
+
+                    const BinEdges q2e = itq2->second;
+                    const BinEdges te  = itt->second;
+
+                    const std::string q2_tag = Form("%0.12g|%0.12g", q2e.min, q2e.max);
+                    const std::string t_tag  = Form("%0.12g|%0.12g", te.min, te.max);
+
+                    if (q2_seen.find(q2_tag) == q2_seen.end()) {
+                        q2_seen.insert(q2_tag);
+                        q2_bins.push_back(q2e);
+                    }
+                    if (t_seen.find(t_tag) == t_seen.end()) {
+                        t_seen.insert(t_tag);
+                        t_bins.push_back(te);
+                    }
+                }
+
+                std::sort(q2_bins.begin(), q2_bins.end(),
+                    [](const BinEdges &a, const BinEdges &b) -> bool {
+                        if (a.min < b.min) return true;
+                        if (a.min > b.min) return false;
+                        return a.max < b.max;
+                    });
+                std::sort(t_bins.begin(), t_bins.end(),
+                    [](const BinEdges &a, const BinEdges &b) -> bool {
+                        if (a.min < b.min) return true;
+                        if (a.min > b.min) return false;
+                        return a.max < b.max;
+                    });
+            }
+
+            // Print per-bin fit summary lines for bins in this xB (stdout)
+            for (std::map<std::string, std::vector<PhiPointRow> >::const_iterator it = phi_points_by_key.begin();
+                 it != phi_points_by_key.end(); ++it) {
+
+                const std::string &key = it->first;
+
+                if (xb_edges_by_key.find(key) == xb_edges_by_key.end()) continue;
+                if (!edges_equal(xb_edges_by_key.find(key)->second, xbE)) continue;
+
+                // Build a temporary graph and fit (stdout only)
+                const std::vector<PhiPointRow> &pts = it->second;
+                if (pts.size() < 5) continue;
+
+                TGraphErrors gr;
+                int n = 0;
+                for (size_t i = 0; i < pts.size(); ++i) {
+                    if (!std::isfinite(pts[i].phi_deg)) continue;
+                    if (!std::isfinite(pts[i].xs) || !(pts[i].xs > 0.0)) continue;
+                    gr.SetPoint(n, pts[i].phi_deg, pts[i].xs);
+                    const double ey = (std::isfinite(pts[i].xs_stat) && pts[i].xs_stat >= 0.0) ? pts[i].xs_stat : 0.0;
+                    gr.SetPointError(n, 0.0, ey);
+                    n += 1;
+                }
+                if (gr.GetN() < 5) continue;
+
+                TF1 f("f_tmp", xs_harmonic_model_deg, 0.0, 360.0, 4);
+                f.SetParNames("A", "B", "C", "D");
+
+                double sumy = 0.0;
+                for (int i = 0; i < gr.GetN(); ++i) {
+                    double x, y;
+                    gr.GetPoint(i, x, y);
+                    sumy += y;
+                }
+                const double A0 = sumy / (double)gr.GetN();
+                f.SetParameter(0, (A0 > 0.0 ? A0 : 1.0));
+                f.SetParameter(1, 0.0);
+                f.SetParameter(2, 0.0);
+                f.SetParameter(3, 0.0);
+
+                const TFitResultPtr res = gr.Fit(&f, "QSN");
+                if (!res.Get() || res->Status() != 0) continue;
+
+                const double A  = f.GetParameter(0);
+                const double dA = f.GetParError(0);
+
+                const double xs_phi0  = f.Eval(kPhi0Deg);
+                const double dxs_phi0 = eval_fit_uncertainty_at_phi0(res, &f, kPhi0Deg);
+
+                const double xb_c = xbavg_by_key.find(key)->second;
+                const double q2_c = q2avg_by_key.find(key)->second;
+                const double t_c  = tavg_by_key.find(key)->second;
+
+                const double bh_phi0 = vgg_bh_only(xb_c, q2_c, t_c, kPhi0Deg, Ebeam);
+                const double km_phi0 = km15_xs(xb_c, q2_c, t_c, kPhi0Deg, Ebeam, hel);
+                const double bh_over_km = (finite_pos(km_phi0) && finite_pos(bh_phi0)) ? (bh_phi0 / km_phi0) : std::numeric_limits<double>::quiet_NaN();
+
+                const double tneg = -t_c;
+
+                std::cout
+                    << std::setw(8)  << std::fixed << std::setprecision(3) << xb_c
+                    << std::setw(10) << std::fixed << std::setprecision(2) << q2_c
+                    << std::setw(12) << std::fixed << std::setprecision(3) << tneg
+                    << std::setw(14) << std::scientific << std::setprecision(6) << A
+                    << std::setw(14) << std::scientific << std::setprecision(3) << dA
+                    << std::setw(14) << std::scientific << std::setprecision(6) << bh_phi0
+                    << std::setw(14) << std::scientific << std::setprecision(6) << km_phi0
+                    << std::setw(14) << std::scientific << std::setprecision(6) << bh_over_km
+                    << std::setw(14) << std::scientific << std::setprecision(6) << xs_phi0
+                    << std::setw(14) << std::scientific << std::setprecision(3) << dxs_phi0
+                    << "\n";
+            }
+
+            // Draw and save the grid canvas for this xB
+            draw_grid_for_xb_bin(grid_dir, label, helicity, Ebeam, hel, xbE,
+                                 q2_bins, t_bins, phi_points_by_key,
+                                 xbavg_by_key, q2avg_by_key, tavg_by_key);
+        }
+
+        std::cout << "------------------------------------------------------------\n";
         std::cout << "[overall_norm] Done.\n";
         std::cout << "============================================================\n";
         return true;
