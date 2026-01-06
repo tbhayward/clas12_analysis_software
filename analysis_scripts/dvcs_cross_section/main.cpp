@@ -271,85 +271,85 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
-    // // {
-    // //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-
-    // //     // Make a dedicated backup before modifying Fbin columns.
-    // //     try {
-    // //         std::filesystem::copy_file(
-    // //             csv_main,
-    // //             "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
-    // //             std::filesystem::copy_options::overwrite_existing
-    // //         );
-    // //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
-    // //     } catch (const std::exception& ex) {
-    // //         std::cerr << "[main] WARNING: failed to create bin-centering backup: "
-    // //                   << ex.what() << "\n";
-    // //     }
-
-    // //     ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
-    // //     const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
-    // //     const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
-
-    // //     if (!update_bin_centering_corrections_csv(
-    // //             csv_main,
-    // //             n_steps,
-    // //             model_paths,
-    // //             vgg_globalfit,
-    // //             ModelChoice::Both)) {
-    // //         std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
-    // //         return 1;
-    // //     }
-
-    // //     // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
-    // //     // Uses Fbin triples and phiavg columns from the updated CSV.
-    // //     plot_bin_centering_fbin_vs_phi(
-    // //         csv_main,
-    // //         "output/bin_centering_plots");
-    // // }
-
-
-    // // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
     // {
-    //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string theory_json_root = "output/jsons/cross_sections";
-    //     const std::string xs_out_root      = "output/cross_sections";
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     // // --------- Theory grids (xs_phi_all.json generation) ----------
-    //     // {
-    //     //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-    //     //     const std::string theory_json_root = "output/jsons/cross_sections";
-
-    //     //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
-    //     //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
-    //     //         return 1;
-    //     //     }
-    //     // }
-
-    //     // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
-    //     LumiMap lumi_map = build_lumi_map();
-
-    //     // Step 1: heavy numerical work (CSV cross sections + theory JSON)
-    //     if (!compute_cross_sections(csv_main, lumi_map)) {
-    //         std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+    //     // Make a dedicated backup before modifying Fbin columns.
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
+    //     } catch (const std::exception& ex) {
+    //         std::cerr << "[main] WARNING: failed to create bin-centering backup: "
+    //                   << ex.what() << "\n";
     //     }
 
-    //     // Step 2: plotting only (can be rerun freely to adjust aesthetics)
-    //     const std::vector<std::string> labels_to_plot = {
-    //         "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-    //         "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-    //         "Fa18", "Sp18", "10.6 GeV"
-    //     };
+    //     ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
+    //     const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
+    //     const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
 
-    //     for (const auto &label : labels_to_plot) {
-    //         if (!plot_cross_sections_for_label(csv_main, label,
-    //             theory_json_root, xs_out_root)) {
-    //             std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
-    //                       << label << "\n";
-    //         }
+    //     if (!update_bin_centering_corrections_csv(
+    //             csv_main,
+    //             n_steps,
+    //             model_paths,
+    //             vgg_globalfit,
+    //             ModelChoice::Both)) {
+    //         std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
+    //         return 1;
     //     }
+
+    //     // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
+    //     // Uses Fbin triples and phiavg columns from the updated CSV.
+    //     plot_bin_centering_fbin_vs_phi(
+    //         csv_main,
+    //         "output/bin_centering_plots");
     // }
+
+
+    // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    {
+        const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string theory_json_root = "output/jsons/cross_sections";
+        const std::string xs_out_root      = "output/cross_sections";
+
+        // --------- Theory grids (xs_phi_all.json generation) ----------
+        {
+            const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+            const std::string theory_json_root = "output/jsons/cross_sections";
+
+            if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
+                std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
+                return 1;
+            }
+        }
+
+        // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
+        LumiMap lumi_map = build_lumi_map();
+
+        // Step 1: heavy numerical work (CSV cross sections + theory JSON)
+        if (!compute_cross_sections(csv_main, lumi_map)) {
+            std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+        }
+
+        // Step 2: plotting only (can be rerun freely to adjust aesthetics)
+        const std::vector<std::string> labels_to_plot = {
+            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+            "Fa18", "Sp18", "10.6 GeV"
+        };
+
+        for (const auto &label : labels_to_plot) {
+            if (!plot_cross_sections_for_label(csv_main, label,
+                theory_json_root, xs_out_root)) {
+                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
+                          << label << "\n";
+            }
+        }
+    }
 
     {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";

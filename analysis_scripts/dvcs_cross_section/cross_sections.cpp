@@ -768,16 +768,26 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
                                          const std::string &theory_json_root,
                                          double Ebeam,
                                          const std::string &energy_label) {
-    std::vector<double> phi_deg;
-    phi_deg.reserve(14);
+ 
 
-    // 14 phi points: 0.5, 15, 45, ..., 345, 395.5
-    phi_deg.push_back(0.5);
-    for (int k = 0; k < 12; ++k) {
-        double phi = 15.0 + 30.0 * (double)k;
+    std::vector<double> phi_deg;
+    phi_deg.reserve(38);
+
+    const int    N       = 38;
+    const double phi_min = 0.1;
+    const double phi_max = 359.9;
+    const double step    = (phi_max - phi_min) / (double)(N - 1);
+
+    for (int i = 0; i < N; ++i) {
+        double phi = phi_min + step * (double)i;
+
+        // Force the last point to be exactly phi_max (avoids floating roundoff).
+        if (i == N - 1) {
+            phi = phi_max;
+        }
+
         phi_deg.push_back(phi);
     }
-    phi_deg.push_back(395.5);
 
     const int n_phi = (int)phi_deg.size();
 
