@@ -382,9 +382,31 @@ static void draw_dedge_panel(TPad *pad,
     pad->SetRightMargin(0.05);
     pad->SetBottomMargin(0.12);
     pad->SetTopMargin(0.12);
+    pad->SetGrid(1, 1);
 
     const std::string ratio_name = ratio_name_for_metric(metric);
     const std::vector<GroupStyle> styles = make_group_styles(ratio_name);
+
+    // Always draw a frame so axes exist even if no points
+    TH1F *frame = (TH1F*)pad->DrawFrame(x_min, 0.0, x_max, 2.0);
+    frame->SetTitle("");
+    frame->GetXaxis()->SetTitle("d_edge (deg)");
+    frame->GetYaxis()->SetTitle("xs/BH");
+    frame->GetXaxis()->SetNdivisions(505);
+    frame->GetXaxis()->CenterTitle();
+    frame->GetYaxis()->CenterTitle();
+
+    TLatex tl;
+    tl.SetNDC(kTRUE);
+    tl.SetTextSize(0.030);
+    tl.DrawLatex(0.14, 0.93, Form("%s, %s   (%s)", label.c_str(), helicity.c_str(), ratio_name.c_str()));
+
+    TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
+    l->SetLineStyle(2);
+    l->SetLineColor(kGray+2);
+    l->SetLineWidth(2);
+    l->Draw("same");
+    l->SetBit(kCanDelete);
 
     std::vector<TGraphErrors*> graphs(styles.size(), (TGraphErrors*)nullptr);
     std::vector<int> n_in(styles.size(), 0);
@@ -397,7 +419,7 @@ static void draw_dedge_panel(TPad *pad,
         graphs[si]->SetLineColor(styles[si].marker_color);
         graphs[si]->SetLineWidth(1);
         graphs[si]->SetMarkerSize(0.85);
-    }
+    } //endfor
 
     for (size_t i = 0; i < pts.size(); ++i) {
         const double r = ratio_for_metric(pts[i], metric);
@@ -411,68 +433,43 @@ static void draw_dedge_panel(TPad *pad,
         n_in[(size_t)si] += 1;
     } //endfor
 
-    int first_nonempty = -1;
+    bool any = false;
     for (size_t si = 0; si < graphs.size(); ++si) {
         if (graphs[si] && graphs[si]->GetN() > 0) {
-            first_nonempty = (int)si;
-            break;
+            graphs[si]->Draw("PE1 SAME");
+            graphs[si]->SetBit(kCanDelete);
+            any = true;
+        } else {
+            delete graphs[si];
+            graphs[si] = nullptr;
         }
-    }
+    } //endfor
 
-    if (first_nonempty >= 0) {
-        graphs[(size_t)first_nonempty]->Draw("AP");
-        graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle("d_edge (deg)");
-        graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
-        graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
-        graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 2.0);
-
-        TLatex tl;
-        tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.030);
-        tl.DrawLatex(0.14, 0.93, Form("%s, %s   (%s)", label.c_str(), helicity.c_str(), ratio_name.c_str()));
-
-        TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
-        l->SetLineStyle(2);
-        l->SetLineColor(kGray+2);
-        l->SetLineWidth(2);
-        l->Draw("same");
-
-        for (size_t si = 0; si < graphs.size(); ++si) {
-            if ((int)si == first_nonempty) continue;
-            if (graphs[si] && graphs[si]->GetN() > 0) {
-                graphs[si]->Draw("P same");
-            }
-        } //endfor
-
-        // Legend (this is the "color coding label" you wanted)
-        TLegend *leg = new TLegend(0.16, 0.62, 0.74, 0.88);
-        leg->SetBorderSize(1);
-        leg->SetFillStyle(1001);
-        leg->SetFillColor(kWhite);
-        leg->SetTextSize(0.024);
-
-        for (size_t si = 0; si < graphs.size(); ++si) {
-            if (graphs[si] && graphs[si]->GetN() > 0) {
-                leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
-            }
-        } //endfor
-        leg->Draw();
-
+    if (!any) {
+        TLatex t0;
+        t0.SetNDC(kTRUE);
+        t0.SetTextSize(0.050);
+        t0.DrawLatex(0.18, 0.70, "No points");
         pad->Update();
-
-        delete leg;
-        delete l;
-    } else {
-        TLatex tl;
-        tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.055);
-        tl.DrawLatex(0.18, 0.70, "No points");
-        pad->Update();
+        return;
     } //endif
 
+    // Legend (this is the "color coding label")
+    TLegend *leg = new TLegend(0.16, 0.62, 0.74, 0.88);
+    leg->SetBorderSize(1);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetTextSize(0.024);
+
     for (size_t si = 0; si < graphs.size(); ++si) {
-        delete graphs[si];
-    }
+        if (graphs[si] && graphs[si]->GetN() > 0) {
+            leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
+        }
+    } //endfor
+    leg->Draw();
+    leg->SetBit(kCanDelete);
+
+    pad->Update();
 }
 
 static void make_normalization_plot_dedge_1x2(const std::string &out_dir,
@@ -571,7 +568,7 @@ static void draw_all_groups_dep_pad(TPad *p,
         graphs[si]->SetLineColor(styles[si].marker_color);
         graphs[si]->SetLineWidth(1);
         graphs[si]->SetMarkerSize(0.85);
-    }
+    } //endfor
 
     for (size_t i = 0; i < pts.size(); ++i) {
         const double r = ratio_for_metric(pts[i], metric);
@@ -585,27 +582,25 @@ static void draw_all_groups_dep_pad(TPad *p,
         n_in[(size_t)si] += 1;
     } //endfor
 
-    int first_nonempty = -1;
+    bool any = false;
     for (size_t si = 0; si < graphs.size(); ++si) {
         if (graphs[si] && graphs[si]->GetN() > 0) {
-            first_nonempty = (int)si;
-            break;
+            graphs[si]->Draw("PE1 SAME");
+            graphs[si]->SetBit(kCanDelete);
+            any = true;
+        } else {
+            delete graphs[si];
+            graphs[si] = nullptr;
         }
-    }
+    } //endfor
 
-    if (first_nonempty >= 0) {
-        graphs[(size_t)first_nonempty]->Draw("PE1 SAME");
-        for (size_t si = 0; si < graphs.size(); ++si) {
-            if ((int)si == first_nonempty) continue;
-            if (graphs[si] && graphs[si]->GetN() > 0) {
-                graphs[si]->Draw("PE1 SAME");
-            }
-        } //endfor
-    } else {
+    if (!any) {
         TLatex t0;
         t0.SetNDC(kTRUE);
         t0.SetTextSize(0.050);
         t0.DrawLatex(0.18, 0.70, "No points");
+        p->Update();
+        return;
     } //endif
 
     // Legend (explicitly included; this was missing on your xB/Q2/-t plots)
@@ -621,13 +616,9 @@ static void draw_all_groups_dep_pad(TPad *p,
         }
     } //endfor
     leg->Draw();
+    leg->SetBit(kCanDelete);
 
     p->Update();
-
-    delete leg;
-    for (size_t si = 0; si < graphs.size(); ++si) {
-        delete graphs[si];
-    }
 }
 
 static void draw_clean_fit_dep_pad(TPad *p,
@@ -637,9 +628,7 @@ static void draw_clean_fit_dep_pad(TPad *p,
                                   const std::string &x_title,
                                   double x_min,
                                   double x_max,
-                                  BhGroupMetric metric,
-                                  std::unique_ptr<TF1> &keep_fit,
-                                  std::unique_ptr<TLegend> &keep_legfit) {
+                                  BhGroupMetric metric) {
     p->SetLeftMargin(0.13);
     p->SetRightMargin(0.05);
     p->SetBottomMargin(0.14);
@@ -662,7 +651,7 @@ static void draw_clean_fit_dep_pad(TPad *p,
     tl.DrawLatex(0.12, 0.93, Form("%s, %s   (%s)", label.c_str(), helicity.c_str(), ratio_name.c_str()));
 
     // Clean points: only in [0.95, 1.05] for this metric
-    std::unique_ptr<TGraphErrors> gr_clean = std::make_unique<TGraphErrors>();
+    TGraphErrors *gr_clean = new TGraphErrors();
     gr_clean->SetName(Form("gr_clean_%s", sanitize_for_filename(ratio_name).c_str()));
     gr_clean->SetMarkerStyle(20);
     gr_clean->SetMarkerColor(kBlack);
@@ -682,6 +671,7 @@ static void draw_clean_fit_dep_pad(TPad *p,
     } //endfor
 
     if (gr_clean->GetN() <= 0) {
+        delete gr_clean;
         TLatex t0;
         t0.SetNDC(kTRUE);
         t0.SetTextSize(0.050);
@@ -691,37 +681,40 @@ static void draw_clean_fit_dep_pad(TPad *p,
     } //endif
 
     gr_clean->Draw("PE1 SAME");
+    gr_clean->SetBit(kCanDelete);
 
     if (gr_clean->GetN() >= 2) {
-        keep_fit = std::make_unique<TF1>(Form("f_lin_%s", sanitize_for_filename(ratio_name).c_str()), "pol1", x_min, x_max);
+        TF1 *f_lin = new TF1(Form("f_lin_%s", sanitize_for_filename(ratio_name).c_str()), "pol1", x_min, x_max);
 
         // Fit quietly, do not auto-draw
-        gr_clean->Fit(keep_fit.get(), "Q0");
+        gr_clean->Fit(f_lin, "Q0");
 
-        keep_fit->SetLineColor(kRed+1);
-        keep_fit->SetLineStyle(2);
-        keep_fit->SetLineWidth(2);
+        f_lin->SetLineColor(kRed+1);
+        f_lin->SetLineStyle(2);
+        f_lin->SetLineWidth(2);
 
         // Explicit draw so it appears
-        keep_fit->Draw("SAME");
+        f_lin->Draw("SAME");
+        f_lin->SetBit(kCanDelete);
 
-        const double p0 = keep_fit->GetParameter(0);
-        const double p1 = keep_fit->GetParameter(1);
-        const double e0 = keep_fit->GetParError(0);
-        const double e1 = keep_fit->GetParError(1);
+        const double p0 = f_lin->GetParameter(0);
+        const double p1 = f_lin->GetParameter(1);
+        const double e0 = f_lin->GetParError(0);
+        const double e1 = f_lin->GetParError(1);
 
         // Fit info in a legend box (top-right)
-        keep_legfit = std::make_unique<TLegend>(0.58, 0.72, 0.93, 0.88);
-        keep_legfit->SetBorderSize(1);
-        keep_legfit->SetFillStyle(1001);
-        keep_legfit->SetFillColor(kWhite);
-        keep_legfit->SetTextSize(0.028);
+        TLegend *legfit = new TLegend(0.58, 0.72, 0.93, 0.88);
+        legfit->SetBorderSize(1);
+        legfit->SetFillStyle(1001);
+        legfit->SetFillColor(kWhite);
+        legfit->SetTextSize(0.028);
 
-        keep_legfit->AddEntry((TObject*)0, "Linear fit (pol1)", "");
-        keep_legfit->AddEntry((TObject*)0, Form("p0 = %.4f #pm %.4f", p0, e0), "");
-        keep_legfit->AddEntry((TObject*)0, Form("p1 = %.4f #pm %.4f", p1, e1), "");
+        legfit->AddEntry((TObject*)0, "Linear fit (pol1)", "");
+        legfit->AddEntry((TObject*)0, Form("p0 = %.4f #pm %.4f", p0, e0), "");
+        legfit->AddEntry((TObject*)0, Form("p1 = %.4f #pm %.4f", p1, e1), "");
 
-        keep_legfit->Draw();
+        legfit->Draw();
+        legfit->SetBit(kCanDelete);
     } else {
         TLatex t1;
         t1.SetNDC(kTRUE);
@@ -754,13 +747,6 @@ static void make_dependence_plot_2x2(const std::string &out_dir,
                              1200, 980);
     c->Divide(2, 2, 0.001, 0.001);
 
-    // Keep fits/fit legends alive through SaveAs
-    std::unique_ptr<TF1> f_fit_tr;
-    std::unique_ptr<TLegend> leg_fit_tr;
-
-    std::unique_ptr<TF1> f_fit_br;
-    std::unique_ptr<TLegend> leg_fit_br;
-
     // Top-left: KM15 all
     {
         TPad *p = (TPad*)c->cd(1);
@@ -770,7 +756,7 @@ static void make_dependence_plot_2x2(const std::string &out_dir,
     // Top-right: KM15 clean+fit
     {
         TPad *p = (TPad*)c->cd(2);
-        draw_clean_fit_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::KM15, f_fit_tr, leg_fit_tr);
+        draw_clean_fit_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::KM15);
     }
 
     // Bottom-left: VGG all
@@ -782,7 +768,7 @@ static void make_dependence_plot_2x2(const std::string &out_dir,
     // Bottom-right: VGG clean+fit
     {
         TPad *p = (TPad*)c->cd(4);
-        draw_clean_fit_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::VGG, f_fit_br, leg_fit_br);
+        draw_clean_fit_dep_pad(p, pts, label, helicity, x_title, x_min, x_max, BhGroupMetric::VGG);
     }
 
     const std::string out_png = out_dir + "/norm_xs_over_bh_vs_" + file_tag + "_" + label_tag + "_" + hel_tag + ".png";
