@@ -276,7 +276,7 @@ static void ensure_output_dir_or_throw(const std::string &dir) {
 }
 
 // -----------------------------------------------------------------------------
-// Grouping by BH/KM15 (kept)
+// Grouping by BH/KM15
 // -----------------------------------------------------------------------------
 
 enum class BhKmGroup {
@@ -344,7 +344,7 @@ struct DepPoint {
 
 // -----------------------------------------------------------------------------
 // Legacy 1D plot: xs/BH vs d_edge (log x), grouped by BH/KM15 bins.
-// Change: x-axis starts at 1 deg (not 0.1). Remove 2D plot entirely.
+// x-axis starts at 1 deg; y-axis capped at 2 (per request).
 // -----------------------------------------------------------------------------
 
 static void make_normalization_plot_dedge(const std::string &out_dir,
@@ -360,7 +360,7 @@ static void make_normalization_plot_dedge(const std::string &out_dir,
     const std::string label_tag = sanitize_for_filename(label);
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
-    const double x_min = 1.0; // CHANGED per request
+    const double x_min = 1.0;
     double x_max = x_min * 2.0;
 
     for (size_t i = 0; i < pts.size(); ++i) {
@@ -415,11 +415,11 @@ static void make_normalization_plot_dedge(const std::string &out_dir,
         graphs[(size_t)first_nonempty]->GetXaxis()->SetTitle("d_edge (deg)");
         graphs[(size_t)first_nonempty]->GetYaxis()->SetTitle("xs/BH");
         graphs[(size_t)first_nonempty]->GetXaxis()->SetLimits(x_min, x_max);
-        graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 3.0);
+        graphs[(size_t)first_nonempty]->GetYaxis()->SetRangeUser(0.0, 2.0); // CHANGED
 
         TLatex tl;
         tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.034); // smaller title text
+        tl.SetTextSize(0.034);
         tl.DrawLatex(0.14, 0.93, Form("Normalization study: %s, %s", label.c_str(), helicity.c_str()));
 
         TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
@@ -439,7 +439,7 @@ static void make_normalization_plot_dedge(const std::string &out_dir,
         leg->SetBorderSize(1);
         leg->SetFillStyle(1001);
         leg->SetFillColor(kWhite);
-        leg->SetTextSize(0.026); // slightly smaller legend font
+        leg->SetTextSize(0.026);
 
         for (size_t si = 0; si < graphs.size(); ++si) {
             if (graphs[si] && graphs[si]->GetN() > 0) {
@@ -466,10 +466,10 @@ static void make_normalization_plot_dedge(const std::string &out_dir,
 // -----------------------------------------------------------------------------
 // New dependence plots: 1x2
 //   Left: all groups (same color coding)
-//   Right: only BH/KM15 in [0.95,1.05], plus linear fit (dashed red) + label
+//   Right: only BH/KM15 in [0.95,1.05], plus linear fit (dashed red) + legend
 //
-// IMPORTANT FIX: the fitted TF1 is owned and kept alive until after SaveAs,
-// and it is explicitly drawn with "SAME" after the points/frame are drawn.
+// y-axis capped at 2 (per request).
+// Fit info is now placed in a legend box in the top-right of the right pad.
 // -----------------------------------------------------------------------------
 
 static void make_dependence_plot_1x2(const std::string &out_dir,
@@ -546,7 +546,7 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
         p->SetTopMargin(0.12);
         p->SetGrid(1, 1);
 
-        TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 3.0);
+        TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 2.0); // CHANGED
         frame->SetTitle("");
         frame->GetXaxis()->SetTitle(x_title.c_str());
         frame->GetYaxis()->SetTitle("xs/BH");
@@ -556,7 +556,7 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
 
         TLatex tl;
         tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.034); // smaller title font
+        tl.SetTextSize(0.034);
         tl.DrawLatex(0.12, 0.93, Form("%s, %s", label.c_str(), helicity.c_str()));
 
         int first_nonempty = -1;
@@ -574,14 +574,14 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
                 if (graphs[si] && graphs[si]->GetN() > 0) {
                     graphs[si]->Draw("PE1 SAME");
                 }
-            }
+            } //endfor
         } //endif
 
         TLegend *leg = new TLegend(0.16, 0.66, 0.78, 0.88);
         leg->SetBorderSize(1);
         leg->SetFillStyle(1001);
         leg->SetFillColor(kWhite);
-        leg->SetTextSize(0.026); // slightly smaller legend font
+        leg->SetTextSize(0.026);
 
         for (size_t si = 0; si < graphs.size(); ++si) {
             if (graphs[si] && graphs[si]->GetN() > 0) {
@@ -595,7 +595,8 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
     }
 
     // ---------------- Right pad ----------------
-    TF1 *f_lin = nullptr; // keep alive until after SaveAs
+    TF1 *f_lin = nullptr;         // keep alive until after SaveAs
+    TLegend *leg_fit = nullptr;   // keep alive until after SaveAs
     {
         TPad *p = (TPad*)c->cd(2);
         p->SetLeftMargin(0.13);
@@ -604,7 +605,7 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
         p->SetTopMargin(0.12);
         p->SetGrid(1, 1);
 
-        TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 3.0);
+        TH1F *frame = (TH1F*)p->DrawFrame(x_min, 0.0, x_max, 2.0); // CHANGED
         frame->SetTitle("");
         frame->GetXaxis()->SetTitle(x_title.c_str());
         frame->GetYaxis()->SetTitle("xs/BH");
@@ -614,7 +615,7 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
 
         TLatex tl;
         tl.SetNDC(kTRUE);
-        tl.SetTextSize(0.034); // smaller title font
+        tl.SetTextSize(0.034);
         tl.DrawLatex(0.12, 0.93, Form("%s, %s", label.c_str(), helicity.c_str()));
 
         if (gr_clean->GetN() > 0) {
@@ -636,24 +637,29 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
             gr_clean->Fit(f_lin, "Q0");
 
             f_lin->SetLineColor(kRed+1);
-            f_lin->SetLineStyle(2);   // dashed
+            f_lin->SetLineStyle(2);
             f_lin->SetLineWidth(2);
 
-            // THIS is the critical step that makes the line appear:
+            // Explicit draw so it appears
             f_lin->Draw("SAME");
 
-            // Fit label
+            // Fit info -> legend box in top-right
             const double p0 = f_lin->GetParameter(0);
             const double p1 = f_lin->GetParameter(1);
             const double e0 = f_lin->GetParError(0);
             const double e1 = f_lin->GetParError(1);
 
-            TLatex tf;
-            tf.SetNDC(kTRUE);
-            tf.SetTextSize(0.040);
-            tf.DrawLatex(0.16, 0.84, Form("fit: y = p0 + p1 x"));
-            tf.DrawLatex(0.16, 0.77, Form("p0 = %.4f #pm %.4f", p0, e0));
-            tf.DrawLatex(0.16, 0.70, Form("p1 = %.4f #pm %.4f", p1, e1));
+            leg_fit = new TLegend(0.58, 0.72, 0.93, 0.88);
+            leg_fit->SetBorderSize(1);
+            leg_fit->SetFillStyle(1001);
+            leg_fit->SetFillColor(kWhite);
+            leg_fit->SetTextSize(0.030);
+
+            leg_fit->AddEntry((TObject*)0, "Linear fit (pol1)", "");
+            leg_fit->AddEntry((TObject*)0, Form("p0 = %.4f #pm %.4f", p0, e0), "");
+            leg_fit->AddEntry((TObject*)0, Form("p1 = %.4f #pm %.4f", p1, e1), "");
+
+            leg_fit->Draw();
         } else {
             TLatex t1;
             t1.SetNDC(kTRUE);
@@ -667,10 +673,13 @@ static void make_dependence_plot_1x2(const std::string &out_dir,
 SAVE_AND_CLEANUP:
 
     // Save
-    const std::string out_png = out_dir + "/norm_xs_over_bh_vs_" + file_tag + "_" + label_tag + "_" + hel_tag + ".png";
-    c->SaveAs(out_png.c_str());
+    {
+        const std::string out_png = out_dir + "/norm_xs_over_bh_vs_" + file_tag + "_" + label_tag + "_" + hel_tag + ".png";
+        c->SaveAs(out_png.c_str());
+    }
 
     // Cleanup
+    delete leg_fit;
     delete f_lin;
     delete gr_clean;
 
@@ -924,10 +933,10 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const std::string out_dir = "output/normalization_study";
         ensure_output_dir_or_throw(out_dir);
 
-        // d_edge (log x) legacy plot
+        // d_edge (log x) plot
         make_normalization_plot_dedge(out_dir, label, helicity, plot_pts_dedge);
 
-        // Dependence plots: standardized x ranges per request
+        // Dependence plots: standardized x ranges
         make_dependence_plot_1x2(out_dir, label, helicity,
                                 "xB",
                                 "xb",
@@ -946,7 +955,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                                 0.0, 1.0,
                                 dep_t);
 
-        // Legacy weighted mean summary (unchanged)
+        // Weighted mean summary (unchanged)
         std::cout << "\n";
         std::cout << "------------------------------------------------------------\n";
         std::cout << "[overall_norm] Weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
