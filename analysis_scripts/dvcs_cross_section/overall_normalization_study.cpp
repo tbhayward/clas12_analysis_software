@@ -29,6 +29,7 @@
 #include <TColor.h>
 #include <TROOT.h>
 #include <TPad.h>
+#include <TF1.h>
 
 #include <filesystem>
 
@@ -339,12 +340,24 @@ struct DepPoint {
 static void draw_clean_label(double x_ndc, double y_ndc) {
     TLatex tl;
     tl.SetNDC(kTRUE);
-    tl.SetTextSize(0.040);
-    tl.DrawLatex(x_ndc, y_ndc, "Clean: BH/KM15 in [0.95, 1.05]");
+    tl.SetTextSize(0.034);
+    tl.DrawLatex(x_ndc, y_ndc, "BH/KM15 in [0.95, 1.05]");
+}
+
+static void draw_fit_label(double x_ndc, double y_ndc, double p0, double p1) {
+    TLatex tl;
+    tl.SetNDC(kTRUE);
+    tl.SetTextSize(0.032);
+
+    std::ostringstream oss;
+    oss << "Fit: y = " << std::fixed << std::setprecision(3) << p0
+        << " + " << std::fixed << std::setprecision(3) << p1 << " x";
+    tl.DrawLatex(x_ndc, y_ndc, oss.str().c_str());
 }
 
 // -----------------------------------------------------------------------------
-// Legacy 1D plot (xs/BH vs d_edge) -> now 1x2: (all groups) | (clean only)
+// Legacy 1D plot (xs/BH vs d_edge) -> 1x2: (all groups) | (clean only)
+// (titles: no "all"/"clean", smaller font; legends slightly smaller)
 // -----------------------------------------------------------------------------
 
 static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &out_dir,
@@ -404,8 +417,8 @@ static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &
             gr_clean->SetPoint(n_clean, pts[i].d_edge_deg, pts[i].xs_over_bh);
             gr_clean->SetPointError(n_clean, 0.0, pts[i].xs_over_bh_err);
             n_clean += 1;
-        }
-    }
+        } //endif
+    } //endfor
 
     TCanvas *c = new TCanvas("c_norm_1d_twopanel", "c_norm_1d_twopanel", 1450, 700);
     c->Divide(2, 1, 0.001, 0.001);
@@ -424,8 +437,8 @@ static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &
             if (graphs_all[si] && graphs_all[si]->GetN() > 0) {
                 first_nonempty = (int)si;
                 break;
-            }
-        }
+            } //endif
+        } //endfor
 
         if (first_nonempty >= 0) {
             graphs_all[(size_t)first_nonempty]->Draw("AP");
@@ -436,8 +449,8 @@ static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &
 
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.040);
-            tl.DrawLatex(0.14, 0.93, Form("Normalization study (all): %s, %s", label.c_str(), helicity.c_str()));
+            tl.SetTextSize(0.032);
+            tl.DrawLatex(0.14, 0.93, Form("Normalization study: %s, %s", label.c_str(), helicity.c_str()));
 
             TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
             l->SetLineStyle(2);
@@ -449,27 +462,27 @@ static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &
                 if ((int)si == first_nonempty) continue;
                 if (graphs_all[si] && graphs_all[si]->GetN() > 0) {
                     graphs_all[si]->Draw("P same");
-                }
-            }
+                } //endif
+            } //endfor
 
             TLegend *leg = new TLegend(0.16, 0.66, 0.70, 0.88);
             leg->SetBorderSize(1);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
-            leg->SetTextSize(0.028);
+            leg->SetTextSize(0.025);
 
             for (size_t si = 0; si < graphs_all.size(); ++si) {
                 if (graphs_all[si] && graphs_all[si]->GetN() > 0) {
                     leg->AddEntry(graphs_all[si], styles[si].label.c_str(), "p");
-                }
-            }
+                } //endif
+            } //endfor
             leg->Draw();
         } else {
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.050);
+            tl.SetTextSize(0.040);
             tl.DrawLatex(0.14, 0.50, "No points");
-        }
+        } //endif
     }
 
     // ---------------- Right: clean only ----------------
@@ -490,8 +503,8 @@ static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &
 
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.040);
-            tl.DrawLatex(0.14, 0.93, Form("Normalization study (clean): %s, %s", label.c_str(), helicity.c_str()));
+            tl.SetTextSize(0.032);
+            tl.DrawLatex(0.14, 0.93, Form("Normalization study: %s, %s", label.c_str(), helicity.c_str()));
 
             draw_clean_label(0.16, 0.86);
 
@@ -503,10 +516,10 @@ static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &
         } else {
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.050);
-            tl.DrawLatex(0.14, 0.55, "No clean points");
+            tl.SetTextSize(0.040);
+            tl.DrawLatex(0.14, 0.55, "No points");
             draw_clean_label(0.14, 0.47);
-        }
+        } //endif
     }
 
     const std::string out_png = out_dir + "/norm_1d_xs_over_bh_vs_dedge_" + label_tag + "_" + hel_tag + ".png";
@@ -514,13 +527,18 @@ static void make_normalization_plots_legacy_1d_only_twopanel(const std::string &
 
     for (size_t si = 0; si < graphs_all.size(); ++si) {
         delete graphs_all[si];
-    }
+    } //endfor
     delete gr_clean;
     delete c;
 }
 
 // -----------------------------------------------------------------------------
-// Dependence plot (xs/BH vs xB or Q2 or t_abs) -> now 1x2: (all) | (clean only)
+// Dependence plot (xs/BH vs xB or Q2 or t_abs) -> 1x2: (all) | (clean only)
+// - Titles: remove "all"/"clean", smaller font
+// - Legends: slightly smaller font
+// - Standardized x-axis ranges:
+//     xB: [0, 0.6], Q2: [1, 6], t_abs: [0, 1]
+// - Right panel: linear fit to clean points, dashed red line + function label
 // -----------------------------------------------------------------------------
 
 static void make_dependence_plot_twopanel(const std::string &out_dir,
@@ -556,13 +574,10 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
         graphs_all[si]->SetMarkerColor(styles[si].marker_color);
         graphs_all[si]->SetLineColor(styles[si].marker_color);
         graphs_all[si]->SetLineWidth(1);
-    }
-
-    double x_min = std::numeric_limits<double>::infinity();
-    double x_max = -std::numeric_limits<double>::infinity();
-    bool any_x = false;
+    } //endfor
 
     int n_clean = 0;
+    int n_total_used = 0;
     for (size_t i = 0; i < pts.size(); ++i) {
         if (!std::isfinite(pts[i].x)) continue;
         if (!std::isfinite(pts[i].y) || pts[i].y < 0.0) continue;
@@ -571,34 +586,58 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
         const int si = style_index_for_group(g, styles);
         if (si < 0) continue;
 
+        const double ey_use = (std::isfinite(pts[i].ey) && pts[i].ey >= 0.0 ? pts[i].ey : 0.0);
+
         const int n = n_all[(size_t)si];
         graphs_all[(size_t)si]->SetPoint(n, pts[i].x, pts[i].y);
-        graphs_all[(size_t)si]->SetPointError(n, 0.0, (std::isfinite(pts[i].ey) && pts[i].ey >= 0.0 ? pts[i].ey : 0.0));
+        graphs_all[(size_t)si]->SetPointError(n, 0.0, ey_use);
         n_all[(size_t)si] += 1;
 
         if (g == BhKmGroup::G_95_105) {
             gr_clean->SetPoint(n_clean, pts[i].x, pts[i].y);
-            gr_clean->SetPointError(n_clean, 0.0, (std::isfinite(pts[i].ey) && pts[i].ey >= 0.0 ? pts[i].ey : 0.0));
+            gr_clean->SetPointError(n_clean, 0.0, ey_use);
             n_clean += 1;
-        }
+        } //endif
 
-        if (pts[i].x < x_min) x_min = pts[i].x;
-        if (pts[i].x > x_max) x_max = pts[i].x;
-        any_x = true;
-    }
+        n_total_used += 1;
+    } //endfor
 
-    if (!any_x || !(x_max > x_min)) {
+    if (n_total_used <= 0) {
         std::cerr << "[overall_norm] WARNING: no usable points for dependence plot: " << plot_tag << "\n";
         for (size_t si = 0; si < graphs_all.size(); ++si) {
             delete graphs_all[si];
-        }
+        } //endfor
         delete gr_clean;
         return;
-    }
+    } //endif
 
-    const double dx = x_max - x_min;
-    x_min -= 0.05 * dx;
-    x_max += 0.05 * dx;
+    // Standardized x-ranges
+    double x_min = 0.0;
+    double x_max = 1.0;
+
+    if (plot_tag == "xb") {
+        x_min = 0.0;
+        x_max = 0.6;
+    } else if (plot_tag == "q2") {
+        x_min = 1.0;
+        x_max = 6.0;
+    } else if (plot_tag == "t") {
+        x_min = 0.0;
+        x_max = 1.0;
+    } else {
+        // deterministic fallback (should not happen in your intended usage)
+        double xmin_data = std::numeric_limits<double>::infinity();
+        double xmax_data = -std::numeric_limits<double>::infinity();
+        for (size_t i = 0; i < pts.size(); ++i) {
+            if (!std::isfinite(pts[i].x)) continue;
+            if (pts[i].x < xmin_data) xmin_data = pts[i].x;
+            if (pts[i].x > xmax_data) xmax_data = pts[i].x;
+        } //endfor
+        if (std::isfinite(xmin_data) && std::isfinite(xmax_data) && (xmax_data > xmin_data)) {
+            x_min = xmin_data;
+            x_max = xmax_data;
+        } //endif
+    } //endif
 
     TCanvas *c = new TCanvas(Form("c_dep_%s_twopanel", plot_tag.c_str()),
                              Form("c_dep_%s_twopanel", plot_tag.c_str()),
@@ -618,8 +657,8 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
             if (graphs_all[si] && graphs_all[si]->GetN() > 0) {
                 first_nonempty = (int)si;
                 break;
-            }
-        }
+            } //endif
+        } //endfor
 
         if (first_nonempty >= 0) {
             graphs_all[(size_t)first_nonempty]->Draw("AP");
@@ -630,8 +669,8 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
 
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.040);
-            tl.DrawLatex(0.14, 0.93, Form("Normalization study (all): xs/BH vs %s (%s, %s)",
+            tl.SetTextSize(0.032);
+            tl.DrawLatex(0.14, 0.93, Form("Normalization study: xs/BH vs %s (%s, %s)",
                                           x_title.c_str(), label.c_str(), helicity.c_str()));
 
             TLine *l = new TLine(x_min, 1.0, x_max, 1.0);
@@ -644,30 +683,30 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
                 if ((int)si == first_nonempty) continue;
                 if (graphs_all[si] && graphs_all[si]->GetN() > 0) {
                     graphs_all[si]->Draw("P same");
-                }
-            }
+                } //endif
+            } //endfor
 
             TLegend *leg = new TLegend(0.16, 0.66, 0.70, 0.88);
             leg->SetBorderSize(1);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
-            leg->SetTextSize(0.028);
+            leg->SetTextSize(0.025);
 
             for (size_t si = 0; si < graphs_all.size(); ++si) {
                 if (graphs_all[si] && graphs_all[si]->GetN() > 0) {
                     leg->AddEntry(graphs_all[si], styles[si].label.c_str(), "p");
-                }
-            }
+                } //endif
+            } //endfor
             leg->Draw();
         } else {
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.050);
+            tl.SetTextSize(0.040);
             tl.DrawLatex(0.14, 0.50, "No points");
-        }
+        } //endif
     }
 
-    // ---------------- Right: clean only ----------------
+    // ---------------- Right: clean only + linear fit ----------------
     {
         TPad *p = (TPad*)c->cd(2);
         p->SetLeftMargin(0.14);
@@ -684,8 +723,8 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
 
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.040);
-            tl.DrawLatex(0.14, 0.93, Form("Normalization study (clean): xs/BH vs %s (%s, %s)",
+            tl.SetTextSize(0.032);
+            tl.DrawLatex(0.14, 0.93, Form("Normalization study: xs/BH vs %s (%s, %s)",
                                           x_title.c_str(), label.c_str(), helicity.c_str()));
 
             draw_clean_label(0.16, 0.86);
@@ -695,13 +734,30 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
             l->SetLineColor(kGray+2);
             l->SetLineWidth(2);
             l->Draw("same");
+
+            // Linear fit: y = p0 + p1*x, drawn as dashed red line
+            TF1 f_lin(Form("f_lin_%s", plot_tag.c_str()), "[0] + [1]*x", x_min, x_max);
+            f_lin.SetLineColor(kRed+1);
+            f_lin.SetLineStyle(2);
+            f_lin.SetLineWidth(2);
+
+            // Quiet fit, use y-errors as weights automatically via TGraphErrors
+            // "Q" quiet, "N" do not store/draw automatically
+            gr_clean->Fit(&f_lin, "QN");
+
+            f_lin.Draw("SAME");
+
+            const double p0 = f_lin.GetParameter(0);
+            const double p1 = f_lin.GetParameter(1);
+            draw_fit_label(0.16, 0.80, p0, p1);
+
         } else {
             TLatex tl;
             tl.SetNDC(kTRUE);
-            tl.SetTextSize(0.050);
-            tl.DrawLatex(0.14, 0.55, "No clean points");
+            tl.SetTextSize(0.040);
+            tl.DrawLatex(0.14, 0.55, "No points");
             draw_clean_label(0.14, 0.47);
-        }
+        } //endif
     }
 
     const std::string out_png =
@@ -710,7 +766,7 @@ static void make_dependence_plot_twopanel(const std::string &out_dir,
 
     for (size_t si = 0; si < graphs_all.size(); ++si) {
         delete graphs_all[si];
-    }
+    } //endfor
     delete gr_clean;
     delete c;
 }
@@ -798,12 +854,12 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
             if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
                 continue;
-            }
+            } //endif
 
             TripleCell xs = parse_tuple3(fields[c_xs]);
             if (!(xs.value > 0.0) || !std::isfinite(xs.value)) {
                 continue;
-            }
+            } //endif
 
             const double dist = min_dist_to_0_or_360(phi);
             std::map<std::string, BestPhiRow>::iterator it = best.find(key_legacy);
@@ -818,13 +874,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 br.xs_stat = xs.stat;
                 br.csv_row_index = r;
                 best[key_legacy] = br;
-            }
-        }
+            } //endif
+        } //endfor
 
         if (best.empty()) {
             std::cerr << "[overall_norm] WARNING: no bins found with positive cross section values.\n";
             return true;
-        }
+        } //endif
 
         std::cout << "[overall_norm] Unique kinematic bins found (legacy best-phi): " << best.size()
                   << " (from " << n_rows << " CSV data rows)\n\n";
@@ -880,14 +936,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 xs_over_bh = br.xs / bh;
                 if (std::isfinite(br.xs_stat) && br.xs_stat >= 0.0) {
                     xs_over_bh_err = br.xs_stat / bh;
-                }
-            }
+                } //endif
+            } //endif
             if (finite_pos(vgg)) {
                 bh_over_vgg = bh / vgg;
-            }
+            } //endif
             if (finite_pos(km)) {
                 bh_over_km = bh / km;
-            }
+            } //endif
 
             std::cout
                 << std::setw(8)  << std::fixed << std::setprecision(3) << xb
@@ -910,7 +966,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 p.xs_over_bh_err  = xs_over_bh_err;
                 p.bh_over_km15    = bh_over_km;
                 plot_pts.push_back(p);
-            }
+            } //endif
 
             if (std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(xs_over_bh_err) && xs_over_bh_err >= 0.0 &&
@@ -923,7 +979,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     d.ey = xs_over_bh_err;
                     d.bh_over_km15 = bh_over_km;
                     dep_xb.push_back(d);
-                }
+                } //endif
 
                 if (std::isfinite(q2)) {
                     DepPoint d;
@@ -932,7 +988,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     d.ey = xs_over_bh_err;
                     d.bh_over_km15 = bh_over_km;
                     dep_q2.push_back(d);
-                }
+                } //endif
 
                 if (std::isfinite(tpos)) {
                     DepPoint d;
@@ -941,8 +997,8 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     d.ey = xs_over_bh_err;
                     d.bh_over_km15 = bh_over_km;
                     dep_t.push_back(d);
-                }
-            }
+                } //endif
+            } //endif
 
             if (std::isfinite(bh_over_km) && bh_over_km >= 0.95 && bh_over_km <= 1.05) {
                 n_in_95_105_total += 1;
@@ -954,9 +1010,9 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     sumw  += w;
                     sumwx += w * xs_over_bh;
                     n_weighted_used += 1;
-                }
-            }
-        }
+                } //endif
+            } //endif
+        } //endfor best bins
 
         const std::string out_dir = "output/normalization_study";
         ensure_output_dir_or_throw(out_dir);
@@ -980,7 +1036,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
             std::cout << "[overall_norm] Weighted stat unc       : " << std::fixed << std::setprecision(6) << err  << "\n";
         } else {
             std::cout << "[overall_norm] Weighted mean xs/BH     : N/A (no usable uncertainties)\n";
-        }
+        } //endif
         std::cout << "------------------------------------------------------------\n";
 
         std::cout << "\n";
@@ -991,5 +1047,5 @@ bool print_bh_normalization_study(const std::string &csv_path,
     } catch (const std::exception &e) {
         std::cerr << "[overall_norm] FATAL: " << e.what() << "\n";
         return false;
-    }
+    } //endtry
 }
