@@ -347,7 +347,7 @@ static void make_normalization_plots_legacy_1d_only(const std::string &out_dir,
     const std::string label_tag = sanitize_for_filename(label);
     const std::string hel_tag   = sanitize_for_filename(helicity);
 
-    // USER REQUEST: x-axis (d_edge) should start at 1 degree (instead of 0.1)
+    // x-axis (d_edge) starts at 1 degree
     const double x_min = 1.0;
     double x_max = x_min * 10.0;
     for (size_t i = 0; i < pts.size(); ++i) {
@@ -611,7 +611,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const int c_tmin  = require_col(header, "t_abs_min");
         const int c_tmax  = require_col(header, "t_abs_max");
 
-        // NOTE: Use per-period center columns as requested
+        // Use per-period center columns
         const std::string col_xbavg  = "xBavg, " + label;
         const std::string col_q2avg  = "Q2avg, " + label;
         const std::string col_tavg   = "t_abs_avg, " + label;
@@ -658,7 +658,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
             const double xb_c   = std::atof(trim(unquote(fields[c_xbavg])).c_str());
             const double q2_c   = std::atof(trim(unquote(fields[c_q2avg])).c_str());
-            const double t_c    = std::atof(trim(unquote(fields[c_tavg])).c_str());
+            const double t_c    = std::atof(trim(unquote(fields[c_tavg])).c_str()); // already positive t_abs
             const double phi    = std::atof(trim(unquote(fields[c_phiavg])).c_str());
 
             if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
@@ -697,7 +697,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
-            << std::setw(12) << "-t"
+            << std::setw(12) << "t_abs"
             << std::setw(10) << "d_edge"
             << std::setw(14) << "xs"
             << std::setw(14) << "xs/BH"
@@ -717,7 +717,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
         dep_q2.reserve(best.size());
         dep_t.reserve(best.size());
 
-        // Weighted mean accumulator for legacy xs/BH in BH/KM15 in [0.95,1.05]
         double sumw = 0.0;
         double sumwx = 0.0;
         int n_weighted_used = 0;
@@ -730,7 +729,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
             const double xb   = br.xb_c;
             const double q2   = br.q2_c;
-            const double tpos = br.t_c;
+            const double tpos = br.t_c;       // t_abs already positive
             const double phi  = br.phi_deg;
 
             const double bh  = vgg_bh_only(xb, q2, tpos, phi, Ebeam);
@@ -755,12 +754,10 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 bh_over_km = bh / km;
             }
 
-            const double tneg = -tpos;
-
             std::cout
                 << std::setw(8)  << std::fixed << std::setprecision(3) << xb
                 << std::setw(10) << std::fixed << std::setprecision(2) << q2
-                << std::setw(12) << std::fixed << std::setprecision(3) << tneg
+                << std::setw(12) << std::fixed << std::setprecision(3) << tpos
                 << std::setw(10) << std::fixed << std::setprecision(1) << br.dist_to_edge
                 << std::setw(14) << std::scientific << std::setprecision(3) << br.xs
                 << std::setw(14) << std::fixed << std::setprecision(3) << xs_over_bh
@@ -768,7 +765,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
 
-            // Legacy plot-point selection (unchanged): dist_to_edge > 0.0
             if (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0 &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0) {
@@ -781,7 +777,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 plot_pts.push_back(p);
             }
 
-            // New dependence points: xs/BH as a function of xB, Q2, and -t
             if (std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(xs_over_bh_err) && xs_over_bh_err >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0) {
@@ -804,9 +799,9 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     dep_q2.push_back(d);
                 }
 
-                if (std::isfinite(tneg)) {
+                if (std::isfinite(tpos)) {
                     DepPoint d;
-                    d.x = tneg;
+                    d.x = tpos; // DO NOT NEGATE (t_abs already positive)
                     d.y = xs_over_bh;
                     d.ey = xs_over_bh_err;
                     d.bh_over_km15 = bh_over_km;
@@ -828,19 +823,15 @@ bool print_bh_normalization_study(const std::string &csv_path,
             }
         }
 
-        // Output directory
         const std::string out_dir = "output/normalization_study";
         ensure_output_dir_or_throw(out_dir);
 
-        // Legacy 1D plot (xs/BH vs d_edge), with x-axis starting at 1 deg, and 2D plot removed
         make_normalization_plots_legacy_1d_only(out_dir, label, helicity, plot_pts);
 
-        // New dependence plots (xs/BH vs xB, Q2, -t), color-coded by BH/KM15 group
         make_dependence_plot(out_dir, label, helicity, "x_{B}", "xb", dep_xb);
         make_dependence_plot(out_dir, label, helicity, "Q^{2} (GeV^{2})", "q2", dep_q2);
-        make_dependence_plot(out_dir, label, helicity, "-t (GeV^{2})", "t", dep_t);
+        make_dependence_plot(out_dir, label, helicity, "|t| (GeV^{2})", "t", dep_t);
 
-        // Weighted mean summary (unchanged)
         std::cout << "\n";
         std::cout << "------------------------------------------------------------\n";
         std::cout << "[overall_norm] Weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
