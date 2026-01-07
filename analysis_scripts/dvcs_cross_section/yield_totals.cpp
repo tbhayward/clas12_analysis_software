@@ -26,8 +26,9 @@
 // Cuts:
 //   - Global kinematic cuts via passes_global_cuts(...) from
 //     global_cuts.h (same as exclusivity_cuts.cpp).
-//     IMPORTANT: new P2 global cuts may require kinematics (x, Q2)
-//     when certain global-cut options are enabled (e.g. dvcsgen ycol).
+//     IMPORTANT: P2 global cuts can enable dvcsgen "ycol", which
+//     requires kinematics; thus we call the kinematics-aware
+//     passes_global_cuts overload.
 //   - 3 sigma exclusivity cuts using combined_cuts.json entries
 //     "data" for data and "mc" for MC, using topology keys
 //     "DVCS_<PeriodDir>_<TopoDir>".
@@ -100,6 +101,49 @@ static std::string canonical_period_dir(const std::string& L) {
 
 static inline std::string period_dir_for_label(const std::string& L) {
     return canonical_period_dir(L);
+}
+
+static inline double ebeam_for_label(const std::string& label) {
+    const std::string k = to_lower_nospace(label);
+
+    // Explicit, deterministic mapping used throughout this analysis:
+    // - RGA 10.6 GeV: Sp18, Fa18
+    // - RGA 10.2 GeV: Sp19
+    if (k == "fa18inb" || k == "fa18out" || k == "sp18inb" || k == "sp18out") return 10.6;
+    if (k == "sp19inb") return 10.2;
+
+    fatal("ebeam_for_label: unsupported/unknown period label '" + label + "'");
+    return 0.0;
+}
+
+static inline double compute_y_from_xQ2(double x, double Q2, double Ebeam) {
+    // y = (p·q)/(p·k) = nu/E, with nu = Q2/(2 M x)
+    // -> y = Q2/(2 M x E)
+    static const double M = 0.9382720813;
+    if (!(std::isfinite(x) && std::isfinite(Q2) && std::isfinite(Ebeam))) {
+        fatal("compute_y_from_xQ2: non-finite x/Q2/Ebeam.");
+    }
+    if (x <= 0.0 || Q2 <= 0.0 || Ebeam <= 0.0) {
+        fatal("compute_y_from_xQ2: non-positive x/Q2/Ebeam.");
+    }
+    return Q2 / (2.0 * M * x * Ebeam);
+}
+
+static inline double compute_W_from_xQ2(double x, double Q2) {
+    // W^2 = M^2 + Q^2(1/x - 1)
+    static const double M = 0.9382720813;
+    if (!(std::isfinite(x) && std::isfinite(Q2))) {
+        fatal("compute_W_from_xQ2: non-finite x/Q2.");
+    }
+    if (x <= 0.0 || Q2 <= 0.0) {
+        fatal("compute_W_from_xQ2: non-positive x/Q2.");
+    }
+    const double W2 = M * M + Q2 * (1.0 / x - 1.0);
+    if (!(std::isfinite(W2)) || W2 <= 0.0) {
+        fatal("compute_W_from_xQ2: invalid W2 computed (x=" + std::to_string(x) +
+              ", Q2=" + std::to_string(Q2) + ", W2=" + std::to_string(W2) + ").");
+    }
+    return std::sqrt(W2);
 }
 
 // ---------------- topology ----------------
@@ -554,7 +598,8 @@ struct Totals {
 static Totals compute_totals_internal(
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
-    const TopoCutMap& sigmaCuts)
+    const TopoCutMap& sigmaCuts,
+    const GlobalCutConfig& globalCuts)
 {
     Totals totals;
 
@@ -578,6 +623,8 @@ static Totals compute_totals_internal(
             continue;
         }
 
+        const double Ebeam = ebeam_for_label(label);
+
         // ---------------- DATA ----------------
         {
             auto itT = dvcsDataTrees.find(tree_key);
@@ -591,7 +638,7 @@ static Totals compute_totals_internal(
                 topo.enable_and_bind(t);
 
                 BranchBinding b_runnum, b_t1, b_open, b_pTmiss;
-                BranchBinding b_x, b_Q2;
+                BranchBinding b_x, b_Q2, b_phi2;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
 
                 bind_one_exact_enable(t, "runnum",            b_runnum);
@@ -599,9 +646,10 @@ static Totals compute_totals_internal(
                 bind_one_exact_enable(t, "open_angle_ep2",    b_open);
                 bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
 
-                // Kinematics required by new P2 global cuts (e.g. dvcsgen ycol)
+                // Kinematics for P2 global cuts (e.g. dvcsgen ycol)
                 bind_one_exact_enable(t, "x",                 b_x);
                 bind_one_exact_enable(t, "Q2",                b_Q2);
+                bind_one_exact_enable(t, "phi2",              b_phi2);
 
                 bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
                 bind_one_exact_enable(t, "Mx2",               b_Mx2);
@@ -617,15 +665,25 @@ static Totals compute_totals_internal(
                     if (t->GetEntry(i) <= 0) continue;
 
                     const double t1       = bb_as_double(b_t1);
-                    const double open_rad = bb_as_double(b_open);
+                    const double open_deg = bb_as_double(b_open);
                     const double pT       = bb_as_double(b_pTmiss);
 
-                    const double x  = bb_as_double(b_x);
-                    const double Q2 = bb_as_double(b_Q2);
+                    const double x   = bb_as_double(b_x);
+                    const double Q2  = bb_as_double(b_Q2);
+                    const double phi = bb_as_double(b_phi2);
 
-                    // IMPORTANT: call the kinematics-aware global cuts entrypoint
-                    // so global cuts that require kinematics (e.g. ycol) can be evaluated.
-                    if (!passes_global_cuts(t1, open_rad, pT, x, Q2)) continue;
+                    const double y = compute_y_from_xQ2(x, Q2, Ebeam);
+                    const double W = compute_W_from_xQ2(x, Q2);
+
+                    // Use the kinematics-aware overload.
+                    // The last two doubles are reserved for any additional kinematic
+                    // variables used by global_cuts.h; yield_totals does not define
+                    // further cuts beyond those already provided, so we pass 0.0, 0.0.
+                    if (!passes_global_cuts(t1, open_deg, pT,
+                                            x, Q2, y, W, phi, 0.0, 0.0,
+                                            globalCuts)) {
+                        continue;
+                    }
 
                     const int topo_idx = topo.index();
                     if (topo_idx < 0 || topo_idx > 2) continue;
@@ -682,16 +740,17 @@ static Totals compute_totals_internal(
                 topo.enable_and_bind(t);
 
                 BranchBinding b_t1, b_open, b_pTmiss;
-                BranchBinding b_x, b_Q2;
+                BranchBinding b_x, b_Q2, b_phi2;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
 
                 bind_one_exact_enable(t, "t1",                b_t1);
                 bind_one_exact_enable(t, "open_angle_ep2",    b_open);
                 bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
 
-                // Kinematics required by new P2 global cuts (e.g. dvcsgen ycol)
+                // Kinematics for P2 global cuts (e.g. dvcsgen ycol)
                 bind_one_exact_enable(t, "x",                 b_x);
                 bind_one_exact_enable(t, "Q2",                b_Q2);
+                bind_one_exact_enable(t, "phi2",              b_phi2);
 
                 bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
                 bind_one_exact_enable(t, "Mx2",               b_Mx2);
@@ -707,15 +766,21 @@ static Totals compute_totals_internal(
                     if (t->GetEntry(i) <= 0) continue;
 
                     const double t1       = bb_as_double(b_t1);
-                    const double open_rad = bb_as_double(b_open);
+                    const double open_deg = bb_as_double(b_open);
                     const double pT       = bb_as_double(b_pTmiss);
 
-                    const double x  = bb_as_double(b_x);
-                    const double Q2 = bb_as_double(b_Q2);
+                    const double x   = bb_as_double(b_x);
+                    const double Q2  = bb_as_double(b_Q2);
+                    const double phi = bb_as_double(b_phi2);
 
-                    // IMPORTANT: call the kinematics-aware global cuts entrypoint
-                    // so global cuts that require kinematics (e.g. ycol) can be evaluated.
-                    if (!passes_global_cuts(t1, open_rad, pT, x, Q2)) continue;
+                    const double y = compute_y_from_xQ2(x, Q2, Ebeam);
+                    const double W = compute_W_from_xQ2(x, Q2);
+
+                    if (!passes_global_cuts(t1, open_deg, pT,
+                                            x, Q2, y, W, phi, 0.0, 0.0,
+                                            globalCuts)) {
+                        continue;
+                    }
 
                     const int topo_idx = topo.index();
                     if (topo_idx < 0 || topo_idx > 2) continue;
@@ -832,11 +897,18 @@ static void write_totals_to_stream(
 } // end anon namespace
 
 // ---------------- public API ----------------
+//
+// NOTE:
+// This implementation assumes the caller already loaded a GlobalCutConfig
+// (P2 global cuts) and passes it into compute_yield_totals. If your current
+// yield_totals.h signature does not yet include this argument, update the
+// declaration and the call site in main accordingly.
 
 bool compute_yield_totals(
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const std::string& combined_cuts_json,
+    const GlobalCutConfig& globalCuts,
     const std::string& output_txt)
 {
     try {
@@ -847,7 +919,7 @@ bool compute_yield_totals(
             return false;
         }
 
-        Totals totals = compute_totals_internal(dvcsDataTrees, dvcsRecMcTrees, sigmaCuts);
+        Totals totals = compute_totals_internal(dvcsDataTrees, dvcsRecMcTrees, sigmaCuts, globalCuts);
 
         {
             std::ofstream ofs(output_txt);
