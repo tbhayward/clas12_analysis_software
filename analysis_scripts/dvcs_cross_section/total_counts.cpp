@@ -81,16 +81,15 @@ static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
 }
 
-// ---------------- Enforce new global cuts signature ----------------
-// Require passes_global_cuts(t1, open_angle_deg, pTmiss, ycol) to exist.
+// ---------------- Ensure global cuts API exists ----------------
 template <typename, typename = void>
-struct has_passes_global_cuts_4 : std::false_type {};
+struct has_passes_global_cuts_3 : std::false_type {};
 
 template <typename T>
-struct has_passes_global_cuts_4<T, std::void_t<decltype(passes_global_cuts(0.0, 0.0, 0.0, true))>> : std::true_type {};
+struct has_passes_global_cuts_3<T, std::void_t<decltype(passes_global_cuts(0.0, 0.0, 0.0))>> : std::true_type {};
 
-static_assert(has_passes_global_cuts_4<void>::value,
-              "global_cuts.h must provide passes_global_cuts(t1, open_angle_deg, pTmiss, ycol).");
+static_assert(has_passes_global_cuts_3<void>::value,
+              "global_cuts.h must provide passes_global_cuts(t1, open_angle_deg, pTmiss [, cfg]).");
 
 // ---------------- CSV helper ----------------
 struct CsvDoc {
@@ -207,12 +206,11 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_CD_FD"
         const json& block = it.value();
 
-        // We are counting DATA here; use the "data" object if present.
         if (!block.contains("data") || !block["data"].is_object()) continue;
 
         VarCutMap m;
         for (auto vit = block["data"].begin(); vit != block["data"].end(); ++vit) {
-            const std::string vname = vit.key(); // Emiss2, Mx2, ...
+            const std::string vname = vit.key();
             const json& vs = vit.value();
             SigmaCut sc;
             if (vs.contains("mean") && vs["mean"].is_number()) sc.mean = vs["mean"].get<double>();
@@ -223,7 +221,9 @@ static TopoCutMap load_sigma_cuts_data(const std::string& path) {
         }
         if (!m.empty()) out[key] = std::move(m);
     }
-    std::cout << "[total_counts] Loaded sigma cuts for " << out.size() << " topology keys from " << path << "\n";
+
+    std::cout << "[total_counts] Loaded sigma cuts for " << out.size()
+              << " topology keys from " << path << "\n";
     return out;
 }
 
@@ -360,7 +360,6 @@ static void canonicalize_output_dirs(const std::string& total_counts_root) {
             fs::path to = dst / p.path().filename();
             fs::rename(p.path(), to, ec);
             if (ec) {
-                // fallback copy+remove if rename across filesystems
                 ec.clear();
                 fs::copy(p.path(), to, fs::copy_options::overwrite_existing | fs::copy_options::recursive, ec);
                 fs::remove_all(p.path(), ec);
@@ -374,7 +373,6 @@ static void canonicalize_output_dirs(const std::string& total_counts_root) {
     for (auto& p : fs::directory_iterator(total_counts_root)) {
         if (!p.is_directory()) continue;
         const std::string name = p.path().filename().string();
-        // recognize either a period-like or group-like name and rewrite
         std::string canon = canonical_period_dir(name);
         if (is_group_label(name)) canon = canonical_group_dir(name);
         if (canon != name) {
@@ -496,7 +494,6 @@ static void bind_one_exact_enable(TTree* t, const std::string& bname, BranchBind
         t->SetBranchAddress(bname.c_str(), &bb.as_u8);
     }
     else if (tn=="Bool_t"||tn=="bool") {
-        // ROOT Bool_t is typically stored as an unsigned char.
         bb.kind=BranchBinding::Kind::kU8;
         t->SetBranchAddress(bname.c_str(), &bb.as_u8);
     }
@@ -588,7 +585,6 @@ static void draw_group_canvases(
 {
     namespace fs=std::filesystem;
 
-    // Clean up any alias dirs once per process (cheap no-op if already clean)
     static std::once_flag canon_once;
     std::call_once(canon_once, [&](){
         canonicalize_output_dirs((fs::path(out_root_dir)/"total_counts_plots").string());
@@ -618,8 +614,7 @@ static void draw_group_canvases(
     std::set<std::pair<double,double>> xb_set;
     for (int r=0;r<csv.nrows();++r) xb_set.emplace(csv.as_double(r,cols.c_xb_min), csv.as_double(r,cols.c_xb_max));
 
-    // visual tuning (smaller titles, restore legend box, keep left padding)
-    const double head_size = 0.14;   // was 0.28
+    const double head_size = 0.14;
     const double label_sz  = 0.050;
     const double title_sz  = 0.045;
     const double leg_txt   = 0.050;
@@ -628,7 +623,6 @@ static void draw_group_canvases(
     const bool force_counts_only = should_skip_csv_for_label(display_label);
     const std::vector<std::string> members = is_group ? group_members(display_label) : std::vector<std::string>{};
 
-    // one-time summary of combined totals if applicable
     static std::once_flag once_flag;
     std::call_once(once_flag, [&](){
         if (is_group && counts_opt) {
@@ -722,7 +716,6 @@ static void draw_group_canvases(
                             yp = (double)rc_it->second.pos;
                             yn = (double)rc_it->second.neg;
                         } else if (is_group && !members.empty()) {
-                            // Fallback: sum CSV across the group's member periods for this row
                             double sp=0.0, sn=0.0;
                             sum_csv_for_group_row(csv, r, topo_str_label, members, sp, sn);
                             yp = sp; yn = sn;
@@ -759,7 +752,6 @@ static void draw_group_canvases(
         std::string cname="c_counts_"+period_dir_for_label(display_label)+"_"+topo_dir_label+"_xB_"+std::to_string((int)std::round(xb.first*1000.0));
         TCanvas* c=new TCanvas(cname.c_str(), "", W, H);
 
-        // smaller top bar
         TPad* pTop = new TPad("pTop","pTop",0.0,0.86,1.0,1.0);
         TPad* pGrid= new TPad("pGrid","pGrid",0.0,0.00,1.0,0.86);
         pTop->SetFillStyle(0); pTop->Draw();
@@ -776,9 +768,9 @@ static void draw_group_canvases(
         for (int rr=0; rr<nrows; ++rr) for (int cc=0; cc<ncols; ++cc) {
             pGrid->cd(rr*ncols+cc+1);
             gPad->SetGrid(1,1);
-            gPad->SetTopMargin(0.24);     // a touch more room to prevent clipping at top
+            gPad->SetTopMargin(0.24);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.125);   // requested left padding
+            gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.07);
             gPad->SetTickx(1);
             gPad->SetTicky(1);
@@ -793,7 +785,7 @@ static void draw_group_canvases(
             frame->GetYaxis()->SetTitleSize(title_sz);
             frame->GetXaxis()->SetLabelSize(label_sz);
             frame->GetYaxis()->SetLabelSize(label_sz);
-            frame->GetYaxis()->SetTitleOffset(1.25);   // keep y-title clear of the left edge
+            frame->GetYaxis()->SetTitleOffset(1.25);
             frame->GetXaxis()->SetTitleOffset(1.05);
 
             const CellData& C = cells[rr*ncols+cc];
@@ -804,7 +796,6 @@ static void draw_group_canvases(
             gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue); gm->SetLineColor(kBlue); gm->SetLineWidth(1);
             gp->Draw("PE1 SAME"); gm->Draw("PE1 SAME");
 
-            // per-pad legend, with border box restored
             TLegend* leg = new TLegend(0.60, 0.72, 0.93, 0.92);
             leg->SetBorderSize(1);
             leg->SetLineColor(kBlack);
@@ -815,7 +806,6 @@ static void draw_group_canvases(
             leg->AddEntry(gm, "- helicity", "PE");
             leg->Draw();
 
-            // per-pad kinematics label, nudged clear of the legend and top edge
             TLatex lab; lab.SetNDC(); lab.SetTextSize(0.058); lab.SetTextAlign(13);
             const double q2m=safe_mean(C.q2means), tm=safe_mean(C.tmeans);
             lab.DrawLatex(0.16, 0.88, Form("Q^{2}=%.3g  |t|=%.3g", q2m, tm));
@@ -930,9 +920,9 @@ bool update_total_counts_csv(
         bind_one_exact_enable(t, "pTmiss",          b_pTmiss);
         bind_one_exact_enable(t, "ycol",            b_ycol);
 
-        // ycol is mandatory for this module going forward.
+        // Enforce ycol as a required branch AND a required true flag.
         if (t->GetBranch("ycol") == nullptr) {
-            fatal("Missing required branch 'ycol' in DVCS tree (needed for enforced global cuts).");
+            fatal("Missing required branch 'ycol' in DVCS tree.");
         }
 
         BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
@@ -945,7 +935,7 @@ bool update_total_counts_csv(
 
         const Long64_t N=t->GetEntries();
         const Long64_t cadence=cadence_for(N);
-        Long64_t seen=0, kept=0, used=0;
+        long long seen=0, kept=0, used=0;
         DebugCounts dbg;
 
 #ifdef _OPENMP
@@ -971,7 +961,7 @@ bool update_total_counts_csv(
             const double phi2= bb_as_double(b_phi2);
             const double open_angle_deg = bb_as_double(b_open_angle);
             const double pTmiss         = bb_as_double(b_pTmiss);
-            const bool   ycol           = (bb_as_ll(b_ycol) != 0);
+            const bool   ycol_ok        = (bb_as_ll(b_ycol) != 0);
 
             if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)
                 || !std::isfinite(open_angle_deg) || !std::isfinite(pTmiss)) {
@@ -979,9 +969,11 @@ bool update_total_counts_csv(
             }
             ++seen;
 
-            // Global run blacklist + global cuts from global_cuts.h (enforced ycol)
+            if (!ycol_ok) { dbg.cut_fail++; continue; }
+
+            // Global run blacklist + global cuts from global_cuts.h
             if (is_excluded_run(runnum)) { dbg.cut_fail++; continue; }
-            if (!passes_global_cuts(t1, open_angle_deg, pTmiss, ycol)) { dbg.cut_fail++; continue; }
+            if (!passes_global_cuts(t1, open_angle_deg, pTmiss)) { dbg.cut_fail++; continue; }
 
             const int topo_idx = topo.index();
             if (topo_idx < 0 || topo_idx > 2) { dbg.topo_bad++; continue; }
@@ -1010,7 +1002,7 @@ bool update_total_counts_csv(
                     const CutMode mode = var_mode(vname);
                     if (!within_3sigma(val, sc, mode)) { ok = false; break; }
                 }
-                if (!ok) continue; // fail the 3-sigma exclusivity for this topology
+                if (!ok) continue;
             }
             ++kept;
 
