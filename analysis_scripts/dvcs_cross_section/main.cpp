@@ -164,44 +164,44 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Quick yield totals by current (data) and by period (MC) ----------
-    {
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
-        const std::string out_txt   = "output/yield_totals.txt";
-
-        if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
-            std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
-
-    // // --------- DVCS MC acceptance (CSV + plots) ----------
+    // // --------- Quick yield totals by current (data) and by period (MC) ----------
     // {
-    //     const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
-    //     const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    //     const std::string out_txt   = "output/yield_totals.txt";
 
-    //     // Make a backup before modifying the acceptance columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for acceptance failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
-
-    //     if (!update_acceptance_csv(csv_main,
-    //                                genMcTrees,
-    //                                recMcTrees,
-    //                                combined_cuts_json,
-    //                                global_cuts_json,
-    //                                output_root)) {
-    //         std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
+    //     if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
+    //         std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
     //         std::exit(EXIT_FAILURE);
     //     }
     // }
+
+    // --------- DVCS MC acceptance (CSV + plots) ----------
+    {
+        const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+        const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
+        const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+
+        // Make a backup before modifying the acceptance columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for acceptance failed ("
+                      << e.what() << "). Continuing.\n";
+        }
+
+        if (!update_acceptance_csv(csv_main,
+                                   genMcTrees,
+                                   recMcTrees,
+                                   combined_cuts_json,
+                                   global_cuts_json,
+                                   output_root)) {
+            std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- Unfolding: acceptance-corrected DVCS yields ----------
     // {
