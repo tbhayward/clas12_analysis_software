@@ -1,20 +1,19 @@
 // yield_totals.cpp
 // ------------------------------------------------------------
-// Quick helper to count reconstructed events after exclusivity
-// cuts, grouped by beam current (nA) for DATA and by period
-// for MC.
+// Count reconstructed events after exclusivity cuts, grouped by
+// beam current (nA) for DATA and by period for reconstructed MC.
 //
 // Cuts:
-//   - Global kinematic cuts via passes_global_cuts(...) from
-//     global_cuts.h, using the P2 global-cuts JSON config.
-//   - 3 sigma exclusivity cuts using combined_cuts.json entries
-//     "data" for data and "mc" for MC, using topology keys
-//     "DVCS_<PeriodDir>_<TopoDir>".
+//   - Global kinematic cuts via passes_global_cuts(...) from global_cuts.h,
+//     using the SAME pattern as other modules (e.g. bin_means.cpp):
+//        * get config via default_global_cuts()
+//        * if cfg.enable_dvcsgen_ycol_cut is enabled, call the kinematics-aware
+//          overload (with x, Q2, W, y, nu, ycol)
+//        * otherwise call the base overload (t1/open/pT only)
+//   - 3-sigma exclusivity cuts from combined_cuts.json, using topology keys
+//     "DVCS_<PeriodDir>_<TopoDir>" and the "data"/"mc" blocks.
 //
-// NOTE:
-//   This module keeps the original public API (no main.cpp changes).
-//   It loads the global-cuts config internally from the canonical
-//   output/jsons/global_cuts_config.json path and fails fast if missing.
+// Public API is unchanged (no main.cpp changes).
 // ------------------------------------------------------------
 
 #include "yield_totals.h"
@@ -27,6 +26,7 @@
 #include <TTree.h>
 #include <TBranch.h>
 #include <TLeaf.h>
+#include <TROOT.h> // ROOT::EnableThreadSafety
 
 #include <algorithm>
 #include <cmath>
@@ -46,9 +46,6 @@
 namespace {
 
 using json = nlohmann::json;
-
-// Canonical path for P2 global cuts config (deterministic, no fallbacks).
-static const char* kGlobalCutsConfigJson = "output/jsons/global_cuts_config.json";
 
 // ---------------- small helpers ----------------
 
@@ -181,14 +178,17 @@ static std::mutex g_root_bind_mutex;
 static void bind_one_exact_enable(TTree* t, const std::string& bname, BranchBinding& bb) {
     if (!t) fatal("bind_one_exact_enable: null tree for branch " + bname);
     std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+
     t->SetBranchStatus(bname.c_str(), 1);
     TBranch* b = t->GetBranch(bname.c_str());
     if (!b) fatal("Branch not found: " + bname);
+
     TLeaf* leaf = b->GetLeaf(bname.c_str());
     if (!leaf) {
         leaf = static_cast<TLeaf*>(b->GetListOfLeaves()->First());
         if (!leaf) fatal("Branch has no leaves: " + bname);
     }
+
     const std::string tn = leaf->GetTypeName();
     if (tn == "Double_t" || tn == "double") {
         bb.kind = BranchBinding::Kind::kDouble;
@@ -336,6 +336,46 @@ static bool passes_sigma_cuts(
     }
 
     return true;
+}
+
+// ---------------- global cuts wrapper (consistent with other modules) ----------------
+
+static inline bool passes_global(
+    bool is_mc,
+    int runnum,
+    const std::string& period_label,
+    double t1,
+    double open_rad,
+    double pTmiss,
+    double x,
+    double Q2,
+    double W,
+    double y,
+    double nu,
+    double ycol,
+    const GlobalCutConfig& cfg)
+{
+    // Run blacklist only applies to data (if you ever add runnum for MC later,
+    // keep behavior explicit and do not silently apply it).
+    if (!is_mc) {
+        if (is_excluded_run(runnum)) return false;
+    }
+
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        // Require kinematics if the ycol cut is enabled.
+        if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(W) ||
+            !std::isfinite(y) || !std::isfinite(nu) || !std::isfinite(ycol)) {
+            fatal(std::string("[global_cuts] FATAL: dvcsgen ycol cut enabled but missing kinematics for period_label '") +
+                  period_label + "'");
+        }
+
+        return passes_global_cuts(t1, open_rad, pTmiss,
+                                 period_label,
+                                 x, Q2, W, y, nu, ycol,
+                                 cfg);
+    }
+
+    return passes_global_cuts(t1, open_rad, pTmiss, cfg);
 }
 
 // ---------------- run -> current maps ----------------
@@ -567,7 +607,7 @@ static Totals compute_totals_internal(
                 BranchBinding b_runnum, b_t1, b_open, b_pTmiss;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
 
-                // Kinematics needed by P2 global cuts (dvcsgen ycol cut, etc.)
+                // Kinematics for global cuts (only REQUIRED if cfg.enable_dvcsgen_ycol_cut is enabled)
                 BranchBinding b_x, b_Q2, b_W, b_y, b_nu, b_ycol;
 
                 bind_one_exact_enable(t, "runnum",            b_runnum);
@@ -595,6 +635,8 @@ static Totals compute_totals_internal(
                 for (Long64_t i = 0; i < N; ++i) {
                     if (t->GetEntry(i) <= 0) continue;
 
+                    const int run = static_cast<int>(bb_as_ll(b_runnum));
+
                     const double t1       = bb_as_double(b_t1);
                     const double open_rad = bb_as_double(b_open);
                     const double pT       = bb_as_double(b_pTmiss);
@@ -606,12 +648,10 @@ static Totals compute_totals_internal(
                     const double nu   = bb_as_double(b_nu);
                     const double ycol = bb_as_double(b_ycol);
 
-                    // P2 global cuts: use the kinematics-aware overload
-                    // to avoid the dvcsgen ycol cut fatal.
-                    if (!passes_global_cuts(t1, open_rad, pT,
-                                           label,
-                                           x, Q2, W, y, nu, ycol,
-                                           globalCuts)) {
+                    if (!passes_global(/*is_mc=*/false, run, label,
+                                       t1, open_rad, pT,
+                                       x, Q2, W, y, nu, ycol,
+                                       globalCuts)) {
                         continue;
                     }
 
@@ -636,9 +676,6 @@ static Totals compute_totals_internal(
                                            pT, xF, theta)) {
                         continue;
                     }
-
-                    const long long run_ll = bb_as_ll(b_runnum);
-                    const int run = static_cast<int>(run_ll);
 
                     int current = 0;
                     if (resolve_current_for_label(label, run, current)) {
@@ -672,7 +709,7 @@ static Totals compute_totals_internal(
                 BranchBinding b_t1, b_open, b_pTmiss;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
 
-                // Kinematics needed by P2 global cuts
+                // Kinematics for global cuts (only REQUIRED if cfg.enable_dvcsgen_ycol_cut is enabled)
                 BranchBinding b_x, b_Q2, b_W, b_y, b_nu, b_ycol;
 
                 bind_one_exact_enable(t, "t1",                b_t1);
@@ -710,10 +747,11 @@ static Totals compute_totals_internal(
                     const double nu   = bb_as_double(b_nu);
                     const double ycol = bb_as_double(b_ycol);
 
-                    if (!passes_global_cuts(t1, open_rad, pT,
-                                           label,
-                                           x, Q2, W, y, nu, ycol,
-                                           globalCuts)) {
+                    // MC has no run blacklist here (consistent with current project behavior).
+                    if (!passes_global(/*is_mc=*/true, /*runnum=*/0, label,
+                                       t1, open_rad, pT,
+                                       x, Q2, W, y, nu, ycol,
+                                       globalCuts)) {
                         continue;
                     }
 
@@ -840,6 +878,9 @@ bool compute_yield_totals(
     const std::string& output_txt)
 {
     try {
+        // Match other modules: ensure ROOT global locks are initialized.
+        ROOT::EnableThreadSafety();
+
         const TopoCutMap sigmaCuts = load_sigma_cuts_both(combined_cuts_json);
         if (sigmaCuts.empty()) {
             std::cerr << "[yield_totals] ERROR: no sigma cuts loaded from "
@@ -847,17 +888,8 @@ bool compute_yield_totals(
             return false;
         }
 
-        // Load P2 global cuts config internally (no main.cpp changes).
-        // This must exist and must match the global_cuts module schema.
-        std::ifstream gin(kGlobalCutsConfigJson);
-        if (!gin.is_open()) {
-            fatal(std::string("Cannot open P2 global cuts config: ") + kGlobalCutsConfigJson);
-        }
-        gin.close();
-
-        // This function is expected to be provided by global_cuts.{h,cpp}.
-        // It must parse output/jsons/global_cuts_config.json and return a GlobalCutConfig.
-        const GlobalCutConfig globalCuts = load_global_cut_config(kGlobalCutsConfigJson);
+        // Match other modules: use the global cuts config from default_global_cuts().
+        const GlobalCutConfig& globalCuts = default_global_cuts();
 
         Totals totals = compute_totals_internal(dvcsDataTrees, dvcsRecMcTrees, sigmaCuts, globalCuts);
 
