@@ -1,4 +1,16 @@
+// pi0_contamination.cpp
+// -----------------------------------------------------------------------------
+// NOTE: Updated to enforce the new global P2 cut via global_cuts.h.
+//       No other logic changes.
+//
+// The global cut enforcement is now routed through default_global_cuts() and the
+// overloads of passes_global_cuts(...) in global_cuts.h, including the optional
+// dvcsgen P2/ycol cut when cfg.enable_dvcsgen_ycol_cut is enabled.
+// -----------------------------------------------------------------------------
+
 #include "pi0_contamination.h"
+
+#include "global_cuts.h"
 
 // ROOT includes (must include concrete histogram/axis headers, not just forward decls)
 #include <TTree.h>
@@ -71,6 +83,17 @@ static std::string period_display_from_tag_strict(const std::string &tag) {
     if (tag.find("Sp18_out") != std::string::npos || tag.find("sp18_out") != std::string::npos) return "Sp18 Out";
     if (tag.find("Sp19_inb") != std::string::npos || tag.find("sp19_inb") != std::string::npos) return "Sp19 Inb";
     fatal("Cannot infer period display name from tag='" + tag + "'");
+    return "";
+}
+
+static std::string period_label_from_display_strict(const std::string &period_display) {
+    // Must match global_cuts.h allowed labels exactly.
+    if (period_display == "Sp18 Inb") return "sp18_inb";
+    if (period_display == "Sp18 Out") return "sp18_out";
+    if (period_display == "Fa18 Inb") return "fa18_inb";
+    if (period_display == "Fa18 Out") return "fa18_out";
+    if (period_display == "Sp19 Inb") return "sp19_inb";
+    fatal("Cannot map period_display '" + period_display + "' to global_cuts period_label");
     return "";
 }
 
@@ -372,13 +395,27 @@ struct BaseVars {
     double pTmiss;
     int detector1;
     int detector2;
+
+    // dvcsgen P2/ycol cut inputs (only required/bound if enabled)
+    double e_p;
+    double e_theta;
+    double e_phi;
+    double p2_p;
+    double p2_theta;
+    double p2_phi;
+
+    bool has_p2 = false;
 };
 
-static BaseVars setup_base_vars(TTree *t) {
+static BaseVars setup_base_vars(TTree *t, const GlobalCutConfig &cfg) {
     BaseVars v;
     v.x = 0.0; v.Q2 = 0.0; v.t1 = 0.0; v.phi2 = 0.0;
     v.open_angle_ep2 = 0.0; v.pTmiss = 0.0;
     v.detector1 = -9999; v.detector2 = -9999;
+
+    v.e_p = 0.0; v.e_theta = 0.0; v.e_phi = 0.0;
+    v.p2_p = 0.0; v.p2_theta = 0.0; v.p2_phi = 0.0;
+    v.has_p2 = false;
 
     t->SetBranchStatus("*", 0);
 
@@ -391,16 +428,39 @@ static BaseVars setup_base_vars(TTree *t) {
     bind_required_branch(t, "detector1", &v.detector1);
     bind_required_branch(t, "detector2", &v.detector2);
 
+    // Enforce new global P2/ycol cut when enabled.
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        bind_required_branch(t, "e_p", &v.e_p);
+        bind_required_branch(t, "e_theta", &v.e_theta);
+        bind_required_branch(t, "e_phi", &v.e_phi);
+
+        bind_required_branch(t, "p2_p", &v.p2_p);
+        bind_required_branch(t, "p2_theta", &v.p2_theta);
+        bind_required_branch(t, "p2_phi", &v.p2_phi);
+
+        v.has_p2 = true;
+    }
+
     return v;
 }
 
-static bool passes_global_cuts(double open_angle_ep2_rad, double t1, double pTmiss) {
-    const double open_angle_deg = open_angle_ep2_rad * 180.0 / M_PI;
-    const double t_abs = std::fabs(t1);
-    if (!(open_angle_deg > 5.0)) return false;
-    if (!(t_abs < 1.0)) return false;
-    if (!(pTmiss <= 0.20)) return false;
-    return true;
+static bool passes_global_cuts_dispatch(const BaseVars &v,
+                                       const std::string &period_label,
+                                       const GlobalCutConfig &cfg) {
+    // Route through global_cuts.h so the P2/ycol cut is enforced consistently.
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        if (!v.has_p2) {
+            fatal("dvcsgen ycol cut enabled, but P2 branches were not bound (internal error)");
+        }
+
+        return passes_global_cuts(v.t1, v.open_angle_ep2, v.pTmiss,
+                                  period_label,
+                                  v.e_p, v.e_theta, v.e_phi,
+                                  v.p2_p, v.p2_theta, v.p2_phi,
+                                  cfg);
+    }
+
+    return passes_global_cuts(v.t1, v.open_angle_ep2, v.pTmiss, cfg);
 }
 
 static bool is_base_double_var(const std::string &name) {
@@ -511,7 +571,10 @@ static void accumulate_counts_for_tree(TTree *t,
         fatal("Internal error: dataset must be 'data' or 'mc' (got '" + dataset + "')");
     }
 
-    BaseVars v = setup_base_vars(t);
+    const GlobalCutConfig &gcfg = default_global_cuts();
+    const std::string period_label = period_label_from_display_strict(period_display);
+
+    BaseVars v = setup_base_vars(t, gcfg);
 
     const std::vector<std::string> topo_keys = {"FD_FD", "CD_FD", "CD_FT"};
     std::set<std::string> required_cut_vars;
@@ -594,7 +657,7 @@ static void accumulate_counts_for_tree(TTree *t,
         ++n_topo_ok;
         topo_counts[topo_key]++;
 
-        const bool pass_global = passes_global_cuts(v.open_angle_ep2, v.t1, v.pTmiss);
+        const bool pass_global = passes_global_cuts_dispatch(v, period_label, gcfg);
         if (!pass_global) {
             if (debug && kDebugPrintEventExamples && printed_event < kDebugMaxEventPrint) {
                 const double open_deg = v.open_angle_ep2 * 180.0 / M_PI;
