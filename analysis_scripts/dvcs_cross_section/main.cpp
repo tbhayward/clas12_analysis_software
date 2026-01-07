@@ -38,6 +38,9 @@ int main(int argc, char* argv[]) {
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
 
+    // Single source of truth for global cuts config (P2)
+    const std::string global_cuts_json = "output/jsons/global_cuts_config.json";
+
     // Containers for different tree categories
     std::map<std::string, TTree*> dataTrees;        // DVCS data
     std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
