@@ -96,8 +96,8 @@ static double compute_ycol(double x, double Q2, double t1) {
 int main(int argc, char **argv) {
     const std::string in_file = (argc > 1)
         ? std::string(argv[1])
-        // : std::string("/volatile/clas12/thayward/dvcs_event_builder_test/gen_dvcsgen_sp18_out.root");
-        : std::string("/volatile/clas12/thayward/dvcs_event_builder_test/dvcs_rga_sp18_out.root");
+        : std::string("/volatile/clas12/thayward/dvcs_event_builder_test/gen_dvcsgen_sp18_out.root");
+        // : std::string("/volatile/clas12/thayward/dvcs_event_builder_test/dvcs_rga_sp18_out.root");
 
     const double Ebeam = (argc > 2)
         ? std::atof(argv[2])

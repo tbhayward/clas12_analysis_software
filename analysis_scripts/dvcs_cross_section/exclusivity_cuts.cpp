@@ -29,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -134,6 +135,15 @@ struct BranchBinder {
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
 
+    // NEW (only used if cfg.enable_dvcsgen_ycol_cut is true): scattered e- and photon kinematics
+    double e_p = 0.0;       bool has_e_p = false;
+    double e_theta = 0.0;   bool has_e_theta = false;
+    double e_phi = 0.0;     bool has_e_phi = false;
+
+    double p2_p = 0.0;      bool has_p2_p = false;
+    double p2_theta = 0.0;  bool has_p2_theta = false;
+    double p2_phi = 0.0;    bool has_p2_phi = false;
+
     void bind(TTree* t, Channel ch) {
         if (!t) return;
 
@@ -156,6 +166,14 @@ struct BranchBinder {
         ena("Delta_phi");
         if (ch == Channel::DVCS) ena("theta_gamma_gamma");
         else                     ena("theta_pi0_pi0");
+
+        // NEW: required only when dvcsgen ycol cut is enabled.
+        ena("e_p");
+        ena("e_theta");
+        ena("e_phi");
+        ena("p2_p");
+        ena("p2_theta");
+        ena("p2_phi");
 
         // Bind with explicit primitive types (6-arg overload).
         auto bI = [&](const char* n, int* a, bool& f){
@@ -181,6 +199,15 @@ struct BranchBinder {
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
         if (ch == Channel::DVCS) bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         else                     bD("theta_pi0_pi0",     &theta_pi0_pi0,     has_theta_pi0_pi0);
+
+        // NEW (may or may not exist, depending on tree schema)
+        bD("e_p",     &e_p,     has_e_p);
+        bD("e_theta", &e_theta, has_e_theta);
+        bD("e_phi",   &e_phi,   has_e_phi);
+
+        bD("p2_p",     &p2_p,     has_p2_p);
+        bD("p2_theta", &p2_theta, has_p2_theta);
+        bD("p2_phi",   &p2_phi,   has_p2_phi);
     }
 
     std::map<std::string, double> valuesMap(Channel ch) const {
@@ -253,6 +280,7 @@ struct FilledHists {
 
 static FilledHists fillStageHists(
     TTree* dataTree, TTree* mcTree, Topology topo, Channel ch,
+    const std::string& period_label,
     const CutDict& cumulative, const HistList& cfg, int stage_index)
 {
     FilledHists out;
@@ -268,6 +296,31 @@ static FilledHists fillStageHists(
         out.data[var] = dh; out.mc[var] = mh;
     }
 
+    const GlobalCutConfig& gcfg = default_global_cuts();
+
+    auto passesGlobal = [&](const BranchBinder& b)->bool {
+        if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
+
+        if (gcfg.enable_dvcsgen_ycol_cut) {
+            if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+                  b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+                std::ostringstream ss;
+                ss << "dvcsgen ycol cut enabled, but required branches are missing for period_label='"
+                   << period_label << "'. Missing one or more of: "
+                   << "e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.";
+                throw std::runtime_error(std::string("[exclusivity_cuts] FATAL: ") + ss.str());
+            }
+
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      period_label,
+                                      b.e_p, b.e_theta, b.e_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      gcfg);
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, gcfg);
+    };
+
     // Data loop
     if (dataTree) {
         BranchBinder b; b.bind(dataTree, ch);
@@ -280,9 +333,8 @@ static FilledHists fillStageHists(
 
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
-            // Must have all three to apply the universal cuts
-            if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) continue;
-            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
+
+            if (!passesGlobal(b)) continue;
 
             auto vals = b.valuesMap(ch);
             if (!passes3SigmaCuts(cumulative.data, vals)) continue;
@@ -307,8 +359,8 @@ static FilledHists fillStageHists(
 
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
-            if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) continue;
-            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
+
+            if (!passesGlobal(b)) continue;
 
             auto vals = b.valuesMap(ch);
             if (!passes3SigmaCuts(cumulative.mc, vals)) continue;
@@ -518,6 +570,7 @@ struct PeriodWork {
 
 static void processOneChannelOneTopology(
     const std::string& prettyPeriod, Channel ch, Topology topo,
+    const std::string& period_label,
     TTree* dataTree, TTree* mcTree,
     const std::string& outPlotDir,
     CutDict& outCutsForTopo)
@@ -528,7 +581,7 @@ static void processOneChannelOneTopology(
     CutDict cumulative;
     int numStages = static_cast<int>(stages.size()) + 1;
     for (int s = 0; s < numStages; ++s) {
-        auto H = fillStageHists(dataTree, mcTree, topo, ch, cumulative, cfg, s);
+        auto H = fillStageHists(dataTree, mcTree, topo, ch, period_label, cumulative, cfg, s);
         saveStagePlots(H, cfg, ch, prettyPeriod, topo, outPlotDir, "cut_" + std::to_string(s));
         if (s < static_cast<int>(stages.size())) {
             updateCumulativeCuts(H, stages[s], cumulative);
@@ -554,7 +607,8 @@ static void processPeriod(
         std::string pretty = periodCode(Channel::DVCS, W.label);
         for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
             CutDict cutsDVCS;
-            processOneChannelOneTopology(pretty, Channel::DVCS, topo, W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS);
+            processOneChannelOneTopology(pretty, Channel::DVCS, topo, W.label,
+                                         W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS);
             std::lock_guard<std::mutex> lock(combined_mutex);
             combined_out[pretty + "_" + topoToKey(topo)] = cutsDVCS;
         }
@@ -565,7 +619,8 @@ static void processPeriod(
         std::string pretty = periodCode(Channel::EPPI0, W.label);
         for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
             CutDict cutsPI0;
-            processOneChannelOneTopology(pretty, Channel::EPPI0, topo, W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0);
+            processOneChannelOneTopology(pretty, Channel::EPPI0, topo, W.label,
+                                         W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0);
             std::lock_guard<std::mutex> lock(combined_mutex);
             combined_out[pretty + "_" + topoToKey(topo)] = cutsPI0;
         }
