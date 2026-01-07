@@ -4,38 +4,17 @@
 // cuts, grouped by beam current (nA) for DATA and by period
 // for MC.
 //
-// Data:
-//   - Uses run-by-run current maps:
-//       * Fa18 Inb: 40, 45, 50, 55 nA (explicit run lists +
-//                    your extra runs mapped below).
-//       * Fa18 Out: 5, 40, 50 nA (explicit run lists +
-//                    your extra runs mapped below).
-//       * Sp18 Out: 30 nA (3211-3293), 45 nA (3867-3987).
-//       * Sp18 Inb: 35 nA (3306-3411),
-//                   50 nA (3431-4325),
-//                   plus explicit overrides for runs
-//                   3418 (70 nA), 3421 (35 nA),
-//                   3422 (35 nA), 3429 (50 nA).
-//       * Sp19 Inb: all runs treated as 50 nA.
-//   - Other periods are counted but placed in an "uncategorized"
-//     bucket since we do not have a current map.
-//
-// MC:
-//   - Counts per period (no current split).
-//
 // Cuts:
 //   - Global kinematic cuts via passes_global_cuts(...) from
-//     global_cuts.h (same as exclusivity_cuts.cpp).
-//     IMPORTANT: P2 global cuts can enable dvcsgen "ycol", which
-//     requires kinematics; thus we call the kinematics-aware
-//     passes_global_cuts overload.
+//     global_cuts.h, using the P2 global-cuts JSON config.
 //   - 3 sigma exclusivity cuts using combined_cuts.json entries
 //     "data" for data and "mc" for MC, using topology keys
 //     "DVCS_<PeriodDir>_<TopoDir>".
 //
-// Output:
-//   - Prints to stdout and writes to a text file (output_txt).
-//   - Also prints unique uncategorized run numbers per period.
+// NOTE:
+//   This module keeps the original public API (no main.cpp changes).
+//   It loads the global-cuts config internally from the canonical
+//   output/jsons/global_cuts_config.json path and fails fast if missing.
 // ------------------------------------------------------------
 
 #include "yield_totals.h"
@@ -67,6 +46,9 @@
 namespace {
 
 using json = nlohmann::json;
+
+// Canonical path for P2 global cuts config (deterministic, no fallbacks).
+static const char* kGlobalCutsConfigJson = "output/jsons/global_cuts_config.json";
 
 // ---------------- small helpers ----------------
 
@@ -101,49 +83,6 @@ static std::string canonical_period_dir(const std::string& L) {
 
 static inline std::string period_dir_for_label(const std::string& L) {
     return canonical_period_dir(L);
-}
-
-static inline double ebeam_for_label(const std::string& label) {
-    const std::string k = to_lower_nospace(label);
-
-    // Explicit, deterministic mapping used throughout this analysis:
-    // - RGA 10.6 GeV: Sp18, Fa18
-    // - RGA 10.2 GeV: Sp19
-    if (k == "fa18inb" || k == "fa18out" || k == "sp18inb" || k == "sp18out") return 10.6;
-    if (k == "sp19inb") return 10.2;
-
-    fatal("ebeam_for_label: unsupported/unknown period label '" + label + "'");
-    return 0.0;
-}
-
-static inline double compute_y_from_xQ2(double x, double Q2, double Ebeam) {
-    // y = (p·q)/(p·k) = nu/E, with nu = Q2/(2 M x)
-    // -> y = Q2/(2 M x E)
-    static const double M = 0.9382720813;
-    if (!(std::isfinite(x) && std::isfinite(Q2) && std::isfinite(Ebeam))) {
-        fatal("compute_y_from_xQ2: non-finite x/Q2/Ebeam.");
-    }
-    if (x <= 0.0 || Q2 <= 0.0 || Ebeam <= 0.0) {
-        fatal("compute_y_from_xQ2: non-positive x/Q2/Ebeam.");
-    }
-    return Q2 / (2.0 * M * x * Ebeam);
-}
-
-static inline double compute_W_from_xQ2(double x, double Q2) {
-    // W^2 = M^2 + Q^2(1/x - 1)
-    static const double M = 0.9382720813;
-    if (!(std::isfinite(x) && std::isfinite(Q2))) {
-        fatal("compute_W_from_xQ2: non-finite x/Q2.");
-    }
-    if (x <= 0.0 || Q2 <= 0.0) {
-        fatal("compute_W_from_xQ2: non-positive x/Q2.");
-    }
-    const double W2 = M * M + Q2 * (1.0 / x - 1.0);
-    if (!(std::isfinite(W2)) || W2 <= 0.0) {
-        fatal("compute_W_from_xQ2: invalid W2 computed (x=" + std::to_string(x) +
-              ", Q2=" + std::to_string(Q2) + ", W2=" + std::to_string(W2) + ").");
-    }
-    return std::sqrt(W2);
 }
 
 // ---------------- topology ----------------
@@ -406,7 +345,7 @@ static int current_fa18_inb(int run, bool& ok) {
     static const std::unordered_map<int, int> m = {
         // 40 nA
         {5335, 40}, {5339, 40}, {5341, 40},
-        {5340, 40}, {5342, 40}, {5343, 40}, {5344, 40}, {5345, 40}, // reclassified
+        {5340, 40}, {5342, 40}, {5343, 40}, {5344, 40}, {5345, 40},
 
         // 45 nA
         {5032, 45}, {5036, 45}, {5038, 45}, {5039, 45}, {5040, 45}, {5041, 45},
@@ -425,7 +364,7 @@ static int current_fa18_inb(int run, bool& ok) {
         {5320, 45}, {5323, 45}, {5324, 45}, {5333, 45}, {5334, 45}, {5346, 45},
         {5347, 45}, {5349, 45}, {5351, 45}, {5354, 45}, {5355, 45}, {5367, 45},
 
-        // Your extra Fa18 Inb 45 nA runs
+        // Extra Fa18 Inb 45 nA runs
         {5046, 45}, {5047, 45}, {5051, 45},
         {5128, 45}, {5129, 45}, {5130, 45},
         {5159, 45}, {5160, 45},
@@ -439,7 +378,7 @@ static int current_fa18_inb(int run, bool& ok) {
         {5356, 50}, {5357, 50}, {5358, 50}, {5359, 50}, {5360, 50}, {5361, 50},
         {5362, 50}, {5366, 50},
 
-        // 55 nA (5356-5407 are 55; 5400 included)
+        // 55 nA
         {5368, 55}, {5369, 55}, {5372, 55}, {5373, 55}, {5374, 55}, {5375, 55},
         {5376, 55}, {5377, 55}, {5378, 55}, {5379, 55}, {5380, 55}, {5381, 55},
         {5382, 55}, {5383, 55}, {5386, 55}, {5390, 55}, {5391, 55}, {5392, 55},
@@ -458,7 +397,6 @@ static int current_fa18_inb(int run, bool& ok) {
 // Fa18 Out
 static int current_fa18_out(int run, bool& ok) {
     static const std::unordered_map<int, int> m = {
-
         // 40 nA
         {5423, 40}, {5424, 40}, {5425, 40}, {5426, 40}, {5428, 40}, {5429, 40},
         {5430, 40}, {5432, 40}, {5434, 40}, {5435, 40}, {5436, 40}, {5437, 40},
@@ -470,7 +408,7 @@ static int current_fa18_out(int run, bool& ok) {
         {5481, 40}, {5482, 40}, {5483, 40}, {5485, 40}, {5486, 40}, {5487, 40},
         {5497, 40}, {5498, 40}, {5499, 40}, {5500, 40}, {5504, 40},
 
-        // Your extra Fa18 Out 40 nA runs
+        // Extra Fa18 Out 40 nA runs
         {5448, 40}, {5495, 40}, {5496, 40},
 
         // 50 nA
@@ -491,12 +429,12 @@ static int current_fa18_out(int run, bool& ok) {
         {5645, 50}, {5646, 50}, {5647, 50}, {5648, 50}, {5649, 50}, {5650, 50},
         {5651, 50}, {5652, 50}, {5654, 50}, {5655, 50}, {5656, 50}, {5662, 50},
         {5663, 50}, {5664, 50}, {5665, 50}, {5666, 50},
-        {5615, 50}, // redefined as 50 nA
+        {5615, 50},
 
-        // Your extra Fa18 Out 50 nA runs
+        // Extra Fa18 Out 50 nA runs
         {5505, 50}, {5567, 50}, {5617, 50}, {5621, 50}, {5623, 50},
 
-        // Your extra Fa18 Out 5 nA run
+        // Extra Fa18 Out 5 nA run
         {5610, 5}
     };
     auto it = m.find(run);
@@ -533,7 +471,6 @@ static bool resolve_current_for_label(
     }
 
     if (k == "sp18out") {
-        // RGA Sp18 Out: 30 nA from 3211-3293, 45 nA from 3867-3987.
         if (runnum >= 3211 && runnum <= 3293) {
             current_nA = 30;
             return true;
@@ -546,7 +483,6 @@ static bool resolve_current_for_label(
     }
 
     if (k == "sp18inb") {
-        // Explicit overrides first (your new info):
         if (runnum == 3418) {
             current_nA = 70;
             return true;
@@ -560,9 +496,6 @@ static bool resolve_current_for_label(
             return true;
         }
 
-        // RGA Sp18 Inb ranges:
-        //  - 35 nA from 3306-3411
-        //  - 50 nA from 3431-4325
         if (runnum >= 3306 && runnum <= 3411) {
             current_nA = 35;
             return true;
@@ -572,17 +505,14 @@ static bool resolve_current_for_label(
             return true;
         }
 
-        // Other Sp18 Inb runs: unknown current (stay uncategorized)
         return false;
     }
 
     if (k == "sp19inb") {
-        // All Sp19 Inb runs are 50 nA.
         current_nA = 50;
         return true;
     }
 
-    // Other periods (Fa18 Inb Supp, etc.) -> uncategorized.
     return false;
 }
 
@@ -616,14 +546,11 @@ static Totals compute_totals_internal(
         const std::string tree_key = P.tree_key;
         const std::string label    = P.label;
 
-        // Skip Fa18 Inb Supp entirely (no sigma cuts defined for this period)
         if (period_dir_for_label(label) == "Fa18_Inb_Supp") {
             std::cout << "[yield_totals] Skipping period " << label
                       << " (Fa18 Inb Supp; no sigma cuts defined)." << std::endl;
             continue;
         }
-
-        const double Ebeam = ebeam_for_label(label);
 
         // ---------------- DATA ----------------
         {
@@ -638,18 +565,22 @@ static Totals compute_totals_internal(
                 topo.enable_and_bind(t);
 
                 BranchBinding b_runnum, b_t1, b_open, b_pTmiss;
-                BranchBinding b_x, b_Q2, b_phi2;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
+
+                // Kinematics needed by P2 global cuts (dvcsgen ycol cut, etc.)
+                BranchBinding b_x, b_Q2, b_W, b_y, b_nu, b_ycol;
 
                 bind_one_exact_enable(t, "runnum",            b_runnum);
                 bind_one_exact_enable(t, "t1",                b_t1);
                 bind_one_exact_enable(t, "open_angle_ep2",    b_open);
                 bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
 
-                // Kinematics for P2 global cuts (e.g. dvcsgen ycol)
                 bind_one_exact_enable(t, "x",                 b_x);
                 bind_one_exact_enable(t, "Q2",                b_Q2);
-                bind_one_exact_enable(t, "phi2",              b_phi2);
+                bind_one_exact_enable(t, "W",                 b_W);
+                bind_one_exact_enable(t, "y",                 b_y);
+                bind_one_exact_enable(t, "nu",                b_nu);
+                bind_one_exact_enable(t, "ycol",              b_ycol);
 
                 bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
                 bind_one_exact_enable(t, "Mx2",               b_Mx2);
@@ -665,23 +596,22 @@ static Totals compute_totals_internal(
                     if (t->GetEntry(i) <= 0) continue;
 
                     const double t1       = bb_as_double(b_t1);
-                    const double open_deg = bb_as_double(b_open);
+                    const double open_rad = bb_as_double(b_open);
                     const double pT       = bb_as_double(b_pTmiss);
 
-                    const double x   = bb_as_double(b_x);
-                    const double Q2  = bb_as_double(b_Q2);
-                    const double phi = bb_as_double(b_phi2);
+                    const double x    = bb_as_double(b_x);
+                    const double Q2   = bb_as_double(b_Q2);
+                    const double W    = bb_as_double(b_W);
+                    const double y    = bb_as_double(b_y);
+                    const double nu   = bb_as_double(b_nu);
+                    const double ycol = bb_as_double(b_ycol);
 
-                    const double y = compute_y_from_xQ2(x, Q2, Ebeam);
-                    const double W = compute_W_from_xQ2(x, Q2);
-
-                    // Use the kinematics-aware overload.
-                    // The last two doubles are reserved for any additional kinematic
-                    // variables used by global_cuts.h; yield_totals does not define
-                    // further cuts beyond those already provided, so we pass 0.0, 0.0.
-                    if (!passes_global_cuts(t1, open_deg, pT,
-                                            x, Q2, y, W, phi, 0.0, 0.0,
-                                            globalCuts)) {
+                    // P2 global cuts: use the kinematics-aware overload
+                    // to avoid the dvcsgen ycol cut fatal.
+                    if (!passes_global_cuts(t1, open_rad, pT,
+                                           label,
+                                           x, Q2, W, y, nu, ycol,
+                                           globalCuts)) {
                         continue;
                     }
 
@@ -740,17 +670,21 @@ static Totals compute_totals_internal(
                 topo.enable_and_bind(t);
 
                 BranchBinding b_t1, b_open, b_pTmiss;
-                BranchBinding b_x, b_Q2, b_phi2;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
+
+                // Kinematics needed by P2 global cuts
+                BranchBinding b_x, b_Q2, b_W, b_y, b_nu, b_ycol;
 
                 bind_one_exact_enable(t, "t1",                b_t1);
                 bind_one_exact_enable(t, "open_angle_ep2",    b_open);
                 bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
 
-                // Kinematics for P2 global cuts (e.g. dvcsgen ycol)
                 bind_one_exact_enable(t, "x",                 b_x);
                 bind_one_exact_enable(t, "Q2",                b_Q2);
-                bind_one_exact_enable(t, "phi2",              b_phi2);
+                bind_one_exact_enable(t, "W",                 b_W);
+                bind_one_exact_enable(t, "y",                 b_y);
+                bind_one_exact_enable(t, "nu",                b_nu);
+                bind_one_exact_enable(t, "ycol",              b_ycol);
 
                 bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
                 bind_one_exact_enable(t, "Mx2",               b_Mx2);
@@ -766,19 +700,20 @@ static Totals compute_totals_internal(
                     if (t->GetEntry(i) <= 0) continue;
 
                     const double t1       = bb_as_double(b_t1);
-                    const double open_deg = bb_as_double(b_open);
+                    const double open_rad = bb_as_double(b_open);
                     const double pT       = bb_as_double(b_pTmiss);
 
-                    const double x   = bb_as_double(b_x);
-                    const double Q2  = bb_as_double(b_Q2);
-                    const double phi = bb_as_double(b_phi2);
+                    const double x    = bb_as_double(b_x);
+                    const double Q2   = bb_as_double(b_Q2);
+                    const double W    = bb_as_double(b_W);
+                    const double y    = bb_as_double(b_y);
+                    const double nu   = bb_as_double(b_nu);
+                    const double ycol = bb_as_double(b_ycol);
 
-                    const double y = compute_y_from_xQ2(x, Q2, Ebeam);
-                    const double W = compute_W_from_xQ2(x, Q2);
-
-                    if (!passes_global_cuts(t1, open_deg, pT,
-                                            x, Q2, y, W, phi, 0.0, 0.0,
-                                            globalCuts)) {
+                    if (!passes_global_cuts(t1, open_rad, pT,
+                                           label,
+                                           x, Q2, W, y, nu, ycol,
+                                           globalCuts)) {
                         continue;
                     }
 
@@ -897,18 +832,11 @@ static void write_totals_to_stream(
 } // end anon namespace
 
 // ---------------- public API ----------------
-//
-// NOTE:
-// This implementation assumes the caller already loaded a GlobalCutConfig
-// (P2 global cuts) and passes it into compute_yield_totals. If your current
-// yield_totals.h signature does not yet include this argument, update the
-// declaration and the call site in main accordingly.
 
 bool compute_yield_totals(
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const std::string& combined_cuts_json,
-    const GlobalCutConfig& globalCuts,
     const std::string& output_txt)
 {
     try {
@@ -918,6 +846,18 @@ bool compute_yield_totals(
                       << combined_cuts_json << std::endl;
             return false;
         }
+
+        // Load P2 global cuts config internally (no main.cpp changes).
+        // This must exist and must match the global_cuts module schema.
+        std::ifstream gin(kGlobalCutsConfigJson);
+        if (!gin.is_open()) {
+            fatal(std::string("Cannot open P2 global cuts config: ") + kGlobalCutsConfigJson);
+        }
+        gin.close();
+
+        // This function is expected to be provided by global_cuts.{h,cpp}.
+        // It must parse output/jsons/global_cuts_config.json and return a GlobalCutConfig.
+        const GlobalCutConfig globalCuts = load_global_cut_config(kGlobalCutsConfigJson);
 
         Totals totals = compute_totals_internal(dvcsDataTrees, dvcsRecMcTrees, sigmaCuts, globalCuts);
 
