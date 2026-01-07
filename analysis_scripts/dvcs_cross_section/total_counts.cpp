@@ -2,6 +2,10 @@
 // Raw-yield writer + plots with legends, correct axis labels, margins, and
 // canonicalized output directories. Combined groups are plotted from in-memory
 // aggregated period counts with CSV fallback to ensure non-zero curves.
+//
+// Updated to enforce loading the shared global_cuts configuration (global_cuts.cpp)
+// before applying is_excluded_run() / passes_global_cuts(), without changing any
+// other behavior.
 
 #include <nlohmann/json.hpp>
 
@@ -78,6 +82,33 @@ static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
     return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
+}
+
+// ---------------- global cuts config enforcement ----------------
+// New requirement: modules must explicitly load the shared global_cuts config
+// before using is_excluded_run() / passes_global_cuts().
+static void ensure_global_cuts_loaded_or_die(const std::string& global_cuts_json) {
+    static std::once_flag once;
+    static bool loaded_ok = false;
+
+    std::call_once(once, [&](){
+        if (global_cuts_json.empty()) {
+            fatal("global_cuts_json path is empty.");
+        }
+
+        // global_cuts.h is expected to provide this initializer.
+        // Fail fast if the configuration cannot be loaded.
+        loaded_ok = load_global_cuts_config(global_cuts_json);
+        if (!loaded_ok) {
+            fatal("Failed to load global cuts config from: " + global_cuts_json);
+        }
+
+        std::cout << "[total_counts] Loaded global cuts config: " << global_cuts_json << "\n";
+    });
+
+    if (!loaded_ok) {
+        fatal("Global cuts config was not successfully loaded (unexpected state).");
+    }
 }
 
 // ---------------- CSV helper ----------------
@@ -786,7 +817,7 @@ static void draw_group_canvases(
 
             // per-pad legend, with border box restored
             TLegend* leg = new TLegend(0.60, 0.72, 0.93, 0.92);
-            leg->SetBorderSize(1);    
+            leg->SetBorderSize(1);
             leg->SetLineColor(kBlack);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
@@ -814,11 +845,15 @@ bool update_total_counts_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& combined_cuts_json,
+    const std::string& global_cuts_json,
     const std::string& out_root_dir,
     int max_workers)
 {
     namespace fs=std::filesystem;
     ROOT::EnableThreadSafety();
+
+    // Enforce that the shared global cuts configuration is loaded exactly once.
+    ensure_global_cuts_loaded_or_die(global_cuts_json);
 
     const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
@@ -831,7 +866,7 @@ bool update_total_counts_csv(
 
     BinCache bins = precache_bins(csv);
 
-    // Load 3σ exclusivity cuts for DATA from the JSON
+    // Load 3sigma exclusivity cuts for DATA from the JSON
     const TopoCutMap sigmaCuts = load_sigma_cuts_data(combined_cuts_json);
 
     CsvCols cols;
@@ -980,7 +1015,7 @@ bool update_total_counts_csv(
                     const CutMode mode = var_mode(vname);
                     if (!within_3sigma(val, sc, mode)) { ok = false; break; }
                 }
-                if (!ok) continue; // fail the 3σ exclusivity for this topology
+                if (!ok) continue; // fail the 3sigma exclusivity for this topology
             }
             ++kept;
 
