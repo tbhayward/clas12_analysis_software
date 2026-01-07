@@ -26,6 +26,8 @@
 // Cuts:
 //   - Global kinematic cuts via passes_global_cuts(...) from
 //     global_cuts.h (same as exclusivity_cuts.cpp).
+//     IMPORTANT: new P2 global cuts may require kinematics (x, Q2)
+//     when certain global-cut options are enabled (e.g. dvcsgen ycol).
 //   - 3 sigma exclusivity cuts using combined_cuts.json entries
 //     "data" for data and "mc" for MC, using topology keys
 //     "DVCS_<PeriodDir>_<TopoDir>".
@@ -389,7 +391,7 @@ static int current_fa18_inb(int run, bool& ok) {
         {5239, 45},
         {5336, 45},
 
-        // 50 nA 
+        // 50 nA
         {5356, 50}, {5357, 50}, {5358, 50}, {5359, 50}, {5360, 50}, {5361, 50},
         {5362, 50}, {5366, 50},
 
@@ -589,12 +591,18 @@ static Totals compute_totals_internal(
                 topo.enable_and_bind(t);
 
                 BranchBinding b_runnum, b_t1, b_open, b_pTmiss;
+                BranchBinding b_x, b_Q2;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
 
                 bind_one_exact_enable(t, "runnum",            b_runnum);
                 bind_one_exact_enable(t, "t1",                b_t1);
                 bind_one_exact_enable(t, "open_angle_ep2",    b_open);
                 bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
+
+                // Kinematics required by new P2 global cuts (e.g. dvcsgen ycol)
+                bind_one_exact_enable(t, "x",                 b_x);
+                bind_one_exact_enable(t, "Q2",                b_Q2);
+
                 bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
                 bind_one_exact_enable(t, "Mx2",               b_Mx2);
                 bind_one_exact_enable(t, "Mx2_1",             b_Mx2_1);
@@ -608,11 +616,16 @@ static Totals compute_totals_internal(
                 for (Long64_t i = 0; i < N; ++i) {
                     if (t->GetEntry(i) <= 0) continue;
 
-                    const double t1        = bb_as_double(b_t1);
-                    const double open_deg  = bb_as_double(b_open);
-                    const double pT        = bb_as_double(b_pTmiss);
+                    const double t1       = bb_as_double(b_t1);
+                    const double open_rad = bb_as_double(b_open);
+                    const double pT       = bb_as_double(b_pTmiss);
 
-                    if (!passes_global_cuts(t1, open_deg, pT)) continue;
+                    const double x  = bb_as_double(b_x);
+                    const double Q2 = bb_as_double(b_Q2);
+
+                    // IMPORTANT: call the kinematics-aware global cuts entrypoint
+                    // so global cuts that require kinematics (e.g. ycol) can be evaluated.
+                    if (!passes_global_cuts(t1, open_rad, pT, x, Q2)) continue;
 
                     const int topo_idx = topo.index();
                     if (topo_idx < 0 || topo_idx > 2) continue;
@@ -669,11 +682,17 @@ static Totals compute_totals_internal(
                 topo.enable_and_bind(t);
 
                 BranchBinding b_t1, b_open, b_pTmiss;
+                BranchBinding b_x, b_Q2;
                 BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
 
                 bind_one_exact_enable(t, "t1",                b_t1);
                 bind_one_exact_enable(t, "open_angle_ep2",    b_open);
                 bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
+
+                // Kinematics required by new P2 global cuts (e.g. dvcsgen ycol)
+                bind_one_exact_enable(t, "x",                 b_x);
+                bind_one_exact_enable(t, "Q2",                b_Q2);
+
                 bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
                 bind_one_exact_enable(t, "Mx2",               b_Mx2);
                 bind_one_exact_enable(t, "Mx2_1",             b_Mx2_1);
@@ -687,11 +706,16 @@ static Totals compute_totals_internal(
                 for (Long64_t i = 0; i < N; ++i) {
                     if (t->GetEntry(i) <= 0) continue;
 
-                    const double t1        = bb_as_double(b_t1);
-                    const double open_deg  = bb_as_double(b_open);
-                    const double pT        = bb_as_double(b_pTmiss);
+                    const double t1       = bb_as_double(b_t1);
+                    const double open_rad = bb_as_double(b_open);
+                    const double pT       = bb_as_double(b_pTmiss);
 
-                    if (!passes_global_cuts(t1, open_deg, pT)) continue;
+                    const double x  = bb_as_double(b_x);
+                    const double Q2 = bb_as_double(b_Q2);
+
+                    // IMPORTANT: call the kinematics-aware global cuts entrypoint
+                    // so global cuts that require kinematics (e.g. ycol) can be evaluated.
+                    if (!passes_global_cuts(t1, open_rad, pT, x, Q2)) continue;
 
                     const int topo_idx = topo.index();
                     if (topo_idx < 0 || topo_idx > 2) continue;
