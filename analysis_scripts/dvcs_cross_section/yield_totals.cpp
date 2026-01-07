@@ -8,10 +8,16 @@
 //     using the SAME pattern as other modules (e.g. bin_means.cpp):
 //        * get config via default_global_cuts()
 //        * if cfg.enable_dvcsgen_ycol_cut is enabled, call the kinematics-aware
-//          overload (with x, Q2, W, y, nu, ycol)
-//        * otherwise call the base overload (t1/open/pT only)
+//          overload using the P2_pos mirror inputs:
+//              e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi
+//          with Ebeam resolved deterministically from the canonical period label
+//          (sp18_inb, sp18_out, fa18_inb, fa18_out, sp19_inb).
+//        * otherwise call the base overload (t1/open/pTmiss only).
+//     NOTE: No "nu" is used anywhere in the P2 implementation.
+//
 //   - 3-sigma exclusivity cuts from combined_cuts.json, using topology keys
 //     "DVCS_<PeriodDir>_<TopoDir>" and the "data"/"mc" blocks.
+//     Apply within_3sigma to any variables present (and bound).
 //
 // Public API is unchanged (no main.cpp changes).
 // ------------------------------------------------------------
@@ -24,8 +30,6 @@
 #include <nlohmann/json.hpp>
 
 #include <TTree.h>
-#include <TBranch.h>
-#include <TLeaf.h>
 #include <TROOT.h> // ROOT::EnableThreadSafety
 
 #include <algorithm>
@@ -82,6 +86,19 @@ static inline std::string period_dir_for_label(const std::string& L) {
     return canonical_period_dir(L);
 }
 
+// Canonical period labels for global_cuts (deterministic; fail-fast if unknown)
+static std::string canonical_period_label(const std::string& L) {
+    const std::string k = to_lower_nospace(L);
+    if (k == "sp18inb") return "sp18_inb";
+    if (k == "sp18out") return "sp18_out";
+    if (k == "fa18inb") return "fa18_inb";
+    if (k == "fa18out") return "fa18_out";
+    if (k == "sp19inb") return "sp19_inb";
+    if (k == "fa18inbsupp") return "fa18_inb"; // only used if someone forgets to skip it
+    fatal("Unknown period label '" + L + "' for canonical_period_label().");
+    return "";
+}
+
 // ---------------- topology ----------------
 
 enum class Topology { FD_FD = 0, CD_FD = 1, CD_FT = 2 };
@@ -93,136 +110,6 @@ static inline const char* topo_dir(Topology t) {
         case Topology::CD_FT: return "CD_FT";
     }
     return "FD_FD";
-}
-
-struct TopologyResolver {
-    int detector1 = 0;
-    int detector2 = 0;
-    bool have1 = false;
-    bool have2 = false;
-
-    void enable_and_bind(TTree* t) {
-        if (!t) fatal("TopologyResolver: null tree.");
-        t->SetBranchStatus("*", 0);
-        t->SetBranchStatus("detector1", 1);
-        t->SetBranchStatus("detector2", 1);
-        have1 = (t->GetBranch("detector1") != nullptr);
-        have2 = (t->GetBranch("detector2") != nullptr);
-        if (!(have1 && have2)) {
-            fatal("Missing detector1/detector2 in DVCS tree.");
-        }
-        t->SetBranchAddress("detector1", &detector1);
-        t->SetBranchAddress("detector2", &detector2);
-    }
-
-    int index() const {
-        if (detector1 == 1 && detector2 == 1) return static_cast<int>(Topology::FD_FD);
-        if (detector1 == 2 && detector2 == 1) return static_cast<int>(Topology::CD_FD);
-        if (detector1 == 2 && detector2 == 0) return static_cast<int>(Topology::CD_FT);
-        return -1;
-    }
-};
-
-// ---------------- branch binding ----------------
-
-struct BranchBinding {
-    std::string name;
-    enum class Kind {
-        kDouble, kFloat, kI32, kU32, kI64, kU64, kI16, kU16, kI8, kU8
-    } kind = Kind::kDouble;
-
-    double as_double = std::numeric_limits<double>::quiet_NaN();
-    float  as_float  = std::numeric_limits<float>::quiet_NaN();
-    int as_i32 = 0; unsigned as_u32 = 0;
-    long long as_i64 = 0; unsigned long long as_u64 = 0;
-    short as_i16 = 0; unsigned short as_u16 = 0;
-    signed char as_i8 = 0; unsigned char as_u8 = 0;
-};
-
-static inline double bb_as_double(const BranchBinding& bb) {
-    using K = BranchBinding::Kind;
-    switch (bb.kind) {
-        case K::kDouble: return bb.as_double;
-        case K::kFloat:  return static_cast<double>(bb.as_float);
-        case K::kI32:    return static_cast<double>(bb.as_i32);
-        case K::kU32:    return static_cast<double>(bb.as_u32);
-        case K::kI64:    return static_cast<double>(bb.as_i64);
-        case K::kU64:    return static_cast<double>(bb.as_u64);
-        case K::kI16:    return static_cast<double>(bb.as_i16);
-        case K::kU16:    return static_cast<double>(bb.as_u16);
-        case K::kI8:     return static_cast<double>(bb.as_i8);
-        case K::kU8:     return static_cast<double>(bb.as_u8);
-    }
-    return std::numeric_limits<double>::quiet_NaN();
-}
-
-static inline long long bb_as_ll(const BranchBinding& bb) {
-    using K = BranchBinding::Kind;
-    switch (bb.kind) {
-        case K::kDouble: return static_cast<long long>(std::llround(bb.as_double));
-        case K::kFloat:  return static_cast<long long>(std::llround(bb.as_float));
-        case K::kI32:    return static_cast<long long>(bb.as_i32);
-        case K::kU32:    return static_cast<long long>(bb.as_u32);
-        case K::kI64:    return static_cast<long long>(bb.as_i64);
-        case K::kU64:    return static_cast<long long>(bb.as_u64);
-        case K::kI16:    return static_cast<long long>(bb.as_i16);
-        case K::kU16:    return static_cast<long long>(bb.as_u16);
-        case K::kI8:     return static_cast<long long>(bb.as_i8);
-        case K::kU8:     return static_cast<long long>(bb.as_u8);
-    }
-    return 0;
-}
-
-static std::mutex g_root_bind_mutex;
-
-static void bind_one_exact_enable(TTree* t, const std::string& bname, BranchBinding& bb) {
-    if (!t) fatal("bind_one_exact_enable: null tree for branch " + bname);
-    std::lock_guard<std::mutex> lock(g_root_bind_mutex);
-
-    t->SetBranchStatus(bname.c_str(), 1);
-    TBranch* b = t->GetBranch(bname.c_str());
-    if (!b) fatal("Branch not found: " + bname);
-
-    TLeaf* leaf = b->GetLeaf(bname.c_str());
-    if (!leaf) {
-        leaf = static_cast<TLeaf*>(b->GetListOfLeaves()->First());
-        if (!leaf) fatal("Branch has no leaves: " + bname);
-    }
-
-    const std::string tn = leaf->GetTypeName();
-    if (tn == "Double_t" || tn == "double") {
-        bb.kind = BranchBinding::Kind::kDouble;
-        t->SetBranchAddress(bname.c_str(), &bb.as_double);
-    } else if (tn == "Float_t" || tn == "float") {
-        bb.kind = BranchBinding::Kind::kFloat;
-        t->SetBranchAddress(bname.c_str(), &bb.as_float);
-    } else if (tn == "Int_t" || tn == "int") {
-        bb.kind = BranchBinding::Kind::kI32;
-        t->SetBranchAddress(bname.c_str(), &bb.as_i32);
-    } else if (tn == "UInt_t" || tn == "unsigned int") {
-        bb.kind = BranchBinding::Kind::kU32;
-        t->SetBranchAddress(bname.c_str(), &bb.as_u32);
-    } else if (tn == "Long64_t" || tn == "long long") {
-        bb.kind = BranchBinding::Kind::kI64;
-        t->SetBranchAddress(bname.c_str(), &bb.as_i64);
-    } else if (tn == "ULong64_t" || tn == "unsigned long long") {
-        bb.kind = BranchBinding::Kind::kU64;
-        t->SetBranchAddress(bname.c_str(), &bb.as_u64);
-    } else if (tn == "Short_t" || tn == "short") {
-        bb.kind = BranchBinding::Kind::kI16;
-        t->SetBranchAddress(bname.c_str(), &bb.as_i16);
-    } else if (tn == "UShort_t" || tn == "unsigned short") {
-        bb.kind = BranchBinding::Kind::kU16;
-        t->SetBranchAddress(bname.c_str(), &bb.as_u16);
-    } else if (tn == "Char_t" || tn == "char" || tn == "signed char") {
-        bb.kind = BranchBinding::Kind::kI8;
-        t->SetBranchAddress(bname.c_str(), &bb.as_i8);
-    } else if (tn == "UChar_t" || tn == "unsigned char") {
-        bb.kind = BranchBinding::Kind::kU8;
-        t->SetBranchAddress(bname.c_str(), &bb.as_u8);
-    } else {
-        fatal("Unsupported leaf type '" + tn + "' for branch '" + bname + "'");
-    }
 }
 
 // ---------------- sigma cuts ----------------
@@ -295,87 +182,197 @@ static TopoCutMap load_sigma_cuts_both(const std::string& path) {
     return out;
 }
 
-static inline bool within_3sigma(double val, const SigmaCut& sc) {
+enum class CutMode { TwoSided, UpperOnly };
+
+static CutMode var_mode(const std::string& var) {
+    // Match the convention used elsewhere (e.g. bin_means.cpp).
+    if (var == "Emiss2" || var == "pTmiss" || var == "theta_gamma_gamma") return CutMode::UpperOnly;
+    return CutMode::TwoSided;
+}
+
+static inline bool within_3sigma(double val, const SigmaCut& sc, CutMode mode) {
     if (!std::isfinite(val) || !std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) {
         return true;
     }
-    return std::fabs(val - sc.mean) <= 3.0 * sc.std;
+    if (mode == CutMode::UpperOnly) {
+        return (val <= sc.mean + 3.0 * sc.std);
+    }
+    return (std::fabs(val - sc.mean) <= 3.0 * sc.std);
 }
 
-static bool passes_sigma_cuts(
-    const TopoSigma& ts,
-    bool is_mc,
-    double Emiss2,
-    double Mx2,
-    double Mx2_1,
-    double Mx2_2,
-    double pTmiss,
-    double xF,
-    double theta_gg)
-{
+// ---------------- branch binding (bin_means-style) ----------------
+
+static std::mutex g_root_bind_mutex;
+
+struct BranchBinder {
+    // Required for DATA current mapping + run blacklist
+    int runnum = 0;              bool has_runnum = false;
+
+    // Required for topology-dependent sigma cuts
+    int detector1 = 0;           bool has_det1 = false;
+    int detector2 = 0;           bool has_det2 = false;
+
+    // Global cuts
+    double t1 = 0.0;             bool has_t1 = false;
+    double open_angle_ep2 = 0.0; bool has_open = false; // degrees
+    double pTmiss = 0.0;         bool has_pT = false;
+
+    // Sigma-cut variables (optional; applied if present AND present in JSON)
+    double Emiss2 = 0.0;         bool has_Em2 = false;
+    double Mx2 = 0.0;            bool has_Mx2 = false;
+    double Mx2_1 = 0.0;          bool has_Mx2_1 = false;
+    double Mx2_2 = 0.0;          bool has_Mx2_2 = false;
+    double xF = 0.0;             bool has_xF = false;
+    double theta_gamma_gamma = 0.0; bool has_theta_gg = false;
+
+    // P2 cut inputs (only required if cfg.enable_dvcsgen_ycol_cut is true)
+    double e_p = 0.0;            bool has_e_p = false;
+    double e_theta = 0.0;        bool has_e_theta = false;
+    double e_phi = 0.0;          bool has_e_phi = false;
+
+    double p2_p = 0.0;           bool has_p2_p = false;
+    double p2_theta = 0.0;       bool has_p2_theta = false;
+    double p2_phi = 0.0;         bool has_p2_phi = false;
+
+    void bind(TTree* t, bool require_runnum) {
+        if (!t) fatal("BranchBinder::bind: null tree.");
+
+        std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+
+        t->SetBranchStatus("*", 0);
+
+        auto enable = [&](const char* n){
+            if (t->GetBranch(n)) t->SetBranchStatus(n, 1);
+        };
+
+        // Always attempt to enable (guarded) what we might use
+        enable("runnum");
+        enable("detector1");
+        enable("detector2");
+        enable("t1");
+        enable("open_angle_ep2");
+        enable("pTmiss");
+
+        enable("Emiss2");
+        enable("Mx2");
+        enable("Mx2_1");
+        enable("Mx2_2");
+        enable("xF");
+        enable("theta_gamma_gamma");
+
+        enable("e_p");
+        enable("e_theta");
+        enable("e_phi");
+        enable("p2_p");
+        enable("p2_theta");
+        enable("p2_phi");
+
+        t->SetCacheSize(0);
+
+        auto bindD = [&](const char* n, double* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
+        };
+        auto bindI = [&](const char* n, int* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
+        };
+
+        bindI("runnum",    &runnum,    has_runnum);
+        bindI("detector1", &detector1, has_det1);
+        bindI("detector2", &detector2, has_det2);
+
+        bindD("t1",             &t1,             has_t1);
+        bindD("open_angle_ep2", &open_angle_ep2, has_open);
+        bindD("pTmiss",         &pTmiss,         has_pT);
+
+        bindD("Emiss2",            &Emiss2,            has_Em2);
+        bindD("Mx2",               &Mx2,               has_Mx2);
+        bindD("Mx2_1",             &Mx2_1,             has_Mx2_1);
+        bindD("Mx2_2",             &Mx2_2,             has_Mx2_2);
+        bindD("xF",                &xF,                has_xF);
+        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
+
+        bindD("e_p",     &e_p,     has_e_p);
+        bindD("e_theta", &e_theta, has_e_theta);
+        bindD("e_phi",   &e_phi,   has_e_phi);
+
+        bindD("p2_p",     &p2_p,     has_p2_p);
+        bindD("p2_theta", &p2_theta, has_p2_theta);
+        bindD("p2_phi",   &p2_phi,   has_p2_phi);
+
+        if (require_runnum && !has_runnum) {
+            fatal("Missing required branch 'runnum' in DATA tree.");
+        }
+        if (!(has_det1 && has_det2)) {
+            fatal("Missing required branches detector1/detector2 in DVCS tree (needed for topology).");
+        }
+        if (!(has_t1 && has_open && has_pT)) {
+            fatal("Missing required branches t1/open_angle_ep2/pTmiss in DVCS tree (needed for global cuts).");
+        }
+    }
+
+    int topo_index() const {
+        if (!has_det1 || !has_det2) return -1;
+        if (detector1 == 1 && detector2 == 1) return static_cast<int>(Topology::FD_FD);
+        if (detector1 == 2 && detector2 == 1) return static_cast<int>(Topology::CD_FD);
+        if (detector1 == 2 && detector2 == 0) return static_cast<int>(Topology::CD_FT);
+        return -1;
+    }
+};
+
+// Apply sigma cuts to any variables present in BOTH: (a) JSON map and (b) tree binding.
+static bool passes_sigma_cuts(const TopoSigma& ts, bool is_mc, const BranchBinder& b) {
     const VarCutMap& m = is_mc ? ts.mc : ts.data;
-    if (m.empty()) {
-        return true;
-    }
+    if (m.empty()) return true;
 
-    for (const auto& kv : m) {
-        const std::string& vname = kv.first;
-        const SigmaCut& sc = kv.second;
-        double val = std::numeric_limits<double>::quiet_NaN();
+    auto check = [&](const char* vname, bool has_val, double val) -> bool {
+        auto it = m.find(vname);
+        if (it == m.end()) return true;      // not requested by JSON
+        if (!has_val) return true;           // branch not present: skip explicitly
+        const SigmaCut& sc = it->second;
+        const CutMode mode = var_mode(vname);
+        return within_3sigma(val, sc, mode);
+    };
 
-        if (vname == "Emiss2")                 val = Emiss2;
-        else if (vname == "Mx2")               val = Mx2;
-        else if (vname == "Mx2_1")             val = Mx2_1;
-        else if (vname == "Mx2_2")             val = Mx2_2;
-        else if (vname == "pTmiss")            val = pTmiss;
-        else if (vname == "xF")                val = xF;
-        else if (vname == "theta_gamma_gamma") val = theta_gg;
-        else continue;
+    if (!check("Emiss2",            b.has_Em2,      b.Emiss2)) return false;
+    if (!check("Mx2",               b.has_Mx2,      b.Mx2)) return false;
+    if (!check("Mx2_1",             b.has_Mx2_1,    b.Mx2_1)) return false;
+    if (!check("Mx2_2",             b.has_Mx2_2,    b.Mx2_2)) return false;
+    if (!check("pTmiss",            b.has_pT,       b.pTmiss)) return false;
+    if (!check("xF",                b.has_xF,       b.xF)) return false;
+    if (!check("theta_gamma_gamma", b.has_theta_gg, b.theta_gamma_gamma)) return false;
 
-        if (!within_3sigma(val, sc)) return false;
-    }
-
+    // If the JSON contains additional variables not listed above, we ignore them here
+    // (explicit behavior; no heuristics for unknown names).
     return true;
 }
 
 // ---------------- global cuts wrapper (consistent with other modules) ----------------
 
-static inline bool passes_global(
-    bool is_mc,
-    int runnum,
-    const std::string& period_label,
-    double t1,
-    double open_rad,
-    double pTmiss,
-    double x,
-    double Q2,
-    double W,
-    double y,
-    double nu,
-    double ycol,
-    const GlobalCutConfig& cfg)
-{
-    // Run blacklist only applies to data (if you ever add runnum for MC later,
-    // keep behavior explicit and do not silently apply it).
+static inline bool passes_global(bool is_mc,
+                                 int runnum,
+                                 const std::string& period_label_internal,
+                                 const BranchBinder& b,
+                                 const GlobalCutConfig& cfg) {
+    // Run blacklist only applies to data (explicit behavior).
     if (!is_mc) {
-        if (is_excluded_run(runnum)) return false;
+        if (is_excluded_run(runnum, cfg)) return false;
     }
 
     if (cfg.enable_dvcsgen_ycol_cut) {
-        // Require kinematics if the ycol cut is enabled.
-        if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(W) ||
-            !std::isfinite(y) || !std::isfinite(nu) || !std::isfinite(ycol)) {
-            fatal(std::string("[global_cuts] FATAL: dvcsgen ycol cut enabled but missing kinematics for period_label '") +
-                  period_label + "'");
+        if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            fatal(std::string("P2 cut enabled but required branches are missing for period_label '") +
+                  period_label_internal + "'. Missing one or more of: e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.");
         }
 
-        return passes_global_cuts(t1, open_rad, pTmiss,
-                                 period_label,
-                                 x, Q2, W, y, nu, ycol,
-                                 cfg);
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  period_label_internal,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  cfg);
     }
 
-    return passes_global_cuts(t1, open_rad, pTmiss, cfg);
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg);
 }
 
 // ---------------- run -> current maps ----------------
@@ -487,11 +484,9 @@ static int current_fa18_out(int run, bool& ok) {
 }
 
 // Resolve current for a given period label and run number.
-static bool resolve_current_for_label(
-    const std::string& period_label,
-    int runnum,
-    int& current_nA)
-{
+static bool resolve_current_for_label(const std::string& period_label,
+                                      int runnum,
+                                      int& current_nA) {
     const std::string k = to_lower_nospace(period_label);
 
     if (k == "fa18inb") {
@@ -565,12 +560,10 @@ struct Totals {
     std::map<std::string, long long> mc_by_period;
 };
 
-static Totals compute_totals_internal(
-    const std::map<std::string, TTree*>& dvcsDataTrees,
-    const std::map<std::string, TTree*>& dvcsRecMcTrees,
-    const TopoCutMap& sigmaCuts,
-    const GlobalCutConfig& globalCuts)
-{
+static Totals compute_totals_internal(const std::map<std::string, TTree*>& dvcsDataTrees,
+                                      const std::map<std::string, TTree*>& dvcsRecMcTrees,
+                                      const TopoCutMap& sigmaCuts,
+                                      const GlobalCutConfig& globalCuts) {
     Totals totals;
 
     auto find_topo_sigma = [&](const std::string& topo_key) -> const TopoSigma& {
@@ -586,11 +579,15 @@ static Totals compute_totals_internal(
         const std::string tree_key = P.tree_key;
         const std::string label    = P.label;
 
-        if (period_dir_for_label(label) == "Fa18_Inb_Supp") {
+        const std::string period_dir = period_dir_for_label(label);
+
+        if (period_dir == "Fa18_Inb_Supp") {
             std::cout << "[yield_totals] Skipping period " << label
                       << " (Fa18 Inb Supp; no sigma cuts defined)." << std::endl;
             continue;
         }
+
+        const std::string period_label_internal = canonical_period_label(label);
 
         // ---------------- DATA ----------------
         {
@@ -601,79 +598,35 @@ static Totals compute_totals_internal(
                           << " (tree key " << tree_key << ") with "
                           << static_cast<long long>(t->GetEntries()) << " entries\n";
 
-                TopologyResolver topo;
-                topo.enable_and_bind(t);
+                BranchBinder b;
+                b.bind(t, /*require_runnum=*/true);
 
-                BranchBinding b_runnum, b_t1, b_open, b_pTmiss;
-                BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
-
-                // Kinematics for global cuts (only REQUIRED if cfg.enable_dvcsgen_ycol_cut is enabled)
-                BranchBinding b_x, b_Q2, b_W, b_y, b_nu, b_ycol;
-
-                bind_one_exact_enable(t, "runnum",            b_runnum);
-                bind_one_exact_enable(t, "t1",                b_t1);
-                bind_one_exact_enable(t, "open_angle_ep2",    b_open);
-                bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
-
-                bind_one_exact_enable(t, "x",                 b_x);
-                bind_one_exact_enable(t, "Q2",                b_Q2);
-                bind_one_exact_enable(t, "W",                 b_W);
-                bind_one_exact_enable(t, "y",                 b_y);
-                bind_one_exact_enable(t, "nu",                b_nu);
-                bind_one_exact_enable(t, "ycol",              b_ycol);
-
-                bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
-                bind_one_exact_enable(t, "Mx2",               b_Mx2);
-                bind_one_exact_enable(t, "Mx2_1",             b_Mx2_1);
-                bind_one_exact_enable(t, "Mx2_2",             b_Mx2_2);
-                bind_one_exact_enable(t, "theta_gamma_gamma", b_theta_gg);
-                bind_one_exact_enable(t, "xF",                b_xF);
-
-                Long64_t N = t->GetEntries();
+                const Long64_t N = t->GetEntries();
                 long long kept = 0;
 
                 for (Long64_t i = 0; i < N; ++i) {
                     if (t->GetEntry(i) <= 0) continue;
 
-                    const int run = static_cast<int>(bb_as_ll(b_runnum));
+                    const int run = b.runnum;
 
-                    const double t1       = bb_as_double(b_t1);
-                    const double open_rad = bb_as_double(b_open);
-                    const double pT       = bb_as_double(b_pTmiss);
-
-                    const double x    = bb_as_double(b_x);
-                    const double Q2   = bb_as_double(b_Q2);
-                    const double W    = bb_as_double(b_W);
-                    const double y    = bb_as_double(b_y);
-                    const double nu   = bb_as_double(b_nu);
-                    const double ycol = bb_as_double(b_ycol);
-
-                    if (!passes_global(/*is_mc=*/false, run, label,
-                                       t1, open_rad, pT,
-                                       x, Q2, W, y, nu, ycol,
+                    if (!passes_global(/*is_mc=*/false,
+                                       run,
+                                       period_label_internal,
+                                       b,
                                        globalCuts)) {
                         continue;
                     }
 
-                    const int topo_idx = topo.index();
+                    const int topo_idx = b.topo_index();
                     if (topo_idx < 0 || topo_idx > 2) continue;
 
                     const std::string topo_key =
-                        std::string("DVCS_") + period_dir_for_label(label) +
-                        "_" + topo_dir(static_cast<Topology>(topo_idx));
+                        std::string("DVCS_") + period_dir + "_" +
+                        topo_dir(static_cast<Topology>(topo_idx));
 
                     const TopoSigma& ts = find_topo_sigma(topo_key);
 
-                    const double Emiss2 = bb_as_double(b_Emiss2);
-                    const double Mx2    = bb_as_double(b_Mx2);
-                    const double Mx2_1  = bb_as_double(b_Mx2_1);
-                    const double Mx2_2  = bb_as_double(b_Mx2_2);
-                    const double xF     = bb_as_double(b_xF);
-                    const double theta  = bb_as_double(b_theta_gg);
-
-                    if (!passes_sigma_cuts(ts, /*is_mc=*/false,
-                                           Emiss2, Mx2, Mx2_1, Mx2_2,
-                                           pT, xF, theta)) {
+                    if (!passes_sigma_cuts(ts, /*is_mc=*/false, b)) {
                         continue;
                     }
 
@@ -703,77 +656,33 @@ static Totals compute_totals_internal(
                           << " (tree key " << rec_key << ") with "
                           << static_cast<long long>(t->GetEntries()) << " entries\n";
 
-                TopologyResolver topo;
-                topo.enable_and_bind(t);
+                BranchBinder b;
+                b.bind(t, /*require_runnum=*/false);
 
-                BranchBinding b_t1, b_open, b_pTmiss;
-                BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
-
-                // Kinematics for global cuts (only REQUIRED if cfg.enable_dvcsgen_ycol_cut is enabled)
-                BranchBinding b_x, b_Q2, b_W, b_y, b_nu, b_ycol;
-
-                bind_one_exact_enable(t, "t1",                b_t1);
-                bind_one_exact_enable(t, "open_angle_ep2",    b_open);
-                bind_one_exact_enable(t, "pTmiss",            b_pTmiss);
-
-                bind_one_exact_enable(t, "x",                 b_x);
-                bind_one_exact_enable(t, "Q2",                b_Q2);
-                bind_one_exact_enable(t, "W",                 b_W);
-                bind_one_exact_enable(t, "y",                 b_y);
-                bind_one_exact_enable(t, "nu",                b_nu);
-                bind_one_exact_enable(t, "ycol",              b_ycol);
-
-                bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
-                bind_one_exact_enable(t, "Mx2",               b_Mx2);
-                bind_one_exact_enable(t, "Mx2_1",             b_Mx2_1);
-                bind_one_exact_enable(t, "Mx2_2",             b_Mx2_2);
-                bind_one_exact_enable(t, "theta_gamma_gamma", b_theta_gg);
-                bind_one_exact_enable(t, "xF",                b_xF);
-
-                Long64_t N = t->GetEntries();
+                const Long64_t N = t->GetEntries();
                 long long kept = 0;
 
                 for (Long64_t i = 0; i < N; ++i) {
                     if (t->GetEntry(i) <= 0) continue;
 
-                    const double t1       = bb_as_double(b_t1);
-                    const double open_rad = bb_as_double(b_open);
-                    const double pT       = bb_as_double(b_pTmiss);
-
-                    const double x    = bb_as_double(b_x);
-                    const double Q2   = bb_as_double(b_Q2);
-                    const double W    = bb_as_double(b_W);
-                    const double y    = bb_as_double(b_y);
-                    const double nu   = bb_as_double(b_nu);
-                    const double ycol = bb_as_double(b_ycol);
-
-                    // MC has no run blacklist here (consistent with current project behavior).
-                    if (!passes_global(/*is_mc=*/true, /*runnum=*/0, label,
-                                       t1, open_rad, pT,
-                                       x, Q2, W, y, nu, ycol,
+                    if (!passes_global(/*is_mc=*/true,
+                                       /*runnum=*/0,
+                                       period_label_internal,
+                                       b,
                                        globalCuts)) {
                         continue;
                     }
 
-                    const int topo_idx = topo.index();
+                    const int topo_idx = b.topo_index();
                     if (topo_idx < 0 || topo_idx > 2) continue;
 
                     const std::string topo_key =
-                        std::string("DVCS_") + period_dir_for_label(label) +
-                        "_" + topo_dir(static_cast<Topology>(topo_idx));
+                        std::string("DVCS_") + period_dir + "_" +
+                        topo_dir(static_cast<Topology>(topo_idx));
 
                     const TopoSigma& ts = find_topo_sigma(topo_key);
 
-                    const double Emiss2 = bb_as_double(b_Emiss2);
-                    const double Mx2    = bb_as_double(b_Mx2);
-                    const double Mx2_1  = bb_as_double(b_Mx2_1);
-                    const double Mx2_2  = bb_as_double(b_Mx2_2);
-                    const double xF     = bb_as_double(b_xF);
-                    const double theta  = bb_as_double(b_theta_gg);
-
-                    if (!passes_sigma_cuts(ts, /*is_mc=*/true,
-                                           Emiss2, Mx2, Mx2_1, Mx2_2,
-                                           pT, xF, theta)) {
+                    if (!passes_sigma_cuts(ts, /*is_mc=*/true, b)) {
                         continue;
                     }
 
@@ -792,10 +701,7 @@ static Totals compute_totals_internal(
 
 // ---------------- pretty printing ----------------
 
-static void write_totals_to_stream(
-    std::ostream& os,
-    const Totals& totals)
-{
+static void write_totals_to_stream(std::ostream& os, const Totals& totals) {
     os << "================ Yield totals after exclusivity cuts ================\n\n";
 
     std::map<int, long long> global_by_current;
@@ -871,12 +777,10 @@ static void write_totals_to_stream(
 
 // ---------------- public API ----------------
 
-bool compute_yield_totals(
-    const std::map<std::string, TTree*>& dvcsDataTrees,
-    const std::map<std::string, TTree*>& dvcsRecMcTrees,
-    const std::string& combined_cuts_json,
-    const std::string& output_txt)
-{
+bool compute_yield_totals(const std::map<std::string, TTree*>& dvcsDataTrees,
+                          const std::map<std::string, TTree*>& dvcsRecMcTrees,
+                          const std::string& combined_cuts_json,
+                          const std::string& output_txt) {
     try {
         // Match other modules: ensure ROOT global locks are initialized.
         ROOT::EnableThreadSafety();
