@@ -55,42 +55,47 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction 
-    // // Record the exact global cuts used:
-    // write_global_cuts_config_json("output/jsons");
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    if (!load_global_cuts_config(global_cuts_json)) {
+        std::cerr << "[main] FATAL: failed to load global cuts JSON: " << global_cuts_json << "\n";
+        return 1;
+    }
+    print_global_cuts_summary();
 
-    // // --------- Global bin-averaged kinematics (CSV update) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // Run exclusivity cut extraction 
+    // Record the exact global cuts used:
+    write_global_cuts_config_json("output/jsons");
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    //     // Make a simple backup before modifying
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //                                    std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-    //     }
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // Make a simple backup before modifying
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
+
+        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // --------- Raw yields (counts) into CSV + plots ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make a backup (the function also backs up to ..._total_counts.csv)
         try {
             std::filesystem::copy_file(csv_main,
                 "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
@@ -100,9 +105,13 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
         }
 
-        // update_total_counts_csv() now discovers periods/topologies internally
-        if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
-                /*max_workers=*/5)) {
+        // IMPORTANT: pass global_cuts_json (6-arg signature)
+        if (!update_total_counts_csv(csv_main,
+                                     dataTrees,
+                                     cuts_json,
+                                     global_cuts_json,
+                                     output_root,
+                                     /*max_workers=*/5)) {
             std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
