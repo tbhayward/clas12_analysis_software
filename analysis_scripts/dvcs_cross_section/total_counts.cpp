@@ -57,6 +57,9 @@
 #include <TStyle.h>
 #include <TROOT.h>
 #include <TSystem.h>
+#include <TH1.h>
+#include <TH1F.h>
+#include <TAxis.h>
 
 // JSON
 #include <nlohmann/json.hpp>
