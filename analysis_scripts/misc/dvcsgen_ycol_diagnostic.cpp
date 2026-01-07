@@ -3,29 +3,36 @@
 // Determine dvcsgen --ycol semantics by checking which variable has a hard edge
 // at 0.005 on a sample generated with --ycol 0.005.
 //
-// This version processes at most the first 5,000,000 events (or fewer if the
-// tree has fewer entries).
+// This version processes at most the first 5,000,000 events.
 //
-// Produces a 2-pad canvas:
-//   left:  P1_neg = - (k - qgamma)^{2} / Q^{2}   (dimensionless)
-//   right: ycol_minus_y = ycol - y              (dimensionless)
+// It computes:
+//   Q2_calc = - (k - k')^2   from beam k and scattered electron k'
+//   P1_pos  =  2 (k  . qgamma) / Q2_calc          (incoming lepton propagator proxy)
+//   P2_pos  =  2 (k' . qgamma) / Q2_calc          (outgoing lepton propagator proxy)
+//   Pmin    =  min(P1_pos, P2_pos)
+//   ycol    =  (Q2_calc - |t|) / (Q2_calc - x*|t|)
+//   ycol-y  =  ycol - y_branch
 //
-// Saves:
+// It then checks which of these has a sharp lower edge at 0.005.
+//
+// Saves a single 2x2 canvas to:
 //   /u/home/thayward/dvcsgen_ycol_diagnostic.png
 //   /u/home/thayward/dvcsgen_ycol_diagnostic.pdf
 //
-// Branches required (angles in radians):
+// Required branches (angles in radians):
 //   e_p, e_theta, e_phi
 //   p2_p, p2_theta, p2_phi     (p2 = photon)
-//   x, Q2, t1, y
+//   x, t1, y
+//
+// Q2 branch is not required; we recompute Q2_calc internally.
 //
 // Tree assumed: PhysicsEvents
 // -----------------------------------------------------------------------------
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
-#include <stdexcept>
 #include <string>
 
 #include <TFile.h>
@@ -56,7 +63,6 @@ static TLorentzVector make_beam_electron(double Ebeam_GeV) {
     if (Ebeam_GeV <= me) {
         fatal("beam energy <= electron mass (GeV)");
     }
-
     const double pz = std::sqrt(Ebeam_GeV * Ebeam_GeV - me * me);
     return TLorentzVector(0.0, 0.0, pz, Ebeam_GeV);
 }
@@ -77,16 +83,13 @@ static TLorentzVector make_p4_from_p_theta_phi(double p,
     return TLorentzVector(px, py, pz, E);
 }
 
-// ycol = (Q2 - |t|) / (Q2 - x*|t|) where x is Bjorken x (0<x<1), |t| = |t1|
+// ycol = (Q2 - |t|) / (Q2 - x*|t|)
 static double compute_ycol(double x, double Q2, double t1) {
     const double tabs = std::fabs(t1);
-
     const double denom = Q2 - x * tabs;
     if (!(denom > 0.0)) {
-        // Inconsistent kinematics for DVCS definitions; treat as failing.
         return -1.0;
     }
-
     return (Q2 - tabs) / denom;
 }
 
@@ -108,8 +111,6 @@ int main(int argc, char **argv) {
         : std::string("PhysicsEvents");
 
     const double ycol_cut = 0.005;
-
-    // Hard cap for speed
     const Long64_t max_events = 5000000;
 
     TFile *f = TFile::Open(in_file.c_str(), "READ");
@@ -122,7 +123,7 @@ int main(int argc, char **argv) {
         fatal("cannot find TTree '" + tree_name + "' in file: " + in_file);
     }
 
-    // Required branches (explicit; fail fast if names mismatch)
+    // Required branches
     require_branch(t, "e_p");
     require_branch(t, "e_theta");
     require_branch(t, "e_phi");
@@ -130,13 +131,12 @@ int main(int argc, char **argv) {
     require_branch(t, "p2_theta");
     require_branch(t, "p2_phi");
     require_branch(t, "x");
-    require_branch(t, "Q2");
     require_branch(t, "t1");
     require_branch(t, "y");
 
     double e_p = 0.0, e_theta = 0.0, e_phi = 0.0;
     double p2_p = 0.0, p2_theta = 0.0, p2_phi = 0.0;
-    double x = 0.0, Q2 = 0.0, t1 = 0.0, y = 0.0;
+    double x = 0.0, t1 = 0.0, y = 0.0;
 
     t->SetBranchAddress("e_p", &e_p);
     t->SetBranchAddress("e_theta", &e_theta);
@@ -147,22 +147,25 @@ int main(int argc, char **argv) {
     t->SetBranchAddress("p2_phi", &p2_phi);
 
     t->SetBranchAddress("x", &x);
-    t->SetBranchAddress("Q2", &Q2);
     t->SetBranchAddress("t1", &t1);
     t->SetBranchAddress("y", &y);
 
-    // Histograms
-    TH1D *h_P1neg = new TH1D("h_P1neg",
-                            "Candidate A: P1_neg = - (k - qgamma)^{2} / Q^{2};P1_neg;Counts",
+    // Histograms: focus on the region near 0.005
+    TH1D *h_P1pos = new TH1D("h_P1pos",
+                            "P1_pos = 2(k.qgamma)/Q2_calc;P1_pos;Counts",
+                            400, 0.0, 0.08);
+
+    TH1D *h_P2pos = new TH1D("h_P2pos",
+                            "P2_pos = 2(kprime.qgamma)/Q2_calc;P2_pos;Counts",
+                            400, 0.0, 0.08);
+
+    TH1D *h_Pmin  = new TH1D("h_Pmin",
+                            "Pmin = min(P1_pos, P2_pos);Pmin;Counts",
                             400, 0.0, 0.08);
 
     TH1D *h_ycolmy = new TH1D("h_ycolmy",
-                             "Candidate B: ycol - y; ycol - y;Counts",
+                             "ycol - y; ycol - y;Counts",
                              400, -0.02, 0.08);
-
-    TH1D *h_P1abs  = new TH1D("h_P1abs",
-                             "P1_abs = |(k - qgamma)^{2}/Q^{2}|;P1_abs;Counts",
-                             400, 0.0, 0.08);
 
     const TLorentzVector k = make_beam_electron(Ebeam);
     const double me = 0.00051099895; // (GeV)
@@ -173,36 +176,46 @@ int main(int argc, char **argv) {
     Long64_t n_bad_Q2 = 0;
     Long64_t n_bad_ycol = 0;
 
-    Long64_t n_P1neg_below = 0;
+    Long64_t n_P1_below = 0;
+    Long64_t n_P2_below = 0;
+    Long64_t n_Pmin_below = 0;
     Long64_t n_ycolmy_below = 0;
 
     for (Long64_t i = 0; i < nentries; ++i) {
         t->GetEntry(i);
 
-        if (!(Q2 > 0.0) || !std::isfinite(Q2)) {
+        const TLorentzVector kprime = make_p4_from_p_theta_phi(e_p, e_theta, e_phi, me);
+        const TLorentzVector qgamma = make_p4_from_p_theta_phi(p2_p, p2_theta, p2_phi, 0.0);
+
+        const TLorentzVector q = k - kprime;
+        const double Q2_calc = -q.M2();
+
+        if (!(Q2_calc > 0.0) || !std::isfinite(Q2_calc)) {
             n_bad_Q2++;
             continue;
         }
 
-        const TLorentzVector kprime = make_p4_from_p_theta_phi(e_p,  e_theta,  e_phi,  me);
-        const TLorentzVector qgamma = make_p4_from_p_theta_phi(p2_p, p2_theta, p2_phi, 0.0);
+        // Positive propagator proxies (go to 0 in collinear limits)
+        // (k - qgamma)^2 ~ -2 k.qgamma  => 2 k.qgamma / Q2 is a natural positive proxy
+        const double P1_pos = (2.0 * k.Dot(qgamma)) / Q2_calc;
+        const double P2_pos = (2.0 * kprime.Dot(qgamma)) / Q2_calc;
+        const double Pmin   = std::min(P1_pos, P2_pos);
 
-        const double P1_scaled = (k - qgamma).M2() / Q2;
-        const double P1_neg    = -P1_scaled;
-        const double P1_abs    = std::fabs(P1_scaled);
-
-        const double ycol = compute_ycol(x, Q2, t1);
+        const double ycol = compute_ycol(x, Q2_calc, t1);
         if (!(ycol > -0.5)) {
             n_bad_ycol++;
             continue;
         }
         const double ycol_minus_y = ycol - y;
 
-        h_P1neg->Fill(P1_neg);
-        h_P1abs->Fill(P1_abs);
+        h_P1pos->Fill(P1_pos);
+        h_P2pos->Fill(P2_pos);
+        h_Pmin->Fill(Pmin);
         h_ycolmy->Fill(ycol_minus_y);
 
-        if (P1_neg < ycol_cut) n_P1neg_below++;
+        if (P1_pos < ycol_cut) n_P1_below++;
+        if (P2_pos < ycol_cut) n_P2_below++;
+        if (Pmin   < ycol_cut) n_Pmin_below++;
         if (ycol_minus_y < ycol_cut) n_ycolmy_below++;
     } //endfor
 
@@ -212,44 +225,61 @@ int main(int argc, char **argv) {
     std::cout << "Entries (processed): " << nentries << std::endl;
     std::cout << "Ebeam:      " << Ebeam << " (GeV)" << std::endl;
     std::cout << "Cut value:  " << ycol_cut << std::endl;
-    std::cout << "Skipped (bad Q2):    " << n_bad_Q2 << std::endl;
-    std::cout << "Skipped (bad ycol):  " << n_bad_ycol << std::endl;
-    std::cout << "Count P1_neg < 0.005:      " << n_P1neg_below << std::endl;
-    std::cout << "Count (ycol - y) < 0.005:  " << n_ycolmy_below << std::endl;
+    std::cout << "Skipped (bad Q2_calc): " << n_bad_Q2 << std::endl;
+    std::cout << "Skipped (bad ycol):    " << n_bad_ycol << std::endl;
+    std::cout << "Count P1_pos < 0.005:        " << n_P1_below << std::endl;
+    std::cout << "Count P2_pos < 0.005:        " << n_P2_below << std::endl;
+    std::cout << "Count Pmin   < 0.005:        " << n_Pmin_below << std::endl;
+    std::cout << "Count (ycol - y) < 0.005:    " << n_ycolmy_below << std::endl;
 
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(1110);
 
-    TCanvas *c = new TCanvas("c", "dvcsgen ycol diagnostic", 1400, 600);
-    c->Divide(2, 1);
+    TCanvas *c = new TCanvas("c", "dvcsgen ycol diagnostic", 1400, 900);
+    c->Divide(2, 2);
 
+    // Pad 1: P1_pos
     c->cd(1);
     gPad->SetLogy();
-    h_P1neg->Draw("HIST");
-    TLine *l1 = new TLine(ycol_cut, 0.0, ycol_cut, h_P1neg->GetMaximum());
-    l1->SetLineWidth(2);
-    l1->Draw("SAME");
-    TLatex tx1;
-    tx1.SetNDC();
-    tx1.SetTextSize(0.040);
-    tx1.DrawLatex(0.12, 0.86, "Vertical line at 0.005");
-    tx1.DrawLatex(0.12, 0.80, "Candidate A: P1_neg = - (k - qgamma)^{2} / Q^{2}");
+    h_P1pos->Draw("HIST");
+    {
+        TLine *l = new TLine(ycol_cut, 0.0, ycol_cut, h_P1pos->GetMaximum());
+        l->SetLineWidth(2);
+        l->Draw("SAME");
+    }
 
+    // Pad 2: P2_pos
     c->cd(2);
     gPad->SetLogy();
+    h_P2pos->Draw("HIST");
+    {
+        TLine *l = new TLine(ycol_cut, 0.0, ycol_cut, h_P2pos->GetMaximum());
+        l->SetLineWidth(2);
+        l->Draw("SAME");
+    }
+
+    // Pad 3: Pmin
+    c->cd(3);
+    gPad->SetLogy();
+    h_Pmin->Draw("HIST");
+    {
+        TLine *l = new TLine(ycol_cut, 0.0, ycol_cut, h_Pmin->GetMaximum());
+        l->SetLineWidth(2);
+        l->Draw("SAME");
+    }
+
+    // Pad 4: ycol - y
+    c->cd(4);
+    gPad->SetLogy();
     h_ycolmy->Draw("HIST");
-    TLine *l2 = new TLine(ycol_cut, 0.0, ycol_cut, h_ycolmy->GetMaximum());
-    l2->SetLineWidth(2);
-    l2->Draw("SAME");
-    TLatex tx2;
-    tx2.SetNDC();
-    tx2.SetTextSize(0.040);
-    tx2.DrawLatex(0.12, 0.86, "Vertical line at 0.005");
-    tx2.DrawLatex(0.12, 0.80, "Candidate B: ycol - y");
+    {
+        TLine *l = new TLine(ycol_cut, 0.0, ycol_cut, h_ycolmy->GetMaximum());
+        l->SetLineWidth(2);
+        l->Draw("SAME");
+    }
 
     const std::string out_png = out_dir + "/dvcsgen_ycol_diagnostic.png";
     const std::string out_pdf = out_dir + "/dvcsgen_ycol_diagnostic.pdf";
-
     c->SaveAs(out_png.c_str());
     c->SaveAs(out_pdf.c_str());
 
@@ -257,8 +287,9 @@ int main(int argc, char **argv) {
     std::cout << "Wrote: " << out_pdf << std::endl;
 
     delete c;
-    delete h_P1neg;
-    delete h_P1abs;
+    delete h_P1pos;
+    delete h_P2pos;
+    delete h_Pmin;
     delete h_ycolmy;
     f->Close();
     delete f;
