@@ -3,6 +3,9 @@
 // Determine dvcsgen --ycol semantics by checking which variable has a hard edge
 // at 0.005 on a sample generated with --ycol 0.005.
 //
+// This version processes at most the first 5,000,000 events (or fewer if the
+// tree has fewer entries).
+//
 // Produces a 2-pad canvas:
 //   left:  P1_neg = - (k - qgamma)^{2} / Q^{2}   (dimensionless)
 //   right: ycol_minus_y = ycol - y              (dimensionless)
@@ -106,6 +109,9 @@ int main(int argc, char **argv) {
 
     const double ycol_cut = 0.005;
 
+    // Hard cap for speed
+    const Long64_t max_events = 5000000;
+
     TFile *f = TFile::Open(in_file.c_str(), "READ");
     if (!f || f->IsZombie()) {
         fatal("cannot open input ROOT file: " + in_file);
@@ -146,7 +152,6 @@ int main(int argc, char **argv) {
     t->SetBranchAddress("y", &y);
 
     // Histograms
-    // Ranges chosen to resolve the region around 0.005 very clearly.
     TH1D *h_P1neg = new TH1D("h_P1neg",
                             "Candidate A: P1_neg = - (k - qgamma)^{2} / Q^{2};P1_neg;Counts",
                             400, 0.0, 0.08);
@@ -155,7 +160,6 @@ int main(int argc, char **argv) {
                              "Candidate B: ycol - y; ycol - y;Counts",
                              400, -0.02, 0.08);
 
-    // Optional debug histogram (not drawn by default)
     TH1D *h_P1abs  = new TH1D("h_P1abs",
                              "P1_abs = |(k - qgamma)^{2}/Q^{2}|;P1_abs;Counts",
                              400, 0.0, 0.08);
@@ -163,7 +167,9 @@ int main(int argc, char **argv) {
     const TLorentzVector k = make_beam_electron(Ebeam);
     const double me = 0.00051099895; // (GeV)
 
-    const Long64_t nentries = t->GetEntries();
+    const Long64_t nentries_total = t->GetEntries();
+    const Long64_t nentries = (nentries_total < max_events) ? nentries_total : max_events;
+
     Long64_t n_bad_Q2 = 0;
     Long64_t n_bad_ycol = 0;
 
@@ -178,18 +184,13 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        // Build 4-vectors from (p, theta, phi) with angles in radians
         const TLorentzVector kprime = make_p4_from_p_theta_phi(e_p,  e_theta,  e_phi,  me);
         const TLorentzVector qgamma = make_p4_from_p_theta_phi(p2_p, p2_theta, p2_phi, 0.0);
 
-        // BMK scaled propagator definition:
-        //   P1_scaled = (k - qgamma)^2 / Q2
-        // dvcsgen may cut on a positive proxy such as -P1_scaled or |P1_scaled|.
         const double P1_scaled = (k - qgamma).M2() / Q2;
         const double P1_neg    = -P1_scaled;
         const double P1_abs    = std::fabs(P1_scaled);
 
-        // ycol - y
         const double ycol = compute_ycol(x, Q2, t1);
         if (!(ycol > -0.5)) {
             n_bad_ycol++;
@@ -207,7 +208,8 @@ int main(int argc, char **argv) {
 
     std::cout << "Input file: " << in_file << std::endl;
     std::cout << "Tree:       " << tree_name << std::endl;
-    std::cout << "Entries:    " << nentries << std::endl;
+    std::cout << "Entries (total):     " << nentries_total << std::endl;
+    std::cout << "Entries (processed): " << nentries << std::endl;
     std::cout << "Ebeam:      " << Ebeam << " (GeV)" << std::endl;
     std::cout << "Cut value:  " << ycol_cut << std::endl;
     std::cout << "Skipped (bad Q2):    " << n_bad_Q2 << std::endl;
@@ -215,14 +217,12 @@ int main(int argc, char **argv) {
     std::cout << "Count P1_neg < 0.005:      " << n_P1neg_below << std::endl;
     std::cout << "Count (ycol - y) < 0.005:  " << n_ycolmy_below << std::endl;
 
-    // Plot
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(1110);
 
     TCanvas *c = new TCanvas("c", "dvcsgen ycol diagnostic", 1400, 600);
     c->Divide(2, 1);
 
-    // Left pad: P1_neg
     c->cd(1);
     gPad->SetLogy();
     h_P1neg->Draw("HIST");
@@ -235,7 +235,6 @@ int main(int argc, char **argv) {
     tx1.DrawLatex(0.12, 0.86, "Vertical line at 0.005");
     tx1.DrawLatex(0.12, 0.80, "Candidate A: P1_neg = - (k - qgamma)^{2} / Q^{2}");
 
-    // Right pad: ycol - y
     c->cd(2);
     gPad->SetLogy();
     h_ycolmy->Draw("HIST");
@@ -257,7 +256,6 @@ int main(int argc, char **argv) {
     std::cout << "Wrote: " << out_png << std::endl;
     std::cout << "Wrote: " << out_pdf << std::endl;
 
-    // Cleanup
     delete c;
     delete h_P1neg;
     delete h_P1abs;
