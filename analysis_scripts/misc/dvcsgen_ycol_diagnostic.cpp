@@ -4,8 +4,8 @@
 // at 0.005 on a sample generated with --ycol 0.005.
 //
 // Produces a 2-pad canvas:
-//   left:  P1_neg = - (k - qgamma)^2 / Q2   (dimensionless)
-//   right: ycol_minus_y = ycol - y         (dimensionless)
+//   left:  P1_neg = - (k - qgamma)^{2} / Q^{2}   (dimensionless)
+//   right: ycol_minus_y = ycol - y              (dimensionless)
 //
 // Saves:
 //   /u/home/thayward/dvcsgen_ycol_diagnostic.png
@@ -14,7 +14,7 @@
 // Branches required (angles in radians):
 //   e_p, e_theta, e_phi
 //   p2_p, p2_theta, p2_phi     (p2 = photon)
-//   xB, Q2, t1, y
+//   x, Q2, t1, y
 //
 // Tree assumed: PhysicsEvents
 // -----------------------------------------------------------------------------
@@ -74,11 +74,11 @@ static TLorentzVector make_p4_from_p_theta_phi(double p,
     return TLorentzVector(px, py, pz, E);
 }
 
-// ycol = (Q2 - |t|) / (Q2 - xB*|t|)  where |t| = -t if t is negative
-static double compute_ycol(double xB, double Q2, double t1) {
+// ycol = (Q2 - |t|) / (Q2 - x*|t|) where x is Bjorken x (0<x<1), |t| = |t1|
+static double compute_ycol(double x, double Q2, double t1) {
     const double tabs = std::fabs(t1);
 
-    const double denom = Q2 - xB * tabs;
+    const double denom = Q2 - x * tabs;
     if (!(denom > 0.0)) {
         // Inconsistent kinematics for DVCS definitions; treat as failing.
         return -1.0;
@@ -123,14 +123,14 @@ int main(int argc, char **argv) {
     require_branch(t, "p2_p");
     require_branch(t, "p2_theta");
     require_branch(t, "p2_phi");
-    require_branch(t, "xB");
+    require_branch(t, "x");
     require_branch(t, "Q2");
     require_branch(t, "t1");
     require_branch(t, "y");
 
     double e_p = 0.0, e_theta = 0.0, e_phi = 0.0;
     double p2_p = 0.0, p2_theta = 0.0, p2_phi = 0.0;
-    double xB = 0.0, Q2 = 0.0, t1 = 0.0, y = 0.0;
+    double x = 0.0, Q2 = 0.0, t1 = 0.0, y = 0.0;
 
     t->SetBranchAddress("e_p", &e_p);
     t->SetBranchAddress("e_theta", &e_theta);
@@ -140,21 +140,24 @@ int main(int argc, char **argv) {
     t->SetBranchAddress("p2_theta", &p2_theta);
     t->SetBranchAddress("p2_phi", &p2_phi);
 
-    t->SetBranchAddress("xB", &xB);
+    t->SetBranchAddress("x", &x);
     t->SetBranchAddress("Q2", &Q2);
     t->SetBranchAddress("t1", &t1);
     t->SetBranchAddress("y", &y);
 
     // Histograms
     // Ranges chosen to resolve the region around 0.005 very clearly.
-    TH1D *h_P1neg = new TH1D("h_P1neg", "Candidate A: P1_neg = - (k - qgamma)^{2} / Q^{2};P1_neg;Counts",
+    TH1D *h_P1neg = new TH1D("h_P1neg",
+                            "Candidate A: P1_neg = - (k - qgamma)^{2} / Q^{2};P1_neg;Counts",
                             400, 0.0, 0.08);
 
-    TH1D *h_ycolmy = new TH1D("h_ycolmy", "Candidate B: ycol - y; ycol - y;Counts",
+    TH1D *h_ycolmy = new TH1D("h_ycolmy",
+                             "Candidate B: ycol - y; ycol - y;Counts",
                              400, -0.02, 0.08);
 
-    // Also keep these for optional debugging prints (not plotted by default)
-    TH1D *h_P1abs  = new TH1D("h_P1abs", "P1_abs = |(k - qgamma)^{2}/Q^{2}|;P1_abs;Counts",
+    // Optional debug histogram (not drawn by default)
+    TH1D *h_P1abs  = new TH1D("h_P1abs",
+                             "P1_abs = |(k - qgamma)^{2}/Q^{2}|;P1_abs;Counts",
                              400, 0.0, 0.08);
 
     const TLorentzVector k = make_beam_electron(Ebeam);
@@ -181,14 +184,14 @@ int main(int argc, char **argv) {
 
         // BMK scaled propagator definition:
         //   P1_scaled = (k - qgamma)^2 / Q2
-        // Often P1_scaled is negative; dvcsgen may cut on -P1_scaled or |P1_scaled|.
+        // dvcsgen may cut on a positive proxy such as -P1_scaled or |P1_scaled|.
         const double P1_scaled = (k - qgamma).M2() / Q2;
         const double P1_neg    = -P1_scaled;
         const double P1_abs    = std::fabs(P1_scaled);
 
         // ycol - y
-        const double ycol = compute_ycol(xB, Q2, t1);
-        if (!(ycol > -0.5)) { // compute_ycol returns -1.0 on bad denom
+        const double ycol = compute_ycol(x, Q2, t1);
+        if (!(ycol > -0.5)) {
             n_bad_ycol++;
             continue;
         }
