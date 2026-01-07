@@ -41,6 +41,7 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -79,6 +80,17 @@ static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
     return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
 }
+
+// ---------------- Enforce new global cuts signature ----------------
+// Require passes_global_cuts(t1, open_angle_deg, pTmiss, ycol) to exist.
+template <typename, typename = void>
+struct has_passes_global_cuts_4 : std::false_type {};
+
+template <typename T>
+struct has_passes_global_cuts_4<T, std::void_t<decltype(passes_global_cuts(0.0, 0.0, 0.0, true))>> : std::true_type {};
+
+static_assert(has_passes_global_cuts_4<void>::value,
+              "global_cuts.h must provide passes_global_cuts(t1, open_angle_deg, pTmiss, ycol).");
 
 // ---------------- CSV helper ----------------
 struct CsvDoc {
@@ -479,7 +491,15 @@ static void bind_one_exact_enable(TTree* t, const std::string& bname, BranchBind
     else if (tn=="Short_t"||tn=="short") { bb.kind=BranchBinding::Kind::kI16; t->SetBranchAddress(bname.c_str(), &bb.as_i16); }
     else if (tn=="UShort_t"||tn=="unsigned short") { bb.kind=BranchBinding::Kind::kU16; t->SetBranchAddress(bname.c_str(), &bb.as_u16); }
     else if (tn=="Char_t"||tn=="char"||tn=="signed char") { bb.kind=BranchBinding::Kind::kI8; t->SetBranchAddress(bname.c_str(), &bb.as_i8); }
-    else if (tn=="UChar_t"||tn=="unsigned char") { bb.kind=BranchBinding::Kind::kU8; t->SetBranchAddress(bname.c_str(), &bb.as_u8); }
+    else if (tn=="UChar_t"||tn=="unsigned char") {
+        bb.kind=BranchBinding::Kind::kU8;
+        t->SetBranchAddress(bname.c_str(), &bb.as_u8);
+    }
+    else if (tn=="Bool_t"||tn=="bool") {
+        // ROOT Bool_t is typically stored as an unsigned char.
+        bb.kind=BranchBinding::Kind::kU8;
+        t->SetBranchAddress(bname.c_str(), &bb.as_u8);
+    }
     else { fatal("Unsupported leaf type '"+tn+"' for branch '"+bname+"'"); }
 }
 
@@ -786,7 +806,7 @@ static void draw_group_canvases(
 
             // per-pad legend, with border box restored
             TLegend* leg = new TLegend(0.60, 0.72, 0.93, 0.92);
-            leg->SetBorderSize(1);    
+            leg->SetBorderSize(1);
             leg->SetLineColor(kBlack);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
@@ -831,7 +851,7 @@ bool update_total_counts_csv(
 
     BinCache bins = precache_bins(csv);
 
-    // Load 3σ exclusivity cuts for DATA from the JSON
+    // Load 3-sigma exclusivity cuts for DATA from the JSON
     const TopoCutMap sigmaCuts = load_sigma_cuts_data(combined_cuts_json);
 
     CsvCols cols;
@@ -898,14 +918,23 @@ bool update_total_counts_csv(
 
         BranchBinding b_runnum;
         BranchBinding b_helicity, b_x, b_Q2, b_t1, b_phi2, b_open_angle, b_pTmiss;
+        BranchBinding b_ycol;
+
         bind_one_exact_enable(t, "runnum",          b_runnum);
         bind_one_exact_enable(t, "helicity",        b_helicity);
-        bind_one_exact_enable(t, "x",              b_x);
-        bind_one_exact_enable(t, "Q2",             b_Q2);
-        bind_one_exact_enable(t, "t1",             b_t1);
-        bind_one_exact_enable(t, "phi2",           b_phi2);
-        bind_one_exact_enable(t, "open_angle_ep2", b_open_angle);
-        bind_one_exact_enable(t, "pTmiss",         b_pTmiss);
+        bind_one_exact_enable(t, "x",               b_x);
+        bind_one_exact_enable(t, "Q2",              b_Q2);
+        bind_one_exact_enable(t, "t1",              b_t1);
+        bind_one_exact_enable(t, "phi2",            b_phi2);
+        bind_one_exact_enable(t, "open_angle_ep2",  b_open_angle);
+        bind_one_exact_enable(t, "pTmiss",          b_pTmiss);
+        bind_one_exact_enable(t, "ycol",            b_ycol);
+
+        // ycol is mandatory for this module going forward.
+        if (t->GetBranch("ycol") == nullptr) {
+            fatal("Missing required branch 'ycol' in DVCS tree (needed for enforced global cuts).");
+        }
+
         BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
         bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
         bind_one_exact_enable(t, "Mx2",               b_Mx2);
@@ -942,6 +971,7 @@ bool update_total_counts_csv(
             const double phi2= bb_as_double(b_phi2);
             const double open_angle_deg = bb_as_double(b_open_angle);
             const double pTmiss         = bb_as_double(b_pTmiss);
+            const bool   ycol           = (bb_as_ll(b_ycol) != 0);
 
             if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)
                 || !std::isfinite(open_angle_deg) || !std::isfinite(pTmiss)) {
@@ -949,9 +979,9 @@ bool update_total_counts_csv(
             }
             ++seen;
 
-            // Global run blacklist + global cuts from global_cuts.h
+            // Global run blacklist + global cuts from global_cuts.h (enforced ycol)
             if (is_excluded_run(runnum)) { dbg.cut_fail++; continue; }
-            if (!passes_global_cuts(t1, open_angle_deg, pTmiss)) { dbg.cut_fail++; continue; }
+            if (!passes_global_cuts(t1, open_angle_deg, pTmiss, ycol)) { dbg.cut_fail++; continue; }
 
             const int topo_idx = topo.index();
             if (topo_idx < 0 || topo_idx > 2) { dbg.topo_bad++; continue; }
@@ -980,7 +1010,7 @@ bool update_total_counts_csv(
                     const CutMode mode = var_mode(vname);
                     if (!within_3sigma(val, sc, mode)) { ok = false; break; }
                 }
-                if (!ok) continue; // fail the 3σ exclusivity for this topology
+                if (!ok) continue; // fail the 3-sigma exclusivity for this topology
             }
             ++kept;
 
