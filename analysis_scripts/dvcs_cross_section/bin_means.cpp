@@ -83,8 +83,9 @@ static inline const char* topo_tag(Topology t) {
 }
 
 struct PeriodKeyMap {
-    std::string json_tag;   // e.g. "DVCS_Fa18_Inb"
-    std::string csv_label;  // e.g. "Fa18 Inb"
+    std::string json_tag;      // e.g. "DVCS_Fa18_Out" (matches combined_cuts.json keys)
+    std::string csv_label;     // e.g. "Fa18 Out"      (matches CSV column labels)
+    std::string period_label;  // e.g. "fa18_out"      (matches global_cuts period labels)
 };
 
 static inline PeriodKeyMap period_key_to_tags(const std::string& k) {
@@ -92,12 +93,21 @@ static inline PeriodKeyMap period_key_to_tags(const std::string& k) {
     for (char c : k) s.push_back((char)std::tolower((unsigned char)c));
     auto has = [&](const char* sub){ return s.find(sub) != std::string::npos; };
 
-    if (has("fa18") && has("inb")) return {"DVCS_Fa18_Inb", "Fa18 Inb"};
-    if (has("fa18") && has("out")) return {"DVCS_Fa18_Out", "Fa18 Out"};
-    if (has("sp19") && has("inb")) return {"DVCS_Sp19_Inb", "Sp19 Inb"};
-    if (has("sp18") && has("inb")) return {"DVCS_Sp18_Inb", "Sp18 Inb"};
-    if (has("sp18") && has("out")) return {"DVCS_Sp18_Out", "Sp18 Out"};
-    return {"", ""};
+    // Deterministic mapping only. No fallbacks.
+    if (has("fa18") && has("inb")) return {"DVCS_Fa18_Inb", "Fa18 Inb", "fa18_inb"};
+    if (has("fa18") && has("out")) return {"DVCS_Fa18_Out", "Fa18 Out", "fa18_out"};
+    if (has("sp19") && has("inb")) return {"DVCS_Sp19_Inb", "Sp19 Inb", "sp19_inb"};
+    if (has("sp18") && has("inb")) return {"DVCS_Sp18_Inb", "Sp18 Inb", "sp18_inb"};
+    if (has("sp18") && has("out")) return {"DVCS_Sp18_Out", "Sp18 Out", "sp18_out"};
+
+    // Fail-fast: if we cannot map it, do not proceed.
+    std::ostringstream ss;
+    ss << "[bin_means] FATAL: cannot map period key '" << k
+       << "' into {json_tag,csv_label,period_label}.";
+    std::cerr << ss.str() << std::endl;
+    std::exit(EXIT_FAILURE);
+
+    return {"", "", ""};
 }
 
 static inline const std::vector<std::string>& csv_period_labels() {
@@ -363,22 +373,21 @@ static inline bool passes_global(const BranchBinder& b, const std::string& perio
 
     const GlobalCutConfig& cfg = default_global_cuts();
 
-    // Use shared global cuts configuration (t1, open_angle_ep2_deg, pTmiss).
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
             std::cerr << "[bin_means] FATAL: dvcsgen ycol cut enabled, but required branches are missing "
-                      << "for period '" << period_label << "'. Missing one or more of: "
+                      << "for period_label '" << period_label << "'. Missing one or more of: "
                       << "e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi."
                       << std::endl;
             std::exit(EXIT_FAILURE);
         }
 
         if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                               period_label,
-                               b.e_p, b.e_theta, b.e_phi,
-                               b.p2_p, b.p2_theta, b.p2_phi,
-                               cfg)) {
+                                period_label,
+                                b.e_p, b.e_theta, b.e_phi,
+                                b.p2_p, b.p2_theta, b.p2_phi,
+                                cfg)) {
             return false;
         }
     } else {
@@ -611,7 +620,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
                       << std::endl;
         }
 
-        if (!passes_global(b, period_key)) continue;
+        if (!passes_global(b, tags.period_label)) continue;
         ++n_pass_global;
 
         int topo_idx = b.topology_index();
