@@ -31,7 +31,7 @@ struct GlobalCutConfig {
     double pTmiss_max = 0.20; // (GeV)
 
     // dvcsgen ycol cut mirror (OFF by default)
-    bool   enable_dvcsgen_ycol_cut = false;
+    bool   enable_dvcsgen_ycol_cut = true;
     double dvcsgen_ycol_cut = 0.005; // dimensionless threshold on P2_pos
 
     // Runs to exclude globally (data quality blacklist).
@@ -41,27 +41,7 @@ struct GlobalCutConfig {
     };
 };
 
-// -----------------------------------------------------------------------------
-// P2 enforcement API
-// -----------------------------------------------------------------------------
-
-// Load the global cuts JSON. MUST be called before using passes_global_cuts()
-// or is_excluded_run() with default cfg (fail-fast otherwise).
-bool load_global_cuts_config(const std::string& json_path);
-
-// True only if load_global_cuts_config() has succeeded.
-bool global_cuts_loaded();
-
-// Accessor used as the default cfg provider.
-// This should FAIL-FAST if global cuts are not loaded.
 const GlobalCutConfig& default_global_cuts();
-
-// Optional: print the active config (useful for provenance).
-void print_global_cuts_summary();
-
-// -----------------------------------------------------------------------------
-// Cut predicates
-// -----------------------------------------------------------------------------
 
 // Base version: only the three universal cuts.
 // FAIL-FAST if cfg.enable_dvcsgen_ycol_cut is true (because additional inputs are required).
@@ -109,6 +89,6 @@ std::string global_cuts_tcut(const GlobalCutConfig& cfg = default_global_cuts())
 
 // Persist the configuration once for provenance.
 void write_global_cuts_config_json(const std::string& out_json_dir,
-                                  const GlobalCutConfig& cfg = default_global_cuts());
+                                   const GlobalCutConfig& cfg = default_global_cuts());
 
 #endif // GLOBAL_CUTS_H
