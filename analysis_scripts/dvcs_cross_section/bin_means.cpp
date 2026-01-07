@@ -240,6 +240,15 @@ struct BranchBinder {
     double xF = 0.0;             bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gg = false;
 
+    // NEW (only required if global_cuts enables the dvcsgen ycol cut)
+    double e_p = 0.0;            bool has_e_p = false;
+    double e_theta = 0.0;        bool has_e_theta = false;
+    double e_phi = 0.0;          bool has_e_phi = false;
+
+    double p2_p = 0.0;           bool has_p2_p = false;
+    double p2_theta = 0.0;       bool has_p2_theta = false;
+    double p2_phi = 0.0;         bool has_p2_phi = false;
+
     // binning vars
     double x = 0.0;              bool has_x = false;
     double Q2 = 0.0;             bool has_Q2 = false;
@@ -272,6 +281,14 @@ struct BranchBinder {
         enable("xF");
         enable("theta_gamma_gamma");
 
+        // NEW (may or may not exist depending on tree schema; required only when enabled in global cuts)
+        enable("e_p");
+        enable("e_theta");
+        enable("e_phi");
+        enable("p2_p");
+        enable("p2_theta");
+        enable("p2_phi");
+
         // Binning variables
         enable("x");
         enable("Q2");
@@ -301,6 +318,15 @@ struct BranchBinder {
         bindD("xF",                &xF,                has_xF);
         bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
 
+        // NEW
+        bindD("e_p",     &e_p,     has_e_p);
+        bindD("e_theta", &e_theta, has_e_theta);
+        bindD("e_phi",   &e_phi,   has_e_phi);
+
+        bindD("p2_p",     &p2_p,     has_p2_p);
+        bindD("p2_theta", &p2_theta, has_p2_theta);
+        bindD("p2_phi",   &p2_phi,   has_p2_phi);
+
         bindD("x",    &x,    has_x);
         bindD("Q2",   &Q2,   has_Q2);
         bindD("phi2", &phi2_rad, has_phi2);
@@ -329,14 +355,35 @@ struct BranchBinder {
 };
 
 // ---------------- cuts ----------------
-static inline bool passes_global(const BranchBinder& b) {
+static inline bool passes_global(const BranchBinder& b, const std::string& period_label) {
     if (!b.readyForCuts()) return false;
 
     // Global run blacklist (from global_cuts.h), if runnum is available.
     if (b.has_runnum && is_excluded_run(b.runnum)) return false;
 
+    const GlobalCutConfig& cfg = default_global_cuts();
+
     // Use shared global cuts configuration (t1, open_angle_ep2_deg, pTmiss).
-    if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss)) return false;
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            std::cerr << "[bin_means] FATAL: dvcsgen ycol cut enabled, but required branches are missing "
+                      << "for period '" << period_label << "'. Missing one or more of: "
+                      << "e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi."
+                      << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
+        if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                               period_label,
+                               b.e_p, b.e_theta, b.e_phi,
+                               b.p2_p, b.p2_theta, b.p2_phi,
+                               cfg)) {
+            return false;
+        }
+    } else {
+        if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg)) return false;
+    }
 
     return true;
 }
@@ -564,7 +611,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
                       << std::endl;
         }
 
-        if (!passes_global(b)) continue;
+        if (!passes_global(b, period_key)) continue;
         ++n_pass_global;
 
         int topo_idx = b.topology_index();
