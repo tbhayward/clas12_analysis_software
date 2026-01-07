@@ -67,6 +67,7 @@
 // C++ stdlib
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -232,7 +233,13 @@ static inline PeriodTags parse_period_tags_from_tree_key(const std::string& tree
     }
     if (has("fa18") && has("inb") && has("supp")) {
         t.period_display = "Fa18 Inb Supp";
-        t.period_label   = "fa18_inb_supp";
+
+        // IMPORTANT:
+        // global_cuts.h does not recognize "fa18_inb_supp". For global-cuts
+        // dispatch, treat supplemental Fa18 Inb as the standard Fa18 Inb label.
+        t.period_label   = "fa18_inb";
+
+        // Sigma cuts still use the supplemental JSON key tag.
         t.json_tag       = "DVCS_Fa18_Inb_Supp";
         return t;
     }
@@ -1005,7 +1012,7 @@ static void plot_one_xB_canvas(const std::string& outdir,
             const double xmin = 0.0;
             const double xmax = 360.0;
 
-            TH1F* frame = gPad->DrawFrame(xmin, 0.0, xmax, std::max(1.0, 1.15 * ymax));
+            TH1F* frame = (TH1F*)gPad->DrawFrame(xmin, 0.0, xmax, std::max(1.0, 1.15 * ymax));
             frame->SetTitle("");
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle("Counts");
@@ -1052,9 +1059,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
                    << "  |t|=" << std::fixed << std::setprecision(2) << tc;
                 txt.DrawLatex(0.12, 0.83, ss.str().c_str());
             }
-
-            // Ownership: frame and graphs belong to pad; ROOT will clean on close, but avoid leaks in long runs.
-            // We leave them as-is because the canvas is written once then destroyed; ROOT will clear.
         }
     }
 
@@ -1062,7 +1066,8 @@ static void plot_one_xB_canvas(const std::string& outdir,
 
     const int idx = (int)std::llround(xBmin_for_file * 1000.0);
     std::ostringstream fname;
-    fname << outdir << "/plot_total_counts_" << (is_combined_group_label(label_for_title) ? canonical_group_dir(label_for_title) : canonical_period_dir(label_for_title))
+    fname << outdir << "/plot_total_counts_"
+          << (is_combined_group_label(label_for_title) ? canonical_group_dir(label_for_title) : canonical_period_dir(label_for_title))
           << "_" << topoDir << "_xB_" << idx << ".png";
 
     c.SaveAs(fname.str().c_str());
