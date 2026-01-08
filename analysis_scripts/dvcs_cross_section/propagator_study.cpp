@@ -1,3 +1,23 @@
+// propagator_study.cpp
+// -----------------------------------------------------------------------------
+// Study of dvcsgen propagator (P1 / ycol-mirror) cut efficiency in DATA.
+//
+// For each (xB, Q2, |t|, phi) bin defined by dvcs_pass2_analysis.csv, we count:
+//
+//   N_noP1   : events passing global DVCS cuts with the P1 cut DISABLED
+//   N_withP1 : events passing global DVCS cuts with the P1 cut ENABLED
+//
+// and plot the ratio vs phi:
+//
+//   eff(phi) = N_withP1 / N_noP1
+//
+// Notes / constraints:
+// - Applies 3-sigma exclusivity cuts for DATA using combined_cuts.json, topology-by-topology.
+// - Fails fast on missing CSV columns, missing period keys, missing required branches,
+//   or malformed cut JSON.
+// - This module only produces plots; it does not write to CSV.
+// -----------------------------------------------------------------------------
+
 #include "propagator_study.h"
 
 #include "global_cuts.h"
@@ -12,6 +32,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -43,6 +64,8 @@ namespace propagator_study {
 
 using Range = std::pair<double, double>;
 
+static constexpr double kPi = 3.14159265358979323846;
+
 static void fatal(const std::string& msg) {
     throw std::runtime_error(std::string("[propagator_study] FATAL: ") + msg);
 }
@@ -56,9 +79,9 @@ static std::string canonical_period_dir(const std::string& label) {
     if (label == "Fa18")     return "Fa18";
     if (label == "Sp18")     return "Sp18";
     if (label == "10.6 GeV") return "10.6_GeV";
-    std::string out = label;
-    std::replace(out.begin(), out.end(), ' ', '_');
-    return out;
+
+    fatal("Unknown label passed to canonical_period_dir: \"" + label + "\"");
+    return "UNREACHABLE";
 }
 
 static void ensure_dir(const fs::path& p) {
@@ -73,7 +96,7 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
     bool in_quotes = false;
 
     for (size_t i = 0; i < line.size(); ++i) {
-        char c = line[i];
+        const char c = line[i];
         if (c == '"') {
             in_quotes = !in_quotes;
             field.push_back(c);
@@ -90,16 +113,21 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
 
 static std::string trim(const std::string& s) {
     size_t b = 0;
-    while (b < s.size() && std::isspace((unsigned char)s[b])) ++b;
+    while (b < s.size() && std::isspace((unsigned char)s[b])) {
+        ++b;
+    }
     size_t e = s.size();
-    while (e > b && std::isspace((unsigned char)s[e - 1])) --e;
+    while (e > b && std::isspace((unsigned char)s[e - 1])) {
+        --e;
+    }
     return s.substr(b, e - b);
 }
 
 static std::string unquote(const std::string& s) {
     if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
-        std::string inner = s.substr(1, s.size() - 2);
+        const std::string inner = s.substr(1, s.size() - 2);
         std::string out;
+        out.reserve(inner.size());
         for (size_t i = 0; i < inner.size(); ++i) {
             if (inner[i] == '"' && i + 1 < inner.size() && inner[i + 1] == '"') {
                 out.push_back('"');
@@ -137,7 +165,9 @@ static int find_col_optional(const std::vector<std::string>& header,
 // Wrap angle into [0, 360)
 static double wrap_phi_deg(double phi_deg) {
     double x = std::fmod(phi_deg, 360.0);
-    if (x < 0.0) x += 360.0;
+    if (x < 0.0) {
+        x += 360.0;
+    }
     return x;
 }
 
@@ -150,20 +180,18 @@ static bool phi_in_range_deg(double phi_deg, double phimin, double phimax) {
     if (phimin <= phimax) {
         return (phi_deg >= phimin && phi_deg < phimax);
     }
-    // wrap-around: accept if phi >= phimin OR phi < phimax
     return (phi_deg >= phimin || phi_deg < phimax);
 }
 
 static double phi_center_deg(double phimin, double phimax) {
-    double a = wrap_phi_deg(phimin);
-    double b = wrap_phi_deg(phimax);
+    const double a = wrap_phi_deg(phimin);
+    const double b = wrap_phi_deg(phimax);
 
     if (a <= b) {
         return 0.5 * (a + b);
     }
-    // wrap-around: treat b as b+360
-    double bb = b + 360.0;
-    double c = 0.5 * (a + bb);
+    const double bb = b + 360.0;
+    const double c = 0.5 * (a + bb);
     return wrap_phi_deg(c);
 }
 
@@ -172,8 +200,8 @@ static bool value_in_range(double v, const Range& r) {
 }
 
 static std::string topology_from_detectors(int detector1, int detector2) {
-    // Deterministic mapping:
-    // 1 = FD, 2 = CD, 3 = FT (assumed consistent with existing analysis)
+    // Deterministic mapping (must match the rest of the analysis):
+    // 1 = FD, 2 = CD, 3 = FT
     if (detector1 == 1 && detector2 == 1) return "FD_FD";
     if (detector1 == 2 && detector2 == 1) return "CD_FD";
     if (detector1 == 2 && detector2 == 3) return "CD_FT";
@@ -192,31 +220,20 @@ struct Cut1D {
 using SigmaCut   = std::map<std::string, Cut1D>;
 using TopoCutMap = std::map<std::string, SigmaCut>;
 
-static bool read_mu_sigma(const json& j, double& mu, double& sigma) {
-    // Accept a small set of deterministic key spellings.
-    // This is not a fallback for analysis logic; it is a strict parser for the cut file schema.
-    if (!j.is_object()) return false;
-
-    bool have_mu = false;
-    bool have_sigma = false;
-
-    if (j.contains("mu")) {
-        mu = j["mu"].get<double>();
-        have_mu = true;
-    } else if (j.contains("mean")) {
-        mu = j["mean"].get<double>();
-        have_mu = true;
+static bool read_mu_sigma_strict(const json& j, double& mu, double& sigma) {
+    // Strict schema: must contain exactly "mu" and "sigma" as numbers.
+    if (!j.is_object()) {
+        return false;
     }
-
-    if (j.contains("sigma")) {
-        sigma = j["sigma"].get<double>();
-        have_sigma = true;
-    } else if (j.contains("std")) {
-        sigma = j["std"].get<double>();
-        have_sigma = true;
+    if (!j.contains("mu") || !j.contains("sigma")) {
+        return false;
     }
-
-    return have_mu && have_sigma;
+    if (!j["mu"].is_number() || !j["sigma"].is_number()) {
+        return false;
+    }
+    mu    = j["mu"].get<double>();
+    sigma = j["sigma"].get<double>();
+    return true;
 }
 
 static TopoCutMap load_combined_cuts_json(const std::string& path) {
@@ -236,21 +253,24 @@ static TopoCutMap load_combined_cuts_json(const std::string& path) {
         fatal("combined cuts JSON root is not an object: " + path);
     }
 
-    // Expect top-level to contain topology objects (FD_FD, CD_FD, CD_FT).
     TopoCutMap out;
 
     for (auto it = j.begin(); it != j.end(); ++it) {
         const std::string topo = it.key();
         const json& topo_obj = it.value();
-        if (!topo_obj.is_object()) continue;
+        if (!topo_obj.is_object()) {
+            fatal("Topology entry is not an object for topo=" + topo);
+        }
 
         SigmaCut sc;
         for (auto iv = topo_obj.begin(); iv != topo_obj.end(); ++iv) {
             const std::string var = iv.key();
             const json& spec = iv.value();
-            double mu = 0.0, sigma = 0.0;
-            if (!read_mu_sigma(spec, mu, sigma)) {
-                continue;
+
+            double mu = 0.0;
+            double sigma = 0.0;
+            if (!read_mu_sigma_strict(spec, mu, sigma)) {
+                fatal("Cut spec must contain numeric keys {mu, sigma} for topo=" + topo + " var=" + var);
             }
             if (!(sigma > 0.0) || !std::isfinite(sigma)) {
                 fatal("Non-positive or non-finite sigma for topo=" + topo + " var=" + var);
@@ -258,16 +278,16 @@ static TopoCutMap load_combined_cuts_json(const std::string& path) {
             sc[var] = Cut1D{mu, sigma};
         }
 
-        if (!sc.empty()) {
-            out[topo] = sc;
+        if (sc.empty()) {
+            fatal("Topology \"" + topo + "\" contains no cut variables");
         }
+        out[topo] = sc;
     }
 
     if (out.empty()) {
         fatal("combined cuts JSON produced an empty TopoCutMap: " + path);
     }
 
-    // Require the canonical DVCS topologies to exist.
     const std::vector<std::string> required_topos = {"FD_FD", "CD_FD", "CD_FT"};
     for (const auto& t : required_topos) {
         if (out.find(t) == out.end()) {
@@ -275,10 +295,11 @@ static TopoCutMap load_combined_cuts_json(const std::string& path) {
         }
     }
 
-    std::cout << "[propagator_study] Loaded combined cuts from " << path
-              << " with topologies: ";
+    std::cout << "[propagator_study] Loaded combined cuts from " << path << " with topologies: ";
     for (auto it = out.begin(); it != out.end(); ++it) {
-        if (it != out.begin()) std::cout << ", ";
+        if (it != out.begin()) {
+            std::cout << ", ";
+        }
         std::cout << it->first << "(" << it->second.size() << " vars)";
     }
     std::cout << "\n";
@@ -292,7 +313,7 @@ static bool within_3sigma_value(double v, const Cut1D& c) {
 }
 
 // -----------------------------------------------------------------------------
-// CSV bin definitions
+// CSV bin definitions and LUT
 // -----------------------------------------------------------------------------
 
 struct RowBin {
@@ -307,7 +328,7 @@ struct RowBin {
 struct PhiBinRef {
     double phimin_deg = 0.0;
     double phimax_deg = 0.0;
-    size_t row_index = 0; // index into bins vector
+    size_t row_index = 0;
 };
 
 struct LUT {
@@ -316,8 +337,7 @@ struct LUT {
     struct XBNode {
         std::vector<Range> q2_bins;
         std::vector<Range> t_bins;
-        // phi bins per (q2_idx, t_idx)
-        std::vector<std::vector<std::vector<PhiBinRef>>> phi_bins;
+        std::vector<std::vector<std::vector<PhiBinRef>>> phi_bins; // [iq][it][iphi]
         int xb_index_for_name = -1;
     };
 
@@ -327,16 +347,18 @@ struct LUT {
 static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
     LUT lut;
 
-    // Unique xB ranges
     std::set<Range> xb_set;
-    for (const auto& b : bins) xb_set.insert(b.xb);
+    for (const auto& b : bins) {
+        xb_set.insert(b.xb);
+    }
     lut.xb_bins.assign(xb_set.begin(), xb_set.end());
     lut.nodes.resize(lut.xb_bins.size());
 
     for (size_t ixb = 0; ixb < lut.xb_bins.size(); ++ixb) {
         const Range& xbR = lut.xb_bins[ixb];
 
-        std::set<Range> q2_set, t_set;
+        std::set<Range> q2_set;
+        std::set<Range> t_set;
         int xb_idx_name = -1;
 
         for (const auto& b : bins) {
@@ -356,12 +378,16 @@ static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
 
         const size_t nq = node.q2_bins.size();
         const size_t nt = node.t_bins.size();
+
+        if (nq == 0 || nt == 0) {
+            fatal("LUT build produced empty q2 or t bins for an xB slice");
+        }
+
         node.phi_bins.resize(nq);
         for (size_t iq = 0; iq < nq; ++iq) {
             node.phi_bins[iq].resize(nt);
         }
 
-        // Fill phi bins for each (q2,t)
         for (size_t iq = 0; iq < nq; ++iq) {
             for (size_t it = 0; it < nt; ++it) {
                 const Range& q2R = node.q2_bins[iq];
@@ -377,6 +403,10 @@ static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
                         ref.row_index  = r;
                         pb.push_back(ref);
                     }
+                }
+
+                if (pb.empty()) {
+                    fatal("No phi bins found for some (xB,Q2,|t|) slice in LUT build");
                 }
 
                 std::sort(pb.begin(), pb.end(),
@@ -395,15 +425,11 @@ static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
 }
 
 static bool find_bin_index(const LUT& lut,
-                           const std::vector<RowBin>& bins,
                            double xB,
                            double Q2,
                            double t_abs,
                            double phi_deg,
                            size_t& out_row_index) {
-    (void)bins;
-
-    // xB
     int ixb = -1;
     for (size_t i = 0; i < lut.xb_bins.size(); ++i) {
         if (value_in_range(xB, lut.xb_bins[i])) {
@@ -411,7 +437,9 @@ static bool find_bin_index(const LUT& lut,
             break;
         }
     }
-    if (ixb < 0) return false;
+    if (ixb < 0) {
+        return false;
+    }
 
     const auto& node = lut.nodes[(size_t)ixb];
 
@@ -422,7 +450,9 @@ static bool find_bin_index(const LUT& lut,
             break;
         }
     }
-    if (iq < 0) return false;
+    if (iq < 0) {
+        return false;
+    }
 
     int it = -1;
     for (size_t i = 0; i < node.t_bins.size(); ++i) {
@@ -431,10 +461,16 @@ static bool find_bin_index(const LUT& lut,
             break;
         }
     }
-    if (it < 0) return false;
+    if (it < 0) {
+        return false;
+    }
 
     const auto& pb = node.phi_bins[(size_t)iq][(size_t)it];
-    if (pb.empty()) return false;
+    if (pb.empty()) {
+        return false;
+    }
+
+    phi_deg = wrap_phi_deg(phi_deg);
 
     for (const auto& ref : pb) {
         if (phi_in_range_deg(phi_deg, ref.phimin_deg, ref.phimax_deg)) {
@@ -447,7 +483,7 @@ static bool find_bin_index(const LUT& lut,
 }
 
 // -----------------------------------------------------------------------------
-// Plotting
+// Plotting helpers
 // -----------------------------------------------------------------------------
 
 struct Point {
@@ -457,7 +493,10 @@ struct Point {
 };
 
 static TGraphErrors* make_graph(const std::vector<Point>& v) {
-    if (v.empty()) return nullptr;
+    if (v.empty()) {
+        return nullptr;
+    }
+
     const int N = (int)v.size();
     std::vector<double> x(N), y(N), ex(N), ey(N);
     for (int i = 0; i < N; ++i) {
@@ -466,6 +505,7 @@ static TGraphErrors* make_graph(const std::vector<Point>& v) {
         ex[i] = 0.0;
         ey[i] = v[i].yerr;
     }
+
     TGraphErrors* g = new TGraphErrors(N, x.data(), y.data(), ex.data(), ey.data());
     g->SetMarkerStyle(20);
     g->SetMarkerSize(1.0);
@@ -487,6 +527,13 @@ static void set_root_style() {
     gStyle->SetPadTickY(1);
 }
 
+static std::string fmt_cell_label(double q2min, double q2max, double tmin, double tmax) {
+    std::ostringstream oss;
+    oss << "Q^{2} in (" << std::fixed << std::setprecision(2) << q2min << ", " << q2max
+        << "), |t| in (" << std::fixed << std::setprecision(2) << tmin << ", " << tmax << ")";
+    return oss.str();
+}
+
 static void make_canvas_for_xb(const std::string& label,
                                const Range& xb_range,
                                const LUT& lut,
@@ -496,7 +543,6 @@ static void make_canvas_for_xb(const std::string& label,
                                const fs::path& outdir,
                                int xb_idx_for_name,
                                double p1_threshold) {
-    // Identify q2 and t slices for this xB
     int ixb = -1;
     for (size_t i = 0; i < lut.xb_bins.size(); ++i) {
         if (lut.xb_bins[i] == xb_range) {
@@ -504,23 +550,33 @@ static void make_canvas_for_xb(const std::string& label,
             break;
         }
     }
-    if (ixb < 0) return;
+    if (ixb < 0) {
+        return;
+    }
 
     const auto& node = lut.nodes[(size_t)ixb];
+
     const int ncols = (int)node.q2_bins.size();
     const int nrows = (int)node.t_bins.size();
-    if (ncols <= 0 || nrows <= 0) return;
+    if (ncols <= 0 || nrows <= 0) {
+        return;
+    }
 
     const int nPads = ncols * nrows;
 
     int W = 300 * ncols + 160;
     int H = 260 * nrows + 240;
-    if (W < 1200) W = 1200;
-    if (H < 900)  H = 900;
+    if (W < 1200) {
+        W = 1200;
+    }
+    if (H < 900) {
+        H = 900;
+    }
 
     double titleSize = 0.18;
     double legendTextSize = 0.11;
     double cellLabelSize = 0.070;
+
     if (nPads <= 4) {
         titleSize = 0.14;
         legendTextSize = 0.09;
@@ -531,6 +587,7 @@ static void make_canvas_for_xb(const std::string& label,
         legendTextSize = 0.085;
         cellLabelSize = 0.055;
     }
+
     titleSize *= 0.5;
     legendTextSize *= 0.5;
 
@@ -569,7 +626,6 @@ static void make_canvas_for_xb(const std::string& label,
 
     head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
-    // Legend in top pad
     TGraphErrors dummy;
     dummy.SetMarkerStyle(20);
     dummy.SetMarkerSize(1.0);
@@ -587,7 +643,6 @@ static void make_canvas_for_xb(const std::string& label,
     leg->AddEntry(&dummy, "N(with P1 cut) / N(no P1 cut)", "lep");
     leg->Draw();
 
-    // Draw pads
     for (int r = 0; r < nrows; ++r) {
         const Range& t_range = node.t_bins[(size_t)r];
         for (int cc = 0; cc < ncols; ++cc) {
@@ -595,10 +650,10 @@ static void make_canvas_for_xb(const std::string& label,
 
             pGrid->cd(r * ncols + cc + 1);
             gPad->SetGrid(1, 1);
-            gPad->SetTopMargin(0.12);
+            gPad->SetTopMargin(0.22);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.16);
-            gPad->SetRightMargin(0.10);
+            gPad->SetLeftMargin(0.160);
+            gPad->SetRightMargin(0.07);
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.05);
             frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -618,36 +673,42 @@ static void make_canvas_for_xb(const std::string& label,
             lab.SetTextSize(cellLabelSize);
             lab.SetTextAlign(11);
             lab.SetTextFont(42);
-            lab.DrawLatex(
-                0.14, 0.93,
-                Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
-                     q2_range.first, q2_range.second,
-                     t_range.first,  t_range.second)
-            );
 
-            // Collect phi points in this (xB,q2,t)
+            const std::string cell = fmt_cell_label(q2_range.first, q2_range.second,
+                                                    t_range.first, t_range.second);
+            lab.DrawLatex(0.12, 0.93, cell.c_str());
+
             const auto& pb = node.phi_bins[(size_t)cc][(size_t)r];
-            if (pb.empty()) continue;
+            if (pb.empty()) {
+                continue;
+            }
 
             std::vector<Point> pts;
             pts.reserve(pb.size());
 
             for (const auto& ref : pb) {
                 const size_t ridx = ref.row_index;
-                if (ridx >= bins.size()) continue;
+                if (ridx >= bins.size()) {
+                    fatal("Internal error: phi-bin row_index exceeds bins size");
+                }
 
                 const double denom = N_noP1[ridx];
                 const double numer = N_withP1[ridx];
 
-                if (denom <= 0.0) continue;
+                if (denom <= 0.0) {
+                    continue;
+                }
 
                 double f = numer / denom;
-                if (f < 0.0) f = 0.0;
-                if (f > 1.0) f = 1.0;
+                if (f < 0.0) {
+                    f = 0.0;
+                }
+                if (f > 1.0) {
+                    f = 1.0;
+                }
 
-                double err = 0.0;
                 // Binomial uncertainty: sqrt(f(1-f)/N)
-                err = std::sqrt(std::max(0.0, f * (1.0 - f) / denom));
+                double err = std::sqrt(std::max(0.0, f * (1.0 - f) / denom));
 
                 Point p;
                 p.phi  = phi_center_deg(ref.phimin_deg, ref.phimax_deg);
@@ -657,12 +718,15 @@ static void make_canvas_for_xb(const std::string& label,
             }
 
             std::sort(pts.begin(), pts.end(),
-                      [](const Point& a, const Point& b) { return a.phi < b.phi; });
+                      [](const Point& a, const Point& b) {
+                          return a.phi < b.phi;
+                      });
 
             TGraphErrors* g = make_graph(pts);
-            if (g) g->Draw("P SAME");
+            if (g != nullptr) {
+                g->Draw("P SAME");
+            }
 
-            // Reference line at 1.0
             TLine* l1 = new TLine(0.0, 1.0, 360.0, 1.0);
             l1->SetLineStyle(2);
             l1->SetLineWidth(1);
@@ -674,14 +738,14 @@ static void make_canvas_for_xb(const std::string& label,
     fname << "propagator_study_" << canonical_period_dir(label)
           << "_xB_" << xb_idx_for_name << ".png";
 
-    fs::path outpath = outdir / fname.str();
+    const fs::path outpath = outdir / fname.str();
     c->SaveAs(outpath.string().c_str());
 
     delete c;
 }
 
 // -----------------------------------------------------------------------------
-// Counting pass (one period key, one set of trees)
+// Tree reading / counting
 // -----------------------------------------------------------------------------
 
 struct BoundVarD {
@@ -690,7 +754,9 @@ struct BoundVarD {
 };
 
 static bool tree_has_branch(TTree* t, const std::string& bname) {
-    if (!t) return false;
+    if (t == nullptr) {
+        return false;
+    }
     return (t->GetBranch(bname.c_str()) != nullptr);
 }
 
@@ -717,18 +783,20 @@ static void accumulate_counts_for_period(const std::string& period_key,
     }
 
     for (TTree* tree : trees) {
-        if (!tree) continue;
+        if (tree == nullptr) {
+            continue;
+        }
 
         // Required branches for binning and global cuts
-        require_branch(tree, "x",               period_key);
-        require_branch(tree, "Q2",              period_key);
-        require_branch(tree, "t1",              period_key);
-        require_branch(tree, "phi2",            period_key);
-        require_branch(tree, "open_angle_ep2",  period_key);
-        require_branch(tree, "pTmiss",          period_key);
-        require_branch(tree, "detector1",       period_key);
-        require_branch(tree, "detector2",       period_key);
-        require_branch(tree, "runnum",          period_key);
+        require_branch(tree, "x",              period_key);
+        require_branch(tree, "Q2",             period_key);
+        require_branch(tree, "t1",             period_key);
+        require_branch(tree, "phi2",           period_key);
+        require_branch(tree, "open_angle_ep2", period_key);
+        require_branch(tree, "pTmiss",         period_key);
+        require_branch(tree, "detector1",      period_key);
+        require_branch(tree, "detector2",      period_key);
+        require_branch(tree, "runnum",         period_key);
 
         // Required for P1 computation inside passes_global_cuts(...)
         require_branch(tree, "e_p",      period_key);
@@ -738,7 +806,7 @@ static void accumulate_counts_for_period(const std::string& period_key,
         require_branch(tree, "p2_theta", period_key);
         require_branch(tree, "p2_phi",   period_key);
 
-        // Optional exclusivity variables for 3-sigma (apply if both present in tree and in cutmap for the topology)
+        // Optional exclusivity variables for 3-sigma cuts
         const std::vector<std::string> opt_vars = {
             "Emiss2",
             "Mx2",
@@ -746,7 +814,7 @@ static void accumulate_counts_for_period(const std::string& period_key,
             "Mx2_2",
             "theta_gamma_gamma",
             "xF",
-            "pTmiss" // already required, but also commonly in cutmap
+            "pTmiss"
         };
 
         TTreeReader reader(tree);
@@ -805,26 +873,31 @@ static void accumulate_counts_for_period(const std::string& period_key,
             }
             const SigmaCut& sc = it_topo->second;
 
-            // 3-sigma cuts: apply for variables that are both bound and present in sc
+            // Apply 3-sigma cuts for variables that are both bound and present in the cut map.
             bool pass_3s = true;
             for (const auto& bv : opt_bound) {
                 auto itv = sc.find(bv.name);
-                if (itv == sc.end()) continue;
-                const double val = **(bv.val);
-                if (!within_3sigma_value(val, itv->second)) {
+                if (itv == sc.end()) {
+                    continue;
+                }
+                const double vv = **(bv.val);
+                if (!within_3sigma_value(vv, itv->second)) {
                     pass_3s = false;
                     break;
                 }
             }
-            if (!pass_3s) continue;
+            if (!pass_3s) {
+                continue;
+            }
 
             const double t_abs = -(*t1);
-            if (!(t_abs > 0.0) || !std::isfinite(t_abs)) continue;
+            if (!(t_abs > 0.0) || !std::isfinite(t_abs)) {
+                continue;
+            }
 
-            double phi_deg = (*phi2) * 180.0 / M_PI;
+            double phi_deg = (*phi2) * 180.0 / kPi;
             phi_deg = wrap_phi_deg(phi_deg);
 
-            // Global cuts without P1
             bool pass_noP1 = false;
             bool pass_withP1 = false;
 
@@ -837,7 +910,9 @@ static void accumulate_counts_for_period(const std::string& period_key,
                                                *p2_p, *p2_theta, *p2_phi,
                                                cfg_noP1);
 
-                if (!pass_noP1) continue;
+                if (!pass_noP1) {
+                    continue;
+                }
 
                 pass_withP1 = passes_global_cuts(*t1,
                                                  *open_angle_ep2,
@@ -854,13 +929,11 @@ static void accumulate_counts_for_period(const std::string& period_key,
                 fatal(oss.str());
             }
 
-            // Bin lookup
             size_t ridx = 0;
-            if (!find_bin_index(lut, bins, *x, *Q2, t_abs, phi_deg, ridx)) {
+            if (!find_bin_index(lut, *x, *Q2, t_abs, phi_deg, ridx)) {
                 continue;
             }
 
-            // Denominator always increments here
             N_noP1[ridx] += 1.0;
             if (pass_withP1) {
                 N_withP1[ridx] += 1.0;
@@ -873,11 +946,11 @@ static void accumulate_counts_for_period(const std::string& period_key,
                       << " skipped " << n_unknown_topo
                       << " events with UNKNOWN topology\n";
         }
-    } // end tree loop
+    }
 }
 
 // -----------------------------------------------------------------------------
-// Main entry point
+// CSV bin loader
 // -----------------------------------------------------------------------------
 
 static std::vector<RowBin> load_bins_from_csv(const std::string& csv_main) {
@@ -897,7 +970,7 @@ static std::vector<RowBin> load_bins_from_csv(const std::string& csv_main) {
         fatal("CSV is empty: " + csv_main);
     }
 
-    std::vector<std::string> header = split_csv_line(lines[0]);
+    const std::vector<std::string> header = split_csv_line(lines[0]);
 
     const int c_xb_min  = find_col(header, "xBmin");
     const int c_xb_max  = find_col(header, "xBmax");
@@ -913,9 +986,13 @@ static std::vector<RowBin> load_bins_from_csv(const std::string& csv_main) {
     bins.reserve(lines.size() > 1 ? lines.size() - 1 : 0);
 
     for (size_t r = 1; r < lines.size(); ++r) {
-        if (lines[r].empty()) continue;
-        std::vector<std::string> fields = split_csv_line(lines[r]);
-        if (fields.size() != header.size()) continue;
+        if (lines[r].empty()) {
+            continue;
+        }
+        const std::vector<std::string> fields = split_csv_line(lines[r]);
+        if (fields.size() != header.size()) {
+            continue;
+        }
 
         RowBin b;
 
@@ -933,9 +1010,15 @@ static std::vector<RowBin> load_bins_from_csv(const std::string& csv_main) {
             b.xb_index = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
         }
 
-        if (!(b.xb.first < b.xb.second)) continue;
-        if (!(b.q2.first < b.q2.second)) continue;
-        if (!(b.t_abs.first < b.t_abs.second)) continue;
+        if (!(b.xb.first < b.xb.second)) {
+            continue;
+        }
+        if (!(b.q2.first < b.q2.second)) {
+            continue;
+        }
+        if (!(b.t_abs.first < b.t_abs.second)) {
+            continue;
+        }
 
         bins.push_back(b);
     }
@@ -963,38 +1046,37 @@ static void require_period_keys(const TreeMap& m,
     }
 }
 
+// -----------------------------------------------------------------------------
+// Public entry point
+// -----------------------------------------------------------------------------
+
 bool run_propagator_study(const std::string& csv_main,
                           const TreeMap& data_trees_by_period,
                           const std::string& combined_cuts_json,
                           const std::string& out_root_dir) {
     set_root_style();
 
-    // Require the five base periods as inputs
     const std::vector<std::string> base_period_keys = {
         "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "sp19_inb"
     };
     require_period_keys(data_trees_by_period, base_period_keys);
 
-    // Load bins and LUT
     const std::vector<RowBin> bins = load_bins_from_csv(csv_main);
     const LUT lut = build_lut_from_bins(bins);
 
-    // Load 3-sigma cuts
     const TopoCutMap cutmap = load_combined_cuts_json(combined_cuts_json);
 
-    // Prepare global cut configs:
-    //   cfg_noP1: same as default but P1 cut disabled
-    //   cfg_withP1: default (P1 cut enabled)
     GlobalCutConfig cfg_withP1 = default_global_cuts();
     GlobalCutConfig cfg_noP1   = default_global_cuts();
+
+    // Disable P1/ycol-mirror cut in cfg_noP1 only.
     cfg_noP1.enable_dvcsgen_ycol_cut = false;
 
     const double p1_threshold = cfg_withP1.dvcsgen_ycol_cut;
 
-    // Labels to produce (display labels)
     struct LabelSpec {
         std::string label;
-        std::vector<std::string> members; // period keys
+        std::vector<std::string> members;
     };
 
     const std::vector<LabelSpec> labels = {
@@ -1008,7 +1090,6 @@ bool run_propagator_study(const std::string& csv_main,
         {"10.6 GeV", {"fa18_inb", "fa18_out", "sp18_inb", "sp18_out"}}
     };
 
-    // For each label, accumulate counts and then plot
     for (const auto& L : labels) {
         std::vector<double> N_noP1(bins.size(), 0.0);
         std::vector<double> N_withP1(bins.size(), 0.0);
@@ -1016,7 +1097,9 @@ bool run_propagator_study(const std::string& csv_main,
         std::cout << "[propagator_study] Accumulating counts for label=\""
                   << L.label << "\" using members={";
         for (size_t i = 0; i < L.members.size(); ++i) {
-            if (i > 0) std::cout << ", ";
+            if (i > 0) {
+                std::cout << ", ";
+            }
             std::cout << L.members[i];
         }
         std::cout << "}\n";
@@ -1026,6 +1109,7 @@ bool run_propagator_study(const std::string& csv_main,
             if (it == data_trees_by_period.end()) {
                 fatal("Missing member period_key=\"" + period_key + "\" for label=\"" + L.label + "\"");
             }
+
             accumulate_counts_for_period(period_key,
                                          it->second,
                                          cutmap,
@@ -1037,11 +1121,9 @@ bool run_propagator_study(const std::string& csv_main,
                                          cfg_withP1);
         }
 
-        // Output directory for this label
-        fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(L.label);
+        const fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(L.label);
         ensure_dir(outdir);
 
-        // Iterate xB canvases and make plots
         int xb_canvas_counter = 0;
         for (size_t ixb = 0; ixb < lut.xb_bins.size(); ++ixb) {
             const Range& xbR = lut.xb_bins[ixb];
