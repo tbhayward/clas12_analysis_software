@@ -4,7 +4,7 @@
 //
 // We compute (per CSV bin in xB, Q2, |t|, phi):
 //
-//   ratio(phi) = N_numer / N_denom
+//   eff(phi) = N_numer / N_denom
 //
 // for three tests:
 //
@@ -26,15 +26,11 @@
 // - All the machinery for global cuts and 3-sigma cuts remains in the code so we can
 //   turn pieces back on without rewriting the module.
 //
-// Notes / constraints:
-// - Bin definitions come from dvcs_pass2_analysis.csv.
-// - 3-sigma exclusivity cuts for DATA are loaded from combined_cuts.json
-//   (new schema) and are applied topology-by-topology (FD_FD, CD_FD, CD_FT).
-// - Fail fast on missing required branches (only those needed by the active tests).
-//
-// PRINTING POLICY (as requested):
-// - ONLY print out the bins/lines that have efficiency not equal to 1.
-//   We define "eff != 1" as (denom > 0) AND (numer != denom) for a phi-bin.
+// PRINTING POLICY (updated per your request):
+// - Print ONLY for label "Fa18 Out".
+// - Print ONLY for the first two xB bins (lowest xB slices).
+// - Print ONLY bins where efficiency is NOT equal to 1, i.e. denom > 0 AND numer != denom.
+// - For printed bins, include "eff=" explicitly.
 // -----------------------------------------------------------------------------
 
 #include "propagator_study.h"
@@ -86,6 +82,10 @@ static constexpr double kPi = 3.14159265358979323846;
 
 // Requested starting threshold for the propagator cut study:
 static constexpr double kP2CutThreshold = 0.005;
+
+// Printing restrictions (your request)
+static constexpr int kPrintFirstNXB = 2;
+static const std::string kPrintOnlyLabel = "Fa18 Out";
 
 static void fatal(const std::string &msg) {
     throw std::runtime_error(std::string("[propagator_study] FATAL: ") + msg);
@@ -491,6 +491,21 @@ static bool find_bin_index(const LUT &lut,
     return false;
 }
 
+// Printing filter: first N xB bins (by LUT ordering)
+static int xb_bin_position(const LUT &lut, const Range &xbR) {
+    for (size_t i = 0; i < lut.xb_bins.size(); ++i) {
+        if (lut.xb_bins[i] == xbR) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static bool in_first_n_xb_bins(const LUT &lut, const Range &xbR, int n) {
+    const int pos = xb_bin_position(lut, xbR);
+    return (pos >= 0 && pos < n);
+}
+
 // -----------------------------------------------------------------------------
 // Plotting helpers
 // -----------------------------------------------------------------------------
@@ -541,7 +556,8 @@ static std::string fmt_cell_label(double q2min, double q2max, double tmin, doubl
     return oss.str();
 }
 
-static void maybe_print_eff_not1_point(const std::string &test_title,
+static void maybe_print_eff_not1_point(bool allow_print,
+                                      const std::string &test_title,
                                       const std::string &label,
                                       int xb_idx_for_name,
                                       const Range &xb_range,
@@ -550,15 +566,15 @@ static void maybe_print_eff_not1_point(const std::string &test_title,
                                       double phi_c,
                                       double numer,
                                       double denom,
-                                      double ratio,
+                                      double eff,
                                       double err,
                                       size_t csv_row_index,
                                       double phimin_deg,
                                       double phimax_deg) {
+    if (!allow_print) return;
     if (!(denom > 0.0)) return;
 
     // "eff != 1" as requested:
-    // because counts are filled in unit steps, denom and numer should be exact integers in double.
     if (numer == denom) return;
 
     std::cout << std::fixed << std::setprecision(6)
@@ -573,7 +589,7 @@ static void maybe_print_eff_not1_point(const std::string &test_title,
               << "phi_bin=(" << phimin_deg << "," << phimax_deg << ") "
               << "row=" << csv_row_index << " "
               << "numer=" << numer << " denom=" << denom
-              << " ratio=" << ratio << " err=" << err
+              << " eff=" << eff << " err=" << err
               << "\n";
 }
 
@@ -677,6 +693,10 @@ static void make_canvas_for_xb(const std::string &label,
     leg->AddEntry(&dummy, legend_text.c_str(), "lep");
     leg->Draw();
 
+    // Print gating: ONLY Fa18 Out AND ONLY first two xB bins
+    const bool allow_print_this_xb =
+        (label == kPrintOnlyLabel && in_first_n_xb_bins(lut, xb_range, kPrintFirstNXB));
+
     for (int r = 0; r < nrows; ++r) {
         const Range &t_range = node.t_bins[(size_t)r];
         for (int cc = 0; cc < ncols; ++cc) {
@@ -729,18 +749,19 @@ static void make_canvas_for_xb(const std::string &label,
 
                 if (denom <= 0.0) continue;
 
-                const double f = numer / denom;
+                const double eff = numer / denom;
 
                 double err = 0.0;
-                const double arg = f * (1.0 - f) / denom;
+                const double arg = eff * (1.0 - eff) / denom;
                 if (arg > 0.0) {
                     err = std::sqrt(arg);
                 }
 
                 const double phi_c = phi_center_deg(ref.phimin_deg, ref.phimax_deg);
 
-                // ONLY print bins where eff != 1
-                maybe_print_eff_not1_point(test_title,
+                // ONLY print bins where eff != 1, AND within label/xB restrictions.
+                maybe_print_eff_not1_point(allow_print_this_xb,
+                                           test_title,
                                            label,
                                            xb_idx_for_name,
                                            xb_range,
@@ -749,7 +770,7 @@ static void make_canvas_for_xb(const std::string &label,
                                            phi_c,
                                            numer,
                                            denom,
-                                           f,
+                                           eff,
                                            err,
                                            ridx,
                                            ref.phimin_deg,
@@ -757,7 +778,7 @@ static void make_canvas_for_xb(const std::string &label,
 
                 Point p;
                 p.phi  = phi_c;
-                p.y    = f;
+                p.y    = eff;
                 p.yerr = err;
                 pts.push_back(p);
             }
@@ -856,8 +877,6 @@ static double compute_P2_pos_value(const std::string &period_key,
                                   double e_p, double e_theta, double e_phi,
                                   double p2_p, double p2_theta, double p2_phi,
                                   const GlobalCutConfig &cfg_context) {
-    // Your global_cuts implementation currently routes dvcsgen_ycol_value()
-    // to compute_P2_pos(). We keep using it as the canonical P2_pos calculator.
     const double v = ::dvcsgen_ycol_value(period_key,
                                           e_p, e_theta, e_phi,
                                           p2_p, p2_theta, p2_phi,
@@ -909,7 +928,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
     for (TTree *tree : trees) {
         if (tree == nullptr) continue;
 
-        // Always needed for bin matching:
         require_branch(tree, "x",    period_key);
         require_branch(tree, "Q2",   period_key);
         require_branch(tree, "t1",   period_key);
@@ -919,13 +937,11 @@ static void accumulate_counts_for_period(const std::string &period_key,
             require_branch(tree, "runnum", period_key);
         }
 
-        // Global DVCS cuts (optional)
         if (need_global) {
             require_branch(tree, "open_angle_ep2", period_key);
             require_branch(tree, "pTmiss",         period_key);
         }
 
-        // P2 computation (optional)
         if (need_P2) {
             require_branch(tree, "e_p",      period_key);
             require_branch(tree, "e_theta",  period_key);
@@ -935,7 +951,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
             require_branch(tree, "p2_phi",   period_key);
         }
 
-        // 3-sigma (optional)
         if (need_3s) {
             require_branch(tree, "detector1", period_key);
             require_branch(tree, "detector2", period_key);
@@ -988,7 +1003,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
             detector2.reset(new TTreeReaderValue<int>(reader, "detector2"));
         }
 
-        // Bind all 3-sigma vars as doubles (ROOT will convert floats)
         struct BoundD {
             std::string name;
             std::unique_ptr<TTreeReaderValue<double>> val;
@@ -1010,11 +1024,7 @@ static void accumulate_counts_for_period(const std::string &period_key,
             fatal("Internal error: count arrays size mismatch vs bins");
         }
 
-        long long n_unknown_topo = 0;
-        std::map<std::pair<int, int>, long long> unknown_pairs;
-
         while (reader.Next()) {
-            // Minimal sanity: we need |t| to be meaningful for bin matching
             const double t_abs = -(*t1);
             if (!(t_abs > 0.0) || !std::isfinite(t_abs)) {
                 continue;
@@ -1098,8 +1108,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
                     const int d2 = **detector2;
                     const std::string topo = topology_from_detectors(d1, d2);
                     if (topo == "UNKNOWN") {
-                        ++n_unknown_topo;
-                        unknown_pairs[std::make_pair(d1, d2)] += 1;
                         return false;
                     }
 
@@ -1142,11 +1150,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
                 N_numer[ridx] += 1.0;
             }
         }
-
-        // If unknown topology occurs, that affects efficiencies; but you asked to ONLY print eff != 1.
-        // So we do not print unknown topo diagnostics here.
-        (void)n_unknown_topo;
-        (void)unknown_pairs;
     } //endfor
 }
 
@@ -1267,9 +1270,9 @@ bool run_propagator_study(const std::string &csv_main,
     cfg_global_withP2.dvcsgen_ycol_cut = kP2CutThreshold;
 
     struct TestSpec {
-        std::string tag;         // directory tag
-        std::string title;       // canvas title prefix
-        std::string legend_text; // legend entry text
+        std::string tag;
+        std::string title;
+        std::string legend_text;
         Scenario denom;
         Scenario numer;
     };
@@ -1368,15 +1371,9 @@ bool run_propagator_study(const std::string &csv_main,
         std::vector<std::string> members;
     };
 
+    // Restrict to Fa18 Out only (your request)
     const std::vector<LabelSpec> labels = {
-        {"Fa18 Inb", {"fa18_inb"}},
-        {"Fa18 Out", {"fa18_out"}},
-        {"Sp18 Inb", {"sp18_inb"}},
-        {"Sp18 Out", {"sp18_out"}},
-        {"Sp19 Inb", {"sp19_inb"}},
-        {"Fa18",     {"fa18_inb", "fa18_out"}},
-        {"Sp18",     {"sp18_inb", "sp18_out"}},
-        {"10.6 GeV", {"fa18_inb", "fa18_out", "sp18_inb", "sp18_out"}}
+        {"Fa18 Out", {"fa18_out"}}
     };
 
     for (const auto &T : tests) {
@@ -1402,7 +1399,7 @@ bool run_propagator_study(const std::string &csv_main,
             }
 
             // -------------------------------------------------------------------------
-            // ONLY print bins/lines where eff != 1: i.e., where loss > 0 in any CSV row.
+            // PRINT ONLY for first two xB bins AND ONLY when eff != 1 in those bins.
             // -------------------------------------------------------------------------
             {
                 double sum_denom = 0.0;
@@ -1411,21 +1408,41 @@ bool run_propagator_study(const std::string &csv_main,
 
                 struct LossBin {
                     double loss;
+                    double eff;
                     size_t idx;
                 };
                 std::vector<LossBin> losses;
                 losses.reserve(bins.size());
 
                 for (size_t i = 0; i < bins.size(); ++i) {
+                    const auto &b = bins[i];
+
+                    // Restrict to first two xB bins (lowest xB slices)
+                    if (!in_first_n_xb_bins(lut, b.xb, kPrintFirstNXB)) {
+                        continue;
+                    }
+
                     const double d = N_denom[i];
                     const double n = N_numer[i];
+
+                    if (!(d > 0.0)) {
+                        continue;
+                    }
+
+                    const double eff = n / d;
+
+                    // Restrict to eff != 1 (numer != denom)
+                    if (n == d) {
+                        continue;
+                    }
+
                     sum_denom += d;
                     sum_numer += n;
 
                     const double loss = d - n;
                     if (loss > 0.0) {
                         sum_loss += loss;
-                        losses.push_back(LossBin{loss, i});
+                        losses.push_back(LossBin{loss, eff, i});
                     }
                 } //endfor
 
@@ -1444,6 +1461,7 @@ bool run_propagator_study(const std::string &csv_main,
                         const auto &b = bins[i];
                         std::cout << "  LOSS[" << k << "] loss=" << std::fixed << std::setprecision(0) << losses[k].loss
                                   << " denom=" << N_denom[i] << " numer=" << N_numer[i]
+                                  << " eff=" << std::setprecision(6) << losses[k].eff
                                   << " row=" << i
                                   << " xB=(" << std::setprecision(6) << b.xb.first << "," << b.xb.second << ")"
                                   << " Q2=(" << b.q2.first << "," << b.q2.second << ")"
