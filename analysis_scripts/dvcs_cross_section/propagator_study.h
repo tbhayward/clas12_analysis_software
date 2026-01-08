@@ -9,6 +9,11 @@ class TTree;
 
 namespace propagator_study {
 
+// Canonical container types for this module.
+// These MUST be defined in the header so every translation unit agrees.
+using TreeVec = std::vector<TTree *>;
+using TreeMap = std::map<std::string, TreeVec>;
+
 // Build dvcsgen ycol-mirror efficiency canvases (phi-dependent) for standard DVCS bins.
 //
 // Efficiency is defined as:
@@ -28,7 +33,7 @@ namespace propagator_study {
 //
 // Returns true on success; throws std::runtime_error on fatal configuration/schema/IO issues.
 bool run_propagator_study(const std::string &csv_main,
-                          const std::map<std::string, std::vector<TTree *>> &dataTreesByPeriod,
+                          const TreeMap &dataTreesByPeriod,
                           const std::string &combined_cuts_json,
                           const std::string &out_root_dir);
 
