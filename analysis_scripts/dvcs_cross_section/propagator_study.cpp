@@ -1226,7 +1226,7 @@ bool run_propagator_study(const std::string &csv_main,
     GlobalCutConfig cfg_withP1 = default_global_cuts();
     GlobalCutConfig cfg_noP1   = default_global_cuts();
 
-    cfg_withP1.dvcsgen_ycol_cut = 0.50; // was 0.005
+    cfg_withP1.dvcsgen_ycol_cut = 0.010; // was 0.005
 
     cfg_noP1.enable_dvcsgen_ycol_cut = false;
 
