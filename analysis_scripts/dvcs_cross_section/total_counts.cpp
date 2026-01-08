@@ -734,14 +734,6 @@ struct HelCounts {
 
 using RowCounts = std::unordered_map<int, HelCounts>; // row index -> counts
 
-static inline void add_count(HelCounts& c, int helicity) {
-    if (helicity > 0) c.pos += 1.0;
-    else if (helicity < 0) c.neg += 1.0;
-    else c.unpol += 1.0;
-    c.unpol += 0.0; // keep explicit; we also store explicit "unpol" bucket only from helicity==0 unless user wants sum.
-}
-
-// If you want unpol to mean (pos+neg) always, do it explicitly at write-time.
 
 static inline bool passes_sigma_cuts_data_only(const TopoCutMap& cuts,
                                                const std::string& key,
@@ -1475,9 +1467,9 @@ bool update_total_counts_csv(const std::string& csv_main,
                     fatal(ss.str());
                 }
 
-                // Per conventions: write pos/neg separately; unpol is stored as the explicit unpol bucket.
-                // If you want unpol := pos+neg, do it explicitly here (deterministic).
-                const double unpol = h.unpol;
+                // Per conventions: unpol is the helicity-summed yield.
+                const double unpol = h.pos + h.neg;
+
                 csv.rows[r][cols.col_unpol] = fmt0(unpol);
                 csv.rows[r][cols.col_pos]   = fmt0(h.pos);
                 csv.rows[r][cols.col_neg]   = fmt0(h.neg);
