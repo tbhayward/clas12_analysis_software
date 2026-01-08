@@ -62,6 +62,38 @@ static TLorentzVector make_p4_from_p_theta_phi(double p,
     return TLorentzVector(px, py, pz, E);
 }
 
+// P1_pos = 2 (k . qgamma) / Q2_calc
+// where Q2_calc = - (k - kprime)^2 computed from Ebeam.
+static double compute_P1_pos(double Ebeam,
+                             double e_p,
+                             double e_theta,
+                             double e_phi,
+                             double p2_p,
+                             double p2_theta,
+                             double p2_phi) {
+    const double me = 0.00051099895; // (GeV)
+
+    const TLorentzVector k      = make_beam_electron(Ebeam);
+    const TLorentzVector kprime = make_p4_from_p_theta_phi(e_p,  e_theta,  e_phi,  me);
+    const TLorentzVector qgamma = make_p4_from_p_theta_phi(p2_p, p2_theta, p2_phi, 0.0);
+
+    const TLorentzVector q = k - kprime;
+    const double Q2_calc = -q.M2();
+
+    if (!(Q2_calc > 0.0) || !std::isfinite(Q2_calc)) {
+        fatal_global("compute_P1_pos: non-physical Q2_calc");
+    }
+
+    const double dot = k.Dot(qgamma);
+    const double P1_pos = (2.0 * dot) / Q2_calc;
+
+    if (!std::isfinite(P1_pos)) {
+        fatal_global("compute_P1_pos: non-finite P1_pos");
+    }
+
+    return P1_pos;
+}
+
 // P2_pos = 2 (kprime . qgamma) / Q2_calc
 // where Q2_calc = - (k - kprime)^2 computed from Ebeam.
 static double compute_P2_pos(double Ebeam,
@@ -125,8 +157,8 @@ bool passes_global_cuts(double t1,
     if (pTmiss > cfg.pTmiss_max) return false;
 
     if (cfg.enable_dvcsgen_ycol_cut) {
-        const double P2_pos = compute_P2_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
-        if (!(P2_pos > cfg.dvcsgen_ycol_cut)) return false;
+        const double P1_pos = compute_P1_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
+        if (!(P1_pos > cfg.dvcsgen_ycol_cut)) return false;
     }
 
     return true;
