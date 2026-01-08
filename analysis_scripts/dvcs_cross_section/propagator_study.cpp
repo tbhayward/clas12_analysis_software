@@ -1,25 +1,36 @@
 // propagator_study.cpp
 // -----------------------------------------------------------------------------
-// Study of dvcsgen propagator (ycol) cut efficiency in DATA.
+// Study of dvcsgen propagator cut efficiency in DATA, built up in stages.
 //
-// For each (xB, Q2, |t|, phi) bin defined by dvcs_pass2_analysis.csv, we count:
+// We compute (per CSV bin in xB, Q2, |t|, phi):
 //
-//   N_noP1   : events passing global DVCS cuts with the ycol cut DISABLED
-//   N_withP1 : events passing global DVCS cuts with the ycol cut ENABLED
+//   ratio(phi) = N_numer / N_denom
 //
-// and plot the ratio vs phi:
+// for three tests:
 //
-//   eff(phi) = N_withP1 / N_noP1
+//   (1) P2-only efficiency:
+//       numer = pass(P2 > 0.005)
+//       denom = pass(no cuts)
 //
-// Diagnostics:
-// - Prints per-period counts of baseline vs with-cut vs fail-only.
-// - Prints UNKNOWN topology breakdown and top (detector1, detector2) pairs.
-// - Prints per-point ratios as they are created.
-// - Prints ycol value for failing events (optional, controlled by a boolean).
+//   (2) P2 on top of 3-sigma efficiency:
+//       numer = pass(3-sigma AND P2 > 0.005)
+//       denom = pass(3-sigma)
+//
+//   (3) P2 on top of global+3sigma efficiency:
+//       numer = pass(global cuts AND 3-sigma AND P2 > 0.005)
+//       denom = pass(global cuts (NO P2) AND 3-sigma)
+//
+// IMPORTANT (per your request):
+// - We start from the beginning: by default, we do NOT apply any global cuts,
+//   and we do NOT apply the run blacklist, unless a given test explicitly enables it.
+// - All the machinery for global cuts and 3-sigma cuts remains in the code so we can
+//   turn pieces back on without rewriting the module.
 //
 // Notes / constraints:
-// - Applies 3-sigma exclusivity cuts for DATA using combined_cuts.json, topology-by-topology.
-// - Fails fast on missing required inputs (CSV columns, JSON keys, tree branches).
+// - Bin definitions come from dvcs_pass2_analysis.csv.
+// - 3-sigma exclusivity cuts for DATA are loaded from combined_cuts.json
+//   (new schema) and are applied topology-by-topology (FD_FD, CD_FD, CD_FT).
+// - Fail fast on missing required branches (only those needed by the active tests).
 // -----------------------------------------------------------------------------
 
 #include "propagator_study.h"
@@ -68,6 +79,9 @@ namespace propagator_study {
 using Range = std::pair<double, double>;
 
 static constexpr double kPi = 3.14159265358979323846;
+
+// Requested starting threshold for the propagator cut study:
+static constexpr double kP2CutThreshold = 0.005;
 
 static void fatal(const std::string &msg) {
     throw std::runtime_error(std::string("[propagator_study] FATAL: ") + msg);
@@ -543,14 +557,15 @@ static std::string fmt_cell_label(double q2min, double q2max, double tmin, doubl
 }
 
 static void make_canvas_for_xb(const std::string &label,
+                               const std::string &test_title,
+                               const std::string &legend_text,
                                const Range &xb_range,
                                const LUT &lut,
                                const std::vector<RowBin> &bins,
-                               const std::vector<double> &N_noP1,
-                               const std::vector<double> &N_withP1,
+                               const std::vector<double> &N_denom,
+                               const std::vector<double> &N_numer,
                                const fs::path &outdir,
-                               int xb_idx_for_name,
-                               double ycol_threshold) {
+                               int xb_idx_for_name) {
     int ixb = -1;
     for (size_t i = 0; i < lut.xb_bins.size(); ++i) {
         if (lut.xb_bins[i] == xb_range) {
@@ -617,9 +632,7 @@ static void make_canvas_for_xb(const std::string &label,
     head.SetTextSize(titleSize);
 
     std::ostringstream tit;
-    tit << "Propagator cut efficiency (ycol > "
-        << std::fixed << std::setprecision(3) << ycol_threshold
-        << "), ep->epg   " << label
+    tit << test_title << "   ep->epg   " << label
         << "   xB in ("
         << std::fixed << std::setprecision(3)
         << xb_range.first << ", " << xb_range.second << ")";
@@ -633,14 +646,14 @@ static void make_canvas_for_xb(const std::string &label,
     dummy.SetMarkerColor(kBlack);
     dummy.SetLineColor(kBlack);
 
-    TLegend *leg = new TLegend(0.02, 0.10, 0.40, 0.70);
+    TLegend *leg = new TLegend(0.02, 0.10, 0.60, 0.70);
     leg->SetBorderSize(1);
     leg->SetLineColor(kBlack);
     leg->SetFillColor(kWhite);
     leg->SetFillStyle(1001);
     leg->SetTextFont(42);
     leg->SetTextSize(legendTextSize);
-    leg->AddEntry(&dummy, "N(with ycol cut) / N(no ycol cut)", "lep");
+    leg->AddEntry(&dummy, legend_text.c_str(), "lep");
     leg->Draw();
 
     for (int r = 0; r < nrows; ++r) {
@@ -655,7 +668,7 @@ static void make_canvas_for_xb(const std::string &label,
             gPad->SetLeftMargin(0.160);
             gPad->SetRightMargin(0.07);
 
-            TH1 *frame = gPad->DrawFrame(0.0, 0.4, 360.0, 1.6);
+            TH1 *frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.6);
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle("Fraction");
             frame->GetXaxis()->CenterTitle();
@@ -690,8 +703,8 @@ static void make_canvas_for_xb(const std::string &label,
                     fatal("Internal error: phi-bin row_index exceeds bins size");
                 }
 
-                const double denom = N_noP1[ridx];
-                const double numer = N_withP1[ridx];
+                const double denom = N_denom[ridx];
+                const double numer = N_numer[ridx];
 
                 if (denom <= 0.0) continue;
 
@@ -707,13 +720,14 @@ static void make_canvas_for_xb(const std::string &label,
 
                 std::cout << std::fixed << std::setprecision(6)
                           << "[propagator_study] POINT "
+                          << "test=\"" << test_title << "\" "
                           << "label=\"" << label << "\" "
                           << "xB=(" << xb_range.first << "," << xb_range.second << ") "
                           << "Q2=(" << q2_range.first << "," << q2_range.second << ") "
                           << "|t|=(" << t_range.first << "," << t_range.second << ") "
                           << "phi=" << phi_c << " "
                           << "numer=" << numer << " denom=" << denom
-                          << " eff=" << f << " err=" << err
+                          << " ratio=" << f << " err=" << err
                           << "\n";
 
                 Point p;
@@ -768,12 +782,6 @@ static void require_branch(TTree *t, const std::string &bname, const std::string
     }
 }
 
-struct TopoCounters {
-    long long base = 0;
-    long long pass = 0;
-    long long fail_only = 0;
-};
-
 static std::set<std::string> required_3sigma_vars_for_period(const CutDB &cutdb,
                                                              const std::string &period_key) {
     auto itp = cutdb.cuts.find(period_key);
@@ -795,52 +803,127 @@ static std::set<std::string> required_3sigma_vars_for_period(const CutDB &cutdb,
     return vars;
 }
 
+struct Scenario {
+    std::string name;
+
+    bool apply_run_blacklist = false;
+    bool apply_global_cuts = false;
+    bool apply_3sigma_cuts = false;
+    bool apply_P2_cut = false;
+
+    GlobalCutConfig global_cfg; // used only when apply_global_cuts == true
+    double P2_threshold = kP2CutThreshold;
+};
+
+static std::string scenario_brief(const Scenario &s) {
+    std::ostringstream oss;
+    oss << s.name
+        << " (run_blacklist=" << (s.apply_run_blacklist ? 1 : 0)
+        << ", global=" << (s.apply_global_cuts ? 1 : 0)
+        << ", 3sigma=" << (s.apply_3sigma_cuts ? 1 : 0)
+        << ", P2=" << (s.apply_P2_cut ? 1 : 0)
+        << ", P2thr=" << std::fixed << std::setprecision(6) << s.P2_threshold
+        << ")";
+    return oss.str();
+}
+
+static double compute_P2_pos_value(const std::string &period_key,
+                                  double e_p, double e_theta, double e_phi,
+                                  double p2_p, double p2_theta, double p2_phi,
+                                  const GlobalCutConfig &cfg_context) {
+    // Your global_cuts implementation currently routes dvcsgen_ycol_value()
+    // to compute_P2_pos(). We keep using it as the canonical P2_pos calculator.
+    const double v = ::dvcsgen_ycol_value(period_key,
+                                          e_p, e_theta, e_phi,
+                                          p2_p, p2_theta, p2_phi,
+                                          cfg_context);
+    return v;
+}
+
+static bool passes_3sigma_for_topology(const SigmaCut &sc,
+                                      const std::vector<std::pair<std::string, double>> &vals) {
+    for (const auto &kv : vals) {
+        auto it = sc.find(kv.first);
+        if (it == sc.end()) {
+            // The combined_cuts.json map defines what to cut; if this var is absent in this topo map,
+            // it is not cut here.
+            continue;
+        }
+        if (!within_3sigma_value(kv.second, it->second)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void accumulate_counts_for_period(const std::string &period_key,
                                          const TreeVec &trees,
-                                         const CutDB &cutdb,
+                                         const CutDB *cutdb_or_null,
                                          const LUT &lut,
                                          const std::vector<RowBin> &bins,
-                                         std::vector<double> &N_noP1,
-                                         std::vector<double> &N_withP1,
-                                         const GlobalCutConfig &cfg_noP1,
-                                         const GlobalCutConfig &cfg_withP1) {
+                                         std::vector<double> &N_denom,
+                                         std::vector<double> &N_numer,
+                                         const Scenario &denom,
+                                         const Scenario &numer) {
     if (trees.empty()) {
         fatal("No trees provided for period_key=" + period_key);
     }
 
-    std::cout << "[propagator_study] INFO: period_key=" << period_key
-              << " cfg_noP1.enable_ycol=" << (cfg_noP1.enable_dvcsgen_ycol_cut ? 1 : 0)
-              << " cfg_withP1.enable_ycol=" << (cfg_withP1.enable_dvcsgen_ycol_cut ? 1 : 0)
-              << " ycol_threshold=" << std::fixed << std::setprecision(6) << cfg_withP1.dvcsgen_ycol_cut
-              << "\n";
+    const bool need_runnum = (denom.apply_run_blacklist || numer.apply_run_blacklist);
+    const bool need_global = (denom.apply_global_cuts || numer.apply_global_cuts);
+    const bool need_P2     = (denom.apply_P2_cut || numer.apply_P2_cut);
+    const bool need_3s     = (denom.apply_3sigma_cuts || numer.apply_3sigma_cuts);
 
-    const std::set<std::string> required_3s_vars = required_3sigma_vars_for_period(cutdb, period_key);
+    if (need_3s && cutdb_or_null == nullptr) {
+        fatal("Internal error: need_3sigma_cuts=true but cutdb_or_null is null for period_key=" + period_key);
+    }
+
+    std::cout << "[propagator_study] INFO: period_key=" << period_key << "\n";
+    std::cout << "  denom: " << scenario_brief(denom) << "\n";
+    std::cout << "  numer: " << scenario_brief(numer) << "\n";
+
+    std::set<std::string> required_3s_vars;
+    if (need_3s) {
+        required_3s_vars = required_3sigma_vars_for_period(*cutdb_or_null, period_key);
+    }
 
     for (TTree *tree : trees) {
         if (tree == nullptr) continue;
 
-        // Bin matching + global DVCS cuts
-        require_branch(tree, "x",              period_key);
-        require_branch(tree, "Q2",             period_key);
-        require_branch(tree, "t1",             period_key);
-        require_branch(tree, "phi2",           period_key);
-        require_branch(tree, "open_angle_ep2", period_key);
-        require_branch(tree, "pTmiss",         period_key);
-        require_branch(tree, "detector1",      period_key);
-        require_branch(tree, "detector2",      period_key);
-        require_branch(tree, "runnum",         period_key);
+        // Always needed for bin matching:
+        require_branch(tree, "x",    period_key);
+        require_branch(tree, "Q2",   period_key);
+        require_branch(tree, "t1",   period_key);
+        require_branch(tree, "phi2", period_key);
 
-        // Kinematics needed to compute ycol when enabled
-        require_branch(tree, "e_p",      period_key);
-        require_branch(tree, "e_theta",  period_key);
-        require_branch(tree, "e_phi",    period_key);
-        require_branch(tree, "p2_p",     period_key);
-        require_branch(tree, "p2_theta", period_key);
-        require_branch(tree, "p2_phi",   period_key);
+        if (need_runnum) {
+            require_branch(tree, "runnum", period_key);
+        }
 
-        // 3-sigma variables must exist if present in combined_cuts.json
-        for (const auto &v : required_3s_vars) {
-            require_branch(tree, v, period_key + " (3-sigma var)");
+        // Global DVCS cuts (optional)
+        if (need_global) {
+            require_branch(tree, "open_angle_ep2", period_key);
+            require_branch(tree, "pTmiss",         period_key);
+        }
+
+        // P2 computation (optional)
+        if (need_P2) {
+            require_branch(tree, "e_p",      period_key);
+            require_branch(tree, "e_theta",  period_key);
+            require_branch(tree, "e_phi",    period_key);
+            require_branch(tree, "p2_p",     period_key);
+            require_branch(tree, "p2_theta", period_key);
+            require_branch(tree, "p2_phi",   period_key);
+        }
+
+        // 3-sigma (optional)
+        if (need_3s) {
+            require_branch(tree, "detector1", period_key);
+            require_branch(tree, "detector2", period_key);
+
+            for (const auto &v : required_3s_vars) {
+                require_branch(tree, v, period_key + " (3-sigma var)");
+            }
         }
 
         TTreeReader reader(tree);
@@ -849,18 +932,42 @@ static void accumulate_counts_for_period(const std::string &period_key,
         TTreeReaderValue<double> Q2(reader, "Q2");
         TTreeReaderValue<double> t1(reader, "t1");
         TTreeReaderValue<double> phi2(reader, "phi2");
-        TTreeReaderValue<double> open_angle_ep2(reader, "open_angle_ep2");
-        TTreeReaderValue<double> pTmiss(reader, "pTmiss");
-        TTreeReaderValue<int> detector1(reader, "detector1");
-        TTreeReaderValue<int> detector2(reader, "detector2");
-        TTreeReaderValue<int> runnum(reader, "runnum");
 
-        TTreeReaderValue<double> e_p(reader, "e_p");
-        TTreeReaderValue<double> e_theta(reader, "e_theta");
-        TTreeReaderValue<double> e_phi(reader, "e_phi");
-        TTreeReaderValue<double> p2_p(reader, "p2_p");
-        TTreeReaderValue<double> p2_theta(reader, "p2_theta");
-        TTreeReaderValue<double> p2_phi(reader, "p2_phi");
+        std::unique_ptr<TTreeReaderValue<int>> runnum;
+        if (need_runnum) {
+            runnum.reset(new TTreeReaderValue<int>(reader, "runnum"));
+        }
+
+        std::unique_ptr<TTreeReaderValue<double>> open_angle_ep2;
+        std::unique_ptr<TTreeReaderValue<double>> pTmiss;
+        if (need_global) {
+            open_angle_ep2.reset(new TTreeReaderValue<double>(reader, "open_angle_ep2"));
+            pTmiss.reset(new TTreeReaderValue<double>(reader, "pTmiss"));
+        }
+
+        std::unique_ptr<TTreeReaderValue<double>> e_p;
+        std::unique_ptr<TTreeReaderValue<double>> e_theta;
+        std::unique_ptr<TTreeReaderValue<double>> e_phi;
+        std::unique_ptr<TTreeReaderValue<double>> p2_p;
+        std::unique_ptr<TTreeReaderValue<double>> p2_theta;
+        std::unique_ptr<TTreeReaderValue<double>> p2_phi;
+
+        if (need_P2) {
+            e_p.reset(new TTreeReaderValue<double>(reader, "e_p"));
+            e_theta.reset(new TTreeReaderValue<double>(reader, "e_theta"));
+            e_phi.reset(new TTreeReaderValue<double>(reader, "e_phi"));
+            p2_p.reset(new TTreeReaderValue<double>(reader, "p2_p"));
+            p2_theta.reset(new TTreeReaderValue<double>(reader, "p2_theta"));
+            p2_phi.reset(new TTreeReaderValue<double>(reader, "p2_phi"));
+        }
+
+        std::unique_ptr<TTreeReaderValue<int>> detector1;
+        std::unique_ptr<TTreeReaderValue<int>> detector2;
+
+        if (need_3s) {
+            detector1.reset(new TTreeReaderValue<int>(reader, "detector1"));
+            detector2.reset(new TTreeReaderValue<int>(reader, "detector2"));
+        }
 
         // Bind all 3-sigma vars as doubles (ROOT will convert floats)
         struct BoundD {
@@ -869,49 +976,42 @@ static void accumulate_counts_for_period(const std::string &period_key,
         };
 
         std::vector<BoundD> bound_3s;
-        bound_3s.reserve(required_3s_vars.size());
-        for (const auto &v : required_3s_vars) {
-            BoundD b;
-            b.name = v;
-            b.val.reset(new TTreeReaderValue<double>(reader, v.c_str()));
-            bound_3s.push_back(std::move(b));
+        if (need_3s) {
+            bound_3s.reserve(required_3s_vars.size());
+            for (const auto &v : required_3s_vars) {
+                BoundD b;
+                b.name = v;
+                b.val.reset(new TTreeReaderValue<double>(reader, v.c_str()));
+                bound_3s.push_back(std::move(b));
+            }
         }
 
         const size_t n_bins = bins.size();
-        if (N_noP1.size() != n_bins || N_withP1.size() != n_bins) {
+        if (N_denom.size() != n_bins || N_numer.size() != n_bins) {
             fatal("Internal error: count arrays size mismatch vs bins");
         }
 
-        std::map<std::pair<int, int>, long long> unknown_pairs;
+        long long n_seen = 0;
+        long long n_denom_pass = 0;
+        long long n_numer_pass = 0;
+
+        long long n_denom_binned = 0;
+        long long n_numer_binned = 0;
+
         long long n_unknown_topo = 0;
+        std::map<std::pair<int, int>, long long> unknown_pairs;
 
-        long long n_baseline = 0;
-        long long n_withcut = 0;
-        long long n_fail_only = 0;
-
-        std::map<std::string, TopoCounters> topo_counts;
-        topo_counts["FD_FD"] = TopoCounters{};
-        topo_counts["CD_FD"] = TopoCounters{};
-        topo_counts["CD_FT"] = TopoCounters{};
-
-                // Optional: print a few failing ycol values (very verbose).
-        const bool kPrintFailingYcolExamples = false;
-        long long n_printed_fail_ycol = 0;
-        const long long max_print_fail_ycol = 50;
-
-        // NEW: raw-ycol diagnostics on the baseline sample
-        long long n_ycol_below_threshold = 0;
-        double ycol_min = +std::numeric_limits<double>::infinity();
-        double ycol_max = -std::numeric_limits<double>::infinity();
-        long long n_printed_ycol_examples = 0;
-        const long long max_print_ycol_examples = 10;
+        // Simple P2 diagnostics for this period+tree (when P2 is used by either scenario)
+        long long n_P2_eval = 0;
+        long long n_P2_below_denom = 0;
+        long long n_P2_below_numer = 0;
+        double P2_min = +std::numeric_limits<double>::infinity();
+        double P2_max = -std::numeric_limits<double>::infinity();
 
         while (reader.Next()) {
-            const int rnum = *runnum;
-            if (is_excluded_run(rnum, default_global_cuts())) {
-                continue;
-            }
+            ++n_seen;
 
+            // Minimal sanity: we need |t| to be meaningful for bin matching
             const double t_abs = -(*t1);
             if (!(t_abs > 0.0) || !std::isfinite(t_abs)) {
                 continue;
@@ -920,177 +1020,174 @@ static void accumulate_counts_for_period(const std::string &period_key,
             double phi_deg = (*phi2) * 180.0 / kPi;
             phi_deg = wrap_phi_deg(phi_deg);
 
-            bool pass_noP1 = false;
-            bool pass_withP1 = false;
+            // If either scenario needs a run blacklist, apply it inside that scenario evaluation.
+            const int rnum = (need_runnum ? **runnum : -1);
 
-            try {
-                pass_noP1 = passes_global_cuts(*t1,
-                                               *open_angle_ep2,
-                                               *pTmiss,
-                                               period_key,
-                                               *e_p, *e_theta, *e_phi,
-                                               *p2_p, *p2_theta, *p2_phi,
-                                               cfg_noP1);
+            // Pre-compute P2_pos once per event if needed (and finite)
+            double P2_pos = std::numeric_limits<double>::quiet_NaN();
+            if (need_P2) {
+                // Use denom.global_cfg as context for dvcsgen_ycol_value (it may encode period-dependent behavior),
+                // but any cfg is fine as long as it routes to the same compute_P2_pos implementation.
+                const GlobalCutConfig &cfg_ctx = (denom.apply_global_cuts ? denom.global_cfg : numer.global_cfg);
 
-                if (!pass_noP1) {
-                    continue;
+                P2_pos = compute_P2_pos_value(period_key,
+                                              **e_p, **e_theta, **e_phi,
+                                              **p2_p, **p2_theta, **p2_phi,
+                                              cfg_ctx);
+                if (std::isfinite(P2_pos)) {
+                    ++n_P2_eval;
+                    if (P2_pos < P2_min) P2_min = P2_pos;
+                    if (P2_pos > P2_max) P2_max = P2_pos;
+                    if (denom.apply_P2_cut && P2_pos < denom.P2_threshold) ++n_P2_below_denom;
+                    if (numer.apply_P2_cut && P2_pos < numer.P2_threshold) ++n_P2_below_numer;
                 }
+            }
 
-                // NEW: compute the raw propagator value on the baseline sample
-                // (so we can see whether anything is even below threshold)
-                if (cfg_withP1.enable_dvcsgen_ycol_cut) {
-                    const double ycol_val = ::dvcsgen_ycol_value(period_key,
-                                                                 *e_p, *e_theta, *e_phi,
-                                                                 *p2_p, *p2_theta, *p2_phi,
-                                                                 cfg_withP1);
-
-                    if (std::isfinite(ycol_val)) {
-                        if (ycol_val < ycol_min) ycol_min = ycol_val;
-                        if (ycol_val > ycol_max) ycol_max = ycol_val;
-
-                        if (ycol_val < cfg_withP1.dvcsgen_ycol_cut) {
-                            ++n_ycol_below_threshold;
-
-                            if (n_printed_ycol_examples < max_print_ycol_examples) {
-                                std::cout << std::fixed << std::setprecision(6)
-                                          << "[propagator_study] BASELINE_RAW_BELOW "
-                                          << "period=" << period_key
-                                          << " ycol=" << ycol_val
-                                          << " thr=" << cfg_withP1.dvcsgen_ycol_cut
-                                          << "\n";
-                                ++n_printed_ycol_examples;
-                            }
-                        }
+            // Helper: evaluate one scenario on this event
+            auto eval_scenario = [&](const Scenario &s) -> bool {
+                // run blacklist (optional; OFF by default for this rebuild)
+                if (s.apply_run_blacklist) {
+                    if (!need_runnum) {
+                        fatal("Internal error: apply_run_blacklist=true but runnum not bound");
+                    }
+                    if (is_excluded_run(rnum, default_global_cuts())) {
+                        return false;
                     }
                 }
 
-                // Now evaluate the with-cut decision
-                pass_withP1 = passes_global_cuts(*t1,
-                                                 *open_angle_ep2,
-                                                 *pTmiss,
-                                                 period_key,
-                                                 *e_p, *e_theta, *e_phi,
-                                                 *p2_p, *p2_theta, *p2_phi,
-                                                 cfg_withP1);
-            } catch (const std::exception &e) {
-                std::ostringstream oss;
-                oss << "passes_global_cuts threw exception for period_key=" << period_key
-                    << " tree=" << tree->GetName()
-                    << " (what=" << e.what() << ")";
-                fatal(oss.str());
-            }
+                // global DVCS cuts (optional)
+                if (s.apply_global_cuts) {
+                    if (!need_global) {
+                        fatal("Internal error: apply_global_cuts=true but global branches not bound");
+                    }
 
-            ++n_baseline;
-            if (pass_withP1) {
-                ++n_withcut;
-            } else {
-                ++n_fail_only;
-                if (kPrintFailingYcolExamples && n_printed_fail_ycol < max_print_fail_ycol) {
-                    const double ycol_val = ::dvcsgen_ycol_value(period_key,
-                                                                 *e_p, *e_theta, *e_phi,
-                                                                 *p2_p, *p2_theta, *p2_phi,
-                                                                 cfg_withP1);
-                    std::cout << std::fixed << std::setprecision(6)
-                              << "[propagator_study] FAIL_YCOL "
-                              << "period=" << period_key
-                              << " ycol=" << ycol_val
-                              << " threshold=" << cfg_withP1.dvcsgen_ycol_cut
-                              << "\n";
-                    ++n_printed_fail_ycol;
+                    bool pass_global = false;
+                    try {
+                        pass_global = passes_global_cuts(*t1,
+                                                         **open_angle_ep2,
+                                                         **pTmiss,
+                                                         period_key,
+                                                         (need_P2 ? **e_p : 0.0),
+                                                         (need_P2 ? **e_theta : 0.0),
+                                                         (need_P2 ? **e_phi : 0.0),
+                                                         (need_P2 ? **p2_p : 0.0),
+                                                         (need_P2 ? **p2_theta : 0.0),
+                                                         (need_P2 ? **p2_phi : 0.0),
+                                                         s.global_cfg);
+                    } catch (const std::exception &e) {
+                        std::ostringstream oss;
+                        oss << "passes_global_cuts threw exception for period_key=" << period_key
+                            << " tree=" << tree->GetName()
+                            << " scenario=\"" << s.name << "\""
+                            << " (what=" << e.what() << ")";
+                        fatal(oss.str());
+                    }
+
+                    if (!pass_global) {
+                        return false;
+                    }
                 }
-            }
 
-            const int d1 = *detector1;
-            const int d2 = *detector2;
-            const std::string topo = topology_from_detectors(d1, d2);
-
-            if (topo == "UNKNOWN") {
-                ++n_unknown_topo;
-                unknown_pairs[std::make_pair(d1, d2)] += 1;
-                continue;
-            }
-
-            topo_counts[topo].base += 1;
-            if (pass_withP1) {
-                topo_counts[topo].pass += 1;
-            } else {
-                topo_counts[topo].fail_only += 1;
-            }
-
-            auto itp = cutdb.cuts.find(period_key);
-            if (itp == cutdb.cuts.end()) {
-                fatal("CutDB missing period_key=\"" + period_key + "\"");
-            }
-            auto itt = itp->second.find(topo);
-            if (itt == itp->second.end()) {
-                fatal("CutDB missing topo=\"" + topo + "\" for period_key=\"" + period_key + "\"");
-            }
-            const SigmaCut &sc = itt->second;
-
-            bool pass_3s = true;
-            for (const auto &bv : bound_3s) {
-                auto itv = sc.find(bv.name);
-                if (itv == sc.end()) {
-                    continue;
+                // P2 cut (optional).
+                // IMPORTANT: if apply_global_cuts==false, we apply ONLY the P2 cut here (no other global cuts).
+                if (s.apply_P2_cut) {
+                    if (!need_P2) {
+                        fatal("Internal error: apply_P2_cut=true but P2 branches not bound");
+                    }
+                    if (!std::isfinite(P2_pos)) {
+                        return false;
+                    }
+                    if (!(P2_pos > s.P2_threshold)) {
+                        return false;
+                    }
                 }
-                const double vv = **(bv.val);
-                if (!within_3sigma_value(vv, itv->second)) {
-                    pass_3s = false;
-                    break;
-                }
-            }
-            if (!pass_3s) {
-                continue;
-            }
 
+                // 3-sigma exclusivity cuts (optional)
+                if (s.apply_3sigma_cuts) {
+                    if (!need_3s) {
+                        fatal("Internal error: apply_3sigma_cuts=true but 3sigma branches not bound");
+                    }
+
+                    const int d1 = **detector1;
+                    const int d2 = **detector2;
+                    const std::string topo = topology_from_detectors(d1, d2);
+                    if (topo == "UNKNOWN") {
+                        ++n_unknown_topo;
+                        unknown_pairs[std::make_pair(d1, d2)] += 1;
+                        return false;
+                    }
+
+                    auto itp = cutdb_or_null->cuts.find(period_key);
+                    if (itp == cutdb_or_null->cuts.end()) {
+                        fatal("CutDB missing period_key=\"" + period_key + "\"");
+                    }
+                    auto itt = itp->second.find(topo);
+                    if (itt == itp->second.end()) {
+                        fatal("CutDB missing topo=\"" + topo + "\" for period_key=\"" + period_key + "\"");
+                    }
+                    const SigmaCut &sc = itt->second;
+
+                    // collect values for this event
+                    std::vector<std::pair<std::string, double>> vals;
+                    vals.reserve(bound_3s.size());
+                    for (const auto &bv : bound_3s) {
+                        vals.push_back(std::make_pair(bv.name, **(bv.val)));
+                    }
+
+                    if (!passes_3sigma_for_topology(sc, vals)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+
+            const bool pass_denom = eval_scenario(denom);
+            const bool pass_numer = eval_scenario(numer);
+
+            if (pass_denom) ++n_denom_pass;
+            if (pass_numer) ++n_numer_pass;
+
+            // Only fill binned counts if each scenario passes AND the event maps to a CSV bin.
             size_t ridx = 0;
             if (!find_bin_index(lut, *x, *Q2, t_abs, phi_deg, ridx)) {
                 continue;
             }
 
-            N_noP1[ridx] += 1.0;
-            if (pass_withP1) {
-                N_withP1[ridx] += 1.0;
+            if (pass_denom) {
+                N_denom[ridx] += 1.0;
+                ++n_denom_binned;
+            }
+            if (pass_numer) {
+                N_numer[ridx] += 1.0;
+                ++n_numer_binned;
             }
         }
 
-        // NEW: print the raw-ycol baseline diagnostics
-        if (cfg_withP1.enable_dvcsgen_ycol_cut) {
-            std::cout << "[propagator_study] INFO: period_key=" << period_key
-                      << " baseline_raw_ycol: below_thr=" << n_ycol_below_threshold
-                      << " thr=" << std::fixed << std::setprecision(6) << cfg_withP1.dvcsgen_ycol_cut
-                      << " ycol_min=" << std::fixed << std::setprecision(6) << ycol_min
-                      << " ycol_max=" << std::fixed << std::setprecision(6) << ycol_max
-                      << "\n";
-        }
-
-        const double frac_fail = (n_baseline > 0 ? (double)n_fail_only / (double)n_baseline : 0.0);
-
         std::cout << "[propagator_study] INFO: period_key=" << period_key
                   << " tree=" << tree->GetName()
-                  << " baseline(noP1)=" << n_baseline
-                  << " withP1=" << n_withcut
-                  << " failP1_only=" << n_fail_only
-                  << " frac_fail=" << std::fixed << std::setprecision(6) << frac_fail
+                  << " seen=" << n_seen
+                  << " denom_pass=" << n_denom_pass
+                  << " numer_pass=" << n_numer_pass
+                  << " denom_binned=" << n_denom_binned
+                  << " numer_binned=" << n_numer_binned
                   << "\n";
 
-        std::cout << "[propagator_study] INFO: period_key=" << period_key
-                  << " per-topology baseline/with/fail:\n";
-        for (const auto &kv : topo_counts) {
-            const double ff = (kv.second.base > 0 ? (double)kv.second.fail_only / (double)kv.second.base : 0.0);
-            std::cout << "  topo=" << kv.first
-                      << " base=" << kv.second.base
-                      << " pass=" << kv.second.pass
-                      << " fail=" << kv.second.fail_only
-                      << " frac_fail=" << std::fixed << std::setprecision(6) << ff
+        if (need_P2) {
+            std::cout << "[propagator_study] INFO: period_key=" << period_key
+                      << " P2 diagnostics: eval=" << n_P2_eval
+                      << " P2_min=" << std::fixed << std::setprecision(6) << P2_min
+                      << " P2_max=" << std::fixed << std::setprecision(6) << P2_max
+                      << " below_denom_thr=" << n_P2_below_denom
+                      << " below_numer_thr=" << n_P2_below_numer
                       << "\n";
         }
 
-        if (n_unknown_topo > 0) {
+        if (need_3s && n_unknown_topo > 0) {
             std::cout << "[propagator_study] INFO: period_key=" << period_key
                       << " tree=" << tree->GetName()
                       << " skipped " << n_unknown_topo
-                      << " events with UNKNOWN topology (after baseline noP1 cuts)\n";
+                      << " events with UNKNOWN topology (during 3-sigma evaluation)\n";
 
             std::vector<std::pair<std::pair<int, int>, long long>> v;
             v.reserve(unknown_pairs.size());
@@ -1108,7 +1205,7 @@ static void accumulate_counts_for_period(const std::string &period_key,
                 std::cout << "  (" << v[i].first.first << ", " << v[i].first.second << ") : " << v[i].second << "\n";
             }
         }
-    }
+    } //endfor
 }
 
 // -----------------------------------------------------------------------------
@@ -1221,14 +1318,110 @@ bool run_propagator_study(const std::string &csv_main,
     const std::vector<RowBin> bins = load_bins_from_csv(csv_main);
     const LUT lut = build_lut_from_bins(bins);
 
+    // We load combined cuts up-front because tests (2) and (3) require it.
     const CutDB cutdb = load_combined_cuts_json_newschema(combined_cuts_json, base_period_keys);
 
-    GlobalCutConfig cfg_withP1 = default_global_cuts();
-    GlobalCutConfig cfg_noP1   = default_global_cuts();
+    // Prepare global cut configs for the scenarios that need them (test 3).
+    GlobalCutConfig cfg_global_noP2 = default_global_cuts();
+    GlobalCutConfig cfg_global_withP2 = default_global_cuts();
 
-    cfg_noP1.enable_dvcsgen_ycol_cut = false;
+    cfg_global_noP2.enable_dvcsgen_ycol_cut = false;
+    cfg_global_withP2.enable_dvcsgen_ycol_cut = true;
 
-    const double ycol_threshold = cfg_withP1.dvcsgen_ycol_cut;
+    cfg_global_noP2.dvcsgen_ycol_cut = kP2CutThreshold;
+    cfg_global_withP2.dvcsgen_ycol_cut = kP2CutThreshold;
+
+    struct TestSpec {
+        std::string tag;         // directory tag
+        std::string title;       // canvas title prefix
+        std::string legend_text; // legend entry text
+        Scenario denom;
+        Scenario numer;
+    };
+
+    // Three tests, exactly as requested.
+    std::vector<TestSpec> tests;
+
+    {
+        TestSpec T;
+        T.tag = "test1_P2_only";
+        std::ostringstream tt;
+        tt << "P2-only efficiency (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
+        T.title = tt.str();
+        T.legend_text = "N(P2 cut) / N(no cuts)";
+
+        T.denom.name = "denom: no cuts";
+        T.denom.apply_run_blacklist = false;
+        T.denom.apply_global_cuts = false;
+        T.denom.apply_3sigma_cuts = false;
+        T.denom.apply_P2_cut = false;
+        T.denom.global_cfg = cfg_global_noP2;
+        T.denom.P2_threshold = kP2CutThreshold;
+
+        T.numer.name = "numer: P2 only";
+        T.numer.apply_run_blacklist = false;
+        T.numer.apply_global_cuts = false;
+        T.numer.apply_3sigma_cuts = false;
+        T.numer.apply_P2_cut = true;
+        T.numer.global_cfg = cfg_global_noP2;
+        T.numer.P2_threshold = kP2CutThreshold;
+
+        tests.push_back(T);
+    }
+
+    {
+        TestSpec T;
+        T.tag = "test2_P2_plus_3sigma";
+        std::ostringstream tt;
+        tt << "P2 on top of 3-sigma (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
+        T.title = tt.str();
+        T.legend_text = "N(3-sigma + P2) / N(3-sigma)";
+
+        T.denom.name = "denom: 3-sigma only";
+        T.denom.apply_run_blacklist = false;
+        T.denom.apply_global_cuts = false;
+        T.denom.apply_3sigma_cuts = true;
+        T.denom.apply_P2_cut = false;
+        T.denom.global_cfg = cfg_global_noP2;
+        T.denom.P2_threshold = kP2CutThreshold;
+
+        T.numer.name = "numer: 3-sigma + P2";
+        T.numer.apply_run_blacklist = false;
+        T.numer.apply_global_cuts = false;
+        T.numer.apply_3sigma_cuts = true;
+        T.numer.apply_P2_cut = true;
+        T.numer.global_cfg = cfg_global_noP2;
+        T.numer.P2_threshold = kP2CutThreshold;
+
+        tests.push_back(T);
+    }
+
+    {
+        TestSpec T;
+        T.tag = "test3_P2_plus_global_plus_3sigma";
+        std::ostringstream tt;
+        tt << "P2 on top of global + 3-sigma (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
+        T.title = tt.str();
+        T.legend_text = "N(global + 3-sigma + P2) / N(global + 3-sigma)";
+
+        T.denom.name = "denom: global (NO P2) + 3-sigma";
+        T.denom.apply_run_blacklist = false;
+        T.denom.apply_global_cuts = true;
+        T.denom.apply_3sigma_cuts = true;
+        T.denom.apply_P2_cut = false; // IMPORTANT: "global cuts (without P2)"
+        T.denom.global_cfg = cfg_global_noP2;
+        T.denom.P2_threshold = kP2CutThreshold;
+
+        T.numer.name = "numer: global (WITH P2) + 3-sigma";
+        T.numer.apply_run_blacklist = false;
+        T.numer.apply_global_cuts = true;
+        T.numer.apply_3sigma_cuts = true;
+        T.numer.apply_P2_cut = false; // IMPORTANT: let passes_global_cuts apply the P2 cut in this scenario
+        T.numer.global_cfg = cfg_global_withP2;
+        T.numer.P2_threshold = kP2CutThreshold;
+
+        tests.push_back(T);
+    }
 
     struct LabelSpec {
         std::string label;
@@ -1246,60 +1439,70 @@ bool run_propagator_study(const std::string &csv_main,
         {"10.6 GeV", {"fa18_inb", "fa18_out", "sp18_inb", "sp18_out"}}
     };
 
-    for (const auto &L : labels) {
-        std::vector<double> N_noP1(bins.size(), 0.0);
-        std::vector<double> N_withP1(bins.size(), 0.0);
+    for (const auto &T : tests) {
+        std::cout << "[propagator_study] ================================\n";
+        std::cout << "[propagator_study] Running " << T.tag << "\n";
+        std::cout << "[propagator_study] Title: " << T.title << "\n";
+        std::cout << "[propagator_study] Denom: " << scenario_brief(T.denom) << "\n";
+        std::cout << "[propagator_study] Numer: " << scenario_brief(T.numer) << "\n";
 
-        std::cout << "[propagator_study] Accumulating counts for label=\""
-                  << L.label << "\" using members={";
-        for (size_t i = 0; i < L.members.size(); ++i) {
-            if (i > 0) std::cout << ", ";
-            std::cout << L.members[i];
-        }
-        std::cout << "}\n";
+        for (const auto &L : labels) {
+            std::vector<double> N_denom(bins.size(), 0.0);
+            std::vector<double> N_numer(bins.size(), 0.0);
 
-        for (const auto &period_key : L.members) {
-            auto it = data_trees_by_period.find(period_key);
-            if (it == data_trees_by_period.end()) {
-                fatal("Missing member period_key=\"" + period_key + "\" for label=\"" + L.label + "\"");
+            std::cout << "[propagator_study] Accumulating counts for label=\""
+                      << L.label << "\" using members={";
+            for (size_t i = 0; i < L.members.size(); ++i) {
+                if (i > 0) std::cout << ", ";
+                std::cout << L.members[i];
+            }
+            std::cout << "}\n";
+
+            for (const auto &period_key : L.members) {
+                auto it = data_trees_by_period.find(period_key);
+                if (it == data_trees_by_period.end()) {
+                    fatal("Missing member period_key=\"" + period_key + "\" for label=\"" + L.label + "\"");
+                }
+
+                accumulate_counts_for_period(period_key,
+                                             it->second,
+                                             &cutdb,
+                                             lut,
+                                             bins,
+                                             N_denom,
+                                             N_numer,
+                                             T.denom,
+                                             T.numer);
             }
 
-            accumulate_counts_for_period(period_key,
-                                         it->second,
-                                         cutdb,
-                                         lut,
-                                         bins,
-                                         N_noP1,
-                                         N_withP1,
-                                         cfg_noP1,
-                                         cfg_withP1);
-        }
+            const fs::path outdir = fs::path(out_root_dir) / T.tag / canonical_period_dir(L.label);
+            ensure_dir(outdir);
 
-        const fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(L.label);
-        ensure_dir(outdir);
+            for (size_t ixb = 0; ixb < lut.xb_bins.size(); ++ixb) {
+                const Range &xbR = lut.xb_bins[ixb];
+                const auto &node = lut.nodes[ixb];
 
-        for (size_t ixb = 0; ixb < lut.xb_bins.size(); ++ixb) {
-            const Range &xbR = lut.xb_bins[ixb];
-            const auto &node = lut.nodes[ixb];
+                if (node.xb_index_for_name < 0) {
+                    fatal("Internal error: LUT node missing xb_index_for_name even though CSV requires xB index");
+                }
 
-            if (node.xb_index_for_name < 0) {
-                fatal("Internal error: LUT node missing xb_index_for_name even though CSV requires xB index");
+                make_canvas_for_xb(L.label,
+                                   T.title,
+                                   T.legend_text,
+                                   xbR,
+                                   lut,
+                                   bins,
+                                   N_denom,
+                                   N_numer,
+                                   outdir,
+                                   node.xb_index_for_name);
             }
 
-            make_canvas_for_xb(L.label,
-                               xbR,
-                               lut,
-                               bins,
-                               N_noP1,
-                               N_withP1,
-                               outdir,
-                               node.xb_index_for_name,
-                               ycol_threshold);
-        }
-
-        std::cout << "[propagator_study] Wrote plots for label=\""
-                  << L.label << "\" into " << outdir.string() << "\n";
-    }
+            std::cout << "[propagator_study] Wrote plots for test=\"" << T.tag
+                      << "\" label=\"" << L.label
+                      << "\" into " << outdir.string() << "\n";
+        } //endfor labels
+    } //endfor tests
 
     return true;
 }
