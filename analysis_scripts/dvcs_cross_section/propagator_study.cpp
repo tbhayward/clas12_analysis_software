@@ -347,6 +347,7 @@ struct LUT {
 static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
     LUT lut;
 
+    // Unique xB ranges
     std::set<Range> xb_set;
     for (const auto& b : bins) {
         xb_set.insert(b.xb);
@@ -388,6 +389,11 @@ static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
             node.phi_bins[iq].resize(nt);
         }
 
+        // The CSV binning can be ragged: not every (Q2,|t|) pair exists for a given xB.
+        // Therefore we do NOT fatal on empty phi lists; we leave those cells empty.
+        size_t n_empty_cells = 0;
+        size_t n_filled_cells = 0;
+
         for (size_t iq = 0; iq < nq; ++iq) {
             for (size_t it = 0; it < nt; ++it) {
                 const Range& q2R = node.q2_bins[iq];
@@ -406,7 +412,9 @@ static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
                 }
 
                 if (pb.empty()) {
-                    fatal("No phi bins found for some (xB,Q2,|t|) slice in LUT build");
+                    ++n_empty_cells;
+                    // Leave node.phi_bins[iq][it] empty and continue.
+                    continue;
                 }
 
                 std::sort(pb.begin(), pb.end(),
@@ -415,8 +423,15 @@ static LUT build_lut_from_bins(const std::vector<RowBin>& bins) {
                           });
 
                 node.phi_bins[iq][it] = std::move(pb);
+                ++n_filled_cells;
             }
         }
+
+        std::cout << "[propagator_study] LUT xB slice ("
+                  << std::fixed << std::setprecision(3) << xbR.first << ", " << xbR.second
+                  << "): grid=(" << nq << " Q2 bins x " << nt << " |t| bins)"
+                  << ", filled_cells=" << n_filled_cells
+                  << ", empty_cells=" << n_empty_cells << "\n";
 
         lut.nodes[ixb] = std::move(node);
     }
