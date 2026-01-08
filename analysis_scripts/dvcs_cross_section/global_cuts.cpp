@@ -94,8 +94,7 @@ static double compute_P1_pos(double Ebeam,
     return P1_pos;
 }
 
-// P2_pos = 2 (kprime . qgamma) / Q2_calc
-// where Q2_calc = - (k - kprime)^2 computed from Ebeam.
+// Optional: kept for completeness / potential future diagnostics.
 static double compute_P2_pos(double Ebeam,
                              double e_p,
                              double e_theta,
@@ -124,6 +123,30 @@ static double compute_P2_pos(double Ebeam,
     }
 
     return P2_pos;
+}
+
+double dvcsgen_ycol_value(double Ebeam,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi,
+                          const GlobalCutConfig& cfg) {
+    (void)cfg; // cfg included for interface symmetry; value depends only on kinematics and Ebeam.
+    return compute_P1_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
+}
+
+double dvcsgen_ycol_value(const std::string& period_label,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi,
+                          const GlobalCutConfig& cfg) {
+    const double Ebeam = beam_energy_for_period_label(period_label);
+    return dvcsgen_ycol_value(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, cfg);
 }
 
 bool passes_global_cuts(double t1,

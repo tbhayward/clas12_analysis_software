@@ -15,6 +15,8 @@
 // - Prints per-period counts of baseline vs with-cut vs fail-only.
 // - Prints UNKNOWN topology breakdown and top (detector1, detector2) pairs.
 // - Prints per-point ratios as they are created.
+// - Prints ycol min/max and below-threshold counts for baseline events.
+// - Asserts consistency between ycol_val and pass_withP1.
 //
 // Notes / constraints:
 // - Applies 3-sigma exclusivity cuts for DATA using combined_cuts.json, topology-by-topology.
@@ -789,11 +791,6 @@ static void make_canvas_for_xb(const std::string& label,
 // Tree reading / counting
 // -----------------------------------------------------------------------------
 
-struct BoundVarD {
-    std::string name;
-    std::unique_ptr<TTreeReaderValue<double>> val;
-};
-
 static bool tree_has_branch(TTree* t, const std::string& bname) {
     if (t == nullptr) {
         return false;
@@ -816,6 +813,33 @@ struct TopoCounters {
     long long fail_only = 0;
 };
 
+static std::set<std::string> union_sigma_vars_for_period(const CutDB& cutdb,
+                                                         const std::string& period_key) {
+    auto itp = cutdb.cuts.find(period_key);
+    if (itp == cutdb.cuts.end()) {
+        fatal("CutDB missing period_key=\"" + period_key + "\"");
+    }
+
+    const std::vector<std::string> required_topos = {"FD_FD", "CD_FD", "CD_FT"};
+    std::set<std::string> vars;
+
+    for (const auto& topo : required_topos) {
+        auto itt = itp->second.find(topo);
+        if (itt == itp->second.end()) {
+            fatal("CutDB missing topo=\"" + topo + "\" for period_key=\"" + period_key + "\"");
+        }
+        for (const auto& kv : itt->second) {
+            vars.insert(kv.first);
+        }
+    }
+
+    if (vars.empty()) {
+        fatal("Internal error: empty 3-sigma var union for period_key=\"" + period_key + "\"");
+    }
+
+    return vars;
+}
+
 static void accumulate_counts_for_period(const std::string& period_key,
                                          const TreeVec& trees,
                                          const CutDB& cutdb,
@@ -829,15 +853,23 @@ static void accumulate_counts_for_period(const std::string& period_key,
         fatal("No trees provided for period_key=" + period_key);
     }
 
+    if (cfg_noP1.enable_dvcsgen_ycol_cut) {
+        fatal("cfg_noP1.enable_dvcsgen_ycol_cut must be false (denominator must be noP1 baseline).");
+    }
+    if (!cfg_withP1.enable_dvcsgen_ycol_cut) {
+        fatal("cfg_withP1.enable_dvcsgen_ycol_cut must be true (numerator must apply P1).");
+    }
+    if (!(cfg_withP1.dvcsgen_ycol_cut > 0.0) || !std::isfinite(cfg_withP1.dvcsgen_ycol_cut)) {
+        fatal("cfg_withP1.dvcsgen_ycol_cut must be finite and > 0.");
+    }
+
     std::cout << "[propagator_study] INFO: period_key=" << period_key
               << " cfg_noP1.enable_ycol=" << (cfg_noP1.enable_dvcsgen_ycol_cut ? 1 : 0)
               << " cfg_withP1.enable_ycol=" << (cfg_withP1.enable_dvcsgen_ycol_cut ? 1 : 0)
               << " ycol_threshold=" << std::fixed << std::setprecision(6) << cfg_withP1.dvcsgen_ycol_cut
               << "\n";
 
-    if (cfg_noP1.enable_dvcsgen_ycol_cut == cfg_withP1.enable_dvcsgen_ycol_cut) {
-        std::cout << "[propagator_study] WARNING: cfg_noP1 and cfg_withP1 have the same enable_dvcsgen_ycol_cut value.\n";
-    }
+    const std::set<std::string> sigma_vars_union = union_sigma_vars_for_period(cutdb, period_key);
 
     for (TTree* tree : trees) {
         if (tree == nullptr) {
@@ -861,15 +893,10 @@ static void accumulate_counts_for_period(const std::string& period_key,
         require_branch(tree, "p2_theta", period_key);
         require_branch(tree, "p2_phi",   period_key);
 
-        const std::vector<std::string> opt_vars = {
-            "Emiss2",
-            "Mx2",
-            "Mx2_1",
-            "Mx2_2",
-            "theta_gamma_gamma",
-            "xF",
-            "pTmiss"
-        };
+        // Enforce strict availability of all 3-sigma variables for this period.
+        for (const auto& v : sigma_vars_union) {
+            require_branch(tree, v, period_key);
+        }
 
         TTreeReader reader(tree);
 
@@ -890,14 +917,15 @@ static void accumulate_counts_for_period(const std::string& period_key,
         TTreeReaderValue<double> p2_theta(reader, "p2_theta");
         TTreeReaderValue<double> p2_phi(reader, "p2_phi");
 
-        std::vector<BoundVarD> opt_bound;
-        for (const auto& v : opt_vars) {
-            if (tree_has_branch(tree, v)) {
-                BoundVarD b;
-                b.name = v;
-                b.val.reset(new TTreeReaderValue<double>(reader, v.c_str()));
-                opt_bound.push_back(std::move(b));
-            }
+        // Create readers for the strict 3-sigma variables (excluding those already bound above).
+        std::map<std::string, std::unique_ptr<TTreeReaderValue<double>>> sigma_readers;
+        for (const auto& v : sigma_vars_union) {
+            // Skip ones already bound:
+            if (v == "pTmiss") continue;
+
+            // Also skip non-double branches if they ever appear (hard fail, deterministic).
+            // Here we assume combined cuts only include double-type vars.
+            sigma_readers[v] = std::unique_ptr<TTreeReaderValue<double>>(new TTreeReaderValue<double>(reader, v.c_str()));
         }
 
         const size_t n_bins = bins.size();
@@ -911,6 +939,18 @@ static void accumulate_counts_for_period(const std::string& period_key,
         long long n_baseline = 0;
         long long n_withcut = 0;
         long long n_fail_only = 0;
+
+        // ycol diagnostics on baseline events
+        long long n_ycol_eval = 0;
+        long long n_ycol_below = 0;
+        double ycol_min = +std::numeric_limits<double>::infinity();
+        double ycol_max = -std::numeric_limits<double>::infinity();
+
+        // angle diagnostics on baseline events
+        double e_theta_min = +std::numeric_limits<double>::infinity();
+        double e_theta_max = -std::numeric_limits<double>::infinity();
+        double p2_theta_min = +std::numeric_limits<double>::infinity();
+        double p2_theta_max = -std::numeric_limits<double>::infinity();
 
         std::map<std::string, TopoCounters> topo_counts;
         topo_counts["FD_FD"] = TopoCounters{};
@@ -969,9 +1009,44 @@ static void accumulate_counts_for_period(const std::string& period_key,
                 ++n_fail_only;
             }
 
+            // ycol scalar diagnostics on baseline events
+            {
+                const double ycol_val = dvcsgen_ycol_value(period_key,
+                                                           *e_p, *e_theta, *e_phi,
+                                                           *p2_p, *p2_theta, *p2_phi,
+                                                           cfg_withP1);
+                ++n_ycol_eval;
+                ycol_min = std::min(ycol_min, ycol_val);
+                ycol_max = std::max(ycol_max, ycol_val);
+
+                e_theta_min = std::min(e_theta_min, *e_theta);
+                e_theta_max = std::max(e_theta_max, *e_theta);
+                p2_theta_min = std::min(p2_theta_min, *p2_theta);
+                p2_theta_max = std::max(p2_theta_max, *p2_theta);
+
+                const bool fails_by_value = !(ycol_val > cfg_withP1.dvcsgen_ycol_cut);
+                if (fails_by_value) {
+                    ++n_ycol_below;
+                }
+
+                // Consistency assertions: since baseline already passed, the only extra condition
+                // in cfg_withP1 is ycol > threshold.
+                if (fails_by_value && pass_withP1) {
+                    fatal("Inconsistency: ycol_val <= threshold but passes_global_cuts(cfg_withP1) returned true.");
+                } //endif
+                if (!fails_by_value && !pass_withP1) {
+                    fatal("Inconsistency: ycol_val > threshold but passes_global_cuts(cfg_withP1) returned false.");
+                } //endif
+            }
+
             const int d1 = *detector1;
             const int d2 = *detector2;
             const std::string topo = topology_from_detectors(d1, d2);
+
+            // Hard check that the common CD_FT pair never maps to UNKNOWN.
+            if (topo == "UNKNOWN" && d1 == 2 && d2 == 0) {
+                fatal("Topology map bug: saw (detector1, detector2)=(2,0) but mapped to UNKNOWN. You are not running the intended topology_from_detectors implementation.");
+            } //endif
 
             if (topo == "UNKNOWN") {
                 ++n_unknown_topo;
@@ -997,13 +1072,22 @@ static void accumulate_counts_for_period(const std::string& period_key,
             const SigmaCut& sc = itt->second;
 
             bool pass_3s = true;
-            for (const auto& bv : opt_bound) {
-                auto itv = sc.find(bv.name);
-                if (itv == sc.end()) {
-                    continue;
+            for (const auto& kv : sc) {
+                const std::string& var = kv.first;
+                const Cut1D& cut = kv.second;
+
+                double vv = 0.0;
+                if (var == "pTmiss") {
+                    vv = *pTmiss;
+                } else {
+                    auto itv = sigma_readers.find(var);
+                    if (itv == sigma_readers.end() || !(itv->second)) {
+                        fatal("Internal error: missing sigma reader for var=\"" + var + "\" (period_key=" + period_key + ")");
+                    }
+                    vv = **(itv->second);
                 }
-                const double vv = **(bv.val);
-                if (!within_3sigma_value(vv, itv->second)) {
+
+                if (!within_3sigma_value(vv, cut)) {
                     pass_3s = false;
                     break;
                 }
@@ -1024,6 +1108,7 @@ static void accumulate_counts_for_period(const std::string& period_key,
         }
 
         const double frac_fail = (n_baseline > 0 ? (double)n_fail_only / (double)n_baseline : 0.0);
+        const double frac_ycol_below = (n_ycol_eval > 0 ? (double)n_ycol_below / (double)n_ycol_eval : 0.0);
 
         std::cout << "[propagator_study] INFO: period_key=" << period_key
                   << " tree=" << tree->GetName()
@@ -1034,7 +1119,23 @@ static void accumulate_counts_for_period(const std::string& period_key,
                   << "\n";
 
         std::cout << "[propagator_study] INFO: period_key=" << period_key
-                  << " per-topology baseline/with/fail:\n";
+                  << " ycol_min=" << std::fixed << std::setprecision(6) << ycol_min
+                  << " ycol_max=" << std::fixed << std::setprecision(6) << ycol_max
+                  << " threshold=" << std::fixed << std::setprecision(6) << cfg_withP1.dvcsgen_ycol_cut
+                  << " n_ycol_eval=" << n_ycol_eval
+                  << " n_ycol_below=" << n_ycol_below
+                  << " frac_ycol_below=" << std::fixed << std::setprecision(6) << frac_ycol_below
+                  << "\n";
+
+        std::cout << "[propagator_study] INFO: period_key=" << period_key
+                  << " e_theta_min=" << std::fixed << std::setprecision(6) << e_theta_min
+                  << " e_theta_max=" << std::fixed << std::setprecision(6) << e_theta_max
+                  << " p2_theta_min=" << std::fixed << std::setprecision(6) << p2_theta_min
+                  << " p2_theta_max=" << std::fixed << std::setprecision(6) << p2_theta_max
+                  << "\n";
+
+        std::cout << "[propagator_study] INFO: period_key=" << period_key
+                  << " per-topology baseline/with/fail (after baseline, before 3-sigma binning):\n";
         for (const auto& kv : topo_counts) {
             const double ff = (kv.second.base > 0 ? (double)kv.second.fail_only / (double)kv.second.base : 0.0);
             std::cout << "  topo=" << kv.first
@@ -1184,6 +1285,7 @@ bool run_propagator_study(const std::string& csv_main,
     GlobalCutConfig cfg_withP1 = default_global_cuts();
     GlobalCutConfig cfg_noP1   = default_global_cuts();
 
+    cfg_withP1.enable_dvcsgen_ycol_cut = true;
     cfg_noP1.enable_dvcsgen_ycol_cut = false;
 
     const double ycol_threshold = cfg_withP1.dvcsgen_ycol_cut;
