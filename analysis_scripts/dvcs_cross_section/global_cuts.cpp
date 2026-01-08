@@ -62,39 +62,9 @@ static TLorentzVector make_p4_from_p_theta_phi(double p,
     return TLorentzVector(px, py, pz, E);
 }
 
-// P1_pos = 2 (k . qgamma) / Q2_calc
+// P2_pos = 2 (kprime . qgamma) / Q2_calc
 // where Q2_calc = - (k - kprime)^2 computed from Ebeam.
-static double compute_P1_pos(double Ebeam,
-                             double e_p,
-                             double e_theta,
-                             double e_phi,
-                             double p2_p,
-                             double p2_theta,
-                             double p2_phi) {
-    const double me = 0.00051099895; // (GeV)
-
-    const TLorentzVector k      = make_beam_electron(Ebeam);
-    const TLorentzVector kprime = make_p4_from_p_theta_phi(e_p,  e_theta,  e_phi,  me);
-    const TLorentzVector qgamma = make_p4_from_p_theta_phi(p2_p, p2_theta, p2_phi, 0.0);
-
-    const TLorentzVector q = k - kprime;
-    const double Q2_calc = -q.M2();
-
-    if (!(Q2_calc > 0.0) || !std::isfinite(Q2_calc)) {
-        fatal_global("compute_P1_pos: non-physical Q2_calc");
-    }
-
-    const double dot = k.Dot(qgamma);
-    const double P1_pos = (2.0 * dot) / Q2_calc;
-
-    if (!std::isfinite(P1_pos)) {
-        fatal_global("compute_P1_pos: non-finite P1_pos");
-    }
-
-    return P1_pos;
-}
-
-// Optional: kept for completeness / potential future diagnostics.
+// This matches the dvcsgen --ycol mirror cut you described.
 static double compute_P2_pos(double Ebeam,
                              double e_p,
                              double e_theta,
@@ -125,10 +95,6 @@ static double compute_P2_pos(double Ebeam,
     return P2_pos;
 }
 
-// -----------------------------------------------------------------------------
-// Public dvcsgen ycol helpers
-// -----------------------------------------------------------------------------
-
 double dvcsgen_ycol_value(double Ebeam,
                           double e_p,
                           double e_theta,
@@ -137,8 +103,8 @@ double dvcsgen_ycol_value(double Ebeam,
                           double p2_theta,
                           double p2_phi,
                           const GlobalCutConfig& cfg) {
-    (void)cfg;
-    return compute_P1_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
+    (void)cfg; // cfg included for interface symmetry; value depends only on kinematics and Ebeam.
+    return compute_P2_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
 }
 
 double dvcsgen_ycol_value(const std::string& period_label,
@@ -152,31 +118,6 @@ double dvcsgen_ycol_value(const std::string& period_label,
     const double Ebeam = beam_energy_for_period_label(period_label);
     return dvcsgen_ycol_value(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, cfg);
 }
-
-// Convenience wrappers (default cfg)
-double dvcsgen_ycol_value(double Ebeam,
-                          double e_p,
-                          double e_theta,
-                          double e_phi,
-                          double p2_p,
-                          double p2_theta,
-                          double p2_phi) {
-    return dvcsgen_ycol_value(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, default_global_cuts());
-}
-
-double dvcsgen_ycol_value(const std::string& period_label,
-                          double e_p,
-                          double e_theta,
-                          double e_phi,
-                          double p2_p,
-                          double p2_theta,
-                          double p2_phi) {
-    return dvcsgen_ycol_value(period_label, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, default_global_cuts());
-}
-
-// -----------------------------------------------------------------------------
-// Global cuts
-// -----------------------------------------------------------------------------
 
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
@@ -209,8 +150,8 @@ bool passes_global_cuts(double t1,
     if (pTmiss > cfg.pTmiss_max) return false;
 
     if (cfg.enable_dvcsgen_ycol_cut) {
-        const double P1_pos = compute_P1_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
-        if (!(P1_pos > cfg.dvcsgen_ycol_cut)) return false;
+        const double ycol = compute_P2_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
+        if (!(ycol > cfg.dvcsgen_ycol_cut)) return false;
     }
 
     return true;
@@ -270,7 +211,7 @@ std::string global_cuts_tcut(const GlobalCutConfig& cfg) {
 }
 
 void write_global_cuts_config_json(const std::string& out_json_dir,
-                                   const GlobalCutConfig& cfg) {
+                                  const GlobalCutConfig& cfg) {
     std::string path = out_json_dir + "/global_cuts_config.json";
     std::ofstream ofs(path);
     if (!ofs) {
