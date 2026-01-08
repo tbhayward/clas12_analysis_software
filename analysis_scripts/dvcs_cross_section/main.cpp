@@ -316,10 +316,19 @@ int main(int argc, char* argv[]) {
         const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
         const std::string outdir = "output/propagator_study";
 
-        // dataTrees is: std::map<std::string, TTree*>
-        // with keys like: DVCS_fa18_inb, DVCS_fa18_out, DVCS_sp18_inb, DVCS_sp18_out, DVCS_sp19_inb
+        // Adapter: propagator_study expects map<string, vector<TTree*>>
+        // but loadTrees() populates map<string, TTree*>.
+        std::map<std::string, std::vector<TTree*>> dataTreesByLabel;
+        for (const auto &kv : dataTrees) {
+            if (kv.second == nullptr) {
+                std::cerr << "[main] FATAL: dataTrees contains nullptr for key '" << kv.first << "'\n";
+                return 1;
+            }
+            dataTreesByLabel[kv.first].push_back(kv.second);
+        } //endfor
+
         if (!run_propagator_study(csv_main,
-                                  dataTrees,
+                                  dataTreesByLabel,
                                   combined_cuts_json,
                                   outdir)) {
             std::cerr << "[main] ERROR: propagator study failed\n";
