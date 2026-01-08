@@ -1508,7 +1508,7 @@ bool run_propagator_study(const std::string &csv_main,
                 std::sort(losses.begin(), losses.end(),
                           [](const LossBin &a, const LossBin &b) { return a.loss > b.loss; });
 
-                std::cout << "[propagator_study] CHECK label=\"" << L.label << "\" test=\"" << test_name << "\"\n";
+                std::cout << "[propagator_study] CHECK label=\"" << L.label << "\" test=\"" << T.tag << "\"\n";
                 std::cout << "  sum_denom=" << std::fixed << std::setprecision(0) << sum_denom
                           << " sum_numer=" << sum_numer
                           << " sum_loss=" << sum_loss
