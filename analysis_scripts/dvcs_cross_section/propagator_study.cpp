@@ -1475,6 +1475,59 @@ bool run_propagator_study(const std::string &csv_main,
                                              T.numer);
             }
 
+            // -------------------------------------------------------------------------
+            // Sanity diagnostics: do we have any bin-level P2 losses at all?
+            // -------------------------------------------------------------------------
+            {
+                double sum_denom = 0.0;
+                double sum_numer = 0.0;
+                long long n_loss_bins = 0;
+                double sum_loss = 0.0;
+
+                struct LossBin {
+                    double loss;
+                    size_t idx;
+                };
+                std::vector<LossBin> losses;
+                losses.reserve(bins.size());
+
+                for (size_t i = 0; i < bins.size(); ++i) {
+                    const double d = N_denom[i];
+                    const double n = N_numer[i];
+                    sum_denom += d;
+                    sum_numer += n;
+
+                    const double loss = d - n;
+                    if (loss > 0.0) {
+                        ++n_loss_bins;
+                        sum_loss += loss;
+                        losses.push_back(LossBin{loss, i});
+                    }
+                } //endfor
+
+                std::sort(losses.begin(), losses.end(),
+                          [](const LossBin &a, const LossBin &b) { return a.loss > b.loss; });
+
+                std::cout << "[propagator_study] CHECK label=\"" << L.label << "\" test=\"" << test_name << "\"\n";
+                std::cout << "  sum_denom=" << std::fixed << std::setprecision(0) << sum_denom
+                          << " sum_numer=" << sum_numer
+                          << " sum_loss=" << sum_loss
+                          << " n_loss_bins=" << n_loss_bins << "\n";
+
+                const size_t nprint = std::min<size_t>(25, losses.size());
+                for (size_t k = 0; k < nprint; ++k) {
+                    const size_t i = losses[k].idx;
+                    const auto &b = bins[i];
+                    std::cout << "  LOSS[" << k << "] loss=" << losses[k].loss
+                              << " denom=" << N_denom[i] << " numer=" << N_numer[i]
+                              << " xB=(" << b.xb.first << "," << b.xb.second << ")"
+                              << " Q2=(" << b.q2.first << "," << b.q2.second << ")"
+                              << " |t|=(" << b.t_abs.first << "," << b.t_abs.second << ")"
+                              << " phi=(" << b.phimin_deg << "," << b.phimax_deg << ")"
+                              << "\n";
+                } //endfor
+            }
+
             const fs::path outdir = fs::path(out_root_dir) / T.tag / canonical_period_dir(L.label);
             ensure_dir(outdir);
 
