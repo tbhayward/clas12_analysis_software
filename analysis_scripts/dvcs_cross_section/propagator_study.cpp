@@ -1098,9 +1098,6 @@ static std::vector<RowBin> load_bins_from_csv(const std::string &csv_main) {
     const int c_phimin  = find_col(header, "phimin");
     const int c_phimax  = find_col(header, "phimax");
 
-    // Fail-fast: required for deterministic naming and cross-checking.
-    const int c_xb_idx  = find_col(header, "xB index");
-
     std::vector<RowBin> bins;
     bins.reserve(lines.size() > 1 ? lines.size() - 1 : 0);
 
@@ -1124,21 +1121,26 @@ static std::vector<RowBin> load_bins_from_csv(const std::string &csv_main) {
         b.phimin_deg = std::atof(trim(unquote(fields[c_phimin])).c_str());
         b.phimax_deg = std::atof(trim(unquote(fields[c_phimax])).c_str());
 
-        b.xb_index = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
+        // Deterministic xB-slice index for naming (matches your existing convention):
+        // idx = round(xBmin * 1000)
+        if (!std::isfinite(b.xb.first)) {
+            fatal("Non-finite xBmin at CSV line " + std::to_string(r + 1));
+        }
+        b.xb_index = (int)std::llround(b.xb.first * 1000.0);
 
         if (!(b.xb.first < b.xb.second)) continue;
         if (!(b.q2.first < b.q2.second)) continue;
         if (!(b.t_abs.first < b.t_abs.second)) continue;
 
         bins.push_back(b);
-    }
+    } //endfor
 
     if (bins.empty()) {
         fatal("No valid bin rows parsed from CSV: " + csv_main);
     }
 
     std::cout << "[propagator_study] Loaded " << bins.size()
-              << " bin-rows from CSV: " + csv_main << "\n";
+              << " bin-rows from CSV: " << csv_main << "\n";
 
     return bins;
 }
