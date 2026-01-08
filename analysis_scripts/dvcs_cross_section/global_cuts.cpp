@@ -125,6 +125,10 @@ static double compute_P2_pos(double Ebeam,
     return P2_pos;
 }
 
+// -----------------------------------------------------------------------------
+// Public dvcsgen ycol helpers
+// -----------------------------------------------------------------------------
+
 double dvcsgen_ycol_value(double Ebeam,
                           double e_p,
                           double e_theta,
@@ -133,7 +137,7 @@ double dvcsgen_ycol_value(double Ebeam,
                           double p2_theta,
                           double p2_phi,
                           const GlobalCutConfig& cfg) {
-    (void)cfg; // cfg included for interface symmetry; value depends only on kinematics and Ebeam.
+    (void)cfg;
     return compute_P1_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
 }
 
@@ -148,6 +152,31 @@ double dvcsgen_ycol_value(const std::string& period_label,
     const double Ebeam = beam_energy_for_period_label(period_label);
     return dvcsgen_ycol_value(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, cfg);
 }
+
+// Convenience wrappers (default cfg)
+double dvcsgen_ycol_value(double Ebeam,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi) {
+    return dvcsgen_ycol_value(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, default_global_cuts());
+}
+
+double dvcsgen_ycol_value(const std::string& period_label,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi) {
+    return dvcsgen_ycol_value(period_label, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, default_global_cuts());
+}
+
+// -----------------------------------------------------------------------------
+// Global cuts
+// -----------------------------------------------------------------------------
 
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,

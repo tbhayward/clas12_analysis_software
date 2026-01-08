@@ -23,7 +23,6 @@
 // -----------------------------------------------------------------------------
 
 #include "propagator_study.h"
-
 #include "global_cuts.h"
 
 #include <algorithm>
@@ -92,17 +91,6 @@ static void ensure_dir(const fs::path &p) {
     if (!fs::exists(p)) {
         fs::create_directories(p);
     }
-}
-
-double dvcsgen_ycol_value(const std::string &period_label,
-                          double e_p,
-                          double e_theta,
-                          double e_phi,
-                          double p2_p,
-                          double p2_theta,
-                          double p2_phi) {
-    const double Ebeam = beam_energy_for_period_label(period_label);
-    return compute_P1_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
 }
 
 static std::vector<std::string> split_csv_line(const std::string &line) {
@@ -962,9 +950,11 @@ static void accumulate_counts_for_period(const std::string &period_key,
             } else {
                 ++n_fail_only;
                 if (kPrintFailingYcolExamples && n_printed_fail_ycol < max_print_fail_ycol) {
-                    const double ycol_val = dvcsgen_ycol_value(period_key,
-                                                               *e_p, *e_theta, *e_phi,
-                                                               *p2_p, *p2_theta, *p2_phi);
+                    // IMPORTANT: use the global_cuts API (do NOT re-implement ycol locally)
+                    const double ycol_val = ::dvcsgen_ycol_value(period_key,
+                                                                 *e_p, *e_theta, *e_phi,
+                                                                 *p2_p, *p2_theta, *p2_phi,
+                                                                 cfg_withP1);
                     std::cout << std::fixed << std::setprecision(6)
                               << "[propagator_study] FAIL_YCOL "
                               << "period=" << period_key
@@ -1006,7 +996,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
             for (const auto &bv : bound_3s) {
                 auto itv = sc.find(bv.name);
                 if (itv == sc.end()) {
-                    // Variable exists globally but not defined for this topo; deterministic skip.
                     continue;
                 }
                 const double vv = **(bv.val);
@@ -1149,7 +1138,7 @@ static std::vector<RowBin> load_bins_from_csv(const std::string &csv_main) {
     }
 
     std::cout << "[propagator_study] Loaded " << bins.size()
-              << " bin-rows from CSV: " << csv_main << "\n";
+              << " bin-rows from CSV: " + csv_main << "\n";
 
     return bins;
 }
