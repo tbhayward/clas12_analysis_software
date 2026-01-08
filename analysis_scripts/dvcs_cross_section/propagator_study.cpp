@@ -894,10 +894,17 @@ static void accumulate_counts_for_period(const std::string &period_key,
         topo_counts["CD_FD"] = TopoCounters{};
         topo_counts["CD_FT"] = TopoCounters{};
 
-        // Optional: print a few failing ycol values (very verbose).
+                // Optional: print a few failing ycol values (very verbose).
         const bool kPrintFailingYcolExamples = false;
         long long n_printed_fail_ycol = 0;
         const long long max_print_fail_ycol = 50;
+
+        // NEW: raw-ycol diagnostics on the baseline sample
+        long long n_ycol_below_threshold = 0;
+        double ycol_min = +std::numeric_limits<double>::infinity();
+        double ycol_max = -std::numeric_limits<double>::infinity();
+        long long n_printed_ycol_examples = 0;
+        const long long max_print_ycol_examples = 10;
 
         while (reader.Next()) {
             const int rnum = *runnum;
@@ -929,6 +936,35 @@ static void accumulate_counts_for_period(const std::string &period_key,
                     continue;
                 }
 
+                // NEW: compute the raw propagator value on the baseline sample
+                // (so we can see whether anything is even below threshold)
+                if (cfg_withP1.enable_dvcsgen_ycol_cut) {
+                    const double ycol_val = ::dvcsgen_ycol_value(period_key,
+                                                                 *e_p, *e_theta, *e_phi,
+                                                                 *p2_p, *p2_theta, *p2_phi,
+                                                                 cfg_withP1);
+
+                    if (std::isfinite(ycol_val)) {
+                        if (ycol_val < ycol_min) ycol_min = ycol_val;
+                        if (ycol_val > ycol_max) ycol_max = ycol_val;
+
+                        if (ycol_val < cfg_withP1.dvcsgen_ycol_cut) {
+                            ++n_ycol_below_threshold;
+
+                            if (n_printed_ycol_examples < max_print_ycol_examples) {
+                                std::cout << std::fixed << std::setprecision(6)
+                                          << "[propagator_study] BASELINE_RAW_BELOW "
+                                          << "period=" << period_key
+                                          << " ycol=" << ycol_val
+                                          << " thr=" << cfg_withP1.dvcsgen_ycol_cut
+                                          << "\n";
+                                ++n_printed_ycol_examples;
+                            }
+                        }
+                    }
+                }
+
+                // Now evaluate the with-cut decision
                 pass_withP1 = passes_global_cuts(*t1,
                                                  *open_angle_ep2,
                                                  *pTmiss,
@@ -950,7 +986,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
             } else {
                 ++n_fail_only;
                 if (kPrintFailingYcolExamples && n_printed_fail_ycol < max_print_fail_ycol) {
-                    // IMPORTANT: use the global_cuts API (do NOT re-implement ycol locally)
                     const double ycol_val = ::dvcsgen_ycol_value(period_key,
                                                                  *e_p, *e_theta, *e_phi,
                                                                  *p2_p, *p2_theta, *p2_phi,
@@ -1017,6 +1052,16 @@ static void accumulate_counts_for_period(const std::string &period_key,
             if (pass_withP1) {
                 N_withP1[ridx] += 1.0;
             }
+        }
+
+        // NEW: print the raw-ycol baseline diagnostics
+        if (cfg_withP1.enable_dvcsgen_ycol_cut) {
+            std::cout << "[propagator_study] INFO: period_key=" << period_key
+                      << " baseline_raw_ycol: below_thr=" << n_ycol_below_threshold
+                      << " thr=" << std::fixed << std::setprecision(6) << cfg_withP1.dvcsgen_ycol_cut
+                      << " ycol_min=" << std::fixed << std::setprecision(6) << ycol_min
+                      << " ycol_max=" << std::fixed << std::setprecision(6) << ycol_max
+                      << "\n";
         }
 
         const double frac_fail = (n_baseline > 0 ? (double)n_fail_only / (double)n_baseline : 0.0);
