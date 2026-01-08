@@ -31,6 +31,10 @@
 // - 3-sigma exclusivity cuts for DATA are loaded from combined_cuts.json
 //   (new schema) and are applied topology-by-topology (FD_FD, CD_FD, CD_FT).
 // - Fail fast on missing required branches (only those needed by the active tests).
+//
+// PRINTING POLICY (as requested):
+// - ONLY print out the bins/lines that have efficiency not equal to 1.
+//   We define "eff != 1" as (denom > 0) AND (numer != denom) for a phi-bin.
 // -----------------------------------------------------------------------------
 
 #include "propagator_study.h"
@@ -317,14 +321,6 @@ static CutDB load_combined_cuts_json_newschema(const std::string &path,
         }
     }
 
-    std::cout << "[propagator_study] Loaded combined cuts (new schema) from " << path << "\n";
-    for (const auto &pk : required_period_keys) {
-        std::cout << "  period_key=" << pk << ":\n";
-        std::cout << "    FD_FD vars=" << db.cuts[pk]["FD_FD"].size() << "\n";
-        std::cout << "    CD_FD vars=" << db.cuts[pk]["CD_FD"].size() << "\n";
-        std::cout << "    CD_FT vars=" << db.cuts[pk]["CD_FT"].size() << "\n";
-    }
-
     return db;
 }
 
@@ -409,9 +405,6 @@ static LUT build_lut_from_bins(const std::vector<RowBin> &bins) {
             node.phi_bins[iq].resize(nt);
         }
 
-        size_t n_empty_cells = 0;
-        size_t n_filled_cells = 0;
-
         for (size_t iq = 0; iq < nq; ++iq) {
             for (size_t it = 0; it < nt; ++it) {
                 const Range &q2R = node.q2_bins[iq];
@@ -430,7 +423,6 @@ static LUT build_lut_from_bins(const std::vector<RowBin> &bins) {
                 }
 
                 if (pb.empty()) {
-                    ++n_empty_cells;
                     continue;
                 }
 
@@ -440,15 +432,8 @@ static LUT build_lut_from_bins(const std::vector<RowBin> &bins) {
                           });
 
                 node.phi_bins[iq][it] = std::move(pb);
-                ++n_filled_cells;
             }
         }
-
-        std::cout << "[propagator_study] LUT xB slice ("
-                  << std::fixed << std::setprecision(3) << xbR.first << ", " << xbR.second
-                  << "): grid=(" << nq << " Q2 bins x " << nt << " |t| bins)"
-                  << ", filled_cells=" << n_filled_cells
-                  << ", empty_cells=" << n_empty_cells << "\n";
 
         lut.nodes[ixb] = std::move(node);
     }
@@ -554,6 +539,42 @@ static std::string fmt_cell_label(double q2min, double q2max, double tmin, doubl
     oss << "Q2 in (" << std::fixed << std::setprecision(2) << q2min << ", " << q2max
         << "), |t| in (" << std::fixed << std::setprecision(2) << tmin << ", " << tmax << ")";
     return oss.str();
+}
+
+static void maybe_print_eff_not1_point(const std::string &test_title,
+                                      const std::string &label,
+                                      int xb_idx_for_name,
+                                      const Range &xb_range,
+                                      const Range &q2_range,
+                                      const Range &t_range,
+                                      double phi_c,
+                                      double numer,
+                                      double denom,
+                                      double ratio,
+                                      double err,
+                                      size_t csv_row_index,
+                                      double phimin_deg,
+                                      double phimax_deg) {
+    if (!(denom > 0.0)) return;
+
+    // "eff != 1" as requested:
+    // because counts are filled in unit steps, denom and numer should be exact integers in double.
+    if (numer == denom) return;
+
+    std::cout << std::fixed << std::setprecision(6)
+              << "[propagator_study] EFF_NOT1 "
+              << "test=\"" << test_title << "\" "
+              << "label=\"" << label << "\" "
+              << "xBidx=" << xb_idx_for_name << " "
+              << "xB=(" << xb_range.first << "," << xb_range.second << ") "
+              << "Q2=(" << q2_range.first << "," << q2_range.second << ") "
+              << "|t|=(" << t_range.first << "," << t_range.second << ") "
+              << "phi=" << phi_c << " "
+              << "phi_bin=(" << phimin_deg << "," << phimax_deg << ") "
+              << "row=" << csv_row_index << " "
+              << "numer=" << numer << " denom=" << denom
+              << " ratio=" << ratio << " err=" << err
+              << "\n";
 }
 
 static void make_canvas_for_xb(const std::string &label,
@@ -718,17 +739,21 @@ static void make_canvas_for_xb(const std::string &label,
 
                 const double phi_c = phi_center_deg(ref.phimin_deg, ref.phimax_deg);
 
-                std::cout << std::fixed << std::setprecision(6)
-                          << "[propagator_study] POINT "
-                          << "test=\"" << test_title << "\" "
-                          << "label=\"" << label << "\" "
-                          << "xB=(" << xb_range.first << "," << xb_range.second << ") "
-                          << "Q2=(" << q2_range.first << "," << q2_range.second << ") "
-                          << "|t|=(" << t_range.first << "," << t_range.second << ") "
-                          << "phi=" << phi_c << " "
-                          << "numer=" << numer << " denom=" << denom
-                          << " ratio=" << f << " err=" << err
-                          << "\n";
+                // ONLY print bins where eff != 1
+                maybe_print_eff_not1_point(test_title,
+                                           label,
+                                           xb_idx_for_name,
+                                           xb_range,
+                                           q2_range,
+                                           t_range,
+                                           phi_c,
+                                           numer,
+                                           denom,
+                                           f,
+                                           err,
+                                           ridx,
+                                           ref.phimin_deg,
+                                           ref.phimax_deg);
 
                 Point p;
                 p.phi  = phi_c;
@@ -845,8 +870,6 @@ static bool passes_3sigma_for_topology(const SigmaCut &sc,
     for (const auto &kv : vals) {
         auto it = sc.find(kv.first);
         if (it == sc.end()) {
-            // The combined_cuts.json map defines what to cut; if this var is absent in this topo map,
-            // it is not cut here.
             continue;
         }
         if (!within_3sigma_value(kv.second, it->second)) {
@@ -877,10 +900,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
     if (need_3s && cutdb_or_null == nullptr) {
         fatal("Internal error: need_3sigma_cuts=true but cutdb_or_null is null for period_key=" + period_key);
     }
-
-    std::cout << "[propagator_study] INFO: period_key=" << period_key << "\n";
-    std::cout << "  denom: " << scenario_brief(denom) << "\n";
-    std::cout << "  numer: " << scenario_brief(numer) << "\n";
 
     std::set<std::string> required_3s_vars;
     if (need_3s) {
@@ -991,26 +1010,10 @@ static void accumulate_counts_for_period(const std::string &period_key,
             fatal("Internal error: count arrays size mismatch vs bins");
         }
 
-        long long n_seen = 0;
-        long long n_denom_pass = 0;
-        long long n_numer_pass = 0;
-
-        long long n_denom_binned = 0;
-        long long n_numer_binned = 0;
-
         long long n_unknown_topo = 0;
         std::map<std::pair<int, int>, long long> unknown_pairs;
 
-        // Simple P2 diagnostics for this period+tree (when P2 is used by either scenario)
-        long long n_P2_eval = 0;
-        long long n_P2_below_denom = 0;
-        long long n_P2_below_numer = 0;
-        double P2_min = +std::numeric_limits<double>::infinity();
-        double P2_max = -std::numeric_limits<double>::infinity();
-
         while (reader.Next()) {
-            ++n_seen;
-
             // Minimal sanity: we need |t| to be meaningful for bin matching
             const double t_abs = -(*t1);
             if (!(t_abs > 0.0) || !std::isfinite(t_abs)) {
@@ -1020,32 +1023,19 @@ static void accumulate_counts_for_period(const std::string &period_key,
             double phi_deg = (*phi2) * 180.0 / kPi;
             phi_deg = wrap_phi_deg(phi_deg);
 
-            // If either scenario needs a run blacklist, apply it inside that scenario evaluation.
             const int rnum = (need_runnum ? **runnum : -1);
 
-            // Pre-compute P2_pos once per event if needed (and finite)
             double P2_pos = std::numeric_limits<double>::quiet_NaN();
             if (need_P2) {
-                // Use denom.global_cfg as context for dvcsgen_ycol_value (it may encode period-dependent behavior),
-                // but any cfg is fine as long as it routes to the same compute_P2_pos implementation.
                 const GlobalCutConfig &cfg_ctx = (denom.apply_global_cuts ? denom.global_cfg : numer.global_cfg);
 
                 P2_pos = compute_P2_pos_value(period_key,
                                               **e_p, **e_theta, **e_phi,
                                               **p2_p, **p2_theta, **p2_phi,
                                               cfg_ctx);
-                if (std::isfinite(P2_pos)) {
-                    ++n_P2_eval;
-                    if (P2_pos < P2_min) P2_min = P2_pos;
-                    if (P2_pos > P2_max) P2_max = P2_pos;
-                    if (denom.apply_P2_cut && P2_pos < denom.P2_threshold) ++n_P2_below_denom;
-                    if (numer.apply_P2_cut && P2_pos < numer.P2_threshold) ++n_P2_below_numer;
-                }
             }
 
-            // Helper: evaluate one scenario on this event
             auto eval_scenario = [&](const Scenario &s) -> bool {
-                // run blacklist (optional; OFF by default for this rebuild)
                 if (s.apply_run_blacklist) {
                     if (!need_runnum) {
                         fatal("Internal error: apply_run_blacklist=true but runnum not bound");
@@ -1055,7 +1045,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
                     }
                 }
 
-                // global DVCS cuts (optional)
                 if (s.apply_global_cuts) {
                     if (!need_global) {
                         fatal("Internal error: apply_global_cuts=true but global branches not bound");
@@ -1088,8 +1077,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
                     }
                 }
 
-                // P2 cut (optional).
-                // IMPORTANT: if apply_global_cuts==false, we apply ONLY the P2 cut here (no other global cuts).
                 if (s.apply_P2_cut) {
                     if (!need_P2) {
                         fatal("Internal error: apply_P2_cut=true but P2 branches not bound");
@@ -1102,7 +1089,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
                     }
                 }
 
-                // 3-sigma exclusivity cuts (optional)
                 if (s.apply_3sigma_cuts) {
                     if (!need_3s) {
                         fatal("Internal error: apply_3sigma_cuts=true but 3sigma branches not bound");
@@ -1127,7 +1113,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
                     }
                     const SigmaCut &sc = itt->second;
 
-                    // collect values for this event
                     std::vector<std::pair<std::string, double>> vals;
                     vals.reserve(bound_3s.size());
                     for (const auto &bv : bound_3s) {
@@ -1145,10 +1130,6 @@ static void accumulate_counts_for_period(const std::string &period_key,
             const bool pass_denom = eval_scenario(denom);
             const bool pass_numer = eval_scenario(numer);
 
-            if (pass_denom) ++n_denom_pass;
-            if (pass_numer) ++n_numer_pass;
-
-            // Only fill binned counts if each scenario passes AND the event maps to a CSV bin.
             size_t ridx = 0;
             if (!find_bin_index(lut, *x, *Q2, t_abs, phi_deg, ridx)) {
                 continue;
@@ -1156,55 +1137,16 @@ static void accumulate_counts_for_period(const std::string &period_key,
 
             if (pass_denom) {
                 N_denom[ridx] += 1.0;
-                ++n_denom_binned;
             }
             if (pass_numer) {
                 N_numer[ridx] += 1.0;
-                ++n_numer_binned;
             }
         }
 
-        std::cout << "[propagator_study] INFO: period_key=" << period_key
-                  << " tree=" << tree->GetName()
-                  << " seen=" << n_seen
-                  << " denom_pass=" << n_denom_pass
-                  << " numer_pass=" << n_numer_pass
-                  << " denom_binned=" << n_denom_binned
-                  << " numer_binned=" << n_numer_binned
-                  << "\n";
-
-        if (need_P2) {
-            std::cout << "[propagator_study] INFO: period_key=" << period_key
-                      << " P2 diagnostics: eval=" << n_P2_eval
-                      << " P2_min=" << std::fixed << std::setprecision(6) << P2_min
-                      << " P2_max=" << std::fixed << std::setprecision(6) << P2_max
-                      << " below_denom_thr=" << n_P2_below_denom
-                      << " below_numer_thr=" << n_P2_below_numer
-                      << "\n";
-        }
-
-        if (need_3s && n_unknown_topo > 0) {
-            std::cout << "[propagator_study] INFO: period_key=" << period_key
-                      << " tree=" << tree->GetName()
-                      << " skipped " << n_unknown_topo
-                      << " events with UNKNOWN topology (during 3-sigma evaluation)\n";
-
-            std::vector<std::pair<std::pair<int, int>, long long>> v;
-            v.reserve(unknown_pairs.size());
-            for (const auto &kv : unknown_pairs) {
-                v.push_back(kv);
-            }
-            std::sort(v.begin(), v.end(),
-                      [](const auto &a, const auto &b) {
-                          return a.second > b.second;
-                      });
-
-            const size_t nprint = std::min<size_t>(10, v.size());
-            std::cout << "[propagator_study] INFO: Most common UNKNOWN (detector1, detector2) pairs:\n";
-            for (size_t i = 0; i < nprint; ++i) {
-                std::cout << "  (" << v[i].first.first << ", " << v[i].first.second << ") : " << v[i].second << "\n";
-            }
-        }
+        // If unknown topology occurs, that affects efficiencies; but you asked to ONLY print eff != 1.
+        // So we do not print unknown topo diagnostics here.
+        (void)n_unknown_topo;
+        (void)unknown_pairs;
     } //endfor
 }
 
@@ -1263,8 +1205,6 @@ static std::vector<RowBin> load_bins_from_csv(const std::string &csv_main) {
         b.phimin_deg = std::atof(trim(unquote(fields[c_phimin])).c_str());
         b.phimax_deg = std::atof(trim(unquote(fields[c_phimax])).c_str());
 
-        // Deterministic xB-slice index for naming (matches your existing convention):
-        // idx = round(xBmin * 1000)
         if (!std::isfinite(b.xb.first)) {
             fatal("Non-finite xBmin at CSV line " + std::to_string(r + 1));
         }
@@ -1280,9 +1220,6 @@ static std::vector<RowBin> load_bins_from_csv(const std::string &csv_main) {
     if (bins.empty()) {
         fatal("No valid bin rows parsed from CSV: " + csv_main);
     }
-
-    std::cout << "[propagator_study] Loaded " << bins.size()
-              << " bin-rows from CSV: " << csv_main << "\n";
 
     return bins;
 }
@@ -1318,10 +1255,8 @@ bool run_propagator_study(const std::string &csv_main,
     const std::vector<RowBin> bins = load_bins_from_csv(csv_main);
     const LUT lut = build_lut_from_bins(bins);
 
-    // We load combined cuts up-front because tests (2) and (3) require it.
     const CutDB cutdb = load_combined_cuts_json_newschema(combined_cuts_json, base_period_keys);
 
-    // Prepare global cut configs for the scenarios that need them (test 3).
     GlobalCutConfig cfg_global_noP2 = default_global_cuts();
     GlobalCutConfig cfg_global_withP2 = default_global_cuts();
 
@@ -1339,15 +1274,16 @@ bool run_propagator_study(const std::string &csv_main,
         Scenario numer;
     };
 
-    // Three tests, exactly as requested.
     std::vector<TestSpec> tests;
 
     {
         TestSpec T;
         T.tag = "test1_P2_only";
-        std::ostringstream tt;
-        tt << "P2-only efficiency (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
-        T.title = tt.str();
+        {
+            std::ostringstream tt;
+            tt << "P2-only efficiency (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
+            T.title = tt.str();
+        }
         T.legend_text = "N(P2 cut) / N(no cuts)";
 
         T.denom.name = "denom: no cuts";
@@ -1372,9 +1308,11 @@ bool run_propagator_study(const std::string &csv_main,
     {
         TestSpec T;
         T.tag = "test2_P2_plus_3sigma";
-        std::ostringstream tt;
-        tt << "P2 on top of 3-sigma (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
-        T.title = tt.str();
+        {
+            std::ostringstream tt;
+            tt << "P2 on top of 3-sigma (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
+            T.title = tt.str();
+        }
         T.legend_text = "N(3-sigma + P2) / N(3-sigma)";
 
         T.denom.name = "denom: 3-sigma only";
@@ -1399,16 +1337,18 @@ bool run_propagator_study(const std::string &csv_main,
     {
         TestSpec T;
         T.tag = "test3_P2_plus_global_plus_3sigma";
-        std::ostringstream tt;
-        tt << "P2 on top of global + 3-sigma (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
-        T.title = tt.str();
+        {
+            std::ostringstream tt;
+            tt << "P2 on top of global + 3-sigma (P2 > " << std::fixed << std::setprecision(3) << kP2CutThreshold << ")";
+            T.title = tt.str();
+        }
         T.legend_text = "N(global + 3-sigma + P2) / N(global + 3-sigma)";
 
         T.denom.name = "denom: global (NO P2) + 3-sigma";
         T.denom.apply_run_blacklist = false;
         T.denom.apply_global_cuts = true;
         T.denom.apply_3sigma_cuts = true;
-        T.denom.apply_P2_cut = false; // IMPORTANT: "global cuts (without P2)"
+        T.denom.apply_P2_cut = false;
         T.denom.global_cfg = cfg_global_noP2;
         T.denom.P2_threshold = kP2CutThreshold;
 
@@ -1416,7 +1356,7 @@ bool run_propagator_study(const std::string &csv_main,
         T.numer.apply_run_blacklist = false;
         T.numer.apply_global_cuts = true;
         T.numer.apply_3sigma_cuts = true;
-        T.numer.apply_P2_cut = false; // IMPORTANT: let passes_global_cuts apply the P2 cut in this scenario
+        T.numer.apply_P2_cut = false; // let passes_global_cuts apply the P2 cut in this scenario
         T.numer.global_cfg = cfg_global_withP2;
         T.numer.P2_threshold = kP2CutThreshold;
 
@@ -1440,23 +1380,9 @@ bool run_propagator_study(const std::string &csv_main,
     };
 
     for (const auto &T : tests) {
-        std::cout << "[propagator_study] ================================\n";
-        std::cout << "[propagator_study] Running " << T.tag << "\n";
-        std::cout << "[propagator_study] Title: " << T.title << "\n";
-        std::cout << "[propagator_study] Denom: " << scenario_brief(T.denom) << "\n";
-        std::cout << "[propagator_study] Numer: " << scenario_brief(T.numer) << "\n";
-
         for (const auto &L : labels) {
             std::vector<double> N_denom(bins.size(), 0.0);
             std::vector<double> N_numer(bins.size(), 0.0);
-
-            std::cout << "[propagator_study] Accumulating counts for label=\""
-                      << L.label << "\" using members={";
-            for (size_t i = 0; i < L.members.size(); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << L.members[i];
-            }
-            std::cout << "}\n";
 
             for (const auto &period_key : L.members) {
                 auto it = data_trees_by_period.find(period_key);
@@ -1476,12 +1402,11 @@ bool run_propagator_study(const std::string &csv_main,
             }
 
             // -------------------------------------------------------------------------
-            // Sanity diagnostics: do we have any bin-level P2 losses at all?
+            // ONLY print bins/lines where eff != 1: i.e., where loss > 0 in any CSV row.
             // -------------------------------------------------------------------------
             {
                 double sum_denom = 0.0;
                 double sum_numer = 0.0;
-                long long n_loss_bins = 0;
                 double sum_loss = 0.0;
 
                 struct LossBin {
@@ -1499,33 +1424,34 @@ bool run_propagator_study(const std::string &csv_main,
 
                     const double loss = d - n;
                     if (loss > 0.0) {
-                        ++n_loss_bins;
                         sum_loss += loss;
                         losses.push_back(LossBin{loss, i});
                     }
                 } //endfor
 
-                std::sort(losses.begin(), losses.end(),
-                          [](const LossBin &a, const LossBin &b) { return a.loss > b.loss; });
+                if (sum_loss > 0.0) {
+                    std::sort(losses.begin(), losses.end(),
+                              [](const LossBin &a, const LossBin &b) { return a.loss > b.loss; });
 
-                std::cout << "[propagator_study] CHECK label=\"" << L.label << "\" test=\"" << T.tag << "\"\n";
-                std::cout << "  sum_denom=" << std::fixed << std::setprecision(0) << sum_denom
-                          << " sum_numer=" << sum_numer
-                          << " sum_loss=" << sum_loss
-                          << " n_loss_bins=" << n_loss_bins << "\n";
+                    std::cout << "[propagator_study] CHECK label=\"" << L.label << "\" test=\"" << T.tag << "\"\n";
+                    std::cout << "  sum_denom=" << std::fixed << std::setprecision(0) << sum_denom
+                              << " sum_numer=" << sum_numer
+                              << " sum_loss=" << sum_loss
+                              << " n_loss_bins=" << (long long)losses.size() << "\n";
 
-                const size_t nprint = std::min<size_t>(25, losses.size());
-                for (size_t k = 0; k < nprint; ++k) {
-                    const size_t i = losses[k].idx;
-                    const auto &b = bins[i];
-                    std::cout << "  LOSS[" << k << "] loss=" << losses[k].loss
-                              << " denom=" << N_denom[i] << " numer=" << N_numer[i]
-                              << " xB=(" << b.xb.first << "," << b.xb.second << ")"
-                              << " Q2=(" << b.q2.first << "," << b.q2.second << ")"
-                              << " |t|=(" << b.t_abs.first << "," << b.t_abs.second << ")"
-                              << " phi=(" << b.phimin_deg << "," << b.phimax_deg << ")"
-                              << "\n";
-                } //endfor
+                    for (size_t k = 0; k < losses.size(); ++k) {
+                        const size_t i = losses[k].idx;
+                        const auto &b = bins[i];
+                        std::cout << "  LOSS[" << k << "] loss=" << std::fixed << std::setprecision(0) << losses[k].loss
+                                  << " denom=" << N_denom[i] << " numer=" << N_numer[i]
+                                  << " row=" << i
+                                  << " xB=(" << std::setprecision(6) << b.xb.first << "," << b.xb.second << ")"
+                                  << " Q2=(" << b.q2.first << "," << b.q2.second << ")"
+                                  << " |t|=(" << b.t_abs.first << "," << b.t_abs.second << ")"
+                                  << " phi=(" << b.phimin_deg << "," << b.phimax_deg << ")"
+                                  << "\n";
+                    } //endfor
+                }
             }
 
             const fs::path outdir = fs::path(out_root_dir) / T.tag / canonical_period_dir(L.label);
@@ -1550,10 +1476,6 @@ bool run_propagator_study(const std::string &csv_main,
                                    outdir,
                                    node.xb_index_for_name);
             }
-
-            std::cout << "[propagator_study] Wrote plots for test=\"" << T.tag
-                      << "\" label=\"" << L.label
-                      << "\" into " << outdir.string() << "\n";
         } //endfor labels
     } //endfor tests
 
