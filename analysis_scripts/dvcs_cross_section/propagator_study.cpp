@@ -94,6 +94,17 @@ static void ensure_dir(const fs::path &p) {
     }
 }
 
+double dvcsgen_ycol_value(const std::string &period_label,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi) {
+    const double Ebeam = beam_energy_for_period_label(period_label);
+    return compute_P1_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
+}
+
 static std::vector<std::string> split_csv_line(const std::string &line) {
     std::vector<std::string> out;
     std::string field;

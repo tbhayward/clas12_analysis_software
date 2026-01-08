@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 
+// global_cuts.h
+#pragma once
+
 /*
  * Global, universal event-level cuts for DVCS analysis.
  *
@@ -40,6 +43,16 @@ struct GlobalCutConfig {
         5180, 5181, 5182, 5183, 5247, 5448, 5495, 5496, 5615, 5567
     };
 };
+
+// Returns the dvcsgen "ycol" (propagator) value used for the ycol cut.
+// Deterministic mapping: period_label -> beam energy is enforced in global_cuts.cpp.
+double dvcsgen_ycol_value(const std::string &period_label,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi);
 
 const GlobalCutConfig& default_global_cuts();
 
@@ -90,5 +103,28 @@ std::string global_cuts_tcut(const GlobalCutConfig& cfg = default_global_cuts())
 // Persist the configuration once for provenance.
 void write_global_cuts_config_json(const std::string& out_json_dir,
                                    const GlobalCutConfig& cfg = default_global_cuts());
+
+
+struct GlobalCutConfig;
+
+// Return the dvcsgen "ycol" scalar used by the propagator cut (P1_pos).
+// This is computed identically to the internal quantity used inside passes_global_cuts.
+double dvcsgen_ycol_value(double Ebeam,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi,
+                          const GlobalCutConfig& cfg);
+
+double dvcsgen_ycol_value(const std::string& period_label,
+                          double e_p,
+                          double e_theta,
+                          double e_phi,
+                          double p2_p,
+                          double p2_theta,
+                          double p2_phi,
+                          const GlobalCutConfig& cfg);
 
 #endif // GLOBAL_CUTS_H
