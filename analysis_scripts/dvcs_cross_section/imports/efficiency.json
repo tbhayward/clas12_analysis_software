@@ -3,34 +3,34 @@
     "fa18_inb": {
       "efficiency_scheme": "rga_fa18_inb",
       "currents": [
-        { "current_nA": 40, "counts": 7270, "period_fraction": 0.033818, "period_fraction_percent": 3.38 },
-        { "current_nA": 45, "counts": 149107, "period_fraction": 0.693608, "period_fraction_percent": 69.36 },
-        { "current_nA": 50, "counts": 18947, "period_fraction": 0.088137, "period_fraction_percent": 8.81 },
-        { "current_nA": 55, "counts": 39649, "period_fraction": 0.184437, "period_fraction_percent": 18.44 }
+        { "current_nA": 40, "counts": 4416, "period_fraction": 0.020867, "period_fraction_percent": 2.09 },
+        { "current_nA": 45, "counts": 148621, "period_fraction": 0.702288, "period_fraction_percent": 70.23 },
+        { "current_nA": 50, "counts": 18947, "period_fraction": 0.089531, "period_fraction_percent": 8.95 },
+        { "current_nA": 55, "counts": 39640, "period_fraction": 0.187313, "period_fraction_percent": 18.73 }
       ]
     },
 
     "fa18_out": {
       "efficiency_scheme": "rga_fa18_out",
       "currents": [
-        { "current_nA": 40, "counts": 171688, "period_fraction": 0.363290, "period_fraction_percent": 36.33 },
-        { "current_nA": 50, "counts": 300904, "period_fraction": 0.636710, "period_fraction_percent": 63.67 }
+        { "current_nA": 40, "counts": 171691, "period_fraction": 0.366048, "period_fraction_percent": 36.60 },
+        { "current_nA": 50, "counts": 297348, "period_fraction": 0.633952, "period_fraction_percent": 63.40 }
       ]
     },
 
     "sp18_inb": {
       "efficiency_scheme": "rga_sp18_inb",
       "currents": [
-        { "current_nA": 35, "counts": 20372, "period_fraction": 0.081020, "period_fraction_percent": 8.10 },
-        { "current_nA": 50, "counts": 231071, "period_fraction": 0.918980, "period_fraction_percent": 91.90 }
+        { "current_nA": 35, "counts": 20373, "period_fraction": 0.081021, "period_fraction_percent": 8.10 },
+        { "current_nA": 50, "counts": 231081, "period_fraction": 0.918979, "period_fraction_percent": 91.90 }
       ]
     },
 
     "sp18_out": {
       "efficiency_scheme": "rga_sp18_out",
       "currents": [
-        { "current_nA": 30, "counts": 30415, "period_fraction": 0.191164, "period_fraction_percent": 19.12 },
-        { "current_nA": 45, "counts": 128689, "period_fraction": 0.808836, "period_fraction_percent": 80.88 }
+        { "current_nA": 30, "counts": 30416, "period_fraction": 0.191166, "period_fraction_percent": 19.12 },
+        { "current_nA": 45, "counts": 128692, "period_fraction": 0.808834, "period_fraction_percent": 80.88 }
       ]
     },
 
