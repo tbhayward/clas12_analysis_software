@@ -316,16 +316,16 @@ int main(int argc, char* argv[]) {
         const std::string theory_json_root = "output/jsons/cross_sections";
         const std::string xs_out_root      = "output/cross_sections";
 
-        // --------- Theory grids (xs_phi_all.json generation) ----------
-        {
-            const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-            const std::string theory_json_root = "output/jsons/cross_sections";
+        // // --------- Theory grids (xs_phi_all.json generation) ----------
+        // {
+        //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+        //     const std::string theory_json_root = "output/jsons/cross_sections";
 
-            if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
-                std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
-                return 1;
-            }
-        }
+        //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
+        //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
+        //         return 1;
+        //     }
+        // }
 
         // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
         LumiMap lumi_map = build_lumi_map();
