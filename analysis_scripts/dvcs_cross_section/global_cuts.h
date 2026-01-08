@@ -29,9 +29,12 @@
  */
 
 struct GlobalCutConfig {
-    double t1_abs_max = 1.0;
-    double open_angle_min_deg = 5.0;
-    double pTmiss_max = 0.20; // (GeV)
+    // double t1_abs_max = 1.0;
+    // double open_angle_min_deg = 5.0;
+    // double pTmiss_max = 0.20; // (GeV)
+    double t1_abs_max = 100.0;
+    double open_angle_min_deg = 0.0;
+    double pTmiss_max = 103900.20; // (GeV)
 
     // dvcsgen ycol cut mirror (ON by default)
     bool   enable_dvcsgen_ycol_cut = true;
