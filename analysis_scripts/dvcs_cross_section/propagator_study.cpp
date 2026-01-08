@@ -12,10 +12,18 @@
 //   eff(phi) = N_withP1 / N_noP1
 //
 // Notes / constraints:
-// - Applies 3-sigma exclusivity cuts for DATA using combined_cuts.json, topology-by-topology.
+// - Applies 3-sigma exclusivity cuts for DATA using combined_cuts.json, topology-by-topology,
+//   AND period-by-period (Fa18 Inb/Out, Sp18 Inb/Out, Sp19 Inb).
 // - Fails fast on missing CSV columns, missing period keys, missing required branches,
 //   or malformed cut JSON.
 // - This module only produces plots; it does not write to CSV.
+//
+// Expected combined_cuts.json schema for DVCS (example key):
+//   "DVCS_Fa18_Inb_CD_FD": {
+//       "data": { "Emiss2": {"mean":..., "std":...}, ... },
+//       "mc"  : { ... }
+//   }
+// We use ONLY the "data" block for this study.
 // -----------------------------------------------------------------------------
 
 #include "propagator_study.h"
@@ -208,35 +216,52 @@ static std::string topology_from_detectors(int detector1, int detector2) {
     return "UNKNOWN";
 }
 
+static std::string period_tag_from_key(const std::string& period_key) {
+    // Must match the combined_cuts.json keys: DVCS_<Tag>_<Topo>
+    if (period_key == "fa18_inb") return "Fa18_Inb";
+    if (period_key == "fa18_out") return "Fa18_Out";
+    if (period_key == "sp18_inb") return "Sp18_Inb";
+    if (period_key == "sp18_out") return "Sp18_Out";
+    if (period_key == "sp19_inb") return "Sp19_Inb";
+
+    fatal("Unknown period_key passed to period_tag_from_key: \"" + period_key + "\"");
+    return "UNREACHABLE";
+}
+
 // -----------------------------------------------------------------------------
 // 3-sigma cut map loader (combined_cuts.json)
 // -----------------------------------------------------------------------------
 
 struct Cut1D {
-    double mu = 0.0;
-    double sigma = 0.0;
+    double mu = 0.0;    // "mean" in JSON
+    double sigma = 0.0; // "std" in JSON
 };
 
-using SigmaCut   = std::map<std::string, Cut1D>;
-using TopoCutMap = std::map<std::string, SigmaCut>;
+using SigmaCut = std::map<std::string, Cut1D>;
 
-static bool read_mu_sigma_strict(const json& j, double& mu, double& sigma) {
-    // Strict schema: must contain exactly "mu" and "sigma" as numbers.
+// Period-specific and topology-specific cut map:
+//   cutmap[period_key][topo]["Mx2"] -> {mean,std}
+using TopoMap           = std::map<std::string, SigmaCut>;
+using PeriodTopoCutMap  = std::map<std::string, TopoMap>;
+
+static bool read_mean_std_strict(const json& j, double& mean, double& stdev) {
+    // Strict schema: must contain exactly "mean" and "std" as numbers (we do not allow fallback keys).
     if (!j.is_object()) {
         return false;
     }
-    if (!j.contains("mu") || !j.contains("sigma")) {
+    if (!j.contains("mean") || !j.contains("std")) {
         return false;
     }
-    if (!j["mu"].is_number() || !j["sigma"].is_number()) {
+    if (!j["mean"].is_number() || !j["std"].is_number()) {
         return false;
     }
-    mu    = j["mu"].get<double>();
-    sigma = j["sigma"].get<double>();
+    mean  = j["mean"].get<double>();
+    stdev = j["std"].get<double>();
     return true;
 }
 
-static TopoCutMap load_combined_cuts_json(const std::string& path) {
+static PeriodTopoCutMap load_combined_cuts_json(const std::string& path,
+                                                const std::vector<std::string>& required_period_keys) {
     std::ifstream ifs(path);
     if (!ifs) {
         fatal("Cannot open combined cuts JSON: " + path);
@@ -253,56 +278,74 @@ static TopoCutMap load_combined_cuts_json(const std::string& path) {
         fatal("combined cuts JSON root is not an object: " + path);
     }
 
-    TopoCutMap out;
+    const std::vector<std::string> required_topos = {"FD_FD", "CD_FD", "CD_FT"};
 
-    for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string topo = it.key();
-        const json& topo_obj = it.value();
-        if (!topo_obj.is_object()) {
-            fatal("Topology entry is not an object for topo=" + topo);
-        }
+    PeriodTopoCutMap out;
 
-        SigmaCut sc;
-        for (auto iv = topo_obj.begin(); iv != topo_obj.end(); ++iv) {
-            const std::string var = iv.key();
-            const json& spec = iv.value();
+    for (const auto& pk : required_period_keys) {
+        const std::string ptag = period_tag_from_key(pk);
 
-            double mu = 0.0;
-            double sigma = 0.0;
-            if (!read_mu_sigma_strict(spec, mu, sigma)) {
-                fatal("Cut spec must contain numeric keys {mu, sigma} for topo=" + topo + " var=" + var);
+        TopoMap topo_map;
+
+        for (const auto& topo : required_topos) {
+            const std::string key = std::string("DVCS_") + ptag + "_" + topo;
+
+            if (!j.contains(key)) {
+                fatal("combined cuts JSON missing required key: \"" + key + "\"");
             }
-            if (!(sigma > 0.0) || !std::isfinite(sigma)) {
-                fatal("Non-positive or non-finite sigma for topo=" + topo + " var=" + var);
+            const json& entry = j[key];
+            if (!entry.is_object()) {
+                fatal("combined cuts JSON entry is not an object for key=\"" + key + "\"");
             }
-            sc[var] = Cut1D{mu, sigma};
+            if (!entry.contains("data")) {
+                fatal("combined cuts JSON entry missing \"data\" block for key=\"" + key + "\"");
+            }
+            const json& data = entry["data"];
+            if (!data.is_object()) {
+                fatal("\"data\" block is not an object for key=\"" + key + "\"");
+            }
+            if (data.empty()) {
+                fatal("\"data\" block is empty for key=\"" + key + "\"");
+            }
+
+            SigmaCut sc;
+            for (auto it = data.begin(); it != data.end(); ++it) {
+                const std::string var = it.key();
+                const json& spec = it.value();
+
+                double mean = 0.0;
+                double stdev = 0.0;
+                if (!read_mean_std_strict(spec, mean, stdev)) {
+                    fatal("Cut spec must contain numeric keys {mean, std} for key=\"" + key + "\" var=\"" + var + "\"");
+                }
+                if (!(stdev > 0.0) || !std::isfinite(stdev)) {
+                    fatal("Non-positive or non-finite std for key=\"" + key + "\" var=\"" + var + "\"");
+                }
+                sc[var] = Cut1D{mean, stdev};
+            }
+
+            if (sc.empty()) {
+                fatal("SigmaCut unexpectedly empty for key=\"" + key + "\"");
+            }
+
+            topo_map[topo] = std::move(sc);
         }
 
-        if (sc.empty()) {
-            fatal("Topology \"" + topo + "\" contains no cut variables");
-        }
-        out[topo] = sc;
+        out[pk] = std::move(topo_map);
     }
 
     if (out.empty()) {
-        fatal("combined cuts JSON produced an empty TopoCutMap: " + path);
+        fatal("combined cuts JSON produced an empty PeriodTopoCutMap: " + path);
     }
 
-    const std::vector<std::string> required_topos = {"FD_FD", "CD_FD", "CD_FT"};
-    for (const auto& t : required_topos) {
-        if (out.find(t) == out.end()) {
-            fatal("combined cuts JSON missing required topology key: " + t);
-        }
-    }
-
-    std::cout << "[propagator_study] Loaded combined cuts from " << path << " with topologies: ";
-    for (auto it = out.begin(); it != out.end(); ++it) {
-        if (it != out.begin()) {
+    std::cout << "[propagator_study] Loaded combined cuts from " << path << " for periods: ";
+    for (size_t i = 0; i < required_period_keys.size(); ++i) {
+        if (i > 0) {
             std::cout << ", ";
         }
-        std::cout << it->first << "(" << it->second.size() << " vars)";
+        std::cout << required_period_keys[i];
     }
-    std::cout << "\n";
+    std::cout << " (each with topologies FD_FD, CD_FD, CD_FT)\n";
 
     return out;
 }
@@ -786,7 +829,7 @@ static void require_branch(TTree* t, const std::string& bname, const std::string
 
 static void accumulate_counts_for_period(const std::string& period_key,
                                          const TreeVec& trees,
-                                         const TopoCutMap& cutmap,
+                                         const PeriodTopoCutMap& cutmap,
                                          const LUT& lut,
                                          const std::vector<RowBin>& bins,
                                          std::vector<double>& N_noP1,
@@ -796,6 +839,12 @@ static void accumulate_counts_for_period(const std::string& period_key,
     if (trees.empty()) {
         fatal("No trees provided for period_key=" + period_key);
     }
+
+    auto itP = cutmap.find(period_key);
+    if (itP == cutmap.end()) {
+        fatal("Cut map missing required period_key=\"" + period_key + "\"");
+    }
+    const TopoMap& topo_map = itP->second;
 
     for (TTree* tree : trees) {
         if (tree == nullptr) {
@@ -821,15 +870,14 @@ static void accumulate_counts_for_period(const std::string& period_key,
         require_branch(tree, "p2_theta", period_key);
         require_branch(tree, "p2_phi",   period_key);
 
-        // Optional exclusivity variables for 3-sigma cuts
+        // Optional exclusivity variables for 3-sigma cuts (pTmiss handled separately; it is required)
         const std::vector<std::string> opt_vars = {
             "Emiss2",
             "Mx2",
             "Mx2_1",
             "Mx2_2",
             "theta_gamma_gamma",
-            "xF",
-            "pTmiss"
+            "xF"
         };
 
         TTreeReader reader(tree);
@@ -882,25 +930,37 @@ static void accumulate_counts_for_period(const std::string& period_key,
                 continue;
             }
 
-            auto it_topo = cutmap.find(topo);
-            if (it_topo == cutmap.end()) {
-                fatal("Cut map missing topology \"" + topo + "\"");
+            auto itT = topo_map.find(topo);
+            if (itT == topo_map.end()) {
+                fatal("Cut map missing topology \"" + topo + "\" for period_key=\"" + period_key + "\"");
             }
-            const SigmaCut& sc = it_topo->second;
+            const SigmaCut& sc = itT->second;
 
-            // Apply 3-sigma cuts for variables that are both bound and present in the cut map.
+            // Apply 3-sigma cuts for variables that are both present in the cut map and bound.
             bool pass_3s = true;
-            for (const auto& bv : opt_bound) {
-                auto itv = sc.find(bv.name);
-                if (itv == sc.end()) {
-                    continue;
-                }
-                const double vv = **(bv.val);
-                if (!within_3sigma_value(vv, itv->second)) {
+
+            // pTmiss is required (already bound), so apply it if present in the cut map.
+            auto it_pt = sc.find("pTmiss");
+            if (it_pt != sc.end()) {
+                if (!within_3sigma_value(*pTmiss, it_pt->second)) {
                     pass_3s = false;
-                    break;
                 }
             }
+
+            if (pass_3s) {
+                for (const auto& bv : opt_bound) {
+                    auto itv = sc.find(bv.name);
+                    if (itv == sc.end()) {
+                        continue;
+                    }
+                    const double vv = **(bv.val);
+                    if (!within_3sigma_value(vv, itv->second)) {
+                        pass_3s = false;
+                        break;
+                    }
+                }
+            }
+
             if (!pass_3s) {
                 continue;
             }
@@ -1079,7 +1139,7 @@ bool run_propagator_study(const std::string& csv_main,
     const std::vector<RowBin> bins = load_bins_from_csv(csv_main);
     const LUT lut = build_lut_from_bins(bins);
 
-    const TopoCutMap cutmap = load_combined_cuts_json(combined_cuts_json);
+    const PeriodTopoCutMap cutmap = load_combined_cuts_json(combined_cuts_json, base_period_keys);
 
     GlobalCutConfig cfg_withP1 = default_global_cuts();
     GlobalCutConfig cfg_noP1   = default_global_cuts();
