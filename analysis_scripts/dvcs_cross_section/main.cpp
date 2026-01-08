@@ -316,12 +316,12 @@ int main(int argc, char* argv[]) {
         const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
         const std::string outdir = "output/propagator_study";
 
-        // dataTrees must be a map<string, vector<TTree*>>
-        // with keys: fa18_inb, fa18_out, sp18_inb, sp18_out, sp19_inb
-        if (!propagator_study::run_propagator_study(csv_main,
-                                                    dataTrees,
-                                                    combined_cuts_json,
-                                                    outdir)) {
+        // dataTrees is: std::map<std::string, TTree*>
+        // with keys like: DVCS_fa18_inb, DVCS_fa18_out, DVCS_sp18_inb, DVCS_sp18_out, DVCS_sp19_inb
+        if (!run_propagator_study(csv_main,
+                                  dataTrees,
+                                  combined_cuts_json,
+                                  outdir)) {
             std::cerr << "[main] ERROR: propagator study failed\n";
             return 1;
         }
