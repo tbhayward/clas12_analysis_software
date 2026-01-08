@@ -158,7 +158,7 @@ bool passes_global_cuts(double t1,
 
     if (cfg.enable_dvcsgen_ycol_cut) {
         const double P2_pos = compute_P2_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
-        if (!(P1_pos > cfg.dvcsgen_ycol_cut)) return false;
+        if (!(P2_pos > cfg.dvcsgen_ycol_cut)) return false;
     }
 
     return true;
