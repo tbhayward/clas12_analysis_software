@@ -16,10 +16,6 @@ What this script does
    - sanity report (TXT) with checks for identical series / zero deltas / len mismatches,
    - per-bin CSVs with x, Baseline y±σ, ISR&FSR y±σ, Δ±σ.
 
-If your high-x Δ looked like zero earlier, check output/enpi+/ISR_FSR_sanity_report.txt
-to confirm whether any series were *identical* between Baseline and ISR&FSR.
-
-Author: you :)
 """
 
 import os
