@@ -20,8 +20,15 @@
 #     center: F_UL^{sin(phi)} / F_UU   and   F_UL^{sin(2phi)} / F_UU
 #     right:  F_LL / F_UU              and   F_LL^{cos(phi)} / F_UU
 #
+# Additional plots (added without changing previous functionality):
+# - The script also produces 4 PDF canvases (one per xB bin) showing ONLY the
+#   migration systematic magnitudes vs -t':
+#     UL:  |Delta AUL sin(phi)| and |Delta AUL sin(2phi)|
+#     LL:  |Delta ALL| and |Delta ALL cos(phi)|
+#   The y-axis of each subplot is [0, 1.2 * max_plotted_in_that_subplot].
+#
 # Plot requirements (as requested):
-# - Y ranges:
+# - Y ranges (main asymmetry canvases):
 #     single-spin (LU, UL): [-0.4, 0.4]
 #     double-spin (LL):     [-0.8, 0.8]
 # - No horizontal error bars (no xerr on points).
@@ -466,7 +473,6 @@ def compute_bin_edges_from_centers(x, np):
 #enddef
 
 def extract_sys_series_explicit(fit_map, sys_name, x_ref, np):
-    # sys series must be list of len N with entries [tmean, sys] or [tmean, *, sys]
     raw = fit_map[sys_name]
     if (not isinstance(raw, list)) or (len(raw) != len(x_ref)):
         fatal("Systematics series '{}' exists but has length {} (expected {}).".format(
@@ -506,9 +512,6 @@ def extract_sys_series_explicit(fit_map, sys_name, x_ref, np):
 #enddef
 
 def get_sys_band(fit_map, varname, x_ref, np):
-    # Deterministic preference order:
-    #   1) varname + "Sys" (injected from migration diffs)
-    #   2) other exact spellings (if present in input)
     preferred = varname + "Sys"
     if preferred in fit_map:
         return extract_sys_series_explicit(fit_map, preferred, x_ref, np)
@@ -541,7 +544,6 @@ def draw_sys_bars(ax, x_centers, sys_band, widths):
 #enddef
 
 def draw_points(ax, x, y, e, label, color, marker, capsize, ms):
-    # No horizontal error bars: xerr omitted.
     ax.errorbar(
         x, y, yerr=e,
         fmt=marker, color=color, ecolor=color,
@@ -568,7 +570,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
     xlim_t = (0.0, 1.30)
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
-    # Updated standardized y-limits requested
     ylim_single = (-0.40, 0.40)
     ylim_double = (-0.80, 0.80)
 
@@ -612,23 +613,17 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
             fatal("Plot x mismatch: {} vs {} (bin {})".format(v_lu, v_ll1, g))
         #endif
 
-        # Needed for sys-rectangle widths
         left, right, widths = compute_bin_edges_from_centers(x_lu, np)
 
-        # Sys extraction (deterministic):
         sys_lu  = get_sys_band(fit_map, v_lu,  x_lu, np)
         sys_ul1 = get_sys_band(fit_map, v_ul1, x_lu, np)
         sys_ul2 = get_sys_band(fit_map, v_ul2, x_lu, np)
         sys_ll0 = get_sys_band(fit_map, v_ll0, x_lu, np)
         sys_ll1 = get_sys_band(fit_map, v_ll1, x_lu, np)
 
-        # Panel sys policy:
-        # - UL panel: only lower-order harmonic sys (UL sin(phi))
-        # - LL panel: only lower-order harmonic sys (LL)
         sys_band_ul_panel = sys_ul1
         sys_band_ll_panel = sys_ll0
 
-        # Warn only if we truly have none for the bin (should not happen if injected)
         if (sys_lu is None) and (sys_band_ul_panel is None) and (sys_band_ll_panel is None):
             warn("No systematics series found for bin '{}'; sys rectangles will be skipped.".format(g))
         #endif
@@ -639,7 +634,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         ax_mid   = axes[1]
         ax_right = axes[2]
 
-        # Left: LU
         draw_sys_bars(ax_left, x_lu, sys_lu, widths)
         draw_points(
             ax_left, x_lu, y_lu, e_lu,
@@ -650,7 +644,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         ax_left.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
         ax_left.grid(True, linestyle="--", alpha=0.6)
 
-        # Middle: UL (sys only from UL sin(phi))
         draw_sys_bars(ax_mid, x_ul1, sys_band_ul_panel, widths)
         draw_points(
             ax_mid, x_ul1, y_ul1, e_ul1,
@@ -668,7 +661,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         leg_mid = ax_mid.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
         leg_mid.get_frame().set_alpha(0.9)
 
-        # Right: LL (sys only from LL)
         draw_sys_bars(ax_right, x_ll0, sys_band_ll_panel, widths)
         draw_points(
             ax_right, x_ll0, y_ll0, e_ll0,
@@ -698,7 +690,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
 #enddef
 
 def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
-    # Inject deterministic sys-series names: "<varname>Sys" as pairs [tmean, sysmag].
     out = dict(fit_map)
 
     for v in required_varnames:
@@ -720,6 +711,99 @@ def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
     #endfor
 
     return out
+#enddef
+
+# =========================
+# Plotting (migration sys vs -t')
+# =========================
+
+def save_migration_sys_canvases(fit_map, out_dir):
+    np, plt = import_plot_deps()
+
+    xlim_t = (0.0, 1.30)
+    x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
+
+    suffix_ul1  = "GEchi2FitsAULsinphi"
+    suffix_ul2  = "GEchi2FitsAULsin2phi"
+    suffix_ll0  = "GEchi2FitsALL"
+    suffix_ll1  = "GEchi2FitsALLcosphi"
+
+    groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
+
+    for g in groups:
+        v_ul1 = g + suffix_ul1
+        v_ul2 = g + suffix_ul2
+        v_ll0 = g + suffix_ll0
+        v_ll1 = g + suffix_ll1
+
+        # These are injected by inject_migration_sys_for_plotting()
+        v_ul1_sys = v_ul1 + "Sys"
+        v_ul2_sys = v_ul2 + "Sys"
+        v_ll0_sys = v_ll0 + "Sys"
+        v_ll1_sys = v_ll1 + "Sys"
+
+        for v in [v_ul1, v_ul2, v_ll0, v_ll1]:
+            if v not in fit_map:
+                fatal("Cannot make migration-sys plots: missing required input series '{}'.".format(v))
+            #endif
+        #endfor
+
+        for v in [v_ul1_sys, v_ul2_sys, v_ll0_sys, v_ll1_sys]:
+            if v not in fit_map:
+                fatal("Cannot make migration-sys plots: missing injected sys series '{}'.".format(v))
+            #endif
+        #endfor
+
+        # x reference from any base series (triples)
+        x_ref, y_dummy, e_dummy = to_series(fit_map[v_ul1], np=np)
+
+        sys_ul1 = get_sys_band(fit_map, v_ul1, x_ref, np)
+        sys_ul2 = get_sys_band(fit_map, v_ul2, x_ref, np)
+        sys_ll0 = get_sys_band(fit_map, v_ll0, x_ref, np)
+        sys_ll1 = get_sys_band(fit_map, v_ll1, x_ref, np)
+
+        if (sys_ul1 is None) or (sys_ul2 is None) or (sys_ll0 is None) or (sys_ll1 is None):
+            fatal("Internal error: expected all sys series to exist for '{}' but at least one is missing.".format(g))
+        #endif
+
+        fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.4))
+
+        ax_ul = axes[0]
+        ax_ll = axes[1]
+
+        # UL subplot (two harmonics)
+        y_ul_max = float(np.max(np.array([np.max(sys_ul1), np.max(sys_ul2)], dtype=float)))
+        if y_ul_max <= 0.0:
+            y_ul_max = 1.0e-6
+        #endif
+        ax_ul.plot(x_ref, sys_ul1, marker="o", linestyle="None", label=r"$|\Delta(F_{UL}^{\sin\phi}/F_{UU})|$")
+        ax_ul.plot(x_ref, sys_ul2, marker="s", linestyle="None", label=r"$|\Delta(F_{UL}^{\sin2\phi}/F_{UU})|$")
+        ax_ul.set(xlim=xlim_t, ylim=(0.0, 1.2 * y_ul_max), xlabel=x_label, ylabel="Migration systematic magnitude")
+        ax_ul.grid(True, linestyle="--", alpha=0.6)
+        leg_ul = ax_ul.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
+        leg_ul.get_frame().set_alpha(0.9)
+
+        # LL subplot (two harmonics)
+        y_ll_max = float(np.max(np.array([np.max(sys_ll0), np.max(sys_ll1)], dtype=float)))
+        if y_ll_max <= 0.0:
+            y_ll_max = 1.0e-6
+        #endif
+        ax_ll.plot(x_ref, sys_ll0, marker="o", linestyle="None", label=r"$|\Delta(F_{LL}/F_{UU})|$")
+        ax_ll.plot(x_ref, sys_ll1, marker="s", linestyle="None", label=r"$|\Delta(F_{LL}^{\cos\phi}/F_{UU})|$")
+        ax_ll.set(xlim=xlim_t, ylim=(0.0, 1.2 * y_ll_max), xlabel=x_label, ylabel="Migration systematic magnitude")
+        ax_ll.grid(True, linestyle="--", alpha=0.6)
+        leg_ll = ax_ll.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
+        leg_ll.get_frame().set_alpha(0.9)
+
+        plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - migration systematics", fontsize=14, y=0.98)
+        plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+
+        out_pdf = os.path.join(out_dir, "migration_systematics_{}.pdf".format(g))
+        plt.savefig(out_pdf)
+        plt.close(fig)
+
+        sys.stdout.write("Saved plot: {}\n".format(out_pdf))
+    #endfor
 #enddef
 
 def main():
@@ -769,9 +853,11 @@ def main():
     sys.stdout.write("Wrote migrated fit file: {}\n".format(out_path))
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
 
-    # Plot the input/original asymmetries with migration systematics injected as "<varname>Sys".
     fit_map_for_plots = inject_migration_sys_for_plotting(fit_map, diffs_mag, required)
     save_input_asymmetry_canvases(fit_map_for_plots, out_dir)
+
+    # New: plots of migration systematic magnitudes vs -t' (both harmonics)
+    save_migration_sys_canvases(fit_map_for_plots, out_dir)
 #enddef
 
 if __name__ == "__main__":
