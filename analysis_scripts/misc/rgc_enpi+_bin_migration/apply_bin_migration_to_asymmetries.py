@@ -5,15 +5,22 @@
 # python3 apply_bin_migration_to_asymmetries.py mc_bin_migration.csv fit_results.txt fit_results_migrated.txt
 #
 # Notes:
-# - The 3rd argument is now a file name only (no directory). Output files are written to:
+# - The 3rd argument is a file name only (no directory). Output files are written to:
 #     output/rgc_enpi+_bin_migration_study/
+# - The script produces:
+#     (1) Migrated fit file:
+#         name = {{tmean, migrated_value, stat_original}, ...};
+#     (2) Diff/systematics file:
+#         name        = {{tmean, abs(migrated-original)}, ...};               (systematic magnitude)
+#         name_ratio  = {{tmean, abs(migrated-original)/abs(original)}, ...}; (relative magnitude)
+#         name_delta  = {{tmean, migrated-original}, ...};                    (signed delta, for diagnostics)
 # - The script also produces 4 PDF canvases (one per xB bin) in the same output directory,
 #   plotting the input/original asymmetries from the fit-results text file:
 #     left:   F_LU^{sin(phi)} / F_UU
 #     center: F_UL^{sin(phi)} / F_UU   and   F_UL^{sin(2phi)} / F_UU
 #     right:  F_LL / F_UU              and   F_LL^{cos(phi)} / F_UU
-# - Systematic-uncertainty "bands from y=0" are drawn if matching sys-series are found in the input file
-#   (see find_sys_series_varname_candidates()). Otherwise a WARNING is printed and bands are skipped.
+# - Systematic-uncertainty "bands from y=0" are drawn in these plots only if matching sys-series
+#   are found in the *input* fit-results file (see find_sys_series_varname_candidates()).
 
 import argparse
 import ast
@@ -217,7 +224,8 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
     ]
 
     migrated = {}
-    diffs = {}
+    diffs_mag = {}
+    diffs_signed = {}
 
     for suffix in suffixes:
         for xb_group_idx in range(4):
@@ -225,7 +233,8 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
             varname = xb_name + suffix
 
             out_list = []
-            diff_list = []
+            diff_mag_list = []
+            diff_signed_list = []
 
             for t_idx in range(6):
                 target_global_bin = xb_group_idx * 6 + t_idx
@@ -269,18 +278,21 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
                     migrated_val = migrated_val / row_sum
                 #endif
 
-                delta = migrated_val - aval_target
+                delta_signed = migrated_val - aval_target
+                delta_mag = abs(delta_signed)
 
                 out_list.append([tmean_target, migrated_val, stat_target])
-                diff_list.append([tmean_target, delta])
+                diff_mag_list.append([tmean_target, delta_mag])
+                diff_signed_list.append([tmean_target, delta_signed])
             #endfor
 
             migrated[varname] = out_list
-            diffs[varname] = diff_list
+            diffs_mag[varname] = diff_mag_list
+            diffs_signed[varname] = diff_signed_list
         #endfor
     #endfor
 
-    return migrated, diffs
+    return migrated, diffs_mag, diffs_signed
 #enddef
 
 def format_mathematica_list_triple(lst):
@@ -299,7 +311,7 @@ def format_mathematica_list_pair(lst):
     return "{" + ", ".join(parts) + "}"
 #enddef
 
-def write_output_files(out_path, out_diff_path, migrated, diffs, fit_map):
+def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map):
     suffixes = [
         "GEchi2FitsALUsinphi",
         "GEchi2FitsAULsinphi",
@@ -324,40 +336,49 @@ def write_output_files(out_path, out_diff_path, migrated, diffs, fit_map):
         #endfor
     #endwith
 
-    # 2) Diff output file:
-    #    - name = {{tmean, diff}, ...};
-    #    - name_ratio = {{tmean, diff/value_before}, ...};
+    # 2) Diff/systematics output file:
+    #    - name       = {{tmean, abs(delta)}, ...};
+    #    - name_ratio = {{tmean, abs(delta)/abs(value_before)}, ...};
+    #    - name_delta = {{tmean, delta_signed}, ...};  (diagnostic)
     #
-    # Fail fast if any value_before is 0 (or extremely close).
+    # Fail fast if any denom is 0 (or extremely close).
     eps = 1.0e-15
 
     with open(out_diff_path, "w") as f:
         for g in xb_groups:
             for s in suffixes:
                 name = g + s
-                if name not in diffs:
-                    fatal("Internal error: diffs missing variable '{}'".format(name))
+                if name not in diffs_mag:
+                    fatal("Internal error: diffs_mag missing variable '{}'".format(name))
+                #endif
+                if name not in diffs_signed:
+                    fatal("Internal error: diffs_signed missing variable '{}'".format(name))
                 #endif
                 if name not in fit_map:
                     fatal("Internal error: fit_map missing variable '{}' needed for ratio.".format(name))
                 #endif
 
-                # Write diff line (pairs)
-                rhs_diff = format_mathematica_list_pair(diffs[name])
-                f.write(name + " = " + rhs_diff + ";\n")
+                # Write systematic magnitude line (pairs)
+                rhs_mag = format_mathematica_list_pair(diffs_mag[name])
+                f.write(name + " = " + rhs_mag + ";\n")
 
-                # Build ratio list
+                # Write signed delta diagnostic line (pairs)
+                rhs_signed = format_mathematica_list_pair(diffs_signed[name])
+                f.write(name + "_delta = " + rhs_signed + ";\n")
+
+                # Build ratio list using abs(original) in denom so it is a magnitude ratio.
                 ratio_list = []
                 for k in range(6):
-                    tmean = float(diffs[name][k][0])
-                    delta = float(diffs[name][k][1])
+                    tmean = float(diffs_mag[name][k][0])
+                    sysmag = float(diffs_mag[name][k][1])
 
                     before_val = float(fit_map[name][k][1])
-                    if abs(before_val) < eps:
-                        fatal("Cannot compute ratio for {} at index {}: before value is {:.17g} (too close to zero).".format(name, k, before_val))
+                    denom = abs(before_val)
+                    if denom < eps:
+                        fatal("Cannot compute ratio for {} at index {}: abs(before value) is {:.17g} (too close to zero).".format(name, k, denom))
                     #endif
 
-                    ratio = delta / before_val
+                    ratio = sysmag / denom
                     ratio_list.append([tmean, ratio])
                 #endfor
 
@@ -514,7 +535,6 @@ def xb_label(group_name):
 def save_input_asymmetry_canvases(fit_map, out_dir):
     np, plt = import_plot_deps()
 
-    # Plot constants (kept close to your ISR/FSR style)
     capsize = 3
     ms = 5.0
     xlim_t = (0.0, 1.30)
@@ -551,7 +571,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         x_ll0, y_ll0, e_ll0 = to_series(fit_map[v_ll0], np=np)
         x_ll1, y_ll1, e_ll1 = to_series(fit_map[v_ll1], np=np)
 
-        # Sanity: require consistent x within each bin (strict)
         if not np.allclose(x_lu, x_ul1, rtol=0.0, atol=1.0e-10):
             fatal("Plot x mismatch: {} vs {} (bin {})".format(v_lu, v_ul1, g))
         #endif
@@ -565,7 +584,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
             fatal("Plot x mismatch: {} vs {} (bin {})".format(v_lu, v_ll1, g))
         #endif
 
-        # Optional sys bands (if present)
         sys_lu  = extract_sys_series(fit_map, v_lu,  x_lu,  np)
         sys_ul1 = extract_sys_series(fit_map, v_ul1, x_lu,  np)
         sys_ul2 = extract_sys_series(fit_map, v_ul2, x_lu,  np)
@@ -584,7 +602,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         ax_mid   = axes[1]
         ax_right = axes[2]
 
-        # Left: LU
         draw_series_with_optional_sys_band(
             ax_left, x_lu, y_lu, e_lu, sys_lu,
             label=r"$F_{LU}^{\sin\phi}/F_{UU}$",
@@ -594,7 +611,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         ax_left.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
         ax_left.grid(True, linestyle="--", alpha=0.6)
 
-        # Middle: UL sin(phi) and sin(2phi)
         draw_series_with_optional_sys_band(
             ax_mid, x_ul1, y_ul1, e_ul1, sys_ul1,
             label=r"$F_{UL}^{\sin\phi}/F_{UU}$",
@@ -611,7 +627,6 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         leg_mid = ax_mid.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
         leg_mid.get_frame().set_alpha(0.9)
 
-        # Right: LL and LLcosphi
         draw_series_with_optional_sys_band(
             ax_right, x_ll0, y_ll0, e_ll0, sys_ll0,
             label=r"$F_{LL}/F_{UU}$",
@@ -674,7 +689,7 @@ def main():
     required = build_required_varnames()
     validate_fit_data(fit_map, required)
 
-    migrated, diffs = compute_migrated_values(
+    migrated, diffs_mag, diffs_signed = compute_migrated_values(
         weights=weights,
         fit_map=fit_map,
         required_varnames=required,
@@ -682,7 +697,7 @@ def main():
         tol=args.tol
     )
 
-    write_output_files(out_path, out_diff_path, migrated, diffs, fit_map)
+    write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map)
 
     sys.stdout.write("Wrote migrated fit file: {}\n".format(out_path))
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
