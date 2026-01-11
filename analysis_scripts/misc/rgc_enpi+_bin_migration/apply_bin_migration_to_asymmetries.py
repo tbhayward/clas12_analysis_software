@@ -24,6 +24,16 @@
 #   For plotting, we inject that systematic into the plotting map under the deterministic
 #   name "<varname>Sys" so the plotter can find it (no dependence on sys-series existing
 #   in the input text file).
+#
+# Plot standardization requested:
+#   - Single-spin asymmetries (LU, UL): y in [-0.3, 0.3]
+#   - Double-spin asymmetries (LL):     y in [-0.6, 0.6]
+# Systematics band policy requested:
+#   - UL panel: use only lower-order harmonic sys (AUL sin(phi)) as the band
+#   - LL panel: use only lower-order harmonic sys (ALL) as the band
+# Bin-width requested:
+#   - Use horizontal bars spanning inferred -t bin width (xerr) for points
+#   - Draw systematic uncertainty as per-bin rectangles spanning that same width
 
 import argparse
 import ast
@@ -428,6 +438,36 @@ def to_series(triples, negate_x=True, sort=True, np=None):
     return x, y, e
 #enddef
 
+def compute_bin_edges_from_centers(x, np):
+    # x must be sorted ascending. Returns (left_edges, right_edges, widths, halfwidths).
+    n = len(x)
+    if n < 2:
+        fatal("Need at least 2 points to infer bin edges.")
+    #endif
+
+    mid = 0.5 * (x[1:] + x[:-1])  # length n-1
+
+    left = np.zeros(n, dtype=float)
+    right = np.zeros(n, dtype=float)
+
+    left[1:] = mid
+    right[:-1] = mid
+
+    # Extrapolate outer edges using nearest spacing
+    left[0] = x[0] - 0.5 * (x[1] - x[0])
+    right[-1] = x[-1] + 0.5 * (x[-1] - x[-2])
+
+    widths = right - left
+    half = 0.5 * widths
+
+    # Sanity
+    if np.any(widths <= 0.0):
+        fatal("Inferred non-positive bin width(s) from x centers: {}".format(widths))
+    #endif
+
+    return left, right, widths, half
+#enddef
+
 def find_sys_series_varname_candidates(varname):
     return [
         varname + "Sys",
@@ -493,14 +533,21 @@ def extract_sys_series(fit_map, varname, x_ref, np):
     return s
 #enddef
 
-def draw_series_with_optional_sys_band(ax, x, y, e, sys_band, label, color, marker, capsize, ms):
-    if sys_band is not None:
-        ax.fill_between(x, 0.0,  sys_band, color="0.7", alpha=0.25, linewidth=0.0, zorder=0)
-        ax.fill_between(x, 0.0, -sys_band, color="0.7", alpha=0.25, linewidth=0.0, zorder=0)
+def draw_sys_bars(ax, x_centers, sys_band, widths):
+    # Draw per-bin rectangles spanning the bin width, from y=0 to +/-sys_band.
+    if sys_band is None:
+        return
     #endif
 
+    # Use neutral gray; no connecting polygons.
+    ax.bar(x_centers,  sys_band, width=widths, bottom=0.0, color="0.7", alpha=0.25, linewidth=0.0, align="center", zorder=0)
+    ax.bar(x_centers, -sys_band, width=widths, bottom=0.0, color="0.7", alpha=0.25, linewidth=0.0, align="center", zorder=0)
+#enddef
+
+def draw_points_with_binwidth(ax, x, y, e, xhalf, label, color, marker, capsize, ms):
+    # Include xerr to show bin-width bars in -t.
     ax.errorbar(
-        x, y, yerr=e,
+        x, y, yerr=e, xerr=xhalf,
         fmt=marker, color=color, ecolor=color,
         capsize=capsize, markersize=ms, linestyle="None",
         label=label, zorder=2
@@ -525,9 +572,9 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
     xlim_t = (0.0, 1.30)
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
-    ylim_lu = (-0.20, 0.20)
-    ylim_ul = (-0.20, 0.20)
-    ylim_ll = (-0.50, 0.50)
+    # Standardized y-limits requested
+    ylim_single = (-0.30, 0.30)
+    ylim_double = (-0.60, 0.60)
 
     suffix_lu   = "GEchi2FitsALUsinphi"
     suffix_ul1  = "GEchi2FitsAULsinphi"
@@ -556,6 +603,7 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         x_ll0, y_ll0, e_ll0 = to_series(fit_map[v_ll0], np=np)
         x_ll1, y_ll1, e_ll1 = to_series(fit_map[v_ll1], np=np)
 
+        # Sanity: require consistent x within each bin (strict)
         if not np.allclose(x_lu, x_ul1, rtol=0.0, atol=1.0e-10):
             fatal("Plot x mismatch: {} vs {} (bin {})".format(v_lu, v_ul1, g))
         #endif
@@ -569,14 +617,24 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
             fatal("Plot x mismatch: {} vs {} (bin {})".format(v_lu, v_ll1, g))
         #endif
 
+        # Infer bin edges/widths from x centers (sorted)
+        left, right, widths, half = compute_bin_edges_from_centers(x_lu, np)
+
+        # Extract systematic series (if present)
         sys_lu  = extract_sys_series(fit_map, v_lu,  x_lu, np)
         sys_ul1 = extract_sys_series(fit_map, v_ul1, x_lu, np)
         sys_ul2 = extract_sys_series(fit_map, v_ul2, x_lu, np)
         sys_ll0 = extract_sys_series(fit_map, v_ll0, x_lu, np)
         sys_ll1 = extract_sys_series(fit_map, v_ll1, x_lu, np)
 
-        if (sys_lu is None) and (sys_ul1 is None) and (sys_ul2 is None) and (sys_ll0 is None) and (sys_ll1 is None):
-            warn("No systematics series found for bin '{}'; sys bands will be skipped.".format(g))
+        # Systematics band policy requested:
+        # - UL panel: use only lower-order harmonic sys (UL sin(phi)) for the band
+        # - LL panel: use only lower-order harmonic sys (LL) for the band
+        sys_band_ul_panel = sys_ul1
+        sys_band_ll_panel = sys_ll0
+
+        if (sys_lu is None) and (sys_band_ul_panel is None) and (sys_band_ll_panel is None):
+            warn("No systematics series found for bin '{}'; sys bars will be skipped.".format(g))
         #endif
 
         fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.4))
@@ -585,42 +643,48 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         ax_mid   = axes[1]
         ax_right = axes[2]
 
-        draw_series_with_optional_sys_band(
-            ax_left, x_lu, y_lu, e_lu, sys_lu,
+        # Left: LU (single-spin)
+        draw_sys_bars(ax_left, x_lu, sys_lu, widths)
+        draw_points_with_binwidth(
+            ax_left, x_lu, y_lu, e_lu, half,
             label=r"$F_{LU}^{\sin\phi}/F_{UU}$",
             color="tab:blue", marker="o", capsize=capsize, ms=ms
         )
-        ax_left.set(xlim=xlim_t, ylim=ylim_lu, xlabel=x_label, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
+        ax_left.set(xlim=xlim_t, ylim=ylim_single, xlabel=x_label, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
         ax_left.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
         ax_left.grid(True, linestyle="--", alpha=0.6)
 
-        draw_series_with_optional_sys_band(
-            ax_mid, x_ul1, y_ul1, e_ul1, sys_ul1,
+        # Middle: UL (single-spin) -- sys band only from lower-order harmonic (sin phi)
+        draw_sys_bars(ax_mid, x_ul1, sys_band_ul_panel, widths)
+        draw_points_with_binwidth(
+            ax_mid, x_ul1, y_ul1, e_ul1, half,
             label=r"$F_{UL}^{\sin\phi}/F_{UU}$",
             color="tab:red", marker="s", capsize=capsize, ms=ms
         )
-        draw_series_with_optional_sys_band(
-            ax_mid, x_ul2, y_ul2, e_ul2, sys_ul2,
+        draw_points_with_binwidth(
+            ax_mid, x_ul2, y_ul2, e_ul2, half,
             label=r"$F_{UL}^{\sin2\phi}/F_{UU}$",
             color="tab:green", marker="^", capsize=capsize, ms=ms
         )
-        ax_mid.set(xlim=xlim_t, ylim=ylim_ul, xlabel=x_label, ylabel=r"$F_{UL}^{\sin(n\phi)}/F_{UU}$")
+        ax_mid.set(xlim=xlim_t, ylim=ylim_single, xlabel=x_label, ylabel=r"$F_{UL}^{\sin(n\phi)}/F_{UU}$")
         ax_mid.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
         ax_mid.grid(True, linestyle="--", alpha=0.6)
         leg_mid = ax_mid.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
         leg_mid.get_frame().set_alpha(0.9)
 
-        draw_series_with_optional_sys_band(
-            ax_right, x_ll0, y_ll0, e_ll0, sys_ll0,
+        # Right: LL (double-spin) -- sys band only from lower-order harmonic (LL)
+        draw_sys_bars(ax_right, x_ll0, sys_band_ll_panel, widths)
+        draw_points_with_binwidth(
+            ax_right, x_ll0, y_ll0, e_ll0, half,
             label=r"$F_{LL}/F_{UU}$",
             color="tab:purple", marker="o", capsize=capsize, ms=ms
         )
-        draw_series_with_optional_sys_band(
-            ax_right, x_ll1, y_ll1, e_ll1, sys_ll1,
+        draw_points_with_binwidth(
+            ax_right, x_ll1, y_ll1, e_ll1, half,
             label=r"$F_{LL}^{\cos\phi}/F_{UU}$",
             color="tab:orange", marker="s", capsize=capsize, ms=ms
         )
-        ax_right.set(xlim=xlim_t, ylim=ylim_ll, xlabel=x_label, ylabel=r"$F_{LL}^{(0,\cos\phi)}/F_{UU}$")
+        ax_right.set(xlim=xlim_t, ylim=ylim_double, xlabel=x_label, ylabel=r"$F_{LL}^{(0,\cos\phi)}/F_{UU}$")
         ax_right.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
         ax_right.grid(True, linestyle="--", alpha=0.6)
         leg_right = ax_right.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
