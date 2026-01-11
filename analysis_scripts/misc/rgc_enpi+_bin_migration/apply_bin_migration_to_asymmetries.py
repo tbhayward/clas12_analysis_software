@@ -13,14 +13,17 @@
 #     (2) Diff/systematics file:
 #         name        = {{tmean, abs(migrated-original)}, ...};               (systematic magnitude)
 #         name_ratio  = {{tmean, abs(migrated-original)/abs(original)}, ...}; (relative magnitude)
-#         name_delta  = {{tmean, migrated-original}, ...};                    (signed delta, for diagnostics)
+#         name_delta  = {{tmean, migrated-original}, ...};                    (signed delta, diagnostics)
 # - The script also produces 4 PDF canvases (one per xB bin) in the same output directory,
 #   plotting the input/original asymmetries from the fit-results text file:
 #     left:   F_LU^{sin(phi)} / F_UU
 #     center: F_UL^{sin(phi)} / F_UU   and   F_UL^{sin(2phi)} / F_UU
 #     right:  F_LL / F_UU              and   F_LL^{cos(phi)} / F_UU
-# - Systematic-uncertainty "bands from y=0" are drawn in these plots only if matching sys-series
-#   are found in the *input* fit-results file (see find_sys_series_varname_candidates()).
+# - IMPORTANT:
+#   The bin-migration "systematic" is computed by this script as abs(migrated-original).
+#   For plotting, we inject that systematic into the plotting map under the deterministic
+#   name "<varname>Sys" so the plotter can find it (no dependence on sys-series existing
+#   in the input text file).
 
 import argparse
 import ast
@@ -76,8 +79,8 @@ def read_migration_csv(csv_path):
                 bin_num = int(float(row[0]))
                 xbmin   = float(row[1])
                 xbmax   = float(row[2])
-                tmin_n  = float(row[3])  # (-t) min in your CSV
-                tmax_n  = float(row[4])  # (-t) max in your CSV
+                tmin_n  = float(row[3])
+                tmax_n  = float(row[4])
                 nev     = int(float(row[5]))
             except Exception as e:
                 fatal("Failed parsing meta columns on CSV row {}: {}".format(row_idx, str(e)))
@@ -118,7 +121,6 @@ def parse_fit_results_text(txt_path):
     text = open(txt_path, "r").read()
 
     pattern = re.compile(r"([A-Za-z0-9_]+)\s*=\s*(\{\{.*?\}\})\s*;", re.DOTALL)
-
     matches = list(pattern.finditer(text))
     if len(matches) == 0:
         fatal("No Mathematica-style assignments found in: " + txt_path)
@@ -192,7 +194,7 @@ def validate_fit_data(fit_map, required_varnames):
 
     for v in required_varnames:
         arr = fit_map[v]
-        if not isinstance(arr, list) or len(arr) != 6:
+        if (not isinstance(arr, list)) or (len(arr) != 6):
             fatal("Variable '{}' must be a list of length 6; got type {} length {}.".format(
                 v, type(arr).__name__, len(arr) if isinstance(arr, list) else -1
             ))
@@ -200,7 +202,7 @@ def validate_fit_data(fit_map, required_varnames):
 
         for k in range(6):
             tup = arr[k]
-            if (not isinstance(tup, (list, tuple))) or len(tup) != 3:
+            if (not isinstance(tup, (list, tuple))) or (len(tup) != 3):
                 fatal("Variable '{}' entry {} must be (tmean, value, stat).".format(v, k))
             #endif
         #endfor
@@ -321,7 +323,6 @@ def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signe
     ]
     xb_groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
 
-    # 1) Migrated output file (triples)
     with open(out_path, "w") as f:
         for g in xb_groups:
             for s in suffixes:
@@ -336,12 +337,6 @@ def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signe
         #endfor
     #endwith
 
-    # 2) Diff/systematics output file:
-    #    - name       = {{tmean, abs(delta)}, ...};
-    #    - name_ratio = {{tmean, abs(delta)/abs(value_before)}, ...};
-    #    - name_delta = {{tmean, delta_signed}, ...};  (diagnostic)
-    #
-    # Fail fast if any denom is 0 (or extremely close).
     eps = 1.0e-15
 
     with open(out_diff_path, "w") as f:
@@ -358,15 +353,12 @@ def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signe
                     fatal("Internal error: fit_map missing variable '{}' needed for ratio.".format(name))
                 #endif
 
-                # Write systematic magnitude line (pairs)
                 rhs_mag = format_mathematica_list_pair(diffs_mag[name])
                 f.write(name + " = " + rhs_mag + ";\n")
 
-                # Write signed delta diagnostic line (pairs)
                 rhs_signed = format_mathematica_list_pair(diffs_signed[name])
                 f.write(name + "_delta = " + rhs_signed + ";\n")
 
-                # Build ratio list using abs(original) in denom so it is a magnitude ratio.
                 ratio_list = []
                 for k in range(6):
                     tmean = float(diffs_mag[name][k][0])
@@ -437,7 +429,6 @@ def to_series(triples, negate_x=True, sort=True, np=None):
 #enddef
 
 def find_sys_series_varname_candidates(varname):
-    # Deterministic candidate list (no guessing beyond these exact spellings).
     return [
         varname + "Sys",
         varname + "Syst",
@@ -451,7 +442,6 @@ def find_sys_series_varname_candidates(varname):
 #enddef
 
 def extract_sys_series(fit_map, varname, x_ref, np):
-    # Returns sys array aligned to x_ref, or None if not found.
     candidates = find_sys_series_varname_candidates(varname)
     sys_name = None
     for c in candidates:
@@ -472,9 +462,6 @@ def extract_sys_series(fit_map, varname, x_ref, np):
         ))
     #endif
 
-    # Accept:
-    #  - pairs:   [tmean, sys]
-    #  - triples: [tmean, something, sys]  (we take entry[2] as sys, deterministically)
     tmeans = []
     sysv = []
     for k in range(len(raw)):
@@ -499,7 +486,6 @@ def extract_sys_series(fit_map, varname, x_ref, np):
     x = x[idx]
     s = s[idx]
 
-    # Light consistency check (do not fail; warn if x differs notably)
     if (len(x) == len(x_ref)) and (not np.allclose(x, x_ref, rtol=0.0, atol=1.0e-6)):
         warn("x mismatch between '{}' systematics and stat series (index-paired).".format(sys_name))
     #endif
@@ -508,7 +494,6 @@ def extract_sys_series(fit_map, varname, x_ref, np):
 #enddef
 
 def draw_series_with_optional_sys_band(ax, x, y, e, sys_band, label, color, marker, capsize, ms):
-    # sys_band: array of positive magnitudes; draw "starting at y=0" both up and down.
     if sys_band is not None:
         ax.fill_between(x, 0.0,  sys_band, color="0.7", alpha=0.25, linewidth=0.0, zorder=0)
         ax.fill_between(x, 0.0, -sys_band, color="0.7", alpha=0.25, linewidth=0.0, zorder=0)
@@ -584,16 +569,14 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
             fatal("Plot x mismatch: {} vs {} (bin {})".format(v_lu, v_ll1, g))
         #endif
 
-        sys_lu  = extract_sys_series(fit_map, v_lu,  x_lu,  np)
-        sys_ul1 = extract_sys_series(fit_map, v_ul1, x_lu,  np)
-        sys_ul2 = extract_sys_series(fit_map, v_ul2, x_lu,  np)
-        sys_ll0 = extract_sys_series(fit_map, v_ll0, x_lu,  np)
-        sys_ll1 = extract_sys_series(fit_map, v_ll1, x_lu,  np)
+        sys_lu  = extract_sys_series(fit_map, v_lu,  x_lu, np)
+        sys_ul1 = extract_sys_series(fit_map, v_ul1, x_lu, np)
+        sys_ul2 = extract_sys_series(fit_map, v_ul2, x_lu, np)
+        sys_ll0 = extract_sys_series(fit_map, v_ll0, x_lu, np)
+        sys_ll1 = extract_sys_series(fit_map, v_ll1, x_lu, np)
 
         if (sys_lu is None) and (sys_ul1 is None) and (sys_ul2 is None) and (sys_ll0 is None) and (sys_ll1 is None):
-            warn("No systematics series found for bin '{}'; sys bands will be skipped. Tried suffixes: {}".format(
-                g, ", ".join([s.replace("enpiX", g) for s in find_sys_series_varname_candidates("enpiX" + suffix_lu)])
-            ))
+            warn("No systematics series found for bin '{}'; sys bands will be skipped.".format(g))
         #endif
 
         fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.4))
@@ -654,6 +637,32 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
     #endfor
 #enddef
 
+def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
+    # Inject deterministic sys-series names: "<varname>Sys" as pairs [tmean, sysmag].
+    # This is used only for plotting, so the plotter can always find the migration systematic.
+    out = dict(fit_map)
+
+    for v in required_varnames:
+        if v not in diffs_mag:
+            fatal("Internal error: diffs_mag missing '{}' needed for plotting sys injection.".format(v))
+        #endif
+
+        sys_pairs = []
+        for ent in diffs_mag[v]:
+            if (not isinstance(ent, (list, tuple))) or (len(ent) != 2):
+                fatal("Internal error: diffs_mag['{}'] entry must be [tmean, sysmag].".format(v))
+            #endif
+            tmean = float(ent[0])
+            sysmag = float(ent[1])
+            sys_pairs.append([tmean, sysmag])
+        #endfor
+
+        out[v + "Sys"] = sys_pairs
+    #endfor
+
+    return out
+#enddef
+
 def main():
     ap = argparse.ArgumentParser(
         description="Apply a 24x24 bin-migration matrix to selected enpi* GEchi2Fits* asymmetry lists."
@@ -683,7 +692,6 @@ def main():
     out_diff_path = os.path.join(out_dir, out_diff_name)
 
     weights, meta = read_migration_csv(args.migration_csv)
-
     fit_map = parse_fit_results_text(args.fit_in_txt)
 
     required = build_required_varnames()
@@ -702,8 +710,9 @@ def main():
     sys.stdout.write("Wrote migrated fit file: {}\n".format(out_path))
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
 
-    # Plot the input (original) asymmetries from fit_in_txt (fit_map), not migrated.
-    save_input_asymmetry_canvases(fit_map, out_dir)
+    # Plot the input/original asymmetries with migration systematics injected as "<varname>Sys".
+    fit_map_for_plots = inject_migration_sys_for_plotting(fit_map, diffs_mag, required)
+    save_input_asymmetry_canvases(fit_map_for_plots, out_dir)
 #enddef
 
 if __name__ == "__main__":
