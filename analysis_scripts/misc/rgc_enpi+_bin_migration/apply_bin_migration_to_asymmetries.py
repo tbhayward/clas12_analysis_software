@@ -39,8 +39,8 @@ def read_migration_csv(csv_path):
                 bin_num = int(float(row[0]))
                 xbmin   = float(row[1])
                 xbmax   = float(row[2])
-                tmin_n  = float(row[3])  # this is (-t) min in your CSV
-                tmax_n  = float(row[4])  # this is (-t) max in your CSV
+                tmin_n  = float(row[3])  # (-t) min in your CSV
+                tmax_n  = float(row[4])  # (-t) max in your CSV
                 nev     = int(float(row[5]))
             except Exception as e:
                 fatal("Failed parsing meta columns on CSV row {}: {}".format(row_idx, str(e)))
@@ -64,7 +64,6 @@ def read_migration_csv(csv_path):
         fatal("Migration CSV has {} data rows; expected 24 (bins 0-23).".format(len(weights)))
     #endif
 
-    # Sanity: ensure bin numbering is consistent with row ordering
     for i in range(24):
         if meta[i][0] != i:
             fatal("Migration CSV binNum mismatch: row {} has binNum {} (expected {}).".format(i, meta[i][0], i))
@@ -80,8 +79,6 @@ def parse_fit_results_text(txt_path):
 
     text = open(txt_path, "r").read()
 
-    # Match Mathematica-style assignments: name = {{...},{...}}; across newlines
-    # Non-greedy is fine here because each assignment ends with a semicolon.
     pattern = re.compile(r"([A-Za-z0-9_]+)\s*=\s*(\{\{.*?\}\})\s*;", re.DOTALL)
 
     matches = list(pattern.finditer(text))
@@ -94,7 +91,6 @@ def parse_fit_results_text(txt_path):
         name = m.group(1).strip()
         rhs  = m.group(2).strip()
 
-        # Convert Mathematica braces to Python list brackets
         py_rhs = rhs.replace("{", "[").replace("}", "]")
         try:
             val = ast.literal_eval(py_rhs)
@@ -153,7 +149,6 @@ def validate_fit_data(fit_map, required_varnames):
         fatal(msg.rstrip("\n"))
     #endif
 
-    # Validate each required variable has 6 entries with (tmean, value, stat)
     for v in required_varnames:
         arr = fit_map[v]
         if not isinstance(arr, list) or len(arr) != 6:
@@ -177,8 +172,6 @@ def global_bin_to_group_and_tindex(b):
     return (b // 6), (b % 6)
 
 def compute_migrated_values(weights, fit_map, required_varnames, renormalize, tol):
-    # Build a convenience lookup: A_before[varname][k] = (tmean, value, stat)
-    # Also build a bin-level lookup for each suffix for each global bin.
     suffixes = [
         "GEchi2FitsALUsinphi",
         "GEchi2FitsAULsinphi",
@@ -191,7 +184,6 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
     diffs = {}
 
     for suffix in suffixes:
-        # For each xB group, compute its 6 migrated tuples
         for xb_group_idx in range(4):
             xb_name = xb_group_name_from_index(xb_group_idx)
             varname = xb_name + suffix
@@ -218,12 +210,10 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
                     )
                 #endif
 
-                # Target bin original tuple
                 tmean_target = float(fit_map[varname][t_idx][0])
                 aval_target  = float(fit_map[varname][t_idx][1])
                 stat_target  = float(fit_map[varname][t_idx][2])
 
-                # Weighted sum over source bins j
                 migrated_val = 0.0
                 for j in range(24):
                     w = row[j]
@@ -257,7 +247,6 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
     return migrated, diffs
 
 def format_mathematica_list_triple(lst):
-    # lst: [[tmean, val, stat], ...]
     parts = []
     for trip in lst:
         parts.append("{" + "{:.9f}".format(trip[0]) + ", " + "{:.9f}".format(trip[1]) + ", " + "{:.9f}".format(trip[2]) + "}")
@@ -265,15 +254,13 @@ def format_mathematica_list_triple(lst):
     return "{" + ", ".join(parts) + "}"
 
 def format_mathematica_list_pair(lst):
-    # lst: [[tmean, delta], ...]
     parts = []
     for pair in lst:
         parts.append("{" + "{:.9f}".format(pair[0]) + ", " + "{:.9f}".format(pair[1]) + "}")
     #endfor
     return "{" + ", ".join(parts) + "}"
 
-def write_output_files(out_path, out_diff_path, migrated, diffs):
-    # Deterministic ordering: by xB group order, then suffix order
+def write_output_files(out_path, out_diff_path, migrated, diffs, fit_map):
     suffixes = [
         "GEchi2FitsALUsinphi",
         "GEchi2FitsAULsinphi",
@@ -283,6 +270,7 @@ def write_output_files(out_path, out_diff_path, migrated, diffs):
     ]
     xb_groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
 
+    # 1) Migrated output file (triples)
     with open(out_path, "w") as f:
         for g in xb_groups:
             for s in suffixes:
@@ -297,6 +285,13 @@ def write_output_files(out_path, out_diff_path, migrated, diffs):
         #endfor
     #endwith
 
+    # 2) Diff output file:
+    #    - name = {{tmean, diff}, ...};
+    #    - name_ratio = {{tmean, diff/value_before}, ...};
+    #
+    # Fail fast if any value_before is 0 (or extremely close).
+    eps = 1.0e-15
+
     with open(out_diff_path, "w") as f:
         for g in xb_groups:
             for s in suffixes:
@@ -304,12 +299,42 @@ def write_output_files(out_path, out_diff_path, migrated, diffs):
                 if name not in diffs:
                     fatal("Internal error: diffs missing variable '{}'".format(name))
                 #endif
-                rhs = format_mathematica_list_pair(diffs[name])
-                f.write(name + " = " + rhs + ";\n")
+                if name not in fit_map:
+                    fatal("Internal error: fit_map missing variable '{}' needed for ratio.".format(name))
+                #endif
+
+                # Write diff line (pairs)
+                rhs_diff = format_mathematica_list_pair(diffs[name])
+                f.write(name + " = " + rhs_diff + ";\n")
+
+                # Build ratio list
+                ratio_list = []
+                for k in range(6):
+                    tmean = float(diffs[name][k][0])
+                    delta = float(diffs[name][k][1])
+
+                    before_val = float(fit_map[name][k][1])
+                    if abs(before_val) < eps:
+                        fatal("Cannot compute ratio for {} at index {}: before value is {:.17g} (too close to zero).".format(name, k, before_val))
+                    #endif
+
+                    ratio = delta / before_val
+                    ratio_list.append([tmean, ratio])
+                #endfor
+
+                rhs_ratio = format_mathematica_list_pair(ratio_list)
+                f.write(name + "_ratio = " + rhs_ratio + ";\n")
             #endfor
             f.write("\n")
         #endfor
     #endwith
+
+def default_diff_path(out_path):
+    base, ext = os.path.splitext(out_path)
+    if ext == "":
+        return out_path + "_diff"
+    #endif
+    return base + "_diff" + ext
 
 def main():
     ap = argparse.ArgumentParser(
@@ -318,7 +343,7 @@ def main():
     ap.add_argument("migration_csv", help="CSV with 24 rows (bins 0-23) and 24 fraction columns per row.")
     ap.add_argument("fit_in_txt", help="Input Mathematica-style fit-results text file.")
     ap.add_argument("fit_out_txt", help="Output text file with migrated values (Mathematica-style).")
-    ap.add_argument("--out-diff", default=None, help="Output text file for (after - before). Default: <fit_out_txt>_diff.txt")
+    ap.add_argument("--out-diff", default=None, help="Output text file for (after - before) and ratio lines. Default: <fit_out_txt with _diff inserted before extension>")
     ap.add_argument("--renormalize", action="store_true", help="Renormalize each migration row to sum to 1.0 before weighting.")
     ap.add_argument("--tol", type=float, default=1.0e-3, help="Tolerance for row-sum checks against 1.0 (strict mode).")
 
@@ -326,7 +351,7 @@ def main():
 
     out_diff = args.out_diff
     if out_diff is None:
-        out_diff = args.fit_out_txt + "_diff.txt"
+        out_diff = default_diff_path(args.fit_out_txt)
     #endif
 
     weights, meta = read_migration_csv(args.migration_csv)
@@ -344,7 +369,7 @@ def main():
         tol=args.tol
     )
 
-    write_output_files(args.fit_out_txt, out_diff, migrated, diffs)
+    write_output_files(args.fit_out_txt, out_diff, migrated, diffs, fit_map)
 
     sys.stdout.write("Wrote migrated fit file: {}\n".format(args.fit_out_txt))
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff))
