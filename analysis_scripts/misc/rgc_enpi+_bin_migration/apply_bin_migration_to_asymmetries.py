@@ -5,10 +5,10 @@
 # python3 apply_bin_migration_to_asymmetries.py mc_bin_migration.csv fit_results.txt fit_results_migrated.txt
 #
 # Notes:
-# - The 3rd argument is now a *file name only* (no directory). Output files are written to:
+# - The 3rd argument is now a file name only (no directory). Output files are written to:
 #     output/rgc_enpi+_bin_migration_study/
 # - The script also produces 4 PDF canvases (one per xB bin) in the same output directory,
-#   plotting the *input/original* asymmetries from the fit-results text file:
+#   plotting the input/original asymmetries from the fit-results text file:
 #     left:   F_LU^{sin(phi)} / F_UU
 #     center: F_UL^{sin(phi)} / F_UU   and   F_UL^{sin(2phi)} / F_UU
 #     right:  F_LL / F_UU              and   F_LL^{cos(phi)} / F_UU
@@ -574,7 +574,7 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
 
         if (sys_lu is None) and (sys_ul1 is None) and (sys_ul2 is None) and (sys_ll0 is None) and (sys_ll1 is None):
             warn("No systematics series found for bin '{}'; sys bands will be skipped. Tried suffixes: {}".format(
-                g, ", ".join(find_sys_series_varname_candidates("enpiX" + suffix_lu).replace("enpiX", g))
+                g, ", ".join([s.replace("enpiX", g) for s in find_sys_series_varname_candidates("enpiX" + suffix_lu)])
             ))
         #endif
 
@@ -628,7 +628,7 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         leg_right = ax_right.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
         leg_right.get_frame().set_alpha(0.9)
 
-        plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " — " + xb_label(g), fontsize=14, y=0.98)
+        plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g), fontsize=14, y=0.98)
         plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
 
         out_pdf = os.path.join(out_dir, "input_asymmetries_{}.pdf".format(g))
@@ -687,7 +687,7 @@ def main():
     sys.stdout.write("Wrote migrated fit file: {}\n".format(out_path))
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
 
-    # Plot the *input* (original) asymmetries from fit_in_txt (fit_map), not migrated.
+    # Plot the input (original) asymmetries from fit_in_txt (fit_map), not migrated.
     save_input_asymmetry_canvases(fit_map, out_dir)
 #enddef
 
