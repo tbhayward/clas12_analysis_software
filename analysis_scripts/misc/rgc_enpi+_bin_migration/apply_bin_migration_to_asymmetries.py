@@ -23,8 +23,9 @@
 # Additional plots (added without changing previous functionality):
 # - The script also produces 4 PDF canvases (one per xB bin) showing ONLY the
 #   migration systematic magnitudes vs -t':
-#     UL:  |Delta AUL sin(phi)| and |Delta AUL sin(2phi)|
-#     LL:  |Delta ALL| and |Delta ALL cos(phi)|
+#     left:  |Delta(F_LU^{sin(phi)}/F_UU)|
+#     mid:   |Delta(F_UL^{sin(phi)}/F_UU)| and |Delta(F_UL^{sin(2phi)}/F_UU)|
+#     right: |Delta(F_LL/F_UU)| and |Delta(F_LL^{cos(phi)}/F_UU)|
 #   The y-axis of each subplot is [0, 1.2 * max_plotted_in_that_subplot].
 #
 # Plot requirements (as requested):
@@ -638,7 +639,7 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         draw_points(
             ax_left, x_lu, y_lu, e_lu,
             label=r"$F_{LU}^{\sin\phi}/F_{UU}$",
-            color="tab:blue", marker="o", capsize=capsize, ms=ms
+            color="tab:blue", marker="o", capsize=3, ms=5.0
         )
         ax_left.set(xlim=xlim_t, ylim=ylim_single, xlabel=x_label, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
         ax_left.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
@@ -648,12 +649,12 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         draw_points(
             ax_mid, x_ul1, y_ul1, e_ul1,
             label=r"$F_{UL}^{\sin\phi}/F_{UU}$",
-            color="tab:red", marker="s", capsize=capsize, ms=ms
+            color="tab:red", marker="s", capsize=3, ms=5.0
         )
         draw_points(
             ax_mid, x_ul2, y_ul2, e_ul2,
             label=r"$F_{UL}^{\sin2\phi}/F_{UU}$",
-            color="tab:green", marker="^", capsize=capsize, ms=ms
+            color="tab:green", marker="^", capsize=3, ms=5.0
         )
         ax_mid.set(xlim=xlim_t, ylim=ylim_single, xlabel=x_label, ylabel=r"$F_{UL}^{\sin(n\phi)}/F_{UU}$")
         ax_mid.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
@@ -665,12 +666,12 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         draw_points(
             ax_right, x_ll0, y_ll0, e_ll0,
             label=r"$F_{LL}/F_{UU}$",
-            color="tab:purple", marker="o", capsize=capsize, ms=ms
+            color="tab:purple", marker="o", capsize=3, ms=5.0
         )
         draw_points(
             ax_right, x_ll1, y_ll1, e_ll1,
             label=r"$F_{LL}^{\cos\phi}/F_{UU}$",
-            color="tab:orange", marker="s", capsize=capsize, ms=ms
+            color="tab:orange", marker="s", capsize=3, ms=5.0
         )
         ax_right.set(xlim=xlim_t, ylim=ylim_double, xlabel=x_label, ylabel=r"$F_{LL}^{(0,\cos\phi)}/F_{UU}$")
         ax_right.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
@@ -723,6 +724,7 @@ def save_migration_sys_canvases(fit_map, out_dir):
     xlim_t = (0.0, 1.30)
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
+    suffix_lu   = "GEchi2FitsALUsinphi"
     suffix_ul1  = "GEchi2FitsAULsinphi"
     suffix_ul2  = "GEchi2FitsAULsin2phi"
     suffix_ll0  = "GEchi2FitsALL"
@@ -731,47 +733,58 @@ def save_migration_sys_canvases(fit_map, out_dir):
     groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
 
     for g in groups:
+        v_lu  = g + suffix_lu
         v_ul1 = g + suffix_ul1
         v_ul2 = g + suffix_ul2
         v_ll0 = g + suffix_ll0
         v_ll1 = g + suffix_ll1
 
-        # These are injected by inject_migration_sys_for_plotting()
+        v_lu_sys  = v_lu  + "Sys"
         v_ul1_sys = v_ul1 + "Sys"
         v_ul2_sys = v_ul2 + "Sys"
         v_ll0_sys = v_ll0 + "Sys"
         v_ll1_sys = v_ll1 + "Sys"
 
-        for v in [v_ul1, v_ul2, v_ll0, v_ll1]:
+        for v in [v_lu, v_ul1, v_ul2, v_ll0, v_ll1]:
             if v not in fit_map:
                 fatal("Cannot make migration-sys plots: missing required input series '{}'.".format(v))
             #endif
         #endfor
 
-        for v in [v_ul1_sys, v_ul2_sys, v_ll0_sys, v_ll1_sys]:
+        for v in [v_lu_sys, v_ul1_sys, v_ul2_sys, v_ll0_sys, v_ll1_sys]:
             if v not in fit_map:
                 fatal("Cannot make migration-sys plots: missing injected sys series '{}'.".format(v))
             #endif
         #endfor
 
-        # x reference from any base series (triples)
-        x_ref, y_dummy, e_dummy = to_series(fit_map[v_ul1], np=np)
+        x_ref, y_dummy, e_dummy = to_series(fit_map[v_lu], np=np)
 
+        sys_lu  = get_sys_band(fit_map, v_lu,  x_ref, np)
         sys_ul1 = get_sys_band(fit_map, v_ul1, x_ref, np)
         sys_ul2 = get_sys_band(fit_map, v_ul2, x_ref, np)
         sys_ll0 = get_sys_band(fit_map, v_ll0, x_ref, np)
         sys_ll1 = get_sys_band(fit_map, v_ll1, x_ref, np)
 
-        if (sys_ul1 is None) or (sys_ul2 is None) or (sys_ll0 is None) or (sys_ll1 is None):
+        if (sys_lu is None) or (sys_ul1 is None) or (sys_ul2 is None) or (sys_ll0 is None) or (sys_ll1 is None):
             fatal("Internal error: expected all sys series to exist for '{}' but at least one is missing.".format(g))
         #endif
 
-        fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.4))
+        fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.4))
 
-        ax_ul = axes[0]
-        ax_ll = axes[1]
+        ax_lu = axes[0]
+        ax_ul = axes[1]
+        ax_ll = axes[2]
 
-        # UL subplot (two harmonics)
+        y_lu_max = float(np.max(sys_lu))
+        if y_lu_max <= 0.0:
+            y_lu_max = 1.0e-6
+        #endif
+        ax_lu.plot(x_ref, sys_lu, marker="o", linestyle="None", label=r"$|\Delta(F_{LU}^{\sin\phi}/F_{UU})|$")
+        ax_lu.set(xlim=xlim_t, ylim=(0.0, 1.2 * y_lu_max), xlabel=x_label, ylabel="Migration systematic magnitude")
+        ax_lu.grid(True, linestyle="--", alpha=0.6)
+        leg_lu = ax_lu.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
+        leg_lu.get_frame().set_alpha(0.9)
+
         y_ul_max = float(np.max(np.array([np.max(sys_ul1), np.max(sys_ul2)], dtype=float)))
         if y_ul_max <= 0.0:
             y_ul_max = 1.0e-6
@@ -783,7 +796,6 @@ def save_migration_sys_canvases(fit_map, out_dir):
         leg_ul = ax_ul.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
         leg_ul.get_frame().set_alpha(0.9)
 
-        # LL subplot (two harmonics)
         y_ll_max = float(np.max(np.array([np.max(sys_ll0), np.max(sys_ll1)], dtype=float)))
         if y_ll_max <= 0.0:
             y_ll_max = 1.0e-6
@@ -856,7 +868,7 @@ def main():
     fit_map_for_plots = inject_migration_sys_for_plotting(fit_map, diffs_mag, required)
     save_input_asymmetry_canvases(fit_map_for_plots, out_dir)
 
-    # New: plots of migration systematic magnitudes vs -t' (both harmonics)
+    # New: plots of migration systematic magnitudes vs -t' (includes LU + both UL/LL harmonics)
     save_migration_sys_canvases(fit_map_for_plots, out_dir)
 #enddef
 
