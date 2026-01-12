@@ -42,7 +42,7 @@ YLIM_LU = (-0.40, 0.40)   # for F_LU^{sinphi}/F_UU
 YLIM_UL = (-0.40, 0.40)   # for F_UL^{sin(nphi)}/F_UU
 YLIM_LL = (-1, 1)   # for F_LL/F_UU and F_LL^{cosphi}/F_UU
 YLIM_DIL = (0.20, 0.60)   # for dilution factor
-YLIM_DELTA = (-0.20, 0.20)  # for all Delta panels
+YLIM_DELTA = (-0.30, 0.30)  # for all Delta panels
 TOP_PAD = 0.95
 ATOL_ZERO = 1e-14  # tolerance to call Delta "all zeros"
 
