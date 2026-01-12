@@ -4,6 +4,12 @@
 Plot ep -> en pi+ asymmetries versus -t' in several xB bins, for three run periods
 and for the combined (inverse-variance weighted) file.
 
+This version:
+  - Produces a 1x3 plot ONLY (LU, UL, LL).
+  - Completely omits unpolarized modulations (UUcos, UUcos2) from plots.
+  - Prints LaTeX tables with \\renewcommand{\\arraystretch}{1.40} applied
+    within each table environment.
+
 Also prints LaTeX tables (to stdout) for the 4 xB slices:
   enpiLowxBGE, enpiMidLowxBGE, enpiMidHighxBGE, enpiHighxBGE
 
@@ -62,7 +68,6 @@ X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 YLIM_LU = (-0.4, 0.4)    # BSA
 YLIM_UL = (-0.4, 0.4)    # TSA
 YLIM_LL = (-1.0, 1.0)    # DSA
-YLIM_UU = (-1.0, 1.0)    # UU updated to match DSA
 
 XB_BINS = {
     "enpiLowxBGE":     r"$0.10 < x_{B} < 0.25$",
@@ -74,8 +79,7 @@ XB_BINS = {
 
 BIN_ORDER = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE", "enpiGE"]
 
-TOP_PAD_PER_BIN = 0.95
-TOP_PAD_OVERLAY = 0.94
+TOP_PAD_PER_BIN = 0.92
 
 OUT_PREFIX = "enpi"
 
@@ -150,8 +154,9 @@ def build_period_dict(parsed, bin_prefix):
         "AULsin2": get_series(parsed, k("AULsin2phi")),
         "ALLn0":   get_series(parsed, k("ALL")),
         "ALLcos":  get_series(parsed, k("ALLcosphi")),
-        "UUcos":   get_series(parsed, k("AUUcosphi")),
-        "UUcos2":  get_series(parsed, k("AUUcos2phi")),
+        # UU intentionally omitted from plotting in this version
+        # "UUcos":   get_series(parsed, k("AUUcosphi")),
+        # "UUcos2":  get_series(parsed, k("AUUcos2phi")),
     }
 
 def detect_available_bins(*dicts):
@@ -437,10 +442,10 @@ def _apply_shift_if_available(series, rad_entry):
 # ---------------------------------------------------------------------
 # Legends
 # ---------------------------------------------------------------------
-def _legend_run_period(ax, labels):
+def _legend_run_period(ax, labels, where="lower right"):
     handles = [Line2D([0], [0], marker=MARKER, color=COLORS[L], linestyle="", label=L) for L in labels]
     leg = ax.legend(handles=handles, title="Run Period", frameon=True, edgecolor="black",
-                    loc="lower right", fontsize=11, title_fontsize=12)
+                    loc=where, fontsize=11, title_fontsize=12)
     leg.get_frame().set_alpha(0.9)
 
 def _legend_harmonic(ax, labels=("n=1", "n=2"), where="lower left"):
@@ -464,11 +469,11 @@ def _suffix(with_rad, with_mig):
     return ""
 
 # ---------------------------------------------------------------------
-# Plotting (2x2 canvases)
+# Plotting (1x3 canvases: LU, UL, LL only)
 # ---------------------------------------------------------------------
-def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
-                     rad_for_bin=None, mig_for_bin=None,
-                     with_rad=False, with_mig=False, bin_tag_for_width="enpiGE"):
+def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
+                        rad_for_bin=None, mig_for_bin=None,
+                        with_rad=False, with_mig=False, bin_tag_for_width="enpiGE"):
     edges = _sys_edges_for_bin(bin_tag_for_width)
 
     def R(key):
@@ -497,7 +502,7 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
         #endif
         return np.abs(np.asarray(e.get("sigma", []), dtype=float))
 
-    # BSA (ALU sin phi)
+    # ---------------- BSA (ALU sin phi) ----------------
     rs = rad_sigma("ALUsin") if with_rad else None
     ms = mig_sigma("ALUsin") if with_mig else None
     _draw_total_sys_band_solid(axLU, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
@@ -518,9 +523,9 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
     axLU.set(xlim=XLIM_T, ylim=YLIM_LU, xlabel=X_LABEL, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
     axLU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLU.grid(True, linestyle="--", alpha=0.6)
-    _legend_run_period(axLU, list(pdata_by_label.keys()))
+    _legend_run_period(axLU, list(pdata_by_label.keys()), where="lower right")
 
-    # TSA (AUL sin phi open, sin2 phi filled)
+    # ---------------- TSA (AUL sin phi open, sin2 phi filled) ----------------
     rs = rad_sigma("AULsin") if with_rad else None
     ms = mig_sigma("AULsin") if with_mig else None
     _draw_total_sys_band_solid(axUL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
@@ -553,9 +558,9 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
     axUL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUL.grid(True, linestyle="--", alpha=0.6)
     _legend_harmonic(axUL, labels=("n=1", "n=2"))
-    _legend_run_period(axUL, list(pdata_by_label.keys()))
+    _legend_run_period(axUL, list(pdata_by_label.keys()), where="lower right")
 
-    # DSA (ALL n=0 open, cos phi filled)
+    # ---------------- DSA (ALL n=0 open, cos phi filled) ----------------
     rs = rad_sigma("ALLn0") if with_rad else None
     ms = mig_sigma("ALLn0") if with_mig else None
     _draw_total_sys_band_solid(axLL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
@@ -588,42 +593,21 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
     _legend_harmonic(axLL, labels=("n=0", "n=1"))
-    _legend_run_period(axLL, list(pdata_by_label.keys()))
-
-    # UU
-    for lab, pdata in pdata_by_label.items():
-        s1 = pdata.get("UUcos")
-        if s1 is not None:
-            axUU.errorbar(s1["x"], s1["y"], yerr=s1["yerr"], fmt="o", mfc="none",
-                          mec=COLORS[lab], ecolor=COLORS[lab], capsize=CAPSIZE,
-                          markersize=MS, linestyle="None")
-        #endif
-        s2 = pdata.get("UUcos2")
-        if s2 is not None:
-            axUU.errorbar(s2["x"], s2["y"], yerr=s2["yerr"], fmt="o", color=COLORS[lab],
-                          ecolor=COLORS[lab], capsize=CAPSIZE, markersize=MS, linestyle="None")
-        #endif
-    #endfor
-    axUU.set(xlim=XLIM_T, ylim=YLIM_UU, xlabel=X_LABEL, ylabel=r"$F_{UU}^{\cos n\phi}/F_{UU}$")
-    axUU.axhline(0, color="black", linestyle="--", linewidth=1.2)
-    axUU.grid(True, linestyle="--", alpha=0.6)
-    _legend_harmonic(axUU, labels=("n=1", "n=2"))
-    _legend_run_period(axUU, list(pdata_by_label.keys()))
+    _legend_run_period(axLL, list(pdata_by_label.keys()), where="lower right")
 
 def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir):
-    plt.figure(figsize=(12, 9))
-    axLU = plt.subplot(2, 2, 1)
-    axUL = plt.subplot(2, 2, 2)
-    axLL = plt.subplot(2, 2, 3)
-    axUU = plt.subplot(2, 2, 4)
+    plt.figure(figsize=(16, 5))
+    axLU = plt.subplot(1, 3, 1)
+    axUL = plt.subplot(1, 3, 2)
+    axLL = plt.subplot(1, 3, 3)
 
     xb_label = XB_BINS.get(bin_tag, bin_tag)
-    plt.suptitle(make_title(xb_label), fontsize=16, y=0.97)
+    plt.suptitle(make_title(xb_label), fontsize=16, y=0.98)
 
     pdata_by_label = {"Su22": p_su22, "Fa22": p_fa22, "Sp23": p_sp23}
-    _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
-                     rad_for_bin=None, mig_for_bin=None,
-                     with_rad=False, with_mig=False, bin_tag_for_width=bin_tag)
+    _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
+                        rad_for_bin=None, mig_for_bin=None,
+                        with_rad=False, with_mig=False, bin_tag_for_width=bin_tag)
 
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])
     os.makedirs(out_dir, exist_ok=True)
@@ -635,14 +619,13 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir):
 
 def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
                                with_rad=False, with_mig=False, rad_bin=None, mig_bin=None):
-    plt.figure(figsize=(12, 9))
-    axLU = plt.subplot(2, 2, 1)
-    axUL = plt.subplot(2, 2, 2)
-    axLL = plt.subplot(2, 2, 3)
-    axUU = plt.subplot(2, 2, 4)
+    plt.figure(figsize=(16, 5))
+    axLU = plt.subplot(1, 3, 1)
+    axUL = plt.subplot(1, 3, 2)
+    axLL = plt.subplot(1, 3, 3)
 
     xb_label = XB_BINS.get(bin_tag, bin_tag)
-    plt.suptitle(make_title(xb_label), fontsize=16, y=0.97)
+    plt.suptitle(make_title(xb_label), fontsize=16, y=0.98)
 
     black = COLORS["Combined"]
     edges = _sys_edges_for_bin(bin_tag)
@@ -673,7 +656,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
         #endif
         return np.abs(np.asarray(e.get("sigma", []), dtype=float))
 
-    # BSA
+    # ---------------- BSA ----------------
     rs = rad_sigma("ALUsin") if with_rad else None
     ms = mig_sigma("ALUsin") if with_mig else None
     _draw_total_sys_band_solid(axLU, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
@@ -692,7 +675,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
     axLU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLU.grid(True, linestyle="--", alpha=0.6)
 
-    # TSA (systematics from AULsin)
+    # ---------------- TSA ----------------
     rs = rad_sigma("AULsin") if with_rad else None
     ms = mig_sigma("AULsin") if with_mig else None
     _draw_total_sys_band_solid(axUL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
@@ -734,7 +717,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
     )
     axUL.add_artist(_leg_h)
 
-    # DSA (systematics from ALLn0)
+    # ---------------- DSA ----------------
     rs = rad_sigma("ALLn0") if with_rad else None
     ms = mig_sigma("ALLn0") if with_mig else None
     _draw_total_sys_band_solid(axLL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
@@ -775,21 +758,6 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
         fontsize=11, title_fontsize=12
     )
     axLL.add_artist(_leg_h2)
-
-    # UU
-    if p_comb.get("UUcos") is not None:
-        s1 = p_comb["UUcos"]
-        axUU.errorbar(s1["x"], s1["y"], yerr=s1["yerr"], fmt=MARKER, mfc="none", mec=black,
-                      ecolor=black, capsize=CAPSIZE, markersize=MS, linestyle="None")
-    #endif
-    if p_comb.get("UUcos2") is not None:
-        s2 = p_comb["UUcos2"]
-        axUU.errorbar(s2["x"], s2["y"], yerr=s2["yerr"], fmt=MARKER, color=black, ecolor=black,
-                      capsize=CAPSIZE, markersize=MS, linestyle="None")
-    #endif
-    axUU.set(xlim=XLIM_T, ylim=YLIM_UU, xlabel=X_LABEL, ylabel=r"$F_{UU}^{\cos n\phi}/F_{UU}$")
-    axUU.axhline(0, color="black", linestyle="--", linewidth=1.2)
-    axUU.grid(True, linestyle="--", alpha=0.6)
 
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])
     os.makedirs(out_dir, exist_ok=True)
@@ -848,8 +816,7 @@ def _get_mig_arrays(mig_bin, key, n_expected):
 
 def _fmt_cell(val, stat, syst, ndp=3):
     """
-    IMPORTANT: wrap the full cell in $...$ to ensure math mode, since we use ^ and _.
-    This prevents 'Missing $ inserted.' in LaTeX tables.
+    Wrap the full cell in $...$ to ensure math mode, since we use ^ and _.
     """
     fmt = "{0:." + str(ndp) + "f}"
     core = fmt.format(val) + "^{\\pm " + fmt.format(stat) + "}_{\\pm " + fmt.format(syst) + "}"
@@ -912,11 +879,12 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         systs[key] = s_tot
     #endfor
 
-    # Header strings (exactly as requested)
+    # Header strings (exactly as requested), now with arraystretch = 1.40
     header = (
         "\\begin{table}[h]\n"
         "\\centering\n"
         "\\small\n"
+        "\\renewcommand{\\arraystretch}{1.40}\n"
         "\\begin{tabular}{|c|c|c|c|c|c|} \\hline\n"
         "$\\langle -t' \\rangle$ & $F_{LU}^{\\sin\\phi}/F_{UU}$ & $F_{UL}^{\\sin\\phi}/F_{UU}$ & $F_{UL}^{\\sin2\\phi}/F_{UU}$ & $F_{LL}/F_{UU}$ & $F_{LL}^{\\cos\\phi}/F_{UU}$ \\\\ \\hline\n"
     )
@@ -925,6 +893,7 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
     label = f"table:{bin_tag}_fitresults_tprime"
     caption = (
         "\\end{tabular}\n"
+        "\\renewcommand{\\arraystretch}{1.0}\n"
         "\\caption{Fitted structure-function ratios per bin. Entries are $\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$.\\label{"
         + label +
         "}}\n"
