@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ISR/FSR comparison & delta plots (index-paired), with sanity checks.
+ISR/FSR comparison and delta plots (index-paired), with sanity checks.
 
 What this script does
 ---------------------
-1) Loads Baseline and ISR&FSR datasets (ALL series & bins you supplied).
+1) Loads Baseline and ISRFSR datasets (all series and bins you supplied).
 2) Assumes first bin matches first bin, etc. (index-based pairing).
-3) Generates, per x_B bin:
-   - 6-panel comparison figure: D_f, F_LU^{sinφ}/F_UU, F_UL^{sinφ}/F_UU,
-     F_UL^{sin2φ}/F_UU, F_LL/F_UU, F_LL^{cosφ}/F_UU.
-   - 6-panel Δ figure (Baseline − ISR&FSR) for the same quantities.
+3) Generates, per xB bin:
+   - 6-panel comparison figure: D_f, F_LU^{sinphi}/F_UU, F_UL^{sinphi}/F_UU,
+     F_UL^{sin2phi}/F_UU, F_LL/F_UU, F_LL^{cosphi}/F_UU.
+   - 6-panel Delta figure (Baseline - ISRFSR) for the same quantities.
 4) Writes:
-   - Δ summary (TXT),
+   - Delta summary (TXT),
    - sanity report (TXT) with checks for identical series / zero deltas / len mismatches,
-   - per-bin CSVs with x, Baseline y±σ, ISR&FSR y±σ, Δ±σ.
+   - per-bin CSVs with x, Baseline y+-err, ISRFSR y+-err, Delta+-err.
 
 """
 
@@ -39,13 +39,13 @@ CAPSIZE = 3
 MS = 5.0
 XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
-YLIM_LU = (-0.20, 0.20)   # for F_LU^{sinφ}/F_UU
-YLIM_UL = (-0.20, 0.20)   # for F_UL^{sin(nφ)}/F_UU
-YLIM_LL = (-0.50, 0.50)   # for F_LL/F_UU and F_LL^{cosφ}/F_UU
-YLIM_DIL = (0.20, 0.60)   # for dilution factor
-YLIM_DELTA = (-0.20, 0.20)  # for all Δ panels
+YLIM_LU = (-0.20, 0.20)      # for F_LU^{sinphi}/F_UU
+YLIM_UL = (-0.20, 0.20)      # for F_UL^{sin(nphi)}/F_UU
+YLIM_LL = (-0.50, 0.50)      # for F_LL/F_UU and F_LL^{cosphi}/F_UU
+YLIM_DIL = (0.20, 0.60)      # for dilution factor
+YLIM_DELTA = (-0.20, 0.20)   # for all Delta panels
 TOP_PAD = 0.95
-ATOL_ZERO = 1e-14  # tolerance to call Δ "all zeros"
+ATOL_ZERO = 1e-14  # tolerance to call Delta "all zeros"
 
 XB_LABELS = {
     "enpiGE":          r"$0.10 < x_{B} < 0.60$",
@@ -63,7 +63,7 @@ SAVE_TAG = {
     "enpiHighxBGE": "enpiHighxB",
 }
 
-# We store *all* series you supplied (even if we don't plot every one).
+# We store all series you supplied (even if we do not plot every one).
 SERIES_ALL = [
     "ALUoffset", "AULoffset",
     "ALUsinphi", "AULsinphi", "AULsin2phi",
@@ -101,7 +101,11 @@ BASELINE = {
         "AUUcos2phi":[[-1.197794737, -0.114074382, 0.135008706], [-1.098067394, -0.269173479, 0.088610941], [-0.998672499, -0.287157311, 0.092971171], [-0.898361973, -0.353380144, 0.069921197], [-0.798808425, -0.267087147, 0.093723221], [-0.698328598, -0.168054674, 0.072374799], [-0.598159741, -0.241967188, 0.058457325], [-0.498426411, -0.144209987, 0.057979906], [-0.398107337, -0.149581386, 0.049268981], [-0.297608016, -0.166532410, 0.045052813], [-0.196900705, -0.076583800, 0.042665645], [-0.098027710, -0.050223846, 0.055221409]],
         "A_T_LL":    [[-1.197794737, -0.020347084, 0.023155653], [-1.098067394, 0.002344903, 0.015970167], [-0.998672499, -0.012067363, 0.017583282], [-0.898361973, 0.003563649, 0.014636818], [-0.798808425, 0.000609902, 0.015471299], [-0.698328598, -0.009741587, 0.015451815], [-0.598159741, 0.007002362, 0.011823861], [-0.498426411, -0.011575832, 0.010064118], [-0.398107337, 0.012513540, 0.008579713], [-0.297608016, 0.006754309, 0.006850136], [-0.196900705, 0.005973332, 0.005820087], [-0.098027710, 0.004666171, 0.007693023]],
     },
-    "enpiGE": {
+
+    # IMPORTANT FIX:
+    # This block was previously keyed as "enpiGE" a second time (overwriting the 12-bin enpiGE above).
+    # It matches your missing low-xB baseline bin (6 points), so it must be keyed as "enpiLowxBGE".
+    "enpiLowxBGE": {
         "ALUoffset":  [[-1.138841645, 0.000498403, 0.011994851], [-0.945412485, -0.004036017, 0.010143554], [-0.745986706, 0.100000000, 0.000009841], [-0.544511106, -0.002799958, 0.008042611], [-0.338705309, 0.010456264, 0.005940713], [-0.127170825, -0.000544851, 0.003719204]],
         "AULoffset":  [[-1.138841645, 0.056263682, 0.030369997], [-0.945412485, 0.018990833, 0.026547080], [-0.745986706, 0.088436557, 0.021863442], [-0.544511106, 0.035452578, 0.022678194], [-0.338705309, 0.029301435, 0.016452080], [-0.127170825, 0.009159044, 0.010121689]],
         "ALUsinphi":  [[-1.138841645, 0.040771306, 0.027935057], [-0.945412485, 0.020050915, 0.026868076], [-0.745986706, 0.052616207, 0.001775763], [-0.544511106, 0.085181499, 0.024471630], [-0.338705309, 0.139297588, 0.017400078], [-0.127170825, 0.105305412, 0.010215282]],
@@ -114,6 +118,7 @@ BASELINE = {
         "AUUcos2phi": [[-1.138841645, -0.450333761, 0.192234818], [-0.945412485, -0.280214535, 0.395326850], [-0.745986706, -0.508695341, 0.056791863], [-0.544511106, -0.239817236, 0.246449846], [-0.338705309, -0.370859347, 0.147523402], [-0.127170825, -0.178328493, 0.099539513]],
         "A_T_LL":     [[-1.138841645, -0.032251379, 0.027062585], [-0.945412485, 0.028186436, 0.056091876], [-0.745986706, 0.108764645, 0.007665802], [-0.544511106, 0.013436575, 0.051386040], [-0.338705309, 0.019511758, 0.034572737], [-0.127170825, -0.000476593, 0.021491316]],
     },
+
     "enpiMidLowxBGE": {
         "ALUoffset":  [[-1.134812606, -0.002165905, 0.009347533], [-0.947480592, -0.003287568, 0.007653800], [-0.742347938, 0.005573333, 0.006603856], [-0.544101692, 0.000713202, 0.005360508], [-0.338265277, 0.002339513, 0.004191469], [-0.136438754, 0.007033109, 0.002859891]],
         "AULoffset":  [[-1.134812606, -0.012744353, 0.022397042], [-0.947480592, -0.002696580, 0.018583274], [-0.742347938, 0.010582191, 0.015936965], [-0.544101692, 0.007754087, 0.012809893], [-0.338265277, 0.013007449, 0.010171331], [-0.136438754, 0.026209215, 0.006883665]],
@@ -127,6 +132,7 @@ BASELINE = {
         "AUUcos2phi": [[-1.134812606, -0.190185327, 0.174191455], [-0.947480592, -0.547673963, 0.113537282], [-0.742347938, -0.166229886, 0.122169553], [-0.544101692, -0.122450690, 0.080604166], [-0.338265277, -0.164476799, 0.064161687], [-0.136438754, -0.100467957, 0.049913764]],
         "A_T_LL":     [[-1.134812606, -0.008215481, 0.045879219], [-0.947480592, 0.027248937, 0.031330681], [-0.742347938, 0.036650710, 0.034732112], [-0.544101692, 0.039879700, 0.027860884], [-0.338265277, 0.008891513, 0.015757368], [-0.136438754, -0.009033783, 0.013156260]],
     },
+
     "enpiMidHighxBGE": {
         "ALUoffset":  [[-1.144089180, 0.011761401, 0.009751087], [-0.942551678, 0.006257835, 0.007734979], [-0.743107623, 0.002623102, 0.006110201], [-0.543465259, 0.004725665, 0.004912164], [-0.343026376, 0.001608421, 0.004172796], [-0.145666031, 0.003626380, 0.003216845]],
         "AULoffset":  [[-1.144089180, 0.028690025, 0.023582580], [-0.942551678, 0.019659512, 0.018003579], [-0.743107623, 0.003507469, 0.014756806], [-0.543465259, 0.004642439, 0.011097509], [-0.343026376, 0.029195988, 0.010174987], [-0.145666031, 0.014522274, 0.008211038]],
@@ -157,6 +163,7 @@ BASELINE = {
 }
 
 # ---------- ISR&FSR (data-driven, updated) ----------
+# (unchanged from your input)
 ISRFSR = {
     "enpiGE": {
         "ALUoffset":  [[-1.197824870, 0.002668059, 0.007520922], [-1.098299686, 0.002568490, 0.006579869], [-0.999005092, 0.003190342, 0.006072949], [-0.898501092, 0.006643178, 0.005599157], [-0.798977666, -0.000405113, 0.005204643], [-0.698603084, -0.000468435, 0.004952225], [-0.598324200, 0.003803497, 0.004489146], [-0.498645948, -0.000281459, 0.004121069], [-0.398318834, -0.001927808, 0.003798861], [-0.297839566, 0.003930199, 0.003386113], [-0.197258576, 0.008203654, 0.002950756], [-0.098267017, 0.003531912, 0.002544746]],
@@ -184,7 +191,6 @@ ISRFSR = {
         "AUUcos2phi": [[-1.140196906, 0.094903329, 0.275184341], [-0.946321166, -0.486271695, 0.227885273], [-0.747087115, 0.016497560, 0.227222604], [-0.545648541, 0.141280635, 0.193889696], [-0.339448271, -0.128075673, 0.169005985], [-0.130027264, 0.013601631, 0.105990447]],
         "A_T_LL":     [[-1.140196906, 0.027907961, 0.072703553], [-0.946321166, 0.159719286, 0.075834541], [-0.747087115, 0.045383689, 0.079890656], [-0.545648541, -0.078202552, 0.060717660], [-0.339448271, 0.025840421, 0.045190147], [-0.130027264, -0.024965292, 0.030006945]],
     },
-
     "enpiMidLowxBGE": {
         "ALUoffset":  [[-1.135373946, -0.009472796, 0.008077730], [-0.948259938, 0.004158608, 0.006766598], [-0.742786341, -0.000644860, 0.006010179], [-0.545219052, -0.000066163, 0.005038125], [-0.339386776, -0.000082375, 0.004064309], [-0.138291009, 0.007730072, 0.002926223]],
         "AULoffset":  [[-1.135373946, 0.020753607, 0.024821333], [-0.948259938, -0.003794966, 0.020770645], [-0.742786341, 0.044408812, 0.018430845], [-0.545219052, 0.024601666, 0.015604350], [-0.339386776, -0.001286564, 0.012670061], [-0.138291009, 0.024283709, 0.009227472]],
@@ -211,7 +217,6 @@ ISRFSR = {
         "AUUcos2phi": [[-1.145175295, 0.033733151, 0.145790669], [-0.943560991, -0.039339514, 0.117778792], [-0.743764660, -0.031043646, 0.099622288], [-0.544415622, 0.084401586, 0.073839737], [-0.343935183, 0.005492057, 0.061179693], [-0.146870394, -0.034783863, 0.056995061]],
         "A_T_LL":     [[-1.145175295, 0.002238744, 0.080060274], [-0.943560991, -0.036213026, 0.056603201], [-0.743764660, 0.033484415, 0.037676750], [-0.544415622, -0.019092641, 0.017560236], [-0.343935183, -0.014526654, 0.028842477], [-0.146870394, -0.036877441, 0.022408980]],
     },
-
     "enpiHighxBGE": {
         "ALUoffset":  [[-1.147221387, -0.009142683, 0.010234728], [-0.941637515, 0.001931915, 0.008855974], [-0.744015229, 0.001298856, 0.006967716], [-0.546159801, 0.006788792, 0.006059642], [-0.346824489, -0.006877716, 0.005405851], [-0.153237664, 0.006148118, 0.005202151]],
         "AULoffset":  [[-1.147221387, 0.036277723, 0.025396876], [-0.941637515, -0.022771734, 0.023043285], [-0.744015229, 0.019278720, 0.017385121], [-0.546159801, 0.040724022, 0.017247324], [-0.346824489, 0.034384368, 0.015532052], [-0.153237664, 0.034986730, 0.012913989]],
@@ -228,15 +233,14 @@ ISRFSR = {
 }
 
 # ========== Dilution factors ==========
+# (unchanged from your input)
 DILUTION_BASELINE = {
-    # 12 bins for enpiGE:
     "enpiGE": [
         (0.448035, 0.0136488), (0.42815, 0.0117845), (0.430355, 0.0107726),
         (0.453937, 0.00893328), (0.421864, 0.00896185), (0.421846, 0.00829886),
         (0.43366, 0.00709006), (0.418158, 0.00654615), (0.41809, 0.00616164),
         (0.403662, 0.00537979), (0.395163, 0.00469164), (0.411302, 0.00377839),
     ],
-    # 6 each for the xB sub-bins (order matching your list):
     "enpiLowxBGE": [
         (0.394203, 0.0216236), (0.425555, 0.0160769), (0.39112,  0.0158188),
         (0.385488, 0.0140821), (0.378195, 0.0110474), (0.383469, 0.00639608),
@@ -262,7 +266,6 @@ DILUTION_ISRFSR = {
         (0.37597, 0.00784255), (0.362834, 0.00728278), (0.368102, 0.00682182),
         (0.355803, 0.00599899), (0.362105, 0.00526425), (0.388919, 0.00427406),
     ],
-    # 6 each for the xB sub-bins (order matching your list):
     "enpiLowxBGE": [
         (0.284011, 0.0206511), (0.312197, 0.0174497), (0.314149, 0.0158779),
         (0.34394,  0.0132704), (0.319867, 0.0110387), (0.365984, 0.00656769),
@@ -293,10 +296,11 @@ def to_series(triples, negate_x=True, sort=True):
     if sort:
         idx = np.argsort(x)
         x, y, e = x[idx], y[idx], e[idx]
+    #endif
     return x, y, e
 
 def delta(yb, eb, yi, ei):
-    """Baseline − ISR&FSR with uncorrelated error propagation."""
+    """Baseline - ISRFSR with uncorrelated error propagation."""
     d = yb - yi
     ed = np.sqrt(eb**2 + ei**2)
     return d, ed
@@ -305,16 +309,19 @@ def assert_same_length(bin_tag, series_name, xb, xi):
     if len(xb) != len(xi):
         raise ValueError(
             f"[ERROR] Bin={bin_tag} Series={series_name}: "
-            f"mismatched counts (Baseline {len(xb)} vs ISR&FSR {len(xi)})."
+            f"mismatched counts (Baseline {len(xb)} vs ISRFSR {len(xi)})."
         )
+    #endif
 
 def dilution_series(bin_tag, which, x_fallback):
     if which == "Baseline":
         d = DILUTION_BASELINE.get(bin_tag)
     else:
         d = DILUTION_ISRFSR.get(bin_tag)
+    #endif
     if d is None:
         return None
+    #endif
     arr = np.array(d, dtype=float)
     n = min(len(arr), len(x_fallback))
     x = x_fallback[:n]
@@ -323,7 +330,7 @@ def dilution_series(bin_tag, which, x_fallback):
     return x, y, e
 
 def get_bin_title(bin_tag):
-    return r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) 
+    return r"$ep \rightarrow en\pi^{+}$ - " + XB_LABELS.get(bin_tag, bin_tag)
 
 # =========
 # Plotters
@@ -333,6 +340,7 @@ def legend_on(ax, loc="upper right"):
     if h:
         leg = ax.legend(h, l, frameon=True, edgecolor="black", fontsize=11, loc=loc)
         leg.get_frame().set_alpha(0.9)
+    #endif
 
 def draw_compare(ax, bin_tag, series_name, ylabel, ylim=None):
     for lab in ["Baseline", "ISR&FSR (data-driven)"]:
@@ -340,14 +348,17 @@ def draw_compare(ax, bin_tag, series_name, ylabel, ylim=None):
         triples = src.get(bin_tag, {}).get(series_name)
         if not triples:
             continue
+        #endif
         x, y, e = to_series(triples)
         ax.errorbar(
             x, y, yerr=e,
             fmt=MARKERS[lab], color=COLORS[lab], ecolor=COLORS[lab],
             capsize=CAPSIZE, markersize=MS, linestyle="None", label=lab
         )
+    #endfor
     if ylim is not None:
         ax.set(ylim=ylim)
+    #endif
     ax.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel=ylabel)
     ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
@@ -357,13 +368,15 @@ def draw_delta_indexed(ax, bin_tag, series_name, ylabel):
     i = ISRFSR.get(bin_tag, {}).get(series_name)
     if not b or not i:
         return
+    #endif
     xb, yb, eb = to_series(b)
     xi, yi, ei = to_series(i)
     assert_same_length(bin_tag, series_name, xb, xi)
 
-    # Light x-grid check: warn if x differs notably (shouldn't, but useful)
+    # Light x-grid check: warn if x differs notably (should not, but useful)
     if not np.allclose(xb, xi, rtol=0, atol=1e-6):
         print(f"[WARN] x mismatch in {bin_tag}:{series_name} (index-paired).")
+    #endif
 
     yd, ed = delta(yb, eb, yi, ei)
     ax.errorbar(
@@ -380,6 +393,7 @@ def draw_delta_dilution(ax, bin_tag, x_ref):
     di = DILUTION_ISRFSR.get(bin_tag)
     if not db or not di:
         return
+    #endif
     db = np.array(db, dtype=float)
     di = np.array(di, dtype=float)
     n = min(len(db), len(di), len(x_ref))
@@ -407,12 +421,14 @@ def plot_bin(bin_tag, out_dir):
         s = dilution_series(bin_tag, lab, x_ref)
         if s is None:
             continue
+        #endif
         x, y, e = s
         ax_dil.errorbar(
             x, y, yerr=e,
             fmt=MARKERS[lab], color=COLORS[lab], ecolor=COLORS[lab],
             capsize=CAPSIZE, markersize=MS, linestyle="None", label=lab
         )
+    #endfor
     ax_dil.set(xlim=XLIM_T, ylim=YLIM_DIL, xlabel=X_LABEL, ylabel=r"$D_f$")
     ax_dil.grid(True, linestyle="--", alpha=0.6)
 
@@ -447,7 +463,7 @@ def plot_bin_delta(bin_tag, out_dir):
     draw_delta_indexed(ax_ll0, bin_tag, "ALL",        r"$\Delta(F_{LL}/F_{UU})$")
     draw_delta_indexed(ax_ll1, bin_tag, "ALLcosphi",  r"$\Delta(F_{LL}^{\cos\phi}/F_{UU})$")
 
-    plt.suptitle(r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag), fontsize=16, y=0.97)
+    plt.suptitle(r"$ep \rightarrow en\pi^{+}$ - " + XB_LABELS.get(bin_tag, bin_tag), fontsize=16, y=0.97)
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD])
 
     os.makedirs(out_dir, exist_ok=True)
@@ -464,6 +480,7 @@ def collect_delta_sf(bin_tag, series_name):
     i = ISRFSR.get(bin_tag, {}).get(series_name)
     if not b or not i:
         return None
+    #endif
     xb, yb, eb = to_series(b)
     xi, yi, ei = to_series(i)
     assert_same_length(bin_tag, series_name, xb, xi)
@@ -475,6 +492,7 @@ def collect_delta_dilution(bin_tag, x_ref):
     di = DILUTION_ISRFSR.get(bin_tag)
     if not db or not di:
         return None
+    #endif
     db = np.array(db, dtype=float)
     di = np.array(di, dtype=float)
     n = min(len(db), len(di), len(x_ref))
@@ -487,67 +505,76 @@ def collect_delta_dilution(bin_tag, x_ref):
 def write_delta_summary(out_dir, bin_tags):
     path = os.path.join(out_dir, "ISR_FSR_delta_summary.txt")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("Signed Δ summary: Δ = Baseline − ISR&FSR with propagated σΔ (uncorrelated)\n")
+        f.write("Signed Delta summary: Delta = Baseline - ISRFSR with propagated sigma_Delta (uncorrelated)\n")
         f.write("Units: -t' in GeV^2\n")
         f.write("=" * 88 + "\n")
 
         for b in bin_tags:
             x_ref, _, _ = to_series(BASELINE[b]["ALUsinphi"])
-            f.write(f"\nBin: {b}    x_B range: {XB_LABELS.get(b, '')}\n")
+            f.write(f"\nBin: {b}    xB range: {XB_LABELS.get(b, '')}\n")
             f.write("-" * 88 + "\n")
 
-            # Dilution first
             dil = collect_delta_dilution(b, x_ref)
             if dil is not None:
                 x, _, _, _, _, d, ed = dil
-                f.write("Series: Dilution $D_f$\n")
-                f.write(f"{'-t\'':>8}    {'Δ':>12}    {'σΔ':>12}\n")
+                f.write("Series: Dilution D_f\n")
+                f.write(f"{'-t\\'':>8}    {'Delta':>12}    {'sigma_Delta':>12}\n")
                 for xi, di_, ei in zip(x, d, ed):
                     f.write(f"{xi:8.5f}    {di_:12.6f}    {ei:12.6f}\n")
+                #endfor
                 f.write("\n")
+            #endif
 
             for key, label, _ in SERIES_TO_PLOT[1:]:
                 res = collect_delta_sf(b, key)
                 if res is None:
                     continue
+                #endif
                 x, _, _, _, _, d, ed = res
                 f.write(f"Series: {label}\n")
-                f.write(f"{'-t\'':>8}    {'Δ':>12}    {'σΔ':>12}\n")
+                f.write(f"{'-t\\'':>8}    {'Delta':>12}    {'sigma_Delta':>12}\n")
                 for xi, di_, ei in zip(x, d, ed):
                     f.write(f"{xi:8.5f}    {di_:12.6f}    {ei:12.6f}\n")
+                #endfor
                 f.write("\n")
-    print(f"[OK] Wrote Δ summary: {path}")
+            #endfor
+        #endfor
+    print(f"[OK] Wrote Delta summary: {path}")
 
 def write_bin_csvs(out_dir, bin_tag):
     """Per-series CSV with x, baseline, isrfsr, deltas."""
     bin_dir = os.path.join(out_dir, f"csv_{SAVE_TAG.get(bin_tag, bin_tag)}")
     os.makedirs(bin_dir, exist_ok=True)
 
-    # reference x for dilution alignment
     x_ref, _, _ = to_series(BASELINE[bin_tag]["ALUsinphi"])
 
-    # Dilution CSV
     dil = collect_delta_dilution(bin_tag, x_ref)
     if dil is not None:
         x, yb, eb, yi, ei, d, ed = dil
         with open(os.path.join(bin_dir, "DILUTION.csv"), "w", newline="") as fh:
             w = csv.writer(fh)
-            w.writerow(["-t' [GeV^2]", "Baseline Df", "σ(B)", "ISR&FSR Df", "σ(I)", "Δ", "σ(Δ)", "Δ/σ"])
-            for row in zip(x, yb, eb, yi, ei, d, ed, np.divide(d, ed, out=np.zeros_like(d), where=ed>0)):
+            w.writerow(["-t' (GeV^2)", "Baseline Df", "err(B)", "ISR&FSR Df", "err(I)", "Delta", "err(Delta)", "Delta/err"])
+            for row in zip(x, yb, eb, yi, ei, d, ed, np.divide(d, ed, out=np.zeros_like(d), where=ed > 0)):
                 w.writerow([f"{row[0]:.6f}"] + [f"{v:.6g}" for v in row[1:]])
+            #endfor
+        #endwith
+    #endif
 
-    # SF CSVs
     for key, label, _ in SERIES_TO_PLOT[1:]:
         res = collect_delta_sf(bin_tag, key)
-        if res is None: 
+        if res is None:
             continue
+        #endif
         x, yb, eb, yi, ei, d, ed = res
         fname = key + ".csv"
         with open(os.path.join(bin_dir, fname), "w", newline="") as fh:
             w = csv.writer(fh)
-            w.writerow(["-t' [GeV^2]", f"Baseline {label}", "σ(B)", f"ISR&FSR {label}", "σ(I)", "Δ", "σ(Δ)", "Δ/σ"])
-            for row in zip(x, yb, eb, yi, ei, d, ed, np.divide(d, ed, out=np.zeros_like(d), where=ed>0)):
+            w.writerow(["-t' (GeV^2)", f"Baseline {label}", "err(B)", f"ISR&FSR {label}", "err(I)", "Delta", "err(Delta)", "Delta/err"])
+            for row in zip(x, yb, eb, yi, ei, d, ed, np.divide(d, ed, out=np.zeros_like(d), where=ed > 0)):
                 w.writerow([f"{row[0]:.6f}"] + [f"{v:.6g}" for v in row[1:]])
+            #endfor
+        #endwith
+    #endfor
 
 # ==========================
 # Sanity / debug report
@@ -555,43 +582,72 @@ def write_bin_csvs(out_dir, bin_tag):
 def sanity_lines_for_bin(bin_tag):
     lines = [f"== Bin: {bin_tag} ({XB_LABELS.get(bin_tag,'')})"]
     check_series = ["ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"]
+
     for s in check_series:
         b = BASELINE.get(bin_tag, {}).get(s)
         i = ISRFSR.get(bin_tag, {}).get(s)
         if not b or not i:
             missing = []
-            if not b: missing.append("BASELINE")
-            if not i: missing.append("ISRFSR")
+            if not b:
+                missing.append("BASELINE")
+            #endif
+            if not i:
+                missing.append("ISRFSR")
+            #endif
             lines.append(f"  {s}: MISSING in {', '.join(missing)}")
             continue
+        #endif
+
         xb, yb, eb = to_series(b)
         xi, yi, ei = to_series(i)
+
         same_len = (len(yb) == len(yi))
         exact_equal = same_len and np.array_equal(yb, yi)
-        close_equal  = same_len and np.allclose(yb, yi)
-        d, _ = delta(yb, eb, yi, ei) if same_len else (np.array([]), None)
-        zero_delta = (d.size > 0) and np.allclose(d, 0.0, atol=ATOL_ZERO)
-        max_abs_d = float(np.max(np.abs(d))) if d.size else float("nan")
+        close_equal = same_len and np.allclose(yb, yi)
+
+        if same_len:
+            d, _ = delta(yb, eb, yi, ei)
+            zero_delta = (d.size > 0) and np.allclose(d, 0.0, atol=ATOL_ZERO)
+            max_abs_d = float(np.max(np.abs(d))) if d.size else float("nan")
+        else:
+            d = np.array([])
+            zero_delta = False
+            max_abs_d = float("nan")
+        #endif
+
         lines.append(
             f"  {s}: lenB={len(yb)} lenI={len(yi)} "
             f"exact_equal={exact_equal} close_equal={close_equal} "
-            f"Δ_all_zero={zero_delta} max|Δ|={max_abs_d:.6g}"
+            f"Delta_all_zero={zero_delta} max|Delta|={max_abs_d:.6g}"
         )
-        if not np.allclose(xb, xi, atol=1e-6):
-            lines.append("     NOTE: x grids differ (still paired by index).")
+
+        # IMPORTANT FIX: only compare xb and xi if same_len, otherwise numpy will throw a broadcast error.
+        if same_len:
+            if not np.allclose(xb, xi, atol=1e-6):
+                lines.append("     NOTE: x grids differ (still paired by index).")
+            #endif
+        else:
+            lines.append("     NOTE: cannot compare x grids (length mismatch).")
+        #endif
+
         if exact_equal:
             lines.append("     >>> WARNING: y_Baseline and y_ISRFSR are IDENTICAL.")
+        #endif
+    #endfor
+
     return lines
 
 def write_sanity_report(out_dir, bin_tags):
     path = os.path.join(out_dir, "ISR_FSR_sanity_report.txt")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("Sanity report (index-based Δ pairing)\n")
-        f.write("Flags identical series / zero-Δ after pairing / x-grid mismatches.\n\n")
+        f.write("Sanity report (index-based Delta pairing)\n")
+        f.write("Flags identical series / zero-Delta after pairing / x-grid mismatches.\n\n")
         for b in bin_tags:
             for line in sanity_lines_for_bin(b):
                 f.write(line + "\n")
+            #endfor
             f.write("\n")
+        #endfor
     print(f"[OK] Wrote sanity report: {path}")
 
 # =====
@@ -603,7 +659,7 @@ def main():
 
     bin_tags = ["enpiGE", "enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
 
-    # Debug first — will loudly flag identical series (root cause of Δ=0 text)
+    # Debug first (should never crash; it should report mismatches instead)
     write_sanity_report(out_dir, bin_tags)
 
     # Plots + CSVs
@@ -611,12 +667,15 @@ def main():
         if b not in ISRFSR or b not in BASELINE:
             print(f"[WARN] Skipping {b} (missing data).")
             continue
+        #endif
         plot_bin(b, out_dir)
         plot_bin_delta(b, out_dir)
         write_bin_csvs(out_dir, b)
+    #endfor
 
-    # Δ summary (TXT)
+    # Delta summary (TXT)
     write_delta_summary(out_dir, bin_tags)
 
 if __name__ == "__main__":
     main()
+#endif
