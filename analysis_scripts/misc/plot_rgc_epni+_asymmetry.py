@@ -847,8 +847,14 @@ def _get_mig_arrays(mig_bin, key, n_expected):
     return sigma[:n_expected]
 
 def _fmt_cell(val, stat, syst, ndp=3):
+    """
+    IMPORTANT: wrap the full cell in $...$ to ensure math mode, since we use ^ and _.
+    This prevents 'Missing $ inserted.' in LaTeX tables.
+    """
     fmt = "{0:." + str(ndp) + "f}"
-    return fmt.format(val) + "^{\\pm " + fmt.format(stat) + "}_{\\pm " + fmt.format(syst) + "}"
+    core = fmt.format(val) + "^{\\pm " + fmt.format(stat) + "}_{\\pm " + fmt.format(syst) + "}"
+    return "$" + core + "$"
+#endif
 
 def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
     """
@@ -915,7 +921,7 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         "$\\langle -t' \\rangle$ & $F_{LU}^{\\sin\\phi}/F_{UU}$ & $F_{UL}^{\\sin\\phi}/F_{UU}$ & $F_{UL}^{\\sin2\\phi}/F_{UU}$ & $F_{LL}/F_{UU}$ & $F_{LL}^{\\cos\\phi}/F_{UU}$ \\\\ \\hline\n"
     )
 
-    # Caption/label: you can rename label if you want; this is deterministic
+    # Caption/label: deterministic
     label = f"table:{bin_tag}_fitresults_tprime"
     caption = (
         "\\end{tabular}\n"
