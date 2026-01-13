@@ -147,10 +147,10 @@ public static void main(String[] args) {
 					// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 					double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 
-					// TwoParticles_Fermi variables = new TwoParticles_Fermi(event, research_Event, 
-					// 	p1_Str.toInteger(), current_p1, energy);
-					TwoParticles variables = new TwoParticles(event, research_Event, 
+					TwoParticles_Fermi variables = new TwoParticles_Fermi(event, research_Event, 
 						p1_Str.toInteger(), current_p1, energy);
+					// TwoParticles variables = new TwoParticles(event, research_Event, 
+					// 	p1_Str.toInteger(), current_p1, energy);
 					TwoParticles mc_variables = new TwoParticles(event, mc_Event, 
 						p1_Str.toInteger(), current_p1, energy);
 
