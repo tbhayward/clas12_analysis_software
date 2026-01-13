@@ -761,7 +761,7 @@ public class momentum_corrections {
         // smear with probability = 1 – D_f(mx2)
         double pSmear = 1.0 - dilutionFactor(mx2);
         double random = rand.nextDouble();
-        System.out.println(pSmear+" "+random);
+        System.out.println("pSmear = "+pSmear+", random = "+random);
         if (random < pSmear) {
             // leave at rest
             return new Vector3(0.0, 0.0, 0.0);
