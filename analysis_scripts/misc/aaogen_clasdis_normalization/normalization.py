@@ -214,7 +214,6 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
       - fill Mx2 into the appropriate histogram
       - increment count grid for that bin
     """
-    # Bind minimal branches once
     runnum = array("i", [0])
     e_p = array("d", [0.0])
     e_theta = array("d", [0.0])
@@ -243,7 +242,11 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
     tree.SetBranchAddress("Mx2", Mx2)
 
     n_entries = int(tree.GetEntries())
-    n_to_process = min(n_entries, int(max_events))
+    if max_events is None:
+        n_to_process = n_entries
+    else:
+        n_to_process = min(n_entries, int(max_events))
+    #endif
 
     for i in range(n_to_process):
         tree.GetEntry(i)
@@ -280,7 +283,8 @@ def main():
     ap.add_argument("--data", required=True, help="Path to data ROOT file")
     ap.add_argument("--aaogen", required=True, help="Path to aaogen ROOT file")
     ap.add_argument("--clasdis", required=True, help="Path to clasdis ROOT file")
-    ap.add_argument("--max_events", type=int, default=10000, help="Max events per file (default 10000)")
+    ap.add_argument("--max_events", type=int, default=-1,
+                    help="Max events per file (-1 means all events)")
     args = ap.parse_args()
 
     require_file(args.data)
@@ -308,7 +312,6 @@ def main():
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
 
-    # Create histogram grids (4x6) and count grids
     h_data = make_hist_grid("h_data", nrows, ncols)
     h_aao = make_hist_grid("h_aaogen", nrows, ncols)
     h_dis = make_hist_grid("h_clasdis", nrows, ncols)
@@ -317,12 +320,12 @@ def main():
     c_aao = make_count_grid(nrows, ncols)
     c_dis = make_count_grid(nrows, ncols)
 
-    # Fill each dataset in a single pass
-    fill_all_bins_single_pass(t_data, h_data, c_data, args.max_events)
-    fill_all_bins_single_pass(t_aao, h_aao, c_aao, args.max_events)
-    fill_all_bins_single_pass(t_dis, h_dis, c_dis, args.max_events)
+    max_events = None if args.max_events is None or int(args.max_events) < 0 else int(args.max_events)
 
-    # Normalize each histogram to unit area per bin
+    fill_all_bins_single_pass(t_data, h_data, c_data, max_events)
+    fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
+    fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
+
     for r in range(nrows):
         for c in range(ncols):
             normalize_unit_area(h_data[r][c])
@@ -331,7 +334,6 @@ def main():
         #endfor
     #endfor
 
-    # Style
     col_data = ROOT.kBlack
     col_aao = ROOT.kRed
     col_dis = ROOT.kBlue
@@ -344,7 +346,6 @@ def main():
         #endfor
     #endfor
 
-    # Draw canvas
     canv = ROOT.TCanvas("c_yields", "Mx2 in xB and -tprime bins", 2400, 1400)
     canv.Divide(ncols, nrows, 0.001, 0.001)
 
@@ -361,12 +362,13 @@ def main():
             pad_idx += 1
 
             pad.SetGrid(1, 1)
-            pad.SetLeftMargin(0.13)
+
+            # Increased left padding so y-axis title/labels are not clipped
+            pad.SetLeftMargin(0.18)
             pad.SetRightMargin(0.04)
             pad.SetBottomMargin(0.14)
             pad.SetTopMargin(0.08)
 
-            # Set axes on data hist (even if empty)
             h_data[r][c].GetXaxis().SetTitle("Mx2 (GeV^2)")
             h_data[r][c].GetYaxis().SetTitle("Normalized yield")
             h_data[r][c].GetXaxis().SetTitleSize(0.06)
