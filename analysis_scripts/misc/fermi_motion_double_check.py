@@ -16,6 +16,10 @@ Each pad overlays:
   - Fermi motion (red)
   - No motion    (black)
 
+Requested updates:
+  - x-axis range for ALL pads: [-0.1, 0.1]
+  - Include a legend showing which histogram is which (already included).
+
 Saves: output/fermi_motion_double_check.png
 """
 
@@ -34,13 +38,14 @@ DEFAULT_AAOGEN_NO     = "/volatile/clas12/thayward/fermi_motion_study/aaogen_no_
 TREE_NAME = "PhysicsEvents"
 
 # Histogram configuration (explicit and deterministic)
+# Force ALL delta distributions to the same x-axis range requested by user.
 NBINS_DX   = 240
-DX_MIN    = -0.30
-DX_MAX    =  0.30
+DX_MIN    = -0.10
+DX_MAX    =  0.10
 
 NBINS_DP   = 240
-DP_MIN    = -1.50
-DP_MAX    =  1.50
+DP_MIN    = -0.10
+DP_MAX    =  0.10
 
 # If True, scale each histogram to unit area (shape comparison).
 # If False, keep raw counts.
@@ -73,7 +78,6 @@ def open_tree(path, tree_name):
         fatal("Tree '" + tree_name + "' not found in file: " + path)
     #endif
 
-    # Keep file handle alive by returning it too.
     return f, t
 
 
@@ -143,6 +147,7 @@ def draw_overlay_pad(pad, h_no, h_fermi, xlabel, ylabel, pad_title):
     h_no.Draw("hist")
     h_fermi.Draw("hist same")
 
+    # Legend explicitly identifies which histogram is which.
     leg = ROOT.TLegend(0.58, 0.74, 0.90, 0.90)
     leg.SetBorderSize(1)
     leg.SetFillStyle(1001)
