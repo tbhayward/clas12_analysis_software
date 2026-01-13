@@ -117,7 +117,7 @@ public static void main(String[] args) {
 
 		while(reader.hasEvent()){
 			++num_events; 
-			if (num_events > 100000) { break; }
+			if (num_events > 10000) { break; }
 			if (num_events%1000000 == 0) { 
 				print("processed: "+num_events+" events.     ");
 			}
@@ -149,6 +149,8 @@ public static void main(String[] args) {
 
 					TwoParticles_Fermi variables = new TwoParticles_Fermi(event, research_Event, 
 						p1_Str.toInteger(), current_p1, energy);
+					// TwoParticles variables = new TwoParticles(event, research_Event, 
+					// 	p1_Str.toInteger(), current_p1, energy);
 					TwoParticles mc_variables = new TwoParticles(event, mc_Event, 
 						p1_Str.toInteger(), current_p1, energy);
 
