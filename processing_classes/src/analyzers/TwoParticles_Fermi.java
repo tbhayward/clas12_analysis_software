@@ -195,8 +195,8 @@ public class TwoParticles_Fermi {
         momentum_corrections momentum_corrections = new momentum_corrections();
         lv_target.setPxPyPzM(0, 0, 0, kinematic_variables.particle_mass(2212));
 
-//        Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
-//        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
+        Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
         
         /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
         // Simulate Fermi motion
