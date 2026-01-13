@@ -1,283 +1,380 @@
-// exclusive_post_processing.cpp
-//
-// Skimmer for CLAS12 enpi+ PhysicsEvents.
-//
-// Selection (applied via CopyTree):
-//   0.65 < Mx2 < 1.125
-//   fiducial_status == 111
-//   0.09 < x < 0.61
-//
-// Output policy:
-//   - Keep all branches EXCEPT the following eight:
-//       fiducial_status, num_pos, num_neg, num_neutral, evnum, detector, xi, eta
-//   - Preserve existing t, tmin, tprime, sinthetagamma if already present.
-//   - If any are missing, compute and add ONLY the missing ones (on the file-backed skim).
-//
-// Build:
-//   g++ -O2 -std=c++17 exclusive_post_processing.cpp `root-config --cflags --libs` -o exclusive_post_processing
-//
-// Run:
-//   ./exclusive_post_processing /path/to/input.root
-//
-// Output filename:
-//   Inserts "_2" before ".root" (or appends "_2.root" if no .root suffix).
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <iostream>
-#include <string>
-#include <vector>
+"""
+normalization.py
 
-#include <TFile.h>
-#include <TTree.h>
-#include <TBranch.h>
-#include <TSystem.h>
+Make a 4x6 canvas of Mx2 distributions binned in (xB, -t') where -t' is computed
+on-the-fly from electron and pion kinematics (no recoil neutron detected).
 
-// -------- constants (avoid <cmath> M_E/M_PI macro collisions) --------
-static constexpr double MASS_E  = 0.000511;        // GeV (electron)
-static constexpr double MASS_PI = 0.139570;        // GeV (charged pion)
-static constexpr double MASS_N  = 0.9382720813;    // GeV (proton)
+Inputs:
+  --data    <data.root>
+  --aaogen  <aaogen.root>
+  --clasdis <clasdis.root>
 
-// ------------------------------ helpers --------------------------------
-static double beamEnergy(int runnum) {
-    if (runnum >= 6616  && runnum <= 6783)   return 10.1998;
-    if (runnum >= 16042 && runnum <= 17065)  return 10.5473;
-    if (runnum >= 17067 && runnum <= 17724)  return 10.5563;
-    if (runnum >= 17725 && runnum <= 17811)  return 10.5593;
-    return 10.5563;
-}
+Tree:
+  PhysicsEvents
 
-static bool has_branch(TTree* t, const char* name) {
-    return t && t->GetListOfBranches() && t->GetListOfBranches()->FindObject(name);
-}
+Required branches (must exist in each file):
+  runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi, x, Q2, Mx2
 
-static double compute_t_scalar(int runnum,
-                               double e_p, double e_theta, double e_phi,
-                               double p_p, double p_theta, double p_phi) {
-    const double Eb = beamEnergy(runnum);
-    if (Eb <= 0.0) return 1e9;
+Binning:
+  xB edges   = [0.10, 0.25, 0.35, 0.45, 0.60]  -> 4 rows
+  -t' edges  = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25] -> 6 cols
 
-    const double E_e = std::sqrt(e_p*e_p + MASS_E*MASS_E);
-    const double se  = std::sin(e_theta), ce = std::cos(e_theta);
-    const double ex  = e_p * se * std::cos(e_phi);
-    const double ey  = e_p * se * std::sin(e_phi);
-    const double ez  = e_p * ce;
+Plot:
+  Mx2 in [0, 4], normalized to unit area for each dataset in each bin.
 
-    const double E_pi = std::sqrt(p_p*p_p + MASS_PI*MASS_PI);
-    const double sp   = std::sin(p_theta), cp = std::cos(p_theta);
-    const double px   = p_p * sp * std::cos(p_phi);
-    const double py   = p_p * sp * std::sin(p_phi);
-    const double pz   = p_p * cp;
+Output:
+  output/yields.png
+"""
 
-    // q = k - k' = (Eb - E_e, -ex, -ey, Eb - ez)
-    const double dE = (Eb - E_e) - E_pi;
-    const double dx = -ex - px;
-    const double dy = -ey - py;
-    const double dz = (Eb - ez) - pz;
+import os
+import sys
+import math
+import argparse
 
-    return dE*dE - (dx*dx + dy*dy + dz*dz);
-}
+import ROOT
 
-static double compute_sin_theta_gamma(double y, double xB, double Q2) {
-    if (Q2 <= 0.0) return 0.0;
-    const double Q     = std::sqrt(Q2);
-    const double gamma = (Q > 0.0) ? (2.0 * xB * MASS_N / Q) : 0.0;
-    const double num   = 1.0 - y - 0.25 * y * y * gamma * gamma;
-    const double den   = 1.0 + gamma * gamma;
-    if (den <= 0.0) return 0.0;
-    const double ratio = std::max(0.0, num / den);
-    return gamma * std::sqrt(ratio);
-}
 
-static double compute_tmin_exact(double xB, double Q2) {
-    const bool xb_ok = (xB > 0.0 && xB < 1.0);
-    if (Q2 <= 0.0 || !xb_ok) {
-        if (xb_ok) {
-            const double denom = (1.0 - xB);
-            if (denom > 0.0) return - (MASS_N*xB)*(MASS_N*xB) / denom; // high-E approx
-        }
-        return 0.0;
-    }
-    const double eps2 = 4.0*MASS_N*MASS_N*xB*xB / Q2;
-    const double root = std::sqrt(1.0 + eps2);
-    const double num  = Q2 * ( 2.0*(1.0 - xB)*(1.0 - root) + eps2 );
-    const double den  = 4.0*xB*(1.0 - xB) + eps2;
-    if (den == 0.0) return 0.0;
-    return - num / den;
-}
+TREE_NAME = "PhysicsEvents"
 
-// -------------------------------- main ---------------------------------
-int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <input.root>\n";
-        return 1;
-    }
+XB_EDGES   = [0.10, 0.25, 0.35, 0.45, 0.60]
+TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]
 
-    std::string infile(argv[1]);
-    std::string outfile = infile;
-    auto pos = outfile.rfind(".root");
-    if (pos != std::string::npos) outfile.insert(pos, "_2");
-    else                          outfile += "_2.root";
+MX2_MIN   = 0.0
+MX2_MAX   = 4.0
+MX2_NBINS = 200
 
-    // 0) Open input
-    TFile* fin = TFile::Open(infile.c_str(), "READ");
-    if (!fin || fin->IsZombie()) {
-        std::cerr << "Error: could not open input " << infile << "\n";
-        return 1;
-    }
-    TTree* tin = static_cast<TTree*>(fin->Get("PhysicsEvents"));
-    if (!tin) {
-        std::cerr << "Error: PhysicsEvents not found in " << infile << "\n";
-        fin->Close();
-        return 1;
-    }
+OUTPUT_PNG = "output/yields.png"
 
-    // Selection
-    const char* CUTS = "Mx2>0.65 && Mx2<1.125 && fiducial_status==111 && x>0.09 && x<0.61";
+# Masses (GeV)
+MASS_E  = 0.000511
+MASS_PI = 0.139570
+MASS_N  = 0.9382720813
 
-    const Long64_t n_in     = tin->GetEntries();
-    const Long64_t n_expect = tin->GetEntries(CUTS);
 
-    // 1) DO NOT disable branches before CopyTree. Copy everything; we will drop later.
-    tin->SetBranchStatus("*", 1);
+def fatal(msg):
+    raise RuntimeError(msg)
 
-    // 2) Create output file; cd into it so CopyTree builds the skim *on the file*
-    TFile* fout = TFile::Open(outfile.c_str(), "RECREATE");
-    if (!fout || fout->IsZombie()) {
-        std::cerr << "Error: could not create output " << outfile << "\n";
-        fin->Close();
-        return 1;
-    }
-    fout->SetCompressionAlgorithm(ROOT::kZLIB);
-    fout->SetCompressionLevel(9);
-    fout->cd();
 
-    // 3) Skim directly onto the file (NO memory-resident tree)
-    TTree* tskim = tin->CopyTree(CUTS);
-    if (!tskim) {
-        std::cerr << "CopyTree returned null.\n";
-        fout->Close();
-        fin->Close();
-        return 1;
-    }
-    tskim->SetDirectory(fout);  // ensure file-backed
+def require_file(path):
+    if path is None or path.strip() == "":
+        fatal("Missing required input path.")
+    #endif
+    if not os.path.isfile(path):
+        fatal("File not found: " + path)
+    #endif
 
-    // 4) Enable everything on the skim (we may need multiple inputs to compute)
-    tskim->SetBranchStatus("*", 1);
 
-    // 5) Check derived branches
-    const bool have_t       = has_branch(tskim, "t");
-    const bool have_tmin    = has_branch(tskim, "tmin");
-    const bool have_tprime  = has_branch(tskim, "tprime");
-    const bool have_stg     = has_branch(tskim, "sinthetagamma");
-    const bool need_compute = (!have_t) || (!have_tmin) || (!have_tprime) || (!have_stg);
+def open_tree(path, tree_name):
+    f = ROOT.TFile.Open(path, "READ")
+    if not f or f.IsZombie():
+        fatal("Failed to open ROOT file: " + path)
+    #endif
+    t = f.Get(tree_name)
+    if not t:
+        fatal("Tree '" + tree_name + "' not found in: " + path)
+    #endif
+    return f, t
 
-    // 6) If any are missing, add and fill them *on tskim* (file-backed)
-    Int_t    runnum=0;
-    Double_t e_p=0,e_theta=0,e_phi=0;
-    Double_t p_p=0,p_theta=0,p_phi=0;
-    Double_t xB=0,Q2=0,yv=0;
 
-    Double_t t_val=0, tmin_val=0, tprime_val=0, stg_val=0;
-    TBranch *b_t=nullptr, *b_tmin=nullptr, *b_tprime=nullptr, *b_stg=nullptr;
+def require_branches(t, needed, label):
+    blist = t.GetListOfBranches()
+    if not blist:
+        fatal("No branch list available for tree in: " + label)
+    #endif
+    missing = []
+    for b in needed:
+        if not blist.FindObject(b):
+            missing.append(b)
+        #endif
+    #endfor
+    if len(missing) > 0:
+        fatal("Missing required branches in " + label + ": " + ", ".join(missing))
+    #endif
 
-    // Mx2 stats (sanity check)
-    Double_t mx2_tmp = 0.0;
-    double mx2_min = 1e300, mx2_sum = 0.0;
-    const Long64_t nsel = tskim->GetEntries();
 
-    if (need_compute) {
-        // Ensure inputs exist
-        for (const char* bn : std::vector<const char*>{
-            "runnum","e_p","e_theta","e_phi","p_p","p_theta","p_phi","x","Q2","y","Mx2"
-        }) {
-            if (!tskim->GetBranch(bn)) {
-                std::cerr << "Missing branch in skim needed for compute/stats: " << bn << "\n";
-                fout->Close(); fin->Close();
-                return 1;
-            }
-        }
+def beam_energy(runnum):
+    # Matches your C++ beamEnergy(int runnum)
+    if runnum >= 6616 and runnum <= 6783:
+        return 10.1998
+    if runnum >= 16042 and runnum <= 17065:
+        return 10.5473
+    if runnum >= 17067 and runnum <= 17724:
+        return 10.5563
+    if runnum >= 17725 and runnum <= 17811:
+        return 10.5593
+    return 10.5563
+#enddef
 
-        tskim->SetBranchAddress("runnum",  &runnum);
-        tskim->SetBranchAddress("e_p",     &e_p);
-        tskim->SetBranchAddress("e_theta", &e_theta);
-        tskim->SetBranchAddress("e_phi",   &e_phi);
-        tskim->SetBranchAddress("p_p",     &p_p);
-        tskim->SetBranchAddress("p_theta", &p_theta);
-        tskim->SetBranchAddress("p_phi",   &p_phi);
-        tskim->SetBranchAddress("x",       &xB);
-        tskim->SetBranchAddress("Q2",      &Q2);
-        tskim->SetBranchAddress("y",       &yv);
-        tskim->SetBranchAddress("Mx2",     &mx2_tmp);
 
-        if (!have_t)      b_t      = tskim->Branch("t",             &t_val,     "t/D");
-        if (!have_tmin)   b_tmin   = tskim->Branch("tmin",          &tmin_val,  "tmin/D");
-        if (!have_tprime) b_tprime = tskim->Branch("tprime",        &tprime_val,"tprime/D");
-        if (!have_stg)    b_stg    = tskim->Branch("sinthetagamma", &stg_val,   "sinthetagamma/D");
+def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
+    Eb = beam_energy(int(runnum))
+    if Eb <= 0.0:
+        return 1.0e9
+    #endif
 
-        for (Long64_t i=0; i<nsel; ++i) {
-            tskim->GetEntry(i);
+    E_e = math.sqrt(max(0.0, e_p * e_p + MASS_E * MASS_E))
+    se  = math.sin(e_theta)
+    ce  = math.cos(e_theta)
+    ex  = e_p * se * math.cos(e_phi)
+    ey  = e_p * se * math.sin(e_phi)
+    ez  = e_p * ce
 
-            if (!have_t || !have_tmin || !have_tprime) {
-                const double tt   = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
-                const double tmin = compute_tmin_exact(xB, Q2);
-                if (!have_t)      t_val      = tt;
-                if (!have_tmin)   tmin_val   = tmin;
-                if (!have_tprime) tprime_val = tt - tmin;
-            }
-            if (!have_stg) {
-                stg_val = compute_sin_theta_gamma(yv, xB, Q2);
-            }
+    E_pi = math.sqrt(max(0.0, p_p * p_p + MASS_PI * MASS_PI))
+    sp   = math.sin(p_theta)
+    cp   = math.cos(p_theta)
+    px   = p_p * sp * math.cos(p_phi)
+    py   = p_p * sp * math.sin(p_phi)
+    pz   = p_p * cp
 
-            if (b_t)      b_t->Fill();
-            if (b_tmin)   b_tmin->Fill();
-            if (b_tprime) b_tprime->Fill();
-            if (b_stg)    b_stg->Fill();
+    # q = k - k' = (Eb - E_e, -ex, -ey, Eb - ez)
+    # then (q - p_pi)^2 = ( (Eb - E_e) - E_pi )^2 - | (-e_vec + (0,0,Eb)) - p_vec |^2
+    dE = (Eb - E_e) - E_pi
+    dx = -ex - px
+    dy = -ey - py
+    dz = (Eb - ez) - pz
 
-            if (mx2_tmp < mx2_min) mx2_min = mx2_tmp;
-            mx2_sum += mx2_tmp;
-        }
-    } else {
-        // No compute needed; still do Mx2 stats
-        if (!tskim->GetBranch("Mx2")) {
-            std::cerr << "Mx2 branch is missing in skim, cannot compute stats.\n";
-        } else {
-            tskim->SetBranchAddress("Mx2", &mx2_tmp);
-            for (Long64_t i=0; i<nsel; ++i) {
-                tskim->GetEntry(i);
-                if (mx2_tmp < mx2_min) mx2_min = mx2_tmp;
-                mx2_sum += mx2_tmp;
-            }
-        }
-    }
+    return dE * dE - (dx * dx + dy * dy + dz * dz)
+#enddef
 
-    // 7) Drop the 8 columns by disabling them on tskim and cloning to a new tree
-    const char* DROP[] = {"fiducial_status","num_pos","num_neg","num_neutral",
-                          "evnum","detector","xi","eta"};
 
-    tskim->SetBranchStatus("*", 1);
-    for (const char* nm : DROP) if (has_branch(tskim, nm)) tskim->SetBranchStatus(nm, 0);
+def compute_tmin_exact(xB, Q2):
+    xb_ok = (xB > 0.0 and xB < 1.0)
+    if Q2 <= 0.0 or (not xb_ok):
+        if xb_ok:
+            denom = (1.0 - xB)
+            if denom > 0.0:
+                return - (MASS_N * xB) * (MASS_N * xB) / denom
+            #endif
+        #endif
+        return 0.0
+    #endif
 
-    // Clone all entries (-1) with only the enabled branches
-    TTree* tout = tskim->CloneTree(-1, "fast");
-    tout->SetName("PhysicsEvents");       // keep the canonical name
-    tout->SetDirectory(fout);             // ensure attached (should already be)
+    eps2 = 4.0 * MASS_N * MASS_N * xB * xB / Q2
+    root = math.sqrt(1.0 + eps2)
+    num  = Q2 * (2.0 * (1.0 - xB) * (1.0 - root) + eps2)
+    den  = 4.0 * xB * (1.0 - xB) + eps2
+    if den == 0.0:
+        return 0.0
+    #endif
+    return - num / den
+#enddef
 
-    // 8) Write the final tree and close files
-    fout->cd();
-    tout->Write("", TObject::kOverwrite);
-    fout->Close();
-    fin->Close();
 
-    const double mx2_mean = (nsel>0 ? mx2_sum / nsel : 0.0);
-    std::cout << "Input entries : " << n_in << "\n";
-    std::cout << "Selected (exp): " << n_expect << " (by CopyTree expression)\n";
-    std::cout << "Selected (out): " << nsel << " (actual written)\n";
-    std::cout << "Mx2 in output : min=" << mx2_min << "  mean=" << mx2_mean << "\n";
-    std::cout << "Dropped cols  : fiducial_status, num_pos, num_neg, num_neutral, evnum, detector, xi, eta\n";
-    std::cout << "Preserved/added: t, tmin, tprime, sinthetagamma (added only if missing)\n";
+def normalize_unit_area(h):
+    integ = h.Integral(0, h.GetNbinsX() + 1)
+    if integ > 0.0:
+        h.Scale(1.0 / integ)
+    #endif
+#enddef
 
-    return 0;
-}
+
+def style_hist(h, color, width, linestyle):
+    h.SetLineColor(color)
+    h.SetLineWidth(width)
+    h.SetLineStyle(linestyle)
+    h.SetMarkerSize(0.0)
+#enddef
+
+
+def fill_mx2_hists_in_bin(tree, xb_lo, xb_hi, tneg_lo, tneg_hi, hist):
+    """
+    Loop over the tree, compute -tprime, and fill Mx2 into `hist`
+    for events in:
+      xb_lo <= x < xb_hi
+      tneg_lo <= (-tprime) < tneg_hi
+    """
+    # Bind branch readers
+    runnum  = ROOT.Long64_t(0)
+    e_p     = ROOT.Double(0.0)
+    e_theta = ROOT.Double(0.0)
+    e_phi   = ROOT.Double(0.0)
+    p_p     = ROOT.Double(0.0)
+    p_theta = ROOT.Double(0.0)
+    p_phi   = ROOT.Double(0.0)
+    xB      = ROOT.Double(0.0)
+    Q2      = ROOT.Double(0.0)
+    Mx2     = ROOT.Double(0.0)
+
+    tree.SetBranchStatus("*", 0)
+    for bn in ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]:
+        tree.SetBranchStatus(bn, 1)
+    #endfor
+
+    tree.SetBranchAddress("runnum",  runnum)
+    tree.SetBranchAddress("e_p",     e_p)
+    tree.SetBranchAddress("e_theta", e_theta)
+    tree.SetBranchAddress("e_phi",   e_phi)
+    tree.SetBranchAddress("p_p",     p_p)
+    tree.SetBranchAddress("p_theta", p_theta)
+    tree.SetBranchAddress("p_phi",   p_phi)
+    tree.SetBranchAddress("x",       xB)
+    tree.SetBranchAddress("Q2",      Q2)
+    tree.SetBranchAddress("Mx2",     Mx2)
+
+    n = tree.GetEntries()
+    n_filled = 0
+
+    for i in range(int(n)):
+        tree.GetEntry(i)
+
+        xb_val = float(xB)
+        if xb_val < xb_lo or xb_val >= xb_hi:
+            continue
+        #endif
+
+        Q2_val = float(Q2)
+        t_val = compute_t_scalar(int(runnum), float(e_p), float(e_theta), float(e_phi),
+                                 float(p_p), float(p_theta), float(p_phi))
+        tmin_val = compute_tmin_exact(xb_val, Q2_val)
+        tprime = t_val - tmin_val
+        tneg = -tprime
+
+        if tneg < tneg_lo or tneg >= tneg_hi:
+            continue
+        #endif
+
+        hist.Fill(float(Mx2))
+        n_filled += 1
+    #endfor
+
+    tree.SetBranchStatus("*", 1)
+
+    return n_filled
+#enddef
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", required=True, help="Path to data ROOT file")
+    ap.add_argument("--aaogen", required=True, help="Path to aaogen ROOT file")
+    ap.add_argument("--clasdis", required=True, help="Path to clasdis ROOT file")
+    args = ap.parse_args()
+
+    require_file(args.data)
+    require_file(args.aaogen)
+    require_file(args.clasdis)
+
+    ROOT.gROOT.SetBatch(True)
+    ROOT.gStyle.SetOptStat(0)
+    ROOT.gStyle.SetOptTitle(0)
+
+    f_data, t_data = open_tree(args.data, TREE_NAME)
+    f_aao,  t_aao  = open_tree(args.aaogen, TREE_NAME)
+    f_dis,  t_dis  = open_tree(args.clasdis, TREE_NAME)
+
+    needed = ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
+    require_branches(t_data, needed, "data")
+    require_branches(t_aao,  needed, "aaogen")
+    require_branches(t_dis,  needed, "clasdis")
+
+    outdir = os.path.dirname(OUTPUT_PNG)
+    if outdir != "":
+        os.makedirs(outdir, exist_ok=True)
+    #endif
+
+    nrows = len(XB_EDGES) - 1
+    ncols = len(TNEG_EDGES) - 1
+
+    c = ROOT.TCanvas("c_yields", "Mx2 yields in xB and -tprime bins", 2400, 1400)
+    c.Divide(ncols, nrows, 0.001, 0.001)
+
+    col_data = ROOT.kBlack
+    col_aao  = ROOT.kRed
+    col_dis  = ROOT.kBlue
+
+    pad_idx = 1
+    for ixb in range(nrows):
+        xb_lo = XB_EDGES[ixb]
+        xb_hi = XB_EDGES[ixb + 1]
+
+        for it in range(ncols):
+            t_lo = TNEG_EDGES[it]
+            t_hi = TNEG_EDGES[it + 1]
+
+            pad = c.cd(pad_idx)
+            pad_idx += 1
+
+            pad.SetGrid(1, 1)
+            pad.SetLeftMargin(0.13)
+            pad.SetRightMargin(0.04)
+            pad.SetBottomMargin(0.14)
+            pad.SetTopMargin(0.08)
+
+            hname_data = f"h_mx2_data_{ixb}_{it}"
+            hname_aao  = f"h_mx2_aao_{ixb}_{it}"
+            hname_dis  = f"h_mx2_dis_{ixb}_{it}"
+
+            h_data = ROOT.TH1F(hname_data, "", MX2_NBINS, MX2_MIN, MX2_MAX)
+            h_aao  = ROOT.TH1F(hname_aao,  "", MX2_NBINS, MX2_MIN, MX2_MAX)
+            h_dis  = ROOT.TH1F(hname_dis,  "", MX2_NBINS, MX2_MIN, MX2_MAX)
+
+            h_data.Sumw2()
+            h_aao.Sumw2()
+            h_dis.Sumw2()
+
+            n_data = fill_mx2_hists_in_bin(t_data, xb_lo, xb_hi, t_lo, t_hi, h_data)
+            n_aao  = fill_mx2_hists_in_bin(t_aao,  xb_lo, xb_hi, t_lo, t_hi, h_aao)
+            n_dis  = fill_mx2_hists_in_bin(t_dis,  xb_lo, xb_hi, t_lo, t_hi, h_dis)
+
+            normalize_unit_area(h_data)
+            normalize_unit_area(h_aao)
+            normalize_unit_area(h_dis)
+
+            style_hist(h_data, col_data, 2, 1)  # solid
+            style_hist(h_aao,  col_aao,  2, 2)  # dashed
+            style_hist(h_dis,  col_dis,  2, 3)  # dotted
+
+            h_data.GetXaxis().SetTitle("Mx2 (GeV^2)")
+            h_data.GetYaxis().SetTitle("Normalized yield")
+            h_data.GetXaxis().SetTitleSize(0.06)
+            h_data.GetYaxis().SetTitleSize(0.06)
+            h_data.GetXaxis().SetLabelSize(0.05)
+            h_data.GetYaxis().SetLabelSize(0.05)
+
+            ymax = max(h_data.GetMaximum(), h_aao.GetMaximum(), h_dis.GetMaximum())
+            if ymax <= 0.0:
+                ymax = 1.0
+            #endif
+            h_data.SetMaximum(1.25 * ymax)
+
+            h_data.Draw("hist")
+            h_aao.Draw("hist same")
+            h_dis.Draw("hist same")
+
+            leg = ROOT.TLegend(0.55, 0.68, 0.94, 0.92)
+            leg.SetBorderSize(1)
+            leg.SetFillStyle(1001)
+            leg.SetFillColor(ROOT.kWhite)
+            leg.SetTextSize(0.045)
+            leg.AddEntry(h_data, f"data (N={int(n_data)})", "l")
+            leg.AddEntry(h_aao,  f"aaogen (N={int(n_aao)})", "l")
+            leg.AddEntry(h_dis,  f"clasdis (N={int(n_dis)})", "l")
+            leg.Draw()
+
+            tex = ROOT.TLatex()
+            tex.SetNDC(True)
+            tex.SetTextSize(0.05)
+            tex.DrawLatex(0.14, 0.93,
+                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
+        #endfor
+    #endfor
+
+    c.SaveAs(OUTPUT_PNG)
+
+    f_data.Close()
+    f_aao.Close()
+    f_dis.Close()
+#enddef
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        sys.stderr.write("FATAL: " + str(e) + "\n")
+        sys.exit(1)
+    #endif
+#endif

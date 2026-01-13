@@ -2,26 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-yields.py
+normalization.py
 
-Inputs:
-  --data    <data.root>
-  --aaogen  <aaogen.root>
-  --clasdis <clasdis.root>
+Single-pass (per dataset) filling of 4x6 Mx2 histograms binned in (xB, -t').
+Computes t, tmin, tprime on-the-fly from e and pi+ kinematics.
 
-All files must contain a TTree named "PhysicsEvents" with branches:
-  - x
-  - tprime
-  - Mx2
-
-Binning:
-  xB edges     = [0.10, 0.25, 0.35, 0.45, 0.60]  -> 4 rows
-  -t' edges    = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25] -> 6 columns
-We bin using: (-tprime) in those edges.
-
-In each (xB, -t') bin, we plot the Mx2 distribution (0 to 4) for:
-  data (black), aaogen (red), clasdis (blue),
-each normalized to unit area.
+Usage:
+  python3 normalization.py --data data.root --aaogen aaogen.root --clasdis clasdis.root
 
 Output:
   output/yields.png
@@ -29,25 +16,34 @@ Output:
 
 import os
 import sys
+import math
 import argparse
+from array import array
 
 import ROOT
 
-
 TREE_NAME = "PhysicsEvents"
 
-XB_EDGES  = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 bins -> 4 rows
-TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 bins -> 6 cols
+# Binning requested by user
+XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
+TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -t'
 
-MX2_MIN   = 0.0
-MX2_MAX   = 4.0
+# Mx2 histogram settings
+MX2_MIN = 0.0
+MX2_MAX = 4.0
 MX2_NBINS = 200
 
 OUTPUT_PNG = "output/yields.png"
 
+# Masses (GeV)
+MASS_E = 0.000511
+MASS_PI = 0.139570
+MASS_N = 0.9382720813
+
 
 def fatal(msg):
     raise RuntimeError(msg)
+#enddef
 
 
 def require_file(path):
@@ -57,6 +53,7 @@ def require_file(path):
     if not os.path.isfile(path):
         fatal("File not found: " + path)
     #endif
+#enddef
 
 
 def open_tree(path, tree_name):
@@ -64,13 +61,12 @@ def open_tree(path, tree_name):
     if not f or f.IsZombie():
         fatal("Failed to open ROOT file: " + path)
     #endif
-
     t = f.Get(tree_name)
     if not t:
         fatal("Tree '" + tree_name + "' not found in: " + path)
     #endif
-
     return f, t
+#enddef
 
 
 def require_branches(t, needed, label):
@@ -87,6 +83,90 @@ def require_branches(t, needed, label):
     if len(missing) > 0:
         fatal("Missing required branches in " + label + ": " + ", ".join(missing))
     #endif
+#enddef
+
+
+def beam_energy(runnum):
+    # Matches your C++ beamEnergy(int runnum)
+    if runnum >= 6616 and runnum <= 6783:
+        return 10.1998
+    #endif
+    if runnum >= 16042 and runnum <= 17065:
+        return 10.5473
+    #endif
+    if runnum >= 17067 and runnum <= 17724:
+        return 10.5563
+    #endif
+    if runnum >= 17725 and runnum <= 17811:
+        return 10.5593
+    #endif
+    return 10.5563
+#enddef
+
+
+def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
+    Eb = beam_energy(int(runnum))
+    if Eb <= 0.0:
+        return 1.0e9
+    #endif
+
+    E_e = math.sqrt(max(0.0, e_p * e_p + MASS_E * MASS_E))
+    se = math.sin(e_theta)
+    ce = math.cos(e_theta)
+    ex = e_p * se * math.cos(e_phi)
+    ey = e_p * se * math.sin(e_phi)
+    ez = e_p * ce
+
+    E_pi = math.sqrt(max(0.0, p_p * p_p + MASS_PI * MASS_PI))
+    sp = math.sin(p_theta)
+    cp = math.cos(p_theta)
+    px = p_p * sp * math.cos(p_phi)
+    py = p_p * sp * math.sin(p_phi)
+    pz = p_p * cp
+
+    # q = k - k' = (Eb - E_e, -ex, -ey, Eb - ez)
+    # (q - p_pi)^2 = ( (Eb - E_e) - E_pi )^2 - | (-ex,-ey,Eb-ez) - (px,py,pz) |^2
+    dE = (Eb - E_e) - E_pi
+    dx = -ex - px
+    dy = -ey - py
+    dz = (Eb - ez) - pz
+
+    return dE * dE - (dx * dx + dy * dy + dz * dz)
+#enddef
+
+
+def compute_tmin_exact(xB, Q2):
+    xb_ok = (xB > 0.0 and xB < 1.0)
+    if Q2 <= 0.0 or (not xb_ok):
+        if xb_ok:
+            denom = (1.0 - xB)
+            if denom > 0.0:
+                return - (MASS_N * xB) * (MASS_N * xB) / denom
+            #endif
+        #endif
+        return 0.0
+    #endif
+
+    eps2 = 4.0 * MASS_N * MASS_N * xB * xB / Q2
+    root = math.sqrt(1.0 + eps2)
+    num = Q2 * (2.0 * (1.0 - xB) * (1.0 - root) + eps2)
+    den = 4.0 * xB * (1.0 - xB) + eps2
+    if den == 0.0:
+        return 0.0
+    #endif
+    return - num / den
+#enddef
+
+
+def find_bin(val, edges):
+    # returns i such that edges[i] <= val < edges[i+1], else -1
+    for i in range(len(edges) - 1):
+        if val >= edges[i] and val < edges[i + 1]:
+            return i
+        #endif
+    #endfor
+    return -1
+#enddef
 
 
 def normalize_unit_area(h):
@@ -94,6 +174,7 @@ def normalize_unit_area(h):
     if integ > 0.0:
         h.Scale(1.0 / integ)
     #endif
+#enddef
 
 
 def style_hist(h, color, width, linestyle):
@@ -101,6 +182,97 @@ def style_hist(h, color, width, linestyle):
     h.SetLineWidth(width)
     h.SetLineStyle(linestyle)
     h.SetMarkerSize(0.0)
+#enddef
+
+
+def make_hist_grid(prefix, nrows, ncols):
+    grid = []
+    for r in range(nrows):
+        row = []
+        for c in range(ncols):
+            name = f"{prefix}_r{r}_c{c}"
+            h = ROOT.TH1F(name, "", MX2_NBINS, MX2_MIN, MX2_MAX)
+            h.Sumw2()
+            row.append(h)
+        #endfor
+        grid.append(row)
+    #endfor
+    return grid
+#enddef
+
+
+def make_count_grid(nrows, ncols):
+    return [[0 for _ in range(ncols)] for _ in range(nrows)]
+#enddef
+
+
+def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
+    """
+    Single pass through the tree:
+      - compute xB bin
+      - compute tprime and -tprime bin
+      - fill Mx2 into the appropriate histogram
+      - increment count grid for that bin
+    """
+    # Bind minimal branches once
+    runnum = array("i", [0])
+    e_p = array("d", [0.0])
+    e_theta = array("d", [0.0])
+    e_phi = array("d", [0.0])
+    p_p = array("d", [0.0])
+    p_theta = array("d", [0.0])
+    p_phi = array("d", [0.0])
+    xB = array("d", [0.0])
+    Q2 = array("d", [0.0])
+    Mx2 = array("d", [0.0])
+
+    tree.SetBranchStatus("*", 0)
+    for bn in ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]:
+        tree.SetBranchStatus(bn, 1)
+    #endfor
+
+    tree.SetBranchAddress("runnum", runnum)
+    tree.SetBranchAddress("e_p", e_p)
+    tree.SetBranchAddress("e_theta", e_theta)
+    tree.SetBranchAddress("e_phi", e_phi)
+    tree.SetBranchAddress("p_p", p_p)
+    tree.SetBranchAddress("p_theta", p_theta)
+    tree.SetBranchAddress("p_phi", p_phi)
+    tree.SetBranchAddress("x", xB)
+    tree.SetBranchAddress("Q2", Q2)
+    tree.SetBranchAddress("Mx2", Mx2)
+
+    n_entries = int(tree.GetEntries())
+    n_to_process = min(n_entries, int(max_events))
+
+    for i in range(n_to_process):
+        tree.GetEntry(i)
+
+        xb_val = float(xB[0])
+        rb = find_bin(xb_val, XB_EDGES)
+        if rb < 0:
+            continue
+        #endif
+
+        Q2_val = float(Q2[0])
+        t_val = compute_t_scalar(int(runnum[0]),
+                                 float(e_p[0]), float(e_theta[0]), float(e_phi[0]),
+                                 float(p_p[0]), float(p_theta[0]), float(p_phi[0]))
+        tmin_val = compute_tmin_exact(xb_val, Q2_val)
+        tprime = t_val - tmin_val
+        tneg = -tprime
+
+        cb = find_bin(tneg, TNEG_EDGES)
+        if cb < 0:
+            continue
+        #endif
+
+        hgrid[rb][cb].Fill(float(Mx2[0]))
+        cgrid[rb][cb] += 1
+    #endfor
+
+    tree.SetBranchStatus("*", 1)
+#enddef
 
 
 def main():
@@ -108,6 +280,7 @@ def main():
     ap.add_argument("--data", required=True, help="Path to data ROOT file")
     ap.add_argument("--aaogen", required=True, help="Path to aaogen ROOT file")
     ap.add_argument("--clasdis", required=True, help="Path to clasdis ROOT file")
+    ap.add_argument("--max_events", type=int, default=10000, help="Max events per file (default 10000)")
     args = ap.parse_args()
 
     require_file(args.data)
@@ -119,13 +292,13 @@ def main():
     ROOT.gStyle.SetOptTitle(0)
 
     f_data, t_data = open_tree(args.data, TREE_NAME)
-    f_aao,  t_aao  = open_tree(args.aaogen, TREE_NAME)
-    f_dis,  t_dis  = open_tree(args.clasdis, TREE_NAME)
+    f_aao, t_aao = open_tree(args.aaogen, TREE_NAME)
+    f_dis, t_dis = open_tree(args.clasdis, TREE_NAME)
 
-    needed = ["x", "tprime", "Mx2"]
+    needed = ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
     require_branches(t_data, needed, "data")
-    require_branches(t_aao,  needed, "aaogen")
-    require_branches(t_dis,  needed, "clasdis")
+    require_branches(t_aao, needed, "aaogen")
+    require_branches(t_dis, needed, "clasdis")
 
     outdir = os.path.dirname(OUTPUT_PNG)
     if outdir != "":
@@ -135,25 +308,56 @@ def main():
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
 
-    c = ROOT.TCanvas("c_yields", "Mx2 yields in xB and -tprime bins", 2400, 1400)
-    c.Divide(ncols, nrows, 0.001, 0.001)
+    # Create histogram grids (4x6) and count grids
+    h_data = make_hist_grid("h_data", nrows, ncols)
+    h_aao = make_hist_grid("h_aaogen", nrows, ncols)
+    h_dis = make_hist_grid("h_clasdis", nrows, ncols)
 
-    # Colors: data black, aaogen red, clasdis blue
+    c_data = make_count_grid(nrows, ncols)
+    c_aao = make_count_grid(nrows, ncols)
+    c_dis = make_count_grid(nrows, ncols)
+
+    # Fill each dataset in a single pass
+    fill_all_bins_single_pass(t_data, h_data, c_data, args.max_events)
+    fill_all_bins_single_pass(t_aao, h_aao, c_aao, args.max_events)
+    fill_all_bins_single_pass(t_dis, h_dis, c_dis, args.max_events)
+
+    # Normalize each histogram to unit area per bin
+    for r in range(nrows):
+        for c in range(ncols):
+            normalize_unit_area(h_data[r][c])
+            normalize_unit_area(h_aao[r][c])
+            normalize_unit_area(h_dis[r][c])
+        #endfor
+    #endfor
+
+    # Style
     col_data = ROOT.kBlack
-    col_aao  = ROOT.kRed
-    col_dis  = ROOT.kBlue
+    col_aao = ROOT.kRed
+    col_dis = ROOT.kBlue
 
-    # Loop over bins: row-major (ROOT pads are 1-indexed, left-to-right then top-to-bottom)
+    for r in range(nrows):
+        for c in range(ncols):
+            style_hist(h_data[r][c], col_data, 2, 1)  # solid
+            style_hist(h_aao[r][c], col_aao, 2, 2)    # dashed
+            style_hist(h_dis[r][c], col_dis, 2, 3)    # dotted
+        #endfor
+    #endfor
+
+    # Draw canvas
+    canv = ROOT.TCanvas("c_yields", "Mx2 in xB and -tprime bins", 2400, 1400)
+    canv.Divide(ncols, nrows, 0.001, 0.001)
+
     pad_idx = 1
-    for ixb in range(nrows):
-        xb_lo = XB_EDGES[ixb]
-        xb_hi = XB_EDGES[ixb + 1]
+    for r in range(nrows):
+        xb_lo = XB_EDGES[r]
+        xb_hi = XB_EDGES[r + 1]
 
-        for it in range(ncols):
-            t_lo = TNEG_EDGES[it]
-            t_hi = TNEG_EDGES[it + 1]
+        for c in range(ncols):
+            t_lo = TNEG_EDGES[c]
+            t_hi = TNEG_EDGES[c + 1]
 
-            pad = c.cd(pad_idx)
+            pad = canv.cd(pad_idx)
             pad_idx += 1
 
             pad.SetGrid(1, 1)
@@ -162,80 +366,43 @@ def main():
             pad.SetBottomMargin(0.14)
             pad.SetTopMargin(0.08)
 
-            # Cut uses (-tprime) because your tprime is (t - tmin), typically negative.
-            cut = (
-                f"(x >= {xb_lo} && x < {xb_hi})"
-                f" && (-tprime >= {t_lo} && -tprime < {t_hi})"
-            )
+            # Set axes on data hist (even if empty)
+            h_data[r][c].GetXaxis().SetTitle("Mx2 (GeV^2)")
+            h_data[r][c].GetYaxis().SetTitle("Normalized yield")
+            h_data[r][c].GetXaxis().SetTitleSize(0.06)
+            h_data[r][c].GetYaxis().SetTitleSize(0.06)
+            h_data[r][c].GetXaxis().SetLabelSize(0.05)
+            h_data[r][c].GetYaxis().SetLabelSize(0.05)
 
-            # Unique histogram names per pad
-            hname_data = f"h_mx2_data_{ixb}_{it}"
-            hname_aao  = f"h_mx2_aao_{ixb}_{it}"
-            hname_dis  = f"h_mx2_dis_{ixb}_{it}"
-
-            h_data = ROOT.TH1F(hname_data, "", MX2_NBINS, MX2_MIN, MX2_MAX)
-            h_aao  = ROOT.TH1F(hname_aao,  "", MX2_NBINS, MX2_MIN, MX2_MAX)
-            h_dis  = ROOT.TH1F(hname_dis,  "", MX2_NBINS, MX2_MIN, MX2_MAX)
-
-            h_data.Sumw2()
-            h_aao.Sumw2()
-            h_dis.Sumw2()
-
-            # Fill (goff so nothing is drawn yet)
-            n_data = t_data.Draw(f"Mx2>>{hname_data}", cut, "goff")
-            n_aao  = t_aao.Draw (f"Mx2>>{hname_aao}",  cut, "goff")
-            n_dis  = t_dis.Draw (f"Mx2>>{hname_dis}",  cut, "goff")
-
-            # Normalize each to unit area (per your request)
-            normalize_unit_area(h_data)
-            normalize_unit_area(h_aao)
-            normalize_unit_area(h_dis)
-
-            # Styling (use different linestyles so overlap is still visible)
-            style_hist(h_data, col_data, 2, 1)  # solid
-            style_hist(h_aao,  col_aao,  2, 2)  # dashed
-            style_hist(h_dis,  col_dis,  2, 3)  # dotted
-
-            # Axes
-            h_data.GetXaxis().SetTitle("Mx2 (GeV^2)")
-            h_data.GetYaxis().SetTitle("Normalized yield")
-            h_data.GetXaxis().SetTitleSize(0.06)
-            h_data.GetYaxis().SetTitleSize(0.06)
-            h_data.GetXaxis().SetLabelSize(0.05)
-            h_data.GetYaxis().SetLabelSize(0.05)
-
-            # Common y-max so all three are visible
-            ymax = max(h_data.GetMaximum(), h_aao.GetMaximum(), h_dis.GetMaximum())
+            ymax = max(h_data[r][c].GetMaximum(), h_aao[r][c].GetMaximum(), h_dis[r][c].GetMaximum())
             if ymax <= 0.0:
                 ymax = 1.0
             #endif
-            h_data.SetMaximum(1.25 * ymax)
+            h_data[r][c].SetMaximum(1.25 * ymax)
 
-            # Draw
-            h_data.Draw("hist")
-            h_aao.Draw("hist same")
-            h_dis.Draw("hist same")
+            h_data[r][c].Draw("hist")
+            h_aao[r][c].Draw("hist same")
+            h_dis[r][c].Draw("hist same")
 
-            # Legend (in every pad, for clarity)
             leg = ROOT.TLegend(0.55, 0.68, 0.94, 0.92)
             leg.SetBorderSize(1)
             leg.SetFillStyle(1001)
             leg.SetFillColor(ROOT.kWhite)
             leg.SetTextSize(0.045)
-            leg.AddEntry(h_data, f"data (N={int(n_data)})", "l")
-            leg.AddEntry(h_aao,  f"aaogen (N={int(n_aao)})", "l")
-            leg.AddEntry(h_dis,  f"clasdis (N={int(n_dis)})", "l")
+            leg.AddEntry(h_data[r][c], f"data (N={int(c_data[r][c])})", "l")
+            leg.AddEntry(h_aao[r][c], f"aaogen (N={int(c_aao[r][c])})", "l")
+            leg.AddEntry(h_dis[r][c], f"clasdis (N={int(c_dis[r][c])})", "l")
             leg.Draw()
 
-            # Bin label
             tex = ROOT.TLatex()
             tex.SetNDC(True)
             tex.SetTextSize(0.05)
-            tex.DrawLatex(0.14, 0.93, f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
+            tex.DrawLatex(0.14, 0.93,
+                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
         #endfor
     #endfor
 
-    c.SaveAs(OUTPUT_PNG)
+    canv.SaveAs(OUTPUT_PNG)
 
     f_data.Close()
     f_aao.Close()
