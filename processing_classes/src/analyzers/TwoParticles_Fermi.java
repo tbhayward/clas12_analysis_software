@@ -39,6 +39,7 @@ public class TwoParticles_Fermi {
 
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi; // electron kinematics
     protected double p_px, p_py, p_pz, p_p, p_e, p_theta, p_phi; // hadron kinematics
+    protected double fermi_px, fermi_py, fermi_pz; // potential Fermi motion
     protected double vz_e, vz_p;
 
     protected double p_Breit_pz, p_gN_pz;
@@ -202,6 +203,7 @@ public class TwoParticles_Fermi {
         // Simulate Fermi motion
         org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
         lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
+        fermi_px = fermiP.x(); fermi_py = fermiP.y(); fermi_pz = fermiP.z();
         Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
         Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
 
@@ -404,6 +406,10 @@ public class TwoParticles_Fermi {
     public double p_e()  { return ((int) (p_e  * 100000)) / 100000.0; }
     public double p_theta() { return ((int) (p_theta * 100000)) / 100000.0; }
     public double p_phi()   { return ((int) (p_phi   * 100000)) / 100000.0; }
+    
+    public double fermi_px() { return ((int) (fermi_px * 100000)) / 100000.0; }
+    public double fermi_py() { return ((int) (fermi_py * 100000)) / 100000.0; }
+    public double fermi_pz() { return ((int) (fermi_pz * 100000)) / 100000.0; }
 
     public double vz_e() { return ((int) (vz_e * 100000)) / 100000.0; }
     public double vz_p() { return ((int) (vz_p * 100000)) / 100000.0; }
