@@ -13,12 +13,12 @@ Layout:
   (row 1, col 1): aaogen,   p_p  - mc_p_p
 
 Each pad overlays:
-  - Fermi motion (red)
-  - No motion    (black)
+  - Fermi motion (red dashed)  [drawn first]
+  - No motion    (black solid) [drawn second, on top]
 
 Requested updates:
   - x-axis range for ALL pads: [-0.1, 0.1]
-  - Include a legend showing which histogram is which (already included).
+  - Include a legend showing which histogram is which
 
 Saves: output/fermi_motion_double_check.png
 """
@@ -37,15 +37,10 @@ DEFAULT_AAOGEN_NO     = "/volatile/clas12/thayward/fermi_motion_study/aaogen_no_
 
 TREE_NAME = "PhysicsEvents"
 
-# Histogram configuration (explicit and deterministic)
-# Force ALL delta distributions to the same x-axis range requested by user.
-NBINS_DX   = 240
-DX_MIN    = -0.10
-DX_MAX    =  0.10
-
-NBINS_DP   = 240
-DP_MIN    = -0.10
-DP_MAX    =  0.10
+# Force ALL delta distributions to requested x-axis range
+NBINS_DX = 240
+XMIN     = -0.10
+XMAX     =  0.10
 
 # If True, scale each histogram to unit area (shape comparison).
 # If False, keep raw counts.
@@ -89,8 +84,8 @@ def require_branches(tree, branches, file_label):
     #endfor
 
 
-def make_hist(name, title, nbins, xmin, xmax):
-    h = ROOT.TH1F(name, title, nbins, xmin, xmax)
+def make_hist(name, nbins, xmin, xmax):
+    h = ROOT.TH1F(name, "", nbins, xmin, xmax)  # title intentionally blank
     h.Sumw2()
     return h
 
@@ -101,6 +96,8 @@ def fill_hist(tree, expr, hist, max_entries):
         tree.SetEstimate(max_entries)
     #endif
 
+    # IMPORTANT: use ">>" (not ">>+") because hist is empty at creation;
+    # we fill each hist exactly once.
     if max_entries >= 0:
         n = tree.Draw(expr + ">>" + hist.GetName(), "", draw_opt, max_entries, 0)
     else:
@@ -119,12 +116,30 @@ def fill_hist(tree, expr, hist, max_entries):
         hist.Scale(1.0 / integral)
     #endif
 
+    return n
 
-def style_hist(h, color, width):
-    h.SetLineColor(color)
-    h.SetLineWidth(width)
-    h.SetMarkerColor(color)
+
+def style_hist_no_motion(h):
+    h.SetLineColor(ROOT.kBlack)
+    h.SetLineStyle(1)
+    h.SetLineWidth(2)
     h.SetMarkerSize(0.0)
+
+
+def style_hist_fermi(h):
+    h.SetLineColor(ROOT.kRed)
+    h.SetLineStyle(2)  # dashed so it’s visible even if shapes overlap
+    h.SetLineWidth(2)
+    h.SetMarkerSize(0.0)
+
+
+def print_hist_summary(label, h, n_filled):
+    # Note: Entries in ROOT can differ from n_filled depending on weights/underflow,
+    # but for our usage they should be consistent enough to sanity check.
+    mean = h.GetMean()
+    rms  = h.GetRMS()
+    ent  = h.GetEntries()
+    print(f"{label}: filled={n_filled}  entries={ent:.0f}  mean={mean:+.6f}  rms={rms:.6f}")
 
 
 def draw_overlay_pad(pad, h_no, h_fermi, xlabel, ylabel, pad_title):
@@ -136,18 +151,19 @@ def draw_overlay_pad(pad, h_no, h_fermi, xlabel, ylabel, pad_title):
         pad.SetLogy(0)
     #endif
 
-    h_no.GetXaxis().SetTitle(xlabel)
-    h_no.GetYaxis().SetTitle(ylabel)
+    # Axis labeling handled by the first drawn hist (fermi).
+    h_fermi.GetXaxis().SetTitle(xlabel)
+    h_fermi.GetYaxis().SetTitle(ylabel)
 
-    max_no = h_no.GetMaximum()
-    max_fm = h_fermi.GetMaximum()
-    ymax = max(max_no, max_fm)
-    h_no.SetMaximum(1.25 * ymax)
+    # Set y-max based on both
+    ymax = max(h_no.GetMaximum(), h_fermi.GetMaximum())
+    h_fermi.SetMaximum(1.25 * ymax)
 
-    h_no.Draw("hist")
-    h_fermi.Draw("hist same")
+    # Draw fermi first, then no-motion on top (so black is never hidden)
+    h_fermi.Draw("hist")
+    h_no.Draw("hist same")
 
-    # Legend explicitly identifies which histogram is which.
+    # Legend
     leg = ROOT.TLegend(0.58, 0.74, 0.90, 0.90)
     leg.SetBorderSize(1)
     leg.SetFillStyle(1001)
@@ -156,6 +172,7 @@ def draw_overlay_pad(pad, h_no, h_fermi, xlabel, ylabel, pad_title):
     leg.AddEntry(h_fermi, "fermi motion", "l")
     leg.Draw()
 
+    # Pad title
     tex = ROOT.TLatex()
     tex.SetNDC(True)
     tex.SetTextSize(0.045)
@@ -174,6 +191,7 @@ def main():
 
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
+    ROOT.gStyle.SetOptTitle(0)  # suppress ROOT's automatic histogram title line
 
     require_file(args.clasdis_fermi)
     require_file(args.clasdis_no)
@@ -198,41 +216,47 @@ def main():
         os.makedirs(outdir, exist_ok=True)
     #endif
 
-    # Top row: delta x
-    h_cd_dx_no = make_hist("h_cd_dx_no", "clasdis: x - mc_x (no)", NBINS_DX, DX_MIN, DX_MAX)
-    h_cd_dx_fm = make_hist("h_cd_dx_fm", "clasdis: x - mc_x (fm)", NBINS_DX, DX_MIN, DX_MAX)
+    # Histograms: top row delta x, bottom row delta p_p (all forced to [-0.1, 0.1])
+    h_cd_dx_no = make_hist("h_cd_dx_no", NBINS_DX, XMIN, XMAX)
+    h_cd_dx_fm = make_hist("h_cd_dx_fm", NBINS_DX, XMIN, XMAX)
+    h_aa_dx_no = make_hist("h_aa_dx_no", NBINS_DX, XMIN, XMAX)
+    h_aa_dx_fm = make_hist("h_aa_dx_fm", NBINS_DX, XMIN, XMAX)
 
-    h_aa_dx_no = make_hist("h_aa_dx_no", "aaogen: x - mc_x (no)", NBINS_DX, DX_MIN, DX_MAX)
-    h_aa_dx_fm = make_hist("h_aa_dx_fm", "aaogen: x - mc_x (fm)", NBINS_DX, DX_MIN, DX_MAX)
+    h_cd_dp_no = make_hist("h_cd_dp_no", NBINS_DX, XMIN, XMAX)
+    h_cd_dp_fm = make_hist("h_cd_dp_fm", NBINS_DX, XMIN, XMAX)
+    h_aa_dp_no = make_hist("h_aa_dp_no", NBINS_DX, XMIN, XMAX)
+    h_aa_dp_fm = make_hist("h_aa_dp_fm", NBINS_DX, XMIN, XMAX)
 
-    # Bottom row: delta p_p
-    h_cd_dp_no = make_hist("h_cd_dp_no", "clasdis: p_p - mc_p_p (no)", NBINS_DP, DP_MIN, DP_MAX)
-    h_cd_dp_fm = make_hist("h_cd_dp_fm", "clasdis: p_p - mc_p_p (fm)", NBINS_DP, DP_MIN, DP_MAX)
+    style_hist_no_motion(h_cd_dx_no)
+    style_hist_fermi(h_cd_dx_fm)
+    style_hist_no_motion(h_aa_dx_no)
+    style_hist_fermi(h_aa_dx_fm)
 
-    h_aa_dp_no = make_hist("h_aa_dp_no", "aaogen: p_p - mc_p_p (no)", NBINS_DP, DP_MIN, DP_MAX)
-    h_aa_dp_fm = make_hist("h_aa_dp_fm", "aaogen: p_p - mc_p_p (fm)", NBINS_DP, DP_MIN, DP_MAX)
+    style_hist_no_motion(h_cd_dp_no)
+    style_hist_fermi(h_cd_dp_fm)
+    style_hist_no_motion(h_aa_dp_no)
+    style_hist_fermi(h_aa_dp_fm)
 
-    style_hist(h_cd_dx_no, ROOT.kBlack, 2)
-    style_hist(h_cd_dx_fm, ROOT.kRed,   2)
-    style_hist(h_aa_dx_no, ROOT.kBlack, 2)
-    style_hist(h_aa_dx_fm, ROOT.kRed,   2)
+    # Fill and print summaries so you can confirm both histograms exist and differ
+    n = fill_hist(t_cd_no, "x - mc_x", h_cd_dx_no, args.max_entries)
+    print_hist_summary("clasdis  dx  no", h_cd_dx_no, n)
+    n = fill_hist(t_cd_fm, "x - mc_x", h_cd_dx_fm, args.max_entries)
+    print_hist_summary("clasdis  dx  fm", h_cd_dx_fm, n)
 
-    style_hist(h_cd_dp_no, ROOT.kBlack, 2)
-    style_hist(h_cd_dp_fm, ROOT.kRed,   2)
-    style_hist(h_aa_dp_no, ROOT.kBlack, 2)
-    style_hist(h_aa_dp_fm, ROOT.kRed,   2)
+    n = fill_hist(t_aa_no, "x - mc_x", h_aa_dx_no, args.max_entries)
+    print_hist_summary("aaogen   dx  no", h_aa_dx_no, n)
+    n = fill_hist(t_aa_fm, "x - mc_x", h_aa_dx_fm, args.max_entries)
+    print_hist_summary("aaogen   dx  fm", h_aa_dx_fm, n)
 
-    fill_hist(t_cd_no, "x - mc_x", h_cd_dx_no, args.max_entries)
-    fill_hist(t_cd_fm, "x - mc_x", h_cd_dx_fm, args.max_entries)
+    n = fill_hist(t_cd_no, "p_p - mc_p_p", h_cd_dp_no, args.max_entries)
+    print_hist_summary("clasdis  dp  no", h_cd_dp_no, n)
+    n = fill_hist(t_cd_fm, "p_p - mc_p_p", h_cd_dp_fm, args.max_entries)
+    print_hist_summary("clasdis  dp  fm", h_cd_dp_fm, n)
 
-    fill_hist(t_aa_no, "x - mc_x", h_aa_dx_no, args.max_entries)
-    fill_hist(t_aa_fm, "x - mc_x", h_aa_dx_fm, args.max_entries)
-
-    fill_hist(t_cd_no, "p_p - mc_p_p", h_cd_dp_no, args.max_entries)
-    fill_hist(t_cd_fm, "p_p - mc_p_p", h_cd_dp_fm, args.max_entries)
-
-    fill_hist(t_aa_no, "p_p - mc_p_p", h_aa_dp_no, args.max_entries)
-    fill_hist(t_aa_fm, "p_p - mc_p_p", h_aa_dp_fm, args.max_entries)
+    n = fill_hist(t_aa_no, "p_p - mc_p_p", h_aa_dp_no, args.max_entries)
+    print_hist_summary("aaogen   dp  no", h_aa_dp_no, n)
+    n = fill_hist(t_aa_fm, "p_p - mc_p_p", h_aa_dp_fm, args.max_entries)
+    print_hist_summary("aaogen   dp  fm", h_aa_dp_fm, n)
 
     c = ROOT.TCanvas("c_fermi_motion_double_check", "Fermi motion double check", 1400, 1000)
     c.Divide(2, 2)
