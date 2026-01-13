@@ -202,11 +202,11 @@ public class TwoParticles_Fermi {
         // Simulate Fermi motion
         System.out.println("TP_FERMI preMx2=" + Mx2);
         org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
-        System.out.println("TP_FERMI afterSample blankline");
-        System.out.println();
         lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
         Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
         Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
+        System.out.println("TP_FERMI postMx2=" + Mx2);
+        System.out.println();
 
 
         // electron kinematics (for output)
