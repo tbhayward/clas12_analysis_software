@@ -760,8 +760,10 @@ public class momentum_corrections {
         initFermi();
         // smear with probability = 1 – D_f(mx2)
         double pSmear = 1.0 - dilutionFactor(mx2);
-        if (rand.nextDouble() < pSmear) {
+        double random = rand.nextDouble();
+        if (random < pSmear) {
             // leave at rest
+            System.out.println(pSmear+" "+random);
             return new Vector3(0.0, 0.0, 0.0);
         }
         // now sample k from CDF
