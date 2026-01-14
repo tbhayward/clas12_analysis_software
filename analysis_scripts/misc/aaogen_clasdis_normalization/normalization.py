@@ -22,9 +22,10 @@ Phase 2:
         w = sum_i (X_i Y_i) / sum_i (X_i^2), clipped to [0,1].
 
 Outputs:
-  output/yields.png      : data vs aaogen vs clasdis (shape-only) per pad
-  output/yields_mix.png  : data vs per-bin mixture per pad, legend shows w[r,c]
-  output/weights.txt     : per-bin w[r,c], w_unclipped, SSE summary
+  output/yields.png           : data vs aaogen vs clasdis (shape-only) per pad
+  output/yields_mix.png       : data vs per-bin mixture per pad, legend shows w[r,c]
+  output/yields_data_only.png : data only (shape-only) per pad  [NEW sanity canvas]
+  output/weights.txt          : per-bin w[r,c], w_unclipped, SSE summary
 """
 
 import os
@@ -51,6 +52,7 @@ MX2_FIT_MAX = 1.1
 
 OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
+OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # NEW
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
 # Masses (GeV)
@@ -465,6 +467,58 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
 #enddef
 
 
+def draw_canvas_data_only(h_data, c_data, outpng):
+    nrows = len(h_data)
+    ncols = len(h_data[0])
+
+    canv = ROOT.TCanvas("c_data_only", "Mx2 data only in xB and -tprime bins", 2400, 1400)
+    canv.Divide(ncols, nrows, 0.001, 0.001)
+
+    pad_idx = 1
+    for r in range(nrows):
+        xb_lo = XB_EDGES[r]
+        xb_hi = XB_EDGES[r + 1]
+
+        for c in range(ncols):
+            t_lo = TNEG_EDGES[c]
+            t_hi = TNEG_EDGES[c + 1]
+
+            pad = canv.cd(pad_idx)
+            pad_idx += 1
+            pad_set_margins(pad)
+
+            hd = h_data[r][c]
+
+            ymax = hd.GetMaximum()
+            if ymax <= 0.0:
+                ymax = 1.0
+            #endif
+            ymax = 1.2 * ymax
+
+            set_axes_and_range(hd, ymax)
+
+            hd.Draw("hist")
+
+            leg = ROOT.TLegend(0.55, 0.78, 0.94, 0.92)
+            leg.SetBorderSize(1)
+            leg.SetFillStyle(1001)
+            leg.SetFillColor(ROOT.kWhite)
+            leg.SetTextSize(0.045)
+            leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
+            leg.Draw()
+
+            tex = ROOT.TLatex()
+            tex.SetNDC(True)
+            tex.SetTextSize(0.05)
+            tex.DrawLatex(0.14, 0.93,
+                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -tprime [{t_lo:.2f}, {t_hi:.2f})")
+        #endfor
+    #endfor
+
+    canv.SaveAs(outpng)
+#enddef
+
+
 def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
     nrows = len(h_data)
     ncols = len(h_data[0])
@@ -593,6 +647,7 @@ def main():
 
     ensure_outdir(OUTPUT_YIELDS_PNG)
     ensure_outdir(OUTPUT_MIX_PNG)
+    ensure_outdir(OUTPUT_DATAONLY_PNG)
     ensure_outdir(OUTPUT_WEIGHTS_TXT)
 
     nrows = len(XB_EDGES) - 1
@@ -632,7 +687,11 @@ def main():
         #endfor
     #endfor
 
+    # Existing outputs (unchanged behavior)
     draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
+
+    # NEW sanity output: data only (no overlays)
+    draw_canvas_data_only(h_data, c_data, OUTPUT_DATAONLY_PNG)
 
     w_grid, wun_grid, sse_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis)
 
