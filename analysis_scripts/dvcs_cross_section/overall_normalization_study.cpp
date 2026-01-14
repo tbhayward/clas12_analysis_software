@@ -36,9 +36,6 @@
 
 namespace {
 
-static constexpr double PI      = 3.14159265358979323846;
-static constexpr double RAD2DEG = 180.0 / PI;
-
 struct TripleCell {
     double value;
     double stat;
@@ -176,10 +173,6 @@ static bool finite_pos(double x) {
     return std::isfinite(x) && x > 0.0;
 }
 
-static bool finite_nonneg(double x) {
-    return std::isfinite(x) && x >= 0.0;
-}
-
 static Helicity helicity_from_string(const std::string &h) {
     if (h == "pos") return Helicity::Plus;
     if (h == "neg") return Helicity::Minus;
@@ -281,6 +274,11 @@ struct GroupStyle {
     std::string label;
 };
 
+static std::string ratio_name_for_metric(BhGroupMetric m) {
+    if (m == BhGroupMetric::VGG) return "BH/VGG";
+    return "BH/KM15";
+}
+
 static std::vector<GroupStyle> make_group_styles(const std::string &ratio_name) {
     std::vector<GroupStyle> s;
     s.push_back({BhKmGroup::G_95_105,             20, kBlack,     ratio_name + " in [0.95, 1.05]"});
@@ -325,17 +323,8 @@ static double ratio_for_metric(const DepPoint &p, BhGroupMetric m) {
     return (m == BhGroupMetric::KM15 ? p.bh_over_km15 : p.bh_over_vgg);
 }
 
-static std::string ratio_name_for_metric(BhGroupMetric m) {
-    if (m == BhGroupMetric::VGG) return "BH/VGG";
-    return "BH/KM15";
-}
-
 // -----------------------------------------------------------------------------
 // d_edge plot: 1x2
-//   Left: grouped by BH/KM15
-//   Right: grouped by BH/VGG
-//
-// x-axis starts at 1 deg (log scale); y capped at 2.
 // -----------------------------------------------------------------------------
 
 static void draw_dedge_panel(TPad *pad,
@@ -386,7 +375,7 @@ static void draw_dedge_panel(TPad *pad,
         graphs[si]->SetLineColor(styles[si].marker_color);
         graphs[si]->SetLineWidth(1);
         graphs[si]->SetMarkerSize(0.85);
-    }
+    } //endfor
 
     for (size_t i = 0; i < pts.size(); ++i) {
         const double r = ratio_for_metric(pts[i], metric);
@@ -398,7 +387,7 @@ static void draw_dedge_panel(TPad *pad,
         graphs[(size_t)si]->SetPoint(n, pts[i].d_edge_deg, pts[i].xs_over_bh);
         graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].xs_over_bh_err);
         n_in[(size_t)si] += 1;
-    }
+    } //endfor
 
     bool any = false;
     for (size_t si = 0; si < graphs.size(); ++si) {
@@ -410,7 +399,7 @@ static void draw_dedge_panel(TPad *pad,
             delete graphs[si];
             graphs[si] = nullptr;
         }
-    }
+    } //endfor
 
     if (!any) {
         TLatex t0;
@@ -419,7 +408,7 @@ static void draw_dedge_panel(TPad *pad,
         t0.DrawLatex(0.18, 0.70, "No points");
         pad->Update();
         return;
-    }
+    } //endif
 
     TLegend *leg = new TLegend(0.16, 0.62, 0.74, 0.88);
     leg->SetBorderSize(1);
@@ -431,7 +420,7 @@ static void draw_dedge_panel(TPad *pad,
         if (graphs[si] && graphs[si]->GetN() > 0) {
             leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
         }
-    }
+    } //endfor
     leg->Draw();
     leg->SetBit(kCanDelete);
 
@@ -439,9 +428,9 @@ static void draw_dedge_panel(TPad *pad,
 }
 
 static void make_normalization_plot_dedge_1x2(const std::string &out_dir,
-                                             const std::string &label,
-                                             const std::string &helicity,
-                                             const std::vector<PlotPoint> &pts) {
+                                              const std::string &label,
+                                              const std::string &helicity,
+                                              const std::vector<PlotPoint> &pts) {
     ensure_output_dir_or_throw(out_dir);
 
     gROOT->SetBatch(kTRUE);
@@ -482,18 +471,16 @@ static void make_normalization_plot_dedge_1x2(const std::string &out_dir,
 
 // -----------------------------------------------------------------------------
 // Dependence plots: 2x2
-//   Row 1: KM15 (left all-groups, right clean+fit)
-//   Row 2: VGG  (left all-groups, right clean+fit)
 // -----------------------------------------------------------------------------
 
 static void draw_all_groups_dep_pad(TPad *p,
-                                   const std::vector<DepPoint> &pts,
-                                   const std::string &label,
-                                   const std::string &helicity,
-                                   const std::string &x_title,
-                                   double x_min,
-                                   double x_max,
-                                   BhGroupMetric metric) {
+                                    const std::vector<DepPoint> &pts,
+                                    const std::string &label,
+                                    const std::string &helicity,
+                                    const std::string &x_title,
+                                    double x_min,
+                                    double x_max,
+                                    BhGroupMetric metric) {
     p->SetLeftMargin(0.13);
     p->SetRightMargin(0.05);
     p->SetBottomMargin(0.14);
@@ -527,7 +514,7 @@ static void draw_all_groups_dep_pad(TPad *p,
         graphs[si]->SetLineColor(styles[si].marker_color);
         graphs[si]->SetLineWidth(1);
         graphs[si]->SetMarkerSize(0.85);
-    }
+    } //endfor
 
     for (size_t i = 0; i < pts.size(); ++i) {
         const double r = ratio_for_metric(pts[i], metric);
@@ -539,7 +526,7 @@ static void draw_all_groups_dep_pad(TPad *p,
         graphs[(size_t)si]->SetPoint(n, pts[i].x, pts[i].y);
         graphs[(size_t)si]->SetPointError(n, 0.0, pts[i].ey);
         n_in[(size_t)si] += 1;
-    }
+    } //endfor
 
     bool any = false;
     for (size_t si = 0; si < graphs.size(); ++si) {
@@ -551,7 +538,7 @@ static void draw_all_groups_dep_pad(TPad *p,
             delete graphs[si];
             graphs[si] = nullptr;
         }
-    }
+    } //endfor
 
     if (!any) {
         TLatex t0;
@@ -560,7 +547,7 @@ static void draw_all_groups_dep_pad(TPad *p,
         t0.DrawLatex(0.18, 0.70, "No points");
         p->Update();
         return;
-    }
+    } //endif
 
     TLegend *leg = new TLegend(0.16, 0.62, 0.78, 0.88);
     leg->SetBorderSize(1);
@@ -572,7 +559,7 @@ static void draw_all_groups_dep_pad(TPad *p,
         if (graphs[si] && graphs[si]->GetN() > 0) {
             leg->AddEntry(graphs[si], styles[si].label.c_str(), "p");
         }
-    }
+    } //endfor
     leg->Draw();
     leg->SetBit(kCanDelete);
 
@@ -580,13 +567,13 @@ static void draw_all_groups_dep_pad(TPad *p,
 }
 
 static void draw_clean_fit_dep_pad(TPad *p,
-                                  const std::vector<DepPoint> &pts,
-                                  const std::string &label,
-                                  const std::string &helicity,
-                                  const std::string &x_title,
-                                  double x_min,
-                                  double x_max,
-                                  BhGroupMetric metric) {
+                                   const std::vector<DepPoint> &pts,
+                                   const std::string &label,
+                                   const std::string &helicity,
+                                   const std::string &x_title,
+                                   double x_min,
+                                   double x_max,
+                                   BhGroupMetric metric) {
     p->SetLeftMargin(0.13);
     p->SetRightMargin(0.05);
     p->SetBottomMargin(0.14);
@@ -625,7 +612,7 @@ static void draw_clean_fit_dep_pad(TPad *p,
         gr_clean->SetPoint(n, pts[i].x, pts[i].y);
         gr_clean->SetPointError(n, 0.0, pts[i].ey);
         n += 1;
-    }
+    } //endfor
 
     if (gr_clean->GetN() <= 0) {
         delete gr_clean;
@@ -635,13 +622,14 @@ static void draw_clean_fit_dep_pad(TPad *p,
         t0.DrawLatex(0.18, 0.70, "No points in [0.95, 1.05]");
         p->Update();
         return;
-    }
+    } //endif
 
     gr_clean->Draw("PE1 SAME");
     gr_clean->SetBit(kCanDelete);
 
     if (gr_clean->GetN() >= 2) {
         TF1 *f_lin = new TF1(Form("f_lin_%s", sanitize_for_filename(ratio_name).c_str()), "pol1", x_min, x_max);
+
         gr_clean->Fit(f_lin, "Q0");
 
         f_lin->SetLineColor(kRed+1);
@@ -673,19 +661,19 @@ static void draw_clean_fit_dep_pad(TPad *p,
         t1.SetNDC(kTRUE);
         t1.SetTextSize(0.050);
         t1.DrawLatex(0.18, 0.70, "Too few points to fit");
-    }
+    } //endif
 
     p->Update();
 }
 
 static void make_dependence_plot_2x2(const std::string &out_dir,
-                                    const std::string &label,
-                                    const std::string &helicity,
-                                    const std::string &x_title,
-                                    const std::string &file_tag,
-                                    double x_min,
-                                    double x_max,
-                                    const std::vector<DepPoint> &pts) {
+                                     const std::string &label,
+                                     const std::string &helicity,
+                                     const std::string &x_title,
+                                     const std::string &file_tag,
+                                     double x_min,
+                                     double x_max,
+                                     const std::vector<DepPoint> &pts) {
     ensure_output_dir_or_throw(out_dir);
 
     gROOT->SetBatch(kTRUE);
@@ -756,16 +744,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
         std::vector<std::string> header = split_csv_line(lines[0]);
 
-        // Bin edge columns (used only for bookkeeping / robustness; no "best-phi" selection anymore)
         const int c_xbmin = require_col(header, "xBmin");
         const int c_xbmax = require_col(header, "xBmax");
         const int c_q2min = require_col(header, "Q2min");
         const int c_q2max = require_col(header, "Q2max");
         const int c_tmin  = require_col(header, "t_abs_min");
         const int c_tmax  = require_col(header, "t_abs_max");
-        (void)c_xbmin; (void)c_xbmax; (void)c_q2min; (void)c_q2max; (void)c_tmin; (void)c_tmax;
 
-        // Means columns (existing)
         const std::string col_xbavg  = "xBavg, " + label;
         const std::string col_q2avg  = "Q2avg, " + label;
         const std::string col_tavg   = "t_abs_avg, " + label;
@@ -776,10 +761,12 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const int c_tavg   = require_col(header, col_tavg);
         const int c_phiavg = require_col(header, col_phiavg);
 
-        // NEW: theta means columns (degrees already in CSV per your new bin_means.cpp update)
-        const std::string col_e_theta = "e_theta_avg, " + label;
-        const std::string col_p_theta = "p_theta_avg, " + label;
-        const std::string col_g_theta = "g_theta_avg, " + label;
+        // ---------------------------------------------------------------------
+        // FIX: theta columns do NOT have "_avg" in the CSV schema
+        // ---------------------------------------------------------------------
+        const std::string col_e_theta = "e_theta, " + label;
+        const std::string col_p_theta = "p_theta, " + label;
+        const std::string col_g_theta = "g_theta, " + label;
 
         const int c_e_theta = require_col(header, col_e_theta);
         const int c_p_theta = require_col(header, col_p_theta);
@@ -800,26 +787,23 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] Ebeam    : " << Ebeam << "\n";
         std::cout << "------------------------------------------------------------\n";
 
-        const size_t n_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
+        // NOTE: legacy best-phi selection removed; we now treat each CSV row independently.
+
+        size_t n_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
 
         std::cout
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
             << std::setw(12) << "t_abs"
-            << std::setw(10) << "phi"
             << std::setw(10) << "d_edge"
             << std::setw(14) << "xs"
             << std::setw(14) << "xs/BH"
             << std::setw(14) << "BH/VGG"
             << std::setw(14) << "BH/KM15"
-            << std::setw(12) << "th_e"
-            << std::setw(12) << "th_p"
-            << std::setw(12) << "th_g"
             << "\n";
-        std::cout << std::string(8+10+12+10+10+14*4+12*3, '-') << "\n";
+        std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
 
         std::vector<PlotPoint> plot_pts_dedge;
-        plot_pts_dedge.reserve(n_rows);
 
         std::vector<DepPoint> dep_xb;
         std::vector<DepPoint> dep_q2;
@@ -829,21 +813,20 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::vector<DepPoint> dep_p_theta;
         std::vector<DepPoint> dep_g_theta;
 
+        plot_pts_dedge.reserve(n_rows);
+
         dep_xb.reserve(n_rows);
         dep_q2.reserve(n_rows);
         dep_t.reserve(n_rows);
+
         dep_e_theta.reserve(n_rows);
         dep_p_theta.reserve(n_rows);
         dep_g_theta.reserve(n_rows);
 
-        // Weighted mean accumulator for xs/BH in BH/KM15 in [0.95,1.05]
         double sumw = 0.0;
         double sumwx = 0.0;
         int n_weighted_used = 0;
         int n_in_95_105_total = 0;
-
-        // Main loop: NO "best-phi" selection anymore; use all rows with usable values.
-        size_t n_used_rows = 0;
 
         for (size_t r = 1; r < lines.size(); ++r) {
             if (lines[r].empty()) continue;
@@ -851,23 +834,31 @@ bool print_bh_normalization_study(const std::string &csv_path,
             std::vector<std::string> fields = split_csv_line(lines[r]);
             if (fields.size() != header.size()) continue;
 
+            const std::string xbmin_s = trim(unquote(fields[c_xbmin]));
+            const std::string xbmax_s = trim(unquote(fields[c_xbmax]));
+            const std::string q2min_s = trim(unquote(fields[c_q2min]));
+            const std::string q2max_s = trim(unquote(fields[c_q2max]));
+            const std::string tmin_s  = trim(unquote(fields[c_tmin]));
+            const std::string tmax_s  = trim(unquote(fields[c_tmax]));
+            (void)xbmin_s; (void)xbmax_s; (void)q2min_s; (void)q2max_s; (void)tmin_s; (void)tmax_s;
+
             const double xb_c   = std::atof(trim(unquote(fields[c_xbavg])).c_str());
             const double q2_c   = std::atof(trim(unquote(fields[c_q2avg])).c_str());
-            const double t_c    = std::atof(trim(unquote(fields[c_tavg])).c_str());   // already positive
+            const double t_c    = std::atof(trim(unquote(fields[c_tavg])).c_str());
             const double phi    = std::atof(trim(unquote(fields[c_phiavg])).c_str());
 
-            const double th_e   = std::atof(trim(unquote(fields[c_e_theta])).c_str()); // degrees
-            const double th_p   = std::atof(trim(unquote(fields[c_p_theta])).c_str()); // degrees
-            const double th_g   = std::atof(trim(unquote(fields[c_g_theta])).c_str()); // degrees
+            const double e_th = std::atof(trim(unquote(fields[c_e_theta])).c_str());
+            const double p_th = std::atof(trim(unquote(fields[c_p_theta])).c_str());
+            const double g_th = std::atof(trim(unquote(fields[c_g_theta])).c_str());
 
             if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
                 continue;
-            }
+            } //endif
 
             TripleCell xs = parse_tuple3(fields[c_xs]);
             if (!(xs.value > 0.0) || !std::isfinite(xs.value)) {
                 continue;
-            }
+            } //endif
 
             const double bh  = vgg_bh_only(xb_c, q2_c, t_c, phi, Ebeam);
             const double vgg = vgg_xs(xb_c, q2_c, t_c, phi, Ebeam, hel);
@@ -882,14 +873,14 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 xs_over_bh = xs.value / bh;
                 if (std::isfinite(xs.stat) && xs.stat >= 0.0) {
                     xs_over_bh_err = xs.stat / bh;
-                }
-            }
+                } //endif
+            } //endif
             if (finite_pos(vgg)) {
                 bh_over_vgg = bh / vgg;
-            }
+            } //endif
             if (finite_pos(km)) {
                 bh_over_km = bh / km;
-            }
+            } //endif
 
             const double d_edge = min_dist_to_0_or_360(phi);
 
@@ -897,20 +888,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(8)  << std::fixed << std::setprecision(3) << xb_c
                 << std::setw(10) << std::fixed << std::setprecision(2) << q2_c
                 << std::setw(12) << std::fixed << std::setprecision(3) << t_c
-                << std::setw(10) << std::fixed << std::setprecision(1) << phi
                 << std::setw(10) << std::fixed << std::setprecision(1) << d_edge
                 << std::setw(14) << std::scientific << std::setprecision(3) << xs.value
                 << std::setw(14) << std::fixed << std::setprecision(3) << xs_over_bh
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_vgg
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
-                << std::setw(12) << std::fixed << std::setprecision(2) << th_e
-                << std::setw(12) << std::fixed << std::setprecision(2) << th_p
-                << std::setw(12) << std::fixed << std::setprecision(2) << th_g
                 << "\n";
 
-            n_used_rows += 1;
-
-            // d_edge plot points: require d_edge > 0.0 so log-x is safe (x_min=1 anyway)
             if (std::isfinite(d_edge) && d_edge > 0.0 &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
@@ -923,9 +907,8 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 p.bh_over_km15    = bh_over_km;
                 p.bh_over_vgg     = bh_over_vgg;
                 plot_pts_dedge.push_back(p);
-            }
+            } //endif
 
-            // Dependence plots: require usable ratios
             if (std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
                 std::isfinite(bh_over_vgg) && bh_over_vgg > 0.0) {
@@ -947,43 +930,43 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 dep_q2.push_back(pq);
 
                 DepPoint pt;
-                pt.x = t_c; // already positive
+                pt.x = t_c;
                 pt.y = xs_over_bh;
                 pt.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                 pt.bh_over_km15 = bh_over_km;
                 pt.bh_over_vgg  = bh_over_vgg;
                 dep_t.push_back(pt);
 
-                if (finite_nonneg(th_e)) {
+                if (std::isfinite(e_th)) {
                     DepPoint pe;
-                    pe.x = th_e;
+                    pe.x = e_th;
                     pe.y = xs_over_bh;
                     pe.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                     pe.bh_over_km15 = bh_over_km;
                     pe.bh_over_vgg  = bh_over_vgg;
                     dep_e_theta.push_back(pe);
-                }
+                } //endif
 
-                if (finite_nonneg(th_p)) {
+                if (std::isfinite(p_th)) {
                     DepPoint pp;
-                    pp.x = th_p;
+                    pp.x = p_th;
                     pp.y = xs_over_bh;
                     pp.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                     pp.bh_over_km15 = bh_over_km;
                     pp.bh_over_vgg  = bh_over_vgg;
                     dep_p_theta.push_back(pp);
-                }
+                } //endif
 
-                if (finite_nonneg(th_g)) {
+                if (std::isfinite(g_th)) {
                     DepPoint pg;
-                    pg.x = th_g;
+                    pg.x = g_th;
                     pg.y = xs_over_bh;
                     pg.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                     pg.bh_over_km15 = bh_over_km;
                     pg.bh_over_vgg  = bh_over_vgg;
                     dep_g_theta.push_back(pg);
-                }
-            }
+                } //endif
+            } //endif
 
             if (std::isfinite(bh_over_km) && bh_over_km >= 0.95 && bh_over_km <= 1.05) {
                 n_in_95_105_total += 1;
@@ -995,65 +978,61 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     sumw  += w;
                     sumwx += w * xs_over_bh;
                     n_weighted_used += 1;
-                }
-            }
-        }
+                } //endif
+            } //endif
+        } //endfor rows
 
-        if (n_used_rows == 0) {
-            std::cerr << "[overall_norm] WARNING: no rows found with usable {xBavg,Q2avg,t_abs_avg,phiavg,xs}.\n";
+        if (plot_pts_dedge.empty() && dep_xb.empty() && dep_q2.empty() && dep_t.empty()) {
+            std::cerr << "[overall_norm] WARNING: no usable rows found with positive cross sections.\n";
             return true;
-        }
+        } //endif
 
         std::cout << "\n";
-        std::cout << "[overall_norm] Rows used (no best-phi selection): " << n_used_rows
-                  << " (from " << n_rows << " CSV data rows)\n\n";
+        std::cout << "[overall_norm] CSV rows scanned (data rows) : " << n_rows << "\n";
+        std::cout << "[overall_norm] Points kept for d_edge plot  : " << plot_pts_dedge.size() << "\n";
+        std::cout << "[overall_norm] Points kept for dep plots    : " << dep_xb.size() << "\n\n";
 
         const std::string out_dir = "output/normalization_study";
         ensure_output_dir_or_throw(out_dir);
 
-        // d_edge plot: 1x2 (KM15 vs VGG grouping)
         make_normalization_plot_dedge_1x2(out_dir, label, helicity, plot_pts_dedge);
 
-        // Existing dependence plots
         make_dependence_plot_2x2(out_dir, label, helicity,
-                                "xB",
-                                "xb",
-                                0.0, 0.6,
-                                dep_xb);
+                                 "xB",
+                                 "xb",
+                                 0.0, 0.6,
+                                 dep_xb);
 
         make_dependence_plot_2x2(out_dir, label, helicity,
-                                "Q^{2}",
-                                "q2",
-                                1.0, 6.0,
-                                dep_q2);
+                                 "Q^{2}",
+                                 "q2",
+                                 1.0, 6.0,
+                                 dep_q2);
 
         make_dependence_plot_2x2(out_dir, label, helicity,
-                                "-t",
-                                "t",
-                                0.0, 1.0,
-                                dep_t);
-
-        // NEW theta dependence plots (degrees in CSV)
-        make_dependence_plot_2x2(out_dir, label, helicity,
-                                "#theta_{e} (deg)",
-                                "e_theta",
-                                0.0, 40.0,
-                                dep_e_theta);
+                                 "-t",
+                                 "t",
+                                 0.0, 1.0,
+                                 dep_t);
 
         make_dependence_plot_2x2(out_dir, label, helicity,
-                                "#theta_{p} (deg)",
-                                "p_theta",
-                                0.0, 70.0,
-                                dep_p_theta);
+                                 "#theta_{e} (deg)",
+                                 "e_theta",
+                                 0.0, 40.0,
+                                 dep_e_theta);
 
         make_dependence_plot_2x2(out_dir, label, helicity,
-                                "#theta_{#gamma} (deg)",
-                                "g_theta",
-                                0.0, 40.0,
-                                dep_g_theta);
+                                 "#theta_{p} (deg)",
+                                 "p_theta",
+                                 0.0, 80.0,
+                                 dep_p_theta);
 
-        // Weighted mean summary (unchanged logic; now based on all rows)
-        std::cout << "\n";
+        make_dependence_plot_2x2(out_dir, label, helicity,
+                                 "#theta_{#gamma} (deg)",
+                                 "g_theta",
+                                 0.0, 40.0,
+                                 dep_g_theta);
+
         std::cout << "------------------------------------------------------------\n";
         std::cout << "[overall_norm] Weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
         std::cout << "[overall_norm] Points in range (total) : " << n_in_95_105_total << "\n";
@@ -1066,7 +1045,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
             std::cout << "[overall_norm] Weighted stat unc       : " << std::fixed << std::setprecision(6) << err  << "\n";
         } else {
             std::cout << "[overall_norm] Weighted mean xs/BH     : N/A (no usable uncertainties)\n";
-        }
+        } //endif
         std::cout << "------------------------------------------------------------\n";
 
         std::cout << "\n";
