@@ -4,14 +4,21 @@
 """
 normalization.py
 
-Single-pass (per dataset) filling of 4x6 Mx2 histograms binned in (xB, -t').
-Computes t, tmin, tprime on-the-fly from e and pi+ kinematics.
+Phase 1 (completed earlier):
+  - Fill 4x6 Mx2 histograms binned in (xB, -t') for data, aaogen, clasdis
+  - Compute t, tmin, tprime on-the-fly
+  - Normalize each histogram to unit area per (xB, -t') bin (shape-only)
 
-Usage:
-  python3 normalization.py --data data.root --aaogen aaogen.root --clasdis clasdis.root
+Phase 2 (this update):
+  - Build a *single global* mixture fraction w in [0,1]:
+        H_mix = w * H_aaogen + (1-w) * H_clasdis
+    where each component histogram is unit-area normalized in each subplot.
+  - Determine w by minimizing the *unweighted* sum of squared bin-by-bin differences
+    between the data shape and the mixture shape, summed over ALL subplots.
 
 Output:
-  output/yields.png
+  output/yields.png      : (data vs aaogen vs clasdis) in each pad
+  output/yields_mix.png  : (data vs mixture) in each pad, with w in legend
 """
 
 import os
@@ -24,7 +31,7 @@ import ROOT
 
 TREE_NAME = "PhysicsEvents"
 
-# Binning requested by user
+# Binning requested
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
 TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -t'
 
@@ -33,7 +40,8 @@ MX2_MIN = 0.0
 MX2_MAX = 4.0
 MX2_NBINS = 200
 
-OUTPUT_PNG = "output/yields.png"
+OUTPUT_YIELDS_PNG = "output/yields.png"
+OUTPUT_MIX_PNG = "output/yields_mix.png"
 
 # Masses (GeV)
 MASS_E = 0.000511
@@ -159,7 +167,6 @@ def compute_tmin_exact(xB, Q2):
 
 
 def find_bin(val, edges):
-    # returns i such that edges[i] <= val < edges[i+1], else -1
     for i in range(len(edges) - 1):
         if val >= edges[i] and val < edges[i + 1]:
             return i
@@ -170,7 +177,8 @@ def find_bin(val, edges):
 
 
 def normalize_unit_area(h):
-    integ = h.Integral(0, h.GetNbinsX() + 1)  # include under/overflow
+    # Use only in-range bins for "shape" normalization
+    integ = h.Integral(1, h.GetNbinsX())
     if integ > 0.0:
         h.Scale(1.0 / integ)
     #endif
@@ -208,11 +216,10 @@ def make_count_grid(nrows, ncols):
 
 def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
     """
-    Single pass through the tree:
-      - compute xB bin
-      - compute tprime and -tprime bin
+    Single pass through tree:
+      - determine xB bin
+      - compute tprime and bin in -tprime
       - fill Mx2 into the appropriate histogram
-      - increment count grid for that bin
     """
     runnum = array("i", [0])
     e_p = array("d", [0.0])
@@ -258,6 +265,7 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
         #endif
 
         Q2_val = float(Q2[0])
+
         t_val = compute_t_scalar(int(runnum[0]),
                                  float(e_p[0]), float(e_theta[0]), float(e_phi[0]),
                                  float(p_p[0]), float(p_theta[0]), float(p_phi[0]))
@@ -275,6 +283,256 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
     #endfor
 
     tree.SetBranchStatus("*", 1)
+#enddef
+
+
+def ensure_outdir(path):
+    d = os.path.dirname(path)
+    if d != "":
+        os.makedirs(d, exist_ok=True)
+    #endif
+#enddef
+
+
+def compute_global_best_w_unweighted(h_data, h_aao, h_dis):
+    """
+    Determine *global* w that minimizes unweighted SSE across all pads and bins:
+        SSE(w) = sum_over_all ( D_i - (w*A_i + (1-w)*C_i) )^2
+
+    With unweighted least squares, the exact minimizer is:
+        Let X_i = (A_i - C_i)
+            Y_i = (D_i - C_i)
+        SSE(w) minimized at w = sum(X_i * Y_i) / sum(X_i^2), clipped to [0,1].
+
+    We compute sums over all (row, col, mx2bin).
+    """
+    nrows = len(h_data)
+    ncols = len(h_data[0])
+
+    num = 0.0
+    den = 0.0
+
+    for r in range(nrows):
+        for c in range(ncols):
+            hd = h_data[r][c]
+            ha = h_aao[r][c]
+            hc = h_dis[r][c]
+
+            # Skip empty pads (no shape information)
+            if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
+                continue
+            #endif
+            if ha.Integral(1, ha.GetNbinsX()) <= 0.0 and hc.Integral(1, hc.GetNbinsX()) <= 0.0:
+                continue
+            #endif
+
+            nb = hd.GetNbinsX()
+            for i in range(1, nb + 1):
+                D = hd.GetBinContent(i)
+                A = ha.GetBinContent(i)
+                C = hc.GetBinContent(i)
+                X = (A - C)
+                Y = (D - C)
+                num += X * Y
+                den += X * X
+            #endfor
+        #endfor
+    #endfor
+
+    if den <= 0.0:
+        return 0.0
+    #endif
+
+    w = num / den
+    if w < 0.0:
+        w = 0.0
+    #endif
+    if w > 1.0:
+        w = 1.0
+    #endif
+    return w
+#enddef
+
+
+def compute_global_sse_unweighted(h_data, h_mix):
+    nrows = len(h_data)
+    ncols = len(h_data[0])
+    sse = 0.0
+
+    for r in range(nrows):
+        for c in range(ncols):
+            hd = h_data[r][c]
+            hm = h_mix[r][c]
+
+            if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
+                continue
+            #endif
+
+            nb = hd.GetNbinsX()
+            for i in range(1, nb + 1):
+                d = hd.GetBinContent(i)
+                m = hm.GetBinContent(i)
+                diff = d - m
+                sse += diff * diff
+            #endfor
+        #endfor
+    #endfor
+
+    return sse
+#enddef
+
+
+def build_mix_grid(h_aao, h_dis, w):
+    nrows = len(h_aao)
+    ncols = len(h_aao[0])
+    mix = []
+
+    for r in range(nrows):
+        row = []
+        for c in range(ncols):
+            hm = h_aao[r][c].Clone(f"h_mix_r{r}_c{c}")
+            hm.Reset("ICESM")  # clear contents/errors
+            hm.Add(h_aao[r][c], w)
+            hm.Add(h_dis[r][c], (1.0 - w))
+            row.append(hm)
+        #endfor
+        mix.append(row)
+    #endfor
+
+    return mix
+#enddef
+
+
+def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
+    nrows = len(h_data)
+    ncols = len(h_data[0])
+
+    canv = ROOT.TCanvas("c_yields", "Mx2 in xB and -tprime bins", 2400, 1400)
+    canv.Divide(ncols, nrows, 0.001, 0.001)
+
+    pad_idx = 1
+    for r in range(nrows):
+        xb_lo = XB_EDGES[r]
+        xb_hi = XB_EDGES[r + 1]
+
+        for c in range(ncols):
+            t_lo = TNEG_EDGES[c]
+            t_hi = TNEG_EDGES[c + 1]
+
+            pad = canv.cd(pad_idx)
+            pad_idx += 1
+
+            pad.SetGrid(1, 1)
+            pad.SetLeftMargin(0.18)   # extra padding for y-axis labels
+            pad.SetRightMargin(0.04)
+            pad.SetBottomMargin(0.14)
+            pad.SetTopMargin(0.08)
+
+            hd = h_data[r][c]
+            ha = h_aao[r][c]
+            hc = h_dis[r][c]
+
+            hd.GetXaxis().SetTitle("Mx2 (GeV^2)")
+            hd.GetYaxis().SetTitle("Normalized yield")
+            hd.GetXaxis().SetTitleSize(0.06)
+            hd.GetYaxis().SetTitleSize(0.06)
+            hd.GetXaxis().SetLabelSize(0.05)
+            hd.GetYaxis().SetLabelSize(0.05)
+
+            ymax = max(hd.GetMaximum(), ha.GetMaximum(), hc.GetMaximum())
+            if ymax <= 0.0:
+                ymax = 1.0
+            #endif
+            hd.SetMaximum(1.25 * ymax)
+
+            hd.Draw("hist")
+            ha.Draw("hist same")
+            hc.Draw("hist same")
+
+            leg = ROOT.TLegend(0.55, 0.68, 0.94, 0.92)
+            leg.SetBorderSize(1)
+            leg.SetFillStyle(1001)
+            leg.SetFillColor(ROOT.kWhite)
+            leg.SetTextSize(0.045)
+            leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
+            leg.AddEntry(ha, f"aaogen (N={int(c_aao[r][c])})", "l")
+            leg.AddEntry(hc, f"clasdis (N={int(c_dis[r][c])})", "l")
+            leg.Draw()
+
+            tex = ROOT.TLatex()
+            tex.SetNDC(True)
+            tex.SetTextSize(0.05)
+            tex.DrawLatex(0.14, 0.93,
+                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
+        #endfor
+    #endfor
+
+    canv.SaveAs(outpng)
+#enddef
+
+
+def draw_canvas_mix(h_data, h_mix, c_data, w, outpng):
+    nrows = len(h_data)
+    ncols = len(h_data[0])
+
+    canv = ROOT.TCanvas("c_mix", "Mx2: data vs mixture", 2400, 1400)
+    canv.Divide(ncols, nrows, 0.001, 0.001)
+
+    pad_idx = 1
+    for r in range(nrows):
+        xb_lo = XB_EDGES[r]
+        xb_hi = XB_EDGES[r + 1]
+
+        for c in range(ncols):
+            t_lo = TNEG_EDGES[c]
+            t_hi = TNEG_EDGES[c + 1]
+
+            pad = canv.cd(pad_idx)
+            pad_idx += 1
+
+            pad.SetGrid(1, 1)
+            pad.SetLeftMargin(0.18)   # extra padding for y-axis labels
+            pad.SetRightMargin(0.04)
+            pad.SetBottomMargin(0.14)
+            pad.SetTopMargin(0.08)
+
+            hd = h_data[r][c]
+            hm = h_mix[r][c]
+
+            hd.GetXaxis().SetTitle("Mx2 (GeV^2)")
+            hd.GetYaxis().SetTitle("Normalized yield")
+            hd.GetXaxis().SetTitleSize(0.06)
+            hd.GetYaxis().SetTitleSize(0.06)
+            hd.GetXaxis().SetLabelSize(0.05)
+            hd.GetYaxis().SetLabelSize(0.05)
+
+            ymax = max(hd.GetMaximum(), hm.GetMaximum())
+            if ymax <= 0.0:
+                ymax = 1.0
+            #endif
+            hd.SetMaximum(1.25 * ymax)
+
+            hd.Draw("hist")
+            hm.Draw("hist same")
+
+            leg = ROOT.TLegend(0.55, 0.72, 0.94, 0.92)
+            leg.SetBorderSize(1)
+            leg.SetFillStyle(1001)
+            leg.SetFillColor(ROOT.kWhite)
+            leg.SetTextSize(0.045)
+            leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
+            leg.AddEntry(hm, f"mix: w={w:.4f}", "l")
+            leg.Draw()
+
+            tex = ROOT.TLatex()
+            tex.SetNDC(True)
+            tex.SetTextSize(0.05)
+            tex.DrawLatex(0.14, 0.93,
+                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
+        #endfor
+    #endfor
+
+    canv.SaveAs(outpng)
 #enddef
 
 
@@ -304,10 +562,8 @@ def main():
     require_branches(t_aao, needed, "aaogen")
     require_branches(t_dis, needed, "clasdis")
 
-    outdir = os.path.dirname(OUTPUT_PNG)
-    if outdir != "":
-        os.makedirs(outdir, exist_ok=True)
-    #endif
+    ensure_outdir(OUTPUT_YIELDS_PNG)
+    ensure_outdir(OUTPUT_MIX_PNG)
 
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
@@ -326,6 +582,7 @@ def main():
     fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
     fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
 
+    # Shape-only: normalize each histogram to unit area per pad
     for r in range(nrows):
         for c in range(ncols):
             normalize_unit_area(h_data[r][c])
@@ -334,6 +591,7 @@ def main():
         #endfor
     #endfor
 
+    # Style for the three-way canvas
     col_data = ROOT.kBlack
     col_aao = ROOT.kRed
     col_dis = ROOT.kBlue
@@ -346,65 +604,32 @@ def main():
         #endfor
     #endfor
 
-    canv = ROOT.TCanvas("c_yields", "Mx2 in xB and -tprime bins", 2400, 1400)
-    canv.Divide(ncols, nrows, 0.001, 0.001)
+    # Save the baseline “three-way” shape canvas
+    draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
 
-    pad_idx = 1
+    # Compute the single global w (unweighted SSE minimization)
+    w_best = compute_global_best_w_unweighted(h_data, h_aao, h_dis)
+
+    # Build mixture grids and style them
+    h_mix = build_mix_grid(h_aao, h_dis, w_best)
+
+    col_mix = ROOT.kGreen + 2
     for r in range(nrows):
-        xb_lo = XB_EDGES[r]
-        xb_hi = XB_EDGES[r + 1]
-
         for c in range(ncols):
-            t_lo = TNEG_EDGES[c]
-            t_hi = TNEG_EDGES[c + 1]
-
-            pad = canv.cd(pad_idx)
-            pad_idx += 1
-
-            pad.SetGrid(1, 1)
-
-            # Increased left padding so y-axis title/labels are not clipped
-            pad.SetLeftMargin(0.18)
-            pad.SetRightMargin(0.04)
-            pad.SetBottomMargin(0.14)
-            pad.SetTopMargin(0.08)
-
-            h_data[r][c].GetXaxis().SetTitle("Mx2 (GeV^2)")
-            h_data[r][c].GetYaxis().SetTitle("Normalized yield")
-            h_data[r][c].GetXaxis().SetTitleSize(0.06)
-            h_data[r][c].GetYaxis().SetTitleSize(0.06)
-            h_data[r][c].GetXaxis().SetLabelSize(0.05)
-            h_data[r][c].GetYaxis().SetLabelSize(0.05)
-
-            ymax = max(h_data[r][c].GetMaximum(), h_aao[r][c].GetMaximum(), h_dis[r][c].GetMaximum())
-            if ymax <= 0.0:
-                ymax = 1.0
-            #endif
-            h_data[r][c].SetMaximum(1.25 * ymax)
-
-            h_data[r][c].Draw("hist")
-            h_aao[r][c].Draw("hist same")
-            h_dis[r][c].Draw("hist same")
-
-            leg = ROOT.TLegend(0.55, 0.68, 0.94, 0.92)
-            leg.SetBorderSize(1)
-            leg.SetFillStyle(1001)
-            leg.SetFillColor(ROOT.kWhite)
-            leg.SetTextSize(0.045)
-            leg.AddEntry(h_data[r][c], f"data (N={int(c_data[r][c])})", "l")
-            leg.AddEntry(h_aao[r][c], f"aaogen (N={int(c_aao[r][c])})", "l")
-            leg.AddEntry(h_dis[r][c], f"clasdis (N={int(c_dis[r][c])})", "l")
-            leg.Draw()
-
-            tex = ROOT.TLatex()
-            tex.SetNDC(True)
-            tex.SetTextSize(0.05)
-            tex.DrawLatex(0.14, 0.93,
-                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
+            style_hist(h_mix[r][c], col_mix, 3, 1)
         #endfor
     #endfor
 
-    canv.SaveAs(OUTPUT_PNG)
+    # Compute final SSE for reporting
+    sse = compute_global_sse_unweighted(h_data, h_mix)
+
+    print("Global mixture fit (shape-only, unweighted SSE):")
+    print(f"  w_best (aaogen fraction) = {w_best:.6f}")
+    print(f"  (1-w_best) (clasdis frac) = {(1.0 - w_best):.6f}")
+    print(f"  total SSE = {sse:.6e}")
+
+    # Save the “data vs mix” canvas
+    draw_canvas_mix(h_data, h_mix, c_data, w_best, OUTPUT_MIX_PNG)
 
     f_data.Close()
     f_aao.Close()
