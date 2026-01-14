@@ -5,16 +5,16 @@
 normalization.py
 
 Phase 1:
-  - Fill 4x6 Mx2 histograms binned in (xB, -t') for data, aaogen, clasdis
+  - Fill 4x6 Mx2 histograms binned in (xB, -tprime) for data, aaogen, clasdis
   - Compute t, tmin, tprime on-the-fly
-  - Normalize each histogram to unit area per (xB, -t') bin (shape-only)
+  - Normalize each histogram to unit area per (xB, -tprime) bin (shape-only)
 
 Phase 2:
-  - Determine a *per-bin* mixture fraction w[r,c] in [0,1]:
+  - Determine a per-bin mixture fraction w[r,c] in [0,1]:
         H_mix(r,c) = w[r,c] * H_aaogen(r,c) + (1-w[r,c]) * H_clasdis(r,c)
 
-  - Choose w[r,c] by minimizing the *unweighted* sum of squared differences
-    between the data shape and mixture shape *within an Mx2 fit window*:
+  - Choose w[r,c] by minimizing the unweighted sum of squared differences
+    between the data shape and mixture shape within an Mx2 fit window:
         SSE_{r,c}(w) = sum_{i in window} ( D_i - (w*A_i + (1-w)*C_i) )^2
 
     Exact minimizer in each pad (over bins i in window):
@@ -38,13 +38,13 @@ import ROOT
 TREE_NAME = "PhysicsEvents"
 
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
-TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -t'
+TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 
 MX2_MIN = 0.0
 MX2_MAX = 4.0
 MX2_NBINS = 200
 
-# --- NEW: fit window used for solving w and computing SSE ---
+# Fit window used for solving w and computing SSE
 MX2_FIT_MIN = 0.4
 MX2_FIT_MAX = 1.5
 
@@ -465,7 +465,7 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
             tex.SetNDC(True)
             tex.SetTextSize(0.05)
             tex.DrawLatex(0.14, 0.93,
-                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
+                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -tprime [{t_lo:.2f}, {t_hi:.2f})")
         #endfor
     #endfor
 
@@ -515,14 +515,15 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
             leg.SetTextSize(0.040)
             leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
             leg.AddEntry(hm, f"mix (aaogen frac w={w:.4f})", "l")
-            leg.AddEntry(None, f"fit window: [{MX2_FIT_MIN:.1f}, {MX2_FIT_MAX:.1f}]", "")
+            # IMPORTANT: do NOT pass None here; use empty name string overload
+            leg.AddEntry("", f"fit window: [{MX2_FIT_MIN:.1f}, {MX2_FIT_MAX:.1f}]", "")
             leg.Draw()
 
             tex = ROOT.TLatex()
             tex.SetNDC(True)
             tex.SetTextSize(0.05)
             tex.DrawLatex(0.14, 0.93,
-                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -t' [{t_lo:.2f}, {t_hi:.2f})")
+                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -tprime [{t_lo:.2f}, {t_hi:.2f})")
         #endfor
     #endfor
 
@@ -563,7 +564,7 @@ def write_weights_report(w_grid, wun_grid, sse_grid, c_data, c_aao, c_dis, path)
                 Na = int(c_aao[r][c])
                 Nc = int(c_dis[r][c])
                 f.write(
-                    f"  Col {c}: -t' [{t_lo:.2f}, {t_hi:.2f})  "
+                    f"  Col {c}: -tprime [{t_lo:.2f}, {t_hi:.2f})  "
                     f"w={w:.6f}  w_unclipped={wun:.6f}  SSE={sse:.6e}  "
                     f"N(data,aao,dis)=({Nd},{Na},{Nc})\n"
                 )
