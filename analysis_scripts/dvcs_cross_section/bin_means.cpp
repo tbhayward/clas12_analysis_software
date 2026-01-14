@@ -124,7 +124,7 @@ static inline const std::vector<std::string>& csv_group_labels() {
 // Theta column label sets (must match initialize_pass2_csv.cpp schema exactly)
 static inline const std::vector<std::string>& e_theta_labels() {
     static const std::vector<std::string> v = {
-        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
     };
     return v;
 }
@@ -299,7 +299,7 @@ struct BranchBinder {
     double p2_theta = 0.0;       bool has_p2_theta = false; // radians (also used for bin means: photon theta)
     double p2_phi = 0.0;         bool has_p2_phi = false;
 
-    // NEW for bin means: proton theta (branch name p1_theta, radians)
+    // proton theta (branch name p1_theta, radians)
     double p1_theta = 0.0;       bool has_p1_theta = false;
 
     // binning vars
@@ -342,7 +342,7 @@ struct BranchBinder {
         enable("p2_theta");
         enable("p2_phi");
 
-        // NEW: proton theta for bin means
+        // proton theta for bin means
         enable("p1_theta");
 
         // Binning variables
@@ -624,7 +624,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         std::exit(EXIT_FAILURE);
     }
 
-    // NEW: required for theta means (in degrees) written to CSV
+    // Required for theta means (in degrees) written to CSV
     if (!b.readyForThetaMeans()) {
         std::cerr << "[bin_means] FATAL: Tree for '" << period_key
                   << "' missing theta branches required for theta means. Required: "
@@ -668,7 +668,6 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
     const Long64_t N = tree->GetEntries();
     print_banner("Processing period " + period_key + " with " + std::to_string((long long)N) + " entries");
 
-    // Optional quick sanity peek (off by default). export BINMEANS_DEBUG=1 to enable.
     const bool dbg = (std::getenv("BINMEANS_DEBUG") != nullptr);
 
     long long n_pass_global = 0;
@@ -713,7 +712,6 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
         const double phi_deg = b.phi_deg();
 
-        // NEW: theta degrees for bin means
         const double e_theta_deg = b.e_theta_deg();
         const double p_theta_deg = b.p_theta_deg();
         const double g_theta_deg = b.g_theta_deg();
@@ -783,7 +781,7 @@ static void fill_combined_groups(CSV& csv,
     const int c_t_106     = col(csv, col_tavg ("10.6 GeV"));
     const int c_phi_106   = col(csv, col_phiavg("10.6 GeV"));
 
-    // NEW: theta group columns (all must exist per schema; fail fast if missing)
+    // theta group columns (all must exist per schema; fail fast if missing)
     const int c_e_Fa18   = col(csv, col_e_theta("Fa18"));
     const int c_p_Fa18   = col(csv, col_p_theta("Fa18"));
     const int c_g_Fa18   = col(csv, col_g_theta("Fa18"));
@@ -926,7 +924,7 @@ bool update_bin_means_csv(const std::string& csv_path,
         cphi[lab] = col(csv, col_phiavg(lab));
     }
 
-    // NEW: theta mean columns (note e_theta does not exist for "Sp18 Inb" by schema)
+    // Theta mean columns
     std::unordered_map<std::string,int> ceT, cpT, cgT;
 
     for (const auto& lab : e_theta_labels()) {
@@ -986,14 +984,13 @@ bool update_bin_means_csv(const std::string& csv_path,
                 csv.rows[r][ct [tags.csv_label]]  = fmt8(a.mt());
                 csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
 
-                // NEW: theta means (degrees)
-                // e_theta: only write if the column exists for this label (per schema).
+                // Theta means (degrees): all must exist now, including e_theta for Sp18 Inb
                 auto itE = ceT.find(tags.csv_label);
-                if (itE != ceT.end()) {
-                    csv.rows[r][itE->second] = fmt8(a.meT());
+                if (itE == ceT.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for e_theta label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
                 }
-
-                // p_theta and g_theta exist for all periods by schema.
                 auto itP = cpT.find(tags.csv_label);
                 if (itP == cpT.end()) {
                     std::cerr << "[bin_means] FATAL: expected column missing for p_theta label: "
@@ -1006,6 +1003,8 @@ bool update_bin_means_csv(const std::string& csv_path,
                               << tags.csv_label << std::endl;
                     std::exit(EXIT_FAILURE);
                 }
+
+                csv.rows[r][itE->second] = fmt8(a.meT());
                 csv.rows[r][itP->second] = fmt8(a.mpT());
                 csv.rows[r][itG->second] = fmt8(a.mgT());
 
@@ -1017,12 +1016,13 @@ bool update_bin_means_csv(const std::string& csv_path,
                 csv.rows[r][ct [tags.csv_label]].clear();
                 csv.rows[r][cphi[tags.csv_label]].clear();
 
-                // NEW: theta means
+                // Theta means
                 auto itE = ceT.find(tags.csv_label);
-                if (itE != ceT.end()) {
-                    csv.rows[r][itE->second].clear();
+                if (itE == ceT.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for e_theta label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
                 }
-
                 auto itP = cpT.find(tags.csv_label);
                 if (itP == cpT.end()) {
                     std::cerr << "[bin_means] FATAL: expected column missing for p_theta label: "
@@ -1035,6 +1035,8 @@ bool update_bin_means_csv(const std::string& csv_path,
                               << tags.csv_label << std::endl;
                     std::exit(EXIT_FAILURE);
                 }
+
+                csv.rows[r][itE->second].clear();
                 csv.rows[r][itP->second].clear();
                 csv.rows[r][itG->second].clear();
 

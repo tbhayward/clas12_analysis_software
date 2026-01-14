@@ -1069,7 +1069,15 @@ bool print_bh_normalization_study(const std::string &csv_path,
             } //endif
         } //endfor best bins
 
-        const std::string out_dir = "output/normalization_study";
+        // ---------------------------------------------------------------------
+        // OUTPUT DIRECTORY POLICY:
+        //   output/normalization_study/<RunPeriodLabelSanitized>
+        //   (so each "label" call writes into its own directory)
+        // ---------------------------------------------------------------------
+        const std::string out_root = "output/normalization_study";
+        ensure_output_dir_or_throw(out_root);
+
+        const std::string out_dir = out_root + "/" + sanitize_for_filename(label);
         ensure_output_dir_or_throw(out_dir);
 
         make_normalization_plot_dedge_1x2(out_dir, label, helicity, plot_pts_dedge);

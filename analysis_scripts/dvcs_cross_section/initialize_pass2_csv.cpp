@@ -1,3 +1,5 @@
+// initialize_pass2_csv.cpp
+
 #include "initialize_pass2_csv.h"
 
 #include <cctype>
@@ -33,7 +35,7 @@
  * ADDITIONS (THIS UPDATE)
  * -----------------------
  * 1) After "phiavg, 10.6 GeV", add grouped theta columns:
- *      - e_theta, <group> for specific groups (as requested, note Sp18 Inb omitted)
+ *      - e_theta, <group> for groups (NOW INCLUDING Sp18 Inb)
  *      - p_theta, <group> for groups (including Sp18 Inb)
  *      - g_theta, <group> for groups (including Sp18 Inb)
  *
@@ -151,10 +153,11 @@ static void add_grouped_avg_columns(std::vector<std::string>& H, const std::stri
 static void add_theta_group_columns_after_phiavg_10p6(std::vector<std::string>& H) {
     // Inserted immediately after "phiavg, 10.6 GeV" (which is last in avg_groups()).
 
-    // e_theta sequence EXACTLY as requested (note: Sp18 Inb intentionally omitted)
+    // e_theta sequence EXACTLY as requested (NOW includes Sp18 Inb, placed between Sp19 Inb and Sp18 Out)
     H.push_back("e_theta, Fa18 Inb");
     H.push_back("e_theta, Fa18 Out");
     H.push_back("e_theta, Sp19 Inb");
+    H.push_back("e_theta, Sp18 Inb");  // NEW (previously missing)
     H.push_back("e_theta, Sp18 Out");
     H.push_back("e_theta, Fa18");
     H.push_back("e_theta, Sp18");
@@ -395,11 +398,10 @@ static void add_cross_section_columns(std::vector<std::string>& H) {
         }
     }
 
-    // NEW: insert norm columns immediately after "cross sections, ep->epg, exp, Sp18, neg"
-    // Since the above loops end on (grp="Sp18", hel="neg"), appending here is exactly "right after".
+    // Insert norm columns immediately after "cross sections, ep->epg, exp, Sp18, neg"
     add_norm_columns(H);
 
-    // NEW: immediately after norm columns, append "normed" copies of all cross section columns.
+    // Immediately after norm columns, append "normed" copies of all cross section columns.
     add_normed_cross_section_columns(H);
 }
 
@@ -452,7 +454,7 @@ static std::vector<std::string> build_new_header() {
     std::vector<std::string> H;
     H.reserve(650);
 
-    add_bin_definition_columns(H);  // includes grouped avg columns + NEW theta group columns after phiavg, 10.6 GeV
+    add_bin_definition_columns(H);
     add_raw_yield_columns(H);
     add_contamination_columns(H);
     add_signal_yield_columns(H);
@@ -460,7 +462,7 @@ static std::vector<std::string> build_new_header() {
     add_acc_corrected_yield_columns(H);
     add_frad_fbin_binvol_columns(H);
     add_luminosity_columns(H);
-    add_cross_section_columns(H);   // includes NEW norm columns + NEW normed cross section columns
+    add_cross_section_columns(H);
     add_bsa_columns(H);
     add_valid_and_prefactor_columns(H);
 
@@ -604,7 +606,7 @@ bool initialize_pass2_csv(const std::string& lee_csv_path,
             out_row[new_idx] = v;
         }
 
-        // All analysis-produced fields (including grouped averages, theta columns, norms, and normed cross sections) remain blank at init
+        // All analysis-produced fields remain blank at init
         fout << join_csv_row(out_row) << "\n";
         ++kept_rows;
     }
