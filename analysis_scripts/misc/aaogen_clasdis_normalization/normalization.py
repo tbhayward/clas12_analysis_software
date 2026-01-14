@@ -4,21 +4,27 @@
 """
 normalization.py
 
-Phase 1 (completed earlier):
+Phase 1:
   - Fill 4x6 Mx2 histograms binned in (xB, -t') for data, aaogen, clasdis
   - Compute t, tmin, tprime on-the-fly
   - Normalize each histogram to unit area per (xB, -t') bin (shape-only)
 
 Phase 2 (this update):
-  - Build a *single global* mixture fraction w in [0,1]:
-        H_mix = w * H_aaogen + (1-w) * H_clasdis
+  - Determine a *per-bin* mixture fraction w[r,c] in [0,1]:
+        H_mix(r,c) = w[r,c] * H_aaogen(r,c) + (1-w[r,c]) * H_clasdis(r,c)
     where each component histogram is unit-area normalized in each subplot.
-  - Determine w by minimizing the *unweighted* sum of squared bin-by-bin differences
-    between the data shape and the mixture shape, summed over ALL subplots.
+  - Choose w[r,c] by minimizing the *unweighted* sum of squared differences
+    between the data shape and mixture shape within that subplot:
+        SSE_{r,c}(w) = sum_i ( D_i - (w*A_i + (1-w)*C_i) )^2
 
-Output:
-  output/yields.png      : (data vs aaogen vs clasdis) in each pad
-  output/yields_mix.png  : (data vs mixture) in each pad, with w in legend
+    The exact minimizer in each pad is:
+        Let X_i = (A_i - C_i),  Y_i = (D_i - C_i)
+        w = sum_i (X_i Y_i) / sum_i (X_i^2), clipped to [0,1].
+
+Outputs:
+  output/yields.png      : data vs aaogen vs clasdis (shape-only) per pad
+  output/yields_mix.png  : data vs per-bin mixture per pad, legend shows w[r,c]
+  output/weights.txt     : per-bin w[r,c] and SSE summary
 """
 
 import os
@@ -42,6 +48,7 @@ MX2_NBINS = 200
 
 OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
+OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
 # Masses (GeV)
 MASS_E = 0.000511
@@ -95,7 +102,6 @@ def require_branches(t, needed, label):
 
 
 def beam_energy(runnum):
-    # Matches your C++ beamEnergy(int runnum)
     if runnum >= 6616 and runnum <= 6783:
         return 10.1998
     #endif
@@ -132,8 +138,6 @@ def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
     py = p_p * sp * math.sin(p_phi)
     pz = p_p * cp
 
-    # q = k - k' = (Eb - E_e, -ex, -ey, Eb - ez)
-    # (q - p_pi)^2 = ( (Eb - E_e) - E_pi )^2 - | (-ex,-ey,Eb-ez) - (px,py,pz) |^2
     dE = (Eb - E_e) - E_pi
     dx = -ex - px
     dy = -ey - py
@@ -177,7 +181,6 @@ def find_bin(val, edges):
 
 
 def normalize_unit_area(h):
-    # Use only in-range bins for "shape" normalization
     integ = h.Integral(1, h.GetNbinsX())
     if integ > 0.0:
         h.Scale(1.0 / integ)
@@ -215,12 +218,6 @@ def make_count_grid(nrows, ncols):
 
 
 def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
-    """
-    Single pass through tree:
-      - determine xB bin
-      - compute tprime and bin in -tprime
-      - fill Mx2 into the appropriate histogram
-    """
     runnum = array("i", [0])
     e_p = array("d", [0.0])
     e_theta = array("d", [0.0])
@@ -294,112 +291,95 @@ def ensure_outdir(path):
 #enddef
 
 
-def compute_global_best_w_unweighted(h_data, h_aao, h_dis):
+def compute_best_w_unweighted_for_pad(hd, ha, hc):
     """
-    Determine *global* w that minimizes unweighted SSE across all pads and bins:
-        SSE(w) = sum_over_all ( D_i - (w*A_i + (1-w)*C_i) )^2
+    Minimizes SSE(w) = sum_i ( D_i - (w*A_i + (1-w)*C_i) )^2 for a single pad.
 
-    With unweighted least squares, the exact minimizer is:
-        Let X_i = (A_i - C_i)
-            Y_i = (D_i - C_i)
-        SSE(w) minimized at w = sum(X_i * Y_i) / sum(X_i^2), clipped to [0,1].
-
-    We compute sums over all (row, col, mx2bin).
+    Exact minimizer:
+      X_i = (A_i - C_i)
+      Y_i = (D_i - C_i)
+      w = sum(X_i*Y_i)/sum(X_i^2)  (clip to [0,1])
     """
-    nrows = len(h_data)
-    ncols = len(h_data[0])
+    # If data has no content, there's nothing to fit.
+    if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
+        return 0.0, 0.0
+    #endif
 
+    nb = hd.GetNbinsX()
     num = 0.0
     den = 0.0
 
-    for r in range(nrows):
-        for c in range(ncols):
-            hd = h_data[r][c]
-            ha = h_aao[r][c]
-            hc = h_dis[r][c]
-
-            # Skip empty pads (no shape information)
-            if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
-                continue
-            #endif
-            if ha.Integral(1, ha.GetNbinsX()) <= 0.0 and hc.Integral(1, hc.GetNbinsX()) <= 0.0:
-                continue
-            #endif
-
-            nb = hd.GetNbinsX()
-            for i in range(1, nb + 1):
-                D = hd.GetBinContent(i)
-                A = ha.GetBinContent(i)
-                C = hc.GetBinContent(i)
-                X = (A - C)
-                Y = (D - C)
-                num += X * Y
-                den += X * X
-            #endfor
-        #endfor
+    for i in range(1, nb + 1):
+        D = hd.GetBinContent(i)
+        A = ha.GetBinContent(i)
+        C = hc.GetBinContent(i)
+        X = (A - C)
+        Y = (D - C)
+        num += X * Y
+        den += X * X
     #endfor
 
     if den <= 0.0:
-        return 0.0
+        # No discrimination between A and C (or both zero); choose w=0 by convention.
+        w = 0.0
+    else:
+        w = num / den
     #endif
 
-    w = num / den
     if w < 0.0:
         w = 0.0
     #endif
     if w > 1.0:
         w = 1.0
     #endif
-    return w
-#enddef
 
-
-def compute_global_sse_unweighted(h_data, h_mix):
-    nrows = len(h_data)
-    ncols = len(h_data[0])
+    # Compute SSE at this w for reporting
     sse = 0.0
-
-    for r in range(nrows):
-        for c in range(ncols):
-            hd = h_data[r][c]
-            hm = h_mix[r][c]
-
-            if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
-                continue
-            #endif
-
-            nb = hd.GetNbinsX()
-            for i in range(1, nb + 1):
-                d = hd.GetBinContent(i)
-                m = hm.GetBinContent(i)
-                diff = d - m
-                sse += diff * diff
-            #endfor
-        #endfor
+    for i in range(1, nb + 1):
+        D = hd.GetBinContent(i)
+        M = w * ha.GetBinContent(i) + (1.0 - w) * hc.GetBinContent(i)
+        diff = D - M
+        sse += diff * diff
     #endfor
 
-    return sse
+    return w, sse
 #enddef
 
 
-def build_mix_grid(h_aao, h_dis, w):
-    nrows = len(h_aao)
-    ncols = len(h_aao[0])
-    mix = []
+def compute_w_grid_and_mix(h_data, h_aao, h_dis):
+    """
+    For each pad, compute w[r,c] and build h_mix[r,c].
+    Returns:
+      w_grid[r][c], sse_grid[r][c], h_mix[r][c]
+    """
+    nrows = len(h_data)
+    ncols = len(h_data[0])
+
+    w_grid = [[0.0 for _ in range(ncols)] for _ in range(nrows)]
+    sse_grid = [[0.0 for _ in range(ncols)] for _ in range(nrows)]
+    h_mix = []
 
     for r in range(nrows):
         row = []
         for c in range(ncols):
-            hm = h_aao[r][c].Clone(f"h_mix_r{r}_c{c}")
-            hm.Reset("ICESM")  # clear contents/errors
-            hm.Add(h_aao[r][c], w)
-            hm.Add(h_dis[r][c], (1.0 - w))
+            hd = h_data[r][c]
+            ha = h_aao[r][c]
+            hc = h_dis[r][c]
+
+            w, sse = compute_best_w_unweighted_for_pad(hd, ha, hc)
+            w_grid[r][c] = w
+            sse_grid[r][c] = sse
+
+            hm = ha.Clone(f"h_mix_r{r}_c{c}")
+            hm.Reset("ICESM")
+            hm.Add(ha, w)
+            hm.Add(hc, (1.0 - w))
             row.append(hm)
         #endfor
-        mix.append(row)
+        h_mix.append(row)
     #endfor
 
-    return mix
+    return w_grid, sse_grid, h_mix
 #enddef
 
 
@@ -423,7 +403,7 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
             pad_idx += 1
 
             pad.SetGrid(1, 1)
-            pad.SetLeftMargin(0.18)   # extra padding for y-axis labels
+            pad.SetLeftMargin(0.18)
             pad.SetRightMargin(0.04)
             pad.SetBottomMargin(0.14)
             pad.SetTopMargin(0.08)
@@ -471,11 +451,11 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
 #enddef
 
 
-def draw_canvas_mix(h_data, h_mix, c_data, w, outpng):
+def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
     nrows = len(h_data)
     ncols = len(h_data[0])
 
-    canv = ROOT.TCanvas("c_mix", "Mx2: data vs mixture", 2400, 1400)
+    canv = ROOT.TCanvas("c_mix", "Mx2: data vs per-bin mixture", 2400, 1400)
     canv.Divide(ncols, nrows, 0.001, 0.001)
 
     pad_idx = 1
@@ -491,13 +471,14 @@ def draw_canvas_mix(h_data, h_mix, c_data, w, outpng):
             pad_idx += 1
 
             pad.SetGrid(1, 1)
-            pad.SetLeftMargin(0.18)   # extra padding for y-axis labels
+            pad.SetLeftMargin(0.18)
             pad.SetRightMargin(0.04)
             pad.SetBottomMargin(0.14)
             pad.SetTopMargin(0.08)
 
             hd = h_data[r][c]
             hm = h_mix[r][c]
+            w = w_grid[r][c]
 
             hd.GetXaxis().SetTitle("Mx2 (GeV^2)")
             hd.GetYaxis().SetTitle("Normalized yield")
@@ -536,6 +517,42 @@ def draw_canvas_mix(h_data, h_mix, c_data, w, outpng):
 #enddef
 
 
+def write_weights_report(w_grid, sse_grid, c_data, c_aao, c_dis, path):
+    ensure_outdir(path)
+    nrows = len(w_grid)
+    ncols = len(w_grid[0])
+
+    total_sse = 0.0
+    for r in range(nrows):
+        for c in range(ncols):
+            total_sse += sse_grid[r][c]
+        #endfor
+    #endfor
+
+    with open(path, "w") as f:
+        f.write("Per-bin mixture weights (shape-only, unweighted SSE)\n")
+        f.write("Definition: H_mix = w * H_aaogen + (1-w) * H_clasdis\n\n")
+        f.write(f"Total SSE (sum over pads) = {total_sse:.6e}\n\n")
+
+        for r in range(nrows):
+            xb_lo = XB_EDGES[r]
+            xb_hi = XB_EDGES[r + 1]
+            f.write(f"Row {r}: xB [{xb_lo:.2f}, {xb_hi:.2f})\n")
+            for c in range(ncols):
+                t_lo = TNEG_EDGES[c]
+                t_hi = TNEG_EDGES[c + 1]
+                w = w_grid[r][c]
+                sse = sse_grid[r][c]
+                Nd = int(c_data[r][c])
+                Na = int(c_aao[r][c])
+                Nc = int(c_dis[r][c])
+                f.write(f"  Col {c}: -t' [{t_lo:.2f}, {t_hi:.2f})  w={w:.6f}  SSE={sse:.6e}  N(data,aao,dis)=({Nd},{Na},{Nc})\n")
+            #endfor
+            f.write("\n")
+        #endfor
+#enddef
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True, help="Path to data ROOT file")
@@ -564,6 +581,7 @@ def main():
 
     ensure_outdir(OUTPUT_YIELDS_PNG)
     ensure_outdir(OUTPUT_MIX_PNG)
+    ensure_outdir(OUTPUT_WEIGHTS_TXT)
 
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
@@ -582,7 +600,7 @@ def main():
     fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
     fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
 
-    # Shape-only: normalize each histogram to unit area per pad
+    # Shape-only: normalize to unit area per pad
     for r in range(nrows):
         for c in range(ncols):
             normalize_unit_area(h_data[r][c])
@@ -591,28 +609,24 @@ def main():
         #endfor
     #endfor
 
-    # Style for the three-way canvas
+    # Style: three-way
     col_data = ROOT.kBlack
     col_aao = ROOT.kRed
     col_dis = ROOT.kBlue
-
     for r in range(nrows):
         for c in range(ncols):
-            style_hist(h_data[r][c], col_data, 2, 1)  # solid
-            style_hist(h_aao[r][c], col_aao, 2, 2)    # dashed
-            style_hist(h_dis[r][c], col_dis, 2, 3)    # dotted
+            style_hist(h_data[r][c], col_data, 2, 1)
+            style_hist(h_aao[r][c], col_aao, 2, 2)
+            style_hist(h_dis[r][c], col_dis, 2, 3)
         #endfor
     #endfor
 
-    # Save the baseline “three-way” shape canvas
     draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
 
-    # Compute the single global w (unweighted SSE minimization)
-    w_best = compute_global_best_w_unweighted(h_data, h_aao, h_dis)
+    # Compute per-bin weights and mixture
+    w_grid, sse_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis)
 
-    # Build mixture grids and style them
-    h_mix = build_mix_grid(h_aao, h_dis, w_best)
-
+    # Style mix histograms
     col_mix = ROOT.kGreen + 2
     for r in range(nrows):
         for c in range(ncols):
@@ -620,16 +634,21 @@ def main():
         #endfor
     #endfor
 
-    # Compute final SSE for reporting
-    sse = compute_global_sse_unweighted(h_data, h_mix)
+    # Print quick summary
+    total_sse = 0.0
+    for r in range(nrows):
+        for c in range(ncols):
+            total_sse += sse_grid[r][c]
+        #endfor
+    #endfor
+    print("Per-bin mixture fit (shape-only, unweighted SSE):")
+    print(f"  total SSE = {total_sse:.6e}")
+    print(f"  wrote weights report: {OUTPUT_WEIGHTS_TXT}")
 
-    print("Global mixture fit (shape-only, unweighted SSE):")
-    print(f"  w_best (aaogen fraction) = {w_best:.6f}")
-    print(f"  (1-w_best) (clasdis frac) = {(1.0 - w_best):.6f}")
-    print(f"  total SSE = {sse:.6e}")
+    write_weights_report(w_grid, sse_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT)
 
-    # Save the “data vs mix” canvas
-    draw_canvas_mix(h_data, h_mix, c_data, w_best, OUTPUT_MIX_PNG)
+    # Draw data vs per-bin mixture
+    draw_canvas_mix(h_data, h_mix, c_data, w_grid, OUTPUT_MIX_PNG)
 
     f_data.Close()
     f_aao.Close()
