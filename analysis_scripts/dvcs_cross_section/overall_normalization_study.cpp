@@ -192,6 +192,24 @@ static double min_dist_to_0_or_360(double phi_deg) {
     return std::min(d0, d360);
 }
 
+static std::string cell_key_for_kin_bin(const std::string &xbmin_s,
+                                        const std::string &xbmax_s,
+                                        const std::string &q2min_s,
+                                        const std::string &q2max_s,
+                                        const std::string &tmin_s,
+                                        const std::string &tmax_s) {
+    std::string k;
+    k.reserve(xbmin_s.size() + xbmax_s.size() + q2min_s.size() + q2max_s.size() +
+              tmin_s.size() + tmax_s.size() + 16);
+    k += xbmin_s; k += "|";
+    k += xbmax_s; k += "|";
+    k += q2min_s; k += "|";
+    k += q2max_s; k += "|";
+    k += tmin_s;  k += "|";
+    k += tmax_s;
+    return k;
+}
+
 static std::string sanitize_for_filename(const std::string &s) {
     std::string out;
     out.reserve(s.size());
@@ -715,6 +733,39 @@ static void make_dependence_plot_2x2(const std::string &out_dir,
 }
 
 // -----------------------------------------------------------------------------
+// Best-phi selection container (FAST PATH)
+//   - One row per (xB,Q2,|t|) cell
+//   - Choose phiavg closest to 0 or 360
+// -----------------------------------------------------------------------------
+
+struct BestPhiRow {
+    double xb_c;
+    double q2_c;
+    double t_c;           // positive |t|
+    double phi_deg;
+    double dist_to_edge;  // min(|phi-0|, |phi-360|)
+    double xs;
+    double xs_stat;
+    double e_theta;
+    double p_theta;
+    double g_theta;
+    size_t csv_row_index;
+
+    BestPhiRow() :
+        xb_c(std::numeric_limits<double>::quiet_NaN()),
+        q2_c(std::numeric_limits<double>::quiet_NaN()),
+        t_c(std::numeric_limits<double>::quiet_NaN()),
+        phi_deg(std::numeric_limits<double>::quiet_NaN()),
+        dist_to_edge(std::numeric_limits<double>::infinity()),
+        xs(0.0),
+        xs_stat(0.0),
+        e_theta(std::numeric_limits<double>::quiet_NaN()),
+        p_theta(std::numeric_limits<double>::quiet_NaN()),
+        g_theta(std::numeric_limits<double>::quiet_NaN()),
+        csv_row_index(0) {}
+};
+
+// -----------------------------------------------------------------------------
 // Main entry
 // -----------------------------------------------------------------------------
 
@@ -761,9 +812,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const int c_tavg   = require_col(header, col_tavg);
         const int c_phiavg = require_col(header, col_phiavg);
 
-        // ---------------------------------------------------------------------
         // FIX: theta columns do NOT have "_avg" in the CSV schema
-        // ---------------------------------------------------------------------
         const std::string col_e_theta = "e_theta, " + label;
         const std::string col_p_theta = "p_theta, " + label;
         const std::string col_g_theta = "g_theta, " + label;
@@ -787,47 +836,12 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] Ebeam    : " << Ebeam << "\n";
         std::cout << "------------------------------------------------------------\n";
 
-        // NOTE: legacy best-phi selection removed; we now treat each CSV row independently.
+        // ---------------------------------------------------------------------
+        // FAST PATH: best-phi selection (one row per cell closest to 0/360)
+        // ---------------------------------------------------------------------
+        std::map<std::string, BestPhiRow> best;
 
         size_t n_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
-
-        std::cout
-            << std::setw(8)  << "xB"
-            << std::setw(10) << "Q2"
-            << std::setw(12) << "t_abs"
-            << std::setw(10) << "d_edge"
-            << std::setw(14) << "xs"
-            << std::setw(14) << "xs/BH"
-            << std::setw(14) << "BH/VGG"
-            << std::setw(14) << "BH/KM15"
-            << "\n";
-        std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
-
-        std::vector<PlotPoint> plot_pts_dedge;
-
-        std::vector<DepPoint> dep_xb;
-        std::vector<DepPoint> dep_q2;
-        std::vector<DepPoint> dep_t;
-
-        std::vector<DepPoint> dep_e_theta;
-        std::vector<DepPoint> dep_p_theta;
-        std::vector<DepPoint> dep_g_theta;
-
-        plot_pts_dedge.reserve(n_rows);
-
-        dep_xb.reserve(n_rows);
-        dep_q2.reserve(n_rows);
-        dep_t.reserve(n_rows);
-
-        dep_e_theta.reserve(n_rows);
-        dep_p_theta.reserve(n_rows);
-        dep_g_theta.reserve(n_rows);
-
-        double sumw = 0.0;
-        double sumwx = 0.0;
-        int n_weighted_used = 0;
-        int n_in_95_105_total = 0;
-
         for (size_t r = 1; r < lines.size(); ++r) {
             if (lines[r].empty()) continue;
 
@@ -840,12 +854,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
             const std::string q2max_s = trim(unquote(fields[c_q2max]));
             const std::string tmin_s  = trim(unquote(fields[c_tmin]));
             const std::string tmax_s  = trim(unquote(fields[c_tmax]));
-            (void)xbmin_s; (void)xbmax_s; (void)q2min_s; (void)q2max_s; (void)tmin_s; (void)tmax_s;
 
-            const double xb_c   = std::atof(trim(unquote(fields[c_xbavg])).c_str());
-            const double q2_c   = std::atof(trim(unquote(fields[c_q2avg])).c_str());
-            const double t_c    = std::atof(trim(unquote(fields[c_tavg])).c_str());
-            const double phi    = std::atof(trim(unquote(fields[c_phiavg])).c_str());
+            const std::string key = cell_key_for_kin_bin(xbmin_s, xbmax_s, q2min_s, q2max_s, tmin_s, tmax_s);
+
+            const double xb_c = std::atof(trim(unquote(fields[c_xbavg])).c_str());
+            const double q2_c = std::atof(trim(unquote(fields[c_q2avg])).c_str());
+            const double t_c  = std::atof(trim(unquote(fields[c_tavg])).c_str());   // already positive
+            const double phi  = std::atof(trim(unquote(fields[c_phiavg])).c_str());
 
             const double e_th = std::atof(trim(unquote(fields[c_e_theta])).c_str());
             const double p_th = std::atof(trim(unquote(fields[c_p_theta])).c_str());
@@ -860,9 +875,81 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 continue;
             } //endif
 
-            const double bh  = vgg_bh_only(xb_c, q2_c, t_c, phi, Ebeam);
-            const double vgg = vgg_xs(xb_c, q2_c, t_c, phi, Ebeam, hel);
-            const double km  = km15_xs(xb_c, q2_c, t_c, phi, Ebeam, hel);
+            const double dist = min_dist_to_0_or_360(phi);
+
+            std::map<std::string, BestPhiRow>::iterator it = best.find(key);
+            if (it == best.end() || dist < it->second.dist_to_edge) {
+                BestPhiRow br;
+                br.xb_c = xb_c;
+                br.q2_c = q2_c;
+                br.t_c  = t_c;
+                br.phi_deg = phi;
+                br.dist_to_edge = dist;
+                br.xs = xs.value;
+                br.xs_stat = xs.stat;
+                br.e_theta = e_th;
+                br.p_theta = p_th;
+                br.g_theta = g_th;
+                br.csv_row_index = r;
+                best[key] = br;
+            } //endif
+        } //endfor rows
+
+        if (best.empty()) {
+            std::cerr << "[overall_norm] WARNING: no bins found with positive cross section values.\n";
+            return true;
+        } //endif
+
+        std::cout << "[overall_norm] Unique kinematic bins found (best-phi): " << best.size()
+                  << " (from " << n_rows << " CSV data rows)\n\n";
+
+        std::cout
+            << std::setw(8)  << "xB"
+            << std::setw(10) << "Q2"
+            << std::setw(12) << "t_abs"
+            << std::setw(10) << "d_edge"
+            << std::setw(14) << "xs"
+            << std::setw(14) << "xs/BH"
+            << std::setw(14) << "BH/VGG"
+            << std::setw(14) << "BH/KM15"
+            << "\n";
+        std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
+
+        std::vector<PlotPoint> plot_pts_dedge;
+        plot_pts_dedge.reserve(best.size());
+
+        std::vector<DepPoint> dep_xb;
+        std::vector<DepPoint> dep_q2;
+        std::vector<DepPoint> dep_t;
+        std::vector<DepPoint> dep_e_theta;
+        std::vector<DepPoint> dep_p_theta;
+        std::vector<DepPoint> dep_g_theta;
+
+        dep_xb.reserve(best.size());
+        dep_q2.reserve(best.size());
+        dep_t.reserve(best.size());
+        dep_e_theta.reserve(best.size());
+        dep_p_theta.reserve(best.size());
+        dep_g_theta.reserve(best.size());
+
+        double sumw = 0.0;
+        double sumwx = 0.0;
+        int n_weighted_used = 0;
+        int n_in_95_105_total = 0;
+
+        for (std::map<std::string, BestPhiRow>::const_iterator it = best.begin();
+             it != best.end(); ++it) {
+
+            const BestPhiRow &br = it->second;
+
+            const double xb   = br.xb_c;
+            const double q2   = br.q2_c;
+            const double tpos = br.t_c;
+            const double phi  = br.phi_deg;
+
+            const double bh  = vgg_bh_only(xb, q2, tpos, phi, Ebeam);
+            const double vgg = vgg_xs(xb, q2, tpos, phi, Ebeam, hel);
+            const double km  = km15_xs(xb, q2, tpos, phi, Ebeam, hel);
 
             double xs_over_bh  = 0.0;
             double xs_over_bh_err = 0.0;
@@ -870,9 +957,9 @@ bool print_bh_normalization_study(const std::string &csv_path,
             double bh_over_km  = 0.0;
 
             if (finite_pos(bh)) {
-                xs_over_bh = xs.value / bh;
-                if (std::isfinite(xs.stat) && xs.stat >= 0.0) {
-                    xs_over_bh_err = xs.stat / bh;
+                xs_over_bh = br.xs / bh;
+                if (std::isfinite(br.xs_stat) && br.xs_stat >= 0.0) {
+                    xs_over_bh_err = br.xs_stat / bh;
                 } //endif
             } //endif
             if (finite_pos(vgg)) {
@@ -882,26 +969,25 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 bh_over_km = bh / km;
             } //endif
 
-            const double d_edge = min_dist_to_0_or_360(phi);
-
             std::cout
-                << std::setw(8)  << std::fixed << std::setprecision(3) << xb_c
-                << std::setw(10) << std::fixed << std::setprecision(2) << q2_c
-                << std::setw(12) << std::fixed << std::setprecision(3) << t_c
-                << std::setw(10) << std::fixed << std::setprecision(1) << d_edge
-                << std::setw(14) << std::scientific << std::setprecision(3) << xs.value
+                << std::setw(8)  << std::fixed << std::setprecision(3) << xb
+                << std::setw(10) << std::fixed << std::setprecision(2) << q2
+                << std::setw(12) << std::fixed << std::setprecision(3) << tpos
+                << std::setw(10) << std::fixed << std::setprecision(1) << br.dist_to_edge
+                << std::setw(14) << std::scientific << std::setprecision(3) << br.xs
                 << std::setw(14) << std::fixed << std::setprecision(3) << xs_over_bh
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_vgg
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
 
-            if (std::isfinite(d_edge) && d_edge > 0.0 &&
+            // d_edge plot points: require dist_to_edge > 0.0
+            if (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0 &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
                 std::isfinite(bh_over_vgg) && bh_over_vgg > 0.0) {
 
                 PlotPoint p;
-                p.d_edge_deg      = d_edge;
+                p.d_edge_deg      = br.dist_to_edge;
                 p.xs_over_bh      = xs_over_bh;
                 p.xs_over_bh_err  = xs_over_bh_err;
                 p.bh_over_km15    = bh_over_km;
@@ -909,12 +995,13 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 plot_pts_dedge.push_back(p);
             } //endif
 
+            // Dependence plots
             if (std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
                 std::isfinite(bh_over_vgg) && bh_over_vgg > 0.0) {
 
                 DepPoint px;
-                px.x = xb_c;
+                px.x = xb;
                 px.y = xs_over_bh;
                 px.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                 px.bh_over_km15 = bh_over_km;
@@ -922,7 +1009,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 dep_xb.push_back(px);
 
                 DepPoint pq;
-                pq.x = q2_c;
+                pq.x = q2;
                 pq.y = xs_over_bh;
                 pq.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                 pq.bh_over_km15 = bh_over_km;
@@ -930,16 +1017,16 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 dep_q2.push_back(pq);
 
                 DepPoint pt;
-                pt.x = t_c;
+                pt.x = tpos;
                 pt.y = xs_over_bh;
                 pt.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                 pt.bh_over_km15 = bh_over_km;
                 pt.bh_over_vgg  = bh_over_vgg;
                 dep_t.push_back(pt);
 
-                if (std::isfinite(e_th)) {
+                if (std::isfinite(br.e_theta)) {
                     DepPoint pe;
-                    pe.x = e_th;
+                    pe.x = br.e_theta;
                     pe.y = xs_over_bh;
                     pe.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                     pe.bh_over_km15 = bh_over_km;
@@ -947,9 +1034,9 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     dep_e_theta.push_back(pe);
                 } //endif
 
-                if (std::isfinite(p_th)) {
+                if (std::isfinite(br.p_theta)) {
                     DepPoint pp;
-                    pp.x = p_th;
+                    pp.x = br.p_theta;
                     pp.y = xs_over_bh;
                     pp.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                     pp.bh_over_km15 = bh_over_km;
@@ -957,9 +1044,9 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     dep_p_theta.push_back(pp);
                 } //endif
 
-                if (std::isfinite(g_th)) {
+                if (std::isfinite(br.g_theta)) {
                     DepPoint pg;
-                    pg.x = g_th;
+                    pg.x = br.g_theta;
                     pg.y = xs_over_bh;
                     pg.ey = (std::isfinite(xs_over_bh_err) ? xs_over_bh_err : 0.0);
                     pg.bh_over_km15 = bh_over_km;
@@ -980,17 +1067,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     n_weighted_used += 1;
                 } //endif
             } //endif
-        } //endfor rows
-
-        if (plot_pts_dedge.empty() && dep_xb.empty() && dep_q2.empty() && dep_t.empty()) {
-            std::cerr << "[overall_norm] WARNING: no usable rows found with positive cross sections.\n";
-            return true;
-        } //endif
-
-        std::cout << "\n";
-        std::cout << "[overall_norm] CSV rows scanned (data rows) : " << n_rows << "\n";
-        std::cout << "[overall_norm] Points kept for d_edge plot  : " << plot_pts_dedge.size() << "\n";
-        std::cout << "[overall_norm] Points kept for dep plots    : " << dep_xb.size() << "\n\n";
+        } //endfor best bins
 
         const std::string out_dir = "output/normalization_study";
         ensure_output_dir_or_throw(out_dir);
@@ -1009,6 +1086,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                                  1.0, 6.0,
                                  dep_q2);
 
+        // Label changed from t_abs to -t (values are already positive)
         make_dependence_plot_2x2(out_dir, label, helicity,
                                  "-t",
                                  "t",
@@ -1033,6 +1111,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                                  0.0, 40.0,
                                  dep_g_theta);
 
+        std::cout << "\n";
         std::cout << "------------------------------------------------------------\n";
         std::cout << "[overall_norm] Weighted xs/BH for BH/KM15 in [0.95, 1.05]\n";
         std::cout << "[overall_norm] Points in range (total) : " << n_in_95_105_total << "\n";
