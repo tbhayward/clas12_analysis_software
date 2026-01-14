@@ -121,6 +121,26 @@ static inline const std::vector<std::string>& csv_group_labels() {
     return v;
 }
 
+// Theta column label sets (must match initialize_pass2_csv.cpp schema exactly)
+static inline const std::vector<std::string>& e_theta_labels() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
+    };
+    return v;
+}
+static inline const std::vector<std::string>& p_theta_labels() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
+    };
+    return v;
+}
+static inline const std::vector<std::string>& g_theta_labels() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
+    };
+    return v;
+}
+
 // ---------------- CSV I/O ----------------
 struct CSV {
     std::vector<std::string> header;
@@ -211,20 +231,40 @@ static int col(const CSV& csv, const std::string& name) {
     return it->second;
 }
 
-static inline std::string col_xBavg(const std::string& lab)  { return "xBavg, "     + lab; }
-static inline std::string col_Q2avg(const std::string& lab)  { return "Q2avg, "     + lab; }
-static inline std::string col_tavg (const std::string& lab)  { return "t_abs_avg, " + lab; }
-static inline std::string col_phiavg(const std::string& lab) { return "phiavg, "    + lab; }
+static inline std::string col_xBavg(const std::string& lab)  { return "xBavg, "      + lab; }
+static inline std::string col_Q2avg(const std::string& lab)  { return "Q2avg, "      + lab; }
+static inline std::string col_tavg (const std::string& lab)  { return "t_abs_avg, "  + lab; }
+static inline std::string col_phiavg(const std::string& lab) { return "phiavg, "     + lab; }
+
+static inline std::string col_e_theta(const std::string& lab) { return "e_theta, " + lab; }
+static inline std::string col_p_theta(const std::string& lab) { return "p_theta, " + lab; }
+static inline std::string col_g_theta(const std::string& lab) { return "g_theta, " + lab; }
 
 // ---------------- accumulators ----------------
 struct Accum {
-    double sx = 0.0, sQ = 0.0, st = 0.0, sp = 0.0;
+    double sx  = 0.0, sQ  = 0.0, st  = 0.0, sp  = 0.0;
+    double seT = 0.0, spT = 0.0, sgT = 0.0; // theta sums in degrees
     long long n = 0;
-    void add(double x, double Q2, double tabs, double phi_deg) { sx += x; sQ += Q2; st += tabs; sp += phi_deg; ++n; }
-    double mx() const { return n ? sx / n : std::numeric_limits<double>::quiet_NaN(); }
-    double mQ() const { return n ? sQ / n : std::numeric_limits<double>::quiet_NaN(); }
-    double mt() const { return n ? st / n : std::numeric_limits<double>::quiet_NaN(); }
-    double mp() const { return n ? sp / n : std::numeric_limits<double>::quiet_NaN(); }
+
+    void add(double x, double Q2, double tabs, double phi_deg,
+             double e_theta_deg, double p_theta_deg, double g_theta_deg) {
+        sx  += x;
+        sQ  += Q2;
+        st  += tabs;
+        sp  += phi_deg;
+        seT += e_theta_deg;
+        spT += p_theta_deg;
+        sgT += g_theta_deg;
+        ++n;
+    }
+
+    double mx()  const { return n ? sx  / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mQ()  const { return n ? sQ  / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mt()  const { return n ? st  / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mp()  const { return n ? sp  / n : std::numeric_limits<double>::quiet_NaN(); }
+    double meT() const { return n ? seT / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mpT() const { return n ? spT / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mgT() const { return n ? sgT / n : std::numeric_limits<double>::quiet_NaN(); }
 };
 
 // ---------- ROOT binding serialized to avoid Cling races ----------
@@ -250,14 +290,17 @@ struct BranchBinder {
     double xF = 0.0;             bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gg = false;
 
-    // NEW (only required if global_cuts enables the dvcsgen ycol cut)
+    // Inputs used by global_cuts when dvcsgen ycol cut is enabled
     double e_p = 0.0;            bool has_e_p = false;
-    double e_theta = 0.0;        bool has_e_theta = false;
+    double e_theta = 0.0;        bool has_e_theta = false; // radians (also used for bin means)
     double e_phi = 0.0;          bool has_e_phi = false;
 
     double p2_p = 0.0;           bool has_p2_p = false;
-    double p2_theta = 0.0;       bool has_p2_theta = false;
+    double p2_theta = 0.0;       bool has_p2_theta = false; // radians (also used for bin means: photon theta)
     double p2_phi = 0.0;         bool has_p2_phi = false;
+
+    // NEW for bin means: proton theta (branch name p1_theta, radians)
+    double p1_theta = 0.0;       bool has_p1_theta = false;
 
     // binning vars
     double x = 0.0;              bool has_x = false;
@@ -291,13 +334,16 @@ struct BranchBinder {
         enable("xF");
         enable("theta_gamma_gamma");
 
-        // NEW (may or may not exist depending on tree schema; required only when enabled in global cuts)
+        // Used by dvcsgen ycol cut (and now also by bin means theta averages)
         enable("e_p");
         enable("e_theta");
         enable("e_phi");
         enable("p2_p");
         enable("p2_theta");
         enable("p2_phi");
+
+        // NEW: proton theta for bin means
+        enable("p1_theta");
 
         // Binning variables
         enable("x");
@@ -328,7 +374,6 @@ struct BranchBinder {
         bindD("xF",                &xF,                has_xF);
         bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
 
-        // NEW
         bindD("e_p",     &e_p,     has_e_p);
         bindD("e_theta", &e_theta, has_e_theta);
         bindD("e_phi",   &e_phi,   has_e_phi);
@@ -336,6 +381,8 @@ struct BranchBinder {
         bindD("p2_p",     &p2_p,     has_p2_p);
         bindD("p2_theta", &p2_theta, has_p2_theta);
         bindD("p2_phi",   &p2_phi,   has_p2_phi);
+
+        bindD("p1_theta", &p1_theta, has_p1_theta);
 
         bindD("x",    &x,    has_x);
         bindD("Q2",   &Q2,   has_Q2);
@@ -348,6 +395,14 @@ struct BranchBinder {
     bool readyForAverages() const {
         return has_x && has_Q2 && has_phi2;
     }
+    bool readyForThetaMeans() const {
+        // Required for filling e_theta / p_theta / g_theta (in degrees) into CSV.
+        // - e_theta uses branch e_theta
+        // - p_theta uses branch p1_theta
+        // - g_theta uses branch p2_theta
+        return has_e_theta && has_p1_theta && has_p2_theta;
+    }
+
     double phi_deg() const {
         if (!has_phi2) return std::numeric_limits<double>::quiet_NaN();
         double deg = std::fmod(phi2_rad * RAD2DEG, 360.0);
@@ -355,6 +410,20 @@ struct BranchBinder {
         if (deg >= 360.0) deg = std::nextafter(360.0, 0.0);
         return deg;
     }
+
+    double e_theta_deg() const {
+        if (!has_e_theta) return std::numeric_limits<double>::quiet_NaN();
+        return e_theta * RAD2DEG;
+    }
+    double p_theta_deg() const {
+        if (!has_p1_theta) return std::numeric_limits<double>::quiet_NaN();
+        return p1_theta * RAD2DEG;
+    }
+    double g_theta_deg() const {
+        if (!has_p2_theta) return std::numeric_limits<double>::quiet_NaN();
+        return p2_theta * RAD2DEG;
+    }
+
     int topology_index() const {
         if (!has_det1 || !has_det2) return -1;
         if (detector1 == 1 && detector2 == 1) return (int)Topology::FD_FD;
@@ -555,6 +624,15 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         std::exit(EXIT_FAILURE);
     }
 
+    // NEW: required for theta means (in degrees) written to CSV
+    if (!b.readyForThetaMeans()) {
+        std::cerr << "[bin_means] FATAL: Tree for '" << period_key
+                  << "' missing theta branches required for theta means. Required: "
+                  << "e_theta (electron), p1_theta (proton), p2_theta (photon)."
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
     const int c_xBmin = col(csv, "xBmin");
     const int c_xBmax = col(csv, "xBmax");
     const int c_Q2min = col(csv, "Q2min");
@@ -614,6 +692,9 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
                       << " x=" << b.x << " Q2=" << b.Q2
                       << " phi2(rad)=" << b.phi2_rad
                       << " theta_gamma_gamma=" << b.theta_gamma_gamma
+                      << " e_theta(rad)=" << b.e_theta
+                      << " p1_theta(rad)=" << b.p1_theta
+                      << " p2_theta(rad)=" << b.p2_theta
                       << " det1=" << (b.has_det1 ? b.detector1 : -1)
                       << " det2=" << (b.has_det2 ? b.detector2 : -1)
                       << " runnum=" << (b.has_runnum ? b.runnum : -1)
@@ -631,6 +712,12 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         ++n_pass_3sig;
 
         const double phi_deg = b.phi_deg();
+
+        // NEW: theta degrees for bin means
+        const double e_theta_deg = b.e_theta_deg();
+        const double p_theta_deg = b.p_theta_deg();
+        const double g_theta_deg = b.g_theta_deg();
+
         bool used_any_row = false;
 
         for (int r = 0; r < (int)rows.size(); ++r) {
@@ -639,7 +726,8 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
             if (!row_accepts_kin(b, w.xBmin, w.xBmax, w.Q2min, w.Q2max, w.tmin, w.tmax)) continue;
             if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
 
-            R.per_row[r].add(b.x, b.Q2, std::fabs(b.t1), phi_deg);
+            R.per_row[r].add(b.x, b.Q2, std::fabs(b.t1), phi_deg,
+                             e_theta_deg, p_theta_deg, g_theta_deg);
             used_any_row = true;
         }
         if (used_any_row) ++n_used_rows;
@@ -695,6 +783,19 @@ static void fill_combined_groups(CSV& csv,
     const int c_t_106     = col(csv, col_tavg ("10.6 GeV"));
     const int c_phi_106   = col(csv, col_phiavg("10.6 GeV"));
 
+    // NEW: theta group columns (all must exist per schema; fail fast if missing)
+    const int c_e_Fa18   = col(csv, col_e_theta("Fa18"));
+    const int c_p_Fa18   = col(csv, col_p_theta("Fa18"));
+    const int c_g_Fa18   = col(csv, col_g_theta("Fa18"));
+
+    const int c_e_Sp18   = col(csv, col_e_theta("Sp18"));
+    const int c_p_Sp18   = col(csv, col_p_theta("Sp18"));
+    const int c_g_Sp18   = col(csv, col_g_theta("Sp18"));
+
+    const int c_e_106    = col(csv, col_e_theta("10.6 GeV"));
+    const int c_p_106    = col(csv, col_p_theta("10.6 GeV"));
+    const int c_g_106    = col(csv, col_g_theta("10.6 GeV"));
+
     auto combine = [&](const std::vector<const std::unordered_map<int, Accum>*>& parts, int row)->Accum {
         Accum a;
         for (auto* p : parts) {
@@ -702,7 +803,14 @@ static void fill_combined_groups(CSV& csv,
             auto it = p->find(row);
             if (it == p->end()) continue;
             const Accum& r = it->second;
-            a.sx += r.sx; a.sQ += r.sQ; a.st += r.st; a.sp += r.sp; a.n += r.n;
+            a.sx  += r.sx;
+            a.sQ  += r.sQ;
+            a.st  += r.st;
+            a.sp  += r.sp;
+            a.seT += r.seT;
+            a.spT += r.spT;
+            a.sgT += r.sgT;
+            a.n   += r.n;
         }
         return a;
     };
@@ -719,12 +827,22 @@ static void fill_combined_groups(CSV& csv,
                 csv.rows[r][c_Q2_Fa18]  = fmt8(a.mQ());
                 csv.rows[r][c_t_Fa18]   = fmt8(a.mt());
                 csv.rows[r][c_phi_Fa18] = fmt8(a.mp());
+
+                csv.rows[r][c_e_Fa18]   = fmt8(a.meT());
+                csv.rows[r][c_p_Fa18]   = fmt8(a.mpT());
+                csv.rows[r][c_g_Fa18]   = fmt8(a.mgT());
+
                 ++wrote_Fa18;
             } else {
                 csv.rows[r][c_xB_Fa18].clear();
                 csv.rows[r][c_Q2_Fa18].clear();
                 csv.rows[r][c_t_Fa18].clear();
                 csv.rows[r][c_phi_Fa18].clear();
+
+                csv.rows[r][c_e_Fa18].clear();
+                csv.rows[r][c_p_Fa18].clear();
+                csv.rows[r][c_g_Fa18].clear();
+
                 ++skip_Fa18;
             }
         }
@@ -735,12 +853,22 @@ static void fill_combined_groups(CSV& csv,
                 csv.rows[r][c_Q2_Sp18]  = fmt8(a.mQ());
                 csv.rows[r][c_t_Sp18]   = fmt8(a.mt());
                 csv.rows[r][c_phi_Sp18] = fmt8(a.mp());
+
+                csv.rows[r][c_e_Sp18]   = fmt8(a.meT());
+                csv.rows[r][c_p_Sp18]   = fmt8(a.mpT());
+                csv.rows[r][c_g_Sp18]   = fmt8(a.mgT());
+
                 ++wrote_Sp18;
             } else {
                 csv.rows[r][c_xB_Sp18].clear();
                 csv.rows[r][c_Q2_Sp18].clear();
                 csv.rows[r][c_t_Sp18].clear();
                 csv.rows[r][c_phi_Sp18].clear();
+
+                csv.rows[r][c_e_Sp18].clear();
+                csv.rows[r][c_p_Sp18].clear();
+                csv.rows[r][c_g_Sp18].clear();
+
                 ++skip_Sp18;
             }
         }
@@ -751,12 +879,22 @@ static void fill_combined_groups(CSV& csv,
                 csv.rows[r][c_Q2_106]  = fmt8(a.mQ());
                 csv.rows[r][c_t_106]   = fmt8(a.mt());
                 csv.rows[r][c_phi_106] = fmt8(a.mp());
+
+                csv.rows[r][c_e_106]   = fmt8(a.meT());
+                csv.rows[r][c_p_106]   = fmt8(a.mpT());
+                csv.rows[r][c_g_106]   = fmt8(a.mgT());
+
                 ++wrote_106;
             } else {
                 csv.rows[r][c_xB_106].clear();
                 csv.rows[r][c_Q2_106].clear();
                 csv.rows[r][c_t_106].clear();
                 csv.rows[r][c_phi_106].clear();
+
+                csv.rows[r][c_e_106].clear();
+                csv.rows[r][c_p_106].clear();
+                csv.rows[r][c_g_106].clear();
+
                 ++skip_106;
             }
         }
@@ -779,12 +917,26 @@ bool update_bin_means_csv(const std::string& csv_path,
     CSV csv;
     if (!load_csv(csv_path, csv)) return false;
 
+    // Existing mean columns
     std::unordered_map<std::string,int> cxB, cQ2, ct, cphi;
     for (const auto& lab : csv_period_labels()) {
         cxB[lab]  = col(csv, col_xBavg(lab));
         cQ2[lab]  = col(csv, col_Q2avg(lab));
         ct[lab]   = col(csv, col_tavg (lab));
         cphi[lab] = col(csv, col_phiavg(lab));
+    }
+
+    // NEW: theta mean columns (note e_theta does not exist for "Sp18 Inb" by schema)
+    std::unordered_map<std::string,int> ceT, cpT, cgT;
+
+    for (const auto& lab : e_theta_labels()) {
+        ceT[lab] = col(csv, col_e_theta(lab));
+    }
+    for (const auto& lab : p_theta_labels()) {
+        cpT[lab] = col(csv, col_p_theta(lab));
+    }
+    for (const auto& lab : g_theta_labels()) {
+        cgT[lab] = col(csv, col_g_theta(lab));
     }
 
     std::vector<std::string> period_keys;
@@ -828,16 +980,64 @@ bool update_bin_means_csv(const std::string& csv_path,
             int r = kv.first;
             const Accum& a = kv.second;
             if (a.n >= MIN_BIN_COUNT) {
+                // Existing means
                 csv.rows[r][cxB[tags.csv_label]]  = fmt8(a.mx());
                 csv.rows[r][cQ2[tags.csv_label]]  = fmt8(a.mQ());
                 csv.rows[r][ct [tags.csv_label]]  = fmt8(a.mt());
                 csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
+
+                // NEW: theta means (degrees)
+                // e_theta: only write if the column exists for this label (per schema).
+                auto itE = ceT.find(tags.csv_label);
+                if (itE != ceT.end()) {
+                    csv.rows[r][itE->second] = fmt8(a.meT());
+                }
+
+                // p_theta and g_theta exist for all periods by schema.
+                auto itP = cpT.find(tags.csv_label);
+                if (itP == cpT.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for p_theta label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
+                }
+                auto itG = cgT.find(tags.csv_label);
+                if (itG == cgT.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for g_theta label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
+                }
+                csv.rows[r][itP->second] = fmt8(a.mpT());
+                csv.rows[r][itG->second] = fmt8(a.mgT());
+
                 ++wrote;
             } else {
+                // Existing means
                 csv.rows[r][cxB[tags.csv_label]].clear();
                 csv.rows[r][cQ2[tags.csv_label]].clear();
                 csv.rows[r][ct [tags.csv_label]].clear();
                 csv.rows[r][cphi[tags.csv_label]].clear();
+
+                // NEW: theta means
+                auto itE = ceT.find(tags.csv_label);
+                if (itE != ceT.end()) {
+                    csv.rows[r][itE->second].clear();
+                }
+
+                auto itP = cpT.find(tags.csv_label);
+                if (itP == cpT.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for p_theta label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
+                }
+                auto itG = cgT.find(tags.csv_label);
+                if (itG == cgT.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for g_theta label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
+                }
+                csv.rows[r][itP->second].clear();
+                csv.rows[r][itG->second].clear();
+
                 ++skipped;
             }
         }
