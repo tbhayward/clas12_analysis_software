@@ -21,10 +21,14 @@ Phase 2:
         X_i = (A_i - C_i),  Y_i = (D_i - C_i)
         w = sum_i (X_i Y_i) / sum_i (X_i^2), clipped to [0,1].
 
+Additional diagnostic output:
+  - output/yields_data_only.png is now a SINGLE-PAD integrated plot:
+        (sum over all xB and -tprime bins) for data vs aaogen vs clasdis.
+
 Outputs:
   output/yields.png           : data vs aaogen vs clasdis (shape-only) per pad
   output/yields_mix.png       : data vs per-bin mixture per pad, legend shows w[r,c]
-  output/yields_data_only.png : data only (shape-only) per pad
+  output/yields_data_only.png : integrated (all bins summed) data vs aaogen vs clasdis
   output/weights.txt          : per-bin w[r,c], w_unclipped, SSE summary
 """
 
@@ -41,7 +45,7 @@ TREE_NAME = "PhysicsEvents"
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
 TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 
-# Histogram window (now identical to fit window)
+# Histogram window (identical to fit window)
 MX2_MIN = 0.7
 MX2_MAX = 1.1
 MX2_NBINS = 200
@@ -52,7 +56,7 @@ MX2_FIT_MAX = 1.1
 
 OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
-OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"
+OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # now integrated 1-pad three-way
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
 # Masses (GeV)
@@ -297,6 +301,16 @@ def ensure_outdir(path):
 
 
 def compute_best_w_unweighted_for_pad(hd, ha, hc):
+    """
+    Minimizes SSE(w) = sum_{i in fit window} ( D_i - (w*A_i + (1-w)*C_i) )^2.
+
+    Exact minimizer:
+      X_i = (A_i - C_i)
+      Y_i = (D_i - C_i)
+      w_unclipped = sum(X_i*Y_i)/sum(X_i^2)   (over i in window)
+      w = clip(w_unclipped, 0, 1)
+    """
+
     if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
         return 0.0, 0.0, 0.0
     #endif
@@ -408,6 +422,75 @@ def set_axes_and_range(h_frame, ymax):
 #enddef
 
 
+def sum_counts_grid(cgrid):
+    nrows = len(cgrid)
+    ncols = len(cgrid[0])
+    tot = 0
+    for r in range(nrows):
+        for c in range(ncols):
+            tot += int(cgrid[r][c])
+        #endfor
+    #endfor
+    return tot
+#enddef
+
+
+def make_integrated_hist_from_grid(hgrid, name):
+    nrows = len(hgrid)
+    ncols = len(hgrid[0])
+    hsum = hgrid[0][0].Clone(name)
+    hsum.Reset("ICESM")
+    for r in range(nrows):
+        for c in range(ncols):
+            hsum.Add(hgrid[r][c])
+        #endfor
+    #endfor
+    return hsum
+#enddef
+
+
+def draw_canvas_integrated_threeway(hd_int, ha_int, hc_int, Nd, Na, Nc, outpng):
+    canv = ROOT.TCanvas("c_integrated", "Mx2 integrated: data vs aaogen vs clasdis", 1200, 900)
+    canv.cd()
+
+    pad = canv.cd(1)
+    pad.SetGrid(1, 1)
+    pad.SetLeftMargin(0.18)
+    pad.SetRightMargin(0.05)
+    pad.SetBottomMargin(0.14)
+    pad.SetTopMargin(0.08)
+
+    ymax = max(hd_int.GetMaximum(), ha_int.GetMaximum(), hc_int.GetMaximum())
+    if ymax <= 0.0:
+        ymax = 1.0
+    #endif
+    ymax = 1.2 * ymax
+
+    set_axes_and_range(hd_int, ymax)
+
+    hd_int.Draw("hist")
+    ha_int.Draw("hist same")
+    hc_int.Draw("hist same")
+
+    leg = ROOT.TLegend(0.55, 0.72, 0.94, 0.92)
+    leg.SetBorderSize(1)
+    leg.SetFillStyle(1001)
+    leg.SetFillColor(ROOT.kWhite)
+    leg.SetTextSize(0.042)
+    leg.AddEntry(hd_int, f"data (N={int(Nd)})", "l")
+    leg.AddEntry(ha_int, f"aaogen (N={int(Na)})", "l")
+    leg.AddEntry(hc_int, f"clasdis (N={int(Nc)})", "l")
+    leg.Draw()
+
+    tex = ROOT.TLatex()
+    tex.SetNDC(True)
+    tex.SetTextSize(0.045)
+    tex.DrawLatex(0.16, 0.93, "Integrated over all xB and -tprime bins")
+
+    canv.SaveAs(outpng)
+#enddef
+
+
 def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
     nrows = len(h_data)
     ncols = len(h_data[0])
@@ -452,58 +535,6 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
             leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
             leg.AddEntry(ha, f"aaogen (N={int(c_aao[r][c])})", "l")
             leg.AddEntry(hc, f"clasdis (N={int(c_dis[r][c])})", "l")
-            leg.Draw()
-
-            tex = ROOT.TLatex()
-            tex.SetNDC(True)
-            tex.SetTextSize(0.05)
-            tex.DrawLatex(0.14, 0.93,
-                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -tprime [{t_lo:.2f}, {t_hi:.2f})")
-        #endfor
-    #endfor
-
-    canv.SaveAs(outpng)
-#enddef
-
-
-def draw_canvas_data_only(h_data, c_data, outpng):
-    nrows = len(h_data)
-    ncols = len(h_data[0])
-
-    canv = ROOT.TCanvas("c_data_only", "Mx2 data only in xB and -tprime bins", 2400, 1400)
-    canv.Divide(ncols, nrows, 0.001, 0.001)
-
-    pad_idx = 1
-    for r in range(nrows):
-        xb_lo = XB_EDGES[r]
-        xb_hi = XB_EDGES[r + 1]
-
-        for c in range(ncols):
-            t_lo = TNEG_EDGES[c]
-            t_hi = TNEG_EDGES[c + 1]
-
-            pad = canv.cd(pad_idx)
-            pad_idx += 1
-            pad_set_margins(pad)
-
-            hd = h_data[r][c]
-
-            ymax = hd.GetMaximum()
-            if ymax <= 0.0:
-                ymax = 1.0
-            #endif
-            ymax = 1.2 * ymax
-
-            set_axes_and_range(hd, ymax)
-
-            hd.Draw("hist")
-
-            leg = ROOT.TLegend(0.55, 0.78, 0.94, 0.92)
-            leg.SetBorderSize(1)
-            leg.SetFillStyle(1001)
-            leg.SetFillColor(ROOT.kWhite)
-            leg.SetTextSize(0.045)
-            leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
             leg.Draw()
 
             tex = ROOT.TLatex()
@@ -666,6 +697,29 @@ def main():
     fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
     fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
 
+    # Build integrated histograms from RAW (unnormalized) per-pad histograms.
+    h_data_int = make_integrated_hist_from_grid(h_data, "h_data_integrated")
+    h_aao_int = make_integrated_hist_from_grid(h_aao, "h_aaogen_integrated")
+    h_dis_int = make_integrated_hist_from_grid(h_dis, "h_clasdis_integrated")
+
+    Nd_tot = sum_counts_grid(c_data)
+    Na_tot = sum_counts_grid(c_aao)
+    Nc_tot = sum_counts_grid(c_dis)
+
+    # Normalize integrated shapes (like per-pad behavior).
+    normalize_unit_area(h_data_int)
+    normalize_unit_area(h_aao_int)
+    normalize_unit_area(h_dis_int)
+
+    col_data = ROOT.kBlack
+    col_aao = ROOT.kRed
+    col_dis = ROOT.kBlue
+
+    style_hist(h_data_int, col_data, 2, 1)
+    style_hist(h_aao_int, col_aao, 2, 2)
+    style_hist(h_dis_int, col_dis, 2, 3)
+
+    # Now normalize the per-pad histograms to unit area (shape-only).
     for r in range(nrows):
         for c in range(ncols):
             normalize_unit_area(h_data[r][c])
@@ -673,10 +727,6 @@ def main():
             normalize_unit_area(h_dis[r][c])
         #endfor
     #endfor
-
-    col_data = ROOT.kBlack
-    col_aao = ROOT.kRed
-    col_dis = ROOT.kBlue
 
     for r in range(nrows):
         for c in range(ncols):
@@ -687,7 +737,9 @@ def main():
     #endfor
 
     draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
-    draw_canvas_data_only(h_data, c_data, OUTPUT_DATAONLY_PNG)
+
+    # Repurposed "data_only" output: 1-pad integrated three-way plot.
+    draw_canvas_integrated_threeway(h_data_int, h_aao_int, h_dis_int, Nd_tot, Na_tot, Nc_tot, OUTPUT_DATAONLY_PNG)
 
     w_grid, wun_grid, sse_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis)
 
