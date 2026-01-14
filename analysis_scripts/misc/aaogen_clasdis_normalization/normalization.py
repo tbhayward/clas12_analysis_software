@@ -24,7 +24,7 @@ Phase 2:
 Outputs:
   output/yields.png           : data vs aaogen vs clasdis (shape-only) per pad
   output/yields_mix.png       : data vs per-bin mixture per pad, legend shows w[r,c]
-  output/yields_data_only.png : data only (shape-only) per pad  [NEW sanity canvas]
+  output/yields_data_only.png : data only (shape-only) per pad
   output/weights.txt          : per-bin w[r,c], w_unclipped, SSE summary
 """
 
@@ -41,18 +41,18 @@ TREE_NAME = "PhysicsEvents"
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
 TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 
-# Histogram window
-MX2_MIN = 0.0
-MX2_MAX = 2.0
+# Histogram window (now identical to fit window)
+MX2_MIN = 0.7
+MX2_MAX = 1.1
 MX2_NBINS = 200
 
-# Fit window used for solving w and computing SSE
+# Fit window used for solving w and computing SSE (identical to hist range)
 MX2_FIT_MIN = 0.7
 MX2_FIT_MAX = 1.1
 
 OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
-OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # NEW
+OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
 # Masses (GeV)
@@ -280,8 +280,7 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
             continue
         #endif
 
-        mx2_val = float(Mx2[0])
-        hgrid[rb][cb].Fill(mx2_val)
+        hgrid[rb][cb].Fill(float(Mx2[0]))
         cgrid[rb][cb] += 1
     #endfor
 
@@ -687,10 +686,7 @@ def main():
         #endfor
     #endfor
 
-    # Existing outputs (unchanged behavior)
     draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
-
-    # NEW sanity output: data only (no overlays)
     draw_canvas_data_only(h_data, c_data, OUTPUT_DATAONLY_PNG)
 
     w_grid, wun_grid, sse_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis)
