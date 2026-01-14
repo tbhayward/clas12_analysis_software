@@ -311,45 +311,45 @@ int main(int argc, char* argv[]) {
     // }
 
 
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
-        const std::string outdir = "output/propagator_study";
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     const std::string outdir = "output/propagator_study";
 
-        // Build the exact keying scheme required by propagator_study.cpp:
-        // required keys: fa18_inb, fa18_out, sp18_inb, sp18_out, sp19_inb
-        std::map<std::string, std::vector<TTree*>> dataTreesByPeriod;
+    //     // Build the exact keying scheme required by propagator_study.cpp:
+    //     // required keys: fa18_inb, fa18_out, sp18_inb, sp18_out, sp19_inb
+    //     std::map<std::string, std::vector<TTree*>> dataTreesByPeriod;
 
-        auto require_tree = [&](const std::string& in_key,
-                                const std::string& out_key) {
-            auto it = dataTrees.find(in_key);
-            if (it == dataTrees.end() || it->second == nullptr) {
-                std::cerr << "[main] FATAL: missing required data tree key \"" << in_key << "\"\n";
-                std::cerr << "[main] Available dataTrees keys are:\n";
-                for (const auto& kv : dataTrees) {
-                    std::cerr << "  - " << kv.first << "\n";
-                } //endfor
-                std::exit(EXIT_FAILURE);
-            }
-            dataTreesByPeriod[out_key].push_back(it->second);
-        };
+    //     auto require_tree = [&](const std::string& in_key,
+    //                             const std::string& out_key) {
+    //         auto it = dataTrees.find(in_key);
+    //         if (it == dataTrees.end() || it->second == nullptr) {
+    //             std::cerr << "[main] FATAL: missing required data tree key \"" << in_key << "\"\n";
+    //             std::cerr << "[main] Available dataTrees keys are:\n";
+    //             for (const auto& kv : dataTrees) {
+    //                 std::cerr << "  - " << kv.first << "\n";
+    //             } //endfor
+    //             std::exit(EXIT_FAILURE);
+    //         }
+    //         dataTreesByPeriod[out_key].push_back(it->second);
+    //     };
 
-        // These input keys must match exactly whatever loadTrees() uses.
-        // Based on your comment earlier ("keys like DVCS_Fa18_inb, ..."), this is the expected mapping:
-        require_tree("DVCS_Fa18_inb", "fa18_inb");
-        require_tree("DVCS_Fa18_out", "fa18_out");
-        require_tree("DVCS_Sp18_inb", "sp18_inb");
-        require_tree("DVCS_Sp18_out", "sp18_out");
-        require_tree("DVCS_Sp19_inb", "sp19_inb");
+    //     // These input keys must match exactly whatever loadTrees() uses.
+    //     // Based on your comment earlier ("keys like DVCS_Fa18_inb, ..."), this is the expected mapping:
+    //     require_tree("DVCS_Fa18_inb", "fa18_inb");
+    //     require_tree("DVCS_Fa18_out", "fa18_out");
+    //     require_tree("DVCS_Sp18_inb", "sp18_inb");
+    //     require_tree("DVCS_Sp18_out", "sp18_out");
+    //     require_tree("DVCS_Sp19_inb", "sp19_inb");
 
-        if (!propagator_study::run_propagator_study(csv_main,
-                                                    dataTreesByPeriod,
-                                                    combined_cuts_json,
-                                                    outdir)) {
-            std::cerr << "[main] ERROR: propagator study failed\n";
-            return 1;
-        }
-    }
+    //     if (!propagator_study::run_propagator_study(csv_main,
+    //                                                 dataTreesByPeriod,
+    //                                                 combined_cuts_json,
+    //                                                 outdir)) {
+    //         std::cerr << "[main] ERROR: propagator study failed\n";
+    //         return 1;
+    //     }
+    // }
 
 
     // // --------- Cross sections (CSV update + theory JSON + plots) ----------

@@ -29,6 +29,17 @@
  * We only keep period/combined-group averages (no singletons). For each variable
  * (xB, Q2, t_abs, phi) the eight grouped averages appear right after the matching
  * "...max" column.
+ *
+ * ADDITIONS (THIS UPDATE)
+ * -----------------------
+ * 1) After "phiavg, 10.6 GeV", add grouped theta columns:
+ *      - e_theta, <group> for specific groups (as requested, note Sp18 Inb omitted)
+ *      - p_theta, <group> for groups (including Sp18 Inb)
+ *      - g_theta, <group> for groups (including Sp18 Inb)
+ *
+ * 2) After "cross sections, ep->epg, exp, Sp18, neg", add:
+ *      - norm, <group> for {Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out, Fa18, Sp18, 10.6 GeV}
+ *      - then add "normed " + <each existing cross section column> (same list/order as cross sections)
  */
 
 /* ============================
@@ -137,6 +148,39 @@ static void add_grouped_avg_columns(std::vector<std::string>& H, const std::stri
     }
 }
 
+static void add_theta_group_columns_after_phiavg_10p6(std::vector<std::string>& H) {
+    // Inserted immediately after "phiavg, 10.6 GeV" (which is last in avg_groups()).
+
+    // e_theta sequence EXACTLY as requested (note: Sp18 Inb intentionally omitted)
+    H.push_back("e_theta, Fa18 Inb");
+    H.push_back("e_theta, Fa18 Out");
+    H.push_back("e_theta, Sp19 Inb");
+    H.push_back("e_theta, Sp18 Out");
+    H.push_back("e_theta, Fa18");
+    H.push_back("e_theta, Sp18");
+    H.push_back("e_theta, 10.6 GeV");
+
+    // p_theta sequence EXACTLY as requested
+    H.push_back("p_theta, Fa18 Inb");
+    H.push_back("p_theta, Fa18 Out");
+    H.push_back("p_theta, Sp19 Inb");
+    H.push_back("p_theta, Sp18 Inb");
+    H.push_back("p_theta, Sp18 Out");
+    H.push_back("p_theta, Fa18");
+    H.push_back("p_theta, Sp18");
+    H.push_back("p_theta, 10.6 GeV");
+
+    // g_theta sequence EXACTLY as requested
+    H.push_back("g_theta, Fa18 Inb");
+    H.push_back("g_theta, Fa18 Out");
+    H.push_back("g_theta, Sp19 Inb");
+    H.push_back("g_theta, Sp18 Inb");
+    H.push_back("g_theta, Sp18 Out");
+    H.push_back("g_theta, Fa18");
+    H.push_back("g_theta, Sp18");
+    H.push_back("g_theta, 10.6 GeV");
+}
+
 static void add_bin_definition_columns(std::vector<std::string>& H) {
     // Bin-definition columns (copied where specified)
     H.push_back("bin index");
@@ -161,6 +205,9 @@ static void add_bin_definition_columns(std::vector<std::string>& H) {
     H.push_back("phimin");
     H.push_back("phimax");
     add_grouped_avg_columns(H, "phiavg"); // immediately after phimax
+
+    // NEW: insert theta columns immediately after "phiavg, 10.6 GeV"
+    add_theta_group_columns_after_phiavg_10p6(H);
 
     // remaining bin-definition helpers
     H.push_back("tmin");
@@ -284,6 +331,44 @@ static void add_luminosity_columns(std::vector<std::string>& H) {
     H.push_back("integrated luminosity, 10.6 GeV (nC)");
 }
 
+static void add_norm_columns(std::vector<std::string>& H) {
+    // EXACT insertion sequence requested
+    H.push_back("norm, Fa18 Inb");
+    H.push_back("norm, Fa18 Out");
+    H.push_back("norm, Sp19 Inb");
+    H.push_back("norm, Sp18 Inb");
+    H.push_back("norm, Sp18 Out");
+    H.push_back("norm, Fa18");
+    H.push_back("norm, Sp18");
+    H.push_back("norm, 10.6 GeV");
+}
+
+static void add_normed_cross_section_columns(std::vector<std::string>& H) {
+    // Repeat the SAME cross section columns and SAME ordering, but with "normed " prefixed.
+    const std::vector<std::string> periods = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
+    };
+    const std::vector<std::string> helicities = { "unpol", "pos", "neg" };
+    const std::vector<std::string> combined = {
+        "10.6 GeV", "Fa18", "Sp18"
+    };
+
+    for (const auto& per : periods) {
+        for (const auto& hel : helicities) {
+            std::ostringstream name;
+            name << "normed cross sections, ep->epg, exp, " << per << ", " << hel;
+            H.push_back(name.str());
+        }
+    }
+    for (const auto& grp : combined) {
+        for (const auto& hel : helicities) {
+            std::ostringstream name;
+            name << "normed cross sections, ep->epg, exp, " << grp << ", " << hel;
+            H.push_back(name.str());
+        }
+    }
+}
+
 static void add_cross_section_columns(std::vector<std::string>& H) {
     const std::vector<std::string> periods = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
@@ -309,6 +394,13 @@ static void add_cross_section_columns(std::vector<std::string>& H) {
             H.push_back(name.str());
         }
     }
+
+    // NEW: insert norm columns immediately after "cross sections, ep->epg, exp, Sp18, neg"
+    // Since the above loops end on (grp="Sp18", hel="neg"), appending here is exactly "right after".
+    add_norm_columns(H);
+
+    // NEW: immediately after norm columns, append "normed" copies of all cross section columns.
+    add_normed_cross_section_columns(H);
 }
 
 static void add_bsa_columns(std::vector<std::string>& H) {
@@ -358,9 +450,9 @@ static void add_valid_and_prefactor_columns(std::vector<std::string>& H) {
 
 static std::vector<std::string> build_new_header() {
     std::vector<std::string> H;
-    H.reserve(500);
+    H.reserve(650);
 
-    add_bin_definition_columns(H);  // includes grouped average columns placed after each max
+    add_bin_definition_columns(H);  // includes grouped avg columns + NEW theta group columns after phiavg, 10.6 GeV
     add_raw_yield_columns(H);
     add_contamination_columns(H);
     add_signal_yield_columns(H);
@@ -368,7 +460,7 @@ static std::vector<std::string> build_new_header() {
     add_acc_corrected_yield_columns(H);
     add_frad_fbin_binvol_columns(H);
     add_luminosity_columns(H);
-    add_cross_section_columns(H);
+    add_cross_section_columns(H);   // includes NEW norm columns + NEW normed cross section columns
     add_bsa_columns(H);
     add_valid_and_prefactor_columns(H);
 
@@ -512,7 +604,7 @@ bool initialize_pass2_csv(const std::string& lee_csv_path,
             out_row[new_idx] = v;
         }
 
-        // All analysis-produced fields (including grouped averages) remain blank at init
+        // All analysis-produced fields (including grouped averages, theta columns, norms, and normed cross sections) remain blank at init
         fout << join_csv_row(out_row) << "\n";
         ++kept_rows;
     }
