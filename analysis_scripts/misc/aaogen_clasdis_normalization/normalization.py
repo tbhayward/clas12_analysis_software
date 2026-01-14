@@ -40,13 +40,14 @@ TREE_NAME = "PhysicsEvents"
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
 TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 
+# Histogram window
 MX2_MIN = 0.0
 MX2_MAX = 2.0
 MX2_NBINS = 200
 
 # Fit window used for solving w and computing SSE
 MX2_FIT_MIN = 0.7
-MX2_FIT_MAX = 1.3
+MX2_FIT_MAX = 1.1
 
 OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
@@ -277,7 +278,8 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
             continue
         #endif
 
-        hgrid[rb][cb].Fill(float(Mx2[0]))
+        mx2_val = float(Mx2[0])
+        hgrid[rb][cb].Fill(mx2_val)
         cgrid[rb][cb] += 1
     #endfor
 
@@ -294,16 +296,6 @@ def ensure_outdir(path):
 
 
 def compute_best_w_unweighted_for_pad(hd, ha, hc):
-    """
-    Minimizes SSE(w) = sum_{i in fit window} ( D_i - (w*A_i + (1-w)*C_i) )^2.
-
-    Exact minimizer:
-      X_i = (A_i - C_i)
-      Y_i = (D_i - C_i)
-      w_unclipped = sum(X_i*Y_i)/sum(X_i^2)   (over i in window)
-      w = clip(w_unclipped, 0, 1)
-    """
-
     if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
         return 0.0, 0.0, 0.0
     #endif
@@ -515,7 +507,6 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
             leg.SetTextSize(0.040)
             leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
             leg.AddEntry(hm, f"mix (aaogen frac w={w:.4f})", "l")
-            # IMPORTANT: do NOT pass None here; use empty name string overload
             leg.AddEntry("", f"fit window: [{MX2_FIT_MIN:.1f}, {MX2_FIT_MAX:.1f}]", "")
             leg.Draw()
 
