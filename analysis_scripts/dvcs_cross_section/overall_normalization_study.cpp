@@ -41,7 +41,7 @@ namespace {
 //   - true  : FAST PATH (one row per (xB,Q2,|t|) cell; pick phi closest to 0/360)
 //   - false : USE ALL POINTS (every phi row in the CSV that has a valid xs)
 // -----------------------------------------------------------------------------
-static const bool kUseOnlyClosestToEdgePerKinCell = false;
+static const bool kUseOnlyClosestToEdgePerKinCell = true;
 
 // If kUseOnlyClosestToEdgePerKinCell == false, you can also optionally reject
 // points with phi exactly on the edge (d_edge == 0). Keep as true by default.
