@@ -48,7 +48,7 @@ TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 # Histogram window (identical to fit window)
 MX2_MIN = 0.7
 MX2_MAX = 1.1
-MX2_NBINS = 200
+MX2_NBINS = 25
 
 # Fit window used for solving w and computing SSE (identical to hist range)
 MX2_FIT_MIN = 0.7
