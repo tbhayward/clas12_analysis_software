@@ -6,7 +6,7 @@ normalization.py
 
 Phase 1:
   - Fill 4x6 Mx2 histograms binned in (xB, -tprime) for data, aaogen, clasdis
-  - Compute t, tmin, tprime on-the-fly
+  - Compute t, tmin, tprime on-the-fly (from runnum-based beam energy)
   - Normalize each histogram to unit area per (xB, -tprime) bin (shape-only)
 
 Phase 2:
@@ -35,22 +35,25 @@ Additional diagnostic output:
   - output/yields_data_only.png is a SINGLE-PAD integrated plot:
         (sum over all xB and -tprime bins) for data vs aaogen vs clasdis.
 
-Phase 3 (optional):
-  - If --mc_aaogen and --mc_clasdis are provided:
-      * Build a mixed MC ROOT file by combining events from the provided MC aaogen/clasdis trees
-        on a bin-by-bin basis in (xB, -tprime), using the computed w[r,c] from Phase 2.
-      * In each (r,c) bin, use ALL clasdis events, then add enough aaogen events to approach
-        the target aaogen fraction w[r,c]. If aaogen runs out in a bin, use all available.
-      * The new MC files do NOT contain runnum, so beam energy is assumed constant Eb=10.55 GeV.
-      * Copy the required branches into the new output tree, and additionally write:
-            t, tmin, tprime, mc_t, mc_tmin, mc_tprime
+Optional Phase 3 (event-level mixing into a new ROOT file):
+  - If --mc_aaogen and --mc_clasdis are provided, create an output ROOT file containing
+    a per-(xB,-tprime) event mixture of those MC files using the weights w[r,c].
+  - Strategy: write ALL clasdis events (max stats), then add aaogen events until each
+    bin achieves the target mixture fraction:
+        w = N_aao / (N_aao + N_dis)  =>  N_aao_target = w/(1-w) * N_dis
+  - These MC files do NOT have runnum. Assume fixed beam energy Eb=10.55 GeV.
+  - IMPORTANT: Any pre-existing t/tmin branches in the MC inputs are IGNORED.
+    We recompute:
+        t, tmin, tprime from reconstructed kinematics and (x,Q2)
+        mc_t, mc_tmin, mc_tprime from generated kinematics and (mc_x,mc_Q2)
+  - Bin assignment for mixing uses recomputed reco (x, tprime).
 
-Outputs:
+Outputs (unchanged from prior behavior):
   output/yields.png           : data vs aaogen vs clasdis (shape-only) per pad
   output/yields_mix.png       : data vs per-bin mixture per pad, legend shows w[r,c]
   output/yields_data_only.png : integrated (all bins summed) data vs aaogen vs clasdis
   output/weights.txt          : per-bin w[r,c], w_unclipped, chi2 summary
-  output/mixed_mc.root        : (optional) mixed MC built from --mc_aaogen/--mc_clasdis
+  --out mixed MC root         : optional mixed MC ROOT file (Phase 3)
 """
 
 import os
@@ -80,14 +83,14 @@ OUTPUT_MIX_PNG = "output/yields_mix.png"
 OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # integrated 1-pad three-way
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
-OUTPUT_MIXED_MC_ROOT = "output/mixed_mc.root"
+DEFAULT_MIXED_MC_ROOT = "output/mixed_mc.root"
 
-# For the new MC mixing files (no runnum):
-MIXED_MC_EB = 10.55  # (GeV)
+# Fixed beam energy for MC mixing stage (no runnum in MC files)
+MC_EB_FIXED = 10.55
 
 # Masses (GeV)
 MASS_E = 0.000511
-MASS_PI = 0.139570
+MASS_PI = 0.139570  # used for the hadron 4-vector in t computation; change if needed
 MASS_N = 0.9382720813
 
 
@@ -97,11 +100,11 @@ def fatal(msg):
 
 
 def require_file(path):
-    if path is None or path.strip() == "":
+    if path is None or str(path).strip() == "":
         fatal("Missing required input path.")
     #endif
     if not os.path.isfile(path):
-        fatal("File not found: " + path)
+        fatal("File not found: " + str(path))
     #endif
 #enddef
 
@@ -109,11 +112,11 @@ def require_file(path):
 def open_tree(path, tree_name):
     f = ROOT.TFile.Open(path, "READ")
     if not f or f.IsZombie():
-        fatal("Failed to open ROOT file: " + path)
+        fatal("Failed to open ROOT file: " + str(path))
     #endif
     t = f.Get(tree_name)
     if not t:
-        fatal("Tree '" + tree_name + "' not found in: " + path)
+        fatal("Tree '" + str(tree_name) + "' not found in: " + str(path))
     #endif
     return f, t
 #enddef
@@ -122,7 +125,7 @@ def open_tree(path, tree_name):
 def require_branches(t, needed, label):
     blist = t.GetListOfBranches()
     if not blist:
-        fatal("No branch list available for tree in: " + label)
+        fatal("No branch list available for tree in: " + str(label))
     #endif
     missing = []
     for b in needed:
@@ -131,7 +134,7 @@ def require_branches(t, needed, label):
         #endif
     #endfor
     if len(missing) > 0:
-        fatal("Missing required branches in " + label + ": " + ", ".join(missing))
+        fatal("Missing required branches in " + str(label) + ": " + ", ".join(missing))
     #endif
 #enddef
 
@@ -153,7 +156,7 @@ def beam_energy(runnum):
 #enddef
 
 
-def compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
+def compute_t_scalar_from_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
     if Eb <= 0.0:
         return 1.0e9
     #endif
@@ -172,8 +175,6 @@ def compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
     py = p_p * sp * math.sin(p_phi)
     pz = p_p * cp
 
-    # q = k - k' = (Eb - E_e, -ex, -ey, Eb - ez)
-    # then (q - p_pi)^2 = ( (Eb - E_e) - E_pi )^2 - | (-e_vec + (0,0,Eb)) - p_vec |^2
     dE = (Eb - E_e) - E_pi
     dx = -ex - px
     dy = -ey - py
@@ -185,7 +186,7 @@ def compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
 
 def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
     Eb = beam_energy(int(runnum))
-    return compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
+    return compute_t_scalar_from_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
 #enddef
 
 
@@ -251,28 +252,6 @@ def make_hist_grid(prefix, nrows, ncols):
         grid.append(row)
     #endfor
     return grid
-#enddef
-
-
-def clone_hist_grid(hgrid, prefix):
-    nrows = len(hgrid)
-    ncols = len(hgrid[0])
-    out = []
-    for r in range(nrows):
-        row = []
-        for c in range(ncols):
-            h = hgrid[r][c].Clone(f"{see_safe(prefix)}_r{r}_c{c}")
-            row.append(h)
-        #endfor
-        out.append(row)
-    #endfor
-    return out
-#enddef
-
-
-def see_safe(s):
-    # Avoid surprises with ROOT object naming
-    return str(s).replace(" ", "_")
 #enddef
 
 
@@ -348,7 +327,7 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
 
 
 def ensure_outdir(path):
-    d = os.path.dirname(path)
+    d = os.path.dirname(str(path))
     if d != "":
         os.makedirs(d, exist_ok=True)
     #endif
@@ -356,11 +335,6 @@ def ensure_outdir(path):
 
 
 def sigma_from_raw_counts(n_i, N_pad):
-    """
-    For normalized data D_i = n_i / N_pad, Poisson stat gives:
-      sigma(D_i) = sqrt(n_i) / N_pad.
-    We must avoid sigma=0 when n_i=0; use a floor ~ 1/N_pad.
-    """
     if N_pad <= 0:
         return 1.0
     #endif
@@ -372,19 +346,6 @@ def sigma_from_raw_counts(n_i, N_pad):
 
 
 def compute_best_w_weighted_for_pad(hd_norm, ha_norm, hc_norm, hd_raw):
-    """
-    Weighted least squares minimization in the fit window:
-
-      chi2(w) = sum_i (D_i - (w*A_i + (1-w)*C_i))^2 / sigma_i^2
-
-    sigma_i is derived from RAW data counts:
-      D_i = (n_i / N), sigma_i = sqrt(n_i)/N, with floor for n_i=0.
-
-    Closed form:
-      X_i = (A_i - C_i), Y_i = (D_i - C_i), w_i = 1/sigma_i^2
-      w_unclipped = sum(w_i X_i Y_i) / sum(w_i X_i^2), then clip to [0,1].
-    """
-
     nb = hd_norm.GetNbinsX()
 
     N_pad = hd_raw.Integral(1, nb)
@@ -744,428 +705,395 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
 #enddef
 
 
-def _make_out_branch_double(tout, name):
-    arr = array("d", [0.0])
-    tout.Branch(name, arr, name + "/D")
-    return arr
-#enddef
-
-
-def _make_out_branch_int(tout, name):
-    arr = array("i", [0])
-    tout.Branch(name, arr, name + "/I")
-    return arr
-#enddef
-
-
-def _compute_rc_bin_from_reco(Eb, x_rec, Q2_rec, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
-    rb = find_bin(x_rec, XB_EDGES)
-    if rb < 0:
-        return -1, -1, 0.0, 0.0, 0.0
-    #endif
-
-    t_val = compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
-    tmin_val = compute_tmin_exact(x_rec, Q2_rec)
+def compute_bin_indices_from_reco(x_val, Q2_val, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
+    """
+    For MC mixing stage:
+      - Use fixed Eb=MC_EB_FIXED
+      - Recompute t, tmin, tprime from reco kinematics and (x,Q2)
+      - Return (row, col, t, tmin, tprime)
+    """
+    t_val = compute_t_scalar_from_Eb(MC_EB_FIXED, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
+    tmin_val = compute_tmin_exact(x_val, Q2_val)
     tprime_val = t_val - tmin_val
     tneg = -tprime_val
 
-    cb = find_bin(tneg, TNEG_EDGES)
-    if cb < 0:
+    r = find_bin(x_val, XB_EDGES)
+    if r < 0:
         return -1, -1, t_val, tmin_val, tprime_val
     #endif
-
-    return rb, cb, t_val, tmin_val, tprime_val
+    c = find_bin(tneg, TNEG_EDGES)
+    if c < 0:
+        return -1, -1, t_val, tmin_val, tprime_val
+    #endif
+    return r, c, t_val, tmin_val, tprime_val
 #enddef
 
 
-def write_mixed_mc_root(mc_aaogen_path, mc_clasdis_path, w_grid, out_root_path, max_events):
+def compute_mc_t_quantities_from_gen(mc_x_val, mc_Q2_val,
+                                    mc_e_p, mc_e_theta, mc_e_phi,
+                                    mc_p_p, mc_p_theta, mc_p_phi):
     """
-    Build a mixed MC ROOT file using the per-(xB,-tprime) weights w_grid:
-
-      - Write ALL clasdis events (subject to binning cuts)
-      - Then write enough aaogen events per bin to approximate target aaogen fraction w
-
-    Target relation per bin:
-      w = N_aao / (N_aao + N_dis)  =>  N_aao_target = w/(1-w) * N_dis
-
-    If w=0 => no aaogen added in that bin.
-    If w is very close to 1 => extremely large N_aao_target; in that case we write all aaogen
-    available and warn if the target is unreachable.
-
-    Also adds derived branches:
-      t, tmin, tprime, mc_t, mc_tmin, mc_tprime
-
-    Eb is assumed constant MIXED_MC_EB.
+    Recompute generated-level t, tmin, tprime using fixed Eb=MC_EB_FIXED.
     """
+    mc_t_val = compute_t_scalar_from_Eb(MC_EB_FIXED,
+                                        mc_e_p, mc_e_theta, mc_e_phi,
+                                        mc_p_p, mc_p_theta, mc_p_phi)
+    mc_tmin_val = compute_tmin_exact(mc_x_val, mc_Q2_val)
+    mc_tprime_val = mc_t_val - mc_tmin_val
+    return mc_t_val, mc_tmin_val, mc_tprime_val
+#enddef
 
-    require_file(mc_aaogen_path)
-    require_file(mc_clasdis_path)
 
-    f_aao, t_aao = open_tree(mc_aaogen_path, TREE_NAME)
-    f_dis, t_dis = open_tree(mc_clasdis_path, TREE_NAME)
+def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_events):
+    require_file(mc_aao_path)
+    require_file(mc_dis_path)
 
-    # Required branches for these special MC files (no runnum).
-    # NOTE: fail fast if any are missing.
-    needed_mc = [
-        "e_p", "mc_e_p",
-        "e_theta", "mc_e_theta",
-        "e_phi", "mc_e_phi",
-        "vz_e", "mc_vz_e",
-        "p_p", "mc_p_p",
-        "p_theta", "mc_p_theta",
-        "p_phi", "mc_p_phi",
-        "vz_p", "mc_vz_p",
-        "Q2", "mc_Q2",
-        "W", "mc_W",
-        "Mx", "mc_Mx",
-        "Mx2", "mc_Mx2",
-        "x", "mc_x",
-        "y", "mc_y",
-        "z", "mc_z",
-        "xF", "mc_xF",
-        "pT", "mc_pT",
-        "xi", "mc_xi",
-        "eta", "mc_eta",
-        "trento_phi", "mc_trento_phi",
-        "Depolarization_A", "mc_Depolarization_A",
-        "Depolarization_B", "mc_Depolarization_B",
-        "Depolarization_C", "mc_Depolarization_C",
-        "Depolarization_V", "mc_Depolarization_V",
-        "Depolarization_W", "mc_Depolarization_W",
-        "matching_e_pid",
-        "matching_p1_pid",
-        "mc_p1_parent"
+    f_aao, t_aao = open_tree(mc_aao_path, TREE_NAME)
+    f_dis, t_dis = open_tree(mc_dis_path, TREE_NAME)
+
+    # Updated MC schema (phi is trento_phi; DepA..DepW instead of Depolarization_*).
+    # NOTE: We do NOT require input t/tmin/mc_t/mc_tmin because we will ignore them.
+    mc_needed = [
+        "e_p", "e_theta", "e_phi", "vz_e",
+        "p_p", "p_theta", "p_phi", "vz_p",
+        "Q2", "W", "Mx", "Mx2", "x", "y", "z", "xF", "pT", "xi", "eta", "phi",
+        "DepA", "DepB", "DepC", "DepV", "DepW",
+        "mc_e_p", "mc_e_theta", "mc_e_phi", "mc_vz_e",
+        "mc_p_p", "mc_p_theta", "mc_p_phi", "mc_vz_p",
+        "mc_Q2", "mc_W", "mc_Mx", "mc_Mx2", "mc_x", "mc_y", "mc_z",
+        "mc_xF", "mc_pT", "mc_xi", "mc_eta", "mc_phi",
+        "mc_DepA", "mc_DepB", "mc_DepC", "mc_DepV", "mc_DepW",
+        "matching_e_pid", "matching_p1_pid", "mc_p1_parent"
     ]
-    require_branches(t_aao, needed_mc, "mc_aaogen")
-    require_branches(t_dis, needed_mc, "mc_clasdis")
+    require_branches(t_aao, mc_needed, "mc_aaogen")
+    require_branches(t_dis, mc_needed, "mc_clasdis")
 
     ensure_outdir(out_root_path)
 
     fout = ROOT.TFile.Open(out_root_path, "RECREATE")
     if not fout or fout.IsZombie():
-        fatal("Failed to create output ROOT file: " + out_root_path)
+        fatal("Failed to create output ROOT file: " + str(out_root_path))
     #endif
 
-    tout = ROOT.TTree(TREE_NAME, "Mixed MC: clasdis + aaogen (per-bin)")
+    tout = ROOT.TTree(TREE_NAME, "Mixed MC: per-bin aaogen/clasdis mixture using w_grid")
 
-    # Output branches (copy inputs + add derived).
-    out = {}
+    # Output buffers
+    e_p = array("d", [0.0])
+    e_theta = array("d", [0.0])
+    e_phi = array("d", [0.0])
+    vz_e = array("d", [0.0])
+    p_p = array("d", [0.0])
+    p_theta = array("d", [0.0])
+    p_phi = array("d", [0.0])
+    vz_p = array("d", [0.0])
+    Q2 = array("d", [0.0])
+    W = array("d", [0.0])
+    Mx = array("d", [0.0])
+    Mx2 = array("d", [0.0])
+    x = array("d", [0.0])
+    y = array("d", [0.0])
+    z = array("d", [0.0])
+    xF = array("d", [0.0])
+    pT = array("d", [0.0])
+    xi = array("d", [0.0])
+    eta = array("d", [0.0])
+    phi = array("d", [0.0])
+    DepA = array("d", [0.0])
+    DepB = array("d", [0.0])
+    DepC = array("d", [0.0])
+    DepV = array("d", [0.0])
+    DepW = array("d", [0.0])
 
-    # Doubles
-    for bn in [
-        "e_p", "mc_e_p",
-        "e_theta", "mc_e_theta",
-        "e_phi", "mc_e_phi",
-        "vz_e", "mc_vz_e",
-        "p_p", "mc_p_p",
-        "p_theta", "mc_p_theta",
-        "p_phi", "mc_p_phi",
-        "vz_p", "mc_vz_p",
-        "Q2", "mc_Q2",
-        "W", "mc_W",
-        "Mx", "mc_Mx",
-        "Mx2", "mc_Mx2",
-        "x", "mc_x",
-        "y", "mc_y",
-        "z", "mc_z",
-        "xF", "mc_xF",
-        "pT", "mc_pT",
-        "xi", "mc_xi",
-        "eta", "mc_eta",
-        "trento_phi", "mc_trento_phi",
-        "Depolarization_A", "mc_Depolarization_A",
-        "Depolarization_B", "mc_Depolarization_B",
-        "Depolarization_C", "mc_Depolarization_C",
-        "Depolarization_V", "mc_Depolarization_V",
-        "Depolarization_W", "mc_Depolarization_W"
-    ]:
-        out[bn] = _make_out_branch_double(tout, bn)
-    #endfor
+    mc_e_p = array("d", [0.0])
+    mc_e_theta = array("d", [0.0])
+    mc_e_phi = array("d", [0.0])
+    mc_vz_e = array("d", [0.0])
+    mc_p_p = array("d", [0.0])
+    mc_p_theta = array("d", [0.0])
+    mc_p_phi = array("d", [0.0])
+    mc_vz_p = array("d", [0.0])
+    mc_Q2 = array("d", [0.0])
+    mc_W = array("d", [0.0])
+    mc_Mx = array("d", [0.0])
+    mc_Mx2 = array("d", [0.0])
+    mc_x = array("d", [0.0])
+    mc_y = array("d", [0.0])
+    mc_z = array("d", [0.0])
+    mc_xF = array("d", [0.0])
+    mc_pT = array("d", [0.0])
+    mc_xi = array("d", [0.0])
+    mc_eta = array("d", [0.0])
+    mc_phi = array("d", [0.0])
+    mc_DepA = array("d", [0.0])
+    mc_DepB = array("d", [0.0])
+    mc_DepC = array("d", [0.0])
+    mc_DepV = array("d", [0.0])
+    mc_DepW = array("d", [0.0])
 
-    # Ints
-    for bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
-        out[bn] = _make_out_branch_int(tout, bn)
-    #endfor
+    matching_e_pid = array("i", [0])
+    matching_p1_pid = array("i", [0])
+    mc_p1_parent = array("i", [0])
 
-    # Derived doubles
-    out["t"] = _make_out_branch_double(tout, "t")
-    out["tmin"] = _make_out_branch_double(tout, "tmin")
-    out["tprime"] = _make_out_branch_double(tout, "tprime")
-    out["mc_t"] = _make_out_branch_double(tout, "mc_t")
-    out["mc_tmin"] = _make_out_branch_double(tout, "mc_tmin")
-    out["mc_tprime"] = _make_out_branch_double(tout, "mc_tprime")
+    # Newly recomputed branches
+    t = array("d", [0.0])
+    tmin = array("d", [0.0])
+    tprime = array("d", [0.0])
+    mc_t = array("d", [0.0])
+    mc_tmin = array("d", [0.0])
+    mc_tprime = array("d", [0.0])
 
-    # Reader buffers for input trees
-    def _bind_inputs(tree):
-        bufs = {}
-        tree.SetBranchStatus("*", 0)
-        for bn in needed_mc:
-            tree.SetBranchStatus(bn, 1)
-        #endfor
+    # Create branches in output
+    tout.Branch("e_p", e_p, "e_p/D")
+    tout.Branch("e_theta", e_theta, "e_theta/D")
+    tout.Branch("e_phi", e_phi, "e_phi/D")
+    tout.Branch("vz_e", vz_e, "vz_e/D")
+    tout.Branch("p_p", p_p, "p_p/D")
+    tout.Branch("p_theta", p_theta, "p_theta/D")
+    tout.Branch("p_phi", p_phi, "p_phi/D")
+    tout.Branch("vz_p", vz_p, "vz_p/D")
+    tout.Branch("Q2", Q2, "Q2/D")
+    tout.Branch("W", W, "W/D")
+    tout.Branch("Mx", Mx, "Mx/D")
+    tout.Branch("Mx2", Mx2, "Mx2/D")
+    tout.Branch("x", x, "x/D")
+    tout.Branch("y", y, "y/D")
+    tout.Branch("z", z, "z/D")
+    tout.Branch("xF", xF, "xF/D")
+    tout.Branch("pT", pT, "pT/D")
+    tout.Branch("xi", xi, "xi/D")
+    tout.Branch("eta", eta, "eta/D")
+    tout.Branch("phi", phi, "phi/D")
+    tout.Branch("DepA", DepA, "DepA/D")
+    tout.Branch("DepB", DepB, "DepB/D")
+    tout.Branch("DepC", DepC, "DepC/D")
+    tout.Branch("DepV", DepV, "DepV/D")
+    tout.Branch("DepW", DepW, "DepW/D")
 
-        # doubles
-        for bn in [
-            "e_p", "mc_e_p",
-            "e_theta", "mc_e_theta",
-            "e_phi", "mc_e_phi",
-            "vz_e", "mc_vz_e",
-            "p_p", "mc_p_p",
-            "p_theta", "mc_p_theta",
-            "p_phi", "mc_p_phi",
-            "vz_p", "mc_vz_p",
-            "Q2", "mc_Q2",
-            "W", "mc_W",
-            "Mx", "mc_Mx",
-            "Mx2", "mc_Mx2",
-            "x", "mc_x",
-            "y", "mc_y",
-            "z", "mc_z",
-            "xF", "mc_xF",
-            "pT", "mc_pT",
-            "xi", "mc_xi",
-            "eta", "mc_eta",
-            "trento_phi", "mc_trento_phi",
-            "Depolarization_A", "mc_Depolarization_A",
-            "Depolarization_B", "mc_Depolarization_B",
-            "Depolarization_C", "mc_Depolarization_C",
-            "Depolarization_V", "mc_Depolarization_V",
-            "Depolarization_W", "mc_Depolarization_W"
-        ]:
-            bufs[bn] = array("d", [0.0])
-            tree.SetBranchAddress(bn, bufs[bn])
-        #endfor
+    tout.Branch("mc_e_p", mc_e_p, "mc_e_p/D")
+    tout.Branch("mc_e_theta", mc_e_theta, "mc_e_theta/D")
+    tout.Branch("mc_e_phi", mc_e_phi, "mc_e_phi/D")
+    tout.Branch("mc_vz_e", mc_vz_e, "mc_vz_e/D")
+    tout.Branch("mc_p_p", mc_p_p, "mc_p_p/D")
+    tout.Branch("mc_p_theta", mc_p_theta, "mc_p_theta/D")
+    tout.Branch("mc_p_phi", mc_p_phi, "mc_p_phi/D")
+    tout.Branch("mc_vz_p", mc_vz_p, "mc_vz_p/D")
+    tout.Branch("mc_Q2", mc_Q2, "mc_Q2/D")
+    tout.Branch("mc_W", mc_W, "mc_W/D")
+    tout.Branch("mc_Mx", mc_Mx, "mc_Mx/D")
+    tout.Branch("mc_Mx2", mc_Mx2, "mc_Mx2/D")
+    tout.Branch("mc_x", mc_x, "mc_x/D")
+    tout.Branch("mc_y", mc_y, "mc_y/D")
+    tout.Branch("mc_z", mc_z, "mc_z/D")
+    tout.Branch("mc_xF", mc_xF, "mc_xF/D")
+    tout.Branch("mc_pT", mc_pT, "mc_pT/D")
+    tout.Branch("mc_xi", mc_xi, "mc_xi/D")
+    tout.Branch("mc_eta", mc_eta, "mc_eta/D")
+    tout.Branch("mc_phi", mc_phi, "mc_phi/D")
+    tout.Branch("mc_DepA", mc_DepA, "mc_DepA/D")
+    tout.Branch("mc_DepB", mc_DepB, "mc_DepB/D")
+    tout.Branch("mc_DepC", mc_DepC, "mc_DepC/D")
+    tout.Branch("mc_DepV", mc_DepV, "mc_DepV/D")
+    tout.Branch("mc_DepW", mc_DepW, "mc_DepW/D")
 
-        # ints
-        for bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
-            bufs[bn] = array("i", [0])
-            tree.SetBranchAddress(bn, bufs[bn])
-        #endfor
+    tout.Branch("matching_e_pid", matching_e_pid, "matching_e_pid/I")
+    tout.Branch("matching_p1_pid", matching_p1_pid, "matching_p1_pid/I")
+    tout.Branch("mc_p1_parent", mc_p1_parent, "mc_p1_parent/I")
 
-        return bufs
-    #enddef
-
-    buf_dis = _bind_inputs(t_dis)
-    buf_aao = _bind_inputs(t_aao)
+    # Recomputed output t variables
+    tout.Branch("t", t, "t/D")
+    tout.Branch("tmin", tmin, "tmin/D")
+    tout.Branch("tprime", tprime, "tprime/D")
+    tout.Branch("mc_t", mc_t, "mc_t/D")
+    tout.Branch("mc_tmin", mc_tmin, "mc_tmin/D")
+    tout.Branch("mc_tprime", mc_tprime, "mc_tprime/D")
 
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
 
-    # First pass: write ALL clasdis events and count per bin.
-    Ndis_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
+    # First pass over clasdis: write all events, and count Ndis per (r,c)
+    Ndis = [[0 for _ in range(ncols)] for _ in range(nrows)]
 
-    n_dis_entries = int(t_dis.GetEntries())
+    def bind_mc_tree(tree):
+        tree.SetBranchStatus("*", 0)
+        for bn in mc_needed:
+            tree.SetBranchStatus(bn, 1)
+        #endfor
+
+        tree.SetBranchAddress("e_p", e_p)
+        tree.SetBranchAddress("e_theta", e_theta)
+        tree.SetBranchAddress("e_phi", e_phi)
+        tree.SetBranchAddress("vz_e", vz_e)
+        tree.SetBranchAddress("p_p", p_p)
+        tree.SetBranchAddress("p_theta", p_theta)
+        tree.SetBranchAddress("p_phi", p_phi)
+        tree.SetBranchAddress("vz_p", vz_p)
+        tree.SetBranchAddress("Q2", Q2)
+        tree.SetBranchAddress("W", W)
+        tree.SetBranchAddress("Mx", Mx)
+        tree.SetBranchAddress("Mx2", Mx2)
+        tree.SetBranchAddress("x", x)
+        tree.SetBranchAddress("y", y)
+        tree.SetBranchAddress("z", z)
+        tree.SetBranchAddress("xF", xF)
+        tree.SetBranchAddress("pT", pT)
+        tree.SetBranchAddress("xi", xi)
+        tree.SetBranchAddress("eta", eta)
+        tree.SetBranchAddress("phi", phi)
+        tree.SetBranchAddress("DepA", DepA)
+        tree.SetBranchAddress("DepB", DepB)
+        tree.SetBranchAddress("DepC", DepC)
+        tree.SetBranchAddress("DepV", DepV)
+        tree.SetBranchAddress("DepW", DepW)
+
+        tree.SetBranchAddress("mc_e_p", mc_e_p)
+        tree.SetBranchAddress("mc_e_theta", mc_e_theta)
+        tree.SetBranchAddress("mc_e_phi", mc_e_phi)
+        tree.SetBranchAddress("mc_vz_e", mc_vz_e)
+        tree.SetBranchAddress("mc_p_p", mc_p_p)
+        tree.SetBranchAddress("mc_p_theta", mc_p_theta)
+        tree.SetBranchAddress("mc_p_phi", mc_p_phi)
+        tree.SetBranchAddress("mc_vz_p", mc_vz_p)
+        tree.SetBranchAddress("mc_Q2", mc_Q2)
+        tree.SetBranchAddress("mc_W", mc_W)
+        tree.SetBranchAddress("mc_Mx", mc_Mx)
+        tree.SetBranchAddress("mc_Mx2", mc_Mx2)
+        tree.SetBranchAddress("mc_x", mc_x)
+        tree.SetBranchAddress("mc_y", mc_y)
+        tree.SetBranchAddress("mc_z", mc_z)
+        tree.SetBranchAddress("mc_xF", mc_xF)
+        tree.SetBranchAddress("mc_pT", mc_pT)
+        tree.SetBranchAddress("mc_xi", mc_xi)
+        tree.SetBranchAddress("mc_eta", mc_eta)
+        tree.SetBranchAddress("mc_phi", mc_phi)
+        tree.SetBranchAddress("mc_DepA", mc_DepA)
+        tree.SetBranchAddress("mc_DepB", mc_DepB)
+        tree.SetBranchAddress("mc_DepC", mc_DepC)
+        tree.SetBranchAddress("mc_DepV", mc_DepV)
+        tree.SetBranchAddress("mc_DepW", mc_DepW)
+
+        tree.SetBranchAddress("matching_e_pid", matching_e_pid)
+        tree.SetBranchAddress("matching_p1_pid", matching_p1_pid)
+        tree.SetBranchAddress("mc_p1_parent", mc_p1_parent)
+    #enddef
+
+    bind_mc_tree(t_dis)
+
+    n_entries_dis = int(t_dis.GetEntries())
     if max_events is None:
-        n_dis_to_process = n_dis_entries
+        n_to_process_dis = n_entries_dis
     else:
-        n_dis_to_process = min(n_dis_entries, int(max_events))
+        n_to_process_dis = min(n_entries_dis, int(max_events))
     #endif
 
-    for i in range(n_dis_to_process):
+    for i in range(n_to_process_dis):
         t_dis.GetEntry(i)
 
-        x_rec = float(buf_dis["x"][0])
-        Q2_rec = float(buf_dis["Q2"][0])
-
-        rb, cb, t_val, tmin_val, tprime_val = _compute_rc_bin_from_reco(
-            MIXED_MC_EB,
-            x_rec, Q2_rec,
-            float(buf_dis["e_p"][0]), float(buf_dis["e_theta"][0]), float(buf_dis["e_phi"][0]),
-            float(buf_dis["p_p"][0]), float(buf_dis["p_theta"][0]), float(buf_dis["p_phi"][0])
+        r, c, t_val, tmin_val, tp_val = compute_bin_indices_from_reco(
+            float(x[0]), float(Q2[0]),
+            float(e_p[0]), float(e_theta[0]), float(e_phi[0]),
+            float(p_p[0]), float(p_theta[0]), float(p_phi[0])
         )
-        if rb < 0 or cb < 0:
+        if r < 0 or c < 0:
             continue
         #endif
 
-        # Fill output copied branches
-        for bn in out.keys():
-            if bn in ["t", "tmin", "tprime", "mc_t", "mc_tmin", "mc_tprime"]:
-                continue
-            #endif
-            if bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
-                out[bn][0] = int(buf_dis[bn][0])
-            else:
-                out[bn][0] = float(buf_dis[bn][0])
-            #endif
-        #endfor
-
-        # Derived (reco)
-        out["t"][0] = float(t_val)
-        out["tmin"][0] = float(tmin_val)
-        out["tprime"][0] = float(tprime_val)
-
-        # Derived (mc)
-        mc_x = float(buf_dis["mc_x"][0])
-        mc_Q2 = float(buf_dis["mc_Q2"][0])
-        mc_t_val = compute_t_scalar_Eb(
-            MIXED_MC_EB,
-            float(buf_dis["mc_e_p"][0]), float(buf_dis["mc_e_theta"][0]), float(buf_dis["mc_e_phi"][0]),
-            float(buf_dis["mc_p_p"][0]), float(buf_dis["mc_p_theta"][0]), float(buf_dis["mc_p_phi"][0])
+        # Recompute gen-level t quantities too
+        mc_t_val, mc_tmin_val, mc_tp_val = compute_mc_t_quantities_from_gen(
+            float(mc_x[0]), float(mc_Q2[0]),
+            float(mc_e_p[0]), float(mc_e_theta[0]), float(mc_e_phi[0]),
+            float(mc_p_p[0]), float(mc_p_theta[0]), float(mc_p_phi[0])
         )
-        mc_tmin_val = compute_tmin_exact(mc_x, mc_Q2)
-        mc_tprime_val = mc_t_val - mc_tmin_val
 
-        out["mc_t"][0] = float(mc_t_val)
-        out["mc_tmin"][0] = float(mc_tmin_val)
-        out["mc_tprime"][0] = float(mc_tprime_val)
+        t[0] = float(t_val)
+        tmin[0] = float(tmin_val)
+        tprime[0] = float(tp_val)
+        mc_t[0] = float(mc_t_val)
+        mc_tmin[0] = float(mc_tmin_val)
+        mc_tprime[0] = float(mc_tp_val)
 
         tout.Fill()
-        Ndis_written[rb][cb] += 1
+        Ndis[r][c] += 1
     #endfor
 
-    # Decide how many aaogen events to add per bin
-    Naao_need = [[0 for _ in range(ncols)] for _ in range(nrows)]
+    # Compute target Naao per bin using Ndis and w_grid
+    Naao_target = [[0 for _ in range(ncols)] for _ in range(nrows)]
     for r in range(nrows):
         for c in range(ncols):
-            Nc = int(Ndis_written[r][c])
             w = float(w_grid[r][c])
-            if Nc <= 0:
-                Naao_need[r][c] = 0
-                continue
-            #endif
-            if w <= 0.0:
-                Naao_need[r][c] = 0
-                continue
-            #endif
-            if w >= 0.999999:
-                # Practically "all aaogen"; cannot be achieved with finite Nc unless Nc->0.
-                # We will just try to write all aaogen events in that bin.
-                Naao_need[r][c] = 2**31 - 1
+            nd = int(Ndis[r][c])
+
+            if nd <= 0:
+                Naao_target[r][c] = 0
                 continue
             #endif
 
-            # N_aao_target = w/(1-w)*Nc
-            target = (w / (1.0 - w)) * float(Nc)
-            Naao_need[r][c] = int(math.ceil(target))
+            if w <= 0.0:
+                Naao_target[r][c] = 0
+                continue
+            #endif
+
+            if w >= 1.0:
+                Naao_target[r][c] = 10**18  # effectively "as many as exist"
+                continue
+            #endif
+
+            need = (w / (1.0 - w)) * float(nd)
+            Naao_target[r][c] = int(math.ceil(need))
         #endfor
     #endfor
 
-    # Second pass: write aaogen until Naao_need per bin is satisfied (or aaogen exhausts).
+    # Second pass over aaogen: fill until each bin reaches Naao_target
     Naao_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
 
-    n_aao_entries = int(t_aao.GetEntries())
+    bind_mc_tree(t_aao)
+
+    n_entries_aao = int(t_aao.GetEntries())
     if max_events is None:
-        n_aao_to_process = n_aao_entries
+        n_to_process_aao = n_entries_aao
     else:
-        n_aao_to_process = min(n_aao_entries, int(max_events))
+        n_to_process_aao = min(n_entries_aao, int(max_events))
     #endif
 
-    remaining_total = 0
-    for r in range(nrows):
-        for c in range(ncols):
-            if Naao_need[r][c] > 0 and Naao_need[r][c] < (2**31 - 1):
-                remaining_total += Naao_need[r][c]
-            elif Naao_need[r][c] >= (2**31 - 1):
-                remaining_total += 1
-            #endif
-        #endfor
-    #endfor
-
-    for i in range(n_aao_to_process):
-        if remaining_total <= 0:
-            break
-        #endif
-
+    for i in range(n_to_process_aao):
         t_aao.GetEntry(i)
 
-        x_rec = float(buf_aao["x"][0])
-        Q2_rec = float(buf_aao["Q2"][0])
-
-        rb, cb, t_val, tmin_val, tprime_val = _compute_rc_bin_from_reco(
-            MIXED_MC_EB,
-            x_rec, Q2_rec,
-            float(buf_aao["e_p"][0]), float(buf_aao["e_theta"][0]), float(buf_aao["e_phi"][0]),
-            float(buf_aao["p_p"][0]), float(buf_aao["p_theta"][0]), float(buf_aao["p_phi"][0])
+        r, c, t_val, tmin_val, tp_val = compute_bin_indices_from_reco(
+            float(x[0]), float(Q2[0]),
+            float(e_p[0]), float(e_theta[0]), float(e_phi[0]),
+            float(p_p[0]), float(p_theta[0]), float(p_phi[0])
         )
-        if rb < 0 or cb < 0:
+        if r < 0 or c < 0:
             continue
         #endif
 
-        need = int(Naao_need[rb][cb])
-        have = int(Naao_written[rb][cb])
-        if have >= need:
+        if Naao_written[r][c] >= Naao_target[r][c]:
             continue
         #endif
 
-        # Fill output copied branches
-        for bn in out.keys():
-            if bn in ["t", "tmin", "tprime", "mc_t", "mc_tmin", "mc_tprime"]:
-                continue
-            #endif
-            if bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
-                out[bn][0] = int(buf_aao[bn][0])
-            else:
-                out[bn][0] = float(buf_aao[bn][0])
-            #endif
-        #endfor
-
-        # Derived (reco)
-        out["t"][0] = float(t_val)
-        out["tmin"][0] = float(tmin_val)
-        out["tprime"][0] = float(tprime_val)
-
-        # Derived (mc)
-        mc_x = float(buf_aao["mc_x"][0])
-        mc_Q2 = float(buf_aao["mc_Q2"][0])
-        mc_t_val = compute_t_scalar_Eb(
-            MIXED_MC_EB,
-            float(buf_aao["mc_e_p"][0]), float(buf_aao["mc_e_theta"][0]), float(buf_aao["mc_e_phi"][0]),
-            float(buf_aao["mc_p_p"][0]), float(buf_aao["mc_p_theta"][0]), float(buf_aao["mc_p_phi"][0])
+        mc_t_val, mc_tmin_val, mc_tp_val = compute_mc_t_quantities_from_gen(
+            float(mc_x[0]), float(mc_Q2[0]),
+            float(mc_e_p[0]), float(mc_e_theta[0]), float(mc_e_phi[0]),
+            float(mc_p_p[0]), float(mc_p_theta[0]), float(mc_p_phi[0])
         )
-        mc_tmin_val = compute_tmin_exact(mc_x, mc_Q2)
-        mc_tprime_val = mc_t_val - mc_tmin_val
 
-        out["mc_t"][0] = float(mc_t_val)
-        out["mc_tmin"][0] = float(mc_tmin_val)
-        out["mc_tprime"][0] = float(mc_tprime_val)
+        t[0] = float(t_val)
+        tmin[0] = float(tmin_val)
+        tprime[0] = float(tp_val)
+        mc_t[0] = float(mc_t_val)
+        mc_tmin[0] = float(mc_tmin_val)
+        mc_tprime[0] = float(mc_tp_val)
 
         tout.Fill()
-        Naao_written[rb][cb] += 1
-
-        # update remaining_total conservatively
-        if need < (2**31 - 1):
-            remaining_total -= 1
-        #endif
+        Naao_written[r][c] += 1
     #endfor
 
-    # Diagnostics: achieved fractions per bin
-    print("Mixed MC writing summary (per bin):")
-    for r in range(nrows):
-        for c in range(ncols):
-            Nc = int(Ndis_written[r][c])
-            Na = int(Naao_written[r][c])
-            w_target = float(w_grid[r][c])
-
-            denom = float(Na + Nc)
-            if denom > 0.0:
-                w_ach = float(Na) / denom
-            else:
-                w_ach = 0.0
-            #endif
-
-            if Nc > 0 or Na > 0:
-                msg = f"  bin (r={r}, c={c}): w_target={w_target:.6f}  Ndis={Nc}  Naao={Na}  w_ach={w_ach:.6f}"
-                if w_target > 0.0 and Na < Naao_need[r][c] and Naao_need[r][c] < (2**31 - 1):
-                    msg += "  WARNING: aaogen insufficient for target"
-                #endif
-                if Naao_need[r][c] >= (2**31 - 1) and w_target >= 0.999999:
-                    msg += "  NOTE: w_target~1; wrote as many aaogen as available"
-                #endif
-                print(msg)
-            #endif
-        #endfor
-    #endfor
-
+    # Write output and cleanup
     fout.cd()
     tout.Write()
+
     fout.Close()
-
-    t_aao.SetBranchStatus("*", 1)
-    t_dis.SetBranchStatus("*", 1)
-
     f_aao.Close()
     f_dis.Close()
-
-    print("Wrote mixed MC ROOT file: " + out_root_path)
 #enddef
 
 
@@ -1176,8 +1104,12 @@ def main():
     ap.add_argument("--clasdis", required=True, help="Path to clasdis ROOT file")
     ap.add_argument("--max_events", type=int, default=-1,
                     help="Max events per file (-1 means all events)")
-    ap.add_argument("--mc_aaogen", default="", help="(optional) Path to special MC aaogen ROOT file to be mixed")
-    ap.add_argument("--mc_clasdis", default="", help="(optional) Path to special MC clasdis ROOT file to be mixed")
+    ap.add_argument("--mc_aaogen", default=None,
+                    help="Optional: Path to MC aaogen ROOT file for event-level mixing")
+    ap.add_argument("--mc_clasdis", default=None,
+                    help="Optional: Path to MC clasdis ROOT file for event-level mixing")
+    ap.add_argument("--out", default=DEFAULT_MIXED_MC_ROOT,
+                    help="Optional: Output ROOT file for mixed MC (default: output/mixed_mc.root)")
     args = ap.parse_args()
 
     require_file(args.data)
@@ -1201,7 +1133,6 @@ def main():
     ensure_outdir(OUTPUT_MIX_PNG)
     ensure_outdir(OUTPUT_DATAONLY_PNG)
     ensure_outdir(OUTPUT_WEIGHTS_TXT)
-    ensure_outdir(OUTPUT_MIXED_MC_ROOT)
 
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
@@ -1220,7 +1151,7 @@ def main():
     fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
     fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
 
-    # Keep RAW data histograms for computing sigma_i in the weighted fit.
+    # Keep RAW data histograms for sigma_i computation in the weighted fit.
     h_data_raw = []
     for r in range(nrows):
         row = []
@@ -1230,7 +1161,7 @@ def main():
         h_data_raw.append(row)
     #endfor
 
-    # Build integrated histograms from RAW (unnormalized) per-pad histograms.
+    # Integrated histograms from RAW (unnormalized).
     h_data_int = make_integrated_hist_from_grid(h_data, "h_data_integrated")
     h_aao_int = make_integrated_hist_from_grid(h_aao, "h_aaogen_integrated")
     h_dis_int = make_integrated_hist_from_grid(h_dis, "h_clasdis_integrated")
@@ -1239,7 +1170,7 @@ def main():
     Na_tot = sum_counts_grid(c_aao)
     Nc_tot = sum_counts_grid(c_dis)
 
-    # Normalize integrated shapes (like per-pad behavior).
+    # Normalize integrated shapes (match per-pad behavior).
     normalize_unit_area(h_data_int)
     normalize_unit_area(h_aao_int)
     normalize_unit_area(h_dis_int)
@@ -1252,7 +1183,7 @@ def main():
     style_hist(h_aao_int, col_aao, 2, 2)
     style_hist(h_dis_int, col_dis, 2, 3)
 
-    # Now normalize the per-pad histograms to unit area (shape-only).
+    # Normalize per-pad histograms to unit area (shape-only).
     for r in range(nrows):
         for c in range(ncols):
             normalize_unit_area(h_data[r][c])
@@ -1270,8 +1201,6 @@ def main():
     #endfor
 
     draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
-
-    # 1-pad integrated three-way plot.
     draw_canvas_integrated_threeway(h_data_int, h_aao_int, h_dis_int, Nd_tot, Na_tot, Nc_tot, OUTPUT_DATAONLY_PNG)
 
     # Weighted per-pad mixture fit (weights from RAW data stats).
@@ -1296,22 +1225,29 @@ def main():
     print(f"  wrote weights report: {OUTPUT_WEIGHTS_TXT}")
 
     write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT)
-
     draw_canvas_mix(h_data, h_mix, c_data, w_grid, OUTPUT_MIX_PNG)
 
-    # Phase 3 (optional): write mixed MC ROOT using provided special MC inputs
-    mc_aao = str(args.mc_aaogen).strip()
-    mc_dis = str(args.mc_clasdis).strip()
-    if (mc_aao != "") or (mc_dis != ""):
-        if mc_aao == "" or mc_dis == "":
+    # Optional Phase 3: event-level mixed MC output file.
+    if args.mc_aaogen is not None or args.mc_clasdis is not None:
+        if args.mc_aaogen is None or args.mc_clasdis is None:
             fatal("If using Phase 3, you must provide BOTH --mc_aaogen and --mc_clasdis.")
         #endif
-        print("Phase 3: building mixed MC ROOT from:")
-        print("  mc_aaogen  = " + mc_aao)
-        print("  mc_clasdis = " + mc_dis)
-        print("  out_root   = " + OUTPUT_MIXED_MC_ROOT)
-        print("  Eb (fixed) = %.3f GeV" % MIXED_MC_EB)
-        write_mixed_mc_root(mc_aao, mc_dis, w_grid, OUTPUT_MIXED_MC_ROOT, max_events)
+        require_file(args.mc_aaogen)
+        require_file(args.mc_clasdis)
+
+        out_path = str(args.out)
+        if out_path.strip() == "":
+            fatal("--out may not be empty when Phase 3 is enabled.")
+        #endif
+
+        print("Phase 3: writing mixed MC ROOT file")
+        print("  mc_aaogen  =", args.mc_aaogen)
+        print("  mc_clasdis =", args.mc_clasdis)
+        print("  out        =", out_path)
+        print(f"  recompute t,tmin,tprime and mc_t,mc_tmin,mc_tprime with Eb={MC_EB_FIXED:.3f} (ignore any existing t/tmin branches)")
+
+        mix_mc_to_output_root(args.mc_aaogen, args.mc_clasdis, out_path, w_grid, max_events)
+        print("  wrote mixed MC:", out_path)
     #endif
 
     f_data.Close()
