@@ -35,11 +35,22 @@ Additional diagnostic output:
   - output/yields_data_only.png is a SINGLE-PAD integrated plot:
         (sum over all xB and -tprime bins) for data vs aaogen vs clasdis.
 
+Phase 3 (optional):
+  - If --mc_aaogen and --mc_clasdis are provided:
+      * Build a mixed MC ROOT file by combining events from the provided MC aaogen/clasdis trees
+        on a bin-by-bin basis in (xB, -tprime), using the computed w[r,c] from Phase 2.
+      * In each (r,c) bin, use ALL clasdis events, then add enough aaogen events to approach
+        the target aaogen fraction w[r,c]. If aaogen runs out in a bin, use all available.
+      * The new MC files do NOT contain runnum, so beam energy is assumed constant Eb=10.55 GeV.
+      * Copy the required branches into the new output tree, and additionally write:
+            t, tmin, tprime, mc_t, mc_tmin, mc_tprime
+
 Outputs:
   output/yields.png           : data vs aaogen vs clasdis (shape-only) per pad
   output/yields_mix.png       : data vs per-bin mixture per pad, legend shows w[r,c]
   output/yields_data_only.png : integrated (all bins summed) data vs aaogen vs clasdis
   output/weights.txt          : per-bin w[r,c], w_unclipped, chi2 summary
+  output/mixed_mc.root        : (optional) mixed MC built from --mc_aaogen/--mc_clasdis
 """
 
 import os
@@ -68,6 +79,11 @@ OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
 OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # integrated 1-pad three-way
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
+
+OUTPUT_MIXED_MC_ROOT = "output/mixed_mc.root"
+
+# For the new MC mixing files (no runnum):
+MIXED_MC_EB = 10.55  # (GeV)
 
 # Masses (GeV)
 MASS_E = 0.000511
@@ -137,8 +153,7 @@ def beam_energy(runnum):
 #enddef
 
 
-def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
-    Eb = beam_energy(int(runnum))
+def compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
     if Eb <= 0.0:
         return 1.0e9
     #endif
@@ -157,12 +172,20 @@ def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
     py = p_p * sp * math.sin(p_phi)
     pz = p_p * cp
 
+    # q = k - k' = (Eb - E_e, -ex, -ey, Eb - ez)
+    # then (q - p_pi)^2 = ( (Eb - E_e) - E_pi )^2 - | (-e_vec + (0,0,Eb)) - p_vec |^2
     dE = (Eb - E_e) - E_pi
     dx = -ex - px
     dy = -ey - py
     dz = (Eb - ez) - pz
 
     return dE * dE - (dx * dx + dy * dy + dz * dz)
+#enddef
+
+
+def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
+    Eb = beam_energy(int(runnum))
+    return compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
 #enddef
 
 
@@ -721,6 +744,431 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
 #enddef
 
 
+def _make_out_branch_double(tout, name):
+    arr = array("d", [0.0])
+    tout.Branch(name, arr, name + "/D")
+    return arr
+#enddef
+
+
+def _make_out_branch_int(tout, name):
+    arr = array("i", [0])
+    tout.Branch(name, arr, name + "/I")
+    return arr
+#enddef
+
+
+def _compute_rc_bin_from_reco(Eb, x_rec, Q2_rec, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
+    rb = find_bin(x_rec, XB_EDGES)
+    if rb < 0:
+        return -1, -1, 0.0, 0.0, 0.0
+    #endif
+
+    t_val = compute_t_scalar_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
+    tmin_val = compute_tmin_exact(x_rec, Q2_rec)
+    tprime_val = t_val - tmin_val
+    tneg = -tprime_val
+
+    cb = find_bin(tneg, TNEG_EDGES)
+    if cb < 0:
+        return -1, -1, t_val, tmin_val, tprime_val
+    #endif
+
+    return rb, cb, t_val, tmin_val, tprime_val
+#enddef
+
+
+def write_mixed_mc_root(mc_aaogen_path, mc_clasdis_path, w_grid, out_root_path, max_events):
+    """
+    Build a mixed MC ROOT file using the per-(xB,-tprime) weights w_grid:
+
+      - Write ALL clasdis events (subject to binning cuts)
+      - Then write enough aaogen events per bin to approximate target aaogen fraction w
+
+    Target relation per bin:
+      w = N_aao / (N_aao + N_dis)  =>  N_aao_target = w/(1-w) * N_dis
+
+    If w=0 => no aaogen added in that bin.
+    If w is very close to 1 => extremely large N_aao_target; in that case we write all aaogen
+    available and warn if the target is unreachable.
+
+    Also adds derived branches:
+      t, tmin, tprime, mc_t, mc_tmin, mc_tprime
+
+    Eb is assumed constant MIXED_MC_EB.
+    """
+
+    require_file(mc_aaogen_path)
+    require_file(mc_clasdis_path)
+
+    f_aao, t_aao = open_tree(mc_aaogen_path, TREE_NAME)
+    f_dis, t_dis = open_tree(mc_clasdis_path, TREE_NAME)
+
+    # Required branches for these special MC files (no runnum).
+    # NOTE: fail fast if any are missing.
+    needed_mc = [
+        "e_p", "mc_e_p",
+        "e_theta", "mc_e_theta",
+        "e_phi", "mc_e_phi",
+        "vz_e", "mc_vz_e",
+        "p_p", "mc_p_p",
+        "p_theta", "mc_p_theta",
+        "p_phi", "mc_p_phi",
+        "vz_p", "mc_vz_p",
+        "Q2", "mc_Q2",
+        "W", "mc_W",
+        "Mx", "mc_Mx",
+        "Mx2", "mc_Mx2",
+        "x", "mc_x",
+        "y", "mc_y",
+        "z", "mc_z",
+        "xF", "mc_xF",
+        "pT", "mc_pT",
+        "xi", "mc_xi",
+        "eta", "mc_eta",
+        "trento_phi", "mc_trento_phi",
+        "Depolarization_A", "mc_Depolarization_A",
+        "Depolarization_B", "mc_Depolarization_B",
+        "Depolarization_C", "mc_Depolarization_C",
+        "Depolarization_V", "mc_Depolarization_V",
+        "Depolarization_W", "mc_Depolarization_W",
+        "matching_e_pid",
+        "matching_p1_pid",
+        "mc_p1_parent"
+    ]
+    require_branches(t_aao, needed_mc, "mc_aaogen")
+    require_branches(t_dis, needed_mc, "mc_clasdis")
+
+    ensure_outdir(out_root_path)
+
+    fout = ROOT.TFile.Open(out_root_path, "RECREATE")
+    if not fout or fout.IsZombie():
+        fatal("Failed to create output ROOT file: " + out_root_path)
+    #endif
+
+    tout = ROOT.TTree(TREE_NAME, "Mixed MC: clasdis + aaogen (per-bin)")
+
+    # Output branches (copy inputs + add derived).
+    out = {}
+
+    # Doubles
+    for bn in [
+        "e_p", "mc_e_p",
+        "e_theta", "mc_e_theta",
+        "e_phi", "mc_e_phi",
+        "vz_e", "mc_vz_e",
+        "p_p", "mc_p_p",
+        "p_theta", "mc_p_theta",
+        "p_phi", "mc_p_phi",
+        "vz_p", "mc_vz_p",
+        "Q2", "mc_Q2",
+        "W", "mc_W",
+        "Mx", "mc_Mx",
+        "Mx2", "mc_Mx2",
+        "x", "mc_x",
+        "y", "mc_y",
+        "z", "mc_z",
+        "xF", "mc_xF",
+        "pT", "mc_pT",
+        "xi", "mc_xi",
+        "eta", "mc_eta",
+        "trento_phi", "mc_trento_phi",
+        "Depolarization_A", "mc_Depolarization_A",
+        "Depolarization_B", "mc_Depolarization_B",
+        "Depolarization_C", "mc_Depolarization_C",
+        "Depolarization_V", "mc_Depolarization_V",
+        "Depolarization_W", "mc_Depolarization_W"
+    ]:
+        out[bn] = _make_out_branch_double(tout, bn)
+    #endfor
+
+    # Ints
+    for bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
+        out[bn] = _make_out_branch_int(tout, bn)
+    #endfor
+
+    # Derived doubles
+    out["t"] = _make_out_branch_double(tout, "t")
+    out["tmin"] = _make_out_branch_double(tout, "tmin")
+    out["tprime"] = _make_out_branch_double(tout, "tprime")
+    out["mc_t"] = _make_out_branch_double(tout, "mc_t")
+    out["mc_tmin"] = _make_out_branch_double(tout, "mc_tmin")
+    out["mc_tprime"] = _make_out_branch_double(tout, "mc_tprime")
+
+    # Reader buffers for input trees
+    def _bind_inputs(tree):
+        bufs = {}
+        tree.SetBranchStatus("*", 0)
+        for bn in needed_mc:
+            tree.SetBranchStatus(bn, 1)
+        #endfor
+
+        # doubles
+        for bn in [
+            "e_p", "mc_e_p",
+            "e_theta", "mc_e_theta",
+            "e_phi", "mc_e_phi",
+            "vz_e", "mc_vz_e",
+            "p_p", "mc_p_p",
+            "p_theta", "mc_p_theta",
+            "p_phi", "mc_p_phi",
+            "vz_p", "mc_vz_p",
+            "Q2", "mc_Q2",
+            "W", "mc_W",
+            "Mx", "mc_Mx",
+            "Mx2", "mc_Mx2",
+            "x", "mc_x",
+            "y", "mc_y",
+            "z", "mc_z",
+            "xF", "mc_xF",
+            "pT", "mc_pT",
+            "xi", "mc_xi",
+            "eta", "mc_eta",
+            "trento_phi", "mc_trento_phi",
+            "Depolarization_A", "mc_Depolarization_A",
+            "Depolarization_B", "mc_Depolarization_B",
+            "Depolarization_C", "mc_Depolarization_C",
+            "Depolarization_V", "mc_Depolarization_V",
+            "Depolarization_W", "mc_Depolarization_W"
+        ]:
+            bufs[bn] = array("d", [0.0])
+            tree.SetBranchAddress(bn, bufs[bn])
+        #endfor
+
+        # ints
+        for bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
+            bufs[bn] = array("i", [0])
+            tree.SetBranchAddress(bn, bufs[bn])
+        #endfor
+
+        return bufs
+    #enddef
+
+    buf_dis = _bind_inputs(t_dis)
+    buf_aao = _bind_inputs(t_aao)
+
+    nrows = len(XB_EDGES) - 1
+    ncols = len(TNEG_EDGES) - 1
+
+    # First pass: write ALL clasdis events and count per bin.
+    Ndis_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
+
+    n_dis_entries = int(t_dis.GetEntries())
+    if max_events is None:
+        n_dis_to_process = n_dis_entries
+    else:
+        n_dis_to_process = min(n_dis_entries, int(max_events))
+    #endif
+
+    for i in range(n_dis_to_process):
+        t_dis.GetEntry(i)
+
+        x_rec = float(buf_dis["x"][0])
+        Q2_rec = float(buf_dis["Q2"][0])
+
+        rb, cb, t_val, tmin_val, tprime_val = _compute_rc_bin_from_reco(
+            MIXED_MC_EB,
+            x_rec, Q2_rec,
+            float(buf_dis["e_p"][0]), float(buf_dis["e_theta"][0]), float(buf_dis["e_phi"][0]),
+            float(buf_dis["p_p"][0]), float(buf_dis["p_theta"][0]), float(buf_dis["p_phi"][0])
+        )
+        if rb < 0 or cb < 0:
+            continue
+        #endif
+
+        # Fill output copied branches
+        for bn in out.keys():
+            if bn in ["t", "tmin", "tprime", "mc_t", "mc_tmin", "mc_tprime"]:
+                continue
+            #endif
+            if bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
+                out[bn][0] = int(buf_dis[bn][0])
+            else:
+                out[bn][0] = float(buf_dis[bn][0])
+            #endif
+        #endfor
+
+        # Derived (reco)
+        out["t"][0] = float(t_val)
+        out["tmin"][0] = float(tmin_val)
+        out["tprime"][0] = float(tprime_val)
+
+        # Derived (mc)
+        mc_x = float(buf_dis["mc_x"][0])
+        mc_Q2 = float(buf_dis["mc_Q2"][0])
+        mc_t_val = compute_t_scalar_Eb(
+            MIXED_MC_EB,
+            float(buf_dis["mc_e_p"][0]), float(buf_dis["mc_e_theta"][0]), float(buf_dis["mc_e_phi"][0]),
+            float(buf_dis["mc_p_p"][0]), float(buf_dis["mc_p_theta"][0]), float(buf_dis["mc_p_phi"][0])
+        )
+        mc_tmin_val = compute_tmin_exact(mc_x, mc_Q2)
+        mc_tprime_val = mc_t_val - mc_tmin_val
+
+        out["mc_t"][0] = float(mc_t_val)
+        out["mc_tmin"][0] = float(mc_tmin_val)
+        out["mc_tprime"][0] = float(mc_tprime_val)
+
+        tout.Fill()
+        Ndis_written[rb][cb] += 1
+    #endfor
+
+    # Decide how many aaogen events to add per bin
+    Naao_need = [[0 for _ in range(ncols)] for _ in range(nrows)]
+    for r in range(nrows):
+        for c in range(ncols):
+            Nc = int(Ndis_written[r][c])
+            w = float(w_grid[r][c])
+            if Nc <= 0:
+                Naao_need[r][c] = 0
+                continue
+            #endif
+            if w <= 0.0:
+                Naao_need[r][c] = 0
+                continue
+            #endif
+            if w >= 0.999999:
+                # Practically "all aaogen"; cannot be achieved with finite Nc unless Nc->0.
+                # We will just try to write all aaogen events in that bin.
+                Naao_need[r][c] = 2**31 - 1
+                continue
+            #endif
+
+            # N_aao_target = w/(1-w)*Nc
+            target = (w / (1.0 - w)) * float(Nc)
+            Naao_need[r][c] = int(math.ceil(target))
+        #endfor
+    #endfor
+
+    # Second pass: write aaogen until Naao_need per bin is satisfied (or aaogen exhausts).
+    Naao_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
+
+    n_aao_entries = int(t_aao.GetEntries())
+    if max_events is None:
+        n_aao_to_process = n_aao_entries
+    else:
+        n_aao_to_process = min(n_aao_entries, int(max_events))
+    #endif
+
+    remaining_total = 0
+    for r in range(nrows):
+        for c in range(ncols):
+            if Naao_need[r][c] > 0 and Naao_need[r][c] < (2**31 - 1):
+                remaining_total += Naao_need[r][c]
+            elif Naao_need[r][c] >= (2**31 - 1):
+                remaining_total += 1
+            #endif
+        #endfor
+    #endfor
+
+    for i in range(n_aao_to_process):
+        if remaining_total <= 0:
+            break
+        #endif
+
+        t_aao.GetEntry(i)
+
+        x_rec = float(buf_aao["x"][0])
+        Q2_rec = float(buf_aao["Q2"][0])
+
+        rb, cb, t_val, tmin_val, tprime_val = _compute_rc_bin_from_reco(
+            MIXED_MC_EB,
+            x_rec, Q2_rec,
+            float(buf_aao["e_p"][0]), float(buf_aao["e_theta"][0]), float(buf_aao["e_phi"][0]),
+            float(buf_aao["p_p"][0]), float(buf_aao["p_theta"][0]), float(buf_aao["p_phi"][0])
+        )
+        if rb < 0 or cb < 0:
+            continue
+        #endif
+
+        need = int(Naao_need[rb][cb])
+        have = int(Naao_written[rb][cb])
+        if have >= need:
+            continue
+        #endif
+
+        # Fill output copied branches
+        for bn in out.keys():
+            if bn in ["t", "tmin", "tprime", "mc_t", "mc_tmin", "mc_tprime"]:
+                continue
+            #endif
+            if bn in ["matching_e_pid", "matching_p1_pid", "mc_p1_parent"]:
+                out[bn][0] = int(buf_aao[bn][0])
+            else:
+                out[bn][0] = float(buf_aao[bn][0])
+            #endif
+        #endfor
+
+        # Derived (reco)
+        out["t"][0] = float(t_val)
+        out["tmin"][0] = float(tmin_val)
+        out["tprime"][0] = float(tprime_val)
+
+        # Derived (mc)
+        mc_x = float(buf_aao["mc_x"][0])
+        mc_Q2 = float(buf_aao["mc_Q2"][0])
+        mc_t_val = compute_t_scalar_Eb(
+            MIXED_MC_EB,
+            float(buf_aao["mc_e_p"][0]), float(buf_aao["mc_e_theta"][0]), float(buf_aao["mc_e_phi"][0]),
+            float(buf_aao["mc_p_p"][0]), float(buf_aao["mc_p_theta"][0]), float(buf_aao["mc_p_phi"][0])
+        )
+        mc_tmin_val = compute_tmin_exact(mc_x, mc_Q2)
+        mc_tprime_val = mc_t_val - mc_tmin_val
+
+        out["mc_t"][0] = float(mc_t_val)
+        out["mc_tmin"][0] = float(mc_tmin_val)
+        out["mc_tprime"][0] = float(mc_tprime_val)
+
+        tout.Fill()
+        Naao_written[rb][cb] += 1
+
+        # update remaining_total conservatively
+        if need < (2**31 - 1):
+            remaining_total -= 1
+        #endif
+    #endfor
+
+    # Diagnostics: achieved fractions per bin
+    print("Mixed MC writing summary (per bin):")
+    for r in range(nrows):
+        for c in range(ncols):
+            Nc = int(Ndis_written[r][c])
+            Na = int(Naao_written[r][c])
+            w_target = float(w_grid[r][c])
+
+            denom = float(Na + Nc)
+            if denom > 0.0:
+                w_ach = float(Na) / denom
+            else:
+                w_ach = 0.0
+            #endif
+
+            if Nc > 0 or Na > 0:
+                msg = f"  bin (r={r}, c={c}): w_target={w_target:.6f}  Ndis={Nc}  Naao={Na}  w_ach={w_ach:.6f}"
+                if w_target > 0.0 and Na < Naao_need[r][c] and Naao_need[r][c] < (2**31 - 1):
+                    msg += "  WARNING: aaogen insufficient for target"
+                #endif
+                if Naao_need[r][c] >= (2**31 - 1) and w_target >= 0.999999:
+                    msg += "  NOTE: w_target~1; wrote as many aaogen as available"
+                #endif
+                print(msg)
+            #endif
+        #endfor
+    #endfor
+
+    fout.cd()
+    tout.Write()
+    fout.Close()
+
+    t_aao.SetBranchStatus("*", 1)
+    t_dis.SetBranchStatus("*", 1)
+
+    f_aao.Close()
+    f_dis.Close()
+
+    print("Wrote mixed MC ROOT file: " + out_root_path)
+#enddef
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True, help="Path to data ROOT file")
@@ -728,6 +1176,8 @@ def main():
     ap.add_argument("--clasdis", required=True, help="Path to clasdis ROOT file")
     ap.add_argument("--max_events", type=int, default=-1,
                     help="Max events per file (-1 means all events)")
+    ap.add_argument("--mc_aaogen", default="", help="(optional) Path to special MC aaogen ROOT file to be mixed")
+    ap.add_argument("--mc_clasdis", default="", help="(optional) Path to special MC clasdis ROOT file to be mixed")
     args = ap.parse_args()
 
     require_file(args.data)
@@ -751,6 +1201,7 @@ def main():
     ensure_outdir(OUTPUT_MIX_PNG)
     ensure_outdir(OUTPUT_DATAONLY_PNG)
     ensure_outdir(OUTPUT_WEIGHTS_TXT)
+    ensure_outdir(OUTPUT_MIXED_MC_ROOT)
 
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
@@ -847,6 +1298,21 @@ def main():
     write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT)
 
     draw_canvas_mix(h_data, h_mix, c_data, w_grid, OUTPUT_MIX_PNG)
+
+    # Phase 3 (optional): write mixed MC ROOT using provided special MC inputs
+    mc_aao = str(args.mc_aaogen).strip()
+    mc_dis = str(args.mc_clasdis).strip()
+    if (mc_aao != "") or (mc_dis != ""):
+        if mc_aao == "" or mc_dis == "":
+            fatal("If using Phase 3, you must provide BOTH --mc_aaogen and --mc_clasdis.")
+        #endif
+        print("Phase 3: building mixed MC ROOT from:")
+        print("  mc_aaogen  = " + mc_aao)
+        print("  mc_clasdis = " + mc_dis)
+        print("  out_root   = " + OUTPUT_MIXED_MC_ROOT)
+        print("  Eb (fixed) = %.3f GeV" % MIXED_MC_EB)
+        write_mixed_mc_root(mc_aao, mc_dis, w_grid, OUTPUT_MIXED_MC_ROOT, max_events)
+    #endif
 
     f_data.Close()
     f_aao.Close()
