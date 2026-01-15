@@ -13,23 +13,33 @@ Phase 2:
   - Determine a per-bin mixture fraction w[r,c] in [0,1]:
         H_mix(r,c) = w[r,c] * H_aaogen(r,c) + (1-w[r,c]) * H_clasdis(r,c)
 
-  - Choose w[r,c] by minimizing the unweighted sum of squared differences
-    between the data shape and mixture shape within an Mx2 fit window:
-        SSE_{r,c}(w) = sum_{i in window} ( D_i - (w*A_i + (1-w)*C_i) )^2
+  - Choose w[r,c] by minimizing a WEIGHTED chi2 between the data shape and mixture shape
+    within an Mx2 fit window, where weights come from the DATA statistical uncertainty
+    per Mx2 bin (derived from the RAW data counts in that pad):
+
+        chi2_{r,c}(w) = sum_{i in window} ( D_i - (w*A_i + (1-w)*C_i) )^2 / sigma_i^2
+
+    With:
+        D_i = normalized data bin content
+        A_i = normalized aaogen bin content
+        C_i = normalized clasdis bin content
+        n_i = raw (unnormalized) data bin count
+        N   = total raw data counts in the pad
+        sigma_i = sqrt(n_i)/N   (with a floor for n_i=0)
 
     Exact minimizer in each pad (over bins i in window):
-        X_i = (A_i - C_i),  Y_i = (D_i - C_i)
-        w = sum_i (X_i Y_i) / sum_i (X_i^2), clipped to [0,1].
+        X_i = (A_i - C_i),  Y_i = (D_i - C_i),  w_i = 1/sigma_i^2
+        w_unclipped = sum_i (w_i X_i Y_i) / sum_i (w_i X_i^2), clipped to [0,1].
 
 Additional diagnostic output:
-  - output/yields_data_only.png is now a SINGLE-PAD integrated plot:
+  - output/yields_data_only.png is a SINGLE-PAD integrated plot:
         (sum over all xB and -tprime bins) for data vs aaogen vs clasdis.
 
 Outputs:
   output/yields.png           : data vs aaogen vs clasdis (shape-only) per pad
   output/yields_mix.png       : data vs per-bin mixture per pad, legend shows w[r,c]
   output/yields_data_only.png : integrated (all bins summed) data vs aaogen vs clasdis
-  output/weights.txt          : per-bin w[r,c], w_unclipped, SSE summary
+  output/weights.txt          : per-bin w[r,c], w_unclipped, chi2 summary
 """
 
 import os
@@ -45,18 +55,18 @@ TREE_NAME = "PhysicsEvents"
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
 TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 
-# Histogram window (identical to fit window)
+# Histogram window (also fit window)
 MX2_MIN = 0.3
 MX2_MAX = 2.0
 MX2_NBINS = 100
 
-# Fit window used for solving w and computing SSE (identical to hist range)
+# Fit window used for solving w and computing chi2 (kept explicit even if identical)
 MX2_FIT_MIN = 0.4
-MX2_FIT_MAX = 2
+MX2_FIT_MAX = 2.0
 
 OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
-OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # now integrated 1-pad three-way
+OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # integrated 1-pad three-way
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
 # Masses (GeV)
@@ -221,6 +231,28 @@ def make_hist_grid(prefix, nrows, ncols):
 #enddef
 
 
+def clone_hist_grid(hgrid, prefix):
+    nrows = len(hgrid)
+    ncols = len(hgrid[0])
+    out = []
+    for r in range(nrows):
+        row = []
+        for c in range(ncols):
+            h = hgrid[r][c].Clone(f"{see_safe(prefix)}_r{r}_c{c}")
+            row.append(h)
+        #endfor
+        out.append(row)
+    #endfor
+    return out
+#enddef
+
+
+def see_safe(s):
+    # Avoid surprises with ROOT object naming
+    return str(s).replace(" ", "_")
+#enddef
+
+
 def make_count_grid(nrows, ncols):
     return [[0 for _ in range(ncols)] for _ in range(nrows)]
 #enddef
@@ -300,39 +332,69 @@ def ensure_outdir(path):
 #enddef
 
 
-def compute_best_w_unweighted_for_pad(hd, ha, hc):
+def sigma_from_raw_counts(n_i, N_pad):
     """
-    Minimizes SSE(w) = sum_{i in fit window} ( D_i - (w*A_i + (1-w)*C_i) )^2.
+    For normalized data D_i = n_i / N_pad, Poisson stat gives:
+      sigma(D_i) = sqrt(n_i) / N_pad.
+    We must avoid sigma=0 when n_i=0; use a floor ~ 1/N_pad.
+    """
+    if N_pad <= 0:
+        return 1.0
+    #endif
+    if n_i <= 0.0:
+        return 1.0 / float(N_pad)
+    #endif
+    return math.sqrt(n_i) / float(N_pad)
+#enddef
 
-    Exact minimizer:
-      X_i = (A_i - C_i)
-      Y_i = (D_i - C_i)
-      w_unclipped = sum(X_i*Y_i)/sum(X_i^2)   (over i in window)
-      w = clip(w_unclipped, 0, 1)
+
+def compute_best_w_weighted_for_pad(hd_norm, ha_norm, hc_norm, hd_raw):
+    """
+    Weighted least squares minimization in the fit window:
+
+      chi2(w) = sum_i (D_i - (w*A_i + (1-w)*C_i))^2 / sigma_i^2
+
+    sigma_i is derived from RAW data counts:
+      D_i = (n_i / N), sigma_i = sqrt(n_i)/N, with floor for n_i=0.
+
+    Closed form:
+      X_i = (A_i - C_i), Y_i = (D_i - C_i), w_i = 1/sigma_i^2
+      w_unclipped = sum(w_i X_i Y_i) / sum(w_i X_i^2), then clip to [0,1].
     """
 
-    if hd.Integral(1, hd.GetNbinsX()) <= 0.0:
+    nb = hd_norm.GetNbinsX()
+
+    N_pad = hd_raw.Integral(1, nb)
+    if N_pad <= 0.0 or hd_norm.Integral(1, nb) <= 0.0:
         return 0.0, 0.0, 0.0
     #endif
 
-    nb = hd.GetNbinsX()
     num = 0.0
     den = 0.0
     used_bins = 0
 
     for i in range(1, nb + 1):
-        xcen = hd.GetXaxis().GetBinCenter(i)
+        xcen = hd_norm.GetXaxis().GetBinCenter(i)
         if xcen < MX2_FIT_MIN or xcen > MX2_FIT_MAX:
             continue
         #endif
 
-        D = hd.GetBinContent(i)
-        A = ha.GetBinContent(i)
-        C = hc.GetBinContent(i)
+        D = hd_norm.GetBinContent(i)
+        A = ha_norm.GetBinContent(i)
+        C = hc_norm.GetBinContent(i)
+
+        n_i = hd_raw.GetBinContent(i)
+        sig = sigma_from_raw_counts(n_i, N_pad)
+        if sig <= 0.0:
+            continue
+        #endif
+        wgt = 1.0 / (sig * sig)
+
         X = (A - C)
         Y = (D - C)
-        num += X * Y
-        den += X * X
+
+        num += wgt * X * Y
+        den += wgt * X * X
         used_bins += 1
     #endfor
 
@@ -350,29 +412,37 @@ def compute_best_w_unweighted_for_pad(hd, ha, hc):
         w = 1.0
     #endif
 
-    sse = 0.0
+    chi2 = 0.0
     for i in range(1, nb + 1):
-        xcen = hd.GetXaxis().GetBinCenter(i)
+        xcen = hd_norm.GetXaxis().GetBinCenter(i)
         if xcen < MX2_FIT_MIN or xcen > MX2_FIT_MAX:
             continue
         #endif
-        D = hd.GetBinContent(i)
-        M = w * ha.GetBinContent(i) + (1.0 - w) * hc.GetBinContent(i)
+
+        D = hd_norm.GetBinContent(i)
+        M = w * ha_norm.GetBinContent(i) + (1.0 - w) * hc_norm.GetBinContent(i)
+
+        n_i = hd_raw.GetBinContent(i)
+        sig = sigma_from_raw_counts(n_i, N_pad)
+        if sig <= 0.0:
+            continue
+        #endif
+
         diff = D - M
-        sse += diff * diff
+        chi2 += (diff * diff) / (sig * sig)
     #endfor
 
-    return w, w_unclipped, sse
+    return w, w_unclipped, chi2
 #enddef
 
 
-def compute_w_grid_and_mix(h_data, h_aao, h_dis):
+def compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw):
     nrows = len(h_data)
     ncols = len(h_data[0])
 
     w_grid = [[0.0 for _ in range(ncols)] for _ in range(nrows)]
     wun_grid = [[0.0 for _ in range(ncols)] for _ in range(nrows)]
-    sse_grid = [[0.0 for _ in range(ncols)] for _ in range(nrows)]
+    chi2_grid = [[0.0 for _ in range(ncols)] for _ in range(nrows)]
     h_mix = []
 
     for r in range(nrows):
@@ -381,11 +451,12 @@ def compute_w_grid_and_mix(h_data, h_aao, h_dis):
             hd = h_data[r][c]
             ha = h_aao[r][c]
             hc = h_dis[r][c]
+            hdr = h_data_raw[r][c]
 
-            w, w_unclipped, sse = compute_best_w_unweighted_for_pad(hd, ha, hc)
+            w, w_unclipped, chi2 = compute_best_w_weighted_for_pad(hd, ha, hc, hdr)
             w_grid[r][c] = w
             wun_grid[r][c] = w_unclipped
-            sse_grid[r][c] = sse
+            chi2_grid[r][c] = chi2
 
             hm = ha.Clone(f"h_mix_r{r}_c{c}")
             hm.Reset("ICESM")
@@ -396,7 +467,7 @@ def compute_w_grid_and_mix(h_data, h_aao, h_dis):
         h_mix.append(row)
     #endfor
 
-    return w_grid, wun_grid, sse_grid, h_mix
+    return w_grid, wun_grid, chi2_grid, h_mix
 #enddef
 
 
@@ -606,24 +677,25 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
 #enddef
 
 
-def write_weights_report(w_grid, wun_grid, sse_grid, c_data, c_aao, c_dis, path):
+def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path):
     ensure_outdir(path)
     nrows = len(w_grid)
     ncols = len(w_grid[0])
 
-    total_sse = 0.0
+    total_chi2 = 0.0
     for r in range(nrows):
         for c in range(ncols):
-            total_sse += sse_grid[r][c]
+            total_chi2 += chi2_grid[r][c]
         #endfor
     #endfor
 
     with open(path, "w") as f:
-        f.write("Per-bin mixture weights (shape-only, unweighted SSE)\n")
+        f.write("Per-bin mixture weights (shape-only, WEIGHTED chi2)\n")
         f.write("Definition: H_mix = w * H_aaogen + (1-w) * H_clasdis\n")
-        f.write(f"Fit window for w and SSE: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}]\n")
+        f.write(f"Fit window for w and chi2: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}]\n")
+        f.write("Weights: sigma_i from RAW data counts in the pad: sigma_i = sqrt(n_i)/N (floor for n_i=0)\n")
         f.write("Note: w is clipped to [0,1]. Report includes w_unclipped for diagnostics.\n\n")
-        f.write(f"Total SSE (sum over pads) = {total_sse:.6e}\n\n")
+        f.write(f"Total chi2 (sum over pads) = {total_chi2:.6e}\n\n")
 
         for r in range(nrows):
             xb_lo = XB_EDGES[r]
@@ -634,13 +706,13 @@ def write_weights_report(w_grid, wun_grid, sse_grid, c_data, c_aao, c_dis, path)
                 t_hi = TNEG_EDGES[c + 1]
                 w = w_grid[r][c]
                 wun = wun_grid[r][c]
-                sse = sse_grid[r][c]
+                chi2 = chi2_grid[r][c]
                 Nd = int(c_data[r][c])
                 Na = int(c_aao[r][c])
                 Nc = int(c_dis[r][c])
                 f.write(
                     f"  Col {c}: -tprime [{t_lo:.2f}, {t_hi:.2f})  "
-                    f"w={w:.6f}  w_unclipped={wun:.6f}  SSE={sse:.6e}  "
+                    f"w={w:.6f}  w_unclipped={wun:.6f}  chi2={chi2:.6e}  "
                     f"N(data,aao,dis)=({Nd},{Na},{Nc})\n"
                 )
             #endfor
@@ -697,6 +769,16 @@ def main():
     fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
     fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
 
+    # Keep RAW data histograms for computing sigma_i in the weighted fit.
+    h_data_raw = []
+    for r in range(nrows):
+        row = []
+        for c in range(ncols):
+            row.append(h_data[r][c].Clone(f"h_data_raw_r{r}_c{c}"))
+        #endfor
+        h_data_raw.append(row)
+    #endfor
+
     # Build integrated histograms from RAW (unnormalized) per-pad histograms.
     h_data_int = make_integrated_hist_from_grid(h_data, "h_data_integrated")
     h_aao_int = make_integrated_hist_from_grid(h_aao, "h_aaogen_integrated")
@@ -738,10 +820,11 @@ def main():
 
     draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
 
-    # Repurposed "data_only" output: 1-pad integrated three-way plot.
+    # 1-pad integrated three-way plot.
     draw_canvas_integrated_threeway(h_data_int, h_aao_int, h_dis_int, Nd_tot, Na_tot, Nc_tot, OUTPUT_DATAONLY_PNG)
 
-    w_grid, wun_grid, sse_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis)
+    # Weighted per-pad mixture fit (weights from RAW data stats).
+    w_grid, wun_grid, chi2_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw)
 
     col_mix = ROOT.kGreen + 2
     for r in range(nrows):
@@ -750,18 +833,18 @@ def main():
         #endfor
     #endfor
 
-    total_sse = 0.0
+    total_chi2 = 0.0
     for r in range(nrows):
         for c in range(ncols):
-            total_sse += sse_grid[r][c]
+            total_chi2 += chi2_grid[r][c]
         #endfor
     #endfor
-    print("Per-bin mixture fit (shape-only, unweighted SSE):")
+    print("Per-bin mixture fit (shape-only, WEIGHTED chi2):")
     print(f"  fit window: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}]")
-    print(f"  total SSE  = {total_sse:.6e}")
+    print(f"  total chi2 = {total_chi2:.6e}")
     print(f"  wrote weights report: {OUTPUT_WEIGHTS_TXT}")
 
-    write_weights_report(w_grid, wun_grid, sse_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT)
+    write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT)
 
     draw_canvas_mix(h_data, h_mix, c_data, w_grid, OUTPUT_MIX_PNG)
 
