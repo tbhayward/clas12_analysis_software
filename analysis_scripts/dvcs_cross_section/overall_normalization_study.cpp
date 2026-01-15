@@ -36,6 +36,17 @@
 
 namespace {
 
+// -----------------------------------------------------------------------------
+// USER TOGGLE (edit here)
+//   - true  : FAST PATH (one row per (xB,Q2,|t|) cell; pick phi closest to 0/360)
+//   - false : USE ALL POINTS (every phi row in the CSV that has a valid xs)
+// -----------------------------------------------------------------------------
+static const bool kUseOnlyClosestToEdgePerKinCell = false;
+
+// If kUseOnlyClosestToEdgePerKinCell == false, you can also optionally reject
+// points with phi exactly on the edge (d_edge == 0). Keep as true by default.
+static const bool kRequirePositiveDEdge = true;
+
 struct TripleCell {
     double value;
     double stat;
@@ -733,12 +744,12 @@ static void make_dependence_plot_2x2(const std::string &out_dir,
 }
 
 // -----------------------------------------------------------------------------
-// Best-phi selection container (FAST PATH)
-//   - One row per (xB,Q2,|t|) cell
-//   - Choose phiavg closest to 0 or 360
+// Row container
+//   - When using ALL points: we keep per-row values and compute BH/model per row.
+//   - When using BEST points: we keep one per (xB,Q2,|t|) cell (closest phi edge).
 // -----------------------------------------------------------------------------
 
-struct BestPhiRow {
+struct RowData {
     double xb_c;
     double q2_c;
     double t_c;           // positive |t|
@@ -751,7 +762,7 @@ struct BestPhiRow {
     double g_theta;
     size_t csv_row_index;
 
-    BestPhiRow() :
+    RowData() :
         xb_c(std::numeric_limits<double>::quiet_NaN()),
         q2_c(std::numeric_limits<double>::quiet_NaN()),
         t_c(std::numeric_limits<double>::quiet_NaN()),
@@ -834,75 +845,149 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] label    : " << label << "\n";
         std::cout << "[overall_norm] helicity : " << helicity << "\n";
         std::cout << "[overall_norm] Ebeam    : " << Ebeam << "\n";
+        std::cout << "[overall_norm] mode     : "
+                  << (kUseOnlyClosestToEdgePerKinCell ? "closest-to-edge (per kinematic cell)" : "all points")
+                  << "\n";
         std::cout << "------------------------------------------------------------\n";
 
         // ---------------------------------------------------------------------
-        // FAST PATH: best-phi selection (one row per cell closest to 0/360)
+        // Build the selected row set based on the toggle
         // ---------------------------------------------------------------------
-        std::map<std::string, BestPhiRow> best;
 
-        size_t n_rows = (lines.size() > 0 ? lines.size() - 1 : 0);
-        for (size_t r = 1; r < lines.size(); ++r) {
-            if (lines[r].empty()) continue;
+        std::vector<RowData> selected_rows;
+        selected_rows.reserve(lines.size() > 1 ? lines.size() - 1 : 0);
 
-            std::vector<std::string> fields = split_csv_line(lines[r]);
-            if (fields.size() != header.size()) continue;
+        if (kUseOnlyClosestToEdgePerKinCell) {
+            // Map: key = (xBmin,xBmax,Q2min,Q2max,tmin,tmax), store best (smallest dist)
+            std::map<std::string, RowData> best;
 
-            const std::string xbmin_s = trim(unquote(fields[c_xbmin]));
-            const std::string xbmax_s = trim(unquote(fields[c_xbmax]));
-            const std::string q2min_s = trim(unquote(fields[c_q2min]));
-            const std::string q2max_s = trim(unquote(fields[c_q2max]));
-            const std::string tmin_s  = trim(unquote(fields[c_tmin]));
-            const std::string tmax_s  = trim(unquote(fields[c_tmax]));
+            for (size_t r = 1; r < lines.size(); ++r) {
+                if (lines[r].empty()) continue;
 
-            const std::string key = cell_key_for_kin_bin(xbmin_s, xbmax_s, q2min_s, q2max_s, tmin_s, tmax_s);
+                std::vector<std::string> fields = split_csv_line(lines[r]);
+                if (fields.size() != header.size()) continue;
 
-            const double xb_c = std::atof(trim(unquote(fields[c_xbavg])).c_str());
-            const double q2_c = std::atof(trim(unquote(fields[c_q2avg])).c_str());
-            const double t_c  = std::atof(trim(unquote(fields[c_tavg])).c_str());   // already positive
-            const double phi  = std::atof(trim(unquote(fields[c_phiavg])).c_str());
+                const std::string xbmin_s = trim(unquote(fields[c_xbmin]));
+                const std::string xbmax_s = trim(unquote(fields[c_xbmax]));
+                const std::string q2min_s = trim(unquote(fields[c_q2min]));
+                const std::string q2max_s = trim(unquote(fields[c_q2max]));
+                const std::string tmin_s  = trim(unquote(fields[c_tmin]));
+                const std::string tmax_s  = trim(unquote(fields[c_tmax]));
 
-            const double e_th = std::atof(trim(unquote(fields[c_e_theta])).c_str());
-            const double p_th = std::atof(trim(unquote(fields[c_p_theta])).c_str());
-            const double g_th = std::atof(trim(unquote(fields[c_g_theta])).c_str());
+                const std::string key = cell_key_for_kin_bin(xbmin_s, xbmax_s, q2min_s, q2max_s, tmin_s, tmax_s);
 
-            if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
-                continue;
+                const double xb_c = std::atof(trim(unquote(fields[c_xbavg])).c_str());
+                const double q2_c = std::atof(trim(unquote(fields[c_q2avg])).c_str());
+                const double t_c  = std::atof(trim(unquote(fields[c_tavg])).c_str());
+                const double phi  = std::atof(trim(unquote(fields[c_phiavg])).c_str());
+
+                const double e_th = std::atof(trim(unquote(fields[c_e_theta])).c_str());
+                const double p_th = std::atof(trim(unquote(fields[c_p_theta])).c_str());
+                const double g_th = std::atof(trim(unquote(fields[c_g_theta])).c_str());
+
+                if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
+                    continue;
+                } //endif
+
+                TripleCell xs = parse_tuple3(fields[c_xs]);
+                if (!(xs.value > 0.0) || !std::isfinite(xs.value)) {
+                    continue;
+                } //endif
+
+                const double dist = min_dist_to_0_or_360(phi);
+                if (kRequirePositiveDEdge && !(dist > 0.0)) {
+                    continue;
+                } //endif
+
+                std::map<std::string, RowData>::iterator it = best.find(key);
+                if (it == best.end() || dist < it->second.dist_to_edge) {
+                    RowData rd;
+                    rd.xb_c = xb_c;
+                    rd.q2_c = q2_c;
+                    rd.t_c  = t_c;
+                    rd.phi_deg = phi;
+                    rd.dist_to_edge = dist;
+                    rd.xs = xs.value;
+                    rd.xs_stat = xs.stat;
+                    rd.e_theta = e_th;
+                    rd.p_theta = p_th;
+                    rd.g_theta = g_th;
+                    rd.csv_row_index = r;
+                    best[key] = rd;
+                } //endif
+            } //endfor rows
+
+            for (std::map<std::string, RowData>::const_iterator it = best.begin(); it != best.end(); ++it) {
+                selected_rows.push_back(it->second);
+            } //endfor
+
+            if (selected_rows.empty()) {
+                std::cerr << "[overall_norm] WARNING: no selected bins found in closest-to-edge mode.\n";
+                return true;
             } //endif
 
-            TripleCell xs = parse_tuple3(fields[c_xs]);
-            if (!(xs.value > 0.0) || !std::isfinite(xs.value)) {
-                continue;
+            std::cout << "[overall_norm] Selected rows: " << selected_rows.size()
+                      << " (one per kinematic cell, closest to phi edge)\n\n";
+
+        } else {
+            // Use every valid row
+            for (size_t r = 1; r < lines.size(); ++r) {
+                if (lines[r].empty()) continue;
+
+                std::vector<std::string> fields = split_csv_line(lines[r]);
+                if (fields.size() != header.size()) continue;
+
+                const double xb_c = std::atof(trim(unquote(fields[c_xbavg])).c_str());
+                const double q2_c = std::atof(trim(unquote(fields[c_q2avg])).c_str());
+                const double t_c  = std::atof(trim(unquote(fields[c_tavg])).c_str());
+                const double phi  = std::atof(trim(unquote(fields[c_phiavg])).c_str());
+
+                const double e_th = std::atof(trim(unquote(fields[c_e_theta])).c_str());
+                const double p_th = std::atof(trim(unquote(fields[c_p_theta])).c_str());
+                const double g_th = std::atof(trim(unquote(fields[c_g_theta])).c_str());
+
+                if (!finite_pos(xb_c) || !finite_pos(q2_c) || !finite_pos(t_c) || !std::isfinite(phi)) {
+                    continue;
+                } //endif
+
+                TripleCell xs = parse_tuple3(fields[c_xs]);
+                if (!(xs.value > 0.0) || !std::isfinite(xs.value)) {
+                    continue;
+                } //endif
+
+                const double dist = min_dist_to_0_or_360(phi);
+                if (kRequirePositiveDEdge && !(dist > 0.0)) {
+                    continue;
+                } //endif
+
+                RowData rd;
+                rd.xb_c = xb_c;
+                rd.q2_c = q2_c;
+                rd.t_c  = t_c;
+                rd.phi_deg = phi;
+                rd.dist_to_edge = dist;
+                rd.xs = xs.value;
+                rd.xs_stat = xs.stat;
+                rd.e_theta = e_th;
+                rd.p_theta = p_th;
+                rd.g_theta = g_th;
+                rd.csv_row_index = r;
+
+                selected_rows.push_back(rd);
+            } //endfor rows
+
+            if (selected_rows.empty()) {
+                std::cerr << "[overall_norm] WARNING: no selected bins found in all-points mode.\n";
+                return true;
             } //endif
 
-            const double dist = min_dist_to_0_or_360(phi);
+            std::cout << "[overall_norm] Selected rows: " << selected_rows.size()
+                      << " (all points)\n\n";
+        } //endif mode switch
 
-            std::map<std::string, BestPhiRow>::iterator it = best.find(key);
-            if (it == best.end() || dist < it->second.dist_to_edge) {
-                BestPhiRow br;
-                br.xb_c = xb_c;
-                br.q2_c = q2_c;
-                br.t_c  = t_c;
-                br.phi_deg = phi;
-                br.dist_to_edge = dist;
-                br.xs = xs.value;
-                br.xs_stat = xs.stat;
-                br.e_theta = e_th;
-                br.p_theta = p_th;
-                br.g_theta = g_th;
-                br.csv_row_index = r;
-                best[key] = br;
-            } //endif
-        } //endfor rows
-
-        if (best.empty()) {
-            std::cerr << "[overall_norm] WARNING: no bins found with positive cross section values.\n";
-            return true;
-        } //endif
-
-        std::cout << "[overall_norm] Unique kinematic bins found (best-phi): " << best.size()
-                  << " (from " << n_rows << " CSV data rows)\n\n";
-
+        // ---------------------------------------------------------------------
+        // Print header for the table (same columns as before)
+        // ---------------------------------------------------------------------
         std::cout
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
@@ -916,7 +1001,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << std::string(8+10+12+10+14*4, '-') << "\n";
 
         std::vector<PlotPoint> plot_pts_dedge;
-        plot_pts_dedge.reserve(best.size());
+        plot_pts_dedge.reserve(selected_rows.size());
 
         std::vector<DepPoint> dep_xb;
         std::vector<DepPoint> dep_q2;
@@ -925,22 +1010,20 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::vector<DepPoint> dep_p_theta;
         std::vector<DepPoint> dep_g_theta;
 
-        dep_xb.reserve(best.size());
-        dep_q2.reserve(best.size());
-        dep_t.reserve(best.size());
-        dep_e_theta.reserve(best.size());
-        dep_p_theta.reserve(best.size());
-        dep_g_theta.reserve(best.size());
+        dep_xb.reserve(selected_rows.size());
+        dep_q2.reserve(selected_rows.size());
+        dep_t.reserve(selected_rows.size());
+        dep_e_theta.reserve(selected_rows.size());
+        dep_p_theta.reserve(selected_rows.size());
+        dep_g_theta.reserve(selected_rows.size());
 
         double sumw = 0.0;
         double sumwx = 0.0;
         int n_weighted_used = 0;
         int n_in_95_105_total = 0;
 
-        for (std::map<std::string, BestPhiRow>::const_iterator it = best.begin();
-             it != best.end(); ++it) {
-
-            const BestPhiRow &br = it->second;
+        for (size_t irow = 0; irow < selected_rows.size(); ++irow) {
+            const RowData &br = selected_rows[irow];
 
             const double xb   = br.xb_c;
             const double q2   = br.q2_c;
@@ -980,8 +1063,8 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
 
-            // d_edge plot points: require dist_to_edge > 0.0
-            if (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0 &&
+            // d_edge plot points: require dist_to_edge > 0.0 unless user disabled
+            if ((!kRequirePositiveDEdge || (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0)) &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
                 std::isfinite(bh_over_vgg) && bh_over_vgg > 0.0) {
@@ -1067,12 +1150,11 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     n_weighted_used += 1;
                 } //endif
             } //endif
-        } //endfor best bins
+        } //endfor selected rows
 
         // ---------------------------------------------------------------------
         // OUTPUT DIRECTORY POLICY:
         //   output/normalization_study/<RunPeriodLabelSanitized>
-        //   (so each "label" call writes into its own directory)
         // ---------------------------------------------------------------------
         const std::string out_root = "output/normalization_study";
         ensure_output_dir_or_throw(out_root);
