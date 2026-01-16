@@ -20,7 +20,9 @@ Canvas 2 -> output/Mx2_data_comparison.png
 
 Both canvases:
   - Histogram range: 0.4 to 2.0
-  - Each histogram normalized to unit integral over the plotted range
+  - Each histogram normalized to a TRUE probability density:
+        counts / (integral * bin_width)
+    which is exactly what np.histogram(..., density=True) produces.
   - X-axis label: "M_{x}^{2} (GeV^{2})"
 """
 
@@ -52,7 +54,10 @@ def load_branch_array(root_path: str, tree_name: str, branch_name: str) -> np.nd
         t = f[tree_name]
         if branch_name not in t.keys():
             brs = [k for k in t.keys()]
-            raise KeyError(f"branch '{branch_name}' not found in TTree '{tree_name}' for file '{root_path}'. Example branches: {brs[:50]}{' ...' if len(brs) > 50 else ''}")
+            raise KeyError(
+                f"branch '{branch_name}' not found in TTree '{tree_name}' for file '{root_path}'. "
+                f"Example branches: {brs[:50]}{' ...' if len(brs) > 50 else ''}"
+            )
         #endif
 
         arr = t[branch_name].array(library="np")
@@ -68,21 +73,16 @@ def hist_density(arr: np.ndarray, nbins: int, xmin: float, xmax: float) -> tuple
     in_range = (arr >= xmin) & (arr <= xmax)
     x = arr[in_range]
 
-    counts, edges = np.histogram(x, bins=nbins, range=(xmin, xmax))
-    integral = float(np.sum(counts))
-
-    if integral <= 0.0:
-        density = counts.astype(np.float64)
-    else:
-        density = counts.astype(np.float64) / integral
-    #endif
-
+    # TRUE probability density normalization:
+    # density=True means: sum_i (density_i * bin_width) = 1
+    density, edges = np.histogram(x, bins=nbins, range=(xmin, xmax), density=True)
     centers = 0.5 * (edges[:-1] + edges[1:])
     return centers, density
 #enddef
 
 
-def plot_overlay(out_png: str, files: list[str], labels: list[str], title: str, nbins: int, xmin: float, xmax: float) -> None:
+def plot_overlay(out_png: str, files: list[str], labels: list[str], title: str,
+                 nbins: int, xmin: float, xmax: float) -> None:
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
 
     fig = plt.figure(figsize=(9, 6))
@@ -97,7 +97,7 @@ def plot_overlay(out_png: str, files: list[str], labels: list[str], title: str, 
     #endfor
 
     plt.xlabel("M_{x}^{2} (GeV^{2})")
-    plt.ylabel("Normalized counts")
+    plt.ylabel("Probability density (1/GeV^{2})")
     plt.title(title)
     plt.legend(frameon=True)
 
