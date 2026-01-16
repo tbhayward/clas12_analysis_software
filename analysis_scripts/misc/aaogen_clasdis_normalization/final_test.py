@@ -28,9 +28,16 @@ New behavior (ADDED, no regression):
 Canvas 3 -> output/Mx2_grid_mc_vs_data.png
   - 4x6 grid in (xB, -tprime) bins (XB_EDGES x TNEG_EDGES)
   - Overlays root2 ("MC") vs root5 ("data") for the branch "Mx2"
-  - Binning uses recomputed tprime from reconstructed kinematics with fixed Eb=10.55
+  - Binning uses recomputed -tprime from reconstructed kinematics with fixed Eb=10.55
   - Mx2 histogram range: 0.4 to 2.0
   - TRUE density normalization in each pad (shape-only)
+
+Additional NEW grids (ADDED):
+  output/Q2_grid_mc_vs_data.png       : per-pad Q2 shapes
+  output/xB_grid_mc_vs_data.png       : per-pad xB shapes
+  output/tprime_grid_mc_vs_data.png   : per-pad (-tprime) shapes (computed)
+  output/phi_grid_mc_vs_data.png      : per-pad phi shapes (wrapped to [0,360))
+All are density-normalized per pad and use the SAME pad binning (xB, -tprime).
 """
 
 import os
@@ -47,21 +54,52 @@ TREE_NAME = "PhysicsEvents"
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
 TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 
+# ----------------------------
+# Overlay settings (unchanged)
+# ----------------------------
 MX2_MIN = 0.4
 MX2_MAX = 2.0
 MX2_NBINS_OVERLAY = 320
-MX2_NBINS_GRID = 100
 
 OUT_OVERLAY_1 = "output/Mx2_comparison.png"
 OUT_OVERLAY_2 = "output/Mx2_data_comparison.png"
-OUT_GRID = "output/Mx2_grid_mc_vs_data.png"
+
+# ----------------------------
+# Grid settings (existing Mx2 grid)
+# ----------------------------
+MX2_NBINS_GRID = 100
+OUT_GRID_MX2 = "output/Mx2_grid_mc_vs_data.png"
+
+# ----------------------------
+# Added grid settings (new variables)
+# You can tune these ranges/bins as needed.
+# ----------------------------
+Q2_MIN = 0.0
+Q2_MAX = 10.0
+Q2_NBINS_GRID = 80
+OUT_GRID_Q2 = "output/Q2_grid_mc_vs_data.png"
+
+XB_MIN = 0.10
+XB_MAX = 0.60
+XB_NBINS_GRID = 80
+OUT_GRID_XB = "output/xB_grid_mc_vs_data.png"
+
+TNEG_MIN = 0.0
+TNEG_MAX = 2.0
+TNEG_NBINS_GRID = 80
+OUT_GRID_TNEG = "output/tprime_grid_mc_vs_data.png"
+
+PHI_MIN = 0.0
+PHI_MAX = 360.0
+PHI_NBINS_GRID = 90
+OUT_GRID_PHI = "output/phi_grid_mc_vs_data.png"
 
 # Masses (GeV)
 MASS_E = 0.000511
 MASS_PI = 0.139570
 MASS_N = 0.9382720813
 
-# Fixed beam energy (GeV) for binning in (xB, -tprime) in the grid plot
+# Fixed beam energy (GeV) for binning in (xB, -tprime) in the grid plots
 EB_FIXED = 10.55
 
 
@@ -205,6 +243,20 @@ def compute_tmin_exact(xB: float, Q2: float) -> float:
 #enddef
 
 
+def wrap_phi_deg(phi_val: float) -> float:
+    # Force into [0, 360)
+    p = float(phi_val)
+    if not math.isfinite(p):
+        return float("nan")
+    #endif
+    p = p % 360.0
+    if p < 0.0:
+        p += 360.0
+    #endif
+    return p
+#enddef
+
+
 def load_arrays_for_grid(root_path: str) -> dict[str, np.ndarray]:
     with uproot.open(root_path) as f:
         if TREE_NAME not in f:
@@ -212,7 +264,13 @@ def load_arrays_for_grid(root_path: str) -> dict[str, np.ndarray]:
         #endif
         t = f[TREE_NAME]
 
-        needed = ["x", "Q2", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "Mx2"]
+        needed = [
+            "x", "Q2",
+            "e_p", "e_theta", "e_phi",
+            "p_p", "p_theta", "p_phi",
+            "Mx2",
+            "phi",
+        ]
         missing = [b for b in needed if b not in t.keys()]
         if len(missing) > 0:
             raise KeyError(f"Missing required branches in '{root_path}': {', '.join(missing)}")
@@ -229,10 +287,20 @@ def load_arrays_for_grid(root_path: str) -> dict[str, np.ndarray]:
 #enddef
 
 
-def fill_grid_mx2(arrs: dict[str, np.ndarray]) -> list[list[np.ndarray]]:
+def fill_grid_variable(arrs: dict[str, np.ndarray], var_name: str) -> list[list[np.ndarray]]:
+    """
+    Build 4x6 buckets in (xB, -tprime) using recomputed tprime.
+    Store the requested variable's values in each pad bucket.
+
+    var_name options:
+      - "Mx2"   : store Mx2 branch
+      - "Q2"    : store Q2 branch
+      - "xB"    : store x branch
+      - "tneg"  : store computed (-tprime)
+      - "phi"   : store phi branch, wrapped to [0,360)
+    """
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
-
     buckets = [[[] for _ in range(ncols)] for _ in range(nrows)]
 
     xB = arrs["x"]
@@ -244,8 +312,9 @@ def fill_grid_mx2(arrs: dict[str, np.ndarray]) -> list[list[np.ndarray]]:
     p_theta = arrs["p_theta"]
     p_phi = arrs["p_phi"]
     Mx2 = arrs["Mx2"]
+    phi = arrs["phi"]
 
-    n = len(Mx2)
+    n = len(xB)
 
     for i in range(n):
         xb = float(xB[i])
@@ -270,7 +339,21 @@ def fill_grid_mx2(arrs: dict[str, np.ndarray]) -> list[list[np.ndarray]]:
             continue
         #endif
 
-        v = float(Mx2[i])
+        v = float("nan")
+        if var_name == "Mx2":
+            v = float(Mx2[i])
+        elif var_name == "Q2":
+            v = float(Q2[i])
+        elif var_name == "xB":
+            v = float(xB[i])
+        elif var_name == "tneg":
+            v = float(tneg)
+        elif var_name == "phi":
+            v = wrap_phi_deg(float(phi[i]))
+        else:
+            raise RuntimeError("Unknown var_name: " + str(var_name))
+        #endif
+
         if not math.isfinite(v):
             continue
         #endif
@@ -292,13 +375,24 @@ def fill_grid_mx2(arrs: dict[str, np.ndarray]) -> list[list[np.ndarray]]:
 
 def make_grid_plot(mc_grid: list[list[np.ndarray]],
                    data_grid: list[list[np.ndarray]],
-                   out_png: str) -> None:
+                   out_png: str,
+                   xmin: float,
+                   xmax: float,
+                   nbins: int,
+                   x_title: str,
+                   y_title: str,
+                   fig_title: str) -> None:
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
 
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(3.8 * ncols, 2.8 * nrows), sharex=True, sharey=False)
+    fig, axes = plt.subplots(
+        nrows, ncols,
+        figsize=(3.8 * ncols, 2.8 * nrows),
+        sharex=True,
+        sharey=False
+    )
 
     if nrows == 1 and ncols == 1:
         axes = np.asarray([[axes]])
@@ -320,21 +414,24 @@ def make_grid_plot(mc_grid: list[list[np.ndarray]],
             mc_arr = mc_grid[r][c]
             data_arr = data_grid[r][c]
 
-            x_mc, y_mc = hist_density(mc_arr, MX2_NBINS_GRID, MX2_MIN, MX2_MAX)
-            x_da, y_da = hist_density(data_arr, MX2_NBINS_GRID, MX2_MIN, MX2_MAX)
+            x_mc, y_mc = hist_density(mc_arr, nbins, xmin, xmax)
+            x_da, y_da = hist_density(data_arr, nbins, xmin, xmax)
 
             ax.step(x_mc, y_mc, where="mid", linewidth=1.2, label="MC")
             ax.step(x_da, y_da, where="mid", linewidth=1.2, label="data")
 
             ax.grid(True)
-            ax.set_xlim(MX2_MIN, MX2_MAX)
-            ax.set_title(f"xB [{xb_lo:.2f}, {xb_hi:.2f})  -tprime [{t_lo:.2f}, {t_hi:.2f})", fontsize=9)
+            ax.set_xlim(xmin, xmax)
+            ax.set_title(
+                f"xB [{xb_lo:.2f}, {xb_hi:.2f})  -tprime [{t_lo:.2f}, {t_hi:.2f})",
+                fontsize=9
+            )
 
             if r == nrows - 1:
-                ax.set_xlabel("Mx2 (GeV^2)")
+                ax.set_xlabel(x_title)
             #endif
             if c == 0:
-                ax.set_ylabel("Prob. density (1/GeV^2)")
+                ax.set_ylabel(y_title)
             #endif
 
             if r == 0 and c == 0:
@@ -343,8 +440,12 @@ def make_grid_plot(mc_grid: list[list[np.ndarray]],
         #endfor
     #endfor
 
-    fig.suptitle("Mx2 in (xB, -tprime) bins: root2 (MC) vs root5 (data)", fontsize=14)
+    fig.suptitle(fig_title, fontsize=14)
+
+    # Extra padding so y-axis labels are not clipped.
     plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+    fig.subplots_adjust(left=0.06)
+
     plt.savefig(out_png, dpi=200)
     plt.close(fig)
 #enddef
@@ -361,19 +462,16 @@ def main() -> int:
     root4 = sys.argv[4]
     root5 = sys.argv[5]
 
-    xmin = 0.4
-    xmax = 2.0
-
     try:
-        # Preserve original overlays
+        # Preserve original overlays (unchanged)
         plot_overlay(
             out_png=OUT_OVERLAY_1,
             files=[root1, root2],
             labels=["At Rest", "Simulated Fermi Motion"],
             title="Mx2 comparison",
             nbins=MX2_NBINS_OVERLAY,
-            xmin=xmin,
-            xmax=xmax,
+            xmin=MX2_MIN,
+            xmax=MX2_MAX,
         )
 
         plot_overlay(
@@ -382,18 +480,87 @@ def main() -> int:
             labels=["RGA", "RGA simulated Fermi Motion", "RGC"],
             title="Mx2 data comparison",
             nbins=MX2_NBINS_OVERLAY,
-            xmin=xmin,
-            xmax=xmax,
+            xmin=MX2_MIN,
+            xmax=MX2_MAX,
         )
 
-        # Add new 4x6 grid: root2 vs root5
+        # Load arrays once for the grid comparisons (root2 vs root5)
         require_file(root2)
         require_file(root5)
         mc_arrs = load_arrays_for_grid(root2)
         data_arrs = load_arrays_for_grid(root5)
-        mc_grid = fill_grid_mx2(mc_arrs)
-        data_grid = fill_grid_mx2(data_arrs)
-        make_grid_plot(mc_grid, data_grid, OUT_GRID)
+
+        # Existing Mx2 grid (preserved)
+        mc_grid_mx2 = fill_grid_variable(mc_arrs, "Mx2")
+        data_grid_mx2 = fill_grid_variable(data_arrs, "Mx2")
+        make_grid_plot(
+            mc_grid=mc_grid_mx2,
+            data_grid=data_grid_mx2,
+            out_png=OUT_GRID_MX2,
+            xmin=MX2_MIN,
+            xmax=MX2_MAX,
+            nbins=MX2_NBINS_GRID,
+            x_title="Mx2 (GeV^2)",
+            y_title="Prob. density (1/GeV^2)",
+            fig_title="Mx2 in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+        )
+
+        # NEW grids: Q2, xB, -tprime, phi
+        mc_grid_q2 = fill_grid_variable(mc_arrs, "Q2")
+        data_grid_q2 = fill_grid_variable(data_arrs, "Q2")
+        make_grid_plot(
+            mc_grid=mc_grid_q2,
+            data_grid=data_grid_q2,
+            out_png=OUT_GRID_Q2,
+            xmin=Q2_MIN,
+            xmax=Q2_MAX,
+            nbins=Q2_NBINS_GRID,
+            x_title="Q2 (GeV^2)",
+            y_title="Prob. density (1/GeV^2)",
+            fig_title="Q2 in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+        )
+
+        mc_grid_xb = fill_grid_variable(mc_arrs, "xB")
+        data_grid_xb = fill_grid_variable(data_arrs, "xB")
+        make_grid_plot(
+            mc_grid=mc_grid_xb,
+            data_grid=data_grid_xb,
+            out_png=OUT_GRID_XB,
+            xmin=XB_MIN,
+            xmax=XB_MAX,
+            nbins=XB_NBINS_GRID,
+            x_title="xB",
+            y_title="Prob. density (1)",
+            fig_title="xB in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+        )
+
+        mc_grid_tneg = fill_grid_variable(mc_arrs, "tneg")
+        data_grid_tneg = fill_grid_variable(data_arrs, "tneg")
+        make_grid_plot(
+            mc_grid=mc_grid_tneg,
+            data_grid=data_grid_tneg,
+            out_png=OUT_GRID_TNEG,
+            xmin=TNEG_MIN,
+            xmax=TNEG_MAX,
+            nbins=TNEG_NBINS_GRID,
+            x_title="-tprime (GeV^2)",
+            y_title="Prob. density (1/GeV^2)",
+            fig_title="-tprime in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+        )
+
+        mc_grid_phi = fill_grid_variable(mc_arrs, "phi")
+        data_grid_phi = fill_grid_variable(data_arrs, "phi")
+        make_grid_plot(
+            mc_grid=mc_grid_phi,
+            data_grid=data_grid_phi,
+            out_png=OUT_GRID_PHI,
+            xmin=PHI_MIN,
+            xmax=PHI_MAX,
+            nbins=PHI_NBINS_GRID,
+            x_title="phi (deg)",
+            y_title="Prob. density (1/deg)",
+            fig_title="phi in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+        )
 
     except Exception as e:
         return fatal(str(e), 3)
@@ -401,7 +568,11 @@ def main() -> int:
 
     print("Wrote: " + OUT_OVERLAY_1)
     print("Wrote: " + OUT_OVERLAY_2)
-    print("Wrote: " + OUT_GRID)
+    print("Wrote: " + OUT_GRID_MX2)
+    print("Wrote: " + OUT_GRID_Q2)
+    print("Wrote: " + OUT_GRID_XB)
+    print("Wrote: " + OUT_GRID_TNEG)
+    print("Wrote: " + OUT_GRID_PHI)
     return 0
 #enddef
 
