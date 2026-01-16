@@ -1325,8 +1325,8 @@ def main():
     if args.force:
         forced_map[(0, 2)] = 0.05
         forced_map[(0, 3)] = 0.08
-        forced_map[(0, 4)] = 0.08
-        forced_map[(0, 5)] = 0.08
+        forced_map[(0, 4)] = 0.03
+        forced_map[(0, 5)] = 0.03
 
         print("FORCE mode enabled: overriding selected w[r,c] after fit:")
         for (rr, cc), wv in forced_map.items():
