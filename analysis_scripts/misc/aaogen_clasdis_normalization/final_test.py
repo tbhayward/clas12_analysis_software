@@ -36,7 +36,7 @@ Additional NEW grids (ADDED):
   output/Q2_grid_mc_vs_data.png       : per-pad Q2 shapes
   output/xB_grid_mc_vs_data.png       : per-pad xB shapes
   output/tprime_grid_mc_vs_data.png   : per-pad (-tprime) shapes (computed)
-  output/phi_grid_mc_vs_data.png      : per-pad phi shapes (wrapped to [0,360))
+  output/phi_grid_mc_vs_data.png      : per-pad phi shapes (WRAPPED to [0, 2*pi) in radians)
 All are density-normalized per pad and use the SAME pad binning (xB, -tprime).
 """
 
@@ -89,8 +89,9 @@ TNEG_MAX = 2.0
 TNEG_NBINS_GRID = 80
 OUT_GRID_TNEG = "output/tprime_grid_mc_vs_data.png"
 
+# phi is in radians (wrapped to [0, 2*pi))
 PHI_MIN = 0.0
-PHI_MAX = 360.0
+PHI_MAX = 2.0 * math.pi
 PHI_NBINS_GRID = 90
 OUT_GRID_PHI = "output/phi_grid_mc_vs_data.png"
 
@@ -243,15 +244,16 @@ def compute_tmin_exact(xB: float, Q2: float) -> float:
 #enddef
 
 
-def wrap_phi_deg(phi_val: float) -> float:
-    # Force into [0, 360)
+def wrap_phi_rad(phi_val: float) -> float:
+    # Force into [0, 2*pi)
     p = float(phi_val)
     if not math.isfinite(p):
         return float("nan")
     #endif
-    p = p % 360.0
+    twopi = 2.0 * math.pi
+    p = p % twopi
     if p < 0.0:
-        p += 360.0
+        p += twopi
     #endif
     return p
 #enddef
@@ -297,7 +299,7 @@ def fill_grid_variable(arrs: dict[str, np.ndarray], var_name: str) -> list[list[
       - "Q2"    : store Q2 branch
       - "xB"    : store x branch
       - "tneg"  : store computed (-tprime)
-      - "phi"   : store phi branch, wrapped to [0,360)
+      - "phi"   : store phi branch, wrapped to [0, 2*pi) (radians)
     """
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
@@ -349,7 +351,7 @@ def fill_grid_variable(arrs: dict[str, np.ndarray], var_name: str) -> list[list[
         elif var_name == "tneg":
             v = float(tneg)
         elif var_name == "phi":
-            v = wrap_phi_deg(float(phi[i]))
+            v = wrap_phi_rad(float(phi[i]))
         else:
             raise RuntimeError("Unknown var_name: " + str(var_name))
         #endif
@@ -442,7 +444,6 @@ def make_grid_plot(mc_grid: list[list[np.ndarray]],
 
     fig.suptitle(fig_title, fontsize=14)
 
-    # Extra padding so y-axis labels are not clipped.
     plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
     fig.subplots_adjust(left=0.06)
 
@@ -505,7 +506,7 @@ def main() -> int:
             fig_title="Mx2 in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
         )
 
-        # NEW grids: Q2, xB, -tprime, phi
+        # NEW grids: Q2, xB, -tprime, phi (radians)
         mc_grid_q2 = fill_grid_variable(mc_arrs, "Q2")
         data_grid_q2 = fill_grid_variable(data_arrs, "Q2")
         make_grid_plot(
@@ -557,8 +558,8 @@ def main() -> int:
             xmin=PHI_MIN,
             xmax=PHI_MAX,
             nbins=PHI_NBINS_GRID,
-            x_title="phi (deg)",
-            y_title="Prob. density (1/deg)",
+            x_title="phi (rad)",
+            y_title="Prob. density (1/rad)",
             fig_title="phi in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
         )
 
