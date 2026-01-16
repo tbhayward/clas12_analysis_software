@@ -58,6 +58,13 @@ Outputs (unchanged from prior behavior):
 New debug outputs (Phase 3 only):
   output/mix_debug_report.txt : detailed per-bin and global counters for the mixed ROOT file
   output/mix_debug_mx2.png    : integrated Mx2 shapes of events WRITTEN to the output, split by source
+
+Optional diagnostics:
+  --force: override a few w[r,c] values (after the fit) for debugging:
+      Row 0, Col 2 = 0.05
+      Row 0, Col 3 = 0.08
+      Row 0, Col 4 = 0.08
+      Row 0, Col 5 = 0.08
 """
 
 import os
@@ -428,6 +435,38 @@ def compute_best_w_weighted_for_pad(hd_norm, ha_norm, hc_norm, hd_raw):
 #enddef
 
 
+def compute_chi2_for_pad_given_w(hd_norm, ha_norm, hc_norm, hd_raw, w):
+    nb = hd_norm.GetNbinsX()
+
+    N_pad = hd_raw.Integral(1, nb)
+    if N_pad <= 0.0 or hd_norm.Integral(1, nb) <= 0.0:
+        return 0.0
+    #endif
+
+    chi2 = 0.0
+    for i in range(1, nb + 1):
+        xcen = hd_norm.GetXaxis().GetBinCenter(i)
+        if xcen < MX2_FIT_MIN or xcen > MX2_FIT_MAX:
+            continue
+        #endif
+
+        D = hd_norm.GetBinContent(i)
+        M = w * ha_norm.GetBinContent(i) + (1.0 - w) * hc_norm.GetBinContent(i)
+
+        n_i = hd_raw.GetBinContent(i)
+        sig = sigma_from_raw_counts(n_i, N_pad)
+        if sig <= 0.0:
+            continue
+        #endif
+
+        diff = D - M
+        chi2 += (diff * diff) / (sig * sig)
+    #endfor
+
+    return chi2
+#enddef
+
+
 def compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw):
     nrows = len(h_data)
     ncols = len(h_data[0])
@@ -669,7 +708,7 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
 #enddef
 
 
-def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path):
+def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path, forced_map=None):
     ensure_outdir(path)
     nrows = len(w_grid)
     ncols = len(w_grid[0])
@@ -686,7 +725,11 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
         f.write("Definition: H_mix = w * H_aaogen + (1-w) * H_clasdis\n")
         f.write(f"Fit window for w and chi2: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}]\n")
         f.write("Weights: sigma_i from RAW data counts in the pad: sigma_i = sqrt(n_i)/N (floor for n_i=0)\n")
-        f.write("Note: w is clipped to [0,1]. Report includes w_unclipped for diagnostics.\n\n")
+        f.write("Note: w is clipped to [0,1]. Report includes w_unclipped for diagnostics.\n")
+        if forced_map is not None and len(forced_map) > 0:
+            f.write("NOTE: Some w values were FORCED by --force and chi2 was recomputed for those pads.\n")
+        #endif
+        f.write("\n")
         f.write(f"Total chi2 (sum over pads) = {total_chi2:.6e}\n\n")
 
         for r in range(nrows):
@@ -702,10 +745,18 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
                 Nd = int(c_data[r][c])
                 Na = int(c_aao[r][c])
                 Nc = int(c_dis[r][c])
+
+                tag = ""
+                if forced_map is not None:
+                    if (r, c) in forced_map:
+                        tag = "  FORCED"
+                    #endif
+                #endif
+
                 f.write(
                     f"  Col {c}: -tprime [{t_lo:.2f}, {t_hi:.2f})  "
                     f"w={w:.6f}  w_unclipped={wun:.6f}  chi2={chi2:.6e}  "
-                    f"N(data,aao,dis)=({Nd},{Na},{Nc})\n"
+                    f"N(data,aao,dis)=({Nd},{Na},{Nc}){tag}\n"
                 )
             #endfor
             f.write("\n")
@@ -927,7 +978,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
 
     aaogen_written_total = 0
     aaogen_written_in_grid = 0
-    aaogen_written_out_grid = 0
 
     aaogen_skipped_out_grid = 0
     aaogen_skipped_quota_met = 0
@@ -1077,8 +1127,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     # Behavior unchanged:
     #   - ONLY write aaogen that falls into an in-grid (r,c),
     #   - ONLY until Naao_target[r][c] is reached.
-    #
-    # If you want aaogen out-of-grid written too, say so explicitly and we will add it.
     # -------------------------------------------------------------------------
     Naao_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
 
@@ -1139,7 +1187,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     f_aao.Close()
     f_dis.Close()
 
-    # Debug prints (these will show up in your Phase 3 report)
     print("Phase 3 debug (NEW behavior):")
     print("  Wrote ALL clasdis events (in-grid + out-of-grid). No Mx2 cuts were applied.")
     print(f"  clasdis written total      = {clasdis_written_total}")
@@ -1172,6 +1219,8 @@ def main():
                     help="Optional: Path to MC clasdis ROOT file for event-level mixing")
     ap.add_argument("--out", default=DEFAULT_MIXED_MC_ROOT,
                     help="Optional: Output ROOT file for mixed MC (default: output/mixed_mc.root)")
+    ap.add_argument("--force", action="store_true",
+                    help="Optional diagnostic: force specific w[r,c] values after fit")
     args = ap.parse_args()
 
     require_file(args.data)
@@ -1270,6 +1319,35 @@ def main():
     # Weighted per-pad mixture fit (weights from RAW data stats).
     w_grid, wun_grid, chi2_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw)
 
+    forced_map = {}
+
+    # Optional override for diagnostics
+    if args.force:
+        forced_map[(0, 2)] = 0.05
+        forced_map[(0, 3)] = 0.08
+        forced_map[(0, 4)] = 0.08
+        forced_map[(0, 5)] = 0.08
+
+        print("FORCE mode enabled: overriding selected w[r,c] after fit:")
+        for (rr, cc), wv in forced_map.items():
+            old = float(w_grid[rr][cc])
+            w_grid[rr][cc] = float(wv)
+
+            # Rebuild mixture histogram for that pad
+            hm = h_mix[rr][cc]
+            hm.Reset("ICESM")
+            hm.Add(h_aao[rr][cc], float(w_grid[rr][cc]))
+            hm.Add(h_dis[rr][cc], float(1.0 - w_grid[rr][cc]))
+
+            # Recompute chi2 for that pad using the forced w
+            chi2_grid[rr][cc] = compute_chi2_for_pad_given_w(
+                h_data[rr][cc], h_aao[rr][cc], h_dis[rr][cc], h_data_raw[rr][cc], float(w_grid[rr][cc])
+            )
+
+            print(f"  Row {rr}, Col {cc}: w {old:.6f} -> {w_grid[rr][cc]:.6f}")
+        #endfor
+    #endif
+
     col_mix = ROOT.kGreen + 2
     for r in range(nrows):
         for c in range(ncols):
@@ -1288,7 +1366,7 @@ def main():
     print(f"  total chi2 = {total_chi2:.6e}")
     print(f"  wrote weights report: {OUTPUT_WEIGHTS_TXT}")
 
-    write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT)
+    write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT, forced_map)
     draw_canvas_mix(h_data, h_mix, c_data, w_grid, OUTPUT_MIX_PNG)
 
     # Optional Phase 3: event-level mixed MC output file.
