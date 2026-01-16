@@ -54,6 +54,10 @@ Outputs (unchanged from prior behavior):
   output/yields_data_only.png : integrated (all bins summed) data vs aaogen vs clasdis
   output/weights.txt          : per-bin w[r,c], w_unclipped, chi2 summary
   --out mixed MC root         : optional mixed MC ROOT file (Phase 3)
+
+New debug outputs (Phase 3 only):
+  output/mix_debug_report.txt : detailed per-bin and global counters for the mixed ROOT file
+  output/mix_debug_mx2.png    : integrated Mx2 shapes of events WRITTEN to the output, split by source
 """
 
 import os
@@ -84,6 +88,10 @@ OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # integrated 1-pad three-wa
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
 DEFAULT_MIXED_MC_ROOT = "output/mixed_mc.root"
+
+# Debug outputs for Phase 3
+OUTPUT_MIX_DEBUG_TXT = "output/mix_debug_report.txt"
+OUTPUT_MIX_DEBUG_MX2_PNG = "output/mix_debug_mx2.png"
 
 # Fixed beam energy for MC mixing stage (no runnum in MC files)
 MC_EB_FIXED = 10.55
@@ -769,6 +777,8 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     require_branches(t_dis, mc_needed, "mc_clasdis")
 
     ensure_outdir(out_root_path)
+    ensure_outdir(OUTPUT_MIX_DEBUG_TXT)
+    ensure_outdir(OUTPUT_MIX_DEBUG_MX2_PNG)
 
     fout = ROOT.TFile.Open(out_root_path, "RECREATE")
     if not fout or fout.IsZombie():
@@ -834,7 +844,7 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     matching_p1_pid = array("i", [0])
     mc_p1_parent = array("i", [0])
 
-    # Newly recomputed branches
+    # Newly recomputed branches (input t/tmin are ignored)
     t = array("d", [0.0])
     tmin = array("d", [0.0])
     tprime = array("d", [0.0])
@@ -910,8 +920,35 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
 
-    # First pass over clasdis: write all events, and count Ndis per (r,c)
-    Ndis = [[0 for _ in range(ncols)] for _ in range(nrows)]
+    # Debug histograms of what is actually written to the output file
+    h_out_mx2_dis = ROOT.TH1F("h_out_mx2_dis", "", MX2_NBINS, MX2_MIN, MX2_MAX)
+    h_out_mx2_aao = ROOT.TH1F("h_out_mx2_aao", "", MX2_NBINS, MX2_MIN, MX2_MAX)
+    h_out_mx2_all = ROOT.TH1F("h_out_mx2_all", "", MX2_NBINS, MX2_MIN, MX2_MAX)
+    h_out_mx2_dis.Sumw2()
+    h_out_mx2_aao.Sumw2()
+    h_out_mx2_all.Sumw2()
+
+    # Per-bin counters (seen in-grid, written)
+    Ndis_seen = [[0 for _ in range(ncols)] for _ in range(nrows)]
+    Naao_seen = [[0 for _ in range(ncols)] for _ in range(nrows)]
+    Ndis_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
+    Naao_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
+
+    # Global counters
+    dis_total_entries = int(t_dis.GetEntries())
+    aao_total_entries = int(t_aao.GetEntries())
+
+    if max_events is None:
+        dis_to_process = dis_total_entries
+        aao_to_process = aao_total_entries
+    else:
+        dis_to_process = min(dis_total_entries, int(max_events))
+        aao_to_process = min(aao_total_entries, int(max_events))
+    #endif
+
+    dis_skipped_outgrid = 0
+    aao_skipped_outgrid = 0
+    aao_skipped_quota = 0
 
     def bind_mc_tree(tree):
         tree.SetBranchStatus("*", 0)
@@ -976,16 +1013,10 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         tree.SetBranchAddress("mc_p1_parent", mc_p1_parent)
     #enddef
 
+    # Pass 1: write ALL clasdis events that fall into the (xB,-tprime) grid
     bind_mc_tree(t_dis)
 
-    n_entries_dis = int(t_dis.GetEntries())
-    if max_events is None:
-        n_to_process_dis = n_entries_dis
-    else:
-        n_to_process_dis = min(n_entries_dis, int(max_events))
-    #endif
-
-    for i in range(n_to_process_dis):
+    for i in range(dis_to_process):
         t_dis.GetEntry(i)
 
         r, c, t_val, tmin_val, tp_val = compute_bin_indices_from_reco(
@@ -994,10 +1025,12 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
             float(p_p[0]), float(p_theta[0]), float(p_phi[0])
         )
         if r < 0 or c < 0:
+            dis_skipped_outgrid += 1
             continue
         #endif
 
-        # Recompute gen-level t quantities too
+        Ndis_seen[r][c] += 1
+
         mc_t_val, mc_tmin_val, mc_tp_val = compute_mc_t_quantities_from_gen(
             float(mc_x[0]), float(mc_Q2[0]),
             float(mc_e_p[0]), float(mc_e_theta[0]), float(mc_e_phi[0]),
@@ -1012,15 +1045,18 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         mc_tprime[0] = float(mc_tp_val)
 
         tout.Fill()
-        Ndis[r][c] += 1
+        Ndis_written[r][c] += 1
+
+        h_out_mx2_dis.Fill(float(Mx2[0]))
+        h_out_mx2_all.Fill(float(Mx2[0]))
     #endfor
 
-    # Compute target Naao per bin using Ndis and w_grid
+    # Compute target Naao per bin using Ndis_written and w_grid
     Naao_target = [[0 for _ in range(ncols)] for _ in range(nrows)]
     for r in range(nrows):
         for c in range(ncols):
             w = float(w_grid[r][c])
-            nd = int(Ndis[r][c])
+            nd = int(Ndis_written[r][c])
 
             if nd <= 0:
                 Naao_target[r][c] = 0
@@ -1033,7 +1069,7 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
             #endif
 
             if w >= 1.0:
-                Naao_target[r][c] = 10**18  # effectively "as many as exist"
+                Naao_target[r][c] = 10**18  # "as many as exist"
                 continue
             #endif
 
@@ -1042,19 +1078,10 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         #endfor
     #endfor
 
-    # Second pass over aaogen: fill until each bin reaches Naao_target
-    Naao_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
-
+    # Pass 2: write aaogen events until each bin reaches Naao_target
     bind_mc_tree(t_aao)
 
-    n_entries_aao = int(t_aao.GetEntries())
-    if max_events is None:
-        n_to_process_aao = n_entries_aao
-    else:
-        n_to_process_aao = min(n_entries_aao, int(max_events))
-    #endif
-
-    for i in range(n_to_process_aao):
+    for i in range(aao_to_process):
         t_aao.GetEntry(i)
 
         r, c, t_val, tmin_val, tp_val = compute_bin_indices_from_reco(
@@ -1063,10 +1090,14 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
             float(p_p[0]), float(p_theta[0]), float(p_phi[0])
         )
         if r < 0 or c < 0:
+            aao_skipped_outgrid += 1
             continue
         #endif
 
+        Naao_seen[r][c] += 1
+
         if Naao_written[r][c] >= Naao_target[r][c]:
+            aao_skipped_quota += 1
             continue
         #endif
 
@@ -1085,11 +1116,155 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
 
         tout.Fill()
         Naao_written[r][c] += 1
+
+        h_out_mx2_aao.Fill(float(Mx2[0]))
+        h_out_mx2_all.Fill(float(Mx2[0]))
     #endfor
 
-    # Write output and cleanup
+    # Write output tree
     fout.cd()
     tout.Write()
+
+    # Write debug report (text)
+    with open(OUTPUT_MIX_DEBUG_TXT, "w") as f:
+        f.write("Phase 3 mixing debug report\n")
+        f.write("Output ROOT file created by: write ALL mc_clasdis in-grid, then top up mc_aaogen per-bin\n")
+        f.write(f"MC_EB_FIXED used in recompute t,tmin,tprime and mc_t,mc_tmin,mc_tprime: {MC_EB_FIXED:.6f}\n")
+        f.write("\n")
+        f.write("Input processing limits:\n")
+        f.write(f"  mc_clasdis entries total = {dis_total_entries}\n")
+        f.write(f"  mc_aaogen  entries total = {aao_total_entries}\n")
+        f.write(f"  mc_clasdis entries processed = {dis_to_process}\n")
+        f.write(f"  mc_aaogen  entries processed = {aao_to_process}\n")
+        f.write("\n")
+        f.write("Global skip counters:\n")
+        f.write(f"  clasdis skipped (out of grid) = {dis_skipped_outgrid}\n")
+        f.write(f"  aaogen  skipped (out of grid) = {aao_skipped_outgrid}\n")
+        f.write(f"  aaogen  skipped (quota met)   = {aao_skipped_quota}\n")
+        f.write("\n")
+
+        dis_written_total = 0
+        aao_written_total = 0
+        dis_seen_total = 0
+        aao_seen_total = 0
+        for r in range(nrows):
+            for c in range(ncols):
+                dis_written_total += int(Ndis_written[r][c])
+                aao_written_total += int(Naao_written[r][c])
+                dis_seen_total += int(Ndis_seen[r][c])
+                aao_seen_total += int(Naao_seen[r][c])
+            #endfor
+        #endfor
+
+        f.write("Global in-grid vs written:\n")
+        f.write(f"  clasdis seen in-grid   = {dis_seen_total}\n")
+        f.write(f"  clasdis written        = {dis_written_total}\n")
+        f.write(f"  aaogen  seen in-grid   = {aao_seen_total}\n")
+        f.write(f"  aaogen  written        = {aao_written_total}\n")
+
+        denom_all = float(dis_written_total + aao_written_total)
+        if denom_all > 0.0:
+            w_all = float(aao_written_total) / denom_all
+        else:
+            w_all = 0.0
+        #endif
+        f.write(f"  achieved global aaogen fraction (written) = {w_all:.6f}\n")
+        f.write("\n")
+
+        f.write("Per-bin details (all counts are WRITTEN unless otherwise stated):\n")
+        for r in range(nrows):
+            xb_lo = XB_EDGES[r]
+            xb_hi = XB_EDGES[r + 1]
+            f.write(f"Row {r}: xB [{xb_lo:.2f}, {xb_hi:.2f})\n")
+
+            for c in range(ncols):
+                t_lo = TNEG_EDGES[c]
+                t_hi = TNEG_EDGES[c + 1]
+
+                w_target = float(w_grid[r][c])
+                nd_w = int(Ndis_written[r][c])
+                na_w = int(Naao_written[r][c])
+                na_t = int(Naao_target[r][c])
+
+                nd_seen = int(Ndis_seen[r][c])
+                na_seen = int(Naao_seen[r][c])
+
+                denom = float(nd_w + na_w)
+                if denom > 0.0:
+                    w_ach = float(na_w) / denom
+                else:
+                    w_ach = 0.0
+                #endif
+
+                # Saturation: if we did not reach target due to limited aaogen in-grid
+                saturated = ""
+                if na_w < na_t and na_t < 10**18:
+                    # Could be because file ran out of matching events in this bin
+                    saturated = " (UNDERFILLED vs target)"
+                #endif
+                if na_t >= 10**18:
+                    saturated = " (w_target=1.0 requested; wrote as many aaogen as available)"
+                #endif
+
+                f.write(
+                    f"  Col {c}: -tprime [{t_lo:.2f}, {t_hi:.2f})  "
+                    f"w_target={w_target:.6f}  "
+                    f"Ndis_written={nd_w}  Naao_target={na_t}  Naao_written={na_w}  "
+                    f"w_achieved={w_ach:.6f}{saturated}\n"
+                )
+                f.write(
+                    f"         seen_in_grid: Ndis_seen={nd_seen}  Naao_seen={na_seen}\n"
+                )
+            #endfor
+            f.write("\n")
+        #endfor
+
+    # Write debug Mx2 plot for what was actually written
+    ROOT.gStyle.SetOptStat(0)
+    cdbg = ROOT.TCanvas("c_mix_debug_mx2", "Mixed MC output: written Mx2 by source", 1200, 900)
+    cdbg.cd()
+    cdbg.SetGrid(1, 1)
+    cdbg.SetLeftMargin(0.18)
+    cdbg.SetRightMargin(0.05)
+    cdbg.SetBottomMargin(0.14)
+    cdbg.SetTopMargin(0.08)
+
+    # Normalize for shape comparison
+    normalize_unit_area(h_out_mx2_dis)
+    normalize_unit_area(h_out_mx2_aao)
+    normalize_unit_area(h_out_mx2_all)
+
+    style_hist(h_out_mx2_all, ROOT.kBlack, 3, 1)
+    style_hist(h_out_mx2_dis, ROOT.kBlue, 2, 2)
+    style_hist(h_out_mx2_aao, ROOT.kRed, 2, 3)
+
+    ymax = max(h_out_mx2_all.GetMaximum(), h_out_mx2_dis.GetMaximum(), h_out_mx2_aao.GetMaximum())
+    if ymax <= 0.0:
+        ymax = 1.0
+    #endif
+    ymax = 1.2 * ymax
+
+    set_axes_and_range(h_out_mx2_all, ymax)
+    h_out_mx2_all.Draw("hist")
+    h_out_mx2_dis.Draw("hist same")
+    h_out_mx2_aao.Draw("hist same")
+
+    leg = ROOT.TLegend(0.55, 0.70, 0.94, 0.92)
+    leg.SetBorderSize(1)
+    leg.SetFillStyle(1001)
+    leg.SetFillColor(ROOT.kWhite)
+    leg.SetTextSize(0.040)
+    leg.AddEntry(h_out_mx2_all, "output written (all)", "l")
+    leg.AddEntry(h_out_mx2_dis, "output written (clasdis)", "l")
+    leg.AddEntry(h_out_mx2_aao, "output written (aaogen)", "l")
+    leg.Draw()
+
+    tex = ROOT.TLatex()
+    tex.SetNDC(True)
+    tex.SetTextSize(0.040)
+    tex.DrawLatex(0.16, 0.93, f"Phase 3 output debug: written events only; Eb={MC_EB_FIXED:.3f}")
+
+    cdbg.SaveAs(OUTPUT_MIX_DEBUG_MX2_PNG)
 
     fout.Close()
     f_aao.Close()
@@ -1133,6 +1308,8 @@ def main():
     ensure_outdir(OUTPUT_MIX_PNG)
     ensure_outdir(OUTPUT_DATAONLY_PNG)
     ensure_outdir(OUTPUT_WEIGHTS_TXT)
+    ensure_outdir(OUTPUT_MIX_DEBUG_TXT)
+    ensure_outdir(OUTPUT_MIX_DEBUG_MX2_PNG)
 
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
@@ -1245,6 +1422,8 @@ def main():
         print("  mc_clasdis =", args.mc_clasdis)
         print("  out        =", out_path)
         print(f"  recompute t,tmin,tprime and mc_t,mc_tmin,mc_tprime with Eb={MC_EB_FIXED:.3f} (ignore any existing t/tmin branches)")
+        print(f"  will write debug report: {OUTPUT_MIX_DEBUG_TXT}")
+        print(f"  will write debug Mx2 png: {OUTPUT_MIX_DEBUG_MX2_PNG}")
 
         mix_mc_to_output_root(args.mc_aaogen, args.mc_clasdis, out_path, w_grid, max_events)
         print("  wrote mixed MC:", out_path)
