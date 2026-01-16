@@ -7,7 +7,7 @@ please_god.py
 Usage:
   python please_god.py <file1.root> <file2.root>
 
-Reads TTree "PhysicsEvents" and branch/leaf "Mx2" from two ROOT files and overlays
+Reads TTree "PhysicsEvents" and variable "Mx2" from two ROOT files and overlays
 their histograms on a single canvas.
 
 Output:
@@ -16,6 +16,7 @@ Output:
 
 import os
 import sys
+import uuid
 
 import ROOT
 
@@ -48,52 +49,15 @@ def get_tree(f, name):
     return t
 
 
-def list_names_containing(obj_list, needle_lower):
-    out = []
-    if not obj_list:
-        return out
-    #endif
-    for i in range(obj_list.GetEntries()):
-        o = obj_list.At(i)
-        if not o:
-            continue
-        #endif
-        n = o.GetName()
-        if needle_lower in n.lower():
-            out.append(n)
-        #endif
-    #endfor
-    return out
-
-
 def require_drawable(tree, varname):
-    """
-    Ensure 'varname' can be drawn from the tree.
-    We check both branches and leaves (some files store leaves without a branch name match).
-    """
     br = tree.GetBranch(varname)
     lf = tree.GetLeaf(varname)
-
     if br or lf:
         return
     #endif
 
-    branch_hits = list_names_containing(tree.GetListOfBranches(), varname.lower())
-    leaf_hits   = list_names_containing(tree.GetListOfLeaves(),   varname.lower())
-
-    msg = f"'{varname}' not found as a branch or leaf in tree '{tree.GetName()}'."
-    if branch_hits:
-        msg += f" Branches containing '{varname}': {', '.join(branch_hits)}."
-    else:
-        msg += f" Branches containing '{varname}': (none)."
-    #endif
-    if leaf_hits:
-        msg += f" Leaves containing '{varname}': {', '.join(leaf_hits)}."
-    else:
-        msg += f" Leaves containing '{varname}': (none)."
-    #endif
-
-    die(msg)
+    die(f"'{varname}' not found as a branch or leaf in tree '{tree.GetName()}'.")
+#endif
 
 
 def print_tree_diagnostics(label, file_path, tree, varname):
@@ -104,20 +68,12 @@ def print_tree_diagnostics(label, file_path, tree, varname):
     print(f"Tree: {tree.GetName()}")
     print(f"Entries: {n_entries}")
 
-    if n_entries <= 0:
-        print("NOTE: Tree has 0 entries. This will produce an empty histogram.")
-        return
-    #endif
-
-    # Only attempt min/max if the variable is drawable.
-    # TTree::GetMinimum/GetMaximum will return 0 in some failure modes,
-    # so we also report whether the branch/leaf exists.
     br = tree.GetBranch(varname)
     lf = tree.GetLeaf(varname)
     print(f"Has branch '{varname}': {'YES' if br else 'NO'}")
     print(f"Has leaf   '{varname}': {'YES' if lf else 'NO'}")
 
-    if br or lf:
+    if n_entries > 0 and (br or lf):
         try:
             vmin = float(tree.GetMinimum(varname))
             vmax = float(tree.GetMaximum(varname))
@@ -128,35 +84,39 @@ def print_tree_diagnostics(label, file_path, tree, varname):
     #endif
 
 
-def hist_from_tree(tree, hist_name, nbins, xmin, xmax, varname="Mx2"):
+def hist_from_tree_via_draw(tree, nbins, xmin, xmax, varname="Mx2"):
     if int(tree.GetEntries()) <= 0:
-        die(f"Tree '{tree.GetName()}' has 0 entries; cannot fill histogram '{hist_name}'.")
+        die(f"Tree '{tree.GetName()}' has 0 entries; cannot fill histogram.")
     #endif
 
     require_drawable(tree, varname)
 
-    h = ROOT.TH1F(hist_name, "", nbins, xmin, xmax)
-    h.Sumw2()
+    # IMPORTANT:
+    # Let ROOT create the histogram in gDirectory, then fetch it.
+    # This avoids the SetDirectory(0) / name-collision pitfall.
+    hname = f"h_{varname}_{uuid.uuid4().hex}"
+
+    ROOT.gROOT.cd()
+    draw_expr = f"{varname}>>{hname}({nbins},{xmin},{xmax})"
+    n_drawn = int(tree.Draw(draw_expr, "", "goff"))
+
+    if n_drawn <= 0:
+        die(f"TTree.Draw returned {n_drawn} for expression '{draw_expr}'.")
+    #endif
+
+    h = ROOT.gDirectory.Get(hname)
+    if not h:
+        die(f"Could not retrieve histogram '{hname}' from gDirectory after Draw.")
+    #endif
+
+    # Detach AFTER it has been created+filled so it survives file closes.
     h.SetDirectory(0)
+    h.Sumw2()
 
-    # Fill via Draw (fast, avoids manual SetBranchAddress pitfalls).
-    # IMPORTANT: Use ">>+" only if you intend to accumulate; here we do NOT.
-    n_drawn = tree.Draw(f"{varname}>>{hist_name}", "", "goff")
-
-    # ROOT can return 0 (not < 0) if the expression is invalid or nothing is selected.
-    # We treat 0 as a hard error here, and print additional debug below.
-    if n_drawn <= 0 or h.GetEntries() <= 0:
-        # Print a focused set of debugging hints in the fatal message.
-        br = tree.GetBranch(varname)
-        lf = tree.GetLeaf(varname)
+    if h.GetEntries() <= 0:
         die(
-            f"Histogram '{hist_name}' has zero entries after Draw.\n"
-            f"  tree entries = {int(tree.GetEntries())}\n"
-            f"  Draw returned = {int(n_drawn)}\n"
-            f"  has branch '{varname}' = {'YES' if br else 'NO'}\n"
-            f"  has leaf   '{varname}' = {'YES' if lf else 'NO'}\n"
-            f"Most common cause: the file/tree you are pointing at is not the one you think it is "
-            f"(e.g., '{varname}' is missing or the tree is empty)."
+            f"Histogram '{hname}' still has zero entries after Draw.\n"
+            f"  This would imply all values are outside [{xmin}, {xmax}] or Draw did not fill as expected."
         )
     #endif
 
@@ -193,7 +153,6 @@ def main():
     t1 = get_tree(f1, "PhysicsEvents")
     t2 = get_tree(f2, "PhysicsEvents")
 
-    # Print diagnostics up front so you can see immediately if mixed_mc.root is empty/changed.
     print_tree_diagnostics("INPUT 1", file1_path, t1, "Mx2")
     print_tree_diagnostics("INPUT 2", file2_path, t2, "Mx2")
 
@@ -201,8 +160,8 @@ def main():
     xmin = 0.4
     xmax = 2.0
 
-    h1 = hist_from_tree(t1, "h_mx2_1", nbins, xmin, xmax, varname="Mx2")
-    h2 = hist_from_tree(t2, "h_mx2_2", nbins, xmin, xmax, varname="Mx2")
+    h1 = hist_from_tree_via_draw(t1, nbins, xmin, xmax, varname="Mx2")
+    h2 = hist_from_tree_via_draw(t2, nbins, xmin, xmax, varname="Mx2")
 
     normalize_unit_area_in_range(h1, xmin, xmax)
     normalize_unit_area_in_range(h2, xmin, xmax)
