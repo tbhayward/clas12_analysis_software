@@ -512,7 +512,8 @@ def pad_set_margins(pad):
 
 
 def set_axes_and_range(h_frame, ymax):
-    h_frame.GetXaxis().SetTitle("Mx2 (GeV^2)")
+    # Use ROOT TLatex-style syntax in axis titles:
+    h_frame.GetXaxis().SetTitle("M_{x}^{2} (GeV^{2})")
     h_frame.GetYaxis().SetTitle("Normalized yield")
     h_frame.GetXaxis().SetTitleSize(0.06)
     h_frame.GetYaxis().SetTitleSize(0.06)
@@ -587,7 +588,7 @@ def draw_canvas_integrated_threeway(hd_int, ha_int, hc_int, Nd, Na, Nc, outpng):
     tex = ROOT.TLatex()
     tex.SetNDC(True)
     tex.SetTextSize(0.045)
-    tex.DrawLatex(0.16, 0.93, "Integrated over all xB and -tprime bins")
+    tex.DrawLatex(0.16, 0.93, "Integrated over all x_{B} and #minus t^{#prime} bins")
 
     canv.SaveAs(outpng)
 #enddef
@@ -642,8 +643,10 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
             tex = ROOT.TLatex()
             tex.SetNDC(True)
             tex.SetTextSize(0.05)
-            tex.DrawLatex(0.14, 0.93,
-                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -tprime [{t_lo:.2f}, {t_hi:.2f})")
+            tex.DrawLatex(
+                0.14, 0.93,
+                f"x_{{B}} [{xb_lo:.2f}, {xb_hi:.2f})   #minus t^{{#prime}} [{t_lo:.2f}, {t_hi:.2f}) (GeV^{{2}})"
+            )
         #endfor
     #endfor
 
@@ -699,8 +702,10 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
             tex = ROOT.TLatex()
             tex.SetNDC(True)
             tex.SetTextSize(0.05)
-            tex.DrawLatex(0.14, 0.93,
-                          f"xB [{xb_lo:.2f}, {xb_hi:.2f})   -tprime [{t_lo:.2f}, {t_hi:.2f})")
+            tex.DrawLatex(
+                0.14, 0.93,
+                f"x_{{B}} [{xb_lo:.2f}, {xb_hi:.2f})   #minus t^{{#prime}} [{t_lo:.2f}, {t_hi:.2f}) (GeV^{{2}})"
+            )
         #endfor
     #endfor
 
