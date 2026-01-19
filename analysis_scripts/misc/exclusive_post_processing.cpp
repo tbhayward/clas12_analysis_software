@@ -135,7 +135,8 @@ int main(int argc, char** argv) {
     }
 
     // Selection
-    const char* CUTS = "Mx2>0.65 && Mx2<1.125 && fiducial_status==111 && x>0.09 && x<0.61";
+    // const char* CUTS = "Mx2>0.65 && Mx2<1.125 && fiducial_status==111 && x>0.09 && x<0.61";
+    const char* CUTS = "fiducial_status==111";
 
     const Long64_t n_in     = tin->GetEntries();
     const Long64_t n_expect = tin->GetEntries(CUTS);
