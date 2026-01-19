@@ -126,11 +126,11 @@ const std::vector<DataSetConfig> dataSetConfigs = {
     {
         "RGC_Fa22_enpi+",
         0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_NH3.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_C.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_CH2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_He.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_ET.root"
+        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_NH3_2.root",
+        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_C_2.root",
+        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_CH2_2.root",
+        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_He_2.root",
+        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_ET_2.root"
     },
 };
 
