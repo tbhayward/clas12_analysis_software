@@ -10,11 +10,20 @@ This version:
   - Prints LaTeX tables with \\renewcommand{\\arraystretch}{1.40} applied
     within each table environment.
 
-Also prints LaTeX tables (to stdout) for the 4 xB slices:
+Radiative correction convention (IMPORTANT):
+  - We apply: A_Born = A_baseline - Delta
+  - Therefore, whenever --rad is used, central values are shifted as:
+      y_shift = y - Delta_rad
+    and statistical errors remain unchanged.
+  - Systematic rectangles represent total systematic per bin:
+      sigma_tot = sqrt( sigma_rad^2 + sigma_mig^2 )
+    drawn as solid gray rectangles from y=0 to y=sigma_tot spanning each full fixed x bin.
+
+LaTeX tables (stdout) for the 4 xB slices:
   enpiLowxBGE, enpiMidLowxBGE, enpiMidHighxBGE, enpiHighxBGE
 
 Tables are printed only when BOTH --rad and --migration are provided, and use:
-  central = (fit value) + (radiative Delta)
+  central = (fit value) - (radiative Delta)     [i.e., Born estimate]
   stat    = (fit statistical uncertainty)
   syst    = sqrt( sigma_rad^2 + sigma_mig^2 )
 
@@ -22,6 +31,45 @@ Rows are ordered in increasing -t' (i.e. increasing x axis as plotted).
 
 Usage:
   python plot_rgc_epni+_asymmetry.py Su22.txt Fa22.txt Sp23.txt Combined.txt --rad ISR_FSR_delta_summary.txt --migration migration_summary.txt
+
+Input format expectations:
+  1) Asymmetry fit-result files:
+     contain blocks like:
+       enpiLowxBGEchi2FitsALUsinphi = {{mean_tprime, value, error}, ...};
+     (x is plotted as -t').
+
+  2) Radiative delta summary file (--rad):
+     Expected "block" format produced by Script 1:
+       Bin: <bin_tag> ...
+       Series: <KEY> | <label>
+         -t'    Delta    sigma
+         0.10   ...      ...
+     KEY must be one of: ALUsin, AULsin, AULsin2, ALLn0, ALLcos
+
+  3) Migration summary file (--migration):
+     Supported formats (explicitly detected):
+       (A) Block format (preferred, Script-2 style):
+           Bin: <bin_tag> ...
+           Series: <KEY> | <label>
+             -t'    delta_or_sigma   [optional third column sigma]
+             0.10   ...
+           We interpret:
+             - if 2 numeric columns: x and delta; sigma_mig = abs(delta)
+             - if 3 numeric columns: x, delta, sigma; sigma_mig = abs(sigma)
+
+       (B) Legacy assignment format (previous functionality):
+           NAME = {{mean_tprime, delta}, ...};
+           where NAME matches:
+             <bin_tag>chi2Fits<suffix>_delta
+           and sigma_mig = abs(delta).
+
+Notes on systematic rectangles:
+  - Rectangles span full fixed bins, not centered on data means.
+  - Edges (given to you in -t, we use their absolute values on the +(-t') axis):
+      * For enpiGE (integrated), 0.10-wide bins with edges:
+          0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25
+      * For xB sub-bins, 0.20-wide bins with edges:
+          0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25
 """
 
 import sys
@@ -172,19 +220,41 @@ def detect_available_bins(*dicts):
 
 # ---------------------------------------------------------------------
 # Radiative-correction summary parser (signed Delta summary txt)
+# Block format: Bin: <bin> ; Series: <KEY> | <label> ; numeric rows
 # ---------------------------------------------------------------------
-_SERIES_KEYWORDS = {
-    "ALUsin":   r"F_{LU}^{\sin\phi}/F_{UU}",
-    "AULsin":   r"F_{UL}^{\sin\phi}/F_{UU}",
-    "AULsin2":  r"F_{UL}^{\sin2\phi}/F_{UU}",
-    "ALLn0":    r"F_{LL}/F_{UU}",
-    "ALLcos":   r"F_{LL}^{\cos\phi}/F_{UU}",
-}
+_ALLOWED_KEYS = ["ALUsin", "AULsin", "AULsin2", "ALLn0", "ALLcos"]
+
+def _parse_series_key_from_line(line):
+    """
+    Expect:
+      Series: <KEY> | <label>
+    Return KEY (str) or None if malformed.
+    """
+    s = line.strip()
+    if not s.startswith("Series:"):
+        return None
+    #endif
+    rest = s[len("Series:"):].strip()
+    if "|" in rest:
+        key = rest.split("|", 1)[0].strip()
+    else:
+        key = rest.strip()
+    #endif
+    if not key:
+        return None
+    #endif
+    return key
 
 def parse_rad_summary(rad_path):
     """
     Returns:
       rad[bin_tag][series_key] = {"x": array(-t'), "delta": array, "sigma": array}
+    where series_key is one of _ALLOWED_KEYS.
+
+    This parser is strict:
+      - Requires Bin: lines.
+      - Requires Series: lines.
+      - Stores only allowed keys; unknown keys are ignored with an INFO message.
     """
     rad = {}
     cur_bin = None
@@ -202,25 +272,33 @@ def parse_rad_summary(rad_path):
             if len(parts) >= 2:
                 cur_bin = parts[1]
                 rad.setdefault(cur_bin, {})
+            else:
+                raise RuntimeError(f"FATAL: malformed Bin line in rad file: '{line}'")
             #endif
             i += 1
             continue
         #endif
 
         if line.startswith("Series:"):
-            ser_line = line[len("Series:"):].strip()
-            cur_series_key = None
-            for key, tag in _SERIES_KEYWORDS.items():
-                if tag in ser_line:
-                    cur_series_key = key
-                    break
-                #endif
-            #endfor
+            if cur_bin is None:
+                raise RuntimeError("FATAL: encountered Series before any Bin in rad file.")
+            #endif
 
+            key = _parse_series_key_from_line(line)
+            if key is None:
+                raise RuntimeError(f"FATAL: malformed Series line in rad file: '{line}'")
+            #endif
+
+            use_key = (key in _ALLOWED_KEYS)
+            if not use_key:
+                print(f"[INFO] rad: ignoring unknown series key '{key}' in bin '{cur_bin}'.")
+            #endif
+
+            # skip possible header line(s)
             i += 1
             if i < len(lines):
-                hdr = lines[i]
-                if ("-t'" in hdr) or ("Delta" in hdr) or ("sigma" in hdr):
+                hdr = lines[i].strip()
+                if (("-t'" in hdr) or ("Delta" in hdr) or ("delta" in hdr) or ("sigma" in hdr)):
                     i += 1
                 #endif
             #endif
@@ -228,16 +306,19 @@ def parse_rad_summary(rad_path):
             xs, deltas, sigmas = [], [], []
             while i < len(lines):
                 row = lines[i].strip()
-                if (not row) or row.startswith("Series:") or row.startswith("Bin:") or set(row) <= set("=-"):
+                if (not row) or row.startswith("Series:") or row.startswith("Bin:") or (set(row) <= set("=-")):
                     break
                 #endif
                 parts = row.split()
+                if len(parts) < 3:
+                    raise RuntimeError(f"FATAL: rad row must have 3 numeric columns (x delta sigma). Got: '{row}'")
+                #endif
                 try:
                     xval = float(parts[0])
                     dval = float(parts[1])
                     sval = float(parts[2])
                 except Exception:
-                    break
+                    raise RuntimeError(f"FATAL: non-numeric rad row: '{row}'")
                 #endif
                 xs.append(xval)
                 deltas.append(dval)
@@ -245,8 +326,8 @@ def parse_rad_summary(rad_path):
                 i += 1
             #endfor
 
-            if cur_bin is not None and cur_series_key is not None and xs:
-                rad[cur_bin][cur_series_key] = {
+            if use_key and xs:
+                rad[cur_bin][key] = {
                     "x": np.array(xs, dtype=float),
                     "delta": np.array(deltas, dtype=float),
                     "sigma": np.array(sigmas, dtype=float),
@@ -261,12 +342,14 @@ def parse_rad_summary(rad_path):
     return rad
 
 # ---------------------------------------------------------------------
-# Migration systematics parser (from *_delta lists)
+# Migration systematics parsers
+#   - Block format: Bin/Series blocks, numeric rows
+#   - Legacy assignment format: NAME = {{x, delta}, ...};
 # ---------------------------------------------------------------------
 _pair_re = re.compile(r'\{([^{}]+)\}')
 
-def parse_migration_file(path):
-    """Parse NAME = {{x, val}, ...}; blocks into dict[name] -> np.array(N,2)."""
+def parse_migration_file_legacy(path):
+    """Parse legacy NAME = {{x, delta}, ...}; blocks into dict[name] -> np.array(N,2)."""
     with open(path, "r") as f:
         text = f.read()
     #endif
@@ -292,9 +375,9 @@ def parse_migration_file(path):
     #endfor
     return out
 
-def get_mig_sigma_series(dct, key, negate_x=True, sort_x=True):
+def get_mig_sigma_series_legacy(dct, key, negate_x=True, sort_x=True):
     """
-    Migration *_delta list: (mean_tprime, delta)
+    Legacy migration *_delta list: (mean_tprime, delta)
     Output: x = -mean_tprime (if negate_x), sigma = abs(delta)
     """
     if key not in dct:
@@ -317,18 +400,125 @@ def get_mig_sigma_series(dct, key, negate_x=True, sort_x=True):
     #endif
     return {"x": x, "sigma": sigma}
 
-def build_migration_dict(mig_parsed, bin_prefix):
+def build_migration_dict_legacy(mig_parsed, bin_prefix):
     if mig_parsed is None:
         return None
     #endif
     k = lambda suffix: f"{bin_prefix}chi2Fits{suffix}_delta"
     return {
-        "ALUsin":  get_mig_sigma_series(mig_parsed, k("ALUsinphi")),
-        "AULsin":  get_mig_sigma_series(mig_parsed, k("AULsinphi")),
-        "AULsin2": get_mig_sigma_series(mig_parsed, k("AULsin2phi")),
-        "ALLn0":   get_mig_sigma_series(mig_parsed, k("ALL")),
-        "ALLcos":  get_mig_sigma_series(mig_parsed, k("ALLcosphi")),
+        "ALUsin":  get_mig_sigma_series_legacy(mig_parsed, k("ALUsinphi")),
+        "AULsin":  get_mig_sigma_series_legacy(mig_parsed, k("AULsinphi")),
+        "AULsin2": get_mig_sigma_series_legacy(mig_parsed, k("AULsin2phi")),
+        "ALLn0":   get_mig_sigma_series_legacy(mig_parsed, k("ALL")),
+        "ALLcos":  get_mig_sigma_series_legacy(mig_parsed, k("ALLcosphi")),
     }
+
+def parse_migration_summary_block(path):
+    """
+    Parse block-format migration summary into:
+      mig[bin_tag][series_key] = {"x": array(-t'), "sigma": array}
+
+    Numeric rows:
+      - If 2 columns: x delta  -> sigma = abs(delta)
+      - If 3 columns: x delta sigma -> sigma = abs(sigma)
+    """
+    mig = {}
+    cur_bin = None
+
+    with open(path, "r") as f:
+        lines = f.readlines()
+    #endif
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        if line.startswith("Bin:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                cur_bin = parts[1]
+                mig.setdefault(cur_bin, {})
+            else:
+                raise RuntimeError(f"FATAL: malformed Bin line in migration file: '{line}'")
+            #endif
+            i += 1
+            continue
+        #endif
+
+        if line.startswith("Series:"):
+            if cur_bin is None:
+                raise RuntimeError("FATAL: encountered Series before any Bin in migration file.")
+            #endif
+
+            key = _parse_series_key_from_line(line)
+            if key is None:
+                raise RuntimeError(f"FATAL: malformed Series line in migration file: '{line}'")
+            #endif
+
+            use_key = (key in _ALLOWED_KEYS)
+            if not use_key:
+                print(f"[INFO] migration: ignoring unknown series key '{key}' in bin '{cur_bin}'.")
+            #endif
+
+            # skip possible header line(s)
+            i += 1
+            if i < len(lines):
+                hdr = lines[i].strip()
+                if (("-t'" in hdr) or ("delta" in hdr) or ("Delta" in hdr) or ("sigma" in hdr)):
+                    i += 1
+                #endif
+            #endif
+
+            xs, sigmas = [], []
+            while i < len(lines):
+                row = lines[i].strip()
+                if (not row) or row.startswith("Series:") or row.startswith("Bin:") or (set(row) <= set("=-")):
+                    break
+                #endif
+                parts = row.split()
+                if len(parts) < 2:
+                    raise RuntimeError(f"FATAL: migration row must have at least 2 numeric columns. Got: '{row}'")
+                #endif
+                try:
+                    xval = float(parts[0])
+                    dval = float(parts[1])
+                    if len(parts) >= 3:
+                        sval = float(parts[2])
+                        sigma_val = abs(sval)
+                    else:
+                        sigma_val = abs(dval)
+                    #endif
+                except Exception:
+                    raise RuntimeError(f"FATAL: non-numeric migration row: '{row}'")
+                #endif
+                xs.append(xval)
+                sigmas.append(sigma_val)
+                i += 1
+            #endfor
+
+            if use_key and xs:
+                mig[cur_bin][key] = {
+                    "x": np.array(xs, dtype=float),
+                    "sigma": np.array(sigmas, dtype=float),
+                }
+            #endif
+            continue
+        #endif
+
+        i += 1
+    #endfor
+
+    return mig
+
+def _file_has_bin_blocks(path):
+    with open(path, "r") as f:
+        for line in f:
+            if line.strip().startswith("Bin:"):
+                return True
+            #endif
+        #endfor
+    #endif
+    return False
 
 # ---------------------------------------------------------------------
 # Titles / bin edges
@@ -416,6 +606,11 @@ def _draw_total_sys_band_solid(ax, edges, rad_sigma=None, mig_sigma=None, zorder
     #endfor
 
 def _apply_shift_if_available(series, rad_entry):
+    """
+    Apply radiative shift consistent with:
+      A_Born = A_baseline - Delta
+    So we do: y_shift = y - Delta.
+    """
     if series is None:
         return None
     #endif
@@ -436,7 +631,7 @@ def _apply_shift_if_available(series, rad_entry):
     #endif
 
     y_shift = y.copy()
-    y_shift[:n] = y_shift[:n] + dr[:n]
+    y_shift[:n] = y_shift[:n] - dr[:n]
     return x, y_shift, yerr
 
 # ---------------------------------------------------------------------
@@ -821,12 +1016,14 @@ def _fmt_cell(val, stat, syst, ndp=3):
     fmt = "{0:." + str(ndp) + "f}"
     core = fmt.format(val) + "^{\\pm " + fmt.format(stat) + "}_{\\pm " + fmt.format(syst) + "}"
     return "$" + core + "$"
-#endif
+# endif
 
 def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
     """
     Prints one LaTeX table for a given bin_tag using Combined fit results,
-    radiative shifts, and quadrature systematics.
+    radiative deltas, and quadrature systematics.
+
+    Central values correspond to A_Born = A_baseline - Delta_rad.
     """
     p = build_period_dict(comb_parsed, bin_tag)
 
@@ -859,7 +1056,7 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         raise RuntimeError(f"FATAL: missing bin in migration summary: {bin_tag}")
     #endif
 
-    # Prepare arrays: central shifts from rad delta, sys from quadrature of sigmas
+    # Prepare arrays: central shift = y - d_rad, sys from quadrature of sigmas
     vals = {}
     stats = {}
     systs = {}
@@ -871,7 +1068,7 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         d_rad, s_rad = _get_rad_arrays(rad_bin, key, n)
         s_mig = _get_mig_arrays(mig_bin, key, n)
 
-        y_shift = y + d_rad
+        y_shift = y - d_rad
         s_tot = np.sqrt(s_rad * s_rad + s_mig * s_mig)
 
         vals[key] = y_shift
@@ -879,7 +1076,6 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         systs[key] = s_tot
     #endfor
 
-    # Header strings (exactly as requested), now with arraystretch = 1.40
     header = (
         "\\begin{table}[h]\n"
         "\\centering\n"
@@ -889,7 +1085,6 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         "$\\langle -t' \\rangle$ & $F_{LU}^{\\sin\\phi}/F_{UU}$ & $F_{UL}^{\\sin\\phi}/F_{UU}$ & $F_{UL}^{\\sin2\\phi}/F_{UU}$ & $F_{LL}/F_{UU}$ & $F_{LL}^{\\cos\\phi}/F_{UU}$ \\\\ \\hline\n"
     )
 
-    # Caption/label: deterministic
     label = f"table:{bin_tag}_fitresults_tprime"
     caption = (
         "\\end{tabular}\n"
@@ -900,16 +1095,14 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         "\\end{table}\n"
     )
 
-    # Print table
     print("")
     print("% -----------------------------------------------------------------------------")
     print(f"% LaTeX table for bin: {bin_tag}  ({XB_BINS.get(bin_tag, bin_tag)})")
-    print("% Central values include radiative Delta shifts; syst is sqrt(rad^2 + mig^2).")
-    print("% Rows are ordered in increasing -t'.")
+    print("% Central values correspond to A_Born = A_baseline - Delta_rad.")
+    print("% Syst is sqrt(rad_sigma^2 + mig_sigma^2). Rows ordered in increasing -t'.")
     print("% -----------------------------------------------------------------------------")
     print(header, end="")
 
-    # Rows (already sorted increasing -t' due to get_series sort)
     for i in range(n):
         tmean = float(x[i])
 
@@ -919,9 +1112,7 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         c4 = _fmt_cell(float(vals["ALLn0"][i]),   float(stats["ALLn0"][i]),   float(systs["ALLn0"][i]),   ndp=3)
         c5 = _fmt_cell(float(vals["ALLcos"][i]),  float(stats["ALLcos"][i]),  float(systs["ALLcos"][i]),  ndp=3)
 
-        row = (
-            f"{tmean:.3f} ~&~ {c1} ~&~ {c2} ~&~ {c3} ~&~ {c4} ~&~ {c5} \\\\ \\hline"
-        )
+        row = f"{tmean:.3f} ~&~ {c1} ~&~ {c2} ~&~ {c3} ~&~ {c4} ~&~ {c5} \\\\ \\hline"
         print(row)
     #endfor
 
@@ -931,13 +1122,13 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
 # Main
 # ---------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description="Plot enpi+ asymmetries vs -t' with optional radiative shifts and bin-migration systematics.")
+    ap = argparse.ArgumentParser(description="Plot enpi+ asymmetries vs -t' with optional radiative deltas and bin-migration systematics.")
     ap.add_argument("su22", type=str, help="Su22 fit-results .txt")
     ap.add_argument("fa22", type=str, help="Fa22 fit-results .txt")
     ap.add_argument("sp23", type=str, help="Sp23 fit-results .txt")
     ap.add_argument("combined", type=str, help="Combined fit-results .txt")
-    ap.add_argument("--rad", type=str, default=None, help="Signed Delta summary .txt to apply (+Delta)")
-    ap.add_argument("--migration", type=str, default=None, help="Migration summary .txt; uses *_delta lists as abs(delta) systematic per bin")
+    ap.add_argument("--rad", type=str, default=None, help="Radiative Delta summary .txt (block format). Applied as A_Born = A_baseline - Delta.")
+    ap.add_argument("--migration", type=str, default=None, help="Migration summary file. Block format preferred; legacy NAME={{x,delta}} supported.")
     args = ap.parse_args()
 
     su22 = parse_asym_file(args.su22)
@@ -964,11 +1155,18 @@ def main():
         if not os.path.isfile(args.migration):
             raise RuntimeError(f"FATAL: --migration file not found: {args.migration}")
         #endif
-        mig_parsed = parse_migration_file(args.migration)
-        mig_all = {}
-        for bin_tag in BIN_ORDER:
-            mig_all[bin_tag] = build_migration_dict(mig_parsed, bin_tag) or {}
-        #endfor
+
+        if _file_has_bin_blocks(args.migration):
+            print("[INFO] migration: detected block-format migration summary (Bin:/Series:).")
+            mig_all = parse_migration_summary_block(args.migration)
+        else:
+            print("[INFO] migration: detected legacy NAME={{x,delta}} format; using legacy parser.")
+            mig_parsed = parse_migration_file_legacy(args.migration)
+            mig_all = {}
+            for bin_tag in BIN_ORDER:
+                mig_all[bin_tag] = build_migration_dict_legacy(mig_parsed, bin_tag) or {}
+            #endfor
+        #endif
     #endif
 
     out_dir = os.path.join("output", "enpi+")
@@ -1010,4 +1208,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-#endif
+# endif
