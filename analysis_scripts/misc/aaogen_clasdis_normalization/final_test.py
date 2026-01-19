@@ -38,6 +38,12 @@ Additional NEW grids (ADDED):
   output/tprime_grid_mc_vs_data.png   : per-pad (-tprime) shapes (computed)
   output/phi_grid_mc_vs_data.png      : per-pad phi shapes (WRAPPED to [0, 2*pi) in radians)
 All are density-normalized per pad and use the SAME pad binning (xB, -tprime).
+
+NOTE (requested update):
+  This version "fixes all the latex labels" by using Matplotlib mathtext consistently:
+    - use $...$ wrappers
+    - use \mathrm{} for units
+    - use \phi, x_B, Q^2, t^\prime, etc.
 """
 
 import os
@@ -102,6 +108,22 @@ MASS_N = 0.9382720813
 
 # Fixed beam energy (GeV) for binning in (xB, -tprime) in the grid plots
 EB_FIXED = 10.55
+
+
+# ----------------------------
+# Label helpers (Matplotlib mathtext)
+# ----------------------------
+LABEL_MX2 = r"$M_{x}^{2}\;(\mathrm{GeV}^{2})$"
+LABEL_Q2 = r"$Q^{2}\;(\mathrm{GeV}^{2})$"
+LABEL_XB = r"$x_{B}$"
+LABEL_TPRIME_NEG = r"$-t^{\prime}\;(\mathrm{GeV}^{2})$"
+LABEL_PHI = r"$\phi\;(\mathrm{rad})$"
+
+YLABEL_DENSITY_GEV2 = r"$\mathrm{Probability\ density}\;(\mathrm{GeV}^{-2})$"
+YLABEL_DENSITY_RAD = r"$\mathrm{Probability\ density}\;(\mathrm{rad}^{-1})$"
+YLABEL_DENSITY_DIMLESS = r"$\mathrm{Probability\ density}$"
+
+TITLE_BIN_FMT = r"$x_{B}\in[{xb_lo:.2f},{xb_hi:.2f})\ ,\ -t^\prime\in[{t_lo:.2f},{t_hi:.2f})\ (\mathrm{{GeV}}^{{2}})$"
 
 
 def fatal(msg: str, code: int = 1) -> int:
@@ -174,8 +196,8 @@ def plot_overlay(out_png: str, files: list[str], labels: list[str], title: str,
         plt.step(x, y, where="mid", linewidth=1.5, label=lab)
     #endfor
 
-    plt.xlabel("M_{x}^{2} (GeV^{2})")
-    plt.ylabel("Probability density (1/GeV^{2})")
+    plt.xlabel(LABEL_MX2)
+    plt.ylabel(YLABEL_DENSITY_GEV2)
     plt.title(title)
     plt.legend(frameon=True)
 
@@ -424,8 +446,9 @@ def make_grid_plot(mc_grid: list[list[np.ndarray]],
 
             ax.grid(True)
             ax.set_xlim(xmin, xmax)
+
             ax.set_title(
-                f"xB [{xb_lo:.2f}, {xb_hi:.2f})  -tprime [{t_lo:.2f}, {t_hi:.2f})",
+                TITLE_BIN_FMT.format(xb_lo=xb_lo, xb_hi=xb_hi, t_lo=t_lo, t_hi=t_hi),
                 fontsize=9
             )
 
@@ -469,7 +492,7 @@ def main() -> int:
             out_png=OUT_OVERLAY_1,
             files=[root1, root2],
             labels=["At Rest", "Simulated Fermi Motion"],
-            title="Mx2 comparison",
+            title=r"$M_{x}^{2}$ comparison",
             nbins=MX2_NBINS_OVERLAY,
             xmin=MX2_MIN,
             xmax=MX2_MAX,
@@ -479,7 +502,7 @@ def main() -> int:
             out_png=OUT_OVERLAY_2,
             files=[root3, root4, root5],
             labels=["RGA", "RGA simulated Fermi Motion", "RGC"],
-            title="Mx2 data comparison",
+            title=r"$M_{x}^{2}$ data comparison",
             nbins=MX2_NBINS_OVERLAY,
             xmin=MX2_MIN,
             xmax=MX2_MAX,
@@ -501,9 +524,9 @@ def main() -> int:
             xmin=MX2_MIN,
             xmax=MX2_MAX,
             nbins=MX2_NBINS_GRID,
-            x_title="Mx2 (GeV^2)",
-            y_title="Prob. density (1/GeV^2)",
-            fig_title="Mx2 in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+            x_title=LABEL_MX2,
+            y_title=YLABEL_DENSITY_GEV2,
+            fig_title=r"$M_{x}^{2}$ in $(x_{B},-t^\prime)$ bins: root2 (MC) vs root5 (data)"
         )
 
         # NEW grids: Q2, xB, -tprime, phi (radians)
@@ -516,9 +539,9 @@ def main() -> int:
             xmin=Q2_MIN,
             xmax=Q2_MAX,
             nbins=Q2_NBINS_GRID,
-            x_title="Q2 (GeV^2)",
-            y_title="Prob. density (1/GeV^2)",
-            fig_title="Q2 in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+            x_title=LABEL_Q2,
+            y_title=YLABEL_DENSITY_GEV2,
+            fig_title=r"$Q^{2}$ in $(x_{B},-t^\prime)$ bins: root2 (MC) vs root5 (data)"
         )
 
         mc_grid_xb = fill_grid_variable(mc_arrs, "xB")
@@ -530,9 +553,9 @@ def main() -> int:
             xmin=XB_MIN,
             xmax=XB_MAX,
             nbins=XB_NBINS_GRID,
-            x_title="xB",
-            y_title="Prob. density (1)",
-            fig_title="xB in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+            x_title=LABEL_XB,
+            y_title=YLABEL_DENSITY_DIMLESS,
+            fig_title=r"$x_{B}$ in $(x_{B},-t^\prime)$ bins: root2 (MC) vs root5 (data)"
         )
 
         mc_grid_tneg = fill_grid_variable(mc_arrs, "tneg")
@@ -544,9 +567,9 @@ def main() -> int:
             xmin=TNEG_MIN,
             xmax=TNEG_MAX,
             nbins=TNEG_NBINS_GRID,
-            x_title="-tprime (GeV^2)",
-            y_title="Prob. density (1/GeV^2)",
-            fig_title="-tprime in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+            x_title=LABEL_TPRIME_NEG,
+            y_title=YLABEL_DENSITY_GEV2,
+            fig_title=r"$-t^\prime$ in $(x_{B},-t^\prime)$ bins: root2 (MC) vs root5 (data)"
         )
 
         mc_grid_phi = fill_grid_variable(mc_arrs, "phi")
@@ -558,9 +581,9 @@ def main() -> int:
             xmin=PHI_MIN,
             xmax=PHI_MAX,
             nbins=PHI_NBINS_GRID,
-            x_title="phi (rad)",
-            y_title="Prob. density (1/rad)",
-            fig_title="phi in (xB, -tprime) bins: root2 (MC) vs root5 (data)"
+            x_title=LABEL_PHI,
+            y_title=YLABEL_DENSITY_RAD,
+            fig_title=r"$\phi$ in $(x_{B},-t^\prime)$ bins: root2 (MC) vs root5 (data)"
         )
 
     except Exception as e:
