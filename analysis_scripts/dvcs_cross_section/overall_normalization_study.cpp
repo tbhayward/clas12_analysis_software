@@ -1,3 +1,26 @@
+// normalization_study.cpp
+// -----------------------------------------------------------------------------
+// Overall BH normalization study + theta_p-based normalization writeback.
+//
+// Existing behavior preserved:
+//   - Reads dvcs_pass2_analysis.csv
+//   - Selects rows (either all points or closest-to-edge per kin cell)
+//   - Computes BH, VGG, KM15 and prints summary table
+//   - Produces d_edge 1x2 plot (KM15 and VGG group coloring)
+//   - Produces 2x2 dependence plots for xB, Q2, t, e_theta, p_theta, g_theta
+//
+// New behavior added (requested):
+//   - Fit xs/BH vs p_theta using ONLY "clean" points where BH/KM15 in [0.95, 1.05]
+//   - Use that fitted pol1 line to compute "norm, <label>" at the mean p_theta
+//     already stored in the CSV column "p_theta, <label>" for each row.
+//   - Write those values back into the CSV (existing column required).
+//
+// Notes / policy:
+//   - No new CSV columns are created.
+//   - Missing required columns cause a hard failure.
+//   - CSV save is atomic (write temp + rename).
+// -----------------------------------------------------------------------------
+
 #include "overall_normalization_study.h"
 #include "model_predictions.h"
 
@@ -47,6 +70,11 @@ static const bool kUseOnlyClosestToEdgePerKinCell = true;
 // points with phi exactly on the edge (d_edge == 0). Keep as true by default.
 static const bool kRequirePositiveDEdge = true;
 
+// When writing normalization, require unpolarized call by default.
+// (If you later decide to call this function with pos/neg, you can relax this,
+// but today your requested CSV columns are "norm, <label>" (no helicity).)
+static const bool kRequireUnpolForCsvWrite = true;
+
 struct TripleCell {
     double value;
     double stat;
@@ -72,6 +100,15 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
     }
     out.push_back(field);
     return out;
+}
+
+static std::string join_csv_line(const std::vector<std::string> &fields) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (i) oss << ",";
+        oss << fields[i];
+    }
+    return oss.str();
 }
 
 static std::string trim(const std::string &s) {
@@ -744,9 +781,74 @@ static void make_dependence_plot_2x2(const std::string &out_dir,
 }
 
 // -----------------------------------------------------------------------------
+// NEW: Perform the same "clean" fit numerically (no drawing required).
+// We fit y = p0 + p1*x for clean points (BH/KM15 in [0.95,1.05]) and return p0,p1.
+// -----------------------------------------------------------------------------
+static bool fit_clean_pol1(const std::vector<DepPoint> &pts,
+                           BhGroupMetric metric,
+                           double x_min,
+                           double x_max,
+                           double &p0,
+                           double &p1,
+                           double &e0,
+                           double &e1,
+                           int &n_used) {
+    p0 = 0.0;
+    p1 = 0.0;
+    e0 = 0.0;
+    e1 = 0.0;
+    n_used = 0;
+
+    TGraphErrors gr;
+    gr.SetName("gr_clean_fit_internal");
+
+    int n = 0;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const double r = ratio_for_metric(pts[i], metric);
+        const BhKmGroup g = categorize_bh_over_model(r);
+        if (g != BhKmGroup::G_95_105) continue;
+
+        if (!std::isfinite(pts[i].x) || !std::isfinite(pts[i].y) || !std::isfinite(pts[i].ey)) continue;
+        if (pts[i].ey < 0.0) continue;
+
+        gr.SetPoint(n, pts[i].x, pts[i].y);
+        gr.SetPointError(n, 0.0, pts[i].ey);
+        n += 1;
+    } //endfor
+
+    n_used = gr.GetN();
+    if (n_used < 2) {
+        return false;
+    } //endif
+
+    TF1 f("f_clean_pol1_internal", "pol1", x_min, x_max);
+
+    // Q0: quiet, no draw
+    // Note: we are not forcing weights; ROOT will use ey if present for chi2.
+    gr.Fit(&f, "Q0");
+
+    p0 = f.GetParameter(0);
+    p1 = f.GetParameter(1);
+    e0 = f.GetParError(0);
+    e1 = f.GetParError(1);
+
+    if (!std::isfinite(p0) || !std::isfinite(p1)) {
+        return false;
+    } //endif
+
+    return true;
+}
+
+static std::string format_plain_double(double x) {
+    // Deterministic formatting; avoid scientific unless needed.
+    // (If you prefer a specific precision, adjust here.)
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(10) << x;
+    return oss.str();
+}
+
+// -----------------------------------------------------------------------------
 // Row container
-//   - When using ALL points: we keep per-row values and compute BH/model per row.
-//   - When using BEST points: we keep one per (xB,Q2,|t|) cell (closest phi edge).
 // -----------------------------------------------------------------------------
 
 struct RowData {
@@ -823,7 +925,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const int c_tavg   = require_col(header, col_tavg);
         const int c_phiavg = require_col(header, col_phiavg);
 
-        // FIX: theta columns do NOT have "_avg" in the CSV schema
+        // Theta columns do NOT have "_avg" in the CSV schema
         const std::string col_e_theta = "e_theta, " + label;
         const std::string col_p_theta = "p_theta, " + label;
         const std::string col_g_theta = "g_theta, " + label;
@@ -836,8 +938,20 @@ bool print_bh_normalization_study(const std::string &csv_path,
             "cross sections, ep->epg, exp, " + label + ", " + helicity;
         const int c_xs = require_col(header, col_xs);
 
+        // NEW: normalization output column to fill
+        const std::string col_norm = "norm, " + label;
+        const int c_norm = require_col(header, col_norm);
+
         const double Ebeam = beam_energy_for_label(label);
         const Helicity hel = helicity_from_string(helicity);
+
+        if (kRequireUnpolForCsvWrite && helicity != "unpol") {
+            std::cerr << "[overall_norm] FATAL: CSV writeback is enabled, but helicity != unpol.\n";
+            std::cerr << "[overall_norm] Requested behavior writes into column \"" << col_norm
+                      << "\" which is helicity-independent.\n";
+            std::cerr << "[overall_norm] Call with helicity=\"unpol\" for writeback.\n";
+            return false;
+        } //endif
 
         std::cout << "============================================================\n";
         std::cout << "[overall_norm] BH normalization study\n";
@@ -1022,6 +1136,22 @@ bool print_bh_normalization_study(const std::string &csv_path,
         int n_weighted_used = 0;
         int n_in_95_105_total = 0;
 
+        // For writing norms we need per-row p_theta and xs/BH (and bh/km15 selection).
+        // We'll store per-row results keyed by CSV row index.
+        struct RowCalc {
+            double p_theta;
+            double xs_over_bh;
+            double xs_over_bh_err;
+            double bh_over_km15;
+            bool valid;
+            RowCalc() : p_theta(std::numeric_limits<double>::quiet_NaN()),
+                        xs_over_bh(0.0),
+                        xs_over_bh_err(0.0),
+                        bh_over_km15(0.0),
+                        valid(false) {}
+        };
+        std::map<size_t, RowCalc> row_calcs;
+
         for (size_t irow = 0; irow < selected_rows.size(); ++irow) {
             const RowData &br = selected_rows[irow];
 
@@ -1063,7 +1193,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
 
-            // d_edge plot points: require dist_to_edge > 0.0 unless user disabled
+            // d_edge plot points
             if ((!kRequirePositiveDEdge || (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0)) &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
@@ -1136,6 +1266,15 @@ bool print_bh_normalization_study(const std::string &csv_path,
                     pg.bh_over_vgg  = bh_over_vgg;
                     dep_g_theta.push_back(pg);
                 } //endif
+
+                // Save per-row calc info for later norm writeback (uses p_theta)
+                RowCalc rc;
+                rc.p_theta = br.p_theta;
+                rc.xs_over_bh = xs_over_bh;
+                rc.xs_over_bh_err = xs_over_bh_err;
+                rc.bh_over_km15 = bh_over_km;
+                rc.valid = true;
+                row_calcs[br.csv_row_index] = rc;
             } //endif
 
             if (std::isfinite(bh_over_km) && bh_over_km >= 0.95 && bh_over_km <= 1.05) {
@@ -1216,6 +1355,100 @@ bool print_bh_normalization_study(const std::string &csv_path,
             std::cout << "[overall_norm] Weighted mean xs/BH     : N/A (no usable uncertainties)\n";
         } //endif
         std::cout << "------------------------------------------------------------\n";
+
+        // ---------------------------------------------------------------------
+        // NEW: Theta_p normalization writeback:
+        //   - Fit xs/BH vs p_theta for CLEAN points (BH/KM15 in [0.95, 1.05])
+        //   - Evaluate norm(theta_p_mean) for each CSV row and write into "norm, <label>"
+        // ---------------------------------------------------------------------
+        {
+            double p0 = 0.0, p1 = 0.0, e0 = 0.0, e1 = 0.0;
+            int nfit = 0;
+
+            const double fit_xmin = 0.0;
+            const double fit_xmax = 80.0;
+
+            const bool ok_fit = fit_clean_pol1(dep_p_theta, BhGroupMetric::KM15,
+                                               fit_xmin, fit_xmax,
+                                               p0, p1, e0, e1, nfit);
+
+            if (!ok_fit) {
+                std::ostringstream oss;
+                oss << "[overall_norm] FATAL: cannot fit clean pol1 for xs/BH vs p_theta.\n"
+                    << "[overall_norm] Need at least 2 clean points with BH/KM15 in [0.95,1.05].\n"
+                    << "[overall_norm] Clean points found: " << nfit << "\n";
+                throw std::runtime_error(oss.str());
+            } //endif
+
+            std::cout << "\n";
+            std::cout << "[overall_norm] Clean p_theta fit (xs/BH vs p_theta), BH/KM15 in [0.95,1.05]\n";
+            std::cout << "[overall_norm] Fit range (deg): [" << fit_xmin << ", " << fit_xmax << "]\n";
+            std::cout << "[overall_norm] pol1: p0 = " << std::fixed << std::setprecision(10) << p0
+                      << "  p1 = " << std::fixed << std::setprecision(10) << p1 << "\n";
+            std::cout << "[overall_norm] Fit errs: e0 = " << std::fixed << std::setprecision(10) << e0
+                      << "  e1 = " << std::fixed << std::setprecision(10) << e1 << "\n";
+
+            // Write to all rows (not only selected rows), using per-row p_theta mean already in CSV.
+            // We will:
+            //   - Parse each row
+            //   - Read p_theta, label
+            //   - If finite, set norm, label = p0 + p1*p_theta
+            //   - Otherwise leave untouched (empty or existing content)
+            // This is deterministic and does not create columns.
+            size_t n_written = 0;
+            size_t n_skipped_missing_ptheta = 0;
+            size_t n_rows_total = (lines.size() > 1 ? lines.size() - 1 : 0);
+
+            for (size_t r = 1; r < lines.size(); ++r) {
+                if (lines[r].empty()) continue;
+
+                std::vector<std::string> fields = split_csv_line(lines[r]);
+                if (fields.size() != header.size()) continue;
+
+                const double pth = std::atof(trim(unquote(fields[c_p_theta])).c_str());
+                if (!std::isfinite(pth)) {
+                    n_skipped_missing_ptheta += 1;
+                    continue;
+                } //endif
+
+                const double norm_val = p0 + p1 * pth;
+                if (!std::isfinite(norm_val)) {
+                    continue;
+                } //endif
+
+                fields[(size_t)c_norm] = format_plain_double(norm_val);
+                lines[r] = join_csv_line(fields);
+                n_written += 1;
+            } //endfor
+
+            // Atomic save
+            {
+                const std::string tmp_path = csv_path + ".tmp_norm_write";
+                std::ofstream ofs(tmp_path.c_str());
+                if (!ofs) {
+                    throw std::runtime_error("[overall_norm] Failed to open temp CSV for writing: " + tmp_path);
+                }
+                for (size_t i = 0; i < lines.size(); ++i) {
+                    ofs << lines[i] << "\n";
+                }
+                ofs.close();
+
+                std::error_code ec;
+                std::filesystem::rename(tmp_path, csv_path, ec);
+                if (ec) {
+                    // Best-effort cleanup
+                    std::error_code ec2;
+                    std::filesystem::remove(tmp_path, ec2);
+                    throw std::runtime_error("[overall_norm] Failed to rename temp CSV into place: " + ec.message());
+                }
+            }
+
+            std::cout << "[overall_norm] CSV writeback complete\n";
+            std::cout << "[overall_norm] Column filled: \"" << col_norm << "\"\n";
+            std::cout << "[overall_norm] Rows total (non-header): " << n_rows_total << "\n";
+            std::cout << "[overall_norm] Rows written          : " << n_written << "\n";
+            std::cout << "[overall_norm] Rows skipped (no p_theta) : " << n_skipped_missing_ptheta << "\n";
+        }
 
         std::cout << "\n";
         std::cout << "[overall_norm] Done.\n";
