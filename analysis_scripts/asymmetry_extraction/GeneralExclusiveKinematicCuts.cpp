@@ -343,7 +343,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         //                  (*x > 0.10 && *x < 0.60);
         bool goodEvent = (*x > 0.10 && *x < 0.60);
         if (!goodEvent) return false;
-        return *Mx2 > 1.30 && *Mx2 < 1.45;
+        return *Mx2 > 1.15 && *Mx2 < 1.30;
         return PassesDynamicMx2(*x, *t, *Mx2);
         // return *Mx2 > 0.86 && *Mx2 < 1;
     }
@@ -352,7 +352,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         //                  (*x > 0.10 && *x < 0.25);
         bool goodEvent = (*x > 0.10 && *x < 0.25);
         if (!goodEvent) return false;
-        return *Mx2 > 1.30 && *Mx2 < 1.45;
+        return *Mx2 > 1.15 && *Mx2 < 1.30;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiMidLowxB") {
@@ -360,7 +360,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         //                  (*x > 0.25 && *x < 0.35);
         bool goodEvent = (*x > 0.25 && *x < 0.35);
         if (!goodEvent) return false;
-        return *Mx2 > 1.30 && *Mx2 < 1.45;
+        return *Mx2 > 1.15 && *Mx2 < 1.30;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiMidHighxB") {
@@ -368,7 +368,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         //                  (*x > 0.35 && *x < 0.45);
         bool goodEvent = (*x > 0.35 && *x < 0.45);
         if (!goodEvent) return false;
-        return *Mx2 > 1.30 && *Mx2 < 1.45;
+        return *Mx2 > 1.15 && *Mx2 < 1.30;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiHighxB") {
@@ -376,7 +376,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         //                  (*x > 0.45 && *x < 0.60);
         bool goodEvent = (*x > 0.45 && *x < 0.60);
         if (!goodEvent) return false;
-        return *Mx2 > 1.30 && *Mx2 < 1.45;
+        return *Mx2 > 1.15 && *Mx2 < 1.30;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
     // if (property == "enpiHarut1") {
