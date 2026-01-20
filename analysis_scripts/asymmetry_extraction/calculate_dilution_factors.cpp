@@ -335,7 +335,7 @@ std::pair<double, double> calculate_dilution_and_error(
     // double packing_fraction = (0.699832)*(nA/xA - nMT/xHe)
     //     / (1.25055*nCH/xCH - 0.23688*nC/xC - 0.013668*nf/xf - nMT/xHe);
 
-    std::cout << dilution+" ";
+    std::cout << dilution << " ";
 
     double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
     return { dilution, error };
