@@ -1,3 +1,5 @@
+// model_predictions.cpp
+
 #include "model_predictions.h"
 
 #include <cstdio>
@@ -31,6 +33,24 @@ static std::string trim_copy(const std::string& s) {
     return s.substr(a, b - a + 1);
 }
 
+static std::string shell_quote_posix(const std::string& s) {
+    // Single-quote for /bin/sh. Safe for paths with spaces or special chars.
+    // 'abc' -> 'abc'
+    // abc'def -> 'abc'"'"'def'
+    std::string out;
+    out.reserve(s.size() + 2);
+    out.push_back('\'');
+    for (char c : s) {
+        if (c == '\'') {
+            out.append("'\"'\"'");
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('\'');
+    return out;
+}
+
 // Find an executable path to dvcsgen directory.
 // Priority: paths.dvcsgen_path -> env DVCSGEN_PATH -> default.
 static std::string resolve_dvcsgen_dir(const ModelPaths& paths) {
@@ -53,34 +73,38 @@ static std::string resolve_km15_cli(const ModelPaths& paths) {
 static std::string run_and_capture_stdout(const std::string& cmd, bool require_ok) {
     std::array<char, 4096> buf{};
     std::string out;
+
     FILE* pipe = POPEN(cmd.c_str(), "r");
     if (!pipe) {
         if (require_ok) throw std::runtime_error("popen failed: " + cmd);
         return std::string();
     }
+
     while (true) {
         size_t n = std::fread(buf.data(), 1, buf.size(), pipe);
         if (n == 0) break;
         out.append(buf.data(), n);
     }
+
     int rc = PCLOSE(pipe);
     if (require_ok && rc != 0) {
         std::ostringstream oss;
         oss << "Command failed (rc=" << rc << "): " << cmd << "\nOutput:\n" << out;
         throw std::runtime_error(oss.str());
     }
+
     return out;
 }
 
 // Map helicity to which dvcsgen line to parse (matching your Python logic):
-// pol=0 -> last line           (unpolarized total)
-// pol=+1 -> third from last    (depending on dvcsgen print order)
+// pol=0  -> last line
+// pol=+1 -> third from last
 // pol=-1 -> second from last
 // We will mirror exactly your historical usage: i = {0,2,1} counting from end.
 static int dvcsgen_line_offset_from_end(Helicity h) {
-    if (h == Helicity::Unpol) return 1;   // last line
-    if (h == Helicity::Plus)  return 3;   // -1 - i => i=2 => third from last
-    return 2;                              // Minus => second from last
+    if (h == Helicity::Unpol) return 1; // last line
+    if (h == Helicity::Plus)  return 3; // third from last
+    return 2;                            // second from last
 }
 
 // Parse the last N lines and extract the numeric value at the end of the chosen line.
@@ -95,13 +119,16 @@ static double parse_dvcsgen_value(const std::string& all, int which_from_end) {
             if (!L.empty()) lines.push_back(L);
         }
     }
-    if ((int)lines.size() < which_from_end) {
-        return 0.0;
-    }
+
+    if ((int)lines.size() < which_from_end) return 0.0;
+
     const std::string& target = lines[lines.size() - which_from_end];
+
     std::istringstream ss(target);
-    std::string tok, last;
+    std::string tok;
+    std::string last;
     while (ss >> tok) last = tok;
+
     try {
         return std::stod(last);
     } catch (...) {
@@ -113,8 +140,9 @@ static double parse_dvcsgen_value(const std::string& all, int which_from_end) {
 static std::string build_dvcsgen_cmd(const std::string& dvcsgen_dir,
                                      double xB, double Q2, double t_pos, double phi_deg,
                                      double Ebeam, int bh_mode, bool globalfit) {
-    // dvcsgen in your usage wants phi in radians.
+    // dvcsgen wants phi in radians.
     const double phi_rad = phi_deg * M_PI / 180.0;
+
     std::ostringstream cmd;
     cmd << dvcsgen_dir << "/dvcsgen"
         << " --beam " << Ebeam
@@ -124,12 +152,12 @@ static std::string build_dvcsgen_cmd(const std::string& dvcsgen_dir,
         << " --bh "   << bh_mode
         << " --phi "  << phi_rad
         << " --ycol 0.0001";
-    // Your VGG usage also sets --gpd 101 when not pure BH; we keep that in vgg_xs only.
+
     if (globalfit) cmd << " --globalfit";
     return cmd.str();
 }
 
-// Public: VGG total (BH+DVCS+INT) or similar (your bh=3 case).
+// Public: VGG total (BH+DVCS+INT) (your bh=3 case).
 double vgg_xs(double xB, double Q2, double t_pos, double phi_deg,
               double Ebeam, Helicity helicity,
               const ModelPaths& paths, bool globalfit) {
@@ -139,15 +167,13 @@ double vgg_xs(double xB, double Q2, double t_pos, double phi_deg,
     cmd << build_dvcsgen_cmd(dvcsgen_dir, xB, Q2, t_pos, phi_deg, Ebeam, /*bh_mode=*/3, globalfit)
         << " --gpd 101";
 
-    // Ensure PATH and CLASDVCS_PDF include dvcsgen_dir; easiest is to prefix the command.
-    // Many shells allow "VAR=val command". For portability, we export and then run.
     std::ostringstream wrapped;
 #ifndef _WIN32
-    wrapped << "export PATH=\"" << dvcsgen_dir << ":$PATH\"; "
-            << "export CLASDVCS_PDF=\"" << dvcsgen_dir << "\"; "
+    wrapped << "export PATH=" << shell_quote_posix(dvcsgen_dir) << ":$PATH; "
+            << "export CLASDVCS_PDF=" << shell_quote_posix(dvcsgen_dir) << "; "
             << cmd.str();
 #else
-    wrapped << cmd.str(); // Windows: assume dvcsgen_dir on PATH already
+    wrapped << cmd.str();
 #endif
 
     const std::string out = run_and_capture_stdout(wrapped.str(), /*require_ok=*/false);
@@ -157,7 +183,7 @@ double vgg_xs(double xB, double Q2, double t_pos, double phi_deg,
     return parse_dvcsgen_value(out, which);
 }
 
-// Public: BH only
+// Public: BH only.
 double vgg_bh_only(double xB, double Q2, double t_pos, double phi_deg,
                    double Ebeam, const ModelPaths& paths, bool globalfit) {
     const std::string dvcsgen_dir = resolve_dvcsgen_dir(paths);
@@ -167,8 +193,8 @@ double vgg_bh_only(double xB, double Q2, double t_pos, double phi_deg,
 
     std::ostringstream wrapped;
 #ifndef _WIN32
-    wrapped << "export PATH=\"" << dvcsgen_dir << ":$PATH\"; "
-            << "export CLASDVCS_PDF=\"" << dvcsgen_dir << "\"; "
+    wrapped << "export PATH=" << shell_quote_posix(dvcsgen_dir) << ":$PATH; "
+            << "export CLASDVCS_PDF=" << shell_quote_posix(dvcsgen_dir) << "; "
             << cmd.str();
 #else
     wrapped << cmd.str();
@@ -182,43 +208,54 @@ double vgg_bh_only(double xB, double Q2, double t_pos, double phi_deg,
 }
 
 // Public: KM15 via Python CLI.
-// The CLI prints a single float to stdout and returns 0 on success.
-// We pass helicity so you can extend the Python later if needed; for now we
-// mirror your historical Unpol usage and ignore helicity inside the CLI unless you add it.
+// IMPORTANT: run with PYTHONPATH removed so ROOT module contamination cannot break numpy/gepard.
 double km15_xs(double xB, double Q2, double t_pos, double phi_deg,
                double Ebeam, Helicity helicity,
                const ModelPaths& paths) {
     const std::string cli = resolve_km15_cli(paths);
 
-    // We keep interface simple: km15_cli.py xB Q2 t_pos phi_deg Ebeam helicity
     int hel_int = 0;
     if (helicity == Helicity::Plus)  hel_int = +1;
     if (helicity == Helicity::Minus) hel_int = -1;
 
-    std::ostringstream cmd;
 #ifndef _WIN32
-    // Use user's default python. You can also force "python3" here if you prefer.
-    cmd << "python3 " << cli
+    // Require PY_KM15 so we do not accidentally use the module python (often 3.13 with ROOT).
+    const char* py_km15_env = std::getenv("PY_KM15");
+    if (!py_km15_env || std::string(py_km15_env).empty()) {
+        std::cerr << "[km15_xs] FATAL: PY_KM15 is not set.\n";
+        std::cerr << "[km15_xs] Set PY_KM15 to your KM15 venv python, e.g.:\n";
+        std::cerr << "  setenv PY_KM15 /u/home/thayward/venvs/km15_py312/bin/python3\n";
+        std::exit(EXIT_FAILURE);
+    }
+    const std::string py_km15 = std::string(py_km15_env);
+
+    // Critical: drop PYTHONPATH for this subprocess only.
+    std::ostringstream cmd;
+    cmd << "env -u PYTHONPATH "
+        << shell_quote_posix(py_km15) << " "
+        << shell_quote_posix(cli)
         << " " << xB
         << " " << Q2
         << " " << t_pos
         << " " << phi_deg
         << " " << Ebeam
-        << " " << hel_int;
+        << " " << hel_int
+        << " XS";
 #else
+    std::ostringstream cmd;
     cmd << "python " << cli
         << " " << xB
         << " " << Q2
         << " " << t_pos
         << " " << phi_deg
         << " " << Ebeam
-        << " " << hel_int;
+        << " " << hel_int
+        << " XS";
 #endif
 
     const std::string out = run_and_capture_stdout(cmd.str(), /*require_ok=*/false);
     if (out.empty()) return 0.0;
 
-    // Expect a single number on stdout.
     try {
         return std::stod(trim_copy(out));
     } catch (...) {
