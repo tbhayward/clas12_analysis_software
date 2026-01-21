@@ -48,6 +48,26 @@ static const bool kUseOnlyClosestToEdgePerKinCell = true;
 static const bool kRequirePositiveDEdge = true;
 
 // -----------------------------------------------------------------------------
+// NEW: Toggle for which variable is used to parameterize the normalization that
+// is written to "norm, <label>".
+//
+//   - PTheta : norm = p0 + p1 * p_theta
+//   - XB     : norm = p0 + p1 * xBavg
+//
+// This ONLY affects the "norm write" section at the end. All dependence plots
+// (including xB and p_theta panels) are still produced as before.
+// -----------------------------------------------------------------------------
+enum class NormXAxis {
+    PTheta = 0,
+    XB     = 1
+};
+
+// // Default: keep prior behavior (p_theta)
+// static const NormXAxis kNormXAxis = NormXAxis::PTheta;
+// Use xB to parameterize the normalization
+static const NormXAxis kNormXAxis = NormXAxis::XB;
+
+// -----------------------------------------------------------------------------
 // NEW: Which clean-fit metric to use when writing "norm, <label>" to CSV.
 // This uses the same "clean fit" selection shown in the 2x2 dependence plots:
 //   - Clean points are those with BH/KM15 (or BH/VGG) in [0.95, 1.05].
@@ -279,7 +299,7 @@ static void ensure_output_dir_or_throw(const std::string &dir) {
 }
 
 // -----------------------------------------------------------------------------
-// NEW: CSV write helpers (atomic rewrite)
+// CSV write helpers (atomic rewrite)
 // -----------------------------------------------------------------------------
 
 static std::string csv_join_fields(const std::vector<std::string> &fields) {
@@ -314,7 +334,6 @@ static void write_lines_atomic_or_throw(const std::string &path,
     std::error_code ec;
     std::filesystem::rename(tmp, path, ec);
     if (ec) {
-        // Try fallback: remove destination then rename (Windows-ish behavior)
         std::filesystem::remove(path, ec);
         ec.clear();
         std::filesystem::rename(tmp, path, ec);
@@ -334,8 +353,6 @@ static bool try_parse_double_blank_is_missing(const std::string &cell, double &o
 }
 
 static std::string format_double_for_csv(double x) {
-    // Keep deterministic, compact-enough formatting.
-    // If you prefer more/less precision, adjust here.
     std::ostringstream oss;
     oss.setf(std::ios::fixed);
     oss << std::setprecision(6) << x;
@@ -425,8 +442,7 @@ static double ratio_for_metric(const DepPoint &p, BhGroupMetric m) {
 }
 
 // -----------------------------------------------------------------------------
-// NEW: compute the same clean linear fit used in the right-hand dependence pads.
-// This is used to populate "norm, <label>" = p0 + p1 * p_theta into the CSV.
+// Compute clean linear fit used for norm write
 // -----------------------------------------------------------------------------
 
 static bool compute_clean_linear_fit_pol1(const std::vector<DepPoint> &pts,
@@ -444,7 +460,6 @@ static bool compute_clean_linear_fit_pol1(const std::vector<DepPoint> &pts,
     e1 = 0.0;
     n_clean_used = 0;
 
-    // Build a graph from clean points (group G_95_105 for the chosen metric).
     TGraphErrors gr;
     gr.SetName("gr_clean_fit_internal");
 
@@ -469,7 +484,6 @@ static bool compute_clean_linear_fit_pol1(const std::vector<DepPoint> &pts,
     } //endif
 
     TF1 f("f_clean_pol1_internal", "pol1", x_min, x_max);
-    // "Q0": quiet, do not draw
     gr.Fit(&f, "Q0");
 
     p0 = f.GetParameter(0);
@@ -877,8 +891,6 @@ static void make_dependence_plot_2x2(const std::string &out_dir,
 
 // -----------------------------------------------------------------------------
 // Row container
-//   - When using ALL points: we keep per-row values and compute BH/model per row.
-//   - When using BEST points: we keep one per (xB,Q2,|t|) cell (closest phi edge).
 // -----------------------------------------------------------------------------
 
 struct RowData {
@@ -907,10 +919,6 @@ struct RowData {
         g_theta(std::numeric_limits<double>::quiet_NaN()),
         csv_row_index(0) {}
 };
-
-// -----------------------------------------------------------------------------
-// Main entry
-// -----------------------------------------------------------------------------
 
 } // end anonymous namespace
 
@@ -955,7 +963,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const int c_tavg   = require_col(header, col_tavg);
         const int c_phiavg = require_col(header, col_phiavg);
 
-        // FIX: theta columns do NOT have "_avg" in the CSV schema
         const std::string col_e_theta = "e_theta, " + label;
         const std::string col_p_theta = "p_theta, " + label;
         const std::string col_g_theta = "g_theta, " + label;
@@ -968,7 +975,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
             "cross sections, ep->epg, exp, " + label + ", " + helicity;
         const int c_xs = require_col(header, col_xs);
 
-        // NEW: norm column to be written
         const std::string col_norm = "norm, " + label;
         const int c_norm = find_col_optional(header, col_norm);
 
@@ -987,17 +993,15 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cout << "[overall_norm] norm fit : "
                   << (kNormFitMetric == BhGroupMetric::KM15 ? "KM15" : "VGG")
                   << " (clean points in [0.95, 1.05])\n";
+        std::cout << "[overall_norm] norm x   : "
+                  << (kNormXAxis == NormXAxis::PTheta ? "p_theta" : "xBavg")
+                  << "\n";
         std::cout << "------------------------------------------------------------\n";
-
-        // ---------------------------------------------------------------------
-        // Build the selected row set based on the toggle
-        // ---------------------------------------------------------------------
 
         std::vector<RowData> selected_rows;
         selected_rows.reserve(lines.size() > 1 ? lines.size() - 1 : 0);
 
         if (kUseOnlyClosestToEdgePerKinCell) {
-            // Map: key = (xBmin,xBmax,Q2min,Q2max,tmin,tmax), store best (smallest dist)
             std::map<std::string, RowData> best;
 
             for (size_t r = 1; r < lines.size(); ++r) {
@@ -1069,7 +1073,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                       << " (one per kinematic cell, closest to phi edge)\n\n";
 
         } else {
-            // Use every valid row
             for (size_t r = 1; r < lines.size(); ++r) {
                 if (lines[r].empty()) continue;
 
@@ -1124,9 +1127,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                       << " (all points)\n\n";
         } //endif mode switch
 
-        // ---------------------------------------------------------------------
-        // Print header for the table (same columns as before)
-        // ---------------------------------------------------------------------
         std::cout
             << std::setw(8)  << "xB"
             << std::setw(10) << "Q2"
@@ -1202,7 +1202,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 << std::setw(14) << std::fixed << std::setprecision(3) << bh_over_km
                 << "\n";
 
-            // d_edge plot points: require dist_to_edge > 0.0 unless user disabled
             if ((!kRequirePositiveDEdge || (std::isfinite(br.dist_to_edge) && br.dist_to_edge > 0.0)) &&
                 std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
@@ -1217,7 +1216,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 plot_pts_dedge.push_back(p);
             } //endif
 
-            // Dependence plots
             if (std::isfinite(xs_over_bh) && xs_over_bh >= 0.0 &&
                 std::isfinite(bh_over_km) && bh_over_km > 0.0 &&
                 std::isfinite(bh_over_vgg) && bh_over_vgg > 0.0) {
@@ -1291,10 +1289,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
             } //endif
         } //endfor selected rows
 
-        // ---------------------------------------------------------------------
-        // OUTPUT DIRECTORY POLICY:
-        //   output/normalization_study/<RunPeriodLabelSanitized>
-        // ---------------------------------------------------------------------
         const std::string out_root = "output/normalization_study";
         ensure_output_dir_or_throw(out_root);
 
@@ -1315,7 +1309,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
                                  1.0, 6.0,
                                  dep_q2);
 
-        // Label changed from t_abs to -t (values are already positive)
         make_dependence_plot_2x2(out_dir, label, helicity,
                                  "-t",
                                  "t",
@@ -1341,27 +1334,50 @@ bool print_bh_normalization_study(const std::string &csv_path,
                                  dep_g_theta);
 
         // ---------------------------------------------------------------------
-        // NEW: write "norm, <label>" by evaluating the fitted line vs theta_p.
-        //  - Fit is derived from the *same* clean-point selection (95-105 group)
-        //    for the chosen metric (kNormFitMetric).
-        //  - Norm is written for every CSV row with non-blank p_theta, <label>.
-        //  - If p_theta is blank, we do NOT write anything (leave unchanged).
+        // Write "norm, <label>" by evaluating the fitted line vs chosen variable.
+        //
+        //   If kNormXAxis == PTheta:
+        //     - Fit uses dep_p_theta
+        //     - Writes per-row using "p_theta, <label>"
+        //     - Skips rows with blank p_theta
+        //
+        //   If kNormXAxis == XB:
+        //     - Fit uses dep_xb
+        //     - Writes per-row using "xBavg, <label>"
+        //     - Skips rows with blank xBavg
         // ---------------------------------------------------------------------
 
         if (c_norm < 0) {
             std::cout << "\n";
             std::cout << "[overall_norm] NOTE: Column \"" << col_norm << "\" not found; skipping norm write.\n";
         } else {
+            const std::vector<DepPoint> *dep_for_fit = nullptr;
+            int c_x_for_write = -1;
+            double fit_xmin = 0.0;
+            double fit_xmax = 0.0;
+            std::string x_name;
+
+            if (kNormXAxis == NormXAxis::PTheta) {
+                dep_for_fit = &dep_p_theta;
+                c_x_for_write = c_p_theta;
+                fit_xmin = 0.0;
+                fit_xmax = 80.0;
+                x_name = "p_theta";
+            } else {
+                dep_for_fit = &dep_xb;
+                c_x_for_write = c_xbavg;
+                fit_xmin = 0.0;
+                fit_xmax = 0.6;
+                x_name = "xBavg";
+            } //endif
+
             double fit_p0 = 0.0;
             double fit_p1 = 0.0;
             double fit_e0 = 0.0;
             double fit_e1 = 0.0;
             int n_clean_fit = 0;
 
-            const double fit_xmin = 0.0;
-            const double fit_xmax = 80.0;
-
-            const bool fit_ok = compute_clean_linear_fit_pol1(dep_p_theta,
+            const bool fit_ok = compute_clean_linear_fit_pol1(*dep_for_fit,
                                                               kNormFitMetric,
                                                               fit_xmin,
                                                               fit_xmax,
@@ -1373,9 +1389,10 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
             std::cout << "\n";
             if (!fit_ok) {
-                std::cout << "[overall_norm] WARNING: clean theta_p fit failed (need >=2 clean points); skipping norm write.\n";
+                std::cout << "[overall_norm] WARNING: clean fit failed (need >=2 clean points); skipping norm write.\n";
+                std::cout << "              norm x = " << x_name << "\n";
             } else {
-                std::cout << "[overall_norm] Writing \"" << col_norm << "\" using pol1 fit:\n";
+                std::cout << "[overall_norm] Writing \"" << col_norm << "\" using pol1 fit vs " << x_name << ":\n";
                 std::cout << "              p0 = " << std::fixed << std::setprecision(6) << fit_p0
                           << " +/- " << std::fixed << std::setprecision(6) << fit_e0 << "\n";
                 std::cout << "              p1 = " << std::fixed << std::setprecision(6) << fit_p1
@@ -1383,24 +1400,21 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 std::cout << "              clean points used = " << n_clean_fit << "\n";
 
                 int n_rows_written = 0;
-                int n_rows_skipped_blank_theta = 0;
+                int n_rows_skipped_blank_x = 0;
 
-                // Rewrite ALL rows (not just selected_rows), because p_theta is a per-row bin mean
-                // and you want the norm populated per bin throughout the CSV.
                 for (size_t r = 1; r < lines.size(); ++r) {
                     if (lines[r].empty()) continue;
 
                     std::vector<std::string> fields = split_csv_line(lines[r]);
                     if (fields.size() != header.size()) continue;
 
-                    // Your requirement: do not write norm if p_theta cell is blank.
-                    double theta_p = std::numeric_limits<double>::quiet_NaN();
-                    if (!try_parse_double_blank_is_missing(fields[c_p_theta], theta_p)) {
-                        n_rows_skipped_blank_theta += 1;
+                    double x_val = std::numeric_limits<double>::quiet_NaN();
+                    if (!try_parse_double_blank_is_missing(fields[(size_t)c_x_for_write], x_val)) {
+                        n_rows_skipped_blank_x += 1;
                         continue;
                     } //endif
 
-                    const double norm_val = fit_p0 + fit_p1 * theta_p;
+                    const double norm_val = fit_p0 + fit_p1 * x_val;
                     if (!std::isfinite(norm_val)) continue;
 
                     fields[(size_t)c_norm] = format_double_for_csv(norm_val);
@@ -1411,9 +1425,9 @@ bool print_bh_normalization_study(const std::string &csv_path,
                 if (n_rows_written > 0) {
                     write_lines_atomic_or_throw(csv_path, lines);
                     std::cout << "[overall_norm] Wrote norm values to CSV: " << n_rows_written << " rows updated.\n";
-                    std::cout << "[overall_norm] Skipped due to blank p_theta: " << n_rows_skipped_blank_theta << " rows.\n";
+                    std::cout << "[overall_norm] Skipped due to blank " << x_name << ": " << n_rows_skipped_blank_x << " rows.\n";
                 } else {
-                    std::cout << "[overall_norm] NOTE: no rows updated (either all p_theta blank, or no parseable values).\n";
+                    std::cout << "[overall_norm] NOTE: no rows updated (either all " << x_name << " blank, or no parseable values).\n";
                 } //endif
             } //endif fit_ok
         } //endif c_norm
