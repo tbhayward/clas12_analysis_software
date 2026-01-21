@@ -3,12 +3,16 @@
 // Apply overall-normalization factors to already-computed DVCS cross sections
 // and make the same plots as cross_sections.cpp, but using the normalized values.
 //
-// Convention used here:
+// IMPORTANT (your convention from overall_normalization_study.cpp):
 //
-//   sigma_normed = N * sigma_raw
+//   norm, <Label> models (xs / BH)
+//
+// Therefore to obtain BH-normalized cross sections we must DIVIDE:
+//
+//   sigma_normed = sigma_raw / N
 //
 // where N is read from:
-//   "overall normalization, ep->epg, exp, <Label>, <hel>"
+//   "norm, <Label>"                       (helicity independent)
 //
 // and sigma_raw is read from:
 //   "cross sections, ep->epg, exp, <Label>, <hel>"
@@ -17,13 +21,13 @@
 //   "normed cross sections, ep->epg, exp, <Label>, <hel>"
 //
 // Notes:
-// - "overall normalization, ..." may be either a single number or a tuple3.
+// - "norm, <Label>" may be either a single number or a tuple3.
 //   If it is a tuple3, we interpret it as (value, stat, sys) for N.
 // - Errors are propagated assuming independence:
 //
-//   sigma_out = N * sigma
-//   stat_out  = sqrt( (N*stat_sigma)^2 + (sigma*stat_N)^2 )
-//   sys_out   = sqrt( (N*sys_sigma)^2  + (sigma*sys_N)^2  )
+//   y = x / N
+//   stat_y = sqrt( (stat_x / N)^2 + (x * stat_N / N^2)^2 )
+//   sys_y  = sqrt( (sys_x  / N)^2 + (x * sys_N  / N^2)^2 )
 //
 // - If either the sigma cell or N cell is blank/empty, we do not write output.
 // - Fail-fast on missing required columns.
@@ -102,32 +106,45 @@ static std::string theory_energy_label_for(const std::string &label) {
     return "10.6 GeV";
 }
 
-static double beam_energy_for_label(const std::string &label) {
-    if (label == "Sp19 Inb" || label == "10.2 GeV") return 10.2;
-    return 10.6;
-}
-
 // -----------------------------------------------------------------------------
-// Basic CSV helpers
+// Robust CSV helpers (handles "" escape inside quoted fields)
 // -----------------------------------------------------------------------------
 
 static std::vector<std::string> split_csv_line(const std::string &line) {
     std::vector<std::string> out;
     std::string field;
+
     bool in_quotes = false;
 
     for (size_t i = 0; i < line.size(); ++i) {
-        char c = line[i];
-        if (c == '"') {
-            in_quotes = !in_quotes;
-            field.push_back(c);
-        } else if (c == ',' && !in_quotes) {
-            out.push_back(field);
-            field.clear();
+        const char c = line[i];
+
+        if (in_quotes) {
+            if (c == '"') {
+                // Escaped quote inside a quoted field: "" -> "
+                if (i + 1 < line.size() && line[i + 1] == '"') {
+                    field.push_back('"');
+                    ++i;
+                } else {
+                    // End of quoted region
+                    in_quotes = false;
+                }
+            } else {
+                field.push_back(c);
+            }
         } else {
-            field.push_back(c);
+            if (c == '"') {
+                // Begin quoted region (do not store the quote itself)
+                in_quotes = true;
+            } else if (c == ',') {
+                out.push_back(field);
+                field.clear();
+            } else {
+                field.push_back(c);
+            }
         }
     }
+
     out.push_back(field);
     return out;
 }
@@ -140,46 +157,35 @@ static std::string trim(const std::string &s) {
     return s.substr(b, e - b);
 }
 
-static std::string unquote(const std::string &s) {
-    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
-        std::string inner = s.substr(1, s.size() - 2);
-        std::string out;
-        for (size_t i = 0; i < inner.size(); ++i) {
-            if (inner[i] == '"' && i + 1 < inner.size() && inner[i + 1] == '"') {
-                out.push_back('"');
-                ++i;
-            } else {
-                out.push_back(inner[i]);
-            }
-        }
-        return out;
-    }
-    return s;
-}
-
 static std::string quote_if_needed(const std::string &s) {
     bool need = false;
     for (char c : s) {
-        if (c == ',' || c == '"' || std::isspace((unsigned char)c)) {
+        if (c == ',' || c == '"' || c == '\n' || c == '\r') {
             need = true;
             break;
         }
     }
     if (!need) return s;
 
-    std::string out = "\"";
+    std::string out;
+    out.reserve(s.size() + 2);
+    out.push_back('"');
     for (char c : s) {
-        if (c == '"') out += "\"\"";
-        else out += c;
+        if (c == '"') {
+            out.push_back('"');
+            out.push_back('"');
+        } else {
+            out.push_back(c);
+        }
     }
-    out += "\"";
+    out.push_back('"');
     return out;
 }
 
 static std::string join_csv_line(const std::vector<std::string> &fields) {
     std::ostringstream oss;
     for (size_t i = 0; i < fields.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i) oss << ",";
         oss << quote_if_needed(fields[i]);
     }
     return oss.str();
@@ -188,7 +194,7 @@ static std::string join_csv_line(const std::vector<std::string> &fields) {
 static int find_col_optional(const std::vector<std::string> &header,
                              const std::string &target) {
     for (size_t i = 0; i < header.size(); ++i) {
-        if (trim(unquote(header[i])) == target) {
+        if (trim(header[i]) == target) {
             return (int)i;
         }
     }
@@ -197,7 +203,7 @@ static int find_col_optional(const std::vector<std::string> &header,
 
 static int find_col_required(const std::vector<std::string> &header,
                              const std::string &target) {
-    int idx = find_col_optional(header, target);
+    const int idx = find_col_optional(header, target);
     if (idx < 0) {
         throw std::runtime_error("Missing required column: \"" + target + "\"");
     }
@@ -208,41 +214,23 @@ static int find_col_required(const std::vector<std::string> &header,
 // Tuple parsing/formatting
 // -----------------------------------------------------------------------------
 
-static std::string strip_all_outer_quotes(std::string s) {
-    s = unquote(s);
-    s = trim(s);
-
-    bool changed = true;
-    while (changed && s.size() >= 2) {
-        changed = false;
-        char first = s.front();
-        char last  = s.back();
-        if ((first == '"' && last == '"') ||
-            (first == '\'' && last == '\'')) {
-            s = s.substr(1, s.size() - 2);
-            s = trim(s);
-            changed = true;
-        }
-    }
-    return s;
-}
-
-static Triple parse_tuple3(const std::string &cell) {
+static Triple parse_tuple3(const std::string &cell_raw) {
     Triple out{0.0, 0.0, 0.0};
 
-    std::string s = strip_all_outer_quotes(cell);
-    s = trim(s);
+    std::string s = trim(cell_raw);
     if (s.empty()) return out;
 
-    if (s.front() == '(' && s.back() == ')') {
-        s = s.substr(1, s.size() - 2);
-        s = trim(s);
+    // If cell was written by our CSV writer, quotes were stripped by split_csv_line.
+    // We therefore just parse what we see.
+    if (!s.empty() && s.front() == '(' && s.back() == ')') {
+        s = trim(s.substr(1, s.size() - 2));
         if (s.empty()) return out;
     }
 
     std::vector<std::string> parts;
     std::string token;
-    for (char c : s) {
+    for (size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
         if (c == ',') {
             parts.push_back(trim(token));
             token.clear();
@@ -250,48 +238,46 @@ static Triple parse_tuple3(const std::string &cell) {
             token.push_back(c);
         }
     }
-    if (!token.empty()) parts.push_back(trim(token));
+    if (!token.empty() || s.find(',') != std::string::npos) {
+        parts.push_back(trim(token));
+    }
 
     auto to_double_or_zero = [](const std::string &str) -> double {
         if (str.empty()) return 0.0;
         return std::atof(str.c_str());
     };
 
-    if (!parts.empty())      out.value = to_double_or_zero(parts[0]);
-    if (parts.size() > 1U)   out.stat  = to_double_or_zero(parts[1]);
-    if (parts.size() > 2U)   out.sys   = to_double_or_zero(parts[2]);
+    if (!parts.empty())    out.value = to_double_or_zero(parts[0]);
+    if (parts.size() > 1U) out.stat  = to_double_or_zero(parts[1]);
+    if (parts.size() > 2U) out.sys   = to_double_or_zero(parts[2]);
 
     return out;
 }
 
-static bool cell_looks_like_tuple3(const std::string &cell) {
-    std::string s = strip_all_outer_quotes(cell);
-    s = trim(s);
+static bool cell_looks_like_tuple3(const std::string &cell_raw) {
+    const std::string s = trim(cell_raw);
     if (s.empty()) return false;
     if (s.front() == '(' && s.back() == ')') return true;
     if (s.find(',') != std::string::npos) return true;
     return false;
 }
 
-static bool parse_norm_cell(const std::string &cell, Triple *outN) {
+static bool parse_norm_cell(const std::string &cell_raw, Triple *outN) {
     if (!outN) return false;
     *outN = Triple{0.0, 0.0, 0.0};
 
-    std::string s = strip_all_outer_quotes(cell);
-    s = trim(s);
+    const std::string s = trim(cell_raw);
     if (s.empty()) return false;
 
-    // If it looks like a tuple3, parse it as (N, statN, sysN).
-    if (cell_looks_like_tuple3(cell)) {
-        Triple t = parse_tuple3(cell);
-        if (!(t.value > 0.0)) return false;
+    if (cell_looks_like_tuple3(s)) {
+        const Triple t = parse_tuple3(s);
+        if (!(t.value > 0.0) || !std::isfinite(t.value)) return false;
         *outN = t;
         return true;
     }
 
-    // Otherwise interpret as a bare scalar N.
-    double N = std::atof(s.c_str());
-    if (!(N > 0.0)) return false;
+    const double N = std::atof(s.c_str());
+    if (!(N > 0.0) || !std::isfinite(N)) return false;
 
     outN->value = N;
     outN->stat  = 0.0;
@@ -309,9 +295,9 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
 }
 
 static void ensure_dir(const fs::path &p) {
-    if (!fs::exists(p)) {
-        fs::create_directories(p);
-    }
+    std::error_code ec;
+    if (fs::exists(p, ec)) return;
+    fs::create_directories(p, ec);
 }
 
 // -----------------------------------------------------------------------------
@@ -330,9 +316,9 @@ load_theory_for_label(const std::string &label,
                       const std::string &theory_root) {
     std::map<size_t, TheoryCurves> out;
 
-    std::string energy_label = theory_energy_label_for(label);
-    fs::path dir  = fs::path(theory_root) / canonical_period_dir(energy_label);
-    fs::path file = dir / "xs_phi_all.json";
+    const std::string energy_label = theory_energy_label_for(label);
+    const fs::path dir  = fs::path(theory_root) / canonical_period_dir(energy_label);
+    const fs::path file = dir / "xs_phi_all.json";
 
     if (!fs::exists(file)) {
         std::cerr << "[norm_cross_sections] WARNING: no theory JSON for label \""
@@ -356,7 +342,7 @@ load_theory_for_label(const std::string &label,
         return out;
     }
 
-    std::vector<double> phi_deg = j.value("phi_deg", std::vector<double>{});
+    const std::vector<double> phi_deg = j.value("phi_deg", std::vector<double>{});
     if (phi_deg.empty()) {
         std::cerr << "[norm_cross_sections] WARNING: theory JSON for label \""
                   << label << "\" has empty phi_deg.\n";
@@ -447,8 +433,8 @@ static std::pair<double, double> compute_yrange_for_bin(
     auto update_from_points = [&](const std::vector<Point> &v) {
         for (const auto &p : v) {
             if (p.xs > 0.0) {
-                double ylow  = std::max(1e-12, p.xs - p.xs_err);
-                double yhigh = p.xs + p.xs_err;
+                const double ylow  = std::max(1e-12, p.xs - p.xs_err);
+                const double yhigh = p.xs + p.xs_err;
                 if (ylow  > 0.0 && ylow  < ymin) ymin = ylow;
                 if (yhigh > ymax) ymax = yhigh;
             }
@@ -468,7 +454,7 @@ static std::pair<double, double> compute_yrange_for_bin(
         if (mode == XSecPanelMode::All || mode == XSecPanelMode::NegOnly)   update_from_points(bin->neg);
 
         if (bin->have_theory_row) {
-            auto it_th = theory.find(bin->theory_row);
+            const auto it_th = theory.find(bin->theory_row);
             if (it_th != theory.end()) {
                 const TheoryCurves &tc = it_th->second;
                 if (mode == XSecPanelMode::All) {
@@ -501,8 +487,8 @@ static std::pair<double, double> compute_yrange_for_bin(
         ymax = 1.0;
     } else {
         if (ymin <= 0.0 || !std::isfinite(ymin)) ymin = ymax * 1e-3;
-        double logmin = std::pow(10.0, std::floor(std::log10(ymin)));
-        double logmax = std::pow(10.0, std::ceil(std::log10(ymax)));
+        const double logmin = std::pow(10.0, std::floor(std::log10(ymin)));
+        const double logmax = std::pow(10.0, std::ceil(std::log10(ymax)));
         ymin = std::max(1e-4, logmin);
         ymax = logmax;
     }
@@ -513,14 +499,17 @@ static std::pair<double, double> compute_yrange_for_bin(
 static TGraphErrors *make_xsec_graph(const std::vector<Point> &v,
                                      int mstyle, int mcolor) {
     if (v.empty()) return nullptr;
-    int N = (int)v.size();
+
+    const int N = (int)v.size();
     std::vector<double> x(N), y(N), ex(N), ey(N);
+
     for (int i = 0; i < N; ++i) {
         x[i]  = v[i].phi;
         y[i]  = v[i].xs;
         ex[i] = 0.0;
         ey[i] = v[i].xs_err;
     }
+
     TGraphErrors *g = new TGraphErrors(N, x.data(), y.data(), ex.data(), ey.data());
     g->SetMarkerStyle(mstyle);
     g->SetMarkerSize(1.0);
@@ -555,6 +544,7 @@ static void make_xsec_canvas_for_mode(
     double titleSize       = 0.18;
     double legendTextSize  = 0.11;
     double cellLabelSize   = 0.070;
+
     if (nPads <= 4) {
         titleSize      = 0.14;
         legendTextSize = 0.09;
@@ -565,6 +555,7 @@ static void make_xsec_canvas_for_mode(
         legendTextSize = 0.085;
         cellLabelSize  = 0.055;
     }
+
     titleSize      *= 0.5;
     legendTextSize *= 0.5;
 
@@ -597,16 +588,17 @@ static void make_xsec_canvas_for_mode(
     head.SetTextSize(titleSize);
 
     std::ostringstream tit;
-    tit << "Normalized cross sections, ep #rightarrow ep#gamma   " << label
-        << "   x_{B} in ("
+    tit << "BH-normalized cross sections, ep -> epgamma   " << label
+        << "   xB in ("
         << std::fixed << std::setprecision(3)
         << xb_range.first << ", " << xb_range.second << ")";
-    if      (mode == XSecPanelMode::UnpolOnly) tit << "   (unpolarized only)";
-    else if (mode == XSecPanelMode::PosOnly)   tit << "   (+ helicity only)";
-    else if (mode == XSecPanelMode::NegOnly)   tit << "   (- helicity only)";
+    if (mode == XSecPanelMode::UnpolOnly) tit << "   (unpolarized only)";
+    else if (mode == XSecPanelMode::PosOnly) tit << "   (+ helicity only)";
+    else if (mode == XSecPanelMode::NegOnly) tit << "   (- helicity only)";
 
     head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
+    // Legend dummies (kept as-is from your provided file)
     TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
     dummy_unpol.SetMarkerStyle(20);
     dummy_unpol.SetMarkerSize(1.0);
@@ -736,7 +728,7 @@ static void make_xsec_canvas_for_mode(
             double ymin_canvas = 1e-4;
             double ymax_canvas = 1.0;
             {
-                auto yr = compute_yrange_for_bin(bin_ptr, theory, mode);
+                const auto yr = compute_yrange_for_bin(bin_ptr, theory, mode);
                 ymin_canvas = yr.first;
                 ymax_canvas = yr.second;
             }
@@ -791,14 +783,14 @@ static void make_xsec_canvas_for_mode(
             }
 
             if (bin.have_theory_row) {
-                auto it_th = theory.find(bin.theory_row);
+                const auto it_th = theory.find(bin.theory_row);
                 if (it_th != theory.end()) {
                     const TheoryCurves &tc = it_th->second;
 
                     auto draw_curve = [&](const std::vector<double> &ys,
                                           int lstyle, int lcolor) {
                         if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
-                        int M = (int)ys.size();
+                        const int M = (int)ys.size();
                         std::vector<double> xp(M), yp(M);
                         for (int i = 0; i < M; ++i) {
                             xp[i] = tc.phi_deg[i];
@@ -845,7 +837,7 @@ static void make_xsec_canvas_for_mode(
     fname << canonical_period_dir(label)
           << "_xB_" << xb_idx_for_name << ".png";
 
-    fs::path outpath = outdir / fname.str();
+    const fs::path outpath = outdir / fname.str();
     c->SaveAs(outpath.string().c_str());
 
     delete c;
@@ -876,7 +868,7 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
         return false;
     }
 
-    std::vector<std::string> header = split_csv_line(lines[0]);
+    const std::vector<std::string> header = split_csv_line(lines[0]);
 
     const std::vector<std::string> helicities = {"unpol", "pos", "neg"};
     const std::vector<std::string> labels = {
@@ -888,39 +880,42 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
         "Sp18"
     };
 
-    // Required column mapping:
-    // - cross sections, ...
-    // - overall normalization, ...
-    // - normed cross sections, ...
     struct ColTriplet {
         int xs_in  = -1;
-        int norm   = -1;
+        int norm   = -1; // helicity-independent: "norm, <Label>"
         int xs_out = -1;
     };
-    std::map<std::string, ColTriplet> cmap;
 
+    // Map keyed by label + helicity
+    std::map<std::string, ColTriplet> cmap;
     std::vector<std::string> missing;
 
+    // Cache norm column indices per label
+    std::map<std::string, int> norm_col_for_label;
+
     for (const auto &L : labels) {
+        const std::string norm_name = "norm, " + L;
+        const int i_norm = find_col_optional(header, norm_name);
+        if (i_norm < 0) {
+            missing.push_back(norm_name);
+        } else {
+            norm_col_for_label[L] = i_norm;
+        }
+
         for (const auto &h : helicities) {
-            std::string xs_in_name =
+            const std::string xs_in_name =
                 "cross sections, ep->epg, exp, " + L + ", " + h;
-            std::string norm_name =
-                "overall normalization, ep->epg, exp, " + L + ", " + h;
-            std::string xs_out_name =
+            const std::string xs_out_name =
                 "normed cross sections, ep->epg, exp, " + L + ", " + h;
 
-            int i_xs_in  = find_col_optional(header, xs_in_name);
-            int i_norm   = find_col_optional(header, norm_name);
-            int i_xs_out = find_col_optional(header, xs_out_name);
+            const int i_xs_in  = find_col_optional(header, xs_in_name);
+            const int i_xs_out = find_col_optional(header, xs_out_name);
 
-            // We require all three to exist as columns (fail fast if not).
             if (i_xs_in < 0)  missing.push_back(xs_in_name);
-            if (i_norm < 0)   missing.push_back(norm_name);
             if (i_xs_out < 0) missing.push_back(xs_out_name);
 
-            if (i_xs_in >= 0 && i_norm >= 0 && i_xs_out >= 0) {
-                std::string key = L + "|" + h;
+            if (i_xs_in >= 0 && i_xs_out >= 0 && i_norm >= 0) {
+                const std::string key = L + "|" + h;
                 cmap[key] = ColTriplet{i_xs_in, i_norm, i_xs_out};
             }
         }
@@ -942,7 +937,7 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
     std::cout << "[norm_cross_sections] update_normed_cross_sections_csv: data rows = "
               << n_data_rows << "\n";
 
-    int next_pct = 1;
+    int next_pct = 10;
 
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) {
@@ -951,8 +946,8 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
         }
 
         if (n_data_rows > 0 && next_pct <= 100) {
-            double frac = 100.0 * (double)row / (double)n_data_rows;
-            if (frac >= next_pct) {
+            const double frac = 100.0 * (double)row / (double)n_data_rows;
+            if (frac >= (double)next_pct) {
                 std::cout << "[norm_cross_sections] ~"
                           << next_pct << "% rows processed (row "
                           << row << " / " << n_data_rows << ")\n";
@@ -968,45 +963,65 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
             continue;
         }
 
+        // For each label, read N once (helicity-independent), then apply to all helicities.
         for (const auto &L : labels) {
+            const int c_norm = norm_col_for_label[L];
+
+            Triple N{0.0, 0.0, 0.0};
+            const bool have_N = parse_norm_cell(fields[c_norm], &N);
+            if (!have_N) {
+                continue;
+            }
+            if (!(N.value > 0.0) || !std::isfinite(N.value)) {
+                continue;
+            }
+
             for (const auto &h : helicities) {
-                std::string key = L + "|" + h;
+                const std::string key = L + "|" + h;
                 auto it = cmap.find(key);
                 if (it == cmap.end()) continue;
 
                 const ColTriplet &C = it->second;
 
-                // If sigma cell is blank -> do not write output.
-                std::string xs_cell = trim(unquote(fields[C.xs_in]));
-                if (strip_all_outer_quotes(xs_cell).empty()) {
+                const std::string xs_cell = trim(fields[C.xs_in]);
+                if (xs_cell.empty()) {
                     continue;
                 }
 
-                Triple sigma_in = parse_tuple3(fields[C.xs_in]);
-                if (!(sigma_in.value > 0.0)) {
+                const Triple sigma_in = parse_tuple3(fields[C.xs_in]);
+                if (!(sigma_in.value > 0.0) || !std::isfinite(sigma_in.value)) {
                     continue;
                 }
 
-                // If norm cell is blank -> do not write output.
-                Triple N{0.0, 0.0, 0.0};
-                if (!parse_norm_cell(fields[C.norm], &N)) {
-                    continue;
-                }
-
-                // Convention: sigma_out = N * sigma_in
-                double sigma_out = N.value * sigma_in.value;
+                // BH-normalization convention:
+                //   sigma_out = sigma_in / N
+                const double sigma_out = sigma_in.value / N.value;
 
                 double stat2 = 0.0;
                 double sys2  = 0.0;
 
-                if (sigma_in.stat > 0.0) stat2 += (N.value * sigma_in.stat) * (N.value * sigma_in.stat);
-                if (N.stat > 0.0)        stat2 += (sigma_in.value * N.stat) * (sigma_in.value * N.stat);
+                // stat_y^2 = (stat_x/N)^2 + (x*stat_N/N^2)^2
+                if (sigma_in.stat > 0.0) {
+                    const double t = sigma_in.stat / N.value;
+                    stat2 += t * t;
+                }
+                if (N.stat > 0.0) {
+                    const double t = (sigma_in.value * N.stat) / (N.value * N.value);
+                    stat2 += t * t;
+                }
 
-                if (sigma_in.sys > 0.0)  sys2  += (N.value * sigma_in.sys) * (N.value * sigma_in.sys);
-                if (N.sys > 0.0)         sys2  += (sigma_in.value * N.sys) * (sigma_in.value * N.sys);
+                // sys_y^2 = (sys_x/N)^2 + (x*sys_N/N^2)^2
+                if (sigma_in.sys > 0.0) {
+                    const double t = sigma_in.sys / N.value;
+                    sys2 += t * t;
+                }
+                if (N.sys > 0.0) {
+                    const double t = (sigma_in.value * N.sys) / (N.value * N.value);
+                    sys2 += t * t;
+                }
 
-                double stat_out = (stat2 > 0.0) ? std::sqrt(stat2) : 0.0;
-                double sys_out  = (sys2  > 0.0) ? std::sqrt(sys2)  : 0.0;
+                const double stat_out = (stat2 > 0.0) ? std::sqrt(stat2) : 0.0;
+                const double sys_out  = (sys2  > 0.0) ? std::sqrt(sys2)  : 0.0;
 
                 fields[C.xs_out] = tuple3_to_cell(sigma_out, stat_out, sys_out);
             }
@@ -1015,20 +1030,38 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
         out_lines.push_back(join_csv_line(fields));
     }
 
-    fs::path csv_path(csv_main);
+    const fs::path csv_path(csv_main);
     fs::path tmp_path = csv_path;
     tmp_path += ".tmp";
 
-    std::ofstream ofs(tmp_path);
-    if (!ofs) {
-        std::cerr << "[norm_cross_sections] ERROR: cannot open " << tmp_path
-                  << " for writing.\n";
-        return false;
+    {
+        std::ofstream ofs(tmp_path);
+        if (!ofs) {
+            std::cerr << "[norm_cross_sections] ERROR: cannot open " << tmp_path
+                      << " for writing.\n";
+            return false;
+        }
+        for (const auto &lout : out_lines) ofs << lout << "\n";
+        ofs.close();
+        if (!ofs) {
+            std::cerr << "[norm_cross_sections] ERROR: write failed for " << tmp_path << "\n";
+            return false;
+        }
     }
-    for (const auto &lout : out_lines) ofs << lout << "\n";
-    ofs.close();
 
-    fs::rename(tmp_path, csv_path);
+    std::error_code ec;
+    fs::rename(tmp_path, csv_path, ec);
+    if (ec) {
+        fs::remove(csv_path, ec);
+        ec.clear();
+        fs::rename(tmp_path, csv_path, ec);
+        if (ec) {
+            std::cerr << "[norm_cross_sections] ERROR: rename failed for " << tmp_path
+                      << " -> " << csv_path << "\n";
+            return false;
+        }
+    }
+
     std::cout << "[norm_cross_sections] Updated CSV with normed cross sections: "
               << csv_main << "\n";
 
@@ -1061,11 +1094,12 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         return false;
     }
 
-    std::vector<std::string> header = split_csv_line(lines[0]);
+    const std::vector<std::string> header = split_csv_line(lines[0]);
 
     int c_xb_min = -1, c_xb_max = -1;
     int c_q2_min = -1, c_q2_max = -1;
     int c_t_min  = -1, c_t_max  = -1;
+
     try {
         c_xb_min = find_col_required(header, "xBmin");
         c_xb_max = find_col_required(header, "xBmax");
@@ -1079,9 +1113,9 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         return false;
     }
 
-    int c_xb_idx = find_col_optional(header, "xB index");
+    const int c_xb_idx = find_col_optional(header, "xB index");
 
-    int c_phiavg = find_col_optional(header, "phiavg, " + label);
+    const int c_phiavg = find_col_optional(header, "phiavg, " + label);
     int c_phimin = -1, c_phimax = -1;
     if (c_phiavg < 0) {
         c_phimin = find_col_optional(header, "phimin");
@@ -1093,11 +1127,11 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         }
     }
 
-    int c_xs_unpol = find_col_optional(
+    const int c_xs_unpol = find_col_optional(
         header, "normed cross sections, ep->epg, exp, " + label + ", unpol");
-    int c_xs_pos   = find_col_optional(
+    const int c_xs_pos   = find_col_optional(
         header, "normed cross sections, ep->epg, exp, " + label + ", pos");
-    int c_xs_neg   = find_col_optional(
+    const int c_xs_neg   = find_col_optional(
         header, "normed cross sections, ep->epg, exp, " + label + ", neg");
 
     if (c_xs_unpol < 0 && c_xs_pos < 0 && c_xs_neg < 0) {
@@ -1115,37 +1149,37 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
 
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) continue;
-        std::vector<std::string> fields = split_csv_line(lines[row]);
+        const std::vector<std::string> fields = split_csv_line(lines[row]);
         if (fields.size() != header.size()) continue;
 
-        double xbmin = std::atof(trim(unquote(fields[c_xb_min])).c_str());
-        double xbmax = std::atof(trim(unquote(fields[c_xb_max])).c_str());
-        double q2min = std::atof(trim(unquote(fields[c_q2_min])).c_str());
-        double q2max = std::atof(trim(unquote(fields[c_q2_max])).c_str());
-        double tmin  = std::atof(trim(unquote(fields[c_t_min])).c_str());
-        double tmax  = std::atof(trim(unquote(fields[c_t_max])).c_str());
+        const double xbmin = std::atof(trim(fields[c_xb_min]).c_str());
+        const double xbmax = std::atof(trim(fields[c_xb_max]).c_str());
+        const double q2min = std::atof(trim(fields[c_q2_min]).c_str());
+        const double q2max = std::atof(trim(fields[c_q2_max]).c_str());
+        const double tmin  = std::atof(trim(fields[c_t_min]).c_str());
+        const double tmax  = std::atof(trim(fields[c_t_max]).c_str());
 
-        Range xb_range(xbmin, xbmax);
-        Range q2_range(q2min, q2max);
-        Range t_range(tmin,  tmax);
+        const Range xb_range(xbmin, xbmax);
+        const Range q2_range(q2min, q2max);
+        const Range t_range(tmin,  tmax);
 
         double phi = 0.0;
         if (c_phiavg >= 0) {
-            phi = std::atof(trim(unquote(fields[c_phiavg])).c_str());
+            phi = std::atof(trim(fields[c_phiavg]).c_str());
         } else {
-            double pmin = std::atof(trim(unquote(fields[c_phimin])).c_str());
-            double pmax = std::atof(trim(unquote(fields[c_phimax])).c_str());
+            const double pmin = std::atof(trim(fields[c_phimin]).c_str());
+            const double pmax = std::atof(trim(fields[c_phimax]).c_str());
             phi = 0.5 * (pmin + pmax);
         }
 
-        Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
-        Triple xs_pos   = parse_tuple3(fields[c_xs_pos]);
-        Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
+        const Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
+        const Triple xs_pos   = parse_tuple3(fields[c_xs_pos]);
+        const Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
         if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) continue;
 
         XSGroupByXB &group = by_xb[xb_range];
         if (group.xb_index < 0 && c_xb_idx >= 0) {
-            group.xb_index = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
+            group.xb_index = std::atoi(trim(fields[c_xb_idx]).c_str());
         }
 
         QTKey key(q2_range, t_range);
@@ -1175,7 +1209,7 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    std::map<size_t, TheoryCurves> theory = load_theory_for_label(label, theory_json_root);
+    const std::map<size_t, TheoryCurves> theory = load_theory_for_label(label, theory_json_root);
 
     gROOT->SetBatch(true);
     gStyle->SetOptStat(0);
@@ -1187,7 +1221,7 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
     gStyle->SetPadTickX(1);
     gStyle->SetPadTickY(1);
 
-    fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(label);
+    const fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(label);
     ensure_dir(outdir);
 
     int xb_canvas_counter = 0;
@@ -1199,19 +1233,19 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
 
         std::set<Range> q2_set, t_set;
         for (const auto &kv : bins_for_xB) {
-            const QTKey &qt = kv.first;
-            q2_set.insert(qt.first);
-            t_set.insert(qt.second);
+            q2_set.insert(kv.first.first);
+            t_set.insert(kv.first.second);
         }
-        std::vector<Range> q2_slice(q2_set.begin(), q2_set.end());
-        std::vector<Range> t_slice(t_set.begin(), t_set.end());
+
+        const std::vector<Range> q2_slice(q2_set.begin(), q2_set.end());
+        const std::vector<Range> t_slice(t_set.begin(), t_set.end());
         if (q2_slice.empty() || t_slice.empty()) continue;
 
-        int ncols = (int)q2_slice.size();
-        int nrows = (int)t_slice.size();
-        int nPads = ncols * nrows;
+        const int ncols = (int)q2_slice.size();
+        const int nrows = (int)t_slice.size();
+        const int nPads = ncols * nrows;
 
-        int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
+        const int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
 
         make_xsec_canvas_for_mode(label, xb_range, group,
                                   q2_slice, t_slice,
