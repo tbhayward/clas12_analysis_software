@@ -450,7 +450,7 @@ int main(int argc, char* argv[]) {
     // --------- DVCS normalized cross sections (CSV + plots) ----------
     {
         const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root   = "output/jsons/theory";
+        const std::string theory_json_root   = "output/jsons/cross_sections";
         const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
 
         if (!update_normed_cross_sections_csv(csv_main)) {

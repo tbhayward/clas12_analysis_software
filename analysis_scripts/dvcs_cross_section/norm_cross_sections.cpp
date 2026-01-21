@@ -5,7 +5,7 @@
 //
 // IMPORTANT (your convention from overall_normalization_study.cpp):
 //
-//   norm, <Label> models (xs / BH)
+//   "norm, <Label>" models (xs / BH)
 //
 // Therefore to obtain BH-normalized cross sections we must DIVIDE:
 //
@@ -31,6 +31,8 @@
 //
 // - If either the sigma cell or N cell is blank/empty, we do not write output.
 // - Fail-fast on missing required columns.
+// - Plotting overlays the same BH / KM / VGG theory curves used by cross_sections.cpp,
+//   loaded from theory_json_root/<EnergyDir>/xs_phi_all.json, keyed by CSV row index.
 // -----------------------------------------------------------------------------
 
 #include "norm_cross_sections.h"
@@ -440,6 +442,7 @@ static std::pair<double, double> compute_yrange_for_bin(
             }
         }
     };
+
     auto update_from_curve = [&](const std::vector<double> &ys) {
         for (double y : ys) {
             if (y <= 0.0) continue;
@@ -449,14 +452,21 @@ static std::pair<double, double> compute_yrange_for_bin(
     };
 
     if (bin) {
-        if (mode == XSecPanelMode::All || mode == XSecPanelMode::UnpolOnly) update_from_points(bin->unpol);
-        if (mode == XSecPanelMode::All || mode == XSecPanelMode::PosOnly)   update_from_points(bin->pos);
-        if (mode == XSecPanelMode::All || mode == XSecPanelMode::NegOnly)   update_from_points(bin->neg);
+        if (mode == XSecPanelMode::All || mode == XSecPanelMode::UnpolOnly) {
+            update_from_points(bin->unpol);
+        }
+        if (mode == XSecPanelMode::All || mode == XSecPanelMode::PosOnly) {
+            update_from_points(bin->pos);
+        }
+        if (mode == XSecPanelMode::All || mode == XSecPanelMode::NegOnly) {
+            update_from_points(bin->neg);
+        }
 
         if (bin->have_theory_row) {
             const auto it_th = theory.find(bin->theory_row);
             if (it_th != theory.end()) {
                 const TheoryCurves &tc = it_th->second;
+
                 if (mode == XSecPanelMode::All) {
                     update_from_curve(tc.bh_unpol);
                     update_from_curve(tc.km_unpol);
@@ -486,9 +496,11 @@ static std::pair<double, double> compute_yrange_for_bin(
         ymin = 1e-4;
         ymax = 1.0;
     } else {
-        if (ymin <= 0.0 || !std::isfinite(ymin)) ymin = ymax * 1e-3;
+        if (ymin <= 0.0 || !std::isfinite(ymin)) {
+            ymin = ymax * 1e-3;
+        }
         const double logmin = std::pow(10.0, std::floor(std::log10(ymin)));
-        const double logmax = std::pow(10.0, std::ceil(std::log10(ymax)));
+        const double logmax = std::pow(10.0, std::ceil (std::log10(ymax)));
         ymin = std::max(1e-4, logmin);
         ymax = logmax;
     }
@@ -519,7 +531,11 @@ static TGraphErrors *make_xsec_graph(const std::vector<Point> &v,
     return g;
 }
 
-static void make_xsec_canvas_for_mode(
+// -----------------------------------------------------------------------------
+// Canvas builder (one xB bin, one view mode)
+// -----------------------------------------------------------------------------
+
+static void make_normed_xsec_canvas_for_mode(
     const std::string &label,
     const Range &xb_range,
     const XSGroupByXB &group,
@@ -544,7 +560,6 @@ static void make_xsec_canvas_for_mode(
     double titleSize       = 0.18;
     double legendTextSize  = 0.11;
     double cellLabelSize   = 0.070;
-
     if (nPads <= 4) {
         titleSize      = 0.14;
         legendTextSize = 0.09;
@@ -555,12 +570,11 @@ static void make_xsec_canvas_for_mode(
         legendTextSize = 0.085;
         cellLabelSize  = 0.055;
     }
-
     titleSize      *= 0.5;
     legendTextSize *= 0.5;
 
     std::ostringstream cname;
-    cname << "c_norm_xsec_";
+    cname << "c_normxsec_";
     if (mode == XSecPanelMode::UnpolOnly) cname << "unpol_";
     else if (mode == XSecPanelMode::PosOnly) cname << "pos_";
     else if (mode == XSecPanelMode::NegOnly) cname << "neg_";
@@ -588,17 +602,17 @@ static void make_xsec_canvas_for_mode(
     head.SetTextSize(titleSize);
 
     std::ostringstream tit;
-    tit << "BH-normalized cross sections, ep -> epgamma   " << label
-        << "   xB in ("
+    tit << "Normed cross sections, ep #rightarrow ep#gamma   " << label
+        << "   x_{B} in ("
         << std::fixed << std::setprecision(3)
         << xb_range.first << ", " << xb_range.second << ")";
-    if (mode == XSecPanelMode::UnpolOnly) tit << "   (unpolarized only)";
-    else if (mode == XSecPanelMode::PosOnly) tit << "   (+ helicity only)";
-    else if (mode == XSecPanelMode::NegOnly) tit << "   (- helicity only)";
+    if      (mode == XSecPanelMode::UnpolOnly) tit << "   (unpolarized only)";
+    else if (mode == XSecPanelMode::PosOnly)   tit << "   (+ helicity only)";
+    else if (mode == XSecPanelMode::NegOnly)   tit << "   (- helicity only)";
 
     head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
-    // Legend dummies (kept as-is from your provided file)
+    // Legend dummies (match cross_sections.cpp styling)
     TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
     dummy_unpol.SetMarkerStyle(20);
     dummy_unpol.SetMarkerSize(1.0);
@@ -674,9 +688,9 @@ static void make_xsec_canvas_for_mode(
     legVGG->SetTextSize(legendTextSize);
 
     if (mode == XSecPanelMode::All) {
-        legData->AddEntry(&dummy_unpol, "data unpolarized", "lep");
-        legData->AddEntry(&dummy_pos,   "data + helicity", "lep");
-        legData->AddEntry(&dummy_neg,   "data - helicity", "lep");
+        legData->AddEntry(&dummy_unpol, "data unpolarized (normed)", "lep");
+        legData->AddEntry(&dummy_pos,   "data + helicity (normed)", "lep");
+        legData->AddEntry(&dummy_neg,   "data - helicity (normed)", "lep");
 
         legKM->AddEntry(&dummy_bh,       "BH unpolarized", "l");
         legKM->AddEntry(&dummy_km_unpol, "KM unpolarized", "l");
@@ -687,17 +701,17 @@ static void make_xsec_canvas_for_mode(
         legVGG->AddEntry(&dummy_vgg_pos,   "VGG + helicity",  "l");
         legVGG->AddEntry(&dummy_vgg_neg,   "VGG - helicity",  "l");
     } else if (mode == XSecPanelMode::UnpolOnly) {
-        legData->AddEntry(&dummy_unpol, "data unpolarized", "lep");
+        legData->AddEntry(&dummy_unpol, "data unpolarized (normed)", "lep");
         legKM->AddEntry(&dummy_bh,       "BH unpolarized", "l");
         legKM->AddEntry(&dummy_km_unpol, "KM unpolarized", "l");
         legVGG->AddEntry(&dummy_vgg_unpol, "VGG unpolarized", "l");
     } else if (mode == XSecPanelMode::PosOnly) {
-        legData->AddEntry(&dummy_pos, "data + helicity", "lep");
+        legData->AddEntry(&dummy_pos, "data + helicity (normed)", "lep");
         legKM->AddEntry(&dummy_bh,     "BH",            "l");
         legKM->AddEntry(&dummy_km_pos, "KM + helicity", "l");
         legVGG->AddEntry(&dummy_vgg_pos, "VGG + helicity", "l");
     } else if (mode == XSecPanelMode::NegOnly) {
-        legData->AddEntry(&dummy_neg, "data - helicity", "lep");
+        legData->AddEntry(&dummy_neg, "data - helicity (normed)", "lep");
         legKM->AddEntry(&dummy_bh,     "BH",            "l");
         legKM->AddEntry(&dummy_km_neg, "KM - helicity", "l");
         legVGG->AddEntry(&dummy_vgg_neg, "VGG - helicity", "l");
@@ -723,19 +737,21 @@ static void make_xsec_canvas_for_mode(
             QTKey key(q2_range, t_range);
             auto it_bin = bins_for_xB.find(key);
             const BinData *bin_ptr = nullptr;
-            if (it_bin != bins_for_xB.end()) bin_ptr = &(it_bin->second);
+            if (it_bin != bins_for_xB.end()) {
+                bin_ptr = &(it_bin->second);
+            }
 
             double ymin_canvas = 1e-4;
             double ymax_canvas = 1.0;
             {
-                const auto yr = compute_yrange_for_bin(bin_ptr, theory, mode);
+                auto yr = compute_yrange_for_bin(bin_ptr, theory, mode);
                 ymin_canvas = yr.first;
                 ymax_canvas = yr.second;
             }
 
             TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
             frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("d^{4}#sigma / (dx_{B} dQ^{2} d|t| d#phi)");
+            frame->GetYaxis()->SetTitle("d^{4}#sigma_{norm} / (dx_{B} dQ^{2} d|t| d#phi)");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
@@ -763,7 +779,9 @@ static void make_xsec_canvas_for_mode(
             BinData bin = *bin_ptr;
             auto sort_by_phi = [](std::vector<Point> &v) {
                 std::sort(v.begin(), v.end(),
-                          [](const Point &a, const Point &b) { return a.phi < b.phi; });
+                          [](const Point &a, const Point &b) {
+                              return a.phi < b.phi;
+                          });
             };
             sort_by_phi(bin.unpol);
             sort_by_phi(bin.pos);
@@ -782,20 +800,23 @@ static void make_xsec_canvas_for_mode(
                 if (g_neg) g_neg->Draw("P SAME");
             }
 
+            // Theory overlay (same as cross_sections.cpp)
             if (bin.have_theory_row) {
-                const auto it_th = theory.find(bin.theory_row);
+                auto it_th = theory.find(bin.theory_row);
                 if (it_th != theory.end()) {
                     const TheoryCurves &tc = it_th->second;
 
                     auto draw_curve = [&](const std::vector<double> &ys,
                                           int lstyle, int lcolor) {
                         if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
+
                         const int M = (int)ys.size();
                         std::vector<double> xp(M), yp(M);
                         for (int i = 0; i < M; ++i) {
                             xp[i] = tc.phi_deg[i];
                             yp[i] = ys[i];
                         }
+
                         TGraph *gth = new TGraph(M, xp.data(), yp.data());
                         gth->SetLineStyle(lstyle);
                         gth->SetLineWidth(2);
@@ -804,25 +825,25 @@ static void make_xsec_canvas_for_mode(
                     };
 
                     if (mode == XSecPanelMode::All) {
-                        draw_curve(tc.bh_unpol, 2, kGreen + 2);
-                        draw_curve(tc.km_unpol, 1, kMagenta + 1);
-                        draw_curve(tc.km_pos,   2, kMagenta + 1);
-                        draw_curve(tc.km_neg,   3, kMagenta + 1);
+                        draw_curve(tc.bh_unpol,  2, kGreen + 2);
+                        draw_curve(tc.km_unpol,  1, kMagenta + 1);
+                        draw_curve(tc.km_pos,    2, kMagenta + 1);
+                        draw_curve(tc.km_neg,    3, kMagenta + 1);
                         draw_curve(tc.vgg_unpol, 1, kOrange + 7);
                         draw_curve(tc.vgg_pos,   2, kOrange + 7);
                         draw_curve(tc.vgg_neg,   3, kOrange + 7);
                     } else if (mode == XSecPanelMode::UnpolOnly) {
-                        draw_curve(tc.bh_unpol, 2, kGreen + 2);
-                        draw_curve(tc.km_unpol, 1, kMagenta + 1);
+                        draw_curve(tc.bh_unpol,  2, kGreen + 2);
+                        draw_curve(tc.km_unpol,  1, kMagenta + 1);
                         draw_curve(tc.vgg_unpol, 1, kOrange + 7);
                     } else if (mode == XSecPanelMode::PosOnly) {
-                        draw_curve(tc.bh_unpol, 2, kGreen + 2);
-                        draw_curve(tc.km_pos,   2, kMagenta + 1);
-                        draw_curve(tc.vgg_pos,  2, kOrange + 7);
+                        draw_curve(tc.bh_unpol,  2, kGreen + 2);
+                        draw_curve(tc.km_pos,    2, kMagenta + 1);
+                        draw_curve(tc.vgg_pos,   2, kOrange + 7);
                     } else if (mode == XSecPanelMode::NegOnly) {
-                        draw_curve(tc.bh_unpol, 2, kGreen + 2);
-                        draw_curve(tc.km_neg,   3, kMagenta + 1);
-                        draw_curve(tc.vgg_neg,  3, kOrange + 7);
+                        draw_curve(tc.bh_unpol,  2, kGreen + 2);
+                        draw_curve(tc.km_neg,    3, kMagenta + 1);
+                        draw_curve(tc.vgg_neg,   3, kOrange + 7);
                     }
                 }
             }
@@ -837,19 +858,53 @@ static void make_xsec_canvas_for_mode(
     fname << canonical_period_dir(label)
           << "_xB_" << xb_idx_for_name << ".png";
 
-    const fs::path outpath = outdir / fname.str();
+    fs::path outpath = outdir / fname.str();
     c->SaveAs(outpath.string().c_str());
 
     delete c;
 }
 
+// -----------------------------------------------------------------------------
+// Compute/update normalized cross sections in the CSV
+// -----------------------------------------------------------------------------
+
+static void normalize_one_sigma_cell(const Triple &sigma_raw,
+                                     const Triple &N,
+                                     Triple *sigma_out) {
+    if (!sigma_out) return;
+    *sigma_out = Triple{0.0, 0.0, 0.0};
+
+    if (!(sigma_raw.value > 0.0) || !(N.value > 0.0)) return;
+
+    const double x = sigma_raw.value;
+    const double Nx = N.value;
+
+    const double y = x / Nx;
+
+    const double stat_x = sigma_raw.stat;
+    const double sys_x  = sigma_raw.sys;
+    const double stat_N = N.stat;
+    const double sys_N  = N.sys;
+
+    const double stat_y = std::sqrt(
+        (stat_x / Nx) * (stat_x / Nx) +
+        (x * stat_N / (Nx * Nx)) * (x * stat_N / (Nx * Nx))
+    );
+
+    const double sys_y = std::sqrt(
+        (sys_x / Nx) * (sys_x / Nx) +
+        (x * sys_N / (Nx * Nx)) * (x * sys_N / (Nx * Nx))
+    );
+
+    sigma_out->value = y;
+    sigma_out->stat  = stat_y;
+    sigma_out->sys   = sys_y;
+}
+
 } // end anonymous namespace
 
-// -----------------------------------------------------------------------------
-// CSV updater
-// -----------------------------------------------------------------------------
-
-bool update_normed_cross_sections_csv(const std::string &csv_main) {
+bool update_normed_cross_sections_csv(const std::string &csv_main,
+                                      const std::vector<std::string> &labels_to_update) {
     std::ifstream ifs(csv_main);
     if (!ifs) {
         std::cerr << "[norm_cross_sections] ERROR: cannot open " << csv_main
@@ -859,7 +914,9 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
 
     std::vector<std::string> lines;
     std::string line;
-    while (std::getline(ifs, line)) lines.push_back(line);
+    while (std::getline(ifs, line)) {
+        lines.push_back(line);
+    }
     ifs.close();
 
     if (lines.empty()) {
@@ -868,64 +925,38 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
         return false;
     }
 
-    const std::vector<std::string> header = split_csv_line(lines[0]);
+    std::vector<std::string> header = split_csv_line(lines[0]);
 
-    const std::vector<std::string> helicities = {"unpol", "pos", "neg"};
-    const std::vector<std::string> labels = {
-        "Fa18 Inb", "Fa18 Out",
-        "Sp19 Inb",
-        "Sp18 Inb", "Sp18 Out",
-        "10.6 GeV",
-        "Fa18",
-        "Sp18"
+    // We fail-fast on any required column for any requested label.
+    struct LabelCols {
+        int c_norm = -1;
+        int c_raw_unpol = -1;
+        int c_raw_pos   = -1;
+        int c_raw_neg   = -1;
+        int c_out_unpol = -1;
+        int c_out_pos   = -1;
+        int c_out_neg   = -1;
     };
 
-    struct ColTriplet {
-        int xs_in  = -1;
-        int norm   = -1; // helicity-independent: "norm, <Label>"
-        int xs_out = -1;
-    };
+    std::map<std::string, LabelCols> cols;
 
-    // Map keyed by label + helicity
-    std::map<std::string, ColTriplet> cmap;
-    std::vector<std::string> missing;
+    try {
+        for (const auto &label : labels_to_update) {
+            LabelCols lc;
+            lc.c_norm = find_col_required(header, "norm, " + label);
 
-    // Cache norm column indices per label
-    std::map<std::string, int> norm_col_for_label;
+            lc.c_raw_unpol = find_col_required(header, "cross sections, ep->epg, exp, " + label + ", unpol");
+            lc.c_raw_pos   = find_col_required(header, "cross sections, ep->epg, exp, " + label + ", pos");
+            lc.c_raw_neg   = find_col_required(header, "cross sections, ep->epg, exp, " + label + ", neg");
 
-    for (const auto &L : labels) {
-        const std::string norm_name = "norm, " + L;
-        const int i_norm = find_col_optional(header, norm_name);
-        if (i_norm < 0) {
-            missing.push_back(norm_name);
-        } else {
-            norm_col_for_label[L] = i_norm;
+            lc.c_out_unpol = find_col_required(header, "normed cross sections, ep->epg, exp, " + label + ", unpol");
+            lc.c_out_pos   = find_col_required(header, "normed cross sections, ep->epg, exp, " + label + ", pos");
+            lc.c_out_neg   = find_col_required(header, "normed cross sections, ep->epg, exp, " + label + ", neg");
+
+            cols[label] = lc;
         }
-
-        for (const auto &h : helicities) {
-            const std::string xs_in_name =
-                "cross sections, ep->epg, exp, " + L + ", " + h;
-            const std::string xs_out_name =
-                "normed cross sections, ep->epg, exp, " + L + ", " + h;
-
-            const int i_xs_in  = find_col_optional(header, xs_in_name);
-            const int i_xs_out = find_col_optional(header, xs_out_name);
-
-            if (i_xs_in < 0)  missing.push_back(xs_in_name);
-            if (i_xs_out < 0) missing.push_back(xs_out_name);
-
-            if (i_xs_in >= 0 && i_xs_out >= 0 && i_norm >= 0) {
-                const std::string key = L + "|" + h;
-                cmap[key] = ColTriplet{i_xs_in, i_norm, i_xs_out};
-            }
-        }
-    }
-
-    if (!missing.empty()) {
-        std::ostringstream oss;
-        oss << "[norm_cross_sections] FATAL: missing required columns (" << missing.size() << "):\n";
-        for (const auto &m : missing) oss << "  - " << m << "\n";
-        std::cerr << oss.str();
+    } catch (const std::exception &e) {
+        std::cerr << "[norm_cross_sections] FATAL: " << e.what() << "\n";
         return false;
     }
 
@@ -937,139 +968,77 @@ bool update_normed_cross_sections_csv(const std::string &csv_main) {
     std::cout << "[norm_cross_sections] update_normed_cross_sections_csv: data rows = "
               << n_data_rows << "\n";
 
-    int next_pct = 10;
-
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) {
             out_lines.push_back(lines[row]);
             continue;
         }
 
-        if (n_data_rows > 0 && next_pct <= 100) {
-            const double frac = 100.0 * (double)row / (double)n_data_rows;
-            if (frac >= (double)next_pct) {
-                std::cout << "[norm_cross_sections] ~"
-                          << next_pct << "% rows processed (row "
-                          << row << " / " << n_data_rows << ")\n";
-                next_pct += 10;
-            }
-        }
-
         std::vector<std::string> fields = split_csv_line(lines[row]);
         if (fields.size() != header.size()) {
-            std::cerr << "[norm_cross_sections] WARNING: row " << row
-                      << " has wrong number of fields, copying unchanged.\n";
-            out_lines.push_back(lines[row]);
-            continue;
+            std::ostringstream oss;
+            oss << "Row " << row << " has " << fields.size()
+                << " columns, expected " << header.size();
+            std::cerr << "[norm_cross_sections] FATAL: " << oss.str() << "\n";
+            return false;
         }
 
-        // For each label, read N once (helicity-independent), then apply to all helicities.
-        for (const auto &L : labels) {
-            const int c_norm = norm_col_for_label[L];
+        for (const auto &kv : cols) {
+            const std::string &label = kv.first;
+            const LabelCols &lc = kv.second;
 
-            Triple N{0.0, 0.0, 0.0};
-            const bool have_N = parse_norm_cell(fields[c_norm], &N);
-            if (!have_N) {
-                continue;
-            }
-            if (!(N.value > 0.0) || !std::isfinite(N.value)) {
+            Triple N;
+            if (!parse_norm_cell(fields[lc.c_norm], &N)) {
+                // Per your rule: if N cell is blank/invalid, do not write output.
                 continue;
             }
 
-            for (const auto &h : helicities) {
-                const std::string key = L + "|" + h;
-                auto it = cmap.find(key);
-                if (it == cmap.end()) continue;
+            auto do_one = [&](int c_raw, int c_out) {
+                const std::string raw_cell = trim(fields[c_raw]);
+                if (raw_cell.empty()) return;
 
-                const ColTriplet &C = it->second;
+                const Triple sigma_raw = parse_tuple3(raw_cell);
+                if (!(sigma_raw.value > 0.0) || !std::isfinite(sigma_raw.value)) return;
 
-                const std::string xs_cell = trim(fields[C.xs_in]);
-                if (xs_cell.empty()) {
-                    continue;
-                }
+                Triple sigma_norm;
+                normalize_one_sigma_cell(sigma_raw, N, &sigma_norm);
+                if (!(sigma_norm.value > 0.0) || !std::isfinite(sigma_norm.value)) return;
 
-                const Triple sigma_in = parse_tuple3(fields[C.xs_in]);
-                if (!(sigma_in.value > 0.0) || !std::isfinite(sigma_in.value)) {
-                    continue;
-                }
+                fields[c_out] = tuple3_to_cell(sigma_norm.value, sigma_norm.stat, sigma_norm.sys);
+            };
 
-                // BH-normalization convention:
-                //   sigma_out = sigma_in / N
-                const double sigma_out = sigma_in.value / N.value;
-
-                double stat2 = 0.0;
-                double sys2  = 0.0;
-
-                // stat_y^2 = (stat_x/N)^2 + (x*stat_N/N^2)^2
-                if (sigma_in.stat > 0.0) {
-                    const double t = sigma_in.stat / N.value;
-                    stat2 += t * t;
-                }
-                if (N.stat > 0.0) {
-                    const double t = (sigma_in.value * N.stat) / (N.value * N.value);
-                    stat2 += t * t;
-                }
-
-                // sys_y^2 = (sys_x/N)^2 + (x*sys_N/N^2)^2
-                if (sigma_in.sys > 0.0) {
-                    const double t = sigma_in.sys / N.value;
-                    sys2 += t * t;
-                }
-                if (N.sys > 0.0) {
-                    const double t = (sigma_in.value * N.sys) / (N.value * N.value);
-                    sys2 += t * t;
-                }
-
-                const double stat_out = (stat2 > 0.0) ? std::sqrt(stat2) : 0.0;
-                const double sys_out  = (sys2  > 0.0) ? std::sqrt(sys2)  : 0.0;
-
-                fields[C.xs_out] = tuple3_to_cell(sigma_out, stat_out, sys_out);
-            }
+            do_one(lc.c_raw_unpol, lc.c_out_unpol);
+            do_one(lc.c_raw_pos,   lc.c_out_pos);
+            do_one(lc.c_raw_neg,   lc.c_out_neg);
         }
 
         out_lines.push_back(join_csv_line(fields));
     }
 
-    const fs::path csv_path(csv_main);
+    fs::path csv_path(csv_main);
     fs::path tmp_path = csv_path;
     tmp_path += ".tmp";
 
-    {
-        std::ofstream ofs(tmp_path);
-        if (!ofs) {
-            std::cerr << "[norm_cross_sections] ERROR: cannot open " << tmp_path
-                      << " for writing.\n";
-            return false;
-        }
-        for (const auto &lout : out_lines) ofs << lout << "\n";
-        ofs.close();
-        if (!ofs) {
-            std::cerr << "[norm_cross_sections] ERROR: write failed for " << tmp_path << "\n";
-            return false;
-        }
+    std::ofstream ofs(tmp_path);
+    if (!ofs) {
+        std::cerr << "[norm_cross_sections] ERROR: cannot open " << tmp_path
+                  << " for writing.\n";
+        return false;
     }
+    for (const auto &lout : out_lines) {
+        ofs << lout << "\n";
+    }
+    ofs.close();
 
-    std::error_code ec;
-    fs::rename(tmp_path, csv_path, ec);
-    if (ec) {
-        fs::remove(csv_path, ec);
-        ec.clear();
-        fs::rename(tmp_path, csv_path, ec);
-        if (ec) {
-            std::cerr << "[norm_cross_sections] ERROR: rename failed for " << tmp_path
-                      << " -> " << csv_path << "\n";
-            return false;
-        }
-    }
+    fs::rename(tmp_path, csv_path);
 
     std::cout << "[norm_cross_sections] Updated CSV with normed cross sections: "
               << csv_main << "\n";
-
     return true;
 }
 
 // -----------------------------------------------------------------------------
-// Plotting entry point (normed columns)
+// Plotting normalized cross sections (with theory curves)
 // -----------------------------------------------------------------------------
 
 bool plot_normed_cross_sections_for_label(const std::string &csv_main,
@@ -1085,7 +1054,9 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
 
     std::vector<std::string> lines;
     std::string line;
-    while (std::getline(ifs, line)) lines.push_back(line);
+    while (std::getline(ifs, line)) {
+        lines.push_back(line);
+    }
     ifs.close();
 
     if (lines.empty()) {
@@ -1094,12 +1065,11 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         return false;
     }
 
-    const std::vector<std::string> header = split_csv_line(lines[0]);
+    std::vector<std::string> header = split_csv_line(lines[0]);
 
     int c_xb_min = -1, c_xb_max = -1;
     int c_q2_min = -1, c_q2_max = -1;
     int c_t_min  = -1, c_t_max  = -1;
-
     try {
         c_xb_min = find_col_required(header, "xBmin");
         c_xb_max = find_col_required(header, "xBmax");
@@ -1115,8 +1085,9 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
 
     const int c_xb_idx = find_col_optional(header, "xB index");
 
-    const int c_phiavg = find_col_optional(header, "phiavg, " + label);
-    int c_phimin = -1, c_phimax = -1;
+    int c_phiavg = find_col_optional(header, "phiavg, " + label);
+    int c_phimin = -1;
+    int c_phimax = -1;
     if (c_phiavg < 0) {
         c_phimin = find_col_optional(header, "phimin");
         c_phimax = find_col_optional(header, "phimax");
@@ -1149,7 +1120,8 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
 
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) continue;
-        const std::vector<std::string> fields = split_csv_line(lines[row]);
+
+        std::vector<std::string> fields = split_csv_line(lines[row]);
         if (fields.size() != header.size()) continue;
 
         const double xbmin = std::atof(trim(fields[c_xb_min]).c_str());
@@ -1159,9 +1131,9 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         const double tmin  = std::atof(trim(fields[c_t_min]).c_str());
         const double tmax  = std::atof(trim(fields[c_t_max]).c_str());
 
-        const Range xb_range(xbmin, xbmax);
-        const Range q2_range(q2min, q2max);
-        const Range t_range(tmin,  tmax);
+        Range xb_range(xbmin, xbmax);
+        Range q2_range(q2min, q2max);
+        Range t_range(tmin,  tmax);
 
         double phi = 0.0;
         if (c_phiavg >= 0) {
@@ -1175,7 +1147,10 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         const Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
         const Triple xs_pos   = parse_tuple3(fields[c_xs_pos]);
         const Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
-        if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) continue;
+
+        if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) {
+            continue;
+        }
 
         XSGroupByXB &group = by_xb[xb_range];
         if (group.xb_index < 0 && c_xb_idx >= 0) {
@@ -1185,12 +1160,12 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         QTKey key(q2_range, t_range);
         BinData &bin = group.bins[key];
         if (!bin.have_theory_row) {
-            bin.theory_row      = row;
+            bin.theory_row      = row;   // critical: use CSV row index for theory lookup
             bin.have_theory_row = true;
         }
 
         auto add_point = [&](const Triple &xs, std::vector<Point> &vec) {
-            if (xs.value <= 0.0) return;
+            if (!(xs.value > 0.0) || !std::isfinite(xs.value)) return;
             Point p;
             p.phi    = phi;
             p.xs     = xs.value;
@@ -1221,10 +1196,11 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
     gStyle->SetPadTickX(1);
     gStyle->SetPadTickY(1);
 
-    const fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(label);
+    fs::path outdir = fs::path(out_root_dir) / canonical_period_dir(label);
     ensure_dir(outdir);
 
     int xb_canvas_counter = 0;
+
     for (const auto &kv_xb : by_xb) {
         const Range &xb_range = kv_xb.first;
         const XSGroupByXB &group = kv_xb.second;
@@ -1233,44 +1209,49 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
 
         std::set<Range> q2_set, t_set;
         for (const auto &kv : bins_for_xB) {
-            q2_set.insert(kv.first.first);
-            t_set.insert(kv.first.second);
+            const QTKey &qt = kv.first;
+            q2_set.insert(qt.first);
+            t_set.insert(qt.second);
         }
 
-        const std::vector<Range> q2_slice(q2_set.begin(), q2_set.end());
-        const std::vector<Range> t_slice(t_set.begin(), t_set.end());
+        std::vector<Range> q2_slice(q2_set.begin(), q2_set.end());
+        std::vector<Range> t_slice(t_set.begin(), t_set.end());
         if (q2_slice.empty() || t_slice.empty()) continue;
 
         const int ncols = (int)q2_slice.size();
         const int nrows = (int)t_slice.size();
         const int nPads = ncols * nrows;
 
-        const int xb_idx_for_name = (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
+        const int xb_idx_for_name =
+            (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
 
-        make_xsec_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::All,
-                                  ncols, nrows, nPads);
-        make_xsec_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::UnpolOnly,
-                                  ncols, nrows, nPads);
-        make_xsec_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::PosOnly,
-                                  ncols, nrows, nPads);
-        make_xsec_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::NegOnly,
-                                  ncols, nrows, nPads);
+        make_normed_xsec_canvas_for_mode(label, xb_range, group,
+                                         q2_slice, t_slice,
+                                         theory, outdir,
+                                         xb_idx_for_name,
+                                         XSecPanelMode::All,
+                                         ncols, nrows, nPads);
+
+        make_normed_xsec_canvas_for_mode(label, xb_range, group,
+                                         q2_slice, t_slice,
+                                         theory, outdir,
+                                         xb_idx_for_name,
+                                         XSecPanelMode::UnpolOnly,
+                                         ncols, nrows, nPads);
+
+        make_normed_xsec_canvas_for_mode(label, xb_range, group,
+                                         q2_slice, t_slice,
+                                         theory, outdir,
+                                         xb_idx_for_name,
+                                         XSecPanelMode::PosOnly,
+                                         ncols, nrows, nPads);
+
+        make_normed_xsec_canvas_for_mode(label, xb_range, group,
+                                         q2_slice, t_slice,
+                                         theory, outdir,
+                                         xb_idx_for_name,
+                                         XSecPanelMode::NegOnly,
+                                         ncols, nrows, nPads);
 
         ++xb_canvas_counter;
     }
