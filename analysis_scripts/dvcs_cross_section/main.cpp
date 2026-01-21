@@ -464,7 +464,8 @@ int main(int argc, char* argv[]) {
         };
 
         for (const auto &lab : labels) {
-            if (!plot_normed_cross_sections_for_label(csv_main, lab,
+            if (!plot_normed_cross_sections_for_label(csv_main,
+                                                      lab,
                                                       theory_json_root,
                                                       out_norm_xsec_root)) {
                 std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "

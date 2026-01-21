@@ -3,36 +3,25 @@
 // Apply overall-normalization factors to already-computed DVCS cross sections
 // and make the same plots as cross_sections.cpp, but using the normalized values.
 //
-// IMPORTANT (your convention from overall_normalization_study.cpp):
+// Convention (from overall_normalization_study.cpp):
+//   "norm, <Label>" is defined as (xs / BH)
 //
-//   "norm, <Label>" models (xs / BH)
-//
-// Therefore to obtain BH-normalized cross sections we must DIVIDE:
-//
+// Therefore BH-normalized cross sections must DIVIDE:
 //   sigma_normed = sigma_raw / N
 //
-// where N is read from:
-//   "norm, <Label>"                       (helicity independent)
+// Where:
+//   N is read from:   "norm, <Label>"   (scalar or tuple3)
+//   sigma_raw from:  "cross sections, ep->epg, exp, <Label>, <hel>"
+//   output written:  "normed cross sections, ep->epg, exp, <Label>, <hel>"
 //
-// and sigma_raw is read from:
-//   "cross sections, ep->epg, exp, <Label>, <hel>"
-//
-// The normalized result is written to:
-//   "normed cross sections, ep->epg, exp, <Label>, <hel>"
-//
-// Notes:
-// - "norm, <Label>" may be either a single number or a tuple3.
-//   If it is a tuple3, we interpret it as (value, stat, sys) for N.
-// - Errors are propagated assuming independence:
-//
+// Error propagation (independent):
 //   y = x / N
 //   stat_y = sqrt( (stat_x / N)^2 + (x * stat_N / N^2)^2 )
 //   sys_y  = sqrt( (sys_x  / N)^2 + (x * sys_N  / N^2)^2 )
 //
-// - If either the sigma cell or N cell is blank/empty, we do not write output.
-// - Fail-fast on missing required columns.
-// - Plotting overlays the same BH / KM / VGG theory curves used by cross_sections.cpp,
-//   loaded from theory_json_root/<EnergyDir>/xs_phi_all.json, keyed by CSV row index.
+// Plotting overlays BH / KM / VGG curves loaded from:
+//   theory_json_root/<EnergyDir>/xs_phi_all.json
+// keyed by CSV row index (row number in the CSV, header excluded).
 // -----------------------------------------------------------------------------
 
 #include "norm_cross_sections.h"
@@ -57,7 +46,7 @@
 
 #include <nlohmann/json.hpp>
 
-// ROOT includes
+// ROOT
 #include <TCanvas.h>
 #include <TGraph.h>
 #include <TGraphErrors.h>
@@ -69,6 +58,7 @@
 #include <TAxis.h>
 #include <TString.h>
 #include <TH1.h>
+#include <TSystem.h>
 
 namespace fs = std::filesystem;
 using json   = nlohmann::json;
@@ -84,7 +74,7 @@ struct Triple {
 };
 
 // -----------------------------------------------------------------------------
-// Label helpers (match cross_sections.cpp behavior)
+// Label helpers (match cross_sections.cpp behavior / your conventions)
 // -----------------------------------------------------------------------------
 
 static std::string canonical_period_dir(const std::string &label) {
@@ -109,13 +99,20 @@ static std::string theory_energy_label_for(const std::string &label) {
 }
 
 // -----------------------------------------------------------------------------
-// Robust CSV helpers (handles "" escape inside quoted fields)
+// CSV helpers (robust for quoted fields with escaped quotes)
 // -----------------------------------------------------------------------------
+
+static std::string trim(const std::string &s) {
+    size_t b = 0;
+    while (b < s.size() && std::isspace((unsigned char)s[b])) ++b;
+    size_t e = s.size();
+    while (e > b && std::isspace((unsigned char)s[e - 1])) --e;
+    return s.substr(b, e - b);
+}
 
 static std::vector<std::string> split_csv_line(const std::string &line) {
     std::vector<std::string> out;
     std::string field;
-
     bool in_quotes = false;
 
     for (size_t i = 0; i < line.size(); ++i) {
@@ -123,12 +120,10 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
 
         if (in_quotes) {
             if (c == '"') {
-                // Escaped quote inside a quoted field: "" -> "
                 if (i + 1 < line.size() && line[i + 1] == '"') {
                     field.push_back('"');
                     ++i;
                 } else {
-                    // End of quoted region
                     in_quotes = false;
                 }
             } else {
@@ -136,7 +131,6 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
             }
         } else {
             if (c == '"') {
-                // Begin quoted region (do not store the quote itself)
                 in_quotes = true;
             } else if (c == ',') {
                 out.push_back(field);
@@ -149,14 +143,6 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
 
     out.push_back(field);
     return out;
-}
-
-static std::string trim(const std::string &s) {
-    size_t b = 0;
-    while (b < s.size() && std::isspace((unsigned char)s[b])) ++b;
-    size_t e = s.size();
-    while (e > b && std::isspace((unsigned char)s[e - 1])) --e;
-    return s.substr(b, e - b);
 }
 
 static std::string quote_if_needed(const std::string &s) {
@@ -222,8 +208,6 @@ static Triple parse_tuple3(const std::string &cell_raw) {
     std::string s = trim(cell_raw);
     if (s.empty()) return out;
 
-    // If cell was written by our CSV writer, quotes were stripped by split_csv_line.
-    // We therefore just parse what we see.
     if (!s.empty() && s.front() == '(' && s.back() == ')') {
         s = trim(s.substr(1, s.size() - 2));
         if (s.empty()) return out;
@@ -303,7 +287,7 @@ static void ensure_dir(const fs::path &p) {
 }
 
 // -----------------------------------------------------------------------------
-// Theory loading (same structure as cross_sections.cpp)
+// Theory loading (same JSON structure as cross_sections.cpp generator)
 // -----------------------------------------------------------------------------
 
 struct TheoryCurves {
@@ -346,14 +330,14 @@ load_theory_for_label(const std::string &label,
 
     const std::vector<double> phi_deg = j.value("phi_deg", std::vector<double>{});
     if (phi_deg.empty()) {
-        std::cerr << "[norm_cross_sections] WARNING: theory JSON for label \""
-                  << label << "\" has empty phi_deg.\n";
+        std::cerr << "[norm_cross_sections] WARNING: theory JSON has empty phi_deg at "
+                  << file.string() << "\n";
         return out;
     }
 
     if (!j.contains("rows") || !j["rows"].is_object()) {
-        std::cerr << "[norm_cross_sections] WARNING: theory JSON for label \""
-                  << label << "\" has no rows object.\n";
+        std::cerr << "[norm_cross_sections] WARNING: theory JSON has no rows object at "
+                  << file.string() << "\n";
         return out;
     }
 
@@ -370,12 +354,15 @@ load_theory_for_label(const std::string &label,
 
         TheoryCurves tc;
         tc.phi_deg   = phi_deg;
+
         tc.bh_unpol  = cell["BH"].value("unpol", std::vector<double>{});
         tc.bh_pos    = cell["BH"].value("pos",   std::vector<double>{});
         tc.bh_neg    = cell["BH"].value("neg",   std::vector<double>{});
+
         tc.km_unpol  = cell["KM"].value("unpol", std::vector<double>{});
         tc.km_pos    = cell["KM"].value("pos",   std::vector<double>{});
         tc.km_neg    = cell["KM"].value("neg",   std::vector<double>{});
+
         tc.vgg_unpol = cell["VGG"].value("unpol", std::vector<double>{});
         tc.vgg_pos   = cell["VGG"].value("pos",   std::vector<double>{});
         tc.vgg_neg   = cell["VGG"].value("neg",   std::vector<double>{});
@@ -393,13 +380,50 @@ load_theory_for_label(const std::string &label,
 }
 
 // -----------------------------------------------------------------------------
-// Plotting structures (copied pattern from cross_sections.cpp)
+// Normalization math
+// -----------------------------------------------------------------------------
+
+static void normalize_one_sigma_cell(const Triple &sigma_raw,
+                                     const Triple &N,
+                                     Triple *sigma_out) {
+    if (!sigma_out) return;
+    *sigma_out = Triple{0.0, 0.0, 0.0};
+
+    if (!(sigma_raw.value > 0.0) || !(N.value > 0.0)) return;
+
+    const double x  = sigma_raw.value;
+    const double Nx = N.value;
+
+    const double y = x / Nx;
+
+    const double stat_x = sigma_raw.stat;
+    const double sys_x  = sigma_raw.sys;
+    const double stat_N = N.stat;
+    const double sys_N  = N.sys;
+
+    const double stat_y = std::sqrt(
+        (stat_x / Nx) * (stat_x / Nx) +
+        (x * stat_N / (Nx * Nx)) * (x * stat_N / (Nx * Nx))
+    );
+
+    const double sys_y = std::sqrt(
+        (sys_x / Nx) * (sys_x / Nx) +
+        (x * sys_N / (Nx * Nx)) * (x * sys_N / (Nx * Nx))
+    );
+
+    sigma_out->value = y;
+    sigma_out->stat  = stat_y;
+    sigma_out->sys   = sys_y;
+}
+
+// -----------------------------------------------------------------------------
+// Plotting structures (mirrors cross_sections style)
 // -----------------------------------------------------------------------------
 
 struct Point {
     double phi;
     double xs;
-    double xs_err;
+    double xs_err; // using stat as error bars (matches cross_sections.cpp style)
 };
 
 struct BinData {
@@ -410,7 +434,7 @@ struct BinData {
     bool   have_theory_row = false;
 };
 
-using QTKey = std::pair<Range, Range>;
+using QTKey = std::pair<Range, Range>; // (Q2, |t|)
 
 struct XSGroupByXB {
     std::map<QTKey, BinData> bins;
@@ -552,35 +576,11 @@ static void make_normed_xsec_canvas_for_mode(
     const auto &bins_for_xB = group.bins;
     if (bins_for_xB.empty()) return;
 
-    int W = 280 * ncols + 160;
-    int H = 260 * nrows + 260;
-    if (W < 1200) W = 1200;
-    if (H < 900)  H = 900;
+    int W = 300 * ncols + 160;
+    int H = 260 * nrows + 240;
 
-    double titleSize       = 0.18;
-    double legendTextSize  = 0.11;
-    double cellLabelSize   = 0.070;
-    if (nPads <= 4) {
-        titleSize      = 0.14;
-        legendTextSize = 0.09;
-        cellLabelSize  = 0.060;
-    }
-    if (nPads == 1) {
-        titleSize      = 0.12;
-        legendTextSize = 0.085;
-        cellLabelSize  = 0.055;
-    }
-    titleSize      *= 0.5;
-    legendTextSize *= 0.5;
-
-    std::ostringstream cname;
-    cname << "c_normxsec_";
-    if (mode == XSecPanelMode::UnpolOnly) cname << "unpol_";
-    else if (mode == XSecPanelMode::PosOnly) cname << "pos_";
-    else if (mode == XSecPanelMode::NegOnly) cname << "neg_";
-    cname << canonical_period_dir(label) << "_xB" << xb_idx_for_name;
-
-    TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+    // Title pad + grid pad
+    TCanvas *c = new TCanvas("c_normed_xsec", "c_normed_xsec", W, H);
 
     TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
     pTop->SetFillStyle(0);
@@ -594,12 +594,14 @@ static void make_normed_xsec_canvas_for_mode(
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
+    // Top title + legend dummies
     pTop->cd();
+
     TLatex head;
     head.SetNDC();
     head.SetTextAlign(22);
     head.SetTextFont(42);
-    head.SetTextSize(titleSize);
+    head.SetTextSize(0.06);
 
     std::ostringstream tit;
     tit << "Normed cross sections, ep #rightarrow ep#gamma   " << label
@@ -609,10 +611,9 @@ static void make_normed_xsec_canvas_for_mode(
     if      (mode == XSecPanelMode::UnpolOnly) tit << "   (unpolarized only)";
     else if (mode == XSecPanelMode::PosOnly)   tit << "   (+ helicity only)";
     else if (mode == XSecPanelMode::NegOnly)   tit << "   (- helicity only)";
-
     head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
-    // Legend dummies (match cross_sections.cpp styling)
+    // Legend dummies
     TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
     dummy_unpol.SetMarkerStyle(20);
     dummy_unpol.SetMarkerSize(1.0);
@@ -663,29 +664,29 @@ static void make_normed_xsec_canvas_for_mode(
     dummy_vgg_neg.SetLineStyle(3);
     dummy_vgg_neg.SetLineColor(kOrange + 7);
 
-    TLegend *legData = new TLegend(0.02, 0.05, 0.32, 0.80);
+    TLegend *legData = new TLegend(0.02, 0.10, 0.32, 0.75);
     legData->SetBorderSize(1);
     legData->SetLineColor(kBlack);
     legData->SetFillColor(kWhite);
     legData->SetFillStyle(1001);
     legData->SetTextFont(42);
-    legData->SetTextSize(legendTextSize);
+    legData->SetTextSize(0.045);
 
-    TLegend *legKM = new TLegend(0.35, 0.05, 0.65, 0.80);
+    TLegend *legKM = new TLegend(0.35, 0.10, 0.65, 0.75);
     legKM->SetBorderSize(1);
     legKM->SetLineColor(kBlack);
     legKM->SetFillColor(kWhite);
     legKM->SetFillStyle(1001);
     legKM->SetTextFont(42);
-    legKM->SetTextSize(legendTextSize);
+    legKM->SetTextSize(0.045);
 
-    TLegend *legVGG = new TLegend(0.68, 0.05, 0.98, 0.80);
+    TLegend *legVGG = new TLegend(0.68, 0.10, 0.98, 0.75);
     legVGG->SetBorderSize(1);
     legVGG->SetLineColor(kBlack);
     legVGG->SetFillColor(kWhite);
     legVGG->SetFillStyle(1001);
     legVGG->SetTextFont(42);
-    legVGG->SetTextSize(legendTextSize);
+    legVGG->SetTextSize(0.045);
 
     if (mode == XSecPanelMode::All) {
         legData->AddEntry(&dummy_unpol, "data unpolarized (normed)", "lep");
@@ -721,6 +722,7 @@ static void make_normed_xsec_canvas_for_mode(
     legKM->Draw();
     legVGG->Draw();
 
+    // Grid pads
     for (int r = 0; r < nrows; ++r) {
         const Range &t_range = t_slice[r];
         for (int cc = 0; cc < ncols; ++cc) {
@@ -728,10 +730,10 @@ static void make_normed_xsec_canvas_for_mode(
 
             pGrid->cd(r * ncols + cc + 1);
             gPad->SetGrid(1, 1);
-            gPad->SetTopMargin(0.12);
+            gPad->SetTopMargin(0.22);
             gPad->SetBottomMargin(0.18);
             gPad->SetLeftMargin(0.16);
-            gPad->SetRightMargin(0.10);
+            gPad->SetRightMargin(0.07);
             gPad->SetLogy(true);
 
             QTKey key(q2_range, t_range);
@@ -755,27 +757,28 @@ static void make_normed_xsec_canvas_for_mode(
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
-            frame->GetXaxis()->SetTitleSize(0.060);
-            frame->GetYaxis()->SetTitleSize(0.060);
-            frame->GetXaxis()->SetLabelSize(0.048);
-            frame->GetYaxis()->SetLabelSize(0.048);
-            frame->GetXaxis()->SetTitleOffset(1.10);
-            frame->GetYaxis()->SetTitleOffset(1.35);
+            frame->GetXaxis()->SetTitleSize(0.070);
+            frame->GetYaxis()->SetTitleSize(0.070);
+            frame->GetXaxis()->SetLabelSize(0.060);
+            frame->GetYaxis()->SetLabelSize(0.060);
+            frame->GetXaxis()->SetTitleOffset(1.00);
+            frame->GetYaxis()->SetTitleOffset(1.15);
 
             TLatex lab;
             lab.SetNDC();
-            lab.SetTextSize(cellLabelSize);
+            lab.SetTextSize(0.060);
             lab.SetTextAlign(11);
             lab.SetTextFont(42);
             lab.DrawLatex(
-                0.14, 0.93,
-                Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
+                0.12, 0.83,
+                Form("Q^{2}=(%.2f, %.2f)  |t|=(%.2f, %.2f)",
                      q2_range.first, q2_range.second,
                      t_range.first,  t_range.second)
             );
 
             if (!bin_ptr) continue;
 
+            // Copy/sort by phi
             BinData bin = *bin_ptr;
             auto sort_by_phi = [](std::vector<Point> &v) {
                 std::sort(v.begin(), v.end(),
@@ -787,6 +790,7 @@ static void make_normed_xsec_canvas_for_mode(
             sort_by_phi(bin.pos);
             sort_by_phi(bin.neg);
 
+            // Data points
             if (mode == XSecPanelMode::All || mode == XSecPanelMode::UnpolOnly) {
                 TGraphErrors *g_unpol = make_xsec_graph(bin.unpol, 20, kBlack);
                 if (g_unpol) g_unpol->Draw("P SAME");
@@ -800,7 +804,7 @@ static void make_normed_xsec_canvas_for_mode(
                 if (g_neg) g_neg->Draw("P SAME");
             }
 
-            // Theory overlay (same as cross_sections.cpp)
+            // Theory overlays (BH/KM/VGG) keyed by CSV row index
             if (bin.have_theory_row) {
                 auto it_th = theory.find(bin.theory_row);
                 if (it_th != theory.end()) {
@@ -864,44 +868,23 @@ static void make_normed_xsec_canvas_for_mode(
     delete c;
 }
 
+} // end anonymous namespace
+
 // -----------------------------------------------------------------------------
-// Compute/update normalized cross sections in the CSV
+// Public API: wrapper overload (fixes your original main.cpp call)
 // -----------------------------------------------------------------------------
 
-static void normalize_one_sigma_cell(const Triple &sigma_raw,
-                                     const Triple &N,
-                                     Triple *sigma_out) {
-    if (!sigma_out) return;
-    *sigma_out = Triple{0.0, 0.0, 0.0};
-
-    if (!(sigma_raw.value > 0.0) || !(N.value > 0.0)) return;
-
-    const double x = sigma_raw.value;
-    const double Nx = N.value;
-
-    const double y = x / Nx;
-
-    const double stat_x = sigma_raw.stat;
-    const double sys_x  = sigma_raw.sys;
-    const double stat_N = N.stat;
-    const double sys_N  = N.sys;
-
-    const double stat_y = std::sqrt(
-        (stat_x / Nx) * (stat_x / Nx) +
-        (x * stat_N / (Nx * Nx)) * (x * stat_N / (Nx * Nx))
-    );
-
-    const double sys_y = std::sqrt(
-        (sys_x / Nx) * (sys_x / Nx) +
-        (x * sys_N / (Nx * Nx)) * (x * sys_N / (Nx * Nx))
-    );
-
-    sigma_out->value = y;
-    sigma_out->stat  = stat_y;
-    sigma_out->sys   = sys_y;
+bool update_normed_cross_sections_csv(const std::string &csv_main) {
+    const std::vector<std::string> labels_to_update = {
+        "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+        "Fa18", "Sp18", "10.6 GeV"
+    };
+    return update_normed_cross_sections_csv(csv_main, labels_to_update);
 }
 
-} // end anonymous namespace
+// -----------------------------------------------------------------------------
+// Update normalized cross sections in the CSV
+// -----------------------------------------------------------------------------
 
 bool update_normed_cross_sections_csv(const std::string &csv_main,
                                       const std::vector<std::string> &labels_to_update) {
@@ -927,7 +910,6 @@ bool update_normed_cross_sections_csv(const std::string &csv_main,
 
     std::vector<std::string> header = split_csv_line(lines[0]);
 
-    // We fail-fast on any required column for any requested label.
     struct LabelCols {
         int c_norm = -1;
         int c_raw_unpol = -1;
@@ -989,7 +971,7 @@ bool update_normed_cross_sections_csv(const std::string &csv_main,
 
             Triple N;
             if (!parse_norm_cell(fields[lc.c_norm], &N)) {
-                // Per your rule: if N cell is blank/invalid, do not write output.
+                // If N is blank/invalid, do not write output for this label in this row.
                 continue;
             }
 
@@ -1030,7 +1012,12 @@ bool update_normed_cross_sections_csv(const std::string &csv_main,
     }
     ofs.close();
 
-    fs::rename(tmp_path, csv_path);
+    std::error_code ec;
+    fs::rename(tmp_path, csv_path, ec);
+    if (ec) {
+        std::cerr << "[norm_cross_sections] ERROR: rename failed: " << ec.message() << "\n";
+        return false;
+    }
 
     std::cout << "[norm_cross_sections] Updated CSV with normed cross sections: "
               << csv_main << "\n";
@@ -1070,6 +1057,7 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
     int c_xb_min = -1, c_xb_max = -1;
     int c_q2_min = -1, c_q2_max = -1;
     int c_t_min  = -1, c_t_max  = -1;
+
     try {
         c_xb_min = find_col_required(header, "xBmin");
         c_xb_max = find_col_required(header, "xBmax");
@@ -1159,8 +1147,10 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
 
         QTKey key(q2_range, t_range);
         BinData &bin = group.bins[key];
+
+        // Critical: use CSV row index for theory lookup
         if (!bin.have_theory_row) {
-            bin.theory_row      = row;   // critical: use CSV row index for theory lookup
+            bin.theory_row      = row;
             bin.have_theory_row = true;
         }
 
@@ -1184,8 +1174,10 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    const std::map<size_t, TheoryCurves> theory = load_theory_for_label(label, theory_json_root);
+    const std::map<size_t, TheoryCurves> theory =
+        load_theory_for_label(label, theory_json_root);
 
+    // ROOT style (batch, no stat boxes)
     gROOT->SetBatch(true);
     gStyle->SetOptStat(0);
     gStyle->SetTitleFont(42, "XYZ");
