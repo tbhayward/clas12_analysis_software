@@ -26,6 +26,7 @@
 #include "models_vs_data_plots.h"
 #include "overall_normalization_study.h"
 #include "propagator_study.h"
+#include "norm_cross_sections.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -394,57 +395,82 @@ int main(int argc, char* argv[]) {
     // }
 
 
-    std::cout << "[main] KM15 sanity (unpol): " << std::setprecision(12) << km15_xs(0.20, 2.00, 0.30, 30.0, 10.6, Helicity::Unpol) << "\n";
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Fa18 Inb", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
+
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Fa18 Out", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
+
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
+
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
+
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp19 Inb", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
+
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Fa18", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
+
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp18", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
+
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "10.6 GeV", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
+    // }
+
+    // --------- DVCS normalized cross sections (CSV + plots) ----------
     {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string theory_json_root   = "output/jsons/theory";
+        const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+        if (!update_normed_cross_sections_csv(csv_main)) {
+            std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
             return 1;
         }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Out", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+        const std::vector<std::string> labels = {
+            "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+            "Fa18", "Sp18", "10.6 GeV"
+        };
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp19 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "10.6 GeV", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
+        for (const auto &lab : labels) {
+            if (!plot_normed_cross_sections_for_label(csv_main, lab,
+                                                      theory_json_root,
+                                                      out_norm_xsec_root)) {
+                std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
+                          << lab << "\n";
+                return 1;
+            }
         }
     }
 
