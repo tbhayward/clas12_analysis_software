@@ -13,10 +13,10 @@
 //      "cross sections, ep->epg, exp, syst. unc. (up)"   (systematic up)
 //      "cross sections, ep->epg, exp, syst. unc. (down)" (systematic down)
 //
-//   Hayward:
-//      "cross sections, ep->epg, exp, Fa18, unpol"       (three-tuple:
-//                                                        value, stat_err,
-//                                                        syst_err [ignored here])
+//   Hayward (UPDATED: use *normed* cross section columns):
+//      "normed cross sections, ep->epg, exp, Fa18, unpol" (three-tuple:
+//                                                          value, stat_err,
+//                                                          syst_err [ignored here])
 //
 // We organize the comparison by xB, Q^{2}, and -t. For each (xB, Q^{2}, -t)
 // cell, we take all rows matching those ranges and use their provided phiavg
@@ -25,7 +25,7 @@
 // Output filenames (per xB index ix):
 //   cross_section_counts_xB_<ix>.png
 //   cross_section_ratio_xB_<ix>.png
-//   cross_section_staterr_xB_<ix>.png   <-- NEW: stat. unc. vs phi for both
+//   cross_section_staterr_xB_<ix>.png   <-- stat. unc. vs phi for both
 //
 // OFFICIAL INSTRUCTIONS IMPLEMENTED:
 //   - For counts canvases (cross sections):
@@ -34,21 +34,21 @@
 //           1e-1, 1e-2, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-4
 //       * Per-canvas global y-max (from all subplots, including error bars),
 //         used for all subplots on that canvas. For Lee, this includes
-//         stat⊕syst(up) in quadrature on top of the central value.
+//         stat and syst(up) combined in quadrature on top of the central value.
 //   - For ratio canvases (Hayward/Lee):
 //       * Linear y-scale, fixed range [0, 3] for all subplots.
 //       * Two sets of error bars per point:
 //           1) "stat": propagate stat errors from BOTH Hayward and Lee.
-//           2) "stat + Lee syst": propagate Hayward stat and Lee (stat⊕syst)
+//           2) "stat + Lee syst": propagate Hayward stat and Lee (stat+syst)
 //              with asymmetric up/down uncertainties.
 //
 // Additionally:
-//   - Lee cross sections are now drawn on the counts canvases with:
+//   - Lee cross sections are drawn on the counts canvases with:
 //        * Stat error bars (TGraphErrors, orange).
-//        * Larger asymmetric stat⊕syst error bars (TGraphAsymmErrors,
-//          slightly different orange, thicker line, no marker).
-//   - NEW: A third canvas per xB bin showing the statistical uncertainties
-//          themselves vs phi, for Hayward and Lee.
+//        * Larger asymmetric stat+syst error bars (TGraphAsymmErrors,
+//          thicker line, no marker).
+//   - A third canvas per xB bin shows the statistical uncertainties
+//     themselves vs phi, for Hayward and Lee.
 // -----------------------------------------------------------------------------
 
 #include "cross_section_cross_check.h"
@@ -83,6 +83,7 @@
 #include <utility>
 #include <vector>
 #include <stdexcept>
+#include <cstdlib>
 
 namespace fs = std::filesystem;
 
@@ -371,8 +372,8 @@ struct BinRow_xs {
     double lee_syst_up = 0.0;  // Lee systematic up
     double lee_syst_dn = 0.0;  // Lee systematic down
 
-    double my_xs       = 0.0;  // Hayward cross section (value)
-    double my_xs_err   = 0.0;  // Hayward cross section stat error
+    double my_xs       = 0.0;  // Hayward (normed) cross section value
+    double my_xs_err   = 0.0;  // Hayward (normed) cross section stat error
 };
 
 static AxisSets_xs build_axes_from_rows_xs(const std::vector<BinRow_xs>& rows) {
@@ -531,7 +532,7 @@ static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
     return g;
 }
 
-// Simple points (no y-error) — useful for plotting the *size* of stat errors
+// Simple points (no y-error) - useful for plotting the *size* of stat errors
 static TGraph* graph_points_xs(const std::vector<double>& X,
                                const std::vector<double>& Y,
                                int markerStyle, int color) {
@@ -548,7 +549,7 @@ static TGraph* graph_points_xs(const std::vector<double>& X,
     return g;
 }
 
-// Asymmetric error bars (for Lee stat⊕syst on counts, and ratio if needed)
+// Asymmetric error bars (for Lee stat+syst on counts, and ratio if needed)
 static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
                                            const std::vector<double>& Y,
                                            const std::vector<double>& EY_low,
@@ -650,7 +651,7 @@ static void draw_one_canvas_xs(const std::string& title,
 
                         double vup = v;
                         if (include_syst) {
-                            // Use stat⊕syst(up) in quadrature
+                            // Use stat+syst(up) combined in quadrature
                             double e_tot_up = std::sqrt(es * es + esu * esu);
                             vup = v + e_tot_up;
                         } else {
@@ -668,7 +669,7 @@ static void draw_one_canvas_xs(const std::string& title,
 
                 // Hayward: stat only
                 update_minmax(hayward_tmp, false);
-                // Lee: stat⊕syst(up)
+                // Lee: stat+syst(up)
                 update_minmax(lee_tmp, true);
             }
         }
@@ -744,9 +745,9 @@ static void draw_one_canvas_xs(const std::string& title,
         legend_keepalive.push_back(lnRatioTot);
         legend_keepalive.push_back(lnY1);
 
-        legTop->AddEntry(mRatioStat, "Hayward/Lee (stat)",             "p");
-        legTop->AddEntry(lnRatioTot, "Hayward/Lee (stat + Lee syst)",  "l");
-        legTop->AddEntry(lnY1,       "y = 1",                          "l");
+        legTop->AddEntry(mRatioStat, "Hayward/Lee (stat)",            "p");
+        legTop->AddEntry(lnRatioTot, "Hayward/Lee (stat + Lee syst)", "l");
+        legTop->AddEntry(lnY1,       "y = 1",                         "l");
     } else if (mode == CANVAS_COUNTS) {
         auto* mH        = new TMarker(0.0, 0.0, 20);
         auto* mL_stat   = new TMarker(0.0, 0.0, 24);
@@ -761,9 +762,9 @@ static void draw_one_canvas_xs(const std::string& title,
         legend_keepalive.push_back(mL_stat);
         legend_keepalive.push_back(lnL_syst);
 
-        legTop->AddEntry(mH,       "Hayward (pass-2), stat",          "p");
-        legTop->AddEntry(mL_stat,  "Lee (pass-1), stat",              "p");
-        legTop->AddEntry(lnL_syst, "Lee (pass-1), stat + syst",       "l");
+        legTop->AddEntry(mH,       "Hayward (pass-2), stat",     "p");
+        legTop->AddEntry(mL_stat,  "Lee (pass-1), stat",         "p");
+        legTop->AddEntry(lnL_syst, "Lee (pass-1), stat + syst",  "l");
     } else if (mode == CANVAS_STATERR) {
         auto* mH_stat  = new TMarker(0.0, 0.0, 20);
         auto* mL_stat  = new TMarker(0.0, 0.0, 24);
@@ -805,14 +806,7 @@ static void draw_one_canvas_xs(const std::string& title,
             double ymax = 1.0;
 
             if (mode == CANVAS_COUNTS) {
-                // -----------------------------------------------------------------
-                // COUNTS CANVAS: OFFICIAL INSTRUCTIONS
-                //   - Log y-scale
-                //   - y-min = per-xB-bin floor (same for all subplots)
-                //   - y-max = global max over all panels * 1.1
-                // -----------------------------------------------------------------
                 if (!any_positive_counts || global_max_counts <= 0.0) {
-                    // No positive entries anywhere on the canvas: fall back to linear [0,1]
                     gPad->SetLogy(0);
                     ymin = 0.0;
                     ymax = 1.0;
@@ -827,7 +821,7 @@ static void draw_one_canvas_xs(const std::string& title,
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("Cross section");
+                frame->GetYaxis()->SetTitle("Normed cross section");
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
@@ -856,7 +850,7 @@ static void draw_one_canvas_xs(const std::string& title,
                 // Plot Lee stat (symmetric)
                 graph_pe1_xs(lee.phi, lee.val, lee.err_stat, 24, orange);
 
-                // Plot Lee stat⊕syst as asymmetric bars
+                // Plot Lee stat+syst as asymmetric bars
                 std::vector<double> lee_comb_dn;
                 std::vector<double> lee_comb_up;
                 lee_comb_dn.reserve(lee.val.size());
@@ -874,14 +868,6 @@ static void draw_one_canvas_xs(const std::string& title,
                                  lee_comb_up,
                                  orange_syst);
             } else if (mode == CANVAS_RATIO) {
-                // -----------------------------------------------------------------
-                // RATIO CANVAS: OFFICIAL INSTRUCTIONS
-                //   - Linear y-scale
-                //   - y-range fixed to [0, 3]
-                //   - Two error sets:
-                //       * stat-only (H and L stat)
-                //       * stat + Lee syst (H stat, L stat⊕syst)
-                // -----------------------------------------------------------------
                 gPad->SetLogy(0);
 
                 const double tol = 20.0;
@@ -913,8 +899,8 @@ static void draw_one_canvas_xs(const std::string& title,
 
                     double R = H / L;
 
-                    double sigma_H_stat = (i < hayward.err_stat.size())    ? hayward.err_stat[i]    : 0.0;
-                    double sigma_L_stat = (jbest < (int)lee.err_stat.size())    ? lee.err_stat[jbest]    : 0.0;
+                    double sigma_H_stat = (i < hayward.err_stat.size()) ? hayward.err_stat[i] : 0.0;
+                    double sigma_L_stat = (jbest < (int)lee.err_stat.size()) ? lee.err_stat[jbest] : 0.0;
                     double sigma_L_su   = (jbest < (int)lee.err_syst_up.size()) ? lee.err_syst_up[jbest] : 0.0;
                     double sigma_L_sd   = (jbest < (int)lee.err_syst_dn.size()) ? lee.err_syst_dn[jbest] : 0.0;
 
@@ -951,7 +937,7 @@ static void draw_one_canvas_xs(const std::string& title,
                 }
 
                 ymin = 0.0;
-                ymax = 3.0;  // Fixed by OFFICIAL INSTRUCTIONS
+                ymax = 3.0;
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -979,10 +965,8 @@ static void draw_one_canvas_xs(const std::string& title,
                          Ts[r].first,     Ts[r].second));
 
                 if (!x.empty()) {
-                    // Stat-only ratio error bars
                     graph_pe1_xs(x, y, ey_stat, 20, black);
 
-                    // Stat + Lee syst ratio error bars (asymmetric, line only)
                     const int n = (int)x.size();
                     auto* gTot = new TGraphAsymmErrors(n);
                     for (int i = 0; i < n; ++i) {
@@ -997,7 +981,6 @@ static void draw_one_canvas_xs(const std::string& title,
                     gTot->SetMarkerSize(0.0);
                     gTot->Draw("E1 SAME");
 
-                    // y = 1 line
                     TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
                     one->SetLineStyle(2);
                     one->SetLineWidth(2);
@@ -1005,15 +988,6 @@ static void draw_one_canvas_xs(const std::string& title,
                     one->Draw("SAME");
                 }
             } else if (mode == CANVAS_STATERR) {
-                // -----------------------------------------------------------------
-                // STAT-UNCERTAINTY CANVAS:
-                //   - Linear y-scale
-                //   - y-min = 0 (or 0..1 if all zero)
-                //   - y-max = global max over all stat errors * 1.1
-                //   - Plot:
-                //       * Hayward: sigma_stat(H) vs phi
-                //       * Lee:     sigma_stat(L) vs phi
-                // -----------------------------------------------------------------
                 gPad->SetLogy(0);
 
                 if (!any_positive_stat || global_max_stat <= 0.0) {
@@ -1052,11 +1026,8 @@ static void draw_one_canvas_xs(const std::string& title,
                          Q2s[ccol].first, Q2s[ccol].second,
                          Ts[r].first,     Ts[r].second));
 
-                // Plot Hayward stat errors as points vs phi
                 graph_points_xs(hayward.phi, hayward.err_stat, 20, black);
-
-                // Plot Lee stat errors as points vs phi
-                graph_points_xs(lee.phi, lee.err_stat, 24, orange);
+                graph_points_xs(lee.phi,     lee.err_stat,     24, orange);
             }
         }
     }
@@ -1170,10 +1141,11 @@ static void fill_hayward_xs(const std::string& hayward_csv_path,
     std::vector<std::string> header = split_csv_line_xs(header_line);
     auto H = build_header_index_xs(header);
 
+    // UPDATED: require the normed cross section column (Fa18, unpol)
     const std::vector<std::string> required = {
         "bin index",
         "valid bin",
-        "cross sections, ep->epg, exp, Fa18, unpol"
+        "normed cross sections, ep->epg, exp, Fa18, unpol"
     };
     require_columns_xs(H, required, "Hayward CSV");
 
@@ -1197,7 +1169,7 @@ static void fill_hayward_xs(const std::string& hayward_csv_path,
         }
 
         XsValue_xs xv = parse_xs_triplet_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, Fa18, unpol")
+            get_col_ref_xs(cols, H, "normed cross sections, ep->epg, exp, Fa18, unpol")
         );
 
         BinRow_xs& r = rows[it->second];
@@ -1233,7 +1205,7 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
     std::unordered_map<int,size_t> bin_to_index;
     auto rows = load_lee_rows_xs(lee_csv_path, bin_to_index);
 
-    // 2) Load Hayward CSV
+    // 2) Load Hayward CSV (normed cross sections)
     fill_hayward_xs(hayward_csv_path, bin_to_index, rows);
 
     // 3) Build axis sets and per-panel maps
@@ -1273,12 +1245,12 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
         const double xb_hi = ax.xB[ix].second;
 
         const std::string title_counts =
-            Form("Cross sections: 10.6 GeV   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
+            Form("Normed cross sections: 10.6 GeV   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
         const std::string title_ratio  =
-            Form("Cross section ratio (Hayward/Lee): 10.6 GeV   x_{B} #in [%.3g, %.3g]",
+            Form("Normed cross section ratio (Hayward/Lee): 10.6 GeV   x_{B} #in [%.3g, %.3g]",
                  xb_lo, xb_hi);
         const std::string title_staterr =
-            Form("Cross section stat. unc.: 10.6 GeV   x_{B} #in [%.3g, %.3g]",
+            Form("Normed cross section stat. unc.: 10.6 GeV   x_{B} #in [%.3g, %.3g]",
                  xb_lo, xb_hi);
 
         auto fetchBoth = make_fetchBoth(ix);

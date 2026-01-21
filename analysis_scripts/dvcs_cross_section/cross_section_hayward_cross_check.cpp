@@ -10,17 +10,17 @@
 //   "(value, stat_err, syst_err)"
 // in columns like:
 //
-//   "cross sections, ep->epg, exp, Fa18 Inb, unpol"
-//   "cross sections, ep->epg, exp, Fa18 Out, unpol"
-//   "cross sections, ep->epg, exp, Sp18 Inb, unpol"
-//   "cross sections, ep->epg, exp, Sp18 Out, unpol"
-//   "cross sections, ep->epg, exp, Fa18, unpol"
-//   "cross sections, ep->epg, exp, Sp18, unpol"
-//   "cross sections, ep->epg, exp, Sp19 Inb, unpol"
-//   "cross sections, ep->epg, exp, Fa18 Inb, pos"
-//   "cross sections, ep->epg, exp, Fa18 Out, pos"
-//   "cross sections, ep->epg, exp, Fa18 Inb, neg"
-//   "cross sections, ep->epg, exp, Fa18 Out, neg"
+//   "normed cross sections, ep->epg, exp, Fa18 Inb, unpol"
+//   "normed cross sections, ep->epg, exp, Fa18 Out,  unpol"
+//   "normed cross sections, ep->epg, exp, Sp18 Inb,  unpol"
+//   "normed cross sections, ep->epg, exp, Sp18 Out,  unpol"
+//   "normed cross sections, ep->epg, exp, Fa18,      unpol"
+//   "normed cross sections, ep->epg, exp, Sp18,      unpol"
+//   "normed cross sections, ep->epg, exp, Sp19 Inb,  unpol"
+//   "normed cross sections, ep->epg, exp, Fa18 Inb,  pos"
+//   "normed cross sections, ep->epg, exp, Fa18 Out,  pos"
+//   "normed cross sections, ep->epg, exp, Fa18 Inb,  neg"
+//   "normed cross sections, ep->epg, exp, Fa18 Out,  neg"
 //
 // We organize the comparison by xB, Q^{2}, and -t using the Lee-style
 // binning columns in dvcs_pass2_analysis.csv:
@@ -76,6 +76,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cstdlib>
 
 namespace fs = std::filesystem;
 
@@ -568,14 +569,7 @@ static void draw_one_canvas_pair_xs_h(
             double ymax = 1.0;
 
             if (!draw_ratio_only) {
-                // -----------------------------------------------------------------
-                // COUNTS CANVAS: STANDARD INSTRUCTIONS
-                //   - Log y-scale
-                //   - y-min = per-xB-bin floor (same for all subplots)
-                //   - y-max = global max over all panels * 1.1
-                // -----------------------------------------------------------------
                 if (!any_positive || global_max_counts <= 0.0) {
-                    // No positive entries anywhere on the canvas: fall back to linear [0,1]
                     gPad->SetLogy(0);
                     ymin = 0.0;
                     ymax = 1.0;
@@ -590,7 +584,7 @@ static void draw_one_canvas_pair_xs_h(
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("Cross section");
+                frame->GetYaxis()->SetTitle("Normed cross section");
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
@@ -613,18 +607,12 @@ static void draw_one_canvas_pair_xs_h(
                          Q2s[ccol].first, Q2s[ccol].second,
                          Ts[r].first,     Ts[r].second));
 
-                // Plot both series
                 graph_pe1_xs_h(A.phi, A.val, A.err, 20, black);
                 graph_pe1_xs_h(B.phi, B.val, B.err, 24, orange);
             } else {
-                // -----------------------------------------------------------------
-                // RATIO CANVAS: STANDARD INSTRUCTIONS
-                //   - Linear y-scale
-                //   - y-range fixed to [0, 3]
-                // -----------------------------------------------------------------
                 gPad->SetLogy(0);
 
-                // Compute R = A/B and eR from A error
+                // Compute R = A/B and eR from A stat error only
                 const double tol = 20.0;
                 std::vector<double> x, y, ey;
 
@@ -640,8 +628,8 @@ static void draw_one_canvas_pair_xs_h(
                     }
                     // endfor
                     if (jbest >= 0 && best_dist <= tol && B.val[jbest] > 0.0) {
-                        double H = A.val[i];           // numerator (A)
-                        double L = B.val[jbest];       // denominator (B)
+                        double H = A.val[i];
+                        double L = B.val[jbest];
                         double R = (H <= 0.0) ? 0.0 : H / L;
 
                         double sigma_H = (i < A.err.size()) ? A.err[i] : 0.0;
@@ -658,7 +646,7 @@ static void draw_one_canvas_pair_xs_h(
                 // endfor
 
                 ymin = 0.0;
-                ymax = 3.0;  // Fixed by STANDARD INSTRUCTIONS
+                ymax = 3.0;
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -732,11 +720,9 @@ load_hayward_rows_xs_h(const std::string& hayward_csv_path,
         "Q2max",
         "t_abs_min",
         "t_abs_max",
-        // Common phi coordinate for 10.6 GeV
         "phiavg, 10.6 GeV"
     };
 
-    // Append all xs_columns to required
     for (const auto& c : xs_columns) {
         required.push_back(c);
     }
@@ -783,7 +769,6 @@ load_hayward_rows_xs_h(const std::string& hayward_csv_path,
         }
         // endfor
 
-        // Skip bins with no cross section in any of the requested columns.
         if (!has_any_xs) continue;
 
         rows.push_back(r);
@@ -847,11 +832,11 @@ static void run_one_comparison_xs_h(
         const double xb_hi = ax.xB[ix].second;
 
         std::string title_counts = Form(
-            "Cross sections: 10.6 GeV   %s vs %s   x_{B} #in [%.3g, %.3g]",
+            "Normed cross sections: 10.6 GeV   %s vs %s   x_{B} #in [%.3g, %.3g]",
             labelA.c_str(), labelB.c_str(), xb_lo, xb_hi
         );
         std::string title_ratio = Form(
-            "Cross section ratio: 10.6 GeV   %s/%s   x_{B} #in [%.3g, %.3g]",
+            "Normed cross section ratio: 10.6 GeV   %s/%s   x_{B} #in [%.3g, %.3g]",
             labelA.c_str(), labelB.c_str(), xb_lo, xb_hi
         );
 
@@ -891,32 +876,30 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     gStyle->SetLabelFont(42, "XYZ");
     gStyle->SetTextFont(42);
 
-    // All unique cross section columns we will require
+    // All unique *normed* cross section columns we will require
     const std::vector<std::string> xs_columns = {
         // unpolarized
-        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
-        "cross sections, ep->epg, exp, Fa18 Out, unpol",
-        "cross sections, ep->epg, exp, Sp18 Inb, unpol",
-        "cross sections, ep->epg, exp, Sp18 Out, unpol",
-        "cross sections, ep->epg, exp, Fa18, unpol",
-        "cross sections, ep->epg, exp, Sp18, unpol",
-        "cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Fa18 Out, unpol",
+        "normed cross sections, ep->epg, exp, Sp18 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Sp18 Out, unpol",
+        "normed cross sections, ep->epg, exp, Fa18, unpol",
+        "normed cross sections, ep->epg, exp, Sp18, unpol",
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol",
         // helicity-separated Fa18
-        "cross sections, ep->epg, exp, Fa18 Inb, pos",
-        "cross sections, ep->epg, exp, Fa18 Out, pos",
-        "cross sections, ep->epg, exp, Fa18 Inb, neg",
-        "cross sections, ep->epg, exp, Fa18 Out, neg"
+        "normed cross sections, ep->epg, exp, Fa18 Inb, pos",
+        "normed cross sections, ep->epg, exp, Fa18 Out, pos",
+        "normed cross sections, ep->epg, exp, Fa18 Inb, neg",
+        "normed cross sections, ep->epg, exp, Fa18 Out, neg"
     };
 
-    // 1) Load Hayward rows (axis info + all needed cross-section columns)
+    // 1) Load Hayward rows (axis info + all needed normed cross-section columns)
     auto rows = load_hayward_rows_xs_h(hayward_csv_path, xs_columns);
 
     // 2) Build axis sets from these rows
     AxisSets_h ax = build_axes_from_rows_xs_h(rows);
 
     info_xs_h("Axis xB bins: " + std::to_string(ax.xB.size()));
-
-    // 3) Define the specific comparisons you requested
 
     struct Comparison {
         std::string labelA;
@@ -932,8 +915,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Fa18 Inb (unpol)",
         "Fa18 Out (unpol)",
-        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
-        "cross sections, ep->epg, exp, Fa18 Out, unpol",
+        "normed cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Fa18 Out, unpol",
         "Fa18Inb_vs_Fa18Out_unpol"
     });
 
@@ -941,8 +924,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Fa18 Inb (unpol)",
         "Sp18 Inb (unpol)",
-        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
-        "cross sections, ep->epg, exp, Sp18 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Sp18 Inb, unpol",
         "Fa18Inb_vs_Sp18Inb_unpol"
     });
 
@@ -950,8 +933,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Fa18 Out (unpol)",
         "Sp18 Out (unpol)",
-        "cross sections, ep->epg, exp, Fa18 Out, unpol",
-        "cross sections, ep->epg, exp, Sp18 Out, unpol",
+        "normed cross sections, ep->epg, exp, Fa18 Out, unpol",
+        "normed cross sections, ep->epg, exp, Sp18 Out, unpol",
         "Fa18Out_vs_Sp18Out_unpol"
     });
 
@@ -959,8 +942,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Sp18 Inb (unpol)",
         "Sp18 Out (unpol)",
-        "cross sections, ep->epg, exp, Sp18 Inb, unpol",
-        "cross sections, ep->epg, exp, Sp18 Out, unpol",
+        "normed cross sections, ep->epg, exp, Sp18 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Sp18 Out, unpol",
         "Sp18Inb_vs_Sp18Out_unpol"
     });
 
@@ -968,8 +951,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Fa18 (unpol)",
         "Sp18 (unpol)",
-        "cross sections, ep->epg, exp, Fa18, unpol",
-        "cross sections, ep->epg, exp, Sp18, unpol",
+        "normed cross sections, ep->epg, exp, Fa18, unpol",
+        "normed cross sections, ep->epg, exp, Sp18, unpol",
         "Fa18_vs_Sp18_unpol"
     });
 
@@ -977,8 +960,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Fa18 Inb (unpol)",
         "Sp19 Inb (unpol)",
-        "cross sections, ep->epg, exp, Fa18 Inb, unpol",
-        "cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Fa18 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol",
         "Fa18Inb_vs_Sp19Inb_unpol"
     });
 
@@ -986,8 +969,8 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Fa18 Inb (pos)",
         "Fa18 Out (pos)",
-        "cross sections, ep->epg, exp, Fa18 Inb, pos",
-        "cross sections, ep->epg, exp, Fa18 Out, pos",
+        "normed cross sections, ep->epg, exp, Fa18 Inb, pos",
+        "normed cross sections, ep->epg, exp, Fa18 Out, pos",
         "Fa18Inb_vs_Fa18Out_pos"
     });
 
@@ -995,12 +978,11 @@ void plot_cross_section_hayward_cross_checks(const std::string& hayward_csv_path
     comps.push_back({
         "Fa18 Inb (neg)",
         "Fa18 Out (neg)",
-        "cross sections, ep->epg, exp, Fa18 Inb, neg",
-        "cross sections, ep->epg, exp, Fa18 Out, neg",
+        "normed cross sections, ep->epg, exp, Fa18 Inb, neg",
+        "normed cross sections, ep->epg, exp, Fa18 Out, neg",
         "Fa18Inb_vs_Fa18Out_neg"
     });
 
-    // 4) Run all comparisons
     for (const auto& cmp : comps) {
         run_one_comparison_xs_h(
             cmp.labelA, cmp.labelB,
