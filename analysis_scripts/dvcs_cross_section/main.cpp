@@ -410,23 +410,23 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+        // // 10.6 GeV combined group (unpolarized) normalization study
+        // if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
+        //     std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+        //     return 1;
+        // }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+        // // 10.6 GeV combined group (unpolarized) normalization study
+        // if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
+        //     std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+        //     return 1;
+        // }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp19 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
+        // // 10.6 GeV combined group (unpolarized) normalization study
+        // if (!print_bh_normalization_study(csv_main, "Sp19 Inb", "unpol")) {
+        //     std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+        //     return 1;
+        // }
 
         // 10.6 GeV combined group (unpolarized) normalization study
         if (!print_bh_normalization_study(csv_main, "Fa18", "unpol")) {
@@ -434,17 +434,17 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
+        // // 10.6 GeV combined group (unpolarized) normalization study
+        // if (!print_bh_normalization_study(csv_main, "Sp18", "unpol")) {
+        //     std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+        //     return 1;
+        // }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "10.6 GeV", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
+        // // 10.6 GeV combined group (unpolarized) normalization study
+        // if (!print_bh_normalization_study(csv_main, "10.6 GeV", "unpol")) {
+        //     std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+        //     return 1;
+        // }
     }
 
     // --------- DVCS normalized cross sections (CSV + plots) ----------
