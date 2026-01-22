@@ -37,6 +37,16 @@
 namespace {
 
 // -----------------------------------------------------------------------------
+// USER TOGGLES (edit here)
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// NEW: If true, skip ALL calculations and ALL plotting, and just write "1.00"
+// into every row of "norm, <label>" (if the column exists), then return.
+// -----------------------------------------------------------------------------
+static const bool kSkipAllWorkWriteUnityNorm = true;
+
+// -----------------------------------------------------------------------------
 // USER TOGGLE (edit here)
 //   - true  : FAST PATH (one row per (xB,Q2,|t|) cell; pick phi closest to 0/360)
 //   - false : USE ALL POINTS (every phi row in the CSV that has a valid xs)
@@ -946,6 +956,51 @@ bool print_bh_normalization_study(const std::string &csv_path,
 
         std::vector<std::string> header = split_csv_line(lines[0]);
 
+        const std::string col_norm = "norm, " + label;
+        const int c_norm = find_col_optional(header, col_norm);
+
+        // ---------------------------------------------------------------------
+        // NEW: Fast bypass mode: write unity normalization and return immediately.
+        // This intentionally does NOT require any other columns to exist.
+        // ---------------------------------------------------------------------
+        if (kSkipAllWorkWriteUnityNorm) {
+            std::cout << "============================================================\n";
+            std::cout << "[overall_norm] BH normalization study (UNITY OVERRIDE)\n";
+            std::cout << "[overall_norm] CSV      : " << csv_path << "\n";
+            std::cout << "[overall_norm] label    : " << label << "\n";
+            std::cout << "[overall_norm] helicity : " << helicity << "\n";
+            std::cout << "[overall_norm] mode     : SKIP ALL WORK; write norm=1.00 everywhere\n";
+
+            if (c_norm < 0) {
+                std::cout << "[overall_norm] NOTE: Column \"" << col_norm << "\" not found; nothing to write.\n";
+                std::cout << "============================================================\n";
+                return true;
+            } //endif
+
+            int n_rows_updated = 0;
+            for (size_t r = 1; r < lines.size(); ++r) {
+                if (lines[r].empty()) continue;
+
+                std::vector<std::string> fields = split_csv_line(lines[r]);
+                if (fields.size() != header.size()) continue;
+
+                fields[(size_t)c_norm] = "1.00";
+                lines[r] = csv_join_fields(fields);
+                n_rows_updated += 1;
+            } //endfor
+
+            if (n_rows_updated > 0) {
+                write_lines_atomic_or_throw(csv_path, lines);
+                std::cout << "[overall_norm] Wrote unity norm values to CSV: " << n_rows_updated << " rows updated.\n";
+            } else {
+                std::cout << "[overall_norm] NOTE: no rows updated (empty CSV body or row size mismatches).\n";
+            } //endif
+
+            std::cout << "[overall_norm] Done (unity override).\n";
+            std::cout << "============================================================\n";
+            return true;
+        } //endif kSkipAllWorkWriteUnityNorm
+
         const int c_xbmin = require_col(header, "xBmin");
         const int c_xbmax = require_col(header, "xBmax");
         const int c_q2min = require_col(header, "Q2min");
@@ -974,9 +1029,6 @@ bool print_bh_normalization_study(const std::string &csv_path,
         const std::string col_xs =
             "cross sections, ep->epg, exp, " + label + ", " + helicity;
         const int c_xs = require_col(header, col_xs);
-
-        const std::string col_norm = "norm, " + label;
-        const int c_norm = find_col_optional(header, col_norm);
 
         const double Ebeam = beam_energy_for_label(label);
         const Helicity hel = helicity_from_string(helicity);
