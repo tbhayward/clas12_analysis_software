@@ -175,24 +175,15 @@ public static void main(String[] args) {
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // boolean process_event = filter.isValid(research_Event);
-		    // boolean process_event = filter.isValid(research_Event) && 
-		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
-	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
-	    	// 	qa.OkForAsymmetry(runnum, evnum));
 	    	boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 ||  // MC
-	    		userProvidedOverride == 1 || // skip QADB
-		    	runnum < 3087 || // RGA Sp18 Inb
-		     	(runnum > 3306 && runnum < 3817) || // RGA Sp18 Inb
-		     	(runnum > 4003 && runnum < 5020) || // RGA Sp18 Inb
+		    	userProvidedOverride == 1 || // skip QADB
 		    	qa.pass(runnum, evnum));
 		    if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
-	    	if (runnum == 3867) process_event = false; // low yields
-	    	if (runnum == 3490 || runnum == 3508 || runnum == 3526 || runnum == 3528 || runnum == 3529 || runnum == 3530 || runnum == 3531 || runnum == 3532 || runnum == 3533 || runnum == 3534 || runnum == 3535 || runnum == 3538 || runnum == 3540 || runnum == 3544 ||runnum == 3545 || runnum == 3547 || runnum == 3548 || runnum == 3698 || runnum == 3709 || runnum == 3736 || runnum == 3793 || runnum == 3814 ||runnum == 3815 || runnum == 4018 || runnum == 4142 || runnum == 4145 || runnum == 4146 || runnum == 4160 || runnum == 4162 || runnum == 4160 || runnum == 4162 || runnum == 4163 || runnum == 4163 || runnum == 4176 || runnum == 4209 || runnum == 4227 || runnum == 4246 || runnum == 4252) process_event = false; // low yields
 	    	if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
-	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
-	    	if (runnum == 17331 || runnum == 16987 || runnum == 17079 || runnum == 17190 || runnum == 17639) process_event = false; // low live time
-	    	if (runnum == 16850 || runnum == 16851 || runnum == 16852 || runnum == 16855 || runnum == 16879) process_event = false; // luminosity scans
+	    	if (runnum > 17768 && runnum <= 17811) process_event = false; // outbending RGC Sp23
+	    	if ([17331, 16987, 17079, 17190, 17639].contains(runnum)) process_event = false; // low live time
+	    	if ([16850, 16851, 16852, 16855, 16879].contains(runnum)) process_event = false; // luminosity scans
 	    	
 		    if (process_event) {
 

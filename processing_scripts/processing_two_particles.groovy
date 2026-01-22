@@ -111,20 +111,31 @@ public static void main(String[] args) {
     qa.checkForDefect('ChargeNegative')
     qa.checkForDefect('ChargeUnknown')
     qa.checkForDefect('PossiblyNoBeam')
-    [
-        5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
-        5160, 5163, 5165, 5166, 5167, 5168, 5169, 5180,
-        5181, 5182, 5183, 5400, 5448, 5495, 5496, 5505,
-        5567, 5610, 5617, 5621, 5623, 6736, 6737, 6738,
+    // [
+    //     5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
+    //     5160, 5163, 5165, 5166, 5167, 5168, 5169, 5180,
+    //     5181, 5182, 5183, 5400, 5448, 5495, 5496, 5505,
+    //     5567, 5610, 5617, 5621, 5623, 6736, 6737, 6738,
+    //     6739, 6740, 6741, 6742, 6743, 6744, 6746, 6747,
+    //     6748, 6749, 6750, 6751, 6753, 6754, 6755, 6756,
+    //     6757,
+    //     16194, 16089, 16185, 16308, 16184, 16307, 16309,
+    //     16872, 16975,
+    //     17763, 17764, 17765, 17766, 17767, 17768,
+    //     17179, 17180, 17181, 17182, 17183, 17188, 17189,
+    //     17252
+    // ].each { run -> qa.allowMiscBit(run) }
+    [ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
+        6736, 6737, 6738,
         6739, 6740, 6741, 6742, 6743, 6744, 6746, 6747,
         6748, 6749, 6750, 6751, 6753, 6754, 6755, 6756,
-        6757,
-        16194, 16089, 16185, 16308, 16184, 16307, 16309,
-        16872, 16975,
-        17763, 17764, 17765, 17766, 17767, 17768,
-        17179, 17180, 17181, 17182, 17183, 17188, 17189,
+        6757,                                            // RGA runs FADC failure sector 6
+        16194, 16089, 16185, 16308, 16184, 16307, 16309, // RGC Su22 He/ET
+        16872, 16975,                                    // RGC Fa22 He/ET
+        17763, 17764, 17765, 17766, 17767, 17768,        // RGC Sp23 He/ET
+        17179, 17180, 17181, 17182, 17183, 17188, 17189, // RICH off/partially down
         17252
-    ].each { run -> qa.allowMiscBit(run) }
+    ].each{ run -> qa.allowMiscBit(run) }
 
     StringBuilder batchLines = new StringBuilder()
 
@@ -151,17 +162,17 @@ public static void main(String[] args) {
 
             PhysicsEvent research_Event = fitter.getPhysicsEvent(event)
 
+            // do not use the qa if it is MC (runnum = 11) 
+            // boolean process_event = filter.isValid(research_Event);
             boolean process_event = filter.isValid(research_Event) && 
                 (runnum == 11 ||  // MC
-                runnum > 19000 || 
                 userProvidedOverride == 1 || // skip QADB
-                runnum < 3087 || // RGA Sp18 Inb
-                (runnum > 3306 && runnum < 3817) || // RGA Sp18 Inb
-                (runnum > 4003 && runnum < 5020) || // RGA Sp18 Inb
                 qa.pass(runnum, evnum));
-            // if (runnum > 17768) process_event = false
-            if ([17331, 16987, 17079, 17190, 17639].contains(runnum)) process_event = false
-            if ([16850, 16851, 16852, 16855, 16879].contains(runnum)) process_event = false
+            if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
+            if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
+            if (runnum > 17768 && runnum <= 17811) process_event = false; // outbending RGC Sp23
+            if ([17331, 16987, 17079, 17190, 17639].contains(runnum)) process_event = false; // low live time
+            if ([16850, 16851, 16852, 16855, 16879].contains(runnum)) process_event = false; // luminosity scans
 
             // --- Toggle here ---
             // false -> baseline (no inverse-ISR)
