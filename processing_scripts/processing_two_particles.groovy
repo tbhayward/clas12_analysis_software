@@ -170,7 +170,7 @@ public static void main(String[] args) {
                 qa.pass(runnum, evnum));
             if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
             if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
-            if (runnum > 17768 && runnum <= 17811) process_event = false; // outbending RGC Sp23
+            if (!(runnum > 17768 && runnum <= 17811)) process_event = false; // outbending RGC Sp23
             if ([17331, 16987, 17079, 17190, 17639].contains(runnum)) process_event = false; // low live time
             if ([16850, 16851, 16852, 16855, 16879].contains(runnum)) process_event = false; // luminosity scans
 
