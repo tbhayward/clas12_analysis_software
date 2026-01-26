@@ -296,10 +296,25 @@ static FilledHists fillStageHists(
         out.data[var] = dh; out.mc[var] = mh;
     }
 
-    const GlobalCutConfig& gcfg = default_global_cuts();
+    // IMPORTANT:
+    // This module explicitly loops over Topology and already applies passesTopology().
+    // However, default_global_cuts() may have enable_topology_filter=true, and the
+    // fail-fast policy requires that we *never* call the legacy overloads in that case.
+    //
+    // Therefore we:
+    //   - make a local mutable cfg copy,
+    //   - explicitly set required_detector1/2 to match the current topo,
+    //   - and always call the topology-aware passes_global_cuts overloads.
+    GlobalCutConfig gcfg = default_global_cuts();
+    gcfg.enable_topology_filter = true;
+
+    if (topo == Topology::FD_FD) { gcfg.required_detector1 = 1; gcfg.required_detector2 = 1; }
+    if (topo == Topology::CD_FD) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 1; }
+    if (topo == Topology::CD_FT) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 0; }
 
     auto passesGlobal = [&](const BranchBinder& b)->bool {
         if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
+        if (!(b.has_detector1 && b.has_detector2)) return false;
 
         if (gcfg.enable_dvcsgen_ycol_cut) {
             if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
@@ -319,7 +334,9 @@ static FilledHists fillStageHists(
                                       gcfg);
         }
 
-        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, gcfg);
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  gcfg);
     };
 
     // Data loop
