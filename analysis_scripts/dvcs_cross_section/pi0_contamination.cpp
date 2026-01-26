@@ -454,7 +454,7 @@ static bool passes_global_cuts_dispatch(const BaseVars &v,
         }
 
         return passes_global_cuts(v.t1, v.open_angle_ep2, v.pTmiss,
-                                  b.detector1, b.detector2,
+                                  v.detector1, v.detector2,
                                   period_label,
                                   v.e_p, v.e_theta, v.e_phi,
                                   v.p2_p, v.p2_theta, v.p2_phi,
