@@ -4,100 +4,48 @@
 #include <string>
 #include <vector>
 
-// global_cuts.h
-#pragma once
-
-/*
- * Global, universal event-level cuts for DVCS analysis.
- *
- * Base cuts applied everywhere:
- *   (-t1) < t1_abs_max
- *   open_angle_ep2 > open_angle_min_deg (deg)
- *   pTmiss <= pTmiss_max (GeV)
- *
- * Optional (ON by default): dvcsgen --ycol cut mirror.
- *
- * Empirically (from your diagnostic), dvcsgen generated with:
- *   --ycol 0.005
- * enforces:
- *   P2_pos > 0.005
- * where:
- *   Q2_calc = - (k - kprime)^2
- *   P2_pos  = 2 (kprime . qgamma) / Q2_calc
- *
- * This requires the beam energy and the electron/photon kinematics.
- */
-
+// -----------------------------------------------------------------------------
+// GlobalCutConfig
+//
+// This struct defines analysis-wide cuts that all stages should share.
+// It is intentionally "fail-fast":
+//   - If enable_dvcsgen_ycol_cut is true, callers must use the overloads that
+//     provide the required kinematics.
+//   - If enable_topology_filter is true, callers must use the overloads that
+//     provide detector1 and detector2.
+// -----------------------------------------------------------------------------
 struct GlobalCutConfig {
-    double t1_abs_max = 1.0;
-    double open_angle_min_deg = 5.0;
-    double pTmiss_max = 0.20; // (GeV)
+    // Baseline global DVCS exclusivity-style cuts
+    double t1_abs_max         = 1.0;  // cut is (-t1) < t1_abs_max
+    double open_angle_min_deg = 5.0;  // open_angle_ep2_deg > open_angle_min_deg
+    double pTmiss_max         = 0.2;  // pTmiss <= pTmiss_max
 
-    // dvcsgen ycol cut mirror (ON by default)
-    bool   enable_dvcsgen_ycol_cut = true;
-    double dvcsgen_ycol_cut = 0.005; // dimensionless threshold on P2_pos
+    // Optional dvcsgen P2_pos (ycol / propagator) cut
+    bool   enable_dvcsgen_ycol_cut = false;
+    double dvcsgen_ycol_cut        = 0.005;
 
-    // Runs to exclude globally (data quality blacklist).
-    std::vector<int> excluded_runs = {
-        3867, 5046, 5047, 5051, 5128, 5129, 5130, 5160, 5163, 5165, 5166, 5167, 5168, 5169,
-        5180, 5181, 5182, 5183, 5247, 5448, 5495, 5496, 5615, 5567
-    };
+    // Optional topology filter (detector1/detector2)
+    //
+    // detector1 is proton region (expected: 1 FD or 2 CD)
+    // detector2 is photon region (expected: 0 FT or 1 FD)
+    //
+    // If enable_topology_filter is true, ALL callers must use the overloads
+    // that provide detector1 and detector2; otherwise we throw FATAL.
+    bool enable_topology_filter = false;
+
+    // Required detector assignments when topology filtering is enabled.
+    // Must be in {0,1,2} when enable_topology_filter == true.
+    int required_detector1 = 1;  // default FD (ignored unless enabled)
+    int required_detector2 = 1;  // default FD (ignored unless enabled)
+
+    // Run blacklist (global)
+    std::vector<int> excluded_runs;
 };
 
+// Default config instance (process-wide)
 const GlobalCutConfig& default_global_cuts();
 
-// Base version: only the three universal cuts.
-// FAIL-FAST if cfg.enable_dvcsgen_ycol_cut is true (because additional inputs are required).
-bool passes_global_cuts(double t1,
-                        double open_angle_ep2_deg,
-                        double pTmiss,
-                        const GlobalCutConfig& cfg = default_global_cuts());
-
-// Extended version (explicit Ebeam): includes optional dvcsgen ycol cut mirror.
-// Angles must be in radians (as in your ROOT branches).
-bool passes_global_cuts(double t1,
-                        double open_angle_ep2_deg,
-                        double pTmiss,
-                        double Ebeam,
-                        double e_p,
-                        double e_theta,
-                        double e_phi,
-                        double p2_p,
-                        double p2_theta,
-                        double p2_phi,
-                        const GlobalCutConfig& cfg = default_global_cuts());
-
-// Extended version (period label): looks up Ebeam deterministically from the run period label.
-// Allowed labels (exact):
-//   sp18_inb, sp18_out, fa18_inb, fa18_out, sp19_inb
-bool passes_global_cuts(double t1,
-                        double open_angle_ep2_deg,
-                        double pTmiss,
-                        const std::string& period_label,
-                        double e_p,
-                        double e_theta,
-                        double e_phi,
-                        double p2_p,
-                        double p2_theta,
-                        double p2_phi,
-                        const GlobalCutConfig& cfg = default_global_cuts());
-
-// NEW: check if a run is globally blacklisted.
-bool is_excluded_run(int runnum,
-                     const GlobalCutConfig& cfg = default_global_cuts());
-
-// Convenience: ROOT-style TCut string for base cuts only.
-// FAIL-FAST if cfg.enable_dvcsgen_ycol_cut is true (use the C++ cut instead).
-std::string global_cuts_tcut(const GlobalCutConfig& cfg = default_global_cuts());
-
-// Persist the configuration once for provenance.
-void write_global_cuts_config_json(const std::string& out_json_dir,
-                                  const GlobalCutConfig& cfg = default_global_cuts());
-
-struct GlobalCutConfig;
-
-// Return the dvcsgen "ycol" scalar used by the propagator cut (P2_pos).
-// This is computed identically to the internal quantity used inside passes_global_cuts.
+// dvcsgen ycol helper (exposed for diagnostics/plotting)
 double dvcsgen_ycol_value(double Ebeam,
                           double e_p,
                           double e_theta,
@@ -115,5 +63,93 @@ double dvcsgen_ycol_value(const std::string& period_label,
                           double p2_theta,
                           double p2_phi,
                           const GlobalCutConfig& cfg);
+
+// -----------------------------------------------------------------------------
+// passes_global_cuts overloads
+//
+// NOTE:
+//  - If cfg.enable_dvcsgen_ycol_cut is true, you must call an overload that
+//    provides the needed kinematics (or we throw FATAL).
+//  - If cfg.enable_topology_filter is true, you must call an overload that
+//    provides detector1 and detector2 (or we throw FATAL).
+// -----------------------------------------------------------------------------
+
+// Legacy overload: no kinematics, no topology.
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        const GlobalCutConfig& cfg);
+
+// Legacy overload: with ycol kinematics, but no topology.
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        double Ebeam,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        const std::string& period_label,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+// NEW: topology-aware overloads (detector1/detector2), no ycol kinematics.
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const GlobalCutConfig& cfg);
+
+// NEW: topology-aware overloads with ycol kinematics.
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        double Ebeam,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const std::string& period_label,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+// Run exclusion helper
+bool is_excluded_run(int runnum, const GlobalCutConfig& cfg = default_global_cuts());
+
+// ROOT TCut helper (only valid when ycol and topology filters are disabled)
+std::string global_cuts_tcut(const GlobalCutConfig& cfg = default_global_cuts());
+
+// JSON writer for config echoing
+void write_global_cuts_config_json(const std::string& out_json_dir,
+                                  const GlobalCutConfig& cfg = default_global_cuts());
 
 #endif // GLOBAL_CUTS_H

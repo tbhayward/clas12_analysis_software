@@ -366,6 +366,7 @@ static inline bool passes_global(bool is_mc,
         }
 
         return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
                                   period_label_internal,
                                   b.e_p, b.e_theta, b.e_phi,
                                   b.p2_p, b.p2_theta, b.p2_phi,

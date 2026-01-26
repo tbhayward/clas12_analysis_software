@@ -11,6 +11,19 @@
 
 #include <TLorentzVector.h>
 
+// -----------------------------------------------------------------------------
+// USER TOGGLES (edit here, recompile, rerun)
+//
+// Topology splitting:
+//   enable_topology_filter = true
+//   required_detector1/2 set as (p-region, gamma-region):
+//     FD_FD: (1, 1)
+//     CD_FD: (2, 1)
+//     CD_FT: (2, 0)
+//
+// If enable_topology_filter is true, all callers MUST pass detector1/2 into the
+// topology-aware passes_global_cuts(...) overloads, or we throw FATAL.
+// -----------------------------------------------------------------------------
 static GlobalCutConfig g_default_cfg; // default-initialized to values in header
 
 const GlobalCutConfig& default_global_cuts() {
@@ -19,6 +32,31 @@ const GlobalCutConfig& default_global_cuts() {
 
 static void fatal_global(const std::string& msg) {
     throw std::runtime_error(std::string("[global_cuts] FATAL: ") + msg);
+}
+
+static void validate_topology_cfg_or_fatal(const GlobalCutConfig& cfg) {
+    if (!cfg.enable_topology_filter) return;
+
+    auto ok_det = [](int d)->bool { return (d == 0 || d == 1 || d == 2); };
+
+    if (!ok_det(cfg.required_detector1) || !ok_det(cfg.required_detector2)) {
+        std::ostringstream ss;
+        ss << "enable_topology_filter is true, but required_detector1/2 are invalid. "
+           << "Got (required_detector1=" << cfg.required_detector1
+           << ", required_detector2=" << cfg.required_detector2
+           << "). Allowed detector codes are {0,1,2}.";
+        fatal_global(ss.str());
+    }
+}
+
+static bool passes_topology_filter(int detector1, int detector2, const GlobalCutConfig& cfg) {
+    if (!cfg.enable_topology_filter) return true;
+
+    validate_topology_cfg_or_fatal(cfg);
+
+    if (detector1 != cfg.required_detector1) return false;
+    if (detector2 != cfg.required_detector2) return false;
+    return true;
 }
 
 static double beam_energy_for_period_label(const std::string& period_label) {
@@ -119,12 +157,19 @@ double dvcsgen_ycol_value(const std::string& period_label,
     return dvcsgen_ycol_value(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi, cfg);
 }
 
+// -----------------------------------------------------------------------------
+// passes_global_cuts overloads (legacy)
+// -----------------------------------------------------------------------------
+
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
                         double pTmiss,
                         const GlobalCutConfig& cfg) {
     if (cfg.enable_dvcsgen_ycol_cut) {
         fatal_global("dvcsgen ycol cut enabled but called base passes_global_cuts() without kinematics");
+    }
+    if (cfg.enable_topology_filter) {
+        fatal_global("topology filter enabled but called passes_global_cuts() without detector1/detector2");
     }
 
     if ((-t1) >= cfg.t1_abs_max) return false;
@@ -145,6 +190,10 @@ bool passes_global_cuts(double t1,
                         double p2_theta,
                         double p2_phi,
                         const GlobalCutConfig& cfg) {
+    if (cfg.enable_topology_filter) {
+        fatal_global("topology filter enabled but called passes_global_cuts(ycol) without detector1/detector2");
+    }
+
     if ((-t1) >= cfg.t1_abs_max) return false;
     if (open_angle_ep2_deg <= cfg.open_angle_min_deg) return false;
     if (pTmiss > cfg.pTmiss_max) return false;
@@ -183,6 +232,90 @@ bool passes_global_cuts(double t1,
                               cfg);
 }
 
+// -----------------------------------------------------------------------------
+// passes_global_cuts overloads (NEW: topology-aware)
+// -----------------------------------------------------------------------------
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const GlobalCutConfig& cfg) {
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        fatal_global("dvcsgen ycol cut enabled but called topology-aware passes_global_cuts() without kinematics");
+    }
+
+    if (!passes_topology_filter(detector1, detector2, cfg)) return false;
+
+    if ((-t1) >= cfg.t1_abs_max) return false;
+    if (open_angle_ep2_deg <= cfg.open_angle_min_deg) return false;
+    if (pTmiss > cfg.pTmiss_max) return false;
+
+    return true;
+}
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        double Ebeam,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg) {
+    if (!passes_topology_filter(detector1, detector2, cfg)) return false;
+
+    if ((-t1) >= cfg.t1_abs_max) return false;
+    if (open_angle_ep2_deg <= cfg.open_angle_min_deg) return false;
+    if (pTmiss > cfg.pTmiss_max) return false;
+
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        const double ycol = compute_P2_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi);
+        if (!(ycol > cfg.dvcsgen_ycol_cut)) return false;
+    }
+
+    return true;
+}
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const std::string& period_label,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg) {
+    const double Ebeam = beam_energy_for_period_label(period_label);
+
+    return passes_global_cuts(t1,
+                              open_angle_ep2_deg,
+                              pTmiss,
+                              detector1,
+                              detector2,
+                              Ebeam,
+                              e_p,
+                              e_theta,
+                              e_phi,
+                              p2_p,
+                              p2_theta,
+                              p2_phi,
+                              cfg);
+}
+
+// -----------------------------------------------------------------------------
+// Run exclusion helper
+// -----------------------------------------------------------------------------
+
 bool is_excluded_run(int runnum, const GlobalCutConfig& cfg) {
     static std::unordered_set<int> s_runs;
     static bool initialized = false;
@@ -198,9 +331,16 @@ bool is_excluded_run(int runnum, const GlobalCutConfig& cfg) {
     return s_runs.find(runnum) != s_runs.end();
 }
 
+// -----------------------------------------------------------------------------
+// ROOT TCut helper (only valid when ycol and topology filters are disabled)
+// -----------------------------------------------------------------------------
+
 std::string global_cuts_tcut(const GlobalCutConfig& cfg) {
     if (cfg.enable_dvcsgen_ycol_cut) {
         fatal_global("global_cuts_tcut: dvcsgen ycol cut enabled; use C++ cut (needs kinematics)");
+    }
+    if (cfg.enable_topology_filter) {
+        fatal_global("global_cuts_tcut: topology filter enabled; use C++ cut (needs detector1/detector2)");
     }
 
     std::ostringstream ss;
@@ -209,6 +349,10 @@ std::string global_cuts_tcut(const GlobalCutConfig& cfg) {
        << " && pTmiss <= " << std::fixed << std::setprecision(2) << cfg.pTmiss_max;
     return ss.str();
 }
+
+// -----------------------------------------------------------------------------
+// JSON writer for config echoing
+// -----------------------------------------------------------------------------
 
 void write_global_cuts_config_json(const std::string& out_json_dir,
                                   const GlobalCutConfig& cfg) {
@@ -225,6 +369,9 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"pTmiss_max\": " << std::setprecision(6) << cfg.pTmiss_max << ",\n"
         << "  \"enable_dvcsgen_ycol_cut\": " << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false") << ",\n"
         << "  \"dvcsgen_ycol_cut\": " << std::setprecision(6) << cfg.dvcsgen_ycol_cut << ",\n"
+        << "  \"enable_topology_filter\": " << (cfg.enable_topology_filter ? "true" : "false") << ",\n"
+        << "  \"required_detector1\": " << cfg.required_detector1 << ",\n"
+        << "  \"required_detector2\": " << cfg.required_detector2 << ",\n"
         << "  \"beam_energy_by_period_label\": {\n"
         << "    \"sp18_inb\": 10.594,\n"
         << "    \"sp18_out\": 10.594,\n"
