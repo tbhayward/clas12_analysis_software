@@ -31,12 +31,13 @@ struct GlobalCutConfig {
     //
     // If enable_topology_filter is true, ALL callers must use the overloads
     // that provide detector1 and detector2; otherwise we throw FATAL.
-    bool enable_topology_filter = false;
+    bool enable_topology_filter = true;
 
     // Required detector assignments when topology filtering is enabled.
     // Must be in {0,1,2} when enable_topology_filter == true.
-    int required_detector1 = 1;  // default FD (ignored unless enabled)
-    int required_detector2 = 1;  // default FD (ignored unless enabled)
+    // 0 = FT, 1 = FD, 2 = CD
+    int required_detector1 = 1;  // proton detector (ignored unless enabled)
+    int required_detector2 = 1;  // photon detector (ignored unless enabled)
 
     // Run blacklist (global)
     std::vector<int> excluded_runs;
