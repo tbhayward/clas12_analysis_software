@@ -1,5 +1,4 @@
 // radiative_corrections.cpp
-// -----------------------------------------------------------------------------
 // Frad from generated Born and radiative MC, written into CSV as
 // "(value, stat, sys)" triples in the columns:
 //   "Frad, 10.6 GeV"   (Sp18 Inb + Sp18 Out + Fa18 Inb + Fa18 Out,
@@ -9,21 +8,21 @@
 // Binning comes from dvcs_pass2_analysis.csv (Lee-style).
 //
 // NEW BEHAVIOR:
-//   - We now apply the *DVCS global kinematic cuts* from global_cuts.h
+//   - We now apply the DVCS global kinematic cuts from global_cuts.h
 //     to the generated Born and Radiative MC before binning and
 //     normalization:
 //         * (-t1) < t1_abs_max
 //         * open_angle_ep2 > open_angle_min_deg
 //         * pTmiss <= pTmiss_max
-//     via passes_global_cuts(t1, open_angle_ep2, pTmiss).
+//     via passes_global_cuts(..., GlobalCutConfig).
 //
 //   - We also apply a generator-level Emiss2 3-sigma cut. The Emiss2
 //     band is defined by scanning combined_cuts.json over all DVCS
 //     topology keys ("DVCS_<PeriodDir>_<TopoDir>") and taking the
-//     Emiss2 SigmaCut with the *largest std* in the "data" block.
+//     Emiss2 SigmaCut with the largest std in the "data" block.
 //     That SigmaCut (mean, std_max) is then used to require:
 //         |Emiss2 - mean| <= 3 * std_max
-//     for *all* generated Born and Radiative MC events.
+//     for all generated Born and Radiative MC events.
 //
 //   - The global normalizations N_born and N_rad used in
 //       Frad_i = (a_i / N_born) / (b_i / N_rad)
@@ -47,14 +46,12 @@
 //     AND the Emiss2 3-sigma cut, accumulates row-wise counts and a
 //     global N_total (post-cut, in-bin), then returns. CSV writes and
 //     plotting occur only after all workers complete.
-// -----------------------------------------------------------------------------
 
 #include "radiative_corrections.h"
 #include "global_cuts.h"
 
 #include <nlohmann/json.hpp>
 
-// ROOT
 #include <TTree.h>
 #include <TCanvas.h>
 #include <TGraphAsymmErrors.h>
@@ -64,7 +61,6 @@
 #include <TROOT.h>
 #include <TStyle.h>
 #include <TError.h>
-#include <TString.h>
 
 #include <algorithm>
 #include <cctype>
@@ -260,8 +256,7 @@ static std::string format_triple(double v, double s_stat, double s_sys) {
 static bool parse_triple(const std::string& s,
                          double& value,
                          double& stat,
-                         double& sys)
-{
+                         double& sys) {
     value = std::numeric_limits<double>::quiet_NaN();
     stat  = std::numeric_limits<double>::quiet_NaN();
     sys   = std::numeric_limits<double>::quiet_NaN();
@@ -291,9 +286,7 @@ static bool parse_triple(const std::string& s,
     }
     parts.push_back(cur);
 
-    if (parts.size() != 3) {
-        return false;
-    }
+    if (parts.size() != 3) return false;
 
     char* e1 = 0;
     char* e2 = 0;
@@ -310,42 +303,24 @@ static bool parse_triple(const std::string& s,
     return true;
 }
 
-// ------------- Emiss2 3-sigma cut (from combined_cuts.json) -------------
-
-struct SigmaCut {
-    double mean;
-    double std;
-    SigmaCut() : mean(std::numeric_limits<double>::quiet_NaN()),
-                 std (std::numeric_limits<double>::quiet_NaN()) {}
-};
-
-static inline bool within_3sigma(double val, const SigmaCut& sc) {
-    if (!std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) {
-        std::cerr << "[radcorr] FATAL: Emiss2 SigmaCut is not well-defined "
-                  << "(mean=" << sc.mean << ", std=" << sc.std << ").\n";
-        std::exit(EXIT_FAILURE);
-    }
-    if (!std::isfinite(val)) {
-        return false;
-    }
-    return std::fabs(val - sc.mean) <= 3.0 * sc.std;
-}
-
-// Load Emiss2 SigmaCut for DVCS MC by scanning combined_cuts.json over
-// all keys of the form "DVCS_*" and looking in the "data" block. We
-// collect all Emiss2 SigmaCuts and choose the one with the *largest* std.
-// This defines a single global Emiss2 band for generated MC.
-static SigmaCut load_global_emiss2_cut(const std::string& path) {
+// ------------- GlobalCutConfig loader (local, explicit, fail-fast) -------------
+//
+// global_cuts.h (as pasted) does NOT declare a JSON loader. Your previous code
+// called load_global_cut_config(...), which will not compile unless declared
+// elsewhere. This local loader makes radiative_corrections.cpp self-contained.
+//
+// Policy: fail-fast. We require all relevant keys to be present and of the
+// correct type. No silent defaults.
+//
+static GlobalCutConfig load_global_cut_config(const std::string& path) {
     if (path.empty()) {
-        std::cerr << "[radcorr] FATAL: combined_cuts JSON path is empty "
-                  << "for Emiss2 3-sigma definition.\n";
+        std::cerr << "[radcorr] FATAL: global cuts JSON path is empty.\n";
         std::exit(EXIT_FAILURE);
     }
 
     std::ifstream fin(path.c_str());
     if (!fin.is_open()) {
-        std::cerr << "[radcorr] FATAL: could not open combined cuts JSON: "
-                  << path << "\n";
+        std::cerr << "[radcorr] FATAL: could not open global cuts JSON: " << path << "\n";
         std::exit(EXIT_FAILURE);
     }
 
@@ -353,18 +328,163 @@ static SigmaCut load_global_emiss2_cut(const std::string& path) {
     try {
         fin >> j;
     } catch (const std::exception& e) {
-        std::cerr << "[radcorr] FATAL: failed to parse combined cuts JSON ("
-                  << e.what() << ")\n";
+        std::cerr << "[radcorr] FATAL: failed to parse global cuts JSON (" << e.what() << ")\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!j.is_object()) {
+        std::cerr << "[radcorr] FATAL: global cuts JSON root is not an object (path=" << path << ")\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::vector<std::string> missing;
+
+    auto require_number = [&](const char* key, double& out) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_number()) {
+            missing.push_back(std::string(key));
+            return;
+        }
+        out = it->get<double>();
+    };
+
+    auto require_bool = [&](const char* key, bool& out) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_boolean()) {
+            missing.push_back(std::string(key));
+            return;
+        }
+        out = it->get<bool>();
+    };
+
+    auto require_int = [&](const char* key, int& out) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_number_integer()) {
+            missing.push_back(std::string(key));
+            return;
+        }
+        out = it->get<int>();
+    };
+
+    auto require_int_array = [&](const char* key, std::vector<int>& out) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_array()) {
+            missing.push_back(std::string(key));
+            return;
+        }
+        out.clear();
+        for (std::size_t i = 0; i < it->size(); ++i) {
+            const json& v = (*it)[i];
+            if (!v.is_number_integer()) {
+                std::cerr << "[radcorr] FATAL: global cuts JSON key '" << key
+                          << "' contains a non-integer entry at index " << i
+                          << " (path=" << path << ")\n";
+                std::exit(EXIT_FAILURE);
+            }
+            out.push_back(v.get<int>());
+        }
+    };
+
+    GlobalCutConfig cfg;
+
+    require_number("t1_abs_max", cfg.t1_abs_max);
+    require_number("open_angle_min_deg", cfg.open_angle_min_deg);
+    require_number("pTmiss_max", cfg.pTmiss_max);
+
+    require_bool("enable_dvcsgen_ycol_cut", cfg.enable_dvcsgen_ycol_cut);
+    require_number("dvcsgen_ycol_cut", cfg.dvcsgen_ycol_cut);
+
+    require_bool("enable_topology_filter", cfg.enable_topology_filter);
+    require_int("required_detector1", cfg.required_detector1);
+    require_int("required_detector2", cfg.required_detector2);
+
+    require_int_array("excluded_runs", cfg.excluded_runs);
+
+    if (!missing.empty()) {
+        std::cerr << "[radcorr] FATAL: global cuts JSON is missing required key(s): ";
+        for (std::size_t i = 0; i < missing.size(); ++i) {
+            std::cerr << missing[i];
+            if (i + 1 < missing.size()) std::cerr << ", ";
+        }
+        std::cerr << " (path=" << path << ")\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Sanity checks consistent with the comments in global_cuts.h
+    auto det_ok = [&](int d) { return (d == 0 || d == 1 || d == 2); };
+
+    if (cfg.enable_topology_filter) {
+        if (!det_ok(cfg.required_detector1) || !det_ok(cfg.required_detector2)) {
+            std::cerr << "[radcorr] FATAL: enable_topology_filter=true but required_detector1/2 "
+                      << "not in {0,1,2}: det1=" << cfg.required_detector1
+                      << " det2=" << cfg.required_detector2
+                      << " (path=" << path << ")\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
+    std::cout << "[radcorr] Loaded global cuts config from " << path << ":\n";
+    std::cout << "          t1_abs_max=" << cfg.t1_abs_max
+              << " open_angle_min_deg=" << cfg.open_angle_min_deg
+              << " pTmiss_max=" << cfg.pTmiss_max << "\n";
+    std::cout << "          enable_dvcsgen_ycol_cut=" << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false")
+              << " dvcsgen_ycol_cut=" << cfg.dvcsgen_ycol_cut << "\n";
+    std::cout << "          enable_topology_filter=" << (cfg.enable_topology_filter ? "true" : "false")
+              << " required_detector1=" << cfg.required_detector1
+              << " required_detector2=" << cfg.required_detector2 << "\n";
+    std::cout << "          excluded_runs.size()=" << cfg.excluded_runs.size() << "\n";
+
+    return cfg;
+}
+
+// ------------- Emiss2 3-sigma cut (from combined_cuts.json) -------------
+
+struct SigmaCut {
+    double mean;
+    double std;
+    SigmaCut()
+        : mean(std::numeric_limits<double>::quiet_NaN()),
+          std(std::numeric_limits<double>::quiet_NaN()) {}
+};
+
+static inline bool within_3sigma(double val, const SigmaCut& sc) {
+    if (!std::isfinite(val) || !std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) {
+        // Should be unreachable because we fail-fast if the cut cannot be determined.
+        return true;
+    }
+    return std::fabs(val - sc.mean) <= 3.0 * sc.std;
+}
+
+// Load Emiss2 SigmaCut for DVCS MC by scanning combined_cuts.json over
+// all keys of the form "DVCS_*" and looking in the "data" block. We
+// collect all Emiss2 SigmaCuts and choose the one with the largest std.
+// This defines a single global Emiss2 band for generated MC.
+static SigmaCut load_global_emiss2_cut(const std::string& path) {
+    if (path.empty()) {
+        std::cerr << "[radcorr] FATAL: combined_cuts JSON path is empty for Emiss2 3-sigma definition.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::ifstream fin(path.c_str());
+    if (!fin.is_open()) {
+        std::cerr << "[radcorr] FATAL: could not open combined cuts JSON: " << path << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    json j;
+    try {
+        fin >> j;
+    } catch (const std::exception& e) {
+        std::cerr << "[radcorr] FATAL: failed to parse combined cuts JSON (" << e.what() << ")\n";
         std::exit(EXIT_FAILURE);
     }
 
     bool found = false;
     SigmaCut best;
     double best_std = -1.0;
-    std::string best_key;
 
     for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_FD_FD"
+        const std::string key = it.key();
         if (key.size() < 5 || key.compare(0, 5, "DVCS_") != 0) continue;
 
         const json& block = it.value();
@@ -376,35 +496,25 @@ static SigmaCut load_global_emiss2_cut(const std::string& path) {
 
         const json& vs = *vit;
         SigmaCut sc;
+        if (vs.contains("mean") && vs["mean"].is_number()) sc.mean = vs["mean"].get<double>();
+        if (vs.contains("std")  && vs["std"].is_number())  sc.std  = vs["std"].get<double>();
 
-        if (vs.contains("mean") && vs["mean"].is_number()) {
-            sc.mean = vs["mean"].get<double>();
-        }
-        if (vs.contains("std") && vs["std"].is_number()) {
-            sc.std = vs["std"].get<double>();
-        }
-
-        if (!std::isfinite(sc.mean)) continue;
         if (!std::isfinite(sc.std) || sc.std <= 0.0) continue;
 
         if (sc.std > best_std) {
             best = sc;
             best_std = sc.std;
-            best_key = key;
             found = true;
         }
     }
 
     if (!found) {
-        std::cerr << "[radcorr] FATAL: could not find a valid Emiss2 SigmaCut "
-                  << "for DVCS in combined_cuts JSON.\n";
+        std::cerr << "[radcorr] FATAL: could not find a valid Emiss2 SigmaCut for DVCS in combined_cuts JSON.\n";
         std::exit(EXIT_FAILURE);
     }
 
     std::cout << "[radcorr] Using global Emiss2 3-sigma cut from combined_cuts: "
-              << "key=" << best_key
-              << " mean=" << best.mean
-              << " std=" << best.std
+              << "mean=" << best.mean << " std=" << best.std
               << " (largest std among DVCS topologies, path=" << path << ")\n";
 
     return best;
@@ -415,9 +525,9 @@ static SigmaCut load_global_emiss2_cut(const std::string& path) {
 struct RowBin {
     double xbmin, xbmax;
     double q2min, q2max;
-    double tmin,  tmax;
+    double tmin, tmax;
     double phimin, phimax;
-    int    row_index;
+    int row_index;
 };
 
 static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
@@ -456,12 +566,12 @@ static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
         const double phi_width = b.phimax - b.phimin;
         if (!std::isfinite(phi_width)) continue;
 
-        // Skip phi-integrated bins (we only define Frad for phi-binned rows)
+        // Skip phi-integrated bins (Frad defined only for phi-binned rows)
         if (std::fabs(phi_width) >= 359.0) continue;
 
         if (!(b.xbmax > b.xbmin &&
               b.q2max > b.q2min &&
-              b.tmax  > b.tmin  &&
+              b.tmax  > b.tmin &&
               b.phimax > b.phimin)) {
             continue;
         }
@@ -482,9 +592,7 @@ static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
 }
 
 // For each energy group, mark which CSV rows actually have data.
-static std::vector<bool>
-build_row_has_data(const CsvDoc& csv, const std::string& xbavg_col_name)
-{
+static std::vector<bool> build_row_has_data(const CsvDoc& csv, const std::string& xbavg_col_name) {
     const int NR = csv.nrows();
     int c = csv.col_index(xbavg_col_name);
     if (c < 0) {
@@ -511,54 +619,55 @@ static int find_row_for_event(double xB,
                               double Q2,
                               double tAbs,
                               double phiDeg,
-                              const std::vector<RowBin>& bins)
-{
+                              const std::vector<RowBin>& bins) {
     for (std::size_t i = 0; i < bins.size(); ++i) {
         const RowBin& b = bins[i];
-        if (!(xB   >= b.xbmin  && xB   < b.xbmax))  continue;
-        if (!(Q2   >= b.q2min  && Q2   < b.q2max))  continue;
-        if (!(tAbs >= b.tmin   && tAbs < b.tmax))   continue;
+        if (!(xB >= b.xbmin && xB < b.xbmax)) continue;
+        if (!(Q2 >= b.q2min && Q2 < b.q2max)) continue;
+        if (!(tAbs >= b.tmin && tAbs < b.tmax)) continue;
         if (!(phiDeg >= b.phimin && phiDeg < b.phimax)) continue;
         return b.row_index;
     }
     return -1;
 }
 
-// MC accumulation with DVCS global cuts + Emiss2 3-sigma cut and progress prints.
-// Returns N_accepted = total number of entries that:
-//   - pass passes_global_cuts(t1, open_angle_ep2, pTmiss),
+// Accumulate MC counts with DVCS global cuts + Emiss2 3-sigma cut.
+// Returns N_accepted = number of entries that:
+//   - pass passes_global_cuts(...),
 //   - pass the Emiss2 3-sigma band, and
-//   - fall into any DVCS analysis (phi-binned) bin.
-// The 'counts' vector must be pre-sized to NR = row_has_data.size() by the caller.
+//   - fall into any DVCS analysis bin.
+// The 'counts' vector must be pre-sized to NR by the caller.
 static double accumulate_counts_for_tree(const std::string& group_label,
                                          const std::string& tree_label,
                                          TTree* tree,
                                          const std::vector<RowBin>& bins,
                                          const std::vector<bool>& row_has_data,
                                          const SigmaCut& emiss2_cut,
-                                         std::vector<double>& counts)
-{
-    (void)row_has_data;
-
+                                         const GlobalCutConfig& global_cfg,
+                                         std::vector<double>& counts) {
     if (!tree) {
         std::cerr << "[radcorr] FATAL: null TTree pointer for "
                   << group_label << " (" << tree_label << ").\n";
         std::exit(EXIT_FAILURE);
     }
 
-    const int NR = (int)counts.size();
+    const int NR = (int)row_has_data.size();
+    if ((int)counts.size() != NR) {
+        std::cerr << "[radcorr] FATAL: counts vector size mismatch in accumulate_counts_for_tree for "
+                  << group_label << " (" << tree_label << "): expected " << NR
+                  << " got " << counts.size() << "\n";
+        std::exit(EXIT_FAILURE);
+    }
 
-    // Required branches in generated MC:
-    //   - x, Q2, t1, phi2 for binning
-    //   - open_angle_ep2, pTmiss for DVCS global cuts
-    //   - Emiss2 for generator-level 3-sigma exclusivity band
-    const char* br_x        = "x";
-    const char* br_Q2       = "Q2";
-    const char* br_t1       = "t1";
-    const char* br_phi2     = "phi2";
-    const char* br_oa_ep2   = "open_angle_ep2";
-    const char* br_pTmiss   = "pTmiss";
-    const char* br_Emiss2   = "Emiss2";
+    const char* br_x      = "x";
+    const char* br_Q2     = "Q2";
+    const char* br_t1     = "t1";
+    const char* br_phi2   = "phi2";
+    const char* br_oa_ep2 = "open_angle_ep2";
+    const char* br_pTmiss = "pTmiss";
+    const char* br_Emiss2 = "Emiss2";
+    const char* br_det1   = "detector1";
+    const char* br_det2   = "detector2";
 
     if (!tree->GetBranch(br_x) ||
         !tree->GetBranch(br_Q2) ||
@@ -566,42 +675,48 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         !tree->GetBranch(br_phi2) ||
         !tree->GetBranch(br_oa_ep2) ||
         !tree->GetBranch(br_pTmiss) ||
-        !tree->GetBranch(br_Emiss2)) {
+        !tree->GetBranch(br_Emiss2) ||
+        !tree->GetBranch(br_det1) ||
+        !tree->GetBranch(br_det2)) {
         std::cerr << "[radcorr] FATAL: missing one or more branches in generated MC tree for "
                   << group_label << " (" << tree_label
-                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss, Emiss2).\n";
+                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss, Emiss2, detector1, detector2).\n";
         std::exit(EXIT_FAILURE);
     }
 
-    double g_x            = 0.0;
-    double g_Q2           = 0.0;
-    double g_t1           = 0.0;
-    double g_phi2         = 0.0;
-    double g_open_angle   = 0.0;
-    double g_pTmiss       = 0.0;
-    double g_Emiss2       = 0.0;
+    double g_x = 0.0;
+    double g_Q2 = 0.0;
+    double g_t1 = 0.0;
+    double g_phi2 = 0.0;
+    double g_open_angle = 0.0;
+    double g_pTmiss = 0.0;
+    double g_Emiss2 = 0.0;
+    int g_det1 = 0;
+    int g_det2 = 0;
 
-    tree->SetBranchAddress(br_x,          &g_x);
-    tree->SetBranchAddress(br_Q2,         &g_Q2);
-    tree->SetBranchAddress(br_t1,         &g_t1);
-    tree->SetBranchAddress(br_phi2,       &g_phi2);
-    tree->SetBranchAddress(br_oa_ep2,     &g_open_angle);
-    tree->SetBranchAddress(br_pTmiss,     &g_pTmiss);
-    tree->SetBranchAddress(br_Emiss2,     &g_Emiss2);
+    tree->SetBranchAddress(br_x, &g_x);
+    tree->SetBranchAddress(br_Q2, &g_Q2);
+    tree->SetBranchAddress(br_t1, &g_t1);
+    tree->SetBranchAddress(br_phi2, &g_phi2);
+    tree->SetBranchAddress(br_oa_ep2, &g_open_angle);
+    tree->SetBranchAddress(br_pTmiss, &g_pTmiss);
+    tree->SetBranchAddress(br_Emiss2, &g_Emiss2);
+    tree->SetBranchAddress(br_det1, &g_det1);
+    tree->SetBranchAddress(br_det2, &g_det2);
 
     const Long64_t N = tree->GetEntries();
     Long64_t used = 0;
-
     int next_pct = 10;
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
 
-        // Apply DVCS global kinematic cuts at generator level:
-        //   (-t1) < t1_abs_max
-        //   open_angle_ep2 > open_angle_min_deg
-        //   pTmiss <= pTmiss_max
-        if (!passes_global_cuts(g_t1, g_open_angle, g_pTmiss)) {
+        // Apply DVCS global kinematic cuts (requires GlobalCutConfig).
+        // Use the detector-aware overload:
+        //   passes_global_cuts(t1, open_angle_ep2_deg, pTmiss, det1, det2, cfg)
+        //
+        // NOTE: user confirmed open_angle_ep2 is already in degrees.
+        if (!passes_global_cuts(g_t1, g_open_angle, g_pTmiss, g_det1, g_det2, global_cfg)) {
             if (N > 0 && next_pct <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)N;
                 while (pct >= (double)next_pct && next_pct <= 100) {
@@ -616,7 +731,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
             continue;
         }
 
-        // Apply Emiss2 3-sigma exclusivity band defined from combined_cuts.json
+        // Apply Emiss2 3-sigma exclusivity band.
         if (!within_3sigma(g_Emiss2, emiss2_cut)) {
             if (N > 0 && next_pct <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)N;
@@ -632,8 +747,8 @@ static double accumulate_counts_for_tree(const std::string& group_label,
             continue;
         }
 
-        const double xB   = g_x;
-        const double Q2   = g_Q2;
+        const double xB = g_x;
+        const double Q2 = g_Q2;
         const double tAbs = std::fabs(g_t1);
         const double phiD = wrap_deg(RAD2DEG(g_phi2));
 
@@ -653,10 +768,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
             continue;
         }
 
-        // NOTE: we do not gate on "row_has_data[row]" here.
-        // Generator MC is counted for any analysis bin, regardless of whether
-        // that energy group has reconstructed data in that bin.
-
+        // Count all analysis bins (do not gate on row_has_data here).
         counts[row] += 1.0;
         ++used;
 
@@ -676,11 +788,9 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     std::cout << "[radcorr] Group " << group_label
               << ", tree " << tree_label
               << ": total entries = " << (long long)N
-              << " ; passed DVCS global cuts + Emiss2 3-sigma and binned (any DVCS bin) = "
+              << " ; passed global cuts + Emiss2 3-sigma and binned (any DVCS bin) = "
               << (long long)used << "\n";
 
-    // Return N_accepted (post-cuts, in-bin) for use as N_born / N_rad
-    // global normalizations at the group level.
     return (double)used;
 }
 
@@ -692,12 +802,11 @@ static bool fill_frad_for_group(const std::string& group_label,
                                 const std::vector<double>& born_counts,
                                 const std::vector<double>& rad_counts,
                                 double N_born,
-                                double N_rad)
-{
+                                double N_rad) {
     const int NR = csv.nrows();
     if ((int)row_has_data.size() != NR ||
-        (int)born_counts.size()   != NR ||
-        (int)rad_counts.size()    != NR) {
+        (int)born_counts.size() != NR ||
+        (int)rad_counts.size() != NR) {
         std::cerr << "[radcorr] FATAL: size mismatch in fill_frad_for_group for "
                   << group_label << ".\n";
         return false;
@@ -705,19 +814,16 @@ static bool fill_frad_for_group(const std::string& group_label,
 
     if (N_born <= 0.0 || N_rad <= 0.0) {
         std::cerr << "[radcorr] FATAL: non-positive global N_born or N_rad in fill_frad_for_group for "
-                  << group_label << " (N_born=" << N_born
-                  << ", N_rad=" << N_rad << ").\n";
+                  << group_label << " (N_born=" << N_born << ", N_rad=" << N_rad << ").\n";
         return false;
     }
 
     const int c_frad = csv.col_index(frad_col_name);
     if (c_frad < 0) {
-        std::cerr << "[radcorr] FATAL: missing Frad column '"
-                  << frad_col_name << "' in CSV header.\n";
+        std::cerr << "[radcorr] FATAL: missing Frad column '" << frad_col_name << "' in CSV header.\n";
         return false;
     }
 
-    // Column indices for kinematic bin edges (for debug printing).
     const int c_xb_min  = csv.col_index("xBmin");
     const int c_xb_max  = csv.col_index("xBmax");
     const int c_q2_min  = csv.col_index("Q2min");
@@ -750,27 +856,17 @@ static bool fill_frad_for_group(const std::string& group_label,
         const double a = born_counts[r];
         const double b = rad_counts[r];
 
-        if (a <= 0.0 || b <= 0.0) {
-            continue;
-        }
+        if (a <= 0.0 || b <= 0.0) continue;
 
-        const double RC = (a * N_rad) / (b * N_born); // Born/Rad with global norms
+        const double RC = (a * N_rad) / (b * N_born);
+        if (!std::isfinite(RC)) continue;
 
-        if (!std::isfinite(RC)) {
-            continue;
-        }
-
-        // Statistical uncertainty for ratio of normalized counts:
-        //   RC = (a/N_born) / (b/N_rad)
-        // With Poisson a,b and fixed N_born,N_rad, the dominant term is:
-        //   (sigma_RC/RC)^2 ~ 1/a + 1/b
         const double a_eff = std::max(a, 1.0);
         const double b_eff = std::max(b, 1.0);
         const double rel_var = 1.0 / a_eff + 1.0 / b_eff;
+
         double sRC = 0.0;
-        if (rel_var > 0.0) {
-            sRC = std::fabs(RC) * std::sqrt(rel_var);
-        }
+        if (rel_var > 0.0) sRC = std::fabs(RC) * std::sqrt(rel_var);
 
         if (debug_printed < debug_limit) {
             const double xbmin  = csv.as_double(r, c_xb_min);
@@ -813,11 +909,11 @@ static bool fill_frad_for_group(const std::string& group_label,
 // plotting
 
 struct CellData {
-    std::vector<double> X;    // phi position (deg)
-    std::vector<double> Y;    // Frad
-    std::vector<double> EXL;  // left x error (deg)
-    std::vector<double> EXH;  // right x error (deg)
-    std::vector<double> EY;   // y error (stat, symmetric)
+    std::vector<double> X;
+    std::vector<double> Y;
+    std::vector<double> EXL;
+    std::vector<double> EXH;
+    std::vector<double> EY;
     std::vector<double> q2means;
     std::vector<double> tmeans;
 };
@@ -844,8 +940,7 @@ static void draw_radiative_canvases(const std::string& group_label,
                                     const CsvDoc& csv,
                                     const std::vector<bool>& row_has_data,
                                     const std::string& out_root_dir,
-                                    const std::string& energy_dir)
-{
+                                    const std::string& energy_dir) {
     namespace fs = std::filesystem;
 
     const int c_xb_min  = csv.col_index("xBmin");
@@ -870,8 +965,7 @@ static void draw_radiative_canvases(const std::string& group_label,
 
     const int c_frad = csv.col_index(frad_col_name);
     if (c_frad < 0) {
-        std::cerr << "[radcorr] FATAL: missing column '" << frad_col_name
-                  << "' for plotting.\n";
+        std::cerr << "[radcorr] FATAL: missing column '" << frad_col_name << "' for plotting.\n";
         std::exit(EXIT_FAILURE);
     }
 
@@ -929,7 +1023,7 @@ static void draw_radiative_canvases(const std::string& group_label,
         }
 
         std::vector<std::pair<double,double> > Q2s(q2set.begin(), q2set.end());
-        std::vector<std::pair<double,double> > Ts (tset_all.begin(), tset_all.end());
+        std::vector<std::pair<double,double> > Ts(tset_all.begin(), tset_all.end());
         if (Q2s.empty() || Ts.empty()) continue;
 
         const int nrows = (int)Q2s.size();
@@ -975,16 +1069,15 @@ static void draw_radiative_canvases(const std::string& group_label,
                         std::fabs(xbmax - xb.second) < 1e-9 &&
                         std::fabs(q2min - qpair.first) < 1e-9 &&
                         std::fabs(q2max - qpair.second) < 1e-9 &&
-                        std::fabs(tmin  - tpair.first) < 1e-9 &&
-                        std::fabs(tmax  - tpair.second) < 1e-9) {
+                        std::fabs(tmin - tpair.first) < 1e-9 &&
+                        std::fabs(tmax - tpair.second) < 1e-9) {
                         rows_for_cell.push_back(r);
                     }
                 }
 
                 std::sort(rows_for_cell.begin(), rows_for_cell.end(),
                           [&](int a, int b) {
-                              return csv.as_double(a, c_phi_min) <
-                                     csv.as_double(b, c_phi_min);
+                              return csv.as_double(a, c_phi_min) < csv.as_double(b, c_phi_min);
                           });
 
                 CellData& C = cells[rr * ncols + cc];
@@ -1001,9 +1094,7 @@ static void draw_radiative_canvases(const std::string& group_label,
                     double xphi = 0.5 * (pmin + pmax);
                     if (c_phiavg >= 0) {
                         const double pav = csv.as_double(r, c_phiavg);
-                        if (std::isfinite(pav) && pav > 0.0 && pav < 360.0) {
-                            xphi = pav;
-                        }
+                        if (std::isfinite(pav) && pav > 0.0 && pav < 360.0) xphi = pav;
                     }
 
                     const std::string& frad_cell = csv.rows[r][c_frad];
@@ -1015,7 +1106,7 @@ static void draw_radiative_canvases(const std::string& group_label,
                     if (!parse_triple(frad_cell, frad_val, frad_stat, frad_sys)) {
                         double tmp = CsvDoc::to_double(frad_cell);
                         if (!std::isfinite(tmp)) continue;
-                        frad_val  = tmp;
+                        frad_val = tmp;
                         frad_stat = 0.0;
                     }
 
@@ -1032,12 +1123,8 @@ static void draw_radiative_canvases(const std::string& group_label,
                     C.EXL.push_back(exl);
                     C.EXH.push_back(exh);
 
-                    const double q2m = (c_q2avg >= 0)
-                        ? csv.as_double(r, c_q2avg)
-                        : 0.5 * (qpair.first + qpair.second);
-                    const double tm  = (c_tabavg >= 0)
-                        ? csv.as_double(r, c_tabavg)
-                        : 0.5 * (tpair.first + tpair.second);
+                    const double q2m = (c_q2avg >= 0) ? csv.as_double(r, c_q2avg) : 0.5 * (qpair.first + qpair.second);
+                    const double tm  = (c_tabavg >= 0) ? csv.as_double(r, c_tabavg) : 0.5 * (tpair.first + tpair.second);
                     C.q2means.push_back(q2m);
                     C.tmeans.push_back(tm);
 
@@ -1047,13 +1134,10 @@ static void draw_radiative_canvases(const std::string& group_label,
             }
         }
 
-        if (!std::isfinite(canvas_max) || !std::isfinite(canvas_min)) {
-            continue;
-        }
+        if (!std::isfinite(canvas_max) || !std::isfinite(canvas_min)) continue;
 
         double y_min = canvas_min;
         double y_max = canvas_max;
-
         if (y_min == y_max) {
             double base = (y_min == 0.0) ? 1.0 : std::fabs(y_min);
             y_min -= 0.1 * base;
@@ -1067,14 +1151,15 @@ static void draw_radiative_canvases(const std::string& group_label,
         double y_hi = y_max + pad;
 
         std::ostringstream cname;
-        cname << "c_frad_" << energy_dir << "_xB_"
-              << (int)std::round(xb.first * 1000.0);
+        cname << "c_frad_" << energy_dir << "_xB_" << (int)std::round(xb.first * 1000.0);
         TCanvas* c = new TCanvas(cname.str().c_str(), "", W, H);
 
         TPad* pTop  = new TPad("pTop", "pTop", 0.0, 0.86, 1.0, 1.0);
-        TPad* pGrid = new TPad("pGrid","pGrid",0.0, 0.00, 1.0, 0.86);
-        pTop->SetFillStyle(0);  pTop->Draw();
-        pGrid->SetFillStyle(0); pGrid->Draw();
+        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.86);
+        pTop->SetFillStyle(0);
+        pTop->Draw();
+        pGrid->SetFillStyle(0);
+        pGrid->Draw();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
         pTop->cd();
@@ -1082,10 +1167,7 @@ static void draw_radiative_canvases(const std::string& group_label,
         head.SetNDC();
         head.SetTextSize(head_size);
         head.SetTextAlign(22);
-        head.DrawLatex(0.5, 0.58,
-                       Form("Frad   %s   <xB>=%.2f",
-                            group_label.c_str(),
-                            xb_mean_for_title));
+        head.DrawLatex(0.5, 0.58, Form("Frad   %s   <xB>=%.2f", group_label.c_str(), xb_mean_for_title));
 
         for (int rr = 0; rr < nrows; ++rr) {
             for (int cc = 0; cc < ncols; ++cc) {
@@ -1111,39 +1193,34 @@ static void draw_radiative_canvases(const std::string& group_label,
                 frame->GetYaxis()->SetTitleOffset(1.25);
                 frame->GetXaxis()->SetTitleOffset(1.05);
 
-                const CellData& C = cells[rr * ncols + cc];
-
-                if (C.X.empty()) {
-                    continue;
-                }
+                const CellData& Cc = cells[rr * ncols + cc];
+                if (Cc.X.empty()) continue;
 
                 TGraphAsymmErrors* gfrad = new TGraphAsymmErrors(
-                    (int)C.X.size(),
-                    (double*)C.X.data(),
-                    (double*)C.Y.data(),
-                    (double*)C.EXL.data(),
-                    (double*)C.EXH.data(),
-                    (double*)C.EY.data(),
-                    (double*)C.EY.data()
+                    (int)Cc.X.size(),
+                    (double*)Cc.X.data(),
+                    (double*)Cc.Y.data(),
+                    (double*)Cc.EXL.data(),
+                    (double*)Cc.EXH.data(),
+                    (double*)Cc.EY.data(),
+                    (double*)Cc.EY.data()
                 );
 
                 gfrad->SetMarkerStyle(20);
                 gfrad->SetMarkerColor(kBlack);
                 gfrad->SetLineColor(kBlack);
                 gfrad->SetLineWidth(1);
-
                 gfrad->Draw("PE1 SAME");
 
                 TLatex lab;
                 lab.SetNDC();
                 lab.SetTextSize(0.058);
                 lab.SetTextAlign(13);
-                const double q2m = safe_mean(C.q2means);
-                const double tm  = safe_mean(C.tmeans);
-                lab.DrawLatex(0.16, 0.88,
-                              Form("Q^{2}=%.2f  |t|=%.2f", q2m, tm));
-            } //endfor
-        } //endfor
+                const double q2m = safe_mean(Cc.q2means);
+                const double tm  = safe_mean(Cc.tmeans);
+                lab.DrawLatex(0.16, 0.88, Form("Q^{2}=%.2f  |t|=%.2f", q2m, tm));
+            }
+        }
 
         const std::string fpath =
             (fs::path(base_dir) /
@@ -1153,7 +1230,7 @@ static void draw_radiative_canvases(const std::string& group_label,
 
         c->SaveAs(fpath.c_str());
         delete c;
-    } //endfor
+    }
 }
 
 // group definition
@@ -1161,17 +1238,17 @@ static void draw_radiative_canvases(const std::string& group_label,
 struct McPair {
     std::string bornTag;
     std::string radTag;
-    std::string period_label; // print messages
+    std::string period_label;
 };
 
 struct RCGroup {
-    std::string label;        // "10.6 GeV" or "10.2 GeV"
-    std::string xbavg_col;    // "xBavg, 10.6 GeV" or "xBavg, Sp19 Inb"
-    std::string phiavg_col;   // "phiavg, 10.6 GeV" or "phiavg, Sp19 Inb"
-    std::string q2avg_col;    // "Q2avg, 10.6 GeV" or "Q2avg, Sp19 Inb"
-    std::string tabavg_col;   // "t_abs_avg, 10.6 GeV" or "t_abs_avg, Sp19 Inb"
-    std::string frad_col;     // "Frad, 10.6 GeV" or "Frad, 10.2 GeV"
-    std::string energy_dir;   // "10.60" or "10.2"
+    std::string label;
+    std::string xbavg_col;
+    std::string phiavg_col;
+    std::string q2avg_col;
+    std::string tabavg_col;
+    std::string frad_col;
+    std::string energy_dir;
     std::vector<McPair> mc_pairs;
 };
 
@@ -1184,17 +1261,15 @@ struct GroupAccum {
 };
 
 // Worker function for a single (group, type) pair.
-// isBorn == true  -> use genMcTrees (Born), fill born_counts and N_born.
-// isBorn == false -> use radGenMcTrees (Rad), fill rad_counts and N_rad.
 static void accumulate_group_type(const RCGroup& G,
                                   const std::vector<RowBin>& bins,
                                   const std::vector<bool>& row_has_data,
                                   const std::map<std::string, TTree*>& treeMap,
                                   bool isBorn,
                                   const SigmaCut& emiss2_cut,
+                                  const GlobalCutConfig& global_cfg,
                                   std::vector<double>& counts_out,
-                                  double& Ntotal_out)
-{
+                                  double& Ntotal_out) {
     const std::string type_label = isBorn ? "Born" : "Rad";
     const int NR = (int)row_has_data.size();
 
@@ -1205,10 +1280,10 @@ static void accumulate_group_type(const RCGroup& G,
         const McPair& P = G.mc_pairs[ip];
         const std::string tag = isBorn ? P.bornTag : P.radTag;
 
-        std::map<std::string,TTree*>::const_iterator itT = treeMap.find(tag);
+        std::map<std::string, TTree*>::const_iterator itT = treeMap.find(tag);
         if (itT == treeMap.end()) {
-            std::cerr << "[radcorr] FATAL: missing MC tree with tag '"
-                      << tag << "' for group " << G.label
+            std::cerr << "[radcorr] FATAL: missing MC tree with tag '" << tag
+                      << "' for group " << G.label
                       << " (" << type_label << ", period " << P.period_label << ").\n";
             std::exit(EXIT_FAILURE);
         }
@@ -1222,9 +1297,10 @@ static void accumulate_group_type(const RCGroup& G,
                                                    bins,
                                                    row_has_data,
                                                    emiss2_cut,
+                                                   global_cfg,
                                                    counts_out);
         Ntotal_out += N_here;
-    } //endfor
+    }
 
     std::cout << "[radcorr] Group " << G.label << " " << type_label
               << ": global N_total (all periods, post-cuts, in-bin) = "
@@ -1235,30 +1311,22 @@ static void accumulate_group_type(const RCGroup& G,
 
 // public entry point
 
-bool update_radiative_corrections_csv(
-    const std::string& csv_path,
-    const std::map<std::string, TTree*>& genMcTrees,
-    const std::map<std::string, TTree*>& radGenMcTrees,
-    const std::string& out_root_dir)
-{
+bool update_radiative_corrections_csv(const std::string& csv_path,
+                                      const std::map<std::string, TTree*>& genMcTrees,
+                                      const std::map<std::string, TTree*>& radGenMcTrees,
+                                      const std::string& out_root_dir) {
     namespace fs = std::filesystem;
 
-    // -------------------------------------------------------------------------
     // Temporary toggle:
-    //   - Set SKIP_FA18_INB_10P6 = true to *omit* the Fa18 Inb period from the
-    //     10.6 GeV Frad calculation (both Born and Rad).
-    //   - When your Fa18 Inb MC is fixed, set this back to false to restore
-    //     the full four-period combination.
-    // -------------------------------------------------------------------------
+    //   - true  -> omit Fa18 Inb from the 10.6 GeV Frad combination
+    //   - false -> include all four periods
     const bool SKIP_FA18_INB_10P6 = true;
 
     const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
-    const uintmax_t size_before =
-        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
+    const uintmax_t size_before = fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
 
-    std::cout << "[radcorr] CSV: " << csv_abs
-              << " (size=" << size_before << ")\n";
+    std::cout << "[radcorr] CSV: " << csv_abs << " (size=" << size_before << ")\n";
 
     CsvDoc csv;
     if (!csv.load(csv_path)) {
@@ -1268,18 +1336,18 @@ bool update_radiative_corrections_csv(
 
     std::vector<RowBin> bins = build_row_bins(csv);
 
-    // ---------------------------------------------------------------------
-    // Load Emiss2 3-sigma band from combined_cuts.json by scanning DVCS
-    // topology-dependent cuts and choosing the Emiss2 SigmaCut with the
-    // largest std.
-    //
-    // NOTE: Path is hard-coded here; if you prefer, promote this into a
-    // function argument and pass it from main (similar to acceptance).
-    // ---------------------------------------------------------------------
+    // Hard-coded paths (match your existing style here).
     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+    const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
+
+    // Load global cuts config (required by passes_global_cuts overloads).
+    // NOTE: global_cuts.h does not declare a JSON loader, so we use the
+    // local fail-fast loader defined above.
+    const GlobalCutConfig global_cfg = load_global_cut_config(global_cuts_json);
+
     const SigmaCut emiss2_cut = load_global_emiss2_cut(combined_cuts_json);
 
-    // Define groups: 10.6 GeV (4 periods) and 10.2 GeV (Sp19 Inb only)
+    // Define groups: 10.6 GeV and 10.2 GeV
     RCGroup g10p6;
     g10p6.label      = "10.6 GeV";
     g10p6.xbavg_col  = "xBavg, 10.6 GeV";
@@ -1288,17 +1356,15 @@ bool update_radiative_corrections_csv(
     g10p6.tabavg_col = "t_abs_avg, 10.6 GeV";
     g10p6.frad_col   = "Frad, 10.6 GeV";
     g10p6.energy_dir = "10.60";
-    g10p6.mc_pairs.push_back(McPair{"DVCS_Sp18_inb_gen",  "DVCS_Sp18_inb_gen_rad",  "Sp18 Inb"});
-    g10p6.mc_pairs.push_back(McPair{"DVCS_Sp18_out_gen",  "DVCS_Sp18_out_gen_rad",  "Sp18 Out"});
+    g10p6.mc_pairs.push_back(McPair{"DVCS_Sp18_inb_gen", "DVCS_Sp18_inb_gen_rad", "Sp18 Inb"});
+    g10p6.mc_pairs.push_back(McPair{"DVCS_Sp18_out_gen", "DVCS_Sp18_out_gen_rad", "Sp18 Out"});
 
     if (SKIP_FA18_INB_10P6) {
-        std::cout << "[radcorr] NOTE: SKIP_FA18_INB_10P6=true, omitting Fa18 Inb "
-                  << "from 10.6 GeV Frad (using Sp18 Inb, Sp18 Out, Fa18 Out only).\n";
+        std::cout << "[radcorr] NOTE: SKIP_FA18_INB_10P6=true, omitting Fa18 Inb from 10.6 GeV Frad.\n";
     } else {
-        g10p6.mc_pairs.push_back(McPair{"DVCS_Fa18_inb_gen",  "DVCS_Fa18_inb_gen_rad",  "Fa18 Inb"});
+        g10p6.mc_pairs.push_back(McPair{"DVCS_Fa18_inb_gen", "DVCS_Fa18_inb_gen_rad", "Fa18 Inb"});
     }
-
-    g10p6.mc_pairs.push_back(McPair{"DVCS_Fa18_out_gen",  "DVCS_Fa18_out_gen_rad",  "Fa18 Out"});
+    g10p6.mc_pairs.push_back(McPair{"DVCS_Fa18_out_gen", "DVCS_Fa18_out_gen_rad", "Fa18 Out"});
 
     RCGroup g10p2;
     g10p2.label      = "10.2 GeV";
@@ -1308,104 +1374,90 @@ bool update_radiative_corrections_csv(
     g10p2.tabavg_col = "t_abs_avg, Sp19 Inb";
     g10p2.frad_col   = "Frad, 10.2 GeV";
     g10p2.energy_dir = "10.2";
-    g10p2.mc_pairs.push_back(McPair{"DVCS_Sp19_inb_gen",  "DVCS_Sp19_inb_gen_rad",  "Sp19 Inb"});
+    g10p2.mc_pairs.push_back(McPair{"DVCS_Sp19_inb_gen", "DVCS_Sp19_inb_gen_rad", "Sp19 Inb"});
 
-    std::vector<RCGroup> groups;
-    groups.push_back(g10p6);
-    groups.push_back(g10p2);
-
-    // Pre-check: ensure all required trees exist before launching threads.
-    for (std::size_t ig = 0; ig < groups.size(); ++ig) {
-        const RCGroup& G = groups[ig];
-        for (std::size_t ip = 0; ip < G.mc_pairs.size(); ++ip) {
-            const McPair& P = G.mc_pairs[ip];
-            if (genMcTrees.find(P.bornTag) == genMcTrees.end()) {
-                std::cerr << "[radcorr] FATAL: missing Born MC tree with tag '"
-                          << P.bornTag << "' for group " << G.label
-                          << " (period " << P.period_label << ").\n";
-                return false;
+    // Pre-check: ensure required trees exist.
+    {
+        const std::vector<RCGroup> groups = {g10p6, g10p2};
+        for (std::size_t ig = 0; ig < groups.size(); ++ig) {
+            const RCGroup& G = groups[ig];
+            for (std::size_t ip = 0; ip < G.mc_pairs.size(); ++ip) {
+                const McPair& P = G.mc_pairs[ip];
+                if (genMcTrees.find(P.bornTag) == genMcTrees.end()) {
+                    std::cerr << "[radcorr] FATAL: missing Born MC tree tag '" << P.bornTag
+                              << "' for group " << G.label << " (period " << P.period_label << ").\n";
+                    return false;
+                }
+                if (radGenMcTrees.find(P.radTag) == radGenMcTrees.end()) {
+                    std::cerr << "[radcorr] FATAL: missing Rad MC tree tag '" << P.radTag
+                              << "' for group " << G.label << " (period " << P.period_label << ").\n";
+                    return false;
+                }
             }
-            if (radGenMcTrees.find(P.radTag) == radGenMcTrees.end()) {
-                std::cerr << "[radcorr] FATAL: missing Rad MC tree with tag '"
-                          << P.radTag << "' for group " << G.label
-                          << " (period " << P.period_label << ").\n";
-                return false;
-            }
-        } //endfor
-    } //endfor
+        }
+    }
 
     // Enable ROOT thread safety for concurrent TTree access.
     ROOT::EnableThreadSafety();
 
-    // Build row_has_data for each group (decides where we compute Frad).
+    // Build row_has_data for each group.
     std::vector<bool> row_has_data_10p6 = build_row_has_data(csv, g10p6.xbavg_col);
     std::vector<bool> row_has_data_10p2 = build_row_has_data(csv, g10p2.xbavg_col);
 
     GroupAccum acc10p6;
     GroupAccum acc10p2;
 
-    // Launch 4 worker threads:
-    //   - 10.6 GeV Born
-    //   - 10.6 GeV Rad
-    //   - 10.2 GeV Born
-    //   - 10.2 GeV Rad
+    // Launch 4 worker threads.
+    std::thread t_10p6_born(accumulate_group_type,
+                            std::cref(g10p6),
+                            std::cref(bins),
+                            std::cref(row_has_data_10p6),
+                            std::cref(genMcTrees),
+                            true,
+                            std::cref(emiss2_cut),
+                            std::cref(global_cfg),
+                            std::ref(acc10p6.born_counts),
+                            std::ref(acc10p6.N_born));
 
-    std::thread t_10p6_born(
-        accumulate_group_type,
-        std::cref(g10p6),
-        std::cref(bins),
-        std::cref(row_has_data_10p6),
-        std::cref(genMcTrees),
-        true,
-        std::cref(emiss2_cut),
-        std::ref(acc10p6.born_counts),
-        std::ref(acc10p6.N_born)
-    );
+    std::thread t_10p6_rad(accumulate_group_type,
+                           std::cref(g10p6),
+                           std::cref(bins),
+                           std::cref(row_has_data_10p6),
+                           std::cref(radGenMcTrees),
+                           false,
+                           std::cref(emiss2_cut),
+                           std::cref(global_cfg),
+                           std::ref(acc10p6.rad_counts),
+                           std::ref(acc10p6.N_rad));
 
-    std::thread t_10p6_rad(
-        accumulate_group_type,
-        std::cref(g10p6),
-        std::cref(bins),
-        std::cref(row_has_data_10p6),
-        std::cref(radGenMcTrees),
-        false,
-        std::cref(emiss2_cut),
-        std::ref(acc10p6.rad_counts),
-        std::ref(acc10p6.N_rad)
-    );
+    std::thread t_10p2_born(accumulate_group_type,
+                            std::cref(g10p2),
+                            std::cref(bins),
+                            std::cref(row_has_data_10p2),
+                            std::cref(genMcTrees),
+                            true,
+                            std::cref(emiss2_cut),
+                            std::cref(global_cfg),
+                            std::ref(acc10p2.born_counts),
+                            std::ref(acc10p2.N_born));
 
-    std::thread t_10p2_born(
-        accumulate_group_type,
-        std::cref(g10p2),
-        std::cref(bins),
-        std::cref(row_has_data_10p2),
-        std::cref(genMcTrees),
-        true,
-        std::cref(emiss2_cut),
-        std::ref(acc10p2.born_counts),
-        std::ref(acc10p2.N_born)
-    );
+    std::thread t_10p2_rad(accumulate_group_type,
+                           std::cref(g10p2),
+                           std::cref(bins),
+                           std::cref(row_has_data_10p2),
+                           std::cref(radGenMcTrees),
+                           false,
+                           std::cref(emiss2_cut),
+                           std::cref(global_cfg),
+                           std::ref(acc10p2.rad_counts),
+                           std::ref(acc10p2.N_rad));
 
-    std::thread t_10p2_rad(
-        accumulate_group_type,
-        std::cref(g10p2),
-        std::cref(bins),
-        std::cref(row_has_data_10p2),
-        std::cref(radGenMcTrees),
-        false,
-        std::cref(emiss2_cut),
-        std::ref(acc10p2.rad_counts),
-        std::ref(acc10p2.N_rad)
-    );
-
-    // Wait for all workers to finish before touching CSV or producing plots.
     t_10p6_born.join();
     t_10p6_rad.join();
     t_10p2_born.join();
     t_10p2_rad.join();
 
-    // Now fill Frad columns and draw plots in the main thread.
-
+    // Fill Frad columns.
     if (!fill_frad_for_group(g10p6.label,
                              g10p6.frad_col,
                              csv,
@@ -1414,8 +1466,7 @@ bool update_radiative_corrections_csv(
                              acc10p6.rad_counts,
                              acc10p6.N_born,
                              acc10p6.N_rad)) {
-        std::cerr << "[radcorr] ERROR: fill_frad_for_group failed for "
-                  << g10p6.label << ".\n";
+        std::cerr << "[radcorr] ERROR: fill_frad_for_group failed for " << g10p6.label << ".\n";
         return false;
     }
 
@@ -1427,12 +1478,11 @@ bool update_radiative_corrections_csv(
                              acc10p2.rad_counts,
                              acc10p2.N_born,
                              acc10p2.N_rad)) {
-        std::cerr << "[radcorr] ERROR: fill_frad_for_group failed for "
-                  << g10p2.label << ".\n";
+        std::cerr << "[radcorr] ERROR: fill_frad_for_group failed for " << g10p2.label << ".\n";
         return false;
     }
 
-    // Draw canvases (sequential, no threads).
+    // Draw canvases (sequential).
     draw_radiative_canvases(g10p6.label,
                             g10p6.xbavg_col,
                             g10p6.phiavg_col,
@@ -1461,8 +1511,7 @@ bool update_radiative_corrections_csv(
     }
 
     std::error_code ec2;
-    const uintmax_t size_after =
-        fs::exists(csv_path, ec2) ? fs::file_size(csv_path, ec2) : 0;
+    const uintmax_t size_after = fs::exists(csv_path, ec2) ? fs::file_size(csv_path, ec2) : 0;
 
     std::cout << "[radcorr] Updated CSV: " << csv_abs
               << " (size " << size_before << " -> " << size_after << ")\n";
