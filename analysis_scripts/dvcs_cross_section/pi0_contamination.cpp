@@ -6,6 +6,14 @@
 // The global cut enforcement is now routed through default_global_cuts() and the
 // overloads of passes_global_cuts(...) in global_cuts.h, including the optional
 // dvcsgen P2/ycol cut when cfg.enable_dvcsgen_ycol_cut is enabled.
+//
+// IMPORTANT UPDATE (2026-01-26 style):
+//   - global_cuts.h now defaults to enable_topology_filter = true,
+//     so ALL callers must use topology-aware overloads (detector1/detector2).
+//   - The dispatch function below now always routes through the correct overload.
+//   - topo_key_from_det now uses detector2 == 0 for FT (per GlobalCutConfig docs).
+//   - open_angle_ep2 is treated as radians in the tree and converted to degrees
+//     before passing to passes_global_cuts(...), which expects degrees.
 // -----------------------------------------------------------------------------
 
 #include "pi0_contamination.h"
@@ -98,9 +106,11 @@ static std::string period_label_from_display_strict(const std::string &period_di
 }
 
 static std::string topo_key_from_det(int detector1, int detector2) {
+    // detector codes per GlobalCutConfig:
+    //   0 = FT, 1 = FD, 2 = CD
     if (detector1 == 1 && detector2 == 1) return "FD_FD";
     if (detector1 == 2 && detector2 == 1) return "CD_FD";
-    if (detector1 == 2 && detector2 == 3) return "CD_FT";
+    if (detector1 == 2 && detector2 == 0) return "CD_FT";
     return "";
 }
 
@@ -447,13 +457,17 @@ static BaseVars setup_base_vars(TTree *t, const GlobalCutConfig &cfg) {
 static bool passes_global_cuts_dispatch(const BaseVars &v,
                                        const std::string &period_label,
                                        const GlobalCutConfig &cfg) {
-    // Route through global_cuts.h so the P2/ycol cut is enforced consistently.
+    // global_cuts.h expects open_angle_ep2 in degrees.
+    // This file treats PhysicsEvents::open_angle_ep2 as radians (consistent with debug prints).
+    const double open_angle_ep2_deg = v.open_angle_ep2 * 180.0 / M_PI;
+
+    // Route through global_cuts.h so the P2/ycol cut (and topology filter) is enforced consistently.
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!v.has_p2) {
             fatal("dvcsgen ycol cut enabled, but P2 branches were not bound (internal error)");
         }
 
-        return passes_global_cuts(v.t1, v.open_angle_ep2, v.pTmiss,
+        return passes_global_cuts(v.t1, open_angle_ep2_deg, v.pTmiss,
                                   v.detector1, v.detector2,
                                   period_label,
                                   v.e_p, v.e_theta, v.e_phi,
@@ -461,7 +475,10 @@ static bool passes_global_cuts_dispatch(const BaseVars &v,
                                   cfg);
     }
 
-    return passes_global_cuts(v.t1, v.open_angle_ep2, v.pTmiss, cfg);
+    // Topology filter is enabled by default -> MUST pass detector1/detector2.
+    return passes_global_cuts(v.t1, open_angle_ep2_deg, v.pTmiss,
+                              v.detector1, v.detector2,
+                              cfg);
 }
 
 static bool is_base_double_var(const std::string &name) {
