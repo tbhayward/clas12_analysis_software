@@ -442,6 +442,15 @@ static inline bool passes_global(const BranchBinder& b, const std::string& perio
 
     const GlobalCutConfig& cfg = default_global_cuts();
 
+    // If topology filtering is enabled inside global_cuts, we MUST have detector1/detector2
+    // and MUST call the overload that provides them.
+    if (!b.has_det1 || !b.has_det2) {
+        std::cerr << "[bin_means] FATAL: detector1/detector2 missing but required for global cuts "
+                  << "(topology filtering may be enabled). period_label='" << period_label << "'"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
@@ -461,7 +470,14 @@ static inline bool passes_global(const BranchBinder& b, const std::string& perio
             return false;
         }
     } else {
-        if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg)) return false;
+        // FIX: previously this called the short overload (t1,open,pTmiss,cfg),
+        // which throws when topology filtering is enabled. Always provide det1/det2 (+ period).
+        if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                b.detector1, b.detector2,
+                                period_label,
+                                cfg)) {
+            return false;
+        }
     }
 
     return true;
@@ -733,8 +749,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
         if (i == 0 || (i % cadence) == 0 || i + 1 == N) {
             double pct = (N > 0) ? (100.0 * (double)i / (double)N) : 100.0;
-            // print_status_singleline(period_key, pct, (long long)i, (long long)N,
-            //                         n_pass_global, n_pass_3sig, n_used_rows, sw.RealTime());
+            (void)pct;
             sw.Continue();
         }
     }
@@ -985,7 +1000,7 @@ bool update_bin_means_csv(const std::string& csv_path,
                 csv.rows[r][ct [tags.csv_label]]  = fmt8(a.mt());
                 csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
 
-                // Theta means (degrees): all must exist now, including e_theta for Sp18 Inb
+                // Theta means (degrees): all must exist now
                 auto itE = ceT.find(tags.csv_label);
                 if (itE == ceT.end()) {
                     std::cerr << "[bin_means] FATAL: expected column missing for e_theta label: "
