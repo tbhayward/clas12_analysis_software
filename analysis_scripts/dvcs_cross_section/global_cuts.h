@@ -37,7 +37,7 @@ struct GlobalCutConfig {
     // Must be in {0,1,2} when enable_topology_filter == true.
     // 0 = FT, 1 = FD, 2 = CD
     int required_detector1 = 2;  // proton detector (ignored unless enabled)
-    int required_detector2 = 1;  // photon detector (ignored unless enabled)
+    int required_detector2 = 0;  // photon detector (ignored unless enabled)
 
     // Run blacklist (global)
     std::vector<int> excluded_runs;
