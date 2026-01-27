@@ -2,7 +2,8 @@
 # apply_mx2_fermi_migration_to_asymmetries.py
 #
 # Purpose:
-#   Estimate a bin-migration systematic in reconstructed Mx2 due to Fermi motion.
+#   Estimate a bin-migration correction in reconstructed Mx2 due to Fermi motion,
+#   using an MC-derived migration/composition matrix.
 #
 # Concept:
 #   - You provide multiple fit-results text files, each produced with a different reconstructed Mx2 window.
@@ -13,9 +14,14 @@
 #   - For each asymmetry series and each -t' point, we compute:
 #         A_mix = sum_k w_k * A_k
 #     where A_k is the fitted asymmetry from the fit file corresponding to Mx2 bin k.
-#   - The migration systematic is:
-#         Delta = A_mix - A_base
-#         Sys   = |Delta|
+#
+# Correction definition (SIGNED):
+#   - delta = A_mix - A_base
+#   - A_corrected = A_base + delta = A_mix
+#
+# Sign interpretation:
+#   - delta > 0 makes the asymmetry numerically larger (shifts upward).
+#   - delta < 0 makes the asymmetry numerically smaller (shifts downward).
 #
 # Key update (Jan 2026):
 #   - The script NO LONGER treats small differences in the per-bin tmean grids across Mx2 windows as fatal.
@@ -23,22 +29,22 @@
 #     is taken from the baseline (exclusive) file.
 #   - If the tmean grids differ by more than --tmean-tol, the script emits WARNING(s), not FATAL.
 #
-# Additional update (Jan 2026):
-#   - Adds "Mx2-bin overlay" plots: for each xB group, a 2x3 grid (5 SF panels + 1 blank legend panel)
-#     overlaying ALL Mx2-bin fit curves on each SF subplot.
-#
 # Outputs (written under output/enpi+/mx2_fermi_migration_study/):
 #   (1) Migrated/mixed fit file:
 #         name = {{tmean, A_mix, stat_base}, ...};
-#   (2) Diff/systematics file:
-#         name        = {{tmean, |A_mix - A_base|}, ...};
-#         name_ratio  = {{tmean, |A_mix - A_base|/|A_base|}, ...};
-#         name_delta  = {{tmean,  A_mix - A_base }, ...};
+#   (2) Diff/correction file (SIGNED by default):
+#         name_delta = {{tmean, (A_mix - A_base)}, ...};
+#         name_abs   = {{tmean, |A_mix - A_base|}, ...};
+#         name_ratio = {{tmean, (A_mix - A_base)/A_base}, ...};  (SIGNED ratio)
+#
 #   (3) PDF plots:
 #         - polarized_structure_functions_baseline_<xBgroup>.pdf
 #         - polarized_structure_functions_migrated_<xBgroup>.pdf
 #         - migration_systematics_<xBgroup>.pdf
-#         - mx2_bin_overlays_<xBgroup>.pdf
+#
+#   (4) Per-variable Mx2 overlay plots (separate canvas per SF and per xB group),
+#       saved under:
+#         output/enpi+/mx2_fermi_migration_study/mx2_bin_overlays/<xBgroup>/<short_name>.pdf
 #
 # Notes:
 #   - This script supports dropping the final Mx2 bin (e.g., if you have 7 bins in the CSV but only 6 fit files).
@@ -229,21 +235,6 @@ def parse_fit_results_text(txt_path):
 #enddef
 
 
-def xb_group_name_from_index(idx):
-    if idx == 0:
-        return "enpiLowxB"
-    elif idx == 1:
-        return "enpiMidLowxB"
-    elif idx == 2:
-        return "enpiMidHighxB"
-    elif idx == 3:
-        return "enpiHighxB"
-    else:
-        fatal("Invalid xB group index: {}".format(idx))
-    #endif
-#enddef
-
-
 def build_required_varnames():
     xb_groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
     suffixes = [
@@ -369,6 +360,11 @@ def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varna
     excl_bin_idx: int index of the exclusive/baseline file in fit_maps list
 
     Mixing is performed by INDEX. Output tmean is taken from the baseline file.
+
+    Returns:
+      migrated:     dict var -> list[[tmean, A_mix, stat_base], ...]
+      diffs_mag:    dict var -> list[[tmean, |delta|], ...]
+      diffs_signed: dict var -> list[[tmean, delta], ...]
     """
     if len(weights_row) != len(fit_maps):
         fatal("Internal error: weights_row length {} != number of fit_maps {}.".format(len(weights_row), len(fit_maps)))
@@ -409,9 +405,9 @@ def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varna
         out_diff_signed_pairs = []
 
         for i in range(len(base_list)):
-            tmean = float(base_list[i][0])     # always use baseline tmean grid
+            tmean = float(base_list[i][0])      # always use baseline tmean grid
             aval_base = float(base_list[i][1])
-            stat_base = float(base_list[i][2]) # preserve baseline stat
+            stat_base = float(base_list[i][2])  # preserve baseline stat
 
             aval_mix = 0.0
             for k in range(len(fit_maps)):
@@ -455,6 +451,15 @@ def format_mathematica_list_pair(lst):
 
 
 def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map_baseline, required_varnames):
+    """
+    Writes:
+      - out_path: migrated (A_mix) triples
+      - out_diff_path: signed delta, abs(delta), signed ratio delta/base
+
+    IMPORTANT:
+      - The primary "delta" object is signed: v_delta = {{tmean, delta}, ...}
+      - We also write v_abs and v_ratio for convenience.
+    """
     with open(out_path, "w") as f:
         for v in required_varnames:
             rhs = format_mathematica_list_triple(migrated[v])
@@ -477,29 +482,32 @@ def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signe
                 fatal("Internal error: baseline fit map missing '{}'.".format(v))
             #endif
 
-            rhs_mag = format_mathematica_list_pair(diffs_mag[v])
-            f.write(v + " = " + rhs_mag + ";\n")
-
+            # Signed delta
             rhs_signed = format_mathematica_list_pair(diffs_signed[v])
             f.write(v + "_delta = " + rhs_signed + ";\n")
 
+            # Absolute delta
+            rhs_abs = format_mathematica_list_pair(diffs_mag[v])
+            f.write(v + "_abs = " + rhs_abs + ";\n")
+
+            # Signed ratio (delta / baseline)
             ratio_list = []
             base_list = fit_map_baseline[v]
             for i in range(len(base_list)):
-                tmean = float(diffs_mag[v][i][0])
-                sysmag = float(diffs_mag[v][i][1])
+                tmean = float(diffs_signed[v][i][0])
+                delta = float(diffs_signed[v][i][1])
 
                 before_val = float(base_list[i][1])
-                denom = abs(before_val)
-                if denom < eps:
+                denom = before_val
+                if abs(denom) < eps:
                     fatal(
-                        "Cannot compute ratio for {} at index {}: abs(baseline value) is {:.17g} (too close to zero).".format(
+                        "Cannot compute signed ratio for {} at index {}: baseline value is {:.17g} (too close to zero).".format(
                             v, i, denom
                         )
                     )
                 #endif
 
-                ratio = sysmag / denom
+                ratio = delta / denom
                 ratio_list.append([tmean, ratio])
             #endfor
 
@@ -821,6 +829,10 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
 
 
 def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
+    """
+    Injects *magnitude* of migration differences as VarSys for plotting as symmetric +/- bars.
+    Even though the correction itself is signed, the visual sys rectangle is conventionally symmetric.
+    """
     out = dict(fit_map)
 
     for v in required_varnames:
@@ -866,21 +878,9 @@ def save_migration_sys_canvases(fit_map, out_dir):
         v_ll0 = g + suffix_ll0
         v_ll1 = g + suffix_ll1
 
-        v_lu_sys = v_lu + "Sys"
-        v_ul1_sys = v_ul1 + "Sys"
-        v_ul2_sys = v_ul2 + "Sys"
-        v_ll0_sys = v_ll0 + "Sys"
-        v_ll1_sys = v_ll1 + "Sys"
-
         for v in [v_lu, v_ul1, v_ul2, v_ll0, v_ll1]:
             if v not in fit_map:
                 fatal("Cannot make migration-sys plots: missing required input series '{}'.".format(v))
-            #endif
-        #endfor
-
-        for v in [v_lu_sys, v_ul1_sys, v_ul2_sys, v_ll0_sys, v_ll1_sys]:
-            if v not in fit_map:
-                fatal("Cannot make migration-sys plots: missing injected sys series '{}'.".format(v))
             #endif
         #endfor
 
@@ -946,58 +946,87 @@ def save_migration_sys_canvases(fit_map, out_dir):
 #enddef
 
 
-def save_mx2_bin_overlay_canvases(fit_maps, meta, effective_N, out_dir):
-    """
-    For each xB group, make a 2x3 canvas:
-      - 5 subplots: each polarized structure function (as extracted from each Mx2-window file)
-      - 1 blank subplot: used for legend
+def get_mx2_bin_labels(meta, effective_N):
+    labels = []
+    for k in range(effective_N):
+        mx2min = meta[k][1]
+        mx2max = meta[k][2]
+        labels.append("Mx2 bin {}: [{:.3f}, {:.3f}]".format(k, mx2min, mx2max))
+    #endfor
+    return labels
+#enddef
 
-    Each SF subplot overlays all Mx2-bin curves (one curve per input fit file).
+
+def short_name_and_ylabel_for_suffix(suffix):
+    """
+    Returns:
+      short_name: file stem
+      y_label:    axis label
+      title:      plot title fragment
+    """
+    if suffix == "GEchi2FitsALUsinphi":
+        return ("ALU_sinphi", r"$F_{LU}^{\sin\phi}/F_{UU}$", r"$F_{LU}^{\sin\phi}/F_{UU}$")
+    elif suffix == "GEchi2FitsAULsinphi":
+        return ("AUL_sinphi", r"$F_{UL}^{\sin\phi}/F_{UU}$", r"$F_{UL}^{\sin\phi}/F_{UU}$")
+    elif suffix == "GEchi2FitsAULsin2phi":
+        return ("AUL_sin2phi", r"$F_{UL}^{\sin2\phi}/F_{UU}$", r"$F_{UL}^{\sin2\phi}/F_{UU}$")
+    elif suffix == "GEchi2FitsALL":
+        return ("ALL", r"$F_{LL}/F_{UU}$", r"$F_{LL}/F_{UU}$")
+    elif suffix == "GEchi2FitsALLcosphi":
+        return ("ALL_cosphi", r"$F_{LL}^{\cos\phi}/F_{UU}$", r"$F_{LL}^{\cos\phi}/F_{UU}$")
+    else:
+        fatal("Unknown suffix for plotting: '{}'".format(suffix))
+    #endif
+#enddef
+
+
+def save_mx2_bin_overlay_canvases_by_variable(fit_maps, meta, effective_N, out_dir):
+    """
+    For each xB group AND for each SF variable, make a separate plot overlaying all Mx2 bins.
+    Saves to:
+      <out_dir>/mx2_bin_overlays/<xBgroup>/<short_name>.pdf
+
+    This avoids the very busy 2x3 multi-variable grid.
     """
     np, plt = import_plot_deps()
+
+    root_overlay_dir = os.path.join(out_dir, "mx2_bin_overlays")
+    ensure_output_dir(root_overlay_dir)
 
     xlim_t = (0.0, 1.30)
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
+    # Keep the same y-limits as before to make comparisons consistent.
     ylim_single = (-0.40, 0.40)
     ylim_double = (-0.80, 0.80)
 
-    suffix_lu  = "GEchi2FitsALUsinphi"
-    suffix_ul1 = "GEchi2FitsAULsinphi"
-    suffix_ul2 = "GEchi2FitsAULsin2phi"
-    suffix_ll0 = "GEchi2FitsALL"
-    suffix_ll1 = "GEchi2FitsALLcosphi"
+    suffixes = [
+        "GEchi2FitsALUsinphi",
+        "GEchi2FitsAULsinphi",
+        "GEchi2FitsAULsin2phi",
+        "GEchi2FitsALL",
+        "GEchi2FitsALLcosphi",
+    ]
 
     groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
 
-    mx2_bin_labels = []
-    for k in range(effective_N):
-        mx2min = meta[k][1]
-        mx2max = meta[k][2]
-        mx2_bin_labels.append("bin {}: [{:.3f}, {:.3f}]".format(k, mx2min, mx2max))
-    #endfor
+    mx2_labels = get_mx2_bin_labels(meta, effective_N)
 
     for g in groups:
-        v_lu  = g + suffix_lu
-        v_ul1 = g + suffix_ul1
-        v_ul2 = g + suffix_ul2
-        v_ll0 = g + suffix_ll0
-        v_ll1 = g + suffix_ll1
+        group_dir = os.path.join(root_overlay_dir, g)
+        ensure_output_dir(group_dir)
 
-        fig, axes = plt.subplots(2, 3, figsize=(15.0, 8.5))
+        for suffix in suffixes:
+            varname = g + suffix
+            short_name, y_label, title_frag = short_name_and_ylabel_for_suffix(suffix)
 
-        ax_lu = axes[0, 0]
-        ax_ul1 = axes[0, 1]
-        ax_ul2 = axes[0, 2]
-        ax_ll0 = axes[1, 0]
-        ax_ll1 = axes[1, 1]
-        ax_blank = axes[1, 2]
+            if suffix in ["GEchi2FitsALL", "GEchi2FitsALLcosphi"]:
+                ylim = ylim_double
+            else:
+                ylim = ylim_single
+            #endif
 
-        legend_handles = []
-        legend_labels = []
-
-        def overlay_one(ax, varname, ylim, collect_legend):
-            nonlocal legend_handles, legend_labels
+            fig, ax = plt.subplots(1, 1, figsize=(7.6, 5.6))
 
             for k in range(effective_N):
                 fm = fit_maps[k]
@@ -1007,54 +1036,32 @@ def save_mx2_bin_overlay_canvases(fit_maps, meta, effective_N, out_dir):
 
                 x, y, e = to_series(fm[varname], np=np)
 
-                h = ax.errorbar(x, y, yerr=e, fmt="o", capsize=2, markersize=4.0, linestyle="None")
-
-                if collect_legend:
-                    legend_handles.append(h[0])
-                    legend_labels.append(mx2_bin_labels[k])
-                #endif
+                ax.errorbar(
+                    x, y, yerr=e,
+                    fmt="o",
+                    capsize=2,
+                    markersize=4.0,
+                    linestyle="None",
+                    label=mx2_labels[k]
+                )
             #endfor
 
-            ax.set(xlim=xlim_t, ylim=ylim, xlabel=x_label)
+            ax.set(xlim=xlim_t, ylim=ylim, xlabel=x_label, ylabel=y_label)
             ax.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
             ax.grid(True, linestyle="--", alpha=0.6)
-        #enddef
 
-        overlay_one(ax_lu, v_lu, ylim_single, collect_legend=True)
-        ax_lu.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$")
+            leg = ax.legend(frameon=True, edgecolor="black", fontsize=9, loc="best")
+            leg.get_frame().set_alpha(0.9)
 
-        overlay_one(ax_ul1, v_ul1, ylim_single, collect_legend=False)
-        ax_ul1.set_ylabel(r"$F_{UL}^{\sin\phi}/F_{UU}$")
+            plt.title(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - " + title_frag + " overlays", fontsize=12)
+            plt.tight_layout()
 
-        overlay_one(ax_ul2, v_ul2, ylim_single, collect_legend=False)
-        ax_ul2.set_ylabel(r"$F_{UL}^{\sin2\phi}/F_{UU}$")
+            out_pdf = os.path.join(group_dir, "{}.pdf".format(short_name))
+            plt.savefig(out_pdf)
+            plt.close(fig)
 
-        overlay_one(ax_ll0, v_ll0, ylim_double, collect_legend=False)
-        ax_ll0.set_ylabel(r"$F_{LL}/F_{UU}$")
-
-        overlay_one(ax_ll1, v_ll1, ylim_double, collect_legend=False)
-        ax_ll1.set_ylabel(r"$F_{LL}^{\cos\phi}/F_{UU}$")
-
-        ax_blank.axis("off")
-        if len(legend_handles) > 0:
-            ax_blank.legend(
-                legend_handles,
-                legend_labels,
-                loc="center",
-                frameon=True,
-                edgecolor="black",
-                fontsize=10
-            )
-        #endif
-
-        plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - Mx2-bin overlays", fontsize=14, y=0.98)
-        plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
-
-        out_pdf = os.path.join(out_dir, "mx2_bin_overlays_{}.pdf".format(g))
-        plt.savefig(out_pdf)
-        plt.close(fig)
-
-        sys.stdout.write("Saved plot: {}\n".format(out_pdf))
+            sys.stdout.write("Saved plot: {}\n".format(out_pdf))
+        #endfor
     #endfor
 #enddef
 
@@ -1207,8 +1214,8 @@ def main():
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
 
     # Plotting:
-    #   - baseline points + migration sys rectangles
-    #   - migrated points + migration sys rectangles
+    #   - baseline points + migration sys rectangles (sys rectangles use |delta|)
+    #   - migrated points + migration sys rectangles (sys rectangles use |delta|)
     baseline_for_plots = inject_migration_sys_for_plotting(baseline_fit_map, diffs_mag, required)
     migrated_for_plots = inject_migration_sys_for_plotting(migrated, diffs_mag, required)
 
@@ -1221,8 +1228,9 @@ def main():
 
     save_migration_sys_canvases(baseline_for_plots, out_dir)
 
-    # New: overlay all Mx2-bin fit curves on a 2x3 grid per xB slice
-    save_mx2_bin_overlay_canvases(fit_maps, meta, effective_N, out_dir)
+    # New Mx2 visualization:
+    #   - Separate canvas per SF variable, per xB group, in sub-subdirectories
+    save_mx2_bin_overlay_canvases_by_variable(fit_maps, meta, effective_N, out_dir)
 
     # Diagnostic summary of the exclusive row weights
     sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
@@ -1232,6 +1240,11 @@ def main():
     for i in range(effective_N):
         sys.stdout.write("  w_raw[{}] = {:.6f}\n".format(i, weights_row[i]))
     #endfor
+
+    sys.stdout.write("\nSign convention reminder:\n")
+    sys.stdout.write("  delta = A_mix - A_base\n")
+    sys.stdout.write("  A_corrected = A_base + delta = A_mix\n")
+    sys.stdout.write("  delta > 0 shifts asymmetry upward (numerically larger).\n")
 #enddef
 
 
