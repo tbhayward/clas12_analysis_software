@@ -17,6 +17,12 @@
 #         Delta = A_mix - A_base
 #         Sys   = |Delta|
 #
+# Key update (Jan 2026):
+#   - The script NO LONGER treats small differences in the per-bin tmean grids across Mx2 windows as fatal.
+#   - The mixing is performed by INDEX (bin number) assuming bin boundaries match; the output x-axis (tmean)
+#     is taken from the baseline (exclusive) file.
+#   - If the tmean grids differ by more than --tmean-tol, the script emits WARNING(s), not FATAL.
+#
 # Outputs (written under output/rgc_enpi+_mx2_fermi_migration_study/):
 #   (1) Migrated/mixed fit file:
 #         name = {{tmean, A_mix, stat_base}, ...};
@@ -33,16 +39,6 @@
 #     If you provide N-1 fit files for an N-bin CSV, you MUST pass --drop-last-bin.
 #   - The mixing uses only ONE migration row: the row corresponding to the reconstructed exclusive Mx2 bin.
 #   - The baseline statistical uncertainties are preserved (stat_base).
-#
-# Example (tcsh one-liner, 7-bin CSV but only 6 fit files; you must drop last bin explicitly):
-#   python3 apply_mx2_fermi_migration_to_asymmetries.py mc_bin_migration_mx2_fm.csv \
-#     0.62_Mx2_0.81.txt 0.81_Mx2_1.00.txt 1.00_Mx2_1.15.txt 1.15_Mx2_1.35.txt 1.35_Mx2_1.70.txt 1.70_Mx2_2.50.txt \
-#     mx2_migrated.txt --drop-last-bin
-#
-# Example (provide all N fit files, no dropping):
-#   python3 apply_mx2_fermi_migration_to_asymmetries.py mc_bin_migration_mx2_fm.csv \
-#     bin0.txt bin1.txt bin2.txt bin3.txt bin4.txt bin5.txt bin6.txt \
-#     mx2_migrated.txt
 #
 # ------------------------------------------------------------------------------
 
@@ -301,35 +297,77 @@ def validate_fit_map(fit_map, required_varnames, expected_len, file_tag):
 #enddef
 
 
-def validate_tmean_grids_consistent(fit_maps, required_varnames, expected_len, tmean_tol):
+def warn_tmean_grids_if_inconsistent(fit_maps, required_varnames, expected_len, tmean_tol):
     """
-    Ensures all fit files share the same tmean grids for each required variable.
-    Uses file 0 as reference.
+    Non-fatal check.
+
+    We assume binning boundaries are the same across Mx2-window fit files, but the
+    reported mean -t' (tmean) in each bin may differ slightly due to different
+    event populations.
+
+    Mixing is therefore done by INDEX, and we always use the baseline tmean grid
+    for output and plotting.
+
+    Behavior:
+      - If abs(tmean_k - tmean_ref) > tmean_tol, emit WARNING.
+      - No fatal exit.
     """
+    if len(fit_maps) < 2:
+        return
+    #endif
+
     ref = fit_maps[0]
+
+    worst_abs = 0.0
+    worst_info = None
+    n_warn = 0
+
     for v in required_varnames:
         for i in range(expected_len):
             t_ref = float(ref[v][i][0])
             for k in range(1, len(fit_maps)):
                 t_k = float(fit_maps[k][v][i][0])
-                if abs(t_k - t_ref) > tmean_tol:
-                    fatal(
-                        "tmean grid mismatch for variable '{}' at index {}: file0 has {:.9f}, file{} has {:.9f} (tol={}).".format(
-                            v, i, t_ref, k, t_k, tmean_tol
+                dt = abs(t_k - t_ref)
+                if dt > tmean_tol:
+                    n_warn += 1
+                    if n_warn <= 25:
+                        warn(
+                            "tmean grid differs (non-fatal) for '{}' idx {}: file0 {:.9f} vs file{} {:.9f} (abs diff {:.3g} > tol {:.3g}).".format(
+                                v, i, t_ref, k, t_k, dt, tmean_tol
+                            )
                         )
-                    )
+                    #endif
+                #endif
+                if dt > worst_abs:
+                    worst_abs = dt
+                    worst_info = (v, i, t_ref, k, t_k, dt)
                 #endif
             #endfor
         #endfor
     #endfor
+
+    if n_warn > 25:
+        warn("tmean grid: emitted first 25 warnings; suppressed {} additional warnings.".format(n_warn - 25))
+    #endif
+
+    if worst_info is not None and worst_abs > tmean_tol:
+        (v, i, t_ref, k, t_k, dt) = worst_info
+        warn(
+            "tmean grid summary: max abs diff {:.3g} occurred for '{}' idx {}: file0 {:.9f} vs file{} {:.9f}.".format(
+                dt, v, i, t_ref, k, t_k
+            )
+        )
+    #endif
 #enddef
 
 
-def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varnames, renormalize, tol, dropped_frac_warn):
+def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varnames, renormalize, tol):
     """
     weights_row: list[float] weights for each provided fit file (length M)
     fit_maps:    list[dict]  one per Mx2 bin file (length M)
-    excl_bin_idx: int index of the exclusive/bineline file in fit_maps list
+    excl_bin_idx: int index of the exclusive/baseline file in fit_maps list
+
+    Mixing is performed by INDEX. Output tmean is taken from the baseline file.
     """
     if len(weights_row) != len(fit_maps):
         fatal("Internal error: weights_row length {} != number of fit_maps {}.".format(len(weights_row), len(fit_maps)))
@@ -358,7 +396,6 @@ def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varna
         weights = [w / row_sum for w in weights_row]
     #endif
 
-    # Compute mixed and diffs
     migrated = {}
     diffs_mag = {}
     diffs_signed = {}
@@ -371,13 +408,13 @@ def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varna
         out_diff_signed_pairs = []
 
         for i in range(len(base_list)):
-            tmean = float(base_list[i][0])
+            tmean = float(base_list[i][0])     # always use baseline tmean grid
             aval_base = float(base_list[i][1])
-            stat_base = float(base_list[i][2])
+            stat_base = float(base_list[i][2]) # preserve baseline stat
 
             aval_mix = 0.0
             for k in range(len(fit_maps)):
-                a_k = float(fit_maps[k][v][i][1])
+                a_k = float(fit_maps[k][v][i][1])  # index-paired mixing
                 aval_mix += weights[k] * a_k
             #endfor
 
@@ -930,7 +967,7 @@ def main():
     ap.add_argument("--dropped-frac-warn", type=float, default=0.02, help="Warn if dropped last-bin fraction exceeds this value.")
 
     # Validation:
-    ap.add_argument("--tmean-tol", type=float, default=1.0e-8, help="Tolerance for tmean grid consistency across Mx2 fit files.")
+    ap.add_argument("--tmean-tol", type=float, default=1.0e-8, help="Tolerance for tmean-grid warnings across Mx2 fit files (non-fatal).")
 
     args = ap.parse_args()
 
@@ -994,11 +1031,11 @@ def main():
     full_row = fracs_by_row[excl_csv_idx]
 
     if args.drop_last_bin:
-        dropped = full_row[effective_N]  # this is the last bin's fraction (index N-1)
+        dropped = full_row[N - 1]
         if dropped > args.dropped_frac_warn:
             warn(
                 "Dropping final Mx2 bin (index {}) but its fraction in exclusive-bin row is {:.6f} (> warn threshold {}).".format(
-                    effective_N, dropped, args.dropped_frac_warn
+                    N - 1, dropped, args.dropped_frac_warn
                 )
             )
         #endif
@@ -1018,8 +1055,8 @@ def main():
         fit_maps.append(fm)
     #endfor
 
-    # Enforce consistent tmean grids across all bins
-    validate_tmean_grids_consistent(fit_maps, required, expected_len=6, tmean_tol=args.tmean_tol)
+    # Non-fatal tmean warnings (mixing is index-based; output uses baseline tmean grid)
+    warn_tmean_grids_if_inconsistent(fit_maps, required, expected_len=6, tmean_tol=args.tmean_tol)
 
     # Compute mixture/migrated and diffs
     migrated, diffs_mag, diffs_signed = compute_mx2_mixed_values(
@@ -1028,8 +1065,7 @@ def main():
         excl_bin_idx=excl_fit_idx,
         required_varnames=required,
         renormalize=args.renormalize,
-        tol=args.tol,
-        dropped_frac_warn=args.dropped_frac_warn
+        tol=args.tol
     )
 
     # Write outputs
@@ -1057,9 +1093,9 @@ def main():
     sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
     sys.stdout.write("Exclusive reconstructed Mx2 window from CSV: [{:.6f}, {:.6f}]\n".format(meta[excl_csv_idx][1], meta[excl_csv_idx][2]))
     sys.stdout.write("Using {} fit files (effective_N={}); drop_last_bin={}\n".format(effective_N, effective_N, args.drop_last_bin))
-    sys.stdout.write("Weights used (after any optional renormalization happens internally):\n")
+    sys.stdout.write("Weights provided (NOTE: if --renormalize is set, the actual weights used are rescaled internally):\n")
     for i in range(effective_N):
-        sys.stdout.write("  w[{}] = {:.6f}\n".format(i, weights_row[i]))
+        sys.stdout.write("  w_raw[{}] = {:.6f}\n".format(i, weights_row[i]))
     #endfor
 #enddef
 
