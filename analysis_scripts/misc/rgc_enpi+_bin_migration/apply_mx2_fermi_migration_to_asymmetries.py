@@ -23,6 +23,10 @@
 #     is taken from the baseline (exclusive) file.
 #   - If the tmean grids differ by more than --tmean-tol, the script emits WARNING(s), not FATAL.
 #
+# Additional update (Jan 2026):
+#   - Adds "Mx2-bin overlay" plots: for each xB group, a 2x3 grid (5 SF panels + 1 blank legend panel)
+#     overlaying ALL Mx2-bin fit curves on each SF subplot.
+#
 # Outputs (written under output/enpi+/mx2_fermi_migration_study/):
 #   (1) Migrated/mixed fit file:
 #         name = {{tmean, A_mix, stat_base}, ...};
@@ -34,6 +38,7 @@
 #         - polarized_structure_functions_baseline_<xBgroup>.pdf
 #         - polarized_structure_functions_migrated_<xBgroup>.pdf
 #         - migration_systematics_<xBgroup>.pdf
+#         - mx2_bin_overlays_<xBgroup>.pdf
 #
 # Notes:
 #   - This script supports dropping the final Mx2 bin (e.g., if you have 7 bins in the CSV but only 6 fit files).
@@ -941,6 +946,119 @@ def save_migration_sys_canvases(fit_map, out_dir):
 #enddef
 
 
+def save_mx2_bin_overlay_canvases(fit_maps, meta, effective_N, out_dir):
+    """
+    For each xB group, make a 2x3 canvas:
+      - 5 subplots: each polarized structure function (as extracted from each Mx2-window file)
+      - 1 blank subplot: used for legend
+
+    Each SF subplot overlays all Mx2-bin curves (one curve per input fit file).
+    """
+    np, plt = import_plot_deps()
+
+    xlim_t = (0.0, 1.30)
+    x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
+
+    ylim_single = (-0.40, 0.40)
+    ylim_double = (-0.80, 0.80)
+
+    suffix_lu  = "GEchi2FitsALUsinphi"
+    suffix_ul1 = "GEchi2FitsAULsinphi"
+    suffix_ul2 = "GEchi2FitsAULsin2phi"
+    suffix_ll0 = "GEchi2FitsALL"
+    suffix_ll1 = "GEchi2FitsALLcosphi"
+
+    groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
+
+    mx2_bin_labels = []
+    for k in range(effective_N):
+        mx2min = meta[k][1]
+        mx2max = meta[k][2]
+        mx2_bin_labels.append("bin {}: [{:.3f}, {:.3f}]".format(k, mx2min, mx2max))
+    #endfor
+
+    for g in groups:
+        v_lu  = g + suffix_lu
+        v_ul1 = g + suffix_ul1
+        v_ul2 = g + suffix_ul2
+        v_ll0 = g + suffix_ll0
+        v_ll1 = g + suffix_ll1
+
+        fig, axes = plt.subplots(2, 3, figsize=(15.0, 8.5))
+
+        ax_lu = axes[0, 0]
+        ax_ul1 = axes[0, 1]
+        ax_ul2 = axes[0, 2]
+        ax_ll0 = axes[1, 0]
+        ax_ll1 = axes[1, 1]
+        ax_blank = axes[1, 2]
+
+        legend_handles = []
+        legend_labels = []
+
+        def overlay_one(ax, varname, ylim, collect_legend):
+            nonlocal legend_handles, legend_labels
+
+            for k in range(effective_N):
+                fm = fit_maps[k]
+                if varname not in fm:
+                    fatal("Overlay plots: missing '{}' in fit map index {}.".format(varname, k))
+                #endif
+
+                x, y, e = to_series(fm[varname], np=np)
+
+                h = ax.errorbar(x, y, yerr=e, fmt="o", capsize=2, markersize=4.0, linestyle="None")
+
+                if collect_legend:
+                    legend_handles.append(h[0])
+                    legend_labels.append(mx2_bin_labels[k])
+                #endif
+            #endfor
+
+            ax.set(xlim=xlim_t, ylim=ylim, xlabel=x_label)
+            ax.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
+            ax.grid(True, linestyle="--", alpha=0.6)
+        #enddef
+
+        overlay_one(ax_lu, v_lu, ylim_single, collect_legend=True)
+        ax_lu.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$")
+
+        overlay_one(ax_ul1, v_ul1, ylim_single, collect_legend=False)
+        ax_ul1.set_ylabel(r"$F_{UL}^{\sin\phi}/F_{UU}$")
+
+        overlay_one(ax_ul2, v_ul2, ylim_single, collect_legend=False)
+        ax_ul2.set_ylabel(r"$F_{UL}^{\sin2\phi}/F_{UU}$")
+
+        overlay_one(ax_ll0, v_ll0, ylim_double, collect_legend=False)
+        ax_ll0.set_ylabel(r"$F_{LL}/F_{UU}$")
+
+        overlay_one(ax_ll1, v_ll1, ylim_double, collect_legend=False)
+        ax_ll1.set_ylabel(r"$F_{LL}^{\cos\phi}/F_{UU}$")
+
+        ax_blank.axis("off")
+        if len(legend_handles) > 0:
+            ax_blank.legend(
+                legend_handles,
+                legend_labels,
+                loc="center",
+                frameon=True,
+                edgecolor="black",
+                fontsize=10
+            )
+        #endif
+
+        plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - Mx2-bin overlays", fontsize=14, y=0.98)
+        plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+
+        out_pdf = os.path.join(out_dir, "mx2_bin_overlays_{}.pdf".format(g))
+        plt.savefig(out_pdf)
+        plt.close(fig)
+
+        sys.stdout.write("Saved plot: {}\n".format(out_pdf))
+    #endfor
+#enddef
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Apply an Mx2 Fermi-motion migration mixture (from MC) to enpi* GEchi2Fits* asymmetry lists."
@@ -1102,6 +1220,9 @@ def main():
     )
 
     save_migration_sys_canvases(baseline_for_plots, out_dir)
+
+    # New: overlay all Mx2-bin fit curves on a 2x3 grid per xB slice
+    save_mx2_bin_overlay_canvases(fit_maps, meta, effective_N, out_dir)
 
     # Diagnostic summary of the exclusive row weights
     sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
