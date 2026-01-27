@@ -734,7 +734,6 @@ struct HelCounts {
 
 using RowCounts = std::unordered_map<int, HelCounts>; // row index -> counts
 
-
 static inline bool passes_sigma_cuts_data_only(const TopoCutMap& cuts,
                                                const std::string& key,
                                                const BranchBinder& b) {
@@ -766,11 +765,50 @@ static inline bool passes_sigma_cuts_data_only(const TopoCutMap& cuts,
 static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
                                                const std::string& period_label) {
     // Global cuts are shared across modules via global_cuts.h.
-    // We enforce the DVCSgen P2/ycol logic only through global_cuts.h.
+    // IMPORTANT:
+    // If cfg.enable_topology_filter is enabled inside global_cuts, you MUST call
+    // an overload that includes detector1/detector2. Calling the legacy overload
+    // (without detectors) is forbidden and will throw.
     if (!(b.has_t1 && b.has_open_angle && b.has_pTmiss)) return false;
 
     const GlobalCutConfig& cfg = default_global_cuts();
 
+    if (cfg.enable_topology_filter) {
+        if (!(b.has_detector1 && b.has_detector2)) {
+            std::ostringstream ss;
+            ss << "[total_counts] FATAL: topology filter enabled in global_cuts, but detector1/detector2 "
+               << "are not available for period_label='" << period_label << "'.";
+            fatal(ss.str());
+        }
+
+        if (cfg.enable_dvcsgen_ycol_cut) {
+            if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+                  b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+                std::ostringstream ss;
+                ss << "[total_counts] FATAL: dvcsgen ycol cut enabled, but required branches are missing "
+                   << "for period_label='" << period_label << "'. Missing one or more of: "
+                   << "e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.";
+                fatal(ss.str());
+            }
+
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      period_label,
+                                      b.e_p, b.e_theta, b.e_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      cfg);
+        }
+
+        // Topology filter enabled, ycol disabled: still must call detector-aware overload.
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  cfg);
+    }
+
+    // Topology filter disabled:
+    // - If ycol is enabled, call the full overload (it is OK if global_cuts ignores detectors when topo filter is off).
+    // - Otherwise call the legacy overload.
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
@@ -1001,7 +1039,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
             }
 
             // Create a frame histogram for axes.
-            // X range: show full phi (0..360) but data may extend beyond 360 if your bins do.
             const double xmin = 0.0;
             const double xmax = 360.0;
 
