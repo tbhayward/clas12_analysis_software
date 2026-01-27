@@ -30,7 +30,7 @@ Tables are printed only when BOTH --rad and --migration are provided, and use:
 Rows are ordered in increasing -t' (i.e. increasing x axis as plotted).
 
 Usage:
-  python plot_rgc_epni+_asymmetry.py Su22.txt Fa22.txt Sp23.txt Combined.txt --rad ISR_FSR_delta_summary.txt --migration migration_summary.txt
+  python plot_rgc_enpi+_asymmetry.py Su22.txt Fa22.txt Sp23.txt Combined.txt --rad output/enpi+/ISR_FSR_delta_summary.txt --migration migration_summary.txt
 
 Input format expectations:
   1) Asymmetry fit-result files:
@@ -45,6 +45,10 @@ Input format expectations:
          -t'    Delta    sigma
          0.10   ...      ...
      KEY must be one of: ALUsin, AULsin, AULsin2, ALLn0, ALLcos
+
+     NOTE: This script ALSO supports Script-1 summaries that use LaTeX series labels, e.g.:
+       Series: $F_{LU}^{\\sin\\phi}/F_{UU}$
+     by mapping those to the internal keys above.
 
   3) Migration summary file (--migration):
      Supported formats (explicitly detected):
@@ -220,41 +224,92 @@ def detect_available_bins(*dicts):
 
 # ---------------------------------------------------------------------
 # Radiative-correction summary parser (signed Delta summary txt)
-# Block format: Bin: <bin> ; Series: <KEY> | <label> ; numeric rows
+# Block format: Bin: <bin> ; Series: <KEY or label> ; numeric rows
 # ---------------------------------------------------------------------
 _ALLOWED_KEYS = ["ALUsin", "AULsin", "AULsin2", "ALLn0", "ALLcos"]
 
+def _norm_series_token(s):
+    """
+    Normalize a Series token for robust matching:
+      - strip whitespace
+      - remove '$'
+      - remove spaces
+      - keep backslashes/braces/underscores/carets (LaTeX structure)
+      - lowercase
+    """
+    if s is None:
+        return ""
+    #endif
+    out = s.strip()
+    out = out.replace("$", "")
+    out = out.replace(" ", "")
+    out = out.lower()
+    return out
+
+# Map LaTeX-style series labels (as seen in your ISR_FSR_delta_summary.txt) to internal keys.
+# We normalize both sides with _norm_series_token before comparing.
+_RAD_LABEL_TO_KEY = {
+    _norm_series_token(r"F_{LU}^{\sin\phi}/F_{UU}"):      "ALUsin",
+    _norm_series_token(r"F_{UL}^{\sin\phi}/F_{UU}"):      "AULsin",
+    _norm_series_token(r"F_{UL}^{\sin2\phi}/F_{UU}"):     "AULsin2",
+    _norm_series_token(r"F_{LL}/F_{UU}"):                 "ALLn0",
+    _norm_series_token(r"F_{LL}^{\cos\phi}/F_{UU}"):      "ALLcos",
+    _norm_series_token(r"DilutionD_f"):                   "Df",      # parsed but not used by this script
+    _norm_series_token(r"DilutionD_{f}"):                 "Df",      # just in case of brace variant
+}
+
 def _parse_series_key_from_line(line):
     """
-    Expect:
+    Accept either:
       Series: <KEY> | <label>
-    Return KEY (str) or None if malformed.
+    or
+      Series: <label-only>
+    and return a canonical internal key if possible.
     """
     s = line.strip()
     if not s.startswith("Series:"):
         return None
     #endif
     rest = s[len("Series:"):].strip()
-    if "|" in rest:
-        key = rest.split("|", 1)[0].strip()
-    else:
-        key = rest.strip()
-    #endif
-    if not key:
+
+    # If it is KEY | label, take the left side as "token".
+    token = rest.split("|", 1)[0].strip() if ("|" in rest) else rest.strip()
+    if not token:
         return None
     #endif
-    return key
+
+    # Direct key match (preferred)
+    if token in _ALLOWED_KEYS:
+        return token
+    #endif
+
+    # Try mapping from LaTeX label to internal key
+    norm = _norm_series_token(token)
+    mapped = _RAD_LABEL_TO_KEY.get(norm)
+    if mapped in _ALLOWED_KEYS:
+        return mapped
+    #endif
+
+    # Allow parsing dilution (ignored by asymmetry correction logic)
+    if mapped == "Df":
+        return "Df"
+    #endif
+
+    return token  # unknown; caller can decide to ignore
 
 def parse_rad_summary(rad_path):
     """
     Returns:
       rad[bin_tag][series_key] = {"x": array(-t'), "delta": array, "sigma": array}
-    where series_key is one of _ALLOWED_KEYS.
+    where series_key is one of _ALLOWED_KEYS (and optionally "Df").
 
-    This parser is strict:
-      - Requires Bin: lines.
-      - Requires Series: lines.
-      - Stores only allowed keys; unknown keys are ignored with an INFO message.
+    This parser is strict about structure, but tolerant about "Series:" tokens:
+      - If token matches allowed key, uses it.
+      - Else if token matches known LaTeX label, maps to allowed key.
+      - Else ignores with INFO.
+
+    IMPORTANT: This file's x is assumed already in +(-t') units (positive numbers).
+    Pairing to data is by index when lengths differ.
     """
     rad = {}
     cur_bin = None
@@ -284,14 +339,14 @@ def parse_rad_summary(rad_path):
                 raise RuntimeError("FATAL: encountered Series before any Bin in rad file.")
             #endif
 
-            key = _parse_series_key_from_line(line)
-            if key is None:
+            key_raw = _parse_series_key_from_line(line)
+            if key_raw is None:
                 raise RuntimeError(f"FATAL: malformed Series line in rad file: '{line}'")
             #endif
 
-            use_key = (key in _ALLOWED_KEYS)
+            use_key = (key_raw in _ALLOWED_KEYS) or (key_raw == "Df")
             if not use_key:
-                print(f"[INFO] rad: ignoring unknown series key '{key}' in bin '{cur_bin}'.")
+                print(f"[INFO] rad: ignoring unknown series token '{key_raw}' in bin '{cur_bin}'.")
             #endif
 
             # skip possible header line(s)
@@ -327,7 +382,7 @@ def parse_rad_summary(rad_path):
             #endfor
 
             if use_key and xs:
-                rad[cur_bin][key] = {
+                rad[cur_bin][key_raw] = {
                     "x": np.array(xs, dtype=float),
                     "delta": np.array(deltas, dtype=float),
                     "sigma": np.array(sigmas, dtype=float),
@@ -619,8 +674,8 @@ def _apply_shift_if_available(series, rad_entry):
         return x, y, yerr
     #endif
 
-    xr = np.asarray(rad_entry["x"], dtype=float)
-    dr = np.asarray(rad_entry["delta"], dtype=float)
+    xr = np.asarray(rad_entry.get("x", []), dtype=float)
+    dr = np.asarray(rad_entry.get("delta", []), dtype=float)
 
     n = min(x.size, xr.size, dr.size)
     if n == 0:
@@ -1016,7 +1071,7 @@ def _fmt_cell(val, stat, syst, ndp=3):
     fmt = "{0:." + str(ndp) + "f}"
     core = fmt.format(val) + "^{\\pm " + fmt.format(stat) + "}_{\\pm " + fmt.format(syst) + "}"
     return "$" + core + "$"
-# endif
+#endif
 
 def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
     """
@@ -1148,6 +1203,21 @@ def main():
             raise RuntimeError(f"FATAL: --rad file not found: {args.rad}")
         #endif
         rad_all = parse_rad_summary(args.rad)
+
+        # Optional sanity: warn if none of the allowed keys appear for any bin.
+        any_key = False
+        for bt, block in rad_all.items():
+            for k in _ALLOWED_KEYS:
+                if k in block:
+                    any_key = True
+                    break
+                #endif
+            #endfor
+        #endfor
+        if not any_key:
+            print("[WARN] rad: parsed file, but did not find any of the expected keys ALUsin/AULsin/AULsin2/ALLn0/ALLcos in any bin.")
+            print("[WARN]      This usually means the Series tokens did not map correctly.")
+        #endif
     #endif
 
     mig_all = None
@@ -1208,4 +1278,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# endif
+#endif

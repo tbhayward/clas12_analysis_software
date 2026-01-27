@@ -31,7 +31,7 @@ struct GlobalCutConfig {
     //
     // If enable_topology_filter is true, ALL callers must use the overloads
     // that provide detector1 and detector2; otherwise we throw FATAL.
-    bool enable_topology_filter = true;
+    bool enable_topology_filter = false;
 
     // Required detector assignments when topology filtering is enabled.
     // Must be in {0,1,2} when enable_topology_filter == true.
