@@ -215,8 +215,6 @@ static inline PeriodTags parse_period_tags_from_tree_key(const std::string& tree
     PeriodTags t;
     t.tree_key = tree_key;
 
-    // DVCS_<Period>_<Torus>
-    // We only support the canonical DVCS periods used in pass-2.
     auto has = [&](const char* sub) { return (s.find(sub) != std::string::npos); };
 
     if (has("fa18") && has("inb") && !has("supp")) {
@@ -370,10 +368,7 @@ static void write_csv_atomic(const std::string& path, const CSV& csv) {
     }
 
     // Atomic replace.
-    if (std::remove(path.c_str()) != 0) {
-        // If file doesn't exist, ignore; otherwise error.
-        // We do not silently continue on unexpected errno; but C stdlib doesn't expose errno portably here.
-    }
+    (void)std::remove(path.c_str());
     if (std::rename(tmp.c_str(), path.c_str()) != 0) {
         std::ostringstream ss;
         ss << "[total_counts] FATAL: rename failed from '" << tmp << "' to '" << path << "'";
@@ -401,13 +396,10 @@ static inline std::string col_counts(const std::string& topo_label,
 
 // Alias-resolution helpers (deterministic; no heuristics).
 static inline std::vector<std::string> topology_aliases(const std::string& topo_label) {
-    // If you ever had alternate topo label strings in older CSVs, list them here explicitly.
-    // Deterministic list ordered by preference.
     return { topo_label };
 }
 
 static inline std::vector<std::string> period_aliases(const std::string& period_display) {
-    // Deterministic list ordered by preference.
     return { period_display };
 }
 
@@ -419,8 +411,6 @@ static int find_col_alias(const CSV& csv,
                           const std::vector<std::string>& topo_alias,
                           const std::vector<std::string>& period_alias,
                           const std::vector<std::string>& helicity_alias) {
-    // We resolve the canonical naming by enumerating explicit aliases.
-    // If nothing matches, we fail fast.
     for (const auto& tl : topo_alias) {
         for (const auto& pl : period_alias) {
             for (const auto& hl : helicity_alias) {
@@ -515,11 +505,6 @@ static inline bool row_accepts_kin(const RowBin& w, double x, double Q2, double 
 
 // -----------------------------------------------------------------------------
 // Combined 3-sigma cuts loader (DATA only)
-// combined_cuts.json format (as written by exclusivity_cuts.cpp):
-// {
-//   "DVCS_Fa18_Inb_FD_FD": { "data": { "Mx2": {"mean":..., "std":...}, ... }, "mc": {...} },
-//   ...
-// }
 // -----------------------------------------------------------------------------
 
 struct SigmaStats {
@@ -658,7 +643,6 @@ struct BranchBinder {
         ena("open_angle_ep2");
         ena("pTmiss");
 
-        // 3-sigma vars (presence is expected for DVCS trees; still bind conditionally)
         ena("Emiss2");
         ena("Mx2");
         ena("Mx2_1");
@@ -666,7 +650,6 @@ struct BranchBinder {
         ena("xF");
         ena("theta_gamma_gamma");
 
-        // dvcsgen cut inputs (optional; required only if cfg.enable_dvcsgen_ycol_cut)
         ena("e_p");
         ena("e_theta");
         ena("e_phi");
@@ -749,8 +732,6 @@ static inline bool passes_sigma_cuts_data_only(const TopoCutMap& cuts,
         return within_3sigma(val, iv->second);
     };
 
-    // Apply to any variables present in the cut map.
-    // (If the JSON contains fewer/more keys, we still deterministically check what exists.)
     if (!check("Emiss2",            b.has_Emiss2, b.Emiss2)) return false;
     if (!check("Mx2",               b.has_Mx2,    b.Mx2)) return false;
     if (!check("Mx2_1",             b.has_Mx2_1,  b.Mx2_1)) return false;
@@ -765,50 +746,20 @@ static inline bool passes_sigma_cuts_data_only(const TopoCutMap& cuts,
 static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
                                                const std::string& period_label) {
     // Global cuts are shared across modules via global_cuts.h.
-    // IMPORTANT:
-    // If cfg.enable_topology_filter is enabled inside global_cuts, you MUST call
-    // an overload that includes detector1/detector2. Calling the legacy overload
-    // (without detectors) is forbidden and will throw.
+    // We enforce the DVCSgen P2/ycol logic only through global_cuts.h.
     if (!(b.has_t1 && b.has_open_angle && b.has_pTmiss)) return false;
 
     const GlobalCutConfig& cfg = default_global_cuts();
 
+    // Fail-fast: if topology filtering is enabled, detector1/2 must exist.
     if (cfg.enable_topology_filter) {
         if (!(b.has_detector1 && b.has_detector2)) {
             std::ostringstream ss;
-            ss << "[total_counts] FATAL: topology filter enabled in global_cuts, but detector1/detector2 "
-               << "are not available for period_label='" << period_label << "'.";
+            ss << "[total_counts] FATAL: topology filter enabled in global cuts, but detector1/detector2 branches are missing.";
             fatal(ss.str());
         }
-
-        if (cfg.enable_dvcsgen_ycol_cut) {
-            if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
-                  b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
-                std::ostringstream ss;
-                ss << "[total_counts] FATAL: dvcsgen ycol cut enabled, but required branches are missing "
-                   << "for period_label='" << period_label << "'. Missing one or more of: "
-                   << "e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.";
-                fatal(ss.str());
-            }
-
-            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                      b.detector1, b.detector2,
-                                      period_label,
-                                      b.e_p, b.e_theta, b.e_phi,
-                                      b.p2_p, b.p2_theta, b.p2_phi,
-                                      cfg);
-        }
-
-        // Topology filter enabled, ycol disabled: still must call detector-aware overload.
-        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                  b.detector1, b.detector2,
-                                  period_label,
-                                  cfg);
     }
 
-    // Topology filter disabled:
-    // - If ycol is enabled, call the full overload (it is OK if global_cuts ignores detectors when topo filter is off).
-    // - Otherwise call the legacy overload.
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
@@ -819,6 +770,7 @@ static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
             fatal(ss.str());
         }
 
+        // IMPORTANT: use the topology-aware + period_label + kinematics overload (13 args).
         return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                   b.detector1, b.detector2,
                                   period_label,
@@ -827,7 +779,10 @@ static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
                                   cfg);
     }
 
-    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg);
+    // IMPORTANT: use the topology-aware overload WITHOUT period_label (6 args).
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                              b.detector1, b.detector2,
+                              cfg);
 }
 
 // -----------------------------------------------------------------------------
@@ -863,8 +818,6 @@ static CountsColumnIndex resolve_counts_columns(const CSV& csv,
 }
 
 static inline std::string fmt0(double v) {
-    // Counts are integers in practice, but stored as a numeric string.
-    // Deterministic formatting: no scientific notation.
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(0) << v;
     return oss.str();
@@ -890,8 +843,6 @@ static inline double bin_center(double a, double b) {
 }
 
 static inline double poisson_err(double n) {
-    // Deterministic Poisson sqrt(n). For zero counts, error is zero here.
-    // If you prefer Garwood for zeros, implement explicitly; do not guess.
     return (n > 0.0) ? std::sqrt(n) : 0.0;
 }
 
@@ -906,7 +857,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
                                const std::vector<RowPoint>& points) {
     if (row_indices.empty()) return;
 
-    // Determine grid: unique Q2 and t bins among these rows.
     struct Edge { double a, b; };
     std::vector<Edge> Q2bins;
     std::vector<Edge> tbins;
@@ -943,7 +893,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
 
     TCanvas c("c_total_counts", "", W, H);
 
-    // Top title pad + grid pad.
     TPad* top = new TPad("top", "top", 0.0, 0.90, 1.0, 1.0);
     TPad* grid = new TPad("grid", "grid", 0.0, 0.0, 1.0, 0.90);
     top->SetFillStyle(0);
@@ -966,7 +915,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
     grid->cd();
     grid->Divide(ncols, nrows, 0.0, 0.0);
 
-    // Build lookup Q2/t bin -> pad index.
     auto find_q = [&](double a, double b) {
         for (int i = 0; i < (int)Q2bins.size(); ++i) if (Q2bins[i].a == a && Q2bins[i].b == b) return i;
         return -1;
@@ -976,7 +924,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
         return -1;
     };
 
-    // For each (Q2,t) cell, gather its phi points in increasing x for plotting.
     for (int it = 0; it < nrows; ++it) {
         for (int iq = 0; iq < ncols; ++iq) {
             const int pad_idx = it * ncols + iq + 1;
@@ -990,7 +937,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
             gPad->SetTickx(1);
             gPad->SetTicky(1);
 
-            // Collect points for this cell.
             std::vector<RowPoint> cell;
             cell.reserve(row_indices.size());
 
@@ -1011,7 +957,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
 
             const int N = (int)cell.size();
 
-            // Build graphs.
             TGraphErrors* gpos = new TGraphErrors();
             TGraphErrors* gneg = new TGraphErrors();
 
@@ -1038,7 +983,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
                 ymax = std::max(ymax, std::max(cell[i].pos + cell[i].pos_err, cell[i].neg + cell[i].neg_err));
             }
 
-            // Create a frame histogram for axes.
             const double xmin = 0.0;
             const double xmax = 360.0;
 
@@ -1063,7 +1007,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
             gpos->Draw("PE1 SAME");
             gneg->Draw("PE1 SAME");
 
-            // Per-pad legend.
             TLegend* leg = new TLegend(0.60, 0.73, 0.93, 0.92);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
@@ -1074,7 +1017,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
             leg->AddEntry(gneg, "- helicity", "p");
             leg->Draw();
 
-            // Kinematics annotation (use bin centers from the Q2 and t edges).
             TLatex txt;
             txt.SetNDC(true);
             txt.SetTextFont(42);
@@ -1111,7 +1053,6 @@ static void plot_one_xB_canvas(const std::string& outdir,
 // -----------------------------------------------------------------------------
 
 struct PeriodWorkResult {
-    // Per topology directory -> row counts
     std::unordered_map<std::string, RowCounts> topo_counts;
 };
 
@@ -1133,7 +1074,6 @@ static PeriodWorkResult accumulate_counts_for_tree(const PeriodTags& tags,
         fatal(ss.str());
     }
 
-    // This module expects helicity; if absent, we only fill "unpol" via helicity==0.
     if (!b.has_helicity) {
         std::ostringstream ss;
         ss << "[total_counts] FATAL: Missing required branch 'helicity' in DVCS tree for '" << tags.tree_key << "'.";
@@ -1156,8 +1096,6 @@ static PeriodWorkResult accumulate_counts_for_tree(const PeriodTags& tags,
         if (!passes_global_cuts_dispatch(b, tags.period_label)) continue;
         ++n_global_pass;
 
-        // Apply DATA-only 3-sigma cuts (always enforced going forward).
-        // Key format in JSON: "<json_tag>_<TopoDir>" e.g. "DVCS_Fa18_Inb_FD_FD"
         const std::string sig_key = tags.json_tag + "_" + topoDir;
         if (!passes_sigma_cuts_data_only(sigma_cuts_data, sig_key, b)) continue;
         ++n_sigma_pass;
@@ -1165,7 +1103,6 @@ static PeriodWorkResult accumulate_counts_for_tree(const PeriodTags& tags,
         const double phi_deg = b.phi_deg();
         const double tabs = b.t_abs();
 
-        // Match to CSV row(s).
         bool matched_any = false;
 
         for (int r = 0; r < (int)rows.size(); ++r) {
@@ -1176,7 +1113,6 @@ static PeriodWorkResult accumulate_counts_for_tree(const PeriodTags& tags,
             if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
 
             HelCounts& hc = out.topo_counts[topoDir][r];
-            // pos/neg based on helicity sign
             if (b.helicity > 0) hc.pos += 1.0;
             else if (b.helicity < 0) hc.neg += 1.0;
             else hc.unpol += 1.0;
@@ -1254,7 +1190,6 @@ static void make_plots_for_label_and_topo(const std::string& label,
                                           const CSV& csv,
                                           const std::vector<RowBin>& rows,
                                           const RowCounts& row_counts_for_topo) {
-    // Determine xB bins present (unique xBmin/xBmax among valid bins).
     struct XBEdge { double a, b; };
     std::vector<XBEdge> xbs;
 
@@ -1271,9 +1206,7 @@ static void make_plots_for_label_and_topo(const std::string& label,
         return p.b < q.b;
     });
 
-    // phiavg column is period-specific; it may or may not exist.
-    // Per conventions: use "phiavg, <period>" if present; else mid-bin.
-    const bool use_phiavg = (!is_combined_group_label(label)); // combined groups have no single period phiavg
+    const bool use_phiavg = (!is_combined_group_label(label));
     int c_phiavg = -1;
     if (use_phiavg) {
         const std::string name = col_phiavg_for_period(label);
@@ -1295,11 +1228,9 @@ static void make_plots_for_label_and_topo(const std::string& label,
         fatal(ss.str());
     }
 
-    // Build output directory:
     const std::string outdir = out_root_for_label(label, out_root_dir) + "/" + topoDir;
     mkdir_p(outdir);
 
-    // For each xB bin, collect row indices for this xB bin, and build RowPoint per row.
     for (const auto& xb : xbs) {
         std::vector<int> row_indices;
         row_indices.reserve(256);
@@ -1316,7 +1247,6 @@ static void make_plots_for_label_and_topo(const std::string& label,
 
             RowPoint p;
 
-            // x value: phiavg if available, else midpoint of bin.
             if (c_phiavg >= 0) {
                 const std::string& cell = csv.rows[r][c_phiavg];
                 const double v = cell_to_double_or_nan(cell);
@@ -1326,7 +1256,6 @@ static void make_plots_for_label_and_topo(const std::string& label,
                 p.phi_x = wrap_phi_deg(bin_center(w.pmin, w.pmax));
             }
 
-            // y values: counts for this row, this topo.
             auto itc = row_counts_for_topo.find(r);
             double pos = 0.0, neg = 0.0;
             if (itc != row_counts_for_topo.end()) {
@@ -1346,10 +1275,8 @@ static void make_plots_for_label_and_topo(const std::string& label,
             points[r] = p;
         }
 
-        // Title xB text: prefer xBavg if present, else use range.
         std::ostringstream xbtxt;
         if (c_xBavg >= 0) {
-            // Use the first row in this xB bin that has a finite xBavg.
             double xBavg = std::numeric_limits<double>::quiet_NaN();
             for (int r : row_indices) {
                 const double v = cell_to_double_or_nan(csv.rows[r][c_xBavg]);
@@ -1366,7 +1293,6 @@ static void make_plots_for_label_and_topo(const std::string& label,
                   << "," << std::fixed << std::setprecision(2) << xb.b << ")";
         }
 
-        // Label for title in plot function: for combined groups label is the group label.
         const std::string label_for_title = label;
 
         plot_one_xB_canvas(outdir,
@@ -1409,26 +1335,21 @@ bool update_total_counts_csv(const std::string& csv_main,
                              const std::string& combined_cuts_json,
                              const std::string& global_cuts_json,
                              int maxThreads) {
-    (void)global_cuts_json; // global_cuts.h currently uses default_global_cuts(); keep signature stable.
+    (void)global_cuts_json;
 
-    // ROOT global threading safety.
     ROOT::EnableThreadSafety();
     TH1::AddDirectory(kFALSE);
     gStyle->SetOptStat(0);
 
     const bool trace_matches = env_flag("TOTAL_COUNTS_TRACE_MATCHES");
 
-    // Load CSV.
     CSV csv;
     load_csv(csv_main, csv);
 
-    // Load row bins from CSV.
     const std::vector<RowBin> rows = load_row_bins_from_csv(csv);
 
-    // Load 3-sigma cuts (DATA only).
     const TopoCutMap sigma_cuts_data = load_combined_cuts_data_only(combined_cuts_json);
 
-    // Prepare list of periods that are present.
     std::vector<PeriodTags> periods;
     periods.reserve(CANONICAL_PERIODS().size());
 
@@ -1446,11 +1367,9 @@ bool update_total_counts_csv(const std::string& csv_main,
 
     std::cout << "[total_counts] Will process " << periods.size() << " DVCS period tree(s)." << std::endl;
 
-    // Per-period results: period_display -> topoDir -> RowCounts
     std::unordered_map<std::string, std::unordered_map<std::string, RowCounts>> per_period_counts;
     std::mutex merge_mutex;
 
-    // Thread count cap.
     int nth = std::max(1, std::min(5, maxThreads));
     nth = std::min(nth, (int)periods.size());
 
@@ -1475,7 +1394,6 @@ bool update_total_counts_csv(const std::string& csv_main,
         }
     }
 
-    // Write per-period counts into CSV (skip supplemental and groups).
     for (const auto& kvp : per_period_counts) {
         const std::string& period_display = kvp.first;
         const auto& topoMap = kvp.second;
@@ -1505,7 +1423,6 @@ bool update_total_counts_csv(const std::string& csv_main,
                     fatal(ss.str());
                 }
 
-                // Per conventions: unpol is the helicity-summed yield.
                 const double unpol = h.pos + h.neg;
 
                 csv.rows[r][cols.col_unpol] = fmt0(unpol);
@@ -1515,16 +1432,11 @@ bool update_total_counts_csv(const std::string& csv_main,
         }
     }
 
-    // Atomic CSV save.
     write_csv_atomic(csv_main, csv);
     std::cout << "[total_counts] Updated CSV counts in: " << csv_main << std::endl;
 
-    // Plotting:
-    //  - per-period plots (including supplemental if present)
-    //  - combined groups Fa18, Sp18, 10.6 GeV (in-memory sums; never written to CSV)
     const std::string out_root_dir = "output/total_counts_plots";
 
-    // Per-period plots.
     for (const auto& kvp : per_period_counts) {
         const std::string& period_display = kvp.first;
         const auto& topoMap = kvp.second;
@@ -1537,11 +1449,6 @@ bool update_total_counts_csv(const std::string& csv_main,
         }
     }
 
-    // Combined groups (in-memory aggregation only).
-    // Group definitions (deterministic):
-    //   Fa18     := Fa18 Inb + Fa18 Out
-    //   Sp18     := Sp18 Inb + Sp18 Out
-    //   10.6 GeV := Fa18 Inb + Fa18 Out + Sp18 Inb + Sp18 Out
     auto get_counts = [&](const std::string& period_display) -> const std::unordered_map<std::string, RowCounts>* {
         auto it = per_period_counts.find(period_display);
         if (it == per_period_counts.end()) return nullptr;
