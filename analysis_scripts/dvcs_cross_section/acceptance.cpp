@@ -3,7 +3,10 @@
 //   - acceptance, <period> = N_rec / N_gen per (xB, Q2, |t|, phi) bin
 //   - N_rec from reconstructed MC with:
 //       * hard global DVCS exclusivity cuts (t1, open_angle_ep2, pTmiss),
-//       * PLUS dvcsgen P2(ycol) cut enforced via global_cuts.cpp (computed from kinematics),
+//       * PLUS optional dvcsgen P2(ycol) cut enforced via global_cuts.cpp (computed from kinematics)
+//         when default_global_cuts().enable_dvcsgen_ycol_cut == true,
+//       * optional topology filter (detector1/detector2) enforced via global_cuts.cpp
+//         when default_global_cuts().enable_topology_filter == true,
 //       * global run-blacklist and global cuts from global_cuts.h,
 //       * AND 3-sigma cuts loaded from combined_cuts.json, applied
 //         topology-by-topology (FD_FD, CD_FD, CD_FT) via detector1/2.
@@ -297,8 +300,7 @@ static std::string format_triple(double v, double s_stat, double s_sys) {
 static bool parse_triple(const std::string& s,
                          double& value,
                          double& stat,
-                         double& sys)
-{
+                         double& sys) {
     value = std::numeric_limits<double>::quiet_NaN();
     stat  = std::numeric_limits<double>::quiet_NaN();
     sys   = std::numeric_limits<double>::quiet_NaN();
@@ -529,8 +531,7 @@ static inline std::vector<std::string> expected_dvcs_cut_vars() {
 }
 
 static void validate_sigma_cuts_for_period_or_die(const std::string& period_label,
-                                                  const TopoCutMap& sigmaCuts)
-{
+                                                  const TopoCutMap& sigmaCuts) {
     const std::string period_dir = period_dir_for_label(period_label);
 
     std::vector<std::string> expected_keys;
@@ -691,8 +692,7 @@ static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
 }
 
 static std::map<std::string, std::vector<bool>>
-build_row_has_data(const CsvDoc& csv)
-{
+build_row_has_data(const CsvDoc& csv) {
     const int NR = csv.nrows();
     std::map<std::string, std::vector<bool>> has_data;
 
@@ -725,8 +725,7 @@ static int find_row_for_event(double xB,
                               double Q2,
                               double tAbs,
                               double phiDeg,
-                              const std::vector<RowBin>& bins)
-{
+                              const std::vector<RowBin>& bins) {
     for (const auto& b : bins) {
         if (!(xB >= b.xbmin && xB < b.xbmax)) continue;
         if (!(Q2 >= b.q2min && Q2 < b.q2max)) continue;
@@ -737,16 +736,7 @@ static int find_row_for_event(double xB,
     return -1;
 }
 
-// ------------- exclusivity for reconstructed MC (global + P2 + 3-sigma) -------------
-
-static void require_p2_cut_enabled_or_die() {
-    const GlobalCutConfig& cfg = default_global_cuts();
-    if (!cfg.enable_dvcsgen_ycol_cut) {
-        std::cerr << "[acceptance] FATAL: P2(ycol) cut was requested, but default_global_cuts().enable_dvcsgen_ycol_cut is false.\n";
-        std::cerr << "[acceptance] Aborting (no silent behavior changes).\n";
-        std::exit(EXIT_FAILURE);
-    }
-}
+// ------------- exclusivity for reconstructed MC (global + optional P2 + 3-sigma) -------------
 
 // NOTE: P2 is not a tree branch. It is computed inside global_cuts.cpp from the kinematics
 // (e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi) and the beam energy determined by period_label.
@@ -766,8 +756,7 @@ static bool rec_passes_exclusivity(const std::string& period_label_pretty,
                                    double p2_theta,
                                    double p2_phi,
                                    const std::map<std::string,double>& recVars,
-                                   const VarCutMap* cutsForTopo)
-{
+                                   const VarCutMap* cutsForTopo) {
     auto itP = recVars.find("pTmiss");
     if (itP == recVars.end()) {
         std::cerr << "[acceptance] FATAL: internal error: pTmiss not found in recVars map.\n";
@@ -777,13 +766,15 @@ static bool rec_passes_exclusivity(const std::string& period_label_pretty,
 
     if (is_excluded_run(runnum)) return false;
 
-    // Require P2(ycol) cut via global_cuts.cpp (computed, not a branch).
-    // This also enforces the standard global cuts (t1, open_angle_ep2, pTmiss).
+    // Apply global cuts via global_cuts.cpp:
+    //   - always applies t1/open_angle/pTmiss
+    //   - applies optional topology filter if cfg.enable_topology_filter == true
+    //   - applies optional P2(ycol) cut if cfg.enable_dvcsgen_ycol_cut == true
     const GlobalCutConfig& cfg = default_global_cuts();
     if (!passes_global_cuts(t1,
                             open_angle_ep2_deg,
                             pTmiss,
-                            detector1, 
+                            detector1,
                             detector2,
                             period_label_global,
                             e_p,
@@ -805,8 +796,8 @@ static bool rec_passes_exclusivity(const std::string& period_label_pretty,
 
     static bool printed_once = false;
     if (!printed_once) {
-        std::cout << "[acceptance] rec_passes_exclusivity: applying global cuts + P2(ycol) cut + topology-dependent 3-sigma "
-                  << cut_source_label(kSigmaCutSource) << " cuts.\n";
+        std::cout << "[acceptance] rec_passes_exclusivity: applying global cuts (and optional P2(ycol) / topology filters) + "
+                  << "topology-dependent 3-sigma " << cut_source_label(kSigmaCutSource) << " cuts.\n";
         printed_once = true;
     }
 
@@ -844,8 +835,7 @@ static bool rec_passes_exclusivity(const std::string& period_label_pretty,
 
 static std::set<std::string>
 build_cut_branches_for_period(const std::string& period_label,
-                              const TopoCutMap& sigmaCuts)
-{
+                              const TopoCutMap& sigmaCuts) {
     std::set<std::string> vars;
     const std::string period_dir = period_dir_for_label(period_label);
 
@@ -879,17 +869,12 @@ static void accumulate_counts_for_period(const std::string& period_label,
                                          TTree* recTree,
                                          const TopoCutMap& sigmaCuts,
                                          std::vector<double>& gen_counts,
-                                         std::vector<double>& rec_counts)
-{
+                                         std::vector<double>& rec_counts) {
     if (!genTree || !recTree) {
         std::cerr << "[acceptance] FATAL: null TTree pointer for period "
                   << period_label << ".\n";
         std::exit(EXIT_FAILURE);
     }
-
-    // Fail fast if the global-cuts config is not actually enabling the P2(ycol) cut,
-    // since the request here is to REQUIRE it (no silent behavior changes).
-    require_p2_cut_enabled_or_die();
 
     validate_sigma_cuts_for_period_or_die(period_label, sigmaCuts);
 
@@ -933,17 +918,23 @@ static void accumulate_counts_for_period(const std::string& period_label,
         std::exit(EXIT_FAILURE);
     }
 
-    // Require P2(ycol) kinematic branches on the reconstructed tree.
-    if (!recTree->GetBranch(br_e_p) ||
-        !recTree->GetBranch(br_e_theta) ||
-        !recTree->GetBranch(br_e_phi) ||
-        !recTree->GetBranch(br_p2_p) ||
-        !recTree->GetBranch(br_p2_theta) ||
-        !recTree->GetBranch(br_p2_phi)) {
-        std::cerr << "[acceptance] FATAL: recTree for period " << period_label
-                  << " is missing one or more branches required to compute P2(ycol) cut:\n";
-        std::cerr << "  - required: e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi\n";
-        std::exit(EXIT_FAILURE);
+    // If enable_dvcsgen_ycol_cut is true, we REQUIRE these branches to compute ycol.
+    // If it is false, we still bind them if present (cheap), but we do NOT fail if absent.
+    {
+        const GlobalCutConfig& cfg = default_global_cuts();
+        if (cfg.enable_dvcsgen_ycol_cut) {
+            if (!recTree->GetBranch(br_e_p) ||
+                !recTree->GetBranch(br_e_theta) ||
+                !recTree->GetBranch(br_e_phi) ||
+                !recTree->GetBranch(br_p2_p) ||
+                !recTree->GetBranch(br_p2_theta) ||
+                !recTree->GetBranch(br_p2_phi)) {
+                std::cerr << "[acceptance] FATAL: P2(ycol) cut is enabled, but recTree for period " << period_label
+                          << " is missing one or more branches required to compute P2(ycol):\n";
+                std::cerr << "  - required: e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi\n";
+                std::exit(EXIT_FAILURE);
+            }
+        }
     }
 
     TopologyResolver topo;
@@ -1002,7 +993,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
     double r_oa     = 0.0;
     int    r_run    = 0;
 
-    // Reco kinematics required for P2(ycol).
+    // Reco kinematics required for P2(ycol) if enabled.
     double r_e_p     = 0.0;
     double r_e_theta = 0.0;
     double r_e_phi   = 0.0;
@@ -1017,12 +1008,13 @@ static void accumulate_counts_for_period(const std::string& period_label,
     recTree->SetBranchAddress(br_oa_ep2, &r_oa);
     recTree->SetBranchAddress(br_runnum, &r_run);
 
-    recTree->SetBranchAddress(br_e_p,     &r_e_p);
-    recTree->SetBranchAddress(br_e_theta, &r_e_theta);
-    recTree->SetBranchAddress(br_e_phi,   &r_e_phi);
-    recTree->SetBranchAddress(br_p2_p,     &r_p2_p);
-    recTree->SetBranchAddress(br_p2_theta, &r_p2_theta);
-    recTree->SetBranchAddress(br_p2_phi,   &r_p2_phi);
+    // Bind ycol kinematic branches if present; required only when ycol cut is enabled (enforced above).
+    if (recTree->GetBranch(br_e_p))     recTree->SetBranchAddress(br_e_p,     &r_e_p);
+    if (recTree->GetBranch(br_e_theta)) recTree->SetBranchAddress(br_e_theta, &r_e_theta);
+    if (recTree->GetBranch(br_e_phi))   recTree->SetBranchAddress(br_e_phi,   &r_e_phi);
+    if (recTree->GetBranch(br_p2_p))     recTree->SetBranchAddress(br_p2_p,     &r_p2_p);
+    if (recTree->GetBranch(br_p2_theta)) recTree->SetBranchAddress(br_p2_theta, &r_p2_theta);
+    if (recTree->GetBranch(br_p2_phi))   recTree->SetBranchAddress(br_p2_phi,   &r_p2_phi);
 
     const std::set<std::string> cutBranches =
         build_cut_branches_for_period(period_label, sigmaCuts);
@@ -1057,8 +1049,8 @@ static void accumulate_counts_for_period(const std::string& period_label,
     const std::string period_label_global = global_cuts_period_label_or_die(period_label);
 
     Long64_t topo_seen[3] = {0, 0, 0};
-    Long64_t topo_pass_global[3] = {0, 0, 0};      // global cuts INCLUDING P2(ycol)
-    Long64_t topo_pass_sigma[3] = {0, 0, 0};       // global+P2 + 3-sigma
+    Long64_t topo_pass_global[3] = {0, 0, 0};      // global cuts (and optional topology/P2 cuts)
+    Long64_t topo_pass_sigma[3] = {0, 0, 0};       // global(+optional)+3-sigma
     Long64_t topo_unknown = 0;
 
     for (Long64_t i = 0; i < Nrec; ++i) {
@@ -1096,14 +1088,15 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
         const VarCutMap* cutsForTopo = &itTopoCuts->second;
 
-        // Diagnostics: count events passing global cuts INCLUDING P2(ycol).
+        // Diagnostics: count events passing global cuts as implemented in global_cuts.cpp
+        // (t1/open_angle/pTmiss, plus optional topology filter and optional P2(ycol) if enabled).
         const double pTmiss = recVars.at("pTmiss");
         if (!is_excluded_run(r_run)) {
             const GlobalCutConfig& cfg = default_global_cuts();
             if (passes_global_cuts(r_t1,
                                    r_oa,
                                    pTmiss,
-                                   topo.detector1, 
+                                   topo.detector1,
                                    topo.detector2,
                                    period_label_global,
                                    r_e_p,
@@ -1197,21 +1190,21 @@ static void accumulate_counts_for_period(const std::string& period_label,
 
     std::cout << "[acceptance] Period " << period_label
               << " rec MC: total entries = " << Nrec
-              << " ; passed global+P2+3sigma exclusivity = " << passed_excl
+              << " ; passed global(+optional)+3sigma exclusivity = " << passed_excl
               << " ; binned (with period-data flag) = " << used_rec << "\n";
 
     std::cout << "[acceptance] Period " << period_label << " topology diagnostics:\n";
     std::cout << "  - unknown topology events (detector1/2 not in expected combos) = "
               << (long long)topo_unknown << "\n";
     std::cout << "  - FD_FD: seen=" << (long long)topo_seen[(int)Topology::FD_FD]
-              << " passed_global+P2=" << (long long)topo_pass_global[(int)Topology::FD_FD]
-              << " passed_global+P2+3sigma=" << (long long)topo_pass_sigma[(int)Topology::FD_FD] << "\n";
+              << " passed_global=" << (long long)topo_pass_global[(int)Topology::FD_FD]
+              << " passed_global+3sigma=" << (long long)topo_pass_sigma[(int)Topology::FD_FD] << "\n";
     std::cout << "  - CD_FD: seen=" << (long long)topo_seen[(int)Topology::CD_FD]
-              << " passed_global+P2=" << (long long)topo_pass_global[(int)Topology::CD_FD]
-              << " passed_global+P2+3sigma=" << (long long)topo_pass_sigma[(int)Topology::CD_FD] << "\n";
+              << " passed_global=" << (long long)topo_pass_global[(int)Topology::CD_FD]
+              << " passed_global+3sigma=" << (long long)topo_pass_sigma[(int)Topology::CD_FD] << "\n";
     std::cout << "  - CD_FT: seen=" << (long long)topo_seen[(int)Topology::CD_FT]
-              << " passed_global+P2=" << (long long)topo_pass_global[(int)Topology::CD_FT]
-              << " passed_global+P2+3sigma=" << (long long)topo_pass_sigma[(int)Topology::CD_FT] << "\n";
+              << " passed_global=" << (long long)topo_pass_global[(int)Topology::CD_FT]
+              << " passed_global+3sigma=" << (long long)topo_pass_sigma[(int)Topology::CD_FT] << "\n";
 }
 
 // ------------- CSV filling (triples) -------------
@@ -1219,8 +1212,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
 static bool fill_acceptance_columns(CsvDoc& csv,
                                     const std::map<std::string, std::vector<double>>& gen_all,
                                     const std::map<std::string, std::vector<double>>& rec_all,
-                                    const std::map<std::string, std::vector<bool>>& row_has_data)
-{
+                                    const std::map<std::string, std::vector<bool>>& row_has_data) {
     const int NR = csv.nrows();
 
     std::map<std::string,int> acc_idx;
@@ -1310,8 +1302,7 @@ struct CellData {
 
 static void draw_acceptance_canvases(const std::string& period_label,
                                      const CsvDoc& csv,
-                                     const std::string& out_root_dir)
-{
+                                     const std::string& out_root_dir) {
     namespace fs = std::filesystem;
 
     const int c_xb_min  = csv.col_index("xBmin");
@@ -1590,8 +1581,7 @@ bool update_acceptance_csv(const std::string& csv_path,
                            const std::map<std::string, TTree*>& recMcTrees,
                            const std::string& combined_cuts_json,
                            const std::string& global_cuts_json, // unused, kept for API symmetry
-                           const std::string& out_root_dir)
-{
+                           const std::string& out_root_dir) {
     namespace fs = std::filesystem;
 
     (void)global_cuts_json; // global cuts handled via global_cuts.h
@@ -1604,12 +1594,17 @@ bool update_acceptance_csv(const std::string& csv_path,
     std::cout << "[acceptance] CSV: " << csv_abs
               << " (size=" << size_before << ")\n";
 
-    // Print the global-cuts config relevant to this change.
+    // Print the global-cuts config relevant to this module.
     {
         const GlobalCutConfig& cfg = default_global_cuts();
         std::cout << "[acceptance] global cuts config:\n";
         std::cout << "  - enable_dvcsgen_ycol_cut = " << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false") << "\n";
         std::cout << "  - dvcsgen_ycol_cut = " << cfg.dvcsgen_ycol_cut << "\n";
+        std::cout << "  - enable_topology_filter = " << (cfg.enable_topology_filter ? "true" : "false") << "\n";
+        std::cout << "  - required_detector1 = " << cfg.required_detector1 << "\n";
+        std::cout << "  - required_detector2 = " << cfg.required_detector2 << "\n";
+        std::cout << "  - P2(ycol) will be " << (cfg.enable_dvcsgen_ycol_cut ? "ENFORCED" : "SKIPPED") << " in acceptance.\n";
+        std::cout << "  - topology filter will be " << (cfg.enable_topology_filter ? "ENFORCED" : "SKIPPED") << " in acceptance.\n";
     }
 
     CsvDoc csv;
