@@ -34,6 +34,13 @@
 #         - input_asymmetries_<xBgroup>.pdf
 #         - migration_systematics_<xBgroup>.pdf
 #
+# Added (Jan 2026, per your request):
+#   - You can now ALSO pass existing fit-results text files (e.g. Su22/Fa22/Sp23/Combined, etc.)
+#     and have this script inject/replace <var>Sys arrays with the computed migration systematic.
+#   - Use one or more:
+#         --inject IN_TXT OUT_BASENAME
+#     and the patched file is written under the same output directory.
+#
 # Notes:
 #   - This script supports dropping the final Mx2 bin (e.g., if you have 7 bins in the CSV but only 6 fit files).
 #     If you provide N-1 fit files for an N-bin CSV, you MUST pass --drop-last-bin.
@@ -220,6 +227,45 @@ def parse_fit_results_text(txt_path):
     #endfor
 
     return out
+#enddef
+
+
+def parse_fit_results_text_with_order(txt_path):
+    """
+    Same parsing as parse_fit_results_text(), but also preserves assignment order
+    as encountered in the file, so we can write patched files in a predictable way.
+    """
+    if not os.path.isfile(txt_path):
+        fatal("Fit-results text file not found: " + txt_path)
+    #endif
+
+    text = open(txt_path, "r").read()
+
+    pattern = re.compile(r"([A-Za-z0-9_]+)\s*=\s*(\{\{.*?\}\})\s*;", re.DOTALL)
+    matches = list(pattern.finditer(text))
+    if len(matches) == 0:
+        fatal("No Mathematica-style assignments found in: " + txt_path)
+    #endif
+
+    out = {}
+    order = []
+
+    for m in matches:
+        name = m.group(1).strip()
+        rhs = m.group(2).strip()
+
+        py_rhs = rhs.replace("{", "[").replace("}", "]")
+        try:
+            val = ast.literal_eval(py_rhs)
+        except Exception as e:
+            fatal("Failed to parse assignment for variable '{}' in file '{}': {}".format(name, txt_path, str(e)))
+        #endif
+
+        out[name] = val
+        order.append(name)
+    #endfor
+
+    return out, order
 #enddef
 
 
@@ -453,6 +499,33 @@ def format_mathematica_list_pair(lst):
 #enddef
 
 
+def format_mathematica_list_auto(lst):
+    """
+    Supports lists of:
+      - triples: [t, v, e]
+      - pairs:   [t, v]
+    """
+    if not isinstance(lst, list):
+        fatal("Internal error: expected list for format_mathematica_list_auto, got {}".format(type(lst).__name__))
+    #endif
+    if len(lst) == 0:
+        return "{}"
+    #endif
+
+    first = lst[0]
+    if (not isinstance(first, (list, tuple))) or (len(first) not in [2, 3]):
+        fatal("Internal error: cannot auto-format list; first element has type {} len {}".format(
+            type(first).__name__, len(first) if isinstance(first, (list, tuple)) else -1
+        ))
+    #endif
+
+    if len(first) == 2:
+        return format_mathematica_list_pair(lst)
+    #endif
+    return format_mathematica_list_triple(lst)
+#enddef
+
+
 def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map_baseline, required_varnames):
     with open(out_path, "w") as f:
         for v in required_varnames:
@@ -508,6 +581,120 @@ def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signe
             f.write("\n")
         #endfor
     #endwith
+#enddef
+
+
+def write_fit_map_with_order(out_path, fit_map, order):
+    """
+    Writes a Mathematica-style assignment file:
+      name = {{...}, {...}, ...};
+
+    Preserves 'order' for keys encountered in the original file, then appends
+    any new keys not in order (sorted) at the end.
+    """
+    if not isinstance(order, list):
+        fatal("Internal error: write_fit_map_with_order expects 'order' as a list.")
+    #endif
+
+    seen = set()
+    keys_out = []
+
+    for k in order:
+        if k in fit_map:
+            keys_out.append(k)
+            seen.add(k)
+        #endif
+    #endfor
+
+    extras = []
+    for k in fit_map.keys():
+        if k not in seen:
+            extras.append(k)
+        #endif
+    #endfor
+
+    extras = sorted(extras)
+    keys_out.extend(extras)
+
+    with open(out_path, "w") as f:
+        for k in keys_out:
+            v = fit_map[k]
+            if not isinstance(v, list):
+                # We only support list-valued series in these files.
+                fatal("Cannot write key '{}' to '{}': value is type {}, expected list.".format(k, out_path, type(v).__name__))
+            #endif
+            rhs = format_mathematica_list_auto(v)
+            f.write(k + " = " + rhs + ";\n")
+        #endfor
+        f.write("\n")
+    #endwith
+#enddef
+
+
+def inject_migration_sys_into_fit_map(existing_fit_map, diffs_mag, required_varnames, tmean_tol, file_tag):
+    """
+    Replace/define <var>Sys arrays in an existing fit_map using diffs_mag[var] magnitudes.
+
+    Policy (explicit / deterministic):
+      - existing_fit_map MUST contain all required_varnames.
+      - For each required var, the per-index tmean in existing_fit_map[var] must match
+        diffs_mag[var] tmean within tmean_tol, else FATAL.
+      - Output uses existing_fit_map's tmean grid (so the injected Sys is aligned to that file).
+    """
+    validate_fit_map(existing_fit_map, required_varnames, expected_len=6, file_tag=file_tag)
+
+    out = dict(existing_fit_map)
+
+    for v in required_varnames:
+        if v not in diffs_mag:
+            fatal("Internal error: diffs_mag missing '{}' for injection.".format(v))
+        #endif
+
+        base_list = existing_fit_map[v]
+        sys_pairs_src = diffs_mag[v]
+
+        if len(base_list) != len(sys_pairs_src):
+            fatal("Injection length mismatch for '{}': base len {} vs sys len {}.".format(v, len(base_list), len(sys_pairs_src)))
+        #endif
+
+        sys_pairs = []
+        worst_dt = 0.0
+        worst_i = -1
+
+        for i in range(len(base_list)):
+            t_base = float(base_list[i][0])
+            t_sys = float(sys_pairs_src[i][0])
+            dt = abs(t_base - t_sys)
+
+            if dt > worst_dt:
+                worst_dt = dt
+                worst_i = i
+            #endif
+
+            if dt > tmean_tol:
+                fatal(
+                    "Cannot inject migration sys into '{}': tmean mismatch for '{}' idx {}: file tmean {:.9f} vs sys tmean {:.9f} (abs diff {:.3g} > tol {:.3g}).".format(
+                        file_tag, v, i, t_base, t_sys, dt, tmean_tol
+                    )
+                )
+            #endif
+
+            sysmag = float(sys_pairs_src[i][1])
+            sys_pairs.append([t_base, abs(sysmag)])
+        #endfor
+
+        out[v + "Sys"] = sys_pairs
+
+        # Optional: small diagnostic to stderr if there is *any* measurable drift but within tol.
+        if worst_dt > 0.0 and worst_dt <= tmean_tol and worst_i >= 0:
+            # Keep it quiet-ish: only warn if it is nonzero at the float level.
+            if worst_dt > 1.0e-15:
+                warn("Injected sys into '{}': max |dtmean| within tol for '{}' at idx {}: {:.3g}.".format(file_tag, v, worst_i, worst_dt))
+            #endif
+        #endif
+    #endfor
+
+    return out
 #enddef
 
 
@@ -952,6 +1139,16 @@ def main():
 
     ap.add_argument("--out-diff", default=None, help="Diff output file name only. Default: <fit_out_name with _diff inserted>")
 
+    # New: inject migration sys into existing fit-results text files (e.g. Su22/Fa22/Sp23/Combined)
+    ap.add_argument(
+        "--inject",
+        action="append",
+        nargs=2,
+        metavar=("IN_TXT", "OUT_BASENAME"),
+        default=[],
+        help="Inject/replace <var>Sys arrays in IN_TXT using the computed migration sys, and write to out_dir/OUT_BASENAME. Can be repeated."
+    )
+
     # Exclusive bin selection:
     ap.add_argument("--exclusive-bin", type=int, default=None, help="Exclusive reconstructed Mx2 bin index (overrides --exclusive-mx2-min/max).")
     ap.add_argument("--exclusive-mx2-min", type=float, default=0.81, help="Exclusive reconstructed Mx2 min for auto-match.")
@@ -967,7 +1164,7 @@ def main():
     ap.add_argument("--dropped-frac-warn", type=float, default=0.02, help="Warn if dropped last-bin fraction exceeds this value.")
 
     # Validation:
-    ap.add_argument("--tmean-tol", type=float, default=1.0e-8, help="Tolerance for tmean-grid warnings across Mx2 fit files (non-fatal).")
+    ap.add_argument("--tmean-tol", type=float, default=1.0e-8, help="Tolerance for tmean-grid warnings across Mx2 fit files (non-fatal). Also used as strict tolerance when injecting sys into external files.")
 
     args = ap.parse_args()
 
@@ -980,6 +1177,13 @@ def main():
         out_diff_name = default_diff_basename(args.fit_out_name)
     #endif
     ensure_is_basename(out_diff_name, "out-diff")
+
+    # Validate inject outputs are basenames (explicit)
+    for pair in args.inject:
+        in_txt = pair[0]
+        out_base = pair[1]
+        ensure_is_basename(out_base, "OUT_BASENAME for --inject")
+    #endfor
 
     out_path = os.path.join(out_dir, args.fit_out_name)
     out_diff_path = os.path.join(out_dir, out_diff_name)
@@ -1088,6 +1292,28 @@ def main():
     fit_map_for_plots = inject_migration_sys_for_plotting(baseline_fit_map, diffs_mag, required)
     save_input_asymmetry_canvases(fit_map_for_plots, out_dir)
     save_migration_sys_canvases(fit_map_for_plots, out_dir)
+
+    # New: Inject/replace <var>Sys in user-provided fit-results files (explicitly passed)
+    if len(args.inject) > 0:
+        sys.stdout.write("\nInjecting migration sys into {} external fit-results file(s):\n".format(len(args.inject)))
+    #endif
+
+    for (in_txt, out_base) in args.inject:
+        existing_map, existing_order = parse_fit_results_text_with_order(in_txt)
+
+        patched = inject_migration_sys_into_fit_map(
+            existing_fit_map=existing_map,
+            diffs_mag=diffs_mag,
+            required_varnames=required,
+            tmean_tol=args.tmean_tol,
+            file_tag=in_txt
+        )
+
+        out_injected_path = os.path.join(out_dir, out_base)
+        write_fit_map_with_order(out_injected_path, patched, existing_order)
+
+        sys.stdout.write("  Wrote injected file: {}\n".format(out_injected_path))
+    #endfor
 
     # Print a short diagnostic summary of the exclusive row weights
     sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
