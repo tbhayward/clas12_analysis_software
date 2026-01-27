@@ -36,7 +36,7 @@ struct GlobalCutConfig {
     // Required detector assignments when topology filtering is enabled.
     // Must be in {0,1,2} when enable_topology_filter == true.
     // 0 = FT, 1 = FD, 2 = CD
-    int required_detector1 = 1;  // proton detector (ignored unless enabled)
+    int required_detector1 = 2;  // proton detector (ignored unless enabled)
     int required_detector2 = 1;  // photon detector (ignored unless enabled)
 
     // Run blacklist (global)
