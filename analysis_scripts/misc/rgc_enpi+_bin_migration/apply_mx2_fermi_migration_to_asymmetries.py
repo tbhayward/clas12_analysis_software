@@ -32,7 +32,7 @@
 # Outputs (written under output/enpi+/mx2_fermi_migration_study/):
 #   (1) Migrated/mixed fit file:
 #         name = {{tmean, A_mix, stat_base}, ...};
-#   (2) Diff/correction file (SIGNED by default):
+#   (2) Diff/correction file (SIGNED):
 #         name_delta = {{tmean, (A_mix - A_base)}, ...};
 #         name_abs   = {{tmean, |A_mix - A_base|}, ...};
 #         name_ratio = {{tmean, (A_mix - A_base)/A_base}, ...};  (SIGNED ratio)
@@ -42,9 +42,13 @@
 #         - polarized_structure_functions_migrated_<xBgroup>.pdf
 #         - migration_systematics_<xBgroup>.pdf
 #
-#   (4) Per-variable Mx2 overlay plots (separate canvas per SF and per xB group),
-#       saved under:
-#         output/enpi+/mx2_fermi_migration_study/mx2_bin_overlays/<xBgroup>/<short_name>.pdf
+#   (4) Per-xB, per-structure-function Mx2 canvases:
+#       For each xB bin and each of the 5 SF ratios, create 2x3 canvases where each
+#       subplot corresponds to one Mx2 bin, and each subplot shows only that single
+#       dataset vs -t' (one curve per pad).
+#
+#       Saved under:
+#         output/enpi+/mx2_fermi_migration_study/mx2_bin_canvases/<xBgroup>/<short_name>_page<NN>.pdf
 #
 # Notes:
 #   - This script supports dropping the final Mx2 bin (e.g., if you have 7 bins in the CSV but only 6 fit files).
@@ -762,10 +766,6 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
         sys_band_ul_panel = sys_ul1
         sys_band_ll_panel = sys_ll0
 
-        if (sys_lu is None) and (sys_band_ul_panel is None) and (sys_band_ll_panel is None):
-            warn("No systematics series found for bin '{}'; sys rectangles will be skipped.".format(g))
-        #endif
-
         fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.4))
 
         ax_left = axes[0]
@@ -946,24 +946,7 @@ def save_migration_sys_canvases(fit_map, out_dir):
 #enddef
 
 
-def get_mx2_bin_labels(meta, effective_N):
-    labels = []
-    for k in range(effective_N):
-        mx2min = meta[k][1]
-        mx2max = meta[k][2]
-        labels.append("Mx2 bin {}: [{:.3f}, {:.3f}]".format(k, mx2min, mx2max))
-    #endfor
-    return labels
-#enddef
-
-
 def short_name_and_ylabel_for_suffix(suffix):
-    """
-    Returns:
-      short_name: file stem
-      y_label:    axis label
-      title:      plot title fragment
-    """
     if suffix == "GEchi2FitsALUsinphi":
         return ("ALU_sinphi", r"$F_{LU}^{\sin\phi}/F_{UU}$", r"$F_{LU}^{\sin\phi}/F_{UU}$")
     elif suffix == "GEchi2FitsAULsinphi":
@@ -980,23 +963,27 @@ def short_name_and_ylabel_for_suffix(suffix):
 #enddef
 
 
-def save_mx2_bin_overlay_canvases_by_variable(fit_maps, meta, effective_N, out_dir):
+def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_dir):
     """
-    For each xB group AND for each SF variable, make a separate plot overlaying all Mx2 bins.
-    Saves to:
-      <out_dir>/mx2_bin_overlays/<xBgroup>/<short_name>.pdf
+    For each xB group (4) and for each SF variable (5), create 2x3 canvases where
+    each subplot corresponds to one Mx2 bin, and each subplot shows ONLY that bin's
+    dataset vs -t' (one curve per pad).
 
-    This avoids the very busy 2x3 multi-variable grid.
+    Saves under:
+      <out_dir>/mx2_bin_canvases/<xBgroup>/<short_name>_page<NN>.pdf
+
+    Behavior:
+      - If effective_N <= 6: one page, remaining pads blank.
+      - If effective_N > 6 : multiple pages, 6 bins per page.
     """
     np, plt = import_plot_deps()
 
-    root_overlay_dir = os.path.join(out_dir, "mx2_bin_overlays")
-    ensure_output_dir(root_overlay_dir)
+    root_dir = os.path.join(out_dir, "mx2_bin_canvases")
+    ensure_output_dir(root_dir)
 
     xlim_t = (0.0, 1.30)
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
-    # Keep the same y-limits as before to make comparisons consistent.
     ylim_single = (-0.40, 0.40)
     ylim_double = (-0.80, 0.80)
 
@@ -1010,10 +997,12 @@ def save_mx2_bin_overlay_canvases_by_variable(fit_maps, meta, effective_N, out_d
 
     groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
 
-    mx2_labels = get_mx2_bin_labels(meta, effective_N)
+    bins_per_page = 6
+    ncols = 3
+    nrows = 2
 
     for g in groups:
-        group_dir = os.path.join(root_overlay_dir, g)
+        group_dir = os.path.join(root_dir, g)
         ensure_output_dir(group_dir)
 
         for suffix in suffixes:
@@ -1026,41 +1015,69 @@ def save_mx2_bin_overlay_canvases_by_variable(fit_maps, meta, effective_N, out_d
                 ylim = ylim_single
             #endif
 
-            fig, ax = plt.subplots(1, 1, figsize=(7.6, 5.6))
+            n_pages = (effective_N + bins_per_page - 1) // bins_per_page
+            if n_pages < 1:
+                n_pages = 1
+            #endif
 
-            for k in range(effective_N):
-                fm = fit_maps[k]
-                if varname not in fm:
-                    fatal("Overlay plots: missing '{}' in fit map index {}.".format(varname, k))
+            for page in range(n_pages):
+                fig, axes = plt.subplots(nrows, ncols, figsize=(13.2, 7.6))
+                axes_flat = [axes[r][c] for r in range(nrows) for c in range(ncols)]
+
+                start = page * bins_per_page
+                end = min(start + bins_per_page, effective_N)
+
+                for pad_idx in range(bins_per_page):
+                    ax = axes_flat[pad_idx]
+                    mx2_bin_idx = start + pad_idx
+
+                    if mx2_bin_idx >= end:
+                        ax.axis("off")
+                        continue
+                    #endif
+
+                    fm = fit_maps[mx2_bin_idx]
+                    if varname not in fm:
+                        fatal("Mx2 canvases: missing '{}' in fit map index {}.".format(varname, mx2_bin_idx))
+                    #endif
+
+                    x, y, e = to_series(fm[varname], np=np)
+
+                    ax.errorbar(
+                        x, y, yerr=e,
+                        fmt="o",
+                        capsize=2,
+                        markersize=4.0,
+                        linestyle="None"
+                    )
+                    ax.axhline(0.0, color="black", linestyle="--", linewidth=1.0)
+                    ax.grid(True, linestyle="--", alpha=0.6)
+
+                    ax.set(xlim=xlim_t, ylim=ylim)
+                    ax.set_xlabel(x_label)
+                    ax.set_ylabel(y_label)
+
+                    mx2min = meta[mx2_bin_idx][1]
+                    mx2max = meta[mx2_bin_idx][2]
+                    ax.set_title("Mx2 bin {}: [{:.3f}, {:.3f}]".format(mx2_bin_idx, mx2min, mx2max), fontsize=10)
+                #endfor
+
+                # Pad 6 handled above; no special blank pad needed (already off if missing bin).
+
+                supt = r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - " + title_frag + " (Mx2 bins)"
+                if n_pages > 1:
+                    supt += " page {}/{}".format(page + 1, n_pages)
                 #endif
 
-                x, y, e = to_series(fm[varname], np=np)
+                plt.suptitle(supt, fontsize=14, y=0.98)
+                plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
 
-                ax.errorbar(
-                    x, y, yerr=e,
-                    fmt="o",
-                    capsize=2,
-                    markersize=4.0,
-                    linestyle="None",
-                    label=mx2_labels[k]
-                )
+                out_pdf = os.path.join(group_dir, "{}_page{}.pdf".format(short_name, page + 1))
+                plt.savefig(out_pdf)
+                plt.close(fig)
+
+                sys.stdout.write("Saved plot: {}\n".format(out_pdf))
             #endfor
-
-            ax.set(xlim=xlim_t, ylim=ylim, xlabel=x_label, ylabel=y_label)
-            ax.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
-            ax.grid(True, linestyle="--", alpha=0.6)
-
-            leg = ax.legend(frameon=True, edgecolor="black", fontsize=9, loc="best")
-            leg.get_frame().set_alpha(0.9)
-
-            plt.title(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - " + title_frag + " overlays", fontsize=12)
-            plt.tight_layout()
-
-            out_pdf = os.path.join(group_dir, "{}.pdf".format(short_name))
-            plt.savefig(out_pdf)
-            plt.close(fig)
-
-            sys.stdout.write("Saved plot: {}\n".format(out_pdf))
         #endfor
     #endfor
 #enddef
@@ -1228,9 +1245,9 @@ def main():
 
     save_migration_sys_canvases(baseline_for_plots, out_dir)
 
-    # New Mx2 visualization:
-    #   - Separate canvas per SF variable, per xB group, in sub-subdirectories
-    save_mx2_bin_overlay_canvases_by_variable(fit_maps, meta, effective_N, out_dir)
+    # New Mx2 canvases (requested):
+    #   For each xB group and each SF, 2x3 pads with one Mx2 bin per pad.
+    save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_dir)
 
     # Diagnostic summary of the exclusive row weights
     sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
