@@ -348,6 +348,8 @@ static bool passes_sigma_cuts(const TopoSigma& ts, bool is_mc, const BranchBinde
 
 // ---------------- global cuts wrapper (consistent with other modules) ----------------
 
+// ---------------- global cuts wrapper (consistent with other modules) ----------------
+
 static inline bool passes_global(bool is_mc,
                                  int runnum,
                                  const std::string& period_label_internal,
@@ -358,23 +360,52 @@ static inline bool passes_global(bool is_mc,
         if (is_excluded_run(runnum, cfg)) return false;
     }
 
+    // If topology filtering is enabled, we must have detector1/detector2 available
+    // and we must call an overload that includes them.
+    if (cfg.enable_topology_filter) {
+        if (!(b.has_det1 && b.has_det2)) {
+            fatal("cfg.enable_topology_filter is true but detector1/detector2 are not bound/present.");
+        }
+    }
+
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
             fatal(std::string("P2 cut enabled but required branches are missing for period_label '") +
-                  period_label_internal + "'. Missing one or more of: e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.");
+                  period_label_internal +
+                  "'. Missing one or more of: e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.");
         }
 
+        // Choose correct overload based on topology filtering
+        if (cfg.enable_topology_filter) {
+            // 13-arg overload: includes det1/det2 + period_label + ycol inputs
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      period_label_internal,
+                                      b.e_p, b.e_theta, b.e_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      cfg);
+        } else {
+            // 11-arg overload: period_label + ycol inputs
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      period_label_internal,
+                                      b.e_p, b.e_theta, b.e_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      cfg);
+        }
+    }
+
+    // No P2/ycol cut: choose correct overload based on topology filtering
+    if (cfg.enable_topology_filter) {
+        // 6-arg overload: includes det1/det2
         return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                   b.detector1, b.detector2,
-                                  period_label_internal,
-                                  b.e_p, b.e_theta, b.e_phi,
-                                  b.p2_p, b.p2_theta, b.p2_phi,
                                   cfg);
     }
 
+    // 4-arg overload: simplest global cuts only
     return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg);
-}
+} //endfor
 
 // ---------------- run -> current maps ----------------
 
