@@ -10,27 +10,54 @@ This version:
   - Prints LaTeX tables with \\renewcommand{\\arraystretch}{1.40} applied
     within each table environment.
 
-Radiative correction convention (IMPORTANT):
-  - We apply: A_Born = A_baseline - Delta
-  - Therefore, whenever --rad is used, central values are shifted as:
-      y_shift = y - Delta_rad
-    and statistical errors remain unchanged.
-  - Systematic rectangles represent total systematic per bin:
-      sigma_tot = sqrt( sigma_rad^2 + sigma_mig^2 )
-    drawn as solid gray rectangles from y=0 to y=sigma_tot spanning each full fixed x bin.
+Corrections / shifts (IMPORTANT):
+  1) Radiative (ISR/FSR) correction convention (as before):
+       A_Born = A_baseline - Delta_rad
+     i.e. whenever --rad is used, central values are shifted as:
+       y <- y - Delta_rad
+     and statistical errors remain unchanged.
+
+  2) Regular migration correction (NEW BEHAVIOR):
+     If --migration is provided and the file contains signed diffs (delta),
+     we ADD that signed diff AFTER the radiative shift:
+       y <- (y - Delta_rad) + diff_mig
+
+  3) Fermi-motion migration correction (NEW INPUT):
+     If --fermi_migration is provided (signed diffs),
+     we ADD that signed diff as well:
+       y <- (y - Delta_rad) + diff_mig + diff_fermi
+
+Systematic uncertainties (IMPORTANT):
+  - Radiative systematic (sigma_rad) comes from the --rad summary file.
+  - Migration systematic (sigma_mig) is defined as:
+        sigma_mig = average( |diff_mig|, |diff_fermi| )
+    i.e.
+        sigma_mig = 0.5 * ( |diff_mig| + |diff_fermi| )
+    If only one migration diff source is provided, we fall back to:
+        sigma_mig = |diff_source|
+    (so the script remains usable if you temporarily omit --fermi_migration).
+
+  - Total systematic per bin (drawn as solid gray rectangles) is:
+        sigma_tot = sqrt( sigma_rad^2 + sigma_mig^2 )
 
 LaTeX tables (stdout) for the 4 xB slices:
   enpiLowxBGE, enpiMidLowxBGE, enpiMidHighxBGE, enpiHighxBGE
 
-Tables are printed only when BOTH --rad and --migration are provided, and use:
-  central = (fit value) - (radiative Delta)     [i.e., Born estimate]
+Tables are printed only when --rad AND --migration are provided (same trigger as before).
+If --fermi_migration is also provided, it is included in BOTH:
+  - the central-value shift, and
+  - the migration systematic (average of |diff_mig| and |diff_fermi|).
+
+Tables use:
+  central = (fit value) - (radiative Delta) + (regular mig diff) + (fermi mig diff)
   stat    = (fit statistical uncertainty)
   syst    = sqrt( sigma_rad^2 + sigma_mig^2 )
+where sigma_mig is defined above.
 
 Rows are ordered in increasing -t' (i.e. increasing x axis as plotted).
 
 Usage:
-  python plot_rgc_enpi+_asymmetry.py Su22.txt Fa22.txt Sp23.txt Combined.txt --rad output/enpi+/ISR_FSR_delta_summary.txt --migration migration_summary.txt
+  python plot_rgc_enpi+_asymmetry.py Su22.txt Fa22.txt Sp23.txt Combined.txt --rad output/enpi+/ISR_FSR_delta_summary.txt --migration migration_diff_summary.txt --fermi_migration fermi_migration_diff_summary.txt
 
 Input format expectations:
   1) Asymmetry fit-result files:
@@ -50,22 +77,22 @@ Input format expectations:
        Series: $F_{LU}^{\\sin\\phi}/F_{UU}$
      by mapping those to the internal keys above.
 
-  3) Migration summary file (--migration):
+  3) Migration diff summary files (--migration, --fermi_migration):
      Supported formats (explicitly detected):
-       (A) Block format (preferred, Script-2 style):
+       (A) Block format (preferred):
            Bin: <bin_tag> ...
            Series: <KEY> | <label>
-             -t'    delta_or_sigma   [optional third column sigma]
+             -t'    diff   [optional third column, ignored by this script]
              0.10   ...
-           We interpret:
-             - if 2 numeric columns: x and delta; sigma_mig = abs(delta)
-             - if 3 numeric columns: x, delta, sigma; sigma_mig = abs(sigma)
+           We interpret the SECOND numeric column as the signed diff to APPLY:
+             y <- y + diff
+           and the migration systematic uses abs(diff).
 
-       (B) Legacy assignment format (previous functionality):
-           NAME = {{mean_tprime, delta}, ...};
+       (B) Legacy assignment format:
+           NAME = {{mean_tprime, diff}, ...};
            where NAME matches:
              <bin_tag>chi2Fits<suffix>_delta
-           and sigma_mig = abs(delta).
+           and we interpret the second entry as the signed diff to APPLY.
 
 Notes on systematic rectangles:
   - Rectangles span full fixed bins, not centered on data means.
@@ -207,8 +234,6 @@ def build_period_dict(parsed, bin_prefix):
         "ALLn0":   get_series(parsed, k("ALL")),
         "ALLcos":  get_series(parsed, k("ALLcosphi")),
         # UU intentionally omitted from plotting in this version
-        # "UUcos":   get_series(parsed, k("AUUcosphi")),
-        # "UUcos2":  get_series(parsed, k("AUUcos2phi")),
     }
 
 def detect_available_bins(*dicts):
@@ -246,16 +271,15 @@ def _norm_series_token(s):
     out = out.lower()
     return out
 
-# Map LaTeX-style series labels (as seen in your ISR_FSR_delta_summary.txt) to internal keys.
-# We normalize both sides with _norm_series_token before comparing.
+# Map LaTeX-style series labels to internal keys.
 _RAD_LABEL_TO_KEY = {
     _norm_series_token(r"F_{LU}^{\sin\phi}/F_{UU}"):      "ALUsin",
     _norm_series_token(r"F_{UL}^{\sin\phi}/F_{UU}"):      "AULsin",
     _norm_series_token(r"F_{UL}^{\sin2\phi}/F_{UU}"):     "AULsin2",
     _norm_series_token(r"F_{LL}/F_{UU}"):                 "ALLn0",
     _norm_series_token(r"F_{LL}^{\cos\phi}/F_{UU}"):      "ALLcos",
-    _norm_series_token(r"DilutionD_f"):                   "Df",      # parsed but not used by this script
-    _norm_series_token(r"DilutionD_{f}"):                 "Df",      # just in case of brace variant
+    _norm_series_token(r"DilutionD_f"):                   "Df",
+    _norm_series_token(r"DilutionD_{f}"):                 "Df",
 }
 
 def _parse_series_key_from_line(line):
@@ -272,41 +296,32 @@ def _parse_series_key_from_line(line):
     #endif
     rest = s[len("Series:"):].strip()
 
-    # If it is KEY | label, take the left side as "token".
     token = rest.split("|", 1)[0].strip() if ("|" in rest) else rest.strip()
     if not token:
         return None
     #endif
 
-    # Direct key match (preferred)
     if token in _ALLOWED_KEYS:
         return token
     #endif
 
-    # Try mapping from LaTeX label to internal key
     norm = _norm_series_token(token)
     mapped = _RAD_LABEL_TO_KEY.get(norm)
     if mapped in _ALLOWED_KEYS:
         return mapped
     #endif
 
-    # Allow parsing dilution (ignored by asymmetry correction logic)
     if mapped == "Df":
         return "Df"
     #endif
 
-    return token  # unknown; caller can decide to ignore
+    return token
 
 def parse_rad_summary(rad_path):
     """
     Returns:
       rad[bin_tag][series_key] = {"x": array(-t'), "delta": array, "sigma": array}
     where series_key is one of _ALLOWED_KEYS (and optionally "Df").
-
-    This parser is strict about structure, but tolerant about "Series:" tokens:
-      - If token matches allowed key, uses it.
-      - Else if token matches known LaTeX label, maps to allowed key.
-      - Else ignores with INFO.
 
     IMPORTANT: This file's x is assumed already in +(-t') units (positive numbers).
     Pairing to data is by index when lengths differ.
@@ -349,7 +364,6 @@ def parse_rad_summary(rad_path):
                 print(f"[INFO] rad: ignoring unknown series token '{key_raw}' in bin '{cur_bin}'.")
             #endif
 
-            # skip possible header line(s)
             i += 1
             if i < len(lines):
                 hdr = lines[i].strip()
@@ -397,14 +411,17 @@ def parse_rad_summary(rad_path):
     return rad
 
 # ---------------------------------------------------------------------
-# Migration systematics parsers
+# Migration diff parsers
 #   - Block format: Bin/Series blocks, numeric rows
-#   - Legacy assignment format: NAME = {{x, delta}, ...};
+#   - Legacy assignment format: NAME = {{x, diff}, ...};
+# We store BOTH:
+#   "delta" = signed diff to APPLY (y <- y + delta)
+#   "sigma" = abs(delta)  (used for migration-systematic magnitude)
 # ---------------------------------------------------------------------
 _pair_re = re.compile(r'\{([^{}]+)\}')
 
 def parse_migration_file_legacy(path):
-    """Parse legacy NAME = {{x, delta}, ...}; blocks into dict[name] -> np.array(N,2)."""
+    """Parse legacy NAME = {{x, diff}, ...}; blocks into dict[name] -> np.array(N,2)."""
     with open(path, "r") as f:
         text = f.read()
     #endif
@@ -430,10 +447,13 @@ def parse_migration_file_legacy(path):
     #endfor
     return out
 
-def get_mig_sigma_series_legacy(dct, key, negate_x=True, sort_x=True):
+def get_mig_delta_series_legacy(dct, key, negate_x=True, sort_x=True):
     """
-    Legacy migration *_delta list: (mean_tprime, delta)
-    Output: x = -mean_tprime (if negate_x), sigma = abs(delta)
+    Legacy migration *_delta list: (mean_tprime, diff)
+    Output:
+      x     = -mean_tprime (if negate_x)
+      delta = diff (signed, to APPLY)
+      sigma = abs(diff) (magnitude used for sys)
     """
     if key not in dct:
         return None
@@ -448,12 +468,13 @@ def get_mig_sigma_series_legacy(dct, key, negate_x=True, sort_x=True):
         return None
     #endif
     x = -x_raw[mask] if negate_x else x_raw[mask]
-    sigma = np.abs(delta[mask])
+    d = delta[mask]
+    s = np.abs(d)
     if sort_x and x.size > 1:
         order = np.argsort(x)
-        x, sigma = x[order], sigma[order]
+        x, d, s = x[order], d[order], s[order]
     #endif
-    return {"x": x, "sigma": sigma}
+    return {"x": x, "delta": d, "sigma": s}
 
 def build_migration_dict_legacy(mig_parsed, bin_prefix):
     if mig_parsed is None:
@@ -461,21 +482,25 @@ def build_migration_dict_legacy(mig_parsed, bin_prefix):
     #endif
     k = lambda suffix: f"{bin_prefix}chi2Fits{suffix}_delta"
     return {
-        "ALUsin":  get_mig_sigma_series_legacy(mig_parsed, k("ALUsinphi")),
-        "AULsin":  get_mig_sigma_series_legacy(mig_parsed, k("AULsinphi")),
-        "AULsin2": get_mig_sigma_series_legacy(mig_parsed, k("AULsin2phi")),
-        "ALLn0":   get_mig_sigma_series_legacy(mig_parsed, k("ALL")),
-        "ALLcos":  get_mig_sigma_series_legacy(mig_parsed, k("ALLcosphi")),
+        "ALUsin":  get_mig_delta_series_legacy(mig_parsed, k("ALUsinphi")),
+        "AULsin":  get_mig_delta_series_legacy(mig_parsed, k("AULsinphi")),
+        "AULsin2": get_mig_delta_series_legacy(mig_parsed, k("AULsin2phi")),
+        "ALLn0":   get_mig_delta_series_legacy(mig_parsed, k("ALL")),
+        "ALLcos":  get_mig_delta_series_legacy(mig_parsed, k("ALLcosphi")),
     }
 
 def parse_migration_summary_block(path):
     """
-    Parse block-format migration summary into:
-      mig[bin_tag][series_key] = {"x": array(-t'), "sigma": array}
+    Parse block-format migration diff summary into:
+      mig[bin_tag][series_key] = {"x": array(-t'), "delta": array, "sigma": array}
 
     Numeric rows:
-      - If 2 columns: x delta  -> sigma = abs(delta)
-      - If 3 columns: x delta sigma -> sigma = abs(sigma)
+      - If 2+ columns: we interpret:
+          col0 = x
+          col1 = diff (signed, to APPLY)
+        Any additional columns are ignored by this script.
+      - sigma is defined here as abs(diff), since your definition of the migration systematic
+        is based on the size of the applied shift.
     """
     mig = {}
     cur_bin = None
@@ -515,16 +540,15 @@ def parse_migration_summary_block(path):
                 print(f"[INFO] migration: ignoring unknown series key '{key}' in bin '{cur_bin}'.")
             #endif
 
-            # skip possible header line(s)
             i += 1
             if i < len(lines):
                 hdr = lines[i].strip()
-                if (("-t'" in hdr) or ("delta" in hdr) or ("Delta" in hdr) or ("sigma" in hdr)):
+                if (("-t'" in hdr) or ("delta" in hdr) or ("Delta" in hdr) or ("diff" in hdr) or ("sigma" in hdr)):
                     i += 1
                 #endif
             #endif
 
-            xs, sigmas = [], []
+            xs, deltas, sigmas = [], [], []
             while i < len(lines):
                 row = lines[i].strip()
                 if (not row) or row.startswith("Series:") or row.startswith("Bin:") or (set(row) <= set("=-")):
@@ -537,23 +561,19 @@ def parse_migration_summary_block(path):
                 try:
                     xval = float(parts[0])
                     dval = float(parts[1])
-                    if len(parts) >= 3:
-                        sval = float(parts[2])
-                        sigma_val = abs(sval)
-                    else:
-                        sigma_val = abs(dval)
-                    #endif
                 except Exception:
                     raise RuntimeError(f"FATAL: non-numeric migration row: '{row}'")
                 #endif
                 xs.append(xval)
-                sigmas.append(sigma_val)
+                deltas.append(dval)
+                sigmas.append(abs(dval))
                 i += 1
             #endfor
 
             if use_key and xs:
                 mig[cur_bin][key] = {
                     "x": np.array(xs, dtype=float),
+                    "delta": np.array(deltas, dtype=float),
                     "sigma": np.array(sigmas, dtype=float),
                 }
             #endif
@@ -574,6 +594,28 @@ def _file_has_bin_blocks(path):
         #endfor
     #endif
     return False
+
+def parse_migration_any_format(path):
+    """
+    Wrapper: detect block vs legacy and return:
+      mig_all[bin_tag][key] = {"x","delta","sigma"}
+    """
+    if not os.path.isfile(path):
+        raise RuntimeError(f"FATAL: migration file not found: {path}")
+    #endif
+
+    if _file_has_bin_blocks(path):
+        print(f"[INFO] migration: detected block-format summary (Bin:/Series:) in: {path}")
+        return parse_migration_summary_block(path)
+    #endif
+
+    print(f"[INFO] migration: detected legacy NAME={{x,diff}} format in: {path}")
+    mig_parsed = parse_migration_file_legacy(path)
+    mig_all = {}
+    for bin_tag in BIN_ORDER:
+        mig_all[bin_tag] = build_migration_dict_legacy(mig_parsed, bin_tag) or {}
+    #endfor
+    return mig_all
 
 # ---------------------------------------------------------------------
 # Titles / bin edges
@@ -600,17 +642,8 @@ def _compute_total_sigma_per_bin(edges, rad_sigma=None, mig_sigma=None):
         return None
     #endif
 
-    if have_rad:
-        r = np.asarray(rad_sigma, dtype=float)
-    else:
-        r = None
-    #endif
-
-    if have_mig:
-        m = np.asarray(mig_sigma, dtype=float)
-    else:
-        m = None
-    #endif
+    r = np.asarray(rad_sigma, dtype=float) if have_rad else None
+    m = np.asarray(mig_sigma, dtype=float) if have_mig else None
 
     if have_rad and have_mig:
         n = min(nbins, r.size, m.size)
@@ -660,34 +693,142 @@ def _draw_total_sys_band_solid(ax, edges, rad_sigma=None, mig_sigma=None, zorder
         ax.add_patch(rect)
     #endfor
 
-def _apply_shift_if_available(series, rad_entry):
+def _warn_len_mismatch(tag, lab, a_len, b_len, n_use):
+    if a_len != b_len:
+        print(f"[WARN] {tag}: length mismatch for {lab}: {a_len} vs {b_len}; pairing by index up to {n_use}.")
+    #endif
+
+def _get_delta_array(entry):
+    if entry is None:
+        return None
+    #endif
+    d = entry.get("delta", None)
+    if d is None:
+        return None
+    #endif
+    return np.asarray(d, dtype=float)
+
+def _get_sigma_array(entry, prefer_abs_delta=True):
     """
-    Apply radiative shift consistent with:
-      A_Born = A_baseline - Delta
-    So we do: y_shift = y - Delta.
+    For migration, sigma is defined as abs(delta) (size of applied shift).
+    For radiation, sigma comes from the file.
+    """
+    if entry is None:
+        return None
+    #endif
+
+    if prefer_abs_delta and ("delta" in entry):
+        d = np.asarray(entry.get("delta", []), dtype=float)
+        if d.size > 0:
+            return np.abs(d)
+        #endif
+    #endif
+
+    s = np.asarray(entry.get("sigma", []), dtype=float)
+    if s.size > 0:
+        return np.abs(s)
+    #endif
+    return None
+
+def _combine_mig_sigma(mig_entry, fermi_entry, n_target, label):
+    """
+    sigma_mig per your definition:
+      - if both exist: 0.5*(|diff_mig| + |diff_fermi|)
+      - if only one exists: |diff_source|
+    Pair by index and truncate to n_target.
+    """
+    if (mig_entry is None) and (fermi_entry is None):
+        return None
+    #endif
+
+    a = _get_sigma_array(mig_entry, prefer_abs_delta=True)
+    b = _get_sigma_array(fermi_entry, prefer_abs_delta=True)
+
+    if (a is None) and (b is None):
+        return None
+    #endif
+
+    if (a is not None) and (b is not None):
+        n = min(n_target, a.size, b.size)
+        if n <= 0:
+            return None
+        #endif
+        _warn_len_mismatch("mig_sigma(avg)", label, a.size, b.size, n)
+        return 0.5 * (a[:n] + b[:n])
+    #endif
+
+    if a is not None:
+        n = min(n_target, a.size)
+        if n <= 0:
+            return None
+        #endif
+        return a[:n]
+    #endif
+
+    n = min(n_target, b.size)
+    if n <= 0:
+        return None
+    #endif
+    return b[:n]
+
+def _apply_total_shift(series, rad_entry=None, mig_entry=None, fermi_entry=None,
+                      with_rad=False, with_mig=False, with_fermi=False, label=""):
+    """
+    Apply shifts in the required order:
+      y <- y - Delta_rad
+      y <- y + diff_mig
+      y <- y + diff_fermi
+
+    Pairing is by index if arrays differ in length.
     """
     if series is None:
         return None
     #endif
-    x, y, yerr = series["x"], series["y"], series["yerr"]
-    if rad_entry is None:
-        return x, y, yerr
+
+    x = series["x"]
+    y = series["y"].copy()
+    yerr = series["yerr"]
+
+    if with_rad and (rad_entry is not None):
+        dr = _get_delta_array(rad_entry)
+        if dr is not None:
+            n = min(y.size, dr.size)
+            if n > 0:
+                if dr.size != y.size:
+                    _warn_len_mismatch("rad_shift", label, dr.size, y.size, n)
+                #endif
+                y[:n] = y[:n] - dr[:n]
+            #endif
+        #endif
     #endif
 
-    xr = np.asarray(rad_entry.get("x", []), dtype=float)
-    dr = np.asarray(rad_entry.get("delta", []), dtype=float)
-
-    n = min(x.size, xr.size, dr.size)
-    if n == 0:
-        return x, y, yerr
+    if with_mig and (mig_entry is not None):
+        dm = _get_delta_array(mig_entry)
+        if dm is not None:
+            n = min(y.size, dm.size)
+            if n > 0:
+                if dm.size != y.size:
+                    _warn_len_mismatch("mig_shift", label, dm.size, y.size, n)
+                #endif
+                y[:n] = y[:n] + dm[:n]
+            #endif
+        #endif
     #endif
-    if x.size != xr.size:
-        print(f"[WARN] rad Delta length ({xr.size}) != data length ({x.size}); pairing by index up to {n}.")
+
+    if with_fermi and (fermi_entry is not None):
+        df = _get_delta_array(fermi_entry)
+        if df is not None:
+            n = min(y.size, df.size)
+            if n > 0:
+                if df.size != y.size:
+                    _warn_len_mismatch("fermi_shift", label, df.size, y.size, n)
+                #endif
+                y[:n] = y[:n] + df[:n]
+            #endif
+        #endif
     #endif
 
-    y_shift = y.copy()
-    y_shift[:n] = y_shift[:n] - dr[:n]
-    return x, y_shift, yerr
+    return x, y, yerr
 
 # ---------------------------------------------------------------------
 # Legends
@@ -706,14 +847,21 @@ def _legend_harmonic(ax, labels=("n=1", "n=2"), where="lower left"):
                     bbox_to_anchor=(0.02, 0.02), fontsize=11, title_fontsize=12)
     ax.add_artist(leg)
 
-def _suffix(with_rad, with_mig):
-    if with_rad and with_mig:
+def _suffix(with_rad, with_mig, with_fermi):
+    """
+    Keep filenames stable as much as possible:
+      - previous "_withRadMig" remains the suffix whenever rad AND (any migration) are enabled.
+      - "_withMig" when migrations (any) but no rad.
+      - "_withRad" when only rad.
+    """
+    any_mig = with_mig or with_fermi
+    if with_rad and any_mig:
         return "_withRadMig"
     #endif
     if with_rad:
         return "_withRad"
     #endif
-    if with_mig:
+    if any_mig:
         return "_withMig"
     #endif
     return ""
@@ -722,8 +870,13 @@ def _suffix(with_rad, with_mig):
 # Plotting (1x3 canvases: LU, UL, LL only)
 # ---------------------------------------------------------------------
 def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
-                        rad_for_bin=None, mig_for_bin=None,
-                        with_rad=False, with_mig=False, bin_tag_for_width="enpiGE"):
+                        rad_for_bin=None,
+                        mig_for_bin=None,
+                        fermi_for_bin=None,
+                        with_rad=False,
+                        with_mig=False,
+                        with_fermi=False,
+                        bin_tag_for_width="enpiGE"):
     edges = _sys_edges_for_bin(bin_tag_for_width)
 
     def R(key):
@@ -738,23 +891,44 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
         #endif
         return mig_for_bin.get(key)
 
-    def rad_sigma(key):
+    def F(key):
+        if fermi_for_bin is None:
+            return None
+        #endif
+        return fermi_for_bin.get(key)
+
+    def rad_sigma(key, n_target):
         e = R(key)
         if e is None:
             return None
         #endif
-        return np.abs(np.asarray(e.get("sigma", []), dtype=float))
-
-    def mig_sigma(key):
-        e = M(key)
-        if e is None:
+        s = _get_sigma_array(e, prefer_abs_delta=False)
+        if s is None:
             return None
         #endif
-        return np.abs(np.asarray(e.get("sigma", []), dtype=float))
+        n = min(n_target, s.size)
+        if n <= 0:
+            return None
+        #endif
+        return s[:n]
+
+    def mig_sigma_combined(key, n_target):
+        return _combine_mig_sigma(M(key), F(key), n_target=n_target, label=f"{key}")
+
+    # Determine a target length for sys arrays from any available series in pdata_by_label
+    def _target_len_for_key(key):
+        for _, pdata in pdata_by_label.items():
+            s = pdata.get(key)
+            if s is not None:
+                return int(s["x"].size)
+            #endif
+        #endfor
+        return 0
 
     # ---------------- BSA (ALU sin phi) ----------------
-    rs = rad_sigma("ALUsin") if with_rad else None
-    ms = mig_sigma("ALUsin") if with_mig else None
+    nL = _target_len_for_key("ALUsin")
+    rs = rad_sigma("ALUsin", nL) if with_rad else None
+    ms = mig_sigma_combined("ALUsin", nL) if (with_mig or with_fermi) else None
     _draw_total_sys_band_solid(axLU, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
 
     for lab, pdata in pdata_by_label.items():
@@ -762,11 +936,16 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
         if s is None:
             continue
         #endif
-        if with_rad:
-            x, y, ye = _apply_shift_if_available(s, R("ALUsin"))
-        else:
-            x, y, ye = s["x"], s["y"], s["yerr"]
-        #endif
+        x, y, ye = _apply_total_shift(
+            s,
+            rad_entry=R("ALUsin"),
+            mig_entry=M("ALUsin"),
+            fermi_entry=F("ALUsin"),
+            with_rad=with_rad,
+            with_mig=with_mig,
+            with_fermi=with_fermi,
+            label=f"{lab}:ALUsin"
+        )
         axLU.errorbar(x, y, yerr=ye, fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                       capsize=CAPSIZE, label=lab, markersize=MS, linestyle="None")
     #endfor
@@ -776,29 +955,40 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
     _legend_run_period(axLU, list(pdata_by_label.keys()), where="lower right")
 
     # ---------------- TSA (AUL sin phi open, sin2 phi filled) ----------------
-    rs = rad_sigma("AULsin") if with_rad else None
-    ms = mig_sigma("AULsin") if with_mig else None
+    nU1 = _target_len_for_key("AULsin")
+    rs = rad_sigma("AULsin", nU1) if with_rad else None
+    ms = mig_sigma_combined("AULsin", nU1) if (with_mig or with_fermi) else None
     _draw_total_sys_band_solid(axUL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
 
     for lab, pdata in pdata_by_label.items():
         s1 = pdata.get("AULsin")
         if s1 is not None:
-            if with_rad:
-                x1, y1, ye1 = _apply_shift_if_available(s1, R("AULsin"))
-            else:
-                x1, y1, ye1 = s1["x"], s1["y"], s1["yerr"]
-            #endif
+            x1, y1, ye1 = _apply_total_shift(
+                s1,
+                rad_entry=R("AULsin"),
+                mig_entry=M("AULsin"),
+                fermi_entry=F("AULsin"),
+                with_rad=with_rad,
+                with_mig=with_mig,
+                with_fermi=with_fermi,
+                label=f"{lab}:AULsin"
+            )
             axUL.errorbar(x1, y1, yerr=ye1, fmt="o", mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, markersize=MS, linestyle="None")
         #endif
 
         s2 = pdata.get("AULsin2")
         if s2 is not None:
-            if with_rad and (R("AULsin2") is not None):
-                x2, y2, ye2 = _apply_shift_if_available(s2, R("AULsin2"))
-            else:
-                x2, y2, ye2 = s2["x"], s2["y"], s2["yerr"]
-            #endif
+            x2, y2, ye2 = _apply_total_shift(
+                s2,
+                rad_entry=R("AULsin2"),
+                mig_entry=M("AULsin2"),
+                fermi_entry=F("AULsin2"),
+                with_rad=with_rad,
+                with_mig=with_mig,
+                with_fermi=with_fermi,
+                label=f"{lab}:AULsin2"
+            )
             axUL.errorbar(x2, y2, yerr=ye2, fmt="o", color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, markersize=MS, linestyle="None")
         #endif
@@ -811,29 +1001,40 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
     _legend_run_period(axUL, list(pdata_by_label.keys()), where="lower right")
 
     # ---------------- DSA (ALL n=0 open, cos phi filled) ----------------
-    rs = rad_sigma("ALLn0") if with_rad else None
-    ms = mig_sigma("ALLn0") if with_mig else None
+    nD = _target_len_for_key("ALLn0")
+    rs = rad_sigma("ALLn0", nD) if with_rad else None
+    ms = mig_sigma_combined("ALLn0", nD) if (with_mig or with_fermi) else None
     _draw_total_sys_band_solid(axLL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
 
     for lab, pdata in pdata_by_label.items():
         s0 = pdata.get("ALLn0")
         if s0 is not None:
-            if with_rad:
-                x0, y0, ye0 = _apply_shift_if_available(s0, R("ALLn0"))
-            else:
-                x0, y0, ye0 = s0["x"], s0["y"], s0["yerr"]
-            #endif
+            x0, y0, ye0 = _apply_total_shift(
+                s0,
+                rad_entry=R("ALLn0"),
+                mig_entry=M("ALLn0"),
+                fermi_entry=F("ALLn0"),
+                with_rad=with_rad,
+                with_mig=with_mig,
+                with_fermi=with_fermi,
+                label=f"{lab}:ALLn0"
+            )
             axLL.errorbar(x0, y0, yerr=ye0, fmt="o", mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, markersize=MS, linestyle="None")
         #endif
 
         s1 = pdata.get("ALLcos")
         if s1 is not None:
-            if with_rad and (R("ALLcos") is not None):
-                x1, y1, ye1 = _apply_shift_if_available(s1, R("ALLcos"))
-            else:
-                x1, y1, ye1 = s1["x"], s1["y"], s1["yerr"]
-            #endif
+            x1, y1, ye1 = _apply_total_shift(
+                s1,
+                rad_entry=R("ALLcos"),
+                mig_entry=M("ALLcos"),
+                fermi_entry=F("ALLcos"),
+                with_rad=with_rad,
+                with_mig=with_mig,
+                with_fermi=with_fermi,
+                label=f"{lab}:ALLcos"
+            )
             axLL.errorbar(x1, y1, yerr=ye1, fmt="o", color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, markersize=MS, linestyle="None")
         #endif
@@ -856,8 +1057,9 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir):
 
     pdata_by_label = {"Su22": p_su22, "Fa22": p_fa22, "Sp23": p_sp23}
     _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
-                        rad_for_bin=None, mig_for_bin=None,
-                        with_rad=False, with_mig=False, bin_tag_for_width=bin_tag)
+                        rad_for_bin=None, mig_for_bin=None, fermi_for_bin=None,
+                        with_rad=False, with_mig=False, with_fermi=False,
+                        bin_tag_for_width=bin_tag)
 
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])
     os.makedirs(out_dir, exist_ok=True)
@@ -868,7 +1070,8 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir):
     print(f"Saved all-periods figure: {out_path}")
 
 def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
-                               with_rad=False, with_mig=False, rad_bin=None, mig_bin=None):
+                               with_rad=False, with_mig=False, with_fermi=False,
+                               rad_bin=None, mig_bin=None, fermi_bin=None):
     plt.figure(figsize=(16, 5))
     axLU = plt.subplot(1, 3, 1)
     axUL = plt.subplot(1, 3, 2)
@@ -892,32 +1095,48 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
         #endif
         return mig_bin.get(key)
 
-    def rad_sigma(key):
+    def F(key):
+        if fermi_bin is None:
+            return None
+        #endif
+        return fermi_bin.get(key)
+
+    def rad_sigma(key, n_target):
         e = R(key)
         if e is None:
             return None
         #endif
-        return np.abs(np.asarray(e.get("sigma", []), dtype=float))
-
-    def mig_sigma(key):
-        e = M(key)
-        if e is None:
+        s = _get_sigma_array(e, prefer_abs_delta=False)
+        if s is None:
             return None
         #endif
-        return np.abs(np.asarray(e.get("sigma", []), dtype=float))
+        n = min(n_target, s.size)
+        if n <= 0:
+            return None
+        #endif
+        return s[:n]
+
+    def mig_sigma_combined(key, n_target):
+        return _combine_mig_sigma(M(key), F(key), n_target=n_target, label=f"{key}")
 
     # ---------------- BSA ----------------
-    rs = rad_sigma("ALUsin") if with_rad else None
-    ms = mig_sigma("ALUsin") if with_mig else None
-    _draw_total_sys_band_solid(axLU, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
-
     if p_comb.get("ALUsin") is not None:
+        n = int(p_comb["ALUsin"]["x"].size)
+        rs = rad_sigma("ALUsin", n) if with_rad else None
+        ms = mig_sigma_combined("ALUsin", n) if (with_mig or with_fermi) else None
+        _draw_total_sys_band_solid(axLU, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+
         s = p_comb["ALUsin"]
-        if with_rad:
-            x, y, ye = _apply_shift_if_available(s, R("ALUsin"))
-        else:
-            x, y, ye = s["x"], s["y"], s["yerr"]
-        #endif
+        x, y, ye = _apply_total_shift(
+            s,
+            rad_entry=R("ALUsin"),
+            mig_entry=M("ALUsin"),
+            fermi_entry=F("ALUsin"),
+            with_rad=with_rad,
+            with_mig=with_mig,
+            with_fermi=with_fermi,
+            label="Combined:ALUsin"
+        )
         axLU.errorbar(x, y, yerr=ye, fmt=MARKER, color=black, ecolor=black,
                       capsize=CAPSIZE, markersize=MS, linestyle="None")
     #endif
@@ -926,28 +1145,39 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
     axLU.grid(True, linestyle="--", alpha=0.6)
 
     # ---------------- TSA ----------------
-    rs = rad_sigma("AULsin") if with_rad else None
-    ms = mig_sigma("AULsin") if with_mig else None
-    _draw_total_sys_band_solid(axUL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
-
     if p_comb.get("AULsin") is not None:
+        n = int(p_comb["AULsin"]["x"].size)
+        rs = rad_sigma("AULsin", n) if with_rad else None
+        ms = mig_sigma_combined("AULsin", n) if (with_mig or with_fermi) else None
+        _draw_total_sys_band_solid(axUL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+
         s1 = p_comb["AULsin"]
-        if with_rad:
-            x1, y1, ye1 = _apply_shift_if_available(s1, R("AULsin"))
-        else:
-            x1, y1, ye1 = s1["x"], s1["y"], s1["yerr"]
-        #endif
+        x1, y1, ye1 = _apply_total_shift(
+            s1,
+            rad_entry=R("AULsin"),
+            mig_entry=M("AULsin"),
+            fermi_entry=F("AULsin"),
+            with_rad=with_rad,
+            with_mig=with_mig,
+            with_fermi=with_fermi,
+            label="Combined:AULsin"
+        )
         axUL.errorbar(x1, y1, yerr=ye1, fmt=MARKER, mfc="none", mec=black, ecolor=black,
                       capsize=CAPSIZE, markersize=MS, linestyle="None")
     #endif
 
     if p_comb.get("AULsin2") is not None:
         s2 = p_comb["AULsin2"]
-        if with_rad and (R("AULsin2") is not None):
-            x2, y2, ye2 = _apply_shift_if_available(s2, R("AULsin2"))
-        else:
-            x2, y2, ye2 = s2["x"], s2["y"], s2["yerr"]
-        #endif
+        x2, y2, ye2 = _apply_total_shift(
+            s2,
+            rad_entry=R("AULsin2"),
+            mig_entry=M("AULsin2"),
+            fermi_entry=F("AULsin2"),
+            with_rad=with_rad,
+            with_mig=with_mig,
+            with_fermi=with_fermi,
+            label="Combined:AULsin2"
+        )
         axUL.errorbar(x2, y2, yerr=ye2, fmt=MARKER, color=black, ecolor=black,
                       capsize=CAPSIZE, markersize=MS, linestyle="None")
     #endif
@@ -968,28 +1198,39 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
     axUL.add_artist(_leg_h)
 
     # ---------------- DSA ----------------
-    rs = rad_sigma("ALLn0") if with_rad else None
-    ms = mig_sigma("ALLn0") if with_mig else None
-    _draw_total_sys_band_solid(axLL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
-
     if p_comb.get("ALLn0") is not None:
+        n = int(p_comb["ALLn0"]["x"].size)
+        rs = rad_sigma("ALLn0", n) if with_rad else None
+        ms = mig_sigma_combined("ALLn0", n) if (with_mig or with_fermi) else None
+        _draw_total_sys_band_solid(axLL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+
         s0 = p_comb["ALLn0"]
-        if with_rad:
-            x0, y0, ye0 = _apply_shift_if_available(s0, R("ALLn0"))
-        else:
-            x0, y0, ye0 = s0["x"], s0["y"], s0["yerr"]
-        #endif
+        x0, y0, ye0 = _apply_total_shift(
+            s0,
+            rad_entry=R("ALLn0"),
+            mig_entry=M("ALLn0"),
+            fermi_entry=F("ALLn0"),
+            with_rad=with_rad,
+            with_mig=with_mig,
+            with_fermi=with_fermi,
+            label="Combined:ALLn0"
+        )
         axLL.errorbar(x0, y0, yerr=ye0, fmt=MARKER, mfc="none", mec=black, ecolor=black,
                       capsize=CAPSIZE, markersize=MS, linestyle="None")
     #endif
 
     if p_comb.get("ALLcos") is not None:
         s1 = p_comb["ALLcos"]
-        if with_rad and (R("ALLcos") is not None):
-            x1, y1, ye1 = _apply_shift_if_available(s1, R("ALLcos"))
-        else:
-            x1, y1, ye1 = s1["x"], s1["y"], s1["yerr"]
-        #endif
+        x1, y1, ye1 = _apply_total_shift(
+            s1,
+            rad_entry=R("ALLcos"),
+            mig_entry=M("ALLcos"),
+            fermi_entry=F("ALLcos"),
+            with_rad=with_rad,
+            with_mig=with_mig,
+            with_fermi=with_fermi,
+            label="Combined:ALLcos"
+        )
         axLL.errorbar(x1, y1, yerr=ye1, fmt=MARKER, color=black, ecolor=black,
                       capsize=CAPSIZE, markersize=MS, linestyle="None")
     #endif
@@ -1012,7 +1253,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])
     os.makedirs(out_dir, exist_ok=True)
 
-    suf = _suffix(with_rad, with_mig)
+    suf = _suffix(with_rad, with_mig, with_fermi)
     out_path = os.path.join(out_dir, f"rgc_{OUT_PREFIX}_{bin_tag}_CombinedOnly{suf}.pdf")
     plt.savefig(out_path)
     plt.close()
@@ -1049,36 +1290,45 @@ def _get_rad_arrays(rad_bin, key, n_expected):
     if delta.size < n_expected or sigma.size < n_expected:
         raise RuntimeError(f"FATAL: radiative arrays too short for key={key}: delta={delta.size}, sigma={sigma.size}, expected={n_expected}")
     #endif
-    return delta[:n_expected], sigma[:n_expected]
+    return delta[:n_expected], np.abs(sigma[:n_expected])
 
-def _get_mig_arrays(mig_bin, key, n_expected):
+def _get_mig_delta_arrays(mig_bin, key, n_expected, label):
+    """
+    Return signed diff arrays (delta) and abs(delta) arrays for a given migration block.
+    """
     if mig_bin is None:
-        raise RuntimeError("FATAL: mig_bin is None while generating LaTeX tables.")
+        return None, None
     #endif
     if key not in mig_bin or mig_bin[key] is None:
-        raise RuntimeError(f"FATAL: missing migration series for key={key}")
+        return None, None
     #endif
-    sigma = np.asarray(mig_bin[key].get("sigma", []), dtype=float)
-    if sigma.size < n_expected:
-        raise RuntimeError(f"FATAL: migration sigma array too short for key={key}: sigma={sigma.size}, expected={n_expected}")
+    d = np.asarray(mig_bin[key].get("delta", []), dtype=float)
+    if d.size < n_expected:
+        raise RuntimeError(f"FATAL: migration diff array too short for key={key} in {label}: delta={d.size}, expected={n_expected}")
     #endif
-    return sigma[:n_expected]
+    d = d[:n_expected]
+    return d, np.abs(d)
 
 def _fmt_cell(val, stat, syst, ndp=3):
     """
-    Wrap the full cell in $...$ to ensure math mode, since we use ^ and _.
+    Wrap the full cell in $...$ to ensure math mode.
     """
     fmt = "{0:." + str(ndp) + "f}"
     core = fmt.format(val) + "^{\\pm " + fmt.format(stat) + "}_{\\pm " + fmt.format(syst) + "}"
     return "$" + core + "$"
 #endif
 
-def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
+def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all):
     """
     Prints one LaTeX table for a given bin_tag using Combined fit results,
-    radiative deltas, and quadrature systematics.
+    radiative deltas, and total systematics.
 
-    Central values correspond to A_Born = A_baseline - Delta_rad.
+    Central values:
+      y_corr = y - Delta_rad + diff_mig + diff_fermi
+
+    Migration systematic:
+      sigma_mig = average( |diff_mig|, |diff_fermi| )
+    with fallback to |diff_source| if only one is provided.
     """
     p = build_period_dict(comb_parsed, bin_tag)
 
@@ -1088,7 +1338,6 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         raise RuntimeError(f"FATAL: missing Combined fit series for bin={bin_tag}: {missing}")
     #endif
 
-    # Ensure same x binning across all five series
     series_list = [p[k] for k in required]
     _assert_same_x(series_list, required, tol=1.0e-6)
 
@@ -1099,11 +1348,13 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
     #endif
 
     if rad_all is None or mig_all is None:
-        raise RuntimeError("FATAL: LaTeX tables require BOTH --rad and --migration so systematics can be sqrt(rad^2 + mig^2).")
+        raise RuntimeError("FATAL: LaTeX tables require BOTH --rad and --migration.")
     #endif
 
     rad_bin = rad_all.get(bin_tag)
     mig_bin = mig_all.get(bin_tag)
+    fermi_bin = fermi_all.get(bin_tag) if (fermi_all is not None) else None
+
     if rad_bin is None:
         raise RuntimeError(f"FATAL: missing bin in rad summary: {bin_tag}")
     #endif
@@ -1111,7 +1362,6 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         raise RuntimeError(f"FATAL: missing bin in migration summary: {bin_tag}")
     #endif
 
-    # Prepare arrays: central shift = y - d_rad, sys from quadrature of sigmas
     vals = {}
     stats = {}
     systs = {}
@@ -1121,9 +1371,30 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
         ye = np.asarray(p[key]["yerr"], dtype=float)
 
         d_rad, s_rad = _get_rad_arrays(rad_bin, key, n)
-        s_mig = _get_mig_arrays(mig_bin, key, n)
 
+        d_mig,  s_mig_abs  = _get_mig_delta_arrays(mig_bin, key, n, label="--migration")
+        d_fermi, s_fermi_abs = _get_mig_delta_arrays(fermi_bin, key, n, label="--fermi_migration") if (fermi_bin is not None) else (None, None)
+
+        # Central shifts: y - Delta_rad + diff_mig + diff_fermi
         y_shift = y - d_rad
+        if d_mig is not None:
+            y_shift = y_shift + d_mig
+        #endif
+        if d_fermi is not None:
+            y_shift = y_shift + d_fermi
+        #endif
+
+        # Migration systematic: average magnitudes (with fallback)
+        if (s_mig_abs is not None) and (s_fermi_abs is not None):
+            s_mig = 0.5 * (s_mig_abs + s_fermi_abs)
+        elif (s_mig_abs is not None):
+            s_mig = s_mig_abs
+        elif (s_fermi_abs is not None):
+            s_mig = s_fermi_abs
+        else:
+            raise RuntimeError(f"FATAL: missing migration diffs for key={key} in bin={bin_tag} (no diffs found in either migration source).")
+        #endif
+
         s_tot = np.sqrt(s_rad * s_rad + s_mig * s_mig)
 
         vals[key] = y_shift
@@ -1153,8 +1424,9 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
     print("")
     print("% -----------------------------------------------------------------------------")
     print(f"% LaTeX table for bin: {bin_tag}  ({XB_BINS.get(bin_tag, bin_tag)})")
-    print("% Central values correspond to A_Born = A_baseline - Delta_rad.")
-    print("% Syst is sqrt(rad_sigma^2 + mig_sigma^2). Rows ordered in increasing -t'.")
+    print("% Central values: y - Delta_rad + diff_mig + diff_fermi (if provided).")
+    print("% Migration syst: avg(|diff_mig|, |diff_fermi|) with fallback to |diff_source|.")
+    print("% Total syst: sqrt(rad_sigma^2 + mig_sigma^2). Rows ordered in increasing -t'.")
     print("% -----------------------------------------------------------------------------")
     print(header, end="")
 
@@ -1177,13 +1449,18 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all):
 # Main
 # ---------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description="Plot enpi+ asymmetries vs -t' with optional radiative deltas and bin-migration systematics.")
+    ap = argparse.ArgumentParser(description="Plot enpi+ asymmetries vs -t' with optional radiative deltas and (regular + Fermi) migration diffs.")
     ap.add_argument("su22", type=str, help="Su22 fit-results .txt")
     ap.add_argument("fa22", type=str, help="Fa22 fit-results .txt")
     ap.add_argument("sp23", type=str, help="Sp23 fit-results .txt")
     ap.add_argument("combined", type=str, help="Combined fit-results .txt")
-    ap.add_argument("--rad", type=str, default=None, help="Radiative Delta summary .txt (block format). Applied as A_Born = A_baseline - Delta.")
-    ap.add_argument("--migration", type=str, default=None, help="Migration summary file. Block format preferred; legacy NAME={{x,delta}} supported.")
+
+    ap.add_argument("--rad", type=str, default=None,
+                    help="Radiative Delta summary .txt (block format). Applied as A_Born = A_baseline - Delta.")
+    ap.add_argument("--migration", type=str, default=None,
+                    help="Regular migration DIFF summary file. Block format preferred; legacy NAME={{x,diff}} supported. Applied as y <- y + diff.")
+    ap.add_argument("--fermi_migration", type=str, default=None,
+                    help="Fermi-motion migration DIFF summary file. Same formats as --migration. Applied as y <- y + diff.")
     args = ap.parse_args()
 
     su22 = parse_asym_file(args.su22)
@@ -1204,7 +1481,6 @@ def main():
         #endif
         rad_all = parse_rad_summary(args.rad)
 
-        # Optional sanity: warn if none of the allowed keys appear for any bin.
         any_key = False
         for bt, block in rad_all.items():
             for k in _ALLOWED_KEYS:
@@ -1215,28 +1491,19 @@ def main():
             #endfor
         #endfor
         if not any_key:
-            print("[WARN] rad: parsed file, but did not find any of the expected keys ALUsin/AULsin/AULsin2/ALLn0/ALLcos in any bin.")
+            print("[WARN] rad: parsed file, but did not find any expected keys in any bin.")
             print("[WARN]      This usually means the Series tokens did not map correctly.")
         #endif
     #endif
 
     mig_all = None
     if args.migration:
-        if not os.path.isfile(args.migration):
-            raise RuntimeError(f"FATAL: --migration file not found: {args.migration}")
-        #endif
+        mig_all = parse_migration_any_format(args.migration)
+    #endif
 
-        if _file_has_bin_blocks(args.migration):
-            print("[INFO] migration: detected block-format migration summary (Bin:/Series:).")
-            mig_all = parse_migration_summary_block(args.migration)
-        else:
-            print("[INFO] migration: detected legacy NAME={{x,delta}} format; using legacy parser.")
-            mig_parsed = parse_migration_file_legacy(args.migration)
-            mig_all = {}
-            for bin_tag in BIN_ORDER:
-                mig_all[bin_tag] = build_migration_dict_legacy(mig_parsed, bin_tag) or {}
-            #endfor
-        #endif
+    fermi_all = None
+    if args.fermi_migration:
+        fermi_all = parse_migration_any_format(args.fermi_migration)
     #endif
 
     out_dir = os.path.join("output", "enpi+")
@@ -1251,23 +1518,38 @@ def main():
 
         plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir)
 
-        plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
-                                   with_rad=False, with_mig=False, rad_bin=None, mig_bin=None)
+        # Always produce the unshifted Combined-only figure (as before)
+        plot_combined_only_for_bin(
+            p_comb, bin_tag, out_dir,
+            with_rad=False, with_mig=False, with_fermi=False,
+            rad_bin=None, mig_bin=None, fermi_bin=None
+        )
 
+        # Produce shifted/systematics figure if we have at least rad+regular migration (same trigger as before),
+        # with optional inclusion of fermi_migration if provided.
         if (rad_all is not None) and (mig_all is not None):
             rad_bin = rad_all.get(bin_tag, {})
             mig_bin = mig_all.get(bin_tag, {})
-            plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
-                                       with_rad=True, with_mig=True, rad_bin=rad_bin, mig_bin=mig_bin)
+            fermi_bin = fermi_all.get(bin_tag, {}) if (fermi_all is not None) else None
+
+            plot_combined_only_for_bin(
+                p_comb, bin_tag, out_dir,
+                with_rad=True,
+                with_mig=True,
+                with_fermi=(fermi_all is not None),
+                rad_bin=rad_bin,
+                mig_bin=mig_bin,
+                fermi_bin=fermi_bin
+            )
         #endif
     #endfor
 
-    # Print LaTeX tables (four xB slices only), require both rad+migration
+    # Print LaTeX tables (four xB slices only), require at least rad+migration (same trigger as before).
     if (rad_all is not None) and (mig_all is not None):
         table_bins = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
         for bt in table_bins:
             if bt in available_bins:
-                print_latex_table_for_bin(bt, comb, rad_all, mig_all)
+                print_latex_table_for_bin(bt, comb, rad_all, mig_all, fermi_all)
             else:
                 raise RuntimeError(f"FATAL: requested table bin not present in input files: {bt}")
             #endif
