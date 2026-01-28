@@ -89,7 +89,7 @@ def main():
             continue
         #endif
 
-        xb = float(getattr(t, "xB"))
+        xb = float(getattr(t, "x"))
         if xb < xb_sel_min or xb > xb_sel_max:
             continue
         #endif
