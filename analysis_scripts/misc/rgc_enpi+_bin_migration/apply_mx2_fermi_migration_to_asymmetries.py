@@ -1248,7 +1248,7 @@ def main():
     save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_dir)
 
     # Diagnostic summary of the exclusive row weights
-    sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
+    sys.stdout.write("\nExclusive reconstructed  Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
     sys.stdout.write("Exclusive reconstructed Mx2 window from CSV: [{:.6f}, {:.6f}]\n".format(meta[excl_csv_idx][1], meta[excl_csv_idx][2]))
     sys.stdout.write("Using {} fit files (effective_N={}); drop_last_bin={}\n".format(effective_N, effective_N, args.drop_last_bin))
     sys.stdout.write("Weights provided (NOTE: if --renormalize is set, the actual weights used are rescaled internally):\n")
