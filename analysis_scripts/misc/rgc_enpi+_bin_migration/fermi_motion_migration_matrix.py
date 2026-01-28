@@ -10,13 +10,12 @@ Read a ROOT file at runtime, load the PhysicsEvents TTree, select events with:
   -1.0 <= tprime <= 0.0
 
 Then compute the percentage distribution of mc_Mx2 values in the bins:
-  [-10, 0.81]
-  [0.81, 1.00]
-  [1.00, 1.15]
-  [1.15, 1.30]
-  [1.30, 1.45]
-  [1.45, 1.60]
-  [1.60, 20]
+  [-inf, 1.07]
+  [1.07, 1.22]
+  [1.22, 1.37]
+  [1.37, 1.52]
+  [1.52, 1.77]
+  [1.77, inf]
 
 Also produces an output plot comparing Mx2 and mc_Mx2 histograms with ONLY the
 (x, tprime) cuts applied (no Mx2 window), in the range [-1, 4], and saves it to:
@@ -28,6 +27,7 @@ Usage (tcsh):
 
 import sys
 import os
+import math
 import ROOT
 
 
@@ -43,6 +43,28 @@ def ensure_outdir(path):
     d = os.path.dirname(path)
     if d and (not os.path.isdir(d)):
         os.makedirs(d, exist_ok=True)
+    #endif
+
+
+def bin_label(lo, hi):
+    if math.isinf(lo) and (lo < 0.0) and (not math.isinf(hi)):
+        return f"[-inf, {hi:.2f}]"
+    #endif
+    if (not math.isinf(lo)) and math.isinf(hi) and (hi > 0.0):
+        return f"[{lo:.2f}, inf]"
+    #endif
+    if (not math.isinf(lo)) and (not math.isinf(hi)):
+        return f"[{lo:.2f}, {hi:.2f}]"
+    #endif
+    return f"[{lo}, {hi}]"
+
+
+def in_bin(val, lo, hi, is_last_bin):
+    # Half-open [lo, hi) except last bin includes upper edge.
+    if not is_last_bin:
+        return (val >= lo) and (val < hi)
+    #endif
+    return (val >= lo) and (val <= hi)
     #endif
 
 
@@ -85,12 +107,21 @@ def main():
     tprime_sel_min = -1.0
     tprime_sel_max = 0.0
 
-    # mc_Mx2 bin edges (ascending).
-    edges = [-10.0, 0.81, 1.00, 1.15, 1.30, 1.45, 1.60, 20.0]
-    counts = [0] * (len(edges) - 1)
+    # --------------------------
+    # mc_Mx2 bins (with infinities)
+    # --------------------------
+    bins = [
+        (-math.inf, 1.07),
+        (1.07, 1.22),
+        (1.22, 1.37),
+        (1.37, 1.52),
+        (1.52, 1.77),
+        (1.77, math.inf),
+    ]
+    counts = [0] * len(bins)
 
     total_selected = 0
-    total_outside_mc_range = 0
+    total_outside_mc_range = 0  # should remain 0 with infinite endpoints
 
     n_entries = int(t.GetEntries())
     for i in range(n_entries):
@@ -115,23 +146,13 @@ def main():
         total_selected += 1
 
         placed = False
-        for k in range(len(counts)):
-            lo = edges[k]
-            hi = edges[k + 1]
-
-            # Half-open bins [lo, hi), except last includes upper edge.
-            if k < len(counts) - 1:
-                if (mc_mx2 >= lo) and (mc_mx2 < hi):
-                    counts[k] += 1
-                    placed = True
-                    break
-                #endif
-            else:
-                if (mc_mx2 >= lo) and (mc_mx2 <= hi):
-                    counts[k] += 1
-                    placed = True
-                    break
-                #endif
+        for k in range(len(bins)):
+            lo, hi = bins[k]
+            is_last = (k == (len(bins) - 1))
+            if in_bin(mc_mx2, lo, hi, is_last):
+                counts[k] += 1
+                placed = True
+                break
             #endif
         #endfor
 
@@ -165,10 +186,9 @@ def main():
     print(f"{'mc_Mx2 bin':>20}   {'count':>12}   {'percent':>12}")
     print(f"{'-'*20}   {'-'*12}   {'-'*12}")
 
-    for k in range(len(counts)):
-        lo = edges[k]
-        hi = edges[k + 1]
-        label = f"[{lo:.2f}, {hi:.2f}]"
+    for k in range(len(bins)):
+        lo, hi = bins[k]
+        label = bin_label(lo, hi)
         frac = counts[k] / float(total_selected)
         print(f"{label:>20}   {counts[k]:12d}   {format_pct(frac):>12}")
     #endfor
@@ -176,8 +196,8 @@ def main():
     if total_outside_mc_range > 0:
         print("")
         print(
-            f"WARNING: {total_outside_mc_range} selected events had mc_Mx2 outside "
-            f"[{edges[0]}, {edges[-1]}] and were not counted."
+            f"WARNING: {total_outside_mc_range} selected events were not assigned to a bin. "
+            "This should not happen with infinite endpoints; check for NaNs in mc_Mx2."
         )
     #endif
 
@@ -193,19 +213,16 @@ def main():
     out_png = "output/Mx2_comparison.png"
     ensure_outdir(out_png)
 
-    # Turn off stat box globally for this script.
     ROOT.gStyle.SetOptStat(0)
 
     nbins = 200
     h_mx2 = ROOT.TH1F("h_mx2", "Mx2 Comparison;M_{x}^{2} (GeV^{2});Counts", nbins, -1.0, 4.0)
     h_mc  = ROOT.TH1F("h_mc_mx2", "Mx2 Comparison;M_{x}^{2} (GeV^{2});Counts", nbins, -1.0, 4.0)
 
-    # Basic styling (ROOT defaults are fine; just make them distinguishable).
     h_mx2.SetLineWidth(2)
     h_mc.SetLineWidth(2)
     h_mc.SetLineColor(ROOT.kRed)
 
-    # Fill histograms with x/tprime cuts only.
     n_entries = int(t.GetEntries())
     for i in range(n_entries):
         t.GetEntry(i)
@@ -234,11 +251,9 @@ def main():
         die("Histogram for mc_Mx2 has zero entries after (x, tprime) cuts.")
     #endif
 
-    # Draw
     c = ROOT.TCanvas("c_mx2_comp", "Mx2 comparison", 900, 700)
     c.SetLeftMargin(0.13)
 
-    # Set y-range based on max of both.
     ymax = max(h_mx2.GetMaximum(), h_mc.GetMaximum())
     h_mx2.SetMaximum(1.15 * ymax)
 
@@ -253,11 +268,14 @@ def main():
     leg.AddEntry(h_mc, "mc_Mx2", "l")
     leg.Draw()
 
-    # Small annotation of cuts.
     latex = ROOT.TLatex()
     latex.SetNDC(True)
     latex.SetTextSize(0.032)
-    latex.DrawLatex(0.14, 0.92, f"{x_sel_min:.2f} #leq x #leq {x_sel_max:.2f},  {tprime_sel_min:.1f} #leq t' #leq {tprime_sel_max:.1f}")
+    latex.DrawLatex(
+        0.14,
+        0.92,
+        f"{x_sel_min:.2f} #leq x #leq {x_sel_max:.2f},  {tprime_sel_min:.1f} #leq t' #leq {tprime_sel_max:.1f}",
+    )
 
     c.SaveAs(out_png)
 
