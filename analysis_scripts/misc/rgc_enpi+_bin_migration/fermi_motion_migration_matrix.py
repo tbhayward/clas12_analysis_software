@@ -5,8 +5,8 @@
 mx2_mc_mx2_fraction_table.py
 
 Read a ROOT file at runtime, load the PhysicsEvents TTree, select events with:
-  0.81 <= Mx2    <= 1.00        (for the TABLE only)
-  0.10 <= x      <= 0.60
+  -inf <= Mx2   <= 1.07        (for the TABLE only)
+  0.10 <= x     <= 0.60
   -1.0 <= tprime <= 0.0
 
 Then compute the percentage distribution of mc_Mx2 values in the bins:
@@ -98,8 +98,8 @@ def main():
     # --------------------------
     # Selections for TABLE
     # --------------------------
-    mx2_sel_min = 0.81
-    mx2_sel_max = 1.00
+    # "Mx2 between -inf and 1.07" means: Mx2 <= 1.07 (no lower bound).
+    mx2_sel_max = 1.07
 
     x_sel_min = 0.10
     x_sel_max = 0.60
@@ -128,7 +128,7 @@ def main():
         t.GetEntry(i)
 
         mx2 = float(getattr(t, "Mx2"))
-        if mx2 < mx2_sel_min or mx2 > mx2_sel_max:
+        if mx2 > mx2_sel_max:
             continue
         #endif
 
@@ -164,7 +164,7 @@ def main():
     if total_selected == 0:
         die(
             "No entries passed the TABLE selection: "
-            f"{mx2_sel_min:.2f} <= Mx2 <= {mx2_sel_max:.2f}, "
+            f"Mx2 <= {mx2_sel_max:.2f}, "
             f"{x_sel_min:.2f} <= x <= {x_sel_max:.2f}, "
             f"{tprime_sel_min:.2f} <= tprime <= {tprime_sel_max:.2f}."
         )
@@ -177,7 +177,7 @@ def main():
     print(f"Input file: {inpath}")
     print("Tree: PhysicsEvents")
     print("TABLE selection:")
-    print(f"  {mx2_sel_min:.2f} <= Mx2    <= {mx2_sel_max:.2f}")
+    print(f"  Mx2 <= {mx2_sel_max:.2f}")
     print(f"  {x_sel_min:.2f} <= x      <= {x_sel_max:.2f}")
     print(f"  {tprime_sel_min:.2f} <= tprime <= {tprime_sel_max:.2f}")
     print(f"Selected entries (for table): {total_selected}")
