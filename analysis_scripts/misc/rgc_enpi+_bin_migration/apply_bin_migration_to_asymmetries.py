@@ -4,45 +4,51 @@
 # Usage (tcsh one-liner example):
 # python3 apply_bin_migration_to_asymmetries.py mc_bin_migration.csv fit_results.txt fit_results_migrated.txt
 #
-# Notes:
-# - The 3rd argument is a file name only (no directory). Output files are written to:
-#     output/rgc_enpi+_bin_migration_study/
-# - The script produces:
-#     (1) Migrated fit file:
+# Purpose:
+#   Apply the standard (non-Fermi) kinematic bin-migration matrix to the fitted
+#   asymmetry points and (now) treat the migration effect as a SIGNED correction.
+#
+# Inputs:
+#   (1) Migration CSV with 24x24 per-bin composition/migration fractions (rows sum ~ 1).
+#   (2) Fit-results text file in Mathematica-style assignments:
+#         name = {{tmean, value, stat}, ...};
+#       for 4 xB groups x 5 SF suffixes = 20 variables total, each of length 6.
+#
+# Outputs (written under output/rgc_enpi+_bin_migration_study/):
+#   (1) Migrated/corrected fit file:
 #         name = {{tmean, migrated_value, stat_original}, ...};
-#     (2) Diff/systematics file:
-#         name        = {{tmean, abs(migrated-original)}, ...};               (systematic magnitude)
-#         name_ratio  = {{tmean, abs(migrated-original)/abs(original)}, ...}; (relative magnitude)
-#         name_delta  = {{tmean, migrated-original}, ...};                    (signed delta, diagnostics)
-# - The script also produces 4 PDF canvases (one per xB bin) in the same output directory,
-#   plotting the input/original asymmetries from the fit-results text file:
-#     left:   F_LU^{sin(phi)} / F_UU
-#     center: F_UL^{sin(phi)} / F_UU   and   F_UL^{sin(2phi)} / F_UU
-#     right:  F_LL / F_UU              and   F_LL^{cos(phi)} / F_UU
 #
-# Additional plots (added without changing previous functionality):
-# - The script also produces 4 PDF canvases (one per xB bin) showing ONLY the
-#   migration systematic magnitudes vs -t':
-#     left:  |Delta(F_LU^{sin(phi)}/F_UU)|
-#     mid:   |Delta(F_UL^{sin(phi)}/F_UU)| and |Delta(F_UL^{sin(2phi)}/F_UU)|
-#     right: |Delta(F_LL/F_UU)| and |Delta(F_LL^{cos(phi)}/F_UU)|
-#   The y-axis of each subplot is [0, 1.2 * max_plotted_in_that_subplot].
+#   (2) Diff/correction file (SIGNED):
+#         name_delta = {{tmean, (migrated-original)}, ...};          (SIGNED delta)
+#         name_abs   = {{tmean, |migrated-original|}, ...};          (magnitude)
+#         name_ratio = {{tmean, (migrated-original)/original}, ...}; (SIGNED ratio)
 #
-# Plot requirements (as requested):
+# IMPORTANT (Jan 2026 update):
+#   - This script now treats the migration difference as a SIGNED correction
+#     (delta = migrated - original), consistent with the Mx2 Fermi-motion script.
+#   - Plotting sys rectangles remain CONVENTIONALLY symmetric and use |delta|.
+#
+# Plots:
+#   (A) 4 PDF canvases (one per xB bin) for BASELINE/original points with sys rectangles:
+#       - output file: polarized_structure_functions_baseline_<xBgroup>.pdf
+#   (B) 4 PDF canvases (one per xB bin) for MIGRATED/corrected points with sys rectangles:
+#       - output file: polarized_structure_functions_migrated_<xBgroup>.pdf
+#   (C) 4 PDF canvases (one per xB bin) showing ONLY migration systematic magnitudes:
+#       - output file: migration_systematics_<xBgroup>.pdf
+#
+# Plot requirements:
 # - Y ranges (main asymmetry canvases):
 #     single-spin (LU, UL): [-0.4, 0.4]
 #     double-spin (LL):     [-0.8, 0.8]
-# - No horizontal error bars (no xerr on points).
+# - No horizontal error bars (no xerr).
 # - Systematic uncertainty drawn as per-bin rectangles from y=0 to +/-sys,
-#   spanning the inferred (-t) bin width.
+#   spanning the inferred (-t') bin width.
 # - UL panel: sys rectangles from lower-order harmonic only (AUL sin(phi)).
 # - LL panel: sys rectangles from lower-order harmonic only (ALL).
 #
 # Implementation detail:
-# - Migration-derived systematic magnitudes are injected into the plotting map
-#   under the deterministic name "<varname>Sys" (pairs: [tmean, sysmag]).
-#   This guarantees the plotter can draw systematics even if the input text file
-#   contains no sys series.
+# - Migration-derived magnitude series are injected under "<varname>Sys" (pairs [tmean, sysmag])
+#   so the plotter can always draw sys rectangles even if the input fit file has none.
 
 import argparse
 import ast
@@ -51,14 +57,17 @@ import os
 import re
 import sys
 
+
 def fatal(msg):
     sys.stderr.write("FATAL: " + msg + "\n")
     sys.exit(1)
 #enddef
 
+
 def warn(msg):
     sys.stderr.write("WARNING: " + msg + "\n")
 #enddef
+
 
 def ensure_output_dir(out_dir):
     try:
@@ -68,13 +77,23 @@ def ensure_output_dir(out_dir):
     #endif
 #enddef
 
+
 def ensure_is_basename(path_like, what):
     if os.path.basename(path_like) != path_like:
         fatal("{} must be a file name only (no directory). Got: '{}'".format(what, path_like))
     #endif
 #enddef
 
+
 def read_migration_csv(csv_path):
+    """
+    Migration CSV format (per row):
+      bin, xbmin, xbmax, tmin_n, tmax_n, nev, frac0..frac23   (6 meta + 24 fractions) => 30 columns
+
+    Returns:
+      weights: list[list[float]] shape (24, 24)   (row i = target bin i, columns j = source bin j)
+      meta:    list[(bin, xbmin, xbmax, tmin_n, tmax_n, nev)]
+    """
     if not os.path.isfile(csv_path):
         fatal("Migration CSV not found: " + csv_path)
     #endif
@@ -132,6 +151,7 @@ def read_migration_csv(csv_path):
     return weights, meta
 #enddef
 
+
 def parse_fit_results_text(txt_path):
     if not os.path.isfile(txt_path):
         fatal("Fit-results text file not found: " + txt_path)
@@ -154,7 +174,7 @@ def parse_fit_results_text(txt_path):
         try:
             val = ast.literal_eval(py_rhs)
         except Exception as e:
-            fatal("Failed to parse assignment for variable '{}': {}".format(name, str(e)))
+            fatal("Failed to parse assignment for variable '{}' in file '{}': {}".format(name, txt_path, str(e)))
         #endif
 
         out[name] = val
@@ -162,6 +182,7 @@ def parse_fit_results_text(txt_path):
 
     return out
 #enddef
+
 
 def xb_group_name_from_index(idx):
     if idx == 0:
@@ -176,6 +197,7 @@ def xb_group_name_from_index(idx):
         fatal("Invalid xB group index: {}".format(idx))
     #endif
 #enddef
+
 
 def build_required_varnames():
     xb_groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
@@ -194,6 +216,7 @@ def build_required_varnames():
     #endfor
     return varnames
 #enddef
+
 
 def validate_fit_data(fit_map, required_varnames):
     missing = []
@@ -228,6 +251,7 @@ def validate_fit_data(fit_map, required_varnames):
     #endfor
 #enddef
 
+
 def global_bin_to_group_and_tindex(b):
     if b < 0 or b > 23:
         fatal("Global bin out of range: {}".format(b))
@@ -235,7 +259,21 @@ def global_bin_to_group_and_tindex(b):
     return (b // 6), (b % 6)
 #enddef
 
+
 def compute_migrated_values(weights, fit_map, required_varnames, renormalize, tol):
+    """
+    For each target (xB group, t index) bin -> global bin b:
+      migrated(b) = sum_j w_bj * value(j)
+
+    Correction convention:
+      delta = migrated - original  (SIGNED)
+      corrected value = migrated
+
+    Returns:
+      migrated:     dict var -> list[[tmean, migrated_value, stat_original], ...]
+      diffs_mag:    dict var -> list[[tmean, |delta|], ...]
+      diffs_signed: dict var -> list[[tmean, delta], ...]
+    """
     suffixes = [
         "GEchi2FitsALUsinphi",
         "GEchi2FitsAULsinphi",
@@ -261,7 +299,11 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
                 target_global_bin = xb_group_idx * 6 + t_idx
 
                 row = weights[target_global_bin]
-                row_sum = sum(row)
+
+                row_sum = 0.0
+                for w in row:
+                    row_sum += w
+                #endfor
 
                 if row_sum == 0.0:
                     fatal("Migration row sum is zero for target bin {} (cannot compute weighted average).".format(target_global_bin))
@@ -316,6 +358,7 @@ def compute_migrated_values(weights, fit_map, required_varnames, renormalize, to
     return migrated, diffs_mag, diffs_signed
 #enddef
 
+
 def format_mathematica_list_triple(lst):
     parts = []
     for trip in lst:
@@ -323,6 +366,7 @@ def format_mathematica_list_triple(lst):
     #endfor
     return "{" + ", ".join(parts) + "}"
 #enddef
+
 
 def format_mathematica_list_pair(lst):
     parts = []
@@ -332,7 +376,16 @@ def format_mathematica_list_pair(lst):
     return "{" + ", ".join(parts) + "}"
 #enddef
 
+
 def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map):
+    """
+    Writes:
+      - out_path: migrated (corrected) triples
+      - out_diff_path: signed delta, abs(delta), signed ratio delta/original
+
+    File naming convention matches your Mx2 Fermi-motion script:
+      var_delta, var_abs, var_ratio
+    """
     suffixes = [
         "GEchi2FitsALUsinphi",
         "GEchi2FitsAULsinphi",
@@ -362,44 +415,50 @@ def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signe
         for g in xb_groups:
             for s in suffixes:
                 name = g + s
-                if name not in diffs_mag:
-                    fatal("Internal error: diffs_mag missing variable '{}'".format(name))
-                #endif
+
                 if name not in diffs_signed:
                     fatal("Internal error: diffs_signed missing variable '{}'".format(name))
+                #endif
+                if name not in diffs_mag:
+                    fatal("Internal error: diffs_mag missing variable '{}'".format(name))
                 #endif
                 if name not in fit_map:
                     fatal("Internal error: fit_map missing variable '{}' needed for ratio.".format(name))
                 #endif
 
-                rhs_mag = format_mathematica_list_pair(diffs_mag[name])
-                f.write(name + " = " + rhs_mag + ";\n")
+                # Signed delta
+                rhs_delta = format_mathematica_list_pair(diffs_signed[name])
+                f.write(name + "_delta = " + rhs_delta + ";\n")
 
-                rhs_signed = format_mathematica_list_pair(diffs_signed[name])
-                f.write(name + "_delta = " + rhs_signed + ";\n")
+                # Absolute magnitude (useful for sys plotting)
+                rhs_abs = format_mathematica_list_pair(diffs_mag[name])
+                f.write(name + "_abs = " + rhs_abs + ";\n")
 
+                # Signed ratio (delta / original)
                 ratio_list = []
                 for k in range(6):
-                    tmean = float(diffs_mag[name][k][0])
-                    sysmag = float(diffs_mag[name][k][1])
+                    tmean = float(diffs_signed[name][k][0])
+                    delta = float(diffs_signed[name][k][1])
 
                     before_val = float(fit_map[name][k][1])
-                    denom = abs(before_val)
-                    if denom < eps:
-                        fatal("Cannot compute ratio for {} at index {}: abs(before value) is {:.17g} (too close to zero).".format(name, k, denom))
+                    denom = before_val
+                    if abs(denom) < eps:
+                        fatal("Cannot compute signed ratio for {} at index {}: baseline value is {:.17g} (too close to zero).".format(name, k, denom))
                     #endif
 
-                    ratio = sysmag / denom
+                    ratio = delta / denom
                     ratio_list.append([tmean, ratio])
                 #endfor
 
                 rhs_ratio = format_mathematica_list_pair(ratio_list)
                 f.write(name + "_ratio = " + rhs_ratio + ";\n")
+
+                f.write("\n")
             #endfor
-            f.write("\n")
         #endfor
     #endwith
 #enddef
+
 
 def default_diff_basename(out_basename):
     base, ext = os.path.splitext(out_basename)
@@ -409,8 +468,9 @@ def default_diff_basename(out_basename):
     return base + "_diff" + ext
 #enddef
 
+
 # =========================
-# Plotting (input series)
+# Plotting
 # =========================
 
 def import_plot_deps():
@@ -431,6 +491,7 @@ def import_plot_deps():
     return np, plt
 #enddef
 
+
 def to_series(triples, negate_x=True, sort=True, np=None):
     if np is None:
         fatal("Internal error: numpy not provided to to_series().")
@@ -446,6 +507,7 @@ def to_series(triples, negate_x=True, sort=True, np=None):
     #endif
     return x, y, e
 #enddef
+
 
 def compute_bin_edges_from_centers(x, np):
     n = len(x)
@@ -472,6 +534,7 @@ def compute_bin_edges_from_centers(x, np):
 
     return left, right, widths
 #enddef
+
 
 def extract_sys_series_explicit(fit_map, sys_name, x_ref, np):
     raw = fit_map[sys_name]
@@ -512,6 +575,7 @@ def extract_sys_series_explicit(fit_map, sys_name, x_ref, np):
     return s
 #enddef
 
+
 def get_sys_band(fit_map, varname, x_ref, np):
     preferred = varname + "Sys"
     if preferred in fit_map:
@@ -536,6 +600,7 @@ def get_sys_band(fit_map, varname, x_ref, np):
     return None
 #enddef
 
+
 def draw_sys_bars(ax, x_centers, sys_band, widths):
     if sys_band is None:
         return
@@ -543,6 +608,7 @@ def draw_sys_bars(ax, x_centers, sys_band, widths):
     ax.bar(x_centers,  sys_band, width=widths, bottom=0.0, color="0.7", alpha=0.25, linewidth=0.0, align="center", zorder=0)
     ax.bar(x_centers, -sys_band, width=widths, bottom=0.0, color="0.7", alpha=0.25, linewidth=0.0, align="center", zorder=0)
 #enddef
+
 
 def draw_points(ax, x, y, e, label, color, marker, capsize, ms):
     ax.errorbar(
@@ -552,6 +618,7 @@ def draw_points(ax, x, y, e, label, color, marker, capsize, ms):
         label=label, zorder=2
     )
 #enddef
+
 
 def xb_label(group_name):
     labels = {
@@ -563,27 +630,32 @@ def xb_label(group_name):
     return labels.get(group_name, group_name)
 #enddef
 
-def save_input_asymmetry_canvases(fit_map, out_dir):
+
+def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
+    """
+    Makes the 1x3 polarized-structure-function style canvases:
+      - LU
+      - UL (sinphi, sin2phi)  [UL sys rectangles from sinphi only]
+      - LL (0, cosphi)        [LL sys rectangles from ALL only]
+    """
     np, plt = import_plot_deps()
 
-    capsize = 3
-    ms = 5.0
     xlim_t = (0.0, 1.30)
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
     ylim_single = (-0.40, 0.40)
     ylim_double = (-0.80, 0.80)
 
-    suffix_lu   = "GEchi2FitsALUsinphi"
-    suffix_ul1  = "GEchi2FitsAULsinphi"
-    suffix_ul2  = "GEchi2FitsAULsin2phi"
-    suffix_ll0  = "GEchi2FitsALL"
-    suffix_ll1  = "GEchi2FitsALLcosphi"
+    suffix_lu = "GEchi2FitsALUsinphi"
+    suffix_ul1 = "GEchi2FitsAULsinphi"
+    suffix_ul2 = "GEchi2FitsAULsin2phi"
+    suffix_ll0 = "GEchi2FitsALL"
+    suffix_ll1 = "GEchi2FitsALLcosphi"
 
     groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
 
     for g in groups:
-        v_lu  = g + suffix_lu
+        v_lu = g + suffix_lu
         v_ul1 = g + suffix_ul1
         v_ul2 = g + suffix_ul2
         v_ll0 = g + suffix_ll0
@@ -591,11 +663,11 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
 
         for v in [v_lu, v_ul1, v_ul2, v_ll0, v_ll1]:
             if v not in fit_map:
-                fatal("Cannot make plots: missing required input series '{}' in fit-results file.".format(v))
+                fatal("Cannot make plots: missing required input series '{}'.".format(v))
             #endif
         #endfor
 
-        x_lu,  y_lu,  e_lu  = to_series(fit_map[v_lu],  np=np)
+        x_lu, y_lu, e_lu = to_series(fit_map[v_lu], np=np)
         x_ul1, y_ul1, e_ul1 = to_series(fit_map[v_ul1], np=np)
         x_ul2, y_ul2, e_ul2 = to_series(fit_map[v_ul2], np=np)
         x_ll0, y_ll0, e_ll0 = to_series(fit_map[v_ll0], np=np)
@@ -616,23 +688,20 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
 
         left, right, widths = compute_bin_edges_from_centers(x_lu, np)
 
-        sys_lu  = get_sys_band(fit_map, v_lu,  x_lu, np)
+        sys_lu = get_sys_band(fit_map, v_lu, x_lu, np)
         sys_ul1 = get_sys_band(fit_map, v_ul1, x_lu, np)
         sys_ul2 = get_sys_band(fit_map, v_ul2, x_lu, np)
         sys_ll0 = get_sys_band(fit_map, v_ll0, x_lu, np)
         sys_ll1 = get_sys_band(fit_map, v_ll1, x_lu, np)
 
+        # Convention: UL panel uses sys from sinphi only; LL panel uses sys from ALL only.
         sys_band_ul_panel = sys_ul1
         sys_band_ll_panel = sys_ll0
 
-        if (sys_lu is None) and (sys_band_ul_panel is None) and (sys_band_ll_panel is None):
-            warn("No systematics series found for bin '{}'; sys rectangles will be skipped.".format(g))
-        #endif
-
         fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.4))
 
-        ax_left  = axes[0]
-        ax_mid   = axes[1]
+        ax_left = axes[0]
+        ax_mid = axes[1]
         ax_right = axes[2]
 
         draw_sys_bars(ax_left, x_lu, sys_lu, widths)
@@ -682,7 +751,7 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
         plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g), fontsize=14, y=0.98)
         plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
 
-        out_pdf = os.path.join(out_dir, "input_asymmetries_{}.pdf".format(g))
+        out_pdf = os.path.join(out_dir, "{}_{}.pdf".format(file_prefix, g))
         plt.savefig(out_pdf)
         plt.close(fig)
 
@@ -690,7 +759,11 @@ def save_input_asymmetry_canvases(fit_map, out_dir):
     #endfor
 #enddef
 
+
 def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
+    """
+    Injects *magnitude* of migration differences as VarSys for plotting as symmetric +/- bars.
+    """
     out = dict(fit_map)
 
     for v in required_varnames:
@@ -714,36 +787,31 @@ def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
     return out
 #enddef
 
-# =========================
-# Plotting (migration sys vs -t')
-# =========================
 
 def save_migration_sys_canvases(fit_map, out_dir):
+    """
+    4 PDFs, one per xB group, showing ONLY the migration magnitude series vs -t'.
+    Expects VarSys to exist for each required series.
+    """
     np, plt = import_plot_deps()
 
     xlim_t = (0.0, 1.30)
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
-    suffix_lu   = "GEchi2FitsALUsinphi"
-    suffix_ul1  = "GEchi2FitsAULsinphi"
-    suffix_ul2  = "GEchi2FitsAULsin2phi"
-    suffix_ll0  = "GEchi2FitsALL"
-    suffix_ll1  = "GEchi2FitsALLcosphi"
+    suffix_lu = "GEchi2FitsALUsinphi"
+    suffix_ul1 = "GEchi2FitsAULsinphi"
+    suffix_ul2 = "GEchi2FitsAULsin2phi"
+    suffix_ll0 = "GEchi2FitsALL"
+    suffix_ll1 = "GEchi2FitsALLcosphi"
 
     groups = ["enpiLowxB", "enpiMidLowxB", "enpiMidHighxB", "enpiHighxB"]
 
     for g in groups:
-        v_lu  = g + suffix_lu
+        v_lu = g + suffix_lu
         v_ul1 = g + suffix_ul1
         v_ul2 = g + suffix_ul2
         v_ll0 = g + suffix_ll0
         v_ll1 = g + suffix_ll1
-
-        v_lu_sys  = v_lu  + "Sys"
-        v_ul1_sys = v_ul1 + "Sys"
-        v_ul2_sys = v_ul2 + "Sys"
-        v_ll0_sys = v_ll0 + "Sys"
-        v_ll1_sys = v_ll1 + "Sys"
 
         for v in [v_lu, v_ul1, v_ul2, v_ll0, v_ll1]:
             if v not in fit_map:
@@ -751,15 +819,9 @@ def save_migration_sys_canvases(fit_map, out_dir):
             #endif
         #endfor
 
-        for v in [v_lu_sys, v_ul1_sys, v_ul2_sys, v_ll0_sys, v_ll1_sys]:
-            if v not in fit_map:
-                fatal("Cannot make migration-sys plots: missing injected sys series '{}'.".format(v))
-            #endif
-        #endfor
-
         x_ref, y_dummy, e_dummy = to_series(fit_map[v_lu], np=np)
 
-        sys_lu  = get_sys_band(fit_map, v_lu,  x_ref, np)
+        sys_lu = get_sys_band(fit_map, v_lu, x_ref, np)
         sys_ul1 = get_sys_band(fit_map, v_ul1, x_ref, np)
         sys_ul2 = get_sys_band(fit_map, v_ul2, x_ref, np)
         sys_ll0 = get_sys_band(fit_map, v_ll0, x_ref, np)
@@ -807,7 +869,7 @@ def save_migration_sys_canvases(fit_map, out_dir):
         leg_ll = ax_ll.legend(frameon=True, edgecolor="black", fontsize=10, loc="upper right")
         leg_ll.get_frame().set_alpha(0.9)
 
-        plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - migration systematics", fontsize=14, y=0.98)
+        plt.suptitle(r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - bin-migration systematics", fontsize=14, y=0.98)
         plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
 
         out_pdf = os.path.join(out_dir, "migration_systematics_{}.pdf".format(g))
@@ -818,16 +880,19 @@ def save_migration_sys_canvases(fit_map, out_dir):
     #endfor
 #enddef
 
+
 def main():
     ap = argparse.ArgumentParser(
-        description="Apply a 24x24 bin-migration matrix to selected enpi* GEchi2Fits* asymmetry lists."
+        description="Apply standard 24x24 bin-migration mixture to enpi* GEchi2Fits* asymmetry lists (SIGNED correction diffs)."
     )
-    ap.add_argument("migration_csv", help="CSV with 24 rows (bins 0-23) and 24 fraction columns per row.")
-    ap.add_argument("fit_in_txt", help="Input Mathematica-style fit-results text file.")
-    ap.add_argument("fit_out_name", help="Output file name only (no directory). Saved under output/rgc_enpi+_bin_migration_study/")
 
-    ap.add_argument("--out-diff", default=None, help="Diff output file name only (no directory). Default: <fit_out_name with _diff inserted before extension>")
-    ap.add_argument("--renormalize", action="store_true", help="Renormalize each migration row to sum to 1.0 before weighting.")
+    ap.add_argument("migration_csv", help="Bin migration CSV (24 rows, 30 cols = 6 meta + 24 fractions).")
+    ap.add_argument("fit_txt", help="Input Mathematica-style fit-results text file.")
+    ap.add_argument("fit_out_name", help="Output file name only (no directory). Written under output/rgc_enpi+_bin_migration_study/")
+
+    ap.add_argument("--out-diff", default=None, help="Diff output file name only. Default: <fit_out_name with _diff inserted>")
+
+    ap.add_argument("--renormalize", action="store_true", help="Renormalize each migration row to sum to 1.0 (after reading).")
     ap.add_argument("--tol", type=float, default=1.0e-3, help="Tolerance for row-sum checks against 1.0 (strict mode).")
 
     args = ap.parse_args()
@@ -847,8 +912,8 @@ def main():
     out_diff_path = os.path.join(out_dir, out_diff_name)
 
     weights, meta = read_migration_csv(args.migration_csv)
-    fit_map = parse_fit_results_text(args.fit_in_txt)
 
+    fit_map = parse_fit_results_text(args.fit_txt)
     required = build_required_varnames()
     validate_fit_data(fit_map, required)
 
@@ -860,17 +925,40 @@ def main():
         tol=args.tol
     )
 
-    write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map)
+    write_output_files(
+        out_path=out_path,
+        out_diff_path=out_diff_path,
+        migrated=migrated,
+        diffs_mag=diffs_mag,
+        diffs_signed=diffs_signed,
+        fit_map=fit_map
+    )
 
     sys.stdout.write("Wrote migrated fit file: {}\n".format(out_path))
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
 
-    fit_map_for_plots = inject_migration_sys_for_plotting(fit_map, diffs_mag, required)
-    save_input_asymmetry_canvases(fit_map_for_plots, out_dir)
+    # Plotting:
+    #   - baseline points + bin-migration sys rectangles (sys rectangles use |delta|)
+    #   - migrated points + bin-migration sys rectangles (sys rectangles use |delta|)
+    baseline_for_plots = inject_migration_sys_for_plotting(fit_map, diffs_mag, required)
+    migrated_for_plots = inject_migration_sys_for_plotting(migrated, diffs_mag, required)
 
-    # New: plots of migration systematic magnitudes vs -t' (includes LU + both UL/LL harmonics)
-    save_migration_sys_canvases(fit_map_for_plots, out_dir)
+    save_polarized_structure_function_canvases(
+        baseline_for_plots, out_dir, file_prefix="polarized_structure_functions_baseline"
+    )
+    save_polarized_structure_function_canvases(
+        migrated_for_plots, out_dir, file_prefix="polarized_structure_functions_migrated"
+    )
+
+    save_migration_sys_canvases(baseline_for_plots, out_dir)
+
+    # Diagnostic reminder
+    sys.stdout.write("\nSign convention reminder:\n")
+    sys.stdout.write("  delta = migrated - original\n")
+    sys.stdout.write("  corrected value written to migrated fit file is the migrated value.\n")
+    sys.stdout.write("  delta > 0 shifts asymmetry upward (numerically larger).\n")
 #enddef
+
 
 if __name__ == "__main__":
     main()
