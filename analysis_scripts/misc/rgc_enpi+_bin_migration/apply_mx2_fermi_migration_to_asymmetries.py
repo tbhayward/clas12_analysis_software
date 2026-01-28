@@ -1,44 +1,60 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # apply_mx2_fermi_migration_to_asymmetries.py
 #
 # Purpose:
-#   UNFOLD (invert) reconstructed Mx2 bin migration due to Fermi motion, using an
-#   MC-derived matrix that encodes the composition of reconstructed bins in terms
-#   of true/generated bins.
+#   Estimate a bin-migration correction in reconstructed Mx2 due to Fermi motion,
+#   using an MC-derived migration/composition matrix.
 #
-# Inputs:
-#   - N fit-results text files, each corresponding to ONE reconstructed Mx2 bin.
-#     These contain Mathematica-style assignments like:
-#       enpiLowxBGEchi2FitsAULsinphi = {{tmean, value, stat}, ...};
-#   - An N x N CSV matrix with per-row fractions:
-#       row r (reco bin r) has fractions frac0..frac(N-1) giving contributions from
-#       true bins t=0..N-1, typically:
-#         C[r,t] = P(true=t | reco=r)
+# Concept:
+#   - You provide multiple fit-results text files, each produced with a different reconstructed Mx2 window.
+#   - You also provide an Mx2 migration/composition matrix from MC.
+#   - We identify the "exclusive reconstructed bin" (baseline window, typically 0.81 < Mx2 < 1.00).
+#   - We take the migration row for that bin: weights w_k describing how much each Mx2 source-bin contributes
+#     to the reconstructed exclusive bin.
+#   - For each asymmetry series and each -t' point, we compute:
+#         A_mix = sum_k w_k * A_k
+#     where A_k is the fitted asymmetry from the fit file corresponding to Mx2 bin k.
 #
-# Model (per -t' point and per SF series):
-#   Let A_obs(r) be the measured asymmetry in reconstructed bin r (from fit file r).
-#   Let A_true(t) be the underlying asymmetry in true bin t.
+# Correction definition (SIGNED):
+#   - delta = A_mix - A_base
+#   - A_corrected = A_base + delta = A_mix
 #
-#   We approximate:
-#       A_obs = C * A_true
-#   so the unfolded estimate is:
-#       A_true = C^{-1} * A_obs
+# Sign interpretation:
+#   - delta > 0 makes the asymmetry numerically larger (shifts upward).
+#   - delta < 0 makes the asymmetry numerically smaller (shifts downward).
 #
-# What this script outputs:
-#   - The MAIN output file contains ONLY the unfolded "exclusive true bin" series,
-#     written with the SAME variable names as the original fits:
-#       var = {{tmean_base, A_true_excl, stat_unfolded}, ...};
+# Key update (Jan 2026):
+#   - The script NO LONGER treats small differences in the per-bin tmean grids across Mx2 windows as fatal.
+#   - The mixing is performed by INDEX (bin number) assuming bin boundaries match; the output x-axis (tmean)
+#     is taken from the baseline (exclusive) file.
+#   - If the tmean grids differ by more than --tmean-tol, the script emits WARNING(s), not FATAL.
 #
-#   - A diff file contains:
-#       var_delta = {{tmean_base, (A_true_excl - A_obs_excl_reco)}, ...};
-#       var_abs   = {{tmean_base, |A_true_excl - A_obs_excl_reco|}, ...};
-#       var_ratio = {{tmean_base, (A_true_excl - A_obs_excl_reco)/A_obs_excl_reco}, ...};
+# Outputs (written under output/enpi+/mx2_fermi_migration_study/):
+#   (1) Migrated/mixed fit file:
+#         name = {{tmean, A_mix, stat_base}, ...};
+#   (2) Diff/correction file (SIGNED):
+#         name_delta = {{tmean, (A_mix - A_base)}, ...};
+#         name_abs   = {{tmean, |A_mix - A_base|}, ...};
+#         name_ratio = {{tmean, (A_mix - A_base)/A_base}, ...};  (SIGNED ratio)
 #
-# Notes / conventions:
-#   - We still use the baseline (exclusive reco) file's tmean grid for output/plots.
-#   - Systematic rectangles for plotting use |delta| as symmetric +/- bars.
-#   - Statistical uncertainty propagation assumes reco-bin fit errors are uncorrelated.
+#   (3) PDF plots:
+#         - polarized_structure_functions_baseline_<xBgroup>.pdf
+#         - polarized_structure_functions_migrated_<xBgroup>.pdf
+#         - migration_systematics_<xBgroup>.pdf
+#
+#   (4) Per-xB, per-structure-function Mx2 canvases:
+#       For each xB bin and each of the 5 SF ratios, create 2x3 canvases where each
+#       subplot corresponds to one Mx2 bin, and each subplot shows only that single
+#       dataset vs -t' (one curve per pad).
+#
+#       Saved under:
+#         output/enpi+/mx2_fermi_migration_study/mx2_bin_canvases/<xBgroup>/<short_name>_page<NN>.pdf
+#
+# Notes:
+#   - This script supports dropping the final Mx2 bin (e.g., if you have 7 bins in the CSV but only 6 fit files).
+#     If you provide N-1 fit files for an N-bin CSV, you MUST pass --drop-last-bin.
+#   - The mixing uses only ONE migration row: the row corresponding to the reconstructed exclusive Mx2 bin.
+#   - The baseline statistical uncertainties are preserved (stat_base).
 #
 # ------------------------------------------------------------------------------
 
@@ -77,23 +93,13 @@ def ensure_is_basename(path_like, what):
 #enddef
 
 
-def import_numpy_required():
-    try:
-        import numpy as np
-    except Exception as e:
-        fatal("numpy import failed (required for unfolding): {}".format(str(e)))
-    #endif
-    return np
-#enddef
-
-
 def read_mx2_migration_csv(csv_path):
     """
     Reads an Mx2 migration/composition CSV with columns:
       bin, mx2min, mx2max, nev, frac0, frac1, ..., frac(N-1)
 
     Returns:
-      fracs_by_row: list[list[float]]  shape (N, N)  (row = reco bin r, col = true bin t)
+      fracs_by_row: list[list[float]]  shape (N, N)
       meta:         list[(bin, mx2min, mx2max, nev)]
     """
     if not os.path.isfile(csv_path):
@@ -294,7 +300,9 @@ def validate_fit_map(fit_map, required_varnames, expected_len, file_tag):
 
 def warn_tmean_grids_if_inconsistent(fit_maps, required_varnames, expected_len, tmean_tol):
     """
-    Non-fatal check: unfolding uses values by INDEX; output/plot x-grid uses baseline tmean grid.
+    Non-fatal check.
+
+    Mixing is done by INDEX; output/plot x-grid uses baseline tmean grid.
 
     Behavior:
       - If abs(tmean_k - tmean_ref) > tmean_tol, emit WARNING.
@@ -349,154 +357,82 @@ def warn_tmean_grids_if_inconsistent(fit_maps, required_varnames, expected_len, 
 #enddef
 
 
-def matrix_from_fracs(fracs_by_row, effective_N, renormalize_rows, row_sum_tol):
+def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varnames, renormalize, tol):
     """
-    Build the effective_N x effective_N matrix C (row=reco, col=true).
+    weights_row: list[float] weights for each provided fit file (length M)
+    fit_maps:    list[dict]  one per Mx2 bin file (length M)
+    excl_bin_idx: int index of the exclusive/baseline file in fit_maps list
 
-    If renormalize_rows is False:
-      - require each row sum to be within row_sum_tol of 1.0, else FATAL.
-
-    If renormalize_rows is True:
-      - renormalize each row to sum to 1.0 (FATAL on zero-sum rows).
-    """
-    np = import_numpy_required()
-
-    C = np.zeros((effective_N, effective_N), dtype=float)
-
-    for r in range(effective_N):
-        row = fracs_by_row[r][:effective_N]
-
-        s = 0.0
-        for x in row:
-            s += float(x)
-        #endfor
-
-        if s == 0.0:
-            fatal("Matrix row {} sum is zero; cannot build unfolding matrix.".format(r))
-        #endif
-
-        if renormalize_rows:
-            row = [float(x) / s for x in row]
-        else:
-            if abs(s - 1.0) > row_sum_tol:
-                fatal(
-                    "Matrix row {} sum is {:.9f}, not within tol {:.3g} of 1.0.\n"
-                    "If you intend to renormalize rows, rerun with --renormalize-rows.".format(r, s, row_sum_tol)
-                )
-            #endif
-        #endif
-
-        for t in range(effective_N):
-            C[r, t] = float(row[t])
-        #endfor
-    #endfor
-
-    return C
-#enddef
-
-
-def compute_unfolded_exclusive(C, fit_maps, excl_reco_idx, excl_true_idx, required_varnames, expected_len, cond_max):
-    """
-    For each var v and each -t' index i:
-      - Build A_obs[r] from fit_maps[r][v][i][1], r=0..N-1
-      - Solve A_true = inv(C) * A_obs
-      - Take A_true_excl = A_true[excl_true_idx]
-      - Propagate stat assuming diagonal cov_obs: sigma_obs[r]^2
-          sigma_true_excl^2 = sum_r (invC[excl_true_idx, r]^2 * sigma_obs[r]^2)
-
-    Output tmean grid uses baseline (exclusive reco) file, i.e. fit_maps[excl_reco_idx].
+    Mixing is performed by INDEX. Output tmean is taken from the baseline file.
 
     Returns:
-      unfolded_excl: dict v -> list[[tmean, A_true_excl, stat_true_excl], ...]
-      diffs_mag:     dict v -> list[[tmean, |A_true_excl - A_obs_excl|], ...]
-      diffs_signed:  dict v -> list[[tmean, (A_true_excl - A_obs_excl)], ...]
+      migrated:     dict var -> list[[tmean, A_mix, stat_base], ...]
+      diffs_mag:    dict var -> list[[tmean, |delta|], ...]
+      diffs_signed: dict var -> list[[tmean, delta], ...]
     """
-    np = import_numpy_required()
-
-    # Conditioning / invertibility checks
-    try:
-        cond = float(np.linalg.cond(C))
-    except Exception as e:
-        fatal("Failed computing condition number for unfolding matrix: {}".format(str(e)))
+    if len(weights_row) != len(fit_maps):
+        fatal("Internal error: weights_row length {} != number of fit_maps {}.".format(len(weights_row), len(fit_maps)))
     #endif
 
-    if not (cond > 0.0):
-        fatal("Unfolding matrix condition number is non-positive (unexpected): {:.9g}".format(cond))
+    row_sum = 0.0
+    for w in weights_row:
+        row_sum += w
+    #endfor
+
+    if row_sum == 0.0:
+        fatal("Exclusive-bin migration row sum is zero; cannot compute weighted mixture.")
     #endif
 
-    if cond > cond_max:
+    if (abs(row_sum - 1.0) > tol) and (not renormalize):
         fatal(
-            "Unfolding matrix is ill-conditioned: cond(C) = {:.3e} > cond_max = {:.3e}.\n"
-            "Either improve the matrix statistics / binning, or raise --cond-max explicitly (not recommended).".format(
-                cond, cond_max
+            "Exclusive-bin migration row sum is {:.6f}, not within tol {:.6f} of 1.0.\n"
+            "If you intend to renormalize the weights, rerun with --renormalize.".format(
+                row_sum, tol
             )
         )
     #endif
 
-    try:
-        invC = np.linalg.inv(C)
-    except Exception as e:
-        fatal("Unfolding matrix inversion failed (singular or unstable): {}".format(str(e)))
+    weights = list(weights_row)
+    if renormalize:
+        weights = [w / row_sum for w in weights_row]
     #endif
 
-    N = C.shape[0]
-    if len(fit_maps) != N:
-        fatal("Internal error: number of fit maps {} != matrix dimension {}.".format(len(fit_maps), N))
-    #endif
-
-    unfolded_excl = {}
+    migrated = {}
     diffs_mag = {}
     diffs_signed = {}
 
     for v in required_varnames:
-        base_list = fit_maps[excl_reco_idx][v]
+        base_list = fit_maps[excl_bin_idx][v]
 
         out_triples = []
         out_diff_mag_pairs = []
         out_diff_signed_pairs = []
 
-        for i in range(expected_len):
-            tmean = float(base_list[i][0])  # baseline tmean grid
+        for i in range(len(base_list)):
+            tmean = float(base_list[i][0])      # always use baseline tmean grid
+            aval_base = float(base_list[i][1])
+            stat_base = float(base_list[i][2])  # preserve baseline stat
 
-            # Build A_obs and sigma_obs vectors across reco bins
-            A_obs = np.zeros(N, dtype=float)
-            S_obs = np.zeros(N, dtype=float)
-
-            for r in range(N):
-                A_obs[r] = float(fit_maps[r][v][i][1])
-                S_obs[r] = float(fit_maps[r][v][i][2])
+            aval_mix = 0.0
+            for k in range(len(fit_maps)):
+                a_k = float(fit_maps[k][v][i][1])  # index-paired mixing
+                aval_mix += weights[k] * a_k
             #endfor
 
-            # Solve A_true = invC * A_obs
-            A_true = invC.dot(A_obs)
-
-            A_true_excl = float(A_true[excl_true_idx])
-
-            # Stat propagation for exclusive true component
-            row = invC[excl_true_idx, :]
-            var_true = float(np.sum((row * row) * (S_obs * S_obs)))
-            if var_true < 0.0:
-                fatal("Internal error: negative propagated variance at '{}' idx {}: {}".format(v, i, var_true))
-            #endif
-            stat_true = float(np.sqrt(var_true))
-
-            # Baseline observed exclusive reco value for diff
-            A_obs_excl = float(A_obs[excl_reco_idx])
-
-            delta = A_true_excl - A_obs_excl
+            delta = aval_mix - aval_base
             sysmag = abs(delta)
 
-            out_triples.append([tmean, A_true_excl, stat_true])
+            out_triples.append([tmean, aval_mix, stat_base])
             out_diff_mag_pairs.append([tmean, sysmag])
             out_diff_signed_pairs.append([tmean, delta])
         #endfor
 
-        unfolded_excl[v] = out_triples
+        migrated[v] = out_triples
         diffs_mag[v] = out_diff_mag_pairs
         diffs_signed[v] = out_diff_signed_pairs
     #endfor
 
-    return unfolded_excl, diffs_mag, diffs_signed
+    return migrated, diffs_mag, diffs_signed
 #enddef
 
 
@@ -518,15 +454,19 @@ def format_mathematica_list_pair(lst):
 #enddef
 
 
-def write_output_files(out_path, out_diff_path, unfolded_excl, diffs_mag, diffs_signed, fit_map_baseline, required_varnames):
+def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map_baseline, required_varnames):
     """
     Writes:
-      - out_path: unfolded exclusive-true triples (tmean, A_true_excl, stat_true_excl)
-      - out_diff_path: signed delta, abs(delta), signed ratio delta/base_obs_excl
+      - out_path: migrated (A_mix) triples
+      - out_diff_path: signed delta, abs(delta), signed ratio delta/base
+
+    IMPORTANT:
+      - The primary "delta" object is signed: v_delta = {{tmean, delta}, ...}
+      - We also write v_abs and v_ratio for convenience.
     """
     with open(out_path, "w") as f:
         for v in required_varnames:
-            rhs = format_mathematica_list_triple(unfolded_excl[v])
+            rhs = format_mathematica_list_triple(migrated[v])
             f.write(v + " = " + rhs + ";\n")
         #endfor
         f.write("\n")
@@ -554,10 +494,9 @@ def write_output_files(out_path, out_diff_path, unfolded_excl, diffs_mag, diffs_
             rhs_abs = format_mathematica_list_pair(diffs_mag[v])
             f.write(v + "_abs = " + rhs_abs + ";\n")
 
-            # Signed ratio (delta / baseline observed exclusive reco)
+            # Signed ratio (delta / baseline)
             ratio_list = []
             base_list = fit_map_baseline[v]
-
             for i in range(len(base_list)):
                 tmean = float(diffs_signed[v][i][0])
                 delta = float(diffs_signed[v][i][1])
@@ -599,7 +538,11 @@ def default_diff_basename(out_basename):
 # =========================
 
 def import_plot_deps():
-    np = import_numpy_required()
+    try:
+        import numpy as np
+    except Exception as e:
+        fatal("numpy import failed (needed for plots): {}".format(str(e)))
+    #endif
 
     try:
         import matplotlib
@@ -767,6 +710,8 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
     ylim_single = (-0.40, 0.40)
+
+    # UPDATED: LL y-range everywhere -> [-1, 1]
     ylim_double = (-1.00, 1.00)
 
     suffix_lu = "GEchi2FitsALUsinphi"
@@ -817,6 +762,9 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
         sys_ll0 = get_sys_band(fit_map, v_ll0, x_lu, np)
         sys_ll1 = get_sys_band(fit_map, v_ll1, x_lu, np)
 
+        # Convention:
+        #   - UL panel uses only lower harmonic sys (sinphi)
+        #   - LL panel uses only lower harmonic sys (LL)
         sys_band_ul_panel = sys_ul1
         sys_band_ll_panel = sys_ll0
 
@@ -884,7 +832,8 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
 
 def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
     """
-    Injects magnitude of unfolding differences as VarSys for plotting as symmetric +/- bars.
+    Injects *magnitude* of migration differences as VarSys for plotting as symmetric +/- bars.
+    Even though the correction itself is signed, the visual sys rectangle is conventionally symmetric.
     """
     out = dict(fit_map)
 
@@ -1018,9 +967,12 @@ def short_name_and_ylabel_for_suffix(suffix):
 
 def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_dir):
     """
-    Diagnostic: for each xB group (4) and each SF variable (5), create 2x3 canvases where
-    each subplot corresponds to one reconstructed Mx2 bin, and each subplot shows ONLY that bin's
+    For each xB group (4) and for each SF variable (5), create 2x3 canvases where
+    each subplot corresponds to one Mx2 bin, and each subplot shows ONLY that bin's
     dataset vs -t' (one curve per pad).
+
+    Saves under:
+      <out_dir>/mx2_bin_canvases/<xBgroup>/<short_name>_page<NN>.pdf
     """
     np, plt = import_plot_deps()
 
@@ -1031,6 +983,8 @@ def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_d
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
     ylim_single = (-0.40, 0.40)
+
+    # UPDATED: LL y-range everywhere -> [-1, 1]
     ylim_double = (-1.00, 1.00)
 
     suffixes = [
@@ -1129,43 +1083,32 @@ def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_d
 
 def main():
     ap = argparse.ArgumentParser(
-        description="UNFOLD reconstructed Mx2 migration using an MC composition matrix and multiple reco-bin fit files."
+        description="Apply an Mx2 Fermi-motion migration mixture (from MC) to enpi* GEchi2Fits* asymmetry lists."
     )
 
-    ap.add_argument("migration_csv", help="Mx2 CSV (square N x N with meta columns).")
+    ap.add_argument("migration_csv", help="Mx2 migration CSV (square N x N with meta columns).")
     ap.add_argument(
         "fit_txts",
         nargs="+",
-        help="List of fit-results text files, one per reconstructed Mx2 bin (in CSV bin order)."
+        help="List of Mathematica-style fit-results text files, one per Mx2 bin (in CSV bin order)."
     )
     ap.add_argument("fit_out_name", help="Output file name only (no directory). Saved under output/enpi+/mx2_fermi_migration_study/")
 
     ap.add_argument("--out-diff", default=None, help="Diff output file name only. Default: <fit_out_name with _diff inserted>")
 
-    # Exclusive reco bin selection:
+    # Exclusive bin selection:
     ap.add_argument("--exclusive-bin", type=int, default=None, help="Exclusive reconstructed Mx2 bin index (overrides --exclusive-mx2-min/max).")
     ap.add_argument("--exclusive-mx2-min", type=float, default=0.81, help="Exclusive reconstructed Mx2 min for auto-match.")
     ap.add_argument("--exclusive-mx2-max", type=float, default=1.00, help="Exclusive reconstructed Mx2 max for auto-match.")
     ap.add_argument("--mx2-match-tol", type=float, default=1.0e-6, help="Tolerance for matching exclusive mx2min/mx2max in CSV.")
 
-    # Exclusive true bin selection:
-    ap.add_argument(
-        "--exclusive-true-bin",
-        type=int,
-        default=None,
-        help="Exclusive TRUE/GEN Mx2 bin index to report after unfolding. Default: same as exclusive reco bin."
-    )
+    # Weight handling:
+    ap.add_argument("--renormalize", action="store_true", help="Renormalize exclusive-bin weights to sum to 1.0 (after any dropping).")
+    ap.add_argument("--tol", type=float, default=1.0e-3, help="Tolerance for weight-sum checks against 1.0 (strict mode).")
 
     # Dropping last bin (explicit):
-    ap.add_argument("--drop-last-bin", action="store_true", help="Drop the final Mx2 bin (requires providing N-1 fit files).")
-    ap.add_argument("--dropped-frac-warn", type=float, default=0.02, help="Warn if any dropped fraction in matrix exceeds this value.")
-
-    # Matrix handling:
-    ap.add_argument("--renormalize-rows", action="store_true", help="Renormalize each matrix row to sum to 1.0.")
-    ap.add_argument("--row-sum-tol", type=float, default=1.0e-3, help="Tolerance for row-sum checks against 1.0 when not renormalizing.")
-
-    # Unfolding stability:
-    ap.add_argument("--cond-max", type=float, default=1.0e12, help="Fail if cond(C) exceeds this threshold (ill-conditioned matrix).")
+    ap.add_argument("--drop-last-bin", action="store_true", help="Drop the final Mx2 bin from the mixture (requires providing N-1 fit files).")
+    ap.add_argument("--dropped-frac-warn", type=float, default=0.02, help="Warn if dropped last-bin fraction exceeds this value.")
 
     # Validation:
     ap.add_argument("--tmean-tol", type=float, default=1.0e-8, help="Tolerance for tmean-grid warnings across Mx2 fit files (non-fatal).")
@@ -1208,64 +1151,44 @@ def main():
         fatal("Number of fit files ({}) must be N ({}) or N-1 ({}).".format(M, N, N - 1))
     #endif
 
-    # Identify exclusive reco bin index
+    # Identify exclusive bin index in the CSV (full-N index)
     if args.exclusive_bin is not None:
-        excl_reco_idx = args.exclusive_bin
-        if excl_reco_idx < 0 or excl_reco_idx >= N:
-            fatal("--exclusive-bin {} out of range for N={} bins.".format(excl_reco_idx, N))
+        excl_csv_idx = args.exclusive_bin
+        if excl_csv_idx < 0 or excl_csv_idx >= N:
+            fatal("--exclusive-bin {} out of range for N={} bins.".format(excl_csv_idx, N))
         #endif
     else:
-        excl_reco_idx = find_exclusive_bin_index(meta, args.exclusive_mx2_min, args.exclusive_mx2_max, args.mx2_match_tol)
+        excl_csv_idx = find_exclusive_bin_index(meta, args.exclusive_mx2_min, args.exclusive_mx2_max, args.mx2_match_tol)
     #endif
 
-    if excl_reco_idx >= effective_N:
+    # Map exclusive bin index to fit-file index (must exist within effective_N)
+    if excl_csv_idx >= effective_N:
         fatal(
-            "Exclusive reco bin index {} is not available in provided fit files (effective_N={}).".format(
-                excl_reco_idx, effective_N
-            )
+            "Exclusive bin index {} is not available in the provided fit files (effective_N={}).\n"
+            "You likely dropped the last bin but also selected it as exclusive; adjust selection.".format(excl_csv_idx, effective_N)
         )
     #endif
 
-    # Exclusive true bin index
-    if args.exclusive_true_bin is None:
-        excl_true_idx = excl_reco_idx
-    else:
-        excl_true_idx = args.exclusive_true_bin
-    #endif
+    excl_fit_idx = excl_csv_idx
 
-    if excl_true_idx < 0 or excl_true_idx >= effective_N:
-        fatal("--exclusive-true-bin {} out of range for effective_N={}.".format(excl_true_idx, effective_N))
-    #endif
+    # Extract the exclusive-bin weights row from CSV
+    full_row = fracs_by_row[excl_csv_idx]
 
-    # Warn if dropping last bin loses sizable entries in the matrix
     if args.drop_last_bin:
-        dropped_idx = N - 1
-        # Check any row/col mass referencing the dropped bin.
-        max_dropped = 0.0
-        for r in range(N):
-            val = float(fracs_by_row[r][dropped_idx])
-            if val > max_dropped:
-                max_dropped = val
-            #endif
-        #endfor
-        if max_dropped > args.dropped_frac_warn:
+        dropped = full_row[N - 1]
+        if dropped > args.dropped_frac_warn:
             warn(
-                "Dropping final bin index {} but max dropped fraction across rows is {:.6f} (> warn threshold {}).".format(
-                    dropped_idx, max_dropped, args.dropped_frac_warn
+                "Dropping final Mx2 bin (index {}) but its fraction in exclusive-bin row is {:.6f} (> warn threshold {}).".format(
+                    N - 1, dropped, args.dropped_frac_warn
                 )
             )
         #endif
+        weights_row = full_row[:effective_N]
+    else:
+        weights_row = full_row[:effective_N]
     #endif
 
-    # Build unfolding matrix C (effective_N x effective_N)
-    C = matrix_from_fracs(
-        fracs_by_row=fracs_by_row,
-        effective_N=effective_N,
-        renormalize_rows=args.renormalize_rows,
-        row_sum_tol=args.row_sum_tol
-    )
-
-    # Parse all fit files (one per reco bin)
+    # Parse all fit files
     required = build_required_varnames()
 
     fit_maps = []
@@ -1276,65 +1199,67 @@ def main():
         fit_maps.append(fm)
     #endfor
 
-    # Non-fatal tmean warnings
+    # Non-fatal tmean warnings (mixing is index-based; output uses baseline tmean grid)
     warn_tmean_grids_if_inconsistent(fit_maps, required, expected_len=6, tmean_tol=args.tmean_tol)
 
-    # Compute unfolded exclusive series and diffs relative to baseline observed exclusive reco
-    unfolded_excl, diffs_mag, diffs_signed = compute_unfolded_exclusive(
-        C=C,
+    # Compute mixture/migrated and diffs
+    migrated, diffs_mag, diffs_signed = compute_mx2_mixed_values(
+        weights_row=weights_row,
         fit_maps=fit_maps,
-        excl_reco_idx=excl_reco_idx,
-        excl_true_idx=excl_true_idx,
+        excl_bin_idx=excl_fit_idx,
         required_varnames=required,
-        expected_len=6,
-        cond_max=args.cond_max
+        renormalize=args.renormalize,
+        tol=args.tol
     )
 
     # Write outputs
-    baseline_fit_map = fit_maps[excl_reco_idx]
+    baseline_fit_map = fit_maps[excl_fit_idx]
 
     write_output_files(
         out_path=out_path,
         out_diff_path=out_diff_path,
-        unfolded_excl=unfolded_excl,
+        migrated=migrated,
         diffs_mag=diffs_mag,
         diffs_signed=diffs_signed,
         fit_map_baseline=baseline_fit_map,
         required_varnames=required
     )
 
-    sys.stdout.write("Wrote unfolded (exclusive true) fit file: {}\n".format(out_path))
-    sys.stdout.write("Wrote difference file:                  {}\n".format(out_diff_path))
+    sys.stdout.write("Wrote migrated fit file: {}\n".format(out_path))
+    sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
 
     # Plotting:
     #   - baseline points + migration sys rectangles (sys rectangles use |delta|)
-    #   - unfolded points + migration sys rectangles (sys rectangles use |delta|)
+    #   - migrated points + migration sys rectangles (sys rectangles use |delta|)
     baseline_for_plots = inject_migration_sys_for_plotting(baseline_fit_map, diffs_mag, required)
-    unfolded_for_plots = inject_migration_sys_for_plotting(unfolded_excl, diffs_mag, required)
+    migrated_for_plots = inject_migration_sys_for_plotting(migrated, diffs_mag, required)
 
     save_polarized_structure_function_canvases(
         baseline_for_plots, out_dir, file_prefix="polarized_structure_functions_baseline"
     )
     save_polarized_structure_function_canvases(
-        unfolded_for_plots, out_dir, file_prefix="polarized_structure_functions_unfolded"
+        migrated_for_plots, out_dir, file_prefix="polarized_structure_functions_migrated"
     )
 
     save_migration_sys_canvases(baseline_for_plots, out_dir)
 
-    # Diagnostic per-reco-bin canvases
+    # New Mx2 canvases (requested):
+    #   For each xB group and each SF, 2x3 pads with one Mx2 bin per pad.
     save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_dir)
 
-    # Summary
-    sys.stdout.write("\nExclusive reconstructed Mx2 bin (reco index): {}\n".format(excl_reco_idx))
-    sys.stdout.write("Exclusive reconstructed Mx2 window from CSV: [{:.6f}, {:.6f}]\n".format(meta[excl_reco_idx][1], meta[excl_reco_idx][2]))
-    sys.stdout.write("Exclusive TRUE Mx2 bin (true index):         {}\n".format(excl_true_idx))
-    sys.stdout.write("Using {} reco-bin fit files (effective_N={}); drop_last_bin={}\n".format(effective_N, effective_N, args.drop_last_bin))
-    sys.stdout.write("Row renormalization: {}; row_sum_tol={}\n".format(args.renormalize_rows, args.row_sum_tol))
-    sys.stdout.write("Unfold stability: cond_max={:.3e}\n".format(args.cond_max))
+    # Diagnostic summary of the exclusive row weights
+    sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
+    sys.stdout.write("Exclusive reconstructed Mx2 window from CSV: [{:.6f}, {:.6f}]\n".format(meta[excl_csv_idx][1], meta[excl_csv_idx][2]))
+    sys.stdout.write("Using {} fit files (effective_N={}); drop_last_bin={}\n".format(effective_N, effective_N, args.drop_last_bin))
+    sys.stdout.write("Weights provided (NOTE: if --renormalize is set, the actual weights used are rescaled internally):\n")
+    for i in range(effective_N):
+        sys.stdout.write("  w_raw[{}] = {:.6f}\n".format(i, weights_row[i]))
+    #endfor
 
     sys.stdout.write("\nSign convention reminder:\n")
-    sys.stdout.write("  delta = A_true_excl - A_obs_excl_reco\n")
-    sys.stdout.write("  delta > 0 shifts exclusive asymmetry upward; delta < 0 shifts downward.\n")
+    sys.stdout.write("  delta = A_mix - A_base\n")
+    sys.stdout.write("  A_corrected = A_base + delta = A_mix\n")
+    sys.stdout.write("  delta > 0 shifts asymmetry upward (numerically larger).\n")
 #enddef
 
 
