@@ -17,28 +17,30 @@ Corrections / shifts (IMPORTANT):
        y <- y - Delta_rad
      and statistical errors remain unchanged.
 
-  2) Regular migration correction (NEW BEHAVIOR):
+  2) Resolution (regular) migration correction (signed diffs):
      If --migration is provided and the file contains signed diffs (delta),
      we ADD that signed diff AFTER the radiative shift:
        y <- (y - Delta_rad) + diff_mig
 
-  3) Fermi-motion migration correction (NEW INPUT):
+  3) Fermi-motion migration correction (signed diffs):
      If --fermi_migration is provided (signed diffs),
      we ADD that signed diff as well:
        y <- (y - Delta_rad) + diff_mig + diff_fermi
 
-Systematic uncertainties (IMPORTANT):
+Systematic uncertainties (IMPORTANT - UPDATED BEHAVIOR):
   - Radiative systematic (sigma_rad) comes from the --rad summary file.
-  - Migration systematic (sigma_mig) is defined as:
-        sigma_mig = average( |diff_mig|, |diff_fermi| )
-    i.e.
-        sigma_mig = 0.5 * ( |diff_mig| + |diff_fermi| )
-    If only one migration diff source is provided, we fall back to:
-        sigma_mig = |diff_source|
-    (so the script remains usable if you temporarily omit --fermi_migration).
+  - Resolution-migration systematic (sigma_resmig) is defined as:
+        sigma_resmig = |diff_mig|
+  - Fermi-migration systematic (sigma_fermi) is defined as:
+        sigma_fermi = |diff_fermi|
 
   - Total systematic per bin (drawn as solid gray rectangles) is:
-        sigma_tot = sqrt( sigma_rad^2 + sigma_mig^2 )
+        sigma_tot = sqrt( sigma_rad^2 + sigma_resmig^2 + sigma_fermi^2 )
+
+  Notes:
+    * If --fermi_migration is omitted, sigma_fermi is omitted from the quadrature sum.
+    * If --migration is omitted, sigma_resmig is omitted from the quadrature sum.
+    * LaTeX tables are still printed only when --rad AND --migration are provided.
 
 LaTeX tables (stdout) for the 4 xB slices:
   enpiLowxBGE, enpiMidLowxBGE, enpiMidHighxBGE, enpiHighxBGE
@@ -46,13 +48,15 @@ LaTeX tables (stdout) for the 4 xB slices:
 Tables are printed only when --rad AND --migration are provided (same trigger as before).
 If --fermi_migration is also provided, it is included in BOTH:
   - the central-value shift, and
-  - the migration systematic (average of |diff_mig| and |diff_fermi|).
+  - the total systematic quadrature sum.
 
 Tables use:
-  central = (fit value) - (radiative Delta) + (regular mig diff) + (fermi mig diff)
+  central = (fit value) - (radiative Delta) + (res-mig diff) + (fermi-mig diff)
   stat    = (fit statistical uncertainty)
-  syst    = sqrt( sigma_rad^2 + sigma_mig^2 )
-where sigma_mig is defined above.
+  syst    = sqrt( sigma_rad^2 + sigma_resmig^2 + sigma_fermi^2 )
+where:
+  sigma_resmig = |diff_mig|
+  sigma_fermi  = |diff_fermi|
 
 Rows are ordered in increasing -t' (i.e. increasing x axis as plotted).
 
@@ -416,7 +420,7 @@ def parse_rad_summary(rad_path):
 #   - Legacy assignment format: NAME = {{x, diff}, ...};
 # We store BOTH:
 #   "delta" = signed diff to APPLY (y <- y + delta)
-#   "sigma" = abs(delta)  (used for migration-systematic magnitude)
+#   "sigma" = abs(delta)  (magnitude used for sys)
 # ---------------------------------------------------------------------
 _pair_re = re.compile(r'\{([^{}]+)\}')
 
@@ -627,45 +631,59 @@ def _sys_edges_for_bin(bin_tag):
     return EDGES_SYS_GE if bin_tag == "enpiGE" else EDGES_SYS_XB
 
 # ---------------------------------------------------------------------
-# Systematics drawing (solid gray only)
+# Systematics drawing (solid gray only) - UPDATED to quadrature sum of:
+#   sigma_rad, sigma_resmig, sigma_fermi
 # ---------------------------------------------------------------------
-def _compute_total_sigma_per_bin(edges, rad_sigma=None, mig_sigma=None):
+def _quadrature_sum_arrays(arr_list, nbins):
+    """
+    Given a list of arrays (some may be None), truncate consistently and return:
+      tot[i] = sqrt(sum_j arr_j[i]^2)
+    Returns None if no usable arrays exist.
+    """
+    usable = []
+    for a in arr_list:
+        if a is None:
+            continue
+        #endif
+        aa = np.asarray(a, dtype=float)
+        if aa.size <= 0:
+            continue
+        #endif
+        usable.append(aa)
+    #endfor
+
+    if not usable:
+        return None
+    #endif
+
+    n = nbins
+    for aa in usable:
+        n = min(n, int(aa.size))
+    #endfor
+
+    if n <= 0:
+        return None
+    #endif
+
+    acc = np.zeros(n, dtype=float)
+    for aa in usable:
+        acc += aa[:n] * aa[:n]
+    #endfor
+
+    return np.sqrt(acc)
+
+def _draw_total_sys_band_solid(ax, edges, sigma_rad=None, sigma_resmig=None, sigma_fermi=None, zorder=1):
     nbins = max(0, len(edges) - 1)
     if nbins <= 0:
-        return None
+        return
     #endif
 
-    have_rad = (rad_sigma is not None) and (np.asarray(rad_sigma).size > 0)
-    have_mig = (mig_sigma is not None) and (np.asarray(mig_sigma).size > 0)
-
-    if not have_rad and not have_mig:
-        return None
-    #endif
-
-    r = np.asarray(rad_sigma, dtype=float) if have_rad else None
-    m = np.asarray(mig_sigma, dtype=float) if have_mig else None
-
-    if have_rad and have_mig:
-        n = min(nbins, r.size, m.size)
-        tot = np.sqrt(r[:n] * r[:n] + m[:n] * m[:n])
-    elif have_rad:
-        n = min(nbins, r.size)
-        tot = r[:n]
-    else:
-        n = min(nbins, m.size)
-        tot = m[:n]
-    #endif
-
-    return tot
-
-def _draw_total_sys_band_solid(ax, edges, rad_sigma=None, mig_sigma=None, zorder=1):
-    tot = _compute_total_sigma_per_bin(edges, rad_sigma=rad_sigma, mig_sigma=mig_sigma)
+    tot = _quadrature_sum_arrays([sigma_rad, sigma_resmig, sigma_fermi], nbins=nbins)
     if tot is None:
         return
     #endif
 
-    nbins = max(0, len(edges) - 1)
-    n = min(nbins, tot.size)
+    n = min(nbins, int(tot.size))
     if n <= 0:
         return
     #endif
@@ -711,7 +729,7 @@ def _get_delta_array(entry):
 def _get_sigma_array(entry, prefer_abs_delta=True):
     """
     For migration, sigma is defined as abs(delta) (size of applied shift).
-    For radiation, sigma comes from the file.
+    For radiation, sigma comes from the file (prefer_abs_delta=False).
     """
     if entry is None:
         return None
@@ -729,47 +747,6 @@ def _get_sigma_array(entry, prefer_abs_delta=True):
         return np.abs(s)
     #endif
     return None
-
-def _combine_mig_sigma(mig_entry, fermi_entry, n_target, label):
-    """
-    sigma_mig per your definition:
-      - if both exist: 0.5*(|diff_mig| + |diff_fermi|)
-      - if only one exists: |diff_source|
-    Pair by index and truncate to n_target.
-    """
-    if (mig_entry is None) and (fermi_entry is None):
-        return None
-    #endif
-
-    a = _get_sigma_array(mig_entry, prefer_abs_delta=True)
-    b = _get_sigma_array(fermi_entry, prefer_abs_delta=True)
-
-    if (a is None) and (b is None):
-        return None
-    #endif
-
-    if (a is not None) and (b is not None):
-        n = min(n_target, a.size, b.size)
-        if n <= 0:
-            return None
-        #endif
-        _warn_len_mismatch("mig_sigma(avg)", label, a.size, b.size, n)
-        return 0.5 * (a[:n] + b[:n])
-    #endif
-
-    if a is not None:
-        n = min(n_target, a.size)
-        if n <= 0:
-            return None
-        #endif
-        return a[:n]
-    #endif
-
-    n = min(n_target, b.size)
-    if n <= 0:
-        return None
-    #endif
-    return b[:n]
 
 def _apply_total_shift(series, rad_entry=None, mig_entry=None, fermi_entry=None,
                       with_rad=False, with_mig=False, with_fermi=False, label=""):
@@ -906,14 +883,41 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
         if s is None:
             return None
         #endif
-        n = min(n_target, s.size)
+        n = min(n_target, int(s.size))
         if n <= 0:
             return None
         #endif
         return s[:n]
 
-    def mig_sigma_combined(key, n_target):
-        return _combine_mig_sigma(M(key), F(key), n_target=n_target, label=f"{key}")
+    def mig_sigma_res(key, n_target):
+        e = M(key)
+        if e is None:
+            return None
+        #endif
+        s = _get_sigma_array(e, prefer_abs_delta=True)
+        if s is None:
+            return None
+        #endif
+        n = min(n_target, int(s.size))
+        if n <= 0:
+            return None
+        #endif
+        return s[:n]
+
+    def mig_sigma_fermi(key, n_target):
+        e = F(key)
+        if e is None:
+            return None
+        #endif
+        s = _get_sigma_array(e, prefer_abs_delta=True)
+        if s is None:
+            return None
+        #endif
+        n = min(n_target, int(s.size))
+        if n <= 0:
+            return None
+        #endif
+        return s[:n]
 
     # Determine a target length for sys arrays from any available series in pdata_by_label
     def _target_len_for_key(key):
@@ -928,8 +932,9 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
     # ---------------- BSA (ALU sin phi) ----------------
     nL = _target_len_for_key("ALUsin")
     rs = rad_sigma("ALUsin", nL) if with_rad else None
-    ms = mig_sigma_combined("ALUsin", nL) if (with_mig or with_fermi) else None
-    _draw_total_sys_band_solid(axLU, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+    ms_res = mig_sigma_res("ALUsin", nL) if with_mig else None
+    ms_fermi = mig_sigma_fermi("ALUsin", nL) if with_fermi else None
+    _draw_total_sys_band_solid(axLU, edges, sigma_rad=rs, sigma_resmig=ms_res, sigma_fermi=ms_fermi, zorder=1)
 
     for lab, pdata in pdata_by_label.items():
         s = pdata.get("ALUsin")
@@ -957,8 +962,9 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
     # ---------------- TSA (AUL sin phi open, sin2 phi filled) ----------------
     nU1 = _target_len_for_key("AULsin")
     rs = rad_sigma("AULsin", nU1) if with_rad else None
-    ms = mig_sigma_combined("AULsin", nU1) if (with_mig or with_fermi) else None
-    _draw_total_sys_band_solid(axUL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+    ms_res = mig_sigma_res("AULsin", nU1) if with_mig else None
+    ms_fermi = mig_sigma_fermi("AULsin", nU1) if with_fermi else None
+    _draw_total_sys_band_solid(axUL, edges, sigma_rad=rs, sigma_resmig=ms_res, sigma_fermi=ms_fermi, zorder=1)
 
     for lab, pdata in pdata_by_label.items():
         s1 = pdata.get("AULsin")
@@ -1003,8 +1009,9 @@ def _plot_panel_sets_1x3(axLU, axUL, axLL, pdata_by_label,
     # ---------------- DSA (ALL n=0 open, cos phi filled) ----------------
     nD = _target_len_for_key("ALLn0")
     rs = rad_sigma("ALLn0", nD) if with_rad else None
-    ms = mig_sigma_combined("ALLn0", nD) if (with_mig or with_fermi) else None
-    _draw_total_sys_band_solid(axLL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+    ms_res = mig_sigma_res("ALLn0", nD) if with_mig else None
+    ms_fermi = mig_sigma_fermi("ALLn0", nD) if with_fermi else None
+    _draw_total_sys_band_solid(axLL, edges, sigma_rad=rs, sigma_resmig=ms_res, sigma_fermi=ms_fermi, zorder=1)
 
     for lab, pdata in pdata_by_label.items():
         s0 = pdata.get("ALLn0")
@@ -1110,21 +1117,49 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
         if s is None:
             return None
         #endif
-        n = min(n_target, s.size)
+        n = min(n_target, int(s.size))
         if n <= 0:
             return None
         #endif
         return s[:n]
 
-    def mig_sigma_combined(key, n_target):
-        return _combine_mig_sigma(M(key), F(key), n_target=n_target, label=f"{key}")
+    def mig_sigma_res(key, n_target):
+        e = M(key)
+        if e is None:
+            return None
+        #endif
+        s = _get_sigma_array(e, prefer_abs_delta=True)
+        if s is None:
+            return None
+        #endif
+        n = min(n_target, int(s.size))
+        if n <= 0:
+            return None
+        #endif
+        return s[:n]
+
+    def mig_sigma_fermi(key, n_target):
+        e = F(key)
+        if e is None:
+            return None
+        #endif
+        s = _get_sigma_array(e, prefer_abs_delta=True)
+        if s is None:
+            return None
+        #endif
+        n = min(n_target, int(s.size))
+        if n <= 0:
+            return None
+        #endif
+        return s[:n]
 
     # ---------------- BSA ----------------
     if p_comb.get("ALUsin") is not None:
         n = int(p_comb["ALUsin"]["x"].size)
         rs = rad_sigma("ALUsin", n) if with_rad else None
-        ms = mig_sigma_combined("ALUsin", n) if (with_mig or with_fermi) else None
-        _draw_total_sys_band_solid(axLU, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+        ms_res = mig_sigma_res("ALUsin", n) if with_mig else None
+        ms_fermi = mig_sigma_fermi("ALUsin", n) if with_fermi else None
+        _draw_total_sys_band_solid(axLU, edges, sigma_rad=rs, sigma_resmig=ms_res, sigma_fermi=ms_fermi, zorder=1)
 
         s = p_comb["ALUsin"]
         x, y, ye = _apply_total_shift(
@@ -1148,8 +1183,9 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
     if p_comb.get("AULsin") is not None:
         n = int(p_comb["AULsin"]["x"].size)
         rs = rad_sigma("AULsin", n) if with_rad else None
-        ms = mig_sigma_combined("AULsin", n) if (with_mig or with_fermi) else None
-        _draw_total_sys_band_solid(axUL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+        ms_res = mig_sigma_res("AULsin", n) if with_mig else None
+        ms_fermi = mig_sigma_fermi("AULsin", n) if with_fermi else None
+        _draw_total_sys_band_solid(axUL, edges, sigma_rad=rs, sigma_resmig=ms_res, sigma_fermi=ms_fermi, zorder=1)
 
         s1 = p_comb["AULsin"]
         x1, y1, ye1 = _apply_total_shift(
@@ -1201,8 +1237,9 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir,
     if p_comb.get("ALLn0") is not None:
         n = int(p_comb["ALLn0"]["x"].size)
         rs = rad_sigma("ALLn0", n) if with_rad else None
-        ms = mig_sigma_combined("ALLn0", n) if (with_mig or with_fermi) else None
-        _draw_total_sys_band_solid(axLL, edges, rad_sigma=rs, mig_sigma=ms, zorder=1)
+        ms_res = mig_sigma_res("ALLn0", n) if with_mig else None
+        ms_fermi = mig_sigma_fermi("ALLn0", n) if with_fermi else None
+        _draw_total_sys_band_solid(axLL, edges, sigma_rad=rs, sigma_resmig=ms_res, sigma_fermi=ms_fermi, zorder=1)
 
         s0 = p_comb["ALLn0"]
         x0, y0, ye0 = _apply_total_shift(
@@ -1316,7 +1353,7 @@ def _fmt_cell(val, stat, syst, ndp=3):
     fmt = "{0:." + str(ndp) + "f}"
     core = fmt.format(val) + "^{\\pm " + fmt.format(stat) + "}_{\\pm " + fmt.format(syst) + "}"
     return "$" + core + "$"
-#endif
+# endif
 
 def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all):
     """
@@ -1326,9 +1363,11 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
     Central values:
       y_corr = y - Delta_rad + diff_mig + diff_fermi
 
-    Migration systematic:
-      sigma_mig = average( |diff_mig|, |diff_fermi| )
-    with fallback to |diff_source| if only one is provided.
+    Total systematic (UPDATED):
+      sigma_tot = sqrt( sigma_rad^2 + sigma_resmig^2 + sigma_fermi^2 )
+    where:
+      sigma_resmig = |diff_mig|   (if --migration present)
+      sigma_fermi  = |diff_fermi| (if --fermi_migration present)
     """
     p = build_period_dict(comb_parsed, bin_tag)
 
@@ -1372,8 +1411,8 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
 
         d_rad, s_rad = _get_rad_arrays(rad_bin, key, n)
 
-        d_mig,  s_mig_abs  = _get_mig_delta_arrays(mig_bin, key, n, label="--migration")
-        d_fermi, s_fermi_abs = _get_mig_delta_arrays(fermi_bin, key, n, label="--fermi_migration") if (fermi_bin is not None) else (None, None)
+        d_mig,  s_res  = _get_mig_delta_arrays(mig_bin, key, n, label="--migration")
+        d_fermi, s_fermi = _get_mig_delta_arrays(fermi_bin, key, n, label="--fermi_migration") if (fermi_bin is not None) else (None, None)
 
         # Central shifts: y - Delta_rad + diff_mig + diff_fermi
         y_shift = y - d_rad
@@ -1384,18 +1423,17 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
             y_shift = y_shift + d_fermi
         #endif
 
-        # Migration systematic: average magnitudes (with fallback)
-        if (s_mig_abs is not None) and (s_fermi_abs is not None):
-            s_mig = 0.5 * (s_mig_abs + s_fermi_abs)
-        elif (s_mig_abs is not None):
-            s_mig = s_mig_abs
-        elif (s_fermi_abs is not None):
-            s_mig = s_fermi_abs
-        else:
-            raise RuntimeError(f"FATAL: missing migration diffs for key={key} in bin={bin_tag} (no diffs found in either migration source).")
+        # Systematics: quadrature of rad + resmig + fermi
+        s_tot_sq = s_rad * s_rad
+
+        if s_res is not None:
+            s_tot_sq = s_tot_sq + s_res * s_res
+        #endif
+        if s_fermi is not None:
+            s_tot_sq = s_tot_sq + s_fermi * s_fermi
         #endif
 
-        s_tot = np.sqrt(s_rad * s_rad + s_mig * s_mig)
+        s_tot = np.sqrt(s_tot_sq)
 
         vals[key] = y_shift
         stats[key] = ye
@@ -1425,8 +1463,9 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
     print("% -----------------------------------------------------------------------------")
     print(f"% LaTeX table for bin: {bin_tag}  ({XB_BINS.get(bin_tag, bin_tag)})")
     print("% Central values: y - Delta_rad + diff_mig + diff_fermi (if provided).")
-    print("% Migration syst: avg(|diff_mig|, |diff_fermi|) with fallback to |diff_source|.")
-    print("% Total syst: sqrt(rad_sigma^2 + mig_sigma^2). Rows ordered in increasing -t'.")
+    print("% Total syst: sqrt( sigma_rad^2 + sigma_resmig^2 + sigma_fermi^2 ).")
+    print("%   sigma_resmig = |diff_mig|, sigma_fermi = |diff_fermi|.")
+    print("% Rows ordered in increasing -t'.")
     print("% -----------------------------------------------------------------------------")
     print(header, end="")
 
@@ -1560,4 +1599,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-#endif
+# endif
