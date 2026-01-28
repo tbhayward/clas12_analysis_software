@@ -710,7 +710,9 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
     ylim_single = (-0.40, 0.40)
-    ylim_double = (-0.80, 0.80)
+
+    # UPDATED: LL y-range everywhere -> [-1, 1]
+    ylim_double = (-1.00, 1.00)
 
     suffix_lu = "GEchi2FitsALUsinphi"
     suffix_ul1 = "GEchi2FitsAULsinphi"
@@ -971,10 +973,6 @@ def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_d
 
     Saves under:
       <out_dir>/mx2_bin_canvases/<xBgroup>/<short_name>_page<NN>.pdf
-
-    Behavior:
-      - If effective_N <= 6: one page, remaining pads blank.
-      - If effective_N > 6 : multiple pages, 6 bins per page.
     """
     np, plt = import_plot_deps()
 
@@ -985,7 +983,9 @@ def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_d
     x_label = r"$-t'\ (\mathrm{GeV}^{2})$"
 
     ylim_single = (-0.40, 0.40)
-    ylim_double = (-0.80, 0.80)
+
+    # UPDATED: LL y-range everywhere -> [-1, 1]
+    ylim_double = (-1.00, 1.00)
 
     suffixes = [
         "GEchi2FitsALUsinphi",
@@ -1061,8 +1061,6 @@ def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_d
                     mx2max = meta[mx2_bin_idx][2]
                     ax.set_title("Mx2 bin {}: [{:.3f}, {:.3f}]".format(mx2_bin_idx, mx2min, mx2max), fontsize=10)
                 #endfor
-
-                # Pad 6 handled above; no special blank pad needed (already off if missing bin).
 
                 supt = r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - " + title_frag + " (Mx2 bins)"
                 if n_pages > 1:
