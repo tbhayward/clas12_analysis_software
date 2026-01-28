@@ -5,8 +5,8 @@
 mx2_mc_mx2_fraction_table.py
 
 Read a ROOT file at runtime, load the PhysicsEvents TTree, select events with:
-  0.81 <= Mx2   <= 1.00
-  0.10 <= xB    <= 0.60
+  0.81 <= Mx2    <= 1.00        (for the TABLE only)
+  0.10 <= x      <= 0.60
   -1.0 <= tprime <= 0.0
 
 Then compute the percentage distribution of mc_Mx2 values in the bins:
@@ -18,13 +18,16 @@ Then compute the percentage distribution of mc_Mx2 values in the bins:
   [1.45, 1.60]
   [1.60, 20]
 
-Prints a table to the terminal.
+Also produces an output plot comparing Mx2 and mc_Mx2 histograms with ONLY the
+(x, tprime) cuts applied (no Mx2 window), in the range [-1, 4], and saves it to:
+  output/Mx2_comparison.png
 
 Usage (tcsh):
   python3 mx2_mc_mx2_fraction_table.py /path/to/file.root
 """
 
 import sys
+import os
 import ROOT
 
 
@@ -34,6 +37,13 @@ def die(msg):
 
 def format_pct(x):
     return f"{100.0 * x:8.3f}%"
+
+
+def ensure_outdir(path):
+    d = os.path.dirname(path)
+    if d and (not os.path.isdir(d)):
+        os.makedirs(d, exist_ok=True)
+    #endif
 
 
 def main():
@@ -63,12 +73,14 @@ def main():
     if len(missing) > 0:
         die(f"Missing required branch/leaf(s) in PhysicsEvents: {', '.join(missing)}")
 
-    # Selections
+    # --------------------------
+    # Selections for TABLE
+    # --------------------------
     mx2_sel_min = 0.81
     mx2_sel_max = 1.00
 
-    xb_sel_min = 0.10
-    xb_sel_max = 0.60
+    x_sel_min = 0.10
+    x_sel_max = 0.60
 
     tprime_sel_min = -1.0
     tprime_sel_max = 0.0
@@ -89,8 +101,8 @@ def main():
             continue
         #endif
 
-        xb = float(getattr(t, "x"))
-        if xb < xb_sel_min or xb > xb_sel_max:
+        x = float(getattr(t, "x"))
+        if x < x_sel_min or x > x_sel_max:
             continue
         #endif
 
@@ -100,7 +112,6 @@ def main():
         #endif
 
         mc_mx2 = float(getattr(t, "mc_Mx2"))
-
         total_selected += 1
 
         placed = False
@@ -108,7 +119,7 @@ def main():
             lo = edges[k]
             hi = edges[k + 1]
 
-            # Half-open bins [lo, hi), except last bin includes upper edge.
+            # Half-open bins [lo, hi), except last includes upper edge.
             if k < len(counts) - 1:
                 if (mc_mx2 >= lo) and (mc_mx2 < hi):
                     counts[k] += 1
@@ -131,22 +142,24 @@ def main():
 
     if total_selected == 0:
         die(
-            "No entries passed the selection: "
+            "No entries passed the TABLE selection: "
             f"{mx2_sel_min:.2f} <= Mx2 <= {mx2_sel_max:.2f}, "
-            f"{xb_sel_min:.2f} <= xB <= {xb_sel_max:.2f}, "
+            f"{x_sel_min:.2f} <= x <= {x_sel_max:.2f}, "
             f"{tprime_sel_min:.2f} <= tprime <= {tprime_sel_max:.2f}."
         )
 
-    # Print table.
+    # --------------------------
+    # Print table
+    # --------------------------
     print("")
     print("------------------------------------------------------------")
     print(f"Input file: {inpath}")
     print("Tree: PhysicsEvents")
-    print("Selection:")
+    print("TABLE selection:")
     print(f"  {mx2_sel_min:.2f} <= Mx2    <= {mx2_sel_max:.2f}")
-    print(f"  {xb_sel_min:.2f} <= xB     <= {xb_sel_max:.2f}")
+    print(f"  {x_sel_min:.2f} <= x      <= {x_sel_max:.2f}")
     print(f"  {tprime_sel_min:.2f} <= tprime <= {tprime_sel_max:.2f}")
-    print(f"Selected entries: {total_selected}")
+    print(f"Selected entries (for table): {total_selected}")
     print("------------------------------------------------------------")
     print("")
     print(f"{'mc_Mx2 bin':>20}   {'count':>12}   {'percent':>12}")
@@ -169,6 +182,86 @@ def main():
     #endif
 
     print("")
+
+    # --------------------------
+    # Make comparison plot
+    #   - apply ONLY x and tprime cuts (no Mx2 window)
+    #   - histogram range [-1, 4]
+    #   - remove stat box
+    #   - legend for both
+    # --------------------------
+    out_png = "output/Mx2_comparison.png"
+    ensure_outdir(out_png)
+
+    # Turn off stat box globally for this script.
+    ROOT.gStyle.SetOptStat(0)
+
+    nbins = 200
+    h_mx2 = ROOT.TH1F("h_mx2", "Mx2 Comparison;M_{x}^{2} (GeV^{2});Counts", nbins, -1.0, 4.0)
+    h_mc  = ROOT.TH1F("h_mc_mx2", "Mx2 Comparison;M_{x}^{2} (GeV^{2});Counts", nbins, -1.0, 4.0)
+
+    # Basic styling (ROOT defaults are fine; just make them distinguishable).
+    h_mx2.SetLineWidth(2)
+    h_mc.SetLineWidth(2)
+    h_mc.SetLineColor(ROOT.kRed)
+
+    # Fill histograms with x/tprime cuts only.
+    n_entries = int(t.GetEntries())
+    for i in range(n_entries):
+        t.GetEntry(i)
+
+        x = float(getattr(t, "x"))
+        if x < x_sel_min or x > x_sel_max:
+            continue
+        #endif
+
+        tp = float(getattr(t, "tprime"))
+        if tp < tprime_sel_min or tp > tprime_sel_max:
+            continue
+        #endif
+
+        mx2 = float(getattr(t, "Mx2"))
+        mc_mx2 = float(getattr(t, "mc_Mx2"))
+
+        h_mx2.Fill(mx2)
+        h_mc.Fill(mc_mx2)
+    #endfor
+
+    if h_mx2.GetEntries() <= 0:
+        die("Histogram for Mx2 has zero entries after (x, tprime) cuts.")
+    #endif
+    if h_mc.GetEntries() <= 0:
+        die("Histogram for mc_Mx2 has zero entries after (x, tprime) cuts.")
+    #endif
+
+    # Draw
+    c = ROOT.TCanvas("c_mx2_comp", "Mx2 comparison", 900, 700)
+    c.SetLeftMargin(0.13)
+
+    # Set y-range based on max of both.
+    ymax = max(h_mx2.GetMaximum(), h_mc.GetMaximum())
+    h_mx2.SetMaximum(1.15 * ymax)
+
+    h_mx2.Draw("HIST")
+    h_mc.Draw("HIST SAME")
+
+    leg = ROOT.TLegend(0.62, 0.72, 0.89, 0.89)
+    leg.SetFillStyle(1001)
+    leg.SetFillColor(ROOT.kWhite)
+    leg.SetBorderSize(1)
+    leg.AddEntry(h_mx2, "Mx2", "l")
+    leg.AddEntry(h_mc, "mc_Mx2", "l")
+    leg.Draw()
+
+    # Small annotation of cuts.
+    latex = ROOT.TLatex()
+    latex.SetNDC(True)
+    latex.SetTextSize(0.032)
+    latex.DrawLatex(0.14, 0.92, f"{x_sel_min:.2f} #leq x #leq {x_sel_max:.2f},  {tprime_sel_min:.1f} #leq t' #leq {tprime_sel_max:.1f}")
+
+    c.SaveAs(out_png)
+
+    print(f"Saved plot: {out_png}")
     print("Done.")
 
 
