@@ -53,7 +53,7 @@ def main():
         die("Tree 'PhysicsEvents' not found in file.")
 
     # Fail-fast branch checks.
-    required = ["Mx2", "mc_Mx2", "xB", "tprime"]
+    required = ["Mx2", "mc_Mx2", "x", "tprime"]
     missing = []
     for br in required:
         if not (t.GetBranch(br) or t.GetLeaf(br)):
