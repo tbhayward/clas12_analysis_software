@@ -4047,7 +4047,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       TTreeReaderValue<double> y     (dataReader,"y");
       TTreeReaderValue<double> z     (dataReader,"z");
       TTreeReaderValue<double> t     (dataReader,"t");
-      std::cout << *t << std::endl;
       TTreeReaderValue<double> tmin  (dataReader,"tmin");
       TTreeReaderValue<double> tprime(dataReader,"tprime");   // use branch directly
       TTreeReaderValue<double> phi   (dataReader,"phi");
@@ -4073,6 +4072,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         sumy    += *y;
         sumz    += *z;
         sumt    += *t;
+        std::cout << *t << std::endl;
         sumtmin += *tmin;
         sumVar  += *currentVariable;
         nEvt    += 1.0;
