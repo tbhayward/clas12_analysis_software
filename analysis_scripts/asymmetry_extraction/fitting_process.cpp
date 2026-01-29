@@ -3929,8 +3929,9 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
   // Prepare output streams
   std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sAT_UL, sALL, sALLc, sAUUc, sAUUc2, sAT_LL;
-  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sAT_UL,&sALL,&sALLc,&sAUUc,&sAUUc2,&sAT_LL})
+  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sAT_UL,&sALL,&sALLc,&sAUUc,&sAUUc2,&sAT_LL}) {
     (*s) << std::fixed << std::setprecision(9);
+  }
 
   sALUoff << prefix << "GEchi2FitsALUoffset = {";
   sAULoff << prefix << "GEchi2FitsAULoffset = {";
@@ -3944,13 +3945,13 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
   sAT_LL  << prefix << "GEchi2FitsA_T_LL = {";
 
-  // Kinematic LaTeX table scaffolding (original)
+  // Kinematic LaTeX table scaffolding (original)  <-- UPDATED: z -> t
   std::ostringstream kinLatex;
   kinLatex << "\\begin{table}[h]\n\\centering\n"
            << "\\begin{tabular}{|c|c|c|c|c|c|} \\hline\n"
-           << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $z$ & $-t'$ \\\\ \\hline\n";
+           << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $t$ & $-t'$ \\\\ \\hline\n";
 
-  // Extended kinematics table (kinematics2_, with t, W, DepB/DepA)
+  // Extended kinematics table (kinematics2_, with t, W, DepB/DepA)  (unchanged)
   std::ostringstream kinLatex2;
   kinLatex2 << "\\begin{table}[h]\n\\centering\n"
             << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline\n"
@@ -4015,24 +4016,27 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::cout << "Beginning simultaneous chi2 GE fit for " << binNames[currentFits]
               << " bin " << i << ". " << std::endl;
 
-    // Build histograms and m^c(φ)
+    // Build histograms and m^c(phi)
     char hname[64]; snprintf(hname, sizeof(hname), "GE_%zu", i);
     TH1D *hALU, *hAUL, *hALL;
     std::tie(hALU, hAUL, hALL) =
       createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
 
-    // Mean & range kinematics + ⟨cosφ⟩
+    // Mean & range kinematics + <cosphi>
     double sumQ2=0, sumW=0, sumx=0, sumy=0, sumz=0, sumt=0, sumtmin=0, sumVar=0, nEvt=0;
     double q2min= 1e300, q2max=-1e300;
     double xmin = 1e300, xmax =-1e300;
     double ymin = 1e300, ymax =-1e300;
     double zmin = 1e300, zmax =-1e300;
 
-    double wmin = 1e300, wmax = -1e300;      // new: W range
+    double wmin = 1e300, wmax = -1e300;      // W range
     double mtp_min = 1e300, mtp_max = -1e300;
     double sum_mtp = 0.0;
     double sum_mt  = 0.0;
-    double mt_min  = 1e300, mt_max  = -1e300; // new: -t range
+    double mt_min  = 1e300, mt_max  = -1e300; // -t range
+
+    // NEW (for original kinLatex table update): t range (min/mean/max of t itself)
+    double t_raw_min = 1e300, t_raw_max = -1e300;
 
     double sum_cosphi = 0.0, sum_cosphi2 = 0.0;
     long   cnt_cosphi = 0;
@@ -4077,16 +4081,19 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         MinMaxUpdater::upd(*x,  xmin,  xmax);
         MinMaxUpdater::upd(*y,  ymin,  ymax);
         MinMaxUpdater::upd(*z,  zmin,  zmax);
-        MinMaxUpdater::upd(*W,  wmin,  wmax);   // track W range
+        MinMaxUpdater::upd(*W,  wmin,  wmax);
 
-        // −t′ and −t (tprime = t - tmin ⇒ −t′ = −tprime)
+        // NEW: track min/max of t itself (not -t)
+        MinMaxUpdater::upd(*t, t_raw_min, t_raw_max);
+
+        // -t' and -t (tprime = t - tmin => -t' = -tprime)
         const double mtp = -(*tprime);
         sum_mtp += mtp;
         MinMaxUpdater::upd(mtp, mtp_min, mtp_max);
 
         const double mt = -(*t);
         sum_mt += mt;
-        MinMaxUpdater::upd(mt, mt_min, mt_max); // track -t range
+        MinMaxUpdater::upd(mt, mt_min, mt_max);
 
         const double cphi = std::cos(*phi);
         sum_cosphi  += cphi;
@@ -4104,8 +4111,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const double meanz    = (nEvt>0)? sumz/nEvt   : 0.0;
     const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
     const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
-    const double mean_mtp = (nEvt>0)? sum_mtp/nEvt : 0.0;   // ⟨−t′⟩
-    const double mean_mt  = (nEvt>0)? sum_mt /nEvt : 0.0;   // ⟨−t⟩
+    const double mean_mtp = (nEvt>0)? sum_mtp/nEvt : 0.0;   // <-t'>
+    const double mean_mt  = (nEvt>0)? sum_mt /nEvt : 0.0;   // <-t>
 
     double mean_cosphi = 0.0, err_cosphi = 0.0;
     if (cnt_cosphi > 0) {
@@ -4124,6 +4131,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       mtp_min=mtp_max=0.0;
       wmin=wmax=0.0;
       mt_min=mt_max=0.0;
+
+      // NEW: zero out t range if empty
+      t_raw_min = 0.0;
+      t_raw_max = 0.0;
     }
 
     // Depolarization ratios
@@ -4201,10 +4212,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     // Minimize
     {
       double arglist[2]; int ier=0;
-      arglist[0] = 2;               minuit.mnexcm("SET STR", arglist, 1, ier);
+      arglist[0] = 2;                    minuit.mnexcm("SET STR", arglist, 1, ier);
       arglist[0] = 5000; arglist[1] = 0.1;  minuit.mnexcm("MINImize", arglist, 2, ier);
       if (ier != 0) {
-        arglist[0] = 2000;          minuit.mnexcm("SIMPLEX", arglist, 1, ier);
+        arglist[0] = 2000;               minuit.mnexcm("SIMPLEX", arglist, 1, ier);
         arglist[0] = 5000; arglist[1] = 0.1;  minuit.mnexcm("MIGRAD", arglist, 2, ier);
       }
       minuit.mnexcm("HESSE", 0, 0, ier);
@@ -4235,7 +4246,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const int ndf_global = std::max(0, npts_total - npar);
     const double chi2_global = fmin;
 
-    // Plot (pass values **and** errors)
+    // Plot (pass values and errors)
     plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, perr,
                                          (int)i, prefix, suffix,
                                          chi2_global, ndf_global);
@@ -4283,16 +4294,16 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       }
     };
 
-    // Original LaTeX kinematics table row (Q2, xB, y, z, -t')
+    // Original LaTeX kinematics table row (Q2, xB, y, t, -t')  <-- UPDATED: z -> t
     kinLatex << (i+1) << " ~&~ "
              << TripleHelper::triple(q2min,  meanQ2,  q2max)   << " ~&~ "
              << TripleHelper::triple(xmin,   meanx,   xmax)    << " ~&~ "
              << TripleHelper::triple(ymin,   meany,   ymax)    << " ~&~ "
-             << TripleHelper::triple(zmin,   meanz,   zmax)    << " ~&~ "
+             << TripleHelper::triple(t_raw_min, meant, t_raw_max) << " ~&~ "
              << TripleHelper::triple(mtp_min, mean_mtp, mtp_max)
              << " \\\\ \\hline\n";
 
-    // Extended kinematics2_ table row: same + -t, W, DepB/DepA
+    // Extended kinematics2_ table row: same + -t, W, DepB/DepA (unchanged)
     kinLatex2 << (i+1) << " ~&~ "
               << TripleHelper::triple(q2min,  meanQ2,  q2max)   << " ~&~ "
               << TripleHelper::triple(xmin,   meanx,   xmax)    << " ~&~ "
@@ -4355,7 +4366,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     // === write the per-bin export line (FINAL schema) ==========================
     if (g_ge_write_bin_export && binExport) {
-      // Convert fitted ratios → physical asymmetry amplitudes
+      // Convert fitted ratios -> physical asymmetry amplitudes
       const double ALU_sin      = g_ge_ctx.rWA * pval[2];
       const double eALU_sin     = g_ge_ctx.rWA * perr[2];
 
@@ -4429,10 +4440,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAT_LL.str()  << "\n";
   }
 
-  // Finish LaTeX kinematics table & kinematics list (original)
+  // Finish LaTeX kinematics table & kinematics list (original)  <-- UPDATED caption: z -> t
   kinLatex << "\\end{tabular}\n"
-           << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $z$, and $-t'$. "
-           << "$Q^{2}$ and $-t'$ are in GeV$^{2}$.}\n"
+           << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $t$, and $-t'$. "
+           << "$Q^{2}$, $t$, and $-t'$ are in GeV$^{2}$.}\n"
            << "\\label{table:GE_kinematics_" << prefix << "}\n"
            << "\\end{table}\n\n\n";
   {
@@ -4440,7 +4451,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     kf << kinLatex.str() << std::endl;
   }
 
-  // Extended kinematics2 table: write to sibling file "kinematics2_..."
+  // Extended kinematics2 table: write to sibling file "kinematics2_..." (unchanged)
   kinLatex2 << "\\end{tabular}\n"
             << "\\caption{Per-bin kinematics including $Q^{2}$, $x_{B}$, $y$, $z$, $-t'$, $-t$, $W$, and $\\mathrm{DepB}/\\mathrm{DepA}$. "
             << "$Q^{2}$, $-t'$ and $-t$ are in GeV$^{2}$ and $W$ is in GeV.}\n"
