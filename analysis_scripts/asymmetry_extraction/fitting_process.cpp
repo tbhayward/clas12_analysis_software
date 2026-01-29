@@ -3945,13 +3945,13 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
   sAT_LL  << prefix << "GEchi2FitsA_T_LL = {";
 
-  // Kinematic LaTeX table scaffolding (original)  <-- UPDATED: z -> t
+  // Kinematic LaTeX table scaffolding (original)  <-- UPDATED: z -> -t
   std::ostringstream kinLatex;
   kinLatex << "\\begin{table}[h]\n\\centering\n"
            << "\\begin{tabular}{|c|c|c|c|c|c|} \\hline\n"
-           << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $t$ & $-t'$ \\\\ \\hline\n";
+           << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $-t$ & $-t'$ \\\\ \\hline\n";
 
-  // Extended kinematics table (kinematics2_, with t, W, DepB/DepA)  (unchanged)
+  // Extended kinematics table (kinematics2_, with t, W, DepB/DepA) (unchanged)
   std::ostringstream kinLatex2;
   kinLatex2 << "\\begin{table}[h]\n\\centering\n"
             << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline\n"
@@ -4032,11 +4032,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     double wmin = 1e300, wmax = -1e300;      // W range
     double mtp_min = 1e300, mtp_max = -1e300;
     double sum_mtp = 0.0;
-    double sum_mt  = 0.0;
-    double mt_min  = 1e300, mt_max  = -1e300; // -t range
 
-    // NEW (for original kinLatex table update): t range (min/mean/max of t itself)
-    double t_raw_min = 1e300, t_raw_max = -1e300;
+    // NEW/USED: -t accumulation and range for the original kinLatex table
+    double sum_mt = 0.0;
+    double mt_min = 1e300, mt_max = -1e300;
 
     double sum_cosphi = 0.0, sum_cosphi2 = 0.0;
     long   cnt_cosphi = 0;
@@ -4083,14 +4082,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         MinMaxUpdater::upd(*z,  zmin,  zmax);
         MinMaxUpdater::upd(*W,  wmin,  wmax);
 
-        // NEW: track min/max of t itself (not -t)
-        MinMaxUpdater::upd(*t, t_raw_min, t_raw_max);
-
-        // -t' and -t (tprime = t - tmin => -t' = -tprime)
+        // -t' (tprime = t - tmin => -t' = -tprime)
         const double mtp = -(*tprime);
         sum_mtp += mtp;
         MinMaxUpdater::upd(mtp, mtp_min, mtp_max);
 
+        // -t
         const double mt = -(*t);
         sum_mt += mt;
         MinMaxUpdater::upd(mt, mt_min, mt_max);
@@ -4131,10 +4128,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       mtp_min=mtp_max=0.0;
       wmin=wmax=0.0;
       mt_min=mt_max=0.0;
-
-      // NEW: zero out t range if empty
-      t_raw_min = 0.0;
-      t_raw_max = 0.0;
     }
 
     // Depolarization ratios
@@ -4294,12 +4287,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       }
     };
 
-    // Original LaTeX kinematics table row (Q2, xB, y, t, -t')  <-- UPDATED: z -> t
+    // Original LaTeX kinematics table row (Q2, xB, y, -t, -t')  <-- UPDATED
     kinLatex << (i+1) << " ~&~ "
              << TripleHelper::triple(q2min,  meanQ2,  q2max)   << " ~&~ "
              << TripleHelper::triple(xmin,   meanx,   xmax)    << " ~&~ "
              << TripleHelper::triple(ymin,   meany,   ymax)    << " ~&~ "
-             << TripleHelper::triple(t_raw_min, meant, t_raw_max) << " ~&~ "
+             << TripleHelper::triple(mt_min, mean_mt, mt_max)  << " ~&~ "
              << TripleHelper::triple(mtp_min, mean_mtp, mtp_max)
              << " \\\\ \\hline\n";
 
@@ -4440,10 +4433,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAT_LL.str()  << "\n";
   }
 
-  // Finish LaTeX kinematics table & kinematics list (original)  <-- UPDATED caption: z -> t
+  // Finish LaTeX kinematics table & kinematics list (original)  <-- UPDATED caption: z -> -t
   kinLatex << "\\end{tabular}\n"
-           << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $t$, and $-t'$. "
-           << "$Q^{2}$, $t$, and $-t'$ are in GeV$^{2}$.}\n"
+           << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $-t$, and $-t'$. "
+           << "$Q^{2}$, $-t$, and $-t'$ are in GeV$^{2}$.}\n"
            << "\\label{table:GE_kinematics_" << prefix << "}\n"
            << "\\end{table}\n\n\n";
   {
