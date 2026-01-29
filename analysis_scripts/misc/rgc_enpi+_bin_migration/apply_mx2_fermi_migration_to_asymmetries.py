@@ -8,23 +8,22 @@
 # Concept:
 #   - You provide multiple fit-results text files, each produced with a different reconstructed Mx2 window.
 #   - You also provide an Mx2 migration/composition matrix from MC.
-#   - We identify the "exclusive reconstructed bin" (baseline window, typically 0.81 < Mx2 < 1.00).
+#   - We identify the "exclusive reconstructed bin" (baseline window), typically:
+#         (-inf, 1.07)
+#     and by default we now select this as exclusive bin index 0.
 #   - We take the migration row for that bin: weights w_k describing how much each Mx2 source-bin contributes
 #     to the reconstructed exclusive bin.
-#   - For each asymmetry series and each -t' point, we compute:
-#         A_mix = sum_k w_k * A_k
-#     where A_k is the fitted asymmetry from the fit file corresponding to Mx2 bin k.
+#   - For each asymmetry series and each -t' point index i, we compute:
+#         A_mix(i) = sum_k w_k * A_k(i)
+#     where k runs over the provided Mx2-bin fit files (one per Mx2 bin), and the sum includes the exclusive
+#     bin itself as one of the k terms.
 #
 # Correction definition (SIGNED):
-#   - delta = A_mix - A_base
-#   - A_corrected = A_base + delta = A_mix
-#
-# Sign interpretation:
-#   - delta > 0 makes the asymmetry numerically larger (shifts upward).
-#   - delta < 0 makes the asymmetry numerically smaller (shifts downward).
+#   - delta(i) = A_mix(i) - A_base(i)
+#   - A_corrected(i) = A_base(i) + delta(i) = A_mix(i)
 #
 # Key update (Jan 2026):
-#   - The script NO LONGER treats small differences in the per-bin tmean grids across Mx2 windows as fatal.
+#   - The script does NOT treat small differences in the per-bin tmean grids across Mx2 windows as fatal.
 #   - The mixing is performed by INDEX (bin number) assuming bin boundaries match; the output x-axis (tmean)
 #     is taken from the baseline (exclusive) file.
 #   - If the tmean grids differ by more than --tmean-tol, the script emits WARNING(s), not FATAL.
@@ -34,7 +33,7 @@
 #         name = {{tmean, A_mix, stat_base}, ...};
 #   (2) Diff/correction file (SIGNED):
 #         name_delta = {{tmean, (A_mix - A_base)}, ...};
-#         name_abs   = {{tmean, |A_mix - A_base|}, ...};
+#         name_abs   = {{tmean, abs(A_mix - A_base)}, ...};
 #         name_ratio = {{tmean, (A_mix - A_base)/A_base}, ...};  (SIGNED ratio)
 #
 #   (3) PDF plots:
@@ -51,7 +50,7 @@
 #         output/enpi+/mx2_fermi_migration_study/mx2_bin_canvases/<xBgroup>/<short_name>_page<NN>.pdf
 #
 # Notes:
-#   - This script supports dropping the final Mx2 bin (e.g., if you have 7 bins in the CSV but only 6 fit files).
+#   - This script supports dropping the final Mx2 bin (e.g., if you have N bins in the CSV but only N-1 fit files).
 #     If you provide N-1 fit files for an N-bin CSV, you MUST pass --drop-last-bin.
 #   - The mixing uses only ONE migration row: the row corresponding to the reconstructed exclusive Mx2 bin.
 #   - The baseline statistical uncertainties are preserved (stat_base).
@@ -61,6 +60,7 @@
 import argparse
 import ast
 import csv
+import math
 import os
 import re
 import sys
@@ -93,6 +93,31 @@ def ensure_is_basename(path_like, what):
 #enddef
 
 
+def parse_inf_float(s):
+    """
+    Parse floats including +/-inf tokens robustly (ASCII only).
+    Accepts: inf, +inf, -inf, infinity, +infinity, -infinity (case-insensitive).
+    """
+    if s is None:
+        return None
+    #endif
+
+    t = str(s).strip().lower()
+    if t in ["inf", "+inf", "infinity", "+infinity"]:
+        return float("inf")
+    #endif
+    if t in ["-inf", "-infinity"]:
+        return -float("inf")
+    #endif
+
+    try:
+        return float(t)
+    except Exception:
+        fatal("Could not parse float token '{}'. If you meant infinity, use 'inf' or '-inf'.".format(s))
+    #endexcept
+#enddef
+
+
 def read_mx2_migration_csv(csv_path):
     """
     Reads an Mx2 migration/composition CSV with columns:
@@ -114,6 +139,12 @@ def read_mx2_migration_csv(csv_path):
             fatal("Migration CSV is empty: " + csv_path)
         #endif
 
+        # Allow a leading '#' in the first header cell (common for commented headers).
+        # We do not rely on header names, but this prevents confusion in diagnostics.
+        if len(header) > 0:
+            header[0] = header[0].lstrip("#").strip()
+        #endif
+
         for row_idx, row in enumerate(reader):
             if len(row) < 5:
                 fatal("Migration CSV row {} has too few columns (need at least 5).".format(row_idx))
@@ -121,8 +152,8 @@ def read_mx2_migration_csv(csv_path):
 
             try:
                 bin_num = int(float(row[0]))
-                mx2min = float(row[1])
-                mx2max = float(row[2])
+                mx2min = parse_inf_float(row[1])
+                mx2max = parse_inf_float(row[2])
                 nev = int(float(row[3]))
             except Exception as e:
                 fatal("Failed parsing meta columns on CSV row {}: {}".format(row_idx, str(e)))
@@ -175,27 +206,50 @@ def read_mx2_migration_csv(csv_path):
 #enddef
 
 
+def bounds_match(a, b, tol):
+    """
+    Robust float comparison that safely handles +/-inf.
+    """
+    if a is None or b is None:
+        return False
+    #endif
+
+    if math.isinf(a) or math.isinf(b):
+        # Both must be infinite with the same sign to match.
+        if math.isinf(a) and math.isinf(b):
+            return (a > 0.0 and b > 0.0) or (a < 0.0 and b < 0.0)
+        #endif
+        return False
+    #endif
+
+    return abs(a - b) <= tol
+#enddef
+
+
 def find_exclusive_bin_index(meta, mx2min_target, mx2max_target, tol):
     """
     Find bin index whose (mx2min, mx2max) matches target within tol.
+    Handles +/-inf robustly.
     """
     candidates = []
     for i in range(len(meta)):
         mx2min = meta[i][1]
         mx2max = meta[i][2]
-        if (abs(mx2min - mx2min_target) <= tol) and (abs(mx2max - mx2max_target) <= tol):
+        if bounds_match(mx2min, mx2min_target, tol) and bounds_match(mx2max, mx2max_target, tol):
             candidates.append(i)
         #endif
     #endfor
 
     if len(candidates) == 0:
-        msg = "Could not find exclusive Mx2 bin matching [{:.6f}, {:.6f}] within tol {:.3g}.\n".format(
+        msg = "Could not find exclusive Mx2 bin matching [{}, {}] within tol {:.3g}.\n".format(
             mx2min_target, mx2max_target, tol
         )
         msg += "Available bins from CSV:\n"
         for i in range(len(meta)):
-            msg += "  bin {}: [{:.6f}, {:.6f}]  nev={}\n".format(i, meta[i][1], meta[i][2], meta[i][3])
+            msg += "  bin {}: [{}, {}]  nev={}\n".format(i, meta[i][1], meta[i][2], meta[i][3])
         #endfor
+        msg += "Hint: if you want the default exclusive bin, use --exclusive-bin 0 (recommended).\n"
+        msg += "If you truly want bounds matching, use --exclusive-by-bounds and pass --exclusive-mx2-min/-max (supports -inf).\n"
         fatal(msg.rstrip("\n"))
     #endif
 
@@ -359,15 +413,19 @@ def warn_tmean_grids_if_inconsistent(fit_maps, required_varnames, expected_len, 
 
 def compute_mx2_mixed_values(weights_row, fit_maps, excl_bin_idx, required_varnames, renormalize, tol):
     """
-    weights_row: list[float] weights for each provided fit file (length M)
-    fit_maps:    list[dict]  one per Mx2 bin file (length M)
+    weights_row:  list[float] weights for each provided fit file (length M)
+    fit_maps:     list[dict]  one per Mx2 bin file (length M)
     excl_bin_idx: int index of the exclusive/baseline file in fit_maps list
 
-    Mixing is performed by INDEX. Output tmean is taken from the baseline file.
+    Mixing is performed by INDEX.
+    For each variable v and each -t' point index i:
+      A_mix(i) = sum_k w_k * A_k(i)   where k runs over Mx2 bins (fit files).
+      delta(i) = A_mix(i) - A_base(i)
+    Output tmean is taken from the baseline file (excl_bin_idx).
 
     Returns:
       migrated:     dict var -> list[[tmean, A_mix, stat_base], ...]
-      diffs_mag:    dict var -> list[[tmean, |delta|], ...]
+      diffs_mag:    dict var -> list[[tmean, abs(delta)], ...]
       diffs_signed: dict var -> list[[tmean, delta], ...]
     """
     if len(weights_row) != len(fit_maps):
@@ -711,7 +769,7 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
 
     ylim_single = (-0.40, 0.40)
 
-    # UPDATED: LL y-range everywhere -> [-1, 1]
+    # LL y-range everywhere -> [-1, 1]
     ylim_double = (-1.00, 1.00)
 
     suffix_lu = "GEchi2FitsALUsinphi"
@@ -832,7 +890,7 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
 
 def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
     """
-    Injects *magnitude* of migration differences as VarSys for plotting as symmetric +/- bars.
+    Injects magnitude of migration differences as VarSys for plotting as symmetric +/- bars.
     Even though the correction itself is signed, the visual sys rectangle is conventionally symmetric.
     """
     out = dict(fit_map)
@@ -984,7 +1042,7 @@ def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_d
 
     ylim_single = (-0.40, 0.40)
 
-    # UPDATED: LL y-range everywhere -> [-1, 1]
+    # LL y-range everywhere -> [-1, 1]
     ylim_double = (-1.00, 1.00)
 
     suffixes = [
@@ -1059,7 +1117,7 @@ def save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_d
 
                     mx2min = meta[mx2_bin_idx][1]
                     mx2max = meta[mx2_bin_idx][2]
-                    ax.set_title("Mx2 bin {}: [{:.3f}, {:.3f}]".format(mx2_bin_idx, mx2min, mx2max), fontsize=10)
+                    ax.set_title("Mx2 bin {}: [{}, {}]".format(mx2_bin_idx, mx2min, mx2max), fontsize=10)
                 #endfor
 
                 supt = r"$ep \rightarrow en\pi^{+}$" + " - " + xb_label(g) + " - " + title_frag + " (Mx2 bins)"
@@ -1097,10 +1155,14 @@ def main():
     ap.add_argument("--out-diff", default=None, help="Diff output file name only. Default: <fit_out_name with _diff inserted>")
 
     # Exclusive bin selection:
-    ap.add_argument("--exclusive-bin", type=int, default=None, help="Exclusive reconstructed Mx2 bin index (overrides --exclusive-mx2-min/max).")
-    ap.add_argument("--exclusive-mx2-min", type=float, default=0.81, help="Exclusive reconstructed Mx2 min for auto-match.")
-    ap.add_argument("--exclusive-mx2-max", type=float, default=1.00, help="Exclusive reconstructed Mx2 max for auto-match.")
-    ap.add_argument("--mx2-match-tol", type=float, default=1.0e-6, help="Tolerance for matching exclusive mx2min/mx2max in CSV.")
+    # Default behavior is now explicit and safe: use bin index 0 unless you override it.
+    ap.add_argument("--exclusive-bin", type=int, default=0, help="Exclusive reconstructed Mx2 bin index. Default: 0 (recommended for [-inf, 1.07]).")
+
+    # Optional bounds-based selection (must be explicitly enabled to avoid accidents like 0 vs -inf).
+    ap.add_argument("--exclusive-by-bounds", action="store_true", help="Select exclusive bin by matching bounds instead of using --exclusive-bin.")
+    ap.add_argument("--exclusive-mx2-min", default=None, help="Exclusive reconstructed Mx2 min for bounds matching (use -inf if needed).")
+    ap.add_argument("--exclusive-mx2-max", default=None, help="Exclusive reconstructed Mx2 max for bounds matching (use inf if needed).")
+    ap.add_argument("--mx2-match-tol", type=float, default=1.0e-6, help="Tolerance for matching exclusive mx2min/mx2max in CSV (robust to +/-inf).")
 
     # Weight handling:
     ap.add_argument("--renormalize", action="store_true", help="Renormalize exclusive-bin weights to sum to 1.0 (after any dropping).")
@@ -1151,14 +1213,26 @@ def main():
         fatal("Number of fit files ({}) must be N ({}) or N-1 ({}).".format(M, N, N - 1))
     #endif
 
-    # Identify exclusive bin index in the CSV (full-N index)
-    if args.exclusive_bin is not None:
+    # Exclusive bin index selection.
+    bounds_requested = (args.exclusive_mx2_min is not None) or (args.exclusive_mx2_max is not None)
+
+    if bounds_requested and (not args.exclusive_by_bounds):
+        warn("You provided --exclusive-mx2-min/max but did not set --exclusive-by-bounds; ignoring bounds and using --exclusive-bin {}.".format(args.exclusive_bin))
+    #endif
+
+    if args.exclusive_by_bounds:
+        if (args.exclusive_mx2_min is None) or (args.exclusive_mx2_max is None):
+            fatal("--exclusive-by-bounds requires BOTH --exclusive-mx2-min and --exclusive-mx2-max.")
+        #endif
+
+        excl_min = parse_inf_float(args.exclusive_mx2_min)
+        excl_max = parse_inf_float(args.exclusive_mx2_max)
+        excl_csv_idx = find_exclusive_bin_index(meta, excl_min, excl_max, args.mx2_match_tol)
+    else:
         excl_csv_idx = args.exclusive_bin
         if excl_csv_idx < 0 or excl_csv_idx >= N:
             fatal("--exclusive-bin {} out of range for N={} bins.".format(excl_csv_idx, N))
         #endif
-    else:
-        excl_csv_idx = find_exclusive_bin_index(meta, args.exclusive_mx2_min, args.exclusive_mx2_max, args.mx2_match_tol)
     #endif
 
     # Map exclusive bin index to fit-file index (must exist within effective_N)
@@ -1229,8 +1303,8 @@ def main():
     sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
 
     # Plotting:
-    #   - baseline points + migration sys rectangles (sys rectangles use |delta|)
-    #   - migrated points + migration sys rectangles (sys rectangles use |delta|)
+    #   - baseline points + migration sys rectangles (sys rectangles use abs(delta))
+    #   - migrated points + migration sys rectangles (sys rectangles use abs(delta))
     baseline_for_plots = inject_migration_sys_for_plotting(baseline_fit_map, diffs_mag, required)
     migrated_for_plots = inject_migration_sys_for_plotting(migrated, diffs_mag, required)
 
@@ -1243,13 +1317,12 @@ def main():
 
     save_migration_sys_canvases(baseline_for_plots, out_dir)
 
-    # New Mx2 canvases (requested):
-    #   For each xB group and each SF, 2x3 pads with one Mx2 bin per pad.
+    # Mx2 canvases:
     save_mx2_bin_canvases_one_dataset_per_pad(fit_maps, meta, effective_N, out_dir)
 
     # Diagnostic summary of the exclusive row weights
     sys.stdout.write("\nExclusive reconstructed Mx2 bin (CSV index): {}\n".format(excl_csv_idx))
-    sys.stdout.write("Exclusive reconstructed Mx2 window from CSV: [{:.6f}, {:.6f}]\n".format(meta[excl_csv_idx][1], meta[excl_csv_idx][2]))
+    sys.stdout.write("Exclusive reconstructed Mx2 window from CSV: [{}, {}]\n".format(meta[excl_csv_idx][1], meta[excl_csv_idx][2]))
     sys.stdout.write("Using {} fit files (effective_N={}); drop_last_bin={}\n".format(effective_N, effective_N, args.drop_last_bin))
     sys.stdout.write("Weights provided (NOTE: if --renormalize is set, the actual weights used are rescaled internally):\n")
     for i in range(effective_N):
