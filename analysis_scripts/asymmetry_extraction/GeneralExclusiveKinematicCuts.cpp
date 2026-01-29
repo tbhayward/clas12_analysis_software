@@ -352,6 +352,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         //                  (*x > 0.10 && *x < 0.25);
         bool goodEvent = (*x > 0.10 && *x < 0.25);
         if (!goodEvent) return false;
+        std::cout << *t << std::endl;
         // return *Mx2 > 1.52 && *Mx2 < 1.77;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }

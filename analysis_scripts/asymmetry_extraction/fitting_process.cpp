@@ -4089,7 +4089,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
         // -t
         const double mt = -(*t);
-        std::cout << mt << std::endl;
         sum_mt += mt;
         MinMaxUpdater::upd(mt, mt_min, mt_max);
 
