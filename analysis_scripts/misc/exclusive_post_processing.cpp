@@ -151,8 +151,11 @@ int main(int argc, char** argv) {
         fin->Close();
         return 1;
     }
-    fout->SetCompressionAlgorithm(ROOT::kZLIB);
+
+    // ROOT compatibility: ROOT::kZLIB is not available on some installations.
+    // Setting compression level alone is broadly supported; algorithm defaults to zlib.
     fout->SetCompressionLevel(9);
+
     fout->cd();
 
     // 3) Skim directly onto the file (NO memory-resident tree)
@@ -239,7 +242,7 @@ int main(int argc, char** argv) {
 
             if (mx2_tmp < mx2_min) mx2_min = mx2_tmp;
             mx2_sum += mx2_tmp;
-        }
+        } //endfor
     } else {
         // No compute needed; still do Mx2 stats
         if (!tskim->GetBranch("Mx2")) {
@@ -250,7 +253,7 @@ int main(int argc, char** argv) {
                 tskim->GetEntry(i);
                 if (mx2_tmp < mx2_min) mx2_min = mx2_tmp;
                 mx2_sum += mx2_tmp;
-            }
+            } //endfor
         }
     }
 
