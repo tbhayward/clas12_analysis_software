@@ -4072,7 +4072,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         sumy    += *y;
         sumz    += *z;
         sumt    += *t;
-        std::cout << *t << std::endl;
         sumtmin += *tmin;
         sumVar  += *currentVariable;
         nEvt    += 1.0;
@@ -4085,6 +4084,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
         // -t' (tprime = t - tmin => -t' = -tprime)
         const double mtp = -(*tprime);
+        std::cout << *t << " " << *tprime << std::endl;
         sum_mtp += mtp;
         MinMaxUpdater::upd(mtp, mtp_min, mtp_max);
 
