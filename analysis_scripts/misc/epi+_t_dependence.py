@@ -26,14 +26,17 @@ Axes:
   - Double-spin (last 2):  y in [-1.0, 1.0]
   - x for all:             x in [0.0, 10.0]
 
-Labels:
+Labels (Matplotlib mathtext / LaTeX-style):
   y axes:
-    "F_{LU}^{sin#phi}/F_{UU}"
-    "F_{UL}^{sin#phi}/F_{UU}"
-    "F_{UL}^{sin2#phi}/F_{UU}"
-    "F_{LL}/F_{UU}"
-    "F_{LL}^{cos#phi}/F_{UU}"
-  x axis: "-t'"
+    r"$F_{LU}^{\sin\phi}/F_{UU}$"
+    r"$F_{UL}^{\sin\phi}/F_{UU}$"
+    r"$F_{UL}^{\sin2\phi}/F_{UU}$"
+    r"$F_{LL}/F_{UU}$"
+    r"$F_{LL}^{\cos\phi}/F_{UU}$"
+  x axis:
+    r"$-t^\prime$"
+
+Also draws a thin dashed gray reference line at y=0 in each active subplot.
 
 Output:
   - Creates output/full_t_enpi+/ if needed.
@@ -70,13 +73,16 @@ TARGET_VARS = [
     "tempGEchi2FitsALLcosphi",
 ]
 
+# Matplotlib mathtext (LaTeX-like) labels
 Y_LABELS = {
-    "tempGEchi2FitsALUsinphi":   "F_{LU}^{sin#phi}/F_{UU}",
-    "tempGEchi2FitsAULsinphi":   "F_{UL}^{sin#phi}/F_{UU}",
-    "tempGEchi2FitsAULsin2phi":  "F_{UL}^{sin2#phi}/F_{UU}",
-    "tempGEchi2FitsALL":         "F_{LL}/F_{UU}",
-    "tempGEchi2FitsALLcosphi":   "F_{LL}^{cos#phi}/F_{UU}",
+    "tempGEchi2FitsALUsinphi":   r"$F_{LU}^{\sin\phi}/F_{UU}$",
+    "tempGEchi2FitsAULsinphi":   r"$F_{UL}^{\sin\phi}/F_{UU}$",
+    "tempGEchi2FitsAULsin2phi":  r"$F_{UL}^{\sin2\phi}/F_{UU}$",
+    "tempGEchi2FitsALL":         r"$F_{LL}/F_{UU}$",
+    "tempGEchi2FitsALLcosphi":   r"$F_{LL}^{\cos\phi}/F_{UU}$",
 }
+
+X_LABEL = r"$-t^\prime$"
 
 SSA_VARS = set([
     "tempGEchi2FitsALUsinphi",
@@ -110,21 +116,18 @@ def find_assignment_block(text, varname):
       - find first '{'
       - then brace-match until the corresponding closing brace is found
     """
-    # Locate "varname" followed by optional whitespace and '='
     m = re.search(r"\b" + re.escape(varname) + r"\b\s*=", text)
     if m is None:
         return None
     #endif
 
-    i = m.end()  # position after '='
+    i = m.end()
     n = len(text)
 
-    # Skip whitespace
     while i < n and text[i].isspace():
         i += 1
     #endfor
 
-    # Expect a '{'
     if i >= n or text[i] != "{":
         return None
     #endif
@@ -138,7 +141,6 @@ def find_assignment_block(text, varname):
         elif c == "}":
             depth -= 1
             if depth == 0:
-                # Include this closing brace
                 end = i + 1
                 return text[start:end]
             #endif
@@ -151,10 +153,8 @@ def find_assignment_block(text, varname):
 
 def mathematica_braces_to_python_list(brace_block):
     """
-    Convert a Mathematica-style brace block to a Python-evaluable list string:
-      {{a,b,c},{d,e,f}}  ->  [[a,b,c],[d,e,f]]
-
-    Then parse via ast.literal_eval.
+    Convert Mathematica braces to Python brackets then literal-eval:
+      {{a,b,c},{d,e,f}} -> [[a,b,c],[d,e,f]]
     """
     if brace_block is None:
         return None
@@ -170,9 +170,6 @@ def mathematica_braces_to_python_list(brace_block):
 
 
 def extract_target_lists(text):
-    """
-    Return dict: varname -> list of triplets [[tprime_mean, value, err], ...]
-    """
     out = {}
     for v in TARGET_VARS:
         block = find_assignment_block(text, v)
@@ -186,8 +183,7 @@ def extract_target_lists(text):
 
 def coerce_triplets(triplets, varname):
     """
-    Ensure we have numeric arrays x=-tprime, y, yerr.
-    Skip malformed rows quietly (but keep deterministic behavior).
+    Ensure numeric arrays x=-tprime, y, yerr.
     """
     xs = []
     ys = []
@@ -197,6 +193,7 @@ def coerce_triplets(triplets, varname):
         if not isinstance(row, (list, tuple)) or len(row) < 3:
             continue
         #endif
+
         try:
             tprime_mean = float(row[0])
             val = float(row[1])
@@ -205,7 +202,7 @@ def coerce_triplets(triplets, varname):
             continue
         #endif
 
-        xs.append(-tprime_mean)  # plot -t'
+        xs.append(-tprime_mean)
         ys.append(val)
         es.append(err)
     #endfor
@@ -218,7 +215,6 @@ def coerce_triplets(triplets, varname):
     y = np.array(ys, dtype=float)
     e = np.array(es, dtype=float)
 
-    # Sort by x increasing for nicer lines (if used later)
     order = np.argsort(x)
     return x[order], y[order], e[order]
 
@@ -230,7 +226,6 @@ def make_canvas(data_map, outdir):
     fig, axes = plt.subplots(2, 3, figsize=(14, 8), sharex=False)
     axes = axes.flatten()
 
-    # Desired subplot order (left-to-right, top-to-bottom)
     plot_order = [
         "tempGEchi2FitsALUsinphi",
         "tempGEchi2FitsAULsinphi",
@@ -250,7 +245,7 @@ def make_canvas(data_map, outdir):
         var = plot_order[i]
         if var not in data_map:
             ax.axis("off")
-            ax.text(0.5, 0.5, "Missing: " + var, ha="center", va="center", transform=ax.transAxes)
+            ax.text(0.5, 0.5, "Missing:\n" + var, ha="center", va="center", transform=ax.transAxes)
             continue
         #endif
 
@@ -271,11 +266,13 @@ def make_canvas(data_map, outdir):
         elif var in DSA_VARS:
             ax.set_ylim(-1.0, 1.0)
         else:
-            # Should not happen for our target vars, but keep deterministic behavior.
             ax.set_ylim(-1.0, 1.0)
         #endif
 
-        ax.set_xlabel("-t'")
+        # Thin dashed gray y=0 reference line
+        ax.axhline(0.0, linestyle="--", linewidth=0.8, color="gray", alpha=0.8)
+
+        ax.set_xlabel(X_LABEL)
         ax.set_ylabel(Y_LABELS.get(var, var))
         ax.grid(True, alpha=0.3)
     #endfor
@@ -317,9 +314,8 @@ def make_tprime_hist(root_path, outdir):
         raise RuntimeError("No finite entries in tprime for: " + root_path)
     #endif
 
-    # Use a robust range so huge outliers do not dominate the plot.
     qlo, qhi = np.quantile(arr, [0.01, 0.99])
-    if not np.isfinite(qlo) or not np.isfinite(qhi) or qhi <= qlo:
+    if (not np.isfinite(qlo)) or (not np.isfinite(qhi)) or (qhi <= qlo):
         qlo = float(np.min(arr))
         qhi = float(np.max(arr))
     #endif
@@ -329,7 +325,11 @@ def make_tprime_hist(root_path, outdir):
 
     fig = plt.figure(figsize=(10, 6))
     plt.hist(arr, bins=bins, histtype="step")
-    plt.xlabel("tprime")
+
+    # Add y=0 reference line (mostly cosmetic for histogram, but requested style parity)
+    plt.axhline(0.0, linestyle="--", linewidth=0.8, color="gray", alpha=0.8)
+
+    plt.xlabel(r"$t^\prime$")
     plt.ylabel("Counts")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
