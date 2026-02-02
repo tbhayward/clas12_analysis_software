@@ -6,28 +6,41 @@ run_period_study_enpi_asymmetries.py
 
 Purpose:
   Make clean comparison plots of ep -> en pi+ asymmetry fit results
-  across run periods (Su22, Fa22, Sp23) plus the Combined file,
-  with NO radiative corrections and NO migration corrections.
+  across run periods (Su22, Fa22, Sp23), with NO radiative corrections
+  and NO migration corrections.
 
 Enhancement:
-  Adds a per-subplot statistical compatibility test for the THREE run periods only
-  (Su22/Fa22/Sp23), reporting a chi-square heterogeneity statistic (Cochran's Q):
+  Adds a per-subplot statistical compatibility test for the THREE run periods
+  (Su22, Fa22, Sp23), reporting a weighted chi-square heterogeneity statistic
+  (Cochran Q) and its p-value.
 
-    For each x-point i, assume the three period values y_{p,i} measure a common mu_i
-    with weights w_{p,i} = 1/sigma_{p,i}^2.
-    Define:
-      mu_i = sum_p w_{p,i} y_{p,i} / sum_p w_{p,i}
-      Q    = sum_i sum_p w_{p,i} (y_{p,i} - mu_i)^2
-      dof  = sum_i (k_i - 1), with k_i = number of periods contributing at i (usually 3)
+  IMPORTANT CHANGE (per user request):
+    We assume the series lists are already aligned in the correct bin order.
+    Therefore, we pair points strictly by index:
+      Su22[i] <-> Fa22[i] <-> Sp23[i]
+    even if the mean -t' values differ slightly between periods.
 
-    Under the null (periods consistent given the stated stat errors), Q ~ chi2(dof).
-    We print Q, dof, p-value, and Q/dof on each subplot.
+Compatibility test definition:
+  For each i (index-paired point), with three measurements y_p,i and stat errors sigma_p,i:
+    w_p,i = 1/sigma_p,i^2
+    mu_i  = sum_p w_p,i y_p,i / sum_p w_p,i
+    Q     = sum_i sum_p w_p,i (y_p,i - mu_i)^2
+    dof   = (k - 1) * N_used = 2 * N_used   (since k=3 periods)
+
+  Under the null hypothesis that the three periods are statistically consistent
+  given the stated statistical errors, Q approximately follows chi2(dof).
+  The p-value is P(Chi2(dof) >= Q).
+
+Interpretation guidance (practical):
+  - Large p (e.g. p > 0.10): no evidence of incompatibility (differences look consistent with stat errors).
+  - Moderate p (0.01 to 0.10): some tension; worth checking systematics, run conditions, or outliers.
+  - Small p (p < 0.01): strong evidence the periods are not mutually consistent under stat-only errors.
+  - Q/dof ~ 1 is "about right" for a good stat-only description. Much larger suggests extra variance.
 
 Inputs (runtime args):
   1) Su22 fit-results .txt
   2) Fa22 fit-results .txt
   3) Sp23 fit-results .txt
-  4) Combined fit-results .txt
 
 Input format expectations:
   Files contain assignment blocks like:
@@ -43,18 +56,12 @@ Plots:
     (1,1) ALLcos    : F_LL^{cos phi}/F_UU
     (1,2) legend pad (no data)
 
-  Each subplot overlays:
-    Su22 (color)
-    Fa22 (color)
-    Sp23 (color)
-    Combined (black)
-
 Output:
   Saves one PDF per bin_tag to:
     output/enpi+/run_period_study/
 
 Example:
-  python run_period_study_enpi_asymmetries.py Su22.txt Fa22.txt Sp23.txt Combined.txt
+  python run_period_study_enpi_asymmetries.py Su22.txt Fa22.txt Sp23.txt
 """
 
 import sys
@@ -70,7 +77,7 @@ from matplotlib.lines import Line2D
 # Chi-square survival function helper (p-value)
 #   Prefer SciPy; fall back to mpmath; else fail fast.
 # -----------------------------------------------------------------------------
-def _chi2_sf(x, dof):
+def chi2_sf(x, dof):
     """
     Survival function P(Chi2(dof) >= x).
     Requires either scipy.stats or mpmath.
@@ -104,7 +111,6 @@ COLORS = {
     "Su22": "tab:blue",
     "Fa22": "tab:orange",
     "Sp23": "tab:green",
-    "Combined": "black",
 }
 
 MARKER = "o"
@@ -115,7 +121,7 @@ ELINEWIDTH = 1.0
 XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 
-# Per-series y limits (kept consistent with your earlier choice)
+# Per-series y limits
 YLIMS = {
     "ALUsin":  (-0.4, 0.4),
     "AULsin":  (-0.4, 0.4),
@@ -124,7 +130,6 @@ YLIMS = {
     "ALLcos":  (-1.0, 1.0),
 }
 
-# Display labels for xB bins
 XB_BINS = {
     "enpiLowxBGE":     r"$0.10 < x_{B} < 0.25$",
     "enpiMidLowxBGE":  r"$0.25 < x_{B} < 0.35$",
@@ -136,9 +141,6 @@ XB_BINS = {
 BIN_ORDER = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE", "enpiGE"]
 
 OUT_DIR = os.path.join("output", "enpi+", "run_period_study")
-
-# How tightly to match x-values across periods when computing the compatibility test
-X_MATCH_TOL = 1.0e-6
 
 # -----------------------------------------------------------------------------
 # Parsing helpers (fit-result .txt files)
@@ -183,10 +185,13 @@ def parse_asym_file(path):
 
     return out
 
-def get_series(dct, key, negate_x=True, sort_x=True):
+def get_series(dct, key, negate_x=True, sort_x=False):
     """
     Return dict(x,y,yerr) if key exists with finite values and positive errors; else None.
-    Negates x if negate_x=True (to convert t' -> -t' for plotting). Optionally sort by x.
+
+    NOTE:
+      We do NOT sort by x because the user wants index-pairing across periods.
+      We preserve the file's intrinsic ordering.
     """
     if key not in dct:
         return None
@@ -203,9 +208,12 @@ def get_series(dct, key, negate_x=True, sort_x=True):
         return None
     #endif
 
-    x = -x_raw[mask] if negate_x else x_raw[mask]
+    # Preserve order; just drop invalid rows in-place.
+    x_raw = x_raw[mask]
     y = y[mask]
     e = e[mask]
+
+    x = -x_raw if negate_x else x_raw
 
     if sort_x and x.size > 1:
         order = np.argsort(x)
@@ -242,160 +250,87 @@ def detect_available_bins(*dicts):
     return available
 
 # -----------------------------------------------------------------------------
-# Statistical compatibility test across run periods (Su22/Fa22/Sp23)
+# Statistical compatibility test across Su22/Fa22/Sp23 (index paired)
 # -----------------------------------------------------------------------------
-def _align_series_by_x(series_by_label, tol=X_MATCH_TOL):
+def cochran_q_three_index_paired(s_su22, s_fa22, s_sp23):
     """
-    Align multiple series to a common set of x values.
-
-    series_by_label:
-      { "Su22": {"x","y","yerr"}, "Fa22": {...}, "Sp23": {...} } (some may be None)
-
-    Strategy:
-      - Choose the first non-None series as reference.
-      - For each x in reference, find matching x in each other series within tol.
-      - Keep only those x where at least 2 series match (for a meaningful dof).
-      - Return:
-          x_common, y_by_label, e_by_label
-        where y_by_label[label] and e_by_label[label] are arrays aligned to x_common.
-
-    Note:
-      For your use case, x arrays should usually match already; this just makes it robust.
-    """
-    labels_present = [lab for lab, s in series_by_label.items() if s is not None]
-    if len(labels_present) < 2:
-        return None, None, None
-    #endif
-
-    ref_lab = labels_present[0]
-    ref = series_by_label[ref_lab]
-    xref = np.asarray(ref["x"], dtype=float)
-
-    y_aligned = {lab: [] for lab in labels_present}
-    e_aligned = {lab: [] for lab in labels_present}
-    x_common = []
-
-    for xr in xref:
-        vals = {}
-        errs = {}
-
-        # Always include ref if finite
-        iref = np.argmin(np.abs(ref["x"] - xr))
-        if abs(ref["x"][iref] - xr) <= tol:
-            vals[ref_lab] = float(ref["y"][iref])
-            errs[ref_lab] = float(ref["yerr"][iref])
-        else:
-            continue
-        #endif
-
-        # Match other labels
-        for lab in labels_present[1:]:
-            s = series_by_label[lab]
-            x = np.asarray(s["x"], dtype=float)
-            j = int(np.argmin(np.abs(x - xr)))
-            if abs(x[j] - xr) <= tol:
-                vals[lab] = float(s["y"][j])
-                errs[lab] = float(s["yerr"][j])
-            #endif
-        #endfor
-
-        # Require at least 2 periods at this point
-        if len(vals.keys()) < 2:
-            continue
-        #endif
-
-        x_common.append(float(xr))
-        for lab in vals.keys():
-            y_aligned[lab].append(vals[lab])
-            e_aligned[lab].append(errs[lab])
-        #endfor
-    #endfor
-
-    if len(x_common) == 0:
-        return None, None, None
-    #endif
-
-    # Convert lists to arrays (note: some labs may have fewer points; handle later)
-    x_common = np.asarray(x_common, dtype=float)
-    for lab in list(y_aligned.keys()):
-        y_aligned[lab] = np.asarray(y_aligned[lab], dtype=float)
-        e_aligned[lab] = np.asarray(e_aligned[lab], dtype=float)
-    #endfor
-
-    return x_common, y_aligned, e_aligned
-
-def _cochran_q_test(y_aligned, e_aligned):
-    """
-    Compute Cochran's Q across available periods at each point.
-
-    y_aligned, e_aligned:
-      dict label -> array of values/errors aligned to some x list,
-      but arrays may have different lengths if some labels were missing at some points.
-
-    We compute point-by-point using only labels that have that index.
+    Compute Cochran Q heterogeneity statistic for exactly three periods using index pairing.
 
     Returns:
-      Q, dof, pval, Q_over_dof
-    or (None, None, None, None) if not enough dof.
+      (Q, dof, pval, Q_over_dof, N_used)
+
+    We use:
+      N0 = min(len(Su22), len(Fa22), len(Sp23))
+      Then we keep only indices i in [0, N0) where all y and yerr are finite and yerr>0.
+
+    If N_used == 0: returns (None, None, None, None, 0).
     """
-    labels = list(y_aligned.keys())
-    if len(labels) < 2:
-        return None, None, None, None
+    if (s_su22 is None) or (s_fa22 is None) or (s_sp23 is None):
+        return None, None, None, None, 0
     #endif
 
-    # Determine max length across labels
-    nmax = 0
-    for lab in labels:
-        nmax = max(nmax, int(y_aligned[lab].size))
-    #endfor
+    y1 = np.asarray(s_su22["y"], dtype=float)
+    e1 = np.asarray(s_su22["yerr"], dtype=float)
+    y2 = np.asarray(s_fa22["y"], dtype=float)
+    e2 = np.asarray(s_fa22["yerr"], dtype=float)
+    y3 = np.asarray(s_sp23["y"], dtype=float)
+    e3 = np.asarray(s_sp23["yerr"], dtype=float)
+
+    N0 = int(min(y1.size, y2.size, y3.size, e1.size, e2.size, e3.size))
+    if N0 <= 0:
+        return None, None, None, None, 0
+    #endif
+
+    y1 = y1[:N0]; e1 = e1[:N0]
+    y2 = y2[:N0]; e2 = e2[:N0]
+    y3 = y3[:N0]; e3 = e3[:N0]
+
+    mask = (
+        np.isfinite(y1) & np.isfinite(e1) & (e1 > 0.0) &
+        np.isfinite(y2) & np.isfinite(e2) & (e2 > 0.0) &
+        np.isfinite(y3) & np.isfinite(e3) & (e3 > 0.0)
+    )
+
+    if not np.any(mask):
+        return None, None, None, None, 0
+    #endif
+
+    y1 = y1[mask]; e1 = e1[mask]
+    y2 = y2[mask]; e2 = e2[mask]
+    y3 = y3[mask]; e3 = e3[mask]
+
+    N = int(y1.size)
+    if N <= 0:
+        return None, None, None, None, 0
+    #endif
 
     Q = 0.0
-    dof = 0
+    for i in range(N):
+        w1 = 1.0 / float(e1[i] * e1[i])
+        w2 = 1.0 / float(e2[i] * e2[i])
+        w3 = 1.0 / float(e3[i] * e3[i])
 
-    for i in range(nmax):
-        ys = []
-        ws = []
-
-        for lab in labels:
-            if i >= int(y_aligned[lab].size):
-                continue
-            #endif
-            yi = float(y_aligned[lab][i])
-            ei = float(e_aligned[lab][i])
-            if (not math.isfinite(yi)) or (not math.isfinite(ei)) or (ei <= 0.0):
-                continue
-            #endif
-            ys.append(yi)
-            ws.append(1.0 / (ei * ei))
-        #endfor
-
-        k = len(ys)
-        if k < 2:
-            continue
-        #endif
-
-        ws = np.asarray(ws, dtype=float)
-        ys = np.asarray(ys, dtype=float)
-
-        wsum = float(np.sum(ws))
+        wsum = w1 + w2 + w3
         if (not math.isfinite(wsum)) or (wsum <= 0.0):
             continue
         #endif
 
-        mu = float(np.sum(ws * ys) / wsum)
-        Q += float(np.sum(ws * (ys - mu) * (ys - mu)))
-        dof += (k - 1)
+        mu = (w1 * float(y1[i]) + w2 * float(y2[i]) + w3 * float(y3[i])) / wsum
+        Q += w1 * (float(y1[i]) - mu) * (float(y1[i]) - mu)
+        Q += w2 * (float(y2[i]) - mu) * (float(y2[i]) - mu)
+        Q += w3 * (float(y3[i]) - mu) * (float(y3[i]) - mu)
     #endfor
 
+    dof = 2 * N
     if dof <= 0:
-        return None, None, None, None
+        return None, None, None, None, N
     #endif
 
-    pval = _chi2_sf(Q, dof)
-    Q_over_dof = Q / float(dof) if dof > 0 else float("nan")
-    return Q, dof, pval, Q_over_dof
+    pval = chi2_sf(Q, dof)
+    Q_over_dof = Q / float(dof)
+    return Q, dof, pval, Q_over_dof, N
 
-def _format_pval(p):
+def format_pval(p):
     if p is None or (not math.isfinite(p)):
         return "n/a"
     #endif
@@ -404,17 +339,19 @@ def _format_pval(p):
     #endif
     return f"{p:.3f}"
 
-def _add_test_text(ax, Q, dof, pval, Q_over_dof):
+def add_test_text(ax, Q, dof, pval, Q_over_dof, N_used):
     """
     Add a compact annotation to the axis in axes coordinates.
     """
-    if (Q is None) or (dof is None) or (pval is None) or (Q_over_dof is None):
+    if (Q is None) or (dof is None) or (pval is None) or (Q_over_dof is None) or (N_used is None) or (N_used <= 0):
         txt = "Period compatibility:\n n/a"
     else:
         txt = (
             "Su22 vs Fa22 vs Sp23:\n"
-            f"Q = {Q:.1f}, dof = {dof:d}\n"
-            f"p = {_format_pval(pval)}, Q/dof = {Q_over_dof:.2f}"
+            "Index paired\n"
+            f"N = {int(N_used):d}\n"
+            f"Q = {Q:.1f}, dof = {int(dof):d}\n"
+            f"p = {format_pval(pval)}, Q/dof = {Q_over_dof:.2f}"
         )
     #endif
 
@@ -433,18 +370,19 @@ def make_title(bin_tag):
     xb_label = XB_BINS.get(bin_tag, bin_tag)
     return r"$ep \rightarrow en\pi^{+}$" + "  " + xb_label
 
-def _style_axis(ax, ylabel, ylim):
+def style_axis(ax, ylabel, ylim):
     ax.set(xlim=XLIM_T, ylim=ylim, xlabel=X_LABEL, ylabel=ylabel)
     ax.axhline(0.0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
 
-def _plot_one_series(ax, series_key, ylabel, period_dicts_by_label):
+def plot_one_series(ax, series_key, ylabel, period_dicts_by_label):
     """
-    Plot one series overlaying all periods including Combined,
-    and annotate a compatibility test across Su22/Fa22/Sp23 only.
+    Plot one series overlaying Su22/Fa22/Sp23,
+    and annotate a compatibility test across those three (index paired).
     """
-    # 1) Plot points for all provided labels (including Combined)
-    for lab, pdata in period_dicts_by_label.items():
+    # Plot points
+    for lab in ["Su22", "Fa22", "Sp23"]:
+        pdata = period_dicts_by_label.get(lab, {})
         s = pdata.get(series_key)
         if s is None:
             continue
@@ -463,25 +401,17 @@ def _plot_one_series(ax, series_key, ylabel, period_dicts_by_label):
         )
     #endfor
 
-    _style_axis(ax, ylabel=ylabel, ylim=YLIMS[series_key])
+    style_axis(ax, ylabel=ylabel, ylim=YLIMS[series_key])
 
-    # 2) Compute and annotate test across the three run periods only
+    # Compatibility test (index paired)
     s_su22 = period_dicts_by_label.get("Su22", {}).get(series_key)
     s_fa22 = period_dicts_by_label.get("Fa22", {}).get(series_key)
     s_sp23 = period_dicts_by_label.get("Sp23", {}).get(series_key)
 
-    series_by_label = {"Su22": s_su22, "Fa22": s_fa22, "Sp23": s_sp23}
+    Q, dof, pval, Q_over_dof, N_used = cochran_q_three_index_paired(s_su22, s_fa22, s_sp23)
+    add_test_text(ax, Q, dof, pval, Q_over_dof, N_used)
 
-    x_common, y_aligned, e_aligned = _align_series_by_x(series_by_label, tol=X_MATCH_TOL)
-    if (x_common is None) or (y_aligned is None) or (e_aligned is None):
-        _add_test_text(ax, None, None, None, None)
-        return
-    #endif
-
-    Q, dof, pval, Q_over_dof = _cochran_q_test(y_aligned, e_aligned)
-    _add_test_text(ax, Q, dof, pval, Q_over_dof)
-
-def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, p_comb, out_dir):
+def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, out_dir):
     """
     Produce the 2x3 canvas for one bin_tag.
     """
@@ -492,25 +422,24 @@ def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, p_comb, out_dir):
         "Su22": p_su22,
         "Fa22": p_fa22,
         "Sp23": p_sp23,
-        "Combined": p_comb,
     }
 
     # Row 0
-    _plot_one_series(
+    plot_one_series(
         axes[0, 0],
         "ALUsin",
         ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$",
         period_dicts_by_label=period_dicts_by_label
     )
 
-    _plot_one_series(
+    plot_one_series(
         axes[0, 1],
         "AULsin",
         ylabel=r"$F_{UL}^{\sin\phi}/F_{UU}$",
         period_dicts_by_label=period_dicts_by_label
     )
 
-    _plot_one_series(
+    plot_one_series(
         axes[0, 2],
         "AULsin2",
         ylabel=r"$F_{UL}^{\sin2\phi}/F_{UU}$",
@@ -518,27 +447,27 @@ def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, p_comb, out_dir):
     )
 
     # Row 1
-    _plot_one_series(
+    plot_one_series(
         axes[1, 0],
         "ALLn0",
         ylabel=r"$F_{LL}/F_{UU}$",
         period_dicts_by_label=period_dicts_by_label
     )
 
-    _plot_one_series(
+    plot_one_series(
         axes[1, 1],
         "ALLcos",
         ylabel=r"$F_{LL}^{\cos\phi}/F_{UU}$",
         period_dicts_by_label=period_dicts_by_label
     )
 
-    # Legend pad (axes[1,2])
+    # Legend pad
     ax_leg = axes[1, 2]
     ax_leg.axis("off")
 
     handles = []
     labels = []
-    for lab in ["Su22", "Fa22", "Sp23", "Combined"]:
+    for lab in ["Su22", "Fa22", "Sp23"]:
         handles.append(Line2D([0], [0], marker=MARKER, color=COLORS[lab], linestyle="", markersize=MS))
         labels.append(lab)
     #endfor
@@ -569,20 +498,18 @@ def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, p_comb, out_dir):
 # -----------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(
-        description="Run-period study: compare Su22/Fa22/Sp23 vs Combined for ep->en pi+ structure-function ratios (no rad/migration), with per-subplot compatibility p-values."
+        description="Run-period study: compare Su22/Fa22/Sp23 for ep->en pi+ structure-function ratios (no rad/migration), with per-subplot compatibility p-values (index paired)."
     )
     ap.add_argument("su22", type=str, help="Su22 fit-results .txt")
     ap.add_argument("fa22", type=str, help="Fa22 fit-results .txt")
     ap.add_argument("sp23", type=str, help="Sp23 fit-results .txt")
-    ap.add_argument("combined", type=str, help="Combined fit-results .txt")
     args = ap.parse_args()
 
     su22 = parse_asym_file(args.su22)
     fa22 = parse_asym_file(args.fa22)
     sp23 = parse_asym_file(args.sp23)
-    comb = parse_asym_file(args.combined)
 
-    available_bins = detect_available_bins(su22, fa22, sp23, comb)
+    available_bins = detect_available_bins(su22, fa22, sp23)
     if not available_bins:
         print("[ERROR] No recognizable xB-bin sections found (e.g. enpiLowxBGEchi2FitsALUsinphi).")
         sys.exit(2)
@@ -594,11 +521,10 @@ def main():
         p_su22 = build_period_dict(su22, bin_tag)
         p_fa22 = build_period_dict(fa22, bin_tag)
         p_sp23 = build_period_dict(sp23, bin_tag)
-        p_comb = build_period_dict(comb, bin_tag)
 
         have_any = False
         for k in ["ALUsin", "AULsin", "AULsin2", "ALLn0", "ALLcos"]:
-            if (p_su22.get(k) is not None) or (p_fa22.get(k) is not None) or (p_sp23.get(k) is not None) or (p_comb.get(k) is not None):
+            if (p_su22.get(k) is not None) or (p_fa22.get(k) is not None) or (p_sp23.get(k) is not None):
                 have_any = True
                 break
             #endif
@@ -609,7 +535,7 @@ def main():
             continue
         #endif
 
-        plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, p_comb, OUT_DIR)
+        plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, OUT_DIR)
     #endfor
 
 if __name__ == "__main__":
