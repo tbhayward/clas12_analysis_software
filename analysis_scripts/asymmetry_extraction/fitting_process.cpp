@@ -1034,13 +1034,11 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
     // Declare reader locations
     TTreeReaderValue<int> runnum(dataReader, "runnum");
-    TTreeReaderValue<int> evnum(dataReader, "evnum");
     TTreeReaderValue<double> Q2(dataReader, "Q2");
     TTreeReaderValue<double> W(dataReader, "W");
     TTreeReaderValue<double> x(dataReader, "x");
     TTreeReaderValue<double> y(dataReader, "y");
     TTreeReaderValue<double> z(dataReader, "z");
-    TTreeReaderValue<double> xi(dataReader, "xi");
     TTreeReaderValue<double> pT(dataReader, "pT");
     TTreeReaderValue<double> xF(dataReader, "xF");
     TTreeReaderValue<double> t(dataReader, "t");
@@ -1070,7 +1068,8 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
         sumx += *x;
         sumy += *y;
         sumz += *z;
-        sumxi += *xi;
+        // sumxi += *xi;
+        sumxi += 0;
         sumpT += *pT;
         sumxF += *xF;
         sumt += *t;
@@ -1298,7 +1297,6 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
   double sum_MM = 0; // negative beam -- negative target
 
   TTreeReaderValue<int> runnum(dataReader, "runnum");
-  TTreeReaderValue<int> evnum(dataReader, "evnum");
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
