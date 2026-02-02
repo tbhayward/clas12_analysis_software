@@ -24,18 +24,18 @@ Compatibility test definition:
   For each i (index-paired point), with three measurements y_p,i and stat errors sigma_p,i:
     w_p,i = 1/sigma_p,i^2
     mu_i  = sum_p w_p,i y_p,i / sum_p w_p,i
-    Q     = sum_i sum_p w_p,i (y_p,i - mu_i)^2
+    chi2  = sum_i sum_p w_p,i (y_p,i - mu_i)^2
     dof   = (k - 1) * N_used = 2 * N_used   (since k=3 periods)
 
   Under the null hypothesis that the three periods are statistically consistent
-  given the stated statistical errors, Q approximately follows chi2(dof).
-  The p-value is P(Chi2(dof) >= Q).
+  given the stated statistical errors, chi2 approximately follows chi2(dof).
+  The p-value is P(Chi2(dof) >= chi2).
 
 Interpretation guidance (practical):
   - Large p (e.g. p > 0.10): no evidence of incompatibility (differences look consistent with stat errors).
   - Moderate p (0.01 to 0.10): some tension; worth checking systematics, run conditions, or outliers.
   - Small p (p < 0.01): strong evidence the periods are not mutually consistent under stat-only errors.
-  - Q/dof ~ 1 is "about right" for a good stat-only description. Much larger suggests extra variance.
+  - chi2/dof ~ 1 is "about right" for a good stat-only description. Much larger suggests extra variance.
 
 Inputs (runtime args):
   1) Su22 fit-results .txt
@@ -190,7 +190,7 @@ def get_series(dct, key, negate_x=True, sort_x=False):
     Return dict(x,y,yerr) if key exists with finite values and positive errors; else None.
 
     NOTE:
-      We do NOT sort by x because the user wants index-pairing across periods.
+      We do NOT sort by x because we want index-pairing across periods.
       We preserve the file's intrinsic ordering.
     """
     if key not in dct:
@@ -257,7 +257,7 @@ def cochran_q_three_index_paired(s_su22, s_fa22, s_sp23):
     Compute Cochran Q heterogeneity statistic for exactly three periods using index pairing.
 
     Returns:
-      (Q, dof, pval, Q_over_dof, N_used)
+      (chi2, dof, pval, chi2_over_dof, N_used)
 
     We use:
       N0 = min(len(Su22), len(Fa22), len(Sp23))
@@ -304,7 +304,7 @@ def cochran_q_three_index_paired(s_su22, s_fa22, s_sp23):
         return None, None, None, None, 0
     #endif
 
-    Q = 0.0
+    chi2 = 0.0
     for i in range(N):
         w1 = 1.0 / float(e1[i] * e1[i])
         w2 = 1.0 / float(e2[i] * e2[i])
@@ -316,9 +316,9 @@ def cochran_q_three_index_paired(s_su22, s_fa22, s_sp23):
         #endif
 
         mu = (w1 * float(y1[i]) + w2 * float(y2[i]) + w3 * float(y3[i])) / wsum
-        Q += w1 * (float(y1[i]) - mu) * (float(y1[i]) - mu)
-        Q += w2 * (float(y2[i]) - mu) * (float(y2[i]) - mu)
-        Q += w3 * (float(y3[i]) - mu) * (float(y3[i]) - mu)
+        chi2 += w1 * (float(y1[i]) - mu) * (float(y1[i]) - mu)
+        chi2 += w2 * (float(y2[i]) - mu) * (float(y2[i]) - mu)
+        chi2 += w3 * (float(y3[i]) - mu) * (float(y3[i]) - mu)
     #endfor
 
     dof = 2 * N
@@ -326,9 +326,9 @@ def cochran_q_three_index_paired(s_su22, s_fa22, s_sp23):
         return None, None, None, None, N
     #endif
 
-    pval = chi2_sf(Q, dof)
-    Q_over_dof = Q / float(dof)
-    return Q, dof, pval, Q_over_dof, N
+    pval = chi2_sf(chi2, dof)
+    chi2_over_dof = chi2 / float(dof)
+    return chi2, dof, pval, chi2_over_dof, N
 
 def format_pval(p):
     if p is None or (not math.isfinite(p)):
@@ -339,25 +339,24 @@ def format_pval(p):
     #endif
     return f"{p:.3f}"
 
-def add_test_text(ax, Q, dof, pval, Q_over_dof, N_used):
+def add_test_text(ax, chi2, dof, pval, chi2_over_dof, N_used):
     """
     Add a compact annotation to the axis in axes coordinates.
 
     User requested formatting:
-      - Remove the leading "Su22 vs Fa22 vs Sp23" line.
-      - Remove the "Index paired" line.
-      - Replace "Q" label with chi^2.
-      - Move to bottom-left.
-      - Add a border.
+      - No "N = ..." line.
+      - No "chi2 = ..., dof = ..." line.
+      - Just show p and chi2/dof.
+      - Bottom-left placement.
+      - Border around text box.
     """
-    if (Q is None) or (dof is None) or (pval is None) or (Q_over_dof is None) or (N_used is None) or (N_used <= 0):
+    if (chi2 is None) or (dof is None) or (pval is None) or (chi2_over_dof is None) or (N_used is None) or (N_used <= 0):
         txt = "Period compatibility:\n n/a"
     else:
         txt = (
             "Period compatibility:\n"
-            f"N = {int(N_used):d}\n"
-            r"$\chi^{2}$" + f" = {Q:.1f}, dof = {int(dof):d}\n"
-            f"p = {format_pval(pval)}, " + r"$\chi^{2}$/dof" + f" = {Q_over_dof:.2f}"
+            f"p = {format_pval(pval)}\n"
+            + r"$\chi^{2}$/dof" + f" = {chi2_over_dof:.2f}"
         )
     #endif
 
@@ -392,7 +391,6 @@ def plot_one_series(ax, series_key, ylabel, period_dicts_by_label):
     Plot one series overlaying Su22/Fa22/Sp23,
     and annotate a compatibility test across those three (index paired).
     """
-    # Plot points
     for lab in ["Su22", "Fa22", "Sp23"]:
         pdata = period_dicts_by_label.get(lab, {})
         s = pdata.get(series_key)
@@ -415,13 +413,12 @@ def plot_one_series(ax, series_key, ylabel, period_dicts_by_label):
 
     style_axis(ax, ylabel=ylabel, ylim=YLIMS[series_key])
 
-    # Compatibility test (index paired)
     s_su22 = period_dicts_by_label.get("Su22", {}).get(series_key)
     s_fa22 = period_dicts_by_label.get("Fa22", {}).get(series_key)
     s_sp23 = period_dicts_by_label.get("Sp23", {}).get(series_key)
 
-    Q, dof, pval, Q_over_dof, N_used = cochran_q_three_index_paired(s_su22, s_fa22, s_sp23)
-    add_test_text(ax, Q, dof, pval, Q_over_dof, N_used)
+    chi2, dof, pval, chi2_over_dof, N_used = cochran_q_three_index_paired(s_su22, s_fa22, s_sp23)
+    add_test_text(ax, chi2, dof, pval, chi2_over_dof, N_used)
 
 def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, out_dir):
     """
@@ -436,7 +433,6 @@ def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, out_dir):
         "Sp23": p_sp23,
     }
 
-    # Row 0
     plot_one_series(
         axes[0, 0],
         "ALUsin",
@@ -458,7 +454,6 @@ def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, out_dir):
         period_dicts_by_label=period_dicts_by_label
     )
 
-    # Row 1
     plot_one_series(
         axes[1, 0],
         "ALLn0",
@@ -473,7 +468,6 @@ def plot_bin_2x3(bin_tag, p_su22, p_fa22, p_sp23, out_dir):
         period_dicts_by_label=period_dicts_by_label
     )
 
-    # Legend pad
     ax_leg = axes[1, 2]
     ax_leg.axis("off")
 
