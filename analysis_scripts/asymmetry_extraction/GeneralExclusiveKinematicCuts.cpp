@@ -337,6 +337,16 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     // if (*Mx2  <  0.86 || *Mx2 > 1.02   ) return false;
     // if (*x < 0.1 || *x > 0.60) return false;
 
+    if (property == "temp") {
+        // bool goodEvent = (*fiducial_status >= 111) &&
+        //                  (*x > 0.10 && *x < 0.60);
+        bool goodEvent = (*x > 0.10 && *x < 0.60);
+        if (!goodEvent) return false;
+        return true;
+        // return *Mx2 > 1.52 && *Mx2 < 1.77;
+        // return PassesDynamicMx2(*x, *t, *Mx2);
+        // return *Mx2 > 0.86 && *Mx2 < 1;
+    }
 
     if (property == "enpi") {
         // bool goodEvent = (*fiducial_status >= 111) &&
