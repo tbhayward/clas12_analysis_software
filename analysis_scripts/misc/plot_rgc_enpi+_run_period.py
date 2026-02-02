@@ -14,7 +14,7 @@ Enhancement:
   (Su22, Fa22, Sp23), reporting a weighted chi-square heterogeneity statistic
   (Cochran Q) and its p-value.
 
-  IMPORTANT CHANGE (per user request):
+  IMPORTANT:
     We assume the series lists are already aligned in the correct bin order.
     Therefore, we pair points strictly by index:
       Su22[i] <-> Fa22[i] <-> Sp23[i]
@@ -342,25 +342,37 @@ def format_pval(p):
 def add_test_text(ax, Q, dof, pval, Q_over_dof, N_used):
     """
     Add a compact annotation to the axis in axes coordinates.
+
+    User requested formatting:
+      - Remove the leading "Su22 vs Fa22 vs Sp23" line.
+      - Remove the "Index paired" line.
+      - Replace "Q" label with chi^2.
+      - Move to bottom-left.
+      - Add a border.
     """
     if (Q is None) or (dof is None) or (pval is None) or (Q_over_dof is None) or (N_used is None) or (N_used <= 0):
         txt = "Period compatibility:\n n/a"
     else:
         txt = (
-            "Su22 vs Fa22 vs Sp23:\n"
-            "Index paired\n"
+            "Period compatibility:\n"
             f"N = {int(N_used):d}\n"
-            f"Q = {Q:.1f}, dof = {int(dof):d}\n"
-            f"p = {format_pval(pval)}, Q/dof = {Q_over_dof:.2f}"
+            r"$\chi^{2}$" + f" = {Q:.1f}, dof = {int(dof):d}\n"
+            f"p = {format_pval(pval)}, " + r"$\chi^{2}$/dof" + f" = {Q_over_dof:.2f}"
         )
     #endif
 
     ax.text(
-        0.02, 0.98, txt,
+        0.02, 0.02, txt,
         transform=ax.transAxes,
-        ha="left", va="top",
+        ha="left", va="bottom",
         fontsize=10,
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.80, pad=3.0)
+        bbox=dict(
+            facecolor="white",
+            edgecolor="black",
+            linewidth=1.0,
+            alpha=0.90,
+            pad=3.0
+        )
     )
 
 # -----------------------------------------------------------------------------
