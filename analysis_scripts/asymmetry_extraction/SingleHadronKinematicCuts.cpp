@@ -16,7 +16,6 @@ static constexpr double m_pi = 0.13957;   // charged pion
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader),
       runnum       (reader, "runnum"),
-      fiducial_status(reader, "fiducial_status"),
 
       // Electron‐side branches (added e_p, e_theta)
       e_p          (reader, "e_p"),
@@ -36,11 +35,9 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       pT           (reader, "pT"),
       y            (reader, "y"),
       x            (reader, "x"),
-      xi           (reader, "xi"),
       phi          (reader, "phi"),
       z            (reader, "z"),
       t            (reader, "t"),
-      // t1            (reader, "t1"),
       tmin         (reader, "tmin"),
       target_pol   (reader, "target_pol")
 {}
@@ -127,95 +124,29 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
 
-    int    rn     = *runnum;
-    double ec_p   = *e_p;
-    double ec_th  = *e_theta;
-    double ec_ph  = *e_phi;
-    double pi_p   = *p_p;
-    double pi_th  = *p_theta;
-    double pi_ph  = *p_phi;
-    double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
-
     if (property == "enpi") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
             *x > 0.1 && *x < 0.6;
         return goodEvent;
     }
     if (property == "enpiLowxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
             *x > 0.1 && *x < 0.25;
         return goodEvent;
     }
     if (property == "enpiMidLowxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
             *x > 0.25 && *x < 0.35;
         return goodEvent;
     }
     if (property == "enpiMidHighxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
             *x > 0.35 && *x < 0.45;
         return goodEvent;
     }
     if (property == "enpiHighxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
             *x > 0.45 && *x < 0.60;
-        return goodEvent;
-    }
-
-    if (property == "Fall18xB" || property == "Fall18pT" ||
-        property == "Spring18xB" || property == "Spring18pT")
-    {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 2.25);
-        return goodEvent;
-    }
-    if (property == "W" || property == "x") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 1.8225);
-        return goodEvent;
-    }
-    if (property == "integrated") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *Mx2 > 1.8225 && *y < 0.80);
-        return goodEvent;
-    }
-    if (property == "Mx2") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80);
-        return goodEvent;
-    }
-    if (property == "xF") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 1.8225);
-        return goodEvent;
-    }
-    if (property == "xFsmallPT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *pT < 0.5);
-        return goodEvent;
-    }
-    if (property == "xFlargePT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *pT > 0.5);
-        return goodEvent;
-    }
-    if (property == "xTFR"   || property == "xi"     || property == "PTTFR") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF < 0.0);
-        return goodEvent;
-    }
-    if (property == "xTFRsmallPT" || property == "xismallPT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF < 0.0 && *pT < 0.5);
-        return goodEvent;
-    }
-    if (property == "xTFRlargePT" || property == "xilargePT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF < 0.0 && *pT > 0.5);
-        return goodEvent;
-    }
-    if (property == "xCFR"   || property == "z"  || property == "PTCFR") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF > 0.2);
-        return goodEvent;
-    }
-    if (property == "x") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 1.8225);
         return goodEvent;
     }
 
