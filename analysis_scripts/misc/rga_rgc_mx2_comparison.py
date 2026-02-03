@@ -25,10 +25,9 @@ Subplot 2:
 Subplot 3:
   Compute subtracted spectrum: (NH3/Q) - c*(C/Q)
   Overlay H2/Q
-  THEN (new request) normalize each of these two subplot-3 curves to unit integral
-  (area = 1 over the plotted x-range).
-  THEN fit the missing-neutron peak (0.5 to 1.0) to Gaussian+const for both curves,
-  and print mu/sigma as text in bottom-left.
+  Normalize each of these two subplot-3 curves to unit integral (area=1 over [-1,4]).
+  Fit the missing-neutron peak (0.5 to 1.0) to Gaussian+const for both curves,
+  and print mu/sigma as boxed text in bottom-right.
 
 Optional:
   --short : restrict each ROOT tree to only the first 6 run numbers (ascending),
@@ -312,12 +311,10 @@ def fit_gaussian_peak(x_centers, y, xmin, xmax):
     B0 = float(np.median(np.concatenate([yw[:nedge], yw[-nedge:]])))
     ysub = yw - B0
 
-    # Guard: if subtraction makes everything non-positive, just use raw y
     if np.all(ysub <= 0.0):
         ysub = yw - float(np.min(yw))
     #endif
 
-    # Moment guesses for mu/sigma
     w = np.clip(ysub, 0.0, None)
     if np.sum(w) <= 0.0:
         w = np.ones_like(yw)
@@ -328,12 +325,10 @@ def fit_gaussian_peak(x_centers, y, xmin, xmax):
     sigma0 = float(np.sqrt(max(var0, 1.0e-6)))
     A0 = float(np.max(yw) - B0)
 
-    # Try scipy curve_fit if available
     try:
         from scipy.optimize import curve_fit
 
         p0 = [A0, mu0, sigma0, B0]
-        # bounds: sigma > 0; mu inside a padded window
         bounds = (
             [0.0, xmin - 0.2, 1.0e-4, -np.inf],
             [np.inf, xmax + 0.2, 2.0, np.inf],
@@ -344,7 +339,6 @@ def fit_gaussian_peak(x_centers, y, xmin, xmax):
         sigma = abs(float(popt[2]))
         return mu, sigma
     except Exception:
-        # Fallback: baseline-subtracted moment estimate
         w2 = np.clip(yw - B0, 0.0, None)
         if np.sum(w2) <= 0.0:
             w2 = np.clip(yw - np.min(yw), 0.0, None)
@@ -374,12 +368,10 @@ def main():
 
     run_charge_map = read_run_charge_map(RUN_INFO_CSV)
 
-    # Load arrays
     nh3_mx2, nh3_run = load_tree_arrays(NH3_ROOT, TREE_NAME)
     c_mx2,   c_run   = load_tree_arrays(C_ROOT,   TREE_NAME)
     h2_mx2,  h2_run  = load_tree_arrays(H2_ROOT,  TREE_NAME)
 
-    # Determine runs used and optionally restrict to first 6 runs per file
     if short_mode:
         nh3_mx2, nh3_run, nh3_runs_used = restrict_to_first_n_runs(nh3_mx2, nh3_run, 6, "NH3")
         c_mx2,   c_run,   c_runs_used   = restrict_to_first_n_runs(c_mx2,   c_run,   6, "C")
@@ -390,17 +382,14 @@ def main():
         h2_runs_used  = np.unique(h2_run)
     #endif
 
-    # Total charge (nC) for each sample (sum over runs present)
     nh3_charge = total_charge_for_runs(nh3_runs_used, run_charge_map, f"NH3 file '{NH3_ROOT}'", RUN_INFO_CSV)
     c_charge   = total_charge_for_runs(c_runs_used,   run_charge_map, f"C file '{C_ROOT}'",   RUN_INFO_CSV)
     h2_charge  = total_charge_for_runs(h2_runs_used,  run_charge_map, f"H2 file '{H2_ROOT}'", RUN_INFO_CSV)
 
-    # Fixed binning
     bin_edges = np.linspace(MX2_MIN, MX2_MAX, NBINS + 1)
     bin_width = float(bin_edges[1] - bin_edges[0])
     x_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 
-    # Counts and charge-normalized spectra (counts / nC)
     nh3_counts = hist_counts_in_range(nh3_mx2, bin_edges)
     c_counts   = hist_counts_in_range(c_mx2,   bin_edges)
     h2_counts  = hist_counts_in_range(h2_mx2,  bin_edges)
@@ -409,20 +398,16 @@ def main():
     c_per_nc   = c_counts   / c_charge
     h2_per_nc  = h2_counts  / h2_charge
 
-    # Subplot 2: ratio and constant fit
     ratio_nh3_over_c = safe_ratio(nh3_per_nc, c_per_nc)
     c_fit, n_fit_bins = fit_constant_in_window(x_centers, ratio_nh3_over_c, FIT_XMIN, FIT_XMAX)
 
-    # Subplot 3: subtraction using fitted c (still in counts/nC)
     subtracted_per_nc = nh3_per_nc - c_fit * c_per_nc
 
-    # NEW: normalize BOTH subplot-3 curves to unit area (over [-1,4])
-    subtracted_unit = normalize_to_unit_area(subtracted_per_nc, bin_width, "NH3/(nC) - c*C/(nC)")
-    h2_unit         = normalize_to_unit_area(h2_per_nc,         bin_width, "H2/(nC)")
+    subtracted_unit = normalize_to_unit_area(subtracted_per_nc, bin_width, "RGC")
+    h2_unit         = normalize_to_unit_area(h2_per_nc,         bin_width, "RGA")
 
-    # Gaussian peak fits on subplot-3 curves (0.5 to 1.0)
-    mu_sub, sigma_sub = fit_gaussian_peak(x_centers, subtracted_unit, PEAK_XMIN, PEAK_XMAX)
-    mu_h2,  sigma_h2  = fit_gaussian_peak(x_centers, h2_unit,         PEAK_XMIN, PEAK_XMAX)
+    mu_rgc, sigma_rgc = fit_gaussian_peak(x_centers, subtracted_unit, PEAK_XMIN, PEAK_XMAX)
+    mu_rga, sigma_rga = fit_gaussian_peak(x_centers, h2_unit,         PEAK_XMIN, PEAK_XMAX)
 
     # ---------------------------------------------------------------------
     # Plotting
@@ -431,7 +416,7 @@ def main():
 
     x_label = r"$M_{x}^{2}$ (GeV$^{2}$)"
 
-    # 1) NH3/Q, C/Q, H2/Q
+    # 1
     ax = axes[0]
     step_plot(ax, bin_edges, nh3_per_nc, "RGC Su22 NH3/(nC)")
     step_plot(ax, bin_edges, c_per_nc,   "RGC Su22 C/(nC)")
@@ -442,7 +427,7 @@ def main():
     ax.set_xlim(MX2_MIN, MX2_MAX)
     ax.legend(fontsize=10)
 
-    # 2) Ratio + fitted constant line in BLACK (solid in window, dashed elsewhere)
+    # 2
     ax = axes[1]
     step_plot(ax, bin_edges, ratio_nh3_over_c, "(NH3/(nC)) / (C/(nC))")
     ax.set_title(f"Ratio and constant fit in [{FIT_XMIN}, {FIT_XMAX}]")
@@ -456,10 +441,10 @@ def main():
 
     ax.legend(fontsize=10)
 
-    # 3) Subtracted and H2 overlay, BOTH unit-area-normalized, plus Gaussian fit text
+    # 3
     ax = axes[2]
-    step_plot(ax, bin_edges, subtracted_unit, "NH3/(nC) - c*C/(nC) (unit area)")
-    step_plot(ax, bin_edges, h2_unit,         "H2/(nC) (unit area)")
+    step_plot(ax, bin_edges, subtracted_unit, "RGC (unit area)")
+    step_plot(ax, bin_edges, h2_unit,         "RGA (unit area)")
     ax.axhline(0.0, linewidth=1.0)
     ax.set_title("Subtracted spectrum using fitted c")
     ax.set_xlabel(x_label)
@@ -467,20 +452,19 @@ def main():
     ax.set_xlim(MX2_MIN, MX2_MAX)
     ax.legend(fontsize=10)
 
-    # Bottom-left text block with mu/sigma
+    # Bottom-right boxed text with mu/sigma (smaller font)
     text_lines = [
-        r"Gaussian fit (0.5 to 1.0):",
-        rf"Subtracted: $\mu$ = {mu_sub:.4f}, $\sigma$ = {sigma_sub:.4f}",
-        rf"H2:         $\mu$ = {mu_h2:.4f}, $\sigma$ = {sigma_h2:.4f}",
+        rf"RGC: $\mu$ = {mu_rgc:.4f}, $\sigma$ = {sigma_rgc:.4f}",
+        rf"RGA: $\mu$ = {mu_rga:.4f}, $\sigma$ = {sigma_rga:.4f}",
     ]
     ax.text(
-        0.05, 0.05,
+        0.95, 0.05,
         "\n".join(text_lines),
         transform=ax.transAxes,
-        fontsize=10,
+        fontsize=9,
         verticalalignment="bottom",
-        horizontalalignment="left",
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="none"),
+        horizontalalignment="right",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="black", linewidth=0.8),
     )
 
     if short_mode:
@@ -492,8 +476,8 @@ def main():
 
     print(f"Wrote: {OUT_PNG}")
     print(f"Fit constant c = {c_fit:.6f} using {n_fit_bins} bins in [{FIT_XMIN}, {FIT_XMAX}]")
-    print(f"Subtracted peak: mu = {mu_sub:.6f}, sigma = {sigma_sub:.6f} (fit window [{PEAK_XMIN}, {PEAK_XMAX}])")
-    print(f"H2 peak:        mu = {mu_h2:.6f}, sigma = {sigma_h2:.6f} (fit window [{PEAK_XMIN}, {PEAK_XMAX}])")
+    print(f"RGC peak: mu = {mu_rgc:.6f}, sigma = {sigma_rgc:.6f} (fit window [{PEAK_XMIN}, {PEAK_XMAX}])")
+    print(f"RGA peak: mu = {mu_rga:.6f}, sigma = {sigma_rga:.6f} (fit window [{PEAK_XMIN}, {PEAK_XMAX}])")
     if short_mode:
         print("SHORT mode enabled: used first 6 run numbers per file.")
     #endif
