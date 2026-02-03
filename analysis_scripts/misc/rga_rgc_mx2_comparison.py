@@ -4,32 +4,38 @@
 """
 rgc_rga_mx2_comparison.py
 
-Mx2 comparison for three samples:
+Make a 1x3 canvas comparing Mx2 distributions for:
   - RGC Su22 NH3
   - RGC Su22 C
   - RGA Fa18 Inb H2
 
-Updates requested:
-  - Histogram/plot x-range: [-1, 4] (GeV^2)
-  - Subplot 1: normalize each histogram by its integral over [-1, 4]
-               (no charge normalization; CSV kept but commented out)
-  - Subplot 2: ratio (NH3_norm / C_norm) with constant fit c in [-0.5, 0.5]
-               draw c solid on [-0.5, 0.5], dashed elsewhere
-  - Subplot 3: plot (NH3_norm - c * C_norm) and overlay H2_norm
+Normalization:
+  Histograms are normalized to "counts per nC" by dividing the bin counts by
+  the total accumulated Faraday cup charge (from CSV) for the runs present in
+  that ROOT tree.
+
+Subplot 1:
+  Overlay NH3/Q, C/Q, H2/Q where Q is total charge (nC) for runs present.
+
+Subplot 2:
+  Ratio: (NH3/Q) / (C/Q)
+  Fit constant c in window [-0.5, 0.5].
+  Draw fitted c as BLACK solid line in [-0.5,0.5] and BLACK dashed elsewhere.
+
+Subplot 3:
+  Subtracted: (NH3/Q) - c*(C/Q)
+  (Optionally) overlay H2/Q as a reference shape.
 
 Optional:
   --short : restrict each ROOT tree to only the first 6 run numbers (ascending),
-            but keep all events belonging to those runs.
+            but keep all events belonging to those runs. Charge sums use only
+            those runs.
 
 Output:
   output/rgc_rga_mx2_comparison.png
 
 Dependencies:
   python3, uproot, numpy, matplotlib
-
-Example:
-  python3 rgc_rga_mx2_comparison.py
-  python3 rgc_rga_mx2_comparison.py --short
 """
 
 import os
@@ -48,8 +54,7 @@ H2_ROOT  = "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rga_fa18_inb_H2.root"
 
 TREE_NAME = "PhysicsEvents"
 
-# Left here (commented) per request, but not used for normalization anymore:
-#RUN_INFO_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
+RUN_INFO_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
 OUT_PNG = "output/rgc_rga_mx2_comparison.png"
 
@@ -76,6 +81,56 @@ def parse_args(argv):
         #endif
     #endfor
     return short
+
+
+def read_run_charge_map(csv_path):
+    """
+    Read run info CSV with lines like:
+      runnum,charge,...
+
+    Returns:
+      dict[int, float] mapping runnum -> accumulated charge (nC)
+    """
+    if not os.path.isfile(csv_path):
+        raise RuntimeError(f"FATAL: CSV not found: {csv_path}")
+
+    run_charge = {}
+
+    with open(csv_path, "r", encoding="utf-8") as f:
+        for lineno, line in enumerate(f, start=1):
+            s = line.strip()
+            if len(s) == 0:
+                continue
+            if s.startswith("#"):
+                continue
+
+            parts = [p.strip() for p in s.split(",")]
+            if len(parts) < 2:
+                raise RuntimeError(
+                    f"FATAL: Malformed CSV line {lineno} in {csv_path}: '{line.rstrip()}'"
+                )
+
+            try:
+                runnum = int(parts[0])
+            except Exception:
+                raise RuntimeError(
+                    f"FATAL: Could not parse runnum on line {lineno} in {csv_path}: '{parts[0]}'"
+                )
+
+            try:
+                charge = float(parts[1])
+            except Exception:
+                raise RuntimeError(
+                    f"FATAL: Could not parse charge on line {lineno} in {csv_path}: '{parts[1]}'"
+                )
+
+            run_charge[runnum] = charge
+        #endfor
+
+    if len(run_charge) == 0:
+        raise RuntimeError(f"FATAL: No run/charge entries parsed from {csv_path}")
+
+    return run_charge
 
 
 def load_tree_arrays(root_path, tree_name):
@@ -119,11 +174,11 @@ def load_tree_arrays(root_path, tree_name):
 
 def restrict_to_first_n_runs(mx2, run, n_runs, label):
     """
-    Restrict arrays to only events belonging to the first n_runs unique run numbers (ascending).
+    Restrict arrays to events belonging to the first n_runs unique run numbers (ascending).
     Keeps all events for those runs.
 
     Returns:
-      mx2_cut, run_cut
+      mx2_cut, run_cut, runs_kept (unique run numbers kept)
     """
     runs_unique = np.unique(run)
     if runs_unique.size == 0:
@@ -132,41 +187,53 @@ def restrict_to_first_n_runs(mx2, run, n_runs, label):
     runs_kept = runs_unique[:n_runs]
     mask = np.isin(run, runs_kept)
 
-    mx2_cut = mx2[mask]
-    run_cut = run[mask]
-
-    return mx2_cut, run_cut
+    return mx2[mask], run[mask], runs_kept
 
 
-def hist_density(mx2_values, bin_edges):
+def total_charge_for_runs(runs_unique, run_charge_map, label_for_errors, csv_path):
     """
-    Build a histogram over [MX2_MIN, MX2_MAX] and normalize by integral.
-    We return a "density-like" array where sum(y_i * bin_width_i) = 1.
+    Sum charges for an array of unique run numbers.
+    Fail fast if any run is missing in the CSV.
+    """
+    runs_unique = np.asarray(runs_unique, dtype=np.int64)
 
-    Implementation:
-      counts -> density = counts / (sum(counts) * bin_width)
-    so that the area under the curve is 1 in the chosen range.
+    missing = [int(r) for r in runs_unique if int(r) not in run_charge_map]
+    if len(missing) > 0:
+        missing_sorted = sorted(set(missing))
+        msg = (
+            f"FATAL: Missing {len(missing_sorted)} run(s) in run-info CSV for {label_for_errors}.\n"
+            f"Missing runnum values: {missing_sorted}\n"
+            f"Fix: add these run numbers to {csv_path} (or remove them from the ROOT file)."
+        )
+        raise RuntimeError(msg)
+
+    total = 0.0
+    for r in runs_unique:
+        total += run_charge_map[int(r)]
+    #endfor
+
+    if not np.isfinite(total) or total <= 0.0:
+        raise RuntimeError(
+            f"FATAL: Computed non-positive or non-finite total charge for {label_for_errors}: {total}"
+        )
+
+    return total
+
+
+def hist_counts_in_range(mx2_values, bin_edges):
+    """
+    Histogram Mx2 with fixed bins in [MX2_MIN, MX2_MAX].
+    Drops events outside [MX2_MIN, MX2_MAX].
     """
     mask = (mx2_values >= MX2_MIN) & (mx2_values <= MX2_MAX)
     mx2_in = mx2_values[mask]
-
     counts, _ = np.histogram(mx2_in, bins=bin_edges)
-    counts = counts.astype(np.float64)
-
-    total = np.sum(counts)
-    if total <= 0.0:
-        raise RuntimeError("FATAL: Histogram integral is zero in the requested Mx2 range.")
-
-    bin_width = bin_edges[1] - bin_edges[0]
-    density = counts / (total * bin_width)
-
-    return density
+    return counts.astype(np.float64)
 
 
 def safe_ratio(num, den):
     """
-    Compute num/den bin-by-bin, returning NaN where den == 0.
-    (NaNs won't draw in matplotlib step plots, which is often what you want.)
+    Compute num/den bin-by-bin, returning NaN where den == 0 (so matplotlib won't draw).
     """
     out = np.full_like(num, np.nan, dtype=np.float64)
     mask = den != 0.0
@@ -204,34 +271,48 @@ def main():
 
     os.makedirs(os.path.dirname(OUT_PNG), exist_ok=True)
 
-    # Load arrays (only needed branches)
+    run_charge_map = read_run_charge_map(RUN_INFO_CSV)
+
+    # Load arrays
     nh3_mx2, nh3_run = load_tree_arrays(NH3_ROOT, TREE_NAME)
     c_mx2,   c_run   = load_tree_arrays(C_ROOT,   TREE_NAME)
     h2_mx2,  h2_run  = load_tree_arrays(H2_ROOT,  TREE_NAME)
 
-    # Optional short restriction
+    # Determine runs used and optionally restrict to first 6 runs per file
     if short_mode:
-        nh3_mx2, nh3_run = restrict_to_first_n_runs(nh3_mx2, nh3_run, 6, "NH3")
-        c_mx2,   c_run   = restrict_to_first_n_runs(c_mx2,   c_run,   6, "C")
-        h2_mx2,  h2_run  = restrict_to_first_n_runs(h2_mx2,  h2_run,  6, "H2")
+        nh3_mx2, nh3_run, nh3_runs_used = restrict_to_first_n_runs(nh3_mx2, nh3_run, 6, "NH3")
+        c_mx2,   c_run,   c_runs_used   = restrict_to_first_n_runs(c_mx2,   c_run,   6, "C")
+        h2_mx2,  h2_run,  h2_runs_used  = restrict_to_first_n_runs(h2_mx2,  h2_run,  6, "H2")
+    else:
+        nh3_runs_used = np.unique(nh3_run)
+        c_runs_used   = np.unique(c_run)
+        h2_runs_used  = np.unique(h2_run)
     #endif
 
-    # Fixed binning for all plots
+    # Total charge (nC) for each sample (sum over runs present)
+    nh3_charge = total_charge_for_runs(nh3_runs_used, run_charge_map, f"NH3 file '{NH3_ROOT}'", RUN_INFO_CSV)
+    c_charge   = total_charge_for_runs(c_runs_used,   run_charge_map, f"C file '{C_ROOT}'",   RUN_INFO_CSV)
+    h2_charge  = total_charge_for_runs(h2_runs_used,  run_charge_map, f"H2 file '{H2_ROOT}'", RUN_INFO_CSV)
+
+    # Fixed binning
     bin_edges = np.linspace(MX2_MIN, MX2_MAX, NBINS + 1)
-    bin_width = bin_edges[1] - bin_edges[0]
     x_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 
-    # Normalized-by-integral (area = 1) histograms
-    nh3_norm = hist_density(nh3_mx2, bin_edges)
-    c_norm   = hist_density(c_mx2,   bin_edges)
-    h2_norm  = hist_density(h2_mx2,  bin_edges)
+    # Counts and charge-normalized spectra (counts / nC)
+    nh3_counts = hist_counts_in_range(nh3_mx2, bin_edges)
+    c_counts   = hist_counts_in_range(c_mx2,   bin_edges)
+    h2_counts  = hist_counts_in_range(h2_mx2,  bin_edges)
+
+    nh3_per_nc = nh3_counts / nh3_charge
+    c_per_nc   = c_counts   / c_charge
+    h2_per_nc  = h2_counts  / h2_charge
 
     # Subplot 2: ratio and constant fit
-    ratio_nh3_over_c = safe_ratio(nh3_norm, c_norm)
+    ratio_nh3_over_c = safe_ratio(nh3_per_nc, c_per_nc)
     c_fit, n_fit_bins = fit_constant_in_window(x_centers, ratio_nh3_over_c, FIT_XMIN, FIT_XMAX)
 
     # Subplot 3: subtraction using fitted c
-    diff_subtracted = nh3_norm - c_fit * c_norm
+    subtracted = nh3_per_nc - c_fit * c_per_nc
 
     # ---------------------------------------------------------------------
     # Plotting
@@ -239,43 +320,40 @@ def main():
     fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True)
 
     x_label = r"$M_{x}^{2}$ (GeV$^{2}$)"
-    y_label = "Arb. units (unit area on [-1, 4])"
+    y_label = "Counts / (nC)"
 
-    # 1) Overlay of normalized histograms
+    # 1) NH3/Q, C/Q, H2/Q
     ax = axes[0]
-    step_plot(ax, bin_edges, nh3_norm, "RGC Su22 NH3")
-    step_plot(ax, bin_edges, c_norm,   "RGC Su22 C")
-    step_plot(ax, bin_edges, h2_norm,  "RGA Fa18 Inb H2")
-    ax.set_title("Mx2 (each spectrum area-normalized)")
+    step_plot(ax, bin_edges, nh3_per_nc, "RGC Su22 NH3")
+    step_plot(ax, bin_edges, c_per_nc,   "RGC Su22 C")
+    step_plot(ax, bin_edges, h2_per_nc,  "RGA Fa18 Inb H2")
+    ax.set_title("Mx2 (charge-normalized: counts/(nC))")
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_xlim(MX2_MIN, MX2_MAX)
     ax.legend(fontsize=10)
 
-    # 2) Ratio + constant fit line (solid in fit window, dashed elsewhere)
+    # 2) Ratio + fitted constant line in BLACK (solid in window, dashed elsewhere)
     ax = axes[1]
-    step_plot(ax, bin_edges, ratio_nh3_over_c, "NH3_norm / C_norm")
+    step_plot(ax, bin_edges, ratio_nh3_over_c, "(NH3/(nC)) / (C/(nC))")
     ax.set_title(f"Ratio and constant fit in [{FIT_XMIN}, {FIT_XMAX}]")
     ax.set_xlabel(x_label)
     ax.set_ylabel("Ratio")
     ax.set_xlim(MX2_MIN, MX2_MAX)
 
-    # Draw fitted constant as solid in [-0.5,0.5], dashed elsewhere
-    # Left dashed segment
-    ax.plot([MX2_MIN, FIT_XMIN], [c_fit, c_fit], linestyle="--", linewidth=1.8, label=None)
-    # Solid fit window segment
-    ax.plot([FIT_XMIN, FIT_XMAX], [c_fit, c_fit], linestyle="-", linewidth=2.2, label=f"c = {c_fit:.4f}")
-    # Right dashed segment
-    ax.plot([FIT_XMAX, MX2_MAX], [c_fit, c_fit], linestyle="--", linewidth=1.8, label=None)
+    # Black fitted line: dashed outside, solid inside
+    ax.plot([MX2_MIN, FIT_XMIN], [c_fit, c_fit], color="black", linestyle="--", linewidth=1.8)
+    ax.plot([FIT_XMIN, FIT_XMAX], [c_fit, c_fit], color="black", linestyle="-",  linewidth=2.2, label=f"c = {c_fit:.4f}")
+    ax.plot([FIT_XMAX, MX2_MAX], [c_fit, c_fit], color="black", linestyle="--", linewidth=1.8)
 
     ax.legend(fontsize=10)
 
-    # 3) Subtracted spectrum + H2 overlay
+    # 3) Subtracted: NH3/Q - c*(C/Q), with H2/Q overlay (optional but useful reference)
     ax = axes[2]
-    step_plot(ax, bin_edges, diff_subtracted, "NH3_norm - c * C_norm")
-    step_plot(ax, bin_edges, h2_norm,         "H2_norm")
+    step_plot(ax, bin_edges, subtracted, "NH3/(nC) - c*C/(nC)")
+    step_plot(ax, bin_edges, h2_per_nc,  "H2/(nC)")
     ax.axhline(0.0, linewidth=1.0)
-    ax.set_title("Subtracted (hydrogen-like) residual vs H2")
+    ax.set_title("Subtracted spectrum using fitted c")
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_xlim(MX2_MIN, MX2_MAX)
@@ -287,8 +365,12 @@ def main():
 
     fig.tight_layout()
     fig.savefig(OUT_PNG, dpi=200)
+
     print(f"Wrote: {OUT_PNG}")
     print(f"Fit constant c = {c_fit:.6f} using {n_fit_bins} bins in [{FIT_XMIN}, {FIT_XMAX}]")
+    if short_mode:
+        print("SHORT mode enabled: used first 6 run numbers per file.")
+    #endif
 
     return 0
 
