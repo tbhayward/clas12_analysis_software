@@ -259,12 +259,12 @@ def make_canvas(data_map, outdir):
             linewidth=1.0,
         )
 
-        ax.set_xlim(0.0, 10.0)
+        ax.set_xlim(0.0, 8.0)
 
         if var in SSA_VARS:
-            ax.set_ylim(-0.6, 0.6)
+            ax.set_ylim(-0.2, 0.2)
         elif var in DSA_VARS:
-            ax.set_ylim(-1.0, 1.0)
+            ax.set_ylim(-0.6, 0.6)
         else:
             ax.set_ylim(-1.0, 1.0)
         #endif
