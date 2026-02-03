@@ -458,7 +458,7 @@ def main():
         rf"RGA: $\mu$ = {mu_rga:.4f}, $\sigma$ = {sigma_rga:.4f}",
     ]
     ax.text(
-        0.95, 0.05,
+        0.95, 0.15,
         "\n".join(text_lines),
         transform=ax.transAxes,
         fontsize=9,
