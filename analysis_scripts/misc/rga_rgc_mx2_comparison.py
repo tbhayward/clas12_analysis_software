@@ -27,7 +27,11 @@ Subplot 3:
   Overlay H2/Q
   Normalize each of these two subplot-3 curves to unit integral (area=1 over [-1,4]).
   Fit the missing-neutron peak (0.5 to 1.0) to Gaussian+const for both curves,
-  and print mu/sigma as boxed text in bottom-right.
+  and show mu/sigma in a box bottom-right.
+
+Console printout:
+  Also prints uncertainties on fitted mu and sigma (from covariance if SciPy fit
+  succeeded, otherwise approximate effective-N uncertainties).
 
 Optional:
   --short : restrict each ROOT tree to only the first 6 run numbers (ascending),
@@ -290,13 +294,19 @@ def gaussian_plus_const(x, A, mu, sigma, B):
     return A * np.exp(-0.5 * ((x - mu) / sigma) ** 2) + B
 
 
-def fit_gaussian_peak(x_centers, y, xmin, xmax):
+def fit_gaussian_peak_with_uncertainty(x_centers, y, xmin, xmax):
     """
     Fit y(x) in [xmin, xmax] to Gaussian+const.
-    Returns:
-      mu, sigma (floats)
 
-    Uses scipy if available, else moment-based fallback (with constant baseline subtraction).
+    Returns:
+      mu, sigma, dmu, dsigma, fit_method
+
+    - If SciPy curve_fit succeeds, dmu and dsigma come from covariance matrix.
+    - Else, uses a baseline-subtracted weighted-moment estimate with approximate
+      uncertainties based on an effective N:
+        Neff = (sum w)^2 / (sum w^2)
+        dmu    ~ sigma / sqrt(Neff)
+        dsigma ~ sigma / sqrt(2 Neff)
     """
     win = (x_centers >= xmin) & (x_centers <= xmax) & np.isfinite(y)
     xw = x_centers[win]
@@ -305,9 +315,9 @@ def fit_gaussian_peak(x_centers, y, xmin, xmax):
     if yw.size < 5:
         raise RuntimeError("FATAL: Not enough bins in peak fit window to fit Gaussian.")
 
-    # Initial guesses (baseline from edge medians)
+    # Baseline estimate from edges
     n = yw.size
-    nedge = max(1, n // 5)  # 20% of points on each edge
+    nedge = max(1, n // 5)
     B0 = float(np.median(np.concatenate([yw[:nedge], yw[-nedge:]])))
     ysub = yw - B0
 
@@ -325,6 +335,7 @@ def fit_gaussian_peak(x_centers, y, xmin, xmax):
     sigma0 = float(np.sqrt(max(var0, 1.0e-6)))
     A0 = float(np.max(yw) - B0)
 
+    # Try SciPy fit first
     try:
         from scipy.optimize import curve_fit
 
@@ -334,11 +345,25 @@ def fit_gaussian_peak(x_centers, y, xmin, xmax):
             [np.inf, xmax + 0.2, 2.0, np.inf],
         )
 
-        popt, _pcov = curve_fit(gaussian_plus_const, xw, yw, p0=p0, bounds=bounds, maxfev=20000)
+        popt, pcov = curve_fit(gaussian_plus_const, xw, yw, p0=p0, bounds=bounds, maxfev=20000)
+
         mu = float(popt[1])
         sigma = abs(float(popt[2]))
-        return mu, sigma
+
+        # Covariance -> uncertainties
+        # pcov indices: [A, mu, sigma, B]
+        if pcov is not None and np.all(np.isfinite(pcov)):
+            dmu = float(np.sqrt(max(pcov[1, 1], 0.0)))
+            dsigma = float(np.sqrt(max(pcov[2, 2], 0.0)))
+        else:
+            dmu = float("nan")
+            dsigma = float("nan")
+        #endif
+
+        return mu, sigma, dmu, dsigma, "scipy"
     except Exception:
+        # Moment-based fallback + approximate uncertainties
+        # Use baseline-subtracted weights for Neff
         w2 = np.clip(yw - B0, 0.0, None)
         if np.sum(w2) <= 0.0:
             w2 = np.clip(yw - np.min(yw), 0.0, None)
@@ -347,10 +372,23 @@ def fit_gaussian_peak(x_centers, y, xmin, xmax):
             w2 = np.ones_like(yw)
         #endif
 
+        sw = float(np.sum(w2))
+        sw2 = float(np.sum(w2 * w2))
+        if sw2 <= 0.0:
+            neff = float(yw.size)
+        else:
+            neff = (sw * sw) / sw2
+        #endif
+        neff = max(neff, 1.0)
+
         mu = float(np.sum(w2 * xw) / np.sum(w2))
         var = float(np.sum(w2 * (xw - mu) ** 2) / np.sum(w2))
         sigma = float(np.sqrt(max(var, 1.0e-6)))
-        return mu, sigma
+
+        dmu = float(sigma / np.sqrt(neff))
+        dsigma = float(sigma / np.sqrt(2.0 * neff))
+
+        return mu, sigma, dmu, dsigma, "moment"
     #endif
 
 
@@ -406,8 +444,12 @@ def main():
     subtracted_unit = normalize_to_unit_area(subtracted_per_nc, bin_width, "RGC")
     h2_unit         = normalize_to_unit_area(h2_per_nc,         bin_width, "RGA")
 
-    mu_rgc, sigma_rgc = fit_gaussian_peak(x_centers, subtracted_unit, PEAK_XMIN, PEAK_XMAX)
-    mu_rga, sigma_rga = fit_gaussian_peak(x_centers, h2_unit,         PEAK_XMIN, PEAK_XMAX)
+    mu_rgc, sigma_rgc, dmu_rgc, dsigma_rgc, method_rgc = fit_gaussian_peak_with_uncertainty(
+        x_centers, subtracted_unit, PEAK_XMIN, PEAK_XMAX
+    )
+    mu_rga, sigma_rga, dmu_rga, dsigma_rga, method_rga = fit_gaussian_peak_with_uncertainty(
+        x_centers, h2_unit, PEAK_XMIN, PEAK_XMAX
+    )
 
     # ---------------------------------------------------------------------
     # Plotting
@@ -452,13 +494,12 @@ def main():
     ax.set_xlim(MX2_MIN, MX2_MAX)
     ax.legend(fontsize=10)
 
-    # Bottom-right boxed text with mu/sigma (smaller font)
     text_lines = [
         rf"RGC: $\mu$ = {mu_rgc:.4f}, $\sigma$ = {sigma_rgc:.4f}",
         rf"RGA: $\mu$ = {mu_rga:.4f}, $\sigma$ = {sigma_rga:.4f}",
     ]
     ax.text(
-        0.95, 0.15,
+        0.95, 0.05,
         "\n".join(text_lines),
         transform=ax.transAxes,
         fontsize=9,
@@ -476,8 +517,10 @@ def main():
 
     print(f"Wrote: {OUT_PNG}")
     print(f"Fit constant c = {c_fit:.6f} using {n_fit_bins} bins in [{FIT_XMIN}, {FIT_XMAX}]")
-    print(f"RGC peak: mu = {mu_rgc:.6f}, sigma = {sigma_rgc:.6f} (fit window [{PEAK_XMIN}, {PEAK_XMAX}])")
-    print(f"RGA peak: mu = {mu_rga:.6f}, sigma = {sigma_rga:.6f} (fit window [{PEAK_XMIN}, {PEAK_XMAX}])")
+    print(f"RGC peak fit method = {method_rgc}")
+    print(f"RGC: mu = {mu_rgc:.6f} +/- {dmu_rgc:.6f} , sigma = {sigma_rgc:.6f} +/- {dsigma_rgc:.6f}  (window [{PEAK_XMIN}, {PEAK_XMAX}])")
+    print(f"RGA peak fit method = {method_rga}")
+    print(f"RGA: mu = {mu_rga:.6f} +/- {dmu_rga:.6f} , sigma = {sigma_rga:.6f} +/- {dsigma_rga:.6f}  (window [{PEAK_XMIN}, {PEAK_XMAX}])")
     if short_mode:
         print("SHORT mode enabled: used first 6 run numbers per file.")
     #endif
