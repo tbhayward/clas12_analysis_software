@@ -61,8 +61,8 @@ public class BeamEnergy {
         else if (runnum >= 11284 && runnum <= 11300) { Eb = 4.17179; }
         else if (runnum >= 11323 && runnum <= 11571) { Eb = 10.3894; }
         else if (runnum >= 16042 && runnum <= 17065) { Eb = 10.5473; }
-        else if (runnum >= 17067 && runnum <= 17724) { Eb = 10.5563; }
-        else if (runnum >= 17725 && runnum <= 17811) { Eb = 10.5593; }
+        else if (runnum >= 17067 && runnum <= 17716) { Eb = 10.5563; }
+        else if (runnum >= 17717 && runnum <= 17811) { Eb = 10.5593; }
         else if (runnum >= 19204 && runnum <= 19659) { Eb = 6.39463; }
         else if (runnum >= 19662 && runnum <= 19893) { Eb = 8.47757; }
 

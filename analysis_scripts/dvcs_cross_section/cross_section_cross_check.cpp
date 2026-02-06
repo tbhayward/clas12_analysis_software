@@ -36,7 +36,8 @@
 //         used for all subplots on that canvas. For Lee, this includes
 //         stat and syst(up) combined in quadrature on top of the central value.
 //   - For ratio canvases (Hayward/Lee):
-//       * Linear y-scale, fixed range [0, 3] for all subplots.
+//       * Linear y-scale, fixed range [0, 2] for all subplots.
+//       * Thin dashed horizontal guide lines at y = 0.7 and y = 1.3.
 //       * Two sets of error bars per point:
 //           1) "stat": propagate stat errors from BOTH Hayward and Lee.
 //           2) "stat + Lee syst": propagate Hayward stat and Lee (stat+syst)
@@ -285,22 +286,22 @@ static LeeCsvCols_xs detect_lee_columns_xs(const std::vector<std::string>& heade
         fatal_xs("Empty header row in Lee CSV");
     }
 
-    LeeCsvCols_xs cols;
-    cols.c_bin     = -1;
-    cols.c_xb_min  = -1;
-    cols.c_xb_max  = -1;
-    cols.c_q2_min  = -1;
-    cols.c_q2_max  = -1;
-    cols.c_t_min   = -1;
-    cols.c_t_max   = -1;
-    cols.c_phi_avg = -1;
+    LeeCsvCols_xs cols_lee;
+    cols_lee.c_bin     = -1;
+    cols_lee.c_xb_min  = -1;
+    cols_lee.c_xb_max  = -1;
+    cols_lee.c_q2_min  = -1;
+    cols_lee.c_q2_max  = -1;
+    cols_lee.c_t_min   = -1;
+    cols_lee.c_t_max   = -1;
+    cols_lee.c_phi_avg = -1;
 
     // 1) Bin index: try named column first, then unlabeled first column
-    cols.c_bin = find_col_alias_xs(header, { "bin index", "bin", "idx" });
-    if (cols.c_bin < 0) {
+    cols_lee.c_bin = find_col_alias_xs(header, { "bin index", "bin", "idx" });
+    if (cols_lee.c_bin < 0) {
         std::string h0 = trim_xs(header[0]);
         if (h0.empty()) {
-            cols.c_bin = 0;
+            cols_lee.c_bin = 0;
         } else {
             std::ostringstream oss;
             oss << "Could not locate bin index column in Lee CSV. "
@@ -311,26 +312,26 @@ static LeeCsvCols_xs detect_lee_columns_xs(const std::vector<std::string>& heade
     }
 
     // 2) xB, Q2, phi
-    cols.c_xb_min  = find_col_alias_xs(header, { "xBmin", "xbmin", "xB_min", "xb_min" });
-    cols.c_xb_max  = find_col_alias_xs(header, { "xBmax", "xbmax", "xB_max", "xb_max" });
-    cols.c_q2_min  = find_col_alias_xs(header, { "Q2min", "q2min", "Q2_min", "q2_min" });
-    cols.c_q2_max  = find_col_alias_xs(header, { "Q2max", "q2max", "Q2_max", "q2_max" });
-    cols.c_phi_avg = find_col_alias_xs(header, { "phiavg", "phi_avg", "phi_average" });
+    cols_lee.c_xb_min  = find_col_alias_xs(header, { "xBmin", "xbmin", "xB_min", "xb_min" });
+    cols_lee.c_xb_max  = find_col_alias_xs(header, { "xBmax", "xbmax", "xB_max", "xb_max" });
+    cols_lee.c_q2_min  = find_col_alias_xs(header, { "Q2min", "q2min", "Q2_min", "q2_min" });
+    cols_lee.c_q2_max  = find_col_alias_xs(header, { "Q2max", "q2max", "Q2_max", "q2_max" });
+    cols_lee.c_phi_avg = find_col_alias_xs(header, { "phiavg", "phi_avg", "phi_average" });
 
     // 3) |t| min and max
-    cols.c_t_min = find_col_alias_xs(header, { "t_abs_min", "tmin", "t_min" });
-    cols.c_t_max = find_col_alias_xs(header, { "t_abs_max", "tmax", "t_max" });
+    cols_lee.c_t_min = find_col_alias_xs(header, { "t_abs_min", "tmin", "t_min" });
+    cols_lee.c_t_max = find_col_alias_xs(header, { "t_abs_max", "tmax", "t_max" });
 
     // 4) Validate required columns (binning only)
     std::vector<std::string> missing;
-    if (cols.c_bin     < 0) missing.push_back("bin index");
-    if (cols.c_xb_min  < 0) missing.push_back("xBmin");
-    if (cols.c_xb_max  < 0) missing.push_back("xBmax");
-    if (cols.c_q2_min  < 0) missing.push_back("Q2min");
-    if (cols.c_q2_max  < 0) missing.push_back("Q2max");
-    if (cols.c_t_min   < 0) missing.push_back("t_abs_min/tmin");
-    if (cols.c_t_max   < 0) missing.push_back("t_abs_max/tmax");
-    if (cols.c_phi_avg < 0) missing.push_back("phiavg");
+    if (cols_lee.c_bin     < 0) missing.push_back("bin index");
+    if (cols_lee.c_xb_min  < 0) missing.push_back("xBmin");
+    if (cols_lee.c_xb_max  < 0) missing.push_back("xBmax");
+    if (cols_lee.c_q2_min  < 0) missing.push_back("Q2min");
+    if (cols_lee.c_q2_max  < 0) missing.push_back("Q2max");
+    if (cols_lee.c_t_min   < 0) missing.push_back("t_abs_min/tmin");
+    if (cols_lee.c_t_max   < 0) missing.push_back("t_abs_max/tmax");
+    if (cols_lee.c_phi_avg < 0) missing.push_back("phiavg");
 
     if (!missing.empty()) {
         std::ostringstream oss;
@@ -346,7 +347,7 @@ static LeeCsvCols_xs detect_lee_columns_xs(const std::vector<std::string>& heade
         fatal_xs(oss.str());
     }
 
-    return cols;
+    return cols_lee;
 }
 
 // ---------- bin / axis structs ----------
@@ -384,8 +385,8 @@ static AxisSets_xs build_axes_from_rows_xs(const std::vector<BinRow_xs>& rows) {
     for (const auto& r : rows) {
         const auto xb = std::make_pair(r.xBmin, r.xBmax);
         xbset.insert(xb);
-        q2set_by_xb[xb].insert({r.Q2min, r.Q2max});
-        tset_by_xb[xb].insert({r.tmin,  r.tmax});
+        q2set_by_xb[xb].insert(std::make_pair(r.Q2min, r.Q2max));
+        tset_by_xb[xb].insert(std::make_pair(r.tmin,  r.tmax));
     }
 
     AxisSets_xs ax;
@@ -435,11 +436,11 @@ static PerPanel_xs map_to_panels_xs(const std::vector<BinRow_xs>& rows,
         const auto& Q2s = ax.Q2_by_ix.at(ix);
         const auto& Ts  = ax.t_by_ix.at(ix);
 
-        const int iQ = find_index_xs({r.Q2min, r.Q2max}, Q2s);
-        const int it = find_index_xs({r.tmin,   r.tmax},  Ts);
+        const int iQ = find_index_xs(std::make_pair(r.Q2min, r.Q2max), Q2s);
+        const int it = find_index_xs(std::make_pair(r.tmin,  r.tmax),  Ts);
         if (iQ < 0 || it < 0) continue;
 
-        auto key = std::make_tuple(ix, iQ, it);
+        const auto key = std::make_tuple(ix, iQ, it);
 
         // Lee data (central + stat + syst)
         if (r.lee_xs > 0.0) {
@@ -519,11 +520,11 @@ static TGraphErrors* graph_pe1_xs(const std::vector<double>& X,
                                   int markerStyle, int color) {
     if (X.empty()) return nullptr;
     std::vector<double> ex(X.size(), 0.0);
-    auto* g = new TGraphErrors((int)X.size(),
-                               const_cast<double*>(X.data()),
-                               const_cast<double*>(Y.data()),
-                               ex.data(),
-                               const_cast<double*>(EY.data()));
+    TGraphErrors* g = new TGraphErrors((int)X.size(),
+                                      const_cast<double*>(X.data()),
+                                      const_cast<double*>(Y.data()),
+                                      ex.data(),
+                                      const_cast<double*>(EY.data()));
     g->SetMarkerStyle(markerStyle);
     g->SetMarkerColor(color);
     g->SetLineColor(color);
@@ -538,9 +539,9 @@ static TGraph* graph_points_xs(const std::vector<double>& X,
                                int markerStyle, int color) {
     if (X.empty() || Y.empty()) return nullptr;
     const int n = (int)std::min(X.size(), Y.size());
-    auto* g = new TGraph(n,
-                         const_cast<double*>(X.data()),
-                         const_cast<double*>(Y.data()));
+    TGraph* g = new TGraph(n,
+                           const_cast<double*>(X.data()),
+                           const_cast<double*>(Y.data()));
     g->SetMarkerStyle(markerStyle);
     g->SetMarkerColor(color);
     g->SetLineColor(color);
@@ -557,7 +558,7 @@ static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
                                            int lineColor) {
     if (X.empty()) return nullptr;
     const int n = (int)X.size();
-    auto* g = new TGraphAsymmErrors(n);
+    TGraphAsymmErrors* g = new TGraphAsymmErrors(n);
     for (int i = 0; i < n; ++i) {
         double x  = X[i];
         double y  = Y[i];
@@ -591,12 +592,8 @@ static double get_xb_ymin_floor_xs(int ix_xb) {
         1e-4   // xB bin 7
     };
     const int n = (int)(sizeof(floors) / sizeof(floors[0]));
-    if (ix_xb < 0) {
-        return floors[0];
-    }
-    if (ix_xb >= n) {
-        return floors[n - 1];
-    }
+    if (ix_xb < 0) return floors[0];
+    if (ix_xb >= n) return floors[n - 1];
     return floors[ix_xb];
 }
 
@@ -658,13 +655,10 @@ static void draw_one_canvas_xs(const std::string& title,
                             vup = v + es;
                         }
 
-                        if (vup > global_max_counts) {
-                            global_max_counts = vup;
-                        }
-                        if (vup > 0.0) {
-                            any_positive_counts = true;
-                        }
+                        if (vup > global_max_counts) global_max_counts = vup;
+                        if (vup > 0.0) any_positive_counts = true;
                     }
+                    // endfor
                 };
 
                 // Hayward: stat only
@@ -672,7 +666,9 @@ static void draw_one_canvas_xs(const std::string& title,
                 // Lee: stat+syst(up)
                 update_minmax(lee_tmp, true);
             }
+            // endfor
         }
+        // endfor
     } else if (mode == CANVAS_STATERR) {
         for (int r = 0; r < nrows; ++r) {
             for (int ccol = 0; ccol < ncols; ++ccol) {
@@ -682,19 +678,18 @@ static void draw_one_canvas_xs(const std::string& title,
                 auto update_stat = [&](const PanelData_xs& pd) {
                     for (size_t i = 0; i < pd.err_stat.size(); ++i) {
                         double es = pd.err_stat[i];
-                        if (es > global_max_stat) {
-                            global_max_stat = es;
-                        }
-                        if (es > 0.0) {
-                            any_positive_stat = true;
-                        }
+                        if (es > global_max_stat) global_max_stat = es;
+                        if (es > 0.0) any_positive_stat = true;
                     }
+                    // endfor
                 };
 
                 update_stat(hayward_tmp);
                 update_stat(lee_tmp);
             }
+            // endfor
         }
+        // endfor
     }
 
     const std::string cname = safe_canvas_name_xs(out_png);
@@ -729,14 +724,14 @@ static void draw_one_canvas_xs(const std::string& title,
     legTop->SetTextSize(0.22);
 
     if (mode == CANVAS_RATIO) {
-        auto* mRatioStat = new TMarker(0.0, 0.0, 20);
+        TMarker* mRatioStat = new TMarker(0.0, 0.0, 20);
         mRatioStat->SetMarkerColor(black);
 
-        auto* lnRatioTot = new TLine(0.0, 0.0, 1.0, 0.0);
+        TLine* lnRatioTot = new TLine(0.0, 0.0, 1.0, 0.0);
         lnRatioTot->SetLineColor(orange_syst);
         lnRatioTot->SetLineWidth(2);
 
-        auto* lnY1 = new TLine(0.0, 0.0, 1.0, 0.0);
+        TLine* lnY1 = new TLine(0.0, 0.0, 1.0, 0.0);
         lnY1->SetLineStyle(2);
         lnY1->SetLineWidth(2);
         lnY1->SetLineColor(orange);
@@ -749,9 +744,9 @@ static void draw_one_canvas_xs(const std::string& title,
         legTop->AddEntry(lnRatioTot, "Hayward/Lee (stat + Lee syst)", "l");
         legTop->AddEntry(lnY1,       "y = 1",                         "l");
     } else if (mode == CANVAS_COUNTS) {
-        auto* mH        = new TMarker(0.0, 0.0, 20);
-        auto* mL_stat   = new TMarker(0.0, 0.0, 24);
-        auto* lnL_syst  = new TLine(0.0, 0.0, 1.0, 0.0);
+        TMarker* mH       = new TMarker(0.0, 0.0, 20);
+        TMarker* mL_stat  = new TMarker(0.0, 0.0, 24);
+        TLine*   lnL_syst = new TLine(0.0, 0.0, 1.0, 0.0);
 
         mH->SetMarkerColor(black);
         mL_stat->SetMarkerColor(orange);
@@ -766,8 +761,8 @@ static void draw_one_canvas_xs(const std::string& title,
         legTop->AddEntry(mL_stat,  "Lee (pass-1), stat",         "p");
         legTop->AddEntry(lnL_syst, "Lee (pass-1), stat + syst",  "l");
     } else if (mode == CANVAS_STATERR) {
-        auto* mH_stat  = new TMarker(0.0, 0.0, 20);
-        auto* mL_stat  = new TMarker(0.0, 0.0, 24);
+        TMarker* mH_stat = new TMarker(0.0, 0.0, 20);
+        TMarker* mL_stat = new TMarker(0.0, 0.0, 24);
 
         mH_stat->SetMarkerColor(black);
         mL_stat->SetMarkerColor(orange);
@@ -814,9 +809,7 @@ static void draw_one_canvas_xs(const std::string& title,
                     gPad->SetLogy(1);
                     ymin = y_floor_counts;
                     ymax = 1.10 * global_max_counts;
-                    if (ymax <= ymin) {
-                        ymax = ymin * 10.0;
-                    }
+                    if (ymax <= ymin) ymax = ymin * 10.0;
                 }
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
@@ -840,9 +833,9 @@ static void draw_one_canvas_xs(const std::string& title,
                 lab.SetTextAlign(11);
                 lab.SetTextFont(42);
                 lab.DrawLatex(0.15, 0.92,
-                    Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
-                         Q2s[ccol].first, Q2s[ccol].second,
-                         Ts[r].first,     Ts[r].second));
+                              Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                                   Q2s[ccol].first, Q2s[ccol].second,
+                                   Ts[r].first,     Ts[r].second));
 
                 // Plot Hayward (stat)
                 graph_pe1_xs(hayward.phi, hayward.val, hayward.err_stat, 20, black);
@@ -862,6 +855,7 @@ static void draw_one_canvas_xs(const std::string& title,
                     lee_comb_dn.push_back(std::sqrt(es * es + esdn * esdn));
                     lee_comb_up.push_back(std::sqrt(es * es + esup * esup));
                 }
+                // endfor
 
                 graph_asymm_y_xs(lee.phi, lee.val,
                                  lee_comb_dn,
@@ -887,15 +881,12 @@ static void draw_one_canvas_xs(const std::string& title,
                             jbest = (int)j;
                         }
                     }
-                    if (jbest < 0 || best_dist > tol) {
-                        continue;
-                    }
+                    // endfor
+                    if (jbest < 0 || best_dist > tol) continue;
 
                     double H = hayward.val[i];
                     double L = lee.val[jbest];
-                    if (H <= 0.0 || L <= 0.0) {
-                        continue;
-                    }
+                    if (H <= 0.0 || L <= 0.0) continue;
 
                     double R = H / L;
 
@@ -935,9 +926,10 @@ static void draw_one_canvas_xs(const std::string& title,
                     ey_tot_up.push_back(eR_tot_up);
                     ey_tot_dn.push_back(eR_tot_dn);
                 }
+                // endfor
 
                 ymin = 0.0;
-                ymax = 3.0;
+                ymax = 2.0;  // UPDATED: fixed ratio y-range [0, 2]
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -960,27 +952,42 @@ static void draw_one_canvas_xs(const std::string& title,
                 lab.SetTextAlign(11);
                 lab.SetTextFont(42);
                 lab.DrawLatex(0.15, 0.92,
-                    Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
-                         Q2s[ccol].first, Q2s[ccol].second,
-                         Ts[r].first,     Ts[r].second));
+                              Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                                   Q2s[ccol].first, Q2s[ccol].second,
+                                   Ts[r].first,     Ts[r].second));
+
+                // Thin dashed guide lines at y = 0.7 and y = 1.3 (requested)
+                TLine* guide07 = new TLine(0.0, 0.7, 360.0, 0.7);
+                guide07->SetLineStyle(2);
+                guide07->SetLineWidth(1);
+                guide07->SetLineColor(kGray + 1);
+                guide07->Draw("SAME");
+
+                TLine* guide13 = new TLine(0.0, 1.3, 360.0, 1.3);
+                guide13->SetLineStyle(2);
+                guide13->SetLineWidth(1);
+                guide13->SetLineColor(kGray + 1);
+                guide13->Draw("SAME");
 
                 if (!x.empty()) {
                     graph_pe1_xs(x, y, ey_stat, 20, black);
 
                     const int n = (int)x.size();
-                    auto* gTot = new TGraphAsymmErrors(n);
+                    TGraphAsymmErrors* gTot = new TGraphAsymmErrors(n);
                     for (int i = 0; i < n; ++i) {
                         double el = (i < (int)ey_tot_dn.size()) ? ey_tot_dn[i] : 0.0;
                         double eh = (i < (int)ey_tot_up.size()) ? ey_tot_up[i] : 0.0;
                         gTot->SetPoint(i, x[i], y[i]);
                         gTot->SetPointError(i, 0.0, 0.0, el, eh);
                     }
+                    // endfor
                     gTot->SetLineColor(orange_syst);
                     gTot->SetLineWidth(2);
                     gTot->SetMarkerStyle(1);
                     gTot->SetMarkerSize(0.0);
                     gTot->Draw("E1 SAME");
 
+                    // Existing y = 1 line (kept)
                     TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
                     one->SetLineStyle(2);
                     one->SetLineWidth(2);
@@ -996,9 +1003,7 @@ static void draw_one_canvas_xs(const std::string& title,
                 } else {
                     ymin = 0.0;
                     ymax = 1.10 * global_max_stat;
-                    if (ymax <= ymin) {
-                        ymax = 1.0;
-                    }
+                    if (ymax <= ymin) ymax = 1.0;
                 }
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
@@ -1022,15 +1027,18 @@ static void draw_one_canvas_xs(const std::string& title,
                 lab.SetTextAlign(11);
                 lab.SetTextFont(42);
                 lab.DrawLatex(0.15, 0.92,
-                    Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
-                         Q2s[ccol].first, Q2s[ccol].second,
-                         Ts[r].first,     Ts[r].second));
+                              Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                                   Q2s[ccol].first, Q2s[ccol].second,
+                                   Ts[r].first,     Ts[r].second));
 
                 graph_points_xs(hayward.phi, hayward.err_stat, 20, black);
                 graph_points_xs(lee.phi,     lee.err_stat,     24, orange);
             }
+            // endif
         }
+        // endfor
     }
+    // endfor
 
     c->SaveAs(out_png.c_str());
 
@@ -1096,21 +1104,13 @@ static std::vector<BinRow_xs> load_lee_rows_xs(const std::string& lee_csv_path,
         r.tmax        = ToDouble_xs(cols[cols_lee.c_t_max]);
         r.phiavg      = ToDouble_xs(cols[cols_lee.c_phi_avg]);
 
-        r.lee_xs = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp")
-        );
-        r.lee_stat = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, stat. unc.")
-        );
-        r.lee_syst_up = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (up)")
-        );
-        r.lee_syst_dn = ToDouble_xs(
-            get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (down)")
-        );
+        r.lee_xs = ToDouble_xs(get_col_ref_xs(cols, H, "cross sections, ep->epg, exp"));
+        r.lee_stat = ToDouble_xs(get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, stat. unc."));
+        r.lee_syst_up = ToDouble_xs(get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (up)"));
+        r.lee_syst_dn = ToDouble_xs(get_col_ref_xs(cols, H, "cross sections, ep->epg, exp, syst. unc. (down)"));
 
-        r.my_xs      = 0.0;
-        r.my_xs_err  = 0.0;
+        r.my_xs     = 0.0;
+        r.my_xs_err = 0.0;
 
         if (bin_to_index.find(r.bin_index) != bin_to_index.end()) {
             fatal_xs("Duplicate bin index in Lee CSV: " + std::to_string(r.bin_index));
@@ -1120,6 +1120,7 @@ static std::vector<BinRow_xs> load_lee_rows_xs(const std::string& lee_csv_path,
         rows.push_back(r);
         ++kept_rows;
     }
+    // endfor
 
     info_xs("Lee CSV rows read: " + std::to_string(input_rows));
     info_xs("Lee valid rows kept (valid bin == 1): " + std::to_string(kept_rows));
@@ -1164,9 +1165,7 @@ static void fill_hayward_xs(const std::string& hayward_csv_path,
 
         int bin_index = ToInt_xs(get_col_ref_xs(cols, H, "bin index"));
         auto it = bin_to_index.find(bin_index);
-        if (it == bin_to_index.end()) {
-            continue;
-        }
+        if (it == bin_to_index.end()) continue;
 
         XsValue_xs xv = parse_xs_triplet_xs(
             get_col_ref_xs(cols, H, "normed cross sections, ep->epg, exp, Fa18, unpol")
@@ -1179,6 +1178,7 @@ static void fill_hayward_xs(const std::string& hayward_csv_path,
         }
         ++matched;
     }
+    // endfor
 
     info_xs("Hayward CSV rows read: " + std::to_string(input_rows));
     info_xs("Hayward valid rows matched to Lee bins: " + std::to_string(matched));
@@ -1203,7 +1203,7 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
 
     // 1) Load Lee CSV
     std::unordered_map<int,size_t> bin_to_index;
-    auto rows = load_lee_rows_xs(lee_csv_path, bin_to_index);
+    std::vector<BinRow_xs> rows = load_lee_rows_xs(lee_csv_path, bin_to_index);
 
     // 2) Load Hayward CSV (normed cross sections)
     fill_hayward_xs(hayward_csv_path, bin_to_index, rows);
@@ -1246,7 +1246,7 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
 
         const std::string title_counts =
             Form("Normed cross sections: 10.6 GeV   x_{B} #in [%.3g, %.3g]", xb_lo, xb_hi);
-        const std::string title_ratio  =
+        const std::string title_ratio =
             Form("Normed cross section ratio (Hayward/Lee): 10.6 GeV   x_{B} #in [%.3g, %.3g]",
                  xb_lo, xb_hi);
         const std::string title_staterr =
@@ -1256,21 +1256,19 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
         auto fetchBoth = make_fetchBoth(ix);
 
         const std::string f_counts =
-            (fs::path(output_base_dir) / Form("cross_section_counts_xB_%d.png",   ix)).string();
-        const std::string f_ratio  =
-            (fs::path(output_base_dir) / Form("cross_section_ratio_xB_%d.png",    ix)).string();
+            (fs::path(output_base_dir) / Form("cross_section_counts_xB_%d.png",  ix)).string();
+        const std::string f_ratio =
+            (fs::path(output_base_dir) / Form("cross_section_ratio_xB_%d.png",   ix)).string();
         const std::string f_staterr =
-            (fs::path(output_base_dir) / Form("cross_section_staterr_xB_%d.png",  ix)).string();
+            (fs::path(output_base_dir) / Form("cross_section_staterr_xB_%d.png", ix)).string();
 
-        draw_one_canvas_xs(title_counts,  Q2s, Ts, fetchBoth, f_counts,
-                           CANVAS_COUNTS,  ix);
-        draw_one_canvas_xs(title_ratio,   Q2s, Ts, fetchBoth, f_ratio,
-                           CANVAS_RATIO,   ix);
-        draw_one_canvas_xs(title_staterr, Q2s, Ts, fetchBoth, f_staterr,
-                           CANVAS_STATERR, ix);
+        draw_one_canvas_xs(title_counts,  Q2s, Ts, fetchBoth, f_counts,  CANVAS_COUNTS,  ix);
+        draw_one_canvas_xs(title_ratio,   Q2s, Ts, fetchBoth, f_ratio,   CANVAS_RATIO,   ix);
+        draw_one_canvas_xs(title_staterr, Q2s, Ts, fetchBoth, f_staterr, CANVAS_STATERR, ix);
 
         info_xs("Saved: " + f_counts);
         info_xs("Saved: " + f_ratio);
         info_xs("Saved: " + f_staterr);
     }
+    // endfor
 }

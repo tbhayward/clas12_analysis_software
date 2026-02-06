@@ -426,7 +426,78 @@ public class energy_loss_corrections {
         double A_phi = 0;
         double B_phi = 0;
         double C_phi = 0;
-        if (runnum >= 4763 && runnum <= 5419) { // RGA Fa18 Inb
+        if ((runnum >= 3031 && runnum <= 3087) || (runnum >= 3306 && runnum <= 3817) ||
+                (runnum >= 4003 && runnum <= 4325)) { // RGA Sp18 Inb
+
+            if (isForwardDetector && !isCentralDetector) {
+
+                A_p = 0.0146275 - 0.00124929 * theta + 3.64154e-05 * theta * theta;
+                B_p = -0.00743169 + 0.000458648 * theta - 6.45703e-06 * theta * theta;
+                C_p = 0.0175282 - 0.00128554 * theta + 3.5249e-05 * theta * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0;
+                B_theta = 0;
+                C_theta = 0;
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0;
+                B_phi = 0;
+                C_phi = 0;
+
+            } else if (!isForwardDetector && isCentralDetector) {
+
+                // A_p, B_p, C_p
+                A_p = -0.229055 + 0.00924571 * theta - 9.09927e-05 * theta * theta;
+                B_p = 0.371002 - 0.0146818 * theta + 0.000146548 * theta * theta;
+                C_p = -0.174565 + 0.00680452 * theta - 6.9e-05 * theta * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0;
+                B_theta = 0;
+                C_theta = 0; 
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0;
+                B_phi = 0;
+                C_phi = 0;
+            }
+        } else if ((runnum >= 3103 && runnum <= 3293) || (runnum >= 3820 && runnum <= 3987)) { // RGA Sp18 Out
+
+            if (isForwardDetector && !isCentralDetector) {
+
+                A_p = 0.00523188 - 9.43614e-05 * theta;
+                B_p = -0.00887291 + 0.000759277 * theta;
+                C_p = 0;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0;
+                B_theta = 0;
+                C_theta = 0;
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0;
+                B_phi = 0;
+                C_phi = 0;
+
+            } else if (!isForwardDetector && isCentralDetector) {
+
+                // A_p, B_p, C_p
+                A_p = -0.204359 + 0.00857339 * theta - 8.79867e-05 * theta * theta;
+                B_p = 0.402543 - 0.0168624 * theta + 0.000178539 * theta * theta;
+                C_p = -0.217865 + 0.00908787 * theta - 9.77617e-05 * theta * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0;
+                B_theta = 0;
+                C_theta = 0; 
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0;
+                B_phi = 0;
+                C_phi = 0;
+            }
+        } else if (runnum >= 4763 && runnum <= 5419) { // RGA Fa18 Inb
 
             if (isForwardDetector && !isCentralDetector) {
 
@@ -494,6 +565,41 @@ public class energy_loss_corrections {
 
             }
 
+        } else if (runnum >= 5674 && runnum <= 6000) { // RGK Fa18 Out
+
+            if (isForwardDetector && !isCentralDetector) {
+
+                A_p = -0.0174808 + 0.00082825 * theta;
+                B_p = 0.0455048 - 0.00173231 * theta;
+                C_p = -0.0252992 + 0.00117479 * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0;
+                B_theta = 0;
+                C_theta = 0;
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0;
+                B_phi = 0;
+                C_phi = 0;
+
+            } else if (!isForwardDetector && isCentralDetector) {
+
+                // A_p, B_p, C_p
+                A_p = 0.000381292 + 2.08512e-05 * theta;
+                B_p = -0.00428696 + 0.000278655 * theta;
+                C_p = 0.00455657 - 0.000263458 * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0;
+                B_theta = 0;
+                C_theta = 0; 
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0;
+                B_phi = 0;
+                C_phi = 0;
+            }
         } else if (runnum >= 6616 && runnum <= 6783) { // RGA Sp19 Inb
             if (isForwardDetector && !isCentralDetector) {
 
