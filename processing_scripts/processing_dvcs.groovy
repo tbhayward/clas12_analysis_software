@@ -219,7 +219,7 @@ public static void main(String[] args) {
 	                	((runnum >= 4003 && runnum <= 4325) || 
 	                	((runnum >= 4763 && runnum <= 5419) || 
 	                	((runnum >= 6616 && runnum <= 6783) || )) {
-	                	continue;
+	                	break;
 	                } 
 
 	                W = variables.W(); // hadronic mass
