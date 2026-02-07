@@ -257,12 +257,12 @@ public static void main(String[] args) {
 
 	                if (Q2 < 1.5 && 
 	                	((runnum >= 3031 && runnum <= 3087) || 
-	                	((runnum >= 3306 && runnum <= 3817) || 
-	                	((runnum >= 4003 && runnum <= 4325) || 
-	                	((runnum >= 4763 && runnum <= 5419) || 
-	                	((runnum >= 6616 && runnum <= 6783) )) {
+	                	(runnum >= 3306 && runnum <= 3817) || 
+	                	(runnum >= 4003 && runnum <= 4325) || 
+	                	(runnum >= 4763 && runnum <= 5419) || 
+	                	(runnum >= 6616 && runnum <= 6783)) {
 	                	continue;
-	                }
+	                } 
 
 	                W = variables.W(); // hadronic mass
 	                x = variables.x(); // Bjorken-x
