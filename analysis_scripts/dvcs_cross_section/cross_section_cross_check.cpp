@@ -37,7 +37,8 @@
 //         stat and syst(up) combined in quadrature on top of the central value.
 //   - For ratio canvases (Hayward/Lee):
 //       * Linear y-scale, fixed range [0, 2] for all subplots.
-//       * Thin dashed horizontal guide lines at y = 0.7 and y = 1.3.
+//       * Only horizontal guide lines at y = 0.7, 1.0, 1.3 (NO pad grid lines).
+//       * Those guide lines are slightly thicker.
 //       * Two sets of error bars per point:
 //           1) "stat": propagate stat errors from BOTH Hayward and Lee.
 //           2) "stat + Lee syst": propagate Hayward stat and Lee (stat+syst)
@@ -733,7 +734,7 @@ static void draw_one_canvas_xs(const std::string& title,
 
         TLine* lnY1 = new TLine(0.0, 0.0, 1.0, 0.0);
         lnY1->SetLineStyle(2);
-        lnY1->SetLineWidth(2);
+        lnY1->SetLineWidth(3); // slightly thicker (was 2)
         lnY1->SetLineColor(orange);
 
         legend_keepalive.push_back(mRatioStat);
@@ -787,7 +788,16 @@ static void draw_one_canvas_xs(const std::string& title,
     for (int r = 0; r < nrows; ++r) {
         for (int ccol = 0; ccol < ncols; ++ccol) {
             pGrid->cd(r * ncols + ccol + 1);
-            gPad->SetGrid(1, 1);
+
+            // IMPORTANT UPDATE:
+            // - Disable pad grid lines for ratio plots so only y=0.7,1.0,1.3 remain.
+            if (mode == CANVAS_RATIO) {
+                gPad->SetGrid(0, 0);
+            } else {
+                gPad->SetGrid(1, 1);
+            }
+            // endif
+
             gPad->SetTicks(1, 1);
             gPad->SetTopMargin(0.12);
             gPad->SetBottomMargin(0.18);
@@ -929,7 +939,7 @@ static void draw_one_canvas_xs(const std::string& title,
                 // endfor
 
                 ymin = 0.0;
-                ymax = 2.0;  // UPDATED: fixed ratio y-range [0, 2]
+                ymax = 2.0;  // fixed ratio y-range [0, 2]
 
                 TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -956,16 +966,16 @@ static void draw_one_canvas_xs(const std::string& title,
                                    Q2s[ccol].first, Q2s[ccol].second,
                                    Ts[r].first,     Ts[r].second));
 
-                // Thin dashed guide lines at y = 0.7 and y = 1.3 (requested)
+                // Only horizontal guide lines at y = 0.7, 1.0, 1.3 (slightly thicker)
                 TLine* guide07 = new TLine(0.0, 0.7, 360.0, 0.7);
                 guide07->SetLineStyle(2);
-                guide07->SetLineWidth(1);
+                guide07->SetLineWidth(2); // thicker (was 1)
                 guide07->SetLineColor(kGray + 1);
                 guide07->Draw("SAME");
 
                 TLine* guide13 = new TLine(0.0, 1.3, 360.0, 1.3);
                 guide13->SetLineStyle(2);
-                guide13->SetLineWidth(1);
+                guide13->SetLineWidth(2); // thicker (was 1)
                 guide13->SetLineColor(kGray + 1);
                 guide13->Draw("SAME");
 
@@ -987,10 +997,10 @@ static void draw_one_canvas_xs(const std::string& title,
                     gTot->SetMarkerSize(0.0);
                     gTot->Draw("E1 SAME");
 
-                    // Existing y = 1 line (kept)
+                    // y = 1 line (kept) - make slightly thicker too
                     TLine* one = new TLine(0.0, 1.0, 360.0, 1.0);
                     one->SetLineStyle(2);
-                    one->SetLineWidth(2);
+                    one->SetLineWidth(3); // thicker (was 2)
                     one->SetLineColor(orange);
                     one->Draw("SAME");
                 }
