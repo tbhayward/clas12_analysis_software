@@ -254,6 +254,12 @@ class CalibrationScript {
             println("There are $hipo_list.size files.")
         }
 
+        // Set the beam energy based on the provided 4th argument or default to 10.6
+		double beam_energy = args.length < 4 ? 10.6 : Double.parseDouble(args[3]);
+		if (args.length < 4) {
+		    println("No beam energy provided, defaulting to 10.6 GeV.");
+		}
+
         // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
         // load my kinematic fitter/PID
@@ -337,9 +343,9 @@ class CalibrationScript {
 			        int num_p2 = research_Event.countByPid(22); 
 
 	        		// supply runnum and boolean for radiative simulation or not
-					BeamEnergy Eb = new BeamEnergy(research_Event, config_run, false);
+					BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 					// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
-					double b_energy = (config_run == 11) ? 10.604 : Eb.Eb();
+					double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 		            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 						2212, 0, 22, 0, b_energy);
 		            // this is my class for defining all relevant kinematic variables
