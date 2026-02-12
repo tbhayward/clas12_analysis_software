@@ -261,26 +261,23 @@ class CalibrationScript {
 		// set filter for final states
 		EventFilter filter = new EventFilter("11:2212:22:Xn");
 
-        // instantiate QADB
-		QADB qa = new QADB()
+        // setup QA database
+		QADB qa = new QADB("latest");
 		qa.checkForDefect('TotalOutlier')    
 		qa.checkForDefect('TerminalOutlier')
 		qa.checkForDefect('MarginalOutlier')
 		qa.checkForDefect('SectorLoss')
-		qa.checkForDefect('LowLiveTime')
+		// qa.checkForDefect('LowLiveTime')
 		qa.checkForDefect('Misc')
 		qa.checkForDefect('ChargeHigh')
 		qa.checkForDefect('ChargeNegative')
 		qa.checkForDefect('ChargeUnknown')
 		qa.checkForDefect('PossiblyNoBeam')
 		[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
-		 	5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
-	  		5160, 5163, 5165, 5166, 5167, 5168, 5169, 5180,
-	  		5181, 5182, 5183, 5400, 5448, 5495, 5496, 5505,
-	  		5567, 5610, 5617, 5621, 5623, 6736, 6737, 6738,
+	  		6736, 6737, 6738,
 	  		6739, 6740, 6741, 6742, 6743, 6744, 6746, 6747,
 	  		6748, 6749, 6750, 6751, 6753, 6754, 6755, 6756,
-	  		6757, 											 // RGA runs ^
+	  		6757, 											 // RGA runs FADC failure sector 6
 	  		16194, 16089, 16185, 16308, 16184, 16307, 16309, // RGC Su22 He/ET
 	  		16872, 16975, 									 // RGC Fa22 He/ET
 	  		17763, 17764, 17765, 17766, 17767, 17768,		 // RGC Sp23 He/ET
@@ -322,13 +319,14 @@ class CalibrationScript {
                 // collect info for QA
                 config_run = run_Bank.getInt('run', 0)
                 if (config_run > 16600 && config_run < 16700) break; // Hall C bleedthrough
+                if (config_run == 5247) break; // sector 4 loss, should be removed by qa but maybe early events need it too?
+		    	if (config_run == 5345) break; // beam lowered to 20 nA for part of the run
                 config_event = run_Bank.getInt('event', 0)
 
                 PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
                 // boolean process_event = filter.isValid(research_Event)
-                boolean process_event = (config_run == 11 || config_run < 5020 || 
-		    		qa.pass(config_run, config_event));
+                boolean process_event = (config_run == 11 ||  qa.pass(config_run, config_event));
 		    	if (config_run > 17768) process_event == false; // outbending RGC Sp23
 		    	if (!filter.isValid(research_Event)) process_event = false;
 
@@ -357,13 +355,13 @@ class CalibrationScript {
 		                if (open_angle_ep2 <= 5) continue;
 
 		                Mx2 = variables.Mx2(); // missing mass
-		                if (Mx2 < -0.006 || Mx2 > 0.006) continue;
+		                if (Mx2 < -0.030 || Mx2 > 0.030) continue;
 
 		                Mx2_1 = variables.Mx2_1(); // missing mass calculated with p1
-		                if (Mx2_1 < -0.45 || Mx2_1 > 0.45) continue;
+		                if (Mx2_1 < -0.4 || Mx2_1 > 0.4) continue;
 
 		                Mx2_2 = variables.Mx2_2(); 
-		                if (Mx2_2 < 0.4 || Mx2_2 > 1.65) continue;
+		                if (Mx2_2 < 0.0 || Mx2_2 > 2.0) continue;
 
 		                xF = variables.xF(); // Feynman-x
 		                if (xF < -0.12 || xF > 0.12) continue;
