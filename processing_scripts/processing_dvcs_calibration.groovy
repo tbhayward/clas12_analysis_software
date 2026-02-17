@@ -263,7 +263,8 @@ class CalibrationScript {
         // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
         // load my kinematic fitter/PID
-		GenericKinematicFitter fitter = new dvcs_fitter(10.6041);
+		// GenericKinematicFitter fitter = new dvcs_fitter(10.6041);
+		GenericKinematicFitter fitter = new event_builder_fitter(10.6041);
 		// set filter for final states
 		EventFilter filter = new EventFilter("11:2212:22:Xn");
 
