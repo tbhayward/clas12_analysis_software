@@ -38,7 +38,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 9;
+constexpr int data_set = 10;
 
 struct DataSetConfig {
     std::string name;
@@ -133,31 +133,13 @@ const std::vector<DataSetConfig> dataSetConfigs = {
         "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_ET_2.root"
     },
     {
-        "RGC_Su22_mx2_test",
-        0.7624, 0.0747, 0.0390, 0.0249, 0.0989,
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_su22_inb_NH3_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_su22_inb_C_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_su22_inb_CH2_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_su22_inb_He_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_su22_inb_ET_2.root"
-    },
-    {
-        "RGC_Fa22_mx2_test",
-        0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_NH3_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_C_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_CH2_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_He_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_fa22_inb_ET_2.root"
-    },
-    {
-        "RGC_Sp23_mx2_test",
+        "RGC_Sp23_eppi-",
         0.4543, 0.1509, 0.1966, 0.1205, 0.0777,
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_sp23_inb_NH3_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_sp23_inb_C_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_sp23_inb_CH2_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_sp23_inb_He_2.root",
-        "/volatile/clas12/thayward/rgc_enpi+_Mx2_study/rgc_sp23_inb_ET_2.root"
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_ND3_epi-_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_C_epi-_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_CD2_epi-_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_He_epi-_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_ET_epi-_2.root"
     },
 };
 
