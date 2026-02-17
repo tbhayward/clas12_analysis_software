@@ -17,12 +17,15 @@ Layout (2x3):
 DATA histogram: black
 MC histogram:   red
 
-IMPORTANT UPDATE:
-  - Histograms are normalized to their integral (each period + dataset separately).
+Histograms are normalized to their integral (each period + dataset separately).
 
 Parallel processing:
   - Up to 5 workers HARD LIMIT.
   - We process ALL data files in parallel, then ALL mc files in parallel.
+
+UPDATE:
+  - X axis range is now fixed to [-10, 10] (cm).
+  - Histogram range is also [-10, 10] so the integral corresponds to what you see.
 
 Output:
   output/vz_electron.png
@@ -52,8 +55,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 TREE_NAME = "PhysicsEvents"  # set this to the TTree name in your ROOT files
 
 # Histogram binning for particle_vz
-VZ_MIN = -20.0
-VZ_MAX = 20.0
+VZ_MIN = -10.0
+VZ_MAX = 10.0
 N_BINS = 200
 
 # Hard limit on workers
@@ -124,7 +127,6 @@ def validate_inputs() -> None:
         fatal(f"Invalid MAX_WORKERS={MAX_WORKERS}, must be > 0")
     #endif
 
-    # Ensure files exist
     for label, path in DATA_FILES.items():
         if not os.path.isfile(path):
             fatal(f"Missing DATA file for '{label}': {path}")
@@ -136,7 +138,6 @@ def validate_inputs() -> None:
         #endif
     #endfor
 
-    # Ensure period keys match exactly
     data_keys = set(DATA_FILES.keys())
     mc_keys = set(MC_FILES.keys())
     if data_keys != mc_keys:
@@ -149,7 +150,6 @@ def validate_inputs() -> None:
         )
     #endif
 
-    # Ensure PANEL_POS covers all periods
     for k in DATA_FILES.keys():
         if k not in PANEL_POS:
             fatal(f"PANEL_POS missing placement for period '{k}'")
@@ -161,10 +161,6 @@ def validate_inputs() -> None:
 
 
 def normalize_to_integral(counts: np.ndarray) -> np.ndarray:
-    """
-    Normalize histogram counts to unit integral.
-    If integral is zero, returns an array of zeros (fail-safe, deterministic).
-    """
     integral = float(np.sum(counts))
     if integral <= 0.0:
         return np.zeros_like(counts, dtype=np.float64)
@@ -173,19 +169,6 @@ def normalize_to_integral(counts: np.ndarray) -> np.ndarray:
 
 
 def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, int, Hist1D]:
-    """
-    Worker function (must be top-level for multiprocessing pickling).
-
-    args = (period_label, root_path, pid, tree_name)
-
-    Returns:
-      (period_label, root_path, pid, Hist1D)
-
-    NOTE:
-      - The returned histogram counts are normalized to unit integral.
-      - n_selected is still the raw number of selected entries (pre-normalization),
-        so legends can show the statistics.
-    """
     period_label, root_path, pid, tree_name = args
 
     try:
@@ -238,13 +221,6 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
 
 
 def run_parallel_hists(file_map: Dict[str, str], pid: int, tree_name: str) -> Dict[str, Hist1D]:
-    """
-    Compute normalized histograms for all periods in file_map for a given pid.
-    Parallelized with a hard max of MAX_WORKERS.
-
-    Returns:
-      dict period_label -> Hist1D
-    """
     items = sorted(file_map.items(), key=lambda kv: kv[0])
     tasks = [(label, path, pid, tree_name) for (label, path) in items]
 
@@ -281,14 +257,9 @@ def plot_2x3_canvas(
     mc_hists: Dict[str, Hist1D],
     outpath: str,
 ) -> None:
-    """
-    Make a 2x3 matplotlib figure with overlays (DATA vs MC) for each period.
-    Counts are already normalized to unit integral.
-    """
     fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=False)
     fig.suptitle(title, fontsize=18)
 
-    # Turn off all axes first
     for r in range(2):
         for c in range(3):
             axes[r, c].axis("off")
@@ -318,15 +289,11 @@ def plot_2x3_canvas(
         ax.set_xlabel("particle_vz (cm)", fontsize=12)
         ax.set_ylabel("normalized counts", fontsize=12)
         ax.grid(True, alpha=0.25)
-
         ax.legend(loc="upper right", fontsize=10, frameon=True)
-
-        # Optional: ensure y starts at 0 for normalized plots
         ax.set_ylim(bottom=0.0)
 
     #endfor
 
-    # Keep top-right empty
     axes[0, 2].axis("off")
 
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
