@@ -385,7 +385,7 @@ class CalibrationScript {
 
                     event_helicity = event_Bank.getInt('helicity',0);
 
-
+                    int num_elec = 0; int num_photon = 0; int num_proton = 0;
                     for (int particle_Index = 0; particle_Index < rec_Bank.rows(); 
                     	particle_Index++) {
 
@@ -393,6 +393,14 @@ class CalibrationScript {
                         if (particle_pid == 0 || particle_pid == 45) { continue; }
                         // if (particle_pid == 0 || particle_pid == 45 || particle_pid == 211 || particle_pid == -211 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2112) { continue; }
                         // if (particle_pid == 0 || particle_pid == 45 || particle_pid == 11 || particle_pid == -11 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2212 || particle_pid == 2112) { continue; }
+                        
+                        if (particle_pid == 11) { num_elec++; }
+                        if (particle_pid == 22) { num_photon++; }
+                        if (particle_pid == 2212) { num_proton++; }
+                        if (num_elec > 1 || num_photon > 1 || num_proton > 1) {
+                        	continue;
+                        }
+
                         particle_px = rec_Bank.getFloat("px", particle_Index);
                         particle_py = rec_Bank.getFloat("py", particle_Index);
                         particle_pz = rec_Bank.getFloat("pz", particle_Index);
