@@ -17,15 +17,27 @@ Layout (2x3):
 DATA histogram: black
 MC histogram:   red
 
-Histograms are normalized to their integral (each period + dataset separately).
+Histogram normalization:
+  - Each histogram is normalized to its integral (unit area) over the plotted range.
 
 Parallel processing:
   - Up to 5 workers HARD LIMIT.
   - We process ALL data files in parallel, then ALL mc files in parallel.
 
-UPDATE:
-  - X axis range is now fixed to [-10, 10] (cm).
-  - Histogram range is also [-10, 10] so the integral corresponds to what you see.
+Requested features implemented:
+  1) Draw vertical cut lines for your pass2-derived vertex cuts (per RGA period).
+     - For electron (pid=11): use the charge<0 window from your Java (per period).
+     - For proton   (pid=2212): use the charge>0 window from your Java (per period).
+     - For photon   (pid=22): Java falls through to the default window (-9, 2),
+       since charge==0 does not enter charge>0 or charge<0 blocks.
+  2) Legend includes the percentage of selected events inside the cut window.
+     - Percentage is computed on the unbinned selected sample (after skipping vz==0 exactly).
+  3) Skip events with vz == 0 EXACTLY.
+     - Excluded from BOTH total selected count AND in-cut count (for data and mc).
+
+X axis range:
+  - Fixed to [-10, 10] (cm).
+  - Histogram range is also [-10, 10] so unit-normalization corresponds to what you see.
 
 Output:
   output/vz_electron.png
@@ -93,6 +105,51 @@ PANEL_POS = {
     "Sp19 Inb": (1, 2),
 }
 
+# -----------------------------------------------------------------------------
+# PASS2 DERIVED VERTEX CUTS (mapped to the 5 RGA periods)
+#
+# From your Java:
+#   - Sp18 Inb: runnum 4003..4325
+#   - Sp18 Out: runnum ranges 3173..3293 OR 3863..3987
+#   - Fa18 Inb AND Sp19 Inb share the same cut block (runnum 5032..5419 OR 6616..6783)
+#   - Fa18 Out: runnum 5422..5666
+#
+# For charge > 0 (proton):
+#   - Sp18 Inb:  (-7.879,  1.515)
+#   - Sp18 Out:  (-6.6667, 2.7273)
+#   - Fa18 Inb:  (-8.485,  0.606)
+#   - Fa18 Out:  (-6.970,  1.818)
+#   - Sp19 Inb:  (-8.485,  0.606)  (same as Fa18 Inb)
+#
+# For charge < 0 (electron):
+#   - Sp18 Inb:  (-6.0606, 1.8182)
+#   - Sp18 Out:  (-7.273,  0.9091)
+#   - Fa18 Inb:  (-6.364,  1.515)
+#   - Fa18 Out:  (-7.879,  0.303)
+#   - Sp19 Inb:  (-6.364,  1.515)  (same as Fa18 Inb)
+#
+# For charge == 0 (photon), your Java falls through to default:
+#   return -9 < vz && vz < 2
+# -----------------------------------------------------------------------------
+
+VTX_CUTS_POS = {
+    "Sp18 Inb": (-7.8790, 1.5150),
+    "Sp18 Out": (-6.6667, 2.7273),
+    "Fa18 Inb": (-8.4850, 0.6060),
+    "Fa18 Out": (-6.9700, 1.8180),
+    "Sp19 Inb": (-8.4850, 0.6060),
+}
+
+VTX_CUTS_NEG = {
+    "Sp18 Inb": (-6.0606, 1.8182),
+    "Sp18 Out": (-7.2730, 0.9091),
+    "Fa18 Inb": (-6.3640, 1.5150),
+    "Fa18 Out": (-7.8790, 0.3030),
+    "Sp19 Inb": (-6.3640, 1.5150),
+}
+
+VTX_CUT_FALLBACK_NEUTRAL = (-9.0, 2.0)
+
 
 # -----------------------------------------------------------------------------
 # INTERNALS
@@ -103,11 +160,16 @@ class Hist1D:
     counts: np.ndarray
     edges: np.ndarray
     n_selected: int
+    n_in_cut: int
+    frac_in_cut: float
+    cut_low: float
+    cut_high: float
 
 
 def fatal(msg: str) -> None:
     sys.stderr.write(f"\nFATAL: {msg}\n")
     sys.exit(1)
+    #endif
 
 
 def ensure_outdir(path: str) -> None:
@@ -154,7 +216,11 @@ def validate_inputs() -> None:
         if k not in PANEL_POS:
             fatal(f"PANEL_POS missing placement for period '{k}'")
         #endif
+        if k not in VTX_CUTS_POS or k not in VTX_CUTS_NEG:
+            fatal(f"Vertex cut maps missing period '{k}'")
+        #endif
     #endfor
+
     if (0, 2) in PANEL_POS.values():
         fatal("PANEL_POS should NOT assign any period to (0,2); that panel is reserved as empty.")
     #endif
@@ -168,7 +234,26 @@ def normalize_to_integral(counts: np.ndarray) -> np.ndarray:
     return counts.astype(np.float64) / integral
 
 
+def cut_window_for_pid_and_period(pid: int, period_label: str) -> Tuple[float, float]:
+    if pid == 11:
+        return VTX_CUTS_NEG[period_label]
+    elif pid == 2212:
+        return VTX_CUTS_POS[period_label]
+    elif pid == 22:
+        return VTX_CUT_FALLBACK_NEUTRAL
+    #endif
+    return VTX_CUT_FALLBACK_NEUTRAL
+
+
 def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, int, Hist1D]:
+    """
+    Worker function.
+
+    - Select by pid.
+    - Require finite vz and vz != 0 EXACTLY (skipped from both total and in-cut).
+    - Histogram in [VZ_MIN, VZ_MAX], then normalize to unit area.
+    - Compute n_in_cut and frac_in_cut using the pid/period cut window on the selected sample.
+    """
     period_label, root_path, pid, tree_name = args
 
     try:
@@ -195,16 +280,31 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
             pids = arrays["particle_pid"]
             vz = arrays["particle_vz"]
 
-            mask = (pids == pid) & np.isfinite(vz)
+            mask = (pids == pid) & np.isfinite(vz) & (vz != 0.0)
             vz_sel = vz[mask]
 
             counts_raw, edges = np.histogram(vz_sel, bins=N_BINS, range=(VZ_MIN, VZ_MAX))
             counts_norm = normalize_to_integral(counts_raw)
 
+            cut_low, cut_high = cut_window_for_pid_and_period(pid, period_label)
+
+            if vz_sel.size > 0:
+                in_cut = (vz_sel > cut_low) & (vz_sel < cut_high)
+                n_in_cut = int(np.count_nonzero(in_cut))
+                frac_in_cut = float(n_in_cut) / float(vz_sel.size)
+            else:
+                n_in_cut = 0
+                frac_in_cut = 0.0
+            #endif
+
             h = Hist1D(
                 counts=counts_norm.astype(np.float64),
                 edges=edges.astype(np.float64),
                 n_selected=int(vz_sel.size),
+                n_in_cut=n_in_cut,
+                frac_in_cut=frac_in_cut,
+                cut_low=float(cut_low),
+                cut_high=float(cut_high),
             )
             return (period_label, root_path, pid, h)
 
@@ -281,19 +381,39 @@ def plot_2x3_canvas(
             fatal(f"Histogram edges mismatch for period '{period_label}'")
         #endif
 
-        ax.step(centers, dh.counts, where="mid", color="black", linewidth=1.2, label=f"data (N={dh.n_selected})")
-        ax.step(centers, mh.counts, where="mid", color="red", linewidth=1.2, label=f"mc (N={mh.n_selected})")
+        # Use the period cut window (same for data/mc display; percent computed separately)
+        cut_low = dh.cut_low
+        cut_high = dh.cut_high
+
+        data_label = f"data: {100.0 * dh.frac_in_cut:.2f}% in-cut (N={dh.n_selected})"
+        mc_label = f"mc: {100.0 * mh.frac_in_cut:.2f}% in-cut (N={mh.n_selected})"
+
+        ax.step(centers, dh.counts, where="mid", color="black", linewidth=1.2, label=data_label)
+        ax.step(centers, mh.counts, where="mid", color="red", linewidth=1.2, label=mc_label)
+
+        # Cut lines (requested)
+        ax.axvline(cut_low, color="black", linestyle="--", linewidth=1.0)
+        ax.axvline(cut_high, color="black", linestyle="--", linewidth=1.0)
 
         ax.set_title(period_label, fontsize=13)
         ax.set_xlim(VZ_MIN, VZ_MAX)
         ax.set_xlabel("particle_vz (cm)", fontsize=12)
         ax.set_ylabel("normalized counts", fontsize=12)
         ax.grid(True, alpha=0.25)
-        ax.legend(loc="upper right", fontsize=10, frameon=True)
+        ax.legend(loc="upper right", fontsize=9, frameon=True)
         ax.set_ylim(bottom=0.0)
 
+        ax.text(
+            0.02,
+            0.92,
+            f"cut: ({cut_low:.3f}, {cut_high:.3f}) (cm)",
+            transform=ax.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+        )
     #endfor
 
+    # Keep top-right empty
     axes[0, 2].axis("off")
 
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
@@ -316,7 +436,7 @@ def main() -> None:
         mc_hists = run_parallel_hists(MC_FILES, pid, TREE_NAME)
 
         outpath = os.path.join(OUTDIR, fname)
-        title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized]"
+        title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized, vz!=0]"
         plot_2x3_canvas(title, data_hists, mc_hists, outpath)
 
         print(f"Wrote: {outpath}")
