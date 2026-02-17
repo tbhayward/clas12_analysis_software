@@ -17,6 +17,9 @@ Layout (2x3):
 DATA histogram: black
 MC histogram:   red
 
+IMPORTANT UPDATE:
+  - Histograms are normalized to their integral (each period + dataset separately).
+
 Parallel processing:
   - Up to 5 workers HARD LIMIT.
   - We process ALL data files in parallel, then ALL mc files in parallel.
@@ -32,10 +35,9 @@ Dependencies:
 
 import os
 import sys
-import math
 import traceback
 from dataclasses import dataclass
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple
 
 import numpy as np
 import uproot
@@ -87,6 +89,7 @@ PANEL_POS = {
     "Fa18 Out": (1, 1),
     "Sp19 Inb": (1, 2),
 }
+
 
 # -----------------------------------------------------------------------------
 # INTERNALS
@@ -157,6 +160,18 @@ def validate_inputs() -> None:
     #endif
 
 
+def normalize_to_integral(counts: np.ndarray) -> np.ndarray:
+    """
+    Normalize histogram counts to unit integral.
+    If integral is zero, returns an array of zeros (fail-safe, deterministic).
+    """
+    integral = float(np.sum(counts))
+    if integral <= 0.0:
+        return np.zeros_like(counts, dtype=np.float64)
+    #endif
+    return counts.astype(np.float64) / integral
+
+
 def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, int, Hist1D]:
     """
     Worker function (must be top-level for multiprocessing pickling).
@@ -165,10 +180,14 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
 
     Returns:
       (period_label, root_path, pid, Hist1D)
+
+    NOTE:
+      - The returned histogram counts are normalized to unit integral.
+      - n_selected is still the raw number of selected entries (pre-normalization),
+        so legends can show the statistics.
     """
     period_label, root_path, pid, tree_name = args
 
-    # Open ROOT and read arrays
     try:
         with uproot.open(root_path) as f:
             if tree_name not in f:
@@ -179,7 +198,6 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
 
             tree = f[tree_name]
 
-            # Strict: require these branches
             required = ["particle_pid", "particle_vz"]
             for br in required:
                 if br not in tree.keys():
@@ -194,18 +212,20 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
             pids = arrays["particle_pid"]
             vz = arrays["particle_vz"]
 
-            # Selection
             mask = (pids == pid) & np.isfinite(vz)
             vz_sel = vz[mask]
 
-            # Histogram
-            counts, edges = np.histogram(vz_sel, bins=N_BINS, range=(VZ_MIN, VZ_MAX))
-            h = Hist1D(counts=counts.astype(np.float64), edges=edges.astype(np.float64), n_selected=int(vz_sel.size))
+            counts_raw, edges = np.histogram(vz_sel, bins=N_BINS, range=(VZ_MIN, VZ_MAX))
+            counts_norm = normalize_to_integral(counts_raw)
 
+            h = Hist1D(
+                counts=counts_norm.astype(np.float64),
+                edges=edges.astype(np.float64),
+                n_selected=int(vz_sel.size),
+            )
             return (period_label, root_path, pid, h)
 
     except Exception as e:
-        # Include traceback info for debugging
         tb = traceback.format_exc()
         raise RuntimeError(
             f"Failed processing file:\n"
@@ -219,7 +239,7 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
 
 def run_parallel_hists(file_map: Dict[str, str], pid: int, tree_name: str) -> Dict[str, Hist1D]:
     """
-    Compute histograms for all periods in file_map for a given pid.
+    Compute normalized histograms for all periods in file_map for a given pid.
     Parallelized with a hard max of MAX_WORKERS.
 
     Returns:
@@ -246,7 +266,6 @@ def run_parallel_hists(file_map: Dict[str, str], pid: int, tree_name: str) -> Di
         #endfor
     #endwith
 
-    # Fail fast if anything missing
     for period_label in file_map.keys():
         if period_label not in out:
             fatal(f"Missing histogram result for period '{period_label}' (pid={pid})")
@@ -258,31 +277,28 @@ def run_parallel_hists(file_map: Dict[str, str], pid: int, tree_name: str) -> Di
 
 def plot_2x3_canvas(
     title: str,
-    pid_label: str,
     data_hists: Dict[str, Hist1D],
     mc_hists: Dict[str, Hist1D],
     outpath: str,
 ) -> None:
     """
     Make a 2x3 matplotlib figure with overlays (DATA vs MC) for each period.
+    Counts are already normalized to unit integral.
     """
     fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=False)
     fig.suptitle(title, fontsize=18)
 
-    # Turn off all axes first (we'll enable the used ones, plus keep empty top-right off)
+    # Turn off all axes first
     for r in range(2):
         for c in range(3):
             axes[r, c].axis("off")
         #endfor
     #endfor
 
-    # Common bin centers for step plotting
-    # (edges length N+1, centers length N)
     any_period = next(iter(data_hists.keys()))
     edges = data_hists[any_period].edges
     centers = 0.5 * (edges[:-1] + edges[1:])
 
-    # Plot each period
     for period_label, (r, c) in PANEL_POS.items():
         ax = axes[r, c]
         ax.axis("on")
@@ -290,26 +306,27 @@ def plot_2x3_canvas(
         dh = data_hists[period_label]
         mh = mc_hists[period_label]
 
-        # Sanity: edges must match
         if dh.edges.shape != mh.edges.shape or not np.allclose(dh.edges, mh.edges):
             fatal(f"Histogram edges mismatch for period '{period_label}'")
         #endif
 
-        # Step plots
         ax.step(centers, dh.counts, where="mid", color="black", linewidth=1.2, label=f"data (N={dh.n_selected})")
         ax.step(centers, mh.counts, where="mid", color="red", linewidth=1.2, label=f"mc (N={mh.n_selected})")
 
         ax.set_title(period_label, fontsize=13)
         ax.set_xlim(VZ_MIN, VZ_MAX)
         ax.set_xlabel("particle_vz (cm)", fontsize=12)
-        ax.set_ylabel("counts", fontsize=12)
+        ax.set_ylabel("normalized counts", fontsize=12)
         ax.grid(True, alpha=0.25)
 
         ax.legend(loc="upper right", fontsize=10, frameon=True)
 
+        # Optional: ensure y starts at 0 for normalized plots
+        ax.set_ylim(bottom=0.0)
+
     #endfor
 
-    # Explicitly keep top-right empty
+    # Keep top-right empty
     axes[0, 2].axis("off")
 
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
@@ -321,7 +338,6 @@ def main() -> None:
     validate_inputs()
     ensure_outdir(OUTDIR)
 
-    # Particle definitions
     particles = [
         (11, "electron", "vz_electron.png"),
         (2212, "proton", "vz_proton.png"),
@@ -329,16 +345,12 @@ def main() -> None:
     ]
 
     for pid, pid_label, fname in particles:
-        # Compute DATA in parallel (all five periods at once)
         data_hists = run_parallel_hists(DATA_FILES, pid, TREE_NAME)
-
-        # Compute MC in parallel (all five periods at once)
         mc_hists = run_parallel_hists(MC_FILES, pid, TREE_NAME)
 
-        # Plot canvas
         outpath = os.path.join(OUTDIR, fname)
-        title = f"Vertex z comparison: {pid_label} (pid={pid})"
-        plot_2x3_canvas(title, pid_label, data_hists, mc_hists, outpath)
+        title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized]"
+        plot_2x3_canvas(title, data_hists, mc_hists, outpath)
 
         print(f"Wrote: {outpath}")
     #endfor
