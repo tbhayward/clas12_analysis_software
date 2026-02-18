@@ -41,7 +41,7 @@ std::vector<std::string> split(const std::string &line) {
     std::string item;
     while(std::getline(ss, item, ',')) {
         out.push_back(item);
-    } //endwhile
+    }
     return out;
 }
 
@@ -85,6 +85,7 @@ bool make_pass1_phi_panels(const std::string &csv_path,
         rows.push_back(r);
     }
 
+    // Updated bins: 64 instead of 63
     std::vector<int> wanted_bins = {64,65,66,67,68};
     std::map<int, std::vector<Row>> grouped;
 
@@ -100,153 +101,138 @@ bool make_pass1_phi_panels(const std::string &csv_path,
     std::filesystem::create_directories("output/pass1_paper_plots");
 
     TCanvas *c = new TCanvas("c_pass1","",1500,900);
-    c->Divide(3,2,0.0,0.0);
+    c->Divide(3,2,0.0,0.0);  // zero spacing
 
     int pad_index = 1;
 
     for(int row=0; row<2; row++) {
         for(int col=0; col<3; col++) {
 
-            if(pad_index > 5) break;
-
-            int bin = wanted_bins[pad_index-1];
-
             c->cd(pad_index);
             TPad *p = (TPad*)gPad;
 
-            p->SetLeftMargin(col==0 ? 0.18 : 0.05);
-            p->SetRightMargin(0.02);
-            p->SetBottomMargin(row==1 ? 0.18 : 0.05);
-            p->SetTopMargin(0.05);
+            // Tight margins so pads touch
+            p->SetLeftMargin(col==0 ? 0.17 : 0.01);
+            p->SetRightMargin(0.01);
+            p->SetTopMargin(0.01);
+            p->SetBottomMargin(row==1 ? 0.16 : 0.01);
 
-            auto &vec = grouped[bin];
-            if(vec.empty()) continue;
+            if(pad_index <= 5) {
 
-            TH1F *frame = new TH1F(Form("frame_%d",bin),"",100,0,360);
-            frame->SetMinimum(1e-3);
-            frame->SetMaximum(1.0);
-            frame->Draw();
+                int bin = wanted_bins[pad_index-1];
+                auto &vec = grouped[bin];
+                if(vec.empty()) {
+                    pad_index++;
+                    continue;
+                }
 
-            p->SetLogy();
+                TH1F *frame = new TH1F(Form("frame_%d",bin),"",100,0,360);
+                frame->SetMinimum(1e-3);
+                frame->SetMaximum(1.0);
+                frame->Draw();
 
-            frame->GetXaxis()->SetTitleSize(0.07);
-            frame->GetYaxis()->SetTitleSize(0.07);
-            frame->GetXaxis()->CenterTitle();
-            frame->GetYaxis()->CenterTitle();
+                p->SetLogy();
 
-            if(row==1)
-                frame->GetXaxis()->SetTitle("#phi (^{#circ})");
+                frame->GetXaxis()->SetTitleSize(0.075);
+                frame->GetYaxis()->SetTitleSize(0.075);
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
 
-            if(col==0)
-                frame->GetYaxis()->SetTitle(
-                    "#frac{d#sigma_{ep#rightarrow e'p'#gamma}}{dx_{B} dQ^{2} d|t| d#phi} (nb/GeV^{4})"
-                );
+                // X-axis labels only on bottom row of each column
+                if(row==1 || pad_index==3)
+                    frame->GetXaxis()->SetTitle("#phi (^{#circ})");
 
-            int N = vec.size();
-            TGraphErrors *g_stat = new TGraphErrors(N);
-            TGraphErrors *g_syst = new TGraphErrors(N);
+                if(col==0)
+                    frame->GetYaxis()->SetTitle(
+                        "#frac{d#sigma_{ep#rightarrow e'p'#gamma}}{dx_{B} dQ^{2} d|t| d#phi} (nb/GeV^{4})"
+                    );
 
-            for(int i=0;i<N;i++) {
-                g_stat->SetPoint(i, vec[i].phi, vec[i].val);
-                g_stat->SetPointError(i, 0, vec[i].stat);
+                int N = vec.size();
+                TGraphErrors *g_stat = new TGraphErrors(N);
+                TGraphErrors *g_syst = new TGraphErrors(N);
 
-                g_syst->SetPoint(i, vec[i].phi, vec[i].val);
-                g_syst->SetPointError(i, 0, vec[i].syst);
+                for(int i=0;i<N;i++) {
+                    g_stat->SetPoint(i, vec[i].phi, vec[i].val);
+                    g_stat->SetPointError(i, 0, vec[i].stat);
+
+                    g_syst->SetPoint(i, vec[i].phi, vec[i].val);
+                    g_syst->SetPointError(i, 0, vec[i].syst);
+                }
+
+                g_syst->SetFillColor(kGray);
+                g_syst->SetLineColor(kGray);
+                g_syst->Draw("E2 SAME");
+
+                g_stat->SetMarkerStyle(20);
+                g_stat->Draw("PE SAME");
+
+                // Fit
+                TF1 *fit = new TF1(Form("fit_%d",bin),
+                    "[0]*(1 + [1]*cos(x*TMath::DegToRad()))",
+                    0.0, 360.0);
+
+                fit->SetParameters(vec[0].val, 0.1);
+                fit->SetLineColor(kBlack);
+                fit->SetLineStyle(2);
+                fit->SetLineWidth(2);
+
+                g_stat->Fit(fit,"Q");
+                fit->Draw("SAME");
+
+                // Models
+                const int nphi=20;
+                TGraph *g_bh   = new TGraph(nphi);
+                TGraph *g_vgg  = new TGraph(nphi);
+                TGraph *g_km15 = new TGraph(nphi);
+
+                for(int i=0;i<nphi;i++) {
+                    double phi = 360.0*i/(nphi-1);
+                    g_bh->SetPoint(i,phi,
+                        vgg_bh_only(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam));
+                    g_vgg->SetPoint(i,phi,
+                        vgg_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity));
+                    g_km15->SetPoint(i,phi,
+                        km15_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity));
+                }
+
+                g_bh->SetLineColor(kRed);
+                g_vgg->SetLineColor(kOrange+7);
+                g_km15->SetLineColor(kCyan+2);
+
+                g_bh->Draw("L SAME");
+                g_vgg->Draw("L SAME");
+                g_km15->Draw("L SAME");
+
+                TLatex tl;
+                tl.SetNDC();
+                tl.SetTextAlign(22);
+                tl.SetTextSize(0.06);
+
+                // Shifted slightly down
+                tl.DrawLatex(0.5,0.88,
+                    Form("|t| = %.2f GeV^{2}", vec[0].t));
             }
 
-            g_syst->SetFillColor(kGray);
-            g_syst->SetLineColor(kGray);
-            g_syst->Draw("E2 SAME");
+            // Sixth panel — annotation block
+            if(pad_index == 6) {
 
-            g_stat->SetMarkerStyle(20);
-            g_stat->SetMarkerColor(kBlack);
-            g_stat->SetLineColor(kBlack);
-            g_stat->Draw("PE SAME");
+                TLatex text;
+                text.SetNDC();
+                text.SetTextSize(0.07);
 
-            // -------------------------
-            // Fit: c0 (1 + c1 cos(phi))
-            // -------------------------
+                text.DrawLatex(0.15,0.80,"<x_{B}> = 0.17");
+                text.DrawLatex(0.15,0.70,"<Q^{2}> = 2.24 GeV^{2}");
 
-            TF1 *fit = new TF1(Form("fit_%d",bin),
-                "[0]*(1 + [1]*cos(x*TMath::DegToRad()))",
-                0.0, 360.0);
-
-            fit->SetParameters(vec[0].val, 0.1);
-            fit->SetLineColor(kBlack);
-            fit->SetLineStyle(2);
-            fit->SetLineWidth(2);
-
-            g_stat->Fit(fit,"Q");
-            fit->Draw("SAME");
-
-            double c0  = fit->GetParameter(0);
-            double c1  = fit->GetParameter(1);
-            double ec0 = fit->GetParError(0);
-            double ec1 = fit->GetParError(1);
-
-            std::cout << "Bin " << bin
-                      << " |t|=" << vec[0].t
-                      << "  c0=" << c0 << " +/- " << ec0
-                      << "  c1=" << c1 << " +/- " << ec1
-                      << std::endl;
-
-            // -------------------------
-            // Models
-            // -------------------------
-
-            const int nphi=5;
-            TGraph *g_bh   = new TGraph(nphi);
-            TGraph *g_vgg  = new TGraph(nphi);
-            TGraph *g_km15 = new TGraph(nphi);
-
-            for(int i=0;i<nphi;i++) {
-                double phi = 360.0*i/(nphi-1);
-                double bh  = vgg_bh_only(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam);
-                double vgg = vgg_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity);
-                double km  = km15_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity);
-
-                g_bh->SetPoint(i,phi,bh);
-                g_vgg->SetPoint(i,phi,vgg);
-                g_km15->SetPoint(i,phi,km);
-            }
-
-            g_bh->SetLineColor(kRed);
-            g_vgg->SetLineColor(kOrange+7);
-            g_km15->SetLineColor(kCyan+2);
-
-            g_bh->SetLineWidth(2);
-            g_vgg->SetLineWidth(2);
-            g_km15->SetLineWidth(2);
-
-            g_bh->Draw("L SAME");
-            g_vgg->Draw("L SAME");
-            g_km15->Draw("L SAME");
-
-            TLatex tl;
-            tl.SetNDC();
-            tl.SetTextAlign(22);
-            tl.SetTextSize(0.06);
-            tl.DrawLatex(0.5,0.93,
-                Form("|t| = %.2f GeV^{2}", vec[0].t));
-
-            if(pad_index==5) {
-                TLatex info;
-                info.SetNDC();
-                info.SetTextSize(0.055);
-
-                info.DrawLatex(0.55,0.75,"<x_{B}> = 0.17");
-                info.DrawLatex(0.55,0.68,"<Q^{2}> = 2.24 GeV^{2}");
-
-                TLegend *leg = new TLegend(0.50,0.38,0.95,0.65);
+                TLegend *leg = new TLegend(0.15,0.40,0.85,0.65);
                 leg->SetBorderSize(0);
-                leg->SetTextSize(0.05);
+                leg->SetTextSize(0.06);
 
-                leg->AddEntry(g_stat,"Data","p");
-                leg->AddEntry(g_syst,"Syst. Unc.","f");
-                leg->AddEntry(fit,"Fit (c_{0}(1+c_{1}cos#phi))","l");
-                leg->AddEntry(g_bh,"BH","l");
-                leg->AddEntry(g_vgg,"VGG","l");
-                leg->AddEntry(g_km15,"KM15","l");
+                leg->AddEntry((TObject*)0,"Data","p");
+                leg->AddEntry((TObject*)0,"Syst. Unc.","f");
+                leg->AddEntry((TObject*)0,"Fit (c_{0}(1+c_{1}cos#phi))","l");
+                leg->AddEntry((TObject*)0,"BH","l");
+                leg->AddEntry((TObject*)0,"VGG","l");
+                leg->AddEntry((TObject*)0,"KM15","l");
 
                 leg->Draw();
             }
