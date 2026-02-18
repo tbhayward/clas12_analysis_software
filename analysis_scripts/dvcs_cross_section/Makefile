@@ -9,7 +9,7 @@ DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp exclus
            bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \
            cross_sections.cpp model_predictions.cpp overall_normalization_study.cpp \
            bin_centering_corrections.cpp models_vs_data_plots.cpp propagator_study.cpp \
-           norm_cross_sections.cpp
+           norm_cross_sections.cpp pass1_paper_plots.cpp
 DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
 DVCS_BIN = dvcs_analysis
 # ---------- cross_check_lee ----------
