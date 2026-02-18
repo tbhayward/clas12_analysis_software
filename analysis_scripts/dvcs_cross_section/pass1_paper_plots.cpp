@@ -10,6 +10,8 @@
 #include <TStyle.h>
 #include <TBox.h>
 #include <TPad.h>
+#include <TH1F.h>
+#include <TROOT.h>
 
 #include <fstream>
 #include <sstream>
@@ -48,8 +50,14 @@ std::vector<std::string> split(const std::string &line) {
 
 bool make_pass1_phi_panels(const std::string &csv_path,
                            double Ebeam,
-                           int helicity)
+                           int helicity_input)
 {
+    // Convert int -> Helicity enum
+    Helicity helicity;
+    if(helicity_input == 1) helicity = Helicity::Plus;
+    else if(helicity_input == -1) helicity = Helicity::Minus;
+    else helicity = Helicity::Unpol;
+
     std::ifstream file(csv_path.c_str());
     if(!file) {
         std::cerr << "Cannot open CSV: " << csv_path << "\n";
@@ -81,7 +89,6 @@ bool make_pass1_phi_panels(const std::string &csv_path,
     } //endwhile
 
     std::vector<int> wanted_bins = {63,65,66,67,68};
-
     std::map<int, std::vector<Row>> grouped;
 
     for(const auto &r : rows) {
@@ -106,7 +113,7 @@ bool make_pass1_phi_panels(const std::string &csv_path,
 
         c->cd(pad_index);
         TPad *p = (TPad*)gPad;
-        p->SetLeftMargin(0.15);
+        p->SetLeftMargin(0.16);
         p->SetBottomMargin(0.15);
         p->SetRightMargin(0.05);
         p->SetTopMargin(0.08);
@@ -116,7 +123,11 @@ bool make_pass1_phi_panels(const std::string &csv_path,
 
         double tval = vec.front().t;
 
-        TH1F *frame = (TH1F*)p->DrawFrame(0, 1e-3, 360, 1.2);
+        TH1F *frame = new TH1F("frame","",100,0,360);
+        frame->SetMinimum(1e-3);
+        frame->SetMaximum(1.2);
+        frame->Draw();
+
         frame->GetYaxis()->SetTitleOffset(1.6);
         frame->GetYaxis()->SetTitle(
             "#frac{d#sigma_{ep#rightarrow e'p'#gamma}}{dx_{B} dQ^{2} d|t| d#phi} (nb/GeV^{4})"
@@ -150,8 +161,6 @@ bool make_pass1_phi_panels(const std::string &csv_path,
         g_stat->SetLineColor(kBlack);
         g_stat->Draw("PE SAME");
 
-        // -------- Models --------
-
         const int nphi = 200;
         TGraph *g_bh   = new TGraph(nphi);
         TGraph *g_vgg  = new TGraph(nphi);
@@ -170,12 +179,11 @@ bool make_pass1_phi_panels(const std::string &csv_path,
         } //endfor
 
         g_bh->SetLineColor(kRed);
-        g_bh->SetLineWidth(2);
-
         g_vgg->SetLineColor(kOrange+7);
-        g_vgg->SetLineWidth(2);
-
         g_km15->SetLineColor(kCyan+2);
+
+        g_bh->SetLineWidth(2);
+        g_vgg->SetLineWidth(2);
         g_km15->SetLineWidth(2);
 
         g_bh->Draw("L SAME");
@@ -192,21 +200,19 @@ bool make_pass1_phi_panels(const std::string &csv_path,
             TLatex info;
             info.SetNDC();
             info.SetTextSize(0.045);
-            info.DrawLatex(0.55,0.75,
-                "<x_{B}> = 0.17");
-            info.DrawLatex(0.55,0.68,
-                "<Q^{2}> = 2.24 GeV^{2}");
+            info.DrawLatex(0.55,0.75,"<x_{B}> = 0.17");
+            info.DrawLatex(0.55,0.68,"<Q^{2}> = 2.24 GeV^{2}");
         }
 
         pad_index++;
 
-    } //endfor bins
+    } //endfor
 
     c->SaveAs("output/pass1_paper_plots/pass1_phi_panels.png");
 
     delete c;
 
-    std::cout << "Saved: output/pass1_paper_plots/pass1_phi_panels.png\n";
+    std::cout << "Saved pass1_phi_panels.png\n";
 
     return true;
 }
