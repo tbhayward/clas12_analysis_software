@@ -161,7 +161,7 @@ bool make_pass1_phi_panels(const std::string &csv_path,
         g_stat->SetLineColor(kBlack);
         g_stat->Draw("PE SAME");
 
-        const int nphi = 200;
+        const int nphi = 15;
         TGraph *g_bh   = new TGraph(nphi);
         TGraph *g_vgg  = new TGraph(nphi);
         TGraph *g_km15 = new TGraph(nphi);
