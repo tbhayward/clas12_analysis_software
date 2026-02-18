@@ -11,6 +11,8 @@
 #include <TPad.h>
 #include <TH1F.h>
 #include <TROOT.h>
+#include <TF1.h>
+#include <TMath.h>
 
 #include <fstream>
 #include <sstream>
@@ -83,7 +85,7 @@ bool make_pass1_phi_panels(const std::string &csv_path,
         rows.push_back(r);
     }
 
-    std::vector<int> wanted_bins = {63,65,66,67,68};
+    std::vector<int> wanted_bins = {64,65,66,67,68};
     std::map<int, std::vector<Row>> grouped;
 
     for(const auto &r : rows) {
@@ -112,7 +114,6 @@ bool make_pass1_phi_panels(const std::string &csv_path,
             c->cd(pad_index);
             TPad *p = (TPad*)gPad;
 
-            // Tight margins
             p->SetLeftMargin(col==0 ? 0.18 : 0.05);
             p->SetRightMargin(0.02);
             p->SetBottomMargin(row==1 ? 0.18 : 0.05);
@@ -121,7 +122,7 @@ bool make_pass1_phi_panels(const std::string &csv_path,
             auto &vec = grouped[bin];
             if(vec.empty()) continue;
 
-            TH1F *frame = new TH1F("frame","",100,0,360);
+            TH1F *frame = new TH1F(Form("frame_%d",bin),"",100,0,360);
             frame->SetMinimum(1e-3);
             frame->SetMaximum(1.0);
             frame->Draw();
@@ -162,7 +163,38 @@ bool make_pass1_phi_panels(const std::string &csv_path,
             g_stat->SetLineColor(kBlack);
             g_stat->Draw("PE SAME");
 
-            const int nphi=8;
+            // -------------------------
+            // Fit: c0 (1 + c1 cos(phi))
+            // -------------------------
+
+            TF1 *fit = new TF1(Form("fit_%d",bin),
+                "[0]*(1 + [1]*cos(x*TMath::DegToRad()))",
+                0.0, 360.0);
+
+            fit->SetParameters(vec[0].val, 0.1);
+            fit->SetLineColor(kBlack);
+            fit->SetLineStyle(2);
+            fit->SetLineWidth(2);
+
+            g_stat->Fit(fit,"Q");
+            fit->Draw("SAME");
+
+            double c0  = fit->GetParameter(0);
+            double c1  = fit->GetParameter(1);
+            double ec0 = fit->GetParError(0);
+            double ec1 = fit->GetParError(1);
+
+            std::cout << "Bin " << bin
+                      << " |t|=" << vec[0].t
+                      << "  c0=" << c0 << " +/- " << ec0
+                      << "  c1=" << c1 << " +/- " << ec1
+                      << std::endl;
+
+            // -------------------------
+            // Models
+            // -------------------------
+
+            const int nphi=5;
             TGraph *g_bh   = new TGraph(nphi);
             TGraph *g_vgg  = new TGraph(nphi);
             TGraph *g_km15 = new TGraph(nphi);
@@ -205,12 +237,13 @@ bool make_pass1_phi_panels(const std::string &csv_path,
                 info.DrawLatex(0.55,0.75,"<x_{B}> = 0.17");
                 info.DrawLatex(0.55,0.68,"<Q^{2}> = 2.24 GeV^{2}");
 
-                TLegend *leg = new TLegend(0.55,0.45,0.95,0.65);
+                TLegend *leg = new TLegend(0.50,0.38,0.95,0.65);
                 leg->SetBorderSize(0);
                 leg->SetTextSize(0.05);
 
                 leg->AddEntry(g_stat,"Data","p");
                 leg->AddEntry(g_syst,"Syst. Unc.","f");
+                leg->AddEntry(fit,"Fit (c_{0}(1+c_{1}cos#phi))","l");
                 leg->AddEntry(g_bh,"BH","l");
                 leg->AddEntry(g_vgg,"VGG","l");
                 leg->AddEntry(g_km15,"KM15","l");
