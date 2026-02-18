@@ -8,7 +8,6 @@
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
-#include <TBox.h>
 #include <TPad.h>
 #include <TH1F.h>
 #include <TROOT.h>
@@ -19,7 +18,6 @@
 #include <map>
 #include <cmath>
 #include <iostream>
-#include <iomanip>
 #include <filesystem>
 
 namespace {
@@ -45,14 +43,13 @@ std::vector<std::string> split(const std::string &line) {
     return out;
 }
 
-} // anonymous namespace
+} // namespace
 
 
 bool make_pass1_phi_panels(const std::string &csv_path,
                            double Ebeam,
                            int helicity_input)
 {
-    // Convert int -> Helicity enum
     Helicity helicity;
     if(helicity_input == 1) helicity = Helicity::Plus;
     else if(helicity_input == -1) helicity = Helicity::Minus;
@@ -60,18 +57,16 @@ bool make_pass1_phi_panels(const std::string &csv_path,
 
     std::ifstream file(csv_path.c_str());
     if(!file) {
-        std::cerr << "Cannot open CSV: " << csv_path << "\n";
+        std::cerr << "Cannot open CSV\n";
         return false;
     }
 
     std::vector<Row> rows;
-
     std::string line;
-    std::getline(file, line); // skip header
+    std::getline(file, line);
 
     while(std::getline(file, line)) {
         if(line.empty()) continue;
-
         auto cols = split(line);
         if(cols.size() < 8) continue;
 
@@ -86,133 +81,149 @@ bool make_pass1_phi_panels(const std::string &csv_path,
         r.syst = std::stod(cols[7]);
 
         rows.push_back(r);
-    } //endwhile
+    }
 
     std::vector<int> wanted_bins = {63,65,66,67,68};
     std::map<int, std::vector<Row>> grouped;
 
     for(const auto &r : rows) {
         for(int b : wanted_bins) {
-            if(r.bin == b) {
-                grouped[b].push_back(r);
-            }
-        } //endfor
-    } //endfor
+            if(r.bin == b) grouped[b].push_back(r);
+        }
+    }
 
     gStyle->SetOptStat(0);
     gROOT->SetBatch(kTRUE);
 
     std::filesystem::create_directories("output/pass1_paper_plots");
 
-    TCanvas *c = new TCanvas("c_pass1", "pass1", 1500, 900);
-    c->Divide(3,2,0.0001,0.0001);
+    TCanvas *c = new TCanvas("c_pass1","",1500,900);
+    c->Divide(3,2,0.0,0.0);
 
     int pad_index = 1;
 
-    for(int b : wanted_bins) {
+    for(int row=0; row<2; row++) {
+        for(int col=0; col<3; col++) {
 
-        c->cd(pad_index);
-        TPad *p = (TPad*)gPad;
-        p->SetLeftMargin(0.16);
-        p->SetBottomMargin(0.15);
-        p->SetRightMargin(0.05);
-        p->SetTopMargin(0.08);
+            if(pad_index > 5) break;
 
-        auto &vec = grouped[b];
-        if(vec.empty()) continue;
+            int bin = wanted_bins[pad_index-1];
 
-        double tval = vec.front().t;
+            c->cd(pad_index);
+            TPad *p = (TPad*)gPad;
 
-        TH1F *frame = new TH1F("frame","",100,0,360);
-        frame->SetMinimum(1e-3);
-        frame->SetMaximum(1.2);
-        frame->Draw();
+            // Tight margins
+            p->SetLeftMargin(col==0 ? 0.18 : 0.05);
+            p->SetRightMargin(0.02);
+            p->SetBottomMargin(row==1 ? 0.18 : 0.05);
+            p->SetTopMargin(0.05);
 
-        frame->GetYaxis()->SetTitleOffset(1.6);
-        frame->GetYaxis()->SetTitle(
-            "#frac{d#sigma_{ep#rightarrow e'p'#gamma}}{dx_{B} dQ^{2} d|t| d#phi} (nb/GeV^{4})"
-        );
+            auto &vec = grouped[bin];
+            if(vec.empty()) continue;
 
-        if(pad_index >= 4) {
-            frame->GetXaxis()->SetTitle("#phi (deg)");
+            TH1F *frame = new TH1F("frame","",100,0,360);
+            frame->SetMinimum(1e-3);
+            frame->SetMaximum(1.0);
+            frame->Draw();
+
+            p->SetLogy();
+
+            frame->GetXaxis()->SetTitleSize(0.07);
+            frame->GetYaxis()->SetTitleSize(0.07);
+            frame->GetXaxis()->CenterTitle();
+            frame->GetYaxis()->CenterTitle();
+
+            if(row==1)
+                frame->GetXaxis()->SetTitle("#phi (^{#circ})");
+
+            if(col==0)
+                frame->GetYaxis()->SetTitle(
+                    "#frac{d#sigma_{ep#rightarrow e'p'#gamma}}{dx_{B} dQ^{2} d|t| d#phi} (nb/GeV^{4})"
+                );
+
+            int N = vec.size();
+            TGraphErrors *g_stat = new TGraphErrors(N);
+            TGraphErrors *g_syst = new TGraphErrors(N);
+
+            for(int i=0;i<N;i++) {
+                g_stat->SetPoint(i, vec[i].phi, vec[i].val);
+                g_stat->SetPointError(i, 0, vec[i].stat);
+
+                g_syst->SetPoint(i, vec[i].phi, vec[i].val);
+                g_syst->SetPointError(i, 0, vec[i].syst);
+            }
+
+            g_syst->SetFillColor(kGray);
+            g_syst->SetLineColor(kGray);
+            g_syst->Draw("E2 SAME");
+
+            g_stat->SetMarkerStyle(20);
+            g_stat->SetMarkerColor(kBlack);
+            g_stat->SetLineColor(kBlack);
+            g_stat->Draw("PE SAME");
+
+            const int nphi=8;
+            TGraph *g_bh   = new TGraph(nphi);
+            TGraph *g_vgg  = new TGraph(nphi);
+            TGraph *g_km15 = new TGraph(nphi);
+
+            for(int i=0;i<nphi;i++) {
+                double phi = 360.0*i/(nphi-1);
+                double bh  = vgg_bh_only(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam);
+                double vgg = vgg_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity);
+                double km  = km15_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity);
+
+                g_bh->SetPoint(i,phi,bh);
+                g_vgg->SetPoint(i,phi,vgg);
+                g_km15->SetPoint(i,phi,km);
+            }
+
+            g_bh->SetLineColor(kRed);
+            g_vgg->SetLineColor(kOrange+7);
+            g_km15->SetLineColor(kCyan+2);
+
+            g_bh->SetLineWidth(2);
+            g_vgg->SetLineWidth(2);
+            g_km15->SetLineWidth(2);
+
+            g_bh->Draw("L SAME");
+            g_vgg->Draw("L SAME");
+            g_km15->Draw("L SAME");
+
+            TLatex tl;
+            tl.SetNDC();
+            tl.SetTextAlign(22);
+            tl.SetTextSize(0.06);
+            tl.DrawLatex(0.5,0.93,
+                Form("|t| = %.2f GeV^{2}", vec[0].t));
+
+            if(pad_index==5) {
+                TLatex info;
+                info.SetNDC();
+                info.SetTextSize(0.055);
+
+                info.DrawLatex(0.55,0.75,"<x_{B}> = 0.17");
+                info.DrawLatex(0.55,0.68,"<Q^{2}> = 2.24 GeV^{2}");
+
+                TLegend *leg = new TLegend(0.55,0.45,0.95,0.65);
+                leg->SetBorderSize(0);
+                leg->SetTextSize(0.05);
+
+                leg->AddEntry(g_stat,"Data","p");
+                leg->AddEntry(g_syst,"Syst. Unc.","f");
+                leg->AddEntry(g_bh,"BH","l");
+                leg->AddEntry(g_vgg,"VGG","l");
+                leg->AddEntry(g_km15,"KM15","l");
+
+                leg->Draw();
+            }
+
+            pad_index++;
         }
-
-        p->SetLogy();
-
-        int N = vec.size();
-
-        TGraphErrors *g_stat = new TGraphErrors(N);
-        TGraphErrors *g_syst = new TGraphErrors(N);
-
-        for(int i=0;i<N;i++) {
-            g_stat->SetPoint(i, vec[i].phi, vec[i].val);
-            g_stat->SetPointError(i, 0, vec[i].stat);
-
-            g_syst->SetPoint(i, vec[i].phi, vec[i].val);
-            g_syst->SetPointError(i, 0, vec[i].syst);
-        } //endfor
-
-        g_syst->SetFillColor(kGray);
-        g_syst->SetLineColor(kGray);
-        g_syst->Draw("E2 SAME");
-
-        g_stat->SetMarkerStyle(20);
-        g_stat->SetMarkerColor(kBlack);
-        g_stat->SetLineColor(kBlack);
-        g_stat->Draw("PE SAME");
-
-        const int nphi = 15;
-        TGraph *g_bh   = new TGraph(nphi);
-        TGraph *g_vgg  = new TGraph(nphi);
-        TGraph *g_km15 = new TGraph(nphi);
-
-        for(int i=0;i<nphi;i++) {
-            double phi = 360.0 * i / (nphi-1);
-
-            double bh  = vgg_bh_only(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam);
-            double vgg = vgg_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity);
-            double km  = km15_xs(vec[0].xB, vec[0].Q2, vec[0].t, phi, Ebeam, helicity);
-
-            g_bh->SetPoint(i, phi, bh);
-            g_vgg->SetPoint(i, phi, vgg);
-            g_km15->SetPoint(i, phi, km);
-        } //endfor
-
-        g_bh->SetLineColor(kRed);
-        g_vgg->SetLineColor(kOrange+7);
-        g_km15->SetLineColor(kCyan+2);
-
-        g_bh->SetLineWidth(2);
-        g_vgg->SetLineWidth(2);
-        g_km15->SetLineWidth(2);
-
-        g_bh->Draw("L SAME");
-        g_vgg->Draw("L SAME");
-        g_km15->Draw("L SAME");
-
-        TLatex tl;
-        tl.SetNDC();
-        tl.SetTextSize(0.05);
-        tl.DrawLatex(0.18,0.88,
-            Form("|t| = %.2f GeV^{2}", tval));
-
-        if(pad_index == 6) {
-            TLatex info;
-            info.SetNDC();
-            info.SetTextSize(0.045);
-            info.DrawLatex(0.55,0.75,"<x_{B}> = 0.17");
-            info.DrawLatex(0.55,0.68,"<Q^{2}> = 2.24 GeV^{2}");
-        }
-
-        pad_index++;
-
-    } //endfor
+    }
 
     c->SaveAs("output/pass1_paper_plots/pass1_phi_panels.png");
-
     delete c;
-
-    std::cout << "Saved pass1_phi_panels.png\n";
 
     return true;
 }
