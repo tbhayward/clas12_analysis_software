@@ -17,6 +17,10 @@ Canvas layout (2x3):
 DATA histogram: black
 MC histogram:   red
 
+UPDATED DEFAULTS (this version):
+  - X axis range fixed to [0.0, 2.0] (GeV)
+  - Histograms normalized to their integrals (unit area) by default
+
 Parallel processing:
   - At most 5 workers HARD LIMIT.
   - We process ALL data files in parallel, then ALL mc files in parallel.
@@ -141,15 +145,15 @@ def validate_inputs(args: argparse.Namespace) -> None:
     #endfor
 
 
-def compute_hist_for_file(args: Tuple[str, str, float, float, int, bool]) -> Tuple[str, Hist1D]:
+def compute_hist_for_file(args: Tuple[str, str, float, float, int]) -> Tuple[str, Hist1D]:
     """
     Worker:
       - Select electrons (particle_pid == 11)
       - Read cal_energy_1
       - Histogram in [emin, emax] with nbins
-      - Optionally normalize to unit integral
+      - Normalize to unit integral
     """
-    period_label, root_path, emin, emax, nbins, do_norm = args
+    period_label, root_path, emin, emax, nbins = args
 
     try:
         with uproot.open(root_path) as f:
@@ -173,11 +177,7 @@ def compute_hist_for_file(args: Tuple[str, str, float, float, int, bool]) -> Tup
             e_sel = e1[mask].astype(np.float64)
 
             counts, edges = np.histogram(e_sel, bins=nbins, range=(emin, emax))
-            if do_norm:
-                counts = normalize_to_integral(counts)
-            else:
-                counts = counts.astype(np.float64)
-            #endif
+            counts = normalize_to_integral(counts)
 
             h = Hist1D(counts=counts, edges=edges.astype(np.float64), n_selected=int(e_sel.size))
             return period_label, h
@@ -192,9 +192,9 @@ def compute_hist_for_file(args: Tuple[str, str, float, float, int, bool]) -> Tup
         )
 
 
-def run_parallel_hists(file_map: Dict[str, str], emin: float, emax: float, nbins: int, do_norm: bool, max_workers: int) -> Dict[str, Hist1D]:
+def run_parallel_hists(file_map: Dict[str, str], emin: float, emax: float, nbins: int, max_workers: int) -> Dict[str, Hist1D]:
     items = sorted(file_map.items(), key=lambda kv: kv[0])
-    tasks = [(label, path, emin, emax, nbins, do_norm) for (label, path) in items]
+    tasks = [(label, path, emin, emax, nbins) for (label, path) in items]
 
     n_workers = min(max_workers, len(tasks))
     if n_workers < 1:
@@ -226,8 +226,6 @@ def plot_2x3_canvas(
     outpath: str,
     emin: float,
     emax: float,
-    do_norm: bool,
-    logy: bool,
 ) -> None:
     fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=False)
     fig.suptitle(title, fontsize=18)
@@ -239,12 +237,9 @@ def plot_2x3_canvas(
         #endfor
     #endfor
 
-    # Common bin centers
     any_period = next(iter(data_hists.keys()))
     edges = data_hists[any_period].edges
     centers = 0.5 * (edges[:-1] + edges[1:])
-
-    y_label = "normalized counts" if do_norm else "counts"
 
     for period_label, (r, c) in PANEL_POS.items():
         ax = axes[r, c]
@@ -263,18 +258,10 @@ def plot_2x3_canvas(
         ax.set_title(period_label, fontsize=13)
         ax.set_xlim(emin, emax)
         ax.set_xlabel("cal_energy_1 (GeV)", fontsize=12)
-        ax.set_ylabel(y_label, fontsize=12)
+        ax.set_ylabel("normalized counts", fontsize=12)
         ax.grid(True, alpha=0.25)
         ax.legend(loc="upper right", fontsize=10, frameon=True)
-
-        if logy:
-            ax.set_yscale("log")
-            positive_vals = np.concatenate([dh.counts[dh.counts > 0.0], mh.counts[mh.counts > 0.0]])
-            y_min = float(np.min(positive_vals)) if positive_vals.size > 0 else 1e-12
-            ax.set_ylim(bottom=y_min)
-        else:
-            ax.set_ylim(bottom=0.0)
-        #endif
+        ax.set_ylim(bottom=0.0)
 
     #endfor
 
@@ -289,10 +276,8 @@ def plot_2x3_canvas(
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Compare cal_energy_1 between data and mc for electrons.")
     p.add_argument("--emin", type=float, default=0.0, help="Histogram minimum for cal_energy_1 (GeV).")
-    p.add_argument("--emax", type=float, default=6.0, help="Histogram maximum for cal_energy_1 (GeV).")
+    p.add_argument("--emax", type=float, default=2.0, help="Histogram maximum for cal_energy_1 (GeV).")
     p.add_argument("--bins", type=int, default=240, help="Number of histogram bins.")
-    p.add_argument("--normalize", action="store_true", help="Normalize each histogram to unit integral.")
-    p.add_argument("--logy", action="store_true", help="Use log scale on y axis.")
     p.add_argument("--max-workers", type=int, default=5, help="Max parallel workers (hard limit 5).")
     return p.parse_args()
 
@@ -302,18 +287,11 @@ def main() -> None:
     validate_inputs(args)
     ensure_outdir(OUTDIR)
 
-    # Data first, then MC (as you’ve been doing)
-    data_hists = run_parallel_hists(DATA_FILES, args.emin, args.emax, args.bins, args.normalize, args.max_workers)
-    mc_hists = run_parallel_hists(MC_FILES, args.emin, args.emax, args.bins, args.normalize, args.max_workers)
+    data_hists = run_parallel_hists(DATA_FILES, args.emin, args.emax, args.bins, args.max_workers)
+    mc_hists = run_parallel_hists(MC_FILES, args.emin, args.emax, args.bins, args.max_workers)
 
     outpath = os.path.join(OUTDIR, "cal_energy_1_electron.png")
-    title = "Calorimeter energy deposit comparison: electrons (pid=11), cal_energy_1"
-    if args.normalize:
-        title += " [unit-normalized]"
-    if args.logy:
-        title += " [log-y]"
-    #endif
-
+    title = "Calorimeter energy deposit comparison: electrons (pid=11), cal_energy_1 [unit-normalized]"
     plot_2x3_canvas(
         title=title,
         data_hists=data_hists,
@@ -321,8 +299,6 @@ def main() -> None:
         outpath=outpath,
         emin=args.emin,
         emax=args.emax,
-        do_norm=args.normalize,
-        logy=args.logy,
     )
 
     print(f"Wrote: {outpath}")
