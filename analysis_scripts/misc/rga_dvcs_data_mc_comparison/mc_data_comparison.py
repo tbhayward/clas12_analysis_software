@@ -26,20 +26,24 @@ Parallel processing:
   - Up to 5 workers HARD LIMIT.
   - We process ALL data files in parallel, then ALL mc files in parallel.
 
-Requested features implemented:
+Features:
   1) Draw vertical cut lines for your pass2-derived vertex cuts (per RGA period).
      - electron (pid=11): charge<0 window from your Java (per period).
      - proton   (pid=2212): charge>0 window from your Java (per period).
   2) Legend includes the percentage of selected events inside the cut window.
-     - Percentage is computed on the selected unbinned sample (no vz==0 suppression).
-  3) Print out the MODE bin entry info (per period, for data and mc):
-     - mode_vz (bin center), mode_count (raw counts in that bin), mode_frac.
+  3) Print out the MODE bin entry info (per period, for data and mc).
   4) Cut description text is in the bottom-right of each subplot.
-  5) Y-axis is LOG scale (requested).
+  5) Y-axis is LOG scale.
+  6) NEW: Extend x-axis (and histogram range) to [-14, 14] (cm).
+  7) NEW: For each histogram, compute the points (bin centers) on the LEFT and RIGHT
+          side of the peak (mode bin) whose normalized bin content is closest to 2%.
+          These are printed to the console for both DATA and MC.
 
-X axis range:
-  - Fixed to [-10, 10] (cm).
-  - Histogram range is also [-10, 10].
+Interpretation of "closest to 2%":
+  - We use the normalized histogram bin content (unit area normalization),
+    so "2%" corresponds to y = 0.02.
+  - We find, among bins strictly left of the peak bin, the bin whose normalized
+    content minimizes |y - 0.02|. Same on the right side.
 
 Output:
   output/vz_electron.png
@@ -68,9 +72,12 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 TREE_NAME = "PhysicsEvents"  # set this to the TTree name in your ROOT files
 
 # Histogram binning for particle_vz
-VZ_MIN = -10.0
-VZ_MAX = 10.0
+VZ_MIN = -14.0
+VZ_MAX = 14.0
 N_BINS = 200
+
+# Target normalized level for "2%"
+TARGET_LEVEL = 0.02
 
 # Hard limit on workers
 MAX_WORKERS = 5
@@ -140,9 +147,18 @@ class Hist1D:
     frac_in_cut: float
     cut_low: float
     cut_high: float
+
+    # Peak (mode) info from RAW counts
+    peak_index: int
     mode_vz: float
     mode_count: int
     mode_frac: float
+
+    # Closest-to-2% points, left and right of peak (using normalized counts)
+    left_2pct_vz: float
+    left_2pct_y: float
+    right_2pct_vz: float
+    right_2pct_y: float
 
 
 def fatal(msg: str) -> None:
@@ -166,6 +182,9 @@ def validate_inputs() -> None:
     #endif
     if MAX_WORKERS <= 0:
         fatal(f"Invalid MAX_WORKERS={MAX_WORKERS}, must be > 0")
+    #endif
+    if TARGET_LEVEL <= 0.0:
+        fatal(f"Invalid TARGET_LEVEL={TARGET_LEVEL}, must be > 0")
     #endif
 
     for label, path in DATA_FILES.items():
@@ -219,20 +238,23 @@ def cut_window_for_pid_and_period(pid: int, period_label: str) -> Tuple[float, f
     elif pid == 2212:
         return VTX_CUTS_POS[period_label]
     #endif
-    # Should not be reached in this script since we removed photon plots.
     return (-9.0, 2.0)
 
 
-def compute_mode_from_hist(counts_raw: np.ndarray, edges: np.ndarray, n_selected: int) -> Tuple[float, int, float]:
+def compute_mode_from_hist(counts_raw: np.ndarray, edges: np.ndarray, n_selected: int) -> Tuple[int, float, int, float]:
+    """
+    Mode defined as the bin with maximum raw count.
+    Returns (peak_index, mode_vz_center, mode_count, mode_frac).
+    """
     if counts_raw.size == 0:
-        return 0.0, 0, 0.0
+        return 0, 0.0, 0, 0.0
     #endif
 
-    imax = int(np.argmax(counts_raw))
-    mode_count = int(counts_raw[imax])
+    peak_index = int(np.argmax(counts_raw))
+    mode_count = int(counts_raw[peak_index])
 
     centers = 0.5 * (edges[:-1] + edges[1:])
-    mode_vz = float(centers[imax])
+    mode_vz = float(centers[peak_index])
 
     if n_selected > 0:
         mode_frac = float(mode_count) / float(n_selected)
@@ -240,7 +262,52 @@ def compute_mode_from_hist(counts_raw: np.ndarray, edges: np.ndarray, n_selected
         mode_frac = 0.0
     #endif
 
-    return mode_vz, mode_count, mode_frac
+    return peak_index, mode_vz, mode_count, mode_frac
+
+
+def compute_closest_to_level_left_right(
+    counts_norm: np.ndarray,
+    edges: np.ndarray,
+    peak_index: int,
+    level: float,
+) -> Tuple[float, float, float, float]:
+    """
+    Find the bin (center) on the LEFT of peak_index with normalized content closest to 'level',
+    and similarly on the RIGHT.
+
+    Returns:
+      (left_vz, left_y, right_vz, right_y)
+
+    If left or right side has no bins (degenerate), we return (nan, nan, nan, nan).
+    """
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    # Left side: indices [0, peak_index-1]
+    if peak_index <= 0:
+        left_vz = float("nan")
+        left_y = float("nan")
+    else:
+        left_slice = counts_norm[:peak_index]
+        left_diff = np.abs(left_slice - level)
+        i_left = int(np.argmin(left_diff))
+        left_vz = float(centers[i_left])
+        left_y = float(left_slice[i_left])
+    #endif
+
+    # Right side: indices [peak_index+1, end)
+    if peak_index >= (counts_norm.size - 1):
+        right_vz = float("nan")
+        right_y = float("nan")
+    else:
+        right_slice = counts_norm[peak_index + 1 :]
+        right_diff = np.abs(right_slice - level)
+        i_rel = int(np.argmin(right_diff))
+        i_right = peak_index + 1 + i_rel
+        right_vz = float(centers[i_right])
+        right_y = float(counts_norm[i_right])
+    #endif
+
+    return left_vz, left_y, right_vz, right_y
 
 
 def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, int, Hist1D]:
@@ -287,7 +354,14 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
                 frac_in_cut = 0.0
             #endif
 
-            mode_vz, mode_count, mode_frac = compute_mode_from_hist(counts_raw, edges, int(vz_sel.size))
+            peak_index, mode_vz, mode_count, mode_frac = compute_mode_from_hist(counts_raw, edges, int(vz_sel.size))
+
+            left_vz, left_y, right_vz, right_y = compute_closest_to_level_left_right(
+                counts_norm=counts_norm,
+                edges=edges,
+                peak_index=peak_index,
+                level=TARGET_LEVEL,
+            )
 
             h = Hist1D(
                 counts=counts_norm.astype(np.float64),
@@ -297,9 +371,14 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
                 frac_in_cut=frac_in_cut,
                 cut_low=float(cut_low),
                 cut_high=float(cut_high),
-                mode_vz=mode_vz,
-                mode_count=mode_count,
-                mode_frac=mode_frac,
+                peak_index=int(peak_index),
+                mode_vz=float(mode_vz),
+                mode_count=int(mode_count),
+                mode_frac=float(mode_frac),
+                left_2pct_vz=float(left_vz),
+                left_2pct_y=float(left_y),
+                right_2pct_vz=float(right_vz),
+                right_2pct_y=float(right_y),
             )
             return (period_label, root_path, pid, h)
 
@@ -395,10 +474,8 @@ def plot_2x3_canvas(
         ax.grid(True, alpha=0.25)
         ax.legend(loc="upper right", fontsize=9, frameon=True)
 
-        # LOG Y SCALE (requested)
+        # Log y
         ax.set_yscale("log")
-
-        # With log scale, we must keep y>0. Use the smallest positive value in either curve.
         positive_vals = np.concatenate([dh.counts[dh.counts > 0.0], mh.counts[mh.counts > 0.0]])
         if positive_vals.size > 0:
             y_min = float(np.min(positive_vals))
@@ -427,11 +504,12 @@ def plot_2x3_canvas(
     plt.close(fig)
 
 
-def print_mode_summary(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[str, Hist1D]) -> None:
+def print_mode_and_2pct_summary(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[str, Hist1D]) -> None:
     print("")
     print("------------------------------------------------------------")
-    print(f"MODE SUMMARY: {pid_label} (pid={pid})")
-    print("  (mode is the bin with maximum RAW entries in the plotted [-10,10] range)")
+    print(f"SUMMARY: {pid_label} (pid={pid})")
+    print(f"  Histogram range = ({VZ_MIN:.1f}, {VZ_MAX:.1f}) (cm), N_BINS={N_BINS}, target level = {TARGET_LEVEL:.3f}")
+    print("  mode is peak bin (max RAW count). 2% points are closest bins to y=0.02 on each side of the peak.")
     print("------------------------------------------------------------")
     periods = sorted(PANEL_POS.keys(), key=lambda k: (PANEL_POS[k][0], PANEL_POS[k][1]))
     for period_label in periods:
@@ -441,7 +519,9 @@ def print_mode_summary(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], 
         print(f"{period_label}:")
         print(f"  cut_window = ({dh.cut_low:.4f}, {dh.cut_high:.4f}) (cm)")
         print(f"  data: N={dh.n_selected}  in_cut={100.0*dh.frac_in_cut:.3f}%  mode_vz={dh.mode_vz:.4f} (cm)  mode_count={dh.mode_count}  mode_frac={100.0*dh.mode_frac:.3f}%")
+        print(f"        left@2pct:  vz={dh.left_2pct_vz:.4f} (cm)  y={dh.left_2pct_y:.6f}   right@2pct: vz={dh.right_2pct_vz:.4f} (cm)  y={dh.right_2pct_y:.6f}")
         print(f"  mc:   N={mh.n_selected}  in_cut={100.0*mh.frac_in_cut:.3f}%  mode_vz={mh.mode_vz:.4f} (cm)  mode_count={mh.mode_count}  mode_frac={100.0*mh.mode_frac:.3f}%")
+        print(f"        left@2pct:  vz={mh.left_2pct_vz:.4f} (cm)  y={mh.left_2pct_y:.6f}   right@2pct: vz={mh.right_2pct_vz:.4f} (cm)  y={mh.right_2pct_y:.6f}")
     #endfor
 
 
@@ -449,7 +529,6 @@ def main() -> None:
     validate_inputs()
     ensure_outdir(OUTDIR)
 
-    # Photon removed (requested)
     particles = [
         (11, "electron", "vz_electron.png"),
         (2212, "proton", "vz_proton.png"),
@@ -459,7 +538,7 @@ def main() -> None:
         data_hists = run_parallel_hists(DATA_FILES, pid, TREE_NAME)
         mc_hists = run_parallel_hists(MC_FILES, pid, TREE_NAME)
 
-        print_mode_summary(pid, pid_label, data_hists, mc_hists)
+        print_mode_and_2pct_summary(pid, pid_label, data_hists, mc_hists)
 
         outpath = os.path.join(OUTDIR, fname)
         title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized, log-y]"
