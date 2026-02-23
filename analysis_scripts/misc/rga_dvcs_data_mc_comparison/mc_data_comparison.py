@@ -19,16 +19,16 @@ MC histogram:   red
 Y scale: log
 
 Cuts (THIS VERSION):
-  - We want the interval that contains the CENTRAL 98% of events,
-    while avoiding secondary peaks (e.g., exit foil).
-  - We therefore use the Highest Density Interval (HDI):
-      the shortest interval that contains 98% of vz values.
-  - Cuts are computed separately for DATA and MC for each period.
-
-We keep the old pass2 cut maps in the code, but COMMENTED OUT, for easy revert.
+  - We compute the Highest Density Interval (HDI): the shortest interval containing
+    a user-specified fraction of events.
+  - The coverage fraction is provided at runtime, e.g.:
+      ./calibration_vertex_vz_compare.py --coverage 0.99
 
 Parallel processing:
   - At most 5 workers.
+
+X-axis / histogram range:
+  - Fixed to [-20, 20] (cm).
 
 Output:
   output/vz_electron.png
@@ -40,6 +40,7 @@ Dependencies:
 
 import os
 import sys
+import argparse
 import traceback
 from dataclasses import dataclass
 from typing import Dict, Tuple
@@ -51,18 +52,15 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 # -----------------------------------------------------------------------------
-# USER SETTINGS
+# USER SETTINGS (STATIC)
 # -----------------------------------------------------------------------------
 
 TREE_NAME = "PhysicsEvents"
 
 # Histogram range and binning
-VZ_MIN = -14.0
-VZ_MAX = 14.0
+VZ_MIN = -20.0
+VZ_MAX = 20.0
 N_BINS = 200
-
-# Coverage for the "central" interval
-TARGET_COVERAGE = 0.98  # central 98% (HDI)
 
 # Hard limit on workers
 MAX_WORKERS = 5
@@ -129,13 +127,10 @@ class Hist1D:
     mode_count: int
     mode_frac: float
 
-    # HDI cut window (central coverage interval)
     cut_low: float
     cut_high: float
     frac_in_cut: float
     n_in_cut: int
-
-    # For debugging / reporting
     hdi_width: float
 
 
@@ -151,7 +146,7 @@ def ensure_outdir(path: str) -> None:
     #endif
 
 
-def validate_inputs() -> None:
+def validate_inputs(coverage: float) -> None:
     if VZ_MAX <= VZ_MIN:
         fatal("Invalid VZ range.")
     #endif
@@ -161,8 +156,8 @@ def validate_inputs() -> None:
     if MAX_WORKERS <= 0:
         fatal("Invalid MAX_WORKERS.")
     #endif
-    if TARGET_COVERAGE <= 0.0 or TARGET_COVERAGE >= 1.0:
-        fatal("TARGET_COVERAGE must be in (0,1).")
+    if coverage <= 0.0 or coverage >= 1.0:
+        fatal(f"--coverage must be in (0,1). Got {coverage}")
     #endif
 
     for label, path in DATA_FILES.items():
@@ -212,9 +207,6 @@ def hdi_interval(sorted_vals: np.ndarray, coverage: float) -> Tuple[float, float
 
     Input must be sorted.
     Returns (low, high).
-
-    For bimodal distributions, HDI tends to select the dominant/narrow mode, which helps
-    avoid the exit-foil bump if it's separated.
     """
     n = int(sorted_vals.size)
     if n <= 0:
@@ -226,11 +218,9 @@ def hdi_interval(sorted_vals: np.ndarray, coverage: float) -> Tuple[float, float
         fatal("HDI: coverage too small for sample size.")
     #endif
     if m >= n:
-        # coverage so high that you basically include everything
         return float(sorted_vals[0]), float(sorted_vals[-1])
     #endif
 
-    # sliding window of size m: [i, i+m-1]
     widths = sorted_vals[m - 1 :] - sorted_vals[: n - (m - 1)]
     i_best = int(np.argmin(widths))
     low = float(sorted_vals[i_best])
@@ -243,16 +233,8 @@ def hdi_interval(sorted_vals: np.ndarray, coverage: float) -> Tuple[float, float
     return low, high
 
 
-def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, int, Hist1D]:
-    """
-    Worker:
-      - select pid
-      - build histogram in [-14,14], normalize to unit integral
-      - compute mode (from raw bin counts)
-      - compute HDI (central 98%) from event-level vz values, separately per dataset
-      - compute in-cut fraction from event-level vz values using HDI window
-    """
-    period_label, root_path, pid, tree_name = args
+def compute_hist_for_file(args: Tuple[str, str, int, str, float]) -> Tuple[str, str, int, Hist1D]:
+    period_label, root_path, pid, tree_name, coverage = args
 
     try:
         with uproot.open(root_path) as f:
@@ -275,18 +257,14 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
             mask = (pids == pid) & np.isfinite(vz)
             vz_sel = vz[mask].astype(np.float64)
 
-            # Histogram
             counts_raw, edges = np.histogram(vz_sel, bins=N_BINS, range=(VZ_MIN, VZ_MAX))
             counts_norm = normalize_to_integral(counts_raw)
             centers = 0.5 * (edges[:-1] + edges[1:])
 
             peak_index, mode_vz, mode_count, mode_frac = compute_mode_from_raw(
-                counts_raw=counts_raw,
-                centers=centers,
-                n_selected=int(vz_sel.size),
+                counts_raw=counts_raw, centers=centers, n_selected=int(vz_sel.size)
             )
 
-            # HDI (central 98%)
             if vz_sel.size <= 0:
                 cut_low = float("nan")
                 cut_high = float("nan")
@@ -295,7 +273,7 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
                 hdi_width = float("nan")
             else:
                 vz_sorted = np.sort(vz_sel)
-                cut_low, cut_high = hdi_interval(vz_sorted, TARGET_COVERAGE)
+                cut_low, cut_high = hdi_interval(vz_sorted, coverage)
                 hdi_width = float(cut_high - cut_low)
 
                 in_cut = (vz_sel >= cut_low) & (vz_sel <= cut_high)
@@ -332,9 +310,9 @@ def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, in
         )
 
 
-def run_parallel_hists(file_map: Dict[str, str], pid: int) -> Dict[str, Hist1D]:
+def run_parallel_hists(file_map: Dict[str, str], pid: int, coverage: float) -> Dict[str, Hist1D]:
     items = sorted(file_map.items(), key=lambda kv: kv[0])
-    tasks = [(label, path, pid, TREE_NAME) for (label, path) in items]
+    tasks = [(label, path, pid, TREE_NAME, coverage) for (label, path) in items]
 
     n_workers = min(MAX_WORKERS, len(tasks))
     if n_workers < 1:
@@ -359,7 +337,13 @@ def run_parallel_hists(file_map: Dict[str, str], pid: int) -> Dict[str, Hist1D]:
     return out
 
 
-def plot_2x3_canvas(title: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[str, Hist1D], outpath: str) -> None:
+def plot_2x3_canvas(
+    title: str,
+    data_hists: Dict[str, Hist1D],
+    mc_hists: Dict[str, Hist1D],
+    outpath: str,
+    coverage: float,
+) -> None:
     fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=False)
     fig.suptitle(title, fontsize=18)
 
@@ -376,14 +360,12 @@ def plot_2x3_canvas(title: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[st
         dh = data_hists[period_label]
         mh = mc_hists[period_label]
 
-        # Overlays
         data_label = f"data: {100.0*dh.frac_in_cut:.2f}% in-cut (N={dh.n_selected})"
         mc_label = f"mc: {100.0*mh.frac_in_cut:.2f}% in-cut (N={mh.n_selected})"
 
         ax.step(dh.centers, dh.counts, where="mid", color="black", linewidth=1.2, label=data_label)
         ax.step(mh.centers, mh.counts, where="mid", color="red", linewidth=1.2, label=mc_label)
 
-        # HDI cut lines (data black, mc red)
         ax.axvline(dh.cut_low, color="black", linestyle="--", linewidth=1.0)
         ax.axvline(dh.cut_high, color="black", linestyle="--", linewidth=1.0)
         ax.axvline(mh.cut_low, color="red", linestyle="--", linewidth=1.0)
@@ -404,7 +386,7 @@ def plot_2x3_canvas(title: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[st
         ax.text(
             0.98,
             0.06,
-            f"HDI {100.0*TARGET_COVERAGE:.1f}%:\n"
+            f"HDI {100.0*coverage:.1f}%:\n"
             f"data: ({dh.cut_low:.3f}, {dh.cut_high:.3f})\n"
             f"mc:   ({mh.cut_low:.3f}, {mh.cut_high:.3f})",
             transform=ax.transAxes,
@@ -421,14 +403,12 @@ def plot_2x3_canvas(title: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[st
     plt.close(fig)
 
 
-def print_summary(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[str, Hist1D]) -> None:
+def print_summary(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[str, Hist1D], coverage: float) -> None:
     print("")
     print("------------------------------------------------------------")
     print(f"SUMMARY: {pid_label} (pid={pid})")
-    print(f"  Range=({VZ_MIN:.1f},{VZ_MAX:.1f}) (cm), bins={N_BINS}, HDI coverage={TARGET_COVERAGE:.3f}")
-    print("  Cuts are HDI (shortest interval containing the target fraction), computed separately for data and mc.")
+    print(f"  Range=({VZ_MIN:.1f},{VZ_MAX:.1f}) (cm), bins={N_BINS}, HDI coverage={coverage:.5f}")
     print("------------------------------------------------------------")
-
     periods = sorted(PANEL_POS.keys(), key=lambda k: (PANEL_POS[k][0], PANEL_POS[k][1]))
     for period_label in periods:
         d = data_hists[period_label]
@@ -439,8 +419,24 @@ def print_summary(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], mc_hi
     #endfor
 
 
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Vertex z calibration plots with HDI-based central coverage cuts (data vs mc)."
+    )
+    p.add_argument(
+        "--coverage",
+        type=float,
+        required=True,
+        help="Central coverage fraction for HDI window (e.g. 0.99). Must be in (0,1).",
+    )
+    return p.parse_args()
+
+
 def main() -> None:
-    validate_inputs()
+    args = parse_args()
+    coverage = float(args.coverage)
+
+    validate_inputs(coverage)
     ensure_outdir(OUTDIR)
 
     particles = [
@@ -449,14 +445,14 @@ def main() -> None:
     ]
 
     for pid, pid_label, fname in particles:
-        data_hists = run_parallel_hists(DATA_FILES, pid)
-        mc_hists = run_parallel_hists(MC_FILES, pid)
+        data_hists = run_parallel_hists(DATA_FILES, pid, coverage)
+        mc_hists = run_parallel_hists(MC_FILES, pid, coverage)
 
-        print_summary(pid, pid_label, data_hists, mc_hists)
+        print_summary(pid, pid_label, data_hists, mc_hists, coverage)
 
         outpath = os.path.join(OUTDIR, fname)
-        title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized, log-y, HDI {100.0*TARGET_COVERAGE:.1f}%]"
-        plot_2x3_canvas(title, data_hists, mc_hists, outpath)
+        title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized, log-y, HDI {100.0*coverage:.1f}%]"
+        plot_2x3_canvas(title, data_hists, mc_hists, outpath, coverage)
 
         print(f"Wrote: {outpath}")
     #endfor
