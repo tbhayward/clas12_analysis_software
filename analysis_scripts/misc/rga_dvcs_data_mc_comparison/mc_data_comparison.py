@@ -8,7 +8,9 @@ Make 2x3 canvases comparing DATA vs DVCSGEN MC for particle vertex z (particle_v
 separately for:
   - electron (pid = 11)
   - proton   (pid = 2212)
-  - photon   (pid = 22)
+
+NOTE:
+  - Photon plots are REMOVED (you said you don't cut on photon vertex).
 
 Layout (2x3):
   Top row:    Sp18 Inb | Sp18 Out | (empty)
@@ -28,11 +30,12 @@ Requested features implemented:
   1) Draw vertical cut lines for your pass2-derived vertex cuts (per RGA period).
      - electron (pid=11): charge<0 window from your Java (per period).
      - proton   (pid=2212): charge>0 window from your Java (per period).
-     - photon   (pid=22): Java falls through to default window (-9, 2).
   2) Legend includes the percentage of selected events inside the cut window.
      - Percentage is computed on the selected unbinned sample (no vz==0 suppression).
   3) Print out the MODE bin entry info (per period, for data and mc):
      - mode_vz (bin center), mode_count (raw counts in that bin), mode_frac.
+  4) Cut description text is in the bottom-right of each subplot.
+  5) Y-axis is LOG scale (requested).
 
 X axis range:
   - Fixed to [-10, 10] (cm).
@@ -41,7 +44,6 @@ X axis range:
 Output:
   output/vz_electron.png
   output/vz_proton.png
-  output/vz_photon.png
 
 Dependencies:
   pip install uproot numpy matplotlib
@@ -124,8 +126,6 @@ VTX_CUTS_NEG = {
     "Sp19 Inb": (-6.3640, 1.5150),
 }
 
-VTX_CUT_FALLBACK_NEUTRAL = (-9.0, 2.0)
-
 
 # -----------------------------------------------------------------------------
 # INTERNALS
@@ -140,9 +140,9 @@ class Hist1D:
     frac_in_cut: float
     cut_low: float
     cut_high: float
-    mode_vz: float              # bin center at max raw count
-    mode_count: int             # raw count in the mode bin
-    mode_frac: float            # mode_count / n_selected (0 if n_selected==0)
+    mode_vz: float
+    mode_count: int
+    mode_frac: float
 
 
 def fatal(msg: str) -> None:
@@ -218,17 +218,12 @@ def cut_window_for_pid_and_period(pid: int, period_label: str) -> Tuple[float, f
         return VTX_CUTS_NEG[period_label]
     elif pid == 2212:
         return VTX_CUTS_POS[period_label]
-    elif pid == 22:
-        return VTX_CUT_FALLBACK_NEUTRAL
     #endif
-    return VTX_CUT_FALLBACK_NEUTRAL
+    # Should not be reached in this script since we removed photon plots.
+    return (-9.0, 2.0)
 
 
 def compute_mode_from_hist(counts_raw: np.ndarray, edges: np.ndarray, n_selected: int) -> Tuple[float, int, float]:
-    """
-    Mode defined as the bin with maximum raw count.
-    Returns (mode_vz_center, mode_count, mode_frac).
-    """
     if counts_raw.size == 0:
         return 0.0, 0, 0.0
     #endif
@@ -249,15 +244,6 @@ def compute_mode_from_hist(counts_raw: np.ndarray, edges: np.ndarray, n_selected
 
 
 def compute_hist_for_file(args: Tuple[str, str, int, str]) -> Tuple[str, str, int, Hist1D]:
-    """
-    Worker function.
-
-    - Select by pid.
-    - Require finite vz (NO vz==0 suppression in this version).
-    - Histogram in [VZ_MIN, VZ_MAX], then normalize to unit area.
-    - Compute n_in_cut and frac_in_cut using the pid/period cut window on the selected sample.
-    - Compute mode_vz/mode_count/mode_frac from the RAW histogram.
-    """
     period_label, root_path, pid, tree_name = args
 
     try:
@@ -408,16 +394,30 @@ def plot_2x3_canvas(
         ax.set_ylabel("normalized counts", fontsize=12)
         ax.grid(True, alpha=0.25)
         ax.legend(loc="upper right", fontsize=9, frameon=True)
-        ax.set_ylim(bottom=0.0)
 
+        # LOG Y SCALE (requested)
+        ax.set_yscale("log")
+
+        # With log scale, we must keep y>0. Use the smallest positive value in either curve.
+        positive_vals = np.concatenate([dh.counts[dh.counts > 0.0], mh.counts[mh.counts > 0.0]])
+        if positive_vals.size > 0:
+            y_min = float(np.min(positive_vals))
+        else:
+            y_min = 1e-12
+        #endif
+        ax.set_ylim(bottom=y_min)
+
+        # Cut description bottom-right
         ax.text(
-            0.02,
-            0.92,
+            0.98,
+            0.06,
             f"cut: ({cut_low:.3f}, {cut_high:.3f}) (cm)",
             transform=ax.transAxes,
             fontsize=9,
-            verticalalignment="top",
+            verticalalignment="bottom",
+            horizontalalignment="right",
         )
+
     #endfor
 
     axes[0, 2].axis("off")
@@ -449,21 +449,20 @@ def main() -> None:
     validate_inputs()
     ensure_outdir(OUTDIR)
 
+    # Photon removed (requested)
     particles = [
         (11, "electron", "vz_electron.png"),
         (2212, "proton", "vz_proton.png"),
-        (22, "photon", "vz_photon.png"),
     ]
 
     for pid, pid_label, fname in particles:
         data_hists = run_parallel_hists(DATA_FILES, pid, TREE_NAME)
         mc_hists = run_parallel_hists(MC_FILES, pid, TREE_NAME)
 
-        # Print mode summary (requested)
         print_mode_summary(pid, pid_label, data_hists, mc_hists)
 
         outpath = os.path.join(OUTDIR, fname)
-        title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized]"
+        title = f"Vertex z comparison: {pid_label} (pid={pid}) [unit-normalized, log-y]"
         plot_2x3_canvas(title, data_hists, mc_hists, outpath)
 
         print(f"Wrote: {outpath}")
