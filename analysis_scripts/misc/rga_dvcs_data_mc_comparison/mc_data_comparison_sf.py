@@ -13,15 +13,9 @@ Sampling fraction definition:
 We compute, in bins of p, the mean SF:
   <SF>(p-bin) = (1/N) * sum_i SF_i   for events in that p bin
 
-IMPORTANT FIX (this version):
-  - Reject invalid calorimeter layer energies that cause negative / absurd SF.
-  - Require:
-      p > 0
-      cal_energy_1 > 0
-      cal_energy_4 > 0
-      cal_energy_7 > 0
-    This removes common sentinel defaults like -9999.
-  - Also require SF >= 0 as a final sanity check.
+UPDATES (this version):
+  1) Validity mask uses >= 0.0 for cal_energy_1/4/7 (requested), plus p > 0.
+  2) Standardize y-axis range to [0.1, 0.35] for ALL subplots (requested).
 
 Canvas layout (2x3):
   Top row:    Sp18 Inb | Sp18 Out | (empty)
@@ -63,6 +57,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 TREE_NAME = "PhysicsEvents"
 OUTDIR = "output"
 MAX_WORKERS_HARD = 5
+
+# Standardized y-range (requested)
+Y_MIN = 0.1
+Y_MAX = 0.35
 
 DATA_FILES = {
     "Sp18 Inb": "/volatile/clas12/thayward/dvcs_temp/calibration_data_rga_sp18_inb.root",
@@ -128,6 +126,9 @@ def validate_inputs(args: argparse.Namespace) -> None:
     if args.max_workers <= 0 or args.max_workers > MAX_WORKERS_HARD:
         fatal(f"--max-workers must be in [1,{MAX_WORKERS_HARD}]. Got {args.max_workers}")
     #endif
+    if Y_MAX <= Y_MIN:
+        fatal(f"Invalid Y range: Y_MIN={Y_MIN} must be < Y_MAX={Y_MAX}")
+    #endif
 
     for label, path in DATA_FILES.items():
         if not os.path.isfile(path):
@@ -155,9 +156,8 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int]) -> Tuple[
     Worker:
       - Select electrons (particle_pid == 11)
       - Require finite p, e1, e4, e7
-      - Require p>0 and e1>0, e4>0, e7>0 (removes sentinel negatives)
+      - Require p>0 and e1>=0, e4>=0, e7>=0 (requested)
       - Compute SF = (e1+e4+e7)/p
-      - Require SF >= 0 (sanity)
       - Bin in p, compute mean SF and SEM
     """
     period_label, root_path, pmin, pmax, pbins = args
@@ -194,16 +194,15 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int]) -> Tuple[
 
             n_total_selected = int(np.count_nonzero(base))
 
-            # STRICT validity mask to kill sentinel values
-            valid = base & (e1 > 0.0) & (e4 > 0.0) & (e7 > 0.0)
+            # Updated validity mask (>=0)
+            valid = base & (e1 >= 0.0) & (e4 >= 0.0) & (e7 >= 0.0)
 
             p_sel = p[valid].astype(np.float64)
             sf_sel = (e1[valid].astype(np.float64) + e4[valid].astype(np.float64) + e7[valid].astype(np.float64)) / p_sel
 
-            # Sanity
-            sf_sel = sf_sel[np.isfinite(sf_sel)]
-            sf_sel = sf_sel[sf_sel >= 0.0]
-            p_sel = p_sel[: sf_sel.size]  # keep aligned after filters above (conservative)
+            sf_mask = np.isfinite(sf_sel) & (sf_sel >= 0.0)
+            sf_sel = sf_sel[sf_mask]
+            p_sel = p_sel[sf_mask]
 
             n_valid_used = int(sf_sel.size)
 
@@ -290,7 +289,7 @@ def plot_2x3_canvas(
     pmin: float,
     pmax: float,
 ) -> None:
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=False)
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=True)
     fig.suptitle(title, fontsize=18)
 
     for r in range(2):
@@ -332,6 +331,7 @@ def plot_2x3_canvas(
 
         ax.set_title(period_label, fontsize=13)
         ax.set_xlim(pmin, pmax)
+        ax.set_ylim(Y_MIN, Y_MAX)  # standardized y-range (requested)
         ax.set_xlabel("p (GeV)", fontsize=12)
         ax.set_ylabel("mean sampling fraction", fontsize=12)
         ax.grid(True, alpha=0.25)
@@ -365,15 +365,6 @@ def main() -> None:
     outpath = os.path.join(OUTDIR, "sampling_fraction_vs_p_electron.png")
     title = "Mean sampling fraction vs p: electrons (pid=11), (cal_energy_1+4+7)/p"
     plot_2x3_canvas(title, data_prof, mc_prof, outpath, args.pmin, args.pmax)
-
-    # quick console summary
-    print("")
-    print("Validity-mask summary (per period): require e1>0, e4>0, e7>0, p>0")
-    for period_label in sorted(PANEL_POS.keys(), key=lambda k: (PANEL_POS[k][0], PANEL_POS[k][1])):
-        dp = data_prof[period_label]
-        mp = mc_prof[period_label]
-        print(f"{period_label}: data used {dp.n_valid_used}/{dp.n_total_selected} ; mc used {mp.n_valid_used}/{mp.n_total_selected}")
-    #endfor
 
     print(f"Wrote: {outpath}")
     print("Done.")
