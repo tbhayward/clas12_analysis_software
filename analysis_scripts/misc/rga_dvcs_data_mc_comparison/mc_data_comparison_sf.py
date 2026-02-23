@@ -13,6 +13,16 @@ Sampling fraction definition:
 We compute, in bins of p, the mean SF:
   <SF>(p-bin) = (1/N) * sum_i SF_i   for events in that p bin
 
+IMPORTANT FIX (this version):
+  - Reject invalid calorimeter layer energies that cause negative / absurd SF.
+  - Require:
+      p > 0
+      cal_energy_1 > 0
+      cal_energy_4 > 0
+      cal_energy_7 > 0
+    This removes common sentinel defaults like -9999.
+  - Also require SF >= 0 as a final sanity check.
+
 Canvas layout (2x3):
   Top row:    Sp18 Inb | Sp18 Out | (empty)
   Bottom row: Fa18 Inb | Fa18 Out | Sp19 Inb
@@ -22,7 +32,6 @@ MC:   red points
 
 Parallel processing:
   - At most 5 workers HARD LIMIT.
-  - We process ALL data files in parallel, then ALL mc files in parallel.
 
 p range:
   - 2 to 8 (GeV)
@@ -53,8 +62,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 TREE_NAME = "PhysicsEvents"
 OUTDIR = "output"
-
-# HARD LIMIT on workers
 MAX_WORKERS_HARD = 5
 
 DATA_FILES = {
@@ -91,10 +98,12 @@ PID_ELECTRON = 11
 
 @dataclass(frozen=True)
 class MeanProfile:
-    p_centers: np.ndarray   # bin centers
-    mean_sf: np.ndarray     # mean SF in each p bin (NaN where empty)
-    err_sf: np.ndarray      # standard error on mean (NaN where empty)
-    n_in_bin: np.ndarray    # counts per bin (int)
+    p_centers: np.ndarray
+    mean_sf: np.ndarray
+    err_sf: np.ndarray
+    n_in_bin: np.ndarray
+    n_total_selected: int
+    n_valid_used: int
 
 
 def fatal(msg: str) -> None:
@@ -145,12 +154,11 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int]) -> Tuple[
     """
     Worker:
       - Select electrons (particle_pid == 11)
-      - Require finite p, cal_energy_1/4/7 and p>0
+      - Require finite p, e1, e4, e7
+      - Require p>0 and e1>0, e4>0, e7>0 (removes sentinel negatives)
       - Compute SF = (e1+e4+e7)/p
-      - Bin in p and compute mean SF and standard error on mean in each bin
-
-    Returns:
-      (period_label, MeanProfile)
+      - Require SF >= 0 (sanity)
+      - Bin in p, compute mean SF and SEM
     """
     period_label, root_path, pmin, pmax, pbins = args
 
@@ -175,7 +183,7 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int]) -> Tuple[
             e4 = arr["cal_energy_4"]
             e7 = arr["cal_energy_7"]
 
-            mask = (
+            base = (
                 (pid == PID_ELECTRON)
                 & np.isfinite(p)
                 & np.isfinite(e1)
@@ -183,25 +191,34 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int]) -> Tuple[
                 & np.isfinite(e7)
                 & (p > 0.0)
             )
-            p_sel = p[mask].astype(np.float64)
-            sf_sel = (e1[mask].astype(np.float64) + e4[mask].astype(np.float64) + e7[mask].astype(np.float64)) / p_sel
 
-            # p binning
+            n_total_selected = int(np.count_nonzero(base))
+
+            # STRICT validity mask to kill sentinel values
+            valid = base & (e1 > 0.0) & (e4 > 0.0) & (e7 > 0.0)
+
+            p_sel = p[valid].astype(np.float64)
+            sf_sel = (e1[valid].astype(np.float64) + e4[valid].astype(np.float64) + e7[valid].astype(np.float64)) / p_sel
+
+            # Sanity
+            sf_sel = sf_sel[np.isfinite(sf_sel)]
+            sf_sel = sf_sel[sf_sel >= 0.0]
+            p_sel = p_sel[: sf_sel.size]  # keep aligned after filters above (conservative)
+
+            n_valid_used = int(sf_sel.size)
+
             edges = np.linspace(pmin, pmax, pbins + 1, dtype=np.float64)
             centers = 0.5 * (edges[:-1] + edges[1:])
 
-            # Bin indices: 0..pbins-1, ignore under/overflow by mask
             bin_idx = np.digitize(p_sel, edges) - 1
             inrange = (bin_idx >= 0) & (bin_idx < pbins)
             bin_idx = bin_idx[inrange]
             sf_sel = sf_sel[inrange]
 
-            # Aggregate sums and sums of squares for mean and std error
             n = np.zeros(pbins, dtype=np.int64)
             s1 = np.zeros(pbins, dtype=np.float64)
             s2 = np.zeros(pbins, dtype=np.float64)
 
-            # Vectorized accumulation
             np.add.at(n, bin_idx, 1)
             np.add.at(s1, bin_idx, sf_sel)
             np.add.at(s2, bin_idx, sf_sel * sf_sel)
@@ -212,16 +229,20 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int]) -> Tuple[
             nonzero = n > 0
             mean[nonzero] = s1[nonzero] / n[nonzero]
 
-            # Sample variance estimate in each bin (unbiased) then SEM
-            # var = (sum(x^2) - sum(x)^2 / n) / (n-1)
             gt1 = n > 1
             var = np.zeros(pbins, dtype=np.float64)
             var[gt1] = (s2[gt1] - (s1[gt1] * s1[gt1]) / n[gt1]) / (n[gt1] - 1.0)
-            var[var < 0.0] = 0.0  # numerical guard
+            var[var < 0.0] = 0.0
             err[gt1] = np.sqrt(var[gt1] / n[gt1])
-            # bins with n==1 keep err=NaN
 
-            prof = MeanProfile(p_centers=centers, mean_sf=mean, err_sf=err, n_in_bin=n)
+            prof = MeanProfile(
+                p_centers=centers,
+                mean_sf=mean,
+                err_sf=err,
+                n_in_bin=n,
+                n_total_selected=n_total_selected,
+                n_valid_used=n_valid_used,
+            )
             return period_label, prof
 
     except Exception as e:
@@ -272,7 +293,6 @@ def plot_2x3_canvas(
     fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=False)
     fig.suptitle(title, fontsize=18)
 
-    # Disable all, then enable only used
     for r in range(2):
         for c in range(3):
             axes[r, c].axis("off")
@@ -286,7 +306,6 @@ def plot_2x3_canvas(
         dp = data_prof[period_label]
         mp = mc_prof[period_label]
 
-        # Keep only finite mean points
         dmask = np.isfinite(dp.mean_sf)
         mmask = np.isfinite(mp.mean_sf)
 
@@ -298,7 +317,7 @@ def plot_2x3_canvas(
             color="black",
             markersize=3,
             linewidth=1.0,
-            label="data",
+            label=f"data (used {dp.n_valid_used}/{dp.n_total_selected})",
         )
         ax.errorbar(
             mp.p_centers[mmask],
@@ -308,7 +327,7 @@ def plot_2x3_canvas(
             color="red",
             markersize=3,
             linewidth=1.0,
-            label="mc",
+            label=f"mc (used {mp.n_valid_used}/{mp.n_total_selected})",
         )
 
         ax.set_title(period_label, fontsize=13)
@@ -316,12 +335,11 @@ def plot_2x3_canvas(
         ax.set_xlabel("p (GeV)", fontsize=12)
         ax.set_ylabel("mean sampling fraction", fontsize=12)
         ax.grid(True, alpha=0.25)
-        ax.legend(loc="upper right", fontsize=10, frameon=True)
+        ax.legend(loc="upper right", fontsize=9, frameon=True)
 
     #endfor
 
     axes[0, 2].axis("off")
-
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     fig.savefig(outpath, dpi=200)
     plt.close(fig)
@@ -346,14 +364,16 @@ def main() -> None:
 
     outpath = os.path.join(OUTDIR, "sampling_fraction_vs_p_electron.png")
     title = "Mean sampling fraction vs p: electrons (pid=11), (cal_energy_1+4+7)/p"
-    plot_2x3_canvas(
-        title=title,
-        data_prof=data_prof,
-        mc_prof=mc_prof,
-        outpath=outpath,
-        pmin=args.pmin,
-        pmax=args.pmax,
-    )
+    plot_2x3_canvas(title, data_prof, mc_prof, outpath, args.pmin, args.pmax)
+
+    # quick console summary
+    print("")
+    print("Validity-mask summary (per period): require e1>0, e4>0, e7>0, p>0")
+    for period_label in sorted(PANEL_POS.keys(), key=lambda k: (PANEL_POS[k][0], PANEL_POS[k][1])):
+        dp = data_prof[period_label]
+        mp = mc_prof[period_label]
+        print(f"{period_label}: data used {dp.n_valid_used}/{dp.n_total_selected} ; mc used {mp.n_valid_used}/{mp.n_total_selected}")
+    #endfor
 
     print(f"Wrote: {outpath}")
     print("Done.")
