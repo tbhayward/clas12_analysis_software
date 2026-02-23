@@ -18,17 +18,16 @@ DATA histogram: black
 MC histogram:   red
 Y scale: log
 
-Cuts (THIS VERSION):
-  - We compute the Highest Density Interval (HDI): the shortest interval containing
-    a user-specified fraction of events.
-  - The coverage fraction is provided at runtime, e.g.:
-      ./calibration_vertex_vz_compare.py --coverage 0.99
+Cuts:
+  - We still compute/plot the HDI window based on a runtime --coverage fraction.
+  - NEW: We ALSO print to console the "surviving yield percentage" for a UNIVERSAL
+    hard cut window: (-8, 2) (cm), for both DATA and MC, per period.
+
+X axis / histogram range:
+  - Fixed to [-20, 20] (cm).
 
 Parallel processing:
   - At most 5 workers.
-
-X-axis / histogram range:
-  - Fixed to [-20, 20] (cm).
 
 Output:
   output/vz_electron.png
@@ -57,15 +56,16 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 TREE_NAME = "PhysicsEvents"
 
-# Histogram range and binning
 VZ_MIN = -20.0
 VZ_MAX = 20.0
 N_BINS = 200
 
-# Hard limit on workers
 MAX_WORKERS = 5
-
 OUTDIR = "output"
+
+# Universal cut requested by user (cm)
+UNIVERSAL_CUT_LOW = -8.0
+UNIVERSAL_CUT_HIGH = 2.0
 
 DATA_FILES = {
     "Sp18 Inb": "/volatile/clas12/thayward/dvcs_temp/calibration_data_rga_sp18_inb.root",
@@ -133,6 +133,10 @@ class Hist1D:
     n_in_cut: int
     hdi_width: float
 
+    # Universal cut survival
+    universal_frac: float
+    universal_n: int
+
 
 def fatal(msg: str) -> None:
     sys.stderr.write(f"\nFATAL: {msg}\n")
@@ -158,6 +162,9 @@ def validate_inputs(coverage: float) -> None:
     #endif
     if coverage <= 0.0 or coverage >= 1.0:
         fatal(f"--coverage must be in (0,1). Got {coverage}")
+    #endif
+    if not (UNIVERSAL_CUT_LOW < UNIVERSAL_CUT_HIGH):
+        fatal("Universal cut window is invalid.")
     #endif
 
     for label, path in DATA_FILES.items():
@@ -202,12 +209,6 @@ def compute_mode_from_raw(counts_raw: np.ndarray, centers: np.ndarray, n_selecte
 
 
 def hdi_interval(sorted_vals: np.ndarray, coverage: float) -> Tuple[float, float]:
-    """
-    Highest Density Interval (HDI): shortest interval containing `coverage` fraction of points.
-
-    Input must be sorted.
-    Returns (low, high).
-    """
     n = int(sorted_vals.size)
     if n <= 0:
         fatal("HDI: empty array.")
@@ -257,6 +258,17 @@ def compute_hist_for_file(args: Tuple[str, str, int, str, float]) -> Tuple[str, 
             mask = (pids == pid) & np.isfinite(vz)
             vz_sel = vz[mask].astype(np.float64)
 
+            # Universal cut survival
+            if vz_sel.size > 0:
+                u_mask = (vz_sel >= UNIVERSAL_CUT_LOW) & (vz_sel <= UNIVERSAL_CUT_HIGH)
+                universal_n = int(np.count_nonzero(u_mask))
+                universal_frac = float(universal_n) / float(vz_sel.size)
+            else:
+                universal_n = 0
+                universal_frac = 0.0
+            #endif
+
+            # Histogram
             counts_raw, edges = np.histogram(vz_sel, bins=N_BINS, range=(VZ_MIN, VZ_MAX))
             counts_norm = normalize_to_integral(counts_raw)
             centers = 0.5 * (edges[:-1] + edges[1:])
@@ -265,6 +277,7 @@ def compute_hist_for_file(args: Tuple[str, str, int, str, float]) -> Tuple[str, 
                 counts_raw=counts_raw, centers=centers, n_selected=int(vz_sel.size)
             )
 
+            # HDI window for plotting
             if vz_sel.size <= 0:
                 cut_low = float("nan")
                 cut_high = float("nan")
@@ -295,6 +308,8 @@ def compute_hist_for_file(args: Tuple[str, str, int, str, float]) -> Tuple[str, 
                 frac_in_cut=float(frac_in_cut),
                 n_in_cut=int(n_in_cut),
                 hdi_width=float(hdi_width),
+                universal_frac=float(universal_frac),
+                universal_n=int(universal_n),
             )
             return (period_label, root_path, pid, h)
 
@@ -403,6 +418,27 @@ def plot_2x3_canvas(
     plt.close(fig)
 
 
+def print_universal_cut_survival(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[str, Hist1D]) -> None:
+    print("")
+    print("============================================================")
+    print(f"UNIVERSAL CUT SURVIVAL: {pid_label} (pid={pid})")
+    print(f"  Universal window = ({UNIVERSAL_CUT_LOW:.3f}, {UNIVERSAL_CUT_HIGH:.3f}) (cm)")
+    print("  Reported as percent of selected events for that pid/period.")
+    print("============================================================")
+
+    periods = sorted(PANEL_POS.keys(), key=lambda k: (PANEL_POS[k][0], PANEL_POS[k][1]))
+    for period_label in periods:
+        d = data_hists[period_label]
+        m = mc_hists[period_label]
+
+        print(f"{period_label}:")
+        print(f"  data: survive={100.0*d.universal_frac:.3f}%  (N_total={d.n_selected}, N_pass={d.universal_n})")
+        print(f"  mc:   survive={100.0*m.universal_frac:.3f}%  (N_total={m.n_selected}, N_pass={m.universal_n})")
+    #endfor
+    print("============================================================")
+    print("")
+
+
 def print_summary(pid: int, pid_label: str, data_hists: Dict[str, Hist1D], mc_hists: Dict[str, Hist1D], coverage: float) -> None:
     print("")
     print("------------------------------------------------------------")
@@ -448,6 +484,10 @@ def main() -> None:
         data_hists = run_parallel_hists(DATA_FILES, pid, coverage)
         mc_hists = run_parallel_hists(MC_FILES, pid, coverage)
 
+        # NEW: print universal cut survival percentages
+        print_universal_cut_survival(pid, pid_label, data_hists, mc_hists)
+
+        # Existing: print HDI summary and make plot
         print_summary(pid, pid_label, data_hists, mc_hists, coverage)
 
         outpath = os.path.join(OUTDIR, fname)
