@@ -14,20 +14,20 @@ What is plotted:
   - In p-bins, plot mean(sf) with standard error on the mean (SEM)
   - DATA in black, MC in red
 
-New additions (this version):
-  1) Apply your sector- and run-period-dependent sampling-fraction cuts (from Java),
-     event-by-event, and print/display the PASS FRACTION (% passing) in the legend.
-  2) Overlay the sampling-fraction CUT CURVES as dashed blue lines:
-       - lower(p) and upper(p)
-     IMPORTANT: since your cuts are sector-dependent (6 curves each), but the plotted
-     quantity is sector-averaged mean(sf), we draw a single representative envelope:
-       - lower_line(p) = median over sectors of lower_limit(p)
-       - upper_line(p) = median over sectors of upper_limit(p)
-     This keeps the plot readable while still showing where the cut band lives.
+Cuts and survival rates (this version):
+  A) Sector- and period-dependent polynomial band cut (from your Java), event-by-event.
+     We compute pass fraction = N_pass / N_used for that cut.
+  B) Additional simple cut: sf >= 0.19 (requested), also event-by-event.
+     We compute pass fraction = N_pass_simple / N_used for that cut.
+
+Overlay:
+  - Dashed blue lines show a representative (median-over-sectors) lower/upper band for the
+    polynomial cut (DATA period definition).
+  - (Optional visual) we draw a horizontal dashed blue line at sf = 0.19 to show the simple cut.
 
 Axes:
   - p from 2 to 8 (GeV)
-  - y fixed to [0.1, 0.35] (requested)
+  - y fixed to [0.1, 0.35]
 
 Parallel processing:
   - At most 5 workers HARD LIMIT.
@@ -45,7 +45,7 @@ import sys
 import argparse
 import traceback
 from dataclasses import dataclass
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple
 
 import numpy as np
 import uproot
@@ -61,13 +61,16 @@ TREE_NAME = "PhysicsEvents"
 OUTDIR = "output"
 MAX_WORKERS_HARD = 5
 
-# Plot ranges (requested)
 P_MIN_DEFAULT = 2.0
 P_MAX_DEFAULT = 8.0
+
 Y_MIN = 0.1
 Y_MAX = 0.35
 
 PID_ELECTRON = 11
+
+# Additional simple SF cut (requested)
+SF_SIMPLE_MIN = 0.19
 
 DATA_FILES = {
     "Sp18 Inb": "/volatile/clas12/thayward/dvcs_temp/calibration_data_rga_sp18_inb.root",
@@ -227,19 +230,11 @@ def coeffs_mc_run11() -> Tuple[np.ndarray, np.ndarray]:
 
 
 def coeffs_for_period(period_label: str, dataset: str) -> Tuple[np.ndarray, np.ndarray, bool]:
-    """
-    dataset: "data" or "mc"
-    Returns (lowerCoeffs, upperCoeffs, has_upper)
-
-    For MC we use the runnum==11 block (as in your Java).
-    For DATA we use the period-specific RGA blocks.
-    """
     if dataset == "mc":
         lo, hi = coeffs_mc_run11()
         return lo, hi, True
     #endif
 
-    # DATA (RGA periods)
     if period_label == "Fa18 Inb":
         lo, hi = coeffs_rga_fa18_inb()
         return lo, hi, True
@@ -257,11 +252,10 @@ def coeffs_for_period(period_label: str, dataset: str) -> Tuple[np.ndarray, np.n
         return lo, hi, True
     #endif
 
-    # If something unexpected shows up, match Java's default: return sf > 0.19
-    # Here we implement that as "no upper cut, only lower cut=0.19"
+    # Java default: return sf > 0.19
     lo = np.zeros((6, 3), dtype=np.float64)
     hi = np.zeros((6, 3), dtype=np.float64)
-    lo[:, 0] = 0.19
+    lo[:, 0] = SF_SIMPLE_MIN
     lo[:, 1] = 0.0
     lo[:, 2] = 0.0
     return lo, hi, False
@@ -269,10 +263,6 @@ def coeffs_for_period(period_label: str, dataset: str) -> Tuple[np.ndarray, np.n
 
 
 def eval_quad(coeffs: np.ndarray, p: np.ndarray) -> np.ndarray:
-    """
-    coeffs shape (6,3), p shape (N,)
-    returns limits shape (6,N)
-    """
     a0 = coeffs[:, 0:1]
     a1 = coeffs[:, 1:2]
     a2 = coeffs[:, 2:3]
@@ -290,10 +280,14 @@ class MeanProfile:
     mean_sf: np.ndarray
     err_sf: np.ndarray
     n_in_bin: np.ndarray
-    n_total_selected: int
-    n_valid_used: int
-    pass_fraction: float
-    pass_n: int
+
+    pass_fraction_poly: float
+    pass_n_poly: int
+
+    pass_fraction_simple: float
+    pass_n_simple: int
+
+    n_used: int
 
 
 def fatal(msg: str) -> None:
@@ -321,6 +315,7 @@ def validate_inputs(args: argparse.Namespace) -> None:
     if set(DATA_FILES.keys()) != set(MC_FILES.keys()):
         fatal("DATA_FILES and MC_FILES keys differ.")
     #endif
+
     for label, path in DATA_FILES.items():
         if not os.path.isfile(path):
             fatal(f"Missing DATA file '{label}': {path}")
@@ -334,9 +329,6 @@ def validate_inputs(args: argparse.Namespace) -> None:
 
 
 def compute_profile_for_file(args: Tuple[str, str, float, float, int, str]) -> Tuple[str, MeanProfile]:
-    """
-    dataset is "data" or "mc"
-    """
     period_label, root_path, pmin, pmax, pbins, dataset = args
 
     try:
@@ -346,8 +338,6 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int, str]) -> T
             #endif
             tree = f[TREE_NAME]
 
-            # REQUIRED: we need sector to apply your SF cuts.
-            # Fail fast if not present (deterministic).
             required = ["particle_pid", "p", "cal_energy_1", "cal_energy_4", "cal_energy_7", "cal_sector"]
             for br in required:
                 if br not in tree.keys():
@@ -383,38 +373,39 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int, str]) -> T
             sf_sel = (e1[base].astype(np.float64) + e4[base].astype(np.float64) + e7[base].astype(np.float64)) / p_sel
             sec_sel = sector[base].astype(np.int64)
 
-            # Sector must be valid 1..6
             sec_ok = (sec_sel >= 1) & (sec_sel <= 6)
             p_sel = p_sel[sec_ok]
             sf_sel = sf_sel[sec_ok]
             sec_sel = sec_sel[sec_ok]
 
-            # Sanity
             ok = np.isfinite(sf_sel) & (sf_sel >= 0.0)
             p_sel = p_sel[ok]
             sf_sel = sf_sel[ok]
             sec_sel = sec_sel[ok]
 
-            n_total_selected = int(np.count_nonzero(pid == PID_ELECTRON))
-            n_valid_used = int(sf_sel.size)
+            n_used = int(sf_sel.size)
 
-            # Apply your sampling fraction cut event-by-event
+            # Simple cut: sf >= 0.19
+            pass_simple = (sf_sel >= SF_SIMPLE_MIN)
+            pass_n_simple = int(np.count_nonzero(pass_simple))
+            pass_fraction_simple = float(pass_n_simple) / float(n_used) if n_used > 0 else 0.0
+
+            # Polynomial band cut (sector-dependent)
             lo_coeffs, hi_coeffs, has_upper = coeffs_for_period(period_label, dataset)
-
             idx = sec_sel - 1  # 0..5
-            lo = lo_coeffs[idx, 0] + lo_coeffs[idx, 1] * p_sel + lo_coeffs[idx, 2] * p_sel * p_sel
 
+            lo = lo_coeffs[idx, 0] + lo_coeffs[idx, 1] * p_sel + lo_coeffs[idx, 2] * p_sel * p_sel
             if has_upper:
                 hi = hi_coeffs[idx, 0] + hi_coeffs[idx, 1] * p_sel + hi_coeffs[idx, 2] * p_sel * p_sel
-                pass_mask = (sf_sel > lo) & (sf_sel < hi)
+                pass_poly = (sf_sel > lo) & (sf_sel < hi)
             else:
-                pass_mask = (sf_sel > lo)
+                pass_poly = (sf_sel > lo)
             #endif
 
-            pass_n = int(np.count_nonzero(pass_mask))
-            pass_fraction = float(pass_n) / float(n_valid_used) if n_valid_used > 0 else 0.0
+            pass_n_poly = int(np.count_nonzero(pass_poly))
+            pass_fraction_poly = float(pass_n_poly) / float(n_used) if n_used > 0 else 0.0
 
-            # Build mean profile (NO extra cuts; this is still the mean SF vs p)
+            # Mean(sf) vs p (NO additional cuts; it is the raw mean SF)
             edges = np.linspace(pmin, pmax, pbins + 1, dtype=np.float64)
             centers = 0.5 * (edges[:-1] + edges[1:])
 
@@ -448,10 +439,11 @@ def compute_profile_for_file(args: Tuple[str, str, float, float, int, str]) -> T
                 mean_sf=mean,
                 err_sf=err,
                 n_in_bin=n,
-                n_total_selected=n_total_selected,
-                n_valid_used=n_valid_used,
-                pass_fraction=pass_fraction,
-                pass_n=pass_n,
+                pass_fraction_poly=pass_fraction_poly,
+                pass_n_poly=pass_n_poly,
+                pass_fraction_simple=pass_fraction_simple,
+                pass_n_simple=pass_n_simple,
+                n_used=n_used,
             )
             return period_label, prof
 
@@ -500,19 +492,16 @@ def plot_2x3_canvas(
     outpath: str,
     pmin: float,
     pmax: float,
-    pbins: int,
 ) -> None:
     fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True, sharey=True)
     fig.suptitle(title, fontsize=18)
 
-    # Turn everything off first
     for r in range(2):
         for c in range(3):
             axes[r, c].axis("off")
         #endfor
     #endfor
 
-    # Build p-grid for cut curves
     p_grid = np.linspace(pmin, pmax, 400, dtype=np.float64)
 
     for period_label, (r, c) in PANEL_POS.items():
@@ -525,7 +514,6 @@ def plot_2x3_canvas(
         dmask = np.isfinite(dp.mean_sf)
         mmask = np.isfinite(mp.mean_sf)
 
-        # Data/MC points
         ax.errorbar(
             dp.p_centers[dmask],
             dp.mean_sf[dmask],
@@ -534,7 +522,7 @@ def plot_2x3_canvas(
             color="black",
             markersize=3,
             linewidth=1.0,
-            label=f"data pass={100.0*dp.pass_fraction:.2f}%",
+            label=f"data poly={100.0*dp.pass_fraction_poly:.2f}%  sf>=0.19={100.0*dp.pass_fraction_simple:.2f}%",
         )
         ax.errorbar(
             mp.p_centers[mmask],
@@ -544,31 +532,27 @@ def plot_2x3_canvas(
             color="red",
             markersize=3,
             linewidth=1.0,
-            label=f"mc pass={100.0*mp.pass_fraction:.2f}%",
+            label=f"mc poly={100.0*mp.pass_fraction_poly:.2f}%  sf>=0.19={100.0*mp.pass_fraction_simple:.2f}%",
         )
 
-        # Cut curves (representative median over sectors)
+        # Polynomial cut curves (representative median-over-sectors for DATA)
         lo_d, hi_d, has_upper_d = coeffs_for_period(period_label, "data")
-        lo_m, hi_m, has_upper_m = coeffs_for_period(period_label, "mc")
+        lo_all = eval_quad(lo_d, p_grid)
+        lo_line = np.median(lo_all, axis=0)
 
-        lo_d_all = eval_quad(lo_d, p_grid)  # (6,N)
-        lo_m_all = eval_quad(lo_m, p_grid)
-
-        lo_line = np.median(lo_d_all, axis=0)  # representative lower curve
-
+        hi_line = None
         if has_upper_d:
-            hi_d_all = eval_quad(hi_d, p_grid)
-            hi_line = np.median(hi_d_all, axis=0)
-        else:
-            hi_line = None
+            hi_all = eval_quad(hi_d, p_grid)
+            hi_line = np.median(hi_all, axis=0)
         #endif
 
-        # Use DATA curves for the blue band overlay (period-defined); MC is typically similar but not necessary to draw twice.
-        ax.plot(p_grid, lo_line, linestyle="--", color="blue", linewidth=1.2, label="SF cut lower/upper")
-
+        ax.plot(p_grid, lo_line, linestyle="--", color="blue", linewidth=1.2, label="SF cut band + sf>=0.19")
         if hi_line is not None:
             ax.plot(p_grid, hi_line, linestyle="--", color="blue", linewidth=1.2)
         #endif
+
+        # Simple cut line (sf >= 0.19)
+        ax.axhline(SF_SIMPLE_MIN, linestyle="--", color="blue", linewidth=1.0)
 
         ax.set_title(period_label, fontsize=13)
         ax.set_xlim(pmin, pmax)
@@ -576,7 +560,7 @@ def plot_2x3_canvas(
         ax.set_xlabel("p (GeV)", fontsize=12)
         ax.set_ylabel("mean sampling fraction", fontsize=12)
         ax.grid(True, alpha=0.25)
-        ax.legend(loc="upper right", fontsize=9, frameon=True)
+        ax.legend(loc="upper right", fontsize=8, frameon=True)
 
     #endfor
 
@@ -597,28 +581,32 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-
     validate_inputs(args)
+
     if not os.path.isdir(OUTDIR):
         os.makedirs(OUTDIR, exist_ok=True)
     #endif
 
-    # DATA then MC (as requested previously)
     data_prof = run_parallel_profiles(DATA_FILES, args.pmin, args.pmax, args.pbins, "data", args.max_workers)
     mc_prof = run_parallel_profiles(MC_FILES, args.pmin, args.pmax, args.pbins, "mc", args.max_workers)
 
     outpath = os.path.join(OUTDIR, "sampling_fraction_vs_p_electron.png")
     title = "Mean sampling fraction vs p: electrons (pid=11), (cal_energy_1+4+7)/p"
-    plot_2x3_canvas(title, data_prof, mc_prof, outpath, args.pmin, args.pmax, args.pbins)
+    plot_2x3_canvas(title, data_prof, mc_prof, outpath, args.pmin, args.pmax)
 
-    # Console summary of pass fractions
     print("")
-    print("Sampling-fraction cut pass fractions (event-by-event, sector-dependent):")
+    print("Sampling fraction survival rates (denominator = n_used after basic validity + sector 1..6):")
     periods = sorted(PANEL_POS.keys(), key=lambda k: (PANEL_POS[k][0], PANEL_POS[k][1]))
     for period_label in periods:
         dp = data_prof[period_label]
         mp = mc_prof[period_label]
-        print(f"{period_label}: data pass = {100.0*dp.pass_fraction:.3f}% (N_pass={dp.pass_n}, N_used={dp.n_valid_used}) ; mc pass = {100.0*mp.pass_fraction:.3f}% (N_pass={mp.pass_n}, N_used={mp.n_valid_used})")
+        print(
+            f"{period_label}: "
+            f"data poly={100.0*dp.pass_fraction_poly:.3f}% (N={dp.pass_n_poly}/{dp.n_used})  "
+            f"data sf>=0.19={100.0*dp.pass_fraction_simple:.3f}% (N={dp.pass_n_simple}/{dp.n_used})  ||  "
+            f"mc poly={100.0*mp.pass_fraction_poly:.3f}% (N={mp.pass_n_poly}/{mp.n_used})  "
+            f"mc sf>=0.19={100.0*mp.pass_fraction_simple:.3f}% (N={mp.pass_n_simple}/{mp.n_used})"
+        )
     #endfor
 
     print(f"Wrote: {outpath}")
