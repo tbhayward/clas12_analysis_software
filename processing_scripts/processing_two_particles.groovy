@@ -98,7 +98,8 @@ public static void main(String[] args) {
     GenericKinematicFitter fitter = new analysis_fitter(10.6041);
     // GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
     // GenericKinematicFitter fitter = new event_builder_fitter(10.6041);
-    EventFilter filter = new EventFilter("11:" + p1_Str + ":X+:X-:Xn")
+    // EventFilter filter = new EventFilter("11:" + p1_Str + ":X+:X-:Xn")
+    EventFilter filter = new EventFilter("22:" + p1_Str + ":X+:X-:Xn")
 
     QADB qa = new QADB("latest")
     qa.checkForDefect('TotalOutlier')
