@@ -10,23 +10,23 @@ Purpose:
 
 Selection (per file / per period):
   - reconstructed particle_pid == 22
-  - theta < THETA_MAX_DEG   (branch: theta, assumed degrees as in your trees)
+  - theta < THETA_MAX_DEG   (branch: theta, assumed degrees)
 
-For the selected candidates, summarize mc_matching_pid into:
-  - true photons:   mc_matching_pid == 22
-  - true electrons: mc_matching_pid == 11
-  - other:          everything else
-
-Outputs:
-  1) Per-period counts and fractions
-  2) Combined (all periods summed) counts and fractions
+Summaries:
+  - Always report:
+      mc_matching_pid == 22
+      mc_matching_pid == 11
+      other (everything else)
+  - NEW (requested):
+      ALSO break out any OTHER individual mc_matching_pid values whose fraction
+      exceeds a threshold (default 1%) within that period, and also for the combined total.
 
 Parallel processing:
   - All five MC files processed in parallel
   - HARD LIMIT: at most 5 workers
 
 Run (tcsh, single line):
-  python3 ft_photon_misid_mc_matching_pid_summary_all_mc.py --theta-max 6.0
+  python3 ft_photon_misid_mc_matching_pid_summary_all_mc.py --theta-max 6.0 --threshold 0.01
 
 Dependencies:
   pip install uproot numpy
@@ -67,9 +67,11 @@ MC_FILES = {
 @dataclass(frozen=True)
 class PidSummary:
     n_total: int
-    n_true_photon: int
-    n_true_electron: int
+    n_22: int
+    n_11: int
     n_other: int
+    # full distribution of mc_matching_pid counts for the selected sample
+    pid_counts: Dict[int, int]
 
 
 def fatal(msg: str) -> None:
@@ -100,11 +102,17 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Max parallel workers (hard limit 5).",
     )
+    p.add_argument(
+        "--threshold",
+        type=float,
+        default=0.01,
+        help="Fraction threshold for listing additional mc_matching_pid categories (default: 0.01 = 1%%).",
+    )
     return p.parse_args()
     #endif
 
 
-def validate_inputs(theta_max: float, tree_name: str, max_workers: int) -> None:
+def validate_inputs(theta_max: float, tree_name: str, max_workers: int, threshold: float) -> None:
     if theta_max <= 0.0:
         fatal(f"--theta-max must be > 0. Got {theta_max}")
     #endif
@@ -113,6 +121,9 @@ def validate_inputs(theta_max: float, tree_name: str, max_workers: int) -> None:
     #endif
     if not tree_name:
         fatal("--tree must be a non-empty string.")
+    #endif
+    if threshold <= 0.0 or threshold >= 1.0:
+        fatal(f"--threshold must be in (0,1). Got {threshold}")
     #endif
 
     for label, path in MC_FILES.items():
@@ -152,7 +163,6 @@ def summarize_one_file(args: Tuple[str, str, str, float]) -> Tuple[str, PidSumma
             theta = arr["theta"]
             mc_pid = arr["mc_matching_pid"]
 
-            # Keep only finite entries (deterministic)
             mask = np.isfinite(theta) & np.isfinite(pid) & np.isfinite(mc_pid)
             pid = pid[mask].astype(np.int64)
             theta = theta[mask].astype(np.float64)
@@ -162,15 +172,24 @@ def summarize_one_file(args: Tuple[str, str, str, float]) -> Tuple[str, PidSumma
             mc_sel = mc_pid[sel]
 
             n_total = int(mc_sel.size)
-            n_true_photon = int(np.count_nonzero(mc_sel == 22))
-            n_true_electron = int(np.count_nonzero(mc_sel == 11))
-            n_other = int(n_total - n_true_photon - n_true_electron)
+
+            if n_total > 0:
+                uniq, cnt = np.unique(mc_sel, return_counts=True)
+                pid_counts = {int(u): int(c) for (u, c) in zip(uniq, cnt)}
+            else:
+                pid_counts = {}
+            #endif
+
+            n_22 = int(pid_counts.get(22, 0))
+            n_11 = int(pid_counts.get(11, 0))
+            n_other = int(n_total - n_22 - n_11)
 
             summary = PidSummary(
                 n_total=n_total,
-                n_true_photon=n_true_photon,
-                n_true_electron=n_true_electron,
+                n_22=n_22,
+                n_11=n_11,
                 n_other=n_other,
+                pid_counts=pid_counts,
             )
             return period_label, summary
 
@@ -194,13 +213,53 @@ def frac(n: int, d: int) -> float:
     #enddef
 
 
+def print_extra_categories(pid_counts: Dict[int, int], n_total: int, threshold: float) -> None:
+    """
+    Print any mc_matching_pid categories (excluding 22 and 11) whose fraction >= threshold.
+    """
+    if n_total <= 0:
+        return
+    #endif
+
+    extras = []
+    for pid_val, n in pid_counts.items():
+        if pid_val == 22 or pid_val == 11:
+            continue
+        #endif
+        f = float(n) / float(n_total)
+        if f >= threshold:
+            extras.append((pid_val, n, f))
+        #endif
+    #endfor
+
+    extras.sort(key=lambda t: (-t[2], -t[1], t[0]))
+
+    if len(extras) == 0:
+        return
+    #endif
+
+    print(f"  Additional mc_matching_pid categories with frac >= {100.0*threshold:.2f}%:")
+    for pid_val, n, f in extras:
+        print(f"    pid == {pid_val}: {n}   frac = {100.0*f:.4f}%")
+    #endfor
+    #enddef
+
+
+def merge_pid_counts(dst: Dict[int, int], src: Dict[int, int]) -> None:
+    for k, v in src.items():
+        dst[k] = int(dst.get(k, 0) + int(v))
+    #endfor
+    #enddef
+
+
 def main() -> None:
     args = parse_args()
     theta_max = float(args.theta_max)
     tree_name = str(args.tree)
     max_workers = int(args.max_workers)
+    threshold = float(args.threshold)
 
-    validate_inputs(theta_max, tree_name, max_workers)
+    validate_inputs(theta_max, tree_name, max_workers, threshold)
 
     items = sorted(MC_FILES.items(), key=lambda kv: kv[0])
     tasks = [(label, path, tree_name, theta_max) for (label, path) in items]
@@ -223,21 +282,19 @@ def main() -> None:
         #endfor
     #endwith
 
-    # Ensure all present
     for period_label in MC_FILES.keys():
         if period_label not in results:
             fatal(f"Missing result for period '{period_label}'")
         #endif
     #endfor
 
-    # Print per-period + combined
     periods_ordered = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 
     print("")
     print("------------------------------------------------------------")
     print("FT photon mis-ID diagnostic using mc_matching_pid (MC only)")
     print("Selection:")
-    print(f"  reconstructed particle_pid == 22")
+    print("  reconstructed particle_pid == 22")
     print(f"  theta < {theta_max:.3f} (deg)")
     print("------------------------------------------------------------")
     print("Per-period summary:")
@@ -247,20 +304,23 @@ def main() -> None:
     tot_22 = 0
     tot_11 = 0
     tot_other = 0
+    tot_pid_counts: Dict[int, int] = {}
 
     for period_label in periods_ordered:
         s = results[period_label]
+        merge_pid_counts(tot_pid_counts, s.pid_counts)
 
         tot_N += s.n_total
-        tot_22 += s.n_true_photon
-        tot_11 += s.n_true_electron
+        tot_22 += s.n_22
+        tot_11 += s.n_11
         tot_other += s.n_other
 
         print(f"{period_label}:")
         print(f"  Total selected: {s.n_total}")
-        print(f"    mc_matching_pid == 22: {s.n_true_photon}   frac = {100.0*frac(s.n_true_photon, s.n_total):.4f}%")
-        print(f"    mc_matching_pid == 11: {s.n_true_electron}   frac = {100.0*frac(s.n_true_electron, s.n_total):.4f}%")
+        print(f"    mc_matching_pid == 22: {s.n_22}   frac = {100.0*frac(s.n_22, s.n_total):.4f}%")
+        print(f"    mc_matching_pid == 11: {s.n_11}   frac = {100.0*frac(s.n_11, s.n_total):.4f}%")
         print(f"    other:                 {s.n_other}   frac = {100.0*frac(s.n_other, s.n_total):.4f}%")
+        print_extra_categories(s.pid_counts, s.n_total, threshold)
         print("")
     #endfor
 
@@ -270,6 +330,7 @@ def main() -> None:
     print(f"    mc_matching_pid == 22: {tot_22}   frac = {100.0*frac(tot_22, tot_N):.4f}%")
     print(f"    mc_matching_pid == 11: {tot_11}   frac = {100.0*frac(tot_11, tot_N):.4f}%")
     print(f"    other:                 {tot_other}   frac = {100.0*frac(tot_other, tot_N):.4f}%")
+    print_extra_categories(tot_pid_counts, tot_N, threshold)
     print("------------------------------------------------------------")
     print("")
 #enddef
