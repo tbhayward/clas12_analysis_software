@@ -101,8 +101,7 @@ public static void main(String[] args) {
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
 	
 	// set filter for final states
-	// EventFilter filter = new EventFilter("11:2212:22:Xn"); 
-	EventFilter filter = new EventFilter("11:2212:11:Xn"); 
+	EventFilter filter = new EventFilter("11:2212:22:Xn"); 
 	
 	// setup QA database
 	QADB qa = new QADB("latest");
