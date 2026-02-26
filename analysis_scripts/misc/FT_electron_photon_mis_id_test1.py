@@ -3,7 +3,7 @@
 import ROOT
 
 # Input / output
-input_file = "/scratch/thayward/test.txt"
+input_file = "/scratch/thayward/test.root"
 tree_name  = "PhysicsEvents"
 output_png = "/u/home/thayward/Mx2.png"
 
