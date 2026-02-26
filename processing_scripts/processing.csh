@@ -61,7 +61,7 @@ endif
 echo "Pulling the latest changes from the repository..."
 git pull
 echo "Sourcing qadb..."
-module load qadb/2.0.0
+module load qadb/3.4.1
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
