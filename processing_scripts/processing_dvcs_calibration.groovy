@@ -416,36 +416,109 @@ class CalibrationScript {
 						particle_chi2pid = rec_Bank.getFloat("chi2pid",particle_Index);
 						particle_status = rec_Bank.getInt("status",particle_Index);
 
-						if (event.hasBank("MC::Particle") && event.hasBank("MC::Lund")) {
-							HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
-							int mc_parent_index = 0;
-							int scale = 2; // could fine tune
-							for (int current_part = 0; current_part < lundBank.rows(); current_part++) {
-								if (mc_matching_pid != -9999) { continue; }
-								int pid = lundBank.getInt("pid", current_part);
-								double mc_particle_px_test = lundBank.getFloat("px", current_part);
-								double mc_particle_py_test = lundBank.getFloat("py", current_part);
-								double mc_particle_pz_test = lundBank.getFloat("pz", current_part);
+						// if (event.hasBank("MC::Particle") && event.hasBank("MC::Lund")) {
+						// 	HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
+						// 	int mc_parent_index = 0;
+						// 	int scale = 2; // could fine tune
+						// 	for (int current_part = 0; current_part < lundBank.rows(); current_part++) {
+						// 		if (mc_matching_pid != -9999) { continue; }
+						// 		int pid = lundBank.getInt("pid", current_part);
+						// 		double mc_particle_px_test = lundBank.getFloat("px", current_part);
+						// 		double mc_particle_py_test = lundBank.getFloat("py", current_part);
+						// 		double mc_particle_pz_test = lundBank.getFloat("pz", current_part);
 
-								double mc_phi_test = phi_calculation(mc_particle_px_test, mc_particle_py_test);
-								double mc_theta_test = theta_calculation(mc_particle_px_test, mc_particle_py_test, mc_particle_pz_test);
+						// 		double mc_phi_test = phi_calculation(mc_particle_px_test, mc_particle_py_test);
+						// 		double mc_theta_test = theta_calculation(mc_particle_px_test, mc_particle_py_test, mc_particle_pz_test);
 
-								boolean matching_p1 = Math.abs(phi - mc_phi_test) < scale*3.0 && 
-									Math.abs(theta - mc_theta_test) < scale*1.0;
-								if (matching_p1) {
-									mc_matching_pid = pid;
-									mc_parent_index = lundBank.getInt("parent", current_part)-1;
-									mc_particle_px = mc_particle_px_test;
-									mc_particle_py = mc_particle_py_test;
-									mc_particle_pz = mc_particle_pz_test;
-									mc_p = Math.sqrt(mc_particle_px*mc_particle_px+
-										mc_particle_py*mc_particle_py+mc_particle_pz*mc_particle_pz);
-									mc_phi = mc_phi_test;
-									mc_theta = mc_theta_test;
-								}
-							}
-							mc_parent_pid = lundBank.getInt("pid", mc_parent_index);
-	                    }
+						// 		boolean matching_p1 = Math.abs(phi - mc_phi_test) < scale*3.0 && 
+						// 			Math.abs(theta - mc_theta_test) < scale*1.0;
+						// 		if (matching_p1) {
+						// 			mc_matching_pid = pid;
+						// 			mc_parent_index = lundBank.getInt("parent", current_part)-1;
+						// 			mc_particle_px = mc_particle_px_test;
+						// 			mc_particle_py = mc_particle_py_test;
+						// 			mc_particle_pz = mc_particle_pz_test;
+						// 			mc_p = Math.sqrt(mc_particle_px*mc_particle_px+
+						// 				mc_particle_py*mc_particle_py+mc_particle_pz*mc_particle_pz);
+						// 			mc_phi = mc_phi_test;
+						// 			mc_theta = mc_theta_test;
+						// 		}
+						// 	}
+						// 	mc_parent_pid = lundBank.getInt("pid", mc_parent_index);
+	                    // }
+
+	                    // =======================================
+						// NEW TRUTH MATCHING USING MC::RecMatch
+						// WITH PARENT TRACKING VIA MC::Lund
+						// =======================================
+						if (event.hasBank("MC::RecMatch") &&
+						    event.hasBank("MC::Particle") &&
+						    event.hasBank("MC::Lund")) {
+
+						    HipoDataBank recMatchBank   = (HipoDataBank) event.getBank("MC::RecMatch");
+						    HipoDataBank mcParticleBank = (HipoDataBank) event.getBank("MC::Particle");
+						    HipoDataBank lundBank       = (HipoDataBank) event.getBank("MC::Lund");
+
+						    for (int matchRow = 0; matchRow < recMatchBank.rows(); matchRow++) {
+
+						        int rec_pindex = recMatchBank.getInt("pindex", matchRow);
+
+						        if (rec_pindex == particle_Index) {
+
+						            int mcindex = recMatchBank.getInt("mcindex", matchRow);
+
+						            if (mcindex >= 0 && mcindex < mcParticleBank.rows()) {
+
+						                // ======================
+						                // TRUTH PARTICLE
+						                // ======================
+						                mc_matching_pid = mcParticleBank.getInt("pid", mcindex);
+
+						                mc_particle_px = mcParticleBank.getFloat("px", mcindex);
+						                mc_particle_py = mcParticleBank.getFloat("py", mcindex);
+						                mc_particle_pz = mcParticleBank.getFloat("pz", mcindex);
+
+						                mc_p = Math.sqrt(
+						                    mc_particle_px*mc_particle_px +
+						                    mc_particle_py*mc_particle_py +
+						                    mc_particle_pz*mc_particle_pz
+						                );
+
+						                mc_theta = theta_calculation(
+						                    mc_particle_px,
+						                    mc_particle_py,
+						                    mc_particle_pz
+						                );
+
+						                mc_phi = phi_calculation(
+						                    mc_particle_px,
+						                    mc_particle_py
+						                );
+
+						                // ======================
+						                // PARENT FROM LUND
+						                // ======================
+						                // Lund row corresponds directly to mcindex
+						                if (mcindex < lundBank.rows()) {
+
+						                    int parent_index = lundBank.getInt("parent", mcindex);
+
+						                    if (parent_index > 0) {
+						                        int parent_row = parent_index - 1;
+						                        if (parent_row >= 0 && parent_row < lundBank.rows()) {
+						                            mc_parent_pid = lundBank.getInt("pid", parent_row);
+						                        }
+						                    }
+						                }
+						            }
+
+						            break; // stop once match found
+						        }
+						    }
+						}
+						// =======================================
+						// END NEW MATCHING
+						// =======================================
 
 						// Calorimeter
 						for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
