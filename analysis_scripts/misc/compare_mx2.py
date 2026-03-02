@@ -39,10 +39,10 @@ def main():
 
     ROOT.gStyle.SetOptStat(0)
 
-    # Histogram parameters
-    nBins = 150
+    # Histogram parameters (UPDATED)
+    nBins = 75          # halved from 150
     xMin = 0.0
-    xMax = 1.5
+    xMax = 2.0          # extended from 1.5 to 2.0
 
     h1 = ROOT.TH1D("h1", "", nBins, xMin, xMax)
     h2 = ROOT.TH1D("h2", "", nBins, xMin, xMax)
@@ -60,8 +60,8 @@ def main():
         h2.Scale(1.0 / h2.Integral())
     #endif
 
-    # Styling
-    h1.SetLineColor(ROOT.kBlack)
+    # Styling (UPDATED COLORS)
+    h1.SetLineColor(ROOT.kBlue)
     h1.SetLineWidth(2)
 
     h2.SetLineColor(ROOT.kRed)
@@ -85,10 +85,11 @@ def main():
     h1.Draw("hist")
     h2.Draw("hist same")
 
-    # Legend
-    legend = ROOT.TLegend(0.60, 0.75, 0.88, 0.88)
-    legend.SetBorderSize(0)
-    legend.SetFillStyle(0)
+    # Legend (UPDATED POSITION: TOP LEFT, BOXED)
+    legend = ROOT.TLegend(0.15, 0.75, 0.45, 0.88)
+    legend.SetBorderSize(1)
+    legend.SetFillStyle(1001)
+    legend.SetFillColor(ROOT.kWhite)
     legend.AddEntry(h1, label1, "l")
     legend.AddEntry(h2, label2, "l")
     legend.Draw()
