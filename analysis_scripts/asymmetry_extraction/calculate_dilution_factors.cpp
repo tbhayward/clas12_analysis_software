@@ -38,7 +38,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 10;
+constexpr int data_set = 11;
 
 struct DataSetConfig {
     std::string name;
@@ -140,6 +140,15 @@ const std::vector<DataSetConfig> dataSetConfigs = {
         "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_CD2_epi-_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_He_epi-_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_ET_epi-_2.root"
+    },
+    {
+        "RGC_Sp23_eppi-",
+        0.4543, 0.1509, 0.1966, 0.1205, 0.0777,
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_ND3_epi-.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_C_epi-.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_CD2_epi-.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_He_epi-.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi-/data/pass2/data/eppi-/rgc_sp23_inb_ET_epi-.root"
     },
 };
 
