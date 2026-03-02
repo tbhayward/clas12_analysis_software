@@ -760,7 +760,8 @@ public class momentum_corrections {
         initFermi();
         // smear with probability = 1 – D_f(mx2)
         double pSmear = 1.0 - dilutionFactor(mx2); 
-        pSmear = 0;
+//        pSmear = 0;
+        pSmear = 1;
         if (rand.nextDouble() < pSmear) {
             // leave at rest
             return new Vector3(0.0, 0.0, 0.0);
