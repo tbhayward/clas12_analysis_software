@@ -236,8 +236,8 @@ GeneralExclusiveKinematicCuts::GeneralExclusiveKinematicCuts(TTreeReader& reader
       phi          (reader, "phi"),
       z            (reader, "z"),
       t            (reader, "t"),
-      tmin         (reader, "tmin"),
-      tprime       (reader, "tprime"),
+      // tmin         (reader, "tmin"),
+      // tprime       (reader, "tprime"),
       target_pol   (reader, "target_pol")
 {}
 
@@ -348,47 +348,47 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         // return *Mx2 > 0.86 && *Mx2 < 1;
     }
 
-    if (property == "enpi") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.10 && *x < 0.60);
-        bool goodEvent = (*x > 0.10 && *x < 0.60);
-        if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-        // return *Mx2 > 0.86 && *Mx2 < 1;
-    }
-    if (property == "enpiLowxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.10 && *x < 0.25);
-        bool goodEvent = (*x > 0.10 && *x < 0.25);
-        if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-    if (property == "enpiMidLowxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.25 && *x < 0.35);
-        bool goodEvent = (*x > 0.25 && *x < 0.35);
-        if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-    if (property == "enpiMidHighxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.35 && *x < 0.45);
-        bool goodEvent = (*x > 0.35 && *x < 0.45);
-        if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-    if (property == "enpiHighxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.45 && *x < 0.60);
-        bool goodEvent = (*x > 0.45 && *x < 0.60);
-        if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
+    // if (property == "enpi") {
+    //     // bool goodEvent = (*fiducial_status >= 111) &&
+    //     //                  (*x > 0.10 && *x < 0.60);
+    //     bool goodEvent = (*x > 0.10 && *x < 0.60);
+    //     if (!goodEvent) return false;
+    //     // return *Mx2 > 1.52 && *Mx2 < 1.77;
+    //     return PassesDynamicMx2(*x, *t, *Mx2);
+    //     // return *Mx2 > 0.86 && *Mx2 < 1;
+    // }
+    // if (property == "enpiLowxB") {
+    //     // bool goodEvent = (*fiducial_status >= 111) &&
+    //     //                  (*x > 0.10 && *x < 0.25);
+    //     bool goodEvent = (*x > 0.10 && *x < 0.25);
+    //     if (!goodEvent) return false;
+    //     // return *Mx2 > 1.52 && *Mx2 < 1.77;
+    //     return PassesDynamicMx2(*x, *t, *Mx2);
+    // }
+    // if (property == "enpiMidLowxB") {
+    //     // bool goodEvent = (*fiducial_status >= 111) &&
+    //     //                  (*x > 0.25 && *x < 0.35);
+    //     bool goodEvent = (*x > 0.25 && *x < 0.35);
+    //     if (!goodEvent) return false;
+    //     // return *Mx2 > 1.52 && *Mx2 < 1.77;
+    //     return PassesDynamicMx2(*x, *t, *Mx2);
+    // }
+    // if (property == "enpiMidHighxB") {
+    //     // bool goodEvent = (*fiducial_status >= 111) &&
+    //     //                  (*x > 0.35 && *x < 0.45);
+    //     bool goodEvent = (*x > 0.35 && *x < 0.45);
+    //     if (!goodEvent) return false;
+    //     // return *Mx2 > 1.52 && *Mx2 < 1.77;
+    //     return PassesDynamicMx2(*x, *t, *Mx2);
+    // }
+    // if (property == "enpiHighxB") {
+    //     // bool goodEvent = (*fiducial_status >= 111) &&
+    //     //                  (*x > 0.45 && *x < 0.60);
+    //     bool goodEvent = (*x > 0.45 && *x < 0.60);
+    //     if (!goodEvent) return false;
+    //     // return *Mx2 > 1.52 && *Mx2 < 1.77;
+    //     return PassesDynamicMx2(*x, *t, *Mx2);
+    // }
     // if (property == "enpiHarut1") {
     //     bool goodEvent = (*fiducial_status >= 111) &&
     //                      (-*tprime > 0.05 && -*tprime < 0.45);
