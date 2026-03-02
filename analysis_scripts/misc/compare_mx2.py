@@ -51,7 +51,7 @@ def main():
     ROOT.gStyle.SetOptStat(0)
 
     # Histogram parameters
-    nBins = 75
+    nBins = 150
     xMin = 0.0
     xMax = 2.0
 
