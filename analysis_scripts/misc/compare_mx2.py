@@ -122,6 +122,7 @@ def main():
         (0.20, 0.40),
         (0.40, 0.60)
     ]
+    nBins = 50;
 
     canvas_binned = ROOT.TCanvas("canvas_binned", "Mx2 xB-binned", 1400, 450)
     canvas_binned.Divide(3,1)
