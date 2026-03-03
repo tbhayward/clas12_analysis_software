@@ -260,6 +260,8 @@ import java.util.Random;
 
 public class kinematic_variables {
 
+    /*~~~~~~~~~~~~~~~~~ Random Utilities ~~~~~~~~~~~~~~~~~*/
+
     public static double rand_Gaussian(double mu, double sigma) {
         Random rand = new Random();
         return mu + sigma * rand.nextGaussian();
@@ -270,6 +272,8 @@ public class kinematic_variables {
         return (mu - sigma) + (2 * sigma) * rand.nextDouble();
     }
 
+    /*~~~~~~~~~~~~~~~~~ Core Utilities ~~~~~~~~~~~~~~~~~*/
+
     double Lorentz_vector_inner_product(LorentzVector lv_p1, LorentzVector lv_p2) {
         return lv_p1.e() * lv_p2.e()
                 - lv_p1.px() * lv_p2.px()
@@ -278,52 +282,66 @@ public class kinematic_variables {
     }
 
     double particle_mass(int pid) {
-        if (pid == 11 || pid == -11) {
-            return 0.0005109989461;
-        } else if (pid == 22) {
-            return 0;
-        } else if (pid == 111) {
-            return 0.1349768;
-        } else if (pid == 211 || pid == -211) {
-            return 0.139570;
-        } else if (pid == 321 || pid == -321) {
-            return 0.493677;
-        } else if (pid == 2212 || pid == -2212) {
-            return 0.938272;
-        } else if (pid == 113) {
-            return 0.7754;
-        }
+        if (pid == 11 || pid == -11) return 0.0005109989461;
+        else if (pid == 22) return 0;
+        else if (pid == 111) return 0.1349768;
+        else if (pid == 211 || pid == -211) return 0.139570;
+        else if (pid == 321 || pid == -321) return 0.493677;
+        else if (pid == 2212 || pid == -2212) return 0.938272;
+        else if (pid == 113) return 0.7754;
         return -1;
     }
 
-    /*~~~~~~~~~~~~~~~~~ general kinematics ~~~~~~~~~~~~~~~~~*/
+    /*~~~~~~~~~~~~~~~~~ General Kinematics ~~~~~~~~~~~~~~~~~*/
+
     double open_angle(LorentzVector lv_p1, LorentzVector lv_p2) {
-        return 180 / Math.PI * Math.acos(
-                lv_p1.vect().dot(lv_p2.vect())
-                / (lv_p1.vect().mag() * lv_p2.vect().mag())
-        );
+        return 180 / Math.PI *
+                Math.acos(lv_p1.vect().dot(lv_p2.vect())
+                / (lv_p1.vect().mag() * lv_p2.vect().mag()));
     }
 
-    /*~~~~~~~~~~~~~~~~~ DIS (Invariant Forms) ~~~~~~~~~~~~~~~~~*/
+    /*~~~~~~~~~~~~~~~~~ DIS (Legacy Lab Frame) ~~~~~~~~~~~~~~~~~*/
 
     double Q2(LorentzVector lv_q) {
         return -lv_q.mass2();
     }
 
-    // invariant x_B = Q2 / (2 p·q)
+    double nu(LorentzVector lv_beam, LorentzVector lv_e) {
+        return lv_beam.e() - lv_e.e();
+    }
+
+    double x(double Q2, double nu) {
+        return Q2 / (2 * particle_mass(2212) * nu);
+    }
+
+    double W(double Q2, double nu) {
+        return Math.sqrt(
+                particle_mass(2212) * particle_mass(2212)
+                + 2 * particle_mass(2212) * nu
+                - Q2
+        );
+    }
+
+    double y(double nu, LorentzVector lv_beam) {
+        return nu / lv_beam.e();
+    }
+
+    /*~~~~~~~~~~~~~~~~~ DIS (Fully Invariant) ~~~~~~~~~~~~~~~~~*/
+
+    // x_B = Q2 / (2 p·q)
     double x(LorentzVector lv_q, LorentzVector lv_target) {
         double p_dot_q = Lorentz_vector_inner_product(lv_target, lv_q);
         return Q2(lv_q) / (2.0 * p_dot_q);
     }
 
-    // invariant W = sqrt( (p + q)^2 )
+    // W = sqrt((p + q)^2)
     double W(LorentzVector lv_q, LorentzVector lv_target) {
         LorentzVector sum = new LorentzVector(lv_q);
         sum.add(lv_target);
         return sum.mass();
     }
 
-    // invariant y = (p·q) / (p·k)
+    // y = (p·q) / (p·k)
     double y(LorentzVector lv_beam,
              LorentzVector lv_q,
              LorentzVector lv_target) {
@@ -340,20 +358,31 @@ public class kinematic_variables {
 
     double tmin(double x, double Q2) {
         final double M = particle_mass(2212);
-
         double eps2 = 4.0 * M * M * x * x / Q2;
         double root = Math.sqrt(1.0 + eps2);
         double num  = Q2 * (2.0 * (1.0 - x) * (1.0 - root) + eps2);
         double den  = 4.0 * x * (1.0 - x) + eps2;
-
         return (den != 0.0) ? -num / den : Double.NaN;
     }
 
-    double t(LorentzVector targetInitial, LorentzVector recoilProton) {
+    double t(double p, double theta) {
+        double mp = particle_mass(2212);
+        double E = mp;
+        return 2 * mp * (E - p)
+                - 2 * Math.sqrt(mp * mp + E * E)
+                * Math.sqrt(mp * mp + p * p)
+                + 2 * Math.sqrt(mp * mp + E * E)
+                * Math.sqrt(mp * mp + p * p)
+                * Math.cos(theta);
+    }
+
+    double t(LorentzVector targetInitial, LorentzVector recoil) {
         LorentzVector diff = new LorentzVector(targetInitial);
-        diff.sub(recoilProton);
+        diff.sub(recoil);
         return diff.mass2();
     }
+
+    /*~~~~~~~~~~~~~~~~~ Depolarization ~~~~~~~~~~~~~~~~~*/
 
     double Depolarization_A(double gamma, double y) {
         return 1 / (1 + gamma * gamma)
@@ -380,7 +409,19 @@ public class kinematic_variables {
                 * Math.sqrt(1 - y - y * y * gamma * gamma / 4);
     }
 
-    /*~~~~~~~~~~~~~~~~~ Missing Mass ~~~~~~~~~~~~~~~~~*/
+    /*~~~~~~~~~~~~~~~~~ Missing Mass (ALL Overloads Restored) ~~~~~~~~~~~~~~~~~*/
+
+    double Mx(LorentzVector lv_q, LorentzVector lv_target) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q);
+        lv_Mx.add(lv_target);
+        return lv_Mx.mass();
+    }
+
+    double Mx2(LorentzVector lv_q, LorentzVector lv_target) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q);
+        lv_Mx.add(lv_target);
+        return lv_Mx.mass2();
+    }
 
     double Mx(LorentzVector lv_q, LorentzVector lv_target, LorentzVector lv_p) {
         LorentzVector lv_Mx = new LorentzVector(lv_q);
@@ -396,12 +437,32 @@ public class kinematic_variables {
         return lv_Mx.mass2();
     }
 
+    double Mx(LorentzVector lv_q, LorentzVector lv_target,
+              LorentzVector lv_p1, LorentzVector lv_p2) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q);
+        lv_Mx.add(lv_target);
+        lv_Mx.sub(lv_p1);
+        lv_Mx.sub(lv_p2);
+        return lv_Mx.mass();
+    }
+
+    double Mx2(LorentzVector lv_q, LorentzVector lv_target,
+               LorentzVector lv_p1, LorentzVector lv_p2) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q);
+        lv_Mx.add(lv_target);
+        lv_Mx.sub(lv_p1);
+        lv_Mx.sub(lv_p2);
+        return lv_Mx.mass2();
+    }
+
     /*~~~~~~~~~~~~~~~~~ Single Hadron ~~~~~~~~~~~~~~~~~*/
+
     double z(LorentzVector lv_p, LorentzVector lv_q) {
         return lv_p.e() / lv_q.e();
     }
 
-    /*~~~~~~~~~~~~~~~~~ Lorentz Boosts ~~~~~~~~~~~~~~~~~*/
+    /*~~~~~~~~~~~~~~~~~ Boosts ~~~~~~~~~~~~~~~~~*/
+
     LorentzVector lv_boost_gN(LorentzVector lv_target,
                               LorentzVector lv_q,
                               LorentzVector lv_p_gN) {
@@ -414,5 +475,72 @@ public class kinematic_variables {
 
         lv_p_gN.boost(gNBoost);
         return lv_p_gN;
+    }
+
+    /*~~~~~~~~~~~~~~~~~ Exclusivity (Fully Restored) ~~~~~~~~~~~~~~~~~*/
+
+    double Emiss0(LorentzVector lv_beam, LorentzVector lv_target,
+                  LorentzVector lv_e) {
+        return lv_beam.e() + lv_target.e() - lv_e.e();
+    }
+
+    double Emiss1(LorentzVector lv_beam, LorentzVector lv_target,
+                  LorentzVector lv_e, LorentzVector lv_p) {
+        return lv_beam.e() + lv_target.e() - lv_e.e() - lv_p.e();
+    }
+
+    double Emiss2(LorentzVector lv_beam, LorentzVector lv_target,
+                  LorentzVector lv_e,
+                  LorentzVector lv_p1, LorentzVector lv_p2) {
+        return lv_beam.e() + lv_target.e()
+                - lv_e.e() - lv_p1.e() - lv_p2.e();
+    }
+
+    double Emiss3(LorentzVector lv_beam, LorentzVector lv_target,
+                  LorentzVector lv_e,
+                  LorentzVector lv_p1, LorentzVector lv_p2,
+                  LorentzVector lv_p3) {
+        return lv_beam.e() + lv_target.e()
+                - lv_e.e() - lv_p1.e() - lv_p2.e() - lv_p3.e();
+    }
+
+    double theta_gamma_gamma(LorentzVector lv_beam, LorentzVector lv_target,
+                             LorentzVector lv_e,
+                             LorentzVector lv_p,
+                             LorentzVector lv_gamma) {
+
+        LorentzVector lv_expected_gamma = new LorentzVector(lv_beam);
+        lv_expected_gamma.sub(lv_e);
+        lv_expected_gamma.sub(lv_p);
+        lv_expected_gamma.add(lv_target);
+
+        Vector3 p_expected_gamma = lv_expected_gamma.vect();
+        Vector3 p_detected_gamma = lv_gamma.vect();
+
+        double cosTheta = p_expected_gamma.dot(p_detected_gamma)
+                / (p_expected_gamma.mag() * p_detected_gamma.mag());
+
+        return Math.toDegrees(Math.acos(cosTheta));
+    }
+
+    double pTmiss(LorentzVector lv_beam, LorentzVector lv_target,
+                  LorentzVector lv_e,
+                  LorentzVector lv_p,
+                  LorentzVector lv_gamma) {
+
+        LorentzVector lv_initial = new LorentzVector(lv_beam);
+        lv_initial.add(lv_target);
+
+        LorentzVector lv_final = new LorentzVector(lv_e);
+        lv_final.add(lv_p);
+        lv_final.add(lv_gamma);
+
+        LorentzVector lv_missing = new LorentzVector(lv_initial);
+        lv_missing.sub(lv_final);
+
+        return Math.sqrt(
+                lv_missing.px() * lv_missing.px()
+                + lv_missing.py() * lv_missing.py()
+        );
     }
 }
