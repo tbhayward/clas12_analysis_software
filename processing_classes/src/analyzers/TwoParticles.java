@@ -198,12 +198,12 @@ public class TwoParticles {
         Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
         Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
         
-//        /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
-//        // Simulate Fermi motion
-//        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
-//        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
-//        Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
-//        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
+        /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
+        // Simulate Fermi motion
+        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
+        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
+        Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
 
 
         // electron kinematics (for output)
@@ -216,12 +216,16 @@ public class TwoParticles {
         e_phi   = scattered_electron.phi();
         if (e_phi < 0) e_phi = 2 * Math.PI + e_phi;
 
-        // ---- DIS variables from corrected q ----
+        // ---- DIS variables (fully invariant, supports moving target) ----
+
         Q2 = kinematic_variables.Q2(lv_q);
-        nu = lv_q.e();                              
-        x  = kinematic_variables.x(Q2, nu);
-        W  = kinematic_variables.W(Q2, nu);
-        y  = kinematic_variables.y(nu, lv_beam);
+        // x_B = Q2 / (2 p·q)
+        x  = kinematic_variables.x(lv_q, lv_target);
+        // W = sqrt( (p + q)^2 )
+        W  = kinematic_variables.W(lv_q, lv_target);
+        // y = (p·q) / (p·k)
+        y  = kinematic_variables.y(lv_beam, lv_q, lv_target);
+        // gamma from invariant x and Q2
         gamma = kinematic_variables.gamma(Q2, x);
 
         // Depolarization from corrected (gamma, y)
