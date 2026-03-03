@@ -3,11 +3,23 @@
 import sys
 import os
 import ROOT
+import math
 
 def normalize_histogram(h):
     if h.Integral() > 0:
         h.Scale(1.0 / h.Integral())
     #endif
+#enddef
+
+
+def style_histograms(h1, h2, h3):
+    h1.SetLineColor(ROOT.kBlue)
+    h2.SetLineColor(ROOT.kOrange+1)
+    h3.SetLineColor(ROOT.kGreen+2)
+
+    h1.SetLineWidth(3)
+    h2.SetLineWidth(3)
+    h3.SetLineWidth(3)
 #enddef
 
 
@@ -53,18 +65,19 @@ def main():
     #endif
 
     ROOT.gStyle.SetOptStat(0)
+    os.makedirs("output", exist_ok=True)
 
-    # -----------------------------
-    # Global Mx2 comparison canvas
-    # -----------------------------
+    # ============================================================
+    # GLOBAL Mx2 PLOT
+    # ============================================================
 
-    nBins = 150
-    xMin = 0.0
-    xMax = 2.0
+    nBins_Mx2 = 150
+    Mx2_min = 0.0
+    Mx2_max = 2.0
 
-    h1 = ROOT.TH1D("h1", "", nBins, xMin, xMax)
-    h2 = ROOT.TH1D("h2", "", nBins, xMin, xMax)
-    h3 = ROOT.TH1D("h3", "", nBins, xMin, xMax)
+    h1 = ROOT.TH1D("h1", "", nBins_Mx2, Mx2_min, Mx2_max)
+    h2 = ROOT.TH1D("h2", "", nBins_Mx2, Mx2_min, Mx2_max)
+    h3 = ROOT.TH1D("h3", "", nBins_Mx2, Mx2_min, Mx2_max)
 
     tree1.Draw("Mx2>>h1", "", "goff")
     tree2.Draw("Mx2>>h2", "", "goff")
@@ -74,13 +87,7 @@ def main():
     normalize_histogram(h2)
     normalize_histogram(h3)
 
-    h1.SetLineColor(ROOT.kBlue)
-    h2.SetLineColor(ROOT.kOrange+1)
-    h3.SetLineColor(ROOT.kGreen+2)
-
-    h1.SetLineWidth(3)
-    h2.SetLineWidth(3)
-    h3.SetLineWidth(3)
+    style_histograms(h1, h2, h3)
 
     h1.GetXaxis().SetTitle("M_{x}^{2} (GeV^{2})")
     h1.GetYaxis().SetTitle("Probability density (GeV^{-2})")
@@ -103,39 +110,32 @@ def main():
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
     legend.SetTextSize(0.04)
-
     legend.AddEntry(h1, label1, "l")
     legend.AddEntry(h2, label2, "l")
     legend.AddEntry(h3, label3, "l")
     legend.Draw()
 
-    os.makedirs("output", exist_ok=True)
-
     canvas.SaveAs("output/fermi_motion_problem.png")
 
-    # -------------------------------------
-    # 1x3 canvas binned in x (x_B)
-    # -------------------------------------
+    # ============================================================
+    # x_B BINNED Mx2 (1x3)
+    # ============================================================
 
-    x_bins = [
-        (0.05, 0.20),
-        (0.20, 0.40),
-        (0.40, 0.60)
-    ]
-    nBins = 50;
+    x_bins = [(0.05,0.20),(0.20,0.40),(0.40,0.60)]
+    nBins_binned = 50
 
     canvas_binned = ROOT.TCanvas("canvas_binned", "Mx2 xB-binned", 1400, 450)
     canvas_binned.Divide(3,1)
 
-    for i, (xmin_bin, xmax_bin) in enumerate(x_bins):
+    for i,(xmin_bin,xmax_bin) in enumerate(x_bins):
 
         canvas_binned.cd(i+1)
         ROOT.gPad.SetLeftMargin(0.15)
         ROOT.gPad.SetBottomMargin(0.15)
 
-        h1b = ROOT.TH1D(f"h1b_{i}", "", nBins, xMin, xMax)
-        h2b = ROOT.TH1D(f"h2b_{i}", "", nBins, xMin, xMax)
-        h3b = ROOT.TH1D(f"h3b_{i}", "", nBins, xMin, xMax)
+        h1b = ROOT.TH1D(f"h1b_{i}", "", nBins_binned, Mx2_min, Mx2_max)
+        h2b = ROOT.TH1D(f"h2b_{i}", "", nBins_binned, Mx2_min, Mx2_max)
+        h3b = ROOT.TH1D(f"h3b_{i}", "", nBins_binned, Mx2_min, Mx2_max)
 
         cut = f"x > {xmin_bin} && x < {xmax_bin}"
 
@@ -147,37 +147,120 @@ def main():
         normalize_histogram(h2b)
         normalize_histogram(h3b)
 
-        h1b.SetLineColor(ROOT.kBlue)
-        h2b.SetLineColor(ROOT.kOrange+1)
-        h3b.SetLineColor(ROOT.kGreen+2)
-
-        h1b.SetLineWidth(3)
-        h2b.SetLineWidth(3)
-        h3b.SetLineWidth(3)
+        style_histograms(h1b, h2b, h3b)
 
         h1b.GetXaxis().SetTitle("M_{x}^{2} (GeV^{2})")
         h1b.GetYaxis().SetTitle("Probability density (GeV^{-2})")
 
-        max_val_bin = max(h1b.GetMaximum(), h2b.GetMaximum(), h3b.GetMaximum())
-        h1b.SetMaximum(1.10 * max_val_bin)
+        max_bin = max(h1b.GetMaximum(), h2b.GetMaximum(), h3b.GetMaximum())
+        h1b.SetMaximum(1.10 * max_bin)
 
         h1b.Draw("hist")
         h2b.Draw("hist same")
         h3b.Draw("hist same")
 
-        # x_B label annotation
         latex = ROOT.TLatex()
         latex.SetNDC()
         latex.SetTextSize(0.045)
-        latex.DrawLatex(0.18, 0.85, f"{xmin_bin:.2f} < x_{{B}} < {xmax_bin:.2f}")
+        latex.DrawLatex(0.18,0.85,f"{xmin_bin:.2f} < x_{{B}} < {xmax_bin:.2f}")
 
     #endfor
 
     canvas_binned.SaveAs("output/fermi_motion_problem_xB_binned.png")
 
+    # ============================================================
+    # GLOBAL PHI PLOT
+    # ============================================================
+
+    nBins_phi = 100
+    phi_min = 0.0
+    phi_max = 2.0 * math.pi
+
+    h1p = ROOT.TH1D("h1p","",nBins_phi,phi_min,phi_max)
+    h2p = ROOT.TH1D("h2p","",nBins_phi,phi_min,phi_max)
+    h3p = ROOT.TH1D("h3p","",nBins_phi,phi_min,phi_max)
+
+    tree1.Draw("phi>>h1p","","goff")
+    tree2.Draw("phi>>h2p","","goff")
+    tree3.Draw("phi>>h3p","","goff")
+
+    normalize_histogram(h1p)
+    normalize_histogram(h2p)
+    normalize_histogram(h3p)
+
+    style_histograms(h1p,h2p,h3p)
+
+    h1p.GetXaxis().SetTitle("#phi")
+    h1p.GetYaxis().SetTitle("Probability density")
+
+    max_phi = max(h1p.GetMaximum(),h2p.GetMaximum(),h3p.GetMaximum())
+    h1p.SetMaximum(1.10*max_phi)
+
+    canvas_phi = ROOT.TCanvas("canvas_phi","Phi Comparison",900,650)
+    canvas_phi.SetLeftMargin(0.13)
+    canvas_phi.SetBottomMargin(0.12)
+
+    h1p.Draw("hist")
+    h2p.Draw("hist same")
+    h3p.Draw("hist same")
+
+    legend.Draw()
+
+    canvas_phi.SaveAs("output/phi_comparison.png")
+
+    # ============================================================
+    # x_B BINNED PHI (1x3)
+    # ============================================================
+
+    canvas_phi_binned = ROOT.TCanvas("canvas_phi_binned","Phi xB-binned",1400,450)
+    canvas_phi_binned.Divide(3,1)
+
+    for i,(xmin_bin,xmax_bin) in enumerate(x_bins):
+
+        canvas_phi_binned.cd(i+1)
+        ROOT.gPad.SetLeftMargin(0.15)
+        ROOT.gPad.SetBottomMargin(0.15)
+
+        h1pb = ROOT.TH1D(f"h1pb_{i}","",nBins_phi,phi_min,phi_max)
+        h2pb = ROOT.TH1D(f"h2pb_{i}","",nBins_phi,phi_min,phi_max)
+        h3pb = ROOT.TH1D(f"h3pb_{i}","",nBins_phi,phi_min,phi_max)
+
+        cut = f"x > {xmin_bin} && x < {xmax_bin}"
+
+        tree1.Draw(f"phi>>h1pb_{i}",cut,"goff")
+        tree2.Draw(f"phi>>h2pb_{i}",cut,"goff")
+        tree3.Draw(f"phi>>h3pb_{i}",cut,"goff")
+
+        normalize_histogram(h1pb)
+        normalize_histogram(h2pb)
+        normalize_histogram(h3pb)
+
+        style_histograms(h1pb,h2pb,h3pb)
+
+        h1pb.GetXaxis().SetTitle("#phi")
+        h1pb.GetYaxis().SetTitle("Probability density")
+
+        max_bin = max(h1pb.GetMaximum(),h2pb.GetMaximum(),h3pb.GetMaximum())
+        h1pb.SetMaximum(1.10*max_bin)
+
+        h1pb.Draw("hist")
+        h2pb.Draw("hist same")
+        h3pb.Draw("hist same")
+
+        latex = ROOT.TLatex()
+        latex.SetNDC()
+        latex.SetTextSize(0.045)
+        latex.DrawLatex(0.18,0.85,f"{xmin_bin:.2f} < x_{{B}} < {xmax_bin:.2f}")
+
+    #endfor
+
+    canvas_phi_binned.SaveAs("output/phi_xB_binned.png")
+
     print("Saved:")
     print("  output/fermi_motion_problem.png")
     print("  output/fermi_motion_problem_xB_binned.png")
+    print("  output/phi_comparison.png")
+    print("  output/phi_xB_binned.png")
 
     file1.Close()
     file2.Close()
