@@ -101,7 +101,7 @@ public class ThreeParticles {
 //        return true;
 //    }
     
-    public static boolean channel_test(TwoParticles variables) {
+    public static boolean channel_test(ThreeParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
         } else if (variables.Q2() < 1.00) {
