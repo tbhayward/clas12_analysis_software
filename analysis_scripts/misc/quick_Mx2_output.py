@@ -40,7 +40,7 @@ g.SetMarkerSize(1.2)
 g.SetLineWidth(2)
 
 # Axis labels and title (ROOT LaTeX formatting)
-g.SetTitle("0.25 < x_{B} < 0.35; 0.05 < -t' < 0.25")
+g.SetTitle("0.25 < x_{B} < 0.35\; 0.05 < -t' < 0.25")
 
 g.GetXaxis().SetTitle("M_{x}^{2} (GeV^{2})")
 g.GetYaxis().SetTitle("F_{LL}/F_{UU}")
