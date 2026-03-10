@@ -6,7 +6,7 @@ import sys
 ROOT.gROOT.SetBatch(True)
 
 # ------------------------------------------------
-# event limit
+# runtime event limit
 # ------------------------------------------------
 
 max_events = 100000
@@ -18,11 +18,8 @@ if len(sys.argv) > 1:
 print("Processing up to",max_events,"events")
 
 # ------------------------------------------------
-# input
+# constants
 # ------------------------------------------------
-
-input_file = "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/fall22_nd3_p_pim.root"
-tree_name  = "PhysicsEvents"
 
 m_e  = 0.000511
 m_pi = 0.13957
@@ -30,7 +27,7 @@ M_p  = 0.938272
 M_n  = 0.939565
 
 # ------------------------------------------------
-# beam energy from run number
+# beam energy function
 # ------------------------------------------------
 
 def get_beam_energy(run):
@@ -60,8 +57,11 @@ def get_beam_energy(run):
     return Eb
 
 # ------------------------------------------------
-# open ROOT file
+# input file
 # ------------------------------------------------
+
+input_file = "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/fall22_nd3_p_pim.root"
+tree_name  = "PhysicsEvents"
 
 f = ROOT.TFile.Open(input_file)
 t = f.Get(tree_name)
@@ -82,36 +82,37 @@ nb_pp,0.3,1.5
 
 h_dxB = ROOT.TH2D(
 "h_dxB",
-"|#Delta x_{B}|; |p_{F}| (GeV); p' (GeV)",
+"<|#Delta x_{B}|>; |p_{F}| (GeV); p' (GeV)",
 nb_pf,0,0.3,
 nb_pp,0.3,1.5
 )
 
 h_dt = ROOT.TH2D(
 "h_dt",
-"|#Delta t| (GeV^{2}); |p_{F}| (GeV); p' (GeV)",
+"<|#Delta t|>; |p_{F}| (GeV); p' (GeV)",
 nb_pf,0,0.3,
 nb_pp,0.3,1.5
 )
 
 h_dmx2 = ROOT.TH2D(
 "h_dmx2",
-"|#Delta Mx^{2}| (GeV^{2}); |p_{F}| (GeV); p' (GeV)",
+"<|#Delta Mx^{2}|>; |p_{F}| (GeV); p' (GeV)",
 nb_pf,0,0.3,
 nb_pp,0.3,1.5
 )
 
+# accumulation arrays
+
+sum_dxB = [[0]*nb_pp for _ in range(nb_pf)]
+sum_dt  = [[0]*nb_pp for _ in range(nb_pf)]
+sum_dmx2= [[0]*nb_pp for _ in range(nb_pf)]
+counts  = [[0]*nb_pp for _ in range(nb_pf)]
+
 # ------------------------------------------------
-# scan events
+# event loop
 # ------------------------------------------------
 
 print("Scanning events")
-
-sum_q = 0
-sum_nu = 0
-sum_K = 0
-sum_xB = 0
-count = 0
 
 event_counter = 0
 
@@ -164,82 +165,77 @@ for ev in t:
     qz = Eb - ez
     qE = Eb - Ee
 
-    qmag = math.sqrt(qx*qx+qy*qy+qz*qz)
+    Q2 = -(qE*qE - qx*qx - qy*qy - qz*qz)
     nu = qE
 
-    Q2 = -(qE*qE - qx*qx - qy*qy - qz*qz)
+    # mesonic missing mass
+    mx2_mes = (qE + M_p - Epi)**2 - ((qx-pix)**2+(qy-piy)**2+(qz-piz)**2)
 
-    xB = Q2/(2*M_n*nu)
-
-    # missing mass
-    mx2 = (qE + M_p - Epi)**2 - ((qx-pix)**2+(qy-piy)**2+(qz-piz)**2)
-
-    if mx2 >= 1.07:
+    if mx2_mes >= 1.07:
         continue
     #endif
 
-    # neutron momentum
+    # reconstructed neutron momentum
     pnx = ppx + pix - qx
     pny = ppy + piy - qy
     pnz = ppz + piz - qz
 
     pF = math.sqrt(pnx*pnx + pny*pny + pnz*pnz)
 
-    if pF < 0.3 and 0.3 < p1 < 1.5:
+    # neutron energy
+    En = math.sqrt(M_n*M_n + pF*pF)
+
+    # true xB
+    dot_pq = En*nu - (pnx*qx + pny*qy + pnz*qz)
+
+    xB_mes = Q2/(2*M_n*nu)
+    xB_true = Q2/(2*dot_pq)
+
+    # t definitions
+    t_mes = (qE - Epi)**2 - ((qx-pix)**2+(qy-piy)**2+(qz-piz)**2)
+
+    t_true = (Ep-En)**2 - ((ppx-pnx)**2+(ppy-pny)**2+(ppz-pnz)**2)
+
+    # true Mx2
+    mx2_true = (qE + En - Epi)**2 - ((qx+pnx-pix)**2+(qy+pny-piy)**2+(qz+pnz-piz)**2)
+
+    # shifts
+    dxB = abs(xB_mes - xB_true)
+    dt  = abs(t_mes - t_true)
+    dmx2 = abs(mx2_mes - mx2_true)
+
+    # bin indices
+    i = int(pF/0.3 * nb_pf)
+    j = int((p1-0.3)/1.2 * nb_pp)
+
+    if 0 <= i < nb_pf and 0 <= j < nb_pp:
+
         h_density.Fill(pF,p1)
+
+        sum_dxB[i][j] += dxB
+        sum_dt[i][j] += dt
+        sum_dmx2[i][j] += dmx2
+        counts[i][j] += 1
+
     #endif
-
-    Kx = qx - pix
-    Ky = qy - piy
-    Kz = qz - piz
-
-    Kmag = math.sqrt(Kx*Kx+Ky*Ky+Kz*Kz)
-
-    sum_q += qmag
-    sum_nu += nu
-    sum_K += Kmag
-    sum_xB += xB
-
-    count += 1
 
 #endfor
 
-print("Events used:",count)
-
-qavg = sum_q/count
-nuavg = sum_nu/count
-Kavg = sum_K/count
-xBavg = sum_xB/count
-
-print("Average |q| =",qavg)
-print("Average |q-p_pi| =",Kavg)
-
 # ------------------------------------------------
-# analytic shift maps
+# compute averages
 # ------------------------------------------------
 
 for i in range(nb_pf):
-
-    pF = (i+0.5)*0.3/nb_pf
-
     for j in range(nb_pp):
 
-        pp = 0.3 + (j+0.5)*(1.2/nb_pp)
+        if counts[i][j] > 0:
 
-        dxB = xBavg*(pF*qavg)/(math.sqrt(3)*M_n*nuavg)
-
-        dt = (2/math.sqrt(3))*pF*pp
-
-        dmx2 = (2/math.sqrt(3))*pF*Kavg
-
-        h_dxB.SetBinContent(i+1,j+1,abs(dxB))
-        h_dt.SetBinContent(i+1,j+1,abs(dt))
-        h_dmx2.SetBinContent(i+1,j+1,abs(dmx2))
-
-#endfor
+            h_dxB.SetBinContent(i+1,j+1,sum_dxB[i][j]/counts[i][j])
+            h_dt.SetBinContent(i+1,j+1,sum_dt[i][j]/counts[i][j])
+            h_dmx2.SetBinContent(i+1,j+1,sum_dmx2[i][j]/counts[i][j])
 
 # ------------------------------------------------
-# plotting
+# plot
 # ------------------------------------------------
 
 ROOT.gStyle.SetOptStat(0)
@@ -261,6 +257,6 @@ h_dmx2.Draw("COLZ")
 
 os.makedirs("output",exist_ok=True)
 
-c.SaveAs("output/fermi_shift_maps.png")
+c.SaveAs("output/fermi_shift_maps_data_driven.png")
 
-print("Saved output/fermi_shift_maps.png")
+print("Saved output/fermi_shift_maps_data_driven.png")
