@@ -15,7 +15,7 @@ if len(sys.argv) > 1:
     max_events = int(sys.argv[1])
 #endif
 
-print("Processing up to",max_events,"events")
+print("Processing up to", max_events, "events")
 
 # ------------------------------------------------
 # constants
@@ -60,7 +60,7 @@ def get_beam_energy(run):
 
 
 # ------------------------------------------------
-# nitrogen momentum table (from image)
+# nitrogen momentum table
 # ------------------------------------------------
 
 k_vals = [
@@ -75,17 +75,8 @@ N14_vals = [
 0.005874,0.003586,0.002312,0.001622,0.001247
 ]
 
-# convert k → GeV
+# convert momentum to GeV
 pf_vals = [k * HBARC for k in k_vals]
-
-# compute normalized CDF
-total = sum(N14_vals)
-cdf = []
-running = 0.0
-
-for v in N14_vals:
-    running += v
-    cdf.append(running / total)
 
 # ------------------------------------------------
 # input files
@@ -96,7 +87,6 @@ files = [
 "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/summer22_nd3_p_pim.root",
 "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/spring23_nd3_p_pim.root"
 ]
-
 
 # files = [
 # "/volatile/clas12/users/mkerr/rgb/rgb_sidisdvcs_p_pim.root",
@@ -143,10 +133,10 @@ nb_pf,0,0.3,
 nb_pp,0.3,1.2
 )
 
-# pF distribution
+# spectator momentum histogram
 h_pf = ROOT.TH1D(
 "h_pf",
-"Extracted |p_{F}| distribution; |p_{F}| (GeV); normalized counts",
+"Extracted |p_{F}| distribution; |p_{F}| (GeV); normalized PDF",
 50,0,0.4
 )
 
@@ -169,7 +159,7 @@ event_counter = 0
 
 for file in files:
 
-    print("Opening",file)
+    print("Opening", file)
 
     f = ROOT.TFile.Open(file)
     t = f.Get(tree_name)
@@ -273,37 +263,72 @@ for file in files:
 
 #endfor
 
-# ------------------------------------------------
-# normalize pF histogram
-# ------------------------------------------------
-
-h_pf.Scale(1.0 / h_pf.Integral())
 
 # ------------------------------------------------
-# build nitrogen CDF graph
+# normalize extracted pF histogram
 # ------------------------------------------------
 
-g_cdf = ROOT.TGraph(len(pf_vals))
+if h_pf.Integral() > 0:
+    h_pf.Scale(1.0 / h_pf.Integral())
 
-for i in range(len(pf_vals)):
-    g_cdf.SetPoint(i, pf_vals[i], cdf[i])
 
-g_cdf.SetLineColor(ROOT.kRed)
-g_cdf.SetLineWidth(3)
+# ------------------------------------------------
+# nitrogen PDF histogram
+# ------------------------------------------------
+
+h_nitrogen = ROOT.TH1D(
+"h_nitrogen",
+"Nitrogen momentum distribution; |p_{F}| (GeV); normalized PDF",
+len(pf_vals)-1,
+pf_vals[0],
+pf_vals[-1]
+)
+
+for i,val in enumerate(N14_vals):
+    h_nitrogen.SetBinContent(i+1,val)
+
+h_nitrogen.Scale(1.0 / h_nitrogen.Integral())
+
+h_nitrogen.SetLineColor(ROOT.kRed)
+h_nitrogen.SetLineWidth(3)
+
+h_pf.SetLineColor(ROOT.kBlue)
+h_pf.SetLineWidth(3)
+
 
 # ------------------------------------------------
 # plot comparison
 # ------------------------------------------------
 
+ROOT.gStyle.SetOptStat(0)
+
 c2 = ROOT.TCanvas("c2","pF comparison",800,600)
 
-h_pf.SetLineColor(ROOT.kBlue)
-h_pf.Draw("HIST")
+frame = ROOT.TH1D(
+"frame",
+"Nitrogen momentum distribution comparison; |p_{F}| (GeV); normalized PDF",
+100,
+0,
+0.4
+)
 
-g_cdf.Draw("L SAME")
+frame.SetMinimum(0)
+frame.SetMaximum(
+max(h_pf.GetMaximum(), h_nitrogen.GetMaximum()) * 1.3
+)
+
+frame.Draw()
+
+h_pf.Draw("HIST SAME")
+h_nitrogen.Draw("HIST SAME")
+
+legend = ROOT.TLegend(0.55,0.65,0.85,0.85)
+legend.AddEntry(h_pf,"Extracted p_{F} distribution","l")
+legend.AddEntry(h_nitrogen,"N^{14} momentum distribution","l")
+legend.Draw()
 
 os.makedirs("output",exist_ok=True)
 
-c2.SaveAs("output/fermi_pf_cdf_comparison.png")
+c2.SaveAs("output/fermi_pf_pdf_comparison.png")
 
-print("Saved output/fermi_pf_cdf_comparison.png")
+print("Saved output/fermi_pf_pdf_comparison.png")
