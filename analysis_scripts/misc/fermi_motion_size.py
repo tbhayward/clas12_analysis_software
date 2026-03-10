@@ -70,8 +70,8 @@ t = f.Get(tree_name)
 # histograms
 # ------------------------------------------------
 
-nb_pf = 60
-nb_pp = 60
+nb_pf = 20
+nb_pp = 20
 
 h_density = ROOT.TH2D(
 "h_density",
