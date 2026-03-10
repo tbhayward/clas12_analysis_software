@@ -17,9 +17,9 @@ M_n  = 0.939565
 f = ROOT.TFile.Open(input_file)
 t = f.Get(tree_name)
 
-# ----------------------------------------
+# ------------------------------------------------
 # histograms
-# ----------------------------------------
+# ------------------------------------------------
 
 h_density = ROOT.TH2D(
 "h_density",
@@ -28,21 +28,21 @@ h_density = ROOT.TH2D(
 60,0.3,1.5
 )
 
-h_dxB = ROOT.TH2D(
+h_dxB = ROOT.TProfile2D(
 "h_dxB",
 "|x_{B}^{mes}-x_{B}^{true}|; |p_{F}| (GeV); p'_{p} (GeV)",
 60,0,0.3,
 60,0.3,1.5
 )
 
-h_dt = ROOT.TH2D(
+h_dt = ROOT.TProfile2D(
 "h_dt",
 "|t_{mes}-t_{true}|; |p_{F}| (GeV); p'_{p} (GeV)",
 60,0,0.3,
 60,0.3,1.5
 )
 
-h_dmx2 = ROOT.TH2D(
+h_dmx2 = ROOT.TProfile2D(
 "h_dmx2",
 "|Mx2_{mes}-Mx2_{true}|; |p_{F}| (GeV); p'_{p} (GeV)",
 60,0,0.3,
@@ -105,7 +105,7 @@ for ev in t:
     qE = beamE - Ee
 
     # ----------------------------------
-    # mesonic missing mass cut
+    # mesonic missing mass
     # ----------------------------------
 
     mx2_mes = (qE + M_p - Epi)**2 - ((qx - pix)**2 + (qy - piy)**2 + (qz - piz)**2)
@@ -115,7 +115,7 @@ for ev in t:
     #endif
 
     # ----------------------------------
-    # reconstructed neutron momentum
+    # neutron momentum from conservation
     # ----------------------------------
 
     pnx = ppx + pix - qx
@@ -131,7 +131,7 @@ for ev in t:
     En = math.sqrt(pF*pF + M_n*M_n)
 
     # ----------------------------------
-    # Q2 and nu
+    # kinematics
     # ----------------------------------
 
     Q2 = -(qE*qE - qx*qx - qy*qy - qz*qz)
@@ -142,9 +142,9 @@ for ev in t:
     # ----------------------------------
 
     xB_mes = Q2/(2*M_n*nu)
-    xB_true = Q2/(2*(En*nu - (pnx*qx+pny*qy+pnz*qz)))
+    xB_true = Q2/(2*(En*nu - (pnx*qx + pny*qy + pnz*qz)))
 
-    dxB = abs(xB_mes-xB_true)
+    dxB = abs(xB_mes - xB_true)
 
     # ----------------------------------
     # t
@@ -155,21 +155,23 @@ for ev in t:
     dy = qy - piy
     dz = qz - piz
 
-    t_mes = dE*dE - (dx*dx+dy*dy+dz*dz)
+    t_mes = dE*dE - (dx*dx + dy*dy + dz*dz)
 
     t_true = (Ep-En)**2 - ((ppx-pnx)**2 + (ppy-pny)**2 + (ppz-pnz)**2)
 
-    dt = abs(t_mes-t_true)
+    dt = abs(t_mes - t_true)
 
     # ----------------------------------
     # Mx2 true
     # ----------------------------------
 
-    mx2_true = (qE + En - Epi)**2 - ((qx + pnx - pix)**2 +
-                                    (qy + pny - piy)**2 +
-                                    (qz + pnz - piz)**2)
+    mx2_true = (qE + En - Epi)**2 - (
+        (qx + pnx - pix)**2 +
+        (qy + pny - piy)**2 +
+        (qz + pnz - piz)**2
+    )
 
-    dmx2 = abs(mx2_mes-mx2_true)
+    dmx2 = abs(mx2_mes - mx2_true)
 
     # ----------------------------------
     # fill histograms
@@ -184,25 +186,19 @@ for ev in t:
 
 ROOT.gStyle.SetOptStat(0)
 
-c = ROOT.TCanvas("c","c",1800,1000)
-c.Divide(3,2)
+c = ROOT.TCanvas("c","c",2000,500)
+c.Divide(4,1)
 
 c.cd(1)
 h_density.Draw("COLZ")
 
 c.cd(2)
-h_density.Draw("COLZ")
-
-c.cd(3)
-h_density.Draw("COLZ")
-
-c.cd(4)
 h_dxB.Draw("COLZ")
 
-c.cd(5)
+c.cd(3)
 h_dt.Draw("COLZ")
 
-c.cd(6)
+c.cd(4)
 h_dmx2.Draw("COLZ")
 
 os.makedirs("output",exist_ok=True)
