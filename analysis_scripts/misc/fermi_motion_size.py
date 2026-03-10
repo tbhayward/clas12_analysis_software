@@ -75,7 +75,6 @@ N14_vals = [
 0.005874,0.003586,0.002312,0.001622,0.001247
 ]
 
-# convert momentum to GeV
 pf_vals = [k * HBARC for k in k_vals]
 
 # ------------------------------------------------
@@ -102,7 +101,7 @@ nb_pf = 20
 nb_pp = 20
 
 # ------------------------------------------------
-# histograms
+# heatmap histograms
 # ------------------------------------------------
 
 h_density = ROOT.TH2D(
@@ -133,11 +132,18 @@ nb_pf,0,0.3,
 nb_pp,0.3,1.2
 )
 
+# ------------------------------------------------
 # spectator momentum histogram
+# ------------------------------------------------
+
+nb_pf_pdf = 50
+
 h_pf = ROOT.TH1D(
 "h_pf",
 "Extracted |p_{F}| distribution; |p_{F}| (GeV); normalized PDF",
-50,0,0.4
+nb_pf_pdf,
+0,
+0.4
 )
 
 # ------------------------------------------------
@@ -265,7 +271,62 @@ for file in files:
 
 
 # ------------------------------------------------
-# normalize extracted pF histogram
+# compute averages
+# ------------------------------------------------
+
+for i in range(nb_pf):
+    for j in range(nb_pp):
+
+        if counts[i][j] > 0:
+
+            h_dxB.SetBinContent(i+1,j+1,sum_dxB[i][j]/counts[i][j])
+            h_dt.SetBinContent(i+1,j+1,sum_dt[i][j]/counts[i][j])
+            h_dmx2.SetBinContent(i+1,j+1,sum_dmx2[i][j]/counts[i][j])
+
+
+# ------------------------------------------------
+# standardize color scale
+# ------------------------------------------------
+
+max_shift = max(
+h_dxB.GetMaximum(),
+h_dt.GetMaximum(),
+h_dmx2.GetMaximum()
+)
+
+h_dxB.SetMaximum(max_shift)
+h_dt.SetMaximum(max_shift)
+h_dmx2.SetMaximum(max_shift)
+
+
+# ------------------------------------------------
+# 1x4 heatmap canvas
+# ------------------------------------------------
+
+ROOT.gStyle.SetOptStat(0)
+
+c = ROOT.TCanvas("c","c",2000,500)
+c.Divide(4,1)
+
+c.cd(1)
+h_density.Draw("COLZ")
+
+c.cd(2)
+h_dxB.Draw("COLZ")
+
+c.cd(3)
+h_dt.Draw("COLZ")
+
+c.cd(4)
+h_dmx2.Draw("COLZ")
+
+os.makedirs("output",exist_ok=True)
+
+c.SaveAs("output/fermi_shift_maps_data_driven.png")
+
+
+# ------------------------------------------------
+# normalize extracted pF PDF
 # ------------------------------------------------
 
 if h_pf.Integral() > 0:
@@ -273,34 +334,38 @@ if h_pf.Integral() > 0:
 
 
 # ------------------------------------------------
-# nitrogen PDF histogram
+# nitrogen PDF histogram (same binning)
 # ------------------------------------------------
 
 h_nitrogen = ROOT.TH1D(
 "h_nitrogen",
-"Nitrogen momentum distribution; |p_{F}| (GeV); normalized PDF",
-len(pf_vals)-1,
-pf_vals[0],
-pf_vals[-1]
+"Nitrogen momentum distribution comparison; |p_{F}| (GeV); normalized PDF",
+nb_pf_pdf,
+0,
+0.4
 )
 
 for i,val in enumerate(N14_vals):
-    h_nitrogen.SetBinContent(i+1,val)
+
+    p = pf_vals[i]
+    bin = h_nitrogen.FindBin(p)
+
+    h_nitrogen.SetBinContent(bin,val)
+
+#endfor
 
 h_nitrogen.Scale(1.0 / h_nitrogen.Integral())
-
-h_nitrogen.SetLineColor(ROOT.kRed)
-h_nitrogen.SetLineWidth(3)
 
 h_pf.SetLineColor(ROOT.kBlue)
 h_pf.SetLineWidth(3)
 
+h_nitrogen.SetLineColor(ROOT.kRed)
+h_nitrogen.SetLineWidth(3)
+
 
 # ------------------------------------------------
-# plot comparison
+# PDF comparison plot
 # ------------------------------------------------
-
-ROOT.gStyle.SetOptStat(0)
 
 c2 = ROOT.TCanvas("c2","pF comparison",800,600)
 
@@ -327,8 +392,7 @@ legend.AddEntry(h_pf,"Extracted p_{F} distribution","l")
 legend.AddEntry(h_nitrogen,"N^{14} momentum distribution","l")
 legend.Draw()
 
-os.makedirs("output",exist_ok=True)
-
 c2.SaveAs("output/fermi_pf_pdf_comparison.png")
 
+print("Saved output/fermi_shift_maps_data_driven.png")
 print("Saved output/fermi_pf_pdf_comparison.png")
