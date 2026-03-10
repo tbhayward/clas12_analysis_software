@@ -1,5 +1,6 @@
 import ROOT
 import math
+import random
 import os
 
 ROOT.gROOT.SetBatch(True)
@@ -17,39 +18,36 @@ M_n  = 0.939565
 f = ROOT.TFile.Open(input_file)
 t = f.Get(tree_name)
 
-# ------------------------------------------
-# histograms
-# ------------------------------------------
+# -----------------------------------------
+# histograms (DATA)
+# -----------------------------------------
 
-h_xB = ROOT.TH2D(
-"h_xB",
-"Shift in xB; |p_{F}| (GeV); p_{p} (GeV)",
+h_density = ROOT.TH2D(
+"h_density",
+"Event density; |p_{F}| (GeV); p'_{p} (GeV)",
 60,0,0.3,
 60,0.3,1.5
 )
 
-h_t = ROOT.TH2D(
-"h_t",
-"Shift in t; |p_{F}| (GeV); p_{p} (GeV)",
+h_t_data = ROOT.TH2D(
+"h_t_data",
+"|t_{mes}-t_{bar}| (data); |p_{F}| (GeV); p'_{p} (GeV)",
 60,0,0.3,
 60,0.3,1.5
 )
 
-h_mx2 = ROOT.TH2D(
-"h_mx2",
-"Shift in Mx2; |p_{F}| (GeV); p_{p} (GeV)",
+h_mx2_data = ROOT.TH2D(
+"h_mx2_data",
+"|#Delta Mx^{2}| (data); |p_{F}| (GeV); p'_{p} (GeV)",
 60,0,0.3,
 60,0.3,1.5
 )
 
-print("Starting event loop")
+print("Running data loop")
 
 for ev in t:
 
-    # --------------------------------
     # electron
-    # --------------------------------
-
     e_p = ev.e_p
     th  = ev.e_theta
     ph  = ev.e_phi
@@ -60,10 +58,7 @@ for ev in t:
 
     Ee = math.sqrt(e_p*e_p + m_e*m_e)
 
-    # --------------------------------
     # pion
-    # --------------------------------
-
     p1 = ev.p1_p
     th = ev.p1_theta
     ph = ev.p1_phi
@@ -74,10 +69,7 @@ for ev in t:
 
     Epi = math.sqrt(p1*p1 + m_pi*m_pi)
 
-    # --------------------------------
     # proton
-    # --------------------------------
-
     p2 = ev.p2_p
     th = ev.p2_theta
     ph = ev.p2_phi
@@ -88,50 +80,33 @@ for ev in t:
 
     Ep = math.sqrt(p2*p2 + M_p*M_p)
 
-    # --------------------------------
     # virtual photon
-    # --------------------------------
-
     qx = -ex
     qy = -ey
     qz = beamE - ez
     qE = beamE - Ee
 
-    # --------------------------------
-    # missing mass cut
-    # --------------------------------
-
+    # exclusivity cut
     mx2 = (qE + M_p - Epi)**2 - ((qx - pix)**2 + (qy - piy)**2 + (qz - piz)**2)
 
     if mx2 >= 1.07:
         continue
     #endif
 
-    # --------------------------------
     # estimate Fermi momentum
-    # --------------------------------
-
     pFx = ppx + pix - qx
     pFy = ppy + piy - qy
     pFz = ppz + piz - qz
 
     pF = math.sqrt(pFx*pFx + pFy*pFy + pFz*pFz)
 
-    # --------------------------------
-    # observables
-    # --------------------------------
+    if pF > 0.3 or p2 < 0.3 or p2 > 1.5:
+        continue
+    #endif
 
-    Q2 = -(qE*qE - qx*qx - qy*qy - qz*qz)
-    nu = qE
-
-    xB = Q2/(2*M_n*nu)
-
-    xB0 = Q2/(2*M_n*nu)
-
-    dxB = abs(xB - xB0)
+    h_density.Fill(pF,p2)
 
     # t definitions
-
     dE = qE - Epi
     dx = qx - pix
     dy = qy - piy
@@ -143,52 +118,101 @@ for ev in t:
 
     dt = abs(t_mes - t_bar)
 
-    # Mx2 shift estimate
+    h_t_data.Fill(pF,p2,dt)
 
+    # approximate Mx2 shift
     dmx2 = abs(2*(pFx*ppx + pFy*ppy + pFz*ppz))
 
-    # --------------------------------
-    # fill histograms
-    # --------------------------------
-
-    if pF < 0.3 and 0.3 < p2 < 1.5:
-
-        h_xB.Fill(pF,p2,dxB)
-        h_t.Fill(pF,p2,dt)
-        h_mx2.Fill(pF,p2,dmx2)
+    h_mx2_data.Fill(pF,p2,dmx2)
 
 #endfor
 
-# ------------------------------------------
-# common color scale
-# ------------------------------------------
+# -----------------------------------------
+# theoretical shift maps
+# -----------------------------------------
 
-max_val = max(h_xB.GetMaximum(),h_t.GetMaximum(),h_mx2.GetMaximum())
+h_blank = ROOT.TH2D(
+"h_blank",
+"Phase space reference; |p_{F}| (GeV); p'_{p} (GeV)",
+60,0,0.3,
+60,0.3,1.5
+)
 
-for h in [h_xB,h_t,h_mx2]:
-    h.SetMinimum(0)
-    h.SetMaximum(max_val)
+h_t_theory = ROOT.TH2D(
+"h_t_theory",
+"Expected |#Delta t|; |p_{F}| (GeV); p'_{p} (GeV)",
+60,0,0.3,
+60,0.3,1.5
+)
 
-# ------------------------------------------
+h_mx2_theory = ROOT.TH2D(
+"h_mx2_theory",
+"Expected |#Delta Mx^{2}|; |p_{F}| (GeV); p'_{p} (GeV)",
+60,0,0.3,
+60,0.3,1.5
+)
+
+samples = 200
+
+print("Scanning theoretical phase space")
+
+for i in range(60):
+
+    pF = (i+0.5)*0.3/60
+
+    for j in range(60):
+
+        pp = 0.3 + (j+0.5)*(1.2/60)
+
+        avg_t = 0
+        avg_mx2 = 0
+
+        for s in range(samples):
+
+            costh = random.uniform(-1,1)
+
+            avg_t += abs(2*pF*pp*costh)
+            avg_mx2 += abs(2*pF*pp*costh)
+
+        #endfor
+
+        avg_t /= samples
+        avg_mx2 /= samples
+
+        h_t_theory.SetBinContent(i+1,j+1,avg_t)
+        h_mx2_theory.SetBinContent(i+1,j+1,avg_mx2)
+
+#endfor
+
+# -----------------------------------------
 # plotting
-# ------------------------------------------
+# -----------------------------------------
 
 ROOT.gStyle.SetOptStat(0)
 
-c = ROOT.TCanvas("c","c",1800,600)
-c.Divide(3,1)
+c = ROOT.TCanvas("c","c",1800,1000)
+c.Divide(3,2)
 
 c.cd(1)
-h_xB.Draw("COLZ")
+h_density.Draw("COLZ")
 
 c.cd(2)
-h_t.Draw("COLZ")
+h_t_data.Draw("COLZ")
 
 c.cd(3)
-h_mx2.Draw("COLZ")
+h_mx2_data.Draw("COLZ")
+
+c.cd(4)
+h_blank.Draw("COLZ")
+
+c.cd(5)
+h_t_theory.Draw("COLZ")
+
+c.cd(6)
+h_mx2_theory.Draw("COLZ")
 
 os.makedirs("output",exist_ok=True)
 
-c.SaveAs("output/fermi_shift_data_map.png")
+c.SaveAs("output/fermi_motion_diagnostics.png")
 
-print("Saved output/fermi_shift_data_map.png")
+print("Saved output/fermi_motion_diagnostics.png")
