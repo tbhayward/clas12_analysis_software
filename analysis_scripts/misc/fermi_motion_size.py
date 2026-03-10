@@ -60,15 +60,15 @@ def get_beam_energy(run):
 # input files
 # ------------------------------------------------
 
-# files = [
-# "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/fall22_nd3_p_pim.root",
-# "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/summer22_nd3_p_pim.root",
-# "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/spring23_nd3_p_pim.root"
-# ]
-
 files = [
-"/volatile/clas12/users/mkerr/rgb/rgb_sidisdvcs_p_pim.root",
+"/volatile/clas12/users/mkerr/rgc/p_pim/ND3/fall22_nd3_p_pim.root",
+"/volatile/clas12/users/mkerr/rgc/p_pim/ND3/summer22_nd3_p_pim.root",
+"/volatile/clas12/users/mkerr/rgc/p_pim/ND3/spring23_nd3_p_pim.root"
 ]
+
+# files = [
+# "/volatile/clas12/users/mkerr/rgb/rgb_sidisdvcs_p_pim.root",
+# ]
 
 tree_name = "PhysicsEvents"
 
