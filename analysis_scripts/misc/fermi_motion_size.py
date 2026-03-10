@@ -67,7 +67,7 @@ def get_beam_energy(run):
 # ]
 
 files = [
-"/volatile/clas12/users/mkerr/rgb/rgb_sidisdvcs_p_pim_ProcWithCuts.root",
+"/volatile/clas12/users/mkerr/rgb/rgb_sidisdvcs_p_pim.root",
 ]
 
 tree_name = "PhysicsEvents"
