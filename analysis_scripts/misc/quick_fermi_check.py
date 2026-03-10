@@ -19,6 +19,7 @@ t = f.Get(tree_name)
 
 h_t_mes = ROOT.TH1D("h_t_mes","Mesonic definition; t (GeV^2); Counts",200,-14,0.5)
 h_t_bar = ROOT.TH1D("h_t_bar","Baryonic definition; t (GeV^2); Counts",200,-2,0.5)
+h_t_diff = ROOT.TH1D("h_t_diff","t_{#pi} - t_{p}; #Delta t (GeV^2); Counts",200,-14,14)
 
 print("Starting event loop")
 
@@ -74,6 +75,8 @@ for ev in t:
 
     t_bar = M_n*M_n + M_p*M_p - 2.0*M_n*E_p
 
+    t_diff = t_mes - t_bar
+
     if counter <= 20:
         print("Event",counter)
         print("electron p,theta,phi:",e_p,e_theta,e_phi)
@@ -81,6 +84,7 @@ for ev in t:
         print("proton p:",p2_p)
         print("t_mes =",t_mes)
         print("t_bar =",t_bar)
+        print("t_mes - t_bar =",t_diff)
         print("")
     #endif
 
@@ -92,18 +96,25 @@ for ev in t:
         h_t_bar.Fill(t_bar)
     #endif
 
+    if not math.isnan(t_diff):
+        h_t_diff.Fill(t_diff)
+    #endif
+
 #endfor
 
 print("Total events passing cut:",counter)
 
-c = ROOT.TCanvas("c","c",1200,500)
-c.Divide(2,1)
+c = ROOT.TCanvas("c","c",1800,500)
+c.Divide(3,1)
 
 c.cd(1)
 h_t_mes.Draw()
 
 c.cd(2)
 h_t_bar.Draw()
+
+c.cd(3)
+h_t_diff.Draw()
 
 os.makedirs("output", exist_ok=True)
 
