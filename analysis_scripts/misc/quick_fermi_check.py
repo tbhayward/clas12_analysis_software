@@ -17,7 +17,7 @@ M_n  = 0.939565
 f = ROOT.TFile.Open(input_file)
 t = f.Get(tree_name)
 
-h_t_mes = ROOT.TH1D("h_t_mes","Mesonic definition; t (GeV^2); Counts",200,-2,0.5)
+h_t_mes = ROOT.TH1D("h_t_mes","Mesonic definition; t (GeV^2); Counts",200,-14,0.5)
 h_t_bar = ROOT.TH1D("h_t_bar","Baryonic definition; t (GeV^2); Counts",200,-2,0.5)
 
 print("Starting event loop")
