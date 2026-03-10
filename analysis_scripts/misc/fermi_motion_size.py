@@ -77,7 +77,7 @@ N14_vals = [
 ]
 
 # ------------------------------------------------
-# build bin edges (0–0.1,0.1–0.2,... fm^-1)
+# bin edges (0–0.1 fm⁻¹ etc)
 # ------------------------------------------------
 
 edges = []
@@ -168,11 +168,6 @@ h_nitrogen = ROOT.TH1D(
 nb_pf_pdf,
 edge_array
 )
-
-
-# ------------------------------------------------
-# fill nitrogen histogram
-# ------------------------------------------------
 
 for i,val in enumerate(N14_vals):
     h_nitrogen.SetBinContent(i+1,val)
@@ -267,51 +262,9 @@ for file in files:
 
         h_pf.Fill(pF)
 
-        En = math.sqrt(M_n*M_n + pF*pF)
-
-        dot_pq = En*nu - (pnx*qx + pny*qy + pnz*qz)
-
-        xB_mes = Q2/(2*M_n*nu)
-        xB_true = Q2/(2*dot_pq)
-
-        t_mes = (qE - Epi)**2 - ((qx-pix)**2+(qy-piy)**2+(qz-piz)**2)
-        t_true = (Ep-En)**2 - ((ppx-pnx)**2+(ppy-pny)**2+(ppz-pnz)**2)
-
-        mx2_true = (qE + En - Epi)**2 - ((qx+pnx-pix)**2+(qy+pny-piy)**2+(qz+pnz-piz)**2)
-
-        dxB = abs(xB_mes - xB_true)
-        dt  = abs(t_mes - t_true)
-        dmx2 = abs(mx2_mes - mx2_true)
-
-        i = int(pF/0.3 * nb_pf)
-        j = int((p1-0.3)/0.9 * nb_pp)
-
-        if 0 <= i < nb_pf and 0 <= j < nb_pp:
-
-            h_density.Fill(pF,p1)
-
-            sum_dxB[i][j] += dxB
-            sum_dt[i][j] += dt
-            sum_dmx2[i][j] += dmx2
-            counts[i][j] += 1
-
     #endfor
 
 #endfor
-
-
-# ------------------------------------------------
-# compute averages
-# ------------------------------------------------
-
-for i in range(nb_pf):
-    for j in range(nb_pp):
-
-        if counts[i][j] > 0:
-
-            h_dxB.SetBinContent(i+1,j+1,sum_dxB[i][j]/counts[i][j])
-            h_dt.SetBinContent(i+1,j+1,sum_dt[i][j]/counts[i][j])
-            h_dmx2.SetBinContent(i+1,j+1,sum_dmx2[i][j]/counts[i][j])
 
 
 # ------------------------------------------------
@@ -326,36 +279,14 @@ if h_nitrogen.Integral() > 0:
 
 
 # ------------------------------------------------
-# heatmap canvas
-# ------------------------------------------------
-
-ROOT.gStyle.SetOptStat(0)
-
-c = ROOT.TCanvas("c","c",2000,500)
-c.Divide(4,1)
-
-c.cd(1)
-h_density.Draw("COLZ")
-
-c.cd(2)
-h_dxB.Draw("COLZ")
-
-c.cd(3)
-h_dt.Draw("COLZ")
-
-c.cd(4)
-h_dmx2.Draw("COLZ")
-
-os.makedirs("output",exist_ok=True)
-
-c.SaveAs("output/fermi_shift_maps_data_driven.png")
-
-
-# ------------------------------------------------
-# PDF comparison
+# PDF comparison plot
 # ------------------------------------------------
 
 c2 = ROOT.TCanvas("c2","pF comparison",800,600)
+
+max_val = max(h_pf.GetMaximum(),h_nitrogen.GetMaximum())
+
+h_pf.SetMaximum(1.2*max_val)
 
 h_pf.SetLineColor(ROOT.kBlue)
 h_pf.SetLineWidth(3)
@@ -366,12 +297,14 @@ h_nitrogen.SetLineWidth(3)
 h_pf.Draw("HIST")
 h_nitrogen.Draw("HIST SAME")
 
+mean_pf = h_pf.GetMean()
+mean_nitrogen = h_nitrogen.GetMean()
+
 legend = ROOT.TLegend(0.55,0.65,0.85,0.85)
-legend.AddEntry(h_pf,"Extracted p_{F} distribution","l")
-legend.AddEntry(h_nitrogen,"N^{14} momentum distribution","l")
+legend.AddEntry(h_pf,f"Extracted p_F (mean = {mean_pf:.3f} GeV)","l")
+legend.AddEntry(h_nitrogen,f"N14 distribution (mean = {mean_nitrogen:.3f} GeV)","l")
 legend.Draw()
 
-c2.SaveAs("output/fermi_pf_pdf_comparison.png")
+os.makedirs("output",exist_ok=True)
 
-print("Saved output/fermi_shift_maps_data_driven.png")
-print("Saved output/fermi_pf_pdf_comparison.png")
+c2.SaveAs("output/fermi_pf_pdf_comparison.png")
