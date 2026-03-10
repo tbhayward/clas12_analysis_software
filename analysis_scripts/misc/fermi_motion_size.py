@@ -2,6 +2,7 @@ import ROOT
 import math
 import os
 import sys
+from array import array
 
 ROOT.gROOT.SetBatch(True)
 
@@ -75,7 +76,22 @@ N14_vals = [
 0.005874,0.003586,0.002312,0.001622,0.001247
 ]
 
-pf_vals = [k * HBARC for k in k_vals]
+# ------------------------------------------------
+# build bin edges (0–0.1,0.1–0.2,... fm^-1)
+# ------------------------------------------------
+
+edges = []
+
+for k in k_vals:
+    edges.append(k * HBARC)
+#endfor
+
+edges.append((k_vals[-1] + 0.1) * HBARC)
+
+edge_array = array('d', edges)
+
+nb_pf_pdf = len(edges) - 1
+
 
 # ------------------------------------------------
 # input files
@@ -93,12 +109,14 @@ files = [
 
 tree_name = "PhysicsEvents"
 
+
 # ------------------------------------------------
 # histogram binning
 # ------------------------------------------------
 
 nb_pf = 20
 nb_pp = 20
+
 
 # ------------------------------------------------
 # heatmap histograms
@@ -132,19 +150,34 @@ nb_pf,0,0.3,
 nb_pp,0.3,1.2
 )
 
-# ------------------------------------------------
-# spectator momentum histogram
-# ------------------------------------------------
 
-nb_pf_pdf = 50
+# ------------------------------------------------
+# spectator momentum histograms
+# ------------------------------------------------
 
 h_pf = ROOT.TH1D(
 "h_pf",
 "Extracted |p_{F}| distribution; |p_{F}| (GeV); normalized PDF",
 nb_pf_pdf,
-0,
-0.4
+edge_array
 )
+
+h_nitrogen = ROOT.TH1D(
+"h_nitrogen",
+"Nitrogen momentum distribution comparison; |p_{F}| (GeV); normalized PDF",
+nb_pf_pdf,
+edge_array
+)
+
+
+# ------------------------------------------------
+# fill nitrogen histogram
+# ------------------------------------------------
+
+for i,val in enumerate(N14_vals):
+    h_nitrogen.SetBinContent(i+1,val)
+#endfor
+
 
 # ------------------------------------------------
 # accumulation arrays
@@ -154,6 +187,7 @@ sum_dxB = [[0]*nb_pp for _ in range(nb_pf)]
 sum_dt  = [[0]*nb_pp for _ in range(nb_pf)]
 sum_dmx2= [[0]*nb_pp for _ in range(nb_pf)]
 counts  = [[0]*nb_pp for _ in range(nb_pf)]
+
 
 # ------------------------------------------------
 # event loop
@@ -165,7 +199,7 @@ event_counter = 0
 
 for file in files:
 
-    print("Opening", file)
+    print("Opening",file)
 
     f = ROOT.TFile.Open(file)
     t = f.Get(tree_name)
@@ -181,7 +215,6 @@ for file in files:
         run = ev.runnum
         Eb = get_beam_energy(run)
 
-        # electron
         e_p = ev.e_p
         th  = ev.e_theta
         ph  = ev.e_phi
@@ -192,7 +225,6 @@ for file in files:
 
         Ee = math.sqrt(e_p*e_p + m_e*m_e)
 
-        # proton
         p1 = ev.p1_p
         th = ev.p1_theta
         ph = ev.p1_phi
@@ -203,7 +235,6 @@ for file in files:
 
         Ep = math.sqrt(p1*p1 + M_p*M_p)
 
-        # pion
         p2 = ev.p2_p
         th = ev.p2_theta
         ph = ev.p2_phi
@@ -214,7 +245,6 @@ for file in files:
 
         Epi = math.sqrt(p2*p2 + m_pi*m_pi)
 
-        # virtual photon
         qx = -ex
         qy = -ey
         qz = Eb - ez
@@ -285,22 +315,18 @@ for i in range(nb_pf):
 
 
 # ------------------------------------------------
-# standardize color scale
+# normalize PDFs
 # ------------------------------------------------
 
-max_shift = max(
-h_dxB.GetMaximum(),
-h_dt.GetMaximum(),
-h_dmx2.GetMaximum()
-)
+if h_pf.Integral() > 0:
+    h_pf.Scale(1.0/h_pf.Integral())
 
-h_dxB.SetMaximum(max_shift)
-h_dt.SetMaximum(max_shift)
-h_dmx2.SetMaximum(max_shift)
+if h_nitrogen.Integral() > 0:
+    h_nitrogen.Scale(1.0/h_nitrogen.Integral())
 
 
 # ------------------------------------------------
-# 1x4 heatmap canvas
+# heatmap canvas
 # ------------------------------------------------
 
 ROOT.gStyle.SetOptStat(0)
@@ -326,35 +352,10 @@ c.SaveAs("output/fermi_shift_maps_data_driven.png")
 
 
 # ------------------------------------------------
-# normalize extracted pF PDF
+# PDF comparison
 # ------------------------------------------------
 
-if h_pf.Integral() > 0:
-    h_pf.Scale(1.0 / h_pf.Integral())
-
-
-# ------------------------------------------------
-# nitrogen PDF histogram (same binning)
-# ------------------------------------------------
-
-h_nitrogen = ROOT.TH1D(
-"h_nitrogen",
-"Nitrogen momentum distribution comparison; |p_{F}| (GeV); normalized PDF",
-nb_pf_pdf,
-0,
-0.4
-)
-
-for i,val in enumerate(N14_vals):
-
-    p = pf_vals[i]
-    bin = h_nitrogen.FindBin(p)
-
-    h_nitrogen.SetBinContent(bin,val)
-
-#endfor
-
-h_nitrogen.Scale(1.0 / h_nitrogen.Integral())
+c2 = ROOT.TCanvas("c2","pF comparison",800,600)
 
 h_pf.SetLineColor(ROOT.kBlue)
 h_pf.SetLineWidth(3)
@@ -362,29 +363,7 @@ h_pf.SetLineWidth(3)
 h_nitrogen.SetLineColor(ROOT.kRed)
 h_nitrogen.SetLineWidth(3)
 
-
-# ------------------------------------------------
-# PDF comparison plot
-# ------------------------------------------------
-
-c2 = ROOT.TCanvas("c2","pF comparison",800,600)
-
-frame = ROOT.TH1D(
-"frame",
-"Nitrogen momentum distribution comparison; |p_{F}| (GeV); normalized PDF",
-100,
-0,
-0.4
-)
-
-frame.SetMinimum(0)
-frame.SetMaximum(
-max(h_pf.GetMaximum(), h_nitrogen.GetMaximum()) * 1.3
-)
-
-frame.Draw()
-
-h_pf.Draw("HIST SAME")
+h_pf.Draw("HIST")
 h_nitrogen.Draw("HIST SAME")
 
 legend = ROOT.TLegend(0.55,0.65,0.85,0.85)
