@@ -76,8 +76,8 @@ tree_name = "PhysicsEvents"
 # histogram binning
 # ------------------------------------------------
 
-nb_pf = 10
-nb_pp = 10
+nb_pf = 20
+nb_pp = 20
 
 # ------------------------------------------------
 # histograms
