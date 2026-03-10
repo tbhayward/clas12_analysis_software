@@ -1,5 +1,6 @@
 import ROOT
 import math
+import random
 import os
 
 ROOT.gROOT.SetBatch(True)
@@ -14,12 +15,12 @@ m_pi = 0.13957
 M_p  = 0.938272
 M_n  = 0.939565
 
+# ------------------------------------------------
+# PANEL 1 : DATA DENSITY
+# ------------------------------------------------
+
 f = ROOT.TFile.Open(input_file)
 t = f.Get(tree_name)
-
-# ------------------------------------------------
-# histograms
-# ------------------------------------------------
 
 h_density = ROOT.TH2D(
 "h_density",
@@ -28,34 +29,9 @@ h_density = ROOT.TH2D(
 60,0.3,1.5
 )
 
-h_dxB = ROOT.TProfile2D(
-"h_dxB",
-"|x_{B}^{mes}-x_{B}^{true}|; |p_{F}| (GeV); p'_{p} (GeV)",
-60,0,0.3,
-60,0.3,1.5
-)
-
-h_dt = ROOT.TProfile2D(
-"h_dt",
-"|t_{mes}-t_{true}|; |p_{F}| (GeV); p'_{p} (GeV)",
-60,0,0.3,
-60,0.3,1.5
-)
-
-h_dmx2 = ROOT.TProfile2D(
-"h_dmx2",
-"|Mx2_{mes}-Mx2_{true}|; |p_{F}| (GeV); p'_{p} (GeV)",
-60,0,0.3,
-60,0.3,1.5
-)
-
-print("Looping over events")
+print("Building phase-space density")
 
 for ev in t:
-
-    # ----------------------------------
-    # electron
-    # ----------------------------------
 
     e_p = ev.e_p
     th  = ev.e_theta
@@ -67,10 +43,6 @@ for ev in t:
 
     Ee = math.sqrt(e_p*e_p + m_e*m_e)
 
-    # ----------------------------------
-    # pion
-    # ----------------------------------
-
     p1 = ev.p1_p
     th = ev.p1_theta
     ph = ev.p1_phi
@@ -81,10 +53,6 @@ for ev in t:
 
     Epi = math.sqrt(p1*p1 + m_pi*m_pi)
 
-    # ----------------------------------
-    # proton
-    # ----------------------------------
-
     p2 = ev.p2_p
     th = ev.p2_theta
     ph = ev.p2_phi
@@ -93,96 +61,84 @@ for ev in t:
     ppy = p2*math.sin(th)*math.sin(ph)
     ppz = p2*math.cos(th)
 
-    Ep = math.sqrt(p2*p2 + M_p*M_p)
-
-    # ----------------------------------
-    # virtual photon
-    # ----------------------------------
-
     qx = -ex
     qy = -ey
     qz = beamE - ez
     qE = beamE - Ee
 
-    # ----------------------------------
-    # mesonic missing mass
-    # ----------------------------------
+    mx2 = (qE + M_p - Epi)**2 - ((qx - pix)**2 + (qy - piy)**2 + (qz - piz)**2)
 
-    mx2_mes = (qE + M_p - Epi)**2 - ((qx - pix)**2 + (qy - piy)**2 + (qz - piz)**2)
-
-    if mx2_mes >= 1.07:
+    if mx2 >= 1.07:
         continue
     #endif
 
-    # ----------------------------------
-    # neutron momentum from conservation
-    # ----------------------------------
+    pFx = ppx + pix - qx
+    pFy = ppy + piy - qy
+    pFz = ppz + piz - qz
 
-    pnx = ppx + pix - qx
-    pny = ppy + piy - qy
-    pnz = ppz + piz - qz
+    pF = math.sqrt(pFx*pFx + pFy*pFy + pFz*pFz)
 
-    pF = math.sqrt(pnx*pnx + pny*pny + pnz*pnz)
-
-    if pF > 0.3 or p2 < 0.3 or p2 > 1.5:
-        continue
+    if pF < 0.3 and 0.3 < p2 < 1.5:
+        h_density.Fill(pF,p2)
     #endif
-
-    En = math.sqrt(pF*pF + M_n*M_n)
-
-    # ----------------------------------
-    # kinematics
-    # ----------------------------------
-
-    Q2 = -(qE*qE - qx*qx - qy*qy - qz*qz)
-    nu = qE
-
-    # ----------------------------------
-    # xB
-    # ----------------------------------
-
-    xB_mes = Q2/(2*M_n*nu)
-    xB_true = Q2/(2*(En*nu - (pnx*qx + pny*qy + pnz*qz)))
-
-    dxB = abs(xB_mes - xB_true)
-
-    # ----------------------------------
-    # t
-    # ----------------------------------
-
-    dE = qE - Epi
-    dx = qx - pix
-    dy = qy - piy
-    dz = qz - piz
-
-    t_mes = dE*dE - (dx*dx + dy*dy + dz*dz)
-
-    t_true = (Ep-En)**2 - ((ppx-pnx)**2 + (ppy-pny)**2 + (ppz-pnz)**2)
-
-    dt = abs(t_mes - t_true)
-
-    # ----------------------------------
-    # Mx2 true
-    # ----------------------------------
-
-    mx2_true = (qE + En - Epi)**2 - (
-        (qx + pnx - pix)**2 +
-        (qy + pny - piy)**2 +
-        (qz + pnz - piz)**2
-    )
-
-    dmx2 = abs(mx2_mes - mx2_true)
-
-    # ----------------------------------
-    # fill histograms
-    # ----------------------------------
-
-    h_density.Fill(pF,p2)
-    h_dxB.Fill(pF,p2,dxB)
-    h_dt.Fill(pF,p2,dt)
-    h_dmx2.Fill(pF,p2,dmx2)
 
 #endfor
+
+
+# ------------------------------------------------
+# PANELS 2–4 : THEORY MAPS
+# ------------------------------------------------
+
+h_dxB = ROOT.TH2D("|#Delta x_{B}|","|#Delta x_{B}|; |p_{F}| (GeV); p'_{p} (GeV)",60,0,0.3,60,0.3,1.5)
+h_dt  = ROOT.TH2D("|#Delta t|","|#Delta t|; |p_{F}| (GeV); p'_{p} (GeV)",60,0,0.3,60,0.3,1.5)
+h_dmx2= ROOT.TH2D("|#Delta Mx2|","|#Delta Mx^{2}|; |p_{F}| (GeV); p'_{p} (GeV)",60,0,0.3,60,0.3,1.5)
+
+samples = 200
+
+# typical DIS kinematics
+Q2 = 2.0
+nu = 5.0
+xB = Q2/(2*M_n*nu)
+q_mag = math.sqrt(Q2 + nu*nu)
+
+print("Scanning theoretical phase space")
+
+for i in range(60):
+
+    pF = (i+0.5)*0.3/60
+
+    for j in range(60):
+
+        pp = 0.3 + (j+0.5)*(1.2/60)
+
+        dxB = 0
+        dt  = 0
+        dmx2= 0
+
+        for s in range(samples):
+
+            costh = random.uniform(-1,1)
+
+            dxB  += abs(xB*(pF*q_mag*costh)/(M_n*nu))
+            dt   += abs(2*pF*pp*costh)
+            dmx2 += abs(2*pF*pp*costh)
+
+        #endfor
+
+        dxB  /= samples
+        dt   /= samples
+        dmx2 /= samples
+
+        h_dxB.SetBinContent(i+1,j+1,dxB)
+        h_dt.SetBinContent(i+1,j+1,dt)
+        h_dmx2.SetBinContent(i+1,j+1,dmx2)
+
+#endfor
+
+
+# ------------------------------------------------
+# PLOT
+# ------------------------------------------------
 
 ROOT.gStyle.SetOptStat(0)
 
@@ -203,4 +159,4 @@ h_dmx2.Draw("COLZ")
 
 os.makedirs("output",exist_ok=True)
 
-c.SaveAs("output/fermi_motion_truth_comparison.png")
+c.SaveAs("output/fermi_motion_bias_map.png")
