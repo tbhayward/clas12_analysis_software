@@ -17,19 +17,28 @@ M_n  = 0.939565
 f = ROOT.TFile.Open(input_file)
 t = f.Get(tree_name)
 
-h_t_mes = ROOT.TH1D("h_t_mes","Mesonic definition; t (GeV^2); Counts",200,-14,0.5)
-h_t_bar = ROOT.TH1D("h_t_bar","Baryonic definition; t (GeV^2); Counts",200,-2,0.5)
-h_t_diff = ROOT.TH1D("h_t_diff","t_{#pi} - t_{p}; #Delta t (GeV^2); Counts",200,-14,14)
+# no-cut histograms (black)
+h_t_mes_all  = ROOT.TH1D("h_t_mes_all","Mesonic definition; t (GeV^2); Counts",200,-14,0.5)
+h_t_bar_all  = ROOT.TH1D("h_t_bar_all","Baryonic definition; t (GeV^2); Counts",200,-2,0.5)
+h_t_diff_all = ROOT.TH1D("h_t_diff_all","t_{#pi}-t_{p}; #Delta t (GeV^2); Counts",200,-14,14)
+
+# cut histograms (red)
+h_t_mes_cut  = ROOT.TH1D("h_t_mes_cut","Mesonic definition; t (GeV^2); Counts",200,-14,0.5)
+h_t_bar_cut  = ROOT.TH1D("h_t_bar_cut","Baryonic definition; t (GeV^2); Counts",200,-2,0.5)
+h_t_diff_cut = ROOT.TH1D("h_t_diff_cut","t_{#pi}-t_{p}; #Delta t (GeV^2); Counts",200,-14,14)
+
+# styling
+for h in [h_t_mes_all, h_t_bar_all, h_t_diff_all]:
+    h.SetLineColor(ROOT.kBlack)
+
+for h in [h_t_mes_cut, h_t_bar_cut, h_t_diff_cut]:
+    h.SetLineColor(ROOT.kRed)
 
 print("Starting event loop")
 
 counter = 0
 
 for ev in t:
-
-    if ev.Mx2 >= 1.07:
-        continue
-    #endif
 
     counter += 1
 
@@ -44,7 +53,7 @@ for ev in t:
 
     E_e = math.sqrt(e_p*e_p + m_e*m_e)
 
-    # pion (p1)
+    # pion
     p1_p = ev.p1_p
     p1_theta = ev.p1_theta
     p1_phi = ev.p1_phi
@@ -55,13 +64,13 @@ for ev in t:
 
     E_pi = math.sqrt(p1_p*p1_p + m_pi*m_pi)
 
-    # virtual photon q = k - k'
+    # virtual photon
     qE = beamE - E_e
     qx = -ex
     qy = -ey
     qz = beamE - ez
 
-    # mesonic definition t = (q - p_pi)^2
+    # mesonic t
     dE = qE - E_pi
     dx = qx - px_pi
     dy = qy - py_pi
@@ -69,7 +78,7 @@ for ev in t:
 
     t_mes = dE*dE - (dx*dx + dy*dy + dz*dz)
 
-    # baryonic definition t = (p_n - p_p)^2
+    # baryonic t
     p2_p = ev.p2_p
     E_p = math.sqrt(p2_p*p2_p + M_p*M_p)
 
@@ -77,44 +86,57 @@ for ev in t:
 
     t_diff = t_mes - t_bar
 
-    if counter <= 20:
-        print("Event",counter)
-        print("electron p,theta,phi:",e_p,e_theta,e_phi)
-        print("pion p,theta,phi:",p1_p,p1_theta,p1_phi)
-        print("proton p:",p2_p)
-        print("t_mes =",t_mes)
-        print("t_bar =",t_bar)
-        print("t_mes - t_bar =",t_diff)
-        print("")
-    #endif
-
+    # fill no-cut histograms
     if not math.isnan(t_mes):
-        h_t_mes.Fill(t_mes)
+        h_t_mes_all.Fill(t_mes)
     #endif
 
     if not math.isnan(t_bar):
-        h_t_bar.Fill(t_bar)
+        h_t_bar_all.Fill(t_bar)
     #endif
 
     if not math.isnan(t_diff):
-        h_t_diff.Fill(t_diff)
+        h_t_diff_all.Fill(t_diff)
+    #endif
+
+    # apply Mx2 cut
+    if ev.Mx2 < 1.07:
+
+        if not math.isnan(t_mes):
+            h_t_mes_cut.Fill(t_mes)
+        #endif
+
+        if not math.isnan(t_bar):
+            h_t_bar_cut.Fill(t_bar)
+        #endif
+
+        if not math.isnan(t_diff):
+            h_t_diff_cut.Fill(t_diff)
+        #endif
+
     #endif
 
 #endfor
 
-print("Total events passing cut:",counter)
+print("Total events processed:",counter)
 
 c = ROOT.TCanvas("c","c",1800,500)
 c.Divide(3,1)
 
+# Mesonic
 c.cd(1)
-h_t_mes.Draw()
+h_t_mes_all.Draw("hist")
+h_t_mes_cut.Draw("hist same")
 
+# Baryonic
 c.cd(2)
-h_t_bar.Draw()
+h_t_bar_all.Draw("hist")
+h_t_bar_cut.Draw("hist same")
 
+# Difference
 c.cd(3)
-h_t_diff.Draw()
+h_t_diff_all.Draw("hist")
+h_t_diff_cut.Draw("hist same")
 
 os.makedirs("output", exist_ok=True)
 
