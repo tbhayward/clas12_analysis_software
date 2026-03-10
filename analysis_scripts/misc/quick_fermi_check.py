@@ -20,11 +20,17 @@ t = f.Get(tree_name)
 h_t_mes = ROOT.TH1D("h_t_mes","Mesonic definition; t (GeV^2); Counts",200,-2,0.5)
 h_t_bar = ROOT.TH1D("h_t_bar","Baryonic definition; t (GeV^2); Counts",200,-2,0.5)
 
+print("Starting event loop")
+
+counter = 0
+
 for ev in t:
 
     if ev.Mx2 >= 1.07:
         continue
     #endif
+
+    counter += 1
 
     # electron
     e_p = ev.e_p
@@ -50,11 +56,11 @@ for ev in t:
 
     # virtual photon q = k - k'
     qE = beamE - E_e
-    qx = beamE - ex
+    qx = -ex
     qy = -ey
-    qz = -ez
+    qz = beamE - ez
 
-    # q - p_pi
+    # mesonic definition t = (q - p_pi)^2
     dE = qE - E_pi
     dx = qx - px_pi
     dy = qy - py_pi
@@ -62,16 +68,33 @@ for ev in t:
 
     t_mes = dE*dE - (dx*dx + dy*dy + dz*dz)
 
-    # baryonic definition
+    # baryonic definition t = (p_n - p_p)^2
     p2_p = ev.p2_p
     E_p = math.sqrt(p2_p*p2_p + M_p*M_p)
 
     t_bar = M_n*M_n + M_p*M_p - 2.0*M_n*E_p
 
-    h_t_mes.Fill(t_mes)
-    h_t_bar.Fill(t_bar)
+    if counter <= 20:
+        print("Event",counter)
+        print("electron p,theta,phi:",e_p,e_theta,e_phi)
+        print("pion p,theta,phi:",p1_p,p1_theta,p1_phi)
+        print("proton p:",p2_p)
+        print("t_mes =",t_mes)
+        print("t_bar =",t_bar)
+        print("")
+    #endif
+
+    if not math.isnan(t_mes):
+        h_t_mes.Fill(t_mes)
+    #endif
+
+    if not math.isnan(t_bar):
+        h_t_bar.Fill(t_bar)
+    #endif
 
 #endfor
+
+print("Total events passing cut:",counter)
 
 c = ROOT.TCanvas("c","c",1200,500)
 c.Divide(2,1)
