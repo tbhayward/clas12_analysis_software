@@ -5,125 +5,132 @@ import os
 
 ROOT.gROOT.SetBatch(True)
 
-# ------------------------------------------------
+# --------------------------------
 # constants
-# ------------------------------------------------
+# --------------------------------
 
-M_p = 0.938272
-M_n = 0.939565
+M = 0.938272
 
 beamE = 10.55
-
-# typical DIS scale for example
 Q2 = 2.0
 nu = 5.0
 
-# ------------------------------------------------
+xB = Q2/(2*M*nu)
+
+q_mag = math.sqrt(Q2 + nu*nu)
+
+# --------------------------------
+# scan ranges
+# --------------------------------
+
+pf_min = 0.0
+pf_max = 0.3
+
+pp_min = 0.3
+pp_max = 1.5
+
+nb_pf = 60
+nb_pp = 60
+
+samples = 300
+
+# --------------------------------
 # histograms
-# ------------------------------------------------
-
-nbins_pf = 60
-nbins_pp = 60
-
-pf_max = 0.4
-pp_max = 3.0
+# --------------------------------
 
 h_xB = ROOT.TH2D(
-    "h_xB",
-    "Shift in xB; p_{F} (GeV); p_{p} (GeV)",
-    nbins_pf,0,pf_max,
-    nbins_pp,0,pp_max
+"h_xB",
+"Shift in xB; p_{F} (GeV); p_{p} (GeV)",
+nb_pf,pf_min,pf_max,
+nb_pp,pp_min,pp_max
 )
 
 h_t = ROOT.TH2D(
-    "h_t",
-    "Shift in t; p_{F} (GeV); p_{p} (GeV)",
-    nbins_pf,0,pf_max,
-    nbins_pp,0,pp_max
+"h_t",
+"Shift in t; p_{F} (GeV); p_{p} (GeV)",
+nb_pf,pf_min,pf_max,
+nb_pp,pp_min,pp_max
 )
 
 h_mx2 = ROOT.TH2D(
-    "h_mx2",
-    "Shift in Mx2; p_{F} (GeV); p_{p} (GeV)",
-    nbins_pf,0,pf_max,
-    nbins_pp,0,pp_max
+"h_mx2",
+"Shift in Mx2; p_{F} (GeV); p_{p} (GeV)",
+nb_pf,pf_min,pf_max,
+nb_pp,pp_min,pp_max
 )
 
-# ------------------------------------------------
-# sampling
-# ------------------------------------------------
+print("Scanning phase space")
 
-samples_per_bin = 200
+# --------------------------------
+# Monte Carlo sampling
+# --------------------------------
 
-print("Starting scan")
+for i_pf in range(nb_pf):
 
-for i_pf in range(nbins_pf):
+    pf = pf_min + (i_pf+0.5)*(pf_max-pf_min)/nb_pf
 
-    pf = (i_pf + 0.5) * pf_max / nbins_pf
+    for i_pp in range(nb_pp):
 
-    for i_pp in range(nbins_pp):
+        pp = pp_min + (i_pp+0.5)*(pp_max-pp_min)/nb_pp
 
-        pp = (i_pp + 0.5) * pp_max / nbins_pp
+        sxB = 0
+        st  = 0
+        smx2 = 0
 
-        shift_xB = 0.0
-        shift_t = 0.0
-        shift_mx2 = 0.0
+        for s in range(samples):
 
-        for s in range(samples_per_bin):
-
-            # random orientation
             costh = random.uniform(-1,1)
 
-            # dot product term
             dot = pf * pp * costh
 
-            # ------------------------------------------------
             # xB shift
-            # ------------------------------------------------
+            delta_xB = abs(xB * (pf*q_mag*costh)/(M*nu))
 
-            xB = Q2 / (2*M_n*nu)
-
-            delta_xB = xB * (pf / M_n)
-
-            shift_xB += abs(delta_xB)
-
-            # ------------------------------------------------
             # t shift
-            # ------------------------------------------------
+            delta_t = abs(2*dot)
 
-            delta_t = 2.0 * dot
-
-            shift_t += abs(delta_t)
-
-            # ------------------------------------------------
             # Mx2 shift
-            # ------------------------------------------------
+            delta_mx2 = abs(2*dot)
 
-            delta_mx2 = -2.0 * dot
-
-            shift_mx2 += abs(delta_mx2)
+            sxB += delta_xB
+            st += delta_t
+            smx2 += delta_mx2
 
         #endfor
 
-        shift_xB /= samples_per_bin
-        shift_t /= samples_per_bin
-        shift_mx2 /= samples_per_bin
+        sxB /= samples
+        st  /= samples
+        smx2 /= samples
 
-        h_xB.SetBinContent(i_pf+1,i_pp+1,shift_xB)
-        h_t.SetBinContent(i_pf+1,i_pp+1,shift_t)
-        h_mx2.SetBinContent(i_pf+1,i_pp+1,shift_mx2)
+        h_xB.SetBinContent(i_pf+1,i_pp+1,sxB)
+        h_t.SetBinContent(i_pf+1,i_pp+1,st)
+        h_mx2.SetBinContent(i_pf+1,i_pp+1,smx2)
 
     #endfor
 #endfor
 
-# ------------------------------------------------
+# --------------------------------
+# determine common color scale
+# --------------------------------
+
+max_val = max(
+    h_xB.GetMaximum(),
+    h_t.GetMaximum(),
+    h_mx2.GetMaximum()
+)
+
+for h in [h_xB,h_t,h_mx2]:
+    h.SetMinimum(0)
+    h.SetMaximum(max_val)
+
+# --------------------------------
 # plotting
-# ------------------------------------------------
+# --------------------------------
+
+ROOT.gStyle.SetOptStat(0)
 
 c = ROOT.TCanvas("c","c",1800,600)
 c.Divide(3,1)
-
-ROOT.gStyle.SetOptStat(0)
 
 c.cd(1)
 h_xB.Draw("COLZ")
