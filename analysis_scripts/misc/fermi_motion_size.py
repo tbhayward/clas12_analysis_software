@@ -26,6 +26,8 @@ m_pi = 0.13957
 M_p  = 0.938272
 M_n  = 0.939565
 
+HBARC = 0.1973269804
+
 # ------------------------------------------------
 # beam energy function
 # ------------------------------------------------
@@ -56,19 +58,49 @@ def get_beam_energy(run):
 
     return Eb
 
+
+# ------------------------------------------------
+# nitrogen momentum table (from image)
+# ------------------------------------------------
+
+k_vals = [
+0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,
+1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9
+]
+
+N14_vals = [
+0.163119,0.183235,0.225102,0.262783,0.276924,
+0.263379,0.228534,0.183451,0.137812,0.097787,
+0.066275,0.043066,0.026994,0.016454,0.009841,
+0.005874,0.003586,0.002312,0.001622,0.001247
+]
+
+# convert k → GeV
+pf_vals = [k * HBARC for k in k_vals]
+
+# compute normalized CDF
+total = sum(N14_vals)
+cdf = []
+running = 0.0
+
+for v in N14_vals:
+    running += v
+    cdf.append(running / total)
+
 # ------------------------------------------------
 # input files
 # ------------------------------------------------
 
-# files = [
-# "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/fall22_nd3_p_pim.root",
-# "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/summer22_nd3_p_pim.root",
-# "/volatile/clas12/users/mkerr/rgc/p_pim/ND3/spring23_nd3_p_pim.root"
-# ]
-
 files = [
-"/volatile/clas12/users/mkerr/rgb/rgb_sidisdvcs_p_pim.root",
+"/volatile/clas12/users/mkerr/rgc/p_pim/ND3/fall22_nd3_p_pim.root",
+"/volatile/clas12/users/mkerr/rgc/p_pim/ND3/summer22_nd3_p_pim.root",
+"/volatile/clas12/users/mkerr/rgc/p_pim/ND3/spring23_nd3_p_pim.root"
 ]
+
+
+# files = [
+# "/volatile/clas12/users/mkerr/rgb/rgb_sidisdvcs_p_pim.root",
+# ]
 
 tree_name = "PhysicsEvents"
 
@@ -109,6 +141,13 @@ h_dmx2 = ROOT.TH2D(
 "<|#Delta Mx^{2}|>; |p_{F}| (GeV); p' (GeV)",
 nb_pf,0,0.3,
 nb_pp,0.3,1.2
+)
+
+# pF distribution
+h_pf = ROOT.TH1D(
+"h_pf",
+"Extracted |p_{F}| distribution; |p_{F}| (GeV); normalized counts",
+50,0,0.4
 )
 
 # ------------------------------------------------
@@ -188,34 +227,30 @@ for file in files:
         Q2 = -(qE*qE - qx*qx - qy*qy - qz*qz)
         nu = qE
 
-        # mesonic Mx2
         mx2_mes = (qE + M_p - Epi)**2 - ((qx-pix)**2+(qy-piy)**2+(qz-piz)**2)
 
         if mx2_mes >= 1.07:
             continue
         #endif
 
-        # neutron momentum
         pnx = ppx + pix - qx
         pny = ppy + piy - qy
         pnz = ppz + piz - qz
 
         pF = math.sqrt(pnx*pnx + pny*pny + pnz*pnz)
 
+        h_pf.Fill(pF)
+
         En = math.sqrt(M_n*M_n + pF*pF)
 
-        # xB
         dot_pq = En*nu - (pnx*qx + pny*qy + pnz*qz)
 
         xB_mes = Q2/(2*M_n*nu)
         xB_true = Q2/(2*dot_pq)
 
-        # t
         t_mes = (qE - Epi)**2 - ((qx-pix)**2+(qy-piy)**2+(qz-piz)**2)
-
         t_true = (Ep-En)**2 - ((ppx-pnx)**2+(ppy-pny)**2+(ppz-pnz)**2)
 
-        # true Mx2
         mx2_true = (qE + En - Epi)**2 - ((qx+pnx-pix)**2+(qy+pny-piy)**2+(qz+pnz-piz)**2)
 
         dxB = abs(xB_mes - xB_true)
@@ -234,68 +269,41 @@ for file in files:
             sum_dmx2[i][j] += dmx2
             counts[i][j] += 1
 
-        #endif
-
     #endfor
-
-    if event_counter > max_events:
-        break
-    #endif
 
 #endfor
 
-print("Events processed:",event_counter)
-
 # ------------------------------------------------
-# compute averages
+# normalize pF histogram
 # ------------------------------------------------
 
-for i in range(nb_pf):
-    for j in range(nb_pp):
-
-        if counts[i][j] > 0:
-
-            h_dxB.SetBinContent(i+1,j+1,sum_dxB[i][j]/counts[i][j])
-            h_dt.SetBinContent(i+1,j+1,sum_dt[i][j]/counts[i][j])
-            h_dmx2.SetBinContent(i+1,j+1,sum_dmx2[i][j]/counts[i][j])
+h_pf.Scale(1.0 / h_pf.Integral())
 
 # ------------------------------------------------
-# standardize color scale
+# build nitrogen CDF graph
 # ------------------------------------------------
 
-max_shift = max(
-h_dxB.GetMaximum(),
-h_dt.GetMaximum(),
-h_dmx2.GetMaximum()
-)
+g_cdf = ROOT.TGraph(len(pf_vals))
 
-h_dxB.SetMaximum(max_shift)
-h_dt.SetMaximum(max_shift)
-h_dmx2.SetMaximum(max_shift)
+for i in range(len(pf_vals)):
+    g_cdf.SetPoint(i, pf_vals[i], cdf[i])
+
+g_cdf.SetLineColor(ROOT.kRed)
+g_cdf.SetLineWidth(3)
 
 # ------------------------------------------------
-# plotting
+# plot comparison
 # ------------------------------------------------
 
-ROOT.gStyle.SetOptStat(0)
+c2 = ROOT.TCanvas("c2","pF comparison",800,600)
 
-c = ROOT.TCanvas("c","c",2000,500)
-c.Divide(4,1)
+h_pf.SetLineColor(ROOT.kBlue)
+h_pf.Draw("HIST")
 
-c.cd(1)
-h_density.Draw("COLZ")
-
-c.cd(2)
-h_dxB.Draw("COLZ")
-
-c.cd(3)
-h_dt.Draw("COLZ")
-
-c.cd(4)
-h_dmx2.Draw("COLZ")
+g_cdf.Draw("L SAME")
 
 os.makedirs("output",exist_ok=True)
 
-c.SaveAs("output/fermi_shift_maps_data_driven.png")
+c2.SaveAs("output/fermi_pf_cdf_comparison.png")
 
-print("Saved output/fermi_shift_maps_data_driven.png")
+print("Saved output/fermi_pf_cdf_comparison.png")
