@@ -69,11 +69,15 @@ files = [
 tree_name = "PhysicsEvents"
 
 # ------------------------------------------------
-# histograms
+# histogram binning
 # ------------------------------------------------
 
-nb_pf = 60
-nb_pp = 60
+nb_pf = 25
+nb_pp = 25
+
+# ------------------------------------------------
+# histograms
+# ------------------------------------------------
 
 h_density = ROOT.TH2D(
 "h_density",
@@ -214,7 +218,6 @@ for file in files:
         dt  = abs(t_mes - t_true)
         dmx2 = abs(mx2_mes - mx2_true)
 
-        # bin indices
         i = int(pF/0.3 * nb_pf)
         j = int((p1-0.3)/0.9 * nb_pp)
 
@@ -251,6 +254,20 @@ for i in range(nb_pf):
             h_dxB.SetBinContent(i+1,j+1,sum_dxB[i][j]/counts[i][j])
             h_dt.SetBinContent(i+1,j+1,sum_dt[i][j]/counts[i][j])
             h_dmx2.SetBinContent(i+1,j+1,sum_dmx2[i][j]/counts[i][j])
+
+# ------------------------------------------------
+# standardize color scale
+# ------------------------------------------------
+
+max_shift = max(
+h_dxB.GetMaximum(),
+h_dt.GetMaximum(),
+h_dmx2.GetMaximum()
+)
+
+h_dxB.SetMaximum(max_shift)
+h_dt.SetMaximum(max_shift)
+h_dmx2.SetMaximum(max_shift)
 
 # ------------------------------------------------
 # plotting
