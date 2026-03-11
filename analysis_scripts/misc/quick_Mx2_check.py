@@ -83,17 +83,20 @@ h_mc.SetLineColor(ROOT.kRed)
 h_mc.SetLineWidth(2)
 
 # ------------------------------------------------
-# determine y-axis maximum
+# determine y-axis range
 # ------------------------------------------------
 
 max_val = max(h_rga.GetMaximum(), h_mc.GetMaximum())
+
 h_rga.SetMaximum(1.2 * max_val)
+h_rga.SetMinimum(1e-6)
 
 # ------------------------------------------------
 # canvas
 # ------------------------------------------------
 
 c = ROOT.TCanvas("c","Mx2 comparison",800,600)
+c.SetLogy()
 
 h_rga.Draw("hist")
 h_mc.Draw("hist same")
