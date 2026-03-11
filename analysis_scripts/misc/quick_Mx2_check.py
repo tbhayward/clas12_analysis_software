@@ -47,8 +47,8 @@ nbins = 200
 xmin  = 0.4
 xmax  = 1.4
 
-h_rga = ROOT.TH1F("h_rga",";Mx2 (GeV^{2});Counts",nbins,xmin,xmax)
-h_rgc = ROOT.TH1F("h_rgc",";Mx2 (GeV^{2});Counts",nbins,xmin,xmax)
+h_rga = ROOT.TH1F("h_rga",";Mx2 (GeV^{2});Normalized Counts",nbins,xmin,xmax)
+h_rgc = ROOT.TH1F("h_rgc",";Mx2 (GeV^{2});Normalized Counts",nbins,xmin,xmax)
 
 # ------------------------------------------------
 # fill histograms
@@ -56,6 +56,21 @@ h_rgc = ROOT.TH1F("h_rgc",";Mx2 (GeV^{2});Counts",nbins,xmin,xmax)
 
 tree_rga.Draw("Mx2>>h_rga","","goff")
 tree_rgc.Draw("Mx2>>h_rgc","","goff")
+
+# ------------------------------------------------
+# normalize to integral
+# ------------------------------------------------
+
+int_rga = h_rga.Integral()
+int_rgc = h_rgc.Integral()
+
+if int_rga > 0:
+    h_rga.Scale(1.0 / int_rga)
+#endif
+
+if int_rgc > 0:
+    h_rgc.Scale(1.0 / int_rgc)
+#endif
 
 # ------------------------------------------------
 # style
@@ -68,7 +83,7 @@ h_rgc.SetLineColor(ROOT.kRed)
 h_rgc.SetLineWidth(2)
 
 # ------------------------------------------------
-# determine y max
+# determine y-axis max
 # ------------------------------------------------
 
 max_val = max(h_rga.GetMaximum(), h_rgc.GetMaximum())
