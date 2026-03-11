@@ -2,6 +2,7 @@ import ROOT
 import os
 
 ROOT.gROOT.SetBatch(True)
+ROOT.gStyle.SetOptStat(0)
 
 # ------------------------------------------------
 # input files
@@ -44,8 +45,8 @@ if not tree_mc:
 # ------------------------------------------------
 
 nbins = 200
-xmin  = 0.4
-xmax  = 1.4
+xmin  = 0.6
+xmax  = 2.0
 
 h_rga = ROOT.TH1F("h_rga",";Mx2 (GeV^{2});Normalized Counts",nbins,xmin,xmax)
 h_mc  = ROOT.TH1F("h_mc",";Mx2 (GeV^{2});Normalized Counts",nbins,xmin,xmax)
@@ -89,7 +90,7 @@ h_mc.SetLineWidth(2)
 max_val = max(h_rga.GetMaximum(), h_mc.GetMaximum())
 
 h_rga.SetMaximum(1.2 * max_val)
-h_rga.SetMinimum(1e-6)
+h_rga.SetMinimum(1e-3)
 
 # ------------------------------------------------
 # canvas
