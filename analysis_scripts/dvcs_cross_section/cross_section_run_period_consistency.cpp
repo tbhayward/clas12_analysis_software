@@ -256,22 +256,11 @@ static int find_index_rpc(const std::pair<double, double>& r,
     return -1;
 }
 
-static double get_xb_ymin_floor_rpc(int ix_xb) {
-    static const double floors[] = {
-        1e-1,
-        1e-2,
-        1e-3,
-        1e-3,
-        1e-3,
-        1e-3,
-        1e-3,
-        1e-4
-    };
-    const int n = (int)(sizeof(floors) / sizeof(floors[0]));
-    if (ix_xb < 0) return floors[0];
-    if (ix_xb >= n) return floors[n - 1];
-    return floors[ix_xb];
-}
+struct PanelPoint_rpc {
+    double phi   = 0.0;
+    double ratio = 0.0;
+    double err   = 0.0;
+};
 
 struct PanelSeries_rpc {
     std::vector<double> phi;
@@ -293,12 +282,8 @@ struct PanelChi2_rpc {
 
 struct PanelBundle_rpc {
     std::map<std::string, PanelSeries_rpc> series_by_period;
+    std::map<std::string, std::vector<PanelPoint_rpc>> ratio_series_by_period;
     PanelChi2_rpc chi2;
-};
-
-struct HelicityConfig_rpc {
-    std::string helicity;
-    std::string subdir;
 };
 
 static std::string xs_col_rpc(const std::string& period_label,
@@ -392,20 +377,6 @@ static std::vector<Row_rpc> load_rows_rpc(const std::string& hayward_csv_path) {
     return rows;
 }
 
-static void degree_ticks_rpc(double xmin, double ymin, double xmax, double labelSize) {
-    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
-    ax->SetLabelFont(42);
-    ax->SetLabelSize(labelSize);
-    ax->SetLabelOffset(0.012);
-    ax->SetTitle("");
-    ax->SetTickSize(0.02);
-    ax->Draw();
-}
-
-static void draw_degree_ticks_here_rpc(double labelSize) {
-    degree_ticks_rpc(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
-}
-
 static TGraphErrors* graph_pe1_rpc(const std::vector<double>& X,
                                    const std::vector<double>& Y,
                                    const std::vector<double>& EY,
@@ -428,6 +399,18 @@ static TGraphErrors* graph_pe1_rpc(const std::vector<double>& X,
     return g;
 }
 
+static double ratio_err_to_mean_rpc(double xi,
+                                    double si,
+                                    double mean,
+                                    int n_periods) {
+    if (n_periods <= 1) return 0.0;
+    if (mean == 0.0) return 0.0;
+    if (si <= 0.0) return 0.0;
+
+    const double dfdxi = (mean - xi / (double)n_periods) / (mean * mean);
+    return std::fabs(dfdxi) * si;
+}
+
 static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
                                              int ix,
                                              int iQ,
@@ -439,6 +422,7 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
 
     for (const auto& p : periods) {
         out.series_by_period[p.label] = PanelSeries_rpc();
+        out.ratio_series_by_period[p.label] = std::vector<PanelPoint_rpc>();
     }
     // endfor
 
@@ -454,8 +438,13 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
 
         ++out.chi2.rows_total;
 
-        std::vector<double> values;
-        std::vector<double> errors;
+        struct OneVal_rpc {
+            std::string label;
+            double value;
+            double err;
+        };
+
+        std::vector<OneVal_rpc> valid_points;
 
         for (const auto& p : periods) {
             const std::string cname = xs_col_rpc(p.label, helicity);
@@ -469,31 +458,40 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
             s.val.push_back(tv.value);
             s.err.push_back(tv.stat_err);
 
-            values.push_back(tv.value);
-            errors.push_back(tv.stat_err);
+            valid_points.push_back({p.label, tv.value, tv.stat_err});
         }
         // endfor
 
-        const int n = (int)values.size();
-        if (n >= 2) {
-            double mean = 0.0;
-            for (double v : values) mean += v;
-            mean /= (double)n;
+        const int n = (int)valid_points.size();
+        if (n < 2) continue;
 
-            double chi2_row = 0.0;
-            for (int i = 0; i < n; ++i) {
-                const double sigma = errors[i];
-                if (sigma <= 0.0) continue;
-                const double pull = (values[i] - mean) / sigma;
-                chi2_row += pull * pull;
-            }
-            // endfor
-
-            out.chi2.chi2 += chi2_row;
-            out.chi2.ndof += (n - 1);
-            ++out.chi2.phi_rows_used;
-            out.chi2.points_used += n;
+        double mean = 0.0;
+        for (const auto& vp : valid_points) {
+            mean += vp.value;
         }
+        // endfor
+        mean /= (double)n;
+        if (mean == 0.0) continue;
+
+        double chi2_row = 0.0;
+        for (const auto& vp : valid_points) {
+            const double sigma = vp.err;
+            if (sigma <= 0.0) continue;
+            const double pull = (vp.value - mean) / sigma;
+            chi2_row += pull * pull;
+
+            PanelPoint_rpc rp;
+            rp.phi   = r.phiavg;
+            rp.ratio = vp.value / mean;
+            rp.err   = ratio_err_to_mean_rpc(vp.value, vp.err, mean, n);
+            out.ratio_series_by_period[vp.label].push_back(rp);
+        }
+        // endfor
+
+        out.chi2.chi2 += chi2_row;
+        out.chi2.ndof += (n - 1);
+        ++out.chi2.phi_rows_used;
+        out.chi2.points_used += n;
     }
     // endfor
 
@@ -514,13 +512,25 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
             val2.push_back(s.val[i]);
             err2.push_back(s.err[i]);
         }
+        // endfor
         s.phi = std::move(phi2);
         s.val = std::move(val2);
         s.err = std::move(err2);
     };
 
+    auto sort_ratio_one = [](std::vector<PanelPoint_rpc>& pts) {
+        std::sort(pts.begin(), pts.end(), [](const PanelPoint_rpc& a, const PanelPoint_rpc& b) {
+            return a.phi < b.phi;
+        });
+    };
+
     for (auto& kv : out.series_by_period) {
         sort_one(kv.second);
+    }
+    // endfor
+
+    for (auto& kv : out.ratio_series_by_period) {
+        sort_ratio_one(kv.second);
     }
     // endfor
 
@@ -544,26 +554,11 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     const int H = 260 * nrows + 260;
 
     std::map<std::tuple<int, int>, PanelBundle_rpc> panel_map;
-    double global_max = 0.0;
-    bool any_positive = false;
 
     for (int it = 0; it < nrows; ++it) {
         for (int iQ = 0; iQ < ncols; ++iQ) {
             PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity);
             panel_map[{iQ, it}] = pb;
-
-            for (const auto& p : period_defs_rpc()) {
-                const auto itp = pb.series_by_period.find(p.label);
-                if (itp == pb.series_by_period.end()) continue;
-                const PanelSeries_rpc& s = itp->second;
-                for (size_t i = 0; i < s.val.size(); ++i) {
-                    const double vup = s.val[i] + ((i < s.err.size()) ? s.err[i] : 0.0);
-                    if (vup > global_max) global_max = vup;
-                    if (vup > 0.0) any_positive = true;
-                }
-                // endfor
-            }
-            // endfor
 
             const PanelChi2_rpc& chi = pb.chi2;
             summary_out << std::fixed << std::setprecision(6)
@@ -589,10 +584,6 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     }
     // endfor
 
-    const double ymin_floor = get_xb_ymin_floor_rpc(ix);
-    double ymax = any_positive ? (1.15 * global_max) : 1.0;
-    if (ymax <= ymin_floor) ymax = ymin_floor * 10.0;
-
     const std::string cname = fs::path(out_png).filename().string();
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
@@ -609,7 +600,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextFont(42);
     head.SetTextSize(0.18);
     head.DrawLatex(0.50, 0.68,
-        Form("Run-period consistency (%s)   x_{B} #in [%.3g, %.3g]",
+        Form("Run-period consistency ratios (%s)   x_{B} #in [%.3g, %.3g]",
              helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
 
     TLegend* leg = new TLegend(0.03, 0.03, 0.97, 0.50);
@@ -641,15 +632,16 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
         for (int iQ = 0; iQ < ncols; ++iQ) {
             pGrid->cd(it * ncols + iQ + 1);
             gPad->SetTicks(1, 1);
-            gPad->SetTopMargin(0.12);
+            gPad->SetTopMargin(0.14);
             gPad->SetBottomMargin(0.18);
             gPad->SetLeftMargin(0.18);
             gPad->SetRightMargin(0.08);
-            gPad->SetLogy(any_positive ? 1 : 0);
+            gPad->SetLogy(0);
 
-            TH1* frame = gPad->DrawFrame(0.0, any_positive ? ymin_floor : 0.0, 360.0, ymax);
+            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 2.0);
             frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("Normed cross section");
+            frame->GetYaxis()->SetTitle("Run period / mean");
+            frame->SetTitle("");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
@@ -660,40 +652,41 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             frame->GetXaxis()->SetTitleOffset(1.10);
             frame->GetYaxis()->SetTitleOffset(1.55);
 
-            draw_degree_ticks_here_rpc(0.050);
-
-            TLatex lab;
-            lab.SetNDC();
-            lab.SetTextFont(42);
-            lab.SetTextAlign(11);
-            lab.SetTextSize(0.065);
-            lab.DrawLatex(0.14, 0.92,
-                Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
-                     Q2s[iQ].first, Q2s[iQ].second,
-                     Ts[it].first,  Ts[it].second));
-
             const PanelBundle_rpc& pb = panel_map.at({iQ, it});
+            const double redchi2 = pb.chi2.reduced_chi2();
+
+            frame->SetTitle(Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g], #chi^{2}/ndf = %s",
+                                 Q2s[iQ].first, Q2s[iQ].second,
+                                 Ts[it].first,  Ts[it].second,
+                                 (pb.chi2.ndof > 0 ? Form("%.2f", redchi2) : "n/a")));
+            frame->GetTitle()->SetTextFont(42);
+            frame->GetTitle()->SetTextSize(0.050);
+
+            TLine* unity = new TLine(0.0, 1.0, 360.0, 1.0);
+            unity->SetLineColor(kGray + 2);
+            unity->SetLineStyle(2);
+            unity->SetLineWidth(2);
+            unity->Draw("SAME");
+
             for (const auto& p : period_defs_rpc()) {
-                const auto itp = pb.series_by_period.find(p.label);
-                if (itp == pb.series_by_period.end()) continue;
-                const PanelSeries_rpc& s = itp->second;
-                graph_pe1_rpc(s.phi, s.val, s.err, p.marker, p.color);
+                const auto itp = pb.ratio_series_by_period.find(p.label);
+                if (itp == pb.ratio_series_by_period.end()) continue;
+                const auto& pts = itp->second;
+                if (pts.empty()) continue;
+
+                std::vector<double> x, y, ey;
+                x.reserve(pts.size());
+                y.reserve(pts.size());
+                ey.reserve(pts.size());
+                for (const auto& pt : pts) {
+                    x.push_back(pt.phi);
+                    y.push_back(pt.ratio);
+                    ey.push_back(pt.err);
+                }
+                // endfor
+                graph_pe1_rpc(x, y, ey, p.marker, p.color);
             }
             // endfor
-
-            TLatex chi;
-            chi.SetNDC();
-            chi.SetTextFont(42);
-            chi.SetTextAlign(13);
-            chi.SetTextSize(0.060);
-            if (pb.chi2.ndof > 0) {
-                chi.DrawLatex(0.14, 0.82,
-                    Form("#chi^{2}/ndf = %.2f", pb.chi2.reduced_chi2()));
-                chi.DrawLatex(0.14, 0.74,
-                    Form("ndf = %d", pb.chi2.ndof));
-            } else {
-                chi.DrawLatex(0.14, 0.82, "#chi^{2}/ndf = n/a");
-            }
         }
         // endfor
     }
@@ -727,16 +720,8 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
         return;
     }
 
-    double xmax = 0.0;
-    for (double v : reduced_chi2_values) {
-        if (v > xmax) xmax = v;
-    }
-    // endfor
-    if (xmax <= 0.0) xmax = 5.0;
-    xmax *= 1.15;
-    if (xmax < 3.0) xmax = 3.0;
-
-    const int nbins = 40;
+    const double xmax = 50.0;
+    const int nbins = 50;
     TH1D* h = new TH1D(Form("h_redchi2_%s", helicity.c_str()), "", nbins, 0.0, xmax);
     for (double v : reduced_chi2_values) {
         h->Fill(v);
@@ -804,6 +789,7 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
     summary_out << "\nReduced-chi2 histogram summary\n";
     summary_out << "entries=" << reduced_chi2_values.size() << "\n";
     summary_out << std::fixed << std::setprecision(6)
+                << "hist_xmax=" << xmax << "\n"
                 << "mean=" << mean << "\n"
                 << "rms=" << rms << "\n"
                 << "fit_status=" << fit_status << "\n"
@@ -829,7 +815,8 @@ static void run_one_helicity_rpc(const std::vector<Row_rpc>& rows,
     }
 
     summary_out << "Run-period consistency summary for helicity = " << helicity << "\n";
-    summary_out << "Definition: for each phi row, chi2 is computed relative to the simple arithmetic mean across the available run periods using only the statistical uncertainties from the corresponding normed cross-section tuples.\n\n";
+    summary_out << "Definition: for each phi row, chi2 is computed relative to the simple arithmetic mean across the available run periods using only the statistical uncertainties from the corresponding normed cross-section tuples.\n";
+    summary_out << "Overlay plots now show the ratio of each run period to that same mean. The plotted statistical uncertainty is propagated through r_i = x_i / mean with mean = (1/N) sum_j x_j, retaining the x_i contribution to the mean.\n\n";
 
     std::vector<double> reduced_chi2_values;
 
@@ -851,7 +838,7 @@ void plot_cross_section_run_period_consistency(const std::string& hayward_csv_pa
                                                const std::string& output_base_dir) {
     fs::create_directories(output_base_dir);
 
-    gStyle->SetOptTitle(0);
+    gStyle->SetOptTitle(1);
     gStyle->SetOptStat(0);
     gStyle->SetLineWidth(2);
     gStyle->SetFrameLineWidth(2);
@@ -860,6 +847,8 @@ void plot_cross_section_run_period_consistency(const std::string& hayward_csv_pa
     gStyle->SetTitleFont(42, "XYZ");
     gStyle->SetLabelFont(42, "XYZ");
     gStyle->SetTextFont(42);
+    gStyle->SetTitleFont(42, "");
+    gStyle->SetTitleSize(0.050, "");
 
     const std::vector<Row_rpc> rows = load_rows_rpc(hayward_csv_path);
     const AxisSets_rpc ax = build_axes_rpc(rows);

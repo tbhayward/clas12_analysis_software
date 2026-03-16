@@ -9,10 +9,10 @@
 //   Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out
 //
 // For each helicity state separately (unpol, pos, neg), this module:
-//   1) overlays the five period-dependent phi distributions in each
-//      (xB, Q2, -t) cell,
-//   2) computes a per-cell chi2 and reduced chi2 with respect to the simple
+//   1) computes a per-cell chi2 and reduced chi2 with respect to the simple
 //      arithmetic mean across the available run periods at each phi bin,
+//   2) overlays the five period-dependent phi distributions as ratios to that
+//      mean in each (xB, Q2, -t) cell,
 //   3) writes a detailed text summary of those chi2 values,
 //   4) produces a histogram of the reduced-chi2 distribution and fits it with
 //      a reduced-chi2 probability-density function.
