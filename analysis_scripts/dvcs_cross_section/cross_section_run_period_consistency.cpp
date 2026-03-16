@@ -195,7 +195,7 @@ struct PeriodDef_rpc {
     int marker;
 };
 
-static const std::vector<PeriodDef_rpc>& period_defs_rpc() {
+static const std::vector<PeriodDef_rpc>& all_period_defs_rpc() {
     static const std::vector<PeriodDef_rpc> defs = {
         {"Fa18 Inb", "Fa18_Inb", kBlack,      20},
         {"Fa18 Out", "Fa18_Out", kRed + 1,    24},
@@ -204,6 +204,34 @@ static const std::vector<PeriodDef_rpc>& period_defs_rpc() {
         {"Sp18 Out", "Sp18_Out", kMagenta+2,  33}
     };
     return defs;
+}
+
+static std::vector<PeriodDef_rpc> regular_period_defs_rpc(const std::string& helicity) {
+    if (helicity == "unpol") {
+        return {
+            {"Fa18 Inb", "Fa18_Inb", kBlack,      20},
+            {"Fa18 Out", "Fa18_Out", kRed + 1,    24},
+            {"Sp18 Inb", "Sp18_Inb", kGreen + 2,  25},
+            {"Sp18 Out", "Sp18_Out", kMagenta+2,  33}
+        };
+    }
+
+    if (helicity == "pos" || helicity == "neg") {
+        return {
+            {"Fa18 Inb", "Fa18_Inb", kBlack,   20},
+            {"Fa18 Out", "Fa18_Out", kRed + 1, 24}
+        };
+    }
+
+    fatal_rpc("Unknown helicity in regular_period_defs_rpc: " + helicity);
+    return {};
+}
+
+static std::vector<PeriodDef_rpc> sp19_pair_period_defs_rpc() {
+    return {
+        {"Fa18 Inb", "Fa18_Inb", kBlack,    20},
+        {"Sp19 Inb", "Sp19_Inb", kBlue + 1, 21}
+    };
 }
 
 struct Row_rpc {
@@ -316,7 +344,7 @@ static std::vector<std::string> all_required_xs_columns_rpc() {
     std::vector<std::string> cols;
     const std::vector<std::string> helicities = {"unpol", "pos", "neg"};
     for (const auto& h : helicities) {
-        for (const auto& p : period_defs_rpc()) {
+        for (const auto& p : all_period_defs_rpc()) {
             cols.push_back(xs_col_rpc(p.label, h));
         }
         // endfor
@@ -454,9 +482,9 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
                                              int iQ,
                                              int it,
                                              const AxisSets_rpc& ax,
-                                             const std::string& helicity) {
+                                             const std::string& helicity,
+                                             const std::vector<PeriodDef_rpc>& periods) {
     PanelBundle_rpc out;
-    const auto& periods = period_defs_rpc();
 
     for (const auto& p : periods) {
         out.series_by_period[p.label] = PanelSeries_rpc();
@@ -638,6 +666,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                                     const AxisSets_rpc& ax,
                                     int ix,
                                     const std::string& helicity,
+                                    const std::vector<PeriodDef_rpc>& periods,
+                                    const std::string& top_label,
                                     const std::string& out_png,
                                     std::vector<double>& reduced_chi2_values,
                                     std::ofstream& summary_out) {
@@ -654,7 +684,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
 
     for (int it = 0; it < nrows; ++it) {
         for (int iQ = 0; iQ < ncols; ++iQ) {
-            PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity);
+            PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity, periods);
             panel_map[{iQ, it}] = pb;
 
             const PanelChi2_rpc& chi = pb.chi2;
@@ -688,8 +718,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
 
-    TPad* pTop = new TPad(Form("pTop_rpc_%d_%s", ix, helicity.c_str()),
-                          Form("pTop_rpc_%d_%s", ix, helicity.c_str()),
+    TPad* pTop = new TPad(Form("pTop_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+                          Form("pTop_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
                           0.0, 0.90, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
@@ -702,20 +732,20 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextFont(42);
     head.SetTextSize(0.18);
     head.DrawLatex(0.50, 0.73,
-        Form("Run-period consistency ratios (%s)   x_{B} #in [%.3g, %.3g]",
-             helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
+        Form("%s (%s)   x_{B} #in [%.3g, %.3g]",
+             top_label.c_str(), helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
     head.DrawLatex(0.50, 0.32,
         Form("Global weighted mean 1/2 range = %.3f", global_weighted_half_range));
 
     TLegend* leg = new TLegend(0.03, 0.02, 0.97, 0.48);
-    leg->SetNColumns(5);
+    leg->SetNColumns((int)periods.size());
     leg->SetBorderSize(0);
     leg->SetFillStyle(0);
     leg->SetTextFont(42);
     leg->SetTextSize(0.16);
 
     std::vector<TMarker*> legend_markers;
-    for (const auto& p : period_defs_rpc()) {
+    for (const auto& p : periods) {
         TMarker* m = new TMarker(0.0, 0.0, p.marker);
         m->SetMarkerColor(p.color);
         legend_markers.push_back(m);
@@ -725,8 +755,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     leg->Draw();
 
     c->cd();
-    TPad* pGrid = new TPad(Form("pGrid_rpc_%d_%s", ix, helicity.c_str()),
-                           Form("pGrid_rpc_%d_%s", ix, helicity.c_str()),
+    TPad* pGrid = new TPad(Form("pGrid_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+                           Form("pGrid_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
                            0.0, 0.00, 1.0, 0.90);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
@@ -799,7 +829,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             unity->SetLineWidth(1);
             unity->Draw("SAME");
 
-            for (const auto& p : period_defs_rpc()) {
+            for (const auto& p : periods) {
                 const auto itp = pb.ratio_series_by_period.find(p.label);
                 if (itp == pb.ratio_series_by_period.end()) continue;
 
@@ -837,6 +867,8 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
                                        const AxisSets_rpc& ax,
                                        int ix,
                                        const std::string& helicity,
+                                       const std::vector<PeriodDef_rpc>& periods,
+                                       const std::string& top_label,
                                        const std::string& out_png,
                                        std::ofstream& summary_out) {
     const auto& Q2s = ax.Q2_by_ix.at(ix);
@@ -853,7 +885,7 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
 
     for (int it = 0; it < nrows; ++it) {
         for (int iQ = 0; iQ < ncols; ++iQ) {
-            PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity);
+            PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity, periods);
             panel_map[{iQ, it}] = pb;
 
             for (const auto& bp : pb.range_band) {
@@ -874,8 +906,8 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
 
-    TPad* pTop = new TPad(Form("pTop_hr_rpc_%d_%s", ix, helicity.c_str()),
-                          Form("pTop_hr_rpc_%d_%s", ix, helicity.c_str()),
+    TPad* pTop = new TPad(Form("pTop_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+                          Form("pTop_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
                           0.0, 0.90, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
@@ -888,14 +920,14 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextFont(42);
     head.SetTextSize(0.18);
     head.DrawLatex(0.50, 0.73,
-        Form("Run-period 1/2 range vs #phi (%s)   x_{B} #in [%.3g, %.3g]",
-             helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
+        Form("%s: 1/2 range vs #phi (%s)   x_{B} #in [%.3g, %.3g]",
+             top_label.c_str(), helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
     head.DrawLatex(0.50, 0.32,
         Form("Global weighted mean 1/2 range = %.3f", global_weighted_half_range));
 
     c->cd();
-    TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s", ix, helicity.c_str()),
-                           Form("pGrid_hr_rpc_%d_%s", ix, helicity.c_str()),
+    TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+                           Form("pGrid_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
                            0.0, 0.00, 1.0, 0.90);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
@@ -949,10 +981,11 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
                 }
                 // endfor
 
+                std::vector<double> ex(x.size(), 0.0);
                 TGraphErrors* g = new TGraphErrors((int)x.size(),
                                                    x.data(),
                                                    y.data(),
-                                                   nullptr,
+                                                   ex.data(),
                                                    ey.data());
                 g->SetMarkerStyle(20);
                 g->SetMarkerSize(0.80);
@@ -996,20 +1029,37 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
 
     const double xmax = 50.0;
     const int nbins = 50;
-    TH1D* h = new TH1D(Form("h_redchi2_%s", helicity.c_str()), "", nbins, 0.0, xmax);
+    TH1D* h = new TH1D(Form("h_redchi2_%s_%lld",
+                            helicity.c_str(),
+                            (long long)std::hash<std::string>{}(out_png)),
+                       "",
+                       nbins,
+                       0.0,
+                       xmax);
     for (double v : reduced_chi2_values) {
         h->Fill(v);
     }
     // endfor
 
-    TF1* f = new TF1(Form("f_redchi2_%s", helicity.c_str()), reduced_chi2_pdf_rpc, 0.0, xmax, 2);
+    TF1* f = new TF1(Form("f_redchi2_%s_%lld",
+                          helicity.c_str(),
+                          (long long)std::hash<std::string>{}(out_png)),
+                     reduced_chi2_pdf_rpc,
+                     0.0,
+                     xmax,
+                     2);
     f->SetParName(0, "A");
     f->SetParName(1, "#nu");
     f->SetParameters(h->GetMaximum(), 4.0);
     f->SetParLimits(0, 0.0, 1.0e9);
     f->SetParLimits(1, 0.1, 200.0);
 
-    TCanvas* c = new TCanvas(Form("c_redchi2_%s", helicity.c_str()), "", 900, 700);
+    TCanvas* c = new TCanvas(Form("c_redchi2_%s_%lld",
+                                  helicity.c_str(),
+                                  (long long)std::hash<std::string>{}(out_png)),
+                             "",
+                             900,
+                             700);
     c->cd();
     gPad->SetTicks(1, 1);
     gPad->SetLeftMargin(0.13);
@@ -1076,10 +1126,12 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
     delete c;
 }
 
-static void run_one_helicity_rpc(const std::vector<Row_rpc>& rows,
-                                 const AxisSets_rpc& ax,
-                                 const std::string& helicity,
-                                 const std::string& output_base_dir) {
+static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
+                                      const AxisSets_rpc& ax,
+                                      const std::string& helicity,
+                                      const std::vector<PeriodDef_rpc>& periods,
+                                      const std::string& mode_label,
+                                      const std::string& output_base_dir) {
     const fs::path base_dir = fs::path(output_base_dir) / helicity;
     const fs::path overlay_dir = base_dir / "overlays";
     fs::create_directories(overlay_dir);
@@ -1089,20 +1141,44 @@ static void run_one_helicity_rpc(const std::vector<Row_rpc>& rows,
         fatal_rpc("Could not open summary text file for writing in " + base_dir.string());
     }
 
-    summary_out << "Run-period consistency summary for helicity = " << helicity << "\n";
-    summary_out << "Definition: for each phi row, chi2 is computed relative to the simple arithmetic mean across the available run periods using only the statistical uncertainties from the corresponding normed cross-section tuples.\n";
-    summary_out << "Overlay plots show the ratio of each run period to that same mean. The plotted statistical uncertainty is propagated through r_i = x_i / mean with mean = (1/N) sum_j x_j, retaining the x_i contribution to the mean.\n";
-    summary_out << "The reported panel value <1/2 range>_w is the weighted mean of 0.5 * (max ratio - min ratio) across phi, with weight w = 1 / sigma_mean^2, where sigma_mean is the statistical uncertainty on the arithmetic mean of the available run-period points at that phi.\n\n";
+    summary_out << "Run-period consistency summary for mode = " << mode_label
+                << " helicity = " << helicity << "\n";
+
+    summary_out << "Included periods: ";
+    for (size_t i = 0; i < periods.size(); ++i) {
+        if (i > 0) summary_out << ", ";
+        summary_out << periods[i].label;
+    }
+    summary_out << "\n";
+
+    summary_out << "Definition: for each phi row, chi2 is computed relative to the simple arithmetic mean across the available included run periods using only the statistical uncertainties from the corresponding normed cross-section tuples.\n";
+    summary_out << "Overlay plots show the ratio of each included run period to that same mean. The plotted statistical uncertainty is propagated through r_i = x_i / mean with mean = (1/N) sum_j x_j, retaining the x_i contribution to the mean.\n";
+    summary_out << "The reported panel value <1/2 range>_w is the weighted mean of 0.5 * (max ratio - min ratio) across phi, with weight w = 1 / sigma_mean^2, where sigma_mean is the statistical uncertainty on the arithmetic mean of the available included run-period points at that phi.\n\n";
 
     std::vector<double> reduced_chi2_values;
 
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
         const fs::path out_png1 = overlay_dir / Form("period_consistency_xB_%d.png", ix);
-        draw_overlay_canvas_rpc(rows, ax, ix, helicity, out_png1.string(), reduced_chi2_values, summary_out);
+        draw_overlay_canvas_rpc(rows,
+                                ax,
+                                ix,
+                                helicity,
+                                periods,
+                                mode_label,
+                                out_png1.string(),
+                                reduced_chi2_values,
+                                summary_out);
         info_rpc("Saved: " + out_png1.string());
 
         const fs::path out_png2 = overlay_dir / Form("period_consistency_half_range_xB_%d.png", ix);
-        draw_half_range_canvas_rpc(rows, ax, ix, helicity, out_png2.string(), summary_out);
+        draw_half_range_canvas_rpc(rows,
+                                   ax,
+                                   ix,
+                                   helicity,
+                                   periods,
+                                   mode_label,
+                                   out_png2.string(),
+                                   summary_out);
         info_rpc("Saved: " + out_png2.string());
     }
     // endfor
@@ -1110,6 +1186,64 @@ static void run_one_helicity_rpc(const std::vector<Row_rpc>& rows,
     const fs::path hist_png = base_dir / "reduced_chi2_distribution.png";
     draw_reduced_chi2_hist_rpc(reduced_chi2_values, helicity, hist_png.string(), summary_out);
     info_rpc("Saved: " + hist_png.string());
+}
+
+static void run_regular_mode_rpc(const std::vector<Row_rpc>& rows,
+                                 const AxisSets_rpc& ax,
+                                 const std::string& output_base_dir) {
+    const fs::path regular_dir = fs::path(output_base_dir) / "regular";
+    fs::create_directories(regular_dir);
+
+    run_one_helicity_mode_rpc(rows,
+                              ax,
+                              "unpol",
+                              regular_period_defs_rpc("unpol"),
+                              "Regular run-period consistency",
+                              regular_dir.string());
+
+    run_one_helicity_mode_rpc(rows,
+                              ax,
+                              "pos",
+                              regular_period_defs_rpc("pos"),
+                              "Regular run-period consistency",
+                              regular_dir.string());
+
+    run_one_helicity_mode_rpc(rows,
+                              ax,
+                              "neg",
+                              regular_period_defs_rpc("neg"),
+                              "Regular run-period consistency",
+                              regular_dir.string());
+}
+
+static void run_sp19_pair_mode_rpc(const std::vector<Row_rpc>& rows,
+                                   const AxisSets_rpc& ax,
+                                   const std::string& output_base_dir) {
+    const fs::path pair_dir = fs::path(output_base_dir) / "fa18_inb_vs_sp19_inb";
+    fs::create_directories(pair_dir);
+
+    const auto periods = sp19_pair_period_defs_rpc();
+
+    run_one_helicity_mode_rpc(rows,
+                              ax,
+                              "unpol",
+                              periods,
+                              "Fa18 Inb vs Sp19 Inb",
+                              pair_dir.string());
+
+    run_one_helicity_mode_rpc(rows,
+                              ax,
+                              "pos",
+                              periods,
+                              "Fa18 Inb vs Sp19 Inb",
+                              pair_dir.string());
+
+    run_one_helicity_mode_rpc(rows,
+                              ax,
+                              "neg",
+                              periods,
+                              "Fa18 Inb vs Sp19 Inb",
+                              pair_dir.string());
 }
 
 } // anonymous namespace
@@ -1135,7 +1269,6 @@ void plot_cross_section_run_period_consistency(const std::string& hayward_csv_pa
 
     info_rpc("Number of xB bins found: " + std::to_string(ax.xB.size()));
 
-    run_one_helicity_rpc(rows, ax, "unpol", output_base_dir);
-    run_one_helicity_rpc(rows, ax, "pos",   output_base_dir);
-    run_one_helicity_rpc(rows, ax, "neg",   output_base_dir);
+    run_regular_mode_rpc(rows, ax, output_base_dir);
+    run_sp19_pair_mode_rpc(rows, ax, output_base_dir);
 }
