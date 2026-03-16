@@ -655,12 +655,12 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             const PanelBundle_rpc& pb = panel_map.at({iQ, it});
             const double redchi2 = pb.chi2.reduced_chi2();
 
+            frame->SetTitleFont(42, "t");
+            frame->SetTitleSize(0.050, "t");
             frame->SetTitle(Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g], #chi^{2}/ndf = %s",
                                  Q2s[iQ].first, Q2s[iQ].second,
                                  Ts[it].first,  Ts[it].second,
                                  (pb.chi2.ndof > 0 ? Form("%.2f", redchi2) : "n/a")));
-            frame->GetTitle()->SetTextFont(42);
-            frame->GetTitle()->SetTextSize(0.050);
 
             TLine* unity = new TLine(0.0, 1.0, 360.0, 1.0);
             unity->SetLineColor(kGray + 2);
