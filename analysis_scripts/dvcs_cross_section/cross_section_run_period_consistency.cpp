@@ -731,11 +731,13 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextAlign(22);
     head.SetTextFont(42);
     head.SetTextSize(0.18);
-    head.DrawLatex(0.50, 0.73,
-        Form("%s (%s)   x_{B} #in [%.3g, %.3g]",
-             top_label.c_str(), helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
-    head.DrawLatex(0.50, 0.32,
-        Form("Global weighted mean 1/2 range = %.3f", global_weighted_half_range));
+    head.DrawLatex(0.50, 0.55,
+    Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
+         top_label.c_str(),
+         helicity.c_str(),
+         ax.xB[ix].first,
+         ax.xB[ix].second,
+         global_weighted_half_range));
 
     TLegend* leg = new TLegend(0.03, 0.02, 0.97, 0.48);
     leg->SetNColumns((int)periods.size());
@@ -919,11 +921,13 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextAlign(22);
     head.SetTextFont(42);
     head.SetTextSize(0.18);
-    head.DrawLatex(0.50, 0.73,
-        Form("%s: 1/2 range vs #phi (%s)   x_{B} #in [%.3g, %.3g]",
-             top_label.c_str(), helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
-    head.DrawLatex(0.50, 0.32,
-        Form("Global weighted mean 1/2 range = %.3f", global_weighted_half_range));
+    head.DrawLatex(0.50, 0.55,
+    Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
+         top_label.c_str(),
+         helicity.c_str(),
+         ax.xB[ix].first,
+         ax.xB[ix].second,
+         global_weighted_half_range));
 
     c->cd();
     TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
