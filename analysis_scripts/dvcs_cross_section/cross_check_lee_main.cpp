@@ -34,8 +34,8 @@ int main() {
 
     // Hard-coded CSV locations
     const std::string lee_csv     = "imports/all_bin_v3.csv";
-    // const std::string hayward_csv = "output/csvs/dvcs_pass2_analysis.csv";
-    const std::string hayward_csv = "output/csvs/dvcs_pass2_analysis_2.csv";
+    const std::string hayward_csv = "output/csvs/dvcs_pass2_analysis.csv";
+    // const std::string hayward_csv = "output/csvs/dvcs_pass2_analysis_2.csv";
 
     mkoutdirs();
 
