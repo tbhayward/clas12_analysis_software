@@ -13,7 +13,6 @@
 #include <TGaxis.h>
 #include <TMath.h>
 #include <TROOT.h>
-#include <TGraph.h>
 
 #include <algorithm>
 #include <cctype>
