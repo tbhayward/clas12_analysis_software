@@ -197,11 +197,11 @@ struct PeriodDef_rpc {
 
 static const std::vector<PeriodDef_rpc>& all_period_defs_rpc() {
     static const std::vector<PeriodDef_rpc> defs = {
-        {"Fa18 Inb", "Fa18_Inb", kBlack,      20},
-        {"Fa18 Out", "Fa18_Out", kRed + 1,    24},
-        {"Sp19 Inb", "Sp19_Inb", kBlue + 1,   21},
-        {"Sp18 Inb", "Sp18_Inb", kGreen + 2,  25},
-        {"Sp18 Out", "Sp18_Out", kMagenta+2,  33}
+        {"Fa18 Inb", "fa18_inb", kBlack,      20},
+        {"Fa18 Out", "fa18_out", kRed + 1,    24},
+        {"Sp19 Inb", "sp19_inb", kBlue + 1,   21},
+        {"Sp18 Inb", "sp18_inb", kGreen + 2,  25},
+        {"Sp18 Out", "sp18_out", kMagenta+2,  33}
     };
     return defs;
 }
@@ -209,17 +209,17 @@ static const std::vector<PeriodDef_rpc>& all_period_defs_rpc() {
 static std::vector<PeriodDef_rpc> regular_period_defs_rpc(const std::string& helicity) {
     if (helicity == "unpol") {
         return {
-            {"Fa18 Inb", "Fa18_Inb", kBlack,      20},
-            {"Fa18 Out", "Fa18_Out", kRed + 1,    24},
-            {"Sp18 Inb", "Sp18_Inb", kGreen + 2,  25},
-            {"Sp18 Out", "Sp18_Out", kMagenta+2,  33}
+            {"Fa18 Inb", "fa18_inb", kBlack,      20},
+            {"Fa18 Out", "fa18_out", kRed + 1,    24},
+            {"Sp18 Inb", "sp18_inb", kGreen + 2,  25},
+            {"Sp18 Out", "sp18_out", kMagenta+2,  33}
         };
     }
 
     if (helicity == "pos" || helicity == "neg") {
         return {
-            {"Fa18 Inb", "Fa18_Inb", kBlack,   20},
-            {"Fa18 Out", "Fa18_Out", kRed + 1, 24}
+            {"Fa18 Inb", "fa18_inb", kBlack,   20},
+            {"Fa18 Out", "fa18_out", kRed + 1, 24}
         };
     }
 
@@ -227,11 +227,46 @@ static std::vector<PeriodDef_rpc> regular_period_defs_rpc(const std::string& hel
     return {};
 }
 
-static std::vector<PeriodDef_rpc> sp19_pair_period_defs_rpc() {
-    return {
-        {"Fa18 Inb", "Fa18_Inb", kBlack,    20},
-        {"Sp19 Inb", "Sp19_Inb", kBlue + 1, 21}
-    };
+static std::vector<PeriodDef_rpc> pairable_period_defs_rpc(const std::string& helicity) {
+    if (helicity == "unpol") {
+        return all_period_defs_rpc();
+    }
+
+    if (helicity == "pos" || helicity == "neg") {
+        return {
+            {"Fa18 Inb", "fa18_inb", kBlack,    20},
+            {"Fa18 Out", "fa18_out", kRed + 1,  24},
+            {"Sp19 Inb", "sp19_inb", kBlue + 1, 21}
+        };
+    }
+
+    fatal_rpc("Unknown helicity in pairable_period_defs_rpc: " + helicity);
+    return {};
+}
+
+struct PairMode_rpc {
+    std::string dir_name;
+    std::string label;
+    std::vector<PeriodDef_rpc> periods;
+};
+
+static std::vector<PairMode_rpc> build_pair_modes_rpc(const std::string& helicity) {
+    const std::vector<PeriodDef_rpc> defs = pairable_period_defs_rpc(helicity);
+    std::vector<PairMode_rpc> out;
+
+    for (size_t i = 0; i < defs.size(); ++i) {
+        for (size_t j = i + 1; j < defs.size(); ++j) {
+            PairMode_rpc pm;
+            pm.dir_name = defs[i].short_tag + "_vs_" + defs[j].short_tag;
+            pm.label = defs[i].label + " vs " + defs[j].label;
+            pm.periods = {defs[i], defs[j]};
+            out.push_back(pm);
+        }
+        // endfor
+    }
+    // endfor
+
+    return out;
 }
 
 struct Row_rpc {
@@ -718,8 +753,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
 
-    TPad* pTop = new TPad(Form("pTop_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
-                          Form("pTop_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+    TPad* pTop = new TPad(Form("pTop_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
+                          Form("pTop_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                           0.0, 0.90, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
@@ -732,12 +767,12 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextFont(42);
     head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
-    Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
-         top_label.c_str(),
-         helicity.c_str(),
-         ax.xB[ix].first,
-         ax.xB[ix].second,
-         global_weighted_half_range));
+        Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
+             top_label.c_str(),
+             helicity.c_str(),
+             ax.xB[ix].first,
+             ax.xB[ix].second,
+             global_weighted_half_range));
 
     TLegend* leg = new TLegend(0.03, 0.02, 0.97, 0.48);
     leg->SetNColumns((int)periods.size());
@@ -757,8 +792,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     leg->Draw();
 
     c->cd();
-    TPad* pGrid = new TPad(Form("pGrid_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
-                           Form("pGrid_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+    TPad* pGrid = new TPad(Form("pGrid_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
+                           Form("pGrid_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                            0.0, 0.00, 1.0, 0.90);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
@@ -908,8 +943,8 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
 
-    TPad* pTop = new TPad(Form("pTop_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
-                          Form("pTop_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+    TPad* pTop = new TPad(Form("pTop_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
+                          Form("pTop_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                           0.0, 0.90, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
@@ -922,16 +957,16 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextFont(42);
     head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
-    Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
-         top_label.c_str(),
-         helicity.c_str(),
-         ax.xB[ix].first,
-         ax.xB[ix].second,
-         global_weighted_half_range));
+        Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
+             top_label.c_str(),
+             helicity.c_str(),
+             ax.xB[ix].first,
+             ax.xB[ix].second,
+             global_weighted_half_range));
 
     c->cd();
-    TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
-                           Form("pGrid_hr_rpc_%d_%s_%s", ix, helicity.c_str(), top_label.c_str()),
+    TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
+                           Form("pGrid_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                            0.0, 0.00, 1.0, 0.90);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
@@ -1220,34 +1255,31 @@ static void run_regular_mode_rpc(const std::vector<Row_rpc>& rows,
                               regular_dir.string());
 }
 
-static void run_sp19_pair_mode_rpc(const std::vector<Row_rpc>& rows,
+static void run_all_pair_modes_rpc(const std::vector<Row_rpc>& rows,
                                    const AxisSets_rpc& ax,
                                    const std::string& output_base_dir) {
-    const fs::path pair_dir = fs::path(output_base_dir) / "fa18_inb_vs_sp19_inb";
-    fs::create_directories(pair_dir);
+    const fs::path pairs_dir = fs::path(output_base_dir) / "pairs";
+    fs::create_directories(pairs_dir);
 
-    const auto periods = sp19_pair_period_defs_rpc();
+    const std::vector<std::string> helicities = {"unpol", "pos", "neg"};
 
-    run_one_helicity_mode_rpc(rows,
-                              ax,
-                              "unpol",
-                              periods,
-                              "Fa18 Inb vs Sp19 Inb",
-                              pair_dir.string());
+    for (const auto& helicity : helicities) {
+        const std::vector<PairMode_rpc> pair_modes = build_pair_modes_rpc(helicity);
 
-    run_one_helicity_mode_rpc(rows,
-                              ax,
-                              "pos",
-                              periods,
-                              "Fa18 Inb vs Sp19 Inb",
-                              pair_dir.string());
+        for (const auto& pm : pair_modes) {
+            const fs::path mode_dir = pairs_dir / pm.dir_name;
+            fs::create_directories(mode_dir);
 
-    run_one_helicity_mode_rpc(rows,
-                              ax,
-                              "neg",
-                              periods,
-                              "Fa18 Inb vs Sp19 Inb",
-                              pair_dir.string());
+            run_one_helicity_mode_rpc(rows,
+                                      ax,
+                                      helicity,
+                                      pm.periods,
+                                      pm.label,
+                                      mode_dir.string());
+        }
+        // endfor
+    }
+    // endfor
 }
 
 } // anonymous namespace
@@ -1274,5 +1306,5 @@ void plot_cross_section_run_period_consistency(const std::string& hayward_csv_pa
     info_rpc("Number of xB bins found: " + std::to_string(ax.xB.size()));
 
     run_regular_mode_rpc(rows, ax, output_base_dir);
-    run_sp19_pair_mode_rpc(rows, ax, output_base_dir);
+    run_all_pair_modes_rpc(rows, ax, output_base_dir);
 }
