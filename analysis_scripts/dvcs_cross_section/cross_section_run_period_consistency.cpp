@@ -272,23 +272,30 @@ struct PanelSeries_rpc {
     std::vector<double> err;
 };
 
+struct RangeBandPoint_rpc {
+    double phi              = 0.0;
+    double lo               = 0.0;
+    double hi               = 0.0;
+    double half_range       = 0.0;
+    double mean_stat_err    = 0.0;
+    double half_range_err   = 0.0;
+    double weight           = 0.0;
+};
+
 struct PanelChi2_rpc {
-    double chi2          = 0.0;
-    int    ndof          = 0;
-    int    phi_rows_used = 0;
-    int    points_used   = 0;
-    int    rows_total    = 0;
-    double mean_range    = 0.0;
+    double chi2                   = 0.0;
+    int    ndof                   = 0;
+    int    phi_rows_used          = 0;
+    int    points_used            = 0;
+    int    rows_total             = 0;
+
+    double weighted_half_range    = 0.0;
+    double sum_w_half_range       = 0.0;
+    double sum_wr_half_range      = 0.0;
 
     double reduced_chi2() const {
         return (ndof > 0) ? (chi2 / (double)ndof) : 0.0;
     }
-};
-
-struct RangeBandPoint_rpc {
-    double phi = 0.0;
-    double lo  = 0.0;
-    double hi  = 0.0;
 };
 
 struct PanelBundle_rpc {
@@ -431,6 +438,17 @@ static double ratio_err_to_mean_rpc(double xi,
     return std::fabs(dfdxi) * si;
 }
 
+static double stat_err_of_arithmetic_mean_rpc(const std::vector<double>& errs) {
+    if (errs.empty()) return 0.0;
+
+    double sumsq = 0.0;
+    for (double e : errs) {
+        sumsq += e * e;
+    }
+    // endfor
+    return std::sqrt(sumsq) / (double)errs.size();
+}
+
 static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
                                              int ix,
                                              int iQ,
@@ -486,12 +504,19 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
         if (n < 2) continue;
 
         double mean = 0.0;
+        std::vector<double> stat_errs;
+        stat_errs.reserve(valid_points.size());
+
         for (const auto& vp : valid_points) {
             mean += vp.value;
+            stat_errs.push_back(vp.err);
         }
         // endfor
         mean /= (double)n;
         if (mean == 0.0) continue;
+
+        const double mean_stat_err = stat_err_of_arithmetic_mean_rpc(stat_errs);
+        const double weight = (mean_stat_err > 0.0) ? 1.0 / (mean_stat_err * mean_stat_err) : 0.0;
 
         double q2avg_sum = out.Q2avg * (double)out.chi2.phi_rows_used;
         double tavg_sum  = out.tavg  * (double)out.chi2.phi_rows_used;
@@ -501,9 +526,11 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
         double min_ratio =  1.0e300;
         double max_ratio = -1.0e300;
         double chi2_row = 0.0;
+
         for (const auto& vp : valid_points) {
             const double sigma = vp.err;
             if (sigma <= 0.0) continue;
+
             const double pull = (vp.value - mean) / sigma;
             chi2_row += pull * pull;
 
@@ -520,13 +547,21 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
 
         if (min_ratio < 1.0e299 && max_ratio > -1.0e299) {
             RangeBandPoint_rpc bp;
-            bp.phi = r.phiavg;
-            bp.lo  = min_ratio;
-            bp.hi  = max_ratio;
+            bp.phi            = r.phiavg;
+            bp.lo             = min_ratio;
+            bp.hi             = max_ratio;
+            bp.half_range     = 0.5 * (max_ratio - min_ratio);
+            bp.mean_stat_err  = mean_stat_err;
+            bp.half_range_err = mean_stat_err;
+            bp.weight         = weight;
             out.range_band.push_back(bp);
 
-            const double prev_sum = out.chi2.mean_range * (double)out.chi2.phi_rows_used;
-            out.chi2.mean_range = (prev_sum + (max_ratio - min_ratio)) / (double)(out.chi2.phi_rows_used + 1);
+            if (weight > 0.0) {
+                out.chi2.sum_w_half_range  += weight;
+                out.chi2.sum_wr_half_range += weight * bp.half_range;
+                out.chi2.weighted_half_range =
+                    out.chi2.sum_wr_half_range / out.chi2.sum_w_half_range;
+            }
         }
 
         out.chi2.chi2 += chi2_row;
@@ -538,6 +573,7 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
 
     auto sort_one = [](PanelSeries_rpc& s) {
         if (s.phi.empty()) return;
+
         std::vector<size_t> idx(s.phi.size());
         for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
         std::sort(idx.begin(), idx.end(), [&](size_t a, size_t b) {
@@ -554,6 +590,7 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
             err2.push_back(s.err[i]);
         }
         // endfor
+
         s.phi = std::move(phi2);
         s.val = std::move(val2);
         s.err = std::move(err2);
@@ -581,6 +618,20 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
     });
 
     return out;
+}
+
+static double weighted_half_range_for_xb_rpc(const std::map<std::tuple<int, int>, PanelBundle_rpc>& panel_map) {
+    double sum_w = 0.0;
+    double sum_wr = 0.0;
+
+    for (const auto& kv : panel_map) {
+        const PanelBundle_rpc& pb = kv.second;
+        sum_w  += pb.chi2.sum_w_half_range;
+        sum_wr += pb.chi2.sum_wr_half_range;
+    }
+    // endfor
+
+    return (sum_w > 0.0) ? (sum_wr / sum_w) : 0.0;
 }
 
 static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
@@ -617,7 +668,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                         << "chi2=" << chi.chi2 << "  "
                         << "ndof=" << chi.ndof << "  "
                         << "chi2_ndf=" << chi.reduced_chi2() << "  "
-                        << "mean_range=" << chi.mean_range << "  "
+                        << "weighted_half_range=" << chi.weighted_half_range << "  "
                         << "phi_rows_used=" << chi.phi_rows_used << "  "
                         << "points_used=" << chi.points_used << "  "
                         << "rows_total=" << chi.rows_total
@@ -631,11 +682,15 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     }
     // endfor
 
+    const double global_weighted_half_range = weighted_half_range_for_xb_rpc(panel_map);
+
     const std::string cname = fs::path(out_png).filename().string();
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
 
-    TPad* pTop = new TPad("pTop_rpc", "pTop_rpc", 0.0, 0.90, 1.0, 1.0);
+    TPad* pTop = new TPad(Form("pTop_rpc_%d_%s", ix, helicity.c_str()),
+                          Form("pTop_rpc_%d_%s", ix, helicity.c_str()),
+                          0.0, 0.90, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
     pTop->Draw();
@@ -646,11 +701,13 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextAlign(22);
     head.SetTextFont(42);
     head.SetTextSize(0.18);
-    head.DrawLatex(0.50, 0.68,
+    head.DrawLatex(0.50, 0.73,
         Form("Run-period consistency ratios (%s)   x_{B} #in [%.3g, %.3g]",
              helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
+    head.DrawLatex(0.50, 0.32,
+        Form("Global weighted mean 1/2 range = %.3f", global_weighted_half_range));
 
-    TLegend* leg = new TLegend(0.03, 0.03, 0.97, 0.50);
+    TLegend* leg = new TLegend(0.03, 0.02, 0.97, 0.48);
     leg->SetNColumns(5);
     leg->SetBorderSize(0);
     leg->SetFillStyle(0);
@@ -668,7 +725,9 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     leg->Draw();
 
     c->cd();
-    TPad* pGrid = new TPad("pGrid_rpc", "pGrid_rpc", 0.0, 0.00, 1.0, 0.90);
+    TPad* pGrid = new TPad(Form("pGrid_rpc_%d_%s", ix, helicity.c_str()),
+                           Form("pGrid_rpc_%d_%s", ix, helicity.c_str()),
+                           0.0, 0.00, 1.0, 0.90);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
     pGrid->Draw();
@@ -704,26 +763,29 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
 
             frame->SetTitleFont(42, "t");
             frame->SetTitleSize(0.040, "t");
-            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, #chi^{2}/ndf=%s, <range>=%.2f",
+            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, #chi^{2}/ndf=%s, <1/2 range>_{w}=%.2f",
                                  pb.Q2avg,
                                  pb.tavg,
                                  (pb.chi2.ndof > 0 ? Form("%.2f", redchi2) : "n/a"),
-                                 pb.chi2.mean_range));
+                                 pb.chi2.weighted_half_range));
 
             if (!pb.range_band.empty()) {
                 std::vector<double> xb, yb;
                 xb.reserve(2 * pb.range_band.size());
                 yb.reserve(2 * pb.range_band.size());
+
                 for (const auto& bp : pb.range_band) {
                     xb.push_back(bp.phi);
                     yb.push_back(bp.hi);
                 }
                 // endfor
+
                 for (int ib = (int)pb.range_band.size() - 1; ib >= 0; --ib) {
                     xb.push_back(pb.range_band[ib].phi);
                     yb.push_back(pb.range_band[ib].lo);
                 }
                 // endfor
+
                 TGraph* gband = new TGraph((int)xb.size(), xb.data(), yb.data());
                 gband->SetFillColorAlpha(kGray + 1, 0.25);
                 gband->SetLineColor(kGray + 1);
@@ -740,6 +802,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             for (const auto& p : period_defs_rpc()) {
                 const auto itp = pb.ratio_series_by_period.find(p.label);
                 if (itp == pb.ratio_series_by_period.end()) continue;
+
                 const auto& pts = itp->second;
                 if (pts.empty()) continue;
 
@@ -747,12 +810,14 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                 x.reserve(pts.size());
                 y.reserve(pts.size());
                 ey.reserve(pts.size());
+
                 for (const auto& pt : pts) {
                     x.push_back(pt.phi);
                     y.push_back(pt.ratio);
                     ey.push_back(pt.err);
                 }
                 // endfor
+
                 graph_pe1_rpc(x, y, ey, p.marker, p.color);
             }
             // endfor
@@ -768,10 +833,150 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     delete c;
 }
 
+static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
+                                       const AxisSets_rpc& ax,
+                                       int ix,
+                                       const std::string& helicity,
+                                       const std::string& out_png,
+                                       std::ofstream& summary_out) {
+    const auto& Q2s = ax.Q2_by_ix.at(ix);
+    const auto& Ts  = ax.t_by_ix.at(ix);
+    const int ncols = (int)Q2s.size();
+    const int nrows = (int)Ts.size();
+    if (ncols == 0 || nrows == 0) return;
+
+    const int W = 320 * ncols + 240;
+    const int H = 260 * nrows + 260;
+
+    std::map<std::tuple<int, int>, PanelBundle_rpc> panel_map;
+    double ymax = 0.0;
+
+    for (int it = 0; it < nrows; ++it) {
+        for (int iQ = 0; iQ < ncols; ++iQ) {
+            PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity);
+            panel_map[{iQ, it}] = pb;
+
+            for (const auto& bp : pb.range_band) {
+                ymax = std::max(ymax, bp.half_range + bp.half_range_err);
+            }
+            // endfor
+        }
+        // endfor
+    }
+    // endfor
+
+    if (ymax <= 0.0) ymax = 0.25;
+    ymax *= 1.20;
+
+    const double global_weighted_half_range = weighted_half_range_for_xb_rpc(panel_map);
+
+    const std::string cname = fs::path(out_png).filename().string();
+    TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
+    c->cd();
+
+    TPad* pTop = new TPad(Form("pTop_hr_rpc_%d_%s", ix, helicity.c_str()),
+                          Form("pTop_hr_rpc_%d_%s", ix, helicity.c_str()),
+                          0.0, 0.90, 1.0, 1.0);
+    pTop->SetFillStyle(0);
+    pTop->SetBorderSize(0);
+    pTop->Draw();
+    pTop->cd();
+
+    TLatex head;
+    head.SetNDC();
+    head.SetTextAlign(22);
+    head.SetTextFont(42);
+    head.SetTextSize(0.18);
+    head.DrawLatex(0.50, 0.73,
+        Form("Run-period 1/2 range vs #phi (%s)   x_{B} #in [%.3g, %.3g]",
+             helicity.c_str(), ax.xB[ix].first, ax.xB[ix].second));
+    head.DrawLatex(0.50, 0.32,
+        Form("Global weighted mean 1/2 range = %.3f", global_weighted_half_range));
+
+    c->cd();
+    TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s", ix, helicity.c_str()),
+                           Form("pGrid_hr_rpc_%d_%s", ix, helicity.c_str()),
+                           0.0, 0.00, 1.0, 0.90);
+    pGrid->SetFillStyle(0);
+    pGrid->SetBorderSize(0);
+    pGrid->Draw();
+    pGrid->cd();
+    pGrid->Divide(ncols, nrows, 0.00, 0.00);
+
+    for (int it = 0; it < nrows; ++it) {
+        for (int iQ = 0; iQ < ncols; ++iQ) {
+            pGrid->cd(it * ncols + iQ + 1);
+            gPad->SetTicks(1, 1);
+            gPad->SetTopMargin(0.14);
+            gPad->SetBottomMargin(0.18);
+            gPad->SetLeftMargin(0.18);
+            gPad->SetRightMargin(0.08);
+            gPad->SetLogy(0);
+
+            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
+            frame->GetXaxis()->SetTitle("#phi (deg)");
+            frame->GetYaxis()->SetTitle("1/2 range");
+            frame->SetTitle("");
+            frame->GetXaxis()->CenterTitle();
+            frame->GetYaxis()->CenterTitle();
+            frame->GetXaxis()->SetNdivisions(505);
+            frame->GetXaxis()->SetTitleSize(0.060);
+            frame->GetYaxis()->SetTitleSize(0.060);
+            frame->GetXaxis()->SetLabelSize(0.050);
+            frame->GetYaxis()->SetLabelSize(0.050);
+            frame->GetXaxis()->SetTitleOffset(1.10);
+            frame->GetYaxis()->SetTitleOffset(1.55);
+
+            const PanelBundle_rpc& pb = panel_map.at({iQ, it});
+
+            frame->SetTitleFont(42, "t");
+            frame->SetTitleSize(0.040, "t");
+            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, <1/2 range>_{w}=%.2f",
+                                 pb.Q2avg,
+                                 pb.tavg,
+                                 pb.chi2.weighted_half_range));
+
+            if (!pb.range_band.empty()) {
+                std::vector<double> x, y, ey;
+                x.reserve(pb.range_band.size());
+                y.reserve(pb.range_band.size());
+                ey.reserve(pb.range_band.size());
+
+                for (const auto& bp : pb.range_band) {
+                    x.push_back(bp.phi);
+                    y.push_back(bp.half_range);
+                    ey.push_back(bp.half_range_err);
+                }
+                // endfor
+
+                TGraphErrors* g = new TGraphErrors((int)x.size(),
+                                                   x.data(),
+                                                   y.data(),
+                                                   nullptr,
+                                                   ey.data());
+                g->SetMarkerStyle(20);
+                g->SetMarkerSize(0.80);
+                g->SetMarkerColor(kBlack);
+                g->SetLineColor(kBlack);
+                g->SetLineWidth(1);
+                g->Draw("PE1 SAME");
+            }
+        }
+        // endfor
+    }
+    // endfor
+
+    c->SaveAs(out_png.c_str());
+    summary_out << "Saved half-range canvas: " << out_png << "\n";
+
+    delete c;
+}
+
 static Double_t reduced_chi2_pdf_rpc(Double_t* x, Double_t* par) {
     const double xx  = x[0];
     const double amp = par[0];
     const double nu  = par[1];
+
     if (xx <= 0.0 || nu <= 0.0) return 0.0;
 
     const double half_nu = 0.5 * nu;
@@ -840,17 +1045,17 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
     lab.SetTextFont(42);
     lab.SetTextAlign(13);
     lab.SetTextSize(0.040);
-    lab.DrawLatex(0.16, 0.90,
+    lab.DrawLatex(0.58, 0.90,
         Form("Reduced #chi^{2} distribution (%s)", helicity.c_str()));
-    lab.DrawLatex(0.16, 0.84,
+    lab.DrawLatex(0.58, 0.84,
         Form("Entries = %d", (int)reduced_chi2_values.size()));
-    lab.DrawLatex(0.16, 0.78,
+    lab.DrawLatex(0.58, 0.78,
         Form("Mean = %.3f", mean));
-    lab.DrawLatex(0.16, 0.72,
+    lab.DrawLatex(0.58, 0.72,
         Form("RMS = %.3f", rms));
-    lab.DrawLatex(0.16, 0.66,
+    lab.DrawLatex(0.58, 0.66,
         Form("Fit status = %d", fit_status));
-    lab.DrawLatex(0.16, 0.60,
+    lab.DrawLatex(0.58, 0.60,
         Form("Effective #nu = %.3f #pm %.3f", nu, nu_e));
 
     c->SaveAs(out_png.c_str());
@@ -863,7 +1068,8 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
                 << "rms=" << rms << "\n"
                 << "fit_status=" << fit_status << "\n"
                 << "fit_nu=" << nu << "\n"
-                << "fit_nu_err=" << nu_e << "\n";
+                << "fit_nu_err=" << nu_e << "\n"
+                << "fit_model=reduced_chi2_pdf_effective_nu\n";
 
     delete f;
     delete h;
@@ -885,14 +1091,19 @@ static void run_one_helicity_rpc(const std::vector<Row_rpc>& rows,
 
     summary_out << "Run-period consistency summary for helicity = " << helicity << "\n";
     summary_out << "Definition: for each phi row, chi2 is computed relative to the simple arithmetic mean across the available run periods using only the statistical uncertainties from the corresponding normed cross-section tuples.\n";
-    summary_out << "Overlay plots now show the ratio of each run period to that same mean. The plotted statistical uncertainty is propagated through r_i = x_i / mean with mean = (1/N) sum_j x_j, retaining the x_i contribution to the mean.\n\n";
+    summary_out << "Overlay plots show the ratio of each run period to that same mean. The plotted statistical uncertainty is propagated through r_i = x_i / mean with mean = (1/N) sum_j x_j, retaining the x_i contribution to the mean.\n";
+    summary_out << "The reported panel value <1/2 range>_w is the weighted mean of 0.5 * (max ratio - min ratio) across phi, with weight w = 1 / sigma_mean^2, where sigma_mean is the statistical uncertainty on the arithmetic mean of the available run-period points at that phi.\n\n";
 
     std::vector<double> reduced_chi2_values;
 
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
-        const fs::path out_png = overlay_dir / Form("period_consistency_xB_%d.png", ix);
-        draw_overlay_canvas_rpc(rows, ax, ix, helicity, out_png.string(), reduced_chi2_values, summary_out);
-        info_rpc("Saved: " + out_png.string());
+        const fs::path out_png1 = overlay_dir / Form("period_consistency_xB_%d.png", ix);
+        draw_overlay_canvas_rpc(rows, ax, ix, helicity, out_png1.string(), reduced_chi2_values, summary_out);
+        info_rpc("Saved: " + out_png1.string());
+
+        const fs::path out_png2 = overlay_dir / Form("period_consistency_half_range_xB_%d.png", ix);
+        draw_half_range_canvas_rpc(rows, ax, ix, helicity, out_png2.string(), summary_out);
+        info_rpc("Saved: " + out_png2.string());
     }
     // endfor
 
