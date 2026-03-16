@@ -730,7 +730,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetNDC();
     head.SetTextAlign(22);
     head.SetTextFont(42);
-    head.SetTextSize(0.18);
+    head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
     Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
          top_label.c_str(),
@@ -920,7 +920,7 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetNDC();
     head.SetTextAlign(22);
     head.SetTextFont(42);
-    head.SetTextSize(0.18);
+    head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
     Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
          top_label.c_str(),
