@@ -13,6 +13,7 @@
 #include <TGaxis.h>
 #include <TMath.h>
 #include <TROOT.h>
+#include <TGraph.h>
 
 #include <algorithm>
 #include <cctype>
@@ -213,6 +214,9 @@ struct Row_rpc {
     double Q2max     = 0.0;
     double tmin      = 0.0;
     double tmax      = 0.0;
+    double xBavg     = 0.0;
+    double Q2avg     = 0.0;
+    double tavg      = 0.0;
     double phiavg    = 0.0;
     std::unordered_map<std::string, TripletValue_rpc> xs_by_col;
 };
@@ -274,15 +278,25 @@ struct PanelChi2_rpc {
     int    phi_rows_used = 0;
     int    points_used   = 0;
     int    rows_total    = 0;
+    double mean_range    = 0.0;
 
     double reduced_chi2() const {
         return (ndof > 0) ? (chi2 / (double)ndof) : 0.0;
     }
 };
 
+struct RangeBandPoint_rpc {
+    double phi = 0.0;
+    double lo  = 0.0;
+    double hi  = 0.0;
+};
+
 struct PanelBundle_rpc {
     std::map<std::string, PanelSeries_rpc> series_by_period;
     std::map<std::string, std::vector<PanelPoint_rpc>> ratio_series_by_period;
+    std::vector<RangeBandPoint_rpc> range_band;
+    double Q2avg = 0.0;
+    double tavg  = 0.0;
     PanelChi2_rpc chi2;
 };
 
@@ -327,6 +341,9 @@ static std::vector<Row_rpc> load_rows_rpc(const std::string& hayward_csv_path) {
         "Q2max",
         "t_abs_min",
         "t_abs_max",
+        "xBavg, 10.6 GeV",
+        "Q2avg, 10.6 GeV",
+        "t_abs_avg, 10.6 GeV",
         "phiavg, 10.6 GeV"
     };
 
@@ -356,6 +373,9 @@ static std::vector<Row_rpc> load_rows_rpc(const std::string& hayward_csv_path) {
         r.Q2max     = ToDouble_rpc(get_col_ref_rpc(cols, H, "Q2max"));
         r.tmin      = ToDouble_rpc(get_col_ref_rpc(cols, H, "t_abs_min"));
         r.tmax      = ToDouble_rpc(get_col_ref_rpc(cols, H, "t_abs_max"));
+        r.xBavg     = ToDouble_rpc(get_col_ref_rpc(cols, H, "xBavg, 10.6 GeV"));
+        r.Q2avg     = ToDouble_rpc(get_col_ref_rpc(cols, H, "Q2avg, 10.6 GeV"));
+        r.tavg      = ToDouble_rpc(get_col_ref_rpc(cols, H, "t_abs_avg, 10.6 GeV"));
         r.phiavg    = ToDouble_rpc(get_col_ref_rpc(cols, H, "phiavg, 10.6 GeV"));
 
         bool has_any = false;
@@ -473,6 +493,13 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
         mean /= (double)n;
         if (mean == 0.0) continue;
 
+        double q2avg_sum = out.Q2avg * (double)out.chi2.phi_rows_used;
+        double tavg_sum  = out.tavg  * (double)out.chi2.phi_rows_used;
+        out.Q2avg = (q2avg_sum + r.Q2avg) / (double)(out.chi2.phi_rows_used + 1);
+        out.tavg  = (tavg_sum  + r.tavg ) / (double)(out.chi2.phi_rows_used + 1);
+
+        double min_ratio =  1.0e300;
+        double max_ratio = -1.0e300;
         double chi2_row = 0.0;
         for (const auto& vp : valid_points) {
             const double sigma = vp.err;
@@ -485,8 +512,22 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
             rp.ratio = vp.value / mean;
             rp.err   = ratio_err_to_mean_rpc(vp.value, vp.err, mean, n);
             out.ratio_series_by_period[vp.label].push_back(rp);
+
+            min_ratio = std::min(min_ratio, rp.ratio);
+            max_ratio = std::max(max_ratio, rp.ratio);
         }
         // endfor
+
+        if (min_ratio < 1.0e299 && max_ratio > -1.0e299) {
+            RangeBandPoint_rpc bp;
+            bp.phi = r.phiavg;
+            bp.lo  = min_ratio;
+            bp.hi  = max_ratio;
+            out.range_band.push_back(bp);
+
+            const double prev_sum = out.chi2.mean_range * (double)out.chi2.phi_rows_used;
+            out.chi2.mean_range = (prev_sum + (max_ratio - min_ratio)) / (double)(out.chi2.phi_rows_used + 1);
+        }
 
         out.chi2.chi2 += chi2_row;
         out.chi2.ndof += (n - 1);
@@ -534,6 +575,11 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
     }
     // endfor
 
+    std::sort(out.range_band.begin(), out.range_band.end(), [](const RangeBandPoint_rpc& a,
+                                                               const RangeBandPoint_rpc& b) {
+        return a.phi < b.phi;
+    });
+
     return out;
 }
 
@@ -571,6 +617,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                         << "chi2=" << chi.chi2 << "  "
                         << "ndof=" << chi.ndof << "  "
                         << "chi2_ndf=" << chi.reduced_chi2() << "  "
+                        << "mean_range=" << chi.mean_range << "  "
                         << "phi_rows_used=" << chi.phi_rows_used << "  "
                         << "points_used=" << chi.points_used << "  "
                         << "rows_total=" << chi.rows_total
@@ -656,16 +703,38 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             const double redchi2 = pb.chi2.reduced_chi2();
 
             frame->SetTitleFont(42, "t");
-            frame->SetTitleSize(0.050, "t");
-            frame->SetTitle(Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g], #chi^{2}/ndf = %s",
-                                 Q2s[iQ].first, Q2s[iQ].second,
-                                 Ts[it].first,  Ts[it].second,
-                                 (pb.chi2.ndof > 0 ? Form("%.2f", redchi2) : "n/a")));
+            frame->SetTitleSize(0.040, "t");
+            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, #chi^{2}/ndf=%s, <range>=%.2f",
+                                 pb.Q2avg,
+                                 pb.tavg,
+                                 (pb.chi2.ndof > 0 ? Form("%.2f", redchi2) : "n/a"),
+                                 pb.chi2.mean_range));
+
+            if (!pb.range_band.empty()) {
+                std::vector<double> xb, yb;
+                xb.reserve(2 * pb.range_band.size());
+                yb.reserve(2 * pb.range_band.size());
+                for (const auto& bp : pb.range_band) {
+                    xb.push_back(bp.phi);
+                    yb.push_back(bp.hi);
+                }
+                // endfor
+                for (int ib = (int)pb.range_band.size() - 1; ib >= 0; --ib) {
+                    xb.push_back(pb.range_band[ib].phi);
+                    yb.push_back(pb.range_band[ib].lo);
+                }
+                // endfor
+                TGraph* gband = new TGraph((int)xb.size(), xb.data(), yb.data());
+                gband->SetFillColorAlpha(kGray + 1, 0.25);
+                gband->SetLineColor(kGray + 1);
+                gband->SetLineWidth(1);
+                gband->Draw("F SAME");
+            }
 
             TLine* unity = new TLine(0.0, 1.0, 360.0, 1.0);
             unity->SetLineColor(kGray + 2);
             unity->SetLineStyle(2);
-            unity->SetLineWidth(2);
+            unity->SetLineWidth(1);
             unity->Draw("SAME");
 
             for (const auto& p : period_defs_rpc()) {
