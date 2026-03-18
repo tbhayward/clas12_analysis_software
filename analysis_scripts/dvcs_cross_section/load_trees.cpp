@@ -391,7 +391,7 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
     // ---------------- eπ0 → DVCS background MC ----------------
     loadCategory({
         {"DVCS_Sp18_inb_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root"},
-        {"DVCS_Sp18_out_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_45nA_10594MeV_epgamma.root"},
+        {"DVCS_Sp18_out_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_45nA_10594MeV_epgamma.root"},
         {"DVCS_Fa18_inb_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root"},
         {"DVCS_Fa18_out_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root"},
         {"DVCS_Sp19_inb_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root"}
