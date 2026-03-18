@@ -29,7 +29,8 @@ run_charge_map = dict(zip(run_info_df["runnum"], run_info_df["charge_nC"]))
 # -----------------------
 
 FA18_INB_CURRENT = {
-    
+    # 5 nA
+    5418: 5, 5419: 5
 
     # 40 nA
     5335: 40, 5339: 40, 5341: 40,
@@ -185,6 +186,8 @@ def resolve_current(period_label, runnum):
 
     # Sp19 Inb: all 50 nA
     if label == "rga_sp19_inb":
+        if runnum == 6616:
+            return True, 5
         return True, 50
     #endif
 
