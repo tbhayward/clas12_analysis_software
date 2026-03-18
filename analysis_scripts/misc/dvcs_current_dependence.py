@@ -2,81 +2,227 @@
 #
 # dvcs_current_dependence.py
 #
-# Hard-coded from the user-provided run-period summary:
-#   - For each period and current: DVCS counts and accumulated charge (nC)
-#   - Compute counts per nC with Poisson error bars
-#   - Fit y = m*x + b (weighted least squares)
-#   - Make two 2x3 canvases:
-#       (1) counts/nC vs current with fits
-#       (2) percent-of-intercept vs current, where intercept b is defined as 100%
+# Rewritten to use the full ROOT trees directly.
 #
-# Requirements implemented:
-#   - Chronological order: Sp18 Inb, Sp18 Out, Fa18 Inb, Fa18 Out, Sp19 Inb
-#   - Legends: no extra descriptive text; no scientific notation; 5 decimals
-#   - Overlay panels MUST use the same per-period colors as the individual panels
-#   - Canvas 2 y-axis range standardized to [0, 150]
-#   - Add semi-transparent 1-sigma band around each fitted line (slope-only):
-#       band uses lines with (m +/- sm) at fixed b
+# What this script now does:
+#   - Read each DVCS ROOT file
+#   - Count events per run using the runnum branch
+#   - Read accumulated charge per run from global.csv
+#   - Resolve beam current per run using the same hard-coded mapping logic
+#     as in the run-by-run script
+#   - Aggregate total counts and total charge by (period, current)
+#   - Compute counts per nC with Poisson uncertainties
+#   - Fit y = m*x + b with weighted least squares
+#   - Produce the same two 2x3 canvases:
+#       (1) counts/nC vs current with fits
+#       (2) percent-of-intercept vs current
 #
 # Output:
 #   output/dvcs_counts_per_nc_vs_current.png
 #   output/dvcs_percent_of_intercept_vs_current.png
 #
-# Run:
-#   python3 dvcs_current_dependence.py
+# Optional diagnostic CSVs:
+#   output/dvcs_current_dependence_run_table.csv
+#   output/dvcs_current_dependence_current_table.csv
 #
 
 import os
 import math
+import csv
+from collections import defaultdict
+
+import uproot
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-def sum_charge_expr(expr):
-    """
-    Sum a string expression like:
-      "123.4+56.7+89.0"
-    into a float.
-    """
-    if expr is None:
-        return 0.0
-    #endif
+# -----------------------------------------------------------------------------
+# Input configuration
+# -----------------------------------------------------------------------------
 
-    s = str(expr).replace("\n", "").replace("\t", "").strip()
-    if s == "":
-        return 0.0
-    #endif
+CSV_FILE = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
-    parts = s.split("+")
-    total = 0.0
-    for p in parts:
-        pp = p.strip()
-        if pp == "":
-            continue
+PERIOD_FILES = [
+    ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
+    ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
+    ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
+    ("Fa18 Out", "rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"),
+    ("Sp19 Inb", "rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"),
+]
+
+PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
+
+
+# -----------------------------------------------------------------------------
+# Run -> current maps
+# (copied/adapted from the first script)
+# -----------------------------------------------------------------------------
+
+FA18_INB_CURRENT = {
+    5418: 5, 5419: 5,
+
+    5335: 40, 5339: 40, 5341: 40,
+    5340: 40, 5342: 40, 5343: 40, 5344: 40,
+
+    5032: 45, 5036: 45, 5038: 45, 5039: 45, 5040: 45, 5041: 45,
+    5043: 45, 5045: 45, 5052: 45, 5053: 45, 5116: 45, 5117: 45,
+    5119: 45, 5120: 45, 5124: 45, 5125: 45, 5126: 45, 5127: 45,
+    5139: 45, 5153: 45, 5158: 45, 5162: 45, 5163: 45, 5164: 45,
+    5181: 45, 5191: 45, 5193: 45, 5195: 45, 5196: 45, 5197: 45,
+    5198: 45, 5199: 45, 5200: 45, 5201: 45, 5202: 45, 5203: 45,
+    5204: 45, 5205: 45, 5206: 45, 5208: 45, 5211: 45, 5212: 45,
+    5215: 45, 5216: 45, 5219: 45, 5220: 45, 5221: 45, 5222: 45,
+    5223: 45, 5230: 45, 5231: 45, 5232: 45, 5233: 45, 5234: 45,
+    5235: 45, 5237: 45, 5238: 45, 5247: 45, 5248: 45, 5249: 45,
+    5252: 45, 5253: 45, 5257: 45, 5258: 45, 5259: 45, 5261: 45,
+    5262: 45, 5303: 45, 5304: 45, 5305: 45, 5306: 45, 5307: 45,
+    5310: 45, 5311: 45, 5315: 45, 5317: 45, 5318: 45, 5319: 45,
+    5320: 45, 5323: 45, 5324: 45, 5333: 45, 5334: 45, 5346: 45,
+    5347: 45, 5349: 45, 5351: 45, 5354: 45, 5355: 45, 5367: 45,
+
+    5046: 45, 5047: 45, 5051: 45,
+    5128: 45, 5129: 45, 5130: 45,
+    5159: 45, 5160: 45,
+    5165: 45, 5166: 45, 5167: 45, 5168: 45, 5169: 45,
+    5180: 45, 5182: 45, 5183: 45,
+    5190: 45,
+    5239: 45,
+    5336: 45,
+
+    5356: 50, 5357: 50, 5358: 50, 5359: 50, 5360: 50, 5361: 50,
+    5362: 50, 5366: 50,
+
+    5368: 55, 5369: 55, 5372: 55, 5373: 55, 5374: 55, 5375: 55,
+    5376: 55, 5377: 55, 5378: 55, 5379: 55, 5380: 55, 5381: 55,
+    5382: 55, 5383: 55, 5386: 55, 5390: 55, 5391: 55, 5392: 55,
+    5393: 55, 5398: 55, 5400: 55, 5401: 55, 5403: 55, 5404: 55,
+    5406: 55, 5407: 55,
+}
+
+FA18_OUT_CURRENT = {
+    5443: 5,
+
+    5444: 20,
+
+    5423: 40, 5424: 40, 5425: 40, 5426: 40, 5428: 40, 5429: 40,
+    5430: 40, 5432: 40, 5434: 40, 5435: 40, 5436: 40, 5437: 40,
+    5438: 40, 5440: 40, 5441: 40, 5442: 40, 5445: 40, 5447: 40,
+    5449: 40, 5450: 40, 5451: 40, 5452: 40, 5453: 40, 5454: 40,
+    5455: 40, 5460: 40, 5464: 40, 5465: 40, 5466: 40, 5467: 40,
+    5468: 40, 5469: 40, 5470: 40, 5471: 40, 5472: 40, 5473: 40,
+    5474: 40, 5475: 40, 5476: 40, 5478: 40, 5479: 40, 5480: 40,
+    5481: 40, 5482: 40, 5483: 40, 5485: 40, 5486: 40, 5487: 40,
+    5497: 40, 5498: 40, 5499: 40, 5500: 40, 5504: 40,
+
+    5448: 40, 5495: 40, 5496: 40,
+
+    5507: 50, 5516: 50, 5517: 50, 5518: 50, 5519: 50, 5520: 50,
+    5521: 50, 5522: 50, 5523: 50, 5524: 50, 5525: 50, 5526: 50,
+    5527: 50, 5528: 50, 5530: 50, 5532: 50, 5533: 50, 5534: 50,
+    5535: 50, 5536: 50, 5537: 50, 5538: 50, 5540: 50, 5541: 50,
+    5543: 50, 5544: 50, 5545: 50, 5546: 50, 5547: 50, 5548: 50,
+    5549: 50, 5550: 50, 5551: 50, 5552: 50, 5555: 50, 5556: 50,
+    5557: 50, 5558: 50, 5559: 50, 5562: 50, 5569: 50, 5570: 50,
+    5571: 50, 5572: 50, 5573: 50, 5574: 50, 5577: 50, 5578: 50,
+    5591: 50, 5592: 50, 5594: 50, 5597: 50, 5598: 50, 5600: 50,
+    5601: 50, 5602: 50, 5603: 50, 5604: 50, 5606: 50, 5607: 50,
+    5611: 50, 5612: 50, 5613: 50, 5614: 50, 5616: 50, 5618: 50,
+    5619: 50, 5624: 50, 5625: 50, 5626: 50, 5627: 50, 5628: 50,
+    5629: 50, 5630: 50, 5631: 50, 5632: 50, 5633: 50, 5635: 50,
+    5637: 50, 5638: 50, 5639: 50, 5641: 50, 5643: 50, 5644: 50,
+    5645: 50, 5646: 50, 5647: 50, 5648: 50, 5649: 50, 5650: 50,
+    5651: 50, 5652: 50, 5654: 50, 5655: 50, 5656: 50, 5662: 50,
+    5663: 50, 5664: 50, 5665: 50, 5666: 50,
+    5615: 50,
+
+    5505: 50, 5567: 50, 5617: 50, 5621: 50, 5623: 50,
+
+    5610: 5,
+}
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+def resolve_current(period_label_internal, runnum):
+    """
+    Resolve beam current (nA) for a given period and run number.
+
+    Returns:
+      (True, current_nA) on success
+      (False, None) otherwise
+    """
+    label = period_label_internal.lower()
+
+    if label == "rga_fa18_inb":
+        if runnum in FA18_INB_CURRENT:
+            return True, FA18_INB_CURRENT[runnum]
         #endif
-        total += float(pp)
-    #endfor
-
-    return total
-#endif
-
-
-def count_charge_terms(expr):
-    """
-    Count how many "+"-separated charge terms appear in the expression.
-    """
-    if expr is None:
-        return 0
+        return False, None
     #endif
 
-    s = str(expr).replace("\n", "").replace("\t", "").strip()
-    if s == "":
-        return 0
+    if label == "rga_fa18_out":
+        if runnum in FA18_OUT_CURRENT:
+            return True, FA18_OUT_CURRENT[runnum]
+        #endif
+        return False, None
     #endif
 
-    parts = [p.strip() for p in s.split("+") if p.strip() != ""]
-    return len(parts)
-#endif
+    if label == "rga_sp18_out":
+        if 3211 <= runnum <= 3293:
+            return True, 30
+        #endif
+        if 3867 <= runnum <= 3987:
+            return True, 45
+        #endif
+        return False, None
+    #endif
+
+    if label == "rga_sp18_inb":
+        if runnum == 3418:
+            return True, 70
+        #endif
+        if runnum == 3421 or runnum == 3422:
+            return True, 35
+        #endif
+        if runnum == 3429:
+            return True, 50
+        #endif
+
+        if 3306 <= runnum <= 3411:
+            return True, 35
+        #endif
+
+        if 3431 <= runnum <= 4325:
+            return True, 50
+        #endif
+
+        return False, None
+    #endif
+
+    if label == "rga_sp19_inb":
+        if runnum == 6616:
+            return True, 5
+        #endif
+        return True, 50
+    #endif
+
+    return False, None
+#enddef
+
+
+def f5(val):
+    """
+    Format a float with 5 digits after the decimal, no scientific notation.
+    """
+    try:
+        return f"{float(val):.5f}"
+    except Exception:
+        return "nan"
+    #endif
+#enddef
 
 
 def weighted_linear_fit(x, y, sy):
@@ -85,7 +231,6 @@ def weighted_linear_fit(x, y, sy):
 
     Inputs:
       x, y, sy: numpy arrays
-        - sy are 1-sigma uncertainties on y
 
     Returns dict:
       m, b, sm, sb, cov_mb, chi2, ndof
@@ -104,6 +249,10 @@ def weighted_linear_fit(x, y, sy):
             "chi2": float("nan"),
             "ndof": 0,
         }
+    #endif
+
+    if np.any(sy <= 0.0):
+        raise RuntimeError("Encountered non-positive uncertainty in weighted_linear_fit.")
     #endif
 
     w = 1.0 / (sy * sy)
@@ -150,172 +299,337 @@ def weighted_linear_fit(x, y, sy):
         "chi2": chi2,
         "ndof": ndof,
     }
-#endif
+#enddef
 
 
-def period_points_from_dict(period_block):
+def read_charge_map(csv_file):
     """
-    period_block: dict mapping current (nA) -> {"counts": int, "charge": "a+b+c"}.
-
-    Returns:
-      x (currents), y (counts/nC), sy (Poisson propagated)
+    Read global.csv and return:
+      run_charge_map[runnum] = charge_nC
     """
-    currents = sorted(period_block.keys())
-    x = []
-    y = []
-    sy = []
+    if not os.path.exists(csv_file):
+        raise RuntimeError(f"Charge CSV not found: {csv_file}")
+    #endif
 
-    for I in currents:
-        counts = float(period_block[I]["counts"])
-        charge = sum_charge_expr(period_block[I]["charge"])
+    run_info_df = pd.read_csv(
+        csv_file,
+        comment="#",
+        header=None,
+        names=["runnum", "charge_nC", "col2", "col3", "col4", "col5"],
+    )
 
-        if charge <= 0.0:
-            raise RuntimeError(f"Charge <= 0 encountered for current {I} nA")
-        #endif
+    if "runnum" not in run_info_df.columns or "charge_nC" not in run_info_df.columns:
+        raise RuntimeError("Failed to read required columns from charge CSV.")
+    #endif
 
-        rate = counts / charge
-        rate_err = math.sqrt(counts) / charge if counts > 0.0 else 0.0
+    run_charge_map = {}
 
-        x.append(float(I))
-        y.append(rate)
-        sy.append(rate_err)
+    for _, row in run_info_df.iterrows():
+        runnum = int(row["runnum"])
+        charge = float(row["charge_nC"])
+        run_charge_map[runnum] = charge
     #endfor
 
-    return (
-        np.asarray(x, dtype=float),
-        np.asarray(y, dtype=float),
-        np.asarray(sy, dtype=float),
-    )
-#endif
+    return run_charge_map
+#enddef
 
 
-def f5(val):
+def read_run_counts_from_root(root_path):
     """
-    Format a float with 5 digits after the decimal, no scientific notation.
+    Read PhysicsEvents/runnum from a ROOT file and return:
+      run_counts[runnum] = number of entries in that run
     """
-    try:
-        return f"{float(val):.5f}"
-    except Exception:
-        return "nan"
+    if not os.path.exists(root_path):
+        raise RuntimeError(f"ROOT file not found: {root_path}")
     #endif
-#endif
+
+    root_file = uproot.open(root_path)
+
+    if "PhysicsEvents" not in root_file:
+        raise RuntimeError(f"'PhysicsEvents' tree not found in {root_path}")
+    #endif
+
+    tree = root_file["PhysicsEvents"]
+
+    if "runnum" not in tree.keys():
+        raise RuntimeError(f"'runnum' branch not found in {root_path}:PhysicsEvents")
+    #endif
+
+    runnum_data = tree["runnum"].array(library="np")
+
+    unique_runs, event_counts = np.unique(runnum_data, return_counts=True)
+
+    run_counts = {}
+    for run_num, count in zip(unique_runs, event_counts):
+        run_counts[int(run_num)] = int(count)
+    #endfor
+
+    return run_counts
+#enddef
+
+
+def build_period_aggregation(period_display_name, period_internal_name, root_path, run_charge_map):
+    """
+    For one period:
+      - read run counts from ROOT
+      - resolve charge and current for each run
+      - build run-level rows
+      - build current-level aggregation
+
+    Returns:
+      run_rows, current_rows
+
+    where
+      run_rows is a list of dicts, one per run
+      current_rows is a list of dicts, one per current
+    """
+    run_counts = read_run_counts_from_root(root_path)
+
+    missing_charge_runs = []
+    nonpositive_charge_runs = []
+    unknown_current_runs = []
+
+    run_rows = []
+    per_current_counts = defaultdict(int)
+    per_current_charge = defaultdict(float)
+    per_current_runs = defaultdict(list)
+
+    for runnum in sorted(run_counts.keys()):
+        count = run_counts[runnum]
+
+        if runnum not in run_charge_map:
+            missing_charge_runs.append(runnum)
+            continue
+        #endif
+
+        charge = float(run_charge_map[runnum])
+        if charge <= 0.0:
+            nonpositive_charge_runs.append((runnum, charge))
+            continue
+        #endif
+
+        ok_cur, current_nA = resolve_current(period_internal_name, runnum)
+        if not ok_cur:
+            unknown_current_runs.append(runnum)
+            continue
+        #endif
+
+        rate = float(count) / charge
+        rate_err = math.sqrt(float(count)) / charge if count > 0 else 0.0
+
+        run_rows.append({
+            "period": period_display_name,
+            "period_internal": period_internal_name,
+            "runnum": runnum,
+            "current_nA": int(current_nA),
+            "counts": int(count),
+            "charge_nC": float(charge),
+            "counts_per_nC": float(rate),
+            "counts_per_nC_err": float(rate_err),
+        })
+
+        per_current_counts[current_nA] += int(count)
+        per_current_charge[current_nA] += float(charge)
+        per_current_runs[current_nA].append(runnum)
+    #endfor
+
+    if len(missing_charge_runs) > 0 or len(nonpositive_charge_runs) > 0 or len(unknown_current_runs) > 0:
+        msg = []
+        msg.append(f"Fatal bookkeeping problem while processing {period_display_name}:")
+        if len(missing_charge_runs) > 0:
+            msg.append(f"  Runs missing from charge CSV ({len(missing_charge_runs)}): {missing_charge_runs}")
+        #endif
+        if len(nonpositive_charge_runs) > 0:
+            msg.append(f"  Runs with non-positive charge ({len(nonpositive_charge_runs)}): {nonpositive_charge_runs}")
+        #endif
+        if len(unknown_current_runs) > 0:
+            msg.append(f"  Runs with no current mapping ({len(unknown_current_runs)}): {unknown_current_runs}")
+        #endif
+        raise RuntimeError("\n".join(msg))
+    #endif
+
+    current_rows = []
+    for current_nA in sorted(per_current_counts.keys()):
+        total_counts = int(per_current_counts[current_nA])
+        total_charge = float(per_current_charge[current_nA])
+
+        if total_charge <= 0.0:
+            raise RuntimeError(
+                f"Total charge <= 0 for {period_display_name}, current {current_nA} nA"
+            )
+        #endif
+
+        counts_per_nC = float(total_counts) / total_charge
+        counts_per_nC_err = math.sqrt(float(total_counts)) / total_charge if total_counts > 0 else 0.0
+
+        current_rows.append({
+            "period": period_display_name,
+            "period_internal": period_internal_name,
+            "current_nA": int(current_nA),
+            "n_runs": len(per_current_runs[current_nA]),
+            "counts": int(total_counts),
+            "charge_nC": float(total_charge),
+            "counts_per_nC": float(counts_per_nC),
+            "counts_per_nC_err": float(counts_per_nC_err),
+        })
+    #endfor
+
+    return run_rows, current_rows
+#enddef
+
+
+def period_points_from_current_rows(current_rows, period_name):
+    """
+    Extract x, y, sy arrays for one period from the aggregated current rows.
+    """
+    rows = [r for r in current_rows if r["period"] == period_name]
+    rows = sorted(rows, key=lambda r: r["current_nA"])
+
+    if len(rows) == 0:
+        raise RuntimeError(f"No current rows found for period {period_name}")
+    #endif
+
+    x = np.asarray([float(r["current_nA"]) for r in rows], dtype=float)
+    y = np.asarray([float(r["counts_per_nC"]) for r in rows], dtype=float)
+    sy = np.asarray([float(r["counts_per_nC_err"]) for r in rows], dtype=float)
+
+    return x, y, sy, rows
+#enddef
+
+
+def write_run_table_csv(path, run_rows):
+    """
+    Write a diagnostic run-level CSV.
+    """
+    fieldnames = [
+        "period",
+        "period_internal",
+        "runnum",
+        "current_nA",
+        "counts",
+        "charge_nC",
+        "counts_per_nC",
+        "counts_per_nC_err",
+    ]
+
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in run_rows:
+            writer.writerow(row)
+        #endfor
+    #endwith
+#enddef
+
+
+def write_current_table_csv(path, current_rows):
+    """
+    Write a diagnostic current-level CSV.
+    """
+    fieldnames = [
+        "period",
+        "period_internal",
+        "current_nA",
+        "n_runs",
+        "counts",
+        "charge_nC",
+        "counts_per_nC",
+        "counts_per_nC_err",
+    ]
+
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in current_rows:
+            writer.writerow(row)
+        #endfor
+    #endwith
+#enddef
 
 
 def main():
     os.makedirs("output", exist_ok=True)
 
     # -------------------------------------------------------------------------
-    # DATA (UPDATED)
-    # -------------------------------------------------------------------------
-    data = {
-        "Fa18 Inb": {
-            5: {
-                "counts": 2348,
-                "charge": "18691.954+18474.5485+13923.970+13817.2078",
-            },
-            40: {
-                "counts": 5949,
-                "charge": "6737.49755859375+6771.6488037109375+45574.68096923828+45481.48861694336+62822.611572265625+62409.57879638672",
-            },
-            45: {
-                "counts": 39075,
-                "charge": "201346.38787+201166.16036+193579.079+194140.941+74896.2782+75326.12602+191423.3704+192464.25308+49888.8757+50064.795+66264.28332+66037.53247",
-            },
-            50: {
-                "counts": 59234,
-                "charge": "193667.20733642578+193616.3713684082+196779.3779296875+196386.0982055664+196626.8271484375+196294.92504882812+192402.1739807129+191979.3485107422+194890.67308044434+194327.9188232422+14640.962524414062+14810.924194335938+202062.1233062744+201417.88856506348",
-            },
-            55: {
-                "counts": 48611,
-                "charge": "52638.2290+52297.98364+3856.1777+3793.7708+188675.4283+188555.84970+185352.695+184093.51965+196134.55081+195204.362823+199060.8468+199012.79614+148373.1586+148479.6847+6656.71997+6607.21667",
-            },
-        },
-
-        "Fa18 Out": {
-            20: {"counts": 8811, "charge": "64156.3185+64410.056869"},
-            40: {
-                "counts": 144302,
-                "charge": "143420.9199+143506.10577+145714.9450+146205.00158+35418.6917+35422.01965+75743.7664+76034.69329+133973.0374+133894.99798+144583.99597+144766.05413+144327.84197+144488.454528+143890.745208+144059.68832+137169.82696+137492.723388",
-            },
-            50: {
-                "counts": 124850,
-                "charge": "138224.19996+139038.25774+141704.8806+142387.018798+51007.15634+51297.464233+137540.88531+137841.00769+137045.91143+137018.58642+37793.01580+37947.76361+90860.10198+90944.84423+137721.85491+138138.37646+88172.906+88302.75451+8090.08282+8247.58453",
-            },
-            70: {"counts": 5197, "charge": "45040.08001+45273.50250"},
-        },
-
-        "Sp19 Inb": {
-            5: {"counts": 867, "charge": "11384.66637+11332.34575"},
-            10: {"counts": 3415, "charge": "67845.5772+67673.031265"},
-            50: {
-                "counts": 70165,
-                "charge": "323344.4873+323692.674255+291200.93087+292563.48767+316595.28671+316518.92312+120891.25866+120788.63574+235832.3674+235687.911804+261436.456359+260771.4342041",
-            },
-        },
-
-        "Sp18 Inb": {
-            35: {
-                "counts": 22628,
-                "charge": "143041.3698+180455.1287+99198.28764+215819.24902+253604.037+256674.04077",
-            },
-            50: {
-                "counts": 29985,
-                "charge": "86823.20456+53875.207720000006+462365.5763500001+155942.65868+30313.130000000005+190978.2245096+57414.873250000004+299534.5488+15610.063702499998+336045.59401999996",
-            },
-            55: {
-                "counts": 25812,
-                "charge": "494237.94639999996+492764.5799800001+68830.43074000001+253110.41491+236823.99630479995+61038.981349999995",
-            },
-        },
-
-        "Sp18 Out": {
-            25: {"counts": 6089, "charge": "107432.82072000002"},
-            30: {
-                "counts": 50486,
-                "charge": "113278.01032+11124.354809999999+93134.14310000002+128407.92089999998+34088.218689999994+55631.41555+87828.17699999998+125198.45608000002+114118.60385999999+95226.42483999998+107480.42574000002",
-            },
-            45: {
-                "counts": 82697,
-                "charge": "53094.88620000001+296750.10305000003+292795.32966000005+146204.13000000003+294288.15236000007+259937.71113000007+129771.95737+290971.9334",
-            },
-        },
-    }
-
-    period_order = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
-
-    # -------------------------------------------------------------------------
-    # Sanity printout for transcription checking.
+    # Read charge map once.
     # -------------------------------------------------------------------------
     print("")
-    print("=== Sanity table (period, current, counts, n_terms, charge_sum_nC) ===")
-    for period in period_order:
-        for I in sorted(data[period].keys()):
-            counts = int(data[period][I]["counts"])
-            expr = data[period][I]["charge"]
-            n_terms = count_charge_terms(expr)
-            qsum = sum_charge_expr(expr)
-            print(f"{period:8s}  {I:3d}  {counts:6d}  {n_terms:2d}  {qsum:.5f}")
+    print("Reading charge map...")
+    run_charge_map = read_charge_map(CSV_FILE)
+    print(f"Loaded charge entries for {len(run_charge_map)} runs from:")
+    print(f"  {CSV_FILE}")
+
+    # -------------------------------------------------------------------------
+    # Build run-level and current-level tables from the full ROOT files.
+    # -------------------------------------------------------------------------
+    all_run_rows = []
+    all_current_rows = []
+
+    print("")
+    print("Processing ROOT files and aggregating by current...")
+    for period_display_name, period_internal_name, root_path in PERIOD_FILES:
+        print("")
+        print("=" * 90)
+        print(f"Period: {period_display_name}")
+        print(f"Internal label: {period_internal_name}")
+        print(f"ROOT file: {root_path}")
+        print("=" * 90)
+
+        run_rows, current_rows = build_period_aggregation(
+            period_display_name=period_display_name,
+            period_internal_name=period_internal_name,
+            root_path=root_path,
+            run_charge_map=run_charge_map,
+        )
+
+        all_run_rows.extend(run_rows)
+        all_current_rows.extend(current_rows)
+
+        print(f"Run-level rows: {len(run_rows)}")
+        print(f"Current groups: {len(current_rows)}")
+
+        for row in current_rows:
+            print(
+                f"  {period_display_name:8s}  "
+                f"{int(row['current_nA']):3d} nA  "
+                f"runs={int(row['n_runs']):3d}  "
+                f"counts={int(row['counts']):8d}  "
+                f"charge={float(row['charge_nC']):12.5f} nC  "
+                f"counts/nC={float(row['counts_per_nC']):.8f} +/- {float(row['counts_per_nC_err']):.8f}"
+            )
         #endfor
     #endfor
 
     # -------------------------------------------------------------------------
-    # Choose a consistent color per period (same in individual panels and overlays)
+    # Write diagnostic CSVs.
+    # -------------------------------------------------------------------------
+    run_table_csv = "output/dvcs_current_dependence_run_table.csv"
+    current_table_csv = "output/dvcs_current_dependence_current_table.csv"
+
+    write_run_table_csv(run_table_csv, all_run_rows)
+    write_current_table_csv(current_table_csv, all_current_rows)
+
+    print("")
+    print(f"[saved] {run_table_csv}")
+    print(f"[saved] {current_table_csv}")
+
+    # -------------------------------------------------------------------------
+    # Choose a consistent color per period.
     # -------------------------------------------------------------------------
     default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-    if len(default_colors) < len(period_order):
+    if len(default_colors) < len(PERIOD_ORDER):
         raise RuntimeError("Matplotlib default color cycle is shorter than number of periods.")
     #endif
 
     period_color = {}
-    for i, period in enumerate(period_order):
+    for i, period in enumerate(PERIOD_ORDER):
         period_color[period] = default_colors[i]
     #endfor
 
-    # Band transparency
     band_alpha = 0.20
 
     # -------------------------------------------------------------------------
-    # Canvas 1: counts per nC vs current with y = m x + b fits.
+    # Canvas 1: counts per nC vs current with y = m*x + b fits.
     # -------------------------------------------------------------------------
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs1 = axs1.flatten()
@@ -326,10 +640,10 @@ def main():
     print("")
     print("=== Canvas 1 fits: y = m*x + b for counts_per_nC vs current ===")
 
-    for i, period in enumerate(period_order):
+    for i, period in enumerate(PERIOD_ORDER):
         ax = axs1[i]
 
-        x, y, sy = period_points_from_dict(data[period])
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
 
         fr = weighted_linear_fit(x, y, sy)
         fit_results[period] = fr
@@ -345,21 +659,20 @@ def main():
 
         c = period_color[period]
 
-        # Central fit line
         yfit = m * xfit + b
-
-        # 1-sigma slope-only band: (m +/- sm)*x + b
         yfit_lo = (m - sm) * xfit + b
         yfit_hi = (m + sm) * xfit + b
 
         ax.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
 
         ax.errorbar(
-            x, y, yerr=sy,
+            x,
+            y,
+            yerr=sy,
             fmt="o",
             capsize=3,
             color=c,
-            label=f"m={f5(m)} +/- {f5(sm)}\n b={f5(b)} +/- {f5(sb)}"
+            label=f"m={f5(m)} +/- {f5(sm)}\n b={f5(b)} +/- {f5(sb)}",
         )
         ax.plot(xfit, yfit, color=c)
 
@@ -378,8 +691,8 @@ def main():
     axc.set_ylabel("DVCS counts per charge (1/nC)")
     axc.grid(True, alpha=0.3)
 
-    for period in period_order:
-        x, y, sy = period_points_from_dict(data[period])
+    for period in PERIOD_ORDER:
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
 
         fr = fit_results[period]
         m = fr["m"]
@@ -396,11 +709,13 @@ def main():
         axc.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
 
         axc.errorbar(
-            x, y, yerr=sy,
+            x,
+            y,
+            yerr=sy,
             fmt="o",
             capsize=3,
             color=c,
-            label=f"{period}: m={f5(m)} +/- {f5(sm)}, b={f5(b)} +/- {f5(sb)}"
+            label=f"{period}: m={f5(m)} +/- {f5(sm)}, b={f5(b)} +/- {f5(sb)}",
         )
         axc.plot(xfit, yfit, color=c)
     #endfor
@@ -409,6 +724,7 @@ def main():
 
     out1 = "output/dvcs_counts_per_nc_vs_current.png"
     fig1.savefig(out1, dpi=200)
+
     print("")
     print(f"[saved] {out1}")
 
@@ -421,10 +737,10 @@ def main():
     print("")
     print("=== Canvas 2 derived slopes: percent(x) = 100*(m*x+b)/b ===")
 
-    for i, period in enumerate(period_order):
+    for i, period in enumerate(PERIOD_ORDER):
         ax = axs2[i]
 
-        x, y, sy = period_points_from_dict(data[period])
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
 
         fr = fit_results[period]
         m = fr["m"]
@@ -437,8 +753,6 @@ def main():
         pct_err = 100.0 * np.sqrt((sy / b) ** 2 + ((y * sb) / (b * b)) ** 2)
 
         pct_fit = 100.0 * ((m * xfit + b) / b)
-
-        # 1-sigma slope-only band propagated through the same transform
         pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
         pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
 
@@ -456,11 +770,13 @@ def main():
         ax.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
 
         ax.errorbar(
-            x, pct, yerr=pct_err,
+            x,
+            pct,
+            yerr=pct_err,
             fmt="o",
             capsize=3,
             color=c,
-            label=f"b={f5(b)} +/- {f5(sb)}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)"
+            label=f"b={f5(b)} +/- {f5(sb)}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
         )
         ax.plot(xfit, pct_fit, color=c)
 
@@ -481,8 +797,8 @@ def main():
     axc2.set_ylabel("Percent of intercept b (%)")
     axc2.grid(True, alpha=0.3)
 
-    for period in period_order:
-        x, y, sy = period_points_from_dict(data[period])
+    for period in PERIOD_ORDER:
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
 
         fr = fit_results[period]
         m = fr["m"]
@@ -509,11 +825,13 @@ def main():
         axc2.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
 
         axc2.errorbar(
-            x, pct, yerr=pct_err,
+            x,
+            pct,
+            yerr=pct_err,
             fmt="o",
             capsize=3,
             color=c,
-            label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)"
+            label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
         )
         axc2.plot(xfit, pct_fit, color=c)
     #endfor
@@ -522,10 +840,11 @@ def main():
 
     out2 = "output/dvcs_percent_of_intercept_vs_current.png"
     fig2.savefig(out2, dpi=200)
+
     print("")
     print(f"[saved] {out2}")
     print("")
-#endif
+#enddef
 
 
 if __name__ == "__main__":
