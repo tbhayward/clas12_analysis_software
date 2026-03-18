@@ -10,7 +10,7 @@ output_dir = "output/dvcs_per_run"
 os.makedirs(output_dir, exist_ok=True)
 
 # Path to CSV with run information
-csv_file = "/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
+csv_file = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
 # Read CSV, skipping comment lines
 run_info_df = pd.read_csv(
