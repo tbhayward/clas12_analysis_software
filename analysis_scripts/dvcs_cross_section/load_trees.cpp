@@ -316,30 +316,30 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
 {
     // ---------------- DVCS data ----------------
     loadCategory({
-        {"DVCS_Sp18_inb",      "/volatile/clas12/thayward/dvcs_temp/rga_sp18_inb_epgamma.root"},
-        {"DVCS_Sp18_out",      "/volatile/clas12/thayward/dvcs_temp/rga_sp18_out_epgamma.root"},
+        {"DVCS_Sp18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"},
+        {"DVCS_Sp18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"},
         {"DVCS_Fa18_inb_supp", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_supplemental_epgamma.root"},
-        {"DVCS_Fa18_inb",      "/volatile/clas12/thayward/dvcs_temp/rga_fa18_inb_epgamma.root"},
-        {"DVCS_Fa18_out",      "/volatile/clas12/thayward/dvcs_temp/rga_fa18_out_epgamma.root"},
-        {"DVCS_Sp19_inb",      "/volatile/clas12/thayward/dvcs_temp/rga_sp19_inb_epgamma.root"}
+        {"DVCS_Fa18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"},
+        {"DVCS_Fa18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"},
+        {"DVCS_Sp19_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"}
     }, dataTrees);
 
     // ---------------- DVCS generated MC (no radiative) ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_gen",  "/volatile/clas12/thayward/dvcs_temp/gen_dvcsgen_rga_sp18_inb_10594MeV.root"},
-        {"DVCS_Sp18_out_gen",  "/volatile/clas12/thayward/dvcs_temp/gen_dvcsgen_rga_sp18_out_10594MeV.root"},
-        {"DVCS_Fa18_inb_gen",  "/volatile/clas12/thayward/dvcs_temp/gen_dvcsgen_rga_fa18_inb_10604MeV.root"},
-        {"DVCS_Fa18_out_gen",  "/volatile/clas12/thayward/dvcs_temp/gen_dvcsgen_rga_fa18_out_10604MeV.root"},
-        {"DVCS_Sp19_inb_gen",  "/volatile/clas12/thayward/dvcs_temp/gen_dvcsgen_rga_sp19_inb_10200MeV.root"}
+        {"DVCS_Sp18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_50nA_10594MeV.root"},
+        {"DVCS_Sp18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_out_45nA_10594MeV.root"},
+        {"DVCS_Fa18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV.root"},
+        {"DVCS_Fa18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_50nA_10604MeV.root"},
+        {"DVCS_Sp19_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV.root"}
     }, genMcTrees);
 
     // ---------------- DVCS reconstructed MC (no radiative) ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_rec",  "/volatile/clas12/thayward/dvcs_temp/rec_dvcsgen_rga_sp18_inb_10594MeV.root"},
-        {"DVCS_Sp18_out_rec",  "/volatile/clas12/thayward/dvcs_temp/rec_dvcsgen_rga_sp18_out_10594MeV.root"},
-        {"DVCS_Fa18_inb_rec",  "/volatile/clas12/thayward/dvcs_temp/rec_dvcsgen_rga_fa18_inb_10604MeV.root"},
-        {"DVCS_Fa18_out_rec",  "/volatile/clas12/thayward/dvcs_temp/rec_dvcsgen_rga_fa18_out_10604MeV.root"},
-        {"DVCS_Sp19_inb_rec",  "/volatile/clas12/thayward/dvcs_temp/rec_dvcsgen_rga_sp19_inb_10200MeV.root"}
+        {"DVCS_Sp18_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_50nA_10594MeV.root"},
+        {"DVCS_Sp18_out_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_out_45nA_10594MeV.root"},
+        {"DVCS_Fa18_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV.root"},
+        {"DVCS_Fa18_out_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV.root"},
+        {"DVCS_Sp19_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV.root"}
     }, recMcTrees);
 
     // ---------------- DVCS generated MC (radiative) ----------------
@@ -362,38 +362,38 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
 
     // ---------------- eπ0 data ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_eppi0",      "/volatile/clas12/thayward/dvcs_temp/rga_sp18_inb_eppi0.root"},
-        {"DVCS_Sp18_out_eppi0",      "/volatile/clas12/thayward/dvcs_temp/rga_sp18_out_eppi0.root"},
+        {"DVCS_Sp18_inb_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root"},
+        {"DVCS_Sp18_out_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root"},
         {"DVCS_Fa18_inb_supp_eppi0", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_supplemental_eppi0.root"},
-        {"DVCS_Fa18_inb_eppi0",      "/volatile/clas12/thayward/dvcs_temp/rga_fa18_inb_eppi0.root"},
-        {"DVCS_Fa18_out_eppi0",      "/volatile/clas12/thayward/dvcs_temp/rga_fa18_out_eppi0.root"},
-        {"DVCS_Sp19_inb_eppi0",      "/volatile/clas12/thayward/dvcs_temp/rga_sp19_inb_eppi0.root"}
+        {"DVCS_Fa18_inb_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root"},
+        {"DVCS_Fa18_out_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root"},
+        {"DVCS_Sp19_inb_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root"}
     }, eppi0DataTrees);
 
     // ---------------- eπ0 generated MC ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_gen_mc", "/volatile/clas12/thayward/dvcs_temp/gen_aaogen_norad_sp18_inb_10594MeV.root"},
-        {"DVCS_Sp18_out_gen_mc", "/volatile/clas12/thayward/dvcs_temp/gen_aaogen_norad_sp18_out_10594MeV.root"},
-        {"DVCS_Fa18_inb_gen_mc", "/volatile/clas12/thayward/dvcs_temp/gen_aaogen_norad_fa18_inb_10604MeV.root"},
-        {"DVCS_Fa18_out_gen_mc", "/volatile/clas12/thayward/dvcs_temp/gen_aaogen_norad_fa18_out_10604MeV.root"},
-        {"DVCS_Sp19_inb_gen_mc", "/volatile/clas12/thayward/dvcs_temp/gen_aaogen_norad_sp19_inb_10200MeV.root"}
+        {"DVCS_Sp18_inb_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_inb_50nA_10594MeV.root"},
+        {"DVCS_Sp18_out_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_out_45nA_10594MeV.root"},
+        {"DVCS_Fa18_inb_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_inb_50nA_10604MeV.root"},
+        {"DVCS_Fa18_out_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_out_50nA_10604MeV.root"},
+        {"DVCS_Sp19_inb_gen_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp19_inb_50nA_10200MeV.root"}
     }, eppi0GenMcTrees);
 
     // ---------------- eπ0 reconstructed MC ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_rec_mc", "/volatile/clas12/thayward/dvcs_temp/rec_aaogen_norad_sp18_inb_10594MeV.root"},
-        {"DVCS_Sp18_out_rec_mc", "/volatile/clas12/thayward/dvcs_temp/rec_aaogen_norad_sp18_out_10594MeV.root"},
-        {"DVCS_Fa18_inb_rec_mc", "/volatile/clas12/thayward/dvcs_temp/rec_aaogen_norad_fa18_inb_10604MeV.root"},
-        {"DVCS_Fa18_out_rec_mc", "/volatile/clas12/thayward/dvcs_temp/rec_aaogen_norad_fa18_out_10604MeV.root"},
-        {"DVCS_Sp19_inb_rec_mc", "/volatile/clas12/thayward/dvcs_temp/rec_aaogen_norad_sp19_inb_10200MeV.root"}
+        {"DVCS_Sp18_inb_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root"},
+        {"DVCS_Sp18_out_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root"},
+        {"DVCS_Fa18_inb_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root"},
+        {"DVCS_Fa18_out_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root"},
+        {"DVCS_Sp19_inb_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root"}
     }, eppi0RecMcTrees);
 
     // ---------------- eπ0 → DVCS background MC ----------------
     loadCategory({
-        {"DVCS_Sp18_inb_bkg", "/volatile/clas12/thayward/dvcs_temp/eppi0_bkg_aaogen_norad_rga_sp18_inb_epgamma.root"},
-        {"DVCS_Sp18_out_bkg", "/volatile/clas12/thayward/dvcs_temp/eppi0_bkg_aaogen_norad_rga_sp18_out_epgamma.root"},
-        {"DVCS_Fa18_inb_bkg", "/volatile/clas12/thayward/dvcs_temp/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root"},
-        {"DVCS_Fa18_out_bkg", "/volatile/clas12/thayward/dvcs_temp/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root"},
-        {"DVCS_Sp19_inb_bkg", "/volatile/clas12/thayward/dvcs_temp/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"}
+        {"DVCS_Sp18_inb_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root"},
+        {"DVCS_Sp18_out_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_45nA_10594MeV_epgamma.root"},
+        {"DVCS_Fa18_inb_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root"},
+        {"DVCS_Fa18_out_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root"},
+        {"DVCS_Sp19_inb_bkg", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root"}
     }, eppi0BkgTrees);
 }
