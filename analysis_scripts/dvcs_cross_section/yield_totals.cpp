@@ -412,6 +412,9 @@ static inline bool passes_global(bool is_mc,
 // Fa18 Inb
 static int current_fa18_inb(int run, bool& ok) {
     static const std::unordered_map<int, int> m = {
+        // 5 nA
+        {5418, 5}, {5419, 5},
+
         // 40 nA
         {5335, 40}, {5339, 40}, {5341, 40},
         {5340, 40}, {5342, 40}, {5343, 40}, {5344, 40}, {5345, 40},
@@ -466,6 +469,12 @@ static int current_fa18_inb(int run, bool& ok) {
 // Fa18 Out
 static int current_fa18_out(int run, bool& ok) {
     static const std::unordered_map<int, int> m = {
+        // 5 nA
+        {5443, 5},
+
+        // 20 nA
+        {5444, 20}, 
+        
         // 40 nA
         {5423, 40}, {5424, 40}, {5425, 40}, {5426, 40}, {5428, 40}, {5429, 40},
         {5430, 40}, {5432, 40}, {5434, 40}, {5435, 40}, {5436, 40}, {5437, 40},
