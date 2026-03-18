@@ -29,6 +29,8 @@ run_charge_map = dict(zip(run_info_df["runnum"], run_info_df["charge_nC"]))
 # -----------------------
 
 FA18_INB_CURRENT = {
+    
+
     # 40 nA
     5335: 40, 5339: 40, 5341: 40,
     5340: 40, 5342: 40, 5343: 40, 5344: 40, # reclassified as 40 nA
@@ -73,6 +75,12 @@ FA18_INB_CURRENT = {
 }
 
 FA18_OUT_CURRENT = {
+
+    # 5 nA
+    5443: 5
+
+    # 20 nA
+    5444: 20
 
     # 40 nA
     5423: 40, 5424: 40, 5425: 40, 5426: 40, 5428: 40, 5429: 40,

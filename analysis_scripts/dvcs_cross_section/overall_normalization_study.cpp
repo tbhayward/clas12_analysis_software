@@ -44,7 +44,7 @@ namespace {
 // NEW: If true, skip ALL calculations and ALL plotting, and just write "1.00"
 // into every row of "norm, <label>" (if the column exists), then return.
 // -----------------------------------------------------------------------------
-static const bool kSkipAllWorkWriteUnityNorm = false;
+static const bool kSkipAllWorkWriteUnityNorm = true;
 
 // -----------------------------------------------------------------------------
 // USER TOGGLE (edit here)
