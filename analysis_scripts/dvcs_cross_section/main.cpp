@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
 
-    // initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
+    initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
@@ -58,125 +58,125 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction 
-    // // Record the exact global cuts used:
-    // write_global_cuts_config_json("output/jsons");
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction 
+    // Record the exact global cuts used:
+    write_global_cuts_config_json("output/jsons");
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // // --------- Global bin-averaged kinematics (CSV update) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-    //     // Make a simple backup before modifying
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //                                    std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-    //     }
+        // Make a simple backup before modifying
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
 
-    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Raw yields (counts) into CSV + plots ----------
-    // {
-    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // --------- Raw yields (counts) into CSV + plots ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-    //     // Make a backup (the function also backs up to ..._total_counts.csv)
-    //     try {
-    //         std::filesystem::copy_file(csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup (the function also backs up to ..._total_counts.csv)
+        try {
+            std::filesystem::copy_file(csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
 
-    //     // update_total_counts_csv() now discovers periods/topologies internally
-    //     if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
-    //             /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // update_total_counts_csv() now discovers periods/topologies internally
+        if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
+                /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
-    // {
-    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-    //     makeOutputDirs();
+        makeOutputDirs();
 
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    //     }
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
 
-    //     const int max_workers = 1;
+        const int max_workers = 1;
 
-    //     if (!compute_pi0_contamination_overall(
-    //             dataTrees,
-    //             eppi0DataTrees,
-    //             eppi0RecMcTrees,
-    //             eppi0BkgTrees,
-    //             cuts_json,
-    //             csv_main,
-    //             output_root,
-    //             max_workers))
-    //     {
-    //         std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    //     std::cout << "pi0 contamination stage finished.\n";
-    // }
+        if (!compute_pi0_contamination_overall(
+                dataTrees,
+                eppi0DataTrees,
+                eppi0RecMcTrees,
+                eppi0BkgTrees,
+                cuts_json,
+                csv_main,
+                output_root,
+                max_workers))
+        {
+            std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        std::cout << "pi0 contamination stage finished.\n";
+    }
 
-    // // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
+    // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
 
-    //     // Make a backup before modifying the signal-yield columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for signal yields failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the signal-yield columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for signal yields failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
-    //         std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
+            std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Quick yield totals by current (data) and by period (MC) ----------
-    // {
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string out_txt   = "output/yield_totals.txt";
+    // --------- Quick yield totals by current (data) and by period (MC) ----------
+    {
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
+        const std::string out_txt   = "output/yield_totals.txt";
 
-    //     if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
-    //         std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
+            std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- DVCS MC acceptance (CSV + plots) ----------
     // {
@@ -396,85 +396,85 @@ int main(int argc, char* argv[]) {
     // }
 
 
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Fa18 Inb", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Out", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Fa18 Out", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
+    //         return 1;
+    //     }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp19 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp19 Inb", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Fa18", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "Sp18", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "10.6 GeV", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
-    }
+    //     // 10.6 GeV combined group (unpolarized) normalization study
+    //     if (!print_bh_normalization_study(csv_main, "10.6 GeV", "unpol")) {
+    //         std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
+    //         return 1;
+    //     }
+    // }
 
-    // --------- DVCS normalized cross sections (CSV + plots) ----------
-    {
-        const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root   = "output/jsons/cross_sections";
-        const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
+    // // --------- DVCS normalized cross sections (CSV + plots) ----------
+    // {
+    //     const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string theory_json_root   = "output/jsons/cross_sections";
+    //     const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
 
-        if (!update_normed_cross_sections_csv(csv_main)) {
-            std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
-            return 1;
-        }
+    //     if (!update_normed_cross_sections_csv(csv_main)) {
+    //         std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
+    //         return 1;
+    //     }
 
-        const std::vector<std::string> labels = {
-            "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-            "Fa18", "Sp18", "10.6 GeV"
-        };
+    //     const std::vector<std::string> labels = {
+    //         "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+    //         "Fa18", "Sp18", "10.6 GeV"
+    //     };
 
-        for (const auto &lab : labels) {
-            if (!plot_normed_cross_sections_for_label(csv_main,
-                                                      lab,
-                                                      theory_json_root,
-                                                      out_norm_xsec_root)) {
-                std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
-                          << lab << "\n";
-                return 1;
-            }
-        }
-    }
+    //     for (const auto &lab : labels) {
+    //         if (!plot_normed_cross_sections_for_label(csv_main,
+    //                                                   lab,
+    //                                                   theory_json_root,
+    //                                                   out_norm_xsec_root)) {
+    //             std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
+    //                       << lab << "\n";
+    //             return 1;
+    //         }
+    //     }
+    // }
 
     // make_pass1_phi_panels(
     //     "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/pass1_paper_plots.csv",
