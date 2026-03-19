@@ -2,28 +2,42 @@
 #
 # dvcs_current_dependence.py
 #
-# Rewritten to use the full ROOT trees directly.
-#
-# What this script now does:
+# DATA:
 #   - Read each DVCS ROOT file
 #   - Count events per run using the runnum branch
 #   - Read accumulated charge per run from global.csv
 #   - Resolve beam current per run using the same hard-coded mapping logic
-#     as in the run-by-run script
 #   - Aggregate total counts and total charge by (period, current)
 #   - Compute counts per nC with Poisson uncertainties
 #   - Fit y = m*x + b with weighted least squares
-#   - Produce the same two 2x3 canvases:
-#       (1) counts/nC vs current with fits
-#       (2) percent-of-intercept vs current
+#
+# MC:
+#   - Scan the DVCSGEN MC directory for gen_*.root and rec_*.root files
+#   - Pair generated and reconstructed ROOT files by name
+#   - Identify period and current from the filename
+#   - Treat "nobkg" as 0 nA
+#   - Compute efficiency = N_rec / N_gen
+#   - Compute uncertainty = sqrt(N_rec) / N_gen
+#   - Fit y = m*x + b with weighted least squares
+#
+# Plots produced:
+#   (1) data counts/nC vs current
+#   (2) data percent-of-intercept vs current
+#   (3) MC efficiency vs current
+#   (4) MC percent-of-intercept vs current
+#   (5) data and MC drop from 0 nA on the same subplots
 #
 # Output:
 #   output/dvcs_current_dependence/dvcs_counts_per_nc_vs_current.png
 #   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current.png
+#   output/dvcs_current_dependence/dvcs_efficiency_vs_current_mc.png
+#   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current_mc.png
+#   output/dvcs_current_dependence/dvcs_drop_from_zero_current_data_vs_mc.png
 #
-# Optional diagnostic CSVs:
+# Diagnostic CSVs:
 #   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
 #   output/dvcs_current_dependence/dvcs_current_dependence_current_table.csv
+#   output/dvcs_current_dependence/dvcs_current_dependence_mc_table.csv
 #
 
 import os
@@ -43,7 +57,7 @@ import matplotlib.pyplot as plt
 
 CSV_FILE = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
-PERIOD_FILES = [
+DATA_PERIOD_FILES = [
     ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
     ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
     ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
@@ -53,12 +67,22 @@ PERIOD_FILES = [
 
 PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 
+PERIOD_DISPLAY_FROM_INTERNAL = {
+    "rga_sp18_inb": "Sp18 Inb",
+    "rga_sp18_out": "Sp18 Out",
+    "rga_fa18_inb": "Fa18 Inb",
+    "rga_fa18_out": "Fa18 Out",
+    "rga_sp19_inb": "Sp19 Inb",
+}
+
+MC_DIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen"
+MC_TREE_NAME = "PhysicsEvents"
+
 OUTPUT_DIR = "output/dvcs_current_dependence"
 
 
 # -----------------------------------------------------------------------------
 # Run -> current maps
-# (copied/adapted from the first script)
 # -----------------------------------------------------------------------------
 
 FA18_INB_CURRENT = {
@@ -370,9 +394,72 @@ def read_run_counts_from_root(root_path):
 #enddef
 
 
+def count_tree_entries(root_path, tree_name):
+    """
+    Count total entries in a ROOT tree.
+    """
+    if not os.path.exists(root_path):
+        raise RuntimeError(f"ROOT file not found: {root_path}")
+    #endif
+
+    root_file = uproot.open(root_path)
+    if tree_name not in root_file:
+        raise RuntimeError(f"'{tree_name}' tree not found in {root_path}")
+    #endif
+
+    tree = root_file[tree_name]
+    return int(tree.num_entries)
+#enddef
+
+
+def parse_mc_filename(basename):
+    """
+    Parse names like:
+      gen_dvcsgen_rga_fa18_inb_45nA_10604MeV.root
+      rec_dvcsgen_rga_sp18_out_nobkg_10594MeV.root
+
+    Returns:
+      kind, period_internal, current_nA
+    """
+    if not basename.endswith(".root"):
+        raise RuntimeError(f"Not a ROOT file: {basename}")
+    #endif
+
+    stem = basename[:-5]
+    tokens = stem.split("_")
+
+    if len(tokens) != 7:
+        raise RuntimeError(f"Unexpected MC filename format: {basename}")
+    #endif
+
+    kind = tokens[0]
+    if kind != "gen" and kind != "rec":
+        raise RuntimeError(f"Unexpected MC file prefix in {basename}")
+    #endif
+
+    if tokens[1] != "dvcsgen":
+        raise RuntimeError(f"Unexpected MC generator tag in {basename}")
+    #endif
+
+    period_internal = "_".join(tokens[2:5])
+    current_token = tokens[5]
+
+    if current_token == "nobkg":
+        current_nA = 0
+    else:
+        if not current_token.endswith("nA"):
+            raise RuntimeError(f"Could not parse current token in {basename}")
+        #endif
+        current_nA = int(current_token[:-2])
+    #endif
+
+    return kind, period_internal, current_nA
+#enddef
+
+
 def build_period_aggregation(period_display_name, period_internal_name, root_path, run_charge_map):
     """
-    For one period:
+    For one data period:
       - read run counts from ROOT
       - resolve charge and current for each run
       - build run-level rows
@@ -380,10 +467,6 @@ def build_period_aggregation(period_display_name, period_internal_name, root_pat
 
     Returns:
       run_rows, current_rows
-
-    where
-      run_rows is a list of dicts, one per run
-      current_rows is a list of dicts, one per current
     """
     run_counts = read_run_counts_from_root(root_path)
 
@@ -480,9 +563,91 @@ def build_period_aggregation(period_display_name, period_internal_name, root_pat
 #enddef
 
 
+def build_mc_aggregation(mc_dir):
+    """
+    Scan the MC directory, pair gen and rec files, and compute MC efficiencies.
+
+    Returns:
+      mc_rows
+    """
+    if not os.path.isdir(mc_dir):
+        raise RuntimeError(f"MC directory not found: {mc_dir}")
+    #endif
+
+    grouped = {}
+
+    for basename in sorted(os.listdir(mc_dir)):
+        if not basename.endswith(".root"):
+            continue
+        #endif
+
+        kind, period_internal, current_nA = parse_mc_filename(basename)
+
+        if period_internal not in PERIOD_DISPLAY_FROM_INTERNAL:
+            raise RuntimeError(f"Unknown MC period in filename: {basename}")
+        #endif
+
+        key = (period_internal, current_nA)
+        if key not in grouped:
+            grouped[key] = {"gen": None, "rec": None}
+        #endif
+
+        full_path = os.path.join(mc_dir, basename)
+
+        if grouped[key][kind] is not None:
+            raise RuntimeError(f"Duplicate MC file for {key}: {basename}")
+        #endif
+
+        grouped[key][kind] = full_path
+    #endfor
+
+    mc_rows = []
+
+    for key in sorted(grouped.keys(), key=lambda item: (PERIOD_ORDER.index(PERIOD_DISPLAY_FROM_INTERNAL[item[0]]), item[1])):
+        period_internal, current_nA = key
+        period_display_name = PERIOD_DISPLAY_FROM_INTERNAL[period_internal]
+
+        gen_path = grouped[key]["gen"]
+        rec_path = grouped[key]["rec"]
+
+        if gen_path is None or rec_path is None:
+            raise RuntimeError(
+                f"Missing gen/rec MC pair for period={period_internal}, current={current_nA} nA"
+            )
+        #endif
+
+        n_gen = count_tree_entries(gen_path, MC_TREE_NAME)
+        n_rec = count_tree_entries(rec_path, MC_TREE_NAME)
+
+        if n_gen <= 0:
+            raise RuntimeError(
+                f"Generated MC count <= 0 for period={period_internal}, current={current_nA} nA"
+            )
+        #endif
+
+        efficiency = float(n_rec) / float(n_gen)
+        efficiency_err = math.sqrt(float(n_rec)) / float(n_gen) if n_rec > 0 else 0.0
+
+        mc_rows.append({
+            "period": period_display_name,
+            "period_internal": period_internal,
+            "current_nA": int(current_nA),
+            "n_gen": int(n_gen),
+            "n_rec": int(n_rec),
+            "efficiency": float(efficiency),
+            "efficiency_err": float(efficiency_err),
+            "gen_file": gen_path,
+            "rec_file": rec_path,
+        })
+    #endfor
+
+    return mc_rows
+#enddef
+
+
 def period_points_from_current_rows(current_rows, period_name):
     """
-    Extract x, y, sy arrays for one period from the aggregated current rows.
+    Extract x, y, sy arrays for one data period from the aggregated current rows.
     """
     rows = [r for r in current_rows if r["period"] == period_name]
     rows = sorted(rows, key=lambda r: r["current_nA"])
@@ -494,6 +659,25 @@ def period_points_from_current_rows(current_rows, period_name):
     x = np.asarray([float(r["current_nA"]) for r in rows], dtype=float)
     y = np.asarray([float(r["counts_per_nC"]) for r in rows], dtype=float)
     sy = np.asarray([float(r["counts_per_nC_err"]) for r in rows], dtype=float)
+
+    return x, y, sy, rows
+#enddef
+
+
+def period_points_from_mc_rows(mc_rows, period_name):
+    """
+    Extract x, y, sy arrays for one MC period from the MC table.
+    """
+    rows = [r for r in mc_rows if r["period"] == period_name]
+    rows = sorted(rows, key=lambda r: r["current_nA"])
+
+    if len(rows) == 0:
+        raise RuntimeError(f"No MC rows found for period {period_name}")
+    #endif
+
+    x = np.asarray([float(r["current_nA"]) for r in rows], dtype=float)
+    y = np.asarray([float(r["efficiency"]) for r in rows], dtype=float)
+    sy = np.asarray([float(r["efficiency_err"]) for r in rows], dtype=float)
 
     return x, y, sy, rows
 #enddef
@@ -526,7 +710,7 @@ def write_run_table_csv(path, run_rows):
 
 def write_current_table_csv(path, current_rows):
     """
-    Write a diagnostic current-level CSV.
+    Write a diagnostic current-level CSV for data.
     """
     fieldnames = [
         "period",
@@ -549,6 +733,70 @@ def write_current_table_csv(path, current_rows):
 #enddef
 
 
+def write_mc_table_csv(path, mc_rows):
+    """
+    Write a diagnostic MC table.
+    """
+    fieldnames = [
+        "period",
+        "period_internal",
+        "current_nA",
+        "n_gen",
+        "n_rec",
+        "efficiency",
+        "efficiency_err",
+        "gen_file",
+        "rec_file",
+    ]
+
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in mc_rows:
+            writer.writerow(row)
+        #endfor
+    #endwith
+#enddef
+
+
+def compute_percent_curve(xfit, fit_result):
+    """
+    Convert y = m*x + b into percent-of-intercept:
+      100 * (m*x + b) / b
+    """
+    m = fit_result["m"]
+    b = fit_result["b"]
+    sm = fit_result["sm"]
+
+    pct_fit = 100.0 * ((m * xfit + b) / b)
+    pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
+    pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
+
+    return pct_fit, pct_fit_lo, pct_fit_hi
+#enddef
+
+
+def compute_percent_slope_and_error(fit_result):
+    """
+    For p = 100*m/b, propagate uncertainty using m, b, cov(m,b).
+    """
+    m = fit_result["m"]
+    b = fit_result["b"]
+    sm = fit_result["sm"]
+    sb = fit_result["sb"]
+    cov_mb = fit_result["cov_mb"]
+
+    slope_pct = 100.0 * (m / b)
+
+    dp_dm = 100.0 / b
+    dp_db = -100.0 * m / (b * b)
+    var_p = dp_dm * dp_dm * (sm * sm) + dp_db * dp_db * (sb * sb) + 2.0 * dp_dm * dp_db * cov_mb
+    slope_pct_err = math.sqrt(var_p) if var_p >= 0.0 else float("nan")
+
+    return slope_pct, slope_pct_err
+#enddef
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -562,17 +810,17 @@ def main():
     print(f"  {CSV_FILE}")
 
     # -------------------------------------------------------------------------
-    # Build run-level and current-level tables from the full ROOT files.
+    # Build data run-level and current-level tables.
     # -------------------------------------------------------------------------
     all_run_rows = []
     all_current_rows = []
 
     print("")
-    print("Processing ROOT files and aggregating by current...")
-    for period_display_name, period_internal_name, root_path in PERIOD_FILES:
+    print("Processing DATA ROOT files and aggregating by current...")
+    for period_display_name, period_internal_name, root_path in DATA_PERIOD_FILES:
         print("")
         print("=" * 90)
-        print(f"Period: {period_display_name}")
+        print(f"DATA period: {period_display_name}")
         print(f"Internal label: {period_internal_name}")
         print(f"ROOT file: {root_path}")
         print("=" * 90)
@@ -603,17 +851,37 @@ def main():
     #endfor
 
     # -------------------------------------------------------------------------
+    # Build MC table.
+    # -------------------------------------------------------------------------
+    print("")
+    print("Processing MC ROOT files and computing efficiencies...")
+    mc_rows = build_mc_aggregation(MC_DIR)
+
+    for row in mc_rows:
+        print(
+            f"  {row['period']:8s}  "
+            f"{int(row['current_nA']):3d} nA  "
+            f"N_gen={int(row['n_gen']):8d}  "
+            f"N_rec={int(row['n_rec']):8d}  "
+            f"eff={float(row['efficiency']):.8f} +/- {float(row['efficiency_err']):.8f}"
+        )
+    #endfor
+
+    # -------------------------------------------------------------------------
     # Write diagnostic CSVs.
     # -------------------------------------------------------------------------
     run_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_run_table.csv")
     current_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_current_table.csv")
+    mc_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_mc_table.csv")
 
     write_run_table_csv(run_table_csv, all_run_rows)
     write_current_table_csv(current_table_csv, all_current_rows)
+    write_mc_table_csv(mc_table_csv, mc_rows)
 
     print("")
     print(f"[saved] {run_table_csv}")
     print(f"[saved] {current_table_csv}")
+    print(f"[saved] {mc_table_csv}")
 
     # -------------------------------------------------------------------------
     # Choose a consistent color per period.
@@ -629,44 +897,66 @@ def main():
     #endfor
 
     band_alpha = 0.20
+    xfit = np.linspace(0.0, 100.0, 300)
 
     # -------------------------------------------------------------------------
-    # Canvas 1: counts per nC vs current with y = m*x + b fits.
+    # Fit DATA.
+    # -------------------------------------------------------------------------
+    data_fit_results = {}
+
+    print("")
+    print("=== DATA fits: y = m*x + b for counts_per_nC vs current ===")
+
+    for period in PERIOD_ORDER:
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
+        fr = weighted_linear_fit(x, y, sy)
+        data_fit_results[period] = fr
+
+        print(
+            f"{period}: m = {fr['m']:.10f} +/- {fr['sm']:.10f}, "
+            f"b = {fr['b']:.10f} +/- {fr['sb']:.10f}, "
+            f"chi2/ndof = {fr['chi2']:.2f}/{fr['ndof']}"
+        )
+    #endfor
+
+    # -------------------------------------------------------------------------
+    # Fit MC.
+    # -------------------------------------------------------------------------
+    mc_fit_results = {}
+
+    print("")
+    print("=== MC fits: y = m*x + b for efficiency vs current ===")
+
+    for period in PERIOD_ORDER:
+        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
+        fr = weighted_linear_fit(x, y, sy)
+        mc_fit_results[period] = fr
+
+        print(
+            f"{period}: m = {fr['m']:.10f} +/- {fr['sm']:.10f}, "
+            f"b = {fr['b']:.10f} +/- {fr['sb']:.10f}, "
+            f"chi2/ndof = {fr['chi2']:.2f}/{fr['ndof']}"
+        )
+    #endfor
+
+    # -------------------------------------------------------------------------
+    # Plot 1: DATA counts per nC vs current
     # -------------------------------------------------------------------------
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs1 = axs1.flatten()
 
-    fit_results = {}
-    xfit = np.linspace(0.0, 100.0, 300)
-
-    print("")
-    print("=== Canvas 1 fits: y = m*x + b for counts_per_nC vs current ===")
-
     for i, period in enumerate(PERIOD_ORDER):
         ax = axs1[i]
-
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-
-        fr = weighted_linear_fit(x, y, sy)
-        fit_results[period] = fr
-
-        m = fr["m"]
-        b = fr["b"]
-        sm = fr["sm"]
-        sb = fr["sb"]
-        chi2 = fr["chi2"]
-        ndof = fr["ndof"]
-
-        print(f"{period}: m = {m:.10f} +/- {sm:.10f}, b = {b:.10f} +/- {sb:.10f}, chi2/ndof = {chi2:.2f}/{ndof}")
-
         c = period_color[period]
 
-        yfit = m * xfit + b
-        yfit_lo = (m - sm) * xfit + b
-        yfit_hi = (m + sm) * xfit + b
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
+        fr = data_fit_results[period]
+
+        yfit = fr["m"] * xfit + fr["b"]
+        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
+        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
 
         ax.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
-
         ax.errorbar(
             x,
             y,
@@ -674,7 +964,7 @@ def main():
             fmt="o",
             capsize=3,
             color=c,
-            label=f"m={f5(m)} +/- {f5(sm)}\n b={f5(b)} +/- {f5(sb)}",
+            label=f"m={f5(fr['m'])} +/- {f5(fr['sm'])}\n b={f5(fr['b'])} +/- {f5(fr['sb'])}",
         )
         ax.plot(xfit, yfit, color=c)
 
@@ -694,22 +984,15 @@ def main():
     axc.grid(True, alpha=0.3)
 
     for period in PERIOD_ORDER:
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-
-        fr = fit_results[period]
-        m = fr["m"]
-        b = fr["b"]
-        sm = fr["sm"]
-        sb = fr["sb"]
-
         c = period_color[period]
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
+        fr = data_fit_results[period]
 
-        yfit = m * xfit + b
-        yfit_lo = (m - sm) * xfit + b
-        yfit_hi = (m + sm) * xfit + b
+        yfit = fr["m"] * xfit + fr["b"]
+        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
+        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
 
         axc.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
-
         axc.errorbar(
             x,
             y,
@@ -717,7 +1000,7 @@ def main():
             fmt="o",
             capsize=3,
             color=c,
-            label=f"{period}: m={f5(m)} +/- {f5(sm)}, b={f5(b)} +/- {f5(sb)}",
+            label=f"{period}: m={f5(fr['m'])} +/- {f5(fr['sm'])}, b={f5(fr['b'])} +/- {f5(fr['sb'])}",
         )
         axc.plot(xfit, yfit, color=c)
     #endfor
@@ -726,51 +1009,34 @@ def main():
 
     out1 = os.path.join(OUTPUT_DIR, "dvcs_counts_per_nc_vs_current.png")
     fig1.savefig(out1, dpi=200)
-
     print("")
     print(f"[saved] {out1}")
 
     # -------------------------------------------------------------------------
-    # Canvas 2: percent-of-intercept vs current.
+    # Plot 2: DATA percent-of-intercept vs current
     # -------------------------------------------------------------------------
     fig2, axs2 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs2 = axs2.flatten()
 
     print("")
-    print("=== Canvas 2 derived slopes: percent(x) = 100*(m*x+b)/b ===")
+    print("=== DATA percent-of-intercept slopes ===")
 
     for i, period in enumerate(PERIOD_ORDER):
         ax = axs2[i]
-
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-
-        fr = fit_results[period]
-        m = fr["m"]
-        b = fr["b"]
-        sm = fr["sm"]
-        sb = fr["sb"]
-        cov_mb = fr["cov_mb"]
-
-        pct = 100.0 * (y / b)
-        pct_err = 100.0 * np.sqrt((sy / b) ** 2 + ((y * sb) / (b * b)) ** 2)
-
-        pct_fit = 100.0 * ((m * xfit + b) / b)
-        pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
-        pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
-
-        slope_pct = 100.0 * (m / b)
-
-        dp_dm = 100.0 / b
-        dp_db = -100.0 * m / (b * b)
-        var_p = dp_dm * dp_dm * (sm * sm) + dp_db * dp_db * (sb * sb) + 2.0 * dp_dm * dp_db * cov_mb
-        slope_pct_err = math.sqrt(var_p) if var_p >= 0.0 else float("nan")
-
-        print(f"{period}: b = {b:.10f} +/- {sb:.10f}, slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
-
         c = period_color[period]
 
-        ax.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
+        fr = data_fit_results[period]
 
+        pct = 100.0 * (y / fr["b"])
+        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
+
+        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
+        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
+
+        print(f"{period}: slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
+
+        ax.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
         ax.errorbar(
             x,
             pct,
@@ -778,7 +1044,7 @@ def main():
             fmt="o",
             capsize=3,
             color=c,
-            label=f"b={f5(b)} +/- {f5(sb)}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
+            label=f"b={f5(fr['b'])} +/- {f5(fr['sb'])}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
         )
         ax.plot(xfit, pct_fit, color=c)
 
@@ -800,32 +1066,17 @@ def main():
     axc2.grid(True, alpha=0.3)
 
     for period in PERIOD_ORDER:
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-
-        fr = fit_results[period]
-        m = fr["m"]
-        b = fr["b"]
-        sm = fr["sm"]
-        sb = fr["sb"]
-        cov_mb = fr["cov_mb"]
-
-        pct = 100.0 * (y / b)
-        pct_err = 100.0 * np.sqrt((sy / b) ** 2 + ((y * sb) / (b * b)) ** 2)
-
-        pct_fit = 100.0 * ((m * xfit + b) / b)
-        pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
-        pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
-
-        slope_pct = 100.0 * (m / b)
-        dp_dm = 100.0 / b
-        dp_db = -100.0 * m / (b * b)
-        var_p = dp_dm * dp_dm * (sm * sm) + dp_db * dp_db * (sb * sb) + 2.0 * dp_dm * dp_db * cov_mb
-        slope_pct_err = math.sqrt(var_p) if var_p >= 0.0 else float("nan")
-
         c = period_color[period]
+        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
+        fr = data_fit_results[period]
+
+        pct = 100.0 * (y / fr["b"])
+        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
+
+        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
+        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
 
         axc2.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
-
         axc2.errorbar(
             x,
             pct,
@@ -842,9 +1093,298 @@ def main():
 
     out2 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_vs_current.png")
     fig2.savefig(out2, dpi=200)
-
     print("")
     print(f"[saved] {out2}")
+
+    # -------------------------------------------------------------------------
+    # Plot 3: MC efficiency vs current
+    # -------------------------------------------------------------------------
+    fig3, axs3 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
+    axs3 = axs3.flatten()
+
+    for i, period in enumerate(PERIOD_ORDER):
+        ax = axs3[i]
+        c = period_color[period]
+
+        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
+        fr = mc_fit_results[period]
+
+        yfit = fr["m"] * xfit + fr["b"]
+        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
+        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
+
+        ax.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
+        ax.errorbar(
+            x,
+            y,
+            yerr=sy,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label=f"m={f5(fr['m'])} +/- {f5(fr['sm'])}\n b={f5(fr['b'])} +/- {f5(fr['sb'])}",
+        )
+        ax.plot(xfit, yfit, color=c, linestyle="--")
+
+        ax.set_title(period)
+        ax.set_xlim(0.0, 100.0)
+        ax.set_xlabel("Beam current (nA)")
+        ax.set_ylabel("MC reconstruction efficiency")
+        ax.grid(True, alpha=0.3)
+        ax.legend(frameon=True)
+    #endfor
+
+    axc3 = axs3[5]
+    axc3.set_title("All periods (overlay)")
+    axc3.set_xlim(0.0, 100.0)
+    axc3.set_xlabel("Beam current (nA)")
+    axc3.set_ylabel("MC reconstruction efficiency")
+    axc3.grid(True, alpha=0.3)
+
+    for period in PERIOD_ORDER:
+        c = period_color[period]
+        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
+        fr = mc_fit_results[period]
+
+        yfit = fr["m"] * xfit + fr["b"]
+        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
+        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
+
+        axc3.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
+        axc3.errorbar(
+            x,
+            y,
+            yerr=sy,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label=f"{period}: m={f5(fr['m'])} +/- {f5(fr['sm'])}, b={f5(fr['b'])} +/- {f5(fr['sb'])}",
+        )
+        axc3.plot(xfit, yfit, color=c, linestyle="--")
+    #endfor
+
+    axc3.legend(frameon=True, fontsize=9)
+
+    out3 = os.path.join(OUTPUT_DIR, "dvcs_efficiency_vs_current_mc.png")
+    fig3.savefig(out3, dpi=200)
+    print("")
+    print(f"[saved] {out3}")
+
+    # -------------------------------------------------------------------------
+    # Plot 4: MC percent-of-intercept vs current
+    # -------------------------------------------------------------------------
+    fig4, axs4 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
+    axs4 = axs4.flatten()
+
+    print("")
+    print("=== MC percent-of-intercept slopes ===")
+
+    for i, period in enumerate(PERIOD_ORDER):
+        ax = axs4[i]
+        c = period_color[period]
+
+        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
+        fr = mc_fit_results[period]
+
+        pct = 100.0 * (y / fr["b"])
+        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
+
+        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
+        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
+
+        print(f"{period}: slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
+
+        ax.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
+        ax.errorbar(
+            x,
+            pct,
+            yerr=pct_err,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label=f"b={f5(fr['b'])} +/- {f5(fr['sb'])}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
+        )
+        ax.plot(xfit, pct_fit, color=c, linestyle="--")
+
+        ax.set_title(period)
+        ax.set_xlim(0.0, 100.0)
+        ax.set_ylim(0.0, 150.0)
+        ax.set_xlabel("Beam current (nA)")
+        ax.set_ylabel("Percent of intercept b (%)")
+        ax.grid(True, alpha=0.3)
+        ax.legend(frameon=True)
+    #endfor
+
+    axc4 = axs4[5]
+    axc4.set_title("All periods (overlay)")
+    axc4.set_xlim(0.0, 100.0)
+    axc4.set_ylim(0.0, 150.0)
+    axc4.set_xlabel("Beam current (nA)")
+    axc4.set_ylabel("Percent of intercept b (%)")
+    axc4.grid(True, alpha=0.3)
+
+    for period in PERIOD_ORDER:
+        c = period_color[period]
+        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
+        fr = mc_fit_results[period]
+
+        pct = 100.0 * (y / fr["b"])
+        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
+
+        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
+        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
+
+        axc4.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
+        axc4.errorbar(
+            x,
+            pct,
+            yerr=pct_err,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
+        )
+        axc4.plot(xfit, pct_fit, color=c, linestyle="--")
+    #endfor
+
+    axc4.legend(frameon=True, fontsize=9)
+
+    out4 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_vs_current_mc.png")
+    fig4.savefig(out4, dpi=200)
+    print("")
+    print(f"[saved] {out4}")
+
+    # -------------------------------------------------------------------------
+    # Plot 5: DATA and MC drop from 0 nA on the same subplots
+    #
+    # Definition:
+    #   drop(x) = 100 - percent_of_intercept(x)
+    #
+    # so a positive value means a loss relative to the fitted 0 nA efficiency.
+    # -------------------------------------------------------------------------
+    fig5, axs5 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
+    axs5 = axs5.flatten()
+
+    for i, period in enumerate(PERIOD_ORDER):
+        ax = axs5[i]
+        c = period_color[period]
+
+        # DATA
+        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
+        frd = data_fit_results[period]
+
+        data_pct = 100.0 * (yd / frd["b"])
+        data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
+        data_drop = 100.0 - data_pct
+        data_drop_err = data_pct_err
+
+        data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
+        data_drop_fit = 100.0 - data_pct_fit
+        data_drop_fit_lo = 100.0 - data_pct_fit_hi
+        data_drop_fit_hi = 100.0 - data_pct_fit_lo
+
+        # MC
+        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
+        frm = mc_fit_results[period]
+
+        mc_pct = 100.0 * (ym / frm["b"])
+        mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
+        mc_drop = 100.0 - mc_pct
+        mc_drop_err = mc_pct_err
+
+        mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
+        mc_drop_fit = 100.0 - mc_pct_fit
+        mc_drop_fit_lo = 100.0 - mc_pct_fit_hi
+        mc_drop_fit_hi = 100.0 - mc_pct_fit_lo
+
+        ax.fill_between(xfit, data_drop_fit_lo, data_drop_fit_hi, color=c, alpha=0.12, linewidth=0)
+        ax.errorbar(
+            xd,
+            data_drop,
+            yerr=data_drop_err,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label="Data",
+        )
+        ax.plot(xfit, data_drop_fit, color=c)
+
+        ax.fill_between(xfit, mc_drop_fit_lo, mc_drop_fit_hi, color=c, alpha=0.08, linewidth=0)
+        ax.errorbar(
+            xm,
+            mc_drop,
+            yerr=mc_drop_err,
+            fmt="s",
+            capsize=3,
+            color=c,
+            label="MC",
+        )
+        ax.plot(xfit, mc_drop_fit, color=c, linestyle="--")
+
+        ax.set_title(period)
+        ax.set_xlim(0.0, 100.0)
+        ax.set_xlabel("Beam current (nA)")
+        ax.set_ylabel("Drop from fitted 0 nA (%)")
+        ax.grid(True, alpha=0.3)
+        ax.legend(frameon=True)
+    #endfor
+
+    axc5 = axs5[5]
+    axc5.set_title("All periods (overlay)")
+    axc5.set_xlim(0.0, 100.0)
+    axc5.set_xlabel("Beam current (nA)")
+    axc5.set_ylabel("Drop from fitted 0 nA (%)")
+    axc5.grid(True, alpha=0.3)
+
+    for period in PERIOD_ORDER:
+        c = period_color[period]
+
+        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
+        frd = data_fit_results[period]
+        data_pct = 100.0 * (yd / frd["b"])
+        data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
+        data_drop = 100.0 - data_pct
+        data_drop_err = data_pct_err
+        data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
+        data_drop_fit = 100.0 - data_pct_fit
+
+        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
+        frm = mc_fit_results[period]
+        mc_pct = 100.0 * (ym / frm["b"])
+        mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
+        mc_drop = 100.0 - mc_pct
+        mc_drop_err = mc_pct_err
+        mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
+        mc_drop_fit = 100.0 - mc_pct_fit
+
+        axc5.errorbar(
+            xd,
+            data_drop,
+            yerr=data_drop_err,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label=f"{period} data",
+        )
+        axc5.plot(xfit, data_drop_fit, color=c)
+
+        axc5.errorbar(
+            xm,
+            mc_drop,
+            yerr=mc_drop_err,
+            fmt="s",
+            capsize=3,
+            color=c,
+            label=f"{period} MC",
+        )
+        axc5.plot(xfit, mc_drop_fit, color=c, linestyle="--")
+    #endfor
+
+    axc5.legend(frameon=True, fontsize=8)
+
+    out5 = os.path.join(OUTPUT_DIR, "dvcs_drop_from_zero_current_data_vs_mc.png")
+    fig5.savefig(out5, dpi=200)
+    print("")
+    print(f"[saved] {out5}")
     print("")
 #enddef
 
