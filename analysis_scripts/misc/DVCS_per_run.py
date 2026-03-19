@@ -34,7 +34,7 @@ FA18_INB_CURRENT = {
 
     # 40 nA
     5335: 40, 5339: 40, 5341: 40,
-    5340: 40, 5342: 40, 5343: 40, 5344: 40, # reclassified as 40 nA
+    5340: 40, 5342: 40, 5343: 40, 5344: 40,
 
     # 45 nA
     5032: 45, 5036: 45, 5038: 45, 5039: 45, 5040: 45, 5041: 45,
@@ -63,7 +63,7 @@ FA18_INB_CURRENT = {
     5239: 45,
     5336: 45,
 
-    # 50 nA (including 5340-5345)
+    # 50 nA
     5356: 50, 5357: 50, 5358: 50, 5359: 50, 5360: 50, 5361: 50,
     5362: 50, 5366: 50,
 
@@ -76,7 +76,6 @@ FA18_INB_CURRENT = {
 }
 
 FA18_OUT_CURRENT = {
-
     # 5 nA
     5443: 5,
 
@@ -115,7 +114,7 @@ FA18_OUT_CURRENT = {
     5645: 50, 5646: 50, 5647: 50, 5648: 50, 5649: 50, 5650: 50,
     5651: 50, 5652: 50, 5654: 50, 5655: 50, 5656: 50, 5662: 50,
     5663: 50, 5664: 50, 5665: 50, 5666: 50,
-    5615: 50, # redefined from 5 nA
+    5615: 50,
 
     # Extra Fa18 Out 50 nA runs
     5505: 50, 5567: 50, 5617: 50, 5621: 50, 5623: 50,
@@ -188,6 +187,7 @@ def resolve_current(period_label, runnum):
     if label == "rga_sp19_inb":
         if runnum == 6616:
             return True, 5
+        #endif
         return True, 50
     #endif
 
@@ -238,10 +238,41 @@ for period_label, root_path in period_files:
     tree = root_file["PhysicsEvents"]
 
     # Get the runnum branch data
-    runnum_data = tree["runnum"].array()
+    runnum_data = tree["runnum"].array(library="np")
 
     # Count events per run number
     unique_runs, event_counts = np.unique(runnum_data, return_counts=True)
+
+    # Extra debug for Sp18 Out 30 nA region
+    if period_label == "rga_sp18_out":
+        print("\nDEBUG: checking Sp18 Out runs in the 30 nA range (3211-3293)")
+        debug_mask_30 = (unique_runs >= 3211) & (unique_runs <= 3293)
+        debug_runs_30 = unique_runs[debug_mask_30]
+        debug_counts_30 = event_counts[debug_mask_30]
+
+        print(f"DEBUG: number of unique runs seen in ROOT in 3211-3293 = {len(debug_runs_30)}")
+        if len(debug_runs_30) > 0:
+            for dbg_run, dbg_count in zip(debug_runs_30, debug_counts_30):
+                dbg_run_int = int(dbg_run)
+                dbg_count_int = int(dbg_count)
+
+                in_charge = dbg_run_int in run_charge_map
+                dbg_charge = run_charge_map[dbg_run_int] if in_charge else None
+                dbg_ok_cur, dbg_current = resolve_current(period_label, dbg_run_int)
+
+                print(
+                    f"  DEBUG run {dbg_run_int}: "
+                    f"count={dbg_count_int}, "
+                    f"in_charge_csv={in_charge}, "
+                    f"charge_nC={dbg_charge if in_charge else 'MISSING'}, "
+                    f"resolve_ok={dbg_ok_cur}, "
+                    f"resolved_current={dbg_current}"
+                )
+            #endfor
+        else:
+            print("  DEBUG: no runs in 3211-3293 were found in the ROOT tree.")
+        #endif
+    #endif
 
     # Group by current: current_nA -> lists of runs / values / errors
     per_current_runs = defaultdict(list)
@@ -252,36 +283,87 @@ for period_label, root_path in period_files:
     zero_charge_count = 0
     unknown_current_count = 0
 
+    # Extra debug counters for Sp18 Out 30 nA region
+    debug_30_found_in_root = 0
+    debug_30_missing_charge = 0
+    debug_30_zero_charge = 0
+    debug_30_unknown_current = 0
+    debug_30_added_to_plot = 0
+
     # Loop over runs in this period
     for run_num, count in zip(unique_runs, event_counts):
-        if run_num not in run_charge_map:
+        run_num_int = int(run_num)
+        count_int = int(count)
+
+        is_sp18_out_30_range = (period_label == "rga_sp18_out" and 3211 <= run_num_int <= 3293)
+        if is_sp18_out_30_range:
+            debug_30_found_in_root += 1
+        #endif
+
+        if run_num_int not in run_charge_map:
             missing_charge_count += 1
+            if is_sp18_out_30_range:
+                debug_30_missing_charge += 1
+                print(f"DEBUG: run {run_num_int} is in 3211-3293 but missing from charge CSV.")
+            #endif
             continue
         #endif
 
-        charge = run_charge_map[run_num]
+        charge = run_charge_map[run_num_int]
         if charge <= 0.0:
-            print(f"Warning: Run {run_num} has zero or negative charge, skipping.")
+            print(f"Warning: Run {run_num_int} has zero or negative charge, skipping.")
             zero_charge_count += 1
+            if is_sp18_out_30_range:
+                debug_30_zero_charge += 1
+                print(f"DEBUG: run {run_num_int} is in 3211-3293 but has non-positive charge {charge}.")
+            #endif
             continue
         #endif
 
         # Events per nC and stat uncertainty
-        value = count / charge
-        error = np.sqrt(count) / charge if count > 0.0 else 0.0
+        value = count_int / charge
+        error = np.sqrt(count_int) / charge if count_int > 0.0 else 0.0
 
         # Resolve current
-        ok_cur, current_nA = resolve_current(period_label, int(run_num))
+        ok_cur, current_nA = resolve_current(period_label, run_num_int)
         if not ok_cur:
-            print(f"Warning: Run {run_num} has charge info but no current mapping for period {period_label}; skipping in plot.")
+            print(f"Warning: Run {run_num_int} has charge info but no current mapping for period {period_label}; skipping in plot.")
             unknown_current_count += 1
+            if is_sp18_out_30_range:
+                debug_30_unknown_current += 1
+                print(f"DEBUG: run {run_num_int} is in 3211-3293 but failed current resolution.")
+            #endif
             continue
         #endif
 
-        per_current_runs[current_nA].append(run_num)
+        per_current_runs[current_nA].append(run_num_int)
         per_current_values[current_nA].append(value)
         per_current_errors[current_nA].append(error)
+
+        if is_sp18_out_30_range:
+            debug_30_added_to_plot += 1
+            print(
+                f"DEBUG: run {run_num_int} added to plot with current={current_nA}, "
+                f"count={count_int}, charge={charge}, value={value:.6f}, error={error:.6f}"
+            )
+        #endif
     #endfor
+
+    if period_label == "rga_sp18_out":
+        print("\nDEBUG SUMMARY for Sp18 Out 30 nA region (3211-3293):")
+        print(f"  runs found in ROOT            = {debug_30_found_in_root}")
+        print(f"  missing from charge CSV       = {debug_30_missing_charge}")
+        print(f"  non-positive charge           = {debug_30_zero_charge}")
+        print(f"  failed current resolution     = {debug_30_unknown_current}")
+        print(f"  successfully added to plot    = {debug_30_added_to_plot}")
+        if 30 in per_current_runs:
+            print(f"  total plotted runs at 30 nA   = {len(per_current_runs[30])}")
+            print(f"  plotted 30 nA runs            = {sorted(per_current_runs[30])}")
+        else:
+            print("  total plotted runs at 30 nA   = 0")
+            print("  plotted 30 nA runs            = []")
+        #endif
+    #endif
 
     # If no runs with both charge and current info, skip plotting
     if not per_current_runs:
