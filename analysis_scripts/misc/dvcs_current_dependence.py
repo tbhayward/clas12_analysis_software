@@ -1082,8 +1082,8 @@ def main():
         ax.plot(xfit, pct_fit, color=c)
 
         ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_ylim(0.0, 150.0)
+        ax.set_xlim(0.0, 80.0)
+        ax.set_ylim(0.4, 120.0)
         ax.set_xlabel("Beam current (nA)")
         ax.set_ylabel("Percent of intercept b (%)")
         ax.grid(True, alpha=0.3)
