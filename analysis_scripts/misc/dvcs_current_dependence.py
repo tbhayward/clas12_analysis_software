@@ -39,10 +39,17 @@
 #   output/dvcs_current_dependence/dvcs_current_dependence_current_table.csv
 #   output/dvcs_current_dependence/dvcs_current_dependence_mc_table.csv
 #
+# Temporary runtime optional override:
+#   --skip_temp_heavy_mc
+#     skips:
+#       rga_sp18_out at 45 nA
+#       rga_fa18_out at 50 nA
+#
 
 import os
 import math
 import csv
+import argparse
 from collections import defaultdict
 
 import uproot
@@ -563,7 +570,7 @@ def build_period_aggregation(period_display_name, period_internal_name, root_pat
 #enddef
 
 
-def build_mc_aggregation(mc_dir):
+def build_mc_aggregation(mc_dir, skip_temp_heavy_mc=False):
     """
     Scan the MC directory, pair gen and rec files, and compute MC efficiencies.
 
@@ -572,6 +579,13 @@ def build_mc_aggregation(mc_dir):
     """
     if not os.path.isdir(mc_dir):
         raise RuntimeError(f"MC directory not found: {mc_dir}")
+    #endif
+
+    skip_pairs = set()
+    if skip_temp_heavy_mc:
+        skip_pairs.add(("rga_sp18_out", 45))
+        skip_pairs.add(("rga_fa18_inb", 50))
+        skip_pairs.add(("rga_fa18_out", 50))
     #endif
 
     grouped = {}
@@ -585,6 +599,10 @@ def build_mc_aggregation(mc_dir):
 
         if period_internal not in PERIOD_DISPLAY_FROM_INTERNAL:
             raise RuntimeError(f"Unknown MC period in filename: {basename}")
+        #endif
+
+        if (period_internal, current_nA) in skip_pairs:
+            continue
         #endif
 
         key = (period_internal, current_nA)
@@ -798,6 +816,14 @@ def compute_percent_slope_and_error(fit_result):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--skip_temp_heavy_mc",
+        action="store_true",
+        help="Temporarily skip rga_sp18_out 45 nA MC and rga_fa18_out 50 nA MC.",
+    )
+    args = parser.parse_args()
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # -------------------------------------------------------------------------
@@ -855,7 +881,13 @@ def main():
     # -------------------------------------------------------------------------
     print("")
     print("Processing MC ROOT files and computing efficiencies...")
-    mc_rows = build_mc_aggregation(MC_DIR)
+    if args.skip_temp_heavy_mc:
+        print("Temporary MC skip override is ON:")
+        print("  skipping rga_sp18_out at 45 nA")
+        print("  skipping rga_fa18_out at 50 nA")
+    #endif
+
+    mc_rows = build_mc_aggregation(MC_DIR, skip_temp_heavy_mc=args.skip_temp_heavy_mc)
 
     for row in mc_rows:
         print(
@@ -1122,6 +1154,10 @@ def main():
             yerr=sy,
             fmt="o",
             capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
             color=c,
             label=f"m={f5(fr['m'])} +/- {f5(fr['sm'])}\n b={f5(fr['b'])} +/- {f5(fr['sb'])}",
         )
@@ -1158,6 +1194,10 @@ def main():
             yerr=sy,
             fmt="o",
             capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
             color=c,
             label=f"{period}: m={f5(fr['m'])} +/- {f5(fr['sm'])}, b={f5(fr['b'])} +/- {f5(fr['sb'])}",
         )
@@ -1203,6 +1243,10 @@ def main():
             yerr=pct_err,
             fmt="o",
             capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
             color=c,
             label=f"b={f5(fr['b'])} +/- {f5(fr['sb'])}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
         )
@@ -1243,6 +1287,10 @@ def main():
             yerr=pct_err,
             fmt="o",
             capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
             color=c,
             label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
         )
@@ -1300,8 +1348,12 @@ def main():
             xm,
             mc_pct,
             yerr=mc_pct_err,
-            fmt="s",
+            fmt="o",
             capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
             color=c,
             label="MC",
         )
@@ -1339,6 +1391,7 @@ def main():
         mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
         mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
 
+        axc5.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=c, alpha=0.08, linewidth=0)
         axc5.errorbar(
             xd,
             data_pct,
@@ -1350,12 +1403,17 @@ def main():
         )
         axc5.plot(xfit, data_pct_fit, color=c)
 
+        axc5.fill_between(xfit, mc_pct_fit_lo, mc_pct_fit_hi, color=c, alpha=0.05, linewidth=0)
         axc5.errorbar(
             xm,
             mc_pct,
             yerr=mc_pct_err,
-            fmt="s",
+            fmt="o",
             capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
             color=c,
             label=f"{period} MC",
         )
