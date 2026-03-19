@@ -10,18 +10,30 @@
 //
 // - Applies per-period and combined-period efficiency corrections from
 //   imports/efficiency.json when kApplyEfficiencyCorrections is true.
-//   The efficiency map is built by:
-//     * For each period {Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out, Sp19 Inb}:
-//         - Each period points to its own unique efficiency_scheme key.
-//         - For each current in that period, take "efficiency_fraction" and
-//           "uncertainty_fraction" from that period's scheme.
-//         - Weight by "counts" from the JSON to get a counts-weighted mean
-//           efficiency and its uncertainty.
-//     * For combined labels {Fa18, Sp18, 10.6 GeV, 10.2 GeV}:
-//         - Combine period efficiencies using total counts per period as
-//           weights (again as a weighted mean with propagated uncertainty).
+//
+//   Efficiency map construction:
+//
+//     * For each base period
+//         {Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out, Sp19 Inb}:
+//         - Read that period's efficiency_scheme from the JSON.
+//         - For each listed current, take efficiency_fraction and
+//           uncertainty_fraction.
+//         - Build a counts-weighted mean efficiency for that period.
+//         - Store the total counts used for that period.
+//
 //     * Fa18 Inb Supp is assigned the same efficiency as Fa18 Inb and is
 //       not used in any combined-group weighting.
+//
+//     * For combined labels
+//         {Fa18, Sp18, 10.6 GeV}:
+//         - The effective efficiency is now computed PER-ROW, and only includes
+//           member periods whose acceptance for that CSV row is non-zero.
+//         - The row-dependent combination still uses the period total counts
+//           from efficiency.json as the weights, but restricted to the member
+//           periods that contribute in that row.
+//
+//     * 10.2 GeV remains equivalent to Sp19 Inb.
+//
 //   The efficiency uncertainty is propagated into the cross section stat error
 //   as an extra relative term in quadrature.
 //
@@ -30,20 +42,18 @@
 //
 // -----------------------------------------------------------------------------
 //
-// IMPORTANT UPDATE (per user request):
+// IMPORTANT UPDATE:
 //
-// For combined labels (Fa18, Sp18, 10.6 GeV), the *effective* integrated
-// luminosity used in the cross section denominator is now computed PER-ROW,
-// and only includes member periods whose acceptance for that CSV row is
+// For combined labels (Fa18, Sp18, 10.6 GeV), BOTH the effective integrated
+// luminosity and the effective efficiency correction are now computed PER-ROW,
+// and only include member periods whose acceptance for that CSV row is
 // non-zero (acceptance cell is non-empty / value > 0).
 //
-// This prevents the combined-group normalization from including charge from
-// a period that has zero acceptance in that bin.
+// This prevents the combined-group normalization from including charge or
+// efficiency information from a period that has zero acceptance in that bin.
 //
-// The per-period luminosities (Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out, Sp19 Inb)
-// remain constant as before. Only the combined-group columns
-// "integrated luminosity, Fa18 (nC)", "integrated luminosity, Sp18 (nC)",
-// and "integrated luminosity, 10.6 GeV (nC)" become row-dependent.
+// The per-period luminosities and per-period efficiencies remain constant as
+// before. Only the combined-group quantities become row-dependent.
 //
 // -----------------------------------------------------------------------------
 
@@ -243,7 +253,6 @@ static int find_col_optional(const std::vector<std::string> &header,
 
 // Helper: strip all outer quote layers (CSV and nested quotes)
 static std::string strip_all_outer_quotes(std::string s) {
-    // First remove CSV-style outer quotes (and collapses double quotes)
     s = unquote(s);
     s = trim(s);
 
@@ -268,14 +277,12 @@ static Triple parse_tuple3(const std::string &cell) {
     out.stat  = 0.0;
     out.sys   = 0.0;
 
-    // Robustly strip CSV and nested quotes
     std::string s = strip_all_outer_quotes(cell);
     s = trim(s);
     if (s.empty()) {
         return out;
     }
 
-    // Optional surrounding parentheses "(...)" -> "..."
     if (s.front() == '(' && s.back() == ')') {
         s = s.substr(1, s.size() - 2);
         s = trim(s);
@@ -284,7 +291,6 @@ static Triple parse_tuple3(const std::string &cell) {
         }
     }
 
-    // Split on commas into up to 3 parts
     std::vector<std::string> parts;
     std::string token;
     for (char c : s) {
@@ -508,9 +514,6 @@ LumiMap build_lumi_map() {
         return r;
     };
 
-    // NOTE: these combined totals are still useful as diagnostics, but the
-    // *effective* luminosities used for combined labels in compute_cross_sections
-    // are now computed per-row using acceptance gating.
     m["Fa18"]     = sum_labels({"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp"});
     m["Sp18"]     = sum_labels({"Sp18 Inb", "Sp18 Out"});
     m["10.6 GeV"] = sum_labels({
@@ -535,11 +538,17 @@ LumiMap build_lumi_map() {
 
 using EffMap = std::map<std::string, Triple>;
 
-static EffMap build_efficiency_map(const LumiMap &lumi_map) {
-    (void)lumi_map; // not needed, kept for signature consistency
-
-    EffMap eff;
+struct EfficiencyBundle {
+    EffMap eff_map;
     std::map<std::string, double> period_counts;
+};
+
+static EfficiencyBundle build_efficiency_bundle(const LumiMap &lumi_map) {
+    (void)lumi_map;
+
+    EfficiencyBundle bundle;
+    EffMap &eff = bundle.eff_map;
+    std::map<std::string, double> &period_counts = bundle.period_counts;
 
     std::ifstream ifs(kEfficiencyJsonPath);
     if (!ifs) {
@@ -670,19 +679,16 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
         return t;
     };
 
-    // Base periods
     Triple e_fa18_inb = compute_period_eff("Fa18 Inb", "fa18_inb");
     Triple e_fa18_out = compute_period_eff("Fa18 Out", "fa18_out");
     Triple e_sp18_inb = compute_period_eff("Sp18 Inb", "sp18_inb");
     Triple e_sp18_out = compute_period_eff("Sp18 Out", "sp18_out");
     Triple e_sp19_inb = compute_period_eff("Sp19 Inb", "sp19_inb");
 
-    // Fa18 Inb Supp: approximate as Fa18 Inb (same efficiency), but do not
-    // introduce extra counts entry for combined-group weighting.
     eff["Fa18 Inb Supp"] = e_fa18_inb;
 
-    auto combine_eff = [&](const std::string &out_label,
-                           const std::vector<std::string> &members) -> Triple {
+    auto combine_eff_for_diagnostics = [&](const std::string &out_label,
+                                           const std::vector<std::string> &members) -> Triple {
         double Ntot = 0.0;
         for (const auto &m : members) {
             auto it_n = period_counts.find(m);
@@ -720,7 +726,7 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
 
         eff[out_label] = out;
 
-        std::cout << "[cross_sections] Combined efficiency for " << out_label
+        std::cout << "[cross_sections] Diagnostic combined efficiency for " << out_label
                   << " from {";
         for (size_t i = 0; i < members.size(); ++i) {
             if (i > 0) std::cout << ", ";
@@ -732,17 +738,16 @@ static EffMap build_efficiency_map(const LumiMap &lumi_map) {
         return out;
     };
 
-    combine_eff("Fa18",     {"Fa18 Inb", "Fa18 Out"});
-    combine_eff("Sp18",     {"Sp18 Inb", "Sp18 Out"});
-    combine_eff("10.6 GeV", {"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"});
-
+    combine_eff_for_diagnostics("Fa18",     {"Fa18 Inb", "Fa18 Out"});
+    combine_eff_for_diagnostics("Sp18",     {"Sp18 Inb", "Sp18 Out"});
+    combine_eff_for_diagnostics("10.6 GeV", {"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"});
     eff["10.2 GeV"] = e_sp19_inb;
 
-    std::cout << "[cross_sections] build_efficiency_map: "
+    std::cout << "[cross_sections] build_efficiency_bundle: "
               << "constructed efficiencies for base and combined labels from "
               << kEfficiencyJsonPath << "\n";
 
-    return eff;
+    return bundle;
 }
 
 // -----------------------------------------------------------------------------
@@ -803,12 +808,9 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
     for (int i = 0; i < N; ++i) {
         double phi = phi_min + step * (double)i;
-
-        // Force the last point to be exactly phi_max (avoids floating roundoff).
         if (i == N - 1) {
             phi = phi_max;
         }
-
         phi_deg.push_back(phi);
     }
 
@@ -1053,12 +1055,12 @@ bool compute_cross_sections(const std::string &csv_main,
         }
     }
 
-    EffMap eff_map;
+    EfficiencyBundle eff_bundle;
     if (kApplyEfficiencyCorrections) {
         try {
-            eff_map = build_efficiency_map(lumi_map);
+            eff_bundle = build_efficiency_bundle(lumi_map);
         } catch (const std::exception &e) {
-            std::cerr << "[cross_sections] FATAL: build_efficiency_map failed: "
+            std::cerr << "[cross_sections] FATAL: build_efficiency_bundle failed: "
                       << e.what() << "\n";
             return false;
         }
@@ -1100,10 +1102,6 @@ bool compute_cross_sections(const std::string &csv_main,
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Luminosity columns (these exist in the CSV and get overwritten here)
-    // -------------------------------------------------------------------------
-
     const std::vector<std::string> lumi_col_names_required = {
         "integrated luminosity, Fa18 Inb (nC)",
         "integrated luminosity, Fa18 Out (nC)",
@@ -1125,11 +1123,6 @@ bool compute_cross_sections(const std::string &csv_main,
         std::cerr << "[cross_sections] FATAL: " << e.what() << "\n";
         return false;
     }
-
-    // -------------------------------------------------------------------------
-    // Acceptance columns needed to gate combined-group luminosities PER ROW.
-    // CSV convention (your file): empty cell means acceptance == 0 for that bin.
-    // -------------------------------------------------------------------------
 
     const std::vector<std::string> base_periods_with_acceptance = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
@@ -1211,7 +1204,6 @@ bool compute_cross_sections(const std::string &csv_main,
         }
     }
 
-    // Helper: determine whether a period has acceptance in this row.
     auto period_has_acceptance = [&](const std::string &period,
                                      const std::vector<std::string> &fields) -> bool {
         auto it = acc_col_idx.find(period);
@@ -1223,9 +1215,6 @@ bool compute_cross_sections(const std::string &csv_main,
         return (a.value > 0.0);
     };
 
-    // Helper: compute per-row effective luminosity for a label.
-    // - For base periods: return the constant lumi_map value.
-    // - For combined labels: sum member period luminosities ONLY if acceptance > 0 in that row.
     auto lumi_for_label_row = [&](const std::string &L,
                                   const std::vector<std::string> &fields) -> Triple {
         if (!is_combined_label(L)) {
@@ -1253,6 +1242,71 @@ bool compute_cross_sections(const std::string &csv_main,
         return out;
     };
 
+    auto eff_for_label_row = [&](const std::string &L,
+                                 const std::vector<std::string> &fields) -> Triple {
+        if (!kApplyEfficiencyCorrections) {
+            return Triple{1.0, 0.0, 0.0};
+        }
+
+        const EffMap &eff_map = eff_bundle.eff_map;
+        const std::map<std::string, double> &period_counts = eff_bundle.period_counts;
+
+        if (!is_combined_label(L)) {
+            auto it = eff_map.find(L);
+            if (it == eff_map.end()) {
+                return Triple{0.0, 0.0, 0.0};
+            }
+            return it->second;
+        }
+
+        std::vector<std::string> members = combined_members_for(L);
+
+        double Ntot = 0.0;
+        for (const auto &m : members) {
+            if (!period_has_acceptance(m, fields)) {
+                continue;
+            }
+            auto itN = period_counts.find(m);
+            if (itN == period_counts.end()) {
+                continue;
+            }
+            Ntot += itN->second;
+        }
+
+        if (Ntot <= 0.0) {
+            return Triple{0.0, 0.0, 0.0};
+        }
+
+        double val = 0.0;
+        double var = 0.0;
+
+        for (const auto &m : members) {
+            if (!period_has_acceptance(m, fields)) {
+                continue;
+            }
+
+            auto itN = period_counts.find(m);
+            auto itE = eff_map.find(m);
+            if (itN == period_counts.end() || itE == eff_map.end()) {
+                continue;
+            }
+
+            double w = itN->second / Ntot;
+            const Triple &tp = itE->second;
+
+            val += w * tp.value;
+            if (tp.stat > 0.0) {
+                var += w * w * tp.stat * tp.stat;
+            }
+        }
+
+        Triple out;
+        out.value = val;
+        out.stat  = (var > 0.0) ? std::sqrt(var) : 0.0;
+        out.sys   = 0.0;
+        return out;
+    };
+
     std::vector<std::string> out_lines;
     out_lines.reserve(lines.size());
     out_lines.push_back(lines[0]);
@@ -1260,7 +1314,9 @@ bool compute_cross_sections(const std::string &csv_main,
     std::cout << "[cross_sections] compute_cross_sections: data rows = "
               << n_data_rows << "\n";
     std::cout << "[cross_sections] NOTE: combined-label luminosities (Fa18, Sp18, 10.6 GeV) "
-              << "are now computed per-row using acceptance gating.\n";
+              << "are computed per-row using acceptance gating.\n";
+    std::cout << "[cross_sections] NOTE: combined-label efficiencies (Fa18, Sp18, 10.6 GeV) "
+              << "are also computed per-row using the same acceptance gating.\n";
 
     int next_pct = 1;
 
@@ -1295,6 +1351,7 @@ bool compute_cross_sections(const std::string &csv_main,
         double tmin  = std::atof(trim(unquote(fields[c_t_min])).c_str());
         double tmax  = std::atof(trim(unquote(fields[c_t_max])).c_str());
         (void)xbmin; (void)xbmax; (void)q2min; (void)q2max; (void)tmin; (void)tmax;
+        (void)c_xb_idx; (void)c_phi_min; (void)c_phi_max;
 
         Triple frad_lee_eff{0.0, 0.0, 0.0};
         Triple fbin_lee_eff{1.0, 0.0, 0.0};
@@ -1334,13 +1391,7 @@ bool compute_cross_sections(const std::string &csv_main,
             if (c_fbin_new_102 >= 0) fbin_102 = parse_tuple3(fields[c_fbin_new_102]);
         }
 
-        // ---------------------------------------------------------------------
-        // Write luminosity cells (base periods constant; combined periods row-dependent)
-        // ---------------------------------------------------------------------
-
         for (const auto &L : labels) {
-            // Only columns that exist in your CSV:
-            //   Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out, Fa18, Sp18, 10.6 GeV
             std::string lumi_col_name;
             if      (L == "Fa18 Inb") lumi_col_name = "integrated luminosity, Fa18 Inb (nC)";
             else if (L == "Fa18 Out") lumi_col_name = "integrated luminosity, Fa18 Out (nC)";
@@ -1361,42 +1412,32 @@ bool compute_cross_sections(const std::string &csv_main,
             fields[it_lumi_col->second] = tuple3_to_cell(LumiRow.value, LumiRow.stat, LumiRow.sys);
         }
 
-        // ---------------------------------------------------------------------
-        // Cross section computation
-        // ---------------------------------------------------------------------
-
         for (const auto &L : labels) {
-            // We only compute cross sections for labels that actually have yield/xs columns in colmap.
-            // Also, your CSV does not include 10.2 GeV xsec columns in this workflow.
             if (L == "10.2 GeV") {
                 continue;
             }
 
-            // Determine per-row luminosity for this label (acceptance-gated for combined labels).
             Triple Lumi = lumi_for_label_row(L, fields);
 
-            // Efficiency correction remains as in the previous implementation:
-            // it is label-level (constant), NOT acceptance-gated per-row.
             double eff_corr = 1.0;
             double eff_rel2 = 0.0;
             if (kApplyEfficiencyCorrections) {
-                auto it_eff = eff_map.find(L);
-                if (it_eff == eff_map.end()) {
-                    std::ostringstream oss;
-                    oss << "efficiency map missing label \"" << L << "\"";
-                    std::cerr << "[cross_sections] FATAL: " << oss.str() << "\n";
-                    return false;
-                }
-                const Triple &Eeff = it_eff->second;
+                Triple Eeff = eff_for_label_row(L, fields);
                 if (Eeff.value <= 0.0) {
-                    std::cerr << "[cross_sections] FATAL: non-positive efficiency for "
-                              << L << " (value=" << Eeff.value << ")\n";
-                    return false;
-                }
-                eff_corr = 1.0 / Eeff.value;
-                if (Eeff.stat > 0.0) {
-                    double r = Eeff.stat / Eeff.value;
-                    eff_rel2 = r * r;
+                    if (is_combined_label(L)) {
+                        // No accepted member periods in this row for this combined label.
+                        // Leave the xsec cells untouched for this label/helicity below.
+                    } else {
+                        std::cerr << "[cross_sections] FATAL: non-positive efficiency for "
+                                  << L << " (value=" << Eeff.value << ")\n";
+                        return false;
+                    }
+                } else {
+                    eff_corr = 1.0 / Eeff.value;
+                    if (Eeff.stat > 0.0) {
+                        double r = Eeff.stat / Eeff.value;
+                        eff_rel2 = r * r;
+                    }
                 }
             }
 
@@ -1418,8 +1459,20 @@ bool compute_cross_sections(const std::string &csv_main,
                 else if (h == "neg")   lumi_val = Lumi.sys;
 
                 if (lumi_val <= 0.0) {
-                    // For combined labels this is expected when no member period has acceptance.
                     continue;
+                }
+
+                if (kApplyEfficiencyCorrections) {
+                    Triple Eeff = eff_for_label_row(L, fields);
+                    if (Eeff.value <= 0.0) {
+                        continue;
+                    }
+                    eff_corr = 1.0 / Eeff.value;
+                    eff_rel2 = 0.0;
+                    if (Eeff.stat > 0.0) {
+                        double r = Eeff.stat / Eeff.value;
+                        eff_rel2 = r * r;
+                    }
                 }
 
                 double Ebeam = beam_energy_for_label(L);
