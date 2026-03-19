@@ -205,19 +205,6 @@ period_files = [
     ("rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
 ]
 
-# Period-specific y-axis ranges
-# NOTE:
-#   We intentionally do NOT force rga_sp18_out here for this test, because
-#   low 30 nA points may be getting clipped below the plotting window.
-y_ranges = {
-    "rga_fa18_inb": (0.01, 0.03),
-    "rga_fa18_out": (0.0, 0.08),
-    "rga_sp19_inb": (0.02, 0.03),
-    # "rga_sp18_out": (0.03, 0.06),
-    # rga_sp18_inb auto-scales
-    # rga_sp18_out auto-scales for debugging
-}
-
 
 for period_label, root_path in period_files:
     print("\n" + "=" * 80)
@@ -498,11 +485,8 @@ for period_label, root_path in period_files:
     plt.title(f"DVCS Events per nC by Run Number ({period_label})")
     plt.grid(True, alpha=0.3)
 
-    # Apply period-specific y-axis ranges if defined
-    if period_label in y_ranges:
-        ymin, ymax = y_ranges[period_label]
-        plt.ylim(ymin, ymax)
-    #endif
+    # Force the same y-axis range on all plots
+    plt.ylim(0.0, 0.10)
 
     plt.xticks(rotation=45)
     plt.legend(title="Beam current (nA)", fontsize=10)
