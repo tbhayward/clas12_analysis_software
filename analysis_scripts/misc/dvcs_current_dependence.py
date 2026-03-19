@@ -583,7 +583,7 @@ def build_mc_aggregation(mc_dir, skip_temp_heavy_mc=False):
 
     skip_pairs = set()
     if skip_temp_heavy_mc:
-        # skip_pairs.add(("rga_sp18_out", 45))
+        skip_pairs.add(("rga_sp18_out", 45))
         # skip_pairs.add(("rga_fa18_inb", 50))
         skip_pairs.add(("rga_fa18_out", 50))
     #endif
