@@ -1253,8 +1253,8 @@ def main():
         ax.plot(xfit, pct_fit, color=c, linestyle="--")
 
         ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_ylim(0.0, 150.0)
+        ax.set_xlim(0.0, 80.0)
+        ax.set_ylim(0.4, 120.0)
         ax.set_xlabel("Beam current (nA)")
         ax.set_ylabel("Percent of intercept b (%)")
         ax.grid(True, alpha=0.3)
@@ -1263,8 +1263,8 @@ def main():
 
     axc4 = axs4[5]
     axc4.set_title("All periods (overlay)")
-    axc4.set_xlim(0.0, 100.0)
-    axc4.set_ylim(0.0, 150.0)
+    axc4.set_xlim(0.0, 80.0)
+    axc4.set_ylim(0.4, 120.0)
     axc4.set_xlabel("Beam current (nA)")
     axc4.set_ylabel("Percent of intercept b (%)")
     axc4.grid(True, alpha=0.3)
