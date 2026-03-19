@@ -1092,8 +1092,8 @@ def main():
 
     axc2 = axs2[5]
     axc2.set_title("All periods (overlay)")
-    axc2.set_xlim(0.0, 100.0)
-    axc2.set_ylim(0.0, 150.0)
+    axc2.set_xlim(0.0, 80.0)
+    axc2.set_ylim(0.4, 120.0)
     axc2.set_xlabel("Beam current (nA)")
     axc2.set_ylabel("Percent of intercept b (%)")
     axc2.grid(True, alpha=0.3)
