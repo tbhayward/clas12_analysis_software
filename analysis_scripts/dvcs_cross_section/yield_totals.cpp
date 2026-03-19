@@ -585,6 +585,10 @@ static bool resolve_current_for_label(const std::string& period_label,
     }
 
     if (k == "sp19inb") {
+        if (runnum == 6616) {
+            current_nA = 5;
+            return true;
+        }
         current_nA = 50;
         return true;
     }
