@@ -18,12 +18,12 @@
 #       (2) percent-of-intercept vs current
 #
 # Output:
-#   output/dvcs_counts_per_nc_vs_current.png
-#   output/dvcs_percent_of_intercept_vs_current.png
+#   output/dvcs_current_dependence/dvcs_counts_per_nc_vs_current.png
+#   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current.png
 #
 # Optional diagnostic CSVs:
-#   output/dvcs_current_dependence_run_table.csv
-#   output/dvcs_current_dependence_current_table.csv
+#   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
+#   output/dvcs_current_dependence/dvcs_current_dependence_current_table.csv
 #
 
 import os
@@ -52,6 +52,8 @@ PERIOD_FILES = [
 ]
 
 PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
+
+OUTPUT_DIR = "output/dvcs_current_dependence"
 
 
 # -----------------------------------------------------------------------------
@@ -548,7 +550,7 @@ def write_current_table_csv(path, current_rows):
 
 
 def main():
-    os.makedirs("output", exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # -------------------------------------------------------------------------
     # Read charge map once.
@@ -603,8 +605,8 @@ def main():
     # -------------------------------------------------------------------------
     # Write diagnostic CSVs.
     # -------------------------------------------------------------------------
-    run_table_csv = "output/dvcs_current_dependence_run_table.csv"
-    current_table_csv = "output/dvcs_current_dependence_current_table.csv"
+    run_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_run_table.csv")
+    current_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_current_table.csv")
 
     write_run_table_csv(run_table_csv, all_run_rows)
     write_current_table_csv(current_table_csv, all_current_rows)
@@ -722,7 +724,7 @@ def main():
 
     axc.legend(frameon=True, fontsize=9)
 
-    out1 = "output/dvcs_counts_per_nc_vs_current.png"
+    out1 = os.path.join(OUTPUT_DIR, "dvcs_counts_per_nc_vs_current.png")
     fig1.savefig(out1, dpi=200)
 
     print("")
@@ -838,7 +840,7 @@ def main():
 
     axc2.legend(frameon=True, fontsize=9)
 
-    out2 = "output/dvcs_percent_of_intercept_vs_current.png"
+    out2 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_vs_current.png")
     fig2.savefig(out2, dpi=200)
 
     print("")
