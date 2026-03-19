@@ -25,14 +25,14 @@
 #   (2) data percent-of-intercept vs current
 #   (3) MC efficiency vs current
 #   (4) MC percent-of-intercept vs current
-#   (5) data and MC drop from 0 nA on the same subplots
+#   (5) data and MC percent-of-intercept vs current on the same subplots
 #
 # Output:
 #   output/dvcs_current_dependence/dvcs_counts_per_nc_vs_current.png
 #   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current.png
 #   output/dvcs_current_dependence/dvcs_efficiency_vs_current_mc.png
 #   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current_mc.png
-#   output/dvcs_current_dependence/dvcs_drop_from_zero_current_data_vs_mc.png
+#   output/dvcs_current_dependence/dvcs_percent_of_intercept_data_vs_mc.png
 #
 # Diagnostic CSVs:
 #   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
@@ -1009,6 +1009,7 @@ def main():
 
     out1 = os.path.join(OUTPUT_DIR, "dvcs_counts_per_nc_vs_current.png")
     fig1.savefig(out1, dpi=200)
+
     print("")
     print(f"[saved] {out1}")
 
@@ -1093,6 +1094,7 @@ def main():
 
     out2 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_vs_current.png")
     fig2.savefig(out2, dpi=200)
+
     print("")
     print(f"[saved] {out2}")
 
@@ -1166,6 +1168,7 @@ def main():
 
     out3 = os.path.join(OUTPUT_DIR, "dvcs_efficiency_vs_current_mc.png")
     fig3.savefig(out3, dpi=200)
+
     print("")
     print(f"[saved] {out3}")
 
@@ -1250,16 +1253,12 @@ def main():
 
     out4 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_vs_current_mc.png")
     fig4.savefig(out4, dpi=200)
+
     print("")
     print(f"[saved] {out4}")
 
     # -------------------------------------------------------------------------
-    # Plot 5: DATA and MC drop from 0 nA on the same subplots
-    #
-    # Definition:
-    #   drop(x) = 100 - percent_of_intercept(x)
-    #
-    # so a positive value means a loss relative to the fitted 0 nA efficiency.
+    # Plot 5: DATA and MC percent-of-intercept vs current on same subplots
     # -------------------------------------------------------------------------
     fig5, axs5 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs5 = axs5.flatten()
@@ -1274,13 +1273,7 @@ def main():
 
         data_pct = 100.0 * (yd / frd["b"])
         data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-        data_drop = 100.0 - data_pct
-        data_drop_err = data_pct_err
-
         data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
-        data_drop_fit = 100.0 - data_pct_fit
-        data_drop_fit_lo = 100.0 - data_pct_fit_hi
-        data_drop_fit_hi = 100.0 - data_pct_fit_lo
 
         # MC
         xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
@@ -1288,42 +1281,37 @@ def main():
 
         mc_pct = 100.0 * (ym / frm["b"])
         mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
-        mc_drop = 100.0 - mc_pct
-        mc_drop_err = mc_pct_err
-
         mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
-        mc_drop_fit = 100.0 - mc_pct_fit
-        mc_drop_fit_lo = 100.0 - mc_pct_fit_hi
-        mc_drop_fit_hi = 100.0 - mc_pct_fit_lo
 
-        ax.fill_between(xfit, data_drop_fit_lo, data_drop_fit_hi, color=c, alpha=0.12, linewidth=0)
+        ax.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=c, alpha=0.12, linewidth=0)
         ax.errorbar(
             xd,
-            data_drop,
-            yerr=data_drop_err,
+            data_pct,
+            yerr=data_pct_err,
             fmt="o",
             capsize=3,
             color=c,
             label="Data",
         )
-        ax.plot(xfit, data_drop_fit, color=c)
+        ax.plot(xfit, data_pct_fit, color=c)
 
-        ax.fill_between(xfit, mc_drop_fit_lo, mc_drop_fit_hi, color=c, alpha=0.08, linewidth=0)
+        ax.fill_between(xfit, mc_pct_fit_lo, mc_pct_fit_hi, color=c, alpha=0.08, linewidth=0)
         ax.errorbar(
             xm,
-            mc_drop,
-            yerr=mc_drop_err,
+            mc_pct,
+            yerr=mc_pct_err,
             fmt="s",
             capsize=3,
             color=c,
             label="MC",
         )
-        ax.plot(xfit, mc_drop_fit, color=c, linestyle="--")
+        ax.plot(xfit, mc_pct_fit, color=c, linestyle="--")
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
+        ax.set_ylim(0.0, 150.0)
         ax.set_xlabel("Beam current (nA)")
-        ax.set_ylabel("Drop from fitted 0 nA (%)")
+        ax.set_ylabel("Percent of fitted 0 nA (%)")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
     #endfor
@@ -1331,8 +1319,9 @@ def main():
     axc5 = axs5[5]
     axc5.set_title("All periods (overlay)")
     axc5.set_xlim(0.0, 100.0)
+    axc5.set_ylim(0.0, 150.0)
     axc5.set_xlabel("Beam current (nA)")
-    axc5.set_ylabel("Drop from fitted 0 nA (%)")
+    axc5.set_ylabel("Percent of fitted 0 nA (%)")
     axc5.grid(True, alpha=0.3)
 
     for period in PERIOD_ORDER:
@@ -1342,47 +1331,42 @@ def main():
         frd = data_fit_results[period]
         data_pct = 100.0 * (yd / frd["b"])
         data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-        data_drop = 100.0 - data_pct
-        data_drop_err = data_pct_err
         data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
-        data_drop_fit = 100.0 - data_pct_fit
 
         xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
         frm = mc_fit_results[period]
         mc_pct = 100.0 * (ym / frm["b"])
         mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
-        mc_drop = 100.0 - mc_pct
-        mc_drop_err = mc_pct_err
         mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
-        mc_drop_fit = 100.0 - mc_pct_fit
 
         axc5.errorbar(
             xd,
-            data_drop,
-            yerr=data_drop_err,
+            data_pct,
+            yerr=data_pct_err,
             fmt="o",
             capsize=3,
             color=c,
             label=f"{period} data",
         )
-        axc5.plot(xfit, data_drop_fit, color=c)
+        axc5.plot(xfit, data_pct_fit, color=c)
 
         axc5.errorbar(
             xm,
-            mc_drop,
-            yerr=mc_drop_err,
+            mc_pct,
+            yerr=mc_pct_err,
             fmt="s",
             capsize=3,
             color=c,
             label=f"{period} MC",
         )
-        axc5.plot(xfit, mc_drop_fit, color=c, linestyle="--")
+        axc5.plot(xfit, mc_pct_fit, color=c, linestyle="--")
     #endfor
 
     axc5.legend(frameon=True, fontsize=8)
 
-    out5 = os.path.join(OUTPUT_DIR, "dvcs_drop_from_zero_current_data_vs_mc.png")
+    out5 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_data_vs_mc.png")
     fig5.savefig(out5, dpi=200)
+
     print("")
     print(f"[saved] {out5}")
     print("")
