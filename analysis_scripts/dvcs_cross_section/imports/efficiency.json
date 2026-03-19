@@ -62,47 +62,47 @@
 
   "efficiency_schemes": {
     "rga_fa18_inb": {
-      "description": "Efficiency vs current for Fa18 Inb from linear fits to counts_per_nC vs current using updated exclusivity-cut totals.",
+      "description": "Final efficiency divisor for Fa18 Inb. Stored value is the combined correction epsilon_final(I) = epsilon_data_rel(I) * (epsilon_data_rel(I) / epsilon_mc_rel(I)) = epsilon_data_rel(I)^2 / epsilon_mc_rel(I). cross_sections.cpp then applies 1 / epsilon_final(I), which simultaneously corrects to zero current and corrects for MC being more efficient than data at the same current. Data relative efficiency uses slope -0.2537662628 +/- 0.0196421015 (% per nA); MC relative efficiency uses slope -0.1579733848 +/- 0.0016897544 (% per nA).",
       "efficiency_by_current": {
-        "5": { "efficiency_percent": 98.7312, "efficiency_fraction": 0.987312, "uncertainty_percent": 0.1124, "uncertainty_fraction": 0.001124 },
-        "40": { "efficiency_percent": 89.8494, "efficiency_fraction": 0.898494, "uncertainty_percent": 0.8991, "uncertainty_fraction": 0.008991 },
-        "45": { "efficiency_percent": 88.5805, "efficiency_fraction": 0.885805, "uncertainty_percent": 1.0115, "uncertainty_fraction": 0.010115 },
-        "50": { "efficiency_percent": 87.3117, "efficiency_fraction": 0.873117, "uncertainty_percent": 1.1239, "uncertainty_fraction": 0.011239 },
-        "55": { "efficiency_percent": 86.0429, "efficiency_fraction": 0.860429, "uncertainty_percent": 1.2363, "uncertainty_fraction": 0.012363 }
+        "5":  { "efficiency_percent": 98.2545, "efficiency_fraction": 0.982545, "uncertainty_percent": 0.1957, "uncertainty_fraction": 0.001957 },
+        "40": { "efficiency_percent": 86.1744, "efficiency_fraction": 0.861744, "uncertainty_percent": 1.5084, "uncertainty_fraction": 0.015084 },
+        "45": { "efficiency_percent": 84.4699, "efficiency_fraction": 0.844699, "uncertainty_percent": 1.6872, "uncertainty_fraction": 0.016872 },
+        "50": { "efficiency_percent": 82.7711, "efficiency_fraction": 0.827711, "uncertainty_percent": 1.8636, "uncertainty_fraction": 0.018636 },
+        "55": { "efficiency_percent": 81.0782, "efficiency_fraction": 0.810782, "uncertainty_percent": 2.0376, "uncertainty_fraction": 0.020376 }
       }
     },
 
     "rga_fa18_out": {
-      "description": "Efficiency vs current for Fa18 Out from linear fits to counts_per_nC vs current using updated exclusivity-cut totals.",
+      "description": "Final efficiency divisor for Fa18 Out. Stored value is the combined correction epsilon_final(I) = epsilon_data_rel(I) * (epsilon_data_rel(I) / epsilon_mc_rel(I)) = epsilon_data_rel(I)^2 / epsilon_mc_rel(I). cross_sections.cpp then applies 1 / epsilon_final(I), which simultaneously corrects to zero current and corrects for MC being more efficient than data at the same current. Data relative efficiency uses slope -0.3314509897 +/- 0.0096237428 (% per nA); MC relative efficiency uses slope -0.1326596418 +/- 0.0008485959 (% per nA).",
       "efficiency_by_current": {
-        "5": { "efficiency_percent": 98.3427, "efficiency_fraction": 0.983427, "uncertainty_percent": 0.0575, "uncertainty_fraction": 0.000575 },
-        "20": { "efficiency_percent": 93.3710, "efficiency_fraction": 0.933710, "uncertainty_percent": 0.2301, "uncertainty_fraction": 0.002301 },
-        "40": { "efficiency_percent": 86.7420, "efficiency_fraction": 0.867420, "uncertainty_percent": 0.4602, "uncertainty_fraction": 0.004602 },
-        "50": { "efficiency_percent": 83.4275, "efficiency_fraction": 0.834275, "uncertainty_percent": 0.5753, "uncertainty_fraction": 0.005753 }
+        "5":  { "efficiency_percent": 97.3587, "efficiency_fraction": 0.973587, "uncertainty_percent": 0.0954, "uncertainty_fraction": 0.000954 },
+        "20": { "efficiency_percent": 89.5575, "efficiency_fraction": 0.895575, "uncertainty_percent": 0.3696, "uncertainty_fraction": 0.003696 },
+        "40": { "efficiency_percent": 79.4580, "efficiency_fraction": 0.794580, "uncertainty_percent": 0.7058, "uncertainty_fraction": 0.007058 },
+        "50": { "efficiency_percent": 74.5460, "efficiency_fraction": 0.745460, "uncertainty_percent": 0.8606, "uncertainty_fraction": 0.008606 }
       }
     },
 
     "rga_sp18_inb": {
-      "description": "Efficiency vs current for Sp18 Inb from linear fits to counts_per_nC vs current using updated exclusivity-cut totals.",
+      "description": "Final efficiency divisor for Sp18 Inb. Stored value is the combined correction epsilon_final(I) = epsilon_data_rel(I) * (epsilon_data_rel(I) / epsilon_mc_rel(I)) = epsilon_data_rel(I)^2 / epsilon_mc_rel(I). cross_sections.cpp then applies 1 / epsilon_final(I), which simultaneously corrects to zero current and corrects for MC being more efficient than data at the same current. Data relative efficiency uses slope -0.5250478961 +/- 0.0170442972 (% per nA); MC relative efficiency uses slope -0.2146648855 +/- 0.0016767191 (% per nA).",
       "efficiency_by_current": {
-        "35": { "efficiency_percent": 81.6233, "efficiency_fraction": 0.816233, "uncertainty_percent": 0.8301, "uncertainty_fraction": 0.008301 },
-        "50": { "efficiency_percent": 73.7476, "efficiency_fraction": 0.737476, "uncertainty_percent": 1.1858, "uncertainty_fraction": 0.011858 }
+        "35": { "efficiency_percent": 72.0359, "efficiency_fraction": 0.720359, "uncertainty_percent": 1.0540, "uncertainty_fraction": 0.010540 },
+        "50": { "efficiency_percent": 60.9265, "efficiency_fraction": 0.609265, "uncertainty_percent": 1.4093, "uncertainty_fraction": 0.014093 }
       }
     },
 
     "rga_sp18_out": {
-      "description": "Efficiency vs current for Sp18 Out from linear fits to counts_per_nC vs current using updated exclusivity-cut totals.",
+      "description": "Final efficiency divisor for Sp18 Out. Stored value is the combined correction epsilon_final(I) = epsilon_data_rel(I) * (epsilon_data_rel(I) / epsilon_mc_rel(I)) = epsilon_data_rel(I)^2 / epsilon_mc_rel(I). cross_sections.cpp then applies 1 / epsilon_final(I), which simultaneously corrects to zero current and corrects for MC being more efficient than data at the same current. Data relative efficiency uses slope -0.4369734046 +/- 0.0517005383 (% per nA); MC relative efficiency uses slope -0.3927868596 +/- 0.0011556464 (% per nA).",
       "efficiency_by_current": {
-        "30": { "efficiency_percent": 86.8908, "efficiency_fraction": 0.868908, "uncertainty_percent": 1.9649, "uncertainty_fraction": 0.019649 },
-        "45": { "efficiency_percent": 80.3362, "efficiency_fraction": 0.803362, "uncertainty_percent": 2.9474, "uncertainty_fraction": 0.029474 }
+        "30": { "efficiency_percent": 85.5851, "efficiency_fraction": 0.855851, "uncertainty_percent": 3.0556, "uncertainty_fraction": 0.030556 },
+        "45": { "efficiency_percent": 78.3958, "efficiency_fraction": 0.783958, "uncertainty_percent": 4.5409, "uncertainty_fraction": 0.045409 }
       }
     },
 
     "rga_sp19_inb": {
-      "description": "Efficiency vs current for Sp19 Inb from linear fits to counts_per_nC vs current using updated exclusivity-cut totals.",
+      "description": "Final efficiency divisor for Sp19 Inb. Stored value is the combined correction epsilon_final(I) = epsilon_data_rel(I) * (epsilon_data_rel(I) / epsilon_mc_rel(I)) = epsilon_data_rel(I)^2 / epsilon_mc_rel(I). cross_sections.cpp then applies 1 / epsilon_final(I), which simultaneously corrects to zero current and corrects for MC being more efficient than data at the same current. Data relative efficiency uses slope -0.3382020949 +/- 0.0631474665 (% per nA); MC relative efficiency uses slope -0.1641432992 +/- 0.0016466795 (% per nA).",
       "efficiency_by_current": {
-        "5": { "efficiency_percent": 98.3090, "efficiency_fraction": 0.983090, "uncertainty_percent": 0.3853, "uncertainty_fraction": 0.003853 },
-        "50": { "efficiency_percent": 83.0899, "efficiency_fraction": 0.830899, "uncertainty_percent": 3.8534, "uncertainty_fraction": 0.038534 }
+        "5":  { "efficiency_percent": 97.4463, "efficiency_fraction": 0.974463, "uncertainty_percent": 0.6260, "uncertainty_fraction": 0.006260 },
+        "50": { "efficiency_percent": 75.2121, "efficiency_fraction": 0.752121, "uncertainty_percent": 5.7164, "uncertainty_fraction": 0.057164 }
       }
     }
   }
