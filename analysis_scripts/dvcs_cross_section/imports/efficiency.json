@@ -3,10 +3,10 @@
     "fa18_inb": {
       "efficiency_scheme": "rga_fa18_inb",
       "currents": [
-        { "current_nA": 5,  "counts": 2234,   "period_fraction": 0.003116, "period_fraction_percent": 0.31 },
-        { "current_nA": 40, "counts": 14918,  "period_fraction": 0.020805, "period_fraction_percent": 2.08 },
+        { "current_nA": 5, "counts": 2234, "period_fraction": 0.003116, "period_fraction_percent": 0.31 },
+        { "current_nA": 40, "counts": 14918, "period_fraction": 0.020805, "period_fraction_percent": 2.08 },
         { "current_nA": 45, "counts": 498389, "period_fraction": 0.695071, "period_fraction_percent": 69.51 },
-        { "current_nA": 50, "counts": 65316,  "period_fraction": 0.091092, "period_fraction_percent": 9.11 },
+        { "current_nA": 50, "counts": 65316, "period_fraction": 0.091092, "period_fraction_percent": 9.11 },
         { "current_nA": 55, "counts": 136176, "period_fraction": 0.189916, "period_fraction_percent": 18.99 }
       ]
     },
@@ -14,9 +14,9 @@
     "fa18_out": {
       "efficiency_scheme": "rga_fa18_out",
       "currents": [
-        { "current_nA": 5,  "counts": 2070,    "period_fraction": 0.000981, "period_fraction_percent": 0.10 },
-        { "current_nA": 20, "counts": 8635,    "period_fraction": 0.004093, "period_fraction_percent": 0.41 },
-        { "current_nA": 40, "counts": 769968,  "period_fraction": 0.364941, "period_fraction_percent": 36.49 },
+        { "current_nA": 5, "counts": 2070, "period_fraction": 0.000981, "period_fraction_percent": 0.10 },
+        { "current_nA": 20, "counts": 8635, "period_fraction": 0.004093, "period_fraction_percent": 0.41 },
+        { "current_nA": 40, "counts": 769968, "period_fraction": 0.364941, "period_fraction_percent": 36.49 },
         { "current_nA": 50, "counts": 1329170, "period_fraction": 0.629985, "period_fraction_percent": 63.00 }
       ]
     },
@@ -24,7 +24,7 @@
     "sp18_inb": {
       "efficiency_scheme": "rga_sp18_inb",
       "currents": [
-        { "current_nA": 35, "counts": 59667,  "period_fraction": 0.070928, "period_fraction_percent": 7.09 },
+        { "current_nA": 35, "counts": 59667, "period_fraction": 0.070928, "period_fraction_percent": 7.09 },
         { "current_nA": 50, "counts": 781569, "period_fraction": 0.929072, "period_fraction_percent": 92.91 }
       ]
     },
@@ -32,7 +32,7 @@
     "sp18_out": {
       "efficiency_scheme": "rga_sp18_out",
       "currents": [
-        { "current_nA": 30, "counts": 8240,   "period_fraction": 0.016736, "period_fraction_percent": 1.67 },
+        { "current_nA": 30, "counts": 8240, "period_fraction": 0.016736, "period_fraction_percent": 1.67 },
         { "current_nA": 45, "counts": 484119, "period_fraction": 0.983264, "period_fraction_percent": 98.33 }
       ]
     },
@@ -40,7 +40,7 @@
     "sp19_inb": {
       "efficiency_scheme": "rga_sp19_inb",
       "currents": [
-        { "current_nA": 5,  "counts": 827,    "period_fraction": 0.000827, "period_fraction_percent": 0.08 },
+        { "current_nA": 5, "counts": 827, "period_fraction": 0.000827, "period_fraction_percent": 0.08 },
         { "current_nA": 50, "counts": 998611, "period_fraction": 0.999173, "period_fraction_percent": 99.92 }
       ]
     }
@@ -49,59 +49,59 @@
   "global": {
     "total_counts": 5159909,
     "currents": [
-      { "current_nA": 5,  "counts": 5131,    "global_fraction": 0.000994, "global_fraction_percent": 0.10 },
-      { "current_nA": 20, "counts": 8635,    "global_fraction": 0.001673, "global_fraction_percent": 0.17 },
-      { "current_nA": 30, "counts": 8240,    "global_fraction": 0.001597, "global_fraction_percent": 0.16 },
-      { "current_nA": 35, "counts": 59667,   "global_fraction": 0.011564, "global_fraction_percent": 1.16 },
-      { "current_nA": 40, "counts": 784886,  "global_fraction": 0.152112, "global_fraction_percent": 15.21 },
-      { "current_nA": 45, "counts": 982508,  "global_fraction": 0.190412, "global_fraction_percent": 19.04 },
+      { "current_nA": 5, "counts": 5131, "global_fraction": 0.000994, "global_fraction_percent": 0.10 },
+      { "current_nA": 20, "counts": 8635, "global_fraction": 0.001673, "global_fraction_percent": 0.17 },
+      { "current_nA": 30, "counts": 8240, "global_fraction": 0.001597, "global_fraction_percent": 0.16 },
+      { "current_nA": 35, "counts": 59667, "global_fraction": 0.011564, "global_fraction_percent": 1.16 },
+      { "current_nA": 40, "counts": 784886, "global_fraction": 0.152112, "global_fraction_percent": 15.21 },
+      { "current_nA": 45, "counts": 982508, "global_fraction": 0.190412, "global_fraction_percent": 19.04 },
       { "current_nA": 50, "counts": 3174666, "global_fraction": 0.615256, "global_fraction_percent": 61.53 },
-      { "current_nA": 55, "counts": 136176,  "global_fraction": 0.026391, "global_fraction_percent": 2.64 }
+      { "current_nA": 55, "counts": 136176, "global_fraction": 0.026391, "global_fraction_percent": 2.64 }
     ]
   },
 
   "efficiency_schemes": {
     "rga_fa18_inb": {
-      "description": "Residual current-dependence correction for Fa18 Inb. Stored value is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I), where epsilon_data_rel(I) = R_data(I)/R_data(0) from the DATA counts/nC fit and epsilon_mc_rel(I) = epsilon_mc(I)/epsilon_mc(0) from the MC rec/gen fit. Because cross_sections.cpp applies 1 / epsilon_resid(I), the cross section is multiplied by epsilon_mc_rel(I) / epsilon_data_rel(I), correcting the residual mismatch after current-dependent MC acceptance has already been applied. Data relative slope: -0.2537662628 +/- 0.0196421015 (% per nA). MC relative slope: -0.1579733848 +/- 0.0016897544 (% per nA). Intermediate values used: epsilon_data_rel(I) = 1 + slope_data * I / 100; epsilon_mc_rel(I) = 1 + slope_mc * I / 100; epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I).",
+      "description": "Residual current-dependence correction for Fa18 Inb when production acceptance uses only the 50 nA MC sample. Data fit: R_data(I) = b_d + m_d I with b_d = 0.0276884777 and m_d = -0.0000702640, corresponding to relative data slope -0.2537662628 +/- 0.0196421015 (% per nA). MC fit: epsilon_mc(I) = b_m + m_m I with b_m = 0.0605858529 and m_m = -0.0000957095, corresponding to relative MC slope -0.1579733848 +/- 0.0016897544 (% per nA). Because cross_sections.cpp uses acceptance from the 50 nA MC only, the stored factor is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(50 nA), not epsilon_data_rel(I) / epsilon_mc_rel(I). Here epsilon_data_rel(I) = 1 + slope_data * I / 100 and epsilon_mc_rel(50) = 1 + slope_mc * 50 / 100 = 0.9210133076. cross_sections.cpp then applies 1 / epsilon_resid(I), which multiplies the extracted cross section by epsilon_mc_rel(50) / epsilon_data_rel(I).",
       "efficiency_by_current": {
-        "5":  { "efficiency_percent": 99.5172, "efficiency_fraction": 0.995172, "uncertainty_percent": 0.0994, "uncertainty_fraction": 0.000994 },
-        "40": { "efficiency_percent": 95.9098, "efficiency_fraction": 0.959098, "uncertainty_percent": 0.8415, "uncertainty_fraction": 0.008415 },
-        "45": { "efficiency_percent": 95.3594, "efficiency_fraction": 0.953594, "uncertainty_percent": 0.9547, "uncertainty_fraction": 0.009547 },
+        "5":  { "efficiency_percent": 107.1984, "efficiency_fraction": 1.071984, "uncertainty_percent": 0.1451, "uncertainty_fraction": 0.001451 },
+        "40": { "efficiency_percent": 97.5549, "efficiency_fraction": 0.975549, "uncertainty_percent": 0.8577, "uncertainty_fraction": 0.008577 },
+        "45": { "efficiency_percent": 96.1772, "efficiency_fraction": 0.961772, "uncertainty_percent": 0.9637, "uncertainty_fraction": 0.009637 },
         "50": { "efficiency_percent": 94.7996, "efficiency_fraction": 0.947996, "uncertainty_percent": 1.0699, "uncertainty_fraction": 0.010699 },
-        "55": { "efficiency_percent": 94.2301, "efficiency_fraction": 0.942301, "uncertainty_percent": 1.1870, "uncertainty_fraction": 0.011870 }
+        "55": { "efficiency_percent": 93.4219, "efficiency_fraction": 0.934219, "uncertainty_percent": 1.1761, "uncertainty_fraction": 0.011761 }
       }
     },
 
     "rga_fa18_out": {
-      "description": "Residual current-dependence correction for Fa18 Out. Stored value is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I), where epsilon_data_rel(I) = R_data(I)/R_data(0) from the DATA counts/nC fit and epsilon_mc_rel(I) = epsilon_mc(I)/epsilon_mc(0) from the MC rec/gen fit. Because cross_sections.cpp applies 1 / epsilon_resid(I), the cross section is multiplied by epsilon_mc_rel(I) / epsilon_data_rel(I), correcting the residual mismatch after current-dependent MC acceptance has already been applied. Data relative slope: -0.3314509897 +/- 0.0096237428 (% per nA). MC relative slope: -0.1326596418 +/- 0.0008485959 (% per nA). Intermediate values used: epsilon_data_rel(I) = 1 + slope_data * I / 100; epsilon_mc_rel(I) = 1 + slope_mc * I / 100; epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I).",
+      "description": "Residual current-dependence correction for Fa18 Out when production acceptance uses only the 50 nA MC sample. Data fit: R_data(I) = b_d + m_d I with b_d = 0.0794103567 and m_d = -0.0002632064, corresponding to relative data slope -0.3314509897 +/- 0.0096237428 (% per nA). MC fit: epsilon_mc(I) = b_m + m_m I with b_m = 0.0579766632 and m_m = -0.0000769116, corresponding to relative MC slope -0.1326596418 +/- 0.0008485959 (% per nA). Because cross_sections.cpp uses acceptance from the 50 nA MC only, the stored factor is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(50 nA), not epsilon_data_rel(I) / epsilon_mc_rel(I). Here epsilon_data_rel(I) = 1 + slope_data * I / 100 and epsilon_mc_rel(50) = 1 + slope_mc * 50 / 100 = 0.9336701791. Example: at 50 nA, epsilon_data_rel(50) = 0.8342745051, so epsilon_resid(50) = 0.8342745051 / 0.9336701791 = 0.8935430560. cross_sections.cpp then applies 1 / epsilon_resid(I), which multiplies the extracted cross section by epsilon_mc_rel(50) / epsilon_data_rel(I).",
       "efficiency_by_current": {
-        "5":  { "efficiency_percent": 98.9994, "efficiency_fraction": 0.989994, "uncertainty_percent": 0.0486, "uncertainty_fraction": 0.000486 },
-        "20": { "efficiency_percent": 95.9158, "efficiency_fraction": 0.959158, "uncertainty_percent": 0.1984, "uncertainty_fraction": 0.001984 },
-        "40": { "efficiency_percent": 91.6028, "efficiency_fraction": 0.916028, "uncertainty_percent": 0.4078, "uncertainty_fraction": 0.004078 },
+        "5":  { "efficiency_percent": 105.3292, "efficiency_fraction": 1.053292, "uncertainty_percent": 0.0703, "uncertainty_fraction": 0.000703 },
+        "20": { "efficiency_percent": 100.0042, "efficiency_fraction": 1.000042, "uncertainty_percent": 0.2111, "uncertainty_fraction": 0.002111 },
+        "40": { "efficiency_percent": 92.9043, "efficiency_fraction": 0.929043, "uncertainty_percent": 0.4145, "uncertainty_fraction": 0.004145 },
         "50": { "efficiency_percent": 89.3543, "efficiency_fraction": 0.893543, "uncertainty_percent": 0.5170, "uncertainty_fraction": 0.005170 }
       }
     },
 
     "rga_sp18_inb": {
-      "description": "Residual current-dependence correction for Sp18 Inb. Stored value is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I), where epsilon_data_rel(I) = R_data(I)/R_data(0) from the DATA counts/nC fit and epsilon_mc_rel(I) = epsilon_mc(I)/epsilon_mc(0) from the MC rec/gen fit. Because cross_sections.cpp applies 1 / epsilon_resid(I), the cross section is multiplied by epsilon_mc_rel(I) / epsilon_data_rel(I), correcting the residual mismatch after current-dependent MC acceptance has already been applied. Data relative slope: -0.5250478961 +/- 0.0170442972 (% per nA). MC relative slope: -0.2146648855 +/- 0.0016767191 (% per nA). Intermediate values used: epsilon_data_rel(I) = 1 + slope_data * I / 100; epsilon_mc_rel(I) = 1 + slope_mc * I / 100; epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I).",
+      "description": "Residual current-dependence correction for Sp18 Inb when production acceptance uses only the 50 nA MC sample. Data fit: R_data(I) = b_d + m_d I with b_d = 0.0221059398 and m_d = -0.0001160668, corresponding to relative data slope -0.5250478961 +/- 0.0170442972 (% per nA). MC fit: epsilon_mc(I) = b_m + m_m I with b_m = 0.0486617914 and m_m = -0.0001044598, corresponding to relative MC slope -0.2146648855 +/- 0.0016767191 (% per nA). Because cross_sections.cpp uses acceptance from the 50 nA MC only, the stored factor is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(50 nA), not epsilon_data_rel(I) / epsilon_mc_rel(I). Here epsilon_data_rel(I) = 1 + slope_data * I / 100 and epsilon_mc_rel(50) = 1 + slope_mc * 50 / 100 = 0.8926675573. Example: at 50 nA, epsilon_data_rel(50) = 0.7374760519, so epsilon_resid(50) = 0.7374760519 / 0.8926675573 = 0.8261485992. cross_sections.cpp then applies 1 / epsilon_resid(I), which multiplies the extracted cross section by epsilon_mc_rel(50) / epsilon_data_rel(I).",
       "efficiency_by_current": {
-        "35": { "efficiency_percent": 88.2541, "efficiency_fraction": 0.882541, "uncertainty_percent": 0.6474, "uncertainty_fraction": 0.006474 },
+        "35": { "efficiency_percent": 91.4375, "efficiency_fraction": 0.914375, "uncertainty_percent": 0.6738, "uncertainty_fraction": 0.006738 },
         "50": { "efficiency_percent": 82.6149, "efficiency_fraction": 0.826149, "uncertainty_percent": 0.9578, "uncertainty_fraction": 0.009578 }
       }
     },
 
     "rga_sp18_out": {
-      "description": "Residual current-dependence correction for Sp18 Out. Stored value is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I), where epsilon_data_rel(I) = R_data(I)/R_data(0) from the DATA counts/nC fit and epsilon_mc_rel(I) = epsilon_mc(I)/epsilon_mc(0) from the MC rec/gen fit. Because cross_sections.cpp applies 1 / epsilon_resid(I), the cross section is multiplied by epsilon_mc_rel(I) / epsilon_data_rel(I), correcting the residual mismatch after current-dependent MC acceptance has already been applied. Data relative slope: -0.4369734046 +/- 0.0517005383 (% per nA). MC relative slope: -0.3927868596 +/- 0.0011556464 (% per nA). Intermediate values used: epsilon_data_rel(I) = 1 + slope_data * I / 100; epsilon_mc_rel(I) = 1 + slope_mc * I / 100; epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I).",
+      "description": "Residual current-dependence correction for Sp18 Out when production acceptance uses only the 45 nA MC sample. Data fit: R_data(I) = b_d + m_d I with b_d = 0.0568596409 and m_d = -0.0002484615, corresponding to relative data slope -0.4369734046 +/- 0.0517005383 (% per nA). MC fit: epsilon_mc(I) = b_m + m_m I with b_m = 0.0515542251 and m_m = -0.0002024982, corresponding to relative MC slope -0.3927868596 +/- 0.0011556464 (% per nA). Because cross_sections.cpp uses acceptance from the 45 nA MC only, the stored factor is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(45 nA), not epsilon_data_rel(I) / epsilon_mc_rel(I). Here epsilon_data_rel(I) = 1 + slope_data * I / 100 and epsilon_mc_rel(45) = 1 + slope_mc * 45 / 100 = 0.8232459132. cross_sections.cpp then applies 1 / epsilon_resid(I), which multiplies the extracted cross section by epsilon_mc_rel(45) / epsilon_data_rel(I).",
       "efficiency_by_current": {
-        "30": { "efficiency_percent": 98.4973, "efficiency_fraction": 0.984973, "uncertainty_percent": 1.7586, "uncertainty_fraction": 0.017586 },
+        "30": { "efficiency_percent": 105.5466, "efficiency_fraction": 1.055466, "uncertainty_percent": 1.8852, "uncertainty_fraction": 0.018852 },
         "45": { "efficiency_percent": 97.5847, "efficiency_fraction": 0.975847, "uncertainty_percent": 2.8267, "uncertainty_fraction": 0.028267 }
       }
     },
 
     "rga_sp19_inb": {
-      "description": "Residual current-dependence correction for Sp19 Inb. Stored value is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I), where epsilon_data_rel(I) = R_data(I)/R_data(0) from the DATA counts/nC fit and epsilon_mc_rel(I) = epsilon_mc(I)/epsilon_mc(0) from the MC rec/gen fit. Because cross_sections.cpp applies 1 / epsilon_resid(I), the cross section is multiplied by epsilon_mc_rel(I) / epsilon_data_rel(I), correcting the residual mismatch after current-dependent MC acceptance has already been applied. Data relative slope: -0.3382020949 +/- 0.0631474665 (% per nA). MC relative slope: -0.1641432992 +/- 0.0016466795 (% per nA). Intermediate values used: epsilon_data_rel(I) = 1 + slope_data * I / 100; epsilon_mc_rel(I) = 1 + slope_mc * I / 100; epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I).",
+      "description": "Residual current-dependence correction for Sp19 Inb when production acceptance uses only the 50 nA MC sample. Data fit: R_data(I) = b_d + m_d I with b_d = 0.0272009625 and m_d = -0.0000919942, corresponding to relative data slope -0.3382020949 +/- 0.0631474665 (% per nA). MC fit: epsilon_mc(I) = b_m + m_m I with b_m = 0.0663298761 and m_m = -0.0001088760, corresponding to relative MC slope -0.1641432992 +/- 0.0016466795 (% per nA). Because cross_sections.cpp uses acceptance from the 50 nA MC only, the stored factor is epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(50 nA), not epsilon_data_rel(I) / epsilon_mc_rel(I). Here epsilon_data_rel(I) = 1 + slope_data * I / 100 and epsilon_mc_rel(50) = 1 + slope_mc * 50 / 100 = 0.9179283504. cross_sections.cpp then applies 1 / epsilon_resid(I), which multiplies the extracted cross section by epsilon_mc_rel(50) / epsilon_data_rel(I).",
       "efficiency_by_current": {
-        "5":  { "efficiency_percent": 99.1225, "efficiency_fraction": 0.991225, "uncertainty_percent": 0.3185, "uncertainty_fraction": 0.003185 },
+        "5":  { "efficiency_percent": 107.0988, "efficiency_fraction": 1.070988, "uncertainty_percent": 0.3571, "uncertainty_fraction": 0.003571 },
         "50": { "efficiency_percent": 90.5189, "efficiency_fraction": 0.905189, "uncertainty_percent": 3.4406, "uncertainty_fraction": 0.034406 }
       }
     }
