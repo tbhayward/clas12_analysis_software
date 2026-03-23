@@ -162,6 +162,7 @@ static TripletValue_rpc parse_triplet_rpc(const std::string& s) {
     if (p0 == std::string::npos || p1 == std::string::npos || p1 <= p0) {
         return tv;
     }
+    // endif
 
     const std::string inner = s.substr(p0 + 1, p1 - p0 - 1);
     std::vector<std::string> parts;
@@ -379,6 +380,7 @@ struct GlobalSpreadAccumulator_rpc {
     double sum_w_spread  = 0.0;
     double sum_wr_spread = 0.0;
     int    phi_rows_used = 0;
+    int    panels_used   = 0;
 
     double mean() const {
         return (sum_w_spread > 0.0) ? (sum_wr_spread / sum_w_spread) : 0.0;
@@ -753,15 +755,37 @@ static double weighted_spread_for_xb_rpc(const std::map<std::tuple<int, int>, Pa
     return (sum_w > 0.0) ? (sum_ws / sum_w) : 0.0;
 }
 
-static void accumulate_global_spread_rpc(const std::map<std::tuple<int, int>, PanelBundle_rpc>& panel_map,
-                                         GlobalSpreadAccumulator_rpc& acc) {
-    for (const auto& kv : panel_map) {
-        const PanelBundle_rpc& pb = kv.second;
-        acc.sum_w_spread  += pb.chi2.sum_w_spread;
-        acc.sum_wr_spread += pb.chi2.sum_wr_spread;
-        acc.phi_rows_used += pb.chi2.phi_rows_used;
+static GlobalSpreadAccumulator_rpc compute_mode_global_spread_rpc(const std::vector<Row_rpc>& rows,
+                                                                  const AxisSets_rpc& ax,
+                                                                  const std::string& helicity,
+                                                                  const std::vector<PeriodDef_rpc>& periods) {
+    GlobalSpreadAccumulator_rpc acc;
+
+    for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
+        const auto& Q2s = ax.Q2_by_ix.at(ix);
+        const auto& Ts  = ax.t_by_ix.at(ix);
+
+        for (int it = 0; it < (int)Ts.size(); ++it) {
+            for (int iQ = 0; iQ < (int)Q2s.size(); ++iQ) {
+                PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity, periods);
+
+                if (pb.chi2.sum_w_spread <= 0.0 || pb.chi2.phi_rows_used <= 0) {
+                    continue;
+                }
+                // endif
+
+                acc.sum_w_spread  += pb.chi2.sum_w_spread;
+                acc.sum_wr_spread += pb.chi2.sum_wr_spread;
+                acc.phi_rows_used += pb.chi2.phi_rows_used;
+                acc.panels_used   += 1;
+            }
+            // endfor
+        }
+        // endfor
     }
     // endfor
+
+    return acc;
 }
 
 static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
@@ -772,8 +796,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                                     const std::string& top_label,
                                     const std::string& out_png,
                                     std::vector<double>& reduced_chi2_values,
-                                    std::ofstream& summary_out,
-                                    GlobalSpreadAccumulator_rpc& global_acc) {
+                                    std::ofstream& summary_out) {
     const auto& Q2s = ax.Q2_by_ix.at(ix);
     const auto& Ts  = ax.t_by_ix.at(ix);
     const int ncols = (int)Q2s.size();
@@ -810,12 +833,11 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             if (chi.ndof > 0) {
                 reduced_chi2_values.push_back(chi.reduced_chi2());
             }
+            // endif
         }
         // endfor
     }
     // endfor
-
-    accumulate_global_spread_rpc(panel_map, global_acc);
 
     const double global_weighted_spread = weighted_spread_for_xb_rpc(panel_map);
 
@@ -1257,6 +1279,7 @@ static void print_mode_global_summary_rpc(const std::string& mode_label,
         << " | periods = [" << plist.str() << "]"
         << " | global_weighted_mean_spread = " << acc.mean()
         << " | total_phi_rows_used = " << acc.phi_rows_used
+        << " | panels_used = " << acc.panels_used
         << " | sum_row_weights = " << acc.sum_w_spread;
 
     info_rpc(msg.str());
@@ -1268,6 +1291,7 @@ static void print_mode_global_summary_rpc(const std::string& mode_label,
     summary_out << std::fixed << std::setprecision(6)
                 << "global_weighted_mean_spread=" << acc.mean() << "\n"
                 << "total_phi_rows_used=" << acc.phi_rows_used << "\n"
+                << "panels_used=" << acc.panels_used << "\n"
                 << "sum_row_weights=" << acc.sum_w_spread << "\n\n";
 }
 
@@ -1305,7 +1329,6 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
     summary_out << "The terminal global summary is the same weighted mean spread, but accumulated over all contributing phi rows from all xB bins in that mode and helicity.\n\n";
 
     std::vector<double> reduced_chi2_values;
-    GlobalSpreadAccumulator_rpc global_acc;
 
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
         const fs::path out_png1 = overlay_dir / Form("period_consistency_xB_%d.png", ix);
@@ -1317,8 +1340,7 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
                                 mode_label,
                                 out_png1.string(),
                                 reduced_chi2_values,
-                                summary_out,
-                                global_acc);
+                                summary_out);
         info_rpc("Saved: " + out_png1.string());
 
         const fs::path out_png2 = overlay_dir / Form("period_consistency_half_range_xB_%d.png", ix);
@@ -1333,6 +1355,9 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
         info_rpc("Saved: " + out_png2.string());
     }
     // endfor
+
+    const GlobalSpreadAccumulator_rpc global_acc =
+        compute_mode_global_spread_rpc(rows, ax, helicity, periods);
 
     print_mode_global_summary_rpc(mode_label, helicity, periods, global_acc, summary_out);
 
