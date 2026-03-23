@@ -375,6 +375,16 @@ struct PanelBundle_rpc {
     PanelChi2_rpc chi2;
 };
 
+struct GlobalSpreadAccumulator_rpc {
+    double sum_w_spread  = 0.0;
+    double sum_wr_spread = 0.0;
+    int    phi_rows_used = 0;
+
+    double mean() const {
+        return (sum_w_spread > 0.0) ? (sum_wr_spread / sum_w_spread) : 0.0;
+    }
+};
+
 static std::string xs_col_rpc(const std::string& period_label,
                               const std::string& helicity) {
     return "normed cross sections, ep->epg, exp, " + period_label + ", " + helicity;
@@ -743,6 +753,17 @@ static double weighted_spread_for_xb_rpc(const std::map<std::tuple<int, int>, Pa
     return (sum_w > 0.0) ? (sum_ws / sum_w) : 0.0;
 }
 
+static void accumulate_global_spread_rpc(const std::map<std::tuple<int, int>, PanelBundle_rpc>& panel_map,
+                                         GlobalSpreadAccumulator_rpc& acc) {
+    for (const auto& kv : panel_map) {
+        const PanelBundle_rpc& pb = kv.second;
+        acc.sum_w_spread  += pb.chi2.sum_w_spread;
+        acc.sum_wr_spread += pb.chi2.sum_wr_spread;
+        acc.phi_rows_used += pb.chi2.phi_rows_used;
+    }
+    // endfor
+}
+
 static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                                     const AxisSets_rpc& ax,
                                     int ix,
@@ -751,7 +772,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                                     const std::string& top_label,
                                     const std::string& out_png,
                                     std::vector<double>& reduced_chi2_values,
-                                    std::ofstream& summary_out) {
+                                    std::ofstream& summary_out,
+                                    GlobalSpreadAccumulator_rpc& global_acc) {
     const auto& Q2s = ax.Q2_by_ix.at(ix);
     const auto& Ts  = ax.t_by_ix.at(ix);
     const int ncols = (int)Q2s.size();
@@ -792,6 +814,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
         // endfor
     }
     // endfor
+
+    accumulate_global_spread_rpc(panel_map, global_acc);
 
     const double global_weighted_spread = weighted_spread_for_xb_rpc(panel_map);
 
@@ -1214,6 +1238,39 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
     delete c;
 }
 
+static void print_mode_global_summary_rpc(const std::string& mode_label,
+                                          const std::string& helicity,
+                                          const std::vector<PeriodDef_rpc>& periods,
+                                          const GlobalSpreadAccumulator_rpc& acc,
+                                          std::ofstream& summary_out) {
+    std::ostringstream plist;
+    for (size_t i = 0; i < periods.size(); ++i) {
+        if (i > 0) plist << ", ";
+        plist << periods[i].label;
+    }
+    // endfor
+
+    std::ostringstream msg;
+    msg << std::fixed << std::setprecision(6)
+        << "GLOBAL SUMMARY | mode = " << mode_label
+        << " | helicity = " << helicity
+        << " | periods = [" << plist.str() << "]"
+        << " | global_weighted_mean_spread = " << acc.mean()
+        << " | total_phi_rows_used = " << acc.phi_rows_used
+        << " | sum_row_weights = " << acc.sum_w_spread;
+
+    info_rpc(msg.str());
+
+    summary_out << "\nGLOBAL SUMMARY\n";
+    summary_out << "mode=" << mode_label << "\n";
+    summary_out << "helicity=" << helicity << "\n";
+    summary_out << "periods=[" << plist.str() << "]\n";
+    summary_out << std::fixed << std::setprecision(6)
+                << "global_weighted_mean_spread=" << acc.mean() << "\n"
+                << "total_phi_rows_used=" << acc.phi_rows_used << "\n"
+                << "sum_row_weights=" << acc.sum_w_spread << "\n\n";
+}
+
 static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
                                       const AxisSets_rpc& ax,
                                       const std::string& helicity,
@@ -1244,9 +1301,11 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
     summary_out << "Definition: for each phi row, a weighted mean cross section is computed across the available included run periods using inverse-variance weights w_i = 1/sigma_i^2 from the statistical uncertainties of the corresponding normed cross-section tuples.\n";
     summary_out << "Overlay plots show the ratio of each included run period to that weighted mean. The plotted statistical uncertainty is propagated through r_i = x_i / mu_w, retaining the x_i contribution to mu_w.\n";
     summary_out << "For each phi row, the plotted spread is the inverse-variance-weighted RMS spread in ratio space: spread_phi = sqrt[ sum_i w_i (r_i - <r>_w)^2 / sum_i w_i ].\n";
-    summary_out << "The reported panel value <spread>_w is the weighted mean of spread_phi across phi, with row weight W_phi = sum_i w_i.\n\n";
+    summary_out << "The reported panel value <spread>_w is the weighted mean of spread_phi across phi, with row weight W_phi = sum_i w_i.\n";
+    summary_out << "The terminal global summary is the same weighted mean spread, but accumulated over all contributing phi rows from all xB bins in that mode and helicity.\n\n";
 
     std::vector<double> reduced_chi2_values;
+    GlobalSpreadAccumulator_rpc global_acc;
 
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
         const fs::path out_png1 = overlay_dir / Form("period_consistency_xB_%d.png", ix);
@@ -1258,7 +1317,8 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
                                 mode_label,
                                 out_png1.string(),
                                 reduced_chi2_values,
-                                summary_out);
+                                summary_out,
+                                global_acc);
         info_rpc("Saved: " + out_png1.string());
 
         const fs::path out_png2 = overlay_dir / Form("period_consistency_half_range_xB_%d.png", ix);
@@ -1273,6 +1333,8 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
         info_rpc("Saved: " + out_png2.string());
     }
     // endfor
+
+    print_mode_global_summary_rpc(mode_label, helicity, periods, global_acc, summary_out);
 
     const fs::path hist_png = base_dir / "reduced_chi2_distribution.png";
     draw_reduced_chi2_hist_rpc(reduced_chi2_values, helicity, hist_png.string(), summary_out);
