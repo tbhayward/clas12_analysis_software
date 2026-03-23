@@ -25,7 +25,8 @@
 #   (2) data percent-of-intercept vs current
 #   (3) MC efficiency vs current
 #   (4) MC percent-of-intercept vs current
-#   (5) data and MC percent-of-intercept vs current on the same subplots
+#   (5) data and MC percent-of-intercept vs current on same subplots
+#   (6) data and MC absolute metric vs current on same subplots
 #
 # Output:
 #   output/dvcs_current_dependence/dvcs_counts_per_nc_vs_current.png
@@ -33,6 +34,7 @@
 #   output/dvcs_current_dependence/dvcs_efficiency_vs_current_mc.png
 #   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current_mc.png
 #   output/dvcs_current_dependence/dvcs_percent_of_intercept_data_vs_mc.png
+#   output/dvcs_current_dependence/dvcs_absolute_data_vs_mc.png
 #
 # Diagnostic CSVs:
 #   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
@@ -41,9 +43,7 @@
 #
 # Temporary runtime optional override:
 #   --skip_temp_heavy_mc
-#     skips:
-#       rga_sp18_out at 45 nA
-#       rga_fa18_out at 50 nA
+#     currently disabled in code below unless you uncomment skip_pairs
 #
 
 import os
@@ -585,7 +585,8 @@ def build_mc_aggregation(mc_dir, skip_temp_heavy_mc=False):
     if skip_temp_heavy_mc:
         # skip_pairs.add(("rga_sp18_out", 45))
         # skip_pairs.add(("rga_fa18_inb", 50))
-        skip_pairs.add(("rga_fa18_out", 50))
+        # skip_pairs.add(("rga_fa18_out", 50))
+        pass
     #endif
 
     grouped = {}
@@ -820,7 +821,7 @@ def main():
     parser.add_argument(
         "--skip_temp_heavy_mc",
         action="store_true",
-        help="Temporarily skip rga_sp18_out 45 nA MC and rga_fa18_out 50 nA MC.",
+        help="Temporarily skip selected MC points if skip_pairs is uncommented in build_mc_aggregation.",
     )
     args = parser.parse_args()
 
@@ -882,9 +883,7 @@ def main():
     print("")
     print("Processing MC ROOT files and computing efficiencies...")
     if args.skip_temp_heavy_mc:
-        print("Temporary MC skip override is ON:")
-        print("  skipping rga_sp18_out at 45 nA")
-        print("  skipping rga_fa18_out at 50 nA")
+        print("Temporary MC skip override flag is ON.")
     #endif
 
     mc_rows = build_mc_aggregation(MC_DIR, skip_temp_heavy_mc=args.skip_temp_heavy_mc)
@@ -1427,6 +1426,132 @@ def main():
 
     print("")
     print(f"[saved] {out5}")
+
+    # -------------------------------------------------------------------------
+    # Plot 6: DATA and MC absolute values vs current on same subplots
+    #
+    # DATA uses counts/nC.
+    # MC uses rec/gen efficiency.
+    # This is not the same physical normalization, but it is useful as a
+    # shape-only comparison period by period.
+    # -------------------------------------------------------------------------
+    fig6, axs6 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
+    axs6 = axs6.flatten()
+
+    for i, period in enumerate(PERIOD_ORDER):
+        ax = axs6[i]
+        c = period_color[period]
+
+        # DATA
+        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
+        frd = data_fit_results[period]
+
+        data_fit = frd["m"] * xfit + frd["b"]
+        data_fit_lo = (frd["m"] - frd["sm"]) * xfit + frd["b"]
+        data_fit_hi = (frd["m"] + frd["sm"]) * xfit + frd["b"]
+
+        # MC
+        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
+        frm = mc_fit_results[period]
+
+        mc_fit = frm["m"] * xfit + frm["b"]
+        mc_fit_lo = (frm["m"] - frm["sm"]) * xfit + frm["b"]
+        mc_fit_hi = (frm["m"] + frm["sm"]) * xfit + frm["b"]
+
+        ax.fill_between(xfit, data_fit_lo, data_fit_hi, color=c, alpha=0.12, linewidth=0)
+        ax.errorbar(
+            xd,
+            yd,
+            yerr=syd,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label="Data (counts/nC)",
+        )
+        ax.plot(xfit, data_fit, color=c)
+
+        ax.fill_between(xfit, mc_fit_lo, mc_fit_hi, color=c, alpha=0.08, linewidth=0)
+        ax.errorbar(
+            xm,
+            ym,
+            yerr=sym,
+            fmt="o",
+            capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
+            color=c,
+            label="MC (rec/gen)",
+        )
+        ax.plot(xfit, mc_fit, color=c, linestyle="--")
+
+        ax.set_title(period)
+        ax.set_xlim(0.0, 100.0)
+        ax.set_xlabel("Beam current (nA)")
+        ax.set_ylabel("Absolute value")
+        ax.grid(True, alpha=0.3)
+        ax.legend(frameon=True)
+    #endfor
+
+    axc6 = axs6[5]
+    axc6.set_title("All periods (overlay)")
+    axc6.set_xlim(0.0, 100.0)
+    axc6.set_xlabel("Beam current (nA)")
+    axc6.set_ylabel("Absolute value")
+    axc6.grid(True, alpha=0.3)
+
+    for period in PERIOD_ORDER:
+        c = period_color[period]
+
+        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
+        frd = data_fit_results[period]
+        data_fit = frd["m"] * xfit + frd["b"]
+        data_fit_lo = (frd["m"] - frd["sm"]) * xfit + frd["b"]
+        data_fit_hi = (frd["m"] + frd["sm"]) * xfit + frd["b"]
+
+        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
+        frm = mc_fit_results[period]
+        mc_fit = frm["m"] * xfit + frm["b"]
+        mc_fit_lo = (frm["m"] - frm["sm"]) * xfit + frm["b"]
+        mc_fit_hi = (frm["m"] + frm["sm"]) * xfit + frm["b"]
+
+        axc6.fill_between(xfit, data_fit_lo, data_fit_hi, color=c, alpha=0.08, linewidth=0)
+        axc6.errorbar(
+            xd,
+            yd,
+            yerr=syd,
+            fmt="o",
+            capsize=3,
+            color=c,
+            label=f"{period} data",
+        )
+        axc6.plot(xfit, data_fit, color=c)
+
+        axc6.fill_between(xfit, mc_fit_lo, mc_fit_hi, color=c, alpha=0.05, linewidth=0)
+        axc6.errorbar(
+            xm,
+            ym,
+            yerr=sym,
+            fmt="o",
+            capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
+            color=c,
+            label=f"{period} MC",
+        )
+        axc6.plot(xfit, mc_fit, color=c, linestyle="--")
+    #endfor
+
+    axc6.legend(frameon=True, fontsize=8)
+
+    out6 = os.path.join(OUTPUT_DIR, "dvcs_absolute_data_vs_mc.png")
+    fig6.savefig(out6, dpi=200)
+
+    print("")
+    print(f"[saved] {out6}")
     print("")
 #enddef
 
