@@ -184,6 +184,7 @@ static TripletValue_rpc parse_triplet_rpc(const std::string& s) {
         tv.syst_err = (parts.size() >= 3) ? ToDouble_rpc(parts[2]) : 0.0;
         tv.valid    = true;
     }
+    // endif
 
     return tv;
 }
@@ -215,6 +216,7 @@ static std::vector<PeriodDef_rpc> regular_period_defs_rpc(const std::string& hel
             {"Sp18 Out", "sp18_out", kMagenta+2,  33}
         };
     }
+    // endif
 
     if (helicity == "pos" || helicity == "neg") {
         return {
@@ -222,6 +224,7 @@ static std::vector<PeriodDef_rpc> regular_period_defs_rpc(const std::string& hel
             {"Fa18 Out", "fa18_out", kRed + 1, 24}
         };
     }
+    // endif
 
     fatal_rpc("Unknown helicity in regular_period_defs_rpc: " + helicity);
     return {};
@@ -231,6 +234,7 @@ static std::vector<PeriodDef_rpc> pairable_period_defs_rpc(const std::string& he
     if (helicity == "unpol") {
         return all_period_defs_rpc();
     }
+    // endif
 
     if (helicity == "pos" || helicity == "neg") {
         return {
@@ -239,6 +243,7 @@ static std::vector<PeriodDef_rpc> pairable_period_defs_rpc(const std::string& he
             {"Sp19 Inb", "sp19_inb", kBlue + 1, 21}
         };
     }
+    // endif
 
     fatal_rpc("Unknown helicity in pairable_period_defs_rpc: " + helicity);
     return {};
@@ -335,26 +340,26 @@ struct PanelSeries_rpc {
     std::vector<double> err;
 };
 
-struct RangeBandPoint_rpc {
-    double phi              = 0.0;
-    double lo               = 0.0;
-    double hi               = 0.0;
-    double half_range       = 0.0;
-    double mean_stat_err    = 0.0;
-    double half_range_err   = 0.0;
-    double weight           = 0.0;
+struct SpreadBandPoint_rpc {
+    double phi               = 0.0;
+    double lo                = 0.0;
+    double hi                = 0.0;
+    double spread            = 0.0;
+    double spread_err        = 0.0;
+    double weight            = 0.0;
+    double weighted_mean_raw = 0.0;
 };
 
 struct PanelChi2_rpc {
-    double chi2                   = 0.0;
-    int    ndof                   = 0;
-    int    phi_rows_used          = 0;
-    int    points_used            = 0;
-    int    rows_total             = 0;
+    double chi2                = 0.0;
+    int    ndof                = 0;
+    int    phi_rows_used       = 0;
+    int    points_used         = 0;
+    int    rows_total          = 0;
 
-    double weighted_half_range    = 0.0;
-    double sum_w_half_range       = 0.0;
-    double sum_wr_half_range      = 0.0;
+    double weighted_spread     = 0.0;
+    double sum_w_spread        = 0.0;
+    double sum_wr_spread       = 0.0;
 
     double reduced_chi2() const {
         return (ndof > 0) ? (chi2 / (double)ndof) : 0.0;
@@ -364,7 +369,7 @@ struct PanelChi2_rpc {
 struct PanelBundle_rpc {
     std::map<std::string, PanelSeries_rpc> series_by_period;
     std::map<std::string, std::vector<PanelPoint_rpc>> ratio_series_by_period;
-    std::vector<RangeBandPoint_rpc> range_band;
+    std::vector<SpreadBandPoint_rpc> spread_band;
     double Q2avg = 0.0;
     double tavg  = 0.0;
     PanelChi2_rpc chi2;
@@ -393,11 +398,13 @@ static std::vector<Row_rpc> load_rows_rpc(const std::string& hayward_csv_path) {
     if (!fin.is_open()) {
         fatal_rpc("Cannot open CSV: " + hayward_csv_path);
     }
+    // endif
 
     std::string header_line;
     if (!std::getline(fin, header_line)) {
         fatal_rpc("CSV appears empty: " + hayward_csv_path);
     }
+    // endif
 
     const std::vector<std::string> header = split_csv_line_rpc(header_line);
     const auto H = build_header_index_rpc(header);
@@ -434,6 +441,7 @@ static std::vector<Row_rpc> load_rows_rpc(const std::string& hayward_csv_path) {
         if (ToInt_rpc(get_col_ref_rpc(cols, H, "valid bin")) != 1) {
             continue;
         }
+        // endif
 
         Row_rpc r;
         r.bin_index = ToInt_rpc(get_col_ref_rpc(cols, H, "bin index"));
@@ -489,27 +497,48 @@ static TGraphErrors* graph_pe1_rpc(const std::vector<double>& X,
     return g;
 }
 
-static double ratio_err_to_mean_rpc(double xi,
-                                    double si,
-                                    double mean,
-                                    int n_periods) {
-    if (n_periods <= 1) return 0.0;
-    if (mean == 0.0) return 0.0;
-    if (si <= 0.0) return 0.0;
+struct WeightedMeanInfo_rpc {
+    double mean    = 0.0;
+    double err     = 0.0;
+    double sum_w   = 0.0;
+    bool   valid   = false;
+};
 
-    const double dfdxi = (mean - xi / (double)n_periods) / (mean * mean);
-    return std::fabs(dfdxi) * si;
-}
+static WeightedMeanInfo_rpc weighted_mean_rpc(const std::vector<double>& values,
+                                              const std::vector<double>& errs) {
+    WeightedMeanInfo_rpc out;
+    if (values.size() != errs.size() || values.empty()) return out;
 
-static double stat_err_of_arithmetic_mean_rpc(const std::vector<double>& errs) {
-    if (errs.empty()) return 0.0;
+    double sum_w  = 0.0;
+    double sum_wx = 0.0;
 
-    double sumsq = 0.0;
-    for (double e : errs) {
-        sumsq += e * e;
+    for (size_t i = 0; i < values.size(); ++i) {
+        const double sigma = errs[i];
+        if (sigma <= 0.0) continue;
+        const double w = 1.0 / (sigma * sigma);
+        sum_w  += w;
+        sum_wx += w * values[i];
     }
     // endfor
-    return std::sqrt(sumsq) / (double)errs.size();
+
+    if (sum_w <= 0.0) return out;
+
+    out.mean  = sum_wx / sum_w;
+    out.err   = std::sqrt(1.0 / sum_w);
+    out.sum_w = sum_w;
+    out.valid = true;
+    return out;
+}
+
+static double ratio_err_to_weighted_mean_rpc(double xi,
+                                             double si,
+                                             double weighted_mean,
+                                             double wi_over_sumw) {
+    if (weighted_mean == 0.0) return 0.0;
+    if (si <= 0.0) return 0.0;
+
+    const double dr_dxi = (weighted_mean - xi * wi_over_sumw) / (weighted_mean * weighted_mean);
+    return std::fabs(dr_dxi) * si;
 }
 
 static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
@@ -551,6 +580,7 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
             const std::string cname = xs_col_rpc(p.label, helicity);
             auto itx = r.xs_by_col.find(cname);
             if (itx == r.xs_by_col.end()) continue;
+
             const TripletValue_rpc& tv = itx->second;
             if (!tv.valid || tv.value <= 0.0 || tv.stat_err <= 0.0) continue;
 
@@ -566,20 +596,19 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
         const int n = (int)valid_points.size();
         if (n < 2) continue;
 
-        double mean = 0.0;
-        std::vector<double> stat_errs;
-        stat_errs.reserve(valid_points.size());
+        std::vector<double> values;
+        std::vector<double> errs;
+        values.reserve(valid_points.size());
+        errs.reserve(valid_points.size());
 
         for (const auto& vp : valid_points) {
-            mean += vp.value;
-            stat_errs.push_back(vp.err);
+            values.push_back(vp.value);
+            errs.push_back(vp.err);
         }
         // endfor
-        mean /= (double)n;
-        if (mean == 0.0) continue;
 
-        const double mean_stat_err = stat_err_of_arithmetic_mean_rpc(stat_errs);
-        const double weight = (mean_stat_err > 0.0) ? 1.0 / (mean_stat_err * mean_stat_err) : 0.0;
+        const WeightedMeanInfo_rpc wm = weighted_mean_rpc(values, errs);
+        if (!wm.valid || wm.mean <= 0.0 || wm.sum_w <= 0.0) continue;
 
         double q2avg_sum = out.Q2avg * (double)out.chi2.phi_rows_used;
         double tavg_sum  = out.tavg  * (double)out.chi2.phi_rows_used;
@@ -588,44 +617,61 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
 
         double min_ratio =  1.0e300;
         double max_ratio = -1.0e300;
-        double chi2_row = 0.0;
+        double chi2_row  =  0.0;
+        double sum_wr    =  0.0;
+        double sum_wrr2  =  0.0;
 
         for (const auto& vp : valid_points) {
             const double sigma = vp.err;
             if (sigma <= 0.0) continue;
 
-            const double pull = (vp.value - mean) / sigma;
+            const double wi = 1.0 / (sigma * sigma);
+            const double wi_over_sumw = wi / wm.sum_w;
+
+            const double pull = (vp.value - wm.mean) / sigma;
             chi2_row += pull * pull;
+
+            const double ratio = vp.value / wm.mean;
+            const double ratio_err = ratio_err_to_weighted_mean_rpc(vp.value,
+                                                                    vp.err,
+                                                                    wm.mean,
+                                                                    wi_over_sumw);
 
             PanelPoint_rpc rp;
             rp.phi   = r.phiavg;
-            rp.ratio = vp.value / mean;
-            rp.err   = ratio_err_to_mean_rpc(vp.value, vp.err, mean, n);
+            rp.ratio = ratio;
+            rp.err   = ratio_err;
             out.ratio_series_by_period[vp.label].push_back(rp);
 
-            min_ratio = std::min(min_ratio, rp.ratio);
-            max_ratio = std::max(max_ratio, rp.ratio);
+            sum_wr   += wi * ratio;
+            sum_wrr2 += wi * ratio * ratio;
+
+            min_ratio = std::min(min_ratio, ratio);
+            max_ratio = std::max(max_ratio, ratio);
         }
         // endfor
 
-        if (min_ratio < 1.0e299 && max_ratio > -1.0e299) {
-            RangeBandPoint_rpc bp;
-            bp.phi            = r.phiavg;
-            bp.lo             = min_ratio;
-            bp.hi             = max_ratio;
-            bp.half_range     = 0.5 * (max_ratio - min_ratio);
-            bp.mean_stat_err  = mean_stat_err;
-            bp.half_range_err = mean_stat_err;
-            bp.weight         = weight;
-            out.range_band.push_back(bp);
+        if (min_ratio >= 1.0e299 || max_ratio <= -1.0e299) continue;
 
-            if (weight > 0.0) {
-                out.chi2.sum_w_half_range  += weight;
-                out.chi2.sum_wr_half_range += weight * bp.half_range;
-                out.chi2.weighted_half_range =
-                    out.chi2.sum_wr_half_range / out.chi2.sum_w_half_range;
-            }
-        }
+        const double ratio_mean = sum_wr / wm.sum_w;
+        double variance = sum_wrr2 / wm.sum_w - ratio_mean * ratio_mean;
+        if (variance < 0.0) variance = 0.0;
+        const double spread = std::sqrt(variance);
+
+        SpreadBandPoint_rpc bp;
+        bp.phi               = r.phiavg;
+        bp.lo                = min_ratio;
+        bp.hi                = max_ratio;
+        bp.spread            = spread;
+        bp.spread_err        = wm.err / wm.mean;
+        bp.weight            = wm.sum_w;
+        bp.weighted_mean_raw = wm.mean;
+        out.spread_band.push_back(bp);
+
+        out.chi2.sum_w_spread  += bp.weight;
+        out.chi2.sum_wr_spread += bp.weight * bp.spread;
+        out.chi2.weighted_spread =
+            out.chi2.sum_wr_spread / out.chi2.sum_w_spread;
 
         out.chi2.chi2 += chi2_row;
         out.chi2.ndof += (n - 1);
@@ -675,26 +721,26 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
     }
     // endfor
 
-    std::sort(out.range_band.begin(), out.range_band.end(), [](const RangeBandPoint_rpc& a,
-                                                               const RangeBandPoint_rpc& b) {
+    std::sort(out.spread_band.begin(), out.spread_band.end(), [](const SpreadBandPoint_rpc& a,
+                                                                 const SpreadBandPoint_rpc& b) {
         return a.phi < b.phi;
     });
 
     return out;
 }
 
-static double weighted_half_range_for_xb_rpc(const std::map<std::tuple<int, int>, PanelBundle_rpc>& panel_map) {
-    double sum_w = 0.0;
-    double sum_wr = 0.0;
+static double weighted_spread_for_xb_rpc(const std::map<std::tuple<int, int>, PanelBundle_rpc>& panel_map) {
+    double sum_w  = 0.0;
+    double sum_ws = 0.0;
 
     for (const auto& kv : panel_map) {
         const PanelBundle_rpc& pb = kv.second;
-        sum_w  += pb.chi2.sum_w_half_range;
-        sum_wr += pb.chi2.sum_wr_half_range;
+        sum_w  += pb.chi2.sum_w_spread;
+        sum_ws += pb.chi2.sum_wr_spread;
     }
     // endfor
 
-    return (sum_w > 0.0) ? (sum_wr / sum_w) : 0.0;
+    return (sum_w > 0.0) ? (sum_ws / sum_w) : 0.0;
 }
 
 static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
@@ -733,7 +779,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                         << "chi2=" << chi.chi2 << "  "
                         << "ndof=" << chi.ndof << "  "
                         << "chi2_ndf=" << chi.reduced_chi2() << "  "
-                        << "weighted_half_range=" << chi.weighted_half_range << "  "
+                        << "weighted_spread=" << chi.weighted_spread << "  "
                         << "phi_rows_used=" << chi.phi_rows_used << "  "
                         << "points_used=" << chi.points_used << "  "
                         << "rows_total=" << chi.rows_total
@@ -747,7 +793,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     }
     // endfor
 
-    const double global_weighted_half_range = weighted_half_range_for_xb_rpc(panel_map);
+    const double global_weighted_spread = weighted_spread_for_xb_rpc(panel_map);
 
     const std::string cname = fs::path(out_png).filename().string();
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
@@ -767,12 +813,12 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextFont(42);
     head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
-        Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
+        Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean spread = %.3f",
              top_label.c_str(),
              helicity.c_str(),
              ax.xB[ix].first,
              ax.xB[ix].second,
-             global_weighted_half_range));
+             global_weighted_spread));
 
     TLegend* leg = new TLegend(0.03, 0.02, 0.97, 0.48);
     leg->SetNColumns((int)periods.size());
@@ -813,7 +859,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 2.0);
             frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("Run period / mean");
+            frame->GetYaxis()->SetTitle("Run period / weighted mean");
             frame->SetTitle("");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
@@ -830,26 +876,26 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
 
             frame->SetTitleFont(42, "t");
             frame->SetTitleSize(0.040, "t");
-            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, #chi^{2}/ndf=%s, <1/2 range>_{w}=%.2f",
+            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, #chi^{2}/ndf=%s, <spread>_{w}=%.2f",
                                  pb.Q2avg,
                                  pb.tavg,
                                  (pb.chi2.ndof > 0 ? Form("%.2f", redchi2) : "n/a"),
-                                 pb.chi2.weighted_half_range));
+                                 pb.chi2.weighted_spread));
 
-            if (!pb.range_band.empty()) {
+            if (!pb.spread_band.empty()) {
                 std::vector<double> xb, yb;
-                xb.reserve(2 * pb.range_band.size());
-                yb.reserve(2 * pb.range_band.size());
+                xb.reserve(2 * pb.spread_band.size());
+                yb.reserve(2 * pb.spread_band.size());
 
-                for (const auto& bp : pb.range_band) {
+                for (const auto& bp : pb.spread_band) {
                     xb.push_back(bp.phi);
                     yb.push_back(bp.hi);
                 }
                 // endfor
 
-                for (int ib = (int)pb.range_band.size() - 1; ib >= 0; --ib) {
-                    xb.push_back(pb.range_band[ib].phi);
-                    yb.push_back(pb.range_band[ib].lo);
+                for (int ib = (int)pb.spread_band.size() - 1; ib >= 0; --ib) {
+                    xb.push_back(pb.spread_band[ib].phi);
+                    yb.push_back(pb.spread_band[ib].lo);
                 }
                 // endfor
 
@@ -859,6 +905,7 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
                 gband->SetLineWidth(1);
                 gband->Draw("F SAME");
             }
+            // endif
 
             TLine* unity = new TLine(0.0, 1.0, 360.0, 1.0);
             unity->SetLineColor(kGray + 2);
@@ -925,8 +972,8 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
             PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity, periods);
             panel_map[{iQ, it}] = pb;
 
-            for (const auto& bp : pb.range_band) {
-                ymax = std::max(ymax, bp.half_range + bp.half_range_err);
+            for (const auto& bp : pb.spread_band) {
+                ymax = std::max(ymax, bp.spread + bp.spread_err);
             }
             // endfor
         }
@@ -937,7 +984,7 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     if (ymax <= 0.0) ymax = 0.25;
     ymax *= 1.20;
 
-    const double global_weighted_half_range = weighted_half_range_for_xb_rpc(panel_map);
+    const double global_weighted_spread = weighted_spread_for_xb_rpc(panel_map);
 
     const std::string cname = fs::path(out_png).filename().string();
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
@@ -957,12 +1004,12 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetTextFont(42);
     head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
-        Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean 1/2 range = %.3f",
+        Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean spread = %.3f",
              top_label.c_str(),
              helicity.c_str(),
              ax.xB[ix].first,
              ax.xB[ix].second,
-             global_weighted_half_range));
+             global_weighted_spread));
 
     c->cd();
     TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
@@ -986,7 +1033,7 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
             frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("1/2 range");
+            frame->GetYaxis()->SetTitle("Weighted spread");
             frame->SetTitle("");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
@@ -1002,21 +1049,21 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
 
             frame->SetTitleFont(42, "t");
             frame->SetTitleSize(0.040, "t");
-            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, <1/2 range>_{w}=%.2f",
+            frame->SetTitle(Form("Q^{2}=%.2f, -t=%.2f, <spread>_{w}=%.2f",
                                  pb.Q2avg,
                                  pb.tavg,
-                                 pb.chi2.weighted_half_range));
+                                 pb.chi2.weighted_spread));
 
-            if (!pb.range_band.empty()) {
+            if (!pb.spread_band.empty()) {
                 std::vector<double> x, y, ey;
-                x.reserve(pb.range_band.size());
-                y.reserve(pb.range_band.size());
-                ey.reserve(pb.range_band.size());
+                x.reserve(pb.spread_band.size());
+                y.reserve(pb.spread_band.size());
+                ey.reserve(pb.spread_band.size());
 
-                for (const auto& bp : pb.range_band) {
+                for (const auto& bp : pb.spread_band) {
                     x.push_back(bp.phi);
-                    y.push_back(bp.half_range);
-                    ey.push_back(bp.half_range_err);
+                    y.push_back(bp.spread);
+                    ey.push_back(bp.spread_err);
                 }
                 // endfor
 
@@ -1033,13 +1080,14 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
                 g->SetLineWidth(1);
                 g->Draw("PE1 SAME");
             }
+            // endif
         }
         // endfor
     }
     // endfor
 
     c->SaveAs(out_png.c_str());
-    summary_out << "Saved half-range canvas: " << out_png << "\n";
+    summary_out << "Saved spread canvas: " << out_png << "\n";
 
     delete c;
 }
@@ -1065,6 +1113,7 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
                     << helicity << ".\n";
         return;
     }
+    // endif
 
     const double xmax = 50.0;
     const int nbins = 50;
@@ -1179,6 +1228,7 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
     if (!summary_out.is_open()) {
         fatal_rpc("Could not open summary text file for writing in " + base_dir.string());
     }
+    // endif
 
     summary_out << "Run-period consistency summary for mode = " << mode_label
                 << " helicity = " << helicity << "\n";
@@ -1188,11 +1238,13 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
         if (i > 0) summary_out << ", ";
         summary_out << periods[i].label;
     }
+    // endfor
     summary_out << "\n";
 
-    summary_out << "Definition: for each phi row, chi2 is computed relative to the simple arithmetic mean across the available included run periods using only the statistical uncertainties from the corresponding normed cross-section tuples.\n";
-    summary_out << "Overlay plots show the ratio of each included run period to that same mean. The plotted statistical uncertainty is propagated through r_i = x_i / mean with mean = (1/N) sum_j x_j, retaining the x_i contribution to the mean.\n";
-    summary_out << "The reported panel value <1/2 range>_w is the weighted mean of 0.5 * (max ratio - min ratio) across phi, with weight w = 1 / sigma_mean^2, where sigma_mean is the statistical uncertainty on the arithmetic mean of the available included run-period points at that phi.\n\n";
+    summary_out << "Definition: for each phi row, a weighted mean cross section is computed across the available included run periods using inverse-variance weights w_i = 1/sigma_i^2 from the statistical uncertainties of the corresponding normed cross-section tuples.\n";
+    summary_out << "Overlay plots show the ratio of each included run period to that weighted mean. The plotted statistical uncertainty is propagated through r_i = x_i / mu_w, retaining the x_i contribution to mu_w.\n";
+    summary_out << "For each phi row, the plotted spread is the inverse-variance-weighted RMS spread in ratio space: spread_phi = sqrt[ sum_i w_i (r_i - <r>_w)^2 / sum_i w_i ].\n";
+    summary_out << "The reported panel value <spread>_w is the weighted mean of spread_phi across phi, with row weight W_phi = sum_i w_i.\n\n";
 
     std::vector<double> reduced_chi2_values;
 
