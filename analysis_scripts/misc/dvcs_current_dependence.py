@@ -20,6 +20,26 @@
 #   - Compute uncertainty = sqrt(N_rec) / N_gen
 #   - Fit y = m*x + b with weighted least squares
 #
+# IMPORTANT OPERATIONAL POINT:
+#   The production acceptance correction does NOT use all MC currents.
+#   Instead, it uses only one MC current per period:
+#
+#     Sp18 Inb  -> 50 nA
+#     Sp18 Out  -> 45 nA
+#     Fa18 Inb  -> 50 nA
+#     Fa18 Out  -> 50 nA
+#     Sp19 Inb  -> 50 nA
+#
+#   Therefore, the quantity relevant for efficiency.json is NOT
+#     epsilon_data_rel(I) / epsilon_mc_rel(I)
+#   but rather
+#     epsilon_data_rel(I) / epsilon_mc_rel(I_ref)
+#   where I_ref is the single MC current actually used in the production
+#   acceptance for that period.
+#
+#   This script keeps all previous plots, and also prints / writes the
+#   residual current-dependence correction implied by that operational logic.
+#
 # Plots produced:
 #   (1) data counts/nC vs current
 #   (2) data percent-of-intercept vs current
@@ -40,6 +60,7 @@
 #   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
 #   output/dvcs_current_dependence/dvcs_current_dependence_current_table.csv
 #   output/dvcs_current_dependence/dvcs_current_dependence_mc_table.csv
+#   output/dvcs_current_dependence/dvcs_current_dependence_residual_table.csv
 #
 # Temporary runtime optional override:
 #   --skip_temp_heavy_mc
@@ -80,6 +101,23 @@ PERIOD_DISPLAY_FROM_INTERNAL = {
     "rga_fa18_inb": "Fa18 Inb",
     "rga_fa18_out": "Fa18 Out",
     "rga_sp19_inb": "Sp19 Inb",
+}
+
+PERIOD_INTERNAL_FROM_DISPLAY = {
+    "Sp18 Inb": "rga_sp18_inb",
+    "Sp18 Out": "rga_sp18_out",
+    "Fa18 Inb": "rga_fa18_inb",
+    "Fa18 Out": "rga_fa18_out",
+    "Sp19 Inb": "rga_sp19_inb",
+}
+
+# The single MC current actually used in the production acceptance correction.
+MC_REFERENCE_CURRENT = {
+    "rga_sp18_inb": 50,
+    "rga_sp18_out": 45,
+    "rga_fa18_inb": 50,
+    "rga_fa18_out": 50,
+    "rga_sp19_inb": 50,
 }
 
 MC_DIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen"
@@ -464,6 +502,44 @@ def parse_mc_filename(basename):
 #enddef
 
 
+def get_mc_reference_current(period_name_or_internal):
+    """
+    Return the single MC current actually used in the production acceptance
+    for this period.
+    """
+    if period_name_or_internal in MC_REFERENCE_CURRENT:
+        return MC_REFERENCE_CURRENT[period_name_or_internal]
+    #endif
+
+    if period_name_or_internal in PERIOD_INTERNAL_FROM_DISPLAY:
+        internal = PERIOD_INTERNAL_FROM_DISPLAY[period_name_or_internal]
+        return MC_REFERENCE_CURRENT[internal]
+    #endif
+
+    raise RuntimeError(f"No MC reference current configured for period: {period_name_or_internal}")
+#enddef
+
+
+def add_reference_current_text(ax, period_name):
+    """
+    Annotate a subplot with the production MC reference current used in the
+    acceptance correction.
+    """
+    ref_current = get_mc_reference_current(period_name)
+    text = f"MC ref used in acceptance: {ref_current} nA"
+
+    ax.text(
+        0.03,
+        0.03,
+        text,
+        transform=ax.transAxes,
+        fontsize=9,
+        verticalalignment="bottom",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="0.7"),
+    )
+#enddef
+
+
 def build_period_aggregation(period_display_name, period_internal_name, root_path, run_charge_map):
     """
     For one data period:
@@ -778,10 +854,52 @@ def write_mc_table_csv(path, mc_rows):
 #enddef
 
 
+def write_residual_table_csv(path, residual_rows):
+    """
+    Write the operational residual current-dependence correction table.
+
+    Stored quantity:
+      epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I_ref)
+
+    cross_sections.cpp should then apply:
+      1 / epsilon_resid(I)
+    """
+    fieldnames = [
+        "period",
+        "period_internal",
+        "data_current_nA",
+        "mc_reference_current_nA",
+        "data_rel_percent",
+        "data_rel_fraction",
+        "mc_rel_at_reference_percent",
+        "mc_rel_at_reference_fraction",
+        "residual_percent",
+        "residual_fraction",
+        "applied_scale_percent",
+        "applied_scale_fraction",
+    ]
+
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in residual_rows:
+            writer.writerow(row)
+        #endfor
+    #endwith
+#enddef
+
+
 def compute_percent_curve(xfit, fit_result):
     """
     Convert y = m*x + b into percent-of-intercept:
       100 * (m*x + b) / b
+
+    The uncertainty band is the same slope-only band used elsewhere:
+      lower: 100 * (((m - sm) * x + b) / b)
+      upper: 100 * (((m + sm) * x + b) / b)
+
+    So we are varying only the slope by +/- 1 sigma while keeping the
+    intercept fixed.
     """
     m = fit_result["m"]
     b = fit_result["b"]
@@ -813,6 +931,73 @@ def compute_percent_slope_and_error(fit_result):
     slope_pct_err = math.sqrt(var_p) if var_p >= 0.0 else float("nan")
 
     return slope_pct, slope_pct_err
+#enddef
+
+
+def compute_relative_value_at_current(current_nA, fit_result):
+    """
+    Compute relative survival at a given current from the fitted line:
+      rel(I) = (m*I + b) / b
+    """
+    m = fit_result["m"]
+    b = fit_result["b"]
+
+    return (m * float(current_nA) + b) / b
+#enddef
+
+
+def build_residual_correction_rows(all_current_rows, data_fit_results, mc_fit_results):
+    """
+    Build the operational residual correction table for the case where the
+    production acceptance uses only one MC current per period.
+
+    For each period and each DATA current I:
+      epsilon_data_rel(I) = R_data(I) / R_data(0)
+      epsilon_mc_rel(I_ref) = epsilon_mc(I_ref) / epsilon_mc(0)
+
+      epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I_ref)
+
+    The scale actually applied to the cross section is:
+      1 / epsilon_resid(I)
+    """
+    residual_rows = []
+
+    for period in PERIOD_ORDER:
+        period_internal = PERIOD_INTERNAL_FROM_DISPLAY[period]
+        ref_current = get_mc_reference_current(period_internal)
+
+        data_fit = data_fit_results[period]
+        mc_fit = mc_fit_results[period]
+
+        data_rows = [r for r in all_current_rows if r["period"] == period]
+        data_rows = sorted(data_rows, key=lambda r: r["current_nA"])
+
+        mc_rel_at_ref = compute_relative_value_at_current(ref_current, mc_fit)
+
+        for row in data_rows:
+            current_nA = int(row["current_nA"])
+            data_rel = compute_relative_value_at_current(current_nA, data_fit)
+            residual = data_rel / mc_rel_at_ref
+            applied_scale = 1.0 / residual
+
+            residual_rows.append({
+                "period": period,
+                "period_internal": period_internal,
+                "data_current_nA": current_nA,
+                "mc_reference_current_nA": int(ref_current),
+                "data_rel_percent": 100.0 * data_rel,
+                "data_rel_fraction": data_rel,
+                "mc_rel_at_reference_percent": 100.0 * mc_rel_at_ref,
+                "mc_rel_at_reference_fraction": mc_rel_at_ref,
+                "residual_percent": 100.0 * residual,
+                "residual_fraction": residual,
+                "applied_scale_percent": 100.0 * applied_scale,
+                "applied_scale_fraction": applied_scale,
+            })
+        #endfor
+    #endfor
+
+    return residual_rows
 #enddef
 
 
@@ -971,6 +1156,40 @@ def main():
     #endfor
 
     # -------------------------------------------------------------------------
+    # Build and write the operational residual correction table.
+    # -------------------------------------------------------------------------
+    residual_rows = build_residual_correction_rows(
+        all_current_rows=all_current_rows,
+        data_fit_results=data_fit_results,
+        mc_fit_results=mc_fit_results,
+    )
+
+    residual_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_residual_table.csv")
+    write_residual_table_csv(residual_table_csv, residual_rows)
+
+    print("")
+    print("[saved] " + residual_table_csv)
+    print("")
+    print("=== Operational residual current-dependence correction ===")
+    print("Stored quantity for efficiency.json / cross_sections.cpp usage:")
+    print("  epsilon_resid(I) = epsilon_data_rel(I) / epsilon_mc_rel(I_ref)")
+    print("  applied scale    = 1 / epsilon_resid(I)")
+    print("where I_ref is the single MC current actually used in production acceptance.")
+    print("")
+
+    for row in residual_rows:
+        print(
+            f"  {row['period']:8s}  "
+            f"data I={int(row['data_current_nA']):3d} nA  "
+            f"MC ref={int(row['mc_reference_current_nA']):3d} nA  "
+            f"data_rel={float(row['data_rel_fraction']):.6f}  "
+            f"mc_rel_ref={float(row['mc_rel_at_reference_fraction']):.6f}  "
+            f"epsilon_resid={float(row['residual_fraction']):.6f}  "
+            f"scale={float(row['applied_scale_fraction']):.6f}"
+        )
+    #endfor
+
+    # -------------------------------------------------------------------------
     # Plot 1: DATA counts per nC vs current
     # -------------------------------------------------------------------------
     fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
@@ -1005,6 +1224,7 @@ def main():
         ax.set_ylabel("DVCS counts per charge (1/nC)")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
+        add_reference_current_text(ax, period)
     #endfor
 
     axc = axs1[5]
@@ -1087,6 +1307,7 @@ def main():
         ax.set_ylabel("Percent of intercept b (%)")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
+        add_reference_current_text(ax, period)
     #endfor
 
     axc2 = axs2[5]
@@ -1138,6 +1359,7 @@ def main():
     for i, period in enumerate(PERIOD_ORDER):
         ax = axs3[i]
         c = period_color[period]
+        ref_current = get_mc_reference_current(period)
 
         x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
         fr = mc_fit_results[period]
@@ -1161,6 +1383,7 @@ def main():
             label=f"m={f5(fr['m'])} +/- {f5(fr['sm'])}\n b={f5(fr['b'])} +/- {f5(fr['sb'])}",
         )
         ax.plot(xfit, yfit, color=c, linestyle="--")
+        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
@@ -1168,6 +1391,7 @@ def main():
         ax.set_ylabel("MC reconstruction efficiency")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
+        add_reference_current_text(ax, period)
     #endfor
 
     axc3 = axs3[5]
@@ -1223,6 +1447,7 @@ def main():
     for i, period in enumerate(PERIOD_ORDER):
         ax = axs4[i]
         c = period_color[period]
+        ref_current = get_mc_reference_current(period)
 
         x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
         fr = mc_fit_results[period]
@@ -1250,6 +1475,7 @@ def main():
             label=f"b={f5(fr['b'])} +/- {f5(fr['sb'])}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
         )
         ax.plot(xfit, pct_fit, color=c, linestyle="--")
+        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
@@ -1258,6 +1484,7 @@ def main():
         ax.set_ylabel("Percent of intercept b (%)")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
+        add_reference_current_text(ax, period)
     #endfor
 
     axc4 = axs4[5]
@@ -1306,6 +1533,11 @@ def main():
 
     # -------------------------------------------------------------------------
     # Plot 5: DATA and MC percent-of-intercept vs current on same subplots
+    #
+    # These are still useful for comparing shape, but remember that the actual
+    # production correction uses MC only at I_ref, not the full MC curve point
+    # by point. Therefore we annotate each panel with the production MC
+    # reference current used in acceptance.
     # -------------------------------------------------------------------------
     fig5, axs5 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs5 = axs5.flatten()
@@ -1313,6 +1545,7 @@ def main():
     for i, period in enumerate(PERIOD_ORDER):
         ax = axs5[i]
         c = period_color[period]
+        ref_current = get_mc_reference_current(period)
 
         # DATA
         xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
@@ -1357,6 +1590,7 @@ def main():
             label="MC",
         )
         ax.plot(xfit, mc_pct_fit, color=c, linestyle="--")
+        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
@@ -1365,6 +1599,7 @@ def main():
         ax.set_ylabel("Percent of fitted 0 nA (%)")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
+        add_reference_current_text(ax, period)
     #endfor
 
     axc5 = axs5[5]
@@ -1432,8 +1667,10 @@ def main():
     #
     # DATA uses counts/nC.
     # MC uses rec/gen efficiency.
-    # This is not the same physical normalization, but it is useful as a
-    # shape-only comparison period by period.
+    #
+    # These are not the same physical normalization, so this remains a shape /
+    # trend comparison only. The annotation reminds us which single MC current
+    # is actually used in the production acceptance correction.
     # -------------------------------------------------------------------------
     fig6, axs6 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
     axs6 = axs6.flatten()
@@ -1441,6 +1678,7 @@ def main():
     for i, period in enumerate(PERIOD_ORDER):
         ax = axs6[i]
         c = period_color[period]
+        ref_current = get_mc_reference_current(period)
 
         # DATA
         xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
@@ -1485,6 +1723,7 @@ def main():
             label="MC (rec/gen)",
         )
         ax.plot(xfit, mc_fit, color=c, linestyle="--")
+        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
 
         ax.set_title(period)
         ax.set_xlim(0.0, 100.0)
@@ -1492,6 +1731,7 @@ def main():
         ax.set_ylabel("Absolute value")
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True)
+        add_reference_current_text(ax, period)
     #endfor
 
     axc6 = axs6[5]
