@@ -39,67 +39,67 @@ int main() {
 
     mkoutdirs();
 
-    // // Raw yield cross-check (reads directly from CSVs)
-    // plot_raw_yield_cross_checks(
-    //     lee_csv,                                  // Lee pass-1 CSV
-    //     hayward_csv,                              // Hayward pass-2 CSV
-    //     "output/cross_check/lee/raw_yield"        // output directory
-    // );
+    // Raw yield cross-check (reads directly from CSVs)
+    plot_raw_yield_cross_checks(
+        lee_csv,                                  // Lee pass-1 CSV
+        hayward_csv,                              // Hayward pass-2 CSV
+        "output/cross_check/lee/raw_yield"        // output directory
+    );
 
-    // // Pi0 contamination cross-check (reads directly from CSVs)
-    // plot_pi0_contam_cross_checks(
-    //     lee_csv,                                  // Lee pass-1 CSV
-    //     hayward_csv,                              // Hayward pass-2 CSV
-    //     "output/cross_check/lee/pi0_contamination" // output directory
-    // );
+    // Pi0 contamination cross-check (reads directly from CSVs)
+    plot_pi0_contam_cross_checks(
+        lee_csv,                                  // Lee pass-1 CSV
+        hayward_csv,                              // Hayward pass-2 CSV
+        "output/cross_check/lee/pi0_contamination" // output directory
+    );
 
-    // // Radiative correction (Frad) cross-check
-    // plot_rad_correction_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/rad_corrections"
-    // );
+    // Radiative correction (Frad) cross-check
+    plot_rad_correction_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/rad_corrections"
+    );
 
-    // // Acceptance cross-check (Lee vs Fa18 Inb/Out)
-    // plot_acceptance_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/acceptance"
-    // );
+    // Acceptance cross-check (Lee vs Fa18 Inb/Out)
+    plot_acceptance_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/acceptance"
+    );
 
-    // // Unfolded acceptance-corrected yield cross-check
-    // plot_unfolded_yields_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/unfolding"
-    // );
+    // Unfolded acceptance-corrected yield cross-check
+    plot_unfolded_yields_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/unfolding"
+    );
 
-    // // Bin-centering correction cross-check (Fbin vs bin_volume)
-    // plot_bin_centering_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/bin_centering"
-    // );
+    // Bin-centering correction cross-check (Fbin vs bin_volume)
+    plot_bin_centering_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/bin_centering"
+    );
 
-    // // Bin volume cross-check
-    // plot_bin_volume_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/bin_volume"
-    // );
+    // Bin volume cross-check
+    plot_bin_volume_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/bin_volume"
+    );
 
-    // // Cross section cross-check
-    // plot_cross_section_cross_checks(
-    //     lee_csv,
-    //     hayward_csv,
-    //     "output/cross_check/lee/cross_sections"
-    // );
+    // Cross section cross-check
+    plot_cross_section_cross_checks(
+        lee_csv,
+        hayward_csv,
+        "output/cross_check/lee/cross_sections"
+    );
 
-    // // Cross section cross-check *between* Hayward run periods
-    // plot_cross_section_hayward_cross_checks(
-    //     hayward_csv,
-    //     "output/cross_check/lee/cross_sections_hayward"
-    // );
+    // Cross section cross-check *between* Hayward run periods
+    plot_cross_section_hayward_cross_checks(
+        hayward_csv,
+        "output/cross_check/lee/cross_sections_hayward"
+    );
 
     // Five-period run-consistency study inside Hayward pass-2
     plot_cross_section_run_period_consistency(
