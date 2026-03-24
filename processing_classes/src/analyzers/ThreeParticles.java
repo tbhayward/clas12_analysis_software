@@ -82,37 +82,25 @@ public class ThreeParticles {
 
     protected double gN_angle_p1_p2, gN_angle_p1_X, gN_angle_p2_X;
 
-//    public static boolean channel_test(ThreeParticles variables) {
-//        if (variables.helicity == 0 && variables.runnum != 11) {
-//            return false;
-//        }
-//        if (variables.Q2() < 1.00) {
-//            return false;
-//        } 
-//        else if (variables.W() < 2) {
-//            return false;
-//        } 
-//        else if (variables.y() > 0.85) {
-//            return false;
-//        } 
-//        else if (variables.y() < 0.19) {
-//            return false;
-//        } 
-//        return true;
-//    }
-    
     public static boolean channel_test(ThreeParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
-        } else if (variables.Q2() < 1.00) {
+        }
+        if (variables.Q2() < 1.00) {
             return false;
-        } else if (variables.W() < 2) {
+        } 
+        else if (variables.W() < 2) {
             return false;
-        } else if (variables.y() > 0.80) {
+        } 
+        else if (variables.y() > 0.85) {
+            return false;
+        } 
+        else if (variables.y() < 0.19) {
             return false;
         } 
         return true;
     }
+   
     
     public static int getIndex(HipoDataBank rec_Bank, int input_pid, int input_index) {
         int index = -1;

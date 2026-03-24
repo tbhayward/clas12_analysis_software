@@ -441,14 +441,8 @@ public class momentum_corrections {
         }
     }
 
-    public void outbending_momentum_corrections(
-            float[] p_array,
-            int sec,
-            int ivec,
-            int corEl,
-            int corPip,
-            int corPim,
-            int corPro) {
+    public void outbending_momentum_corrections(float[] p_array, int sec, int ivec,
+            int corEl, int corPip, int corPim, int corPro) {
         /**
          * Apply outbending torus momentum corrections to a particle's momentum.
          *
