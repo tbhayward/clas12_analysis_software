@@ -741,13 +741,28 @@ static PanelBundle_rpc make_panel_bundle_rpc(const std::vector<Row_rpc>& rows,
     return out;
 }
 
+static bool panel_has_content_rpc(const PanelBundle_rpc& pb) {
+    return (pb.chi2.phi_rows_used > 0 && pb.chi2.sum_w_spread > 0.0 && !pb.spread_band.empty());
+}
+
+static int count_nonempty_panels_rpc(const std::map<std::tuple<int, int>, PanelBundle_rpc>& panel_map) {
+    int count = 0;
+    for (const auto& kv : panel_map) {
+        if (panel_has_content_rpc(kv.second)) {
+            ++count;
+        }
+    }
+    // endfor
+    return count;
+}
+
 static double weighted_spread_for_xb_rpc(const std::map<std::tuple<int, int>, PanelBundle_rpc>& panel_map) {
     double sum_w  = 0.0;
     double sum_ws = 0.0;
 
     for (const auto& kv : panel_map) {
         const PanelBundle_rpc& pb = kv.second;
-        if (pb.chi2.sum_w_spread <= 0.0 || pb.chi2.phi_rows_used <= 0) continue;
+        if (!panel_has_content_rpc(pb)) continue;
         sum_w  += pb.chi2.sum_w_spread;
         sum_ws += pb.chi2.sum_wr_spread;
     }
@@ -762,7 +777,7 @@ static void accumulate_global_spread_from_panel_map_rpc(
 
     for (const auto& kv : panel_map) {
         const PanelBundle_rpc& pb = kv.second;
-        if (pb.chi2.sum_w_spread <= 0.0 || pb.chi2.phi_rows_used <= 0) {
+        if (!panel_has_content_rpc(pb)) {
             continue;
         }
         // endif
@@ -773,28 +788,6 @@ static void accumulate_global_spread_from_panel_map_rpc(
         acc.panels_used   += 1;
     }
     // endfor
-}
-
-static void enforce_white_pad_style_rpc(TPad* pad) {
-    if (!pad) return;
-    pad->SetFillColor(kWhite);
-    pad->SetFillStyle(1001);
-    pad->SetFrameFillColor(kWhite);
-    pad->SetFrameFillStyle(1001);
-    pad->SetFrameLineColor(kBlack);
-    pad->SetBorderMode(0);
-}
-
-static void style_frame_axes_rpc(TH1* frame) {
-    if (!frame) return;
-    frame->SetLineColor(kBlack);
-    frame->SetFillColor(kWhite);
-    frame->GetXaxis()->SetAxisColor(kBlack);
-    frame->GetYaxis()->SetAxisColor(kBlack);
-    frame->GetXaxis()->SetLabelColor(kBlack);
-    frame->GetYaxis()->SetLabelColor(kBlack);
-    frame->GetXaxis()->SetTitleColor(kBlack);
-    frame->GetYaxis()->SetTitleColor(kBlack);
 }
 
 static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
@@ -849,6 +842,13 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     }
     // endfor
 
+    const int nonempty_panels = count_nonempty_panels_rpc(panel_map);
+    if (nonempty_panels <= 0) {
+        summary_out << "Skipped empty overlay canvas: " << out_png << "\n";
+        return;
+    }
+    // endif
+
     accumulate_global_spread_from_panel_map_rpc(panel_map, global_acc);
 
     const double global_weighted_spread = weighted_spread_for_xb_rpc(panel_map);
@@ -857,13 +857,14 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->SetFillColor(kWhite);
     c->SetFrameFillColor(kWhite);
-    c->SetBorderMode(0);
     c->cd();
 
     TPad* pTop = new TPad(Form("pTop_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                           Form("pTop_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                           0.0, 0.90, 1.0, 1.0);
-    enforce_white_pad_style_rpc(pTop);
+    pTop->SetFillColor(kWhite);
+    pTop->SetFrameFillColor(kWhite);
+    pTop->SetFillStyle(1001);
     pTop->SetBorderSize(0);
     pTop->Draw();
     pTop->cd();
@@ -872,7 +873,6 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetNDC();
     head.SetTextAlign(22);
     head.SetTextFont(42);
-    head.SetTextColor(kBlack);
     head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
         Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean spread = %.3f",
@@ -885,10 +885,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     TLegend* leg = new TLegend(0.03, 0.02, 0.97, 0.48);
     leg->SetNColumns((int)periods.size());
     leg->SetBorderSize(0);
-    leg->SetFillColor(kWhite);
-    leg->SetFillStyle(1001);
+    leg->SetFillStyle(0);
     leg->SetTextFont(42);
-    leg->SetTextColor(kBlack);
     leg->SetTextSize(0.16);
 
     std::vector<TMarker*> legend_markers;
@@ -905,7 +903,9 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     TPad* pGrid = new TPad(Form("pGrid_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                            Form("pGrid_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                            0.0, 0.00, 1.0, 0.90);
-    enforce_white_pad_style_rpc(pGrid);
+    pGrid->SetFillColor(kWhite);
+    pGrid->SetFrameFillColor(kWhite);
+    pGrid->SetFillStyle(1001);
     pGrid->SetBorderSize(0);
     pGrid->Draw();
     pGrid->cd();
@@ -914,7 +914,8 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
     for (int it = 0; it < nrows; ++it) {
         for (int iQ = 0; iQ < ncols; ++iQ) {
             pGrid->cd(it * ncols + iQ + 1);
-            enforce_white_pad_style_rpc((TPad*)gPad);
+            gPad->SetFillColor(kWhite);
+            gPad->SetFrameFillColor(kWhite);
             gPad->SetTicks(1, 1);
             gPad->SetTopMargin(0.14);
             gPad->SetBottomMargin(0.18);
@@ -923,10 +924,10 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             gPad->SetLogy(0);
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 2.0);
-            style_frame_axes_rpc(frame);
+            frame->SetLineColor(kBlack);
+            frame->SetTitle("");
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle("Run period / weighted mean");
-            frame->SetTitle("");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
@@ -938,6 +939,11 @@ static void draw_overlay_canvas_rpc(const std::vector<Row_rpc>& rows,
             frame->GetYaxis()->SetTitleOffset(1.55);
 
             const PanelBundle_rpc& pb = panel_map.at({iQ, it});
+            if (!panel_has_content_rpc(pb)) {
+                continue;
+            }
+            // endif
+
             const double redchi2 = pb.chi2.reduced_chi2();
 
             frame->SetTitleFont(42, "t");
@@ -1038,6 +1044,8 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
             PanelBundle_rpc pb = make_panel_bundle_rpc(rows, ix, iQ, it, ax, helicity, periods);
             panel_map[{iQ, it}] = pb;
 
+            if (!panel_has_content_rpc(pb)) continue;
+
             for (const auto& bp : pb.spread_band) {
                 ymax = std::max(ymax, bp.spread + bp.spread_err);
             }
@@ -1046,6 +1054,13 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
         // endfor
     }
     // endfor
+
+    const int nonempty_panels = count_nonempty_panels_rpc(panel_map);
+    if (nonempty_panels <= 0) {
+        summary_out << "Skipped empty spread canvas: " << out_png << "\n";
+        return;
+    }
+    // endif
 
     if (ymax <= 0.0) ymax = 0.25;
     ymax *= 1.20;
@@ -1056,13 +1071,14 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->SetFillColor(kWhite);
     c->SetFrameFillColor(kWhite);
-    c->SetBorderMode(0);
     c->cd();
 
     TPad* pTop = new TPad(Form("pTop_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                           Form("pTop_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                           0.0, 0.90, 1.0, 1.0);
-    enforce_white_pad_style_rpc(pTop);
+    pTop->SetFillColor(kWhite);
+    pTop->SetFrameFillColor(kWhite);
+    pTop->SetFillStyle(1001);
     pTop->SetBorderSize(0);
     pTop->Draw();
     pTop->cd();
@@ -1071,7 +1087,6 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     head.SetNDC();
     head.SetTextAlign(22);
     head.SetTextFont(42);
-    head.SetTextColor(kBlack);
     head.SetTextSize(0.14);
     head.DrawLatex(0.50, 0.55,
         Form("%s (%s)   x_{B} #in [%.3g, %.3g]   Global weighted mean spread = %.3f",
@@ -1085,7 +1100,9 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     TPad* pGrid = new TPad(Form("pGrid_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                            Form("pGrid_hr_rpc_%d_%s_%zu", ix, helicity.c_str(), std::hash<std::string>{}(top_label)),
                            0.0, 0.00, 1.0, 0.90);
-    enforce_white_pad_style_rpc(pGrid);
+    pGrid->SetFillColor(kWhite);
+    pGrid->SetFrameFillColor(kWhite);
+    pGrid->SetFillStyle(1001);
     pGrid->SetBorderSize(0);
     pGrid->Draw();
     pGrid->cd();
@@ -1094,7 +1111,8 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
     for (int it = 0; it < nrows; ++it) {
         for (int iQ = 0; iQ < ncols; ++iQ) {
             pGrid->cd(it * ncols + iQ + 1);
-            enforce_white_pad_style_rpc((TPad*)gPad);
+            gPad->SetFillColor(kWhite);
+            gPad->SetFrameFillColor(kWhite);
             gPad->SetTicks(1, 1);
             gPad->SetTopMargin(0.14);
             gPad->SetBottomMargin(0.18);
@@ -1103,10 +1121,10 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
             gPad->SetLogy(0);
 
             TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
-            style_frame_axes_rpc(frame);
+            frame->SetLineColor(kBlack);
+            frame->SetTitle("");
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle("Weighted spread");
-            frame->SetTitle("");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
@@ -1118,6 +1136,10 @@ static void draw_half_range_canvas_rpc(const std::vector<Row_rpc>& rows,
             frame->GetYaxis()->SetTitleOffset(1.55);
 
             const PanelBundle_rpc& pb = panel_map.at({iQ, it});
+            if (!panel_has_content_rpc(pb)) {
+                continue;
+            }
+            // endif
 
             frame->SetTitleFont(42, "t");
             frame->SetTitleSize(0.040, "t");
@@ -1196,10 +1218,6 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
                        nbins,
                        0.0,
                        xmax);
-    h->SetFillColor(kWhite);
-    h->SetLineColor(kBlack);
-    h->SetLineWidth(2);
-
     for (double v : reduced_chi2_values) {
         h->Fill(v);
     }
@@ -1226,15 +1244,17 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
                              700);
     c->SetFillColor(kWhite);
     c->SetFrameFillColor(kWhite);
-    c->SetBorderMode(0);
     c->cd();
-    enforce_white_pad_style_rpc((TPad*)gPad);
+    gPad->SetFillColor(kWhite);
+    gPad->SetFrameFillColor(kWhite);
     gPad->SetTicks(1, 1);
     gPad->SetLeftMargin(0.13);
     gPad->SetRightMargin(0.06);
     gPad->SetTopMargin(0.08);
     gPad->SetBottomMargin(0.12);
 
+    h->SetLineColor(kBlack);
+    h->SetLineWidth(2);
     h->GetXaxis()->SetTitle("Reduced #chi^{2}");
     h->GetYaxis()->SetTitle("Panels");
     h->GetXaxis()->CenterTitle();
@@ -1244,12 +1264,6 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
     h->GetXaxis()->SetLabelSize(0.045);
     h->GetYaxis()->SetLabelSize(0.045);
     h->GetYaxis()->SetTitleOffset(1.25);
-    h->GetXaxis()->SetAxisColor(kBlack);
-    h->GetYaxis()->SetAxisColor(kBlack);
-    h->GetXaxis()->SetLabelColor(kBlack);
-    h->GetYaxis()->SetLabelColor(kBlack);
-    h->GetXaxis()->SetTitleColor(kBlack);
-    h->GetYaxis()->SetTitleColor(kBlack);
     h->Draw("HIST");
 
     const int fit_status = h->Fit(f, "RQ0");
@@ -1265,7 +1279,6 @@ static void draw_reduced_chi2_hist_rpc(const std::vector<double>& reduced_chi2_v
     TLatex lab;
     lab.SetNDC();
     lab.SetTextFont(42);
-    lab.SetTextColor(kBlack);
     lab.SetTextAlign(13);
     lab.SetTextSize(0.040);
     lab.DrawLatex(0.58, 0.90,
@@ -1364,8 +1377,8 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
     summary_out << "Definition: for each phi row, a weighted mean cross section is computed across the available included run periods using inverse-variance weights w_i = 1/sigma_i^2 from the statistical uncertainties of the corresponding normed cross-section tuples.\n";
     summary_out << "Overlay plots show the ratio of each included run period to that weighted mean. The plotted statistical uncertainty is propagated through r_i = x_i / mu_w, retaining the x_i contribution to mu_w.\n";
     summary_out << "For each phi row, the plotted spread is the inverse-variance-weighted RMS spread in ratio space: spread_phi = sqrt[ sum_i w_i (r_i - <r>_w)^2 / sum_i w_i ].\n";
-    summary_out << "The reported panel value <spread>_{w} is the weighted mean of spread_phi across phi, with row weight W_phi = sum_i w_i.\n";
-    summary_out << "The terminal global summary is accumulated directly from the same panel_map objects used to draw the xB canvases, so it skips empty subplots identically.\n\n";
+    summary_out << "The reported panel value <spread>_w is the weighted mean of spread_phi across phi, with row weight W_phi = sum_i w_i.\n";
+    summary_out << "Empty canvases are now skipped entirely, and empty subpads are never used in the global summary.\n\n";
 
     std::vector<double> reduced_chi2_values;
     GlobalSpreadAccumulator_rpc global_acc;
@@ -1382,7 +1395,7 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
                                 reduced_chi2_values,
                                 summary_out,
                                 global_acc);
-        info_rpc("Saved: " + out_png1.string());
+        info_rpc("Processed: " + out_png1.string());
 
         const fs::path out_png2 = overlay_dir / Form("period_consistency_half_range_xB_%d.png", ix);
         draw_half_range_canvas_rpc(rows,
@@ -1393,7 +1406,7 @@ static void run_one_helicity_mode_rpc(const std::vector<Row_rpc>& rows,
                                    mode_label,
                                    out_png2.string(),
                                    summary_out);
-        info_rpc("Saved: " + out_png2.string());
+        info_rpc("Processed: " + out_png2.string());
     }
     // endfor
 
@@ -1465,8 +1478,12 @@ void plot_cross_section_run_period_consistency(const std::string& hayward_csv_pa
                                                const std::string& output_base_dir) {
     fs::create_directories(output_base_dir);
 
-    gROOT->ForceStyle();
-
+    gROOT->SetBatch(kTRUE);
+    gStyle->SetCanvasColor(kWhite);
+    gStyle->SetPadColor(kWhite);
+    gStyle->SetFrameFillColor(kWhite);
+    gStyle->SetStatColor(kWhite);
+    gStyle->SetTitleFillColor(kWhite);
     gStyle->SetOptTitle(1);
     gStyle->SetOptStat(0);
     gStyle->SetLineWidth(2);
@@ -1478,16 +1495,6 @@ void plot_cross_section_run_period_consistency(const std::string& hayward_csv_pa
     gStyle->SetTextFont(42);
     gStyle->SetTitleFont(42, "");
     gStyle->SetTitleSize(0.050, "");
-
-    gStyle->SetCanvasColor(kWhite);
-    gStyle->SetPadColor(kWhite);
-    gStyle->SetFrameFillColor(kWhite);
-    gStyle->SetStatColor(kWhite);
-    gStyle->SetTitleFillColor(kWhite);
-    gStyle->SetTitleTextColor(kBlack);
-    gStyle->SetLabelColor(kBlack, "XYZ");
-    gStyle->SetAxisColor(kBlack, "XYZ");
-    gStyle->SetTitleColor(kBlack, "XYZ");
 
     const std::vector<Row_rpc> rows = load_rows_rpc(hayward_csv_path);
     const AxisSets_rpc ax = build_axes_rpc(rows);
