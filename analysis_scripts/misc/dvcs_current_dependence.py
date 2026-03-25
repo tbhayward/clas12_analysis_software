@@ -62,23 +62,12 @@
 #   [3.29, 4.33)
 #   [4.33, 5.76]
 #
-# |t| dependence
-# --------------
-# We also repeat the study in |t| bins using abs(t):
-#
-#   [0.11, 0.15)
-#   [0.15, 0.25)
-#   [0.25, 0.40)
-#   [0.40, 0.60)
-#   [0.60, 0.80)
-#   [0.80, 1.00]
-#
-# For DATA in a bin:
-#   counts are restricted to that bin
+# For DATA in a Q2 bin:
+#   counts are restricted to that Q2 bin
 #   charge remains the full accumulated charge for the runs/current settings
 #
-# For MC in a bin:
-#   just use generated and reconstructed counts in that same bin
+# For MC in a Q2 bin:
+#   just use generated and reconstructed counts in that same Q2 bin
 #
 # Integrated plots produced in:
 #   output/dvcs_current_dependence/integrated
@@ -91,8 +80,9 @@
 # Q2-dependent plots produced in:
 #   output/dvcs_current_dependence/Q2_dependence/<bin_label>/
 #
-# |t|-dependent plots produced in:
-#   output/dvcs_current_dependence/t_dependence/<bin_label>/
+# And the parent Q2_dependence directory also contains:
+#   - a five-panel summary plot of the weighted divisor vs Q2
+#   - CSV tables for the Q2-bin summary numbers
 #
 # Diagnostic CSVs:
 #   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
@@ -101,7 +91,6 @@
 #   output/dvcs_current_dependence/dvcs_current_dependence_residual_table.csv
 #   output/dvcs_current_dependence/dvcs_current_dependence_period_summary.csv
 #   output/dvcs_current_dependence/Q2_dependence/dvcs_current_dependence_q2_summary.csv
-#   output/dvcs_current_dependence/t_dependence/dvcs_current_dependence_t_summary.csv
 #
 
 import os
@@ -163,7 +152,6 @@ MC_TREE_NAME = "PhysicsEvents"
 OUTPUT_DIR = "output/dvcs_current_dependence"
 INTEGRATED_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "integrated")
 Q2_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "Q2_dependence")
-T_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "t_dependence")
 
 Q2_BINS = [
     (1.00, 1.20),
@@ -173,15 +161,6 @@ Q2_BINS = [
     (2.51, 3.29),
     (3.29, 4.33),
     (4.33, 5.76),
-]
-
-T_BINS = [
-    (0.11, 0.15),
-    (0.15, 0.25),
-    (0.25, 0.40),
-    (0.40, 0.60),
-    (0.60, 0.80),
-    (0.80, 1.00),
 ]
 
 
@@ -334,15 +313,6 @@ def resolve_current(period_label_internal, runnum):
     #endif
 
     return False, None
-#enddef
-
-
-def f5(val):
-    try:
-        return f"{float(val):.5f}"
-    except Exception:
-        return "nan"
-    #endif
 #enddef
 
 
@@ -513,12 +483,12 @@ def get_mc_reference_current(period_name_or_internal):
 #enddef
 
 
-def generic_bin_to_dirname(prefix, low, high):
-    return f"{prefix}_{low:.2f}_{high:.2f}".replace(".", "p")
+def q2_bin_to_dirname(low, high):
+    return f"Q2_{low:.2f}_{high:.2f}".replace(".", "p")
 #enddef
 
 
-def generic_bin_to_label(low, high, is_last=False):
+def q2_bin_to_label(low, high, is_last=False):
     if is_last:
         return f"[{low:.2f}, {high:.2f}]"
     #endif
@@ -526,16 +496,16 @@ def generic_bin_to_label(low, high, is_last=False):
 #enddef
 
 
-def variable_bin_masks(values, bins):
+def q2_bin_masks(q2_array, q2_bins):
 
     masks = []
-    n_bins = len(bins)
+    n_bins = len(q2_bins)
 
-    for i, (low, high) in enumerate(bins):
+    for i, (low, high) in enumerate(q2_bins):
         if i == n_bins - 1:
-            mask = (values >= low) & (values <= high)
+            mask = (q2_array >= low) & (q2_array <= high)
         else:
-            mask = (values >= low) & (values < high)
+            mask = (q2_array >= low) & (q2_array < high)
         #endif
         masks.append(mask)
     #endfor
@@ -561,7 +531,7 @@ def add_reference_current_text(ax, period_name):
 #enddef
 
 
-def read_data_run_counts_and_binned_counts(root_path, q2_bins, t_bins):
+def read_data_run_counts_and_q2_counts(root_path, q2_bins):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -574,7 +544,7 @@ def read_data_run_counts_and_binned_counts(root_path, q2_bins, t_bins):
 
     tree = root_file["PhysicsEvents"]
 
-    needed = {"runnum", "Q2", "t"}
+    needed = {"runnum", "Q2"}
     missing = [name for name in needed if name not in tree.keys()]
     if len(missing) > 0:
         raise RuntimeError(f"Missing required branches in {root_path}: {missing}")
@@ -582,20 +552,19 @@ def read_data_run_counts_and_binned_counts(root_path, q2_bins, t_bins):
 
     total_run_counts = defaultdict(int)
     q2_run_counts = [defaultdict(int) for _ in q2_bins]
-    t_run_counts = [defaultdict(int) for _ in t_bins]
 
-    for arrays in tree.iterate(["runnum", "Q2", "t"], library="np", step_size="200 MB"):
+    for arrays in tree.iterate(["runnum", "Q2"], library="np", step_size="200 MB"):
         runnum = arrays["runnum"]
         q2 = arrays["Q2"]
-        abs_t = np.abs(arrays["t"])
 
         unique_runs, counts = np.unique(runnum, return_counts=True)
         for r, c in zip(unique_runs, counts):
             total_run_counts[int(r)] += int(c)
         #endfor
 
-        q2_masks = variable_bin_masks(q2, q2_bins)
-        for ibin, mask in enumerate(q2_masks):
+        masks = q2_bin_masks(q2, q2_bins)
+
+        for ibin, mask in enumerate(masks):
             if not np.any(mask):
                 continue
             #endif
@@ -607,27 +576,13 @@ def read_data_run_counts_and_binned_counts(root_path, q2_bins, t_bins):
                 q2_run_counts[ibin][int(r)] += int(c)
             #endfor
         #endfor
-
-        t_masks = variable_bin_masks(abs_t, t_bins)
-        for ibin, mask in enumerate(t_masks):
-            if not np.any(mask):
-                continue
-            #endif
-
-            selected_runs = runnum[mask]
-            unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
-
-            for r, c in zip(unique_sel, counts_sel):
-                t_run_counts[ibin][int(r)] += int(c)
-            #endfor
-        #endfor
     #endfor
 
-    return dict(total_run_counts), [dict(d) for d in q2_run_counts], [dict(d) for d in t_run_counts]
+    return dict(total_run_counts), [dict(d) for d in q2_run_counts]
 #enddef
 
 
-def count_mc_entries_in_bins(root_path, tree_name, bins, branch_name, use_abs=False):
+def count_mc_entries_in_q2_bins(root_path, tree_name, q2_bins):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -639,26 +594,22 @@ def count_mc_entries_in_bins(root_path, tree_name, bins, branch_name, use_abs=Fa
     #endif
 
     tree = root_file[tree_name]
-    if branch_name not in tree.keys():
-        raise RuntimeError(f"'{branch_name}' branch not found in {root_path}:{tree_name}")
+    if "Q2" not in tree.keys():
+        raise RuntimeError(f"'Q2' branch not found in {root_path}:{tree_name}")
     #endif
 
-    counts = [0 for _ in bins]
+    q2_counts = [0 for _ in q2_bins]
 
-    for arrays in tree.iterate([branch_name], library="np", step_size="200 MB"):
-        values = arrays[branch_name]
-        if use_abs:
-            values = np.abs(values)
-        #endif
-
-        masks = variable_bin_masks(values, bins)
+    for arrays in tree.iterate(["Q2"], library="np", step_size="200 MB"):
+        q2 = arrays["Q2"]
+        masks = q2_bin_masks(q2, q2_bins)
 
         for ibin, mask in enumerate(masks):
-            counts[ibin] += int(np.count_nonzero(mask))
+            q2_counts[ibin] += int(np.count_nonzero(mask))
         #endfor
     #endfor
 
-    return counts
+    return q2_counts
 #enddef
 
 
@@ -793,13 +744,9 @@ def build_current_rows_from_counts(period_display_name, period_internal_name, ru
 #enddef
 
 
-def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, q2_bins, t_bins):
+def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, q2_bins):
 
-    total_run_counts, q2_run_counts, t_run_counts = read_data_run_counts_and_binned_counts(
-        root_path=root_path,
-        q2_bins=q2_bins,
-        t_bins=t_bins,
-    )
+    total_run_counts, q2_run_counts = read_data_run_counts_and_q2_counts(root_path, q2_bins)
 
     run_meta, current_charge_totals = build_run_metadata(
         period_display_name=period_display_name,
@@ -809,7 +756,6 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     )
 
     integrated_run_rows = build_run_rows_from_counts(run_meta, total_run_counts)
-
     integrated_current_rows = build_current_rows_from_counts(
         period_display_name=period_display_name,
         period_internal_name=period_internal_name,
@@ -830,23 +776,11 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
         q2_current_rows.append(rows_bin)
     #endfor
 
-    t_current_rows = []
-    for ibin in range(len(t_bins)):
-        rows_bin = build_current_rows_from_counts(
-            period_display_name=period_display_name,
-            period_internal_name=period_internal_name,
-            run_meta=run_meta,
-            current_charge_totals=current_charge_totals,
-            run_counts=t_run_counts[ibin],
-        )
-        t_current_rows.append(rows_bin)
-    #endfor
-
-    return integrated_run_rows, integrated_current_rows, q2_current_rows, t_current_rows
+    return integrated_run_rows, integrated_current_rows, q2_current_rows
 #enddef
 
 
-def build_mc_aggregation(mc_dir, q2_bins, t_bins, skip_temp_heavy_mc=False):
+def build_mc_aggregation(mc_dir, q2_bins, skip_temp_heavy_mc=False):
 
     if not os.path.isdir(mc_dir):
         raise RuntimeError(f"MC directory not found: {mc_dir}")
@@ -890,7 +824,6 @@ def build_mc_aggregation(mc_dir, q2_bins, t_bins, skip_temp_heavy_mc=False):
 
     integrated_mc_rows = []
     q2_mc_rows_by_bin = [[] for _ in q2_bins]
-    t_mc_rows_by_bin = [[] for _ in t_bins]
 
     sort_keys = sorted(
         grouped.keys(),
@@ -930,8 +863,8 @@ def build_mc_aggregation(mc_dir, q2_bins, t_bins, skip_temp_heavy_mc=False):
             "rec_file": rec_path,
         })
 
-        q2_counts_gen = count_mc_entries_in_bins(gen_path, MC_TREE_NAME, q2_bins, "Q2", use_abs=False)
-        q2_counts_rec = count_mc_entries_in_bins(rec_path, MC_TREE_NAME, q2_bins, "Q2", use_abs=False)
+        q2_counts_gen = count_mc_entries_in_q2_bins(gen_path, MC_TREE_NAME, q2_bins)
+        q2_counts_rec = count_mc_entries_in_q2_bins(rec_path, MC_TREE_NAME, q2_bins)
 
         for ibin in range(len(q2_bins)):
             n_gen_bin = int(q2_counts_gen[ibin])
@@ -959,39 +892,9 @@ def build_mc_aggregation(mc_dir, q2_bins, t_bins, skip_temp_heavy_mc=False):
                 "rec_file": rec_path,
             })
         #endfor
-
-        t_counts_gen = count_mc_entries_in_bins(gen_path, MC_TREE_NAME, t_bins, "t", use_abs=True)
-        t_counts_rec = count_mc_entries_in_bins(rec_path, MC_TREE_NAME, t_bins, "t", use_abs=True)
-
-        for ibin in range(len(t_bins)):
-            n_gen_bin = int(t_counts_gen[ibin])
-            n_rec_bin = int(t_counts_rec[ibin])
-
-            if n_gen_bin <= 0:
-                continue
-            #endif
-            if n_rec_bin <= 0:
-                continue
-            #endif
-
-            eff_bin = float(n_rec_bin) / float(n_gen_bin)
-            eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin)
-
-            t_mc_rows_by_bin[ibin].append({
-                "period": period_display_name,
-                "period_internal": period_internal,
-                "current_nA": int(current_nA),
-                "n_gen": int(n_gen_bin),
-                "n_rec": int(n_rec_bin),
-                "efficiency": float(eff_bin),
-                "efficiency_err": float(eff_err_bin),
-                "gen_file": gen_path,
-                "rec_file": rec_path,
-            })
-        #endfor
     #endfor
 
-    return integrated_mc_rows, q2_mc_rows_by_bin, t_mc_rows_by_bin
+    return integrated_mc_rows, q2_mc_rows_by_bin
 #enddef
 
 
@@ -1167,14 +1070,14 @@ def write_period_summary_csv(path, summary_rows):
 #enddef
 
 
-def write_binned_summary_csv(path, summary_rows, bin_prefix):
+def write_q2_summary_csv(path, summary_rows):
 
     fieldnames = [
         "period",
         "period_internal",
-        f"{bin_prefix}_bin_index",
-        f"{bin_prefix}_min",
-        f"{bin_prefix}_max",
+        "q2_bin_index",
+        "q2_min",
+        "q2_max",
         "weighted_data_rel_percent",
         "weighted_data_rel_fraction",
         "weighted_data_rel_stat_err_percent",
@@ -1245,6 +1148,7 @@ def compute_relative_value_error_at_current(current_nA, fit_result):
     if not np.isfinite(m) or not np.isfinite(b) or b == 0.0:
         return float("nan")
     #endif
+
     if not np.isfinite(sm) or not np.isfinite(sb) or not np.isfinite(cov_mb):
         return float("nan")
     #endif
@@ -1257,6 +1161,7 @@ def compute_relative_value_error_at_current(current_nA, fit_result):
     dr_db = -(m * I) / (b * b)
 
     var_r = dr_dm * dr_dm * var_m + dr_db * dr_db * var_b + 2.0 * dr_dm * dr_db * cov_mb
+
     if var_r < 0.0 and abs(var_r) < 1.0e-15:
         var_r = 0.0
     #endif
@@ -1265,6 +1170,43 @@ def compute_relative_value_error_at_current(current_nA, fit_result):
     #endif
 
     return math.sqrt(var_r)
+#enddef
+
+
+def divide_with_error(num, num_err, den, den_err):
+
+    if not np.isfinite(num) or not np.isfinite(den) or den == 0.0:
+        return float("nan"), float("nan")
+    #endif
+
+    val = num / den
+
+    rel2 = 0.0
+    if np.isfinite(num_err) and num != 0.0:
+        rel2 += (num_err / num) ** 2
+    #endif
+    if np.isfinite(den_err) and den != 0.0:
+        rel2 += (den_err / den) ** 2
+    #endif
+
+    err = abs(val) * math.sqrt(rel2)
+    return val, err
+#enddef
+
+
+def reciprocal_with_error(val, val_err):
+
+    if not np.isfinite(val) or val == 0.0:
+        return float("nan"), float("nan")
+    #endif
+
+    out = 1.0 / val
+    if not np.isfinite(val_err):
+        return out, float("nan")
+    #endif
+
+    out_err = abs(val_err / (val * val))
+    return out, out_err
 #enddef
 
 
@@ -1290,8 +1232,8 @@ def compute_weighted_data_rel_and_error(rows, fit_result):
 
     Ibar = 0.0
     for row in rows:
-        weight = float(row["counts"]) / total_counts
-        Ibar += weight * float(row["current_nA"])
+        w = float(row["counts"]) / total_counts
+        Ibar += w * float(row["current_nA"])
     #endfor
 
     value = 1.0 + (m * Ibar) / b
@@ -1303,6 +1245,7 @@ def compute_weighted_data_rel_and_error(rows, fit_result):
     dr_db = -(m * Ibar) / (b * b)
 
     var_r = dr_dm * dr_dm * var_m + dr_db * dr_db * var_b + 2.0 * dr_dm * dr_db * cov_mb
+
     if var_r < 0.0 and abs(var_r) < 1.0e-15:
         var_r = 0.0
     #endif
@@ -1311,42 +1254,6 @@ def compute_weighted_data_rel_and_error(rows, fit_result):
     #endif
 
     return value, math.sqrt(var_r)
-#enddef
-
-
-def divide_with_error(num, num_err, den, den_err):
-
-    if not np.isfinite(num) or not np.isfinite(den) or den == 0.0:
-        return float("nan"), float("nan")
-    #endif
-
-    value = num / den
-
-    rel2 = 0.0
-    if np.isfinite(num_err) and num != 0.0:
-        rel2 += (num_err / num) ** 2
-    #endif
-    if np.isfinite(den_err) and den != 0.0:
-        rel2 += (den_err / den) ** 2
-    #endif
-
-    return value, abs(value) * math.sqrt(rel2)
-#enddef
-
-
-def reciprocal_with_error(val, val_err):
-
-    if not np.isfinite(val) or val == 0.0:
-        return float("nan"), float("nan")
-    #endif
-
-    out = 1.0 / val
-    if not np.isfinite(val_err):
-        return out, float("nan")
-    #endif
-
-    out_err = abs(val_err / (val * val))
-    return out, out_err
 #enddef
 
 
@@ -1491,13 +1398,13 @@ def build_period_summary_rows(current_rows, data_fit_results, mc_fit_results):
 #enddef
 
 
-def build_binned_summary_rows(current_rows_by_bin, mc_rows_by_bin, bins, bin_prefix):
+def build_q2_summary_rows(q2_current_rows_by_bin, q2_mc_rows_by_bin, q2_bins):
 
     summary_rows = []
 
-    for ibin, (low, high) in enumerate(bins):
-        current_rows = current_rows_by_bin[ibin]
-        mc_rows = mc_rows_by_bin[ibin]
+    for ibin, (low, high) in enumerate(q2_bins):
+        current_rows = q2_current_rows_by_bin[ibin]
+        mc_rows = q2_mc_rows_by_bin[ibin]
 
         data_fit_results = {}
         mc_fit_results = {}
@@ -1514,9 +1421,9 @@ def build_binned_summary_rows(current_rows_by_bin, mc_rows_by_bin, bins, bin_pre
 
         for row in period_rows:
             row_out = dict(row)
-            row_out[f"{bin_prefix}_bin_index"] = int(ibin)
-            row_out[f"{bin_prefix}_min"] = float(low)
-            row_out[f"{bin_prefix}_max"] = float(high)
+            row_out["q2_bin_index"] = int(ibin)
+            row_out["q2_min"] = float(low)
+            row_out["q2_max"] = float(high)
             summary_rows.append(row_out)
         #endfor
     #endfor
@@ -2064,21 +1971,21 @@ def make_fit_result_map_for_mc(mc_rows):
 #enddef
 
 
-def make_binned_summary_plot(summary_rows, output_dir, period_color, bins, bin_prefix, x_label, file_stub):
+def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
 
     fig = plt.figure(figsize=(18, 10), constrained_layout=True)
     gs = GridSpec(2, 3, figure=fig)
     axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
 
-    centers = [0.5 * (lo + hi) for (lo, hi) in bins]
-    halfwidths = [0.5 * (hi - lo) for (lo, hi) in bins]
+    q2_centers = [0.5 * (lo + hi) for (lo, hi) in Q2_BINS]
+    q2_halfwidths = [0.5 * (hi - lo) for (lo, hi) in Q2_BINS]
 
     for i, period in enumerate(PERIOD_ORDER):
         ax = axes[i]
         c = period_color[period]
 
-        rows = [r for r in summary_rows if r["period"] == period]
-        rows = sorted(rows, key=lambda r: r[f"{bin_prefix}_bin_index"])
+        rows = [r for r in q2_summary_rows if r["period"] == period]
+        rows = sorted(rows, key=lambda r: r["q2_bin_index"])
 
         x = []
         xerr = []
@@ -2086,7 +1993,7 @@ def make_binned_summary_plot(summary_rows, output_dir, period_color, bins, bin_p
         yerr = []
 
         for row in rows:
-            ibin = int(row[f"{bin_prefix}_bin_index"])
+            ibin = int(row["q2_bin_index"])
             val = float(row["divisor_to_divide_by_fraction"])
             err = float(row["divisor_to_divide_by_stat_err_fraction"])
 
@@ -2094,8 +2001,8 @@ def make_binned_summary_plot(summary_rows, output_dir, period_color, bins, bin_p
                 continue
             #endif
 
-            x.append(centers[ibin])
-            xerr.append(halfwidths[ibin])
+            x.append(q2_centers[ibin])
+            xerr.append(q2_halfwidths[ibin])
             y.append(val)
             yerr.append(err if np.isfinite(err) else 0.0)
         #endfor
@@ -2107,22 +2014,47 @@ def make_binned_summary_plot(summary_rows, output_dir, period_color, bins, bin_p
 
         if len(x) > 0:
             ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="o", capsize=3, color=c)
-            ax.plot(x, y, color=c)
         #endif
 
         ax.set_title(period)
-        ax.set_xlabel(x_label)
+        ax.set_xlabel("Q2")
         ax.set_ylabel("Divisor for cross_sections.cpp")
         ax.grid(True, alpha=0.3)
     #endfor
 
     axes[5].axis("off")
 
-    out_path = os.path.join(output_dir, file_stub)
+    out_path = os.path.join(output_dir, "q2_dependence_normalization_divisor.png")
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
     return out_path
+#enddef
+
+
+def print_summary_table(title, rows):
+
+    print("")
+    print(title)
+    header = (
+        f"{'Period':12s}  "
+        f"{'weighted_data_rel':>18s}  "
+        f"{'data/mc@ref':>12s}  "
+        f"{'divide_by':>12s}  "
+        f"{'applied_scale':>13s}"
+    )
+    print(header)
+    print("-" * len(header))
+
+    for row in rows:
+        print(
+            f"{row['period']:12s}  "
+            f"{float(row['weighted_data_rel_fraction']):18.6f}  "
+            f"{float(row['data_over_mc_at_ref_fraction']):12.6f}  "
+            f"{float(row['divisor_to_divide_by_fraction']):12.6f}  "
+            f"{float(row['applied_scale_fraction']):13.6f}"
+        )
+    #endfor
 #enddef
 
 
@@ -2138,7 +2070,6 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(INTEGRATED_OUTPUT_DIR, exist_ok=True)
     os.makedirs(Q2_OUTPUT_DIR, exist_ok=True)
-    os.makedirs(T_OUTPUT_DIR, exist_ok=True)
 
     print("")
     print("Reading charge map...")
@@ -2147,12 +2078,11 @@ def main():
     print(f"  {CSV_FILE}")
 
     # -------------------------------------------------------------------------
-    # DATA integrated + Q2-bin + |t|-bin aggregations
+    # DATA integrated + Q2-bin aggregations
     # -------------------------------------------------------------------------
     all_run_rows = []
     all_current_rows = []
     q2_current_rows_by_bin = [[] for _ in Q2_BINS]
-    t_current_rows_by_bin = [[] for _ in T_BINS]
 
     print("")
     print("Processing DATA ROOT files and aggregating by current...")
@@ -2165,13 +2095,12 @@ def main():
         print(f"ROOT file: {root_path}")
         print("=" * 90)
 
-        run_rows, current_rows, q2_current_rows_this_period, t_current_rows_this_period = build_data_period_aggregations(
+        run_rows, current_rows, q2_current_rows_this_period = build_data_period_aggregations(
             period_display_name=period_display_name,
             period_internal_name=period_internal_name,
             root_path=root_path,
             run_charge_map=run_charge_map,
             q2_bins=Q2_BINS,
-            t_bins=T_BINS,
         )
 
         all_run_rows.extend(run_rows)
@@ -2179,10 +2108,6 @@ def main():
 
         for ibin in range(len(Q2_BINS)):
             q2_current_rows_by_bin[ibin].extend(q2_current_rows_this_period[ibin])
-        #endfor
-
-        for ibin in range(len(T_BINS)):
-            t_current_rows_by_bin[ibin].extend(t_current_rows_this_period[ibin])
         #endfor
 
         print(f"Run-level rows: {len(run_rows)}")
@@ -2201,7 +2126,7 @@ def main():
     #endfor
 
     # -------------------------------------------------------------------------
-    # MC integrated + Q2-bin + |t|-bin aggregations
+    # MC integrated + Q2-bin aggregations
     # -------------------------------------------------------------------------
     print("")
     print("Processing MC ROOT files and computing efficiencies...")
@@ -2209,10 +2134,9 @@ def main():
         print("Temporary MC skip override flag is ON.")
     #endif
 
-    integrated_mc_rows, q2_mc_rows_by_bin, t_mc_rows_by_bin = build_mc_aggregation(
+    integrated_mc_rows, q2_mc_rows_by_bin = build_mc_aggregation(
         mc_dir=MC_DIR,
         q2_bins=Q2_BINS,
-        t_bins=T_BINS,
         skip_temp_heavy_mc=args.skip_temp_heavy_mc,
     )
 
@@ -2304,37 +2228,6 @@ def main():
     write_period_summary_csv(period_summary_csv, period_summary_rows)
     print(f"[saved] {period_summary_csv}")
 
-    print("")
-    print("=== Representative integrated period-level normalization summary ===")
-    print("Values below are the representative integrated divisors compatible with")
-    print("cross_sections.cpp usage:")
-    print("")
-    print("  weighted_data_rel      = event-weighted average of epsilon_data_rel(I)")
-    print("  data_over_mc_at_ref    = epsilon_data_rel(I_ref) / epsilon_mc_rel(I_ref)")
-    print("  divisor_to_divide_by   = weighted_data_rel / epsilon_mc_rel(I_ref)")
-    print("  applied_scale          = 1 / divisor_to_divide_by")
-    print("")
-
-    header = (
-        f"{'Period':12s}  "
-        f"{'weighted_data_rel':>18s}  "
-        f"{'data/mc@ref':>12s}  "
-        f"{'divide_by':>12s}  "
-        f"{'applied_scale':>13s}"
-    )
-    print(header)
-    print("-" * len(header))
-
-    for row in period_summary_rows:
-        print(
-            f"{row['period']:12s}  "
-            f"{float(row['weighted_data_rel_fraction']):18.6f}  "
-            f"{float(row['data_over_mc_at_ref_fraction']):12.6f}  "
-            f"{float(row['divisor_to_divide_by_fraction']):12.6f}  "
-            f"{float(row['applied_scale_fraction']):13.6f}"
-        )
-    #endfor
-
     # -------------------------------------------------------------------------
     # Integrated plot set
     # -------------------------------------------------------------------------
@@ -2361,20 +2254,21 @@ def main():
     print("")
     print("=== Q2-bin normalization summary ===")
 
-    q2_summary_rows = build_binned_summary_rows(
-        current_rows_by_bin=q2_current_rows_by_bin,
-        mc_rows_by_bin=q2_mc_rows_by_bin,
-        bins=Q2_BINS,
-        bin_prefix="q2",
+    q2_summary_rows = build_q2_summary_rows(
+        q2_current_rows_by_bin=q2_current_rows_by_bin,
+        q2_mc_rows_by_bin=q2_mc_rows_by_bin,
+        q2_bins=Q2_BINS,
     )
 
     q2_summary_csv = os.path.join(Q2_OUTPUT_DIR, "dvcs_current_dependence_q2_summary.csv")
-    write_binned_summary_csv(q2_summary_csv, q2_summary_rows, "q2")
+    write_q2_summary_csv(q2_summary_csv, q2_summary_rows)
     print(f"[saved] {q2_summary_csv}")
 
+    q2_integrated_tables_for_terminal = []
+
     for ibin, (low, high) in enumerate(Q2_BINS):
-        label = generic_bin_to_label(low, high, is_last=(ibin == len(Q2_BINS) - 1))
-        subdir = os.path.join(Q2_OUTPUT_DIR, generic_bin_to_dirname("Q2", low, high))
+        label = q2_bin_to_label(low, high, is_last=(ibin == len(Q2_BINS) - 1))
+        subdir = os.path.join(Q2_OUTPUT_DIR, q2_bin_to_dirname(low, high))
         os.makedirs(subdir, exist_ok=True)
 
         current_rows_bin = q2_current_rows_by_bin[ibin]
@@ -2383,11 +2277,18 @@ def main():
         data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
         mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
 
+        period_rows_bin = build_period_summary_rows(
+            current_rows=current_rows_bin,
+            data_fit_results=data_fit_bin,
+            mc_fit_results=mc_fit_bin,
+        )
+        q2_integrated_tables_for_terminal.append((label, period_rows_bin))
+
         title_suffix = f"  {label}"
 
         out_a_bin, out_b_bin, out_c_bin, out_d_bin = plot_four_panel_set(
             output_dir=subdir,
-            tag=generic_bin_to_dirname("Q2", low, high),
+            tag=q2_bin_to_dirname(low, high),
             data_current_rows=current_rows_bin,
             mc_rows=mc_rows_bin,
             data_fit_results=data_fit_bin,
@@ -2404,78 +2305,22 @@ def main():
         print(f"[saved] {out_d_bin}")
     #endfor
 
-    q2_summary_plot = make_binned_summary_plot(
-        summary_rows=q2_summary_rows,
+    q2_summary_plot = make_q2_summary_plot(
+        q2_summary_rows=q2_summary_rows,
         output_dir=Q2_OUTPUT_DIR,
         period_color=period_color,
-        bins=Q2_BINS,
-        bin_prefix="q2",
-        x_label="Q2",
-        file_stub="q2_dependence_normalization_divisor.png",
     )
     print("")
     print(f"[saved] {q2_summary_plot}")
 
     # -------------------------------------------------------------------------
-    # |t|-dependent fits, summaries, and plot sets
+    # Terminal summary tables at very end
     # -------------------------------------------------------------------------
-    print("")
-    print("=== |t|-bin normalization summary ===")
-
-    t_summary_rows = build_binned_summary_rows(
-        current_rows_by_bin=t_current_rows_by_bin,
-        mc_rows_by_bin=t_mc_rows_by_bin,
-        bins=T_BINS,
-        bin_prefix="t",
-    )
-
-    t_summary_csv = os.path.join(T_OUTPUT_DIR, "dvcs_current_dependence_t_summary.csv")
-    write_binned_summary_csv(t_summary_csv, t_summary_rows, "t")
-    print(f"[saved] {t_summary_csv}")
-
-    for ibin, (low, high) in enumerate(T_BINS):
-        label = generic_bin_to_label(low, high, is_last=(ibin == len(T_BINS) - 1))
-        subdir = os.path.join(T_OUTPUT_DIR, generic_bin_to_dirname("t", low, high))
-        os.makedirs(subdir, exist_ok=True)
-
-        current_rows_bin = t_current_rows_by_bin[ibin]
-        mc_rows_bin = t_mc_rows_by_bin[ibin]
-
-        data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
-        mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
-
-        title_suffix = f"  |t| {label}"
-
-        out_a_bin, out_b_bin, out_c_bin, out_d_bin = plot_four_panel_set(
-            output_dir=subdir,
-            tag=generic_bin_to_dirname("t", low, high),
-            data_current_rows=current_rows_bin,
-            mc_rows=mc_rows_bin,
-            data_fit_results=data_fit_bin,
-            mc_fit_results=mc_fit_bin,
-            period_color=period_color,
-            title_suffix=title_suffix,
-        )
-
-        print("")
-        print(f"|t| bin {ibin}: {label}")
-        print(f"[saved] {out_a_bin}")
-        print(f"[saved] {out_b_bin}")
-        print(f"[saved] {out_c_bin}")
-        print(f"[saved] {out_d_bin}")
+    for label, rows in q2_integrated_tables_for_terminal:
+        print_summary_table(f"Q2 bin {label}", rows)
     #endfor
 
-    t_summary_plot = make_binned_summary_plot(
-        summary_rows=t_summary_rows,
-        output_dir=T_OUTPUT_DIR,
-        period_color=period_color,
-        bins=T_BINS,
-        bin_prefix="t",
-        x_label="|t|",
-        file_stub="t_dependence_normalization_divisor.png",
-    )
-    print("")
-    print(f"[saved] {t_summary_plot}")
+    print_summary_table("Representative integrated period-level normalization summary", period_summary_rows)
 
     print("")
 #enddef
