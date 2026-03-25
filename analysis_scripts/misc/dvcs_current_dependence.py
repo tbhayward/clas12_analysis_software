@@ -2019,6 +2019,7 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
         ax.set_title(period)
         ax.set_xlabel("Q2")
         ax.set_ylabel("Divisor for cross_sections.cpp")
+        ax.set_ylim(0.6, 1.2)
         ax.grid(True, alpha=0.3)
     #endfor
 
