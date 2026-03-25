@@ -37,24 +37,32 @@
 #   where I_ref is the single MC current actually used in the production
 #   acceptance for that period.
 #
-#   This script keeps all previous plots, and also prints / writes the
-#   residual current-dependence correction implied by that operational logic.
+#   This script keeps the diagnostic CSVs and the residual-correction table,
+#   but the plotting has been streamlined into four integrated figures saved to:
 #
-# Plots produced:
-#   (1) data counts/nC vs current
-#   (2) data percent-of-intercept vs current
-#   (3) MC efficiency vs current
-#   (4) MC percent-of-intercept vs current
-#   (5) data and MC percent-of-intercept vs current on same subplots
-#   (6) data and MC absolute metric vs current on same subplots
+#     output/dvcs_current_dependence/integrated/
 #
-# Output:
-#   output/dvcs_current_dependence/dvcs_counts_per_nc_vs_current.png
-#   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current.png
-#   output/dvcs_current_dependence/dvcs_efficiency_vs_current_mc.png
-#   output/dvcs_current_dependence/dvcs_percent_of_intercept_vs_current_mc.png
-#   output/dvcs_current_dependence/dvcs_percent_of_intercept_data_vs_mc.png
-#   output/dvcs_current_dependence/dvcs_absolute_data_vs_mc.png
+#   Integrated plots produced:
+#     (1) six-panel DATA counts/nC vs current
+#     (2) six-panel DATA percent of fitted 0 nA vs current
+#     (3) six-panel absolute DATA and MC vs current together
+#         - data shown as counts/nC
+#         - MC shown as rec/gen
+#         - this remains a shape-only comparison because the absolute units differ
+#     (4) six-panel DATA and MC percent of fitted 0 nA vs current together,
+#         with a lower ratio pad in each panel
+#
+#   Requested plotting conventions:
+#     - all x-axes fixed to 0-80 nA
+#     - percent panels fixed to 40-120 (%)
+#     - MC shown with dashed lines and open-circle markers
+#     - DATA shown with solid lines and filled-circle markers
+#
+# Output figures:
+#   output/dvcs_current_dependence/integrated/dvcs_data_counts_per_nc_integrated.png
+#   output/dvcs_current_dependence/integrated/dvcs_data_percent_of_zero_integrated.png
+#   output/dvcs_current_dependence/integrated/dvcs_absolute_data_mc_integrated.png
+#   output/dvcs_current_dependence/integrated/dvcs_percent_data_mc_with_ratio_integrated.png
 #
 # Diagnostic CSVs:
 #   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
@@ -77,6 +85,7 @@ import uproot
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
 
 # -----------------------------------------------------------------------------
@@ -124,6 +133,13 @@ MC_DIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen"
 MC_TREE_NAME = "PhysicsEvents"
 
 OUTPUT_DIR = "output/dvcs_current_dependence"
+INTEGRATED_DIR = os.path.join(OUTPUT_DIR, "integrated")
+
+XMIN = 0.0
+XMAX = 80.0
+
+PERCENT_YMIN = 40.0
+PERCENT_YMAX = 120.0
 
 
 # -----------------------------------------------------------------------------
@@ -526,14 +542,14 @@ def add_reference_current_text(ax, period_name):
     acceptance correction.
     """
     ref_current = get_mc_reference_current(period_name)
-    text = f"MC ref used in acceptance: {ref_current} nA"
+    text = f"MC ref in acceptance: {ref_current} nA"
 
     ax.text(
         0.03,
         0.03,
         text,
         transform=ax.transAxes,
-        fontsize=9,
+        fontsize=8.5,
         verticalalignment="bottom",
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="0.7"),
     )
@@ -1001,6 +1017,587 @@ def build_residual_correction_rows(all_current_rows, data_fit_results, mc_fit_re
 #enddef
 
 
+def make_absolute_band(fit_result, xfit):
+    """
+    Absolute y = m*x + b band with slope varied by +/- sm.
+    """
+    yfit = fit_result["m"] * xfit + fit_result["b"]
+    yfit_lo = (fit_result["m"] - fit_result["sm"]) * xfit + fit_result["b"]
+    yfit_hi = (fit_result["m"] + fit_result["sm"]) * xfit + fit_result["b"]
+    return yfit, yfit_lo, yfit_hi
+#enddef
+
+
+def prepare_period_cache(all_current_rows, mc_rows, data_fit_results, mc_fit_results):
+    """
+    Build a compact cache used by the plotting code, so the plotting section
+    stays streamlined and does not repeatedly recompute the same arrays.
+    """
+    cache = {}
+
+    for period in PERIOD_ORDER:
+        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
+        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
+
+        frd = data_fit_results[period]
+        frm = mc_fit_results[period]
+
+        cache[period] = {
+            "xd": xd,
+            "yd": yd,
+            "syd": syd,
+            "rowsd": rowsd,
+            "xm": xm,
+            "ym": ym,
+            "sym": sym,
+            "rowsm": rowsm,
+            "frd": frd,
+            "frm": frm,
+        }
+    #endfor
+
+    return cache
+#enddef
+
+
+def set_common_style(ax):
+    """
+    Apply common style to an axis.
+    """
+    ax.grid(True, alpha=0.3)
+#enddef
+
+
+def draw_data_absolute_panel(ax, period, cache, color, xfit, show_legend=True):
+    """
+    Draw one panel for DATA counts/nC vs current.
+    """
+    frd = cache[period]["frd"]
+    xd = cache[period]["xd"]
+    yd = cache[period]["yd"]
+    syd = cache[period]["syd"]
+
+    data_fit, data_fit_lo, data_fit_hi = make_absolute_band(frd, xfit)
+
+    ax.fill_between(xfit, data_fit_lo, data_fit_hi, color=color, alpha=0.20, linewidth=0)
+    ax.errorbar(
+        xd,
+        yd,
+        yerr=syd,
+        fmt="o",
+        capsize=3,
+        color=color,
+        label=f"m={f5(frd['m'])} +/- {f5(frd['sm'])}\n b={f5(frd['b'])} +/- {f5(frd['sb'])}",
+    )
+    ax.plot(xfit, data_fit, color=color)
+
+    ax.set_title(period)
+    ax.set_xlim(XMIN, XMAX)
+    ax.set_xlabel("Beam current (nA)")
+    ax.set_ylabel("DVCS counts per charge (1/nC)")
+    set_common_style(ax)
+    if show_legend:
+        ax.legend(frameon=True, fontsize=9)
+    #endif
+    add_reference_current_text(ax, period)
+#enddef
+
+
+def draw_data_percent_panel(ax, period, cache, color, xfit, show_legend=True):
+    """
+    Draw one panel for DATA percent of fitted 0 nA vs current.
+    """
+    frd = cache[period]["frd"]
+    xd = cache[period]["xd"]
+    yd = cache[period]["yd"]
+    syd = cache[period]["syd"]
+
+    data_pct = 100.0 * (yd / frd["b"])
+    data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
+    data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
+    slope_pct, slope_pct_err = compute_percent_slope_and_error(frd)
+
+    ax.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=color, alpha=0.20, linewidth=0)
+    ax.errorbar(
+        xd,
+        data_pct,
+        yerr=data_pct_err,
+        fmt="o",
+        capsize=3,
+        color=color,
+        label=f"slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
+    )
+    ax.plot(xfit, data_pct_fit, color=color)
+
+    ax.set_title(period)
+    ax.set_xlim(XMIN, XMAX)
+    ax.set_ylim(PERCENT_YMIN, PERCENT_YMAX)
+    ax.set_xlabel("Beam current (nA)")
+    ax.set_ylabel("Efficiency relative to fitted 0 nA (%)")
+    set_common_style(ax)
+    if show_legend:
+        ax.legend(frameon=True, fontsize=9)
+    #endif
+    add_reference_current_text(ax, period)
+#enddef
+
+
+def draw_absolute_overlay_panel(ax, period, cache, color, xfit, show_legend=True):
+    """
+    Draw one panel for absolute DATA and MC together.
+    DATA: counts/nC
+    MC:   rec/gen
+    """
+    frd = cache[period]["frd"]
+    frm = cache[period]["frm"]
+
+    xd = cache[period]["xd"]
+    yd = cache[period]["yd"]
+    syd = cache[period]["syd"]
+
+    xm = cache[period]["xm"]
+    ym = cache[period]["ym"]
+    sym = cache[period]["sym"]
+
+    data_fit, data_fit_lo, data_fit_hi = make_absolute_band(frd, xfit)
+    mc_fit, mc_fit_lo, mc_fit_hi = make_absolute_band(frm, xfit)
+
+    ax.fill_between(xfit, data_fit_lo, data_fit_hi, color=color, alpha=0.14, linewidth=0)
+    ax.errorbar(
+        xd,
+        yd,
+        yerr=syd,
+        fmt="o",
+        capsize=3,
+        color=color,
+        label="Data (counts/nC)",
+    )
+    ax.plot(xfit, data_fit, color=color, linestyle="-")
+
+    ax.fill_between(xfit, mc_fit_lo, mc_fit_hi, color=color, alpha=0.08, linewidth=0)
+    ax.errorbar(
+        xm,
+        ym,
+        yerr=sym,
+        fmt="o",
+        capsize=3,
+        linestyle="none",
+        markerfacecolor="none",
+        markeredgecolor=color,
+        ecolor=color,
+        color=color,
+        label="MC (rec/gen)",
+    )
+    ax.plot(xfit, mc_fit, color=color, linestyle="--")
+
+    ax.set_title(period)
+    ax.set_xlim(XMIN, XMAX)
+    ax.set_xlabel("Beam current (nA)")
+    ax.set_ylabel("Absolute value")
+    set_common_style(ax)
+    if show_legend:
+        ax.legend(frameon=True, fontsize=9)
+    #endif
+    add_reference_current_text(ax, period)
+#enddef
+
+
+def evaluate_percent_fit_and_band(xvals, fit_result):
+    """
+    Evaluate percent curve and slope-only percent band at specific x values.
+    """
+    xvals = np.asarray(xvals, dtype=float)
+
+    pct = 100.0 * ((fit_result["m"] * xvals + fit_result["b"]) / fit_result["b"])
+    pct_lo = 100.0 * ((((fit_result["m"] - fit_result["sm"]) * xvals) + fit_result["b"]) / fit_result["b"])
+    pct_hi = 100.0 * ((((fit_result["m"] + fit_result["sm"]) * xvals) + fit_result["b"]) / fit_result["b"])
+
+    return pct, pct_lo, pct_hi
+#enddef
+
+
+def draw_percent_overlay_with_ratio(top_ax, bot_ax, period, cache, color, xfit, show_legend=True):
+    """
+    Draw one panel with:
+      - top: DATA and MC percent of fitted 0 nA
+      - bottom: ratio = DATA / MC_fit_evaluated_at_DATA_currents
+
+    This follows the style the user requested:
+      - larger top panel
+      - smaller ratio panel underneath
+      - MC dashed and open circles
+      - DATA solid and filled circles
+
+    Ratio points are evaluated at the DATA current values:
+      ratio_i = DATA_percent(I_i) / MC_percent_fit(I_i)
+
+    Ratio band is built from the fit bands:
+      ratio_low  = DATA_fit_low / MC_fit_high
+      ratio_high = DATA_fit_high / MC_fit_low
+    """
+    frd = cache[period]["frd"]
+    frm = cache[period]["frm"]
+
+    xd = cache[period]["xd"]
+    yd = cache[period]["yd"]
+    syd = cache[period]["syd"]
+
+    xm = cache[period]["xm"]
+    ym = cache[period]["ym"]
+    sym = cache[period]["sym"]
+
+    data_pct = 100.0 * (yd / frd["b"])
+    data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
+    data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
+
+    mc_pct = 100.0 * (ym / frm["b"])
+    mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
+    mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
+
+    # -------------------------
+    # Top panel
+    # -------------------------
+
+    top_ax.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=color, alpha=0.12, linewidth=0)
+    top_ax.errorbar(
+        xd,
+        data_pct,
+        yerr=data_pct_err,
+        fmt="o",
+        capsize=3,
+        color=color,
+        label="Data",
+    )
+    top_ax.plot(xfit, data_pct_fit, color=color, linestyle="-")
+
+    top_ax.fill_between(xfit, mc_pct_fit_lo, mc_pct_fit_hi, color=color, alpha=0.08, linewidth=0)
+    top_ax.errorbar(
+        xm,
+        mc_pct,
+        yerr=mc_pct_err,
+        fmt="o",
+        capsize=3,
+        linestyle="none",
+        markerfacecolor="none",
+        markeredgecolor=color,
+        ecolor=color,
+        color=color,
+        label="MC",
+    )
+    top_ax.plot(xfit, mc_pct_fit, color=color, linestyle="--")
+
+    top_ax.set_title(period)
+    top_ax.set_xlim(XMIN, XMAX)
+    top_ax.set_ylim(PERCENT_YMIN, PERCENT_YMAX)
+    top_ax.set_ylabel("Efficiency relative to fitted 0 nA (%)")
+    set_common_style(top_ax)
+    top_ax.tick_params(labelbottom=False)
+    if show_legend:
+        top_ax.legend(frameon=True, fontsize=9, loc="upper right")
+    #endif
+    add_reference_current_text(top_ax, period)
+
+    # -------------------------
+    # Ratio panel
+    # -------------------------
+
+    mc_pct_at_xd, mc_pct_at_xd_lo, mc_pct_at_xd_hi = evaluate_percent_fit_and_band(xd, frm)
+    ratio_pts = data_pct / mc_pct_at_xd
+
+    # Approximate point uncertainty:
+    #   dominant visible uncertainty is DATA point uncertainty combined with the
+    #   MC fit-band half-width at the same x.
+    mc_pct_sigma_at_xd = 0.5 * np.abs(mc_pct_at_xd_hi - mc_pct_at_xd_lo)
+    ratio_err = ratio_pts * np.sqrt((data_pct_err / data_pct) ** 2 + (mc_pct_sigma_at_xd / mc_pct_at_xd) ** 2)
+
+    ratio_fit = data_pct_fit / mc_pct_fit
+    ratio_fit_lo = data_pct_fit_lo / mc_pct_fit_hi
+    ratio_fit_hi = data_pct_fit_hi / mc_pct_fit_lo
+
+    bot_ax.fill_between(xfit, ratio_fit_lo, ratio_fit_hi, color=color, alpha=0.12, linewidth=0)
+    bot_ax.errorbar(
+        xd,
+        ratio_pts,
+        yerr=ratio_err,
+        fmt="o",
+        capsize=3,
+        color=color,
+    )
+    bot_ax.plot(xfit, ratio_fit, color=color, linestyle="-")
+    bot_ax.axhline(1.0, color="gray", linestyle="--", linewidth=1.0)
+
+    bot_ax.set_xlim(XMIN, XMAX)
+    bot_ax.set_xlabel("Beam current (nA)")
+    bot_ax.set_ylabel("Data/MC")
+    set_common_style(bot_ax)
+
+    finite_ratio = ratio_pts[np.isfinite(ratio_pts)]
+    finite_ratio_err = ratio_err[np.isfinite(ratio_err)]
+
+    if finite_ratio.size > 0:
+        rmin = np.min(finite_ratio - finite_ratio_err)
+        rmax = np.max(finite_ratio + finite_ratio_err)
+        pad = max(0.01, 0.15 * (rmax - rmin))
+        if rmax - rmin < 0.03:
+            pad = max(pad, 0.01)
+        #endif
+        bot_ax.set_ylim(rmin - pad, rmax + pad)
+    else:
+        bot_ax.set_ylim(0.8, 1.2)
+    #endif
+#enddef
+
+
+def plot_six_panel_simple(period_order, cache, period_color, drawer, outfile, figsize=(18, 10)):
+    """
+    Draw a simple 2x3 figure with one axis per slot.
+    """
+    fig, axs = plt.subplots(2, 3, figsize=figsize, constrained_layout=True)
+    axs = axs.flatten()
+
+    for i, period in enumerate(period_order):
+        drawer(axs[i], period, cache, period_color[period], np.linspace(XMIN, XMAX, 300), True)
+    #endfor
+
+    # Overlay panel
+    axc = axs[5]
+    axc.clear()
+    axc.set_title("All periods (overlay)")
+    axc.set_xlim(XMIN, XMAX)
+    set_common_style(axc)
+
+    xfit = np.linspace(XMIN, XMAX, 300)
+
+    if drawer == draw_data_absolute_panel:
+        axc.set_xlabel("Beam current (nA)")
+        axc.set_ylabel("DVCS counts per charge (1/nC)")
+        for period in period_order:
+            c = period_color[period]
+            frd = cache[period]["frd"]
+            xd = cache[period]["xd"]
+            yd = cache[period]["yd"]
+            syd = cache[period]["syd"]
+            data_fit, data_fit_lo, data_fit_hi = make_absolute_band(frd, xfit)
+
+            axc.fill_between(xfit, data_fit_lo, data_fit_hi, color=c, alpha=0.10, linewidth=0)
+            axc.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label=f"{period}")
+            axc.plot(xfit, data_fit, color=c)
+        #endfor
+    elif drawer == draw_data_percent_panel:
+        axc.set_xlabel("Beam current (nA)")
+        axc.set_ylabel("Efficiency relative to fitted 0 nA (%)")
+        axc.set_ylim(PERCENT_YMIN, PERCENT_YMAX)
+        for period in period_order:
+            c = period_color[period]
+            frd = cache[period]["frd"]
+            xd = cache[period]["xd"]
+            yd = cache[period]["yd"]
+            syd = cache[period]["syd"]
+
+            data_pct = 100.0 * (yd / frd["b"])
+            data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
+            data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
+
+            axc.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=c, alpha=0.10, linewidth=0)
+            axc.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label=f"{period}")
+            axc.plot(xfit, data_pct_fit, color=c)
+        #endfor
+    elif drawer == draw_absolute_overlay_panel:
+        axc.set_xlabel("Beam current (nA)")
+        axc.set_ylabel("Absolute value")
+        for period in period_order:
+            c = period_color[period]
+
+            frd = cache[period]["frd"]
+            frm = cache[period]["frm"]
+
+            xd = cache[period]["xd"]
+            yd = cache[period]["yd"]
+            syd = cache[period]["syd"]
+
+            xm = cache[period]["xm"]
+            ym = cache[period]["ym"]
+            sym = cache[period]["sym"]
+
+            data_fit, data_fit_lo, data_fit_hi = make_absolute_band(frd, xfit)
+            mc_fit, mc_fit_lo, mc_fit_hi = make_absolute_band(frm, xfit)
+
+            axc.fill_between(xfit, data_fit_lo, data_fit_hi, color=c, alpha=0.08, linewidth=0)
+            axc.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label=f"{period} data")
+            axc.plot(xfit, data_fit, color=c, linestyle="-")
+
+            axc.fill_between(xfit, mc_fit_lo, mc_fit_hi, color=c, alpha=0.05, linewidth=0)
+            axc.errorbar(
+                xm,
+                ym,
+                yerr=sym,
+                fmt="o",
+                capsize=3,
+                linestyle="none",
+                markerfacecolor="none",
+                markeredgecolor=c,
+                ecolor=c,
+                color=c,
+                label=f"{period} MC",
+            )
+            axc.plot(xfit, mc_fit, color=c, linestyle="--")
+        #endfor
+    else:
+        raise RuntimeError("Unknown drawer passed to plot_six_panel_simple.")
+    #endif
+
+    axc.legend(frameon=True, fontsize=8)
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+#enddef
+
+
+def plot_percent_overlay_with_ratio(period_order, cache, period_color, outfile):
+    """
+    Draw the requested 2x3 integrated figure where each slot contains:
+      - top panel: DATA and MC percent of fitted 0 nA
+      - bottom panel: ratio Data/MC
+    """
+    fig = plt.figure(figsize=(18, 11), constrained_layout=False)
+    outer = GridSpec(2, 3, figure=fig, wspace=0.22, hspace=0.28)
+
+    xfit = np.linspace(XMIN, XMAX, 300)
+
+    # Five period panels
+    for i, period in enumerate(period_order):
+        row = i // 3
+        col = i % 3
+
+        inner = GridSpecFromSubplotSpec(
+            2,
+            1,
+            subplot_spec=outer[row, col],
+            height_ratios=[3.2, 1.0],
+            hspace=0.0,
+        )
+
+        top_ax = fig.add_subplot(inner[0, 0])
+        bot_ax = fig.add_subplot(inner[1, 0], sharex=top_ax)
+
+        draw_percent_overlay_with_ratio(
+            top_ax,
+            bot_ax,
+            period,
+            cache,
+            period_color[period],
+            xfit,
+            show_legend=True,
+        )
+    #endfor
+
+    # Sixth overlay panel
+    inner = GridSpecFromSubplotSpec(
+        2,
+        1,
+        subplot_spec=outer[1, 2],
+        height_ratios=[3.2, 1.0],
+        hspace=0.0,
+    )
+
+    top_ax = fig.add_subplot(inner[0, 0])
+    bot_ax = fig.add_subplot(inner[1, 0], sharex=top_ax)
+
+    top_ax.set_title("All periods (overlay)")
+    top_ax.set_xlim(XMIN, XMAX)
+    top_ax.set_ylim(PERCENT_YMIN, PERCENT_YMAX)
+    top_ax.set_ylabel("Efficiency relative to fitted 0 nA (%)")
+    set_common_style(top_ax)
+    top_ax.tick_params(labelbottom=False)
+
+    bot_ax.set_xlim(XMIN, XMAX)
+    bot_ax.set_xlabel("Beam current (nA)")
+    bot_ax.set_ylabel("Data/MC")
+    set_common_style(bot_ax)
+    bot_ax.axhline(1.0, color="gray", linestyle="--", linewidth=1.0)
+
+    all_ratio_y = []
+    all_ratio_err = []
+
+    for period in period_order:
+        c = period_color[period]
+        frd = cache[period]["frd"]
+        frm = cache[period]["frm"]
+
+        xd = cache[period]["xd"]
+        yd = cache[period]["yd"]
+        syd = cache[period]["syd"]
+
+        xm = cache[period]["xm"]
+        ym = cache[period]["ym"]
+        sym = cache[period]["sym"]
+
+        data_pct = 100.0 * (yd / frd["b"])
+        data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
+        data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
+
+        mc_pct = 100.0 * (ym / frm["b"])
+        mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
+        mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
+
+        top_ax.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=c, alpha=0.08, linewidth=0)
+        top_ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label=f"{period} data")
+        top_ax.plot(xfit, data_pct_fit, color=c, linestyle="-")
+
+        top_ax.fill_between(xfit, mc_pct_fit_lo, mc_pct_fit_hi, color=c, alpha=0.05, linewidth=0)
+        top_ax.errorbar(
+            xm,
+            mc_pct,
+            yerr=mc_pct_err,
+            fmt="o",
+            capsize=3,
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor=c,
+            ecolor=c,
+            color=c,
+            label=f"{period} MC",
+        )
+        top_ax.plot(xfit, mc_pct_fit, color=c, linestyle="--")
+
+        mc_pct_at_xd, mc_pct_at_xd_lo, mc_pct_at_xd_hi = evaluate_percent_fit_and_band(xd, frm)
+        ratio_pts = data_pct / mc_pct_at_xd
+        mc_pct_sigma_at_xd = 0.5 * np.abs(mc_pct_at_xd_hi - mc_pct_at_xd_lo)
+        ratio_err = ratio_pts * np.sqrt((data_pct_err / data_pct) ** 2 + (mc_pct_sigma_at_xd / mc_pct_at_xd) ** 2)
+
+        ratio_fit = data_pct_fit / mc_pct_fit
+        ratio_fit_lo = data_pct_fit_lo / mc_pct_fit_hi
+        ratio_fit_hi = data_pct_fit_hi / mc_pct_fit_lo
+
+        bot_ax.fill_between(xfit, ratio_fit_lo, ratio_fit_hi, color=c, alpha=0.08, linewidth=0)
+        bot_ax.errorbar(xd, ratio_pts, yerr=ratio_err, fmt="o", capsize=3, color=c)
+        bot_ax.plot(xfit, ratio_fit, color=c, linestyle="-")
+
+        all_ratio_y.extend(list(ratio_pts))
+        all_ratio_err.extend(list(ratio_err))
+    #endfor
+
+    if len(all_ratio_y) > 0:
+        all_ratio_y = np.asarray(all_ratio_y, dtype=float)
+        all_ratio_err = np.asarray(all_ratio_err, dtype=float)
+
+        rmin = np.min(all_ratio_y - all_ratio_err)
+        rmax = np.max(all_ratio_y + all_ratio_err)
+        pad = max(0.01, 0.15 * (rmax - rmin))
+        if rmax - rmin < 0.03:
+            pad = max(pad, 0.01)
+        #endif
+        bot_ax.set_ylim(rmin - pad, rmax + pad)
+    else:
+        bot_ax.set_ylim(0.8, 1.2)
+    #endif
+
+    top_ax.legend(frameon=True, fontsize=7.5, ncol=1)
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+#enddef
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -1011,6 +1608,7 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(INTEGRATED_DIR, exist_ok=True)
 
     # -------------------------------------------------------------------------
     # Read charge map once.
@@ -1112,9 +1710,6 @@ def main():
         period_color[period] = default_colors[i]
     #endfor
 
-    band_alpha = 0.20
-    xfit = np.linspace(0.0, 100.0, 300)
-
     # -------------------------------------------------------------------------
     # Fit DATA.
     # -------------------------------------------------------------------------
@@ -1190,608 +1785,61 @@ def main():
     #endfor
 
     # -------------------------------------------------------------------------
-    # Plot 1: DATA counts per nC vs current
+    # Build compact plotting cache.
     # -------------------------------------------------------------------------
-    fig1, axs1 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
-    axs1 = axs1.flatten()
+    cache = prepare_period_cache(
+        all_current_rows=all_current_rows,
+        mc_rows=mc_rows,
+        data_fit_results=data_fit_results,
+        mc_fit_results=mc_fit_results,
+    )
 
-    for i, period in enumerate(PERIOD_ORDER):
-        ax = axs1[i]
-        c = period_color[period]
+    # -------------------------------------------------------------------------
+    # Streamlined integrated plots requested by the user.
+    # -------------------------------------------------------------------------
 
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-        fr = data_fit_results[period]
-
-        yfit = fr["m"] * xfit + fr["b"]
-        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
-        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
-
-        ax.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
-        ax.errorbar(
-            x,
-            y,
-            yerr=sy,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label=f"m={f5(fr['m'])} +/- {f5(fr['sm'])}\n b={f5(fr['b'])} +/- {f5(fr['sb'])}",
-        )
-        ax.plot(xfit, yfit, color=c)
-
-        ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_xlabel("Beam current (nA)")
-        ax.set_ylabel("DVCS counts per charge (1/nC)")
-        ax.grid(True, alpha=0.3)
-        ax.legend(frameon=True)
-        add_reference_current_text(ax, period)
-    #endfor
-
-    axc = axs1[5]
-    axc.set_title("All periods (overlay)")
-    axc.set_xlim(0.0, 100.0)
-    axc.set_xlabel("Beam current (nA)")
-    axc.set_ylabel("DVCS counts per charge (1/nC)")
-    axc.grid(True, alpha=0.3)
-
-    for period in PERIOD_ORDER:
-        c = period_color[period]
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-        fr = data_fit_results[period]
-
-        yfit = fr["m"] * xfit + fr["b"]
-        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
-        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
-
-        axc.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
-        axc.errorbar(
-            x,
-            y,
-            yerr=sy,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label=f"{period}: m={f5(fr['m'])} +/- {f5(fr['sm'])}, b={f5(fr['b'])} +/- {f5(fr['sb'])}",
-        )
-        axc.plot(xfit, yfit, color=c)
-    #endfor
-
-    axc.legend(frameon=True, fontsize=9)
-
-    out1 = os.path.join(OUTPUT_DIR, "dvcs_counts_per_nc_vs_current.png")
-    fig1.savefig(out1, dpi=200)
-
+    out1 = os.path.join(INTEGRATED_DIR, "dvcs_data_counts_per_nc_integrated.png")
+    plot_six_panel_simple(
+        period_order=PERIOD_ORDER,
+        cache=cache,
+        period_color=period_color,
+        drawer=draw_data_absolute_panel,
+        outfile=out1,
+    )
     print("")
     print(f"[saved] {out1}")
 
-    # -------------------------------------------------------------------------
-    # Plot 2: DATA percent-of-intercept vs current
-    # -------------------------------------------------------------------------
-    fig2, axs2 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
-    axs2 = axs2.flatten()
-
-    print("")
-    print("=== DATA percent-of-intercept slopes ===")
-
-    for i, period in enumerate(PERIOD_ORDER):
-        ax = axs2[i]
-        c = period_color[period]
-
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-        fr = data_fit_results[period]
-
-        pct = 100.0 * (y / fr["b"])
-        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
-
-        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
-        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
-
-        print(f"{period}: slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
-
-        ax.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
-        ax.errorbar(
-            x,
-            pct,
-            yerr=pct_err,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label=f"b={f5(fr['b'])} +/- {f5(fr['sb'])}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
-        )
-        ax.plot(xfit, pct_fit, color=c)
-
-        ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_ylim(0.0, 150.0)
-        ax.set_xlabel("Beam current (nA)")
-        ax.set_ylabel("Percent of intercept b (%)")
-        ax.grid(True, alpha=0.3)
-        ax.legend(frameon=True)
-        add_reference_current_text(ax, period)
-    #endfor
-
-    axc2 = axs2[5]
-    axc2.set_title("All periods (overlay)")
-    axc2.set_xlim(0.0, 100.0)
-    axc2.set_ylim(0.0, 150.0)
-    axc2.set_xlabel("Beam current (nA)")
-    axc2.set_ylabel("Percent of intercept b (%)")
-    axc2.grid(True, alpha=0.3)
-
-    for period in PERIOD_ORDER:
-        c = period_color[period]
-        x, y, sy, rows = period_points_from_current_rows(all_current_rows, period)
-        fr = data_fit_results[period]
-
-        pct = 100.0 * (y / fr["b"])
-        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
-
-        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
-        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
-
-        axc2.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
-        axc2.errorbar(
-            x,
-            pct,
-            yerr=pct_err,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
-        )
-        axc2.plot(xfit, pct_fit, color=c)
-    #endfor
-
-    axc2.legend(frameon=True, fontsize=9)
-
-    out2 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_vs_current.png")
-    fig2.savefig(out2, dpi=200)
-
+    out2 = os.path.join(INTEGRATED_DIR, "dvcs_data_percent_of_zero_integrated.png")
+    plot_six_panel_simple(
+        period_order=PERIOD_ORDER,
+        cache=cache,
+        period_color=period_color,
+        drawer=draw_data_percent_panel,
+        outfile=out2,
+    )
     print("")
     print(f"[saved] {out2}")
 
-    # -------------------------------------------------------------------------
-    # Plot 3: MC efficiency vs current
-    # -------------------------------------------------------------------------
-    fig3, axs3 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
-    axs3 = axs3.flatten()
-
-    for i, period in enumerate(PERIOD_ORDER):
-        ax = axs3[i]
-        c = period_color[period]
-        ref_current = get_mc_reference_current(period)
-
-        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
-        fr = mc_fit_results[period]
-
-        yfit = fr["m"] * xfit + fr["b"]
-        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
-        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
-
-        ax.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
-        ax.errorbar(
-            x,
-            y,
-            yerr=sy,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label=f"m={f5(fr['m'])} +/- {f5(fr['sm'])}\n b={f5(fr['b'])} +/- {f5(fr['sb'])}",
-        )
-        ax.plot(xfit, yfit, color=c, linestyle="--")
-        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
-
-        ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_xlabel("Beam current (nA)")
-        ax.set_ylabel("MC reconstruction efficiency")
-        ax.grid(True, alpha=0.3)
-        ax.legend(frameon=True)
-        add_reference_current_text(ax, period)
-    #endfor
-
-    axc3 = axs3[5]
-    axc3.set_title("All periods (overlay)")
-    axc3.set_xlim(0.0, 100.0)
-    axc3.set_xlabel("Beam current (nA)")
-    axc3.set_ylabel("MC reconstruction efficiency")
-    axc3.grid(True, alpha=0.3)
-
-    for period in PERIOD_ORDER:
-        c = period_color[period]
-        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
-        fr = mc_fit_results[period]
-
-        yfit = fr["m"] * xfit + fr["b"]
-        yfit_lo = (fr["m"] - fr["sm"]) * xfit + fr["b"]
-        yfit_hi = (fr["m"] + fr["sm"]) * xfit + fr["b"]
-
-        axc3.fill_between(xfit, yfit_lo, yfit_hi, color=c, alpha=band_alpha, linewidth=0)
-        axc3.errorbar(
-            x,
-            y,
-            yerr=sy,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label=f"{period}: m={f5(fr['m'])} +/- {f5(fr['sm'])}, b={f5(fr['b'])} +/- {f5(fr['sb'])}",
-        )
-        axc3.plot(xfit, yfit, color=c, linestyle="--")
-    #endfor
-
-    axc3.legend(frameon=True, fontsize=9)
-
-    out3 = os.path.join(OUTPUT_DIR, "dvcs_efficiency_vs_current_mc.png")
-    fig3.savefig(out3, dpi=200)
-
+    out3 = os.path.join(INTEGRATED_DIR, "dvcs_absolute_data_mc_integrated.png")
+    plot_six_panel_simple(
+        period_order=PERIOD_ORDER,
+        cache=cache,
+        period_color=period_color,
+        drawer=draw_absolute_overlay_panel,
+        outfile=out3,
+    )
     print("")
     print(f"[saved] {out3}")
 
-    # -------------------------------------------------------------------------
-    # Plot 4: MC percent-of-intercept vs current
-    # -------------------------------------------------------------------------
-    fig4, axs4 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
-    axs4 = axs4.flatten()
-
-    print("")
-    print("=== MC percent-of-intercept slopes ===")
-
-    for i, period in enumerate(PERIOD_ORDER):
-        ax = axs4[i]
-        c = period_color[period]
-        ref_current = get_mc_reference_current(period)
-
-        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
-        fr = mc_fit_results[period]
-
-        pct = 100.0 * (y / fr["b"])
-        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
-
-        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
-        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
-
-        print(f"{period}: slope = {slope_pct:.10f} +/- {slope_pct_err:.10f} (% per nA)")
-
-        ax.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
-        ax.errorbar(
-            x,
-            pct,
-            yerr=pct_err,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label=f"b={f5(fr['b'])} +/- {f5(fr['sb'])}\n slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
-        )
-        ax.plot(xfit, pct_fit, color=c, linestyle="--")
-        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
-
-        ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_ylim(0.0, 150.0)
-        ax.set_xlabel("Beam current (nA)")
-        ax.set_ylabel("Percent of intercept b (%)")
-        ax.grid(True, alpha=0.3)
-        ax.legend(frameon=True)
-        add_reference_current_text(ax, period)
-    #endfor
-
-    axc4 = axs4[5]
-    axc4.set_title("All periods (overlay)")
-    axc4.set_xlim(0.0, 100.0)
-    axc4.set_ylim(0.0, 150.0)
-    axc4.set_xlabel("Beam current (nA)")
-    axc4.set_ylabel("Percent of intercept b (%)")
-    axc4.grid(True, alpha=0.3)
-
-    for period in PERIOD_ORDER:
-        c = period_color[period]
-        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
-        fr = mc_fit_results[period]
-
-        pct = 100.0 * (y / fr["b"])
-        pct_err = 100.0 * np.sqrt((sy / fr["b"]) ** 2 + ((y * fr["sb"]) / (fr["b"] * fr["b"])) ** 2)
-
-        pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, fr)
-        slope_pct, slope_pct_err = compute_percent_slope_and_error(fr)
-
-        axc4.fill_between(xfit, pct_fit_lo, pct_fit_hi, color=c, alpha=band_alpha, linewidth=0)
-        axc4.errorbar(
-            x,
-            pct,
-            yerr=pct_err,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label=f"{period}: slope={f5(slope_pct)} +/- {f5(slope_pct_err)} (%/nA)",
-        )
-        axc4.plot(xfit, pct_fit, color=c, linestyle="--")
-    #endfor
-
-    axc4.legend(frameon=True, fontsize=9)
-
-    out4 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_vs_current_mc.png")
-    fig4.savefig(out4, dpi=200)
-
+    out4 = os.path.join(INTEGRATED_DIR, "dvcs_percent_data_mc_with_ratio_integrated.png")
+    plot_percent_overlay_with_ratio(
+        period_order=PERIOD_ORDER,
+        cache=cache,
+        period_color=period_color,
+        outfile=out4,
+    )
     print("")
     print(f"[saved] {out4}")
-
-    # -------------------------------------------------------------------------
-    # Plot 5: DATA and MC percent-of-intercept vs current on same subplots
-    #
-    # These are still useful for comparing shape, but remember that the actual
-    # production correction uses MC only at I_ref, not the full MC curve point
-    # by point. Therefore we annotate each panel with the production MC
-    # reference current used in acceptance.
-    # -------------------------------------------------------------------------
-    fig5, axs5 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
-    axs5 = axs5.flatten()
-
-    for i, period in enumerate(PERIOD_ORDER):
-        ax = axs5[i]
-        c = period_color[period]
-        ref_current = get_mc_reference_current(period)
-
-        # DATA
-        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
-        frd = data_fit_results[period]
-
-        data_pct = 100.0 * (yd / frd["b"])
-        data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-        data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
-
-        # MC
-        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
-        frm = mc_fit_results[period]
-
-        mc_pct = 100.0 * (ym / frm["b"])
-        mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
-        mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
-
-        ax.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=c, alpha=0.12, linewidth=0)
-        ax.errorbar(
-            xd,
-            data_pct,
-            yerr=data_pct_err,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label="Data",
-        )
-        ax.plot(xfit, data_pct_fit, color=c)
-
-        ax.fill_between(xfit, mc_pct_fit_lo, mc_pct_fit_hi, color=c, alpha=0.08, linewidth=0)
-        ax.errorbar(
-            xm,
-            mc_pct,
-            yerr=mc_pct_err,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label="MC",
-        )
-        ax.plot(xfit, mc_pct_fit, color=c, linestyle="--")
-        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
-
-        ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_ylim(0.0, 150.0)
-        ax.set_xlabel("Beam current (nA)")
-        ax.set_ylabel("Percent of fitted 0 nA (%)")
-        ax.grid(True, alpha=0.3)
-        ax.legend(frameon=True)
-        add_reference_current_text(ax, period)
-    #endfor
-
-    axc5 = axs5[5]
-    axc5.set_title("All periods (overlay)")
-    axc5.set_xlim(0.0, 100.0)
-    axc5.set_ylim(0.0, 150.0)
-    axc5.set_xlabel("Beam current (nA)")
-    axc5.set_ylabel("Percent of fitted 0 nA (%)")
-    axc5.grid(True, alpha=0.3)
-
-    for period in PERIOD_ORDER:
-        c = period_color[period]
-
-        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
-        frd = data_fit_results[period]
-        data_pct = 100.0 * (yd / frd["b"])
-        data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-        data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
-
-        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
-        frm = mc_fit_results[period]
-        mc_pct = 100.0 * (ym / frm["b"])
-        mc_pct_err = 100.0 * np.sqrt((sym / frm["b"]) ** 2 + ((ym * frm["sb"]) / (frm["b"] * frm["b"])) ** 2)
-        mc_pct_fit, mc_pct_fit_lo, mc_pct_fit_hi = compute_percent_curve(xfit, frm)
-
-        axc5.fill_between(xfit, data_pct_fit_lo, data_pct_fit_hi, color=c, alpha=0.08, linewidth=0)
-        axc5.errorbar(
-            xd,
-            data_pct,
-            yerr=data_pct_err,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label=f"{period} data",
-        )
-        axc5.plot(xfit, data_pct_fit, color=c)
-
-        axc5.fill_between(xfit, mc_pct_fit_lo, mc_pct_fit_hi, color=c, alpha=0.05, linewidth=0)
-        axc5.errorbar(
-            xm,
-            mc_pct,
-            yerr=mc_pct_err,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label=f"{period} MC",
-        )
-        axc5.plot(xfit, mc_pct_fit, color=c, linestyle="--")
-    #endfor
-
-    axc5.legend(frameon=True, fontsize=8)
-
-    out5 = os.path.join(OUTPUT_DIR, "dvcs_percent_of_intercept_data_vs_mc.png")
-    fig5.savefig(out5, dpi=200)
-
-    print("")
-    print(f"[saved] {out5}")
-
-    # -------------------------------------------------------------------------
-    # Plot 6: DATA and MC absolute values vs current on same subplots
-    #
-    # DATA uses counts/nC.
-    # MC uses rec/gen efficiency.
-    #
-    # These are not the same physical normalization, so this remains a shape /
-    # trend comparison only. The annotation reminds us which single MC current
-    # is actually used in the production acceptance correction.
-    # -------------------------------------------------------------------------
-    fig6, axs6 = plt.subplots(2, 3, figsize=(18, 10), constrained_layout=True)
-    axs6 = axs6.flatten()
-
-    for i, period in enumerate(PERIOD_ORDER):
-        ax = axs6[i]
-        c = period_color[period]
-        ref_current = get_mc_reference_current(period)
-
-        # DATA
-        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
-        frd = data_fit_results[period]
-
-        data_fit = frd["m"] * xfit + frd["b"]
-        data_fit_lo = (frd["m"] - frd["sm"]) * xfit + frd["b"]
-        data_fit_hi = (frd["m"] + frd["sm"]) * xfit + frd["b"]
-
-        # MC
-        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
-        frm = mc_fit_results[period]
-
-        mc_fit = frm["m"] * xfit + frm["b"]
-        mc_fit_lo = (frm["m"] - frm["sm"]) * xfit + frm["b"]
-        mc_fit_hi = (frm["m"] + frm["sm"]) * xfit + frm["b"]
-
-        ax.fill_between(xfit, data_fit_lo, data_fit_hi, color=c, alpha=0.12, linewidth=0)
-        ax.errorbar(
-            xd,
-            yd,
-            yerr=syd,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label="Data (counts/nC)",
-        )
-        ax.plot(xfit, data_fit, color=c)
-
-        ax.fill_between(xfit, mc_fit_lo, mc_fit_hi, color=c, alpha=0.08, linewidth=0)
-        ax.errorbar(
-            xm,
-            ym,
-            yerr=sym,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label="MC (rec/gen)",
-        )
-        ax.plot(xfit, mc_fit, color=c, linestyle="--")
-        ax.axvline(ref_current, color=c, linestyle=":", linewidth=1.0)
-
-        ax.set_title(period)
-        ax.set_xlim(0.0, 100.0)
-        ax.set_xlabel("Beam current (nA)")
-        ax.set_ylabel("Absolute value")
-        ax.grid(True, alpha=0.3)
-        ax.legend(frameon=True)
-        add_reference_current_text(ax, period)
-    #endfor
-
-    axc6 = axs6[5]
-    axc6.set_title("All periods (overlay)")
-    axc6.set_xlim(0.0, 100.0)
-    axc6.set_xlabel("Beam current (nA)")
-    axc6.set_ylabel("Absolute value")
-    axc6.grid(True, alpha=0.3)
-
-    for period in PERIOD_ORDER:
-        c = period_color[period]
-
-        xd, yd, syd, rowsd = period_points_from_current_rows(all_current_rows, period)
-        frd = data_fit_results[period]
-        data_fit = frd["m"] * xfit + frd["b"]
-        data_fit_lo = (frd["m"] - frd["sm"]) * xfit + frd["b"]
-        data_fit_hi = (frd["m"] + frd["sm"]) * xfit + frd["b"]
-
-        xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
-        frm = mc_fit_results[period]
-        mc_fit = frm["m"] * xfit + frm["b"]
-        mc_fit_lo = (frm["m"] - frm["sm"]) * xfit + frm["b"]
-        mc_fit_hi = (frm["m"] + frm["sm"]) * xfit + frm["b"]
-
-        axc6.fill_between(xfit, data_fit_lo, data_fit_hi, color=c, alpha=0.08, linewidth=0)
-        axc6.errorbar(
-            xd,
-            yd,
-            yerr=syd,
-            fmt="o",
-            capsize=3,
-            color=c,
-            label=f"{period} data",
-        )
-        axc6.plot(xfit, data_fit, color=c)
-
-        axc6.fill_between(xfit, mc_fit_lo, mc_fit_hi, color=c, alpha=0.05, linewidth=0)
-        axc6.errorbar(
-            xm,
-            ym,
-            yerr=sym,
-            fmt="o",
-            capsize=3,
-            linestyle="none",
-            markerfacecolor="none",
-            markeredgecolor=c,
-            ecolor=c,
-            color=c,
-            label=f"{period} MC",
-        )
-        axc6.plot(xfit, mc_fit, color=c, linestyle="--")
-    #endfor
-
-    axc6.legend(frameon=True, fontsize=8)
-
-    out6 = os.path.join(OUTPUT_DIR, "dvcs_absolute_data_vs_mc.png")
-    fig6.savefig(out6, dpi=200)
-
-    print("")
-    print(f"[saved] {out6}")
     print("")
 #enddef
 
