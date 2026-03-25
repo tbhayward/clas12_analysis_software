@@ -891,7 +891,6 @@ def build_residual_correction_rows(all_current_rows, data_fit_results, mc_fit_re
 def style_percent_axis(ax, ylabel):
     ax.set_xlim(0.0, 80.0)
     ax.set_ylim(40.0, 120.0)
-    ax.set_xlabel("Beam current (nA)")
     ax.set_ylabel(ylabel)
     ax.grid(True, alpha=0.3)
 #enddef
@@ -907,16 +906,14 @@ def style_absolute_axis(ax, ylabel):
 
 def style_ratio_axis(ax):
     ax.set_xlim(0.0, 80.0)
-    ax.set_ylim(0.80, 1.00)
+    ax.set_ylim(0.80, 1.05)
     ax.set_xlabel("Beam current (nA)")
     ax.set_ylabel("Data/MC")
     ax.grid(True, alpha=0.3)
     ax.axhline(1.0, color="0.5", linestyle="--", linewidth=1.0)
 
-    ticks = [0.80, 0.85, 0.90, 0.95, 1.00]
-    labels = ["0.80", "0.85", "0.90", "0.95", ""]
+    ticks = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05]
     ax.set_yticks(ticks)
-    ax.set_yticklabels(labels)
 #enddef
 
 
@@ -1174,6 +1171,7 @@ def main():
 
         ax.set_title(period)
         style_percent_axis(ax, "Efficiency relative to fitted 0 nA (%)")
+        ax.set_xlabel("Beam current (nA)")
         ax.legend(frameon=True)
         add_reference_current_text(ax, period)
     #endfor
@@ -1181,6 +1179,7 @@ def main():
     ax = axes_b[5]
     ax.set_title("All periods (overlay)")
     style_percent_axis(ax, "Efficiency relative to fitted 0 nA (%)")
+    ax.set_xlabel("Beam current (nA)")
 
     for period in PERIOD_ORDER:
         c = period_color[period]
@@ -1334,6 +1333,7 @@ def main():
 
         ax_top.set_title(period)
         style_percent_axis(ax_top, "Efficiency relative to fitted 0 nA (%)")
+        ax_top.set_xlabel("")
         ax_top.legend(frameon=True)
         add_reference_current_text(ax_top, period)
 
@@ -1365,10 +1365,6 @@ def main():
         ratio_y = np.asarray(ratio_y, dtype=float)
         ratio_sy = np.asarray(ratio_sy, dtype=float)
 
-        data_fit_on_ratio_x = 100.0 * ((frd["m"] * ratio_x + frd["b"]) / frd["b"])
-        mc_fit_on_ratio_x = 100.0 * ((frm["m"] * ratio_x + frm["b"]) / frm["b"])
-        fit_ratio_x = data_fit_on_ratio_x / mc_fit_on_ratio_x
-
         data_fit_curve = 100.0 * ((frd["m"] * xfit + frd["b"]) / frd["b"])
         mc_fit_curve = 100.0 * ((frm["m"] * xfit + frm["b"]) / frm["b"])
         ratio_fit_curve = data_fit_curve / mc_fit_curve
@@ -1392,6 +1388,7 @@ def main():
     ax_bot = bottom_axes_d[5]
     ax_top.set_title("All periods (overlay)")
     style_percent_axis(ax_top, "Efficiency relative to fitted 0 nA (%)")
+    ax_top.set_xlabel("")
     style_ratio_axis(ax_bot)
 
     for period in PERIOD_ORDER:
