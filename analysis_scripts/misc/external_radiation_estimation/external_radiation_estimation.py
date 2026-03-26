@@ -10,8 +10,8 @@ ROOT.gStyle.SetOptFit(0)
 # input/output
 # ------------------------------------------------
 
-# input_file = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
-input_file = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
+input_file = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
+# input_file = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
 tree_name  = "PhysicsEvents"
 output_dir = "output"
 output_png = os.path.join(output_dir, "external_radiation_estimation.png")
@@ -125,7 +125,7 @@ for i in range(n_vz_bins):
 
 # ------------------------------------------------
 # fit each histogram with gaus + polynomial background
-# right-panel 1: point is fitted mean, error bar is fitted sigma
+# right-panel 1: point is fitted mu, error bar is fitted mu uncertainty
 # right-panel 2: point is fitted sigma, error bar is sigma uncertainty
 # ------------------------------------------------
 
@@ -186,12 +186,13 @@ for i in range(n_vz_bins):
 
     if fit_ok:
         mu        = fit_func.GetParameter(1)
+        mu_err    = fit_func.GetParError(1)
         sigma     = abs(fit_func.GetParameter(2))
         sigma_err = fit_func.GetParError(2)
 
         x_mu_vals.append(mean_vz)
         y_mu_vals.append(mu)
-        y_mu_errs.append(sigma)
+        y_mu_errs.append(mu_err)
 
         x_sigma_vals.append(mean_vz)
         y_sigma_vals.append(sigma)
@@ -201,7 +202,7 @@ for i in range(n_vz_bins):
 
 # ------------------------------------------------
 # build graphs
-# graph_mu: fitted peak position vs vz_e, with sigma as y-error
+# graph_mu: fitted mu vs vz_e, with mu uncertainty as y-error
 # graph_sigma: fitted sigma vs vz_e, with sigma uncertainty as y-error
 # ------------------------------------------------
 
@@ -233,7 +234,7 @@ graph_sigma.SetLineWidth(2)
 # canvas layout
 # left side: multi-panel of Mx2 fits
 # right side: two stacked panels
-#   top    = fitted peak position vs vz_e
+#   top    = fitted mu vs vz_e
 #   bottom = fitted sigma vs vz_e
 # ------------------------------------------------
 
@@ -321,7 +322,7 @@ right_top.Draw()
 right_bot.Draw()
 
 # ------------------------------------------------
-# right top: fitted peak position with sigma as error bars
+# right top: fitted mu with mu uncertainty
 # ------------------------------------------------
 
 right_top.cd()
@@ -334,7 +335,7 @@ frame_right_top = ROOT.TH1D("frame_right_top", "", 100, vz_min, vz_max)
 frame_right_top.SetMinimum(0.7)
 frame_right_top.SetMaximum(1.1)
 frame_right_top.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
-frame_right_top.GetYaxis().SetTitle("Fitted neutron peak position M_{X}^{2} (GeV^{2})")
+frame_right_top.GetYaxis().SetTitle("Fitted neutron peak position #mu of M_{X}^{2} (GeV^{2})")
 frame_right_top.GetXaxis().CenterTitle()
 frame_right_top.GetYaxis().CenterTitle()
 frame_right_top.GetXaxis().SetTitleSize(0.05)
@@ -356,14 +357,14 @@ legend_right_top.SetBorderSize(1)
 legend_right_top.SetFillStyle(1001)
 legend_right_top.SetFillColor(ROOT.kWhite)
 legend_right_top.SetTextSize(0.026)
-legend_right_top.AddEntry(graph_mu, "Point = fitted mean, error bar = fitted #sigma", "lep")
+legend_right_top.AddEntry(graph_mu, "Point = fitted #mu, error bar = fit uncertainty on #mu", "lep")
 legend_right_top.AddEntry(line_neutron, "Expected neutron mass squared", "l")
 legend_right_top.Draw()
 
 latex_right_top = ROOT.TLatex()
 latex_right_top.SetNDC()
 latex_right_top.SetTextSize(0.040)
-latex_right_top.DrawLatex(0.18, 0.93, "Fitted peak position vs v_{z,e}")
+latex_right_top.DrawLatex(0.18, 0.93, "Fitted #mu vs v_{z,e}")
 
 # ------------------------------------------------
 # right bottom: fitted sigma with sigma uncertainty
