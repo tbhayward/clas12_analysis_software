@@ -10,7 +10,8 @@ ROOT.gStyle.SetOptFit(0)
 # input/output
 # ------------------------------------------------
 
-input_file = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
+# input_file = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
+input_file = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/clasdis_rga_fa18_inb_epi+X.root"
 tree_name  = "PhysicsEvents"
 output_dir = "output"
 output_png = os.path.join(output_dir, "external_radiation_estimation.png")
