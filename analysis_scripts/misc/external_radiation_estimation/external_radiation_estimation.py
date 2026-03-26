@@ -27,15 +27,16 @@ M_n2 = M_n * M_n
 # ------------------------------------------------
 # binning
 # remove the -7 to -6 bin by starting at -6
+# halve the previous Mx2 bin count: 120 -> 60
 # ------------------------------------------------
 
 vz_min = -6.0
 vz_max =  2.0
 vz_step = 1.0
 
-mx2_min = 0.5
-mx2_max = 1.1
-mx2_bins = 120
+mx2_min = 0.6
+mx2_max = 1.2
+mx2_bins = 60
 
 vz_edges = []
 current_edge = vz_min
@@ -184,9 +185,9 @@ for i in range(n_vz_bins):
     fit_statuses.append(fit_ok)
 
     if fit_ok:
-        mu          = fit_func.GetParameter(1)
-        sigma       = abs(fit_func.GetParameter(2))
-        sigma_err   = fit_func.GetParError(2)
+        mu        = fit_func.GetParameter(1)
+        sigma     = abs(fit_func.GetParameter(2))
+        sigma_err = fit_func.GetParError(2)
 
         x_mu_vals.append(mean_vz)
         y_mu_vals.append(mu)
@@ -252,19 +253,10 @@ right_pad.Draw()
 left_pad.cd()
 left_pad.Divide(4, 2, 0.001, 0.001)
 
-legend = ROOT.TLegend(0.50, 0.72, 0.88, 0.88)
-legend.SetBorderSize(1)
-legend.SetFillStyle(1001)
-legend.SetFillColor(ROOT.kWhite)
-legend.SetTextSize(0.022)
-
-legend_added_hist = False
-legend_added_fit = False
-
 for i in range(n_vz_bins):
     left_pad.cd(i + 1)
 
-    ROOT.gPad.SetLeftMargin(0.14)
+    ROOT.gPad.SetLeftMargin(0.19)
     ROOT.gPad.SetRightMargin(0.05)
     ROOT.gPad.SetBottomMargin(0.14)
     ROOT.gPad.SetTopMargin(0.10)
@@ -286,10 +278,10 @@ for i in range(n_vz_bins):
     h.GetXaxis().CenterTitle()
     h.GetYaxis().CenterTitle()
     h.GetXaxis().SetTitleSize(0.06)
-    h.GetYaxis().SetTitleSize(0.06)
+    h.GetYaxis().SetTitleSize(0.055)
     h.GetXaxis().SetLabelSize(0.05)
     h.GetYaxis().SetLabelSize(0.05)
-    h.GetYaxis().SetTitleOffset(1.10)
+    h.GetYaxis().SetTitleOffset(1.55)
 
     h.Draw("E1")
 
@@ -305,30 +297,16 @@ for i in range(n_vz_bins):
     latex = ROOT.TLatex()
     latex.SetNDC()
     latex.SetTextSize(0.060)
-    latex.DrawLatex(0.18, 0.86, "%.1f < v_{z,e} < %.1f (cm)" % (vz_lo, vz_hi))
+    latex.DrawLatex(0.22, 0.86, "%.1f < v_{z,e} < %.1f (cm)" % (vz_lo, vz_hi))
 
     if fit_statuses[i]:
         mu = fit_functions[i].GetParameter(1)
         sigma = abs(fit_functions[i].GetParameter(2))
         latex.SetTextSize(0.050)
-        latex.DrawLatex(0.18, 0.78, "#mu = %.4f" % mu)
-        latex.DrawLatex(0.18, 0.70, "#sigma = %.4f" % sigma)
-    #endif
-
-    if i == 0:
-        if not legend_added_hist:
-            legend.AddEntry(h, "Data", "lep")
-            legend_added_hist = True
-        #endif
-        if fit_functions[i] and not legend_added_fit:
-            legend.AddEntry(fit_functions[i], "Gaussian + pol2", "l")
-            legend_added_fit = True
-        #endif
+        latex.DrawLatex(0.22, 0.78, "#mu = %.4f" % mu)
+        latex.DrawLatex(0.22, 0.70, "#sigma = %.4f" % sigma)
     #endif
 #endfor
-
-left_pad.cd(n_vz_bins)
-legend.Draw()
 
 # ------------------------------------------------
 # right pad split into top and bottom
