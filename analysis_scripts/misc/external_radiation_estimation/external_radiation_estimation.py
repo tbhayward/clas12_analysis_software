@@ -26,12 +26,11 @@ M_n2 = M_n * M_n
 
 # ------------------------------------------------
 # binning
-# remove the -7 to -6 bin by starting at -6
-# halve the previous Mx2 bin count: 120 -> 60
+# 1 cm bins from -6.5 to 1.5
 # ------------------------------------------------
 
-vz_min = -6.0
-vz_max =  2.0
+vz_min = -6.5
+vz_max =  1.5
 vz_step = 1.0
 
 mx2_min = 0.6
