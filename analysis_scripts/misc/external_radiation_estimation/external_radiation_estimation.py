@@ -26,9 +26,10 @@ M_n2 = M_n * M_n
 
 # ------------------------------------------------
 # binning
+# remove the -7 to -6 bin by starting at -6
 # ------------------------------------------------
 
-vz_min = -7.0
+vz_min = -6.0
 vz_max =  2.0
 vz_step = 1.0
 
@@ -131,27 +132,20 @@ y_vals = []
 y_errs = []
 
 fit_functions = []
-
-color_list = [
-    ROOT.kBlack,
-    ROOT.kRed + 1,
-    ROOT.kBlue + 1,
-    ROOT.kGreen + 2,
-    ROOT.kMagenta + 1,
-    ROOT.kCyan + 2,
-    ROOT.kOrange + 7,
-    ROOT.kViolet + 1,
-    ROOT.kTeal + 3
-]
+fit_statuses = []
 
 for i in range(n_vz_bins):
     h = histograms[i]
 
     if count_vz[i] < 25:
+        fit_functions.append(None)
+        fit_statuses.append(False)
         continue
     #endif
 
     if h.GetEntries() < 10:
+        fit_functions.append(None)
+        fit_statuses.append(False)
         continue
     #endif
 
@@ -174,21 +168,24 @@ for i in range(n_vz_bins):
     fit_func.SetParLimits(1, 0.80, 0.95)
     fit_func.SetParLimits(2, 0.005, 0.20)
 
-    h.Fit(fit_func, "RQ0")
+    fit_result = h.Fit(fit_func, "RQ0S")
 
-    mu = fit_func.GetParameter(1)
-    sigma = abs(fit_func.GetParameter(2))
+    fit_ok = False
+    if fit_result and int(fit_result.Status()) == 0:
+        fit_ok = True
+    #endif
 
-    x_vals.append(mean_vz)
-    y_vals.append(mu)
-    y_errs.append(sigma)
-
-    h.SetLineColor(color_list[i % len(color_list)])
-    h.SetLineWidth(2)
-
-    fit_func.SetLineColor(h.GetLineColor())
-    fit_func.SetLineStyle(2)
     fit_functions.append(fit_func)
+    fit_statuses.append(fit_ok)
+
+    if fit_ok:
+        mu = fit_func.GetParameter(1)
+        sigma = abs(fit_func.GetParameter(2))
+
+        x_vals.append(mean_vz)
+        y_vals.append(mu)
+        y_errs.append(sigma)
+    #endif
 #endfor
 
 # ------------------------------------------------
@@ -209,90 +206,128 @@ graph.SetMarkerSize(1.2)
 graph.SetLineWidth(2)
 
 # ------------------------------------------------
-# canvas
+# canvas layout
+# left side: multi-panel of Mx2 fits
+# right side: extracted peak position vs vz_e
 # ------------------------------------------------
 
-canvas = ROOT.TCanvas("canvas", "external radiation estimation", 1600, 700)
-canvas.Divide(2, 1)
+canvas = ROOT.TCanvas("canvas", "external radiation estimation", 1800, 950)
+
+left_margin_frac = 0.72
+left_pad = ROOT.TPad("left_pad", "left_pad", 0.00, 0.00, left_margin_frac, 1.00)
+right_pad = ROOT.TPad("right_pad", "right_pad", left_margin_frac, 0.00, 1.00, 1.00)
+
+left_pad.Draw()
+right_pad.Draw()
 
 # ------------------------------------------------
-# left pad: normalized Mx2 distributions in vz_e bins
+# left pad split into multi-panel layout
 # ------------------------------------------------
 
-canvas.cd(1)
-ROOT.gPad.SetLeftMargin(0.13)
-ROOT.gPad.SetRightMargin(0.04)
-ROOT.gPad.SetBottomMargin(0.12)
-ROOT.gPad.SetTopMargin(0.08)
+left_pad.cd()
+left_pad.Divide(4, 2, 0.001, 0.001)
 
-frame_left = ROOT.TH1D("frame_left", "", 100, mx2_min, mx2_max)
-frame_left.SetMinimum(0.0)
-
-max_y = 0.0
-for h in histograms:
-    if h.GetMaximum() > max_y:
-        max_y = h.GetMaximum()
-    #endif
-#endfor
-
-frame_left.SetMaximum(1.25 * max_y if max_y > 0.0 else 1.0)
-frame_left.GetXaxis().SetTitle("M_{X}^{2} (GeV^{2})")
-frame_left.GetYaxis().SetTitle("Normalized counts")
-frame_left.GetXaxis().CenterTitle()
-frame_left.GetYaxis().CenterTitle()
-frame_left.Draw()
-
-legend = ROOT.TLegend(0.52, 0.45, 0.93, 0.92)
+legend = ROOT.TLegend(0.50, 0.72, 0.88, 0.88)
 legend.SetBorderSize(1)
 legend.SetFillStyle(1001)
 legend.SetFillColor(ROOT.kWhite)
-legend.SetTextSize(0.028)
+legend.SetTextSize(0.026)
 
-first_drawn = False
+legend_added_hist = False
+legend_added_fit = False
+
 for i in range(n_vz_bins):
+    left_pad.cd(i + 1)
+
+    ROOT.gPad.SetLeftMargin(0.14)
+    ROOT.gPad.SetRightMargin(0.05)
+    ROOT.gPad.SetBottomMargin(0.14)
+    ROOT.gPad.SetTopMargin(0.10)
+
     h = histograms[i]
+    h.SetTitle("")
+    h.SetMarkerStyle(20)
+    h.SetMarkerSize(0.7)
+    h.SetLineWidth(1)
 
-    if count_vz[i] < 25:
-        continue
-    #endif
+    local_max = h.GetMaximum()
+    y_max = 1.25 * local_max if local_max > 0.0 else 1.0
 
-    draw_opt = "hist same"
-    h.Draw(draw_opt)
+    h.SetMinimum(0.0)
+    h.SetMaximum(y_max)
 
-    if i < len(fit_functions):
+    h.GetXaxis().SetTitle("M_{X}^{2} (GeV^{2})")
+    h.GetYaxis().SetTitle("Normalized counts")
+    h.GetXaxis().CenterTitle()
+    h.GetYaxis().CenterTitle()
+    h.GetXaxis().SetTitleSize(0.06)
+    h.GetYaxis().SetTitleSize(0.06)
+    h.GetXaxis().SetLabelSize(0.05)
+    h.GetYaxis().SetLabelSize(0.05)
+    h.GetYaxis().SetTitleOffset(1.10)
+
+    h.Draw("E1")
+
+    if fit_functions[i]:
+        fit_functions[i].SetLineColor(ROOT.kRed + 1)
+        fit_functions[i].SetLineWidth(2)
         fit_functions[i].Draw("same")
     #endif
 
     vz_lo = vz_edges[i]
     vz_hi = vz_edges[i + 1]
-    legend.AddEntry(h, "%.1f < v_{z,e} < %.1f (cm)" % (vz_lo, vz_hi), "l")
-    first_drawn = True
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextSize(0.060)
+    latex.DrawLatex(0.18, 0.86, "%.1f < v_{z,e} < %.1f (cm)" % (vz_lo, vz_hi))
+
+    if fit_statuses[i]:
+        mu = fit_functions[i].GetParameter(1)
+        sigma = abs(fit_functions[i].GetParameter(2))
+        latex.SetTextSize(0.050)
+        latex.DrawLatex(0.18, 0.78, "#mu = %.4f" % mu)
+        latex.DrawLatex(0.18, 0.70, "#sigma = %.4f" % sigma)
+    #endif
+
+    if i == 0:
+        if not legend_added_hist:
+            legend.AddEntry(h, "Data", "lep")
+            legend_added_hist = True
+        #endif
+        if fit_functions[i] and not legend_added_fit:
+            legend.AddEntry(fit_functions[i], "Gaussian + pol2", "l")
+            legend_added_fit = True
+        #endif
+    #endif
 #endfor
 
+# draw the legend in the last panel for convenience
+left_pad.cd(n_vz_bins)
 legend.Draw()
-
-latex_left = ROOT.TLatex()
-latex_left.SetNDC()
-latex_left.SetTextSize(0.040)
-latex_left.DrawLatex(0.14, 0.93, "Exclusive #pi^{+}: normalized M_{X}^{2} distributions")
 
 # ------------------------------------------------
 # right pad: fitted peak position with sigma error bars vs mean vz_e
 # ------------------------------------------------
 
-canvas.cd(2)
-ROOT.gPad.SetLeftMargin(0.13)
-ROOT.gPad.SetRightMargin(0.04)
+right_pad.cd()
+ROOT.gPad.SetLeftMargin(0.16)
+ROOT.gPad.SetRightMargin(0.06)
 ROOT.gPad.SetBottomMargin(0.12)
 ROOT.gPad.SetTopMargin(0.08)
 
 frame_right = ROOT.TH1D("frame_right", "", 100, vz_min, vz_max)
-frame_right.SetMinimum(0.80)
-frame_right.SetMaximum(0.95)
+frame_right.SetMinimum(0.7)
+frame_right.SetMaximum(1.1)
 frame_right.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
 frame_right.GetYaxis().SetTitle("Fitted neutron peak position M_{X}^{2} (GeV^{2})")
 frame_right.GetXaxis().CenterTitle()
 frame_right.GetYaxis().CenterTitle()
+frame_right.GetXaxis().SetTitleSize(0.05)
+frame_right.GetYaxis().SetTitleSize(0.05)
+frame_right.GetXaxis().SetLabelSize(0.04)
+frame_right.GetYaxis().SetLabelSize(0.04)
+frame_right.GetYaxis().SetTitleOffset(1.35)
 frame_right.Draw()
 
 line_neutron = ROOT.TLine(vz_min, M_n2, vz_max, M_n2)
@@ -302,19 +337,19 @@ line_neutron.Draw("same")
 
 graph.Draw("P SAME")
 
-legend_right = ROOT.TLegend(0.17, 0.78, 0.62, 0.91)
+legend_right = ROOT.TLegend(0.18, 0.78, 0.72, 0.90)
 legend_right.SetBorderSize(1)
 legend_right.SetFillStyle(1001)
 legend_right.SetFillColor(ROOT.kWhite)
-legend_right.SetTextSize(0.032)
+legend_right.SetTextSize(0.028)
 legend_right.AddEntry(graph, "Point = fitted mean, error bar = fitted #sigma", "lep")
 legend_right.AddEntry(line_neutron, "Expected neutron mass squared", "l")
 legend_right.Draw()
 
 latex_right = ROOT.TLatex()
 latex_right.SetNDC()
-latex_right.SetTextSize(0.040)
-latex_right.DrawLatex(0.14, 0.93, "Fitted peak position vs v_{z,e}")
+latex_right.SetTextSize(0.042)
+latex_right.DrawLatex(0.18, 0.93, "Fitted peak position vs v_{z,e}")
 
 # ------------------------------------------------
 # save
