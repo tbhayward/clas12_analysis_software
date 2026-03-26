@@ -124,12 +124,17 @@ for i in range(n_vz_bins):
 
 # ------------------------------------------------
 # fit each histogram with gaus + polynomial background
-# y-error on the right plot will be the fitted sigma
+# right-panel 1: point is fitted mean, error bar is fitted sigma
+# right-panel 2: point is fitted sigma, error bar is sigma uncertainty
 # ------------------------------------------------
 
-x_vals = []
-y_vals = []
-y_errs = []
+x_mu_vals = []
+y_mu_vals = []
+y_mu_errs = []
+
+x_sigma_vals = []
+y_sigma_vals = []
+y_sigma_errs = []
 
 fit_functions = []
 fit_statuses = []
@@ -179,41 +184,61 @@ for i in range(n_vz_bins):
     fit_statuses.append(fit_ok)
 
     if fit_ok:
-        mu = fit_func.GetParameter(1)
-        sigma = abs(fit_func.GetParameter(2))
+        mu          = fit_func.GetParameter(1)
+        sigma       = abs(fit_func.GetParameter(2))
+        sigma_err   = fit_func.GetParError(2)
 
-        x_vals.append(mean_vz)
-        y_vals.append(mu)
-        y_errs.append(sigma)
+        x_mu_vals.append(mean_vz)
+        y_mu_vals.append(mu)
+        y_mu_errs.append(sigma)
+
+        x_sigma_vals.append(mean_vz)
+        y_sigma_vals.append(sigma)
+        y_sigma_errs.append(sigma_err)
     #endif
 #endfor
 
 # ------------------------------------------------
-# build graph: point is fitted peak position, error bar is sigma
+# build graphs
+# graph_mu: fitted peak position vs vz_e, with sigma as y-error
+# graph_sigma: fitted sigma vs vz_e, with sigma uncertainty as y-error
 # ------------------------------------------------
 
-n_points = len(x_vals)
-
-graph = ROOT.TGraphErrors(n_points)
-for i in range(n_points):
-    graph.SetPoint(i, x_vals[i], y_vals[i])
-    graph.SetPointError(i, 0.0, y_errs[i])
+n_mu_points = len(x_mu_vals)
+graph_mu = ROOT.TGraphErrors(n_mu_points)
+for i in range(n_mu_points):
+    graph_mu.SetPoint(i, x_mu_vals[i], y_mu_vals[i])
+    graph_mu.SetPointError(i, 0.0, y_mu_errs[i])
 #endfor
 
-graph.SetTitle("")
-graph.SetMarkerStyle(20)
-graph.SetMarkerSize(1.2)
-graph.SetLineWidth(2)
+graph_mu.SetTitle("")
+graph_mu.SetMarkerStyle(20)
+graph_mu.SetMarkerSize(1.2)
+graph_mu.SetLineWidth(2)
+
+n_sigma_points = len(x_sigma_vals)
+graph_sigma = ROOT.TGraphErrors(n_sigma_points)
+for i in range(n_sigma_points):
+    graph_sigma.SetPoint(i, x_sigma_vals[i], y_sigma_vals[i])
+    graph_sigma.SetPointError(i, 0.0, y_sigma_errs[i])
+#endfor
+
+graph_sigma.SetTitle("")
+graph_sigma.SetMarkerStyle(20)
+graph_sigma.SetMarkerSize(1.2)
+graph_sigma.SetLineWidth(2)
 
 # ------------------------------------------------
 # canvas layout
 # left side: multi-panel of Mx2 fits
-# right side: extracted peak position vs vz_e
+# right side: two stacked panels
+#   top    = fitted peak position vs vz_e
+#   bottom = fitted sigma vs vz_e
 # ------------------------------------------------
 
-canvas = ROOT.TCanvas("canvas", "external radiation estimation", 1800, 950)
+canvas = ROOT.TCanvas("canvas", "external radiation estimation", 1800, 1100)
 
-left_margin_frac = 0.72
+left_margin_frac = 0.68
 left_pad = ROOT.TPad("left_pad", "left_pad", 0.00, 0.00, left_margin_frac, 1.00)
 right_pad = ROOT.TPad("right_pad", "right_pad", left_margin_frac, 0.00, 1.00, 1.00)
 
@@ -231,7 +256,7 @@ legend = ROOT.TLegend(0.50, 0.72, 0.88, 0.88)
 legend.SetBorderSize(1)
 legend.SetFillStyle(1001)
 legend.SetFillColor(ROOT.kWhite)
-legend.SetTextSize(0.026)
+legend.SetTextSize(0.022)
 
 legend_added_hist = False
 legend_added_fit = False
@@ -302,54 +327,112 @@ for i in range(n_vz_bins):
     #endif
 #endfor
 
-# draw the legend in the last panel for convenience
 left_pad.cd(n_vz_bins)
 legend.Draw()
 
 # ------------------------------------------------
-# right pad: fitted peak position with sigma error bars vs mean vz_e
+# right pad split into top and bottom
 # ------------------------------------------------
 
 right_pad.cd()
+
+right_top = ROOT.TPad("right_top", "right_top", 0.00, 0.50, 1.00, 1.00)
+right_bot = ROOT.TPad("right_bot", "right_bot", 0.00, 0.00, 1.00, 0.50)
+
+right_top.Draw()
+right_bot.Draw()
+
+# ------------------------------------------------
+# right top: fitted peak position with sigma as error bars
+# ------------------------------------------------
+
+right_top.cd()
 ROOT.gPad.SetLeftMargin(0.16)
 ROOT.gPad.SetRightMargin(0.06)
-ROOT.gPad.SetBottomMargin(0.12)
+ROOT.gPad.SetBottomMargin(0.14)
 ROOT.gPad.SetTopMargin(0.08)
 
-frame_right = ROOT.TH1D("frame_right", "", 100, vz_min, vz_max)
-frame_right.SetMinimum(0.7)
-frame_right.SetMaximum(1.1)
-frame_right.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
-frame_right.GetYaxis().SetTitle("Fitted neutron peak position M_{X}^{2} (GeV^{2})")
-frame_right.GetXaxis().CenterTitle()
-frame_right.GetYaxis().CenterTitle()
-frame_right.GetXaxis().SetTitleSize(0.05)
-frame_right.GetYaxis().SetTitleSize(0.05)
-frame_right.GetXaxis().SetLabelSize(0.04)
-frame_right.GetYaxis().SetLabelSize(0.04)
-frame_right.GetYaxis().SetTitleOffset(1.35)
-frame_right.Draw()
+frame_right_top = ROOT.TH1D("frame_right_top", "", 100, vz_min, vz_max)
+frame_right_top.SetMinimum(0.7)
+frame_right_top.SetMaximum(1.1)
+frame_right_top.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
+frame_right_top.GetYaxis().SetTitle("Fitted neutron peak position M_{X}^{2} (GeV^{2})")
+frame_right_top.GetXaxis().CenterTitle()
+frame_right_top.GetYaxis().CenterTitle()
+frame_right_top.GetXaxis().SetTitleSize(0.05)
+frame_right_top.GetYaxis().SetTitleSize(0.05)
+frame_right_top.GetXaxis().SetLabelSize(0.04)
+frame_right_top.GetYaxis().SetLabelSize(0.04)
+frame_right_top.GetYaxis().SetTitleOffset(1.35)
+frame_right_top.Draw()
 
 line_neutron = ROOT.TLine(vz_min, M_n2, vz_max, M_n2)
 line_neutron.SetLineStyle(2)
 line_neutron.SetLineWidth(2)
 line_neutron.Draw("same")
 
-graph.Draw("P SAME")
+graph_mu.Draw("P SAME")
 
-legend_right = ROOT.TLegend(0.18, 0.78, 0.72, 0.90)
-legend_right.SetBorderSize(1)
-legend_right.SetFillStyle(1001)
-legend_right.SetFillColor(ROOT.kWhite)
-legend_right.SetTextSize(0.028)
-legend_right.AddEntry(graph, "Point = fitted mean, error bar = fitted #sigma", "lep")
-legend_right.AddEntry(line_neutron, "Expected neutron mass squared", "l")
-legend_right.Draw()
+legend_right_top = ROOT.TLegend(0.18, 0.78, 0.74, 0.90)
+legend_right_top.SetBorderSize(1)
+legend_right_top.SetFillStyle(1001)
+legend_right_top.SetFillColor(ROOT.kWhite)
+legend_right_top.SetTextSize(0.026)
+legend_right_top.AddEntry(graph_mu, "Point = fitted mean, error bar = fitted #sigma", "lep")
+legend_right_top.AddEntry(line_neutron, "Expected neutron mass squared", "l")
+legend_right_top.Draw()
 
-latex_right = ROOT.TLatex()
-latex_right.SetNDC()
-latex_right.SetTextSize(0.042)
-latex_right.DrawLatex(0.18, 0.93, "Fitted peak position vs v_{z,e}")
+latex_right_top = ROOT.TLatex()
+latex_right_top.SetNDC()
+latex_right_top.SetTextSize(0.040)
+latex_right_top.DrawLatex(0.18, 0.93, "Fitted peak position vs v_{z,e}")
+
+# ------------------------------------------------
+# right bottom: fitted sigma with sigma uncertainty
+# ------------------------------------------------
+
+right_bot.cd()
+ROOT.gPad.SetLeftMargin(0.16)
+ROOT.gPad.SetRightMargin(0.06)
+ROOT.gPad.SetBottomMargin(0.14)
+ROOT.gPad.SetTopMargin(0.08)
+
+sigma_ymax = 0.10
+for val, err in zip(y_sigma_vals, y_sigma_errs):
+    if val + err > sigma_ymax:
+        sigma_ymax = val + err
+    #endif
+#endfor
+sigma_ymax *= 1.25
+
+frame_right_bot = ROOT.TH1D("frame_right_bot", "", 100, vz_min, vz_max)
+frame_right_bot.SetMinimum(0.0)
+frame_right_bot.SetMaximum(sigma_ymax)
+frame_right_bot.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
+frame_right_bot.GetYaxis().SetTitle("Fitted #sigma of neutron peak M_{X}^{2} (GeV^{2})")
+frame_right_bot.GetXaxis().CenterTitle()
+frame_right_bot.GetYaxis().CenterTitle()
+frame_right_bot.GetXaxis().SetTitleSize(0.05)
+frame_right_bot.GetYaxis().SetTitleSize(0.05)
+frame_right_bot.GetXaxis().SetLabelSize(0.04)
+frame_right_bot.GetYaxis().SetLabelSize(0.04)
+frame_right_bot.GetYaxis().SetTitleOffset(1.35)
+frame_right_bot.Draw()
+
+graph_sigma.Draw("P SAME")
+
+legend_right_bot = ROOT.TLegend(0.18, 0.82, 0.62, 0.90)
+legend_right_bot.SetBorderSize(1)
+legend_right_bot.SetFillStyle(1001)
+legend_right_bot.SetFillColor(ROOT.kWhite)
+legend_right_bot.SetTextSize(0.026)
+legend_right_bot.AddEntry(graph_sigma, "Point = fitted #sigma, error bar = fit uncertainty", "lep")
+legend_right_bot.Draw()
+
+latex_right_bot = ROOT.TLatex()
+latex_right_bot.SetNDC()
+latex_right_bot.SetTextSize(0.040)
+latex_right_bot.DrawLatex(0.18, 0.93, "Fitted #sigma vs v_{z,e}")
 
 # ------------------------------------------------
 # save
