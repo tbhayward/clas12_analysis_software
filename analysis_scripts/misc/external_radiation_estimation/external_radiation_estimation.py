@@ -906,7 +906,7 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
     frame.SetMinimum(min_y - 0.10 * y_span)
     frame.SetMaximum(max_y + 0.25 * y_span)
     frame.GetXaxis().SetTitle("v_{z,e} (cm)")
-    frame.GetYaxis().SetTitle("Needed scattered-electron energy correction #DeltaE_{e'} (GeV)")
+    frame.GetYaxis().SetTitle("e^{-} energy correction (GeV)")
     frame.GetXaxis().CenterTitle()
     frame.GetYaxis().CenterTitle()
     frame.GetXaxis().SetTitleSize(0.05)
