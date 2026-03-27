@@ -12,6 +12,7 @@ ROOT.gStyle.SetOptFit(0)
 # default = first 5 million events from each tree
 # optional command line override:
 # python external_radiation_estimation.py 2000000
+# python external_radiation_estimation.py all
 # ------------------------------------------------
 
 max_events = 5000000
@@ -37,6 +38,7 @@ else:
 input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
 input_file_mc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
 input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
+input_file_data_elastic = "/work/clas12/thayward/CLAS12_exclusive/elastic/rgc_fa22_inb_elastic.root"
 
 tree_name = "PhysicsEvents"
 output_dir = "output"
@@ -59,6 +61,7 @@ M_n2 = m_n * m_n
 # ------------------------------------------------
 # branch configuration
 # using the exact branch names you provided
+# elastic uses only the scattered electron
 # ------------------------------------------------
 
 channel_configs = {
@@ -77,8 +80,15 @@ channel_configs = {
                 "mass": m_pi
             }
         ],
+        "observable_type": "Mx2",
+        "observable_branch": "Mx2",
+        "observable_min": 0.6,
+        "observable_max": 1.2,
+        "observable_bins": 60,
+        "observable_axis_title": "M_{X}^{2} (GeV^{2})",
+        "observable_peak_title": "M_{X}^{2}",
         "missing_particle_label": "neutron",
-        "expected_mass2": M_n2,
+        "expected_peak": M_n2,
         "latex_label": "Data: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": True
     },
@@ -97,8 +107,15 @@ channel_configs = {
                 "mass": m_pi
             }
         ],
+        "observable_type": "Mx2",
+        "observable_branch": "Mx2",
+        "observable_min": 0.6,
+        "observable_max": 1.2,
+        "observable_bins": 60,
+        "observable_axis_title": "M_{X}^{2} (GeV^{2})",
+        "observable_peak_title": "M_{X}^{2}",
         "missing_particle_label": "neutron",
-        "expected_mass2": M_n2,
+        "expected_peak": M_n2,
         "latex_label": "MC: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": False
     },
@@ -124,9 +141,35 @@ channel_configs = {
                 "mass": m_pi
             }
         ],
+        "observable_type": "Mx2",
+        "observable_branch": "Mx2",
+        "observable_min": 0.6,
+        "observable_max": 1.2,
+        "observable_bins": 60,
+        "observable_axis_title": "M_{X}^{2} (GeV^{2})",
+        "observable_peak_title": "M_{X}^{2}",
         "missing_particle_label": "proton",
-        "expected_mass2": M_p2,
+        "expected_peak": M_p2,
         "latex_label": "Data: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "do_energy_correction": True
+    },
+    "data_elastic": {
+        "electron": {
+            "p": "e_p",
+            "theta": "e_theta",
+            "phi": "e_phi"
+        },
+        "hadrons": [],
+        "observable_type": "W",
+        "observable_branch": None,
+        "observable_min": 0.7,
+        "observable_max": 1.1,
+        "observable_bins": 60,
+        "observable_axis_title": "W (GeV)",
+        "observable_peak_title": "W",
+        "missing_particle_label": "proton",
+        "expected_peak": m_p,
+        "latex_label": "Data: e p #rightarrow e p",
         "do_energy_correction": True
     }
 }
@@ -140,10 +183,6 @@ vz_min = -5.5
 vz_max = -0.5
 vz_step = 0.5
 
-mx2_min = 0.6
-mx2_max = 1.2
-mx2_bins = 60
-
 vz_edges = []
 current_edge = vz_min
 while current_edge <= vz_max + 1.0e-9:
@@ -154,7 +193,7 @@ while current_edge <= vz_max + 1.0e-9:
 n_vz_bins = len(vz_edges) - 1
 
 # ------------------------------------------------
-# numerical derivative step for d(Mx2)/dE'
+# numerical derivative step
 # ------------------------------------------------
 
 delta_epsilon = 0.001
@@ -210,7 +249,10 @@ def verify_required_branches(tree, cfg, dataset_label):
     #endfor
 
     required.append("vz_e")
-    required.append("Mx2")
+
+    if cfg["observable_type"] == "Mx2":
+        required.append(cfg["observable_branch"])
+    #endif
 
     missing = []
     for name in required:
@@ -296,7 +338,7 @@ def build_event_four_vectors(tree, cfg):
     return e_lv, hadron_lvs
 #enddef
 
-def compute_missing_mass_squared(e_lv, hadron_lvs):
+def compute_mx2(e_lv, hadron_lvs):
     beam_lv = ROOT.TLorentzVector()
     beam_lv.SetPxPyPzE(0.0, 0.0, beam_energy, beam_energy)
 
@@ -311,30 +353,80 @@ def compute_missing_mass_squared(e_lv, hadron_lvs):
     return miss_lv.M2()
 #enddef
 
-def compute_event_dmx2_de(e_lv, hadron_lvs):
-    mx2_nominal = compute_missing_mass_squared(e_lv, hadron_lvs)
+def compute_w(e_lv):
+    beam_lv = ROOT.TLorentzVector()
+    beam_lv.SetPxPyPzE(0.0, 0.0, beam_energy, beam_energy)
+
+    target_lv = ROOT.TLorentzVector()
+    target_lv.SetPxPyPzE(0.0, 0.0, 0.0, m_p)
+
+    q_lv = beam_lv - e_lv
+    hadronic_lv = target_lv + q_lv
+
+    w2 = hadronic_lv.M2()
+    if w2 < 0.0:
+        return 0.0
+    #endif
+
+    return math.sqrt(w2)
+#enddef
+
+def compute_observable_value(tree, cfg, e_lv, hadron_lvs):
+    if cfg["observable_type"] == "Mx2":
+        return float(getattr(tree, cfg["observable_branch"]))
+    elif cfg["observable_type"] == "W":
+        return compute_w(e_lv)
+    else:
+        raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
+    #endif
+#enddef
+
+def compute_observable_from_shifted_electron(cfg, e_shifted, hadron_lvs):
+    if cfg["observable_type"] == "Mx2":
+        return compute_mx2(e_shifted, hadron_lvs)
+    elif cfg["observable_type"] == "W":
+        return compute_w(e_shifted)
+    else:
+        raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
+    #endif
+#enddef
+
+def compute_event_dobservable_de(cfg, e_lv, hadron_lvs):
+    if cfg["observable_type"] == "Mx2":
+        obs_nominal = compute_mx2(e_lv, hadron_lvs)
+    elif cfg["observable_type"] == "W":
+        obs_nominal = compute_w(e_lv)
+    else:
+        raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
+    #endif
 
     e_shifted = shifted_electron_lorentz_vector(e_lv, delta_epsilon)
     if e_shifted is None:
         return None
     #endif
 
-    mx2_shifted = compute_missing_mass_squared(e_shifted, hadron_lvs)
-    slope = (mx2_shifted - mx2_nominal) / delta_epsilon
+    obs_shifted = compute_observable_from_shifted_electron(cfg, e_shifted, hadron_lvs)
+    slope = (obs_shifted - obs_nominal) / delta_epsilon
     return slope
 #enddef
 
 def process_file(input_file, dataset_label):
     cfg = channel_configs[dataset_label]
-    expected_mass2 = cfg["expected_mass2"]
+    expected_peak = cfg["expected_peak"]
     missing_particle_label = cfg["missing_particle_label"]
     channel_latex = cfg["latex_label"]
+
+    observable_min = cfg["observable_min"]
+    observable_max = cfg["observable_max"]
+    observable_bins = cfg["observable_bins"]
+    observable_axis_title = cfg["observable_axis_title"]
+    observable_peak_title = cfg["observable_peak_title"]
 
     print("")
     print("==============================================================")
     print("Starting dataset: %s" % dataset_label)
     print("Input file: %s" % input_file)
-    print("Expected missing %s peak mass^2 = %.6f GeV^2" % (missing_particle_label, expected_mass2))
+    print("Expected %s peak position = %.6f" % (observable_peak_title, expected_peak))
     print("Opening file...")
 
     f = ROOT.TFile.Open(input_file, "READ")
@@ -363,16 +455,21 @@ def process_file(input_file, dataset_label):
         h = ROOT.TH1D(
             "h_%s_%d" % (make_safe_tag(dataset_label), i),
             "",
-            mx2_bins,
-            mx2_min,
-            mx2_max
+            observable_bins,
+            observable_min,
+            observable_max
         )
         h.Sumw2()
         histograms.append(h)
     #endfor
 
     n_entries_total = tree.GetEntries()
-    n_entries = min(n_entries_total, max_events)
+
+    if max_events < 0:
+        n_entries = n_entries_total
+    else:
+        n_entries = min(n_entries_total, max_events)
+    #endif
 
     print("Total entries in tree: %d" % n_entries_total)
     print("Processing entries: %d" % n_entries)
@@ -385,13 +482,15 @@ def process_file(input_file, dataset_label):
         print_progress(i_entry, n_entries, dataset_label)
 
         vz_e = float(tree.vz_e)
-        mx2 = float(tree.Mx2)
 
         if vz_e < vz_min or vz_e >= vz_max:
             continue
         #endif
 
-        if mx2 < mx2_min or mx2 > mx2_max:
+        e_lv, hadron_lvs = build_event_four_vectors(tree, cfg)
+        observable_val = compute_observable_value(tree, cfg, e_lv, hadron_lvs)
+
+        if observable_val < observable_min or observable_val > observable_max:
             continue
         #endif
 
@@ -401,14 +500,13 @@ def process_file(input_file, dataset_label):
             continue
         #endif
 
-        histograms[vz_bin].Fill(mx2)
+        histograms[vz_bin].Fill(observable_val)
         sum_vz[vz_bin] += vz_e
         count_vz[vz_bin] += 1
         n_kept += 1
 
         if cfg["do_energy_correction"]:
-            e_lv, hadron_lvs = build_event_four_vectors(tree, cfg)
-            slope = compute_event_dmx2_de(e_lv, hadron_lvs)
+            slope = compute_event_dobservable_de(cfg, e_lv, hadron_lvs)
             if slope is not None and math.isfinite(slope):
                 sum_slope[vz_bin] += slope
                 count_slope[vz_bin] += 1
@@ -444,8 +542,8 @@ def process_file(input_file, dataset_label):
     bin_avg_slope = []
 
     print("")
-    print("mu offsets by vz_e bin:")
-    print("vz_low   vz_high   <vz_e>      mu           mu_err       offset=mu-Mexp2")
+    print("peak offsets by vz_e bin:")
+    print("vz_low   vz_high   <vz_e>      mu           mu_err       offset=mu-ref")
     print("--------------------------------------------------------------")
 
     n_fit_success = 0
@@ -481,18 +579,30 @@ def process_file(input_file, dataset_label):
         peak_height = h.GetBinContent(max_bin)
 
         fit_name = "fit_%s_%d" % (make_safe_tag(dataset_label), i)
-        fit_func = ROOT.TF1(fit_name, "gaus(0)+pol3(3)", mx2_min, mx2_max)
+        fit_func = ROOT.TF1(fit_name, "gaus(0)+pol3(3)", observable_min, observable_max)
+
+        if cfg["observable_type"] == "Mx2":
+            mu_low = 0.75
+            mu_high = 1.00
+            sigma_init = 0.03
+        elif cfg["observable_type"] == "W":
+            mu_low = 0.85
+            mu_high = 1.00
+            sigma_init = 0.02
+        else:
+            raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
+        #endif
 
         fit_func.SetParameter(0, peak_height)
-        fit_func.SetParameter(1, expected_mass2)
-        fit_func.SetParameter(2, 0.03)
+        fit_func.SetParameter(1, expected_peak)
+        fit_func.SetParameter(2, sigma_init)
         fit_func.SetParameter(3, 0.0)
         fit_func.SetParameter(4, 0.0)
         fit_func.SetParameter(5, 0.0)
         fit_func.SetParameter(6, 0.0)
 
         fit_func.SetParLimits(0, 0.0, 10.0)
-        fit_func.SetParLimits(1, 0.75, 1.00)
+        fit_func.SetParLimits(1, mu_low, mu_high)
         fit_func.SetParLimits(2, 0.003, 0.20)
 
         fit_result = h.Fit(fit_func, "RQ0S")
@@ -510,7 +620,7 @@ def process_file(input_file, dataset_label):
             mu_err = fit_func.GetParError(1)
             sigma = abs(fit_func.GetParameter(2))
             sigma_err = fit_func.GetParError(2)
-            offset = mu - expected_mass2
+            offset = mu - expected_peak
 
             x_mu_vals.append(mean_vz)
             y_mu_vals.append(mu)
@@ -546,10 +656,17 @@ def process_file(input_file, dataset_label):
             ))
 
             if cfg["do_energy_correction"] and count_slope[i] > 0:
-                print("[%s]   average d(Mx2)/dE in this bin = %.6f GeV" % (
-                    dataset_label,
-                    avg_slope
-                ))
+                if cfg["observable_type"] == "Mx2":
+                    print("[%s]   average d(Mx2)/dE in this bin = %.6f" % (
+                        dataset_label,
+                        avg_slope
+                    ))
+                elif cfg["observable_type"] == "W":
+                    print("[%s]   average dW/dE in this bin = %.6f" % (
+                        dataset_label,
+                        avg_slope
+                    ))
+                #endif
             #endif
         else:
             print("[%s]   fit failed" % dataset_label)
@@ -620,8 +737,13 @@ def process_file(input_file, dataset_label):
         x_corr_vals = []
         y_corr_vals = []
 
-        print("vz_value     mu_fit(vz)     mu_ref-mu_fit     <dMx2/dE>     DeltaE_corr")
-        print("-----------------------------------------------------------------------")
+        if cfg["observable_type"] == "Mx2":
+            print("vz_value     mu_fit(vz)     mu_ref-mu_fit     <dMx2/dE>     DeltaE_corr")
+            print("-----------------------------------------------------------------------")
+        elif cfg["observable_type"] == "W":
+            print("vz_value     mu_fit(vz)     mu_ref-mu_fit      <dW/dE>       DeltaE_corr")
+            print("-----------------------------------------------------------------------")
+        #endif
 
         for i in range(len(bin_mean_vz)):
             vz_val = bin_mean_vz[i]
@@ -638,7 +760,7 @@ def process_file(input_file, dataset_label):
             x_corr_vals.append(vz_val)
             y_corr_vals.append(delta_e_needed)
 
-            print("%7.3f   %12.6f   %13.6f   %10.6f   %12.6f" % (
+            print("%7.3f   %12.6f   %13.6f   %12.6f   %12.6f" % (
                 vz_val,
                 mu_val,
                 delta_mu,
@@ -696,7 +818,7 @@ def process_file(input_file, dataset_label):
         h.SetMinimum(0.0)
         h.SetMaximum(y_max)
 
-        h.GetXaxis().SetTitle("M_{X}^{2} (GeV^{2})")
+        h.GetXaxis().SetTitle(observable_axis_title)
         h.GetYaxis().SetTitle("Normalized counts")
         h.GetXaxis().CenterTitle()
         h.GetYaxis().CenterTitle()
@@ -746,10 +868,21 @@ def process_file(input_file, dataset_label):
     ROOT.gPad.SetTopMargin(0.08)
 
     frame_right_top = ROOT.TH1D("frame_right_top_%s" % make_safe_tag(dataset_label), "", 100, vz_min, vz_max)
-    frame_right_top.SetMinimum(0.8)
-    frame_right_top.SetMaximum(1.0)
+
+    if cfg["observable_type"] == "Mx2":
+        frame_right_top.SetMinimum(0.8)
+        frame_right_top.SetMaximum(1.0)
+        y_title_top = "Fitted peak position #mu of M_{X}^{2} (GeV^{2})"
+    elif cfg["observable_type"] == "W":
+        frame_right_top.SetMinimum(0.88)
+        frame_right_top.SetMaximum(1.00)
+        y_title_top = "Fitted peak position #mu of W (GeV)"
+    else:
+        raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
+    #endif
+
     frame_right_top.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
-    frame_right_top.GetYaxis().SetTitle("Fitted peak position #mu of M_{X}^{2} (GeV^{2})")
+    frame_right_top.GetYaxis().SetTitle(y_title_top)
     frame_right_top.GetXaxis().CenterTitle()
     frame_right_top.GetYaxis().CenterTitle()
     frame_right_top.GetXaxis().SetTitleSize(0.05)
@@ -759,7 +892,7 @@ def process_file(input_file, dataset_label):
     frame_right_top.GetYaxis().SetTitleOffset(1.35)
     frame_right_top.Draw()
 
-    line_expected = ROOT.TLine(vz_min, expected_mass2, vz_max, expected_mass2)
+    line_expected = ROOT.TLine(vz_min, expected_peak, vz_max, expected_peak)
     line_expected.SetLineStyle(2)
     line_expected.SetLineWidth(2)
     line_expected.Draw("same")
@@ -776,7 +909,7 @@ def process_file(input_file, dataset_label):
     legend_right_top.SetFillColor(ROOT.kWhite)
     legend_right_top.SetTextSize(0.023)
     legend_right_top.AddEntry(graph_mu, "Point = fitted #mu, error bar = fit uncertainty on #mu", "lep")
-    legend_right_top.AddEntry(line_expected, "Expected missing %s mass^{2}" % missing_particle_label, "l")
+    legend_right_top.AddEntry(line_expected, "Reference peak position", "l")
     if cubic_fit:
         legend_right_top.AddEntry(cubic_fit, "Cubic fit to #mu(v_{z,e})", "l")
     #endif
@@ -802,10 +935,19 @@ def process_file(input_file, dataset_label):
     sigma_ymax *= 1.25
 
     frame_right_bot = ROOT.TH1D("frame_right_bot_%s" % make_safe_tag(dataset_label), "", 100, vz_min, vz_max)
+
+    if cfg["observable_type"] == "Mx2":
+        y_title_bot = "Fitted #sigma of M_{X}^{2} peak (GeV^{2})"
+    elif cfg["observable_type"] == "W":
+        y_title_bot = "Fitted #sigma of W peak (GeV)"
+    else:
+        raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
+    #endif
+
     frame_right_bot.SetMinimum(0.0)
     frame_right_bot.SetMaximum(sigma_ymax)
     frame_right_bot.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
-    frame_right_bot.GetYaxis().SetTitle("Fitted #sigma of M_{X}^{2} peak (GeV^{2})")
+    frame_right_bot.GetYaxis().SetTitle(y_title_bot)
     frame_right_bot.GetXaxis().CenterTitle()
     frame_right_bot.GetYaxis().CenterTitle()
     frame_right_bot.GetXaxis().SetTitleSize(0.05)
@@ -845,13 +987,13 @@ def process_file(input_file, dataset_label):
     }
 #enddef
 
-def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
-
+def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, result_data_elastic):
     graph_epi = result_data_epi["correction_graph"]
     graph_epipim = result_data_epipim["correction_graph"]
+    graph_elastic = result_data_elastic["correction_graph"]
 
-    if graph_epi is None or graph_epipim is None:
-        print("Skipping combined energy-correction plot because one or both correction graphs are missing.")
+    if graph_epi is None or graph_epipim is None or graph_elastic is None:
+        print("Skipping combined energy-correction plot because one or more correction graphs are missing.")
         return
     #endif
 
@@ -861,16 +1003,17 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
     graph_epipim.SetLineColor(ROOT.kBlue + 1)
     graph_epipim.SetLineWidth(3)
 
+    graph_elastic.SetLineColor(ROOT.kGreen + 2)
+    graph_elastic.SetLineWidth(3)
+
     min_y = 0.0
     max_y = 0.0
     first_point = True
 
-    for graph in [graph_epi, graph_epipim]:
+    for graph in [graph_epi, graph_epipim, graph_elastic]:
         n = graph.GetN()
         for i in range(n):
-            x_val = graph.GetPointX(i)
             y_val = graph.GetPointY(i)
-
             y_float = float(y_val)
 
             if first_point:
@@ -926,20 +1069,22 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
 
     graph_epi.Draw("L SAME")
     graph_epipim.Draw("L SAME")
+    graph_elastic.Draw("L SAME")
 
-    legend = ROOT.TLegend(0.18, 0.76, 0.78, 0.90)
+    legend = ROOT.TLegend(0.18, 0.72, 0.82, 0.90)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.032)
+    legend.SetTextSize(0.030)
     legend.AddEntry(graph_epi, "Data: e p #rightarrow e #pi^{+} X", "l")
     legend.AddEntry(graph_epipim, "Data: e p #rightarrow e #pi^{+} #pi^{-} X", "l")
+    legend.AddEntry(graph_elastic, "Data: e p #rightarrow e p", "l")
     legend.Draw()
 
     latex = ROOT.TLatex()
     latex.SetNDC()
     latex.SetTextSize(0.040)
-    latex.DrawLatex(0.16, 0.93, "External-radiation energy correction inferred from #mu(v_{z,e})")
+    latex.DrawLatex(0.16, 0.93, "External-radiation energy correction inferred from peak drift vs v_{z,e}")
 
     output_png = os.path.join(output_dir, "external_radiation_energy_correction_data_only.png")
     canvas.SaveAs(output_png)
@@ -947,7 +1092,7 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
 #enddef
 
 # ------------------------------------------------
-# run all three
+# run all datasets
 # ------------------------------------------------
 
 result_data_epi = process_file(
@@ -965,7 +1110,13 @@ result_data_epipim = process_file(
     "data_epi_plus_pi_minus"
 )
 
+result_data_elastic = process_file(
+    input_file_data_elastic,
+    "data_elastic"
+)
+
 make_combined_energy_correction_plot(
     result_data_epi,
-    result_data_epipim
+    result_data_epipim,
+    result_data_elastic
 )
