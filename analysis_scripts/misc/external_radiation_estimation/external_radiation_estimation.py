@@ -1,10 +1,26 @@
 import ROOT
 import os
 import math
+import sys
 
 ROOT.gROOT.SetBatch(True)
 ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetOptFit(0)
+
+# ------------------------------------------------
+# runtime event limit
+# default = first 5 million events from each tree
+# optional command line override:
+# python external_radiation_estimation.py 2000000
+# ------------------------------------------------
+
+max_events = 5000000
+
+if len(sys.argv) > 1:
+    max_events = int(sys.argv[1])
+#endif
+
+print("Processing up to %d events per tree" % max_events)
 
 # ------------------------------------------------
 # input files
@@ -347,8 +363,11 @@ def process_file(input_file, dataset_label):
         histograms.append(h)
     #endfor
 
-    n_entries = tree.GetEntries()
-    print("Total entries in tree: %d" % n_entries)
+    n_entries_total = tree.GetEntries()
+    n_entries = min(n_entries_total, max_events)
+
+    print("Total entries in tree: %d" % n_entries_total)
+    print("Processing entries: %d" % n_entries)
     print("Beginning event loop...")
 
     n_kept = 0
