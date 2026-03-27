@@ -61,7 +61,7 @@ M_n2 = m_n * m_n
 # ------------------------------------------------
 # branch configuration
 # using the exact branch names you provided
-# elastic uses only the scattered electron
+# elastic uses the tree's W branch directly
 # ------------------------------------------------
 
 channel_configs = {
@@ -161,7 +161,7 @@ channel_configs = {
         },
         "hadrons": [],
         "observable_type": "W",
-        "observable_branch": None,
+        "observable_branch": "W",
         "observable_min": 0.7,
         "observable_max": 1.1,
         "observable_bins": 60,
@@ -250,7 +250,7 @@ def verify_required_branches(tree, cfg, dataset_label):
 
     required.append("vz_e")
 
-    if cfg["observable_type"] == "Mx2":
+    if cfg["observable_branch"] is not None:
         required.append(cfg["observable_branch"])
     #endif
 
@@ -372,8 +372,12 @@ def compute_w(e_lv):
 #enddef
 
 def compute_observable_value(tree, cfg, e_lv, hadron_lvs):
-    if cfg["observable_type"] == "Mx2":
+    if cfg["observable_branch"] is not None:
         return float(getattr(tree, cfg["observable_branch"]))
+    #endif
+
+    if cfg["observable_type"] == "Mx2":
+        return compute_mx2(e_lv, hadron_lvs)
     elif cfg["observable_type"] == "W":
         return compute_w(e_lv)
     else:
@@ -391,11 +395,15 @@ def compute_observable_from_shifted_electron(cfg, e_shifted, hadron_lvs):
     #endif
 #enddef
 
-def compute_event_dobservable_de(cfg, e_lv, hadron_lvs):
+def compute_event_dobservable_de(cfg, tree, e_lv, hadron_lvs):
     if cfg["observable_type"] == "Mx2":
         obs_nominal = compute_mx2(e_lv, hadron_lvs)
     elif cfg["observable_type"] == "W":
-        obs_nominal = compute_w(e_lv)
+        if cfg["observable_branch"] is not None:
+            obs_nominal = float(getattr(tree, cfg["observable_branch"]))
+        else:
+            obs_nominal = compute_w(e_lv)
+        #endif
     else:
         raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
     #endif
@@ -506,7 +514,7 @@ def process_file(input_file, dataset_label):
         n_kept += 1
 
         if cfg["do_energy_correction"]:
-            slope = compute_event_dobservable_de(cfg, e_lv, hadron_lvs)
+            slope = compute_event_dobservable_de(cfg, tree, e_lv, hadron_lvs)
             if slope is not None and math.isfinite(slope):
                 sum_slope[vz_bin] += slope
                 count_slope[vz_bin] += 1
