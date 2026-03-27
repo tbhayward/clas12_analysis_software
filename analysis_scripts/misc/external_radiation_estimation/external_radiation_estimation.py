@@ -32,11 +32,11 @@ M_n2 = M_n * M_n
 
 # ------------------------------------------------
 # binning
-# 0.5 cm bins from -6.0 to 0.5
+# 0.5 cm bins from -5.5 to -0.5
 # ------------------------------------------------
 
-vz_min = -6.0
-vz_max =  0.5
+vz_min = -5.5
+vz_max = -0.5
 vz_step = 0.5
 
 mx2_min = 0.6
@@ -505,18 +505,18 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
 
     graph_sigma.Draw("P SAME")
 
-    legend_right_bot = ROOT.TLegend(0.18, 0.82, 0.62, 0.90)
+    legend_right_bot = ROOT.TLegend(0.14, 0.78, 0.92, 0.93)
     legend_right_bot.SetBorderSize(1)
     legend_right_bot.SetFillStyle(1001)
     legend_right_bot.SetFillColor(ROOT.kWhite)
-    legend_right_bot.SetTextSize(0.026)
+    legend_right_bot.SetTextSize(0.038)
     legend_right_bot.AddEntry(graph_sigma, "Point = fitted #sigma, error bar = fit uncertainty", "lep")
     legend_right_bot.Draw()
 
     latex_right_bot = ROOT.TLatex()
     latex_right_bot.SetNDC()
     latex_right_bot.SetTextSize(0.038)
-    latex_right_bot.DrawLatex(0.18, 0.93, "%s: fitted #sigma vs v_{z,e}" % channel_latex)
+    latex_right_bot.DrawLatex(0.18, 0.95, "%s: fitted #sigma vs v_{z,e}" % channel_latex)
 
     output_png = os.path.join(output_dir, "external_radiation_estimation_%s.png" % make_safe_tag(dataset_label))
     print("Saving canvas to %s" % output_png)
