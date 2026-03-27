@@ -8,8 +8,6 @@ ROOT.gStyle.SetOptFit(0)
 
 # ------------------------------------------------
 # input files
-# NOTE:
-# replace input_file_data_epipim with the actual epi+pi- data file if needed
 # ------------------------------------------------
 
 input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
@@ -36,9 +34,7 @@ M_n2 = m_n * m_n
 
 # ------------------------------------------------
 # branch configuration
-# IMPORTANT:
-# if your branch names differ, update them here
-# no automatic fallback is used
+# using the exact branch names you provided
 # ------------------------------------------------
 
 channel_configs = {
@@ -51,9 +47,9 @@ channel_configs = {
         "hadrons": [
             {
                 "name": "pip",
-                "p": "pip_p",
-                "theta": "pip_theta",
-                "phi": "pip_phi",
+                "p": "p_p",
+                "theta": "p_theta",
+                "phi": "p_phi",
                 "mass": m_pi
             }
         ],
@@ -71,9 +67,9 @@ channel_configs = {
         "hadrons": [
             {
                 "name": "pip",
-                "p": "pip_p",
-                "theta": "pip_theta",
-                "phi": "pip_phi",
+                "p": "p_p",
+                "theta": "p_theta",
+                "phi": "p_phi",
                 "mass": m_pi
             }
         ],
@@ -91,16 +87,16 @@ channel_configs = {
         "hadrons": [
             {
                 "name": "pip",
-                "p": "pip_p",
-                "theta": "pip_theta",
-                "phi": "pip_phi",
+                "p": "p1_p",
+                "theta": "p1_theta",
+                "phi": "p1_phi",
                 "mass": m_pi
             },
             {
                 "name": "pim",
-                "p": "pim_p",
-                "theta": "pim_theta",
-                "phi": "pim_phi",
+                "p": "p2_p",
+                "theta": "p2_theta",
+                "phi": "p2_phi",
                 "mass": m_pi
             }
         ],
@@ -794,11 +790,11 @@ def process_file(input_file, dataset_label):
 
     graph_sigma.Draw("P SAME")
 
-    legend_right_bot = ROOT.TLegend(0.18, 0.82, 0.80, 0.92)
+    legend_right_bot = ROOT.TLegend(0.17, 0.80, 0.77, 0.91)
     legend_right_bot.SetBorderSize(1)
     legend_right_bot.SetFillStyle(1001)
     legend_right_bot.SetFillColor(ROOT.kWhite)
-    legend_right_bot.SetTextSize(0.030)
+    legend_right_bot.SetTextSize(0.028)
     legend_right_bot.AddEntry(graph_sigma, "Point = fitted #sigma, error bar = fit uncertainty", "lep")
     legend_right_bot.Draw()
 
@@ -837,7 +833,9 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
     graph_epipim.SetLineColor(ROOT.kBlue + 1)
     graph_epipim.SetLineWidth(3)
 
+    min_y = 0.0
     max_y = 0.0
+    first_point = True
 
     for graph in [graph_epi, graph_epipim]:
         n = graph.GetN()
@@ -845,14 +843,36 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
             x_val = ROOT.Double(0.0)
             y_val = ROOT.Double(0.0)
             graph.GetPoint(i, x_val, y_val)
-            if float(y_val) > max_y:
-                max_y = float(y_val)
+
+            y_float = float(y_val)
+
+            if first_point:
+                min_y = y_float
+                max_y = y_float
+                first_point = False
+            else:
+                if y_float < min_y:
+                    min_y = y_float
+                #endif
+                if y_float > max_y:
+                    max_y = y_float
+                #endif
             #endif
         #endfor
     #endfor
 
-    if max_y <= 0.0:
+    if first_point:
+        min_y = 0.0
         max_y = 0.01
+    #endif
+
+    if min_y > 0.0:
+        min_y = 0.0
+    #endif
+
+    y_span = max_y - min_y
+    if y_span <= 0.0:
+        y_span = 0.01
     #endif
 
     canvas = ROOT.TCanvas("canvas_energy_correction_data_only", "energy correction data only", 1100, 800)
@@ -864,8 +884,8 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
     ROOT.gPad.SetTopMargin(0.08)
 
     frame = ROOT.TH1D("frame_energy_correction_data_only", "", 100, vz_min, vz_max)
-    frame.SetMinimum(0.0)
-    frame.SetMaximum(1.25 * max_y)
+    frame.SetMinimum(min_y - 0.10 * y_span)
+    frame.SetMaximum(max_y + 0.25 * y_span)
     frame.GetXaxis().SetTitle("v_{z,e} (cm)")
     frame.GetYaxis().SetTitle("Needed scattered-electron energy correction #DeltaE_{e'} (GeV)")
     frame.GetXaxis().CenterTitle()
