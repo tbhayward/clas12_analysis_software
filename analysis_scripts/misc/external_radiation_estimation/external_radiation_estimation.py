@@ -418,6 +418,34 @@ def compute_event_dobservable_de(cfg, tree, e_lv, hadron_lvs):
     return slope
 #enddef
 
+def fit_is_reasonable(fit_func, fit_result, observable_min, observable_max):
+    if fit_result is None:
+        return False, -999
+    #endif
+
+    status = int(fit_result.Status())
+    mu_val = fit_func.GetParameter(1)
+    sigma_val = abs(fit_func.GetParameter(2))
+    mu_err = fit_func.GetParError(1)
+    sigma_err = fit_func.GetParError(2)
+
+    fit_ok = False
+
+    if sigma_val > 0.0 and observable_min < mu_val < observable_max:
+        fit_ok = True
+    #endif
+
+    if not math.isfinite(mu_val) or not math.isfinite(sigma_val):
+        fit_ok = False
+    #endif
+
+    if mu_err < 0.0 or sigma_err < 0.0:
+        fit_ok = False
+    #endif
+
+    return fit_ok, status
+#enddef
+
 def process_file(input_file, dataset_label):
     cfg = channel_configs[dataset_label]
     expected_peak = cfg["expected_peak"]
@@ -614,10 +642,17 @@ def process_file(input_file, dataset_label):
         fit_func.SetParLimits(2, 0.003, 0.20)
 
         fit_result = h.Fit(fit_func, "RQ0S")
+        fit_ok, fit_status = fit_is_reasonable(
+            fit_func,
+            fit_result,
+            observable_min,
+            observable_max
+        )
 
-        fit_ok = False
-        if fit_result and int(fit_result.Status()) == 0:
-            fit_ok = True
+        print("[%s]   fit status = %d" % (dataset_label, fit_status))
+
+        if fit_ok and fit_status != 0:
+            print("[%s]   fit warning: nonzero Minuit status, but parameters look reasonable; accepting fit" % dataset_label)
         #endif
 
         fit_functions.append(fit_func)
@@ -646,7 +681,7 @@ def process_file(input_file, dataset_label):
 
             n_fit_success += 1
 
-            print("[%s]   fit OK: mu = %.6f, mu_err = %.6f, sigma = %.6f, sigma_err = %.6f" % (
+            print("[%s]   fit accepted: mu = %.6f, mu_err = %.6f, sigma = %.6f, sigma_err = %.6f" % (
                 dataset_label,
                 mu,
                 mu_err,
@@ -677,7 +712,7 @@ def process_file(input_file, dataset_label):
                 #endif
             #endif
         else:
-            print("[%s]   fit failed" % dataset_label)
+            print("[%s]   fit rejected: parameters not reasonable" % dataset_label)
         #endif
     #endfor
 
@@ -838,7 +873,7 @@ def process_file(input_file, dataset_label):
 
         h.Draw("E1")
 
-        if fit_functions[i]:
+        if fit_statuses[i] and fit_functions[i]:
             fit_functions[i].SetLineColor(ROOT.kRed + 1)
             fit_functions[i].SetLineWidth(2)
             fit_functions[i].Draw("same")
