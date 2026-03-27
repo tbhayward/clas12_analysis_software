@@ -838,6 +838,7 @@ def process_file(input_file, dataset_label):
 #enddef
 
 def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
+
     graph_epi = result_data_epi["correction_graph"]
     graph_epipim = result_data_epipim["correction_graph"]
 
@@ -859,9 +860,8 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
     for graph in [graph_epi, graph_epipim]:
         n = graph.GetN()
         for i in range(n):
-            x_val = ROOT.Double(0.0)
-            y_val = ROOT.Double(0.0)
-            graph.GetPoint(i, x_val, y_val)
+            x_val = graph.GetPointX(i)
+            y_val = graph.GetPointY(i)
 
             y_float = float(y_val)
 
