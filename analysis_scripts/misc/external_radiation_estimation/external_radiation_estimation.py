@@ -17,10 +17,18 @@ ROOT.gStyle.SetOptFit(0)
 max_events = 5000000
 
 if len(sys.argv) > 1:
-    max_events = int(sys.argv[1])
+    if sys.argv[1].lower() == "all":
+        max_events = -1
+    else:
+        max_events = int(sys.argv[1])
+    #endif
 #endif
 
-print("Processing up to %d events per tree" % max_events)
+if max_events < 0:
+    print("Processing all events in each tree")
+else:
+    print("Processing up to %d events per tree" % max_events)
+#endif
 
 # ------------------------------------------------
 # input files
