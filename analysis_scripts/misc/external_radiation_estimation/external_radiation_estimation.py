@@ -9,9 +9,7 @@ ROOT.gStyle.SetOptFit(0)
 # ------------------------------------------------
 # input files
 # NOTE:
-# You pasted the 2nd and 3rd paths as the same string.
-# I am keeping the 3rd one as a separate variable so you can
-# replace it with the actual epi+pi- data file path if needed.
+# Replace the third path below with the actual epi+pi- data file if needed.
 # ------------------------------------------------
 
 input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
@@ -34,12 +32,11 @@ M_n2 = M_n * M_n
 
 # ------------------------------------------------
 # binning
-# twice as many vz bins as before:
-# 0.5 cm bins from -6.5 to 1.5
+# 0.5 cm bins from -6.0 to 0.5
 # ------------------------------------------------
 
-vz_min = -6.5
-vz_max =  1.5
+vz_min = -6.0
+vz_max =  0.5
 vz_step = 0.5
 
 mx2_min = 0.6
@@ -68,12 +65,50 @@ def make_safe_tag(text):
     return out
 #enddef
 
+def get_latex_channel_label(dataset_label):
+    if dataset_label == "data_epi_plus":
+        return "Data: e p #rightarrow e #pi^{+} X"
+    elif dataset_label == "mc_epi_plus":
+        return "MC: e p #rightarrow e #pi^{+} X"
+    elif dataset_label == "data_epi_plus_pi_minus":
+        return "Data: e p #rightarrow e #pi^{+} #pi^{-} X"
+    else:
+        return dataset_label
+    #endif
+#enddef
+
+def print_progress(i_entry, n_entries, dataset_label):
+    if n_entries <= 0:
+        return
+    #endif
+
+    step = max(1, n_entries // 20)
+
+    if i_entry == 0 or (i_entry + 1) % step == 0 or (i_entry + 1) == n_entries:
+        frac = 100.0 * float(i_entry + 1) / float(n_entries)
+        print("[%s] processed %d / %d entries (%.1f%%)" % (
+            dataset_label,
+            i_entry + 1,
+            n_entries,
+            frac
+        ))
+    #endif
+#enddef
+
 def process_file(input_file, dataset_label, missing_particle_label, expected_mass2):
+    print("")
+    print("==============================================================")
+    print("Starting dataset: %s" % dataset_label)
+    print("Input file: %s" % input_file)
+    print("Expected missing %s peak mass^2 = %.6f GeV^2" % (missing_particle_label, expected_mass2))
+    print("Opening file...")
+
     f = ROOT.TFile.Open(input_file, "READ")
     if not f or f.IsZombie():
         raise RuntimeError("Could not open file: " + input_file)
     #endif
 
+    print("Reading tree: %s" % tree_name)
     tree = f.Get(tree_name)
     if not tree:
         raise RuntimeError("Could not find tree: " + tree_name + " in " + input_file)
@@ -83,6 +118,7 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
     sum_vz = [0.0] * n_vz_bins
     count_vz = [0] * n_vz_bins
 
+    print("Booking %d vz_e histograms..." % n_vz_bins)
     for i in range(n_vz_bins):
         h = ROOT.TH1D(
             "h_%s_%d" % (make_safe_tag(dataset_label), i),
@@ -96,9 +132,14 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
     #endfor
 
     n_entries = tree.GetEntries()
+    print("Total entries in tree: %d" % n_entries)
+    print("Beginning event loop...")
+
+    n_kept = 0
 
     for i_entry in range(n_entries):
         tree.GetEntry(i_entry)
+        print_progress(i_entry, n_entries, dataset_label)
 
         vz_e = float(tree.vz_e)
         mx2  = float(tree.Mx2)
@@ -120,14 +161,21 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
         histograms[vz_bin].Fill(mx2)
         sum_vz[vz_bin] += vz_e
         count_vz[vz_bin] += 1
+        n_kept += 1
     #endfor
 
+    print("[%s] event loop complete" % dataset_label)
+    print("[%s] entries passing plotting cuts: %d" % (dataset_label, n_kept))
+
+    print("Normalizing histograms...")
     for i in range(n_vz_bins):
         integral = histograms[i].Integral()
         if integral > 0.0:
             histograms[i].Scale(1.0 / integral)
         #endif
     #endfor
+
+    print("Fitting histograms in vz_e bins...")
 
     x_mu_vals = []
     y_mu_vals = []
@@ -141,24 +189,32 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
     fit_statuses = []
 
     print("")
-    print("==============================================================")
-    print("Dataset: %s" % dataset_label)
-    print("Input:   %s" % input_file)
-    print("Expected missing %s peak mass^2 = %.6f GeV^2" % (missing_particle_label, expected_mass2))
     print("mu offsets by vz_e bin:")
     print("vz_low   vz_high   <vz_e>      mu           mu_err       offset=mu-Mexp2")
     print("--------------------------------------------------------------")
 
+    n_fit_success = 0
+
     for i in range(n_vz_bins):
         h = histograms[i]
 
+        print("[%s] fitting vz bin %2d / %2d : %.1f to %.1f cm" % (
+            dataset_label,
+            i + 1,
+            n_vz_bins,
+            vz_edges[i],
+            vz_edges[i + 1]
+        ))
+
         if count_vz[i] < 25:
+            print("[%s]   skipped: only %d entries in this vz bin" % (dataset_label, count_vz[i]))
             fit_functions.append(None)
             fit_statuses.append(False)
             continue
         #endif
 
         if h.GetEntries() < 10:
+            print("[%s]   skipped: histogram has too few filled entries" % dataset_label)
             fit_functions.append(None)
             fit_statuses.append(False)
             continue
@@ -209,6 +265,16 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
             y_sigma_vals.append(sigma)
             y_sigma_errs.append(sigma_err)
 
+            n_fit_success += 1
+
+            print("[%s]   fit OK: mu = %.6f, mu_err = %.6f, sigma = %.6f, sigma_err = %.6f" % (
+                dataset_label,
+                mu,
+                mu_err,
+                sigma,
+                sigma_err
+            ))
+
             print("%6.2f   %7.2f   %8.4f   %10.6f   %10.6f   %+12.6f" % (
                 vz_edges[i],
                 vz_edges[i + 1],
@@ -217,9 +283,14 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
                 mu_err,
                 offset
             ))
+        else:
+            print("[%s]   fit failed" % dataset_label)
         #endif
     #endfor
 
+    print("[%s] successful fits: %d / %d" % (dataset_label, n_fit_success, n_vz_bins))
+
+    print("Building graphs...")
     n_mu_points = len(x_mu_vals)
     graph_mu = ROOT.TGraphErrors(n_mu_points)
     for i in range(n_mu_points):
@@ -244,6 +315,7 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
     graph_sigma.SetMarkerSize(1.0)
     graph_sigma.SetLineWidth(2)
 
+    print("Fitting cubic to mu(vz_e)...")
     cubic_fit = None
     if n_mu_points >= 4:
         cubic_fit = ROOT.TF1(
@@ -265,8 +337,13 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
         print("")
         print("Cubic fit for mu(vz_e):")
         print("mu(vz_e) = %.8f + %.8f*vz_e + %.8f*vz_e^2 + %.8f*vz_e^3" % (c0, c1, c2, c3))
+    else:
+        print("Not enough fitted points for cubic fit.")
     #endif
 
+    channel_latex = get_latex_channel_label(dataset_label)
+
+    print("Building canvas...")
     canvas = ROOT.TCanvas(
         "canvas_%s" % make_safe_tag(dataset_label),
         dataset_label,
@@ -282,7 +359,10 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
     right_pad.Draw()
 
     left_pad.cd()
-    left_pad.Divide(4, 4, 0.001, 0.001)
+
+    n_left_cols = 4
+    n_left_rows = int(math.ceil(float(n_vz_bins) / float(n_left_cols)))
+    left_pad.Divide(n_left_cols, n_left_rows, 0.001, 0.001)
 
     for i in range(n_vz_bins):
         left_pad.cd(i + 1)
@@ -354,7 +434,7 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
     ROOT.gPad.SetTopMargin(0.08)
 
     frame_right_top = ROOT.TH1D("frame_right_top_%s" % make_safe_tag(dataset_label), "", 100, vz_min, vz_max)
-    frame_right_top.SetMinimum(0.7)
+    frame_right_top.SetMinimum(0.8)
     frame_right_top.SetMaximum(1.1)
     frame_right_top.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
     frame_right_top.GetYaxis().SetTitle("Fitted peak position #mu of M_{X}^{2} (GeV^{2})")
@@ -393,7 +473,7 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
     latex_right_top = ROOT.TLatex()
     latex_right_top.SetNDC()
     latex_right_top.SetTextSize(0.038)
-    latex_right_top.DrawLatex(0.16, 0.93, "%s: fitted #mu vs v_{z,e}" % dataset_label)
+    latex_right_top.DrawLatex(0.16, 0.93, "%s: fitted #mu vs v_{z,e}" % channel_latex)
 
     right_bot.cd()
     ROOT.gPad.SetLeftMargin(0.16)
@@ -435,13 +515,15 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
 
     latex_right_bot = ROOT.TLatex()
     latex_right_bot.SetNDC()
-    latex_right_bot.SetTextSize(0.040)
-    latex_right_bot.DrawLatex(0.18, 0.93, "%s: fitted #sigma vs v_{z,e}" % dataset_label)
+    latex_right_bot.SetTextSize(0.038)
+    latex_right_bot.DrawLatex(0.18, 0.93, "%s: fitted #sigma vs v_{z,e}" % channel_latex)
 
     output_png = os.path.join(output_dir, "external_radiation_estimation_%s.png" % make_safe_tag(dataset_label))
+    print("Saving canvas to %s" % output_png)
     canvas.SaveAs(output_png)
     print("Saved: %s" % output_png)
 
+    print("Finished dataset: %s" % dataset_label)
     f.Close()
 #enddef
 
