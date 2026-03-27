@@ -9,26 +9,107 @@ ROOT.gStyle.SetOptFit(0)
 # ------------------------------------------------
 # input files
 # NOTE:
-# Replace the third path below with the actual epi+pi- data file if needed.
+# replace input_file_data_epipim with the actual epi+pi- data file if needed
 # ------------------------------------------------
 
 input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
-input_file_mc_epi   = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
-input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
+input_file_mc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
+input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
 
 tree_name = "PhysicsEvents"
 output_dir = "output"
 os.makedirs(output_dir, exist_ok=True)
 
 # ------------------------------------------------
-# physics constants
+# beam / masses
 # ------------------------------------------------
 
-M_p = 0.938272
-M_n = 0.939565
+beam_energy = 10.6
 
-M_p2 = M_p * M_p
-M_n2 = M_n * M_n
+m_e = 0.000511
+m_p = 0.938272
+m_n = 0.939565
+m_pi = 0.13957
+
+M_p2 = m_p * m_p
+M_n2 = m_n * m_n
+
+# ------------------------------------------------
+# branch configuration
+# IMPORTANT:
+# if your branch names differ, update them here
+# no automatic fallback is used
+# ------------------------------------------------
+
+channel_configs = {
+    "data_epi_plus": {
+        "electron": {
+            "p": "e_p",
+            "theta": "e_theta",
+            "phi": "e_phi"
+        },
+        "hadrons": [
+            {
+                "name": "pip",
+                "p": "pip_p",
+                "theta": "pip_theta",
+                "phi": "pip_phi",
+                "mass": m_pi
+            }
+        ],
+        "missing_particle_label": "neutron",
+        "expected_mass2": M_n2,
+        "latex_label": "Data: e p #rightarrow e #pi^{+} X",
+        "do_energy_correction": True
+    },
+    "mc_epi_plus": {
+        "electron": {
+            "p": "e_p",
+            "theta": "e_theta",
+            "phi": "e_phi"
+        },
+        "hadrons": [
+            {
+                "name": "pip",
+                "p": "pip_p",
+                "theta": "pip_theta",
+                "phi": "pip_phi",
+                "mass": m_pi
+            }
+        ],
+        "missing_particle_label": "neutron",
+        "expected_mass2": M_n2,
+        "latex_label": "MC: e p #rightarrow e #pi^{+} X",
+        "do_energy_correction": False
+    },
+    "data_epi_plus_pi_minus": {
+        "electron": {
+            "p": "e_p",
+            "theta": "e_theta",
+            "phi": "e_phi"
+        },
+        "hadrons": [
+            {
+                "name": "pip",
+                "p": "pip_p",
+                "theta": "pip_theta",
+                "phi": "pip_phi",
+                "mass": m_pi
+            },
+            {
+                "name": "pim",
+                "p": "pim_p",
+                "theta": "pim_theta",
+                "phi": "pim_phi",
+                "mass": m_pi
+            }
+        ],
+        "missing_particle_label": "proton",
+        "expected_mass2": M_p2,
+        "latex_label": "Data: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "do_energy_correction": True
+    }
+}
 
 # ------------------------------------------------
 # binning
@@ -53,6 +134,12 @@ while current_edge <= vz_max + 1.0e-9:
 n_vz_bins = len(vz_edges) - 1
 
 # ------------------------------------------------
+# numerical derivative step for d(Mx2)/dE'
+# ------------------------------------------------
+
+delta_epsilon = 0.001
+
+# ------------------------------------------------
 # helpers
 # ------------------------------------------------
 
@@ -63,18 +150,6 @@ def make_safe_tag(text):
     out = out.replace("-", "m")
     out = out.replace("/", "_")
     return out
-#enddef
-
-def get_latex_channel_label(dataset_label):
-    if dataset_label == "data_epi_plus":
-        return "Data: e p #rightarrow e #pi^{+} X"
-    elif dataset_label == "mc_epi_plus":
-        return "MC: e p #rightarrow e #pi^{+} X"
-    elif dataset_label == "data_epi_plus_pi_minus":
-        return "Data: e p #rightarrow e #pi^{+} #pi^{-} X"
-    else:
-        return dataset_label
-    #endif
 #enddef
 
 def print_progress(i_entry, n_entries, dataset_label):
@@ -95,7 +170,146 @@ def print_progress(i_entry, n_entries, dataset_label):
     #endif
 #enddef
 
-def process_file(input_file, dataset_label, missing_particle_label, expected_mass2):
+def verify_required_branches(tree, cfg, dataset_label):
+    branch_names = set()
+    branch_list = tree.GetListOfBranches()
+    for i in range(branch_list.GetEntries()):
+        branch_names.add(branch_list.At(i).GetName())
+    #endfor
+
+    required = []
+
+    required.append(cfg["electron"]["p"])
+    required.append(cfg["electron"]["theta"])
+    required.append(cfg["electron"]["phi"])
+
+    for had in cfg["hadrons"]:
+        required.append(had["p"])
+        required.append(had["theta"])
+        required.append(had["phi"])
+    #endfor
+
+    required.append("vz_e")
+    required.append("Mx2")
+
+    missing = []
+    for name in required:
+        if name not in branch_names:
+            missing.append(name)
+        #endif
+    #endfor
+
+    if len(missing) > 0:
+        raise RuntimeError(
+            "Missing required branches for %s: %s" % (
+                dataset_label,
+                ", ".join(missing)
+            )
+        )
+    #endif
+#enddef
+
+def make_lorentz_vector_from_p_theta_phi(pmag, theta_deg, phi_deg, mass):
+    theta = math.radians(theta_deg)
+    phi = math.radians(phi_deg)
+
+    px = pmag * math.sin(theta) * math.cos(phi)
+    py = pmag * math.sin(theta) * math.sin(phi)
+    pz = pmag * math.cos(theta)
+    energy = math.sqrt(pmag * pmag + mass * mass)
+
+    lv = ROOT.TLorentzVector()
+    lv.SetPxPyPzE(px, py, pz, energy)
+    return lv
+#enddef
+
+def shifted_electron_lorentz_vector(lv_in, delta_e):
+    p_old = lv_in.P()
+    e_old = lv_in.E()
+
+    if p_old <= 0.0:
+        return None
+    #endif
+
+    e_new = e_old + delta_e
+    if e_new <= m_e:
+        return None
+    #endif
+
+    p_new2 = e_new * e_new - m_e * m_e
+    if p_new2 <= 0.0:
+        return None
+    #endif
+
+    p_new = math.sqrt(p_new2)
+    scale = p_new / p_old
+
+    lv_out = ROOT.TLorentzVector()
+    lv_out.SetPxPyPzE(
+        lv_in.Px() * scale,
+        lv_in.Py() * scale,
+        lv_in.Pz() * scale,
+        e_new
+    )
+    return lv_out
+#enddef
+
+def build_event_four_vectors(tree, cfg):
+    e_lv = make_lorentz_vector_from_p_theta_phi(
+        float(getattr(tree, cfg["electron"]["p"])),
+        float(getattr(tree, cfg["electron"]["theta"])),
+        float(getattr(tree, cfg["electron"]["phi"])),
+        m_e
+    )
+
+    hadron_lvs = []
+    for had in cfg["hadrons"]:
+        had_lv = make_lorentz_vector_from_p_theta_phi(
+            float(getattr(tree, had["p"])),
+            float(getattr(tree, had["theta"])),
+            float(getattr(tree, had["phi"])),
+            had["mass"]
+        )
+        hadron_lvs.append(had_lv)
+    #endfor
+
+    return e_lv, hadron_lvs
+#enddef
+
+def compute_missing_mass_squared(e_lv, hadron_lvs):
+    beam_lv = ROOT.TLorentzVector()
+    beam_lv.SetPxPyPzE(0.0, 0.0, beam_energy, beam_energy)
+
+    target_lv = ROOT.TLorentzVector()
+    target_lv.SetPxPyPzE(0.0, 0.0, 0.0, m_p)
+
+    miss_lv = beam_lv + target_lv - e_lv
+    for had_lv in hadron_lvs:
+        miss_lv = miss_lv - had_lv
+    #endfor
+
+    return miss_lv.M2()
+#enddef
+
+def compute_event_dmx2_de(e_lv, hadron_lvs):
+    mx2_nominal = compute_missing_mass_squared(e_lv, hadron_lvs)
+
+    e_shifted = shifted_electron_lorentz_vector(e_lv, delta_epsilon)
+    if e_shifted is None:
+        return None
+    #endif
+
+    mx2_shifted = compute_missing_mass_squared(e_shifted, hadron_lvs)
+    slope = (mx2_shifted - mx2_nominal) / delta_epsilon
+    return slope
+#enddef
+
+def process_file(input_file, dataset_label):
+    cfg = channel_configs[dataset_label]
+    expected_mass2 = cfg["expected_mass2"]
+    missing_particle_label = cfg["missing_particle_label"]
+    channel_latex = cfg["latex_label"]
+
     print("")
     print("==============================================================")
     print("Starting dataset: %s" % dataset_label)
@@ -114,9 +328,15 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
         raise RuntimeError("Could not find tree: " + tree_name + " in " + input_file)
     #endif
 
+    print("Verifying required branches...")
+    verify_required_branches(tree, cfg, dataset_label)
+
     histograms = []
     sum_vz = [0.0] * n_vz_bins
     count_vz = [0] * n_vz_bins
+
+    sum_slope = [0.0] * n_vz_bins
+    count_slope = [0] * n_vz_bins
 
     print("Booking %d vz_e histograms..." % n_vz_bins)
     for i in range(n_vz_bins):
@@ -142,7 +362,7 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
         print_progress(i_entry, n_entries, dataset_label)
 
         vz_e = float(tree.vz_e)
-        mx2  = float(tree.Mx2)
+        mx2 = float(tree.Mx2)
 
         if vz_e < vz_min or vz_e >= vz_max:
             continue
@@ -162,6 +382,15 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
         sum_vz[vz_bin] += vz_e
         count_vz[vz_bin] += 1
         n_kept += 1
+
+        if cfg["do_energy_correction"]:
+            e_lv, hadron_lvs = build_event_four_vectors(tree, cfg)
+            slope = compute_event_dmx2_de(e_lv, hadron_lvs)
+            if slope is not None and math.isfinite(slope):
+                sum_slope[vz_bin] += slope
+                count_slope[vz_bin] += 1
+            #endif
+        #endif
     #endfor
 
     print("[%s] event loop complete" % dataset_label)
@@ -187,6 +416,9 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
 
     fit_functions = []
     fit_statuses = []
+
+    bin_mean_vz = []
+    bin_avg_slope = []
 
     print("")
     print("mu offsets by vz_e bin:")
@@ -251,11 +483,11 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
         fit_statuses.append(fit_ok)
 
         if fit_ok:
-            mu        = fit_func.GetParameter(1)
-            mu_err    = fit_func.GetParError(1)
-            sigma     = abs(fit_func.GetParameter(2))
+            mu = fit_func.GetParameter(1)
+            mu_err = fit_func.GetParError(1)
+            sigma = abs(fit_func.GetParameter(2))
             sigma_err = fit_func.GetParError(2)
-            offset    = mu - expected_mass2
+            offset = mu - expected_mass2
 
             x_mu_vals.append(mean_vz)
             y_mu_vals.append(mu)
@@ -264,6 +496,12 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
             x_sigma_vals.append(mean_vz)
             y_sigma_vals.append(sigma)
             y_sigma_errs.append(sigma_err)
+
+            if cfg["do_energy_correction"] and count_slope[i] > 0:
+                avg_slope = sum_slope[i] / float(count_slope[i])
+                bin_mean_vz.append(mean_vz)
+                bin_avg_slope.append(avg_slope)
+            #endif
 
             n_fit_success += 1
 
@@ -283,6 +521,13 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
                 mu_err,
                 offset
             ))
+
+            if cfg["do_energy_correction"] and count_slope[i] > 0:
+                print("[%s]   average d(Mx2)/dE in this bin = %.6f GeV" % (
+                    dataset_label,
+                    avg_slope
+                ))
+            #endif
         else:
             print("[%s]   fit failed" % dataset_label)
         #endif
@@ -341,7 +586,51 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
         print("Not enough fitted points for cubic fit.")
     #endif
 
-    channel_latex = get_latex_channel_label(dataset_label)
+    correction_graph = None
+
+    if cfg["do_energy_correction"] and cubic_fit and len(bin_mean_vz) > 0:
+        print("")
+        print("Computing needed scattered-electron energy correction relative to vz_e = %.2f cm" % vz_min)
+
+        mu_ref = cubic_fit.Eval(vz_min)
+
+        x_corr_vals = []
+        y_corr_vals = []
+
+        print("vz_value     mu_fit(vz)     mu_ref-mu_fit     <dMx2/dE>     DeltaE_corr")
+        print("-----------------------------------------------------------------------")
+
+        for i in range(len(bin_mean_vz)):
+            vz_val = bin_mean_vz[i]
+            slope_val = bin_avg_slope[i]
+
+            if abs(slope_val) < 1.0e-12:
+                continue
+            #endif
+
+            mu_val = cubic_fit.Eval(vz_val)
+            delta_mu = mu_ref - mu_val
+            delta_e_needed = delta_mu / slope_val
+
+            x_corr_vals.append(vz_val)
+            y_corr_vals.append(delta_e_needed)
+
+            print("%7.3f   %12.6f   %13.6f   %10.6f   %12.6f" % (
+                vz_val,
+                mu_val,
+                delta_mu,
+                slope_val,
+                delta_e_needed
+            ))
+        #endfor
+
+        n_corr = len(x_corr_vals)
+        correction_graph = ROOT.TGraph(n_corr)
+        for i in range(n_corr):
+            correction_graph.SetPoint(i, x_corr_vals[i], y_corr_vals[i])
+        #endfor
+        correction_graph.SetLineWidth(3)
+    #endif
 
     print("Building canvas...")
     canvas = ROOT.TCanvas(
@@ -435,7 +724,7 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
 
     frame_right_top = ROOT.TH1D("frame_right_top_%s" % make_safe_tag(dataset_label), "", 100, vz_min, vz_max)
     frame_right_top.SetMinimum(0.8)
-    frame_right_top.SetMaximum(1.1)
+    frame_right_top.SetMaximum(1.0)
     frame_right_top.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
     frame_right_top.GetYaxis().SetTitle("Fitted peak position #mu of M_{X}^{2} (GeV^{2})")
     frame_right_top.GetXaxis().CenterTitle()
@@ -505,11 +794,11 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
 
     graph_sigma.Draw("P SAME")
 
-    legend_right_bot = ROOT.TLegend(0.14, 0.78, 0.92, 0.93)
+    legend_right_bot = ROOT.TLegend(0.18, 0.82, 0.80, 0.92)
     legend_right_bot.SetBorderSize(1)
     legend_right_bot.SetFillStyle(1001)
     legend_right_bot.SetFillColor(ROOT.kWhite)
-    legend_right_bot.SetTextSize(0.038)
+    legend_right_bot.SetTextSize(0.030)
     legend_right_bot.AddEntry(graph_sigma, "Point = fitted #sigma, error bar = fit uncertainty", "lep")
     legend_right_bot.Draw()
 
@@ -525,29 +814,111 @@ def process_file(input_file, dataset_label, missing_particle_label, expected_mas
 
     print("Finished dataset: %s" % dataset_label)
     f.Close()
+
+    return {
+        "dataset_label": dataset_label,
+        "channel_latex": channel_latex,
+        "correction_graph": correction_graph
+    }
+#enddef
+
+def make_combined_energy_correction_plot(result_data_epi, result_data_epipim):
+    graph_epi = result_data_epi["correction_graph"]
+    graph_epipim = result_data_epipim["correction_graph"]
+
+    if graph_epi is None or graph_epipim is None:
+        print("Skipping combined energy-correction plot because one or both correction graphs are missing.")
+        return
+    #endif
+
+    graph_epi.SetLineColor(ROOT.kRed + 1)
+    graph_epi.SetLineWidth(3)
+
+    graph_epipim.SetLineColor(ROOT.kBlue + 1)
+    graph_epipim.SetLineWidth(3)
+
+    max_y = 0.0
+
+    for graph in [graph_epi, graph_epipim]:
+        n = graph.GetN()
+        for i in range(n):
+            x_val = ROOT.Double(0.0)
+            y_val = ROOT.Double(0.0)
+            graph.GetPoint(i, x_val, y_val)
+            if float(y_val) > max_y:
+                max_y = float(y_val)
+            #endif
+        #endfor
+    #endfor
+
+    if max_y <= 0.0:
+        max_y = 0.01
+    #endif
+
+    canvas = ROOT.TCanvas("canvas_energy_correction_data_only", "energy correction data only", 1100, 800)
+    canvas.cd()
+
+    ROOT.gPad.SetLeftMargin(0.14)
+    ROOT.gPad.SetRightMargin(0.05)
+    ROOT.gPad.SetBottomMargin(0.13)
+    ROOT.gPad.SetTopMargin(0.08)
+
+    frame = ROOT.TH1D("frame_energy_correction_data_only", "", 100, vz_min, vz_max)
+    frame.SetMinimum(0.0)
+    frame.SetMaximum(1.25 * max_y)
+    frame.GetXaxis().SetTitle("v_{z,e} (cm)")
+    frame.GetYaxis().SetTitle("Needed scattered-electron energy correction #DeltaE_{e'} (GeV)")
+    frame.GetXaxis().CenterTitle()
+    frame.GetYaxis().CenterTitle()
+    frame.GetXaxis().SetTitleSize(0.05)
+    frame.GetYaxis().SetTitleSize(0.05)
+    frame.GetXaxis().SetLabelSize(0.04)
+    frame.GetYaxis().SetLabelSize(0.04)
+    frame.GetYaxis().SetTitleOffset(1.25)
+    frame.Draw()
+
+    graph_epi.Draw("L SAME")
+    graph_epipim.Draw("L SAME")
+
+    legend = ROOT.TLegend(0.18, 0.76, 0.78, 0.90)
+    legend.SetBorderSize(1)
+    legend.SetFillStyle(1001)
+    legend.SetFillColor(ROOT.kWhite)
+    legend.SetTextSize(0.032)
+    legend.AddEntry(graph_epi, "Data: e p #rightarrow e #pi^{+} X", "l")
+    legend.AddEntry(graph_epipim, "Data: e p #rightarrow e #pi^{+} #pi^{-} X", "l")
+    legend.Draw()
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextSize(0.040)
+    latex.DrawLatex(0.16, 0.93, "External-radiation energy correction inferred from #mu(v_{z,e})")
+
+    output_png = os.path.join(output_dir, "external_radiation_energy_correction_data_only.png")
+    canvas.SaveAs(output_png)
+    print("Saved: %s" % output_png)
 #enddef
 
 # ------------------------------------------------
 # run all three
 # ------------------------------------------------
 
-process_file(
+result_data_epi = process_file(
     input_file_data_epi,
-    "data_epi_plus",
-    "neutron",
-    M_n2
+    "data_epi_plus"
 )
 
-process_file(
+result_mc_epi = process_file(
     input_file_mc_epi,
-    "mc_epi_plus",
-    "neutron",
-    M_n2
+    "mc_epi_plus"
 )
 
-process_file(
+result_data_epipim = process_file(
     input_file_data_epipim,
-    "data_epi_plus_pi_minus",
-    "proton",
-    M_p2
+    "data_epi_plus_pi_minus"
+)
+
+make_combined_energy_correction_plot(
+    result_data_epi,
+    result_data_epipim
 )
