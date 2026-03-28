@@ -519,8 +519,12 @@ def process_file(input_file, dataset_label):
             continue
         #endif
 
-        e_lv, hadron_lvs = build_event_four_vectors(tree, cfg)
-        observable_val = compute_observable_value(tree, cfg, e_lv, hadron_lvs)
+        if cfg["observable_branch"] is not None:
+            observable_val = float(getattr(tree, cfg["observable_branch"]))
+        else:
+            e_lv_tmp, hadron_lvs_tmp = build_event_four_vectors(tree, cfg)
+            observable_val = compute_observable_value(tree, cfg, e_lv_tmp, hadron_lvs_tmp)
+        #endif
 
         if observable_val < observable_min or observable_val > observable_max:
             continue
@@ -538,6 +542,7 @@ def process_file(input_file, dataset_label):
         n_kept += 1
 
         if cfg["do_energy_correction"]:
+            e_lv, hadron_lvs = build_event_four_vectors(tree, cfg)
             slope = compute_event_dobservable_de(cfg, tree, e_lv, hadron_lvs)
             if slope is not None and math.isfinite(slope):
                 sum_slope[vz_bin] += slope
