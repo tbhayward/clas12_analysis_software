@@ -35,9 +35,9 @@ else:
 # input files
 # ------------------------------------------------
 
-input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
-input_file_mc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+.root"
-input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
+input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_full.root"
+input_file_mc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
+input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rgc_fa18_inb_NH3_epi+pi-_full.root"
 input_file_data_elastic = "/work/clas12/thayward/CLAS12_exclusive/elastic/rgc_fa22_inb_elastic.root"
 
 tree_name = "PhysicsEvents"
