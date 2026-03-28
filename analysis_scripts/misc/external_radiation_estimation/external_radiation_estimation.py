@@ -61,7 +61,7 @@ M_n2 = m_n * m_n
 # ------------------------------------------------
 # branch configuration
 # using the exact branch names you provided
-# elastic uses the tree's W branch directly
+# elastic uses the tree's W branch directly for plotting/fitting
 # ------------------------------------------------
 
 channel_configs = {
@@ -399,11 +399,7 @@ def compute_event_dobservable_de(cfg, tree, e_lv, hadron_lvs):
     if cfg["observable_type"] == "Mx2":
         obs_nominal = compute_mx2(e_lv, hadron_lvs)
     elif cfg["observable_type"] == "W":
-        if cfg["observable_branch"] is not None:
-            obs_nominal = float(getattr(tree, cfg["observable_branch"]))
-        else:
-            obs_nominal = compute_w(e_lv)
-        #endif
+        obs_nominal = compute_w(e_lv)
     else:
         raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
     #endif
