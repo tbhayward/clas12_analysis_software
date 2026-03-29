@@ -13,9 +13,14 @@ ROOT.gStyle.SetOptFit(0)
 # optional command line override:
 # python external_radiation_estimation.py 2000000
 # python external_radiation_estimation.py all
+#
+# optional dataset override:
+# python external_radiation_estimation.py 2000000 skip_mc_elastic
+# python external_radiation_estimation.py all skip_mc_elastic
 # ------------------------------------------------
 
 max_events = 5000000
+skip_mc_elastic = False
 
 if len(sys.argv) > 1:
     if sys.argv[1].lower() == "all":
@@ -25,19 +30,29 @@ if len(sys.argv) > 1:
     #endif
 #endif
 
+if len(sys.argv) > 2:
+    if sys.argv[2].lower() == "skip_mc_elastic":
+        skip_mc_elastic = True
+    #endif
+#endif
+
 if max_events < 0:
     print("Processing all events in each tree")
 else:
     print("Processing up to %d events per tree" % max_events)
 #endif
 
+if skip_mc_elastic:
+    print("Runtime override active: skipping MC and elastic datasets")
+#endif
+
 # ------------------------------------------------
 # input files
 # ------------------------------------------------
 
-input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_full.root"
+input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
 input_file_mc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
-input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rgc_fa18_inb_NH3_epi+pi-_full.root"
+input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
 input_file_data_elastic = "/work/clas12/thayward/CLAS12_exclusive/elastic/rgc_fa22_inb_elastic.root"
 
 tree_name = "PhysicsEvents"
@@ -1036,25 +1051,43 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, re
     graph_epipim = result_data_epipim["correction_graph"]
     graph_elastic = result_data_elastic["correction_graph"]
 
-    if graph_epi is None or graph_epipim is None or graph_elastic is None:
-        print("Skipping combined energy-correction plot because one or more correction graphs are missing.")
+    graphs = []
+    labels = []
+    colors = []
+
+    if graph_epi is not None:
+        graphs.append(graph_epi)
+        labels.append("Data: e p #rightarrow e #pi^{+} X")
+        colors.append(ROOT.kRed + 1)
+    #endif
+
+    if graph_epipim is not None:
+        graphs.append(graph_epipim)
+        labels.append("Data: e p #rightarrow e #pi^{+} #pi^{-} X")
+        colors.append(ROOT.kBlue + 1)
+    #endif
+
+    if graph_elastic is not None:
+        graphs.append(graph_elastic)
+        labels.append("Data: e p #rightarrow e p")
+        colors.append(ROOT.kGreen + 2)
+    #endif
+
+    if len(graphs) == 0:
+        print("Skipping combined energy-correction plot because no correction graphs are available.")
         return
     #endif
 
-    graph_epi.SetLineColor(ROOT.kRed + 1)
-    graph_epi.SetLineWidth(3)
-
-    graph_epipim.SetLineColor(ROOT.kBlue + 1)
-    graph_epipim.SetLineWidth(3)
-
-    graph_elastic.SetLineColor(ROOT.kGreen + 2)
-    graph_elastic.SetLineWidth(3)
+    for i in range(len(graphs)):
+        graphs[i].SetLineColor(colors[i])
+        graphs[i].SetLineWidth(3)
+    #endfor
 
     min_y = 0.0
     max_y = 0.0
     first_point = True
 
-    for graph in [graph_epi, graph_epipim, graph_elastic]:
+    for graph in graphs:
         n = graph.GetN()
         for i in range(n):
             y_val = graph.GetPointY(i)
@@ -1111,18 +1144,19 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, re
     frame.GetYaxis().SetTitleOffset(1.25)
     frame.Draw()
 
-    graph_epi.Draw("L SAME")
-    graph_epipim.Draw("L SAME")
-    graph_elastic.Draw("L SAME")
+    for graph in graphs:
+        graph.Draw("L SAME")
+    #endfor
 
     legend = ROOT.TLegend(0.18, 0.72, 0.82, 0.90)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
     legend.SetTextSize(0.030)
-    legend.AddEntry(graph_epi, "Data: e p #rightarrow e #pi^{+} X", "l")
-    legend.AddEntry(graph_epipim, "Data: e p #rightarrow e #pi^{+} #pi^{-} X", "l")
-    legend.AddEntry(graph_elastic, "Data: e p #rightarrow e p", "l")
+
+    for i in range(len(graphs)):
+        legend.AddEntry(graphs[i], labels[i], "l")
+    #endfor
     legend.Draw()
 
     latex = ROOT.TLatex()
@@ -1144,19 +1178,24 @@ result_data_epi = process_file(
     "data_epi_plus"
 )
 
-result_mc_epi = process_file(
-    input_file_mc_epi,
-    "mc_epi_plus"
-)
+result_mc_epi = None
+result_data_elastic = None
+
+if not skip_mc_elastic:
+    result_mc_epi = process_file(
+        input_file_mc_epi,
+        "mc_epi_plus"
+    )
+
+    result_data_elastic = process_file(
+        input_file_data_elastic,
+        "data_elastic"
+    )
+#endif
 
 result_data_epipim = process_file(
     input_file_data_epipim,
     "data_epi_plus_pi_minus"
-)
-
-result_data_elastic = process_file(
-    input_file_data_elastic,
-    "data_elastic"
 )
 
 make_combined_energy_correction_plot(
