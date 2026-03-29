@@ -1047,28 +1047,25 @@ def process_file(input_file, dataset_label):
 #enddef
 
 def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, result_data_elastic):
-    graph_epi = result_data_epi["correction_graph"]
-    graph_epipim = result_data_epipim["correction_graph"]
-    graph_elastic = result_data_elastic["correction_graph"]
 
     graphs = []
     labels = []
     colors = []
 
-    if graph_epi is not None:
-        graphs.append(graph_epi)
+    if result_data_epi is not None and result_data_epi["correction_graph"] is not None:
+        graphs.append(result_data_epi["correction_graph"])
         labels.append("Data: e p #rightarrow e #pi^{+} X")
         colors.append(ROOT.kRed + 1)
     #endif
 
-    if graph_epipim is not None:
-        graphs.append(graph_epipim)
+    if result_data_epipim is not None and result_data_epipim["correction_graph"] is not None:
+        graphs.append(result_data_epipim["correction_graph"])
         labels.append("Data: e p #rightarrow e #pi^{+} #pi^{-} X")
         colors.append(ROOT.kBlue + 1)
     #endif
 
-    if graph_elastic is not None:
-        graphs.append(graph_elastic)
+    if result_data_elastic is not None and result_data_elastic["correction_graph"] is not None:
+        graphs.append(result_data_elastic["correction_graph"])
         labels.append("Data: e p #rightarrow e p")
         colors.append(ROOT.kGreen + 2)
     #endif
