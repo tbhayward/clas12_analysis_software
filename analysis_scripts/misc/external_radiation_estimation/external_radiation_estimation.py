@@ -76,6 +76,14 @@ M_p2 = m_p * m_p
 M_n2 = m_n * m_n
 
 # ------------------------------------------------
+# binning defaults
+# RGA: -6.5 to 1.5
+# RGC: -6.0 to 1.5
+# ------------------------------------------------
+
+vz_step = 0.5
+
+# ------------------------------------------------
 # branch configuration
 # ------------------------------------------------
 
@@ -102,10 +110,11 @@ channel_configs = {
         "observable_bins": 60,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
-        "missing_particle_label": "neutron",
         "expected_peak": M_n2,
         "latex_label": "RGA Data: e p #rightarrow e #pi^{+} X",
-        "do_energy_correction": True
+        "do_energy_correction": True,
+        "vz_min": -6.5,
+        "vz_max": 1.5
     },
     "mc_rga_epi_plus": {
         "electron": {
@@ -129,10 +138,11 @@ channel_configs = {
         "observable_bins": 60,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
-        "missing_particle_label": "neutron",
         "expected_peak": M_n2,
         "latex_label": "RGA MC: e p #rightarrow e #pi^{+} X",
-        "do_energy_correction": False
+        "do_energy_correction": False,
+        "vz_min": -6.5,
+        "vz_max": 1.5
     },
     "data_rga_epi_plus_pi_minus": {
         "electron": {
@@ -163,10 +173,11 @@ channel_configs = {
         "observable_bins": 60,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
-        "missing_particle_label": "proton",
         "expected_peak": M_p2,
         "latex_label": "RGA Data: e p #rightarrow e #pi^{+} #pi^{-} X",
-        "do_energy_correction": True
+        "do_energy_correction": True,
+        "vz_min": -6.5,
+        "vz_max": 1.5
     },
     "data_rgc_epi_plus": {
         "electron": {
@@ -190,10 +201,11 @@ channel_configs = {
         "observable_bins": 60,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
-        "missing_particle_label": "neutron",
         "expected_peak": M_n2,
         "latex_label": "RGC Data: e p #rightarrow e #pi^{+} X",
-        "do_energy_correction": True
+        "do_energy_correction": True,
+        "vz_min": -6.0,
+        "vz_max": 1.5
     },
     "data_rgc_epi_plus_pi_minus": {
         "electron": {
@@ -224,30 +236,13 @@ channel_configs = {
         "observable_bins": 60,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
-        "missing_particle_label": "proton",
         "expected_peak": M_p2,
         "latex_label": "RGC Data: e p #rightarrow e #pi^{+} #pi^{-} X",
-        "do_energy_correction": True
+        "do_energy_correction": True,
+        "vz_min": -6.0,
+        "vz_max": 1.5
     }
 }
-
-# ------------------------------------------------
-# binning
-# 0.5 cm bins from -6.5 to 1.5
-# ------------------------------------------------
-
-vz_min = -6.5
-vz_max = 1.5
-vz_step = 0.5
-
-vz_edges = []
-current_edge = vz_min
-while current_edge <= vz_max + 1.0e-9:
-    vz_edges.append(current_edge)
-    current_edge += vz_step
-#endfor
-
-n_vz_bins = len(vz_edges) - 1
 
 # ------------------------------------------------
 # numerical derivative step
@@ -266,6 +261,16 @@ def make_safe_tag(text):
     out = out.replace("-", "m")
     out = out.replace("/", "_")
     return out
+#enddef
+
+def build_vz_edges(vz_min, vz_max, step):
+    edges = []
+    current_edge = vz_min
+    while current_edge <= vz_max + 1.0e-9:
+        edges.append(current_edge)
+        current_edge += step
+    #endfor
+    return edges
 #enddef
 
 def print_progress(i_entry, n_entries, dataset_label):
@@ -486,11 +491,17 @@ def process_file(input_file, dataset_label):
     observable_axis_title = cfg["observable_axis_title"]
     observable_peak_title = cfg["observable_peak_title"]
 
+    vz_min = cfg["vz_min"]
+    vz_max = cfg["vz_max"]
+    vz_edges = build_vz_edges(vz_min, vz_max, vz_step)
+    n_vz_bins = len(vz_edges) - 1
+
     print("")
     print("==============================================================")
     print("Starting dataset: %s" % dataset_label)
     print("Input file: %s" % input_file)
     print("Expected %s peak position = %.6f" % (observable_peak_title, expected_peak))
+    print("Using vz_e range %.1f to %.1f cm" % (vz_min, vz_max))
     print("Opening file...")
 
     f = ROOT.TFile.Open(input_file, "READ")
@@ -1021,7 +1032,9 @@ def process_file(input_file, dataset_label):
     return {
         "dataset_label": dataset_label,
         "channel_latex": channel_latex,
-        "correction_graph": correction_graph
+        "correction_graph": correction_graph,
+        "vz_min": vz_min,
+        "vz_max": vz_max
     }
 #enddef
 
@@ -1032,11 +1045,20 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
     colors = []
     styles = []
 
+    x_min = None
+    x_max = None
+
     if result_rga_epi is not None and result_rga_epi["correction_graph"] is not None:
         graphs.append(result_rga_epi["correction_graph"])
         labels.append("RGA: e p #rightarrow e #pi^{+} X")
         colors.append(ROOT.kRed + 1)
         styles.append(1)
+        if x_min is None or result_rga_epi["vz_min"] < x_min:
+            x_min = result_rga_epi["vz_min"]
+        #endif
+        if x_max is None or result_rga_epi["vz_max"] > x_max:
+            x_max = result_rga_epi["vz_max"]
+        #endif
     #endif
 
     if result_rga_epipim is not None and result_rga_epipim["correction_graph"] is not None:
@@ -1044,6 +1066,12 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
         labels.append("RGA: e p #rightarrow e #pi^{+} #pi^{-} X")
         colors.append(ROOT.kBlue + 1)
         styles.append(1)
+        if x_min is None or result_rga_epipim["vz_min"] < x_min:
+            x_min = result_rga_epipim["vz_min"]
+        #endif
+        if x_max is None or result_rga_epipim["vz_max"] > x_max:
+            x_max = result_rga_epipim["vz_max"]
+        #endif
     #endif
 
     if result_rgc_epi is not None and result_rgc_epi["correction_graph"] is not None:
@@ -1051,6 +1079,12 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
         labels.append("RGC: e p #rightarrow e #pi^{+} X")
         colors.append(ROOT.kRed + 1)
         styles.append(2)
+        if x_min is None or result_rgc_epi["vz_min"] < x_min:
+            x_min = result_rgc_epi["vz_min"]
+        #endif
+        if x_max is None or result_rgc_epi["vz_max"] > x_max:
+            x_max = result_rgc_epi["vz_max"]
+        #endif
     #endif
 
     if result_rgc_epipim is not None and result_rgc_epipim["correction_graph"] is not None:
@@ -1058,6 +1092,12 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
         labels.append("RGC: e p #rightarrow e #pi^{+} #pi^{-} X")
         colors.append(ROOT.kBlue + 1)
         styles.append(2)
+        if x_min is None or result_rgc_epipim["vz_min"] < x_min:
+            x_min = result_rgc_epipim["vz_min"]
+        #endif
+        if x_max is None or result_rgc_epipim["vz_max"] > x_max:
+            x_max = result_rgc_epipim["vz_max"]
+        #endif
     #endif
 
     if len(graphs) == 0:
@@ -1118,7 +1158,7 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
     ROOT.gPad.SetBottomMargin(0.13)
     ROOT.gPad.SetTopMargin(0.08)
 
-    frame = ROOT.TH1D("frame_energy_correction_data_only", "", 100, vz_min, vz_max)
+    frame = ROOT.TH1D("frame_energy_correction_data_only", "", 100, x_min, x_max)
     frame.SetMinimum(min_y - 0.10 * y_span)
     frame.SetMaximum(max_y + 0.25 * y_span)
     frame.GetXaxis().SetTitle("v_{z,e} (cm)")
