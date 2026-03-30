@@ -194,8 +194,8 @@ channel_configs = {
 # 0.5 cm bins from -7.5 to 2.5
 # ------------------------------------------------
 
-vz_min = -7.5
-vz_max = 2.5
+vz_min = -6.5
+vz_max = 1.5
 vz_step = 0.5
 
 vz_edges = []
