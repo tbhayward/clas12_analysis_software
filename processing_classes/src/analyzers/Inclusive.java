@@ -50,10 +50,21 @@ public class Inclusive {
     }
 
     public static boolean channel_test(Inclusive variables) {
-        if (variables.helicity == 0 && variables.runnum != 11) return false;
-        if (variables.Q2() < 1.0) return false;
-        if (variables.W()  < 2.0) return false;
-        if (variables.y()  > 0.75) return false;
+        if (variables.helicity == 0 && variables.runnum != 11) {
+            return false;
+        }
+        if (variables.Q2() < 1.00) {
+            return false;
+        } 
+        else if (variables.W() < 2) {
+            return false;
+        } 
+        else if (variables.y() > 0.85) {
+            return false;
+        } 
+        else if (variables.y() < 0.19) {
+            return false;
+        } 
         return true;
     }
 
