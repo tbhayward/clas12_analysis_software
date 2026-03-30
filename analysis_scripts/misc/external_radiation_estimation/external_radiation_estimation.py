@@ -15,12 +15,12 @@ ROOT.gStyle.SetOptFit(0)
 # python external_radiation_estimation.py all
 #
 # optional dataset override:
-# python external_radiation_estimation.py 2000000 skip_mc_elastic
-# python external_radiation_estimation.py all skip_mc_elastic
+# python external_radiation_estimation.py 2000000 skip_mc
+# python external_radiation_estimation.py all skip_mc
 # ------------------------------------------------
 
 max_events = 5000000
-skip_mc_elastic = False
+skip_mc = False
 
 if len(sys.argv) > 1:
     if sys.argv[1].lower() == "all":
@@ -31,8 +31,8 @@ if len(sys.argv) > 1:
 #endif
 
 if len(sys.argv) > 2:
-    if sys.argv[2].lower() == "skip_mc_elastic":
-        skip_mc_elastic = True
+    if sys.argv[2].lower() == "skip_mc":
+        skip_mc = True
     #endif
 #endif
 
@@ -42,18 +42,20 @@ else:
     print("Processing up to %d events per tree" % max_events)
 #endif
 
-if skip_mc_elastic:
-    print("Runtime override active: skipping MC and elastic datasets")
+if skip_mc:
+    print("Runtime override active: skipping MC dataset")
 #endif
 
 # ------------------------------------------------
 # input files
 # ------------------------------------------------
 
-input_file_data_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
-input_file_mc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
-input_file_data_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
-input_file_data_elastic = "/work/clas12/thayward/CLAS12_exclusive/elastic/rgc_fa22_inb_elastic.root"
+input_file_data_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
+input_file_mc_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
+input_file_data_rga_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
+
+input_file_data_rgc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_full.root"
+input_file_data_rgc_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rgc_fa18_inb_NH3_epi+pi-_full.root"
 
 tree_name = "PhysicsEvents"
 output_dir = "output"
@@ -75,12 +77,10 @@ M_n2 = m_n * m_n
 
 # ------------------------------------------------
 # branch configuration
-# using the exact branch names you provided
-# elastic uses the tree's W branch directly for plotting/fitting
 # ------------------------------------------------
 
 channel_configs = {
-    "data_epi_plus": {
+    "data_rga_epi_plus": {
         "electron": {
             "p": "e_p",
             "theta": "e_theta",
@@ -104,10 +104,10 @@ channel_configs = {
         "observable_peak_title": "M_{X}^{2}",
         "missing_particle_label": "neutron",
         "expected_peak": M_n2,
-        "latex_label": "Data: e p #rightarrow e #pi^{+} X",
+        "latex_label": "RGA Data: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": True
     },
-    "mc_epi_plus": {
+    "mc_rga_epi_plus": {
         "electron": {
             "p": "e_p",
             "theta": "e_theta",
@@ -131,10 +131,10 @@ channel_configs = {
         "observable_peak_title": "M_{X}^{2}",
         "missing_particle_label": "neutron",
         "expected_peak": M_n2,
-        "latex_label": "MC: e p #rightarrow e #pi^{+} X",
+        "latex_label": "RGA MC: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": False
     },
-    "data_epi_plus_pi_minus": {
+    "data_rga_epi_plus_pi_minus": {
         "electron": {
             "p": "e_p",
             "theta": "e_theta",
@@ -165,33 +165,75 @@ channel_configs = {
         "observable_peak_title": "M_{X}^{2}",
         "missing_particle_label": "proton",
         "expected_peak": M_p2,
-        "latex_label": "Data: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "latex_label": "RGA Data: e p #rightarrow e #pi^{+} #pi^{-} X",
         "do_energy_correction": True
     },
-    "data_elastic": {
+    "data_rgc_epi_plus": {
         "electron": {
             "p": "e_p",
             "theta": "e_theta",
             "phi": "e_phi"
         },
-        "hadrons": [],
-        "observable_type": "W",
-        "observable_branch": "W",
-        "observable_min": 0.7,
-        "observable_max": 1.1,
+        "hadrons": [
+            {
+                "name": "pip",
+                "p": "p_p",
+                "theta": "p_theta",
+                "phi": "p_phi",
+                "mass": m_pi
+            }
+        ],
+        "observable_type": "Mx2",
+        "observable_branch": "Mx2",
+        "observable_min": 0.6,
+        "observable_max": 1.2,
         "observable_bins": 60,
-        "observable_axis_title": "W (GeV)",
-        "observable_peak_title": "W",
+        "observable_axis_title": "M_{X}^{2} (GeV^{2})",
+        "observable_peak_title": "M_{X}^{2}",
+        "missing_particle_label": "neutron",
+        "expected_peak": M_n2,
+        "latex_label": "RGC Data: e p #rightarrow e #pi^{+} X",
+        "do_energy_correction": True
+    },
+    "data_rgc_epi_plus_pi_minus": {
+        "electron": {
+            "p": "e_p",
+            "theta": "e_theta",
+            "phi": "e_phi"
+        },
+        "hadrons": [
+            {
+                "name": "pip",
+                "p": "p1_p",
+                "theta": "p1_theta",
+                "phi": "p1_phi",
+                "mass": m_pi
+            },
+            {
+                "name": "pim",
+                "p": "p2_p",
+                "theta": "p2_theta",
+                "phi": "p2_phi",
+                "mass": m_pi
+            }
+        ],
+        "observable_type": "Mx2",
+        "observable_branch": "Mx2",
+        "observable_min": 0.6,
+        "observable_max": 1.2,
+        "observable_bins": 60,
+        "observable_axis_title": "M_{X}^{2} (GeV^{2})",
+        "observable_peak_title": "M_{X}^{2}",
         "missing_particle_label": "proton",
-        "expected_peak": m_p,
-        "latex_label": "Data: e p #rightarrow e p",
+        "expected_peak": M_p2,
+        "latex_label": "RGC Data: e p #rightarrow e #pi^{+} #pi^{-} X",
         "do_energy_correction": True
     }
 }
 
 # ------------------------------------------------
 # binning
-# 0.5 cm bins from -7.5 to 2.5
+# 0.5 cm bins from -6.5 to 1.5
 # ------------------------------------------------
 
 vz_min = -6.5
@@ -368,24 +410,6 @@ def compute_mx2(e_lv, hadron_lvs):
     return miss_lv.M2()
 #enddef
 
-def compute_w(e_lv):
-    beam_lv = ROOT.TLorentzVector()
-    beam_lv.SetPxPyPzE(0.0, 0.0, beam_energy, beam_energy)
-
-    target_lv = ROOT.TLorentzVector()
-    target_lv.SetPxPyPzE(0.0, 0.0, 0.0, m_p)
-
-    q_lv = beam_lv - e_lv
-    hadronic_lv = target_lv + q_lv
-
-    w2 = hadronic_lv.M2()
-    if w2 < 0.0:
-        return 0.0
-    #endif
-
-    return math.sqrt(w2)
-#enddef
-
 def compute_observable_value(tree, cfg, e_lv, hadron_lvs):
     if cfg["observable_branch"] is not None:
         return float(getattr(tree, cfg["observable_branch"]))
@@ -393,8 +417,6 @@ def compute_observable_value(tree, cfg, e_lv, hadron_lvs):
 
     if cfg["observable_type"] == "Mx2":
         return compute_mx2(e_lv, hadron_lvs)
-    elif cfg["observable_type"] == "W":
-        return compute_w(e_lv)
     else:
         raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
     #endif
@@ -403,8 +425,6 @@ def compute_observable_value(tree, cfg, e_lv, hadron_lvs):
 def compute_observable_from_shifted_electron(cfg, e_shifted, hadron_lvs):
     if cfg["observable_type"] == "Mx2":
         return compute_mx2(e_shifted, hadron_lvs)
-    elif cfg["observable_type"] == "W":
-        return compute_w(e_shifted)
     else:
         raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
     #endif
@@ -413,8 +433,6 @@ def compute_observable_from_shifted_electron(cfg, e_shifted, hadron_lvs):
 def compute_event_dobservable_de(cfg, tree, e_lv, hadron_lvs):
     if cfg["observable_type"] == "Mx2":
         obs_nominal = compute_mx2(e_lv, hadron_lvs)
-    elif cfg["observable_type"] == "W":
-        obs_nominal = compute_w(e_lv)
     else:
         raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
     #endif
@@ -460,7 +478,6 @@ def fit_is_reasonable(fit_func, fit_result, observable_min, observable_max):
 def process_file(input_file, dataset_label):
     cfg = channel_configs[dataset_label]
     expected_peak = cfg["expected_peak"]
-    missing_particle_label = cfg["missing_particle_label"]
     channel_latex = cfg["latex_label"]
 
     observable_min = cfg["observable_min"]
@@ -633,17 +650,9 @@ def process_file(input_file, dataset_label):
         fit_name = "fit_%s_%d" % (make_safe_tag(dataset_label), i)
         fit_func = ROOT.TF1(fit_name, "gaus(0)+pol3(3)", observable_min, observable_max)
 
-        if cfg["observable_type"] == "Mx2":
-            mu_low = 0.75
-            mu_high = 1.00
-            sigma_init = 0.03
-        elif cfg["observable_type"] == "W":
-            mu_low = 0.85
-            mu_high = 1.00
-            sigma_init = 0.02
-        else:
-            raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
-        #endif
+        mu_low = 0.75
+        mu_high = 1.00
+        sigma_init = 0.03
 
         fit_func.SetParameter(0, peak_height)
         fit_func.SetParameter(1, expected_peak)
@@ -715,17 +724,10 @@ def process_file(input_file, dataset_label):
             ))
 
             if cfg["do_energy_correction"] and count_slope[i] > 0:
-                if cfg["observable_type"] == "Mx2":
-                    print("[%s]   average d(Mx2)/dE in this bin = %.6f" % (
-                        dataset_label,
-                        avg_slope
-                    ))
-                elif cfg["observable_type"] == "W":
-                    print("[%s]   average dW/dE in this bin = %.6f" % (
-                        dataset_label,
-                        avg_slope
-                    ))
-                #endif
+                print("[%s]   average d(Mx2)/dE in this bin = %.6f" % (
+                    dataset_label,
+                    avg_slope
+                ))
             #endif
         else:
             print("[%s]   fit rejected: parameters not reasonable" % dataset_label)
@@ -796,13 +798,8 @@ def process_file(input_file, dataset_label):
         x_corr_vals = []
         y_corr_vals = []
 
-        if cfg["observable_type"] == "Mx2":
-            print("vz_value     mu_fit(vz)     mu_ref-mu_fit     <dMx2/dE>     DeltaE_corr")
-            print("-----------------------------------------------------------------------")
-        elif cfg["observable_type"] == "W":
-            print("vz_value     mu_fit(vz)     mu_ref-mu_fit      <dW/dE>       DeltaE_corr")
-            print("-----------------------------------------------------------------------")
-        #endif
+        print("vz_value     mu_fit(vz)     mu_ref-mu_fit     <dMx2/dE>     DeltaE_corr")
+        print("-----------------------------------------------------------------------")
 
         for i in range(len(bin_mean_vz)):
             vz_val = bin_mean_vz[i]
@@ -927,21 +924,11 @@ def process_file(input_file, dataset_label):
     ROOT.gPad.SetTopMargin(0.08)
 
     frame_right_top = ROOT.TH1D("frame_right_top_%s" % make_safe_tag(dataset_label), "", 100, vz_min, vz_max)
-
-    if cfg["observable_type"] == "Mx2":
-        frame_right_top.SetMinimum(0.8)
-        frame_right_top.SetMaximum(1.0)
-        y_title_top = "Fitted peak position #mu of M_{X}^{2} (GeV^{2})"
-    elif cfg["observable_type"] == "W":
-        frame_right_top.SetMinimum(0.88)
-        frame_right_top.SetMaximum(1.00)
-        y_title_top = "Fitted peak position #mu of W (GeV)"
-    else:
-        raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
-    #endif
+    frame_right_top.SetMinimum(0.8)
+    frame_right_top.SetMaximum(1.0)
 
     frame_right_top.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
-    frame_right_top.GetYaxis().SetTitle(y_title_top)
+    frame_right_top.GetYaxis().SetTitle("Fitted peak position #mu of M_{X}^{2} (GeV^{2})")
     frame_right_top.GetXaxis().CenterTitle()
     frame_right_top.GetYaxis().CenterTitle()
     frame_right_top.GetXaxis().SetTitleSize(0.05)
@@ -995,18 +982,10 @@ def process_file(input_file, dataset_label):
 
     frame_right_bot = ROOT.TH1D("frame_right_bot_%s" % make_safe_tag(dataset_label), "", 100, vz_min, vz_max)
 
-    if cfg["observable_type"] == "Mx2":
-        y_title_bot = "Fitted #sigma of M_{X}^{2} peak (GeV^{2})"
-    elif cfg["observable_type"] == "W":
-        y_title_bot = "Fitted #sigma of W peak (GeV)"
-    else:
-        raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
-    #endif
-
     frame_right_bot.SetMinimum(0.0)
     frame_right_bot.SetMaximum(sigma_ymax)
     frame_right_bot.GetXaxis().SetTitle("<v_{z,e}> in bin (cm)")
-    frame_right_bot.GetYaxis().SetTitle(y_title_bot)
+    frame_right_bot.GetYaxis().SetTitle("Fitted #sigma of M_{X}^{2} peak (GeV^{2})")
     frame_right_bot.GetXaxis().CenterTitle()
     frame_right_bot.GetYaxis().CenterTitle()
     frame_right_bot.GetXaxis().SetTitleSize(0.05)
@@ -1046,28 +1025,39 @@ def process_file(input_file, dataset_label):
     }
 #enddef
 
-def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, result_data_elastic):
+def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, result_rgc_epi, result_rgc_epipim):
 
     graphs = []
     labels = []
     colors = []
+    styles = []
 
-    if result_data_epi is not None and result_data_epi["correction_graph"] is not None:
-        graphs.append(result_data_epi["correction_graph"])
-        labels.append("Data: e p #rightarrow e #pi^{+} X")
+    if result_rga_epi is not None and result_rga_epi["correction_graph"] is not None:
+        graphs.append(result_rga_epi["correction_graph"])
+        labels.append("RGA: e p #rightarrow e #pi^{+} X")
         colors.append(ROOT.kRed + 1)
+        styles.append(1)
     #endif
 
-    if result_data_epipim is not None and result_data_epipim["correction_graph"] is not None:
-        graphs.append(result_data_epipim["correction_graph"])
-        labels.append("Data: e p #rightarrow e #pi^{+} #pi^{-} X")
+    if result_rga_epipim is not None and result_rga_epipim["correction_graph"] is not None:
+        graphs.append(result_rga_epipim["correction_graph"])
+        labels.append("RGA: e p #rightarrow e #pi^{+} #pi^{-} X")
         colors.append(ROOT.kBlue + 1)
+        styles.append(1)
     #endif
 
-    if result_data_elastic is not None and result_data_elastic["correction_graph"] is not None:
-        graphs.append(result_data_elastic["correction_graph"])
-        labels.append("Data: e p #rightarrow e p")
-        colors.append(ROOT.kGreen + 2)
+    if result_rgc_epi is not None and result_rgc_epi["correction_graph"] is not None:
+        graphs.append(result_rgc_epi["correction_graph"])
+        labels.append("RGC: e p #rightarrow e #pi^{+} X")
+        colors.append(ROOT.kRed + 1)
+        styles.append(2)
+    #endif
+
+    if result_rgc_epipim is not None and result_rgc_epipim["correction_graph"] is not None:
+        graphs.append(result_rgc_epipim["correction_graph"])
+        labels.append("RGC: e p #rightarrow e #pi^{+} #pi^{-} X")
+        colors.append(ROOT.kBlue + 1)
+        styles.append(2)
     #endif
 
     if len(graphs) == 0:
@@ -1077,6 +1067,7 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, re
 
     for i in range(len(graphs)):
         graphs[i].SetLineColor(colors[i])
+        graphs[i].SetLineStyle(styles[i])
         graphs[i].SetLineWidth(3)
     #endfor
 
@@ -1145,11 +1136,11 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, re
         graph.Draw("L SAME")
     #endfor
 
-    legend = ROOT.TLegend(0.18, 0.72, 0.82, 0.90)
+    legend = ROOT.TLegend(0.16, 0.66, 0.86, 0.90)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.030)
+    legend.SetTextSize(0.028)
 
     for i in range(len(graphs)):
         legend.AddEntry(graphs[i], labels[i], "l")
@@ -1170,33 +1161,37 @@ def make_combined_energy_correction_plot(result_data_epi, result_data_epipim, re
 # run all datasets
 # ------------------------------------------------
 
-result_data_epi = process_file(
-    input_file_data_epi,
-    "data_epi_plus"
+result_data_rga_epi = process_file(
+    input_file_data_rga_epi,
+    "data_rga_epi_plus"
 )
 
-result_mc_epi = None
-result_data_elastic = None
-
-if not skip_mc_elastic:
-    result_mc_epi = process_file(
-        input_file_mc_epi,
-        "mc_epi_plus"
-    )
-
-    result_data_elastic = process_file(
-        input_file_data_elastic,
-        "data_elastic"
+result_mc_rga_epi = None
+if not skip_mc:
+    result_mc_rga_epi = process_file(
+        input_file_mc_rga_epi,
+        "mc_rga_epi_plus"
     )
 #endif
 
-result_data_epipim = process_file(
-    input_file_data_epipim,
-    "data_epi_plus_pi_minus"
+result_data_rga_epipim = process_file(
+    input_file_data_rga_epipim,
+    "data_rga_epi_plus_pi_minus"
+)
+
+result_data_rgc_epi = process_file(
+    input_file_data_rgc_epi,
+    "data_rgc_epi_plus"
+)
+
+result_data_rgc_epipim = process_file(
+    input_file_data_rgc_epipim,
+    "data_rgc_epi_plus_pi_minus"
 )
 
 make_combined_energy_correction_plot(
-    result_data_epi,
-    result_data_epipim,
-    result_data_elastic
+    result_data_rga_epi,
+    result_data_rga_epipim,
+    result_data_rgc_epi,
+    result_data_rgc_epipim
 )
