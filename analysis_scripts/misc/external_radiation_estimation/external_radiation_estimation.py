@@ -128,12 +128,12 @@ channel_overlay_labels = {
 
 # ------------------------------------------------
 # photon-energy histogram binning
-# fixed binning so workers can safely return arrays
+# now in MeV
 # ------------------------------------------------
 
-photon_energy_min = -0.10
-photon_energy_max = 0.50
-photon_energy_bins = 240
+photon_energy_min = 0.0
+photon_energy_max = 200.0
+photon_energy_bins = 200
 
 # ------------------------------------------------
 # branch configuration
@@ -720,6 +720,24 @@ def build_graph_errors_from_xyerr_lists(graph_dict):
     return g
 #enddef
 
+def style_integrated_graph(graph):
+    graph.SetTitle("")
+    graph.SetMarkerStyle(20)
+    graph.SetMarkerSize(1.0)
+    graph.SetMarkerColor(ROOT.kBlack)
+    graph.SetLineColor(ROOT.kBlack)
+    graph.SetLineWidth(2)
+#enddef
+
+def style_sector_graph(graph, color, marker_style):
+    graph.SetTitle("")
+    graph.SetMarkerStyle(marker_style)
+    graph.SetMarkerSize(1.0)
+    graph.SetMarkerColor(color)
+    graph.SetLineColor(color)
+    graph.SetLineWidth(2)
+#enddef
+
 def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, observable_min, observable_max, expected_peak, do_energy_correction, group_label_for_print):
     x_mu_vals = []
     y_mu_vals = []
@@ -876,6 +894,7 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
 
     if len(x_mu_vals) >= 4:
         graph_mu_tmp = build_graph_errors_from_xyerr_lists(graph_mu_dict)
+        style_integrated_graph(graph_mu_tmp)
 
         cubic_fit = ROOT.TF1(
             "cubic_mu_%s_%s" % (make_safe_tag(dataset_label), make_safe_tag(group_label_for_print)),
@@ -964,6 +983,8 @@ def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results
 
     graph_mu = build_graph_errors_from_xyerr_lists(fit_results["graph_mu_dict"])
     graph_sigma = build_graph_errors_from_xyerr_lists(fit_results["graph_sigma_dict"])
+    style_integrated_graph(graph_mu)
+    style_integrated_graph(graph_sigma)
 
     cubic_fit = None
     if fit_results["cubic_coeffs"] is not None:
@@ -1174,8 +1195,12 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     graph_sigmas = []
 
     for i_sector in range(N_SECTORS):
-        graph_mus.append(build_graph_errors_from_xyerr_lists(sector_fit_results[i_sector]["graph_mu_dict"]))
-        graph_sigmas.append(build_graph_errors_from_xyerr_lists(sector_fit_results[i_sector]["graph_sigma_dict"]))
+        g_mu = build_graph_errors_from_xyerr_lists(sector_fit_results[i_sector]["graph_mu_dict"])
+        g_sigma = build_graph_errors_from_xyerr_lists(sector_fit_results[i_sector]["graph_sigma_dict"])
+        style_sector_graph(g_mu, sector_colors[i_sector], 20 + i_sector)
+        style_sector_graph(g_sigma, sector_colors[i_sector], 20 + i_sector)
+        graph_mus.append(g_mu)
+        graph_sigmas.append(g_sigma)
     #endfor
 
     canvas = ROOT.TCanvas(
@@ -1314,11 +1339,6 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
 
     for i_sector in range(N_SECTORS):
         graph_mu = graph_mus[i_sector]
-        graph_mu.SetLineColor(sector_colors[i_sector])
-        graph_mu.SetMarkerColor(sector_colors[i_sector])
-        graph_mu.SetMarkerStyle(20 + i_sector)
-        graph_mu.SetMarkerSize(1.0)
-        graph_mu.SetLineWidth(2)
         graph_mu.Draw("P SAME")
         legend_top.AddEntry(graph_mu, sector_labels[i_sector], "lep")
     #endfor
@@ -1368,11 +1388,6 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
 
     for i_sector in range(N_SECTORS):
         graph_sigma = graph_sigmas[i_sector]
-        graph_sigma.SetLineColor(sector_colors[i_sector])
-        graph_sigma.SetMarkerColor(sector_colors[i_sector])
-        graph_sigma.SetMarkerStyle(20 + i_sector)
-        graph_sigma.SetMarkerSize(1.0)
-        graph_sigma.SetLineWidth(2)
         graph_sigma.Draw("P SAME")
         legend_bot.AddEntry(graph_sigma, sector_labels[i_sector], "lep")
     #endfor
@@ -1427,8 +1442,9 @@ def fill_photon_histogram_from_event_list(events_for_photon_hist, cubic_coeffs, 
         mu_val = cubic_coeffs[0] + cubic_coeffs[1] * vz_e + cubic_coeffs[2] * vz_e * vz_e + cubic_coeffs[3] * vz_e * vz_e * vz_e
         delta_mu = mu_ref - mu_val
         delta_e_needed = delta_mu / slope
+        delta_e_needed_mev = 1000.0 * delta_e_needed
 
-        h.Fill(delta_e_needed)
+        h.Fill(delta_e_needed_mev)
     #endfor
 
     return h
@@ -1690,7 +1706,7 @@ def process_file_worker(task):
         photon_hist.SetLineWidth(2)
         photon_hist.SetMinimum(0.0)
         photon_hist.SetMaximum(y_max)
-        photon_hist.GetXaxis().SetTitle("Required e^{-} energy gain (GeV)")
+        photon_hist.GetXaxis().SetTitle("Required e^{-} energy gain (MeV)")
         photon_hist.GetYaxis().SetTitle("Counts")
         photon_hist.GetXaxis().CenterTitle()
         photon_hist.GetYaxis().CenterTitle()
@@ -2130,7 +2146,7 @@ def make_photon_energy_multipanel(results_by_label):
             frame = ROOT.TH1D("frame_photon_empty_%d" % i_panel, "", 100, photon_energy_min, photon_energy_max)
             frame.SetMinimum(0.0)
             frame.SetMaximum(1.0)
-            frame.GetXaxis().SetTitle("Required e^{-} energy gain (GeV)")
+            frame.GetXaxis().SetTitle("Required e^{-} energy gain (MeV)")
             frame.GetYaxis().SetTitle("Normalized counts")
             frame.Draw()
 
@@ -2147,7 +2163,7 @@ def make_photon_energy_multipanel(results_by_label):
         frame = ROOT.TH1D("frame_photon_%s" % make_safe_tag(run_period), "", 100, photon_energy_min, photon_energy_max)
         frame.SetMinimum(0.0)
         frame.SetMaximum(y_max)
-        frame.GetXaxis().SetTitle("Required e^{-} energy gain (GeV)")
+        frame.GetXaxis().SetTitle("Required e^{-} energy gain (MeV)")
         frame.GetYaxis().SetTitle("Normalized counts")
         frame.GetXaxis().CenterTitle()
         frame.GetYaxis().CenterTitle()
