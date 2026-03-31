@@ -50,7 +50,7 @@ if skip_mc:
 # input files
 # ------------------------------------------------
 
-input_file_data_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+.root"
+input_file_data_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+_2.root"
 input_file_mc_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
 input_file_data_rga_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
 
