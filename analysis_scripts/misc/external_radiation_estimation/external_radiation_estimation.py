@@ -2,6 +2,8 @@ import ROOT
 import os
 import math
 import sys
+import multiprocessing as mp
+import concurrent.futures
 
 ROOT.gROOT.SetBatch(True)
 ROOT.gStyle.SetOptStat(0)
@@ -50,11 +52,11 @@ if skip_mc:
 # input files
 # ------------------------------------------------
 
-input_file_data_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_fa18_inb_epi+_2.root"
+input_file_data_rga_epi = "/volatile/clas12/thayward/external_radiation_estimate/rga_fa18_inb_epi+.root"
 input_file_mc_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
 input_file_data_rga_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rga_fa18_inb_epi+pi-X.root"
 
-input_file_data_rgc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_full_2.root"
+input_file_data_rgc_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_full.root"
 input_file_data_rgc_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rgc_fa18_inb_NH3_epi+pi-_full.root"
 
 tree_name = "PhysicsEvents"
@@ -114,6 +116,25 @@ sector_labels = [
     "Sector 6"
 ]
 
+channel_overlay_colors = {
+    "epi_plus": ROOT.kRed + 1,
+    "epi_plus_pi_minus": ROOT.kBlue + 1
+}
+
+channel_overlay_labels = {
+    "epi_plus": "e p -> e pi^{+} X",
+    "epi_plus_pi_minus": "e p -> e pi^{+} pi^{-} X"
+}
+
+# ------------------------------------------------
+# photon-energy histogram binning
+# fixed binning so workers can safely return arrays
+# ------------------------------------------------
+
+photon_energy_min = -0.10
+photon_energy_max = 0.50
+photon_energy_bins = 240
+
 # ------------------------------------------------
 # branch configuration
 # ------------------------------------------------
@@ -145,7 +166,9 @@ channel_configs = {
         "latex_label": "RGA Data: e p -> e pi^{+} X",
         "do_energy_correction": True,
         "vz_min": -6.5,
-        "vz_max": 1.5
+        "vz_max": 1.5,
+        "run_period": "RGA",
+        "channel_key": "epi_plus"
     },
     "mc_rga_epi_plus": {
         "electron": {
@@ -173,7 +196,9 @@ channel_configs = {
         "latex_label": "RGA MC: e p -> e pi^{+} X",
         "do_energy_correction": False,
         "vz_min": -6.5,
-        "vz_max": 1.5
+        "vz_max": 1.5,
+        "run_period": "RGA",
+        "channel_key": "epi_plus"
     },
     "data_rga_epi_plus_pi_minus": {
         "electron": {
@@ -208,7 +233,9 @@ channel_configs = {
         "latex_label": "RGA Data: e p -> e pi^{+} pi^{-} X",
         "do_energy_correction": True,
         "vz_min": -6.5,
-        "vz_max": 1.5
+        "vz_max": 1.5,
+        "run_period": "RGA",
+        "channel_key": "epi_plus_pi_minus"
     },
     "data_rgc_epi_plus": {
         "electron": {
@@ -236,7 +263,9 @@ channel_configs = {
         "latex_label": "RGC Data: e p -> e pi^{+} X",
         "do_energy_correction": True,
         "vz_min": -6.0,
-        "vz_max": 1.5
+        "vz_max": 1.5,
+        "run_period": "RGC",
+        "channel_key": "epi_plus"
     },
     "data_rgc_epi_plus_pi_minus": {
         "electron": {
@@ -271,7 +300,9 @@ channel_configs = {
         "latex_label": "RGC Data: e p -> e pi^{+} pi^{-} X",
         "do_energy_correction": True,
         "vz_min": -6.0,
-        "vz_max": 1.5
+        "vz_max": 1.5,
+        "run_period": "RGC",
+        "channel_key": "epi_plus_pi_minus"
     }
 }
 
@@ -639,6 +670,56 @@ def normalize_histogram_list(hist_list):
     #endfor
 #enddef
 
+def graph_to_xy_lists(graph):
+    if graph is None:
+        return None
+    #endif
+
+    out_x = []
+    out_y = []
+
+    n = graph.GetN()
+    for i in range(n):
+        out_x.append(float(graph.GetPointX(i)))
+        out_y.append(float(graph.GetPointY(i)))
+    #endfor
+
+    return {
+        "x": out_x,
+        "y": out_y
+    }
+#enddef
+
+def build_graph_from_xy_lists(graph_xy):
+    if graph_xy is None:
+        return None
+    #endif
+
+    x_vals = graph_xy["x"]
+    y_vals = graph_xy["y"]
+
+    n = len(x_vals)
+    g = ROOT.TGraph(n)
+    for i in range(n):
+        g.SetPoint(i, x_vals[i], y_vals[i])
+    #endfor
+    return g
+#enddef
+
+def build_graph_errors_from_xyerr_lists(graph_dict):
+    x_vals = graph_dict["x"]
+    y_vals = graph_dict["y"]
+    y_errs = graph_dict["yerr"]
+
+    n = len(x_vals)
+    g = ROOT.TGraphErrors(n)
+    for i in range(n):
+        g.SetPoint(i, x_vals[i], y_vals[i])
+        g.SetPointError(i, 0.0, y_errs[i])
+    #endfor
+    return g
+#enddef
+
 def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, observable_min, observable_max, expected_peak, do_energy_correction, group_label_for_print):
     x_mu_vals = []
     y_mu_vals = []
@@ -778,45 +859,38 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
         n_vz_bins
     ))
 
-    n_mu_points = len(x_mu_vals)
-    graph_mu = ROOT.TGraphErrors(n_mu_points)
-    for i in range(n_mu_points):
-        graph_mu.SetPoint(i, x_mu_vals[i], y_mu_vals[i])
-        graph_mu.SetPointError(i, 0.0, y_mu_errs[i])
-    #endfor
-    graph_mu.SetTitle("")
-    graph_mu.SetMarkerStyle(20)
-    graph_mu.SetMarkerSize(1.0)
-    graph_mu.SetLineWidth(2)
+    graph_mu_dict = {
+        "x": x_mu_vals,
+        "y": y_mu_vals,
+        "yerr": y_mu_errs
+    }
 
-    n_sigma_points = len(x_sigma_vals)
-    graph_sigma = ROOT.TGraphErrors(n_sigma_points)
-    for i in range(n_sigma_points):
-        graph_sigma.SetPoint(i, x_sigma_vals[i], y_sigma_vals[i])
-        graph_sigma.SetPointError(i, 0.0, y_sigma_errs[i])
-    #endfor
-    graph_sigma.SetTitle("")
-    graph_sigma.SetMarkerStyle(20)
-    graph_sigma.SetMarkerSize(1.0)
-    graph_sigma.SetLineWidth(2)
+    graph_sigma_dict = {
+        "x": x_sigma_vals,
+        "y": y_sigma_vals,
+        "yerr": y_sigma_errs
+    }
 
+    cubic_coeffs = None
     cubic_fit = None
-    if n_mu_points >= 4:
+
+    if len(x_mu_vals) >= 4:
+        graph_mu_tmp = build_graph_errors_from_xyerr_lists(graph_mu_dict)
+
         cubic_fit = ROOT.TF1(
             "cubic_mu_%s_%s" % (make_safe_tag(dataset_label), make_safe_tag(group_label_for_print)),
             "[0] + [1]*x + [2]*x*x + [3]*x*x*x",
             vz_edges[0],
             vz_edges[-1]
         )
-        graph_mu.Fit(cubic_fit, "Q0")
-        cubic_fit.SetLineColor(ROOT.kRed + 1)
-        cubic_fit.SetLineStyle(2)
-        cubic_fit.SetLineWidth(2)
+        graph_mu_tmp.Fit(cubic_fit, "Q0")
 
         c0 = cubic_fit.GetParameter(0)
         c1 = cubic_fit.GetParameter(1)
         c2 = cubic_fit.GetParameter(2)
         c3 = cubic_fit.GetParameter(3)
+
+        cubic_coeffs = [float(c0), float(c1), float(c2), float(c3)]
 
         print("")
         print("[%s] Cubic fit for mu(vz_e), %s:" % (dataset_label, group_label_for_print))
@@ -825,9 +899,9 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
         print("[%s] Not enough fitted points for cubic fit for %s." % (dataset_label, group_label_for_print))
     #endif
 
-    correction_graph = None
+    correction_xy = None
 
-    if do_energy_correction and cubic_fit and len(bin_mean_vz) > 0:
+    if do_energy_correction and cubic_coeffs is not None and len(bin_mean_vz) > 0:
         print("")
         print("[%s] Computing needed scattered-electron energy correction for %s relative to vz_e = %.2f cm" % (
             dataset_label,
@@ -835,7 +909,7 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
             vz_edges[0]
         ))
 
-        mu_ref = cubic_fit.Eval(vz_edges[0])
+        mu_ref = cubic_coeffs[0] + cubic_coeffs[1] * vz_edges[0] + cubic_coeffs[2] * vz_edges[0] * vz_edges[0] + cubic_coeffs[3] * vz_edges[0] * vz_edges[0] * vz_edges[0]
 
         x_corr_vals = []
         y_corr_vals = []
@@ -851,7 +925,7 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
                 continue
             #endif
 
-            mu_val = cubic_fit.Eval(vz_val)
+            mu_val = cubic_coeffs[0] + cubic_coeffs[1] * vz_val + cubic_coeffs[2] * vz_val * vz_val + cubic_coeffs[3] * vz_val * vz_val * vz_val
             delta_mu = mu_ref - mu_val
             delta_e_needed = delta_mu / slope_val
 
@@ -867,21 +941,19 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
             ))
         #endfor
 
-        n_corr = len(x_corr_vals)
-        correction_graph = ROOT.TGraph(n_corr)
-        for i in range(n_corr):
-            correction_graph.SetPoint(i, x_corr_vals[i], y_corr_vals[i])
-        #endfor
-        correction_graph.SetLineWidth(3)
+        correction_xy = {
+            "x": x_corr_vals,
+            "y": y_corr_vals
+        }
     #endif
 
     return {
         "fit_functions": fit_functions,
         "fit_statuses": fit_statuses,
-        "graph_mu": graph_mu,
-        "graph_sigma": graph_sigma,
-        "cubic_fit": cubic_fit,
-        "correction_graph": correction_graph,
+        "graph_mu_dict": graph_mu_dict,
+        "graph_sigma_dict": graph_sigma_dict,
+        "cubic_coeffs": cubic_coeffs,
+        "correction_xy": correction_xy,
         "y_sigma_vals": y_sigma_vals,
         "y_sigma_errs": y_sigma_errs
     }
@@ -889,6 +961,28 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
 
 def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results, vz_edges, vz_min, vz_max, expected_peak, observable_axis_title):
     n_vz_bins = len(histograms)
+
+    graph_mu = build_graph_errors_from_xyerr_lists(fit_results["graph_mu_dict"])
+    graph_sigma = build_graph_errors_from_xyerr_lists(fit_results["graph_sigma_dict"])
+
+    cubic_fit = None
+    if fit_results["cubic_coeffs"] is not None:
+        cubic_fit = ROOT.TF1(
+            "cubic_draw_%s" % make_safe_tag(dataset_label),
+            "[0] + [1]*x + [2]*x*x + [3]*x*x*x",
+            vz_min,
+            vz_max
+        )
+        cubic_fit.SetParameters(
+            fit_results["cubic_coeffs"][0],
+            fit_results["cubic_coeffs"][1],
+            fit_results["cubic_coeffs"][2],
+            fit_results["cubic_coeffs"][3]
+        )
+        cubic_fit.SetLineColor(ROOT.kRed + 1)
+        cubic_fit.SetLineStyle(2)
+        cubic_fit.SetLineWidth(2)
+    #endif
 
     canvas = ROOT.TCanvas(
         "canvas_%s" % make_safe_tag(dataset_label),
@@ -999,10 +1093,10 @@ def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results
     line_expected.SetLineWidth(2)
     line_expected.Draw("same")
 
-    fit_results["graph_mu"].Draw("P SAME")
+    graph_mu.Draw("P SAME")
 
-    if fit_results["cubic_fit"]:
-        fit_results["cubic_fit"].Draw("same")
+    if cubic_fit:
+        cubic_fit.Draw("same")
     #endif
 
     legend_right_top = ROOT.TLegend(0.16, 0.74, 0.94, 0.90)
@@ -1010,10 +1104,10 @@ def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results
     legend_right_top.SetFillStyle(1001)
     legend_right_top.SetFillColor(ROOT.kWhite)
     legend_right_top.SetTextSize(0.023)
-    legend_right_top.AddEntry(fit_results["graph_mu"], "Point = fitted #mu, error bar = fit uncertainty on #mu", "lep")
+    legend_right_top.AddEntry(graph_mu, "Point = fitted #mu, error bar = fit uncertainty on #mu", "lep")
     legend_right_top.AddEntry(line_expected, "Reference peak position", "l")
-    if fit_results["cubic_fit"]:
-        legend_right_top.AddEntry(fit_results["cubic_fit"], "Cubic fit to #mu(v_{z,e})", "l")
+    if cubic_fit:
+        legend_right_top.AddEntry(cubic_fit, "Cubic fit to #mu(v_{z,e})", "l")
     #endif
     legend_right_top.Draw()
 
@@ -1050,14 +1144,14 @@ def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results
     frame_right_bot.GetYaxis().SetTitleOffset(1.35)
     frame_right_bot.Draw()
 
-    fit_results["graph_sigma"].Draw("P SAME")
+    graph_sigma.Draw("P SAME")
 
     legend_right_bot = ROOT.TLegend(0.17, 0.80, 0.77, 0.91)
     legend_right_bot.SetBorderSize(1)
     legend_right_bot.SetFillStyle(1001)
     legend_right_bot.SetFillColor(ROOT.kWhite)
     legend_right_bot.SetTextSize(0.028)
-    legend_right_bot.AddEntry(fit_results["graph_sigma"], "Point = fitted #sigma, error bar = fit uncertainty", "lep")
+    legend_right_bot.AddEntry(graph_sigma, "Point = fitted #sigma, error bar = fit uncertainty", "lep")
     legend_right_bot.Draw()
 
     latex_right_bot = ROOT.TLatex()
@@ -1075,6 +1169,14 @@ def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results
 
 def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_fit_results, vz_edges, vz_min, vz_max, expected_peak, observable_axis_title):
     n_vz_bins = len(sector_histograms[0])
+
+    graph_mus = []
+    graph_sigmas = []
+
+    for i_sector in range(N_SECTORS):
+        graph_mus.append(build_graph_errors_from_xyerr_lists(sector_fit_results[i_sector]["graph_mu_dict"]))
+        graph_sigmas.append(build_graph_errors_from_xyerr_lists(sector_fit_results[i_sector]["graph_sigma_dict"]))
+    #endfor
 
     canvas = ROOT.TCanvas(
         "canvas_sector_%s" % make_safe_tag(dataset_label),
@@ -1211,7 +1313,7 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     legend_top.AddEntry(line_expected, "Reference peak position", "l")
 
     for i_sector in range(N_SECTORS):
-        graph_mu = sector_fit_results[i_sector]["graph_mu"]
+        graph_mu = graph_mus[i_sector]
         graph_mu.SetLineColor(sector_colors[i_sector])
         graph_mu.SetMarkerColor(sector_colors[i_sector])
         graph_mu.SetMarkerStyle(20 + i_sector)
@@ -1265,7 +1367,7 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     legend_bot.SetTextSize(0.026)
 
     for i_sector in range(N_SECTORS):
-        graph_sigma = sector_fit_results[i_sector]["graph_sigma"]
+        graph_sigma = graph_sigmas[i_sector]
         graph_sigma.SetLineColor(sector_colors[i_sector])
         graph_sigma.SetMarkerColor(sector_colors[i_sector])
         graph_sigma.SetMarkerStyle(20 + i_sector)
@@ -1290,7 +1392,74 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     return canvas
 #enddef
 
-def process_file(input_file, dataset_label):
+def fill_photon_histogram_from_event_list(events_for_photon_hist, cubic_coeffs, vz_ref):
+    h = ROOT.TH1D(
+        "h_photon_energy_temp",
+        "",
+        photon_energy_bins,
+        photon_energy_min,
+        photon_energy_max
+    )
+    h.Sumw2()
+
+    if cubic_coeffs is None:
+        return h
+    #endif
+
+    mu_ref = cubic_coeffs[0] + cubic_coeffs[1] * vz_ref + cubic_coeffs[2] * vz_ref * vz_ref + cubic_coeffs[3] * vz_ref * vz_ref * vz_ref
+
+    for event_tuple in events_for_photon_hist:
+        vz_e = event_tuple[0]
+        slope = event_tuple[1]
+
+        if slope is None:
+            continue
+        #endif
+
+        if not math.isfinite(slope):
+            continue
+        #endif
+
+        if abs(slope) < 1.0e-12:
+            continue
+        #endif
+
+        mu_val = cubic_coeffs[0] + cubic_coeffs[1] * vz_e + cubic_coeffs[2] * vz_e * vz_e + cubic_coeffs[3] * vz_e * vz_e * vz_e
+        delta_mu = mu_ref - mu_val
+        delta_e_needed = delta_mu / slope
+
+        h.Fill(delta_e_needed)
+    #endfor
+
+    return h
+#enddef
+
+def histogram_to_counts_list(hist):
+    out = []
+    for i_bin in range(1, hist.GetNbinsX() + 1):
+        out.append(float(hist.GetBinContent(i_bin)))
+    #endfor
+    return out
+#enddef
+
+def counts_list_to_hist(hist_name, counts):
+    h = ROOT.TH1D(
+        hist_name,
+        "",
+        photon_energy_bins,
+        photon_energy_min,
+        photon_energy_max
+    )
+    for i_bin in range(len(counts)):
+        h.SetBinContent(i_bin + 1, counts[i_bin])
+    #endfor
+    return h
+#enddef
+
+def process_file_worker(task):
+    input_file = task["input_file"]
+    dataset_label = task["dataset_label"]
+
     cfg = channel_configs[dataset_label]
     expected_peak = cfg["expected_peak"]
     channel_latex = cfg["latex_label"]
@@ -1354,6 +1523,8 @@ def process_file(input_file, dataset_label):
     n_kept_integrated = 0
     n_kept_sector = [0] * N_SECTORS
 
+    events_for_photon_hist = []
+
     for i_entry in range(n_entries):
         tree.GetEntry(i_entry)
         print_progress(i_entry, n_entries, dataset_label)
@@ -1400,16 +1571,18 @@ def process_file(input_file, dataset_label):
             continue
         #endif
 
-        # fill integrated
         hist_groups[INTEGRATED_INDEX][vz_bin].Fill(observable_val)
         update_group_accumulator(group_accs[INTEGRATED_INDEX], vz_bin, vz_e, slope)
         n_kept_integrated += 1
 
-        # fill sector-specific
         sector_index = sector
         hist_groups[sector_index][vz_bin].Fill(observable_val)
         update_group_accumulator(group_accs[sector_index], vz_bin, vz_e, slope)
         n_kept_sector[sector - 1] += 1
+
+        if cfg["do_energy_correction"]:
+            events_for_photon_hist.append((float(vz_e), None if slope is None else float(slope)))
+        #endif
     #endfor
 
     print("[%s] event loop complete" % dataset_label)
@@ -1485,21 +1658,77 @@ def process_file(input_file, dataset_label):
         observable_axis_title
     )
 
+    photon_hist_counts = None
+
+    if cfg["do_energy_correction"] and integrated_fit_results["cubic_coeffs"] is not None:
+        photon_hist = fill_photon_histogram_from_event_list(
+            events_for_photon_hist,
+            integrated_fit_results["cubic_coeffs"],
+            vz_min
+        )
+
+        photon_hist_counts = histogram_to_counts_list(photon_hist)
+
+        photon_canvas = ROOT.TCanvas(
+            "canvas_photon_energy_%s" % make_safe_tag(dataset_label),
+            "photon_energy_" + dataset_label,
+            1000,
+            800
+        )
+        photon_canvas.cd()
+
+        ROOT.gPad.SetLeftMargin(0.14)
+        ROOT.gPad.SetRightMargin(0.05)
+        ROOT.gPad.SetBottomMargin(0.13)
+        ROOT.gPad.SetTopMargin(0.08)
+
+        local_max = photon_hist.GetMaximum()
+        y_max = 1.25 * local_max if local_max > 0.0 else 1.0
+
+        photon_hist.SetTitle("")
+        photon_hist.SetLineColor(ROOT.kBlue + 1)
+        photon_hist.SetLineWidth(2)
+        photon_hist.SetMinimum(0.0)
+        photon_hist.SetMaximum(y_max)
+        photon_hist.GetXaxis().SetTitle("Required e^{-} energy gain (GeV)")
+        photon_hist.GetYaxis().SetTitle("Counts")
+        photon_hist.GetXaxis().CenterTitle()
+        photon_hist.GetYaxis().CenterTitle()
+        photon_hist.GetXaxis().SetTitleSize(0.05)
+        photon_hist.GetYaxis().SetTitleSize(0.05)
+        photon_hist.GetXaxis().SetLabelSize(0.04)
+        photon_hist.GetYaxis().SetLabelSize(0.04)
+        photon_hist.GetYaxis().SetTitleOffset(1.25)
+        photon_hist.Draw("HIST")
+
+        latex = ROOT.TLatex()
+        latex.SetNDC()
+        latex.SetTextSize(0.040)
+        latex.DrawLatex(0.15, 0.93, "%s: event-by-event required e^{-} energy gain" % channel_latex)
+
+        output_png = os.path.join(output_dir, "external_radiation_photon_energy_%s.png" % make_safe_tag(dataset_label))
+        photon_canvas.SaveAs(output_png)
+        print("Saved: %s" % output_png)
+    #endif
+
     print("Finished dataset: %s" % dataset_label)
     f.Close()
 
     return {
         "dataset_label": dataset_label,
         "channel_latex": channel_latex,
-        "correction_graph": integrated_fit_results["correction_graph"],
-        "sector_correction_graphs": [sector_fit_results[i]["correction_graph"] for i in range(N_SECTORS)],
+        "run_period": cfg["run_period"],
+        "channel_key": cfg["channel_key"],
+        "do_energy_correction": cfg["do_energy_correction"],
+        "integrated_correction_xy": integrated_fit_results["correction_xy"],
+        "sector_correction_xys": [sector_fit_results[i]["correction_xy"] for i in range(N_SECTORS)],
+        "photon_hist_counts": photon_hist_counts,
         "vz_min": vz_min,
-        "vz_max": vz_max,
-        "do_energy_correction": cfg["do_energy_correction"]
+        "vz_max": vz_max
     }
 #enddef
 
-def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, result_rgc_epi, result_rgc_epipim):
+def make_combined_energy_correction_plot(results_by_label):
     graphs = []
     labels = []
     colors = []
@@ -1508,57 +1737,51 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
     x_min = None
     x_max = None
 
-    if result_rga_epi is not None and result_rga_epi["correction_graph"] is not None:
-        graphs.append(result_rga_epi["correction_graph"])
-        labels.append("RGA: e p -> e pi^{+} X")
-        colors.append(ROOT.kRed + 1)
-        styles.append(1)
-        if x_min is None or result_rga_epi["vz_min"] < x_min:
-            x_min = result_rga_epi["vz_min"]
-        #endif
-        if x_max is None or result_rga_epi["vz_max"] > x_max:
-            x_max = result_rga_epi["vz_max"]
-        #endif
-    #endif
+    ordered_labels = [
+        "data_rga_epi_plus",
+        "data_rga_epi_plus_pi_minus",
+        "data_rgc_epi_plus",
+        "data_rgc_epi_plus_pi_minus"
+    ]
 
-    if result_rga_epipim is not None and result_rga_epipim["correction_graph"] is not None:
-        graphs.append(result_rga_epipim["correction_graph"])
-        labels.append("RGA: e p -> e pi^{+} pi^{-} X")
-        colors.append(ROOT.kBlue + 1)
-        styles.append(1)
-        if x_min is None or result_rga_epipim["vz_min"] < x_min:
-            x_min = result_rga_epipim["vz_min"]
+    for dataset_label in ordered_labels:
+        if dataset_label not in results_by_label:
+            continue
         #endif
-        if x_max is None or result_rga_epipim["vz_max"] > x_max:
-            x_max = result_rga_epipim["vz_max"]
-        #endif
-    #endif
 
-    if result_rgc_epi is not None and result_rgc_epi["correction_graph"] is not None:
-        graphs.append(result_rgc_epi["correction_graph"])
-        labels.append("RGC: e p -> e pi^{+} X")
-        colors.append(ROOT.kRed + 1)
-        styles.append(2)
-        if x_min is None or result_rgc_epi["vz_min"] < x_min:
-            x_min = result_rgc_epi["vz_min"]
+        result = results_by_label[dataset_label]
+        if result["integrated_correction_xy"] is None:
+            continue
         #endif
-        if x_max is None or result_rgc_epi["vz_max"] > x_max:
-            x_max = result_rgc_epi["vz_max"]
-        #endif
-    #endif
 
-    if result_rgc_epipim is not None and result_rgc_epipim["correction_graph"] is not None:
-        graphs.append(result_rgc_epipim["correction_graph"])
-        labels.append("RGC: e p -> e pi^{+} pi^{-} X")
-        colors.append(ROOT.kBlue + 1)
-        styles.append(2)
-        if x_min is None or result_rgc_epipim["vz_min"] < x_min:
-            x_min = result_rgc_epipim["vz_min"]
+        graph = build_graph_from_xy_lists(result["integrated_correction_xy"])
+        graphs.append(graph)
+
+        if dataset_label == "data_rga_epi_plus":
+            labels.append("RGA: e p -> e pi^{+} X")
+            colors.append(ROOT.kRed + 1)
+            styles.append(1)
+        elif dataset_label == "data_rga_epi_plus_pi_minus":
+            labels.append("RGA: e p -> e pi^{+} pi^{-} X")
+            colors.append(ROOT.kBlue + 1)
+            styles.append(1)
+        elif dataset_label == "data_rgc_epi_plus":
+            labels.append("RGC: e p -> e pi^{+} X")
+            colors.append(ROOT.kRed + 1)
+            styles.append(2)
+        elif dataset_label == "data_rgc_epi_plus_pi_minus":
+            labels.append("RGC: e p -> e pi^{+} pi^{-} X")
+            colors.append(ROOT.kBlue + 1)
+            styles.append(2)
         #endif
-        if x_max is None or result_rgc_epipim["vz_max"] > x_max:
-            x_max = result_rgc_epipim["vz_max"]
+
+        if x_min is None or result["vz_min"] < x_min:
+            x_min = result["vz_min"]
         #endif
-    #endif
+        if x_max is None or result["vz_max"] > x_max:
+            x_max = result["vz_max"]
+        #endif
+    #endfor
 
     if len(graphs) == 0:
         print("Skipping combined energy-correction plot because no correction graphs are available.")
@@ -1578,19 +1801,18 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
     for graph in graphs:
         n = graph.GetN()
         for i in range(n):
-            y_val = graph.GetPointY(i)
-            y_float = float(y_val)
+            y_val = float(graph.GetPointY(i))
 
             if first_point:
-                min_y = y_float
-                max_y = y_float
+                min_y = y_val
+                max_y = y_val
                 first_point = False
             else:
-                if y_float < min_y:
-                    min_y = y_float
+                if y_val < min_y:
+                    min_y = y_val
                 #endif
-                if y_float > max_y:
-                    max_y = y_float
+                if y_val > max_y:
+                    max_y = y_val
                 #endif
             #endif
         #endfor
@@ -1672,11 +1894,12 @@ def draw_sector_energy_subplot(pad, result, frame_name, title_text):
     max_y = None
 
     for i_sector in range(N_SECTORS):
-        graph = result["sector_correction_graphs"][i_sector]
-        if graph is None:
+        graph_xy = result["sector_correction_xys"][i_sector]
+        if graph_xy is None:
             continue
         #endif
 
+        graph = build_graph_from_xy_lists(graph_xy)
         graph.SetLineColor(sector_colors[i_sector])
         graph.SetLineWidth(3)
         graphs.append((i_sector, graph))
@@ -1761,28 +1984,29 @@ def draw_sector_energy_subplot(pad, result, frame_name, title_text):
     latex.DrawLatex(0.16, 0.93, title_text)
 #enddef
 
-def make_sector_energy_correction_multipanel(result_data_rga_epi, result_data_rga_epipim, result_data_rgc_epi, result_data_rgc_epipim):
-    panels = [
-        result_data_rga_epi,
-        result_data_rga_epipim,
-        result_data_rgc_epi,
-        result_data_rgc_epipim
+def make_sector_energy_correction_multipanel(results_by_label):
+    ordered_labels = [
+        "data_rga_epi_plus",
+        "data_rga_epi_plus_pi_minus",
+        "data_rgc_epi_plus",
+        "data_rgc_epi_plus_pi_minus"
     ]
 
-    labels = [
-        "RGA: e p -> e pi^{+} X",
-        "RGA: e p -> e pi^{+} pi^{-} X",
-        "RGC: e p -> e pi^{+} X",
-        "RGC: e p -> e pi^{+} pi^{-} X"
-    ]
+    labels = {
+        "data_rga_epi_plus": "RGA: e p -> e pi^{+} X",
+        "data_rga_epi_plus_pi_minus": "RGA: e p -> e pi^{+} pi^{-} X",
+        "data_rgc_epi_plus": "RGC: e p -> e pi^{+} X",
+        "data_rgc_epi_plus_pi_minus": "RGC: e p -> e pi^{+} pi^{-} X"
+    }
 
     canvas = ROOT.TCanvas("canvas_sector_energy_correction_multipanel", "sector energy correction multipanel", 1600, 1200)
     canvas.Divide(2, 2, 0.001, 0.001)
 
-    for i_panel in range(4):
+    for i_panel in range(len(ordered_labels)):
+        dataset_label = ordered_labels[i_panel]
         canvas.cd(i_panel + 1)
 
-        if panels[i_panel] is None or not panels[i_panel]["do_energy_correction"]:
+        if dataset_label not in results_by_label:
             ROOT.gPad.SetLeftMargin(0.15)
             ROOT.gPad.SetRightMargin(0.05)
             ROOT.gPad.SetBottomMargin(0.14)
@@ -1796,16 +2020,39 @@ def make_sector_energy_correction_multipanel(result_data_rga_epi, result_data_rg
             latex = ROOT.TLatex()
             latex.SetNDC()
             latex.SetTextSize(0.055)
-            latex.DrawLatex(0.18, 0.90, labels[i_panel])
+            latex.DrawLatex(0.18, 0.90, labels[dataset_label])
             latex.DrawLatex(0.30, 0.50, "No correction curves available")
+            continue
+        #endif
+
+        result = results_by_label[dataset_label]
+
+        if not result["do_energy_correction"]:
+            ROOT.gPad.SetLeftMargin(0.15)
+            ROOT.gPad.SetRightMargin(0.05)
+            ROOT.gPad.SetBottomMargin(0.14)
+            ROOT.gPad.SetTopMargin(0.10)
+
+            frame = ROOT.TH1D("frame_blank_sector_energy_%d" % i_panel, "", 100, result["vz_min"], result["vz_max"])
+            frame.SetMinimum(0.0)
+            frame.SetMaximum(0.01)
+            frame.GetXaxis().SetTitle("v_{z,e} (cm)")
+            frame.GetYaxis().SetTitle("e^{-} energy correction (GeV)")
+            frame.Draw()
+
+            latex = ROOT.TLatex()
+            latex.SetNDC()
+            latex.SetTextSize(0.055)
+            latex.DrawLatex(0.18, 0.90, labels[dataset_label])
+            latex.DrawLatex(0.25, 0.50, "No correction curves available")
             continue
         #endif
 
         draw_sector_energy_subplot(
             ROOT.gPad,
-            panels[i_panel],
+            result,
             "frame_sector_energy_panel_%d" % i_panel,
-            labels[i_panel]
+            labels[dataset_label]
         )
     #endfor
 
@@ -1814,48 +2061,185 @@ def make_sector_energy_correction_multipanel(result_data_rga_epi, result_data_rg
     print("Saved: %s" % output_png)
 #enddef
 
-# ------------------------------------------------
-# run all datasets
-# ------------------------------------------------
+def make_photon_energy_multipanel(results_by_label):
+    run_periods = []
+    for dataset_label, result in results_by_label.items():
+        if result["photon_hist_counts"] is None:
+            continue
+        #endif
+        if result["run_period"] not in run_periods:
+            run_periods.append(result["run_period"])
+        #endif
+    #endfor
 
-result_data_rga_epi = process_file(
-    input_file_data_rga_epi,
-    "data_rga_epi_plus"
-)
+    if len(run_periods) == 0:
+        print("Skipping photon-energy multipanel because no photon histograms are available.")
+        return
+    #endif
 
-result_mc_rga_epi = None
-if not skip_mc:
-    result_mc_rga_epi = process_file(
-        input_file_mc_rga_epi,
-        "mc_rga_epi_plus"
-    )
+    run_periods = sorted(run_periods)
+
+    n_panels = len(run_periods)
+    n_cols = 2 if n_panels > 1 else 1
+    n_rows = int(math.ceil(float(n_panels) / float(n_cols)))
+
+    canvas = ROOT.TCanvas("canvas_photon_energy_multipanel", "photon energy multipanel", 900 * n_cols, 700 * n_rows)
+    canvas.Divide(n_cols, n_rows, 0.001, 0.001)
+
+    for i_panel in range(n_panels):
+        run_period = run_periods[i_panel]
+        canvas.cd(i_panel + 1)
+
+        ROOT.gPad.SetLeftMargin(0.14)
+        ROOT.gPad.SetRightMargin(0.05)
+        ROOT.gPad.SetBottomMargin(0.13)
+        ROOT.gPad.SetTopMargin(0.08)
+
+        hists_to_draw = []
+        local_max = 0.0
+
+        for dataset_label, result in results_by_label.items():
+            if result["run_period"] != run_period:
+                continue
+            #endif
+
+            if result["photon_hist_counts"] is None:
+                continue
+            #endif
+
+            channel_key = result["channel_key"]
+            hist_name = "h_photon_mult_%s" % make_safe_tag(dataset_label)
+            h = counts_list_to_hist(hist_name, result["photon_hist_counts"])
+
+            integral = h.Integral()
+            if integral > 0.0:
+                h.Scale(1.0 / integral)
+            #endif
+
+            h.SetLineColor(channel_overlay_colors[channel_key])
+            h.SetLineWidth(3)
+
+            if h.GetMaximum() > local_max:
+                local_max = h.GetMaximum()
+            #endif
+
+            hists_to_draw.append((channel_key, h))
+        #endfor
+
+        if len(hists_to_draw) == 0:
+            frame = ROOT.TH1D("frame_photon_empty_%d" % i_panel, "", 100, photon_energy_min, photon_energy_max)
+            frame.SetMinimum(0.0)
+            frame.SetMaximum(1.0)
+            frame.GetXaxis().SetTitle("Required e^{-} energy gain (GeV)")
+            frame.GetYaxis().SetTitle("Normalized counts")
+            frame.Draw()
+
+            latex = ROOT.TLatex()
+            latex.SetNDC()
+            latex.SetTextSize(0.055)
+            latex.DrawLatex(0.18, 0.90, "%s" % run_period)
+            latex.DrawLatex(0.28, 0.50, "No photon-energy histograms available")
+            continue
+        #endif
+
+        y_max = 1.25 * local_max if local_max > 0.0 else 1.0
+
+        frame = ROOT.TH1D("frame_photon_%s" % make_safe_tag(run_period), "", 100, photon_energy_min, photon_energy_max)
+        frame.SetMinimum(0.0)
+        frame.SetMaximum(y_max)
+        frame.GetXaxis().SetTitle("Required e^{-} energy gain (GeV)")
+        frame.GetYaxis().SetTitle("Normalized counts")
+        frame.GetXaxis().CenterTitle()
+        frame.GetYaxis().CenterTitle()
+        frame.GetXaxis().SetTitleSize(0.05)
+        frame.GetYaxis().SetTitleSize(0.05)
+        frame.GetXaxis().SetLabelSize(0.04)
+        frame.GetYaxis().SetLabelSize(0.04)
+        frame.GetYaxis().SetTitleOffset(1.25)
+        frame.Draw()
+
+        legend = ROOT.TLegend(0.16, 0.72, 0.86, 0.89)
+        legend.SetBorderSize(1)
+        legend.SetFillStyle(1001)
+        legend.SetFillColor(ROOT.kWhite)
+        legend.SetTextSize(0.030)
+
+        for channel_key, h in hists_to_draw:
+            h.Draw("HIST SAME")
+            legend.AddEntry(h, channel_overlay_labels[channel_key], "l")
+        #endfor
+
+        legend.Draw()
+
+        latex = ROOT.TLatex()
+        latex.SetNDC()
+        latex.SetTextSize(0.045)
+        latex.DrawLatex(0.16, 0.93, "%s: event-by-event required e^{-} energy gain" % run_period)
+    #endfor
+
+    output_png = os.path.join(output_dir, "external_radiation_photon_energy_multipanel.png")
+    canvas.SaveAs(output_png)
+    print("Saved: %s" % output_png)
+#enddef
+
+def run_all():
+    tasks = [
+        {
+            "input_file": input_file_data_rga_epi,
+            "dataset_label": "data_rga_epi_plus"
+        },
+        {
+            "input_file": input_file_data_rga_epipim,
+            "dataset_label": "data_rga_epi_plus_pi_minus"
+        },
+        {
+            "input_file": input_file_data_rgc_epi,
+            "dataset_label": "data_rgc_epi_plus"
+        },
+        {
+            "input_file": input_file_data_rgc_epipim,
+            "dataset_label": "data_rgc_epi_plus_pi_minus"
+        }
+    ]
+
+    if not skip_mc:
+        tasks.append({
+            "input_file": input_file_mc_rga_epi,
+            "dataset_label": "mc_rga_epi_plus"
+        })
+    #endif
+
+    max_workers = min(5, len(tasks))
+    print("")
+    print("Launching parallel processing with %d worker(s) (capped at 5)" % max_workers)
+
+    results_by_label = {}
+
+    mp_ctx = mp.get_context("spawn")
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers, mp_context=mp_ctx) as executor:
+        future_to_label = {}
+        for task in tasks:
+            future = executor.submit(process_file_worker, task)
+            future_to_label[future] = task["dataset_label"]
+        #endfor
+
+        for future in concurrent.futures.as_completed(future_to_label):
+            dataset_label = future_to_label[future]
+            result = future.result()
+            results_by_label[dataset_label] = result
+            print("Completed dataset: %s" % dataset_label)
+        #endfor
+    #endwith
+
+    make_combined_energy_correction_plot(results_by_label)
+    make_sector_energy_correction_multipanel(results_by_label)
+    make_photon_energy_multipanel(results_by_label)
+
+    print("")
+    print("All processing complete.")
+#enddef
+
+if __name__ == "__main__":
+    run_all()
 #endif
-
-result_data_rga_epipim = process_file(
-    input_file_data_rga_epipim,
-    "data_rga_epi_plus_pi_minus"
-)
-
-result_data_rgc_epi = process_file(
-    input_file_data_rgc_epi,
-    "data_rgc_epi_plus"
-)
-
-result_data_rgc_epipim = process_file(
-    input_file_data_rgc_epipim,
-    "data_rgc_epi_plus_pi_minus"
-)
-
-make_combined_energy_correction_plot(
-    result_data_rga_epi,
-    result_data_rga_epipim,
-    result_data_rgc_epi,
-    result_data_rgc_epipim
-)
-
-make_sector_energy_correction_multipanel(
-    result_data_rga_epi,
-    result_data_rga_epipim,
-    result_data_rgc_epi,
-    result_data_rgc_epipim
-)
