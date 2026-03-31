@@ -111,9 +111,6 @@ public class ThreeParticles {
         } else if (variables.y() > 0.80) {
             return false;
         } 
-        else if (variables.Mx2() > 1.40) {
-            return false;
-        } 
         return true;
     }
     
