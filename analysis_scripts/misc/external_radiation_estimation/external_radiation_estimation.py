@@ -85,6 +85,7 @@ vz_step = 0.5
 
 # ------------------------------------------------
 # branch configuration
+# note: Mx2 bins reduced from 60 to 30
 # ------------------------------------------------
 
 channel_configs = {
@@ -107,11 +108,11 @@ channel_configs = {
         "observable_branch": "Mx2",
         "observable_min": 0.6,
         "observable_max": 1.2,
-        "observable_bins": 60,
+        "observable_bins": 30,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_n2,
-        "latex_label": "RGA Data: e p #rightarrow e #pi^{+} X",
+        "latex_label": "RGA Data: e p -> e pi^{+} X",
         "do_energy_correction": True,
         "vz_min": -6.5,
         "vz_max": 1.5
@@ -135,11 +136,11 @@ channel_configs = {
         "observable_branch": "Mx2",
         "observable_min": 0.6,
         "observable_max": 1.2,
-        "observable_bins": 60,
+        "observable_bins": 30,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_n2,
-        "latex_label": "RGA MC: e p #rightarrow e #pi^{+} X",
+        "latex_label": "RGA MC: e p -> e pi^{+} X",
         "do_energy_correction": False,
         "vz_min": -6.5,
         "vz_max": 1.5
@@ -170,11 +171,11 @@ channel_configs = {
         "observable_branch": "Mx2",
         "observable_min": 0.6,
         "observable_max": 1.2,
-        "observable_bins": 60,
+        "observable_bins": 30,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_p2,
-        "latex_label": "RGA Data: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "latex_label": "RGA Data: e p -> e pi^{+} pi^{-} X",
         "do_energy_correction": True,
         "vz_min": -6.5,
         "vz_max": 1.5
@@ -198,11 +199,11 @@ channel_configs = {
         "observable_branch": "Mx2",
         "observable_min": 0.6,
         "observable_max": 1.2,
-        "observable_bins": 60,
+        "observable_bins": 30,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_n2,
-        "latex_label": "RGC Data: e p #rightarrow e #pi^{+} X",
+        "latex_label": "RGC Data: e p -> e pi^{+} X",
         "do_energy_correction": True,
         "vz_min": -6.0,
         "vz_max": 1.5
@@ -233,11 +234,11 @@ channel_configs = {
         "observable_branch": "Mx2",
         "observable_min": 0.6,
         "observable_max": 1.2,
-        "observable_bins": 60,
+        "observable_bins": 30,
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_p2,
-        "latex_label": "RGC Data: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "latex_label": "RGC Data: e p -> e pi^{+} pi^{-} X",
         "do_energy_correction": True,
         "vz_min": -6.0,
         "vz_max": 1.5
@@ -480,6 +481,43 @@ def fit_is_reasonable(fit_func, fit_result, observable_min, observable_max):
     return fit_ok, status
 #enddef
 
+def get_fit_formula(dataset_label):
+    label = dataset_label.lower()
+
+    if "rga" in label:
+        return "gaus(0)+pol2(3)"
+    elif "rgc" in label:
+        return "gaus(0)+pol1(3)"
+    else:
+        raise RuntimeError("Could not determine fit formula for dataset_label = %s" % dataset_label)
+    #endif
+#enddef
+
+def initialize_fit_function(fit_func, dataset_label, peak_height, expected_peak):
+    mu_low = 0.75
+    mu_high = 1.00
+    sigma_init = 0.03
+
+    fit_func.SetParameter(0, peak_height)
+    fit_func.SetParameter(1, expected_peak)
+    fit_func.SetParameter(2, sigma_init)
+
+    if "rga" in dataset_label.lower():
+        fit_func.SetParameter(3, 0.0)
+        fit_func.SetParameter(4, 0.0)
+        fit_func.SetParameter(5, 0.0)
+    elif "rgc" in dataset_label.lower():
+        fit_func.SetParameter(3, 0.0)
+        fit_func.SetParameter(4, 0.0)
+    else:
+        raise RuntimeError("Could not initialize fit parameters for dataset_label = %s" % dataset_label)
+    #endif
+
+    fit_func.SetParLimits(0, 0.0, 10.0)
+    fit_func.SetParLimits(1, mu_low, mu_high)
+    fit_func.SetParLimits(2, 0.003, 0.20)
+#enddef
+
 def process_file(input_file, dataset_label):
     cfg = channel_configs[dataset_label]
     expected_peak = cfg["expected_peak"]
@@ -659,23 +697,10 @@ def process_file(input_file, dataset_label):
         peak_height = h.GetBinContent(max_bin)
 
         fit_name = "fit_%s_%d" % (make_safe_tag(dataset_label), i)
-        fit_func = ROOT.TF1(fit_name, "gaus(0)+pol3(3)", observable_min, observable_max)
+        fit_formula = get_fit_formula(dataset_label)
+        fit_func = ROOT.TF1(fit_name, fit_formula, observable_min, observable_max)
 
-        mu_low = 0.75
-        mu_high = 1.00
-        sigma_init = 0.03
-
-        fit_func.SetParameter(0, peak_height)
-        fit_func.SetParameter(1, expected_peak)
-        fit_func.SetParameter(2, sigma_init)
-        fit_func.SetParameter(3, 0.0)
-        fit_func.SetParameter(4, 0.0)
-        fit_func.SetParameter(5, 0.0)
-        fit_func.SetParameter(6, 0.0)
-
-        fit_func.SetParLimits(0, 0.0, 10.0)
-        fit_func.SetParLimits(1, mu_low, mu_high)
-        fit_func.SetParLimits(2, 0.003, 0.20)
+        initialize_fit_function(fit_func, dataset_label, peak_height, expected_peak)
 
         fit_result = h.Fit(fit_func, "RQ0S")
         fit_ok, fit_status = fit_is_reasonable(
@@ -685,6 +710,7 @@ def process_file(input_file, dataset_label):
             observable_max
         )
 
+        print("[%s]   fit formula = %s" % (dataset_label, fit_formula))
         print("[%s]   fit status = %d" % (dataset_label, fit_status))
 
         if fit_ok and fit_status != 0:
@@ -1050,7 +1076,7 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
 
     if result_rga_epi is not None and result_rga_epi["correction_graph"] is not None:
         graphs.append(result_rga_epi["correction_graph"])
-        labels.append("RGA: e p #rightarrow e #pi^{+} X")
+        labels.append("RGA: e p -> e pi^{+} X")
         colors.append(ROOT.kRed + 1)
         styles.append(1)
         if x_min is None or result_rga_epi["vz_min"] < x_min:
@@ -1063,7 +1089,7 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
 
     if result_rga_epipim is not None and result_rga_epipim["correction_graph"] is not None:
         graphs.append(result_rga_epipim["correction_graph"])
-        labels.append("RGA: e p #rightarrow e #pi^{+} #pi^{-} X")
+        labels.append("RGA: e p -> e pi^{+} pi^{-} X")
         colors.append(ROOT.kBlue + 1)
         styles.append(1)
         if x_min is None or result_rga_epipim["vz_min"] < x_min:
@@ -1076,7 +1102,7 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
 
     if result_rgc_epi is not None and result_rgc_epi["correction_graph"] is not None:
         graphs.append(result_rgc_epi["correction_graph"])
-        labels.append("RGC: e p #rightarrow e #pi^{+} X")
+        labels.append("RGC: e p -> e pi^{+} X")
         colors.append(ROOT.kRed + 1)
         styles.append(2)
         if x_min is None or result_rgc_epi["vz_min"] < x_min:
@@ -1089,7 +1115,7 @@ def make_combined_energy_correction_plot(result_rga_epi, result_rga_epipim, resu
 
     if result_rgc_epipim is not None and result_rgc_epipim["correction_graph"] is not None:
         graphs.append(result_rgc_epipim["correction_graph"])
-        labels.append("RGC: e p #rightarrow e #pi^{+} #pi^{-} X")
+        labels.append("RGC: e p -> e pi^{+} pi^{-} X")
         colors.append(ROOT.kBlue + 1)
         styles.append(2)
         if x_min is None or result_rgc_epipim["vz_min"] < x_min:
