@@ -1,7 +1,7 @@
 /*
  * author Timothy B. Hayward
  *
- * DIS (inclusive e−p)
+ * DIS (inclusive e-p)
  */
 
 // import CLAS12 physics classes
@@ -60,8 +60,16 @@ public static void main(String[] args) {
         userProvidedRun = Integer.parseInt(args[4])
     }
 
+    // Allow for QADB override (usually meaning you're processing MC)
+    Integer userProvidedOverride = 0
+    if (args.length < 6) {
+        println("No indication of QADB provided. Will use QADB.")
+    } else {
+        userProvidedOverride = Integer.parseInt(args[5])
+    }
+
     // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
-    // event-level vars we’ll fill from Inclusive
+    // event-level vars we will fill from Inclusive
     int fiducial_status, helicity
     int num_pos, num_neg, num_neutrals
     double e_p, e_theta, e_phi, vz_e
@@ -69,7 +77,6 @@ public static void main(String[] args) {
     double Depolarization_A, Depolarization_B, Depolarization_C, Depolarization_V, Depolarization_W
 
     GenericKinematicFitter fitter = new analysis_fitter(10.6041)
-    // GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
     EventFilter filter = new EventFilter("11:X+:X-:Xn")
 
     // setup QA database
@@ -215,8 +222,7 @@ public static void main(String[] args) {
                 runnum == 3923 ||
                 runnum == 3929 ||
                 runnum == 3947) process_event = false;
-
-
+            
             // --- Toggle here ---
             // false -> baseline (no inverse-ISR)
             // true  -> enable inverse-ISR sampling (subtract R from q inside Inclusive)
@@ -246,16 +252,16 @@ public static void main(String[] args) {
                     num_neutrals    = variables.get_num_neutrals()
 
                     // lab electron kinematics
-                    e_p    = variables.e_p()
-                    e_theta= variables.e_theta()
-                    e_phi  = variables.e_phi()
-                    vz_e   = variables.vz_e()
+                    e_p     = variables.e_p()
+                    e_theta = variables.e_theta()
+                    e_phi   = variables.e_phi()
+                    vz_e    = variables.vz_e()
 
                     // DIS (already corrected if toggle on)
-                    Q2 = variables.Q2()
-                    W  = variables.W()
-                    x  = variables.x()
-                    y  = variables.y()
+                    Q2  = variables.Q2()
+                    W   = variables.W()
+                    x   = variables.x()
+                    y   = variables.y()
                     Mx2 = variables.Mx2()
 
                     Depolarization_A = variables.Depolarization_A()
@@ -279,9 +285,73 @@ public static void main(String[] args) {
                         .append(e_theta).append(" ")
                         .append(e_phi).append(" ")
                         .append(vz_e).append(" ")
-                        // NEW: simulated photon (R). Zeros in baseline mode.
                         .append(applyInverseISR ? Egamma       : 0.0).append(" ")
                         .append(applyInverseISR ? isrTheta_deg : 0.0).append(" ")
+                        .append(applyInverseISR ? isrPhi_deg   : 0.0).append(" ")
+                        .append(Q2).append(" ")
+                        .append(W).append(" ")
+                        .append(Mx2).append(" ")
+                        .append(x).append(" ")
+                        .append(y).append(" ")
+                        .append(Depolarization_A).append(" ")
+                        .append(Depolarization_B).append(" ")
+                        .append(Depolarization_C).append(" ")
+                        .append(Depolarization_V).append(" ")
+                        .append(Depolarization_W).append("\n")
+
+                    batchLines.append(line.toString())
+                    lineCount++
+
+                    if (lineCount >= max_lines) {
+                        file.append(batchLines.toString())
+                        batchLines.setLength(0)
+                        lineCount = 0
+                    }
+                } // channel test
+            } // process_event
+        } // while
+        reader.close()
+
+        if (batchLines.length() > 0) {
+            file.append(batchLines.toString())
+            batchLines.setLength(0)
+        }
+
+        println(
+          "1:  fiducial_status,  " +
+          "2:  num_pos,          " +
+          "3:  num_neg,          " +
+          "4:  num_neutrals,     " +
+          "5:  runnum,           " +
+          "6:  evnum,            " +
+          "7:  helicity,         " +
+          "8:  e_p,              " +
+          "9:  e_theta,          " +
+          "10: e_phi,            " +
+          "11: vz_e,             " +
+          "12: Egamma (GeV),     " +
+          "13: isrTheta (deg),   " +
+          "14: isrPhi (deg),     " +
+          "15: Q2,               " +
+          "16: W,                " +
+          "17: Mx2,              " +
+          "18: x,                " +
+          "19: y,                " +
+          "20: DepA,             " +
+          "21: DepB,             " +
+          "22: DepC,             " +
+          "23: DepV,             " +
+          "24: DepW"
+        )
+
+        println("output text file is: $file")
+    } // files
+
+    writer.close()
+
+    long endTime = System.currentTimeMillis()
+    println("Elapsed time: ${endTime - startTime} ms")
+}lyInverseISR ? isrTheta_deg : 0.0).append(" ")
                         .append(applyInverseISR ? isrPhi_deg   : 0.0).append(" ")
                         // corrected (or baseline) DIS
                         .append(Q2).append(" ")
