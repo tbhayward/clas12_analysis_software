@@ -29,17 +29,22 @@ public static void main(String[] args) {
         println("ERROR: Please enter a hipo file directory as the first argument")
         System.exit(0)
     }
+
     def hipo_list = []
-    (args[0] as File).eachFileRecurse(FileType.FILES) { if (it.name.endsWith('.hipo')) hipo_list << it }
+    (args[0] as File).eachFileRecurse(FileType.FILES) {
+        if (it.name.endsWith('.hipo')) hipo_list << it
+    }
 
     String output_file = args.length < 2 ? "inclusive_dummy_out.txt" : args[1]
     if (args.length < 2) println('WARNING: Specify an output file name. Set to "inclusive_dummy_out.txt".')
+
     File file = new File(output_file)
     file.delete()
     BufferedWriter writer = new BufferedWriter(new FileWriter(file))
 
     int n_files = args.length < 3 || Integer.parseInt(args[2]) == 0 || Integer.parseInt(args[2]) > hipo_list.size()
         ? hipo_list.size() : Integer.parseInt(args[2])
+
     if (args.length < 3 || Integer.parseInt(args[2]) == 0 || Integer.parseInt(args[2]) > hipo_list.size()) {
         println("WARNING: Number of files not specified, set to 0, or number too large.")
         println("Setting # of files to be equal to number of files in the directory.")
@@ -80,8 +85,8 @@ public static void main(String[] args) {
     EventFilter filter = new EventFilter("11:X+:X-:Xn")
 
     // setup QA database
-    QADB qa = new QADB("latest");
-    qa.checkForDefect('TotalOutlier')    
+    QADB qa = new QADB("latest")
+    qa.checkForDefect('TotalOutlier')
     qa.checkForDefect('TerminalOutlier')
     qa.checkForDefect('MarginalOutlier')
     qa.checkForDefect('SectorLoss')
@@ -90,16 +95,19 @@ public static void main(String[] args) {
     qa.checkForDefect('ChargeHigh')
     qa.checkForDefect('ChargeNegative')
     qa.checkForDefect('ChargeUnknown')
-    [ // list of runs with `Misc` that should be allowed
-        5418, 5419, // RGA Fa18 Inb 5nA run
-        5443, // RGA Fa18 Out 5nA run
-        5444, // RGA Fa18 Out 20nA run
-        6616, // RGA Sp19 Inb 5nA run
-        6736, 6737, 6738, 6739, 6740, 6741, 
-            6742, 6743, 6744, 6746, 6747, 6748, 
-            6749, 6750, 6751, 6753, 6754, 6755, 
-            6756, 6757 // RGA runs FADC failure sector 6
-    ].each{ run -> qa.allowMiscBit(run) }
+
+    [
+        5418, 5419,
+        5443,
+        5444,
+        6616,
+        6736, 6737, 6738, 6739, 6740, 6741,
+        6742, 6743, 6744, 6746, 6747, 6748,
+        6749, 6750, 6751, 6753, 6754, 6755,
+        6756, 6757
+    ].each { run ->
+        qa.allowMiscBit(run)
+    }
 
     StringBuilder batchLines = new StringBuilder()
 
@@ -113,27 +121,28 @@ public static void main(String[] args) {
         HipoDataSource reader = new HipoDataSource()
         reader.open(hipo_list[current_file])
 
-        HipoDataEvent event = reader.getNextEvent()
-
         while (reader.hasEvent()) {
             ++num_events
             if (num_events % 1000000 == 0) print("processed: " + num_events + " events. ")
 
-            event = reader.getNextEvent()
+            HipoDataEvent event = reader.getNextEvent()
+
             int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0)
-            if (runnum > 16600 && runnum < 16700) break // Hall C bleedthrough
+            if (runnum > 16600 && runnum < 16700) break
+
             int evnum = event.getBank("RUN::config").getInt('event', 0)
 
             PhysicsEvent research_Event = fitter.getPhysicsEvent(event)
 
-            boolean process_event = filter.isValid(research_Event) && 
-                (runnum == 11 ||  // MC
-                userProvidedOverride == 1 || // skip QADB
-                qa.pass(runnum, evnum));
-            if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
-            if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
-            
-            if (runnum == 5158 || 
+            boolean process_event = filter.isValid(research_Event) &&
+                (runnum == 11 ||
+                 userProvidedOverride == 1 ||
+                 qa.pass(runnum, evnum))
+
+            if (runnum == 5247) process_event = false
+            if (runnum == 5345) process_event = false
+
+            if (runnum == 5158 ||
                 runnum == 5163 ||
                 runnum == 5181 ||
                 runnum == 5519 ||
@@ -194,13 +203,6 @@ public static void main(String[] args) {
                 runnum == 4246 ||
                 runnum == 4252 ||
                 runnum == 4325 ||
-                // runnum == 3218 ||
-                // runnum == 3261 ||
-                // runnum == 3266 ||
-                // runnum == 3269 ||
-                // runnum == 3270 ||
-                // runnum == 3282 ||
-                // runnum == 3288 ||
                 runnum == 3867 ||
                 runnum == 3877 ||
                 runnum == 3882 ||
@@ -215,30 +217,32 @@ public static void main(String[] args) {
                 runnum == 3801 ||
                 runnum == 3807 ||
                 runnum == 3808 ||
-                // runnum == 3262 ||
                 runnum == 3267 ||
-                // runnum == 3288 ||
                 runnum == 3879 ||
                 runnum == 3923 ||
                 runnum == 3929 ||
-                runnum == 3947) process_event = false;
-            
+                runnum == 3947) {
+                process_event = false
+            }
+
             // --- Toggle here ---
             // false -> baseline (no inverse-ISR)
             // true  -> enable inverse-ISR sampling (subtract R from q inside Inclusive)
-            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/false)
+            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false)
 
             double Ebeam = (runnum == 11) ? beam_energy : Eb.Eb()
 
             // If radiative sampling requested, prepare one-shot correction for Inclusive
             boolean applyInverseISR = Eb.isRadiativeApplied() && Eb.getEgammaGeV() > 0.0
-            double Egamma = 0.0, isrTheta = 0.0, isrPhi = 0.0
+            double Egamma = 0.0
+            double isrTheta = 0.0
+            double isrPhi = 0.0
 
             if (process_event) {
                 if (applyInverseISR) {
-                    Egamma   = Eb.getEgammaGeV()
-                    isrTheta = analyzers.ISRThetaKernel.sampleThetaRad(Egamma) // radians
-                    isrPhi   = 2.0 * Math.PI * Math.random()
+                    Egamma = Eb.getEgammaGeV()
+                    isrTheta = analyzers.ISRThetaKernel.sampleThetaRad(Egamma)
+                    isrPhi = 2.0 * Math.PI * Math.random()
                     Inclusive.setNextInverseISRPhoton(Egamma, isrTheta, isrPhi)
                 }
 
@@ -246,22 +250,20 @@ public static void main(String[] args) {
 
                 if (Inclusive.channel_test(variables)) {
                     fiducial_status = variables.get_fiducial_status()
-                    helicity        = variables.get_helicity()
-                    num_pos         = variables.get_num_pos()
-                    num_neg         = variables.get_num_neg()
-                    num_neutrals    = variables.get_num_neutrals()
+                    helicity = variables.get_helicity()
+                    num_pos = variables.get_num_pos()
+                    num_neg = variables.get_num_neg()
+                    num_neutrals = variables.get_num_neutrals()
 
-                    // lab electron kinematics
-                    e_p     = variables.e_p()
+                    e_p = variables.e_p()
                     e_theta = variables.e_theta()
-                    e_phi   = variables.e_phi()
-                    vz_e    = variables.vz_e()
+                    e_phi = variables.e_phi()
+                    vz_e = variables.vz_e()
 
-                    // DIS (already corrected if toggle on)
-                    Q2  = variables.Q2()
-                    W   = variables.W()
-                    x   = variables.x()
-                    y   = variables.y()
+                    Q2 = variables.Q2()
+                    W = variables.W()
+                    x = variables.x()
+                    y = variables.y()
                     Mx2 = variables.Mx2()
 
                     Depolarization_A = variables.Depolarization_A()
@@ -271,7 +273,7 @@ public static void main(String[] args) {
                     Depolarization_W = variables.Depolarization_W()
 
                     double isrTheta_deg = Math.toDegrees(isrTheta)
-                    double isrPhi_deg   = Math.toDegrees(isrPhi)
+                    double isrPhi_deg = Math.toDegrees(isrPhi)
 
                     StringBuilder line = new StringBuilder()
                     line.append(fiducial_status).append(" ")
@@ -285,9 +287,9 @@ public static void main(String[] args) {
                         .append(e_theta).append(" ")
                         .append(e_phi).append(" ")
                         .append(vz_e).append(" ")
-                        .append(applyInverseISR ? Egamma       : 0.0).append(" ")
+                        .append(applyInverseISR ? Egamma : 0.0).append(" ")
                         .append(applyInverseISR ? isrTheta_deg : 0.0).append(" ")
-                        .append(applyInverseISR ? isrPhi_deg   : 0.0).append(" ")
+                        .append(applyInverseISR ? isrPhi_deg : 0.0).append(" ")
                         .append(Q2).append(" ")
                         .append(W).append(" ")
                         .append(Mx2).append(" ")
@@ -303,115 +305,51 @@ public static void main(String[] args) {
                     lineCount++
 
                     if (lineCount >= max_lines) {
-                        file.append(batchLines.toString())
+                        writer.write(batchLines.toString())
                         batchLines.setLength(0)
                         lineCount = 0
                     }
-                } // channel test
-            } // process_event
-        } // while
+                }
+            }
+        }
+
         reader.close()
 
         if (batchLines.length() > 0) {
-            file.append(batchLines.toString())
+            writer.write(batchLines.toString())
             batchLines.setLength(0)
+            lineCount = 0
         }
 
         println(
-          "1:  fiducial_status,  " +
-          "2:  num_pos,          " +
-          "3:  num_neg,          " +
-          "4:  num_neutrals,     " +
-          "5:  runnum,           " +
-          "6:  evnum,            " +
-          "7:  helicity,         " +
-          "8:  e_p,              " +
-          "9:  e_theta,          " +
-          "10: e_phi,            " +
-          "11: vz_e,             " +
-          "12: Egamma (GeV),     " +
-          "13: isrTheta (deg),   " +
-          "14: isrPhi (deg),     " +
-          "15: Q2,               " +
-          "16: W,                " +
-          "17: Mx2,              " +
-          "18: x,                " +
-          "19: y,                " +
-          "20: DepA,             " +
-          "21: DepB,             " +
-          "22: DepC,             " +
-          "23: DepV,             " +
-          "24: DepW"
+            "1:  fiducial_status,  " +
+            "2:  num_pos,          " +
+            "3:  num_neg,          " +
+            "4:  num_neutrals,     " +
+            "5:  runnum,           " +
+            "6:  evnum,            " +
+            "7:  helicity,         " +
+            "8:  e_p,              " +
+            "9:  e_theta,          " +
+            "10: e_phi,            " +
+            "11: vz_e,             " +
+            "12: Egamma (GeV),     " +
+            "13: isrTheta (deg),   " +
+            "14: isrPhi (deg),     " +
+            "15: Q2,               " +
+            "16: W,                " +
+            "17: Mx2,              " +
+            "18: x,                " +
+            "19: y,                " +
+            "20: DepA,             " +
+            "21: DepB,             " +
+            "22: DepC,             " +
+            "23: DepV,             " +
+            "24: DepW"
         )
 
         println("output text file is: $file")
-    } // files
-
-    writer.close()
-
-    long endTime = System.currentTimeMillis()
-    println("Elapsed time: ${endTime - startTime} ms")
-}lyInverseISR ? isrTheta_deg : 0.0).append(" ")
-                        .append(applyInverseISR ? isrPhi_deg   : 0.0).append(" ")
-                        // corrected (or baseline) DIS
-                        .append(Q2).append(" ")
-                        .append(W).append(" ")
-                        .append(Mx2).append(" ")
-                        .append(x).append(" ")
-                        .append(y).append(" ")
-                        .append(Depolarization_A).append(" ")
-                        .append(Depolarization_B).append(" ")
-                        .append(Depolarization_C).append(" ")
-                        .append(Depolarization_V).append(" ")
-                        .append(Depolarization_W).append("\n")
-
-                    batchLines.append(line.toString())
-                    lineCount++
-
-                    if (lineCount >= max_lines) {
-                        file.append(batchLines.toString())
-                        batchLines.setLength(0)
-                        lineCount = 0
-                    }
-                } // channel test
-            } // process_event
-        } // while
-        reader.close()
-
-        if (batchLines.length() > 0) {
-            file.append(batchLines.toString())
-            batchLines.setLength(0)
-        }
-
-        println(
-          "1:  fiducial_status,  " +
-          "2:  num_pos,          " +
-          "3:  num_neg,          " +
-          "4:  num_neutrals,     " +
-          "5:  runnum,           " +
-          "6:  evnum,            " +
-          "7:  helicity,         " +
-          "8:  e_p,              " +
-          "9:  e_theta,          " +
-          "10: e_phi,            " +
-          "11: vz_e,             " +
-          "12: Egamma (GeV),     " +
-          "13: isrTheta (deg),   " +
-          "14: isrPhi (deg),     " +
-          "15: Q2,               " +
-          "16: W,                " +
-          "17: Mx2,              " +
-          "18: x,                " +
-          "19: y,                " +
-          "20: DepA,             " +
-          "21: DepB,             " +
-          "22: DepC,             " +
-          "23: DepV,             " +
-          "24: DepW"
-        )
-
-        println("output text file is: $file")
-    } // files
+    }
 
     writer.close()
 
