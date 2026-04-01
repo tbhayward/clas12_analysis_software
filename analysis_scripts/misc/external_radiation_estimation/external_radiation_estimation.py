@@ -122,8 +122,8 @@ channel_overlay_colors = {
 }
 
 channel_overlay_labels = {
-    "epi_plus": "e p -> e pi^{+} X",
-    "epi_plus_pi_minus": "e p -> e pi^{+} pi^{-} X"
+    "epi_plus": "e p #rightarrow e #pi^{+} X",
+    "epi_plus_pi_minus": "e p #rightarrow e #pi^{+} #pi^{-} X"
 }
 
 # ------------------------------------------------
@@ -132,8 +132,8 @@ channel_overlay_labels = {
 # ------------------------------------------------
 
 photon_energy_min = 0.0
-photon_energy_max = 200.0
-photon_energy_bins = 200
+photon_energy_max = 120.0
+photon_energy_bins = 240
 
 # ------------------------------------------------
 # branch configuration
@@ -163,7 +163,7 @@ channel_configs = {
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_n2,
-        "latex_label": "RGA Data: e p -> e pi^{+} X",
+        "latex_label": "RGA Data: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": True,
         "vz_min": -6.5,
         "vz_max": 1.5,
@@ -193,7 +193,7 @@ channel_configs = {
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_n2,
-        "latex_label": "RGA MC: e p -> e pi^{+} X",
+        "latex_label": "RGA MC: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": False,
         "vz_min": -6.5,
         "vz_max": 1.5,
@@ -230,7 +230,7 @@ channel_configs = {
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_p2,
-        "latex_label": "RGA Data: e p -> e pi^{+} pi^{-} X",
+        "latex_label": "RGA Data: e p #rightarrow e #pi^{+} #pi^{-} X",
         "do_energy_correction": True,
         "vz_min": -6.5,
         "vz_max": 1.5,
@@ -260,7 +260,7 @@ channel_configs = {
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_n2,
-        "latex_label": "RGC Data: e p -> e pi^{+} X",
+        "latex_label": "RGC Data: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": True,
         "vz_min": -6.0,
         "vz_max": 1.5,
@@ -297,7 +297,7 @@ channel_configs = {
         "observable_axis_title": "M_{X}^{2} (GeV^{2})",
         "observable_peak_title": "M_{X}^{2}",
         "expected_peak": M_p2,
-        "latex_label": "RGC Data: e p -> e pi^{+} pi^{-} X",
+        "latex_label": "RGC Data: e p #rightarrow e #pi^{+} #pi^{-} X",
         "do_energy_correction": True,
         "vz_min": -6.0,
         "vz_max": 1.5,
@@ -322,6 +322,10 @@ def make_safe_tag(text):
     out = out.replace("+", "p")
     out = out.replace("-", "m")
     out = out.replace("/", "_")
+    out = out.replace("#", "")
+    out = out.replace("{", "")
+    out = out.replace("}", "")
+    out = out.replace("^", "")
     return out
 #enddef
 
@@ -670,26 +674,6 @@ def normalize_histogram_list(hist_list):
     #endfor
 #enddef
 
-def graph_to_xy_lists(graph):
-    if graph is None:
-        return None
-    #endif
-
-    out_x = []
-    out_y = []
-
-    n = graph.GetN()
-    for i in range(n):
-        out_x.append(float(graph.GetPointX(i)))
-        out_y.append(float(graph.GetPointY(i)))
-    #endfor
-
-    return {
-        "x": out_x,
-        "y": out_y
-    }
-#enddef
-
 def build_graph_from_xy_lists(graph_xy):
     if graph_xy is None:
         return None
@@ -890,7 +874,6 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
     }
 
     cubic_coeffs = None
-    cubic_fit = None
 
     if len(x_mu_vals) >= 4:
         graph_mu_tmp = build_graph_errors_from_xyerr_lists(graph_mu_dict)
@@ -1774,19 +1757,19 @@ def make_combined_energy_correction_plot(results_by_label):
         graphs.append(graph)
 
         if dataset_label == "data_rga_epi_plus":
-            labels.append("RGA: e p -> e pi^{+} X")
+            labels.append("RGA: e p #rightarrow e #pi^{+} X")
             colors.append(ROOT.kRed + 1)
             styles.append(1)
         elif dataset_label == "data_rga_epi_plus_pi_minus":
-            labels.append("RGA: e p -> e pi^{+} pi^{-} X")
+            labels.append("RGA: e p #rightarrow e #pi^{+} #pi^{-} X")
             colors.append(ROOT.kBlue + 1)
             styles.append(1)
         elif dataset_label == "data_rgc_epi_plus":
-            labels.append("RGC: e p -> e pi^{+} X")
+            labels.append("RGC: e p #rightarrow e #pi^{+} X")
             colors.append(ROOT.kRed + 1)
             styles.append(2)
         elif dataset_label == "data_rgc_epi_plus_pi_minus":
-            labels.append("RGC: e p -> e pi^{+} pi^{-} X")
+            labels.append("RGC: e p #rightarrow e #pi^{+} #pi^{-} X")
             colors.append(ROOT.kBlue + 1)
             styles.append(2)
         #endif
@@ -2009,10 +1992,10 @@ def make_sector_energy_correction_multipanel(results_by_label):
     ]
 
     labels = {
-        "data_rga_epi_plus": "RGA: e p -> e pi^{+} X",
-        "data_rga_epi_plus_pi_minus": "RGA: e p -> e pi^{+} pi^{-} X",
-        "data_rgc_epi_plus": "RGC: e p -> e pi^{+} X",
-        "data_rgc_epi_plus_pi_minus": "RGC: e p -> e pi^{+} pi^{-} X"
+        "data_rga_epi_plus": "RGA: e p #rightarrow e #pi^{+} X",
+        "data_rga_epi_plus_pi_minus": "RGA: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "data_rgc_epi_plus": "RGC: e p #rightarrow e #pi^{+} X",
+        "data_rgc_epi_plus_pi_minus": "RGC: e p #rightarrow e #pi^{+} #pi^{-} X"
     }
 
     canvas = ROOT.TCanvas("canvas_sector_energy_correction_multipanel", "sector energy correction multipanel", 1600, 1200)
