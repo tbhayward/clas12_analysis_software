@@ -1212,7 +1212,7 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
         ROOT.gPad.SetLeftMargin(0.19)
         ROOT.gPad.SetRightMargin(0.05)
         ROOT.gPad.SetBottomMargin(0.14)
-        ROOT.gPad.SetTopMargin(0.10)
+        ROOT.gPad.SetTopMargin(0.14)
 
         local_max = 0.0
         for i_sector in range(N_SECTORS):
@@ -1265,14 +1265,14 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
 
         latex = ROOT.TLatex()
         latex.SetNDC()
-        latex.SetTextSize(0.048)
-        latex.DrawLatex(0.20, 0.88, "%.1f < v_{z,e} < %.1f (cm)" % (vz_lo, vz_hi))
+        latex.SetTextSize(0.042)
+        latex.DrawLatex(0.20, 0.93, "%.1f < v_{z,e} < %.1f (cm)" % (vz_lo, vz_hi))
 
-        legend = ROOT.TLegend(0.18, 0.48, 0.56, 0.85)
+        legend = ROOT.TLegend(0.20, 0.64, 0.42, 0.88)
         legend.SetBorderSize(1)
         legend.SetFillStyle(1001)
         legend.SetFillColor(ROOT.kWhite)
-        legend.SetTextSize(0.035)
+        legend.SetTextSize(0.024)
 
         for i_sector in range(N_SECTORS):
             legend.AddEntry(sector_histograms[i_sector][i_vz], sector_labels[i_sector], "l")
