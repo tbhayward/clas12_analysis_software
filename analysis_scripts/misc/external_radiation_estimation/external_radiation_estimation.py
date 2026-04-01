@@ -636,6 +636,7 @@ def book_histogram_groups(dataset_label, observable_bins, observable_min, observ
                 observable_max
             )
             h.Sumw2()
+            h.SetDirectory(0)
             this_group.append(h)
         #endfor
 
@@ -790,6 +791,7 @@ def fit_histogram_group(hist_list, acc, vz_edges, n_vz_bins, dataset_label, obse
         )
         fit_formula = get_fit_formula(dataset_label)
         fit_func = ROOT.TF1(fit_name, fit_formula, observable_min, observable_max)
+        fit_func.SetNpx(500)
 
         initialize_fit_function(fit_func, dataset_label, peak_height, expected_peak)
 
@@ -1407,6 +1409,7 @@ def fill_photon_histogram_from_event_list(events_for_photon_hist, cubic_coeffs, 
         photon_energy_max
     )
     h.Sumw2()
+    h.SetDirectory(0)
 
     if cubic_coeffs is None:
         return h
@@ -1443,7 +1446,8 @@ def fill_photon_histogram_from_event_list(events_for_photon_hist, cubic_coeffs, 
 
 def histogram_to_counts_list(hist):
     out = []
-    for i_bin in range(1, hist.GetNbinsX() + 1):
+    nbins = hist.GetNbinsX()
+    for i_bin in range(1, nbins + 1):
         out.append(float(hist.GetBinContent(i_bin)))
     #endfor
     return out
@@ -1457,6 +1461,7 @@ def counts_list_to_hist(hist_name, counts, nbins, xmin, xmax):
         xmin,
         xmax
     )
+    h.SetDirectory(0)
     for i_bin in range(len(counts)):
         h.SetBinContent(i_bin + 1, counts[i_bin])
     #endfor
@@ -1685,6 +1690,7 @@ def process_file_worker(task):
             integrated_fit_results["cubic_coeffs"],
             vz_min
         )
+        photon_hist.SetDirectory(0)
 
         photon_hist_counts = histogram_to_counts_list(photon_hist)
 
@@ -1730,6 +1736,8 @@ def process_file_worker(task):
         print("Saved: %s" % output_png)
     #endif
 
+    vz_hist_counts = histogram_to_counts_list(vz_hist)
+
     print("Finished dataset: %s" % dataset_label)
     f.Close()
 
@@ -1742,7 +1750,7 @@ def process_file_worker(task):
         "integrated_correction_xy": integrated_fit_results["correction_xy"],
         "sector_correction_xys": [sector_fit_results[i]["correction_xy"] for i in range(N_SECTORS)],
         "photon_hist_counts": photon_hist_counts,
-        "vz_hist_counts": histogram_to_counts_list(vz_hist),
+        "vz_hist_counts": vz_hist_counts,
         "vz_min": vz_min,
         "vz_max": vz_max
     }
@@ -1949,7 +1957,7 @@ def draw_sector_energy_subplot(pad, result, frame_name, title_text):
         latex.SetNDC()
         latex.SetTextSize(0.050)
         latex.DrawLatex(0.18, 0.90, title_text)
-        latex.DrawLatex(0.25, 0.50, "No sector correction curves available")
+        latex.DrawLatex(0.25, 0.50, "No correction curves available")
         return
     #endif
 
