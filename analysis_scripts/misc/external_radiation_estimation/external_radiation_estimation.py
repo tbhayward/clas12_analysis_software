@@ -53,11 +53,11 @@ if skip_mc:
 # ------------------------------------------------
 
 input_file_data_rga_epi = "/volatile/clas12/thayward/external_radiation_estimate/rga_fa18_inb_epi+.root"
-input_file_mc_rga_epi = "/work/clas12/thayward/CLAS12_exclusive/enpi+/mc/rec_clasdis_rga_fa18_inb_epi+X.root"
+input_file_mc_rga_epi = "/volatile/clas12/thayward/external_radiation_estimate/clasdis_rga_fa18_inb_epi+.root"
 input_file_data_rga_epipim = "/volatile/clas12/thayward/external_radiation_estimate/rga_fa18_inb_epi+pi-.root"
 
 input_file_data_rgc_epi = "/volatile/clas12/thayward/external_radiation_estimate/rgc_fa22_inb_epi+.root"
-input_file_data_rgc_epipim = "/work/clas12/thayward/CLAS12_exclusive/epi+pi/rgc_fa18_inb_NH3_epi+pi-_full.root"
+input_file_data_rgc_epipim = "/volatile/clas12/thayward/external_radiation_estimate/rgc_fa22_inb_epi+pi-.root"
 
 tree_name = "PhysicsEvents"
 output_dir = "output"
@@ -1523,6 +1523,7 @@ def process_file_worker(task):
         vz_hist_max
     )
     vz_hist.Sumw2()
+    vz_hist.SetDirectory(0)
 
     n_entries_total = tree.GetEntries()
 
