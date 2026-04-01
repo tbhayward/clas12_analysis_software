@@ -270,7 +270,7 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGC Data: e p #rightarrow e #pi^{+} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
+        "vz_min": -6.5,
         "vz_max": 1.5,
         "run_period": "RGC",
         "channel_key": "epi_plus"
@@ -307,7 +307,7 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGC Data: e p #rightarrow e #pi^{+} #pi^{-} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
+        "vz_min": -6.5,
         "vz_max": 1.5,
         "run_period": "RGC",
         "channel_key": "epi_plus_pi_minus"
