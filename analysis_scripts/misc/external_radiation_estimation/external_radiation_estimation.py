@@ -136,6 +136,14 @@ photon_energy_max = 120.0
 photon_energy_bins = 240
 
 # ------------------------------------------------
+# combined vz_e histogram binning
+# ------------------------------------------------
+
+vz_hist_min = -6.5
+vz_hist_max = 1.5
+vz_hist_bins = 160
+
+# ------------------------------------------------
 # branch configuration
 # ------------------------------------------------
 
@@ -1441,13 +1449,13 @@ def histogram_to_counts_list(hist):
     return out
 #enddef
 
-def counts_list_to_hist(hist_name, counts):
+def counts_list_to_hist(hist_name, counts, nbins, xmin, xmax):
     h = ROOT.TH1D(
         hist_name,
         "",
-        photon_energy_bins,
-        photon_energy_min,
-        photon_energy_max
+        nbins,
+        xmin,
+        xmax
     )
     for i_bin in range(len(counts)):
         h.SetBinContent(i_bin + 1, counts[i_bin])
@@ -1506,6 +1514,15 @@ def process_file_worker(task):
     )
 
     group_accs = initialize_all_group_accumulators(n_vz_bins)
+
+    vz_hist = ROOT.TH1D(
+        "h_vz_distribution_%s" % make_safe_tag(dataset_label),
+        "",
+        vz_hist_bins,
+        vz_hist_min,
+        vz_hist_max
+    )
+    vz_hist.Sumw2()
 
     n_entries_total = tree.GetEntries()
 
@@ -1578,6 +1595,8 @@ def process_file_worker(task):
         hist_groups[sector_index][vz_bin].Fill(observable_val)
         update_group_accumulator(group_accs[sector_index], vz_bin, vz_e, slope)
         n_kept_sector[sector - 1] += 1
+
+        vz_hist.Fill(vz_e)
 
         if cfg["do_energy_correction"]:
             events_for_photon_hist.append((float(vz_e), None if slope is None else float(slope)))
@@ -1722,6 +1741,7 @@ def process_file_worker(task):
         "integrated_correction_xy": integrated_fit_results["correction_xy"],
         "sector_correction_xys": [sector_fit_results[i]["correction_xy"] for i in range(N_SECTORS)],
         "photon_hist_counts": photon_hist_counts,
+        "vz_hist_counts": histogram_to_counts_list(vz_hist),
         "vz_min": vz_min,
         "vz_max": vz_max
     }
@@ -2108,7 +2128,7 @@ def make_photon_energy_multipanel(results_by_label):
 
             channel_key = result["channel_key"]
             hist_name = "h_photon_mult_%s" % make_safe_tag(dataset_label)
-            h = counts_list_to_hist(hist_name, result["photon_hist_counts"])
+            h = counts_list_to_hist(hist_name, result["photon_hist_counts"], photon_energy_bins, photon_energy_min, photon_energy_max)
 
             integral = h.Integral()
             if integral > 0.0:
@@ -2181,6 +2201,124 @@ def make_photon_energy_multipanel(results_by_label):
     print("Saved: %s" % output_png)
 #enddef
 
+def make_vz_distribution_plot(results_by_label):
+    ordered_labels = [
+        "data_rga_epi_plus",
+        "data_rga_epi_plus_pi_minus",
+        "data_rgc_epi_plus",
+        "data_rgc_epi_plus_pi_minus",
+        "mc_rga_epi_plus"
+    ]
+
+    display_labels = {
+        "data_rga_epi_plus": "RGA Data: e p #rightarrow e #pi^{+} X",
+        "data_rga_epi_plus_pi_minus": "RGA Data: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "data_rgc_epi_plus": "RGC Data: e p #rightarrow e #pi^{+} X",
+        "data_rgc_epi_plus_pi_minus": "RGC Data: e p #rightarrow e #pi^{+} #pi^{-} X",
+        "mc_rga_epi_plus": "RGA MC: e p #rightarrow e #pi^{+} X"
+    }
+
+    line_colors = {
+        "data_rga_epi_plus": ROOT.kRed + 1,
+        "data_rga_epi_plus_pi_minus": ROOT.kBlue + 1,
+        "data_rgc_epi_plus": ROOT.kMagenta + 1,
+        "data_rgc_epi_plus_pi_minus": ROOT.kGreen + 2,
+        "mc_rga_epi_plus": ROOT.kBlack
+    }
+
+    line_styles = {
+        "data_rga_epi_plus": 1,
+        "data_rga_epi_plus_pi_minus": 1,
+        "data_rgc_epi_plus": 2,
+        "data_rgc_epi_plus_pi_minus": 2,
+        "mc_rga_epi_plus": 1
+    }
+
+    hist_list = []
+    local_max = 0.0
+
+    for dataset_label in ordered_labels:
+        if dataset_label not in results_by_label:
+            continue
+        #endif
+
+        counts = results_by_label[dataset_label]["vz_hist_counts"]
+        h = counts_list_to_hist(
+            "h_vz_overlay_%s" % make_safe_tag(dataset_label),
+            counts,
+            vz_hist_bins,
+            vz_hist_min,
+            vz_hist_max
+        )
+
+        integral = h.Integral()
+        if integral > 0.0:
+            h.Scale(1.0 / integral)
+        #endif
+
+        h.SetLineColor(line_colors[dataset_label])
+        h.SetLineStyle(line_styles[dataset_label])
+        h.SetLineWidth(3)
+
+        if h.GetMaximum() > local_max:
+            local_max = h.GetMaximum()
+        #endif
+
+        hist_list.append((dataset_label, h))
+    #endfor
+
+    if len(hist_list) == 0:
+        print("Skipping vz_e distribution plot because no histograms are available.")
+        return
+    #endif
+
+    y_max = 1.25 * local_max if local_max > 0.0 else 1.0
+
+    canvas = ROOT.TCanvas("canvas_vz_distributions", "vz distributions", 1100, 800)
+    canvas.cd()
+
+    ROOT.gPad.SetLeftMargin(0.14)
+    ROOT.gPad.SetRightMargin(0.05)
+    ROOT.gPad.SetBottomMargin(0.13)
+    ROOT.gPad.SetTopMargin(0.08)
+
+    frame = ROOT.TH1D("frame_vz_distributions", "", 100, vz_hist_min, vz_hist_max)
+    frame.SetMinimum(0.0)
+    frame.SetMaximum(y_max)
+    frame.GetXaxis().SetTitle("v_{z,e} (cm)")
+    frame.GetYaxis().SetTitle("Normalized counts")
+    frame.GetXaxis().CenterTitle()
+    frame.GetYaxis().CenterTitle()
+    frame.GetXaxis().SetTitleSize(0.05)
+    frame.GetYaxis().SetTitleSize(0.05)
+    frame.GetXaxis().SetLabelSize(0.04)
+    frame.GetYaxis().SetLabelSize(0.04)
+    frame.GetYaxis().SetTitleOffset(1.25)
+    frame.Draw()
+
+    legend = ROOT.TLegend(0.16, 0.63, 0.88, 0.89)
+    legend.SetBorderSize(1)
+    legend.SetFillStyle(1001)
+    legend.SetFillColor(ROOT.kWhite)
+    legend.SetTextSize(0.028)
+
+    for dataset_label, h in hist_list:
+        h.Draw("HIST SAME")
+        legend.AddEntry(h, display_labels[dataset_label], "l")
+    #endfor
+
+    legend.Draw()
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextSize(0.042)
+    latex.DrawLatex(0.16, 0.93, "v_{z,e} distributions for all processed datasets")
+
+    output_png = os.path.join(output_dir, "external_radiation_vz_distributions.png")
+    canvas.SaveAs(output_png)
+    print("Saved: %s" % output_png)
+#enddef
+
 def run_all():
     tasks = [
         {
@@ -2234,6 +2372,7 @@ def run_all():
     make_combined_energy_correction_plot(results_by_label)
     make_sector_energy_correction_multipanel(results_by_label)
     make_photon_energy_multipanel(results_by_label)
+    make_vz_distribution_plot(results_by_label)
 
     print("")
     print("All processing complete.")
