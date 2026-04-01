@@ -81,7 +81,7 @@ M_n2 = m_n * m_n
 # ------------------------------------------------
 # binning defaults
 # RGA: -6.5 to 1.5
-# RGC: -6.0 to 1.5
+# RGC: -6.5 to 1.5
 # ------------------------------------------------
 
 vz_step = 0.5
@@ -630,15 +630,7 @@ def fit_is_reasonable(fit_func, fit_result, observable_min, observable_max):
 #enddef
 
 def get_fit_formula(dataset_label):
-    label = dataset_label.lower()
-
-    if "rga" in label:
-        return "gaus(0)+pol2(3)"
-    elif "rgc" in label:
-        return "gaus(0)+pol1(3)"
-    else:
-        raise RuntimeError("Could not determine fit formula for dataset_label = %s" % dataset_label)
-    #endif
+    return "gaus(0)+pol3(3)"
 #enddef
 
 def initialize_fit_function(fit_func, dataset_label, peak_height, expected_peak):
@@ -649,17 +641,10 @@ def initialize_fit_function(fit_func, dataset_label, peak_height, expected_peak)
     fit_func.SetParameter(0, peak_height)
     fit_func.SetParameter(1, expected_peak)
     fit_func.SetParameter(2, sigma_init)
-
-    if "rga" in dataset_label.lower():
-        fit_func.SetParameter(3, 0.0)
-        fit_func.SetParameter(4, 0.0)
-        fit_func.SetParameter(5, 0.0)
-    elif "rgc" in dataset_label.lower():
-        fit_func.SetParameter(3, 0.0)
-        fit_func.SetParameter(4, 0.0)
-    else:
-        raise RuntimeError("Could not initialize fit parameters for dataset_label = %s" % dataset_label)
-    #endif
+    fit_func.SetParameter(3, 0.0)
+    fit_func.SetParameter(4, 0.0)
+    fit_func.SetParameter(5, 0.0)
+    fit_func.SetParameter(6, 0.0)
 
     fit_func.SetParLimits(0, 0.0, 10.0)
     fit_func.SetParLimits(1, mu_low, mu_high)
