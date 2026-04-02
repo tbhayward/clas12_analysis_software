@@ -14,13 +14,13 @@
 #
 # Default channel
 # ---------------
-# If no channel is specified, this runs exactly as before for:
+# If no channel is specified, this runs for:
 #
-#   epgamma   (the e' p gamma final state)
+#   epgamma
 #
 # Additional runtime channel option
 # ---------------------------------
-# You can now also switch channels at runtime, for example:
+# You can also switch channels at runtime, for example:
 #
 #   python dvcs_current_dependence.py --channel eX
 #
@@ -657,11 +657,11 @@ def count_mc_entries_in_q2_bins(root_path, tree_name, q2_bins):
 def build_run_metadata(period_display_name, period_internal_name, run_list, run_charge_map):
 
     missing_charge_runs = []
-    nonpositive_charge_runs = []
     unknown_current_runs = []
 
     run_meta = {}
     current_charge_totals = defaultdict(float)
+    skipped_nonpositive_charge_rows = []
 
     for runnum in sorted(run_list):
         if runnum not in run_charge_map:
@@ -671,7 +671,17 @@ def build_run_metadata(period_display_name, period_internal_name, run_list, run_
 
         charge = float(run_charge_map[runnum])
         if charge <= 0.0:
-            nonpositive_charge_runs.append((runnum, charge))
+            ok_cur, current_nA = resolve_current(period_internal_name, runnum)
+            current_out = int(current_nA) if ok_cur else None
+
+            skipped_nonpositive_charge_rows.append({
+                "period": period_display_name,
+                "period_internal": period_internal_name,
+                "runnum": int(runnum),
+                "current_nA": current_out,
+                "charge_nC": float(charge),
+                "reason": "nonpositive_charge",
+            })
             continue
         #endif
 
@@ -692,14 +702,11 @@ def build_run_metadata(period_display_name, period_internal_name, run_list, run_
         current_charge_totals[int(current_nA)] += float(charge)
     #endfor
 
-    if len(missing_charge_runs) > 0 or len(nonpositive_charge_runs) > 0 or len(unknown_current_runs) > 0:
+    if len(missing_charge_runs) > 0 or len(unknown_current_runs) > 0:
         msg = []
         msg.append(f"Fatal bookkeeping problem while processing {period_display_name}:")
         if len(missing_charge_runs) > 0:
             msg.append(f"  Runs missing from charge CSV ({len(missing_charge_runs)}): {missing_charge_runs}")
-        #endif
-        if len(nonpositive_charge_runs) > 0:
-            msg.append(f"  Runs with non-positive charge ({len(nonpositive_charge_runs)}): {nonpositive_charge_runs}")
         #endif
         if len(unknown_current_runs) > 0:
             msg.append(f"  Runs with no current mapping ({len(unknown_current_runs)}): {unknown_current_runs}")
@@ -707,7 +714,7 @@ def build_run_metadata(period_display_name, period_internal_name, run_list, run_
         raise RuntimeError("\n".join(msg))
     #endif
 
-    return run_meta, dict(current_charge_totals)
+    return run_meta, dict(current_charge_totals), skipped_nonpositive_charge_rows
 #enddef
 
 
@@ -789,7 +796,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
 
     total_run_counts, q2_run_counts = read_data_run_counts_and_q2_counts(root_path, q2_bins)
 
-    run_meta, current_charge_totals = build_run_metadata(
+    run_meta, current_charge_totals, skipped_nonpositive_charge_rows = build_run_metadata(
         period_display_name=period_display_name,
         period_internal_name=period_internal_name,
         run_list=sorted(total_run_counts.keys()),
@@ -817,7 +824,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
         q2_current_rows.append(rows_bin)
     #endfor
 
-    return integrated_run_rows, integrated_current_rows, q2_current_rows
+    return integrated_run_rows, integrated_current_rows, q2_current_rows, skipped_nonpositive_charge_rows
 #enddef
 
 
@@ -1047,6 +1054,27 @@ def write_mc_table_csv(path, mc_rows):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in mc_rows:
+            writer.writerow(row)
+        #endfor
+    #endwith
+#enddef
+
+
+def write_skipped_run_table_csv(path, skipped_rows):
+
+    fieldnames = [
+        "period",
+        "period_internal",
+        "runnum",
+        "current_nA",
+        "charge_nC",
+        "reason",
+    ]
+
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in skipped_rows:
             writer.writerow(row)
         #endfor
     #endwith
@@ -1551,9 +1579,6 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
     xfit = np.linspace(0.0, 80.0, 300)
     band_alpha = 0.20
 
-    # -------------------------------------------------------------------------
-    # Plot A
-    # -------------------------------------------------------------------------
     fig_a, axes_a = create_simple_2x3_figure()
 
     for i, period in enumerate(PERIOD_ORDER):
@@ -1611,9 +1636,6 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
     fig_a.savefig(out_a, dpi=200)
     plt.close(fig_a)
 
-    # -------------------------------------------------------------------------
-    # Plot B
-    # -------------------------------------------------------------------------
     fig_b, axes_b = create_simple_2x3_figure()
 
     for i, period in enumerate(PERIOD_ORDER):
@@ -1673,9 +1695,6 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
     fig_b.savefig(out_b, dpi=200)
     plt.close(fig_b)
 
-    # -------------------------------------------------------------------------
-    # Plot C
-    # -------------------------------------------------------------------------
     fig_c, axes_c = create_simple_2x3_figure()
 
     for i, period in enumerate(PERIOD_ORDER):
@@ -1779,9 +1798,6 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
     fig_c.savefig(out_c, dpi=200)
     plt.close(fig_c)
 
-    # -------------------------------------------------------------------------
-    # Plot D
-    # -------------------------------------------------------------------------
     fig_d, top_axes_d, bottom_axes_d = create_doublepad_2x3_figure()
 
     for i, period in enumerate(PERIOD_ORDER):
@@ -2149,11 +2165,9 @@ def main():
     print(f"Loaded charge entries for {len(run_charge_map)} runs from:")
     print(f"  {CSV_FILE}")
 
-    # -------------------------------------------------------------------------
-    # DATA integrated + Q2-bin aggregations
-    # -------------------------------------------------------------------------
     all_run_rows = []
     all_current_rows = []
+    all_skipped_run_rows = []
     q2_current_rows_by_bin = [[] for _ in Q2_BINS]
 
     print("")
@@ -2167,7 +2181,7 @@ def main():
         print(f"ROOT file: {root_path}")
         print("=" * 90)
 
-        run_rows, current_rows, q2_current_rows_this_period = build_data_period_aggregations(
+        run_rows, current_rows, q2_current_rows_this_period, skipped_nonpositive_charge_rows = build_data_period_aggregations(
             period_display_name=period_display_name,
             period_internal_name=period_internal_name,
             root_path=root_path,
@@ -2177,13 +2191,20 @@ def main():
 
         all_run_rows.extend(run_rows)
         all_current_rows.extend(current_rows)
+        all_skipped_run_rows.extend(skipped_nonpositive_charge_rows)
 
         for ibin in range(len(Q2_BINS)):
             q2_current_rows_by_bin[ibin].extend(q2_current_rows_this_period[ibin])
         #endfor
 
-        print(f"Run-level rows: {len(run_rows)}")
+        print(f"Run-level rows kept: {len(run_rows)}")
         print(f"Integrated current groups: {len(current_rows)}")
+        print(f"Skipped non-positive-charge runs: {len(skipped_nonpositive_charge_rows)}")
+
+        if len(skipped_nonpositive_charge_rows) > 0:
+            skipped_list = [int(r["runnum"]) for r in skipped_nonpositive_charge_rows]
+            print(f"  skipped runs = {skipped_list}")
+        #endif
 
         for row in current_rows:
             print(
@@ -2197,9 +2218,6 @@ def main():
         #endfor
     #endfor
 
-    # -------------------------------------------------------------------------
-    # MC integrated + Q2-bin aggregations
-    # -------------------------------------------------------------------------
     print("")
     print("Processing MC ROOT files and computing efficiencies...")
     if args.skip_temp_heavy_mc:
@@ -2223,25 +2241,22 @@ def main():
         )
     #endfor
 
-    # -------------------------------------------------------------------------
-    # Write base diagnostic CSVs
-    # -------------------------------------------------------------------------
     run_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_run_table.csv")
     current_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_current_table.csv")
     mc_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_mc_table.csv")
+    skipped_run_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_skipped_runs.csv")
 
     write_run_table_csv(run_table_csv, all_run_rows)
     write_current_table_csv(current_table_csv, all_current_rows)
     write_mc_table_csv(mc_table_csv, integrated_mc_rows)
+    write_skipped_run_table_csv(skipped_run_table_csv, all_skipped_run_rows)
 
     print("")
     print(f"[saved] {run_table_csv}")
     print(f"[saved] {current_table_csv}")
     print(f"[saved] {mc_table_csv}")
+    print(f"[saved] {skipped_run_table_csv}")
 
-    # -------------------------------------------------------------------------
-    # Colors
-    # -------------------------------------------------------------------------
     default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     if len(default_colors) < len(PERIOD_ORDER):
         raise RuntimeError("Matplotlib default color cycle is shorter than number of periods.")
@@ -2252,9 +2267,6 @@ def main():
         period_color[period] = default_colors[i]
     #endfor
 
-    # -------------------------------------------------------------------------
-    # Integrated fits and tables
-    # -------------------------------------------------------------------------
     integrated_data_fit_results = make_fit_result_map_for_data(all_current_rows)
     integrated_mc_fit_results = make_fit_result_map_for_mc(integrated_mc_rows)
 
@@ -2301,9 +2313,6 @@ def main():
     write_period_summary_csv(period_summary_csv, period_summary_rows)
     print(f"[saved] {period_summary_csv}")
 
-    # -------------------------------------------------------------------------
-    # Integrated plot set
-    # -------------------------------------------------------------------------
     out_a, out_b, out_c, out_d = plot_four_panel_set(
         output_dir=INTEGRATED_OUTPUT_DIR,
         tag="integrated",
@@ -2321,9 +2330,6 @@ def main():
     print(f"[saved] {out_c}")
     print(f"[saved] {out_d}")
 
-    # -------------------------------------------------------------------------
-    # Q2-dependent fits, summaries, and plot sets
-    # -------------------------------------------------------------------------
     print("")
     print("=== Q2-bin normalization summary ===")
 
@@ -2386,14 +2392,18 @@ def main():
     print("")
     print(f"[saved] {q2_summary_plot}")
 
-    # -------------------------------------------------------------------------
-    # Terminal summary tables at very end
-    # -------------------------------------------------------------------------
     for label, rows in q2_integrated_tables_for_terminal:
         print_summary_table(f"Q2 bin {label}", rows)
     #endfor
 
     print_summary_table("Representative integrated period-level normalization summary", period_summary_rows)
+
+    if len(all_skipped_run_rows) > 0:
+        print("")
+        print("Skipped runs with non-positive accumulated charge:")
+        print(f"  total skipped = {len(all_skipped_run_rows)}")
+        print(f"  details saved to: {skipped_run_table_csv}")
+    #endif
 
     print("")
 #enddef
