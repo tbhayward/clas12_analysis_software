@@ -4,13 +4,25 @@
 #
 # Purpose
 # -------
-# Study current dependence in DVCS reconstruction using:
+# Study current dependence in reconstruction using:
 #
 #   DATA:
 #     reconstructed counts / accumulated charge
 #
 #   MC:
 #     reconstructed / generated
+#
+# Default channel
+# ---------------
+# If no channel is specified, this runs exactly as before for:
+#
+#   epgamma   (the e' p gamma final state)
+#
+# Additional runtime channel option
+# ---------------------------------
+# You can now also switch channels at runtime, for example:
+#
+#   python dvcs_current_dependence.py --channel eX
 #
 # Operational logic for the production cross section correction
 # -------------------------------------------------------------
@@ -69,29 +81,6 @@
 # For MC in a Q2 bin:
 #   just use generated and reconstructed counts in that same Q2 bin
 #
-# Integrated plots produced in:
-#   output/dvcs_current_dependence/integrated
-#
-#   (1) six-panel data counts per accumulated charge vs current
-#   (2) six-panel data percent of fitted 0 nA vs current
-#   (3) six-panel data counts per accumulated charge + MC rec/gen together
-#   (4) six-panel data + MC percent of fitted 0 nA, with ratio pad
-#
-# Q2-dependent plots produced in:
-#   output/dvcs_current_dependence/Q2_dependence/<bin_label>/
-#
-# And the parent Q2_dependence directory also contains:
-#   - a five-panel summary plot of the weighted divisor vs Q2
-#   - CSV tables for the Q2-bin summary numbers
-#
-# Diagnostic CSVs:
-#   output/dvcs_current_dependence/dvcs_current_dependence_run_table.csv
-#   output/dvcs_current_dependence/dvcs_current_dependence_current_table.csv
-#   output/dvcs_current_dependence/dvcs_current_dependence_mc_table.csv
-#   output/dvcs_current_dependence/dvcs_current_dependence_residual_table.csv
-#   output/dvcs_current_dependence/dvcs_current_dependence_period_summary.csv
-#   output/dvcs_current_dependence/Q2_dependence/dvcs_current_dependence_q2_summary.csv
-#
 
 import os
 import math
@@ -111,14 +100,6 @@ from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 # -----------------------------------------------------------------------------
 
 CSV_FILE = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
-
-DATA_PERIOD_FILES = [
-    ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
-    ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
-    ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
-    ("Fa18 Out", "rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"),
-    ("Sp19 Inb", "rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"),
-]
 
 PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 
@@ -146,12 +127,7 @@ MC_REFERENCE_CURRENT = {
     "rga_sp19_inb": 50,
 }
 
-MC_DIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen"
 MC_TREE_NAME = "PhysicsEvents"
-
-OUTPUT_DIR = "output/dvcs_current_dependence"
-INTEGRATED_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "integrated")
-Q2_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "Q2_dependence")
 
 Q2_BINS = [
     (1.00, 1.20),
@@ -162,6 +138,33 @@ Q2_BINS = [
     (3.29, 4.33),
     (4.33, 5.76),
 ]
+
+CHANNEL_CONFIG = {
+    "epgamma": {
+        "display_name": "epgamma",
+        "mc_dir": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen",
+        "mc_channel_tag": None,
+        "data_period_files": [
+            ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
+            ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
+            ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
+            ("Fa18 Out", "rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"),
+            ("Sp19 Inb", "rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"),
+        ],
+    },
+    "eX": {
+        "display_name": "eX",
+        "mc_dir": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/eX",
+        "mc_channel_tag": "eX",
+        "data_period_files": [
+            ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_sp18_inb_eX.root"),
+            ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_sp18_out_eX.root"),
+            ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_fa18_inb_eX.root"),
+            ("Fa18 Out", "rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_fa18_out_eX.root"),
+            ("Sp19 Inb", "rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_sp19_inb_eX.root"),
+        ],
+    },
+}
 
 
 # -----------------------------------------------------------------------------
@@ -254,6 +257,33 @@ FA18_OUT_CURRENT = {
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
+
+def get_channel_config(channel):
+
+    if channel not in CHANNEL_CONFIG:
+        raise RuntimeError(
+            f"Unknown channel '{channel}'. Available channels: {sorted(CHANNEL_CONFIG.keys())}"
+        )
+    #endif
+
+    return CHANNEL_CONFIG[channel]
+#enddef
+
+
+def get_output_paths(channel):
+
+    if channel == "epgamma":
+        output_dir = "output/dvcs_current_dependence"
+    else:
+        output_dir = os.path.join("output", "dvcs_current_dependence", channel)
+    #endif
+
+    integrated_output_dir = os.path.join(output_dir, "integrated")
+    q2_output_dir = os.path.join(output_dir, "Q2_dependence")
+
+    return output_dir, integrated_output_dir, q2_output_dir
+#enddef
+
 
 def resolve_current(period_label_internal, runnum):
 
@@ -439,7 +469,7 @@ def parse_mc_filename(basename):
     stem = basename[:-5]
     tokens = stem.split("_")
 
-    if len(tokens) != 7:
+    if len(tokens) != 7 and len(tokens) != 8:
         raise RuntimeError(f"Unexpected MC filename format: {basename}")
     #endif
 
@@ -453,7 +483,18 @@ def parse_mc_filename(basename):
     #endif
 
     period_internal = "_".join(tokens[2:5])
+
     current_token = tokens[5]
+    beam_energy_token = tokens[6]
+
+    if not beam_energy_token.endswith("MeV"):
+        raise RuntimeError(f"Could not parse beam energy token in {basename}")
+    #endif
+
+    channel_tag = None
+    if len(tokens) == 8:
+        channel_tag = tokens[7]
+    #endif
 
     if current_token == "nobkg":
         current_nA = 0
@@ -464,7 +505,7 @@ def parse_mc_filename(basename):
         current_nA = int(current_token[:-2])
     #endif
 
-    return kind, period_internal, current_nA
+    return kind, period_internal, current_nA, beam_energy_token, channel_tag
 #enddef
 
 
@@ -780,7 +821,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
 #enddef
 
 
-def build_mc_aggregation(mc_dir, q2_bins, skip_temp_heavy_mc=False):
+def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_heavy_mc=False):
 
     if not os.path.isdir(mc_dir):
         raise RuntimeError(f"MC directory not found: {mc_dir}")
@@ -798,7 +839,17 @@ def build_mc_aggregation(mc_dir, q2_bins, skip_temp_heavy_mc=False):
             continue
         #endif
 
-        kind, period_internal, current_nA = parse_mc_filename(basename)
+        kind, period_internal, current_nA, beam_energy_token, channel_tag = parse_mc_filename(basename)
+
+        if requested_channel_tag is None:
+            if channel_tag is not None:
+                continue
+            #endif
+        else:
+            if channel_tag != requested_channel_tag:
+                continue
+            #endif
+        #endif
 
         if period_internal not in PERIOD_DISPLAY_FROM_INTERNAL:
             raise RuntimeError(f"Unknown MC period in filename: {basename}")
@@ -1512,7 +1563,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xd, yd, syd, rowsd = period_points_from_current_rows(data_current_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label="Data")
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
         #endif
 
         frd = data_fit_results.get(period, None)
@@ -1541,7 +1592,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xd, yd, syd, rowsd = period_points_from_current_rows(data_current_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label=period)
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label=period)
         #endif
 
         frd = data_fit_results.get(period, None)
@@ -1576,7 +1627,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label="Data")
+                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
             #endif
 
             pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1607,7 +1658,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label=period)
+                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label=period)
             #endif
 
             pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1635,7 +1686,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label="Data")
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
         #endif
         if len(rowsm) > 0:
             ax.errorbar(
@@ -1687,7 +1738,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label=f"{period} data")
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label=f"{period} data")
         #endif
         if len(rowsm) > 0:
             ax.errorbar(
@@ -1748,7 +1799,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label="Data")
+                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
             #endif
 
             data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1834,7 +1885,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             ratio_fit_hi_curve = data_fit_hi_curve / mc_fit_lo_curve
 
             ax_bot.fill_between(xfit, ratio_fit_lo_curve, ratio_fit_hi_curve, color=c, alpha=0.12, linewidth=0)
-            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, color=c)
+            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, linestyle="none", color=c)
             ax_bot.plot(xfit, ratio_fit_curve, color=c)
         #endif
 
@@ -1861,7 +1912,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label=f"{period} data")
+                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label=f"{period} data")
             #endif
 
             data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1930,7 +1981,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             mc_fit_curve = 100.0 * ((frm["m"] * xfit + frm["b"]) / frm["b"])
             ratio_fit_curve = data_fit_curve / mc_fit_curve
 
-            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, color=c)
+            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, linestyle="none", color=c)
             ax_bot.plot(xfit, ratio_fit_curve, color=c)
         #endif
     #endfor
@@ -2013,7 +2064,7 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
         yerr = np.asarray(yerr, dtype=float)
 
         if len(x) > 0:
-            ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="o", capsize=3, color=c)
+            ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="o", capsize=3, linestyle="none", color=c)
         #endif
 
         ax.set_title(period)
@@ -2062,15 +2113,35 @@ def print_summary_table(title, rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--channel",
+        default="epgamma",
+        help="Channel to analyze. Default: epgamma. Currently supported: epgamma, eX",
+    )
+    parser.add_argument(
         "--skip_temp_heavy_mc",
         action="store_true",
         help="Temporarily skip selected MC points if skip_pairs is uncommented in build_mc_aggregation.",
     )
     args = parser.parse_args()
 
+    channel_cfg = get_channel_config(args.channel)
+
+    DATA_PERIOD_FILES = channel_cfg["data_period_files"]
+    MC_DIR = channel_cfg["mc_dir"]
+    MC_CHANNEL_TAG = channel_cfg["mc_channel_tag"]
+
+    OUTPUT_DIR, INTEGRATED_OUTPUT_DIR, Q2_OUTPUT_DIR = get_output_paths(args.channel)
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(INTEGRATED_OUTPUT_DIR, exist_ok=True)
     os.makedirs(Q2_OUTPUT_DIR, exist_ok=True)
+
+    print("")
+    print("============================================================")
+    print(f"Running channel: {args.channel}")
+    print(f"MC directory:    {MC_DIR}")
+    print(f"Output dir:      {OUTPUT_DIR}")
+    print("============================================================")
 
     print("")
     print("Reading charge map...")
@@ -2138,6 +2209,7 @@ def main():
     integrated_mc_rows, q2_mc_rows_by_bin = build_mc_aggregation(
         mc_dir=MC_DIR,
         q2_bins=Q2_BINS,
+        requested_channel_tag=MC_CHANNEL_TAG,
         skip_temp_heavy_mc=args.skip_temp_heavy_mc,
     )
 
