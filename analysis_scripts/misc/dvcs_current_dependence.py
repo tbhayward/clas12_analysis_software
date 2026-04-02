@@ -253,7 +253,6 @@ FA18_OUT_CURRENT = {
     5610: 5,
 }
 
-
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
@@ -506,6 +505,17 @@ def parse_mc_filename(basename):
     #endif
 
     return kind, period_internal, current_nA, beam_energy_token, channel_tag
+#enddef
+
+
+def is_candidate_mc_filename(basename):
+    if not basename.endswith(".root"):
+        return False
+    #endif
+    if basename.startswith("gen_") or basename.startswith("rec_"):
+        return True
+    #endif
+    return False
 #enddef
 
 
@@ -840,9 +850,21 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_
     #endif
 
     grouped = {}
+    skipped_non_mc_files = []
 
     for basename in sorted(os.listdir(mc_dir)):
+        full_path = os.path.join(mc_dir, basename)
+
+        if os.path.isdir(full_path):
+            continue
+        #endif
+
         if not basename.endswith(".root"):
+            continue
+        #endif
+
+        if not is_candidate_mc_filename(basename):
+            skipped_non_mc_files.append(basename)
             continue
         #endif
 
@@ -871,14 +893,20 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_
             grouped[key] = {"gen": None, "rec": None}
         #endif
 
-        full_path = os.path.join(mc_dir, basename)
-
         if grouped[key][kind] is not None:
             raise RuntimeError(f"Duplicate MC file for {key}: {basename}")
         #endif
 
         grouped[key][kind] = full_path
     #endfor
+
+    if len(skipped_non_mc_files) > 0:
+        print("")
+        print("Skipping non-MC ROOT files found in MC directory:")
+        for name in skipped_non_mc_files:
+            print(f"  {name}")
+        #endfor
+    #endif
 
     integrated_mc_rows = []
     q2_mc_rows_by_bin = [[] for _ in q2_bins]
@@ -1588,7 +1616,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xd, yd, syd, rowsd = period_points_from_current_rows(data_current_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label="Data")
         #endif
 
         frd = data_fit_results.get(period, None)
@@ -1617,7 +1645,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xd, yd, syd, rowsd = period_points_from_current_rows(data_current_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label=period)
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label=period)
         #endif
 
         frd = data_fit_results.get(period, None)
@@ -1649,7 +1677,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
+                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label="Data")
             #endif
 
             pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1680,7 +1708,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label=period)
+                ax.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label=period)
             #endif
 
             pct_fit, pct_fit_lo, pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1705,7 +1733,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label="Data")
         #endif
         if len(rowsm) > 0:
             ax.errorbar(
@@ -1757,7 +1785,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
         xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
 
         if len(rowsd) > 0:
-            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, linestyle="none", color=c, label=f"{period} data")
+            ax.errorbar(xd, yd, yerr=syd, fmt="o", capsize=3, color=c, label=f"{period} data")
         #endif
         if len(rowsm) > 0:
             ax.errorbar(
@@ -1815,7 +1843,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label="Data")
+                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label="Data")
             #endif
 
             data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1901,7 +1929,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             ratio_fit_hi_curve = data_fit_hi_curve / mc_fit_lo_curve
 
             ax_bot.fill_between(xfit, ratio_fit_lo_curve, ratio_fit_hi_curve, color=c, alpha=0.12, linewidth=0)
-            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, linestyle="none", color=c)
+            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, color=c)
             ax_bot.plot(xfit, ratio_fit_curve, color=c)
         #endif
 
@@ -1928,7 +1956,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             if len(rowsd) > 0:
                 data_pct = 100.0 * (yd / frd["b"])
                 data_pct_err = 100.0 * np.sqrt((syd / frd["b"]) ** 2 + ((yd * frd["sb"]) / (frd["b"] * frd["b"])) ** 2)
-                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, linestyle="none", color=c, label=f"{period} data")
+                ax_top.errorbar(xd, data_pct, yerr=data_pct_err, fmt="o", capsize=3, color=c, label=f"{period} data")
             #endif
 
             data_pct_fit, data_pct_fit_lo, data_pct_fit_hi = compute_percent_curve(xfit, frd)
@@ -1997,7 +2025,7 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
             mc_fit_curve = 100.0 * ((frm["m"] * xfit + frm["b"]) / frm["b"])
             ratio_fit_curve = data_fit_curve / mc_fit_curve
 
-            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, linestyle="none", color=c)
+            ax_bot.errorbar(ratio_x, ratio_y, yerr=ratio_sy, fmt="o", capsize=3, color=c)
             ax_bot.plot(xfit, ratio_fit_curve, color=c)
         #endif
     #endfor
@@ -2080,7 +2108,7 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
         yerr = np.asarray(yerr, dtype=float)
 
         if len(x) > 0:
-            ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="o", capsize=3, linestyle="none", color=c)
+            ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="o", capsize=3, color=c)
         #endif
 
         ax.set_title(period)
