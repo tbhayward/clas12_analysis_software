@@ -290,7 +290,7 @@ class CalibrationScript {
 
                 // do not use the qa if it is MC (runnum = 11)
                 // boolean process_event = filter.isValid(research_Event)
-                boolean process_event = qa.pass(runnum, evnum));
+                boolean process_event = qa.pass(runnum, evnum);
 		    	if (config_run > 17768) process_event == false; // outbending RGC Sp23
 
                 if (process_event && banks_test(event)) {
