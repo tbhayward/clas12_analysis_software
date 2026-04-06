@@ -18,7 +18,7 @@ TREE_NAME = "PhysicsEvents"
 RUN_FILES = [
     ("Su22", "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/calibration/rgc_su22_inb_NH3_epi+X_calibration.root"),
     ("Fa22", "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/calibration/rgc_fa22_inb_NH3_epi+X_calibration.root"),
-    ("Sp23", "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/calibration/rgc_sp23_inb_NH3_epi+X_calibration.roo"),
+    ("Sp23", "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/calibration/rgc_sp23_inb_NH3_epi+X_calibration.root"),
 ]
 
 # Assumed detector mapping.
