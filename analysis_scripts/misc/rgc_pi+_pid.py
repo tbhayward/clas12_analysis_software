@@ -799,26 +799,23 @@ def make_beta_vs_p_plot(tree, run_label, det_label, detector_branch):
         1
     )
 
-    plot_pad.cd(1)
+        plot_pad.cd(1)
     plot_pad.SetLeftMargin(0.12)
     plot_pad.SetRightMargin(0.15)
     plot_pad.SetBottomMargin(0.12)
     plot_pad.SetTopMargin(0.06)
+    plot_pad.SetLogz()
 
     style_hist2d(hist, "p (GeV)", "beta", "Counts")
     hist.SetTitle("")
-    hist.Draw("COLZ")
 
-    info_box = ROOT.TPaveText(0.66, 0.78, 0.92, 0.90, "NDC")
-    info_box.SetFillColor(ROOT.kWhite)
-    info_box.SetFillStyle(1001)
-    info_box.SetBorderSize(1)
-    info_box.SetTextAlign(12)
-    info_box.SetTextSize(0.035)
-    info_box.AddText("Included PID:")
-    info_box.AddText("211, 321, 2212")
-    info_box.AddText("N = %d" % n_selected)
-    info_box.Draw()
+    if det_label == "CD":
+        hist.GetXaxis().SetRangeUser(0.0, 2.0)
+    else:
+        hist.GetXaxis().SetRangeUser(0.0, 6.0)
+    #endif
+
+    hist.Draw("COLZ")
 
     out_name = os.path.join(
         OUTPUT_DIR,
@@ -828,7 +825,7 @@ def make_beta_vs_p_plot(tree, run_label, det_label, detector_branch):
 
     print("Saved plot: %s" % out_name)
 
-    return canvas, hist, info_box
+    return canvas, hist
 #endfor
 
 # ------------------------------------------------
