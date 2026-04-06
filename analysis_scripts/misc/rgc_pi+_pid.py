@@ -799,7 +799,7 @@ def make_beta_vs_p_plot(tree, run_label, det_label, detector_branch):
         1
     )
 
-        plot_pad.cd(1)
+    plot_pad.cd(1)
     plot_pad.SetLeftMargin(0.12)
     plot_pad.SetRightMargin(0.15)
     plot_pad.SetBottomMargin(0.12)
