@@ -21,11 +21,11 @@ RUN_FILES = [
 ]
 
 # Assumed detector mapping:
-#   CD -> track_sector_5, track_chi2_5
-#   FD -> track_sector_6, track_chi2_6
+#   CD -> track_sector_5
+#   FD -> track_sector_6
 DETECTOR_CONFIGS = [
-    ("CD", "track_sector_5", "track_chi2_5"),
-    ("FD", "track_sector_6", "track_chi2_6"),
+    ("CD", "track_sector_5"),
+    ("FD", "track_sector_6"),
 ]
 
 P_BINS = [
@@ -196,7 +196,7 @@ def create_histograms(run_label, det_label):
     return hists
 #endfor
 
-def fill_histograms(tree, run_label, det_label, detector_branch, chi2_branch):
+def fill_histograms(tree, run_label, det_label, detector_branch):
     hists = create_histograms(run_label, det_label)
 
     p_sum = [0.0 for _ in range(len(P_BINS))]
@@ -210,7 +210,6 @@ def fill_histograms(tree, run_label, det_label, detector_branch, chi2_branch):
     print("File: %s" % tree.GetCurrentFile().GetName())
     print("Tree entries: %d" % n_total)
     print("Using detector branch: %s" % detector_branch)
-    print("Using chi2 branch:     %s" % chi2_branch)
     print("============================================================")
 
     for i_entry in range(n_total):
@@ -231,7 +230,7 @@ def fill_histograms(tree, run_label, det_label, detector_branch, chi2_branch):
         #endif
 
         p_val = float(tree.p)
-        chi2_val = float(getattr(tree, chi2_branch))
+        chi2_val = float(tree.particle_chi2pid)
 
         hists[0].Fill(chi2_val)
 
@@ -349,7 +348,7 @@ def build_graph_from_results(run_label, det_label, bin_results):
     graph.SetMarkerSize(1.0)
     graph.SetLineWidth(2)
     graph.GetXaxis().SetTitle("p (GeV)")
-    graph.GetYaxis().SetTitle("#mu(track #chi^{2})")
+    graph.GetYaxis().SetTitle("#mu(particle #chi^{2}_{pid})")
     graph.GetXaxis().CenterTitle(True)
     graph.GetYaxis().CenterTitle(True)
     graph.GetXaxis().SetTitleSize(0.055)
@@ -361,8 +360,8 @@ def build_graph_from_results(run_label, det_label, bin_results):
     return graph
 #endfor
 
-def analyze_one_detector(tree, run_label, det_label, detector_branch, chi2_branch):
-    hists, p_means, p_counts = fill_histograms(tree, run_label, det_label, detector_branch, chi2_branch)
+def analyze_one_detector(tree, run_label, det_label, detector_branch):
+    hists, p_means, p_counts = fill_histograms(tree, run_label, det_label, detector_branch)
 
     fit_results = {
         "integrated": None,
@@ -417,7 +416,7 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch, chi2_branc
     #endfor
 
     canvas.cd(1)
-    style_hist(h_int, "track #chi^{2}", "Counts")
+    style_hist(h_int, "particle #chi^{2}_{pid}", "Counts")
     h_int.SetTitle("")
     h_int.Draw("hist")
     if int_fit:
@@ -429,7 +428,7 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch, chi2_branc
     for i_bin, result in enumerate(fit_results["bins"]):
         canvas.cd(i_bin + 2)
         hist = hists[i_bin + 1]
-        style_hist(hist, "track #chi^{2}", "Counts")
+        style_hist(hist, "particle #chi^{2}_{pid}", "Counts")
         hist.SetTitle("")
         hist.Draw("hist")
         if result["fit"]:
@@ -451,7 +450,7 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch, chi2_branc
         8.2
     )
     frame.SetDirectory(0)
-    style_hist(frame, "p (GeV)", "#mu(track #chi^{2})")
+    style_hist(frame, "p (GeV)", "#mu(particle #chi^{2}_{pid})")
     frame.SetMinimum(-4.0)
     frame.SetMaximum(4.0)
     frame.SetTitle("")
@@ -466,7 +465,7 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch, chi2_branc
 
     out_name = os.path.join(
         OUTPUT_DIR,
-        "track_chi2_pip_%s_%s.png" % (run_label, det_label)
+        "particle_chi2pid_pip_%s_%s.png" % (run_label, det_label)
     )
     canvas.SaveAs(out_name)
 
@@ -498,17 +497,17 @@ def main():
             "particle_pid",
             "p",
             "particle_beta",
+            "particle_chi2pid",
             "track_sector_5",
             "track_sector_6",
-            "track_chi2_5",
-            "track_chi2_6",
         ]
+        
         require_branches(tree, required_branches)
 
         set_branch_statuses(tree, required_branches)
 
-        for det_label, detector_branch, chi2_branch in DETECTOR_CONFIGS:
-            analyze_one_detector(tree, run_label, det_label, detector_branch, chi2_branch)
+        for det_label, detector_branch in DETECTOR_CONFIGS:
+            analyze_one_detector(tree, run_label, det_label, detector_branch)
         #endfor
 
         root_file.Close()
