@@ -303,7 +303,6 @@ class CalibrationScript {
                     	particle_Index++) {
 
                         particle_pid = rec_Bank.getInt("pid", particle_Index);
-                        println(particle_pid);
                         if (particle_pid == 0 || particle_pid == 45) { continue; }
                         if (particle_pid == -211 || particle_pid == -321 || particle_pid == 2112 || particle_pid == -11 || particle_pid == 22) { continue; }
                         // if (particle_pid == 0 || particle_pid == 45 || particle_pid == 211 || particle_pid == -211 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2112) { continue; }
