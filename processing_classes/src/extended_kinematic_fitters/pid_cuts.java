@@ -454,7 +454,7 @@ public class pid_cuts {
             }
         }
 
-        return Math.abs(chi2pid) < 4;
+        return Math.abs(chi2pid) < 3.5;
     }
 
     public boolean charged_hadron_pass2_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {

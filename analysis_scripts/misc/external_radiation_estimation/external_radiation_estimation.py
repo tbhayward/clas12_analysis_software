@@ -81,10 +81,18 @@ M_n2 = m_n * m_n
 # ------------------------------------------------
 # binning defaults
 # RGA: -6.5 to 1.5
-# RGC: -6.5 to 1.5
+# RGC regular: centered at -3.5 with total width 5.0 cm
+# so -6.0 to -1.0
 # ------------------------------------------------
 
 vz_step = 0.5
+
+# ------------------------------------------------
+# RGC special hard cut
+# ------------------------------------------------
+
+rgc_hard_vz_cut_min = -5.758
+rgc_hard_vz_cut_max = 1.515
 
 # ------------------------------------------------
 # sector definitions using e_phi in radians
@@ -123,8 +131,8 @@ channel_overlay_colors = {
 }
 
 channel_overlay_labels = {
-    "epi_plus": "e p #rightarrow e #pi^{+} X",
-    "epi_plus_pi_minus": "e p #rightarrow e #pi^{+} #pi^{-} X"
+    "epi_plus": "ep #rightarrow e#pi^{+} X",
+    "epi_plus_pi_minus": "ep #rightarrow e#pi^{+}#pi^{-} X"
 }
 
 # ------------------------------------------------
@@ -177,7 +185,8 @@ channel_configs = {
         "vz_min": -6.5,
         "vz_max": 1.5,
         "run_period": "RGA",
-        "channel_key": "epi_plus"
+        "channel_key": "epi_plus",
+        "apply_hard_vz_cut": False
     },
     "mc_rga_epi_plus": {
         "electron": {
@@ -207,7 +216,8 @@ channel_configs = {
         "vz_min": -6.5,
         "vz_max": 1.5,
         "run_period": "RGA MC",
-        "channel_key": "epi_plus"
+        "channel_key": "epi_plus",
+        "apply_hard_vz_cut": False
     },
     "data_rga_epi_plus_pi_minus": {
         "electron": {
@@ -244,7 +254,8 @@ channel_configs = {
         "vz_min": -6.5,
         "vz_max": 1.5,
         "run_period": "RGA",
-        "channel_key": "epi_plus_pi_minus"
+        "channel_key": "epi_plus_pi_minus",
+        "apply_hard_vz_cut": False
     },
     "mc_rga_epi_plus_pi_minus": {
         "electron": {
@@ -281,7 +292,8 @@ channel_configs = {
         "vz_min": -6.5,
         "vz_max": 1.5,
         "run_period": "RGA MC",
-        "channel_key": "epi_plus_pi_minus"
+        "channel_key": "epi_plus_pi_minus",
+        "apply_hard_vz_cut": False
     },
     "data_rgc_epi_plus": {
         "electron": {
@@ -308,10 +320,11 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGC Data: ep #rightarrow e#pi^{+} X",
         "do_energy_correction": True,
-        "vz_min": -6.5,
-        "vz_max": 1.5,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
         "run_period": "RGC",
-        "channel_key": "epi_plus"
+        "channel_key": "epi_plus",
+        "apply_hard_vz_cut": False
     },
     "data_rgc_epi_plus_pi_minus": {
         "electron": {
@@ -345,10 +358,80 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGC Data: ep #rightarrow e#pi^{+}#pi^{-} X",
         "do_energy_correction": True,
-        "vz_min": -6.5,
-        "vz_max": 1.5,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
         "run_period": "RGC",
-        "channel_key": "epi_plus_pi_minus"
+        "channel_key": "epi_plus_pi_minus",
+        "apply_hard_vz_cut": False
+    },
+    "data_rgc_epi_plus_hardcut": {
+        "electron": {
+            "p": "e_p",
+            "theta": "e_theta",
+            "phi": "e_phi"
+        },
+        "hadrons": [
+            {
+                "name": "pip",
+                "p": "p_p",
+                "theta": "p_theta",
+                "phi": "p_phi",
+                "mass": m_pi
+            }
+        ],
+        "observable_type": "Mx2",
+        "observable_branch": "Mx2",
+        "observable_min": 0.6,
+        "observable_max": 1.2,
+        "observable_bins": 45,
+        "observable_axis_title": "M_{X}^{2} (GeV^{2})",
+        "observable_peak_title": "M_{X}^{2}",
+        "expected_peak": M_n2,
+        "latex_label": "RGC Data Hard Cut: ep #rightarrow e#pi^{+} X",
+        "do_energy_correction": True,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
+        "run_period": "RGC Hard Cut",
+        "channel_key": "epi_plus",
+        "apply_hard_vz_cut": True
+    },
+    "data_rgc_epi_plus_pi_minus_hardcut": {
+        "electron": {
+            "p": "e_p",
+            "theta": "e_theta",
+            "phi": "e_phi"
+        },
+        "hadrons": [
+            {
+                "name": "pip",
+                "p": "p1_p",
+                "theta": "p1_theta",
+                "phi": "p1_phi",
+                "mass": m_pi
+            },
+            {
+                "name": "pim",
+                "p": "p2_p",
+                "theta": "p2_theta",
+                "phi": "p2_phi",
+                "mass": m_pi
+            }
+        ],
+        "observable_type": "Mx2",
+        "observable_branch": "Mx2",
+        "observable_min": 0.6,
+        "observable_max": 1.2,
+        "observable_bins": 45,
+        "observable_axis_title": "M_{X}^{2} (GeV^{2})",
+        "observable_peak_title": "M_{X}^{2}",
+        "expected_peak": M_p2,
+        "latex_label": "RGC Data Hard Cut: ep #rightarrow e#pi^{+}#pi^{-} X",
+        "do_energy_correction": True,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
+        "run_period": "RGC Hard Cut",
+        "channel_key": "epi_plus_pi_minus",
+        "apply_hard_vz_cut": True
     }
 }
 
@@ -1125,6 +1208,7 @@ def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results
     left_margin_frac = 0.70
     left_pad = ROOT.TPad("left_pad_%s" % make_safe_tag(dataset_label), "", 0.00, 0.00, left_margin_frac, 1.00)
     right_pad = ROOT.TPad("right_pad_%s" % make_safe_tag(dataset_label), "", left_margin_frac, 0.00, 1.00, 1.00)
+
     keep_alive(canvas, left_pad)
     keep_alive(canvas, right_pad)
 
@@ -1203,6 +1287,7 @@ def draw_integrated_canvas(dataset_label, channel_latex, histograms, fit_results
 
     right_top = ROOT.TPad("right_top_%s" % make_safe_tag(dataset_label), "", 0.00, 0.50, 1.00, 1.00)
     right_bot = ROOT.TPad("right_bot_%s" % make_safe_tag(dataset_label), "", 0.00, 0.00, 1.00, 0.50)
+
     keep_alive(canvas, right_top)
     keep_alive(canvas, right_bot)
 
@@ -1655,12 +1740,17 @@ def process_file_worker(task):
     vz_edges = build_vz_edges(vz_min, vz_max, vz_step)
     n_vz_bins = len(vz_edges) - 1
 
+    apply_hard_vz_cut = cfg["apply_hard_vz_cut"]
+
     print("")
     print("==============================================================")
     print("Starting dataset: %s" % dataset_label)
     print("Input file: %s" % input_file)
     print("Expected %s peak position = %.6f" % (observable_peak_title, expected_peak))
     print("Using vz_e range %.1f to %.1f cm" % (vz_min, vz_max))
+    if apply_hard_vz_cut:
+        print("Applying hard vz_e cut: %.3f < vz_e < %.3f" % (rgc_hard_vz_cut_min, rgc_hard_vz_cut_max))
+    #endif
     print("Opening file...")
 
     f = ROOT.TFile.Open(input_file, "READ")
@@ -1720,6 +1810,12 @@ def process_file_worker(task):
         print_progress(i_entry, n_entries, dataset_label)
 
         vz_e = float(tree.vz_e)
+
+        if apply_hard_vz_cut:
+            if not (rgc_hard_vz_cut_min < vz_e and vz_e < rgc_hard_vz_cut_max):
+                continue
+            #endif
+        #endif
 
         if vz_e < vz_min or vz_e >= vz_max:
             continue
@@ -1926,7 +2022,8 @@ def process_file_worker(task):
         "photon_hist_counts": photon_hist_counts,
         "vz_hist_counts": vz_hist_counts,
         "vz_min": vz_min,
-        "vz_max": vz_max
+        "vz_max": vz_max,
+        "apply_hard_vz_cut": apply_hard_vz_cut
     }
 #enddef
 
@@ -1967,19 +2064,19 @@ def make_combined_energy_correction_plot(results_by_label):
         keep_alive(canvas, graph)
 
         if dataset_label == "data_rga_epi_plus":
-            labels.append("RGA: e p #rightarrow e #pi^{+} X")
+            labels.append("RGA: ep #rightarrow e#pi^{+} X")
             colors.append(ROOT.kRed + 1)
             styles.append(1)
         elif dataset_label == "data_rga_epi_plus_pi_minus":
-            labels.append("RGA: e p #rightarrow e #pi^{+} #pi^{-} X")
+            labels.append("RGA: ep #rightarrow e#pi^{+}#pi^{-} X")
             colors.append(ROOT.kBlue + 1)
             styles.append(1)
         elif dataset_label == "data_rgc_epi_plus":
-            labels.append("RGC: e p #rightarrow e #pi^{+} X")
+            labels.append("RGC: ep #rightarrow e#pi^{+} X")
             colors.append(ROOT.kRed + 1)
             styles.append(2)
         elif dataset_label == "data_rgc_epi_plus_pi_minus":
-            labels.append("RGC: e p #rightarrow e #pi^{+} #pi^{-} X")
+            labels.append("RGC: ep #rightarrow e#pi^{+}#pi^{-} X")
             colors.append(ROOT.kBlue + 1)
             styles.append(2)
         #endif
@@ -2094,6 +2191,166 @@ def make_combined_energy_correction_plot(results_by_label):
     canvas.Update()
 
     output_png = os.path.join(output_dir, "external_radiation_energy_correction_data_only.png")
+    canvas.SaveAs(output_png)
+    print("Saved: %s" % output_png)
+#enddef
+
+def make_rgc_hardcut_energy_correction_plot(results_by_label):
+    ordered_labels = [
+        "data_rgc_epi_plus_hardcut",
+        "data_rgc_epi_plus_pi_minus_hardcut"
+    ]
+
+    graphs = []
+    labels = []
+    colors = []
+
+    x_min = None
+    x_max = None
+
+    canvas = ROOT.TCanvas("canvas_rgc_hardcut_energy_correction", "rgc hardcut energy correction", 1100, 800)
+
+    for dataset_label in ordered_labels:
+        if dataset_label not in results_by_label:
+            continue
+        #endif
+
+        result = results_by_label[dataset_label]
+        if result["integrated_correction_xy"] is None:
+            continue
+        #endif
+
+        graph = build_graph_from_xy_lists(result["integrated_correction_xy"])
+        if graph is None:
+            continue
+        #endif
+
+        graphs.append(graph)
+        keep_alive(canvas, graph)
+
+        if dataset_label == "data_rgc_epi_plus_hardcut":
+            labels.append("RGC hard cut: ep #rightarrow e#pi^{+} X")
+            colors.append(ROOT.kRed + 1)
+        elif dataset_label == "data_rgc_epi_plus_pi_minus_hardcut":
+            labels.append("RGC hard cut: ep #rightarrow e#pi^{+}#pi^{-} X")
+            colors.append(ROOT.kBlue + 1)
+        #endif
+
+        if x_min is None or result["vz_min"] < x_min:
+            x_min = result["vz_min"]
+        #endif
+        if x_max is None or result["vz_max"] > x_max:
+            x_max = result["vz_max"]
+        #endif
+    #endfor
+
+    if len(graphs) == 0:
+        print("Skipping RGC hard-cut energy-correction plot because no correction graphs are available.")
+        return
+    #endif
+
+    for i in range(len(graphs)):
+        graphs[i].SetLineColor(colors[i])
+        graphs[i].SetLineStyle(1)
+        graphs[i].SetLineWidth(3)
+    #endfor
+
+    min_y = 0.0
+    max_y = 0.0
+    first_point = True
+
+    for graph in graphs:
+        n = graph.GetN()
+        for i in range(n):
+            y_val = float(graph.GetPointY(i))
+            if not math.isfinite(y_val):
+                continue
+            #endif
+
+            if first_point:
+                min_y = y_val
+                max_y = y_val
+                first_point = False
+            else:
+                if y_val < min_y:
+                    min_y = y_val
+                #endif
+                if y_val > max_y:
+                    max_y = y_val
+                #endif
+            #endif
+        #endfor
+    #endfor
+
+    if first_point:
+        min_y = 0.0
+        max_y = 0.01
+    #endif
+
+    if min_y > 0.0:
+        min_y = 0.0
+    #endif
+
+    y_span = max_y - min_y
+    if y_span <= 0.0:
+        y_span = 0.01
+    #endif
+
+    canvas.cd()
+
+    ROOT.gPad.SetLeftMargin(0.14)
+    ROOT.gPad.SetRightMargin(0.05)
+    ROOT.gPad.SetBottomMargin(0.13)
+    ROOT.gPad.SetTopMargin(0.08)
+
+    frame = ROOT.TH1D("frame_rgc_hardcut_energy_correction", "", 100, x_min, x_max)
+    frame.SetDirectory(0)
+    frame.SetMinimum(min_y - 0.10 * y_span)
+    frame.SetMaximum(max_y + 0.25 * y_span)
+    frame.GetXaxis().SetTitle("v_{z,e} (cm)")
+    frame.GetYaxis().SetTitle("e^{-} energy correction (GeV)")
+    frame.GetXaxis().CenterTitle()
+    frame.GetYaxis().CenterTitle()
+    frame.GetXaxis().SetTitleSize(0.05)
+    frame.GetYaxis().SetTitleSize(0.05)
+    frame.GetXaxis().SetLabelSize(0.04)
+    frame.GetYaxis().SetLabelSize(0.04)
+    frame.GetYaxis().SetTitleOffset(1.25)
+    frame.Draw()
+    keep_alive(canvas, frame)
+
+    for graph in graphs:
+        graph.Draw("L SAME")
+    #endfor
+
+    legend = ROOT.TLegend(0.16, 0.68, 0.88, 0.89)
+    legend.SetBorderSize(1)
+    legend.SetFillStyle(1001)
+    legend.SetFillColor(ROOT.kWhite)
+    legend.SetTextSize(0.030)
+
+    for i in range(len(graphs)):
+        legend.AddEntry(graphs[i], labels[i], "l")
+    #endfor
+    legend.Draw()
+    keep_alive(canvas, legend)
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextSize(0.040)
+    latex.DrawLatex(0.16, 0.93, "RGC hard-cut external-radiation energy correction")
+    keep_alive(canvas, latex)
+
+    latex2 = ROOT.TLatex()
+    latex2.SetNDC()
+    latex2.SetTextSize(0.032)
+    latex2.DrawLatex(0.16, 0.88, "-5.758 < v_{z,e} < 1.515 required before binning")
+    keep_alive(canvas, latex2)
+
+    canvas.Modified()
+    canvas.Update()
+
+    output_png = os.path.join(output_dir, "external_radiation_energy_correction_rgc_hardcut.png")
     canvas.SaveAs(output_png)
     print("Saved: %s" % output_png)
 #enddef
@@ -2228,10 +2485,10 @@ def make_sector_energy_correction_multipanel(results_by_label):
     ]
 
     labels = {
-        "data_rga_epi_plus": "RGA: e p #rightarrow e #pi^{+} X",
-        "data_rga_epi_plus_pi_minus": "RGA: e p #rightarrow e #pi^{+} #pi^{-} X",
-        "data_rgc_epi_plus": "RGC: e p #rightarrow e #pi^{+} X",
-        "data_rgc_epi_plus_pi_minus": "RGC: e p #rightarrow e #pi^{+} #pi^{-} X"
+        "data_rga_epi_plus": "RGA: ep #rightarrow e#pi^{+} X",
+        "data_rga_epi_plus_pi_minus": "RGA: ep #rightarrow e#pi^{+}#pi^{-} X",
+        "data_rgc_epi_plus": "RGC: ep #rightarrow e#pi^{+} X",
+        "data_rgc_epi_plus_pi_minus": "RGC: ep #rightarrow e#pi^{+}#pi^{-} X"
     }
 
     canvas = ROOT.TCanvas("canvas_sector_energy_correction_multipanel", "sector energy correction multipanel", 1600, 1200)
@@ -2307,10 +2564,10 @@ def make_sector_energy_correction_multipanel(results_by_label):
 #enddef
 
 def make_photon_energy_multipanel(results_by_label):
-    run_period_order = ["RGA", "RGC"]
+    run_period_order = ["RGA", "RGC", "RGC Hard Cut"]
 
-    canvas = ROOT.TCanvas("canvas_photon_energy_multipanel", "photon energy multipanel", 1800, 700)
-    canvas.Divide(2, 1, 0.001, 0.001)
+    canvas = ROOT.TCanvas("canvas_photon_energy_multipanel", "photon energy multipanel", 2600, 700)
+    canvas.Divide(3, 1, 0.001, 0.001)
 
     for i_panel in range(len(run_period_order)):
         run_period = run_period_order[i_panel]
@@ -2347,6 +2604,12 @@ def make_photon_energy_multipanel(results_by_label):
 
             h.SetLineColor(channel_overlay_colors[channel_key])
             h.SetLineWidth(3)
+
+            if result["apply_hard_vz_cut"]:
+                h.SetLineStyle(2)
+            else:
+                h.SetLineStyle(1)
+            #endif
 
             if h.GetMaximum() > local_max:
                 local_max = h.GetMaximum()
@@ -2427,17 +2690,21 @@ def make_vz_distribution_plot(results_by_label):
         "data_rga_epi_plus_pi_minus",
         "data_rgc_epi_plus",
         "data_rgc_epi_plus_pi_minus",
+        "data_rgc_epi_plus_hardcut",
+        "data_rgc_epi_plus_pi_minus_hardcut",
         "mc_rga_epi_plus",
         "mc_rga_epi_plus_pi_minus"
     ]
 
     display_labels = {
-        "data_rga_epi_plus": "RGA Data: e p #rightarrow e #pi^{+} X",
-        "data_rga_epi_plus_pi_minus": "RGA Data: e p #rightarrow e #pi^{+} #pi^{-} X",
-        "data_rgc_epi_plus": "RGC Data: e p #rightarrow e #pi^{+} X",
-        "data_rgc_epi_plus_pi_minus": "RGC Data: e p #rightarrow e #pi^{+} #pi^{-} X",
-        "mc_rga_epi_plus": "RGA MC: e p #rightarrow e #pi^{+} X",
-        "mc_rga_epi_plus_pi_minus": "RGA MC: e p #rightarrow e #pi^{+} #pi^{-} X"
+        "data_rga_epi_plus": "RGA Data: ep #rightarrow e#pi^{+} X",
+        "data_rga_epi_plus_pi_minus": "RGA Data: ep #rightarrow e#pi^{+}#pi^{-} X",
+        "data_rgc_epi_plus": "RGC Data: ep #rightarrow e#pi^{+} X",
+        "data_rgc_epi_plus_pi_minus": "RGC Data: ep #rightarrow e#pi^{+}#pi^{-} X",
+        "data_rgc_epi_plus_hardcut": "RGC Hard Cut: ep #rightarrow e#pi^{+} X",
+        "data_rgc_epi_plus_pi_minus_hardcut": "RGC Hard Cut: ep #rightarrow e#pi^{+}#pi^{-} X",
+        "mc_rga_epi_plus": "RGA MC: ep #rightarrow e#pi^{+} X",
+        "mc_rga_epi_plus_pi_minus": "RGA MC: ep #rightarrow e#pi^{+}#pi^{-} X"
     }
 
     line_colors = {
@@ -2445,6 +2712,8 @@ def make_vz_distribution_plot(results_by_label):
         "data_rga_epi_plus_pi_minus": ROOT.kBlue + 1,
         "data_rgc_epi_plus": ROOT.kMagenta + 1,
         "data_rgc_epi_plus_pi_minus": ROOT.kGreen + 2,
+        "data_rgc_epi_plus_hardcut": ROOT.kRed + 1,
+        "data_rgc_epi_plus_pi_minus_hardcut": ROOT.kBlue + 1,
         "mc_rga_epi_plus": ROOT.kBlack,
         "mc_rga_epi_plus_pi_minus": ROOT.kGray + 2
     }
@@ -2454,6 +2723,8 @@ def make_vz_distribution_plot(results_by_label):
         "data_rga_epi_plus_pi_minus": 1,
         "data_rgc_epi_plus": 2,
         "data_rgc_epi_plus_pi_minus": 2,
+        "data_rgc_epi_plus_hardcut": 3,
+        "data_rgc_epi_plus_pi_minus_hardcut": 3,
         "mc_rga_epi_plus": 1,
         "mc_rga_epi_plus_pi_minus": 2
     }
@@ -2526,7 +2797,7 @@ def make_vz_distribution_plot(results_by_label):
     frame.Draw()
     keep_alive(canvas, frame)
 
-    legend = ROOT.TLegend(0.16, 0.58, 0.88, 0.89)
+    legend = ROOT.TLegend(0.16, 0.52, 0.88, 0.89)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
@@ -2571,6 +2842,14 @@ def run_all():
         {
             "input_file": input_file_data_rgc_epipim,
             "dataset_label": "data_rgc_epi_plus_pi_minus"
+        },
+        {
+            "input_file": input_file_data_rgc_epi,
+            "dataset_label": "data_rgc_epi_plus_hardcut"
+        },
+        {
+            "input_file": input_file_data_rgc_epipim,
+            "dataset_label": "data_rgc_epi_plus_pi_minus_hardcut"
         }
     ]
 
@@ -2609,6 +2888,7 @@ def run_all():
     #endwith
 
     make_combined_energy_correction_plot(results_by_label)
+    make_rgc_hardcut_energy_correction_plot(results_by_label)
     make_sector_energy_correction_multipanel(results_by_label)
     make_photon_energy_multipanel(results_by_label)
     make_vz_distribution_plot(results_by_label)
