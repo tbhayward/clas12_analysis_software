@@ -29,11 +29,10 @@ DETECTOR_CONFIGS = [
 ]
 
 CD_P_BINS = [
-    (0.000, 0.500),
-    (0.500, 1.000),
-    (1.000, 1.500),
-    (1.500, 2.000),
-    (2.000, 2.500),
+    (0.500, 0.750),
+    (0.750, 1.000),
+    (1.000, 1.250),
+    (1.250, 1.500),
 ]
 
 FD_P_BINS = [
@@ -42,9 +41,9 @@ FD_P_BINS = [
     (1.500, 2.000),
     (2.000, 2.500),
     (2.500, 3.000),
-    (3.000, 4.000),
+    (3.000, 3.500),
+    (3.500, 4.000),
     (4.000, 5.000),
-    (5.000, 8.000),
 ]
 
 CHI2_XMIN = -5.0
@@ -58,15 +57,10 @@ BETA_P_XMIN = 0.0
 BETA_P_XMAX = 8.0
 BETA_P_YMIN = 0.0
 BETA_P_YMAX = 1.2
-
 BETA_P_NBINS_X = 240
 BETA_P_NBINS_Y = 240
 
-PID_SPECIES = [
-    (211, "pi+", ROOT.kBlue + 1),
-    (321, "K+", ROOT.kRed + 1),
-    (2212, "p", ROOT.kGreen + 2),
-]
+VALID_BETA_P_PIDS = set([211, 321, 2212])
 
 # ------------------------------------------------
 # helpers
@@ -124,9 +118,16 @@ def get_p_bins(det_label):
 
 def get_panel_layout(det_label):
     if det_label == "CD":
-        return 4, 2
+        return 3, 2
     #endif
     return 5, 2
+#endfor
+
+def get_graph_xmax(det_label):
+    if det_label == "CD":
+        return 1.5
+    #endif
+    return 5.0
 #endfor
 
 def style_hist(hist, x_title, y_title):
@@ -155,8 +156,25 @@ def style_frame_hist(hist, x_title, y_title):
     hist.GetYaxis().SetTitleOffset(1.05)
 #endfor
 
+def style_hist2d(hist, x_title, y_title, z_title):
+    hist.GetXaxis().SetTitle(x_title)
+    hist.GetYaxis().SetTitle(y_title)
+    hist.GetZaxis().SetTitle(z_title)
+    hist.GetXaxis().CenterTitle(True)
+    hist.GetYaxis().CenterTitle(True)
+    hist.GetZaxis().CenterTitle(True)
+    hist.GetXaxis().SetTitleSize(0.050)
+    hist.GetYaxis().SetTitleSize(0.050)
+    hist.GetZaxis().SetTitleSize(0.050)
+    hist.GetXaxis().SetLabelSize(0.045)
+    hist.GetYaxis().SetLabelSize(0.045)
+    hist.GetZaxis().SetLabelSize(0.045)
+    hist.GetYaxis().SetTitleOffset(1.10)
+    hist.GetZaxis().SetTitleOffset(1.10)
+#endfor
+
 def nice_bin_label(pmin, pmax):
-    return "%.3f < p < %.3f (GeV)" % (pmin, pmax)
+    return "%.2f < p < %.2f (GeV)" % (pmin, pmax)
 #endfor
 
 def create_histograms(run_label, det_label, p_bins):
@@ -185,6 +203,21 @@ def create_histograms(run_label, det_label, p_bins):
     #endfor
 
     return hists
+#endfor
+
+def create_beta_histogram(run_label, det_label):
+    hist = ROOT.TH2D(
+        "h2_beta_p_%s_%s" % (run_label, det_label),
+        "",
+        BETA_P_NBINS_X,
+        BETA_P_XMIN,
+        BETA_P_XMAX,
+        BETA_P_NBINS_Y,
+        BETA_P_YMIN,
+        BETA_P_YMAX
+    )
+    hist.SetDirectory(0)
+    return hist
 #endfor
 
 def make_title_canvas(name, width, height, title_text, ncols, nrows):
@@ -224,6 +257,9 @@ def determine_fit_range(hist, det_label, i_bin_or_none):
     fit_max = FIT_XMAX
     fit_mode = "full"
 
+    # For CD, bins after the second bin are fit only on the left side.
+    # With the current CD bins, that means:
+    #   [1.00,1.25] and [1.25,1.50]
     if det_label == "CD" and i_bin_or_none is not None and i_bin_or_none >= 2:
         fit_mode = "left-only"
         fit_max = peak_x
@@ -388,7 +424,19 @@ def fill_histograms(tree, run_label, det_label, detector_branch, p_bins):
         hists[0].Fill(chi2_val)
 
         for i_bin, (pmin, pmax) in enumerate(p_bins):
-            if p_val >= pmin and p_val < pmax:
+            in_bin = False
+
+            if i_bin < len(p_bins) - 1:
+                if p_val >= pmin and p_val < pmax:
+                    in_bin = True
+                #endif
+            else:
+                if p_val >= pmin and p_val <= pmax:
+                    in_bin = True
+                #endif
+            #endif
+
+            if in_bin:
                 hists[i_bin + 1].Fill(chi2_val)
                 p_sum[i_bin] += p_val
                 p_count[i_bin] += 1
@@ -447,7 +495,7 @@ def print_fit_summary(run_label, det_label, p_bins, fit_results):
     #endif
 
     for i_bin, result in enumerate(fit_results["bins"]):
-        label = "%.3f-%.3f GeV" % (p_bins[i_bin][0], p_bins[i_bin][1])
+        label = "%.2f-%.2f GeV" % (p_bins[i_bin][0], p_bins[i_bin][1])
         if result["fit_info"] is not None:
             print(
                 "%-24s  %-10d  %-10.5f  %-10.5f  %-10.5f  %-10.5f  [%.2f, %.2f]" % (
@@ -656,13 +704,14 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch):
     grid_pad.cd(final_panel)
     graph = build_graph_from_results(run_label, det_label, fit_results["bins"])
     y_min, y_max = determine_graph_y_range(fit_results["bins"])
+    x_max_graph = get_graph_xmax(det_label)
 
     frame = ROOT.TH1D(
         "frame_%s_%s" % (run_label, det_label),
         "",
         100,
         0.0,
-        8.2
+        x_max_graph
     )
     frame.SetDirectory(0)
     style_frame_hist(frame, "p (GeV)", "#mu(chi2pid)")
@@ -670,7 +719,7 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch):
     frame.SetMaximum(y_max)
     frame.SetTitle("")
     frame.Draw()
-    line_zero = ROOT.TLine(0.0, 0.0, 8.2, 0.0)
+    line_zero = ROOT.TLine(0.0, 0.0, x_max_graph, 0.0)
     line_zero.SetLineStyle(1)
     line_zero.SetLineWidth(1)
     line_zero.Draw("same")
@@ -692,47 +741,20 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch):
     return canvas, hists, graph, objects_to_keep
 #endfor
 
-def create_beta_species_hists(run_label, det_label):
-    hists = []
-
-    for pid, species_label, color in PID_SPECIES:
-        hist = ROOT.TH2D(
-            "h2_beta_p_%s_%s_pid_%d" % (run_label, det_label, pid),
-            "",
-            BETA_P_NBINS_X,
-            BETA_P_XMIN,
-            BETA_P_XMAX,
-            BETA_P_NBINS_Y,
-            BETA_P_YMIN,
-            BETA_P_YMAX
-        )
-        hist.SetDirectory(0)
-        hist.SetLineColor(color)
-        hist.SetLineWidth(2)
-        hist.SetContour(12)
-        hists.append((pid, species_label, color, hist))
-    #endfor
-
-    return hists
-#endfor
-
-def fill_beta_species_hists(tree, run_label, det_label, detector_branch):
-    species_hists = create_beta_species_hists(run_label, det_label)
+def fill_beta_histogram(tree, run_label, det_label, detector_branch):
+    hist = create_beta_histogram(run_label, det_label)
 
     n_total = tree.GetEntries()
+    n_selected = 0
 
     print("")
     print("============================================================")
-    print("Building beta vs p plot for %s %s" % (run_label, det_label))
+    print("Building beta vs p histogram for %s %s" % (run_label, det_label))
     print("File: %s" % tree.GetCurrentFile().GetName())
     print("Tree entries: %d" % n_total)
     print("Using detector branch: %s" % detector_branch)
+    print("Included particle_pid: 211, 321, 2212")
     print("============================================================")
-
-    species_map = {}
-    for pid, species_label, color, hist in species_hists:
-        species_map[pid] = hist
-    #endfor
 
     for i_entry in range(n_total):
         tree.GetEntry(i_entry)
@@ -742,7 +764,7 @@ def fill_beta_species_hists(tree, run_label, det_label, detector_branch):
         #endif
 
         pid = int(tree.particle_pid)
-        if pid not in species_map:
+        if pid not in VALID_BETA_P_PIDS:
             continue
         #endif
 
@@ -754,14 +776,18 @@ def fill_beta_species_hists(tree, run_label, det_label, detector_branch):
         p_val = float(tree.p)
         beta_val = float(tree.particle_beta)
 
-        species_map[pid].Fill(p_val, beta_val)
+        hist.Fill(p_val, beta_val)
+        n_selected += 1
     #endfor
 
-    return species_hists
+    print("Selected tracks for beta vs p: %d" % n_selected)
+    print("")
+
+    return hist, n_selected
 #endfor
 
 def make_beta_vs_p_plot(tree, run_label, det_label, detector_branch):
-    species_hists = fill_beta_species_hists(tree, run_label, det_label, detector_branch)
+    hist, n_selected = fill_beta_histogram(tree, run_label, det_label, detector_branch)
 
     title_text = "%s %s, beta vs p for particle_pid = 211, 321, 2212" % (run_label, det_label)
     canvas, title_pad, plot_pad = make_title_canvas(
@@ -775,66 +801,34 @@ def make_beta_vs_p_plot(tree, run_label, det_label, detector_branch):
 
     plot_pad.cd(1)
     plot_pad.SetLeftMargin(0.12)
-    plot_pad.SetRightMargin(0.05)
+    plot_pad.SetRightMargin(0.15)
     plot_pad.SetBottomMargin(0.12)
     plot_pad.SetTopMargin(0.06)
 
-    frame = ROOT.TH2D(
-        "frame_beta_p_%s_%s" % (run_label, det_label),
-        "",
-        100,
-        BETA_P_XMIN,
-        BETA_P_XMAX,
-        100,
-        BETA_P_YMIN,
-        BETA_P_YMAX
-    )
-    frame.SetDirectory(0)
-    frame.GetXaxis().SetTitle("p (GeV)")
-    frame.GetYaxis().SetTitle("beta")
-    frame.GetXaxis().CenterTitle(True)
-    frame.GetYaxis().CenterTitle(True)
-    frame.GetXaxis().SetTitleSize(0.050)
-    frame.GetYaxis().SetTitleSize(0.050)
-    frame.GetXaxis().SetLabelSize(0.045)
-    frame.GetYaxis().SetLabelSize(0.045)
-    frame.GetYaxis().SetTitleOffset(1.10)
-    frame.Draw()
+    style_hist2d(hist, "p (GeV)", "beta", "Counts")
+    hist.SetTitle("")
+    hist.Draw("COLZ")
 
-    first = True
-    objects_to_keep = [frame]
-
-    for pid, species_label, color, hist in species_hists:
-        if first:
-            hist.Draw("CONT3 SAME")
-            first = False
-        else:
-            hist.Draw("CONT3 SAME")
-        #endif
-        objects_to_keep.append(hist)
-    #endfor
-
-    legend = ROOT.TLegend(0.68, 0.73, 0.93, 0.90)
-    legend.SetBorderSize(1)
-    legend.SetFillColor(ROOT.kWhite)
-    legend.SetFillStyle(1001)
-    legend.SetTextSize(0.040)
-
-    for pid, species_label, color, hist in species_hists:
-        legend.AddEntry(hist, species_label, "l")
-    #endfor
-    legend.Draw()
-    objects_to_keep.append(legend)
+    info_box = ROOT.TPaveText(0.66, 0.78, 0.92, 0.90, "NDC")
+    info_box.SetFillColor(ROOT.kWhite)
+    info_box.SetFillStyle(1001)
+    info_box.SetBorderSize(1)
+    info_box.SetTextAlign(12)
+    info_box.SetTextSize(0.035)
+    info_box.AddText("Included PID:")
+    info_box.AddText("211, 321, 2212")
+    info_box.AddText("N = %d" % n_selected)
+    info_box.Draw()
 
     out_name = os.path.join(
         OUTPUT_DIR,
-        "beta_vs_p_species_%s_%s.png" % (run_label, det_label)
+        "beta_vs_p_combined_%s_%s.png" % (run_label, det_label)
     )
     canvas.SaveAs(out_name)
 
     print("Saved plot: %s" % out_name)
 
-    return canvas, objects_to_keep
+    return canvas, hist, info_box
 #endfor
 
 # ------------------------------------------------

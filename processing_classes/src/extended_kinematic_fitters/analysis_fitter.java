@@ -59,7 +59,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 //                                && p > 1.20
                 //                            && p < 5.00 
                 && pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
-                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank) //                                && (passesForwardDetector // dedicated PID cuts for forward
+//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank) //                                && (passesForwardDetector // dedicated PID cuts for forward
                 //                                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
                 //                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
                 //                                        : true)

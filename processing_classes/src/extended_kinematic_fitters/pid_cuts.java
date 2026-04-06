@@ -375,7 +375,7 @@ public class pid_cuts {
         boolean isCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         if (isForwardDetector) {
-            if (p >= 5.0) {
+            if (p < 0.5 || p >= 5.0) {
                 return false;
             }
             if (runnum >= 6616 && runnum <= 6783) {
@@ -416,7 +416,7 @@ public class pid_cuts {
             if (pid == 2212 && p >= 1.5) {
                 return false;
             }
-            if (p < 0.25) {
+            if (p < 0.25 || p >= 1.5) {
                 return false;
             }
             if (runnum >= 6616 && runnum <= 6783) {
@@ -454,7 +454,7 @@ public class pid_cuts {
             }
         }
 
-        return Math.abs(chi2pid) < 4.0;
+        return Math.abs(chi2pid) < 3.5;
     }
 
     public boolean charged_hadron_pass2_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
