@@ -80,7 +80,8 @@ M_n2 = m_n * m_n
 
 # ------------------------------------------------
 # binning defaults
-# RGA: -6.5 to 1.5
+# RGA regular: centered at -3.5 with total width 5.0 cm
+# so -6.0 to -1.0
 # RGC regular: centered at -3.5 with total width 5.0 cm
 # so -6.0 to -1.0
 # ------------------------------------------------
@@ -182,8 +183,8 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGA Data: ep #rightarrow e#pi^{+} X",
         "do_energy_correction": True,
-        "vz_min": -6.5,
-        "vz_max": 1.5,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
         "run_period": "RGA",
         "channel_key": "epi_plus",
         "apply_hard_vz_cut": False
@@ -213,8 +214,8 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGA MC: ep #rightarrow e#pi^{+} X",
         "do_energy_correction": False,
-        "vz_min": -6.5,
-        "vz_max": 1.5,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
         "run_period": "RGA MC",
         "channel_key": "epi_plus",
         "apply_hard_vz_cut": False
@@ -251,8 +252,8 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGA Data: ep #rightarrow e#pi^{+}#pi^{-} X",
         "do_energy_correction": True,
-        "vz_min": -6.5,
-        "vz_max": 1.5,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
         "run_period": "RGA",
         "channel_key": "epi_plus_pi_minus",
         "apply_hard_vz_cut": False
@@ -289,8 +290,8 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGA MC: ep #rightarrow e#pi^{+}#pi^{-} X",
         "do_energy_correction": False,
-        "vz_min": -6.5,
-        "vz_max": 1.5,
+        "vz_min": -6.0,
+        "vz_max": -1.0,
         "run_period": "RGA MC",
         "channel_key": "epi_plus_pi_minus",
         "apply_hard_vz_cut": False
