@@ -28,20 +28,45 @@ DETECTOR_CONFIGS = [
     ("FD", "track_sector_6"),
 ]
 
-P_BINS = [
-    (0.50, 1.00),
-    (1.00, 1.50),
-    (1.50, 2.00),
-    (2.00, 2.50),
-    (2.50, 3.00),
-    (3.00, 4.00),
-    (4.00, 5.00),
-    (5.00, 8.00),
+CD_P_BINS = [
+    (0.000, 0.500),
+    (0.500, 1.000),
+    (1.000, 1.500),
+    (1.500, 2.000),
+    (2.000, 2.500),
 ]
 
-CHI2_XMIN = -8.0
-CHI2_XMAX = 8.0
-CHI2_NBINS = 160
+FD_P_BINS = [
+    (0.500, 1.000),
+    (1.000, 1.500),
+    (1.500, 2.000),
+    (2.000, 2.500),
+    (2.500, 3.000),
+    (3.000, 4.000),
+    (4.000, 5.000),
+    (5.000, 8.000),
+]
+
+CHI2_XMIN = -5.0
+CHI2_XMAX = 5.0
+CHI2_NBINS = 200
+
+FIT_XMIN = -2.0
+FIT_XMAX = 2.0
+
+BETA_P_XMIN = 0.0
+BETA_P_XMAX = 8.0
+BETA_P_YMIN = 0.0
+BETA_P_YMAX = 1.2
+
+BETA_P_NBINS_X = 240
+BETA_P_NBINS_Y = 240
+
+PID_SPECIES = [
+    (211, "pi+", ROOT.kBlue + 1),
+    (321, "K+", ROOT.kRed + 1),
+    (2212, "p", ROOT.kGreen + 2),
+]
 
 # ------------------------------------------------
 # helpers
@@ -90,83 +115,51 @@ def set_branch_statuses(tree, active_branches):
     #endfor
 #endfor
 
+def get_p_bins(det_label):
+    if det_label == "CD":
+        return CD_P_BINS
+    #endif
+    return FD_P_BINS
+#endfor
+
+def get_panel_layout(det_label):
+    if det_label == "CD":
+        return 4, 2
+    #endif
+    return 5, 2
+#endfor
+
 def style_hist(hist, x_title, y_title):
     hist.SetLineWidth(2)
     hist.GetXaxis().SetTitle(x_title)
     hist.GetYaxis().SetTitle(y_title)
     hist.GetXaxis().CenterTitle(True)
     hist.GetYaxis().CenterTitle(True)
-    hist.GetXaxis().SetTitleSize(0.055)
-    hist.GetYaxis().SetTitleSize(0.055)
-    hist.GetXaxis().SetLabelSize(0.045)
-    hist.GetYaxis().SetLabelSize(0.045)
-    hist.GetYaxis().SetTitleOffset(1.10)
+    hist.GetXaxis().SetTitleSize(0.060)
+    hist.GetYaxis().SetTitleSize(0.060)
+    hist.GetXaxis().SetLabelSize(0.050)
+    hist.GetYaxis().SetLabelSize(0.050)
+    hist.GetYaxis().SetTitleOffset(1.05)
+    hist.GetXaxis().SetRangeUser(CHI2_XMIN, CHI2_XMAX)
 #endfor
 
-def determine_fit_window(hist):
-    max_bin = hist.GetMaximumBin()
-    peak_x = hist.GetBinCenter(max_bin)
-    rms = hist.GetRMS()
-
-    if rms <= 0:
-        rms = 1.0
-    #endif
-
-    fit_min = peak_x - 1.5 * rms
-    fit_max = peak_x + 1.5 * rms
-
-    if fit_min < CHI2_XMIN:
-        fit_min = CHI2_XMIN
-    #endif
-
-    if fit_max > CHI2_XMAX:
-        fit_max = CHI2_XMAX
-    #endif
-
-    if fit_max <= fit_min:
-        fit_min = CHI2_XMIN
-        fit_max = CHI2_XMAX
-    #endif
-
-    return fit_min, fit_max
-#endfor
-
-def fit_histogram_gaussian(hist, fit_name):
-    n_entries = hist.GetEntries()
-
-    if n_entries < 10 or hist.Integral() <= 0:
-        return None
-    #endif
-
-    fit_min, fit_max = determine_fit_window(hist)
-
-    func = ROOT.TF1(fit_name, "gaus", fit_min, fit_max)
-
-    peak_bin = hist.GetMaximumBin()
-    peak_x = hist.GetBinCenter(peak_bin)
-    peak_y = hist.GetBinContent(peak_bin)
-
-    initial_sigma = hist.GetRMS()
-    if initial_sigma <= 0:
-        initial_sigma = 1.0
-    #endif
-
-    func.SetParameters(peak_y, peak_x, initial_sigma)
-
-    fit_result = hist.Fit(func, "RQSN")
-
-    if int(fit_result) != 0:
-        return None
-    #endif
-
-    return func
+def style_frame_hist(hist, x_title, y_title):
+    hist.GetXaxis().SetTitle(x_title)
+    hist.GetYaxis().SetTitle(y_title)
+    hist.GetXaxis().CenterTitle(True)
+    hist.GetYaxis().CenterTitle(True)
+    hist.GetXaxis().SetTitleSize(0.060)
+    hist.GetYaxis().SetTitleSize(0.060)
+    hist.GetXaxis().SetLabelSize(0.050)
+    hist.GetYaxis().SetLabelSize(0.050)
+    hist.GetYaxis().SetTitleOffset(1.05)
 #endfor
 
 def nice_bin_label(pmin, pmax):
-    return "%.2f < p < %.2f (GeV)" % (pmin, pmax)
+    return "%.3f < p < %.3f (GeV)" % (pmin, pmax)
 #endfor
 
-def create_histograms(run_label, det_label):
+def create_histograms(run_label, det_label, p_bins):
     hists = []
 
     h_int = ROOT.TH1D(
@@ -176,9 +169,10 @@ def create_histograms(run_label, det_label):
         CHI2_XMIN,
         CHI2_XMAX
     )
+    h_int.SetDirectory(0)
     hists.append(h_int)
 
-    for i_bin, (pmin, pmax) in enumerate(P_BINS):
+    for i_bin, _ in enumerate(p_bins):
         hist = ROOT.TH1D(
             "h_chi2_%s_%s_bin_%d" % (run_label, det_label, i_bin),
             "",
@@ -186,21 +180,180 @@ def create_histograms(run_label, det_label):
             CHI2_XMIN,
             CHI2_XMAX
         )
-        hists.append(hist)
-    #endfor
-
-    for hist in hists:
         hist.SetDirectory(0)
+        hists.append(hist)
     #endfor
 
     return hists
 #endfor
 
-def fill_histograms(tree, run_label, det_label, detector_branch):
-    hists = create_histograms(run_label, det_label)
+def make_title_canvas(name, width, height, title_text, ncols, nrows):
+    canvas = ROOT.TCanvas(name, "", width, height)
 
-    p_sum = [0.0 for _ in range(len(P_BINS))]
-    p_count = [0 for _ in range(len(P_BINS))]
+    title_pad = ROOT.TPad(name + "_title", "", 0.0, 0.92, 1.0, 1.0)
+    grid_pad = ROOT.TPad(name + "_grid", "", 0.0, 0.0, 1.0, 0.92)
+
+    title_pad.SetFillColor(0)
+    title_pad.SetBorderMode(0)
+    title_pad.SetMargin(0.02, 0.02, 0.05, 0.05)
+    title_pad.Draw()
+
+    grid_pad.SetFillColor(0)
+    grid_pad.SetBorderMode(0)
+    grid_pad.SetMargin(0.0, 0.0, 0.0, 0.0)
+    grid_pad.Draw()
+    grid_pad.Divide(ncols, nrows, 0.001, 0.001)
+
+    title_pad.cd()
+    title = ROOT.TLatex()
+    title.SetNDC(True)
+    title.SetTextAlign(22)
+    title.SetTextSize(0.50)
+    title.DrawLatex(0.50, 0.50, title_text)
+
+    canvas.cd()
+
+    return canvas, title_pad, grid_pad
+#endfor
+
+def determine_fit_range(hist, det_label, i_bin_or_none):
+    peak_bin = hist.GetMaximumBin()
+    peak_x = hist.GetBinCenter(peak_bin)
+
+    fit_min = FIT_XMIN
+    fit_max = FIT_XMAX
+    fit_mode = "full"
+
+    if det_label == "CD" and i_bin_or_none is not None and i_bin_or_none >= 2:
+        fit_mode = "left-only"
+        fit_max = peak_x
+        if fit_max > FIT_XMAX:
+            fit_max = FIT_XMAX
+        #endif
+        if fit_max < -0.20:
+            fit_max = -0.20
+        #endif
+    #endif
+
+    if fit_max <= fit_min + 0.20:
+        fit_min = FIT_XMIN
+        fit_max = FIT_XMAX
+        fit_mode = "full-fallback"
+    #endif
+
+    return fit_min, fit_max, fit_mode
+#endfor
+
+def fit_histogram_gaussian(hist, fit_name, det_label, i_bin_or_none):
+    n_entries = int(hist.GetEntries())
+
+    if n_entries < 10 or hist.Integral() <= 0:
+        return None
+    #endif
+
+    fit_min, fit_max, fit_mode = determine_fit_range(hist, det_label, i_bin_or_none)
+
+    func = ROOT.TF1(fit_name, "gaus", CHI2_XMIN, CHI2_XMAX)
+
+    peak_bin = hist.GetMaximumBin()
+    peak_x = hist.GetBinCenter(peak_bin)
+    peak_y = hist.GetBinContent(peak_bin)
+
+    initial_sigma = hist.GetRMS()
+    if initial_sigma <= 0.0:
+        initial_sigma = 0.5
+    #endif
+    if initial_sigma > 2.0:
+        initial_sigma = 2.0
+    #endif
+
+    func.SetParameters(peak_y, peak_x, initial_sigma)
+
+    fit_result = hist.Fit(func, "RQSN", "", fit_min, fit_max)
+
+    if int(fit_result) != 0:
+        return None
+    #endif
+
+    return {
+        "func": func,
+        "fit_min": fit_min,
+        "fit_max": fit_max,
+        "fit_mode": fit_mode,
+    }
+#endfor
+
+def build_function_segments(fit_info, seg_prefix):
+    if fit_info is None:
+        return []
+    #endif
+
+    func = fit_info["func"]
+    fit_min = fit_info["fit_min"]
+    fit_max = fit_info["fit_max"]
+
+    amp = func.GetParameter(0)
+    mean = func.GetParameter(1)
+    sigma = func.GetParameter(2)
+
+    segments = []
+
+    if fit_min > CHI2_XMIN:
+        left_seg = ROOT.TF1(seg_prefix + "_left", "gaus", CHI2_XMIN, fit_min)
+        left_seg.SetParameters(amp, mean, sigma)
+        left_seg.SetLineColor(ROOT.kRed + 1)
+        left_seg.SetLineStyle(2)
+        left_seg.SetLineWidth(2)
+        segments.append(left_seg)
+    #endif
+
+    center_seg = ROOT.TF1(seg_prefix + "_center", "gaus", fit_min, fit_max)
+    center_seg.SetParameters(amp, mean, sigma)
+    center_seg.SetLineColor(ROOT.kRed + 1)
+    center_seg.SetLineStyle(1)
+    center_seg.SetLineWidth(2)
+    segments.append(center_seg)
+
+    if fit_max < CHI2_XMAX:
+        right_seg = ROOT.TF1(seg_prefix + "_right", "gaus", fit_max, CHI2_XMAX)
+        right_seg.SetParameters(amp, mean, sigma)
+        right_seg.SetLineColor(ROOT.kRed + 1)
+        right_seg.SetLineStyle(2)
+        right_seg.SetLineWidth(2)
+        segments.append(right_seg)
+    #endif
+
+    return segments
+#endfor
+
+def draw_info_box(fit_info, hist, fit_result_dict):
+    box = ROOT.TPaveText(0.56, 0.68, 0.94, 0.90, "NDC")
+    box.SetFillColor(ROOT.kWhite)
+    box.SetFillStyle(1001)
+    box.SetBorderSize(1)
+    box.SetTextAlign(12)
+    box.SetTextSize(0.050)
+
+    entries = int(hist.GetEntries())
+    box.AddText("N = %d" % entries)
+
+    if fit_info is None:
+        box.AddText("fit failed")
+    else:
+        box.AddText("#mu = %.3f #pm %.3f" % (fit_result_dict["mu"], fit_result_dict["mu_err"]))
+        box.AddText("#sigma = %.3f #pm %.3f" % (fit_result_dict["sigma"], fit_result_dict["sigma_err"]))
+        box.AddText("fit: [%.2f, %.2f]" % (fit_info["fit_min"], fit_info["fit_max"]))
+    #endif
+
+    box.Draw()
+    return box
+#endfor
+
+def fill_histograms(tree, run_label, det_label, detector_branch, p_bins):
+    hists = create_histograms(run_label, det_label, p_bins)
+
+    p_sum = [0.0 for _ in range(len(p_bins))]
+    p_count = [0 for _ in range(len(p_bins))]
 
     n_total = tree.GetEntries()
 
@@ -234,7 +387,7 @@ def fill_histograms(tree, run_label, det_label, detector_branch):
 
         hists[0].Fill(chi2_val)
 
-        for i_bin, (pmin, pmax) in enumerate(P_BINS):
+        for i_bin, (pmin, pmax) in enumerate(p_bins):
             if p_val >= pmin and p_val < pmax:
                 hists[i_bin + 1].Fill(chi2_val)
                 p_sum[i_bin] += p_val
@@ -245,71 +398,79 @@ def fill_histograms(tree, run_label, det_label, detector_branch):
     #endfor
 
     p_means = []
-    for i_bin in range(len(P_BINS)):
+    for i_bin in range(len(p_bins)):
         if p_count[i_bin] > 0:
             p_means.append(p_sum[i_bin] / float(p_count[i_bin]))
         else:
-            p_means.append(0.5 * (P_BINS[i_bin][0] + P_BINS[i_bin][1]))
+            p_means.append(0.5 * (p_bins[i_bin][0] + p_bins[i_bin][1]))
         #endif
     #endfor
 
     return hists, p_means, p_count
 #endfor
 
-def print_fit_summary(run_label, det_label, fit_results):
+def print_fit_summary(run_label, det_label, p_bins, fit_results):
     print("")
     print("------------------------------------------------------------")
     print("Gaussian fit summary for %s %s" % (run_label, det_label))
     print("------------------------------------------------------------")
-    print("%-24s  %-12s  %-12s  %-12s  %-12s  %-12s" % ("Bin", "Entries", "mu", "sigma", "mu err", "sigma err"))
+    print("%-24s  %-10s  %-10s  %-10s  %-10s  %-10s  %-14s" % (
+        "Bin", "Entries", "mu", "sigma", "mu err", "sigma err", "fit range"
+    ))
 
     integrated = fit_results["integrated"]
-    if integrated["fit"] is not None:
+    if integrated["fit_info"] is not None:
         print(
-            "%-24s  %-12d  %-12.5f  %-12.5f  %-12.5f  %-12.5f" % (
+            "%-24s  %-10d  %-10.5f  %-10.5f  %-10.5f  %-10.5f  [%.2f, %.2f]" % (
                 "Integrated",
                 integrated["entries"],
                 integrated["mu"],
                 integrated["sigma"],
                 integrated["mu_err"],
-                integrated["sigma_err"]
+                integrated["sigma_err"],
+                integrated["fit_info"]["fit_min"],
+                integrated["fit_info"]["fit_max"],
             )
         )
     else:
         print(
-            "%-24s  %-12d  %-12s  %-12s  %-12s  %-12s" % (
+            "%-24s  %-10d  %-10s  %-10s  %-10s  %-10s  %-14s" % (
                 "Integrated",
                 integrated["entries"],
-                "fit failed",
-                "fit failed",
-                "fit failed",
-                "fit failed"
+                "failed",
+                "failed",
+                "failed",
+                "failed",
+                "failed"
             )
         )
     #endif
 
-    for result in fit_results["bins"]:
-        label = "%.2f-%.2f GeV" % (result["pmin"], result["pmax"])
-        if result["fit"] is not None:
+    for i_bin, result in enumerate(fit_results["bins"]):
+        label = "%.3f-%.3f GeV" % (p_bins[i_bin][0], p_bins[i_bin][1])
+        if result["fit_info"] is not None:
             print(
-                "%-24s  %-12d  %-12.5f  %-12.5f  %-12.5f  %-12.5f" % (
+                "%-24s  %-10d  %-10.5f  %-10.5f  %-10.5f  %-10.5f  [%.2f, %.2f]" % (
                     label,
                     result["entries"],
                     result["mu"],
                     result["sigma"],
                     result["mu_err"],
-                    result["sigma_err"]
+                    result["sigma_err"],
+                    result["fit_info"]["fit_min"],
+                    result["fit_info"]["fit_max"],
                 )
             )
         else:
             print(
-                "%-24s  %-12d  %-12s  %-12s  %-12s  %-12s" % (
+                "%-24s  %-10d  %-10s  %-10s  %-10s  %-10s  %-14s" % (
                     label,
                     result["entries"],
-                    "fit failed",
-                    "fit failed",
-                    "fit failed",
-                    "fit failed"
+                    "failed",
+                    "failed",
+                    "failed",
+                    "failed",
+                    "failed"
                 )
             )
         #endif
@@ -326,7 +487,7 @@ def build_graph_from_results(run_label, det_label, bin_results):
     ey = []
 
     for result in bin_results:
-        if result["fit"] is None:
+        if result["fit_info"] is None:
             continue
         #endif
 
@@ -347,21 +508,44 @@ def build_graph_from_results(run_label, det_label, bin_results):
     graph.SetMarkerStyle(20)
     graph.SetMarkerSize(1.0)
     graph.SetLineWidth(2)
-    graph.GetXaxis().SetTitle("p (GeV)")
-    graph.GetYaxis().SetTitle("#mu(particle #chi^{2}_{pid})")
-    graph.GetXaxis().CenterTitle(True)
-    graph.GetYaxis().CenterTitle(True)
-    graph.GetXaxis().SetTitleSize(0.055)
-    graph.GetYaxis().SetTitleSize(0.055)
-    graph.GetXaxis().SetLabelSize(0.045)
-    graph.GetYaxis().SetLabelSize(0.045)
-    graph.GetYaxis().SetTitleOffset(1.10)
 
     return graph
 #endfor
 
+def determine_graph_y_range(bin_results):
+    y_min = 999.0
+    y_max = -999.0
+
+    for result in bin_results:
+        if result["fit_info"] is None:
+            continue
+        #endif
+        low = result["mu"] - result["sigma"]
+        high = result["mu"] + result["sigma"]
+        if low < y_min:
+            y_min = low
+        #endif
+        if high > y_max:
+            y_max = high
+        #endif
+    #endfor
+
+    if y_min > y_max:
+        y_min = -2.0
+        y_max = 2.0
+    #endif
+
+    pad = 0.20 * (y_max - y_min)
+    if pad <= 0.0:
+        pad = 1.0
+    #endif
+
+    return y_min - pad, y_max + pad
+#endfor
+
 def analyze_one_detector(tree, run_label, det_label, detector_branch):
-    hists, p_means, p_counts = fill_histograms(tree, run_label, det_label, detector_branch)
+    p_bins = get_p_bins(det_label)
+    hists, p_means, p_counts = fill_histograms(tree, run_label, det_label, detector_branch, p_bins)
 
     fit_results = {
         "integrated": None,
@@ -369,99 +553,133 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch):
     }
 
     h_int = hists[0]
-    int_fit = fit_histogram_gaussian(h_int, "f_int_%s_%s" % (run_label, det_label))
+    int_fit_info = fit_histogram_gaussian(h_int, "f_int_%s_%s" % (run_label, det_label), det_label, None)
 
     fit_results["integrated"] = {
         "entries": int(h_int.GetEntries()),
-        "fit": int_fit,
-        "mu": int_fit.GetParameter(1) if int_fit else None,
-        "sigma": abs(int_fit.GetParameter(2)) if int_fit else None,
-        "mu_err": int_fit.GetParError(1) if int_fit else None,
-        "sigma_err": int_fit.GetParError(2) if int_fit else None
+        "fit_info": int_fit_info,
+        "mu": int_fit_info["func"].GetParameter(1) if int_fit_info else None,
+        "sigma": abs(int_fit_info["func"].GetParameter(2)) if int_fit_info else None,
+        "mu_err": int_fit_info["func"].GetParError(1) if int_fit_info else None,
+        "sigma_err": int_fit_info["func"].GetParError(2) if int_fit_info else None
     }
 
-    for i_bin, (pmin, pmax) in enumerate(P_BINS):
+    for i_bin, (pmin, pmax) in enumerate(p_bins):
         hist = hists[i_bin + 1]
-        fit = fit_histogram_gaussian(hist, "f_bin_%s_%s_%d" % (run_label, det_label, i_bin))
+        fit_info = fit_histogram_gaussian(hist, "f_bin_%s_%s_%d" % (run_label, det_label, i_bin), det_label, i_bin)
 
         result = {
             "pmin": pmin,
             "pmax": pmax,
             "pmean": p_means[i_bin],
             "entries": int(hist.GetEntries()),
-            "fit": fit,
-            "mu": fit.GetParameter(1) if fit else None,
-            "sigma": abs(fit.GetParameter(2)) if fit else None,
-            "mu_err": fit.GetParError(1) if fit else None,
-            "sigma_err": fit.GetParError(2) if fit else None
+            "fit_info": fit_info,
+            "mu": fit_info["func"].GetParameter(1) if fit_info else None,
+            "sigma": abs(fit_info["func"].GetParameter(2)) if fit_info else None,
+            "mu_err": fit_info["func"].GetParError(1) if fit_info else None,
+            "sigma_err": fit_info["func"].GetParError(2) if fit_info else None
         }
         fit_results["bins"].append(result)
     #endfor
 
-    print_fit_summary(run_label, det_label, fit_results)
+    print_fit_summary(run_label, det_label, p_bins, fit_results)
 
-    canvas = ROOT.TCanvas("c_%s_%s" % (run_label, det_label), "", 2400, 1000)
-    canvas.Divide(5, 2)
+    ncols, nrows = get_panel_layout(det_label)
 
-    title_latex = ROOT.TLatex()
-    title_latex.SetNDC(True)
-    title_latex.SetTextSize(0.050)
+    if det_label == "CD":
+        canvas_width = 1800
+        canvas_height = 1000
+    else:
+        canvas_width = 2400
+        canvas_height = 1000
+    #endif
 
-    for ipad in range(1, 11):
-        pad = canvas.cd(ipad)
-        pad.SetLeftMargin(0.12)
+    global_title = "%s %s, particle_pid = 211" % (run_label, det_label)
+    canvas, title_pad, grid_pad = make_title_canvas(
+        "c_%s_%s" % (run_label, det_label),
+        canvas_width,
+        canvas_height,
+        global_title,
+        ncols,
+        nrows
+    )
+
+    panel_title = ROOT.TLatex()
+    panel_title.SetNDC(True)
+    panel_title.SetTextAlign(22)
+    panel_title.SetTextSize(0.075)
+
+    objects_to_keep = []
+    total_panels = 1 + len(p_bins) + 1
+
+    for ipad in range(1, ncols * nrows + 1):
+        pad = grid_pad.cd(ipad)
+        pad.SetLeftMargin(0.13)
         pad.SetRightMargin(0.05)
-        pad.SetBottomMargin(0.12)
-        pad.SetTopMargin(0.10)
+        pad.SetBottomMargin(0.14)
+        pad.SetTopMargin(0.18)
+        if ipad > total_panels:
+            pad.Clear()
+        #endif
     #endfor
 
-    canvas.cd(1)
-    style_hist(h_int, "particle #chi^{2}_{pid}", "Counts")
+    grid_pad.cd(1)
+    style_hist(h_int, "chi2pid", "Counts")
     h_int.SetTitle("")
     h_int.Draw("hist")
-    if int_fit:
-        int_fit.SetLineWidth(2)
-        int_fit.Draw("same")
-    #endif
-    title_latex.DrawLatex(0.15, 0.88, "Integrated")
+    panel_title.DrawLatex(0.50, 0.95, "Integrated")
+    int_segments = build_function_segments(fit_results["integrated"]["fit_info"], "seg_int_%s_%s" % (run_label, det_label))
+    for seg in int_segments:
+        seg.Draw("same")
+        objects_to_keep.append(seg)
+    #endfor
+    int_box = draw_info_box(fit_results["integrated"]["fit_info"], h_int, fit_results["integrated"])
+    objects_to_keep.append(int_box)
 
     for i_bin, result in enumerate(fit_results["bins"]):
-        canvas.cd(i_bin + 2)
+        grid_pad.cd(i_bin + 2)
         hist = hists[i_bin + 1]
-        style_hist(hist, "particle #chi^{2}_{pid}", "Counts")
+        style_hist(hist, "chi2pid", "Counts")
         hist.SetTitle("")
         hist.Draw("hist")
-        if result["fit"]:
-            result["fit"].SetLineWidth(2)
-            result["fit"].Draw("same")
-        #endif
-        label = nice_bin_label(result["pmin"], result["pmax"])
-        title_latex.DrawLatex(0.15, 0.88, label)
+        panel_title.DrawLatex(0.50, 0.95, nice_bin_label(result["pmin"], result["pmax"]))
+        segments = build_function_segments(result["fit_info"], "seg_%s_%s_%d" % (run_label, det_label, i_bin))
+        for seg in segments:
+            seg.Draw("same")
+            objects_to_keep.append(seg)
+        #endfor
+        info_box = draw_info_box(result["fit_info"], hist, result)
+        objects_to_keep.append(info_box)
     #endfor
 
-    canvas.cd(10)
+    final_panel = 1 + len(p_bins) + 1
+    grid_pad.cd(final_panel)
     graph = build_graph_from_results(run_label, det_label, fit_results["bins"])
+    y_min, y_max = determine_graph_y_range(fit_results["bins"])
 
     frame = ROOT.TH1D(
         "frame_%s_%s" % (run_label, det_label),
         "",
         100,
-        0.4,
+        0.0,
         8.2
     )
     frame.SetDirectory(0)
-    style_hist(frame, "p (GeV)", "#mu(particle #chi^{2}_{pid})")
-    frame.SetMinimum(-4.0)
-    frame.SetMaximum(4.0)
+    style_frame_hist(frame, "p (GeV)", "#mu(chi2pid)")
+    frame.SetMinimum(y_min)
+    frame.SetMaximum(y_max)
     frame.SetTitle("")
     frame.Draw()
+    line_zero = ROOT.TLine(0.0, 0.0, 8.2, 0.0)
+    line_zero.SetLineStyle(1)
+    line_zero.SetLineWidth(1)
+    line_zero.Draw("same")
     graph.Draw("P SAME")
-    title_latex.DrawLatex(0.15, 0.88, "#mu(p) with #sigma as y error")
+    panel_title.DrawLatex(0.50, 0.95, "#mu(p) with #sigma as y error")
 
-    run_title = ROOT.TLatex()
-    run_title.SetNDC(True)
-    run_title.SetTextSize(0.030)
-    run_title.DrawLatex(0.15, 0.96, "%s %s, particle_pid = 211" % (run_label, det_label))
+    objects_to_keep.append(frame)
+    objects_to_keep.append(graph)
+    objects_to_keep.append(line_zero)
 
     out_name = os.path.join(
         OUTPUT_DIR,
@@ -471,7 +689,152 @@ def analyze_one_detector(tree, run_label, det_label, detector_branch):
 
     print("Saved plot: %s" % out_name)
 
-    return canvas, hists, graph
+    return canvas, hists, graph, objects_to_keep
+#endfor
+
+def create_beta_species_hists(run_label, det_label):
+    hists = []
+
+    for pid, species_label, color in PID_SPECIES:
+        hist = ROOT.TH2D(
+            "h2_beta_p_%s_%s_pid_%d" % (run_label, det_label, pid),
+            "",
+            BETA_P_NBINS_X,
+            BETA_P_XMIN,
+            BETA_P_XMAX,
+            BETA_P_NBINS_Y,
+            BETA_P_YMIN,
+            BETA_P_YMAX
+        )
+        hist.SetDirectory(0)
+        hist.SetLineColor(color)
+        hist.SetLineWidth(2)
+        hist.SetContour(12)
+        hists.append((pid, species_label, color, hist))
+    #endfor
+
+    return hists
+#endfor
+
+def fill_beta_species_hists(tree, run_label, det_label, detector_branch):
+    species_hists = create_beta_species_hists(run_label, det_label)
+
+    n_total = tree.GetEntries()
+
+    print("")
+    print("============================================================")
+    print("Building beta vs p plot for %s %s" % (run_label, det_label))
+    print("File: %s" % tree.GetCurrentFile().GetName())
+    print("Tree entries: %d" % n_total)
+    print("Using detector branch: %s" % detector_branch)
+    print("============================================================")
+
+    species_map = {}
+    for pid, species_label, color, hist in species_hists:
+        species_map[pid] = hist
+    #endfor
+
+    for i_entry in range(n_total):
+        tree.GetEntry(i_entry)
+
+        if i_entry > 0 and i_entry % 1000000 == 0:
+            print("  processed %d / %d entries" % (i_entry, n_total))
+        #endif
+
+        pid = int(tree.particle_pid)
+        if pid not in species_map:
+            continue
+        #endif
+
+        detector_value = float(getattr(tree, detector_branch))
+        if detector_value == -9999:
+            continue
+        #endif
+
+        p_val = float(tree.p)
+        beta_val = float(tree.particle_beta)
+
+        species_map[pid].Fill(p_val, beta_val)
+    #endfor
+
+    return species_hists
+#endfor
+
+def make_beta_vs_p_plot(tree, run_label, det_label, detector_branch):
+    species_hists = fill_beta_species_hists(tree, run_label, det_label, detector_branch)
+
+    title_text = "%s %s, beta vs p for particle_pid = 211, 321, 2212" % (run_label, det_label)
+    canvas, title_pad, plot_pad = make_title_canvas(
+        "c_beta_p_%s_%s" % (run_label, det_label),
+        1200,
+        900,
+        title_text,
+        1,
+        1
+    )
+
+    plot_pad.cd(1)
+    plot_pad.SetLeftMargin(0.12)
+    plot_pad.SetRightMargin(0.05)
+    plot_pad.SetBottomMargin(0.12)
+    plot_pad.SetTopMargin(0.06)
+
+    frame = ROOT.TH2D(
+        "frame_beta_p_%s_%s" % (run_label, det_label),
+        "",
+        100,
+        BETA_P_XMIN,
+        BETA_P_XMAX,
+        100,
+        BETA_P_YMIN,
+        BETA_P_YMAX
+    )
+    frame.SetDirectory(0)
+    frame.GetXaxis().SetTitle("p (GeV)")
+    frame.GetYaxis().SetTitle("beta")
+    frame.GetXaxis().CenterTitle(True)
+    frame.GetYaxis().CenterTitle(True)
+    frame.GetXaxis().SetTitleSize(0.050)
+    frame.GetYaxis().SetTitleSize(0.050)
+    frame.GetXaxis().SetLabelSize(0.045)
+    frame.GetYaxis().SetLabelSize(0.045)
+    frame.GetYaxis().SetTitleOffset(1.10)
+    frame.Draw()
+
+    first = True
+    objects_to_keep = [frame]
+
+    for pid, species_label, color, hist in species_hists:
+        if first:
+            hist.Draw("CONT3 SAME")
+            first = False
+        else:
+            hist.Draw("CONT3 SAME")
+        #endif
+        objects_to_keep.append(hist)
+    #endfor
+
+    legend = ROOT.TLegend(0.68, 0.73, 0.93, 0.90)
+    legend.SetBorderSize(1)
+    legend.SetFillColor(ROOT.kWhite)
+    legend.SetFillStyle(1001)
+    legend.SetTextSize(0.040)
+
+    for pid, species_label, color, hist in species_hists:
+        legend.AddEntry(hist, species_label, "l")
+    #endfor
+    legend.Draw()
+    objects_to_keep.append(legend)
+
+    out_name = os.path.join(
+        OUTPUT_DIR,
+        "beta_vs_p_species_%s_%s.png" % (run_label, det_label)
+    )
+    canvas.SaveAs(out_name)
+
+    print("Saved plot: %s" % out_name)
+
+    return canvas, objects_to_keep
 #endfor
 
 # ------------------------------------------------
@@ -501,13 +864,12 @@ def main():
             "track_sector_5",
             "track_sector_6",
         ]
-        
         require_branches(tree, required_branches)
-
         set_branch_statuses(tree, required_branches)
 
         for det_label, detector_branch in DETECTOR_CONFIGS:
             analyze_one_detector(tree, run_label, det_label, detector_branch)
+            make_beta_vs_p_plot(tree, run_label, det_label, detector_branch)
         #endfor
 
         root_file.Close()
