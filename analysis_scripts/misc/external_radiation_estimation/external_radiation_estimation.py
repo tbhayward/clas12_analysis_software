@@ -18,11 +18,14 @@ ROOT.gStyle.SetOptFit(0)
 #
 # optional dataset override:
 # python external_radiation_estimation.py 2000000 skip_mc
-# python external_radiation_estimation.py all skip_mc
+# python external_radiation_estimation.py 2000000 skip_rgc_epipim
+# python external_radiation_estimation.py 2000000 skip_mc skip_rgc_epipim
+# python external_radiation_estimation.py all skip_mc skip_rgc_epipim
 # ------------------------------------------------
 
 max_events = 5000000
 skip_mc = False
+skip_rgc_epipim = False
 
 if len(sys.argv) > 1:
     if sys.argv[1].lower() == "all":
@@ -32,11 +35,13 @@ if len(sys.argv) > 1:
     #endif
 #endif
 
-if len(sys.argv) > 2:
-    if sys.argv[2].lower() == "skip_mc":
+for arg in sys.argv[2:]:
+    if arg.lower() == "skip_mc":
         skip_mc = True
+    elif arg.lower() == "skip_rgc_epipim":
+        skip_rgc_epipim = True
     #endif
-#endif
+#endfor
 
 if max_events < 0:
     print("Processing all events in each tree")
@@ -46,6 +51,10 @@ else:
 
 if skip_mc:
     print("Runtime override active: skipping MC dataset")
+#endif
+
+if skip_rgc_epipim:
+    print("Runtime override active: skipping RGC pi+pi- dataset everywhere")
 #endif
 
 # ------------------------------------------------
@@ -675,7 +684,7 @@ def compute_event_dobservable_de(cfg, tree, e_lv, hadron_lvs):
         raise RuntimeError("Unknown observable_type: %s" % cfg["observable_type"])
     #endif
 
-    e_shifted = shifted_electron_lorentz_vector(e_lv, delta_epsilon)
+    e_shifted = shifted_electron_lorentz_vector(lv_in=e_lv, delta_e=delta_epsilon)
     if e_shifted is None:
         return None
     #endif
@@ -1515,11 +1524,11 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
         latex.DrawLatex(0.20, 0.93, "%.1f < v_{z,e} < %.1f (cm)" % (vz_lo, vz_hi))
         keep_alive(canvas, latex)
 
-        legend = ROOT.TLegend(0.20, 0.64, 0.42, 0.88)
+        legend = ROOT.TLegend(0.58, 0.14, 0.90, 0.38)
         legend.SetBorderSize(1)
         legend.SetFillStyle(1001)
         legend.SetFillColor(ROOT.kWhite)
-        legend.SetTextSize(0.024)
+        legend.SetTextSize(0.020)
 
         for i_sector in range(N_SECTORS):
             legend.AddEntry(sector_histograms[i_sector][i_vz], sector_labels[i_sector], "l")
@@ -1566,11 +1575,11 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     line_expected.Draw("same")
     keep_alive(canvas, line_expected)
 
-    legend_top = ROOT.TLegend(0.15, 0.62, 0.93, 0.90)
+    legend_top = ROOT.TLegend(0.58, 0.12, 0.92, 0.36)
     legend_top.SetBorderSize(1)
     legend_top.SetFillStyle(1001)
     legend_top.SetFillColor(ROOT.kWhite)
-    legend_top.SetTextSize(0.024)
+    legend_top.SetTextSize(0.022)
     legend_top.AddEntry(line_expected, "Reference peak position", "l")
 
     for i_sector in range(N_SECTORS):
@@ -1620,11 +1629,11 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     frame_bot.Draw()
     keep_alive(canvas, frame_bot)
 
-    legend_bot = ROOT.TLegend(0.15, 0.62, 0.70, 0.90)
+    legend_bot = ROOT.TLegend(0.58, 0.12, 0.90, 0.34)
     legend_bot.SetBorderSize(1)
     legend_bot.SetFillStyle(1001)
     legend_bot.SetFillColor(ROOT.kWhite)
-    legend_bot.SetTextSize(0.026)
+    legend_bot.SetTextSize(0.022)
 
     for i_sector in range(N_SECTORS):
         graph_sigma = graph_sigmas[i_sector]
@@ -2170,11 +2179,11 @@ def make_combined_energy_correction_plot(results_by_label):
         graph.Draw("L SAME")
     #endfor
 
-    legend = ROOT.TLegend(0.16, 0.66, 0.86, 0.90)
+    legend = ROOT.TLegend(0.56, 0.64, 0.88, 0.88)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.028)
+    legend.SetTextSize(0.024)
 
     for i in range(len(graphs)):
         legend.AddEntry(graphs[i], labels[i], "l")
@@ -2324,11 +2333,11 @@ def make_rgc_hardcut_energy_correction_plot(results_by_label):
         graph.Draw("L SAME")
     #endfor
 
-    legend = ROOT.TLegend(0.16, 0.68, 0.88, 0.89)
+    legend = ROOT.TLegend(0.56, 0.66, 0.88, 0.86)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.030)
+    legend.SetTextSize(0.026)
 
     for i in range(len(graphs)):
         legend.AddEntry(graphs[i], labels[i], "l")
@@ -2458,11 +2467,11 @@ def draw_sector_energy_subplot(pad, result, frame_name, title_text, owner):
         graph.Draw("L SAME")
     #endfor
 
-    legend = ROOT.TLegend(0.17, 0.62, 0.87, 0.89)
+    legend = ROOT.TLegend(0.60, 0.14, 0.90, 0.38)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.030)
+    legend.SetTextSize(0.024)
 
     for i_sector, graph in graphs:
         legend.AddEntry(graph, sector_labels[i_sector], "l")
@@ -2656,11 +2665,11 @@ def make_photon_energy_multipanel(results_by_label):
         frame.Draw()
         keep_alive(canvas, frame)
 
-        legend = ROOT.TLegend(0.16, 0.72, 0.86, 0.89)
+        legend = ROOT.TLegend(0.56, 0.66, 0.88, 0.86)
         legend.SetBorderSize(1)
         legend.SetFillStyle(1001)
         legend.SetFillColor(ROOT.kWhite)
-        legend.SetTextSize(0.030)
+        legend.SetTextSize(0.024)
 
         for channel_key, h in hists_to_draw:
             h.Draw("HIST SAME")
@@ -2798,11 +2807,11 @@ def make_vz_distribution_plot(results_by_label):
     frame.Draw()
     keep_alive(canvas, frame)
 
-    legend = ROOT.TLegend(0.16, 0.52, 0.88, 0.89)
+    legend = ROOT.TLegend(0.52, 0.48, 0.88, 0.88)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.028)
+    legend.SetTextSize(0.024)
 
     for dataset_label, h in hist_list:
         h.Draw("HIST SAME")
@@ -2841,18 +2850,21 @@ def run_all():
             "dataset_label": "data_rgc_epi_plus"
         },
         {
-            "input_file": input_file_data_rgc_epipim,
-            "dataset_label": "data_rgc_epi_plus_pi_minus"
-        },
-        {
             "input_file": input_file_data_rgc_epi,
             "dataset_label": "data_rgc_epi_plus_hardcut"
-        },
-        {
-            "input_file": input_file_data_rgc_epipim,
-            "dataset_label": "data_rgc_epi_plus_pi_minus_hardcut"
         }
     ]
+
+    if not skip_rgc_epipim:
+        tasks.append({
+            "input_file": input_file_data_rgc_epipim,
+            "dataset_label": "data_rgc_epi_plus_pi_minus"
+        })
+        tasks.append({
+            "input_file": input_file_data_rgc_epipim,
+            "dataset_label": "data_rgc_epi_plus_pi_minus_hardcut"
+        })
+    #endif
 
     if not skip_mc:
         tasks.append({
