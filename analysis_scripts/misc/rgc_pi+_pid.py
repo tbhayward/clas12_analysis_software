@@ -799,12 +799,12 @@ def make_beta_vs_p_plot(tree, run_label, det_label, detector_branch):
         1
     )
 
-    plot_pad.cd(1)
-    plot_pad.SetLeftMargin(0.12)
-    plot_pad.SetRightMargin(0.15)
-    plot_pad.SetBottomMargin(0.12)
-    plot_pad.SetTopMargin(0.06)
-    plot_pad.SetLogz()
+    subpad = plot_pad.cd(1)
+    subpad.SetLeftMargin(0.12)
+    subpad.SetRightMargin(0.15)
+    subpad.SetBottomMargin(0.12)
+    subpad.SetTopMargin(0.06)
+    subpad.SetLogz()
 
     style_hist2d(hist, "p (GeV)", "beta", "Counts")
     hist.SetTitle("")
