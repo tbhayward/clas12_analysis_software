@@ -89,10 +89,10 @@ M_n2 = m_n * m_n
 
 # ------------------------------------------------
 # binning defaults
-# RGA regular: centered at -3.5 with total width 5.0 cm
-# so -6.0 to -1.0
-# RGC regular: centered at -3.5 with total width 5.0 cm
-# so -6.0 to -1.0
+# RGA regular: centered at -3.0 with total width 5.0 cm
+# so -5.5 to -0.5
+# RGC regular: centered at -3.25 with total width 5.0 cm
+# so -5.75 to -0.75
 # ------------------------------------------------
 
 vz_step = 0.5
@@ -151,8 +151,8 @@ channel_overlay_labels = {
 # ------------------------------------------------
 
 photon_energy_min = 0.0
-photon_energy_max = 120.0
-photon_energy_bins = 240
+photon_energy_max = 30.0
+photon_energy_bins = 60
 
 # ------------------------------------------------
 # combined vz_e histogram binning
@@ -192,8 +192,8 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGA Data: ep #rightarrow e#pi^{+} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.5,
+        "vz_max": -0.5,
         "run_period": "RGA",
         "channel_key": "epi_plus",
         "apply_hard_vz_cut": False
@@ -223,8 +223,8 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGA MC: ep #rightarrow e#pi^{+} X",
         "do_energy_correction": False,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.5,
+        "vz_max": -0.5,
         "run_period": "RGA MC",
         "channel_key": "epi_plus",
         "apply_hard_vz_cut": False
@@ -261,8 +261,8 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGA Data: ep #rightarrow e#pi^{+}#pi^{-} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.5,
+        "vz_max": -0.5,
         "run_period": "RGA",
         "channel_key": "epi_plus_pi_minus",
         "apply_hard_vz_cut": False
@@ -299,8 +299,8 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGA MC: ep #rightarrow e#pi^{+}#pi^{-} X",
         "do_energy_correction": False,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.5,
+        "vz_max": -0.5,
         "run_period": "RGA MC",
         "channel_key": "epi_plus_pi_minus",
         "apply_hard_vz_cut": False
@@ -330,8 +330,8 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGC Data: ep #rightarrow e#pi^{+} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.75,
+        "vz_max": -0.75,
         "run_period": "RGC",
         "channel_key": "epi_plus",
         "apply_hard_vz_cut": False
@@ -368,8 +368,8 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGC Data: ep #rightarrow e#pi^{+}#pi^{-} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.75,
+        "vz_max": -0.75,
         "run_period": "RGC",
         "channel_key": "epi_plus_pi_minus",
         "apply_hard_vz_cut": False
@@ -399,8 +399,8 @@ channel_configs = {
         "expected_peak": M_n2,
         "latex_label": "RGC Data Hard Cut: ep #rightarrow e#pi^{+} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.75,
+        "vz_max": -0.75,
         "run_period": "RGC Hard Cut",
         "channel_key": "epi_plus",
         "apply_hard_vz_cut": True
@@ -437,13 +437,14 @@ channel_configs = {
         "expected_peak": M_p2,
         "latex_label": "RGC Data Hard Cut: ep #rightarrow e#pi^{+}#pi^{-} X",
         "do_energy_correction": True,
-        "vz_min": -6.0,
-        "vz_max": -1.0,
+        "vz_min": -5.75,
+        "vz_max": -0.75,
         "run_period": "RGC Hard Cut",
         "channel_key": "epi_plus_pi_minus",
         "apply_hard_vz_cut": True
     }
 }
+#enddef
 
 # ------------------------------------------------
 # numerical derivative step
@@ -1575,7 +1576,7 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     line_expected.Draw("same")
     keep_alive(canvas, line_expected)
 
-    legend_top = ROOT.TLegend(0.58, 0.12, 0.92, 0.36)
+    legend_top = ROOT.TLegend(0.58, 0.18, 0.92, 0.42)
     legend_top.SetBorderSize(1)
     legend_top.SetFillStyle(1001)
     legend_top.SetFillColor(ROOT.kWhite)
@@ -1629,7 +1630,7 @@ def draw_sector_canvas(dataset_label, channel_latex, sector_histograms, sector_f
     frame_bot.Draw()
     keep_alive(canvas, frame_bot)
 
-    legend_bot = ROOT.TLegend(0.58, 0.12, 0.90, 0.34)
+    legend_bot = ROOT.TLegend(0.58, 0.18, 0.90, 0.40)
     legend_bot.SetBorderSize(1)
     legend_bot.SetFillStyle(1001)
     legend_bot.SetFillColor(ROOT.kWhite)
@@ -2179,11 +2180,11 @@ def make_combined_energy_correction_plot(results_by_label):
         graph.Draw("L SAME")
     #endfor
 
-    legend = ROOT.TLegend(0.56, 0.64, 0.88, 0.88)
+    legend = ROOT.TLegend(0.58, 0.14, 0.88, 0.34)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.024)
+    legend.SetTextSize(0.022)
 
     for i in range(len(graphs)):
         legend.AddEntry(graphs[i], labels[i], "l")
@@ -2333,11 +2334,11 @@ def make_rgc_hardcut_energy_correction_plot(results_by_label):
         graph.Draw("L SAME")
     #endfor
 
-    legend = ROOT.TLegend(0.56, 0.66, 0.88, 0.86)
+    legend = ROOT.TLegend(0.56, 0.14, 0.88, 0.30)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.026)
+    legend.SetTextSize(0.024)
 
     for i in range(len(graphs)):
         legend.AddEntry(graphs[i], labels[i], "l")
@@ -2501,60 +2502,51 @@ def make_sector_energy_correction_multipanel(results_by_label):
         "data_rgc_epi_plus_pi_minus": "RGC: ep #rightarrow e#pi^{+}#pi^{-} X"
     }
 
-    canvas = ROOT.TCanvas("canvas_sector_energy_correction_multipanel", "sector energy correction multipanel", 1600, 1200)
-    canvas.Divide(2, 2, 0.001, 0.001)
+    active_labels = []
+    for dataset_label in ordered_labels:
+        if dataset_label in results_by_label:
+            result = results_by_label[dataset_label]
+            if result["do_energy_correction"]:
+                active_labels.append(dataset_label)
+            #endif
+        #endif
+    #endfor
 
-    for i_panel in range(len(ordered_labels)):
-        dataset_label = ordered_labels[i_panel]
+    if len(active_labels) == 0:
+        print("Skipping sector energy-correction multipanel because no datasets are available.")
+        return
+    #endif
+
+    if len(active_labels) == 1:
+        ncols = 1
+        nrows = 1
+        canvas_w = 900
+        canvas_h = 800
+    elif len(active_labels) == 2:
+        ncols = 2
+        nrows = 1
+        canvas_w = 1600
+        canvas_h = 700
+    elif len(active_labels) == 3:
+        ncols = 3
+        nrows = 1
+        canvas_w = 2400
+        canvas_h = 700
+    else:
+        ncols = 2
+        nrows = 2
+        canvas_w = 1600
+        canvas_h = 1200
+    #endif
+
+    canvas = ROOT.TCanvas("canvas_sector_energy_correction_multipanel", "sector energy correction multipanel", canvas_w, canvas_h)
+    canvas.Divide(ncols, nrows, 0.001, 0.001)
+
+    for i_panel in range(len(active_labels)):
+        dataset_label = active_labels[i_panel]
         canvas.cd(i_panel + 1)
 
-        if dataset_label not in results_by_label:
-            ROOT.gPad.SetLeftMargin(0.15)
-            ROOT.gPad.SetRightMargin(0.05)
-            ROOT.gPad.SetBottomMargin(0.14)
-            ROOT.gPad.SetTopMargin(0.10)
-
-            frame = ROOT.TH1D("frame_blank_sector_energy_%d" % i_panel, "", 100, -1.0, 1.0)
-            frame.SetDirectory(0)
-            frame.SetMinimum(0.0)
-            frame.SetMaximum(1.0)
-            frame.Draw()
-            keep_alive(canvas, frame)
-
-            latex = ROOT.TLatex()
-            latex.SetNDC()
-            latex.SetTextSize(0.055)
-            latex.DrawLatex(0.18, 0.90, labels[dataset_label])
-            latex.DrawLatex(0.30, 0.50, "No correction curves available")
-            keep_alive(canvas, latex)
-            continue
-        #endif
-
         result = results_by_label[dataset_label]
-
-        if not result["do_energy_correction"]:
-            ROOT.gPad.SetLeftMargin(0.15)
-            ROOT.gPad.SetRightMargin(0.05)
-            ROOT.gPad.SetBottomMargin(0.14)
-            ROOT.gPad.SetTopMargin(0.10)
-
-            frame = ROOT.TH1D("frame_blank_sector_energy_%d" % i_panel, "", 100, result["vz_min"], result["vz_max"])
-            frame.SetDirectory(0)
-            frame.SetMinimum(0.0)
-            frame.SetMaximum(0.01)
-            frame.GetXaxis().SetTitle("v_{z,e} (cm)")
-            frame.GetYaxis().SetTitle("e^{-} energy correction (GeV)")
-            frame.Draw()
-            keep_alive(canvas, frame)
-
-            latex = ROOT.TLatex()
-            latex.SetNDC()
-            latex.SetTextSize(0.055)
-            latex.DrawLatex(0.18, 0.90, labels[dataset_label])
-            latex.DrawLatex(0.25, 0.50, "No correction curves available")
-            keep_alive(canvas, latex)
-            continue
-        #endif
 
         draw_sector_energy_subplot(
             ROOT.gPad,
