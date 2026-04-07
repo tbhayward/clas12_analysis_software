@@ -37,16 +37,16 @@ def get_current_from_runnum(runnum):
     if runnum == 6616:
         return 5
     #endif
-    if runnum >= 0:
+    if 6610 <= runnum <= 6783:
         return 50
     #endif
 
-    raise ValueError("Invalid run number encountered: " + str(runnum))
+    return None
 #endif
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python print_event_currents.py input.root")
+        print("Usage: python print_run_current_summary.py input.root")
         sys.exit(1)
     #endif
 
@@ -61,18 +61,38 @@ def main():
     tree = root_file.Get("PhysicsEvents")
     if not tree:
         print("ERROR: could not find tree PhysicsEvents in " + input_file)
+        root_file.Close()
         sys.exit(1)
     #endif
 
-    currents = []
+    unique_runs = set()
 
     for entry in tree:
         runnum = int(entry.runnum)
-        current = get_current_from_runnum(runnum)
-        currents.append(str(current))
+        unique_runs.add(runnum)
     #endfor
 
-    print(" ".join(currents))
+    grouped_runs = {}
+
+    for runnum in sorted(unique_runs):
+        current = get_current_from_runnum(runnum)
+
+        if current is None:
+            print("WARNING: runnum " + str(runnum) + " does not match Sp18 Out, Sp18 Inb, or Sp19 Inb")
+            continue
+        #endif
+
+        if current not in grouped_runs:
+            grouped_runs[current] = []
+        #endif
+
+        grouped_runs[current].append(runnum)
+    #endfor
+
+    for current in sorted(grouped_runs.keys()):
+        run_list_string = ", ".join(str(run) for run in grouped_runs[current])
+        print(str(current) + " nA: " + run_list_string)
+    #endfor
 
     root_file.Close()
 #endif
