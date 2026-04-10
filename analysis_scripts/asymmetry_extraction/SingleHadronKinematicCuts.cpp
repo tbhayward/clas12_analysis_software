@@ -130,22 +130,22 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
         return goodEvent;
     }
     if (property == "enpiLowxB") {
-        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
+        goodEvent = goodEvent && *Mx2 > 0.8 && *Mx2 < 1.07 && 
             *x > 0.1 && *x < 0.25;
         return goodEvent;
     }
     if (property == "enpiMidLowxB") {
-        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
+        goodEvent = goodEvent && *Mx2 > 0.8 && *Mx2 < 1.07 && 
             *x > 0.25 && *x < 0.35;
         return goodEvent;
     }
     if (property == "enpiMidHighxB") {
-        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
+        goodEvent = goodEvent && *Mx2 > 0.8 && *Mx2 < 1.07 && 
             *x > 0.35 && *x < 0.45;
         return goodEvent;
     }
     if (property == "enpiHighxB") {
-        goodEvent = goodEvent && *Mx2 > 0.0 && *Mx2 < 1.07 && 
+        goodEvent = goodEvent && *Mx2 > 0.8 && *Mx2 < 1.07 && 
             *x > 0.45 && *x < 0.60;
         return goodEvent;
     }
