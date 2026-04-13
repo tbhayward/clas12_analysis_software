@@ -38,8 +38,6 @@ double BSA_single_hadron(double* x, double* par) {
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   // return ALU_offset + ALU_sinphi*sin(phi);
-  // AUU_cosphi = -0.184162428;
-  // AUU_cos2phi = -0.553694788;
   return ALU_offset + ALU_sinphi*sin(phi)/(1+AUU_cosphi*cos(phi)+AUU_cos2phi*cos(2*phi));
 }
 
