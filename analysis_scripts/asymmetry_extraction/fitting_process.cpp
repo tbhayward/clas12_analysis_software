@@ -878,14 +878,13 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
+      std::cout << *helicity << " " << *target_pol << std::endl;
       if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
       else if (*helicity < 0 && *target_pol > 0) {  
         std::cout << "Hello world mp" << std::endl;
         histNegPos->Fill(*phi);}
 
-      if (*helicity > 0 && (*target_pol >= 0) ) { 
-        std::cout << "Hello world pp" << std::endl;
-        histPosPos->Fill(*phi); } 
+      if (*helicity > 0 && (*target_pol >= 0) ) { histPosPos->Fill(*phi); } 
       else if (*helicity < 0 && (*target_pol <= 0) ) {  histNegNeg->Fill(*phi); } 
       // this structure allows the same script to run for both polarized and unpolarized targets
       // if it is an RGC run with a polarized target (runnum > 11571) then we assign all four
