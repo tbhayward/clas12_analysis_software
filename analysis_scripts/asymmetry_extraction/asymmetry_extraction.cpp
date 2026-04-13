@@ -264,29 +264,29 @@ int main(int argc, char *argv[]) {
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
 
-    if (cpp != 1) {
-        // Calculate the dilution factors for the current bin
-        dilutionFactors = calculate_dilution_factors();
+    // if (cpp != 1) {
+    //     // Calculate the dilution factors for the current bin
+    //     dilutionFactors = calculate_dilution_factors();
 
-        // Print out the dilution factors and their uncertainties
-        cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
-        for (size_t j = 0; j < dilutionFactors.size(); ++j) {
-            cout << "Bin " << j + 1 << ": "
-                 << "Dilution Factor = " << dilutionFactors[j].first
-                 << ", Uncertainty = " << dilutionFactors[j].second
-                 << endl;
-        }
-    } else {
-        // If cpp == 1, fill dilutionFactors with zeros
-        dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
-    }
-    // dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1, 0.2});
+    //     // Print out the dilution factors and their uncertainties
+    //     cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
+    //     for (size_t j = 0; j < dilutionFactors.size(); ++j) {
+    //         cout << "Bin " << j + 1 << ": "
+    //              << "Dilution Factor = " << dilutionFactors[j].first
+    //              << ", Uncertainty = " << dilutionFactors[j].second
+    //              << endl;
+    //     }
+    // } else {
+    //     // If cpp == 1, fill dilutionFactors with zeros
+    //     dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
+    // }
+    dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1, 0.2});
     if (channel == 6) {
       cout << "    Beginning chi2 simultaneous GeneralExclusive (BSA/TSA/DSA)." << endl;
       performChi2Fits_GeneralExclusive(output_file.c_str(), kinematic_file.c_str(),
         kinematicPlot_file.c_str(), binNames[i]);
     } else {
-      for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
+      for (int asymmetry = 0; asymmetry < 1; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
             cout << "Skipping TSA and DSA for unpolarized target data." << endl;
             continue;
