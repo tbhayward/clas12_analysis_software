@@ -486,7 +486,7 @@ for period_label, root_path in period_files:
     plt.grid(True, alpha=0.3)
 
     # Force the same y-axis range on all plots
-    plt.ylim(0.03, 0.08)
+    plt.ylim(0.0, 0.10)
 
     plt.xticks(rotation=45)
     plt.legend(title="Beam current (nA)", fontsize=10)

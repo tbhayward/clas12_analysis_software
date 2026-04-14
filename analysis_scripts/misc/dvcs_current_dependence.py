@@ -166,6 +166,14 @@ CHANNEL_CONFIG = {
     },
 }
 
+TRIGGER_SEGMENTS_SP18 = [
+    {"label": "trigger v2-v7", "start": 3031, "end": 3495},
+    {"label": "trigger v8", "start": 3499, "end": 3513},
+    {"label": "trigger v9", "start": 3517, "end": 3548},
+    {"label": "trigger v10", "start": 3709, "end": 3722},
+    {"label": "trigger v11-v2_3", "start": 3735, "end": 4325},
+]
+
 
 # -----------------------------------------------------------------------------
 # Run -> current maps
@@ -252,6 +260,7 @@ FA18_OUT_CURRENT = {
 
     5610: 5,
 }
+
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -1018,6 +1027,23 @@ def period_points_from_mc_rows(mc_rows, period_name):
 #enddef
 
 
+def period_run_points_from_run_rows(run_rows, period_name):
+
+    rows = [r for r in run_rows if r["period"] == period_name]
+    rows = sorted(rows, key=lambda r: r["runnum"])
+
+    if len(rows) == 0:
+        return np.asarray([]), np.asarray([]), np.asarray([]), []
+    #endif
+
+    x = np.asarray([float(r["runnum"]) for r in rows], dtype=float)
+    y = np.asarray([float(r["counts_per_nC"]) for r in rows], dtype=float)
+    sy = np.asarray([float(r["counts_per_nC_err"]) for r in rows], dtype=float)
+
+    return x, y, sy, rows
+#enddef
+
+
 def write_run_table_csv(path, run_rows):
 
     fieldnames = [
@@ -1598,6 +1624,106 @@ def create_doublepad_2x3_figure():
     #endfor
 
     return fig, top_axes, bottom_axes
+#enddef
+
+
+def get_trigger_boundary_positions(trigger_segments):
+
+    boundaries = []
+
+    for i in range(1, len(trigger_segments)):
+        boundaries.append({
+            "x": float(trigger_segments[i]["start"]),
+            "label": trigger_segments[i]["label"],
+        })
+    #endfor
+
+    return boundaries
+#enddef
+
+
+def draw_trigger_boundaries(ax, trigger_segments, y_top=None):
+
+    boundaries = get_trigger_boundary_positions(trigger_segments)
+
+    if y_top is None:
+        y0, y1 = ax.get_ylim()
+        y_top = y1
+    #endif
+
+    text_y = y_top - 0.02 * (ax.get_ylim()[1] - ax.get_ylim()[0])
+
+    for item in boundaries:
+        ax.axvline(item["x"], color="0.35", linestyle="--", linewidth=1.2)
+
+        ax.text(
+            item["x"],
+            text_y,
+            item["label"],
+            rotation=90,
+            fontsize=8,
+            color="0.25",
+            ha="right",
+            va="top",
+            bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.75, edgecolor="0.8"),
+        )
+    #endfor
+#enddef
+
+
+def plot_run_dependence(output_dir, run_rows, period_color, channel_tag):
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    saved_paths = []
+
+    for period in PERIOD_ORDER:
+        x, y, sy, rows = period_run_points_from_run_rows(run_rows, period)
+        if len(rows) == 0:
+            continue
+        #endif
+
+        period_internal = PERIOD_INTERNAL_FROM_DISPLAY[period]
+        c = period_color[period]
+
+        fig, ax = plt.subplots(figsize=(14, 6), constrained_layout=True)
+        ax.errorbar(x, y, yerr=sy, fmt="o", markersize=3, capsize=2, color=c)
+        ax.set_xlabel("Run number")
+        ax.set_ylabel("Counts / accumulated charge (1/nC)")
+        ax.set_title(f"{period} run dependence ({channel_tag})")
+        ax.grid(True, alpha=0.3)
+
+        out_standard = os.path.join(output_dir, f"{period_internal}_run_dependence.png")
+        fig.savefig(out_standard, dpi=200)
+        plt.close(fig)
+        saved_paths.append(out_standard)
+
+        if period == "Sp18 Inb" or period == "Sp18 Out":
+            fig, ax = plt.subplots(figsize=(14, 6), constrained_layout=True)
+            ax.errorbar(x, y, yerr=sy, fmt="o", markersize=3, capsize=2, color=c)
+            ax.set_xlabel("Run number")
+            ax.set_ylabel("Counts / accumulated charge (1/nC)")
+            ax.set_title(f"{period} run dependence ({channel_tag}) with trigger changes")
+            ax.grid(True, alpha=0.3)
+
+            y_min = float(np.min(y - sy)) if len(y) > 0 else 0.0
+            y_max = float(np.max(y + sy)) if len(y) > 0 else 1.0
+            if y_max <= y_min:
+                y_max = y_min + 1.0
+            #endif
+            pad = 0.06 * (y_max - y_min)
+            ax.set_ylim(y_min - pad, y_max + pad)
+
+            draw_trigger_boundaries(ax, TRIGGER_SEGMENTS_SP18)
+
+            out_trigger = os.path.join(output_dir, f"{period_internal}_run_dependence_trigger.png")
+            fig.savefig(out_trigger, dpi=200)
+            plt.close(fig)
+            saved_paths.append(out_trigger)
+        #endif
+    #endfor
+
+    return saved_paths
 #enddef
 
 
@@ -2340,6 +2466,18 @@ def main():
     period_summary_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_period_summary.csv")
     write_period_summary_csv(period_summary_csv, period_summary_rows)
     print(f"[saved] {period_summary_csv}")
+
+    run_plot_paths = plot_run_dependence(
+        output_dir=INTEGRATED_OUTPUT_DIR,
+        run_rows=all_run_rows,
+        period_color=period_color,
+        channel_tag=args.channel,
+    )
+
+    print("")
+    for path in run_plot_paths:
+        print(f"[saved] {path}")
+    #endfor
 
     out_a, out_b, out_c, out_d = plot_four_panel_set(
         output_dir=INTEGRATED_OUTPUT_DIR,
