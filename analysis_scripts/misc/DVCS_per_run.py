@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import math
 from collections import defaultdict
 
 # Create output directory if it doesn't exist
@@ -123,6 +124,14 @@ FA18_OUT_CURRENT = {
     5610: 5,
 }
 
+TRIGGER_RANGES_SP18 = [
+    ("trigger v2-v7", 3031, 3495),
+    ("trigger v8", 3499, 3513),
+    ("trigger v9", 3517, 3548),
+    ("trigger v10", 3709, 3722),
+    ("trigger v11-v2_3", 3735, 4325),
+]
+
 
 def resolve_current(period_label, runnum):
     """
@@ -183,7 +192,7 @@ def resolve_current(period_label, runnum):
         return False, None
     #endif
 
-    # Sp19 Inb: all 50 nA
+    # Sp19 Inb: all 50 nA except one 5 nA run
     if label == "rga_sp19_inb":
         if runnum == 6616:
             return True, 5
@@ -193,6 +202,193 @@ def resolve_current(period_label, runnum):
 
     # Other periods: unknown
     return False, None
+#enddef
+
+
+def compute_standardized_ylim(per_current_stats):
+    y_min_raw = float("inf")
+    y_max_raw = float("-inf")
+
+    for current in per_current_stats:
+        vals = per_current_stats[current]["vals"]
+        errs = per_current_stats[current]["errs"]
+
+        if len(vals) == 0:
+            continue
+        #endif
+
+        local_min = float(np.min(vals - errs))
+        local_max = float(np.max(vals + errs))
+
+        if local_min < y_min_raw:
+            y_min_raw = local_min
+        #endif
+        if local_max > y_max_raw:
+            y_max_raw = local_max
+        #endif
+    #endfor
+
+    if not np.isfinite(y_min_raw) or not np.isfinite(y_max_raw):
+        return 0.0, 0.1
+    #endif
+
+    step = 0.1
+
+    y_min = math.floor(y_min_raw / step) * step
+    y_max = math.ceil(y_max_raw / step) * step
+
+    if y_min == y_max:
+        y_max = y_min + step
+    #endif
+
+    return y_min, y_max
+#enddef
+
+
+def add_trigger_annotations(ax, x_min, x_max, y_min, y_max):
+    visible_boundaries = set()
+
+    for _, start_run, end_run in TRIGGER_RANGES_SP18:
+        if start_run >= x_min and start_run <= x_max:
+            visible_boundaries.add(int(start_run))
+        #endif
+        if end_run >= x_min and end_run <= x_max:
+            visible_boundaries.add(int(end_run))
+        #endif
+    #endfor
+
+    for boundary in sorted(visible_boundaries):
+        ax.axvline(boundary, color="0.35", linestyle="--", linewidth=1.0)
+    #endfor
+
+    y_text = y_max - 0.06 * (y_max - y_min)
+
+    for label, start_run, end_run in TRIGGER_RANGES_SP18:
+        visible_start = max(start_run, x_min)
+        visible_end = min(end_run, x_max)
+
+        if visible_end < visible_start:
+            continue
+        #endif
+
+        x_text = 0.5 * (visible_start + visible_end)
+
+        ax.text(
+            x_text,
+            y_text,
+            label,
+            ha="center",
+            va="center",
+            fontsize=9,
+            color="0.25",
+            bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.70, edgecolor="none"),
+        )
+    #endfor
+#enddef
+
+
+def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_charge_count, zero_charge_count, unknown_current_count, make_trigger_version=False):
+    plt.figure(figsize=(12, 6))
+
+    color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9"]
+    sorted_currents = sorted(per_current_stats.keys())
+    current_colors = {}
+
+    for idx, current in enumerate(sorted_currents):
+        current_colors[current] = color_cycle[idx % len(color_cycle)]
+    #endfor
+
+    x_min = float("inf")
+    x_max = float("-inf")
+
+    for current in sorted_currents:
+        st = per_current_stats[current]
+        runs = st["runs"]
+        vals = st["vals"]
+        errs = st["errs"]
+        outmask = st["outliers"]
+        color = current_colors[current]
+
+        if len(runs) > 0:
+            local_x_min = float(np.min(runs))
+            local_x_max = float(np.max(runs))
+            if local_x_min < x_min:
+                x_min = local_x_min
+            #endif
+            if local_x_max > x_max:
+                x_max = local_x_max
+            #endif
+        #endif
+
+        inmask = ~outmask
+
+        if np.any(inmask):
+            plt.errorbar(
+                runs[inmask],
+                vals[inmask],
+                yerr=errs[inmask],
+                fmt="o",
+                markersize=4,
+                linestyle="none",
+                markerfacecolor=color,
+                markeredgecolor=color,
+                ecolor=color,
+                label=f"{current} nA",
+            )
+        #endif
+
+        if np.any(outmask):
+            plt.errorbar(
+                runs[outmask],
+                vals[outmask],
+                yerr=errs[outmask],
+                fmt="o",
+                markersize=6,
+                linestyle="none",
+                markerfacecolor="none",
+                markeredgecolor=color,
+                ecolor=color,
+            )
+        #endif
+
+        plt.axhline(st["mean"], color=color, linestyle="--", linewidth=1.0)
+    #endfor
+
+    y_min, y_max = compute_standardized_ylim(per_current_stats)
+    plt.ylim(y_min, y_max)
+
+    if make_trigger_version and np.isfinite(x_min) and np.isfinite(x_max):
+        add_trigger_annotations(plt.gca(), x_min, x_max, y_min, y_max)
+    #endif
+
+    plt.xlabel("Run Number")
+    plt.ylabel("Events / nC")
+    plt.title(f"DVCS Events per nC by Run Number ({period_label})")
+    plt.grid(True, alpha=0.3)
+    plt.xticks(rotation=45)
+    plt.legend(title="Beam current (nA)", fontsize=10)
+    plt.tight_layout()
+
+    if make_trigger_version:
+        out_path = os.path.join(output_dir, f"dvcs_per_nC_{period_label}_trigger.png")
+    else:
+        out_path = os.path.join(output_dir, f"dvcs_per_nC_{period_label}.png")
+    #endif
+
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"\nPlot saved to {out_path}")
+    print(f"Processed {total_valid_runs} runs with valid charge and current info for {period_label}")
+    if missing_charge_count > 0:
+        print(f"{missing_charge_count} runs were missing from the charge CSV for this period.")
+    #endif
+    if zero_charge_count > 0:
+        print(f"{zero_charge_count} runs had zero or negative charge recorded and were skipped.")
+    #endif
+    if unknown_current_count > 0:
+        print(f"{unknown_current_count} runs had no current mapping and were skipped.")
+    #endif
 #enddef
 
 
@@ -423,89 +619,25 @@ for period_label, root_path in period_files:
         print("  None")
     #endif
 
-    # Create plot
-    plt.figure(figsize=(12, 6))
+    make_period_plot(
+        period_label=period_label,
+        per_current_stats=per_current_stats,
+        total_valid_runs=total_valid_runs,
+        missing_charge_count=missing_charge_count,
+        zero_charge_count=zero_charge_count,
+        unknown_current_count=unknown_current_count,
+        make_trigger_version=False,
+    )
 
-    # Color map per current (sorted for consistency)
-    color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9"]
-    sorted_currents = sorted(per_current_stats.keys())
-    current_colors = {}
-    for idx, current in enumerate(sorted_currents):
-        current_colors[current] = color_cycle[idx % len(color_cycle)]
-    #endfor
-
-    # Plot per current: inliers as solid circles, outliers as open circles
-    for current in sorted_currents:
-        st = per_current_stats[current]
-        runs = st["runs"]
-        vals = st["vals"]
-        errs = st["errs"]
-        outmask = st["outliers"]
-        color = current_colors[current]
-
-        inmask = ~outmask
-
-        # Inliers (solid circles) with label for legend
-        if np.any(inmask):
-            plt.errorbar(
-                runs[inmask],
-                vals[inmask],
-                yerr=errs[inmask],
-                fmt="o",
-                markersize=4,
-                linestyle="none",
-                markerfacecolor=color,
-                markeredgecolor=color,
-                ecolor=color,
-                label=f"{current} nA",
-            )
-        #endif
-
-        # Outliers (open circles), no label (same color)
-        if np.any(outmask):
-            plt.errorbar(
-                runs[outmask],
-                vals[outmask],
-                yerr=errs[outmask],
-                fmt="o",
-                markersize=6,
-                linestyle="none",
-                markerfacecolor="none",
-                markeredgecolor=color,
-                ecolor=color,
-            )
-        #endif
-
-        # Mean line for this current (trimmed mean)
-        plt.axhline(st["mean"], color=color, linestyle="--", linewidth=1.0)
-    #endfor
-
-    plt.xlabel("Run Number")
-    plt.ylabel("Events / nC")
-    plt.title(f"DVCS Events per nC by Run Number ({period_label})")
-    plt.grid(True, alpha=0.3)
-
-    # Force the same y-axis range on all plots
-    plt.ylim(0.0, 0.10)
-
-    plt.xticks(rotation=45)
-    plt.legend(title="Beam current (nA)", fontsize=10)
-    plt.tight_layout()
-
-    # Save the plot
-    out_path = os.path.join(output_dir, f"dvcs_per_nC_{period_label}.png")
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close()
-
-    print(f"\nPlot saved to {out_path}")
-    print(f"Processed {total_valid_runs} runs with valid charge and current info for {period_label}")
-    if missing_charge_count > 0:
-        print(f"{missing_charge_count} runs were missing from the charge CSV for this period.")
-    #endif
-    if zero_charge_count > 0:
-        print(f"{zero_charge_count} runs had zero or negative charge recorded and were skipped.")
-    #endif
-    if unknown_current_count > 0:
-        print(f"{unknown_current_count} runs had no current mapping and were skipped.")
+    if period_label == "rga_sp18_inb" or period_label == "rga_sp18_out":
+        make_period_plot(
+            period_label=period_label,
+            per_current_stats=per_current_stats,
+            total_valid_runs=total_valid_runs,
+            missing_charge_count=missing_charge_count,
+            zero_charge_count=zero_charge_count,
+            unknown_current_count=unknown_current_count,
+            make_trigger_version=True,
+        )
     #endif
 #endfor
