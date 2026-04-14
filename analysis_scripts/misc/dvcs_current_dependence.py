@@ -24,6 +24,16 @@
 #
 #   python dvcs_current_dependence.py --channel eX
 #
+# Topology study
+# --------------
+# For epgamma we also build topology-dependent versions of the full analysis
+# using p1_theta (proton) and p2_theta (photon), with the angles converted
+# from radians to degrees:
+#
+#   CD,FT : proton [30,70) deg, photon [0,6) deg
+#   CD,FD : proton [30,70) deg, photon [6,30) deg
+#   FD,FD : proton [6,30) deg, photon [6,30) deg
+#
 # Operational logic for the production cross section correction
 # -------------------------------------------------------------
 # The production acceptance correction uses only one MC current per period:
@@ -73,13 +83,6 @@
 #   [2.51, 3.29)
 #   [3.29, 4.33)
 #   [4.33, 5.76]
-#
-# For DATA in a Q2 bin:
-#   counts are restricted to that Q2 bin
-#   charge remains the full accumulated charge for the runs/current settings
-#
-# For MC in a Q2 bin:
-#   just use generated and reconstructed counts in that same Q2 bin
 #
 
 import os
@@ -165,6 +168,33 @@ CHANNEL_CONFIG = {
         ],
     },
 }
+
+TOPOLOGY_CONFIGS = [
+    {
+        "key": "CD_FT",
+        "label": "CD,FT",
+        "proton_theta_min_deg": 30.0,
+        "proton_theta_max_deg": 70.0,
+        "photon_theta_min_deg": 0.0,
+        "photon_theta_max_deg": 6.0,
+    },
+    {
+        "key": "CD_FD",
+        "label": "CD,FD",
+        "proton_theta_min_deg": 30.0,
+        "proton_theta_max_deg": 70.0,
+        "photon_theta_min_deg": 6.0,
+        "photon_theta_max_deg": 30.0,
+    },
+    {
+        "key": "FD_FD",
+        "label": "FD,FD",
+        "proton_theta_min_deg": 6.0,
+        "proton_theta_max_deg": 30.0,
+        "photon_theta_min_deg": 6.0,
+        "photon_theta_max_deg": 30.0,
+    },
+]
 
 TRIGGER_SEGMENTS_SP18 = [
     {"label": "trigger v2-v7", "start": 3031, "end": 3495},
@@ -290,6 +320,55 @@ def get_output_paths(channel):
     q2_output_dir = os.path.join(output_dir, "Q2_dependence")
 
     return output_dir, integrated_output_dir, q2_output_dir
+#enddef
+
+
+def get_topology_output_paths(base_output_dir, topology_key):
+
+    output_dir = os.path.join(base_output_dir, "topologies", topology_key)
+    integrated_output_dir = os.path.join(output_dir, "integrated")
+    q2_output_dir = os.path.join(output_dir, "Q2_dependence")
+
+    return output_dir, integrated_output_dir, q2_output_dir
+#enddef
+
+
+def channel_supports_topology(channel):
+    return channel == "epgamma"
+#enddef
+
+
+def theta_rad_to_deg(theta_rad):
+    return theta_rad * (180.0 / math.pi)
+#enddef
+
+
+def build_topology_mask_from_arrays(arrays, topology_spec, source_label):
+
+    if topology_spec is None:
+        first_key = next(iter(arrays.keys()))
+        n = len(arrays[first_key])
+        return np.ones(n, dtype=bool)
+    #endif
+
+    needed = ["p1_theta", "p2_theta"]
+    for name in needed:
+        if name not in arrays:
+            raise RuntimeError(f"Missing topology branch '{name}' in {source_label}")
+        #endif
+    #endfor
+
+    p1_theta_deg = theta_rad_to_deg(arrays["p1_theta"])
+    p2_theta_deg = theta_rad_to_deg(arrays["p2_theta"])
+
+    mask = (
+        (p1_theta_deg >= float(topology_spec["proton_theta_min_deg"])) &
+        (p1_theta_deg <  float(topology_spec["proton_theta_max_deg"])) &
+        (p2_theta_deg >= float(topology_spec["photon_theta_min_deg"])) &
+        (p2_theta_deg <  float(topology_spec["photon_theta_max_deg"]))
+    )
+
+    return mask
 #enddef
 
 
@@ -452,7 +531,7 @@ def read_charge_map(csv_file):
 #enddef
 
 
-def count_tree_entries(root_path, tree_name):
+def count_tree_entries(root_path, tree_name, topology_spec=None):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -464,7 +543,24 @@ def count_tree_entries(root_path, tree_name):
     #endif
 
     tree = root_file[tree_name]
-    return int(tree.num_entries)
+
+    if topology_spec is None:
+        return int(tree.num_entries)
+    #endif
+
+    needed = ["p1_theta", "p2_theta"]
+    missing = [name for name in needed if name not in tree.keys()]
+    if len(missing) > 0:
+        raise RuntimeError(f"Missing topology branches in {root_path}:{tree_name}: {missing}")
+    #endif
+
+    total = 0
+    for arrays in tree.iterate(needed, library="np", step_size="200 MB"):
+        topo_mask = build_topology_mask_from_arrays(arrays, topology_spec, f"{root_path}:{tree_name}")
+        total += int(np.count_nonzero(topo_mask))
+    #endfor
+
+    return total
 #enddef
 
 
@@ -591,7 +687,7 @@ def add_reference_current_text(ax, period_name):
 #enddef
 
 
-def read_data_run_counts_and_q2_counts(root_path, q2_bins):
+def read_data_run_counts_and_q2_counts(root_path, q2_bins, topology_spec=None):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -605,17 +701,34 @@ def read_data_run_counts_and_q2_counts(root_path, q2_bins):
     tree = root_file["PhysicsEvents"]
 
     needed = {"runnum", "Q2"}
+    if topology_spec is not None:
+        needed.add("p1_theta")
+        needed.add("p2_theta")
+    #endif
+
     missing = [name for name in needed if name not in tree.keys()]
     if len(missing) > 0:
         raise RuntimeError(f"Missing required branches in {root_path}: {missing}")
     #endif
 
+    read_branches = ["runnum", "Q2"]
+    if topology_spec is not None:
+        read_branches.append("p1_theta")
+        read_branches.append("p2_theta")
+    #endif
+
     total_run_counts = defaultdict(int)
     q2_run_counts = [defaultdict(int) for _ in q2_bins]
 
-    for arrays in tree.iterate(["runnum", "Q2"], library="np", step_size="200 MB"):
-        runnum = arrays["runnum"]
-        q2 = arrays["Q2"]
+    for arrays in tree.iterate(read_branches, library="np", step_size="200 MB"):
+        topo_mask = build_topology_mask_from_arrays(arrays, topology_spec, root_path)
+
+        runnum = arrays["runnum"][topo_mask]
+        q2 = arrays["Q2"][topo_mask]
+
+        if len(runnum) == 0:
+            continue
+        #endif
 
         unique_runs, counts = np.unique(runnum, return_counts=True)
         for r, c in zip(unique_runs, counts):
@@ -642,7 +755,7 @@ def read_data_run_counts_and_q2_counts(root_path, q2_bins):
 #enddef
 
 
-def count_mc_entries_in_q2_bins(root_path, tree_name, q2_bins):
+def count_mc_entries_in_q2_bins(root_path, tree_name, q2_bins, topology_spec=None):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -654,14 +767,34 @@ def count_mc_entries_in_q2_bins(root_path, tree_name, q2_bins):
     #endif
 
     tree = root_file[tree_name]
-    if "Q2" not in tree.keys():
-        raise RuntimeError(f"'Q2' branch not found in {root_path}:{tree_name}")
+
+    needed = {"Q2"}
+    if topology_spec is not None:
+        needed.add("p1_theta")
+        needed.add("p2_theta")
+    #endif
+
+    missing = [name for name in needed if name not in tree.keys()]
+    if len(missing) > 0:
+        raise RuntimeError(f"Missing required branches in {root_path}:{tree_name}: {missing}")
+    #endif
+
+    read_branches = ["Q2"]
+    if topology_spec is not None:
+        read_branches.append("p1_theta")
+        read_branches.append("p2_theta")
     #endif
 
     q2_counts = [0 for _ in q2_bins]
 
-    for arrays in tree.iterate(["Q2"], library="np", step_size="200 MB"):
-        q2 = arrays["Q2"]
+    for arrays in tree.iterate(read_branches, library="np", step_size="200 MB"):
+        topo_mask = build_topology_mask_from_arrays(arrays, topology_spec, f"{root_path}:{tree_name}")
+        q2 = arrays["Q2"][topo_mask]
+
+        if len(q2) == 0:
+            continue
+        #endif
+
         masks = q2_bin_masks(q2, q2_bins)
 
         for ibin, mask in enumerate(masks):
@@ -811,9 +944,13 @@ def build_current_rows_from_counts(period_display_name, period_internal_name, ru
 #enddef
 
 
-def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, q2_bins):
+def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, q2_bins, topology_spec=None):
 
-    total_run_counts, q2_run_counts = read_data_run_counts_and_q2_counts(root_path, q2_bins)
+    total_run_counts, q2_run_counts = read_data_run_counts_and_q2_counts(
+        root_path=root_path,
+        q2_bins=q2_bins,
+        topology_spec=topology_spec,
+    )
 
     run_meta, current_charge_totals, skipped_nonpositive_charge_rows = build_run_metadata(
         period_display_name=period_display_name,
@@ -847,7 +984,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
 #enddef
 
 
-def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_heavy_mc=False):
+def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_heavy_mc=False, topology_spec=None):
 
     if not os.path.isdir(mc_dir):
         raise RuntimeError(f"MC directory not found: {mc_dir}")
@@ -936,11 +1073,11 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_
             raise RuntimeError(f"Missing gen/rec MC pair for period={period_internal}, current={current_nA} nA")
         #endif
 
-        n_gen = count_tree_entries(gen_path, MC_TREE_NAME)
-        n_rec = count_tree_entries(rec_path, MC_TREE_NAME)
+        n_gen = count_tree_entries(gen_path, MC_TREE_NAME, topology_spec=topology_spec)
+        n_rec = count_tree_entries(rec_path, MC_TREE_NAME, topology_spec=topology_spec)
 
         if n_gen <= 0:
-            raise RuntimeError(f"Generated MC count <= 0 for period={period_internal}, current={current_nA} nA")
+            continue
         #endif
 
         eff = float(n_rec) / float(n_gen)
@@ -958,8 +1095,8 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_
             "rec_file": rec_path,
         })
 
-        q2_counts_gen = count_mc_entries_in_q2_bins(gen_path, MC_TREE_NAME, q2_bins)
-        q2_counts_rec = count_mc_entries_in_q2_bins(rec_path, MC_TREE_NAME, q2_bins)
+        q2_counts_gen = count_mc_entries_in_q2_bins(gen_path, MC_TREE_NAME, q2_bins, topology_spec=topology_spec)
+        q2_counts_rec = count_mc_entries_in_q2_bins(rec_path, MC_TREE_NAME, q2_bins, topology_spec=topology_spec)
 
         for ibin in range(len(q2_bins)):
             n_gen_bin = int(q2_counts_gen[ibin])
@@ -968,12 +1105,9 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, skip_temp_
             if n_gen_bin <= 0:
                 continue
             #endif
-            if n_rec_bin <= 0:
-                continue
-            #endif
 
             eff_bin = float(n_rec_bin) / float(n_gen_bin)
-            eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin)
+            eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin) if n_rec_bin > 0 else 0.0
 
             q2_mc_rows_by_bin[ibin].append({
                 "period": period_display_name,
@@ -1671,7 +1805,7 @@ def draw_trigger_boundaries(ax, trigger_segments, y_top=None):
 #enddef
 
 
-def plot_run_dependence(output_dir, run_rows, period_color, channel_tag):
+def plot_run_dependence(output_dir, run_rows, period_color, title_prefix):
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1690,7 +1824,7 @@ def plot_run_dependence(output_dir, run_rows, period_color, channel_tag):
         ax.errorbar(x, y, yerr=sy, fmt="o", markersize=3, capsize=2, color=c)
         ax.set_xlabel("Run number")
         ax.set_ylabel("Counts / accumulated charge (1/nC)")
-        ax.set_title(f"{period} run dependence ({channel_tag})")
+        ax.set_title(f"{period} run dependence ({title_prefix})")
         ax.grid(True, alpha=0.3)
 
         out_standard = os.path.join(output_dir, f"{period_internal}_run_dependence.png")
@@ -1703,7 +1837,7 @@ def plot_run_dependence(output_dir, run_rows, period_color, channel_tag):
             ax.errorbar(x, y, yerr=sy, fmt="o", markersize=3, capsize=2, color=c)
             ax.set_xlabel("Run number")
             ax.set_ylabel("Counts / accumulated charge (1/nC)")
-            ax.set_title(f"{period} run dependence ({channel_tag}) with trigger changes")
+            ax.set_title(f"{period} run dependence ({title_prefix}) with trigger changes")
             ax.grid(True, alpha=0.3)
 
             y_min = float(np.min(y - sy)) if len(y) > 0 else 0.0
@@ -2192,7 +2326,7 @@ def make_fit_result_map_for_mc(mc_rows):
 #enddef
 
 
-def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
+def make_q2_summary_plot(q2_summary_rows, output_dir, period_color, filename="q2_dependence_normalization_divisor.png"):
 
     fig = plt.figure(figsize=(18, 10), constrained_layout=True)
     gs = GridSpec(2, 3, figure=fig)
@@ -2246,7 +2380,7 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
 
     axes[5].axis("off")
 
-    out_path = os.path.join(output_dir, "q2_dependence_normalization_divisor.png")
+    out_path = os.path.join(output_dir, filename)
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
@@ -2280,54 +2414,103 @@ def print_summary_table(title, rows):
 #enddef
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--channel",
-        default="epgamma",
-        help="Channel to analyze. Default: epgamma. Currently supported: epgamma, eX",
-    )
-    parser.add_argument(
-        "--skip_temp_heavy_mc",
-        action="store_true",
-        help="Temporarily skip selected MC points if skip_pairs is uncommented in build_mc_aggregation.",
-    )
-    args = parser.parse_args()
+def print_period_current_rows(title, current_rows):
 
-    channel_cfg = get_channel_config(args.channel)
+    print("")
+    print(title)
 
-    DATA_PERIOD_FILES = channel_cfg["data_period_files"]
-    MC_DIR = channel_cfg["mc_dir"]
-    MC_CHANNEL_TAG = channel_cfg["mc_channel_tag"]
+    for period in PERIOD_ORDER:
+        rows = [r for r in current_rows if r["period"] == period]
+        rows = sorted(rows, key=lambda r: r["current_nA"])
 
-    OUTPUT_DIR, INTEGRATED_OUTPUT_DIR, Q2_OUTPUT_DIR = get_output_paths(args.channel)
+        if len(rows) == 0:
+            print(f"  {period:8s}  no surviving rows")
+            continue
+        #endif
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    os.makedirs(INTEGRATED_OUTPUT_DIR, exist_ok=True)
-    os.makedirs(Q2_OUTPUT_DIR, exist_ok=True)
+        for row in rows:
+            print(
+                f"  {period:8s}  "
+                f"{int(row['current_nA']):3d} nA  "
+                f"runs={int(row['n_runs']):3d}  "
+                f"counts={int(row['counts']):8d}  "
+                f"charge={float(row['charge_nC']):12.5f} nC  "
+                f"counts/nC={float(row['counts_per_nC']):.8f} +/- {float(row['counts_per_nC_err']):.8f}"
+            )
+        #endfor
+    #endfor
+#enddef
+
+
+def print_mc_rows(title, mc_rows):
+
+    print("")
+    print(title)
+
+    for period in PERIOD_ORDER:
+        rows = [r for r in mc_rows if r["period"] == period]
+        rows = sorted(rows, key=lambda r: r["current_nA"])
+
+        if len(rows) == 0:
+            print(f"  {period:8s}  no surviving MC rows")
+            continue
+        #endif
+
+        for row in rows:
+            print(
+                f"  {period:8s}  "
+                f"{int(row['current_nA']):3d} nA  "
+                f"N_gen={int(row['n_gen']):8d}  "
+                f"N_rec={int(row['n_rec']):8d}  "
+                f"eff={float(row['efficiency']):.8f} +/- {float(row['efficiency_err']):.8f}"
+            )
+        #endfor
+    #endfor
+#enddef
+
+
+def run_single_analysis_block(
+    block_title,
+    output_dir,
+    integrated_output_dir,
+    q2_output_dir,
+    data_period_files,
+    run_charge_map,
+    q2_bins,
+    mc_dir,
+    mc_channel_tag,
+    period_color,
+    skip_temp_heavy_mc=False,
+    topology_spec=None,
+    print_run_lists=False,
+):
+
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(integrated_output_dir, exist_ok=True)
+    os.makedirs(q2_output_dir, exist_ok=True)
 
     print("")
     print("============================================================")
-    print(f"Running channel: {args.channel}")
-    print(f"MC directory:    {MC_DIR}")
-    print(f"Output dir:      {OUTPUT_DIR}")
+    print(f"{block_title}")
+    print(f"Output dir: {output_dir}")
+    if topology_spec is not None:
+        print(
+            f"Topology: {topology_spec['label']}  "
+            f"(p1_theta in [{topology_spec['proton_theta_min_deg']:.1f},{topology_spec['proton_theta_max_deg']:.1f}) deg, "
+            f"p2_theta in [{topology_spec['photon_theta_min_deg']:.1f},{topology_spec['photon_theta_max_deg']:.1f}) deg)"
+        )
+    #endif
     print("============================================================")
-
-    print("")
-    print("Reading charge map...")
-    run_charge_map = read_charge_map(CSV_FILE)
-    print(f"Loaded charge entries for {len(run_charge_map)} runs from:")
-    print(f"  {CSV_FILE}")
 
     all_run_rows = []
     all_current_rows = []
     all_skipped_run_rows = []
-    q2_current_rows_by_bin = [[] for _ in Q2_BINS]
+    q2_current_rows_by_bin = [[] for _ in q2_bins]
 
     print("")
     print("Processing DATA ROOT files and aggregating by current...")
 
-    for period_display_name, period_internal_name, root_path in DATA_PERIOD_FILES:
+    for period_display_name, period_internal_name, root_path in data_period_files:
         print("")
         print("=" * 90)
         print(f"DATA period: {period_display_name}")
@@ -2340,14 +2523,15 @@ def main():
             period_internal_name=period_internal_name,
             root_path=root_path,
             run_charge_map=run_charge_map,
-            q2_bins=Q2_BINS,
+            q2_bins=q2_bins,
+            topology_spec=topology_spec,
         )
 
         all_run_rows.extend(run_rows)
         all_current_rows.extend(current_rows)
         all_skipped_run_rows.extend(skipped_nonpositive_charge_rows)
 
-        for ibin in range(len(Q2_BINS)):
+        for ibin in range(len(q2_bins)):
             q2_current_rows_by_bin[ibin].extend(q2_current_rows_this_period[ibin])
         #endfor
 
@@ -2355,50 +2539,34 @@ def main():
         print(f"Integrated current groups: {len(current_rows)}")
         print(f"Skipped non-positive-charge runs: {len(skipped_nonpositive_charge_rows)}")
 
-        if len(skipped_nonpositive_charge_rows) > 0:
+        if print_run_lists and len(skipped_nonpositive_charge_rows) > 0:
             skipped_list = [int(r["runnum"]) for r in skipped_nonpositive_charge_rows]
             print(f"  skipped runs = {skipped_list}")
         #endif
-
-        for row in current_rows:
-            print(
-                f"  {period_display_name:8s}  "
-                f"{int(row['current_nA']):3d} nA  "
-                f"runs={int(row['n_runs']):3d}  "
-                f"counts={int(row['counts']):8d}  "
-                f"charge={float(row['charge_nC']):12.5f} nC  "
-                f"counts/nC={float(row['counts_per_nC']):.8f} +/- {float(row['counts_per_nC_err']):.8f}"
-            )
-        #endfor
     #endfor
+
+    print_period_current_rows("Integrated DATA current groups", all_current_rows)
 
     print("")
     print("Processing MC ROOT files and computing efficiencies...")
-    if args.skip_temp_heavy_mc:
+    if skip_temp_heavy_mc:
         print("Temporary MC skip override flag is ON.")
     #endif
 
     integrated_mc_rows, q2_mc_rows_by_bin = build_mc_aggregation(
-        mc_dir=MC_DIR,
-        q2_bins=Q2_BINS,
-        requested_channel_tag=MC_CHANNEL_TAG,
-        skip_temp_heavy_mc=args.skip_temp_heavy_mc,
+        mc_dir=mc_dir,
+        q2_bins=q2_bins,
+        requested_channel_tag=mc_channel_tag,
+        skip_temp_heavy_mc=skip_temp_heavy_mc,
+        topology_spec=topology_spec,
     )
 
-    for row in integrated_mc_rows:
-        print(
-            f"  {row['period']:8s}  "
-            f"{int(row['current_nA']):3d} nA  "
-            f"N_gen={int(row['n_gen']):8d}  "
-            f"N_rec={int(row['n_rec']):8d}  "
-            f"eff={float(row['efficiency']):.8f} +/- {float(row['efficiency_err']):.8f}"
-        )
-    #endfor
+    print_mc_rows("Integrated MC current groups", integrated_mc_rows)
 
-    run_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_run_table.csv")
-    current_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_current_table.csv")
-    mc_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_mc_table.csv")
-    skipped_run_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_skipped_runs.csv")
+    run_table_csv = os.path.join(output_dir, "dvcs_current_dependence_run_table.csv")
+    current_table_csv = os.path.join(output_dir, "dvcs_current_dependence_current_table.csv")
+    mc_table_csv = os.path.join(output_dir, "dvcs_current_dependence_mc_table.csv")
+    skipped_run_table_csv = os.path.join(output_dir, "dvcs_current_dependence_skipped_runs.csv")
 
     write_run_table_csv(run_table_csv, all_run_rows)
     write_current_table_csv(current_table_csv, all_current_rows)
@@ -2410,16 +2578,6 @@ def main():
     print(f"[saved] {current_table_csv}")
     print(f"[saved] {mc_table_csv}")
     print(f"[saved] {skipped_run_table_csv}")
-
-    default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-    if len(default_colors) < len(PERIOD_ORDER):
-        raise RuntimeError("Matplotlib default color cycle is shorter than number of periods.")
-    #endif
-
-    period_color = {}
-    for i, period in enumerate(PERIOD_ORDER):
-        period_color[period] = default_colors[i]
-    #endfor
 
     integrated_data_fit_results = make_fit_result_map_for_data(all_current_rows)
     integrated_mc_fit_results = make_fit_result_map_for_mc(integrated_mc_rows)
@@ -2452,7 +2610,7 @@ def main():
         mc_fit_results=integrated_mc_fit_results,
     )
 
-    residual_table_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_residual_table.csv")
+    residual_table_csv = os.path.join(output_dir, "dvcs_current_dependence_residual_table.csv")
     write_residual_table_csv(residual_table_csv, residual_rows)
     print("")
     print(f"[saved] {residual_table_csv}")
@@ -2463,15 +2621,15 @@ def main():
         mc_fit_results=integrated_mc_fit_results,
     )
 
-    period_summary_csv = os.path.join(OUTPUT_DIR, "dvcs_current_dependence_period_summary.csv")
+    period_summary_csv = os.path.join(output_dir, "dvcs_current_dependence_period_summary.csv")
     write_period_summary_csv(period_summary_csv, period_summary_rows)
     print(f"[saved] {period_summary_csv}")
 
     run_plot_paths = plot_run_dependence(
-        output_dir=INTEGRATED_OUTPUT_DIR,
+        output_dir=integrated_output_dir,
         run_rows=all_run_rows,
         period_color=period_color,
-        channel_tag=args.channel,
+        title_prefix=block_title,
     )
 
     print("")
@@ -2480,7 +2638,7 @@ def main():
     #endfor
 
     out_a, out_b, out_c, out_d = plot_four_panel_set(
-        output_dir=INTEGRATED_OUTPUT_DIR,
+        output_dir=integrated_output_dir,
         tag="integrated",
         data_current_rows=all_current_rows,
         mc_rows=integrated_mc_rows,
@@ -2496,24 +2654,20 @@ def main():
     print(f"[saved] {out_c}")
     print(f"[saved] {out_d}")
 
-    print("")
-    print("=== Q2-bin normalization summary ===")
-
     q2_summary_rows = build_q2_summary_rows(
         q2_current_rows_by_bin=q2_current_rows_by_bin,
         q2_mc_rows_by_bin=q2_mc_rows_by_bin,
-        q2_bins=Q2_BINS,
+        q2_bins=q2_bins,
     )
 
-    q2_summary_csv = os.path.join(Q2_OUTPUT_DIR, "dvcs_current_dependence_q2_summary.csv")
+    q2_summary_csv = os.path.join(q2_output_dir, "dvcs_current_dependence_q2_summary.csv")
     write_q2_summary_csv(q2_summary_csv, q2_summary_rows)
+    print("")
     print(f"[saved] {q2_summary_csv}")
 
-    q2_integrated_tables_for_terminal = []
-
-    for ibin, (low, high) in enumerate(Q2_BINS):
-        label = q2_bin_to_label(low, high, is_last=(ibin == len(Q2_BINS) - 1))
-        subdir = os.path.join(Q2_OUTPUT_DIR, q2_bin_to_dirname(low, high))
+    for ibin, (low, high) in enumerate(q2_bins):
+        label = q2_bin_to_label(low, high, is_last=(ibin == len(q2_bins) - 1))
+        subdir = os.path.join(q2_output_dir, q2_bin_to_dirname(low, high))
         os.makedirs(subdir, exist_ok=True)
 
         current_rows_bin = q2_current_rows_by_bin[ibin]
@@ -2521,13 +2675,6 @@ def main():
 
         data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
         mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
-
-        period_rows_bin = build_period_summary_rows(
-            current_rows=current_rows_bin,
-            data_fit_results=data_fit_bin,
-            mc_fit_results=mc_fit_bin,
-        )
-        q2_integrated_tables_for_terminal.append((label, period_rows_bin))
 
         title_suffix = f"  {label}"
 
@@ -2542,8 +2689,6 @@ def main():
             title_suffix=title_suffix,
         )
 
-        print("")
-        print(f"Q2 bin {ibin}: {label}")
         print(f"[saved] {out_a_bin}")
         print(f"[saved] {out_b_bin}")
         print(f"[saved] {out_c_bin}")
@@ -2552,23 +2697,127 @@ def main():
 
     q2_summary_plot = make_q2_summary_plot(
         q2_summary_rows=q2_summary_rows,
-        output_dir=Q2_OUTPUT_DIR,
+        output_dir=q2_output_dir,
         period_color=period_color,
     )
-    print("")
     print(f"[saved] {q2_summary_plot}")
 
-    for label, rows in q2_integrated_tables_for_terminal:
-        print_summary_table(f"Q2 bin {label}", rows)
-    #endfor
-
-    print_summary_table("Representative integrated period-level normalization summary", period_summary_rows)
+    print_summary_table(f"Representative integrated period-level normalization summary: {block_title}", period_summary_rows)
 
     if len(all_skipped_run_rows) > 0:
         print("")
         print("Skipped runs with non-positive accumulated charge:")
         print(f"  total skipped = {len(all_skipped_run_rows)}")
         print(f"  details saved to: {skipped_run_table_csv}")
+    #endif
+
+    return {
+        "run_rows": all_run_rows,
+        "current_rows": all_current_rows,
+        "mc_rows": integrated_mc_rows,
+        "period_summary_rows": period_summary_rows,
+        "q2_summary_rows": q2_summary_rows,
+        "skipped_rows": all_skipped_run_rows,
+    }
+#enddef
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--channel",
+        default="epgamma",
+        help="Channel to analyze. Default: epgamma. Currently supported: epgamma, eX",
+    )
+    parser.add_argument(
+        "--skip_temp_heavy_mc",
+        action="store_true",
+        help="Temporarily skip selected MC points if skip_pairs is uncommented in build_mc_aggregation.",
+    )
+    args = parser.parse_args()
+
+    channel_cfg = get_channel_config(args.channel)
+
+    data_period_files = channel_cfg["data_period_files"]
+    mc_dir = channel_cfg["mc_dir"]
+    mc_channel_tag = channel_cfg["mc_channel_tag"]
+
+    output_dir, integrated_output_dir, q2_output_dir = get_output_paths(args.channel)
+
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(integrated_output_dir, exist_ok=True)
+    os.makedirs(q2_output_dir, exist_ok=True)
+
+    print("")
+    print("============================================================")
+    print(f"Running channel: {args.channel}")
+    print(f"MC directory:    {mc_dir}")
+    print(f"Output dir:      {output_dir}")
+    print("============================================================")
+
+    print("")
+    print("Reading charge map...")
+    run_charge_map = read_charge_map(CSV_FILE)
+    print(f"Loaded charge entries for {len(run_charge_map)} runs from:")
+    print(f"  {CSV_FILE}")
+
+    default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if len(default_colors) < len(PERIOD_ORDER):
+        raise RuntimeError("Matplotlib default color cycle is shorter than number of periods.")
+    #endif
+
+    period_color = {}
+    for i, period in enumerate(PERIOD_ORDER):
+        period_color[period] = default_colors[i]
+    #endfor
+
+    run_single_analysis_block(
+        block_title=f"overall channel {args.channel}",
+        output_dir=output_dir,
+        integrated_output_dir=integrated_output_dir,
+        q2_output_dir=q2_output_dir,
+        data_period_files=data_period_files,
+        run_charge_map=run_charge_map,
+        q2_bins=Q2_BINS,
+        mc_dir=mc_dir,
+        mc_channel_tag=mc_channel_tag,
+        period_color=period_color,
+        skip_temp_heavy_mc=args.skip_temp_heavy_mc,
+        topology_spec=None,
+        print_run_lists=False,
+    )
+
+    if channel_supports_topology(args.channel):
+        print("")
+        print("============================================================")
+        print("Running topology-dependent analyses")
+        print("============================================================")
+
+        for topology_spec in TOPOLOGY_CONFIGS:
+            topo_output_dir, topo_integrated_output_dir, topo_q2_output_dir = get_topology_output_paths(
+                output_dir,
+                topology_spec["key"],
+            )
+
+            run_single_analysis_block(
+                block_title=f"{args.channel} topology {topology_spec['label']}",
+                output_dir=topo_output_dir,
+                integrated_output_dir=topo_integrated_output_dir,
+                q2_output_dir=topo_q2_output_dir,
+                data_period_files=data_period_files,
+                run_charge_map=run_charge_map,
+                q2_bins=Q2_BINS,
+                mc_dir=mc_dir,
+                mc_channel_tag=mc_channel_tag,
+                period_color=period_color,
+                skip_temp_heavy_mc=args.skip_temp_heavy_mc,
+                topology_spec=topology_spec,
+                print_run_lists=False,
+            )
+        #endfor
+    else:
+        print("")
+        print(f"Topology-dependent analyses skipped for channel '{args.channel}'.")
     #endif
 
     print("")
