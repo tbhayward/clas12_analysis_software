@@ -1776,28 +1776,41 @@ def get_trigger_boundary_positions(trigger_segments):
 #enddef
 
 
-def draw_trigger_boundaries(ax, trigger_segments, y_top=None):
+def draw_trigger_boundaries(ax, trigger_segments):
 
     boundaries = get_trigger_boundary_positions(trigger_segments)
 
-    if y_top is None:
-        y0, y1 = ax.get_ylim()
-        y_top = y1
-    #endif
-
-    text_y = y_top - 0.02 * (ax.get_ylim()[1] - ax.get_ylim()[0])
-
     for item in boundaries:
         ax.axvline(item["x"], color="0.35", linestyle="--", linewidth=1.2)
+    #endfor
+#enddef
+
+
+def draw_trigger_segment_labels(ax, trigger_segments):
+
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+
+    text_y = y1 - 0.06 * (y1 - y0)
+
+    for seg in trigger_segments:
+        seg_start = max(float(seg["start"]), x0)
+        seg_end = min(float(seg["end"]), x1)
+
+        if seg_end <= seg_start:
+            continue
+        #endif
+
+        xmid = 0.5 * (seg_start + seg_end)
 
         ax.text(
-            item["x"],
+            xmid,
             text_y,
-            item["label"],
-            rotation=90,
+            seg["label"],
+            rotation=0,
             fontsize=8,
             color="0.25",
-            ha="right",
+            ha="center",
             va="top",
             bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.75, edgecolor="0.8"),
         )
@@ -1805,7 +1818,95 @@ def draw_trigger_boundaries(ax, trigger_segments, y_top=None):
 #enddef
 
 
-def plot_run_dependence(output_dir, run_rows, period_color, title_prefix):
+def build_current_color_map(rows, base_color):
+
+    unique_currents = sorted(set(int(r["current_nA"]) for r in rows))
+
+    if len(unique_currents) <= 1:
+        return {cur: base_color for cur in unique_currents}
+    #endif
+
+    cmap = plt.get_cmap("tab10")
+    color_map = {}
+
+    for i, cur in enumerate(unique_currents):
+        color_map[cur] = cmap(i % 10)
+    #endfor
+
+    return color_map
+#enddef
+
+
+def plot_single_run_dependence_figure(ax, rows, current_rows, period, title_text, with_trigger_overlay=False):
+
+    x, y, sy, ordered_rows = period_run_points_from_run_rows(rows, period)
+
+    if len(ordered_rows) == 0:
+        return False
+    #endif
+
+    current_color_map = build_current_color_map(ordered_rows, "C0")
+    seen_current = set()
+
+    for row in ordered_rows:
+        current_nA = int(row["current_nA"])
+        label = None
+        if current_nA not in seen_current:
+            label = f"{current_nA} nA"
+            seen_current.add(current_nA)
+        #endif
+
+        ax.errorbar(
+            [float(row["runnum"])],
+            [float(row["counts_per_nC"])],
+            yerr=[float(row["counts_per_nC_err"])],
+            fmt="o",
+            markersize=3,
+            capsize=2,
+            color=current_color_map[current_nA],
+            label=label,
+        )
+    #endfor
+
+    period_current_rows = [r for r in current_rows if r["period"] == period]
+    period_current_rows = sorted(period_current_rows, key=lambda r: r["current_nA"])
+
+    for crow in period_current_rows:
+        current_nA = int(crow["current_nA"])
+        yline = float(crow["counts_per_nC"])
+        ax.axhline(
+            yline,
+            color=current_color_map[current_nA],
+            linestyle="--",
+            linewidth=1.0,
+        )
+    #endfor
+
+    ax.set_xlabel("Run Number")
+    ax.set_ylabel("Events / nC")
+    ax.set_title(title_text)
+    ax.grid(True, alpha=0.3)
+
+    ymin = float(np.min(y - sy))
+    ymax = float(np.max(y + sy))
+    if ymax <= ymin:
+        ymax = ymin + 1.0
+    #endif
+    pad = 0.08 * (ymax - ymin)
+    ax.set_ylim(ymin - pad, ymax + pad)
+
+    ax.legend(title="Beam current (nA)", frameon=True, fontsize=9, title_fontsize=9)
+
+    if with_trigger_overlay:
+        draw_trigger_boundaries(ax, TRIGGER_SEGMENTS_SP18)
+        draw_trigger_segment_labels(ax, TRIGGER_SEGMENTS_SP18)
+    #endif
+
+    return True
+#enddef
+
+
+def plot_run_dependence(output_dir, run_rows, current_rows, period_color, title_prefix):
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1818,42 +1919,39 @@ def plot_run_dependence(output_dir, run_rows, period_color, title_prefix):
         #endif
 
         period_internal = PERIOD_INTERNAL_FROM_DISPLAY[period]
-        c = period_color[period]
 
         fig, ax = plt.subplots(figsize=(14, 6), constrained_layout=True)
-        ax.errorbar(x, y, yerr=sy, fmt="o", markersize=3, capsize=2, color=c)
-        ax.set_xlabel("Run number")
-        ax.set_ylabel("Counts / accumulated charge (1/nC)")
-        ax.set_title(f"{period} run dependence ({title_prefix})")
-        ax.grid(True, alpha=0.3)
-
-        out_standard = os.path.join(output_dir, f"{period_internal}_run_dependence.png")
-        fig.savefig(out_standard, dpi=200)
+        ok = plot_single_run_dependence_figure(
+            ax=ax,
+            rows=run_rows,
+            current_rows=current_rows,
+            period=period,
+            title_text=f"DVCS Events per nC by Run Number ({period_internal})",
+            with_trigger_overlay=False,
+        )
+        if ok:
+            out_standard = os.path.join(output_dir, f"{period_internal}_run_dependence.png")
+            fig.savefig(out_standard, dpi=200)
+            saved_paths.append(out_standard)
+        #endif
         plt.close(fig)
-        saved_paths.append(out_standard)
 
         if period == "Sp18 Inb" or period == "Sp18 Out":
             fig, ax = plt.subplots(figsize=(14, 6), constrained_layout=True)
-            ax.errorbar(x, y, yerr=sy, fmt="o", markersize=3, capsize=2, color=c)
-            ax.set_xlabel("Run number")
-            ax.set_ylabel("Counts / accumulated charge (1/nC)")
-            ax.set_title(f"{period} run dependence ({title_prefix}) with trigger changes")
-            ax.grid(True, alpha=0.3)
-
-            y_min = float(np.min(y - sy)) if len(y) > 0 else 0.0
-            y_max = float(np.max(y + sy)) if len(y) > 0 else 1.0
-            if y_max <= y_min:
-                y_max = y_min + 1.0
+            ok = plot_single_run_dependence_figure(
+                ax=ax,
+                rows=run_rows,
+                current_rows=current_rows,
+                period=period,
+                title_text=f"DVCS Events per nC by Run Number ({period_internal}) with trigger changes",
+                with_trigger_overlay=True,
+            )
+            if ok:
+                out_trigger = os.path.join(output_dir, f"{period_internal}_run_dependence_trigger.png")
+                fig.savefig(out_trigger, dpi=200)
+                saved_paths.append(out_trigger)
             #endif
-            pad = 0.06 * (y_max - y_min)
-            ax.set_ylim(y_min - pad, y_max + pad)
-
-            draw_trigger_boundaries(ax, TRIGGER_SEGMENTS_SP18)
-
-            out_trigger = os.path.join(output_dir, f"{period_internal}_run_dependence_trigger.png")
-            fig.savefig(out_trigger, dpi=200)
             plt.close(fig)
-            saved_paths.append(out_trigger)
         #endif
     #endfor
 
@@ -2628,6 +2726,7 @@ def run_single_analysis_block(
     run_plot_paths = plot_run_dependence(
         output_dir=integrated_output_dir,
         run_rows=all_run_rows,
+        current_rows=all_current_rows,
         period_color=period_color,
         title_prefix=block_title,
     )
