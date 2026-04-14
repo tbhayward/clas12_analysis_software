@@ -126,10 +126,10 @@ FA18_OUT_CURRENT = {
 
 TRIGGER_RANGES_SP18 = [
     ("trigger v2-v7", 3031, 3495),
-    ("trigger v8", 3499, 3513),
+    ("trigger v8", 3495, 3517),
     ("trigger v9", 3517, 3548),
     ("trigger v10", 3709, 3722),
-    ("trigger v11-v2_3", 3735, 4325),
+    ("trigger v11-v2_3", 3722, 4325),
 ]
 
 
