@@ -232,7 +232,7 @@ def compute_standardized_ylim(per_current_stats):
         return 0.0, 0.1
     #endif
 
-    step = 0.1
+    step = 0.01
 
     y_min = math.floor(y_min_raw / step) * step
     y_max = math.ceil(y_max_raw / step) * step
