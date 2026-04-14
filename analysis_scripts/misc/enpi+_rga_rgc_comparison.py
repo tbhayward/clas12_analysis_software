@@ -226,7 +226,7 @@ ax_bot.plot(
 ax_bot.set_xlabel("bin number", fontsize=14)
 ax_bot.set_ylabel("pull", fontsize=14)
 ax_bot.set_xlim(0.5, 24.5)
-ax_bot.set_ylim(-8.0, 8.0)
+ax_bot.set_ylim(-5.0, 5.0)
 ax_bot.grid(True, alpha=0.3)
 
 plt.tight_layout()
