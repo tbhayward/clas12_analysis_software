@@ -322,6 +322,7 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
 
         inmask = ~outmask
 
+        # Inliers (solid circles) with label for legend
         if np.any(inmask):
             plt.errorbar(
                 runs[inmask],
@@ -337,6 +338,7 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
             )
         #endif
 
+        # Outliers (open circles), no label
         if np.any(outmask):
             plt.errorbar(
                 runs[outmask],
@@ -351,6 +353,7 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
             )
         #endif
 
+        # Mean line for this current
         plt.axhline(st["mean"], color=color, linestyle="--", linewidth=1.0)
     #endfor
 
