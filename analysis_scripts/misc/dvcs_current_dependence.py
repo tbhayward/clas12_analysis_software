@@ -86,6 +86,7 @@ import math
 import csv
 import argparse
 from collections import defaultdict
+import concurrent.futures as cf
 
 import uproot
 import pandas as pd
@@ -100,6 +101,8 @@ from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 CSV_FILE = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
 PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
+MAX_WORKERS = 5
+ITERATE_STEP_SIZE = "200 MB"
 
 PERIOD_DISPLAY_FROM_INTERNAL = {
     "rga_sp18_inb": "Sp18 Inb",
@@ -312,6 +315,18 @@ FA18_OUT_CURRENT = {
 }
 
 # -----------------------------------------------------------------------------
+# Bin cache
+# -----------------------------------------------------------------------------
+
+SUMMARY_BINS_CACHE = {}
+for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+    SUMMARY_BINS_CACHE[var_cfg["key"]] = {}
+    for period_name in PERIOD_ORDER:
+        SUMMARY_BINS_CACHE[var_cfg["key"]][period_name] = get_summary_bins_for_period(var_cfg, period_name)
+    #endfor
+#endfor
+
+# -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 
@@ -327,396 +342,12 @@ def get_channel_config(channel):
 #enddef
 
 
-def build_angle_bins(min_deg, max_deg, n_bins):
-
-    edges = np.linspace(min_deg, max_deg, n_bins + 1)
-    bins = []
-
-    for i in range(n_bins):
-        bins.append((float(edges[i]), float(edges[i + 1])))
-    #endfor
-
-    return bins
+def get_summary_bins(var_key, period_name):
+    return SUMMARY_BINS_CACHE[var_key][period_name]
 #enddef
 
 
-def get_summary_bins_for_period(var_cfg, period_name):
-
-    key = var_cfg["key"]
-
-    if key == "e_theta":
-        base = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-        return base[:-2] + [(base[-2][0], base[-1][1])]
-    #endif
-
-    if key == "p1_theta":
-        base = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-        return [(base[0][0], base[1][1])] + base[2:]
-    #endif
-
-    if key == "p2_theta":
-        if period_name == "Fa18 Inb" or period_name == "Fa18 Out":
-            return [
-                (0.0, 2.5),
-                (2.5, 5.0),
-                (5.0, 7.5),
-                (7.5, 10.0),
-                (10.0, 15.0),
-                (15.0, 20.0),
-                (20.0, 25.0),
-                (25.0, 30.0),
-                (30.0, 35.0),
-            ]
-        #endif
-        return build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-    #endif
-
-    return build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-#enddef
-
-
-def get_output_paths(channel, topology_dir_name=None):
-
-    if channel == "epgamma":
-        base_output_dir = "output/dvcs_current_dependence"
-    else:
-        base_output_dir = os.path.join("output", "dvcs_current_dependence", channel)
-    #endif
-
-    if topology_dir_name is None:
-        output_dir = base_output_dir
-    else:
-        output_dir = os.path.join(base_output_dir, topology_dir_name)
-    #endif
-
-    integrated_output_dir = os.path.join(output_dir, "integrated")
-    angle_output_dir = os.path.join(output_dir, "angle_dependence")
-
-    return output_dir, integrated_output_dir, angle_output_dir
-#enddef
-
-
-def resolve_current(period_label_internal, runnum):
-
-    label = period_label_internal.lower()
-
-    if label == "rga_fa18_inb":
-        if runnum in FA18_INB_CURRENT:
-            return True, FA18_INB_CURRENT[runnum]
-        #endif
-        return False, None
-    #endif
-
-    if label == "rga_fa18_out":
-        if runnum in FA18_OUT_CURRENT:
-            return True, FA18_OUT_CURRENT[runnum]
-        #endif
-        return False, None
-    #endif
-
-    if label == "rga_sp18_out":
-        if 3211 <= runnum <= 3293:
-            return True, 30
-        #endif
-        if 3867 <= runnum <= 3987:
-            return True, 45
-        #endif
-        return False, None
-    #endif
-
-    if label == "rga_sp18_inb":
-        if runnum == 3418:
-            return True, 70
-        #endif
-        if runnum == 3421 or runnum == 3422:
-            return True, 35
-        #endif
-        if runnum == 3429:
-            return True, 50
-        #endif
-
-        if 3306 <= runnum <= 3411:
-            return True, 35
-        #endif
-
-        if 3431 <= runnum <= 4325:
-            return True, 50
-        #endif
-
-        return False, None
-    #endif
-
-    if label == "rga_sp19_inb":
-        if runnum == 6616:
-            return True, 5
-        #endif
-        return True, 50
-    #endif
-
-    return False, None
-#enddef
-
-
-def weighted_linear_fit(x, y, sy):
-
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    sy = np.asarray(sy, dtype=float)
-
-    if x.size == 0:
-        return {
-            "m": float("nan"),
-            "b": float("nan"),
-            "sm": float("nan"),
-            "sb": float("nan"),
-            "cov_mb": float("nan"),
-            "chi2": float("nan"),
-            "ndof": 0,
-        }
-    #endif
-
-    if x.size == 1:
-        sb = float(sy[0]) if np.isfinite(sy[0]) and sy[0] > 0.0 else 0.0
-        return {
-            "m": 0.0,
-            "b": float(y[0]),
-            "sm": 0.0,
-            "sb": sb,
-            "cov_mb": 0.0,
-            "chi2": 0.0,
-            "ndof": 0,
-        }
-    #endif
-
-    if np.any(sy <= 0.0):
-        raise RuntimeError("Encountered non-positive uncertainty in weighted_linear_fit.")
-    #endif
-
-    w = 1.0 / (sy * sy)
-
-    S = np.sum(w)
-    Sx = np.sum(w * x)
-    Sy = np.sum(w * y)
-    Sxx = np.sum(w * x * x)
-    Sxy = np.sum(w * x * y)
-
-    D = S * Sxx - Sx * Sx
-    if D == 0.0:
-        return {
-            "m": float("nan"),
-            "b": float("nan"),
-            "sm": float("nan"),
-            "sb": float("nan"),
-            "cov_mb": float("nan"),
-            "chi2": float("nan"),
-            "ndof": 0,
-        }
-    #endif
-
-    m = (S * Sxy - Sx * Sy) / D
-    b = (Sxx * Sy - Sx * Sxy) / D
-
-    var_m = S / D
-    var_b = Sxx / D
-    cov_mb = -Sx / D
-
-    sm = math.sqrt(var_m) if var_m >= 0.0 else float("nan")
-    sb = math.sqrt(var_b) if var_b >= 0.0 else float("nan")
-
-    yfit = m * x + b
-    chi2 = np.sum(((y - yfit) / sy) ** 2)
-    ndof = int(x.size - 2)
-
-    return {
-        "m": m,
-        "b": b,
-        "sm": sm,
-        "sb": sb,
-        "cov_mb": cov_mb,
-        "chi2": chi2,
-        "ndof": ndof,
-    }
-#enddef
-
-
-def read_charge_map(csv_file):
-
-    if not os.path.exists(csv_file):
-        raise RuntimeError(f"Charge CSV not found: {csv_file}")
-    #endif
-
-    run_info_df = pd.read_csv(
-        csv_file,
-        comment="#",
-        header=None,
-        names=["runnum", "charge_nC", "col2", "col3", "col4", "col5"],
-    )
-
-    if "runnum" not in run_info_df.columns or "charge_nC" not in run_info_df.columns:
-        raise RuntimeError("Failed to read required columns from charge CSV.")
-    #endif
-
-    run_charge_map = {}
-
-    for _, row in run_info_df.iterrows():
-        runnum = int(row["runnum"])
-        charge = float(row["charge_nC"])
-        run_charge_map[runnum] = charge
-    #endfor
-
-    return run_charge_map
-#enddef
-
-
-def parse_mc_filename(basename):
-
-    if not basename.endswith(".root"):
-        raise RuntimeError(f"Not a ROOT file: {basename}")
-    #endif
-
-    stem = basename[:-5]
-    tokens = stem.split("_")
-
-    if len(tokens) != 7 and len(tokens) != 8:
-        raise RuntimeError(f"Unexpected MC filename format: {basename}")
-    #endif
-
-    kind = tokens[0]
-    if kind != "gen" and kind != "rec":
-        raise RuntimeError(f"Unexpected MC file prefix in {basename}")
-    #endif
-
-    if tokens[1] != "dvcsgen":
-        raise RuntimeError(f"Unexpected MC generator tag in {basename}")
-    #endif
-
-    period_internal = "_".join(tokens[2:5])
-
-    current_token = tokens[5]
-    beam_energy_token = tokens[6]
-
-    if not beam_energy_token.endswith("MeV"):
-        raise RuntimeError(f"Could not parse beam energy token in {basename}")
-    #endif
-
-    channel_tag = None
-    if len(tokens) == 8:
-        channel_tag = tokens[7]
-    #endif
-
-    if current_token == "nobkg":
-        current_nA = 0
-    else:
-        if not current_token.endswith("nA"):
-            raise RuntimeError(f"Could not parse current token in {basename}")
-        #endif
-        current_nA = int(current_token[:-2])
-    #endif
-
-    return kind, period_internal, current_nA, beam_energy_token, channel_tag
-#enddef
-
-
-def is_candidate_mc_filename(basename):
-    if not basename.endswith(".root"):
-        return False
-    #endif
-    if basename.startswith("gen_") or basename.startswith("rec_"):
-        return True
-    #endif
-    return False
-#enddef
-
-
-def get_mc_reference_current(period_name_or_internal):
-
-    if period_name_or_internal in MC_REFERENCE_CURRENT:
-        return MC_REFERENCE_CURRENT[period_name_or_internal]
-    #endif
-
-    if period_name_or_internal in PERIOD_INTERNAL_FROM_DISPLAY:
-        internal = PERIOD_INTERNAL_FROM_DISPLAY[period_name_or_internal]
-        return MC_REFERENCE_CURRENT[internal]
-    #endif
-
-    raise RuntimeError(f"No MC reference current configured for period: {period_name_or_internal}")
-#enddef
-
-
-def angle_bin_to_dirname(variable_key, low, high):
-    return f"{variable_key}_{low:.2f}_{high:.2f}".replace(".", "p")
-#enddef
-
-
-def angle_bin_to_label(low, high, is_last=False):
-    if is_last:
-        return f"[{low:.2f}, {high:.2f}]"
-    #endif
-    return f"[{low:.2f}, {high:.2f})"
-#enddef
-
-
-def angle_bin_masks(theta_deg_array, bins):
-
-    masks = []
-    n_bins = len(bins)
-
-    for i, (low, high) in enumerate(bins):
-        if i == n_bins - 1:
-            mask = (theta_deg_array >= low) & (theta_deg_array <= high)
-        else:
-            mask = (theta_deg_array >= low) & (theta_deg_array < high)
-        #endif
-        masks.append(mask)
-    #endfor
-
-    return masks
-#enddef
-
-
-def add_reference_current_text(ax, period_name):
-
-    ref_current = get_mc_reference_current(period_name)
-    text = f"MC ref in acceptance: {ref_current} nA"
-
-    ax.text(
-        0.03,
-        0.03,
-        text,
-        transform=ax.transAxes,
-        fontsize=9,
-        verticalalignment="bottom",
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.75, edgecolor="0.7"),
-    )
-#enddef
-
-
-def apply_topology_mask(arrays, topology_cuts):
-
-    if topology_cuts is None:
-        first_key = next(iter(arrays))
-        return np.ones(len(arrays[first_key]), dtype=bool)
-    #endif
-
-    if "p1_theta" not in arrays or "p2_theta" not in arrays:
-        raise RuntimeError("Topology cuts requested but p1_theta and p2_theta branches were not loaded.")
-    #endif
-
-    p1_theta_deg = np.degrees(arrays["p1_theta"])
-    p2_theta_deg = np.degrees(arrays["p2_theta"])
-
-    mask = (
-        (p1_theta_deg >= topology_cuts["p1_theta_min_deg"]) &
-        (p1_theta_deg < topology_cuts["p1_theta_max_deg"]) &
-        (p2_theta_deg >= topology_cuts["p2_theta_min_deg"]) &
-        (p2_theta_deg < topology_cuts["p2_theta_max_deg"])
-    )
-
-    return mask
-#enddef
-
-
-def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts=None):
+def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -738,24 +369,24 @@ def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts
     total_run_counts = defaultdict(int)
     angle_run_counts = {}
     angle_theta_sum = {}
-    angle_event_count = {}
+    angle_theta_n = {}
 
-    for var_cfg in angle_config:
-        angle_run_counts[var_cfg["key"]] = {}
-        angle_theta_sum[var_cfg["key"]] = {}
-        angle_event_count[var_cfg["key"]] = {}
-
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        angle_run_counts[var_key] = {}
+        angle_theta_sum[var_key] = {}
+        angle_theta_n[var_key] = {}
         for period_name in PERIOD_ORDER:
-            bins = get_summary_bins_for_period(var_cfg, period_name)
-            angle_run_counts[var_cfg["key"]][period_name] = [defaultdict(int) for _ in bins]
-            angle_theta_sum[var_cfg["key"]][period_name] = [0.0 for _ in bins]
-            angle_event_count[var_cfg["key"]][period_name] = [0 for _ in bins]
+            bins = get_summary_bins(var_key, period_name)
+            angle_run_counts[var_key][period_name] = [defaultdict(int) for _ in bins]
+            angle_theta_sum[var_key][period_name] = [0.0 for _ in bins]
+            angle_theta_n[var_key][period_name] = [0 for _ in bins]
         #endfor
     #endfor
 
     iterate_branches = ["runnum", "e_theta", "p1_theta", "p2_theta"]
 
-    for arrays in tree.iterate(iterate_branches, library="np", step_size="200 MB"):
+    for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
         event_mask = apply_topology_mask(arrays, topology_cuts)
 
         if not np.any(event_mask):
@@ -769,12 +400,23 @@ def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts
             total_run_counts[int(r)] += int(c)
         #endfor
 
-        for var_cfg in angle_config:
-            theta_deg = np.degrees(arrays[var_cfg["branch"]][event_mask])
+        theta_deg_map = {
+            "e_theta": np.degrees(arrays["e_theta"][event_mask]),
+            "p1_theta": np.degrees(arrays["p1_theta"][event_mask]),
+            "p2_theta": np.degrees(arrays["p2_theta"][event_mask]),
+        }
+
+        for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+            var_key = var_cfg["key"]
+            theta_deg = theta_deg_map[var_key]
 
             for period_name in PERIOD_ORDER:
-                bins = get_summary_bins_for_period(var_cfg, period_name)
+                bins = get_summary_bins(var_key, period_name)
                 masks = angle_bin_masks(theta_deg, bins)
+
+                counts_store = angle_run_counts[var_key][period_name]
+                sum_store = angle_theta_sum[var_key][period_name]
+                n_store = angle_theta_n[var_key][period_name]
 
                 for ibin, mask in enumerate(masks):
                     if not np.any(mask):
@@ -785,11 +427,11 @@ def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts
                     unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
 
                     for r, c in zip(unique_sel, counts_sel):
-                        angle_run_counts[var_cfg["key"]][period_name][ibin][int(r)] += int(c)
+                        counts_store[ibin][int(r)] += int(c)
                     #endfor
 
-                    angle_theta_sum[var_cfg["key"]][period_name][ibin] += float(np.sum(theta_deg[mask]))
-                    angle_event_count[var_cfg["key"]][period_name][ibin] += int(np.count_nonzero(mask))
+                    sum_store[ibin] += float(np.sum(theta_deg[mask]))
+                    n_store[ibin] += int(np.count_nonzero(mask))
                 #endfor
             #endfor
         #endfor
@@ -798,16 +440,15 @@ def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts
     angle_run_counts_out = {}
     angle_x_means_out = {}
 
-    for var_cfg in angle_config:
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
         angle_run_counts_out[var_key] = {}
         angle_x_means_out[var_key] = {}
 
         for period_name in PERIOD_ORDER:
             angle_run_counts_out[var_key][period_name] = [dict(d) for d in angle_run_counts[var_key][period_name]]
-
             means = []
-            for s, n in zip(angle_theta_sum[var_key][period_name], angle_event_count[var_key][period_name]):
+            for s, n in zip(angle_theta_sum[var_key][period_name], angle_theta_n[var_key][period_name]):
                 if n > 0:
                     means.append(float(s) / float(n))
                 else:
@@ -822,7 +463,7 @@ def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts
 #enddef
 
 
-def count_mc_total_and_angle_entries(root_path, tree_name, angle_config, topology_cuts=None):
+def count_mc_total_and_angle_entries(root_path, tree_name, topology_cuts=None):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -846,15 +487,16 @@ def count_mc_total_and_angle_entries(root_path, tree_name, angle_config, topolog
     total_count = 0
     angle_counts = {}
 
-    for var_cfg in angle_config:
-        angle_counts[var_cfg["key"]] = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        angle_counts[var_key] = {}
         for period_name in PERIOD_ORDER:
-            bins = get_summary_bins_for_period(var_cfg, period_name)
-            angle_counts[var_cfg["key"]][period_name] = [0 for _ in bins]
+            bins = get_summary_bins(var_key, period_name)
+            angle_counts[var_key][period_name] = [0 for _ in bins]
         #endfor
     #endfor
 
-    for arrays in tree.iterate(iterate_branches, library="np", step_size="200 MB"):
+    for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
         event_mask = apply_topology_mask(arrays, topology_cuts)
 
         if not np.any(event_mask):
@@ -863,15 +505,23 @@ def count_mc_total_and_angle_entries(root_path, tree_name, angle_config, topolog
 
         total_count += int(np.count_nonzero(event_mask))
 
-        for var_cfg in angle_config:
-            theta_deg = np.degrees(arrays[var_cfg["branch"]][event_mask])
+        theta_deg_map = {
+            "e_theta": np.degrees(arrays["e_theta"][event_mask]),
+            "p1_theta": np.degrees(arrays["p1_theta"][event_mask]),
+            "p2_theta": np.degrees(arrays["p2_theta"][event_mask]),
+        }
+
+        for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+            var_key = var_cfg["key"]
+            theta_deg = theta_deg_map[var_key]
 
             for period_name in PERIOD_ORDER:
-                bins = get_summary_bins_for_period(var_cfg, period_name)
+                bins = get_summary_bins(var_key, period_name)
                 masks = angle_bin_masks(theta_deg, bins)
+                store = angle_counts[var_key][period_name]
 
                 for ibin, mask in enumerate(masks):
-                    angle_counts[var_cfg["key"]][period_name][ibin] += int(np.count_nonzero(mask))
+                    store[ibin] += int(np.count_nonzero(mask))
                 #endfor
             #endfor
         #endfor
@@ -1019,11 +669,10 @@ def build_current_rows_from_counts(period_display_name, period_internal_name, ru
 #enddef
 
 
-def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, angle_config, topology_cuts=None):
+def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts=None):
 
     total_run_counts, angle_run_counts, angle_x_means = read_data_run_counts_and_angle_counts(
         root_path=root_path,
-        angle_config=angle_config,
         topology_cuts=topology_cuts,
     )
 
@@ -1044,9 +693,9 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     )
 
     angle_current_rows = {}
-    for var_cfg in angle_config:
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        bins = get_summary_bins_for_period(var_cfg, period_display_name)
+        bins = get_summary_bins(var_key, period_display_name)
         angle_current_rows[var_key] = {
             "bins": bins,
             "rows": [],
@@ -1069,7 +718,113 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
 #enddef
 
 
-def build_mc_aggregation(mc_dir, angle_config, requested_channel_tag=None, topology_cuts=None, skip_temp_heavy_mc=False):
+def process_data_period_worker(args):
+
+    period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts = args
+
+    run_rows, current_rows, angle_current_rows, skipped_nonpositive_charge_rows = build_data_period_aggregations(
+        period_display_name=period_display_name,
+        period_internal_name=period_internal_name,
+        root_path=root_path,
+        run_charge_map=run_charge_map,
+        topology_cuts=topology_cuts,
+    )
+
+    return {
+        "period": period_display_name,
+        "period_internal": period_internal_name,
+        "run_rows": run_rows,
+        "current_rows": current_rows,
+        "angle_current_rows": angle_current_rows,
+        "skipped_nonpositive_charge_rows": skipped_nonpositive_charge_rows,
+        "root_path": root_path,
+    }
+#enddef
+
+
+def process_mc_pair_worker(args):
+
+    period_internal, current_nA, gen_path, rec_path, topology_cuts = args
+    period_display_name = PERIOD_DISPLAY_FROM_INTERNAL[period_internal]
+
+    n_gen, angle_counts_gen = count_mc_total_and_angle_entries(
+        root_path=gen_path,
+        tree_name=MC_TREE_NAME,
+        topology_cuts=topology_cuts,
+    )
+    n_rec, angle_counts_rec = count_mc_total_and_angle_entries(
+        root_path=rec_path,
+        tree_name=MC_TREE_NAME,
+        topology_cuts=topology_cuts,
+    )
+
+    integrated_row = None
+    if n_gen > 0:
+        eff = float(n_rec) / float(n_gen)
+        eff_err = math.sqrt(float(n_rec)) / float(n_gen) if n_rec > 0 else 0.0
+
+        integrated_row = {
+            "period": period_display_name,
+            "period_internal": period_internal,
+            "current_nA": int(current_nA),
+            "n_gen": int(n_gen),
+            "n_rec": int(n_rec),
+            "efficiency": float(eff),
+            "efficiency_err": float(eff_err),
+            "gen_file": gen_path,
+            "rec_file": rec_path,
+        }
+    #endif
+
+    angle_rows_by_variable = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        bins = get_summary_bins(var_key, period_display_name)
+        rows = []
+
+        for ibin in range(len(bins)):
+            n_gen_bin = int(angle_counts_gen[var_key][period_display_name][ibin])
+            n_rec_bin = int(angle_counts_rec[var_key][period_display_name][ibin])
+
+            if n_gen_bin <= 0:
+                rows.append(None)
+                continue
+            #endif
+            if n_rec_bin <= 0:
+                rows.append(None)
+                continue
+            #endif
+
+            eff_bin = float(n_rec_bin) / float(n_gen_bin)
+            eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin)
+
+            rows.append({
+                "period": period_display_name,
+                "period_internal": period_internal,
+                "current_nA": int(current_nA),
+                "n_gen": int(n_gen_bin),
+                "n_rec": int(n_rec_bin),
+                "efficiency": float(eff_bin),
+                "efficiency_err": float(eff_err_bin),
+                "gen_file": gen_path,
+                "rec_file": rec_path,
+            })
+        #endfor
+
+        angle_rows_by_variable[var_key] = rows
+    #endfor
+
+    return {
+        "period": period_display_name,
+        "period_internal": period_internal,
+        "current_nA": int(current_nA),
+        "integrated_row": integrated_row,
+        "angle_rows_by_variable": angle_rows_by_variable,
+    }
+#enddef
+
+
+def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None, skip_temp_heavy_mc=False):
 
     if not os.path.isdir(mc_dir):
         raise RuntimeError(f"MC directory not found: {mc_dir}")
@@ -1139,29 +894,9 @@ def build_mc_aggregation(mc_dir, angle_config, requested_channel_tag=None, topol
         #endfor
     #endif
 
-    integrated_mc_rows = []
-    angle_mc_rows_by_variable = {}
-
-    for var_cfg in angle_config:
-        angle_mc_rows_by_variable[var_cfg["key"]] = {}
-        for period_name in PERIOD_ORDER:
-            bins = get_summary_bins_for_period(var_cfg, period_name)
-            angle_mc_rows_by_variable[var_cfg["key"]][period_name] = {
-                "bins": bins,
-                "rows": [[] for _ in bins],
-            }
-        #endfor
-    #endfor
-
-    sort_keys = sorted(
-        grouped.keys(),
-        key=lambda item: (PERIOD_ORDER.index(PERIOD_DISPLAY_FROM_INTERNAL[item[0]]), item[1])
-    )
-
-    for key in sort_keys:
+    tasks = []
+    for key in sorted(grouped.keys(), key=lambda item: (PERIOD_ORDER.index(PERIOD_DISPLAY_FROM_INTERNAL[item[0]]), item[1])):
         period_internal, current_nA = key
-        period_display_name = PERIOD_DISPLAY_FROM_INTERNAL[period_internal]
-
         gen_path = grouped[key]["gen"]
         rec_path = grouped[key]["rec"]
 
@@ -1169,67 +904,63 @@ def build_mc_aggregation(mc_dir, angle_config, requested_channel_tag=None, topol
             raise RuntimeError(f"Missing gen/rec MC pair for period={period_internal}, current={current_nA} nA")
         #endif
 
-        n_gen, angle_counts_gen = count_mc_total_and_angle_entries(
-            root_path=gen_path,
-            tree_name=MC_TREE_NAME,
-            angle_config=angle_config,
-            topology_cuts=topology_cuts,
-        )
-        n_rec, angle_counts_rec = count_mc_total_and_angle_entries(
-            root_path=rec_path,
-            tree_name=MC_TREE_NAME,
-            angle_config=angle_config,
-            topology_cuts=topology_cuts,
-        )
+        tasks.append((period_internal, current_nA, gen_path, rec_path, topology_cuts))
+    #endfor
 
-        if n_gen <= 0:
-            continue
-        #endif
+    integrated_mc_rows = []
+    angle_mc_rows_by_variable = {}
 
-        eff = float(n_rec) / float(n_gen)
-        eff_err = math.sqrt(float(n_rec)) / float(n_gen) if n_rec > 0 else 0.0
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        angle_mc_rows_by_variable[var_key] = {}
+        for period_name in PERIOD_ORDER:
+            bins = get_summary_bins(var_key, period_name)
+            angle_mc_rows_by_variable[var_key][period_name] = {
+                "bins": bins,
+                "rows": [[] for _ in bins],
+            }
+        #endfor
+    #endfor
 
-        integrated_mc_rows.append({
-            "period": period_display_name,
-            "period_internal": period_internal,
-            "current_nA": int(current_nA),
-            "n_gen": int(n_gen),
-            "n_rec": int(n_rec),
-            "efficiency": float(eff),
-            "efficiency_err": float(eff_err),
-            "gen_file": gen_path,
-            "rec_file": rec_path,
-        })
+    n_workers = min(MAX_WORKERS, max(1, len(tasks)))
 
-        for var_cfg in angle_config:
-            var_key = var_cfg["key"]
-            bins = angle_mc_rows_by_variable[var_key][period_display_name]["bins"]
+    with cf.ProcessPoolExecutor(max_workers=n_workers) as ex:
+        futures = [ex.submit(process_mc_pair_worker, task) for task in tasks]
 
+        for fut in cf.as_completed(futures):
+            result = fut.result()
+
+            if result["integrated_row"] is not None:
+                integrated_mc_rows.append(result["integrated_row"])
+            #endif
+
+            period_name = result["period"]
+
+            for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+                var_key = var_cfg["key"]
+                rows = result["angle_rows_by_variable"][var_key]
+                store = angle_mc_rows_by_variable[var_key][period_name]["rows"]
+
+                for ibin, row in enumerate(rows):
+                    if row is not None:
+                        store[ibin].append(row)
+                    #endif
+                #endfor
+            #endfor
+        #endfor
+    #endwith
+
+    integrated_mc_rows = sorted(
+        integrated_mc_rows,
+        key=lambda row: (PERIOD_ORDER.index(row["period"]), row["current_nA"])
+    )
+
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        for period_name in PERIOD_ORDER:
+            bins = angle_mc_rows_by_variable[var_key][period_name]["rows"]
             for ibin in range(len(bins)):
-                n_gen_bin = int(angle_counts_gen[var_key][period_display_name][ibin])
-                n_rec_bin = int(angle_counts_rec[var_key][period_display_name][ibin])
-
-                if n_gen_bin <= 0:
-                    continue
-                #endif
-                if n_rec_bin <= 0:
-                    continue
-                #endif
-
-                eff_bin = float(n_rec_bin) / float(n_gen_bin)
-                eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin)
-
-                angle_mc_rows_by_variable[var_key][period_display_name]["rows"][ibin].append({
-                    "period": period_display_name,
-                    "period_internal": period_internal,
-                    "current_nA": int(current_nA),
-                    "n_gen": int(n_gen_bin),
-                    "n_rec": int(n_rec_bin),
-                    "efficiency": float(eff_bin),
-                    "efficiency_err": float(eff_err_bin),
-                    "gen_file": gen_path,
-                    "rec_file": rec_path,
-                })
+                bins[ibin] = sorted(bins[ibin], key=lambda row: row["current_nA"])
             #endfor
         #endfor
     #endfor
@@ -1764,6 +1495,7 @@ def build_period_summary_rows(current_rows, data_fit_results, mc_fit_results):
 def build_angle_summary_rows(angle_rows_by_period, mc_rows_by_period, var_cfg):
 
     summary_rows = []
+    var_key = var_cfg["key"]
 
     for period_name in PERIOD_ORDER:
         bins = angle_rows_by_period[period_name]["bins"]
@@ -1783,13 +1515,13 @@ def build_angle_summary_rows(angle_rows_by_period, mc_rows_by_period, var_cfg):
                     xd, yd, syd, rowsd = period_points_from_current_rows(current_rows, loop_period)
                     xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, loop_period)
                 else:
-                    xd = np.asarray([], dtype=float)
-                    yd = np.asarray([], dtype=float)
-                    syd = np.asarray([], dtype=float)
+                    xd = np.asarray([])
+                    yd = np.asarray([])
+                    syd = np.asarray([])
                     rowsd = []
-                    xm = np.asarray([], dtype=float)
-                    ym = np.asarray([], dtype=float)
-                    sym = np.asarray([], dtype=float)
+                    xm = np.asarray([])
+                    ym = np.asarray([])
+                    sym = np.asarray([])
                     rowsm = []
                 #endif
 
@@ -1801,7 +1533,7 @@ def build_angle_summary_rows(angle_rows_by_period, mc_rows_by_period, var_cfg):
 
             for row in period_rows:
                 row_out = dict(row)
-                row_out["angle_variable"] = var_cfg["key"]
+                row_out["angle_variable"] = var_key
                 row_out["angle_bin_index"] = int(ibin)
                 row_out["angle_min_deg"] = float(low)
                 row_out["angle_max_deg"] = float(high)
@@ -2348,11 +2080,46 @@ def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cf
     gs = GridSpec(2, 3, figure=fig)
     axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
 
+    all_xmeans = []
+    for row in angle_summary_rows:
+        if row["angle_variable"] != var_cfg["key"]:
+            continue
+        #endif
+
+        xmean = float(row["angle_x_mean_deg"])
+        val = float(row["divisor_to_divide_by_fraction"])
+
+        if not np.isfinite(xmean):
+            continue
+        #endif
+        if not np.isfinite(val):
+            continue
+        #endif
+
+        all_xmeans.append(xmean)
+    #endfor
+
+    if len(all_xmeans) > 0:
+        xmin_global = min(all_xmeans)
+        xmax_global = max(all_xmeans)
+
+        xmin_global = 5.0 * math.floor(xmin_global / 5.0)
+        xmax_global = 5.0 * math.ceil(xmax_global / 5.0)
+
+        if xmin_global == xmax_global:
+            xmin_global -= 5.0
+            xmax_global += 5.0
+        #endif
+    else:
+        xmin_global = 0.0
+        xmax_global = 5.0
+    #endif
+
     for i, period in enumerate(PERIOD_ORDER):
         ax = axes[i]
         c = period_color[period]
 
-        rows = [r for r in angle_summary_rows if r["period"] == period]
+        rows = [r for r in angle_summary_rows if r["period"] == period and r["angle_variable"] == var_cfg["key"]]
         rows = sorted(rows, key=lambda r: r["angle_x_mean_deg"])
 
         x = []
@@ -2387,6 +2154,7 @@ def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cf
         ax.set_title(period)
         ax.set_xlabel(f"{var_cfg['display_name']} (deg)")
         ax.set_ylabel("Divisor for cross_sections.cpp")
+        ax.set_xlim(xmin_global, xmax_global)
         ax.set_ylim(0.4, 1.3)
         ax.grid(True, alpha=0.3)
     #endfor
@@ -2470,7 +2238,26 @@ def run_selection_analysis(
     print("")
     print("Processing DATA ROOT files and aggregating by current...")
 
+    data_tasks = []
     for period_display_name, period_internal_name, root_path in DATA_PERIOD_FILES:
+        data_tasks.append((period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts))
+    #endfor
+
+    n_workers = min(MAX_WORKERS, max(1, len(data_tasks)))
+
+    with cf.ProcessPoolExecutor(max_workers=n_workers) as ex:
+        futures = [ex.submit(process_data_period_worker, task) for task in data_tasks]
+
+        results_by_period = {}
+        for fut in cf.as_completed(futures):
+            result = fut.result()
+            results_by_period[result["period"]] = result
+        #endfor
+    #endwith
+
+    for period_display_name, period_internal_name, root_path in DATA_PERIOD_FILES:
+        result = results_by_period[period_display_name]
+
         print("")
         print("=" * 90)
         print(f"DATA period: {period_display_name}")
@@ -2478,14 +2265,10 @@ def run_selection_analysis(
         print(f"ROOT file: {root_path}")
         print("=" * 90)
 
-        run_rows, current_rows, angle_current_rows_this_period, skipped_nonpositive_charge_rows = build_data_period_aggregations(
-            period_display_name=period_display_name,
-            period_internal_name=period_internal_name,
-            root_path=root_path,
-            run_charge_map=run_charge_map,
-            angle_config=ANGLE_DEPENDENCE_CONFIG,
-            topology_cuts=topology_cuts,
-        )
+        run_rows = result["run_rows"]
+        current_rows = result["current_rows"]
+        angle_current_rows_this_period = result["angle_current_rows"]
+        skipped_nonpositive_charge_rows = result["skipped_nonpositive_charge_rows"]
 
         all_run_rows.extend(run_rows)
         all_current_rows.extend(current_rows)
@@ -2520,7 +2303,6 @@ def run_selection_analysis(
 
     integrated_mc_rows, angle_mc_rows_by_variable = build_mc_aggregation(
         mc_dir=MC_DIR,
-        angle_config=ANGLE_DEPENDENCE_CONFIG,
         requested_channel_tag=MC_CHANNEL_TAG,
         topology_cuts=topology_cuts,
         skip_temp_heavy_mc=skip_temp_heavy_mc,
@@ -2719,6 +2501,7 @@ def main():
     print("============================================================")
     print(f"Running channel: {args.channel}")
     print(f"MC directory:    {channel_cfg['mc_dir']}")
+    print(f"Max workers:     {MAX_WORKERS}")
     print("============================================================")
 
     print("")
