@@ -340,6 +340,41 @@ def build_angle_bins(min_deg, max_deg, n_bins):
 #enddef
 
 
+def get_summary_bins_for_period(var_cfg, period_name):
+
+    key = var_cfg["key"]
+
+    if key == "e_theta":
+        base = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        return base[:-2] + [(base[-2][0], base[-1][1])]
+    #endif
+
+    if key == "p1_theta":
+        base = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        return [(base[0][0], base[1][1])] + base[2:]
+    #endif
+
+    if key == "p2_theta":
+        if period_name == "Fa18 Inb" or period_name == "Fa18 Out":
+            return [
+                (0.0, 2.5),
+                (2.5, 5.0),
+                (5.0, 7.5),
+                (7.5, 10.0),
+                (10.0, 15.0),
+                (15.0, 20.0),
+                (20.0, 25.0),
+                (25.0, 30.0),
+                (30.0, 35.0),
+            ]
+        #endif
+        return build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+    #endif
+
+    return build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+#enddef
+
+
 def get_output_paths(channel, topology_dir_name=None):
 
     if channel == "epgamma":
@@ -702,10 +737,20 @@ def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts
 
     total_run_counts = defaultdict(int)
     angle_run_counts = {}
+    angle_theta_sum = {}
+    angle_event_count = {}
 
     for var_cfg in angle_config:
-        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-        angle_run_counts[var_cfg["key"]] = [defaultdict(int) for _ in bins]
+        angle_run_counts[var_cfg["key"]] = {}
+        angle_theta_sum[var_cfg["key"]] = {}
+        angle_event_count[var_cfg["key"]] = {}
+
+        for period_name in PERIOD_ORDER:
+            bins = get_summary_bins_for_period(var_cfg, period_name)
+            angle_run_counts[var_cfg["key"]][period_name] = [defaultdict(int) for _ in bins]
+            angle_theta_sum[var_cfg["key"]][period_name] = [0.0 for _ in bins]
+            angle_event_count[var_cfg["key"]][period_name] = [0 for _ in bins]
+        #endfor
     #endfor
 
     iterate_branches = ["runnum", "e_theta", "p1_theta", "p2_theta"]
@@ -725,31 +770,55 @@ def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts
         #endfor
 
         for var_cfg in angle_config:
-            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
             theta_deg = np.degrees(arrays[var_cfg["branch"]][event_mask])
-            masks = angle_bin_masks(theta_deg, bins)
 
-            for ibin, mask in enumerate(masks):
-                if not np.any(mask):
-                    continue
-                #endif
+            for period_name in PERIOD_ORDER:
+                bins = get_summary_bins_for_period(var_cfg, period_name)
+                masks = angle_bin_masks(theta_deg, bins)
 
-                selected_runs = runnum[mask]
-                unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
+                for ibin, mask in enumerate(masks):
+                    if not np.any(mask):
+                        continue
+                    #endif
 
-                for r, c in zip(unique_sel, counts_sel):
-                    angle_run_counts[var_cfg["key"]][ibin][int(r)] += int(c)
+                    selected_runs = runnum[mask]
+                    unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
+
+                    for r, c in zip(unique_sel, counts_sel):
+                        angle_run_counts[var_cfg["key"]][period_name][ibin][int(r)] += int(c)
+                    #endfor
+
+                    angle_theta_sum[var_cfg["key"]][period_name][ibin] += float(np.sum(theta_deg[mask]))
+                    angle_event_count[var_cfg["key"]][period_name][ibin] += int(np.count_nonzero(mask))
                 #endfor
             #endfor
         #endfor
     #endfor
 
     angle_run_counts_out = {}
-    for key in angle_run_counts:
-        angle_run_counts_out[key] = [dict(d) for d in angle_run_counts[key]]
+    angle_x_means_out = {}
+
+    for var_cfg in angle_config:
+        var_key = var_cfg["key"]
+        angle_run_counts_out[var_key] = {}
+        angle_x_means_out[var_key] = {}
+
+        for period_name in PERIOD_ORDER:
+            angle_run_counts_out[var_key][period_name] = [dict(d) for d in angle_run_counts[var_key][period_name]]
+
+            means = []
+            for s, n in zip(angle_theta_sum[var_key][period_name], angle_event_count[var_key][period_name]):
+                if n > 0:
+                    means.append(float(s) / float(n))
+                else:
+                    means.append(float("nan"))
+                #endif
+            #endfor
+            angle_x_means_out[var_key][period_name] = means
+        #endfor
     #endfor
 
-    return dict(total_run_counts), angle_run_counts_out
+    return dict(total_run_counts), angle_run_counts_out, angle_x_means_out
 #enddef
 
 
@@ -778,8 +847,11 @@ def count_mc_total_and_angle_entries(root_path, tree_name, angle_config, topolog
     angle_counts = {}
 
     for var_cfg in angle_config:
-        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-        angle_counts[var_cfg["key"]] = [0 for _ in bins]
+        angle_counts[var_cfg["key"]] = {}
+        for period_name in PERIOD_ORDER:
+            bins = get_summary_bins_for_period(var_cfg, period_name)
+            angle_counts[var_cfg["key"]][period_name] = [0 for _ in bins]
+        #endfor
     #endfor
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size="200 MB"):
@@ -792,12 +864,15 @@ def count_mc_total_and_angle_entries(root_path, tree_name, angle_config, topolog
         total_count += int(np.count_nonzero(event_mask))
 
         for var_cfg in angle_config:
-            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
             theta_deg = np.degrees(arrays[var_cfg["branch"]][event_mask])
-            masks = angle_bin_masks(theta_deg, bins)
 
-            for ibin, mask in enumerate(masks):
-                angle_counts[var_cfg["key"]][ibin] += int(np.count_nonzero(mask))
+            for period_name in PERIOD_ORDER:
+                bins = get_summary_bins_for_period(var_cfg, period_name)
+                masks = angle_bin_masks(theta_deg, bins)
+
+                for ibin, mask in enumerate(masks):
+                    angle_counts[var_cfg["key"]][period_name][ibin] += int(np.count_nonzero(mask))
+                #endfor
             #endfor
         #endfor
     #endfor
@@ -946,7 +1021,7 @@ def build_current_rows_from_counts(period_display_name, period_internal_name, ru
 
 def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, angle_config, topology_cuts=None):
 
-    total_run_counts, angle_run_counts = read_data_run_counts_and_angle_counts(
+    total_run_counts, angle_run_counts, angle_x_means = read_data_run_counts_and_angle_counts(
         root_path=root_path,
         angle_config=angle_config,
         topology_cuts=topology_cuts,
@@ -971,8 +1046,12 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     angle_current_rows = {}
     for var_cfg in angle_config:
         var_key = var_cfg["key"]
-        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-        angle_current_rows[var_key] = []
+        bins = get_summary_bins_for_period(var_cfg, period_display_name)
+        angle_current_rows[var_key] = {
+            "bins": bins,
+            "rows": [],
+            "x_means": angle_x_means[var_key][period_display_name],
+        }
 
         for ibin in range(len(bins)):
             rows_bin = build_current_rows_from_counts(
@@ -980,9 +1059,9 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
                 period_internal_name=period_internal_name,
                 run_meta=run_meta,
                 current_charge_totals=current_charge_totals,
-                run_counts=angle_run_counts[var_key][ibin],
+                run_counts=angle_run_counts[var_key][period_display_name][ibin],
             )
-            angle_current_rows[var_key].append(rows_bin)
+            angle_current_rows[var_key]["rows"].append(rows_bin)
         #endfor
     #endfor
 
@@ -1064,8 +1143,14 @@ def build_mc_aggregation(mc_dir, angle_config, requested_channel_tag=None, topol
     angle_mc_rows_by_variable = {}
 
     for var_cfg in angle_config:
-        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-        angle_mc_rows_by_variable[var_cfg["key"]] = [[] for _ in bins]
+        angle_mc_rows_by_variable[var_cfg["key"]] = {}
+        for period_name in PERIOD_ORDER:
+            bins = get_summary_bins_for_period(var_cfg, period_name)
+            angle_mc_rows_by_variable[var_cfg["key"]][period_name] = {
+                "bins": bins,
+                "rows": [[] for _ in bins],
+            }
+        #endfor
     #endfor
 
     sort_keys = sorted(
@@ -1118,11 +1203,11 @@ def build_mc_aggregation(mc_dir, angle_config, requested_channel_tag=None, topol
 
         for var_cfg in angle_config:
             var_key = var_cfg["key"]
-            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+            bins = angle_mc_rows_by_variable[var_key][period_display_name]["bins"]
 
             for ibin in range(len(bins)):
-                n_gen_bin = int(angle_counts_gen[var_key][ibin])
-                n_rec_bin = int(angle_counts_rec[var_key][ibin])
+                n_gen_bin = int(angle_counts_gen[var_key][period_display_name][ibin])
+                n_rec_bin = int(angle_counts_rec[var_key][period_display_name][ibin])
 
                 if n_gen_bin <= 0:
                     continue
@@ -1134,7 +1219,7 @@ def build_mc_aggregation(mc_dir, angle_config, requested_channel_tag=None, topol
                 eff_bin = float(n_rec_bin) / float(n_gen_bin)
                 eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin)
 
-                angle_mc_rows_by_variable[var_key][ibin].append({
+                angle_mc_rows_by_variable[var_key][period_display_name]["rows"][ibin].append({
                     "period": period_display_name,
                     "period_internal": period_internal,
                     "current_nA": int(current_nA),
@@ -1355,6 +1440,7 @@ def write_angle_summary_csv(path, summary_rows):
         "angle_bin_index",
         "angle_min_deg",
         "angle_max_deg",
+        "angle_x_mean_deg",
         "weighted_data_rel_percent",
         "weighted_data_rel_fraction",
         "weighted_data_rel_stat_err_percent",
@@ -1675,35 +1761,53 @@ def build_period_summary_rows(current_rows, data_fit_results, mc_fit_results):
 #enddef
 
 
-def build_angle_summary_rows(angle_rows_by_bin, mc_rows_by_bin, var_cfg):
+def build_angle_summary_rows(angle_rows_by_period, mc_rows_by_period, var_cfg):
 
     summary_rows = []
-    bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
 
-    for ibin, (low, high) in enumerate(bins):
-        current_rows = angle_rows_by_bin[ibin]
-        mc_rows = mc_rows_by_bin[ibin]
+    for period_name in PERIOD_ORDER:
+        bins = angle_rows_by_period[period_name]["bins"]
+        current_rows_list = angle_rows_by_period[period_name]["rows"]
+        mc_rows_list = mc_rows_by_period[period_name]["rows"]
+        x_means = angle_rows_by_period[period_name]["x_means"]
 
-        data_fit_results = {}
-        mc_fit_results = {}
+        for ibin, (low, high) in enumerate(bins):
+            current_rows = current_rows_list[ibin]
+            mc_rows = mc_rows_list[ibin]
 
-        for period in PERIOD_ORDER:
-            xd, yd, syd, rowsd = period_points_from_current_rows(current_rows, period)
-            xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, period)
+            data_fit_results = {}
+            mc_fit_results = {}
 
-            data_fit_results[period] = weighted_linear_fit(xd, yd, syd)
-            mc_fit_results[period] = weighted_linear_fit(xm, ym, sym)
-        #endfor
+            for loop_period in PERIOD_ORDER:
+                if loop_period == period_name:
+                    xd, yd, syd, rowsd = period_points_from_current_rows(current_rows, loop_period)
+                    xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, loop_period)
+                else:
+                    xd = np.asarray([], dtype=float)
+                    yd = np.asarray([], dtype=float)
+                    syd = np.asarray([], dtype=float)
+                    rowsd = []
+                    xm = np.asarray([], dtype=float)
+                    ym = np.asarray([], dtype=float)
+                    sym = np.asarray([], dtype=float)
+                    rowsm = []
+                #endif
 
-        period_rows = build_period_summary_rows(current_rows, data_fit_results, mc_fit_results)
+                data_fit_results[loop_period] = weighted_linear_fit(xd, yd, syd)
+                mc_fit_results[loop_period] = weighted_linear_fit(xm, ym, sym)
+            #endfor
 
-        for row in period_rows:
-            row_out = dict(row)
-            row_out["angle_variable"] = var_cfg["key"]
-            row_out["angle_bin_index"] = int(ibin)
-            row_out["angle_min_deg"] = float(low)
-            row_out["angle_max_deg"] = float(high)
-            summary_rows.append(row_out)
+            period_rows = build_period_summary_rows(current_rows, data_fit_results, mc_fit_results)
+
+            for row in period_rows:
+                row_out = dict(row)
+                row_out["angle_variable"] = var_cfg["key"]
+                row_out["angle_bin_index"] = int(ibin)
+                row_out["angle_min_deg"] = float(low)
+                row_out["angle_max_deg"] = float(high)
+                row_out["angle_x_mean_deg"] = float(x_means[ibin])
+                summary_rows.append(row_out)
+            #endfor
         #endfor
     #endfor
 
@@ -2244,50 +2348,46 @@ def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cf
     gs = GridSpec(2, 3, figure=fig)
     axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
 
-    bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-    centers = [0.5 * (lo + hi) for (lo, hi) in bins]
-    halfwidths = [0.5 * (hi - lo) for (lo, hi) in bins]
-
     for i, period in enumerate(PERIOD_ORDER):
         ax = axes[i]
         c = period_color[period]
 
         rows = [r for r in angle_summary_rows if r["period"] == period]
-        rows = sorted(rows, key=lambda r: r["angle_bin_index"])
+        rows = sorted(rows, key=lambda r: r["angle_x_mean_deg"])
 
         x = []
-        xerr = []
         y = []
         yerr = []
 
         for row in rows:
-            ibin = int(row["angle_bin_index"])
+            xmean = float(row["angle_x_mean_deg"])
             val = float(row["divisor_to_divide_by_fraction"])
             err = float(row["divisor_to_divide_by_stat_err_fraction"])
 
             if not np.isfinite(val):
                 continue
             #endif
+            if not np.isfinite(xmean):
+                continue
+            #endif
 
-            x.append(centers[ibin])
-            xerr.append(halfwidths[ibin])
+            x.append(xmean)
             y.append(val)
             yerr.append(err if np.isfinite(err) else 0.0)
         #endfor
 
         x = np.asarray(x, dtype=float)
-        xerr = np.asarray(xerr, dtype=float)
         y = np.asarray(y, dtype=float)
         yerr = np.asarray(yerr, dtype=float)
 
         if len(x) > 0:
-            ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="o", capsize=3, color=c)
+            ax.errorbar(x, y, yerr=yerr, fmt="o", capsize=3, color=c)
         #endif
 
         ax.set_title(period)
         ax.set_xlabel(f"{var_cfg['display_name']} (deg)")
         ax.set_ylabel("Divisor for cross_sections.cpp")
-        ax.set_ylim(0.6, 1.2)
+        ax.set_ylim(0.4, 1.3)
         ax.grid(True, alpha=0.3)
     #endfor
 
@@ -2364,8 +2464,7 @@ def run_selection_analysis(
 
     angle_current_rows_by_variable = {}
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
-        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-        angle_current_rows_by_variable[var_cfg["key"]] = [[] for _ in bins]
+        angle_current_rows_by_variable[var_cfg["key"]] = {}
     #endfor
 
     print("")
@@ -2394,11 +2493,7 @@ def run_selection_analysis(
 
         for var_cfg in ANGLE_DEPENDENCE_CONFIG:
             var_key = var_cfg["key"]
-            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
-
-            for ibin in range(len(bins)):
-                angle_current_rows_by_variable[var_key][ibin].extend(angle_current_rows_this_period[var_key][ibin])
-            #endfor
+            angle_current_rows_by_variable[var_key][period_display_name] = angle_current_rows_this_period[var_key]
         #endfor
 
         print(f"Run-level rows kept: {len(run_rows)}")
@@ -2531,8 +2626,8 @@ def run_selection_analysis(
         os.makedirs(var_output_dir, exist_ok=True)
 
         angle_summary_rows = build_angle_summary_rows(
-            angle_rows_by_bin=angle_current_rows_by_variable[var_key],
-            mc_rows_by_bin=angle_mc_rows_by_variable[var_key],
+            angle_rows_by_period=angle_current_rows_by_variable[var_key],
+            mc_rows_by_period=angle_mc_rows_by_variable[var_key],
             var_cfg=var_cfg,
         )
 
@@ -2540,36 +2635,38 @@ def run_selection_analysis(
         write_angle_summary_csv(angle_summary_csv, angle_summary_rows)
         print(f"[saved] {angle_summary_csv}")
 
-        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        for period_name in PERIOD_ORDER:
+            bins = angle_current_rows_by_variable[var_key][period_name]["bins"]
 
-        for ibin, (low, high) in enumerate(bins):
-            subdir = os.path.join(var_output_dir, angle_bin_to_dirname(var_key, low, high))
-            os.makedirs(subdir, exist_ok=True)
+            for ibin, (low, high) in enumerate(bins):
+                subdir = os.path.join(var_output_dir, period_name.replace(" ", "_"), angle_bin_to_dirname(var_key, low, high))
+                os.makedirs(subdir, exist_ok=True)
 
-            current_rows_bin = angle_current_rows_by_variable[var_key][ibin]
-            mc_rows_bin = angle_mc_rows_by_variable[var_key][ibin]
+                current_rows_bin = angle_current_rows_by_variable[var_key][period_name]["rows"][ibin]
+                mc_rows_bin = angle_mc_rows_by_variable[var_key][period_name]["rows"][ibin]
 
-            data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
-            mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
+                data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
+                mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
 
-            label = angle_bin_to_label(low, high, is_last=(ibin == len(bins) - 1))
-            angle_title_suffix = title_suffix + f"  {var_cfg['display_name']} {label}"
+                label = angle_bin_to_label(low, high, is_last=(ibin == len(bins) - 1))
+                angle_title_suffix = title_suffix + f"  {var_cfg['display_name']} {label}"
 
-            out_a_bin, out_b_bin, out_c_bin, out_d_bin = plot_four_panel_set(
-                output_dir=subdir,
-                tag=angle_bin_to_dirname(var_key, low, high),
-                data_current_rows=current_rows_bin,
-                mc_rows=mc_rows_bin,
-                data_fit_results=data_fit_bin,
-                mc_fit_results=mc_fit_bin,
-                period_color=period_color,
-                title_suffix=angle_title_suffix,
-            )
+                out_a_bin, out_b_bin, out_c_bin, out_d_bin = plot_four_panel_set(
+                    output_dir=subdir,
+                    tag=angle_bin_to_dirname(var_key, low, high),
+                    data_current_rows=current_rows_bin,
+                    mc_rows=mc_rows_bin,
+                    data_fit_results=data_fit_bin,
+                    mc_fit_results=mc_fit_bin,
+                    period_color=period_color,
+                    title_suffix=angle_title_suffix,
+                )
 
-            print(f"[saved] {out_a_bin}")
-            print(f"[saved] {out_b_bin}")
-            print(f"[saved] {out_c_bin}")
-            print(f"[saved] {out_d_bin}")
+                print(f"[saved] {out_a_bin}")
+                print(f"[saved] {out_b_bin}")
+                print(f"[saved] {out_c_bin}")
+                print(f"[saved] {out_d_bin}")
+            #endfor
         #endfor
 
         angle_summary_plot = make_angle_summary_plot(
