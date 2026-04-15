@@ -62,24 +62,23 @@
 # This is the representative value to divide by if you want one integrated
 # period-level divisor compatible with cross_sections.cpp.
 #
-# Q2 dependence
-# -------------
-# We also repeat the study in Q2 bins using branch Q2:
+# Detector angle dependence
+# -------------------------
+# We also repeat the study in detector-level angular bins using:
 #
-#   [1.00, 1.20)
-#   [1.20, 1.46)
-#   [1.46, 1.91)
-#   [1.91, 2.51)
-#   [2.51, 3.29)
-#   [3.29, 4.33)
-#   [4.33, 5.76]
+#   e_theta   (electron) : 8 to 35 deg
+#   p1_theta  (proton)   : 8 to 70 deg
+#   p2_theta  (photon)   : 0 to 35 deg
 #
-# For DATA in a Q2 bin:
-#   counts are restricted to that Q2 bin
+# These branches are stored in radians in the ROOT trees and are converted
+# to degrees before binning.
+#
+# For DATA in an angular bin:
+#   counts are restricted to that angular bin
 #   charge remains the full accumulated charge for the runs/current settings
 #
-# For MC in a Q2 bin:
-#   just use generated and reconstructed counts in that same Q2 bin
+# For MC in an angular bin:
+#   just use generated and reconstructed counts in that same angular bin
 #
 
 import os
@@ -128,14 +127,31 @@ MC_REFERENCE_CURRENT = {
 
 MC_TREE_NAME = "PhysicsEvents"
 
-Q2_BINS = [
-    (1.00, 1.20),
-    (1.20, 1.46),
-    (1.46, 1.91),
-    (1.91, 2.51),
-    (2.51, 3.29),
-    (3.29, 4.33),
-    (4.33, 5.76),
+ANGLE_DEPENDENCE_CONFIG = [
+    {
+        "key": "e_theta",
+        "display_name": "electron theta",
+        "branch": "e_theta",
+        "min_deg": 8.0,
+        "max_deg": 35.0,
+        "n_bins": 7,
+    },
+    {
+        "key": "p1_theta",
+        "display_name": "proton theta",
+        "branch": "p1_theta",
+        "min_deg": 8.0,
+        "max_deg": 70.0,
+        "n_bins": 7,
+    },
+    {
+        "key": "p2_theta",
+        "display_name": "photon theta",
+        "branch": "p2_theta",
+        "min_deg": 0.0,
+        "max_deg": 35.0,
+        "n_bins": 7,
+    },
 ]
 
 CHANNEL_CONFIG = {
@@ -311,6 +327,19 @@ def get_channel_config(channel):
 #enddef
 
 
+def build_angle_bins(min_deg, max_deg, n_bins):
+
+    edges = np.linspace(min_deg, max_deg, n_bins + 1)
+    bins = []
+
+    for i in range(n_bins):
+        bins.append((float(edges[i]), float(edges[i + 1])))
+    #endfor
+
+    return bins
+#enddef
+
+
 def get_output_paths(channel, topology_dir_name=None):
 
     if channel == "epgamma":
@@ -326,9 +355,9 @@ def get_output_paths(channel, topology_dir_name=None):
     #endif
 
     integrated_output_dir = os.path.join(output_dir, "integrated")
-    q2_output_dir = os.path.join(output_dir, "Q2_dependence")
+    angle_output_dir = os.path.join(output_dir, "angle_dependence")
 
-    return output_dir, integrated_output_dir, q2_output_dir
+    return output_dir, integrated_output_dir, angle_output_dir
 #enddef
 
 
@@ -579,12 +608,12 @@ def get_mc_reference_current(period_name_or_internal):
 #enddef
 
 
-def q2_bin_to_dirname(low, high):
-    return f"Q2_{low:.2f}_{high:.2f}".replace(".", "p")
+def angle_bin_to_dirname(variable_key, low, high):
+    return f"{variable_key}_{low:.2f}_{high:.2f}".replace(".", "p")
 #enddef
 
 
-def q2_bin_to_label(low, high, is_last=False):
+def angle_bin_to_label(low, high, is_last=False):
     if is_last:
         return f"[{low:.2f}, {high:.2f}]"
     #endif
@@ -592,16 +621,16 @@ def q2_bin_to_label(low, high, is_last=False):
 #enddef
 
 
-def q2_bin_masks(q2_array, q2_bins):
+def angle_bin_masks(theta_deg_array, bins):
 
     masks = []
-    n_bins = len(q2_bins)
+    n_bins = len(bins)
 
-    for i, (low, high) in enumerate(q2_bins):
+    for i, (low, high) in enumerate(bins):
         if i == n_bins - 1:
-            mask = (q2_array >= low) & (q2_array <= high)
+            mask = (theta_deg_array >= low) & (theta_deg_array <= high)
         else:
-            mask = (q2_array >= low) & (q2_array < high)
+            mask = (theta_deg_array >= low) & (theta_deg_array < high)
         #endif
         masks.append(mask)
     #endfor
@@ -652,7 +681,7 @@ def apply_topology_mask(arrays, topology_cuts):
 #enddef
 
 
-def read_data_run_counts_and_q2_counts(root_path, q2_bins, topology_cuts=None):
+def read_data_run_counts_and_angle_counts(root_path, angle_config, topology_cuts=None):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -665,25 +694,21 @@ def read_data_run_counts_and_q2_counts(root_path, q2_bins, topology_cuts=None):
 
     tree = root_file["PhysicsEvents"]
 
-    needed = {"runnum", "Q2"}
-    if topology_cuts is not None:
-        needed.add("p1_theta")
-        needed.add("p2_theta")
-    #endif
-
+    needed = {"runnum", "e_theta", "p1_theta", "p2_theta"}
     missing = [name for name in needed if name not in tree.keys()]
     if len(missing) > 0:
         raise RuntimeError(f"Missing required branches in {root_path}: {missing}")
     #endif
 
     total_run_counts = defaultdict(int)
-    q2_run_counts = [defaultdict(int) for _ in q2_bins]
+    angle_run_counts = {}
 
-    iterate_branches = ["runnum", "Q2"]
-    if topology_cuts is not None:
-        iterate_branches.append("p1_theta")
-        iterate_branches.append("p2_theta")
-    #endif
+    for var_cfg in angle_config:
+        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        angle_run_counts[var_cfg["key"]] = [defaultdict(int) for _ in bins]
+    #endfor
+
+    iterate_branches = ["runnum", "e_theta", "p1_theta", "p2_theta"]
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size="200 MB"):
         event_mask = apply_topology_mask(arrays, topology_cuts)
@@ -693,34 +718,42 @@ def read_data_run_counts_and_q2_counts(root_path, q2_bins, topology_cuts=None):
         #endif
 
         runnum = arrays["runnum"][event_mask]
-        q2 = arrays["Q2"][event_mask]
 
         unique_runs, counts = np.unique(runnum, return_counts=True)
         for r, c in zip(unique_runs, counts):
             total_run_counts[int(r)] += int(c)
         #endfor
 
-        masks = q2_bin_masks(q2, q2_bins)
+        for var_cfg in angle_config:
+            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+            theta_deg = np.degrees(arrays[var_cfg["branch"]][event_mask])
+            masks = angle_bin_masks(theta_deg, bins)
 
-        for ibin, mask in enumerate(masks):
-            if not np.any(mask):
-                continue
-            #endif
+            for ibin, mask in enumerate(masks):
+                if not np.any(mask):
+                    continue
+                #endif
 
-            selected_runs = runnum[mask]
-            unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
+                selected_runs = runnum[mask]
+                unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
 
-            for r, c in zip(unique_sel, counts_sel):
-                q2_run_counts[ibin][int(r)] += int(c)
+                for r, c in zip(unique_sel, counts_sel):
+                    angle_run_counts[var_cfg["key"]][ibin][int(r)] += int(c)
+                #endfor
             #endfor
         #endfor
     #endfor
 
-    return dict(total_run_counts), [dict(d) for d in q2_run_counts]
+    angle_run_counts_out = {}
+    for key in angle_run_counts:
+        angle_run_counts_out[key] = [dict(d) for d in angle_run_counts[key]]
+    #endfor
+
+    return dict(total_run_counts), angle_run_counts_out
 #enddef
 
 
-def count_mc_total_and_q2_entries(root_path, tree_name, q2_bins, topology_cuts=None):
+def count_mc_total_and_angle_entries(root_path, tree_name, angle_config, topology_cuts=None):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -733,25 +766,21 @@ def count_mc_total_and_q2_entries(root_path, tree_name, q2_bins, topology_cuts=N
 
     tree = root_file[tree_name]
 
-    needed = {"Q2"}
-    if topology_cuts is not None:
-        needed.add("p1_theta")
-        needed.add("p2_theta")
-    #endif
-
+    needed = {"e_theta", "p1_theta", "p2_theta"}
     missing = [name for name in needed if name not in tree.keys()]
     if len(missing) > 0:
         raise RuntimeError(f"Missing required branches in {root_path}:{tree_name}: {missing}")
     #endif
 
-    iterate_branches = ["Q2"]
-    if topology_cuts is not None:
-        iterate_branches.append("p1_theta")
-        iterate_branches.append("p2_theta")
-    #endif
+    iterate_branches = ["e_theta", "p1_theta", "p2_theta"]
 
     total_count = 0
-    q2_counts = [0 for _ in q2_bins]
+    angle_counts = {}
+
+    for var_cfg in angle_config:
+        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        angle_counts[var_cfg["key"]] = [0 for _ in bins]
+    #endfor
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size="200 MB"):
         event_mask = apply_topology_mask(arrays, topology_cuts)
@@ -760,16 +789,20 @@ def count_mc_total_and_q2_entries(root_path, tree_name, q2_bins, topology_cuts=N
             continue
         #endif
 
-        q2 = arrays["Q2"][event_mask]
-        total_count += int(len(q2))
+        total_count += int(np.count_nonzero(event_mask))
 
-        masks = q2_bin_masks(q2, q2_bins)
-        for ibin, mask in enumerate(masks):
-            q2_counts[ibin] += int(np.count_nonzero(mask))
+        for var_cfg in angle_config:
+            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+            theta_deg = np.degrees(arrays[var_cfg["branch"]][event_mask])
+            masks = angle_bin_masks(theta_deg, bins)
+
+            for ibin, mask in enumerate(masks):
+                angle_counts[var_cfg["key"]][ibin] += int(np.count_nonzero(mask))
+            #endfor
         #endfor
     #endfor
 
-    return total_count, q2_counts
+    return total_count, angle_counts
 #enddef
 
 
@@ -911,11 +944,11 @@ def build_current_rows_from_counts(period_display_name, period_internal_name, ru
 #enddef
 
 
-def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, q2_bins, topology_cuts=None):
+def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, angle_config, topology_cuts=None):
 
-    total_run_counts, q2_run_counts = read_data_run_counts_and_q2_counts(
+    total_run_counts, angle_run_counts = read_data_run_counts_and_angle_counts(
         root_path=root_path,
-        q2_bins=q2_bins,
+        angle_config=angle_config,
         topology_cuts=topology_cuts,
     )
 
@@ -935,23 +968,29 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
         run_counts=total_run_counts,
     )
 
-    q2_current_rows = []
-    for ibin in range(len(q2_bins)):
-        rows_bin = build_current_rows_from_counts(
-            period_display_name=period_display_name,
-            period_internal_name=period_internal_name,
-            run_meta=run_meta,
-            current_charge_totals=current_charge_totals,
-            run_counts=q2_run_counts[ibin],
-        )
-        q2_current_rows.append(rows_bin)
+    angle_current_rows = {}
+    for var_cfg in angle_config:
+        var_key = var_cfg["key"]
+        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        angle_current_rows[var_key] = []
+
+        for ibin in range(len(bins)):
+            rows_bin = build_current_rows_from_counts(
+                period_display_name=period_display_name,
+                period_internal_name=period_internal_name,
+                run_meta=run_meta,
+                current_charge_totals=current_charge_totals,
+                run_counts=angle_run_counts[var_key][ibin],
+            )
+            angle_current_rows[var_key].append(rows_bin)
+        #endfor
     #endfor
 
-    return integrated_run_rows, integrated_current_rows, q2_current_rows, skipped_nonpositive_charge_rows
+    return integrated_run_rows, integrated_current_rows, angle_current_rows, skipped_nonpositive_charge_rows
 #enddef
 
 
-def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, topology_cuts=None, skip_temp_heavy_mc=False):
+def build_mc_aggregation(mc_dir, angle_config, requested_channel_tag=None, topology_cuts=None, skip_temp_heavy_mc=False):
 
     if not os.path.isdir(mc_dir):
         raise RuntimeError(f"MC directory not found: {mc_dir}")
@@ -1022,7 +1061,12 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, topology_c
     #endif
 
     integrated_mc_rows = []
-    q2_mc_rows_by_bin = [[] for _ in q2_bins]
+    angle_mc_rows_by_variable = {}
+
+    for var_cfg in angle_config:
+        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        angle_mc_rows_by_variable[var_cfg["key"]] = [[] for _ in bins]
+    #endfor
 
     sort_keys = sorted(
         grouped.keys(),
@@ -1040,16 +1084,16 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, topology_c
             raise RuntimeError(f"Missing gen/rec MC pair for period={period_internal}, current={current_nA} nA")
         #endif
 
-        n_gen, q2_counts_gen = count_mc_total_and_q2_entries(
+        n_gen, angle_counts_gen = count_mc_total_and_angle_entries(
             root_path=gen_path,
             tree_name=MC_TREE_NAME,
-            q2_bins=q2_bins,
+            angle_config=angle_config,
             topology_cuts=topology_cuts,
         )
-        n_rec, q2_counts_rec = count_mc_total_and_q2_entries(
+        n_rec, angle_counts_rec = count_mc_total_and_angle_entries(
             root_path=rec_path,
             tree_name=MC_TREE_NAME,
-            q2_bins=q2_bins,
+            angle_config=angle_config,
             topology_cuts=topology_cuts,
         )
 
@@ -1072,35 +1116,40 @@ def build_mc_aggregation(mc_dir, q2_bins, requested_channel_tag=None, topology_c
             "rec_file": rec_path,
         })
 
-        for ibin in range(len(q2_bins)):
-            n_gen_bin = int(q2_counts_gen[ibin])
-            n_rec_bin = int(q2_counts_rec[ibin])
+        for var_cfg in angle_config:
+            var_key = var_cfg["key"]
+            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
 
-            if n_gen_bin <= 0:
-                continue
-            #endif
-            if n_rec_bin <= 0:
-                continue
-            #endif
+            for ibin in range(len(bins)):
+                n_gen_bin = int(angle_counts_gen[var_key][ibin])
+                n_rec_bin = int(angle_counts_rec[var_key][ibin])
 
-            eff_bin = float(n_rec_bin) / float(n_gen_bin)
-            eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin)
+                if n_gen_bin <= 0:
+                    continue
+                #endif
+                if n_rec_bin <= 0:
+                    continue
+                #endif
 
-            q2_mc_rows_by_bin[ibin].append({
-                "period": period_display_name,
-                "period_internal": period_internal,
-                "current_nA": int(current_nA),
-                "n_gen": int(n_gen_bin),
-                "n_rec": int(n_rec_bin),
-                "efficiency": float(eff_bin),
-                "efficiency_err": float(eff_err_bin),
-                "gen_file": gen_path,
-                "rec_file": rec_path,
-            })
+                eff_bin = float(n_rec_bin) / float(n_gen_bin)
+                eff_err_bin = math.sqrt(float(n_rec_bin)) / float(n_gen_bin)
+
+                angle_mc_rows_by_variable[var_key][ibin].append({
+                    "period": period_display_name,
+                    "period_internal": period_internal,
+                    "current_nA": int(current_nA),
+                    "n_gen": int(n_gen_bin),
+                    "n_rec": int(n_rec_bin),
+                    "efficiency": float(eff_bin),
+                    "efficiency_err": float(eff_err_bin),
+                    "gen_file": gen_path,
+                    "rec_file": rec_path,
+                })
+            #endfor
         #endfor
     #endfor
 
-    return integrated_mc_rows, q2_mc_rows_by_bin
+    return integrated_mc_rows, angle_mc_rows_by_variable
 #enddef
 
 
@@ -1297,14 +1346,15 @@ def write_period_summary_csv(path, summary_rows):
 #enddef
 
 
-def write_q2_summary_csv(path, summary_rows):
+def write_angle_summary_csv(path, summary_rows):
 
     fieldnames = [
         "period",
         "period_internal",
-        "q2_bin_index",
-        "q2_min",
-        "q2_max",
+        "angle_variable",
+        "angle_bin_index",
+        "angle_min_deg",
+        "angle_max_deg",
         "weighted_data_rel_percent",
         "weighted_data_rel_fraction",
         "weighted_data_rel_stat_err_percent",
@@ -1625,13 +1675,14 @@ def build_period_summary_rows(current_rows, data_fit_results, mc_fit_results):
 #enddef
 
 
-def build_q2_summary_rows(q2_current_rows_by_bin, q2_mc_rows_by_bin, q2_bins):
+def build_angle_summary_rows(angle_rows_by_bin, mc_rows_by_bin, var_cfg):
 
     summary_rows = []
+    bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
 
-    for ibin, (low, high) in enumerate(q2_bins):
-        current_rows = q2_current_rows_by_bin[ibin]
-        mc_rows = q2_mc_rows_by_bin[ibin]
+    for ibin, (low, high) in enumerate(bins):
+        current_rows = angle_rows_by_bin[ibin]
+        mc_rows = mc_rows_by_bin[ibin]
 
         data_fit_results = {}
         mc_fit_results = {}
@@ -1648,9 +1699,10 @@ def build_q2_summary_rows(q2_current_rows_by_bin, q2_mc_rows_by_bin, q2_bins):
 
         for row in period_rows:
             row_out = dict(row)
-            row_out["q2_bin_index"] = int(ibin)
-            row_out["q2_min"] = float(low)
-            row_out["q2_max"] = float(high)
+            row_out["angle_variable"] = var_cfg["key"]
+            row_out["angle_bin_index"] = int(ibin)
+            row_out["angle_min_deg"] = float(low)
+            row_out["angle_max_deg"] = float(high)
             summary_rows.append(row_out)
         #endfor
     #endfor
@@ -2186,21 +2238,22 @@ def make_fit_result_map_for_mc(mc_rows):
 #enddef
 
 
-def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
+def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cfg):
 
     fig = plt.figure(figsize=(18, 10), constrained_layout=True)
     gs = GridSpec(2, 3, figure=fig)
     axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
 
-    q2_centers = [0.5 * (lo + hi) for (lo, hi) in Q2_BINS]
-    q2_halfwidths = [0.5 * (hi - lo) for (lo, hi) in Q2_BINS]
+    bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+    centers = [0.5 * (lo + hi) for (lo, hi) in bins]
+    halfwidths = [0.5 * (hi - lo) for (lo, hi) in bins]
 
     for i, period in enumerate(PERIOD_ORDER):
         ax = axes[i]
         c = period_color[period]
 
-        rows = [r for r in q2_summary_rows if r["period"] == period]
-        rows = sorted(rows, key=lambda r: r["q2_bin_index"])
+        rows = [r for r in angle_summary_rows if r["period"] == period]
+        rows = sorted(rows, key=lambda r: r["angle_bin_index"])
 
         x = []
         xerr = []
@@ -2208,7 +2261,7 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
         yerr = []
 
         for row in rows:
-            ibin = int(row["q2_bin_index"])
+            ibin = int(row["angle_bin_index"])
             val = float(row["divisor_to_divide_by_fraction"])
             err = float(row["divisor_to_divide_by_stat_err_fraction"])
 
@@ -2216,8 +2269,8 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
                 continue
             #endif
 
-            x.append(q2_centers[ibin])
-            xerr.append(q2_halfwidths[ibin])
+            x.append(centers[ibin])
+            xerr.append(halfwidths[ibin])
             y.append(val)
             yerr.append(err if np.isfinite(err) else 0.0)
         #endfor
@@ -2232,7 +2285,7 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
         #endif
 
         ax.set_title(period)
-        ax.set_xlabel("Q2")
+        ax.set_xlabel(f"{var_cfg['display_name']} (deg)")
         ax.set_ylabel("Divisor for cross_sections.cpp")
         ax.set_ylim(0.6, 1.2)
         ax.grid(True, alpha=0.3)
@@ -2240,7 +2293,7 @@ def make_q2_summary_plot(q2_summary_rows, output_dir, period_color):
 
     axes[5].axis("off")
 
-    out_path = os.path.join(output_dir, "q2_dependence_normalization_divisor.png")
+    out_path = os.path.join(output_dir, f"{var_cfg['key']}_dependence_normalization_divisor.png")
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
@@ -2293,11 +2346,11 @@ def run_selection_analysis(
     MC_DIR = channel_cfg["mc_dir"]
     MC_CHANNEL_TAG = channel_cfg["mc_channel_tag"]
 
-    OUTPUT_DIR, INTEGRATED_OUTPUT_DIR, Q2_OUTPUT_DIR = get_output_paths(channel, topology_dir_name)
+    OUTPUT_DIR, INTEGRATED_OUTPUT_DIR, ANGLE_OUTPUT_DIR = get_output_paths(channel, topology_dir_name)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(INTEGRATED_OUTPUT_DIR, exist_ok=True)
-    os.makedirs(Q2_OUTPUT_DIR, exist_ok=True)
+    os.makedirs(ANGLE_OUTPUT_DIR, exist_ok=True)
 
     print("")
     print("------------------------------------------------------------")
@@ -2308,7 +2361,12 @@ def run_selection_analysis(
     all_run_rows = []
     all_current_rows = []
     all_skipped_run_rows = []
-    q2_current_rows_by_bin = [[] for _ in Q2_BINS]
+
+    angle_current_rows_by_variable = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+        angle_current_rows_by_variable[var_cfg["key"]] = [[] for _ in bins]
+    #endfor
 
     print("")
     print("Processing DATA ROOT files and aggregating by current...")
@@ -2321,12 +2379,12 @@ def run_selection_analysis(
         print(f"ROOT file: {root_path}")
         print("=" * 90)
 
-        run_rows, current_rows, q2_current_rows_this_period, skipped_nonpositive_charge_rows = build_data_period_aggregations(
+        run_rows, current_rows, angle_current_rows_this_period, skipped_nonpositive_charge_rows = build_data_period_aggregations(
             period_display_name=period_display_name,
             period_internal_name=period_internal_name,
             root_path=root_path,
             run_charge_map=run_charge_map,
-            q2_bins=Q2_BINS,
+            angle_config=ANGLE_DEPENDENCE_CONFIG,
             topology_cuts=topology_cuts,
         )
 
@@ -2334,8 +2392,13 @@ def run_selection_analysis(
         all_current_rows.extend(current_rows)
         all_skipped_run_rows.extend(skipped_nonpositive_charge_rows)
 
-        for ibin in range(len(Q2_BINS)):
-            q2_current_rows_by_bin[ibin].extend(q2_current_rows_this_period[ibin])
+        for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+            var_key = var_cfg["key"]
+            bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+
+            for ibin in range(len(bins)):
+                angle_current_rows_by_variable[var_key][ibin].extend(angle_current_rows_this_period[var_key][ibin])
+            #endfor
         #endfor
 
         print(f"Run-level rows kept: {len(run_rows)}")
@@ -2360,9 +2423,9 @@ def run_selection_analysis(
         print("Temporary MC skip override flag is ON.")
     #endif
 
-    integrated_mc_rows, q2_mc_rows_by_bin = build_mc_aggregation(
+    integrated_mc_rows, angle_mc_rows_by_variable = build_mc_aggregation(
         mc_dir=MC_DIR,
-        q2_bins=Q2_BINS,
+        angle_config=ANGLE_DEPENDENCE_CONFIG,
         requested_channel_tag=MC_CHANNEL_TAG,
         topology_cuts=topology_cuts,
         skip_temp_heavy_mc=skip_temp_heavy_mc,
@@ -2462,47 +2525,61 @@ def run_selection_analysis(
     print(f"[saved] {out_c}")
     print(f"[saved] {out_d}")
 
-    q2_summary_rows = build_q2_summary_rows(
-        q2_current_rows_by_bin=q2_current_rows_by_bin,
-        q2_mc_rows_by_bin=q2_mc_rows_by_bin,
-        q2_bins=Q2_BINS,
-    )
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        var_output_dir = os.path.join(ANGLE_OUTPUT_DIR, var_key)
+        os.makedirs(var_output_dir, exist_ok=True)
 
-    q2_summary_csv = os.path.join(Q2_OUTPUT_DIR, "dvcs_current_dependence_q2_summary.csv")
-    write_q2_summary_csv(q2_summary_csv, q2_summary_rows)
-    print(f"[saved] {q2_summary_csv}")
-
-    for ibin, (low, high) in enumerate(Q2_BINS):
-        subdir = os.path.join(Q2_OUTPUT_DIR, q2_bin_to_dirname(low, high))
-        os.makedirs(subdir, exist_ok=True)
-
-        current_rows_bin = q2_current_rows_by_bin[ibin]
-        mc_rows_bin = q2_mc_rows_by_bin[ibin]
-
-        data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
-        mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
-
-        label = q2_bin_to_label(low, high, is_last=(ibin == len(Q2_BINS) - 1))
-        q2_title_suffix = title_suffix + f"  {label}"
-
-        plot_four_panel_set(
-            output_dir=subdir,
-            tag=q2_bin_to_dirname(low, high),
-            data_current_rows=current_rows_bin,
-            mc_rows=mc_rows_bin,
-            data_fit_results=data_fit_bin,
-            mc_fit_results=mc_fit_bin,
-            period_color=period_color,
-            title_suffix=q2_title_suffix,
+        angle_summary_rows = build_angle_summary_rows(
+            angle_rows_by_bin=angle_current_rows_by_variable[var_key],
+            mc_rows_by_bin=angle_mc_rows_by_variable[var_key],
+            var_cfg=var_cfg,
         )
-    #endfor
 
-    q2_summary_plot = make_q2_summary_plot(
-        q2_summary_rows=q2_summary_rows,
-        output_dir=Q2_OUTPUT_DIR,
-        period_color=period_color,
-    )
-    print(f"[saved] {q2_summary_plot}")
+        angle_summary_csv = os.path.join(var_output_dir, f"dvcs_current_dependence_{var_key}_summary.csv")
+        write_angle_summary_csv(angle_summary_csv, angle_summary_rows)
+        print(f"[saved] {angle_summary_csv}")
+
+        bins = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+
+        for ibin, (low, high) in enumerate(bins):
+            subdir = os.path.join(var_output_dir, angle_bin_to_dirname(var_key, low, high))
+            os.makedirs(subdir, exist_ok=True)
+
+            current_rows_bin = angle_current_rows_by_variable[var_key][ibin]
+            mc_rows_bin = angle_mc_rows_by_variable[var_key][ibin]
+
+            data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
+            mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
+
+            label = angle_bin_to_label(low, high, is_last=(ibin == len(bins) - 1))
+            angle_title_suffix = title_suffix + f"  {var_cfg['display_name']} {label}"
+
+            out_a_bin, out_b_bin, out_c_bin, out_d_bin = plot_four_panel_set(
+                output_dir=subdir,
+                tag=angle_bin_to_dirname(var_key, low, high),
+                data_current_rows=current_rows_bin,
+                mc_rows=mc_rows_bin,
+                data_fit_results=data_fit_bin,
+                mc_fit_results=mc_fit_bin,
+                period_color=period_color,
+                title_suffix=angle_title_suffix,
+            )
+
+            print(f"[saved] {out_a_bin}")
+            print(f"[saved] {out_b_bin}")
+            print(f"[saved] {out_c_bin}")
+            print(f"[saved] {out_d_bin}")
+        #endfor
+
+        angle_summary_plot = make_angle_summary_plot(
+            angle_summary_rows=angle_summary_rows,
+            output_dir=var_output_dir,
+            period_color=period_color,
+            var_cfg=var_cfg,
+        )
+        print(f"[saved] {angle_summary_plot}")
+    #endfor
 
     if len(all_skipped_run_rows) > 0:
         print("")
