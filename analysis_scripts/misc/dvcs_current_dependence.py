@@ -315,7 +315,7 @@ FA18_OUT_CURRENT = {
 }
 
 # -----------------------------------------------------------------------------
-# Binning helpers
+# Uniform angle-bin definitions
 # -----------------------------------------------------------------------------
 
 def build_angle_bins(min_deg, max_deg, n_bins):
@@ -331,12 +331,10 @@ def build_angle_bins(min_deg, max_deg, n_bins):
 #enddef
 
 
-def get_summary_bins_for_period(var_cfg, period_name):
+def get_summary_bins(var_key):
 
-    key = var_cfg["key"]
-
-    if key == "e_theta":
-        base = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+    if var_key == "e_theta":
+        base = build_angle_bins(8.0, 35.0, 7)
         return [
             base[0],
             base[1],
@@ -347,8 +345,8 @@ def get_summary_bins_for_period(var_cfg, period_name):
         ]
     #endif
 
-    if key == "p1_theta":
-        base = build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+    if var_key == "p1_theta":
+        base = build_angle_bins(8.0, 70.0, 7)
         return [
             (base[0][0], base[1][1]),
             base[2],
@@ -359,7 +357,7 @@ def get_summary_bins_for_period(var_cfg, period_name):
         ]
     #endif
 
-    if key == "p2_theta":
+    if var_key == "p2_theta":
         return [
             (0.0, 5.0),
             (5.0, 10.0),
@@ -371,20 +369,17 @@ def get_summary_bins_for_period(var_cfg, period_name):
         ]
     #endif
 
-    return build_angle_bins(var_cfg["min_deg"], var_cfg["max_deg"], var_cfg["n_bins"])
+    raise RuntimeError(f"Unknown angle variable for summary bins: {var_key}")
 #enddef
 
 
-SUMMARY_BINS_CACHE = {}
+ANGLE_BINS = {}
 for var_cfg in ANGLE_DEPENDENCE_CONFIG:
-    SUMMARY_BINS_CACHE[var_cfg["key"]] = {}
-    for period_name in PERIOD_ORDER:
-        SUMMARY_BINS_CACHE[var_cfg["key"]][period_name] = get_summary_bins_for_period(var_cfg, period_name)
-    #endfor
+    ANGLE_BINS[var_cfg["key"]] = get_summary_bins(var_cfg["key"])
 #endfor
 
 # -----------------------------------------------------------------------------
-# General helpers
+# Helpers
 # -----------------------------------------------------------------------------
 
 def get_channel_config(channel):
@@ -396,11 +391,6 @@ def get_channel_config(channel):
     #endif
 
     return CHANNEL_CONFIG[channel]
-#enddef
-
-
-def get_summary_bins(var_key, period_name):
-    return SUMMARY_BINS_CACHE[var_key][period_name]
 #enddef
 
 
@@ -483,6 +473,117 @@ def resolve_current(period_label_internal, runnum):
 #enddef
 
 
+def weighted_linear_fit(x, y, sy):
+
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    sy = np.asarray(sy, dtype=float)
+
+    if x.size == 0:
+        return {
+            "m": float("nan"),
+            "b": float("nan"),
+            "sm": float("nan"),
+            "sb": float("nan"),
+            "cov_mb": float("nan"),
+            "chi2": float("nan"),
+            "ndof": 0,
+        }
+    #endif
+
+    if x.size == 1:
+        sb = float(sy[0]) if np.isfinite(sy[0]) and sy[0] > 0.0 else 0.0
+        return {
+            "m": 0.0,
+            "b": float(y[0]),
+            "sm": 0.0,
+            "sb": sb,
+            "cov_mb": 0.0,
+            "chi2": 0.0,
+            "ndof": 0,
+        }
+    #endif
+
+    if np.any(sy <= 0.0):
+        raise RuntimeError("Encountered non-positive uncertainty in weighted_linear_fit.")
+    #endif
+
+    w = 1.0 / (sy * sy)
+
+    S = np.sum(w)
+    Sx = np.sum(w * x)
+    Sy = np.sum(w * y)
+    Sxx = np.sum(w * x * x)
+    Sxy = np.sum(w * x * y)
+
+    D = S * Sxx - Sx * Sx
+    if D == 0.0:
+        return {
+            "m": float("nan"),
+            "b": float("nan"),
+            "sm": float("nan"),
+            "sb": float("nan"),
+            "cov_mb": float("nan"),
+            "chi2": float("nan"),
+            "ndof": 0,
+        }
+    #endif
+
+    m = (S * Sxy - Sx * Sy) / D
+    b = (Sxx * Sy - Sx * Sxy) / D
+
+    var_m = S / D
+    var_b = Sxx / D
+    cov_mb = -Sx / D
+
+    sm = math.sqrt(var_m) if var_m >= 0.0 else float("nan")
+    sb = math.sqrt(var_b) if var_b >= 0.0 else float("nan")
+
+    yfit = m * x + b
+    chi2 = np.sum(((y - yfit) / sy) ** 2)
+    ndof = int(x.size - 2)
+
+    return {
+        "m": m,
+        "b": b,
+        "sm": sm,
+        "sb": sb,
+        "cov_mb": cov_mb,
+        "chi2": chi2,
+        "ndof": ndof,
+    }
+#enddef
+
+
+def read_charge_map(csv_file):
+
+    if not os.path.exists(csv_file):
+        raise RuntimeError(f"Charge CSV not found: {csv_file}")
+    #endif
+
+    run_info_df = pd.read_csv(
+        csv_file,
+        comment="#",
+        header=None,
+        names=["runnum", "charge_nC", "col2", "col3", "col4", "col5"],
+    )
+
+    if "runnum" not in run_info_df.columns or "charge_nC" not in run_info_df.columns:
+        raise RuntimeError("Failed to read required columns from charge CSV.")
+    #endif
+
+    run_charge_map = {}
+
+    for _, row in run_info_df.iterrows():
+        runnum = int(row["runnum"])
+        charge = float(row["charge_nC"])
+        run_charge_map[runnum] = charge
+    #endfor
+
+    return run_charge_map
+#enddef
+
+
 def parse_mc_filename(basename):
 
     if not basename.endswith(".root"):
@@ -506,6 +607,7 @@ def parse_mc_filename(basename):
     #endif
 
     period_internal = "_".join(tokens[2:5])
+
     current_token = tokens[5]
     beam_energy_token = tokens[6]
 
@@ -630,117 +732,6 @@ def apply_topology_mask(arrays, topology_cuts):
 #enddef
 
 
-def weighted_linear_fit(x, y, sy):
-
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    sy = np.asarray(sy, dtype=float)
-
-    if x.size == 0:
-        return {
-            "m": float("nan"),
-            "b": float("nan"),
-            "sm": float("nan"),
-            "sb": float("nan"),
-            "cov_mb": float("nan"),
-            "chi2": float("nan"),
-            "ndof": 0,
-        }
-    #endif
-
-    if x.size == 1:
-        sb = float(sy[0]) if np.isfinite(sy[0]) and sy[0] > 0.0 else 0.0
-        return {
-            "m": 0.0,
-            "b": float(y[0]),
-            "sm": 0.0,
-            "sb": sb,
-            "cov_mb": 0.0,
-            "chi2": 0.0,
-            "ndof": 0,
-        }
-    #endif
-
-    if np.any(sy <= 0.0):
-        raise RuntimeError("Encountered non-positive uncertainty in weighted_linear_fit.")
-    #endif
-
-    w = 1.0 / (sy * sy)
-
-    S = np.sum(w)
-    Sx = np.sum(w * x)
-    Sy = np.sum(w * y)
-    Sxx = np.sum(w * x * x)
-    Sxy = np.sum(w * x * y)
-
-    D = S * Sxx - Sx * Sx
-    if D == 0.0:
-        return {
-            "m": float("nan"),
-            "b": float("nan"),
-            "sm": float("nan"),
-            "sb": float("nan"),
-            "cov_mb": float("nan"),
-            "chi2": float("nan"),
-            "ndof": 0,
-        }
-    #endif
-
-    m = (S * Sxy - Sx * Sy) / D
-    b = (Sxx * Sy - Sx * Sxy) / D
-
-    var_m = S / D
-    var_b = Sxx / D
-    cov_mb = -Sx / D
-
-    sm = math.sqrt(var_m) if var_m >= 0.0 else float("nan")
-    sb = math.sqrt(var_b) if var_b >= 0.0 else float("nan")
-
-    yfit = m * x + b
-    chi2 = np.sum(((y - yfit) / sy) ** 2)
-    ndof = int(x.size - 2)
-
-    return {
-        "m": m,
-        "b": b,
-        "sm": sm,
-        "sb": sb,
-        "cov_mb": cov_mb,
-        "chi2": chi2,
-        "ndof": ndof,
-    }
-#enddef
-
-
-def read_charge_map(csv_file):
-
-    if not os.path.exists(csv_file):
-        raise RuntimeError(f"Charge CSV not found: {csv_file}")
-    #endif
-
-    run_info_df = pd.read_csv(
-        csv_file,
-        comment="#",
-        header=None,
-        names=["runnum", "charge_nC", "col2", "col3", "col4", "col5"],
-    )
-
-    if "runnum" not in run_info_df.columns or "charge_nC" not in run_info_df.columns:
-        raise RuntimeError("Failed to read required columns from charge CSV.")
-    #endif
-
-    run_charge_map = {}
-
-    for _, row in run_info_df.iterrows():
-        runnum = int(row["runnum"])
-        charge = float(row["charge_nC"])
-        run_charge_map[runnum] = charge
-    #endfor
-
-    return run_charge_map
-#enddef
-
-
 def get_angle_axis_label(var_key):
 
     if var_key == "e_theta":
@@ -756,9 +747,6 @@ def get_angle_axis_label(var_key):
     return f"{var_key} (deg)"
 #enddef
 
-# -----------------------------------------------------------------------------
-# Data and MC counting
-# -----------------------------------------------------------------------------
 
 def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
 
@@ -786,15 +774,10 @@ def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
 
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        angle_run_counts[var_key] = {}
-        angle_theta_sum[var_key] = {}
-        angle_theta_n[var_key] = {}
-        for period_name in PERIOD_ORDER:
-            bins = get_summary_bins(var_key, period_name)
-            angle_run_counts[var_key][period_name] = [defaultdict(int) for _ in bins]
-            angle_theta_sum[var_key][period_name] = [0.0 for _ in bins]
-            angle_theta_n[var_key][period_name] = [0 for _ in bins]
-        #endfor
+        bins = ANGLE_BINS[var_key]
+        angle_run_counts[var_key] = [defaultdict(int) for _ in bins]
+        angle_theta_sum[var_key] = [0.0 for _ in bins]
+        angle_theta_n[var_key] = [0 for _ in bins]
     #endfor
 
     iterate_branches = ["runnum", "e_theta", "p1_theta", "p2_theta"]
@@ -822,30 +805,27 @@ def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
         for var_cfg in ANGLE_DEPENDENCE_CONFIG:
             var_key = var_cfg["key"]
             theta_deg = theta_deg_map[var_key]
+            bins = ANGLE_BINS[var_key]
+            masks = angle_bin_masks(theta_deg, bins)
 
-            for period_name in PERIOD_ORDER:
-                bins = get_summary_bins(var_key, period_name)
-                masks = angle_bin_masks(theta_deg, bins)
+            counts_store = angle_run_counts[var_key]
+            sum_store = angle_theta_sum[var_key]
+            n_store = angle_theta_n[var_key]
 
-                counts_store = angle_run_counts[var_key][period_name]
-                sum_store = angle_theta_sum[var_key][period_name]
-                n_store = angle_theta_n[var_key][period_name]
+            for ibin, mask in enumerate(masks):
+                if not np.any(mask):
+                    continue
+                #endif
 
-                for ibin, mask in enumerate(masks):
-                    if not np.any(mask):
-                        continue
-                    #endif
+                selected_runs = runnum[mask]
+                unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
 
-                    selected_runs = runnum[mask]
-                    unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
-
-                    for r, c in zip(unique_sel, counts_sel):
-                        counts_store[ibin][int(r)] += int(c)
-                    #endfor
-
-                    sum_store[ibin] += float(np.sum(theta_deg[mask]))
-                    n_store[ibin] += int(np.count_nonzero(mask))
+                for r, c in zip(unique_sel, counts_sel):
+                    counts_store[ibin][int(r)] += int(c)
                 #endfor
+
+                sum_store[ibin] += float(np.sum(theta_deg[mask]))
+                n_store[ibin] += int(np.count_nonzero(mask))
             #endfor
         #endfor
     #endfor
@@ -855,21 +835,17 @@ def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
 
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        angle_run_counts_out[var_key] = {}
-        angle_x_means_out[var_key] = {}
+        angle_run_counts_out[var_key] = [dict(d) for d in angle_run_counts[var_key]]
 
-        for period_name in PERIOD_ORDER:
-            angle_run_counts_out[var_key][period_name] = [dict(d) for d in angle_run_counts[var_key][period_name]]
-            means = []
-            for s, n in zip(angle_theta_sum[var_key][period_name], angle_theta_n[var_key][period_name]):
-                if n > 0:
-                    means.append(float(s) / float(n))
-                else:
-                    means.append(float("nan"))
-                #endif
-            #endfor
-            angle_x_means_out[var_key][period_name] = means
+        means = []
+        for s, n in zip(angle_theta_sum[var_key], angle_theta_n[var_key]):
+            if n > 0:
+                means.append(float(s) / float(n))
+            else:
+                means.append(float("nan"))
+            #endif
         #endfor
+        angle_x_means_out[var_key] = means
     #endfor
 
     return dict(total_run_counts), angle_run_counts_out, angle_x_means_out
@@ -902,11 +878,8 @@ def count_mc_total_and_angle_entries(root_path, tree_name, topology_cuts=None):
 
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        angle_counts[var_key] = {}
-        for period_name in PERIOD_ORDER:
-            bins = get_summary_bins(var_key, period_name)
-            angle_counts[var_key][period_name] = [0 for _ in bins]
-        #endfor
+        bins = ANGLE_BINS[var_key]
+        angle_counts[var_key] = [0 for _ in bins]
     #endfor
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
@@ -927,15 +900,12 @@ def count_mc_total_and_angle_entries(root_path, tree_name, topology_cuts=None):
         for var_cfg in ANGLE_DEPENDENCE_CONFIG:
             var_key = var_cfg["key"]
             theta_deg = theta_deg_map[var_key]
+            bins = ANGLE_BINS[var_key]
+            masks = angle_bin_masks(theta_deg, bins)
+            store = angle_counts[var_key]
 
-            for period_name in PERIOD_ORDER:
-                bins = get_summary_bins(var_key, period_name)
-                masks = angle_bin_masks(theta_deg, bins)
-                store = angle_counts[var_key][period_name]
-
-                for ibin, mask in enumerate(masks):
-                    store[ibin] += int(np.count_nonzero(mask))
-                #endfor
+            for ibin, mask in enumerate(masks):
+                store[ibin] += int(np.count_nonzero(mask))
             #endfor
         #endfor
     #endfor
@@ -943,9 +913,6 @@ def count_mc_total_and_angle_entries(root_path, tree_name, topology_cuts=None):
     return total_count, angle_counts
 #enddef
 
-# -----------------------------------------------------------------------------
-# Aggregation helpers
-# -----------------------------------------------------------------------------
 
 def build_run_metadata(period_display_name, period_internal_name, run_list, run_charge_map):
 
@@ -1111,11 +1078,11 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     angle_current_rows = {}
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        bins = get_summary_bins(var_key, period_display_name)
+        bins = ANGLE_BINS[var_key]
         angle_current_rows[var_key] = {
             "bins": bins,
             "rows": [],
-            "x_means": angle_x_means[var_key][period_display_name],
+            "x_means": angle_x_means[var_key],
         }
 
         for ibin in range(len(bins)):
@@ -1124,7 +1091,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
                 period_internal_name=period_internal_name,
                 run_meta=run_meta,
                 current_charge_totals=current_charge_totals,
-                run_counts=angle_run_counts[var_key][period_display_name][ibin],
+                run_counts=angle_run_counts[var_key][ibin],
             )
             angle_current_rows[var_key]["rows"].append(rows_bin)
         #endfor
@@ -1195,12 +1162,12 @@ def process_mc_pair_worker(args):
     angle_rows_by_variable = {}
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        bins = get_summary_bins(var_key, period_display_name)
+        bins = ANGLE_BINS[var_key]
         rows = []
 
         for ibin in range(len(bins)):
-            n_gen_bin = int(angle_counts_gen[var_key][period_display_name][ibin])
-            n_rec_bin = int(angle_counts_rec[var_key][period_display_name][ibin])
+            n_gen_bin = int(angle_counts_gen[var_key][ibin])
+            n_rec_bin = int(angle_counts_rec[var_key][ibin])
 
             if n_gen_bin <= 0:
                 rows.append(None)
@@ -1328,14 +1295,11 @@ def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None,
 
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        angle_mc_rows_by_variable[var_key] = {}
-        for period_name in PERIOD_ORDER:
-            bins = get_summary_bins(var_key, period_name)
-            angle_mc_rows_by_variable[var_key][period_name] = {
-                "bins": bins,
-                "rows": [[] for _ in bins],
-            }
-        #endfor
+        bins = ANGLE_BINS[var_key]
+        angle_mc_rows_by_variable[var_key] = {
+            "bins": bins,
+            "rows": {period_name: [[] for _ in bins] for period_name in PERIOD_ORDER},
+        }
     #endfor
 
     n_workers = min(MAX_WORKERS, max(1, len(tasks)))
@@ -1355,7 +1319,7 @@ def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None,
             for var_cfg in ANGLE_DEPENDENCE_CONFIG:
                 var_key = var_cfg["key"]
                 rows = result["angle_rows_by_variable"][var_key]
-                store = angle_mc_rows_by_variable[var_key][period_name]["rows"]
+                store = angle_mc_rows_by_variable[var_key]["rows"][period_name]
 
                 for ibin, row in enumerate(rows):
                     if row is not None:
@@ -1374,9 +1338,9 @@ def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None,
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
         for period_name in PERIOD_ORDER:
-            bins = angle_mc_rows_by_variable[var_key][period_name]["rows"]
-            for ibin in range(len(bins)):
-                bins[ibin] = sorted(bins[ibin], key=lambda row: row["current_nA"])
+            bins_rows = angle_mc_rows_by_variable[var_key]["rows"][period_name]
+            for ibin in range(len(bins_rows)):
+                bins_rows[ibin] = sorted(bins_rows[ibin], key=lambda row: row["current_nA"])
             #endfor
         #endfor
     #endfor
@@ -1384,9 +1348,6 @@ def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None,
     return integrated_mc_rows, angle_mc_rows_by_variable
 #enddef
 
-# -----------------------------------------------------------------------------
-# Fitting and summary math
-# -----------------------------------------------------------------------------
 
 def period_points_from_current_rows(current_rows, period_name):
 
@@ -1421,374 +1382,6 @@ def period_points_from_mc_rows(mc_rows, period_name):
     return x, y, sy, rows
 #enddef
 
-
-def compute_percent_curve(xfit, fit_result):
-
-    m = fit_result["m"]
-    b = fit_result["b"]
-    sm = fit_result["sm"]
-
-    pct_fit = 100.0 * ((m * xfit + b) / b)
-    pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
-    pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
-
-    return pct_fit, pct_fit_lo, pct_fit_hi
-#enddef
-
-
-def compute_relative_value_at_current(current_nA, fit_result):
-
-    m = fit_result["m"]
-    b = fit_result["b"]
-
-    return (m * float(current_nA) + b) / b
-#enddef
-
-
-def compute_relative_value_error_at_current(current_nA, fit_result):
-
-    m = float(fit_result["m"])
-    b = float(fit_result["b"])
-    sm = float(fit_result["sm"])
-    sb = float(fit_result["sb"])
-    cov_mb = float(fit_result["cov_mb"])
-
-    if not np.isfinite(m) or not np.isfinite(b) or b == 0.0:
-        return float("nan")
-    #endif
-
-    if not np.isfinite(sm) or not np.isfinite(sb) or not np.isfinite(cov_mb):
-        return float("nan")
-    #endif
-
-    var_m = sm * sm
-    var_b = sb * sb
-    I = float(current_nA)
-
-    dr_dm = I / b
-    dr_db = -(m * I) / (b * b)
-
-    var_r = dr_dm * dr_dm * var_m + dr_db * dr_db * var_b + 2.0 * dr_dm * dr_db * cov_mb
-
-    if var_r < 0.0 and abs(var_r) < 1.0e-15:
-        var_r = 0.0
-    #endif
-    if var_r < 0.0:
-        return float("nan")
-    #endif
-
-    return math.sqrt(var_r)
-#enddef
-
-
-def divide_with_error(num, num_err, den, den_err):
-
-    if not np.isfinite(num) or not np.isfinite(den) or den == 0.0:
-        return float("nan"), float("nan")
-    #endif
-
-    val = num / den
-
-    rel2 = 0.0
-    if np.isfinite(num_err) and num != 0.0:
-        rel2 += (num_err / num) ** 2
-    #endif
-    if np.isfinite(den_err) and den != 0.0:
-        rel2 += (den_err / den) ** 2
-    #endif
-
-    err = abs(val) * math.sqrt(rel2)
-    return val, err
-#enddef
-
-
-def reciprocal_with_error(val, val_err):
-
-    if not np.isfinite(val) or val == 0.0:
-        return float("nan"), float("nan")
-    #endif
-
-    out = 1.0 / val
-    if not np.isfinite(val_err):
-        return out, float("nan")
-    #endif
-
-    out_err = abs(val_err / (val * val))
-    return out, out_err
-#enddef
-
-
-def compute_weighted_data_rel_and_error(rows, fit_result):
-
-    m = float(fit_result["m"])
-    b = float(fit_result["b"])
-    sm = float(fit_result["sm"])
-    sb = float(fit_result["sb"])
-    cov_mb = float(fit_result["cov_mb"])
-
-    if not np.isfinite(m) or not np.isfinite(b) or b == 0.0:
-        return float("nan"), float("nan")
-    #endif
-    if not np.isfinite(sm) or not np.isfinite(sb) or not np.isfinite(cov_mb):
-        return float("nan"), float("nan")
-    #endif
-
-    total_counts = float(sum(int(r["counts"]) for r in rows))
-    if total_counts <= 0.0:
-        return float("nan"), float("nan")
-    #endif
-
-    Ibar = 0.0
-    for row in rows:
-        w = float(row["counts"]) / total_counts
-        Ibar += w * float(row["current_nA"])
-    #endfor
-
-    value = 1.0 + (m * Ibar) / b
-
-    var_m = sm * sm
-    var_b = sb * sb
-
-    dr_dm = Ibar / b
-    dr_db = -(m * Ibar) / (b * b)
-
-    var_r = dr_dm * dr_dm * var_m + dr_db * dr_db * var_b + 2.0 * dr_dm * dr_db * cov_mb
-
-    if var_r < 0.0 and abs(var_r) < 1.0e-15:
-        var_r = 0.0
-    #endif
-    if var_r < 0.0:
-        return value, float("nan")
-    #endif
-
-    return value, math.sqrt(var_r)
-#enddef
-
-
-def make_fit_result_map_for_data(current_rows):
-
-    fit_results = {}
-
-    for period in PERIOD_ORDER:
-        x, y, sy, rows = period_points_from_current_rows(current_rows, period)
-        fit_results[period] = weighted_linear_fit(x, y, sy)
-    #endfor
-
-    return fit_results
-#enddef
-
-
-def make_fit_result_map_for_mc(mc_rows):
-
-    fit_results = {}
-
-    for period in PERIOD_ORDER:
-        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
-        fit_results[period] = weighted_linear_fit(x, y, sy)
-    #endfor
-
-    return fit_results
-#enddef
-
-
-def build_residual_correction_rows(all_current_rows, data_fit_results, mc_fit_results):
-
-    residual_rows = []
-
-    for period in PERIOD_ORDER:
-        period_internal = PERIOD_INTERNAL_FROM_DISPLAY[period]
-
-        if period not in data_fit_results or period not in mc_fit_results:
-            continue
-        #endif
-
-        data_fit = data_fit_results[period]
-        mc_fit = mc_fit_results[period]
-
-        if not np.isfinite(data_fit["b"]) or not np.isfinite(mc_fit["b"]):
-            continue
-        #endif
-
-        ref_current = get_mc_reference_current(period_internal)
-        mc_rel_at_ref = compute_relative_value_at_current(ref_current, mc_fit)
-
-        data_rows = [r for r in all_current_rows if r["period"] == period]
-        data_rows = sorted(data_rows, key=lambda r: r["current_nA"])
-
-        for row in data_rows:
-            current_nA = int(row["current_nA"])
-            data_rel = compute_relative_value_at_current(current_nA, data_fit)
-            residual = data_rel / mc_rel_at_ref
-            applied_scale = 1.0 / residual
-
-            residual_rows.append({
-                "period": period,
-                "period_internal": period_internal,
-                "data_current_nA": current_nA,
-                "mc_reference_current_nA": int(ref_current),
-                "data_rel_percent": 100.0 * data_rel,
-                "data_rel_fraction": data_rel,
-                "mc_rel_at_reference_percent": 100.0 * mc_rel_at_ref,
-                "mc_rel_at_reference_fraction": mc_rel_at_ref,
-                "residual_percent": 100.0 * residual,
-                "residual_fraction": residual,
-                "applied_scale_percent": 100.0 * applied_scale,
-                "applied_scale_fraction": applied_scale,
-            })
-        #endfor
-    #endfor
-
-    return residual_rows
-#enddef
-
-
-def build_period_summary_rows(current_rows, data_fit_results, mc_fit_results):
-
-    summary_rows = []
-
-    for period in PERIOD_ORDER:
-        period_internal = PERIOD_INTERNAL_FROM_DISPLAY[period]
-
-        if period not in data_fit_results or period not in mc_fit_results:
-            continue
-        #endif
-
-        data_fit = data_fit_results[period]
-        mc_fit = mc_fit_results[period]
-
-        if not np.isfinite(data_fit["b"]) or not np.isfinite(mc_fit["b"]):
-            continue
-        #endif
-
-        rows = [r for r in current_rows if r["period"] == period]
-        rows = sorted(rows, key=lambda r: r["current_nA"])
-
-        if len(rows) == 0:
-            continue
-        #endif
-
-        weighted_data_rel, weighted_data_rel_err = compute_weighted_data_rel_and_error(rows, data_fit)
-
-        ref_current = get_mc_reference_current(period_internal)
-
-        data_rel_at_ref = compute_relative_value_at_current(ref_current, data_fit)
-        data_rel_at_ref_err = compute_relative_value_error_at_current(ref_current, data_fit)
-
-        mc_rel_at_ref = compute_relative_value_at_current(ref_current, mc_fit)
-        mc_rel_at_ref_err = compute_relative_value_error_at_current(ref_current, mc_fit)
-
-        data_over_mc_at_ref, data_over_mc_at_ref_err = divide_with_error(
-            data_rel_at_ref, data_rel_at_ref_err,
-            mc_rel_at_ref, mc_rel_at_ref_err,
-        )
-
-        divisor_to_divide_by, divisor_to_divide_by_err = divide_with_error(
-            weighted_data_rel, weighted_data_rel_err,
-            mc_rel_at_ref, mc_rel_at_ref_err,
-        )
-
-        applied_scale, applied_scale_err = reciprocal_with_error(
-            divisor_to_divide_by,
-            divisor_to_divide_by_err,
-        )
-
-        summary_rows.append({
-            "period": period,
-            "period_internal": period_internal,
-
-            "weighted_data_rel_percent": 100.0 * weighted_data_rel,
-            "weighted_data_rel_fraction": weighted_data_rel,
-            "weighted_data_rel_stat_err_percent": 100.0 * weighted_data_rel_err,
-            "weighted_data_rel_stat_err_fraction": weighted_data_rel_err,
-
-            "data_rel_at_ref_percent": 100.0 * data_rel_at_ref,
-            "data_rel_at_ref_fraction": data_rel_at_ref,
-            "data_rel_at_ref_stat_err_percent": 100.0 * data_rel_at_ref_err,
-            "data_rel_at_ref_stat_err_fraction": data_rel_at_ref_err,
-
-            "mc_rel_at_ref_percent": 100.0 * mc_rel_at_ref,
-            "mc_rel_at_ref_fraction": mc_rel_at_ref,
-            "mc_rel_at_ref_stat_err_percent": 100.0 * mc_rel_at_ref_err,
-            "mc_rel_at_ref_stat_err_fraction": mc_rel_at_ref_err,
-
-            "data_over_mc_at_ref_percent": 100.0 * data_over_mc_at_ref,
-            "data_over_mc_at_ref_fraction": data_over_mc_at_ref,
-            "data_over_mc_at_ref_stat_err_percent": 100.0 * data_over_mc_at_ref_err,
-            "data_over_mc_at_ref_stat_err_fraction": data_over_mc_at_ref_err,
-
-            "divisor_to_divide_by_percent": 100.0 * divisor_to_divide_by,
-            "divisor_to_divide_by_fraction": divisor_to_divide_by,
-            "divisor_to_divide_by_stat_err_percent": 100.0 * divisor_to_divide_by_err,
-            "divisor_to_divide_by_stat_err_fraction": divisor_to_divide_by_err,
-
-            "applied_scale_percent": 100.0 * applied_scale,
-            "applied_scale_fraction": applied_scale,
-            "applied_scale_stat_err_percent": 100.0 * applied_scale_err,
-            "applied_scale_stat_err_fraction": applied_scale_err,
-        })
-    #endfor
-
-    return summary_rows
-#enddef
-
-
-def build_angle_summary_rows(angle_rows_by_period, mc_rows_by_period, var_cfg):
-
-    summary_rows = []
-    var_key = var_cfg["key"]
-
-    for period_name in PERIOD_ORDER:
-        bins = angle_rows_by_period[period_name]["bins"]
-        current_rows_list = angle_rows_by_period[period_name]["rows"]
-        mc_rows_list = mc_rows_by_period[period_name]["rows"]
-        x_means = angle_rows_by_period[period_name]["x_means"]
-
-        for ibin, (low, high) in enumerate(bins):
-            current_rows = current_rows_list[ibin]
-            mc_rows = mc_rows_list[ibin]
-
-            data_fit_results = {}
-            mc_fit_results = {}
-
-            for loop_period in PERIOD_ORDER:
-                if loop_period == period_name:
-                    xd, yd, syd, rowsd = period_points_from_current_rows(current_rows, loop_period)
-                    xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, loop_period)
-                else:
-                    xd = np.asarray([])
-                    yd = np.asarray([])
-                    syd = np.asarray([])
-                    rowsd = []
-                    xm = np.asarray([])
-                    ym = np.asarray([])
-                    sym = np.asarray([])
-                    rowsm = []
-                #endif
-
-                data_fit_results[loop_period] = weighted_linear_fit(xd, yd, syd)
-                mc_fit_results[loop_period] = weighted_linear_fit(xm, ym, sym)
-            #endfor
-
-            period_rows = build_period_summary_rows(current_rows, data_fit_results, mc_fit_results)
-
-            for row in period_rows:
-                row_out = dict(row)
-                row_out["angle_variable"] = var_key
-                row_out["angle_bin_index"] = int(ibin)
-                row_out["angle_min_deg"] = float(low)
-                row_out["angle_max_deg"] = float(high)
-                row_out["angle_x_mean_deg"] = float(x_means[ibin])
-                summary_rows.append(row_out)
-            #endfor
-        #endfor
-    #endfor
-
-    return summary_rows
-#enddef
-
-# -----------------------------------------------------------------------------
-# CSV writers
-# -----------------------------------------------------------------------------
 
 def write_run_table_csv(path, run_rows):
 
@@ -1994,9 +1587,345 @@ def write_angle_summary_csv(path, summary_rows):
     #endwith
 #enddef
 
-# -----------------------------------------------------------------------------
-# Plot styling
-# -----------------------------------------------------------------------------
+
+def compute_percent_curve(xfit, fit_result):
+
+    m = fit_result["m"]
+    b = fit_result["b"]
+    sm = fit_result["sm"]
+
+    pct_fit = 100.0 * ((m * xfit + b) / b)
+    pct_fit_lo = 100.0 * (((m - sm) * xfit + b) / b)
+    pct_fit_hi = 100.0 * (((m + sm) * xfit + b) / b)
+
+    return pct_fit, pct_fit_lo, pct_fit_hi
+#enddef
+
+
+def compute_relative_value_at_current(current_nA, fit_result):
+
+    m = fit_result["m"]
+    b = fit_result["b"]
+
+    return (m * float(current_nA) + b) / b
+#enddef
+
+
+def compute_relative_value_error_at_current(current_nA, fit_result):
+
+    m = float(fit_result["m"])
+    b = float(fit_result["b"])
+    sm = float(fit_result["sm"])
+    sb = float(fit_result["sb"])
+    cov_mb = float(fit_result["cov_mb"])
+
+    if not np.isfinite(m) or not np.isfinite(b) or b == 0.0:
+        return float("nan")
+    #endif
+
+    if not np.isfinite(sm) or not np.isfinite(sb) or not np.isfinite(cov_mb):
+        return float("nan")
+    #endif
+
+    var_m = sm * sm
+    var_b = sb * sb
+    I = float(current_nA)
+
+    dr_dm = I / b
+    dr_db = -(m * I) / (b * b)
+
+    var_r = dr_dm * dr_dm * var_m + dr_db * dr_db * var_b + 2.0 * dr_dm * dr_db * cov_mb
+
+    if var_r < 0.0 and abs(var_r) < 1.0e-15:
+        var_r = 0.0
+    #endif
+    if var_r < 0.0:
+        return float("nan")
+    #endif
+
+    return math.sqrt(var_r)
+#enddef
+
+
+def divide_with_error(num, num_err, den, den_err):
+
+    if not np.isfinite(num) or not np.isfinite(den) or den == 0.0:
+        return float("nan"), float("nan")
+    #endif
+
+    val = num / den
+
+    rel2 = 0.0
+    if np.isfinite(num_err) and num != 0.0:
+        rel2 += (num_err / num) ** 2
+    #endif
+    if np.isfinite(den_err) and den != 0.0:
+        rel2 += (den_err / den) ** 2
+    #endif
+
+    err = abs(val) * math.sqrt(rel2)
+    return val, err
+#enddef
+
+
+def reciprocal_with_error(val, val_err):
+
+    if not np.isfinite(val) or val == 0.0:
+        return float("nan"), float("nan")
+    #endif
+
+    out = 1.0 / val
+    if not np.isfinite(val_err):
+        return out, float("nan")
+    #endif
+
+    out_err = abs(val_err / (val * val))
+    return out, out_err
+#enddef
+
+
+def compute_weighted_data_rel_and_error(rows, fit_result):
+
+    m = float(fit_result["m"])
+    b = float(fit_result["b"])
+    sm = float(fit_result["sm"])
+    sb = float(fit_result["sb"])
+    cov_mb = float(fit_result["cov_mb"])
+
+    if not np.isfinite(m) or not np.isfinite(b) or b == 0.0:
+        return float("nan"), float("nan")
+    #endif
+    if not np.isfinite(sm) or not np.isfinite(sb) or not np.isfinite(cov_mb):
+        return float("nan"), float("nan")
+    #endif
+
+    total_counts = float(sum(int(r["counts"]) for r in rows))
+    if total_counts <= 0.0:
+        return float("nan"), float("nan")
+    #endif
+
+    Ibar = 0.0
+    for row in rows:
+        w = float(row["counts"]) / total_counts
+        Ibar += w * float(row["current_nA"])
+    #endfor
+
+    value = 1.0 + (m * Ibar) / b
+
+    var_m = sm * sm
+    var_b = sb * sb
+
+    dr_dm = Ibar / b
+    dr_db = -(m * Ibar) / (b * b)
+
+    var_r = dr_dm * dr_dm * var_m + dr_db * dr_db * var_b + 2.0 * dr_dm * dr_db * cov_mb
+
+    if var_r < 0.0 and abs(var_r) < 1.0e-15:
+        var_r = 0.0
+    #endif
+    if var_r < 0.0:
+        return value, float("nan")
+    #endif
+
+    return value, math.sqrt(var_r)
+#enddef
+
+
+def build_residual_correction_rows(all_current_rows, data_fit_results, mc_fit_results):
+
+    residual_rows = []
+
+    for period in PERIOD_ORDER:
+        period_internal = PERIOD_INTERNAL_FROM_DISPLAY[period]
+
+        if period not in data_fit_results or period not in mc_fit_results:
+            continue
+        #endif
+
+        data_fit = data_fit_results[period]
+        mc_fit = mc_fit_results[period]
+
+        if not np.isfinite(data_fit["b"]) or not np.isfinite(mc_fit["b"]):
+            continue
+        #endif
+
+        ref_current = get_mc_reference_current(period_internal)
+        mc_rel_at_ref = compute_relative_value_at_current(ref_current, mc_fit)
+
+        data_rows = [r for r in all_current_rows if r["period"] == period]
+        data_rows = sorted(data_rows, key=lambda r: r["current_nA"])
+
+        for row in data_rows:
+            current_nA = int(row["current_nA"])
+            data_rel = compute_relative_value_at_current(current_nA, data_fit)
+            residual = data_rel / mc_rel_at_ref
+            applied_scale = 1.0 / residual
+
+            residual_rows.append({
+                "period": period,
+                "period_internal": period_internal,
+                "data_current_nA": current_nA,
+                "mc_reference_current_nA": int(ref_current),
+                "data_rel_percent": 100.0 * data_rel,
+                "data_rel_fraction": data_rel,
+                "mc_rel_at_reference_percent": 100.0 * mc_rel_at_ref,
+                "mc_rel_at_reference_fraction": mc_rel_at_ref,
+                "residual_percent": 100.0 * residual,
+                "residual_fraction": residual,
+                "applied_scale_percent": 100.0 * applied_scale,
+                "applied_scale_fraction": applied_scale,
+            })
+        #endfor
+    #endfor
+
+    return residual_rows
+#enddef
+
+
+def build_period_summary_rows(current_rows, data_fit_results, mc_fit_results):
+
+    summary_rows = []
+
+    for period in PERIOD_ORDER:
+        period_internal = PERIOD_INTERNAL_FROM_DISPLAY[period]
+
+        if period not in data_fit_results or period not in mc_fit_results:
+            continue
+        #endif
+
+        data_fit = data_fit_results[period]
+        mc_fit = mc_fit_results[period]
+
+        if not np.isfinite(data_fit["b"]) or not np.isfinite(mc_fit["b"]):
+            continue
+        #endif
+
+        rows = [r for r in current_rows if r["period"] == period]
+        rows = sorted(rows, key=lambda r: r["current_nA"])
+
+        if len(rows) == 0:
+            continue
+        #endif
+
+        weighted_data_rel, weighted_data_rel_err = compute_weighted_data_rel_and_error(rows, data_fit)
+
+        ref_current = get_mc_reference_current(period_internal)
+
+        data_rel_at_ref = compute_relative_value_at_current(ref_current, data_fit)
+        data_rel_at_ref_err = compute_relative_value_error_at_current(ref_current, data_fit)
+
+        mc_rel_at_ref = compute_relative_value_at_current(ref_current, mc_fit)
+        mc_rel_at_ref_err = compute_relative_value_error_at_current(ref_current, mc_fit)
+
+        data_over_mc_at_ref, data_over_mc_at_ref_err = divide_with_error(
+            data_rel_at_ref, data_rel_at_ref_err,
+            mc_rel_at_ref, mc_rel_at_ref_err,
+        )
+
+        divisor_to_divide_by, divisor_to_divide_by_err = divide_with_error(
+            weighted_data_rel, weighted_data_rel_err,
+            mc_rel_at_ref, mc_rel_at_ref_err,
+        )
+
+        applied_scale, applied_scale_err = reciprocal_with_error(
+            divisor_to_divide_by,
+            divisor_to_divide_by_err,
+        )
+
+        summary_rows.append({
+            "period": period,
+            "period_internal": period_internal,
+
+            "weighted_data_rel_percent": 100.0 * weighted_data_rel,
+            "weighted_data_rel_fraction": weighted_data_rel,
+            "weighted_data_rel_stat_err_percent": 100.0 * weighted_data_rel_err,
+            "weighted_data_rel_stat_err_fraction": weighted_data_rel_err,
+
+            "data_rel_at_ref_percent": 100.0 * data_rel_at_ref,
+            "data_rel_at_ref_fraction": data_rel_at_ref,
+            "data_rel_at_ref_stat_err_percent": 100.0 * data_rel_at_ref_err,
+            "data_rel_at_ref_stat_err_fraction": data_rel_at_ref_err,
+
+            "mc_rel_at_ref_percent": 100.0 * mc_rel_at_ref,
+            "mc_rel_at_ref_fraction": mc_rel_at_ref,
+            "mc_rel_at_ref_stat_err_percent": 100.0 * mc_rel_at_ref_err,
+            "mc_rel_at_ref_stat_err_fraction": mc_rel_at_ref_err,
+
+            "data_over_mc_at_ref_percent": 100.0 * data_over_mc_at_ref,
+            "data_over_mc_at_ref_fraction": data_over_mc_at_ref,
+            "data_over_mc_at_ref_stat_err_percent": 100.0 * data_over_mc_at_ref_err,
+            "data_over_mc_at_ref_stat_err_fraction": data_over_mc_at_ref_err,
+
+            "divisor_to_divide_by_percent": 100.0 * divisor_to_divide_by,
+            "divisor_to_divide_by_fraction": divisor_to_divide_by,
+            "divisor_to_divide_by_stat_err_percent": 100.0 * divisor_to_divide_by_err,
+            "divisor_to_divide_by_stat_err_fraction": divisor_to_divide_by_err,
+
+            "applied_scale_percent": 100.0 * applied_scale,
+            "applied_scale_fraction": applied_scale,
+            "applied_scale_stat_err_percent": 100.0 * applied_scale_err,
+            "applied_scale_stat_err_fraction": applied_scale_err,
+        })
+    #endfor
+
+    return summary_rows
+#enddef
+
+
+def build_angle_summary_rows(angle_rows_by_period, mc_rows_by_variable, var_cfg):
+
+    summary_rows = []
+    var_key = var_cfg["key"]
+
+    for period_name in PERIOD_ORDER:
+        bins = angle_rows_by_period[period_name]["bins"]
+        current_rows_list = angle_rows_by_period[period_name]["rows"]
+        mc_rows_list = mc_rows_by_variable["rows"][period_name]
+        x_means = angle_rows_by_period[period_name]["x_means"]
+
+        for ibin, (low, high) in enumerate(bins):
+            current_rows = current_rows_list[ibin]
+            mc_rows = mc_rows_list[ibin]
+
+            data_fit_results = {}
+            mc_fit_results = {}
+
+            for loop_period in PERIOD_ORDER:
+                if loop_period == period_name:
+                    xd, yd, syd, rowsd = period_points_from_current_rows(current_rows, loop_period)
+                    xm, ym, sym, rowsm = period_points_from_mc_rows(mc_rows, loop_period)
+                else:
+                    xd = np.asarray([])
+                    yd = np.asarray([])
+                    syd = np.asarray([])
+                    rowsd = []
+                    xm = np.asarray([])
+                    ym = np.asarray([])
+                    sym = np.asarray([])
+                    rowsm = []
+                #endif
+
+                data_fit_results[loop_period] = weighted_linear_fit(xd, yd, syd)
+                mc_fit_results[loop_period] = weighted_linear_fit(xm, ym, sym)
+            #endfor
+
+            period_rows = build_period_summary_rows(current_rows, data_fit_results, mc_fit_results)
+
+            for row in period_rows:
+                row_out = dict(row)
+                row_out["angle_variable"] = var_key
+                row_out["angle_bin_index"] = int(ibin)
+                row_out["angle_min_deg"] = float(low)
+                row_out["angle_max_deg"] = float(high)
+                row_out["angle_x_mean_deg"] = float(x_means[ibin])
+                summary_rows.append(row_out)
+            #endfor
+        #endfor
+    #endfor
+
+    return summary_rows
+#enddef
+
 
 def style_percent_axis(ax, ylabel):
     ax.set_xlim(0.0, 80.0)
@@ -2059,9 +1988,6 @@ def create_doublepad_2x3_figure():
     return fig, top_axes, bottom_axes
 #enddef
 
-# -----------------------------------------------------------------------------
-# Plot builders
-# -----------------------------------------------------------------------------
 
 def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_results, mc_fit_results, period_color, title_suffix=""):
 
@@ -2502,6 +2428,32 @@ def plot_four_panel_set(output_dir, tag, data_current_rows, mc_rows, data_fit_re
 #enddef
 
 
+def make_fit_result_map_for_data(current_rows):
+
+    fit_results = {}
+
+    for period in PERIOD_ORDER:
+        x, y, sy, rows = period_points_from_current_rows(current_rows, period)
+        fit_results[period] = weighted_linear_fit(x, y, sy)
+    #endfor
+
+    return fit_results
+#enddef
+
+
+def make_fit_result_map_for_mc(mc_rows):
+
+    fit_results = {}
+
+    for period in PERIOD_ORDER:
+        x, y, sy, rows = period_points_from_mc_rows(mc_rows, period)
+        fit_results[period] = weighted_linear_fit(x, y, sy)
+    #endfor
+
+    return fit_results
+#enddef
+
+
 def make_angle_counts_per_charge_plot(angle_rows_by_period, output_dir, period_color, var_cfg):
 
     fig = plt.figure(figsize=(18, 10), constrained_layout=True)
@@ -2629,7 +2581,6 @@ def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cf
     axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
 
     all_xmeans = []
-
     for row in angle_summary_rows:
         if row["angle_variable"] != var_cfg["key"]:
             continue
@@ -2649,8 +2600,11 @@ def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cf
     #endfor
 
     if len(all_xmeans) > 0:
-        xmin_global = 5.0 * math.floor(min(all_xmeans) / 5.0)
-        xmax_global = 5.0 * math.ceil(max(all_xmeans) / 5.0)
+        xmin_global = min(all_xmeans)
+        xmax_global = max(all_xmeans)
+
+        xmin_global = 5.0 * math.floor(xmin_global / 5.0)
+        xmax_global = 5.0 * math.ceil(xmax_global / 5.0)
 
         if xmin_global == xmax_global:
             xmin_global -= 5.0
@@ -2714,9 +2668,6 @@ def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cf
     return out_path
 #enddef
 
-# -----------------------------------------------------------------------------
-# Printing
-# -----------------------------------------------------------------------------
 
 def print_summary_table(title, rows):
 
@@ -2745,9 +2696,6 @@ def print_summary_table(title, rows):
     #endfor
 #enddef
 
-# -----------------------------------------------------------------------------
-# Main analysis driver
-# -----------------------------------------------------------------------------
 
 def run_selection_analysis(
     channel,
@@ -2961,7 +2909,7 @@ def run_selection_analysis(
 
         angle_summary_rows = build_angle_summary_rows(
             angle_rows_by_period=angle_current_rows_by_variable[var_key],
-            mc_rows_by_period=angle_mc_rows_by_variable[var_key],
+            mc_rows_by_variable=angle_mc_rows_by_variable[var_key],
             var_cfg=var_cfg,
         )
 
@@ -2977,7 +2925,7 @@ def run_selection_analysis(
                 os.makedirs(subdir, exist_ok=True)
 
                 current_rows_bin = angle_current_rows_by_variable[var_key][period_name]["rows"][ibin]
-                mc_rows_bin = angle_mc_rows_by_variable[var_key][period_name]["rows"][ibin]
+                mc_rows_bin = angle_mc_rows_by_variable[var_key]["rows"][period_name][ibin]
 
                 data_fit_bin = make_fit_result_map_for_data(current_rows_bin)
                 mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
@@ -3030,9 +2978,6 @@ def run_selection_analysis(
     return period_summary_rows
 #enddef
 
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
