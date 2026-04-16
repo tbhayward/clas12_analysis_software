@@ -85,7 +85,7 @@
 # Additional photon histogram version
 # ----------------------------------
 # For the photon theta 1x2 distribution plot only, an additional version is
-# produced requiring electron-photon cone angle > 60 degrees.
+# produced requiring p2_phi > 60 degrees.
 
 import os
 import math
@@ -111,10 +111,9 @@ MAX_WORKERS = 5
 ITERATE_STEP_SIZE = "200 MB"
 MC_TREE_NAME = "PhysicsEvents"
 MIN_E_GAMMA_CONE_ANGLE_DEG = 7.0
-PHOTON_HIST_CONE_MIN_DEG = 60.0
+PHOTON_HIST_PHI_MIN_DEG = 60.0
 
 COS_MIN_E_GAMMA_CONE = math.cos(math.radians(MIN_E_GAMMA_CONE_ANGLE_DEG))
-COS_PHOTON_HIST_CONE_MIN = math.cos(math.radians(PHOTON_HIST_CONE_MIN_DEG))
 
 PERIOD_DISPLAY_FROM_INTERNAL = {
     "rga_sp18_inb": "Sp18 Inb",
@@ -769,7 +768,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
         fine_hist_counts[var_key] = np.zeros(len(PLOT_ANGLE_EDGES[var_key]) - 1, dtype=np.int64)
     #endfor
 
-    photon_hist_counts_cone_gt_60 = np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
+    photon_hist_counts_phi_gt_60 = np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
 
     run_meta = {}
     current_charge_totals = defaultdict(float)
@@ -782,15 +781,14 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     iterate_branches = ["runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"]
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
-        dot = compute_e_gamma_dot(arrays)
-        base_mask = dot <= COS_MIN_E_GAMMA_CONE
+        base_mask = apply_event_mask(arrays)
 
         if not np.any(base_mask):
             continue
         #endif
 
         runnum_chunk = arrays["runnum"][base_mask]
-        dot_chunk = dot[base_mask]
+        p2_phi_deg_chunk = np.degrees(arrays["p2_phi"][base_mask])
 
         unique_runs, inverse, counts = np.unique(runnum_chunk, return_inverse=True, return_counts=True)
         run_is_valid = np.zeros(len(unique_runs), dtype=bool)
@@ -846,7 +844,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
         #endif
 
         runnum_valid = runnum_chunk[valid_event_mask]
-        dot_valid = dot_chunk[valid_event_mask]
+        p2_phi_deg_valid = p2_phi_deg_chunk[valid_event_mask]
 
         theta_deg_map = {
             "e_theta": np.degrees(arrays["e_theta"][base_mask][valid_event_mask]),
@@ -884,13 +882,13 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
             fine_hist_counts[var_key] += counts_chunk_hist.astype(np.int64)
         #endfor
 
-        photon_cone60_mask = dot_valid <= COS_PHOTON_HIST_CONE_MIN
-        if np.any(photon_cone60_mask):
-            counts_chunk_cone60, _ = np.histogram(
-                theta_deg_map["p2_theta"][photon_cone60_mask],
+        phi_gt_60_mask = p2_phi_deg_valid > PHOTON_HIST_PHI_MIN_DEG
+        if np.any(phi_gt_60_mask):
+            counts_chunk_phi_gt_60, _ = np.histogram(
+                theta_deg_map["p2_theta"][phi_gt_60_mask],
                 bins=PLOT_ANGLE_EDGES["p2_theta"],
             )
-            photon_hist_counts_cone_gt_60 += counts_chunk_cone60.astype(np.int64)
+            photon_hist_counts_phi_gt_60 += counts_chunk_phi_gt_60.astype(np.int64)
         #endif
     #endfor
 
@@ -1044,7 +1042,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
         }
     #endfor
 
-    fine_angle_histograms["p2_theta"]["counts_cone_gt_60"] = photon_hist_counts_cone_gt_60.copy()
+    fine_angle_histograms["p2_theta"]["counts_phi_gt_60"] = photon_hist_counts_phi_gt_60.copy()
 
     total_valid_charge_nC = float(sum(current_charge_totals.values()))
 
@@ -2551,17 +2549,17 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
 
             entry = angle_histograms_by_period[period]
             edges = np.asarray(entry["edges"], dtype=float)
-            counts_cone60 = np.asarray(entry.get("counts_cone_gt_60", np.zeros(len(edges) - 1)), dtype=float)
+            counts_phi_gt_60 = np.asarray(entry.get("counts_phi_gt_60", np.zeros(len(edges) - 1)), dtype=float)
             charge_nC = float(entry["charge_nC"])
 
             if charge_nC <= 0.0:
                 continue
             #endif
 
-            counts_per_nC_cone60 = counts_cone60 / charge_nC
+            counts_per_nC_phi_gt_60 = counts_phi_gt_60 / charge_nC
 
             ax2_left.stairs(
-                counts_per_nC_cone60,
+                counts_per_nC_phi_gt_60,
                 edges,
                 label=period,
                 color=period_color[period],
@@ -2569,12 +2567,12 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
             )
 
             bin_widths = np.diff(edges)
-            integral_cone60 = float(np.sum(counts_per_nC_cone60 * bin_widths))
+            integral_phi_gt_60 = float(np.sum(counts_per_nC_phi_gt_60 * bin_widths))
 
-            if integral_cone60 > 0.0:
-                normalized_cone60 = counts_per_nC_cone60 / integral_cone60
+            if integral_phi_gt_60 > 0.0:
+                normalized_phi_gt_60 = counts_per_nC_phi_gt_60 / integral_phi_gt_60
                 ax2_right.stairs(
-                    normalized_cone60,
+                    normalized_phi_gt_60,
                     edges,
                     label=period,
                     color=period_color[period],
@@ -2585,11 +2583,11 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
 
         left_title2 = (
             f"{var_cfg['display_name']} histograms: counts / accumulated charge"
-            f" (e-gamma cone > {PHOTON_HIST_CONE_MIN_DEG:.0f} deg)"
+            f" (p2_phi > {PHOTON_HIST_PHI_MIN_DEG:.0f} deg)"
         )
         right_title2 = (
             f"{var_cfg['display_name']} histograms: normalized to integral"
-            f" (e-gamma cone > {PHOTON_HIST_CONE_MIN_DEG:.0f} deg)"
+            f" (p2_phi > {PHOTON_HIST_PHI_MIN_DEG:.0f} deg)"
         )
 
         if title_suffix != "":
@@ -2613,7 +2611,7 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
 
         out_path2 = os.path.join(
             output_dir,
-            f"{var_key}_dependence_histograms_1x2_cone_gt_{int(PHOTON_HIST_CONE_MIN_DEG)}deg.png"
+            f"{var_key}_dependence_histograms_1x2_p2phi_gt_{int(PHOTON_HIST_PHI_MIN_DEG)}deg.png"
         )
         fig2.savefig(out_path2, dpi=200)
         plt.close(fig2)
@@ -2822,9 +2820,9 @@ def run_selection_analysis(run_charge_map, period_color):
                 "charge_nC": float(total_valid_charge_nC),
             }
 
-            if var_key == "p2_theta" and "counts_cone_gt_60" in fine_angle_histograms_this_period[var_key]:
-                hist_entry["counts_cone_gt_60"] = np.asarray(
-                    fine_angle_histograms_this_period[var_key]["counts_cone_gt_60"],
+            if var_key == "p2_theta" and "counts_phi_gt_60" in fine_angle_histograms_this_period[var_key]:
+                hist_entry["counts_phi_gt_60"] = np.asarray(
+                    fine_angle_histograms_this_period[var_key]["counts_phi_gt_60"],
                     dtype=float,
                 )
             #endif
@@ -3044,7 +3042,7 @@ def main():
     print(f"MC directory:    {MC_DIR}")
     print(f"Max workers:     {MAX_WORKERS}")
     print(f"e-gamma cone cut: {MIN_E_GAMMA_CONE_ANGLE_DEG:.1f} deg")
-    print(f"extra photon histogram cone cut: > {PHOTON_HIST_CONE_MIN_DEG:.1f} deg")
+    print(f"extra photon histogram phi cut: p2_phi > {PHOTON_HIST_PHI_MIN_DEG:.1f} deg")
     print("============================================================")
 
     print("")
