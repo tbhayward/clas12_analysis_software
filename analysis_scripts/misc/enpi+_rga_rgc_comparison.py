@@ -230,6 +230,49 @@ print("=========================================================================
 print("")
 
 # ------------------------------------------------
+# summary metrics for RGC about RGA
+# ------------------------------------------------
+
+rgc_minus_rga = rgc_y - rga_y
+rgc_about_rga_mean_residual = np.mean(rgc_minus_rga)
+rgc_about_rga_rms = np.sqrt(np.mean(rgc_minus_rga ** 2))
+
+if rgc_about_rga_mean_residual > 0.0:
+    rgc_about_rga_signed_rms = rgc_about_rga_rms
+elif rgc_about_rga_mean_residual < 0.0:
+    rgc_about_rga_signed_rms = -rgc_about_rga_rms
+else:
+    rgc_about_rga_signed_rms = 0.0
+#endif
+
+rgc_about_rga_pull = (rgc_y - rga_y) / rgc_err
+rgc_about_rga_mean_abs_pull = np.mean(np.abs(rgc_about_rga_pull))
+rgc_about_rga_pull_rms = np.sqrt(np.mean(rgc_about_rga_pull ** 2))
+
+print("========================================================================================================")
+print("RGC summary about RGA")
+print("========================================================================================================")
+print(
+    f"{'Dataset':<12}"
+    f"{'Mean residual':>18}"
+    f"{'RMS residual':>18}"
+    f"{'Signed RMS':>18}"
+    f"{'Mean |pull|':>18}"
+    f"{'Pull RMS':>14}"
+)
+print("--------------------------------------------------------------------------------------------------------")
+print(
+    f"{'RGC about RGA':<12}"
+    f"{rgc_about_rga_mean_residual:>18.6f}"
+    f"{rgc_about_rga_rms:>18.6f}"
+    f"{rgc_about_rga_signed_rms:>18.6f}"
+    f"{rgc_about_rga_mean_abs_pull:>18.6f}"
+    f"{rgc_about_rga_pull_rms:>14.6f}"
+)
+print("========================================================================================================")
+print("")
+
+# ------------------------------------------------
 # plot
 # ------------------------------------------------
 
