@@ -14,6 +14,8 @@
 #include <TPad.h>
 #include <TLine.h>
 #include <TROOT.h>
+#include <TFitResultPtr.h>
+#include <TFitResult.h>
 
 #include <algorithm>
 #include <cmath>
@@ -111,6 +113,12 @@ std::string make_hist_name(int ix, int it) {
     return oss.str();
 }
 
+std::string make_fit_name(int ix, int it) {
+    std::ostringstream oss;
+    oss << "f_x" << ix << "_t" << it;
+    return oss.str();
+}
+
 std::string format_double(double x, int prec = 4) {
     if (!std::isfinite(x)) return "--";
     std::ostringstream oss;
@@ -166,10 +174,8 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
     double mu_guess = std::max(kMuMin + 0.002, std::min(peak_x, kMuMax - 0.002));
     double sigma_guess = 0.07;
 
-    std::ostringstream fname;
-    fname << "f_x" << ix << "_t" << it;
-
-    TF1 fit_fn(fname.str().c_str(), "gaus(0) + pol2(3)", kMx2Min, kMx2Max);
+    std::string fname = make_fit_name(ix, it);
+    TF1 fit_fn(fname.c_str(), "gaus(0) + pol2(3)", kMx2Min, kMx2Max);
     fit_fn.SetLineColor(kRed + 1);
     fit_fn.SetLineStyle(2);
     fit_fn.SetLineWidth(2);
@@ -185,10 +191,11 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
     fit_fn.SetParLimits(1, kMuMin, kMuMax);
     fit_fn.SetParLimits(2, kSigmaMin, kSigmaMax);
 
-    int fit_status = hist->Fit(&fit_fn, "QRS");
-    int cov_status = 0;
-    if (TVirtualFitter::GetFitter()) {
-        cov_status = TVirtualFitter::GetFitter()->GetStats ? 3 : 0;
+    TFitResultPtr fit_ptr = hist->Fit(&fit_fn, "QRS");
+    int fit_status = static_cast<int>(fit_ptr);
+    int cov_status = -1;
+    if (fit_ptr.Get()) {
+        cov_status = fit_ptr->CovMatrixStatus();
     }
 
     result.fit_status = fit_status;
@@ -321,7 +328,7 @@ void draw_fit_grid(const std::vector<std::vector<TH1D*>>& hists, const std::vect
             leg.SetTextSize(0.038);
 
             if (r.fit_success) {
-                TF1* f = h->GetFunction(Form("f_x%d_t%d", ix, it));
+                TF1* f = h->GetFunction(make_fit_name(ix, it).c_str());
                 if (f) {
                     f->SetLineColor(kRed + 1);
                     f->SetLineStyle(2);
@@ -352,11 +359,6 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
     canvas.Divide(1, 2, 0.001, 0.001);
 
     int n_total = static_cast<int>(results.size());
-    std::vector<double> xvals(n_total), exvals(n_total, 0.0);
-    for (int i = 0; i < n_total; i++) {
-        xvals[i] = i + 1;
-    }
-
     int colors[4] = {kBlue + 1, kRed + 1, kGreen + 2, kMagenta + 2};
 
     canvas.cd(1);
@@ -488,7 +490,7 @@ int main() {
     tree->SetBranchStatus("tprime", 1);
     tree->SetBranchStatus("Mx2", 1);
 
-    std::vector<std::vector<TH1D*>> hists(
+    std::vector<std::vector<TH1D*> > hists(
         kXBSlices.size(),
         std::vector<TH1D*>(kTPrimeBins.size(), nullptr)
     );
