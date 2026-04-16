@@ -66,12 +66,18 @@ static const std::string kOutputDir = "output/enpi+_Mx2_fits";
 
 static constexpr double kMx2Min = 0.70;
 static constexpr double kMx2Max = 1.10;
-static constexpr int kNMx2Bins = 60;
+static constexpr int kNMx2Bins = 30;
 
 static constexpr double kMuMin = 0.85;
 static constexpr double kMuMax = 0.95;
 static constexpr double kSigmaMin = 0.03;
 static constexpr double kSigmaMax = 0.08;
+
+static constexpr double kPeakSearchMin = 0.84;
+static constexpr double kPeakSearchMax = 0.99;
+static constexpr double kPrefitHalfWidth = 0.055;
+static constexpr double kFinalFitMin = 0.78;
+static constexpr double kFinalFitMax = 1.04;
 
 static const std::vector<XBSlice> kXBSlices = {
     {"Low",     0.10, 0.25},
@@ -144,6 +150,42 @@ void ensure_output_dir(const std::string& dir) {
     gSystem->mkdir(dir.c_str(), true);
 }
 
+int find_peak_bin_in_window(TH1D* hist, double xmin, double xmax) {
+    int bin_min = hist->FindBin(xmin);
+    int bin_max = hist->FindBin(xmax);
+    bin_min = std::max(bin_min, 1);
+    bin_max = std::min(bin_max, hist->GetNbinsX());
+
+    int best_bin = bin_min;
+    double best_val = -1.0;
+
+    for (int ibin = bin_min; ibin <= bin_max; ibin++) {
+        double val = hist->GetBinContent(ibin);
+        if (val > best_val) {
+            best_val = val;
+            best_bin = ibin;
+        }
+    }
+
+    return best_bin;
+}
+
+double average_sideband_level(TH1D* hist) {
+    double sum = 0.0;
+    int n = 0;
+
+    for (int ibin = 1; ibin <= hist->GetNbinsX(); ibin++) {
+        double x = hist->GetBinCenter(ibin);
+        if ((x >= 0.70 && x <= 0.80) || (x >= 1.02 && x <= 1.10)) {
+            sum += hist->GetBinContent(ibin);
+            n++;
+        }
+    }
+
+    if (n == 0) return 0.0;
+    return sum / static_cast<double>(n);
+}
+
 FitResult fit_histogram(TH1D* hist, int ix, int it) {
     FitResult result;
     result.slice_name = kXBSlices[ix].name;
@@ -153,37 +195,49 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
     result.t_max = kTPrimeBins[it].tmax;
     result.n_entries = static_cast<long long>(hist->GetEntries());
 
-    int peak_bin = hist->GetMaximumBin();
+    if (result.n_entries < 50) {
+        return result;
+    }
+
+    int peak_bin = find_peak_bin_in_window(hist, kPeakSearchMin, kPeakSearchMax);
     double peak_x = hist->GetBinCenter(peak_bin);
+    double peak_y = hist->GetBinContent(peak_bin);
 
-    double edge_background = 0.0;
-    int n_edge = 0;
-    for (int i = 1; i <= 5; i++) {
-        edge_background += hist->GetBinContent(i);
-        n_edge++;
-    }
-    for (int i = kNMx2Bins - 4; i <= kNMx2Bins; i++) {
-        edge_background += hist->GetBinContent(i);
-        n_edge++;
-    }
-    if (n_edge > 0) {
-        edge_background /= static_cast<double>(n_edge);
-    }
+    double bg_guess = average_sideband_level(hist);
+    double amp_guess = std::max(peak_y - bg_guess, 1.0);
 
-    double amplitude_guess = std::max(hist->GetMaximum() - edge_background, 1.0);
-    double mu_guess = std::max(kMuMin + 0.002, std::min(peak_x, kMuMax - 0.002));
-    double sigma_guess = 0.07;
+    double prefit_min = std::max(kMx2Min, peak_x - kPrefitHalfWidth);
+    double prefit_max = std::min(kMx2Max, peak_x + kPrefitHalfWidth);
+
+    TF1 gprefit("gprefit", "gaus", prefit_min, prefit_max);
+    gprefit.SetParameter(0, amp_guess);
+    gprefit.SetParameter(1, std::max(kMuMin + 0.002, std::min(peak_x, kMuMax - 0.002)));
+    gprefit.SetParameter(2, 0.06);
+    gprefit.SetParLimits(1, kMuMin, kMuMax);
+    gprefit.SetParLimits(2, kSigmaMin, kSigmaMax);
+
+    hist->Fit(&gprefit, "Q0R");
+
+    double mu_guess = gprefit.GetParameter(1);
+    double sigma_guess = gprefit.GetParameter(2);
+
+    if (!std::isfinite(mu_guess) || mu_guess < kMuMin || mu_guess > kMuMax) {
+        mu_guess = std::max(kMuMin + 0.002, std::min(peak_x, kMuMax - 0.002));
+    }
+    if (!std::isfinite(sigma_guess) || sigma_guess < kSigmaMin || sigma_guess > kSigmaMax) {
+        sigma_guess = 0.06;
+    }
 
     std::string fname = make_fit_name(ix, it);
-    TF1 fit_fn(fname.c_str(), "gaus(0) + pol2(3)", kMx2Min, kMx2Max);
+    TF1 fit_fn(fname.c_str(), "gaus(0) + pol2(3)", kFinalFitMin, kFinalFitMax);
     fit_fn.SetLineColor(kRed + 1);
     fit_fn.SetLineStyle(2);
     fit_fn.SetLineWidth(2);
 
-    fit_fn.SetParameter(0, amplitude_guess);
+    fit_fn.SetParameter(0, std::max(gprefit.GetParameter(0), 1.0));
     fit_fn.SetParameter(1, mu_guess);
     fit_fn.SetParameter(2, sigma_guess);
-    fit_fn.SetParameter(3, edge_background);
+    fit_fn.SetParameter(3, bg_guess);
     fit_fn.SetParameter(4, 0.0);
     fit_fn.SetParameter(5, 0.0);
 
@@ -191,7 +245,7 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
     fit_fn.SetParLimits(1, kMuMin, kMuMax);
     fit_fn.SetParLimits(2, kSigmaMin, kSigmaMax);
 
-    TFitResultPtr fit_ptr = hist->Fit(&fit_fn, "QRS");
+    TFitResultPtr fit_ptr = hist->Fit(&fit_fn, "QRSL");
     int fit_status = static_cast<int>(fit_ptr);
     int cov_status = -1;
     if (fit_ptr.Get()) {
@@ -200,7 +254,20 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
 
     result.fit_status = fit_status;
     result.cov_status = cov_status;
-    result.fit_success = (fit_status == 0);
+
+    bool finite_ok =
+        std::isfinite(fit_fn.GetParameter(1)) &&
+        std::isfinite(fit_fn.GetParameter(2)) &&
+        std::isfinite(fit_fn.GetParError(1)) &&
+        std::isfinite(fit_fn.GetParError(2));
+
+    bool boundary_ok =
+        (fit_fn.GetParameter(1) > kMuMin + 1.0e-4) &&
+        (fit_fn.GetParameter(1) < kMuMax - 1.0e-4) &&
+        (fit_fn.GetParameter(2) > kSigmaMin + 1.0e-4) &&
+        (fit_fn.GetParameter(2) < kSigmaMax - 1.0e-4);
+
+    result.fit_success = (fit_status == 0 && cov_status >= 2 && finite_ok && boundary_ok);
 
     if (result.fit_success) {
         result.amp = fit_fn.GetParameter(0);
@@ -276,7 +343,7 @@ void write_latex_table(const std::vector<FitResult>& results, const std::string&
     out << "\\end{table}\n";
 }
 
-void draw_fit_grid(const std::vector<std::vector<TH1D*>>& hists, const std::vector<FitResult>& results, const std::string& png_path, const std::string& pdf_path) {
+void draw_fit_grid(const std::vector<std::vector<TH1D*> >& hists, const std::vector<FitResult>& results, const std::string& png_path, const std::string& pdf_path) {
     TCanvas canvas("c_grid", "Mx2 grid", 2400, 1400);
     canvas.Divide(6, 4, 0.001, 0.001);
 
@@ -327,15 +394,15 @@ void draw_fit_grid(const std::vector<std::vector<TH1D*>>& hists, const std::vect
             leg.SetFillColor(kWhite);
             leg.SetTextSize(0.038);
 
-            if (r.fit_success) {
-                TF1* f = h->GetFunction(make_fit_name(ix, it).c_str());
-                if (f) {
-                    f->SetLineColor(kRed + 1);
-                    f->SetLineStyle(2);
-                    f->SetLineWidth(2);
-                    f->Draw("same");
-                }
+            TF1* f = h->GetFunction(make_fit_name(ix, it).c_str());
+            if (f) {
+                f->SetLineColor(kRed + 1);
+                f->SetLineStyle(2);
+                f->SetLineWidth(2);
+                f->Draw("same");
+            }
 
+            if (r.fit_success) {
                 std::ostringstream fit_label;
                 fit_label << "#mu = " << std::fixed << std::setprecision(4) << r.mu
                           << ", #sigma = " << std::fixed << std::setprecision(4) << r.sigma;
@@ -384,16 +451,18 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
     leg_mu.SetFillColor(kWhite);
     leg_mu.SetTextSize(0.035);
 
-    std::vector<TGraphErrors*> mu_graphs;
     for (int ix = 0; ix < static_cast<int>(kXBSlices.size()); ix++) {
         std::vector<double> xx, yy, ex, ey;
         for (int it = 0; it < static_cast<int>(kTPrimeBins.size()); it++) {
             int idx = ix * static_cast<int>(kTPrimeBins.size()) + it;
+            if (!results[idx].fit_success) continue;
             xx.push_back(idx + 1);
             ex.push_back(0.0);
             yy.push_back(results[idx].mu);
             ey.push_back(results[idx].mu_err);
         }
+
+        if (xx.empty()) continue;
 
         TGraphErrors* g = new TGraphErrors(static_cast<int>(xx.size()), xx.data(), yy.data(), ex.data(), ey.data());
         g->SetMarkerStyle(20);
@@ -402,7 +471,6 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
         g->SetLineColor(colors[ix]);
         g->SetLineWidth(2);
         g->Draw("P SAME");
-        mu_graphs.push_back(g);
 
         std::ostringstream label;
         label << "x_{B} #in [" << std::fixed << std::setprecision(2)
@@ -435,16 +503,18 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
     frame_sigma.GetYaxis()->CenterTitle();
     frame_sigma.Draw();
 
-    std::vector<TGraphErrors*> sigma_graphs;
     for (int ix = 0; ix < static_cast<int>(kXBSlices.size()); ix++) {
         std::vector<double> xx, yy, ex, ey;
         for (int it = 0; it < static_cast<int>(kTPrimeBins.size()); it++) {
             int idx = ix * static_cast<int>(kTPrimeBins.size()) + it;
+            if (!results[idx].fit_success) continue;
             xx.push_back(idx + 1);
             ex.push_back(0.0);
             yy.push_back(results[idx].sigma);
             ey.push_back(results[idx].sigma_err);
         }
+
+        if (xx.empty()) continue;
 
         TGraphErrors* g = new TGraphErrors(static_cast<int>(xx.size()), xx.data(), yy.data(), ex.data(), ey.data());
         g->SetMarkerStyle(20);
@@ -453,7 +523,6 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
         g->SetLineColor(colors[ix]);
         g->SetLineWidth(2);
         g->Draw("P SAME");
-        sigma_graphs.push_back(g);
     }
 
     for (int xline = 6; xline <= 18; xline += 6) {
@@ -552,6 +621,8 @@ int main() {
                 << "  -tprime=[" << std::fixed << std::setprecision(2) << r.t_min << "," << r.t_max << "]"
                 << "  N=" << r.n_entries
                 << "  fit_success=" << (r.fit_success ? 1 : 0)
+                << "  status=" << r.fit_status
+                << "  cov=" << r.cov_status
                 << "  mu=" << format_double(r.mu, 6)
                 << "  mu_err=" << format_double(r.mu_err, 6)
                 << "  sigma=" << format_double(r.sigma, 6)
