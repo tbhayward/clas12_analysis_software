@@ -3,6 +3,7 @@
 import os
 import csv
 import math
+import time
 import uuid
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,6 +12,7 @@ import ROOT
 ROOT.gROOT.SetBatch(True)
 ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetOptFit(0)
+ROOT.EnableImplicitMT()
 
 # ------------------------------------------------
 # configuration
@@ -20,7 +22,6 @@ INPUT_FILE = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+
 TREE_NAME = "PhysicsEvents"
 OUTPUT_DIR = "output/enpi+_Mx2_fits"
 
-# histogram / fit settings
 MX2_MIN = 0.70
 MX2_MAX = 1.10
 N_MX2_BINS = 60
@@ -30,7 +31,6 @@ MU_MAX = 0.95
 SIGMA_MIN = 0.03
 SIGMA_MAX = 0.08
 
-# same numerical binning scheme as before, but applied to positive (-tprime)
 XB_SLICES = [
     ("Low", 0.10, 0.25),
     ("MidLow", 0.25, 0.35),
@@ -46,6 +46,12 @@ TPRIME_BINS_POS = [
     (0.85, 1.05),
     (1.05, 1.25),
 ]
+
+XB_EDGES = np.array([0.10, 0.25, 0.35, 0.45, 0.60], dtype=np.float64)
+TPRIME_EDGES = np.array([0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25], dtype=np.float64)
+MX2_EDGES = np.linspace(MX2_MIN, MX2_MAX, N_MX2_BINS + 1, dtype=np.float64)
+MX2_CENTERS = 0.5 * (MX2_EDGES[:-1] + MX2_EDGES[1:])
+MX2_BIN_WIDTH = (MX2_MAX - MX2_MIN) / N_MX2_BINS
 
 CSV_PATH = os.path.join(OUTPUT_DIR, "Mx2_fit_params_tprime.csv")
 LATEX_TABLE_PATH = os.path.join(OUTPUT_DIR, "Mx2_fit_params_tprime_table.tex")
@@ -64,33 +70,40 @@ def ensure_output_dir(path):
     #endif
 #enddef
 
-def load_arrays(root_file, tree_name):
+def load_filtered_arrays(root_file, tree_name):
+    t0 = time.time()
+
     rdf = ROOT.RDataFrame(tree_name, root_file)
-    arrays = rdf.AsNumpy(["Q2", "W", "y", "x", "tprime", "Mx2"])
+
+    # Apply the global physics cuts inside ROOT before transferring to numpy
+    rdf = rdf.Filter("Q2 > 1.0 && W > 2.0 && y < 0.75")
+
+    arrays = rdf.AsNumpy(["x", "tprime", "Mx2"])
+
     out = {}
     for key in arrays:
         out[key] = np.asarray(arrays[key], dtype=np.float64)
     #endfor
+
+    # Keep only finite values on the Python side
+    finite_mask = (
+        np.isfinite(out["x"]) &
+        np.isfinite(out["tprime"]) &
+        np.isfinite(out["Mx2"])
+    )
+
+    out["x"] = out["x"][finite_mask]
+    out["tprime"] = out["tprime"][finite_mask]
+    out["Mx2"] = out["Mx2"][finite_mask]
+
+    t1 = time.time()
+    print(f"Load and global filter time: {t1 - t0:.2f} s")
+    print(f"Events after global cuts: {len(out['x'])}")
     return out
 #enddef
 
-def base_event_mask(arrays):
-    mask = (
-        (arrays["Q2"] > 1.0) &
-        (arrays["W"] > 2.0) &
-        (arrays["y"] < 0.75) &
-        np.isfinite(arrays["x"]) &
-        np.isfinite(arrays["tprime"]) &
-        np.isfinite(arrays["Mx2"])
-    )
-    return mask
-#enddef
-
-def make_histogram(values, xmin, xmax, nbins):
-    counts, edges = np.histogram(values, bins=nbins, range=(xmin, xmax))
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    errors = np.sqrt(np.maximum(counts.astype(np.float64), 1.0))
-    return counts.astype(np.float64), edges, centers, errors
+def clamp(value, vmin, vmax):
+    return max(vmin, min(vmax, value))
 #enddef
 
 def build_root_hist(counts, edges, name):
@@ -102,10 +115,6 @@ def build_root_hist(counts, edges, name):
     return hist
 #enddef
 
-def clamp(value, vmin, vmax):
-    return max(vmin, min(vmax, value))
-#enddef
-
 def fit_mx2_hist(counts, edges):
     hist_name = "h_" + str(uuid.uuid4()).replace("-", "_")
     func_name = "f_" + str(uuid.uuid4()).replace("-", "_")
@@ -114,6 +123,7 @@ def fit_mx2_hist(counts, edges):
 
     peak_bin = int(np.argmax(counts))
     peak_x = 0.5 * (edges[peak_bin] + edges[peak_bin + 1])
+
     edge_background = 0.5 * (np.mean(counts[:5]) + np.mean(counts[-5:]))
     amplitude_guess = max(float(np.max(counts) - edge_background), 1.0)
     mu_guess = clamp(float(peak_x), MU_MIN + 0.002, MU_MAX - 0.002)
@@ -183,92 +193,70 @@ def evaluate_fit_curve(xvals, fit_result):
     return gaus + poly
 #enddef
 
-def make_grid_figure(all_rows):
-    fig, axes = plt.subplots(
-        nrows=len(XB_SLICES),
-        ncols=len(TPRIME_BINS_POS),
-        figsize=(18, 12),
-        sharex=True,
-        constrained_layout=False
-    )
+def assign_x_bins(xvals):
+    xbin = np.full(len(xvals), -1, dtype=np.int32)
 
-    fig.patch.set_facecolor("#efefef")
-
-    for row in range(len(XB_SLICES)):
-        for col in range(len(TPRIME_BINS_POS)):
-            ax = axes[row, col]
-            ax.set_facecolor("#efefef")
-            ax.grid(True, linestyle="--", alpha=0.35)
-            ax.tick_params(axis="both", labelsize=8)
-
-            entry = all_rows[row * len(TPRIME_BINS_POS) + col]
-
-            centers = entry["centers"]
-            counts = entry["counts"]
-            errors = entry["errors"]
-
-            ax.errorbar(
-                centers,
-                counts,
-                yerr=errors,
-                fmt="s",
-                markersize=2.5,
-                linewidth=0.8,
-                elinewidth=0.8,
-                capsize=1.2,
-                color="black"
-            )
-
-            if entry["fit_success"] == 1:
-                xfit = np.linspace(MX2_MIN, MX2_MAX, 600)
-                yfit = evaluate_fit_curve(xfit, entry)
-                ax.plot(
-                    xfit,
-                    yfit,
-                    linestyle="--",
-                    linewidth=1.2,
-                    color="red",
-                    label=r"$\mu = %.4f,\ \sigma = %.4f$" % (entry["mu"], entry["sigma"])
-                )
-            else:
-                ax.plot([], [], linestyle="--", linewidth=1.2, color="red", label="fit failed")
-            #endif
-
-            ax.legend(loc="lower center", fontsize=7, framealpha=0.9)
-
-            xlo = entry["x_min"]
-            xhi = entry["x_max"]
-            tlo = entry["t_min"]
-            thi = entry["t_max"]
-
-            ax.set_title(
-                r"$x_B \in [%.2f, %.2f],\ -t^\prime \in [%.2f, %.2f]$" % (xlo, xhi, tlo, thi),
-                fontsize=8
-            )
-
-            ax.set_xlim(MX2_MIN, MX2_MAX)
-
-            if col == 0:
-                ax.set_ylabel("counts", fontsize=9)
-            #endif
-
-            if row == len(XB_SLICES) - 1:
-                ax.set_xlabel(r"$M_X^2$ (GeV$^2$)", fontsize=9)
-            #endif
-        #endfor
+    for i in range(len(XB_SLICES)):
+        xlo = XB_SLICES[i][1]
+        xhi = XB_SLICES[i][2]
+        mask = (xvals > xlo) & (xvals < xhi)
+        xbin[mask] = i
     #endfor
 
-    fig.suptitle(
-        r"$M_X^2$ distributions by $x_B$ slice and $-t^\prime$ bin" + "\n" +
-        r"Global cuts: $Q^2 > 1$, $W > 2$, $y < 0.75$ (no $M_X^2$ cut)",
-        fontsize=16,
-        y=0.98
+    return xbin
+#enddef
+
+def assign_tprime_bins(tprime_pos_vals):
+    # searchsorted gives the bin index in the edge array
+    tbin = np.searchsorted(TPRIME_EDGES, tprime_pos_vals, side="right") - 1
+
+    valid = (
+        (tprime_pos_vals >= TPRIME_EDGES[0]) &
+        (tprime_pos_vals < TPRIME_EDGES[-1]) &
+        (tbin >= 0) &
+        (tbin < len(TPRIME_BINS_POS))
     )
 
-    plt.subplots_adjust(left=0.06, right=0.995, bottom=0.07, top=0.90, wspace=0.12, hspace=0.15)
-    fig.savefig(GRID_PNG_PATH, dpi=300)
-    fig.savefig(GRID_PDF_PATH)
-    plt.close(fig)
+    tbin[~valid] = -1
+    return tbin.astype(np.int32)
+#enddef
+
+def assign_mx2_bins(mx2_vals):
+    mbin = np.floor((mx2_vals - MX2_MIN) / MX2_BIN_WIDTH).astype(np.int32)
+
+    valid = (
+        (mx2_vals >= MX2_MIN) &
+        (mx2_vals < MX2_MAX) &
+        (mbin >= 0) &
+        (mbin < N_MX2_BINS)
+    )
+
+    mbin[~valid] = -1
+    return mbin
+#enddef
+
+def fill_all_histograms_once(xvals, tprime_vals, mx2_vals):
+    t0 = time.time()
+
+    # tprime in the tree is negative, so the binned variable is -tprime
+    tprime_pos_vals = -tprime_vals
+
+    xbin = assign_x_bins(xvals)
+    tbin = assign_tprime_bins(tprime_pos_vals)
+    mbin = assign_mx2_bins(mx2_vals)
+
+    valid = (xbin >= 0) & (tbin >= 0) & (mbin >= 0)
+
+    counts = np.zeros((len(XB_SLICES), len(TPRIME_BINS_POS), N_MX2_BINS), dtype=np.int64)
+
+    np.add.at(counts, (xbin[valid], tbin[valid], mbin[valid]), 1)
+
+    entries = np.sum(counts, axis=2)
+
+    t1 = time.time()
+    print(f"Single-pass histogram fill time: {t1 - t0:.2f} s")
+
+    return counts, entries
 #enddef
 
 def write_csv(rows, csv_path):
@@ -360,7 +348,102 @@ def write_latex_table(rows, latex_path):
     #endwith
 #enddef
 
+def make_grid_figure(all_rows):
+    t0 = time.time()
+
+    fig, axes = plt.subplots(
+        nrows=len(XB_SLICES),
+        ncols=len(TPRIME_BINS_POS),
+        figsize=(18, 12),
+        sharex=True,
+        constrained_layout=False
+    )
+
+    fig.patch.set_facecolor("#efefef")
+
+    for row in range(len(XB_SLICES)):
+        for col in range(len(TPRIME_BINS_POS)):
+            ax = axes[row, col]
+            ax.set_facecolor("#efefef")
+            ax.grid(True, linestyle="--", alpha=0.35)
+            ax.tick_params(axis="both", labelsize=8)
+
+            entry = all_rows[row * len(TPRIME_BINS_POS) + col]
+
+            centers = entry["centers"]
+            counts = entry["counts"]
+            errors = entry["errors"]
+
+            ax.errorbar(
+                centers,
+                counts,
+                yerr=errors,
+                fmt="s",
+                markersize=2.5,
+                linewidth=0.8,
+                elinewidth=0.8,
+                capsize=1.2,
+                color="black"
+            )
+
+            if entry["fit_success"] == 1:
+                xfit = np.linspace(MX2_MIN, MX2_MAX, 600)
+                yfit = evaluate_fit_curve(xfit, entry)
+                ax.plot(
+                    xfit,
+                    yfit,
+                    linestyle="--",
+                    linewidth=1.2,
+                    color="red",
+                    label=r"$\mu = %.4f,\ \sigma = %.4f$" % (entry["mu"], entry["sigma"])
+                )
+            else:
+                ax.plot([], [], linestyle="--", linewidth=1.2, color="red", label="fit failed")
+            #endif
+
+            ax.legend(loc="lower center", fontsize=7, framealpha=0.9)
+
+            xlo = entry["x_min"]
+            xhi = entry["x_max"]
+            tlo = entry["t_min"]
+            thi = entry["t_max"]
+
+            ax.set_title(
+                r"$x_B \in [%.2f, %.2f],\ -t^\prime \in [%.2f, %.2f]$" % (xlo, xhi, tlo, thi),
+                fontsize=8
+            )
+
+            ax.set_xlim(MX2_MIN, MX2_MAX)
+
+            if col == 0:
+                ax.set_ylabel("counts", fontsize=9)
+            #endif
+
+            if row == len(XB_SLICES) - 1:
+                ax.set_xlabel(r"$M_X^2$ (GeV$^2$)", fontsize=9)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        r"$M_X^2$ distributions by $x_B$ slice and $-t^\prime$ bin" + "\n" +
+        r"Global cuts: $Q^2 > 1$, $W > 2$, $y < 0.75$ (no $M_X^2$ cut)",
+        fontsize=16,
+        y=0.98
+    )
+
+    plt.subplots_adjust(left=0.06, right=0.995, bottom=0.07, top=0.90, wspace=0.12, hspace=0.15)
+    fig.savefig(GRID_PNG_PATH, dpi=300)
+    fig.savefig(GRID_PDF_PATH)
+    plt.close(fig)
+
+    t1 = time.time()
+    print(f"Grid plot time: {t1 - t0:.2f} s")
+#enddef
+
 def make_summary_figure(rows):
+    t0 = time.time()
+
     fig, axes = plt.subplots(
         2,
         1,
@@ -420,8 +503,7 @@ def make_summary_figure(rows):
             markersize=5,
             linewidth=1.5,
             capsize=4,
-            color=colors[i_slice],
-            label=labels[i_slice]
+            color=colors[i_slice]
         )
     #endfor
 
@@ -458,6 +540,9 @@ def make_summary_figure(rows):
     fig.savefig(SUMMARY_PNG_PATH, dpi=300)
     fig.savefig(SUMMARY_PDF_PATH)
     plt.close(fig)
+
+    t1 = time.time()
+    print(f"Summary plot time: {t1 - t0:.2f} s")
 #enddef
 
 # ------------------------------------------------
@@ -465,32 +550,35 @@ def make_summary_figure(rows):
 # ------------------------------------------------
 
 def main():
+    t_start = time.time()
+
     ensure_output_dir(OUTPUT_DIR)
 
-    arrays = load_arrays(INPUT_FILE, TREE_NAME)
-    mask_base = base_event_mask(arrays)
+    arrays = load_filtered_arrays(INPUT_FILE, TREE_NAME)
 
-    x_all = arrays["x"][mask_base]
-    tprime_all = arrays["tprime"][mask_base]
-    mx2_all = arrays["Mx2"][mask_base]
+    x_all = arrays["x"]
+    tprime_all = arrays["tprime"]
+    mx2_all = arrays["Mx2"]
 
-    # tprime in the tree is negative, so the binned quantity is -tprime
-    tprime_pos_all = -tprime_all
+    counts_3d, entries_2d = fill_all_histograms_once(x_all, tprime_all, mx2_all)
+
+    t_fit0 = time.time()
 
     all_rows = []
 
-    for slice_name, x_min, x_max in XB_SLICES:
-        for t_min, t_max in TPRIME_BINS_POS:
-            sel = (
-                (x_all > x_min) &
-                (x_all < x_max) &
-                (tprime_pos_all >= t_min) &
-                (tprime_pos_all < t_max)
-            )
+    for i_slice in range(len(XB_SLICES)):
+        slice_name = XB_SLICES[i_slice][0]
+        x_min = XB_SLICES[i_slice][1]
+        x_max = XB_SLICES[i_slice][2]
 
-            mx2_sel = mx2_all[sel]
-            counts, edges, centers, errors = make_histogram(mx2_sel, MX2_MIN, MX2_MAX, N_MX2_BINS)
-            fit = fit_mx2_hist(counts, edges)
+        for i_tbin in range(len(TPRIME_BINS_POS)):
+            t_min = TPRIME_BINS_POS[i_tbin][0]
+            t_max = TPRIME_BINS_POS[i_tbin][1]
+
+            counts = counts_3d[i_slice, i_tbin, :].astype(np.float64)
+            errors = np.sqrt(np.maximum(counts, 1.0))
+
+            fit = fit_mx2_hist(counts, MX2_EDGES)
 
             row = {
                 "slice_name": slice_name,
@@ -498,7 +586,7 @@ def main():
                 "x_max": x_max,
                 "t_min": t_min,
                 "t_max": t_max,
-                "n_entries": int(len(mx2_sel)),
+                "n_entries": int(entries_2d[i_slice, i_tbin]),
                 "fit_success": int(fit["fit_success"]),
                 "status": int(fit["status"]),
                 "cov_status": int(fit["cov_status"]),
@@ -513,8 +601,8 @@ def main():
                 "b1": float(fit["b1"]),
                 "b2": float(fit["b2"]),
                 "counts": counts,
-                "edges": edges,
-                "centers": centers,
+                "edges": MX2_EDGES,
+                "centers": MX2_CENTERS,
                 "errors": errors,
             }
 
@@ -524,7 +612,7 @@ def main():
                 f"{slice_name:8s}  "
                 f"x=[{x_min:.2f},{x_max:.2f}]  "
                 f"-tprime=[{t_min:.2f},{t_max:.2f}]  "
-                f"N={len(mx2_sel):7d}  "
+                f"N={int(entries_2d[i_slice, i_tbin]):7d}  "
                 f"fit_success={row['fit_success']}  "
                 f"mu={row['mu']:.6f}  "
                 f"mu_err={row['mu_err']:.6f}  "
@@ -534,10 +622,19 @@ def main():
         #endfor
     #endfor
 
+    t_fit1 = time.time()
+    print(f"All fits time: {t_fit1 - t_fit0:.2f} s")
+
+    t_write0 = time.time()
     write_csv(all_rows, CSV_PATH)
     write_latex_table(all_rows, LATEX_TABLE_PATH)
+    t_write1 = time.time()
+    print(f"CSV and LaTeX write time: {t_write1 - t_write0:.2f} s")
+
     make_grid_figure(all_rows)
     make_summary_figure(all_rows)
+
+    t_end = time.time()
 
     print("")
     print("Done.")
@@ -545,6 +642,7 @@ def main():
     print(f"LaTeX table:  {LATEX_TABLE_PATH}")
     print(f"Grid figure:  {GRID_PNG_PATH}")
     print(f"Summary fig:  {SUMMARY_PNG_PATH}")
+    print(f"Total runtime: {t_end - t_start:.2f} s")
 #enddef
 
 if __name__ == "__main__":
