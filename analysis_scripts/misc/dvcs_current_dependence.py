@@ -80,6 +80,14 @@
 # For MC in an angular bin:
 #   just use generated and reconstructed counts in that same angular bin
 #
+# Fine histogram plots
+# --------------------
+# For each detector angle variable we also make a 1x2 overlay figure:
+#
+#   left  : fine-binned counts / accumulated charge
+#   right : the same histograms normalized to their own integral
+#
+# All run periods are drawn on the same axes in each panel.
 
 import os
 import math
@@ -93,6 +101,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+
 
 # -----------------------------------------------------------------------------
 # Input configuration
@@ -138,6 +147,7 @@ ANGLE_DEPENDENCE_CONFIG = [
         "min_deg": 8.0,
         "max_deg": 35.0,
         "n_bins": 7,
+        "plot_n_bins": 120,
     },
     {
         "key": "p1_theta",
@@ -146,6 +156,7 @@ ANGLE_DEPENDENCE_CONFIG = [
         "min_deg": 8.0,
         "max_deg": 70.0,
         "n_bins": 7,
+        "plot_n_bins": 140,
     },
     {
         "key": "p2_theta",
@@ -154,6 +165,7 @@ ANGLE_DEPENDENCE_CONFIG = [
         "min_deg": 0.0,
         "max_deg": 35.0,
         "n_bins": 7,
+        "plot_n_bins": 120,
     },
 ]
 
@@ -227,6 +239,7 @@ TOPOLOGY_CONFIG = [
         },
     },
 ]
+
 
 # -----------------------------------------------------------------------------
 # Run -> current maps
@@ -314,6 +327,7 @@ FA18_OUT_CURRENT = {
     5610: 5,
 }
 
+
 # -----------------------------------------------------------------------------
 # Uniform angle-bin definitions
 # -----------------------------------------------------------------------------
@@ -374,9 +388,17 @@ def get_summary_bins(var_key):
 
 
 ANGLE_BINS = {}
+PLOT_ANGLE_EDGES = {}
+
 for var_cfg in ANGLE_DEPENDENCE_CONFIG:
     ANGLE_BINS[var_cfg["key"]] = get_summary_bins(var_cfg["key"])
+    PLOT_ANGLE_EDGES[var_cfg["key"]] = np.linspace(
+        float(var_cfg["min_deg"]),
+        float(var_cfg["max_deg"]),
+        int(var_cfg["plot_n_bins"]) + 1,
+    )
 #endfor
+
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -1052,6 +1074,81 @@ def build_current_rows_from_counts(period_display_name, period_internal_name, ru
 #enddef
 
 
+def read_data_fine_angle_histograms(root_path, run_meta, topology_cuts=None):
+
+    if not os.path.exists(root_path):
+        raise RuntimeError(f"ROOT file not found: {root_path}")
+    #endif
+
+    root_file = uproot.open(root_path)
+    if "PhysicsEvents" not in root_file:
+        raise RuntimeError(f"'PhysicsEvents' tree not found in {root_path}")
+    #endif
+
+    tree = root_file["PhysicsEvents"]
+
+    needed = {"runnum", "e_theta", "p1_theta", "p2_theta"}
+    missing = [name for name in needed if name not in tree.keys()]
+    if len(missing) > 0:
+        raise RuntimeError(f"Missing required branches in {root_path}: {missing}")
+    #endif
+
+    valid_runs = np.asarray(sorted(run_meta.keys()), dtype=np.int64)
+
+    hist_counts = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        edges = PLOT_ANGLE_EDGES[var_key]
+        hist_counts[var_key] = np.zeros(len(edges) - 1, dtype=np.int64)
+    #endfor
+
+    iterate_branches = ["runnum", "e_theta", "p1_theta", "p2_theta"]
+
+    for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
+        event_mask = apply_topology_mask(arrays, topology_cuts)
+
+        if not np.any(event_mask):
+            continue
+        #endif
+
+        runnum = arrays["runnum"][event_mask]
+        valid_run_mask = np.isin(runnum, valid_runs)
+
+        if not np.any(valid_run_mask):
+            continue
+        #endif
+
+        e_theta_deg = np.degrees(arrays["e_theta"][event_mask][valid_run_mask])
+        p1_theta_deg = np.degrees(arrays["p1_theta"][event_mask][valid_run_mask])
+        p2_theta_deg = np.degrees(arrays["p2_theta"][event_mask][valid_run_mask])
+
+        theta_deg_map = {
+            "e_theta": e_theta_deg,
+            "p1_theta": p1_theta_deg,
+            "p2_theta": p2_theta_deg,
+        }
+
+        for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+            var_key = var_cfg["key"]
+            edges = PLOT_ANGLE_EDGES[var_key]
+            counts_chunk, _ = np.histogram(theta_deg_map[var_key], bins=edges)
+            hist_counts[var_key] += counts_chunk.astype(np.int64)
+        #endfor
+    #endfor
+
+    output = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        output[var_key] = {
+            "edges": PLOT_ANGLE_EDGES[var_key].copy(),
+            "counts": hist_counts[var_key].copy(),
+        }
+    #endfor
+
+    return output
+#enddef
+
+
 def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts=None):
 
     total_run_counts, angle_run_counts, angle_x_means = read_data_run_counts_and_angle_counts(
@@ -1097,7 +1194,22 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
         #endfor
     #endfor
 
-    return integrated_run_rows, integrated_current_rows, angle_current_rows, skipped_nonpositive_charge_rows
+    fine_angle_histograms = read_data_fine_angle_histograms(
+        root_path=root_path,
+        run_meta=run_meta,
+        topology_cuts=topology_cuts,
+    )
+
+    total_valid_charge_nC = float(sum(current_charge_totals.values()))
+
+    return (
+        integrated_run_rows,
+        integrated_current_rows,
+        angle_current_rows,
+        skipped_nonpositive_charge_rows,
+        fine_angle_histograms,
+        total_valid_charge_nC,
+    )
 #enddef
 
 
@@ -1105,7 +1217,14 @@ def process_data_period_worker(args):
 
     period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts = args
 
-    run_rows, current_rows, angle_current_rows, skipped_nonpositive_charge_rows = build_data_period_aggregations(
+    (
+        run_rows,
+        current_rows,
+        angle_current_rows,
+        skipped_nonpositive_charge_rows,
+        fine_angle_histograms,
+        total_valid_charge_nC,
+    ) = build_data_period_aggregations(
         period_display_name=period_display_name,
         period_internal_name=period_internal_name,
         root_path=root_path,
@@ -1120,6 +1239,8 @@ def process_data_period_worker(args):
         "current_rows": current_rows,
         "angle_current_rows": angle_current_rows,
         "skipped_nonpositive_charge_rows": skipped_nonpositive_charge_rows,
+        "fine_angle_histograms": fine_angle_histograms,
+        "total_valid_charge_nC": total_valid_charge_nC,
         "root_path": root_path,
     }
 #enddef
@@ -2454,119 +2575,79 @@ def make_fit_result_map_for_mc(mc_rows):
 #enddef
 
 
-def make_angle_counts_per_charge_plot(angle_rows_by_period, output_dir, period_color, var_cfg):
+def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_color, var_cfg, title_suffix=""):
 
-    fig = plt.figure(figsize=(18, 10), constrained_layout=True)
-    gs = GridSpec(2, 3, figure=fig)
-    axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
+    os.makedirs(output_dir, exist_ok=True)
 
-    all_xmeans = []
-    all_ytops = []
+    var_key = var_cfg["key"]
+    axis_label = get_angle_axis_label(var_key)
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True)
+    ax_left = axes[0]
+    ax_right = axes[1]
 
     for period in PERIOD_ORDER:
-        x_means = angle_rows_by_period[period]["x_means"]
-        rows_list = angle_rows_by_period[period]["rows"]
+        if period not in angle_histograms_by_period:
+            continue
+        #endif
 
-        for xmean, current_rows in zip(x_means, rows_list):
-            if not np.isfinite(xmean):
-                continue
-            #endif
+        entry = angle_histograms_by_period[period]
+        edges = np.asarray(entry["edges"], dtype=float)
+        counts = np.asarray(entry["counts"], dtype=float)
+        charge_nC = float(entry["charge_nC"])
 
-            total_counts = sum(int(row["counts"]) for row in current_rows)
-            total_charge = sum(float(row["charge_nC"]) for row in current_rows)
+        if charge_nC <= 0.0:
+            continue
+        #endif
 
-            if total_counts <= 0:
-                continue
-            #endif
-            if total_charge <= 0.0:
-                continue
-            #endif
+        counts_per_nC = counts / charge_nC
 
-            rate = float(total_counts) / float(total_charge)
-            rate_err = math.sqrt(float(total_counts)) / float(total_charge)
+        ax_left.stairs(
+            counts_per_nC,
+            edges,
+            label=period,
+            color=period_color[period],
+            linewidth=1.5,
+        )
 
-            all_xmeans.append(float(xmean))
-            all_ytops.append(rate + rate_err)
-        #endfor
+        bin_widths = np.diff(edges)
+        integral = float(np.sum(counts_per_nC * bin_widths))
+
+        if integral > 0.0:
+            normalized = counts_per_nC / integral
+            ax_right.stairs(
+                normalized,
+                edges,
+                label=period,
+                color=period_color[period],
+                linewidth=1.5,
+            )
+        #endif
     #endfor
 
-    if len(all_xmeans) > 0:
-        xmin_global = 5.0 * math.floor(min(all_xmeans) / 5.0)
-        xmax_global = 5.0 * math.ceil(max(all_xmeans) / 5.0)
+    left_title = f"{var_cfg['display_name']} histograms: counts / accumulated charge"
+    right_title = f"{var_cfg['display_name']} histograms: normalized to integral"
 
-        if xmin_global == xmax_global:
-            xmin_global -= 5.0
-            xmax_global += 5.0
-        #endif
-    else:
-        xmin_global = 0.0
-        xmax_global = 5.0
+    if title_suffix != "":
+        left_title += title_suffix
+        right_title += title_suffix
     #endif
 
-    if len(all_ytops) > 0:
-        ymin_global = 0.0
-        ymax_global = 1.10 * max(all_ytops)
-        if ymax_global <= ymin_global:
-            ymax_global = ymin_global + 1.0
-        #endif
-    else:
-        ymin_global = 0.0
-        ymax_global = 1.0
-    #endif
+    ax_left.set_title(left_title)
+    ax_left.set_xlabel(axis_label)
+    ax_left.set_ylabel("Counts / accumulated charge (1/nC)")
+    ax_left.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+    ax_left.grid(True, alpha=0.3)
+    ax_left.legend(frameon=True)
 
-    for i, period in enumerate(PERIOD_ORDER):
-        ax = axes[i]
-        c = period_color[period]
+    ax_right.set_title(right_title)
+    ax_right.set_xlabel(axis_label)
+    ax_right.set_ylabel("Normalized distribution")
+    ax_right.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+    ax_right.grid(True, alpha=0.3)
+    ax_right.legend(frameon=True)
 
-        x = []
-        y = []
-        yerr = []
-
-        x_means = angle_rows_by_period[period]["x_means"]
-        rows_list = angle_rows_by_period[period]["rows"]
-
-        for xmean, current_rows in zip(x_means, rows_list):
-            if not np.isfinite(xmean):
-                continue
-            #endif
-
-            total_counts = sum(int(row["counts"]) for row in current_rows)
-            total_charge = sum(float(row["charge_nC"]) for row in current_rows)
-
-            if total_counts <= 0:
-                continue
-            #endif
-            if total_charge <= 0.0:
-                continue
-            #endif
-
-            rate = float(total_counts) / float(total_charge)
-            rate_err = math.sqrt(float(total_counts)) / float(total_charge)
-
-            x.append(float(xmean))
-            y.append(rate)
-            yerr.append(rate_err)
-        #endfor
-
-        x = np.asarray(x, dtype=float)
-        y = np.asarray(y, dtype=float)
-        yerr = np.asarray(yerr, dtype=float)
-
-        if len(x) > 0:
-            ax.errorbar(x, y, yerr=yerr, fmt="o", capsize=3, color=c)
-        #endif
-
-        ax.set_title(period)
-        ax.set_xlabel(get_angle_axis_label(var_cfg["key"]))
-        ax.set_ylabel("Counts / accumulated charge (1/nC)")
-        ax.set_xlim(xmin_global, xmax_global)
-        ax.set_ylim(ymin_global, ymax_global)
-        ax.grid(True, alpha=0.3)
-    #endfor
-
-    axes[5].axis("off")
-
-    out_path = os.path.join(output_dir, f"{var_cfg['key']}_dependence_counts_per_charge.png")
+    out_path = os.path.join(output_dir, f"{var_key}_dependence_histograms_1x2.png")
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
@@ -2731,8 +2812,11 @@ def run_selection_analysis(
     all_skipped_run_rows = []
 
     angle_current_rows_by_variable = {}
+    fine_angle_histograms_by_variable = {}
+
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         angle_current_rows_by_variable[var_cfg["key"]] = {}
+        fine_angle_histograms_by_variable[var_cfg["key"]] = {}
     #endfor
 
     print("")
@@ -2769,6 +2853,8 @@ def run_selection_analysis(
         current_rows = result["current_rows"]
         angle_current_rows_this_period = result["angle_current_rows"]
         skipped_nonpositive_charge_rows = result["skipped_nonpositive_charge_rows"]
+        fine_angle_histograms_this_period = result["fine_angle_histograms"]
+        total_valid_charge_nC = float(result["total_valid_charge_nC"])
 
         all_run_rows.extend(run_rows)
         all_current_rows.extend(current_rows)
@@ -2777,11 +2863,17 @@ def run_selection_analysis(
         for var_cfg in ANGLE_DEPENDENCE_CONFIG:
             var_key = var_cfg["key"]
             angle_current_rows_by_variable[var_key][period_display_name] = angle_current_rows_this_period[var_key]
+            fine_angle_histograms_by_variable[var_key][period_display_name] = {
+                "edges": np.asarray(fine_angle_histograms_this_period[var_key]["edges"], dtype=float),
+                "counts": np.asarray(fine_angle_histograms_this_period[var_key]["counts"], dtype=float),
+                "charge_nC": float(total_valid_charge_nC),
+            }
         #endfor
 
         print(f"Run-level rows kept: {len(run_rows)}")
         print(f"Integrated current groups: {len(current_rows)}")
         print(f"Skipped non-positive-charge runs: {len(skipped_nonpositive_charge_rows)}")
+        print(f"Total valid charge used for fine histograms: {total_valid_charge_nC:.5f} nC")
 
         for row in current_rows:
             print(
@@ -2951,13 +3043,14 @@ def run_selection_analysis(
             #endfor
         #endfor
 
-        angle_counts_plot = make_angle_counts_per_charge_plot(
-            angle_rows_by_period=angle_current_rows_by_variable[var_key],
+        angle_hist_plot = make_angle_hist_overlay_plot(
+            angle_histograms_by_period=fine_angle_histograms_by_variable[var_key],
             output_dir=var_output_dir,
             period_color=period_color,
             var_cfg=var_cfg,
+            title_suffix=title_suffix,
         )
-        print(f"[saved] {angle_counts_plot}")
+        print(f"[saved] {angle_hist_plot}")
 
         angle_summary_plot = make_angle_summary_plot(
             angle_summary_rows=angle_summary_rows,
