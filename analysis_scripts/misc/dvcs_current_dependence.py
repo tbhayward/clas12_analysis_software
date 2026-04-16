@@ -81,6 +81,11 @@
 # --------------------
 # Any event is skipped if the cone angle between the scattered electron and
 # the photon is less than 7 degrees.
+#
+# Additional photon histogram version
+# ----------------------------------
+# For the photon theta 1x2 distribution plot only, an additional version is
+# produced requiring electron-photon cone angle > 60 degrees.
 
 import os
 import math
@@ -106,6 +111,10 @@ MAX_WORKERS = 5
 ITERATE_STEP_SIZE = "200 MB"
 MC_TREE_NAME = "PhysicsEvents"
 MIN_E_GAMMA_CONE_ANGLE_DEG = 7.0
+PHOTON_HIST_CONE_MIN_DEG = 60.0
+
+COS_MIN_E_GAMMA_CONE = math.cos(math.radians(MIN_E_GAMMA_CONE_ANGLE_DEG))
+COS_PHOTON_HIST_CONE_MIN = math.cos(math.radians(PHOTON_HIST_CONE_MIN_DEG))
 
 PERIOD_DISPLAY_FROM_INTERNAL = {
     "rga_sp18_inb": "Sp18 Inb",
@@ -631,30 +640,7 @@ def add_reference_current_text(ax, period_name):
 #enddef
 
 
-def spherical_to_unit_vector(theta_rad, phi_rad):
-
-    sin_theta = np.sin(theta_rad)
-    x = sin_theta * np.cos(phi_rad)
-    y = sin_theta * np.sin(phi_rad)
-    z = np.cos(theta_rad)
-
-    return x, y, z
-#enddef
-
-
-def compute_cone_angle_deg(theta1_rad, phi1_rad, theta2_rad, phi2_rad):
-
-    x1, y1, z1 = spherical_to_unit_vector(theta1_rad, phi1_rad)
-    x2, y2, z2 = spherical_to_unit_vector(theta2_rad, phi2_rad)
-
-    dot = x1 * x2 + y1 * y2 + z1 * z2
-    dot = np.clip(dot, -1.0, 1.0)
-
-    return np.degrees(np.arccos(dot))
-#enddef
-
-
-def apply_event_mask(arrays):
+def compute_e_gamma_dot(arrays):
 
     required = ["e_theta", "e_phi", "p2_theta", "p2_phi"]
     missing = [name for name in required if name not in arrays]
@@ -662,14 +648,25 @@ def apply_event_mask(arrays):
         raise RuntimeError(f"Missing branches required for cone-angle cut: {missing}")
     #endif
 
-    cone_angle_deg = compute_cone_angle_deg(
-        arrays["e_theta"],
-        arrays["e_phi"],
-        arrays["p2_theta"],
-        arrays["p2_phi"],
+    e_theta = arrays["e_theta"]
+    e_phi = arrays["e_phi"]
+    g_theta = arrays["p2_theta"]
+    g_phi = arrays["p2_phi"]
+
+    dot = (
+        np.sin(e_theta) * np.sin(g_theta) * np.cos(e_phi - g_phi) +
+        np.cos(e_theta) * np.cos(g_theta)
     )
 
-    mask = cone_angle_deg >= MIN_E_GAMMA_CONE_ANGLE_DEG
+    dot = np.clip(dot, -1.0, 1.0)
+    return dot
+#enddef
+
+
+def apply_event_mask(arrays):
+
+    dot = compute_e_gamma_dot(arrays)
+    mask = dot <= COS_MIN_E_GAMMA_CONE
     return mask
 #enddef
 
@@ -690,7 +687,55 @@ def get_angle_axis_label(var_key):
 #enddef
 
 
-def read_data_run_counts_and_angle_counts(root_path):
+def classify_run(period_display_name, period_internal_name, runnum, run_charge_map):
+
+    if runnum not in run_charge_map:
+        return {
+            "status": "missing_charge",
+            "period": period_display_name,
+            "period_internal": period_internal_name,
+            "runnum": int(runnum),
+        }
+    #endif
+
+    charge = float(run_charge_map[runnum])
+
+    ok_cur, current_nA = resolve_current(period_internal_name, runnum)
+
+    if charge <= 0.0:
+        current_out = int(current_nA) if ok_cur else None
+        return {
+            "status": "nonpositive_charge",
+            "period": period_display_name,
+            "period_internal": period_internal_name,
+            "runnum": int(runnum),
+            "current_nA": current_out,
+            "charge_nC": float(charge),
+            "reason": "nonpositive_charge",
+        }
+    #endif
+
+    if not ok_cur:
+        return {
+            "status": "unknown_current",
+            "period": period_display_name,
+            "period_internal": period_internal_name,
+            "runnum": int(runnum),
+        }
+    #endif
+
+    return {
+        "status": "valid",
+        "period": period_display_name,
+        "period_internal": period_internal_name,
+        "runnum": int(runnum),
+        "current_nA": int(current_nA),
+        "charge_nC": float(charge),
+    }
+#enddef
+
+
+def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -713,6 +758,7 @@ def read_data_run_counts_and_angle_counts(root_path):
     angle_run_counts = {}
     angle_theta_sum = {}
     angle_theta_n = {}
+    fine_hist_counts = {}
 
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
@@ -720,36 +766,100 @@ def read_data_run_counts_and_angle_counts(root_path):
         angle_run_counts[var_key] = [defaultdict(int) for _ in bins]
         angle_theta_sum[var_key] = [0.0 for _ in bins]
         angle_theta_n[var_key] = [0 for _ in bins]
+        fine_hist_counts[var_key] = np.zeros(len(PLOT_ANGLE_EDGES[var_key]) - 1, dtype=np.int64)
     #endfor
+
+    photon_hist_counts_cone_gt_60 = np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
+
+    run_meta = {}
+    current_charge_totals = defaultdict(float)
+    skipped_nonpositive_charge_rows = []
+
+    missing_charge_runs = set()
+    unknown_current_runs = set()
+    seen_runs = set()
 
     iterate_branches = ["runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"]
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
-        event_mask = apply_event_mask(arrays)
+        dot = compute_e_gamma_dot(arrays)
+        base_mask = dot <= COS_MIN_E_GAMMA_CONE
 
-        if not np.any(event_mask):
+        if not np.any(base_mask):
             continue
         #endif
 
-        runnum = arrays["runnum"][event_mask]
+        runnum_chunk = arrays["runnum"][base_mask]
+        dot_chunk = dot[base_mask]
 
-        unique_runs, counts = np.unique(runnum, return_counts=True)
-        for r, c in zip(unique_runs, counts):
-            total_run_counts[int(r)] += int(c)
+        unique_runs, inverse, counts = np.unique(runnum_chunk, return_inverse=True, return_counts=True)
+        run_is_valid = np.zeros(len(unique_runs), dtype=bool)
+
+        for i_run, runnum in enumerate(unique_runs):
+            runnum_int = int(runnum)
+
+            if runnum_int not in seen_runs:
+                seen_runs.add(runnum_int)
+
+                info = classify_run(
+                    period_display_name=period_display_name,
+                    period_internal_name=period_internal_name,
+                    runnum=runnum_int,
+                    run_charge_map=run_charge_map,
+                )
+
+                if info["status"] == "valid":
+                    run_meta[runnum_int] = {
+                        "period": info["period"],
+                        "period_internal": info["period_internal"],
+                        "runnum": info["runnum"],
+                        "current_nA": info["current_nA"],
+                        "charge_nC": info["charge_nC"],
+                    }
+                    current_charge_totals[int(info["current_nA"])] += float(info["charge_nC"])
+                elif info["status"] == "nonpositive_charge":
+                    skipped_nonpositive_charge_rows.append({
+                        "period": info["period"],
+                        "period_internal": info["period_internal"],
+                        "runnum": info["runnum"],
+                        "current_nA": info["current_nA"],
+                        "charge_nC": info["charge_nC"],
+                        "reason": info["reason"],
+                    })
+                elif info["status"] == "missing_charge":
+                    missing_charge_runs.add(runnum_int)
+                elif info["status"] == "unknown_current":
+                    unknown_current_runs.add(runnum_int)
+                #endif
+            #endif
+
+            if runnum_int in run_meta:
+                run_is_valid[i_run] = True
+                total_run_counts[runnum_int] += int(counts[i_run])
+            #endif
         #endfor
 
+        valid_event_mask = run_is_valid[inverse]
+
+        if not np.any(valid_event_mask):
+            continue
+        #endif
+
+        runnum_valid = runnum_chunk[valid_event_mask]
+        dot_valid = dot_chunk[valid_event_mask]
+
         theta_deg_map = {
-            "e_theta": np.degrees(arrays["e_theta"][event_mask]),
-            "p1_theta": np.degrees(arrays["p1_theta"][event_mask]),
-            "p2_theta": np.degrees(arrays["p2_theta"][event_mask]),
+            "e_theta": np.degrees(arrays["e_theta"][base_mask][valid_event_mask]),
+            "p1_theta": np.degrees(arrays["p1_theta"][base_mask][valid_event_mask]),
+            "p2_theta": np.degrees(arrays["p2_theta"][base_mask][valid_event_mask]),
         }
 
         for var_cfg in ANGLE_DEPENDENCE_CONFIG:
             var_key = var_cfg["key"]
-            theta_deg = theta_deg_map[var_key]
             bins = ANGLE_BINS[var_key]
-            masks = angle_bin_masks(theta_deg, bins)
+            theta_deg = theta_deg_map[var_key]
 
+            masks = angle_bin_masks(theta_deg, bins)
             counts_store = angle_run_counts[var_key]
             sum_store = angle_theta_sum[var_key]
             n_store = angle_theta_n[var_key]
@@ -759,7 +869,7 @@ def read_data_run_counts_and_angle_counts(root_path):
                     continue
                 #endif
 
-                selected_runs = runnum[mask]
+                selected_runs = runnum_valid[mask]
                 unique_sel, counts_sel = np.unique(selected_runs, return_counts=True)
 
                 for r, c in zip(unique_sel, counts_sel):
@@ -769,28 +879,215 @@ def read_data_run_counts_and_angle_counts(root_path):
                 sum_store[ibin] += float(np.sum(theta_deg[mask]))
                 n_store[ibin] += int(np.count_nonzero(mask))
             #endfor
+
+            counts_chunk_hist, _ = np.histogram(theta_deg, bins=PLOT_ANGLE_EDGES[var_key])
+            fine_hist_counts[var_key] += counts_chunk_hist.astype(np.int64)
         #endfor
+
+        photon_cone60_mask = dot_valid <= COS_PHOTON_HIST_CONE_MIN
+        if np.any(photon_cone60_mask):
+            counts_chunk_cone60, _ = np.histogram(
+                theta_deg_map["p2_theta"][photon_cone60_mask],
+                bins=PLOT_ANGLE_EDGES["p2_theta"],
+            )
+            photon_hist_counts_cone_gt_60 += counts_chunk_cone60.astype(np.int64)
+        #endif
     #endfor
 
-    angle_run_counts_out = {}
-    angle_x_means_out = {}
+    if len(missing_charge_runs) > 0 or len(unknown_current_runs) > 0:
+        msg = []
+        msg.append(f"Fatal bookkeeping problem while processing {period_display_name}:")
+        if len(missing_charge_runs) > 0:
+            msg.append(
+                f"  Runs missing from charge CSV ({len(missing_charge_runs)}): "
+                f"{sorted(missing_charge_runs)}"
+            )
+        #endif
+        if len(unknown_current_runs) > 0:
+            msg.append(
+                f"  Runs with no current mapping ({len(unknown_current_runs)}): "
+                f"{sorted(unknown_current_runs)}"
+            )
+        #endif
+        raise RuntimeError("\n".join(msg))
+    #endif
 
+    integrated_run_rows = []
+    for runnum in sorted(run_meta.keys()):
+        count = int(total_run_counts.get(runnum, 0))
+        charge = float(run_meta[runnum]["charge_nC"])
+        current_nA = int(run_meta[runnum]["current_nA"])
+
+        rate = float(count) / charge
+        rate_err = math.sqrt(float(count)) / charge if count > 0 else 0.0
+
+        integrated_run_rows.append({
+            "period": run_meta[runnum]["period"],
+            "period_internal": run_meta[runnum]["period_internal"],
+            "runnum": int(runnum),
+            "current_nA": int(current_nA),
+            "counts": int(count),
+            "charge_nC": float(charge),
+            "counts_per_nC": float(rate),
+            "counts_per_nC_err": float(rate_err),
+        })
+    #endfor
+
+    integrated_current_rows = []
+    per_current_counts = defaultdict(int)
+    per_current_n_runs = defaultdict(int)
+
+    for runnum in sorted(run_meta.keys()):
+        current_nA = int(run_meta[runnum]["current_nA"])
+        count = int(total_run_counts.get(runnum, 0))
+        per_current_counts[current_nA] += int(count)
+        per_current_n_runs[current_nA] += 1
+    #endfor
+
+    for current_nA in sorted(current_charge_totals.keys()):
+        total_charge = float(current_charge_totals[current_nA])
+        total_counts = int(per_current_counts.get(current_nA, 0))
+        n_runs = int(per_current_n_runs.get(current_nA, 0))
+
+        if total_charge <= 0.0:
+            raise RuntimeError(f"Total charge <= 0 for {period_display_name}, current {current_nA} nA")
+        #endif
+
+        if total_counts <= 0:
+            continue
+        #endif
+
+        counts_per_nC = float(total_counts) / total_charge
+        counts_per_nC_err = math.sqrt(float(total_counts)) / total_charge
+
+        integrated_current_rows.append({
+            "period": period_display_name,
+            "period_internal": period_internal_name,
+            "current_nA": int(current_nA),
+            "n_runs": int(n_runs),
+            "counts": int(total_counts),
+            "charge_nC": float(total_charge),
+            "counts_per_nC": float(counts_per_nC),
+            "counts_per_nC_err": float(counts_per_nC_err),
+        })
+    #endfor
+
+    angle_current_rows = {}
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
-        angle_run_counts_out[var_key] = [dict(d) for d in angle_run_counts[var_key]]
+        bins = ANGLE_BINS[var_key]
+        angle_current_rows[var_key] = {
+            "bins": bins,
+            "rows": [],
+            "x_means": [],
+        }
 
-        means = []
-        for s, n in zip(angle_theta_sum[var_key], angle_theta_n[var_key]):
+        for ibin in range(len(bins)):
+            s = angle_theta_sum[var_key][ibin]
+            n = angle_theta_n[var_key][ibin]
+
             if n > 0:
-                means.append(float(s) / float(n))
+                angle_current_rows[var_key]["x_means"].append(float(s) / float(n))
             else:
-                means.append(float("nan"))
+                angle_current_rows[var_key]["x_means"].append(float("nan"))
             #endif
+
+            per_current_counts_bin = defaultdict(int)
+            per_current_n_runs_bin = defaultdict(int)
+
+            for runnum in sorted(run_meta.keys()):
+                current_nA = int(run_meta[runnum]["current_nA"])
+                count = int(angle_run_counts[var_key][ibin].get(runnum, 0))
+                per_current_counts_bin[current_nA] += int(count)
+                per_current_n_runs_bin[current_nA] += 1
+            #endfor
+
+            rows_bin = []
+            for current_nA in sorted(current_charge_totals.keys()):
+                total_charge = float(current_charge_totals[current_nA])
+                total_counts = int(per_current_counts_bin.get(current_nA, 0))
+                n_runs = int(per_current_n_runs_bin.get(current_nA, 0))
+
+                if total_charge <= 0.0:
+                    raise RuntimeError(f"Total charge <= 0 for {period_display_name}, current {current_nA} nA")
+                #endif
+
+                if total_counts <= 0:
+                    continue
+                #endif
+
+                counts_per_nC = float(total_counts) / total_charge
+                counts_per_nC_err = math.sqrt(float(total_counts)) / total_charge
+
+                rows_bin.append({
+                    "period": period_display_name,
+                    "period_internal": period_internal_name,
+                    "current_nA": int(current_nA),
+                    "n_runs": int(n_runs),
+                    "counts": int(total_counts),
+                    "charge_nC": float(total_charge),
+                    "counts_per_nC": float(counts_per_nC),
+                    "counts_per_nC_err": float(counts_per_nC_err),
+                })
+            #endfor
+
+            angle_current_rows[var_key]["rows"].append(rows_bin)
         #endfor
-        angle_x_means_out[var_key] = means
     #endfor
 
-    return dict(total_run_counts), angle_run_counts_out, angle_x_means_out
+    fine_angle_histograms = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        fine_angle_histograms[var_key] = {
+            "edges": PLOT_ANGLE_EDGES[var_key].copy(),
+            "counts": fine_hist_counts[var_key].copy(),
+        }
+    #endfor
+
+    fine_angle_histograms["p2_theta"]["counts_cone_gt_60"] = photon_hist_counts_cone_gt_60.copy()
+
+    total_valid_charge_nC = float(sum(current_charge_totals.values()))
+
+    return (
+        integrated_run_rows,
+        integrated_current_rows,
+        angle_current_rows,
+        skipped_nonpositive_charge_rows,
+        fine_angle_histograms,
+        total_valid_charge_nC,
+    )
+#enddef
+
+
+def process_data_period_worker(args):
+
+    period_display_name, period_internal_name, root_path, run_charge_map = args
+
+    (
+        run_rows,
+        current_rows,
+        angle_current_rows,
+        skipped_nonpositive_charge_rows,
+        fine_angle_histograms,
+        total_valid_charge_nC,
+    ) = build_data_period_aggregations(
+        period_display_name=period_display_name,
+        period_internal_name=period_internal_name,
+        root_path=root_path,
+        run_charge_map=run_charge_map,
+    )
+
+    return {
+        "period": period_display_name,
+        "period_internal": period_internal_name,
+        "run_rows": run_rows,
+        "current_rows": current_rows,
+        "angle_current_rows": angle_current_rows,
+        "skipped_nonpositive_charge_rows": skipped_nonpositive_charge_rows,
+        "fine_angle_histograms": fine_angle_histograms,
+        "total_valid_charge_nC": total_valid_charge_nC,
+        "root_path": root_path,
+    }
 #enddef
 
 
@@ -853,313 +1150,6 @@ def count_mc_total_and_angle_entries(root_path, tree_name):
     #endfor
 
     return total_count, angle_counts
-#enddef
-
-
-def build_run_metadata(period_display_name, period_internal_name, run_list, run_charge_map):
-
-    missing_charge_runs = []
-    unknown_current_runs = []
-
-    run_meta = {}
-    current_charge_totals = defaultdict(float)
-    skipped_nonpositive_charge_rows = []
-
-    for runnum in sorted(run_list):
-        if runnum not in run_charge_map:
-            missing_charge_runs.append(runnum)
-            continue
-        #endif
-
-        charge = float(run_charge_map[runnum])
-        if charge <= 0.0:
-            ok_cur, current_nA = resolve_current(period_internal_name, runnum)
-            current_out = int(current_nA) if ok_cur else None
-
-            skipped_nonpositive_charge_rows.append({
-                "period": period_display_name,
-                "period_internal": period_internal_name,
-                "runnum": int(runnum),
-                "current_nA": current_out,
-                "charge_nC": float(charge),
-                "reason": "nonpositive_charge",
-            })
-            continue
-        #endif
-
-        ok_cur, current_nA = resolve_current(period_internal_name, runnum)
-        if not ok_cur:
-            unknown_current_runs.append(runnum)
-            continue
-        #endif
-
-        run_meta[runnum] = {
-            "period": period_display_name,
-            "period_internal": period_internal_name,
-            "runnum": int(runnum),
-            "current_nA": int(current_nA),
-            "charge_nC": float(charge),
-        }
-
-        current_charge_totals[int(current_nA)] += float(charge)
-    #endfor
-
-    if len(missing_charge_runs) > 0 or len(unknown_current_runs) > 0:
-        msg = []
-        msg.append(f"Fatal bookkeeping problem while processing {period_display_name}:")
-        if len(missing_charge_runs) > 0:
-            msg.append(f"  Runs missing from charge CSV ({len(missing_charge_runs)}): {missing_charge_runs}")
-        #endif
-        if len(unknown_current_runs) > 0:
-            msg.append(f"  Runs with no current mapping ({len(unknown_current_runs)}): {unknown_current_runs}")
-        #endif
-        raise RuntimeError("\n".join(msg))
-    #endif
-
-    return run_meta, dict(current_charge_totals), skipped_nonpositive_charge_rows
-#enddef
-
-
-def build_run_rows_from_counts(run_meta, run_counts):
-
-    run_rows = []
-
-    for runnum in sorted(run_meta.keys()):
-        count = int(run_counts.get(runnum, 0))
-        charge = float(run_meta[runnum]["charge_nC"])
-        current_nA = int(run_meta[runnum]["current_nA"])
-
-        rate = float(count) / charge
-        rate_err = math.sqrt(float(count)) / charge if count > 0 else 0.0
-
-        run_rows.append({
-            "period": run_meta[runnum]["period"],
-            "period_internal": run_meta[runnum]["period_internal"],
-            "runnum": int(runnum),
-            "current_nA": int(current_nA),
-            "counts": int(count),
-            "charge_nC": float(charge),
-            "counts_per_nC": float(rate),
-            "counts_per_nC_err": float(rate_err),
-        })
-    #endfor
-
-    return run_rows
-#enddef
-
-
-def build_current_rows_from_counts(period_display_name, period_internal_name, run_meta, current_charge_totals, run_counts):
-
-    per_current_counts = defaultdict(int)
-    per_current_n_runs = defaultdict(int)
-
-    for runnum in sorted(run_meta.keys()):
-        current_nA = int(run_meta[runnum]["current_nA"])
-        count = int(run_counts.get(runnum, 0))
-        per_current_counts[current_nA] += int(count)
-        per_current_n_runs[current_nA] += 1
-    #endfor
-
-    current_rows = []
-
-    for current_nA in sorted(current_charge_totals.keys()):
-        total_charge = float(current_charge_totals[current_nA])
-        total_counts = int(per_current_counts.get(current_nA, 0))
-        n_runs = int(per_current_n_runs.get(current_nA, 0))
-
-        if total_charge <= 0.0:
-            raise RuntimeError(f"Total charge <= 0 for {period_display_name}, current {current_nA} nA")
-        #endif
-
-        if total_counts <= 0:
-            continue
-        #endif
-
-        counts_per_nC = float(total_counts) / total_charge
-        counts_per_nC_err = math.sqrt(float(total_counts)) / total_charge
-
-        current_rows.append({
-            "period": period_display_name,
-            "period_internal": period_internal_name,
-            "current_nA": int(current_nA),
-            "n_runs": int(n_runs),
-            "counts": int(total_counts),
-            "charge_nC": float(total_charge),
-            "counts_per_nC": float(counts_per_nC),
-            "counts_per_nC_err": float(counts_per_nC_err),
-        })
-    #endfor
-
-    return current_rows
-#enddef
-
-
-def read_data_fine_angle_histograms(root_path, run_meta):
-
-    if not os.path.exists(root_path):
-        raise RuntimeError(f"ROOT file not found: {root_path}")
-    #endif
-
-    root_file = uproot.open(root_path)
-    if "PhysicsEvents" not in root_file:
-        raise RuntimeError(f"'PhysicsEvents' tree not found in {root_path}")
-    #endif
-
-    tree = root_file["PhysicsEvents"]
-
-    needed = {"runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"}
-    missing = [name for name in needed if name not in tree.keys()]
-    if len(missing) > 0:
-        raise RuntimeError(f"Missing required branches in {root_path}: {missing}")
-    #endif
-
-    valid_runs = np.asarray(sorted(run_meta.keys()), dtype=np.int64)
-
-    hist_counts = {}
-    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
-        var_key = var_cfg["key"]
-        edges = PLOT_ANGLE_EDGES[var_key]
-        hist_counts[var_key] = np.zeros(len(edges) - 1, dtype=np.int64)
-    #endfor
-
-    iterate_branches = ["runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"]
-
-    for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
-        base_mask = apply_event_mask(arrays)
-
-        if not np.any(base_mask):
-            continue
-        #endif
-
-        runnum = arrays["runnum"][base_mask]
-        valid_run_mask = np.isin(runnum, valid_runs)
-
-        if not np.any(valid_run_mask):
-            continue
-        #endif
-
-        e_theta_deg = np.degrees(arrays["e_theta"][base_mask][valid_run_mask])
-        p1_theta_deg = np.degrees(arrays["p1_theta"][base_mask][valid_run_mask])
-        p2_theta_deg = np.degrees(arrays["p2_theta"][base_mask][valid_run_mask])
-
-        theta_deg_map = {
-            "e_theta": e_theta_deg,
-            "p1_theta": p1_theta_deg,
-            "p2_theta": p2_theta_deg,
-        }
-
-        for var_cfg in ANGLE_DEPENDENCE_CONFIG:
-            var_key = var_cfg["key"]
-            edges = PLOT_ANGLE_EDGES[var_key]
-            counts_chunk, _ = np.histogram(theta_deg_map[var_key], bins=edges)
-            hist_counts[var_key] += counts_chunk.astype(np.int64)
-        #endfor
-    #endfor
-
-    output = {}
-    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
-        var_key = var_cfg["key"]
-        output[var_key] = {
-            "edges": PLOT_ANGLE_EDGES[var_key].copy(),
-            "counts": hist_counts[var_key].copy(),
-        }
-    #endfor
-
-    return output
-#enddef
-
-
-def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map):
-
-    total_run_counts, angle_run_counts, angle_x_means = read_data_run_counts_and_angle_counts(
-        root_path=root_path,
-    )
-
-    run_meta, current_charge_totals, skipped_nonpositive_charge_rows = build_run_metadata(
-        period_display_name=period_display_name,
-        period_internal_name=period_internal_name,
-        run_list=sorted(total_run_counts.keys()),
-        run_charge_map=run_charge_map,
-    )
-
-    integrated_run_rows = build_run_rows_from_counts(run_meta, total_run_counts)
-    integrated_current_rows = build_current_rows_from_counts(
-        period_display_name=period_display_name,
-        period_internal_name=period_internal_name,
-        run_meta=run_meta,
-        current_charge_totals=current_charge_totals,
-        run_counts=total_run_counts,
-    )
-
-    angle_current_rows = {}
-    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
-        var_key = var_cfg["key"]
-        bins = ANGLE_BINS[var_key]
-        angle_current_rows[var_key] = {
-            "bins": bins,
-            "rows": [],
-            "x_means": angle_x_means[var_key],
-        }
-
-        for ibin in range(len(bins)):
-            rows_bin = build_current_rows_from_counts(
-                period_display_name=period_display_name,
-                period_internal_name=period_internal_name,
-                run_meta=run_meta,
-                current_charge_totals=current_charge_totals,
-                run_counts=angle_run_counts[var_key][ibin],
-            )
-            angle_current_rows[var_key]["rows"].append(rows_bin)
-        #endfor
-    #endfor
-
-    fine_angle_histograms = read_data_fine_angle_histograms(
-        root_path=root_path,
-        run_meta=run_meta,
-    )
-
-    total_valid_charge_nC = float(sum(current_charge_totals.values()))
-
-    return (
-        integrated_run_rows,
-        integrated_current_rows,
-        angle_current_rows,
-        skipped_nonpositive_charge_rows,
-        fine_angle_histograms,
-        total_valid_charge_nC,
-    )
-#enddef
-
-
-def process_data_period_worker(args):
-
-    period_display_name, period_internal_name, root_path, run_charge_map = args
-
-    (
-        run_rows,
-        current_rows,
-        angle_current_rows,
-        skipped_nonpositive_charge_rows,
-        fine_angle_histograms,
-        total_valid_charge_nC,
-    ) = build_data_period_aggregations(
-        period_display_name=period_display_name,
-        period_internal_name=period_internal_name,
-        root_path=root_path,
-        run_charge_map=run_charge_map,
-    )
-
-    return {
-        "period": period_display_name,
-        "period_internal": period_internal_name,
-        "run_rows": run_rows,
-        "current_rows": current_rows,
-        "angle_current_rows": angle_current_rows,
-        "skipped_nonpositive_charge_rows": skipped_nonpositive_charge_rows,
-        "fine_angle_histograms": fine_angle_histograms,
-        "total_valid_charge_nC": total_valid_charge_nC,
-        "root_path": root_path,
-    }
 #enddef
 
 
@@ -2477,6 +2467,7 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
 
     var_key = var_cfg["key"]
     axis_label = get_angle_axis_label(var_key)
+    saved_paths = []
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True)
     ax_left = axes[0]
@@ -2546,8 +2537,90 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
     out_path = os.path.join(output_dir, f"{var_key}_dependence_histograms_1x2.png")
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
+    saved_paths.append(out_path)
 
-    return out_path
+    if var_key == "p2_theta":
+        fig2, axes2 = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True)
+        ax2_left = axes2[0]
+        ax2_right = axes2[1]
+
+        for period in PERIOD_ORDER:
+            if period not in angle_histograms_by_period:
+                continue
+            #endif
+
+            entry = angle_histograms_by_period[period]
+            edges = np.asarray(entry["edges"], dtype=float)
+            counts_cone60 = np.asarray(entry.get("counts_cone_gt_60", np.zeros(len(edges) - 1)), dtype=float)
+            charge_nC = float(entry["charge_nC"])
+
+            if charge_nC <= 0.0:
+                continue
+            #endif
+
+            counts_per_nC_cone60 = counts_cone60 / charge_nC
+
+            ax2_left.stairs(
+                counts_per_nC_cone60,
+                edges,
+                label=period,
+                color=period_color[period],
+                linewidth=1.5,
+            )
+
+            bin_widths = np.diff(edges)
+            integral_cone60 = float(np.sum(counts_per_nC_cone60 * bin_widths))
+
+            if integral_cone60 > 0.0:
+                normalized_cone60 = counts_per_nC_cone60 / integral_cone60
+                ax2_right.stairs(
+                    normalized_cone60,
+                    edges,
+                    label=period,
+                    color=period_color[period],
+                    linewidth=1.5,
+                )
+            #endif
+        #endfor
+
+        left_title2 = (
+            f"{var_cfg['display_name']} histograms: counts / accumulated charge"
+            f" (e-gamma cone > {PHOTON_HIST_CONE_MIN_DEG:.0f} deg)"
+        )
+        right_title2 = (
+            f"{var_cfg['display_name']} histograms: normalized to integral"
+            f" (e-gamma cone > {PHOTON_HIST_CONE_MIN_DEG:.0f} deg)"
+        )
+
+        if title_suffix != "":
+            left_title2 += title_suffix
+            right_title2 += title_suffix
+        #endif
+
+        ax2_left.set_title(left_title2)
+        ax2_left.set_xlabel(axis_label)
+        ax2_left.set_ylabel("Counts / accumulated charge (1/nC)")
+        ax2_left.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+        ax2_left.grid(True, alpha=0.3)
+        ax2_left.legend(frameon=True)
+
+        ax2_right.set_title(right_title2)
+        ax2_right.set_xlabel(axis_label)
+        ax2_right.set_ylabel("Normalized distribution")
+        ax2_right.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+        ax2_right.grid(True, alpha=0.3)
+        ax2_right.legend(frameon=True)
+
+        out_path2 = os.path.join(
+            output_dir,
+            f"{var_key}_dependence_histograms_1x2_cone_gt_{int(PHOTON_HIST_CONE_MIN_DEG)}deg.png"
+        )
+        fig2.savefig(out_path2, dpi=200)
+        plt.close(fig2)
+        saved_paths.append(out_path2)
+    #endif
+
+    return saved_paths
 #enddef
 
 
@@ -2743,12 +2816,21 @@ def run_selection_analysis(run_charge_map, period_color):
 
         for var_cfg in ANGLE_DEPENDENCE_CONFIG:
             var_key = var_cfg["key"]
-            angle_current_rows_by_variable[var_key][period_display_name] = angle_current_rows_this_period[var_key]
-            fine_angle_histograms_by_variable[var_key][period_display_name] = {
+            hist_entry = {
                 "edges": np.asarray(fine_angle_histograms_this_period[var_key]["edges"], dtype=float),
                 "counts": np.asarray(fine_angle_histograms_this_period[var_key]["counts"], dtype=float),
                 "charge_nC": float(total_valid_charge_nC),
             }
+
+            if var_key == "p2_theta" and "counts_cone_gt_60" in fine_angle_histograms_this_period[var_key]:
+                hist_entry["counts_cone_gt_60"] = np.asarray(
+                    fine_angle_histograms_this_period[var_key]["counts_cone_gt_60"],
+                    dtype=float,
+                )
+            #endif
+
+            angle_current_rows_by_variable[var_key][period_display_name] = angle_current_rows_this_period[var_key]
+            fine_angle_histograms_by_variable[var_key][period_display_name] = hist_entry
         #endfor
 
         print(f"Run-level rows kept: {len(run_rows)}")
@@ -2913,14 +2995,16 @@ def run_selection_analysis(run_charge_map, period_color):
             #endfor
         #endfor
 
-        angle_hist_plot = make_angle_hist_overlay_plot(
+        angle_hist_plots = make_angle_hist_overlay_plot(
             angle_histograms_by_period=fine_angle_histograms_by_variable[var_key],
             output_dir=var_output_dir,
             period_color=period_color,
             var_cfg=var_cfg,
             title_suffix="",
         )
-        print(f"[saved] {angle_hist_plot}")
+        for path in angle_hist_plots:
+            print(f"[saved] {path}")
+        #endfor
 
         angle_summary_plot = make_angle_summary_plot(
             angle_summary_rows=angle_summary_rows,
@@ -2960,6 +3044,7 @@ def main():
     print(f"MC directory:    {MC_DIR}")
     print(f"Max workers:     {MAX_WORKERS}")
     print(f"e-gamma cone cut: {MIN_E_GAMMA_CONE_ANGLE_DEG:.1f} deg")
+    print(f"extra photon histogram cone cut: > {PHOTON_HIST_CONE_MIN_DEG:.1f} deg")
     print("============================================================")
 
     print("")
