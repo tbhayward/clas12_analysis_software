@@ -12,18 +12,6 @@
 #   MC:
 #     reconstructed / generated
 #
-# Default channel
-# ---------------
-# If no channel is specified, this runs for:
-#
-#   epgamma
-#
-# Additional runtime channel option
-# ---------------------------------
-# You can also switch channels at runtime, for example:
-#
-#   python dvcs_current_dependence.py --channel eX
-#
 # Operational logic for the production cross section correction
 # -------------------------------------------------------------
 # The production acceptance correction uses only one MC current per period:
@@ -88,11 +76,15 @@
 #   right : the same histograms normalized to their own integral
 #
 # All run periods are drawn on the same axes in each panel.
+#
+# Additional event cut
+# --------------------
+# Any event is skipped if the cone angle between the scattered electron and
+# the photon is less than 7 degrees.
 
 import os
 import math
 import csv
-import argparse
 from collections import defaultdict
 import concurrent.futures as cf
 
@@ -112,6 +104,8 @@ CSV_FILE = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cros
 PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 MAX_WORKERS = 5
 ITERATE_STEP_SIZE = "200 MB"
+MC_TREE_NAME = "PhysicsEvents"
+MIN_E_GAMMA_CONE_ANGLE_DEG = 7.0
 
 PERIOD_DISPLAY_FROM_INTERNAL = {
     "rga_sp18_inb": "Sp18 Inb",
@@ -137,7 +131,15 @@ MC_REFERENCE_CURRENT = {
     "rga_sp19_inb": 50,
 }
 
-MC_TREE_NAME = "PhysicsEvents"
+DATA_PERIOD_FILES = [
+    ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
+    ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
+    ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
+    ("Fa18 Out", "rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"),
+    ("Sp19 Inb", "rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"),
+]
+
+MC_DIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen"
 
 ANGLE_DEPENDENCE_CONFIG = [
     {
@@ -166,77 +168,6 @@ ANGLE_DEPENDENCE_CONFIG = [
         "max_deg": 35.0,
         "n_bins": 7,
         "plot_n_bins": 120,
-    },
-]
-
-CHANNEL_CONFIG = {
-    "epgamma": {
-        "display_name": "epgamma",
-        "mc_dir": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen",
-        "mc_channel_tag": None,
-        "supports_topology": True,
-        "data_period_files": [
-            ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
-            ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
-            ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
-            ("Fa18 Out", "rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"),
-            ("Sp19 Inb", "rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"),
-        ],
-    },
-    "eX": {
-        "display_name": "eX",
-        "mc_dir": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/eX",
-        "mc_channel_tag": "eX",
-        "supports_topology": False,
-        "data_period_files": [
-            ("Sp18 Inb", "rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_sp18_inb_eX.root"),
-            ("Sp18 Out", "rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_sp18_out_eX.root"),
-            ("Fa18 Inb", "rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_fa18_inb_eX.root"),
-            ("Fa18 Out", "rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_fa18_out_eX.root"),
-            ("Sp19 Inb", "rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/eX/rga_sp19_inb_eX.root"),
-        ],
-    },
-}
-
-TOPOLOGY_CONFIG = [
-    {
-        "key": "overall",
-        "display_name": "overall",
-        "dir_name": None,
-        "cuts": None,
-    },
-    {
-        "key": "CD_FT",
-        "display_name": "CD,FT",
-        "dir_name": "CD_FT",
-        "cuts": {
-            "p1_theta_min_deg": 30.0,
-            "p1_theta_max_deg": 70.0,
-            "p2_theta_min_deg": 0.0,
-            "p2_theta_max_deg": 6.0,
-        },
-    },
-    {
-        "key": "CD_FD",
-        "display_name": "CD,FD",
-        "dir_name": "CD_FD",
-        "cuts": {
-            "p1_theta_min_deg": 30.0,
-            "p1_theta_max_deg": 70.0,
-            "p2_theta_min_deg": 6.0,
-            "p2_theta_max_deg": 30.0,
-        },
-    },
-    {
-        "key": "FD_FD",
-        "display_name": "FD,FD",
-        "dir_name": "FD_FD",
-        "cuts": {
-            "p1_theta_min_deg": 6.0,
-            "p1_theta_max_deg": 30.0,
-            "p2_theta_min_deg": 6.0,
-            "p2_theta_max_deg": 30.0,
-        },
     },
 ]
 
@@ -404,32 +335,9 @@ for var_cfg in ANGLE_DEPENDENCE_CONFIG:
 # Helpers
 # -----------------------------------------------------------------------------
 
-def get_channel_config(channel):
+def get_output_paths():
 
-    if channel not in CHANNEL_CONFIG:
-        raise RuntimeError(
-            f"Unknown channel '{channel}'. Available channels: {sorted(CHANNEL_CONFIG.keys())}"
-        )
-    #endif
-
-    return CHANNEL_CONFIG[channel]
-#enddef
-
-
-def get_output_paths(channel, topology_dir_name=None):
-
-    if channel == "epgamma":
-        base_output_dir = "output/dvcs_current_dependence"
-    else:
-        base_output_dir = os.path.join("output", "dvcs_current_dependence", channel)
-    #endif
-
-    if topology_dir_name is None:
-        output_dir = base_output_dir
-    else:
-        output_dir = os.path.join(base_output_dir, topology_dir_name)
-    #endif
-
+    output_dir = "output/dvcs_current_dependence"
     integrated_output_dir = os.path.join(output_dir, "integrated")
     angle_output_dir = os.path.join(output_dir, "angle_dependence")
 
@@ -615,7 +523,7 @@ def parse_mc_filename(basename):
     stem = basename[:-5]
     tokens = stem.split("_")
 
-    if len(tokens) != 7 and len(tokens) != 8:
+    if len(tokens) != 7:
         raise RuntimeError(f"Unexpected MC filename format: {basename}")
     #endif
 
@@ -629,17 +537,11 @@ def parse_mc_filename(basename):
     #endif
 
     period_internal = "_".join(tokens[2:5])
-
     current_token = tokens[5]
     beam_energy_token = tokens[6]
 
     if not beam_energy_token.endswith("MeV"):
         raise RuntimeError(f"Could not parse beam energy token in {basename}")
-    #endif
-
-    channel_tag = None
-    if len(tokens) == 8:
-        channel_tag = tokens[7]
     #endif
 
     if current_token == "nobkg":
@@ -651,7 +553,7 @@ def parse_mc_filename(basename):
         current_nA = int(current_token[:-2])
     #endif
 
-    return kind, period_internal, current_nA, beam_energy_token, channel_tag
+    return kind, period_internal, current_nA, beam_energy_token
 #enddef
 
 
@@ -729,27 +631,45 @@ def add_reference_current_text(ax, period_name):
 #enddef
 
 
-def apply_topology_mask(arrays, topology_cuts):
+def spherical_to_unit_vector(theta_rad, phi_rad):
 
-    if topology_cuts is None:
-        first_key = next(iter(arrays))
-        return np.ones(len(arrays[first_key]), dtype=bool)
+    sin_theta = np.sin(theta_rad)
+    x = sin_theta * np.cos(phi_rad)
+    y = sin_theta * np.sin(phi_rad)
+    z = np.cos(theta_rad)
+
+    return x, y, z
+#enddef
+
+
+def compute_cone_angle_deg(theta1_rad, phi1_rad, theta2_rad, phi2_rad):
+
+    x1, y1, z1 = spherical_to_unit_vector(theta1_rad, phi1_rad)
+    x2, y2, z2 = spherical_to_unit_vector(theta2_rad, phi2_rad)
+
+    dot = x1 * x2 + y1 * y2 + z1 * z2
+    dot = np.clip(dot, -1.0, 1.0)
+
+    return np.degrees(np.arccos(dot))
+#enddef
+
+
+def apply_event_mask(arrays):
+
+    required = ["e_theta", "e_phi", "p2_theta", "p2_phi"]
+    missing = [name for name in required if name not in arrays]
+    if len(missing) > 0:
+        raise RuntimeError(f"Missing branches required for cone-angle cut: {missing}")
     #endif
 
-    if "p1_theta" not in arrays or "p2_theta" not in arrays:
-        raise RuntimeError("Topology cuts requested but p1_theta and p2_theta branches were not loaded.")
-    #endif
-
-    p1_theta_deg = np.degrees(arrays["p1_theta"])
-    p2_theta_deg = np.degrees(arrays["p2_theta"])
-
-    mask = (
-        (p1_theta_deg >= topology_cuts["p1_theta_min_deg"]) &
-        (p1_theta_deg < topology_cuts["p1_theta_max_deg"]) &
-        (p2_theta_deg >= topology_cuts["p2_theta_min_deg"]) &
-        (p2_theta_deg < topology_cuts["p2_theta_max_deg"])
+    cone_angle_deg = compute_cone_angle_deg(
+        arrays["e_theta"],
+        arrays["e_phi"],
+        arrays["p2_theta"],
+        arrays["p2_phi"],
     )
 
+    mask = cone_angle_deg >= MIN_E_GAMMA_CONE_ANGLE_DEG
     return mask
 #enddef
 
@@ -770,7 +690,7 @@ def get_angle_axis_label(var_key):
 #enddef
 
 
-def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
+def read_data_run_counts_and_angle_counts(root_path):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -783,7 +703,7 @@ def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
 
     tree = root_file["PhysicsEvents"]
 
-    needed = {"runnum", "e_theta", "p1_theta", "p2_theta"}
+    needed = {"runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"}
     missing = [name for name in needed if name not in tree.keys()]
     if len(missing) > 0:
         raise RuntimeError(f"Missing required branches in {root_path}: {missing}")
@@ -802,10 +722,10 @@ def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
         angle_theta_n[var_key] = [0 for _ in bins]
     #endfor
 
-    iterate_branches = ["runnum", "e_theta", "p1_theta", "p2_theta"]
+    iterate_branches = ["runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"]
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
-        event_mask = apply_topology_mask(arrays, topology_cuts)
+        event_mask = apply_event_mask(arrays)
 
         if not np.any(event_mask):
             continue
@@ -874,7 +794,7 @@ def read_data_run_counts_and_angle_counts(root_path, topology_cuts=None):
 #enddef
 
 
-def count_mc_total_and_angle_entries(root_path, tree_name, topology_cuts=None):
+def count_mc_total_and_angle_entries(root_path, tree_name):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -887,13 +807,13 @@ def count_mc_total_and_angle_entries(root_path, tree_name, topology_cuts=None):
 
     tree = root_file[tree_name]
 
-    needed = {"e_theta", "p1_theta", "p2_theta"}
+    needed = {"e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"}
     missing = [name for name in needed if name not in tree.keys()]
     if len(missing) > 0:
         raise RuntimeError(f"Missing required branches in {root_path}:{tree_name}: {missing}")
     #endif
 
-    iterate_branches = ["e_theta", "p1_theta", "p2_theta"]
+    iterate_branches = ["e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"]
 
     total_count = 0
     angle_counts = {}
@@ -905,7 +825,7 @@ def count_mc_total_and_angle_entries(root_path, tree_name, topology_cuts=None):
     #endfor
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
-        event_mask = apply_topology_mask(arrays, topology_cuts)
+        event_mask = apply_event_mask(arrays)
 
         if not np.any(event_mask):
             continue
@@ -1074,7 +994,7 @@ def build_current_rows_from_counts(period_display_name, period_internal_name, ru
 #enddef
 
 
-def read_data_fine_angle_histograms(root_path, run_meta, topology_cuts=None):
+def read_data_fine_angle_histograms(root_path, run_meta):
 
     if not os.path.exists(root_path):
         raise RuntimeError(f"ROOT file not found: {root_path}")
@@ -1087,7 +1007,7 @@ def read_data_fine_angle_histograms(root_path, run_meta, topology_cuts=None):
 
     tree = root_file["PhysicsEvents"]
 
-    needed = {"runnum", "e_theta", "p1_theta", "p2_theta"}
+    needed = {"runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"}
     missing = [name for name in needed if name not in tree.keys()]
     if len(missing) > 0:
         raise RuntimeError(f"Missing required branches in {root_path}: {missing}")
@@ -1102,25 +1022,25 @@ def read_data_fine_angle_histograms(root_path, run_meta, topology_cuts=None):
         hist_counts[var_key] = np.zeros(len(edges) - 1, dtype=np.int64)
     #endfor
 
-    iterate_branches = ["runnum", "e_theta", "p1_theta", "p2_theta"]
+    iterate_branches = ["runnum", "e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"]
 
     for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
-        event_mask = apply_topology_mask(arrays, topology_cuts)
+        base_mask = apply_event_mask(arrays)
 
-        if not np.any(event_mask):
+        if not np.any(base_mask):
             continue
         #endif
 
-        runnum = arrays["runnum"][event_mask]
+        runnum = arrays["runnum"][base_mask]
         valid_run_mask = np.isin(runnum, valid_runs)
 
         if not np.any(valid_run_mask):
             continue
         #endif
 
-        e_theta_deg = np.degrees(arrays["e_theta"][event_mask][valid_run_mask])
-        p1_theta_deg = np.degrees(arrays["p1_theta"][event_mask][valid_run_mask])
-        p2_theta_deg = np.degrees(arrays["p2_theta"][event_mask][valid_run_mask])
+        e_theta_deg = np.degrees(arrays["e_theta"][base_mask][valid_run_mask])
+        p1_theta_deg = np.degrees(arrays["p1_theta"][base_mask][valid_run_mask])
+        p2_theta_deg = np.degrees(arrays["p2_theta"][base_mask][valid_run_mask])
 
         theta_deg_map = {
             "e_theta": e_theta_deg,
@@ -1149,11 +1069,10 @@ def read_data_fine_angle_histograms(root_path, run_meta, topology_cuts=None):
 #enddef
 
 
-def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts=None):
+def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map):
 
     total_run_counts, angle_run_counts, angle_x_means = read_data_run_counts_and_angle_counts(
         root_path=root_path,
-        topology_cuts=topology_cuts,
     )
 
     run_meta, current_charge_totals, skipped_nonpositive_charge_rows = build_run_metadata(
@@ -1197,7 +1116,6 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     fine_angle_histograms = read_data_fine_angle_histograms(
         root_path=root_path,
         run_meta=run_meta,
-        topology_cuts=topology_cuts,
     )
 
     total_valid_charge_nC = float(sum(current_charge_totals.values()))
@@ -1215,7 +1133,7 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
 
 def process_data_period_worker(args):
 
-    period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts = args
+    period_display_name, period_internal_name, root_path, run_charge_map = args
 
     (
         run_rows,
@@ -1229,7 +1147,6 @@ def process_data_period_worker(args):
         period_internal_name=period_internal_name,
         root_path=root_path,
         run_charge_map=run_charge_map,
-        topology_cuts=topology_cuts,
     )
 
     return {
@@ -1248,18 +1165,16 @@ def process_data_period_worker(args):
 
 def process_mc_pair_worker(args):
 
-    period_internal, current_nA, gen_path, rec_path, topology_cuts = args
+    period_internal, current_nA, gen_path, rec_path = args
     period_display_name = PERIOD_DISPLAY_FROM_INTERNAL[period_internal]
 
     n_gen, angle_counts_gen = count_mc_total_and_angle_entries(
         root_path=gen_path,
         tree_name=MC_TREE_NAME,
-        topology_cuts=topology_cuts,
     )
     n_rec, angle_counts_rec = count_mc_total_and_angle_entries(
         root_path=rec_path,
         tree_name=MC_TREE_NAME,
-        topology_cuts=topology_cuts,
     )
 
     integrated_row = None
@@ -1328,15 +1243,10 @@ def process_mc_pair_worker(args):
 #enddef
 
 
-def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None, skip_temp_heavy_mc=False):
+def build_mc_aggregation(mc_dir):
 
     if not os.path.isdir(mc_dir):
         raise RuntimeError(f"MC directory not found: {mc_dir}")
-    #endif
-
-    skip_pairs = set()
-    if skip_temp_heavy_mc:
-        pass
     #endif
 
     grouped = {}
@@ -1358,24 +1268,10 @@ def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None,
             continue
         #endif
 
-        kind, period_internal, current_nA, beam_energy_token, channel_tag = parse_mc_filename(basename)
-
-        if requested_channel_tag is None:
-            if channel_tag is not None:
-                continue
-            #endif
-        else:
-            if channel_tag != requested_channel_tag:
-                continue
-            #endif
-        #endif
+        kind, period_internal, current_nA, beam_energy_token = parse_mc_filename(basename)
 
         if period_internal not in PERIOD_DISPLAY_FROM_INTERNAL:
             raise RuntimeError(f"Unknown MC period in filename: {basename}")
-        #endif
-
-        if (period_internal, current_nA) in skip_pairs:
-            continue
         #endif
 
         key = (period_internal, current_nA)
@@ -1408,7 +1304,7 @@ def build_mc_aggregation(mc_dir, requested_channel_tag=None, topology_cuts=None,
             raise RuntimeError(f"Missing gen/rec MC pair for period={period_internal}, current={current_nA} nA")
         #endif
 
-        tasks.append((period_internal, current_nA, gen_path, rec_path, topology_cuts))
+        tasks.append((period_internal, current_nA, gen_path, rec_path))
     #endfor
 
     integrated_mc_rows = []
@@ -2778,24 +2674,9 @@ def print_summary_table(title, rows):
 #enddef
 
 
-def run_selection_analysis(
-    channel,
-    channel_cfg,
-    topology_cfg,
-    run_charge_map,
-    period_color,
-    skip_temp_heavy_mc=False,
-):
-    topology_key = topology_cfg["key"]
-    topology_display_name = topology_cfg["display_name"]
-    topology_dir_name = topology_cfg["dir_name"]
-    topology_cuts = topology_cfg["cuts"]
+def run_selection_analysis(run_charge_map, period_color):
 
-    DATA_PERIOD_FILES = channel_cfg["data_period_files"]
-    MC_DIR = channel_cfg["mc_dir"]
-    MC_CHANNEL_TAG = channel_cfg["mc_channel_tag"]
-
-    OUTPUT_DIR, INTEGRATED_OUTPUT_DIR, ANGLE_OUTPUT_DIR = get_output_paths(channel, topology_dir_name)
+    OUTPUT_DIR, INTEGRATED_OUTPUT_DIR, ANGLE_OUTPUT_DIR = get_output_paths()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(INTEGRATED_OUTPUT_DIR, exist_ok=True)
@@ -2803,7 +2684,7 @@ def run_selection_analysis(
 
     print("")
     print("------------------------------------------------------------")
-    print(f"Selection: {topology_display_name}")
+    print("Selection: overall")
     print(f"Output dir: {OUTPUT_DIR}")
     print("------------------------------------------------------------")
 
@@ -2824,7 +2705,7 @@ def run_selection_analysis(
 
     data_tasks = []
     for period_display_name, period_internal_name, root_path in DATA_PERIOD_FILES:
-        data_tasks.append((period_display_name, period_internal_name, root_path, run_charge_map, topology_cuts))
+        data_tasks.append((period_display_name, period_internal_name, root_path, run_charge_map))
     #endfor
 
     n_workers = min(MAX_WORKERS, max(1, len(data_tasks)))
@@ -2889,15 +2770,9 @@ def run_selection_analysis(
 
     print("")
     print("Processing MC ROOT files and computing efficiencies...")
-    if skip_temp_heavy_mc:
-        print("Temporary MC skip override flag is ON.")
-    #endif
 
     integrated_mc_rows, angle_mc_rows_by_variable = build_mc_aggregation(
         mc_dir=MC_DIR,
-        requested_channel_tag=MC_CHANNEL_TAG,
-        topology_cuts=topology_cuts,
-        skip_temp_heavy_mc=skip_temp_heavy_mc,
     )
 
     for row in integrated_mc_rows:
@@ -2972,11 +2847,6 @@ def run_selection_analysis(
     write_period_summary_csv(period_summary_csv, period_summary_rows)
     print(f"[saved] {period_summary_csv}")
 
-    title_suffix = ""
-    if topology_key != "overall":
-        title_suffix = f"  topology {topology_display_name}"
-    #endif
-
     out_a, out_b, out_c, out_d = plot_four_panel_set(
         output_dir=INTEGRATED_OUTPUT_DIR,
         tag="integrated",
@@ -2985,7 +2855,7 @@ def run_selection_analysis(
         data_fit_results=integrated_data_fit_results,
         mc_fit_results=integrated_mc_fit_results,
         period_color=period_color,
-        title_suffix=title_suffix,
+        title_suffix="",
     )
 
     print("")
@@ -3023,7 +2893,7 @@ def run_selection_analysis(
                 mc_fit_bin = make_fit_result_map_for_mc(mc_rows_bin)
 
                 label = angle_bin_to_label(low, high, is_last=(ibin == len(bins) - 1))
-                angle_title_suffix = title_suffix + f"  {var_cfg['display_name']} {label}"
+                angle_title_suffix = f"  {var_cfg['display_name']} {label}"
 
                 out_a_bin, out_b_bin, out_c_bin, out_d_bin = plot_four_panel_set(
                     output_dir=subdir,
@@ -3048,7 +2918,7 @@ def run_selection_analysis(
             output_dir=var_output_dir,
             period_color=period_color,
             var_cfg=var_cfg,
-            title_suffix=title_suffix,
+            title_suffix="",
         )
         print(f"[saved] {angle_hist_plot}")
 
@@ -3073,20 +2943,6 @@ def run_selection_analysis(
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--channel",
-        default="epgamma",
-        help="Channel to analyze. Default: epgamma. Currently supported: epgamma, eX",
-    )
-    parser.add_argument(
-        "--skip_temp_heavy_mc",
-        action="store_true",
-        help="Temporarily skip selected MC points if skip_pairs is uncommented in build_mc_aggregation.",
-    )
-    args = parser.parse_args()
-
-    channel_cfg = get_channel_config(args.channel)
 
     default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     if len(default_colors) < len(PERIOD_ORDER):
@@ -3100,9 +2956,10 @@ def main():
 
     print("")
     print("============================================================")
-    print(f"Running channel: {args.channel}")
-    print(f"MC directory:    {channel_cfg['mc_dir']}")
+    print("Running channel: epgamma")
+    print(f"MC directory:    {MC_DIR}")
     print(f"Max workers:     {MAX_WORKERS}")
+    print(f"e-gamma cone cut: {MIN_E_GAMMA_CONE_ANGLE_DEG:.1f} deg")
     print("============================================================")
 
     print("")
@@ -3111,34 +2968,13 @@ def main():
     print(f"Loaded charge entries for {len(run_charge_map)} runs from:")
     print(f"  {CSV_FILE}")
 
-    topology_list = [TOPOLOGY_CONFIG[0]]
-    if channel_cfg["supports_topology"]:
-        topology_list.extend(TOPOLOGY_CONFIG[1:])
-    #endif
+    summary_rows = run_selection_analysis(
+        run_charge_map=run_charge_map,
+        period_color=period_color,
+    )
 
-    all_summary_outputs = []
-
-    for topology_cfg in topology_list:
-        summary_rows = run_selection_analysis(
-            channel=args.channel,
-            channel_cfg=channel_cfg,
-            topology_cfg=topology_cfg,
-            run_charge_map=run_charge_map,
-            period_color=period_color,
-            skip_temp_heavy_mc=args.skip_temp_heavy_mc,
-        )
-        all_summary_outputs.append((topology_cfg, summary_rows))
-    #endfor
-
-    for topology_cfg, summary_rows in all_summary_outputs:
-        if topology_cfg["key"] == "overall":
-            title = f"Representative integrated period-level normalization summary: overall channel {args.channel}"
-        else:
-            title = f"Representative integrated period-level normalization summary: {args.channel} topology {topology_cfg['display_name']}"
-        #endif
-
-        print_summary_table(title, summary_rows)
-    #endfor
+    title = "Representative integrated period-level normalization summary: overall channel epgamma"
+    print_summary_table(title, summary_rows)
 
     print("")
 #enddef
