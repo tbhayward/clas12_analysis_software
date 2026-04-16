@@ -103,6 +103,25 @@ def flatten_reversed(groups):
     return np.array(values, dtype=float), np.array(errors, dtype=float)
 #enddef
 
+def signed_rms_about_reference(values, reference):
+    residuals = values - reference
+    rms = np.sqrt(np.mean(residuals ** 2))
+    signed_mean = np.mean(residuals)
+
+    if signed_mean > 0.0:
+        return rms
+    elif signed_mean < 0.0:
+        return -rms
+    else:
+        return 0.0
+    #endif
+#enddef
+
+def plain_rms_about_reference(values, reference):
+    residuals = values - reference
+    return np.sqrt(np.mean(residuals ** 2))
+#enddef
+
 # ------------------------------------------------
 # flatten into 24 bins
 # ------------------------------------------------
@@ -147,6 +166,25 @@ ndf_total = len(rga_y)
 chi2_per_ndf = total_chi2 / ndf_total
 p_value = chi2.sf(total_chi2, ndf_total)
 
+# ------------------------------------------------
+# summary metrics for the end table
+# ------------------------------------------------
+
+rga_mean_residual = np.mean(rga_y - mean_y)
+rgc_mean_residual = np.mean(rgc_y - mean_y)
+
+rga_rms_about_mean = plain_rms_about_reference(rga_y, mean_y)
+rgc_rms_about_mean = plain_rms_about_reference(rgc_y, mean_y)
+
+rga_signed_rms_about_mean = signed_rms_about_reference(rga_y, mean_y)
+rgc_signed_rms_about_mean = signed_rms_about_reference(rgc_y, mean_y)
+
+rga_mean_abs_pull = np.mean(np.abs(rga_pull))
+rgc_mean_abs_pull = np.mean(np.abs(rgc_pull))
+
+rga_pull_rms = np.sqrt(np.mean(rga_pull ** 2))
+rgc_pull_rms = np.sqrt(np.mean(rgc_pull ** 2))
+
 print("")
 print("============================================================")
 print("RGA vs RGC consistency test about common weighted mean")
@@ -158,6 +196,37 @@ print(f"Total chi2               : {total_chi2:.6f}")
 print(f"chi2/ndf                 : {chi2_per_ndf:.6f}")
 print(f"p-value                  : {p_value:.6e}")
 print("============================================================")
+print("")
+
+print("================================================================================================================")
+print("Dataset summary about the bin-by-bin weighted mean")
+print("================================================================================================================")
+print(
+    f"{'Dataset':<8}"
+    f"{'Mean residual':>18}"
+    f"{'RMS residual':>18}"
+    f"{'Signed RMS':>18}"
+    f"{'Mean |pull|':>18}"
+    f"{'Pull RMS':>14}"
+)
+print("----------------------------------------------------------------------------------------------------------------")
+print(
+    f"{'RGA':<8}"
+    f"{rga_mean_residual:>18.6f}"
+    f"{rga_rms_about_mean:>18.6f}"
+    f"{rga_signed_rms_about_mean:>18.6f}"
+    f"{rga_mean_abs_pull:>18.6f}"
+    f"{rga_pull_rms:>14.6f}"
+)
+print(
+    f"{'RGC':<8}"
+    f"{rgc_mean_residual:>18.6f}"
+    f"{rgc_rms_about_mean:>18.6f}"
+    f"{rgc_signed_rms_about_mean:>18.6f}"
+    f"{rgc_mean_abs_pull:>18.6f}"
+    f"{rgc_pull_rms:>14.6f}"
+)
+print("================================================================================================================")
 print("")
 
 # ------------------------------------------------
