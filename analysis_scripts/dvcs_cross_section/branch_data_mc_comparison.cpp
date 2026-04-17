@@ -88,15 +88,19 @@ static std::string topoToKey(Topology t) {
 }
 
 static std::string periodCode(Channel ch, const std::string& runTag) {
-    std::string prefix = (ch == Channel::DVCS) ? "DVCS_" : "eppi0_";
-    std::string nice = runTag;
-    if (!nice.empty()) nice[0] = std::toupper(static_cast<unsigned char>(nice[0]));
-    for (size_t i = 0; i + 1 < nice.size(); ++i) {
-        if (nice[i] == '_' && i + 1 < nice.size()) {
-            nice[i + 1] = std::toupper(static_cast<unsigned char>(nice[i + 1]));
-        }
-    }
-    return prefix + nice;
+    const std::string prefix = (ch == Channel::DVCS) ? "DVCS_" : "eppi0_";
+
+    if (runTag == "fa18_inb") return prefix + "Fa18_Inb";
+    if (runTag == "fa18_out") return prefix + "Fa18_Out";
+    if (runTag == "sp18_inb") return prefix + "Sp18_Inb";
+    if (runTag == "sp18_out") return prefix + "Sp18_Out";
+    if (runTag == "sp19_inb") return prefix + "Sp19_Inb";
+
+    std::ostringstream ss;
+    ss << "[branch_data_mc_comparison] FATAL: unknown runTag \"" << runTag
+       << "\" in periodCode(). Allowed tags are: "
+       << "fa18_inb, fa18_out, sp18_inb, sp18_out, sp19_inb.";
+    throw std::runtime_error(ss.str());
 }
 
 static bool topologyFromDetectors(int detector1, int detector2, Topology& topo_out) {
