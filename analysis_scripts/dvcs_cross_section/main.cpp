@@ -53,11 +53,11 @@ int main(int argc, char* argv[]) {
     std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
     std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
 
-    // // Load all trees from files
-    // loadTrees(dataTrees, genMcTrees, recMcTrees,
-    //           eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
-    //           radGenMcTrees, radRecMcTrees);
-    // std::cout << "All trees loaded successfully." << std::endl;
+    // Load all trees from files
+    loadTrees(dataTrees, genMcTrees, recMcTrees,
+              eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+              radGenMcTrees, radRecMcTrees);
+    std::cout << "All trees loaded successfully." << std::endl;
 
     // // Run exclusivity cut extraction 
     // // Record the exact global cuts used:
