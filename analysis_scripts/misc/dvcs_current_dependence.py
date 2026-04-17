@@ -2725,8 +2725,12 @@ def make_photon_sector_normalized_panel(angle_histograms_by_period, output_dir, 
 
             normalized_sector = counts_per_nC_sector / integral_sector
 
+            normalized_sector_plot = normalized_sector.copy()
+            low_edge_per_bin = edges[:-1]
+            normalized_sector_plot[low_edge_per_bin < 5.0] = 0.0
+
             ax.stairs(
-                normalized_sector,
+                normalized_sector_plot,
                 edges,
                 label=period,
                 color=period_color[period],
@@ -2742,7 +2746,7 @@ def make_photon_sector_normalized_panel(angle_histograms_by_period, output_dir, 
         ax.set_title(title)
         ax.set_xlabel(get_angle_axis_label("p2_theta"))
         ax.set_ylabel("Normalized distribution")
-        ax.set_xlim(0.0, 35.0)
+        ax.set_xlim(5.0, 35.0)
         ax.grid(True, alpha=0.3)
         ax.legend(frameon=True, fontsize=9)
     #endfor
