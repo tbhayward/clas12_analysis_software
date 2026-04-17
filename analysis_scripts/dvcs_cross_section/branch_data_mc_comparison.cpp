@@ -17,6 +17,7 @@
 #include <TString.h>
 #include <TDataType.h>
 #include <TObjArray.h>
+#include <TMath.h>
 
 #include <algorithm>
 #include <cctype>
@@ -151,6 +152,28 @@ static std::vector<PeriodDef> getEppi0Periods() {
         {"Fa18 Out", "fa18_out", "DVCS_Fa18_out_eppi0", "DVCS_Fa18_out_rec_mc"},
         {"Sp19 Inb", "sp19_inb", "DVCS_Sp19_inb_eppi0", "DVCS_Sp19_inb_rec_mc"}
     };
+}
+
+static bool shouldConvertRadiansToDegrees(const std::string& branch_name) {
+    return (
+        branch_name == "e_theta" ||
+        branch_name == "p1_theta" ||
+        branch_name == "p2_theta"
+    );
+}
+
+static double convertValueForPlot(const std::string& branch_name, double value) {
+    if (shouldConvertRadiansToDegrees(branch_name)) {
+        return value * (180.0 / TMath::Pi());
+    }
+    return value;
+}
+
+static std::string axisTitleForBranch(const std::string& branch_name) {
+    if (shouldConvertRadiansToDegrees(branch_name)) {
+        return branch_name + " (deg)";
+    }
+    return branch_name;
 }
 
 // -------------------- tiny JSON parser for combined_cuts.json --------------------
@@ -392,16 +415,6 @@ static std::map<std::string, CutDict> loadCombinedCutsJson(const std::string& pa
     buf << ifs.rdbuf();
     std::string text = buf.str();
 
-    std::cout << "[branch_data_mc_comparison] combined_cuts_json size = "
-              << text.size() << std::endl;
-
-    std::cout << "[branch_data_mc_comparison] first 16 bytes = ";
-    for (size_t i = 0; i < std::min<size_t>(text.size(), 16); ++i) {
-        std::cout << std::hex << std::uppercase
-                  << static_cast<int>(static_cast<unsigned char>(text[i])) << " ";
-    }
-    std::cout << std::dec << std::endl;
-
     if (text.empty()) {
         std::ostringstream ss;
         ss << "[branch_data_mc_comparison] FATAL: combined cuts JSON is empty: " << path;
@@ -412,17 +425,8 @@ static std::map<std::string, CutDict> loadCombinedCutsJson(const std::string& pa
         static_cast<unsigned char>(text[0]) == 0xEF &&
         static_cast<unsigned char>(text[1]) == 0xBB &&
         static_cast<unsigned char>(text[2]) == 0xBF) {
-        std::cout << "[branch_data_mc_comparison] stripping UTF-8 BOM" << std::endl;
         text.erase(0, 3);
     }
-
-    std::cout << "[branch_data_mc_comparison] first visible chars = ";
-    for (size_t i = 0; i < std::min<size_t>(text.size(), 8); ++i) {
-        char c = text[i];
-        if (std::isprint(static_cast<unsigned char>(c))) std::cout << c;
-        else std::cout << ".";
-    }
-    std::cout << std::endl;
 
     JsonMiniParser parser(text);
     return parser.parseCombinedCuts();
@@ -744,10 +748,15 @@ static RangeInfo determineAutoRangeForBranch(
         integer_like = integer_like && isIntegerLikeType(dleaf) && isIntegerLikeType(mleaf);
         bool_like = bool_like && isBoolType(dleaf) && isBoolType(mleaf);
 
-        const double dmin = dt->GetMinimum(branch_name.c_str());
-        const double dmax = dt->GetMaximum(branch_name.c_str());
-        const double mmin = mt->GetMinimum(branch_name.c_str());
-        const double mmax = mt->GetMaximum(branch_name.c_str());
+        const double dmin_raw = dt->GetMinimum(branch_name.c_str());
+        const double dmax_raw = dt->GetMaximum(branch_name.c_str());
+        const double mmin_raw = mt->GetMinimum(branch_name.c_str());
+        const double mmax_raw = mt->GetMaximum(branch_name.c_str());
+
+        const double dmin = convertValueForPlot(branch_name, dmin_raw);
+        const double dmax = convertValueForPlot(branch_name, dmax_raw);
+        const double mmin = convertValueForPlot(branch_name, mmin_raw);
+        const double mmax = convertValueForPlot(branch_name, mmax_raw);
 
         if (!initialized) {
             global_min = std::min(dmin, mmin);
@@ -852,9 +861,6 @@ static bool passesGlobalCutsForBinder(const BranchBinder& b,
     if (!(b.has_detector1 && b.has_detector2)) return false;
 
     GlobalCutConfig gcfg = default_global_cuts();
-
-    // We are intentionally combining all topologies into one histogram.
-    // Therefore topology must NOT be forced by the global-cuts config here.
     gcfg.enable_topology_filter = false;
 
     if (gcfg.enable_dvcsgen_ycol_cut) {
@@ -968,7 +974,9 @@ static void fillHistogramsForTreeSinglePass(
                 throw std::runtime_error(ss.str());
             }
 
-            itHist->second->Fill(itLeaf->second->GetValue(0));
+            const double raw_value = itLeaf->second->GetValue(0);
+            const double plot_value = convertValueForPlot(branch_name, raw_value);
+            itHist->second->Fill(plot_value);
         }
     }
 }
@@ -1080,7 +1088,7 @@ static void saveOneBranchCanvas(
     if (itRange == store.range_by_branch.end()) {
         std::ostringstream ss;
         ss << "[branch_data_mc_comparison] FATAL: missing range for branch "
-           << branch_name << " أثناء saveOneBranchCanvas";
+           << branch_name << " during saveOneBranchCanvas";
         throw std::runtime_error(ss.str());
     }
     const RangeInfo& rinfo = itRange->second;
@@ -1125,15 +1133,15 @@ static void saveOneBranchCanvas(
         gPad->SetLeftMargin(0.16);
         gPad->SetRightMargin(0.06);
         gPad->SetBottomMargin(0.13);
-        gPad->SetTopMargin(0.10);
+        gPad->SetTopMargin(0.12);
         gPad->SetTickx(1);
         gPad->SetTicky(1);
 
         TH1D* hd = data_hists[i];
         TH1D* hm = mc_hists[i];
 
-        hd->SetTitle(periods[i].pretty.c_str());
-        hd->GetXaxis()->SetTitle(branch_name.c_str());
+        hd->SetTitle("");
+        hd->GetXaxis()->SetTitle(axisTitleForBranch(branch_name).c_str());
         hd->GetYaxis()->SetTitle("Normalized counts");
         hd->GetXaxis()->SetTitleOffset(1.10);
         hd->GetYaxis()->SetTitleOffset(1.70);
@@ -1142,7 +1150,7 @@ static void saveOneBranchCanvas(
         hd->Draw("HIST");
         hm->Draw("HIST SAME");
 
-        TLegend* leg = new TLegend(0.58, 0.74, 0.92, 0.90);
+        TLegend* leg = new TLegend(0.54, 0.66, 0.92, 0.84);
         leg->SetFillStyle(1001);
         leg->SetFillColor(kWhite);
         leg->SetBorderSize(1);
@@ -1151,6 +1159,13 @@ static void saveOneBranchCanvas(
         leg->AddEntry(hd, "Data", "l");
         leg->AddEntry(hm, "Reconstructed MC", "l");
         leg->Draw();
+
+        TLatex period_latex;
+        period_latex.SetNDC();
+        period_latex.SetTextFont(42);
+        period_latex.SetTextSize(0.055);
+        period_latex.SetTextAlign(13);
+        period_latex.DrawLatex(0.18, 0.92, periods[i].pretty.c_str());
     }
 
     c.cd(6);
@@ -1228,8 +1243,6 @@ static void runChannelComparisons(
             tree->SetBranchStatus("*", 0);
             enablePlotBranches(tree, branch_names);
 
-            BranchBinder binder;
-            binder.bindCutBranches(tree, ch);
             std::map<std::string, TLeaf*> leaf_map = buildPlotLeafMap(tree, branch_names);
 
             std::map<std::string, TH1D*> hist_by_branch;
@@ -1259,8 +1272,6 @@ static void runChannelComparisons(
             tree->SetBranchStatus("*", 0);
             enablePlotBranches(tree, branch_names);
 
-            BranchBinder binder;
-            binder.bindCutBranches(tree, ch);
             std::map<std::string, TLeaf*> leaf_map = buildPlotLeafMap(tree, branch_names);
 
             std::map<std::string, TH1D*> hist_by_branch;
