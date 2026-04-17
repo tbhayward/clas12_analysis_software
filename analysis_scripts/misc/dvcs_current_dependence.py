@@ -86,6 +86,18 @@
 # ----------------------------------
 # For the photon theta 1x2 distribution plot only, an additional version is
 # produced requiring p2_phi > 60 degrees.
+#
+# Additional photon sector panel
+# ------------------------------
+# For photon theta we also produce a 3x2 panel of normalized distributions,
+# one pad per CLAS12 sector, where sectors are defined from p2_phi:
+#
+#   sector 1 : [330,360) U [0,30)
+#   sector 2 : [30,90)
+#   sector 3 : [90,150)
+#   sector 4 : [150,210)
+#   sector 5 : [210,270)
+#   sector 6 : [270,330)
 
 import os
 import math
@@ -178,6 +190,8 @@ ANGLE_DEPENDENCE_CONFIG = [
         "plot_n_bins": 120,
     },
 ]
+
+CLAS12_SECTOR_ORDER = [1, 2, 3, 4, 5, 6]
 
 
 # -----------------------------------------------------------------------------
@@ -639,6 +653,30 @@ def add_reference_current_text(ax, period_name):
 #enddef
 
 
+def wrap_phi_deg(phi_deg):
+
+    phi_wrapped = np.mod(phi_deg, 360.0)
+    phi_wrapped = np.where(phi_wrapped < 0.0, phi_wrapped + 360.0, phi_wrapped)
+    return phi_wrapped
+#enddef
+
+
+def get_clas12_sector_from_phi_deg(phi_deg_array):
+
+    phi = wrap_phi_deg(phi_deg_array)
+    sector = np.zeros(phi.shape, dtype=np.int32)
+
+    sector[((phi >= 330.0) & (phi < 360.0)) | ((phi >= 0.0) & (phi < 30.0))] = 1
+    sector[(phi >= 30.0) & (phi < 90.0)] = 2
+    sector[(phi >= 90.0) & (phi < 150.0)] = 3
+    sector[(phi >= 150.0) & (phi < 210.0)] = 4
+    sector[(phi >= 210.0) & (phi < 270.0)] = 5
+    sector[(phi >= 270.0) & (phi < 330.0)] = 6
+
+    return sector
+#enddef
+
+
 def compute_e_gamma_dot(arrays):
 
     required = ["e_theta", "e_phi", "p2_theta", "p2_phi"]
@@ -769,6 +807,10 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     #endfor
 
     photon_hist_counts_phi_gt_60 = np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
+    photon_sector_hist_counts = {
+        sector: np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
+        for sector in CLAS12_SECTOR_ORDER
+    }
 
     run_meta = {}
     current_charge_totals = defaultdict(float)
@@ -890,6 +932,22 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
             )
             photon_hist_counts_phi_gt_60 += counts_chunk_phi_gt_60.astype(np.int64)
         #endif
+
+        photon_sector = get_clas12_sector_from_phi_deg(p2_phi_deg_valid)
+        photon_theta_deg = theta_deg_map["p2_theta"]
+
+        for sector in CLAS12_SECTOR_ORDER:
+            sector_mask = photon_sector == sector
+            if not np.any(sector_mask):
+                continue
+            #endif
+
+            counts_chunk_sector, _ = np.histogram(
+                photon_theta_deg[sector_mask],
+                bins=PLOT_ANGLE_EDGES["p2_theta"],
+            )
+            photon_sector_hist_counts[sector] += counts_chunk_sector.astype(np.int64)
+        #endfor
     #endfor
 
     if len(missing_charge_runs) > 0 or len(unknown_current_runs) > 0:
@@ -1043,6 +1101,10 @@ def build_data_period_aggregations(period_display_name, period_internal_name, ro
     #endfor
 
     fine_angle_histograms["p2_theta"]["counts_phi_gt_60"] = photon_hist_counts_phi_gt_60.copy()
+    fine_angle_histograms["p2_theta"]["sector_counts"] = {
+        sector: photon_sector_hist_counts[sector].copy()
+        for sector in CLAS12_SECTOR_ORDER
+    }
 
     total_valid_charge_nC = float(sum(current_charge_totals.values()))
 
@@ -2622,6 +2684,77 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
 #enddef
 
 
+def make_photon_sector_normalized_panel(angle_histograms_by_period, output_dir, period_color, title_suffix=""):
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    fig = plt.figure(figsize=(18, 10), constrained_layout=True)
+    gs = GridSpec(2, 3, figure=fig)
+    axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
+
+    for i, sector in enumerate(CLAS12_SECTOR_ORDER):
+        ax = axes[i]
+
+        for period in PERIOD_ORDER:
+            if period not in angle_histograms_by_period:
+                continue
+            #endif
+
+            entry = angle_histograms_by_period[period]
+            edges = np.asarray(entry["edges"], dtype=float)
+            charge_nC = float(entry["charge_nC"])
+
+            if charge_nC <= 0.0:
+                continue
+            #endif
+
+            sector_counts_map = entry.get("sector_counts", {})
+            if sector not in sector_counts_map:
+                continue
+            #endif
+
+            counts_sector = np.asarray(sector_counts_map[sector], dtype=float)
+            counts_per_nC_sector = counts_sector / charge_nC
+
+            bin_widths = np.diff(edges)
+            integral_sector = float(np.sum(counts_per_nC_sector * bin_widths))
+
+            if integral_sector <= 0.0:
+                continue
+            #endif
+
+            normalized_sector = counts_per_nC_sector / integral_sector
+
+            ax.stairs(
+                normalized_sector,
+                edges,
+                label=period,
+                color=period_color[period],
+                linewidth=1.5,
+            )
+        #endfor
+
+        title = f"Photon theta, sector {sector}"
+        if title_suffix != "":
+            title += title_suffix
+        #endif
+
+        ax.set_title(title)
+        ax.set_xlabel(get_angle_axis_label("p2_theta"))
+        ax.set_ylabel("Normalized distribution")
+        ax.set_xlim(0.0, 35.0)
+        ax.grid(True, alpha=0.3)
+        ax.legend(frameon=True, fontsize=9)
+    #endfor
+
+    out_path = os.path.join(output_dir, "p2_theta_dependence_histograms_sector_panel_normalized.png")
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+    return out_path
+#enddef
+
+
 def make_angle_summary_plot(angle_summary_rows, output_dir, period_color, var_cfg):
 
     fig = plt.figure(figsize=(18, 10), constrained_layout=True)
@@ -2820,11 +2953,23 @@ def run_selection_analysis(run_charge_map, period_color):
                 "charge_nC": float(total_valid_charge_nC),
             }
 
-            if var_key == "p2_theta" and "counts_phi_gt_60" in fine_angle_histograms_this_period[var_key]:
-                hist_entry["counts_phi_gt_60"] = np.asarray(
-                    fine_angle_histograms_this_period[var_key]["counts_phi_gt_60"],
-                    dtype=float,
-                )
+            if var_key == "p2_theta":
+                if "counts_phi_gt_60" in fine_angle_histograms_this_period[var_key]:
+                    hist_entry["counts_phi_gt_60"] = np.asarray(
+                        fine_angle_histograms_this_period[var_key]["counts_phi_gt_60"],
+                        dtype=float,
+                    )
+                #endif
+
+                if "sector_counts" in fine_angle_histograms_this_period[var_key]:
+                    hist_entry["sector_counts"] = {
+                        sector: np.asarray(
+                            fine_angle_histograms_this_period[var_key]["sector_counts"][sector],
+                            dtype=float,
+                        )
+                        for sector in CLAS12_SECTOR_ORDER
+                    }
+                #endif
             #endif
 
             angle_current_rows_by_variable[var_key][period_display_name] = angle_current_rows_this_period[var_key]
@@ -3003,6 +3148,16 @@ def run_selection_analysis(run_charge_map, period_color):
         for path in angle_hist_plots:
             print(f"[saved] {path}")
         #endfor
+
+        if var_key == "p2_theta":
+            photon_sector_panel_path = make_photon_sector_normalized_panel(
+                angle_histograms_by_period=fine_angle_histograms_by_variable[var_key],
+                output_dir=var_output_dir,
+                period_color=period_color,
+                title_suffix="",
+            )
+            print(f"[saved] {photon_sector_panel_path}")
+        #endif
 
         angle_summary_plot = make_angle_summary_plot(
             angle_summary_rows=angle_summary_rows,
