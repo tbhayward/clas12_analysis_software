@@ -379,7 +379,9 @@ private:
 };
 
 static std::map<std::string, CutDict> loadCombinedCutsJson(const std::string& path) {
-    std::ifstream ifs(path);
+    std::cout << "[branch_data_mc_comparison] combined_cuts_json path = " << path << std::endl;
+
+    std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
         std::ostringstream ss;
         ss << "[branch_data_mc_comparison] FATAL: cannot open combined cuts JSON: " << path;
@@ -388,7 +390,41 @@ static std::map<std::string, CutDict> loadCombinedCutsJson(const std::string& pa
 
     std::ostringstream buf;
     buf << ifs.rdbuf();
-    JsonMiniParser parser(buf.str());
+    std::string text = buf.str();
+
+    std::cout << "[branch_data_mc_comparison] combined_cuts_json size = "
+              << text.size() << std::endl;
+
+    std::cout << "[branch_data_mc_comparison] first 16 bytes = ";
+    for (size_t i = 0; i < std::min<size_t>(text.size(), 16); ++i) {
+        std::cout << std::hex << std::uppercase
+                  << static_cast<int>(static_cast<unsigned char>(text[i])) << " ";
+    }
+    std::cout << std::dec << std::endl;
+
+    if (text.empty()) {
+        std::ostringstream ss;
+        ss << "[branch_data_mc_comparison] FATAL: combined cuts JSON is empty: " << path;
+        throw std::runtime_error(ss.str());
+    }
+
+    if (text.size() >= 3 &&
+        static_cast<unsigned char>(text[0]) == 0xEF &&
+        static_cast<unsigned char>(text[1]) == 0xBB &&
+        static_cast<unsigned char>(text[2]) == 0xBF) {
+        std::cout << "[branch_data_mc_comparison] stripping UTF-8 BOM" << std::endl;
+        text.erase(0, 3);
+    }
+
+    std::cout << "[branch_data_mc_comparison] first visible chars = ";
+    for (size_t i = 0; i < std::min<size_t>(text.size(), 8); ++i) {
+        char c = text[i];
+        if (std::isprint(static_cast<unsigned char>(c))) std::cout << c;
+        else std::cout << ".";
+    }
+    std::cout << std::endl;
+
+    JsonMiniParser parser(text);
     return parser.parseCombinedCuts();
 }
 
