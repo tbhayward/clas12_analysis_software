@@ -28,6 +28,7 @@
 #include "propagator_study.h"
 #include "norm_cross_sections.h"
 #include "pass1_paper_plots.h"
+#include "branch_data_mc_comparison.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
