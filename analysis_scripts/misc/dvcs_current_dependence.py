@@ -72,8 +72,13 @@
 # --------------------
 # For each detector angle variable we also make a 1x2 overlay figure:
 #
-#   left  : fine-binned counts / accumulated charge
-#   right : the same histograms normalized to their own integral
+#   left  : fine-binned counts / accumulated charge for DATA
+#   right : the same DATA histograms normalized to their own integral
+#
+# We also make an MC reconstructed version:
+#
+#   left  : fine-binned reconstructed MC counts
+#   right : the same reconstructed MC histograms normalized to their own integral
 #
 # All run periods are drawn on the same axes in each panel.
 #
@@ -98,6 +103,8 @@
 #   sector 4 : [150,210)
 #   sector 5 : [210,270)
 #   sector 6 : [270,330)
+#
+# For the sector panel, nothing is drawn below 5 degrees.
 
 import os
 import math
@@ -122,7 +129,7 @@ PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 MAX_WORKERS = 5
 ITERATE_STEP_SIZE = "200 MB"
 MC_TREE_NAME = "PhysicsEvents"
-MIN_E_GAMMA_CONE_ANGLE_DEG = 0.0
+MIN_E_GAMMA_CONE_ANGLE_DEG = 7.0
 PHOTON_HIST_PHI_MIN_DEG = 60.0
 
 COS_MIN_E_GAMMA_CONE = math.cos(math.radians(MIN_E_GAMMA_CONE_ANGLE_DEG))
@@ -772,6 +779,104 @@ def classify_run(period_display_name, period_internal_name, runnum, run_charge_m
 #enddef
 
 
+def count_mc_fine_angle_histograms(root_path, tree_name):
+
+    if not os.path.exists(root_path):
+        raise RuntimeError(f"ROOT file not found: {root_path}")
+    #endif
+
+    root_file = uproot.open(root_path)
+    if tree_name not in root_file:
+        raise RuntimeError(f"'{tree_name}' tree not found in {root_path}")
+    #endif
+
+    tree = root_file[tree_name]
+
+    needed = {"e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"}
+    missing = [name for name in needed if name not in tree.keys()]
+    if len(missing) > 0:
+        raise RuntimeError(f"Missing required branches in {root_path}:{tree_name}: {missing}")
+    #endif
+
+    hist_counts = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        hist_counts[var_key] = np.zeros(len(PLOT_ANGLE_EDGES[var_key]) - 1, dtype=np.int64)
+    #endfor
+
+    photon_hist_counts_phi_gt_60 = np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
+    photon_sector_hist_counts = {
+        sector: np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
+        for sector in CLAS12_SECTOR_ORDER
+    }
+
+    iterate_branches = ["e_theta", "e_phi", "p1_theta", "p2_theta", "p2_phi"]
+
+    for arrays in tree.iterate(iterate_branches, library="np", step_size=ITERATE_STEP_SIZE):
+        event_mask = apply_event_mask(arrays)
+
+        if not np.any(event_mask):
+            continue
+        #endif
+
+        theta_deg_map = {
+            "e_theta": np.degrees(arrays["e_theta"][event_mask]),
+            "p1_theta": np.degrees(arrays["p1_theta"][event_mask]),
+            "p2_theta": np.degrees(arrays["p2_theta"][event_mask]),
+        }
+        p2_phi_deg = np.degrees(arrays["p2_phi"][event_mask])
+
+        for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+            var_key = var_cfg["key"]
+            counts_chunk, _ = np.histogram(theta_deg_map[var_key], bins=PLOT_ANGLE_EDGES[var_key])
+            hist_counts[var_key] += counts_chunk.astype(np.int64)
+        #endfor
+
+        phi_gt_60_mask = p2_phi_deg > PHOTON_HIST_PHI_MIN_DEG
+        if np.any(phi_gt_60_mask):
+            counts_chunk_phi_gt_60, _ = np.histogram(
+                theta_deg_map["p2_theta"][phi_gt_60_mask],
+                bins=PLOT_ANGLE_EDGES["p2_theta"],
+            )
+            photon_hist_counts_phi_gt_60 += counts_chunk_phi_gt_60.astype(np.int64)
+        #endif
+
+        photon_sector = get_clas12_sector_from_phi_deg(p2_phi_deg)
+        photon_theta_deg = theta_deg_map["p2_theta"]
+
+        for sector in CLAS12_SECTOR_ORDER:
+            sector_mask = photon_sector == sector
+            if not np.any(sector_mask):
+                continue
+            #endif
+
+            counts_chunk_sector, _ = np.histogram(
+                photon_theta_deg[sector_mask],
+                bins=PLOT_ANGLE_EDGES["p2_theta"],
+            )
+            photon_sector_hist_counts[sector] += counts_chunk_sector.astype(np.int64)
+        #endfor
+    #endfor
+
+    out = {}
+    for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+        var_key = var_cfg["key"]
+        out[var_key] = {
+            "edges": PLOT_ANGLE_EDGES[var_key].copy(),
+            "counts": hist_counts[var_key].copy(),
+        }
+    #endfor
+
+    out["p2_theta"]["counts_phi_gt_60"] = photon_hist_counts_phi_gt_60.copy()
+    out["p2_theta"]["sector_counts"] = {
+        sector: photon_sector_hist_counts[sector].copy()
+        for sector in CLAS12_SECTOR_ORDER
+    }
+
+    return out
+#enddef
+
+
 def build_data_period_aggregations(period_display_name, period_internal_name, root_path, run_charge_map):
 
     if not os.path.exists(root_path):
@@ -1227,6 +1332,11 @@ def process_mc_pair_worker(args):
         tree_name=MC_TREE_NAME,
     )
 
+    rec_fine_histograms = count_mc_fine_angle_histograms(
+        root_path=rec_path,
+        tree_name=MC_TREE_NAME,
+    )
+
     integrated_row = None
     if n_gen > 0:
         eff = float(n_rec) / float(n_gen)
@@ -1289,6 +1399,7 @@ def process_mc_pair_worker(args):
         "current_nA": int(current_nA),
         "integrated_row": integrated_row,
         "angle_rows_by_variable": angle_rows_by_variable,
+        "rec_fine_histograms": rec_fine_histograms,
     }
 #enddef
 
@@ -1359,6 +1470,7 @@ def build_mc_aggregation(mc_dir):
 
     integrated_mc_rows = []
     angle_mc_rows_by_variable = {}
+    rec_fine_angle_histograms_by_period = {}
 
     for var_cfg in ANGLE_DEPENDENCE_CONFIG:
         var_key = var_cfg["key"]
@@ -1366,6 +1478,26 @@ def build_mc_aggregation(mc_dir):
         angle_mc_rows_by_variable[var_key] = {
             "bins": bins,
             "rows": {period_name: [[] for _ in bins] for period_name in PERIOD_ORDER},
+        }
+    #endfor
+
+    for period_name in PERIOD_ORDER:
+        rec_fine_angle_histograms_by_period[period_name] = {}
+        for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+            var_key = var_cfg["key"]
+            rec_fine_angle_histograms_by_period[period_name][var_key] = {
+                "edges": PLOT_ANGLE_EDGES[var_key].copy(),
+                "counts": np.zeros(len(PLOT_ANGLE_EDGES[var_key]) - 1, dtype=np.int64),
+            }
+        #endfor
+
+        rec_fine_angle_histograms_by_period[period_name]["p2_theta"]["counts_phi_gt_60"] = np.zeros(
+            len(PLOT_ANGLE_EDGES["p2_theta"]) - 1,
+            dtype=np.int64,
+        )
+        rec_fine_angle_histograms_by_period[period_name]["p2_theta"]["sector_counts"] = {
+            sector: np.zeros(len(PLOT_ANGLE_EDGES["p2_theta"]) - 1, dtype=np.int64)
+            for sector in CLAS12_SECTOR_ORDER
         }
     #endfor
 
@@ -1394,6 +1526,27 @@ def build_mc_aggregation(mc_dir):
                     #endif
                 #endfor
             #endfor
+
+            rec_hist = result["rec_fine_histograms"]
+            for var_cfg in ANGLE_DEPENDENCE_CONFIG:
+                var_key = var_cfg["key"]
+                rec_fine_angle_histograms_by_period[period_name][var_key]["counts"] += np.asarray(
+                    rec_hist[var_key]["counts"],
+                    dtype=np.int64,
+                )
+            #endfor
+
+            rec_fine_angle_histograms_by_period[period_name]["p2_theta"]["counts_phi_gt_60"] += np.asarray(
+                rec_hist["p2_theta"]["counts_phi_gt_60"],
+                dtype=np.int64,
+            )
+
+            for sector in CLAS12_SECTOR_ORDER:
+                rec_fine_angle_histograms_by_period[period_name]["p2_theta"]["sector_counts"][sector] += np.asarray(
+                    rec_hist["p2_theta"]["sector_counts"][sector],
+                    dtype=np.int64,
+                )
+            #endfor
         #endfor
     #endwith
 
@@ -1412,7 +1565,7 @@ def build_mc_aggregation(mc_dir):
         #endfor
     #endfor
 
-    return integrated_mc_rows, angle_mc_rows_by_variable
+    return integrated_mc_rows, angle_mc_rows_by_variable, rec_fine_angle_histograms_by_period
 #enddef
 
 
@@ -2684,6 +2837,155 @@ def make_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_
 #enddef
 
 
+def make_mc_rec_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, period_color, var_cfg, title_suffix=""):
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    var_key = var_cfg["key"]
+    axis_label = get_angle_axis_label(var_key)
+    saved_paths = []
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True)
+    ax_left = axes[0]
+    ax_right = axes[1]
+
+    for period in PERIOD_ORDER:
+        if period not in angle_histograms_by_period:
+            continue
+        #endif
+
+        entry = angle_histograms_by_period[period]
+        edges = np.asarray(entry["edges"], dtype=float)
+        counts = np.asarray(entry["counts"], dtype=float)
+
+        ax_left.stairs(
+            counts,
+            edges,
+            label=period,
+            color=period_color[period],
+            linewidth=1.5,
+        )
+
+        bin_widths = np.diff(edges)
+        integral = float(np.sum(counts * bin_widths))
+
+        if integral > 0.0:
+            normalized = counts / integral
+            ax_right.stairs(
+                normalized,
+                edges,
+                label=period,
+                color=period_color[period],
+                linewidth=1.5,
+            )
+        #endif
+    #endfor
+
+    left_title = f"{var_cfg['display_name']} histograms: reconstructed MC counts"
+    right_title = f"{var_cfg['display_name']} histograms: reconstructed MC normalized to integral"
+
+    if title_suffix != "":
+        left_title += title_suffix
+        right_title += title_suffix
+    #endif
+
+    ax_left.set_title(left_title)
+    ax_left.set_xlabel(axis_label)
+    ax_left.set_ylabel("Reconstructed MC counts")
+    ax_left.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+    ax_left.grid(True, alpha=0.3)
+    ax_left.legend(frameon=True)
+
+    ax_right.set_title(right_title)
+    ax_right.set_xlabel(axis_label)
+    ax_right.set_ylabel("Normalized distribution")
+    ax_right.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+    ax_right.grid(True, alpha=0.3)
+    ax_right.legend(frameon=True)
+
+    out_path = os.path.join(output_dir, f"{var_key}_dependence_histograms_1x2_rec_mc.png")
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    saved_paths.append(out_path)
+
+    if var_key == "p2_theta":
+        fig2, axes2 = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True)
+        ax2_left = axes2[0]
+        ax2_right = axes2[1]
+
+        for period in PERIOD_ORDER:
+            if period not in angle_histograms_by_period:
+                continue
+            #endif
+
+            entry = angle_histograms_by_period[period]
+            edges = np.asarray(entry["edges"], dtype=float)
+            counts_phi_gt_60 = np.asarray(entry.get("counts_phi_gt_60", np.zeros(len(edges) - 1)), dtype=float)
+
+            ax2_left.stairs(
+                counts_phi_gt_60,
+                edges,
+                label=period,
+                color=period_color[period],
+                linewidth=1.5,
+            )
+
+            bin_widths = np.diff(edges)
+            integral_phi_gt_60 = float(np.sum(counts_phi_gt_60 * bin_widths))
+
+            if integral_phi_gt_60 > 0.0:
+                normalized_phi_gt_60 = counts_phi_gt_60 / integral_phi_gt_60
+                ax2_right.stairs(
+                    normalized_phi_gt_60,
+                    edges,
+                    label=period,
+                    color=period_color[period],
+                    linewidth=1.5,
+                )
+            #endif
+        #endfor
+
+        left_title2 = (
+            f"{var_cfg['display_name']} histograms: reconstructed MC counts"
+            f" (p2_phi > {PHOTON_HIST_PHI_MIN_DEG:.0f} deg)"
+        )
+        right_title2 = (
+            f"{var_cfg['display_name']} histograms: reconstructed MC normalized to integral"
+            f" (p2_phi > {PHOTON_HIST_PHI_MIN_DEG:.0f} deg)"
+        )
+
+        if title_suffix != "":
+            left_title2 += title_suffix
+            right_title2 += title_suffix
+        #endif
+
+        ax2_left.set_title(left_title2)
+        ax2_left.set_xlabel(axis_label)
+        ax2_left.set_ylabel("Reconstructed MC counts")
+        ax2_left.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+        ax2_left.grid(True, alpha=0.3)
+        ax2_left.legend(frameon=True)
+
+        ax2_right.set_title(right_title2)
+        ax2_right.set_xlabel(axis_label)
+        ax2_right.set_ylabel("Normalized distribution")
+        ax2_right.set_xlim(float(var_cfg["min_deg"]), float(var_cfg["max_deg"]))
+        ax2_right.grid(True, alpha=0.3)
+        ax2_right.legend(frameon=True)
+
+        out_path2 = os.path.join(
+            output_dir,
+            f"{var_key}_dependence_histograms_1x2_rec_mc_p2phi_gt_{int(PHOTON_HIST_PHI_MIN_DEG)}deg.png"
+        )
+        fig2.savefig(out_path2, dpi=200)
+        plt.close(fig2)
+        saved_paths.append(out_path2)
+    #endif
+
+    return saved_paths
+#enddef
+
+
 def make_photon_sector_normalized_panel(angle_histograms_by_period, output_dir, period_color, title_suffix=""):
 
     os.makedirs(output_dir, exist_ok=True)
@@ -2752,6 +3054,75 @@ def make_photon_sector_normalized_panel(angle_histograms_by_period, output_dir, 
     #endfor
 
     out_path = os.path.join(output_dir, "p2_theta_dependence_histograms_sector_panel_normalized.png")
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+    return out_path
+#enddef
+
+
+def make_mc_rec_photon_sector_normalized_panel(angle_histograms_by_period, output_dir, period_color, title_suffix=""):
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    fig = plt.figure(figsize=(18, 10), constrained_layout=True)
+    gs = GridSpec(2, 3, figure=fig)
+    axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(6)]
+
+    for i, sector in enumerate(CLAS12_SECTOR_ORDER):
+        ax = axes[i]
+
+        for period in PERIOD_ORDER:
+            if period not in angle_histograms_by_period:
+                continue
+            #endif
+
+            entry = angle_histograms_by_period[period]
+            edges = np.asarray(entry["edges"], dtype=float)
+
+            sector_counts_map = entry.get("sector_counts", {})
+            if sector not in sector_counts_map:
+                continue
+            #endif
+
+            counts_sector = np.asarray(sector_counts_map[sector], dtype=float)
+
+            bin_widths = np.diff(edges)
+            integral_sector = float(np.sum(counts_sector * bin_widths))
+
+            if integral_sector <= 0.0:
+                continue
+            #endif
+
+            normalized_sector = counts_sector / integral_sector
+
+            normalized_sector_plot = normalized_sector.copy()
+            low_edge_per_bin = edges[:-1]
+            normalized_sector_plot[low_edge_per_bin < 5.0] = 0.0
+
+            ax.stairs(
+                normalized_sector_plot,
+                edges,
+                label=period,
+                color=period_color[period],
+                linewidth=1.5,
+            )
+        #endfor
+
+        title = f"Photon theta, sector {sector} reconstructed MC"
+        if title_suffix != "":
+            title += title_suffix
+        #endif
+
+        ax.set_title(title)
+        ax.set_xlabel(get_angle_axis_label("p2_theta"))
+        ax.set_ylabel("Normalized distribution")
+        ax.set_xlim(5.0, 35.0)
+        ax.grid(True, alpha=0.3)
+        ax.legend(frameon=True, fontsize=9)
+    #endfor
+
+    out_path = os.path.join(output_dir, "p2_theta_dependence_histograms_sector_panel_normalized_rec_mc.png")
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
@@ -3000,7 +3371,7 @@ def run_selection_analysis(run_charge_map, period_color):
     print("")
     print("Processing MC ROOT files and computing efficiencies...")
 
-    integrated_mc_rows, angle_mc_rows_by_variable = build_mc_aggregation(
+    integrated_mc_rows, angle_mc_rows_by_variable, rec_fine_angle_histograms_by_period = build_mc_aggregation(
         mc_dir=MC_DIR,
     )
 
@@ -3153,6 +3524,17 @@ def run_selection_analysis(run_charge_map, period_color):
             print(f"[saved] {path}")
         #endfor
 
+        mc_rec_angle_hist_plots = make_mc_rec_angle_hist_overlay_plot(
+            angle_histograms_by_period=rec_fine_angle_histograms_by_period,
+            output_dir=var_output_dir,
+            period_color=period_color,
+            var_cfg=var_cfg,
+            title_suffix="",
+        )
+        for path in mc_rec_angle_hist_plots:
+            print(f"[saved] {path}")
+        #endfor
+
         if var_key == "p2_theta":
             photon_sector_panel_path = make_photon_sector_normalized_panel(
                 angle_histograms_by_period=fine_angle_histograms_by_variable[var_key],
@@ -3161,6 +3543,14 @@ def run_selection_analysis(run_charge_map, period_color):
                 title_suffix="",
             )
             print(f"[saved] {photon_sector_panel_path}")
+
+            mc_rec_photon_sector_panel_path = make_mc_rec_photon_sector_normalized_panel(
+                angle_histograms_by_period=rec_fine_angle_histograms_by_period,
+                output_dir=var_output_dir,
+                period_color=period_color,
+                title_suffix="",
+            )
+            print(f"[saved] {mc_rec_photon_sector_panel_path}")
         #endif
 
         angle_summary_plot = make_angle_summary_plot(
