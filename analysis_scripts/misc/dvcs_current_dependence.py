@@ -2854,7 +2854,11 @@ def make_mc_rec_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, 
             continue
         #endif
 
-        entry = angle_histograms_by_period[period]
+        if var_key not in angle_histograms_by_period[period]:
+            continue
+        #endif
+
+        entry = angle_histograms_by_period[period][var_key]
         edges = np.asarray(entry["edges"], dtype=float)
         counts = np.asarray(entry["counts"], dtype=float)
 
@@ -2918,7 +2922,11 @@ def make_mc_rec_angle_hist_overlay_plot(angle_histograms_by_period, output_dir, 
                 continue
             #endif
 
-            entry = angle_histograms_by_period[period]
+            if var_key not in angle_histograms_by_period[period]:
+                continue
+            #endif
+
+            entry = angle_histograms_by_period[period][var_key]
             edges = np.asarray(entry["edges"], dtype=float)
             counts_phi_gt_60 = np.asarray(entry.get("counts_phi_gt_60", np.zeros(len(edges) - 1)), dtype=float)
 
@@ -3077,7 +3085,11 @@ def make_mc_rec_photon_sector_normalized_panel(angle_histograms_by_period, outpu
                 continue
             #endif
 
-            entry = angle_histograms_by_period[period]
+            if "p2_theta" not in angle_histograms_by_period[period]:
+                continue
+            #endif
+
+            entry = angle_histograms_by_period[period]["p2_theta"]
             edges = np.asarray(entry["edges"], dtype=float)
 
             sector_counts_map = entry.get("sector_counts", {})
