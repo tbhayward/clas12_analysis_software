@@ -11,6 +11,7 @@ void runAllBranchDataMcComparisons(
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
+    const std::string& combined_cuts_json,
     const std::string& outPlotDir
 );
 

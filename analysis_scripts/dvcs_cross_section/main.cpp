@@ -185,6 +185,7 @@ int main(int argc, char* argv[]) {
         recMcTrees,
         eppi0DataTrees,
         eppi0RecMcTrees,
+        "output/jsons/combined_cuts.json",
         "output"
     );
 
