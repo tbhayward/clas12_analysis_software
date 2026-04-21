@@ -36,7 +36,7 @@
 
 namespace {
 
-static constexpr bool kSkipGlobalCuts = false;
+static constexpr bool kSkipGlobalCuts = true;
 static constexpr bool kSkipExclusivityCuts = false;
 static constexpr int kNClasdSectors = 6;
 
