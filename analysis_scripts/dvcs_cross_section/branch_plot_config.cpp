@@ -127,7 +127,7 @@ const std::map<std::string, BranchHistConfig>& getBranchPlotConfigs() {
         {"mc_p_theta",         {100, 0.0, 90.0, true}},
         {"p1_theta",           {100, 0.0, 90.0, true}},
         {"mc_p1_theta",        {100, 0.0, 90.0, true}},
-        {"p2_theta",           {100, 0.0, 45.0, true}},
+        {"p2_theta",           {100, 6.0, 45.0, true}},
         {"mc_p2_theta",        {100, 0.0, 90.0, true}},
         {"p3_theta",           {100, 0.0, 90.0, true}},
         {"mc_p3_theta",        {100, 0.0, 90.0, true}},
