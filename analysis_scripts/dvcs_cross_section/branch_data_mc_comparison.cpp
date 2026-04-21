@@ -36,7 +36,8 @@
 
 namespace {
 
-static constexpr bool kSkipExclusivityCuts = false;
+static constexpr bool kSkipGlobalCuts = true;
+static constexpr bool kSkipExclusivityCuts = true;
 static constexpr int kNClasdSectors = 6;
 
 struct PeriodDef {
@@ -204,6 +205,13 @@ static std::string sectorSourcePhiBranch(const std::string& branch_name) {
     if (branch_name.rfind("p1_", 0) == 0) return "p1_phi";
     if (branch_name.rfind("p2_", 0) == 0) return "p2_phi";
     return "e_phi";
+}
+
+static std::string cutModeText() {
+    if (kSkipGlobalCuts && kSkipExclusivityCuts) return "No global cuts, no exclusivity cuts";
+    if (kSkipGlobalCuts && !kSkipExclusivityCuts) return "No global cuts, topology-matched 3#sigma exclusivity cuts";
+    if (!kSkipGlobalCuts && kSkipExclusivityCuts) return "Global cuts only";
+    return "Global cuts + topology-matched 3#sigma exclusivity cuts";
 }
 
 // -------------------- tiny JSON parser for combined_cuts.json --------------------
@@ -891,6 +899,8 @@ static RangeInfo determineRangeForBranch(
 static bool passesGlobalCutsForBinder(const BranchBinder& b,
                                       const std::string& period_label)
 {
+    if (kSkipGlobalCuts) return true;
+
     if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
     if (!(b.has_detector1 && b.has_detector2)) return false;
 
@@ -1012,7 +1022,10 @@ static void fillHistogramsForTreeSinglePass(
     for (Long64_t i = 0; i < nentries; ++i) {
         tree->GetEntry(i);
 
-        if (b.has_runnum && is_excluded_run(b.runnum, gcfg)) continue;
+        if (!kSkipGlobalCuts) {
+            if (b.has_runnum && is_excluded_run(b.runnum, gcfg)) continue;
+        }
+
         if (!(b.has_detector1 && b.has_detector2)) continue;
 
         Topology topo;
@@ -1332,12 +1345,7 @@ static void saveOneBranchCanvas(
     latex.SetTextSize(0.055);
     latex.DrawLatex(0.50, 0.72, makeCanvasTitle(channelToStr(ch), branch_name).c_str());
     latex.SetTextSize(0.040);
-
-    if (kSkipExclusivityCuts) {
-        latex.DrawLatex(0.50, 0.56, "Global cuts only");
-    } else {
-        latex.DrawLatex(0.50, 0.56, "Global cuts + topology-matched 3#sigma exclusivity cuts");
-    }
+    latex.DrawLatex(0.50, 0.56, cutModeText().c_str());
     latex.DrawLatex(0.50, 0.47, "All topologies combined into one histogram per period");
     latex.DrawLatex(0.50, 0.38, "Each histogram normalized to its own integral");
 
@@ -1461,12 +1469,25 @@ static void saveOneBranchSectorCanvas(
         pad_latex.DrawLatex(0.18, 0.92, ("Sector " + std::to_string(isec + 1)).c_str());
     }
 
-    TLatex canvas_latex;
-    canvas_latex.SetNDC();
-    canvas_latex.SetTextFont(42);
-    canvas_latex.SetTextAlign(13);
-    canvas_latex.SetTextSize(0.035);
-    canvas_latex.DrawLatex(0.08, 0.985, (makeCanvasTitle(channelToStr(ch), branch_name) + "   " + period.pretty + "   sector-by-sector").c_str());
+    c.cd(6);
+    gPad->SetLeftMargin(0.05);
+    gPad->SetRightMargin(0.05);
+    gPad->SetBottomMargin(0.05);
+    gPad->SetTopMargin(0.05);
+
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextAlign(22);
+    latex.SetTextFont(42);
+    latex.SetTextSize(0.050);
+    latex.DrawLatex(0.50, 0.74, (makeCanvasTitle(channelToStr(ch), branch_name) + "   " + period.pretty).c_str());
+    latex.SetTextSize(0.038);
+    latex.DrawLatex(0.50, 0.60, "Sector-by-sector");
+    latex.DrawLatex(0.50, 0.50, cutModeText().c_str());
+
+    std::ostringstream ss;
+    ss << "Range: [" << rinfo.xmin << ", " << rinfo.xmax << "], bins = " << rinfo.nbins;
+    latex.DrawLatex(0.50, 0.38, ss.str().c_str());
 
     const std::string out_name =
         sector_out_dir + "/" + sanitizeName(branch_name) + "_" +
