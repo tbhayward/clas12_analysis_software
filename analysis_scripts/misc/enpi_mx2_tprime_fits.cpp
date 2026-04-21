@@ -255,46 +255,45 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
     result.fit_status = fit_status;
     result.cov_status = cov_status;
 
+    result.amp = fit_fn.GetParameter(0);
+    result.mu = fit_fn.GetParameter(1);
+    result.mu_err = fit_fn.GetParError(1);
+    result.sigma = fit_fn.GetParameter(2);
+    result.sigma_err = fit_fn.GetParError(2);
+    result.p0 = fit_fn.GetParameter(3);
+    result.p1 = fit_fn.GetParameter(4);
+    result.p2 = fit_fn.GetParameter(5);
+    result.chi2 = fit_fn.GetChisquare();
+    result.ndf = fit_fn.GetNDF();
+
     bool finite_ok =
-        std::isfinite(fit_fn.GetParameter(1)) &&
-        std::isfinite(fit_fn.GetParameter(2)) &&
-        std::isfinite(fit_fn.GetParError(1)) &&
-        std::isfinite(fit_fn.GetParError(2));
+        std::isfinite(result.mu) &&
+        std::isfinite(result.mu_err) &&
+        std::isfinite(result.sigma) &&
+        std::isfinite(result.sigma_err);
 
-    bool boundary_ok =
-        (fit_fn.GetParameter(1) > kMuMin + 1.0e-4) &&
-        (fit_fn.GetParameter(1) < kMuMax - 1.0e-4) &&
-        (fit_fn.GetParameter(2) > kSigmaMin + 1.0e-4) &&
-        (fit_fn.GetParameter(2) < kSigmaMax - 1.0e-4);
+    bool in_range_ok =
+        (result.mu >= kMuMin) &&
+        (result.mu <= kMuMax) &&
+        (result.sigma >= kSigmaMin) &&
+        (result.sigma <= kSigmaMax);
 
-    result.fit_success = (fit_status == 0 && cov_status >= 2 && finite_ok && boundary_ok);
-
-    if (result.fit_success) {
-        result.amp = fit_fn.GetParameter(0);
-        result.mu = fit_fn.GetParameter(1);
-        result.mu_err = fit_fn.GetParError(1);
-        result.sigma = fit_fn.GetParameter(2);
-        result.sigma_err = fit_fn.GetParError(2);
-        result.p0 = fit_fn.GetParameter(3);
-        result.p1 = fit_fn.GetParameter(4);
-        result.p2 = fit_fn.GetParameter(5);
-        result.chi2 = fit_fn.GetChisquare();
-        result.ndf = fit_fn.GetNDF();
-    }
+    result.fit_success = (finite_ok && in_range_ok);
 
     return result;
 }
 
 void write_csv(const std::vector<FitResult>& results, const std::string& path) {
     std::ofstream out(path.c_str());
-    out << "slice_name,x_min,x_max,t_min,t_max,mu,mu_err,sigma,sigma_err,n_entries,fit_success\n";
+    out << "slice_name,x_min,x_max,t_min,t_max,mu,mu_err,sigma,sigma_err,n_entries,fit_success,fit_status,cov_status,chi2,ndf\n";
     for (const auto& r : results) {
         out << r.slice_name << ","
             << std::fixed << std::setprecision(4) << r.x_min << ","
             << std::fixed << std::setprecision(4) << r.x_max << ","
             << std::fixed << std::setprecision(4) << r.t_min << ","
             << std::fixed << std::setprecision(4) << r.t_max << ",";
-        if (r.fit_success) {
+
+        if (std::isfinite(r.mu)) {
             out << std::fixed << std::setprecision(6) << r.mu << ","
                 << std::fixed << std::setprecision(6) << r.mu_err << ","
                 << std::fixed << std::setprecision(6) << r.sigma << ","
@@ -302,8 +301,19 @@ void write_csv(const std::vector<FitResult>& results, const std::string& path) {
         } else {
             out << ",,,,";
         }
+
         out << r.n_entries << ","
-            << (r.fit_success ? 1 : 0) << "\n";
+            << (r.fit_success ? 1 : 0) << ","
+            << r.fit_status << ","
+            << r.cov_status << ",";
+
+        if (std::isfinite(r.chi2)) {
+            out << std::fixed << std::setprecision(6) << r.chi2 << ",";
+        } else {
+            out << ",";
+        }
+
+        out << r.ndf << "\n";
     }
 }
 
@@ -402,7 +412,7 @@ void draw_fit_grid(const std::vector<std::vector<TH1D*> >& hists, const std::vec
                 f->Draw("same");
             }
 
-            if (r.fit_success) {
+            if (std::isfinite(r.mu) && std::isfinite(r.sigma)) {
                 std::ostringstream fit_label;
                 fit_label << "#mu = " << std::fixed << std::setprecision(4) << r.mu
                           << ", #sigma = " << std::fixed << std::setprecision(4) << r.sigma;
@@ -410,7 +420,7 @@ void draw_fit_grid(const std::vector<std::vector<TH1D*> >& hists, const std::vec
                 leg.AddEntry((TObject*)0, fit_label.str().c_str(), "");
             } else {
                 leg.AddEntry(h, "Data", "lep");
-                leg.AddEntry((TObject*)0, "Fit failed", "");
+                leg.AddEntry((TObject*)0, "No extracted values", "");
             }
 
             leg.Draw();
@@ -455,7 +465,7 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
         std::vector<double> xx, yy, ex, ey;
         for (int it = 0; it < static_cast<int>(kTPrimeBins.size()); it++) {
             int idx = ix * static_cast<int>(kTPrimeBins.size()) + it;
-            if (!results[idx].fit_success) continue;
+            if (!std::isfinite(results[idx].mu) || !std::isfinite(results[idx].mu_err)) continue;
             xx.push_back(idx + 1);
             ex.push_back(0.0);
             yy.push_back(results[idx].mu);
@@ -507,7 +517,7 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
         std::vector<double> xx, yy, ex, ey;
         for (int it = 0; it < static_cast<int>(kTPrimeBins.size()); it++) {
             int idx = ix * static_cast<int>(kTPrimeBins.size()) + it;
-            if (!results[idx].fit_success) continue;
+            if (!std::isfinite(results[idx].sigma) || !std::isfinite(results[idx].sigma_err)) continue;
             xx.push_back(idx + 1);
             ex.push_back(0.0);
             yy.push_back(results[idx].sigma);
