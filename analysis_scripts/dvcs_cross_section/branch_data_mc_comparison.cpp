@@ -36,7 +36,7 @@
 
 namespace {
 
-static constexpr bool kSkipExclusivityCuts = false;
+static constexpr bool kSkipExclusivityCuts = true;
 static constexpr int kNClasdSectors = 6;
 
 struct PeriodDef {
