@@ -36,7 +36,7 @@
 
 namespace {
 
-static constexpr bool kSkipExclusivityCuts = true;
+static constexpr bool kSkipExclusivityCuts = false;
 
 struct PeriodDef {
     std::string pretty;
