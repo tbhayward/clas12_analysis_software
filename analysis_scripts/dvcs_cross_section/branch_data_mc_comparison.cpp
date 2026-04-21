@@ -36,6 +36,8 @@
 
 namespace {
 
+static constexpr bool kSkipExclusivityCuts = true;
+
 struct PeriodDef {
     std::string pretty;
     std::string period_label;
@@ -943,19 +945,21 @@ static void fillHistogramsForTreeSinglePass(
 
         if (!passesGlobalCutsForBinder(b, period_label)) continue;
 
-        const std::string cut_key = periodCode(ch, period_label) + "_" + topoToKey(topo);
-        auto itCuts = combinedCuts.find(cut_key);
-        if (itCuts == combinedCuts.end()) {
-            std::ostringstream ss;
-            ss << "[branch_data_mc_comparison] FATAL: missing combined cuts entry for key "
-               << cut_key;
-            throw std::runtime_error(ss.str());
+        if (!kSkipExclusivityCuts) {
+            const std::string cut_key = periodCode(ch, period_label) + "_" + topoToKey(topo);
+            auto itCuts = combinedCuts.find(cut_key);
+            if (itCuts == combinedCuts.end()) {
+                std::ostringstream ss;
+                ss << "[branch_data_mc_comparison] FATAL: missing combined cuts entry for key "
+                   << cut_key;
+                throw std::runtime_error(ss.str());
+            }
+
+            const std::map<std::string, double> vals = b.valuesMap(ch);
+            const std::map<std::string, Stats>& cut_map = use_data_cuts ? itCuts->second.data : itCuts->second.mc;
+
+            if (!passes3SigmaCuts(cut_map, vals)) continue;
         }
-
-        const std::map<std::string, double> vals = b.valuesMap(ch);
-        const std::map<std::string, Stats>& cut_map = use_data_cuts ? itCuts->second.data : itCuts->second.mc;
-
-        if (!passes3SigmaCuts(cut_map, vals)) continue;
 
         for (const auto& branch_name : branch_names) {
             auto itLeaf = leaf_map.find(branch_name);
@@ -1181,7 +1185,12 @@ static void saveOneBranchCanvas(
     latex.SetTextSize(0.055);
     latex.DrawLatex(0.50, 0.72, makeCanvasTitle(channelToStr(ch), branch_name).c_str());
     latex.SetTextSize(0.040);
-    latex.DrawLatex(0.50, 0.56, "Global cuts + topology-matched 3#sigma exclusivity cuts");
+
+    if (kSkipExclusivityCuts) {
+        latex.DrawLatex(0.50, 0.56, "Global cuts only");
+    } else {
+        latex.DrawLatex(0.50, 0.56, "Global cuts + topology-matched 3#sigma exclusivity cuts");
+    }
     latex.DrawLatex(0.50, 0.47, "All topologies combined into one histogram per period");
     latex.DrawLatex(0.50, 0.38, "Each histogram normalized to its own integral");
 
@@ -1335,7 +1344,10 @@ void runAllBranchDataMcComparisons(
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
 
-    const std::map<std::string, CutDict> combinedCuts = loadCombinedCutsJson(combined_cuts_json);
+    std::map<std::string, CutDict> combinedCuts;
+    if (!kSkipExclusivityCuts) {
+        combinedCuts = loadCombinedCutsJson(combined_cuts_json);
+    }
 
     const std::string base_out_dir = outPlotDir + "/branch_data_mc_comparisons";
     std::filesystem::create_directories(base_out_dir);
