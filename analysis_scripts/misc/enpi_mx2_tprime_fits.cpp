@@ -69,15 +69,15 @@ static constexpr double kMx2Max = 1.10;
 static constexpr int kNMx2Bins = 30;
 
 static constexpr double kMuMin = 0.85;
-static constexpr double kMuMax = 1.00;
-static constexpr double kSigmaMin = 0.00;
-static constexpr double kSigmaMax = 0.20;
+static constexpr double kMuMax = 0.95;
+static constexpr double kSigmaMin = 0.03;
+static constexpr double kSigmaMax = 0.08;
 
 static constexpr double kPeakSearchMin = 0.84;
 static constexpr double kPeakSearchMax = 0.99;
 static constexpr double kPrefitHalfWidth = 0.055;
-static constexpr double kFinalFitMin = 0.70;
-static constexpr double kFinalFitMax = 1.10;
+static constexpr double kFinalFitMin = 0.78;
+static constexpr double kFinalFitMax = 1.04;
 
 static const std::vector<XBSlice> kXBSlices = {
     {"Low",     0.10, 0.25},
