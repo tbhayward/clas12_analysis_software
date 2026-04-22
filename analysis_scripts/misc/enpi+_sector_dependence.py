@@ -45,12 +45,12 @@ ASYMMETRY_CONFIGS = [
 ]
 
 SECTOR_STYLES = {
-    1: {"label": "Sector 1", "marker": "o", "linestyle": "-", "mfc": "none"},
-    2: {"label": "Sector 2", "marker": "s", "linestyle": "-", "mfc": "none"},
-    3: {"label": "Sector 3", "marker": "^", "linestyle": "-", "mfc": "none"},
-    4: {"label": "Sector 4", "marker": "D", "linestyle": "-", "mfc": "none"},
-    5: {"label": "Sector 5", "marker": "v", "linestyle": "-", "mfc": "none"},
-    6: {"label": "Sector 6", "marker": "P", "linestyle": "-", "mfc": "none"},
+    1: {"label": "Sector 1", "marker": "o", "mfc": "none"},
+    2: {"label": "Sector 2", "marker": "s", "mfc": "none"},
+    3: {"label": "Sector 3", "marker": "^", "mfc": "none"},
+    4: {"label": "Sector 4", "marker": "D", "mfc": "none"},
+    5: {"label": "Sector 5", "marker": "v", "mfc": "none"},
+    6: {"label": "Sector 6", "marker": "P", "mfc": "none"},
 }
 
 
@@ -166,12 +166,13 @@ def build_asymmetry_arrays(parsed_data, asym_key):
     x_plot = np.zeros(n_points, dtype=float)
     means = np.zeros(n_points, dtype=float)
     mean_errs = np.zeros(n_points, dtype=float)
-    rms_per_bin = np.zeros(n_points, dtype=float)
 
     pulls = {}
     for sector in sectors:
         pulls[sector] = np.zeros(n_points, dtype=float)
     #endfor
+
+    avg_signed_sigma_per_bin = np.zeros(n_points, dtype=float)
 
     for i in range(n_points):
         xvals_i = []
@@ -194,20 +195,27 @@ def build_asymmetry_arrays(parsed_data, asym_key):
         means[i] = mean_i
         mean_errs[i] = mean_err_i
 
-        residuals = vals_i - mean_i
-        rms_per_bin[i] = math.sqrt(np.mean(residuals * residuals))
+        signed_sigma_list = []
 
         for isector, sector in enumerate(sectors):
             err = errs_i[isector]
             if err > 0.0:
-                pulls[sector][i] = (vals_i[isector] - mean_i) / err
+                pull_val = (vals_i[isector] - mean_i) / err
+                pulls[sector][i] = pull_val
+                signed_sigma_list.append(pull_val)
             else:
                 pulls[sector][i] = np.nan
             #endif
         #endfor
+
+        if len(signed_sigma_list) > 0:
+            avg_signed_sigma_per_bin[i] = float(np.mean(np.array(signed_sigma_list, dtype=float)))
+        else:
+            avg_signed_sigma_per_bin[i] = np.nan
+        #endif
     #endfor
 
-    avg_rms = float(np.mean(rms_per_bin))
+    avg_signed_sigma = float(np.nanmean(avg_signed_sigma_per_bin))
 
     return {
         "x_plot": x_plot,
@@ -215,8 +223,8 @@ def build_asymmetry_arrays(parsed_data, asym_key):
         "means": means,
         "mean_errs": mean_errs,
         "pulls": pulls,
-        "rms_per_bin": rms_per_bin,
-        "avg_rms": avg_rms,
+        "avg_signed_sigma_per_bin": avg_signed_sigma_per_bin,
+        "avg_signed_sigma": avg_signed_sigma,
     }
 #endfor
 
@@ -269,7 +277,7 @@ def make_plot(all_results):
                 y,
                 yerr=yerr,
                 marker=style["marker"],
-                linestyle=style["linestyle"],
+                linestyle="none",
                 linewidth=1.2,
                 markersize=5.5,
                 capsize=2.5,
@@ -277,15 +285,17 @@ def make_plot(all_results):
                 label=style["label"]
             )
 
+            color = eb[0].get_color()
+
             ax_bot.plot(
                 x_mean,
                 pull,
                 marker=style["marker"],
-                linestyle=style["linestyle"],
+                linestyle="none",
                 linewidth=1.0,
                 markersize=5.0,
                 markerfacecolor=style["mfc"],
-                color=eb[0].get_color()
+                color=color
             )
 
             if idx == 0:
@@ -294,11 +304,11 @@ def make_plot(all_results):
                         [0],
                         [0],
                         marker=style["marker"],
-                        linestyle=style["linestyle"],
+                        linestyle="none",
                         linewidth=1.2,
                         markersize=6.0,
                         markerfacecolor=style["mfc"],
-                        color=eb[0].get_color()
+                        color=color
                     )
                 )
                 legend_labels.append(style["label"])
@@ -318,14 +328,14 @@ def make_plot(all_results):
             label="Weighted mean"
         )
 
-        ax_top.set_xlim(0.0, 0.6)
+        ax_top.set_xlim(0.1, 0.6)
         ax_top.set_ylim(cfg["ylim_top"])
         ax_top.set_ylabel(cfg["ylabel"], fontsize=13)
         ax_top.grid(True, alpha=0.3)
         ax_top.tick_params(axis="x", labelbottom=False)
 
         ax_bot.axhline(0.0, color="gray", linestyle="--", linewidth=1.0)
-        ax_bot.set_xlim(0.0, 0.6)
+        ax_bot.set_xlim(0.1, 0.6)
         ax_bot.set_ylim(cfg["ylim_pull"])
         ax_bot.set_xlabel(r"$x_{B}$", fontsize=13)
         ax_bot.set_ylabel("Pull", fontsize=12)
@@ -334,7 +344,7 @@ def make_plot(all_results):
         ax_top.text(
             0.03,
             0.93,
-            "Avg RMS = {:.4f}".format(result["avg_rms"]),
+            "Avg signed pull = {:.4f}".format(result["avg_signed_sigma"]),
             transform=ax_top.transAxes,
             ha="left",
             va="top",
@@ -389,16 +399,16 @@ def main():
     make_plot(all_results)
 
     print("")
-    print("Average RMS of sector values with respect to the weighted mean:")
-    overall_rms_list = []
+    print("Average signed standard deviations away from the weighted mean:")
+    overall_signed_list = []
 
     for cfg in ASYMMETRY_CONFIGS:
-        avg_rms = all_results[cfg["key"]]["avg_rms"]
-        overall_rms_list.append(avg_rms)
-        print("  {:<12s} : {:.6f}".format(cfg["key"], avg_rms))
+        avg_signed_sigma = all_results[cfg["key"]]["avg_signed_sigma"]
+        overall_signed_list.append(avg_signed_sigma)
+        print("  {:<12s} : {:.6f}".format(cfg["key"], avg_signed_sigma))
     #endfor
 
-    overall_avg = float(np.mean(np.array(overall_rms_list, dtype=float)))
+    overall_avg = float(np.nanmean(np.array(overall_signed_list, dtype=float)))
 
     print("")
     print("Overall average across all five asymmetries: {:.6f}".format(overall_avg))
