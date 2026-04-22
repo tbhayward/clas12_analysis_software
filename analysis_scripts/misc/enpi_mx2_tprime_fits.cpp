@@ -77,7 +77,7 @@ static constexpr double kPeakSearchMin = 0.84;
 static constexpr double kPeakSearchMax = 0.99;
 static constexpr double kPrefitHalfWidth = 0.055;
 static constexpr double kFinalFitMin = 0.70;
-static constexpr double kFinalFitMax = 1.2;
+static constexpr double kFinalFitMax = 1.3;
 
 static const std::vector<XBSlice> kXBSlices = {
     {"Low",     0.10, 0.25},
