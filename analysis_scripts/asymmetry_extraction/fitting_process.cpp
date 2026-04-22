@@ -919,7 +919,6 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    cpp = 1; cpm = 1; cmp = 1; cmm = 1;
     double Npp = histPosPos->GetBinContent(iBin)/cpp;
     double Npm = histPosNeg->GetBinContent(iBin)/cpm;
     double Nmp = histNegPos->GetBinContent(iBin)/cmp;
