@@ -73,6 +73,17 @@ struct FitConfig {
     double sigma_seed;
 };
 
+struct SummaryPoint {
+    double x_min;
+    double x_max;
+    double t_min;
+    double t_max;
+    double mu;
+    double mu_err;
+    double sigma;
+    double sigma_err;
+};
+
 static const std::string kInputFile = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_combined_inb_NH3_epi+_2.root";
 static const std::string kTreeName = "PhysicsEvents";
 static const std::string kOutputDir = "output/enpi+_Mx2_fits";
@@ -392,6 +403,39 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
     return result;
 }
 
+std::vector<SummaryPoint> get_hardcoded_summary_points() {
+    std::vector<SummaryPoint> pts = {
+        {0.1000, 0.2500, 0.0500, 0.2500, 0.9583, 0.0016, 0.0723, 0.0023},
+        {0.1000, 0.2500, 0.2500, 0.4500, 0.9439, 0.0020, 0.0812, 0.0030},
+        {0.1000, 0.2500, 0.4500, 0.6500, 0.9348, 0.0027, 0.0732, 0.0039},
+        {0.1000, 0.2500, 0.6500, 0.8500, 0.9296, 0.0037, 0.0807, 0.0055},
+        {0.1000, 0.2500, 0.8500, 1.0500, 0.9292, 0.0049, 0.0805, 0.0102},
+        {0.1000, 0.2500, 1.0500, 1.2500, 0.9221, 0.0051, 0.0738, 0.0069},
+
+        {0.2500, 0.3500, 0.0500, 0.2500, 0.9500, 0.0000, 0.0723, 0.0008},
+        {0.2500, 0.3500, 0.2500, 0.4500, 0.9340, 0.0013, 0.0803, 0.0020},
+        {0.2500, 0.3500, 0.4500, 0.6500, 0.9263, 0.0018, 0.0815, 0.0000},
+        {0.2500, 0.3500, 0.6500, 0.8500, 0.9151, 0.0025, 0.0761, 0.0038},
+        {0.2500, 0.3500, 0.8500, 1.0500, 0.9052, 0.0033, 0.0734, 0.0047},
+        {0.2500, 0.3500, 1.0500, 1.2500, 0.9054, 0.0051, 0.0769, 0.0076},
+
+        {0.3500, 0.4500, 0.0500, 0.2500, 0.9377, 0.0006, 0.0787, 0.0009},
+        {0.3500, 0.4500, 0.2500, 0.4500, 0.9159, 0.0014, 0.0703, 0.0021},
+        {0.3500, 0.4500, 0.4500, 0.6500, 0.9139, 0.0018, 0.0790, 0.0026},
+        {0.3500, 0.4500, 0.6500, 0.8500, 0.9066, 0.0024, 0.0821, 0.0038},
+        {0.3500, 0.4500, 0.8500, 1.0500, 0.8983, 0.0029, 0.0740, 0.0045},
+        {0.3500, 0.4500, 1.0500, 1.2500, 0.9079, 0.0042, 0.0847, 0.0066},
+
+        {0.4500, 0.6000, 0.0500, 0.2500, 0.9166, 0.0007, 0.0849, 0.0010},
+        {0.4500, 0.6000, 0.2500, 0.4500, 0.9067, 0.0026, 0.0800, 0.0002},
+        {0.4500, 0.6000, 0.4500, 0.6500, 0.9114, 0.0022, 0.0790, 0.0033},
+        {0.4500, 0.6000, 0.6500, 0.8500, 0.9023, 0.0026, 0.0763, 0.0037},
+        {0.4500, 0.6000, 0.8500, 1.0500, 0.8977, 0.0028, 0.0740, 0.0041},
+        {0.4500, 0.6000, 1.0500, 1.2500, 0.8979, 0.0032, 0.0667, 0.0047}
+    };
+    return pts;
+}
+
 void write_csv(const std::vector<FitResult>& results, const std::string& path) {
     std::ofstream out(path.c_str());
     out << "slice_name,x_min,x_max,t_min,t_max,mu,mu_err,sigma,sigma_err,n_entries,fit_success,fit_status,cov_status,chi2,ndf\n";
@@ -661,6 +705,127 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
     canvas.SaveAs(pdf_path.c_str());
 }
 
+void draw_summary_plot_hardcoded(const std::vector<SummaryPoint>& points, const std::string& png_path, const std::string& pdf_path) {
+    TCanvas canvas("c_summary_hardcoded", "mu sigma summary hardcoded", 1600, 1000);
+    canvas.Divide(1, 2, 0.001, 0.001);
+
+    int n_total = static_cast<int>(points.size());
+    int colors[4] = {kBlue + 1, kRed + 1, kGreen + 2, kMagenta + 2};
+
+    double sigma_max_data = 0.0;
+    for (size_t i = 0; i < points.size(); i++) {
+        sigma_max_data = std::max(sigma_max_data, points[i].sigma + points[i].sigma_err);
+    }
+    double sigma_plot_max = std::max(0.16, 1.05 * sigma_max_data);
+
+    canvas.cd(1);
+    gPad->SetGrid();
+    gPad->SetLeftMargin(0.12);
+    gPad->SetRightMargin(0.03);
+    gPad->SetTopMargin(0.10);
+    gPad->SetBottomMargin(0.12);
+
+    TH1D frame_mu("frame_mu_hardcoded", "", n_total, 0.5, n_total + 0.5);
+    frame_mu.SetMinimum(0.84);
+    frame_mu.SetMaximum(1.03);
+    frame_mu.GetXaxis()->SetTitle("Bin");
+    frame_mu.GetYaxis()->SetTitle("#mu");
+    frame_mu.GetXaxis()->CenterTitle();
+    frame_mu.GetYaxis()->CenterTitle();
+    frame_mu.GetYaxis()->SetTitleSize(0.050);
+    frame_mu.GetYaxis()->SetLabelSize(0.040);
+    frame_mu.GetYaxis()->SetTitleOffset(0.95);
+    frame_mu.Draw();
+
+    TLegend leg_mu(0.12, 0.77, 0.52, 0.93);
+    leg_mu.SetNColumns(2);
+    leg_mu.SetBorderSize(1);
+    leg_mu.SetFillStyle(1001);
+    leg_mu.SetFillColor(kWhite);
+    leg_mu.SetTextSize(0.035);
+
+    for (int ix = 0; ix < static_cast<int>(kXBSlices.size()); ix++) {
+        std::vector<double> xx, yy, ex, ey;
+        for (int it = 0; it < static_cast<int>(kTPrimeBins.size()); it++) {
+            int idx = ix * static_cast<int>(kTPrimeBins.size()) + it;
+            xx.push_back(idx + 1);
+            ex.push_back(0.0);
+            yy.push_back(points[idx].mu);
+            ey.push_back(points[idx].mu_err);
+        }
+
+        TGraphErrors* g = new TGraphErrors(static_cast<int>(xx.size()), xx.data(), yy.data(), ex.data(), ey.data());
+        g->SetMarkerStyle(20);
+        g->SetMarkerSize(1.1);
+        g->SetMarkerColor(colors[ix]);
+        g->SetLineColor(colors[ix]);
+        g->SetLineWidth(2);
+        g->Draw("P SAME");
+
+        std::ostringstream label;
+        label << "x_{B} #in [" << std::fixed << std::setprecision(2)
+              << kXBSlices[ix].xmin << ", " << kXBSlices[ix].xmax << "]";
+        leg_mu.AddEntry(g, label.str().c_str(), "lp");
+    }
+
+    for (int xline = 6; xline <= 18; xline += 6) {
+        TLine* line = new TLine(xline + 0.5, frame_mu.GetMinimum(), xline + 0.5, frame_mu.GetMaximum());
+        line->SetLineStyle(3);
+        line->SetLineColor(kGray + 1);
+        line->Draw("same");
+    }
+
+    leg_mu.Draw();
+
+    canvas.cd(2);
+    gPad->SetGrid();
+    gPad->SetLeftMargin(0.12);
+    gPad->SetRightMargin(0.03);
+    gPad->SetTopMargin(0.08);
+    gPad->SetBottomMargin(0.12);
+
+    TH1D frame_sigma("frame_sigma_hardcoded", "", n_total, 0.5, n_total + 0.5);
+    frame_sigma.SetMinimum(0.04);
+    frame_sigma.SetMaximum(sigma_plot_max);
+    frame_sigma.GetXaxis()->SetTitle("Bin");
+    frame_sigma.GetYaxis()->SetTitle("#sigma");
+    frame_sigma.GetXaxis()->CenterTitle();
+    frame_sigma.GetYaxis()->CenterTitle();
+    frame_sigma.GetYaxis()->SetTitleSize(0.050);
+    frame_sigma.GetYaxis()->SetLabelSize(0.040);
+    frame_sigma.GetYaxis()->SetTitleOffset(0.95);
+    frame_sigma.Draw();
+
+    for (int ix = 0; ix < static_cast<int>(kXBSlices.size()); ix++) {
+        std::vector<double> xx, yy, ex, ey;
+        for (int it = 0; it < static_cast<int>(kTPrimeBins.size()); it++) {
+            int idx = ix * static_cast<int>(kTPrimeBins.size()) + it;
+            xx.push_back(idx + 1);
+            ex.push_back(0.0);
+            yy.push_back(points[idx].sigma);
+            ey.push_back(points[idx].sigma_err);
+        }
+
+        TGraphErrors* g = new TGraphErrors(static_cast<int>(xx.size()), xx.data(), yy.data(), ex.data(), ey.data());
+        g->SetMarkerStyle(20);
+        g->SetMarkerSize(1.1);
+        g->SetMarkerColor(colors[ix]);
+        g->SetLineColor(colors[ix]);
+        g->SetLineWidth(2);
+        g->Draw("P SAME");
+    }
+
+    for (int xline = 6; xline <= 18; xline += 6) {
+        TLine* line = new TLine(xline + 0.5, frame_sigma.GetMinimum(), xline + 0.5, frame_sigma.GetMaximum());
+        line->SetLineStyle(3);
+        line->SetLineColor(kGray + 1);
+        line->Draw("same");
+    }
+
+    canvas.SaveAs(png_path.c_str());
+    canvas.SaveAs(pdf_path.c_str());
+}
+
 int main() {
     setup_global_style();
     ensure_output_dir(kOutputDir);
@@ -756,12 +921,16 @@ int main() {
         }
     }
 
+    std::vector<SummaryPoint> hardcoded_points = get_hardcoded_summary_points();
+
     std::string csv_path = kOutputDir + "/Mx2_fit_params_tprime.csv";
     std::string tex_path = kOutputDir + "/Mx2_fit_params_tprime_table.tex";
     std::string grid_png = kOutputDir + "/Mx2_tprime_fit_grid.png";
     std::string grid_pdf = kOutputDir + "/Mx2_tprime_fit_grid.pdf";
     std::string summary_png = kOutputDir + "/Mx2_tprime_mu_sigma_summary.png";
     std::string summary_pdf = kOutputDir + "/Mx2_tprime_mu_sigma_summary.pdf";
+    std::string summary_hardcoded_png = kOutputDir + "/Mx2_tprime_mu_sigma_summary_hardcoded.png";
+    std::string summary_hardcoded_pdf = kOutputDir + "/Mx2_tprime_mu_sigma_summary_hardcoded.pdf";
 
     std::cout << "Writing CSV..." << std::endl;
     write_csv(results, csv_path);
@@ -772,16 +941,21 @@ int main() {
     std::cout << "Drawing fit grid..." << std::endl;
     draw_fit_grid(hists, results, grid_png, grid_pdf);
 
-    std::cout << "Drawing summary plot..." << std::endl;
+    std::cout << "Drawing fit-derived summary plot..." << std::endl;
     draw_summary_plot(results, summary_png, summary_pdf);
 
+    std::cout << "Drawing hard-coded summary plot..." << std::endl;
+    draw_summary_plot_hardcoded(hardcoded_points, summary_hardcoded_png, summary_hardcoded_pdf);
+
     std::cout << "Done." << std::endl;
-    std::cout << "CSV:         " << csv_path << std::endl;
-    std::cout << "LaTeX table: " << tex_path << std::endl;
-    std::cout << "Grid PNG:    " << grid_png << std::endl;
-    std::cout << "Grid PDF:    " << grid_pdf << std::endl;
-    std::cout << "Summary PNG: " << summary_png << std::endl;
-    std::cout << "Summary PDF: " << summary_pdf << std::endl;
+    std::cout << "CSV:                   " << csv_path << std::endl;
+    std::cout << "LaTeX table:           " << tex_path << std::endl;
+    std::cout << "Grid PNG:              " << grid_png << std::endl;
+    std::cout << "Grid PDF:              " << grid_pdf << std::endl;
+    std::cout << "Summary PNG:           " << summary_png << std::endl;
+    std::cout << "Summary PDF:           " << summary_pdf << std::endl;
+    std::cout << "Hard-coded Summary PNG:" << summary_hardcoded_png << std::endl;
+    std::cout << "Hard-coded Summary PDF:" << summary_hardcoded_pdf << std::endl;
 
     file->Close();
     return 0;
