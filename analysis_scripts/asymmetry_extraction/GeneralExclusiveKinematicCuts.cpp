@@ -338,77 +338,110 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     // if (*x < 0.1 || *x > 0.60) return false;
 
     if (property == "temp") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.10 && *x < 0.60);
         bool goodEvent = (*x > 0.10 && *x < 0.60);
         return goodEvent;
-        // return *Mx2 > 2.25;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
-        // return PassesDynamicMx2(*x, *t, *Mx2);
-        // return *Mx2 > 0.86 && *Mx2 < 1;
     }
 
     if (property == "enpi") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.10 && *x < 0.60);
         bool goodEvent = (*x > 0.10 && *x < 0.60);
         if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
         return PassesDynamicMx2(*x, *tprime, *Mx2);
-        // return *Mx2 > 0.86 && *Mx2 < 1;
     }
+
     if (property == "enpiLowxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.10 && *x < 0.25);
         bool goodEvent = (*x > 0.10 && *x < 0.25);
         if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
         return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
     if (property == "enpiMidLowxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.25 && *x < 0.35);
         bool goodEvent = (*x > 0.25 && *x < 0.35);
         if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
         return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
     if (property == "enpiMidHighxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.35 && *x < 0.45);
         bool goodEvent = (*x > 0.35 && *x < 0.45);
         if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
         return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
     if (property == "enpiHighxB") {
-        // bool goodEvent = (*fiducial_status >= 111) &&
-        //                  (*x > 0.45 && *x < 0.60);
         bool goodEvent = (*x > 0.45 && *x < 0.60);
         if (!goodEvent) return false;
-        // return *Mx2 > 1.52 && *Mx2 < 1.77;
         return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
-    // if (property == "enpiHarut1") {
-    //     bool goodEvent = (*fiducial_status >= 111) &&
-    //                      (-*tprime > 0.05 && -*tprime < 0.45);
-    //     if (!goodEvent) return false;
-    //     return *Mx2 > 0.86 && *Mx2 < 1;
-    //     // return PassesDynamicMx2(*x, *tprime, *Mx2);
-    // }
-    // if (property == "enpiHarut2") {
-    //     bool goodEvent = (*fiducial_status >= 111) &&
-    //                      (-*t > 0.45 && -*t < 0.85);
-    //     if (!goodEvent) return false;
-    //     return *Mx2 > 0.86 && *Mx2 < 1;
-    //     // return PassesDynamicMx2(*x, *tprime, *Mx2);
-    // }
-    // if (property == "enpiHarut3") {
-    //     bool goodEvent = (*fiducial_status >= 111) &&
-    //                      (-*tprime > 0.85 && -*tprime < 1.225);
-    //     if (!goodEvent) return false;
-    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
-    // }
+
+    if (property == "enpi_sector1") {
+        double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+        while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+        while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+        bool inSector = ((e_phi_deg >= 330.0 && e_phi_deg < 360.0) ||
+                         (e_phi_deg >= 0.0   && e_phi_deg < 30.0));
+
+        bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *tprime, *Mx2);
+    }
+
+    if (property == "enpi_sector2") {
+        double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+        while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+        while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+        bool inSector = (e_phi_deg >= 30.0 && e_phi_deg < 90.0);
+
+        bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *tprime, *Mx2);
+    }
+
+    if (property == "enpi_sector3") {
+        double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+        while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+        while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+        bool inSector = (e_phi_deg >= 90.0 && e_phi_deg < 150.0);
+
+        bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *tprime, *Mx2);
+    }
+
+    if (property == "enpi_sector4") {
+        double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+        while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+        while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+        bool inSector = (e_phi_deg >= 150.0 && e_phi_deg < 210.0);
+
+        bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *tprime, *Mx2);
+    }
+
+    if (property == "enpi_sector5") {
+        double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+        while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+        while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+        bool inSector = (e_phi_deg >= 210.0 && e_phi_deg < 270.0);
+
+        bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *tprime, *Mx2);
+    }
+
+    if (property == "enpi_sector6") {
+        double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+        while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+        while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+        bool inSector = (e_phi_deg >= 270.0 && e_phi_deg < 330.0);
+
+        bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *tprime, *Mx2);
+    }
+    
 
     return false;
 }
