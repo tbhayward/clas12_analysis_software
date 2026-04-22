@@ -879,14 +879,13 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
       if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
-      else if (*helicity < 0 && *target_pol > 0) {  histNegPos->Fill(*phi);}
+      else if (*helicity < 0 && *target_pol >= 0) {  histNegPos->Fill(*phi);}
 
       if (*helicity > 0 && (*target_pol >= 0) ) { histPosPos->Fill(*phi); } 
-      else if (*helicity < 0 && (*target_pol <= 0) ) {  histNegNeg->Fill(*phi); } 
+      else if (*helicity < 0 && (*target_pol < 0) ) {  histNegNeg->Fill(*phi); } 
       // this structure allows the same script to run for both polarized and unpolarized targets
       // if it is an RGC run with a polarized target (runnum > 11571) then we assign all four
       // combinations, if it is an earlier experiment then we only assign PosPos and NegNeg
-      // and set the Ptp and Ptm below to 1, this allows for a regular BSA calculation
 
 
       // Accumulate polarization and event count for mean polarization calculation
@@ -4180,14 +4179,14 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.001,  -1.0,  1.0);
     minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.001,  -1.0,  1.0);
     minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.001,  -1.0,  1.0);
-    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
-    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1.0,  1.0);
-    minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.01,  -1.0,  1.0);
-    minuit.DefineParameter(10, "A_T_LL",          0.00,  0.01,  -1.0,  1.0);
-    // minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.00,  -1.0,  1.0);
-    // minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.00,  -1.0,  1.0);
-    // minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.00,  -1.0,  1.0);
-    // minuit.DefineParameter(10, "A_T_LL",          0.00,  0.00,  -1.0,  1.0);
+    // minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
+    // minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1.0,  1.0);
+    // minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.01,  -1.0,  1.0);
+    // minuit.DefineParameter(10, "A_T_LL",          0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.00,  -1.0,  1.0);
+    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.00,  -1.0,  1.0);
+    minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.00,  -1.0,  1.0);
+    minuit.DefineParameter(10, "A_T_LL",          0.00,  0.00,  -1.0,  1.0);
 
     // minuit.FixParameter(0);
     // minuit.FixParameter(1);
