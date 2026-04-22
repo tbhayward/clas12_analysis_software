@@ -70,7 +70,7 @@ static constexpr int kNMx2Bins = 15;
 
 static constexpr double kMuMin = 0.85;
 static constexpr double kMuMax = 0.95;
-static constexpr double kSigmaMin = 0.02;
+static constexpr double kSigmaMin = 0.055;
 static constexpr double kSigmaMax = 0.12;
 
 static constexpr double kPeakSearchMin = 0.84;
