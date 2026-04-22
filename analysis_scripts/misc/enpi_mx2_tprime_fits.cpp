@@ -65,7 +65,7 @@ static const std::string kTreeName = "PhysicsEvents";
 static const std::string kOutputDir = "output/enpi+_Mx2_fits";
 
 static constexpr double kMx2Min = 0.70;
-static constexpr double kMx2Max = 1.20;
+static constexpr double kMx2Max = 1.30;
 static constexpr int kNMx2Bins = 15;
 
 static constexpr double kMuMin = 0.85;
