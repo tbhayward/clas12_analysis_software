@@ -567,8 +567,8 @@ void draw_fit_grid(const std::vector<std::vector<TH1D*> >& hists, const std::vec
 
             if (std::isfinite(r.mu) && std::isfinite(r.sigma)) {
                 std::ostringstream fit_label;
-                fit_label << "#mu = " << std::fixed << std::setprecision(4) << r.mu
-                          << ", #sigma = " << std::fixed << std::setprecision(4) << r.sigma;
+                fit_label << "#mu = " << std::fixed << std::setprecision(4) << r.mu << " (GeV^{2})"
+                          << ", #sigma = " << std::fixed << std::setprecision(4) << r.sigma << " (GeV^{2})";
                 leg.AddEntry(h, "Data", "lep");
                 leg.AddEntry((TObject*)0, fit_label.str().c_str(), "");
             } else {
