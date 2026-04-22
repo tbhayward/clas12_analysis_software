@@ -14,43 +14,43 @@ OUTPUT_FILE = "output/enpi+_sector_dependence.pdf"
 ASYMMETRY_CONFIGS = [
     {
         "key": "ALUsinphi",
-        "title": r"$F_{LU}^{\sin\phi}/F_{UU}$",
+        "ylabel": r"$F_{LU}^{\sin\phi}/F_{UU}$",
         "ylim_top": (-0.2, 0.2),
         "ylim_pull": (-5.0, 5.0),
     },
     {
         "key": "AULsinphi",
-        "title": r"$F_{UL}^{\sin\phi}/F_{UU}$",
+        "ylabel": r"$F_{UL}^{\sin\phi}/F_{UU}$",
         "ylim_top": (-0.2, 0.2),
         "ylim_pull": (-5.0, 5.0),
     },
     {
         "key": "AULsin2phi",
-        "title": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
+        "ylabel": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
         "ylim_top": (-0.2, 0.2),
         "ylim_pull": (-5.0, 5.0),
     },
     {
         "key": "ALL",
-        "title": r"$F_{LL}/F_{UU}$",
+        "ylabel": r"$F_{LL}/F_{UU}$",
         "ylim_top": (-0.2, 0.8),
         "ylim_pull": (-5.0, 5.0),
     },
     {
         "key": "ALLcosphi",
-        "title": r"$F_{LL}^{\cos\phi}/F_{UU}$",
+        "ylabel": r"$F_{LL}^{\cos\phi}/F_{UU}$",
         "ylim_top": (-0.2, 0.8),
         "ylim_pull": (-5.0, 5.0),
     },
 ]
 
 SECTOR_STYLES = {
-    1: {"label": "Sector 1", "marker": "o", "linestyle": "-",  "mfc": "none"},
-    2: {"label": "Sector 2", "marker": "s", "linestyle": "-",  "mfc": "none"},
-    3: {"label": "Sector 3", "marker": "^", "linestyle": "-",  "mfc": "none"},
-    4: {"label": "Sector 4", "marker": "D", "linestyle": "-",  "mfc": "none"},
-    5: {"label": "Sector 5", "marker": "v", "linestyle": "-",  "mfc": "none"},
-    6: {"label": "Sector 6", "marker": "P", "linestyle": "-",  "mfc": "none"},
+    1: {"label": "Sector 1", "marker": "o", "linestyle": "-", "mfc": "none"},
+    2: {"label": "Sector 2", "marker": "s", "linestyle": "-", "mfc": "none"},
+    3: {"label": "Sector 3", "marker": "^", "linestyle": "-", "mfc": "none"},
+    4: {"label": "Sector 4", "marker": "D", "linestyle": "-", "mfc": "none"},
+    5: {"label": "Sector 5", "marker": "v", "linestyle": "-", "mfc": "none"},
+    6: {"label": "Sector 6", "marker": "P", "linestyle": "-", "mfc": "none"},
 }
 
 
@@ -68,6 +68,7 @@ def parse_triplets(triplet_block):
         r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*,\s*"
         r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*\}"
     )
+
     matches = triplet_pattern.findall(triplet_block)
 
     triplets = []
@@ -114,7 +115,7 @@ def weighted_mean(values, errors):
     values = np.asarray(values, dtype=float)
     errors = np.asarray(errors, dtype=float)
 
-    good = errors > 0.0
+    good = np.isfinite(values) & np.isfinite(errors) & (errors > 0.0)
     if not np.any(good):
         return np.nan, np.nan
     #endif
@@ -122,6 +123,7 @@ def weighted_mean(values, errors):
     weights = 1.0 / (errors[good] * errors[good])
     mean = np.sum(weights * values[good]) / np.sum(weights)
     mean_err = math.sqrt(1.0 / np.sum(weights))
+
     return mean, mean_err
 #endfor
 
@@ -130,7 +132,6 @@ def build_asymmetry_arrays(parsed_data, asym_key):
     sectors = sorted(parsed_data.keys())
     sector_arrays = {}
 
-    x_reference = None
     n_points = None
 
     for sector in sectors:
@@ -139,19 +140,19 @@ def build_asymmetry_arrays(parsed_data, asym_key):
         #endif
 
         triplets = parsed_data[sector][asym_key]
+
         xvals = np.array([t[0] for t in triplets], dtype=float)
         yvals = np.array([t[1] for t in triplets], dtype=float)
         evals = np.array([t[2] for t in triplets], dtype=float)
 
-        if x_reference is None:
-            x_reference = xvals.copy()
-            n_points = len(x_reference)
+        if n_points is None:
+            n_points = len(xvals)
         else:
             if len(xvals) != n_points:
-                raise RuntimeError("Inconsistent number of xB bins for asymmetry {}".format(asym_key))
-            #endif
-            if not np.allclose(xvals, x_reference, atol=1.0e-8, rtol=0.0):
-                raise RuntimeError("xB values do not match across sectors for asymmetry {}".format(asym_key))
+                raise RuntimeError(
+                    "Inconsistent number of points across sectors for asymmetry {}: "
+                    "sector {} has {} points but expected {}".format(asym_key, sector, len(xvals), n_points)
+                )
             #endif
         #endif
 
@@ -162,51 +163,54 @@ def build_asymmetry_arrays(parsed_data, asym_key):
         }
     #endfor
 
+    x_plot = np.zeros(n_points, dtype=float)
     means = np.zeros(n_points, dtype=float)
     mean_errs = np.zeros(n_points, dtype=float)
+    rms_per_bin = np.zeros(n_points, dtype=float)
+
+    pulls = {}
+    for sector in sectors:
+        pulls[sector] = np.zeros(n_points, dtype=float)
+    #endfor
 
     for i in range(n_points):
+        xvals_i = []
         vals_i = []
         errs_i = []
+
         for sector in sectors:
+            xvals_i.append(sector_arrays[sector]["x"][i])
             vals_i.append(sector_arrays[sector]["y"][i])
             errs_i.append(sector_arrays[sector]["err"][i])
         #endfor
 
+        xvals_i = np.array(xvals_i, dtype=float)
+        vals_i = np.array(vals_i, dtype=float)
+        errs_i = np.array(errs_i, dtype=float)
+
+        x_plot[i] = np.mean(xvals_i)
+
         mean_i, mean_err_i = weighted_mean(vals_i, errs_i)
         means[i] = mean_i
         mean_errs[i] = mean_err_i
-    #endfor
 
-    pulls = {}
-    rms_per_bin = np.zeros(n_points, dtype=float)
-
-    for i in range(n_points):
-        residuals = []
-        for sector in sectors:
-            y = sector_arrays[sector]["y"][i]
-            err = sector_arrays[sector]["err"][i]
-            pull_val = np.nan
-            if err > 0.0:
-                pull_val = (y - means[i]) / err
-            #endif
-
-            if sector not in pulls:
-                pulls[sector] = np.zeros(n_points, dtype=float)
-            #endif
-            pulls[sector][i] = pull_val
-
-            residuals.append(y - means[i])
-        #endfor
-
-        residuals = np.array(residuals, dtype=float)
+        residuals = vals_i - mean_i
         rms_per_bin[i] = math.sqrt(np.mean(residuals * residuals))
+
+        for isector, sector in enumerate(sectors):
+            err = errs_i[isector]
+            if err > 0.0:
+                pulls[sector][i] = (vals_i[isector] - mean_i) / err
+            else:
+                pulls[sector][i] = np.nan
+            #endif
+        #endfor
     #endfor
 
     avg_rms = float(np.mean(rms_per_bin))
 
     return {
-        "x": x_reference,
+        "x_plot": x_plot,
         "sector_arrays": sector_arrays,
         "means": means,
         "mean_errs": mean_errs,
@@ -219,6 +223,7 @@ def build_asymmetry_arrays(parsed_data, asym_key):
 
 def make_plot(all_results):
     fig = plt.figure(figsize=(18, 11))
+
     outer = GridSpec(
         2,
         3,
@@ -226,9 +231,9 @@ def make_plot(all_results):
         left=0.06,
         right=0.98,
         bottom=0.07,
-        top=0.94,
+        top=0.95,
         wspace=0.28,
-        hspace=0.26
+        hspace=0.24
     )
 
     legend_handles = []
@@ -250,10 +255,11 @@ def make_plot(all_results):
         ax_bot = fig.add_subplot(inner[1], sharex=ax_top)
 
         result = all_results[cfg["key"]]
-        x = result["x"]
+        x_mean = result["x_plot"]
 
         for sector in sorted(result["sector_arrays"].keys()):
             style = SECTOR_STYLES[sector]
+            x = result["sector_arrays"][sector]["x"]
             y = result["sector_arrays"][sector]["y"]
             yerr = result["sector_arrays"][sector]["err"]
             pull = result["pulls"][sector]
@@ -271,16 +277,15 @@ def make_plot(all_results):
                 label=style["label"]
             )
 
-            ax_bot.errorbar(
-                x,
+            ax_bot.plot(
+                x_mean,
                 pull,
-                yerr=np.zeros_like(pull),
                 marker=style["marker"],
                 linestyle=style["linestyle"],
                 linewidth=1.0,
                 markersize=5.0,
-                capsize=0.0,
-                markerfacecolor=style["mfc"]
+                markerfacecolor=style["mfc"],
+                color=eb[0].get_color()
             )
 
             if idx == 0:
@@ -301,7 +306,7 @@ def make_plot(all_results):
         #endfor
 
         ax_top.errorbar(
-            x,
+            x_mean,
             result["means"],
             yerr=result["mean_errs"],
             marker="o",
@@ -315,8 +320,7 @@ def make_plot(all_results):
 
         ax_top.set_xlim(0.0, 0.6)
         ax_top.set_ylim(cfg["ylim_top"])
-        ax_top.set_ylabel(cfg["title"], fontsize=13)
-        ax_top.set_title(cfg["title"], fontsize=14, pad=8)
+        ax_top.set_ylabel(cfg["ylabel"], fontsize=13)
         ax_top.grid(True, alpha=0.3)
         ax_top.tick_params(axis="x", labelbottom=False)
 
@@ -327,16 +331,15 @@ def make_plot(all_results):
         ax_bot.set_ylabel("Pull", fontsize=12)
         ax_bot.grid(True, alpha=0.3)
 
-        avg_rms = result["avg_rms"]
         ax_top.text(
             0.03,
             0.93,
-            "Avg RMS = {:.4f}".format(avg_rms),
+            "Avg RMS = {:.4f}".format(result["avg_rms"]),
             transform=ax_top.transAxes,
             ha="left",
             va="top",
             fontsize=10,
-            bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.8, edgecolor="0.7")
+            bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.85, edgecolor="0.7")
         )
     #endfor
 
@@ -350,6 +353,15 @@ def make_plot(all_results):
     )
     legend_labels_with_mean.append("Weighted mean")
 
+    legend_ax.text(
+        0.5,
+        0.82,
+        "Sector dependence",
+        ha="center",
+        va="center",
+        fontsize=16
+    )
+
     legend_ax.legend(
         legend_handles_with_mean,
         legend_labels_with_mean,
@@ -359,16 +371,6 @@ def make_plot(all_results):
         ncol=1
     )
 
-    legend_ax.text(
-        0.5,
-        0.83,
-        "Sector dependence",
-        ha="center",
-        va="center",
-        fontsize=16
-    )
-
-    fig.suptitle("Sector-by-sector asymmetry comparison", fontsize=18)
     fig.savefig(OUTPUT_FILE)
     plt.close(fig)
 #endfor
@@ -397,6 +399,7 @@ def main():
     #endfor
 
     overall_avg = float(np.mean(np.array(overall_rms_list, dtype=float)))
+
     print("")
     print("Overall average across all five asymmetries: {:.6f}".format(overall_avg))
     print("")
