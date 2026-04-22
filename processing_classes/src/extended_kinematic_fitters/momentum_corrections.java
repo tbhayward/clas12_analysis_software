@@ -785,7 +785,7 @@ public class momentum_corrections {
         double px = pMag * sinT * Math.cos(phi);
         double py = pMag * sinT * Math.sin(phi);
         double pz = pMag * cosT;
-        System.out.println(px+" "+py+" "+pz);
+//        System.out.println(px+" "+py+" "+pz);
         return new Vector3(px, py, pz);
     }
 
