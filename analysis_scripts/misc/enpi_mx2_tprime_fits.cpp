@@ -60,6 +60,19 @@ struct FitResult {
     long long n_entries = 0;
 };
 
+struct FitConfig {
+    double mu_min;
+    double mu_max;
+    double sigma_min;
+    double sigma_max;
+    double peak_search_min;
+    double peak_search_max;
+    double prefit_halfwidth;
+    double final_fit_min;
+    double final_fit_max;
+    double sigma_seed;
+};
+
 static const std::string kInputFile = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_combined_inb_NH3_epi+_2.root";
 static const std::string kTreeName = "PhysicsEvents";
 static const std::string kOutputDir = "output/enpi+_Mx2_fits";
@@ -78,21 +91,39 @@ static constexpr double kPeakSearchMax = 0.99;
 static constexpr double kPrefitHalfWidth = 0.055;
 static constexpr double kFinalFitMin = 0.70;
 static constexpr double kFinalFitMax = 1.30;
+static constexpr double kSigmaSeed = 0.06;
 
 /*
- * Special carve-out for the lowest xB and lowest -tprime bin only.
- * This bin wants the Gaussian center farther to the right than the global
- * kMuMax allows, and the peak is broader / more asymmetric.
+ * Special carve-out 1:
+ * lowest xB, lowest -tprime  -> (ix,it) = (0,0)
+ * Problem: Gaussian center was too far left.
  */
-static constexpr double kSpecialMuMin = 0.90;
-static constexpr double kSpecialMuMax = 1.02;
-static constexpr double kSpecialSigmaMin = 0.060;
-static constexpr double kSpecialSigmaMax = 0.16;
-static constexpr double kSpecialPeakSearchMin = 0.90;
-static constexpr double kSpecialPeakSearchMax = 1.05;
-static constexpr double kSpecialPrefitHalfWidth = 0.080;
-static constexpr double kSpecialFinalFitMin = 0.78;
-static constexpr double kSpecialFinalFitMax = 1.20;
+static constexpr double kSpecial1MuMin = 0.90;
+static constexpr double kSpecial1MuMax = 1.02;
+static constexpr double kSpecial1SigmaMin = 0.060;
+static constexpr double kSpecial1SigmaMax = 0.16;
+static constexpr double kSpecial1PeakSearchMin = 0.90;
+static constexpr double kSpecial1PeakSearchMax = 1.05;
+static constexpr double kSpecial1PrefitHalfWidth = 0.080;
+static constexpr double kSpecial1FinalFitMin = 0.78;
+static constexpr double kSpecial1FinalFitMax = 1.20;
+static constexpr double kSpecial1SigmaSeed = 0.085;
+
+/*
+ * Special carve-out 2:
+ * second row, third column -> (ix,it) = (1,2)
+ * Problem: Gaussian center is too far right.
+ */
+static constexpr double kSpecial2MuMin = 0.88;
+static constexpr double kSpecial2MuMax = 0.94;
+static constexpr double kSpecial2SigmaMin = 0.060;
+static constexpr double kSpecial2SigmaMax = 0.12;
+static constexpr double kSpecial2PeakSearchMin = 0.86;
+static constexpr double kSpecial2PeakSearchMax = 0.97;
+static constexpr double kSpecial2PrefitHalfWidth = 0.045;
+static constexpr double kSpecial2FinalFitMin = 0.70;
+static constexpr double kSpecial2FinalFitMax = 1.18;
+static constexpr double kSpecial2SigmaSeed = 0.075;
 
 static const std::vector<XBSlice> kXBSlices = {
     {"Low",     0.10, 0.25},
@@ -110,8 +141,57 @@ static const std::vector<TPrimeBin> kTPrimeBins = {
     {1.05, 1.25}
 };
 
-bool is_special_bin(int ix, int it) {
+bool is_special_bin_1(int ix, int it) {
     return (ix == 0 && it == 0);
+}
+
+bool is_special_bin_2(int ix, int it) {
+    return (ix == 1 && it == 2);
+}
+
+FitConfig get_fit_config(int ix, int it) {
+    if (is_special_bin_1(ix, it)) {
+        return {
+            kSpecial1MuMin,
+            kSpecial1MuMax,
+            kSpecial1SigmaMin,
+            kSpecial1SigmaMax,
+            kSpecial1PeakSearchMin,
+            kSpecial1PeakSearchMax,
+            kSpecial1PrefitHalfWidth,
+            kSpecial1FinalFitMin,
+            kSpecial1FinalFitMax,
+            kSpecial1SigmaSeed
+        };
+    }
+
+    if (is_special_bin_2(ix, it)) {
+        return {
+            kSpecial2MuMin,
+            kSpecial2MuMax,
+            kSpecial2SigmaMin,
+            kSpecial2SigmaMax,
+            kSpecial2PeakSearchMin,
+            kSpecial2PeakSearchMax,
+            kSpecial2PrefitHalfWidth,
+            kSpecial2FinalFitMin,
+            kSpecial2FinalFitMax,
+            kSpecial2SigmaSeed
+        };
+    }
+
+    return {
+        kMuMin,
+        kMuMax,
+        kSigmaMin,
+        kSigmaMax,
+        kPeakSearchMin,
+        kPeakSearchMax,
+        kPrefitHalfWidth,
+        kFinalFitMin,
+        kFinalFitMax,
+        kSigmaSeed
+    };
 }
 
 int find_xbin(double x) {
@@ -224,51 +304,41 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
         return result;
     }
 
-    const bool special = is_special_bin(ix, it);
+    FitConfig cfg = get_fit_config(ix, it);
 
-    const double mu_min_local = special ? kSpecialMuMin : kMuMin;
-    const double mu_max_local = special ? kSpecialMuMax : kMuMax;
-    const double sigma_min_local = special ? kSpecialSigmaMin : kSigmaMin;
-    const double sigma_max_local = special ? kSpecialSigmaMax : kSigmaMax;
-    const double peak_search_min_local = special ? kSpecialPeakSearchMin : kPeakSearchMin;
-    const double peak_search_max_local = special ? kSpecialPeakSearchMax : kPeakSearchMax;
-    const double prefit_halfwidth_local = special ? kSpecialPrefitHalfWidth : kPrefitHalfWidth;
-    const double final_fit_min_local = special ? kSpecialFinalFitMin : kFinalFitMin;
-    const double final_fit_max_local = special ? kSpecialFinalFitMax : kFinalFitMax;
-
-    int peak_bin = find_peak_bin_in_window(hist, peak_search_min_local, peak_search_max_local);
+    int peak_bin = find_peak_bin_in_window(hist, cfg.peak_search_min, cfg.peak_search_max);
     double peak_x = hist->GetBinCenter(peak_bin);
     double peak_y = hist->GetBinContent(peak_bin);
 
     double bg_guess = average_sideband_level(hist);
     double amp_guess = std::max(peak_y - bg_guess, 1.0);
 
-    double prefit_min = std::max(kMx2Min, peak_x - prefit_halfwidth_local);
-    double prefit_max = std::min(kMx2Max, peak_x + prefit_halfwidth_local);
+    double prefit_min = std::max(kMx2Min, peak_x - cfg.prefit_halfwidth);
+    double prefit_max = std::min(kMx2Max, peak_x + cfg.prefit_halfwidth);
 
     std::string gprefit_name = make_prefit_name(ix, it);
     TF1 gprefit(gprefit_name.c_str(), "gaus", prefit_min, prefit_max);
     gprefit.SetParameter(0, amp_guess);
-    gprefit.SetParameter(1, std::max(mu_min_local + 0.002, std::min(peak_x, mu_max_local - 0.002)));
-    gprefit.SetParameter(2, special ? 0.085 : 0.06);
-    gprefit.SetParLimits(1, mu_min_local, mu_max_local);
-    gprefit.SetParLimits(2, sigma_min_local, sigma_max_local);
+    gprefit.SetParameter(1, std::max(cfg.mu_min + 0.002, std::min(peak_x, cfg.mu_max - 0.002)));
+    gprefit.SetParameter(2, cfg.sigma_seed);
+    gprefit.SetParLimits(1, cfg.mu_min, cfg.mu_max);
+    gprefit.SetParLimits(2, cfg.sigma_min, cfg.sigma_max);
 
     hist->Fit(&gprefit, "Q0R");
 
     double mu_guess = gprefit.GetParameter(1);
     double sigma_guess = gprefit.GetParameter(2);
 
-    if (!std::isfinite(mu_guess) || mu_guess < mu_min_local || mu_guess > mu_max_local) {
-        mu_guess = std::max(mu_min_local + 0.002, std::min(peak_x, mu_max_local - 0.002));
+    if (!std::isfinite(mu_guess) || mu_guess < cfg.mu_min || mu_guess > cfg.mu_max) {
+        mu_guess = std::max(cfg.mu_min + 0.002, std::min(peak_x, cfg.mu_max - 0.002));
     }
 
-    if (!std::isfinite(sigma_guess) || sigma_guess < sigma_min_local || sigma_guess > sigma_max_local) {
-        sigma_guess = special ? 0.085 : 0.06;
+    if (!std::isfinite(sigma_guess) || sigma_guess < cfg.sigma_min || sigma_guess > cfg.sigma_max) {
+        sigma_guess = cfg.sigma_seed;
     }
 
     std::string fname = make_fit_name(ix, it);
-    TF1 fit_fn(fname.c_str(), "gaus(0) + pol2(3)", final_fit_min_local, final_fit_max_local);
+    TF1 fit_fn(fname.c_str(), "gaus(0) + pol2(3)", cfg.final_fit_min, cfg.final_fit_max);
     fit_fn.SetLineColor(kRed + 1);
     fit_fn.SetLineStyle(2);
     fit_fn.SetLineWidth(2);
@@ -281,8 +351,8 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
     fit_fn.SetParameter(5, 0.0);
 
     fit_fn.SetParLimits(0, 0.0, 1.0e12);
-    fit_fn.SetParLimits(1, mu_min_local, mu_max_local);
-    fit_fn.SetParLimits(2, sigma_min_local, sigma_max_local);
+    fit_fn.SetParLimits(1, cfg.mu_min, cfg.mu_max);
+    fit_fn.SetParLimits(2, cfg.sigma_min, cfg.sigma_max);
 
     TFitResultPtr fit_ptr = hist->Fit(&fit_fn, "QRSL");
     int fit_status = static_cast<int>(fit_ptr);
@@ -312,10 +382,10 @@ FitResult fit_histogram(TH1D* hist, int ix, int it) {
         std::isfinite(result.sigma_err);
 
     bool in_range_ok =
-        (result.mu >= mu_min_local) &&
-        (result.mu <= mu_max_local) &&
-        (result.sigma >= sigma_min_local) &&
-        (result.sigma <= sigma_max_local);
+        (result.mu >= cfg.mu_min) &&
+        (result.mu <= cfg.mu_max) &&
+        (result.sigma >= cfg.sigma_min) &&
+        (result.sigma <= cfg.sigma_max);
 
     result.fit_success = (finite_ok && in_range_ok);
 
