@@ -33,7 +33,7 @@ ASYMMETRY_CONFIGS = [
     {
         "key": "ALL",
         "ylabel": r"$F_{LL}/F_{UU}$",
-        "ylim_top": (-0.2, 0.8),
+        "ylim_top": (-0.4, 1.0),
         "ylim_pull": (-5.0, 5.0),
     },
     {
