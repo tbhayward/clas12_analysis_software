@@ -549,7 +549,7 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
 
     canvas.cd(1);
     gPad->SetGrid();
-    gPad->SetLeftMargin(0.08);
+    gPad->SetLeftMargin(0.12);
     gPad->SetRightMargin(0.03);
     gPad->SetTopMargin(0.10);
     gPad->SetBottomMargin(0.12);
@@ -561,6 +561,9 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
     frame_mu.GetYaxis()->SetTitle("#mu");
     frame_mu.GetXaxis()->CenterTitle();
     frame_mu.GetYaxis()->CenterTitle();
+    frame_mu.GetYaxis()->SetTitleSize(0.050);
+    frame_mu.GetYaxis()->SetLabelSize(0.040);
+    frame_mu.GetYaxis()->SetTitleOffset(0.95);
     frame_mu.Draw();
 
     TLegend leg_mu(0.12, 0.77, 0.52, 0.93);
@@ -608,7 +611,7 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
 
     canvas.cd(2);
     gPad->SetGrid();
-    gPad->SetLeftMargin(0.08);
+    gPad->SetLeftMargin(0.12);
     gPad->SetRightMargin(0.03);
     gPad->SetTopMargin(0.08);
     gPad->SetBottomMargin(0.12);
@@ -620,6 +623,9 @@ void draw_summary_plot(const std::vector<FitResult>& results, const std::string&
     frame_sigma.GetYaxis()->SetTitle("#sigma");
     frame_sigma.GetXaxis()->CenterTitle();
     frame_sigma.GetYaxis()->CenterTitle();
+    frame_sigma.GetYaxis()->SetTitleSize(0.050);
+    frame_sigma.GetYaxis()->SetLabelSize(0.040);
+    frame_sigma.GetYaxis()->SetTitleOffset(0.95);
     frame_sigma.Draw();
 
     for (int ix = 0; ix < static_cast<int>(kXBSlices.size()); ix++) {
