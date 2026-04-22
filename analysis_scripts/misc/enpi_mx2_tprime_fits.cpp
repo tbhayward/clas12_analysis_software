@@ -69,7 +69,7 @@ static constexpr double kMx2Max = 1.30;
 static constexpr int kNMx2Bins = 15;
 
 static constexpr double kMuMin = 0.85;
-static constexpr double kMuMax = 0.96;
+static constexpr double kMuMax = 0.955;
 static constexpr double kSigmaMin = 0.055;
 static constexpr double kSigmaMax = 0.12;
 
