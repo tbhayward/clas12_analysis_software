@@ -729,7 +729,7 @@ void draw_summary_plot_hardcoded(const std::vector<SummaryPoint>& points, const 
     frame_mu.SetMinimum(0.84);
     frame_mu.SetMaximum(1.03);
     frame_mu.GetXaxis()->SetTitle("Bin");
-    frame_mu.GetYaxis()->SetTitle("#mu");
+    frame_mu.GetYaxis()->SetTitle("#mu (GeV^{2})");
     frame_mu.GetXaxis()->CenterTitle();
     frame_mu.GetYaxis()->CenterTitle();
     frame_mu.GetYaxis()->SetTitleSize(0.050);
@@ -788,7 +788,7 @@ void draw_summary_plot_hardcoded(const std::vector<SummaryPoint>& points, const 
     frame_sigma.SetMinimum(0.04);
     frame_sigma.SetMaximum(sigma_plot_max);
     frame_sigma.GetXaxis()->SetTitle("Bin");
-    frame_sigma.GetYaxis()->SetTitle("#sigma");
+    frame_sigma.GetYaxis()->SetTitle("#sigma (GeV^{2})");
     frame_sigma.GetXaxis()->CenterTitle();
     frame_sigma.GetYaxis()->CenterTitle();
     frame_sigma.GetYaxis()->SetTitleSize(0.050);
