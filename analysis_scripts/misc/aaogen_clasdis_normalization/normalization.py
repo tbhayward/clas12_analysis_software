@@ -101,7 +101,7 @@ OUTPUT_MIX_DEBUG_TXT = "output/mix_debug_report.txt"
 OUTPUT_MIX_DEBUG_MX2_PNG = "output/mix_debug_mx2.png"
 
 # Fixed beam energy for MC mixing stage (no runnum in MC files)
-MC_EB_FIXED = 10.55
+MC_EB_FIXED = 10.556
 
 # Masses (GeV)
 MASS_E = 0.000511
