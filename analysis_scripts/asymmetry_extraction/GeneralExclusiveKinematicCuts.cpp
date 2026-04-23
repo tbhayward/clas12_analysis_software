@@ -379,7 +379,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
 
     if (property == "enpi_sector2") {
@@ -391,7 +391,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
 
     if (property == "enpi_sector3") {
@@ -403,7 +403,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
 
     if (property == "enpi_sector4") {
@@ -415,7 +415,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
 
     if (property == "enpi_sector5") {
@@ -427,7 +427,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
 
     if (property == "enpi_sector6") {
@@ -439,7 +439,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
     
 
