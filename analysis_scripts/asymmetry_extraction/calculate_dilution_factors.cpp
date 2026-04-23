@@ -38,7 +38,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 2;
+constexpr int data_set = 4;
 
 struct DataSetConfig {
     std::string name;
@@ -59,6 +59,33 @@ const std::vector<DataSetConfig> dataSetConfigs = {
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_CH2_epi+_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_He_epi+_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_ET_epi+_2.root"
+    },
+    {
+        "RGC_Fa22",
+        0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_CH2_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+_2.root"
+    },
+    {
+        "RGC_Sp23",
+        0.4543, 0.1509, 0.1966, 0.1205, 0.0777,
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_He_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_ET_epi+_2.root"
+    },
+    {
+        "RGC_Su22",
+        0.7624, 0.0747, 0.0390, 0.0249, 0.0989,
+        "/volatile/clas12/users/mkerr/rgc/pip/NH3/summer22_nh3_pip_ProcWithCuts.root",
+        "/volatile/clas12/users/mkerr/rgc/pip/C/summer22_c_pip_ProcWithCuts.root",
+        "/volatile/clas12/users/mkerr/rgc/pip/CH2/summer22_ch2_pip_ProcWithCuts.root",
+        "/volatile/clas12/users/mkerr/rgc/pip/ET/summer22_he_pip_ProcWithCuts.root",
+        "/volatile/clas12/users/mkerr/rgc/pip/ET/summer22_et_pip_ProcWithCuts.root"
     },
     {
         "RGC_Fa22",
