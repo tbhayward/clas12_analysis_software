@@ -18,7 +18,8 @@ Main ideas
    with an additional sideband penalty.
 4) Allow manual pad-by-pad overrides and simple row suppression.
 5) Dump all histogram contents to CSV so the mixture can be tuned manually.
-6) Optionally build a mixed MC ROOT file from separate MC inputs.
+6) Always build a mixed MC ROOT file using aaogen and clasdis as inputs.
+7) Recompute and write t, tmin, tprime, mc_t, mc_tmin, mc_tprime.
 
 Mixture definition
 ------------------
@@ -80,10 +81,6 @@ output/weights.txt
 
 output/hist_shapes.csv
     Bin-by-bin raw and normalized histogram contents for all pads
-
-Optional Phase 3
-----------------
-If --mc_aaogen and --mc_clasdis are provided, also produce:
 
 output/mixed_mc.root
     Event-level mixed MC
@@ -1327,6 +1324,24 @@ def compute_mc_t_quantities_from_gen(mc_x_val, mc_Q2_val,
 #enddef
 
 
+def choose_phase3_input_paths(args):
+    mc_aao_path = args.aaogen
+    mc_dis_path = args.clasdis
+
+    if args.mc_aaogen is not None and str(args.mc_aaogen).strip() != "":
+        mc_aao_path = args.mc_aaogen
+    #endif
+    if args.mc_clasdis is not None and str(args.mc_clasdis).strip() != "":
+        mc_dis_path = args.mc_clasdis
+    #endif
+
+    require_file(mc_aao_path)
+    require_file(mc_dis_path)
+
+    return mc_aao_path, mc_dis_path
+#enddef
+
+
 def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
                           max_events_mc_aao, max_events_mc_dis):
     require_file(mc_aao_path)
@@ -1348,8 +1363,8 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
         "matching_e_pid", "matching_p1_pid", "mc_p1_parent"
     ]
 
-    require_branches(t_aao, mc_needed, "mc_aaogen")
-    require_branches(t_dis, mc_needed, "mc_clasdis")
+    require_branches(t_aao, mc_needed, "phase3_aaogen")
+    require_branches(t_dis, mc_needed, "phase3_clasdis")
 
     ensure_outdir(out_root_path)
 
@@ -1360,7 +1375,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
 
     tout = ROOT.TTree(TREE_NAME, "Mixed MC")
 
-    # Shared buffers
     e_p = array("d", [0.0])
     e_theta = array("d", [0.0])
     e_phi = array("d", [0.0])
@@ -1424,7 +1438,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
     mc_tmin = array("d", [0.0])
     mc_tprime = array("d", [0.0])
 
-    # Output branches
     tout.Branch("e_p", e_p, "e_p/D")
     tout.Branch("e_theta", e_theta, "e_theta/D")
     tout.Branch("e_phi", e_phi, "e_phi/D")
@@ -1571,7 +1584,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
         tree.SetBranchAddress("mc_p1_parent", mc_p1_parent)
     #enddef
 
-    # Pass 1: write all clasdis
     bind_mc_tree(t_dis)
 
     n_entries_dis = int(t_dis.GetEntries())
@@ -1626,7 +1638,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
         #endif
     #endfor
 
-    # Compute aaogen targets
     for r in range(nrows):
         for c in range(ncols):
             w = float(w_grid[r][c])
@@ -1652,7 +1663,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
         #endfor
     #endfor
 
-    # Pass 2: top up aaogen in-grid only
     bind_mc_tree(t_aao)
 
     n_entries_aao = int(t_aao.GetEntries())
@@ -1719,7 +1729,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
     f_aao.Close()
     f_dis.Close()
 
-    # Debug report
     ensure_outdir(OUTPUT_MIX_DEBUG_TXT)
     with open(OUTPUT_MIX_DEBUG_TXT, "w") as fout_txt:
         fout_txt.write("Phase 3 debug report\n")
@@ -1772,7 +1781,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid,
         #endfor
     #endwith
 
-    # Debug png
     h_dis_norm = h_written_dis.Clone("h_written_dis_norm")
     h_aao_norm = h_written_aao.Clone("h_written_aao_norm")
     h_mix_norm = h_written_mix.Clone("h_written_mix_norm")
@@ -1876,13 +1884,13 @@ def main():
                     help="Integrated mixed plot output path")
 
     ap.add_argument("--mc_aaogen", default=None,
-                    help="Optional MC aaogen ROOT file for phase 3 event-level mixing")
+                    help="Optional override aaogen ROOT file for output-tree writing")
     ap.add_argument("--mc_clasdis", default=None,
-                    help="Optional MC clasdis ROOT file for phase 3 event-level mixing")
+                    help="Optional override clasdis ROOT file for output-tree writing")
     ap.add_argument("--max_events_mc_aaogen", type=int, default=DEFAULT_MAX_EVENTS_MC_AAOGEN,
-                    help="Max MC aaogen events for phase 3 (-1 means all)")
+                    help="Max aaogen events for output-tree writing (-1 means all)")
     ap.add_argument("--max_events_mc_clasdis", type=int, default=DEFAULT_MAX_EVENTS_MC_CLASDIS,
-                    help="Max MC clasdis events for phase 3 (-1 means all)")
+                    help="Max clasdis events for output-tree writing (-1 means all)")
     ap.add_argument("--out", default=DEFAULT_MIXED_MC_ROOT,
                     help="Output ROOT file for mixed MC")
 
@@ -1937,7 +1945,6 @@ def main():
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
 
-    # Fine grids for plotting
     h_data_plot_raw = make_hist_grid("h_data_plot_raw", nrows, ncols,
                                      args.plot_nbins, MX2_PLOT_MIN, MX2_PLOT_MAX)
     h_aao_plot_raw = make_hist_grid("h_aao_plot_raw", nrows, ncols,
@@ -1945,7 +1952,6 @@ def main():
     h_dis_plot_raw = make_hist_grid("h_dis_plot_raw", nrows, ncols,
                                     args.plot_nbins, MX2_PLOT_MIN, MX2_PLOT_MAX)
 
-    # Coarse grids for fitting
     h_data_fit_raw = make_hist_grid("h_data_fit_raw", nrows, ncols,
                                     args.fit_nbins, MX2_FIT_MIN_GLOBAL, MX2_FIT_MAX_GLOBAL)
     h_aao_fit_raw = make_hist_grid("h_aao_fit_raw", nrows, ncols,
@@ -1965,12 +1971,10 @@ def main():
     fill_all_bins_single_pass(t_aao, h_aao_plot_raw, h_aao_fit_raw, c_aao, max_events_aao)
     fill_all_bins_single_pass(t_dis, h_dis_plot_raw, h_dis_fit_raw, c_dis, max_events_dis)
 
-    # Normalized plot histograms
     h_data_plot_norm = clone_grid(h_data_plot_raw, "h_data_plot_norm")
     h_aao_plot_norm = clone_grid(h_aao_plot_raw, "h_aao_plot_norm")
     h_dis_plot_norm = clone_grid(h_dis_plot_raw, "h_dis_plot_norm")
 
-    # Normalized fit histograms
     h_data_fit_norm = clone_grid(h_data_fit_raw, "h_data_fit_norm")
     h_aao_fit_norm = clone_grid(h_aao_fit_raw, "h_aao_fit_norm")
     h_dis_fit_norm = clone_grid(h_dis_fit_raw, "h_dis_fit_norm")
@@ -2071,7 +2075,6 @@ def main():
         forced_map = apply_force_map(w_grid)
     #endif
 
-    # Recompute diagnostics and rebuild mix after any overrides
     diag_after_overrides = compute_objective_grid_for_existing_weights(
         w_grid,
         h_data_fit_norm,
@@ -2174,38 +2177,31 @@ def main():
         w_grid
     )
 
-    if args.mc_aaogen is not None or args.mc_clasdis is not None:
-        if args.mc_aaogen is None or args.mc_clasdis is None:
-            fatal("If using phase 3, you must provide BOTH --mc_aaogen and --mc_clasdis.")
-        #endif
+    mc_aao_path, mc_dis_path = choose_phase3_input_paths(args)
 
-        require_file(args.mc_aaogen)
-        require_file(args.mc_clasdis)
+    max_events_mc_aao = parse_max_events(args.max_events_mc_aaogen)
+    max_events_mc_dis = parse_max_events(args.max_events_mc_clasdis)
 
-        max_events_mc_aao = parse_max_events(args.max_events_mc_aaogen)
-        max_events_mc_dis = parse_max_events(args.max_events_mc_clasdis)
+    print("Phase 3: writing mixed MC ROOT file")
+    print(f"  phase3 aaogen input = {mc_aao_path}")
+    print(f"  phase3 clasdis input = {mc_dis_path}")
+    print(f"  out = {args.out}")
+    print(f"  max_events_mc_aao = {args.max_events_mc_aaogen}")
+    print(f"  max_events_mc_dis = {args.max_events_mc_clasdis}")
+    print(f"  fixed Eb for MC mix = {MC_EB_FIXED:.3f}")
+    print(f"  debug report = {OUTPUT_MIX_DEBUG_TXT}")
+    print(f"  debug png = {OUTPUT_MIX_DEBUG_MX2_PNG}")
 
-        print("Phase 3: writing mixed MC ROOT file")
-        print(f"  mc_aaogen           = {args.mc_aaogen}")
-        print(f"  mc_clasdis          = {args.mc_clasdis}")
-        print(f"  out                 = {args.out}")
-        print(f"  max_events_mc_aao   = {args.max_events_mc_aaogen}")
-        print(f"  max_events_mc_dis   = {args.max_events_mc_clasdis}")
-        print(f"  fixed Eb for MC mix = {MC_EB_FIXED:.3f}")
-        print(f"  debug report        = {OUTPUT_MIX_DEBUG_TXT}")
-        print(f"  debug png           = {OUTPUT_MIX_DEBUG_MX2_PNG}")
+    mix_mc_to_output_root(
+        mc_aao_path,
+        mc_dis_path,
+        args.out,
+        w_grid,
+        max_events_mc_aao,
+        max_events_mc_dis
+    )
 
-        mix_mc_to_output_root(
-            args.mc_aaogen,
-            args.mc_clasdis,
-            args.out,
-            w_grid,
-            max_events_mc_aao,
-            max_events_mc_dis
-        )
-
-        print(f"  wrote mixed MC: {args.out}")
-    #endif
+    print(f"  wrote mixed MC: {args.out}")
 
     f_data.Close()
     f_aao.Close()
