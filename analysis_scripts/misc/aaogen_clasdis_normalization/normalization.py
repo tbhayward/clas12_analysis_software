@@ -140,7 +140,7 @@ DEFAULT_MIXED_MC_ROOT = "output/mixed_mc.root"
 OUTPUT_MIX_DEBUG_TXT = "output/mix_debug_report.txt"
 OUTPUT_MIX_DEBUG_MX2_PNG = "output/mix_debug_mx2.png"
 
-# Fixed beam energy for MC mixing stage
+# Fixed beam energy used everywhere
 MC_EB_FIXED = 10.556
 
 # Default event limits
@@ -223,23 +223,6 @@ def require_branches(tree, needed, label):
 #enddef
 
 
-def beam_energy(runnum):
-    if runnum >= 6616 and runnum <= 6783:
-        return 10.1998
-    #endif
-    if runnum >= 16042 and runnum <= 17065:
-        return 10.5473
-    #endif
-    if runnum >= 17067 and runnum <= 17724:
-        return 10.5563
-    #endif
-    if runnum >= 17725 and runnum <= 17811:
-        return 10.5593
-    #endif
-    return 10.5563
-#enddef
-
-
 def compute_t_scalar_from_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
     if Eb <= 0.0:
         return 1.0e9
@@ -268,9 +251,8 @@ def compute_t_scalar_from_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
 #enddef
 
 
-def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
-    Eb = beam_energy(int(runnum))
-    return compute_t_scalar_from_Eb(Eb, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
+def compute_t_scalar(e_p, e_theta, e_phi, p_p, p_theta, p_phi):
+    return compute_t_scalar_from_Eb(MC_EB_FIXED, e_p, e_theta, e_phi, p_p, p_theta, p_phi)
 #enddef
 
 
@@ -1196,7 +1178,6 @@ def apply_force_map(w_grid):
 
 def build_branch_buffers_phase1():
     return {
-        "runnum": array("i", [0]),
         "e_p": array("d", [0.0]),
         "e_theta": array("d", [0.0]),
         "e_phi": array("d", [0.0]),
@@ -1211,14 +1192,13 @@ def build_branch_buffers_phase1():
 
 
 def bind_phase1_tree(tree, buffers):
-    needed = ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
+    needed = ["e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
 
     tree.SetBranchStatus("*", 0)
     for bname in needed:
         tree.SetBranchStatus(bname, 1)
     #endfor
 
-    tree.SetBranchAddress("runnum", buffers["runnum"])
     tree.SetBranchAddress("e_p", buffers["e_p"])
     tree.SetBranchAddress("e_theta", buffers["e_theta"])
     tree.SetBranchAddress("e_phi", buffers["e_phi"])
@@ -1256,7 +1236,6 @@ def fill_all_bins_single_pass(tree,
         Q2_val = float(buffers["Q2"][0])
 
         t_val = compute_t_scalar(
-            int(buffers["runnum"][0]),
             float(buffers["e_p"][0]),
             float(buffers["e_theta"][0]),
             float(buffers["e_phi"][0]),
@@ -1937,7 +1916,7 @@ def main():
     f_aao, t_aao = open_tree(args.aaogen, TREE_NAME)
     f_dis, t_dis = open_tree(args.clasdis, TREE_NAME)
 
-    needed_phase1 = ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
+    needed_phase1 = ["e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
     require_branches(t_data, needed_phase1, "data")
     require_branches(t_aao, needed_phase1, "aaogen")
     require_branches(t_dis, needed_phase1, "clasdis")
@@ -2188,7 +2167,7 @@ def main():
     print(f"  out = {args.out}")
     print(f"  max_events_mc_aao = {args.max_events_mc_aaogen}")
     print(f"  max_events_mc_dis = {args.max_events_mc_clasdis}")
-    print(f"  fixed Eb for MC mix = {MC_EB_FIXED:.3f}")
+    print(f"  fixed Eb for everything = {MC_EB_FIXED:.3f}")
     print(f"  debug report = {OUTPUT_MIX_DEBUG_TXT}")
     print(f"  debug png = {OUTPUT_MIX_DEBUG_MX2_PNG}")
 
