@@ -149,10 +149,12 @@ public class fiducial_cuts {
                     if (lw_1 > 346.5 && lw_1 < 378.0) {
                         return false;
                     }
+                    break;
                 case 4:
                     if ((lw_1 > 0.0 && lw_1 < 13.5) || (lv_1 > 229.5 && lv_1 < 243.0)) {
                         return false;
                     }
+                    break;
                 case 5:
                     if (lv_4 > 0.0 && lv_4 < 23.5) {
                         return false;
@@ -160,6 +162,7 @@ public class fiducial_cuts {
                     if (lu_7 > 193.5 && lu_7 < 216.0) {
                         return false;
                     }
+                    break;
                 case 6:
                     if (lw_1 > 166.5 && lw_1 < 193.5) {
                         return false;
