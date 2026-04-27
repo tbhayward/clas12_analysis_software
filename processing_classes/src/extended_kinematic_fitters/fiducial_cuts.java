@@ -126,7 +126,7 @@ public class fiducial_cuts {
             return true;
         }
 
-//        if (runnum >= 3030 && runnum <= 6783) { // only explicitly checked for RGA
+        if (runnum >= 3030 && runnum <= 6783) { // only explicitly checked for RGA
             // RGA, RGK, RGB Sp19
             switch (sector) {
                 case 1:
@@ -168,7 +168,7 @@ public class fiducial_cuts {
                 default:
                     break;
             }
-//        }
+        }
 
         if (runnum >= 6616 && runnum <= 6783) {
             // RGA Sp19 !!only!!, maybe applies to RGB Sp19 but not checked
@@ -288,13 +288,7 @@ public class fiducial_cuts {
         int pid = rec_Bank.getInt("pid", particle_Index);
         // different cuts for inbending and outbending tracks
         int runnum = run_Bank.getInt("run", 0);
-//        boolean inbending = false;
-//        boolean outbending = false;
-//        if (run_Bank.getFloat("torus", 0) == 1) {
-//            outbending = true;
-//        } else {
-//            inbending = true;
-//        }
+
         boolean electron_inbending = false;
         boolean electron_outbending = false;
         if (run_Bank.getFloat("torus", 0) == 1) {
