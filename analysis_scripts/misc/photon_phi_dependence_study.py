@@ -33,7 +33,14 @@ if not tree:
     sys.exit(1)
 #endif
 
-required_branches = ["e_phi", "e_theta", "open_angle"]
+required_branches = [
+    "e_phi",
+    "e_theta",
+    "p_phi",
+    "p_theta",
+    "open_angle",
+]
+
 for branch_name in required_branches:
     if not tree.GetBranch(branch_name):
         print("Error: missing required branch '{}' in tree '{}'".format(branch_name, tree_name))
@@ -42,12 +49,31 @@ for branch_name in required_branches:
     #endif
 #endfor
 
-hist = ROOT.TH2D(
+hist_e = ROOT.TH2D(
     "hist_e_phi_vs_e_theta",
     "Electron #phi vs Electron #theta;#phi_{e} (deg);#theta_{e} (deg)",
-    180, -180.0, 180.0,
-    140, 0.0, 70.0
+    180, 0.0, 360.0,
+    140, 0.0, 35.0
 )
+
+hist_p = ROOT.TH2D(
+    "hist_p_phi_vs_p_theta",
+    "Hadron #phi vs Hadron #theta;#phi_{p} (deg);#theta_{p} (deg)",
+    180, 0.0, 360.0,
+    140, 0.0, 35.0
+)
+
+def wrap_phi_deg(phi_deg):
+    while phi_deg < 0.0:
+        phi_deg += 360.0
+    #endwhile
+
+    while phi_deg >= 360.0:
+        phi_deg -= 360.0
+    #endwhile
+
+    return phi_deg
+#enddef
 
 n_entries = tree.GetEntries()
 
@@ -58,18 +84,30 @@ for i in range(n_entries):
         continue
     #endif
 
-    e_phi_deg = tree.e_phi * 180.0 / math.pi
+    e_phi_deg = wrap_phi_deg(tree.e_phi * 180.0 / math.pi)
     e_theta_deg = tree.e_theta * 180.0 / math.pi
 
-    hist.Fill(e_phi_deg, e_theta_deg)
+    p_phi_deg = wrap_phi_deg(tree.p_phi * 180.0 / math.pi)
+    p_theta_deg = tree.p_theta * 180.0 / math.pi
+
+    hist_e.Fill(e_phi_deg, e_theta_deg)
+    hist_p.Fill(p_phi_deg, p_theta_deg)
 #endfor
 
-canvas = ROOT.TCanvas("canvas", "canvas", 900, 700)
-canvas.SetLeftMargin(0.13)
-canvas.SetRightMargin(0.15)
-canvas.SetBottomMargin(0.12)
+canvas = ROOT.TCanvas("canvas", "canvas", 1400, 600)
+canvas.Divide(2, 1)
 
-hist.Draw("COLZ")
+canvas.cd(1)
+ROOT.gPad.SetLeftMargin(0.13)
+ROOT.gPad.SetRightMargin(0.16)
+ROOT.gPad.SetBottomMargin(0.13)
+hist_e.Draw("COLZ")
+
+canvas.cd(2)
+ROOT.gPad.SetLeftMargin(0.13)
+ROOT.gPad.SetRightMargin(0.16)
+ROOT.gPad.SetBottomMargin(0.13)
+hist_p.Draw("COLZ")
 
 canvas.SaveAs(output_file_name)
 
