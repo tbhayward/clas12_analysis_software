@@ -36,8 +36,8 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, run_Bank)
 //                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
 //                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank, run_Bank)
-//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
-//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
                 ;
     }
 
@@ -168,9 +168,9 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
                 && (num_photon == 0 ? p > 2.0 : p > 0.4)
                 && (passesForwardDetector || passesForwardTagger)
-//                && (passesForwardDetector
-//                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
-//                        : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, ft_Bank))
+                && (passesForwardDetector
+                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
+                        : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, ft_Bank))
                 && pid_cuts.beta_cut(particle_Index, rec_Bank)
                 ;
     }
