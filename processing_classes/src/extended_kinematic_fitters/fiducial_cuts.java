@@ -126,7 +126,7 @@ public class fiducial_cuts {
             return true;
         }
 
-        if (runnum >= 3030 && runnum <= 6783) { // only explicitly checked for RGA
+//        if (runnum >= 3030 && runnum <= 6783) { // only explicitly checked for RGA
             // RGA, RGK, RGB Sp19
             switch (sector) {
                 case 1:
@@ -168,7 +168,7 @@ public class fiducial_cuts {
                 default:
                     break;
             }
-        }
+//        }
 
         if (runnum >= 6616 && runnum <= 6783) {
             // RGA Sp19 !!only!!, maybe applies to RGB Sp19 but not checked
