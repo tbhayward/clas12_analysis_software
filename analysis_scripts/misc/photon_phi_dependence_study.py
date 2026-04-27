@@ -17,6 +17,7 @@ input_file_name = sys.argv[1]
 tree_name = "PhysicsEvents"
 output_dir = "output/photon_phi_dependence_study"
 output_file_name = os.path.join(output_dir, "2D_phi_vs_theta.pdf")
+max_entries = 1000000
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -51,14 +52,14 @@ for branch_name in required_branches:
 
 hist_e = ROOT.TH2D(
     "hist_e_phi_vs_e_theta",
-    "Electron #phi vs Electron #theta;#phi_{e} (deg);#theta_{e} (deg)",
+    ";#phi_{e} (deg);#theta_{e} (deg)",
     180, 0.0, 360.0,
     140, 0.0, 35.0
 )
 
 hist_p = ROOT.TH2D(
     "hist_p_phi_vs_p_theta",
-    "Hadron #phi vs Hadron #theta;#phi_{p} (deg);#theta_{p} (deg)",
+    ";#phi_{#gamma} (deg);#theta_{#gamma} (deg)",
     180, 0.0, 360.0,
     140, 0.0, 35.0
 )
@@ -76,8 +77,12 @@ def wrap_phi_deg(phi_deg):
 #enddef
 
 n_entries = tree.GetEntries()
+n_entries_to_process = min(n_entries, max_entries)
 
-for i in range(n_entries):
+print("Tree entries: {}".format(n_entries))
+print("Processing entries: {}".format(n_entries_to_process))
+
+for i in range(n_entries_to_process):
     tree.GetEntry(i)
 
     if tree.open_angle <= 3.0:
