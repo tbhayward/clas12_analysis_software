@@ -17,7 +17,7 @@ input_file_name = sys.argv[1]
 tree_name = "PhysicsEvents"
 output_dir = "output/photon_phi_dependence_study"
 output_file_name = os.path.join(output_dir, "2D_phi_vs_theta.pdf")
-max_entries = 1000000
+max_entries = 100000
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -80,7 +80,7 @@ for sector_index in range(6):
     hist = ROOT.TH1D(
         "hist_p_theta_sector_{}".format(sector),
         ";#theta_{#gamma} (deg);Counts",
-        140, 0.0, 35.0
+        120, 5.0, 35.0
     )
 
     hist.SetLineColor(sector_colors[sector_index])
