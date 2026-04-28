@@ -225,13 +225,6 @@ public static void main(String[] args) {
 			    runnum == 4246 ||
 			    runnum == 4252 ||
 			    runnum == 4325 ||
-			    // runnum == 3218 ||
-			    // runnum == 3261 ||
-			    // runnum == 3266 ||
-			    // runnum == 3269 ||
-			    // runnum == 3270 ||
-			    // runnum == 3282 ||
-			    // runnum == 3288 ||
 			    runnum == 3867 ||
 			    runnum == 3877 ||
 			    runnum == 3882 ||
@@ -246,9 +239,7 @@ public static void main(String[] args) {
 			    runnum == 3801 ||
 			    runnum == 3807 ||
 			    runnum == 3808 ||
-			    // runnum == 3262 ||
 			    runnum == 3267 ||
-			    // runnum == 3288 ||
 			    runnum == 3879 ||
 			    runnum == 3923 ||
 			    runnum == 3929 ||
