@@ -3,60 +3,60 @@
     "fa18_inb": {
       "efficiency_scheme": "rga_fa18_inb",
       "currents": [
-        { "current_nA": 5, "counts": 2434, "period_fraction": 0.003132, "period_fraction_percent": 0.313188 },
-        { "current_nA": 40, "counts": 16154, "period_fraction": 0.020786, "period_fraction_percent": 2.078567 },
-        { "current_nA": 45, "counts": 540250, "period_fraction": 0.695150, "period_fraction_percent": 69.515035 },
-        { "current_nA": 50, "counts": 70739, "period_fraction": 0.091021, "period_fraction_percent": 9.102127 },
-        { "current_nA": 55, "counts": 147593, "period_fraction": 0.189911, "period_fraction_percent": 18.991083 }
+        { "current_nA": 5, "counts": 664, "period_fraction": 0.003159, "period_fraction_percent": 0.315930 },
+        { "current_nA": 40, "counts": 4376, "period_fraction": 0.020821, "period_fraction_percent": 2.082094 },
+        { "current_nA": 45, "counts": 147017, "period_fraction": 0.699505, "period_fraction_percent": 69.950469 },
+        { "current_nA": 50, "counts": 18839, "period_fraction": 0.089636, "period_fraction_percent": 8.963568 },
+        { "current_nA": 55, "counts": 39277, "period_fraction": 0.186879, "period_fraction_percent": 18.687938 }
       ]
     },
 
     "fa18_out": {
       "efficiency_scheme": "rga_fa18_out",
       "currents": [
-        { "current_nA": 5, "counts": 2230, "period_fraction": 0.000988, "period_fraction_percent": 0.098787 },
-        { "current_nA": 20, "counts": 9225, "period_fraction": 0.004087, "period_fraction_percent": 0.408659 },
-        { "current_nA": 40, "counts": 823952, "period_fraction": 0.365004, "period_fraction_percent": 36.500352 },
-        { "current_nA": 50, "counts": 1421974, "period_fraction": 0.629922, "period_fraction_percent": 62.992202 }
+        { "current_nA": 5, "counts": 564, "period_fraction": 0.001116, "period_fraction_percent": 0.111574 },
+        { "current_nA": 20, "counts": 2178, "period_fraction": 0.004309, "period_fraction_percent": 0.430867 },
+        { "current_nA": 40, "counts": 186130, "period_fraction": 0.368216, "period_fraction_percent": 36.821552 },
+        { "current_nA": 50, "counts": 316620, "period_fraction": 0.626360, "period_fraction_percent": 62.636006 }
       ]
     },
 
     "sp18_inb": {
       "efficiency_scheme": "rga_sp18_inb",
       "currents": [
-        { "current_nA": 35, "counts": 64769, "period_fraction": 0.070983, "period_fraction_percent": 7.098299 },
-        { "current_nA": 50, "counts": 847689, "period_fraction": 0.929017, "period_fraction_percent": 92.901701 }
+        { "current_nA": 35, "counts": 15780, "period_fraction": 0.074617, "period_fraction_percent": 7.461699 },
+        { "current_nA": 50, "counts": 195700, "period_fraction": 0.925383, "period_fraction_percent": 92.538301 }
       ]
     },
 
     "sp18_out": {
       "efficiency_scheme": "rga_sp18_out",
       "currents": [
-        { "current_nA": 30, "counts": 8754, "period_fraction": 0.016720, "period_fraction_percent": 1.672024 },
-        { "current_nA": 45, "counts": 514803, "period_fraction": 0.983280, "period_fraction_percent": 98.327976 }
+        { "current_nA": 30, "counts": 2026, "period_fraction": 0.017166, "period_fraction_percent": 1.716629 },
+        { "current_nA": 45, "counts": 115996, "period_fraction": 0.982834, "period_fraction_percent": 98.283371 }
       ]
     },
 
     "sp19_inb": {
       "efficiency_scheme": "rga_sp19_inb",
       "currents": [
-        { "current_nA": 5, "counts": 881, "period_fraction": 0.000834, "period_fraction_percent": 0.083389 },
-        { "current_nA": 50, "counts": 1055609, "period_fraction": 0.999166, "period_fraction_percent": 99.916611 }
+        { "current_nA": 5, "counts": 270, "period_fraction": 0.000955, "period_fraction_percent": 0.095463 },
+        { "current_nA": 50, "counts": 282563, "period_fraction": 0.999045, "period_fraction_percent": 99.904537 }
       ]
     }
   },
 
   "global": {
-    "total_counts": 5527056,
+    "total_counts": 1328000,
     "currents": [
-      { "current_nA": 5, "counts": 5545, "global_fraction": 0.001003, "global_fraction_percent": 0.100325 },
-      { "current_nA": 20, "counts": 9225, "global_fraction": 0.001669, "global_fraction_percent": 0.166906 },
-      { "current_nA": 30, "counts": 8754, "global_fraction": 0.001584, "global_fraction_percent": 0.158384 },
-      { "current_nA": 35, "counts": 64769, "global_fraction": 0.011719, "global_fraction_percent": 1.171854 },
-      { "current_nA": 40, "counts": 840106, "global_fraction": 0.151999, "global_fraction_percent": 15.199882 },
-      { "current_nA": 45, "counts": 1055053, "global_fraction": 0.190889, "global_fraction_percent": 19.088878 },
-      { "current_nA": 50, "counts": 3396011, "global_fraction": 0.614434, "global_fraction_percent": 61.443398 },
-      { "current_nA": 55, "counts": 147593, "global_fraction": 0.026704, "global_fraction_percent": 2.670373 }
+      { "current_nA": 5, "counts": 1498, "global_fraction": 0.001128, "global_fraction_percent": 0.112801 },
+      { "current_nA": 20, "counts": 2178, "global_fraction": 0.001640, "global_fraction_percent": 0.164006 },
+      { "current_nA": 30, "counts": 2026, "global_fraction": 0.001526, "global_fraction_percent": 0.152560 },
+      { "current_nA": 35, "counts": 15780, "global_fraction": 0.011883, "global_fraction_percent": 1.188253 },
+      { "current_nA": 40, "counts": 190506, "global_fraction": 0.143453, "global_fraction_percent": 14.345331 },
+      { "current_nA": 45, "counts": 263013, "global_fraction": 0.198052, "global_fraction_percent": 19.805196 },
+      { "current_nA": 50, "counts": 813722, "global_fraction": 0.612742, "global_fraction_percent": 61.274247 },
+      { "current_nA": 55, "counts": 39277, "global_fraction": 0.029576, "global_fraction_percent": 2.957605 }
     ]
   },
 
