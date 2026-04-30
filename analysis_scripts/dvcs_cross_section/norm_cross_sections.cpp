@@ -24,8 +24,15 @@
 // keyed by CSV row index (row number in the CSV, header excluded).
 //
 // Additional pull plotting:
-//   For each xB bin, make one combined pull canvas with the same Q2 x |t| grid.
-//   Each subplot overlays pulls against KM15, BH, and VGG.
+//   For each xB bin, make separate pull canvases for:
+//     - unpolarized data
+//     - positive-helicity data
+//     - negative-helicity data
+//
+//   Each pull subplot overlays the pulls with respect to all three models:
+//     - KM15
+//     - BH
+//     - VGG
 //
 // Pull convention:
 //   pull = (data - model) / stat_data
@@ -525,6 +532,29 @@ static int pull_model_color(PullModel model) {
     return kOrange + 7;
 }
 
+static std::string pull_mode_prefix(XSecPanelMode mode) {
+    if (mode == XSecPanelMode::UnpolOnly) return "unpol";
+    if (mode == XSecPanelMode::PosOnly)   return "pos";
+    if (mode == XSecPanelMode::NegOnly)   return "neg";
+    return "all";
+}
+
+static std::string pull_mode_label(XSecPanelMode mode) {
+    if (mode == XSecPanelMode::UnpolOnly) return "unpolarized";
+    if (mode == XSecPanelMode::PosOnly)   return "+ helicity";
+    if (mode == XSecPanelMode::NegOnly)   return "- helicity";
+    return "all helicities";
+}
+
+static const std::vector<Point> *points_for_mode(const BinData &bin,
+                                                 XSecPanelMode mode) {
+    if (mode == XSecPanelMode::UnpolOnly) return &(bin.unpol);
+    if (mode == XSecPanelMode::PosOnly)   return &(bin.pos);
+    if (mode == XSecPanelMode::NegOnly)   return &(bin.neg);
+
+    return nullptr;
+}
+
 static std::pair<double, double> compute_yrange_for_bin(
     const BinData *bin,
     const std::map<size_t, TheoryCurves> &theory,
@@ -665,7 +695,7 @@ static TGraph *make_pull_graph(const std::vector<PullPoint> &v,
     TGraph *g = new TGraph(N, x.data(), y.data());
 
     g->SetMarkerStyle(mstyle);
-    g->SetMarkerSize(0.95);
+    g->SetMarkerSize(1.00);
     g->SetLineWidth(2);
     g->SetLineColor(mcolor);
     g->SetMarkerColor(mcolor);
@@ -791,9 +821,10 @@ static std::vector<PullPoint> build_pulls_for_points(
     return pulls;
 }
 
-static std::pair<double, double> compute_combined_pull_yrange_for_bin(
+static std::pair<double, double> compute_pull_yrange_for_bin_and_mode(
     const BinData *bin,
-    const std::map<size_t, TheoryCurves> &theory) {
+    const std::map<size_t, TheoryCurves> &theory,
+    XSecPanelMode mode) {
 
     double max_abs = 5.0;
 
@@ -802,32 +833,25 @@ static std::pair<double, double> compute_combined_pull_yrange_for_bin(
 
         if (it_th != theory.end()) {
             const TheoryCurves &tc = it_th->second;
+            const std::vector<Point> *points = points_for_mode(*bin, mode);
 
-            const std::vector<PullModel> models = {
-                PullModel::KM15,
-                PullModel::BH,
-                PullModel::VGG
-            };
+            if (points) {
+                const std::vector<PullModel> models = {
+                    PullModel::KM15,
+                    PullModel::BH,
+                    PullModel::VGG
+                };
 
-            for (PullModel model : models) {
-                const std::vector<PullPoint> pu =
-                    build_pulls_for_points(bin->unpol, tc, model, XSecPanelMode::UnpolOnly);
-                const std::vector<PullPoint> pp =
-                    build_pulls_for_points(bin->pos,   tc, model, XSecPanelMode::PosOnly);
-                const std::vector<PullPoint> pm =
-                    build_pulls_for_points(bin->neg,   tc, model, XSecPanelMode::NegOnly);
+                for (PullModel model : models) {
+                    const std::vector<PullPoint> pulls =
+                        build_pulls_for_points(*points, tc, model, mode);
 
-                auto update = [&](const std::vector<PullPoint> &v) {
-                    for (const auto &p : v) {
+                    for (const auto &p : pulls) {
                         if (std::isfinite(p.pull)) {
                             max_abs = std::max(max_abs, std::fabs(p.pull));
                         }
                     }
-                };
-
-                update(pu);
-                update(pp);
-                update(pm);
+                }
             }
         }
     }
@@ -1190,10 +1214,10 @@ static void make_normed_xsec_canvas_for_mode(
 }
 
 // -----------------------------------------------------------------------------
-// Canvas builder (one xB bin, combined KM15/BH/VGG pull view)
+// Canvas builder (one xB bin, one helicity mode, combined KM15/BH/VGG pulls)
 // -----------------------------------------------------------------------------
 
-static void make_combined_pull_canvas(
+static void make_pull_canvas_for_mode(
     const std::string &label,
     const Range &xb_range,
     const XSGroupByXB &group,
@@ -1202,11 +1226,14 @@ static void make_combined_pull_canvas(
     const std::map<size_t, TheoryCurves> &theory,
     const fs::path &outdir,
     int xb_idx_for_name,
+    XSecPanelMode mode,
     int ncols,
     int nrows,
     int nPads) {
 
     (void)nPads;
+
+    if (mode == XSecPanelMode::All) return;
 
     const auto &bins_for_xB = group.bins;
 
@@ -1240,6 +1267,7 @@ static void make_combined_pull_canvas(
     std::ostringstream tit;
 
     tit << "Normed cross-section pulls, ep #rightarrow ep#gamma   " << label
+        << "   " << pull_mode_label(mode)
         << "   x_{B} in ("
         << std::fixed << std::setprecision(3)
         << xb_range.first << ", " << xb_range.second << ")";
@@ -1251,40 +1279,21 @@ static void make_combined_pull_canvas(
     TGraph dummy_vgg;
 
     dummy_km15.SetMarkerStyle(20);
-    dummy_km15.SetMarkerSize(0.95);
+    dummy_km15.SetMarkerSize(1.00);
     dummy_km15.SetMarkerColor(pull_model_color(PullModel::KM15));
     dummy_km15.SetLineColor(pull_model_color(PullModel::KM15));
 
     dummy_bh.SetMarkerStyle(20);
-    dummy_bh.SetMarkerSize(0.95);
+    dummy_bh.SetMarkerSize(1.00);
     dummy_bh.SetMarkerColor(pull_model_color(PullModel::BH));
     dummy_bh.SetLineColor(pull_model_color(PullModel::BH));
 
     dummy_vgg.SetMarkerStyle(20);
-    dummy_vgg.SetMarkerSize(0.95);
+    dummy_vgg.SetMarkerSize(1.00);
     dummy_vgg.SetMarkerColor(pull_model_color(PullModel::VGG));
     dummy_vgg.SetLineColor(pull_model_color(PullModel::VGG));
 
-    TGraph dummy_unpol;
-    TGraph dummy_pos;
-    TGraph dummy_neg;
-
-    dummy_unpol.SetMarkerStyle(20);
-    dummy_unpol.SetMarkerSize(0.95);
-    dummy_unpol.SetMarkerColor(kBlack);
-    dummy_unpol.SetLineColor(kBlack);
-
-    dummy_pos.SetMarkerStyle(24);
-    dummy_pos.SetMarkerSize(0.95);
-    dummy_pos.SetMarkerColor(kBlack);
-    dummy_pos.SetLineColor(kBlack);
-
-    dummy_neg.SetMarkerStyle(25);
-    dummy_neg.SetMarkerSize(0.95);
-    dummy_neg.SetMarkerColor(kBlack);
-    dummy_neg.SetLineColor(kBlack);
-
-    TLegend *legModel = new TLegend(0.08, 0.14, 0.42, 0.72);
+    TLegend *legModel = new TLegend(0.34, 0.14, 0.66, 0.72);
     legModel->SetBorderSize(1);
     legModel->SetLineColor(kBlack);
     legModel->SetFillColor(kWhite);
@@ -1294,20 +1303,7 @@ static void make_combined_pull_canvas(
     legModel->AddEntry(&dummy_km15, "pull vs KM15", "p");
     legModel->AddEntry(&dummy_bh,   "pull vs BH",   "p");
     legModel->AddEntry(&dummy_vgg,  "pull vs VGG",  "p");
-
-    TLegend *legHel = new TLegend(0.58, 0.14, 0.92, 0.72);
-    legHel->SetBorderSize(1);
-    legHel->SetLineColor(kBlack);
-    legHel->SetFillColor(kWhite);
-    legHel->SetFillStyle(1001);
-    legHel->SetTextFont(42);
-    legHel->SetTextSize(0.045);
-    legHel->AddEntry(&dummy_unpol, "unpolarized", "p");
-    legHel->AddEntry(&dummy_pos,   "+ helicity",  "p");
-    legHel->AddEntry(&dummy_neg,   "- helicity",  "p");
-
     legModel->Draw();
-    legHel->Draw();
 
     const std::vector<PullModel> models = {
         PullModel::KM15,
@@ -1339,7 +1335,7 @@ static void make_combined_pull_canvas(
                 bin_ptr = &(it_bin->second);
             }
 
-            auto yr = compute_combined_pull_yrange_for_bin(bin_ptr, theory);
+            auto yr = compute_pull_yrange_for_bin_and_mode(bin_ptr, theory, mode);
             const double ymin_canvas = yr.first;
             const double ymax_canvas = yr.second;
 
@@ -1408,24 +1404,19 @@ static void make_combined_pull_canvas(
             if (it_th == theory.end()) continue;
 
             const TheoryCurves &tc = it_th->second;
+            const std::vector<Point> *points = points_for_mode(*bin_ptr, mode);
+
+            if (!points) continue;
 
             for (PullModel model : models) {
                 const int color = pull_model_color(model);
 
-                const std::vector<PullPoint> pu =
-                    build_pulls_for_points(bin_ptr->unpol, tc, model, XSecPanelMode::UnpolOnly);
-                const std::vector<PullPoint> pp =
-                    build_pulls_for_points(bin_ptr->pos,   tc, model, XSecPanelMode::PosOnly);
-                const std::vector<PullPoint> pm =
-                    build_pulls_for_points(bin_ptr->neg,   tc, model, XSecPanelMode::NegOnly);
+                const std::vector<PullPoint> pulls =
+                    build_pulls_for_points(*points, tc, model, mode);
 
-                TGraph *gu = make_pull_graph(pu, 20, color);
-                TGraph *gp = make_pull_graph(pp, 24, color);
-                TGraph *gm = make_pull_graph(pm, 25, color);
+                TGraph *g = make_pull_graph(pulls, 20, color);
 
-                if (gu) gu->Draw("P SAME");
-                if (gp) gp->Draw("P SAME");
-                if (gm) gm->Draw("P SAME");
+                if (g) g->Draw("P SAME");
             }
         }
     }
@@ -1433,6 +1424,7 @@ static void make_combined_pull_canvas(
     std::ostringstream fname;
 
     fname << "normed_cross_sections_pulls_"
+          << pull_mode_prefix(mode) << "_"
           << canonical_period_dir(label)
           << "_xB_" << xb_idx_for_name << ".png";
 
@@ -1861,10 +1853,25 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                          XSecPanelMode::NegOnly,
                                          ncols, nrows, nPads);
 
-        make_combined_pull_canvas(label, xb_range, group,
+        make_pull_canvas_for_mode(label, xb_range, group,
                                   q2_slice, t_slice,
                                   theory, outdir,
                                   xb_idx_for_name,
+                                  XSecPanelMode::UnpolOnly,
+                                  ncols, nrows, nPads);
+
+        make_pull_canvas_for_mode(label, xb_range, group,
+                                  q2_slice, t_slice,
+                                  theory, outdir,
+                                  xb_idx_for_name,
+                                  XSecPanelMode::PosOnly,
+                                  ncols, nrows, nPads);
+
+        make_pull_canvas_for_mode(label, xb_range, group,
+                                  q2_slice, t_slice,
+                                  theory, outdir,
+                                  xb_idx_for_name,
+                                  XSecPanelMode::NegOnly,
                                   ncols, nrows, nPads);
 
         ++xb_canvas_counter;
