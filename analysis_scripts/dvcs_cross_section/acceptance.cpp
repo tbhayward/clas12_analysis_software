@@ -37,12 +37,15 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -70,6 +73,13 @@ enum class CutSource {
 
 // static constexpr CutSource kSigmaCutSource = CutSource::kDATA;
 static constexpr CutSource kSigmaCutSource = CutSource::kMC;
+
+// Maximum number of parallel period-counting workers.
+// There are exactly five periods in kPeriods below, but this constant keeps the
+// bound explicit and prevents accidental expansion beyond five workers.
+static constexpr std::size_t kMaxAcceptanceWorkers = 5;
+
+static std::once_flag gRecPassMessageOnce;
 
 static inline const char* cut_source_label(CutSource s) {
     return (s == CutSource::kDATA) ? "data" : "mc";
@@ -794,12 +804,10 @@ static bool rec_passes_exclusivity(const std::string& period_label_pretty,
         std::exit(EXIT_FAILURE);
     }
 
-    static bool printed_once = false;
-    if (!printed_once) {
+    std::call_once(gRecPassMessageOnce, []() {
         std::cout << "[acceptance] rec_passes_exclusivity: applying global cuts (and optional P2(ycol) / topology filters) + "
                   << "topology-dependent 3-sigma " << cut_source_label(kSigmaCutSource) << " cuts.\n";
-        printed_once = true;
-    }
+    });
 
     for (const auto& kv : *cutsForTopo) {
         const std::string& vname = kv.first;
@@ -1012,7 +1020,7 @@ static void accumulate_counts_for_period(const std::string& period_label,
     if (recTree->GetBranch(br_e_p))     recTree->SetBranchAddress(br_e_p,     &r_e_p);
     if (recTree->GetBranch(br_e_theta)) recTree->SetBranchAddress(br_e_theta, &r_e_theta);
     if (recTree->GetBranch(br_e_phi))   recTree->SetBranchAddress(br_e_phi,   &r_e_phi);
-    if (recTree->GetBranch(br_p2_p))     recTree->SetBranchAddress(br_p2_p,     &r_p2_p);
+    if (recTree->GetBranch(br_p2_p))    recTree->SetBranchAddress(br_p2_p,    &r_p2_p);
     if (recTree->GetBranch(br_p2_theta)) recTree->SetBranchAddress(br_p2_theta, &r_p2_theta);
     if (recTree->GetBranch(br_p2_phi))   recTree->SetBranchAddress(br_p2_phi,   &r_p2_phi);
 
@@ -1049,8 +1057,8 @@ static void accumulate_counts_for_period(const std::string& period_label,
     const std::string period_label_global = global_cuts_period_label_or_die(period_label);
 
     Long64_t topo_seen[3] = {0, 0, 0};
-    Long64_t topo_pass_global[3] = {0, 0, 0};      // global cuts (and optional topology/P2 cuts)
-    Long64_t topo_pass_sigma[3] = {0, 0, 0};       // global(+optional)+3-sigma
+    Long64_t topo_pass_global[3] = {0, 0, 0};
+    Long64_t topo_pass_sigma[3] = {0, 0, 0};
     Long64_t topo_unknown = 0;
 
     for (Long64_t i = 0; i < Nrec; ++i) {
@@ -1205,6 +1213,35 @@ static void accumulate_counts_for_period(const std::string& period_label,
     std::cout << "  - CD_FT: seen=" << (long long)topo_seen[(int)Topology::CD_FT]
               << " passed_global=" << (long long)topo_pass_global[(int)Topology::CD_FT]
               << " passed_global+3sigma=" << (long long)topo_pass_sigma[(int)Topology::CD_FT] << "\n";
+}
+
+struct PeriodCountResult {
+    std::string period_label;
+    std::vector<double> gen_counts;
+    std::vector<double> rec_counts;
+};
+
+static PeriodCountResult count_period_worker(const std::string& period_label,
+                                             const CsvDoc& csv,
+                                             const std::vector<RowBin>& bins,
+                                             const std::vector<bool>& row_has_data,
+                                             TTree* genTree,
+                                             TTree* recTree,
+                                             const TopoCutMap& sigmaCuts) {
+    PeriodCountResult result;
+    result.period_label = period_label;
+
+    accumulate_counts_for_period(period_label,
+                                 csv,
+                                 bins,
+                                 row_has_data,
+                                 genTree,
+                                 recTree,
+                                 sigmaCuts,
+                                 result.gen_counts,
+                                 result.rec_counts);
+
+    return result;
 }
 
 // ------------- CSV filling (triples) -------------
@@ -1586,6 +1623,8 @@ bool update_acceptance_csv(const std::string& csv_path,
 
     (void)global_cuts_json; // global cuts handled via global_cuts.h
 
+    ROOT::EnableThreadSafety();
+
     const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
     const uintmax_t size_before =
@@ -1622,6 +1661,15 @@ bool update_acceptance_csv(const std::string& csv_path,
     std::map<std::string, std::vector<double>> gen_all;
     std::map<std::string, std::vector<double>> rec_all;
 
+    struct WorkerInput {
+        std::string period_label;
+        TTree* gen_tree = nullptr;
+        TTree* rec_tree = nullptr;
+    };
+
+    std::vector<WorkerInput> worker_inputs;
+    worker_inputs.reserve(kPeriods.size());
+
     for (const auto& per : kPeriods) {
         auto itTag = tagMap.find(per);
         if (itTag == tagMap.end()) {
@@ -1640,22 +1688,68 @@ bool update_acceptance_csv(const std::string& csv_path,
             return false;
         }
 
-        const std::vector<bool>& flags = has_data[per];
-
-        std::vector<double> gen_counts;
-        std::vector<double> rec_counts;
-        accumulate_counts_for_period(per,
-                                     csv,
-                                     bins,
-                                     flags,
-                                     itG->second,
-                                     itR->second,
-                                     sigmaCuts,
-                                     gen_counts,
-                                     rec_counts);
-        gen_all[per] = gen_counts;
-        rec_all[per] = rec_counts;
+        worker_inputs.push_back({per, itG->second, itR->second});
     }
+
+    std::cout << "[acceptance] Starting parallel period counting with max workers = "
+              << kMaxAcceptanceWorkers << "\n";
+
+    std::vector<std::future<PeriodCountResult>> futures;
+    futures.reserve(kMaxAcceptanceWorkers);
+
+    auto collect_finished_batch = [&]() -> bool {
+        for (auto& fut : futures) {
+            PeriodCountResult result;
+            try {
+                result = fut.get();
+            } catch (const std::exception& e) {
+                std::cerr << "[acceptance] ERROR: period-counting worker threw exception: "
+                          << e.what() << "\n";
+                return false;
+            } catch (...) {
+                std::cerr << "[acceptance] ERROR: period-counting worker threw unknown exception.\n";
+                return false;
+            }
+
+            gen_all[result.period_label] = std::move(result.gen_counts);
+            rec_all[result.period_label] = std::move(result.rec_counts);
+        }
+        futures.clear();
+        return true;
+    };
+
+    for (const auto& input : worker_inputs) {
+        const auto itFlags = has_data.find(input.period_label);
+        if (itFlags == has_data.end()) {
+            std::cerr << "[acceptance] FATAL: missing row_has_data flags for period "
+                      << input.period_label << ".\n";
+            return false;
+        }
+
+        futures.emplace_back(std::async(std::launch::async,
+                                        count_period_worker,
+                                        input.period_label,
+                                        std::cref(csv),
+                                        std::cref(bins),
+                                        std::cref(itFlags->second),
+                                        input.gen_tree,
+                                        input.rec_tree,
+                                        std::cref(sigmaCuts)));
+
+        if (futures.size() >= kMaxAcceptanceWorkers) {
+            if (!collect_finished_batch()) {
+                return false;
+            }
+        }
+    }
+
+    if (!futures.empty()) {
+        if (!collect_finished_batch()) {
+            return false;
+        }
+    }
+
+    std::cout << "[acceptance] Parallel period counting finished.\n";
 
     if (!fill_acceptance_columns(csv, gen_all, rec_all, has_data)) {
         std::cerr << "[acceptance] ERROR: fill_acceptance_columns failed.\n";
