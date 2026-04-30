@@ -23,24 +23,23 @@
 //   theory_json_root/<EnergyDir>/xs_phi_all.json
 // keyed by CSV row index (row number in the CSV, header excluded).
 //
-// Additional pull plotting:
-//   For each xB bin, make separate pull canvases for:
+// Additional ratio plotting:
+//   For each xB bin, make separate ratio canvases for:
 //     - unpolarized data
 //     - positive-helicity data
 //     - negative-helicity data
 //
-//   Each pull subplot overlays the pulls with respect to all three models:
+//   Each ratio subplot overlays data/model ratios with respect to:
 //     - KM15
 //     - BH
 //     - VGG
 //
-// Pull convention:
-//   pull = (data - model) / stat_data
+// Ratio convention:
+//   ratio = data / model
+//   ratio_stat = stat_data / model
 //
-// The pull plots use the same normalized data points that are plotted in the
-// normed cross-section canvases. The pull denominator is the statistical
-// uncertainty, matching the existing cross-section plotting convention where
-// statistical uncertainties are used as the displayed error bars.
+// The model uncertainty is not included. The ratio uncertainty is propagated
+// only from the statistical uncertainty on the normalized data point.
 // -----------------------------------------------------------------------------
 
 #include "norm_cross_sections.h"
@@ -486,9 +485,10 @@ struct Point {
     double xs_err; // using stat as error bars (matches cross_sections.cpp style)
 };
 
-struct PullPoint {
+struct RatioPoint {
     double phi;
-    double pull;
+    double ratio;
+    double ratio_err;
 };
 
 struct BinData {
@@ -514,32 +514,32 @@ enum class XSecPanelMode {
     NegOnly
 };
 
-enum class PullModel {
+enum class RatioModel {
     KM15,
     BH,
     VGG
 };
 
-static std::string pull_model_name(PullModel model) {
-    if (model == PullModel::KM15) return "KM15";
-    if (model == PullModel::BH)   return "BH";
+static std::string ratio_model_name(RatioModel model) {
+    if (model == RatioModel::KM15) return "KM15";
+    if (model == RatioModel::BH)   return "BH";
     return "VGG";
 }
 
-static int pull_model_color(PullModel model) {
-    if (model == PullModel::KM15) return kMagenta + 1;
-    if (model == PullModel::BH)   return kGreen + 2;
+static int ratio_model_color(RatioModel model) {
+    if (model == RatioModel::KM15) return kMagenta + 1;
+    if (model == RatioModel::BH)   return kGreen + 2;
     return kOrange + 7;
 }
 
-static std::string pull_mode_prefix(XSecPanelMode mode) {
+static std::string ratio_mode_prefix(XSecPanelMode mode) {
     if (mode == XSecPanelMode::UnpolOnly) return "unpol";
     if (mode == XSecPanelMode::PosOnly)   return "pos";
     if (mode == XSecPanelMode::NegOnly)   return "neg";
     return "all";
 }
 
-static std::string pull_mode_label(XSecPanelMode mode) {
+static std::string ratio_mode_label(XSecPanelMode mode) {
     if (mode == XSecPanelMode::UnpolOnly) return "unpolarized";
     if (mode == XSecPanelMode::PosOnly)   return "+ helicity";
     if (mode == XSecPanelMode::NegOnly)   return "- helicity";
@@ -677,25 +677,29 @@ static TGraphErrors *make_xsec_graph(const std::vector<Point> &v,
     return g;
 }
 
-static TGraph *make_pull_graph(const std::vector<PullPoint> &v,
-                               int mstyle,
-                               int mcolor) {
+static TGraphErrors *make_ratio_graph(const std::vector<RatioPoint> &v,
+                                      int mstyle,
+                                      int mcolor) {
     if (v.empty()) return nullptr;
 
     const int N = (int)v.size();
 
     std::vector<double> x(N);
     std::vector<double> y(N);
+    std::vector<double> ex(N);
+    std::vector<double> ey(N);
 
     for (int i = 0; i < N; ++i) {
-        x[i] = v[i].phi;
-        y[i] = v[i].pull;
+        x[i]  = v[i].phi;
+        y[i]  = v[i].ratio;
+        ex[i] = 0.0;
+        ey[i] = v[i].ratio_err;
     }
 
-    TGraph *g = new TGraph(N, x.data(), y.data());
+    TGraphErrors *g = new TGraphErrors(N, x.data(), y.data(), ex.data(), ey.data());
 
     g->SetMarkerStyle(mstyle);
-    g->SetMarkerSize(1.00);
+    g->SetMarkerSize(1.0);
     g->SetLineWidth(2);
     g->SetLineColor(mcolor);
     g->SetMarkerColor(mcolor);
@@ -757,13 +761,13 @@ static double interp_curve_at_phi(const std::vector<double> &x,
 }
 
 static const std::vector<double> *select_model_curve(const TheoryCurves &tc,
-                                                     PullModel model,
+                                                     RatioModel model,
                                                      XSecPanelMode hel_mode) {
-    if (model == PullModel::BH) {
+    if (model == RatioModel::BH) {
         return &(tc.bh_unpol);
     }
 
-    if (model == PullModel::KM15) {
+    if (model == RatioModel::KM15) {
         if (hel_mode == XSecPanelMode::UnpolOnly) return &(tc.km_unpol);
         if (hel_mode == XSecPanelMode::PosOnly)   return &(tc.km_pos);
         if (hel_mode == XSecPanelMode::NegOnly)   return &(tc.km_neg);
@@ -771,7 +775,7 @@ static const std::vector<double> *select_model_curve(const TheoryCurves &tc,
         return nullptr;
     }
 
-    if (model == PullModel::VGG) {
+    if (model == RatioModel::VGG) {
         if (hel_mode == XSecPanelMode::UnpolOnly) return &(tc.vgg_unpol);
         if (hel_mode == XSecPanelMode::PosOnly)   return &(tc.vgg_pos);
         if (hel_mode == XSecPanelMode::NegOnly)   return &(tc.vgg_neg);
@@ -782,51 +786,54 @@ static const std::vector<double> *select_model_curve(const TheoryCurves &tc,
     return nullptr;
 }
 
-static std::vector<PullPoint> build_pulls_for_points(
+static std::vector<RatioPoint> build_ratios_for_points(
     const std::vector<Point> &points,
     const TheoryCurves &tc,
-    PullModel model,
+    RatioModel model,
     XSecPanelMode hel_mode) {
 
-    std::vector<PullPoint> pulls;
+    std::vector<RatioPoint> ratios;
 
     const std::vector<double> *curve = select_model_curve(tc, model, hel_mode);
 
-    if (!curve) return pulls;
-    if (curve->empty()) return pulls;
-    if (tc.phi_deg.size() != curve->size()) return pulls;
+    if (!curve) return ratios;
+    if (curve->empty()) return ratios;
+    if (tc.phi_deg.size() != curve->size()) return ratios;
 
     for (const auto &p : points) {
         if (!(p.xs > 0.0) || !std::isfinite(p.xs)) continue;
-        if (!(p.xs_err > 0.0) || !std::isfinite(p.xs_err)) continue;
+        if (!(p.xs_err >= 0.0) || !std::isfinite(p.xs_err)) continue;
 
         const double model_value = interp_curve_at_phi(tc.phi_deg, *curve, p.phi);
 
         if (!(model_value > 0.0) || !std::isfinite(model_value)) continue;
 
-        PullPoint pp;
-        pp.phi  = p.phi;
-        pp.pull = (p.xs - model_value) / p.xs_err;
+        RatioPoint rp;
+        rp.phi       = p.phi;
+        rp.ratio     = p.xs / model_value;
+        rp.ratio_err = p.xs_err / model_value;
 
-        if (!std::isfinite(pp.pull)) continue;
+        if (!std::isfinite(rp.ratio)) continue;
+        if (!std::isfinite(rp.ratio_err)) continue;
 
-        pulls.push_back(pp);
+        ratios.push_back(rp);
     }
 
-    std::sort(pulls.begin(), pulls.end(),
-              [](const PullPoint &a, const PullPoint &b) {
+    std::sort(ratios.begin(), ratios.end(),
+              [](const RatioPoint &a, const RatioPoint &b) {
                   return a.phi < b.phi;
               });
 
-    return pulls;
+    return ratios;
 }
 
-static std::pair<double, double> compute_pull_yrange_for_bin_and_mode(
+static std::pair<double, double> compute_ratio_yrange_for_bin_and_mode(
     const BinData *bin,
     const std::map<size_t, TheoryCurves> &theory,
     XSecPanelMode mode) {
 
-    double max_abs = 5.0;
+    double ymin = std::numeric_limits<double>::max();
+    double ymax = 0.0;
 
     if (bin && bin->have_theory_row) {
         const auto it_th = theory.find(bin->theory_row);
@@ -836,33 +843,47 @@ static std::pair<double, double> compute_pull_yrange_for_bin_and_mode(
             const std::vector<Point> *points = points_for_mode(*bin, mode);
 
             if (points) {
-                const std::vector<PullModel> models = {
-                    PullModel::KM15,
-                    PullModel::BH,
-                    PullModel::VGG
+                const std::vector<RatioModel> models = {
+                    RatioModel::KM15,
+                    RatioModel::BH,
+                    RatioModel::VGG
                 };
 
-                for (PullModel model : models) {
-                    const std::vector<PullPoint> pulls =
-                        build_pulls_for_points(*points, tc, model, mode);
+                for (RatioModel model : models) {
+                    const std::vector<RatioPoint> ratios =
+                        build_ratios_for_points(*points, tc, model, mode);
 
-                    for (const auto &p : pulls) {
-                        if (std::isfinite(p.pull)) {
-                            max_abs = std::max(max_abs, std::fabs(p.pull));
-                        }
+                    for (const auto &p : ratios) {
+                        if (!std::isfinite(p.ratio)) continue;
+                        if (!std::isfinite(p.ratio_err)) continue;
+
+                        const double lo = std::max(0.0, p.ratio - p.ratio_err);
+                        const double hi = p.ratio + p.ratio_err;
+
+                        if (lo < ymin) ymin = lo;
+                        if (hi > ymax) ymax = hi;
                     }
                 }
             }
         }
     }
 
-    max_abs = std::ceil(max_abs);
-
-    if (max_abs < 5.0) {
-        max_abs = 5.0;
+    if (!(ymax > 0.0) || !std::isfinite(ymax)) {
+        return std::make_pair(0.0, 2.0);
     }
 
-    return std::make_pair(-1.10 * max_abs, 1.10 * max_abs);
+    if (!std::isfinite(ymin) || ymin == std::numeric_limits<double>::max()) {
+        ymin = 0.0;
+    }
+
+    ymin = std::max(0.0, ymin * 0.80);
+    ymax = ymax * 1.20;
+
+    if (ymax < 2.0) {
+        ymax = 2.0;
+    }
+
+    return std::make_pair(ymin, ymax);
 }
 
 // -----------------------------------------------------------------------------
@@ -1214,10 +1235,10 @@ static void make_normed_xsec_canvas_for_mode(
 }
 
 // -----------------------------------------------------------------------------
-// Canvas builder (one xB bin, one helicity mode, combined KM15/BH/VGG pulls)
+// Canvas builder (one xB bin, one helicity mode, combined KM15/BH/VGG ratios)
 // -----------------------------------------------------------------------------
 
-static void make_pull_canvas_for_mode(
+static void make_ratio_canvas_for_mode(
     const std::string &label,
     const Range &xb_range,
     const XSGroupByXB &group,
@@ -1242,14 +1263,14 @@ static void make_pull_canvas_for_mode(
     const int W = 300 * ncols + 160;
     const int H = 260 * nrows + 240;
 
-    TCanvas *c = new TCanvas("c_normed_xsec_pulls", "c_normed_xsec_pulls", W, H);
+    TCanvas *c = new TCanvas("c_normed_xsec_ratios", "c_normed_xsec_ratios", W, H);
 
-    TPad *pTop = new TPad("pTopPull", "pTopPull", 0.0, 0.78, 1.0, 1.0);
+    TPad *pTop = new TPad("pTopRatio", "pTopRatio", 0.0, 0.78, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
     pTop->Draw();
 
-    TPad *pGrid = new TPad("pGridPull", "pGridPull", 0.0, 0.00, 1.0, 0.78);
+    TPad *pGrid = new TPad("pGridRatio", "pGridRatio", 0.0, 0.00, 1.0, 0.78);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
     pGrid->Draw();
@@ -1266,32 +1287,35 @@ static void make_pull_canvas_for_mode(
 
     std::ostringstream tit;
 
-    tit << "Normed cross-section pulls, ep #rightarrow ep#gamma   " << label
-        << "   " << pull_mode_label(mode)
+    tit << "Normed cross-section data/model ratios, ep #rightarrow ep#gamma   " << label
+        << "   " << ratio_mode_label(mode)
         << "   x_{B} in ("
         << std::fixed << std::setprecision(3)
         << xb_range.first << ", " << xb_range.second << ")";
 
     head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
-    TGraph dummy_km15;
-    TGraph dummy_bh;
-    TGraph dummy_vgg;
+    TGraphErrors dummy_km15;
+    TGraphErrors dummy_bh;
+    TGraphErrors dummy_vgg;
 
     dummy_km15.SetMarkerStyle(20);
-    dummy_km15.SetMarkerSize(1.00);
-    dummy_km15.SetMarkerColor(pull_model_color(PullModel::KM15));
-    dummy_km15.SetLineColor(pull_model_color(PullModel::KM15));
+    dummy_km15.SetMarkerSize(1.0);
+    dummy_km15.SetMarkerColor(ratio_model_color(RatioModel::KM15));
+    dummy_km15.SetLineColor(ratio_model_color(RatioModel::KM15));
+    dummy_km15.SetLineWidth(2);
 
     dummy_bh.SetMarkerStyle(20);
-    dummy_bh.SetMarkerSize(1.00);
-    dummy_bh.SetMarkerColor(pull_model_color(PullModel::BH));
-    dummy_bh.SetLineColor(pull_model_color(PullModel::BH));
+    dummy_bh.SetMarkerSize(1.0);
+    dummy_bh.SetMarkerColor(ratio_model_color(RatioModel::BH));
+    dummy_bh.SetLineColor(ratio_model_color(RatioModel::BH));
+    dummy_bh.SetLineWidth(2);
 
     dummy_vgg.SetMarkerStyle(20);
-    dummy_vgg.SetMarkerSize(1.00);
-    dummy_vgg.SetMarkerColor(pull_model_color(PullModel::VGG));
-    dummy_vgg.SetLineColor(pull_model_color(PullModel::VGG));
+    dummy_vgg.SetMarkerSize(1.0);
+    dummy_vgg.SetMarkerColor(ratio_model_color(RatioModel::VGG));
+    dummy_vgg.SetLineColor(ratio_model_color(RatioModel::VGG));
+    dummy_vgg.SetLineWidth(2);
 
     TLegend *legModel = new TLegend(0.34, 0.14, 0.66, 0.72);
     legModel->SetBorderSize(1);
@@ -1300,15 +1324,15 @@ static void make_pull_canvas_for_mode(
     legModel->SetFillStyle(1001);
     legModel->SetTextFont(42);
     legModel->SetTextSize(0.045);
-    legModel->AddEntry(&dummy_km15, "pull vs KM15", "p");
-    legModel->AddEntry(&dummy_bh,   "pull vs BH",   "p");
-    legModel->AddEntry(&dummy_vgg,  "pull vs VGG",  "p");
+    legModel->AddEntry(&dummy_km15, "data / KM15", "lep");
+    legModel->AddEntry(&dummy_bh,   "data / BH",   "lep");
+    legModel->AddEntry(&dummy_vgg,  "data / VGG",  "lep");
     legModel->Draw();
 
-    const std::vector<PullModel> models = {
-        PullModel::KM15,
-        PullModel::BH,
-        PullModel::VGG
+    const std::vector<RatioModel> models = {
+        RatioModel::KM15,
+        RatioModel::BH,
+        RatioModel::VGG
     };
 
     for (int r = 0; r < nrows; ++r) {
@@ -1335,14 +1359,14 @@ static void make_pull_canvas_for_mode(
                 bin_ptr = &(it_bin->second);
             }
 
-            auto yr = compute_pull_yrange_for_bin_and_mode(bin_ptr, theory, mode);
+            auto yr = compute_ratio_yrange_for_bin_and_mode(bin_ptr, theory, mode);
             const double ymin_canvas = yr.first;
             const double ymax_canvas = yr.second;
 
             TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
 
             frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("(data - model) / #sigma_{stat}");
+            frame->GetYaxis()->SetTitle("data / model");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
@@ -1353,35 +1377,11 @@ static void make_pull_canvas_for_mode(
             frame->GetXaxis()->SetTitleOffset(1.00);
             frame->GetYaxis()->SetTitleOffset(1.15);
 
-            TLine *zero = new TLine(0.0, 0.0, 360.0, 0.0);
-            zero->SetLineColor(kBlack);
-            zero->SetLineStyle(1);
-            zero->SetLineWidth(2);
-            zero->Draw("SAME");
-
-            TLine *plus_one = new TLine(0.0, 1.0, 360.0, 1.0);
-            plus_one->SetLineColor(kGray + 2);
-            plus_one->SetLineStyle(2);
-            plus_one->SetLineWidth(1);
-            plus_one->Draw("SAME");
-
-            TLine *minus_one = new TLine(0.0, -1.0, 360.0, -1.0);
-            minus_one->SetLineColor(kGray + 2);
-            minus_one->SetLineStyle(2);
-            minus_one->SetLineWidth(1);
-            minus_one->Draw("SAME");
-
-            TLine *plus_three = new TLine(0.0, 3.0, 360.0, 3.0);
-            plus_three->SetLineColor(kGray + 1);
-            plus_three->SetLineStyle(3);
-            plus_three->SetLineWidth(1);
-            plus_three->Draw("SAME");
-
-            TLine *minus_three = new TLine(0.0, -3.0, 360.0, -3.0);
-            minus_three->SetLineColor(kGray + 1);
-            minus_three->SetLineStyle(3);
-            minus_three->SetLineWidth(1);
-            minus_three->Draw("SAME");
+            TLine *unity = new TLine(0.0, 1.0, 360.0, 1.0);
+            unity->SetLineColor(kBlack);
+            unity->SetLineStyle(1);
+            unity->SetLineWidth(2);
+            unity->Draw("SAME");
 
             TLatex lab;
             lab.SetNDC();
@@ -1408,13 +1408,13 @@ static void make_pull_canvas_for_mode(
 
             if (!points) continue;
 
-            for (PullModel model : models) {
-                const int color = pull_model_color(model);
+            for (RatioModel model : models) {
+                const int color = ratio_model_color(model);
 
-                const std::vector<PullPoint> pulls =
-                    build_pulls_for_points(*points, tc, model, mode);
+                const std::vector<RatioPoint> ratios =
+                    build_ratios_for_points(*points, tc, model, mode);
 
-                TGraph *g = make_pull_graph(pulls, 20, color);
+                TGraphErrors *g = make_ratio_graph(ratios, 20, color);
 
                 if (g) g->Draw("P SAME");
             }
@@ -1423,8 +1423,8 @@ static void make_pull_canvas_for_mode(
 
     std::ostringstream fname;
 
-    fname << "normed_cross_sections_pulls_"
-          << pull_mode_prefix(mode) << "_"
+    fname << "normed_cross_sections_ratios_"
+          << ratio_mode_prefix(mode) << "_"
           << canonical_period_dir(label)
           << "_xB_" << xb_idx_for_name << ".png";
 
@@ -1853,26 +1853,26 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                          XSecPanelMode::NegOnly,
                                          ncols, nrows, nPads);
 
-        make_pull_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::UnpolOnly,
-                                  ncols, nrows, nPads);
+        make_ratio_canvas_for_mode(label, xb_range, group,
+                                   q2_slice, t_slice,
+                                   theory, outdir,
+                                   xb_idx_for_name,
+                                   XSecPanelMode::UnpolOnly,
+                                   ncols, nrows, nPads);
 
-        make_pull_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::PosOnly,
-                                  ncols, nrows, nPads);
+        make_ratio_canvas_for_mode(label, xb_range, group,
+                                   q2_slice, t_slice,
+                                   theory, outdir,
+                                   xb_idx_for_name,
+                                   XSecPanelMode::PosOnly,
+                                   ncols, nrows, nPads);
 
-        make_pull_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::NegOnly,
-                                  ncols, nrows, nPads);
+        make_ratio_canvas_for_mode(label, xb_range, group,
+                                   q2_slice, t_slice,
+                                   theory, outdir,
+                                   xb_idx_for_name,
+                                   XSecPanelMode::NegOnly,
+                                   ncols, nrows, nPads);
 
         ++xb_canvas_counter;
     }
