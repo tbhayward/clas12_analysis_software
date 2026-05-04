@@ -43,7 +43,8 @@ FD_THETA_MAX_DEG = 40.0
 CD_THETA_MIN_DEG = 40.0
 CD_THETA_MAX_DEG = 70.0
 
-N_BINS_THETA = 70
+# Previous value was 70. This is approximately one third of that.
+N_BINS_THETA = 23
 
 DEFAULT_STATUS_EVERY = 250000
 DEFAULT_MAX_WORKERS = 5
@@ -51,10 +52,7 @@ DEFAULT_MAX_WORKERS = 5
 LOG_Y_MIN = 0.5
 LINEAR_Y_MIN = 0.0
 
-# Ratio plots are requested to be limited from 0 to 2.
-# A log-y plot cannot have y_min = 0, so the log-y ratio canvas uses this
-# small positive lower bound while still using y_max = 2.
-RATIO_LOG_Y_MIN = 1.0e-4
+# Ratio plots are linear only and limited from 0 to 2.
 RATIO_LINEAR_Y_MIN = 0.0
 RATIO_Y_MAX = 2.0
 
@@ -111,7 +109,6 @@ def build_output_paths(output_tag):
         "output_dir": output_dir,
         "comparison_log": base + "_log.pdf",
         "comparison_linear": base + "_linear.pdf",
-        "ratio_log": base + "_ratio_log.pdf",
         "ratio_linear": base + "_ratio_linear.pdf",
     }
 
@@ -1040,14 +1037,6 @@ def get_common_y_ranges_for_comparison(data_histograms, mc_histograms, log_y):
     return fd_y_min, fd_y_max, cd_y_min, cd_y_max
 
 
-def get_ratio_y_range(log_y):
-    if log_y:
-        return RATIO_LOG_Y_MIN, RATIO_Y_MAX
-    #endif
-
-    return RATIO_LINEAR_Y_MIN, RATIO_Y_MAX
-
-
 def draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, ratio_mode):
     pad4 = ROOT.gPad
     pad4.Clear()
@@ -1184,22 +1173,13 @@ def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pd
     status("Saved output PDF.")
 
 
-def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
-    if log_y:
-        status("Drawing data/MC ratio output canvas with log y scale.")
-    else:
-        status("Drawing data/MC ratio output canvas with linear y scale.")
-    #endif
+def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+    status("Drawing data/MC ratio output canvas with linear y scale.")
 
     ROOT.gStyle.SetOptStat(0)
 
-    if log_y:
-        canvas_name = "canvas_ratio_log"
-        canvas_title = "{} data over MC p1_theta log y".format(output_tag)
-    else:
-        canvas_name = "canvas_ratio_linear"
-        canvas_title = "{} data over MC p1_theta linear y".format(output_tag)
-    #endif
+    canvas_name = "canvas_ratio_linear"
+    canvas_title = "{} data over MC p1_theta linear y".format(output_tag)
 
     canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 900)
     canvas.Divide(4, 2)
@@ -1224,9 +1204,7 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
         8,
     ]
 
-    ratio_y_min, ratio_y_max = get_ratio_y_range(log_y)
-
-    status("Ratio canvas y-range: [{:.12g}, {:.12g}]".format(ratio_y_min, ratio_y_max))
+    status("Ratio canvas y-range: [{:.12g}, {:.12g}]".format(RATIO_LINEAR_Y_MIN, RATIO_Y_MAX))
 
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
@@ -1236,12 +1214,12 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
         pad.SetRightMargin(0.05)
         pad.SetTopMargin(0.10)
         pad.SetBottomMargin(0.13)
-        pad.SetLogy(log_y)
+        pad.SetLogy(False)
 
         h_ratio = ratio_histograms[i_panel]
 
-        h_ratio.SetMaximum(ratio_y_max)
-        h_ratio.SetMinimum(ratio_y_min)
+        h_ratio.SetMaximum(RATIO_Y_MAX)
+        h_ratio.SetMinimum(RATIO_LINEAR_Y_MIN)
 
         h_ratio.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
         h_ratio.GetXaxis().SetTitle("p_{1} #theta (deg)")
@@ -1255,17 +1233,15 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
 
         h_ratio.Draw("E1")
 
-        if (not log_y) and ratio_y_min < 1.0 and ratio_y_max > 1.0:
-            line = ROOT.TLine(h_ratio.GetXaxis().GetXmin(), 1.0, h_ratio.GetXaxis().GetXmax(), 1.0)
-            line.SetLineColor(ROOT.kRed + 1)
-            line.SetLineStyle(2)
-            line.SetLineWidth(2)
-            line.Draw("SAME")
-        #endif
+        line = ROOT.TLine(h_ratio.GetXaxis().GetXmin(), 1.0, h_ratio.GetXaxis().GetXmax(), 1.0)
+        line.SetLineColor(ROOT.kRed + 1)
+        line.SetLineStyle(2)
+        line.SetLineWidth(2)
+        line.Draw("SAME")
     #endfor
 
     canvas.cd(4)
-    draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, True)
+    draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, False, True)
 
     ensure_output_directory(output_pdf)
 
@@ -1322,14 +1298,14 @@ def main():
     status("Output directory: {}".format(output_paths["output_dir"]))
     status("Output comparison log PDF: {}".format(output_paths["comparison_log"]))
     status("Output comparison linear PDF: {}".format(output_paths["comparison_linear"]))
-    status("Output ratio log PDF: {}".format(output_paths["ratio_log"]))
     status("Output ratio linear PDF: {}".format(output_paths["ratio_linear"]))
     status("Maximum worker processes: {}".format(max_workers))
     status("Using event-by-event reconstructed MC branch: weight")
     status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
     status("FD histograms use theta range 0 to 40 deg; CD histogram uses theta range 40 to 70 deg.")
+    status("Number of p1_theta bins: {}".format(N_BINS_THETA))
     status("Comparison y scales: common across FD sectors; CD uses its own scale.")
-    status("Ratio y scales: fixed to 0 to 2 for linear, and positive lower bound to 2 for log.")
+    status("Ratio y scale: linear only, fixed from 0 to 2.")
 
     ROOT.gROOT.SetBatch(True)
 
@@ -1456,23 +1432,11 @@ def main():
     draw_ratio_canvas(
         output_tag,
         ratio_histograms,
-        output_paths["ratio_log"],
-        normalization_factor,
-        total_charge_mc,
-        integrated_luminosity_pb_inv,
-        n_gen,
-        True
-    )
-
-    draw_ratio_canvas(
-        output_tag,
-        ratio_histograms,
         output_paths["ratio_linear"],
         normalization_factor,
         total_charge_mc,
         integrated_luminosity_pb_inv,
-        n_gen,
-        False
+        n_gen
     )
 
     elapsed_time = time.time() - start_time
@@ -1491,9 +1455,9 @@ def main():
     print("CD definition: p1_theta >= 40 deg")
     print("FD theta plotting range: {:.1f} to {:.1f} deg".format(FD_THETA_MIN_DEG, FD_THETA_MAX_DEG))
     print("CD theta plotting range: {:.1f} to {:.1f} deg".format(CD_THETA_MIN_DEG, CD_THETA_MAX_DEG))
+    print("Number of p1_theta bins: {}".format(N_BINS_THETA))
     print("Comparison y scales: common across FD sectors; CD uses its own scale")
     print("Ratio y range linear: {:.12g} to {:.12g}".format(RATIO_LINEAR_Y_MIN, RATIO_Y_MAX))
-    print("Ratio y range log: {:.12g} to {:.12g}".format(RATIO_LOG_Y_MIN, RATIO_Y_MAX))
     print("Total accumulated charge from CSV raw units: {:.12g}".format(total_charge_raw))
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
@@ -1513,7 +1477,6 @@ def main():
     print("Output directory: {}".format(output_paths["output_dir"]))
     print("Output comparison log PDF: {}".format(output_paths["comparison_log"]))
     print("Output comparison linear PDF: {}".format(output_paths["comparison_linear"]))
-    print("Output ratio log PDF: {}".format(output_paths["ratio_log"]))
     print("Output ratio linear PDF: {}".format(output_paths["ratio_linear"]))
     print("Elapsed time: {:.2f} seconds".format(elapsed_time))
 
