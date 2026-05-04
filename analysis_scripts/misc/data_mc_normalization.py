@@ -51,10 +51,15 @@ RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC = 1316.875
 
 OUTPUT_PDF = "output/data_mc_normalization/output.pdf"
 
+# Panels 1-6 are FD sectors, now defined only by p1_theta < 40 degrees.
+# Panel 7 is CD, now defined only by p1_theta >= 40 degrees.
+FD_THETA_MIN_DEG = 0.0
+FD_THETA_MAX_DEG = 40.0
+
+CD_THETA_MIN_DEG = 40.0
+CD_THETA_MAX_DEG = 70.0
+
 N_BINS_THETA = 70
-THETA_MIN_DEG = 0.0
-THETA_MAX_DEG = 70.0
-THETA_BIN_WIDTH_DEG = (THETA_MAX_DEG - THETA_MIN_DEG) / float(N_BINS_THETA)
 
 DEFAULT_STATUS_EVERY = 250000
 DEFAULT_MAX_WORKERS = 5
@@ -204,8 +209,14 @@ def get_fd_sector_from_phi_deg(phi_deg):
     return 0
 
 
-def get_panel_index(detector1, p1_phi_rad):
-    if detector1 == 1:
+def get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad):
+    p1_theta_deg = math.degrees(p1_theta_rad)
+
+    if p1_theta_deg < FD_THETA_MIN_DEG:
+        return -1
+    #endif
+
+    if p1_theta_deg < FD_THETA_MAX_DEG:
         p1_phi_deg = math.degrees(p1_phi_rad)
         sector = get_fd_sector_from_phi_deg(p1_phi_deg)
 
@@ -216,27 +227,50 @@ def get_panel_index(detector1, p1_phi_rad):
         return -1
     #endif
 
-    if detector1 == 2:
+    if p1_theta_deg >= CD_THETA_MIN_DEG and p1_theta_deg < CD_THETA_MAX_DEG:
         return 6
     #endif
 
     return -1
 
 
-def get_theta_bin(p1_theta_rad):
+def get_theta_bin_for_panel(i_panel, p1_theta_rad):
     p1_theta_deg = math.degrees(p1_theta_rad)
 
-    if p1_theta_deg < THETA_MIN_DEG or p1_theta_deg >= THETA_MAX_DEG:
+    if i_panel >= 0 and i_panel <= 5:
+        theta_min = FD_THETA_MIN_DEG
+        theta_max = FD_THETA_MAX_DEG
+    elif i_panel == 6:
+        theta_min = CD_THETA_MIN_DEG
+        theta_max = CD_THETA_MAX_DEG
+    else:
         return -1
     #endif
 
-    i_bin = int((p1_theta_deg - THETA_MIN_DEG) / THETA_BIN_WIDTH_DEG)
+    if p1_theta_deg < theta_min or p1_theta_deg >= theta_max:
+        return -1
+    #endif
+
+    bin_width = (theta_max - theta_min) / float(N_BINS_THETA)
+    i_bin = int((p1_theta_deg - theta_min) / bin_width)
 
     if i_bin < 0 or i_bin >= N_BINS_THETA:
         return -1
     #endif
 
     return i_bin
+
+
+def get_theta_range_for_panel(i_panel):
+    if i_panel >= 0 and i_panel <= 5:
+        return FD_THETA_MIN_DEG, FD_THETA_MAX_DEG
+    #endif
+
+    if i_panel == 6:
+        return CD_THETA_MIN_DEG, CD_THETA_MAX_DEG
+    #endif
+
+    fatal("invalid panel index in get_theta_range_for_panel: {}".format(i_panel))
 
 
 def make_empty_counts():
@@ -351,14 +385,12 @@ def sum_charge_for_runs(unique_runs, charge_by_run):
 def configure_tree_for_data(tree):
     tree.SetBranchStatus("*", 0)
     tree.SetBranchStatus("runnum", 1)
-    tree.SetBranchStatus("detector1", 1)
     tree.SetBranchStatus("p1_phi", 1)
     tree.SetBranchStatus("p1_theta", 1)
 
 
 def configure_tree_for_mc(tree):
     tree.SetBranchStatus("*", 0)
-    tree.SetBranchStatus("detector1", 1)
     tree.SetBranchStatus("p1_phi", 1)
     tree.SetBranchStatus("p1_theta", 1)
 
@@ -392,7 +424,7 @@ def data_worker(args):
     n_filled = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_detector = 0
+    n_skipped_panel = 0
     n_skipped_theta = 0
     n_total = end_entry - start_entry
 
@@ -407,18 +439,17 @@ def data_worker(args):
         tree.GetEntry(i_entry)
 
         runnum = int(getattr(tree, "runnum"))
-        detector1 = int(getattr(tree, "detector1"))
         p1_phi_rad = float(getattr(tree, "p1_phi"))
         p1_theta_rad = float(getattr(tree, "p1_theta"))
 
         unique_runs.add(runnum)
 
-        i_panel = get_panel_index(detector1, p1_phi_rad)
+        i_panel = get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad)
 
         if i_panel < 0:
-            n_skipped_detector += 1
+            n_skipped_panel += 1
         else:
-            i_bin = get_theta_bin(p1_theta_rad)
+            i_bin = get_theta_bin_for_panel(i_panel, p1_theta_rad)
 
             if i_bin < 0:
                 n_skipped_theta += 1
@@ -426,22 +457,24 @@ def data_worker(args):
                 counts[i_panel][i_bin] += 1.0
                 n_filled += 1
 
-                if detector1 == 1:
+                if i_panel >= 0 and i_panel <= 5:
                     n_fd += 1
-                elif detector1 == 2:
+                elif i_panel == 6:
                     n_cd += 1
                 #endif
             #endif
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] data worker {} progress: {}/{} chunk entries ({}) | filled: {} | unique runs: {}".format(
+            print("[{}] data worker {} progress: {}/{} chunk entries ({}) | filled: {} | FD(theta<40): {} | CD(theta>=40): {} | unique runs: {}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
                 n_total,
                 format_percent(local_index, n_total),
                 n_filled,
+                n_fd,
+                n_cd,
                 len(unique_runs)
             ), flush=True)
         #endif
@@ -449,13 +482,13 @@ def data_worker(args):
 
     root_file.Close()
 
-    print("[{}] data worker {} finished: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}, unique runs = {}.".format(
+    print("[{}] data worker {} finished: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}, unique runs = {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
         n_filled,
         n_fd,
         n_cd,
-        n_skipped_detector,
+        n_skipped_panel,
         n_skipped_theta,
         len(unique_runs)
     ), flush=True)
@@ -466,7 +499,7 @@ def data_worker(args):
         "n_filled": n_filled,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_panel": n_skipped_panel,
         "n_skipped_theta": n_skipped_theta,
     }
 
@@ -499,7 +532,7 @@ def mc_worker(args):
     n_filled = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_detector = 0
+    n_skipped_panel = 0
     n_skipped_theta = 0
     n_total = end_entry - start_entry
 
@@ -513,16 +546,15 @@ def mc_worker(args):
     for local_index, i_entry in enumerate(range(start_entry, end_entry), start=1):
         tree.GetEntry(i_entry)
 
-        detector1 = int(getattr(tree, "detector1"))
         p1_phi_rad = float(getattr(tree, "p1_phi"))
         p1_theta_rad = float(getattr(tree, "p1_theta"))
 
-        i_panel = get_panel_index(detector1, p1_phi_rad)
+        i_panel = get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad)
 
         if i_panel < 0:
-            n_skipped_detector += 1
+            n_skipped_panel += 1
         else:
-            i_bin = get_theta_bin(p1_theta_rad)
+            i_bin = get_theta_bin_for_panel(i_panel, p1_theta_rad)
 
             if i_bin < 0:
                 n_skipped_theta += 1
@@ -530,35 +562,37 @@ def mc_worker(args):
                 counts[i_panel][i_bin] += 1.0
                 n_filled += 1
 
-                if detector1 == 1:
+                if i_panel >= 0 and i_panel <= 5:
                     n_fd += 1
-                elif detector1 == 2:
+                elif i_panel == 6:
                     n_cd += 1
                 #endif
             #endif
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | filled: {}".format(
+            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | filled: {} | FD(theta<40): {} | CD(theta>=40): {}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
                 n_total,
                 format_percent(local_index, n_total),
-                n_filled
+                n_filled,
+                n_fd,
+                n_cd
             ), flush=True)
         #endif
     #endfor
 
     root_file.Close()
 
-    print("[{}] MC worker {} finished: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}.".format(
+    print("[{}] MC worker {} finished: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
         n_filled,
         n_fd,
         n_cd,
-        n_skipped_detector,
+        n_skipped_panel,
         n_skipped_theta
     ), flush=True)
 
@@ -567,7 +601,7 @@ def mc_worker(args):
         "n_filled": n_filled,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_panel": n_skipped_panel,
         "n_skipped_theta": n_skipped_theta,
     }
 
@@ -604,7 +638,7 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
     n_filled = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_detector = 0
+    n_skipped_panel = 0
     n_skipped_theta = 0
 
     with mp.Pool(processes=len(tasks)) as pool:
@@ -617,16 +651,16 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
         n_filled += result["n_filled"]
         n_fd += result["n_fd"]
         n_cd += result["n_cd"]
-        n_skipped_detector += result["n_skipped_detector"]
+        n_skipped_panel += result["n_skipped_panel"]
         n_skipped_theta += result["n_skipped_theta"]
     #endfor
 
     status("Finished parallel data pass.")
-    status("Data total: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}, unique runs = {}.".format(
+    status("Data total: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}, unique runs = {}.".format(
         n_filled,
         n_fd,
         n_cd,
-        n_skipped_detector,
+        n_skipped_panel,
         n_skipped_theta,
         len(unique_runs)
     ))
@@ -637,7 +671,7 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
         "n_filled": n_filled,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_panel": n_skipped_panel,
         "n_skipped_theta": n_skipped_theta,
     }
 
@@ -673,7 +707,7 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
     n_filled = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_detector = 0
+    n_skipped_panel = 0
     n_skipped_theta = 0
 
     with mp.Pool(processes=len(tasks)) as pool:
@@ -685,16 +719,16 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
         n_filled += result["n_filled"]
         n_fd += result["n_fd"]
         n_cd += result["n_cd"]
-        n_skipped_detector += result["n_skipped_detector"]
+        n_skipped_panel += result["n_skipped_panel"]
         n_skipped_theta += result["n_skipped_theta"]
     #endfor
 
     status("Finished parallel reconstructed MC pass.")
-    status("Reco MC total: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}.".format(
+    status("Reco MC total: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}.".format(
         n_filled,
         n_fd,
         n_cd,
-        n_skipped_detector,
+        n_skipped_panel,
         n_skipped_theta
     ))
 
@@ -703,7 +737,7 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
         "n_filled": n_filled,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_panel": n_skipped_panel,
         "n_skipped_theta": n_skipped_theta,
     }
 
@@ -726,6 +760,8 @@ def counts_to_histograms(prefix, counts):
     ]
 
     for i_panel in range(7):
+        theta_min, theta_max = get_theta_range_for_panel(i_panel)
+
         hist_name = "{}_panel_{}".format(prefix, i_panel + 1)
         hist_title = "{};p_{{1}} #theta (deg);Counts".format(panel_names[i_panel])
 
@@ -733,8 +769,8 @@ def counts_to_histograms(prefix, counts):
             hist_name,
             hist_title,
             N_BINS_THETA,
-            THETA_MIN_DEG,
-            THETA_MAX_DEG
+            theta_min,
+            theta_max
         )
 
         hist.Sumw2()
@@ -771,6 +807,8 @@ def scaled_counts_to_histograms(prefix, counts, scale):
     ]
 
     for i_panel in range(7):
+        theta_min, theta_max = get_theta_range_for_panel(i_panel)
+
         hist_name = "{}_panel_{}".format(prefix, i_panel + 1)
         hist_title = "{};p_{{1}} #theta (deg);Counts".format(panel_names[i_panel])
 
@@ -778,8 +816,8 @@ def scaled_counts_to_histograms(prefix, counts, scale):
             hist_name,
             hist_title,
             N_BINS_THETA,
-            THETA_MIN_DEG,
-            THETA_MAX_DEG
+            theta_min,
+            theta_max
         )
 
         hist.Sumw2()
@@ -885,11 +923,11 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg
         h_data.Draw("E1")
         h_mc.Draw("HIST SAME")
 
-        legend = ROOT.TLegend(0.58, 0.72, 0.92, 0.88)
+        legend = ROOT.TLegend(0.66, 0.76, 0.92, 0.89)
         legend.SetBorderSize(1)
         legend.SetFillStyle(1001)
         legend.SetFillColor(ROOT.kWhite)
-        legend.SetTextSize(0.040)
+        legend.SetTextSize(0.032)
         legend.AddEntry(h_data, "data", "lep")
         legend.AddEntry(h_mc, "MC scaled", "l")
         legend.Draw()
@@ -910,6 +948,7 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg
     latex.DrawLatex(0.10, 0.44, "N_{gen} = %d" % n_gen)
     latex.DrawLatex(0.10, 0.34, "event weight = %.6g" % mc_event_weight)
     latex.DrawLatex(0.10, 0.24, "temporary average-weight approx.")
+    latex.DrawLatex(0.10, 0.14, "FD: #theta < 40 deg, CD: #theta #geq 40 deg")
 
     ensure_output_directory(output_pdf)
 
@@ -924,7 +963,7 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare data and reconstructed MC p1_theta by FD sector and CD, with temporary average-weight MC normalization."
+        description="Compare data and reconstructed MC p1_theta using theta-defined FD/CD regions with temporary average-weight MC normalization."
     )
 
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
@@ -958,20 +997,22 @@ def main():
     status("Output PDF: {}".format(args.output))
     status("Maximum worker processes: {}".format(max_workers))
     status("Temporary average generated weight: {:.12g} pb".format(args.avg_gen_weight_pb))
+    status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
+    status("FD histograms use theta range 0 to 40 deg; CD histogram uses theta range 40 to 70 deg.")
 
     ROOT.gROOT.SetBatch(True)
 
     n_data_entries = check_input_tree(
         args.data_root,
         "PhysicsEvents",
-        ["runnum", "detector1", "p1_phi", "p1_theta"],
+        ["runnum", "p1_phi", "p1_theta"],
         "data"
     )
 
     n_reco_mc_entries = check_input_tree(
         args.reco_mc_root,
         "PhysicsEvents",
-        ["detector1", "p1_phi", "p1_theta"],
+        ["p1_phi", "p1_theta"],
         "reconstructed MC"
     )
 
@@ -1061,6 +1102,10 @@ def main():
     print("Charge CSV: {}".format(args.charge_csv))
     print("Maximum workers used: {}".format(max_workers))
     print("Unique data runs found: {}".format(len(unique_runs)))
+    print("FD definition: p1_theta < 40 deg")
+    print("CD definition: p1_theta >= 40 deg")
+    print("FD theta plotting range: {:.1f} to {:.1f} deg".format(FD_THETA_MIN_DEG, FD_THETA_MAX_DEG))
+    print("CD theta plotting range: {:.1f} to {:.1f} deg".format(CD_THETA_MIN_DEG, CD_THETA_MAX_DEG))
     print("Total accumulated charge from CSV raw units: {:.12g}".format(total_charge_raw))
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
@@ -1069,7 +1114,11 @@ def main():
     print("N_GEN: {}".format(n_gen))
     print("MC event weight: {:.12g}".format(mc_event_weight))
     print("Data entries filled: {}".format(data_result["n_filled"]))
+    print("Data FD entries filled: {}".format(data_result["n_fd"]))
+    print("Data CD entries filled: {}".format(data_result["n_cd"]))
     print("Reco MC entries filled: {}".format(mc_result["n_filled"]))
+    print("Reco MC FD entries filled: {}".format(mc_result["n_fd"]))
+    print("Reco MC CD entries filled: {}".format(mc_result["n_cd"]))
     print("Output PDF: {}".format(args.output))
     print("Elapsed time: {:.2f} seconds".format(elapsed_time))
 
