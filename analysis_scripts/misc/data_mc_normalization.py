@@ -49,9 +49,14 @@ DEFAULT_STATUS_EVERY = 250000
 DEFAULT_MAX_WORKERS = 5
 
 LOG_Y_MIN = 0.5
-RATIO_LOG_Y_MIN = 1.0e-4
 LINEAR_Y_MIN = 0.0
+
+# Ratio plots are requested to be limited from 0 to 2.
+# A log-y plot cannot have y_min = 0, so the log-y ratio canvas uses this
+# small positive lower bound while still using y_max = 2.
+RATIO_LOG_Y_MIN = 1.0e-4
 RATIO_LINEAR_Y_MIN = 0.0
+RATIO_Y_MAX = 2.0
 
 # -----------------------------------------------------------------------------
 # Basic helpers
@@ -975,24 +980,22 @@ def get_hist_positive_min_and_max(hist):
     return min_positive, max_value
 
 
-def get_common_y_range_for_comparison(data_histograms, mc_histograms, log_y):
+def get_common_y_range_for_hist_list(histograms, log_y):
     global_min_positive = None
     global_max = 0.0
 
-    for histograms in [data_histograms, mc_histograms]:
-        for hist in histograms:
-            min_positive, max_value = get_hist_positive_min_and_max(hist)
+    for hist in histograms:
+        min_positive, max_value = get_hist_positive_min_and_max(hist)
 
-            if max_value > global_max:
-                global_max = max_value
-            #endif
+        if max_value > global_max:
+            global_max = max_value
+        #endif
 
-            if min_positive is not None:
-                if global_min_positive is None or min_positive < global_min_positive:
-                    global_min_positive = min_positive
-                #endif
+        if min_positive is not None:
+            if global_min_positive is None or min_positive < global_min_positive:
+                global_min_positive = min_positive
             #endif
-        #endfor
+        #endif
     #endfor
 
     if global_max <= 0.0:
@@ -1019,46 +1022,30 @@ def get_common_y_range_for_comparison(data_histograms, mc_histograms, log_y):
     return y_min, y_max
 
 
-def get_common_y_range_for_ratio(ratio_histograms, log_y):
-    global_min_positive = None
-    global_max = 0.0
+def get_common_y_ranges_for_comparison(data_histograms, mc_histograms, log_y):
+    fd_histograms = []
+    cd_histograms = []
 
-    for hist in ratio_histograms:
-        min_positive, max_value = get_hist_positive_min_and_max(hist)
-
-        if max_value > global_max:
-            global_max = max_value
-        #endif
-
-        if min_positive is not None:
-            if global_min_positive is None or min_positive < global_min_positive:
-                global_min_positive = min_positive
-            #endif
-        #endif
+    for i_panel in range(6):
+        fd_histograms.append(data_histograms[i_panel])
+        fd_histograms.append(mc_histograms[i_panel])
     #endfor
 
-    if global_max <= 0.0:
-        global_max = 1.0
-    #endif
+    cd_histograms.append(data_histograms[6])
+    cd_histograms.append(mc_histograms[6])
 
+    fd_y_min, fd_y_max = get_common_y_range_for_hist_list(fd_histograms, log_y)
+    cd_y_min, cd_y_max = get_common_y_range_for_hist_list(cd_histograms, log_y)
+
+    return fd_y_min, fd_y_max, cd_y_min, cd_y_max
+
+
+def get_ratio_y_range(log_y):
     if log_y:
-        y_min = RATIO_LOG_Y_MIN
-
-        if global_min_positive is not None:
-            y_min = max(RATIO_LOG_Y_MIN, 0.5 * global_min_positive)
-        #endif
-
-        y_max = 10.0 * global_max
-    else:
-        y_min = RATIO_LINEAR_Y_MIN
-        y_max = 1.15 * global_max
+        return RATIO_LOG_Y_MIN, RATIO_Y_MAX
     #endif
 
-    if y_max <= y_min:
-        y_max = y_min + 1.0
-    #endif
-
-    return y_min, y_max
+    return RATIO_LINEAR_Y_MIN, RATIO_Y_MAX
 
 
 def draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, ratio_mode):
@@ -1138,9 +1125,10 @@ def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pd
         8,
     ]
 
-    common_y_min, common_y_max = get_common_y_range_for_comparison(data_histograms, mc_histograms, log_y)
+    fd_y_min, fd_y_max, cd_y_min, cd_y_max = get_common_y_ranges_for_comparison(data_histograms, mc_histograms, log_y)
 
-    status("Comparison canvas common y-range: [{:.12g}, {:.12g}]".format(common_y_min, common_y_max))
+    status("Comparison canvas FD common y-range: [{:.12g}, {:.12g}]".format(fd_y_min, fd_y_max))
+    status("Comparison canvas CD y-range: [{:.12g}, {:.12g}]".format(cd_y_min, cd_y_max))
 
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
@@ -1155,8 +1143,13 @@ def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pd
         h_data = data_histograms[i_panel]
         h_mc = mc_histograms[i_panel]
 
-        h_data.SetMaximum(common_y_max)
-        h_data.SetMinimum(common_y_min)
+        if i_panel >= 0 and i_panel <= 5:
+            h_data.SetMaximum(fd_y_max)
+            h_data.SetMinimum(fd_y_min)
+        else:
+            h_data.SetMaximum(cd_y_max)
+            h_data.SetMinimum(cd_y_min)
+        #endif
 
         h_data.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
         h_data.GetXaxis().SetTitle("p_{1} #theta (deg)")
@@ -1231,9 +1224,9 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
         8,
     ]
 
-    common_y_min, common_y_max = get_common_y_range_for_ratio(ratio_histograms, log_y)
+    ratio_y_min, ratio_y_max = get_ratio_y_range(log_y)
 
-    status("Ratio canvas common y-range: [{:.12g}, {:.12g}]".format(common_y_min, common_y_max))
+    status("Ratio canvas y-range: [{:.12g}, {:.12g}]".format(ratio_y_min, ratio_y_max))
 
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
@@ -1247,8 +1240,8 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
 
         h_ratio = ratio_histograms[i_panel]
 
-        h_ratio.SetMaximum(common_y_max)
-        h_ratio.SetMinimum(common_y_min)
+        h_ratio.SetMaximum(ratio_y_max)
+        h_ratio.SetMinimum(ratio_y_min)
 
         h_ratio.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
         h_ratio.GetXaxis().SetTitle("p_{1} #theta (deg)")
@@ -1262,7 +1255,7 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
 
         h_ratio.Draw("E1")
 
-        if (not log_y) and common_y_min < 1.0 and common_y_max > 1.0:
+        if (not log_y) and ratio_y_min < 1.0 and ratio_y_max > 1.0:
             line = ROOT.TLine(h_ratio.GetXaxis().GetXmin(), 1.0, h_ratio.GetXaxis().GetXmax(), 1.0)
             line.SetLineColor(ROOT.kRed + 1)
             line.SetLineStyle(2)
@@ -1335,6 +1328,8 @@ def main():
     status("Using event-by-event reconstructed MC branch: weight")
     status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
     status("FD histograms use theta range 0 to 40 deg; CD histogram uses theta range 40 to 70 deg.")
+    status("Comparison y scales: common across FD sectors; CD uses its own scale.")
+    status("Ratio y scales: fixed to 0 to 2 for linear, and positive lower bound to 2 for log.")
 
     ROOT.gROOT.SetBatch(True)
 
@@ -1496,6 +1491,9 @@ def main():
     print("CD definition: p1_theta >= 40 deg")
     print("FD theta plotting range: {:.1f} to {:.1f} deg".format(FD_THETA_MIN_DEG, FD_THETA_MAX_DEG))
     print("CD theta plotting range: {:.1f} to {:.1f} deg".format(CD_THETA_MIN_DEG, CD_THETA_MAX_DEG))
+    print("Comparison y scales: common across FD sectors; CD uses its own scale")
+    print("Ratio y range linear: {:.12g} to {:.12g}".format(RATIO_LINEAR_Y_MIN, RATIO_Y_MAX))
+    print("Ratio y range log: {:.12g} to {:.12g}".format(RATIO_LOG_Y_MIN, RATIO_Y_MAX))
     print("Total accumulated charge from CSV raw units: {:.12g}".format(total_charge_raw))
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
