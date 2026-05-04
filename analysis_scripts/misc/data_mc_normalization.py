@@ -28,7 +28,7 @@ FD_THETA_MAX_DEG = 40.0
 CD_THETA_MIN_DEG = 40.0
 CD_THETA_MAX_DEG = 70.0
 
-# Previous value was 70. This is approximately one third of that.
+# Previous theta binning was 70. This is approximately one third of that.
 N_BINS_THETA = 23
 N_BINS_P = 23
 N_BINS_PHI = 24
@@ -54,6 +54,24 @@ RATIO_Y_MAX = 1.5
 # -----------------------------------------------------------------------------
 # Plot variable configuration
 # -----------------------------------------------------------------------------
+#
+# layout = "sector_2x4"
+#   Panel layout:
+#     top row: FD sectors 1, 2, 3, normalization pad
+#     bottom row: FD sectors 4, 5, 6, CD
+#
+# layout = "phi_1x3"
+#   Panel layout:
+#     pad 1: FD combined, all six sectors together
+#     pad 2: CD
+#     pad 3: normalization pad / legend information
+#
+# The phi plot still uses the same FD/CD theta definition:
+#
+#   FD: p1_theta < 40 deg
+#   CD: p1_theta >= 40 deg
+#
+# but the FD phi histogram is now combined over all six FD sectors.
 
 PLOT_VARIABLES = [
     {
@@ -67,6 +85,8 @@ PLOT_VARIABLES = [
         "cd_min": CD_THETA_MIN_DEG,
         "cd_max": CD_THETA_MAX_DEG,
         "convert": "rad_to_deg",
+        "layout": "sector_2x4",
+        "n_panels": 7,
     },
     {
         "key": "p1_p",
@@ -79,6 +99,8 @@ PLOT_VARIABLES = [
         "cd_min": P1_P_MIN_GEV,
         "cd_max": P1_P_MAX_GEV,
         "convert": "identity",
+        "layout": "sector_2x4",
+        "n_panels": 7,
     },
     {
         "key": "p1_phi",
@@ -91,6 +113,8 @@ PLOT_VARIABLES = [
         "cd_min": P1_PHI_MIN_DEG,
         "cd_max": P1_PHI_MAX_DEG,
         "convert": "rad_to_deg_wrapped",
+        "layout": "phi_1x3",
+        "n_panels": 2,
     },
 ]
 
@@ -280,14 +304,28 @@ def get_fd_sector_from_phi_deg(phi_deg):
     return 0
 
 
-def get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad):
+def get_region_from_theta(p1_theta_rad):
     p1_theta_deg = math.degrees(p1_theta_rad)
 
     if p1_theta_deg < FD_THETA_MIN_DEG:
-        return -1
+        return "none"
     #endif
 
     if p1_theta_deg < FD_THETA_MAX_DEG:
+        return "fd"
+    #endif
+
+    if p1_theta_deg >= CD_THETA_MIN_DEG and p1_theta_deg < CD_THETA_MAX_DEG:
+        return "cd"
+    #endif
+
+    return "none"
+
+
+def get_sector_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad):
+    region = get_region_from_theta(p1_theta_rad)
+
+    if region == "fd":
         p1_phi_deg = math.degrees(p1_phi_rad)
         sector = get_fd_sector_from_phi_deg(p1_phi_deg)
 
@@ -298,23 +336,80 @@ def get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad):
         return -1
     #endif
 
-    if p1_theta_deg >= CD_THETA_MIN_DEG and p1_theta_deg < CD_THETA_MAX_DEG:
+    if region == "cd":
         return 6
     #endif
 
     return -1
 
 
+def get_variable_panel_index(variable_config, p1_theta_rad, p1_phi_rad):
+    if variable_config["layout"] == "sector_2x4":
+        return get_sector_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad)
+    #endif
+
+    if variable_config["layout"] == "phi_1x3":
+        region = get_region_from_theta(p1_theta_rad)
+
+        if region == "fd":
+            return 0
+        #endif
+
+        if region == "cd":
+            return 1
+        #endif
+
+        return -1
+    #endif
+
+    fatal("unknown layout: {}".format(variable_config["layout"]))
+
+
 def get_plot_range_for_panel(variable_config, i_panel):
-    if i_panel >= 0 and i_panel <= 5:
-        return variable_config["fd_min"], variable_config["fd_max"]
+    if variable_config["layout"] == "sector_2x4":
+        if i_panel >= 0 and i_panel <= 5:
+            return variable_config["fd_min"], variable_config["fd_max"]
+        #endif
+
+        if i_panel == 6:
+            return variable_config["cd_min"], variable_config["cd_max"]
+        #endif
     #endif
 
-    if i_panel == 6:
-        return variable_config["cd_min"], variable_config["cd_max"]
+    if variable_config["layout"] == "phi_1x3":
+        if i_panel == 0:
+            return variable_config["fd_min"], variable_config["fd_max"]
+        #endif
+
+        if i_panel == 1:
+            return variable_config["cd_min"], variable_config["cd_max"]
+        #endif
     #endif
 
-    fatal("invalid panel index in get_plot_range_for_panel: {}".format(i_panel))
+    fatal("invalid panel index {} for variable {}".format(i_panel, variable_config["key"]))
+
+
+def get_panel_labels(variable_config):
+    if variable_config["layout"] == "sector_2x4":
+        return [
+            "FD sector 1",
+            "FD sector 2",
+            "FD sector 3",
+            "FD sector 4",
+            "FD sector 5",
+            "FD sector 6",
+            "Central detector",
+        ]
+    #endif
+
+    if variable_config["layout"] == "phi_1x3":
+        return [
+            "FD combined",
+            "Central detector",
+        ]
+    #endif
+
+    fatal("unknown layout: {}".format(variable_config["layout"]))
 
 
 def get_value_bin_for_panel(variable_config, i_panel, value):
@@ -337,18 +432,21 @@ def get_value_bin_for_panel(variable_config, i_panel, value):
 
 def make_empty_counts_for_variable(variable_config):
     n_bins = variable_config["n_bins"]
-    return [[0.0 for _ in range(n_bins)] for _ in range(7)]
+    n_panels = variable_config["n_panels"]
+    return [[0.0 for _ in range(n_bins)] for _ in range(n_panels)]
 
 
 def make_empty_sumw2_for_variable(variable_config):
     n_bins = variable_config["n_bins"]
-    return [[0.0 for _ in range(n_bins)] for _ in range(7)]
+    n_panels = variable_config["n_panels"]
+    return [[0.0 for _ in range(n_bins)] for _ in range(n_panels)]
 
 
 def add_counts_for_variable(total_counts, chunk_counts, variable_config):
     n_bins = variable_config["n_bins"]
+    n_panels = variable_config["n_panels"]
 
-    for i_panel in range(7):
+    for i_panel in range(n_panels):
         for i_bin in range(n_bins):
             total_counts[i_panel][i_bin] += chunk_counts[i_panel][i_bin]
         #endfor
@@ -491,19 +589,25 @@ def make_empty_result_maps():
     return counts_by_variable, sumw2_by_variable
 
 
-def fill_variable_counts(counts_by_variable, sumw2_by_variable, variable_config, i_panel, raw_value, event_weight):
+def fill_variable_counts(counts_by_variable, sumw2_by_variable, variable_config, p1_theta_rad, p1_phi_rad, raw_value, event_weight):
     key = variable_config["key"]
+    i_panel = get_variable_panel_index(variable_config, p1_theta_rad, p1_phi_rad)
+
+    if i_panel < 0:
+        return False, "panel"
+    #endif
+
     value = convert_value(raw_value, variable_config["convert"])
     i_bin = get_value_bin_for_panel(variable_config, i_panel, value)
 
     if i_bin < 0:
-        return False
+        return False, "range"
     #endif
 
     counts_by_variable[key][i_panel][i_bin] += event_weight
     sumw2_by_variable[key][i_panel][i_bin] += event_weight * event_weight
 
-    return True
+    return True, "filled"
 
 
 def data_worker(args):
@@ -532,18 +636,20 @@ def data_worker(args):
     counts_by_variable, sumw2_by_variable = make_empty_result_maps()
     unique_runs = set()
 
-    n_filled_panel = 0
+    n_filled_sector_panel = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_panel = 0
+    n_skipped_region = 0
     n_total = end_entry - start_entry
 
     variable_fills = {}
-    variable_skips = {}
+    variable_panel_skips = {}
+    variable_range_skips = {}
 
     for key in get_variable_keys():
         variable_fills[key] = 0
-        variable_skips[key] = 0
+        variable_panel_skips[key] = 0
+        variable_range_skips[key] = 0
     #endfor
 
     print("[{}] data worker {} starting entries {} to {}.".format(
@@ -563,16 +669,16 @@ def data_worker(args):
 
         unique_runs.add(runnum)
 
-        i_panel = get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad)
+        region = get_region_from_theta(p1_theta_rad)
 
-        if i_panel < 0:
-            n_skipped_panel += 1
+        if region == "none":
+            n_skipped_region += 1
         else:
-            n_filled_panel += 1
+            n_filled_sector_panel += 1
 
-            if i_panel >= 0 and i_panel <= 5:
+            if region == "fd":
                 n_fd += 1
-            elif i_panel == 6:
+            elif region == "cd":
                 n_cd += 1
             #endif
 
@@ -586,31 +692,34 @@ def data_worker(args):
                 key = variable_config["key"]
                 event_weight = 1.0
 
-                filled = fill_variable_counts(
+                filled, reason = fill_variable_counts(
                     counts_by_variable,
                     sumw2_by_variable,
                     variable_config,
-                    i_panel,
+                    p1_theta_rad,
+                    p1_phi_rad,
                     raw_values[key],
                     event_weight
                 )
 
                 if filled:
                     variable_fills[key] += 1
-                else:
-                    variable_skips[key] += 1
+                elif reason == "panel":
+                    variable_panel_skips[key] += 1
+                elif reason == "range":
+                    variable_range_skips[key] += 1
                 #endif
             #endfor
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] data worker {} progress: {}/{} chunk entries ({}) | panel-filled: {} | FD(theta<40): {} | CD(theta>=40): {} | unique runs: {}".format(
+            print("[{}] data worker {} progress: {}/{} chunk entries ({}) | accepted region: {} | FD(theta<40): {} | CD(theta>=40): {} | unique runs: {}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
                 n_total,
                 format_percent(local_index, n_total),
-                n_filled_panel,
+                n_filled_sector_panel,
                 n_fd,
                 n_cd,
                 len(unique_runs)
@@ -620,13 +729,13 @@ def data_worker(args):
 
     root_file.Close()
 
-    print("[{}] data worker {} finished: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, unique runs = {}.".format(
+    print("[{}] data worker {} finished: accepted region = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped region = {}, unique runs = {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
-        n_filled_panel,
+        n_filled_sector_panel,
         n_fd,
         n_cd,
-        n_skipped_panel,
+        n_skipped_region,
         len(unique_runs)
     ), flush=True)
 
@@ -634,12 +743,13 @@ def data_worker(args):
         "counts_by_variable": counts_by_variable,
         "sumw2_by_variable": sumw2_by_variable,
         "unique_runs": sorted(unique_runs),
-        "n_filled_panel": n_filled_panel,
+        "n_filled_sector_panel": n_filled_sector_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_panel": n_skipped_panel,
+        "n_skipped_region": n_skipped_region,
         "variable_fills": variable_fills,
-        "variable_skips": variable_skips,
+        "variable_panel_skips": variable_panel_skips,
+        "variable_range_skips": variable_range_skips,
     }
 
 
@@ -669,21 +779,23 @@ def mc_worker(args):
 
     counts_by_variable, sumw2_by_variable = make_empty_result_maps()
 
-    n_filled_panel = 0
+    n_filled_sector_panel = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_panel = 0
+    n_skipped_region = 0
     n_total = end_entry - start_entry
     raw_weight_sum = 0.0
     scaled_weight_sum = 0.0
     max_raw_weight = None
 
     variable_fills = {}
-    variable_skips = {}
+    variable_panel_skips = {}
+    variable_range_skips = {}
 
     for key in get_variable_keys():
         variable_fills[key] = 0
-        variable_skips[key] = 0
+        variable_panel_skips[key] = 0
+        variable_range_skips[key] = 0
     #endfor
 
     print("[{}] MC worker {} starting entries {} to {}.".format(
@@ -702,12 +814,12 @@ def mc_worker(args):
         raw_weight = float(getattr(tree, "weight"))
         event_weight = normalization_factor * raw_weight
 
-        i_panel = get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad)
+        region = get_region_from_theta(p1_theta_rad)
 
-        if i_panel < 0:
-            n_skipped_panel += 1
+        if region == "none":
+            n_skipped_region += 1
         else:
-            n_filled_panel += 1
+            n_filled_sector_panel += 1
             raw_weight_sum += raw_weight
             scaled_weight_sum += event_weight
 
@@ -715,9 +827,9 @@ def mc_worker(args):
                 max_raw_weight = raw_weight
             #endif
 
-            if i_panel >= 0 and i_panel <= 5:
+            if region == "fd":
                 n_fd += 1
-            elif i_panel == 6:
+            elif region == "cd":
                 n_cd += 1
             #endif
 
@@ -730,31 +842,34 @@ def mc_worker(args):
             for variable_config in PLOT_VARIABLES:
                 key = variable_config["key"]
 
-                filled = fill_variable_counts(
+                filled, reason = fill_variable_counts(
                     counts_by_variable,
                     sumw2_by_variable,
                     variable_config,
-                    i_panel,
+                    p1_theta_rad,
+                    p1_phi_rad,
                     raw_values[key],
                     event_weight
                 )
 
                 if filled:
                     variable_fills[key] += 1
-                else:
-                    variable_skips[key] += 1
+                elif reason == "panel":
+                    variable_panel_skips[key] += 1
+                elif reason == "range":
+                    variable_range_skips[key] += 1
                 #endif
             #endfor
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | panel-filled: {} | FD(theta<40): {} | CD(theta>=40): {} | raw weight sum in accepted panels: {:.12g}".format(
+            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | accepted region: {} | FD(theta<40): {} | CD(theta>=40): {} | raw weight sum in accepted region: {:.12g}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
                 n_total,
                 format_percent(local_index, n_total),
-                n_filled_panel,
+                n_filled_sector_panel,
                 n_fd,
                 n_cd,
                 raw_weight_sum
@@ -768,13 +883,13 @@ def mc_worker(args):
         max_raw_weight = 0.0
     #endif
 
-    print("[{}] MC worker {} finished: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
+    print("[{}] MC worker {} finished: accepted region = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped region = {}, raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
-        n_filled_panel,
+        n_filled_sector_panel,
         n_fd,
         n_cd,
-        n_skipped_panel,
+        n_skipped_region,
         raw_weight_sum,
         scaled_weight_sum,
         max_raw_weight
@@ -783,15 +898,16 @@ def mc_worker(args):
     return {
         "counts_by_variable": counts_by_variable,
         "sumw2_by_variable": sumw2_by_variable,
-        "n_filled_panel": n_filled_panel,
+        "n_filled_sector_panel": n_filled_sector_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_panel": n_skipped_panel,
+        "n_skipped_region": n_skipped_region,
         "raw_weight_sum": raw_weight_sum,
         "scaled_weight_sum": scaled_weight_sum,
         "max_raw_weight": max_raw_weight,
         "variable_fills": variable_fills,
-        "variable_skips": variable_skips,
+        "variable_panel_skips": variable_panel_skips,
+        "variable_range_skips": variable_range_skips,
     }
 
 
@@ -824,17 +940,19 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
     total_counts_by_variable, total_sumw2_by_variable = make_empty_result_maps()
     unique_runs = set()
 
-    n_filled_panel = 0
+    n_filled_sector_panel = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_panel = 0
+    n_skipped_region = 0
 
     variable_fills = {}
-    variable_skips = {}
+    variable_panel_skips = {}
+    variable_range_skips = {}
 
     for key in get_variable_keys():
         variable_fills[key] = 0
-        variable_skips[key] = 0
+        variable_panel_skips[key] = 0
+        variable_range_skips[key] = 0
     #endfor
 
     with mp.Pool(processes=len(tasks)) as pool:
@@ -858,30 +976,32 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
             )
 
             variable_fills[key] += result["variable_fills"][key]
-            variable_skips[key] += result["variable_skips"][key]
+            variable_panel_skips[key] += result["variable_panel_skips"][key]
+            variable_range_skips[key] += result["variable_range_skips"][key]
         #endfor
 
         unique_runs.update(result["unique_runs"])
-        n_filled_panel += result["n_filled_panel"]
+        n_filled_sector_panel += result["n_filled_sector_panel"]
         n_fd += result["n_fd"]
         n_cd += result["n_cd"]
-        n_skipped_panel += result["n_skipped_panel"]
+        n_skipped_region += result["n_skipped_region"]
     #endfor
 
     status("Finished parallel data pass.")
-    status("Data total: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, unique runs = {}.".format(
-        n_filled_panel,
+    status("Data total: accepted region = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped region = {}, unique runs = {}.".format(
+        n_filled_sector_panel,
         n_fd,
         n_cd,
-        n_skipped_panel,
+        n_skipped_region,
         len(unique_runs)
     ))
 
     for key in get_variable_keys():
-        status("Data variable {}: filled bins entries = {}, skipped range = {}.".format(
+        status("Data variable {}: filled = {}, skipped panel = {}, skipped range = {}.".format(
             key,
             variable_fills[key],
-            variable_skips[key]
+            variable_panel_skips[key],
+            variable_range_skips[key]
         ))
     #endfor
 
@@ -889,12 +1009,13 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
         "counts_by_variable": total_counts_by_variable,
         "sumw2_by_variable": total_sumw2_by_variable,
         "unique_runs": unique_runs,
-        "n_filled_panel": n_filled_panel,
+        "n_filled_sector_panel": n_filled_sector_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_panel": n_skipped_panel,
+        "n_skipped_region": n_skipped_region,
         "variable_fills": variable_fills,
-        "variable_skips": variable_skips,
+        "variable_panel_skips": variable_panel_skips,
+        "variable_range_skips": variable_range_skips,
     }
 
 
@@ -927,20 +1048,22 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
 
     total_counts_by_variable, total_sumw2_by_variable = make_empty_result_maps()
 
-    n_filled_panel = 0
+    n_filled_sector_panel = 0
     n_fd = 0
     n_cd = 0
-    n_skipped_panel = 0
+    n_skipped_region = 0
     raw_weight_sum = 0.0
     scaled_weight_sum = 0.0
     max_raw_weight = None
 
     variable_fills = {}
-    variable_skips = {}
+    variable_panel_skips = {}
+    variable_range_skips = {}
 
     for key in get_variable_keys():
         variable_fills[key] = 0
-        variable_skips[key] = 0
+        variable_panel_skips[key] = 0
+        variable_range_skips[key] = 0
     #endfor
 
     with mp.Pool(processes=len(tasks)) as pool:
@@ -964,13 +1087,14 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
             )
 
             variable_fills[key] += result["variable_fills"][key]
-            variable_skips[key] += result["variable_skips"][key]
+            variable_panel_skips[key] += result["variable_panel_skips"][key]
+            variable_range_skips[key] += result["variable_range_skips"][key]
         #endfor
 
-        n_filled_panel += result["n_filled_panel"]
+        n_filled_sector_panel += result["n_filled_sector_panel"]
         n_fd += result["n_fd"]
         n_cd += result["n_cd"]
-        n_skipped_panel += result["n_skipped_panel"]
+        n_skipped_region += result["n_skipped_region"]
         raw_weight_sum += result["raw_weight_sum"]
         scaled_weight_sum += result["scaled_weight_sum"]
 
@@ -984,38 +1108,40 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
     #endif
 
     status("Finished parallel reconstructed MC pass.")
-    status("Reco MC total: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}.".format(
-        n_filled_panel,
+    status("Reco MC total: accepted region = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped region = {}.".format(
+        n_filled_sector_panel,
         n_fd,
         n_cd,
-        n_skipped_panel
+        n_skipped_region
     ))
-    status("Reco MC weight summary over accepted panels: raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
+    status("Reco MC weight summary over accepted region: raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
         raw_weight_sum,
         scaled_weight_sum,
         max_raw_weight
     ))
 
     for key in get_variable_keys():
-        status("Reco MC variable {}: filled bins entries = {}, skipped range = {}.".format(
+        status("Reco MC variable {}: filled = {}, skipped panel = {}, skipped range = {}.".format(
             key,
             variable_fills[key],
-            variable_skips[key]
+            variable_panel_skips[key],
+            variable_range_skips[key]
         ))
     #endfor
 
     return {
         "counts_by_variable": total_counts_by_variable,
         "sumw2_by_variable": total_sumw2_by_variable,
-        "n_filled_panel": n_filled_panel,
+        "n_filled_sector_panel": n_filled_sector_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
-        "n_skipped_panel": n_skipped_panel,
+        "n_skipped_region": n_skipped_region,
         "raw_weight_sum": raw_weight_sum,
         "scaled_weight_sum": scaled_weight_sum,
         "max_raw_weight": max_raw_weight,
         "variable_fills": variable_fills,
-        "variable_skips": variable_skips,
+        "variable_panel_skips": variable_panel_skips,
+        "variable_range_skips": variable_range_skips,
     }
 
 
@@ -1025,22 +1151,13 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
 
 def arrays_to_histograms(prefix, variable_config, counts, sumw2):
     histograms = []
+    panel_labels = get_panel_labels(variable_config)
 
-    panel_names = [
-        "FD sector 1",
-        "FD sector 2",
-        "FD sector 3",
-        "FD sector 4",
-        "FD sector 5",
-        "FD sector 6",
-        "CD",
-    ]
-
-    for i_panel in range(7):
+    for i_panel in range(variable_config["n_panels"]):
         value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
 
         hist_name = "{}_{}_panel_{}".format(prefix, variable_config["key"], i_panel + 1)
-        hist_title = "{};{};Counts".format(panel_names[i_panel], variable_config["x_title"])
+        hist_title = "{};{};Counts".format(panel_labels[i_panel], variable_config["x_title"])
 
         hist = ROOT.TH1D(
             hist_name,
@@ -1070,7 +1187,7 @@ def arrays_to_histograms(prefix, variable_config, counts, sumw2):
 def make_ratio_graphs(variable_config, data_histograms, mc_histograms):
     ratio_graphs = []
 
-    for i_panel in range(7):
+    for i_panel in range(variable_config["n_panels"]):
         value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
         n_bins = variable_config["n_bins"]
         bin_width = (value_max - value_min) / float(n_bins)
@@ -1216,32 +1333,83 @@ def get_common_y_range_for_hist_list(histograms, log_y):
     return y_min, y_max
 
 
-def get_common_y_ranges_for_comparison(data_histograms, mc_histograms, log_y):
-    fd_histograms = []
-    cd_histograms = []
+def get_common_y_ranges_for_comparison(variable_config, data_histograms, mc_histograms, log_y):
+    if variable_config["layout"] == "sector_2x4":
+        fd_histograms = []
+        cd_histograms = []
 
-    for i_panel in range(6):
-        fd_histograms.append(data_histograms[i_panel])
-        fd_histograms.append(mc_histograms[i_panel])
-    #endfor
+        for i_panel in range(6):
+            fd_histograms.append(data_histograms[i_panel])
+            fd_histograms.append(mc_histograms[i_panel])
+        #endfor
 
-    cd_histograms.append(data_histograms[6])
-    cd_histograms.append(mc_histograms[6])
+        cd_histograms.append(data_histograms[6])
+        cd_histograms.append(mc_histograms[6])
 
-    fd_y_min, fd_y_max = get_common_y_range_for_hist_list(fd_histograms, log_y)
-    cd_y_min, cd_y_max = get_common_y_range_for_hist_list(cd_histograms, log_y)
+        fd_y_min, fd_y_max = get_common_y_range_for_hist_list(fd_histograms, log_y)
+        cd_y_min, cd_y_max = get_common_y_range_for_hist_list(cd_histograms, log_y)
 
-    return fd_y_min, fd_y_max, cd_y_min, cd_y_max
+        return {
+            "fd": (fd_y_min, fd_y_max),
+            "cd": (cd_y_min, cd_y_max),
+        }
+    #endif
+
+    if variable_config["layout"] == "phi_1x3":
+        fd_histograms = [data_histograms[0], mc_histograms[0]]
+        cd_histograms = [data_histograms[1], mc_histograms[1]]
+
+        fd_y_min, fd_y_max = get_common_y_range_for_hist_list(fd_histograms, log_y)
+        cd_y_min, cd_y_max = get_common_y_range_for_hist_list(cd_histograms, log_y)
+
+        return {
+            "fd": (fd_y_min, fd_y_max),
+            "cd": (cd_y_min, cd_y_max),
+        }
+    #endif
+
+    fatal("unknown layout: {}".format(variable_config["layout"]))
 
 
-def draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, ratio_mode):
-    pad4 = ROOT.gPad
-    pad4.Clear()
-    pad4.SetFillColor(ROOT.kWhite)
+def get_comparison_y_range_for_panel(variable_config, y_ranges, i_panel):
+    if variable_config["layout"] == "sector_2x4":
+        if i_panel >= 0 and i_panel <= 5:
+            return y_ranges["fd"]
+        #endif
+
+        if i_panel == 6:
+            return y_ranges["cd"]
+        #endif
+    #endif
+
+    if variable_config["layout"] == "phi_1x3":
+        if i_panel == 0:
+            return y_ranges["fd"]
+        #endif
+
+        if i_panel == 1:
+            return y_ranges["cd"]
+        #endif
+    #endif
+
+    fatal("invalid panel {} for variable {}".format(i_panel, variable_config["key"]))
+
+
+def draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, ratio_mode):
+    pad = ROOT.gPad
+    pad.Clear()
+    pad.SetFillColor(ROOT.kWhite)
 
     latex = ROOT.TLatex()
     latex.SetNDC(True)
-    latex.SetTextSize(0.034)
+
+    if variable_config["layout"] == "phi_1x3":
+        latex.SetTextSize(0.040)
+        x0 = 0.10
+    else:
+        latex.SetTextSize(0.034)
+        x0 = 0.10
+    #endif
 
     if ratio_mode:
         title = "Ratio normalization"
@@ -1249,27 +1417,39 @@ def draw_normalization_pad(output_tag, variable_config, total_charge_mc, integra
         title = "MC normalization"
     #endif
 
-    latex.DrawLatex(0.10, 0.88, output_tag)
-    latex.DrawLatex(0.10, 0.78, variable_config["title"])
-    latex.DrawLatex(0.10, 0.68, title)
-    latex.DrawLatex(0.10, 0.56, "Q = %.6g mC" % total_charge_mc)
-    latex.DrawLatex(0.10, 0.46, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
-    latex.DrawLatex(0.10, 0.36, "N_{gen} = %.6g" % n_gen)
-    latex.DrawLatex(0.10, 0.26, "scale = L_{int}/N_{gen}")
-    latex.DrawLatex(0.10, 0.16, "scale = %.6g pb^{-1}" % normalization_factor)
+    latex.DrawLatex(x0, 0.88, output_tag)
+    latex.DrawLatex(x0, 0.78, variable_config["title"])
+    latex.DrawLatex(x0, 0.68, title)
+    latex.DrawLatex(x0, 0.56, "Q = %.6g mC" % total_charge_mc)
+    latex.DrawLatex(x0, 0.46, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
+    latex.DrawLatex(x0, 0.36, "N_{gen} = %.6g" % n_gen)
+    latex.DrawLatex(x0, 0.26, "scale = L_{int}/N_{gen}")
+    latex.DrawLatex(x0, 0.16, "scale = %.6g pb^{-1}" % normalization_factor)
 
     if ratio_mode:
-        latex.DrawLatex(0.10, 0.06, "ratio: data / MC")
+        latex.DrawLatex(x0, 0.06, "ratio: data / MC")
     else:
-        latex.DrawLatex(0.10, 0.06, "MC fill: scale #times weight")
+        latex.DrawLatex(x0, 0.06, "MC fill: scale #times weight")
     #endif
 
 
-def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
+def make_comparison_legend(h_data, h_mc):
+    legend = ROOT.TLegend(0.64, 0.76, 0.92, 0.89)
+    legend.SetBorderSize(1)
+    legend.SetFillStyle(1001)
+    legend.SetFillColor(ROOT.kWhite)
+    legend.SetTextSize(0.032)
+    legend.AddEntry(h_data, "data", "l")
+    legend.AddEntry(h_mc, "MC weighted", "l")
+
+    return legend
+
+
+def draw_sector_comparison_canvas(output_tag, variable_config, data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
     if log_y:
-        status("Drawing {} data-vs-MC output canvas with log y scale.".format(variable_config["key"]))
+        status("Drawing {} sector data-vs-MC output canvas with log y scale.".format(variable_config["key"]))
     else:
-        status("Drawing {} data-vs-MC output canvas with linear y scale.".format(variable_config["key"]))
+        status("Drawing {} sector data-vs-MC output canvas with linear y scale.".format(variable_config["key"]))
     #endif
 
     ROOT.gStyle.SetOptStat(0)
@@ -1285,15 +1465,7 @@ def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_hist
     canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 900)
     canvas.Divide(4, 2)
 
-    panel_labels = [
-        "FD sector 1",
-        "FD sector 2",
-        "FD sector 3",
-        "FD sector 4",
-        "FD sector 5",
-        "FD sector 6",
-        "Central detector",
-    ]
+    panel_labels = get_panel_labels(variable_config)
 
     canvas_pad_for_panel = [
         1,
@@ -1305,10 +1477,18 @@ def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_hist
         8,
     ]
 
-    fd_y_min, fd_y_max, cd_y_min, cd_y_max = get_common_y_ranges_for_comparison(data_histograms, mc_histograms, log_y)
+    y_ranges = get_common_y_ranges_for_comparison(variable_config, data_histograms, mc_histograms, log_y)
 
-    status("{} comparison canvas FD common y-range: [{:.12g}, {:.12g}]".format(variable_config["key"], fd_y_min, fd_y_max))
-    status("{} comparison canvas CD y-range: [{:.12g}, {:.12g}]".format(variable_config["key"], cd_y_min, cd_y_max))
+    status("{} comparison canvas FD common y-range: [{:.12g}, {:.12g}]".format(
+        variable_config["key"],
+        y_ranges["fd"][0],
+        y_ranges["fd"][1]
+    ))
+    status("{} comparison canvas CD y-range: [{:.12g}, {:.12g}]".format(
+        variable_config["key"],
+        y_ranges["cd"][0],
+        y_ranges["cd"][1]
+    ))
 
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
@@ -1323,13 +1503,10 @@ def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_hist
         h_data = data_histograms[i_panel]
         h_mc = mc_histograms[i_panel]
 
-        if i_panel >= 0 and i_panel <= 5:
-            h_data.SetMaximum(fd_y_max)
-            h_data.SetMinimum(fd_y_min)
-        else:
-            h_data.SetMaximum(cd_y_max)
-            h_data.SetMinimum(cd_y_min)
-        #endif
+        y_min, y_max = get_comparison_y_range_for_panel(variable_config, y_ranges, i_panel)
+
+        h_data.SetMaximum(y_max)
+        h_data.SetMinimum(y_min)
 
         h_data.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
         h_data.GetXaxis().SetTitle(variable_config["x_title"])
@@ -1345,18 +1522,12 @@ def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_hist
         h_data.Draw("HIST")
         h_mc.Draw("HIST SAME")
 
-        legend = ROOT.TLegend(0.64, 0.76, 0.92, 0.89)
-        legend.SetBorderSize(1)
-        legend.SetFillStyle(1001)
-        legend.SetFillColor(ROOT.kWhite)
-        legend.SetTextSize(0.032)
-        legend.AddEntry(h_data, "data", "l")
-        legend.AddEntry(h_mc, "MC weighted", "l")
+        legend = make_comparison_legend(h_data, h_mc)
         legend.Draw()
     #endfor
 
     canvas.cd(4)
-    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, False)
+    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, False)
 
     ensure_output_directory(output_pdf)
 
@@ -1365,8 +1536,126 @@ def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_hist
     status("Saved output PDF.")
 
 
-def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
-    status("Drawing {} data/MC ratio output canvas with linear y scale.".format(variable_config["key"]))
+def draw_phi_comparison_canvas(output_tag, variable_config, data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
+    if log_y:
+        status("Drawing {} combined-FD phi data-vs-MC output canvas with log y scale.".format(variable_config["key"]))
+    else:
+        status("Drawing {} combined-FD phi data-vs-MC output canvas with linear y scale.".format(variable_config["key"]))
+    #endif
+
+    ROOT.gStyle.SetOptStat(0)
+
+    if log_y:
+        canvas_name = "canvas_{}_comparison_log".format(variable_config["key"])
+        canvas_title = "{} {} data vs MC log y".format(output_tag, variable_config["key"])
+    else:
+        canvas_name = "canvas_{}_comparison_linear".format(variable_config["key"])
+        canvas_title = "{} {} data vs MC linear y".format(output_tag, variable_config["key"])
+    #endif
+
+    canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 500)
+    canvas.Divide(3, 1)
+
+    panel_labels = get_panel_labels(variable_config)
+    y_ranges = get_common_y_ranges_for_comparison(variable_config, data_histograms, mc_histograms, log_y)
+
+    status("{} comparison canvas FD combined y-range: [{:.12g}, {:.12g}]".format(
+        variable_config["key"],
+        y_ranges["fd"][0],
+        y_ranges["fd"][1]
+    ))
+    status("{} comparison canvas CD y-range: [{:.12g}, {:.12g}]".format(
+        variable_config["key"],
+        y_ranges["cd"][0],
+        y_ranges["cd"][1]
+    ))
+
+    for i_panel in range(2):
+        canvas.cd(i_panel + 1)
+
+        pad = ROOT.gPad
+        pad.SetLeftMargin(0.16)
+        pad.SetRightMargin(0.06)
+        pad.SetTopMargin(0.12)
+        pad.SetBottomMargin(0.14)
+        pad.SetLogy(log_y)
+
+        h_data = data_histograms[i_panel]
+        h_mc = mc_histograms[i_panel]
+
+        y_min, y_max = get_comparison_y_range_for_panel(variable_config, y_ranges, i_panel)
+
+        h_data.SetMaximum(y_max)
+        h_data.SetMinimum(y_min)
+
+        h_data.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
+        h_data.GetXaxis().SetTitle(variable_config["x_title"])
+        h_data.GetYaxis().SetTitle("Counts")
+        h_data.GetXaxis().CenterTitle(True)
+        h_data.GetYaxis().CenterTitle(True)
+        h_data.GetXaxis().SetTitleSize(0.050)
+        h_data.GetYaxis().SetTitleSize(0.050)
+        h_data.GetXaxis().SetLabelSize(0.045)
+        h_data.GetYaxis().SetLabelSize(0.045)
+        h_data.GetYaxis().SetTitleOffset(1.45)
+
+        h_data.Draw("HIST")
+        h_mc.Draw("HIST SAME")
+
+        legend = make_comparison_legend(h_data, h_mc)
+        legend.Draw()
+    #endfor
+
+    canvas.cd(3)
+    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, False)
+
+    ensure_output_directory(output_pdf)
+
+    status("Saving output PDF: {}".format(output_pdf))
+    canvas.SaveAs(output_pdf)
+    status("Saved output PDF.")
+
+
+def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
+    if variable_config["layout"] == "sector_2x4":
+        draw_sector_comparison_canvas(
+            output_tag,
+            variable_config,
+            data_histograms,
+            mc_histograms,
+            output_pdf,
+            normalization_factor,
+            total_charge_mc,
+            integrated_luminosity_pb_inv,
+            n_gen,
+            log_y
+        )
+
+        return
+    #endif
+
+    if variable_config["layout"] == "phi_1x3":
+        draw_phi_comparison_canvas(
+            output_tag,
+            variable_config,
+            data_histograms,
+            mc_histograms,
+            output_pdf,
+            normalization_factor,
+            total_charge_mc,
+            integrated_luminosity_pb_inv,
+            n_gen,
+            log_y
+        )
+
+        return
+    #endif
+
+    fatal("unknown layout: {}".format(variable_config["layout"]))
+
+
+def draw_sector_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+    status("Drawing {} sector data/MC ratio output canvas with linear y scale.".format(variable_config["key"]))
 
     ROOT.gStyle.SetOptStat(0)
 
@@ -1376,15 +1665,7 @@ def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, nor
     canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 900)
     canvas.Divide(4, 2)
 
-    panel_labels = [
-        "FD sector 1",
-        "FD sector 2",
-        "FD sector 3",
-        "FD sector 4",
-        "FD sector 5",
-        "FD sector 6",
-        "Central detector",
-    ]
+    panel_labels = get_panel_labels(variable_config)
 
     canvas_pad_for_panel = [
         1,
@@ -1395,12 +1676,6 @@ def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, nor
         7,
         8,
     ]
-
-    status("{} ratio canvas y-range: [{:.12g}, {:.12g}]".format(
-        variable_config["key"],
-        RATIO_LINEAR_Y_MIN,
-        RATIO_Y_MAX
-    ))
 
     frame_histograms = []
     unity_lines = []
@@ -1456,13 +1731,128 @@ def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, nor
     #endfor
 
     canvas.cd(4)
-    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, False, True)
+    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, True)
 
     ensure_output_directory(output_pdf)
 
     status("Saving output PDF: {}".format(output_pdf))
     canvas.SaveAs(output_pdf)
     status("Saved output PDF.")
+
+
+def draw_phi_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+    status("Drawing {} combined-FD phi data/MC ratio output canvas with linear y scale.".format(variable_config["key"]))
+
+    ROOT.gStyle.SetOptStat(0)
+
+    canvas_name = "canvas_{}_ratio_linear".format(variable_config["key"])
+    canvas_title = "{} {} data over MC linear y".format(output_tag, variable_config["key"])
+
+    canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 500)
+    canvas.Divide(3, 1)
+
+    panel_labels = get_panel_labels(variable_config)
+    frame_histograms = []
+    unity_lines = []
+
+    for i_panel in range(2):
+        canvas.cd(i_panel + 1)
+
+        pad = ROOT.gPad
+        pad.SetLeftMargin(0.16)
+        pad.SetRightMargin(0.06)
+        pad.SetTopMargin(0.12)
+        pad.SetBottomMargin(0.14)
+        pad.SetLogy(False)
+
+        value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
+
+        frame = ROOT.TH1D(
+            "frame_{}_panel_{}".format(variable_config["key"], i_panel + 1),
+            "{}  {};{};data / MC".format(output_tag, panel_labels[i_panel], variable_config["x_title"]),
+            variable_config["n_bins"],
+            value_min,
+            value_max
+        )
+
+        frame.SetStats(False)
+        frame.SetMinimum(RATIO_LINEAR_Y_MIN)
+        frame.SetMaximum(RATIO_Y_MAX)
+        frame.GetXaxis().CenterTitle(True)
+        frame.GetYaxis().CenterTitle(True)
+        frame.GetXaxis().SetTitleSize(0.050)
+        frame.GetYaxis().SetTitleSize(0.050)
+        frame.GetXaxis().SetLabelSize(0.045)
+        frame.GetYaxis().SetLabelSize(0.045)
+        frame.GetYaxis().SetTitleOffset(1.45)
+        frame.Draw("AXIS")
+
+        frame_histograms.append(frame)
+
+        unity_line = ROOT.TLine(value_min, 1.0, value_max, 1.0)
+        unity_line.SetLineColor(ROOT.kRed + 1)
+        unity_line.SetLineStyle(2)
+        unity_line.SetLineWidth(2)
+        unity_line.Draw("SAME")
+        unity_lines.append(unity_line)
+
+        graph = ratio_graphs[i_panel]
+
+        if graph.GetN() > 0:
+            graph.SetMarkerSize(0.95)
+            graph.SetLineWidth(1)
+            graph.Draw("PZ SAME")
+        #endif
+    #endfor
+
+    canvas.cd(3)
+    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, True)
+
+    ensure_output_directory(output_pdf)
+
+    status("Saving output PDF: {}".format(output_pdf))
+    canvas.SaveAs(output_pdf)
+    status("Saved output PDF.")
+
+
+def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+    status("{} ratio canvas y-range: [{:.12g}, {:.12g}]".format(
+        variable_config["key"],
+        RATIO_LINEAR_Y_MIN,
+        RATIO_Y_MAX
+    ))
+
+    if variable_config["layout"] == "sector_2x4":
+        draw_sector_ratio_canvas(
+            output_tag,
+            variable_config,
+            ratio_graphs,
+            output_pdf,
+            normalization_factor,
+            total_charge_mc,
+            integrated_luminosity_pb_inv,
+            n_gen
+        )
+
+        return
+    #endif
+
+    if variable_config["layout"] == "phi_1x3":
+        draw_phi_ratio_canvas(
+            output_tag,
+            variable_config,
+            ratio_graphs,
+            output_pdf,
+            normalization_factor,
+            total_charge_mc,
+            integrated_luminosity_pb_inv,
+            n_gen
+        )
+
+        return
+    #endif
+
+    fatal("unknown layout: {}".format(variable_config["layout"]))
 
 
 def build_and_save_plots_for_variable(output_tag, variable_config, data_result, mc_result, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
@@ -1576,11 +1966,12 @@ def main():
     status("Maximum worker processes: {}".format(max_workers))
     status("Using event-by-event reconstructed MC branch: weight")
     status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
-    status("Comparison y scales: common across FD sectors; CD uses its own scale.")
+    status("Comparison y scales: common across FD sectors where applicable; CD uses its own scale.")
     status("Ratio y scale: linear only, fixed from 0.2 to 1.5.")
     status("Data and MC comparison plots are drawn as lines.")
     status("Ratio points use vertical statistical error bars only, with horizontal errors set to zero.")
     status("Variables to plot: {}".format(", ".join(get_variable_keys())))
+    status("Special p1_phi behavior: 1x3 canvas with FD combined, CD, and normalization pad.")
 
     ROOT.gROOT.SetBatch(True)
 
@@ -1695,10 +2086,11 @@ def main():
     print("p1_theta CD plotting range: {:.1f} to {:.1f} deg".format(CD_THETA_MIN_DEG, CD_THETA_MAX_DEG))
     print("p1_p plotting range: {:.1f} to {:.1f} GeV".format(P1_P_MIN_GEV, P1_P_MAX_GEV))
     print("p1_phi plotting range: {:.1f} to {:.1f} deg".format(P1_PHI_MIN_DEG, P1_PHI_MAX_DEG))
+    print("p1_phi canvas layout: 1x3, FD combined, CD, normalization pad")
     print("Number of p1_theta bins: {}".format(N_BINS_THETA))
     print("Number of p1_p bins: {}".format(N_BINS_P))
     print("Number of p1_phi bins: {}".format(N_BINS_PHI))
-    print("Comparison y scales: common across FD sectors; CD uses its own scale")
+    print("Comparison y scales: common across FD sectors where applicable; CD uses its own scale")
     print("Ratio y range linear: {:.12g} to {:.12g}".format(RATIO_LINEAR_Y_MIN, RATIO_Y_MAX))
     print("Total accumulated charge from CSV raw units: {:.12g}".format(total_charge_raw))
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
@@ -1707,15 +2099,15 @@ def main():
     print("Generated MC entries from file: {}".format(n_gen_from_file))
     print("N_GEN used for normalization: {:.12g}".format(n_gen))
     print("Normalization factor L_int / N_GEN: {:.12g} pb^-1".format(normalization_factor))
-    print("Data panel entries filled: {}".format(data_result["n_filled_panel"]))
-    print("Data FD panel entries filled: {}".format(data_result["n_fd"]))
-    print("Data CD panel entries filled: {}".format(data_result["n_cd"]))
-    print("Reco MC panel entries filled: {}".format(mc_result["n_filled_panel"]))
-    print("Reco MC FD panel entries filled: {}".format(mc_result["n_fd"]))
-    print("Reco MC CD panel entries filled: {}".format(mc_result["n_cd"]))
-    print("Reco MC raw weight sum over accepted panels: {:.12g}".format(mc_result["raw_weight_sum"]))
-    print("Reco MC scaled weight sum over accepted panels: {:.12g}".format(mc_result["scaled_weight_sum"]))
-    print("Reco MC maximum raw weight over accepted panels: {:.12g}".format(mc_result["max_raw_weight"]))
+    print("Data accepted-region entries: {}".format(data_result["n_filled_sector_panel"]))
+    print("Data FD accepted-region entries: {}".format(data_result["n_fd"]))
+    print("Data CD accepted-region entries: {}".format(data_result["n_cd"]))
+    print("Reco MC accepted-region entries: {}".format(mc_result["n_filled_sector_panel"]))
+    print("Reco MC FD accepted-region entries: {}".format(mc_result["n_fd"]))
+    print("Reco MC CD accepted-region entries: {}".format(mc_result["n_cd"]))
+    print("Reco MC raw weight sum over accepted region: {:.12g}".format(mc_result["raw_weight_sum"]))
+    print("Reco MC scaled weight sum over accepted region: {:.12g}".format(mc_result["scaled_weight_sum"]))
+    print("Reco MC maximum raw weight over accepted region: {:.12g}".format(mc_result["max_raw_weight"]))
     print("Output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag)))
 
     for variable_key in get_variable_keys():
