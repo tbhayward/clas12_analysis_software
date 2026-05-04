@@ -14,14 +14,17 @@ import ROOT
 GLOBAL_CHARGE_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
 # Generator total cross section in pb.
-SIGMA_GEN_TOT_PB = 294734.8125
+DEFAULT_SIGMA_GEN_TOT_PB = 294734.8125
 
 # The global.csv charge values look like nC in the examples you showed.
 # Since the normalization formula wants Q in mC, the default conversion is:
 #
 #   Q(mC) = Q(nC) / 1.0e6
 #
-# If your CSV is already in mC, change this to 1.0.
+# If your CSV is already in mC, change this to 1.0 or use:
+#
+#   --charge-to-mc-factor 1.0
+#
 CHARGE_TO_MC_FACTOR = 1.0e-6
 
 # RGA integrated luminosity:
@@ -306,7 +309,7 @@ def style_histograms(data_histograms, mc_histograms):
     #endfor
 
 
-def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight):
+def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sigma_gen_tot_pb):
     ROOT.gStyle.SetOptStat(0)
 
     canvas = ROOT.TCanvas("canvas", "data vs MC p1_theta", 1500, 1200)
@@ -368,17 +371,21 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight):
     #endfor
 
     canvas.cd(8)
-    ROOT.gPad.SetFrameLineColor(ROOT.kWhite)
+    pad8 = ROOT.gPad
+    pad8.Clear()
+    pad8.SetFillColor(ROOT.kWhite)
 
     latex = ROOT.TLatex()
     latex.SetNDC(True)
     latex.SetTextSize(0.045)
     latex.DrawLatex(0.12, 0.80, "MC normalization")
-    latex.DrawLatex(0.12, 0.70, "#sigma_{gen}^{tot} = %.6g pb" % SIGMA_GEN_TOT_PB)
+    latex.DrawLatex(0.12, 0.70, "#sigma_{gen}^{tot} = %.6g pb" % sigma_gen_tot_pb)
     latex.DrawLatex(0.12, 0.60, "event weight = %.6g" % mc_event_weight)
 
     canvas.cd(9)
-    ROOT.gPad.SetFrameLineColor(ROOT.kWhite)
+    pad9 = ROOT.gPad
+    pad9.Clear()
+    pad9.SetFillColor(ROOT.kWhite)
 
     ensure_output_directory(output_pdf)
     canvas.SaveAs(output_pdf)
@@ -393,14 +400,11 @@ def main():
     parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents")
     parser.add_argument("gen_mc_root", help="Input generated MC ROOT file containing PhysicsEvents")
     parser.add_argument("--output", default=OUTPUT_PDF, help="Output PDF path")
-    parser.add_argument("--sigma-gen-tot-pb", type=float, default=SIGMA_GEN_TOT_PB, help="Generator total cross section in pb")
+    parser.add_argument("--sigma-gen-tot-pb", type=float, default=DEFAULT_SIGMA_GEN_TOT_PB, help="Generator total cross section in pb")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
     parser.add_argument("--charge-to-mc-factor", type=float, default=CHARGE_TO_MC_FACTOR, help="Conversion factor from CSV charge units to mC")
 
     args = parser.parse_args()
-
-    global SIGMA_GEN_TOT_PB
-    SIGMA_GEN_TOT_PB = args.sigma_gen_tot_pb
 
     data_file = open_root_file(args.data_root, "data")
     reco_mc_file = open_root_file(args.reco_mc_root, "reconstructed MC")
@@ -425,7 +429,7 @@ def main():
     total_charge_mc = total_charge_raw * args.charge_to_mc_factor
 
     integrated_luminosity_pb_inv = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * total_charge_mc
-    mc_event_weight = integrated_luminosity_pb_inv * SIGMA_GEN_TOT_PB / float(n_gen)
+    mc_event_weight = integrated_luminosity_pb_inv * args.sigma_gen_tot_pb / float(n_gen)
 
     data_histograms = make_histograms("data")
     mc_histograms = make_histograms("mc")
@@ -434,7 +438,13 @@ def main():
     n_mc_filled = fill_histograms(reco_mc_tree, mc_histograms, mc_event_weight)
 
     style_histograms(data_histograms, mc_histograms)
-    draw_canvas(data_histograms, mc_histograms, args.output, mc_event_weight)
+    draw_canvas(
+        data_histograms,
+        mc_histograms,
+        args.output,
+        mc_event_weight,
+        args.sigma_gen_tot_pb
+    )
 
     print("")
     print("Normalization summary")
@@ -448,7 +458,7 @@ def main():
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
     print("Integrated luminosity: {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    print("sigma_GEN_TOT: {:.12g} pb".format(SIGMA_GEN_TOT_PB))
+    print("sigma_GEN_TOT: {:.12g} pb".format(args.sigma_gen_tot_pb))
     print("N_GEN: {}".format(n_gen))
     print("MC event weight: {:.12g}".format(mc_event_weight))
     print("Data entries filled: {}".format(n_data_filled))
