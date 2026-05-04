@@ -4,7 +4,9 @@ import os
 import sys
 import csv
 import math
+import time
 import argparse
+import multiprocessing as mp
 import ROOT
 
 # -----------------------------------------------------------------------------
@@ -38,14 +40,33 @@ OUTPUT_PDF = "output/data_mc_normalization/output.pdf"
 N_BINS_THETA = 70
 THETA_MIN_DEG = 0.0
 THETA_MAX_DEG = 70.0
+THETA_BIN_WIDTH_DEG = (THETA_MAX_DEG - THETA_MIN_DEG) / float(N_BINS_THETA)
+
+DEFAULT_STATUS_EVERY = 250000
+DEFAULT_MAX_WORKERS = 5
+
+LOG_Y_MIN = 0.5
 
 # -----------------------------------------------------------------------------
-# Helpers
+# Basic helpers
 # -----------------------------------------------------------------------------
 
 def fatal(message):
-    print("ERROR: {}".format(message), file=sys.stderr)
+    print("ERROR: {}".format(message), file=sys.stderr, flush=True)
     sys.exit(1)
+
+
+def status(message):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    print("[{}] {}".format(timestamp, message), flush=True)
+
+
+def format_percent(done, total):
+    if total <= 0:
+        return "0.0%"
+    #endif
+
+    return "{:.1f}%".format(100.0 * float(done) / float(total))
 
 
 def ensure_output_directory(output_path):
@@ -57,6 +78,8 @@ def ensure_output_directory(output_path):
 
 
 def open_root_file(path, label):
+    status("Opening {} ROOT file: {}".format(label, path))
+
     if not os.path.isfile(path):
         fatal("{} ROOT file does not exist: {}".format(label, path))
     #endif
@@ -67,15 +90,21 @@ def open_root_file(path, label):
         fatal("could not open {} ROOT file: {}".format(label, path))
     #endif
 
+    status("Opened {} ROOT file.".format(label))
+
     return root_file
 
 
 def get_tree(root_file, tree_name, label):
+    status("Loading tree '{}' from {} ROOT file.".format(tree_name, label))
+
     tree = root_file.Get(tree_name)
 
     if tree is None:
         fatal("{} ROOT file does not contain tree '{}': {}".format(label, tree_name, root_file.GetName()))
     #endif
+
+    status("Loaded tree '{}' from {} ROOT file with {} entries.".format(tree_name, label, tree.GetEntries()))
 
     return tree
 
@@ -85,6 +114,8 @@ def has_branch(tree, branch_name):
 
 
 def require_branches(tree, branch_names, label):
+    status("Checking required branches for {} tree.".format(label))
+
     missing = []
 
     for branch_name in branch_names:
@@ -96,6 +127,27 @@ def require_branches(tree, branch_names, label):
     if len(missing) > 0:
         fatal("{} tree is missing required branches: {}".format(label, ", ".join(missing)))
     #endif
+
+    status("All required branches are present for {} tree.".format(label))
+
+
+def get_entry_count(root_path, tree_name, label):
+    root_file = open_root_file(root_path, label)
+    tree = get_tree(root_file, tree_name, label)
+    n_entries = tree.GetEntries()
+    root_file.Close()
+
+    return n_entries
+
+
+def check_input_tree(root_path, tree_name, branch_names, label):
+    root_file = open_root_file(root_path, label)
+    tree = get_tree(root_file, tree_name, label)
+    require_branches(tree, branch_names, label)
+    n_entries = tree.GetEntries()
+    root_file.Close()
+
+    return n_entries
 
 
 def wrap_phi_0_360(phi_deg):
@@ -157,17 +209,76 @@ def get_panel_index(detector1, p1_phi_rad):
     return -1
 
 
+def get_theta_bin(p1_theta_rad):
+    p1_theta_deg = math.degrees(p1_theta_rad)
+
+    if p1_theta_deg < THETA_MIN_DEG or p1_theta_deg >= THETA_MAX_DEG:
+        return -1
+    #endif
+
+    i_bin = int((p1_theta_deg - THETA_MIN_DEG) / THETA_BIN_WIDTH_DEG)
+
+    if i_bin < 0 or i_bin >= N_BINS_THETA:
+        return -1
+    #endif
+
+    return i_bin
+
+
+def make_empty_counts():
+    return [[0.0 for _ in range(N_BINS_THETA)] for _ in range(7)]
+
+
+def add_counts(total_counts, chunk_counts):
+    for i_panel in range(7):
+        for i_bin in range(N_BINS_THETA):
+            total_counts[i_panel][i_bin] += chunk_counts[i_panel][i_bin]
+        #endfor
+    #endfor
+
+
+def make_ranges(n_entries, n_workers):
+    ranges = []
+
+    if n_entries <= 0:
+        return ranges
+    #endif
+
+    n_workers = max(1, min(n_workers, n_entries))
+    chunk_size = int(math.ceil(float(n_entries) / float(n_workers)))
+
+    start = 0
+
+    while start < n_entries:
+        end = min(start + chunk_size, n_entries)
+        ranges.append((start, end))
+        start = end
+    #endwhile
+
+    return ranges
+
+
+# -----------------------------------------------------------------------------
+# Charge helpers
+# -----------------------------------------------------------------------------
+
 def load_charge_map(csv_path):
+    status("Loading charge map from CSV: {}".format(csv_path))
+
     if not os.path.isfile(csv_path):
         fatal("charge CSV does not exist: {}".format(csv_path))
     #endif
 
     charge_by_run = {}
+    n_rows_read = 0
+    n_rows_used = 0
 
     with open(csv_path, "r") as f:
         reader = csv.reader(f)
 
         for row in reader:
+            n_rows_read += 1
+
             if len(row) < 2:
                 continue
             #endif
@@ -180,6 +291,7 @@ def load_charge_map(csv_path):
             #endtry
 
             charge_by_run[runnum] = total_charge_raw
+            n_rows_used += 1
         #endfor
     #endwith
 
@@ -187,25 +299,14 @@ def load_charge_map(csv_path):
         fatal("no valid run-charge rows were read from {}".format(csv_path))
     #endif
 
+    status("Loaded charge map: {} valid runs from {} CSV rows.".format(n_rows_used, n_rows_read))
+
     return charge_by_run
 
 
-def collect_unique_data_runs(data_tree):
-    unique_runs = set()
-
-    n_entries = data_tree.GetEntries()
-
-    for i_entry in range(n_entries):
-        data_tree.GetEntry(i_entry)
-
-        runnum = int(getattr(data_tree, "runnum"))
-        unique_runs.add(runnum)
-    #endfor
-
-    return unique_runs
-
-
 def sum_charge_for_runs(unique_runs, charge_by_run):
+    status("Summing accumulated charge for {} unique data runs.".format(len(unique_runs)))
+
     missing_runs = []
     total_charge_raw = 0.0
 
@@ -224,10 +325,380 @@ def sum_charge_for_runs(unique_runs, charge_by_run):
         ))
     #endif
 
+    status("Finished charge sum. Raw accumulated charge sum: {:.12g}".format(total_charge_raw))
+
     return total_charge_raw
 
 
-def make_histograms(prefix):
+# -----------------------------------------------------------------------------
+# Worker functions
+# -----------------------------------------------------------------------------
+
+def configure_tree_for_data(tree):
+    tree.SetBranchStatus("*", 0)
+    tree.SetBranchStatus("runnum", 1)
+    tree.SetBranchStatus("detector1", 1)
+    tree.SetBranchStatus("p1_phi", 1)
+    tree.SetBranchStatus("p1_theta", 1)
+
+
+def configure_tree_for_mc(tree):
+    tree.SetBranchStatus("*", 0)
+    tree.SetBranchStatus("detector1", 1)
+    tree.SetBranchStatus("p1_phi", 1)
+    tree.SetBranchStatus("p1_theta", 1)
+
+
+def data_worker(args):
+    root_path = args["root_path"]
+    tree_name = args["tree_name"]
+    start_entry = args["start_entry"]
+    end_entry = args["end_entry"]
+    worker_id = args["worker_id"]
+    status_every = args["status_every"]
+
+    root_file = ROOT.TFile.Open(root_path, "READ")
+
+    if root_file is None or root_file.IsZombie():
+        raise RuntimeError("worker {} could not open data ROOT file: {}".format(worker_id, root_path))
+    #endif
+
+    tree = root_file.Get(tree_name)
+
+    if tree is None:
+        root_file.Close()
+        raise RuntimeError("worker {} could not load tree {}".format(worker_id, tree_name))
+    #endif
+
+    configure_tree_for_data(tree)
+
+    counts = make_empty_counts()
+    unique_runs = set()
+
+    n_filled = 0
+    n_fd = 0
+    n_cd = 0
+    n_skipped_detector = 0
+    n_skipped_theta = 0
+    n_total = end_entry - start_entry
+
+    print("[{}] data worker {} starting entries {} to {}.".format(
+        time.strftime("%Y-%m-%d %H:%M:%S"),
+        worker_id,
+        start_entry,
+        end_entry
+    ), flush=True)
+
+    for local_index, i_entry in enumerate(range(start_entry, end_entry), start=1):
+        tree.GetEntry(i_entry)
+
+        runnum = int(getattr(tree, "runnum"))
+        detector1 = int(getattr(tree, "detector1"))
+        p1_phi_rad = float(getattr(tree, "p1_phi"))
+        p1_theta_rad = float(getattr(tree, "p1_theta"))
+
+        unique_runs.add(runnum)
+
+        i_panel = get_panel_index(detector1, p1_phi_rad)
+
+        if i_panel < 0:
+            n_skipped_detector += 1
+        else:
+            i_bin = get_theta_bin(p1_theta_rad)
+
+            if i_bin < 0:
+                n_skipped_theta += 1
+            else:
+                counts[i_panel][i_bin] += 1.0
+                n_filled += 1
+
+                if detector1 == 1:
+                    n_fd += 1
+                elif detector1 == 2:
+                    n_cd += 1
+                #endif
+            #endif
+        #endif
+
+        if local_index % status_every == 0:
+            print("[{}] data worker {} progress: {}/{} chunk entries ({}) | filled: {} | unique runs: {}".format(
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                worker_id,
+                local_index,
+                n_total,
+                format_percent(local_index, n_total),
+                n_filled,
+                len(unique_runs)
+            ), flush=True)
+        #endif
+    #endfor
+
+    root_file.Close()
+
+    print("[{}] data worker {} finished: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}, unique runs = {}.".format(
+        time.strftime("%Y-%m-%d %H:%M:%S"),
+        worker_id,
+        n_filled,
+        n_fd,
+        n_cd,
+        n_skipped_detector,
+        n_skipped_theta,
+        len(unique_runs)
+    ), flush=True)
+
+    return {
+        "counts": counts,
+        "unique_runs": sorted(unique_runs),
+        "n_filled": n_filled,
+        "n_fd": n_fd,
+        "n_cd": n_cd,
+        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_theta": n_skipped_theta,
+    }
+
+
+def mc_worker(args):
+    root_path = args["root_path"]
+    tree_name = args["tree_name"]
+    start_entry = args["start_entry"]
+    end_entry = args["end_entry"]
+    worker_id = args["worker_id"]
+    status_every = args["status_every"]
+
+    root_file = ROOT.TFile.Open(root_path, "READ")
+
+    if root_file is None or root_file.IsZombie():
+        raise RuntimeError("worker {} could not open MC ROOT file: {}".format(worker_id, root_path))
+    #endif
+
+    tree = root_file.Get(tree_name)
+
+    if tree is None:
+        root_file.Close()
+        raise RuntimeError("worker {} could not load tree {}".format(worker_id, tree_name))
+    #endif
+
+    configure_tree_for_mc(tree)
+
+    counts = make_empty_counts()
+
+    n_filled = 0
+    n_fd = 0
+    n_cd = 0
+    n_skipped_detector = 0
+    n_skipped_theta = 0
+    n_total = end_entry - start_entry
+
+    print("[{}] MC worker {} starting entries {} to {}.".format(
+        time.strftime("%Y-%m-%d %H:%M:%S"),
+        worker_id,
+        start_entry,
+        end_entry
+    ), flush=True)
+
+    for local_index, i_entry in enumerate(range(start_entry, end_entry), start=1):
+        tree.GetEntry(i_entry)
+
+        detector1 = int(getattr(tree, "detector1"))
+        p1_phi_rad = float(getattr(tree, "p1_phi"))
+        p1_theta_rad = float(getattr(tree, "p1_theta"))
+
+        i_panel = get_panel_index(detector1, p1_phi_rad)
+
+        if i_panel < 0:
+            n_skipped_detector += 1
+        else:
+            i_bin = get_theta_bin(p1_theta_rad)
+
+            if i_bin < 0:
+                n_skipped_theta += 1
+            else:
+                counts[i_panel][i_bin] += 1.0
+                n_filled += 1
+
+                if detector1 == 1:
+                    n_fd += 1
+                elif detector1 == 2:
+                    n_cd += 1
+                #endif
+            #endif
+        #endif
+
+        if local_index % status_every == 0:
+            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | filled: {}".format(
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                worker_id,
+                local_index,
+                n_total,
+                format_percent(local_index, n_total),
+                n_filled
+            ), flush=True)
+        #endif
+    #endfor
+
+    root_file.Close()
+
+    print("[{}] MC worker {} finished: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}.".format(
+        time.strftime("%Y-%m-%d %H:%M:%S"),
+        worker_id,
+        n_filled,
+        n_fd,
+        n_cd,
+        n_skipped_detector,
+        n_skipped_theta
+    ), flush=True)
+
+    return {
+        "counts": counts,
+        "n_filled": n_filled,
+        "n_fd": n_fd,
+        "n_cd": n_cd,
+        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_theta": n_skipped_theta,
+    }
+
+
+def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every):
+    n_workers = min(max_workers, n_entries)
+
+    if n_workers < 1:
+        fatal("data tree has zero entries")
+    #endif
+
+    ranges = make_ranges(n_entries, n_workers)
+
+    tasks = []
+
+    for i_worker, entry_range in enumerate(ranges):
+        start_entry, end_entry = entry_range
+
+        tasks.append({
+            "root_path": root_path,
+            "tree_name": tree_name,
+            "start_entry": start_entry,
+            "end_entry": end_entry,
+            "worker_id": i_worker + 1,
+            "status_every": status_every,
+        })
+    #endfor
+
+    status("Starting parallel data pass with {} workers.".format(len(tasks)))
+
+    total_counts = make_empty_counts()
+    unique_runs = set()
+
+    n_filled = 0
+    n_fd = 0
+    n_cd = 0
+    n_skipped_detector = 0
+    n_skipped_theta = 0
+
+    with mp.Pool(processes=len(tasks)) as pool:
+        results = pool.map(data_worker, tasks)
+    #endwith
+
+    for result in results:
+        add_counts(total_counts, result["counts"])
+        unique_runs.update(result["unique_runs"])
+        n_filled += result["n_filled"]
+        n_fd += result["n_fd"]
+        n_cd += result["n_cd"]
+        n_skipped_detector += result["n_skipped_detector"]
+        n_skipped_theta += result["n_skipped_theta"]
+    #endfor
+
+    status("Finished parallel data pass.")
+    status("Data total: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}, unique runs = {}.".format(
+        n_filled,
+        n_fd,
+        n_cd,
+        n_skipped_detector,
+        n_skipped_theta,
+        len(unique_runs)
+    ))
+
+    return {
+        "counts": total_counts,
+        "unique_runs": unique_runs,
+        "n_filled": n_filled,
+        "n_fd": n_fd,
+        "n_cd": n_cd,
+        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_theta": n_skipped_theta,
+    }
+
+
+def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
+    n_workers = min(max_workers, n_entries)
+
+    if n_workers < 1:
+        fatal("reconstructed MC tree has zero entries")
+    #endif
+
+    ranges = make_ranges(n_entries, n_workers)
+
+    tasks = []
+
+    for i_worker, entry_range in enumerate(ranges):
+        start_entry, end_entry = entry_range
+
+        tasks.append({
+            "root_path": root_path,
+            "tree_name": tree_name,
+            "start_entry": start_entry,
+            "end_entry": end_entry,
+            "worker_id": i_worker + 1,
+            "status_every": status_every,
+        })
+    #endfor
+
+    status("Starting parallel reconstructed MC pass with {} workers.".format(len(tasks)))
+
+    total_counts = make_empty_counts()
+
+    n_filled = 0
+    n_fd = 0
+    n_cd = 0
+    n_skipped_detector = 0
+    n_skipped_theta = 0
+
+    with mp.Pool(processes=len(tasks)) as pool:
+        results = pool.map(mc_worker, tasks)
+    #endwith
+
+    for result in results:
+        add_counts(total_counts, result["counts"])
+        n_filled += result["n_filled"]
+        n_fd += result["n_fd"]
+        n_cd += result["n_cd"]
+        n_skipped_detector += result["n_skipped_detector"]
+        n_skipped_theta += result["n_skipped_theta"]
+    #endfor
+
+    status("Finished parallel reconstructed MC pass.")
+    status("Reco MC total: filled = {}, FD = {}, CD = {}, skipped detector = {}, skipped theta = {}.".format(
+        n_filled,
+        n_fd,
+        n_cd,
+        n_skipped_detector,
+        n_skipped_theta
+    ))
+
+    return {
+        "counts": total_counts,
+        "n_filled": n_filled,
+        "n_fd": n_fd,
+        "n_cd": n_cd,
+        "n_skipped_detector": n_skipped_detector,
+        "n_skipped_theta": n_skipped_theta,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Histogram and plotting helpers
+# -----------------------------------------------------------------------------
+
+def counts_to_histograms(prefix, counts):
     histograms = []
 
     panel_names = [
@@ -253,43 +724,71 @@ def make_histograms(prefix):
         )
 
         hist.Sumw2()
+
+        for i_bin in range(N_BINS_THETA):
+            root_bin = i_bin + 1
+            content = counts[i_panel][i_bin]
+            hist.SetBinContent(root_bin, content)
+
+            if content >= 0.0:
+                hist.SetBinError(root_bin, math.sqrt(content))
+            else:
+                hist.SetBinError(root_bin, 0.0)
+            #endif
+        #endfor
+
         histograms.append(hist)
     #endfor
 
     return histograms
 
 
-def fill_histograms(tree, histograms, event_weight):
-    n_entries = tree.GetEntries()
-    n_filled = 0
+def scaled_counts_to_histograms(prefix, counts, scale):
+    histograms = []
 
-    for i_entry in range(n_entries):
-        tree.GetEntry(i_entry)
+    panel_names = [
+        "FD sector 1",
+        "FD sector 2",
+        "FD sector 3",
+        "FD sector 4",
+        "FD sector 5",
+        "FD sector 6",
+        "CD",
+    ]
 
-        detector1 = int(getattr(tree, "detector1"))
-        p1_phi_rad = float(getattr(tree, "p1_phi"))
-        p1_theta_rad = float(getattr(tree, "p1_theta"))
+    for i_panel in range(7):
+        hist_name = "{}_panel_{}".format(prefix, i_panel + 1)
+        hist_title = "{};p_{{1}} #theta (deg);Counts".format(panel_names[i_panel])
 
-        i_panel = get_panel_index(detector1, p1_phi_rad)
+        hist = ROOT.TH1D(
+            hist_name,
+            hist_title,
+            N_BINS_THETA,
+            THETA_MIN_DEG,
+            THETA_MAX_DEG
+        )
 
-        if i_panel < 0 or i_panel >= len(histograms):
-            continue
-        #endif
+        hist.Sumw2()
 
-        p1_theta_deg = math.degrees(p1_theta_rad)
+        for i_bin in range(N_BINS_THETA):
+            root_bin = i_bin + 1
+            raw_count = counts[i_panel][i_bin]
+            content = scale * raw_count
+            error = abs(scale) * math.sqrt(raw_count)
 
-        if p1_theta_deg < THETA_MIN_DEG or p1_theta_deg >= THETA_MAX_DEG:
-            continue
-        #endif
+            hist.SetBinContent(root_bin, content)
+            hist.SetBinError(root_bin, error)
+        #endfor
 
-        histograms[i_panel].Fill(p1_theta_deg, event_weight)
-        n_filled += 1
+        histograms.append(hist)
     #endfor
 
-    return n_filled
+    return histograms
 
 
 def style_histograms(data_histograms, mc_histograms):
+    status("Styling histograms.")
+
     for hist in data_histograms:
         hist.SetLineColor(ROOT.kBlue)
         hist.SetMarkerColor(ROOT.kBlue)
@@ -309,11 +808,13 @@ def style_histograms(data_histograms, mc_histograms):
     #endfor
 
 
-def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sigma_gen_tot_pb):
+def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sigma_gen_tot_pb, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+    status("Drawing output canvas.")
+
     ROOT.gStyle.SetOptStat(0)
 
-    canvas = ROOT.TCanvas("canvas", "data vs MC p1_theta", 1500, 1200)
-    canvas.Divide(3, 3)
+    canvas = ROOT.TCanvas("canvas", "data vs MC p1_theta", 1600, 900)
+    canvas.Divide(4, 2)
 
     panel_labels = [
         "FD sector 1",
@@ -325,15 +826,45 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sig
         "Central detector",
     ]
 
+    # Histogram panel order:
+    #
+    #   0 -> FD sector 1
+    #   1 -> FD sector 2
+    #   2 -> FD sector 3
+    #   3 -> FD sector 4
+    #   4 -> FD sector 5
+    #   5 -> FD sector 6
+    #   6 -> CD
+    #
+    # Canvas pad order for 2x4:
+    #
+    #   top row:    pad 1, pad 2, pad 3, pad 4
+    #   bottom row: pad 5, pad 6, pad 7, pad 8
+    #
+    # Requested layout:
+    #
+    #   top row:    sector 1, sector 2, sector 3, empty/normalization
+    #   bottom row: sector 4, sector 5, sector 6, CD
+    #
+    canvas_pad_for_panel = [
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+    ]
+
     for i_panel in range(7):
-        canvas.cd(i_panel + 1)
+        canvas.cd(canvas_pad_for_panel[i_panel])
 
         pad = ROOT.gPad
         pad.SetLeftMargin(0.14)
         pad.SetRightMargin(0.05)
         pad.SetTopMargin(0.10)
         pad.SetBottomMargin(0.13)
-        pad.SetGrid()
+        pad.SetLogy(True)
 
         h_data = data_histograms[i_panel]
         h_mc = mc_histograms[i_panel]
@@ -344,8 +875,8 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sig
             max_y = 1.0
         #endif
 
-        h_data.SetMaximum(1.25 * max_y)
-        h_data.SetMinimum(0.0)
+        h_data.SetMaximum(10.0 * max_y)
+        h_data.SetMinimum(LOG_Y_MIN)
 
         h_data.SetTitle(panel_labels[i_panel])
         h_data.GetXaxis().SetTitle("p_{1} #theta (deg)")
@@ -370,26 +901,31 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sig
         legend.Draw()
     #endfor
 
-    canvas.cd(8)
-    pad8 = ROOT.gPad
-    pad8.Clear()
-    pad8.SetFillColor(ROOT.kWhite)
+    canvas.cd(4)
+    pad4 = ROOT.gPad
+    pad4.Clear()
+    pad4.SetFillColor(ROOT.kWhite)
 
     latex = ROOT.TLatex()
     latex.SetNDC(True)
-    latex.SetTextSize(0.045)
-    latex.DrawLatex(0.12, 0.80, "MC normalization")
-    latex.DrawLatex(0.12, 0.70, "#sigma_{gen}^{tot} = %.6g pb" % sigma_gen_tot_pb)
-    latex.DrawLatex(0.12, 0.60, "event weight = %.6g" % mc_event_weight)
-
-    canvas.cd(9)
-    pad9 = ROOT.gPad
-    pad9.Clear()
-    pad9.SetFillColor(ROOT.kWhite)
+    latex.SetTextSize(0.040)
+    latex.DrawLatex(0.10, 0.84, "MC normalization")
+    latex.DrawLatex(0.10, 0.74, "Q = %.6g mC" % total_charge_mc)
+    latex.DrawLatex(0.10, 0.64, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
+    latex.DrawLatex(0.10, 0.54, "#sigma_{gen}^{tot} = %.6g pb" % sigma_gen_tot_pb)
+    latex.DrawLatex(0.10, 0.44, "N_{gen} = %d" % n_gen)
+    latex.DrawLatex(0.10, 0.34, "event weight = %.6g" % mc_event_weight)
 
     ensure_output_directory(output_pdf)
-    canvas.SaveAs(output_pdf)
 
+    status("Saving output PDF: {}".format(output_pdf))
+    canvas.SaveAs(output_pdf)
+    status("Saved output PDF.")
+
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -403,48 +939,109 @@ def main():
     parser.add_argument("--sigma-gen-tot-pb", type=float, default=DEFAULT_SIGMA_GEN_TOT_PB, help="Generator total cross section in pb")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
     parser.add_argument("--charge-to-mc-factor", type=float, default=CHARGE_TO_MC_FACTOR, help="Conversion factor from CSV charge units to mC")
+    parser.add_argument("--status-every", type=int, default=DEFAULT_STATUS_EVERY, help="Print loop progress every N entries per worker")
+    parser.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS, help="Maximum number of worker processes. Hard capped at 5.")
 
     args = parser.parse_args()
 
-    data_file = open_root_file(args.data_root, "data")
-    reco_mc_file = open_root_file(args.reco_mc_root, "reconstructed MC")
-    gen_mc_file = open_root_file(args.gen_mc_root, "generated MC")
+    if args.status_every <= 0:
+        fatal("--status-every must be positive")
+    #endif
 
-    data_tree = get_tree(data_file, "PhysicsEvents", "data")
-    reco_mc_tree = get_tree(reco_mc_file, "PhysicsEvents", "reconstructed MC")
-    gen_mc_tree = get_tree(gen_mc_file, "PhysicsEvents", "generated MC")
+    if args.max_workers <= 0:
+        fatal("--max-workers must be positive")
+    #endif
 
-    require_branches(data_tree, ["runnum", "detector1", "p1_phi", "p1_theta"], "data")
-    require_branches(reco_mc_tree, ["detector1", "p1_phi", "p1_theta"], "reconstructed MC")
+    max_workers = min(args.max_workers, 5)
 
-    n_gen = gen_mc_tree.GetEntries()
+    start_time = time.time()
+
+    status("Starting data/MC normalization script.")
+    status("Data file: {}".format(args.data_root))
+    status("Reco MC file: {}".format(args.reco_mc_root))
+    status("Generated MC file: {}".format(args.gen_mc_root))
+    status("Output PDF: {}".format(args.output))
+    status("Maximum worker processes: {}".format(max_workers))
+
+    ROOT.gROOT.SetBatch(True)
+
+    n_data_entries = check_input_tree(
+        args.data_root,
+        "PhysicsEvents",
+        ["runnum", "detector1", "p1_phi", "p1_theta"],
+        "data"
+    )
+
+    n_reco_mc_entries = check_input_tree(
+        args.reco_mc_root,
+        "PhysicsEvents",
+        ["detector1", "p1_phi", "p1_theta"],
+        "reconstructed MC"
+    )
+
+    n_gen = get_entry_count(args.gen_mc_root, "PhysicsEvents", "generated MC")
+
+    status("Input entry counts:")
+    status("  data entries = {}".format(n_data_entries))
+    status("  reco MC entries = {}".format(n_reco_mc_entries))
+    status("  generated MC entries N_GEN = {}".format(n_gen))
 
     if n_gen <= 0:
         fatal("generated MC tree has zero entries")
     #endif
 
     charge_by_run = load_charge_map(args.charge_csv)
-    unique_runs = collect_unique_data_runs(data_tree)
+
+    data_result = run_data_parallel(
+        args.data_root,
+        "PhysicsEvents",
+        n_data_entries,
+        max_workers,
+        args.status_every
+    )
+
+    unique_runs = data_result["unique_runs"]
     total_charge_raw = sum_charge_for_runs(unique_runs, charge_by_run)
     total_charge_mc = total_charge_raw * args.charge_to_mc_factor
 
     integrated_luminosity_pb_inv = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * total_charge_mc
     mc_event_weight = integrated_luminosity_pb_inv * args.sigma_gen_tot_pb / float(n_gen)
 
-    data_histograms = make_histograms("data")
-    mc_histograms = make_histograms("mc")
+    status("Computed normalization:")
+    status("  Raw charge sum = {:.12g}".format(total_charge_raw))
+    status("  Q = {:.12g} mC".format(total_charge_mc))
+    status("  L_int = {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
+    status("  sigma_GEN_TOT = {:.12g} pb".format(args.sigma_gen_tot_pb))
+    status("  N_GEN = {}".format(n_gen))
+    status("  MC event weight = {:.12g}".format(mc_event_weight))
 
-    n_data_filled = fill_histograms(data_tree, data_histograms, 1.0)
-    n_mc_filled = fill_histograms(reco_mc_tree, mc_histograms, mc_event_weight)
+    mc_result = run_mc_parallel(
+        args.reco_mc_root,
+        "PhysicsEvents",
+        n_reco_mc_entries,
+        max_workers,
+        args.status_every
+    )
+
+    status("Building ROOT histograms from accumulated bin arrays.")
+
+    data_histograms = counts_to_histograms("data", data_result["counts"])
+    mc_histograms = scaled_counts_to_histograms("mc", mc_result["counts"], mc_event_weight)
 
     style_histograms(data_histograms, mc_histograms)
+
     draw_canvas(
         data_histograms,
         mc_histograms,
         args.output,
         mc_event_weight,
-        args.sigma_gen_tot_pb
+        args.sigma_gen_tot_pb,
+        total_charge_mc,
+        integrated_luminosity_pb_inv,
+        n_gen
     )
+
+    elapsed_time = time.time() - start_time
 
     print("")
     print("Normalization summary")
@@ -453,6 +1050,7 @@ def main():
     print("Reco MC ROOT file: {}".format(args.reco_mc_root))
     print("Gen MC ROOT file: {}".format(args.gen_mc_root))
     print("Charge CSV: {}".format(args.charge_csv))
+    print("Maximum workers used: {}".format(max_workers))
     print("Unique data runs found: {}".format(len(unique_runs)))
     print("Total accumulated charge from CSV raw units: {:.12g}".format(total_charge_raw))
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
@@ -461,13 +1059,12 @@ def main():
     print("sigma_GEN_TOT: {:.12g} pb".format(args.sigma_gen_tot_pb))
     print("N_GEN: {}".format(n_gen))
     print("MC event weight: {:.12g}".format(mc_event_weight))
-    print("Data entries filled: {}".format(n_data_filled))
-    print("Reco MC entries filled: {}".format(n_mc_filled))
+    print("Data entries filled: {}".format(data_result["n_filled"]))
+    print("Reco MC entries filled: {}".format(mc_result["n_filled"]))
     print("Output PDF: {}".format(args.output))
+    print("Elapsed time: {:.2f} seconds".format(elapsed_time))
 
-    data_file.Close()
-    reco_mc_file.Close()
-    gen_mc_file.Close()
+    status("Finished data/MC normalization script.")
 
 
 if __name__ == "__main__":
