@@ -32,7 +32,8 @@ CHARGE_TO_MC_FACTOR = 1.0e-6
 #
 RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC = 1316.875
 
-OUTPUT_PDF = "output/data_mc_normalization/output.pdf"
+OUTPUT_ROOT_DIR = "output/data_mc_normalization"
+DEFAULT_OUTPUT_TAG = "default"
 
 # Panels 1-6 are FD sectors, defined only by p1_theta < 40 degrees.
 # Panel 7 is CD, defined only by p1_theta >= 40 degrees.
@@ -48,6 +49,9 @@ DEFAULT_STATUS_EVERY = 250000
 DEFAULT_MAX_WORKERS = 5
 
 LOG_Y_MIN = 0.5
+RATIO_LOG_Y_MIN = 1.0e-4
+LINEAR_Y_MIN = 0.0
+RATIO_LINEAR_Y_MIN = 0.0
 
 # -----------------------------------------------------------------------------
 # Basic helpers
@@ -71,12 +75,40 @@ def format_percent(done, total):
     return "{:.1f}%".format(100.0 * float(done) / float(total))
 
 
+def sanitize_output_tag(output_tag):
+    sanitized = output_tag.strip()
+
+    if sanitized == "":
+        fatal("output_tag cannot be an empty string")
+    #endif
+
+    if "/" in sanitized or "\\" in sanitized:
+        fatal("output_tag must be a single directory name, not a path: {}".format(output_tag))
+    #endif
+
+    return sanitized
+
+
 def ensure_output_directory(output_path):
     output_dir = os.path.dirname(output_path)
 
     if output_dir != "":
         os.makedirs(output_dir, exist_ok=True)
     #endif
+
+
+def build_output_paths(output_tag):
+    tag = sanitize_output_tag(output_tag)
+    output_dir = os.path.join(OUTPUT_ROOT_DIR, tag)
+    base = os.path.join(output_dir, "output")
+
+    return {
+        "output_dir": output_dir,
+        "comparison_log": base + "_log.pdf",
+        "comparison_linear": base + "_linear.pdf",
+        "ratio_log": base + "_ratio_log.pdf",
+        "ratio_linear": base + "_ratio_linear.pdf",
+    }
 
 
 def open_root_file(path, label):
@@ -837,7 +869,52 @@ def arrays_to_histograms(prefix, counts, sumw2):
     return histograms
 
 
-def style_histograms(data_histograms, mc_histograms):
+def make_ratio_histograms(data_histograms, mc_histograms):
+    ratio_histograms = []
+
+    for i_panel in range(7):
+        theta_min, theta_max = get_theta_range_for_panel(i_panel)
+
+        ratio_hist = ROOT.TH1D(
+            "ratio_panel_{}".format(i_panel + 1),
+            "ratio_panel_{};p_{{1}} #theta (deg);data / MC".format(i_panel + 1),
+            N_BINS_THETA,
+            theta_min,
+            theta_max
+        )
+
+        ratio_hist.Sumw2()
+
+        h_data = data_histograms[i_panel]
+        h_mc = mc_histograms[i_panel]
+
+        for i_bin in range(1, N_BINS_THETA + 1):
+            data_content = h_data.GetBinContent(i_bin)
+            data_error = h_data.GetBinError(i_bin)
+            mc_content = h_mc.GetBinContent(i_bin)
+            mc_error = h_mc.GetBinError(i_bin)
+
+            if data_content > 0.0 and mc_content > 0.0:
+                ratio = data_content / mc_content
+                rel_data = data_error / data_content
+                rel_mc = mc_error / mc_content
+                ratio_error = ratio * math.sqrt(rel_data * rel_data + rel_mc * rel_mc)
+
+                ratio_hist.SetBinContent(i_bin, ratio)
+                ratio_hist.SetBinError(i_bin, ratio_error)
+            else:
+                ratio_hist.SetBinContent(i_bin, 0.0)
+                ratio_hist.SetBinError(i_bin, 0.0)
+            #endif
+        #endfor
+
+        ratio_histograms.append(ratio_hist)
+    #endfor
+
+    return ratio_histograms
+
+
+def style_histograms(data_histograms, mc_histograms, ratio_histograms):
     status("Styling histograms.")
 
     for hist in data_histograms:
@@ -858,13 +935,187 @@ def style_histograms(data_histograms, mc_histograms):
         hist.SetStats(False)
     #endfor
 
+    for hist in ratio_histograms:
+        hist.SetLineColor(ROOT.kBlack)
+        hist.SetMarkerColor(ROOT.kBlack)
+        hist.SetMarkerStyle(20)
+        hist.SetMarkerSize(0.65)
+        hist.SetLineWidth(2)
+        hist.SetStats(False)
+    #endfor
 
-def draw_canvas(data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
-    status("Drawing output canvas.")
+
+def get_hist_positive_min_and_max(hist):
+    min_positive = None
+    max_value = 0.0
+
+    for i_bin in range(1, hist.GetNbinsX() + 1):
+        content = hist.GetBinContent(i_bin)
+        error = hist.GetBinError(i_bin)
+        upper = content + error
+        lower = content - error
+
+        if upper > max_value:
+            max_value = upper
+        #endif
+
+        if content > 0.0:
+            candidate = content
+
+            if lower > 0.0:
+                candidate = min(candidate, lower)
+            #endif
+
+            if min_positive is None or candidate < min_positive:
+                min_positive = candidate
+            #endif
+        #endif
+    #endfor
+
+    return min_positive, max_value
+
+
+def get_common_y_range_for_comparison(data_histograms, mc_histograms, log_y):
+    global_min_positive = None
+    global_max = 0.0
+
+    for histograms in [data_histograms, mc_histograms]:
+        for hist in histograms:
+            min_positive, max_value = get_hist_positive_min_and_max(hist)
+
+            if max_value > global_max:
+                global_max = max_value
+            #endif
+
+            if min_positive is not None:
+                if global_min_positive is None or min_positive < global_min_positive:
+                    global_min_positive = min_positive
+                #endif
+            #endif
+        #endfor
+    #endfor
+
+    if global_max <= 0.0:
+        global_max = 1.0
+    #endif
+
+    if log_y:
+        y_min = LOG_Y_MIN
+
+        if global_min_positive is not None:
+            y_min = max(LOG_Y_MIN, 0.5 * global_min_positive)
+        #endif
+
+        y_max = 10.0 * global_max
+    else:
+        y_min = LINEAR_Y_MIN
+        y_max = 1.15 * global_max
+    #endif
+
+    if y_max <= y_min:
+        y_max = y_min + 1.0
+    #endif
+
+    return y_min, y_max
+
+
+def get_common_y_range_for_ratio(ratio_histograms, log_y):
+    global_min_positive = None
+    global_max = 0.0
+
+    for hist in ratio_histograms:
+        min_positive, max_value = get_hist_positive_min_and_max(hist)
+
+        if max_value > global_max:
+            global_max = max_value
+        #endif
+
+        if min_positive is not None:
+            if global_min_positive is None or min_positive < global_min_positive:
+                global_min_positive = min_positive
+            #endif
+        #endif
+    #endfor
+
+    if global_max <= 0.0:
+        global_max = 1.0
+    #endif
+
+    if log_y:
+        y_min = RATIO_LOG_Y_MIN
+
+        if global_min_positive is not None:
+            y_min = max(RATIO_LOG_Y_MIN, 0.5 * global_min_positive)
+        #endif
+
+        y_max = 10.0 * global_max
+    else:
+        y_min = RATIO_LINEAR_Y_MIN
+        y_max = 1.15 * global_max
+    #endif
+
+    if y_max <= y_min:
+        y_max = y_min + 1.0
+    #endif
+
+    return y_min, y_max
+
+
+def draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, ratio_mode):
+    pad4 = ROOT.gPad
+    pad4.Clear()
+    pad4.SetFillColor(ROOT.kWhite)
+
+    latex = ROOT.TLatex()
+    latex.SetNDC(True)
+    latex.SetTextSize(0.035)
+
+    if ratio_mode:
+        title = "Ratio normalization"
+    else:
+        title = "MC normalization"
+    #endif
+
+    if log_y:
+        scale_label = "log y"
+    else:
+        scale_label = "linear y"
+    #endif
+
+    latex.DrawLatex(0.10, 0.88, output_tag)
+    latex.DrawLatex(0.10, 0.78, title)
+    latex.DrawLatex(0.10, 0.68, "scale: {}".format(scale_label))
+    latex.DrawLatex(0.10, 0.58, "Q = %.6g mC" % total_charge_mc)
+    latex.DrawLatex(0.10, 0.48, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
+    latex.DrawLatex(0.10, 0.38, "N_{gen} = %.6g" % n_gen)
+    latex.DrawLatex(0.10, 0.28, "scale = L_{int}/N_{gen}")
+    latex.DrawLatex(0.10, 0.18, "scale = %.6g pb^{-1}" % normalization_factor)
+
+    if ratio_mode:
+        latex.DrawLatex(0.10, 0.08, "ratio: data / MC")
+    else:
+        latex.DrawLatex(0.10, 0.08, "MC fill: scale #times weight")
+    #endif
+
+
+def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
+    if log_y:
+        status("Drawing data-vs-MC output canvas with log y scale.")
+    else:
+        status("Drawing data-vs-MC output canvas with linear y scale.")
+    #endif
 
     ROOT.gStyle.SetOptStat(0)
 
-    canvas = ROOT.TCanvas("canvas", "data vs MC p1_theta", 1600, 900)
+    if log_y:
+        canvas_name = "canvas_comparison_log"
+        canvas_title = "{} data vs MC p1_theta log y".format(output_tag)
+    else:
+        canvas_name = "canvas_comparison_linear"
+        canvas_title = "{} data vs MC p1_theta linear y".format(output_tag)
+    #endif
+
+    canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 900)
     canvas.Divide(4, 2)
 
     panel_labels = [
@@ -887,6 +1138,10 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, normalization_factor
         8,
     ]
 
+    common_y_min, common_y_max = get_common_y_range_for_comparison(data_histograms, mc_histograms, log_y)
+
+    status("Comparison canvas common y-range: [{:.12g}, {:.12g}]".format(common_y_min, common_y_max))
+
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
 
@@ -895,21 +1150,15 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, normalization_factor
         pad.SetRightMargin(0.05)
         pad.SetTopMargin(0.10)
         pad.SetBottomMargin(0.13)
-        pad.SetLogy(True)
+        pad.SetLogy(log_y)
 
         h_data = data_histograms[i_panel]
         h_mc = mc_histograms[i_panel]
 
-        max_y = max(h_data.GetMaximum(), h_mc.GetMaximum())
+        h_data.SetMaximum(common_y_max)
+        h_data.SetMinimum(common_y_min)
 
-        if max_y <= 0.0:
-            max_y = 1.0
-        #endif
-
-        h_data.SetMaximum(10.0 * max_y)
-        h_data.SetMinimum(LOG_Y_MIN)
-
-        h_data.SetTitle(panel_labels[i_panel])
+        h_data.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
         h_data.GetXaxis().SetTitle("p_{1} #theta (deg)")
         h_data.GetYaxis().SetTitle("Counts")
         h_data.GetXaxis().CenterTitle(True)
@@ -933,21 +1182,97 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, normalization_factor
     #endfor
 
     canvas.cd(4)
-    pad4 = ROOT.gPad
-    pad4.Clear()
-    pad4.SetFillColor(ROOT.kWhite)
+    draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, False)
 
-    latex = ROOT.TLatex()
-    latex.SetNDC(True)
-    latex.SetTextSize(0.037)
-    latex.DrawLatex(0.10, 0.84, "MC normalization")
-    latex.DrawLatex(0.10, 0.74, "Q = %.6g mC" % total_charge_mc)
-    latex.DrawLatex(0.10, 0.64, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
-    latex.DrawLatex(0.10, 0.54, "N_{gen} = %d" % n_gen)
-    latex.DrawLatex(0.10, 0.44, "scale = L_{int}/N_{gen}")
-    latex.DrawLatex(0.10, 0.34, "scale = %.6g pb^{-1}" % normalization_factor)
-    latex.DrawLatex(0.10, 0.24, "MC fill: scale #times weight")
-    latex.DrawLatex(0.10, 0.14, "FD: #theta < 40 deg, CD: #theta #geq 40 deg")
+    ensure_output_directory(output_pdf)
+
+    status("Saving output PDF: {}".format(output_pdf))
+    canvas.SaveAs(output_pdf)
+    status("Saved output PDF.")
+
+
+def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
+    if log_y:
+        status("Drawing data/MC ratio output canvas with log y scale.")
+    else:
+        status("Drawing data/MC ratio output canvas with linear y scale.")
+    #endif
+
+    ROOT.gStyle.SetOptStat(0)
+
+    if log_y:
+        canvas_name = "canvas_ratio_log"
+        canvas_title = "{} data over MC p1_theta log y".format(output_tag)
+    else:
+        canvas_name = "canvas_ratio_linear"
+        canvas_title = "{} data over MC p1_theta linear y".format(output_tag)
+    #endif
+
+    canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 900)
+    canvas.Divide(4, 2)
+
+    panel_labels = [
+        "FD sector 1",
+        "FD sector 2",
+        "FD sector 3",
+        "FD sector 4",
+        "FD sector 5",
+        "FD sector 6",
+        "Central detector",
+    ]
+
+    canvas_pad_for_panel = [
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+    ]
+
+    common_y_min, common_y_max = get_common_y_range_for_ratio(ratio_histograms, log_y)
+
+    status("Ratio canvas common y-range: [{:.12g}, {:.12g}]".format(common_y_min, common_y_max))
+
+    for i_panel in range(7):
+        canvas.cd(canvas_pad_for_panel[i_panel])
+
+        pad = ROOT.gPad
+        pad.SetLeftMargin(0.14)
+        pad.SetRightMargin(0.05)
+        pad.SetTopMargin(0.10)
+        pad.SetBottomMargin(0.13)
+        pad.SetLogy(log_y)
+
+        h_ratio = ratio_histograms[i_panel]
+
+        h_ratio.SetMaximum(common_y_max)
+        h_ratio.SetMinimum(common_y_min)
+
+        h_ratio.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
+        h_ratio.GetXaxis().SetTitle("p_{1} #theta (deg)")
+        h_ratio.GetYaxis().SetTitle("data / MC")
+        h_ratio.GetXaxis().CenterTitle(True)
+        h_ratio.GetYaxis().CenterTitle(True)
+        h_ratio.GetXaxis().SetTitleSize(0.050)
+        h_ratio.GetYaxis().SetTitleSize(0.050)
+        h_ratio.GetXaxis().SetLabelSize(0.045)
+        h_ratio.GetYaxis().SetLabelSize(0.045)
+
+        h_ratio.Draw("E1")
+
+        if (not log_y) and common_y_min < 1.0 and common_y_max > 1.0:
+            line = ROOT.TLine(h_ratio.GetXaxis().GetXmin(), 1.0, h_ratio.GetXaxis().GetXmax(), 1.0)
+            line.SetLineColor(ROOT.kRed + 1)
+            line.SetLineStyle(2)
+            line.SetLineWidth(2)
+            line.Draw("SAME")
+        #endif
+    #endfor
+
+    canvas.cd(4)
+    draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, True)
 
     ensure_output_directory(output_pdf)
 
@@ -968,11 +1293,12 @@ def main():
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
     parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents and weight")
     parser.add_argument("gen_mc_root", help="Input generated MC ROOT file containing PhysicsEvents")
-    parser.add_argument("--output", default=OUTPUT_PDF, help="Output PDF path")
+    parser.add_argument("output_tag", nargs="?", default=DEFAULT_OUTPUT_TAG, help="Output tag / run-period string, e.g. Fa18_Inb. Plots are saved under output/data_mc_normalization/<output_tag>/.")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
     parser.add_argument("--charge-to-mc-factor", type=float, default=CHARGE_TO_MC_FACTOR, help="Conversion factor from CSV charge units to mC")
     parser.add_argument("--status-every", type=int, default=DEFAULT_STATUS_EVERY, help="Print loop progress every N entries per worker")
     parser.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS, help="Maximum number of worker processes. Hard capped at 5.")
+    parser.add_argument("--n-gen-override", type=float, default=None, help="Override N_GEN with the true number of thrown/generated MC events.")
 
     args = parser.parse_args()
 
@@ -984,15 +1310,27 @@ def main():
         fatal("--max-workers must be positive")
     #endif
 
+    if args.n_gen_override is not None and args.n_gen_override <= 0.0:
+        fatal("--n-gen-override must be positive")
+    #endif
+
     max_workers = min(args.max_workers, 5)
+
+    output_tag = sanitize_output_tag(args.output_tag)
+    output_paths = build_output_paths(output_tag)
 
     start_time = time.time()
 
     status("Starting data/MC normalization script.")
+    status("Output tag: {}".format(output_tag))
     status("Data file: {}".format(args.data_root))
     status("Reco MC file: {}".format(args.reco_mc_root))
     status("Generated MC file: {}".format(args.gen_mc_root))
-    status("Output PDF: {}".format(args.output))
+    status("Output directory: {}".format(output_paths["output_dir"]))
+    status("Output comparison log PDF: {}".format(output_paths["comparison_log"]))
+    status("Output comparison linear PDF: {}".format(output_paths["comparison_linear"]))
+    status("Output ratio log PDF: {}".format(output_paths["ratio_log"]))
+    status("Output ratio linear PDF: {}".format(output_paths["ratio_linear"]))
     status("Maximum worker processes: {}".format(max_workers))
     status("Using event-by-event reconstructed MC branch: weight")
     status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
@@ -1014,15 +1352,31 @@ def main():
         "reconstructed MC"
     )
 
-    n_gen = get_entry_count(args.gen_mc_root, "PhysicsEvents", "generated MC")
+    n_gen_from_file = get_entry_count(args.gen_mc_root, "PhysicsEvents", "generated MC")
+
+    if args.n_gen_override is not None:
+        n_gen = args.n_gen_override
+        status("Using user-provided N_GEN override: {:.12g}".format(n_gen))
+        status("Generated MC ROOT file entry count was: {}".format(n_gen_from_file))
+    else:
+        n_gen = float(n_gen_from_file)
+    #endif
 
     status("Input entry counts:")
     status("  data entries = {}".format(n_data_entries))
     status("  reco MC entries = {}".format(n_reco_mc_entries))
-    status("  generated MC entries N_GEN = {}".format(n_gen))
+    status("  generated MC entries from file = {}".format(n_gen_from_file))
+    status("  generated MC normalization N_GEN = {:.12g}".format(n_gen))
 
-    if n_gen <= 0:
-        fatal("generated MC tree has zero entries")
+    if n_gen <= 0.0:
+        fatal("generated MC normalization N_GEN is zero")
+    #endif
+
+    if n_gen < float(n_reco_mc_entries):
+        fatal("N_GEN = {:.12g} is smaller than the reconstructed MC entry count = {}. This usually means the generated MC file is not a valid generated-event tree, or you need to use --n-gen-override.".format(
+            n_gen,
+            n_reco_mc_entries
+        ))
     #endif
 
     charge_by_run = load_charge_map(args.charge_csv)
@@ -1059,7 +1413,7 @@ def main():
     status("  Raw charge sum = {:.12g}".format(total_charge_raw))
     status("  Q = {:.12g} mC".format(total_charge_mc))
     status("  L_int = {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    status("  N_GEN = {}".format(n_gen))
+    status("  N_GEN = {:.12g}".format(n_gen))
     status("  normalization factor L_int / N_GEN = {:.12g} pb^-1".format(normalization_factor))
     status("  MC event fill weight = (L_int / N_GEN) * weight")
 
@@ -1076,17 +1430,54 @@ def main():
 
     data_histograms = arrays_to_histograms("data", data_result["counts"], data_result["sumw2"])
     mc_histograms = arrays_to_histograms("mc", mc_result["counts"], mc_result["sumw2"])
+    ratio_histograms = make_ratio_histograms(data_histograms, mc_histograms)
 
-    style_histograms(data_histograms, mc_histograms)
+    style_histograms(data_histograms, mc_histograms, ratio_histograms)
 
-    draw_canvas(
+    draw_comparison_canvas(
+        output_tag,
         data_histograms,
         mc_histograms,
-        args.output,
+        output_paths["comparison_log"],
         normalization_factor,
         total_charge_mc,
         integrated_luminosity_pb_inv,
-        n_gen
+        n_gen,
+        True
+    )
+
+    draw_comparison_canvas(
+        output_tag,
+        data_histograms,
+        mc_histograms,
+        output_paths["comparison_linear"],
+        normalization_factor,
+        total_charge_mc,
+        integrated_luminosity_pb_inv,
+        n_gen,
+        False
+    )
+
+    draw_ratio_canvas(
+        output_tag,
+        ratio_histograms,
+        output_paths["ratio_log"],
+        normalization_factor,
+        total_charge_mc,
+        integrated_luminosity_pb_inv,
+        n_gen,
+        True
+    )
+
+    draw_ratio_canvas(
+        output_tag,
+        ratio_histograms,
+        output_paths["ratio_linear"],
+        normalization_factor,
+        total_charge_mc,
+        integrated_luminosity_pb_inv,
+        n_gen,
+        False
     )
 
     elapsed_time = time.time() - start_time
@@ -1094,6 +1485,7 @@ def main():
     print("")
     print("Normalization summary")
     print("---------------------")
+    print("Output tag: {}".format(output_tag))
     print("Data ROOT file: {}".format(args.data_root))
     print("Reco MC ROOT file: {}".format(args.reco_mc_root))
     print("Gen MC ROOT file: {}".format(args.gen_mc_root))
@@ -1108,7 +1500,8 @@ def main():
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
     print("Integrated luminosity: {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    print("N_GEN: {}".format(n_gen))
+    print("Generated MC entries from file: {}".format(n_gen_from_file))
+    print("N_GEN used for normalization: {:.12g}".format(n_gen))
     print("Normalization factor L_int / N_GEN: {:.12g} pb^-1".format(normalization_factor))
     print("Data entries filled: {}".format(data_result["n_filled"]))
     print("Data FD entries filled: {}".format(data_result["n_fd"]))
@@ -1119,7 +1512,11 @@ def main():
     print("Reco MC raw weight sum over filled entries: {:.12g}".format(mc_result["raw_weight_sum"]))
     print("Reco MC scaled weight sum over filled entries: {:.12g}".format(mc_result["scaled_weight_sum"]))
     print("Reco MC maximum raw weight over filled entries: {:.12g}".format(mc_result["max_raw_weight"]))
-    print("Output PDF: {}".format(args.output))
+    print("Output directory: {}".format(output_paths["output_dir"]))
+    print("Output comparison log PDF: {}".format(output_paths["comparison_log"]))
+    print("Output comparison linear PDF: {}".format(output_paths["comparison_linear"]))
+    print("Output ratio log PDF: {}".format(output_paths["ratio_log"]))
+    print("Output ratio linear PDF: {}".format(output_paths["ratio_linear"]))
     print("Elapsed time: {:.2f} seconds".format(elapsed_time))
 
     status("Finished data/MC normalization script.")
