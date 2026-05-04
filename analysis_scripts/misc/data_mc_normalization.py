@@ -15,28 +15,13 @@ import ROOT
 
 GLOBAL_CHARGE_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
-# The global.csv charge values look like nC in the examples you showed.
-# Since the normalization formula wants Q in mC, the default conversion is:
-#
-#   Q(mC) = Q(nC) / 1.0e6
-#
-# If your CSV is already in mC, change this to 1.0 or use:
-#
-#   --charge-to-mc-factor 1.0
-#
 CHARGE_TO_MC_FACTOR = 1.0e-6
 
-# RGA integrated luminosity:
-#
-#   L_int = 1316.875 * Q(mC) pb^{-1}
-#
 RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC = 1316.875
 
 OUTPUT_ROOT_DIR = "output/data_mc_normalization"
 DEFAULT_OUTPUT_TAG = "default"
 
-# Panels 1-6 are FD sectors, defined only by p1_theta < 40 degrees.
-# Panel 7 is CD, defined only by p1_theta >= 40 degrees.
 FD_THETA_MIN_DEG = 0.0
 FD_THETA_MAX_DEG = 40.0
 
@@ -45,16 +30,68 @@ CD_THETA_MAX_DEG = 70.0
 
 # Previous value was 70. This is approximately one third of that.
 N_BINS_THETA = 23
+N_BINS_P = 23
+N_BINS_PHI = 24
+
+P1_P_MIN_GEV = 0.3
+P1_P_MAX_GEV = 1.3
+
+P1_PHI_MIN_DEG = 0.0
+P1_PHI_MAX_DEG = 360.0
 
 DEFAULT_STATUS_EVERY = 250000
 DEFAULT_MAX_WORKERS = 5
 
 LOG_Y_MIN = 0.5
 LINEAR_Y_MIN = 0.0
+Y_PADDING_LINEAR = 1.30
+Y_PADDING_LOG = 30.0
 
-# Ratio plots are linear only and limited from 0 to 2.
 RATIO_LINEAR_Y_MIN = 0.0
 RATIO_Y_MAX = 2.0
+
+# -----------------------------------------------------------------------------
+# Plot variable configuration
+# -----------------------------------------------------------------------------
+
+PLOT_VARIABLES = [
+    {
+        "key": "p1_theta",
+        "branch": "p1_theta",
+        "title": "p_{1} #theta",
+        "x_title": "p_{1} #theta (deg)",
+        "n_bins": N_BINS_THETA,
+        "fd_min": FD_THETA_MIN_DEG,
+        "fd_max": FD_THETA_MAX_DEG,
+        "cd_min": CD_THETA_MIN_DEG,
+        "cd_max": CD_THETA_MAX_DEG,
+        "convert": "rad_to_deg",
+    },
+    {
+        "key": "p1_p",
+        "branch": "p1_p",
+        "title": "p_{1} momentum",
+        "x_title": "p_{1} momentum (GeV)",
+        "n_bins": N_BINS_P,
+        "fd_min": P1_P_MIN_GEV,
+        "fd_max": P1_P_MAX_GEV,
+        "cd_min": P1_P_MIN_GEV,
+        "cd_max": P1_P_MAX_GEV,
+        "convert": "identity",
+    },
+    {
+        "key": "p1_phi",
+        "branch": "p1_phi",
+        "title": "p_{1} #phi",
+        "x_title": "p_{1} #phi (deg)",
+        "n_bins": N_BINS_PHI,
+        "fd_min": P1_PHI_MIN_DEG,
+        "fd_max": P1_PHI_MAX_DEG,
+        "cd_min": P1_PHI_MIN_DEG,
+        "cd_max": P1_PHI_MAX_DEG,
+        "convert": "rad_to_deg_wrapped",
+    },
+]
 
 # -----------------------------------------------------------------------------
 # Basic helpers
@@ -100,10 +137,10 @@ def ensure_output_directory(output_path):
     #endif
 
 
-def build_output_paths(output_tag):
+def build_output_paths(output_tag, variable_key):
     tag = sanitize_output_tag(output_tag)
     output_dir = os.path.join(OUTPUT_ROOT_DIR, tag)
-    base = os.path.join(output_dir, "output")
+    base = os.path.join(output_dir, "output_{}".format(variable_key))
 
     return {
         "output_dir": output_dir,
@@ -196,6 +233,22 @@ def wrap_phi_0_360(phi_deg):
     return phi
 
 
+def convert_value(raw_value, conversion_mode):
+    if conversion_mode == "identity":
+        return raw_value
+    #endif
+
+    if conversion_mode == "rad_to_deg":
+        return math.degrees(raw_value)
+    #endif
+
+    if conversion_mode == "rad_to_deg_wrapped":
+        return wrap_phi_0_360(math.degrees(raw_value))
+    #endif
+
+    fatal("unknown conversion mode: {}".format(conversion_mode))
+
+
 def get_fd_sector_from_phi_deg(phi_deg):
     phi = wrap_phi_0_360(phi_deg)
 
@@ -251,56 +304,51 @@ def get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad):
     return -1
 
 
-def get_theta_bin_for_panel(i_panel, p1_theta_rad):
-    p1_theta_deg = math.degrees(p1_theta_rad)
-
+def get_plot_range_for_panel(variable_config, i_panel):
     if i_panel >= 0 and i_panel <= 5:
-        theta_min = FD_THETA_MIN_DEG
-        theta_max = FD_THETA_MAX_DEG
-    elif i_panel == 6:
-        theta_min = CD_THETA_MIN_DEG
-        theta_max = CD_THETA_MAX_DEG
-    else:
+        return variable_config["fd_min"], variable_config["fd_max"]
+    #endif
+
+    if i_panel == 6:
+        return variable_config["cd_min"], variable_config["cd_max"]
+    #endif
+
+    fatal("invalid panel index in get_plot_range_for_panel: {}".format(i_panel))
+
+
+def get_value_bin_for_panel(variable_config, i_panel, value):
+    value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
+    n_bins = variable_config["n_bins"]
+
+    if value < value_min or value >= value_max:
         return -1
     #endif
 
-    if p1_theta_deg < theta_min or p1_theta_deg >= theta_max:
-        return -1
-    #endif
+    bin_width = (value_max - value_min) / float(n_bins)
+    i_bin = int((value - value_min) / bin_width)
 
-    bin_width = (theta_max - theta_min) / float(N_BINS_THETA)
-    i_bin = int((p1_theta_deg - theta_min) / bin_width)
-
-    if i_bin < 0 or i_bin >= N_BINS_THETA:
+    if i_bin < 0 or i_bin >= n_bins:
         return -1
     #endif
 
     return i_bin
 
 
-def get_theta_range_for_panel(i_panel):
-    if i_panel >= 0 and i_panel <= 5:
-        return FD_THETA_MIN_DEG, FD_THETA_MAX_DEG
-    #endif
-
-    if i_panel == 6:
-        return CD_THETA_MIN_DEG, CD_THETA_MAX_DEG
-    #endif
-
-    fatal("invalid panel index in get_theta_range_for_panel: {}".format(i_panel))
+def make_empty_counts_for_variable(variable_config):
+    n_bins = variable_config["n_bins"]
+    return [[0.0 for _ in range(n_bins)] for _ in range(7)]
 
 
-def make_empty_counts():
-    return [[0.0 for _ in range(N_BINS_THETA)] for _ in range(7)]
+def make_empty_sumw2_for_variable(variable_config):
+    n_bins = variable_config["n_bins"]
+    return [[0.0 for _ in range(n_bins)] for _ in range(7)]
 
 
-def make_empty_sumw2():
-    return [[0.0 for _ in range(N_BINS_THETA)] for _ in range(7)]
+def add_counts_for_variable(total_counts, chunk_counts, variable_config):
+    n_bins = variable_config["n_bins"]
 
-
-def add_counts(total_counts, chunk_counts):
     for i_panel in range(7):
-        for i_bin in range(N_BINS_THETA):
+        for i_bin in range(n_bins):
             total_counts[i_panel][i_bin] += chunk_counts[i_panel][i_bin]
         #endfor
     #endfor
@@ -325,6 +373,16 @@ def make_ranges(n_entries, n_workers):
     #endwhile
 
     return ranges
+
+
+def get_variable_keys():
+    keys = []
+
+    for variable_config in PLOT_VARIABLES:
+        keys.append(variable_config["key"])
+    #endfor
+
+    return keys
 
 
 # -----------------------------------------------------------------------------
@@ -408,13 +466,43 @@ def configure_tree_for_data(tree):
     tree.SetBranchStatus("runnum", 1)
     tree.SetBranchStatus("p1_phi", 1)
     tree.SetBranchStatus("p1_theta", 1)
+    tree.SetBranchStatus("p1_p", 1)
 
 
 def configure_tree_for_mc(tree):
     tree.SetBranchStatus("*", 0)
     tree.SetBranchStatus("p1_phi", 1)
     tree.SetBranchStatus("p1_theta", 1)
+    tree.SetBranchStatus("p1_p", 1)
     tree.SetBranchStatus("weight", 1)
+
+
+def make_empty_result_maps():
+    counts_by_variable = {}
+    sumw2_by_variable = {}
+
+    for variable_config in PLOT_VARIABLES:
+        key = variable_config["key"]
+        counts_by_variable[key] = make_empty_counts_for_variable(variable_config)
+        sumw2_by_variable[key] = make_empty_sumw2_for_variable(variable_config)
+    #endfor
+
+    return counts_by_variable, sumw2_by_variable
+
+
+def fill_variable_counts(counts_by_variable, sumw2_by_variable, variable_config, i_panel, raw_value, event_weight):
+    key = variable_config["key"]
+    value = convert_value(raw_value, variable_config["convert"])
+    i_bin = get_value_bin_for_panel(variable_config, i_panel, value)
+
+    if i_bin < 0:
+        return False
+    #endif
+
+    counts_by_variable[key][i_panel][i_bin] += event_weight
+    sumw2_by_variable[key][i_panel][i_bin] += event_weight * event_weight
+
+    return True
 
 
 def data_worker(args):
@@ -440,16 +528,22 @@ def data_worker(args):
 
     configure_tree_for_data(tree)
 
-    counts = make_empty_counts()
-    sumw2 = make_empty_sumw2()
+    counts_by_variable, sumw2_by_variable = make_empty_result_maps()
     unique_runs = set()
 
-    n_filled = 0
+    n_filled_panel = 0
     n_fd = 0
     n_cd = 0
     n_skipped_panel = 0
-    n_skipped_theta = 0
     n_total = end_entry - start_entry
+
+    variable_fills = {}
+    variable_skips = {}
+
+    for key in get_variable_keys():
+        variable_fills[key] = 0
+        variable_skips[key] = 0
+    #endfor
 
     print("[{}] data worker {} starting entries {} to {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -464,6 +558,7 @@ def data_worker(args):
         runnum = int(getattr(tree, "runnum"))
         p1_phi_rad = float(getattr(tree, "p1_phi"))
         p1_theta_rad = float(getattr(tree, "p1_theta"))
+        p1_p = float(getattr(tree, "p1_p"))
 
         unique_runs.add(runnum)
 
@@ -472,32 +567,48 @@ def data_worker(args):
         if i_panel < 0:
             n_skipped_panel += 1
         else:
-            i_bin = get_theta_bin_for_panel(i_panel, p1_theta_rad)
+            n_filled_panel += 1
 
-            if i_bin < 0:
-                n_skipped_theta += 1
-            else:
-                event_weight = 1.0
-                counts[i_panel][i_bin] += event_weight
-                sumw2[i_panel][i_bin] += event_weight * event_weight
-                n_filled += 1
-
-                if i_panel >= 0 and i_panel <= 5:
-                    n_fd += 1
-                elif i_panel == 6:
-                    n_cd += 1
-                #endif
+            if i_panel >= 0 and i_panel <= 5:
+                n_fd += 1
+            elif i_panel == 6:
+                n_cd += 1
             #endif
+
+            raw_values = {
+                "p1_theta": p1_theta_rad,
+                "p1_p": p1_p,
+                "p1_phi": p1_phi_rad,
+            }
+
+            for variable_config in PLOT_VARIABLES:
+                key = variable_config["key"]
+                event_weight = 1.0
+                filled = fill_variable_counts(
+                    counts_by_variable,
+                    sumw2_by_variable,
+                    variable_config,
+                    i_panel,
+                    raw_values[key],
+                    event_weight
+                )
+
+                if filled:
+                    variable_fills[key] += 1
+                else:
+                    variable_skips[key] += 1
+                #endif
+            #endfor
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] data worker {} progress: {}/{} chunk entries ({}) | filled: {} | FD(theta<40): {} | CD(theta>=40): {} | unique runs: {}".format(
+            print("[{}] data worker {} progress: {}/{} chunk entries ({}) | panel-filled: {} | FD(theta<40): {} | CD(theta>=40): {} | unique runs: {}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
                 n_total,
                 format_percent(local_index, n_total),
-                n_filled,
+                n_filled_panel,
                 n_fd,
                 n_cd,
                 len(unique_runs)
@@ -507,26 +618,26 @@ def data_worker(args):
 
     root_file.Close()
 
-    print("[{}] data worker {} finished: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}, unique runs = {}.".format(
+    print("[{}] data worker {} finished: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, unique runs = {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
-        n_filled,
+        n_filled_panel,
         n_fd,
         n_cd,
         n_skipped_panel,
-        n_skipped_theta,
         len(unique_runs)
     ), flush=True)
 
     return {
-        "counts": counts,
-        "sumw2": sumw2,
+        "counts_by_variable": counts_by_variable,
+        "sumw2_by_variable": sumw2_by_variable,
         "unique_runs": sorted(unique_runs),
-        "n_filled": n_filled,
+        "n_filled_panel": n_filled_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
         "n_skipped_panel": n_skipped_panel,
-        "n_skipped_theta": n_skipped_theta,
+        "variable_fills": variable_fills,
+        "variable_skips": variable_skips,
     }
 
 
@@ -554,18 +665,24 @@ def mc_worker(args):
 
     configure_tree_for_mc(tree)
 
-    counts = make_empty_counts()
-    sumw2 = make_empty_sumw2()
+    counts_by_variable, sumw2_by_variable = make_empty_result_maps()
 
-    n_filled = 0
+    n_filled_panel = 0
     n_fd = 0
     n_cd = 0
     n_skipped_panel = 0
-    n_skipped_theta = 0
     n_total = end_entry - start_entry
     raw_weight_sum = 0.0
     scaled_weight_sum = 0.0
     max_raw_weight = None
+
+    variable_fills = {}
+    variable_skips = {}
+
+    for key in get_variable_keys():
+        variable_fills[key] = 0
+        variable_skips[key] = 0
+    #endfor
 
     print("[{}] MC worker {} starting entries {} to {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -579,6 +696,7 @@ def mc_worker(args):
 
         p1_phi_rad = float(getattr(tree, "p1_phi"))
         p1_theta_rad = float(getattr(tree, "p1_theta"))
+        p1_p = float(getattr(tree, "p1_p"))
         raw_weight = float(getattr(tree, "weight"))
         event_weight = normalization_factor * raw_weight
 
@@ -587,38 +705,53 @@ def mc_worker(args):
         if i_panel < 0:
             n_skipped_panel += 1
         else:
-            i_bin = get_theta_bin_for_panel(i_panel, p1_theta_rad)
+            n_filled_panel += 1
+            raw_weight_sum += raw_weight
+            scaled_weight_sum += event_weight
 
-            if i_bin < 0:
-                n_skipped_theta += 1
-            else:
-                counts[i_panel][i_bin] += event_weight
-                sumw2[i_panel][i_bin] += event_weight * event_weight
-                raw_weight_sum += raw_weight
-                scaled_weight_sum += event_weight
-
-                if max_raw_weight is None or raw_weight > max_raw_weight:
-                    max_raw_weight = raw_weight
-                #endif
-
-                n_filled += 1
-
-                if i_panel >= 0 and i_panel <= 5:
-                    n_fd += 1
-                elif i_panel == 6:
-                    n_cd += 1
-                #endif
+            if max_raw_weight is None or raw_weight > max_raw_weight:
+                max_raw_weight = raw_weight
             #endif
+
+            if i_panel >= 0 and i_panel <= 5:
+                n_fd += 1
+            elif i_panel == 6:
+                n_cd += 1
+            #endif
+
+            raw_values = {
+                "p1_theta": p1_theta_rad,
+                "p1_p": p1_p,
+                "p1_phi": p1_phi_rad,
+            }
+
+            for variable_config in PLOT_VARIABLES:
+                key = variable_config["key"]
+                filled = fill_variable_counts(
+                    counts_by_variable,
+                    sumw2_by_variable,
+                    variable_config,
+                    i_panel,
+                    raw_values[key],
+                    event_weight
+                )
+
+                if filled:
+                    variable_fills[key] += 1
+                else:
+                    variable_skips[key] += 1
+                #endif
+            #endfor
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | filled: {} | FD(theta<40): {} | CD(theta>=40): {} | raw weight sum in filled bins: {:.12g}".format(
+            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | panel-filled: {} | FD(theta<40): {} | CD(theta>=40): {} | raw weight sum in accepted panels: {:.12g}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
                 n_total,
                 format_percent(local_index, n_total),
-                n_filled,
+                n_filled_panel,
                 n_fd,
                 n_cd,
                 raw_weight_sum
@@ -632,30 +765,30 @@ def mc_worker(args):
         max_raw_weight = 0.0
     #endif
 
-    print("[{}] MC worker {} finished: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}, raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
+    print("[{}] MC worker {} finished: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
-        n_filled,
+        n_filled_panel,
         n_fd,
         n_cd,
         n_skipped_panel,
-        n_skipped_theta,
         raw_weight_sum,
         scaled_weight_sum,
         max_raw_weight
     ), flush=True)
 
     return {
-        "counts": counts,
-        "sumw2": sumw2,
-        "n_filled": n_filled,
+        "counts_by_variable": counts_by_variable,
+        "sumw2_by_variable": sumw2_by_variable,
+        "n_filled_panel": n_filled_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
         "n_skipped_panel": n_skipped_panel,
-        "n_skipped_theta": n_skipped_theta,
         "raw_weight_sum": raw_weight_sum,
         "scaled_weight_sum": scaled_weight_sum,
         "max_raw_weight": max_raw_weight,
+        "variable_fills": variable_fills,
+        "variable_skips": variable_skips,
     }
 
 
@@ -685,50 +818,80 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
 
     status("Starting parallel data pass with {} workers.".format(len(tasks)))
 
-    total_counts = make_empty_counts()
-    total_sumw2 = make_empty_sumw2()
+    total_counts_by_variable, total_sumw2_by_variable = make_empty_result_maps()
     unique_runs = set()
 
-    n_filled = 0
+    n_filled_panel = 0
     n_fd = 0
     n_cd = 0
     n_skipped_panel = 0
-    n_skipped_theta = 0
+
+    variable_fills = {}
+    variable_skips = {}
+
+    for key in get_variable_keys():
+        variable_fills[key] = 0
+        variable_skips[key] = 0
+    #endfor
 
     with mp.Pool(processes=len(tasks)) as pool:
         results = pool.map(data_worker, tasks)
     #endwith
 
     for result in results:
-        add_counts(total_counts, result["counts"])
-        add_counts(total_sumw2, result["sumw2"])
+        for variable_config in PLOT_VARIABLES:
+            key = variable_config["key"]
+
+            add_counts_for_variable(
+                total_counts_by_variable[key],
+                result["counts_by_variable"][key],
+                variable_config
+            )
+
+            add_counts_for_variable(
+                total_sumw2_by_variable[key],
+                result["sumw2_by_variable"][key],
+                variable_config
+            )
+
+            variable_fills[key] += result["variable_fills"][key]
+            variable_skips[key] += result["variable_skips"][key]
+        #endfor
+
         unique_runs.update(result["unique_runs"])
-        n_filled += result["n_filled"]
+        n_filled_panel += result["n_filled_panel"]
         n_fd += result["n_fd"]
         n_cd += result["n_cd"]
         n_skipped_panel += result["n_skipped_panel"]
-        n_skipped_theta += result["n_skipped_theta"]
     #endfor
 
     status("Finished parallel data pass.")
-    status("Data total: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}, unique runs = {}.".format(
-        n_filled,
+    status("Data total: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, unique runs = {}.".format(
+        n_filled_panel,
         n_fd,
         n_cd,
         n_skipped_panel,
-        n_skipped_theta,
         len(unique_runs)
     ))
 
+    for key in get_variable_keys():
+        status("Data variable {}: filled bins entries = {}, skipped range = {}.".format(
+            key,
+            variable_fills[key],
+            variable_skips[key]
+        ))
+    #endfor
+
     return {
-        "counts": total_counts,
-        "sumw2": total_sumw2,
+        "counts_by_variable": total_counts_by_variable,
+        "sumw2_by_variable": total_sumw2_by_variable,
         "unique_runs": unique_runs,
-        "n_filled": n_filled,
+        "n_filled_panel": n_filled_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
         "n_skipped_panel": n_skipped_panel,
-        "n_skipped_theta": n_skipped_theta,
+        "variable_fills": variable_fills,
+        "variable_skips": variable_skips,
     }
 
 
@@ -759,30 +922,52 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
 
     status("Starting parallel reconstructed MC pass with {} workers.".format(len(tasks)))
 
-    total_counts = make_empty_counts()
-    total_sumw2 = make_empty_sumw2()
+    total_counts_by_variable, total_sumw2_by_variable = make_empty_result_maps()
 
-    n_filled = 0
+    n_filled_panel = 0
     n_fd = 0
     n_cd = 0
     n_skipped_panel = 0
-    n_skipped_theta = 0
     raw_weight_sum = 0.0
     scaled_weight_sum = 0.0
     max_raw_weight = None
+
+    variable_fills = {}
+    variable_skips = {}
+
+    for key in get_variable_keys():
+        variable_fills[key] = 0
+        variable_skips[key] = 0
+    #endfor
 
     with mp.Pool(processes=len(tasks)) as pool:
         results = pool.map(mc_worker, tasks)
     #endwith
 
     for result in results:
-        add_counts(total_counts, result["counts"])
-        add_counts(total_sumw2, result["sumw2"])
-        n_filled += result["n_filled"]
+        for variable_config in PLOT_VARIABLES:
+            key = variable_config["key"]
+
+            add_counts_for_variable(
+                total_counts_by_variable[key],
+                result["counts_by_variable"][key],
+                variable_config
+            )
+
+            add_counts_for_variable(
+                total_sumw2_by_variable[key],
+                result["sumw2_by_variable"][key],
+                variable_config
+            )
+
+            variable_fills[key] += result["variable_fills"][key]
+            variable_skips[key] += result["variable_skips"][key]
+        #endfor
+
+        n_filled_panel += result["n_filled_panel"]
         n_fd += result["n_fd"]
         n_cd += result["n_cd"]
         n_skipped_panel += result["n_skipped_panel"]
-        n_skipped_theta += result["n_skipped_theta"]
         raw_weight_sum += result["raw_weight_sum"]
         scaled_weight_sum += result["scaled_weight_sum"]
 
@@ -796,30 +981,38 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
     #endif
 
     status("Finished parallel reconstructed MC pass.")
-    status("Reco MC total: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}.".format(
-        n_filled,
+    status("Reco MC total: panel-filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}.".format(
+        n_filled_panel,
         n_fd,
         n_cd,
-        n_skipped_panel,
-        n_skipped_theta
+        n_skipped_panel
     ))
-    status("Reco MC weight summary over filled entries: raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
+    status("Reco MC weight summary over accepted panels: raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
         raw_weight_sum,
         scaled_weight_sum,
         max_raw_weight
     ))
 
+    for key in get_variable_keys():
+        status("Reco MC variable {}: filled bins entries = {}, skipped range = {}.".format(
+            key,
+            variable_fills[key],
+            variable_skips[key]
+        ))
+    #endfor
+
     return {
-        "counts": total_counts,
-        "sumw2": total_sumw2,
-        "n_filled": n_filled,
+        "counts_by_variable": total_counts_by_variable,
+        "sumw2_by_variable": total_sumw2_by_variable,
+        "n_filled_panel": n_filled_panel,
         "n_fd": n_fd,
         "n_cd": n_cd,
         "n_skipped_panel": n_skipped_panel,
-        "n_skipped_theta": n_skipped_theta,
         "raw_weight_sum": raw_weight_sum,
         "scaled_weight_sum": scaled_weight_sum,
         "max_raw_weight": max_raw_weight,
+        "variable_fills": variable_fills,
+        "variable_skips": variable_skips,
     }
 
 
@@ -827,7 +1020,7 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
 # Histogram and plotting helpers
 # -----------------------------------------------------------------------------
 
-def arrays_to_histograms(prefix, counts, sumw2):
+def arrays_to_histograms(prefix, variable_config, counts, sumw2):
     histograms = []
 
     panel_names = [
@@ -841,22 +1034,22 @@ def arrays_to_histograms(prefix, counts, sumw2):
     ]
 
     for i_panel in range(7):
-        theta_min, theta_max = get_theta_range_for_panel(i_panel)
+        value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
 
-        hist_name = "{}_panel_{}".format(prefix, i_panel + 1)
-        hist_title = "{};p_{{1}} #theta (deg);Counts".format(panel_names[i_panel])
+        hist_name = "{}_{}_panel_{}".format(prefix, variable_config["key"], i_panel + 1)
+        hist_title = "{};{};Counts".format(panel_names[i_panel], variable_config["x_title"])
 
         hist = ROOT.TH1D(
             hist_name,
             hist_title,
-            N_BINS_THETA,
-            theta_min,
-            theta_max
+            variable_config["n_bins"],
+            value_min,
+            value_max
         )
 
         hist.Sumw2()
 
-        for i_bin in range(N_BINS_THETA):
+        for i_bin in range(variable_config["n_bins"]):
             root_bin = i_bin + 1
             content = counts[i_panel][i_bin]
             error = math.sqrt(sumw2[i_panel][i_bin])
@@ -871,26 +1064,28 @@ def arrays_to_histograms(prefix, counts, sumw2):
     return histograms
 
 
-def make_ratio_histograms(data_histograms, mc_histograms):
-    ratio_histograms = []
+def make_ratio_graphs(variable_config, data_histograms, mc_histograms):
+    ratio_graphs = []
 
     for i_panel in range(7):
-        theta_min, theta_max = get_theta_range_for_panel(i_panel)
+        value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
+        n_bins = variable_config["n_bins"]
+        bin_width = (value_max - value_min) / float(n_bins)
 
-        ratio_hist = ROOT.TH1D(
-            "ratio_panel_{}".format(i_panel + 1),
-            "ratio_panel_{};p_{{1}} #theta (deg);data / MC".format(i_panel + 1),
-            N_BINS_THETA,
-            theta_min,
-            theta_max
-        )
-
-        ratio_hist.Sumw2()
+        graph = ROOT.TGraphErrors()
+        graph.SetName("ratio_{}_panel_{}".format(variable_config["key"], i_panel + 1))
+        graph.SetTitle("ratio_{}_panel_{};{};data / MC".format(
+            variable_config["key"],
+            i_panel + 1,
+            variable_config["x_title"]
+        ))
 
         h_data = data_histograms[i_panel]
         h_mc = mc_histograms[i_panel]
 
-        for i_bin in range(1, N_BINS_THETA + 1):
+        point_index = 0
+
+        for i_bin in range(1, n_bins + 1):
             data_content = h_data.GetBinContent(i_bin)
             data_error = h_data.GetBinError(i_bin)
             mc_content = h_mc.GetBinContent(i_bin)
@@ -902,28 +1097,28 @@ def make_ratio_histograms(data_histograms, mc_histograms):
                 rel_mc = mc_error / mc_content
                 ratio_error = ratio * math.sqrt(rel_data * rel_data + rel_mc * rel_mc)
 
-                ratio_hist.SetBinContent(i_bin, ratio)
-                ratio_hist.SetBinError(i_bin, ratio_error)
-            else:
-                ratio_hist.SetBinContent(i_bin, 0.0)
-                ratio_hist.SetBinError(i_bin, 0.0)
+                x_center = value_min + (float(i_bin) - 0.5) * bin_width
+
+                graph.SetPoint(point_index, x_center, ratio)
+                graph.SetPointError(point_index, 0.0, ratio_error)
+                point_index += 1
             #endif
         #endfor
 
-        ratio_histograms.append(ratio_hist)
+        ratio_graphs.append(graph)
     #endfor
 
-    return ratio_histograms
+    return ratio_graphs
 
 
-def style_histograms(data_histograms, mc_histograms, ratio_histograms):
-    status("Styling histograms.")
+def style_histograms(data_histograms, mc_histograms, ratio_graphs):
+    status("Styling histograms and ratio graphs.")
 
     for hist in data_histograms:
         hist.SetLineColor(ROOT.kBlue)
         hist.SetMarkerColor(ROOT.kBlue)
         hist.SetMarkerStyle(20)
-        hist.SetMarkerSize(0.65)
+        hist.SetMarkerSize(0.0)
         hist.SetLineWidth(2)
         hist.SetStats(False)
     #endfor
@@ -932,18 +1127,17 @@ def style_histograms(data_histograms, mc_histograms, ratio_histograms):
         hist.SetLineColor(ROOT.kRed)
         hist.SetMarkerColor(ROOT.kRed)
         hist.SetMarkerStyle(24)
-        hist.SetMarkerSize(0.65)
+        hist.SetMarkerSize(0.0)
         hist.SetLineWidth(2)
         hist.SetStats(False)
     #endfor
 
-    for hist in ratio_histograms:
-        hist.SetLineColor(ROOT.kBlack)
-        hist.SetMarkerColor(ROOT.kBlack)
-        hist.SetMarkerStyle(20)
-        hist.SetMarkerSize(0.65)
-        hist.SetLineWidth(2)
-        hist.SetStats(False)
+    for graph in ratio_graphs:
+        graph.SetLineColor(ROOT.kBlack)
+        graph.SetMarkerColor(ROOT.kBlack)
+        graph.SetMarkerStyle(20)
+        graph.SetMarkerSize(0.65)
+        graph.SetLineWidth(2)
     #endfor
 
 
@@ -1006,10 +1200,10 @@ def get_common_y_range_for_hist_list(histograms, log_y):
             y_min = max(LOG_Y_MIN, 0.5 * global_min_positive)
         #endif
 
-        y_max = 10.0 * global_max
+        y_max = Y_PADDING_LOG * global_max
     else:
         y_min = LINEAR_Y_MIN
-        y_max = 1.15 * global_max
+        y_max = Y_PADDING_LINEAR * global_max
     #endif
 
     if y_max <= y_min:
@@ -1037,14 +1231,14 @@ def get_common_y_ranges_for_comparison(data_histograms, mc_histograms, log_y):
     return fd_y_min, fd_y_max, cd_y_min, cd_y_max
 
 
-def draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, ratio_mode):
+def draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, ratio_mode):
     pad4 = ROOT.gPad
     pad4.Clear()
     pad4.SetFillColor(ROOT.kWhite)
 
     latex = ROOT.TLatex()
     latex.SetNDC(True)
-    latex.SetTextSize(0.035)
+    latex.SetTextSize(0.034)
 
     if ratio_mode:
         title = "Ratio normalization"
@@ -1058,37 +1252,38 @@ def draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb
         scale_label = "linear y"
     #endif
 
-    latex.DrawLatex(0.10, 0.88, output_tag)
-    latex.DrawLatex(0.10, 0.78, title)
-    latex.DrawLatex(0.10, 0.68, "scale: {}".format(scale_label))
-    latex.DrawLatex(0.10, 0.58, "Q = %.6g mC" % total_charge_mc)
-    latex.DrawLatex(0.10, 0.48, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
-    latex.DrawLatex(0.10, 0.38, "N_{gen} = %.6g" % n_gen)
-    latex.DrawLatex(0.10, 0.28, "scale = L_{int}/N_{gen}")
+    latex.DrawLatex(0.10, 0.90, output_tag)
+    latex.DrawLatex(0.10, 0.81, variable_config["title"])
+    latex.DrawLatex(0.10, 0.72, title)
+    latex.DrawLatex(0.10, 0.63, "scale: {}".format(scale_label))
+    latex.DrawLatex(0.10, 0.54, "Q = %.6g mC" % total_charge_mc)
+    latex.DrawLatex(0.10, 0.45, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
+    latex.DrawLatex(0.10, 0.36, "N_{gen} = %.6g" % n_gen)
+    latex.DrawLatex(0.10, 0.27, "scale = L_{int}/N_{gen}")
     latex.DrawLatex(0.10, 0.18, "scale = %.6g pb^{-1}" % normalization_factor)
 
     if ratio_mode:
-        latex.DrawLatex(0.10, 0.08, "ratio: data / MC")
+        latex.DrawLatex(0.10, 0.09, "ratio: data / MC")
     else:
-        latex.DrawLatex(0.10, 0.08, "MC fill: scale #times weight")
+        latex.DrawLatex(0.10, 0.09, "MC fill: scale #times weight")
     #endif
 
 
-def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
+def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen, log_y):
     if log_y:
-        status("Drawing data-vs-MC output canvas with log y scale.")
+        status("Drawing {} data-vs-MC output canvas with log y scale.".format(variable_config["key"]))
     else:
-        status("Drawing data-vs-MC output canvas with linear y scale.")
+        status("Drawing {} data-vs-MC output canvas with linear y scale.".format(variable_config["key"]))
     #endif
 
     ROOT.gStyle.SetOptStat(0)
 
     if log_y:
-        canvas_name = "canvas_comparison_log"
-        canvas_title = "{} data vs MC p1_theta log y".format(output_tag)
+        canvas_name = "canvas_{}_comparison_log".format(variable_config["key"])
+        canvas_title = "{} {} data vs MC log y".format(output_tag, variable_config["key"])
     else:
-        canvas_name = "canvas_comparison_linear"
-        canvas_title = "{} data vs MC p1_theta linear y".format(output_tag)
+        canvas_name = "canvas_{}_comparison_linear".format(variable_config["key"])
+        canvas_title = "{} {} data vs MC linear y".format(output_tag, variable_config["key"])
     #endif
 
     canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 900)
@@ -1116,17 +1311,17 @@ def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pd
 
     fd_y_min, fd_y_max, cd_y_min, cd_y_max = get_common_y_ranges_for_comparison(data_histograms, mc_histograms, log_y)
 
-    status("Comparison canvas FD common y-range: [{:.12g}, {:.12g}]".format(fd_y_min, fd_y_max))
-    status("Comparison canvas CD y-range: [{:.12g}, {:.12g}]".format(cd_y_min, cd_y_max))
+    status("{} comparison canvas FD common y-range: [{:.12g}, {:.12g}]".format(variable_config["key"], fd_y_min, fd_y_max))
+    status("{} comparison canvas CD y-range: [{:.12g}, {:.12g}]".format(variable_config["key"], cd_y_min, cd_y_max))
 
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
 
         pad = ROOT.gPad
-        pad.SetLeftMargin(0.14)
-        pad.SetRightMargin(0.05)
-        pad.SetTopMargin(0.10)
-        pad.SetBottomMargin(0.13)
+        pad.SetLeftMargin(0.16)
+        pad.SetRightMargin(0.06)
+        pad.SetTopMargin(0.12)
+        pad.SetBottomMargin(0.14)
         pad.SetLogy(log_y)
 
         h_data = data_histograms[i_panel]
@@ -1141,7 +1336,7 @@ def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pd
         #endif
 
         h_data.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
-        h_data.GetXaxis().SetTitle("p_{1} #theta (deg)")
+        h_data.GetXaxis().SetTitle(variable_config["x_title"])
         h_data.GetYaxis().SetTitle("Counts")
         h_data.GetXaxis().CenterTitle(True)
         h_data.GetYaxis().CenterTitle(True)
@@ -1149,22 +1344,23 @@ def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pd
         h_data.GetYaxis().SetTitleSize(0.050)
         h_data.GetXaxis().SetLabelSize(0.045)
         h_data.GetYaxis().SetLabelSize(0.045)
+        h_data.GetYaxis().SetTitleOffset(1.45)
 
-        h_data.Draw("E1")
+        h_data.Draw("HIST")
         h_mc.Draw("HIST SAME")
 
-        legend = ROOT.TLegend(0.66, 0.76, 0.92, 0.89)
+        legend = ROOT.TLegend(0.64, 0.76, 0.92, 0.89)
         legend.SetBorderSize(1)
         legend.SetFillStyle(1001)
         legend.SetFillColor(ROOT.kWhite)
         legend.SetTextSize(0.032)
-        legend.AddEntry(h_data, "data", "lep")
+        legend.AddEntry(h_data, "data", "l")
         legend.AddEntry(h_mc, "MC weighted", "l")
         legend.Draw()
     #endfor
 
     canvas.cd(4)
-    draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, False)
+    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, log_y, False)
 
     ensure_output_directory(output_pdf)
 
@@ -1173,13 +1369,13 @@ def draw_comparison_canvas(output_tag, data_histograms, mc_histograms, output_pd
     status("Saved output PDF.")
 
 
-def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
-    status("Drawing data/MC ratio output canvas with linear y scale.")
+def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+    status("Drawing {} data/MC ratio output canvas with linear y scale.".format(variable_config["key"]))
 
     ROOT.gStyle.SetOptStat(0)
 
-    canvas_name = "canvas_ratio_linear"
-    canvas_title = "{} data over MC p1_theta linear y".format(output_tag)
+    canvas_name = "canvas_{}_ratio_linear".format(variable_config["key"])
+    canvas_title = "{} {} data over MC linear y".format(output_tag, variable_config["key"])
 
     canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 900)
     canvas.Divide(4, 2)
@@ -1204,36 +1400,55 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
         8,
     ]
 
-    status("Ratio canvas y-range: [{:.12g}, {:.12g}]".format(RATIO_LINEAR_Y_MIN, RATIO_Y_MAX))
+    status("{} ratio canvas y-range: [{:.12g}, {:.12g}]".format(
+        variable_config["key"],
+        RATIO_LINEAR_Y_MIN,
+        RATIO_Y_MAX
+    ))
+
+    frame_histograms = []
 
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
 
         pad = ROOT.gPad
-        pad.SetLeftMargin(0.14)
-        pad.SetRightMargin(0.05)
-        pad.SetTopMargin(0.10)
-        pad.SetBottomMargin(0.13)
+        pad.SetLeftMargin(0.16)
+        pad.SetRightMargin(0.06)
+        pad.SetTopMargin(0.12)
+        pad.SetBottomMargin(0.14)
         pad.SetLogy(False)
 
-        h_ratio = ratio_histograms[i_panel]
+        value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
 
-        h_ratio.SetMaximum(RATIO_Y_MAX)
-        h_ratio.SetMinimum(RATIO_LINEAR_Y_MIN)
+        frame = ROOT.TH1D(
+            "frame_{}_panel_{}".format(variable_config["key"], i_panel + 1),
+            "{}  {};{};data / MC".format(output_tag, panel_labels[i_panel], variable_config["x_title"]),
+            variable_config["n_bins"],
+            value_min,
+            value_max
+        )
 
-        h_ratio.SetTitle("{}  {}".format(output_tag, panel_labels[i_panel]))
-        h_ratio.GetXaxis().SetTitle("p_{1} #theta (deg)")
-        h_ratio.GetYaxis().SetTitle("data / MC")
-        h_ratio.GetXaxis().CenterTitle(True)
-        h_ratio.GetYaxis().CenterTitle(True)
-        h_ratio.GetXaxis().SetTitleSize(0.050)
-        h_ratio.GetYaxis().SetTitleSize(0.050)
-        h_ratio.GetXaxis().SetLabelSize(0.045)
-        h_ratio.GetYaxis().SetLabelSize(0.045)
+        frame.SetStats(False)
+        frame.SetMinimum(RATIO_LINEAR_Y_MIN)
+        frame.SetMaximum(RATIO_Y_MAX)
+        frame.GetXaxis().CenterTitle(True)
+        frame.GetYaxis().CenterTitle(True)
+        frame.GetXaxis().SetTitleSize(0.050)
+        frame.GetYaxis().SetTitleSize(0.050)
+        frame.GetXaxis().SetLabelSize(0.045)
+        frame.GetYaxis().SetLabelSize(0.045)
+        frame.GetYaxis().SetTitleOffset(1.45)
+        frame.Draw("AXIS")
 
-        h_ratio.Draw("E1")
+        frame_histograms.append(frame)
 
-        line = ROOT.TLine(h_ratio.GetXaxis().GetXmin(), 1.0, h_ratio.GetXaxis().GetXmax(), 1.0)
+        graph = ratio_graphs[i_panel]
+
+        if graph.GetN() > 0:
+            graph.Draw("PZ SAME")
+        #endif
+
+        line = ROOT.TLine(value_min, 1.0, value_max, 1.0)
         line.SetLineColor(ROOT.kRed + 1)
         line.SetLineStyle(2)
         line.SetLineWidth(2)
@@ -1241,7 +1456,7 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
     #endfor
 
     canvas.cd(4)
-    draw_normalization_pad(output_tag, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, False, True)
+    draw_normalization_pad(output_tag, variable_config, total_charge_mc, integrated_luminosity_pb_inv, n_gen, normalization_factor, False, True)
 
     ensure_output_directory(output_pdf)
 
@@ -1250,13 +1465,76 @@ def draw_ratio_canvas(output_tag, ratio_histograms, output_pdf, normalization_fa
     status("Saved output PDF.")
 
 
+def build_and_save_plots_for_variable(output_tag, variable_config, data_result, mc_result, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+    output_paths = build_output_paths(output_tag, variable_config["key"])
+
+    status("Building ROOT histograms for variable {}.".format(variable_config["key"]))
+
+    data_histograms = arrays_to_histograms(
+        "data",
+        variable_config,
+        data_result["counts_by_variable"][variable_config["key"]],
+        data_result["sumw2_by_variable"][variable_config["key"]]
+    )
+
+    mc_histograms = arrays_to_histograms(
+        "mc",
+        variable_config,
+        mc_result["counts_by_variable"][variable_config["key"]],
+        mc_result["sumw2_by_variable"][variable_config["key"]]
+    )
+
+    ratio_graphs = make_ratio_graphs(variable_config, data_histograms, mc_histograms)
+
+    style_histograms(data_histograms, mc_histograms, ratio_graphs)
+
+    draw_comparison_canvas(
+        output_tag,
+        variable_config,
+        data_histograms,
+        mc_histograms,
+        output_paths["comparison_log"],
+        normalization_factor,
+        total_charge_mc,
+        integrated_luminosity_pb_inv,
+        n_gen,
+        True
+    )
+
+    draw_comparison_canvas(
+        output_tag,
+        variable_config,
+        data_histograms,
+        mc_histograms,
+        output_paths["comparison_linear"],
+        normalization_factor,
+        total_charge_mc,
+        integrated_luminosity_pb_inv,
+        n_gen,
+        False
+    )
+
+    draw_ratio_canvas(
+        output_tag,
+        variable_config,
+        ratio_graphs,
+        output_paths["ratio_linear"],
+        normalization_factor,
+        total_charge_mc,
+        integrated_luminosity_pb_inv,
+        n_gen
+    )
+
+    return output_paths
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare data and reconstructed MC p1_theta using theta-defined FD/CD regions with event-by-event MC::Event.weight normalization."
+        description="Compare data and reconstructed MC for p1_theta, p1_p, and p1_phi using theta-defined FD/CD regions with event-by-event MC::Event.weight normalization."
     )
 
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
@@ -1286,7 +1564,6 @@ def main():
     max_workers = min(args.max_workers, 5)
 
     output_tag = sanitize_output_tag(args.output_tag)
-    output_paths = build_output_paths(output_tag)
 
     start_time = time.time()
 
@@ -1295,31 +1572,29 @@ def main():
     status("Data file: {}".format(args.data_root))
     status("Reco MC file: {}".format(args.reco_mc_root))
     status("Generated MC file: {}".format(args.gen_mc_root))
-    status("Output directory: {}".format(output_paths["output_dir"]))
-    status("Output comparison log PDF: {}".format(output_paths["comparison_log"]))
-    status("Output comparison linear PDF: {}".format(output_paths["comparison_linear"]))
-    status("Output ratio linear PDF: {}".format(output_paths["ratio_linear"]))
+    status("Output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag)))
     status("Maximum worker processes: {}".format(max_workers))
     status("Using event-by-event reconstructed MC branch: weight")
     status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
-    status("FD histograms use theta range 0 to 40 deg; CD histogram uses theta range 40 to 70 deg.")
-    status("Number of p1_theta bins: {}".format(N_BINS_THETA))
     status("Comparison y scales: common across FD sectors; CD uses its own scale.")
     status("Ratio y scale: linear only, fixed from 0 to 2.")
+    status("Data and MC comparison plots are drawn as lines.")
+    status("Ratio points use vertical statistical error bars only, with horizontal errors set to zero.")
+    status("Variables to plot: {}".format(", ".join(get_variable_keys())))
 
     ROOT.gROOT.SetBatch(True)
 
     n_data_entries = check_input_tree(
         args.data_root,
         "PhysicsEvents",
-        ["runnum", "p1_phi", "p1_theta"],
+        ["runnum", "p1_phi", "p1_theta", "p1_p"],
         "data"
     )
 
     n_reco_mc_entries = check_input_tree(
         args.reco_mc_root,
         "PhysicsEvents",
-        ["p1_phi", "p1_theta", "weight"],
+        ["p1_phi", "p1_theta", "p1_p", "weight"],
         "reconstructed MC"
     )
 
@@ -1366,18 +1641,6 @@ def main():
 
     integrated_luminosity_pb_inv = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * total_charge_mc
 
-    # Weighted-MC normalization:
-    #
-    #   per-event plot weight = L_int * MC::Event.weight / N_GEN
-    #
-    # The reconstructed ROOT tree now carries MC::Event.weight as the branch:
-    #
-    #   weight
-    #
-    # Therefore the worker fills MC histograms using:
-    #
-    #   event_weight = normalization_factor * weight
-    #
     normalization_factor = integrated_luminosity_pb_inv / float(n_gen)
 
     status("Computed event-by-event MC normalization:")
@@ -1397,47 +1660,22 @@ def main():
         normalization_factor
     )
 
-    status("Building ROOT histograms from accumulated bin arrays.")
+    saved_paths_by_variable = {}
 
-    data_histograms = arrays_to_histograms("data", data_result["counts"], data_result["sumw2"])
-    mc_histograms = arrays_to_histograms("mc", mc_result["counts"], mc_result["sumw2"])
-    ratio_histograms = make_ratio_histograms(data_histograms, mc_histograms)
+    for variable_config in PLOT_VARIABLES:
+        output_paths = build_and_save_plots_for_variable(
+            output_tag,
+            variable_config,
+            data_result,
+            mc_result,
+            normalization_factor,
+            total_charge_mc,
+            integrated_luminosity_pb_inv,
+            n_gen
+        )
 
-    style_histograms(data_histograms, mc_histograms, ratio_histograms)
-
-    draw_comparison_canvas(
-        output_tag,
-        data_histograms,
-        mc_histograms,
-        output_paths["comparison_log"],
-        normalization_factor,
-        total_charge_mc,
-        integrated_luminosity_pb_inv,
-        n_gen,
-        True
-    )
-
-    draw_comparison_canvas(
-        output_tag,
-        data_histograms,
-        mc_histograms,
-        output_paths["comparison_linear"],
-        normalization_factor,
-        total_charge_mc,
-        integrated_luminosity_pb_inv,
-        n_gen,
-        False
-    )
-
-    draw_ratio_canvas(
-        output_tag,
-        ratio_histograms,
-        output_paths["ratio_linear"],
-        normalization_factor,
-        total_charge_mc,
-        integrated_luminosity_pb_inv,
-        n_gen
-    )
+        saved_paths_by_variable[variable_config["key"]] = output_paths
+    #endfor
 
     elapsed_time = time.time() - start_time
 
@@ -1453,9 +1691,13 @@ def main():
     print("Unique data runs found: {}".format(len(unique_runs)))
     print("FD definition: p1_theta < 40 deg")
     print("CD definition: p1_theta >= 40 deg")
-    print("FD theta plotting range: {:.1f} to {:.1f} deg".format(FD_THETA_MIN_DEG, FD_THETA_MAX_DEG))
-    print("CD theta plotting range: {:.1f} to {:.1f} deg".format(CD_THETA_MIN_DEG, CD_THETA_MAX_DEG))
+    print("p1_theta FD plotting range: {:.1f} to {:.1f} deg".format(FD_THETA_MIN_DEG, FD_THETA_MAX_DEG))
+    print("p1_theta CD plotting range: {:.1f} to {:.1f} deg".format(CD_THETA_MIN_DEG, CD_THETA_MAX_DEG))
+    print("p1_p plotting range: {:.1f} to {:.1f} GeV".format(P1_P_MIN_GEV, P1_P_MAX_GEV))
+    print("p1_phi plotting range: {:.1f} to {:.1f} deg".format(P1_PHI_MIN_DEG, P1_PHI_MAX_DEG))
     print("Number of p1_theta bins: {}".format(N_BINS_THETA))
+    print("Number of p1_p bins: {}".format(N_BINS_P))
+    print("Number of p1_phi bins: {}".format(N_BINS_PHI))
     print("Comparison y scales: common across FD sectors; CD uses its own scale")
     print("Ratio y range linear: {:.12g} to {:.12g}".format(RATIO_LINEAR_Y_MIN, RATIO_Y_MAX))
     print("Total accumulated charge from CSV raw units: {:.12g}".format(total_charge_raw))
@@ -1465,19 +1707,23 @@ def main():
     print("Generated MC entries from file: {}".format(n_gen_from_file))
     print("N_GEN used for normalization: {:.12g}".format(n_gen))
     print("Normalization factor L_int / N_GEN: {:.12g} pb^-1".format(normalization_factor))
-    print("Data entries filled: {}".format(data_result["n_filled"]))
-    print("Data FD entries filled: {}".format(data_result["n_fd"]))
-    print("Data CD entries filled: {}".format(data_result["n_cd"]))
-    print("Reco MC entries filled: {}".format(mc_result["n_filled"]))
-    print("Reco MC FD entries filled: {}".format(mc_result["n_fd"]))
-    print("Reco MC CD entries filled: {}".format(mc_result["n_cd"]))
-    print("Reco MC raw weight sum over filled entries: {:.12g}".format(mc_result["raw_weight_sum"]))
-    print("Reco MC scaled weight sum over filled entries: {:.12g}".format(mc_result["scaled_weight_sum"]))
-    print("Reco MC maximum raw weight over filled entries: {:.12g}".format(mc_result["max_raw_weight"]))
-    print("Output directory: {}".format(output_paths["output_dir"]))
-    print("Output comparison log PDF: {}".format(output_paths["comparison_log"]))
-    print("Output comparison linear PDF: {}".format(output_paths["comparison_linear"]))
-    print("Output ratio linear PDF: {}".format(output_paths["ratio_linear"]))
+    print("Data panel entries filled: {}".format(data_result["n_filled_panel"]))
+    print("Data FD panel entries filled: {}".format(data_result["n_fd"]))
+    print("Data CD panel entries filled: {}".format(data_result["n_cd"]))
+    print("Reco MC panel entries filled: {}".format(mc_result["n_filled_panel"]))
+    print("Reco MC FD panel entries filled: {}".format(mc_result["n_fd"]))
+    print("Reco MC CD panel entries filled: {}".format(mc_result["n_cd"]))
+    print("Reco MC raw weight sum over accepted panels: {:.12g}".format(mc_result["raw_weight_sum"]))
+    print("Reco MC scaled weight sum over accepted panels: {:.12g}".format(mc_result["scaled_weight_sum"]))
+    print("Reco MC maximum raw weight over accepted panels: {:.12g}".format(mc_result["max_raw_weight"]))
+    print("Output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag)))
+
+    for variable_key in get_variable_keys():
+        print("{} comparison log PDF: {}".format(variable_key, saved_paths_by_variable[variable_key]["comparison_log"]))
+        print("{} comparison linear PDF: {}".format(variable_key, saved_paths_by_variable[variable_key]["comparison_linear"]))
+        print("{} ratio linear PDF: {}".format(variable_key, saved_paths_by_variable[variable_key]["ratio_linear"]))
+    #endfor
+
     print("Elapsed time: {:.2f} seconds".format(elapsed_time))
 
     status("Finished data/MC normalization script.")
