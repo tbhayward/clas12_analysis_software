@@ -37,6 +37,8 @@ if (!input.exists()) {
     System.exit(4)
 }
 
+boolean isDirectoryInput = input.isDirectory()
+
 List<File> hipoFiles = []
 
 if (input.isFile()) {
@@ -68,6 +70,8 @@ long totalEvents = 0L
 long totalEventsWithMcEvent = 0L
 long totalRows = 0L
 double totalSumWeights = 0.0
+double totalMaxWeight = -Double.MAX_VALUE
+boolean foundAnyWeight = false
 
 int filesProcessed = 0
 
@@ -92,6 +96,8 @@ for (File hipoFile : hipoFiles) {
     long fileEventsWithMcEvent = 0L
     long fileRows = 0L
     double fileSumWeights = 0.0
+    double fileMaxWeight = -Double.MAX_VALUE
+    boolean foundFileWeight = false
 
     while (reader.hasNext()) {
         reader.nextEvent(event)
@@ -107,8 +113,20 @@ for (File hipoFile : hipoFiles) {
         fileEventsWithMcEvent++
 
         for (int row = 0; row < rows; row++) {
-            fileSumWeights += mcEvent.getFloat("weight", row)
+            double weight = (double) mcEvent.getFloat("weight", row)
+
+            fileSumWeights += weight
             fileRows++
+
+            if (!foundFileWeight || weight > fileMaxWeight) {
+                fileMaxWeight = weight
+                foundFileWeight = true
+            }
+
+            if (!foundAnyWeight || weight > totalMaxWeight) {
+                totalMaxWeight = weight
+                foundAnyWeight = true
+            }
         }
     }
 
@@ -124,14 +142,28 @@ for (File hipoFile : hipoFiles) {
     println("  Events with MC::Event: ${fileEventsWithMcEvent}")
     println("  MC::Event rows summed: ${fileRows}")
     println("  Sum of MC::Event weight: ${fileSumWeights}")
+
+    if (foundFileWeight) {
+        println("  Maximum MC::Event weight: ${fileMaxWeight}")
+    } else {
+        println("  Maximum MC::Event weight: none found")
+    }
 }
 
-println("")
-println("Summary")
-println("Input path: ${inputPath}")
-println("HIPO files selected: ${hipoFiles.size()}")
-println("HIPO files processed: ${filesProcessed}")
-println("Total events read: ${totalEvents}")
-println("Total events with MC::Event: ${totalEventsWithMcEvent}")
-println("Total MC::Event rows summed: ${totalRows}")
-println("Total sum of MC::Event weight: ${totalSumWeights}")
+if (isDirectoryInput) {
+    println("")
+    println("Summary over all files looked over")
+    println("Input directory: ${inputPath}")
+    println("HIPO files selected: ${hipoFiles.size()}")
+    println("HIPO files processed: ${filesProcessed}")
+    println("Total events read: ${totalEvents}")
+    println("Total events with MC::Event: ${totalEventsWithMcEvent}")
+    println("Total MC::Event rows summed: ${totalRows}")
+    println("Total sum of MC::Event weight: ${totalSumWeights}")
+
+    if (foundAnyWeight) {
+        println("Maximum MC::Event weight over all files: ${totalMaxWeight}")
+    } else {
+        println("Maximum MC::Event weight over all files: none found")
+    }
+}
