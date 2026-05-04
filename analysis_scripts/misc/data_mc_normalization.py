@@ -47,8 +47,9 @@ LINEAR_Y_MIN = 0.0
 Y_PADDING_LINEAR = 1.30
 Y_PADDING_LOG = 30.0
 
-RATIO_LINEAR_Y_MIN = 0.0
-RATIO_Y_MAX = 2.0
+# Ratio plots are linear only.
+RATIO_LINEAR_Y_MIN = 0.2
+RATIO_Y_MAX = 1.5
 
 # -----------------------------------------------------------------------------
 # Plot variable configuration
@@ -584,6 +585,7 @@ def data_worker(args):
             for variable_config in PLOT_VARIABLES:
                 key = variable_config["key"]
                 event_weight = 1.0
+
                 filled = fill_variable_counts(
                     counts_by_variable,
                     sumw2_by_variable,
@@ -727,6 +729,7 @@ def mc_worker(args):
 
             for variable_config in PLOT_VARIABLES:
                 key = variable_config["key"]
+
                 filled = fill_variable_counts(
                     counts_by_variable,
                     sumw2_by_variable,
@@ -1136,8 +1139,8 @@ def style_histograms(data_histograms, mc_histograms, ratio_graphs):
         graph.SetLineColor(ROOT.kBlack)
         graph.SetMarkerColor(ROOT.kBlack)
         graph.SetMarkerStyle(20)
-        graph.SetMarkerSize(0.65)
-        graph.SetLineWidth(2)
+        graph.SetMarkerSize(0.95)
+        graph.SetLineWidth(1)
     #endfor
 
 
@@ -1246,26 +1249,19 @@ def draw_normalization_pad(output_tag, variable_config, total_charge_mc, integra
         title = "MC normalization"
     #endif
 
-    if log_y:
-        scale_label = "log y"
-    else:
-        scale_label = "linear y"
-    #endif
-
-    latex.DrawLatex(0.10, 0.90, output_tag)
-    latex.DrawLatex(0.10, 0.81, variable_config["title"])
-    latex.DrawLatex(0.10, 0.72, title)
-    latex.DrawLatex(0.10, 0.63, "scale: {}".format(scale_label))
-    latex.DrawLatex(0.10, 0.54, "Q = %.6g mC" % total_charge_mc)
-    latex.DrawLatex(0.10, 0.45, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
+    latex.DrawLatex(0.10, 0.88, output_tag)
+    latex.DrawLatex(0.10, 0.78, variable_config["title"])
+    latex.DrawLatex(0.10, 0.68, title)
+    latex.DrawLatex(0.10, 0.56, "Q = %.6g mC" % total_charge_mc)
+    latex.DrawLatex(0.10, 0.46, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
     latex.DrawLatex(0.10, 0.36, "N_{gen} = %.6g" % n_gen)
-    latex.DrawLatex(0.10, 0.27, "scale = L_{int}/N_{gen}")
-    latex.DrawLatex(0.10, 0.18, "scale = %.6g pb^{-1}" % normalization_factor)
+    latex.DrawLatex(0.10, 0.26, "scale = L_{int}/N_{gen}")
+    latex.DrawLatex(0.10, 0.16, "scale = %.6g pb^{-1}" % normalization_factor)
 
     if ratio_mode:
-        latex.DrawLatex(0.10, 0.09, "ratio: data / MC")
+        latex.DrawLatex(0.10, 0.06, "ratio: data / MC")
     else:
-        latex.DrawLatex(0.10, 0.09, "MC fill: scale #times weight")
+        latex.DrawLatex(0.10, 0.06, "MC fill: scale #times weight")
     #endif
 
 
@@ -1407,6 +1403,7 @@ def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, nor
     ))
 
     frame_histograms = []
+    unity_lines = []
 
     for i_panel in range(7):
         canvas.cd(canvas_pad_for_panel[i_panel])
@@ -1442,17 +1439,20 @@ def draw_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, nor
 
         frame_histograms.append(frame)
 
+        unity_line = ROOT.TLine(value_min, 1.0, value_max, 1.0)
+        unity_line.SetLineColor(ROOT.kRed + 1)
+        unity_line.SetLineStyle(2)
+        unity_line.SetLineWidth(2)
+        unity_line.Draw("SAME")
+        unity_lines.append(unity_line)
+
         graph = ratio_graphs[i_panel]
 
         if graph.GetN() > 0:
+            graph.SetMarkerSize(0.95)
+            graph.SetLineWidth(1)
             graph.Draw("PZ SAME")
         #endif
-
-        line = ROOT.TLine(value_min, 1.0, value_max, 1.0)
-        line.SetLineColor(ROOT.kRed + 1)
-        line.SetLineStyle(2)
-        line.SetLineWidth(2)
-        line.Draw("SAME")
     #endfor
 
     canvas.cd(4)
@@ -1577,7 +1577,7 @@ def main():
     status("Using event-by-event reconstructed MC branch: weight")
     status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
     status("Comparison y scales: common across FD sectors; CD uses its own scale.")
-    status("Ratio y scale: linear only, fixed from 0 to 2.")
+    status("Ratio y scale: linear only, fixed from 0.2 to 1.5.")
     status("Data and MC comparison plots are drawn as lines.")
     status("Ratio points use vertical statistical error bars only, with horizontal errors set to zero.")
     status("Variables to plot: {}".format(", ".join(get_variable_keys())))
