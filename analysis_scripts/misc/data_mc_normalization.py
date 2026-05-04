@@ -28,10 +28,16 @@ FD_THETA_MAX_DEG = 40.0
 CD_THETA_MIN_DEG = 40.0
 CD_THETA_MAX_DEG = 70.0
 
-# Previous theta binning was 70. This is approximately one third of that.
-N_BINS_THETA = 23
-N_BINS_P = 23
-N_BINS_PHI = 24
+# Previous theta/binning was already reduced to about 1/3 of 70.
+# Now reduce the FD binning by another factor of 2 while leaving CD unchanged.
+N_BINS_THETA_FD = 12
+N_BINS_THETA_CD = 23
+
+N_BINS_P_FD = 12
+N_BINS_P_CD = 23
+
+N_BINS_PHI_FD = 12
+N_BINS_PHI_CD = 24
 
 P1_P_MIN_GEV = 0.3
 P1_P_MAX_GEV = 1.3
@@ -71,7 +77,7 @@ RATIO_Y_MAX = 1.5
 #   FD: p1_theta < 40 deg
 #   CD: p1_theta >= 40 deg
 #
-# but the FD phi histogram is now combined over all six FD sectors.
+# but the FD phi histogram is combined over all six FD sectors.
 
 PLOT_VARIABLES = [
     {
@@ -79,7 +85,8 @@ PLOT_VARIABLES = [
         "branch": "p1_theta",
         "title": "p_{1} #theta",
         "x_title": "p_{1} #theta (deg)",
-        "n_bins": N_BINS_THETA,
+        "fd_n_bins": N_BINS_THETA_FD,
+        "cd_n_bins": N_BINS_THETA_CD,
         "fd_min": FD_THETA_MIN_DEG,
         "fd_max": FD_THETA_MAX_DEG,
         "cd_min": CD_THETA_MIN_DEG,
@@ -93,7 +100,8 @@ PLOT_VARIABLES = [
         "branch": "p1_p",
         "title": "p_{1} momentum",
         "x_title": "p_{1} momentum (GeV)",
-        "n_bins": N_BINS_P,
+        "fd_n_bins": N_BINS_P_FD,
+        "cd_n_bins": N_BINS_P_CD,
         "fd_min": P1_P_MIN_GEV,
         "fd_max": P1_P_MAX_GEV,
         "cd_min": P1_P_MIN_GEV,
@@ -107,7 +115,8 @@ PLOT_VARIABLES = [
         "branch": "p1_phi",
         "title": "p_{1} #phi",
         "x_title": "p_{1} #phi (deg)",
-        "n_bins": N_BINS_PHI,
+        "fd_n_bins": N_BINS_PHI_FD,
+        "cd_n_bins": N_BINS_PHI_CD,
         "fd_min": P1_PHI_MIN_DEG,
         "fd_max": P1_PHI_MAX_DEG,
         "cd_min": P1_PHI_MIN_DEG,
@@ -389,6 +398,30 @@ def get_plot_range_for_panel(variable_config, i_panel):
     fatal("invalid panel index {} for variable {}".format(i_panel, variable_config["key"]))
 
 
+def get_n_bins_for_panel(variable_config, i_panel):
+    if variable_config["layout"] == "sector_2x4":
+        if i_panel >= 0 and i_panel <= 5:
+            return variable_config["fd_n_bins"]
+        #endif
+
+        if i_panel == 6:
+            return variable_config["cd_n_bins"]
+        #endif
+    #endif
+
+    if variable_config["layout"] == "phi_1x3":
+        if i_panel == 0:
+            return variable_config["fd_n_bins"]
+        #endif
+
+        if i_panel == 1:
+            return variable_config["cd_n_bins"]
+        #endif
+    #endif
+
+    fatal("invalid panel index {} for variable {}".format(i_panel, variable_config["key"]))
+
+
 def get_panel_labels(variable_config):
     if variable_config["layout"] == "sector_2x4":
         return [
@@ -414,7 +447,7 @@ def get_panel_labels(variable_config):
 
 def get_value_bin_for_panel(variable_config, i_panel, value):
     value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
-    n_bins = variable_config["n_bins"]
+    n_bins = get_n_bins_for_panel(variable_config, i_panel)
 
     if value < value_min or value >= value_max:
         return -1
@@ -431,22 +464,31 @@ def get_value_bin_for_panel(variable_config, i_panel, value):
 
 
 def make_empty_counts_for_variable(variable_config):
-    n_bins = variable_config["n_bins"]
-    n_panels = variable_config["n_panels"]
-    return [[0.0 for _ in range(n_bins)] for _ in range(n_panels)]
+    counts = []
+
+    for i_panel in range(variable_config["n_panels"]):
+        n_bins = get_n_bins_for_panel(variable_config, i_panel)
+        counts.append([0.0 for _ in range(n_bins)])
+    #endfor
+
+    return counts
 
 
 def make_empty_sumw2_for_variable(variable_config):
-    n_bins = variable_config["n_bins"]
-    n_panels = variable_config["n_panels"]
-    return [[0.0 for _ in range(n_bins)] for _ in range(n_panels)]
+    sumw2 = []
+
+    for i_panel in range(variable_config["n_panels"]):
+        n_bins = get_n_bins_for_panel(variable_config, i_panel)
+        sumw2.append([0.0 for _ in range(n_bins)])
+    #endfor
+
+    return sumw2
 
 
 def add_counts_for_variable(total_counts, chunk_counts, variable_config):
-    n_bins = variable_config["n_bins"]
-    n_panels = variable_config["n_panels"]
+    for i_panel in range(variable_config["n_panels"]):
+        n_bins = get_n_bins_for_panel(variable_config, i_panel)
 
-    for i_panel in range(n_panels):
         for i_bin in range(n_bins):
             total_counts[i_panel][i_bin] += chunk_counts[i_panel][i_bin]
         #endfor
@@ -1155,6 +1197,7 @@ def arrays_to_histograms(prefix, variable_config, counts, sumw2):
 
     for i_panel in range(variable_config["n_panels"]):
         value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
+        n_bins = get_n_bins_for_panel(variable_config, i_panel)
 
         hist_name = "{}_{}_panel_{}".format(prefix, variable_config["key"], i_panel + 1)
         hist_title = "{};{};Counts".format(panel_labels[i_panel], variable_config["x_title"])
@@ -1162,14 +1205,14 @@ def arrays_to_histograms(prefix, variable_config, counts, sumw2):
         hist = ROOT.TH1D(
             hist_name,
             hist_title,
-            variable_config["n_bins"],
+            n_bins,
             value_min,
             value_max
         )
 
         hist.Sumw2()
 
-        for i_bin in range(variable_config["n_bins"]):
+        for i_bin in range(n_bins):
             root_bin = i_bin + 1
             content = counts[i_panel][i_bin]
             error = math.sqrt(sumw2[i_panel][i_bin])
@@ -1189,7 +1232,7 @@ def make_ratio_graphs(variable_config, data_histograms, mc_histograms):
 
     for i_panel in range(variable_config["n_panels"]):
         value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
-        n_bins = variable_config["n_bins"]
+        n_bins = get_n_bins_for_panel(variable_config, i_panel)
         bin_width = (value_max - value_min) / float(n_bins)
 
         graph = ROOT.TGraphErrors()
@@ -1691,11 +1734,12 @@ def draw_sector_ratio_canvas(output_tag, variable_config, ratio_graphs, output_p
         pad.SetLogy(False)
 
         value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
+        n_bins = get_n_bins_for_panel(variable_config, i_panel)
 
         frame = ROOT.TH1D(
             "frame_{}_panel_{}".format(variable_config["key"], i_panel + 1),
             "{}  {};{};data / MC".format(output_tag, panel_labels[i_panel], variable_config["x_title"]),
-            variable_config["n_bins"],
+            n_bins,
             value_min,
             value_max
         )
@@ -1766,11 +1810,12 @@ def draw_phi_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf,
         pad.SetLogy(False)
 
         value_min, value_max = get_plot_range_for_panel(variable_config, i_panel)
+        n_bins = get_n_bins_for_panel(variable_config, i_panel)
 
         frame = ROOT.TH1D(
             "frame_{}_panel_{}".format(variable_config["key"], i_panel + 1),
             "{}  {};{};data / MC".format(output_tag, panel_labels[i_panel], variable_config["x_title"]),
-            variable_config["n_bins"],
+            n_bins,
             value_min,
             value_max
         )
@@ -1972,6 +2017,9 @@ def main():
     status("Ratio points use vertical statistical error bars only, with horizontal errors set to zero.")
     status("Variables to plot: {}".format(", ".join(get_variable_keys())))
     status("Special p1_phi behavior: 1x3 canvas with FD combined, CD, and normalization pad.")
+    status("FD binning reduced by another factor of 2; CD binning left unchanged.")
+    status("FD bins: theta = {}, p = {}, phi = {}.".format(N_BINS_THETA_FD, N_BINS_P_FD, N_BINS_PHI_FD))
+    status("CD bins: theta = {}, p = {}, phi = {}.".format(N_BINS_THETA_CD, N_BINS_P_CD, N_BINS_PHI_CD))
 
     ROOT.gROOT.SetBatch(True)
 
@@ -2087,9 +2135,12 @@ def main():
     print("p1_p plotting range: {:.1f} to {:.1f} GeV".format(P1_P_MIN_GEV, P1_P_MAX_GEV))
     print("p1_phi plotting range: {:.1f} to {:.1f} deg".format(P1_PHI_MIN_DEG, P1_PHI_MAX_DEG))
     print("p1_phi canvas layout: 1x3, FD combined, CD, normalization pad")
-    print("Number of p1_theta bins: {}".format(N_BINS_THETA))
-    print("Number of p1_p bins: {}".format(N_BINS_P))
-    print("Number of p1_phi bins: {}".format(N_BINS_PHI))
+    print("Number of p1_theta FD bins: {}".format(N_BINS_THETA_FD))
+    print("Number of p1_theta CD bins: {}".format(N_BINS_THETA_CD))
+    print("Number of p1_p FD bins: {}".format(N_BINS_P_FD))
+    print("Number of p1_p CD bins: {}".format(N_BINS_P_CD))
+    print("Number of p1_phi FD bins: {}".format(N_BINS_PHI_FD))
+    print("Number of p1_phi CD bins: {}".format(N_BINS_PHI_CD))
     print("Comparison y scales: common across FD sectors where applicable; CD uses its own scale")
     print("Ratio y range linear: {:.12g} to {:.12g}".format(RATIO_LINEAR_Y_MIN, RATIO_Y_MAX))
     print("Total accumulated charge from CSV raw units: {:.12g}".format(total_charge_raw))
