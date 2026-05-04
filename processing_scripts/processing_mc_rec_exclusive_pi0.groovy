@@ -18,6 +18,20 @@ import groovy.io.FileType;
 // dilks CLAS QA analysis
 import clasqa.QADB
 
+public static double get_mc_event_weight(HipoDataEvent event) {
+	double weight = 1.0;
+
+	if (event.hasBank("MC::Event")) {
+		def mc_event_bank = event.getBank("MC::Event");
+
+		if (mc_event_bank.rows() > 0) {
+			weight = mc_event_bank.getFloat("weight", 0);
+		}
+	}
+
+	return weight;
+}
+
 public static void main(String[] args) {
 
 	// Start time
@@ -37,14 +51,14 @@ public static void main(String[] args) {
 		{ if (it.name.endsWith('.hipo')) hipo_list << it }
 
 	// Set the output file name based on the provided 2nd argument or use the default name
-	String output_file = args.length < 2 ? "dvcs_dummy_out.txt" : args[1];
+	String output_file = args.length < 2 ? "hadron_dummy_out.txt" : args[1];
 	if (args.length < 2) 
-	    println("WARNING: Specify an output file name. Set to \"dvcs_dummy_out.txt\".");
+	    println("WARNING: Specify an output file name. Set to \"hadron_dummy_out.txt\".");
 	File file = new File(output_file);
 	file.delete();
 	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
 
-	// Set the number of files to process based on the provided 3rd argument or list size
+	// Set the number of files to process based on the provided 3rd argument
 	// If the argument is "0", default to the full list size
 	int n_files = args.length < 3 || Integer.parseInt(args[2]) == 0 || Integer.parseInt(args[2]) > hipo_list.size()
 	    ? hipo_list.size() : Integer.parseInt(args[2]);
@@ -81,26 +95,44 @@ public static void main(String[] args) {
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
-	int helicity, detector1, detector2;
+	int helicity, detector1, detector2, detector_gamma1, detector_gamma2;
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
 	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
+	double open_angle_egamma1, open_angle_egamma2, gamma_phi1, gamma_phi2;
 	double Q2, W, y, Mx2, Mx2_1, Mx2_2; 
 	double x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, xi;
-	double z1, z2, xF1, xF2, Mh, pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
+	double z1, z2, xF1, xF2, Mh, Mh_gammagamma;
+	double pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
-	double Emiss2, theta_gamma_gamma, pTmiss;
+	double Emiss2, theta_pi0_pi0, pTmiss;
+	double weight;
 
 	// load my kinematic fitter/PID
-	GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
-	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
-	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
-	
-	// set filter for final states
-	EventFilter filter = new EventFilter("11:2212:22:Xn"); 
+	// Initialize the fitter
+	GenericKinematicFitter fitter;
 
+	// Uncomment the desired fitter
+	fitter = new analysis_fitter(10.6041); 
+	// fitter = new monte_carlo_fitter(10.6041);
+	// fitter = new event_builder_fitter(10.6041);  
+
+	// Set filter for final states based on fitter type
+	EventFilter filter;
+
+	if (fitter instanceof analysis_fitter) {
+	    // Use filter with 111 for analysis fitter
+	    filter = new EventFilter("11:2212:111:22:22:Xn");
+	} else if (fitter instanceof monte_carlo_fitter) {
+	    // Use filter without 111 for monte_carlo_fitter
+	    filter = new EventFilter("11:2212:22:22:Xn");
+	} else {
+	    // Default filter or another fitter type
+	    filter = new EventFilter("11:2212:111:22:22:Xn");
+	}
+	
 	// setup QA database
 	QADB qa = new QADB("latest");
 	qa.checkForDefect('TotalOutlier')    
@@ -140,7 +172,7 @@ public static void main(String[] args) {
 
 		while (reader.hasEvent()) {
 		    ++num_events;
-		    if (num_events % 500000 == 0) { // not necessary, just updates output
+		    if (num_events % 1000000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
 
@@ -150,6 +182,7 @@ public static void main(String[] args) {
 		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 		    float torus = event.getBank("RUN::config").getFloat("torus", 0);
+		    weight = get_mc_event_weight(event);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
@@ -161,7 +194,7 @@ public static void main(String[] args) {
 		    	qa.pass(runnum, evnum));
 		    if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
 	    	if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
-
+	    	
 	    	if (runnum == 5158 || 
 			    runnum == 5163 ||
 			    runnum == 5181 ||
@@ -244,22 +277,48 @@ public static void main(String[] args) {
 			    runnum == 3947) process_event = false;
 	    	
 		    if (process_event) {
-		        // get # of particles 
-		        int num_p1 = research_Event.countByPid(2212);
-		        int num_p2 = research_Event.countByPid(22); 
+
+		    	int num_photons = research_Event.countByPid(22);
+		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
+		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
+		    			if (current_gamma1 == current_gamma2) continue;
+
+		    			// supply runnum and boolean for radiative simulation or not
+						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
+							22, current_gamma1, 22, current_gamma2, energy);
+
+			            Mh_gammagamma = variables.Mh();
+			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
+			            detector_gamma1 = variables.get_detector1();
+			            detector_gamma2 = variables.get_detector2();
+			            open_angle_egamma1 = variables.open_angle_ep1();
+			            open_angle_egamma2 = variables.open_angle_ep2();
+			            gamma_phi1 = variables.phi1();
+			            gamma_phi2 = variables.phi2();
+		    		}
+		    	}
+		    	if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+		    	if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 
         		// supply runnum and boolean for radiative simulation or not
 				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 				double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 	            ThreeParticles variables = new ThreeParticles(event, research_Event, 
-					2212, 0, 22, 0, energy);
+					2212, 0, 111, 0, energy);
 	            // this is my class for defining all relevant kinematic variables
+
 	            if (variables.channel_test(variables)) {
-	            	fiducial_status = variables.get_fiducial_status();
+
+	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
-	                detector1 = variables.get_detector1();
-	                detector2 = variables.get_detector2();
+	                detector1 = variables.get_detector1(); 
+	                detector2 = detector_gamma1; // the pi0 isn't actually detected in detector
+	                // so put in the location of the photons it's formed from 
 	                num_pos = variables.get_num_pos();
 	                num_neg = variables.get_num_neg();
 	                num_neutrals = variables.get_num_neutrals();
@@ -274,10 +333,10 @@ public static void main(String[] args) {
 	                p2_phi = variables.p2_phi(); // lab azimuthal angle
 	                p2_p = variables.p2_p(); // lab momentum
 	                p2_theta = variables.p2_theta(); // lab polar angle
-	                open_angle_ep = variables.open_angle_ep;
-	                open_angle_ep1 = variables.open_angle_ep1;
-	                open_angle_ep2 = variables.open_angle_ep2;
-	                open_angle_p1p2 = variables.open_angle_p1p2;
+	                open_angle_ep = variables.open_angle_ep(); 
+	                open_angle_ep1 = variables.open_angle_ep1(); 
+	                open_angle_ep2 = variables.open_angle_ep2(); 
+	                open_angle_p1p2 = variables.open_angle_p1p2(); 
 
 	                // vertices
 	                vz_e = variables.vz_e();
@@ -286,7 +345,7 @@ public static void main(String[] args) {
 
 	                // DIS variables
 	                Q2 = variables.Q2(); // exchanged virtual photon energy
-	                if (torus == -1 && Q2 < 1.5) { continue;}
+	                if (torus == -1 && Q2 < 1.5) { continue; }
 
 	                W = variables.W(); // hadronic mass
 	                x = variables.x(); // Bjorken-x
@@ -295,9 +354,9 @@ public static void main(String[] args) {
 	                t2 = variables.t2();
 	                tmin = variables.tmin();
 	                y = variables.y(); // E_scat/E_beam
-	                Mx2 = variables.Mx2(); // missing mass
-	                Mx2_1 = variables.Mx2_1(); // missing mass calculated with p1
-	                Mx2_2 = variables.Mx2_2(); // missing mass squared
+	                Mx2 = variables.Mx2(); // missing mass squared
+	                Mx2_1 = variables.Mx2_1(); // missing mass squared calculated with p1
+	                Mx2_2 = variables.Mx2_2(); // missing mass squared calculated with p2
 
 	                // SIDIS variables
 	                z = variables.z(); // fractional hadron energy wrt virtual photon
@@ -341,7 +400,7 @@ public static void main(String[] args) {
 
 			    	// exclusivity variables
 			    	Emiss2 = variables.Emiss2();
-			    	theta_gamma_gamma = variables.theta_gamma_gamma();
+			    	theta_pi0_pi0 = variables.theta_gamma_gamma();
 			    	pTmiss = variables.pTmiss();
 
 	                // Use a StringBuilder to append all data in a single call
@@ -413,9 +472,17 @@ public static void main(String[] args) {
 	                    .append(Depolarization_C).append(" ")
 	                    .append(Depolarization_V).append(" ")
 	                    .append(Depolarization_W).append(" ")
+	                    .append(Mh_gammagamma).append(" ")
+	                    .append(detector_gamma1).append(" ")
+	                    .append(detector_gamma2).append(" ")
+	                    .append(open_angle_egamma1).append(" ")
+	                    .append(open_angle_egamma2).append(" ")
+	                    .append(gamma_phi1).append(" ")
+	                    .append(gamma_phi2).append(" ")
 	                    .append(Emiss2).append(" ")
-	                    .append(theta_gamma_gamma).append(" ")
-	                    .append(pTmiss).append("\n");
+	                    .append(theta_pi0_pi0).append(" ")
+	                    .append(pTmiss).append(" ")
+	                    .append(weight).append("\n");
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
@@ -427,8 +494,8 @@ public static void main(String[] args) {
 	                    batchLines.setLength(0);
 	                    lineCount = 0;
 	                }
-	            }  
-		    }
+	            }
+		    } 
 		reader.close();
 		}
 
@@ -446,10 +513,10 @@ public static void main(String[] args) {
 	    "38: z1, 39: z2, 40: Mh, 41: xF, 42: xF1, 43: xF2, 44: pT, 45: pT1, 46: pT2, 47: pTpT, " +
 	    "48: xi, 49: xi1, 50: xi2, 51: eta, 52: eta1, 53: eta2, 54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
 	    "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
-	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, 68: Emiss2, 69: theta_gamma_gamma, " +
-	    "70: pTmiss");
+	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, 68: Mh_gammagamma, " +
+	    "69: detector_gamma1, 70: detector_gamma2, 71: open_angle_egamma1, 72: open_angle_egamma2, 73: gamma_phi1, 74: gamma_phi2" +
+	    "75: Emiss2, 76: theta_pi0_pi0, 77: pTmiss, 78: weight.");
 
-		println("Analyzing dvcs.");
 		println("output text file is: $file");
 	}
 

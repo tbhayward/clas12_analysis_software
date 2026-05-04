@@ -1,5 +1,7 @@
 /*
  * author Timothy B. Hayward
+ * 
+ * SIDIS dihadron 
  */
 
 // import CLAS12 physics classes
@@ -17,6 +19,20 @@ import groovy.io.FileType;
 
 // dilks CLAS QA analysis
 import clasqa.QADB
+
+public static double get_mc_event_weight(HipoDataEvent event) {
+	double weight = 1.0;
+
+	if (event.hasBank("MC::Event")) {
+		def mc_event_bank = event.getBank("MC::Event");
+
+		if (mc_event_bank.rows() > 0) {
+			weight = mc_event_bank.getFloat("weight", 0);
+		}
+	}
+
+	return weight;
+}
 
 public static void main(String[] args) {
 
@@ -92,6 +108,7 @@ public static void main(String[] args) {
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
 	double Emiss2, theta_gamma_gamma, pTmiss;
+	double weight;
 
 	// load my kinematic fitter/PID
 	GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
@@ -150,6 +167,7 @@ public static void main(String[] args) {
 		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 		    float torus = event.getBank("RUN::config").getFloat("torus", 0);
+		    weight = get_mc_event_weight(event);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
@@ -415,7 +433,8 @@ public static void main(String[] args) {
 	                    .append(Depolarization_W).append(" ")
 	                    .append(Emiss2).append(" ")
 	                    .append(theta_gamma_gamma).append(" ")
-	                    .append(pTmiss).append("\n");
+	                    .append(pTmiss).append(" ")
+	                    .append(weight).append("\n");
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
@@ -447,7 +466,7 @@ public static void main(String[] args) {
 	    "48: xi, 49: xi1, 50: xi2, 51: eta, 52: eta1, 53: eta2, 54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
 	    "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
 	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, 68: Emiss2, 69: theta_gamma_gamma, " +
-	    "70: pTmiss");
+	    "70: pTmiss, 71: weight");
 
 		println("Analyzing dvcs.");
 		println("output text file is: $file");

@@ -9,6 +9,7 @@ if ( $#argv < 1 ) then
 else
     set arg1 = "$1"
 endif
+
 # Determine the third argument for ./convert_txt_to_root based on arg1
 # Initialize to 0 as default value
 set convert_arg3 = 0
@@ -38,6 +39,10 @@ else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
 else if ($arg1 == "processing_scripts/processing_dvcs_calibration.groovy") then
     set convert_arg3 = 6 # calibration
+else if ($arg1 == "processing_scripts/processing_mc_rec_dvcs.groovy") then
+    set convert_arg3 = 7 # reconstructed MC dvcs with MC::Event weight
+else if ($arg1 == "processing_scripts/processing_mc_rec_exclusive_pi0.groovy") then
+    set convert_arg3 = 8 # reconstructed MC eppi0 with MC::Event weight
 else
     echo "Error: unrecognized processing script: $arg1"
     exit 1
@@ -52,6 +57,10 @@ else if ($arg1 == "processing_scripts/processing_mc_two_particles.groovy") then
 else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") then
     set is_mc = 1;
 else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
+    set is_mc = 1;
+else if ($arg1 == "processing_scripts/processing_mc_rec_dvcs.groovy") then
+    set is_mc = 1;
+else if ($arg1 == "processing_scripts/processing_mc_rec_exclusive_pi0.groovy") then
     set is_mc = 1;
 endif
 
@@ -71,6 +80,7 @@ module load qadb/3.4.1
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
 echo "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+
 # execute command based on number of entries (or dvcs/eppi0/calibration designation)
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" 
@@ -127,6 +137,18 @@ else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+    # Run the convert_txt_to_root program
+    set txt_file = "$3.txt"
+    set root_file = "$3.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_mc_rec_dvcs.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+    # Run the convert_txt_to_root program
+    set txt_file = "$3.txt"
+    set root_file = "$3.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_mc_rec_exclusive_pi0.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
     # Run the convert_txt_to_root program
     set txt_file = "$3.txt"
