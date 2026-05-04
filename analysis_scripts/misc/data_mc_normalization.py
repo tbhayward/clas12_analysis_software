@@ -15,23 +15,6 @@ import ROOT
 
 GLOBAL_CHARGE_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
-# Temporary approximation:
-#
-# The generated MC has event-by-event MC::Event.weight values, but the current
-# reconstructed ROOT tree does not yet carry those weights. For now, use the
-# average generated MC::Event.weight as an effective constant generator weight.
-#
-# You reported:
-#
-#   sum(MC::Event.weight) = 4 * 3.508383992386323E11
-#   N_GEN                 = 127630261
-#
-# Therefore:
-#
-#   average generated weight = sum(MC::Event.weight) / N_GEN
-#
-DEFAULT_AVG_GEN_WEIGHT_PB = (4.0 * 3.508383992386323e11) / 127630261.0
-
 # The global.csv charge values look like nC in the examples you showed.
 # Since the normalization formula wants Q in mC, the default conversion is:
 #
@@ -51,8 +34,8 @@ RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC = 1316.875
 
 OUTPUT_PDF = "output/data_mc_normalization/output.pdf"
 
-# Panels 1-6 are FD sectors, now defined only by p1_theta < 40 degrees.
-# Panel 7 is CD, now defined only by p1_theta >= 40 degrees.
+# Panels 1-6 are FD sectors, defined only by p1_theta < 40 degrees.
+# Panel 7 is CD, defined only by p1_theta >= 40 degrees.
 FD_THETA_MIN_DEG = 0.0
 FD_THETA_MAX_DEG = 40.0
 
@@ -277,6 +260,10 @@ def make_empty_counts():
     return [[0.0 for _ in range(N_BINS_THETA)] for _ in range(7)]
 
 
+def make_empty_sumw2():
+    return [[0.0 for _ in range(N_BINS_THETA)] for _ in range(7)]
+
+
 def add_counts(total_counts, chunk_counts):
     for i_panel in range(7):
         for i_bin in range(N_BINS_THETA):
@@ -393,6 +380,7 @@ def configure_tree_for_mc(tree):
     tree.SetBranchStatus("*", 0)
     tree.SetBranchStatus("p1_phi", 1)
     tree.SetBranchStatus("p1_theta", 1)
+    tree.SetBranchStatus("weight", 1)
 
 
 def data_worker(args):
@@ -419,6 +407,7 @@ def data_worker(args):
     configure_tree_for_data(tree)
 
     counts = make_empty_counts()
+    sumw2 = make_empty_sumw2()
     unique_runs = set()
 
     n_filled = 0
@@ -454,7 +443,9 @@ def data_worker(args):
             if i_bin < 0:
                 n_skipped_theta += 1
             else:
-                counts[i_panel][i_bin] += 1.0
+                event_weight = 1.0
+                counts[i_panel][i_bin] += event_weight
+                sumw2[i_panel][i_bin] += event_weight * event_weight
                 n_filled += 1
 
                 if i_panel >= 0 and i_panel <= 5:
@@ -495,6 +486,7 @@ def data_worker(args):
 
     return {
         "counts": counts,
+        "sumw2": sumw2,
         "unique_runs": sorted(unique_runs),
         "n_filled": n_filled,
         "n_fd": n_fd,
@@ -511,6 +503,7 @@ def mc_worker(args):
     end_entry = args["end_entry"]
     worker_id = args["worker_id"]
     status_every = args["status_every"]
+    normalization_factor = args["normalization_factor"]
 
     root_file = ROOT.TFile.Open(root_path, "READ")
 
@@ -528,6 +521,7 @@ def mc_worker(args):
     configure_tree_for_mc(tree)
 
     counts = make_empty_counts()
+    sumw2 = make_empty_sumw2()
 
     n_filled = 0
     n_fd = 0
@@ -535,6 +529,9 @@ def mc_worker(args):
     n_skipped_panel = 0
     n_skipped_theta = 0
     n_total = end_entry - start_entry
+    raw_weight_sum = 0.0
+    scaled_weight_sum = 0.0
+    max_raw_weight = None
 
     print("[{}] MC worker {} starting entries {} to {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -548,6 +545,8 @@ def mc_worker(args):
 
         p1_phi_rad = float(getattr(tree, "p1_phi"))
         p1_theta_rad = float(getattr(tree, "p1_theta"))
+        raw_weight = float(getattr(tree, "weight"))
+        event_weight = normalization_factor * raw_weight
 
         i_panel = get_panel_index_from_theta_and_phi(p1_theta_rad, p1_phi_rad)
 
@@ -559,7 +558,15 @@ def mc_worker(args):
             if i_bin < 0:
                 n_skipped_theta += 1
             else:
-                counts[i_panel][i_bin] += 1.0
+                counts[i_panel][i_bin] += event_weight
+                sumw2[i_panel][i_bin] += event_weight * event_weight
+                raw_weight_sum += raw_weight
+                scaled_weight_sum += event_weight
+
+                if max_raw_weight is None or raw_weight > max_raw_weight:
+                    max_raw_weight = raw_weight
+                #endif
+
                 n_filled += 1
 
                 if i_panel >= 0 and i_panel <= 5:
@@ -571,7 +578,7 @@ def mc_worker(args):
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | filled: {} | FD(theta<40): {} | CD(theta>=40): {}".format(
+            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | filled: {} | FD(theta<40): {} | CD(theta>=40): {} | raw weight sum in filled bins: {:.12g}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
@@ -579,30 +586,42 @@ def mc_worker(args):
                 format_percent(local_index, n_total),
                 n_filled,
                 n_fd,
-                n_cd
+                n_cd,
+                raw_weight_sum
             ), flush=True)
         #endif
     #endfor
 
     root_file.Close()
 
-    print("[{}] MC worker {} finished: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}.".format(
+    if max_raw_weight is None:
+        max_raw_weight = 0.0
+    #endif
+
+    print("[{}] MC worker {} finished: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}, raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
         n_filled,
         n_fd,
         n_cd,
         n_skipped_panel,
-        n_skipped_theta
+        n_skipped_theta,
+        raw_weight_sum,
+        scaled_weight_sum,
+        max_raw_weight
     ), flush=True)
 
     return {
         "counts": counts,
+        "sumw2": sumw2,
         "n_filled": n_filled,
         "n_fd": n_fd,
         "n_cd": n_cd,
         "n_skipped_panel": n_skipped_panel,
         "n_skipped_theta": n_skipped_theta,
+        "raw_weight_sum": raw_weight_sum,
+        "scaled_weight_sum": scaled_weight_sum,
+        "max_raw_weight": max_raw_weight,
     }
 
 
@@ -633,6 +652,7 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
     status("Starting parallel data pass with {} workers.".format(len(tasks)))
 
     total_counts = make_empty_counts()
+    total_sumw2 = make_empty_sumw2()
     unique_runs = set()
 
     n_filled = 0
@@ -647,6 +667,7 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
 
     for result in results:
         add_counts(total_counts, result["counts"])
+        add_counts(total_sumw2, result["sumw2"])
         unique_runs.update(result["unique_runs"])
         n_filled += result["n_filled"]
         n_fd += result["n_fd"]
@@ -667,6 +688,7 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
 
     return {
         "counts": total_counts,
+        "sumw2": total_sumw2,
         "unique_runs": unique_runs,
         "n_filled": n_filled,
         "n_fd": n_fd,
@@ -676,7 +698,7 @@ def run_data_parallel(root_path, tree_name, n_entries, max_workers, status_every
     }
 
 
-def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
+def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, normalization_factor):
     n_workers = min(max_workers, n_entries)
 
     if n_workers < 1:
@@ -697,18 +719,23 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
             "end_entry": end_entry,
             "worker_id": i_worker + 1,
             "status_every": status_every,
+            "normalization_factor": normalization_factor,
         })
     #endfor
 
     status("Starting parallel reconstructed MC pass with {} workers.".format(len(tasks)))
 
     total_counts = make_empty_counts()
+    total_sumw2 = make_empty_sumw2()
 
     n_filled = 0
     n_fd = 0
     n_cd = 0
     n_skipped_panel = 0
     n_skipped_theta = 0
+    raw_weight_sum = 0.0
+    scaled_weight_sum = 0.0
+    max_raw_weight = None
 
     with mp.Pool(processes=len(tasks)) as pool:
         results = pool.map(mc_worker, tasks)
@@ -716,12 +743,23 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
 
     for result in results:
         add_counts(total_counts, result["counts"])
+        add_counts(total_sumw2, result["sumw2"])
         n_filled += result["n_filled"]
         n_fd += result["n_fd"]
         n_cd += result["n_cd"]
         n_skipped_panel += result["n_skipped_panel"]
         n_skipped_theta += result["n_skipped_theta"]
+        raw_weight_sum += result["raw_weight_sum"]
+        scaled_weight_sum += result["scaled_weight_sum"]
+
+        if max_raw_weight is None or result["max_raw_weight"] > max_raw_weight:
+            max_raw_weight = result["max_raw_weight"]
+        #endif
     #endfor
+
+    if max_raw_weight is None:
+        max_raw_weight = 0.0
+    #endif
 
     status("Finished parallel reconstructed MC pass.")
     status("Reco MC total: filled = {}, FD(theta<40) = {}, CD(theta>=40) = {}, skipped panel = {}, skipped theta = {}.".format(
@@ -731,14 +769,23 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
         n_skipped_panel,
         n_skipped_theta
     ))
+    status("Reco MC weight summary over filled entries: raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
+        raw_weight_sum,
+        scaled_weight_sum,
+        max_raw_weight
+    ))
 
     return {
         "counts": total_counts,
+        "sumw2": total_sumw2,
         "n_filled": n_filled,
         "n_fd": n_fd,
         "n_cd": n_cd,
         "n_skipped_panel": n_skipped_panel,
         "n_skipped_theta": n_skipped_theta,
+        "raw_weight_sum": raw_weight_sum,
+        "scaled_weight_sum": scaled_weight_sum,
+        "max_raw_weight": max_raw_weight,
     }
 
 
@@ -746,7 +793,7 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every):
 # Histogram and plotting helpers
 # -----------------------------------------------------------------------------
 
-def counts_to_histograms(prefix, counts):
+def arrays_to_histograms(prefix, counts, sumw2):
     histograms = []
 
     panel_names = [
@@ -778,55 +825,7 @@ def counts_to_histograms(prefix, counts):
         for i_bin in range(N_BINS_THETA):
             root_bin = i_bin + 1
             content = counts[i_panel][i_bin]
-            hist.SetBinContent(root_bin, content)
-
-            if content >= 0.0:
-                hist.SetBinError(root_bin, math.sqrt(content))
-            else:
-                hist.SetBinError(root_bin, 0.0)
-            #endif
-        #endfor
-
-        histograms.append(hist)
-    #endfor
-
-    return histograms
-
-
-def scaled_counts_to_histograms(prefix, counts, scale):
-    histograms = []
-
-    panel_names = [
-        "FD sector 1",
-        "FD sector 2",
-        "FD sector 3",
-        "FD sector 4",
-        "FD sector 5",
-        "FD sector 6",
-        "CD",
-    ]
-
-    for i_panel in range(7):
-        theta_min, theta_max = get_theta_range_for_panel(i_panel)
-
-        hist_name = "{}_panel_{}".format(prefix, i_panel + 1)
-        hist_title = "{};p_{{1}} #theta (deg);Counts".format(panel_names[i_panel])
-
-        hist = ROOT.TH1D(
-            hist_name,
-            hist_title,
-            N_BINS_THETA,
-            theta_min,
-            theta_max
-        )
-
-        hist.Sumw2()
-
-        for i_bin in range(N_BINS_THETA):
-            root_bin = i_bin + 1
-            raw_count = counts[i_panel][i_bin]
-            content = scale * raw_count
-            error = abs(scale) * math.sqrt(raw_count)
+            error = math.sqrt(sumw2[i_panel][i_bin])
 
             hist.SetBinContent(root_bin, content)
             hist.SetBinError(root_bin, error)
@@ -860,7 +859,7 @@ def style_histograms(data_histograms, mc_histograms):
     #endfor
 
 
-def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg_gen_weight_pb, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+def draw_canvas(data_histograms, mc_histograms, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
     status("Drawing output canvas.")
 
     ROOT.gStyle.SetOptStat(0)
@@ -929,7 +928,7 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg
         legend.SetFillColor(ROOT.kWhite)
         legend.SetTextSize(0.032)
         legend.AddEntry(h_data, "data", "lep")
-        legend.AddEntry(h_mc, "MC scaled", "l")
+        legend.AddEntry(h_mc, "MC weighted", "l")
         legend.Draw()
     #endfor
 
@@ -944,10 +943,10 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg
     latex.DrawLatex(0.10, 0.84, "MC normalization")
     latex.DrawLatex(0.10, 0.74, "Q = %.6g mC" % total_charge_mc)
     latex.DrawLatex(0.10, 0.64, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
-    latex.DrawLatex(0.10, 0.54, "#LT w_{gen} #GT = %.6g pb" % avg_gen_weight_pb)
-    latex.DrawLatex(0.10, 0.44, "N_{gen} = %d" % n_gen)
-    latex.DrawLatex(0.10, 0.34, "event weight = %.6g" % mc_event_weight)
-    latex.DrawLatex(0.10, 0.24, "temporary average-weight approx.")
+    latex.DrawLatex(0.10, 0.54, "N_{gen} = %d" % n_gen)
+    latex.DrawLatex(0.10, 0.44, "scale = L_{int}/N_{gen}")
+    latex.DrawLatex(0.10, 0.34, "scale = %.6g pb^{-1}" % normalization_factor)
+    latex.DrawLatex(0.10, 0.24, "MC fill: scale #times weight")
     latex.DrawLatex(0.10, 0.14, "FD: #theta < 40 deg, CD: #theta #geq 40 deg")
 
     ensure_output_directory(output_pdf)
@@ -963,14 +962,13 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare data and reconstructed MC p1_theta using theta-defined FD/CD regions with temporary average-weight MC normalization."
+        description="Compare data and reconstructed MC p1_theta using theta-defined FD/CD regions with event-by-event MC::Event.weight normalization."
     )
 
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
-    parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents")
+    parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents and weight")
     parser.add_argument("gen_mc_root", help="Input generated MC ROOT file containing PhysicsEvents")
     parser.add_argument("--output", default=OUTPUT_PDF, help="Output PDF path")
-    parser.add_argument("--avg-gen-weight-pb", type=float, default=DEFAULT_AVG_GEN_WEIGHT_PB, help="Temporary average generated MC::Event.weight value in pb")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
     parser.add_argument("--charge-to-mc-factor", type=float, default=CHARGE_TO_MC_FACTOR, help="Conversion factor from CSV charge units to mC")
     parser.add_argument("--status-every", type=int, default=DEFAULT_STATUS_EVERY, help="Print loop progress every N entries per worker")
@@ -996,7 +994,7 @@ def main():
     status("Generated MC file: {}".format(args.gen_mc_root))
     status("Output PDF: {}".format(args.output))
     status("Maximum worker processes: {}".format(max_workers))
-    status("Temporary average generated weight: {:.12g} pb".format(args.avg_gen_weight_pb))
+    status("Using event-by-event reconstructed MC branch: weight")
     status("Detector definition override: FD = p1_theta < 40 deg; CD = p1_theta >= 40 deg.")
     status("FD histograms use theta range 0 to 40 deg; CD histogram uses theta range 40 to 70 deg.")
 
@@ -1012,7 +1010,7 @@ def main():
     n_reco_mc_entries = check_input_tree(
         args.reco_mc_root,
         "PhysicsEvents",
-        ["p1_phi", "p1_theta"],
+        ["p1_phi", "p1_theta", "weight"],
         "reconstructed MC"
     )
 
@@ -1043,40 +1041,41 @@ def main():
 
     integrated_luminosity_pb_inv = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * total_charge_mc
 
-    # Temporary approximation:
+    # Weighted-MC normalization:
     #
-    # Proper weighted MC should use:
+    #   per-event plot weight = L_int * MC::Event.weight / N_GEN
     #
-    #   per-event plot weight = L_int * mc_weight / N_GEN
+    # The reconstructed ROOT tree now carries MC::Event.weight as the branch:
     #
-    # where mc_weight is MC::Event.weight carried into the reconstructed ROOT tree.
+    #   weight
     #
-    # For now, because the reconstructed tree does not carry mc_weight, use:
+    # Therefore the worker fills MC histograms using:
     #
-    #   per-event plot weight = L_int * <mc_weight> / N_GEN
+    #   event_weight = normalization_factor * weight
     #
-    mc_event_weight = integrated_luminosity_pb_inv * args.avg_gen_weight_pb / float(n_gen)
+    normalization_factor = integrated_luminosity_pb_inv / float(n_gen)
 
-    status("Computed temporary average-weight normalization:")
+    status("Computed event-by-event MC normalization:")
     status("  Raw charge sum = {:.12g}".format(total_charge_raw))
     status("  Q = {:.12g} mC".format(total_charge_mc))
     status("  L_int = {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    status("  <MC::Event.weight> = {:.12g} pb".format(args.avg_gen_weight_pb))
     status("  N_GEN = {}".format(n_gen))
-    status("  MC event weight = {:.12g}".format(mc_event_weight))
+    status("  normalization factor L_int / N_GEN = {:.12g} pb^-1".format(normalization_factor))
+    status("  MC event fill weight = (L_int / N_GEN) * weight")
 
     mc_result = run_mc_parallel(
         args.reco_mc_root,
         "PhysicsEvents",
         n_reco_mc_entries,
         max_workers,
-        args.status_every
+        args.status_every,
+        normalization_factor
     )
 
     status("Building ROOT histograms from accumulated bin arrays.")
 
-    data_histograms = counts_to_histograms("data", data_result["counts"])
-    mc_histograms = scaled_counts_to_histograms("mc", mc_result["counts"], mc_event_weight)
+    data_histograms = arrays_to_histograms("data", data_result["counts"], data_result["sumw2"])
+    mc_histograms = arrays_to_histograms("mc", mc_result["counts"], mc_result["sumw2"])
 
     style_histograms(data_histograms, mc_histograms)
 
@@ -1084,8 +1083,7 @@ def main():
         data_histograms,
         mc_histograms,
         args.output,
-        mc_event_weight,
-        args.avg_gen_weight_pb,
+        normalization_factor,
         total_charge_mc,
         integrated_luminosity_pb_inv,
         n_gen
@@ -1110,15 +1108,17 @@ def main():
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
     print("Integrated luminosity: {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    print("Temporary average MC::Event.weight: {:.12g} pb".format(args.avg_gen_weight_pb))
     print("N_GEN: {}".format(n_gen))
-    print("MC event weight: {:.12g}".format(mc_event_weight))
+    print("Normalization factor L_int / N_GEN: {:.12g} pb^-1".format(normalization_factor))
     print("Data entries filled: {}".format(data_result["n_filled"]))
     print("Data FD entries filled: {}".format(data_result["n_fd"]))
     print("Data CD entries filled: {}".format(data_result["n_cd"]))
     print("Reco MC entries filled: {}".format(mc_result["n_filled"]))
     print("Reco MC FD entries filled: {}".format(mc_result["n_fd"]))
     print("Reco MC CD entries filled: {}".format(mc_result["n_cd"]))
+    print("Reco MC raw weight sum over filled entries: {:.12g}".format(mc_result["raw_weight_sum"]))
+    print("Reco MC scaled weight sum over filled entries: {:.12g}".format(mc_result["scaled_weight_sum"]))
+    print("Reco MC maximum raw weight over filled entries: {:.12g}".format(mc_result["max_raw_weight"]))
     print("Output PDF: {}".format(args.output))
     print("Elapsed time: {:.2f} seconds".format(elapsed_time))
 
