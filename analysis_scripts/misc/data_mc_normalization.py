@@ -15,8 +15,22 @@ import ROOT
 
 GLOBAL_CHARGE_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
-# Generator total cross section in pb.
-DEFAULT_SIGMA_GEN_TOT_PB = 294734.8125
+# Temporary approximation:
+#
+# The generated MC has event-by-event MC::Event.weight values, but the current
+# reconstructed ROOT tree does not yet carry those weights. For now, use the
+# average generated MC::Event.weight as an effective constant generator weight.
+#
+# You reported:
+#
+#   sum(MC::Event.weight) = 4 * 3.508383992386323E11
+#   N_GEN                 = 127630261
+#
+# Therefore:
+#
+#   average generated weight = sum(MC::Event.weight) / N_GEN
+#
+DEFAULT_AVG_GEN_WEIGHT_PB = (4.0 * 3.508383992386323e11) / 127630261.0
 
 # The global.csv charge values look like nC in the examples you showed.
 # Since the normalization formula wants Q in mC, the default conversion is:
@@ -808,7 +822,7 @@ def style_histograms(data_histograms, mc_histograms):
     #endfor
 
 
-def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sigma_gen_tot_pb, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
+def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, avg_gen_weight_pb, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
     status("Drawing output canvas.")
 
     ROOT.gStyle.SetOptStat(0)
@@ -826,26 +840,6 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sig
         "Central detector",
     ]
 
-    # Histogram panel order:
-    #
-    #   0 -> FD sector 1
-    #   1 -> FD sector 2
-    #   2 -> FD sector 3
-    #   3 -> FD sector 4
-    #   4 -> FD sector 5
-    #   5 -> FD sector 6
-    #   6 -> CD
-    #
-    # Canvas pad order for 2x4:
-    #
-    #   top row:    pad 1, pad 2, pad 3, pad 4
-    #   bottom row: pad 5, pad 6, pad 7, pad 8
-    #
-    # Requested layout:
-    #
-    #   top row:    sector 1, sector 2, sector 3, empty/normalization
-    #   bottom row: sector 4, sector 5, sector 6, CD
-    #
     canvas_pad_for_panel = [
         1,
         2,
@@ -908,13 +902,14 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sig
 
     latex = ROOT.TLatex()
     latex.SetNDC(True)
-    latex.SetTextSize(0.040)
+    latex.SetTextSize(0.037)
     latex.DrawLatex(0.10, 0.84, "MC normalization")
     latex.DrawLatex(0.10, 0.74, "Q = %.6g mC" % total_charge_mc)
     latex.DrawLatex(0.10, 0.64, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
-    latex.DrawLatex(0.10, 0.54, "#sigma_{gen}^{tot} = %.6g pb" % sigma_gen_tot_pb)
+    latex.DrawLatex(0.10, 0.54, "#LT w_{gen} #GT = %.6g pb" % avg_gen_weight_pb)
     latex.DrawLatex(0.10, 0.44, "N_{gen} = %d" % n_gen)
     latex.DrawLatex(0.10, 0.34, "event weight = %.6g" % mc_event_weight)
+    latex.DrawLatex(0.10, 0.24, "temporary average-weight approx.")
 
     ensure_output_directory(output_pdf)
 
@@ -929,14 +924,14 @@ def draw_canvas(data_histograms, mc_histograms, output_pdf, mc_event_weight, sig
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare data and reconstructed MC p1_theta by FD sector and CD, with MC normalized to expected yield."
+        description="Compare data and reconstructed MC p1_theta by FD sector and CD, with temporary average-weight MC normalization."
     )
 
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
     parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents")
     parser.add_argument("gen_mc_root", help="Input generated MC ROOT file containing PhysicsEvents")
     parser.add_argument("--output", default=OUTPUT_PDF, help="Output PDF path")
-    parser.add_argument("--sigma-gen-tot-pb", type=float, default=DEFAULT_SIGMA_GEN_TOT_PB, help="Generator total cross section in pb")
+    parser.add_argument("--avg-gen-weight-pb", type=float, default=DEFAULT_AVG_GEN_WEIGHT_PB, help="Temporary average generated MC::Event.weight value in pb")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
     parser.add_argument("--charge-to-mc-factor", type=float, default=CHARGE_TO_MC_FACTOR, help="Conversion factor from CSV charge units to mC")
     parser.add_argument("--status-every", type=int, default=DEFAULT_STATUS_EVERY, help="Print loop progress every N entries per worker")
@@ -962,6 +957,7 @@ def main():
     status("Generated MC file: {}".format(args.gen_mc_root))
     status("Output PDF: {}".format(args.output))
     status("Maximum worker processes: {}".format(max_workers))
+    status("Temporary average generated weight: {:.12g} pb".format(args.avg_gen_weight_pb))
 
     ROOT.gROOT.SetBatch(True)
 
@@ -1005,13 +1001,26 @@ def main():
     total_charge_mc = total_charge_raw * args.charge_to_mc_factor
 
     integrated_luminosity_pb_inv = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * total_charge_mc
-    mc_event_weight = integrated_luminosity_pb_inv * args.sigma_gen_tot_pb / float(n_gen)
 
-    status("Computed normalization:")
+    # Temporary approximation:
+    #
+    # Proper weighted MC should use:
+    #
+    #   per-event plot weight = L_int * mc_weight / N_GEN
+    #
+    # where mc_weight is MC::Event.weight carried into the reconstructed ROOT tree.
+    #
+    # For now, because the reconstructed tree does not carry mc_weight, use:
+    #
+    #   per-event plot weight = L_int * <mc_weight> / N_GEN
+    #
+    mc_event_weight = integrated_luminosity_pb_inv * args.avg_gen_weight_pb / float(n_gen)
+
+    status("Computed temporary average-weight normalization:")
     status("  Raw charge sum = {:.12g}".format(total_charge_raw))
     status("  Q = {:.12g} mC".format(total_charge_mc))
     status("  L_int = {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    status("  sigma_GEN_TOT = {:.12g} pb".format(args.sigma_gen_tot_pb))
+    status("  <MC::Event.weight> = {:.12g} pb".format(args.avg_gen_weight_pb))
     status("  N_GEN = {}".format(n_gen))
     status("  MC event weight = {:.12g}".format(mc_event_weight))
 
@@ -1035,7 +1044,7 @@ def main():
         mc_histograms,
         args.output,
         mc_event_weight,
-        args.sigma_gen_tot_pb,
+        args.avg_gen_weight_pb,
         total_charge_mc,
         integrated_luminosity_pb_inv,
         n_gen
@@ -1056,7 +1065,7 @@ def main():
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
     print("Integrated luminosity: {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    print("sigma_GEN_TOT: {:.12g} pb".format(args.sigma_gen_tot_pb))
+    print("Temporary average MC::Event.weight: {:.12g} pb".format(args.avg_gen_weight_pb))
     print("N_GEN: {}".format(n_gen))
     print("MC event weight: {:.12g}".format(mc_event_weight))
     print("Data entries filled: {}".format(data_result["n_filled"]))
