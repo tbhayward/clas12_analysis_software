@@ -40,17 +40,6 @@ P2_FT_THETA_MAX_DEG = 5.0
 P2_FD_THETA_MIN_DEG = 5.0
 P2_FD_THETA_MAX_DEG = 40.0
 
-# Previous theta/binning was already reduced to about 1/3 of 70.
-# Then the FD binning was reduced by another factor of 2 while leaving the
-# second-region binning unchanged.
-#
-# For p1:
-#   first region = FD
-#   second region = CD
-#
-# For p2:
-#   first region = FD
-#   second region = FT
 N_BINS_THETA_FIRST_REGION = 12
 N_BINS_THETA_SECOND_REGION = 23
 
@@ -85,38 +74,6 @@ TREE_NAME = "PhysicsEvents"
 
 # -----------------------------------------------------------------------------
 # Plot variable configuration
-# -----------------------------------------------------------------------------
-#
-# layout = "sector_2x4"
-#   Panel layout:
-#     top row: first-region sectors 1, 2, 3, normalization pad
-#     bottom row: first-region sectors 4, 5, 6, second region
-#
-#   For p1:
-#     first region  = FD
-#     second region = CD
-#
-#   For p2:
-#     first region  = FD
-#     second region = FT
-#
-# layout = "phi_1x3"
-#   Panel layout:
-#     pad 1: first region combined
-#     pad 2: second region
-#     pad 3: normalization pad / legend information
-#
-#   For p1_phi:
-#     pad 1 = FD combined
-#     pad 2 = CD
-#
-#   For p2_phi:
-#     pad 1 = FD combined
-#     pad 2 = FT
-#
-# The FD sector split is always done using the relevant particle azimuth:
-#   p1_phi for p1 plots
-#   p2_phi for p2 plots
 # -----------------------------------------------------------------------------
 
 PLOT_VARIABLES = [
@@ -1857,6 +1814,27 @@ def draw_comparison_canvas(output_tag, variable_config, data_histograms, mc_hist
     fatal("unknown layout: {}".format(variable_config["layout"]))
 
 
+def configure_ratio_frame(frame):
+    frame.SetStats(False)
+    frame.SetMinimum(RATIO_LINEAR_Y_MIN)
+    frame.SetMaximum(RATIO_Y_MAX)
+    frame.GetXaxis().CenterTitle(True)
+    frame.GetYaxis().CenterTitle(True)
+    frame.GetXaxis().SetTitleSize(0.050)
+    frame.GetYaxis().SetTitleSize(0.050)
+    frame.GetXaxis().SetLabelSize(0.045)
+    frame.GetYaxis().SetLabelSize(0.045)
+    frame.GetYaxis().SetTitleOffset(1.45)
+
+
+def draw_ratio_title(title_text):
+    latex = ROOT.TLatex()
+    latex.SetNDC(True)
+    latex.SetTextSize(0.055)
+    latex.SetTextAlign(22)
+    latex.DrawLatex(0.50, 0.94, title_text)
+
+
 def draw_sector_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf, normalization_factor, total_charge_mc, integrated_luminosity_pb_inv, n_gen):
     status("Drawing {} sector data/MC ratio output canvas with linear y scale.".format(variable_config["key"]))
 
@@ -1889,7 +1867,7 @@ def draw_sector_ratio_canvas(output_tag, variable_config, ratio_graphs, output_p
         pad = ROOT.gPad
         pad.SetLeftMargin(0.16)
         pad.SetRightMargin(0.06)
-        pad.SetTopMargin(0.12)
+        pad.SetTopMargin(0.16)
         pad.SetBottomMargin(0.14)
         pad.SetLogy(False)
 
@@ -1898,23 +1876,16 @@ def draw_sector_ratio_canvas(output_tag, variable_config, ratio_graphs, output_p
 
         frame = ROOT.TH1D(
             "frame_{}_panel_{}".format(variable_config["key"], i_panel + 1),
-            "{}  {};{};data / MC".format(output_tag, panel_labels[i_panel], variable_config["x_title"]),
+            ";{};data / MC".format(variable_config["x_title"]),
             n_bins,
             value_min,
             value_max
         )
 
-        frame.SetStats(False)
-        frame.SetMinimum(RATIO_LINEAR_Y_MIN)
-        frame.SetMaximum(RATIO_Y_MAX)
-        frame.GetXaxis().CenterTitle(True)
-        frame.GetYaxis().CenterTitle(True)
-        frame.GetXaxis().SetTitleSize(0.050)
-        frame.GetYaxis().SetTitleSize(0.050)
-        frame.GetXaxis().SetLabelSize(0.045)
-        frame.GetYaxis().SetLabelSize(0.045)
-        frame.GetYaxis().SetTitleOffset(1.45)
+        configure_ratio_frame(frame)
         frame.Draw("AXIS")
+
+        draw_ratio_title("{}  {}".format(output_tag, panel_labels[i_panel]))
 
         frame_histograms.append(frame)
 
@@ -1965,7 +1936,7 @@ def draw_phi_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf,
         pad = ROOT.gPad
         pad.SetLeftMargin(0.16)
         pad.SetRightMargin(0.06)
-        pad.SetTopMargin(0.12)
+        pad.SetTopMargin(0.16)
         pad.SetBottomMargin(0.14)
         pad.SetLogy(False)
 
@@ -1974,23 +1945,16 @@ def draw_phi_ratio_canvas(output_tag, variable_config, ratio_graphs, output_pdf,
 
         frame = ROOT.TH1D(
             "frame_{}_panel_{}".format(variable_config["key"], i_panel + 1),
-            "{}  {};{};data / MC".format(output_tag, panel_labels[i_panel], variable_config["x_title"]),
+            ";{};data / MC".format(variable_config["x_title"]),
             n_bins,
             value_min,
             value_max
         )
 
-        frame.SetStats(False)
-        frame.SetMinimum(RATIO_LINEAR_Y_MIN)
-        frame.SetMaximum(RATIO_Y_MAX)
-        frame.GetXaxis().CenterTitle(True)
-        frame.GetYaxis().CenterTitle(True)
-        frame.GetXaxis().SetTitleSize(0.050)
-        frame.GetYaxis().SetTitleSize(0.050)
-        frame.GetXaxis().SetLabelSize(0.045)
-        frame.GetYaxis().SetLabelSize(0.045)
-        frame.GetYaxis().SetTitleOffset(1.45)
+        configure_ratio_frame(frame)
         frame.Draw("AXIS")
+
+        draw_ratio_title("{}  {}".format(output_tag, panel_labels[i_panel]))
 
         frame_histograms.append(frame)
 
@@ -2179,6 +2143,7 @@ def main():
     status("p2 detector definition: FT = 0 <= p2_theta < 5 deg; FD = 5 <= p2_theta < 40 deg.")
     status("Comparison y scales: common across first-region sectors where applicable; second region uses its own scale.")
     status("Ratio y scale: linear only, fixed from 0.2 to 1.5.")
+    status("Ratio canvases include explicit subplot titles for sectors and CD/FT panels.")
     status("Data and MC comparison plots are drawn as lines.")
     status("Ratio points use vertical statistical error bars only, with horizontal errors set to zero.")
     status("Variables to plot: {}".format(", ".join(get_variable_keys())))
@@ -2314,6 +2279,7 @@ def main():
     print("p2_p plotting range: {:.1f} to {:.1f} GeV".format(P2_P_MIN_GEV, P2_P_MAX_GEV))
     print("p2_phi plotting range: {:.1f} to {:.1f} deg".format(PHI_MIN_DEG, PHI_MAX_DEG))
     print("phi canvas layout: 1x3, first region combined, second region, normalization pad")
+    print("Ratio canvases: subplot titles are explicitly drawn above each ratio pad")
     print("First-region theta bins: {}".format(N_BINS_THETA_FIRST_REGION))
     print("Second-region theta bins: {}".format(N_BINS_THETA_SECOND_REGION))
     print("First-region p bins: {}".format(N_BINS_P_FIRST_REGION))
