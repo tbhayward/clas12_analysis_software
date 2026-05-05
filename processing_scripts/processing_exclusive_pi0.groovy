@@ -297,9 +297,8 @@ public static void main(String[] args) {
 	            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 					2212, 0, 111, 0, energy);
 	            // this is my class for defining all relevant kinematic variables
-
+	            println("hello world");
 	            if (variables.channel_test(variables)) {
-	            	println("hello world");
 
 	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
