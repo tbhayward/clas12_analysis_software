@@ -47,9 +47,12 @@
  *   The DVCS and eppi0 data yield corrections later divide event weights by
  *   this factor.
  *
- * - Reconstructed and generated MC yields are written to the CSV so that
- *   acceptance can be computed algebraically from the CSV rather than by
- *   re-looping over the ROOT trees.
+ * - Generated and reconstructed MC yields are written to the CSV so that
+ *   acceptance and normalization steps can be computed algebraically from the
+ *   CSV rather than by re-looping over the ROOT trees.
+ *
+ * - Reconstructed-current-corrected MC columns are created here but should be
+ *   filled later, after current-efficiency factors have been determined.
  */
 
 /* ============================
@@ -247,7 +250,7 @@ static const std::vector<std::string>& topologies() {
     return v;
 }
 
-static const std::vector<std::string>& channels() {
+static const std::vector<std::string>& physics_channels() {
     static const std::vector<std::string> v = {
         "ep->epg",
         "ep->eppi0"
@@ -339,7 +342,7 @@ static void add_raw_yield_columns(std::vector<std::string>& H) {
 }
 
 static void add_current_efficiency_columns(std::vector<std::string>& H) {
-    for (const auto& channel : channels()) {
+    for (const auto& channel : physics_channels()) {
         for (const auto& per : base_periods()) {
             std::ostringstream name;
             name << "current efficiency factor, " << channel << ", exp, " << per;
@@ -387,42 +390,83 @@ static void add_normalized_raw_yield_columns(std::vector<std::string>& H) {
     add_normalized_raw_yield_columns_for_channel(H, "ep->eppi0");
 }
 
+static void add_mc_yield_columns_for_channel(std::vector<std::string>& H,
+                                             const std::string& channel) {
+    for (const auto& per : base_periods()) {
+        std::ostringstream name;
+        name << "generated yield, " << channel << ", mc, " << per;
+        H.push_back(name.str());
+    }
+
+    for (const auto& per : base_periods()) {
+        std::ostringstream name;
+        name << "reconstructed yield, " << channel << ", mc, " << per;
+        H.push_back(name.str());
+    }
+
+    for (const auto& per : base_periods()) {
+        std::ostringstream name;
+        name << "reconstructed current corrected yield, " << channel << ", mc, " << per;
+        H.push_back(name.str());
+    }
+
+    for (const auto& per : base_periods()) {
+        for (const auto& topo : topologies()) {
+            std::ostringstream name;
+            name << "reconstructed yield, " << channel << ", " << topo
+                 << ", mc, " << per;
+            H.push_back(name.str());
+        }
+    }
+
+    for (const auto& per : base_periods()) {
+        for (const auto& topo : topologies()) {
+            std::ostringstream name;
+            name << "reconstructed current corrected yield, " << channel << ", "
+                 << topo << ", mc, " << per;
+            H.push_back(name.str());
+        }
+    }
+}
+
+static void add_eppi0_background_mc_yield_columns(std::vector<std::string>& H) {
+    const std::string channel = "ep->eppi0->epg";
+
+    for (const auto& per : base_periods()) {
+        std::ostringstream name;
+        name << "reconstructed yield, " << channel << ", mc, " << per;
+        H.push_back(name.str());
+    }
+
+    for (const auto& per : base_periods()) {
+        std::ostringstream name;
+        name << "reconstructed current corrected yield, " << channel << ", mc, " << per;
+        H.push_back(name.str());
+    }
+
+    for (const auto& per : base_periods()) {
+        for (const auto& topo : topologies()) {
+            std::ostringstream name;
+            name << "reconstructed yield, " << channel << ", " << topo
+                 << ", mc, " << per;
+            H.push_back(name.str());
+        }
+    }
+
+    for (const auto& per : base_periods()) {
+        for (const auto& topo : topologies()) {
+            std::ostringstream name;
+            name << "reconstructed current corrected yield, " << channel << ", "
+                 << topo << ", mc, " << per;
+            H.push_back(name.str());
+        }
+    }
+}
+
 static void add_mc_yield_columns(std::vector<std::string>& H) {
-    for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "generated yield, ep->epg, mc, " << per;
-        H.push_back(name.str());
-    }
-
-    for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "reconstructed yield, ep->epg, mc, " << per;
-        H.push_back(name.str());
-    }
-
-    for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "reconstructed current corrected yield, ep->epg, mc, " << per;
-        H.push_back(name.str());
-    }
-
-    for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "generated yield, ep->eppi0, mc, " << per;
-        H.push_back(name.str());
-    }
-
-    for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "reconstructed yield, ep->eppi0, mc, " << per;
-        H.push_back(name.str());
-    }
-
-    for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "reconstructed current corrected yield, ep->eppi0, mc, " << per;
-        H.push_back(name.str());
-    }
+    add_mc_yield_columns_for_channel(H, "ep->epg");
+    add_mc_yield_columns_for_channel(H, "ep->eppi0");
+    add_eppi0_background_mc_yield_columns(H);
 }
 
 static void add_contamination_columns(std::vector<std::string>& H) {
@@ -581,7 +625,7 @@ static void add_valid_and_prefactor_columns(std::vector<std::string>& H) {
 
 static std::vector<std::string> build_new_header() {
     std::vector<std::string> H;
-    H.reserve(850);
+    H.reserve(1050);
 
     add_bin_definition_columns(H);
 

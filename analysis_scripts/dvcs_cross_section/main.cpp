@@ -7,6 +7,7 @@
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
+#include "current_dependence.h"
 #include "pi0_contamination.h"
 #include "pi0_corrected_counts.h"
 #include "bsa.h"
@@ -43,21 +44,33 @@ int main(int argc, char* argv[]) {
     const std::string output_root = "output";
 
     // Containers for different tree categories
-    std::map<std::string, TTree*> dataTrees;        // DVCS data
-    std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
-    std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
-    std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
-    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
-    std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
-    std::map<std::string, TTree*> eppi0BkgTrees;    // eppi0 background MC   (FIX: added)
-    std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
-    std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
+    std::map<std::string, TTree*> dataTrees;                  // DVCS data
+    std::map<std::string, TTree*> genMcTrees;                 // DVCS generated MC (no-rad, reference current)
+    std::map<std::string, TTree*> recMcTrees;                 // DVCS reconstructed MC (no-rad, reference current)
+    std::map<std::string, TTree*> eppi0DataTrees;             // eppi0 data
+    std::map<std::string, TTree*> eppi0GenMcTrees;            // eppi0 generated MC
+    std::map<std::string, TTree*> eppi0RecMcTrees;            // eppi0 reconstructed MC
+    std::map<std::string, TTree*> eppi0BkgTrees;              // eppi0 background MC
+    std::map<std::string, TTree*> radGenMcTrees;              // DVCS generated MC (radiative)
+    std::map<std::string, TTree*> radRecMcTrees;              // DVCS reconstructed MC (radiative)
+    std::map<std::string, TTree*> currentStudyGenMcTrees;     // DVCS generated MC for current-dependence study
+    std::map<std::string, TTree*> currentStudyRecMcTrees;     // DVCS reconstructed MC for current-dependence study
 
     // Load all trees from files
-    loadTrees(dataTrees, genMcTrees, recMcTrees,
-              eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
-              radGenMcTrees, radRecMcTrees);
+    if (!loadTrees(dataTrees, genMcTrees, recMcTrees,
+        eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
+        eppi0BkgTrees,
+        radGenMcTrees, radRecMcTrees,
+        currentStudyGenMcTrees, currentStudyRecMcTrees)) {
+        std::cerr << "[main] FATAL: loadTrees failed.\n";
+        return 1;
+    }
+
     std::cout << "All trees loaded successfully." << std::endl;
+    std::cout << "Current-study generated MC trees loaded: "
+              << currentStudyGenMcTrees.size() << std::endl;
+    std::cout << "Current-study reconstructed MC trees loaded: "
+              << currentStudyRecMcTrees.size() << std::endl;
 
     // Run exclusivity cut extraction 
     // Record the exact global cuts used:
@@ -89,12 +102,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Raw yields (counts) into CSV + plots ----------
+    // --------- Raw yields/counts into CSV + plots ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make a backup (the function also backs up to ..._total_counts.csv)
+        // Make a backup
         try {
             std::filesystem::copy_file(csv_main,
                 "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
@@ -104,10 +117,47 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
         }
 
-        // update_total_counts_csv() now discovers periods/topologies internally
-        if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
-                /*max_workers=*/5)) {
-            std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+        // update_total_counts_csv() fills:
+        //   - DVCS data raw yields
+        //   - eppi0 data raw yields
+        //   - DVCS generated/reconstructed MC yields
+        //   - eppi0 generated/reconstructed MC yields
+        //   - eppi0-background-as-DVCS reconstructed MC yields
+        if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
+            genMcTrees, recMcTrees,
+            eppi0GenMcTrees, eppi0RecMcTrees,
+            eppi0BkgTrees,
+            cuts_json,
+            output_root,
+            /*max_workers=*/5)) {
+          std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+          std::exit(EXIT_FAILURE);
+        }
+    }
+
+    // --------- Current-dependence efficiency factors ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        CurrentDependenceOptions current_opts;
+        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        current_opts.output_dir = "output/dvcs_current_dependence";
+        current_opts.override_to_unity = false;
+        current_opts.max_workers = 5;
+
+        // Set this to true to force all factors to (1,0), useful for cross-checks.
+        // current_opts.override_to_unity = true;
+
+        if (!update_current_dependence_factors_csv(csv_main,
+                                                   dataTrees,
+                                                   eppi0DataTrees,
+                                                   genMcTrees,
+                                                   recMcTrees,
+                                                   eppi0GenMcTrees,
+                                                   eppi0RecMcTrees,
+                                                   current_opts)) {
+            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
     }
