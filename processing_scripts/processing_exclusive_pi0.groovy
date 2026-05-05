@@ -262,7 +262,6 @@ public static void main(String[] args) {
 			    runnum == 3929 ||
 			    runnum == 3947) process_event = false;
 	    	
-	    	println("hello world");
 		    if (process_event) {
 
 		    	int num_photons = research_Event.countByPid(22);
@@ -280,6 +279,7 @@ public static void main(String[] args) {
 			            Mh_gammagamma = variables.Mh();
 			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
 			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
+			            println(detector_gamma1+" "+detector_gamma2)
 			            detector_gamma1 = variables.get_detector1();
 			            detector_gamma2 = variables.get_detector2();
 			            open_angle_egamma1 = variables.open_angle_ep1();
