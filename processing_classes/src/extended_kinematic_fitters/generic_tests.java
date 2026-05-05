@@ -69,6 +69,7 @@ public class generic_tests {
 
     public boolean forward_detector_cut(int particle_Index, HipoDataBank rec_Bank) {
         int status = rec_Bank.getInt("status", particle_Index);
+        System.out.println(status);
         return (Math.abs(status) >= 2000 && Math.abs(status) < 4000);
     }
 
