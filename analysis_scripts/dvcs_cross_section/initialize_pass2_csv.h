@@ -7,18 +7,50 @@
  * initialize_pass2_csv
  *
  * Reads Lee's all_bin_v3.csv, filters to rows where "valid bin" == 1,
- * and writes a NEW CSV "dvcs_pass2_analysis.csv" with the extended schema:
- * - exact bin definitions cloned from Lee where requested
- * - helicity-split columns for yields and cross sections (unpol, pos, neg)
- * - contamination, acceptance, BSA as triplets ("value,stat,syst")
- * - prefactors and Fourier coefficients for 10.6 GeV copied from Lee
- * - analogous 10.2 GeV columns left blank
+ * and writes a new pass-2 analysis CSV with the extended schema.
  *
- * All measurement-like columns that must eventually store triplets are created
- * as blank cells (empty string) in this initializer. We only copy simple bin
- * definitions and 10.6 GeV prefactors/coefficients from Lee at this stage.
+ * The initializer copies only stable bin-definition and theory-prefactor
+ * information from Lee's CSV. All analysis-produced quantities are created as
+ * blank cells and must be filled by later modules.
  *
- * Return: true on success, false on any fatal error.
+ * The generated schema includes columns for:
+ *
+ * - grouped average kinematics,
+ * - raw DVCS and eppi0 yields,
+ * - channel-aware current-efficiency factors for data and MC,
+ * - eppi0 p1_theta data/MC cross-section normalization factors,
+ * - normalized raw DVCS and eppi0 yields,
+ * - generated and reconstructed MC yields for DVCS and eppi0,
+ * - pi0 contamination,
+ * - signal yields,
+ * - acceptance,
+ * - acceptance-corrected yields,
+ * - radiative corrections,
+ * - bin-centering corrections,
+ * - bin volumes,
+ * - luminosities,
+ * - cross sections,
+ * - BH-normalization factors,
+ * - normed cross sections,
+ * - BSA quantities,
+ * - copied 10.6 GeV theory/prefactor columns.
+ *
+ * Current-efficiency factor cells are intended to store:
+ *
+ *   (value,stat)
+ *
+ * eppi0 cross-section normalization polynomial cells are intended to store:
+ *
+ *   (p0,p1,p2,p3,p4)
+ *
+ * where:
+ *
+ *   R_pi0(theta_p) = p0 + p1*theta_p + p2*theta_p^2 + p3*theta_p^3 + p4*theta_p^4
+ *
+ * and downstream data yield corrections divide event weights by R_pi0(theta_p).
+ *
+ * Return:
+ *   true on success, false on any fatal error.
  */
 bool initialize_pass2_csv(const std::string& lee_csv_path,
                           const std::string& out_csv_path);
