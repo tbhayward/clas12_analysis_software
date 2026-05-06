@@ -18,6 +18,7 @@
 #include <TH1.h>
 #include <TString.h>
 #include <TDataType.h>  // kInt_t, kDouble_t and EDataType
+#include <TSystem.h>
 
 // C++ stdlib
 #include <algorithm>
@@ -32,6 +33,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <chrono>
 #include <utility>
 #include <vector>
 
@@ -118,6 +120,9 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
 
 // -------------------- branch binder --------------------
 
+static std::mutex g_root_bind_mutex;
+static std::mutex g_fit_mutex;
+
 struct BranchBinder {
     int runnum = 0;       bool has_runnum = false;
     int detector1 = 0;    bool has_detector1 = false;
@@ -146,6 +151,11 @@ struct BranchBinder {
 
     void bind(TTree* t, Channel ch) {
         if (!t) return;
+
+        // ROOT branch-status/address operations touch shared ROOT internals.
+        // Serialize binding while still allowing independent event loops to run
+        // concurrently after binding is complete.
+        std::lock_guard<std::mutex> lock(g_root_bind_mutex);
 
         // Disable everything, then explicitly enable only what we use.
         t->SetBranchStatus("*", 0);
@@ -229,12 +239,19 @@ struct BranchBinder {
 
 static std::pair<double,double> fitGaussianLeftSide(TH1D* h) {
     if (!h || h->GetEntries() == 0) return {0.0, 0.0};
+
+    // ROOT fitting creates named objects and touches global fitter state.
+    // Serialize this small section to keep the surrounding period-level
+    // parallelism safe and deterministic.
+    std::lock_guard<std::mutex> lock(g_fit_mutex);
+
     double xmin = h->GetXaxis()->GetXmin();
     int peakBin = h->GetMaximumBin();
     double xpeak = h->GetXaxis()->GetBinCenter(peakBin);
     double xr = std::max(xmin + 1e-6, 1.35 * xpeak);
 
-    TF1 f("gausLeft", "gaus(0)", xmin, xr);
+    const std::string fname = std::string("gausLeft_") + h->GetName();
+    TF1 f(fname.c_str(), "gaus(0)", xmin, xr);
     f.SetParameters(h->GetMaximum(), h->GetMean(), std::max(1e-3, h->GetRMS() / 2.0));
     f.SetParLimits(2, 1e-6, 5.0);
     int status = h->Fit(&f, "RQ0");
@@ -285,11 +302,13 @@ static FilledHists fillStageHists(
 {
     FilledHists out;
 
-    // Create detached histograms.
+    const std::string histTag = channelToStr(ch) + "_" + period_label + "_" + topoToKey(topo) + "_stage" + std::to_string(stage_index);
+
+    // Create detached histograms with globally unique names.
     for (const auto& kv : cfg) {
         const std::string& var = kv.first; const HistCfg& hc = kv.second;
-        auto* dh = new TH1D(("data_" + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
-        auto* mh = new TH1D(("mc_"   + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
+        auto* dh = new TH1D(("data_" + histTag + "_" + var).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
+        auto* mh = new TH1D(("mc_"   + histTag + "_" + var).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
         dh->SetDirectory(nullptr); mh->SetDirectory(nullptr);
         dh->SetMarkerStyle(20); dh->SetMarkerSize(0.8);
         mh->SetMarkerStyle(21); mh->SetMarkerSize(0.8);
@@ -619,7 +638,6 @@ static void processPeriod(
     std::mutex& combined_mutex)
 {
     TH1::AddDirectory(kFALSE);
-    gStyle->SetOptStat(0);
 
     if (W.dvcs_data && W.dvcs_mc) {
         std::string pretty = periodCode(Channel::DVCS, W.label);
@@ -657,6 +675,13 @@ void runAllExclusivityCuts(
     const std::string& outPlotDir,
     int maxThreads)
 {
+    ROOT::EnableThreadSafety();
+    TH1::AddDirectory(kFALSE);
+    gStyle->SetOptStat(0);
+
+    if (!outJsonDir.empty()) gSystem->mkdir(outJsonDir.c_str(), true);
+    if (!outPlotDir.empty()) gSystem->mkdir(outPlotDir.c_str(), true);
+
     // Build workers per period
     std::vector<PeriodWork> work;
     work.reserve(CANONICAL_PERIODS().size());
