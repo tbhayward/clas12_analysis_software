@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Current-dependence efficiency factors ----------
+    // --------- Current-dependence correction factors ----------
     {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
@@ -147,14 +147,11 @@ int main(int argc, char* argv[]) {
         current_opts.override_to_unity = false;
         current_opts.max_workers = 5;
 
-        // Set this to true to force all factors to (1,0), useful for cross-checks.
-        // current_opts.override_to_unity = true;
-
         if (!update_current_dependence_factors_csv(csv_main,
                                                    dataTrees,
                                                    eppi0DataTrees,
-                                                   genMcTrees,
-                                                   recMcTrees,
+                                                   currentStudyGenMcTrees,
+                                                   currentStudyRecMcTrees,
                                                    eppi0GenMcTrees,
                                                    eppi0RecMcTrees,
                                                    current_opts)) {

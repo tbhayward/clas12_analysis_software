@@ -37,6 +37,10 @@ struct CurrentDependenceOptions {
  *   current efficiency factor, ep->eppi0, exp, <period> = (eppi0_data_factor,stat)
  *   current efficiency factor, ep->eppi0, mc,  <period> = (derived_eppi0_mc_factor,stat)
  *
+ * The diagnostic output is written as one 2x3 panel per channel/sample rather
+ * than one plot per run period. For DVCS, the MC panel requires the current-scan
+ * MC maps, not the nominal acceptance-MC maps.
+ *
  * If options.override_to_unity is true, no ROOT loops are performed and all
  * current-efficiency factors are written as (1,0).
  */
