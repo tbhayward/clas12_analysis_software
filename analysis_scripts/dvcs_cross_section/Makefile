@@ -6,7 +6,7 @@ LDFLAGS  = $(shell root-config --libs) -lMinuit2 -pthread -fopenmp
 # ---------- dvcs_analysis ----------
 DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp \
            global_cuts.cpp load_binning_scheme.cpp \
-           bin_means.cpp total_counts.cpp current_dependence.cpp yield_totals.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
+           bin_means.cpp total_counts.cpp current_dependence.cpp eppi0_normalization.cpp yield_totals.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
            bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \
            cross_sections.cpp model_predictions.cpp overall_normalization_study.cpp \
            bin_centering_corrections.cpp models_vs_data_plots.cpp propagator_study.cpp \
@@ -30,13 +30,13 @@ LEE_BIN  = cross_check_lee
 all: $(DVCS_BIN) $(LEE_BIN)
 
 $(DVCS_BIN): $(DVCS_OBJ)
-    $(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
+	$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
 
 $(LEE_BIN): $(LEE_OBJ)
-    $(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
+	$(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
 
 %.o: %.cpp
-    $(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-    rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN)
+	rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN)
