@@ -2,6 +2,7 @@
 // Pi0-corrected DVCS signal yields:
 //   - Fill "signal yield, ep->epg, exp, <period>, <hel>" columns
 //     with "(value, stat, sys)" triples
+//   - Uses normalized raw DVCS yields, not raw unnormalized counts
 //   - Produce per-period yield plots vs phi (pos/neg helicities)
 
 #include "pi0_corrected_counts.h"
@@ -288,14 +289,14 @@ static std::string format_triple(double v, double s_stat, double s_sys) {
     return oss.str();
 }
 
-// S = (1 - c) * N_raw, Var(S) = (1 - c)^2 N_raw + N_raw^2 c_stat^2
-static void compute_signal_and_stat(double raw,
+// S = (1 - c) * N_norm, Var(S) = (1 - c)^2 N_norm + N_norm^2 c_stat^2
+static void compute_signal_and_stat(double norm_yield,
                                     double c_val,
                                     double c_stat,
                                     double& S,
                                     double& S_stat)
 {
-    if (!std::isfinite(raw) || raw <= 0.0) {
+    if (!std::isfinite(norm_yield) || norm_yield <= 0.0) {
         S = 0.0;
         S_stat = 0.0;
         return;
@@ -304,10 +305,10 @@ static void compute_signal_and_stat(double raw,
     if (!std::isfinite(c_stat)) c_stat = 0.0;
 
     const double one_minus_c = 1.0 - c_val;
-    const double var = one_minus_c * one_minus_c * raw +
-                       raw * raw * c_stat * c_stat;
+    const double var = one_minus_c * one_minus_c * norm_yield +
+                       norm_yield * norm_yield * c_stat * c_stat;
 
-    S = one_minus_c * raw;
+    S = one_minus_c * norm_yield;
     S_stat = std::sqrt(std::max(0.0, var));
 }
 
@@ -375,17 +376,17 @@ static bool fill_signal_yields(CsvDoc& csv) {
         }
     }
 
-    // indices for raw yields per period/topology/helicity
+    // indices for normalized raw yields per period/topology/helicity
     std::map<std::string, std::map<std::string, std::map<std::string,int>>> raw_idx;
     for (const auto& per : kPeriods) {
         for (const auto& topo : kTopos) {
             for (const auto& hel : kHelicities) {
                 std::ostringstream nm;
-                nm << "raw yield, ep->epg, " << topo
+                nm << "normalized raw yield, ep->epg, " << topo
                    << ", exp, " << per << ", " << hel;
                 int idx = csv.col_index(nm.str());
                 if (idx < 0) {
-                    std::cerr << "[pi0_corrected] FATAL: missing raw-yield column '"
+                    std::cerr << "[pi0_corrected] FATAL: missing normalized-raw-yield column '"
                               << nm.str() << "' in CSV header.\n";
                     return false;
                 }
@@ -427,7 +428,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
                 c_sys  = 0.0;
             }
 
-            // compute raw sums over topologies for each helicity
+            // compute normalized-yield sums over topologies for each helicity
             std::map<std::string,double> raw_sum;
             for (const auto& hel : kHelicities) raw_sum[hel] = 0.0;
 
@@ -439,7 +440,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
                     double v = CsvDoc::to_double(sraw);
                     if (!std::isfinite(v)) {
                         std::cerr << "[pi0_corrected] FATAL: non-numeric raw yield in '"
-                                  << "raw yield, ep->epg, " << topo
+                                  << "normalized raw yield, ep->epg, " << topo
                                   << ", exp, " << per << ", " << hel
                                   << "' at row " << r << "\n";
                         return false;
@@ -450,7 +451,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
 
             // compute signal yields and write as triples
             for (const auto& hel : kHelicities) {
-                const double raw = raw_sum[hel];
+                const double norm = raw_sum[hel];
                 double S = 0.0;
                 double S_stat = 0.0;
                 compute_signal_and_stat(raw, c_val, c_stat, S, S_stat);
@@ -505,17 +506,17 @@ static void draw_signal_yield_canvases(const std::string& period_label,
         std::exit(EXIT_FAILURE);
     }
 
-    // raw-yield column indices for this period/topology/helicity
+    // normalized-raw-yield column indices for this period/topology/helicity
     std::map<std::string, std::map<std::string,int>> raw_idx; // topo -> hel -> col
     for (const auto& topo : kTopos) {
         for (const auto& hel : kHelicities) {
             std::ostringstream name;
-            name << "raw yield, ep->epg, " << topo
+            name << "normalized raw yield, ep->epg, " << topo
                  << ", exp, " << period_label
                  << ", " << hel;
             int idx = csv.col_index(name.str());
             if (idx < 0) {
-                std::cerr << "[pi0_corrected] FATAL: missing raw-yield column: '"
+                std::cerr << "[pi0_corrected] FATAL: missing normalized-raw-yield column: '"
                           << name.str() << "'\n";
                 std::exit(EXIT_FAILURE);
             }
@@ -670,9 +671,9 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                         c_sys  = 0.0;
                     }
 
-                    // raw yields summed over topologies for pos/neg
-                    double raw_pos = 0.0;
-                    double raw_neg = 0.0;
+                    // normalized raw yields summed over topologies for pos/neg
+                    double norm_pos = 0.0;
+                    double norm_neg = 0.0;
                     for (const auto& topo : kTopos) {
                         const int c_pos = raw_idx[topo].at("pos");
                         const int c_neg = raw_idx[topo].at("neg");
@@ -683,24 +684,24 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                         if (!s_pos.empty()) {
                             double vpos = CsvDoc::to_double(s_pos);
                             if (!std::isfinite(vpos)) {
-                                std::cerr << "[pi0_corrected] FATAL: non-numeric raw pos yield in '"
-                                          << "raw yield, ep->epg, " << topo
+                                std::cerr << "[pi0_corrected] FATAL: non-numeric normalized pos yield in '"
+                                          << "normalized raw yield, ep->epg, " << topo
                                           << ", exp, " << period_label << ", pos"
                                           << "' at row " << r << "\n";
                                 std::exit(EXIT_FAILURE);
                             }
-                            raw_pos += vpos;
+                            norm_pos += vpos;
                         }
                         if (!s_neg.empty()) {
                             double vneg = CsvDoc::to_double(s_neg);
                             if (!std::isfinite(vneg)) {
-                                std::cerr << "[pi0_corrected] FATAL: non-numeric raw neg yield in '"
-                                          << "raw yield, ep->epg, " << topo
+                                std::cerr << "[pi0_corrected] FATAL: non-numeric normalized neg yield in '"
+                                          << "normalized raw yield, ep->epg, " << topo
                                           << ", exp, " << period_label << ", neg"
                                           << "' at row " << r << "\n";
                                 std::exit(EXIT_FAILURE);
                             }
-                            raw_neg += vneg;
+                            norm_neg += vneg;
                         }
                     }
 
@@ -708,9 +709,9 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                     double S_pos_stat = 0.0;
                     double S_neg = 0.0;
                     double S_neg_stat = 0.0;
-                    compute_signal_and_stat(raw_pos, c_val, c_stat,
+                    compute_signal_and_stat(norm_pos, c_val, c_stat,
                                             S_pos, S_pos_stat);
-                    compute_signal_and_stat(raw_neg, c_val, c_stat,
+                    compute_signal_and_stat(norm_neg, c_val, c_stat,
                                             S_neg, S_neg_stat);
 
                     C.Yp.push_back(S_pos);

@@ -9,14 +9,14 @@
  *
  * CSV behavior:
  *   For each row, each period, and each helicity {unpol,pos,neg}:
- *     - Sum the raw yields over all three topologies.
+ *     - Sum the normalized normalized raw yields over all three topologies.
  *     - Read the contamination ratio triple
  *           "contamination ratio, <period>" = (c, c_stat, c_sys)
  *       If this cell is empty, assume c = 0 and c_stat = c_sys = 0.
  *     - Compute the signal yield S and its statistical error:
- *           N_raw  = sum_topologies raw yield
- *           S      = (1 - c) * N_raw
- *           Var(S) = (1 - c)^2 * N_raw  +  N_raw^2 * c_stat^2
+ *           N_norm = sum_topologies normalized raw yield
+ *           S      = (1 - c) * N_norm
+ *           Var(S) = (1 - c)^2 * N_norm + N_norm^2 * c_stat^2
  *     - Write the result to the column
  *           "signal yield, ep->epg, exp, <period>, <hel>"
  *       as a triple "(S, S_stat, S_sys)" with S_sys = 0 for now.

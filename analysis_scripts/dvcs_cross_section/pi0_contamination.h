@@ -6,19 +6,31 @@
 
 class TTree;
 
-// Computes per-bin pi0 contamination ratio:
-//   c_i = Npi0mis * (Npi0_exp / Npi0_sim) / NDVCS_exp
+// Computes the pi0 contamination ratio using only quantities already stored in
+// dvcs_pass2_analysis.csv. The TTree maps are retained in the signature for
+// compatibility with the existing main.cpp call, but this implementation does
+// not loop over ROOT trees.
 //
-// Where each N is counted in the same (xB,Q2,|t|,phi) binning (CSV rows).
-// This implementation SUMS over topologies (FD_FD, CD_FD, CD_FT) because the
-// existing CSV schema provides only one column per period:
+// For each CSV row and period:
 //
-//   "contamination ratio, <PeriodDisplay>"
+//   c = N_mis * N_pi0_data / (N_pi0_rec_mc * N_dvcs_data)
 //
-// Cut-block selection is explicit:
-//   - NDVCS_exp and Npi0mis use DVCS_* cut blocks
-//   - Npi0_exp and Npi0sim use eppi0_* cut blocks
+// where the terms are read from existing CSV columns:
 //
+//   N_dvcs_data   = sum_topo normalized raw yield, ep->epg,        topo, exp, period, unpol
+//   N_pi0_data    = sum_topo normalized raw yield, ep->eppi0,      topo, exp, period, unpol
+//   N_pi0_rec_mc  = sum_topo reconstructed current corrected yield, ep->eppi0,      topo, mc, period
+//   N_mis         = sum_topo reconstructed current corrected yield, ep->eppi0->epg, topo, mc, period
+//
+// The output is written to:
+//
+//   contamination ratio, <period>
+//
+// as a triplet:
+//
+//   (value,stat,sys)
+//
+// with sys currently set to 0.
 bool compute_pi0_contamination_overall(
     const std::map<std::string, TTree*> &dvcsDataTrees,
     const std::map<std::string, TTree*> &eppi0DataTrees,
@@ -29,4 +41,4 @@ bool compute_pi0_contamination_overall(
     const std::string &output_root_dir,
     int max_workers);
 
-#endif
+#endif // PI0_CONTAMINATION_H
