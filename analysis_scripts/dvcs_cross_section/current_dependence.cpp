@@ -1764,6 +1764,93 @@ static void write_results_to_csv(CSV& csv,
     }
 }
 
+
+static const PeriodResult& find_result_strict(const std::vector<PeriodResult>& results,
+                                              const std::string& period,
+                                              const std::string& label) {
+    for (const PeriodResult& r : results) {
+        if (r.period == period) {
+            return r;
+        }
+    }
+
+    std::ostringstream ss;
+    ss << "[current_dependence] FATAL: missing " << label
+       << " current-dependence result for period " << period;
+    fatal(ss.str());
+
+    return results.front();
+}
+
+static void apply_dvcs_mc_to_data_ratio_to_eppi0_results(
+    const std::vector<PeriodResult>& dvcs_results,
+    std::vector<PeriodResult>& eppi0_results,
+    const std::string& output_dir,
+    const std::string& eppi0_output_token) {
+
+    for (PeriodResult& epi : eppi0_results) {
+        const PeriodResult& dvcs = find_result_strict(dvcs_results,
+                                                      epi.period,
+                                                      "DVCS");
+
+        if (!(std::isfinite(epi.data_factor) && epi.data_factor > 0.0)) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: invalid eppi0 data current factor for period "
+               << epi.period << ": " << epi.data_factor;
+            fatal(ss.str());
+        }
+
+        if (!(std::isfinite(dvcs.data_factor) && dvcs.data_factor > 0.0)) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: invalid DVCS data current factor for period "
+               << epi.period << ": " << dvcs.data_factor;
+            fatal(ss.str());
+        }
+
+        if (!(std::isfinite(dvcs.mc_factor) && dvcs.mc_factor > 0.0)) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: invalid DVCS MC current factor for period "
+               << epi.period << ": " << dvcs.mc_factor;
+            fatal(ss.str());
+        }
+
+        const double scale = dvcs.mc_factor / dvcs.data_factor;
+        epi.mc_factor = epi.data_factor * scale;
+
+        double rel_var = 0.0;
+
+        if (std::isfinite(epi.data_factor_err) && epi.data_factor_err >= 0.0) {
+            rel_var += (epi.data_factor_err / epi.data_factor) *
+                       (epi.data_factor_err / epi.data_factor);
+        }
+
+        if (std::isfinite(dvcs.mc_factor_err) && dvcs.mc_factor_err >= 0.0) {
+            rel_var += (dvcs.mc_factor_err / dvcs.mc_factor) *
+                       (dvcs.mc_factor_err / dvcs.mc_factor);
+        }
+
+        if (std::isfinite(dvcs.data_factor_err) && dvcs.data_factor_err >= 0.0) {
+            rel_var += (dvcs.data_factor_err / dvcs.data_factor) *
+                       (dvcs.data_factor_err / dvcs.data_factor);
+        }
+
+        epi.mc_factor_err = std::fabs(epi.mc_factor) * std::sqrt(rel_var);
+
+        epi.mc_points.clear();
+        epi.mc_fit = FitResult();
+
+        std::cout << "[current_dependence] ep->eppi0 " << epi.period
+                  << " derived_mc_factor=" << epi.mc_factor
+                  << " +/- " << epi.mc_factor_err
+                  << " using eppi0_data_factor=" << epi.data_factor
+                  << " and DVCS mc/data ratio=" << scale
+                  << std::endl;
+    }
+
+    write_summary_csv(output_dir + "/" + eppi0_output_token + "/period_summary.csv",
+                      eppi0_results);
+}
+
 } // namespace
 
 bool update_current_dependence_factors_csv(
@@ -1823,16 +1910,24 @@ bool update_current_dependence_factors_csv(
                               options.output_dir,
                               options.max_workers);
 
+        const std::map<std::string, TTree*> empty_mc_gen_trees;
+        const std::map<std::string, TTree*> empty_mc_rec_trees;
+
         std::vector<PeriodResult> eppi0_results =
             run_channel_study(eppi0,
                               eppi0DataTrees,
-                              eppi0GenMcTrees,
-                              eppi0RecMcTrees,
+                              empty_mc_gen_trees,
+                              empty_mc_rec_trees,
                               charge_map,
                               data_cuts,
                               mc_cuts,
                               options.output_dir,
                               options.max_workers);
+
+        apply_dvcs_mc_to_data_ratio_to_eppi0_results(dvcs_results,
+                                                     eppi0_results,
+                                                     options.output_dir,
+                                                     eppi0.output_token);
 
         write_results_to_csv(csv, dvcs, dvcs_results);
         write_results_to_csv(csv, eppi0, eppi0_results);
