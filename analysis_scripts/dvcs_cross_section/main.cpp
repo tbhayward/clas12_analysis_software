@@ -316,29 +316,29 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Radiative corrections (Frad factors) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
+    // // --------- Radiative corrections (Frad factors) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
 
-        // Make a backup before modifying the radiative-correction columns
-        try {
-            std::filesystem::copy_file(
-                csv_main,
-                csv_backup,
-                std::filesystem::copy_options::overwrite_existing
-            );
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup for radiative corrections failed ("
-                      << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup before modifying the radiative-correction columns
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             csv_backup,
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup for radiative corrections failed ("
+    //                   << e.what() << "). Continuing.\n";
+    //     }
 
-        if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
-            std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
+    //         std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // --------- Kinematic bin volumes into CSV + plots ----------
     {
@@ -363,43 +363,43 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        // Make a dedicated backup before modifying Fbin columns.
-        try {
-            std::filesystem::copy_file(
-                csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
-                std::filesystem::copy_options::overwrite_existing
-            );
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
-        } catch (const std::exception& ex) {
-            std::cerr << "[main] WARNING: failed to create bin-centering backup: "
-                      << ex.what() << "\n";
-        }
+    //     // Make a dedicated backup before modifying Fbin columns.
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
+    //     } catch (const std::exception& ex) {
+    //         std::cerr << "[main] WARNING: failed to create bin-centering backup: "
+    //                   << ex.what() << "\n";
+    //     }
 
-        ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
-        const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
-        const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
+    //     ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
+    //     const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
+    //     const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
 
-        if (!update_bin_centering_corrections_csv(
-                csv_main,
-                n_steps,
-                model_paths,
-                vgg_globalfit,
-                ModelChoice::Both)) {
-            std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
-            return 1;
-        }
+    //     if (!update_bin_centering_corrections_csv(
+    //             csv_main,
+    //             n_steps,
+    //             model_paths,
+    //             vgg_globalfit,
+    //             ModelChoice::Both)) {
+    //         std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
+    //         return 1;
+    //     }
 
-        // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
-        // Uses Fbin triples and phiavg columns from the updated CSV.
-        plot_bin_centering_fbin_vs_phi(
-            csv_main,
-            "output/bin_centering_plots");
-    }
+    //     // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
+    //     // Uses Fbin triples and phiavg columns from the updated CSV.
+    //     plot_bin_centering_fbin_vs_phi(
+    //         csv_main,
+    //         "output/bin_centering_plots");
+    // }
 
 
     // {
@@ -485,55 +485,43 @@ int main(int argc, char* argv[]) {
     }
 
 
+    // --------- Overall BH-edge normalization study ----------
     {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+        OverallNormalizationOptions norm_opts;
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18 Out", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+        // Production-safe default:
+        //   true  -> write norm = 1.00 everywhere and skip BH-edge study
+        //   false -> run the full BH-edge normalization study and write fitted norms
+        norm_opts.override_to_unity = true;
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+        norm_opts.use_all_points_within_edge_window = true;
+        norm_opts.require_positive_dedge = true;
+        norm_opts.max_dedge_for_normalization_deg = 10.0;
+        norm_opts.norm_x_axis = OverallNormXAxis::XB;
+        norm_opts.output_dir = "output/normalization_study";
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18 Out", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for 10.6 GeV.\n";
-            return 1;
-        }
+        const std::vector<std::string> norm_labels = {
+            "Fa18 Inb",
+            "Fa18 Out",
+            "Sp19 Inb",
+            "Sp18 Inb",
+            "Sp18 Out",
+            "Fa18",
+            "Sp18",
+            "10.6 GeV"
+        };
 
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp19 Inb", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Fa18", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "Sp18", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
-        }
-
-        // 10.6 GeV combined group (unpolarized) normalization study
-        if (!print_bh_normalization_study(csv_main, "10.6 GeV", "unpol")) {
-            std::cerr << "[main] FATAL: overall normalization study failed for Sp19 Inb.\n";
-            return 1;
+        for (const std::string& label : norm_labels) {
+            if (!update_overall_normalization_study_csv(csv_main,
+                                                        label,
+                                                        "unpol",
+                                                        norm_opts)) {
+                std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
+                          << label << ".\n";
+                std::exit(EXIT_FAILURE);
+            }
         }
     }
 

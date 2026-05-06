@@ -44,7 +44,7 @@ namespace {
 // If true, skip ALL calculations and ALL plotting, and just write "1.00"
 // into every row of "norm, <label>" if the column exists, then return.
 // -----------------------------------------------------------------------------
-static const bool kSkipAllWorkWriteUnityNorm = true;
+static bool kSkipAllWorkWriteUnityNorm = true;
 
 // -----------------------------------------------------------------------------
 // Edge-window normalization sample.
@@ -59,9 +59,9 @@ static const bool kSkipAllWorkWriteUnityNorm = true;
 //
 // If kRequirePositiveDEdge is true, points exactly at d_edge = 0 are rejected.
 // -----------------------------------------------------------------------------
-static const bool kUseAllPointsWithinEdgeWindow = true;
-static const bool kRequirePositiveDEdge = true;
-static const double kMaxDEdgeForNormalizationDeg = 10.0;
+static bool kUseAllPointsWithinEdgeWindow = true;
+static bool kRequirePositiveDEdge = true;
+static double kMaxDEdgeForNormalizationDeg = 10.0;
 
 // -----------------------------------------------------------------------------
 // Optional alternate mode.
@@ -87,7 +87,8 @@ enum class NormXAxis {
 };
 
 // Default: use xB to parameterize the normalization.
-static const NormXAxis kNormXAxis = NormXAxis::XB;
+static NormXAxis kNormXAxis = NormXAxis::XB;
+static std::string kOutputRoot = "output/normalization_study";
 
 // -----------------------------------------------------------------------------
 // Model-ratio diagnostic grouping.
@@ -1082,9 +1083,9 @@ struct RowData {
 
 } // end anonymous namespace
 
-bool print_bh_normalization_study(const std::string &csv_path,
-                                  const std::string &label,
-                                  const std::string &helicity) {
+static bool run_bh_normalization_study_impl(const std::string &csv_path,
+                                            const std::string &label,
+                                            const std::string &helicity) {
     try {
         std::ifstream ifs(csv_path.c_str());
 
@@ -1555,7 +1556,7 @@ bool print_bh_normalization_study(const std::string &csv_path,
             } //endif
         } //endfor
 
-        const std::string out_root = "output/normalization_study";
+        const std::string out_root = kOutputRoot;
         ensure_output_dir_or_throw(out_root);
 
         const std::string out_dir = out_root + "/" + sanitize_for_filename(label);
@@ -1744,4 +1745,26 @@ bool print_bh_normalization_study(const std::string &csv_path,
         std::cerr << "[overall_norm] FATAL: " << e.what() << "\n";
         return false;
     }
+}
+
+bool update_overall_normalization_study_csv(const std::string &csv_path,
+                                            const std::string &label,
+                                            const std::string &helicity,
+                                            const OverallNormalizationOptions &options) {
+    kSkipAllWorkWriteUnityNorm = options.override_to_unity;
+    kUseAllPointsWithinEdgeWindow = options.use_all_points_within_edge_window;
+    kRequirePositiveDEdge = options.require_positive_dedge;
+    kMaxDEdgeForNormalizationDeg = options.max_dedge_for_normalization_deg;
+    kNormXAxis = (options.norm_x_axis == OverallNormXAxis::PTheta) ? NormXAxis::PTheta : NormXAxis::XB;
+    kOutputRoot = options.output_dir;
+
+    return run_bh_normalization_study_impl(csv_path, label, helicity);
+}
+
+bool print_bh_normalization_study(const std::string &csv_path,
+                                  const std::string &label,
+                                  const std::string &helicity) {
+    OverallNormalizationOptions options;
+    options.override_to_unity = true;
+    return update_overall_normalization_study_csv(csv_path, label, helicity, options);
 }

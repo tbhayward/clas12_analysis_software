@@ -27,13 +27,24 @@ LumiMap build_lumi_map();
 
 // Update dvcs_pass2_analysis.csv:
 //   - Fill integrated luminosity columns using lumi_map.
-//   - Compute cross sections for all label/helicity combinations that have
-//     both yield and cross section columns in the CSV.
-//   - Compute BH/KM/VGG theory curves for 10.6 GeV and 10.2 GeV and write
-//     a single xs_phi_all.json per label in output/jsons/cross_sections/.
+//   - Compute cross sections from already-corrected, already-unfolded yields:
+//       acceptance corrected yield, ep->epg, exp, <label>, <helicity>
+//   - Import Frad/Fbin/bin_volume directly from imports/all_bin_v3.csv.
+//   - Write those imported values into both 10.6 GeV and 10.2 GeV CSV columns.
+//   - Do not apply imports/efficiency.json or any additional normalization.
 // Returns true on success, false on any fatal CSV or I/O problem.
 bool compute_cross_sections(const std::string &csv_main,
                             const LumiMap &lumi_map);
+
+// Same as above, but lets the caller explicitly choose the Lee/pass-1 CSV.
+// The expected source columns are:
+//   Frad
+//   Fbin
+//   bin_volume
+// matched by the pass-2 CSV "bin index" column.
+bool compute_cross_sections(const std::string &csv_main,
+                            const LumiMap &lumi_map,
+                            const std::string &lee_csv_path);
 
 // Plot cross sections vs phi for a given label:
 //   - Reads cross section columns for that label from csv_main.
