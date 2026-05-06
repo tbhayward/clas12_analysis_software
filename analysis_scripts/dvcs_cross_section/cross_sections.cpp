@@ -115,6 +115,54 @@ static double beam_energy_for_label(const std::string &label) {
     return 10.6;
 }
 
+
+// -----------------------------------------------------------------------------
+// Theory/model helper wrappers
+// -----------------------------------------------------------------------------
+
+static Helicity helicity_from_string(const std::string &h) {
+    if (h == "pos") return Helicity::Plus;
+    if (h == "neg") return Helicity::Minus;
+    return Helicity::Unpol;
+}
+
+static double eval_bh_xs(double Ebeam,
+                         double xB,
+                         double Q2,
+                         double t_pos,
+                         double phi_rad) {
+    const double phi_deg = phi_rad * 180.0 / M_PI;
+    return vgg_bh_only(xB, Q2, t_pos, phi_deg, Ebeam);
+}
+
+static double eval_km_xs(double Ebeam,
+                         double xB,
+                         double Q2,
+                         double t_pos,
+                         double phi_rad,
+                         const std::string &h) {
+    const double phi_deg = phi_rad * 180.0 / M_PI;
+    const Helicity hel = helicity_from_string(h);
+    return km15_xs(xB, Q2, t_pos, phi_deg, Ebeam, hel);
+}
+
+static double eval_vgg_xs(double Ebeam,
+                          double xB,
+                          double Q2,
+                          double t_pos,
+                          double phi_rad,
+                          const std::string &h) {
+    const double phi_deg = phi_rad * 180.0 / M_PI;
+    const Helicity hel = helicity_from_string(h);
+    return vgg_xs(xB, Q2, t_pos, phi_deg, Ebeam, hel);
+}
+
+static void ensure_dir(const fs::path &p) {
+    if (!fs::exists(p)) {
+        fs::create_directories(p);
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Basic CSV helpers
 // -----------------------------------------------------------------------------
@@ -307,7 +355,6 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
 // Luminosity helpers
 // -----------------------------------------------------------------------------
 
-using LumiMap = std::map<std::string, Triple>;
 
 static Triple load_rga_lumi_file(const std::string &path,
                                  bool total_from_pos_neg) {
@@ -824,8 +871,7 @@ bool compute_cross_sections(const std::string &csv_main,
     try {
         lee_corrections = load_lee_corrections_by_bin_index(lee_csv_path);
     } catch (const std::exception &e) {
-        std::cerr << e.what() << "
-";
+        std::cerr << e.what() << "\n";
         return false;
     }
 
@@ -850,8 +896,7 @@ bool compute_cross_sections(const std::string &csv_main,
 
     const int c_pass2_bin_index = find_col_optional(header, "bin index");
     if (c_pass2_bin_index < 0) {
-        std::cerr << "[cross_sections] FATAL: missing pass-2 CSV column: bin index
-";
+        std::cerr << "[cross_sections] FATAL: missing pass-2 CSV column: bin index\n";
         return false;
     }
 
@@ -1027,8 +1072,7 @@ bool compute_cross_sections(const std::string &csv_main,
                                          c_pass2_bin_index,
                                          row);
         } catch (const std::exception &e) {
-            std::cerr << e.what() << "
-";
+            std::cerr << e.what() << "\n";
             return false;
         }
 
