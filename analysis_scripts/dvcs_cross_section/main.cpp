@@ -178,10 +178,8 @@ int main(int argc, char* argv[]) {
         // norm_opts.override_to_unity = true;
 
         if (!update_eppi0_normalization_csv(csv_main,
-                                            dataTrees,
-                                            eppi0DataTrees,
-                                            eppi0GenMcTrees,
-                                            eppi0RecMcTrees,
+                                            dataTrees, eppi0DataTrees,
+                                            eppi0GenMcTrees, eppi0RecMcTrees,
                                             norm_opts)) {
             std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
             std::exit(EXIT_FAILURE);
@@ -244,26 +242,30 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Quick yield totals by current (data) and by period (MC) ----------
+    // --------- Yield totals by current ----------
     {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
-        const std::string out_txt   = "output/yield_totals.txt";
+        const std::string output_txt = "output/yield_totals/yield_totals_by_current.txt";
 
-        if (!compute_yield_totals(dataTrees, recMcTrees, cuts_json, out_txt)) {
+        if (!compute_yield_totals(csv_main,
+                                  dataTrees, eppi0DataTrees,
+                                  cuts_json,
+                                  output_txt)) {
             std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
             std::exit(EXIT_FAILURE);
         }
     }
 
-    // // --------- Data/MC comparison ----------
-    // runAllBranchDataMcComparisons(
-    //     dataTrees,
-    //     recMcTrees,
-    //     eppi0DataTrees,
-    //     eppi0RecMcTrees,
-    //     "output/jsons/combined_cuts.json",
-    //     "output"
-    // );
+    // --------- Data/MC comparison ----------
+    runAllBranchDataMcComparisons(
+        dataTrees,
+        recMcTrees,
+        eppi0DataTrees,
+        eppi0RecMcTrees,
+        "output/jsons/combined_cuts.json",
+        "output"
+    );
 
     // --------- DVCS MC acceptance (CSV + plots) ----------
     {

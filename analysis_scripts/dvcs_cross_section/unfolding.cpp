@@ -334,29 +334,42 @@ static std::string format_triple(double v, double s_stat, double s_sys) {
     return oss.str();
 }
 
-// U = S/A, Var(U) = (1/A^2) Var(S) + (S^2/A^4) Var(A)
-static void compute_unfolded(double S, double S_stat,
-                             double A, double A_stat,
-                             double& U, double& U_stat)
+// U = S/A.
+// Statistical propagation:
+//   Var_stat(U) = (1/A^2) Var_stat(S) + (S^2/A^4) Var_stat(A)
+// Systematic propagation:
+//   Var_sys(U)  = (1/A^2) Var_sys(S)  + (S^2/A^4) Var_sys(A)
+static void compute_unfolded(double S, double S_stat, double S_sys,
+                             double A, double A_stat, double A_sys,
+                             double& U, double& U_stat, double& U_sys)
 {
-    if (!std::isfinite(S) || !std::isfinite(S_stat) ||
-        !std::isfinite(A) || !std::isfinite(A_stat) ||
+    if (!std::isfinite(S) || !std::isfinite(S_stat) || !std::isfinite(S_sys) ||
+        !std::isfinite(A) || !std::isfinite(A_stat) || !std::isfinite(A_sys) ||
         A <= 0.0) {
         U = std::numeric_limits<double>::quiet_NaN();
         U_stat = std::numeric_limits<double>::quiet_NaN();
+        U_sys = std::numeric_limits<double>::quiet_NaN();
         return;
     }
 
-    const double varS = S_stat * S_stat;
-    const double varA = A_stat * A_stat;
-
     const double invA  = 1.0 / A;
     const double invA2 = invA * invA;
+    const double invA4 = invA2 * invA2;
 
-    const double varU = varS * invA2 + (S * S) * varA * invA2 * invA2;
+    const double varS_stat = S_stat * S_stat;
+    const double varA_stat = A_stat * A_stat;
+    const double varS_sys  = S_sys * S_sys;
+    const double varA_sys  = A_sys * A_sys;
+
+    double varU_stat = varS_stat * invA2 + (S * S) * varA_stat * invA4;
+    double varU_sys  = varS_sys  * invA2 + (S * S) * varA_sys  * invA4;
+
+    if (varU_stat < 0.0 && std::fabs(varU_stat) < 1.0e-15) varU_stat = 0.0;
+    if (varU_sys  < 0.0 && std::fabs(varU_sys)  < 1.0e-15) varU_sys  = 0.0;
 
     U = S * invA;
-    U_stat = (varU > 0.0) ? std::sqrt(varU) : 0.0;
+    U_stat = (varU_stat > 0.0) ? std::sqrt(varU_stat) : 0.0;
+    U_sys  = (varU_sys  > 0.0) ? std::sqrt(varU_sys)  : 0.0;
 }
 
 // periods, helicities, groups
@@ -403,7 +416,8 @@ struct CellData {
 static bool fill_unfolded_yields(
     CsvDoc& csv,
     std::map<std::string, std::map<std::string,std::vector<double>>>& unfolded_val,
-    std::map<std::string, std::map<std::string,std::vector<double>>>& unfolded_stat)
+    std::map<std::string, std::map<std::string,std::vector<double>>>& unfolded_stat,
+    std::map<std::string, std::map<std::string,std::vector<double>>>& unfolded_sys)
 {
     const int NR = csv.nrows();
 
@@ -464,6 +478,8 @@ static bool fill_unfolded_yields(
                 std::numeric_limits<double>::quiet_NaN());
             unfolded_stat[lab][hel].assign(NR,
                 std::numeric_limits<double>::quiet_NaN());
+            unfolded_sys[lab][hel].assign(NR,
+                std::numeric_limits<double>::quiet_NaN());
         }
     }
 
@@ -483,6 +499,8 @@ static bool fill_unfolded_yields(
                     unfolded_val[per][hel][r]  =
                         std::numeric_limits<double>::quiet_NaN();
                     unfolded_stat[per][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
+                    unfolded_sys[per][hel][r] =
                         std::numeric_limits<double>::quiet_NaN();
                 }
                 continue;
@@ -506,6 +524,8 @@ static bool fill_unfolded_yields(
                         std::numeric_limits<double>::quiet_NaN();
                     unfolded_stat[per][hel][r] =
                         std::numeric_limits<double>::quiet_NaN();
+                    unfolded_sys[per][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
                 }
                 continue;
             }
@@ -520,6 +540,8 @@ static bool fill_unfolded_yields(
                     unfolded_val[per][hel][r]  =
                         std::numeric_limits<double>::quiet_NaN();
                     unfolded_stat[per][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
+                    unfolded_sys[per][hel][r] =
                         std::numeric_limits<double>::quiet_NaN();
                     continue;
                 }
@@ -537,12 +559,16 @@ static bool fill_unfolded_yields(
 
                 double U = 0.0;
                 double U_stat = 0.0;
-                compute_unfolded(S_val, S_stat, A_val, A_stat, U, U_stat);
+                double U_sys = 0.0;
+                compute_unfolded(S_val, S_stat, S_sys,
+                                 A_val, A_stat, A_sys,
+                                 U, U_stat, U_sys);
 
                 unfolded_val[per][hel][r]  = U;
                 unfolded_stat[per][hel][r] = U_stat;
+                unfolded_sys[per][hel][r] = U_sys;
 
-                csv.rows[r][unf_idx[per][hel]] = format_triple(U, U_stat, 0.0);
+                csv.rows[r][unf_idx[per][hel]] = format_triple(U, U_stat, U_sys);
                 ++cells_written;
             }
         }
@@ -561,17 +587,20 @@ static bool fill_unfolded_yields(
         for (int r = 0; r < NR; ++r) {
             for (const auto& hel : kHelicities) {
                 double sum_val = 0.0;
-                double sum_var = 0.0;
+                double sum_stat_var = 0.0;
+                double sum_sys_var = 0.0;
                 int    count   = 0;
 
                 for (const auto& per : members) {
                     double v = unfolded_val[per][hel][r];
                     double s = unfolded_stat[per][hel][r];
-                    if (!std::isfinite(v) || !std::isfinite(s)) {
+                    double y = unfolded_sys[per][hel][r];
+                    if (!std::isfinite(v) || !std::isfinite(s) || !std::isfinite(y)) {
                         continue;
                     }
                     sum_val += v;
-                    sum_var += s * s;
+                    sum_stat_var += s * s;
+                    sum_sys_var += y * y;
                     ++count;
                 }
 
@@ -582,16 +611,20 @@ static bool fill_unfolded_yields(
                         std::numeric_limits<double>::quiet_NaN();
                     unfolded_stat[grp][hel][r] =
                         std::numeric_limits<double>::quiet_NaN();
+                    unfolded_sys[grp][hel][r] =
+                        std::numeric_limits<double>::quiet_NaN();
                     continue;
                 }
 
                 const double U   = sum_val;
-                const double U_s = (sum_var > 0.0) ? std::sqrt(sum_var) : 0.0;
+                const double U_s = (sum_stat_var > 0.0) ? std::sqrt(sum_stat_var) : 0.0;
+                const double U_y = (sum_sys_var > 0.0) ? std::sqrt(sum_sys_var) : 0.0;
 
                 unfolded_val[grp][hel][r]  = U;
                 unfolded_stat[grp][hel][r] = U_s;
+                unfolded_sys[grp][hel][r] = U_y;
 
-                csv.rows[r][unf_idx[grp][hel]] = format_triple(U, U_s, 0.0);
+                csv.rows[r][unf_idx[grp][hel]] = format_triple(U, U_s, U_y);
                 ++cells_written;
             }
         }
@@ -976,8 +1009,9 @@ bool update_unfolded_yields_csv(const std::string& csv_path,
     // in-memory unfolded yields for plotting
     std::map<std::string, std::map<std::string,std::vector<double>>> unfolded_val;
     std::map<std::string, std::map<std::string,std::vector<double>>> unfolded_stat;
+    std::map<std::string, std::map<std::string,std::vector<double>>> unfolded_sys;
 
-    if (!fill_unfolded_yields(csv, unfolded_val, unfolded_stat)) {
+    if (!fill_unfolded_yields(csv, unfolded_val, unfolded_stat, unfolded_sys)) {
         std::cerr << "[unfolding] ERROR: fill_unfolded_yields failed.\n";
         return false;
     }

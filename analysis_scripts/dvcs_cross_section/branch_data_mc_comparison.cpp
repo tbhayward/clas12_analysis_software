@@ -19,26 +19,38 @@
 #include <TObjArray.h>
 #include <TMath.h>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace {
 
 static constexpr bool kSkipGlobalCuts = false;
 static constexpr bool kSkipExclusivityCuts = false;
 static constexpr int kNClasdSectors = 6;
+static constexpr double kPi = 3.14159265358979323846;
+static constexpr double kRad2Deg = 180.0 / kPi;
 
 struct PeriodDef {
     std::string pretty;
@@ -56,6 +68,32 @@ struct RangeInfo {
     bool from_config = false;
 };
 
+struct RowBin {
+    double xBmin = 0.0;
+    double xBmax = 0.0;
+    double Q2min = 0.0;
+    double Q2max = 0.0;
+    double tmin = 0.0;
+    double tmax = 0.0;
+    double phimin = 0.0;
+    double phimax = 0.0;
+    bool valid = false;
+};
+
+struct PeriodCorrections {
+    double current_exp = 1.0;
+    double poly[5] = {1.0, 0.0, 0.0, 0.0, 0.0};
+};
+
+struct CsvInfo {
+    std::vector<std::string> header;
+    std::unordered_map<std::string, int> col;
+    std::vector<std::vector<std::string> > rows;
+    std::vector<RowBin> bins;
+    std::map<std::string, PeriodCorrections> dvcs_corr;
+    std::map<std::string, PeriodCorrections> eppi0_corr;
+};
+
 struct ChannelHistStore {
     std::vector<std::string> branch_names;
     std::map<std::string, RangeInfo> range_by_branch;
@@ -65,7 +103,9 @@ struct ChannelHistStore {
     std::map<std::string, std::vector<std::vector<TH1D*> > > mc_sector_hists_by_branch;
 };
 
-// -------------------- helpers --------------------
+static std::mutex g_root_bind_mutex;
+
+// -------------------- string / CSV helpers --------------------
 
 static std::string sanitizeName(const std::string& s) {
     std::string out;
@@ -77,8 +117,229 @@ static std::string sanitizeName(const std::string& s) {
     return out;
 }
 
+static std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> out;
+    std::string cur;
+    bool in_quotes = false;
+
+    for (size_t i = 0; i < line.size(); ++i) {
+        const char c = line[i];
+
+        if (c == '"') {
+            if (in_quotes && i + 1 < line.size() && line[i + 1] == '"') {
+                cur.push_back('"');
+                ++i;
+            } else {
+                in_quotes = !in_quotes;
+            }
+        } else if (c == ',' && !in_quotes) {
+            out.push_back(cur);
+            cur.clear();
+        } else {
+            cur.push_back(c);
+        }
+    }
+
+    out.push_back(cur);
+    return out;
+}
+
+static double parse_double_or_nan(const std::string& s) {
+    if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+    char* endp = nullptr;
+    const double v = std::strtod(s.c_str(), &endp);
+    if (endp == s.c_str()) return std::numeric_limits<double>::quiet_NaN();
+    return v;
+}
+
+static bool parse_tuple_numbers(const std::string& cell, std::vector<double>& out) {
+    out.clear();
+    std::string s = cell;
+    for (char& c : s) {
+        if (c == '(' || c == ')' || c == '[' || c == ']') c = ' ';
+    }
+    std::vector<std::string> parts = split_csv_line(s);
+    for (const auto& p : parts) {
+        const double v = parse_double_or_nan(p);
+        if (std::isfinite(v)) out.push_back(v);
+    }
+    return !out.empty();
+}
+
+static int col_strict(const CsvInfo& csv, const std::string& name) {
+    auto it = csv.col.find(name);
+    if (it == csv.col.end()) {
+        std::ostringstream ss;
+        ss << "[branch_data_mc_comparison] FATAL: missing required CSV column: " << name;
+        throw std::runtime_error(ss.str());
+    }
+    return it->second;
+}
+
+static std::string current_eff_col(const std::string& channel,
+                                   const std::string& period) {
+    return "current efficiency factor, " + channel + ", exp, " + period;
+}
+
+static std::string poly_col(const std::string& period) {
+    return "eppi0 cross-section normalization polynomial, ep->eppi0, data_over_mc, " + period;
+}
+
+static std::string contam_col(const std::string& period) {
+    return "contamination ratio, " + period;
+}
+
+static bool is_true_valid(const std::string& s) {
+    return (s == "1" || s == "1.0" || s == "true" || s == "TRUE");
+}
+
+static double first_tuple_value_or_default(const std::string& cell, double def) {
+    std::vector<double> vals;
+    if (!parse_tuple_numbers(cell, vals)) return def;
+    if (vals.empty() || !std::isfinite(vals[0])) return def;
+    return vals[0];
+}
+
+static PeriodCorrections read_period_corrections(const CsvInfo& csv,
+                                                 const std::string& channel,
+                                                 const std::string& period) {
+    PeriodCorrections c;
+
+    const int c_eff = col_strict(csv, current_eff_col(channel, period));
+    const int c_poly = col_strict(csv, poly_col(period));
+
+    bool have_eff = false;
+    bool have_poly = false;
+
+    for (const auto& row : csv.rows) {
+        if (!have_eff) {
+            const double v = first_tuple_value_or_default(row[c_eff], std::numeric_limits<double>::quiet_NaN());
+            if (std::isfinite(v) && v > 0.0) {
+                c.current_exp = v;
+                have_eff = true;
+            }
+        }
+
+        if (!have_poly) {
+            std::vector<double> coeffs;
+            if (parse_tuple_numbers(row[c_poly], coeffs) && coeffs.size() >= 5) {
+                bool ok = true;
+                for (int i = 0; i < 5; ++i) ok = ok && std::isfinite(coeffs[(size_t)i]);
+                if (ok) {
+                    for (int i = 0; i < 5; ++i) c.poly[i] = coeffs[(size_t)i];
+                    have_poly = true;
+                }
+            }
+        }
+
+        if (have_eff && have_poly) break;
+    }
+
+    if (!have_eff) {
+        std::ostringstream ss;
+        ss << "[branch_data_mc_comparison] FATAL: no valid current-efficiency factor found for "
+           << channel << " period " << period;
+        throw std::runtime_error(ss.str());
+    }
+
+    if (!have_poly) {
+        std::ostringstream ss;
+        ss << "[branch_data_mc_comparison] FATAL: no valid eppi0 normalization polynomial found for period "
+           << period;
+        throw std::runtime_error(ss.str());
+    }
+
+    return c;
+}
+
+static CsvInfo load_csv_info(const std::string& csv_path) {
+    CsvInfo csv;
+
+    std::ifstream fin(csv_path);
+    if (!fin.is_open()) {
+        std::ostringstream ss;
+        ss << "[branch_data_mc_comparison] FATAL: cannot open CSV: " << csv_path;
+        throw std::runtime_error(ss.str());
+    }
+
+    std::string line;
+    if (!std::getline(fin, line)) {
+        std::ostringstream ss;
+        ss << "[branch_data_mc_comparison] FATAL: empty CSV: " << csv_path;
+        throw std::runtime_error(ss.str());
+    }
+
+    csv.header = split_csv_line(line);
+    for (int i = 0; i < (int)csv.header.size(); ++i) {
+        if (csv.col.find(csv.header[(size_t)i]) != csv.col.end()) {
+            std::ostringstream ss;
+            ss << "[branch_data_mc_comparison] FATAL: duplicate CSV column: " << csv.header[(size_t)i];
+            throw std::runtime_error(ss.str());
+        }
+        csv.col[csv.header[(size_t)i]] = i;
+    }
+
+    while (std::getline(fin, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> row = split_csv_line(line);
+        if (row.size() < csv.header.size()) row.resize(csv.header.size(), "");
+        if (row.size() != csv.header.size()) {
+            std::ostringstream ss;
+            ss << "[branch_data_mc_comparison] FATAL: CSV row width mismatch in " << csv_path;
+            throw std::runtime_error(ss.str());
+        }
+        csv.rows.push_back(std::move(row));
+    }
+
+    const int c_xmin = col_strict(csv, "xBmin");
+    const int c_xmax = col_strict(csv, "xBmax");
+    const int c_Qmin = col_strict(csv, "Q2min");
+    const int c_Qmax = col_strict(csv, "Q2max");
+    const int c_tmin = col_strict(csv, "t_abs_min");
+    const int c_tmax = col_strict(csv, "t_abs_max");
+    const int c_pmin = col_strict(csv, "phimin");
+    const int c_pmax = col_strict(csv, "phimax");
+    const int c_valid = col_strict(csv, "valid bin");
+
+    csv.bins.reserve(csv.rows.size());
+    for (const auto& row : csv.rows) {
+        RowBin b;
+        b.xBmin = parse_double_or_nan(row[c_xmin]);
+        b.xBmax = parse_double_or_nan(row[c_xmax]);
+        b.Q2min = parse_double_or_nan(row[c_Qmin]);
+        b.Q2max = parse_double_or_nan(row[c_Qmax]);
+        b.tmin = parse_double_or_nan(row[c_tmin]);
+        b.tmax = parse_double_or_nan(row[c_tmax]);
+        b.phimin = parse_double_or_nan(row[c_pmin]);
+        b.phimax = parse_double_or_nan(row[c_pmax]);
+        b.valid = is_true_valid(row[c_valid]);
+        csv.bins.push_back(b);
+    }
+
+    const std::vector<std::string> periods = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
+    };
+
+    for (const auto& p : periods) {
+        csv.dvcs_corr[p] = read_period_corrections(csv, "ep->epg", p);
+        csv.eppi0_corr[p] = read_period_corrections(csv, "ep->eppi0", p);
+        (void)col_strict(csv, contam_col(p));
+    }
+
+    std::cout << "[branch_data_mc_comparison] Loaded CSV corrections and "
+              << csv.bins.size() << " valid-bin rows from " << csv_path << std::endl;
+
+    return csv;
+}
+
+// -------------------- labels and mapping --------------------
+
 static std::string channelToStr(Channel ch) {
     return (ch == Channel::DVCS) ? "dvcs" : "eppi0";
+}
+
+static std::string channelCsvName(Channel ch) {
+    return (ch == Channel::DVCS) ? "ep->epg" : "ep->eppi0";
 }
 
 static std::string channelPretty(Channel ch) {
@@ -105,8 +366,7 @@ static std::string periodCode(Channel ch, const std::string& runTag) {
 
     std::ostringstream ss;
     ss << "[branch_data_mc_comparison] FATAL: unknown runTag \"" << runTag
-       << "\" in periodCode(). Allowed tags are: "
-       << "fa18_inb, fa18_out, sp18_inb, sp18_out, sp19_inb.";
+       << "\" in periodCode().";
     throw std::runtime_error(ss.str());
 }
 
@@ -127,6 +387,7 @@ static bool topologyFromDetectors(int detector1, int detector2, Topology& topo_o
 }
 
 static bool within3Sigma(double val, const Stats& s) {
+    if (!(std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0)) return true;
     return (val >= s.mean - 3.0 * s.std) && (val <= s.mean + 3.0 * s.std);
 }
 
@@ -134,7 +395,12 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
                              const std::map<std::string, double>& values) {
     for (const auto& kv : cuts) {
         auto it = values.find(kv.first);
-        if (it == values.end()) continue;
+        if (it == values.end()) {
+            std::ostringstream ss;
+            ss << "[branch_data_mc_comparison] FATAL: missing value for 3-sigma cut variable "
+               << kv.first;
+            throw std::runtime_error(ss.str());
+        }
         if (!within3Sigma(it->second, kv.second)) return false;
     }
     return true;
@@ -170,7 +436,7 @@ static bool shouldConvertRadiansToDegrees(const std::string& branch_name) {
 
 static double convertValueForPlot(const std::string& branch_name, double value) {
     if (shouldConvertRadiansToDegrees(branch_name)) {
-        return value * (180.0 / TMath::Pi());
+        return value * kRad2Deg;
     }
     return value;
 }
@@ -185,7 +451,34 @@ static std::string axisTitleForBranch(const std::string& branch_name) {
 static double wrapPhiDeg(double phi_deg) {
     double out = std::fmod(phi_deg, 360.0);
     if (out < 0.0) out += 360.0;
+    if (out >= 360.0) out = std::nextafter(360.0, 0.0);
     return out;
+}
+
+static bool in_range(double v, double a, double b) {
+    return (v >= a && v < b);
+}
+
+static bool row_accepts_phi(double phi, double a, double b) {
+    if (b > a) return in_range(phi, a, b);
+    return (phi >= a || phi < b);
+}
+
+static int find_csv_row_for_event(const CsvInfo& csv,
+                                  double x,
+                                  double Q2,
+                                  double t_abs,
+                                  double phi_deg) {
+    for (int i = 0; i < (int)csv.bins.size(); ++i) {
+        const RowBin& r = csv.bins[(size_t)i];
+        if (!r.valid) continue;
+        if (!in_range(x, r.xBmin, r.xBmax)) continue;
+        if (!in_range(Q2, r.Q2min, r.Q2max)) continue;
+        if (!in_range(t_abs, r.tmin, r.tmax)) continue;
+        if (!row_accepts_phi(phi_deg, r.phimin, r.phimax)) continue;
+        return i;
+    }
+    return -1;
 }
 
 static int getClas12SectorFromPhiDeg(double phi_deg) {
@@ -214,260 +507,98 @@ static std::string cutModeText() {
     return "Global cuts + topology-matched 3#sigma exclusivity cuts";
 }
 
-// -------------------- tiny JSON parser for combined_cuts.json --------------------
+static double eval_poly4(const double coeffs[5], double x) {
+    return coeffs[0] + x * (coeffs[1] + x * (coeffs[2] + x * (coeffs[3] + x * coeffs[4])));
+}
 
-class JsonMiniParser {
-public:
-    explicit JsonMiniParser(const std::string& text) : s(text), pos(0) {}
+static double event_weight(Channel ch,
+                           const PeriodDef& period,
+                           const CsvInfo& csv,
+                           int csv_row,
+                           double p1_theta_rad) {
+    const std::map<std::string, PeriodCorrections>& corr_map =
+        (ch == Channel::DVCS) ? csv.dvcs_corr : csv.eppi0_corr;
 
-    std::map<std::string, CutDict> parseCombinedCuts() {
-        std::map<std::string, CutDict> out;
-        parseObjectBegin();
-        skipWs();
-        if (peek() == '}') {
-            parseObjectEnd();
-            return out;
-        }
-
-        while (true) {
-            std::string key = parseString();
-            parseColon();
-            CutDict cd = parseCutDict();
-            out[key] = cd;
-            skipWs();
-            if (peek() == ',') {
-                ++pos;
-                continue;
-            }
-            break;
-        }
-
-        parseObjectEnd();
-        return out;
+    auto it_corr = corr_map.find(period.pretty);
+    if (it_corr == corr_map.end()) {
+        std::ostringstream ss;
+        ss << "[branch_data_mc_comparison] FATAL: missing corrections for period " << period.pretty;
+        throw std::runtime_error(ss.str());
     }
 
-private:
-    const std::string& s;
-    size_t pos;
+    const PeriodCorrections& corr = it_corr->second;
+    const double theta_deg = p1_theta_rad * kRad2Deg;
+    double R = eval_poly4(corr.poly, theta_deg);
 
-    void skipWs() {
-        while (pos < s.size() && std::isspace(static_cast<unsigned char>(s[pos]))) ++pos;
+    if (!(std::isfinite(R) && R > 0.0)) {
+        return 0.0;
     }
 
-    char peek() {
-        skipWs();
-        if (pos >= s.size()) {
-            throw std::runtime_error("[branch_data_mc_comparison] JSON parse error: unexpected end of input");
+    double w = 1.0 / (corr.current_exp * R);
+
+    if (ch == Channel::DVCS) {
+        if (csv_row < 0 || csv_row >= (int)csv.rows.size()) return 0.0;
+        const int c_contam = col_strict(csv, contam_col(period.pretty));
+        const double contam = first_tuple_value_or_default(csv.rows[(size_t)csv_row][c_contam], 0.0);
+        if (std::isfinite(contam)) {
+            w *= (1.0 - contam);
         }
-        return s[pos];
     }
 
-    void expect(char c) {
-        skipWs();
-        if (pos >= s.size() || s[pos] != c) {
-            std::ostringstream ss;
-            ss << "[branch_data_mc_comparison] JSON parse error: expected '" << c
-               << "' at position " << pos;
-            throw std::runtime_error(ss.str());
-        }
-        ++pos;
-    }
+    if (!std::isfinite(w) || w < 0.0) return 0.0;
+    return w;
+}
 
-    void parseObjectBegin() { expect('{'); }
-    void parseObjectEnd() { expect('}'); }
-    void parseColon() { expect(':'); }
-
-    std::string parseString() {
-        skipWs();
-        expect('"');
-        std::string out;
-        while (pos < s.size()) {
-            char c = s[pos++];
-            if (c == '"') return out;
-            if (c == '\\') {
-                if (pos >= s.size()) {
-                    throw std::runtime_error("[branch_data_mc_comparison] JSON parse error: bad escape");
-                }
-                out.push_back(s[pos++]);
-            } else {
-                out.push_back(c);
-            }
-        }
-        throw std::runtime_error("[branch_data_mc_comparison] JSON parse error: unterminated string");
-    }
-
-    double parseNumber() {
-        skipWs();
-        size_t start = pos;
-        if (pos < s.size() && (s[pos] == '-' || s[pos] == '+')) ++pos;
-        while (pos < s.size() &&
-               (std::isdigit(static_cast<unsigned char>(s[pos])) ||
-                s[pos] == '.' || s[pos] == 'e' || s[pos] == 'E' ||
-                s[pos] == '-' || s[pos] == '+')) {
-            ++pos;
-        }
-        std::string token = s.substr(start, pos - start);
-        char* endptr = nullptr;
-        double val = std::strtod(token.c_str(), &endptr);
-        if (endptr == token.c_str()) {
-            std::ostringstream ss;
-            ss << "[branch_data_mc_comparison] JSON parse error: invalid number token \"" << token << "\"";
-            throw std::runtime_error(ss.str());
-        }
-        return val;
-    }
-
-    Stats parseStats() {
-        Stats st{0.0, 0.0};
-        parseObjectBegin();
-
-        bool have_mean = false;
-        bool have_std  = false;
-
-        skipWs();
-        if (peek() == '}') {
-            parseObjectEnd();
-            return st;
-        }
-
-        while (true) {
-            std::string key = parseString();
-            parseColon();
-            double val = parseNumber();
-
-            if (key == "mean") {
-                st.mean = val;
-                have_mean = true;
-            } else if (key == "std") {
-                st.std = val;
-                have_std = true;
-            } else {
-                std::ostringstream ss;
-                ss << "[branch_data_mc_comparison] JSON parse error: unexpected Stats key \"" << key << "\"";
-                throw std::runtime_error(ss.str());
-            }
-
-            skipWs();
-            if (peek() == ',') {
-                ++pos;
-                continue;
-            }
-            break;
-        }
-
-        parseObjectEnd();
-
-        if (!have_mean || !have_std) {
-            throw std::runtime_error("[branch_data_mc_comparison] JSON parse error: Stats missing mean/std");
-        }
-
-        return st;
-    }
-
-    std::map<std::string, Stats> parseStatsMap() {
-        std::map<std::string, Stats> out;
-        parseObjectBegin();
-
-        skipWs();
-        if (peek() == '}') {
-            parseObjectEnd();
-            return out;
-        }
-
-        while (true) {
-            std::string key = parseString();
-            parseColon();
-            Stats st = parseStats();
-            out[key] = st;
-
-            skipWs();
-            if (peek() == ',') {
-                ++pos;
-                continue;
-            }
-            break;
-        }
-
-        parseObjectEnd();
-        return out;
-    }
-
-    CutDict parseCutDict() {
-        CutDict out;
-        parseObjectBegin();
-
-        bool have_data = false;
-        bool have_mc   = false;
-
-        skipWs();
-        if (peek() == '}') {
-            parseObjectEnd();
-            return out;
-        }
-
-        while (true) {
-            std::string key = parseString();
-            parseColon();
-
-            if (key == "data") {
-                out.data = parseStatsMap();
-                have_data = true;
-            } else if (key == "mc") {
-                out.mc = parseStatsMap();
-                have_mc = true;
-            } else {
-                std::ostringstream ss;
-                ss << "[branch_data_mc_comparison] JSON parse error: unexpected CutDict key \"" << key << "\"";
-                throw std::runtime_error(ss.str());
-            }
-
-            skipWs();
-            if (peek() == ',') {
-                ++pos;
-                continue;
-            }
-            break;
-        }
-
-        parseObjectEnd();
-
-        if (!have_data || !have_mc) {
-            throw std::runtime_error("[branch_data_mc_comparison] JSON parse error: CutDict missing data/mc");
-        }
-
-        return out;
-    }
-};
+// -------------------- JSON cuts --------------------
 
 static std::map<std::string, CutDict> loadCombinedCutsJson(const std::string& path) {
     std::cout << "[branch_data_mc_comparison] combined_cuts_json path = " << path << std::endl;
 
-    std::ifstream ifs(path, std::ios::binary);
-    if (!ifs) {
+    std::ifstream fin(path);
+    if (!fin.is_open()) {
         std::ostringstream ss;
         ss << "[branch_data_mc_comparison] FATAL: cannot open combined cuts JSON: " << path;
         throw std::runtime_error(ss.str());
     }
 
-    std::ostringstream buf;
-    buf << ifs.rdbuf();
-    std::string text = buf.str();
-
-    if (text.empty()) {
+    nlohmann::json j;
+    try {
+        fin >> j;
+    } catch (const std::exception& e) {
         std::ostringstream ss;
-        ss << "[branch_data_mc_comparison] FATAL: combined cuts JSON is empty: " << path;
+        ss << "[branch_data_mc_comparison] FATAL: failed parsing " << path << ": " << e.what();
         throw std::runtime_error(ss.str());
     }
 
-    if (text.size() >= 3 &&
-        static_cast<unsigned char>(text[0]) == 0xEF &&
-        static_cast<unsigned char>(text[1]) == 0xBB &&
-        static_cast<unsigned char>(text[2]) == 0xBF) {
-        text.erase(0, 3);
+    std::map<std::string, CutDict> out;
+
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string key = it.key();
+        const auto& block = it.value();
+        if (!block.is_object()) continue;
+
+        CutDict cd;
+
+        auto fill = [&](const char* sample, std::map<std::string, Stats>& target) {
+            if (!block.contains(sample) || !block[sample].is_object()) return;
+            for (auto vit = block[sample].begin(); vit != block[sample].end(); ++vit) {
+                const auto& obj = vit.value();
+                if (!obj.is_object()) continue;
+                if (!obj.contains("mean") || !obj.contains("std")) continue;
+                Stats s;
+                s.mean = obj["mean"].get<double>();
+                s.std = obj["std"].get<double>();
+                target[vit.key()] = s;
+            }
+        };
+
+        fill("data", cd.data);
+        fill("mc", cd.mc);
+
+        out[key] = cd;
     }
 
-    JsonMiniParser parser(text);
-    return parser.parseCombinedCuts();
+    return out;
 }
 
 // -------------------- branch inspection --------------------
@@ -556,12 +687,16 @@ static std::set<std::string> getSupportedScalarNumericBranchNames(TTree* tree) {
     return out;
 }
 
-// -------------------- event binder for cuts --------------------
+// -------------------- event binder for cuts and row matching --------------------
 
 struct BranchBinder {
     int runnum = 0;       bool has_runnum = false;
     int detector1 = 0;    bool has_detector1 = false;
     int detector2 = 0;    bool has_detector2 = false;
+
+    double x = 0.0;       bool has_x = false;
+    double Q2 = 0.0;      bool has_Q2 = false;
+    double phi2 = 0.0;    bool has_phi2 = false;
 
     double t1 = 0.0;                bool has_t1 = false;
     double open_angle_ep2 = 0.0;    bool has_open_angle_ep2 = false;
@@ -579,6 +714,7 @@ struct BranchBinder {
     double e_theta = 0.0;   bool has_e_theta = false;
     double e_phi = 0.0;     bool has_e_phi = false;
 
+    double p1_theta = 0.0;  bool has_p1_theta = false;
     double p1_phi = 0.0;    bool has_p1_phi = false;
 
     double p2_p = 0.0;      bool has_p2_p = false;
@@ -595,6 +731,9 @@ struct BranchBinder {
         ena("runnum");
         ena("detector1");
         ena("detector2");
+        ena("x");
+        ena("Q2");
+        ena("phi2");
         ena("t1");
         ena("open_angle_ep2");
         ena("Emiss2");
@@ -610,6 +749,7 @@ struct BranchBinder {
         ena("e_p");
         ena("e_theta");
         ena("e_phi");
+        ena("p1_theta");
         ena("p1_phi");
         ena("p2_p");
         ena("p2_theta");
@@ -633,6 +773,9 @@ struct BranchBinder {
         bI("detector1", &detector1, has_detector1);
         bI("detector2", &detector2, has_detector2);
 
+        bD("x", &x, has_x);
+        bD("Q2", &Q2, has_Q2);
+        bD("phi2", &phi2, has_phi2);
         bD("t1", &t1, has_t1);
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
         bD("Emiss2", &Emiss2, has_Emiss2);
@@ -649,6 +792,7 @@ struct BranchBinder {
         bD("e_p", &e_p, has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
         bD("e_phi", &e_phi, has_e_phi);
+        bD("p1_theta", &p1_theta, has_p1_theta);
         bD("p1_phi", &p1_phi, has_p1_phi);
         bD("p2_p", &p2_p, has_p2_p);
         bD("p2_theta", &p2_theta, has_p2_theta);
@@ -985,7 +1129,7 @@ static int determineSectorForBranch(const std::string& branch_name, const Branch
         throw std::runtime_error(ss.str());
     }
 
-    const double phi_deg = phi_rad * (180.0 / TMath::Pi());
+    const double phi_deg = phi_rad * kRad2Deg;
     const int sector = getClas12SectorFromPhiDeg(phi_deg);
 
     if (sector < 1 || sector > kNClasdSectors) {
@@ -1001,11 +1145,13 @@ static int determineSectorForBranch(const std::string& branch_name, const Branch
 static void fillHistogramsForTreeSinglePass(
     TTree* tree,
     Channel ch,
-    const std::string& period_label,
+    const PeriodDef& period,
     const std::vector<std::string>& branch_names,
     const std::map<std::string, TLeaf*>& leaf_map,
     const std::map<std::string, CutDict>& combinedCuts,
+    const CsvInfo& csv,
     bool use_data_cuts,
+    bool is_data,
     std::map<std::string, TH1D*>& hist_by_branch,
     std::map<std::string, std::vector<TH1D*> >& sector_hists_by_branch)
 {
@@ -1019,6 +1165,9 @@ static void fillHistogramsForTreeSinglePass(
     GlobalCutConfig gcfg = default_global_cuts();
 
     const Long64_t nentries = tree->GetEntries();
+    long long n_pass = 0;
+    long long n_row = 0;
+
     for (Long64_t i = 0; i < nentries; ++i) {
         tree->GetEntry(i);
 
@@ -1031,10 +1180,10 @@ static void fillHistogramsForTreeSinglePass(
         Topology topo;
         if (!topologyFromDetectors(b.detector1, b.detector2, topo)) continue;
 
-        if (!passesGlobalCutsForBinder(b, period_label)) continue;
+        if (!passesGlobalCutsForBinder(b, period.period_label)) continue;
 
         if (!kSkipExclusivityCuts) {
-            const std::string cut_key = periodCode(ch, period_label) + "_" + topoToKey(topo);
+            const std::string cut_key = periodCode(ch, period.period_label) + "_" + topoToKey(topo);
             auto itCuts = combinedCuts.find(cut_key);
             if (itCuts == combinedCuts.end()) {
                 std::ostringstream ss;
@@ -1048,6 +1197,29 @@ static void fillHistogramsForTreeSinglePass(
 
             if (!passes3SigmaCuts(cut_map, vals)) continue;
         }
+
+        if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi2)) {
+            throw std::runtime_error("[branch_data_mc_comparison] FATAL: missing x/Q2/t1/phi2 needed for CSV-bin correction lookup.");
+        }
+
+        const int csv_row = find_csv_row_for_event(csv,
+                                                   b.x,
+                                                   b.Q2,
+                                                   std::fabs(b.t1),
+                                                   wrapPhiDeg(b.phi2 * kRad2Deg));
+        if (csv_row < 0) continue;
+        ++n_row;
+
+        double weight = 1.0;
+        if (is_data) {
+            if (!b.has_p1_theta) {
+                throw std::runtime_error("[branch_data_mc_comparison] FATAL: missing p1_theta needed for eppi0 normalization polynomial weight.");
+            }
+            weight = event_weight(ch, period, csv, csv_row, b.p1_theta);
+            if (!(weight > 0.0)) continue;
+        }
+
+        ++n_pass;
 
         for (const auto& branch_name : branch_names) {
             auto itLeaf = leaf_map.find(branch_name);
@@ -1076,7 +1248,7 @@ static void fillHistogramsForTreeSinglePass(
 
             const double raw_value = itLeaf->second->GetValue(0);
             const double plot_value = convertValueForPlot(branch_name, raw_value);
-            itHist->second->Fill(plot_value);
+            itHist->second->Fill(plot_value, weight);
 
             const int sector = determineSectorForBranch(branch_name, b);
             TH1D* h_sector = itSectorVec->second[sector - 1];
@@ -1086,9 +1258,17 @@ static void fillHistogramsForTreeSinglePass(
                    << branch_name << " sector " << sector;
                 throw std::runtime_error(ss.str());
             }
-            h_sector->Fill(plot_value);
+            h_sector->Fill(plot_value, weight);
         }
     }
+
+    std::cout << "[branch_data_mc_comparison] Filled "
+              << (is_data ? "data" : "rec MC") << " channel=" << channelToStr(ch)
+              << " period=" << period.pretty
+              << " entries=" << (long long)nentries
+              << " csv_bin_matched=" << n_row
+              << " filled=" << n_pass
+              << std::endl;
 }
 
 static void normalizeHist(TH1D* h) {
@@ -1108,7 +1288,7 @@ static void styleHistogram(TH1D* h, int color, int marker_style) {
 }
 
 static std::string makeCanvasTitle(const std::string& channel_name, const std::string& branch_name) {
-    if (channel_name == "eppi0") return "e p -> e p #pi_{0} : " + branch_name;
+    if (channel_name == "eppi0") return "e p #rightarrow e p #pi_{0} : " + branch_name;
     return "DVCS : " + branch_name;
 }
 
@@ -1157,6 +1337,7 @@ static ChannelHistStore createHistStore(
                 rinfo.xmax
             );
             hd->SetDirectory(nullptr);
+            hd->Sumw2();
 
             TH1D* hm = new TH1D(
                 ("h_mc_" + sanitizeName(channelToStr(ch)) + "_" +
@@ -1167,6 +1348,7 @@ static ChannelHistStore createHistStore(
                 rinfo.xmax
             );
             hm->SetDirectory(nullptr);
+            hm->Sumw2();
 
             std::vector<TH1D*> data_sector_period_vec;
             std::vector<TH1D*> mc_sector_period_vec;
@@ -1184,6 +1366,7 @@ static ChannelHistStore createHistStore(
                     rinfo.xmax
                 );
                 hd_sec->SetDirectory(nullptr);
+                hd_sec->Sumw2();
 
                 TH1D* hm_sec = new TH1D(
                     ("h_mc_" + sanitizeName(channelToStr(ch)) + "_" +
@@ -1195,6 +1378,7 @@ static ChannelHistStore createHistStore(
                     rinfo.xmax
                 );
                 hm_sec->SetDirectory(nullptr);
+                hm_sec->Sumw2();
 
                 data_sector_period_vec.push_back(hd_sec);
                 mc_sector_period_vec.push_back(hm_sec);
@@ -1320,7 +1504,7 @@ static void saveOneBranchCanvas(
         leg->SetBorderSize(1);
         leg->SetTextFont(42);
         leg->SetTextSize(0.035);
-        leg->AddEntry(hd, "Data", "l");
+        leg->AddEntry(hd, "Data, corrected", "l");
         leg->AddEntry(hm, "Reconstructed MC", "l");
         leg->Draw();
 
@@ -1343,18 +1527,20 @@ static void saveOneBranchCanvas(
     latex.SetTextAlign(22);
     latex.SetTextFont(42);
     latex.SetTextSize(0.055);
-    latex.DrawLatex(0.50, 0.72, makeCanvasTitle(channelToStr(ch), branch_name).c_str());
-    latex.SetTextSize(0.040);
-    latex.DrawLatex(0.50, 0.56, cutModeText().c_str());
-    latex.DrawLatex(0.50, 0.47, "All topologies combined into one histogram per period");
-    latex.DrawLatex(0.50, 0.38, "Each histogram normalized to its own integral");
+    latex.DrawLatex(0.50, 0.75, makeCanvasTitle(channelToStr(ch), branch_name).c_str());
+    latex.SetTextSize(0.038);
+    latex.DrawLatex(0.50, 0.60, cutModeText().c_str());
+    latex.DrawLatex(0.50, 0.51, "Data weighted by current-efficiency and e#pi_{0} normalization corrections");
+    if (ch == Channel::DVCS) latex.DrawLatex(0.50, 0.43, "DVCS data also weighted by row-level (1 - #pi_{0} contamination)");
+    else                     latex.DrawLatex(0.50, 0.43, "e#pi_{0} data corrected with the e#pi_{0} normalization polynomial");
+    latex.DrawLatex(0.50, 0.35, "Each histogram normalized to its own integral");
 
     std::ostringstream ss;
     ss << "Range: [" << rinfo.xmin << ", " << rinfo.xmax << "], bins = " << rinfo.nbins;
-    latex.DrawLatex(0.50, 0.29, ss.str().c_str());
+    latex.DrawLatex(0.50, 0.27, ss.str().c_str());
 
-    if (rinfo.from_config) latex.DrawLatex(0.50, 0.20, "Using explicit branch_plot_config range");
-    else                   latex.DrawLatex(0.50, 0.20, "Using automatic branch range");
+    if (rinfo.from_config) latex.DrawLatex(0.50, 0.19, "Using explicit branch_plot_config range");
+    else                   latex.DrawLatex(0.50, 0.19, "Using automatic branch range");
 
     const std::string out_name =
         channel_out_dir + "/" + sanitizeName(branch_name) + "_data_vs_rec_mc.png";
@@ -1398,10 +1584,11 @@ static void saveOneBranchSectorCanvas(
     std::vector<TH1D*> data_hists = itData->second[period_index];
     std::vector<TH1D*> mc_hists   = itMc->second[period_index];
 
-    if (static_cast<int>(data_hists.size()) != kNClasdSectors || static_cast<int>(mc_hists.size()) != kNClasdSectors) {
+    if (static_cast<int>(data_hists.size()) != kNClasdSectors ||
+        static_cast<int>(mc_hists.size())   != kNClasdSectors) {
         std::ostringstream ss;
-        ss << "[branch_data_mc_comparison] FATAL: sector histogram vector size mismatch for branch "
-           << branch_name << " and period " << period.period_label;
+        ss << "[branch_data_mc_comparison] FATAL: sector histogram size mismatch for branch "
+           << branch_name << " period " << period.period_label;
         throw std::runtime_error(ss.str());
     }
 
@@ -1457,7 +1644,7 @@ static void saveOneBranchSectorCanvas(
         leg->SetBorderSize(1);
         leg->SetTextFont(42);
         leg->SetTextSize(0.035);
-        leg->AddEntry(hd, "Data", "l");
+        leg->AddEntry(hd, "Data, corrected", "l");
         leg->AddEntry(hm, "Reconstructed MC", "l");
         leg->Draw();
 
@@ -1484,10 +1671,11 @@ static void saveOneBranchSectorCanvas(
     latex.SetTextSize(0.038);
     latex.DrawLatex(0.50, 0.60, "Sector-by-sector");
     latex.DrawLatex(0.50, 0.50, cutModeText().c_str());
+    latex.DrawLatex(0.50, 0.42, "Data are corrected with CSV current-efficiency and e#pi_{0} normalization weights");
 
     std::ostringstream ss;
     ss << "Range: [" << rinfo.xmin << ", " << rinfo.xmax << "], bins = " << rinfo.nbins;
-    latex.DrawLatex(0.50, 0.38, ss.str().c_str());
+    latex.DrawLatex(0.50, 0.32, ss.str().c_str());
 
     const std::string out_name =
         sector_out_dir + "/" + sanitizeName(branch_name) + "_" +
@@ -1498,13 +1686,99 @@ static void saveOneBranchSectorCanvas(
 
 // -------------------- channel driver --------------------
 
+static void fill_one_period_pair(
+    Channel ch,
+    const PeriodDef& p,
+    size_t ip,
+    const std::map<std::string, TTree*>& dataTrees,
+    const std::map<std::string, TTree*>& recMcTrees,
+    const std::vector<std::string>& branch_names,
+    const std::map<std::string, CutDict>& combinedCuts,
+    const CsvInfo& csv,
+    ChannelHistStore& store)
+{
+    {
+        TTree* tree = dataTrees.at(p.data_key);
+        {
+            std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+            tree->SetBranchStatus("*", 0);
+            enablePlotBranches(tree, branch_names);
+        }
+
+        std::map<std::string, TLeaf*> leaf_map = buildPlotLeafMap(tree, branch_names);
+
+        std::map<std::string, TH1D*> hist_by_branch;
+        std::map<std::string, std::vector<TH1D*> > sector_hist_by_branch;
+
+        for (const auto& branch_name : branch_names) {
+            hist_by_branch[branch_name] = store.data_hists_by_branch.at(branch_name)[ip];
+            sector_hist_by_branch[branch_name] = store.data_sector_hists_by_branch.at(branch_name)[ip];
+        }
+
+        fillHistogramsForTreeSinglePass(
+            tree,
+            ch,
+            p,
+            branch_names,
+            leaf_map,
+            combinedCuts,
+            csv,
+            true,
+            true,
+            hist_by_branch,
+            sector_hist_by_branch
+        );
+
+        std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+        tree->SetBranchStatus("*", 1);
+    }
+
+    {
+        TTree* tree = recMcTrees.at(p.mc_key);
+        {
+            std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+            tree->SetBranchStatus("*", 0);
+            enablePlotBranches(tree, branch_names);
+        }
+
+        std::map<std::string, TLeaf*> leaf_map = buildPlotLeafMap(tree, branch_names);
+
+        std::map<std::string, TH1D*> hist_by_branch;
+        std::map<std::string, std::vector<TH1D*> > sector_hist_by_branch;
+
+        for (const auto& branch_name : branch_names) {
+            hist_by_branch[branch_name] = store.mc_hists_by_branch.at(branch_name)[ip];
+            sector_hist_by_branch[branch_name] = store.mc_sector_hists_by_branch.at(branch_name)[ip];
+        }
+
+        fillHistogramsForTreeSinglePass(
+            tree,
+            ch,
+            p,
+            branch_names,
+            leaf_map,
+            combinedCuts,
+            csv,
+            false,
+            false,
+            hist_by_branch,
+            sector_hist_by_branch
+        );
+
+        std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+        tree->SetBranchStatus("*", 1);
+    }
+}
+
 static void runChannelComparisons(
     Channel ch,
     const std::vector<PeriodDef>& periods,
     const std::map<std::string, TTree*>& dataTrees,
     const std::map<std::string, TTree*>& recMcTrees,
     const std::map<std::string, CutDict>& combinedCuts,
-    const std::string& outPlotDir)
+    const CsvInfo& csv,
+    const std::string& outPlotDir,
+    int max_workers)
 {
     const std::string channel_name = channelToStr(ch);
 
@@ -1535,74 +1809,22 @@ static void runChannelComparisons(
               << ": found " << branch_names.size()
               << " common scalar numeric branches." << std::endl;
 
-    for (size_t ip = 0; ip < periods.size(); ++ip) {
-        const PeriodDef& p = periods[ip];
+    int nth = std::max(1, std::min(5, max_workers));
+    nth = std::min(nth, std::max(1, (int)periods.size()));
 
-        {
-            TTree* tree = dataTrees.at(p.data_key);
-            tree->SetBranchStatus("*", 0);
-            enablePlotBranches(tree, branch_names);
-
-            std::map<std::string, TLeaf*> leaf_map = buildPlotLeafMap(tree, branch_names);
-
-            std::map<std::string, TH1D*> hist_by_branch;
-            std::map<std::string, std::vector<TH1D*> > sector_hist_by_branch;
-
-            for (const auto& branch_name : branch_names) {
-                hist_by_branch[branch_name] = store.data_hists_by_branch[branch_name][ip];
-                sector_hist_by_branch[branch_name] = store.data_sector_hists_by_branch[branch_name][ip];
-            }
-
-            std::cout << "[branch_data_mc_comparison] Filling data tree for "
-                      << channel_name << " period " << p.period_label << std::endl;
-
-            fillHistogramsForTreeSinglePass(
-                tree,
-                ch,
-                p.period_label,
-                branch_names,
-                leaf_map,
-                combinedCuts,
-                true,
-                hist_by_branch,
-                sector_hist_by_branch
-            );
-
-            tree->SetBranchStatus("*", 1);
-        }
-
-        {
-            TTree* tree = recMcTrees.at(p.mc_key);
-            tree->SetBranchStatus("*", 0);
-            enablePlotBranches(tree, branch_names);
-
-            std::map<std::string, TLeaf*> leaf_map = buildPlotLeafMap(tree, branch_names);
-
-            std::map<std::string, TH1D*> hist_by_branch;
-            std::map<std::string, std::vector<TH1D*> > sector_hist_by_branch;
-
-            for (const auto& branch_name : branch_names) {
-                hist_by_branch[branch_name] = store.mc_hists_by_branch[branch_name][ip];
-                sector_hist_by_branch[branch_name] = store.mc_sector_hists_by_branch[branch_name][ip];
-            }
-
-            std::cout << "[branch_data_mc_comparison] Filling rec MC tree for "
-                      << channel_name << " period " << p.period_label << std::endl;
-
-            fillHistogramsForTreeSinglePass(
-                tree,
-                ch,
-                p.period_label,
-                branch_names,
-                leaf_map,
-                combinedCuts,
-                false,
-                hist_by_branch,
-                sector_hist_by_branch
-            );
-
-            tree->SetBranchStatus("*", 1);
-        }
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int ip = 0; ip < (int)periods.size(); ++ip) {
+        fill_one_period_pair(ch,
+                             periods[(size_t)ip],
+                             (size_t)ip,
+                             dataTrees,
+                             recMcTrees,
+                             branch_names,
+                             combinedCuts,
+                             csv,
+                             store);
     }
 
     for (size_t i = 0; i < branch_names.size(); ++i) {
@@ -1647,52 +1869,66 @@ static void runChannelComparisons(
 
 } // namespace
 
-void runAllBranchDataMcComparisons(
+bool runAllBranchDataMcComparisons(
+    const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
     const std::string& combined_cuts_json,
-    const std::string& outPlotDir
-)
+    const std::string& outPlotDir,
+    int max_workers)
 {
-    TH1::AddDirectory(kFALSE);
-    gROOT->SetBatch(kTRUE);
-    gStyle->SetOptStat(0);
-
-    std::map<std::string, CutDict> combinedCuts;
-    if (!kSkipExclusivityCuts) {
-        combinedCuts = loadCombinedCutsJson(combined_cuts_json);
-    }
-
-    const std::string base_out_dir = outPlotDir + "/branch_data_mc_comparisons";
-    std::filesystem::create_directories(base_out_dir);
-
     try {
-        runChannelComparisons(
-            Channel::DVCS,
-            getDvcsPeriods(),
-            dvcsDataTrees,
-            dvcsRecMcTrees,
-            combinedCuts,
-            base_out_dir
-        );
-    } catch (const std::exception& e) {
-        std::cerr << "[branch_data_mc_comparison] DVCS skipped: " << e.what() << std::endl;
-    }
+        ROOT::EnableThreadSafety();
+        TH1::AddDirectory(kFALSE);
+        gROOT->SetBatch(kTRUE);
+        gStyle->SetOptStat(0);
 
-    try {
-        runChannelComparisons(
-            Channel::EPPI0,
-            getEppi0Periods(),
-            eppi0DataTrees,
-            eppi0RecMcTrees,
-            combinedCuts,
-            base_out_dir
-        );
-    } catch (const std::exception& e) {
-        std::cerr << "[branch_data_mc_comparison] eppi0 skipped: " << e.what() << std::endl;
-    }
+        const CsvInfo csv = load_csv_info(csv_path);
 
-    std::cout << "[branch_data_mc_comparison] Done." << std::endl;
+        std::map<std::string, CutDict> combinedCuts;
+        if (!kSkipExclusivityCuts) {
+            combinedCuts = loadCombinedCutsJson(combined_cuts_json);
+        }
+
+        const std::string base_out_dir = outPlotDir + "/branch_data_mc_comparisons";
+        std::filesystem::create_directories(base_out_dir);
+
+        try {
+            runChannelComparisons(
+                Channel::DVCS,
+                getDvcsPeriods(),
+                dvcsDataTrees,
+                dvcsRecMcTrees,
+                combinedCuts,
+                csv,
+                base_out_dir,
+                max_workers
+            );
+        } catch (const std::exception& e) {
+            std::cerr << "[branch_data_mc_comparison] DVCS skipped: " << e.what() << std::endl;
+        }
+
+        try {
+            runChannelComparisons(
+                Channel::EPPI0,
+                getEppi0Periods(),
+                eppi0DataTrees,
+                eppi0RecMcTrees,
+                combinedCuts,
+                csv,
+                base_out_dir,
+                max_workers
+            );
+        } catch (const std::exception& e) {
+            std::cerr << "[branch_data_mc_comparison] eppi0 skipped: " << e.what() << std::endl;
+        }
+
+        std::cout << "[branch_data_mc_comparison] Done." << std::endl;
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return false;
+    }
 }
