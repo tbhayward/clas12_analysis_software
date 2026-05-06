@@ -136,52 +136,52 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Current-dependence correction factors ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-
-        CurrentDependenceOptions current_opts;
-        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-        current_opts.output_dir = "output/dvcs_current_dependence";
-        current_opts.override_to_unity = false;
-        current_opts.max_workers = 5;
-
-        if (!update_current_dependence_factors_csv(csv_main,
-                                                   dataTrees,
-                                                   eppi0DataTrees,
-                                                   currentStudyGenMcTrees,
-                                                   currentStudyRecMcTrees,
-                                                   eppi0GenMcTrees,
-                                                   eppi0RecMcTrees,
-                                                   current_opts)) {
-            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
-
-    // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
+    // // --------- Current-dependence correction factors ----------
     // {
     //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     Eppi0NormalizationOptions norm_opts;
-    //     norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-    //     norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     norm_opts.output_dir = "output/data_mc_normalization";
-    //     norm_opts.override_to_unity = false;
-    //     norm_opts.max_workers = 5;
+    //     CurrentDependenceOptions current_opts;
+    //     current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+    //     current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     current_opts.output_dir = "output/dvcs_current_dependence";
+    //     current_opts.override_to_unity = false;
+    //     current_opts.max_workers = 5;
 
-    //     // Set this to true to disable the eppi0 AAOGEN normalization study.
-    //     // norm_opts.override_to_unity = true;
-
-    //     if (!update_eppi0_normalization_csv(csv_main,
-    //                                         dataTrees, eppi0DataTrees,
-    //                                         eppi0GenMcTrees, eppi0RecMcTrees,
-    //                                         norm_opts)) {
-    //         std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
+    //     if (!update_current_dependence_factors_csv(csv_main,
+    //                                                dataTrees,
+    //                                                eppi0DataTrees,
+    //                                                currentStudyGenMcTrees,
+    //                                                currentStudyRecMcTrees,
+    //                                                eppi0GenMcTrees,
+    //                                                eppi0RecMcTrees,
+    //                                                current_opts)) {
+    //         std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
     //         std::exit(EXIT_FAILURE);
     //     }
     // }
+
+    // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        Eppi0NormalizationOptions norm_opts;
+        norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        norm_opts.output_dir = "output/data_mc_normalization";
+        norm_opts.override_to_unity = false;
+        norm_opts.max_workers = 5;
+
+        // Set this to true to disable the eppi0 AAOGEN normalization study.
+        // norm_opts.override_to_unity = true;
+
+        if (!update_eppi0_normalization_csv(csv_main,
+                                            dataTrees, eppi0DataTrees,
+                                            eppi0GenMcTrees, eppi0RecMcTrees,
+                                            norm_opts)) {
+            std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
     // {
