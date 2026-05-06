@@ -194,12 +194,39 @@ static int parse_current_from_key(const std::string& key) {
         return 0;
     }
 
-    for (int current = 0; current <= 100; ++current) {
-        std::ostringstream token;
-        token << current << "na";
-        if (has_substr(s, token.str())) {
-            return current;
+    // Parse an exact current token of the form <digits>nA.
+    // Do not use substring matching such as "5na", because that incorrectly
+    // classifies 35nA, 45nA, 50nA, and 55nA as 5nA, and 40nA as 0nA.
+    for (size_t na_pos = s.find("na"); na_pos != std::string::npos; na_pos = s.find("na", na_pos + 2)) {
+        if (na_pos == 0) {
+            continue;
         }
+
+        size_t first_digit = na_pos;
+        while (first_digit > 0 && std::isdigit((unsigned char)s[first_digit - 1])) {
+            --first_digit;
+        }
+
+        if (first_digit == na_pos) {
+            continue;
+        }
+
+        const std::string current_token = s.substr(first_digit, na_pos - first_digit);
+        char* endp = nullptr;
+        const long current = std::strtol(current_token.c_str(), &endp, 10);
+
+        if (endp == current_token.c_str() || *endp != '\0') {
+            continue;
+        }
+
+        if (current < 0 || current > 100) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: parsed unreasonable current "
+               << current << " nA from key: " << key;
+            fatal(ss.str());
+        }
+
+        return (int)current;
     }
 
     // The nominal acceptance files are the reference-current files.
