@@ -102,8 +102,8 @@ public static void main(String[] args) {
 	GenericKinematicFitter fitter;
 
 	// Uncomment the desired fitter
-	// fitter = new analysis_fitter(10.6041); 
-	fitter = new monte_carlo_fitter(10.6041);
+	fitter = new analysis_fitter(10.6041); 
+	// fitter = new monte_carlo_fitter(10.6041);
 	// fitter = new event_builder_fitter(10.6041);  
 
 	// Set filter for final states based on fitter type
@@ -277,8 +277,8 @@ public static void main(String[] args) {
 							22, current_gamma1, 22, current_gamma2, energy);
 
 			            Mh_gammagamma = variables.Mh();
-			            // if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
-			            // if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
+			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 			            
 			            detector_gamma1 = variables.get_detector1();
 			            detector_gamma2 = variables.get_detector2();
