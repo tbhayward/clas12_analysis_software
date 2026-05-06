@@ -1369,11 +1369,16 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     std::cout << "[total_counts] channel=" << work_cfg.channel_cfg.csv_channel
               << " sample=" << (is_gen ? "gen" : (is_data ? "data" : "rec"))
               << " tree=" << tags.tree_key
-              << " entries=" << (long long)N
-              << " global_pass=" << n_global_pass
-              << " sig_pass=" << n_sigma_pass
-              << " matched=" << n_used
-              << std::endl;
+              << " entries=" << (long long)N;
+
+    if (is_gen) {
+        std::cout << " global_pass=N/A sig_pass=N/A";
+    } else {
+        std::cout << " global_pass=" << n_global_pass
+                  << " sig_pass=" << n_sigma_pass;
+    }
+
+    std::cout << " matched=" << n_used << std::endl;
 
     return out;
 }
