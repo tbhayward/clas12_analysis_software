@@ -687,20 +687,45 @@ void runAllExclusivityCuts(
     work.reserve(CANONICAL_PERIODS().size());
 
     auto getOrNull = [](const auto& m, const std::string& k)->TTree* {
-        auto it = m.find(k); return (it != m.end() ? it->second : nullptr);
+        auto it = m.find(k);
+        return (it != m.end() ? it->second : nullptr);
+    };
+
+    auto eppi0CleanBaseFromDvcsBase = [](const std::string& dvcs_base)->std::string {
+        // load_trees.cpp now uses explicit EPPI0_* keys for the eppi0 channel:
+        //   DVCS_Fa18_inb  -> EPPI0_Fa18_inb_data / EPPI0_Fa18_inb_rec
+        // Keep the old DVCS_*_eppi0 lookup below as a compatibility fallback.
+        const std::string prefix = "DVCS_";
+        if (dvcs_base.rfind(prefix, 0) == 0) {
+            return std::string("EPPI0_") + dvcs_base.substr(prefix.size());
+        }
+        return std::string("EPPI0_") + dvcs_base;
     };
 
     for (const auto& P : CANONICAL_PERIODS()) {
         const std::string base = P.tree_key;
         const std::string lbl  = P.label;
+        const std::string eppi0_base = eppi0CleanBaseFromDvcsBase(base);
+
         PeriodWork W;
         W.label      = lbl;
         W.dvcs_data  = getOrNull(dvcsDataTrees, base);
         W.dvcs_mc    = getOrNull(dvcsRecMcTrees, base + std::string("_rec"));
-        W.eppi0_data = getOrNull(eppi0DataTrees,  base + std::string(SUF_EPPI0));
-        W.eppi0_mc   = getOrNull(eppi0RecMcTrees, base + std::string(SUF_REC_MC));
-        if (W.dvcs_data && W.dvcs_mc) work.push_back(W);
-        else if (W.eppi0_data && W.eppi0_mc) work.push_back(W);
+
+        // New clean-tag convention, with old-tag fallbacks for compatibility.
+        W.eppi0_data = getOrNull(eppi0DataTrees, eppi0_base + std::string("_data"));
+        if (!W.eppi0_data) {
+            W.eppi0_data = getOrNull(eppi0DataTrees, base + std::string(SUF_EPPI0));
+        }
+
+        W.eppi0_mc = getOrNull(eppi0RecMcTrees, eppi0_base + std::string("_rec"));
+        if (!W.eppi0_mc) {
+            W.eppi0_mc = getOrNull(eppi0RecMcTrees, base + std::string(SUF_REC_MC));
+        }
+
+        if ((W.dvcs_data && W.dvcs_mc) || (W.eppi0_data && W.eppi0_mc)) {
+            work.push_back(W);
+        }
     }
 
     if (work.empty()) {
