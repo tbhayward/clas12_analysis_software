@@ -36,7 +36,9 @@ class TTree;
  *     eppi0 -> DVCS background MC trees used for pi0 contamination estimates.
  *
  *   radGenMcTrees / radRecMcTrees
- *     Radiative DVCS MC trees.
+ *     Optional radiative DVCS MC trees. Missing radiative files are skipped
+ *     with warnings because the standard production workflow can use imported
+ *     pass-1 radiative correction values instead of recalculating them.
  *
  * The extended overload additionally fills:
  *

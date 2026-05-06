@@ -248,6 +248,102 @@ static bool load_category(const std::string& category_name,
     return true;
 }
 
+
+static bool load_single_tree_optional(const FileDef& fd,
+                                      std::map<std::string, TTree*>& container,
+                                      const std::string& category_name) {
+    if (fd.tag.empty()) {
+        std::cerr << "[loadTrees] WARNING: Empty optional tag in category " << category_name << "\n";
+        return true;
+    }
+
+    if (fd.path.empty()) {
+        std::cerr << "[loadTrees] WARNING: Empty optional path for tag " << fd.tag
+                  << " in category " << category_name << "\n";
+        return true;
+    }
+
+    if (container.find(fd.tag) != container.end()) {
+        std::cerr << "[loadTrees] FATAL: Duplicate tree tag in optional category "
+                  << category_name << ": " << fd.tag << "\n";
+        return false;
+    }
+
+    if (!std::filesystem::exists(fd.path)) {
+        std::cerr << "[loadTrees] WARNING: Optional " << category_name
+                  << " file not found; skipping tag " << fd.tag
+                  << ": " << fd.path << "\n";
+        return true;
+    }
+
+    TFile* f = TFile::Open(fd.path.c_str(), "READ");
+
+    if (!f || f->IsZombie()) {
+        std::cerr << "[loadTrees] WARNING: Optional " << category_name
+                  << " file could not be opened; skipping tag " << fd.tag
+                  << ": " << fd.path << "\n";
+        if (f) {
+            delete f;
+        }
+        return true;
+    }
+
+    TTree* tree = dynamic_cast<TTree*>(f->Get(kTreeName));
+
+    if (!tree) {
+        std::cerr << "[loadTrees] WARNING: Optional " << category_name
+                  << " file does not contain " << kTreeName
+                  << "; skipping tag " << fd.tag
+                  << ": " << fd.path << "\n";
+        delete f;
+        return true;
+    }
+
+    open_file_registry().push_back(f);
+    container[fd.tag] = tree;
+
+    return true;
+}
+
+static bool load_optional_category(const std::string& category_name,
+                                   const std::vector<FileDef>& files,
+                                   std::map<std::string, TTree*>& container) {
+    std::vector<std::string> loaded_tags;
+    int skipped = 0;
+
+    for (const auto& fd : files) {
+        const size_t before = container.size();
+
+        if (!load_single_tree_optional(fd, container, category_name)) {
+            return false;
+        }
+
+        if (container.size() > before) {
+            loaded_tags.push_back(fd.tag);
+        } else {
+            ++skipped;
+        }
+    }
+
+    std::cout << "[loadTrees] Optional " << category_name << ": loaded "
+              << loaded_tags.size() << ", skipped " << skipped;
+
+    if (!loaded_tags.empty()) {
+        std::cout << " [";
+        for (size_t i = 0; i < loaded_tags.size(); ++i) {
+            std::cout << loaded_tags[i];
+            if (i + 1 < loaded_tags.size()) {
+                std::cout << ", ";
+            }
+        }
+        std::cout << "]";
+    }
+
+    std::cout << "\n";
+
+    return true;
+}
+
 static bool load_current_study_dvcs_mc(std::map<std::string, TTree*>& currentStudyGenMcTrees,
                                        std::map<std::string, TTree*>& currentStudyRecMcTrees) {
     namespace fs = std::filesystem;
@@ -411,7 +507,7 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
     }
 
     // ---------------- DVCS generated MC for radiative studies ----------------
-    if (!load_category("DVCS generated MC radiative", {
+    if (!load_optional_category("DVCS generated MC radiative", {
         {"DVCS_Sp18_inb_gen_rad", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen_rad/gen_dvcsgen_rad_rga_sp18_inb_10594MeV.root"},
         {"DVCS_Sp18_out_gen_rad", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen_rad/gen_dvcsgen_rad_rga_sp18_out_10594MeV.root"},
         {"DVCS_Fa18_inb_gen_rad", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen_rad/gen_dvcsgen_rad_rga_fa18_inb_10604MeV.root"},
@@ -422,7 +518,7 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
     }
 
     // ---------------- DVCS reconstructed MC for radiative studies ----------------
-    if (!load_category("DVCS reconstructed MC radiative", {
+    if (!load_optional_category("DVCS reconstructed MC radiative", {
         {"DVCS_Sp18_inb_rec_rad", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen_rad/rec_dvcsgen_rad_rga_sp18_inb_10594MeV.root"},
         {"DVCS_Sp18_out_rec_rad", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen_rad/rec_dvcsgen_rad_rga_sp18_out_10594MeV.root"},
         {"DVCS_Fa18_inb_rec_rad", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen_rad/rec_dvcsgen_rad_rga_fa18_inb_10604MeV.root"},
