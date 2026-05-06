@@ -11,6 +11,9 @@ class TTree;
  *
  * Loads all ROOT trees used by the DVCS pass-2 cross-section workflow.
  *
+ * Fa18 Inb supplemental data are intentionally excluded from this loader and
+ * from the standard analysis workflow.
+ *
  * The original maps are preserved:
  *
  *   dataTrees

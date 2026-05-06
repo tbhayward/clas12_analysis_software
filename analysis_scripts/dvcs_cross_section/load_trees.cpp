@@ -381,7 +381,6 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
     if (!load_category("DVCS data", {
         {"DVCS_Sp18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"},
         {"DVCS_Sp18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"},
-        {"DVCS_Fa18_inb_supp", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_supplemental_epgamma.root"},
         {"DVCS_Fa18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"},
         {"DVCS_Fa18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"},
         {"DVCS_Sp19_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"}
@@ -437,7 +436,6 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
     if (!load_category("eppi0 data", {
         {"DVCS_Sp18_inb_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root"},
         {"DVCS_Sp18_out_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root"},
-        {"DVCS_Fa18_inb_supp_eppi0", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_supplemental_eppi0.root"},
         {"DVCS_Fa18_inb_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root"},
         {"DVCS_Fa18_out_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root"},
         {"DVCS_Sp19_inb_eppi0",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root"}
