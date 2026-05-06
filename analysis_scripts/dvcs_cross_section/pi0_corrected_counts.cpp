@@ -454,8 +454,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
                 const double norm = raw_sum[hel];
                 double S = 0.0;
                 double S_stat = 0.0;
-                compute_signal_and_stat(raw, c_val, c_stat, S, S_stat);
-
+                compute_signal_and_stat(norm, c_val, c_stat, S, S_stat);
                 const int c_sig = sig_idx[per][hel];
                 csv.rows[r][c_sig] = format_triple(S, S_stat, 0.0);
                 ++cells_written;
