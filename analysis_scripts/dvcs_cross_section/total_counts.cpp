@@ -110,7 +110,7 @@ static ChannelConfig dvcs_config() {
     cfg.channel = Channel::DVCS;
     cfg.csv_channel = "ep->epg";
     cfg.cut_prefix = "DVCS";
-    cfg.plot_subdir = "";
+    cfg.plot_subdir = "DVCS";
     cfg.plot_file_token = "";
     cfg.title_label = "ep #rightarrow ep#gamma";
     cfg.uses_dvcs_topology_cuts = true;
@@ -297,14 +297,46 @@ static inline bool should_skip_csv_for_label(const std::string& label) {
     return false;
 }
 
+static inline bool ends_with_path_component(const std::string& path,
+                                                const std::string& component) {
+    if (path == component) {
+        return true;
+    }
+
+    if (path.size() <= component.size()) {
+        return false;
+    }
+
+    const size_t start = path.size() - component.size();
+    return path.compare(start, component.size(), component) == 0 &&
+           (start == 0 || path[start - 1] == '/');
+}
+
+static inline std::string normalize_total_counts_root(const std::string& out_root_dir) {
+    if (out_root_dir.empty()) {
+        return "output/total_counts_plots";
+    }
+
+    if (ends_with_path_component(out_root_dir, "total_counts_plots")) {
+        return out_root_dir;
+    }
+
+    return out_root_dir + "/total_counts_plots";
+}
+
 static inline std::string out_root_for_label(const ChannelConfig& channel_cfg,
                                              const std::string& label,
                                              const std::string& out_root_dir) {
-    std::string base = out_root_dir;
+    std::string base = normalize_total_counts_root(out_root_dir);
 
-    if (!channel_cfg.plot_subdir.empty()) {
-        base += "/" + channel_cfg.plot_subdir;
+    if (channel_cfg.plot_subdir.empty()) {
+        std::ostringstream ss;
+        ss << "[total_counts] FATAL: empty plot_subdir for channel "
+           << channel_cfg.csv_channel;
+        fatal(ss.str());
     }
+
+    base += "/" + channel_cfg.plot_subdir;
 
     if (is_combined_group_label(label)) {
         return base + "/" + canonical_group_dir(label);
@@ -1369,16 +1401,11 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     std::cout << "[total_counts] channel=" << work_cfg.channel_cfg.csv_channel
               << " sample=" << (is_gen ? "gen" : (is_data ? "data" : "rec"))
               << " tree=" << tags.tree_key
-              << " entries=" << (long long)N;
-
-    if (is_gen) {
-        std::cout << " global_pass=N/A sig_pass=N/A";
-    } else {
-        std::cout << " global_pass=" << n_global_pass
-                  << " sig_pass=" << n_sigma_pass;
-    }
-
-    std::cout << " matched=" << n_used << std::endl;
+              << " entries=" << (long long)N
+              << " global_pass=" << n_global_pass
+              << " sig_pass=" << n_sigma_pass
+              << " matched=" << n_used
+              << std::endl;
 
     return out;
 }
@@ -2221,7 +2248,7 @@ bool update_total_counts_csv(const std::string& csv_path,
         }
 
         std::cout << "[total_counts] Plots written under: "
-                  << out_root_dir << std::endl;
+                  << normalize_total_counts_root(out_root_dir) << std::endl;
 
         return true;
     } catch (const std::exception& e) {
