@@ -62,6 +62,7 @@ public class monte_carlo_fitter extends GenericKinematicFitter {
 
                     // Check if a valid Particle was returned before adding it to the event
                     if (part != null) {
+                        System.out.println("added pi0");
                         physEvent.addParticle(part);
                     }
                 }
