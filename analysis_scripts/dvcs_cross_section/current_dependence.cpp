@@ -6,6 +6,7 @@
 #include <TROOT.h>
 #include <TSystem.h>
 #include <TCanvas.h>
+#include <TPad.h>
 #include <TGraphErrors.h>
 #include <TGraph.h>
 #include <TLegend.h>
@@ -1603,8 +1604,36 @@ static void draw_current_panel_2x3(const std::string& out_path,
                                    bool relative) {
     mkdir_p(out_path.substr(0, out_path.find_last_of('/')));
 
-    TCanvas c("c_current_dependence_panel", "", 1800, 1200);
-    c.Divide(3, 2, 0.001, 0.001);
+    TCanvas c("c_current_dependence_panel", "", 1900, 1280);
+    c.SetFillColor(kWhite);
+    c.SetFrameFillColor(kWhite);
+
+    TPad* title_pad = new TPad("current_dependence_title_pad", "", 0.0, 0.935, 1.0, 1.0);
+    TPad* grid_pad  = new TPad("current_dependence_grid_pad",  "", 0.0, 0.0,   1.0, 0.935);
+
+    title_pad->SetFillColor(kWhite);
+    title_pad->SetFrameFillColor(kWhite);
+    title_pad->SetBorderMode(0);
+    title_pad->SetMargin(0.0, 0.0, 0.0, 0.0);
+
+    grid_pad->SetFillColor(kWhite);
+    grid_pad->SetFrameFillColor(kWhite);
+    grid_pad->SetBorderMode(0);
+    grid_pad->SetMargin(0.0, 0.0, 0.0, 0.0);
+
+    title_pad->Draw();
+    grid_pad->Draw();
+
+    title_pad->cd();
+    TLatex title_text;
+    title_text.SetNDC(true);
+    title_text.SetTextFont(42);
+    title_text.SetTextSize(0.42);
+    title_text.SetTextAlign(22);
+    title_text.DrawLatex(0.50, 0.48, title.c_str());
+
+    grid_pad->cd();
+    grid_pad->Divide(3, 2, 0.004, 0.004);
 
     std::map<std::string, PeriodResult> by_period;
     for (const PeriodResult& r : results) {
@@ -1614,61 +1643,126 @@ static void draw_current_panel_2x3(const std::string& out_path,
     std::vector<TGraphErrors*> owned_graphs;
     std::vector<TGraph*> owned_lines;
 
-    auto draw_one_period = [&](const PeriodResult& r, int color, int marker, const std::string& pad_title, bool final_pad) {
+    auto y_axis_title = [&]() {
+        if (relative) {
+            return std::string("Relative response to 0 nA");
+        }
+        if (draw_data) {
+            return std::string("Data counts / nC");
+        }
+        return std::string("MC reconstructed / generated");
+    };
+
+    auto configure_pad = [&](int ipad) {
+        grid_pad->cd(ipad + 1);
+        gPad->SetFillColor(kWhite);
+        gPad->SetFrameFillColor(kWhite);
+        gPad->SetLeftMargin(0.215);
+        gPad->SetRightMargin(0.035);
+        gPad->SetTopMargin(0.075);
+        gPad->SetBottomMargin(0.155);
+        gPad->SetGrid(1, 1);
+        gPad->SetTickx(1);
+        gPad->SetTicky(1);
+    };
+
+    auto configure_frame = [&](TH1D* frame) {
+        frame->SetTitle("");
+        frame->GetXaxis()->SetTitle("Current (nA)");
+        frame->GetYaxis()->SetTitle(y_axis_title().c_str());
+        frame->GetXaxis()->CenterTitle(true);
+        frame->GetYaxis()->CenterTitle(true);
+        frame->GetXaxis()->SetNdivisions(505);
+        frame->GetYaxis()->SetNdivisions(505);
+        frame->GetXaxis()->SetTitleSize(0.052);
+        frame->GetYaxis()->SetTitleSize(0.052);
+        frame->GetXaxis()->SetLabelSize(0.042);
+        frame->GetYaxis()->SetLabelSize(0.042);
+        frame->GetXaxis()->SetTitleOffset(1.12);
+        frame->GetYaxis()->SetTitleOffset(1.92);
+    };
+
+    auto draw_pad_label = [&](const std::string& label) {
+        TLatex txt;
+        txt.SetNDC(true);
+        txt.SetTextFont(42);
+        txt.SetTextSize(0.052);
+        txt.SetTextAlign(13);
+        txt.DrawLatex(0.255, 0.900, label.c_str());
+    };
+
+    auto compute_range_for_period = [&](const PeriodResult& r, double& ymin, double& ymax) {
+        ymin = std::numeric_limits<double>::infinity();
+        ymax = -std::numeric_limits<double>::infinity();
+
+        const std::vector<CurrentPoint>& points = draw_data ? r.data_points : r.mc_points;
+        const FitResult& fit = draw_data ? r.data_fit : r.mc_fit;
+
+        for (const CurrentPoint& pt : points) {
+            const double y = point_y_for_plot(pt, fit, relative);
+            const double ey = point_ey_for_plot(pt, fit, relative);
+            if (std::isfinite(y)) {
+                ymin = std::min(ymin, y - ey);
+                ymax = std::max(ymax, y + ey);
+            }
+        }
+
+        if (std::isfinite(fit.m) && std::isfinite(fit.b)) {
+            for (int i = 0; i < 80; ++i) {
+                const double x = 80.0 * (double)i / 79.0;
+                const double y = fit_y_for_plot(x, fit, relative);
+                if (std::isfinite(y)) {
+                    ymin = std::min(ymin, y);
+                    ymax = std::max(ymax, y);
+                }
+            }
+        }
+    };
+
+    auto finalize_range = [&](double& ymin, double& ymax) {
+        if (!std::isfinite(ymin) || !std::isfinite(ymax) || ymax <= ymin) {
+            ymin = relative ? 0.85 : 0.0;
+            ymax = relative ? 1.15 : 1.0;
+            return;
+        }
+
+        const double span = ymax - ymin;
+        if (relative) {
+            ymin = std::min(0.90, ymin - 0.12 * span);
+            ymax = std::max(1.10, ymax + 0.12 * span);
+        } else {
+            ymin = 0.0;
+            ymax = ymax + 0.18 * span;
+            if (!(ymax > 0.0)) {
+                ymax = 1.0;
+            }
+        }
+    };
+
+    auto draw_period_contents = [&](const PeriodResult& r, int color, int marker, bool add_legend_title, TLegend* leg) {
         const std::vector<CurrentPoint>& points = draw_data ? r.data_points : r.mc_points;
         const FitResult& fit = draw_data ? r.data_fit : r.mc_fit;
 
         TGraphErrors* g = new TGraphErrors();
         owned_graphs.push_back(g);
         g->SetMarkerStyle(marker);
+        g->SetMarkerSize(1.0);
         g->SetMarkerColor(color);
         g->SetLineColor(color);
         g->SetLineWidth(1);
-
-        double ymax = 0.0;
-        double ymin = std::numeric_limits<double>::infinity();
 
         for (int i = 0; i < (int)points.size(); ++i) {
             const double y = point_y_for_plot(points[i], fit, relative);
             const double ey = point_ey_for_plot(points[i], fit, relative);
             g->SetPoint(i, points[i].current_nA, y);
             g->SetPointError(i, 0.0, ey);
-            if (std::isfinite(y)) {
-                ymax = std::max(ymax, y + ey);
-                ymin = std::min(ymin, y - ey);
-            }
         }
-
-        if (!(ymax > 0.0)) ymax = 1.0;
-        if (!std::isfinite(ymin)) ymin = 0.0;
-        if (relative) {
-            ymin = std::min(0.85, ymin * 0.95);
-            ymax = std::max(1.15, ymax * 1.05);
-        } else {
-            ymin = 0.0;
-            ymax *= 1.25;
-        }
-
-        TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, ymin, 80.0, ymax);
-        frame->SetTitle(pad_title.c_str());
-        frame->GetXaxis()->SetTitle("Current (nA)");
-        if (relative) {
-            frame->GetYaxis()->SetTitle("Relative response to 0 nA");
-        } else if (draw_data) {
-            frame->GetYaxis()->SetTitle("Data counts / nC");
-        } else {
-            frame->GetYaxis()->SetTitle("MC reconstructed / generated");
-        }
-        frame->GetXaxis()->CenterTitle(true);
-        frame->GetYaxis()->CenterTitle(true);
-        frame->GetXaxis()->SetTitleSize(0.050);
-        frame->GetYaxis()->SetTitleSize(0.050);
-        frame->GetXaxis()->SetLabelSize(0.045);
-        frame->GetYaxis()->SetLabelSize(0.045);
-        frame->GetYaxis()->SetTitleOffset(1.55);
-        frame->GetXaxis()->SetTitleOffset(1.15);
 
         g->Draw("PE SAME");
+
+        if (leg != nullptr) {
+            leg->AddEntry(g, r.period.c_str(), "pe");
+        }
 
         if (std::isfinite(fit.m) && std::isfinite(fit.b)) {
             TGraph* line = new TGraph();
@@ -1683,20 +1777,13 @@ static void draw_current_panel_2x3(const std::string& out_path,
             line->Draw("L SAME");
         }
 
-        if (final_pad) {
-            g->SetTitle(r.period.c_str());
+        if (add_legend_title) {
+            draw_pad_label(r.period);
         }
     };
 
     for (int ipad = 0; ipad < 6; ++ipad) {
-        c.cd(ipad + 1);
-        gPad->SetLeftMargin(0.17);
-        gPad->SetRightMargin(0.06);
-        gPad->SetTopMargin(0.10);
-        gPad->SetBottomMargin(0.14);
-        gPad->SetGrid(1, 1);
-        gPad->SetTickx(1);
-        gPad->SetTicky(1);
+        configure_pad(ipad);
 
         if (ipad < 5) {
             const std::string period = PERIOD_ORDER[(size_t)ipad];
@@ -1704,117 +1791,79 @@ static void draw_current_panel_2x3(const std::string& out_path,
             if (it == by_period.end()) {
                 continue;
             }
-            draw_one_period(it->second, period_color(period), period_marker(period), period, false);
+
+            double ymin = 0.0;
+            double ymax = 1.0;
+            compute_range_for_period(it->second, ymin, ymax);
+            finalize_range(ymin, ymax);
+
+            TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, ymin, 80.0, ymax);
+            configure_frame(frame);
+
+            draw_period_contents(it->second,
+                                 period_color(period),
+                                 period_marker(period),
+                                 true,
+                                 nullptr);
         } else {
-            double ymax = 0.0;
             double ymin = std::numeric_limits<double>::infinity();
+            double ymax = -std::numeric_limits<double>::infinity();
 
             for (const std::string& period : PERIOD_ORDER) {
                 auto it = by_period.find(period);
-                if (it == by_period.end()) continue;
-                const PeriodResult& r = it->second;
-                const std::vector<CurrentPoint>& points = draw_data ? r.data_points : r.mc_points;
-                const FitResult& fit = draw_data ? r.data_fit : r.mc_fit;
-                for (const CurrentPoint& pt : points) {
-                    const double y = point_y_for_plot(pt, fit, relative);
-                    const double ey = point_ey_for_plot(pt, fit, relative);
-                    if (std::isfinite(y)) {
-                        ymax = std::max(ymax, y + ey);
-                        ymin = std::min(ymin, y - ey);
-                    }
+                if (it == by_period.end()) {
+                    continue;
                 }
+
+                double ypmin = 0.0;
+                double ypmax = 1.0;
+                compute_range_for_period(it->second, ypmin, ypmax);
+                ymin = std::min(ymin, ypmin);
+                ymax = std::max(ymax, ypmax);
             }
 
-            if (!(ymax > 0.0)) ymax = 1.0;
-            if (!std::isfinite(ymin)) ymin = 0.0;
-            if (relative) {
-                ymin = std::min(0.85, ymin * 0.95);
-                ymax = std::max(1.15, ymax * 1.05);
-            } else {
-                ymin = 0.0;
-                ymax *= 1.25;
-            }
+            finalize_range(ymin, ymax);
 
             TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, ymin, 80.0, ymax);
-            frame->SetTitle("All periods");
-            frame->GetXaxis()->SetTitle("Current (nA)");
-            if (relative) {
-                frame->GetYaxis()->SetTitle("Relative response to 0 nA");
-            } else if (draw_data) {
-                frame->GetYaxis()->SetTitle("Data counts / nC");
-            } else {
-                frame->GetYaxis()->SetTitle("MC reconstructed / generated");
-            }
-            frame->GetXaxis()->CenterTitle(true);
-            frame->GetYaxis()->CenterTitle(true);
-            frame->GetXaxis()->SetTitleSize(0.050);
-            frame->GetYaxis()->SetTitleSize(0.050);
-            frame->GetXaxis()->SetLabelSize(0.045);
-            frame->GetYaxis()->SetLabelSize(0.045);
-            frame->GetYaxis()->SetTitleOffset(1.55);
-            frame->GetXaxis()->SetTitleOffset(1.15);
+            configure_frame(frame);
+            draw_pad_label("All periods");
 
-            TLegend* leg = new TLegend(0.48, 0.60, 0.92, 0.90);
+            TLegend* leg = new TLegend(0.53, 0.56, 0.94, 0.88);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
             leg->SetBorderSize(1);
             leg->SetTextFont(42);
-            leg->SetTextSize(0.038);
+            leg->SetTextSize(0.040);
 
             for (const std::string& period : PERIOD_ORDER) {
                 auto it = by_period.find(period);
-                if (it == by_period.end()) continue;
-                const PeriodResult& r = it->second;
-                const std::vector<CurrentPoint>& points = draw_data ? r.data_points : r.mc_points;
-                const FitResult& fit = draw_data ? r.data_fit : r.mc_fit;
-                const int color = period_color(period);
-                const int marker = period_marker(period);
-
-                TGraphErrors* g = new TGraphErrors();
-                owned_graphs.push_back(g);
-                g->SetMarkerStyle(marker);
-                g->SetMarkerColor(color);
-                g->SetLineColor(color);
-                g->SetLineWidth(1);
-
-                for (int i = 0; i < (int)points.size(); ++i) {
-                    const double y = point_y_for_plot(points[i], fit, relative);
-                    const double ey = point_ey_for_plot(points[i], fit, relative);
-                    g->SetPoint(i, points[i].current_nA, y);
-                    g->SetPointError(i, 0.0, ey);
+                if (it == by_period.end()) {
+                    continue;
                 }
-                g->Draw("PE SAME");
-                leg->AddEntry(g, period.c_str(), "pe");
-
-                if (std::isfinite(fit.m) && std::isfinite(fit.b)) {
-                    TGraph* line = new TGraph();
-                    owned_lines.push_back(line);
-                    for (int i = 0; i < 200; ++i) {
-                        const double x = 80.0 * (double)i / 199.0;
-                        const double y = fit_y_for_plot(x, fit, relative);
-                        line->SetPoint(i, x, y);
-                    }
-                    line->SetLineColor(color);
-                    line->SetLineWidth(2);
-                    line->Draw("L SAME");
-                }
+                draw_period_contents(it->second,
+                                     period_color(period),
+                                     period_marker(period),
+                                     false,
+                                     leg);
             }
+
             leg->Draw();
         }
     }
 
-    c.cd();
-    TLatex title_text;
-    title_text.SetNDC(true);
-    title_text.SetTextFont(42);
-    title_text.SetTextSize(0.032);
-    title_text.DrawLatex(0.03, 0.985, title.c_str());
-
     c.SaveAs(out_path.c_str());
 
-    for (TGraphErrors* g : owned_graphs) delete g;
-    for (TGraph* g : owned_lines) delete g;
+    for (TGraphErrors* g : owned_graphs) {
+        delete g;
+    }
+    for (TGraph* g : owned_lines) {
+        delete g;
+    }
+
+    delete title_pad;
+    delete grid_pad;
 }
+
 
 static void write_points_csv(const std::string& path,
                              const std::vector<CurrentPoint>& points) {
