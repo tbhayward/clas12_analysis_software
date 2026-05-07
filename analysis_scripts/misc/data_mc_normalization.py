@@ -15,7 +15,7 @@ import ROOT
 
 GLOBAL_CHARGE_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
-DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN = 6.04885572e-4
+DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN = 6.04885572e-3
 
 MICROBARN_TO_PB = 1.0e6
 
