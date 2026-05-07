@@ -19,6 +19,11 @@ CHARGE_TO_MC_FACTOR = 1.0e-6
 
 RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC = 1316.875
 
+# Temporary/default AAOgen integrated cross section for testing.
+# Replace with period/energy-specific values after regenerating the AAOgen logs.
+DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN = 6.04885572e-4
+MICROBARN_TO_PB = 1.0e6
+
 OUTPUT_ROOT_DIR = "output/data_mc_normalization"
 DEFAULT_OUTPUT_TAG = "default"
 
@@ -740,8 +745,6 @@ def configure_tree_for_mc(tree):
         tree.SetBranchStatus(branch_name, 1)
     #endfor
 
-    tree.SetBranchStatus("weight", 1)
-
 
 def make_empty_result_maps():
     counts_by_variable = {}
@@ -970,22 +973,21 @@ def mc_worker(args):
     variable_fills, variable_panel_skips, variable_range_skips = initialize_variable_counters()
 
     n_total = end_entry - start_entry
-    raw_weight_sum = 0.0
+    filled_event_count = 0
     scaled_weight_sum = 0.0
-    max_raw_weight = None
 
-    print("[{}] MC worker {} starting entries {} to {}.".format(
+    print("[{}] MC worker {} starting entries {} to {} with constant AAOgen normalization weight {:.12g}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
         start_entry,
-        end_entry
+        end_entry,
+        normalization_factor
     ), flush=True)
 
     for local_index, i_entry in enumerate(range(start_entry, end_entry), start=1):
         tree.GetEntry(i_entry)
 
-        raw_weight = float(getattr(tree, "weight"))
-        event_weight = normalization_factor * raw_weight
+        event_weight = normalization_factor
 
         raw_values = {
             "p1_theta": float(getattr(tree, "p1_theta")),
@@ -1029,16 +1031,12 @@ def mc_worker(args):
         #endfor
 
         if any_filled:
-            raw_weight_sum += raw_weight
+            filled_event_count += 1
             scaled_weight_sum += event_weight
-
-            if max_raw_weight is None or raw_weight > max_raw_weight:
-                max_raw_weight = raw_weight
-            #endif
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | p1 first/second/none = {}/{}/{} | p2 first/second/none = {}/{}/{} | raw weight sum in any-filled entries: {:.12g}".format(
+            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | p1 first/second/none = {}/{}/{} | p2 first/second/none = {}/{}/{} | any-filled entries = {} | scaled weight sum = {:.12g}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
@@ -1050,18 +1048,15 @@ def mc_worker(args):
                 region_counts["p2_first"],
                 region_counts["p2_second"],
                 region_counts["p2_none"],
-                raw_weight_sum
+                filled_event_count,
+                scaled_weight_sum
             ), flush=True)
         #endif
     #endfor
 
     root_file.Close()
 
-    if max_raw_weight is None:
-        max_raw_weight = 0.0
-    #endif
-
-    print("[{}] MC worker {} finished: p1 first/second/none = {}/{}/{}, p2 first/second/none = {}/{}/{}, raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
+    print("[{}] MC worker {} finished: p1 first/second/none = {}/{}/{}, p2 first/second/none = {}/{}/{}, any-filled entries = {}, scaled weight sum = {:.12g}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
         region_counts["p1_first"],
@@ -1070,23 +1065,20 @@ def mc_worker(args):
         region_counts["p2_first"],
         region_counts["p2_second"],
         region_counts["p2_none"],
-        raw_weight_sum,
-        scaled_weight_sum,
-        max_raw_weight
+        filled_event_count,
+        scaled_weight_sum
     ), flush=True)
 
     return {
         "counts_by_variable": counts_by_variable,
         "sumw2_by_variable": sumw2_by_variable,
         "region_counts": region_counts,
-        "raw_weight_sum": raw_weight_sum,
+        "filled_event_count": filled_event_count,
         "scaled_weight_sum": scaled_weight_sum,
-        "max_raw_weight": max_raw_weight,
         "variable_fills": variable_fills,
         "variable_panel_skips": variable_panel_skips,
         "variable_range_skips": variable_range_skips,
     }
-
 
 def merge_region_counts(total_region_counts, chunk_region_counts):
     for key in total_region_counts:
@@ -1218,9 +1210,8 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
     total_region_counts = initialize_region_counters()
     variable_fills, variable_panel_skips, variable_range_skips = initialize_variable_counters()
 
-    raw_weight_sum = 0.0
+    filled_event_count = 0
     scaled_weight_sum = 0.0
-    max_raw_weight = None
 
     with mp.Pool(processes=len(tasks)) as pool:
         results = pool.map(mc_worker, tasks)
@@ -1249,17 +1240,9 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
 
         merge_region_counts(total_region_counts, result["region_counts"])
 
-        raw_weight_sum += result["raw_weight_sum"]
+        filled_event_count += result["filled_event_count"]
         scaled_weight_sum += result["scaled_weight_sum"]
-
-        if max_raw_weight is None or result["max_raw_weight"] > max_raw_weight:
-            max_raw_weight = result["max_raw_weight"]
-        #endif
     #endfor
-
-    if max_raw_weight is None:
-        max_raw_weight = 0.0
-    #endif
 
     status("Finished parallel reconstructed MC pass.")
     status("Reco MC p1 region totals: FD = {}, CD = {}, none = {}.".format(
@@ -1272,10 +1255,9 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
         total_region_counts["p2_second"],
         total_region_counts["p2_none"]
     ))
-    status("Reco MC weight summary over any-filled entries: raw weight sum = {:.12g}, scaled weight sum = {:.12g}, max raw weight = {:.12g}.".format(
-        raw_weight_sum,
-        scaled_weight_sum,
-        max_raw_weight
+    status("Reco MC constant-weight summary over any-filled entries: entries = {}, scaled weight sum = {:.12g}.".format(
+        filled_event_count,
+        scaled_weight_sum
     ))
 
     for key in get_variable_keys():
@@ -1291,9 +1273,8 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
         "counts_by_variable": total_counts_by_variable,
         "sumw2_by_variable": total_sumw2_by_variable,
         "region_counts": total_region_counts,
-        "raw_weight_sum": raw_weight_sum,
+        "filled_event_count": filled_event_count,
         "scaled_weight_sum": scaled_weight_sum,
-        "max_raw_weight": max_raw_weight,
         "variable_fills": variable_fills,
         "variable_panel_skips": variable_panel_skips,
         "variable_range_skips": variable_range_skips,
@@ -1580,12 +1561,12 @@ def draw_normalization_pad(output_tag, variable_config, total_charge_mc, integra
     latex.DrawLatex(x0, 0.49, "Q = %.6g mC" % total_charge_mc)
     latex.DrawLatex(x0, 0.39, "L_{int} = %.6g pb^{-1}" % integrated_luminosity_pb_inv)
     latex.DrawLatex(x0, 0.29, "N_{gen} = %.6g" % n_gen)
-    latex.DrawLatex(x0, 0.19, "scale = %.6g pb^{-1}" % normalization_factor)
+    latex.DrawLatex(x0, 0.19, "event weight = %.6g" % normalization_factor)
 
     if ratio_mode:
         latex.DrawLatex(x0, 0.09, "ratio: data / MC")
     else:
-        latex.DrawLatex(x0, 0.09, "MC fill: scale #times weight")
+        latex.DrawLatex(x0, 0.09, "MC fill: constant AAOgen scale")
     #endif
 
 
@@ -1596,7 +1577,7 @@ def make_comparison_legend(h_data, h_mc):
     legend.SetFillColor(ROOT.kWhite)
     legend.SetTextSize(0.032)
     legend.AddEntry(h_data, "data", "l")
-    legend.AddEntry(h_mc, "MC weighted", "l")
+    legend.AddEntry(h_mc, "MC AAOgen normalized", "l")
 
     return legend
 
@@ -2093,11 +2074,11 @@ def build_and_save_plots_for_variable(output_tag, variable_config, data_result, 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare data and reconstructed MC for p1 and p2 variables using event-by-event MC::Event.weight normalization."
+        description="Compare data and reconstructed AAOgen MC using integrated-cross-section normalization."
     )
 
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
-    parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents and weight")
+    parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents")
     parser.add_argument("gen_mc_root", help="Input generated MC ROOT file containing PhysicsEvents")
     parser.add_argument("output_tag", nargs="?", default=DEFAULT_OUTPUT_TAG, help="Output tag / run-period string, e.g. Fa18_Inb. Plots are saved under output/data_mc_normalization/<output_tag>/p1 and /p2.")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
@@ -2105,6 +2086,7 @@ def main():
     parser.add_argument("--status-every", type=int, default=DEFAULT_STATUS_EVERY, help="Print loop progress every N entries per worker")
     parser.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS, help="Maximum number of worker processes. Hard capped at 5.")
     parser.add_argument("--n-gen-override", type=float, default=None, help="Override N_GEN with the true number of thrown/generated MC events.")
+    parser.add_argument("--sigma-integrated-microbarn", type=float, default=DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN, help="AAOgen integrated cross section in microbarns. Default is the temporary 10.6 GeV test value from aao_norad.out.")
 
     args = parser.parse_args()
 
@@ -2120,6 +2102,10 @@ def main():
         fatal("--n-gen-override must be positive")
     #endif
 
+    if args.sigma_integrated_microbarn <= 0.0:
+        fatal("--sigma-integrated-microbarn must be positive")
+    #endif
+
     max_workers = min(args.max_workers, 5)
 
     output_tag = sanitize_output_tag(args.output_tag)
@@ -2127,7 +2113,7 @@ def main():
     start_time = time.time()
 
     required_data_branches = ["runnum"] + get_required_plot_branches()
-    required_mc_branches = get_required_plot_branches() + ["weight"]
+    required_mc_branches = get_required_plot_branches()
 
     status("Starting data/MC normalization script.")
     status("Output tag: {}".format(output_tag))
@@ -2138,7 +2124,7 @@ def main():
     status("p1 output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag, "p1")))
     status("p2 output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag, "p2")))
     status("Maximum worker processes: {}".format(max_workers))
-    status("Using event-by-event reconstructed MC branch: weight")
+    status("Using unweighted AAOgen MC with integrated-cross-section normalization.")
     status("p1 detector definition: FD = 0 <= p1_theta < 40 deg; CD = 40 <= p1_theta < 70 deg.")
     status("p2 detector definition: FT = 0 <= p2_theta < 5 deg; FD = 5 <= p2_theta < 40 deg.")
     status("Comparison y scales: common across first-region sectors where applicable; second region uses its own scale.")
@@ -2218,15 +2204,19 @@ def main():
 
     integrated_luminosity_pb_inv = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * total_charge_mc
 
-    normalization_factor = integrated_luminosity_pb_inv / float(n_gen)
+    sigma_integrated_microbarn = args.sigma_integrated_microbarn
+    sigma_integrated_pb = sigma_integrated_microbarn * MICROBARN_TO_PB
+    expected_generated_yield = integrated_luminosity_pb_inv * sigma_integrated_pb
+    normalization_factor = expected_generated_yield / float(n_gen)
 
-    status("Computed event-by-event MC normalization:")
+    status("Computed AAOgen integrated-cross-section MC normalization:")
     status("  Raw charge sum = {:.12g}".format(total_charge_raw))
     status("  Q = {:.12g} mC".format(total_charge_mc))
     status("  L_int = {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
+    status("  sigma_int = {:.12g} microbarn = {:.12g} pb".format(sigma_integrated_microbarn, sigma_integrated_pb))
     status("  N_GEN = {:.12g}".format(n_gen))
-    status("  normalization factor L_int / N_GEN = {:.12g} pb^-1".format(normalization_factor))
-    status("  MC event fill weight = (L_int / N_GEN) * weight")
+    status("  expected generated yield = L_int * sigma_int = {:.12g}".format(expected_generated_yield))
+    status("  MC event fill weight = expected_generated_yield / N_GEN = {:.12g}".format(normalization_factor))
 
     mc_result = run_mc_parallel(
         args.reco_mc_root,
@@ -2294,7 +2284,10 @@ def main():
     print("Integrated luminosity: {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
     print("Generated MC entries from file: {}".format(n_gen_from_file))
     print("N_GEN used for normalization: {:.12g}".format(n_gen))
-    print("Normalization factor L_int / N_GEN: {:.12g} pb^-1".format(normalization_factor))
+    print("AAOgen integrated cross section: {:.12g} microbarn".format(sigma_integrated_microbarn))
+    print("AAOgen integrated cross section: {:.12g} pb".format(sigma_integrated_pb))
+    print("Expected generated yield L_int * sigma_int: {:.12g}".format(expected_generated_yield))
+    print("Constant MC event weight: {:.12g}".format(normalization_factor))
     print("Data p1 FD entries: {}".format(data_result["region_counts"]["p1_first"]))
     print("Data p1 CD entries: {}".format(data_result["region_counts"]["p1_second"]))
     print("Data p1 outside entries: {}".format(data_result["region_counts"]["p1_none"]))
@@ -2307,9 +2300,8 @@ def main():
     print("Reco MC p2 FD entries: {}".format(mc_result["region_counts"]["p2_first"]))
     print("Reco MC p2 FT entries: {}".format(mc_result["region_counts"]["p2_second"]))
     print("Reco MC p2 outside entries: {}".format(mc_result["region_counts"]["p2_none"]))
-    print("Reco MC raw weight sum over any-filled entries: {:.12g}".format(mc_result["raw_weight_sum"]))
+    print("Reco MC any-filled entries: {}".format(mc_result["filled_event_count"]))
     print("Reco MC scaled weight sum over any-filled entries: {:.12g}".format(mc_result["scaled_weight_sum"]))
-    print("Reco MC maximum raw weight over any-filled entries: {:.12g}".format(mc_result["max_raw_weight"]))
     print("Output base directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag)))
 
     for variable_key in get_variable_keys():
