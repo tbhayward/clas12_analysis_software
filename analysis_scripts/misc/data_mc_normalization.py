@@ -19,11 +19,6 @@ CHARGE_TO_MC_FACTOR = 1.0e-6
 
 RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC = 1316.875
 
-# Temporary/default AAOgen integrated cross section for testing.
-# Replace with period/energy-specific values after regenerating the AAOgen logs.
-DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN = 6.04885572e-4
-MICROBARN_TO_PB = 1.0e6
-
 OUTPUT_ROOT_DIR = "output/data_mc_normalization"
 DEFAULT_OUTPUT_TAG = "default"
 
@@ -976,12 +971,11 @@ def mc_worker(args):
     filled_event_count = 0
     scaled_weight_sum = 0.0
 
-    print("[{}] MC worker {} starting entries {} to {} with constant AAOgen normalization weight {:.12g}.".format(
+    print("[{}] MC worker {} starting entries {} to {}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
         start_entry,
-        end_entry,
-        normalization_factor
+        end_entry
     ), flush=True)
 
     for local_index, i_entry in enumerate(range(start_entry, end_entry), start=1):
@@ -1036,7 +1030,7 @@ def mc_worker(args):
         #endif
 
         if local_index % status_every == 0:
-            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | p1 first/second/none = {}/{}/{} | p2 first/second/none = {}/{}/{} | any-filled entries = {} | scaled weight sum = {:.12g}".format(
+            print("[{}] MC worker {} progress: {}/{} chunk entries ({}) | p1 first/second/none = {}/{}/{} | p2 first/second/none = {}/{}/{} | any-filled entries = {} | constant event weight = {:.12g}".format(
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 worker_id,
                 local_index,
@@ -1049,14 +1043,14 @@ def mc_worker(args):
                 region_counts["p2_second"],
                 region_counts["p2_none"],
                 filled_event_count,
-                scaled_weight_sum
+                event_weight
             ), flush=True)
         #endif
     #endfor
 
     root_file.Close()
 
-    print("[{}] MC worker {} finished: p1 first/second/none = {}/{}/{}, p2 first/second/none = {}/{}/{}, any-filled entries = {}, scaled weight sum = {:.12g}.".format(
+    print("[{}] MC worker {} finished: p1 first/second/none = {}/{}/{}, p2 first/second/none = {}/{}/{}, any-filled entries = {}, scaled weight sum = {:.12g}, constant event weight = {:.12g}.".format(
         time.strftime("%Y-%m-%d %H:%M:%S"),
         worker_id,
         region_counts["p1_first"],
@@ -1066,7 +1060,8 @@ def mc_worker(args):
         region_counts["p2_second"],
         region_counts["p2_none"],
         filled_event_count,
-        scaled_weight_sum
+        scaled_weight_sum,
+        normalization_factor
     ), flush=True)
 
     return {
@@ -1075,10 +1070,12 @@ def mc_worker(args):
         "region_counts": region_counts,
         "filled_event_count": filled_event_count,
         "scaled_weight_sum": scaled_weight_sum,
+        "constant_event_weight": normalization_factor,
         "variable_fills": variable_fills,
         "variable_panel_skips": variable_panel_skips,
         "variable_range_skips": variable_range_skips,
     }
+
 
 def merge_region_counts(total_region_counts, chunk_region_counts):
     for key in total_region_counts:
@@ -1255,9 +1252,10 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
         total_region_counts["p2_second"],
         total_region_counts["p2_none"]
     ))
-    status("Reco MC constant-weight summary over any-filled entries: entries = {}, scaled weight sum = {:.12g}.".format(
+    status("Reco MC normalization summary over any-filled entries: any-filled entries = {}, scaled weight sum = {:.12g}, constant event weight = {:.12g}.".format(
         filled_event_count,
-        scaled_weight_sum
+        scaled_weight_sum,
+        normalization_factor
     ))
 
     for key in get_variable_keys():
@@ -1275,6 +1273,7 @@ def run_mc_parallel(root_path, tree_name, n_entries, max_workers, status_every, 
         "region_counts": total_region_counts,
         "filled_event_count": filled_event_count,
         "scaled_weight_sum": scaled_weight_sum,
+        "constant_event_weight": normalization_factor,
         "variable_fills": variable_fills,
         "variable_panel_skips": variable_panel_skips,
         "variable_range_skips": variable_range_skips,
@@ -1566,7 +1565,7 @@ def draw_normalization_pad(output_tag, variable_config, total_charge_mc, integra
     if ratio_mode:
         latex.DrawLatex(x0, 0.09, "ratio: data / MC")
     else:
-        latex.DrawLatex(x0, 0.09, "MC fill: constant AAOgen scale")
+        latex.DrawLatex(x0, 0.09, "MC fill: const AAOgen norm")
     #endif
 
 
@@ -1577,7 +1576,7 @@ def make_comparison_legend(h_data, h_mc):
     legend.SetFillColor(ROOT.kWhite)
     legend.SetTextSize(0.032)
     legend.AddEntry(h_data, "data", "l")
-    legend.AddEntry(h_mc, "MC AAOgen normalized", "l")
+    legend.AddEntry(h_mc, "AAOgen MC", "l")
 
     return legend
 
@@ -2069,16 +2068,72 @@ def build_and_save_plots_for_variable(output_tag, variable_config, data_result, 
 
 
 # -----------------------------------------------------------------------------
+# Normalization diagnostics
+# -----------------------------------------------------------------------------
+
+def sum_counts_for_variable(result, variable_key):
+    total = 0.0
+
+    for panel_counts in result["counts_by_variable"][variable_key]:
+        for value in panel_counts:
+            total += value
+        #endfor
+    #endfor
+
+    return total
+
+
+def print_implied_cross_section_diagnostics(data_result, mc_result, integrated_luminosity_pb_inv, n_gen, sigma_used_microbarn, constant_event_weight):
+    print("")
+    print("AAOgen normalization diagnostic")
+    print("-------------------------------")
+    print("This diagnostic asks what integrated cross section would be required for the")
+    print("constant-weight reconstructed MC prediction to match the data normalization.")
+    print("It is a consistency check, not a replacement cross-section measurement.")
+    print("Formula: sigma_implied = (N_data / L_int) * (N_gen / N_rec) / 1e6, in microbarn")
+    print("")
+
+    for variable_key in get_variable_keys():
+        n_data = sum_counts_for_variable(data_result, variable_key)
+        n_mc = sum_counts_for_variable(mc_result, variable_key)
+
+        if constant_event_weight > 0.0:
+            n_rec_equivalent = n_mc / constant_event_weight
+        else:
+            n_rec_equivalent = 0.0
+        #endif
+
+        if n_data > 0.0 and n_mc > 0.0 and n_rec_equivalent > 0.0 and integrated_luminosity_pb_inv > 0.0:
+            data_over_mc = n_data / n_mc
+            sigma_implied = (n_data / integrated_luminosity_pb_inv) * (float(n_gen) / n_rec_equivalent) / MICROBARN_TO_PB
+            sigma_ratio = sigma_implied / sigma_used_microbarn
+
+            print("{}:".format(variable_key))
+            print("  N_data(hist total) = {:.12g}".format(n_data))
+            print("  N_MC(pred total)   = {:.12g}".format(n_mc))
+            print("  N_rec equivalent   = {:.12g}".format(n_rec_equivalent))
+            print("  data / MC          = {:.12g}".format(data_over_mc))
+            print("  sigma_used         = {:.12g} microbarn".format(sigma_used_microbarn))
+            print("  sigma_implied      = {:.12g} microbarn".format(sigma_implied))
+            print("  sigma_implied / sigma_used = {:.12g}".format(sigma_ratio))
+        else:
+            print("{}:".format(variable_key))
+            print("  skipped diagnostic because one of N_data, N_MC, N_rec, or L_int is non-positive.")
+        #endif
+    #endfor
+
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare data and reconstructed AAOgen MC using integrated-cross-section normalization."
+        description="Compare data and reconstructed AAOgen MC for p1 and p2 variables using a constant integrated-cross-section normalization."
     )
 
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
-    parser.add_argument("reco_mc_root", help="Input reconstructed MC ROOT file containing PhysicsEvents")
+    parser.add_argument("reco_mc_root", help="Input reconstructed AAOgen MC ROOT file containing PhysicsEvents")
     parser.add_argument("gen_mc_root", help="Input generated MC ROOT file containing PhysicsEvents")
     parser.add_argument("output_tag", nargs="?", default=DEFAULT_OUTPUT_TAG, help="Output tag / run-period string, e.g. Fa18_Inb. Plots are saved under output/data_mc_normalization/<output_tag>/p1 and /p2.")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
@@ -2086,7 +2141,7 @@ def main():
     parser.add_argument("--status-every", type=int, default=DEFAULT_STATUS_EVERY, help="Print loop progress every N entries per worker")
     parser.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS, help="Maximum number of worker processes. Hard capped at 5.")
     parser.add_argument("--n-gen-override", type=float, default=None, help="Override N_GEN with the true number of thrown/generated MC events.")
-    parser.add_argument("--sigma-integrated-microbarn", type=float, default=DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN, help="AAOgen integrated cross section in microbarns. Default is the temporary 10.6 GeV test value from aao_norad.out.")
+    parser.add_argument("--sigma-integrated-microbarn", type=float, default=DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN, help="AAOgen integrated cross section in microbarns. Default is a temporary 10.6 GeV test value.")
 
     args = parser.parse_args()
 
@@ -2124,7 +2179,7 @@ def main():
     status("p1 output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag, "p1")))
     status("p2 output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag, "p2")))
     status("Maximum worker processes: {}".format(max_workers))
-    status("Using unweighted AAOgen MC with integrated-cross-section normalization.")
+    status("Using constant AAOgen integrated-cross-section MC event weight; MC::Event.weight is not used.")
     status("p1 detector definition: FD = 0 <= p1_theta < 40 deg; CD = 40 <= p1_theta < 70 deg.")
     status("p2 detector definition: FT = 0 <= p2_theta < 5 deg; FD = 5 <= p2_theta < 40 deg.")
     status("Comparison y scales: common across first-region sectors where applicable; second region uses its own scale.")
@@ -2216,7 +2271,8 @@ def main():
     status("  sigma_int = {:.12g} microbarn = {:.12g} pb".format(sigma_integrated_microbarn, sigma_integrated_pb))
     status("  N_GEN = {:.12g}".format(n_gen))
     status("  expected generated yield = L_int * sigma_int = {:.12g}".format(expected_generated_yield))
-    status("  MC event fill weight = expected_generated_yield / N_GEN = {:.12g}".format(normalization_factor))
+    status("  constant reconstructed-MC event weight = expected generated yield / N_GEN = {:.12g}".format(normalization_factor))
+    status("  MC::Event.weight is intentionally not used for AAOgen normalization.")
 
     mc_result = run_mc_parallel(
         args.reco_mc_root,
@@ -2243,6 +2299,15 @@ def main():
 
         saved_paths_by_variable[variable_config["key"]] = output_paths
     #endfor
+
+    print_implied_cross_section_diagnostics(
+        data_result,
+        mc_result,
+        integrated_luminosity_pb_inv,
+        n_gen,
+        sigma_integrated_microbarn,
+        normalization_factor
+    )
 
     elapsed_time = time.time() - start_time
 
@@ -2284,10 +2349,10 @@ def main():
     print("Integrated luminosity: {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
     print("Generated MC entries from file: {}".format(n_gen_from_file))
     print("N_GEN used for normalization: {:.12g}".format(n_gen))
-    print("AAOgen integrated cross section: {:.12g} microbarn".format(sigma_integrated_microbarn))
-    print("AAOgen integrated cross section: {:.12g} pb".format(sigma_integrated_pb))
+    print("AAOgen integrated cross section used: {:.12g} microbarn".format(sigma_integrated_microbarn))
+    print("AAOgen integrated cross section used: {:.12g} pb".format(sigma_integrated_pb))
     print("Expected generated yield L_int * sigma_int: {:.12g}".format(expected_generated_yield))
-    print("Constant MC event weight: {:.12g}".format(normalization_factor))
+    print("Constant reconstructed-MC event weight: {:.12g}".format(normalization_factor))
     print("Data p1 FD entries: {}".format(data_result["region_counts"]["p1_first"]))
     print("Data p1 CD entries: {}".format(data_result["region_counts"]["p1_second"]))
     print("Data p1 outside entries: {}".format(data_result["region_counts"]["p1_none"]))
@@ -2302,6 +2367,7 @@ def main():
     print("Reco MC p2 outside entries: {}".format(mc_result["region_counts"]["p2_none"]))
     print("Reco MC any-filled entries: {}".format(mc_result["filled_event_count"]))
     print("Reco MC scaled weight sum over any-filled entries: {:.12g}".format(mc_result["scaled_weight_sum"]))
+    print("Reco MC constant event weight: {:.12g}".format(mc_result["constant_event_weight"]))
     print("Output base directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag)))
 
     for variable_key in get_variable_keys():
