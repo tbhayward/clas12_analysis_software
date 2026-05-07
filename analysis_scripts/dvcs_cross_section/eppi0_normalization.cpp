@@ -969,6 +969,67 @@ static void add_hist_set(HistSet& dest, const HistSet& src) {
     }
 }
 
+
+static void add_bin_to_compatible_hist(TH1D& target,
+                                       double x,
+                                       double content,
+                                       double error) {
+    if (!(content != 0.0 || error != 0.0)) {
+        return;
+    }
+
+    const int b = target.FindBin(x);
+    if (b < 1 || b > target.GetNbinsX()) {
+        return;
+    }
+
+    const double old_content = target.GetBinContent(b);
+    const double old_error = target.GetBinError(b);
+
+    target.SetBinContent(b, old_content + content);
+    target.SetBinError(b, std::sqrt(old_error * old_error + error * error));
+}
+
+static void add_hist_to_compatible_hist(TH1D& target, const TH1D* source) {
+    if (!source) {
+        return;
+    }
+
+    for (int b = 1; b <= source->GetNbinsX(); ++b) {
+        const double x = source->GetBinCenter(b);
+        const double content = source->GetBinContent(b);
+        const double error = source->GetBinError(b);
+        add_bin_to_compatible_hist(target, x, content, error);
+    }
+}
+
+static void build_p1_theta_fit_histograms(const HistSet& data_hists,
+                                          const HistSet& mc_hists,
+                                          const std::string& period,
+                                          TH1D& h_data_fit,
+                                          TH1D& h_mc_fit) {
+    auto itd = data_hists.hists.find("p1_theta");
+    auto itm = mc_hists.hists.find("p1_theta");
+
+    if (itd == data_hists.hists.end() || itm == mc_hists.hists.end()) {
+        fatal("[eppi0_norm] FATAL: p1_theta histograms are missing while building fit histograms.");
+    }
+
+    if (itd->second.size() != itm->second.size()) {
+        fatal("[eppi0_norm] FATAL: p1_theta data/MC panel count mismatch while building fit histograms.");
+    }
+
+    for (size_t i = 0; i < itd->second.size(); ++i) {
+        add_hist_to_compatible_hist(h_data_fit, itd->second[i]);
+        add_hist_to_compatible_hist(h_mc_fit, itm->second[i]);
+    }
+
+    std::cout << "[eppi0_norm] " << period
+              << " p1_theta fit histogram integrals: data=" << h_data_fit.Integral()
+              << " mc=" << h_mc_fit.Integral()
+              << std::endl;
+}
+
 // -----------------------------------------------------------------------------
 // Fitting and plotting
 // -----------------------------------------------------------------------------
@@ -1020,12 +1081,31 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     mkdir_p(outdir);
     TCanvas c("c_p1_theta_ratio_fit", "", 1000, 750);
     c.SetGrid(1, 1);
-    c.SetLeftMargin(0.13);
+    c.SetLeftMargin(0.14);
     c.SetRightMargin(0.05);
     c.SetBottomMargin(0.13);
     c.SetTopMargin(0.08);
 
-    TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, RATIO_Y_MIN, 70.0, RATIO_Y_MAX);
+    double ymin = std::numeric_limits<double>::infinity();
+    double ymax = -std::numeric_limits<double>::infinity();
+    for (int i = 0; i < gr.GetN(); ++i) {
+        double gx = 0.0;
+        double gy = 0.0;
+        gr.GetPoint(i, gx, gy);
+        const double ey = gr.GetErrorY(i);
+        ymin = std::min(ymin, gy - ey);
+        ymax = std::max(ymax, gy + ey);
+    }
+    if (!std::isfinite(ymin) || !std::isfinite(ymax) || !(ymax > ymin)) {
+        ymin = RATIO_Y_MIN;
+        ymax = RATIO_Y_MAX;
+    } else {
+        const double pad = 0.15 * (ymax - ymin);
+        ymin = std::max(0.0, ymin - pad);
+        ymax = ymax + pad;
+    }
+
+    TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, ymin, 70.0, ymax);
     frame->SetTitle((period + "  ep #rightarrow ep#pi_{0}  p_{1} #theta ratio fit").c_str());
     frame->GetXaxis()->SetTitle("p_{1} #theta (deg)");
     frame->GetYaxis()->SetTitle("data / MC");
@@ -1078,6 +1158,39 @@ static std::vector<TGraphErrors*> make_ratio_graphs(const std::vector<TH1D*>& hd
         out.push_back(g);
     }
     return out;
+}
+
+
+static std::pair<double, double> graph_y_range(const TGraphErrors* g,
+                                               double fallback_min,
+                                               double fallback_max) {
+    double ymin = std::numeric_limits<double>::infinity();
+    double ymax = -std::numeric_limits<double>::infinity();
+
+    if (g) {
+        for (int i = 0; i < g->GetN(); ++i) {
+            double x = 0.0;
+            double y = 0.0;
+            g->GetPoint(i, x, y);
+            const double ey = g->GetErrorY(i);
+            ymin = std::min(ymin, y - ey);
+            ymax = std::max(ymax, y + ey);
+        }
+    }
+
+    if (!std::isfinite(ymin) || !std::isfinite(ymax) || !(ymax > ymin)) {
+        return {fallback_min, fallback_max};
+    }
+
+    const double pad = 0.15 * (ymax - ymin);
+    ymin = std::max(0.0, ymin - pad);
+    ymax = ymax + pad;
+
+    if (!(ymax > ymin)) {
+        return {fallback_min, fallback_max};
+    }
+
+    return {ymin, ymax};
 }
 
 static void plot_variable(const std::string& outdir,
@@ -1185,7 +1298,8 @@ static void plot_variable(const std::string& outdir,
 
         double xmin = 0.0, xmax = 1.0;
         range_for_panel(v, p, xmin, xmax);
-        TH1D* frame = (TH1D*)gPad->DrawFrame(xmin, RATIO_Y_MIN, xmax, RATIO_Y_MAX);
+        const std::pair<double, double> yr = graph_y_range(gr[p], RATIO_Y_MIN, RATIO_Y_MAX);
+        TH1D* frame = (TH1D*)gPad->DrawFrame(xmin, yr.first, xmax, yr.second);
         frame->SetTitle((period + "  " + panel_label(v, p)).c_str());
         frame->GetXaxis()->SetTitle(v.x_title.c_str());
         frame->GetYaxis()->SetTitle("data / MC");
@@ -1252,44 +1366,112 @@ static double data_charge_for_tree(TTree* tree,
     return q;
 }
 
-static void fill_eppi0_data_hists(const ChannelConfig& cfg,
-                                  const PeriodTags& tags,
-                                  TTree* tree,
-                                  const TopoCutMap& data_cuts,
-                                  double current_factor,
-                                  HistSet& hists) {
+static void fill_eppi0_data_hists_python_like(TTree* tree,
+                                                  HistSet& hists) {
     if (!tree) return;
+
     Branches b;
     b.bind(tree, false);
-    const Long64_t N = tree->GetEntries();
-    const double w = 1.0 / current_factor;
 
+    const Long64_t N = tree->GetEntries();
+    long long n_filled = 0;
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
-        if (!passes_event_selection(cfg, tags, data_cuts, b)) continue;
-        fill_hist_set(hists, b, w);
+        fill_hist_set(hists, b, 1.0);
+        ++n_filled;
     }
+
+    std::cout << "[eppi0_norm] python-like DATA entries=" << (long long)N
+              << " filled=" << n_filled << std::endl;
 }
 
-static void fill_eppi0_mc_hists(const ChannelConfig& cfg,
-                                const PeriodTags& tags,
-                                TTree* tree,
-                                const TopoCutMap& mc_cuts,
-                                double event_norm,
-                                double current_factor,
-                                HistSet& hists) {
+static void fill_eppi0_mc_hists_python_like(TTree* tree,
+                                            double event_norm,
+                                            HistSet& hists) {
     if (!tree) return;
+
     Branches b;
     b.bind(tree, true);
     if (!b.has_weight) fatal("[eppi0_norm] FATAL: eppi0 reconstructed MC tree missing weight branch.");
 
     const Long64_t N = tree->GetEntries();
+    long long n_filled = 0;
+    double sum_weight = 0.0;
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        const double w = event_norm * b.weight;
+        fill_hist_set(hists, b, w);
+        sum_weight += w;
+        ++n_filled;
+    }
+
+    std::cout << "[eppi0_norm] python-like MC entries=" << (long long)N
+              << " filled=" << n_filled
+              << " sum_weight=" << sum_weight
+              << " event_norm=" << event_norm
+              << std::endl;
+}
+
+static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
+                                           const PeriodTags& tags,
+                                           TTree* tree,
+                                           const TopoCutMap& data_cuts,
+                                           double current_factor,
+                                           HistSet& hists) {
+    if (!tree) return;
+
+    Branches b;
+    b.bind(tree, false);
+    const Long64_t N = tree->GetEntries();
+    const double w = 1.0 / current_factor;
+
+    long long n_pass = 0;
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        if (!passes_event_selection(cfg, tags, data_cuts, b)) continue;
+        ++n_pass;
+        fill_hist_set(hists, b, w);
+    }
+
+    std::cout << "[eppi0_norm] analysis DATA " << tags.display
+              << " entries=" << (long long)N
+              << " pass=" << n_pass
+              << " current_factor=" << current_factor
+              << std::endl;
+}
+
+static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
+                                         const PeriodTags& tags,
+                                         TTree* tree,
+                                         const TopoCutMap& mc_cuts,
+                                         double event_norm,
+                                         double current_factor,
+                                         HistSet& hists) {
+    if (!tree) return;
+
+    Branches b;
+    b.bind(tree, true);
+    if (!b.has_weight) fatal("[eppi0_norm] FATAL: eppi0 reconstructed MC tree missing weight branch.");
+
+    const Long64_t N = tree->GetEntries();
+    long long n_pass = 0;
+    double sum_weight = 0.0;
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
         if (!passes_event_selection(cfg, tags, mc_cuts, b)) continue;
+        ++n_pass;
         const double w = event_norm * b.weight / current_factor;
         fill_hist_set(hists, b, w);
+        sum_weight += w;
     }
+
+    std::cout << "[eppi0_norm] analysis MC " << tags.display
+              << " entries=" << (long long)N
+              << " pass=" << n_pass
+              << " sum_weight=" << sum_weight
+              << " event_norm=" << event_norm
+              << " current_factor=" << current_factor
+              << std::endl;
 }
 
 static PeriodNormalization run_period_normalization(const std::string& period,
@@ -1302,10 +1484,12 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                                     const TopoCutMap& mc_cuts,
                                                     const std::string& output_dir) {
     const ChannelConfig epi = eppi0_config();
+    const PeriodTags parsed = parse_period_from_key(period);
+
     PeriodTags tags;
     tags.display = period;
-    tags.period_label = parse_period_from_key(period).period_label;
-    tags.period_code = parse_period_from_key(period).period_code;
+    tags.period_label = parsed.period_label;
+    tags.period_code = parsed.period_code;
 
     const double data_eff = read_current_factor(csv, epi, "exp", period);
     const double mc_eff = read_current_factor(csv, epi, "mc", period);
@@ -1314,46 +1498,70 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     const double q_mc = q_raw * CHARGE_TO_MC_FACTOR;
     const double lint = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * q_mc;
     const double n_gen = (double)generated_entries(gen_tree);
+
     if (!(n_gen > 0.0)) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: generated eppi0 MC entries are zero for " << period;
         fatal(ss.str());
     }
-    const double norm = lint / n_gen;
 
-    PeriodHistResult hr;
-    delete_hist_set(hr.data_hists);
-    delete_hist_set(hr.mc_hists);
-    hr.period = period;
-    hr.data_hists = make_hist_set("data_" + period_dir(period));
-    hr.mc_hists = make_hist_set("mc_" + period_dir(period));
+    const double event_norm = lint / n_gen;
 
-    fill_eppi0_data_hists(epi, tags, data_tree, data_cuts, data_eff, hr.data_hists);
-    fill_eppi0_mc_hists(epi, tags, rec_tree, mc_cuts, norm, mc_eff, hr.mc_hists);
+    const std::string period_root = output_dir + "/" + period_dir(period);
+    const std::string python_like_dir = period_root + "/python_like";
+    const std::string analysis_dir = period_root + "/analysis_corrected";
 
-    const std::string odir = output_dir + "/" + period_dir(period);
-    mkdir_p(odir);
+    mkdir_p(period_root);
+    mkdir_p(python_like_dir);
+    mkdir_p(analysis_dir);
+
+    HistSet py_data = make_hist_set("py_data_" + period_dir(period));
+    HistSet py_mc = make_hist_set("py_mc_" + period_dir(period));
+
+    fill_eppi0_data_hists_python_like(data_tree, py_data);
+    fill_eppi0_mc_hists_python_like(rec_tree, event_norm, py_mc);
 
     for (const VarConfig& v : variable_configs()) {
-        const Poly4* poly_ptr = nullptr;
-        if (v.key == "p1_theta") poly_ptr = &hr.poly;
-        plot_variable(odir, period, v, hr.data_hists.hists[v.key], hr.mc_hists.hists[v.key], poly_ptr);
+        plot_variable(python_like_dir,
+                      period,
+                      v,
+                      py_data.hists[v.key],
+                      py_mc.hists[v.key],
+                      nullptr);
     }
 
-    // Fit using all p1_theta panels merged into one 0-70 degree histogram.
+    HistSet ana_data = make_hist_set("ana_data_" + period_dir(period));
+    HistSet ana_mc = make_hist_set("ana_mc_" + period_dir(period));
+
+    fill_eppi0_data_hists_analysis(epi, tags, data_tree, data_cuts, data_eff, ana_data);
+    fill_eppi0_mc_hists_analysis(epi, tags, rec_tree, mc_cuts, event_norm, mc_eff, ana_mc);
+
+    for (const VarConfig& v : variable_configs()) {
+        plot_variable(analysis_dir,
+                      period,
+                      v,
+                      ana_data.hists[v.key],
+                      ana_mc.hists[v.key],
+                      nullptr);
+    }
+
     TH1D h_data_fit(("h_data_fit_" + period_dir(period)).c_str(), "", 35, 0.0, 70.0);
     TH1D h_mc_fit(("h_mc_fit_" + period_dir(period)).c_str(), "", 35, 0.0, 70.0);
     h_data_fit.Sumw2();
     h_mc_fit.Sumw2();
-    for (TH1D* h : hr.data_hists.hists["p1_theta"]) h_data_fit.Add(h);
-    for (TH1D* h : hr.mc_hists.hists["p1_theta"]) h_mc_fit.Add(h);
 
-    Poly4 poly = fit_p1_theta_ratio(period, odir, &h_data_fit, &h_mc_fit);
+    build_p1_theta_fit_histograms(ana_data, ana_mc, period, h_data_fit, h_mc_fit);
 
-    // Redraw p1 theta ratio with quartic overlay after fit is known.
+    Poly4 poly = fit_p1_theta_ratio(period, analysis_dir, &h_data_fit, &h_mc_fit);
+
     for (const VarConfig& v : variable_configs()) {
         if (v.key == "p1_theta") {
-            plot_variable(odir, period, v, hr.data_hists.hists[v.key], hr.mc_hists.hists[v.key], &poly);
+            plot_variable(analysis_dir,
+                          period,
+                          v,
+                          ana_data.hists[v.key],
+                          ana_mc.hists[v.key],
+                          &poly);
         }
     }
 
@@ -1361,6 +1569,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     const double mc_int = h_mc_fit.Integral();
     double data_err2 = 0.0;
     double mc_err2 = 0.0;
+
     for (int b = 1; b <= h_data_fit.GetNbinsX(); ++b) {
         data_err2 += h_data_fit.GetBinError(b) * h_data_fit.GetBinError(b);
         mc_err2 += h_mc_fit.GetBinError(b) * h_mc_fit.GetBinError(b);
@@ -1370,7 +1579,31 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     double ratio_err = 0.0;
     if (data_int > 0.0 && mc_int > 0.0) {
         ratio = data_int / mc_int;
-        ratio_err = std::fabs(ratio) * std::sqrt(data_err2 / (data_int * data_int) + mc_err2 / (mc_int * mc_int));
+        ratio_err = std::fabs(ratio) * std::sqrt(data_err2 / (data_int * data_int) +
+                                                 mc_err2 / (mc_int * mc_int));
+    }
+
+    double py_data_int = 0.0;
+    double py_mc_int = 0.0;
+    for (TH1D* h : py_data.hists["p1_theta"]) py_data_int += h->Integral();
+    for (TH1D* h : py_mc.hists["p1_theta"]) py_mc_int += h->Integral();
+
+    std::ofstream dbg((period_root + "/normalization_debug_summary.txt").c_str());
+    if (dbg.is_open()) {
+        dbg << "period " << period << "\n";
+        dbg << "data_current_factor " << std::setprecision(12) << data_eff << "\n";
+        dbg << "mc_current_factor " << std::setprecision(12) << mc_eff << "\n";
+        dbg << "data_charge_nC " << std::setprecision(12) << q_raw << "\n";
+        dbg << "charge_to_mc_factor " << std::setprecision(12) << CHARGE_TO_MC_FACTOR << "\n";
+        dbg << "integrated_luminosity_pb_inv " << std::setprecision(12) << lint << "\n";
+        dbg << "n_gen " << std::setprecision(12) << n_gen << "\n";
+        dbg << "event_norm " << std::setprecision(12) << event_norm << "\n";
+        dbg << "python_like_data_integral_p1_theta " << std::setprecision(12) << py_data_int << "\n";
+        dbg << "python_like_mc_integral_p1_theta " << std::setprecision(12) << py_mc_int << "\n";
+        dbg << "analysis_data_integral_p1_theta " << std::setprecision(12) << data_int << "\n";
+        dbg << "analysis_mc_integral_p1_theta " << std::setprecision(12) << mc_int << "\n";
+        dbg << "analysis_ratio " << std::setprecision(12) << ratio << "\n";
+        dbg << "analysis_ratio_stat " << std::setprecision(12) << ratio_err << "\n";
     }
 
     PeriodNormalization out;
@@ -1379,13 +1612,18 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     out.integrated_ratio = ratio;
     out.integrated_ratio_err = ratio_err;
 
-    delete_hist_set(hr.data_hists);
-    delete_hist_set(hr.mc_hists);
+    delete_hist_set(py_data);
+    delete_hist_set(py_mc);
+    delete_hist_set(ana_data);
+    delete_hist_set(ana_mc);
 
     std::cout << "[eppi0_norm] " << period
               << " polynomial=" << tuple5(poly)
               << " integrated_ratio=" << ratio
               << " +/- " << ratio_err
+              << " data_eff=" << data_eff
+              << " mc_eff=" << mc_eff
+              << " event_norm=" << event_norm
               << std::endl;
 
     return out;
