@@ -163,7 +163,7 @@ public static void main(String[] args) {
 		        print("processed: " + num_events + " events. ");
 		    }
 
-		    if (num_events > 10000) {
+		    if (num_events > 1000000) {
 		    	break;
 		    }
 
