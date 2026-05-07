@@ -163,6 +163,10 @@ public static void main(String[] args) {
 		        print("processed: " + num_events + " events. ");
 		    }
 
+		    if (num_events > 10000) {
+		    	break;
+		    }
+
 		    // get run and event numbers
 		    event = reader.getNextEvent();
 		    // collect info for QA
@@ -277,8 +281,8 @@ public static void main(String[] args) {
 							22, current_gamma1, 22, current_gamma2, energy);
 
 			            Mh_gammagamma = variables.Mh();
-			            // if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
-			            // if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
+			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 			            
 			            detector_gamma1 = variables.get_detector1();
 			            detector_gamma2 = variables.get_detector2();
