@@ -176,10 +176,6 @@ public static void main(String[] args) {
 		        print("processed: " + num_events + " events. ");
 		    }
 
-		    if (num_events > 1000000) {
-		    	break;
-		    }
-
 		    // get run and event numbers
 		    event = reader.getNextEvent();
 		    // collect info for QA
