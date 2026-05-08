@@ -117,6 +117,14 @@ struct CubicFit {
     }
 };
 
+struct QuarticFit {
+    double a[5] = {1.0, 0.0, 0.0, 0.0, 0.0};
+
+    double eval(double x) const {
+        return a[0] + x * (a[1] + x * (a[2] + x * (a[3] + x * a[4])));
+    }
+};
+
 struct RegionNormalization {
     std::string region;
     CubicFit fit;
@@ -2107,6 +2115,296 @@ static void fill_normalized_yields(CSV& csv,
     }
 }
 
+
+static std::string region_short_label(const std::string& region) {
+    if (region == "CD") return "CD";
+    return region;
+}
+
+static int color_for_period_index(int i) {
+    static const int colors[5] = {kBlack, kRed + 1, kBlue + 1, kGreen + 2, kMagenta + 1};
+    if (i < 0) return kBlack;
+    return colors[i % 5];
+}
+
+static const PeriodNormalization* find_norm_ptr(const std::vector<PeriodNormalization>& norms,
+                                                const std::string& period) {
+    for (const PeriodNormalization& n : norms) {
+        if (n.period == period) return &n;
+    }
+    return nullptr;
+}
+
+static const RegionNormalization* find_region_norm_ptr(const PeriodNormalization& norm,
+                                                       const std::string& region) {
+    auto it = norm.regions.find(region);
+    if (it == norm.regions.end()) return nullptr;
+    return &it->second;
+}
+
+static void draw_fit_canvas_frame(TPad* pad,
+                                  const std::string& panel_label,
+                                  double x_min,
+                                  double x_max,
+                                  const std::string& title_suffix) {
+    pad->cd();
+    pad->SetGrid(1, 1);
+    pad->SetLeftMargin(0.16);
+    pad->SetRightMargin(0.05);
+    pad->SetBottomMargin(0.16);
+    pad->SetTopMargin(0.09);
+
+    TH1D* frame = (TH1D*)pad->DrawFrame(x_min, RATIO_Y_MIN, x_max, RATIO_Y_MAX);
+    frame->SetTitle("");
+    frame->GetXaxis()->SetTitle("p_{1} #theta (deg)");
+    frame->GetYaxis()->SetTitle("data / MC");
+    frame->GetXaxis()->CenterTitle(true);
+    frame->GetYaxis()->CenterTitle(true);
+    frame->GetXaxis()->SetTitleSize(0.055);
+    frame->GetYaxis()->SetTitleSize(0.055);
+    frame->GetXaxis()->SetLabelSize(0.045);
+    frame->GetYaxis()->SetLabelSize(0.045);
+
+    TLine* unity_line = new TLine(x_min, 1.0, x_max, 1.0);
+    unity_line->SetLineStyle(2);
+    unity_line->SetLineColor(kRed + 1);
+    unity_line->SetLineWidth(2);
+    unity_line->SetBit(TObject::kCanDelete);
+    unity_line->Draw("SAME");
+
+    TLatex latex;
+    latex.SetNDC(true);
+    latex.SetTextSize(0.052);
+    latex.SetTextFont(42);
+    latex.DrawLatex(0.20, 0.84, (panel_label + title_suffix).c_str());
+}
+
+static void save_all_period_p1_theta_fit_summary(const std::string& output_dir,
+                                                 const std::vector<PeriodNormalization>& norms) {
+    mkdir_p(output_dir);
+
+    TCanvas c("c_eppi0_p1_theta_fit_summary_all_periods", "", 1800, 900);
+    c.Divide(4, 2, 0.001, 0.001);
+
+    std::vector<TF1*> owned_funcs;
+    TLegend* legend = nullptr;
+
+    const std::vector<std::string> regions = normalization_regions();
+    for (int ipanel = 0; ipanel < 7; ++ipanel) {
+        const int pad_index = (ipanel < 3) ? (ipanel + 1) : (ipanel + 2);
+        TPad* pad = (TPad*)c.cd(pad_index);
+        const std::string& region = regions[ipanel];
+        const bool is_cd = (region == "CD");
+        const double x_min = is_cd ? 40.0 : 0.0;
+        const double x_max = is_cd ? 70.0 : 40.0;
+        draw_fit_canvas_frame(pad, region_short_label(region), x_min, x_max, "");
+
+        for (int ip = 0; ip < (int)CSV_PERIOD_ORDER.size(); ++ip) {
+            const std::string& period = CSV_PERIOD_ORDER[ip];
+            const PeriodNormalization* pn = find_norm_ptr(norms, period);
+            if (!pn) continue;
+            const RegionNormalization* rn = find_region_norm_ptr(*pn, region);
+            if (!rn || !rn->fit.valid) continue;
+
+            const CubicFit& fit = rn->fit;
+            if (!(fit.x_max > fit.x_min)) continue;
+
+            TF1* f = new TF1(("f_all_period_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
+                             "pol3", fit.x_min, fit.x_max);
+            for (int k = 0; k < 4; ++k) f->SetParameter(k, fit.a[k]);
+            f->SetLineColor(color_for_period_index(ip));
+            f->SetLineWidth(3);
+            f->Draw("L SAME");
+            owned_funcs.push_back(f);
+        }
+    }
+
+    TPad* info = (TPad*)c.cd(4);
+    info->SetLeftMargin(0.05);
+    info->SetRightMargin(0.05);
+    info->SetTopMargin(0.05);
+    info->SetBottomMargin(0.05);
+    info->Clear();
+
+    TLatex latex;
+    latex.SetNDC(true);
+    latex.SetTextFont(42);
+    latex.SetTextSize(0.055);
+    latex.DrawLatex(0.08, 0.90, "ep #rightarrow ep#pi_{0}");
+    latex.DrawLatex(0.08, 0.82, "p_{1} #theta normalization fits");
+    latex.DrawLatex(0.08, 0.74, "Pass-2 cubic fits");
+    latex.DrawLatex(0.08, 0.66, "Line ranges: populated data/MC bins only");
+
+    legend = new TLegend(0.08, 0.20, 0.88, 0.58);
+    legend->SetFillColor(kWhite);
+    legend->SetFillStyle(1001);
+    legend->SetBorderSize(1);
+    legend->SetTextSize(0.045);
+    std::vector<TF1*> legend_funcs;
+    for (int ip = 0; ip < (int)CSV_PERIOD_ORDER.size(); ++ip) {
+        TF1* dummy = new TF1(("f_legend_period_" + std::to_string(ip)).c_str(), "pol0", 0.0, 1.0);
+        dummy->SetParameter(0, 1.0);
+        dummy->SetLineColor(color_for_period_index(ip));
+        dummy->SetLineWidth(3);
+        legend_funcs.push_back(dummy);
+        legend->AddEntry(dummy, CSV_PERIOD_ORDER[ip].c_str(), "l");
+    }
+    legend->Draw();
+
+    c.SaveAs((output_dir + "/eppi0_p1_theta_cubic_fits_all_periods.png").c_str());
+
+    for (TF1* f : owned_funcs) delete f;
+    for (TF1* f : legend_funcs) delete f;
+    delete legend;
+}
+
+static bool pass1_quartic_coefficients(const std::string& period,
+                                       const std::string& region,
+                                       QuarticFit& q) {
+    const int region_index = (region == "Sector 1") ? 0 :
+                             (region == "Sector 2") ? 1 :
+                             (region == "Sector 3") ? 2 :
+                             (region == "Sector 4") ? 3 :
+                             (region == "Sector 5") ? 4 :
+                             (region == "Sector 6") ? 5 :
+                             (region == "CD")       ? 6 : -1;
+    if (region_index < 0) return false;
+
+    static const double inb[7][5] = {
+        { 5.205723e-6, -6.553104e-4,  2.857282e-2, -5.275748e-1,  4.390724 },
+        { 1.736551e-5, -1.905288e-3,  7.459240e-2, -1.243871e0,  8.406038 },
+        {-3.858605e-6,  4.012865e-4, -1.489836e-2,  2.088062e-1,  8.284200e-2},
+        { 8.245591e-6, -8.403340e-4,  2.952225e-2, -4.468835e-1,  3.527616 },
+        {-7.027999e-6,  4.804512e-4, -8.624948e-3, -3.522498e-2,  2.414833 },
+        {-9.300985e-6,  8.132209e-4, -2.646195e-2,  3.715724e-1, -9.530212e-1},
+        { 2.430049e-5, -5.364220e-3,  4.440329e-1, -1.633226e1,  2.258644e2}
+    };
+
+    static const double out[7][5] = {
+        { 6.193140e-5, -7.809714e-3,  3.609521e-1, -7.247023e0,  5.419993e1},
+        {-3.086642e-5,  3.301421e-3, -1.326819e-1,  2.385607e0, -1.532828e1},
+        { 1.265237e-5, -2.382045e-3,  1.419987e-1, -3.430274e0,  3.015195e1},
+        {-3.351760e-5,  3.303882e-3, -1.176380e-1,  1.776518e0, -8.604291e0},
+        { 2.073593e-5, -3.141968e-3,  1.675443e-1, -3.791117e0,  3.185059e1},
+        {-1.690791e-4,  1.976225e-2, -8.510287e-1,  1.595090e1, -1.084887e2},
+        { 7.497258e-6, -1.734757e-3,  1.505486e-1, -5.804050e0,  8.456443e1}
+    };
+
+    const double (*src)[5] = nullptr;
+    if (period == "Fa18 Inb") src = inb;
+    else if (period == "Fa18 Out") src = out;
+    else return false;
+
+    /* Tables list the quartic coefficients as a*x^4 + b*x^3 + c*x^2 + d*x + e.
+       TF1 pol4 stores them as p0 + p1*x + p2*x^2 + p3*x^3 + p4*x^4. */
+    q.a[0] = src[region_index][4];
+    q.a[1] = src[region_index][3];
+    q.a[2] = src[region_index][2];
+    q.a[3] = src[region_index][1];
+    q.a[4] = src[region_index][0];
+    return true;
+}
+
+static void save_pass1_pass2_p1_theta_comparison(const std::string& output_dir,
+                                                 const std::vector<PeriodNormalization>& norms,
+                                                 const std::string& period) {
+    mkdir_p(output_dir);
+
+    const PeriodNormalization* pn = find_norm_ptr(norms, period);
+    if (!pn) {
+        std::cout << "[eppi0_norm] WARNING: skipping pass-1 comparison for missing period " << period << std::endl;
+        return;
+    }
+
+    TCanvas c(("c_eppi0_p1_theta_pass1_pass2_" + period_dir(period)).c_str(), "", 1800, 900);
+    c.Divide(4, 2, 0.001, 0.001);
+
+    std::vector<TF1*> owned_funcs;
+    const std::vector<std::string> regions = normalization_regions();
+    for (int ipanel = 0; ipanel < 7; ++ipanel) {
+        const int pad_index = (ipanel < 3) ? (ipanel + 1) : (ipanel + 2);
+        TPad* pad = (TPad*)c.cd(pad_index);
+        const std::string& region = regions[ipanel];
+        const bool is_cd = (region == "CD");
+        const double x_frame_min = is_cd ? 40.0 : 0.0;
+        const double x_frame_max = is_cd ? 70.0 : 40.0;
+        draw_fit_canvas_frame(pad, region_short_label(region), x_frame_min, x_frame_max, "");
+
+        const RegionNormalization* rn = find_region_norm_ptr(*pn, region);
+        if (!rn || !rn->fit.valid) continue;
+        const CubicFit& cfit = rn->fit;
+        if (!(cfit.x_max > cfit.x_min)) continue;
+
+        TF1* fpass2 = new TF1(("f_pass2_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
+                              "pol3", cfit.x_min, cfit.x_max);
+        for (int k = 0; k < 4; ++k) fpass2->SetParameter(k, cfit.a[k]);
+        fpass2->SetLineColor(kBlue + 1);
+        fpass2->SetLineWidth(3);
+        fpass2->Draw("L SAME");
+        owned_funcs.push_back(fpass2);
+
+        QuarticFit qfit;
+        if (pass1_quartic_coefficients(period, region, qfit)) {
+            TF1* fpass1 = new TF1(("f_pass1_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
+                                  "pol4", cfit.x_min, cfit.x_max);
+            for (int k = 0; k < 5; ++k) fpass1->SetParameter(k, qfit.a[k]);
+            fpass1->SetLineColor(kRed + 1);
+            fpass1->SetLineWidth(3);
+            fpass1->SetLineStyle(2);
+            fpass1->Draw("L SAME");
+            owned_funcs.push_back(fpass1);
+        }
+    }
+
+    TPad* info = (TPad*)c.cd(4);
+    info->SetLeftMargin(0.05);
+    info->SetRightMargin(0.05);
+    info->SetTopMargin(0.05);
+    info->SetBottomMargin(0.05);
+    info->Clear();
+
+    TLatex latex;
+    latex.SetNDC(true);
+    latex.SetTextFont(42);
+    latex.SetTextSize(0.055);
+    latex.DrawLatex(0.08, 0.90, period.c_str());
+    latex.DrawLatex(0.08, 0.82, "ep #rightarrow ep#pi_{0}");
+    latex.DrawLatex(0.08, 0.74, "p_{1} #theta normalization");
+    latex.DrawLatex(0.08, 0.66, "Pass-2 cubic vs pass-1 quartic");
+    latex.DrawLatex(0.08, 0.58, "Both lines over pass-2 populated range");
+
+    TLegend legend(0.08, 0.30, 0.88, 0.50);
+    legend.SetFillColor(kWhite);
+    legend.SetFillStyle(1001);
+    legend.SetBorderSize(1);
+    legend.SetTextSize(0.050);
+    TF1 leg_pass2("leg_pass2", "pol0", 0.0, 1.0);
+    leg_pass2.SetParameter(0, 1.0);
+    leg_pass2.SetLineColor(kBlue + 1);
+    leg_pass2.SetLineWidth(3);
+    TF1 leg_pass1("leg_pass1", "pol0", 0.0, 1.0);
+    leg_pass1.SetParameter(0, 1.0);
+    leg_pass1.SetLineColor(kRed + 1);
+    leg_pass1.SetLineWidth(3);
+    leg_pass1.SetLineStyle(2);
+    legend.AddEntry(&leg_pass2, "pass-2 cubic", "l");
+    legend.AddEntry(&leg_pass1, "pass-1 quartic", "l");
+    legend.Draw();
+
+    c.SaveAs((output_dir + "/eppi0_p1_theta_pass1_pass2_" + period_dir(period) + ".png").c_str());
+
+    for (TF1* f : owned_funcs) delete f;
+}
+
+static void save_parent_fit_summary_plots(const std::string& output_dir,
+                                          const std::vector<PeriodNormalization>& norms) {
+    if (norms.empty()) return;
+    mkdir_p(output_dir);
+    save_all_period_p1_theta_fit_summary(output_dir, norms);
+    save_pass1_pass2_p1_theta_comparison(output_dir, norms, "Fa18 Inb");
+    save_pass1_pass2_p1_theta_comparison(output_dir, norms, "Fa18 Out");
+}
+
 static void write_norms_to_csv(CSV& csv, const std::vector<PeriodNormalization>& norms) {
     for (const std::string& period : CSV_PERIOD_ORDER) {
         const PeriodNormalization& n = find_norm(norms, period);
@@ -2194,6 +2492,10 @@ bool update_eppi0_normalization_csv(
                                                                  options.normalization_json_path);
                 norms.push_back(n);
             }
+        }
+
+        if (!options.override_to_unity) {
+            save_parent_fit_summary_plots(options.output_dir, norms);
         }
 
         write_norms_to_csv(csv, norms);
