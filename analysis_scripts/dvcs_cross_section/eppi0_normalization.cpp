@@ -50,8 +50,8 @@ static constexpr double RAD2DEG = 180.0 / PI;
 static constexpr double CHARGE_TO_MC_FACTOR = 1.0e-6;
 static constexpr double RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC = 1316.875;
 
-static constexpr double RATIO_Y_MIN = 0.2;
-static constexpr double RATIO_Y_MAX = 1.5;
+static constexpr double RATIO_Y_MIN = 0.0;
+static constexpr double RATIO_Y_MAX = 2.0;
 
 static const std::vector<std::string> CSV_PERIOD_ORDER = {
     "Fa18 Inb",
@@ -1415,9 +1415,6 @@ struct PeriodHistResult {
     PeriodHistResult() : data_hists(make_hist_set("data_empty")), mc_hists(make_hist_set("mc_empty")) {}
 };
 
-static long long generated_entries(TTree* tree) {
-    return tree ? (long long)tree->GetEntries() : 0;
-}
 
 static double data_charge_for_tree(TTree* tree,
                                    const std::unordered_map<int, double>& charge_map) {
