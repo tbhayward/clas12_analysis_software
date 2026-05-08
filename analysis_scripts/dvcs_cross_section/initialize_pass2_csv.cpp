@@ -357,17 +357,27 @@ static void add_current_efficiency_columns(std::vector<std::string>& H) {
     }
 }
 
+static std::vector<std::string> eppi0_normalization_regions() {
+    return {"Sector 1", "Sector 2", "Sector 3", "Sector 4", "Sector 5", "Sector 6", "CD"};
+}
+
 static void add_eppi0_normalization_columns(std::vector<std::string>& H) {
     for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "eppi0 cross-section normalization factor, ep->eppi0, data_over_mc, " << per;
-        H.push_back(name.str());
+        for (const auto& region : eppi0_normalization_regions()) {
+            std::ostringstream name;
+            name << "eppi0 cross-section normalization factor, ep->eppi0, data_over_mc, "
+                 << region << ", " << per;
+            H.push_back(name.str());
+        }
     }
 
     for (const auto& per : base_periods()) {
-        std::ostringstream name;
-        name << "eppi0 cross-section normalization polynomial, ep->eppi0, data_over_mc, " << per;
-        H.push_back(name.str());
+        for (const auto& region : eppi0_normalization_regions()) {
+            std::ostringstream name;
+            name << "eppi0 cross-section normalization cubic, ep->eppi0, data_over_mc, "
+                 << region << ", " << per;
+            H.push_back(name.str());
+        }
     }
 }
 

@@ -19,24 +19,24 @@ struct Eppi0NormalizationOptions {
  * update_eppi0_normalization_csv
  *
  * Uses eppi0 DATA, reconstructed AAOGEN MC, and period normalization metadata
- * from options.normalization_json_path to determine a period-dependent quartic
- * normalization function
+ * from options.normalization_json_path to determine a period-dependent regional cubic
+ * normalization functions
  *
  *   R_pi0(theta_p) = N_data(theta_p) / N_MC(theta_p)
  *
  * after applying the current-efficiency factors already saved in the CSV.
  *
- * The quartic coefficients are written to:
+ * The seven cubic fits, one for each p1 FD sector and one CD region, are written to:
  *
- *   eppi0 cross-section normalization polynomial, ep->eppi0, data_over_mc, <period>
+ *   eppi0 cross-section normalization cubic, ep->eppi0, data_over_mc, <region>, <period>
  *
  * as:
  *
- *   (a0,a1,a2,a3,a4)
+ *   (a0,a1,a2,a3)
  *
  * with theta_p in degrees and
  *
- *   R_pi0(theta_p) = a0 + a1 theta + a2 theta^2 + a3 theta^3 + a4 theta^4.
+ *   R_pi0(theta_p) = a0 + a1 theta + a2 theta^2 + a3 theta^3.
  *
  * Then the function loops over DVCS and eppi0 DATA events and fills:
  *
@@ -47,8 +47,8 @@ struct Eppi0NormalizationOptions {
  *
  *   w = 1 / (current_efficiency_exp_factor * R_pi0(theta_p)).
  *
- * If override_to_unity is true, all polynomial cells are written as
- * (1,0,0,0,0), all scalar normalization factor cells as (1,0), and the
+ * If override_to_unity is true, all cubic cells are written as
+ * (1,0,0,0), all scalar normalization factor cells as (1,0), and the
  * normalized raw yields are filled using only the current-efficiency factor.
  */
 bool update_eppi0_normalization_csv(

@@ -18,7 +18,7 @@
  * - grouped average kinematics,
  * - raw DVCS and eppi0 yields,
  * - channel-aware current-efficiency factors for data and MC,
- * - eppi0 p1_theta data/MC cross-section normalization factors,
+ * - eppi0 p1_theta data/MC cross-section normalization factors for six FD sectors plus CD,
  * - normalized raw DVCS and eppi0 yields,
  * - generated and reconstructed MC yields for DVCS and eppi0,
  * - pi0 contamination,
@@ -39,13 +39,13 @@
  *
  *   (value,stat)
  *
- * eppi0 cross-section normalization polynomial cells are intended to store:
+ * eppi0 cross-section normalization cubic cells are intended to store:
  *
- *   (p0,p1,p2,p3,p4)
+ *   (p0,p1,p2,p3)
  *
  * where:
  *
- *   R_pi0(theta_p) = p0 + p1*theta_p + p2*theta_p^2 + p3*theta_p^3 + p4*theta_p^4
+ *   R_pi0(theta_p) = p0 + p1*theta_p + p2*theta_p^2 + p3*theta_p^3
  *
  * and downstream data yield corrections divide event weights by R_pi0(theta_p).
  *

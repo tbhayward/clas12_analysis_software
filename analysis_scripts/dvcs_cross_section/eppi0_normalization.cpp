@@ -105,21 +105,28 @@ struct PeriodTags {
     std::string period_code;
 };
 
-struct Poly4 {
-    double a[5] = {1.0, 0.0, 0.0, 0.0, 0.0};
-    double ea[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+struct CubicFit {
+    double a[4] = {1.0, 0.0, 0.0, 0.0};
+    double ea[4] = {0.0, 0.0, 0.0, 0.0};
+    double x_min = 0.0;
+    double x_max = 0.0;
     bool valid = false;
 
     double eval(double x) const {
-        return a[0] + x * (a[1] + x * (a[2] + x * (a[3] + x * a[4])));
+        return a[0] + x * (a[1] + x * (a[2] + x * a[3]));
     }
+};
+
+struct RegionNormalization {
+    std::string region;
+    CubicFit fit;
+    double integrated_ratio = 1.0;
+    double integrated_ratio_err = 0.0;
 };
 
 struct PeriodNormalization {
     std::string period;
-    Poly4 poly;
-    double integrated_ratio = 1.0;
-    double integrated_ratio_err = 0.0;
+    std::map<std::string, RegionNormalization> regions;
 };
 
 static void fatal(const std::string& msg);
@@ -481,10 +488,10 @@ static std::string tuple2(double a, double b) {
     return ss.str();
 }
 
-static std::string tuple5(const Poly4& p) {
+static std::string tuple4(const CubicFit& p) {
     std::ostringstream ss;
     ss << std::setprecision(12)
-       << "(" << p.a[0] << "," << p.a[1] << "," << p.a[2] << "," << p.a[3] << "," << p.a[4] << ")";
+       << "(" << p.a[0] << "," << p.a[1] << "," << p.a[2] << "," << p.a[3] << ")";
     return ss.str();
 }
 
@@ -530,12 +537,16 @@ static double read_current_factor(const CSV& csv,
     return vals[0];
 }
 
-static std::string norm_poly_col(const std::string& period) {
-    return "eppi0 cross-section normalization polynomial, ep->eppi0, data_over_mc, " + period;
+static std::vector<std::string> normalization_regions() {
+    return {"Sector 1", "Sector 2", "Sector 3", "Sector 4", "Sector 5", "Sector 6", "CD"};
 }
 
-static std::string norm_factor_col(const std::string& period) {
-    return "eppi0 cross-section normalization factor, ep->eppi0, data_over_mc, " + period;
+static std::string norm_fit_col(const std::string& period, const std::string& region) {
+    return "eppi0 cross-section normalization cubic, ep->eppi0, data_over_mc, " + region + ", " + period;
+}
+
+static std::string norm_factor_col(const std::string& period, const std::string& region) {
+    return "eppi0 cross-section normalization factor, ep->eppi0, data_over_mc, " + region + ", " + period;
 }
 
 static std::string normalized_raw_yield_col(const ChannelConfig& cfg,
@@ -999,6 +1010,23 @@ static std::string panel_label(const VarConfig& v, int panel) {
     return "FT";
 }
 
+static std::string normalization_region_for_event(const Branches& b) {
+    const double theta = b.p1_theta_deg();
+    if (theta >= 0.0 && theta < 40.0) {
+        const int sec = sector_from_phi(b.p1_phi_deg());
+        if (sec >= 1 && sec <= 6) {
+            std::ostringstream ss;
+            ss << "Sector " << sec;
+            return ss.str();
+        }
+        return "";
+    }
+    if (theta >= 40.0 && theta < 70.0) {
+        return "CD";
+    }
+    return "";
+}
+
 struct HistSet {
     std::map<std::string, std::vector<TH1D*>> hists;
 };
@@ -1085,50 +1113,54 @@ static void add_hist_to_compatible_hist(TH1D& target, const TH1D* source) {
     }
 }
 
-static void build_p1_theta_fit_histograms(const HistSet& data_hists,
-                                          const HistSet& mc_hists,
-                                          const std::string& period,
-                                          TH1D& h_data_fit,
-                                          TH1D& h_mc_fit) {
+
+static void build_p1_theta_fit_histograms_by_region(const HistSet& data_hists,
+                                                    const HistSet& mc_hists,
+                                                    const std::string& period,
+                                                    std::map<std::string, TH1D*>& h_data_fit,
+                                                    std::map<std::string, TH1D*>& h_mc_fit) {
     auto itd = data_hists.hists.find("p1_theta");
     auto itm = mc_hists.hists.find("p1_theta");
 
     if (itd == data_hists.hists.end() || itm == mc_hists.hists.end()) {
-        fatal("[eppi0_norm] FATAL: p1_theta histograms are missing while building fit histograms.");
+        fatal("[eppi0_norm] FATAL: p1_theta histograms are missing while building regional fit histograms.");
+    }
+    if (itd->second.size() != 7 || itm->second.size() != 7) {
+        fatal("[eppi0_norm] FATAL: p1_theta regional histogram count is not 7.");
     }
 
-    if (itd->second.size() != itm->second.size()) {
-        fatal("[eppi0_norm] FATAL: p1_theta data/MC panel count mismatch while building fit histograms.");
+    const std::vector<std::string> regions = normalization_regions();
+    for (int panel = 0; panel < 7; ++panel) {
+        const std::string& region = regions[panel];
+        h_data_fit[region] = (TH1D*)itd->second[panel]->Clone(("h_data_fit_" + period_dir(period) + "_" + std::to_string(panel)).c_str());
+        h_mc_fit[region] = (TH1D*)itm->second[panel]->Clone(("h_mc_fit_" + period_dir(period) + "_" + std::to_string(panel)).c_str());
+        h_data_fit[region]->SetDirectory(nullptr);
+        h_mc_fit[region]->SetDirectory(nullptr);
+        std::cout << "[eppi0_norm] " << period << " " << region
+                  << " p1_theta fit histogram integrals: data=" << h_data_fit[region]->Integral()
+                  << " mc=" << h_mc_fit[region]->Integral() << std::endl;
     }
-
-    for (size_t i = 0; i < itd->second.size(); ++i) {
-        add_hist_to_compatible_hist(h_data_fit, itd->second[i]);
-        add_hist_to_compatible_hist(h_mc_fit, itm->second[i]);
-    }
-
-    std::cout << "[eppi0_norm] " << period
-              << " p1_theta fit histogram integrals: data=" << h_data_fit.Integral()
-              << " mc=" << h_mc_fit.Integral()
-              << std::endl;
 }
 
-// -----------------------------------------------------------------------------
-// Fitting and plotting
-// -----------------------------------------------------------------------------
-
-static Poly4 fit_p1_theta_ratio(const std::string& period,
-                                const std::string& outdir,
-                                TH1D* h_data,
-                                TH1D* h_mc) {
-    Poly4 p;
+static CubicFit fit_p1_theta_ratio_region(const std::string& period,
+                                          const std::string& region,
+                                          const std::string& outdir,
+                                          TH1D* h_data,
+                                          TH1D* h_mc) {
+    CubicFit p;
     if (!h_data || !h_mc) return p;
 
     TGraphErrors gr;
     int ip = 0;
+    double fit_xmin = std::numeric_limits<double>::infinity();
+    double fit_xmax = -std::numeric_limits<double>::infinity();
+
     for (int b = 1; b <= h_data->GetNbinsX(); ++b) {
         const double d = h_data->GetBinContent(b);
         const double m = h_mc->GetBinContent(b);
         if (!(d > 0.0 && m > 0.0)) continue;
+
+        const double x = h_data->GetBinCenter(b);
         const double ed = h_data->GetBinError(b);
         const double em = h_mc->GetBinError(b);
         const double r = d / m;
@@ -1139,44 +1171,68 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
             er = std::fabs(r) * std::sqrt(rd * rd + rm * rm);
         }
         if (!(er > 0.0)) er = 1.0;
-        gr.SetPoint(ip, h_data->GetBinCenter(b), r);
+        gr.SetPoint(ip, x, r);
         gr.SetPointError(ip, 0.0, er);
         ++ip;
+
+        const double low = h_data->GetBinLowEdge(b);
+        const double high = h_data->GetBinLowEdge(b + 1);
+        fit_xmin = std::min(fit_xmin, low);
+        fit_xmax = std::max(fit_xmax, high);
     }
 
-    if (ip < 5) {
+    if (ip < 4 || !(fit_xmax > fit_xmin)) {
         p.a[0] = 1.0;
+        p.x_min = (region == "CD") ? 40.0 : 0.0;
+        p.x_max = (region == "CD") ? 70.0 : 40.0;
         p.valid = true;
+        std::cout << "[eppi0_norm] WARNING: " << period << " " << region
+                  << " has fewer than four valid data/MC bins. Using unity cubic fit." << std::endl;
         return p;
     }
 
-    TF1 f("f_ratio_pol4", "pol4", 0.0, 70.0);
-    TFitResultPtr fit_result = gr.Fit(&f, "SQ0");
+    TF1 f("f_ratio_pol3", "pol3", fit_xmin, fit_xmax);
+    TFitResultPtr fit_result = gr.Fit(&f, "SQ0", "", fit_xmin, fit_xmax);
     (void)fit_result;
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 4; ++i) {
         p.a[i] = f.GetParameter(i);
         p.ea[i] = f.GetParError(i);
     }
+    p.x_min = fit_xmin;
+    p.x_max = fit_xmax;
     p.valid = true;
 
-    const std::string fit_outdir = outdir + "/p1";
+    const std::string fit_outdir = outdir + "/p1/fits";
     mkdir_p(fit_outdir);
-    TCanvas c("c_p1_theta_ratio_fit", "", 1000, 750);
+
+    std::string safe_region = region;
+    for (char& c : safe_region) {
+        if (c == ' ') c = '_';
+    }
+
+    TCanvas c(("c_p1_theta_ratio_fit_" + safe_region).c_str(), "", 1000, 750);
     c.SetGrid(1, 1);
     c.SetLeftMargin(0.14);
     c.SetRightMargin(0.05);
     c.SetBottomMargin(0.13);
     c.SetTopMargin(0.08);
 
-    TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, RATIO_Y_MIN, 70.0, RATIO_Y_MAX);
-    frame->SetTitle((period + "  ep #rightarrow ep#pi_{0}  p_{1} #theta ratio fit").c_str());
+    double xframe_min = 0.0;
+    double xframe_max = 40.0;
+    if (region == "CD") {
+        xframe_min = 40.0;
+        xframe_max = 70.0;
+    }
+
+    TH1D* frame = (TH1D*)gPad->DrawFrame(xframe_min, RATIO_Y_MIN, xframe_max, RATIO_Y_MAX);
+    frame->SetTitle((period + "  " + region + "  ep #rightarrow ep#pi_{0}  p_{1} #theta ratio cubic fit").c_str());
     frame->GetXaxis()->SetTitle("p_{1} #theta (deg)");
     frame->GetYaxis()->SetTitle("data / MC");
     frame->GetXaxis()->CenterTitle(true);
     frame->GetYaxis()->CenterTitle(true);
 
-    TLine* unity_line = new TLine(0.0, 1.0, 70.0, 1.0);
+    TLine* unity_line = new TLine(xframe_min, 1.0, xframe_max, 1.0);
     unity_line->SetLineStyle(2);
     unity_line->SetLineColor(kRed + 1);
     unity_line->SetLineWidth(2);
@@ -1187,19 +1243,22 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     gr.SetMarkerColor(kBlack);
     gr.SetLineColor(kBlack);
     gr.Draw("PE SAME");
-    f.SetLineColor(kRed + 1);
-    f.SetLineWidth(2);
-    f.Draw("L SAME");
 
-    TLegend leg(0.56, 0.70, 0.90, 0.86);
+    TF1 fdraw("f_ratio_pol3_draw", "pol3", fit_xmin, fit_xmax);
+    for (int i = 0; i < 4; ++i) fdraw.SetParameter(i, p.a[i]);
+    fdraw.SetLineColor(kRed + 1);
+    fdraw.SetLineWidth(2);
+    fdraw.Draw("L SAME");
+
+    TLegend leg(0.56, 0.66, 0.90, 0.84);
     leg.SetFillColor(kWhite);
     leg.SetFillStyle(1001);
     leg.SetBorderSize(1);
     leg.AddEntry(&gr, "data / MC", "pe");
-    leg.AddEntry(&f, "quartic fit", "l");
+    leg.AddEntry(&fdraw, "cubic fit", "l");
     leg.Draw();
 
-    c.SaveAs((fit_outdir + "/p1_theta_ratio_quartic_fit.png").c_str());
+    c.SaveAs((fit_outdir + "/p1_theta_ratio_cubic_fit_" + safe_region + ".png").c_str());
 
     return p;
 }
@@ -1417,7 +1476,7 @@ static void draw_ratio_panel(const std::string& /*period*/,
                              const VarConfig& v,
                              TGraphErrors* gr,
                              int panel,
-                             const Poly4* poly_for_p1_theta) {
+                             const std::map<std::string, CubicFit>* fits_for_p1_theta) {
     TPad* pad = (TPad*)gPad;
     pad->SetLeftMargin(0.16);
     pad->SetRightMargin(0.06);
@@ -1448,12 +1507,21 @@ static void draw_ratio_panel(const std::string& /*period*/,
         gr->Draw("PE SAME");
     }
 
-    if (poly_for_p1_theta && v.key == "p1_theta") {
-        TF1 f("f_poly_overlay", "pol4", xmin, xmax);
-        for (int i = 0; i < 5; ++i) f.SetParameter(i, poly_for_p1_theta->a[i]);
-        f.SetLineColor(kRed + 1);
-        f.SetLineWidth(2);
-        f.DrawCopy("L SAME");
+    if (fits_for_p1_theta && v.key == "p1_theta") {
+        const std::string region = panel_label(v, panel);
+        auto it_fit = fits_for_p1_theta->find(region);
+        if (it_fit != fits_for_p1_theta->end() && it_fit->second.valid) {
+            const CubicFit& fit = it_fit->second;
+            const double draw_xmin = std::max(xmin, fit.x_min);
+            const double draw_xmax = std::min(xmax, fit.x_max);
+            if (draw_xmax > draw_xmin) {
+                TF1 f("f_cubic_overlay", "pol3", draw_xmin, draw_xmax);
+                for (int i = 0; i < 4; ++i) f.SetParameter(i, fit.a[i]);
+                f.SetLineColor(kRed + 1);
+                f.SetLineWidth(2);
+                f.DrawCopy("L SAME");
+            }
+        }
     }
 
     draw_panel_title(panel_label(v, panel));
@@ -1511,7 +1579,7 @@ static void draw_sector_ratio_canvas(const std::string& out_png,
                                      const VarConfig& v,
                                      const std::vector<TGraphErrors*>& gr,
                                      const PlotNormInfo& norm,
-                                     const Poly4* poly_for_p1_theta) {
+                                     const std::map<std::string, CubicFit>* fits_for_p1_theta) {
     TCanvas canvas(("canvas_" + v.key + "_ratio_linear").c_str(), "", 1600, 900);
     canvas.Divide(4, 2);
 
@@ -1519,7 +1587,7 @@ static void draw_sector_ratio_canvas(const std::string& out_png,
 
     for (int panel = 0; panel < 7; ++panel) {
         canvas.cd(canvas_pad_for_panel[panel]);
-        draw_ratio_panel(period, v, gr[panel], panel, poly_for_p1_theta);
+        draw_ratio_panel(period, v, gr[panel], panel, fits_for_p1_theta);
     }
 
     canvas.cd(4);
@@ -1533,13 +1601,13 @@ static void draw_phi_ratio_canvas(const std::string& out_png,
                                   const VarConfig& v,
                                   const std::vector<TGraphErrors*>& gr,
                                   const PlotNormInfo& norm,
-                                  const Poly4* poly_for_p1_theta) {
+                                  const std::map<std::string, CubicFit>* fits_for_p1_theta) {
     TCanvas canvas(("canvas_" + v.key + "_ratio_linear").c_str(), "", 1600, 500);
     canvas.Divide(3, 1);
 
     for (int panel = 0; panel < 2; ++panel) {
         canvas.cd(panel + 1);
-        draw_ratio_panel(period, v, gr[panel], panel, poly_for_p1_theta);
+        draw_ratio_panel(period, v, gr[panel], panel, fits_for_p1_theta);
     }
 
     canvas.cd(3);
@@ -1554,7 +1622,7 @@ static void plot_variable(const std::string& outdir,
                           const std::vector<TH1D*>& hd,
                           const std::vector<TH1D*>& hm,
                           const PlotNormInfo& norm,
-                          const Poly4* poly_for_p1_theta) {
+                          const std::map<std::string, CubicFit>* fits_for_p1_theta) {
     mkdir_p(outdir);
 
     const std::string particle_dir = outdir + ((v.particle == 1) ? "/p1" : "/p2");
@@ -1572,9 +1640,9 @@ static void plot_variable(const std::string& outdir,
     std::vector<TGraphErrors*> gr = make_ratio_graphs(hd, hm);
 
     if (v.kind == 2) {
-        draw_phi_ratio_canvas(ratio_png, period, v, gr, norm, poly_for_p1_theta);
+        draw_phi_ratio_canvas(ratio_png, period, v, gr, norm, fits_for_p1_theta);
     } else {
-        draw_sector_ratio_canvas(ratio_png, period, v, gr, norm, poly_for_p1_theta);
+        draw_sector_ratio_canvas(ratio_png, period, v, gr, norm, fits_for_p1_theta);
     }
 
     for (TGraphErrors* g : gr) delete g;
@@ -1588,7 +1656,7 @@ struct PeriodHistResult {
     std::string period;
     HistSet data_hists;
     HistSet mc_hists;
-    Poly4 poly;
+    CubicFit poly;
     double integrated_ratio = 1.0;
     double integrated_ratio_err = 0.0;
 
@@ -1739,35 +1807,66 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                       nullptr);
     }
 
-    TH1D h_data_fit(("h_data_fit_" + period_dir(period)).c_str(), "", 35, 0.0, 70.0);
-    TH1D h_mc_fit(("h_mc_fit_" + period_dir(period)).c_str(), "", 35, 0.0, 70.0);
-    h_data_fit.Sumw2();
-    h_mc_fit.Sumw2();
+    std::map<std::string, TH1D*> h_data_fit;
+    std::map<std::string, TH1D*> h_mc_fit;
+    build_p1_theta_fit_histograms_by_region(ana_data, ana_mc, period, h_data_fit, h_mc_fit);
 
-    build_p1_theta_fit_histograms(ana_data, ana_mc, period, h_data_fit, h_mc_fit);
+    std::map<std::string, RegionNormalization> region_norms;
+    for (const std::string& region : normalization_regions()) {
+        CubicFit fit = fit_p1_theta_ratio_region(period, region, period_root, h_data_fit[region], h_mc_fit[region]);
 
-    Poly4 poly = fit_p1_theta_ratio(period, period_root, &h_data_fit, &h_mc_fit);
+        const double data_int_region = h_data_fit[region]->Integral();
+        const double mc_int_region = h_mc_fit[region]->Integral();
+        double data_err2_region = 0.0;
+        double mc_err2_region = 0.0;
+        for (int b = 1; b <= h_data_fit[region]->GetNbinsX(); ++b) {
+            data_err2_region += h_data_fit[region]->GetBinError(b) * h_data_fit[region]->GetBinError(b);
+            mc_err2_region += h_mc_fit[region]->GetBinError(b) * h_mc_fit[region]->GetBinError(b);
+        }
+
+        double ratio_region = 1.0;
+        double ratio_err_region = 0.0;
+        if (data_int_region > 0.0 && mc_int_region > 0.0) {
+            ratio_region = data_int_region / mc_int_region;
+            ratio_err_region = std::fabs(ratio_region) * std::sqrt(data_err2_region / (data_int_region * data_int_region) +
+                                                                  mc_err2_region / (mc_int_region * mc_int_region));
+        }
+
+        RegionNormalization rn;
+        rn.region = region;
+        rn.fit = fit;
+        rn.integrated_ratio = ratio_region;
+        rn.integrated_ratio_err = ratio_err_region;
+        region_norms[region] = rn;
+    }
 
     for (const VarConfig& v : variable_configs()) {
         if (v.key == "p1_theta") {
+            std::map<std::string, CubicFit> fits_for_plot;
+            for (const auto& kv : region_norms) {
+                fits_for_plot[kv.first] = kv.second.fit;
+            }
             plot_variable(period_root,
                           period,
                           v,
                           ana_data.hists[v.key],
                           ana_mc.hists[v.key],
                           norm_info,
-                          &poly);
+                          &fits_for_plot);
         }
     }
 
-    const double data_int = h_data_fit.Integral();
-    const double mc_int = h_mc_fit.Integral();
+    double data_int = 0.0;
+    double mc_int = 0.0;
     double data_err2 = 0.0;
     double mc_err2 = 0.0;
-
-    for (int b = 1; b <= h_data_fit.GetNbinsX(); ++b) {
-        data_err2 += h_data_fit.GetBinError(b) * h_data_fit.GetBinError(b);
-        mc_err2 += h_mc_fit.GetBinError(b) * h_mc_fit.GetBinError(b);
+    for (const std::string& region : normalization_regions()) {
+        data_int += h_data_fit[region]->Integral();
+        mc_int += h_mc_fit[region]->Integral();
+        for (int b = 1; b <= h_data_fit[region]->GetNbinsX(); ++b) {
+            data_err2 += h_data_fit[region]->GetBinError(b) * h_data_fit[region]->GetBinError(b);
+            mc_err2 += h_mc_fit[region]->GetBinError(b) * h_mc_fit[region]->GetBinError(b);
+        }
     }
 
     double ratio = 1.0;
@@ -1803,15 +1902,16 @@ static PeriodNormalization run_period_normalization(const std::string& period,
 
     PeriodNormalization out;
     out.period = period;
-    out.poly = poly;
-    out.integrated_ratio = ratio;
-    out.integrated_ratio_err = ratio_err;
+    out.regions = region_norms;
+
+    for (auto& kv : h_data_fit) delete kv.second;
+    for (auto& kv : h_mc_fit) delete kv.second;
 
     delete_hist_set(ana_data);
     delete_hist_set(ana_mc);
 
     std::cout << "[eppi0_norm] " << period
-              << " polynomial=" << tuple5(poly)
+              << " regional_cubic_fits=" << region_norms.size()
               << " integrated_ratio=" << ratio
               << " +/- " << ratio_err
               << " data_eff=" << data_eff
@@ -1862,7 +1962,7 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
                                                   const std::vector<RowBin>& rows,
                                                   const TopoCutMap& data_cuts,
                                                   double current_factor,
-                                                  const Poly4& poly,
+                                                  const PeriodNormalization& norm,
                                                   std::unordered_map<std::string, RowCounts>& out) {
     if (!tree) return;
 
@@ -1880,7 +1980,16 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
         if (topo.empty()) continue;
 
         const double theta = b.p1_theta_deg();
-        const double ratio = poly.eval(theta);
+        const std::string region = normalization_region_for_event(b);
+        if (region.empty()) continue;
+        auto it_region = norm.regions.find(region);
+        if (it_region == norm.regions.end()) {
+            std::ostringstream ss;
+            ss << "[eppi0_norm] FATAL: missing normalization region " << region
+               << " for period " << norm.period;
+            fatal(ss.str());
+        }
+        const double ratio = it_region->second.fit.eval(theta);
         if (!(std::isfinite(ratio) && ratio > 0.0)) continue;
 
         const double weight = 1.0 / (current_factor * ratio);
@@ -1948,7 +2057,7 @@ static void fill_normalized_yields(CSV& csv,
         PeriodTags tags;
         TTree* tree = nullptr;
         double current_factor = 1.0;
-        Poly4 poly;
+        CubicFit poly;
     };
 
     std::vector<WorkItem> items;
@@ -1964,7 +2073,7 @@ static void fill_normalized_yields(CSV& csv,
             w.tags = tags;
             w.tree = kv.second;
             w.current_factor = read_current_factor(csv, cfg, "exp", tags.display);
-            w.poly = find_norm(norms, tags.display).poly;
+            w.norm = find_norm(norms, tags.display);
             items.push_back(w);
         }
     };
@@ -1986,7 +2095,7 @@ static void fill_normalized_yields(CSV& csv,
                                              rows,
                                              data_cuts,
                                              items[i].current_factor,
-                                             items[i].poly,
+                                             items[i].norm,
                                              results[i]);
     }
 
@@ -2001,13 +2110,21 @@ static void fill_normalized_yields(CSV& csv,
 static void write_norms_to_csv(CSV& csv, const std::vector<PeriodNormalization>& norms) {
     for (const std::string& period : CSV_PERIOD_ORDER) {
         const PeriodNormalization& n = find_norm(norms, period);
-        const int c_poly = col_strict(csv, norm_poly_col(period));
-        const int c_factor = col_strict(csv, norm_factor_col(period));
-        const std::string poly_cell = tuple5(n.poly);
-        const std::string factor_cell = tuple2(n.integrated_ratio, n.integrated_ratio_err);
-        for (auto& row : csv.rows) {
-            row[c_poly] = poly_cell;
-            row[c_factor] = factor_cell;
+        for (const std::string& region : normalization_regions()) {
+            auto it_region = n.regions.find(region);
+            if (it_region == n.regions.end()) {
+                std::ostringstream ss;
+                ss << "[eppi0_norm] FATAL: missing " << region << " normalization for " << period;
+                fatal(ss.str());
+            }
+            const int c_fit = col_strict(csv, norm_fit_col(period, region));
+            const int c_factor = col_strict(csv, norm_factor_col(period, region));
+            const std::string fit_cell = tuple4(it_region->second.fit);
+            const std::string factor_cell = tuple2(it_region->second.integrated_ratio, it_region->second.integrated_ratio_err);
+            for (auto& row : csv.rows) {
+                row[c_fit] = fit_cell;
+                row[c_factor] = factor_cell;
+            }
         }
     }
 }
@@ -2017,10 +2134,17 @@ static std::vector<PeriodNormalization> unity_norms() {
     for (const std::string& period : CSV_PERIOD_ORDER) {
         PeriodNormalization n;
         n.period = period;
-        n.poly.valid = true;
-        n.poly.a[0] = 1.0;
-        n.integrated_ratio = 1.0;
-        n.integrated_ratio_err = 0.0;
+        for (const std::string& region : normalization_regions()) {
+            RegionNormalization rn;
+            rn.region = region;
+            rn.fit.valid = true;
+            rn.fit.a[0] = 1.0;
+            rn.fit.x_min = (region == "CD") ? 40.0 : 0.0;
+            rn.fit.x_max = (region == "CD") ? 70.0 : 40.0;
+            rn.integrated_ratio = 1.0;
+            rn.integrated_ratio_err = 0.0;
+            n.regions[region] = rn;
+        }
         norms.push_back(n);
     }
     return norms;
