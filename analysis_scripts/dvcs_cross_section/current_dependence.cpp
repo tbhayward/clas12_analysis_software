@@ -6,9 +6,7 @@
 #include <TROOT.h>
 #include <TSystem.h>
 #include <TCanvas.h>
-#include <TPad.h>
 #include <TGraphErrors.h>
-#include <TGraph.h>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TAxis.h>
@@ -195,39 +193,12 @@ static int parse_current_from_key(const std::string& key) {
         return 0;
     }
 
-    // Parse an exact current token of the form <digits>nA.
-    // Do not use substring matching such as "5na", because that incorrectly
-    // classifies 35nA, 45nA, 50nA, and 55nA as 5nA, and 40nA as 0nA.
-    for (size_t na_pos = s.find("na"); na_pos != std::string::npos; na_pos = s.find("na", na_pos + 2)) {
-        if (na_pos == 0) {
-            continue;
+    for (int current = 0; current <= 100; ++current) {
+        std::ostringstream token;
+        token << current << "na";
+        if (has_substr(s, token.str())) {
+            return current;
         }
-
-        size_t first_digit = na_pos;
-        while (first_digit > 0 && std::isdigit((unsigned char)s[first_digit - 1])) {
-            --first_digit;
-        }
-
-        if (first_digit == na_pos) {
-            continue;
-        }
-
-        const std::string current_token = s.substr(first_digit, na_pos - first_digit);
-        char* endp = nullptr;
-        const long current = std::strtol(current_token.c_str(), &endp, 10);
-
-        if (endp == current_token.c_str() || *endp != '\0') {
-            continue;
-        }
-
-        if (current < 0 || current > 100) {
-            std::ostringstream ss;
-            ss << "[current_dependence] FATAL: parsed unreasonable current "
-               << current << " nA from key: " << key;
-            fatal(ss.str());
-        }
-
-        return (int)current;
     }
 
     // The nominal acceptance files are the reference-current files.
@@ -1521,350 +1492,6 @@ static void draw_fit_graph(const std::string& out_path,
     c.SaveAs(out_path.c_str());
 }
 
-
-
-static int period_color(const std::string& period) {
-    if (period == "Sp18 Inb") return kBlack;
-    if (period == "Sp18 Out") return kRed + 1;
-    if (period == "Fa18 Inb") return kBlue + 1;
-    if (period == "Fa18 Out") return kGreen + 2;
-    if (period == "Sp19 Inb") return kMagenta + 1;
-    return kGray + 2;
-}
-
-static int period_marker(const std::string& period) {
-    if (period == "Sp18 Inb") return 20;
-    if (period == "Sp18 Out") return 21;
-    if (period == "Fa18 Inb") return 22;
-    if (period == "Fa18 Out") return 23;
-    if (period == "Sp19 Inb") return 24;
-    return 20;
-}
-
-static double point_y_for_plot(const CurrentPoint& p, const FitResult& fit, bool relative) {
-    double y = p.y;
-    if (relative && std::isfinite(fit.b) && fit.b != 0.0) {
-        y /= fit.b;
-    }
-    return y;
-}
-
-static double point_ey_for_plot(const CurrentPoint& p, const FitResult& fit, bool relative) {
-    double ey = p.sy;
-    if (relative && std::isfinite(fit.b) && fit.b != 0.0) {
-        ey /= std::fabs(fit.b);
-    }
-    return ey;
-}
-
-static double fit_y_for_plot(double current, const FitResult& fit, bool relative) {
-    if (!std::isfinite(fit.m) || !std::isfinite(fit.b)) {
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-
-    double y = fit.m * current + fit.b;
-    if (relative && fit.b != 0.0) {
-        y /= fit.b;
-    }
-    return y;
-}
-
-static void write_all_points_csv(const std::string& path,
-                                 const std::vector<PeriodResult>& results,
-                                 bool write_data_points) {
-    mkdir_p(path.substr(0, path.find_last_of('/')));
-
-    std::ofstream fout(path);
-
-    if (!fout.is_open()) {
-        std::ostringstream ss;
-        ss << "[current_dependence] FATAL: cannot write: " << path;
-        fatal(ss.str());
-    }
-
-    fout << "period,current_nA,y,stat,counts,normalizer\n";
-
-    for (const PeriodResult& r : results) {
-        const std::vector<CurrentPoint>& points = write_data_points ? r.data_points : r.mc_points;
-        for (const CurrentPoint& pt : points) {
-            fout << r.period << ","
-                 << pt.current_nA << ","
-                 << std::setprecision(12) << pt.y << ","
-                 << std::setprecision(12) << pt.sy << ","
-                 << std::setprecision(12) << pt.counts << ","
-                 << std::setprecision(12) << pt.charge << "\n";
-        }
-    }
-}
-
-static void draw_current_panel_2x3(const std::string& out_path,
-                                   const std::string& title,
-                                   const std::vector<PeriodResult>& results,
-                                   bool draw_data,
-                                   bool relative) {
-    mkdir_p(out_path.substr(0, out_path.find_last_of('/')));
-
-    TCanvas c("c_current_dependence_panel", "", 1900, 1280);
-    c.SetFillColor(kWhite);
-    c.SetFrameFillColor(kWhite);
-
-    TPad* title_pad = new TPad("current_dependence_title_pad", "", 0.0, 0.935, 1.0, 1.0);
-    TPad* grid_pad  = new TPad("current_dependence_grid_pad",  "", 0.0, 0.0,   1.0, 0.935);
-
-    title_pad->SetFillColor(kWhite);
-    title_pad->SetFrameFillColor(kWhite);
-    title_pad->SetBorderMode(0);
-    title_pad->SetMargin(0.0, 0.0, 0.0, 0.0);
-
-    grid_pad->SetFillColor(kWhite);
-    grid_pad->SetFrameFillColor(kWhite);
-    grid_pad->SetBorderMode(0);
-    grid_pad->SetMargin(0.0, 0.0, 0.0, 0.0);
-
-    title_pad->Draw();
-    grid_pad->Draw();
-
-    title_pad->cd();
-    TLatex title_text;
-    title_text.SetNDC(true);
-    title_text.SetTextFont(42);
-    title_text.SetTextSize(0.42);
-    title_text.SetTextAlign(22);
-    title_text.DrawLatex(0.50, 0.48, title.c_str());
-
-    grid_pad->cd();
-    grid_pad->Divide(3, 2, 0.004, 0.004);
-
-    std::map<std::string, PeriodResult> by_period;
-    for (const PeriodResult& r : results) {
-        by_period[r.period] = r;
-    }
-
-    std::vector<TGraphErrors*> owned_graphs;
-    std::vector<TGraph*> owned_lines;
-
-    auto y_axis_title = [&]() {
-        if (relative) {
-            return std::string("Relative response to 0 nA");
-        }
-        if (draw_data) {
-            return std::string("Data counts / nC");
-        }
-        return std::string("MC reconstructed / generated");
-    };
-
-    auto configure_pad = [&](int ipad) {
-        grid_pad->cd(ipad + 1);
-        gPad->SetFillColor(kWhite);
-        gPad->SetFrameFillColor(kWhite);
-        gPad->SetLeftMargin(0.215);
-        gPad->SetRightMargin(0.035);
-        gPad->SetTopMargin(0.075);
-        gPad->SetBottomMargin(0.155);
-        gPad->SetGrid(1, 1);
-        gPad->SetTickx(1);
-        gPad->SetTicky(1);
-    };
-
-    auto configure_frame = [&](TH1D* frame) {
-        frame->SetTitle("");
-        frame->GetXaxis()->SetTitle("Current (nA)");
-        frame->GetYaxis()->SetTitle(y_axis_title().c_str());
-        frame->GetXaxis()->CenterTitle(true);
-        frame->GetYaxis()->CenterTitle(true);
-        frame->GetXaxis()->SetNdivisions(505);
-        frame->GetYaxis()->SetNdivisions(505);
-        frame->GetXaxis()->SetTitleSize(0.052);
-        frame->GetYaxis()->SetTitleSize(0.052);
-        frame->GetXaxis()->SetLabelSize(0.042);
-        frame->GetYaxis()->SetLabelSize(0.042);
-        frame->GetXaxis()->SetTitleOffset(1.12);
-        frame->GetYaxis()->SetTitleOffset(1.92);
-    };
-
-    auto draw_pad_label = [&](const std::string& label) {
-        TLatex txt;
-        txt.SetNDC(true);
-        txt.SetTextFont(42);
-        txt.SetTextSize(0.052);
-        txt.SetTextAlign(13);
-        txt.DrawLatex(0.255, 0.900, label.c_str());
-    };
-
-    auto compute_range_for_period = [&](const PeriodResult& r, double& ymin, double& ymax) {
-        ymin = std::numeric_limits<double>::infinity();
-        ymax = -std::numeric_limits<double>::infinity();
-
-        const std::vector<CurrentPoint>& points = draw_data ? r.data_points : r.mc_points;
-        const FitResult& fit = draw_data ? r.data_fit : r.mc_fit;
-
-        for (const CurrentPoint& pt : points) {
-            const double y = point_y_for_plot(pt, fit, relative);
-            const double ey = point_ey_for_plot(pt, fit, relative);
-            if (std::isfinite(y)) {
-                ymin = std::min(ymin, y - ey);
-                ymax = std::max(ymax, y + ey);
-            }
-        }
-
-        if (std::isfinite(fit.m) && std::isfinite(fit.b)) {
-            for (int i = 0; i < 80; ++i) {
-                const double x = 80.0 * (double)i / 79.0;
-                const double y = fit_y_for_plot(x, fit, relative);
-                if (std::isfinite(y)) {
-                    ymin = std::min(ymin, y);
-                    ymax = std::max(ymax, y);
-                }
-            }
-        }
-    };
-
-    auto finalize_range = [&](double& ymin, double& ymax) {
-        if (!std::isfinite(ymin) || !std::isfinite(ymax) || ymax <= ymin) {
-            ymin = relative ? 0.85 : 0.0;
-            ymax = relative ? 1.15 : 1.0;
-            return;
-        }
-
-        const double span = ymax - ymin;
-        if (relative) {
-            ymin = std::min(0.90, ymin - 0.12 * span);
-            ymax = std::max(1.10, ymax + 0.12 * span);
-        } else {
-            ymin = 0.0;
-            ymax = ymax + 0.18 * span;
-            if (!(ymax > 0.0)) {
-                ymax = 1.0;
-            }
-        }
-    };
-
-    auto draw_period_contents = [&](const PeriodResult& r, int color, int marker, bool add_legend_title, TLegend* leg) {
-        const std::vector<CurrentPoint>& points = draw_data ? r.data_points : r.mc_points;
-        const FitResult& fit = draw_data ? r.data_fit : r.mc_fit;
-
-        TGraphErrors* g = new TGraphErrors();
-        owned_graphs.push_back(g);
-        g->SetMarkerStyle(marker);
-        g->SetMarkerSize(1.0);
-        g->SetMarkerColor(color);
-        g->SetLineColor(color);
-        g->SetLineWidth(1);
-
-        for (int i = 0; i < (int)points.size(); ++i) {
-            const double y = point_y_for_plot(points[i], fit, relative);
-            const double ey = point_ey_for_plot(points[i], fit, relative);
-            g->SetPoint(i, points[i].current_nA, y);
-            g->SetPointError(i, 0.0, ey);
-        }
-
-        g->Draw("PE SAME");
-
-        if (leg != nullptr) {
-            leg->AddEntry(g, r.period.c_str(), "pe");
-        }
-
-        if (std::isfinite(fit.m) && std::isfinite(fit.b)) {
-            TGraph* line = new TGraph();
-            owned_lines.push_back(line);
-            for (int i = 0; i < 200; ++i) {
-                const double x = 80.0 * (double)i / 199.0;
-                const double y = fit_y_for_plot(x, fit, relative);
-                line->SetPoint(i, x, y);
-            }
-            line->SetLineColor(color);
-            line->SetLineWidth(2);
-            line->Draw("L SAME");
-        }
-
-        if (add_legend_title) {
-            draw_pad_label(r.period);
-        }
-    };
-
-    for (int ipad = 0; ipad < 6; ++ipad) {
-        configure_pad(ipad);
-
-        if (ipad < 5) {
-            const std::string period = PERIOD_ORDER[(size_t)ipad];
-            auto it = by_period.find(period);
-            if (it == by_period.end()) {
-                continue;
-            }
-
-            double ymin = 0.0;
-            double ymax = 1.0;
-            compute_range_for_period(it->second, ymin, ymax);
-            finalize_range(ymin, ymax);
-
-            TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, ymin, 80.0, ymax);
-            configure_frame(frame);
-
-            draw_period_contents(it->second,
-                                 period_color(period),
-                                 period_marker(period),
-                                 true,
-                                 nullptr);
-        } else {
-            double ymin = std::numeric_limits<double>::infinity();
-            double ymax = -std::numeric_limits<double>::infinity();
-
-            for (const std::string& period : PERIOD_ORDER) {
-                auto it = by_period.find(period);
-                if (it == by_period.end()) {
-                    continue;
-                }
-
-                double ypmin = 0.0;
-                double ypmax = 1.0;
-                compute_range_for_period(it->second, ypmin, ypmax);
-                ymin = std::min(ymin, ypmin);
-                ymax = std::max(ymax, ypmax);
-            }
-
-            finalize_range(ymin, ymax);
-
-            TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, ymin, 80.0, ymax);
-            configure_frame(frame);
-            draw_pad_label("All periods");
-
-            TLegend* leg = new TLegend(0.53, 0.56, 0.94, 0.88);
-            leg->SetFillStyle(1001);
-            leg->SetFillColor(kWhite);
-            leg->SetBorderSize(1);
-            leg->SetTextFont(42);
-            leg->SetTextSize(0.040);
-
-            for (const std::string& period : PERIOD_ORDER) {
-                auto it = by_period.find(period);
-                if (it == by_period.end()) {
-                    continue;
-                }
-                draw_period_contents(it->second,
-                                     period_color(period),
-                                     period_marker(period),
-                                     false,
-                                     leg);
-            }
-
-            leg->Draw();
-        }
-    }
-
-    c.SaveAs(out_path.c_str());
-
-    for (TGraphErrors* g : owned_graphs) {
-        delete g;
-    }
-    for (TGraph* g : owned_lines) {
-        delete g;
-    }
-
-    delete title_pad;
-    delete grid_pad;
-}
-
-
 static void write_points_csv(const std::string& path,
                              const std::vector<CurrentPoint>& points) {
     mkdir_p(path.substr(0, path.find_last_of('/')));
@@ -1920,51 +1547,6 @@ static void write_summary_csv(const std::string& path,
 // Main channel worker
 // -----------------------------------------------------------------------------
 
-
-static void validate_current_scan_mc_inputs(const ChannelConfig& cfg,
-                                            const std::map<std::string, TTree*>& gen_trees,
-                                            const std::map<std::string, TTree*>& rec_trees) {
-    if (cfg.channel != Channel::DVCS) {
-        return;
-    }
-
-    std::map<std::string, std::set<int>> gen_currents;
-    std::map<std::string, std::set<int>> rec_currents;
-
-    for (const auto& kv : gen_trees) {
-        PeriodTags tags = parse_period_from_key(kv.first);
-        if (tags.display == "Fa18 Inb Supp") continue;
-        gen_currents[tags.display].insert(parse_current_from_key(kv.first));
-    }
-
-    for (const auto& kv : rec_trees) {
-        PeriodTags tags = parse_period_from_key(kv.first);
-        if (tags.display == "Fa18 Inb Supp") continue;
-        rec_currents[tags.display].insert(parse_current_from_key(kv.first));
-    }
-
-    for (const std::string& period : PERIOD_ORDER) {
-        const size_t ngen = gen_currents[period].size();
-        const size_t nrec = rec_currents[period].size();
-
-        std::cout << "[current_dependence] DVCS current-scan MC inputs for " << period
-                  << ": gen currents=";
-        for (int c : gen_currents[period]) std::cout << " " << c;
-        std::cout << " | rec currents=";
-        for (int c : rec_currents[period]) std::cout << " " << c;
-        std::cout << std::endl;
-
-        if (ngen < 2 || nrec < 2) {
-            std::ostringstream ss;
-            ss << "[current_dependence] FATAL: DVCS current-dependence MC for " << period
-               << " has fewer than two current points (gen=" << ngen
-               << ", rec=" << nrec << "). This usually means main.cpp passed the nominal "
-               << "acceptance MC maps instead of currentStudyGenMcTrees/currentStudyRecMcTrees.";
-            fatal(ss.str());
-        }
-    }
-}
-
 static std::vector<PeriodResult> run_channel_study(
     const ChannelConfig& cfg,
     const std::map<std::string, TTree*>& data_trees,
@@ -1975,8 +1557,6 @@ static std::vector<PeriodResult> run_channel_study(
     const TopoCutMap& mc_cuts,
     const std::string& output_dir,
     int max_workers) {
-
-    validate_current_scan_mc_inputs(cfg, gen_trees, rec_trees);
 
     std::map<std::string, DataAgg> data_aggs;
     std::mutex data_mutex;
@@ -2102,6 +1682,28 @@ static std::vector<PeriodResult> run_channel_study(
 
         results.push_back(R);
 
+        const std::string odir = output_dir + "/" + cfg.output_token + "/" + period_dir(period);
+        mkdir_p(odir);
+
+        write_points_csv(odir + "/data_current_points.csv", R.data_points);
+        write_points_csv(odir + "/mc_current_points.csv", R.mc_points);
+
+        draw_fit_graph(odir + "/current_dependence_absolute.png",
+                       cfg.title + "  " + period,
+                       R.data_points,
+                       R.data_fit,
+                       R.mc_points,
+                       R.mc_fit,
+                       false);
+
+        draw_fit_graph(odir + "/current_dependence_relative_to_zero.png",
+                       cfg.title + "  " + period,
+                       R.data_points,
+                       R.data_fit,
+                       R.mc_points,
+                       R.mc_fit,
+                       true);
+
         std::cout << "[current_dependence] " << cfg.csv_channel
                   << " " << period
                   << " data_factor=" << R.data_factor
@@ -2111,39 +1713,7 @@ static std::vector<PeriodResult> run_channel_study(
                   << std::endl;
     }
 
-    const std::string channel_dir = output_dir + "/" + cfg.output_token;
-    mkdir_p(channel_dir);
-
-    write_all_points_csv(channel_dir + "/data_current_points.csv", results, true);
-    write_all_points_csv(channel_dir + "/mc_current_points.csv", results, false);
-
-    draw_current_panel_2x3(channel_dir + "/current_dependence_data_absolute.png",
-                           cfg.title + " data current dependence",
-                           results,
-                           true,
-                           false);
-
-    draw_current_panel_2x3(channel_dir + "/current_dependence_data_relative_to_zero.png",
-                           cfg.title + " data current dependence relative to 0 nA",
-                           results,
-                           true,
-                           true);
-
-    if (cfg.channel == Channel::DVCS) {
-        draw_current_panel_2x3(channel_dir + "/current_dependence_mc_absolute.png",
-                               cfg.title + " MC current dependence",
-                               results,
-                               false,
-                               false);
-
-        draw_current_panel_2x3(channel_dir + "/current_dependence_mc_relative_to_zero.png",
-                               cfg.title + " MC current dependence relative to 0 nA",
-                               results,
-                               false,
-                               true);
-    }
-
-    write_summary_csv(channel_dir + "/period_summary.csv", results);
+    write_summary_csv(output_dir + "/" + cfg.output_token + "/period_summary.csv", results);
 
     return results;
 }
@@ -2195,90 +1765,222 @@ static void write_results_to_csv(CSV& csv,
 }
 
 
-static const PeriodResult& find_result_strict(const std::vector<PeriodResult>& results,
-                                              const std::string& period,
-                                              const std::string& label) {
-    for (const PeriodResult& r : results) {
-        if (r.period == period) {
-            return r;
+// -----------------------------------------------------------------------------
+// Apply saved MC current-efficiency factors to reconstructed MC yield columns
+// -----------------------------------------------------------------------------
+
+static const std::vector<std::string>& topology_labels() {
+    static const std::vector<std::string> v = {
+        "(FD, FD)",
+        "(CD, FD)",
+        "(CD, FT)"
+    };
+    return v;
+}
+
+static bool parse_first_number(const std::string& cell, double& value) {
+    value = std::numeric_limits<double>::quiet_NaN();
+
+    std::string s;
+    s.reserve(cell.size());
+    for (char c : cell) {
+        if (!std::isspace((unsigned char)c)) {
+            s.push_back(c);
         }
+    }
+
+    if (s.empty()) {
+        return false;
+    }
+
+    if (s.front() == '(') {
+        const size_t start = 1;
+        size_t stop = s.find(',', start);
+        if (stop == std::string::npos) {
+            stop = s.find(')', start);
+        }
+        if (stop == std::string::npos || stop <= start) {
+            return false;
+        }
+        s = s.substr(start, stop - start);
+    }
+
+    char* endp = nullptr;
+    const double x = std::strtod(s.c_str(), &endp);
+    if (endp == s.c_str()) {
+        return false;
+    }
+
+    value = x;
+    return std::isfinite(value);
+}
+
+static std::string format_scalar(double v) {
+    if (!std::isfinite(v)) {
+        return "";
     }
 
     std::ostringstream ss;
-    ss << "[current_dependence] FATAL: missing " << label
-       << " current-dependence result for period " << period;
-    fatal(ss.str());
+    ss << std::fixed << std::setprecision(6) << v;
+    std::string out = ss.str();
 
-    return results.front();
-}
-
-static void apply_dvcs_mc_to_data_ratio_to_eppi0_results(
-    const std::vector<PeriodResult>& dvcs_results,
-    std::vector<PeriodResult>& eppi0_results,
-    const std::string& output_dir,
-    const std::string& eppi0_output_token) {
-
-    for (PeriodResult& epi : eppi0_results) {
-        const PeriodResult& dvcs = find_result_strict(dvcs_results,
-                                                      epi.period,
-                                                      "DVCS");
-
-        if (!(std::isfinite(epi.data_factor) && epi.data_factor > 0.0)) {
-            std::ostringstream ss;
-            ss << "[current_dependence] FATAL: invalid eppi0 data current factor for period "
-               << epi.period << ": " << epi.data_factor;
-            fatal(ss.str());
-        }
-
-        if (!(std::isfinite(dvcs.data_factor) && dvcs.data_factor > 0.0)) {
-            std::ostringstream ss;
-            ss << "[current_dependence] FATAL: invalid DVCS data current factor for period "
-               << epi.period << ": " << dvcs.data_factor;
-            fatal(ss.str());
-        }
-
-        if (!(std::isfinite(dvcs.mc_factor) && dvcs.mc_factor > 0.0)) {
-            std::ostringstream ss;
-            ss << "[current_dependence] FATAL: invalid DVCS MC current factor for period "
-               << epi.period << ": " << dvcs.mc_factor;
-            fatal(ss.str());
-        }
-
-        const double scale = dvcs.mc_factor / dvcs.data_factor;
-        epi.mc_factor = epi.data_factor * scale;
-
-        double rel_var = 0.0;
-
-        if (std::isfinite(epi.data_factor_err) && epi.data_factor_err >= 0.0) {
-            rel_var += (epi.data_factor_err / epi.data_factor) *
-                       (epi.data_factor_err / epi.data_factor);
-        }
-
-        if (std::isfinite(dvcs.mc_factor_err) && dvcs.mc_factor_err >= 0.0) {
-            rel_var += (dvcs.mc_factor_err / dvcs.mc_factor) *
-                       (dvcs.mc_factor_err / dvcs.mc_factor);
-        }
-
-        if (std::isfinite(dvcs.data_factor_err) && dvcs.data_factor_err >= 0.0) {
-            rel_var += (dvcs.data_factor_err / dvcs.data_factor) *
-                       (dvcs.data_factor_err / dvcs.data_factor);
-        }
-
-        epi.mc_factor_err = std::fabs(epi.mc_factor) * std::sqrt(rel_var);
-
-        epi.mc_points.clear();
-        epi.mc_fit = FitResult();
-
-        std::cout << "[current_dependence] ep->eppi0 " << epi.period
-                  << " derived_mc_factor=" << epi.mc_factor
-                  << " +/- " << epi.mc_factor_err
-                  << " using eppi0_data_factor=" << epi.data_factor
-                  << " and DVCS mc/data ratio=" << scale
-                  << std::endl;
+    while (!out.empty() && out.back() == '0') {
+        out.pop_back();
+    }
+    if (!out.empty() && out.back() == '.') {
+        out.pop_back();
+    }
+    if (out.empty() || out == "-0") {
+        out = "0";
     }
 
-    write_summary_csv(output_dir + "/" + eppi0_output_token + "/period_summary.csv",
-                      eppi0_results);
+    return out;
+}
+
+static std::string rec_yield_total_col(const std::string& channel,
+                                       const std::string& period) {
+    return "reconstructed yield, " + channel + ", mc, " + period;
+}
+
+static std::string rec_yield_topo_col(const std::string& channel,
+                                      const std::string& topo,
+                                      const std::string& period) {
+    return "reconstructed yield, " + channel + ", " + topo + ", mc, " + period;
+}
+
+static std::string rec_current_corrected_total_col(const std::string& channel,
+                                                   const std::string& period) {
+    return "reconstructed current corrected yield, " + channel + ", mc, " + period;
+}
+
+static std::string rec_current_corrected_topo_col(const std::string& channel,
+                                                  const std::string& topo,
+                                                  const std::string& period) {
+    return "reconstructed current corrected yield, " + channel + ", " + topo + ", mc, " + period;
+}
+
+static double read_mc_current_factor_from_csv(const CSV& csv,
+                                              const ChannelConfig& cfg,
+                                              const std::string& period) {
+    const int c = col_strict(csv, current_eff_col(cfg, "mc", period));
+
+    if (csv.rows.empty()) {
+        fatal("[current_dependence] FATAL: cannot read current factor from empty CSV.");
+    }
+
+    double f = std::numeric_limits<double>::quiet_NaN();
+    if (!parse_first_number(csv.rows.front()[c], f) || !(std::isfinite(f) && f > 0.0)) {
+        std::ostringstream ss;
+        ss << "[current_dependence] FATAL: invalid MC current-efficiency factor in column '"
+           << current_eff_col(cfg, "mc", period) << "': '" << csv.rows.front()[c] << "'.";
+        fatal(ss.str());
+    }
+
+    return f;
+}
+
+static long long apply_one_current_correction_column(CSV& csv,
+                                                     const std::string& src_col,
+                                                     const std::string& dst_col,
+                                                     double factor) {
+    const int c_src = col_strict(csv, src_col);
+    const int c_dst = col_strict(csv, dst_col);
+
+    long long n_positive = 0;
+
+    for (auto& row : csv.rows) {
+        double raw = 0.0;
+        if (!parse_first_number(row[c_src], raw) || !(std::isfinite(raw) && raw > 0.0)) {
+            row[c_dst].clear();
+            continue;
+        }
+
+        const double corrected = raw / factor;
+        row[c_dst] = format_scalar(corrected);
+
+        if (corrected > 0.0) {
+            ++n_positive;
+        }
+    }
+
+    return n_positive;
+}
+
+static long long apply_mc_current_corrections_for_channel(CSV& csv,
+                                                          const std::string& source_channel,
+                                                          const ChannelConfig& factor_cfg,
+                                                          const std::string& log_label) {
+    long long total_positive = 0;
+
+    for (const std::string& period : CSV_PERIOD_ORDER) {
+        const double f_mc = read_mc_current_factor_from_csv(csv, factor_cfg, period);
+
+        const long long n_total = apply_one_current_correction_column(
+            csv,
+            rec_yield_total_col(source_channel, period),
+            rec_current_corrected_total_col(source_channel, period),
+            f_mc);
+        total_positive += n_total;
+
+        std::cout << "[current_dependence] Applied MC current correction for "
+                  << log_label << " period=" << period
+                  << " inclusive factor=" << f_mc
+                  << " positive_rows=" << n_total
+                  << std::endl;
+
+        for (const std::string& topo : topology_labels()) {
+            const long long n_topo = apply_one_current_correction_column(
+                csv,
+                rec_yield_topo_col(source_channel, topo, period),
+                rec_current_corrected_topo_col(source_channel, topo, period),
+                f_mc);
+            total_positive += n_topo;
+
+            std::cout << "[current_dependence] Applied MC current correction for "
+                      << log_label << " period=" << period
+                      << " topo=" << topo
+                      << " factor=" << f_mc
+                      << " positive_rows=" << n_topo
+                      << std::endl;
+        }
+    }
+
+    return total_positive;
+}
+
+static void apply_all_mc_current_corrections(CSV& csv,
+                                             const ChannelConfig& dvcs,
+                                             const ChannelConfig& eppi0) {
+    const long long n_dvcs = apply_mc_current_corrections_for_channel(csv,
+                                                                      "ep->epg",
+                                                                      dvcs,
+                                                                      "ep->epg");
+
+    const long long n_eppi0 = apply_mc_current_corrections_for_channel(csv,
+                                                                       "ep->eppi0",
+                                                                       eppi0,
+                                                                       "ep->eppi0");
+
+    const long long n_eppi0_bkg = apply_mc_current_corrections_for_channel(csv,
+                                                                           "ep->eppi0->epg",
+                                                                           eppi0,
+                                                                           "ep->eppi0->epg");
+
+    if (n_dvcs <= 0) {
+        fatal("[current_dependence] FATAL: applying DVCS MC current corrections produced zero positive cells.");
+    }
+    if (n_eppi0 <= 0) {
+        fatal("[current_dependence] FATAL: applying eppi0 MC current corrections produced zero positive cells.");
+    }
+    if (n_eppi0_bkg <= 0) {
+        fatal("[current_dependence] FATAL: applying eppi0->epg background MC current corrections produced zero positive cells.");
+    }
+
+    std::cout << "[current_dependence] MC current-corrected reconstructed-yield cells written: "
+              << "ep->epg=" << n_dvcs
+              << " ep->eppi0=" << n_eppi0
+              << " ep->eppi0->epg=" << n_eppi0_bkg
+              << std::endl;
 }
 
 } // namespace
@@ -2309,6 +2011,7 @@ bool update_current_dependence_factors_csv(
 
             write_override_unity(csv, dvcs);
             write_override_unity(csv, eppi0);
+            apply_all_mc_current_corrections(csv, dvcs, eppi0);
 
             write_csv_atomic(csv_path, csv);
 
@@ -2340,27 +2043,20 @@ bool update_current_dependence_factors_csv(
                               options.output_dir,
                               options.max_workers);
 
-        const std::map<std::string, TTree*> empty_mc_gen_trees;
-        const std::map<std::string, TTree*> empty_mc_rec_trees;
-
         std::vector<PeriodResult> eppi0_results =
             run_channel_study(eppi0,
                               eppi0DataTrees,
-                              empty_mc_gen_trees,
-                              empty_mc_rec_trees,
+                              eppi0GenMcTrees,
+                              eppi0RecMcTrees,
                               charge_map,
                               data_cuts,
                               mc_cuts,
                               options.output_dir,
                               options.max_workers);
 
-        apply_dvcs_mc_to_data_ratio_to_eppi0_results(dvcs_results,
-                                                     eppi0_results,
-                                                     options.output_dir,
-                                                     eppi0.output_token);
-
         write_results_to_csv(csv, dvcs, dvcs_results);
         write_results_to_csv(csv, eppi0, eppi0_results);
+        apply_all_mc_current_corrections(csv, dvcs, eppi0);
 
         write_csv_atomic(csv_path, csv);
 

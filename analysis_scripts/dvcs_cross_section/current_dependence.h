@@ -19,30 +19,41 @@ struct CurrentDependenceOptions {
  *
  * Performs the current-dependence study adapted from dvcs_current_dependence.py.
  *
- * It determines the DVCS data and MC current factors directly.
+ * For each channel and period, it determines:
  *
- * It also determines the eppi0 DATA current factor directly from the eppi0
- * data luminosity/current scan. Because there is no eppi0 luminosity-scan MC,
- * the eppi0 MC factor is derived from:
+ *   DATA:
+ *     weighted_data_rel = event-weighted fitted data response at the actual
+ *                         current mixture divided by fitted zero-current response
  *
- *   eppi0_mc_factor = eppi0_data_factor * (dvcs_mc_factor / dvcs_data_factor)
+ *   MC:
+ *     mc_ref_rel = fitted MC efficiency at the reference current divided by
+ *                  fitted zero-current MC efficiency
  *
- * and the statistical uncertainty is propagated from the eppi0 data factor,
- * the DVCS MC factor, and the DVCS data factor.
+ * and writes:
  *
- * It writes:
+ *   current efficiency factor, ep->epg,   exp, <period> = (weighted_data_rel,stat)
+ *   current efficiency factor, ep->epg,   mc,  <period> = (mc_ref_rel,stat)
+ *   current efficiency factor, ep->eppi0, exp, <period> = (weighted_data_rel,stat)
+ *   current efficiency factor, ep->eppi0, mc,  <period> = (mc_ref_rel,stat)
  *
- *   current efficiency factor, ep->epg,   exp, <period> = (dvcs_data_factor,stat)
- *   current efficiency factor, ep->epg,   mc,  <period> = (dvcs_mc_factor,stat)
- *   current efficiency factor, ep->eppi0, exp, <period> = (eppi0_data_factor,stat)
- *   current efficiency factor, ep->eppi0, mc,  <period> = (derived_eppi0_mc_factor,stat)
+ * It also applies the saved MC current-efficiency factors to the reconstructed
+ * MC yield columns and writes the current-corrected reconstructed MC columns
+ * needed by downstream eppi0 normalization, pi0-contamination, acceptance, and
+ * unfolding modules:
  *
- * The diagnostic output is written as one 2x3 panel per channel/sample rather
- * than one plot per run period. For DVCS, the MC panel requires the current-scan
- * MC maps, not the nominal acceptance-MC maps.
+ *   reconstructed current corrected yield, ep->epg, mc, <period>
+ *   reconstructed current corrected yield, ep->epg, <topology>, mc, <period>
+ *   reconstructed current corrected yield, ep->eppi0, mc, <period>
+ *   reconstructed current corrected yield, ep->eppi0, <topology>, mc, <period>
+ *   reconstructed current corrected yield, ep->eppi0->epg, mc, <period>
+ *   reconstructed current corrected yield, ep->eppi0->epg, <topology>, mc, <period>
  *
- * If options.override_to_unity is true, no ROOT loops are performed and all
- * current-efficiency factors are written as (1,0).
+ * The correction applied is N_rec,current-corrected = N_rec / f_current^MC.
+ *
+ * If options.override_to_unity is true, no ROOT loops are performed, all
+ * current-efficiency factors are written as (1,0), and the current-corrected MC
+ * reconstructed-yield columns are copied from the uncorrected reconstructed-yield
+ * columns.
  */
 bool update_current_dependence_factors_csv(
     const std::string& csv_path,
