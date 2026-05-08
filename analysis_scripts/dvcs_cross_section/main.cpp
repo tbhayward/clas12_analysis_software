@@ -160,86 +160,86 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
+    // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+    //     Eppi0NormalizationOptions norm_opts;
+    //     norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+    //     norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
+    //     norm_opts.output_dir = "output/data_mc_normalization";
+    //     norm_opts.override_to_unity = false;
+    //     norm_opts.max_workers = 5;
+
+    //     // Set this to true to disable the eppi0 AAOGEN normalization study.
+    //     // norm_opts.override_to_unity = true;
+
+    //     if (!update_eppi0_normalization_csv(csv_main,
+    //                                         dataTrees,
+    //                                         eppi0DataTrees,
+    //                                         eppi0RecMcTrees,
+    //                                         norm_opts)) {
+    //         std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
+
+    // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
     {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        Eppi0NormalizationOptions norm_opts;
-        norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-        norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-        norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
-        norm_opts.output_dir = "output/data_mc_normalization";
-        norm_opts.override_to_unity = false;
-        norm_opts.max_workers = 5;
+        makeOutputDirs();
 
-        // Set this to true to disable the eppi0 AAOGEN normalization study.
-        // norm_opts.override_to_unity = true;
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
 
-        if (!update_eppi0_normalization_csv(csv_main,
-                                            dataTrees,
-                                            eppi0DataTrees,
-                                            eppi0RecMcTrees,
-                                            norm_opts)) {
-            std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
+        const int max_workers = 1;
+
+        if (!compute_pi0_contamination_overall(
+                dataTrees,
+                eppi0DataTrees,
+                eppi0RecMcTrees,
+                eppi0BkgTrees,
+                cuts_json,
+                csv_main,
+                output_root,
+                max_workers))
+        {
+            std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        std::cout << "pi0 contamination stage finished.\n";
+    }
+
+    // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
+
+        // Make a backup before modifying the signal-yield columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for signal yields failed ("
+                      << e.what() << "). Continuing.\n";
+        }
+
+        if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
+            std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
     }
-
-    // // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
-    // {
-    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
-
-    //     makeOutputDirs();
-
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    //     }
-
-    //     const int max_workers = 1;
-
-    //     if (!compute_pi0_contamination_overall(
-    //             dataTrees,
-    //             eppi0DataTrees,
-    //             eppi0RecMcTrees,
-    //             eppi0BkgTrees,
-    //             cuts_json,
-    //             csv_main,
-    //             output_root,
-    //             max_workers))
-    //     {
-    //         std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    //     std::cout << "pi0 contamination stage finished.\n";
-    // }
-
-    // // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
-
-    //     // Make a backup before modifying the signal-yield columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for signal yields failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
-
-    //     if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
-    //         std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
 
     // // --------- Yield totals by current ----------
     // {
