@@ -1191,7 +1191,7 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     f.SetLineWidth(2);
     f.Draw("L SAME");
 
-    TLegend leg(0.58, 0.74, 0.90, 0.88);
+    TLegend leg(0.56, 0.70, 0.90, 0.86);
     leg.SetFillColor(kWhite);
     leg.SetFillStyle(1001);
     leg.SetBorderSize(1);
@@ -1324,12 +1324,12 @@ static void draw_normalization_pad(const std::string& period,
 }
 
 static TLegend* make_comparison_legend(TH1D* h_data, TH1D* h_mc) {
-    TLegend* leg = new TLegend(0.62, 0.815, 0.94, 0.935);
+    TLegend* leg = new TLegend(0.56, 0.705, 0.90, 0.875);
     leg->SetBorderSize(1);
     leg->SetFillStyle(1001);
     leg->SetFillColor(kWhite);
-    leg->SetTextSize(0.030);
-    leg->SetMargin(0.20);
+    leg->SetTextSize(0.032);
+    leg->SetMargin(0.22);
     leg->AddEntry(h_data, "data", "l");
     leg->AddEntry(h_mc, "AAOgen MC", "l");
     return leg;
