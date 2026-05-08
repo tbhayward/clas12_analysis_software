@@ -39,6 +39,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -63,6 +64,21 @@ static constexpr double RAD2DEG = 180.0 / PI;
 [[noreturn]] static void fatal(const std::string& msg) {
     throw std::runtime_error("[yield_totals] FATAL: " + msg);
 }
+
+
+static void ensure_parent_directory_exists(const std::string& path_string) {
+    const std::filesystem::path path(path_string);
+    const std::filesystem::path parent = path.parent_path();
+
+    if (!parent.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+        if (ec) {
+            fatal("cannot create output directory: " + parent.string() + " (" + ec.message() + ")");
+        }
+    }
+}
+
 
 static std::string lower_ascii(std::string s) {
     for (char& c : s) {
@@ -1136,6 +1152,8 @@ static void write_csv_summary(const std::string& output_txt,
     }
     csv_path += ".csv";
 
+    ensure_parent_directory_exists(csv_path);
+
     std::ofstream out(csv_path);
     if (!out.is_open()) {
         fatal("cannot write CSV summary: " + csv_path);
@@ -1207,6 +1225,8 @@ bool compute_yield_totals(const std::string& csv_path,
         Totals totals;
         process_tree_set(dvcsDataTrees, false, inputs, data_cuts, totals);
         process_tree_set(eppi0DataTrees, true, inputs, data_cuts, totals);
+
+        ensure_parent_directory_exists(output_txt);
 
         std::ofstream out(output_txt);
         if (!out.is_open()) {
