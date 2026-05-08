@@ -120,6 +120,86 @@ struct PeriodNormalization {
     double integrated_ratio_err = 0.0;
 };
 
+static void fatal(const std::string& msg);
+
+struct AaoPeriodInput {
+    double sigma_min_microbarn = 0.0;
+    double sigma_max_microbarn = 0.0;
+    double sigma_mid_microbarn = 0.0;
+    double sigma_half_width_microbarn = 0.0;
+    double sigma_relative_uncertainty_from_range = 0.0;
+    double generated_events = 0.0;
+};
+
+static AaoPeriodInput read_aao_period_input(const std::string& json_path, const std::string& period) {
+    std::ifstream in(json_path.c_str());
+    if (!in.is_open()) {
+        std::ostringstream ss;
+        ss << "[eppi0_norm] FATAL: could not open AAOGEN normalization input JSON: " << json_path;
+        fatal(ss.str());
+    }
+
+    nlohmann::json j;
+    in >> j;
+
+    if (!j.contains("periods") || !j["periods"].is_object()) {
+        std::ostringstream ss;
+        ss << "[eppi0_norm] FATAL: AAOGEN normalization input JSON is missing object 'periods': " << json_path;
+        fatal(ss.str());
+    }
+
+    const nlohmann::json& periods = j["periods"];
+    if (!periods.contains(period)) {
+        std::ostringstream ss;
+        ss << "[eppi0_norm] FATAL: AAOGEN normalization input JSON is missing period '" << period << "': " << json_path;
+        fatal(ss.str());
+    }
+
+    const nlohmann::json& jp = periods[period];
+    const std::vector<std::string> required = {
+        "sigma_min_microbarn",
+        "sigma_max_microbarn",
+        "sigma_mid_microbarn",
+        "sigma_half_width_microbarn",
+        "sigma_relative_uncertainty_from_range",
+        "generated_events"
+    };
+
+    std::vector<std::string> missing;
+    for (const std::string& key : required) {
+        if (!jp.contains(key)) missing.push_back(key);
+    }
+
+    if (!missing.empty()) {
+        std::ostringstream ss;
+        ss << "[eppi0_norm] FATAL: AAOGEN normalization input JSON period '" << period << "' is missing keys:";
+        for (const std::string& key : missing) ss << " " << key;
+        fatal(ss.str());
+    }
+
+    AaoPeriodInput out;
+    out.sigma_min_microbarn = jp.at("sigma_min_microbarn").get<double>();
+    out.sigma_max_microbarn = jp.at("sigma_max_microbarn").get<double>();
+    out.sigma_mid_microbarn = jp.at("sigma_mid_microbarn").get<double>();
+    out.sigma_half_width_microbarn = jp.at("sigma_half_width_microbarn").get<double>();
+    out.sigma_relative_uncertainty_from_range = jp.at("sigma_relative_uncertainty_from_range").get<double>();
+    out.generated_events = jp.at("generated_events").get<double>();
+
+    if (!(out.sigma_mid_microbarn > 0.0)) {
+        std::ostringstream ss;
+        ss << "[eppi0_norm] FATAL: AAOGEN normalization input JSON period '" << period << "' has non-positive sigma_mid_microbarn.";
+        fatal(ss.str());
+    }
+
+    if (!(out.generated_events > 0.0)) {
+        std::ostringstream ss;
+        ss << "[eppi0_norm] FATAL: AAOGEN normalization input JSON period '" << period << "' has non-positive generated_events.";
+        fatal(ss.str());
+    }
+
+    return out;
+}
+
 static void fatal(const std::string& msg) {
     throw std::runtime_error(msg);
 }
@@ -1392,14 +1472,13 @@ static void fill_eppi0_mc_hists_python_like(TTree* tree,
 
     Branches b;
     b.bind(tree, true);
-    if (!b.has_weight) fatal("[eppi0_norm] FATAL: eppi0 reconstructed MC tree missing weight branch.");
 
     const Long64_t N = tree->GetEntries();
     long long n_filled = 0;
     double sum_weight = 0.0;
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
-        const double w = event_norm * b.weight;
+        const double w = event_norm;
         fill_hist_set(hists, b, w);
         sum_weight += w;
         ++n_filled;
@@ -1451,7 +1530,6 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
 
     Branches b;
     b.bind(tree, true);
-    if (!b.has_weight) fatal("[eppi0_norm] FATAL: eppi0 reconstructed MC tree missing weight branch.");
 
     const Long64_t N = tree->GetEntries();
     long long n_pass = 0;
@@ -1460,7 +1538,7 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
         tree->GetEntry(i);
         if (!passes_event_selection(cfg, tags, mc_cuts, b)) continue;
         ++n_pass;
-        const double w = event_norm * b.weight / current_factor;
+        const double w = event_norm / current_factor;
         fill_hist_set(hists, b, w);
         sum_weight += w;
     }
@@ -1476,13 +1554,13 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
 
 static PeriodNormalization run_period_normalization(const std::string& period,
                                                     TTree* data_tree,
-                                                    TTree* gen_tree,
                                                     TTree* rec_tree,
                                                     const CSV& csv,
                                                     const std::unordered_map<int, double>& charge_map,
                                                     const TopoCutMap& data_cuts,
                                                     const TopoCutMap& mc_cuts,
-                                                    const std::string& output_dir) {
+                                                    const std::string& output_dir,
+                                                    const std::string& normalization_json_path) {
     const ChannelConfig epi = eppi0_config();
     const PeriodTags parsed = parse_period_from_key(period);
 
@@ -1497,15 +1575,11 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     const double q_raw = data_charge_for_tree(data_tree, charge_map);
     const double q_mc = q_raw * CHARGE_TO_MC_FACTOR;
     const double lint = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * q_mc;
-    const double n_gen = (double)generated_entries(gen_tree);
-
-    if (!(n_gen > 0.0)) {
-        std::ostringstream ss;
-        ss << "[eppi0_norm] FATAL: generated eppi0 MC entries are zero for " << period;
-        fatal(ss.str());
-    }
-
-    const double event_norm = lint / n_gen;
+    const AaoPeriodInput aao_input = read_aao_period_input(normalization_json_path, period);
+    const double n_gen = aao_input.generated_events;
+    const double sigma_integrated_pb = aao_input.sigma_mid_microbarn * 1.0e6;
+    const double expected_generated_yield = lint * sigma_integrated_pb;
+    const double event_norm = expected_generated_yield / n_gen;
 
     const std::string period_root = output_dir + "/" + period_dir(period);
     const std::string python_like_dir = period_root + "/python_like";
@@ -1596,7 +1670,14 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         dbg << "data_charge_nC " << std::setprecision(12) << q_raw << "\n";
         dbg << "charge_to_mc_factor " << std::setprecision(12) << CHARGE_TO_MC_FACTOR << "\n";
         dbg << "integrated_luminosity_pb_inv " << std::setprecision(12) << lint << "\n";
+        dbg << "normalization_json_path " << normalization_json_path << "\n";
+        dbg << "sigma_min_microbarn " << std::setprecision(12) << aao_input.sigma_min_microbarn << "\n";
+        dbg << "sigma_max_microbarn " << std::setprecision(12) << aao_input.sigma_max_microbarn << "\n";
+        dbg << "sigma_mid_microbarn " << std::setprecision(12) << aao_input.sigma_mid_microbarn << "\n";
+        dbg << "sigma_half_width_microbarn " << std::setprecision(12) << aao_input.sigma_half_width_microbarn << "\n";
+        dbg << "sigma_relative_uncertainty_from_range " << std::setprecision(12) << aao_input.sigma_relative_uncertainty_from_range << "\n";
         dbg << "n_gen " << std::setprecision(12) << n_gen << "\n";
+        dbg << "expected_generated_yield " << std::setprecision(12) << expected_generated_yield << "\n";
         dbg << "event_norm " << std::setprecision(12) << event_norm << "\n";
         dbg << "python_like_data_integral_p1_theta " << std::setprecision(12) << py_data_int << "\n";
         dbg << "python_like_mc_integral_p1_theta " << std::setprecision(12) << py_mc_int << "\n";
@@ -1623,6 +1704,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
               << " +/- " << ratio_err
               << " data_eff=" << data_eff
               << " mc_eff=" << mc_eff
+              << " sigma_mid_microbarn=" << aao_input.sigma_mid_microbarn
+              << " n_gen=" << n_gen
               << " event_norm=" << event_norm
               << std::endl;
 
@@ -1837,7 +1920,6 @@ bool update_eppi0_normalization_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
-    const std::map<std::string, TTree*>& eppi0GenMcTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
     const Eppi0NormalizationOptions& options) {
     try {
@@ -1863,18 +1945,17 @@ bool update_eppi0_normalization_csv(
 
             for (const std::string& period : WORK_PERIOD_ORDER) {
                 TTree* data_tree = tree_for_period(eppi0DataTrees, period, "eppi0 data");
-                TTree* gen_tree = tree_for_period(eppi0GenMcTrees, period, "eppi0 generated MC");
                 TTree* rec_tree = tree_for_period(eppi0RecMcTrees, period, "eppi0 reconstructed MC");
 
                 PeriodNormalization n = run_period_normalization(period,
                                                                  data_tree,
-                                                                 gen_tree,
                                                                  rec_tree,
                                                                  csv,
                                                                  charge_map,
                                                                  data_cuts,
                                                                  mc_cuts,
-                                                                 options.output_dir);
+                                                                 options.output_dir,
+                                                                 options.normalization_json_path);
                 norms.push_back(n);
             }
         }

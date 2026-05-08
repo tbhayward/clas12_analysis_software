@@ -10,6 +10,7 @@ struct Eppi0NormalizationOptions {
     std::string charge_csv_path = "imports/integrated_luminosity/global.csv";
     std::string combined_cuts_json = "output/jsons/combined_cuts.json";
     std::string output_dir = "output/data_mc_normalization";
+    std::string normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
     bool override_to_unity = false;
     int max_workers = 5;
 };
@@ -17,7 +18,8 @@ struct Eppi0NormalizationOptions {
 /**
  * update_eppi0_normalization_csv
  *
- * Uses eppi0 DATA and AAOGEN MC to determine a period-dependent quartic
+ * Uses eppi0 DATA, reconstructed AAOGEN MC, and period normalization metadata
+ * from options.normalization_json_path to determine a period-dependent quartic
  * normalization function
  *
  *   R_pi0(theta_p) = N_data(theta_p) / N_MC(theta_p)
@@ -53,7 +55,6 @@ bool update_eppi0_normalization_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
-    const std::map<std::string, TTree*>& eppi0GenMcTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
     const Eppi0NormalizationOptions& options);
 

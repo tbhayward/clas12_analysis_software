@@ -3,6 +3,7 @@
 import os
 import sys
 import csv
+import json
 import math
 import time
 import argparse
@@ -15,7 +16,8 @@ import ROOT
 
 GLOBAL_CHARGE_CSV = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
 
-DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN = 6.04885572e-3
+DEFAULT_PERIOD = "Fa18 Inb"
+NORMALIZATION_INPUT_JSON = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/eppi0_aao_normalization_inputs.json"
 
 MICROBARN_TO_PB = 1.0e6
 
@@ -2138,14 +2140,13 @@ def main():
 
     parser.add_argument("data_root", help="Input data ROOT file containing PhysicsEvents")
     parser.add_argument("reco_mc_root", help="Input reconstructed AAOgen MC ROOT file containing PhysicsEvents")
-    parser.add_argument("gen_mc_root", help="Input generated MC ROOT file containing PhysicsEvents")
-    parser.add_argument("output_tag", nargs="?", default=DEFAULT_OUTPUT_TAG, help="Output tag / run-period string, e.g. Fa18_Inb. Plots are saved under output/data_mc_normalization/<output_tag>/p1 and /p2.")
+    parser.add_argument("period", nargs="?", default=None, help="Run-period string, e.g. 'Fa18 Inb', 'Fa18 Out', 'Sp19 Inb', 'Sp18 Inb', or 'Sp18 Out'. Defaults to Fa18 Inb with a warning.")
+    parser.add_argument("--normalization-json", default=NORMALIZATION_INPUT_JSON, help="JSON containing period cross-section ranges and generated-event totals")
+    parser.add_argument("--output-tag", default=None, help="Optional output tag. Defaults to the canonical run-period string with spaces replaced by underscores.")
     parser.add_argument("--charge-csv", default=GLOBAL_CHARGE_CSV, help="CSV containing run number and accumulated charge")
     parser.add_argument("--charge-to-mc-factor", type=float, default=CHARGE_TO_MC_FACTOR, help="Conversion factor from CSV charge units to mC")
     parser.add_argument("--status-every", type=int, default=DEFAULT_STATUS_EVERY, help="Print loop progress every N entries per worker")
     parser.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS, help="Maximum number of worker processes. Hard capped at 5.")
-    parser.add_argument("--n-gen-override", type=float, default=None, help="Override N_GEN with the true number of thrown/generated MC events.")
-    parser.add_argument("--sigma-integrated-microbarn", type=float, default=DEFAULT_AAOGEN_SIGMA_INTEGRATED_MICROBARN, help="AAOgen integrated cross section in microbarns. Default is a temporary 10.6 GeV test value.")
 
     args = parser.parse_args()
 
@@ -2157,17 +2158,22 @@ def main():
         fatal("--max-workers must be positive")
     #endif
 
-    if args.n_gen_override is not None and args.n_gen_override <= 0.0:
-        fatal("--n-gen-override must be positive")
+    if args.period is None:
+        status("WARNING: no run-period string was specified. Defaulting to Fa18 Inb. Pass one of: Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out.")
+        requested_period = DEFAULT_PERIOD
+    else:
+        requested_period = args.period
     #endif
 
-    if args.sigma_integrated_microbarn <= 0.0:
-        fatal("--sigma-integrated-microbarn must be positive")
-    #endif
+    period_label, period_norm_info = load_period_normalization_inputs(args.normalization_json, requested_period)
 
     max_workers = min(args.max_workers, 5)
 
-    output_tag = sanitize_output_tag(args.output_tag)
+    if args.output_tag is None:
+        output_tag = sanitize_output_tag(period_label)
+    else:
+        output_tag = sanitize_output_tag(args.output_tag)
+    #endif
 
     start_time = time.time()
 
@@ -2176,9 +2182,10 @@ def main():
 
     status("Starting data/MC normalization script.")
     status("Output tag: {}".format(output_tag))
+    status("Run period: {}".format(period_label))
+    status("Normalization input JSON: {}".format(args.normalization_json))
     status("Data file: {}".format(args.data_root))
     status("Reco MC file: {}".format(args.reco_mc_root))
-    status("Generated MC file: {}".format(args.gen_mc_root))
     status("Output base directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag)))
     status("p1 output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag, "p1")))
     status("p2 output directory: {}".format(os.path.join(OUTPUT_ROOT_DIR, output_tag, "p2")))
@@ -2220,21 +2227,12 @@ def main():
         "reconstructed MC"
     )
 
-    n_gen_from_file = get_entry_count(args.gen_mc_root, TREE_NAME, "generated MC")
-
-    if args.n_gen_override is not None:
-        n_gen = args.n_gen_override
-        status("Using user-provided N_GEN override: {:.12g}".format(n_gen))
-        status("Generated MC ROOT file entry count was: {}".format(n_gen_from_file))
-    else:
-        n_gen = float(n_gen_from_file)
-    #endif
+    n_gen = float(period_norm_info["generated_events"])
 
     status("Input entry counts:")
     status("  data entries = {}".format(n_data_entries))
     status("  reco MC entries = {}".format(n_reco_mc_entries))
-    status("  generated MC entries from file = {}".format(n_gen_from_file))
-    status("  generated MC normalization N_GEN = {:.12g}".format(n_gen))
+    status("  generated MC normalization N_GEN from JSON = {:.12g}".format(n_gen))
 
     if n_gen <= 0.0:
         fatal("generated MC normalization N_GEN is zero")
@@ -2263,7 +2261,11 @@ def main():
 
     integrated_luminosity_pb_inv = RGA_LUMINOSITY_FACTOR_PB_INV_PER_MC * total_charge_mc
 
-    sigma_integrated_microbarn = args.sigma_integrated_microbarn
+    sigma_integrated_microbarn = float(period_norm_info["sigma_mid_microbarn"])
+    sigma_integrated_min_microbarn = float(period_norm_info["sigma_min_microbarn"])
+    sigma_integrated_max_microbarn = float(period_norm_info["sigma_max_microbarn"])
+    sigma_integrated_half_width_microbarn = float(period_norm_info["sigma_half_width_microbarn"])
+    sigma_integrated_rel_unc = float(period_norm_info["sigma_relative_uncertainty_from_range"])
     sigma_integrated_pb = sigma_integrated_microbarn * MICROBARN_TO_PB
     expected_generated_yield = integrated_luminosity_pb_inv * sigma_integrated_pb
     normalization_factor = expected_generated_yield / float(n_gen)
@@ -2272,7 +2274,9 @@ def main():
     status("  Raw charge sum = {:.12g}".format(total_charge_raw))
     status("  Q = {:.12g} mC".format(total_charge_mc))
     status("  L_int = {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    status("  sigma_int = {:.12g} microbarn = {:.12g} pb".format(sigma_integrated_microbarn, sigma_integrated_pb))
+    status("  sigma_int midpoint = {:.12g} microbarn = {:.12g} pb".format(sigma_integrated_microbarn, sigma_integrated_pb))
+    status("  sigma_int range = [{:.12g}, {:.12g}] microbarn".format(sigma_integrated_min_microbarn, sigma_integrated_max_microbarn))
+    status("  sigma_int half-width = {:.12g} microbarn, relative = {:.12g}".format(sigma_integrated_half_width_microbarn, sigma_integrated_rel_unc))
     status("  N_GEN = {:.12g}".format(n_gen))
     status("  expected generated yield = L_int * sigma_int = {:.12g}".format(expected_generated_yield))
     status("  constant reconstructed-MC event weight = expected generated yield / N_GEN = {:.12g}".format(normalization_factor))
@@ -2321,7 +2325,8 @@ def main():
     print("Output tag: {}".format(output_tag))
     print("Data ROOT file: {}".format(args.data_root))
     print("Reco MC ROOT file: {}".format(args.reco_mc_root))
-    print("Gen MC ROOT file: {}".format(args.gen_mc_root))
+    print("Run period: {}".format(period_label))
+    print("Normalization JSON: {}".format(args.normalization_json))
     print("Charge CSV: {}".format(args.charge_csv))
     print("Maximum workers used: {}".format(max_workers))
     print("Unique data runs found: {}".format(len(unique_runs)))

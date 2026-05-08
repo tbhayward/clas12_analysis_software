@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "units": {
+    "cross_section": "microbarn",
+    "generated_events": "count"
+  },
+  "periods": {
+    "Fa18 Inb": {
+      "sigma_min_microbarn": 0.00632318063,
+      "sigma_max_microbarn": 0.006488745768947338,
+      "sigma_mid_microbarn": 0.006405963199473669,
+      "sigma_half_width_microbarn": 8.278256947366874e-05,
+      "sigma_relative_uncertainty_from_range": 0.012922735722314229,
+      "sigma_input_values_microbarn": [
+        0.00632318063,
+        0.006488745768947338
+      ],
+      "generated_event_terms": [
+        81009000,
+        89838981,
+        49645000,
+        81009000,
+        90010000,
+        45000000,
+        80990998,
+        72008000,
+        81009000
+      ],
+      "generated_events": 670519979
+    },
+    "Fa18 Out": {
+      "sigma_min_microbarn": 0.00632318063,
+      "sigma_max_microbarn": 0.006488745768947338,
+      "sigma_mid_microbarn": 0.006405963199473669,
+      "sigma_half_width_microbarn": 8.278256947366874e-05,
+      "sigma_relative_uncertainty_from_range": 0.012922735722314229,
+      "sigma_input_values_microbarn": [
+        0.00632318063,
+        0.006488745768947338
+      ],
+      "generated_event_terms": [
+        144016000,
+        81009000,
+        81009001,
+        89901988,
+        50000000,
+        89973996,
+        80999999
+      ],
+      "generated_events": 616909984
+    },
+    "Sp19 Inb": {
+      "sigma_min_microbarn": 0.006393333935341388,
+      "sigma_max_microbarn": 0.00643011602,
+      "sigma_mid_microbarn": 0.006411724977670694,
+      "sigma_half_width_microbarn": 1.8391042329306273e-05,
+      "sigma_relative_uncertainty_from_range": 0.0028683454754148746,
+      "sigma_input_values_microbarn": [
+        0.00643011602,
+        0.006393333935341388
+      ],
+      "generated_event_terms": [
+        81009000,
+        144016000,
+        89964995,
+        50000000,
+        80999999,
+        80252916,
+        81009000,
+        80972996
+      ],
+      "generated_events": 688224906
+    },
+    "Sp18 Inb": {
+      "sigma_min_microbarn": 0.00641442975,
+      "sigma_max_microbarn": 0.006455144610682318,
+      "sigma_mid_microbarn": 0.0064347871803411595,
+      "sigma_half_width_microbarn": 2.0357430341159336e-05,
+      "sigma_relative_uncertainty_from_range": 0.0031636524675366226,
+      "sigma_input_values_microbarn": [
+        0.00641442975,
+        0.006455144610682318
+      ],
+      "generated_event_terms": [
+        19390000,
+        94965000,
+        25000000,
+        20000000
+      ],
+      "generated_events": 159355000
+    },
+    "Sp18 Out": {
+      "sigma_min_microbarn": 0.00641442975,
+      "sigma_max_microbarn": 0.006455144610682318,
+      "sigma_mid_microbarn": 0.0064347871803411595,
+      "sigma_half_width_microbarn": 2.0357430341159336e-05,
+      "sigma_relative_uncertainty_from_range": 0.0031636524675366226,
+      "sigma_input_values_microbarn": [
+        0.00641442975,
+        0.006455144610682318
+      ],
+      "generated_event_terms": [
+        94980000,
+        94975000,
+        24995000,
+        94965000,
+        20000000
+      ],
+      "generated_events": 329915000
+    }
+  }
+}
