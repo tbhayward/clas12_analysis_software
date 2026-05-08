@@ -2057,7 +2057,7 @@ static void fill_normalized_yields(CSV& csv,
         PeriodTags tags;
         TTree* tree = nullptr;
         double current_factor = 1.0;
-        CubicFit poly;
+        PeriodNormalization norm;
     };
 
     std::vector<WorkItem> items;
