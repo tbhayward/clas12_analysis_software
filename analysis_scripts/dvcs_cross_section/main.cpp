@@ -484,45 +484,45 @@ int main(int argc, char* argv[]) {
     }
 
 
-    // // --------- Overall BH-edge normalization study ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // --------- Overall BH-edge normalization study ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     OverallNormalizationOptions norm_opts;
+        OverallNormalizationOptions norm_opts;
 
-    //     // Production-safe default:
-    //     //   true  -> write norm = 1.00 everywhere and skip BH-edge study
-    //     //   false -> run the full BH-edge normalization study and write fitted norms
-    //     norm_opts.override_to_unity = true;
+        // Production-safe default:
+        //   true  -> write norm = 1.00 everywhere and skip BH-edge study
+        //   false -> run the full BH-edge normalization study and write fitted norms
+        norm_opts.override_to_unity = true;
 
-    //     norm_opts.use_all_points_within_edge_window = true;
-    //     norm_opts.require_positive_dedge = true;
-    //     norm_opts.max_dedge_for_normalization_deg = 10.0;
-    //     norm_opts.norm_x_axis = OverallNormXAxis::XB;
-    //     norm_opts.output_dir = "output/normalization_study";
+        norm_opts.use_all_points_within_edge_window = true;
+        norm_opts.require_positive_dedge = true;
+        norm_opts.max_dedge_for_normalization_deg = 10.0;
+        norm_opts.norm_x_axis = OverallNormXAxis::XB;
+        norm_opts.output_dir = "output/normalization_study";
 
-    //     const std::vector<std::string> norm_labels = {
-    //         "Fa18 Inb",
-    //         "Fa18 Out",
-    //         "Sp19 Inb",
-    //         "Sp18 Inb",
-    //         "Sp18 Out",
-    //         "Fa18",
-    //         "Sp18",
-    //         "10.6 GeV"
-    //     };
+        const std::vector<std::string> norm_labels = {
+            "Fa18 Inb",
+            "Fa18 Out",
+            "Sp19 Inb",
+            "Sp18 Inb",
+            "Sp18 Out",
+            "Fa18",
+            "Sp18",
+            "10.6 GeV"
+        };
 
-    //     for (const std::string& label : norm_labels) {
-    //         if (!update_overall_normalization_study_csv(csv_main,
-    //                                                     label,
-    //                                                     "unpol",
-    //                                                     norm_opts)) {
-    //             std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
-    //                       << label << ".\n";
-    //             std::exit(EXIT_FAILURE);
-    //         }
-    //     }
-    // }
+        for (const std::string& label : norm_labels) {
+            if (!update_overall_normalization_study_csv(csv_main,
+                                                        label,
+                                                        "unpol",
+                                                        norm_opts)) {
+                std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
+                          << label << ".\n";
+                std::exit(EXIT_FAILURE);
+            }
+        }
+    }
 
     // --------- DVCS normalized cross sections (CSV + plots) ----------
     {
