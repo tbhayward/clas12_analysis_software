@@ -220,26 +220,26 @@ int main(int argc, char* argv[]) {
     //     std::cout << "pi0 contamination stage finished.\n";
     // }
 
-    // // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
+    // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
 
-    //     // Make a backup before modifying the signal-yield columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for signal yields failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the signal-yield columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for signal yields failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
-    //         std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
+            std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- Yield totals by current ----------
     // {
@@ -266,33 +266,33 @@ int main(int argc, char* argv[]) {
     //     "output"
     // );
 
-    // // --------- DVCS MC acceptance (CSV + plots) ----------
-    // {
-    //     const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
-    //     const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+    // --------- DVCS MC acceptance (CSV + plots) ----------
+    {
+        const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+        const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
+        const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
 
-    //     // Make a backup before modifying the acceptance columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for acceptance failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the acceptance columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for acceptance failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_acceptance_csv(csv_main,
-    //                                genMcTrees,
-    //                                recMcTrees,
-    //                                combined_cuts_json,
-    //                                global_cuts_json,
-    //                                output_root)) {
-    //         std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_acceptance_csv(csv_main,
+                                   genMcTrees,
+                                   recMcTrees,
+                                   combined_cuts_json,
+                                   global_cuts_json,
+                                   output_root)) {
+            std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // --------- Unfolding: acceptance-corrected DVCS yields ----------
     {
@@ -339,28 +339,28 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Kinematic bin volumes into CSV + plots ----------
-    {
-        const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string out_root_dir = "output";
+    // // --------- Kinematic bin volumes into CSV + plots ----------
+    // {
+    //     const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string out_root_dir = "output";
 
-        // Make a backup specific to the bin-volume step
-        try {
-            std::filesystem::copy_file(
-                csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
-                std::filesystem::copy_options::overwrite_existing
-            );
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
-                      << e.what() << "\n";
-        }
+    //     // Make a backup specific to the bin-volume step
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
+    //                   << e.what() << "\n";
+    //     }
 
-        if (!update_bin_volume_csv(csv_main, out_root_dir)) {
-            std::cerr << "[main] ERROR: bin_volume step failed.\n";
-            return 1;
-        }
-    }
+    //     if (!update_bin_volume_csv(csv_main, out_root_dir)) {
+    //         std::cerr << "[main] ERROR: bin_volume step failed.\n";
+    //         return 1;
+    //     }
+    // }
 
     // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
     // {
@@ -442,115 +442,115 @@ int main(int argc, char* argv[]) {
     // }
 
 
-    // --------- Cross sections (CSV update + theory JSON + plots) ----------
-    {
-        const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root = "output/jsons/cross_sections";
-        const std::string xs_out_root      = "output/cross_sections";
+    // // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    // {
+    //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string theory_json_root = "output/jsons/cross_sections";
+    //     const std::string xs_out_root      = "output/cross_sections";
 
-        // // --------- Theory grids (xs_phi_all.json generation) ----------
-        // {
-        //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-        //     const std::string theory_json_root = "output/jsons/cross_sections";
+    //     // // --------- Theory grids (xs_phi_all.json generation) ----------
+    //     // {
+    //     //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+    //     //     const std::string theory_json_root = "output/jsons/cross_sections";
 
-        //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
-        //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
-        //         return 1;
-        //     }
-        // }
+    //     //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
+    //     //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
+    //     //         return 1;
+    //     //     }
+    //     // }
 
-        // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
-        LumiMap lumi_map = build_lumi_map();
+    //     // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
+    //     LumiMap lumi_map = build_lumi_map();
 
-        // Step 1: heavy numerical work (CSV cross sections + theory JSON)
-        if (!compute_cross_sections(csv_main, lumi_map)) {
-            std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
-        }
+    //     // Step 1: heavy numerical work (CSV cross sections + theory JSON)
+    //     if (!compute_cross_sections(csv_main, lumi_map)) {
+    //         std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+    //     }
 
-        // Step 2: plotting only (can be rerun freely to adjust aesthetics)
-        const std::vector<std::string> labels_to_plot = {
-            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-            "Fa18", "Sp18", "10.6 GeV"
-        };
+    //     // Step 2: plotting only (can be rerun freely to adjust aesthetics)
+    //     const std::vector<std::string> labels_to_plot = {
+    //         "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+    //         "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+    //         "Fa18", "Sp18", "10.6 GeV"
+    //     };
 
-        for (const auto &label : labels_to_plot) {
-            if (!plot_cross_sections_for_label(csv_main, label,
-                theory_json_root, xs_out_root)) {
-                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
-                          << label << "\n";
-            }
-        }
-    }
+    //     for (const auto &label : labels_to_plot) {
+    //         if (!plot_cross_sections_for_label(csv_main, label,
+    //             theory_json_root, xs_out_root)) {
+    //             std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
+    //                       << label << "\n";
+    //         }
+    //     }
+    // }
 
 
-    // --------- Overall BH-edge normalization study ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // // --------- Overall BH-edge normalization study ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        OverallNormalizationOptions norm_opts;
+    //     OverallNormalizationOptions norm_opts;
 
-        // Production-safe default:
-        //   true  -> write norm = 1.00 everywhere and skip BH-edge study
-        //   false -> run the full BH-edge normalization study and write fitted norms
-        norm_opts.override_to_unity = true;
+    //     // Production-safe default:
+    //     //   true  -> write norm = 1.00 everywhere and skip BH-edge study
+    //     //   false -> run the full BH-edge normalization study and write fitted norms
+    //     norm_opts.override_to_unity = true;
 
-        norm_opts.use_all_points_within_edge_window = true;
-        norm_opts.require_positive_dedge = true;
-        norm_opts.max_dedge_for_normalization_deg = 10.0;
-        norm_opts.norm_x_axis = OverallNormXAxis::XB;
-        norm_opts.output_dir = "output/normalization_study";
+    //     norm_opts.use_all_points_within_edge_window = true;
+    //     norm_opts.require_positive_dedge = true;
+    //     norm_opts.max_dedge_for_normalization_deg = 10.0;
+    //     norm_opts.norm_x_axis = OverallNormXAxis::XB;
+    //     norm_opts.output_dir = "output/normalization_study";
 
-        const std::vector<std::string> norm_labels = {
-            "Fa18 Inb",
-            "Fa18 Out",
-            "Sp19 Inb",
-            "Sp18 Inb",
-            "Sp18 Out",
-            "Fa18",
-            "Sp18",
-            "10.6 GeV"
-        };
+    //     const std::vector<std::string> norm_labels = {
+    //         "Fa18 Inb",
+    //         "Fa18 Out",
+    //         "Sp19 Inb",
+    //         "Sp18 Inb",
+    //         "Sp18 Out",
+    //         "Fa18",
+    //         "Sp18",
+    //         "10.6 GeV"
+    //     };
 
-        for (const std::string& label : norm_labels) {
-            if (!update_overall_normalization_study_csv(csv_main,
-                                                        label,
-                                                        "unpol",
-                                                        norm_opts)) {
-                std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
-                          << label << ".\n";
-                std::exit(EXIT_FAILURE);
-            }
-        }
-    }
+    //     for (const std::string& label : norm_labels) {
+    //         if (!update_overall_normalization_study_csv(csv_main,
+    //                                                     label,
+    //                                                     "unpol",
+    //                                                     norm_opts)) {
+    //             std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
+    //                       << label << ".\n";
+    //             std::exit(EXIT_FAILURE);
+    //         }
+    //     }
+    // }
 
-    // --------- DVCS normalized cross sections (CSV + plots) ----------
-    {
-        const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root   = "output/jsons/cross_sections";
-        const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
+    // // --------- DVCS normalized cross sections (CSV + plots) ----------
+    // {
+    //     const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string theory_json_root   = "output/jsons/cross_sections";
+    //     const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
 
-        if (!update_normed_cross_sections_csv(csv_main)) {
-            std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
-            return 1;
-        }
+    //     if (!update_normed_cross_sections_csv(csv_main)) {
+    //         std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
+    //         return 1;
+    //     }
 
-        const std::vector<std::string> labels = {
-            "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-            "Fa18", "Sp18", "10.6 GeV"
-        };
+    //     const std::vector<std::string> labels = {
+    //         "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+    //         "Fa18", "Sp18", "10.6 GeV"
+    //     };
 
-        for (const auto &lab : labels) {
-            if (!plot_normed_cross_sections_for_label(csv_main,
-                                                      lab,
-                                                      theory_json_root,
-                                                      out_norm_xsec_root)) {
-                std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
-                          << lab << "\n";
-                return 1;
-            }
-        }
-    }
+    //     for (const auto &lab : labels) {
+    //         if (!plot_normed_cross_sections_for_label(csv_main,
+    //                                                   lab,
+    //                                                   theory_json_root,
+    //                                                   out_norm_xsec_root)) {
+    //             std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
+    //                       << lab << "\n";
+    //             return 1;
+    //         }
+    //     }
+    // }
 
     std::cout << "All done." << std::endl;
     return 0;
