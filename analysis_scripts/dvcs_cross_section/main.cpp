@@ -167,6 +167,7 @@ int main(int argc, char* argv[]) {
         Eppi0NormalizationOptions norm_opts;
         norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
         norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
         norm_opts.output_dir = "output/data_mc_normalization";
         norm_opts.override_to_unity = false;
         norm_opts.max_workers = 5;
@@ -175,8 +176,9 @@ int main(int argc, char* argv[]) {
         // norm_opts.override_to_unity = true;
 
         if (!update_eppi0_normalization_csv(csv_main,
-                                            dataTrees, eppi0DataTrees,
-                                            eppi0GenMcTrees, eppi0RecMcTrees,
+                                            dataTrees,
+                                            eppi0DataTrees,
+                                            eppi0RecMcTrees,
                                             norm_opts)) {
             std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
             std::exit(EXIT_FAILURE);
