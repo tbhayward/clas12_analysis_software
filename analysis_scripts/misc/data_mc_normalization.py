@@ -73,8 +73,8 @@ Y_PADDING_LINEAR = 1.30
 Y_PADDING_LOG = 30.0
 
 # Ratio plots are linear only.
-RATIO_LINEAR_Y_MIN = 0.2
-RATIO_Y_MAX = 1.5
+RATIO_LINEAR_Y_MIN = 0.0
+RATIO_Y_MAX = 2.0
 
 TREE_NAME = "PhysicsEvents"
 
@@ -2350,7 +2350,7 @@ def main():
     status("p1 detector definition: FD = 0 <= p1_theta < 40 deg; CD = 40 <= p1_theta < 70 deg.")
     status("p2 detector definition: FT = 0 <= p2_theta < 5 deg; FD = 5 <= p2_theta < 40 deg.")
     status("Comparison y scales: common across first-region sectors where applicable; second region uses its own scale.")
-    status("Ratio y scale: linear only, fixed from 0.2 to 1.5.")
+    status("Ratio y scale: linear only, fixed from 0 to 2.")
     status("Ratio canvases include explicit subplot titles for sectors and CD/FT panels.")
     status("Data and MC comparison plots are drawn as lines.")
     status("Ratio points use vertical statistical error bars only, with horizontal errors set to zero.")
