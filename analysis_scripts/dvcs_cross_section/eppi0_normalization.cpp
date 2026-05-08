@@ -1175,9 +1175,15 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     frame->GetXaxis()->CenterTitle(true);
     frame->GetYaxis()->CenterTitle(true);
 
+    TLine unity_line(0.0, 1.0, 70.0, 1.0);
+    unity_line.SetLineStyle(2);
+    unity_line.SetLineColor(kRed + 1);
+    unity_line.SetLineWidth(2);
+    unity_line.Draw("SAME");
+
     gr.SetMarkerStyle(20);
-    gr.SetMarkerColor(kBlack);
-    gr.SetLineColor(kBlack);
+    gr.SetMarkerColor(kBlue + 1);
+    gr.SetLineColor(kBlue + 1);
     gr.Draw("PE SAME");
     f.SetLineColor(kRed + 1);
     f.SetLineWidth(2);
@@ -1215,8 +1221,8 @@ static std::vector<TGraphErrors*> make_ratio_graphs(const std::vector<TH1D*>& hd
             ++ip;
         }
         g->SetMarkerStyle(20);
-        g->SetMarkerColor(kBlack);
-        g->SetLineColor(kBlack);
+        g->SetMarkerColor(kBlue + 1);
+        g->SetLineColor(kBlue + 1);
         out.push_back(g);
     }
     return out;
@@ -1315,11 +1321,12 @@ static void draw_normalization_pad(const std::string& period,
 }
 
 static TLegend* make_comparison_legend(TH1D* h_data, TH1D* h_mc) {
-    TLegend* leg = new TLegend(0.64, 0.76, 0.92, 0.89);
+    TLegend* leg = new TLegend(0.64, 0.79, 0.94, 0.91);
     leg->SetBorderSize(1);
     leg->SetFillStyle(1001);
     leg->SetFillColor(kWhite);
-    leg->SetTextSize(0.032);
+    leg->SetTextSize(0.034);
+    leg->SetMargin(0.22);
     leg->AddEntry(h_data, "data", "l");
     leg->AddEntry(h_mc, "AAOgen MC", "l");
     return leg;
@@ -1328,7 +1335,7 @@ static TLegend* make_comparison_legend(TH1D* h_data, TH1D* h_mc) {
 static std::pair<double, double> common_y_range(const std::vector<TH1D*>& hd,
                                                 const std::vector<TH1D*>& hm,
                                                 const std::vector<int>& panels,
-                                                bool log_y) {
+                                                bool /*log_y*/) {
     double ymax = 0.0;
     for (int p : panels) {
         if (p < 0 || p >= (int)hd.size() || p >= (int)hm.size()) continue;
@@ -1338,11 +1345,7 @@ static std::pair<double, double> common_y_range(const std::vector<TH1D*>& hd,
 
     if (!(ymax > 0.0)) ymax = 1.0;
 
-    if (log_y) {
-        return {0.5, 30.0 * ymax};
-    }
-
-    return {0.0, 1.30 * ymax};
+    return {0.0, 1.20 * ymax};
 }
 
 static std::pair<double, double> y_range_for_panel(const VarConfig& v,
@@ -1358,30 +1361,30 @@ static std::pair<double, double> y_range_for_panel(const VarConfig& v,
         if (panel == 6) return common_y_range(hd, hm, {6}, log_y);
     }
 
-    return {log_y ? 0.5 : 0.0, 1.0};
+    return {0.0, 1.0};
 }
 
-static void draw_comparison_panel(const std::string& period,
+static void draw_comparison_panel(const std::string& /*period*/,
                                   const VarConfig& v,
                                   TH1D* h_data,
                                   TH1D* h_mc,
                                   int panel,
                                   const std::pair<double, double>& yr,
-                                  bool log_y) {
+                                  bool /*log_y*/) {
     TPad* pad = (TPad*)gPad;
     pad->SetLeftMargin(0.16);
     pad->SetRightMargin(0.06);
     pad->SetTopMargin(0.12);
     pad->SetBottomMargin(0.14);
-    pad->SetLogy(log_y);
+    pad->SetLogy(false);
     pad->SetGrid(0, 0);
 
-    style_hist_for_plot(h_data, kBlack, 20);
+    style_hist_for_plot(h_data, kBlue + 1, 20);
     style_hist_for_plot(h_mc, kRed + 1, 24);
 
     h_data->SetMaximum(yr.second);
     h_data->SetMinimum(yr.first);
-    h_data->SetTitle((period + "  " + panel_label(v, panel)).c_str());
+    h_data->SetTitle((panel_label(v, panel) + "  " + v.title).c_str());
     h_data->GetXaxis()->SetTitle(v.x_title.c_str());
     h_data->GetYaxis()->SetTitle("Counts");
 
@@ -1392,7 +1395,7 @@ static void draw_comparison_panel(const std::string& period,
     leg->Draw();
 }
 
-static void draw_ratio_panel(const std::string& period,
+static void draw_ratio_panel(const std::string& /*period*/,
                              const VarConfig& v,
                              TGraphErrors* gr,
                              int panel,
@@ -1407,22 +1410,22 @@ static void draw_ratio_panel(const std::string& period,
     double xmin = 0.0, xmax = 1.0;
     range_for_panel(v, panel, xmin, xmax);
     TH1D* frame = (TH1D*)pad->DrawFrame(xmin, RATIO_Y_MIN, xmax, RATIO_Y_MAX);
-    frame->SetTitle((period + "  " + panel_label(v, panel)).c_str());
+    frame->SetTitle((panel_label(v, panel) + "  " + v.title).c_str());
     frame->GetXaxis()->SetTitle(v.x_title.c_str());
     frame->GetYaxis()->SetTitle("data / MC");
     style_ratio_frame(frame);
 
     TLine line(xmin, 1.0, xmax, 1.0);
     line.SetLineStyle(2);
-    line.SetLineColor(kGray + 2);
+    line.SetLineColor(kRed + 1);
     line.SetLineWidth(2);
     line.Draw("SAME");
 
     if (gr) {
         gr->SetMarkerStyle(20);
         gr->SetMarkerSize(0.8);
-        gr->SetMarkerColor(kBlack);
-        gr->SetLineColor(kBlack);
+        gr->SetMarkerColor(kBlue + 1);
+        gr->SetLineColor(kBlue + 1);
         gr->Draw("PE SAME");
     }
 
@@ -1536,15 +1539,12 @@ static void plot_variable(const std::string& outdir,
     mkdir_p(particle_dir);
 
     const std::string linear_png = particle_dir + "/" + v.key + "_comparison_linear.png";
-    const std::string log_png = particle_dir + "/" + v.key + "_comparison_log.png";
     const std::string ratio_png = particle_dir + "/" + v.key + "_ratio_linear.png";
 
     if (v.kind == 2) {
         draw_phi_comparison_canvas(linear_png, period, v, hd, hm, norm, false);
-        draw_phi_comparison_canvas(log_png, period, v, hd, hm, norm, true);
     } else {
         draw_sector_comparison_canvas(linear_png, period, v, hd, hm, norm, false);
-        draw_sector_comparison_canvas(log_png, period, v, hd, hm, norm, true);
     }
 
     std::vector<TGraphErrors*> gr = make_ratio_graphs(hd, hm);
