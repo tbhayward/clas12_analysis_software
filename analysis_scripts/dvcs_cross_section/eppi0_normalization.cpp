@@ -17,6 +17,7 @@
 #include <TAxis.h>
 #include <TFitResult.h>
 #include <TFitResultPtr.h>
+#include <TLine.h>
 
 #include <nlohmann/json.hpp>
 
@@ -1158,7 +1159,8 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     }
     p.valid = true;
 
-    mkdir_p(outdir);
+    const std::string fit_outdir = outdir + "/p1";
+    mkdir_p(fit_outdir);
     TCanvas c("c_p1_theta_ratio_fit", "", 1000, 750);
     c.SetGrid(1, 1);
     c.SetLeftMargin(0.14);
@@ -1166,26 +1168,7 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     c.SetBottomMargin(0.13);
     c.SetTopMargin(0.08);
 
-    double ymin = std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
-    for (int i = 0; i < gr.GetN(); ++i) {
-        double gx = 0.0;
-        double gy = 0.0;
-        gr.GetPoint(i, gx, gy);
-        const double ey = gr.GetErrorY(i);
-        ymin = std::min(ymin, gy - ey);
-        ymax = std::max(ymax, gy + ey);
-    }
-    if (!std::isfinite(ymin) || !std::isfinite(ymax) || !(ymax > ymin)) {
-        ymin = RATIO_Y_MIN;
-        ymax = RATIO_Y_MAX;
-    } else {
-        const double pad = 0.15 * (ymax - ymin);
-        ymin = std::max(0.0, ymin - pad);
-        ymax = ymax + pad;
-    }
-
-    TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, ymin, 70.0, ymax);
+    TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, RATIO_Y_MIN, 70.0, RATIO_Y_MAX);
     frame->SetTitle((period + "  ep #rightarrow ep#pi_{0}  p_{1} #theta ratio fit").c_str());
     frame->GetXaxis()->SetTitle("p_{1} #theta (deg)");
     frame->GetYaxis()->SetTitle("data / MC");
@@ -1208,8 +1191,7 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     leg.AddEntry(&f, "quartic fit", "l");
     leg.Draw();
 
-    c.SaveAs((outdir + "/p1_theta_ratio_quartic_fit.pdf").c_str());
-    c.SaveAs((outdir + "/p1_theta_ratio_quartic_fit.png").c_str());
+    c.SaveAs((fit_outdir + "/p1_theta_ratio_quartic_fit.png").c_str());
 
     return p;
 }
@@ -1241,36 +1223,304 @@ static std::vector<TGraphErrors*> make_ratio_graphs(const std::vector<TH1D*>& hd
 }
 
 
-static std::pair<double, double> graph_y_range(const TGraphErrors* g,
-                                               double fallback_min,
-                                               double fallback_max) {
-    double ymin = std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
 
-    if (g) {
-        for (int i = 0; i < g->GetN(); ++i) {
-            double x = 0.0;
-            double y = 0.0;
-            g->GetPoint(i, x, y);
-            const double ey = g->GetErrorY(i);
-            ymin = std::min(ymin, y - ey);
-            ymax = std::max(ymax, y + ey);
-        }
+struct PlotNormInfo {
+    double total_charge_mc = 0.0;
+    double integrated_luminosity_pb_inv = 0.0;
+    double n_gen = 0.0;
+    double event_norm = 0.0;
+};
+
+static void style_hist_for_plot(TH1D* h, int color, int marker) {
+    if (!h) return;
+    h->SetLineColor(color);
+    h->SetLineWidth(2);
+    h->SetMarkerColor(color);
+    h->SetMarkerStyle(marker);
+    h->SetMarkerSize(0.8);
+    h->SetStats(false);
+    h->GetXaxis()->CenterTitle(true);
+    h->GetYaxis()->CenterTitle(true);
+    h->GetXaxis()->SetTitleSize(0.050);
+    h->GetYaxis()->SetTitleSize(0.050);
+    h->GetXaxis()->SetLabelSize(0.045);
+    h->GetYaxis()->SetLabelSize(0.045);
+    h->GetYaxis()->SetTitleOffset(1.45);
+}
+
+static void style_ratio_frame(TH1D* frame) {
+    if (!frame) return;
+    frame->SetStats(false);
+    frame->SetMinimum(RATIO_Y_MIN);
+    frame->SetMaximum(RATIO_Y_MAX);
+    frame->GetXaxis()->CenterTitle(true);
+    frame->GetYaxis()->CenterTitle(true);
+    frame->GetXaxis()->SetTitleSize(0.050);
+    frame->GetYaxis()->SetTitleSize(0.050);
+    frame->GetXaxis()->SetLabelSize(0.045);
+    frame->GetYaxis()->SetLabelSize(0.045);
+    frame->GetYaxis()->SetTitleOffset(1.45);
+}
+
+static void draw_panel_title(const std::string& text) {
+    TLatex latex;
+    latex.SetNDC(true);
+    latex.SetTextSize(0.055);
+    latex.DrawLatex(0.18, 0.925, text.c_str());
+}
+
+static void draw_normalization_pad(const std::string& period,
+                                   const VarConfig& v,
+                                   const PlotNormInfo& norm,
+                                   bool ratio_mode) {
+    TPad* pad = (TPad*)gPad;
+    if (!pad) return;
+    pad->Clear();
+    pad->SetFillColor(kWhite);
+    pad->SetLeftMargin(0.08);
+    pad->SetRightMargin(0.04);
+    pad->SetTopMargin(0.04);
+    pad->SetBottomMargin(0.04);
+
+    TLatex latex;
+    latex.SetNDC(true);
+    latex.SetTextSize((v.kind == 2) ? 0.040 : 0.034);
+
+    const double x0 = 0.10;
+    latex.DrawLatex(x0, 0.90, period.c_str());
+    latex.DrawLatex(x0, 0.80, (v.particle == 1) ? "p_{1}" : "p_{2}");
+    latex.DrawLatex(x0, 0.70, v.title.c_str());
+    latex.DrawLatex(x0, 0.60, ratio_mode ? "Ratio normalization" : "MC normalization");
+
+    std::ostringstream ss;
+    ss << std::setprecision(6) << "Q = " << norm.total_charge_mc << " mC";
+    latex.DrawLatex(x0, 0.49, ss.str().c_str());
+
+    ss.str("");
+    ss.clear();
+    ss << std::setprecision(6) << "L_{int} = " << norm.integrated_luminosity_pb_inv << " pb^{-1}";
+    latex.DrawLatex(x0, 0.39, ss.str().c_str());
+
+    ss.str("");
+    ss.clear();
+    ss << std::setprecision(6) << "N_{gen} = " << norm.n_gen;
+    latex.DrawLatex(x0, 0.29, ss.str().c_str());
+
+    ss.str("");
+    ss.clear();
+    ss << std::setprecision(6) << "event weight = " << norm.event_norm;
+    latex.DrawLatex(x0, 0.19, ss.str().c_str());
+
+    latex.DrawLatex(x0, 0.09, ratio_mode ? "ratio: data / MC" : "MC fill: const AAOgen norm");
+}
+
+static TLegend* make_comparison_legend(TH1D* h_data, TH1D* h_mc) {
+    TLegend* leg = new TLegend(0.64, 0.76, 0.92, 0.89);
+    leg->SetBorderSize(1);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetTextSize(0.032);
+    leg->AddEntry(h_data, "data", "l");
+    leg->AddEntry(h_mc, "AAOgen MC", "l");
+    return leg;
+}
+
+static std::pair<double, double> common_y_range(const std::vector<TH1D*>& hd,
+                                                const std::vector<TH1D*>& hm,
+                                                const std::vector<int>& panels,
+                                                bool log_y) {
+    double ymax = 0.0;
+    for (int p : panels) {
+        if (p < 0 || p >= (int)hd.size() || p >= (int)hm.size()) continue;
+        ymax = std::max(ymax, hd[p]->GetMaximum());
+        ymax = std::max(ymax, hm[p]->GetMaximum());
     }
 
-    if (!std::isfinite(ymin) || !std::isfinite(ymax) || !(ymax > ymin)) {
-        return {fallback_min, fallback_max};
+    if (!(ymax > 0.0)) ymax = 1.0;
+
+    if (log_y) {
+        return {0.5, 30.0 * ymax};
     }
 
-    const double pad = 0.15 * (ymax - ymin);
-    ymin = std::max(0.0, ymin - pad);
-    ymax = ymax + pad;
+    return {0.0, 1.30 * ymax};
+}
 
-    if (!(ymax > ymin)) {
-        return {fallback_min, fallback_max};
+static std::pair<double, double> y_range_for_panel(const VarConfig& v,
+                                                   const std::vector<TH1D*>& hd,
+                                                   const std::vector<TH1D*>& hm,
+                                                   int panel,
+                                                   bool log_y) {
+    if (v.kind == 2) {
+        if (panel == 0) return common_y_range(hd, hm, {0}, log_y);
+        if (panel == 1) return common_y_range(hd, hm, {1}, log_y);
+    } else {
+        if (panel >= 0 && panel <= 5) return common_y_range(hd, hm, {0, 1, 2, 3, 4, 5}, log_y);
+        if (panel == 6) return common_y_range(hd, hm, {6}, log_y);
     }
 
-    return {ymin, ymax};
+    return {log_y ? 0.5 : 0.0, 1.0};
+}
+
+static void draw_comparison_panel(const std::string& period,
+                                  const VarConfig& v,
+                                  TH1D* h_data,
+                                  TH1D* h_mc,
+                                  int panel,
+                                  const std::pair<double, double>& yr,
+                                  bool log_y) {
+    TPad* pad = (TPad*)gPad;
+    pad->SetLeftMargin(0.16);
+    pad->SetRightMargin(0.06);
+    pad->SetTopMargin(0.12);
+    pad->SetBottomMargin(0.14);
+    pad->SetLogy(log_y);
+    pad->SetGrid(0, 0);
+
+    style_hist_for_plot(h_data, kBlack, 20);
+    style_hist_for_plot(h_mc, kRed + 1, 24);
+
+    h_data->SetMaximum(yr.second);
+    h_data->SetMinimum(yr.first);
+    h_data->SetTitle((period + "  " + panel_label(v, panel)).c_str());
+    h_data->GetXaxis()->SetTitle(v.x_title.c_str());
+    h_data->GetYaxis()->SetTitle("Counts");
+
+    h_data->Draw("HIST");
+    h_mc->Draw("HIST SAME");
+
+    TLegend* leg = make_comparison_legend(h_data, h_mc);
+    leg->Draw();
+}
+
+static void draw_ratio_panel(const std::string& period,
+                             const VarConfig& v,
+                             TGraphErrors* gr,
+                             int panel,
+                             const Poly4* poly_for_p1_theta) {
+    TPad* pad = (TPad*)gPad;
+    pad->SetLeftMargin(0.16);
+    pad->SetRightMargin(0.06);
+    pad->SetTopMargin(0.12);
+    pad->SetBottomMargin(0.14);
+    pad->SetGrid(0, 0);
+
+    double xmin = 0.0, xmax = 1.0;
+    range_for_panel(v, panel, xmin, xmax);
+    TH1D* frame = (TH1D*)pad->DrawFrame(xmin, RATIO_Y_MIN, xmax, RATIO_Y_MAX);
+    frame->SetTitle((period + "  " + panel_label(v, panel)).c_str());
+    frame->GetXaxis()->SetTitle(v.x_title.c_str());
+    frame->GetYaxis()->SetTitle("data / MC");
+    style_ratio_frame(frame);
+
+    TLine line(xmin, 1.0, xmax, 1.0);
+    line.SetLineStyle(2);
+    line.SetLineColor(kGray + 2);
+    line.SetLineWidth(2);
+    line.Draw("SAME");
+
+    if (gr) {
+        gr->SetMarkerStyle(20);
+        gr->SetMarkerSize(0.8);
+        gr->SetMarkerColor(kBlack);
+        gr->SetLineColor(kBlack);
+        gr->Draw("PE SAME");
+    }
+
+    if (poly_for_p1_theta && v.key == "p1_theta") {
+        TF1 f("f_poly_overlay", "pol4", xmin, xmax);
+        for (int i = 0; i < 5; ++i) f.SetParameter(i, poly_for_p1_theta->a[i]);
+        f.SetLineColor(kRed + 1);
+        f.SetLineWidth(2);
+        f.DrawCopy("L SAME");
+    }
+}
+
+static void draw_sector_comparison_canvas(const std::string& out_png,
+                                          const std::string& period,
+                                          const VarConfig& v,
+                                          const std::vector<TH1D*>& hd,
+                                          const std::vector<TH1D*>& hm,
+                                          const PlotNormInfo& norm,
+                                          bool log_y) {
+    TCanvas canvas(("canvas_" + v.key + (log_y ? "_comparison_log" : "_comparison_linear")).c_str(), "", 1600, 900);
+    canvas.Divide(4, 2);
+
+    const int canvas_pad_for_panel[7] = {1, 2, 3, 5, 6, 7, 8};
+
+    for (int panel = 0; panel < 7; ++panel) {
+        canvas.cd(canvas_pad_for_panel[panel]);
+        const auto yr = y_range_for_panel(v, hd, hm, panel, log_y);
+        draw_comparison_panel(period, v, hd[panel], hm[panel], panel, yr, log_y);
+    }
+
+    canvas.cd(4);
+    draw_normalization_pad(period, v, norm, false);
+
+    canvas.SaveAs(out_png.c_str());
+}
+
+static void draw_phi_comparison_canvas(const std::string& out_png,
+                                       const std::string& period,
+                                       const VarConfig& v,
+                                       const std::vector<TH1D*>& hd,
+                                       const std::vector<TH1D*>& hm,
+                                       const PlotNormInfo& norm,
+                                       bool log_y) {
+    TCanvas canvas(("canvas_" + v.key + (log_y ? "_comparison_log" : "_comparison_linear")).c_str(), "", 1600, 500);
+    canvas.Divide(3, 1);
+
+    for (int panel = 0; panel < 2; ++panel) {
+        canvas.cd(panel + 1);
+        const auto yr = y_range_for_panel(v, hd, hm, panel, log_y);
+        draw_comparison_panel(period, v, hd[panel], hm[panel], panel, yr, log_y);
+    }
+
+    canvas.cd(3);
+    draw_normalization_pad(period, v, norm, false);
+
+    canvas.SaveAs(out_png.c_str());
+}
+
+static void draw_sector_ratio_canvas(const std::string& out_png,
+                                     const std::string& period,
+                                     const VarConfig& v,
+                                     const std::vector<TGraphErrors*>& gr,
+                                     const PlotNormInfo& norm,
+                                     const Poly4* poly_for_p1_theta) {
+    TCanvas canvas(("canvas_" + v.key + "_ratio_linear").c_str(), "", 1600, 900);
+    canvas.Divide(4, 2);
+
+    const int canvas_pad_for_panel[7] = {1, 2, 3, 5, 6, 7, 8};
+
+    for (int panel = 0; panel < 7; ++panel) {
+        canvas.cd(canvas_pad_for_panel[panel]);
+        draw_ratio_panel(period, v, gr[panel], panel, poly_for_p1_theta);
+    }
+
+    canvas.cd(4);
+    draw_normalization_pad(period, v, norm, true);
+
+    canvas.SaveAs(out_png.c_str());
+}
+
+static void draw_phi_ratio_canvas(const std::string& out_png,
+                                  const std::string& period,
+                                  const VarConfig& v,
+                                  const std::vector<TGraphErrors*>& gr,
+                                  const PlotNormInfo& norm,
+                                  const Poly4* poly_for_p1_theta) {
+    TCanvas canvas(("canvas_" + v.key + "_ratio_linear").c_str(), "", 1600, 500);
+    canvas.Divide(3, 1);
+
+    for (int panel = 0; panel < 2; ++panel) {
+        canvas.cd(panel + 1);
+        draw_ratio_panel(period, v, gr[panel], panel, poly_for_p1_theta);
+    }
+
+    canvas.cd(3);
+    draw_normalization_pad(period, v, norm, true);
+
+    canvas.SaveAs(out_png.c_str());
 }
 
 static void plot_variable(const std::string& outdir,
@@ -1278,124 +1528,32 @@ static void plot_variable(const std::string& outdir,
                           const VarConfig& v,
                           const std::vector<TH1D*>& hd,
                           const std::vector<TH1D*>& hm,
+                          const PlotNormInfo& norm,
                           const Poly4* poly_for_p1_theta) {
     mkdir_p(outdir);
 
-    const int ncols = (v.kind == 2) ? 3 : 4;
-    const int nrows = (v.kind == 2) ? 1 : 2;
-    const int W = 350 * ncols + 120;
-    const int H = 300 * nrows + 120;
+    const std::string particle_dir = outdir + ((v.particle == 1) ? "/p1" : "/p2");
+    mkdir_p(particle_dir);
 
-    TCanvas c(("c_" + v.key).c_str(), "", W, H);
-    c.Divide(ncols, nrows, 0.001, 0.001);
+    const std::string linear_png = particle_dir + "/" + v.key + "_comparison_linear.png";
+    const std::string log_png = particle_dir + "/" + v.key + "_comparison_log.png";
+    const std::string ratio_png = particle_dir + "/" + v.key + "_ratio_linear.png";
 
-    for (int p = 0; p < v.n_panels; ++p) {
-        c.cd(p + 1);
-        gPad->SetLeftMargin(0.14);
-        gPad->SetRightMargin(0.06);
-        gPad->SetBottomMargin(0.14);
-        gPad->SetTopMargin(0.12);
-        gPad->SetGrid(1, 1);
-
-        TH1D* d = hd[p];
-        TH1D* m = hm[p];
-        d->SetLineColor(kBlack);
-        d->SetLineWidth(2);
-        m->SetLineColor(kRed + 1);
-        m->SetLineWidth(2);
-        d->SetMarkerColor(kBlack);
-        m->SetMarkerColor(kRed + 1);
-        d->SetMarkerStyle(20);
-        m->SetMarkerStyle(24);
-
-        double ymax = std::max(d->GetMaximum(), m->GetMaximum());
-        if (!(ymax > 0.0)) ymax = 1.0;
-        d->SetMaximum(1.3 * ymax);
-        d->SetMinimum(0.0);
-        d->SetTitle((period + "  " + panel_label(v, p)).c_str());
-        d->GetXaxis()->SetTitle(v.x_title.c_str());
-        d->GetYaxis()->SetTitle("Counts");
-        d->Draw("HIST E");
-        m->Draw("HIST E SAME");
-
-        if (p == 0) {
-            TLegend* leg = new TLegend(0.55, 0.72, 0.90, 0.88);
-            leg->SetFillColor(kWhite);
-            leg->SetFillStyle(1001);
-            leg->SetBorderSize(1);
-            leg->AddEntry(d, "data", "l");
-            leg->AddEntry(m, "AAOGEN MC", "l");
-            leg->Draw();
-        }
+    if (v.kind == 2) {
+        draw_phi_comparison_canvas(linear_png, period, v, hd, hm, norm, false);
+        draw_phi_comparison_canvas(log_png, period, v, hd, hm, norm, true);
+    } else {
+        draw_sector_comparison_canvas(linear_png, period, v, hd, hm, norm, false);
+        draw_sector_comparison_canvas(log_png, period, v, hd, hm, norm, true);
     }
-
-    c.SaveAs((outdir + "/" + v.key + "_comparison_linear.pdf").c_str());
-    c.SaveAs((outdir + "/" + v.key + "_comparison_linear.png").c_str());
-
-    TCanvas clog(("c_log_" + v.key).c_str(), "", W, H);
-    clog.Divide(ncols, nrows, 0.001, 0.001);
-    for (int p = 0; p < v.n_panels; ++p) {
-        clog.cd(p + 1);
-        gPad->SetLeftMargin(0.14);
-        gPad->SetRightMargin(0.06);
-        gPad->SetBottomMargin(0.14);
-        gPad->SetTopMargin(0.12);
-        gPad->SetGrid(1, 1);
-        gPad->SetLogy(1);
-        TH1D* d = hd[p];
-        TH1D* m = hm[p];
-        double ymax = std::max(d->GetMaximum(), m->GetMaximum());
-        if (!(ymax > 0.0)) ymax = 1.0;
-        d->SetMaximum(30.0 * ymax);
-        d->SetMinimum(0.5);
-        d->SetTitle((period + "  " + panel_label(v, p)).c_str());
-        d->Draw("HIST E");
-        m->Draw("HIST E SAME");
-        if (p == 0) {
-            TLegend* leg = new TLegend(0.55, 0.72, 0.90, 0.88);
-            leg->SetFillColor(kWhite);
-            leg->SetFillStyle(1001);
-            leg->SetBorderSize(1);
-            leg->AddEntry(d, "data", "l");
-            leg->AddEntry(m, "AAOGEN MC", "l");
-            leg->Draw();
-        }
-    }
-    clog.SaveAs((outdir + "/" + v.key + "_comparison_log.pdf").c_str());
-    clog.SaveAs((outdir + "/" + v.key + "_comparison_log.png").c_str());
 
     std::vector<TGraphErrors*> gr = make_ratio_graphs(hd, hm);
-    TCanvas cr(("c_ratio_" + v.key).c_str(), "", W, H);
-    cr.Divide(ncols, nrows, 0.001, 0.001);
 
-    for (int p = 0; p < v.n_panels; ++p) {
-        cr.cd(p + 1);
-        gPad->SetLeftMargin(0.14);
-        gPad->SetRightMargin(0.06);
-        gPad->SetBottomMargin(0.14);
-        gPad->SetTopMargin(0.12);
-        gPad->SetGrid(1, 1);
-
-        double xmin = 0.0, xmax = 1.0;
-        range_for_panel(v, p, xmin, xmax);
-        const std::pair<double, double> yr = graph_y_range(gr[p], RATIO_Y_MIN, RATIO_Y_MAX);
-        TH1D* frame = (TH1D*)gPad->DrawFrame(xmin, yr.first, xmax, yr.second);
-        frame->SetTitle((period + "  " + panel_label(v, p)).c_str());
-        frame->GetXaxis()->SetTitle(v.x_title.c_str());
-        frame->GetYaxis()->SetTitle("data / MC");
-        gr[p]->Draw("PE SAME");
-
-        if (poly_for_p1_theta && v.key == "p1_theta") {
-            TF1 f("f_poly_overlay", "pol4", xmin, xmax);
-            for (int i = 0; i < 5; ++i) f.SetParameter(i, poly_for_p1_theta->a[i]);
-            f.SetLineColor(kRed + 1);
-            f.SetLineWidth(2);
-            f.DrawCopy("L SAME");
-        }
+    if (v.kind == 2) {
+        draw_phi_ratio_canvas(ratio_png, period, v, gr, norm, poly_for_p1_theta);
+    } else {
+        draw_sector_ratio_canvas(ratio_png, period, v, gr, norm, poly_for_p1_theta);
     }
-
-    cr.SaveAs((outdir + "/" + v.key + "_ratio_linear.pdf").c_str());
-    cr.SaveAs((outdir + "/" + v.key + "_ratio_linear.png").c_str());
 
     for (TGraphErrors* g : gr) delete g;
 }
@@ -1441,51 +1599,6 @@ static double data_charge_for_tree(TTree* tree,
         q += it->second;
     }
     return q;
-}
-
-static void fill_eppi0_data_hists_python_like(TTree* tree,
-                                                  HistSet& hists) {
-    if (!tree) return;
-
-    Branches b;
-    b.bind(tree, false);
-
-    const Long64_t N = tree->GetEntries();
-    long long n_filled = 0;
-    for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
-        fill_hist_set(hists, b, 1.0);
-        ++n_filled;
-    }
-
-    std::cout << "[eppi0_norm] python-like DATA entries=" << (long long)N
-              << " filled=" << n_filled << std::endl;
-}
-
-static void fill_eppi0_mc_hists_python_like(TTree* tree,
-                                            double event_norm,
-                                            HistSet& hists) {
-    if (!tree) return;
-
-    Branches b;
-    b.bind(tree, true);
-
-    const Long64_t N = tree->GetEntries();
-    long long n_filled = 0;
-    double sum_weight = 0.0;
-    for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
-        const double w = event_norm;
-        fill_hist_set(hists, b, w);
-        sum_weight += w;
-        ++n_filled;
-    }
-
-    std::cout << "[eppi0_norm] python-like MC entries=" << (long long)N
-              << " filled=" << n_filled
-              << " sum_weight=" << sum_weight
-              << " event_norm=" << event_norm
-              << std::endl;
 }
 
 static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
@@ -1578,28 +1691,15 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     const double expected_generated_yield = lint * sigma_integrated_pb;
     const double event_norm = expected_generated_yield / n_gen;
 
+    PlotNormInfo norm_info;
+    norm_info.total_charge_mc = q_mc;
+    norm_info.integrated_luminosity_pb_inv = lint;
+    norm_info.n_gen = n_gen;
+    norm_info.event_norm = event_norm;
+
     const std::string period_root = output_dir + "/" + period_dir(period);
-    const std::string python_like_dir = period_root + "/python_like";
-    const std::string analysis_dir = period_root + "/analysis_corrected";
 
     mkdir_p(period_root);
-    mkdir_p(python_like_dir);
-    mkdir_p(analysis_dir);
-
-    HistSet py_data = make_hist_set("py_data_" + period_dir(period));
-    HistSet py_mc = make_hist_set("py_mc_" + period_dir(period));
-
-    fill_eppi0_data_hists_python_like(data_tree, py_data);
-    fill_eppi0_mc_hists_python_like(rec_tree, event_norm, py_mc);
-
-    for (const VarConfig& v : variable_configs()) {
-        plot_variable(python_like_dir,
-                      period,
-                      v,
-                      py_data.hists[v.key],
-                      py_mc.hists[v.key],
-                      nullptr);
-    }
 
     HistSet ana_data = make_hist_set("ana_data_" + period_dir(period));
     HistSet ana_mc = make_hist_set("ana_mc_" + period_dir(period));
@@ -1608,11 +1708,12 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     fill_eppi0_mc_hists_analysis(epi, tags, rec_tree, mc_cuts, event_norm, mc_eff, ana_mc);
 
     for (const VarConfig& v : variable_configs()) {
-        plot_variable(analysis_dir,
+        plot_variable(period_root,
                       period,
                       v,
                       ana_data.hists[v.key],
                       ana_mc.hists[v.key],
+                      norm_info,
                       nullptr);
     }
 
@@ -1623,15 +1724,16 @@ static PeriodNormalization run_period_normalization(const std::string& period,
 
     build_p1_theta_fit_histograms(ana_data, ana_mc, period, h_data_fit, h_mc_fit);
 
-    Poly4 poly = fit_p1_theta_ratio(period, analysis_dir, &h_data_fit, &h_mc_fit);
+    Poly4 poly = fit_p1_theta_ratio(period, period_root, &h_data_fit, &h_mc_fit);
 
     for (const VarConfig& v : variable_configs()) {
         if (v.key == "p1_theta") {
-            plot_variable(analysis_dir,
+            plot_variable(period_root,
                           period,
                           v,
                           ana_data.hists[v.key],
                           ana_mc.hists[v.key],
+                          norm_info,
                           &poly);
         }
     }
@@ -1654,11 +1756,6 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                                  mc_err2 / (mc_int * mc_int));
     }
 
-    double py_data_int = 0.0;
-    double py_mc_int = 0.0;
-    for (TH1D* h : py_data.hists["p1_theta"]) py_data_int += h->Integral();
-    for (TH1D* h : py_mc.hists["p1_theta"]) py_mc_int += h->Integral();
-
     std::ofstream dbg((period_root + "/normalization_debug_summary.txt").c_str());
     if (dbg.is_open()) {
         dbg << "period " << period << "\n";
@@ -1676,8 +1773,6 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         dbg << "n_gen " << std::setprecision(12) << n_gen << "\n";
         dbg << "expected_generated_yield " << std::setprecision(12) << expected_generated_yield << "\n";
         dbg << "event_norm " << std::setprecision(12) << event_norm << "\n";
-        dbg << "python_like_data_integral_p1_theta " << std::setprecision(12) << py_data_int << "\n";
-        dbg << "python_like_mc_integral_p1_theta " << std::setprecision(12) << py_mc_int << "\n";
         dbg << "analysis_data_integral_p1_theta " << std::setprecision(12) << data_int << "\n";
         dbg << "analysis_mc_integral_p1_theta " << std::setprecision(12) << mc_int << "\n";
         dbg << "analysis_ratio " << std::setprecision(12) << ratio << "\n";
@@ -1690,8 +1785,6 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     out.integrated_ratio = ratio;
     out.integrated_ratio_err = ratio_err;
 
-    delete_hist_set(py_data);
-    delete_hist_set(py_mc);
     delete_hist_set(ana_data);
     delete_hist_set(ana_mc);
 

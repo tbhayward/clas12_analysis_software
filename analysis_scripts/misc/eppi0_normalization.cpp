@@ -1601,51 +1601,6 @@ static double data_charge_for_tree(TTree* tree,
     return q;
 }
 
-static void fill_eppi0_data_hists_python_like(TTree* tree,
-                                                  HistSet& hists) {
-    if (!tree) return;
-
-    Branches b;
-    b.bind(tree, false);
-
-    const Long64_t N = tree->GetEntries();
-    long long n_filled = 0;
-    for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
-        fill_hist_set(hists, b, 1.0);
-        ++n_filled;
-    }
-
-    std::cout << "[eppi0_norm] python-like DATA entries=" << (long long)N
-              << " filled=" << n_filled << std::endl;
-}
-
-static void fill_eppi0_mc_hists_python_like(TTree* tree,
-                                            double event_norm,
-                                            HistSet& hists) {
-    if (!tree) return;
-
-    Branches b;
-    b.bind(tree, true);
-
-    const Long64_t N = tree->GetEntries();
-    long long n_filled = 0;
-    double sum_weight = 0.0;
-    for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
-        const double w = event_norm;
-        fill_hist_set(hists, b, w);
-        sum_weight += w;
-        ++n_filled;
-    }
-
-    std::cout << "[eppi0_norm] python-like MC entries=" << (long long)N
-              << " filled=" << n_filled
-              << " sum_weight=" << sum_weight
-              << " event_norm=" << event_norm
-              << std::endl;
-}
-
 static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
                                            const PeriodTags& tags,
                                            TTree* tree,
@@ -1743,28 +1698,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     norm_info.event_norm = event_norm;
 
     const std::string period_root = output_dir + "/" + period_dir(period);
-    const std::string python_like_dir = period_root + "/python_like";
-    const std::string analysis_dir = period_root + "/analysis_corrected";
 
     mkdir_p(period_root);
-    mkdir_p(python_like_dir);
-    mkdir_p(analysis_dir);
-
-    HistSet py_data = make_hist_set("py_data_" + period_dir(period));
-    HistSet py_mc = make_hist_set("py_mc_" + period_dir(period));
-
-    fill_eppi0_data_hists_python_like(data_tree, py_data);
-    fill_eppi0_mc_hists_python_like(rec_tree, event_norm, py_mc);
-
-    for (const VarConfig& v : variable_configs()) {
-        plot_variable(python_like_dir,
-                      period,
-                      v,
-                      py_data.hists[v.key],
-                      py_mc.hists[v.key],
-                      norm_info,
-                      nullptr);
-    }
 
     HistSet ana_data = make_hist_set("ana_data_" + period_dir(period));
     HistSet ana_mc = make_hist_set("ana_mc_" + period_dir(period));
@@ -1773,7 +1708,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     fill_eppi0_mc_hists_analysis(epi, tags, rec_tree, mc_cuts, event_norm, mc_eff, ana_mc);
 
     for (const VarConfig& v : variable_configs()) {
-        plot_variable(analysis_dir,
+        plot_variable(period_root,
                       period,
                       v,
                       ana_data.hists[v.key],
@@ -1789,11 +1724,11 @@ static PeriodNormalization run_period_normalization(const std::string& period,
 
     build_p1_theta_fit_histograms(ana_data, ana_mc, period, h_data_fit, h_mc_fit);
 
-    Poly4 poly = fit_p1_theta_ratio(period, analysis_dir, &h_data_fit, &h_mc_fit);
+    Poly4 poly = fit_p1_theta_ratio(period, period_root, &h_data_fit, &h_mc_fit);
 
     for (const VarConfig& v : variable_configs()) {
         if (v.key == "p1_theta") {
-            plot_variable(analysis_dir,
+            plot_variable(period_root,
                           period,
                           v,
                           ana_data.hists[v.key],
@@ -1821,11 +1756,6 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                                  mc_err2 / (mc_int * mc_int));
     }
 
-    double py_data_int = 0.0;
-    double py_mc_int = 0.0;
-    for (TH1D* h : py_data.hists["p1_theta"]) py_data_int += h->Integral();
-    for (TH1D* h : py_mc.hists["p1_theta"]) py_mc_int += h->Integral();
-
     std::ofstream dbg((period_root + "/normalization_debug_summary.txt").c_str());
     if (dbg.is_open()) {
         dbg << "period " << period << "\n";
@@ -1843,8 +1773,6 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         dbg << "n_gen " << std::setprecision(12) << n_gen << "\n";
         dbg << "expected_generated_yield " << std::setprecision(12) << expected_generated_yield << "\n";
         dbg << "event_norm " << std::setprecision(12) << event_norm << "\n";
-        dbg << "python_like_data_integral_p1_theta " << std::setprecision(12) << py_data_int << "\n";
-        dbg << "python_like_mc_integral_p1_theta " << std::setprecision(12) << py_mc_int << "\n";
         dbg << "analysis_data_integral_p1_theta " << std::setprecision(12) << data_int << "\n";
         dbg << "analysis_mc_integral_p1_theta " << std::setprecision(12) << mc_int << "\n";
         dbg << "analysis_ratio " << std::setprecision(12) << ratio << "\n";
@@ -1857,8 +1785,6 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     out.integrated_ratio = ratio;
     out.integrated_ratio_err = ratio_err;
 
-    delete_hist_set(py_data);
-    delete_hist_set(py_mc);
     delete_hist_set(ana_data);
     delete_hist_set(ana_mc);
 
