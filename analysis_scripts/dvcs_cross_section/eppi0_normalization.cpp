@@ -18,6 +18,7 @@
 #include <TFitResult.h>
 #include <TFitResultPtr.h>
 #include <TLine.h>
+#include <TObject.h>
 
 #include <nlohmann/json.hpp>
 
@@ -1175,15 +1176,16 @@ static Poly4 fit_p1_theta_ratio(const std::string& period,
     frame->GetXaxis()->CenterTitle(true);
     frame->GetYaxis()->CenterTitle(true);
 
-    TLine unity_line(0.0, 1.0, 70.0, 1.0);
-    unity_line.SetLineStyle(2);
-    unity_line.SetLineColor(kRed + 1);
-    unity_line.SetLineWidth(2);
-    unity_line.Draw("SAME");
+    TLine* unity_line = new TLine(0.0, 1.0, 70.0, 1.0);
+    unity_line->SetLineStyle(2);
+    unity_line->SetLineColor(kRed + 1);
+    unity_line->SetLineWidth(2);
+    unity_line->SetBit(TObject::kCanDelete);
+    unity_line->Draw("SAME");
 
     gr.SetMarkerStyle(20);
-    gr.SetMarkerColor(kBlue + 1);
-    gr.SetLineColor(kBlue + 1);
+    gr.SetMarkerColor(kBlack);
+    gr.SetLineColor(kBlack);
     gr.Draw("PE SAME");
     f.SetLineColor(kRed + 1);
     f.SetLineWidth(2);
@@ -1221,8 +1223,8 @@ static std::vector<TGraphErrors*> make_ratio_graphs(const std::vector<TH1D*>& hd
             ++ip;
         }
         g->SetMarkerStyle(20);
-        g->SetMarkerColor(kBlue + 1);
-        g->SetLineColor(kBlue + 1);
+        g->SetMarkerColor(kBlack);
+        g->SetLineColor(kBlack);
         out.push_back(g);
     }
     return out;
@@ -1271,7 +1273,8 @@ static void style_ratio_frame(TH1D* frame) {
 static void draw_panel_title(const std::string& text) {
     TLatex latex;
     latex.SetNDC(true);
-    latex.SetTextSize(0.055);
+    latex.SetTextFont(42);
+    latex.SetTextSize(0.050);
     latex.DrawLatex(0.18, 0.925, text.c_str());
 }
 
@@ -1321,12 +1324,12 @@ static void draw_normalization_pad(const std::string& period,
 }
 
 static TLegend* make_comparison_legend(TH1D* h_data, TH1D* h_mc) {
-    TLegend* leg = new TLegend(0.64, 0.79, 0.94, 0.91);
+    TLegend* leg = new TLegend(0.62, 0.815, 0.94, 0.935);
     leg->SetBorderSize(1);
     leg->SetFillStyle(1001);
     leg->SetFillColor(kWhite);
-    leg->SetTextSize(0.034);
-    leg->SetMargin(0.22);
+    leg->SetTextSize(0.030);
+    leg->SetMargin(0.20);
     leg->AddEntry(h_data, "data", "l");
     leg->AddEntry(h_mc, "AAOgen MC", "l");
     return leg;
@@ -1382,17 +1385,32 @@ static void draw_comparison_panel(const std::string& /*period*/,
     style_hist_for_plot(h_data, kBlue + 1, 20);
     style_hist_for_plot(h_mc, kRed + 1, 24);
 
-    h_data->SetMaximum(yr.second);
-    h_data->SetMinimum(yr.first);
-    h_data->SetTitle((panel_label(v, panel) + "  " + v.title).c_str());
-    h_data->GetXaxis()->SetTitle(v.x_title.c_str());
-    h_data->GetYaxis()->SetTitle("Counts");
+    double xmin = 0.0;
+    double xmax = 1.0;
+    range_for_panel(v, panel, xmin, xmax);
 
-    h_data->Draw("HIST");
+    TH1D* frame = (TH1D*)pad->DrawFrame(xmin, yr.first, xmax, yr.second);
+    frame->SetStats(false);
+    frame->SetTitle("");
+    frame->GetXaxis()->SetTitle(v.x_title.c_str());
+    frame->GetYaxis()->SetTitle("Counts");
+    frame->GetXaxis()->CenterTitle(true);
+    frame->GetYaxis()->CenterTitle(true);
+    frame->GetXaxis()->SetTitleSize(0.050);
+    frame->GetYaxis()->SetTitleSize(0.050);
+    frame->GetXaxis()->SetLabelSize(0.045);
+    frame->GetYaxis()->SetLabelSize(0.045);
+    frame->GetYaxis()->SetTitleOffset(1.45);
+
+    h_data->Draw("HIST SAME");
     h_mc->Draw("HIST SAME");
+
+    draw_panel_title(panel_label(v, panel));
 
     TLegend* leg = make_comparison_legend(h_data, h_mc);
     leg->Draw();
+
+    pad->RedrawAxis();
 }
 
 static void draw_ratio_panel(const std::string& /*period*/,
@@ -1410,22 +1428,23 @@ static void draw_ratio_panel(const std::string& /*period*/,
     double xmin = 0.0, xmax = 1.0;
     range_for_panel(v, panel, xmin, xmax);
     TH1D* frame = (TH1D*)pad->DrawFrame(xmin, RATIO_Y_MIN, xmax, RATIO_Y_MAX);
-    frame->SetTitle((panel_label(v, panel) + "  " + v.title).c_str());
+    frame->SetTitle("");
     frame->GetXaxis()->SetTitle(v.x_title.c_str());
     frame->GetYaxis()->SetTitle("data / MC");
     style_ratio_frame(frame);
 
-    TLine line(xmin, 1.0, xmax, 1.0);
-    line.SetLineStyle(2);
-    line.SetLineColor(kRed + 1);
-    line.SetLineWidth(2);
-    line.Draw("SAME");
+    TLine* unity_line = new TLine(xmin, 1.0, xmax, 1.0);
+    unity_line->SetLineStyle(2);
+    unity_line->SetLineColor(kRed + 1);
+    unity_line->SetLineWidth(2);
+    unity_line->SetBit(TObject::kCanDelete);
+    unity_line->Draw("SAME");
 
     if (gr) {
         gr->SetMarkerStyle(20);
         gr->SetMarkerSize(0.8);
-        gr->SetMarkerColor(kBlue + 1);
-        gr->SetLineColor(kBlue + 1);
+        gr->SetMarkerColor(kBlack);
+        gr->SetLineColor(kBlack);
         gr->Draw("PE SAME");
     }
 
@@ -1436,6 +1455,9 @@ static void draw_ratio_panel(const std::string& /*period*/,
         f.SetLineWidth(2);
         f.DrawCopy("L SAME");
     }
+
+    draw_panel_title(panel_label(v, panel));
+    pad->RedrawAxis();
 }
 
 static void draw_sector_comparison_canvas(const std::string& out_png,
