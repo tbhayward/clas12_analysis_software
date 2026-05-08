@@ -2129,6 +2129,162 @@ def print_implied_cross_section_diagnostics(data_result, mc_result, integrated_l
     #endfor
 
 
+
+# -----------------------------------------------------------------------------
+# Period normalization input handling
+# -----------------------------------------------------------------------------
+
+def canonical_period_label(period):
+    if period is None:
+        return DEFAULT_PERIOD
+    #endif
+
+    cleaned = str(period).strip()
+    cleaned = cleaned.replace("_", " ")
+    cleaned = " ".join(cleaned.split())
+
+    aliases = {
+        "Fa18 Inb": "Fa18 Inb",
+        "Fa18 Out": "Fa18 Out",
+        "Sp19 Inb": "Sp19 Inb",
+        "Sp18 Inb": "Sp18 Inb",
+        "Sp18 Out": "Sp18 Out",
+        "Fall18 Inb": "Fa18 Inb",
+        "Fall18 Out": "Fa18 Out",
+        "Spring19 Inb": "Sp19 Inb",
+        "Spring18 Inb": "Sp18 Inb",
+        "Spring18 Out": "Sp18 Out",
+        "RGA Fa18 Inb": "Fa18 Inb",
+        "RGA Fa18 Out": "Fa18 Out",
+        "RGA Sp19 Inb": "Sp19 Inb",
+        "RGA Sp18 Inb": "Sp18 Inb",
+        "RGA Sp18 Out": "Sp18 Out",
+        "rga fa18 inb": "Fa18 Inb",
+        "rga fa18 out": "Fa18 Out",
+        "rga sp19 inb": "Sp19 Inb",
+        "rga sp18 inb": "Sp18 Inb",
+        "rga sp18 out": "Sp18 Out",
+        "fa18 inb": "Fa18 Inb",
+        "fa18 out": "Fa18 Out",
+        "sp19 inb": "Sp19 Inb",
+        "sp18 inb": "Sp18 Inb",
+        "sp18 out": "Sp18 Out",
+    }
+
+    if cleaned in aliases:
+        return aliases[cleaned]
+    #endif
+
+    lowered = cleaned.lower()
+    if lowered in aliases:
+        return aliases[lowered]
+    #endif
+
+    fatal("unknown run-period string '{}'. Valid values are: Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out.".format(period))
+
+
+def load_period_normalization_inputs(json_path, requested_period):
+    if json_path is None or str(json_path).strip() == "":
+        fatal("normalization JSON path is empty")
+    #endif
+
+    if not os.path.exists(json_path):
+        fatal("normalization JSON file does not exist: {}".format(json_path))
+    #endif
+
+    period_label = canonical_period_label(requested_period)
+
+    with open(json_path, "r") as f:
+        payload = json.load(f)
+    #endwith
+
+    if not isinstance(payload, dict):
+        fatal("normalization JSON top-level object must be a dictionary")
+    #endif
+
+    if "periods" not in payload:
+        fatal("normalization JSON is missing required top-level key 'periods'")
+    #endif
+
+    periods = payload["periods"]
+
+    if not isinstance(periods, dict):
+        fatal("normalization JSON key 'periods' must contain a dictionary")
+    #endif
+
+    if period_label not in periods:
+        available = sorted(periods.keys())
+        fatal("normalization JSON does not contain period '{}'. Available periods are: {}".format(period_label, ", ".join(available)))
+    #endif
+
+    info = periods[period_label]
+
+    required_keys = [
+        "sigma_min_microbarn",
+        "sigma_max_microbarn",
+        "sigma_mid_microbarn",
+        "sigma_half_width_microbarn",
+        "sigma_relative_uncertainty_from_range",
+        "generated_events",
+    ]
+
+    missing = []
+    for key in required_keys:
+        if key not in info:
+            missing.append(key)
+        #endif
+    #endfor
+
+    if len(missing) > 0:
+        fatal("normalization JSON period '{}' is missing required keys: {}".format(period_label, ", ".join(missing)))
+    #endif
+
+    try:
+        sigma_min = float(info["sigma_min_microbarn"])
+        sigma_max = float(info["sigma_max_microbarn"])
+        sigma_mid = float(info["sigma_mid_microbarn"])
+        sigma_half_width = float(info["sigma_half_width_microbarn"])
+        sigma_rel_unc = float(info["sigma_relative_uncertainty_from_range"])
+        generated_events = int(info["generated_events"])
+    except Exception as exc:
+        fatal("normalization JSON period '{}' has a value with the wrong type: {}".format(period_label, exc))
+    #endtry
+
+    if sigma_min <= 0.0:
+        fatal("normalization JSON period '{}' has non-positive sigma_min_microbarn".format(period_label))
+    #endif
+
+    if sigma_max <= 0.0:
+        fatal("normalization JSON period '{}' has non-positive sigma_max_microbarn".format(period_label))
+    #endif
+
+    if sigma_mid <= 0.0:
+        fatal("normalization JSON period '{}' has non-positive sigma_mid_microbarn".format(period_label))
+    #endif
+
+    if sigma_half_width < 0.0:
+        fatal("normalization JSON period '{}' has negative sigma_half_width_microbarn".format(period_label))
+    #endif
+
+    if sigma_rel_unc < 0.0:
+        fatal("normalization JSON period '{}' has negative sigma_relative_uncertainty_from_range".format(period_label))
+    #endif
+
+    if generated_events <= 0:
+        fatal("normalization JSON period '{}' has non-positive generated_events".format(period_label))
+    #endif
+
+    cleaned_info = dict(info)
+    cleaned_info["sigma_min_microbarn"] = sigma_min
+    cleaned_info["sigma_max_microbarn"] = sigma_max
+    cleaned_info["sigma_mid_microbarn"] = sigma_mid
+    cleaned_info["sigma_half_width_microbarn"] = sigma_half_width
+    cleaned_info["sigma_relative_uncertainty_from_range"] = sigma_rel_unc
+    cleaned_info["generated_events"] = generated_events
+
+    return period_label, cleaned_info
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
@@ -2170,7 +2326,7 @@ def main():
     max_workers = min(args.max_workers, 5)
 
     if args.output_tag is None:
-        output_tag = sanitize_output_tag(period_label)
+        output_tag = sanitize_output_tag(period_label.replace(" ", "_"))
     else:
         output_tag = sanitize_output_tag(args.output_tag)
     #endif
@@ -2356,7 +2512,7 @@ def main():
     print("Charge conversion factor to mC: {:.12g}".format(args.charge_to_mc_factor))
     print("Total accumulated charge Q: {:.12g} mC".format(total_charge_mc))
     print("Integrated luminosity: {:.12g} pb^-1".format(integrated_luminosity_pb_inv))
-    print("Generated MC entries from file: {}".format(n_gen_from_file))
+    print("Generated MC entries from JSON: {:.12g}".format(n_gen))
     print("N_GEN used for normalization: {:.12g}".format(n_gen))
     print("AAOgen integrated cross section used: {:.12g} microbarn".format(sigma_integrated_microbarn))
     print("AAOgen integrated cross section used: {:.12g} pb".format(sigma_integrated_pb))
