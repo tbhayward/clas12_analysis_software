@@ -10,11 +10,11 @@
 // Outputs by period and current:
 //
 //   1) DVCS normalized pi0-subtracted counts
-//      event weight = 1 / [current_eff(epg, exp, period) * R_pi0(p1_theta)]
+//      event weight = 1 / [current_eff(epg, exp, period) * R_pi0(region, p1_theta)]
 //      row weight   = event weight * [1 - contamination_ratio(row, period)]
 //
 //   2) eppi0 normalized counts
-//      event weight = 1 / [current_eff(eppi0, exp, period) * R_pi0(p1_theta)]
+//      event weight = 1 / [current_eff(eppi0, exp, period) * R_pi0(region, p1_theta)]
 //
 // Cuts:
 //   - Global cuts via global_cuts.h.
@@ -321,10 +321,14 @@ struct RowBin {
     bool valid = false;
 };
 
+struct RegionNormalization {
+    std::vector<double> cubic;
+};
+
 struct PeriodProducts {
     double epg_current_eff = std::numeric_limits<double>::quiet_NaN();
     double eppi0_current_eff = std::numeric_limits<double>::quiet_NaN();
-    std::vector<double> poly;
+    std::map<std::string, RegionNormalization> regions;
 };
 
 struct AnalysisInputs {
@@ -338,8 +342,16 @@ static std::string current_eff_col(const std::string& channel,
     return "current efficiency factor, " + channel + ", exp, " + period;
 }
 
-static std::string norm_poly_col(const std::string& period) {
-    return "eppi0 cross-section normalization polynomial, ep->eppi0, data_over_mc, " + period;
+static const std::vector<std::string>& normalization_regions() {
+    static const std::vector<std::string> v = {
+        "Sector 1", "Sector 2", "Sector 3", "Sector 4", "Sector 5", "Sector 6", "CD"
+    };
+    return v;
+}
+
+static std::string norm_cubic_col(const std::string& period,
+                                  const std::string& region) {
+    return "eppi0 cross-section normalization cubic, ep->eppi0, data_over_mc, " + region + ", " + period;
 }
 
 static std::string contamination_col(const std::string& period) {
@@ -381,7 +393,6 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
 
         const int c_epg_eff = col(csv, current_eff_col("ep->epg", period));
         const int c_epi_eff = col(csv, current_eff_col("ep->eppi0", period));
-        const int c_poly = col(csv, norm_poly_col(period));
         const int c_cont = col(csv, contamination_col(period));
 
         // These are period-level constants copied into every row. Read from the
@@ -394,16 +405,25 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
                                                                 current_eff_col("ep->epg", period));
         const std::vector<double> epi_eff = parse_tuple_numbers(csv.rows.front()[c_epi_eff],
                                                                 current_eff_col("ep->eppi0", period));
-        const std::vector<double> poly = parse_tuple_numbers(csv.rows.front()[c_poly],
-                                                             norm_poly_col(period));
 
-        if (epg_eff.size() < 1 || epi_eff.size() < 1 || poly.size() < 5) {
-            fatal("malformed current-efficiency or normalization polynomial columns for period " + period);
+        if (epg_eff.size() < 1 || epi_eff.size() < 1) {
+            fatal("malformed current-efficiency columns for period " + period);
         }
 
         p.epg_current_eff = epg_eff[0];
         p.eppi0_current_eff = epi_eff[0];
-        p.poly.assign(poly.begin(), poly.begin() + 5);
+
+        for (const std::string& region : normalization_regions()) {
+            const std::string cname = norm_cubic_col(period, region);
+            const int c_cubic = col(csv, cname);
+            const std::vector<double> cubic = parse_tuple_numbers(csv.rows.front()[c_cubic], cname);
+            if (cubic.size() < 4) {
+                fatal("malformed regional eppi0 normalization cubic column for period " + period + ", region " + region);
+            }
+            RegionNormalization rn;
+            rn.cubic.assign(cubic.begin(), cubic.begin() + 4);
+            p.regions[region] = rn;
+        }
 
         if (!(std::isfinite(p.epg_current_eff) && p.epg_current_eff > 0.0)) {
             fatal("invalid epg current-efficiency factor for period " + period);
@@ -437,12 +457,41 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
     return in;
 }
 
-static double eval_poly(const std::vector<double>& p, double x) {
-    if (p.size() < 5) {
-        fatal("normalization polynomial has fewer than 5 coefficients.");
+static double eval_cubic(const std::vector<double>& p, double x) {
+    if (p.size() < 4) {
+        fatal("normalization cubic has fewer than 4 coefficients.");
     }
 
-    return p[0] + x * (p[1] + x * (p[2] + x * (p[3] + x * p[4])));
+    return p[0] + x * (p[1] + x * (p[2] + x * p[3]));
+}
+
+static int clas12_sector_from_phi_deg(double phi_deg) {
+    const double phi = wrap_phi_deg(phi_deg);
+
+    if ((phi >= 330.0 && phi < 360.0) || (phi >= 0.0 && phi < 30.0)) return 1;
+    if (phi >= 30.0  && phi < 90.0)  return 2;
+    if (phi >= 90.0  && phi < 150.0) return 3;
+    if (phi >= 150.0 && phi < 210.0) return 4;
+    if (phi >= 210.0 && phi < 270.0) return 5;
+    if (phi >= 270.0 && phi < 330.0) return 6;
+
+    return 0;
+}
+
+static std::string normalization_region_for_event(double p1_theta_deg,
+                                                  double p1_phi_deg) {
+    if (p1_theta_deg >= 40.0 && p1_theta_deg < 70.0) {
+        return "CD";
+    }
+
+    if (p1_theta_deg >= 0.0 && p1_theta_deg < 40.0) {
+        const int sector = clas12_sector_from_phi_deg(p1_phi_deg);
+        if (sector >= 1 && sector <= 6) {
+            return "Sector " + std::to_string(sector);
+        }
+    }
+
+    return "";
 }
 
 static int find_row_index(const std::vector<RowBin>& rows,
@@ -700,6 +749,7 @@ struct Branches {
     double e_phi = 0.0; bool has_e_phi = false;
 
     double p1_theta = 0.0; bool has_p1_theta = false;
+    double p1_phi = 0.0; bool has_p1_phi = false;
 
     double p2_p = 0.0; bool has_p2_p = false;
     double p2_theta = 0.0; bool has_p2_theta = false;
@@ -739,6 +789,7 @@ struct Branches {
         ena("e_theta");
         ena("e_phi");
         ena("p1_theta");
+        ena("p1_phi");
         ena("p2_p");
         ena("p2_theta");
         ena("p2_phi");
@@ -784,14 +835,15 @@ struct Branches {
         bD("e_phi", &e_phi, has_e_phi);
 
         bD("p1_theta", &p1_theta, has_p1_theta);
+        bD("p1_phi", &p1_phi, has_p1_phi);
 
         bD("p2_p", &p2_p, has_p2_p);
         bD("p2_theta", &p2_theta, has_p2_theta);
         bD("p2_phi", &p2_phi, has_p2_phi);
 
         if (!(has_runnum && has_detector1 && has_detector2 && has_x && has_Q2 &&
-              has_t1 && has_phi2 && has_open_angle_ep2 && has_pTmiss && has_p1_theta)) {
-            fatal("tree is missing one or more required branches: runnum, detector1, detector2, x, Q2, t1, phi2, open_angle_ep2, pTmiss, p1_theta.");
+              has_t1 && has_phi2 && has_open_angle_ep2 && has_pTmiss && has_p1_theta && has_p1_phi)) {
+            fatal("tree is missing one or more required branches: runnum, detector1, detector2, x, Q2, t1, phi2, open_angle_ep2, pTmiss, p1_theta, p1_phi.");
         }
     }
 
@@ -805,6 +857,10 @@ struct Branches {
 
     double p1_theta_deg() const {
         return p1_theta * RAD2DEG;
+    }
+
+    double p1_phi_deg() const {
+        return wrap_phi_deg(p1_phi * RAD2DEG);
     }
 };
 
@@ -961,9 +1017,19 @@ static void process_tree_set(const std::map<std::string, TTree*>& trees,
             ++matched;
 
             const double theta = b.p1_theta_deg();
-            const double r_pi0 = eval_poly(products.poly, theta);
+            const std::string region = normalization_region_for_event(theta, b.p1_phi_deg());
+            if (region.empty()) {
+                continue;
+            }
+
+            auto region_it = products.regions.find(region);
+            if (region_it == products.regions.end()) {
+                fatal("missing regional eppi0 normalization cubic for period " + tags.display + ", region " + region);
+            }
+
+            const double r_pi0 = eval_cubic(region_it->second.cubic, theta);
             if (!(std::isfinite(r_pi0) && r_pi0 > 0.0)) {
-                fatal("non-positive eppi0 normalization polynomial value for period " + tags.display);
+                fatal("non-positive regional eppi0 normalization cubic value for period " + tags.display + ", region " + region);
             }
 
             const double eff = is_eppi0 ? products.eppi0_current_eff : products.epg_current_eff;
@@ -1098,7 +1164,7 @@ static void write_totals(std::ostream& os, const Totals& totals) {
     os << "Definitions:\n";
     os << "  DVCS normalized pi0-subtracted counts = normalized ep->epgamma DATA weights multiplied by (1 - contamination ratio).\n";
     os << "  eppi0 normalized counts = normalized ep->eppi0 DATA weights.\n";
-    os << "  Both quantities use current-efficiency factors and the eppi0 AAOGEN p1_theta normalization polynomial from the CSV.\n\n";
+    os << "  Both quantities use current-efficiency factors and the regional eppi0 AAOGEN p1_theta normalization cubic fits from the CSV.\n\n";
 
     os << "Raw accepted event counters used only as diagnostics:\n";
     os << "  DVCS events contributing: " << totals.dvcs_events_used << "\n";
