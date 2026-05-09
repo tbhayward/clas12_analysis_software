@@ -193,16 +193,15 @@ static int parse_current_from_key(const std::string& key) {
         return 0;
     }
 
-    for (int current = 0; current <= 100; ++current) {
-        std::ostringstream token;
-        token << current << "na";
-        if (has_substr(s, token.str())) {
-            return current;
-        }
-    }
-
-    // The nominal acceptance files are the reference-current files.
     PeriodTags tags = parse_period_from_key(key);
+
+    // Current-study MC convention:
+    //   - nobkg files are the 0 nA reference.
+    //   - Sp18 Out non-nobkg MC is the 45 nA production-current sample.
+    //   - all other non-nobkg MC samples are treated as 50 nA.
+    //
+    // Do not parse numeric substrings such as "45nA" or "50nA" here.
+    // A substring parser will incorrectly match "5nA" inside "45nA" or "50nA".
     return reference_current_nA(tags.display);
 }
 
@@ -1158,8 +1157,6 @@ static long long count_generated_tree(TTree* tree) {
         return 0;
     }
 
-    // Generated trees in this workflow are already generated-level samples.
-    // The Python script counted generated entries directly.
     return (long long)tree->GetEntries();
 }
 
@@ -1763,7 +1760,6 @@ static void write_results_to_csv(CSV& csv,
         }
     }
 }
-
 
 // -----------------------------------------------------------------------------
 // Apply saved MC current-efficiency factors to reconstructed MC yield columns
