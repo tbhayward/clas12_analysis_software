@@ -186,22 +186,49 @@ static int reference_current_nA(const std::string& period_display) {
     return 50;
 }
 
+static bool has_exact_current_token(const std::string& s, int current_nA) {
+    std::ostringstream token_ss;
+    token_ss << current_nA << "na";
+    const std::string token = token_ss.str();
+
+    size_t pos = s.find(token);
+
+    while (pos != std::string::npos) {
+        const bool left_ok =
+            (pos == 0) ||
+            (!std::isdigit((unsigned char)s[pos - 1]));
+
+        const size_t right_pos = pos + token.size();
+        const bool right_ok =
+            (right_pos >= s.size()) ||
+            (!std::isdigit((unsigned char)s[right_pos]));
+
+        if (left_ok && right_ok) {
+            return true;
+        }
+
+        pos = s.find(token, pos + 1);
+    }
+
+    return false;
+}
+
 static int parse_current_from_key(const std::string& key) {
     const std::string s = lower_ascii(key);
 
-    if (has_substr(s, "nobkg")) {
+    if (has_substr(s, "nobkg") || has_exact_current_token(s, 0)) {
         return 0;
     }
 
     PeriodTags tags = parse_period_from_key(key);
 
     // Current-study MC convention:
-    //   - nobkg files are the 0 nA reference.
-    //   - Sp18 Out non-nobkg MC is the 45 nA production-current sample.
-    //   - all other non-nobkg MC samples are treated as 50 nA.
+    //   - nobkg or explicit 0nA files are the 0 nA reference.
+    //   - Sp18 Out nonzero-current MC is the 45 nA production-current sample.
+    //   - all other nonzero-current MC samples are treated as 50 nA.
     //
-    // Do not parse numeric substrings such as "45nA" or "50nA" here.
-    // A substring parser will incorrectly match "5nA" inside "45nA" or "50nA".
+    // Do not scan all integers with substring matching. That misidentifies
+    // 45nA and 50nA as 5nA.
     return reference_current_nA(tags.display);
 }
 
