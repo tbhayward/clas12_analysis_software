@@ -3255,8 +3255,6 @@ static void save_all_period_kinematic_ratio_summary(const std::string& output_di
     const double y_min = RATIO_Y_MIN;
     const double y_max = RATIO_Y_MAX;
 
-    y_max = std::max(RATIO_Y_MAX, 1.20 * y_max);
-
     TCanvas c(("c_eppi0_summary_ratio_" + key).c_str(), "", 1200, 850);
     c.SetGrid(1, 1);
     c.SetLeftMargin(0.14);
