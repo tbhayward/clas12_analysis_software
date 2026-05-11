@@ -3252,29 +3252,8 @@ static void save_all_period_kinematic_ratio_summary(const std::string& output_di
 
     range_for_panel(frame_var, 0, x_min, x_max);
 
-    double y_max = 0.0;
-
-    for (const PeriodNormalization& norm : norms) {
-        auto it = norm.summary_ratio_curves.find(key);
-
-        if (it == norm.summary_ratio_curves.end()) {
-            continue;
-        }
-
-        const SummaryRatioCurve& curve = it->second;
-
-        for (size_t i = 0; i < curve.y.size(); ++i) {
-            const double candidate = curve.y[i] + curve.ey[i];
-
-            if (std::isfinite(candidate)) {
-                y_max = std::max(y_max, candidate);
-            }
-        }
-    }
-
-    if (!(y_max > 0.0)) {
-        y_max = RATIO_Y_MAX;
-    }
+    const double y_min = RATIO_Y_MIN;
+    const double y_max = RATIO_Y_MAX;
 
     y_max = std::max(RATIO_Y_MAX, 1.20 * y_max);
 
@@ -3285,7 +3264,7 @@ static void save_all_period_kinematic_ratio_summary(const std::string& output_di
     c.SetBottomMargin(0.13);
     c.SetTopMargin(0.08);
 
-    TH1D* frame = (TH1D*)gPad->DrawFrame(x_min, RATIO_Y_MIN, x_max, y_max);
+    TH1D* frame = (TH1D*)gPad->DrawFrame(x_min, y_min, x_max, y_max);
     frame->SetTitle(("ep #rightarrow ep#pi_{0}  all periods  " + title + " ratio").c_str());
     frame->GetXaxis()->SetTitle(x_title.c_str());
     frame->GetYaxis()->SetTitle("data / MC");
