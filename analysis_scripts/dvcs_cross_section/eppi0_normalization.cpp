@@ -160,6 +160,7 @@ struct AaoPeriodInput {
 
 static AaoPeriodInput read_aao_period_input(const std::string& json_path, const std::string& period) {
     std::ifstream in(json_path.c_str());
+
     if (!in.is_open()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: could not open AAOGEN normalization input JSON: " << json_path;
@@ -176,6 +177,7 @@ static AaoPeriodInput read_aao_period_input(const std::string& json_path, const 
     }
 
     const nlohmann::json& periods = j["periods"];
+
     if (!periods.contains(period)) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: AAOGEN normalization input JSON is missing period '" << period << "': " << json_path;
@@ -183,6 +185,7 @@ static AaoPeriodInput read_aao_period_input(const std::string& json_path, const 
     }
 
     const nlohmann::json& jp = periods[period];
+
     const std::vector<std::string> required = {
         "sigma_min_microbarn",
         "sigma_max_microbarn",
@@ -193,14 +196,19 @@ static AaoPeriodInput read_aao_period_input(const std::string& json_path, const 
     };
 
     std::vector<std::string> missing;
+
     for (const std::string& key : required) {
-        if (!jp.contains(key)) missing.push_back(key);
+        if (!jp.contains(key)) {
+            missing.push_back(key);
+        }
     }
 
     if (!missing.empty()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: AAOGEN normalization input JSON period '" << period << "' is missing keys:";
-        for (const std::string& key : missing) ss << " " << key;
+        for (const std::string& key : missing) {
+            ss << " " << key;
+        }
         fatal(ss.str());
     }
 
@@ -235,6 +243,7 @@ static std::string lower_ascii(std::string s) {
     for (char& c : s) {
         c = (char)std::tolower((unsigned char)c);
     }
+
     return s;
 }
 
@@ -291,6 +300,7 @@ static PeriodTags parse_period_from_key(const std::string& key) {
     std::ostringstream ss;
     ss << "[eppi0_norm] FATAL: cannot parse period from tree key: " << key;
     fatal(ss.str());
+
     return t;
 }
 
@@ -305,6 +315,7 @@ static std::string period_dir(const std::string& period) {
     std::ostringstream ss;
     ss << "[eppi0_norm] FATAL: unknown period label: " << period;
     fatal(ss.str());
+
     return "";
 }
 
@@ -316,8 +327,15 @@ static void mkdir_p(const std::string& path) {
 
 static double wrap_phi_deg(double v) {
     double p = std::fmod(v, 360.0);
-    if (p < 0.0) p += 360.0;
-    if (p >= 360.0) p = std::nextafter(360.0, 0.0);
+
+    if (p < 0.0) {
+        p += 360.0;
+    }
+
+    if (p >= 360.0) {
+        p = std::nextafter(360.0, 0.0);
+    }
+
     return p;
 }
 
@@ -326,7 +344,10 @@ static bool in_range(double v, double a, double b) {
 }
 
 static bool row_accepts_phi(double phi, double pmin, double pmax) {
-    if (pmax > pmin) return in_range(phi, pmin, pmax);
+    if (pmax > pmin) {
+        return in_range(phi, pmin, pmax);
+    }
+
     return phi >= pmin || phi < pmax;
 }
 
@@ -334,6 +355,7 @@ static std::string topo_dir(int det1, int det2) {
     if (det1 == 1 && det2 == 1) return "FD_FD";
     if (det1 == 2 && det2 == 1) return "CD_FD";
     if (det1 == 2 && det2 == 0) return "CD_FT";
+
     return "";
 }
 
@@ -341,6 +363,7 @@ static std::string topo_label_for_csv(const std::string& topo) {
     if (topo == "FD_FD") return "(FD, FD)";
     if (topo == "CD_FD") return "(CD, FD)";
     if (topo == "CD_FT") return "(CD, FT)";
+
     return "";
 }
 
@@ -361,6 +384,7 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
 
     for (size_t i = 0; i < line.size(); ++i) {
         const char c = line[i];
+
         if (c == '"') {
             if (inq && i + 1 < line.size() && line[i + 1] == '"') {
                 cur.push_back('"');
@@ -377,6 +401,7 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
     }
 
     out.push_back(cur);
+
     return out;
 }
 
@@ -385,21 +410,31 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
 
     for (size_t i = 0; i < fields.size(); ++i) {
         const std::string& s = fields[i];
+
         const bool quote = s.find(',') != std::string::npos ||
                            s.find('"') != std::string::npos ||
                            s.find('\n') != std::string::npos ||
                            s.find('\r') != std::string::npos;
+
         if (quote) {
             oss << '"';
+
             for (char ch : s) {
-                if (ch == '"') oss << "\"\"";
-                else oss << ch;
+                if (ch == '"') {
+                    oss << "\"\"";
+                } else {
+                    oss << ch;
+                }
             }
+
             oss << '"';
         } else {
             oss << s;
         }
-        if (i + 1 < fields.size()) oss << ',';
+
+        if (i + 1 < fields.size()) {
+            oss << ',';
+        }
     }
 
     return oss.str();
@@ -407,6 +442,7 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
 
 static void load_csv_strict(const std::string& path, CSV& csv) {
     std::ifstream fin(path);
+
     if (!fin.is_open()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: cannot open CSV: " << path;
@@ -414,6 +450,7 @@ static void load_csv_strict(const std::string& path, CSV& csv) {
     }
 
     std::string line;
+
     if (!std::getline(fin, line)) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: empty CSV: " << path;
@@ -422,30 +459,43 @@ static void load_csv_strict(const std::string& path, CSV& csv) {
 
     csv.header = split_csv_line(line);
     csv.index.clear();
+
     for (int i = 0; i < (int)csv.header.size(); ++i) {
         if (csv.index.find(csv.header[i]) != csv.index.end()) {
             std::ostringstream ss;
             ss << "[eppi0_norm] FATAL: duplicate CSV column: " << csv.header[i];
             fatal(ss.str());
         }
+
         csv.index[csv.header[i]] = i;
     }
 
     csv.rows.clear();
+
     while (std::getline(fin, line)) {
-        if (line.empty()) continue;
+        if (line.empty()) {
+            continue;
+        }
+
         std::vector<std::string> row = split_csv_line(line);
-        if (row.size() < csv.header.size()) row.resize(csv.header.size(), "");
+
+        if (row.size() < csv.header.size()) {
+            row.resize(csv.header.size(), "");
+        }
+
         if (row.size() != csv.header.size()) {
             fatal("[eppi0_norm] FATAL: CSV row width mismatch while loading.");
         }
+
         csv.rows.push_back(std::move(row));
     }
 }
 
 static void write_csv_atomic(const std::string& path, const CSV& csv) {
     const std::string tmp = path + ".tmp";
+
     std::ofstream fout(tmp);
+
     if (!fout.is_open()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: cannot write temp CSV: " << tmp;
@@ -453,7 +503,11 @@ static void write_csv_atomic(const std::string& path, const CSV& csv) {
     }
 
     fout << join_csv_row(csv.header) << "\n";
-    for (const auto& row : csv.rows) fout << join_csv_row(row) << "\n";
+
+    for (const auto& row : csv.rows) {
+        fout << join_csv_row(row) << "\n";
+    }
+
     fout.close();
 
     if (!fout) {
@@ -463,6 +517,7 @@ static void write_csv_atomic(const std::string& path, const CSV& csv) {
     }
 
     (void)std::remove(path.c_str());
+
     if (std::rename(tmp.c_str(), path.c_str()) != 0) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: failed replacing CSV: " << path;
@@ -472,11 +527,13 @@ static void write_csv_atomic(const std::string& path, const CSV& csv) {
 
 static int col_strict(const CSV& csv, const std::string& name) {
     auto it = csv.index.find(name);
+
     if (it == csv.index.end()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: missing CSV column: " << name;
         fatal(ss.str());
     }
+
     return it->second;
 }
 
@@ -486,13 +543,16 @@ static double to_double_strict(const std::string& s, const std::string& what) {
         ss << "[eppi0_norm] FATAL: empty numeric cell for " << what;
         fatal(ss.str());
     }
+
     char* e = nullptr;
     const double v = std::strtod(s.c_str(), &e);
+
     if (e == s.c_str()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: parse failure for " << what << " value " << s;
         fatal(ss.str());
     }
+
     return v;
 }
 
@@ -515,19 +575,29 @@ static std::string tuple4(const CubicFit& p) {
 
 static bool parse_tuple_numbers(const std::string& s, std::vector<double>& vals) {
     vals.clear();
+
     std::string t = s;
+
     for (char& c : t) {
-        if (c == '(' || c == ')' || c == '"') c = ' ';
+        if (c == '(' || c == ')' || c == '"') {
+            c = ' ';
+        }
     }
 
     std::stringstream ss(t);
     std::string part;
+
     while (std::getline(ss, part, ',')) {
         char* e = nullptr;
         const double v = std::strtod(part.c_str(), &e);
-        if (e == part.c_str()) return false;
+
+        if (e == part.c_str()) {
+            return false;
+        }
+
         vals.push_back(v);
     }
+
     return !vals.empty();
 }
 
@@ -537,21 +607,27 @@ static double read_current_factor(const CSV& csv,
                                   const std::string& period) {
     const std::string name = "current efficiency factor, " + cfg.csv_channel + ", " + sample + ", " + period;
     const int c = col_strict(csv, name);
-    if (csv.rows.empty()) fatal("[eppi0_norm] FATAL: CSV has no rows.");
+
+    if (csv.rows.empty()) {
+        fatal("[eppi0_norm] FATAL: CSV has no rows.");
+    }
 
     std::vector<double> vals;
+
     if (!parse_tuple_numbers(csv.rows.front()[c], vals) || vals.size() < 1) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: cannot parse current-efficiency tuple from column " << name
            << " value '" << csv.rows.front()[c] << "'.";
         fatal(ss.str());
     }
+
     if (!(std::isfinite(vals[0]) && vals[0] > 0.0)) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: invalid current-efficiency factor in column " << name
            << ": " << vals[0];
         fatal(ss.str());
     }
+
     return vals[0];
 }
 
@@ -606,6 +682,7 @@ static std::vector<RowBin> load_rows(const CSV& csv) {
 
     for (int i = 0; i < (int)csv.rows.size(); ++i) {
         const auto& r = csv.rows[i];
+
         RowBin b;
         b.xBmin = to_double_strict(r[c_xmin], "xBmin");
         b.xBmax = to_double_strict(r[c_xmax], "xBmax");
@@ -616,8 +693,10 @@ static std::vector<RowBin> load_rows(const CSV& csv) {
         b.pmin = to_double_strict(r[c_pmin], "phimin");
         b.pmax = to_double_strict(r[c_pmax], "phimax");
         b.valid = valid_cell(r[c_valid]);
+
         rows.push_back(b);
     }
+
     return rows;
 }
 
@@ -627,6 +706,7 @@ static bool row_accepts(const RowBin& r, double x, double Q2, double tabs, doubl
     if (!in_range(Q2, r.Q2min, r.Q2max)) return false;
     if (!in_range(tabs, r.tmin, r.tmax)) return false;
     if (!row_accepts_phi(phi, r.pmin, r.pmax)) return false;
+
     return true;
 }
 
@@ -636,6 +716,7 @@ static bool row_accepts(const RowBin& r, double x, double Q2, double tabs, doubl
 
 static std::unordered_map<int, double> read_charge_csv(const std::string& path) {
     std::ifstream fin(path);
+
     if (!fin.is_open()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: cannot open charge CSV: " << path;
@@ -644,18 +725,35 @@ static std::unordered_map<int, double> read_charge_csv(const std::string& path) 
 
     std::unordered_map<int, double> out;
     std::string line;
+
     while (std::getline(fin, line)) {
-        if (line.empty() || line[0] == '#') continue;
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
         std::vector<std::string> f = split_csv_line(line);
-        if (f.size() < 2) continue;
+
+        if (f.size() < 2) {
+            continue;
+        }
+
         char* e = nullptr;
         int run = (int)std::strtol(f[0].c_str(), &e, 10);
-        if (e == f[0].c_str()) continue;
+
+        if (e == f[0].c_str()) {
+            continue;
+        }
+
         e = nullptr;
         double q = std::strtod(f[1].c_str(), &e);
-        if (e == f[1].c_str()) continue;
+
+        if (e == f[1].c_str()) {
+            continue;
+        }
+
         out[run] = q;
     }
+
     return out;
 }
 
@@ -669,6 +767,7 @@ using TopoCutMap = std::unordered_map<std::string, CutVarMap>;
 
 static TopoCutMap load_sigma_cuts(const std::string& path, const std::string& sample_key) {
     std::ifstream fin(path);
+
     if (!fin.is_open()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: cannot open combined cuts JSON: " << path;
@@ -679,40 +778,65 @@ static TopoCutMap load_sigma_cuts(const std::string& path, const std::string& sa
     fin >> j;
 
     TopoCutMap out;
+
     for (auto it = j.begin(); it != j.end(); ++it) {
         const std::string key = it.key();
         const auto& block = it.value();
-        if (!block.is_object() || !block.contains(sample_key)) continue;
+
+        if (!block.is_object() || !block.contains(sample_key)) {
+            continue;
+        }
+
         const auto& sample = block[sample_key];
-        if (!sample.is_object()) continue;
+
+        if (!sample.is_object()) {
+            continue;
+        }
 
         CutVarMap vm;
+
         for (auto vit = sample.begin(); vit != sample.end(); ++vit) {
             const auto& obj = vit.value();
-            if (!obj.is_object() || !obj.contains("mean") || !obj.contains("std")) continue;
+
+            if (!obj.is_object() || !obj.contains("mean") || !obj.contains("std")) {
+                continue;
+            }
+
             SigmaStats s;
             s.mean = obj["mean"].get<double>();
             s.std = obj["std"].get<double>();
             vm[vit.key()] = s;
         }
-        if (!vm.empty()) out[key] = vm;
+
+        if (!vm.empty()) {
+            out[key] = vm;
+        }
     }
+
     return out;
 }
 
 static bool within_3sigma(double v, const SigmaStats& s) {
-    if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) return true;
+    if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) {
+        return true;
+    }
+
     return std::fabs(v - s.mean) <= 3.0 * s.std;
 }
 
 static bool check_sigma(const CutVarMap& vm, const std::string& var, bool has, double val) {
     auto it = vm.find(var);
-    if (it == vm.end()) return true;
+
+    if (it == vm.end()) {
+        return true;
+    }
+
     if (!has) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: sigma cut requires missing branch " << var;
         fatal(ss.str());
     }
+
     return within_3sigma(val, it->second);
 }
 
@@ -758,26 +882,32 @@ struct Branches {
 
     void bind(TTree* t, bool need_weight) {
         std::lock_guard<std::mutex> lock(g_bind_mutex);
+
         t->SetBranchStatus("*", 0);
 
         auto ena = [&](const char* name) {
-            if (t->GetBranch(name)) t->SetBranchStatus(name, 1);
+            if (t->GetBranch(name)) {
+                t->SetBranchStatus(name, 1);
+            }
         };
 
         ena("runnum");
         ena("detector1");
         ena("detector2");
         ena("helicity");
+
         ena("x");
         ena("Q2");
         ena("t1");
         ena("phi2");
+
         ena("p1_p");
         ena("p1_theta");
         ena("p1_phi");
         ena("p2_p");
         ena("p2_theta");
         ena("p2_phi");
+
         ena("open_angle_ep2");
         ena("pTmiss");
         ena("Emiss2");
@@ -787,10 +917,14 @@ struct Branches {
         ena("xF");
         ena("theta_gamma_gamma");
         ena("theta_pi0_pi0");
+
         ena("e_p");
         ena("e_theta");
         ena("e_phi");
-        if (need_weight) ena("weight");
+
+        if (need_weight) {
+            ena("weight");
+        }
 
         t->SetCacheSize(0);
 
@@ -800,6 +934,7 @@ struct Branches {
                 flag = true;
             }
         };
+
         auto bD = [&](const char* name, double* addr, bool& flag) {
             if (t->GetBranch(name)) {
                 t->SetBranchAddress(name, addr);
@@ -811,17 +946,21 @@ struct Branches {
         bI("detector1", &detector1, has_detector1);
         bI("detector2", &detector2, has_detector2);
         bI("helicity", &helicity, has_helicity);
+
         bD("x", &x, has_x);
         bD("Q2", &Q2, has_Q2);
         bD("t1", &t1, has_t1);
         bD("phi2", &phi2, has_phi2);
+
         bD("p1_p", &p1_p, has_p1_p);
         bD("p1_theta", &p1_theta, has_p1_theta);
         bD("p1_phi", &p1_phi, has_p1_phi);
         bD("p2_p", &p2_p, has_p2_p);
         bD("p2_theta", &p2_theta, has_p2_theta);
         bD("p2_phi", &p2_phi, has_p2_phi);
+
         bD("weight", &weight, has_weight);
+
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
         bD("pTmiss", &pTmiss, has_pTmiss);
         bD("Emiss2", &Emiss2, has_Emiss2);
@@ -831,35 +970,67 @@ struct Branches {
         bD("xF", &xF, has_xF);
         bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         bD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+
         bD("e_p", &e_p, has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
         bD("e_phi", &e_phi, has_e_phi);
     }
 
-    double phi_deg() const { return wrap_phi_deg(phi2 * RAD2DEG); }
-    double t_abs() const { return std::fabs(t1); }
-    double p1_theta_deg() const { return p1_theta * RAD2DEG; }
-    double p1_phi_deg() const { return wrap_phi_deg(p1_phi * RAD2DEG); }
-    double p2_theta_deg() const { return p2_theta * RAD2DEG; }
-    double p2_phi_deg() const { return wrap_phi_deg(p2_phi * RAD2DEG); }
+    double phi_deg() const {
+        return wrap_phi_deg(phi2 * RAD2DEG);
+    }
+
+    double t_abs() const {
+        return std::fabs(t1);
+    }
+
+    double p1_theta_deg() const {
+        return p1_theta * RAD2DEG;
+    }
+
+    double p1_phi_deg() const {
+        return wrap_phi_deg(p1_phi * RAD2DEG);
+    }
+
+    double p2_theta_deg() const {
+        return p2_theta * RAD2DEG;
+    }
+
+    double p2_phi_deg() const {
+        return wrap_phi_deg(p2_phi * RAD2DEG);
+    }
 };
 
 static bool passes_global_dispatch(const Branches& b, const PeriodTags& tags) {
-    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
-    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
+    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) {
+        return false;
+    }
+
+    if (b.has_runnum && is_excluded_run(b.runnum)) {
+        return false;
+    }
 
     const GlobalCutConfig& cfg = default_global_cuts();
 
     if (cfg.enable_dvcsgen_ycol_cut) {
-        if (!(b.has_detector1 && b.has_detector2 && b.has_e_p && b.has_e_theta && b.has_e_phi &&
+        if (!(b.has_detector1 && b.has_detector2 &&
+              b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
             fatal("[eppi0_norm] FATAL: missing branches required by global ycol/topology cuts.");
         }
-        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                  b.detector1, b.detector2,
+
+        return passes_global_cuts(b.t1,
+                                  b.open_angle_ep2,
+                                  b.pTmiss,
+                                  b.detector1,
+                                  b.detector2,
                                   tags.period_label,
-                                  b.e_p, b.e_theta, b.e_phi,
-                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  b.e_p,
+                                  b.e_theta,
+                                  b.e_phi,
+                                  b.p2_p,
+                                  b.p2_theta,
+                                  b.p2_phi,
                                   cfg);
     }
 
@@ -867,20 +1038,32 @@ static bool passes_global_dispatch(const Branches& b, const PeriodTags& tags) {
         fatal("[eppi0_norm] FATAL: missing detector1/detector2.");
     }
 
-    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                              b.detector1, b.detector2, cfg);
+    return passes_global_cuts(b.t1,
+                              b.open_angle_ep2,
+                              b.pTmiss,
+                              b.detector1,
+                              b.detector2,
+                              cfg);
 }
 
 static bool passes_sigma_dispatch(const ChannelConfig& cfg,
                                   const PeriodTags& tags,
                                   const TopoCutMap& cuts,
                                   const Branches& b) {
-    if (!(b.has_detector1 && b.has_detector2)) return false;
+    if (!(b.has_detector1 && b.has_detector2)) {
+        return false;
+    }
+
     const std::string topo = topo_dir(b.detector1, b.detector2);
-    if (topo.empty()) return false;
+
+    if (topo.empty()) {
+        return false;
+    }
 
     const std::string key = cfg.cut_prefix + "_" + tags.period_code + "_" + topo;
+
     auto it = cuts.find(key);
+
     if (it == cuts.end()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: missing sigma-cut key: " << key;
@@ -888,6 +1071,7 @@ static bool passes_sigma_dispatch(const ChannelConfig& cfg,
     }
 
     const CutVarMap& vm = it->second;
+
     if (!check_sigma(vm, "Emiss2", b.has_Emiss2, b.Emiss2)) return false;
     if (!check_sigma(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
     if (!check_sigma(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
@@ -908,8 +1092,14 @@ static bool passes_event_selection(const ChannelConfig& cfg,
                                    const PeriodTags& tags,
                                    const TopoCutMap& cuts,
                                    const Branches& b) {
-    if (!passes_global_dispatch(b, tags)) return false;
-    if (!passes_sigma_dispatch(cfg, tags, cuts, b)) return false;
+    if (!passes_global_dispatch(b, tags)) {
+        return false;
+    }
+
+    if (!passes_sigma_dispatch(cfg, tags, cuts, b)) {
+        return false;
+    }
+
     return true;
 }
 
@@ -948,12 +1138,14 @@ static std::vector<VarConfig> variable_configs() {
 
 static int sector_from_phi(double phi) {
     const double p = wrap_phi_deg(phi);
+
     if ((p >= 330.0 && p < 360.0) || (p >= 0.0 && p < 30.0)) return 1;
     if (p >= 30.0 && p < 90.0) return 2;
     if (p >= 90.0 && p < 150.0) return 3;
     if (p >= 150.0 && p < 210.0) return 4;
     if (p >= 210.0 && p < 270.0) return 5;
     if (p >= 270.0 && p < 330.0) return 6;
+
     return 0;
 }
 
@@ -973,6 +1165,7 @@ static int panel_index(const VarConfig& v, const Branches& b) {
             if (theta >= 5.0 && theta < 40.0) return 0;
             if (theta >= 0.0 && theta < 5.0) return 1;
         }
+
         return -1;
     }
 
@@ -981,7 +1174,9 @@ static int panel_index(const VarConfig& v, const Branches& b) {
             int sec = sector_from_phi(phi);
             return (sec >= 1 && sec <= 6) ? sec - 1 : -1;
         }
+
         if (theta >= 40.0 && theta < 70.0) return 6;
+
         return -1;
     }
 
@@ -989,7 +1184,9 @@ static int panel_index(const VarConfig& v, const Branches& b) {
         int sec = sector_from_phi(phi);
         return (sec >= 1 && sec <= 6) ? sec - 1 : -1;
     }
+
     if (theta >= 0.0 && theta < 5.0) return 6;
+
     return -1;
 }
 
@@ -1016,6 +1213,7 @@ static double value_for_var(const VarConfig& v, const Branches& b) {
 
     if (v.kind == 0) return b.p2_theta_deg();
     if (v.kind == 1) return b.p2_p;
+
     return b.p2_phi_deg();
 }
 
@@ -1036,6 +1234,7 @@ static int nbins_for_panel(const VarConfig& v, int panel) {
 
     if (v.kind == 0) return (panel < 6) ? 12 : 23;
     if (v.kind == 1) return (panel < 6) ? 12 : 23;
+
     return (panel == 0) ? 12 : 24;
 }
 
@@ -1096,6 +1295,7 @@ static void range_for_panel(const VarConfig& v, int panel, double& xmin, double&
             xmin = (panel < 6) ? 5.0 : 0.0;
             xmax = (panel < 6) ? 40.0 : 5.0;
         }
+
         return;
     }
 
@@ -1126,23 +1326,29 @@ static std::string panel_label(const VarConfig& v, int panel) {
     }
 
     if (v.particle == 1) return "CD";
+
     return "FT";
 }
 
 static std::string normalization_region_for_event(const Branches& b) {
     const double theta = b.p1_theta_deg();
+
     if (theta >= 0.0 && theta < 40.0) {
         const int sec = sector_from_phi(b.p1_phi_deg());
+
         if (sec >= 1 && sec <= 6) {
             std::ostringstream ss;
             ss << "Sector " << sec;
             return ss.str();
         }
+
         return "";
     }
+
     if (theta >= 40.0 && theta < 70.0) {
         return "CD";
     }
+
     return "";
 }
 
@@ -1152,37 +1358,54 @@ struct HistSet {
 
 static HistSet make_hist_set(const std::string& prefix) {
     HistSet hs;
+
     for (const VarConfig& v : variable_configs()) {
         std::vector<TH1D*> vec;
+
         for (int p = 0; p < v.n_panels; ++p) {
-            double xmin = 0.0, xmax = 1.0;
+            double xmin = 0.0;
+            double xmax = 1.0;
             range_for_panel(v, p, xmin, xmax);
-            int nb = nbins_for_panel(v, p);
+
+            const int nb = nbins_for_panel(v, p);
+
             std::ostringstream name;
             name << prefix << "_" << v.key << "_panel_" << p;
+
             TH1D* h = new TH1D(name.str().c_str(), "", nb, xmin, xmax);
             h->Sumw2();
             h->GetXaxis()->SetTitle(v.x_title.c_str());
             h->GetYaxis()->SetTitle("Counts");
+
             vec.push_back(h);
         }
+
         hs.hists[v.key] = vec;
     }
+
     return hs;
 }
 
 static void delete_hist_set(HistSet& hs) {
     for (auto& kv : hs.hists) {
-        for (TH1D* h : kv.second) delete h;
+        for (TH1D* h : kv.second) {
+            delete h;
+        }
+
         kv.second.clear();
     }
+
     hs.hists.clear();
 }
 
 static void fill_hist_set(HistSet& hs, const Branches& b, double w) {
     for (const VarConfig& v : variable_configs()) {
-        int p = panel_index(v, b);
-        if (p < 0 || p >= v.n_panels) continue;
+        const int p = panel_index(v, b);
+
+        if (p < 0 || p >= v.n_panels) {
+            continue;
+        }
+
         const double value = value_for_var(v, b);
         hs.hists[v.key][p]->Fill(value, w);
     }
@@ -1191,7 +1414,11 @@ static void fill_hist_set(HistSet& hs, const Branches& b, double w) {
 static void add_hist_set(HistSet& dest, const HistSet& src) {
     for (const auto& kv : src.hists) {
         auto it = dest.hists.find(kv.first);
-        if (it == dest.hists.end()) continue;
+
+        if (it == dest.hists.end()) {
+            continue;
+        }
+
         for (size_t i = 0; i < kv.second.size(); ++i) {
             it->second[i]->Add(kv.second[i]);
         }
@@ -1207,6 +1434,7 @@ static void add_bin_to_compatible_hist(TH1D& target,
     }
 
     const int b = target.FindBin(x);
+
     if (b < 1 || b > target.GetNbinsX()) {
         return;
     }
@@ -1227,6 +1455,7 @@ static void add_hist_to_compatible_hist(TH1D& target, const TH1D* source) {
         const double x = source->GetBinCenter(b);
         const double content = source->GetBinContent(b);
         const double error = source->GetBinError(b);
+
         add_bin_to_compatible_hist(target, x, content, error);
     }
 }
@@ -1242,17 +1471,27 @@ static void build_p1_theta_fit_histograms_by_region(const HistSet& data_hists,
     if (itd == data_hists.hists.end() || itm == mc_hists.hists.end()) {
         fatal("[eppi0_norm] FATAL: p1_theta histograms are missing while building regional fit histograms.");
     }
+
     if (itd->second.size() != 7 || itm->second.size() != 7) {
         fatal("[eppi0_norm] FATAL: p1_theta regional histogram count is not 7.");
     }
 
     const std::vector<std::string> regions = normalization_regions();
+
     for (int panel = 0; panel < 7; ++panel) {
         const std::string& region = regions[panel];
-        h_data_fit[region] = (TH1D*)itd->second[panel]->Clone(("h_data_fit_" + period_dir(period) + "_" + std::to_string(panel)).c_str());
-        h_mc_fit[region] = (TH1D*)itm->second[panel]->Clone(("h_mc_fit_" + period_dir(period) + "_" + std::to_string(panel)).c_str());
+
+        h_data_fit[region] = (TH1D*)itd->second[panel]->Clone(
+            ("h_data_fit_" + period_dir(period) + "_" + std::to_string(panel)).c_str()
+        );
+
+        h_mc_fit[region] = (TH1D*)itm->second[panel]->Clone(
+            ("h_mc_fit_" + period_dir(period) + "_" + std::to_string(panel)).c_str()
+        );
+
         h_data_fit[region]->SetDirectory(nullptr);
         h_mc_fit[region]->SetDirectory(nullptr);
+
         std::cout << "[eppi0_norm] " << period << " " << region
                   << " p1_theta fit histogram integrals: data=" << h_data_fit[region]->Integral()
                   << " mc=" << h_mc_fit[region]->Integral() << std::endl;
@@ -1265,17 +1504,24 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
                                           TH1D* h_data,
                                           TH1D* h_mc) {
     CubicFit p;
-    if (!h_data || !h_mc) return p;
+
+    if (!h_data || !h_mc) {
+        return p;
+    }
 
     TGraphErrors gr;
     int ip = 0;
+
     double fit_xmin = std::numeric_limits<double>::infinity();
     double fit_xmax = -std::numeric_limits<double>::infinity();
 
     for (int b = 1; b <= h_data->GetNbinsX(); ++b) {
         const double d = h_data->GetBinContent(b);
         const double m = h_mc->GetBinContent(b);
-        if (!(d > 0.0 && m > 0.0)) continue;
+
+        if (!(d > 0.0 && m > 0.0)) {
+            continue;
+        }
 
         const double x = h_data->GetBinCenter(b);
         const double ed = h_data->GetBinError(b);
@@ -1283,12 +1529,16 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
         const double r = d / m;
 
         double er = 0.0;
+
         if (ed > 0.0 || em > 0.0) {
             const double rd = (ed > 0.0) ? ed / d : 0.0;
             const double rm = (em > 0.0) ? em / m : 0.0;
             er = std::fabs(r) * std::sqrt(rd * rd + rm * rm);
         }
-        if (!(er > 0.0)) er = 1.0;
+
+        if (!(er > 0.0)) {
+            er = 1.0;
+        }
 
         gr.SetPoint(ip, x, r);
         gr.SetPointError(ip, 0.0, er);
@@ -1296,6 +1546,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
 
         const double low = h_data->GetBinLowEdge(b);
         const double high = h_data->GetBinLowEdge(b + 1);
+
         fit_xmin = std::min(fit_xmin, low);
         fit_xmax = std::max(fit_xmax, high);
     }
@@ -1309,6 +1560,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
         std::cout << "[eppi0_norm] WARNING: " << period << " " << region
                   << " has fewer than four valid data/MC bins. Using unity cubic fit."
                   << std::endl;
+
         return p;
     }
 
@@ -1320,6 +1572,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
         p.a[i] = f.GetParameter(i);
         p.ea[i] = f.GetParError(i);
     }
+
     p.x_min = fit_xmin;
     p.x_max = fit_xmax;
     p.valid = true;
@@ -1328,8 +1581,11 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     mkdir_p(fit_outdir);
 
     std::string safe_region = region;
+
     for (char& c : safe_region) {
-        if (c == ' ') c = '_';
+        if (c == ' ') {
+            c = '_';
+        }
     }
 
     TCanvas c(("c_p1_theta_ratio_fit_" + safe_region).c_str(), "", 1000, 750);
@@ -1341,6 +1597,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
 
     double xframe_min = 0.0;
     double xframe_max = 40.0;
+
     if (region == "CD") {
         xframe_min = 40.0;
         xframe_max = 70.0;
@@ -1366,7 +1623,11 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     gr.Draw("PE SAME");
 
     TF1 fdraw("f_ratio_pol3_draw", "pol3", fit_xmin, fit_xmax);
-    for (int i = 0; i < 4; ++i) fdraw.SetParameter(i, p.a[i]);
+
+    for (int i = 0; i < 4; ++i) {
+        fdraw.SetParameter(i, p.a[i]);
+    }
+
     fdraw.SetLineColor(kRed + 1);
     fdraw.SetLineWidth(2);
     fdraw.Draw("L SAME");
@@ -1395,11 +1656,15 @@ static std::vector<TGraphErrors*> make_ratio_graphs(const std::vector<TH1D*>& hd
         for (int b = 1; b <= hd[i]->GetNbinsX(); ++b) {
             const double d = hd[i]->GetBinContent(b);
             const double m = hm[i]->GetBinContent(b);
-            if (!(d > 0.0 && m > 0.0)) continue;
+
+            if (!(d > 0.0 && m > 0.0)) {
+                continue;
+            }
 
             const double ed = hd[i]->GetBinError(b);
             const double em = hm[i]->GetBinError(b);
             const double r = d / m;
+
             const double er = std::fabs(r) * std::sqrt((ed / d) * (ed / d) + (em / m) * (em / m));
 
             g->SetPoint(ip, hd[i]->GetBinCenter(b), r);
@@ -1410,12 +1675,12 @@ static std::vector<TGraphErrors*> make_ratio_graphs(const std::vector<TH1D*>& hd
         g->SetMarkerStyle(20);
         g->SetMarkerColor(kBlack);
         g->SetLineColor(kBlack);
+
         out.push_back(g);
     }
 
     return out;
 }
-
 
 static SummaryRatioCurve make_summary_ratio_curve(const std::string& period,
                                                   const VarConfig& v,
@@ -1434,6 +1699,7 @@ static SummaryRatioCurve make_summary_ratio_curve(const std::string& period,
     TH1D* h_mc = hm[0];
 
     const int n_bins = std::min(h_data->GetNbinsX(), h_mc->GetNbinsX());
+
     for (int b = 1; b <= n_bins; ++b) {
         const double d = h_data->GetBinContent(b);
         const double m = h_mc->GetBinContent(b);
@@ -1446,10 +1712,9 @@ static SummaryRatioCurve make_summary_ratio_curve(const std::string& period,
         const double em = h_mc->GetBinError(b);
         const double ratio = d / m;
 
-        double ratio_err = 0.0;
         const double rel_d = (ed > 0.0) ? ed / d : 0.0;
         const double rel_m = (em > 0.0) ? em / m : 0.0;
-        ratio_err = std::fabs(ratio) * std::sqrt(rel_d * rel_d + rel_m * rel_m);
+        const double ratio_err = std::fabs(ratio) * std::sqrt(rel_d * rel_d + rel_m * rel_m);
 
         curve.x.push_back(h_data->GetBinCenter(b));
         curve.y.push_back(ratio);
@@ -1471,7 +1736,9 @@ struct PlotNormInfo {
 };
 
 static void style_hist_for_plot(TH1D* h, int color, int marker) {
-    if (!h) return;
+    if (!h) {
+        return;
+    }
 
     h->SetLineColor(color);
     h->SetLineWidth(2);
@@ -1489,7 +1756,9 @@ static void style_hist_for_plot(TH1D* h, int color, int marker) {
 }
 
 static void style_ratio_frame(TH1D* frame) {
-    if (!frame) return;
+    if (!frame) {
+        return;
+    }
 
     frame->SetStats(false);
     frame->SetMinimum(RATIO_Y_MIN);
@@ -1516,7 +1785,10 @@ static void draw_normalization_pad(const std::string& period,
                                    const PlotNormInfo& norm,
                                    bool ratio_mode) {
     TPad* pad = (TPad*)gPad;
-    if (!pad) return;
+
+    if (!pad) {
+        return;
+    }
 
     pad->Clear();
     pad->SetFillColor(kWhite);
@@ -1527,9 +1799,11 @@ static void draw_normalization_pad(const std::string& period,
 
     TLatex latex;
     latex.SetNDC(true);
+    latex.SetTextFont(42);
     latex.SetTextSize((v.kind == 2) ? 0.040 : 0.034);
 
     const double x0 = 0.10;
+
     latex.DrawLatex(x0, 0.90, period.c_str());
 
     if (v.kind == 3) {
@@ -1542,6 +1816,7 @@ static void draw_normalization_pad(const std::string& period,
     latex.DrawLatex(x0, 0.60, ratio_mode ? "Ratio normalization" : "MC normalization");
 
     std::ostringstream ss;
+
     ss << std::setprecision(6) << "Q = " << norm.total_charge_mc << " mC";
     latex.DrawLatex(x0, 0.49, ss.str().c_str());
 
@@ -1572,6 +1847,7 @@ static TLegend* make_comparison_legend(TH1D* h_data, TH1D* h_mc) {
     leg->SetMargin(0.22);
     leg->AddEntry(h_data, "data", "l");
     leg->AddEntry(h_mc, "AAOgen MC", "l");
+
     return leg;
 }
 
@@ -1582,12 +1858,17 @@ static std::pair<double, double> common_y_range(const std::vector<TH1D*>& hd,
     double ymax = 0.0;
 
     for (int p : panels) {
-        if (p < 0 || p >= (int)hd.size() || p >= (int)hm.size()) continue;
+        if (p < 0 || p >= (int)hd.size() || p >= (int)hm.size()) {
+            continue;
+        }
+
         ymax = std::max(ymax, hd[p]->GetMaximum());
         ymax = std::max(ymax, hm[p]->GetMaximum());
     }
 
-    if (!(ymax > 0.0)) ymax = 1.0;
+    if (!(ymax > 0.0)) {
+        ymax = 1.0;
+    }
 
     return {0.0, 1.20 * ymax};
 }
@@ -1620,6 +1901,7 @@ static void draw_comparison_panel(const std::string& /*period*/,
                                   const std::pair<double, double>& yr,
                                   bool /*log_y*/) {
     TPad* pad = (TPad*)gPad;
+
     pad->SetLeftMargin(0.16);
     pad->SetRightMargin(0.06);
     pad->SetTopMargin(0.12);
@@ -1664,6 +1946,7 @@ static void draw_ratio_panel(const std::string& /*period*/,
                              int panel,
                              const std::map<std::string, CubicFit>* fits_for_p1_theta) {
     TPad* pad = (TPad*)gPad;
+
     pad->SetLeftMargin(0.16);
     pad->SetRightMargin(0.06);
     pad->SetTopMargin(0.12);
@@ -1698,13 +1981,19 @@ static void draw_ratio_panel(const std::string& /*period*/,
     if (fits_for_p1_theta && v.key == "p1_theta") {
         const std::string region = panel_label(v, panel);
         auto it_fit = fits_for_p1_theta->find(region);
+
         if (it_fit != fits_for_p1_theta->end() && it_fit->second.valid) {
             const CubicFit& fit = it_fit->second;
             const double draw_xmin = std::max(xmin, fit.x_min);
             const double draw_xmax = std::min(xmax, fit.x_max);
+
             if (draw_xmax > draw_xmin) {
                 TF1 f("f_cubic_overlay", "pol3", draw_xmin, draw_xmax);
-                for (int i = 0; i < 4; ++i) f.SetParameter(i, fit.a[i]);
+
+                for (int i = 0; i < 4; ++i) {
+                    f.SetParameter(i, fit.a[i]);
+                }
+
                 f.SetLineColor(kRed + 1);
                 f.SetLineWidth(2);
                 f.DrawCopy("L SAME");
@@ -1730,8 +2019,16 @@ static void draw_sector_comparison_canvas(const std::string& out_png,
 
     for (int panel = 0; panel < 7; ++panel) {
         canvas.cd(canvas_pad_for_panel[panel]);
+
         const auto yr = y_range_for_panel(v, hd, hm, panel, log_y);
-        draw_comparison_panel(period, v, hd[panel], hm[panel], panel, yr, log_y);
+
+        draw_comparison_panel(period,
+                              v,
+                              hd[panel],
+                              hm[panel],
+                              panel,
+                              yr,
+                              log_y);
     }
 
     canvas.cd(4);
@@ -1752,8 +2049,16 @@ static void draw_phi_comparison_canvas(const std::string& out_png,
 
     for (int panel = 0; panel < 2; ++panel) {
         canvas.cd(panel + 1);
+
         const auto yr = y_range_for_panel(v, hd, hm, panel, log_y);
-        draw_comparison_panel(period, v, hd[panel], hm[panel], panel, yr, log_y);
+
+        draw_comparison_panel(period,
+                              v,
+                              hd[panel],
+                              hm[panel],
+                              panel,
+                              yr,
+                              log_y);
     }
 
     canvas.cd(3);
@@ -1773,8 +2078,16 @@ static void draw_kinematics_comparison_canvas(const std::string& out_png,
     canvas.Divide(2, 1);
 
     canvas.cd(1);
+
     const auto yr = y_range_for_panel(v, hd, hm, 0, log_y);
-    draw_comparison_panel(period, v, hd[0], hm[0], 0, yr, log_y);
+
+    draw_comparison_panel(period,
+                          v,
+                          hd[0],
+                          hm[0],
+                          0,
+                          yr,
+                          log_y);
 
     canvas.cd(2);
     draw_normalization_pad(period, v, norm, false);
@@ -1795,7 +2108,12 @@ static void draw_sector_ratio_canvas(const std::string& out_png,
 
     for (int panel = 0; panel < 7; ++panel) {
         canvas.cd(canvas_pad_for_panel[panel]);
-        draw_ratio_panel(period, v, gr[panel], panel, fits_for_p1_theta);
+
+        draw_ratio_panel(period,
+                         v,
+                         gr[panel],
+                         panel,
+                         fits_for_p1_theta);
     }
 
     canvas.cd(4);
@@ -1815,7 +2133,12 @@ static void draw_phi_ratio_canvas(const std::string& out_png,
 
     for (int panel = 0; panel < 2; ++panel) {
         canvas.cd(panel + 1);
-        draw_ratio_panel(period, v, gr[panel], panel, fits_for_p1_theta);
+
+        draw_ratio_panel(period,
+                         v,
+                         gr[panel],
+                         panel,
+                         fits_for_p1_theta);
     }
 
     canvas.cd(3);
@@ -1834,7 +2157,12 @@ static void draw_kinematics_ratio_canvas(const std::string& out_png,
     canvas.Divide(2, 1);
 
     canvas.cd(1);
-    draw_ratio_panel(period, v, gr[0], 0, fits_for_p1_theta);
+
+    draw_ratio_panel(period,
+                     v,
+                     gr[0],
+                     0,
+                     fits_for_p1_theta);
 
     canvas.cd(2);
     draw_normalization_pad(period, v, norm, true);
@@ -1852,6 +2180,7 @@ static void plot_variable(const std::string& outdir,
     mkdir_p(outdir);
 
     std::string subdir;
+
     if (v.kind == 3) {
         subdir = outdir + "/kinematics";
     } else {
@@ -1864,24 +2193,59 @@ static void plot_variable(const std::string& outdir,
     const std::string ratio_png = subdir + "/" + v.key + "_ratio_linear.png";
 
     if (v.kind == 3) {
-        draw_kinematics_comparison_canvas(linear_png, period, v, hd, hm, norm, false);
+        draw_kinematics_comparison_canvas(linear_png,
+                                          period,
+                                          v,
+                                          hd,
+                                          hm,
+                                          norm,
+                                          false);
     } else if (v.kind == 2) {
-        draw_phi_comparison_canvas(linear_png, period, v, hd, hm, norm, false);
+        draw_phi_comparison_canvas(linear_png,
+                                   period,
+                                   v,
+                                   hd,
+                                   hm,
+                                   norm,
+                                   false);
     } else {
-        draw_sector_comparison_canvas(linear_png, period, v, hd, hm, norm, false);
+        draw_sector_comparison_canvas(linear_png,
+                                      period,
+                                      v,
+                                      hd,
+                                      hm,
+                                      norm,
+                                      false);
     }
 
     std::vector<TGraphErrors*> gr = make_ratio_graphs(hd, hm);
 
     if (v.kind == 3) {
-        draw_kinematics_ratio_canvas(ratio_png, period, v, gr, norm, fits_for_p1_theta);
+        draw_kinematics_ratio_canvas(ratio_png,
+                                     period,
+                                     v,
+                                     gr,
+                                     norm,
+                                     fits_for_p1_theta);
     } else if (v.kind == 2) {
-        draw_phi_ratio_canvas(ratio_png, period, v, gr, norm, fits_for_p1_theta);
+        draw_phi_ratio_canvas(ratio_png,
+                              period,
+                              v,
+                              gr,
+                              norm,
+                              fits_for_p1_theta);
     } else {
-        draw_sector_ratio_canvas(ratio_png, period, v, gr, norm, fits_for_p1_theta);
+        draw_sector_ratio_canvas(ratio_png,
+                                 period,
+                                 v,
+                                 gr,
+                                 norm,
+                                 fits_for_p1_theta);
     }
 
-    for (TGraphErrors* g : gr) delete g;
+    for (TGraphErrors* g : gr) {
+        delete g;
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -1896,16 +2260,24 @@ struct PeriodHistResult {
     double integrated_ratio = 1.0;
     double integrated_ratio_err = 0.0;
 
-    PeriodHistResult() : data_hists(make_hist_set("data_empty")), mc_hists(make_hist_set("mc_empty")) {}
+    PeriodHistResult() :
+        data_hists(make_hist_set("data_empty")),
+        mc_hists(make_hist_set("mc_empty")) {
+    }
 };
 
 static double data_charge_for_tree(TTree* tree,
                                    const std::unordered_map<int, double>& charge_map) {
-    if (!tree) return 0.0;
+    if (!tree) {
+        return 0.0;
+    }
 
     Branches b;
     b.bind(tree, false);
-    if (!b.has_runnum) fatal("[eppi0_norm] FATAL: data tree missing runnum.");
+
+    if (!b.has_runnum) {
+        fatal("[eppi0_norm] FATAL: data tree missing runnum.");
+    }
 
     std::set<int> runs;
     const Long64_t N = tree->GetEntries();
@@ -1916,13 +2288,16 @@ static double data_charge_for_tree(TTree* tree,
     }
 
     double q = 0.0;
+
     for (int run : runs) {
         auto it = charge_map.find(run);
+
         if (it == charge_map.end()) {
             std::ostringstream ss;
             ss << "[eppi0_norm] FATAL: run " << run << " missing from charge CSV.";
             fatal(ss.str());
         }
+
         q += it->second;
     }
 
@@ -1935,7 +2310,9 @@ static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
                                            const TopoCutMap& data_cuts,
                                            double current_factor,
                                            HistSet& hists) {
-    if (!tree) return;
+    if (!tree) {
+        return;
+    }
 
     Branches b;
     b.bind(tree, false);
@@ -1947,7 +2324,10 @@ static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
-        if (!passes_event_selection(cfg, tags, data_cuts, b)) continue;
+
+        if (!passes_event_selection(cfg, tags, data_cuts, b)) {
+            continue;
+        }
 
         ++n_pass;
         fill_hist_set(hists, b, w);
@@ -1967,21 +2347,29 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
                                          double event_norm,
                                          double current_factor,
                                          HistSet& hists) {
-    if (!tree) return;
+    if (!tree) {
+        return;
+    }
 
     Branches b;
     b.bind(tree, true);
 
     const Long64_t N = tree->GetEntries();
+
     long long n_pass = 0;
     double sum_weight = 0.0;
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
-        if (!passes_event_selection(cfg, tags, mc_cuts, b)) continue;
+
+        if (!passes_event_selection(cfg, tags, mc_cuts, b)) {
+            continue;
+        }
 
         ++n_pass;
+
         const double w = event_norm / current_factor;
+
         fill_hist_set(hists, b, w);
         sum_weight += w;
     }
@@ -2037,10 +2425,23 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     HistSet ana_data = make_hist_set("ana_data_" + period_dir(period));
     HistSet ana_mc = make_hist_set("ana_mc_" + period_dir(period));
 
-    fill_eppi0_data_hists_analysis(epi, tags, data_tree, data_cuts, data_eff, ana_data);
-    fill_eppi0_mc_hists_analysis(epi, tags, rec_tree, mc_cuts, event_norm, mc_eff, ana_mc);
+    fill_eppi0_data_hists_analysis(epi,
+                                   tags,
+                                   data_tree,
+                                   data_cuts,
+                                   data_eff,
+                                   ana_data);
+
+    fill_eppi0_mc_hists_analysis(epi,
+                                 tags,
+                                 rec_tree,
+                                 mc_cuts,
+                                 event_norm,
+                                 mc_eff,
+                                 ana_mc);
 
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
+
     for (const VarConfig& v : variable_configs()) {
         if (v.key == "minus_t1" || v.key == "Q2" || v.key == "x") {
             summary_ratio_curves[v.key] = make_summary_ratio_curve(period,
@@ -2062,11 +2463,21 @@ static PeriodNormalization run_period_normalization(const std::string& period,
 
     std::map<std::string, TH1D*> h_data_fit;
     std::map<std::string, TH1D*> h_mc_fit;
-    build_p1_theta_fit_histograms_by_region(ana_data, ana_mc, period, h_data_fit, h_mc_fit);
+
+    build_p1_theta_fit_histograms_by_region(ana_data,
+                                            ana_mc,
+                                            period,
+                                            h_data_fit,
+                                            h_mc_fit);
 
     std::map<std::string, RegionNormalization> region_norms;
+
     for (const std::string& region : normalization_regions()) {
-        CubicFit fit = fit_p1_theta_ratio_region(period, region, period_root, h_data_fit[region], h_mc_fit[region]);
+        CubicFit fit = fit_p1_theta_ratio_region(period,
+                                                 region,
+                                                 period_root,
+                                                 h_data_fit[region],
+                                                 h_mc_fit[region]);
 
         const double data_int_region = h_data_fit[region]->Integral();
         const double mc_int_region = h_mc_fit[region]->Integral();
@@ -2095,12 +2506,14 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         rn.fit = fit;
         rn.integrated_ratio = ratio_region;
         rn.integrated_ratio_err = ratio_err_region;
+
         region_norms[region] = rn;
     }
 
     for (const VarConfig& v : variable_configs()) {
         if (v.key == "p1_theta") {
             std::map<std::string, CubicFit> fits_for_plot;
+
             for (const auto& kv : region_norms) {
                 fits_for_plot[kv.first] = kv.second.fit;
             }
@@ -2142,6 +2555,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     }
 
     std::ofstream dbg((period_root + "/normalization_debug_summary.txt").c_str());
+
     if (dbg.is_open()) {
         dbg << "period " << period << "\n";
         dbg << "data_current_factor " << std::setprecision(12) << data_eff << "\n";
@@ -2169,8 +2583,13 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     out.regions = region_norms;
     out.summary_ratio_curves = summary_ratio_curves;
 
-    for (auto& kv : h_data_fit) delete kv.second;
-    for (auto& kv : h_mc_fit) delete kv.second;
+    for (auto& kv : h_data_fit) {
+        delete kv.second;
+    }
+
+    for (auto& kv : h_mc_fit) {
+        delete kv.second;
+    }
 
     delete_hist_set(ana_data);
     delete_hist_set(ana_mc);
@@ -2193,8 +2612,12 @@ static std::string key_for_period_map(const std::map<std::string, TTree*>& trees
                                       const std::string& period) {
     for (const auto& kv : trees) {
         PeriodTags tags = parse_period_from_key(kv.first);
-        if (tags.display == period) return kv.first;
+
+        if (tags.display == period) {
+            return kv.first;
+        }
     }
+
     return "";
 }
 
@@ -2202,11 +2625,13 @@ static TTree* tree_for_period(const std::map<std::string, TTree*>& trees,
                               const std::string& period,
                               const std::string& label) {
     const std::string key = key_for_period_map(trees, period);
+
     if (key.empty()) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: missing " << label << " tree for period " << period;
         fatal(ss.str());
     }
+
     return trees.at(key);
 }
 
@@ -2230,27 +2655,41 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
                                                   double current_factor,
                                                   const PeriodNormalization& norm,
                                                   std::unordered_map<std::string, RowCounts>& out) {
-    if (!tree) return;
+    if (!tree) {
+        return;
+    }
 
     Branches b;
     b.bind(tree, false);
-    if (!b.has_helicity) fatal("[eppi0_norm] FATAL: data tree missing helicity.");
+
+    if (!b.has_helicity) {
+        fatal("[eppi0_norm] FATAL: data tree missing helicity.");
+    }
 
     const Long64_t N = tree->GetEntries();
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
 
-        if (!passes_event_selection(cfg, tags, data_cuts, b)) continue;
+        if (!passes_event_selection(cfg, tags, data_cuts, b)) {
+            continue;
+        }
 
         const std::string topo = topo_dir(b.detector1, b.detector2);
-        if (topo.empty()) continue;
+
+        if (topo.empty()) {
+            continue;
+        }
 
         const double theta = b.p1_theta_deg();
         const std::string region = normalization_region_for_event(b);
-        if (region.empty()) continue;
+
+        if (region.empty()) {
+            continue;
+        }
 
         auto it_region = norm.regions.find(region);
+
         if (it_region == norm.regions.end()) {
             std::ostringstream ss;
             ss << "[eppi0_norm] FATAL: missing normalization region " << region
@@ -2259,19 +2698,29 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
         }
 
         const double ratio = it_region->second.fit.eval(theta);
-        if (!(std::isfinite(ratio) && ratio > 0.0)) continue;
+
+        if (!(std::isfinite(ratio) && ratio > 0.0)) {
+            continue;
+        }
 
         const double weight = 1.0 / (current_factor * ratio);
         const double phi = b.phi_deg();
         const double tabs = b.t_abs();
 
         for (int r = 0; r < (int)rows.size(); ++r) {
-            if (!row_accepts(rows[r], b.x, b.Q2, tabs, phi)) continue;
+            if (!row_accepts(rows[r], b.x, b.Q2, tabs, phi)) {
+                continue;
+            }
 
             HelCounts& hc = out[topo][r];
-            if (b.helicity > 0) hc.pos += weight;
-            else if (b.helicity < 0) hc.neg += weight;
-            else hc.unpol += weight;
+
+            if (b.helicity > 0) {
+                hc.pos += weight;
+            } else if (b.helicity < 0) {
+                hc.neg += weight;
+            } else {
+                hc.unpol += weight;
+            }
         }
     }
 }
@@ -2282,7 +2731,10 @@ static void write_normalized_counts_to_csv(CSV& csv,
                                            const std::unordered_map<std::string, RowCounts>& topo_counts) {
     for (const auto& kt : topo_counts) {
         const std::string topo_label = topo_label_for_csv(kt.first);
-        if (topo_label.empty()) continue;
+
+        if (topo_label.empty()) {
+            continue;
+        }
 
         const int c_unpol = col_strict(csv, normalized_raw_yield_col(cfg, topo_label, period, "unpol"));
         const int c_pos = col_strict(csv, normalized_raw_yield_col(cfg, topo_label, period, "pos"));
@@ -2290,7 +2742,10 @@ static void write_normalized_counts_to_csv(CSV& csv,
 
         for (const auto& kr : kt.second) {
             const int row = kr.first;
-            if (row < 0 || row >= (int)csv.rows.size()) fatal("[eppi0_norm] FATAL: row index out of range.");
+
+            if (row < 0 || row >= (int)csv.rows.size()) {
+                fatal("[eppi0_norm] FATAL: row index out of range.");
+            }
 
             const HelCounts& h = kr.second;
             const double unpol = h.pos + h.neg + h.unpol;
@@ -2313,7 +2768,9 @@ static void write_normalized_counts_to_csv(CSV& csv,
 static const PeriodNormalization& find_norm(const std::vector<PeriodNormalization>& norms,
                                             const std::string& period) {
     for (const auto& n : norms) {
-        if (n.period == period) return n;
+        if (n.period == period) {
+            return n;
+        }
     }
 
     std::ostringstream ss;
@@ -2339,13 +2796,17 @@ static void fill_normalized_yields(CSV& csv,
     };
 
     std::vector<WorkItem> items;
+
     const ChannelConfig dvcs = dvcs_config();
     const ChannelConfig epi = eppi0_config();
 
     auto add_items = [&](const ChannelConfig& cfg, const std::map<std::string, TTree*>& trees) {
         for (const auto& kv : trees) {
             PeriodTags tags = parse_period_from_key(kv.first);
-            if (tags.display == "Fa18 Inb Supp") continue;
+
+            if (tags.display == "Fa18 Inb Supp") {
+                continue;
+            }
 
             WorkItem w;
             w.cfg = cfg;
@@ -2353,6 +2814,7 @@ static void fill_normalized_yields(CSV& csv,
             w.tree = kv.second;
             w.current_factor = read_current_factor(csv, cfg, "exp", tags.display);
             w.norm = find_norm(norms, tags.display);
+
             items.push_back(w);
         }
     };
@@ -2387,29 +2849,53 @@ static void fill_normalized_yields(CSV& csv,
     }
 }
 
+// -----------------------------------------------------------------------------
+// Parent summary plots
+// -----------------------------------------------------------------------------
+
 static std::string region_short_label(const std::string& region) {
-    if (region == "CD") return "CD";
+    if (region == "CD") {
+        return "CD";
+    }
+
     return region;
 }
 
 static int color_for_period_index(int i) {
-    static const int colors[5] = {kBlack, kRed + 1, kBlue + 1, kGreen + 2, kMagenta + 1};
-    if (i < 0) return kBlack;
+    static const int colors[5] = {
+        kBlack,
+        kRed + 1,
+        kBlue + 1,
+        kGreen + 2,
+        kMagenta + 1
+    };
+
+    if (i < 0) {
+        return kBlack;
+    }
+
     return colors[i % 5];
 }
 
 static const PeriodNormalization* find_norm_ptr(const std::vector<PeriodNormalization>& norms,
                                                 const std::string& period) {
     for (const PeriodNormalization& n : norms) {
-        if (n.period == period) return &n;
+        if (n.period == period) {
+            return &n;
+        }
     }
+
     return nullptr;
 }
 
 static const RegionNormalization* find_region_norm_ptr(const PeriodNormalization& norm,
                                                        const std::string& region) {
     auto it = norm.regions.find(region);
-    if (it == norm.regions.end()) return nullptr;
+
+    if (it == norm.regions.end()) {
+        return nullptr;
+    }
+
     return &it->second;
 }
 
@@ -2458,7 +2944,6 @@ static void save_all_period_p1_theta_fit_summary(const std::string& output_dir,
     c.Divide(4, 2, 0.001, 0.001);
 
     std::vector<TF1*> owned_funcs;
-    TLegend* legend = nullptr;
 
     const std::vector<std::string> regions = normalization_regions();
 
@@ -2468,29 +2953,50 @@ static void save_all_period_p1_theta_fit_summary(const std::string& output_dir,
 
         const std::string& region = regions[ipanel];
         const bool is_cd = (region == "CD");
+
         const double x_min = is_cd ? 40.0 : 0.0;
         const double x_max = is_cd ? 70.0 : 40.0;
 
-        draw_fit_canvas_frame(pad, region_short_label(region), x_min, x_max, "");
+        draw_fit_canvas_frame(pad,
+                              region_short_label(region),
+                              x_min,
+                              x_max,
+                              "");
 
         for (int ip = 0; ip < (int)CSV_PERIOD_ORDER.size(); ++ip) {
             const std::string& period = CSV_PERIOD_ORDER[ip];
+
             const PeriodNormalization* pn = find_norm_ptr(norms, period);
-            if (!pn) continue;
+
+            if (!pn) {
+                continue;
+            }
 
             const RegionNormalization* rn = find_region_norm_ptr(*pn, region);
-            if (!rn || !rn->fit.valid) continue;
+
+            if (!rn || !rn->fit.valid) {
+                continue;
+            }
 
             const CubicFit& fit = rn->fit;
-            if (!(fit.x_max > fit.x_min)) continue;
+
+            if (!(fit.x_max > fit.x_min)) {
+                continue;
+            }
 
             TF1* f = new TF1(("f_all_period_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
-                             "pol3", fit.x_min, fit.x_max);
+                             "pol3",
+                             fit.x_min,
+                             fit.x_max);
 
-            for (int k = 0; k < 4; ++k) f->SetParameter(k, fit.a[k]);
+            for (int k = 0; k < 4; ++k) {
+                f->SetParameter(k, fit.a[k]);
+            }
+
             f->SetLineColor(color_for_period_index(ip));
             f->SetLineWidth(3);
             f->Draw("L SAME");
+
             owned_funcs.push_back(f);
         }
     }
@@ -2511,18 +3017,20 @@ static void save_all_period_p1_theta_fit_summary(const std::string& output_dir,
     latex.DrawLatex(0.08, 0.74, "Pass-2 cubic fits");
     latex.DrawLatex(0.08, 0.66, "Line ranges: populated data/MC bins only");
 
-    legend = new TLegend(0.08, 0.20, 0.88, 0.58);
+    TLegend* legend = new TLegend(0.08, 0.20, 0.88, 0.58);
     legend->SetFillColor(kWhite);
     legend->SetFillStyle(1001);
     legend->SetBorderSize(1);
     legend->SetTextSize(0.045);
 
     std::vector<TF1*> legend_funcs;
+
     for (int ip = 0; ip < (int)CSV_PERIOD_ORDER.size(); ++ip) {
         TF1* dummy = new TF1(("f_legend_period_" + std::to_string(ip)).c_str(), "pol0", 0.0, 1.0);
         dummy->SetParameter(0, 1.0);
         dummy->SetLineColor(color_for_period_index(ip));
         dummy->SetLineWidth(3);
+
         legend_funcs.push_back(dummy);
         legend->AddEntry(dummy, CSV_PERIOD_ORDER[ip].c_str(), "l");
     }
@@ -2531,8 +3039,14 @@ static void save_all_period_p1_theta_fit_summary(const std::string& output_dir,
 
     c.SaveAs((output_dir + "/eppi0_p1_theta_cubic_fits_all_periods.png").c_str());
 
-    for (TF1* f : owned_funcs) delete f;
-    for (TF1* f : legend_funcs) delete f;
+    for (TF1* f : owned_funcs) {
+        delete f;
+    }
+
+    for (TF1* f : legend_funcs) {
+        delete f;
+    }
+
     delete legend;
 }
 
@@ -2547,7 +3061,9 @@ static bool pass1_quartic_coefficients(const std::string& period,
                              (region == "Sector 6") ? 5 :
                              (region == "CD")       ? 6 : -1;
 
-    if (region_index < 0) return false;
+    if (region_index < 0) {
+        return false;
+    }
 
     static const double inb[7][5] = {
         { 5.205723e-6, -6.553104e-4,  2.857282e-2, -5.275748e-1,  4.390724 },
@@ -2571,9 +3087,13 @@ static bool pass1_quartic_coefficients(const std::string& period,
 
     const double (*src)[5] = nullptr;
 
-    if (period == "Fa18 Inb") src = inb;
-    else if (period == "Fa18 Out") src = out;
-    else return false;
+    if (period == "Fa18 Inb") {
+        src = inb;
+    } else if (period == "Fa18 Out") {
+        src = out;
+    } else {
+        return false;
+    }
 
     q.a[0] = src[region_index][4];
     q.a[1] = src[region_index][3];
@@ -2590,6 +3110,7 @@ static void save_pass1_pass2_p1_theta_comparison(const std::string& output_dir,
     mkdir_p(output_dir);
 
     const PeriodNormalization* pn = find_norm_ptr(norms, period);
+
     if (!pn) {
         std::cout << "[eppi0_norm] WARNING: skipping pass-1 comparison for missing period "
                   << period << std::endl;
@@ -2608,36 +3129,60 @@ static void save_pass1_pass2_p1_theta_comparison(const std::string& output_dir,
 
         const std::string& region = regions[ipanel];
         const bool is_cd = (region == "CD");
+
         const double x_frame_min = is_cd ? 40.0 : 0.0;
         const double x_frame_max = is_cd ? 70.0 : 40.0;
 
-        draw_fit_canvas_frame(pad, region_short_label(region), x_frame_min, x_frame_max, "");
+        draw_fit_canvas_frame(pad,
+                              region_short_label(region),
+                              x_frame_min,
+                              x_frame_max,
+                              "");
 
         const RegionNormalization* rn = find_region_norm_ptr(*pn, region);
-        if (!rn || !rn->fit.valid) continue;
+
+        if (!rn || !rn->fit.valid) {
+            continue;
+        }
 
         const CubicFit& cfit = rn->fit;
-        if (!(cfit.x_max > cfit.x_min)) continue;
+
+        if (!(cfit.x_max > cfit.x_min)) {
+            continue;
+        }
 
         TF1* fpass2 = new TF1(("f_pass2_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
-                              "pol3", cfit.x_min, cfit.x_max);
+                              "pol3",
+                              cfit.x_min,
+                              cfit.x_max);
 
-        for (int k = 0; k < 4; ++k) fpass2->SetParameter(k, cfit.a[k]);
+        for (int k = 0; k < 4; ++k) {
+            fpass2->SetParameter(k, cfit.a[k]);
+        }
+
         fpass2->SetLineColor(kBlue + 1);
         fpass2->SetLineWidth(3);
         fpass2->Draw("L SAME");
+
         owned_funcs.push_back(fpass2);
 
         QuarticFit qfit;
+
         if (pass1_quartic_coefficients(period, region, qfit)) {
             TF1* fpass1 = new TF1(("f_pass1_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
-                                  "pol4", cfit.x_min, cfit.x_max);
+                                  "pol4",
+                                  cfit.x_min,
+                                  cfit.x_max);
 
-            for (int k = 0; k < 5; ++k) fpass1->SetParameter(k, qfit.a[k]);
+            for (int k = 0; k < 5; ++k) {
+                fpass1->SetParameter(k, qfit.a[k]);
+            }
+
             fpass1->SetLineColor(kRed + 1);
             fpass1->SetLineWidth(3);
             fpass1->SetLineStyle(2);
             fpass1->Draw("L SAME");
+
             owned_funcs.push_back(fpass1);
         }
     }
@@ -2682,9 +3227,10 @@ static void save_pass1_pass2_p1_theta_comparison(const std::string& output_dir,
 
     c.SaveAs((output_dir + "/eppi0_p1_theta_pass1_pass2_" + period_dir(period) + ".png").c_str());
 
-    for (TF1* f : owned_funcs) delete f;
+    for (TF1* f : owned_funcs) {
+        delete f;
+    }
 }
-
 
 static void save_all_period_kinematic_ratio_summary(const std::string& output_dir,
                                                     const std::vector<PeriodNormalization>& norms,
@@ -2703,19 +3249,25 @@ static void save_all_period_kinematic_ratio_summary(const std::string& output_di
     frame_var.particle = 0;
     frame_var.kind = 3;
     frame_var.n_panels = 1;
+
     range_for_panel(frame_var, 0, x_min, x_max);
 
     double y_max = 0.0;
+
     for (const PeriodNormalization& norm : norms) {
         auto it = norm.summary_ratio_curves.find(key);
+
         if (it == norm.summary_ratio_curves.end()) {
             continue;
         }
+
         const SummaryRatioCurve& curve = it->second;
+
         for (size_t i = 0; i < curve.y.size(); ++i) {
-            const double ymax_candidate = curve.y[i] + curve.ey[i];
-            if (std::isfinite(ymax_candidate)) {
-                y_max = std::max(y_max, ymax_candidate);
+            const double candidate = curve.y[i] + curve.ey[i];
+
+            if (std::isfinite(candidate)) {
+                y_max = std::max(y_max, candidate);
             }
         }
     }
@@ -2752,6 +3304,7 @@ static void save_all_period_kinematic_ratio_summary(const std::string& output_di
     unity_line.Draw("SAME");
 
     std::vector<TGraphErrors*> graphs;
+
     TLegend legend(0.58, 0.66, 0.90, 0.88);
     legend.SetFillColor(kWhite);
     legend.SetFillStyle(1001);
@@ -2761,38 +3314,45 @@ static void save_all_period_kinematic_ratio_summary(const std::string& output_di
     for (int ip = 0; ip < (int)CSV_PERIOD_ORDER.size(); ++ip) {
         const std::string& period = CSV_PERIOD_ORDER[ip];
         const PeriodNormalization* pn = find_norm_ptr(norms, period);
+
         if (!pn) {
             continue;
         }
 
         auto it = pn->summary_ratio_curves.find(key);
+
         if (it == pn->summary_ratio_curves.end()) {
             continue;
         }
 
         const SummaryRatioCurve& curve = it->second;
+
         if (curve.x.empty()) {
             continue;
         }
 
         TGraphErrors* g = new TGraphErrors();
+
         for (int i = 0; i < (int)curve.x.size(); ++i) {
             g->SetPoint(i, curve.x[i], curve.y[i]);
             g->SetPointError(i, 0.0, curve.ey[i]);
         }
 
         const int color = color_for_period_index(ip);
+
         g->SetMarkerStyle(20 + ip);
         g->SetMarkerSize(0.85);
         g->SetMarkerColor(color);
         g->SetLineColor(color);
         g->SetLineWidth(1);
         g->Draw("PE SAME");
+
         legend.AddEntry(g, period.c_str(), "pe");
         graphs.push_back(g);
     }
 
     legend.Draw();
+
     c.SaveAs((output_dir + "/eppi0_summary_ratio_" + key + ".png").c_str());
 
     for (TGraphErrors* g : graphs) {
@@ -2806,146 +3366,42 @@ static void save_all_period_kinematic_ratio_summaries(const std::string& output_
         return;
     }
 
-    save_all_period_kinematic_ratio_summary(output_dir, norms, "minus_t1", "-t", "-t (GeV^{2})");
-    save_all_period_kinematic_ratio_summary(output_dir, norms, "Q2", "Q^{2}", "Q^{2} (GeV^{2})");
-    save_all_period_kinematic_ratio_summary(output_dir, norms, "x", "x_{B}", "x_{B}");
+    save_all_period_kinematic_ratio_summary(output_dir,
+                                            norms,
+                                            "minus_t1",
+                                            "-t",
+                                            "-t (GeV^{2})");
+
+    save_all_period_kinematic_ratio_summary(output_dir,
+                                            norms,
+                                            "Q2",
+                                            "Q^{2}",
+                                            "Q^{2} (GeV^{2})");
+
+    save_all_period_kinematic_ratio_summary(output_dir,
+                                            norms,
+                                            "x",
+                                            "x_{B}",
+                                            "x_{B}");
 }
 
 static void save_parent_fit_summary_plots(const std::string& output_dir,
                                           const std::vector<PeriodNormalization>& norms) {
-    if (norms.empty()) return;
+    if (norms.empty()) {
+        return;
+    }
 
     mkdir_p(output_dir);
+
     save_all_period_p1_theta_fit_summary(output_dir, norms);
     save_all_period_kinematic_ratio_summaries(output_dir, norms);
     save_pass1_pass2_p1_theta_comparison(output_dir, norms, "Fa18 Inb");
     save_pass1_pass2_p1_theta_comparison(output_dir, norms, "Fa18 Out");
 }
 
-
-static int color_for_period_index(int i) {
-    static const int colors[5] = {kBlack, kRed + 1, kBlue + 1, kGreen + 2, kMagenta + 1};
-    if (i < 0) return kBlack;
-    return colors[i % 5];
-}
-
-static const PeriodNormalization* find_norm_ptr(const std::vector<PeriodNormalization>& norms,
-                                                const std::string& period) {
-    for (const PeriodNormalization& n : norms) {
-        if (n.period == period) return &n;
-    }
-    return nullptr;
-}
-
-static void save_kinematic_ratio_summary_plot(const std::string& output_dir,
-                                             const std::vector<PeriodNormalization>& norms,
-                                             const std::string& key) {
-    mkdir_p(output_dir);
-
-    const VarConfig& v = var_config_by_key(key);
-
-    double xmin = 0.0;
-    double xmax = 1.0;
-    range_for_panel(v, 0, xmin, xmax);
-
-    double ymax = 0.0;
-    for (const PeriodNormalization& norm : norms) {
-        auto it = norm.summary_ratios.find(key);
-        if (it == norm.summary_ratios.end()) {
-            continue;
-        }
-
-        for (const RatioPoint& p : it->second) {
-            if (std::isfinite(p.y) && std::isfinite(p.ey)) {
-                ymax = std::max(ymax, p.y + p.ey);
-            }
-        }
-    }
-
-    if (!(ymax > 0.0)) {
-        ymax = RATIO_Y_MAX;
-    }
-    ymax = std::max(RATIO_Y_MAX, 1.15 * ymax);
-
-    TCanvas c(("c_eppi0_kinematic_ratio_summary_" + key).c_str(), "", 1200, 850);
-    c.SetGrid(1, 1);
-    c.SetLeftMargin(0.14);
-    c.SetRightMargin(0.05);
-    c.SetBottomMargin(0.13);
-    c.SetTopMargin(0.08);
-
-    TH1D* frame = (TH1D*)gPad->DrawFrame(xmin, RATIO_Y_MIN, xmax, ymax);
-    frame->SetTitle(("ep #rightarrow ep#pi_{0}  " + v.title + "  data/MC ratios").c_str());
-    frame->GetXaxis()->SetTitle(v.x_title.c_str());
-    frame->GetYaxis()->SetTitle("data / MC");
-    frame->GetXaxis()->CenterTitle(true);
-    frame->GetYaxis()->CenterTitle(true);
-    frame->GetXaxis()->SetTitleSize(0.050);
-    frame->GetYaxis()->SetTitleSize(0.050);
-    frame->GetXaxis()->SetLabelSize(0.045);
-    frame->GetYaxis()->SetLabelSize(0.045);
-    frame->GetYaxis()->SetTitleOffset(1.35);
-
-    TLine unity_line(xmin, 1.0, xmax, 1.0);
-    unity_line.SetLineStyle(2);
-    unity_line.SetLineColor(kRed + 1);
-    unity_line.SetLineWidth(2);
-    unity_line.Draw("SAME");
-
-    std::vector<TGraphErrors*> graphs;
-    TLegend legend(0.58, 0.63, 0.90, 0.88);
-    legend.SetFillColor(kWhite);
-    legend.SetFillStyle(1001);
-    legend.SetBorderSize(1);
-    legend.SetTextSize(0.036);
-
-    for (int ip = 0; ip < (int)CSV_PERIOD_ORDER.size(); ++ip) {
-        const std::string& period = CSV_PERIOD_ORDER[ip];
-        const PeriodNormalization* pn = find_norm_ptr(norms, period);
-        if (!pn) {
-            continue;
-        }
-
-        auto it = pn->summary_ratios.find(key);
-        if (it == pn->summary_ratios.end() || it->second.empty()) {
-            continue;
-        }
-
-        TGraphErrors* g = new TGraphErrors();
-        for (int i = 0; i < (int)it->second.size(); ++i) {
-            const RatioPoint& pnt = it->second[i];
-            g->SetPoint(i, pnt.x, pnt.y);
-            g->SetPointError(i, pnt.ex, pnt.ey);
-        }
-
-        const int color = color_for_period_index(ip);
-        g->SetMarkerStyle(20 + ip);
-        g->SetMarkerSize(0.85);
-        g->SetMarkerColor(color);
-        g->SetLineColor(color);
-        g->SetLineWidth(1);
-        g->Draw("PE SAME");
-        legend.AddEntry(g, period.c_str(), "pe");
-        graphs.push_back(g);
-    }
-
-    legend.Draw();
-    c.SaveAs((output_dir + "/eppi0_kinematic_ratio_summary_" + key + ".pdf").c_str());
-    c.SaveAs((output_dir + "/eppi0_kinematic_ratio_summary_" + key + ".png").c_str());
-
-    for (TGraphErrors* g : graphs) {
-        delete g;
-    }
-}
-
-static void save_kinematic_ratio_summary_plots(const std::string& output_dir,
-                                               const std::vector<PeriodNormalization>& norms) {
-    if (norms.empty()) return;
-
-    save_kinematic_ratio_summary_plot(output_dir, norms, "t1");
-    save_kinematic_ratio_summary_plot(output_dir, norms, "Q2");
-    save_kinematic_ratio_summary_plot(output_dir, norms, "xB");
-}
+// -----------------------------------------------------------------------------
+// CSV output for normalization fits
+// -----------------------------------------------------------------------------
 
 static void write_norms_to_csv(CSV& csv, const std::vector<PeriodNormalization>& norms) {
     for (const std::string& period : CSV_PERIOD_ORDER) {
@@ -2953,6 +3409,7 @@ static void write_norms_to_csv(CSV& csv, const std::vector<PeriodNormalization>&
 
         for (const std::string& region : normalization_regions()) {
             auto it_region = n.regions.find(region);
+
             if (it_region == n.regions.end()) {
                 std::ostringstream ss;
                 ss << "[eppi0_norm] FATAL: missing " << region << " normalization for " << period;
@@ -2990,6 +3447,7 @@ static std::vector<PeriodNormalization> unity_norms() {
             rn.fit.x_max = (region == "CD") ? 70.0 : 40.0;
             rn.integrated_ratio = 1.0;
             rn.integrated_ratio_err = 0.0;
+
             n.regions[region] = rn;
         }
 
@@ -3025,6 +3483,7 @@ bool update_eppi0_normalization_csv(
         if (options.override_to_unity) {
             std::cout << "[eppi0_norm] Override enabled: using unity eppi0 normalization polynomial."
                       << std::endl;
+
             norms = unity_norms();
         } else {
             mkdir_p(options.output_dir);
@@ -3045,16 +3504,13 @@ bool update_eppi0_normalization_csv(
                                                                  mc_cuts,
                                                                  options.output_dir,
                                                                  options.normalization_json_path);
+
                 norms.push_back(n);
             }
         }
 
         if (!options.override_to_unity) {
             save_parent_fit_summary_plots(options.output_dir, norms);
-        }
-
-        if (!options.override_to_unity) {
-            save_kinematic_ratio_summary_plots(options.output_dir, norms);
         }
 
         write_norms_to_csv(csv, norms);
