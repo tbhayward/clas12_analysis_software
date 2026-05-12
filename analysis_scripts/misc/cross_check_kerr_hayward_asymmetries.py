@@ -69,6 +69,11 @@ HAYWARD_PERIOD_FILE_PATTERNS = {
     "Sp23": r"asymmetries_rgc_sp23_inb_NH3_epi\+_2_timeStamp_.*\.txt$",
 }
 
+# PyROOT object lifetime protection.
+# Without this, earlier subpads can lose their histograms/markers/graphs before
+# the canvas is saved, leaving only the final subplot populated.
+ROOT_OBJECT_KEEPALIVE = []
+
 
 # -----------------------------------------------------------------------------
 # Asymmetry configuration
@@ -658,7 +663,7 @@ def fit_constant_sector_dependence(
     line_color: int,
     x_min: float,
     x_max: float,
-) -> Tuple[ROOT.TF1, float, int]:
+) -> Tuple[ROOT.TF1, float, int, float]:
     fit_func = ROOT.TF1(fit_name, "pol0", x_min, x_max)
     fit_func.SetLineColor(line_color)
     fit_func.SetLineStyle(1)
@@ -669,15 +674,17 @@ def fit_constant_sector_dependence(
     chi2 = fit_func.GetChisquare()
     ndf = fit_func.GetNDF()
 
-    return fit_func, chi2, ndf
-
-
-def format_chi2_ndf(chi2: float, ndf: int) -> str:
     if ndf > 0:
-        return "#chi^{{2}}/ndf = {:.2f}/{}".format(chi2, ndf)
+        chi2_ndf = chi2 / float(ndf)
+    else:
+        chi2_ndf = 0.0
     #endif
 
-    return "#chi^{{2}}/ndf = n/a"
+    return fit_func, chi2, ndf, chi2_ndf
+
+
+def format_chi2_ndf_value(chi2_ndf: float) -> str:
+    return "chi2/ndf={:.2f}".format(chi2_ndf)
 
 
 def make_single_point_error_graph(
@@ -728,7 +735,10 @@ def draw_empty_sixth_pad() -> None:
     pad.SetBorderMode(0)
     pad.SetFrameBorderMode(0)
     pad.Clear()
-    pad._keepalive = []
+
+    keepalive = []
+    pad._keepalive = keepalive
+    ROOT_OBJECT_KEEPALIVE.append(keepalive)
 
 
 def draw_xb_bin_subplot(
@@ -738,6 +748,8 @@ def draw_xb_bin_subplot(
     kerr_results: ResultsDict,
     hayward_results: ResultsDict,
 ) -> None:
+    global ROOT_OBJECT_KEEPALIVE
+
     pad = ROOT.gPad
     pad.Clear()
     pad.SetLeftMargin(0.16)
@@ -906,7 +918,7 @@ def draw_xb_bin_subplot(
         y_errors_in=kerr_y_errors,
     )
 
-    hayward_fit_func, hayward_chi2, hayward_ndf = fit_constant_sector_dependence(
+    hayward_fit_func, hayward_chi2, hayward_ndf, hayward_chi2_ndf = fit_constant_sector_dependence(
         graph=hayward_fit_graph,
         fit_name="fit_hayward_{}_{}_xbbin{}".format(
             period,
@@ -918,7 +930,7 @@ def draw_xb_bin_subplot(
         x_max=SECTOR_AXIS_MAX,
     )
 
-    kerr_fit_func, kerr_chi2, kerr_ndf = fit_constant_sector_dependence(
+    kerr_fit_func, kerr_chi2, kerr_ndf, kerr_chi2_ndf = fit_constant_sector_dependence(
         graph=kerr_fit_graph,
         fit_name="fit_kerr_{}_{}_xbbin{}".format(
             period,
@@ -938,30 +950,34 @@ def draw_xb_bin_subplot(
     keepalive.append(hayward_fit_func)
     keepalive.append(kerr_fit_func)
 
-    legend = ROOT.TLegend(0.46, 0.16, 0.94, 0.38)
+    legend = ROOT.TLegend(0.60, 0.18, 0.94, 0.32)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.037)
+    legend.SetTextSize(0.028)
     legend.AddEntry(
         first_hayward_marker,
-        "Hayward, {}".format(format_chi2_ndf(hayward_chi2, hayward_ndf)),
+        "Hayward, {}".format(format_chi2_ndf_value(hayward_chi2_ndf)),
         "p",
     )
     legend.AddEntry(
         first_kerr_marker,
-        "Kerr, {}".format(format_chi2_ndf(kerr_chi2, kerr_ndf)),
+        "Kerr, {}".format(format_chi2_ndf_value(kerr_chi2_ndf)),
         "p",
     )
     legend.Draw("SAME")
     keepalive.append(legend)
 
     pad._keepalive = keepalive
+    ROOT_OBJECT_KEEPALIVE.append(keepalive)
+
     pad.Modified()
     pad.Update()
 
 
 def draw_canvas_title(title_pad: ROOT.TPad, title: str) -> None:
+    global ROOT_OBJECT_KEEPALIVE
+
     title_pad.cd()
     title_pad.Clear()
 
@@ -976,6 +992,7 @@ def draw_canvas_title(title_pad: ROOT.TPad, title: str) -> None:
 
     keepalive.append(latex)
     title_pad._keepalive = keepalive
+    ROOT_OBJECT_KEEPALIVE.append(keepalive)
 
     title_pad.Modified()
     title_pad.Update()
@@ -988,6 +1005,8 @@ def make_comparison_plot(
     kerr_results: ResultsDict,
     hayward_results: ResultsDict,
 ) -> None:
+    global ROOT_OBJECT_KEEPALIVE
+
     canvas_name = "c_{}_{}".format(period, asym.key)
     canvas_title = "{}  {}".format(period, asym.title)
 
@@ -1021,6 +1040,8 @@ def make_comparison_plot(
     grid_pad.cd()
     grid_pad.Divide(3, 2, 0.001, 0.001)
 
+    plot_keepalive = [canvas, title_pad, grid_pad]
+
     for xb_bin in range(N_XB_BINS):
         grid_pad.cd(xb_bin + 1)
 
@@ -1041,7 +1062,9 @@ def make_comparison_plot(
         "{}   {}   sector dependence".format(period, asym.title),
     )
 
-    canvas._keepalive = [title_pad, grid_pad]
+    canvas._keepalive = plot_keepalive
+    ROOT_OBJECT_KEEPALIVE.append(plot_keepalive)
+
     canvas.cd()
     canvas.Modified()
     canvas.Update()
