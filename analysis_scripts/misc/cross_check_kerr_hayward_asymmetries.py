@@ -1456,7 +1456,7 @@ def make_comparison_plot(
     #endif
 
     if combine_high_xb:
-        mode_suffix += ", high-x_{B} combined"
+        mode_suffix += ""
     #endif
 
     draw_canvas_title(
