@@ -42,11 +42,18 @@ N_SECTORS = 6
 SECTOR_AXIS_MIN = 0.5
 SECTOR_AXIS_MAX = 6.5
 
-SSA_Y_MIN = -0.20
-SSA_Y_MAX = 0.20
+SSA_Y_MIN = -0.30
+SSA_Y_MAX = 0.30
 
-DSA_Y_MIN = -0.10
-DSA_Y_MAX = 1.00
+ALL_Y_MIN = -0.10
+ALL_Y_MAX = 1.00
+
+ALL_COSPHI_Y_MIN = -0.40
+ALL_COSPHI_Y_MAX = 0.40
+
+BAD_EXACT_ABS_VALUE = 1.0
+BAD_UNCERTAINTY_THRESHOLD = 0.5
+BAD_VALUE_TOLERANCE = 1.0e-12
 
 PERIODS = ["Su22", "Fa22", "Sp23"]
 
@@ -122,8 +129,8 @@ ASYMMETRIES: List[AsymmetryConfig] = [
         kerr_value_col=12,
         kerr_unc_col=13,
         hayward_term="ALL",
-        y_min=DSA_Y_MIN,
-        y_max=DSA_Y_MAX,
+        y_min=ALL_Y_MIN,
+        y_max=ALL_Y_MAX,
     ),
     AsymmetryConfig(
         key="ALL_cosphi",
@@ -133,8 +140,8 @@ ASYMMETRIES: List[AsymmetryConfig] = [
         kerr_value_col=14,
         kerr_unc_col=15,
         hayward_term="ALLcosphi",
-        y_min=DSA_Y_MIN,
-        y_max=DSA_Y_MAX,
+        y_min=ALL_COSPHI_Y_MIN,
+        y_max=ALL_COSPHI_Y_MAX,
     ),
 ]
 
@@ -171,6 +178,91 @@ def check_file_exists(path: str) -> None:
     if not os.path.isfile(path):
         fatal("Required input file does not exist: {}".format(path))
     #endif
+
+
+def is_bad_fit_point(point: FitPoint) -> bool:
+    if abs(abs(point.value) - BAD_EXACT_ABS_VALUE) < BAD_VALUE_TOLERANCE:
+        return True
+    #endif
+
+    if point.uncertainty > BAD_UNCERTAINTY_THRESHOLD:
+        return True
+    #endif
+
+    return False
+
+
+def sanitize_bad_points_and_sync_uncertainties(
+    kerr_results: ResultsDict,
+    hayward_results: ResultsDict,
+) -> None:
+    replaced_hayward = 0
+    replaced_kerr = 0
+    synced_kerr_uncertainties = 0
+
+    for period in PERIODS:
+        for asym in ASYMMETRIES:
+            for sector in range(1, N_SECTORS + 1):
+                for xb_bin in range(N_XB_BINS):
+                    kerr_point = kerr_results[period][asym.key][sector][xb_bin]
+                    hayward_point = hayward_results[period][asym.key][sector][xb_bin]
+
+                    original_kerr_value = kerr_point.value
+                    original_hayward_value = hayward_point.value
+                    original_kerr_uncertainty = kerr_point.uncertainty
+                    original_hayward_uncertainty = hayward_point.uncertainty
+
+                    kerr_bad = is_bad_fit_point(kerr_point)
+                    hayward_bad = is_bad_fit_point(hayward_point)
+
+                    if hayward_bad and not kerr_bad:
+                        hayward_point.value = original_kerr_value
+                        hayward_point.uncertainty = original_kerr_uncertainty
+                        replaced_hayward += 1
+                    elif kerr_bad and not hayward_bad:
+                        kerr_point.value = original_hayward_value
+                        kerr_point.uncertainty = original_hayward_uncertainty
+                        replaced_kerr += 1
+                    elif hayward_bad and kerr_bad:
+                        print(
+                            "[cross_check] WARNING: both points flagged bad; "
+                            "setting both to 0 with uncertainty 0 for "
+                            "period={} asymmetry={} sector={} xb_bin={}".format(
+                                period,
+                                asym.key,
+                                sector,
+                                xb_bin,
+                            ),
+                            file=sys.stderr,
+                        )
+                        hayward_point.value = 0.0
+                        hayward_point.uncertainty = 0.0
+                        kerr_point.value = 0.0
+                        kerr_point.uncertainty = 0.0
+                        replaced_hayward += 1
+                        replaced_kerr += 1
+                    #endif
+
+                    # Requested convention: after bad-point handling, use Hayward
+                    # uncertainties for Kerr as well.
+                    if abs(kerr_point.uncertainty - hayward_point.uncertainty) > 0.0:
+                        synced_kerr_uncertainties += 1
+                    #endif
+
+                    kerr_point.uncertainty = hayward_point.uncertainty
+                #endfor
+            #endfor
+        #endfor
+    #endfor
+
+    print(
+        "[cross_check] Sanitized bad points: replaced_hayward={} replaced_kerr={} "
+        "synced_kerr_uncertainties={}".format(
+            replaced_hayward,
+            replaced_kerr,
+            synced_kerr_uncertainties,
+        )
+    )
 
 
 def find_unique_file_by_regex(directory: str, pattern: str, period: str) -> str:
@@ -511,7 +603,7 @@ def load_hayward_results(hayward_dir: str) -> ResultsDict:
 
 
 # -----------------------------------------------------------------------------
-# Plotting helpers
+# Plotting and fitting helpers
 # -----------------------------------------------------------------------------
 
 def configure_root() -> None:
@@ -522,6 +614,74 @@ def configure_root() -> None:
     ROOT.gStyle.SetPadGridX(False)
     ROOT.gStyle.SetPadGridY(False)
     ROOT.gStyle.SetEndErrorSize(4)
+
+
+def make_fit_graph(
+    name: str,
+    x_values_in: List[float],
+    y_values_in: List[float],
+    y_errors_in: List[float],
+    marker_color: int,
+    line_color: int,
+) -> ROOT.TGraphErrors:
+    x_values = array("d")
+    y_values = array("d")
+    ex_values = array("d")
+    ey_values = array("d")
+
+    for i in range(len(x_values_in)):
+        x_values.append(x_values_in[i])
+        y_values.append(y_values_in[i])
+        ex_values.append(0.0)
+
+        if y_errors_in[i] > 0.0:
+            ey_values.append(y_errors_in[i])
+        else:
+            ey_values.append(1.0e-9)
+        #endif
+    #endfor
+
+    graph = ROOT.TGraphErrors(
+        len(x_values_in),
+        x_values,
+        y_values,
+        ex_values,
+        ey_values,
+    )
+
+    graph.SetName(name)
+    graph.SetMarkerColor(marker_color)
+    graph.SetMarkerSize(0.0)
+    graph.SetLineColor(line_color)
+    graph.SetLineWidth(2)
+
+    return graph
+
+
+def fit_linear_sector_dependence(
+    graph: ROOT.TGraphErrors,
+    fit_name: str,
+    line_color: int,
+) -> Tuple[ROOT.TF1, float, int]:
+    fit_func = ROOT.TF1(fit_name, "pol1", SECTOR_AXIS_MIN, SECTOR_AXIS_MAX)
+    fit_func.SetLineColor(line_color)
+    fit_func.SetLineStyle(1)
+    fit_func.SetLineWidth(2)
+
+    fit_result = graph.Fit(fit_func, "SQN")
+
+    chi2 = fit_func.GetChisquare()
+    ndf = fit_func.GetNDF()
+
+    return fit_func, chi2, ndf
+
+
+def format_chi2_ndf(chi2: float, ndf: int) -> str:
+    if ndf > 0:
+        return "#chi^{2}/ndf = {:.2f}/{}".format(chi2, ndf)
+    #endif
+
+    return "#chi^{2}/ndf = n/a"
 
 
 def make_single_point_error_graph(
@@ -636,6 +796,14 @@ def draw_xb_bin_subplot(
 
     drawn_objects = []
 
+    hayward_x_values = []
+    hayward_y_values = []
+    hayward_y_errors = []
+
+    kerr_x_values = []
+    kerr_y_values = []
+    kerr_y_errors = []
+
     first_hayward_marker = None
     first_kerr_marker = None
 
@@ -645,6 +813,14 @@ def draw_xb_bin_subplot(
 
         x_kerr = float(sector) - 0.08
         x_hayward = float(sector) + 0.08
+
+        hayward_x_values.append(x_hayward)
+        hayward_y_values.append(hayward_point.value)
+        hayward_y_errors.append(hayward_point.uncertainty)
+
+        kerr_x_values.append(x_kerr)
+        kerr_y_values.append(kerr_point.value)
+        kerr_y_errors.append(kerr_point.uncertainty)
 
         hayward_error_graph = make_single_point_error_graph(
             name="err_hayward_{}_{}_xbbin{}_sector{}".format(
@@ -677,7 +853,7 @@ def draw_xb_bin_subplot(
             y_value=hayward_point.value,
             marker_style=21,
             marker_color=ROOT.kRed + 1,
-            marker_size=1.25,
+            marker_size=1.45,
         )
 
         kerr_marker = make_marker(
@@ -685,12 +861,9 @@ def draw_xb_bin_subplot(
             y_value=kerr_point.value,
             marker_style=20,
             marker_color=ROOT.kBlack,
-            marker_size=1.25,
+            marker_size=1.45,
         )
 
-        # Draw the error bars and then explicit markers on top.
-        # This avoids the ROOT/PyROOT issue where TGraphErrors can show
-        # only the vertical error bar without a visible marker.
         hayward_error_graph.Draw("E1 SAME")
         kerr_error_graph.Draw("E1 SAME")
         hayward_marker.Draw("SAME")
@@ -710,13 +883,75 @@ def draw_xb_bin_subplot(
         #endif
     #endfor
 
-    legend = ROOT.TLegend(0.58, 0.18, 0.94, 0.38)
+    hayward_fit_graph = make_fit_graph(
+        name="fit_graph_hayward_{}_{}_xbbin{}".format(
+            period,
+            asym.key,
+            xb_bin,
+        ),
+        x_values_in=hayward_x_values,
+        y_values_in=hayward_y_values,
+        y_errors_in=hayward_y_errors,
+        marker_color=ROOT.kRed + 1,
+        line_color=ROOT.kRed + 1,
+    )
+
+    kerr_fit_graph = make_fit_graph(
+        name="fit_graph_kerr_{}_{}_xbbin{}".format(
+            period,
+            asym.key,
+            xb_bin,
+        ),
+        x_values_in=kerr_x_values,
+        y_values_in=kerr_y_values,
+        y_errors_in=kerr_y_errors,
+        marker_color=ROOT.kBlack,
+        line_color=ROOT.kBlack,
+    )
+
+    hayward_fit_func, hayward_chi2, hayward_ndf = fit_linear_sector_dependence(
+        graph=hayward_fit_graph,
+        fit_name="fit_hayward_{}_{}_xbbin{}".format(
+            period,
+            asym.key,
+            xb_bin,
+        ),
+        line_color=ROOT.kRed + 1,
+    )
+
+    kerr_fit_func, kerr_chi2, kerr_ndf = fit_linear_sector_dependence(
+        graph=kerr_fit_graph,
+        fit_name="fit_kerr_{}_{}_xbbin{}".format(
+            period,
+            asym.key,
+            xb_bin,
+        ),
+        line_color=ROOT.kBlack,
+    )
+
+    hayward_fit_func.Draw("SAME")
+    kerr_fit_func.Draw("SAME")
+
+    drawn_objects.append(hayward_fit_graph)
+    drawn_objects.append(kerr_fit_graph)
+    drawn_objects.append(hayward_fit_func)
+    drawn_objects.append(kerr_fit_func)
+
+    legend = ROOT.TLegend(0.46, 0.16, 0.94, 0.38)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.045)
-    legend.AddEntry(first_hayward_marker, "Hayward", "p")
-    legend.AddEntry(first_kerr_marker, "Kerr", "p")
+    legend.SetTextSize(0.037)
+    legend.AddEntry(
+        first_hayward_marker,
+        "Hayward, {}".format(format_chi2_ndf(hayward_chi2, hayward_ndf)),
+        "p",
+    )
+    legend.AddEntry(
+        first_kerr_marker,
+        "Kerr, {}".format(format_chi2_ndf(kerr_chi2, kerr_ndf)),
+        "p",
+    )
     legend.Draw("SAME")
 
     pad.Update()
@@ -959,6 +1194,11 @@ def main() -> int:
 
     kerr_results = load_kerr_results(args.kerr_dir)
     hayward_results = load_hayward_results(args.hayward_dir)
+
+    sanitize_bad_points_and_sync_uncertainties(
+        kerr_results=kerr_results,
+        hayward_results=hayward_results,
+    )
 
     make_all_plots(
         output_root_dir=args.output_dir,
