@@ -671,8 +671,8 @@ def fit_constant_sector_dependence(
 ) -> Tuple[ROOT.TF1, float, int, float, float]:
     fit_func = ROOT.TF1(fit_name, "pol0", x_min, x_max)
     fit_func.SetLineColor(line_color)
-    fit_func.SetLineStyle(1)
-    fit_func.SetLineWidth(2)
+    fit_func.SetLineStyle(2)
+    fit_func.SetLineWidth(1)
 
     graph.Fit(fit_func, "SQN0")
 
