@@ -39,8 +39,8 @@ XB_CENTERS = [
 N_XB_BINS = len(XB_CENTERS)
 N_SECTORS = 6
 
-X_AXIS_MIN = 0.10
-X_AXIS_MAX = 0.70
+SECTOR_AXIS_MIN = 0.5
+SECTOR_AXIS_MAX = 6.5
 
 SSA_Y_MIN = -0.20
 SSA_Y_MAX = 0.20
@@ -70,7 +70,7 @@ HAYWARD_PERIOD_FILE_PATTERNS = {
 @dataclass(frozen=True)
 class AsymmetryConfig:
     key: str
-    directory_name: str
+    file_name_stem: str
     title: str
     y_title: str
     kerr_value_col: int
@@ -83,7 +83,7 @@ class AsymmetryConfig:
 ASYMMETRIES: List[AsymmetryConfig] = [
     AsymmetryConfig(
         key="ALU_sinphi",
-        directory_name="BSA_ALU_sinphi",
+        file_name_stem="BSA_ALU_sinphi",
         title="BSA A_{LU}^{sin#phi}",
         y_title="A_{LU}^{sin#phi}",
         kerr_value_col=4,
@@ -94,7 +94,7 @@ ASYMMETRIES: List[AsymmetryConfig] = [
     ),
     AsymmetryConfig(
         key="AUL_sinphi",
-        directory_name="TSA_AUL_sinphi",
+        file_name_stem="TSA_AUL_sinphi",
         title="TSA A_{UL}^{sin#phi}",
         y_title="A_{UL}^{sin#phi}",
         kerr_value_col=8,
@@ -105,7 +105,7 @@ ASYMMETRIES: List[AsymmetryConfig] = [
     ),
     AsymmetryConfig(
         key="AUL_sin2phi",
-        directory_name="TSA_AUL_sin2phi",
+        file_name_stem="TSA_AUL_sin2phi",
         title="TSA A_{UL}^{sin2#phi}",
         y_title="A_{UL}^{sin2#phi}",
         kerr_value_col=10,
@@ -116,7 +116,7 @@ ASYMMETRIES: List[AsymmetryConfig] = [
     ),
     AsymmetryConfig(
         key="ALL_const",
-        directory_name="DSA_ALL_const",
+        file_name_stem="DSA_ALL_const",
         title="DSA A_{LL}^{const}",
         y_title="A_{LL}^{const}",
         kerr_value_col=12,
@@ -127,7 +127,7 @@ ASYMMETRIES: List[AsymmetryConfig] = [
     ),
     AsymmetryConfig(
         key="ALL_cosphi",
-        directory_name="DSA_ALL_cosphi",
+        file_name_stem="DSA_ALL_cosphi",
         title="DSA A_{LL}^{cos#phi}",
         y_title="A_{LL}^{cos#phi}",
         kerr_value_col=14,
@@ -524,18 +524,17 @@ def configure_root() -> None:
     ROOT.gStyle.SetEndErrorSize(4)
 
 
-def make_single_point_graph(
+def make_single_point_error_graph(
     name: str,
-    point: FitPoint,
-    x_shift: float,
-    marker_style: int,
-    marker_color: int,
+    x_value: float,
+    y_value: float,
+    y_error: float,
     line_color: int,
 ) -> ROOT.TGraphErrors:
-    x_values = array("d", [point.x + x_shift])
-    y_values = array("d", [point.value])
+    x_values = array("d", [x_value])
+    y_values = array("d", [y_value])
     ex_values = array("d", [0.0])
-    ey_values = array("d", [point.uncertainty])
+    ey_values = array("d", [y_error])
 
     graph = ROOT.TGraphErrors(
         1,
@@ -546,21 +545,41 @@ def make_single_point_graph(
     )
 
     graph.SetName(name)
-    graph.SetMarkerStyle(marker_style)
-    graph.SetMarkerSize(1.25)
-    graph.SetMarkerColor(marker_color)
     graph.SetLineColor(line_color)
     graph.SetLineWidth(2)
+    graph.SetMarkerColor(line_color)
+    graph.SetMarkerSize(0.0)
 
     return graph
 
 
-def draw_sector_subplot(
-    sector: int,
+def make_marker(
+    x_value: float,
+    y_value: float,
+    marker_style: int,
+    marker_color: int,
+    marker_size: float,
+) -> ROOT.TMarker:
+    marker = ROOT.TMarker(x_value, y_value, marker_style)
+    marker.SetMarkerColor(marker_color)
+    marker.SetMarkerSize(marker_size)
+    return marker
+
+
+def draw_empty_sixth_pad() -> None:
+    pad = ROOT.gPad
+    pad.SetFillColor(0)
+    pad.SetBorderMode(0)
+    pad.SetFrameBorderMode(0)
+    pad.Clear()
+
+
+def draw_xb_bin_subplot(
+    xb_bin: int,
     period: str,
     asym: AsymmetryConfig,
-    kerr_points: List[FitPoint],
-    hayward_points: List[FitPoint],
+    kerr_results: ResultsDict,
+    hayward_results: ResultsDict,
 ) -> None:
     pad = ROOT.gPad
     pad.SetLeftMargin(0.16)
@@ -570,25 +589,28 @@ def draw_sector_subplot(
     pad.SetGridx(False)
     pad.SetGridy(False)
 
-    frame_name = "frame_{}_{}_sector{}".format(
+    frame_name = "frame_{}_{}_xbbin{}".format(
         period,
         asym.key,
-        sector,
+        xb_bin,
     )
 
-    frame_title = "Sector {}".format(sector)
+    frame_title = "{:.2f} < x_{{B}} < {:.2f}".format(
+        XB_EDGES[xb_bin],
+        XB_EDGES[xb_bin + 1],
+    )
 
     frame = ROOT.TH1D(
         frame_name,
         frame_title,
-        100,
-        X_AXIS_MIN,
-        X_AXIS_MAX,
+        6,
+        SECTOR_AXIS_MIN,
+        SECTOR_AXIS_MAX,
     )
 
     frame.SetMinimum(asym.y_min)
     frame.SetMaximum(asym.y_max)
-    frame.GetXaxis().SetTitle("x_{B}")
+    frame.GetXaxis().SetTitle("Electron sector")
     frame.GetYaxis().SetTitle(asym.y_title)
     frame.GetXaxis().CenterTitle(True)
     frame.GetYaxis().CenterTitle(True)
@@ -597,63 +619,94 @@ def draw_sector_subplot(
     frame.GetXaxis().SetLabelSize(0.050)
     frame.GetYaxis().SetLabelSize(0.050)
     frame.GetYaxis().SetTitleOffset(1.18)
-    frame.GetXaxis().SetNdivisions(505)
+    frame.GetXaxis().SetNdivisions(6, False)
     frame.GetYaxis().SetNdivisions(505)
+
+    for sector in range(1, N_SECTORS + 1):
+        frame.GetXaxis().SetBinLabel(sector, str(sector))
+    #endfor
+
     frame.Draw("AXIS")
 
-    zero_line = ROOT.TLine(X_AXIS_MIN, 0.0, X_AXIS_MAX, 0.0)
+    zero_line = ROOT.TLine(SECTOR_AXIS_MIN, 0.0, SECTOR_AXIS_MAX, 0.0)
     zero_line.SetLineStyle(2)
     zero_line.SetLineWidth(1)
     zero_line.SetLineColor(ROOT.kGray + 1)
     zero_line.Draw("SAME")
 
-    drawn_graphs = []
+    drawn_objects = []
 
-    first_hayward_graph = None
-    first_kerr_graph = None
+    first_hayward_marker = None
+    first_kerr_marker = None
 
-    for xb_bin in range(N_XB_BINS):
-        hayward_graph = make_single_point_graph(
-            name="graph_hayward_{}_{}_sector{}_xb{}".format(
+    for sector in range(1, N_SECTORS + 1):
+        kerr_point = kerr_results[period][asym.key][sector][xb_bin]
+        hayward_point = hayward_results[period][asym.key][sector][xb_bin]
+
+        x_kerr = float(sector) - 0.08
+        x_hayward = float(sector) + 0.08
+
+        hayward_error_graph = make_single_point_error_graph(
+            name="err_hayward_{}_{}_xbbin{}_sector{}".format(
                 period,
                 asym.key,
-                sector,
                 xb_bin,
+                sector,
             ),
-            point=hayward_points[xb_bin],
-            x_shift=0.004,
-            marker_style=21,
-            marker_color=ROOT.kRed + 1,
+            x_value=x_hayward,
+            y_value=hayward_point.value,
+            y_error=hayward_point.uncertainty,
             line_color=ROOT.kRed + 1,
         )
 
-        kerr_graph = make_single_point_graph(
-            name="graph_kerr_{}_{}_sector{}_xb{}".format(
+        kerr_error_graph = make_single_point_error_graph(
+            name="err_kerr_{}_{}_xbbin{}_sector{}".format(
                 period,
                 asym.key,
-                sector,
                 xb_bin,
+                sector,
             ),
-            point=kerr_points[xb_bin],
-            x_shift=-0.004,
-            marker_style=20,
-            marker_color=ROOT.kBlack,
+            x_value=x_kerr,
+            y_value=kerr_point.value,
+            y_error=kerr_point.uncertainty,
             line_color=ROOT.kBlack,
         )
 
-        # Draw one-point graphs so ROOT cannot draw connecting lines between xB bins.
-        hayward_graph.Draw("P E1 SAME")
-        kerr_graph.Draw("P E1 SAME")
+        hayward_marker = make_marker(
+            x_value=x_hayward,
+            y_value=hayward_point.value,
+            marker_style=21,
+            marker_color=ROOT.kRed + 1,
+            marker_size=1.25,
+        )
 
-        drawn_graphs.append(hayward_graph)
-        drawn_graphs.append(kerr_graph)
+        kerr_marker = make_marker(
+            x_value=x_kerr,
+            y_value=kerr_point.value,
+            marker_style=20,
+            marker_color=ROOT.kBlack,
+            marker_size=1.25,
+        )
 
-        if first_hayward_graph is None:
-            first_hayward_graph = hayward_graph
+        # Draw the error bars and then explicit markers on top.
+        # This avoids the ROOT/PyROOT issue where TGraphErrors can show
+        # only the vertical error bar without a visible marker.
+        hayward_error_graph.Draw("E1 SAME")
+        kerr_error_graph.Draw("E1 SAME")
+        hayward_marker.Draw("SAME")
+        kerr_marker.Draw("SAME")
+
+        drawn_objects.append(hayward_error_graph)
+        drawn_objects.append(kerr_error_graph)
+        drawn_objects.append(hayward_marker)
+        drawn_objects.append(kerr_marker)
+
+        if first_hayward_marker is None:
+            first_hayward_marker = hayward_marker
         #endif
 
-        if first_kerr_graph is None:
-            first_kerr_graph = kerr_graph
+        if first_kerr_marker is None:
+            first_kerr_marker = kerr_marker
         #endif
     #endfor
 
@@ -662,8 +715,8 @@ def draw_sector_subplot(
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
     legend.SetTextSize(0.045)
-    legend.AddEntry(first_hayward_graph, "Hayward", "pe")
-    legend.AddEntry(first_kerr_graph, "Kerr", "pe")
+    legend.AddEntry(first_hayward_marker, "Hayward", "p")
+    legend.AddEntry(first_kerr_marker, "Kerr", "p")
     legend.Draw("SAME")
 
     pad.Update()
@@ -672,8 +725,8 @@ def draw_sector_subplot(
     pad.GetListOfPrimitives().Add(frame)
     pad.GetListOfPrimitives().Add(zero_line)
 
-    for graph in drawn_graphs:
-        pad.GetListOfPrimitives().Add(graph)
+    for obj in drawn_objects:
+        pad.GetListOfPrimitives().Add(obj)
     #endfor
 
     pad.GetListOfPrimitives().Add(legend)
@@ -732,29 +785,24 @@ def make_comparison_plot(
     grid_pad.cd()
     grid_pad.Divide(3, 2, 0.001, 0.001)
 
-    for sector in range(1, N_SECTORS + 1):
-        grid_pad.cd(sector)
+    for xb_bin in range(N_XB_BINS):
+        grid_pad.cd(xb_bin + 1)
 
-        kerr_points = []
-        hayward_points = []
-
-        for xb_bin in range(N_XB_BINS):
-            kerr_points.append(kerr_results[period][asym.key][sector][xb_bin])
-            hayward_points.append(hayward_results[period][asym.key][sector][xb_bin])
-        #endfor
-
-        draw_sector_subplot(
-            sector=sector,
+        draw_xb_bin_subplot(
+            xb_bin=xb_bin,
             period=period,
             asym=asym,
-            kerr_points=kerr_points,
-            hayward_points=hayward_points,
+            kerr_results=kerr_results,
+            hayward_results=hayward_results,
         )
     #endfor
 
+    grid_pad.cd(6)
+    draw_empty_sixth_pad()
+
     draw_canvas_title(
         title_pad,
-        "{}   {}   all x_{{B}} bins".format(period, asym.title),
+        "{}   {}   sector dependence".format(period, asym.title),
     )
 
     canvas.cd()
@@ -762,7 +810,7 @@ def make_comparison_plot(
 
     ensure_directory(output_dir)
 
-    filename_base = "{}_{}".format(period, asym.directory_name)
+    filename_base = "{}_{}".format(period, asym.file_name_stem)
     png_path = os.path.join(output_dir, filename_base + ".png")
 
     canvas.SaveAs(png_path)
@@ -780,11 +828,8 @@ def make_all_plots(
         ensure_directory(period_dir)
 
         for asym in ASYMMETRIES:
-            asym_dir = os.path.join(period_dir, asym.directory_name)
-            ensure_directory(asym_dir)
-
             make_comparison_plot(
-                output_dir=asym_dir,
+                output_dir=period_dir,
                 period=period,
                 asym=asym,
                 kerr_results=kerr_results,
