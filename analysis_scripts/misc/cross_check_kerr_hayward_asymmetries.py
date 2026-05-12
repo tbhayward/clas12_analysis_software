@@ -5,6 +5,7 @@ import re
 import sys
 import math
 import argparse
+from array import array
 from dataclasses import dataclass
 from typing import Dict, Tuple, List
 
@@ -12,17 +13,22 @@ import ROOT
 
 
 # -----------------------------------------------------------------------------
-# User-editable defaults
+# Hard-coded paths
 # -----------------------------------------------------------------------------
 
-DEFAULT_KERR_DIR = "/u/home/thayward/maggies_fits"
+KERR_DIR = "/u/home/thayward/maggies_fits"
 
-DEFAULT_HAYWARD_DIR = (
+HAYWARD_DIR = (
     "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
     "asymmetry_extraction/output/results"
 )
 
-DEFAULT_OUTPUT_DIR = "output/cross_check"
+OUTPUT_DIR = "output/cross_check"
+
+
+# -----------------------------------------------------------------------------
+# Global configuration
+# -----------------------------------------------------------------------------
 
 XB_EDGES = [0.10, 0.20, 0.30, 0.40, 0.50, 0.60]
 XB_CENTERS = [
@@ -42,6 +48,8 @@ SSA_Y_MAX = 0.20
 DSA_Y_MIN = -0.10
 DSA_Y_MAX = 1.00
 
+PERIODS = ["Su22", "Fa22", "Sp23"]
+
 KERR_PERIOD_FILES = {
     "Su22": "pip_fit_summer22.txt",
     "Fa22": "pip_fit_fall22.txt",
@@ -53,8 +61,6 @@ HAYWARD_PERIOD_FILE_PATTERNS = {
     "Fa22": r"asymmetries_rgc_fa22_inb_NH3_epi\+_2_timeStamp_.*\.txt$",
     "Sp23": r"asymmetries_rgc_sp23_inb_NH3_epi\+_2_timeStamp_.*\.txt$",
 }
-
-PERIODS = ["Su22", "Fa22", "Sp23"]
 
 
 # -----------------------------------------------------------------------------
@@ -144,7 +150,6 @@ class FitPoint:
     uncertainty: float
 
 
-# Structure:
 # results[period][asym_key][sector][xb_bin_index] = FitPoint
 ResultsDict = Dict[str, Dict[str, Dict[int, Dict[int, FitPoint]]]]
 
@@ -514,33 +519,68 @@ def configure_root() -> None:
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTitleBorderSize(0)
     ROOT.gStyle.SetTitleFillColor(0)
-    ROOT.gStyle.SetPadGridX(True)
-    ROOT.gStyle.SetPadGridY(True)
+    ROOT.gStyle.SetPadGridX(False)
+    ROOT.gStyle.SetPadGridY(False)
     ROOT.gStyle.SetEndErrorSize(4)
 
 
-def draw_sector_plot(
+def make_graph_from_points(
+    name: str,
+    points: List[FitPoint],
+    x_shift: float,
+    marker_style: int,
+    marker_color: int,
+    line_color: int,
+) -> ROOT.TGraphErrors:
+    x_values = array("d")
+    y_values = array("d")
+    ex_values = array("d")
+    ey_values = array("d")
+
+    for point in points:
+        x_values.append(point.x + x_shift)
+        y_values.append(point.value)
+        ex_values.append(0.0)
+        ey_values.append(point.uncertainty)
+    #endfor
+
+    graph = ROOT.TGraphErrors(
+        len(points),
+        x_values,
+        y_values,
+        ex_values,
+        ey_values,
+    )
+
+    graph.SetName(name)
+    graph.SetMarkerStyle(marker_style)
+    graph.SetMarkerSize(1.25)
+    graph.SetMarkerColor(marker_color)
+    graph.SetLineColor(line_color)
+    graph.SetLineWidth(2)
+
+    return graph
+
+
+def draw_sector_subplot(
     sector: int,
     period: str,
     asym: AsymmetryConfig,
-    xb_bin: int,
-    kerr_point: FitPoint,
-    hayward_point: FitPoint,
-    show_legend: bool,
+    kerr_points: List[FitPoint],
+    hayward_points: List[FitPoint],
 ) -> None:
     pad = ROOT.gPad
     pad.SetLeftMargin(0.16)
     pad.SetRightMargin(0.04)
     pad.SetBottomMargin(0.16)
     pad.SetTopMargin(0.13)
-    pad.SetGridx(True)
-    pad.SetGridy(True)
+    pad.SetGridx(False)
+    pad.SetGridy(False)
 
-    frame_name = "frame_{}_{}_sector{}_xb{}".format(
+    frame_name = "frame_{}_{}_sector{}".format(
         period,
         asym.key,
         sector,
-        xb_bin,
     )
 
     frame_title = "Sector {}".format(sector)
@@ -563,7 +603,7 @@ def draw_sector_plot(
     frame.GetYaxis().SetTitleSize(0.060)
     frame.GetXaxis().SetLabelSize(0.050)
     frame.GetYaxis().SetLabelSize(0.050)
-    frame.GetYaxis().SetTitleOffset(1.20)
+    frame.GetYaxis().SetTitleOffset(1.18)
     frame.GetXaxis().SetNdivisions(505)
     frame.GetYaxis().SetNdivisions(505)
     frame.Draw("AXIS")
@@ -571,86 +611,42 @@ def draw_sector_plot(
     zero_line = ROOT.TLine(X_AXIS_MIN, 0.0, X_AXIS_MAX, 0.0)
     zero_line.SetLineStyle(2)
     zero_line.SetLineWidth(1)
+    zero_line.SetLineColor(ROOT.kGray + 1)
     zero_line.Draw("SAME")
 
-    x_kerr = ROOT.std.vector("double")()
-    y_kerr = ROOT.std.vector("double")()
-    ex_kerr = ROOT.std.vector("double")()
-    ey_kerr = ROOT.std.vector("double")()
-
-    x_hayward = ROOT.std.vector("double")()
-    y_hayward = ROOT.std.vector("double")()
-    ex_hayward = ROOT.std.vector("double")()
-    ey_hayward = ROOT.std.vector("double")()
-
-    x_kerr.push_back(kerr_point.x)
-    y_kerr.push_back(kerr_point.value)
-    ex_kerr.push_back(0.0)
-    ey_kerr.push_back(kerr_point.uncertainty)
-
-    x_hayward.push_back(hayward_point.x)
-    y_hayward.push_back(hayward_point.value)
-    ex_hayward.push_back(0.0)
-    ey_hayward.push_back(hayward_point.uncertainty)
-
-    graph_kerr = ROOT.TGraphErrors(1, x_kerr.data(), y_kerr.data(), ex_kerr.data(), ey_kerr.data())
-    graph_hayward = ROOT.TGraphErrors(1, x_hayward.data(), y_hayward.data(), ex_hayward.data(), ey_hayward.data())
-
-    graph_kerr.SetName(
-        "graph_kerr_{}_{}_sector{}_xb{}".format(
-            period,
-            asym.key,
-            sector,
-            xb_bin,
-        )
-    )
-    graph_hayward.SetName(
-        "graph_hayward_{}_{}_sector{}_xb{}".format(
-            period,
-            asym.key,
-            sector,
-            xb_bin,
-        )
+    # Small x-offsets keep Kerr and Hayward points from sitting exactly on top
+    # of each other while preserving the same xB-bin interpretation.
+    graph_kerr = make_graph_from_points(
+        name="graph_kerr_{}_{}_sector{}".format(period, asym.key, sector),
+        points=kerr_points,
+        x_shift=-0.004,
+        marker_style=20,
+        marker_color=ROOT.kBlack,
+        line_color=ROOT.kBlack,
     )
 
-    graph_kerr.SetMarkerStyle(20)
-    graph_kerr.SetMarkerSize(1.15)
-    graph_kerr.SetMarkerColor(ROOT.kBlack)
-    graph_kerr.SetLineColor(ROOT.kBlack)
-    graph_kerr.SetLineWidth(2)
-
-    graph_hayward.SetMarkerStyle(24)
-    graph_hayward.SetMarkerSize(1.25)
-    graph_hayward.SetMarkerColor(ROOT.kRed + 1)
-    graph_hayward.SetLineColor(ROOT.kRed + 1)
-    graph_hayward.SetLineWidth(2)
-
-    graph_kerr.Draw("PE1 SAME")
-    graph_hayward.Draw("PE1 SAME")
-
-    latex = ROOT.TLatex()
-    latex.SetNDC(True)
-    latex.SetTextSize(0.050)
-    latex.SetTextFont(42)
-
-    xb_low = XB_EDGES[xb_bin]
-    xb_high = XB_EDGES[xb_bin + 1]
-    latex.DrawLatex(
-        0.20,
-        0.80,
-        "{:.2f} < x_{{B}} < {:.2f}".format(xb_low, xb_high),
+    graph_hayward = make_graph_from_points(
+        name="graph_hayward_{}_{}_sector{}".format(period, asym.key, sector),
+        points=hayward_points,
+        x_shift=0.004,
+        marker_style=21,
+        marker_color=ROOT.kRed + 1,
+        line_color=ROOT.kRed + 1,
     )
 
-    if show_legend:
-        legend = ROOT.TLegend(0.53, 0.68, 0.94, 0.88)
-        legend.SetBorderSize(1)
-        legend.SetFillStyle(1001)
-        legend.SetFillColor(ROOT.kWhite)
-        legend.SetTextSize(0.045)
-        legend.AddEntry(graph_kerr, "Kerr", "pe")
-        legend.AddEntry(graph_hayward, "Hayward", "pe")
-        legend.Draw()
-    #endif
+    # The "P" draw option is important here: it explicitly draws the data marker
+    # along with the error bars, matching the style in the reference image.
+    graph_kerr.Draw("P E1 SAME")
+    graph_hayward.Draw("P E1 SAME")
+
+    legend = ROOT.TLegend(0.55, 0.70, 0.94, 0.88)
+    legend.SetBorderSize(1)
+    legend.SetFillStyle(1001)
+    legend.SetFillColor(ROOT.kWhite)
+    legend.SetTextSize(0.045)
+    legend.AddEntry(graph_hayward, "Hayward", "pe")
+    legend.AddEntry(graph_kerr, "Kerr", "pe")
+    legend.Draw("SAME")
 
     pad.Update()
 
@@ -659,6 +655,7 @@ def draw_sector_plot(
     pad.GetListOfPrimitives().Add(zero_line)
     pad.GetListOfPrimitives().Add(graph_kerr)
     pad.GetListOfPrimitives().Add(graph_hayward)
+    pad.GetListOfPrimitives().Add(legend)
 
 
 def draw_canvas_title(canvas: ROOT.TCanvas, title: str) -> None:
@@ -678,12 +675,11 @@ def make_comparison_plot(
     output_dir: str,
     period: str,
     asym: AsymmetryConfig,
-    xb_bin: int,
     kerr_results: ResultsDict,
     hayward_results: ResultsDict,
 ) -> None:
-    canvas_name = "c_{}_{}_xbbin{}".format(period, asym.key, xb_bin)
-    canvas_title = "{}  {}  xB bin {}".format(period, asym.title, xb_bin)
+    canvas_name = "c_{}_{}".format(period, asym.key)
+    canvas_title = "{}  {}".format(period, asym.title)
 
     canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 950)
     canvas.SetTopMargin(0.04)
@@ -692,50 +688,36 @@ def make_comparison_plot(
     for sector in range(1, N_SECTORS + 1):
         canvas.cd(sector)
 
-        kerr_point = kerr_results[period][asym.key][sector][xb_bin]
-        hayward_point = hayward_results[period][asym.key][sector][xb_bin]
+        kerr_points = []
+        hayward_points = []
 
-        draw_sector_plot(
+        for xb_bin in range(N_XB_BINS):
+            kerr_points.append(kerr_results[period][asym.key][sector][xb_bin])
+            hayward_points.append(hayward_results[period][asym.key][sector][xb_bin])
+        #endfor
+
+        draw_sector_subplot(
             sector=sector,
             period=period,
             asym=asym,
-            xb_bin=xb_bin,
-            kerr_point=kerr_point,
-            hayward_point=hayward_point,
-            show_legend=(sector == 1),
+            kerr_points=kerr_points,
+            hayward_points=hayward_points,
         )
     #endfor
 
     draw_canvas_title(
         canvas,
-        "{}   {}   {:.2f} < x_{{B}} < {:.2f}".format(
-            period,
-            asym.title,
-            XB_EDGES[xb_bin],
-            XB_EDGES[xb_bin + 1],
-        ),
+        "{}   {}   all x_{{B}} bins".format(period, asym.title),
     )
 
     ensure_directory(output_dir)
 
-    filename_base = "{}_{}_xB_{:02d}_{:.2f}_{:.2f}".format(
-        period,
-        asym.directory_name,
-        xb_bin,
-        XB_EDGES[xb_bin],
-        XB_EDGES[xb_bin + 1],
-    )
-
-    filename_base = filename_base.replace(".", "p")
-
+    filename_base = "{}_{}".format(period, asym.directory_name)
     png_path = os.path.join(output_dir, filename_base + ".png")
-    pdf_path = os.path.join(output_dir, filename_base + ".pdf")
 
     canvas.SaveAs(png_path)
-    canvas.SaveAs(pdf_path)
 
     print("[cross_check] Wrote {}".format(png_path))
-    print("[cross_check] Wrote {}".format(pdf_path))
 
 
 def make_all_plots(
@@ -751,22 +733,19 @@ def make_all_plots(
             asym_dir = os.path.join(period_dir, asym.directory_name)
             ensure_directory(asym_dir)
 
-            for xb_bin in range(N_XB_BINS):
-                make_comparison_plot(
-                    output_dir=asym_dir,
-                    period=period,
-                    asym=asym,
-                    xb_bin=xb_bin,
-                    kerr_results=kerr_results,
-                    hayward_results=hayward_results,
-                )
-            #endfor
+            make_comparison_plot(
+                output_dir=asym_dir,
+                period=period,
+                asym=asym,
+                kerr_results=kerr_results,
+                hayward_results=hayward_results,
+            )
         #endfor
     #endfor
 
 
 # -----------------------------------------------------------------------------
-# Optional text summary
+# Summary table
 # -----------------------------------------------------------------------------
 
 def write_summary_tables(
@@ -793,7 +772,10 @@ def write_summary_tables(
                         h = hayward_results[period][asym.key][sector][xb_bin]
 
                         difference = h.value - k.value
-                        combined_unc = math.sqrt(k.uncertainty * k.uncertainty + h.uncertainty * h.uncertainty)
+                        combined_unc = math.sqrt(
+                            k.uncertainty * k.uncertainty
+                            + h.uncertainty * h.uncertainty
+                        )
 
                         if combined_unc > 0.0:
                             pull = difference / combined_unc
@@ -846,20 +828,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--kerr-dir",
-        default=DEFAULT_KERR_DIR,
-        help="Directory containing Kerr fit text files. Default: {}".format(DEFAULT_KERR_DIR),
+        default=KERR_DIR,
+        help="Override Kerr fit text-file directory.",
     )
 
     parser.add_argument(
         "--hayward-dir",
-        default=DEFAULT_HAYWARD_DIR,
-        help="Directory containing Hayward asymmetry result text files. Default: {}".format(DEFAULT_HAYWARD_DIR),
+        default=HAYWARD_DIR,
+        help="Override Hayward asymmetry result text-file directory.",
     )
 
     parser.add_argument(
         "--output-dir",
-        default=DEFAULT_OUTPUT_DIR,
-        help="Master output directory. Default: {}".format(DEFAULT_OUTPUT_DIR),
+        default=OUTPUT_DIR,
+        help="Override master output directory.",
     )
 
     parser.add_argument(
