@@ -243,8 +243,6 @@ def sanitize_bad_points_and_sync_uncertainties(
                         replaced_kerr += 1
                     #endif
 
-                    # Requested convention: after bad-point handling, use Hayward
-                    # uncertainties for Kerr as well.
                     if abs(kerr_point.uncertainty - hayward_point.uncertainty) > 0.0:
                         synced_kerr_uncertainties += 1
                     #endif
@@ -621,8 +619,6 @@ def make_fit_graph(
     x_values_in: List[float],
     y_values_in: List[float],
     y_errors_in: List[float],
-    marker_color: int,
-    line_color: int,
 ) -> ROOT.TGraphErrors:
     x_values = array("d")
     y_values = array("d")
@@ -650,25 +646,25 @@ def make_fit_graph(
     )
 
     graph.SetName(name)
-    graph.SetMarkerColor(marker_color)
     graph.SetMarkerSize(0.0)
-    graph.SetLineColor(line_color)
-    graph.SetLineWidth(2)
+    graph.SetLineWidth(0)
 
     return graph
 
 
-def fit_linear_sector_dependence(
+def fit_constant_sector_dependence(
     graph: ROOT.TGraphErrors,
     fit_name: str,
     line_color: int,
+    x_min: float,
+    x_max: float,
 ) -> Tuple[ROOT.TF1, float, int]:
-    fit_func = ROOT.TF1(fit_name, "pol1", SECTOR_AXIS_MIN, SECTOR_AXIS_MAX)
+    fit_func = ROOT.TF1(fit_name, "pol0", x_min, x_max)
     fit_func.SetLineColor(line_color)
     fit_func.SetLineStyle(1)
     fit_func.SetLineWidth(2)
 
-    fit_result = graph.Fit(fit_func, "SQN")
+    graph.Fit(fit_func, "SQN0")
 
     chi2 = fit_func.GetChisquare()
     ndf = fit_func.GetNDF()
@@ -732,6 +728,7 @@ def draw_empty_sixth_pad() -> None:
     pad.SetBorderMode(0)
     pad.SetFrameBorderMode(0)
     pad.Clear()
+    pad._keepalive = []
 
 
 def draw_xb_bin_subplot(
@@ -742,12 +739,15 @@ def draw_xb_bin_subplot(
     hayward_results: ResultsDict,
 ) -> None:
     pad = ROOT.gPad
+    pad.Clear()
     pad.SetLeftMargin(0.16)
     pad.SetRightMargin(0.04)
     pad.SetBottomMargin(0.16)
     pad.SetTopMargin(0.16)
     pad.SetGridx(False)
     pad.SetGridy(False)
+
+    keepalive = []
 
     frame_name = "frame_{}_{}_xbbin{}".format(
         period,
@@ -768,6 +768,7 @@ def draw_xb_bin_subplot(
         SECTOR_AXIS_MAX,
     )
 
+    frame.SetDirectory(0)
     frame.SetMinimum(asym.y_min)
     frame.SetMaximum(asym.y_max)
     frame.GetXaxis().SetTitle("Electron sector")
@@ -787,14 +788,14 @@ def draw_xb_bin_subplot(
     #endfor
 
     frame.Draw("AXIS")
+    keepalive.append(frame)
 
     zero_line = ROOT.TLine(SECTOR_AXIS_MIN, 0.0, SECTOR_AXIS_MAX, 0.0)
     zero_line.SetLineStyle(2)
     zero_line.SetLineWidth(1)
     zero_line.SetLineColor(ROOT.kGray + 1)
     zero_line.Draw("SAME")
-
-    drawn_objects = []
+    keepalive.append(zero_line)
 
     hayward_x_values = []
     hayward_y_values = []
@@ -869,10 +870,10 @@ def draw_xb_bin_subplot(
         hayward_marker.Draw("SAME")
         kerr_marker.Draw("SAME")
 
-        drawn_objects.append(hayward_error_graph)
-        drawn_objects.append(kerr_error_graph)
-        drawn_objects.append(hayward_marker)
-        drawn_objects.append(kerr_marker)
+        keepalive.append(hayward_error_graph)
+        keepalive.append(kerr_error_graph)
+        keepalive.append(hayward_marker)
+        keepalive.append(kerr_marker)
 
         if first_hayward_marker is None:
             first_hayward_marker = hayward_marker
@@ -892,8 +893,6 @@ def draw_xb_bin_subplot(
         x_values_in=hayward_x_values,
         y_values_in=hayward_y_values,
         y_errors_in=hayward_y_errors,
-        marker_color=ROOT.kRed + 1,
-        line_color=ROOT.kRed + 1,
     )
 
     kerr_fit_graph = make_fit_graph(
@@ -905,11 +904,9 @@ def draw_xb_bin_subplot(
         x_values_in=kerr_x_values,
         y_values_in=kerr_y_values,
         y_errors_in=kerr_y_errors,
-        marker_color=ROOT.kBlack,
-        line_color=ROOT.kBlack,
     )
 
-    hayward_fit_func, hayward_chi2, hayward_ndf = fit_linear_sector_dependence(
+    hayward_fit_func, hayward_chi2, hayward_ndf = fit_constant_sector_dependence(
         graph=hayward_fit_graph,
         fit_name="fit_hayward_{}_{}_xbbin{}".format(
             period,
@@ -917,9 +914,11 @@ def draw_xb_bin_subplot(
             xb_bin,
         ),
         line_color=ROOT.kRed + 1,
+        x_min=SECTOR_AXIS_MIN,
+        x_max=SECTOR_AXIS_MAX,
     )
 
-    kerr_fit_func, kerr_chi2, kerr_ndf = fit_linear_sector_dependence(
+    kerr_fit_func, kerr_chi2, kerr_ndf = fit_constant_sector_dependence(
         graph=kerr_fit_graph,
         fit_name="fit_kerr_{}_{}_xbbin{}".format(
             period,
@@ -927,15 +926,17 @@ def draw_xb_bin_subplot(
             xb_bin,
         ),
         line_color=ROOT.kBlack,
+        x_min=SECTOR_AXIS_MIN,
+        x_max=SECTOR_AXIS_MAX,
     )
 
     hayward_fit_func.Draw("SAME")
     kerr_fit_func.Draw("SAME")
 
-    drawn_objects.append(hayward_fit_graph)
-    drawn_objects.append(kerr_fit_graph)
-    drawn_objects.append(hayward_fit_func)
-    drawn_objects.append(kerr_fit_func)
+    keepalive.append(hayward_fit_graph)
+    keepalive.append(kerr_fit_graph)
+    keepalive.append(hayward_fit_func)
+    keepalive.append(kerr_fit_func)
 
     legend = ROOT.TLegend(0.46, 0.16, 0.94, 0.38)
     legend.SetBorderSize(1)
@@ -953,22 +954,18 @@ def draw_xb_bin_subplot(
         "p",
     )
     legend.Draw("SAME")
+    keepalive.append(legend)
 
+    pad._keepalive = keepalive
+    pad.Modified()
     pad.Update()
-
-    # Keep objects alive by attaching them to the pad.
-    pad.GetListOfPrimitives().Add(frame)
-    pad.GetListOfPrimitives().Add(zero_line)
-
-    for obj in drawn_objects:
-        pad.GetListOfPrimitives().Add(obj)
-    #endfor
-
-    pad.GetListOfPrimitives().Add(legend)
 
 
 def draw_canvas_title(title_pad: ROOT.TPad, title: str) -> None:
     title_pad.cd()
+    title_pad.Clear()
+
+    keepalive = []
 
     latex = ROOT.TLatex()
     latex.SetNDC(True)
@@ -977,6 +974,10 @@ def draw_canvas_title(title_pad: ROOT.TPad, title: str) -> None:
     latex.SetTextSize(0.42)
     latex.DrawLatex(0.5, 0.50, title)
 
+    keepalive.append(latex)
+    title_pad._keepalive = keepalive
+
+    title_pad.Modified()
     title_pad.Update()
 
 
@@ -1040,7 +1041,9 @@ def make_comparison_plot(
         "{}   {}   sector dependence".format(period, asym.title),
     )
 
+    canvas._keepalive = [title_pad, grid_pad]
     canvas.cd()
+    canvas.Modified()
     canvas.Update()
 
     ensure_directory(output_dir)
