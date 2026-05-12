@@ -369,6 +369,79 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
 
+    // if (property == "enpi_sector1") {
+    //     double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+    //     while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+    //     while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+    //     bool inSector = ((e_phi_deg >= 330.0 && e_phi_deg < 360.0) ||
+    //                      (e_phi_deg >= 0.0   && e_phi_deg < 30.0));
+
+    //     bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+    //     if (!goodEvent) return false;
+    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+
+    // if (property == "enpi_sector2") {
+    //     double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+    //     while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+    //     while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+    //     bool inSector = (e_phi_deg >= 30.0 && e_phi_deg < 90.0);
+
+    //     bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+    //     if (!goodEvent) return false;
+    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+
+    // if (property == "enpi_sector3") {
+    //     double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+    //     while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+    //     while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+    //     bool inSector = (e_phi_deg >= 90.0 && e_phi_deg < 150.0);
+
+    //     bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+    //     if (!goodEvent) return false;
+    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+
+    // if (property == "enpi_sector4") {
+    //     double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+    //     while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+    //     while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+    //     bool inSector = (e_phi_deg >= 150.0 && e_phi_deg < 210.0);
+
+    //     bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+    //     if (!goodEvent) return false;
+    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+
+    // if (property == "enpi_sector5") {
+    //     double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+    //     while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+    //     while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+    //     bool inSector = (e_phi_deg >= 210.0 && e_phi_deg < 270.0);
+
+    //     bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+    //     if (!goodEvent) return false;
+    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+
+    // if (property == "enpi_sector6") {
+    //     double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
+    //     while (e_phi_deg < 0.0) e_phi_deg += 360.0;
+    //     while (e_phi_deg >= 360.0) e_phi_deg -= 360.0;
+
+    //     bool inSector = (e_phi_deg >= 270.0 && e_phi_deg < 330.0);
+
+    //     bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
+    //     if (!goodEvent) return false;
+    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+
     if (property == "enpi_sector1") {
         double e_phi_deg = (*e_phi) * 180.0 / TMath::Pi();
         while (e_phi_deg < 0.0) e_phi_deg += 360.0;
@@ -379,7 +452,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return ((*Mx2 > 0.77 && *Mx2 < 1.09));
+        // return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
 
     if (property == "enpi_sector2") {
@@ -391,7 +465,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return ((*Mx2 > 0.77 && *Mx2 < 1.09));
+        // return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
 
     if (property == "enpi_sector3") {
@@ -403,7 +478,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return ((*Mx2 > 0.77 && *Mx2 < 1.09));
+        // return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
 
     if (property == "enpi_sector4") {
@@ -415,7 +491,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return ((*Mx2 > 0.77 && *Mx2 < 1.09));
+        // return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
 
     if (property == "enpi_sector5") {
@@ -427,7 +504,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return ((*Mx2 > 0.77 && *Mx2 < 1.09));
+        // return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
 
     if (property == "enpi_sector6") {
@@ -439,7 +517,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         bool goodEvent = (*x > 0.10 && *x < 0.60 && inSector);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return ((*Mx2 > 0.77 && *Mx2 < 1.09));
+        // return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
     
 
