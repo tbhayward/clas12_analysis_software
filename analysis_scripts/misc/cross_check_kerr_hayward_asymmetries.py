@@ -75,7 +75,6 @@ HAYWARD_PERIOD_FILE_PATTERNS = {
     "Sp23": r"asymmetries_rgc_sp23_inb_NH3_epi\+_2_timeStamp_.*\.txt$",
 }
 
-# PyROOT object lifetime protection.
 ROOT_OBJECT_KEEPALIVE = []
 
 
@@ -164,6 +163,14 @@ class FitPoint:
     x: float
     value: float
     uncertainty: float
+
+
+@dataclass(frozen=True)
+class PlotBinConfig:
+    label: str
+    name_tag: str
+    source_xb_bins: List[int]
+    x_value: float
 
 
 # results[period][asym_key][sector][xb_bin_index] = FitPoint
@@ -326,6 +333,147 @@ def weighted_average_points(
         x=XB_CENTERS[xb_bin],
         value=combined_value,
         uncertainty=combined_uncertainty,
+    )
+
+
+def weighted_average_points_for_plot_bin(
+    points: List[FitPoint],
+    combined_x: float,
+    period_label: str,
+    asym_key: str,
+    sector: int,
+    plot_bin_label: str,
+    analyzer_name: str,
+) -> FitPoint:
+    weighted_sum = 0.0
+    weight_sum = 0.0
+
+    for point in points:
+        if point.uncertainty <= 0.0:
+            print(
+                "[cross_check] WARNING: skipping zero/negative uncertainty point in plot-bin average "
+                "for analyzer={} period={} asymmetry={} sector={} plot_bin={} "
+                "value={} uncertainty={}".format(
+                    analyzer_name,
+                    period_label,
+                    asym_key,
+                    sector,
+                    plot_bin_label,
+                    point.value,
+                    point.uncertainty,
+                ),
+                file=sys.stderr,
+            )
+            continue
+        #endif
+
+        weight = 1.0 / (point.uncertainty * point.uncertainty)
+        weighted_sum += weight * point.value
+        weight_sum += weight
+    #endfor
+
+    if weight_sum <= 0.0:
+        fatal(
+            "Cannot form weighted plot-bin average for analyzer={} period={} asymmetry={} "
+            "sector={} plot_bin={}; all candidate points had non-positive uncertainties.".format(
+                analyzer_name,
+                period_label,
+                asym_key,
+                sector,
+                plot_bin_label,
+            )
+        )
+    #endif
+
+    combined_value = weighted_sum / weight_sum
+    combined_uncertainty = math.sqrt(1.0 / weight_sum)
+
+    return FitPoint(
+        x=combined_x,
+        value=combined_value,
+        uncertainty=combined_uncertainty,
+    )
+
+
+def get_plot_bin_configs(combine_high_xb: bool) -> List[PlotBinConfig]:
+    if combine_high_xb:
+        return [
+            PlotBinConfig(
+                label="{:.2f} < x_{{B}} < {:.2f}".format(XB_EDGES[0], XB_EDGES[1]),
+                name_tag="xB_0p10_0p20",
+                source_xb_bins=[0],
+                x_value=0.5 * (XB_EDGES[0] + XB_EDGES[1]),
+            ),
+            PlotBinConfig(
+                label="{:.2f} < x_{{B}} < {:.2f}".format(XB_EDGES[1], XB_EDGES[2]),
+                name_tag="xB_0p20_0p30",
+                source_xb_bins=[1],
+                x_value=0.5 * (XB_EDGES[1] + XB_EDGES[2]),
+            ),
+            PlotBinConfig(
+                label="{:.2f} < x_{{B}} < {:.2f}".format(XB_EDGES[2], XB_EDGES[3]),
+                name_tag="xB_0p30_0p40",
+                source_xb_bins=[2],
+                x_value=0.5 * (XB_EDGES[2] + XB_EDGES[3]),
+            ),
+            PlotBinConfig(
+                label="{:.2f} < x_{{B}} < {:.2f}".format(XB_EDGES[3], XB_EDGES[5]),
+                name_tag="xB_0p40_0p60",
+                source_xb_bins=[3, 4],
+                x_value=0.5 * (XB_EDGES[3] + XB_EDGES[5]),
+            ),
+        ]
+    #endif
+
+    plot_bins = []
+
+    for xb_bin in range(N_XB_BINS):
+        plot_bins.append(
+            PlotBinConfig(
+                label="{:.2f} < x_{{B}} < {:.2f}".format(
+                    XB_EDGES[xb_bin],
+                    XB_EDGES[xb_bin + 1],
+                ),
+                name_tag="xB_{:.2f}_{:.2f}".format(
+                    XB_EDGES[xb_bin],
+                    XB_EDGES[xb_bin + 1],
+                ).replace(".", "p"),
+                source_xb_bins=[xb_bin],
+                x_value=XB_CENTERS[xb_bin],
+            )
+        )
+    #endfor
+
+    return plot_bins
+
+
+def get_plot_point(
+    results: ResultsDict,
+    period: str,
+    asym: AsymmetryConfig,
+    sector: int,
+    plot_bin: PlotBinConfig,
+    analyzer_name: str,
+) -> FitPoint:
+    if len(plot_bin.source_xb_bins) == 1:
+        xb_bin = plot_bin.source_xb_bins[0]
+        return results[period][asym.key][sector][xb_bin]
+    #endif
+
+    source_points = []
+
+    for xb_bin in plot_bin.source_xb_bins:
+        source_points.append(results[period][asym.key][sector][xb_bin])
+    #endfor
+
+    return weighted_average_points_for_plot_bin(
+        points=source_points,
+        combined_x=plot_bin.x_value,
+        period_label=period,
+        asym_key=asym.key,
+        sector=sector,
+        plot_bin_label=plot_bin.label,
+        analyzer_name=analyzer_name,
     )
 
 
@@ -935,7 +1083,7 @@ def draw_empty_sixth_pad() -> None:
     pad.Clear()
 
 
-def draw_xb_bin_title(xb_bin: int) -> ROOT.TLatex:
+def draw_xb_bin_title(plot_bin: PlotBinConfig) -> ROOT.TLatex:
     latex = ROOT.TLatex()
     latex.SetNDC(True)
     latex.SetTextFont(42)
@@ -944,16 +1092,14 @@ def draw_xb_bin_title(xb_bin: int) -> ROOT.TLatex:
     latex.DrawLatex(
         0.50,
         0.91,
-        "{:.2f} < x_{{B}} < {:.2f}".format(
-            XB_EDGES[xb_bin],
-            XB_EDGES[xb_bin + 1],
-        ),
+        plot_bin.label,
     )
     return latex
 
 
 def draw_xb_bin_subplot(
-    xb_bin: int,
+    plot_bin_index: int,
+    plot_bin: PlotBinConfig,
     period: str,
     asym: AsymmetryConfig,
     kerr_results: ResultsDict,
@@ -969,10 +1115,10 @@ def draw_xb_bin_subplot(
     pad.SetGridx(False)
     pad.SetGridy(False)
 
-    frame_name = "frame_{}_{}_xbbin{}".format(
+    frame_name = "frame_{}_{}_{}".format(
         period,
         asym.key,
-        xb_bin,
+        plot_bin.name_tag,
     )
 
     frame = ROOT.TH1D(
@@ -1005,7 +1151,7 @@ def draw_xb_bin_subplot(
     frame.Draw("AXIS")
     keep_root_object(frame)
 
-    subplot_title = draw_xb_bin_title(xb_bin)
+    subplot_title = draw_xb_bin_title(plot_bin)
     keep_root_object(subplot_title)
 
     zero_line = ROOT.TLine(SECTOR_AXIS_MIN, 0.0, SECTOR_AXIS_MAX, 0.0)
@@ -1027,14 +1173,29 @@ def draw_xb_bin_subplot(
     first_kerr_marker = None
 
     for sector in range(1, N_SECTORS + 1):
-        kerr_point = kerr_results[period][asym.key][sector][xb_bin]
+        kerr_point = get_plot_point(
+            results=kerr_results,
+            period=period,
+            asym=asym,
+            sector=sector,
+            plot_bin=plot_bin,
+            analyzer_name="Kerr",
+        )
 
         if plot_hayward:
             if hayward_results is None:
                 fatal("Internal error: plot_hayward is true but hayward_results is None.")
             #endif
 
-            hayward_point = hayward_results[period][asym.key][sector][xb_bin]
+            hayward_point = get_plot_point(
+                results=hayward_results,
+                period=period,
+                asym=asym,
+                sector=sector,
+                plot_bin=plot_bin,
+                analyzer_name="Hayward",
+            )
+
             x_kerr = float(sector) - 0.08
             x_hayward = float(sector) + 0.08
         else:
@@ -1048,10 +1209,10 @@ def draw_xb_bin_subplot(
         kerr_y_errors.append(kerr_point.uncertainty)
 
         kerr_error_graph = make_single_point_error_graph(
-            name="err_kerr_{}_{}_xbbin{}_sector{}".format(
+            name="err_kerr_{}_{}_{}_sector{}".format(
                 period,
                 asym.key,
-                xb_bin,
+                plot_bin.name_tag,
                 sector,
             ),
             x_value=x_kerr,
@@ -1074,10 +1235,10 @@ def draw_xb_bin_subplot(
             hayward_y_errors.append(hayward_point.uncertainty)
 
             hayward_error_graph = make_single_point_error_graph(
-                name="err_hayward_{}_{}_xbbin{}_sector{}".format(
+                name="err_hayward_{}_{}_{}_sector{}".format(
                     period,
                     asym.key,
-                    xb_bin,
+                    plot_bin.name_tag,
                     sector,
                 ),
                 x_value=x_hayward,
@@ -1117,10 +1278,10 @@ def draw_xb_bin_subplot(
     #endfor
 
     kerr_fit_graph = make_fit_graph(
-        name="fit_graph_kerr_{}_{}_xbbin{}".format(
+        name="fit_graph_kerr_{}_{}_{}".format(
             period,
             asym.key,
-            xb_bin,
+            plot_bin.name_tag,
         ),
         x_values_in=kerr_x_values,
         y_values_in=kerr_y_values,
@@ -1129,10 +1290,10 @@ def draw_xb_bin_subplot(
 
     kerr_fit_func, kerr_chi2, kerr_ndf, kerr_chi2_ndf, kerr_p_value = fit_constant_sector_dependence(
         graph=kerr_fit_graph,
-        fit_name="fit_kerr_{}_{}_xbbin{}".format(
+        fit_name="fit_kerr_{}_{}_{}".format(
             period,
             asym.key,
-            xb_bin,
+            plot_bin.name_tag,
         ),
         line_color=ROOT.kBlack,
         x_min=SECTOR_AXIS_MIN,
@@ -1145,10 +1306,10 @@ def draw_xb_bin_subplot(
 
     if plot_hayward:
         hayward_fit_graph = make_fit_graph(
-            name="fit_graph_hayward_{}_{}_xbbin{}".format(
+            name="fit_graph_hayward_{}_{}_{}".format(
                 period,
                 asym.key,
-                xb_bin,
+                plot_bin.name_tag,
             ),
             x_values_in=hayward_x_values,
             y_values_in=hayward_y_values,
@@ -1157,10 +1318,10 @@ def draw_xb_bin_subplot(
 
         hayward_fit_func, hayward_chi2, hayward_ndf, hayward_chi2_ndf, hayward_p_value = fit_constant_sector_dependence(
             graph=hayward_fit_graph,
-            fit_name="fit_hayward_{}_{}_xbbin{}".format(
+            fit_name="fit_hayward_{}_{}_{}".format(
                 period,
                 asym.key,
-                xb_bin,
+                plot_bin.name_tag,
             ),
             line_color=ROOT.kRed + 1,
             x_min=SECTOR_AXIS_MIN,
@@ -1218,11 +1379,17 @@ def make_comparison_plot(
     kerr_results: ResultsDict,
     hayward_results: Optional[ResultsDict],
     plot_hayward: bool,
+    combine_high_xb: bool,
 ) -> None:
     canvas_name = "c_{}_{}".format(period, asym.key)
     canvas_title = "{}  {}".format(period, asym.title)
 
-    canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 1050)
+    if combine_high_xb:
+        canvas = ROOT.TCanvas(canvas_name, canvas_title, 1350, 1000)
+    else:
+        canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 1050)
+    #endif
+
     keep_root_object(canvas)
 
     title_pad = ROOT.TPad(
@@ -1253,14 +1420,22 @@ def make_comparison_plot(
     grid_pad.Draw()
     keep_root_object(grid_pad)
 
-    grid_pad.cd()
-    grid_pad.Divide(3, 2, 0.001, 0.001)
+    plot_bins = get_plot_bin_configs(combine_high_xb)
 
-    for xb_bin in range(N_XB_BINS):
-        grid_pad.cd(xb_bin + 1)
+    grid_pad.cd()
+
+    if combine_high_xb:
+        grid_pad.Divide(2, 2, 0.001, 0.001)
+    else:
+        grid_pad.Divide(3, 2, 0.001, 0.001)
+    #endif
+
+    for plot_bin_index, plot_bin in enumerate(plot_bins):
+        grid_pad.cd(plot_bin_index + 1)
 
         draw_xb_bin_subplot(
-            xb_bin=xb_bin,
+            plot_bin_index=plot_bin_index,
+            plot_bin=plot_bin,
             period=period,
             asym=asym,
             kerr_results=kerr_results,
@@ -1269,13 +1444,19 @@ def make_comparison_plot(
         )
     #endfor
 
-    grid_pad.cd(6)
-    draw_empty_sixth_pad()
+    if not combine_high_xb:
+        grid_pad.cd(6)
+        draw_empty_sixth_pad()
+    #endif
 
     if plot_hayward:
         mode_suffix = "sector dependence"
     else:
         mode_suffix = "sector dependence"
+    #endif
+
+    if combine_high_xb:
+        mode_suffix += ", high-x_{B} combined"
     #endif
 
     draw_canvas_title(
@@ -1290,6 +1471,10 @@ def make_comparison_plot(
     ensure_directory(output_dir)
 
     filename_base = "{}_{}".format(period, asym.file_name_stem)
+
+    if combine_high_xb:
+        filename_base += "_xBhigh_combined"
+    #endif
 
     if not plot_hayward:
         filename_base += "_Kerr_only"
@@ -1307,6 +1492,7 @@ def make_all_plots(
     kerr_results: ResultsDict,
     hayward_results: ResultsDict,
     plot_hayward: bool,
+    combine_high_xb: bool,
 ) -> None:
     for period in PERIODS:
         period_dir = os.path.join(output_root_dir, period)
@@ -1320,6 +1506,7 @@ def make_all_plots(
                 kerr_results=kerr_results,
                 hayward_results=hayward_results,
                 plot_hayward=plot_hayward,
+                combine_high_xb=combine_high_xb,
             )
         #endfor
     #endfor
@@ -1345,6 +1532,7 @@ def make_all_plots(
             kerr_results=rgc_kerr_results,
             hayward_results=rgc_hayward_results,
             plot_hayward=plot_hayward,
+            combine_high_xb=combine_high_xb,
         )
     #endfor
 
@@ -1460,6 +1648,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--combine-high-xb",
+        action="store_true",
+        help=(
+            "Use 2x2 canvases instead of 2x3 canvases by combining the final two "
+            "xB bins into one weighted-average bin: 0.40 < x_B < 0.60."
+        ),
+    )
+
+    parser.add_argument(
         "--no-summary",
         action="store_true",
         help="Disable writing the CSV summary table.",
@@ -1483,6 +1680,12 @@ def main() -> int:
         print("[cross_check] Plotting mode: Kerr and Hayward")
     #endif
 
+    if args.combine_high_xb:
+        print("[cross_check] xB plotting mode: combine 0.40-0.50 and 0.50-0.60 into 0.40-0.60")
+    else:
+        print("[cross_check] xB plotting mode: standard five xB bins")
+    #endif
+
     kerr_results = load_kerr_results(args.kerr_dir)
     hayward_results = load_hayward_results(args.hayward_dir)
 
@@ -1496,6 +1699,7 @@ def main() -> int:
         kerr_results=kerr_results,
         hayward_results=hayward_results,
         plot_hayward=(not args.kerr_only),
+        combine_high_xb=args.combine_high_xb,
     )
 
     if not args.no_summary:
