@@ -7,7 +7,7 @@ import math
 import argparse
 from array import array
 from dataclasses import dataclass
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 
 import ROOT
 
@@ -42,8 +42,14 @@ N_SECTORS = 6
 SECTOR_AXIS_MIN = 0.5
 SECTOR_AXIS_MAX = 6.5
 
-SSA_Y_MIN = -0.60
-SSA_Y_MAX = 0.60
+ALU_SINPHI_Y_MIN = -0.30
+ALU_SINPHI_Y_MAX = 0.30
+
+AUL_SINPHI_Y_MIN = -0.30
+AUL_SINPHI_Y_MAX = 0.30
+
+AUL_SIN2PHI_Y_MIN = -0.40
+AUL_SIN2PHI_Y_MAX = 0.40
 
 ALL_Y_MIN = -1.00
 ALL_Y_MAX = 1.00
@@ -95,40 +101,40 @@ ASYMMETRIES: List[AsymmetryConfig] = [
         key="ALU_sinphi",
         file_name_stem="BSA_ALU_sinphi",
         title="BSA A_{LU}^{sin#phi}",
-        y_title="A_{LU}^{sin#phi}",
+        y_title="F_{LU}^{sin#phi}/F_{UU}",
         kerr_value_col=4,
         kerr_unc_col=5,
         hayward_term="ALUsinphi",
-        y_min=SSA_Y_MIN,
-        y_max=SSA_Y_MAX,
+        y_min=ALU_SINPHI_Y_MIN,
+        y_max=ALU_SINPHI_Y_MAX,
     ),
     AsymmetryConfig(
         key="AUL_sinphi",
         file_name_stem="TSA_AUL_sinphi",
         title="TSA A_{UL}^{sin#phi}",
-        y_title="A_{UL}^{sin#phi}",
+        y_title="F_{UL}^{sin#phi}/F_{UU}",
         kerr_value_col=8,
         kerr_unc_col=9,
         hayward_term="AULsinphi",
-        y_min=SSA_Y_MIN,
-        y_max=SSA_Y_MAX,
+        y_min=AUL_SINPHI_Y_MIN,
+        y_max=AUL_SINPHI_Y_MAX,
     ),
     AsymmetryConfig(
         key="AUL_sin2phi",
         file_name_stem="TSA_AUL_sin2phi",
         title="TSA A_{UL}^{sin2#phi}",
-        y_title="A_{UL}^{sin2#phi}",
+        y_title="F_{UL}^{sin2#phi}/F_{UU}",
         kerr_value_col=10,
         kerr_unc_col=11,
         hayward_term="AULsin2phi",
-        y_min=SSA_Y_MIN,
-        y_max=SSA_Y_MAX,
+        y_min=AUL_SIN2PHI_Y_MIN,
+        y_max=AUL_SIN2PHI_Y_MAX,
     ),
     AsymmetryConfig(
         key="ALL_const",
         file_name_stem="DSA_ALL_const",
         title="DSA A_{LL}^{const}",
-        y_title="A_{LL}^{const}",
+        y_title="F_{LL}/F_{UU}",
         kerr_value_col=12,
         kerr_unc_col=13,
         hayward_term="ALL",
@@ -139,7 +145,7 @@ ASYMMETRIES: List[AsymmetryConfig] = [
         key="ALL_cosphi",
         file_name_stem="DSA_ALL_cosphi",
         title="DSA A_{LL}^{cos#phi}",
-        y_title="A_{LL}^{cos#phi}",
+        y_title="F_{LL}^{cos#phi}/F_{UU}",
         kerr_value_col=14,
         kerr_unc_col=15,
         hayward_term="ALLcosphi",
@@ -265,7 +271,15 @@ def sanitize_bad_points_and_sync_uncertainties(
         )
     )
 
-def weighted_average_points(points: List[FitPoint], period_label: str, asym_key: str, sector: int, xb_bin: int, analyzer_name: str) -> FitPoint:
+
+def weighted_average_points(
+    points: List[FitPoint],
+    period_label: str,
+    asym_key: str,
+    sector: int,
+    xb_bin: int,
+    analyzer_name: str,
+) -> FitPoint:
     weighted_sum = 0.0
     weight_sum = 0.0
 
@@ -398,6 +412,7 @@ def build_rgc_combined_results(
 
     return combined_results
 
+
 def find_unique_file_by_regex(directory: str, pattern: str, period: str) -> str:
     if not os.path.isdir(directory):
         fatal("Hayward input directory does not exist: {}".format(directory))
@@ -455,53 +470,12 @@ def initialize_results() -> ResultsDict:
 
 
 def validate_complete_results(results: ResultsDict, analyzer_name: str) -> None:
-    missing = []
+    validate_complete_results_for_periods(
+        results=results,
+        analyzer_name=analyzer_name,
+        periods_to_check=PERIODS,
+    )
 
-    for period in PERIODS:
-        for asym in ASYMMETRIES:
-            for sector in range(1, N_SECTORS + 1):
-                for xb_bin in range(N_XB_BINS):
-                    if xb_bin not in results[period][asym.key][sector]:
-                        missing.append(
-                            "{} period={} asymmetry={} sector={} xb_bin={}".format(
-                                analyzer_name,
-                                period,
-                                asym.key,
-                                sector,
-                                xb_bin,
-                            )
-                        )
-                    #endif
-                #endfor
-            #endfor
-        #endfor
-    #endfor
-
-    if missing:
-        max_print = 100
-        print(
-            "[cross_check] FATAL: missing {} required fit points for {}.".format(
-                len(missing),
-                analyzer_name,
-            ),
-            file=sys.stderr,
-        )
-
-        for item in missing[:max_print]:
-            print("[cross_check]   missing {}".format(item), file=sys.stderr)
-        #endfor
-
-        if len(missing) > max_print:
-            print(
-                "[cross_check]   ... {} more missing entries".format(
-                    len(missing) - max_print
-                ),
-                file=sys.stderr,
-            )
-        #endif
-
-        sys.exit(1)
-    #endif
 
 def validate_complete_results_for_periods(
     results: ResultsDict,
@@ -588,6 +562,7 @@ def validate_complete_results_for_periods(
 
         sys.exit(1)
     #endif
+
 
 # -----------------------------------------------------------------------------
 # Kerr parser
@@ -872,8 +847,6 @@ def make_fit_graph(
     graph.SetName(name)
     graph.SetMarkerSize(0.0)
     graph.SetLineWidth(0)
-
-    # Keep the underlying arrays alive, too.
     graph._arrays = (x_values, y_values, ex_values, ey_values)
 
     return graph
@@ -936,8 +909,6 @@ def make_single_point_error_graph(
     graph.SetLineWidth(2)
     graph.SetMarkerColor(line_color)
     graph.SetMarkerSize(0.0)
-
-    # Keep the underlying arrays alive, too.
     graph._arrays = (x_values, y_values, ex_values, ey_values)
 
     return graph
@@ -986,7 +957,8 @@ def draw_xb_bin_subplot(
     period: str,
     asym: AsymmetryConfig,
     kerr_results: ResultsDict,
-    hayward_results: ResultsDict,
+    hayward_results: Optional[ResultsDict],
+    plot_hayward: bool,
 ) -> None:
     pad = ROOT.gPad
     pad.Clear()
@@ -1056,31 +1028,24 @@ def draw_xb_bin_subplot(
 
     for sector in range(1, N_SECTORS + 1):
         kerr_point = kerr_results[period][asym.key][sector][xb_bin]
-        hayward_point = hayward_results[period][asym.key][sector][xb_bin]
 
-        x_kerr = float(sector) - 0.08
-        x_hayward = float(sector) + 0.08
+        if plot_hayward:
+            if hayward_results is None:
+                fatal("Internal error: plot_hayward is true but hayward_results is None.")
+            #endif
 
-        hayward_x_values.append(x_hayward)
-        hayward_y_values.append(hayward_point.value)
-        hayward_y_errors.append(hayward_point.uncertainty)
+            hayward_point = hayward_results[period][asym.key][sector][xb_bin]
+            x_kerr = float(sector) - 0.08
+            x_hayward = float(sector) + 0.08
+        else:
+            hayward_point = None
+            x_kerr = float(sector)
+            x_hayward = float(sector)
+        #endif
 
         kerr_x_values.append(x_kerr)
         kerr_y_values.append(kerr_point.value)
         kerr_y_errors.append(kerr_point.uncertainty)
-
-        hayward_error_graph = make_single_point_error_graph(
-            name="err_hayward_{}_{}_xbbin{}_sector{}".format(
-                period,
-                asym.key,
-                xb_bin,
-                sector,
-            ),
-            x_value=x_hayward,
-            y_value=hayward_point.value,
-            y_error=hayward_point.uncertainty,
-            line_color=ROOT.kRed + 1,
-        )
 
         kerr_error_graph = make_single_point_error_graph(
             name="err_kerr_{}_{}_xbbin{}_sector{}".format(
@@ -1095,14 +1060,6 @@ def draw_xb_bin_subplot(
             line_color=ROOT.kBlack,
         )
 
-        hayward_marker = make_marker(
-            x_value=x_hayward,
-            y_value=hayward_point.value,
-            marker_style=21,
-            marker_color=ROOT.kRed + 1,
-            marker_size=1.45,
-        )
-
         kerr_marker = make_marker(
             x_value=x_kerr,
             y_value=kerr_point.value,
@@ -1111,35 +1068,53 @@ def draw_xb_bin_subplot(
             marker_size=1.45,
         )
 
-        hayward_error_graph.Draw("E1 SAME")
+        if plot_hayward:
+            hayward_x_values.append(x_hayward)
+            hayward_y_values.append(hayward_point.value)
+            hayward_y_errors.append(hayward_point.uncertainty)
+
+            hayward_error_graph = make_single_point_error_graph(
+                name="err_hayward_{}_{}_xbbin{}_sector{}".format(
+                    period,
+                    asym.key,
+                    xb_bin,
+                    sector,
+                ),
+                x_value=x_hayward,
+                y_value=hayward_point.value,
+                y_error=hayward_point.uncertainty,
+                line_color=ROOT.kRed + 1,
+            )
+
+            hayward_marker = make_marker(
+                x_value=x_hayward,
+                y_value=hayward_point.value,
+                marker_style=21,
+                marker_color=ROOT.kRed + 1,
+                marker_size=1.45,
+            )
+
+            hayward_error_graph.Draw("E1 SAME")
+            hayward_marker.Draw("SAME")
+
+            keep_root_object(hayward_error_graph)
+            keep_root_object(hayward_marker)
+
+            if first_hayward_marker is None:
+                first_hayward_marker = hayward_marker
+            #endif
+        #endif
+
         kerr_error_graph.Draw("E1 SAME")
-        hayward_marker.Draw("SAME")
         kerr_marker.Draw("SAME")
 
-        keep_root_object(hayward_error_graph)
         keep_root_object(kerr_error_graph)
-        keep_root_object(hayward_marker)
         keep_root_object(kerr_marker)
-
-        if first_hayward_marker is None:
-            first_hayward_marker = hayward_marker
-        #endif
 
         if first_kerr_marker is None:
             first_kerr_marker = kerr_marker
         #endif
     #endfor
-
-    hayward_fit_graph = make_fit_graph(
-        name="fit_graph_hayward_{}_{}_xbbin{}".format(
-            period,
-            asym.key,
-            xb_bin,
-        ),
-        x_values_in=hayward_x_values,
-        y_values_in=hayward_y_values,
-        y_errors_in=hayward_y_errors,
-    )
 
     kerr_fit_graph = make_fit_graph(
         name="fit_graph_kerr_{}_{}_xbbin{}".format(
@@ -1150,18 +1125,6 @@ def draw_xb_bin_subplot(
         x_values_in=kerr_x_values,
         y_values_in=kerr_y_values,
         y_errors_in=kerr_y_errors,
-    )
-
-    hayward_fit_func, hayward_chi2, hayward_ndf, hayward_chi2_ndf, hayward_p_value = fit_constant_sector_dependence(
-        graph=hayward_fit_graph,
-        fit_name="fit_hayward_{}_{}_xbbin{}".format(
-            period,
-            asym.key,
-            xb_bin,
-        ),
-        line_color=ROOT.kRed + 1,
-        x_min=SECTOR_AXIS_MIN,
-        x_max=SECTOR_AXIS_MAX,
     )
 
     kerr_fit_func, kerr_chi2, kerr_ndf, kerr_chi2_ndf, kerr_p_value = fit_constant_sector_dependence(
@@ -1176,31 +1139,56 @@ def draw_xb_bin_subplot(
         x_max=SECTOR_AXIS_MAX,
     )
 
-    hayward_fit_func.Draw("SAME")
     kerr_fit_func.Draw("SAME")
-
-    keep_root_object(hayward_fit_graph)
     keep_root_object(kerr_fit_graph)
-    keep_root_object(hayward_fit_func)
     keep_root_object(kerr_fit_func)
 
-    legend = ROOT.TLegend(0.53, 0.16, 0.94, 0.31)
-    legend.SetBorderSize(1)
-    legend.SetFillStyle(1001)
-    legend.SetFillColor(ROOT.kWhite)
-    legend.SetTextSize(0.025)
-    legend.AddEntry(
-        first_hayward_marker,
-        "Hayward, {}".format(format_fit_quality(hayward_chi2_ndf, hayward_p_value)),
-        "p",
-    )
-    legend.AddEntry(
-        first_kerr_marker,
-        "Kerr, {}".format(format_fit_quality(kerr_chi2_ndf, kerr_p_value)),
-        "p",
-    )
-    legend.Draw("SAME")
-    keep_root_object(legend)
+    if plot_hayward:
+        hayward_fit_graph = make_fit_graph(
+            name="fit_graph_hayward_{}_{}_xbbin{}".format(
+                period,
+                asym.key,
+                xb_bin,
+            ),
+            x_values_in=hayward_x_values,
+            y_values_in=hayward_y_values,
+            y_errors_in=hayward_y_errors,
+        )
+
+        hayward_fit_func, hayward_chi2, hayward_ndf, hayward_chi2_ndf, hayward_p_value = fit_constant_sector_dependence(
+            graph=hayward_fit_graph,
+            fit_name="fit_hayward_{}_{}_xbbin{}".format(
+                period,
+                asym.key,
+                xb_bin,
+            ),
+            line_color=ROOT.kRed + 1,
+            x_min=SECTOR_AXIS_MIN,
+            x_max=SECTOR_AXIS_MAX,
+        )
+
+        hayward_fit_func.Draw("SAME")
+        keep_root_object(hayward_fit_graph)
+        keep_root_object(hayward_fit_func)
+
+        legend = ROOT.TLegend(0.53, 0.16, 0.94, 0.31)
+        legend.SetBorderSize(1)
+        legend.SetFillStyle(1001)
+        legend.SetFillColor(ROOT.kWhite)
+        legend.SetTextSize(0.025)
+        legend.AddEntry(
+            first_hayward_marker,
+            "Hayward, {}".format(format_fit_quality(hayward_chi2_ndf, hayward_p_value)),
+            "p",
+        )
+        legend.AddEntry(
+            first_kerr_marker,
+            "Kerr, {}".format(format_fit_quality(kerr_chi2_ndf, kerr_p_value)),
+            "p",
+        )
+        legend.Draw("SAME")
+        keep_root_object(legend)
+    #endif
 
     pad.Modified()
     pad.Update()
@@ -1228,7 +1216,8 @@ def make_comparison_plot(
     period: str,
     asym: AsymmetryConfig,
     kerr_results: ResultsDict,
-    hayward_results: ResultsDict,
+    hayward_results: Optional[ResultsDict],
+    plot_hayward: bool,
 ) -> None:
     canvas_name = "c_{}_{}".format(period, asym.key)
     canvas_title = "{}  {}".format(period, asym.title)
@@ -1276,15 +1265,22 @@ def make_comparison_plot(
             asym=asym,
             kerr_results=kerr_results,
             hayward_results=hayward_results,
+            plot_hayward=plot_hayward,
         )
     #endfor
 
     grid_pad.cd(6)
     draw_empty_sixth_pad()
 
+    if plot_hayward:
+        mode_suffix = "sector dependence"
+    else:
+        mode_suffix = "sector dependence, Kerr only"
+    #endif
+
     draw_canvas_title(
         title_pad,
-        "{}   {}   sector dependence".format(period, asym.title),
+        "{}   {}   {}".format(period, asym.title, mode_suffix),
     )
 
     canvas.cd()
@@ -1294,6 +1290,11 @@ def make_comparison_plot(
     ensure_directory(output_dir)
 
     filename_base = "{}_{}".format(period, asym.file_name_stem)
+
+    if not plot_hayward:
+        filename_base += "_Kerr_only"
+    #endif
+
     png_path = os.path.join(output_dir, filename_base + ".png")
 
     canvas.SaveAs(png_path)
@@ -1305,6 +1306,7 @@ def make_all_plots(
     output_root_dir: str,
     kerr_results: ResultsDict,
     hayward_results: ResultsDict,
+    plot_hayward: bool,
 ) -> None:
     for period in PERIODS:
         period_dir = os.path.join(output_root_dir, period)
@@ -1317,6 +1319,7 @@ def make_all_plots(
                 asym=asym,
                 kerr_results=kerr_results,
                 hayward_results=hayward_results,
+                plot_hayward=plot_hayward,
             )
         #endfor
     #endfor
@@ -1341,8 +1344,10 @@ def make_all_plots(
             asym=asym,
             kerr_results=rgc_kerr_results,
             hayward_results=rgc_hayward_results,
+            plot_hayward=plot_hayward,
         )
     #endfor
+
 
 # -----------------------------------------------------------------------------
 # Summary table
@@ -1445,6 +1450,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--kerr-only",
+        action="store_true",
+        help=(
+            "Only plot Kerr points and Kerr constant-fit lines. "
+            "Hayward files are still loaded so Kerr uncertainties can be synchronized "
+            "to Hayward uncertainties before plotting."
+        ),
+    )
+
+    parser.add_argument(
         "--no-summary",
         action="store_true",
         help="Disable writing the CSV summary table.",
@@ -1462,6 +1477,12 @@ def main() -> int:
     print("[cross_check] Hayward directory: {}".format(args.hayward_dir))
     print("[cross_check] Output directory: {}".format(args.output_dir))
 
+    if args.kerr_only:
+        print("[cross_check] Plotting mode: Kerr only")
+    else:
+        print("[cross_check] Plotting mode: Kerr and Hayward")
+    #endif
+
     kerr_results = load_kerr_results(args.kerr_dir)
     hayward_results = load_hayward_results(args.hayward_dir)
 
@@ -1474,6 +1495,7 @@ def main() -> int:
         output_root_dir=args.output_dir,
         kerr_results=kerr_results,
         hayward_results=hayward_results,
+        plot_hayward=(not args.kerr_only),
     )
 
     if not args.no_summary:
