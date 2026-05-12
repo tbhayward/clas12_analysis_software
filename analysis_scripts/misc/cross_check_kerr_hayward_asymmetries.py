@@ -265,6 +265,138 @@ def sanitize_bad_points_and_sync_uncertainties(
         )
     )
 
+def weighted_average_points(points: List[FitPoint], period_label: str, asym_key: str, sector: int, xb_bin: int, analyzer_name: str) -> FitPoint:
+    weighted_sum = 0.0
+    weight_sum = 0.0
+
+    for point in points:
+        if point.uncertainty <= 0.0:
+            print(
+                "[cross_check] WARNING: skipping zero/negative uncertainty point in RGC average "
+                "for analyzer={} period_group={} asymmetry={} sector={} xb_bin={} "
+                "value={} uncertainty={}".format(
+                    analyzer_name,
+                    period_label,
+                    asym_key,
+                    sector,
+                    xb_bin,
+                    point.value,
+                    point.uncertainty,
+                ),
+                file=sys.stderr,
+            )
+            continue
+        #endif
+
+        weight = 1.0 / (point.uncertainty * point.uncertainty)
+        weighted_sum += weight * point.value
+        weight_sum += weight
+    #endfor
+
+    if weight_sum <= 0.0:
+        fatal(
+            "Cannot form RGC weighted average for analyzer={} asymmetry={} sector={} xb_bin={}; "
+            "all candidate points had non-positive uncertainties.".format(
+                analyzer_name,
+                asym_key,
+                sector,
+                xb_bin,
+            )
+        )
+    #endif
+
+    combined_value = weighted_sum / weight_sum
+    combined_uncertainty = math.sqrt(1.0 / weight_sum)
+
+    return FitPoint(
+        x=XB_CENTERS[xb_bin],
+        value=combined_value,
+        uncertainty=combined_uncertainty,
+    )
+
+
+def build_rgc_combined_results(
+    input_results: ResultsDict,
+    analyzer_name: str,
+) -> ResultsDict:
+    combined_results: ResultsDict = {
+        "RGC": {}
+    }
+
+    for asym in ASYMMETRIES:
+        combined_results["RGC"][asym.key] = {}
+
+        for sector in range(1, N_SECTORS + 1):
+            combined_results["RGC"][asym.key][sector] = {}
+
+            for xb_bin in range(N_XB_BINS):
+                period_points = []
+
+                for period in PERIODS:
+                    if period not in input_results:
+                        fatal(
+                            "Cannot build RGC average for analyzer={}; missing period={}.".format(
+                                analyzer_name,
+                                period,
+                            )
+                        )
+                    #endif
+
+                    if asym.key not in input_results[period]:
+                        fatal(
+                            "Cannot build RGC average for analyzer={}; missing asymmetry={} in period={}.".format(
+                                analyzer_name,
+                                asym.key,
+                                period,
+                            )
+                        )
+                    #endif
+
+                    if sector not in input_results[period][asym.key]:
+                        fatal(
+                            "Cannot build RGC average for analyzer={}; missing sector={} for period={} asymmetry={}.".format(
+                                analyzer_name,
+                                sector,
+                                period,
+                                asym.key,
+                            )
+                        )
+                    #endif
+
+                    if xb_bin not in input_results[period][asym.key][sector]:
+                        fatal(
+                            "Cannot build RGC average for analyzer={}; missing xb_bin={} for period={} asymmetry={} sector={}.".format(
+                                analyzer_name,
+                                xb_bin,
+                                period,
+                                asym.key,
+                                sector,
+                            )
+                        )
+                    #endif
+
+                    period_points.append(input_results[period][asym.key][sector][xb_bin])
+                #endfor
+
+                combined_results["RGC"][asym.key][sector][xb_bin] = weighted_average_points(
+                    points=period_points,
+                    period_label="RGC",
+                    asym_key=asym.key,
+                    sector=sector,
+                    xb_bin=xb_bin,
+                    analyzer_name=analyzer_name,
+                )
+            #endfor
+        #endfor
+    #endfor
+
+    validate_complete_results_for_periods(
+        results=combined_results,
+        analyzer_name=analyzer_name,
+        periods_to_check=["RGC"],
+    )
+
+    return combined_results
 
 def find_unique_file_by_regex(directory: str, pattern: str, period: str) -> str:
     if not os.path.isdir(directory):
@@ -371,6 +503,91 @@ def validate_complete_results(results: ResultsDict, analyzer_name: str) -> None:
         sys.exit(1)
     #endif
 
+def validate_complete_results_for_periods(
+    results: ResultsDict,
+    analyzer_name: str,
+    periods_to_check: List[str],
+) -> None:
+    missing = []
+
+    for period in periods_to_check:
+        for asym in ASYMMETRIES:
+            for sector in range(1, N_SECTORS + 1):
+                for xb_bin in range(N_XB_BINS):
+                    if period not in results:
+                        missing.append(
+                            "{} period={} missing entirely".format(
+                                analyzer_name,
+                                period,
+                            )
+                        )
+                        continue
+                    #endif
+
+                    if asym.key not in results[period]:
+                        missing.append(
+                            "{} period={} asymmetry={} missing entirely".format(
+                                analyzer_name,
+                                period,
+                                asym.key,
+                            )
+                        )
+                        continue
+                    #endif
+
+                    if sector not in results[period][asym.key]:
+                        missing.append(
+                            "{} period={} asymmetry={} sector={} missing entirely".format(
+                                analyzer_name,
+                                period,
+                                asym.key,
+                                sector,
+                            )
+                        )
+                        continue
+                    #endif
+
+                    if xb_bin not in results[period][asym.key][sector]:
+                        missing.append(
+                            "{} period={} asymmetry={} sector={} xb_bin={}".format(
+                                analyzer_name,
+                                period,
+                                asym.key,
+                                sector,
+                                xb_bin,
+                            )
+                        )
+                    #endif
+                #endfor
+            #endfor
+        #endfor
+    #endfor
+
+    if missing:
+        max_print = 100
+        print(
+            "[cross_check] FATAL: missing {} required fit points for {}.".format(
+                len(missing),
+                analyzer_name,
+            ),
+            file=sys.stderr,
+        )
+
+        for item in missing[:max_print]:
+            print("[cross_check]   missing {}".format(item), file=sys.stderr)
+        #endfor
+
+        if len(missing) > max_print:
+            print(
+                "[cross_check]   ... {} more missing entries".format(
+                    len(missing) - max_print
+                ),
+                file=sys.stderr,
+            )
+        #endif
+
+        sys.exit(1)
+    #endif
 
 # -----------------------------------------------------------------------------
 # Kerr parser
@@ -1104,6 +1321,28 @@ def make_all_plots(
         #endfor
     #endfor
 
+    rgc_kerr_results = build_rgc_combined_results(
+        input_results=kerr_results,
+        analyzer_name="Kerr",
+    )
+
+    rgc_hayward_results = build_rgc_combined_results(
+        input_results=hayward_results,
+        analyzer_name="Hayward",
+    )
+
+    rgc_dir = os.path.join(output_root_dir, "RGC")
+    ensure_directory(rgc_dir)
+
+    for asym in ASYMMETRIES:
+        make_comparison_plot(
+            output_dir=rgc_dir,
+            period="RGC",
+            asym=asym,
+            kerr_results=rgc_kerr_results,
+            hayward_results=rgc_hayward_results,
+        )
+    #endfor
 
 # -----------------------------------------------------------------------------
 # Summary table
