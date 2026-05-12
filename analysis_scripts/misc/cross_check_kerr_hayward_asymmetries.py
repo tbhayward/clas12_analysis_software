@@ -678,10 +678,10 @@ def fit_linear_sector_dependence(
 
 def format_chi2_ndf(chi2: float, ndf: int) -> str:
     if ndf > 0:
-        return "#chi^{2}/ndf = {:.2f}/{}".format(chi2, ndf)
+        return "#chi^{{2}}/ndf = {:.2f}/{}".format(chi2, ndf)
     #endif
 
-    return "#chi^{2}/ndf = n/a"
+    return "#chi^{{2}}/ndf = n/a"
 
 
 def make_single_point_error_graph(
