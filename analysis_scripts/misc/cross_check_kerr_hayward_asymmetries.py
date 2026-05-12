@@ -1275,7 +1275,7 @@ def make_comparison_plot(
     if plot_hayward:
         mode_suffix = "sector dependence"
     else:
-        mode_suffix = "sector dependence, Kerr only"
+        mode_suffix = "sector dependence"
     #endif
 
     draw_canvas_title(
