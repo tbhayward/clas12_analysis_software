@@ -524,28 +524,21 @@ def configure_root() -> None:
     ROOT.gStyle.SetEndErrorSize(4)
 
 
-def make_graph_from_points(
+def make_single_point_graph(
     name: str,
-    points: List[FitPoint],
+    point: FitPoint,
     x_shift: float,
     marker_style: int,
     marker_color: int,
     line_color: int,
 ) -> ROOT.TGraphErrors:
-    x_values = array("d")
-    y_values = array("d")
-    ex_values = array("d")
-    ey_values = array("d")
-
-    for point in points:
-        x_values.append(point.x + x_shift)
-        y_values.append(point.value)
-        ex_values.append(0.0)
-        ey_values.append(point.uncertainty)
-    #endfor
+    x_values = array("d", [point.x + x_shift])
+    y_values = array("d", [point.value])
+    ex_values = array("d", [0.0])
+    ey_values = array("d", [point.uncertainty])
 
     graph = ROOT.TGraphErrors(
-        len(points),
+        1,
         x_values,
         y_values,
         ex_values,
@@ -573,7 +566,7 @@ def draw_sector_subplot(
     pad.SetLeftMargin(0.16)
     pad.SetRightMargin(0.04)
     pad.SetBottomMargin(0.16)
-    pad.SetTopMargin(0.13)
+    pad.SetTopMargin(0.16)
     pad.SetGridx(False)
     pad.SetGridy(False)
 
@@ -614,38 +607,63 @@ def draw_sector_subplot(
     zero_line.SetLineColor(ROOT.kGray + 1)
     zero_line.Draw("SAME")
 
-    # Small x-offsets keep Kerr and Hayward points from sitting exactly on top
-    # of each other while preserving the same xB-bin interpretation.
-    graph_kerr = make_graph_from_points(
-        name="graph_kerr_{}_{}_sector{}".format(period, asym.key, sector),
-        points=kerr_points,
-        x_shift=-0.004,
-        marker_style=20,
-        marker_color=ROOT.kBlack,
-        line_color=ROOT.kBlack,
-    )
+    drawn_graphs = []
 
-    graph_hayward = make_graph_from_points(
-        name="graph_hayward_{}_{}_sector{}".format(period, asym.key, sector),
-        points=hayward_points,
-        x_shift=0.004,
-        marker_style=21,
-        marker_color=ROOT.kRed + 1,
-        line_color=ROOT.kRed + 1,
-    )
+    first_hayward_graph = None
+    first_kerr_graph = None
 
-    # The "P" draw option is important here: it explicitly draws the data marker
-    # along with the error bars, matching the style in the reference image.
-    graph_kerr.Draw("P E1 SAME")
-    graph_hayward.Draw("P E1 SAME")
+    for xb_bin in range(N_XB_BINS):
+        hayward_graph = make_single_point_graph(
+            name="graph_hayward_{}_{}_sector{}_xb{}".format(
+                period,
+                asym.key,
+                sector,
+                xb_bin,
+            ),
+            point=hayward_points[xb_bin],
+            x_shift=0.004,
+            marker_style=21,
+            marker_color=ROOT.kRed + 1,
+            line_color=ROOT.kRed + 1,
+        )
 
-    legend = ROOT.TLegend(0.55, 0.70, 0.94, 0.88)
+        kerr_graph = make_single_point_graph(
+            name="graph_kerr_{}_{}_sector{}_xb{}".format(
+                period,
+                asym.key,
+                sector,
+                xb_bin,
+            ),
+            point=kerr_points[xb_bin],
+            x_shift=-0.004,
+            marker_style=20,
+            marker_color=ROOT.kBlack,
+            line_color=ROOT.kBlack,
+        )
+
+        # Draw one-point graphs so ROOT cannot draw connecting lines between xB bins.
+        hayward_graph.Draw("P E1 SAME")
+        kerr_graph.Draw("P E1 SAME")
+
+        drawn_graphs.append(hayward_graph)
+        drawn_graphs.append(kerr_graph)
+
+        if first_hayward_graph is None:
+            first_hayward_graph = hayward_graph
+        #endif
+
+        if first_kerr_graph is None:
+            first_kerr_graph = kerr_graph
+        #endif
+    #endfor
+
+    legend = ROOT.TLegend(0.58, 0.18, 0.94, 0.38)
     legend.SetBorderSize(1)
     legend.SetFillStyle(1001)
     legend.SetFillColor(ROOT.kWhite)
     legend.SetTextSize(0.045)
-    legend.AddEntry(graph_hayward, "Hayward", "pe")
-    legend.AddEntry(graph_kerr, "Kerr", "pe")
+    legend.AddEntry(first_hayward_graph, "Hayward", "pe")
+    legend.AddEntry(first_kerr_graph, "Kerr", "pe")
     legend.Draw("SAME")
 
     pad.Update()
@@ -653,22 +671,25 @@ def draw_sector_subplot(
     # Keep objects alive by attaching them to the pad.
     pad.GetListOfPrimitives().Add(frame)
     pad.GetListOfPrimitives().Add(zero_line)
-    pad.GetListOfPrimitives().Add(graph_kerr)
-    pad.GetListOfPrimitives().Add(graph_hayward)
+
+    for graph in drawn_graphs:
+        pad.GetListOfPrimitives().Add(graph)
+    #endfor
+
     pad.GetListOfPrimitives().Add(legend)
 
 
-def draw_canvas_title(canvas: ROOT.TCanvas, title: str) -> None:
-    canvas.cd()
+def draw_canvas_title(title_pad: ROOT.TPad, title: str) -> None:
+    title_pad.cd()
 
     latex = ROOT.TLatex()
     latex.SetNDC(True)
     latex.SetTextAlign(22)
     latex.SetTextFont(42)
-    latex.SetTextSize(0.032)
-    latex.DrawLatex(0.5, 0.975, title)
+    latex.SetTextSize(0.42)
+    latex.DrawLatex(0.5, 0.50, title)
 
-    canvas.Update()
+    title_pad.Update()
 
 
 def make_comparison_plot(
@@ -681,12 +702,38 @@ def make_comparison_plot(
     canvas_name = "c_{}_{}".format(period, asym.key)
     canvas_title = "{}  {}".format(period, asym.title)
 
-    canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 950)
-    canvas.SetTopMargin(0.04)
-    canvas.Divide(3, 2, 0.001, 0.001)
+    canvas = ROOT.TCanvas(canvas_name, canvas_title, 1600, 1050)
+
+    title_pad = ROOT.TPad(
+        "title_pad_{}_{}".format(period, asym.key),
+        "title_pad_{}_{}".format(period, asym.key),
+        0.0,
+        0.925,
+        1.0,
+        1.0,
+    )
+    title_pad.SetFillColor(0)
+    title_pad.SetBorderMode(0)
+    title_pad.SetFrameBorderMode(0)
+    title_pad.Draw()
+
+    grid_pad = ROOT.TPad(
+        "grid_pad_{}_{}".format(period, asym.key),
+        "grid_pad_{}_{}".format(period, asym.key),
+        0.0,
+        0.0,
+        1.0,
+        0.925,
+    )
+    grid_pad.SetFillColor(0)
+    grid_pad.SetBorderMode(0)
+    grid_pad.SetFrameBorderMode(0)
+    grid_pad.Draw()
+    grid_pad.cd()
+    grid_pad.Divide(3, 2, 0.001, 0.001)
 
     for sector in range(1, N_SECTORS + 1):
-        canvas.cd(sector)
+        grid_pad.cd(sector)
 
         kerr_points = []
         hayward_points = []
@@ -706,9 +753,12 @@ def make_comparison_plot(
     #endfor
 
     draw_canvas_title(
-        canvas,
+        title_pad,
         "{}   {}   all x_{{B}} bins".format(period, asym.title),
     )
+
+    canvas.cd()
+    canvas.Update()
 
     ensure_directory(output_dir)
 
