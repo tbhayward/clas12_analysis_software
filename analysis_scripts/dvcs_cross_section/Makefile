@@ -26,13 +26,8 @@ LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp raw_signal_cross_check.cpp \
 LEE_OBJ  = $(LEE_SRC:.cpp=.o)
 LEE_BIN  = cross_check_lee
 
-# ---------- norm_scenario_comparison ----------
-NORM_SCENARIO_SRC = norm_scenario_comparison.cpp
-NORM_SCENARIO_OBJ = $(NORM_SCENARIO_SRC:.cpp=.o)
-NORM_SCENARIO_BIN = norm_scenario_comparison
-
-# Build all by default
-all: $(DVCS_BIN) $(LEE_BIN) $(NORM_SCENARIO_BIN)
+# Build both by default
+all: $(DVCS_BIN) $(LEE_BIN)
 
 $(DVCS_BIN): $(DVCS_OBJ)
 	$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
@@ -40,11 +35,8 @@ $(DVCS_BIN): $(DVCS_OBJ)
 $(LEE_BIN): $(LEE_OBJ)
 	$(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
 
-$(NORM_SCENARIO_BIN): $(NORM_SCENARIO_OBJ)
-	$(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
-
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN)
+	rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN)
