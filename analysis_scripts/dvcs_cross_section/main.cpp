@@ -493,7 +493,7 @@ int main(int argc, char* argv[]) {
         // Production-safe default:
         //   true  -> write norm = 1.00 everywhere and skip BH-edge study
         //   false -> run the full BH-edge normalization study and write fitted norms
-        norm_opts.override_to_unity = true;
+        norm_opts.override_to_unity = false;
 
         norm_opts.use_all_points_within_edge_window = true;
         norm_opts.require_positive_dedge = true;
