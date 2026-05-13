@@ -399,6 +399,27 @@ static const std::vector<std::string> kHelicities = {
     "neg"
 };
 
+static const std::vector<std::string> kUnpolarizedOnlyHelicities = {
+    "unpol"
+};
+
+static bool has_helicity_resolved_columns(const std::string& label) {
+    if (label == "Sp18 Inb" || label == "Sp18 Out" ||
+        label == "Sp18" || label == "2018 (10.6 GeV)") {
+        return false;
+    }
+
+    return true;
+}
+
+static const std::vector<std::string>& helicities_for_label(const std::string& label) {
+    if (has_helicity_resolved_columns(label)) {
+        return kHelicities;
+    }
+
+    return kUnpolarizedOnlyHelicities;
+}
+
 struct CellData {
     std::vector<double> X;
     std::vector<double> Yp;
@@ -424,7 +445,7 @@ static bool fill_unfolded_yields(
     // indices for signal yield per period/helicity
     std::map<std::string, std::map<std::string,int>> sig_idx;
     for (const auto& per : kPeriods) {
-        for (const auto& hel : kHelicities) {
+        for (const auto& hel : helicities_for_label(per)) {
             std::ostringstream name;
             name << "signal yield, ep->epg, exp, " << per << ", " << hel;
             int idx = csv.col_index(name.str());
@@ -457,7 +478,7 @@ static bool fill_unfolded_yields(
     allLabels.insert(allLabels.end(), kGroups.begin(),  kGroups.end());
 
     for (const auto& lab : allLabels) {
-        for (const auto& hel : kHelicities) {
+        for (const auto& hel : helicities_for_label(lab)) {
             std::ostringstream nm;
             nm << "acceptance corrected yield, ep->epg, exp, "
                << lab << ", " << hel;
@@ -473,7 +494,7 @@ static bool fill_unfolded_yields(
 
     // initialize in-memory storage: unfolded_val[label][hel][row]
     for (const auto& lab : allLabels) {
-        for (const auto& hel : kHelicities) {
+        for (const auto& hel : helicities_for_label(lab)) {
             unfolded_val[lab][hel].assign(NR,
                 std::numeric_limits<double>::quiet_NaN());
             unfolded_stat[lab][hel].assign(NR,
@@ -494,7 +515,7 @@ static bool fill_unfolded_yields(
 
             if (sA.empty()) {
                 // No acceptance for this bin/period: clear unfolded cells
-                for (const auto& hel : kHelicities) {
+                for (const auto& hel : helicities_for_label(per)) {
                     csv.rows[r][unf_idx[per][hel]].clear();
                     unfolded_val[per][hel][r]  =
                         std::numeric_limits<double>::quiet_NaN();
@@ -518,7 +539,7 @@ static bool fill_unfolded_yields(
 
             if (!std::isfinite(A_val) || A_val <= 0.0) {
                 // Non-physical or zero acceptance: clear unfolded cells
-                for (const auto& hel : kHelicities) {
+                for (const auto& hel : helicities_for_label(per)) {
                     csv.rows[r][unf_idx[per][hel]].clear();
                     unfolded_val[per][hel][r]  =
                         std::numeric_limits<double>::quiet_NaN();
@@ -530,7 +551,7 @@ static bool fill_unfolded_yields(
                 continue;
             }
 
-            for (const auto& hel : kHelicities) {
+            for (const auto& hel : helicities_for_label(per)) {
                 int c_sig = sig_idx[per][hel];
                 const std::string& sS = csv.rows[r][c_sig];
 
@@ -585,7 +606,7 @@ static bool fill_unfolded_yields(
         const std::vector<std::string>& members = itMembers->second;
 
         for (int r = 0; r < NR; ++r) {
-            for (const auto& hel : kHelicities) {
+            for (const auto& hel : helicities_for_label(grp)) {
                 double sum_val = 0.0;
                 double sum_stat_var = 0.0;
                 double sum_sys_var = 0.0;
@@ -1034,6 +1055,12 @@ bool update_unfolded_yields_csv(const std::string& csv_path,
     labels.insert(labels.end(), kGroups.begin(),  kGroups.end());
 
     for (const auto& lab : labels) {
+        if (!has_helicity_resolved_columns(lab)) {
+            std::cout << "[unfolding] Skipping pos/neg unfolded-yield plots for unpolarized-only label: "
+                      << lab << "\n";
+            continue;
+        }
+
         draw_unfolded_canvases(lab, csv,
                                unfolded_val.at(lab),
                                unfolded_stat.at(lab),

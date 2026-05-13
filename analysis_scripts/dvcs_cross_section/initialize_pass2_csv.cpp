@@ -248,23 +248,22 @@ static const std::vector<std::string>& unpolarized_only_helicities() {
     return v;
 }
 
-static const std::vector<std::string>& cross_section_helicities_for_label(const std::string& label) {
-    if (label == "Sp18 Inb" ||
-        label == "Sp18 Out" ||
-        label == "Sp18" ||
-        label == "10.6 GeV") {
-        return unpolarized_only_helicities();
+static bool has_helicity_resolved_data_columns(const std::string& label) {
+    if (label == "Sp18 Inb" || label == "Sp18 Out" ||
+        label == "Sp18" || label == "10.6 GeV" ||
+        label == "2018 (10.6 GeV)") {
+        return false;
     }
 
-    return helicities();
+    return true;
 }
 
-static const std::vector<std::string>& acceptance_corrected_helicities_for_label(const std::string& label) {
-    if (label == "2018 (10.6 GeV)") {
-        return unpolarized_only_helicities();
+static const std::vector<std::string>& helicities_for_data_label(const std::string& label) {
+    if (has_helicity_resolved_data_columns(label)) {
+        return helicities();
     }
 
-    return helicities();
+    return unpolarized_only_helicities();
 }
 
 static const std::vector<std::string>& topologies() {
@@ -352,7 +351,7 @@ static void add_raw_yield_columns_for_channel(std::vector<std::string>& H,
                                               const std::string& channel) {
     for (const auto& per : base_periods()) {
         for (const auto& topo : topologies()) {
-            for (const auto& hel : helicities()) {
+            for (const auto& hel : helicities_for_data_label(per)) {
                 std::ostringstream name;
                 name << "raw yield, " << channel << ", " << topo
                      << ", exp, " << per << ", " << hel;
@@ -411,7 +410,7 @@ static void add_normalized_raw_yield_columns_for_channel(std::vector<std::string
                                                          const std::string& channel) {
     for (const auto& per : base_periods()) {
         for (const auto& topo : topologies()) {
-            for (const auto& hel : helicities()) {
+            for (const auto& hel : helicities_for_data_label(per)) {
                 std::ostringstream name;
                 name << "normalized raw yield, " << channel << ", " << topo
                      << ", exp, " << per << ", " << hel;
@@ -515,7 +514,7 @@ static void add_contamination_columns(std::vector<std::string>& H) {
 
 static void add_signal_yield_columns(std::vector<std::string>& H) {
     for (const auto& per : base_periods()) {
-        for (const auto& hel : helicities()) {
+        for (const auto& hel : helicities_for_data_label(per)) {
             std::ostringstream name;
             name << "signal yield, ep->epg, exp, " << per << ", " << hel;
             H.push_back(name.str());
@@ -533,7 +532,7 @@ static void add_acceptance_columns(std::vector<std::string>& H) {
 
 static void add_acc_corrected_yield_columns(std::vector<std::string>& H) {
     for (const auto& per : base_periods()) {
-        for (const auto& hel : helicities()) {
+        for (const auto& hel : helicities_for_data_label(per)) {
             std::ostringstream name;
             name << "acceptance corrected yield, ep->epg, exp, " << per << ", " << hel;
             H.push_back(name.str());
@@ -541,7 +540,7 @@ static void add_acc_corrected_yield_columns(std::vector<std::string>& H) {
     }
 
     for (const auto& grp : acceptance_corrected_groups()) {
-        for (const auto& hel : acceptance_corrected_helicities_for_label(grp)) {
+        for (const auto& hel : helicities_for_data_label(grp)) {
             std::ostringstream name;
             name << "acceptance corrected yield, ep->epg, exp, " << grp << ", " << hel;
             H.push_back(name.str());
@@ -583,7 +582,7 @@ static void add_norm_columns(std::vector<std::string>& H) {
 static void add_cross_section_columns_without_normed(std::vector<std::string>& H,
                                                      const std::string& prefix) {
     for (const auto& per : base_periods()) {
-        for (const auto& hel : cross_section_helicities_for_label(per)) {
+        for (const auto& hel : helicities_for_data_label(per)) {
             std::ostringstream name;
             name << prefix << "cross sections, ep->epg, exp, " << per << ", " << hel;
             H.push_back(name.str());
@@ -591,7 +590,7 @@ static void add_cross_section_columns_without_normed(std::vector<std::string>& H
     }
 
     for (const auto& grp : cross_section_groups()) {
-        for (const auto& hel : cross_section_helicities_for_label(grp)) {
+        for (const auto& hel : helicities_for_data_label(grp)) {
             std::ostringstream name;
             name << prefix << "cross sections, ep->epg, exp, " << grp << ", " << hel;
             H.push_back(name.str());
