@@ -16,8 +16,11 @@
 //    Fa18Out_vs_Sp18Out_unpol
 //    Sp18Inb_vs_Sp18Out_unpol
 //    Fa18_vs_Sp18_unpol
-//    Fa18_vs_Sp18_pos
-//    Fa18_vs_Sp18_neg
+//    Fa18Inb_vs_Fa18Out_pos
+//    Fa18Inb_vs_Fa18Out_neg
+//
+// Sp18 is intentionally unpolarized-only. No Sp18 pos/neg comparison is
+// produced or required.
 //
 //  Each subdir contains:
 //    cross_section_counts_xB_<ix>.png

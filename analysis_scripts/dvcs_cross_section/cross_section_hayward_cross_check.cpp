@@ -1,7 +1,12 @@
 // cross_section_hayward_cross_check.cpp
 // -----------------------------------------------------------------------------
 // Cross-check of experimental cross sections *within* Hayward pass-2,
-// comparing different run periods / helicities for 10.6 GeV.
+// comparing compatible run periods / helicities.
+//
+// Sp18 Inb/Out and Sp18 are unpolarized-only in this workflow. Helicity-
+// separated comparisons are restricted to periods with valid helicity-resolved
+// luminosities. No separate 10.2 GeV label is used; Sp19 Inb is the 10.2 GeV
+// dataset.
 //
 // Input:
 //   - Hayward CSV (pass-2): e.g. output/csvs/dvcs_pass2_analysis.csv
