@@ -1,9 +1,11 @@
 // pi0_corrected_counts.cpp
 // Pi0-corrected DVCS signal yields:
 //   - Fill "signal yield, ep->epg, exp, <period>, <hel>" columns
-//     with "(value, stat, sys)" triples
-//   - Uses normalized raw DVCS yields, not raw unnormalized counts
-//   - Produce per-period yield plots vs phi (pos/neg helicities)
+//     with "(value, stat, sys)" triples.
+//   - Uses normalized raw DVCS yields, not raw unnormalized counts.
+//   - Sp18 Inb and Sp18 Out are unpolarized-only because those periods do not
+//     have valid helicity-resolved accumulated charge.
+//   - Produce per-period yield plots vs phi for helicity-resolved periods.
 
 #include "pi0_corrected_counts.h"
 
@@ -327,6 +329,26 @@ static const std::vector<std::string> kHelicities = {
     "neg"
 };
 
+static const std::vector<std::string> kUnpolarizedOnlyHelicities = {
+    "unpol"
+};
+
+static bool has_helicity_resolved_data_columns(const std::string& period) {
+    if (period == "Sp18 Inb" || period == "Sp18 Out") {
+        return false;
+    }
+
+    return true;
+}
+
+static const std::vector<std::string>& helicities_for_period(const std::string& period) {
+    if (!has_helicity_resolved_data_columns(period)) {
+        return kUnpolarizedOnlyHelicities;
+    }
+
+    return kHelicities;
+}
+
 static const std::vector<std::string> kTopos = {
     "(FD, FD)",
     "(CD, FD)",
@@ -363,7 +385,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
     // indices for signal-yield columns per period/helicity
     std::map<std::string, std::map<std::string,int>> sig_idx;
     for (const auto& per : kPeriods) {
-        for (const auto& hel : kHelicities) {
+        for (const auto& hel : helicities_for_period(per)) {
             std::ostringstream name;
             name << "signal yield, ep->epg, exp, " << per << ", " << hel;
             int idx = csv.col_index(name.str());
@@ -380,7 +402,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
     std::map<std::string, std::map<std::string, std::map<std::string,int>>> raw_idx;
     for (const auto& per : kPeriods) {
         for (const auto& topo : kTopos) {
-            for (const auto& hel : kHelicities) {
+            for (const auto& hel : helicities_for_period(per)) {
                 std::ostringstream nm;
                 nm << "normalized raw yield, ep->epg, " << topo
                    << ", exp, " << per << ", " << hel;
@@ -430,10 +452,12 @@ static bool fill_signal_yields(CsvDoc& csv) {
 
             // compute normalized-yield sums over topologies for each helicity
             std::map<std::string,double> raw_sum;
-            for (const auto& hel : kHelicities) raw_sum[hel] = 0.0;
+            for (const auto& hel : helicities_for_period(per)) {
+                raw_sum[hel] = 0.0;
+            }
 
             for (const auto& topo : kTopos) {
-                for (const auto& hel : kHelicities) {
+                for (const auto& hel : helicities_for_period(per)) {
                     int c_raw = raw_idx[per][topo][hel];
                     const std::string& sraw = csv.rows[r][c_raw];
                     if (sraw.empty()) continue;
@@ -450,7 +474,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
             }
 
             // compute signal yields and write as triples
-            for (const auto& hel : kHelicities) {
+            for (const auto& hel : helicities_for_period(per)) {
                 const double norm = raw_sum[hel];
                 double S = 0.0;
                 double S_stat = 0.0;
@@ -474,6 +498,13 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                                        const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
+
+    if (!has_helicity_resolved_data_columns(period_label)) {
+        std::cout << "[pi0_corrected] Skipping helicity-separated signal-yield plots for "
+                  << period_label
+                  << " because this period is unpolarized-only.\n";
+        return;
+    }
 
     const int c_xb_min  = csv.col_index("xBmin");
     const int c_xb_max  = csv.col_index("xBmax");

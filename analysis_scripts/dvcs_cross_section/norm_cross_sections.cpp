@@ -86,6 +86,27 @@ using Range = std::pair<double, double>;
 
 namespace {
 
+static const std::vector<std::string> kAllHelicities = {"unpol", "pos", "neg"};
+static const std::vector<std::string> kUnpolarizedOnlyHelicities = {"unpol"};
+
+static bool has_helicity_resolved_normed_cross_sections(const std::string &label) {
+    if (label == "Sp18 Inb" || label == "Sp18 Out" ||
+        label == "Sp18" || label == "10.6 GeV") {
+        return false;
+    }
+
+    return true;
+}
+
+static const std::vector<std::string>& normed_helicities_for_label(const std::string &label) {
+    if (has_helicity_resolved_normed_cross_sections(label)) {
+        return kAllHelicities;
+    }
+
+    return kUnpolarizedOnlyHelicities;
+}
+
+
 struct Triple {
     double value;
     double stat;
@@ -1481,16 +1502,14 @@ bool update_normed_cross_sections_csv(const std::string &csv_main,
 
     std::vector<std::string> header = split_csv_line(lines[0]);
 
+    struct HelicityCols {
+        int c_raw = -1;
+        int c_out = -1;
+    };
+
     struct LabelCols {
         int c_norm = -1;
-
-        int c_raw_unpol = -1;
-        int c_raw_pos   = -1;
-        int c_raw_neg   = -1;
-
-        int c_out_unpol = -1;
-        int c_out_pos   = -1;
-        int c_out_neg   = -1;
+        std::map<std::string, HelicityCols> helicity_cols;
     };
 
     std::map<std::string, LabelCols> cols;
@@ -1501,13 +1520,12 @@ bool update_normed_cross_sections_csv(const std::string &csv_main,
 
             lc.c_norm = find_col_required(header, "norm, " + label);
 
-            lc.c_raw_unpol = find_col_required(header, "cross sections, ep->epg, exp, " + label + ", unpol");
-            lc.c_raw_pos   = find_col_required(header, "cross sections, ep->epg, exp, " + label + ", pos");
-            lc.c_raw_neg   = find_col_required(header, "cross sections, ep->epg, exp, " + label + ", neg");
-
-            lc.c_out_unpol = find_col_required(header, "normed cross sections, ep->epg, exp, " + label + ", unpol");
-            lc.c_out_pos   = find_col_required(header, "normed cross sections, ep->epg, exp, " + label + ", pos");
-            lc.c_out_neg   = find_col_required(header, "normed cross sections, ep->epg, exp, " + label + ", neg");
+            for (const auto &hel : normed_helicities_for_label(label)) {
+                HelicityCols hc;
+                hc.c_raw = find_col_required(header, "cross sections, ep->epg, exp, " + label + ", " + hel);
+                hc.c_out = find_col_required(header, "normed cross sections, ep->epg, exp, " + label + ", " + hel);
+                lc.helicity_cols[hel] = hc;
+            }
 
             cols[label] = lc;
         }
@@ -1571,9 +1589,9 @@ bool update_normed_cross_sections_csv(const std::string &csv_main,
                 fields[c_out] = tuple3_to_cell(sigma_norm.value, sigma_norm.stat, sigma_norm.sys);
             };
 
-            do_one(lc.c_raw_unpol, lc.c_out_unpol);
-            do_one(lc.c_raw_pos,   lc.c_out_pos);
-            do_one(lc.c_raw_neg,   lc.c_out_neg);
+            for (const auto &hk : lc.helicity_cols) {
+                do_one(hk.second.c_raw, hk.second.c_out);
+            }
         }
 
         out_lines.push_back(join_csv_line(fields));
@@ -1696,8 +1714,15 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    if (c_xs_unpol < 0 || c_xs_pos < 0 || c_xs_neg < 0) {
-        std::cerr << "[norm_cross_sections] FATAL: incomplete normed cross section columns "
+    if (c_xs_unpol < 0) {
+        std::cerr << "[norm_cross_sections] FATAL: missing unpolarized normed cross section column "
+                  << "for label " << label << ".\n";
+        return false;
+    }
+
+    const bool has_hel = has_helicity_resolved_normed_cross_sections(label);
+    if (has_hel && (c_xs_pos < 0 || c_xs_neg < 0)) {
+        std::cerr << "[norm_cross_sections] FATAL: incomplete helicity-resolved normed cross section columns "
                   << "for label " << label << " (need unpol/pos/neg).\n";
         return false;
     }
@@ -1734,10 +1759,15 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         }
 
         const Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
-        const Triple xs_pos   = parse_tuple3(fields[c_xs_pos]);
-        const Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
+        Triple xs_pos;
+        Triple xs_neg;
+        if (has_hel) {
+            xs_pos = parse_tuple3(fields[c_xs_pos]);
+            xs_neg = parse_tuple3(fields[c_xs_neg]);
+        }
 
-        if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) {
+        if (xs_unpol.value <= 0.0 &&
+            (!has_hel || (xs_pos.value <= 0.0 && xs_neg.value <= 0.0))) {
             continue;
         }
 
@@ -1767,8 +1797,10 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         };
 
         add_point(xs_unpol, bin.unpol);
-        add_point(xs_pos,   bin.pos);
-        add_point(xs_neg,   bin.neg);
+        if (has_hel) {
+            add_point(xs_pos, bin.pos);
+            add_point(xs_neg, bin.neg);
+        }
     }
 
     if (by_xb.empty()) {
@@ -1825,12 +1857,14 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         const int xb_idx_for_name =
             (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
 
-        make_normed_xsec_canvas_for_mode(label, xb_range, group,
-                                         q2_slice, t_slice,
-                                         theory, outdir,
-                                         xb_idx_for_name,
-                                         XSecPanelMode::All,
-                                         ncols, nrows, nPads);
+        if (has_hel) {
+            make_normed_xsec_canvas_for_mode(label, xb_range, group,
+                                             q2_slice, t_slice,
+                                             theory, outdir,
+                                             xb_idx_for_name,
+                                             XSecPanelMode::All,
+                                             ncols, nrows, nPads);
+        }
 
         make_normed_xsec_canvas_for_mode(label, xb_range, group,
                                          q2_slice, t_slice,
@@ -1839,19 +1873,21 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                          XSecPanelMode::UnpolOnly,
                                          ncols, nrows, nPads);
 
-        make_normed_xsec_canvas_for_mode(label, xb_range, group,
-                                         q2_slice, t_slice,
-                                         theory, outdir,
-                                         xb_idx_for_name,
-                                         XSecPanelMode::PosOnly,
-                                         ncols, nrows, nPads);
+        if (has_hel) {
+            make_normed_xsec_canvas_for_mode(label, xb_range, group,
+                                             q2_slice, t_slice,
+                                             theory, outdir,
+                                             xb_idx_for_name,
+                                             XSecPanelMode::PosOnly,
+                                             ncols, nrows, nPads);
 
-        make_normed_xsec_canvas_for_mode(label, xb_range, group,
-                                         q2_slice, t_slice,
-                                         theory, outdir,
-                                         xb_idx_for_name,
-                                         XSecPanelMode::NegOnly,
-                                         ncols, nrows, nPads);
+            make_normed_xsec_canvas_for_mode(label, xb_range, group,
+                                             q2_slice, t_slice,
+                                             theory, outdir,
+                                             xb_idx_for_name,
+                                             XSecPanelMode::NegOnly,
+                                             ncols, nrows, nPads);
+        }
 
         make_ratio_canvas_for_mode(label, xb_range, group,
                                    q2_slice, t_slice,
@@ -1860,19 +1896,21 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                    XSecPanelMode::UnpolOnly,
                                    ncols, nrows, nPads);
 
-        make_ratio_canvas_for_mode(label, xb_range, group,
-                                   q2_slice, t_slice,
-                                   theory, outdir,
-                                   xb_idx_for_name,
-                                   XSecPanelMode::PosOnly,
-                                   ncols, nrows, nPads);
+        if (has_hel) {
+            make_ratio_canvas_for_mode(label, xb_range, group,
+                                       q2_slice, t_slice,
+                                       theory, outdir,
+                                       xb_idx_for_name,
+                                       XSecPanelMode::PosOnly,
+                                       ncols, nrows, nPads);
 
-        make_ratio_canvas_for_mode(label, xb_range, group,
-                                   q2_slice, t_slice,
-                                   theory, outdir,
-                                   xb_idx_for_name,
-                                   XSecPanelMode::NegOnly,
-                                   ncols, nrows, nPads);
+            make_ratio_canvas_for_mode(label, xb_range, group,
+                                       q2_slice, t_slice,
+                                       theory, outdir,
+                                       xb_idx_for_name,
+                                       XSecPanelMode::NegOnly,
+                                       ncols, nrows, nPads);
+        }
 
         ++xb_canvas_counter;
     }

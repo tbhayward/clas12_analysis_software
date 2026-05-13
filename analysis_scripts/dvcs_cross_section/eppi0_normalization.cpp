@@ -77,6 +77,18 @@ static const std::vector<std::string> HELICITIES = {
     "neg"
 };
 
+static inline bool has_helicity_resolved_data_columns(const std::string& period) {
+    if (period == "Sp18 Inb") {
+        return false;
+    }
+
+    if (period == "Sp18 Out") {
+        return false;
+    }
+
+    return true;
+}
+
 struct ChannelConfig {
     std::string csv_channel;
     std::string cut_prefix;
@@ -2637,6 +2649,9 @@ static TTree* tree_for_period(const std::map<std::string, TTree*>& trees,
 
 // -----------------------------------------------------------------------------
 // Normalized raw yield filling
+//
+// Sp18 Inb and Sp18 Out are unpolarized-only for downstream normalized
+// data yields because they do not have usable helicity-resolved charge.
 // -----------------------------------------------------------------------------
 
 struct HelCounts {
@@ -2737,8 +2752,13 @@ static void write_normalized_counts_to_csv(CSV& csv,
         }
 
         const int c_unpol = col_strict(csv, normalized_raw_yield_col(cfg, topo_label, period, "unpol"));
-        const int c_pos = col_strict(csv, normalized_raw_yield_col(cfg, topo_label, period, "pos"));
-        const int c_neg = col_strict(csv, normalized_raw_yield_col(cfg, topo_label, period, "neg"));
+        const bool write_helicity_resolved = has_helicity_resolved_data_columns(period);
+        const int c_pos = write_helicity_resolved
+                          ? col_strict(csv, normalized_raw_yield_col(cfg, topo_label, period, "pos"))
+                          : -1;
+        const int c_neg = write_helicity_resolved
+                          ? col_strict(csv, normalized_raw_yield_col(cfg, topo_label, period, "neg"))
+                          : -1;
 
         for (const auto& kr : kt.second) {
             const int row = kr.first;
@@ -2751,16 +2771,20 @@ static void write_normalized_counts_to_csv(CSV& csv,
             const double unpol = h.pos + h.neg + h.unpol;
 
             std::ostringstream su;
-            std::ostringstream sp;
-            std::ostringstream sn;
-
             su << std::fixed << std::setprecision(8) << unpol;
-            sp << std::fixed << std::setprecision(8) << h.pos;
-            sn << std::fixed << std::setprecision(8) << h.neg;
 
             csv.rows[row][c_unpol] = su.str();
-            csv.rows[row][c_pos] = sp.str();
-            csv.rows[row][c_neg] = sn.str();
+
+            if (write_helicity_resolved) {
+                std::ostringstream sp;
+                std::ostringstream sn;
+
+                sp << std::fixed << std::setprecision(8) << h.pos;
+                sn << std::fixed << std::setprecision(8) << h.neg;
+
+                csv.rows[row][c_pos] = sp.str();
+                csv.rows[row][c_neg] = sn.str();
+            }
         }
     }
 }

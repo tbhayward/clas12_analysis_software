@@ -36,6 +36,25 @@
 
 namespace {
 
+static bool has_helicity_resolved_cross_sections(const std::string &label) {
+    if (label == "Sp18 Inb" || label == "Sp18 Out" ||
+        label == "Sp18" || label == "10.6 GeV") {
+        return false;
+    }
+
+    return true;
+}
+
+static bool normalization_helicity_allowed(const std::string &label,
+                                           const std::string &helicity) {
+    if (helicity == "unpol") {
+        return true;
+    }
+
+    return has_helicity_resolved_cross_sections(label);
+}
+
+
 // -----------------------------------------------------------------------------
 // USER TOGGLES (edit here)
 // -----------------------------------------------------------------------------
@@ -1112,6 +1131,12 @@ static bool run_bh_normalization_study_impl(const std::string &csv_path,
 
         const std::string col_norm = "norm, " + label;
         const int c_norm = find_col_optional(header, col_norm);
+
+        if (!normalization_helicity_allowed(label, helicity)) {
+            std::cout << "[overall_norm] Skipping normalization study for unavailable helicity column: "
+                      << label << ", " << helicity << "\n";
+            return true;
+        }
 
         // ---------------------------------------------------------------------
         // Fast bypass mode: write unity normalization and return immediately.

@@ -678,6 +678,26 @@ static std::vector<std::string> combined_members_for(const std::string &L) {
     return {};
 }
 
+static const std::vector<std::string> kAllHelicities = {"unpol", "pos", "neg"};
+static const std::vector<std::string> kUnpolarizedOnlyHelicities = {"unpol"};
+
+static bool has_helicity_resolved_cross_sections(const std::string &label) {
+    if (label == "Sp18 Inb" || label == "Sp18 Out" ||
+        label == "Sp18" || label == "10.6 GeV") {
+        return false;
+    }
+
+    return true;
+}
+
+static const std::vector<std::string>& cross_section_helicities_for_label(const std::string &label) {
+    if (has_helicity_resolved_cross_sections(label)) {
+        return kAllHelicities;
+    }
+
+    return kUnpolarizedOnlyHelicities;
+}
+
 static std::string lumi_col_for_label(const std::string &L) {
     if (L == "Fa18 Inb") return "integrated luminosity, Fa18 Inb (nC)";
     if (L == "Fa18 Out") return "integrated luminosity, Fa18 Out (nC)";
@@ -901,22 +921,19 @@ bool compute_cross_sections(const std::string &csv_main,
     }
 
     int c_vbin_106 = find_col_optional(header, "bin_volume, 10.6 GeV");
-    int c_vbin_102 = find_col_optional(header, "bin_volume, 10.2 GeV");
     int c_frad_106 = find_col_optional(header, "Frad, 10.6 GeV");
-    int c_frad_102 = find_col_optional(header, "Frad, 10.2 GeV");
     int c_fbin_106 = find_col_optional(header, "Fbin, 10.6 GeV");
-    int c_fbin_102 = find_col_optional(header, "Fbin, 10.2 GeV");
 
-    if (c_vbin_106 < 0 || c_vbin_102 < 0) {
-        std::cerr << "[cross_sections] FATAL: missing bin_volume columns.\n";
+    if (c_vbin_106 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing bin_volume column: bin_volume, 10.6 GeV\n";
         return false;
     }
-    if (c_frad_106 < 0 || c_frad_102 < 0) {
-        std::cerr << "[cross_sections] FATAL: missing Frad columns.\n";
+    if (c_frad_106 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing Frad column: Frad, 10.6 GeV\n";
         return false;
     }
-    if (c_fbin_106 < 0 || c_fbin_102 < 0) {
-        std::cerr << "[cross_sections] FATAL: missing Fbin columns.\n";
+    if (c_fbin_106 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing Fbin column: Fbin, 10.6 GeV\n";
         return false;
     }
 
@@ -956,7 +973,6 @@ bool compute_cross_sections(const std::string &csv_main,
         lumi_col_idx[name] = idx;
     }
 
-    const std::vector<std::string> helicities = {"unpol", "pos", "neg"};
     const std::vector<std::string> labels = {
         "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
         "Fa18", "Sp18", "10.6 GeV"
@@ -967,7 +983,7 @@ bool compute_cross_sections(const std::string &csv_main,
 
     for (const auto &L : labels) {
         const std::string YL = yield_label_for(L);
-        for (const auto &h : helicities) {
+        for (const auto &h : cross_section_helicities_for_label(L)) {
             const std::string yield_col =
                 "acceptance corrected yield, ep->epg, exp, " + YL + ", " + h;
             const std::string xs_col =
@@ -1076,31 +1092,25 @@ bool compute_cross_sections(const std::string &csv_main,
             return false;
         }
 
-        const Triple frad_106 = lee_row->frad;
-        const Triple frad_102 = lee_row->frad;
-        const Triple fbin_106 = lee_row->fbin;
-        const Triple fbin_102 = lee_row->fbin;
-        const Triple vbin_106 = lee_row->bin_volume;
-        const Triple vbin_102 = lee_row->bin_volume;
+        const Triple frad = lee_row->frad;
+        const Triple fbin = lee_row->fbin;
+        const Triple vbin = lee_row->bin_volume;
 
-        fields[c_frad_106] = tuple3_to_cell(frad_106.value, frad_106.stat, frad_106.sys);
-        fields[c_frad_102] = tuple3_to_cell(frad_102.value, frad_102.stat, frad_102.sys);
-        fields[c_fbin_106] = tuple3_to_cell(fbin_106.value, fbin_106.stat, fbin_106.sys);
-        fields[c_fbin_102] = tuple3_to_cell(fbin_102.value, fbin_102.stat, fbin_102.sys);
-        fields[c_vbin_106] = tuple3_to_cell(vbin_106.value, vbin_106.stat, vbin_106.sys);
-        fields[c_vbin_102] = tuple3_to_cell(vbin_102.value, vbin_102.stat, vbin_102.sys);
+        fields[c_frad_106] = tuple3_to_cell(frad.value, frad.stat, frad.sys);
+        fields[c_fbin_106] = tuple3_to_cell(fbin.value, fbin.stat, fbin.sys);
+        fields[c_vbin_106] = tuple3_to_cell(vbin.value, vbin.stat, vbin.sys);
 
         for (const auto &L : labels) {
             const Triple Lumi = lumi_for_label_row(L, fields);
             const double Ebeam = beam_energy_for_label(L);
 
-            const Triple &Frad = (Ebeam > 10.3) ? frad_106 : frad_102;
-            const Triple &Fbin = (Ebeam > 10.3) ? fbin_106 : fbin_102;
-            const Triple &Vbin = (Ebeam > 10.3) ? vbin_106 : vbin_102;
+            const Triple &Frad = frad;
+            const Triple &Fbin = fbin;
+            const Triple &Vbin = vbin;
 
             if (Frad.value <= 0.0 || Fbin.value <= 0.0 || Vbin.value <= 0.0) continue;
 
-            for (const auto &h : helicities) {
+            for (const auto &h : cross_section_helicities_for_label(L)) {
                 auto it = colmap.find(L + "|" + h);
                 if (it == colmap.end()) continue;
 
@@ -1803,8 +1813,16 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                   << label << "; nothing to plot.\n";
         return true;
     }
-    if (c_xs_unpol < 0 || c_xs_pos < 0 || c_xs_neg < 0) {
-        std::cerr << "[cross_sections] FATAL: incomplete cross section columns "
+
+    if (c_xs_unpol < 0) {
+        std::cerr << "[cross_sections] FATAL: missing unpolarized cross section column "
+                  << "for label " << label << ".\n";
+        return false;
+    }
+
+    const bool has_hel = has_helicity_resolved_cross_sections(label);
+    if (has_hel && (c_xs_pos < 0 || c_xs_neg < 0)) {
+        std::cerr << "[cross_sections] FATAL: incomplete helicity-resolved cross section columns "
                   << "for label " << label << " (need unpol/pos/neg).\n";
         return false;
     }
@@ -1837,9 +1855,15 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         }
 
         Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
-        Triple xs_pos   = parse_tuple3(fields[c_xs_pos]);
-        Triple xs_neg   = parse_tuple3(fields[c_xs_neg]);
-        if (xs_unpol.value <= 0.0 && xs_pos.value <= 0.0 && xs_neg.value <= 0.0) {
+        Triple xs_pos;
+        Triple xs_neg;
+        if (has_hel) {
+            xs_pos = parse_tuple3(fields[c_xs_pos]);
+            xs_neg = parse_tuple3(fields[c_xs_neg]);
+        }
+
+        if (xs_unpol.value <= 0.0 &&
+            (!has_hel || (xs_pos.value <= 0.0 && xs_neg.value <= 0.0))) {
             continue;
         }
 
@@ -1865,8 +1889,10 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         };
 
         add_point(xs_unpol, bin.unpol);
-        add_point(xs_pos,   bin.pos);
-        add_point(xs_neg,   bin.neg);
+        if (has_hel) {
+            add_point(xs_pos, bin.pos);
+            add_point(xs_neg, bin.neg);
+        }
     }
 
     if (by_xb.empty()) {
@@ -1914,30 +1940,37 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         int xb_idx_for_name =
             (group.xb_index >= 0 ? group.xb_index : xb_canvas_counter);
 
-        make_xsec_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::All,
-                                  ncols, nrows, nPads);
+        if (has_hel) {
+            make_xsec_canvas_for_mode(label, xb_range, group,
+                                      q2_slice, t_slice,
+                                      theory, outdir,
+                                      xb_idx_for_name,
+                                      XSecPanelMode::All,
+                                      ncols, nrows, nPads);
+        }
+
         make_xsec_canvas_for_mode(label, xb_range, group,
                                   q2_slice, t_slice,
                                   theory, outdir,
                                   xb_idx_for_name,
                                   XSecPanelMode::UnpolOnly,
                                   ncols, nrows, nPads);
-        make_xsec_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::PosOnly,
-                                  ncols, nrows, nPads);
-        make_xsec_canvas_for_mode(label, xb_range, group,
-                                  q2_slice, t_slice,
-                                  theory, outdir,
-                                  xb_idx_for_name,
-                                  XSecPanelMode::NegOnly,
-                                  ncols, nrows, nPads);
+
+        if (has_hel) {
+            make_xsec_canvas_for_mode(label, xb_range, group,
+                                      q2_slice, t_slice,
+                                      theory, outdir,
+                                      xb_idx_for_name,
+                                      XSecPanelMode::PosOnly,
+                                      ncols, nrows, nPads);
+
+            make_xsec_canvas_for_mode(label, xb_range, group,
+                                      q2_slice, t_slice,
+                                      theory, outdir,
+                                      xb_idx_for_name,
+                                      XSecPanelMode::NegOnly,
+                                      ncols, nrows, nPads);
+        }
 
         ++xb_canvas_counter;
     }

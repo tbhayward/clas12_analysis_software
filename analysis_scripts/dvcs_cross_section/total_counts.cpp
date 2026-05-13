@@ -3,8 +3,10 @@
 // Fill raw data counts and MC counts into the pass-2 CSV.
 //
 // DATA columns filled:
-//   raw yield, ep->epg,   <topo label>, exp, <period>, <helicity>
-//   raw yield, ep->eppi0, <topo label>, exp, <period>, <helicity>
+//   raw yield, ep->epg,   <topo label>, exp, <period>, unpol
+//   raw yield, ep->eppi0, <topo label>, exp, <period>, unpol
+//   raw yield, ep->epg,   <topo label>, exp, <period>, pos/neg for helicity-qualified periods only
+//   raw yield, ep->eppi0, <topo label>, exp, <period>, pos/neg for helicity-qualified periods only
 //
 // MC columns filled:
 //   generated yield, ep->epg, mc, <period>
@@ -295,6 +297,18 @@ static inline bool should_skip_csv_for_label(const std::string& label) {
     }
 
     return false;
+}
+
+static inline bool has_helicity_resolved_data_columns(const std::string& label) {
+    if (label == "Sp18 Inb") {
+        return false;
+    }
+
+    if (label == "Sp18 Out") {
+        return false;
+    }
+
+    return true;
 }
 
 static inline bool ends_with_path_component(const std::string& path,
@@ -1524,8 +1538,13 @@ static void write_collection_to_csv(CSV& csv,
 
             if (cfg.write_data_raw_columns) {
                 const int c_unpol = col_strict(csv, col_data_raw_counts(cfg.channel_cfg, topoLabel, period_display, "unpol"));
-                const int c_pos   = col_strict(csv, col_data_raw_counts(cfg.channel_cfg, topoLabel, period_display, "pos"));
-                const int c_neg   = col_strict(csv, col_data_raw_counts(cfg.channel_cfg, topoLabel, period_display, "neg"));
+                const bool write_helicity_resolved = has_helicity_resolved_data_columns(period_display);
+                const int c_pos = write_helicity_resolved
+                                  ? col_strict(csv, col_data_raw_counts(cfg.channel_cfg, topoLabel, period_display, "pos"))
+                                  : -1;
+                const int c_neg = write_helicity_resolved
+                                  ? col_strict(csv, col_data_raw_counts(cfg.channel_cfg, topoLabel, period_display, "neg"))
+                                  : -1;
 
                 for (const auto& row_kv : rc) {
                     const int r = row_kv.first;
@@ -1538,8 +1557,11 @@ static void write_collection_to_csv(CSV& csv,
                     const double unpol = h.pos + h.neg + h.unpol;
 
                     csv.rows[r][c_unpol] = fmt0(unpol);
-                    csv.rows[r][c_pos]   = fmt0(h.pos);
-                    csv.rows[r][c_neg]   = fmt0(h.neg);
+
+                    if (write_helicity_resolved) {
+                        csv.rows[r][c_pos] = fmt0(h.pos);
+                        csv.rows[r][c_neg] = fmt0(h.neg);
+                    }
                 }
             }
 

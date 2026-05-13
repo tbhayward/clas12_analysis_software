@@ -241,6 +241,32 @@ static const std::vector<std::string>& helicities() {
     return v;
 }
 
+static const std::vector<std::string>& unpolarized_only_helicities() {
+    static const std::vector<std::string> v = {
+        "unpol"
+    };
+    return v;
+}
+
+static const std::vector<std::string>& cross_section_helicities_for_label(const std::string& label) {
+    if (label == "Sp18 Inb" ||
+        label == "Sp18 Out" ||
+        label == "Sp18" ||
+        label == "10.6 GeV") {
+        return unpolarized_only_helicities();
+    }
+
+    return helicities();
+}
+
+static const std::vector<std::string>& acceptance_corrected_helicities_for_label(const std::string& label) {
+    if (label == "2018 (10.6 GeV)") {
+        return unpolarized_only_helicities();
+    }
+
+    return helicities();
+}
+
 static const std::vector<std::string>& topologies() {
     static const std::vector<std::string> v = {
         "(FD, FD)",
@@ -515,7 +541,7 @@ static void add_acc_corrected_yield_columns(std::vector<std::string>& H) {
     }
 
     for (const auto& grp : acceptance_corrected_groups()) {
-        for (const auto& hel : helicities()) {
+        for (const auto& hel : acceptance_corrected_helicities_for_label(grp)) {
             std::ostringstream name;
             name << "acceptance corrected yield, ep->epg, exp, " << grp << ", " << hel;
             H.push_back(name.str());
@@ -557,7 +583,7 @@ static void add_norm_columns(std::vector<std::string>& H) {
 static void add_cross_section_columns_without_normed(std::vector<std::string>& H,
                                                      const std::string& prefix) {
     for (const auto& per : base_periods()) {
-        for (const auto& hel : helicities()) {
+        for (const auto& hel : cross_section_helicities_for_label(per)) {
             std::ostringstream name;
             name << prefix << "cross sections, ep->epg, exp, " << per << ", " << hel;
             H.push_back(name.str());
@@ -565,7 +591,7 @@ static void add_cross_section_columns_without_normed(std::vector<std::string>& H
     }
 
     for (const auto& grp : cross_section_groups()) {
-        for (const auto& hel : helicities()) {
+        for (const auto& hel : cross_section_helicities_for_label(grp)) {
             std::ostringstream name;
             name << prefix << "cross sections, ep->epg, exp, " << grp << ", " << hel;
             H.push_back(name.str());
