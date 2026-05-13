@@ -1271,7 +1271,8 @@ static void make_ratio_canvas_for_mode(
     XSecPanelMode mode,
     int ncols,
     int nrows,
-    int nPads) {
+    int nPads,
+    bool log_y) {
 
     (void)nPads;
 
@@ -1284,7 +1285,8 @@ static void make_ratio_canvas_for_mode(
     const int W = 300 * ncols + 160;
     const int H = 260 * nrows + 240;
 
-    TCanvas *c = new TCanvas("c_normed_xsec_ratios", "c_normed_xsec_ratios", W, H);
+    const char *canvas_name = log_y ? "c_normed_xsec_ratios_logy" : "c_normed_xsec_ratios";
+    TCanvas *c = new TCanvas(canvas_name, canvas_name, W, H);
 
     TPad *pTop = new TPad("pTopRatio", "pTopRatio", 0.0, 0.78, 1.0, 1.0);
     pTop->SetFillStyle(0);
@@ -1308,7 +1310,9 @@ static void make_ratio_canvas_for_mode(
 
     std::ostringstream tit;
 
-    tit << "Normed cross-section data/model ratios, ep #rightarrow ep#gamma   " << label
+    tit << "Normed cross-section data/model ratios"
+        << (log_y ? " (log y)" : "")
+        << ", ep #rightarrow ep#gamma   " << label
         << "   " << ratio_mode_label(mode)
         << "   x_{B} in ("
         << std::fixed << std::setprecision(3)
@@ -1369,7 +1373,7 @@ static void make_ratio_canvas_for_mode(
             gPad->SetBottomMargin(0.18);
             gPad->SetLeftMargin(0.16);
             gPad->SetRightMargin(0.07);
-            gPad->SetLogy(false);
+            gPad->SetLogy(log_y);
 
             QTKey key(q2_range, t_range);
 
@@ -1381,8 +1385,8 @@ static void make_ratio_canvas_for_mode(
             }
 
             auto yr = compute_ratio_yrange_for_bin_and_mode(bin_ptr, theory, mode);
-            const double ymin_canvas = yr.first;
-            const double ymax_canvas = yr.second;
+            const double ymin_canvas = log_y ? 0.1 : yr.first;
+            const double ymax_canvas = log_y ? 100.0 : yr.second;
 
             TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
 
@@ -1447,7 +1451,13 @@ static void make_ratio_canvas_for_mode(
     fname << "normed_cross_sections_ratios_"
           << ratio_mode_prefix(mode) << "_"
           << canonical_period_dir(label)
-          << "_xB_" << xb_idx_for_name << ".png";
+          << "_xB_" << xb_idx_for_name;
+
+    if (log_y) {
+        fname << "_logy";
+    }
+
+    fname << ".png";
 
     fs::path outpath = outdir / fname.str();
 
@@ -1894,7 +1904,16 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                    theory, outdir,
                                    xb_idx_for_name,
                                    XSecPanelMode::UnpolOnly,
-                                   ncols, nrows, nPads);
+                                   ncols, nrows, nPads,
+                                   false);
+
+        make_ratio_canvas_for_mode(label, xb_range, group,
+                                   q2_slice, t_slice,
+                                   theory, outdir,
+                                   xb_idx_for_name,
+                                   XSecPanelMode::UnpolOnly,
+                                   ncols, nrows, nPads,
+                                   true);
 
         if (has_hel) {
             make_ratio_canvas_for_mode(label, xb_range, group,
@@ -1902,14 +1921,32 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                        theory, outdir,
                                        xb_idx_for_name,
                                        XSecPanelMode::PosOnly,
-                                       ncols, nrows, nPads);
+                                       ncols, nrows, nPads,
+                                       false);
+
+            make_ratio_canvas_for_mode(label, xb_range, group,
+                                       q2_slice, t_slice,
+                                       theory, outdir,
+                                       xb_idx_for_name,
+                                       XSecPanelMode::PosOnly,
+                                       ncols, nrows, nPads,
+                                       true);
 
             make_ratio_canvas_for_mode(label, xb_range, group,
                                        q2_slice, t_slice,
                                        theory, outdir,
                                        xb_idx_for_name,
                                        XSecPanelMode::NegOnly,
-                                       ncols, nrows, nPads);
+                                       ncols, nrows, nPads,
+                                       false);
+
+            make_ratio_canvas_for_mode(label, xb_range, group,
+                                       q2_slice, t_slice,
+                                       theory, outdir,
+                                       xb_idx_for_name,
+                                       XSecPanelMode::NegOnly,
+                                       ncols, nrows, nPads,
+                                       true);
         }
 
         ++xb_canvas_counter;
