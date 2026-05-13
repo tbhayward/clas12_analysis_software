@@ -1386,7 +1386,7 @@ static void make_ratio_canvas_for_mode(
 
             auto yr = compute_ratio_yrange_for_bin_and_mode(bin_ptr, theory, mode);
             const double ymin_canvas = log_y ? 0.1 : yr.first;
-            const double ymax_canvas = log_y ? 100.0 : yr.second;
+            const double ymax_canvas = log_y ? 20.0 : yr.second;
 
             TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
 
