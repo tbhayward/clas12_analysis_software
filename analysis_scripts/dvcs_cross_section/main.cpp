@@ -182,7 +182,7 @@ int main(int argc, char* argv[]) {
         norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
         norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
         norm_opts.output_dir = "output/data_mc_normalization";
-        norm_opts.override_to_unity = false;
+        norm_opts.override_to_unity = true;
         norm_opts.max_workers = 5;
 
         // Set this to true to disable the eppi0 AAOGEN normalization study.
@@ -506,7 +506,7 @@ int main(int argc, char* argv[]) {
         // Production-safe default:
         //   true  -> write norm = 1.00 everywhere and skip BH-edge study
         //   false -> run the full BH-edge normalization study and write fitted norms
-        norm_opts.override_to_unity = true;
+        norm_opts.override_to_unity = false;
 
         norm_opts.use_all_points_within_edge_window = true;
         norm_opts.require_positive_dedge = true;
