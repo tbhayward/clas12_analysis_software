@@ -973,7 +973,7 @@ static void make_model_ratio_canvas(const std::string &label,
             gPad->SetLogy(false);
 
             draw_empty_axes(
-                0.0,
+                -0.05,
                 3.0,
                 "data / " + model_name,
                 false
@@ -981,17 +981,17 @@ static void make_model_ratio_canvas(const std::string &label,
 
             draw_bin_title(q2, tt);
 
-            TLine line_zero(0.0, 0.0, 360.0, 0.0);
-            line_zero.SetLineColor(kBlack);
-            line_zero.SetLineStyle(2);
-            line_zero.SetLineWidth(1);
-            line_zero.Draw("SAME");
+            TLine *line_zero = new TLine(0.0, 0.0, 360.0, 0.0);
+            line_zero->SetLineColor(kBlack);
+            line_zero->SetLineStyle(2);
+            line_zero->SetLineWidth(1);
+            line_zero->Draw("SAME");
 
-            TLine line_one(0.0, 1.0, 360.0, 1.0);
-            line_one.SetLineColor(kBlack);
-            line_one.SetLineStyle(2);
-            line_one.SetLineWidth(1);
-            line_one.Draw("SAME");
+            TLine *line_one = new TLine(0.0, 1.0, 360.0, 1.0);
+            line_one->SetLineColor(kBlack);
+            line_one->SetLineStyle(2);
+            line_one->SetLineWidth(1);
+            line_one->Draw("SAME");
 
             for (int is = 0; is < 3; ++is) {
                 const BinData *bd = nullptr;
