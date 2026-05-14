@@ -12,13 +12,11 @@
 #include <TH2D.h>
 #include <TLine.h>
 #include <TLatex.h>
-#include <TLegend.h>
 #include <TStyle.h>
 #include <TROOT.h>
 #include <TSystem.h>
 #include <TDataType.h>
 #include <TVirtualPad.h>
-#include <TImage.h>
 
 #include <algorithm>
 #include <cmath>
@@ -40,6 +38,10 @@ static constexpr double kXBMin = 0.0;
 static constexpr double kXBMax = 0.7;
 static constexpr double kQ2Min = 0.0;
 static constexpr double kQ2Max = 7.0;
+
+static constexpr int kInbendingColor = kRed + 1;
+static constexpr int kOutbendingColor = kBlue + 1;
+static constexpr int kBinLineColor = kGreen + 2;
 
 static std::string topo_to_key(Topology topo) {
     switch (topo) {
@@ -524,7 +526,6 @@ struct PointSet {
 struct DrawnObjects {
     std::vector<TH2D*> frames;
     std::vector<TGraph*> graphs;
-    std::vector<TLegend*> legends;
     std::vector<TLine*> lines;
     std::vector<TLatex*> latex;
 };
@@ -696,7 +697,7 @@ static TGraph* make_graph(
     }
 
     graph->SetMarkerStyle(20);
-    graph->SetMarkerSize(0.12);
+    graph->SetMarkerSize(0.10);
     graph->SetMarkerColor(color);
     graph->SetLineColor(color);
 
@@ -708,124 +709,22 @@ static std::string format_axis_value(double x) {
 
     if (std::abs(x - std::round(x)) < 1.0e-9) {
         ss << static_cast<int>(std::round(x));
-    } else {
-        ss << std::fixed << std::setprecision(2) << x;
-
-        std::string out = ss.str();
-        while (!out.empty() && out.back() == '0') {
-            out.pop_back();
-        }
-
-        if (!out.empty() && out.back() == '.') {
-            out.pop_back();
-        }
-
-        return out;
+        return ss.str();
     }
 
-    return ss.str();
-}
+    ss << std::fixed << std::setprecision(2) << x;
 
-static void draw_grid_lines(const BinGrid& grid, DrawnObjects& drawn) {
-    for (double xb : grid.xb_edges) {
-        if (xb < kXBMin || xb > kXBMax) {
-            continue;
-        }
+    std::string out = ss.str();
 
-        auto* line = new TLine(xb, kQ2Min, xb, kQ2Max);
-        line->SetLineColor(kGray + 1);
-        line->SetLineStyle(2);
-        line->SetLineWidth(1);
-        line->Draw("same");
-
-        drawn.lines.push_back(line);
+    while (!out.empty() && out.back() == '0') {
+        out.pop_back();
     }
 
-    for (double q2 : grid.q2_edges) {
-        if (q2 < kQ2Min || q2 > kQ2Max) {
-            continue;
-        }
-
-        auto* line = new TLine(kXBMin, q2, kXBMax, q2);
-        line->SetLineColor(kGray + 1);
-        line->SetLineStyle(2);
-        line->SetLineWidth(1);
-        line->Draw("same");
-
-        drawn.lines.push_back(line);
-    }
-}
-
-static void draw_custom_bin_edge_labels(const BinGrid& grid, DrawnObjects& drawn) {
-    const double left = gPad->GetLeftMargin();
-    const double right = gPad->GetRightMargin();
-    const double bottom = gPad->GetBottomMargin();
-    const double top = gPad->GetTopMargin();
-
-    auto* xlatex = new TLatex();
-    xlatex->SetNDC(true);
-    xlatex->SetTextAlign(23);
-    xlatex->SetTextSize(0.032);
-
-    for (double xb : grid.xb_edges) {
-        if (xb < kXBMin || xb > kXBMax) {
-            continue;
-        }
-
-        const double x_ndc = left + (1.0 - left - right) * (xb - kXBMin) / (kXBMax - kXBMin);
-        const double y_ndc = bottom * 0.54;
-
-        xlatex->DrawLatex(x_ndc, y_ndc, format_axis_value(xb).c_str());
+    if (!out.empty() && out.back() == '.') {
+        out.pop_back();
     }
 
-    drawn.latex.push_back(xlatex);
-
-    auto* ylatex = new TLatex();
-    ylatex->SetNDC(true);
-    ylatex->SetTextAlign(32);
-    ylatex->SetTextSize(0.030);
-
-    for (double q2 : grid.q2_edges) {
-        if (q2 < kQ2Min || q2 > kQ2Max) {
-            continue;
-        }
-
-        const double x_ndc = left * 0.72;
-        const double y_ndc = bottom + (1.0 - bottom - top) * (q2 - kQ2Min) / (kQ2Max - kQ2Min);
-
-        ylatex->DrawLatex(x_ndc, y_ndc, format_axis_value(q2).c_str());
-    }
-
-    drawn.latex.push_back(ylatex);
-}
-
-static void draw_axis_titles(DrawnObjects& drawn) {
-    const double left = gPad->GetLeftMargin();
-    const double bottom = gPad->GetBottomMargin();
-
-    auto* x_title = new TLatex();
-    x_title->SetNDC(true);
-    x_title->SetTextAlign(22);
-    x_title->SetTextSize(0.048);
-    x_title->DrawLatex(0.5, bottom * 0.18, "x_{B}");
-    drawn.latex.push_back(x_title);
-
-    auto* y_title = new TLatex();
-    y_title->SetNDC(true);
-    y_title->SetTextAlign(22);
-    y_title->SetTextSize(0.048);
-    y_title->SetTextAngle(90.0);
-    y_title->DrawLatex(left * 0.20, 0.5, "Q^{2} (GeV^{2})");
-    drawn.latex.push_back(y_title);
-}
-
-static void draw_period_label(const std::string& label, DrawnObjects& drawn) {
-    auto* period = new TLatex();
-    period->SetNDC(true);
-    period->SetTextAlign(13);
-    period->SetTextSize(0.060);
-    period->DrawLatex(0.17, 0.91, label.c_str());
-    drawn.latex.push_back(period);
+    return out;
 }
 
 static TH2D* make_frame(const std::string& name) {
@@ -848,13 +747,124 @@ static TH2D* make_frame(const std::string& name) {
     frame->GetXaxis()->SetLabelSize(0.0);
     frame->GetYaxis()->SetLabelSize(0.0);
 
-    frame->GetXaxis()->SetTickLength(0.015);
-    frame->GetYaxis()->SetTickLength(0.015);
-
     frame->GetXaxis()->SetNdivisions(0);
     frame->GetYaxis()->SetNdivisions(0);
 
+    frame->GetXaxis()->SetTickLength(0.0);
+    frame->GetYaxis()->SetTickLength(0.0);
+
     return frame;
+}
+
+static void draw_bin_boundary_lines_on_top(const BinGrid& grid, DrawnObjects& drawn) {
+    for (double xb : grid.xb_edges) {
+        if (xb < kXBMin || xb > kXBMax) {
+            continue;
+        }
+
+        auto* line = new TLine(xb, kQ2Min, xb, kQ2Max);
+        line->SetLineColor(kBinLineColor);
+        line->SetLineStyle(1);
+        line->SetLineWidth(2);
+        line->Draw("same");
+
+        drawn.lines.push_back(line);
+    }
+
+    for (double q2 : grid.q2_edges) {
+        if (q2 < kQ2Min || q2 > kQ2Max) {
+            continue;
+        }
+
+        auto* line = new TLine(kXBMin, q2, kXBMax, q2);
+        line->SetLineColor(kBinLineColor);
+        line->SetLineStyle(1);
+        line->SetLineWidth(2);
+        line->Draw("same");
+
+        drawn.lines.push_back(line);
+    }
+}
+
+static void draw_custom_bin_edge_labels(const BinGrid& grid, DrawnObjects& drawn) {
+    const double left = gPad->GetLeftMargin();
+    const double right = gPad->GetRightMargin();
+    const double bottom = gPad->GetBottomMargin();
+    const double top = gPad->GetTopMargin();
+
+    auto* xlatex = new TLatex();
+    xlatex->SetNDC(true);
+    xlatex->SetTextAlign(23);
+    xlatex->SetTextSize(0.030);
+
+    for (double xb : grid.xb_edges) {
+        if (xb < kXBMin || xb > kXBMax) {
+            continue;
+        }
+
+        const double x_ndc = left + (1.0 - left - right) * (xb - kXBMin) / (kXBMax - kXBMin);
+        const double y_ndc = bottom * 0.58;
+
+        xlatex->DrawLatex(x_ndc, y_ndc, format_axis_value(xb).c_str());
+    }
+
+    drawn.latex.push_back(xlatex);
+
+    auto* ylatex = new TLatex();
+    ylatex->SetNDC(true);
+    ylatex->SetTextAlign(32);
+    ylatex->SetTextSize(0.030);
+
+    for (double q2 : grid.q2_edges) {
+        if (q2 < kQ2Min || q2 > kQ2Max) {
+            continue;
+        }
+
+        const double x_ndc = left * 0.74;
+        const double y_ndc = bottom + (1.0 - bottom - top) * (q2 - kQ2Min) / (kQ2Max - kQ2Min);
+
+        ylatex->DrawLatex(x_ndc, y_ndc, format_axis_value(q2).c_str());
+    }
+
+    drawn.latex.push_back(ylatex);
+}
+
+static void draw_axis_titles(DrawnObjects& drawn) {
+    const double left = gPad->GetLeftMargin();
+    const double bottom = gPad->GetBottomMargin();
+
+    auto* x_title = new TLatex();
+    x_title->SetNDC(true);
+    x_title->SetTextAlign(22);
+    x_title->SetTextSize(0.046);
+    x_title->DrawLatex(0.5, bottom * 0.20, "x_{B}");
+    drawn.latex.push_back(x_title);
+
+    auto* y_title = new TLatex();
+    y_title->SetNDC(true);
+    y_title->SetTextAlign(22);
+    y_title->SetTextSize(0.046);
+    y_title->SetTextAngle(90.0);
+    y_title->DrawLatex(left * 0.24, 0.5, "Q^{2} (GeV^{2})");
+    drawn.latex.push_back(y_title);
+}
+
+static void draw_period_title(const PointSet& points, DrawnObjects& drawn) {
+    auto* title = new TLatex();
+    title->SetNDC(true);
+    title->SetTextAlign(22);
+    title->SetTextSize(0.062);
+    title->DrawLatex(0.50, 0.965, points.display_label.c_str());
+    drawn.latex.push_back(title);
+
+    auto* subtitle = new TLatex();
+    subtitle->SetNDC(true);
+    subtitle->SetTextAlign(22);
+    subtitle->SetTextSize(0.040);
+
+    const char* bending_label = points.is_inbending ? "Inbending DATA" : "Outbending DATA";
+    subtitle->DrawLatex(0.50, 0.920, bending_label);
+    drawn.latex.push_back(subtitle);
 }
 
 static void draw_panel(
@@ -867,9 +877,7 @@ static void draw_panel(
     frame->Draw("axis");
     drawn.frames.push_back(frame);
 
-    draw_grid_lines(grid, drawn);
-
-    const int color = points.is_inbending ? (kRed + 1) : (kBlue + 1);
+    const int color = points.is_inbending ? kInbendingColor : kOutbendingColor;
     TGraph* graph = make_graph(points.x, points.q2, color);
 
     if (graph->GetN() > 0) {
@@ -878,26 +886,13 @@ static void draw_panel(
 
     drawn.graphs.push_back(graph);
 
+    draw_bin_boundary_lines_on_top(grid, drawn);
+
     frame->Draw("axis same");
 
     draw_custom_bin_edge_labels(grid, drawn);
     draw_axis_titles(drawn);
-    draw_period_label(points.display_label, drawn);
-
-    auto* legend = new TLegend(0.66, 0.84, 0.94, 0.94);
-    legend->SetFillColor(kWhite);
-    legend->SetFillStyle(1001);
-    legend->SetBorderSize(1);
-    legend->SetTextSize(0.042);
-
-    if (points.is_inbending) {
-        legend->AddEntry(graph, "Inbending DATA", "p");
-    } else {
-        legend->AddEntry(graph, "Outbending DATA", "p");
-    }
-
-    legend->Draw("same");
-    drawn.legends.push_back(legend);
+    draw_period_title(points, drawn);
 }
 
 static void draw_empty_panel(DrawnObjects& drawn) {
@@ -905,8 +900,8 @@ static void draw_empty_panel(DrawnObjects& drawn) {
     gPad->SetFrameFillColor(kWhite);
     gPad->SetLeftMargin(0.18);
     gPad->SetRightMargin(0.04);
-    gPad->SetTopMargin(0.10);
-    gPad->SetBottomMargin(0.18);
+    gPad->SetTopMargin(0.16);
+    gPad->SetBottomMargin(0.22);
 
     auto* latex = new TLatex();
     latex->SetNDC(true);
@@ -919,27 +914,61 @@ static void draw_empty_panel(DrawnObjects& drawn) {
 static void setup_pad_margins() {
     gPad->SetLeftMargin(0.18);
     gPad->SetRightMargin(0.04);
-    gPad->SetTopMargin(0.08);
-    gPad->SetBottomMargin(0.20);
+    gPad->SetTopMargin(0.16);
+    gPad->SetBottomMargin(0.22);
     gPad->SetGrid(0, 0);
     gPad->SetTicks(1, 1);
 }
 
-static void write_png_from_canvas(TCanvas* canvas, const std::string& out_png) {
+static bool file_exists_nonempty(const std::string& path) {
+    std::ifstream fin(path, std::ios::binary | std::ios::ate);
+    if (!fin) {
+        return false;
+    }
+
+    return fin.tellg() > 0;
+}
+
+static std::string shell_quote(const std::string& s) {
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') {
+            out += "'\\''";
+        } else {
+            out += c;
+        }
+    }
+
+    out += "'";
+    return out;
+}
+
+static void write_png_from_pdf_or_canvas(
+    TCanvas* canvas,
+    const std::string& out_pdf,
+    const std::string& out_png
+) {
     canvas->cd();
     canvas->Modified();
     canvas->Update();
     gSystem->ProcessEvents();
 
-    TImage* img = TImage::Create();
-    if (!img) {
-        throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Could not create TImage for PNG output.");
+    const std::string gs_cmd =
+        "gs -dSAFER -dBATCH -dNOPAUSE -sDEVICE=png16m -r200 "
+        "-dTextAlphaBits=4 -dGraphicsAlphaBits=4 "
+        "-sOutputFile=" + shell_quote(out_png) + " " + shell_quote(out_pdf);
+
+    const int gs_status = std::system(gs_cmd.c_str());
+
+    if (gs_status == 0 && file_exists_nonempty(out_png)) {
+        std::cout << "[q2_xb_cut_coverage] PNG rasterized from PDF using Ghostscript.\n";
+        return;
     }
 
-    img->FromPad(canvas);
-    img->WriteImage(out_png.c_str());
+    std::cerr << "[q2_xb_cut_coverage] WARNING: Ghostscript PNG rasterization failed. "
+              << "Falling back to ROOT canvas PNG output.\n";
 
-    delete img;
+    canvas->Print(out_png.c_str());
 }
 
 } // namespace
@@ -985,11 +1014,11 @@ bool plot_q2_xb_cut_coverage(
         auto* canvas = new TCanvas(
             "c_q2_xb_cut_coverage",
             "Q2 vs xB coverage after global and 3sigma cuts",
-            2100,
-            1500
+            2400,
+            1700
         );
 
-        canvas->Divide(2, 3, 0.02, 0.04);
+        canvas->Divide(2, 3, 0.025, 0.035);
 
         for (int i = 0; i < static_cast<int>(all_points.size()); ++i) {
             canvas->cd(i + 1);
@@ -1023,7 +1052,7 @@ bool plot_q2_xb_cut_coverage(
         const std::string out_png = output_dir + "/q2_xb_cut_coverage_by_period.png";
 
         canvas->SaveAs(out_pdf.c_str());
-        write_png_from_canvas(canvas, out_png);
+        write_png_from_pdf_or_canvas(canvas, out_pdf, out_png);
 
         std::cout << "[q2_xb_cut_coverage] Wrote " << out_pdf << "\n";
         std::cout << "[q2_xb_cut_coverage] Wrote " << out_png << "\n";
@@ -1035,10 +1064,6 @@ bool plot_q2_xb_cut_coverage(
         }
 
         for (TGraph* obj : drawn.graphs) {
-            delete obj;
-        }
-
-        for (TLegend* obj : drawn.legends) {
             delete obj;
         }
 
