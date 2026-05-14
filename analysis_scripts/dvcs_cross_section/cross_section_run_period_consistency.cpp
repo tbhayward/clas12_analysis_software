@@ -392,16 +392,52 @@ static std::string xs_col_rpc(const std::string& period_label,
     return "normed cross sections, ep->epg, exp, " + period_label + ", " + helicity;
 }
 
+static bool has_helicity_resolved_normed_cross_sections_rpc(const std::string& period_label) {
+    if (period_label == "Sp18 Inb" || period_label == "Sp18 Out") {
+        return false;
+    }
+    // endif
+
+    return true;
+}
+
+static std::vector<PeriodDef_rpc> period_defs_for_required_columns_rpc(const std::string& helicity) {
+    if (helicity == "unpol") {
+        return all_period_defs_rpc();
+    }
+    // endif
+
+    if (helicity == "pos" || helicity == "neg") {
+        std::vector<PeriodDef_rpc> out;
+        for (const auto& p : all_period_defs_rpc()) {
+            if (!has_helicity_resolved_normed_cross_sections_rpc(p.label)) {
+                continue;
+            }
+            // endif
+            out.push_back(p);
+        }
+        // endfor
+        return out;
+    }
+    // endif
+
+    fatal_rpc("Unknown helicity in period_defs_for_required_columns_rpc: " + helicity);
+    return {};
+}
+
 static std::vector<std::string> all_required_xs_columns_rpc() {
     std::vector<std::string> cols;
     const std::vector<std::string> helicities = {"unpol", "pos", "neg"};
+
     for (const auto& h : helicities) {
-        for (const auto& p : all_period_defs_rpc()) {
+        const std::vector<PeriodDef_rpc> defs = period_defs_for_required_columns_rpc(h);
+        for (const auto& p : defs) {
             cols.push_back(xs_col_rpc(p.label, h));
         }
         // endfor
     }
     // endfor
+
     return cols;
 }
 
