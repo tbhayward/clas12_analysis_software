@@ -1915,41 +1915,65 @@ static const std::vector<std::string>& topology_labels() {
     return v;
 }
 
-static bool parse_first_number(const std::string& cell, double& value) {
-    value = std::numeric_limits<double>::quiet_NaN();
+static bool parse_tuple_numbers_cell(const std::string& cell, std::vector<double>& vals) {
+    vals.clear();
 
     std::string s;
     s.reserve(cell.size());
     for (char c : cell) {
-        if (!std::isspace((unsigned char)c)) {
+        if (c == '(' || c == ')' || c == '"') {
+            s.push_back(' ');
+        } else {
             s.push_back(c);
         }
     }
 
-    if (s.empty()) {
-        return false;
-    }
+    std::stringstream ss(s);
+    std::string part;
 
-    if (s.front() == '(') {
-        const size_t start = 1;
-        size_t stop = s.find(',', start);
-        if (stop == std::string::npos) {
-            stop = s.find(')', start);
-        }
-        if (stop == std::string::npos || stop <= start) {
+    while (std::getline(ss, part, ',')) {
+        char* endp = nullptr;
+        const double v = std::strtod(part.c_str(), &endp);
+        if (endp == part.c_str()) {
             return false;
         }
-        s = s.substr(start, stop - start);
+        vals.push_back(v);
     }
 
-    char* endp = nullptr;
-    const double x = std::strtod(s.c_str(), &endp);
-    if (endp == s.c_str()) {
+    return !vals.empty();
+}
+
+static bool parse_first_number(const std::string& cell, double& value) {
+    value = std::numeric_limits<double>::quiet_NaN();
+
+    std::vector<double> vals;
+    if (!parse_tuple_numbers_cell(cell, vals) || vals.empty()) {
         return false;
     }
 
-    value = x;
+    value = vals[0];
     return std::isfinite(value);
+}
+
+static bool parse_value_stat_sys(const std::string& cell,
+                                 double& value,
+                                 double& stat,
+                                 double& sys) {
+    value = std::numeric_limits<double>::quiet_NaN();
+    stat = std::numeric_limits<double>::quiet_NaN();
+    sys = 0.0;
+
+    std::vector<double> vals;
+    if (!parse_tuple_numbers_cell(cell, vals) || vals.size() < 3) {
+        return false;
+    }
+
+    value = vals[0];
+    stat = vals[1];
+    sys = vals[2];
+
+    return std::isfinite(value) && std::isfinite(stat) && std::isfinite(sys) &&
+           stat >= 0.0 && sys >= 0.0;
 }
 
 static std::string format_scalar(double v) {
@@ -1974,6 +1998,17 @@ static std::string format_scalar(double v) {
     return out;
 }
 
+static std::string format_triple(double v, double stat, double sys) {
+    if (!std::isfinite(v) || !std::isfinite(stat) || !std::isfinite(sys)) {
+        return "";
+    }
+
+    std::ostringstream ss;
+    ss << std::setprecision(12)
+       << "(" << v << "," << stat << "," << sys << ")";
+    return ss.str();
+}
+
 static std::string rec_yield_total_col(const std::string& channel,
                                        const std::string& period) {
     return "reconstructed yield, " + channel + ", mc, " + period;
@@ -1996,44 +2031,62 @@ static std::string rec_current_corrected_topo_col(const std::string& channel,
     return "reconstructed current corrected yield, " + channel + ", " + topo + ", mc, " + period;
 }
 
-static double read_mc_current_factor_from_csv(const CSV& csv,
-                                              const ChannelConfig& cfg,
-                                              const std::string& period) {
+static void read_mc_current_factor_from_csv(const CSV& csv,
+                                                const ChannelConfig& cfg,
+                                                const std::string& period,
+                                                double& factor,
+                                                double& factor_stat) {
     const int c = col_strict(csv, current_eff_col(cfg, "mc", period));
 
     if (csv.rows.empty()) {
         fatal("[current_dependence] FATAL: cannot read current factor from empty CSV.");
     }
 
-    double f = std::numeric_limits<double>::quiet_NaN();
-    if (!parse_first_number(csv.rows.front()[c], f) || !(std::isfinite(f) && f > 0.0)) {
+    std::vector<double> vals;
+    if (!parse_tuple_numbers_cell(csv.rows.front()[c], vals) || vals.size() < 2 ||
+        !(std::isfinite(vals[0]) && vals[0] > 0.0) ||
+        !(std::isfinite(vals[1]) && vals[1] >= 0.0)) {
         std::ostringstream ss;
-        ss << "[current_dependence] FATAL: invalid MC current-efficiency factor in column '"
+        ss << "[current_dependence] FATAL: invalid MC current-efficiency factor tuple in column '"
            << current_eff_col(cfg, "mc", period) << "': '" << csv.rows.front()[c] << "'.";
         fatal(ss.str());
     }
 
-    return f;
+    factor = vals[0];
+    factor_stat = vals[1];
 }
 
 static long long apply_one_current_correction_column(CSV& csv,
                                                      const std::string& src_col,
                                                      const std::string& dst_col,
-                                                     double factor) {
+                                                     double factor,
+                                                     double factor_stat) {
     const int c_src = col_strict(csv, src_col);
     const int c_dst = col_strict(csv, dst_col);
+
+    if (!(std::isfinite(factor) && factor > 0.0) ||
+        !(std::isfinite(factor_stat) && factor_stat >= 0.0)) {
+        fatal("[current_dependence] FATAL: invalid current factor passed to correction writer.");
+    }
 
     long long n_positive = 0;
 
     for (auto& row : csv.rows) {
         double raw = 0.0;
-        if (!parse_first_number(row[c_src], raw) || !(std::isfinite(raw) && raw > 0.0)) {
+        double raw_stat = 0.0;
+        double raw_sys = 0.0;
+        if (!parse_value_stat_sys(row[c_src], raw, raw_stat, raw_sys) ||
+            !(std::isfinite(raw) && raw > 0.0)) {
             row[c_dst].clear();
             continue;
         }
 
         const double corrected = raw / factor;
-        row[c_dst] = format_scalar(corrected);
+        const double var_stat = (raw_stat * raw_stat) / (factor * factor) +
+                                (raw * raw * factor_stat * factor_stat) /
+                                (factor * factor * factor * factor);
+        const double corrected_stat = (var_stat > 0.0) ? std::sqrt(var_stat) : 0.0;
+        row[c_dst] = format_triple(corrected, corrected_stat, 0.0);
 
         if (corrected > 0.0) {
             ++n_positive;
@@ -2050,13 +2103,16 @@ static long long apply_mc_current_corrections_for_channel(CSV& csv,
     long long total_positive = 0;
 
     for (const std::string& period : CSV_PERIOD_ORDER) {
-        const double f_mc = read_mc_current_factor_from_csv(csv, factor_cfg, period);
+        double f_mc = 0.0;
+        double f_mc_stat = 0.0;
+        read_mc_current_factor_from_csv(csv, factor_cfg, period, f_mc, f_mc_stat);
 
         const long long n_total = apply_one_current_correction_column(
             csv,
             rec_yield_total_col(source_channel, period),
             rec_current_corrected_total_col(source_channel, period),
-            f_mc);
+            f_mc,
+            f_mc_stat);
         total_positive += n_total;
 
         std::cout << "[current_dependence] Applied MC current correction for "
@@ -2070,7 +2126,8 @@ static long long apply_mc_current_corrections_for_channel(CSV& csv,
                 csv,
                 rec_yield_topo_col(source_channel, topo, period),
                 rec_current_corrected_topo_col(source_channel, topo, period),
-                f_mc);
+                f_mc,
+                f_mc_stat);
             total_positive += n_topo;
 
             std::cout << "[current_dependence] Applied MC current correction for "

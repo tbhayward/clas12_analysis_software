@@ -254,19 +254,68 @@ static double to_double_strict(const std::string& s, const std::string& context)
     return v;
 }
 
-static double to_double_or_zero(const std::string& s) {
+static bool parse_tuple_numbers(const std::string& s, std::vector<double>& vals) {
+    vals.clear();
+
+    std::string t;
+    t.reserve(s.size());
+    for (char c : s) {
+        if (c == '(' || c == ')' || c == '"') {
+            t.push_back(' ');
+        } else {
+            t.push_back(c);
+        }
+    }
+
+    std::stringstream ss(t);
+    std::string part;
+
+    while (std::getline(ss, part, ',')) {
+        char* endp = nullptr;
+        const double v = std::strtod(part.c_str(), &endp);
+        if (endp == part.c_str()) {
+            return false;
+        }
+        vals.push_back(v);
+    }
+
+    return !vals.empty();
+}
+
+static Triple parse_yield_or_zero(const std::string& s,
+                                  const std::string& context) {
+    Triple out;
+    out.v = 0.0;
+    out.stat = 0.0;
+    out.sys = 0.0;
+
     if (s.empty()) {
-        return 0.0;
+        return out;
     }
 
-    char* endp = nullptr;
-    const double v = std::strtod(s.c_str(), &endp);
-
-    if (endp == s.c_str()) {
-        return 0.0;
+    std::vector<double> vals;
+    if (!parse_tuple_numbers(s, vals) || vals.size() < 3) {
+        fatal("[pi0_contamination] FATAL: expected yield triple (value,stat,sys) for " +
+              context + ", got '" + s + "'.");
     }
 
-    return v;
+    out.v = vals[0];
+    out.stat = vals[1];
+    out.sys = vals[2];
+
+    if (!std::isfinite(out.v) || !std::isfinite(out.stat) || !std::isfinite(out.sys) ||
+        out.stat < 0.0 || out.sys < 0.0) {
+        fatal("[pi0_contamination] FATAL: invalid yield triple for " + context +
+              ": '" + s + "'.");
+    }
+
+    return out;
+}
+
+static void add_triple_in_quadrature(Triple& total, const Triple& x) {
+    total.v += x.v;
+    total.stat = std::sqrt(total.stat * total.stat + x.stat * x.stat);
+    total.sys = std::sqrt(total.sys * total.sys + x.sys * x.sys);
 }
 
 static std::string format_triple(const Triple& t) {
@@ -340,52 +389,63 @@ static std::string contamination_col(const std::string& period) {
     return "contamination ratio, " + period;
 }
 
-static double sum_topology_data_yield(const CSV& csv,
+static Triple sum_topology_data_yield(const CSV& csv,
                                       const std::vector<std::string>& row,
                                       const std::string& channel,
                                       const std::string& period) {
-    double total = 0.0;
+    Triple total;
+    total.v = 0.0;
+    total.stat = 0.0;
+    total.sys = 0.0;
+
     for (const std::string& topo : kTopologies) {
-        const int c = col_strict(csv, normalized_raw_yield_col(channel, topo, period, "unpol"));
-        total += to_double_or_zero(row[c]);
+        const std::string colname = normalized_raw_yield_col(channel, topo, period, "unpol");
+        const int c = col_strict(csv, colname);
+        add_triple_in_quadrature(total, parse_yield_or_zero(row[c], colname));
     }
     return total;
 }
 
-static double sum_topology_mc_yield(const CSV& csv,
+static Triple sum_topology_mc_yield(const CSV& csv,
                                     const std::vector<std::string>& row,
                                     const std::string& channel,
                                     const std::string& period) {
-    double total = 0.0;
+    Triple total;
+    total.v = 0.0;
+    total.stat = 0.0;
+    total.sys = 0.0;
+
     for (const std::string& topo : kTopologies) {
-        const int c = col_strict(csv, rec_current_corrected_yield_col(channel, topo, period));
-        total += to_double_or_zero(row[c]);
+        const std::string colname = rec_current_corrected_yield_col(channel, topo, period);
+        const int c = col_strict(csv, colname);
+        add_triple_in_quadrature(total, parse_yield_or_zero(row[c], colname));
     }
     return total;
 }
 
-static Triple compute_contamination(double Nmis,
-                                    double Npi0_data,
-                                    double Npi0_rec_mc,
-                                    double Ndvcs_data) {
+static Triple compute_contamination(const Triple& Nmis,
+                                    const Triple& Npi0_data,
+                                    const Triple& Npi0_rec_mc,
+                                    const Triple& Ndvcs_data) {
     Triple out;
 
-    if (!(Nmis > 0.0) || !(Npi0_data > 0.0) || !(Npi0_rec_mc > 0.0) || !(Ndvcs_data > 0.0)) {
+    if (!(Nmis.v > 0.0) || !(Npi0_data.v > 0.0) ||
+        !(Npi0_rec_mc.v > 0.0) || !(Ndvcs_data.v > 0.0)) {
         out.v = 0.0;
         out.stat = 0.0;
         out.sys = 0.0;
         return out;
     }
 
-    out.v = (Nmis * Npi0_data) / (Npi0_rec_mc * Ndvcs_data);
+    out.v = (Nmis.v * Npi0_data.v) / (Npi0_rec_mc.v * Ndvcs_data.v);
 
-    const double rel_var =
-        1.0 / Nmis +
-        1.0 / Npi0_data +
-        1.0 / Npi0_rec_mc +
-        1.0 / Ndvcs_data;
+    const double rel_var_stat =
+        (Nmis.stat * Nmis.stat) / (Nmis.v * Nmis.v) +
+        (Npi0_data.stat * Npi0_data.stat) / (Npi0_data.v * Npi0_data.v) +
+        (Npi0_rec_mc.stat * Npi0_rec_mc.stat) / (Npi0_rec_mc.v * Npi0_rec_mc.v) +
+        (Ndvcs_data.stat * Ndvcs_data.stat) / (Ndvcs_data.v * Ndvcs_data.v);
 
-    out.stat = std::fabs(out.v) * std::sqrt(std::max(0.0, rel_var));
+    out.stat = std::fabs(out.v) * std::sqrt(std::max(0.0, rel_var_stat));
     out.sys = 0.0;
 
     return out;
@@ -629,10 +689,14 @@ static void compute_period(CSV& csv,
     std::vector<RowContam> points;
     points.resize(csv.rows.size());
 
-    double sum_Ndvcs = 0.0;
-    double sum_Nmis = 0.0;
-    double sum_Npi0_data = 0.0;
-    double sum_Npi0_rec = 0.0;
+    Triple sum_Ndvcs;
+    Triple sum_Nmis;
+    Triple sum_Npi0_data;
+    Triple sum_Npi0_rec;
+    sum_Ndvcs.v = sum_Ndvcs.stat = sum_Ndvcs.sys = 0.0;
+    sum_Nmis.v = sum_Nmis.stat = sum_Nmis.sys = 0.0;
+    sum_Npi0_data.v = sum_Npi0_data.stat = sum_Npi0_data.sys = 0.0;
+    sum_Npi0_rec.v = sum_Npi0_rec.stat = sum_Npi0_rec.sys = 0.0;
 
     for (int r = 0; r < (int)csv.rows.size(); ++r) {
         const RowBin& b = bins[r];
@@ -644,10 +708,10 @@ static void compute_period(CSV& csv,
 
         const std::vector<std::string>& row = csv.rows[r];
 
-        const double Ndvcs = sum_topology_data_yield(csv, row, "ep->epg", period);
-        const double Npi0_data = sum_topology_data_yield(csv, row, "ep->eppi0", period);
-        const double Npi0_rec = sum_topology_mc_yield(csv, row, "ep->eppi0", period);
-        const double Nmis = sum_topology_mc_yield(csv, row, "ep->eppi0->epg", period);
+        const Triple Ndvcs = sum_topology_data_yield(csv, row, "ep->epg", period);
+        const Triple Npi0_data = sum_topology_data_yield(csv, row, "ep->eppi0", period);
+        const Triple Npi0_rec = sum_topology_mc_yield(csv, row, "ep->eppi0", period);
+        const Triple Nmis = sum_topology_mc_yield(csv, row, "ep->eppi0->epg", period);
 
         const Triple tr = compute_contamination(Nmis, Npi0_data, Npi0_rec, Ndvcs);
         csv.rows[r][c_contam] = format_triple(tr);
@@ -665,19 +729,19 @@ static void compute_period(CSV& csv,
         p.valid = true;
         points[r] = p;
 
-        sum_Ndvcs += Ndvcs;
-        sum_Npi0_data += Npi0_data;
-        sum_Npi0_rec += Npi0_rec;
-        sum_Nmis += Nmis;
+        add_triple_in_quadrature(sum_Ndvcs, Ndvcs);
+        add_triple_in_quadrature(sum_Npi0_data, Npi0_data);
+        add_triple_in_quadrature(sum_Npi0_rec, Npi0_rec);
+        add_triple_in_quadrature(sum_Nmis, Nmis);
     }
 
     const Triple integrated = compute_contamination(sum_Nmis, sum_Npi0_data, sum_Npi0_rec, sum_Ndvcs);
 
     std::cout << "[pi0_contamination] " << period
-              << " totals: Ndvcs_norm=" << std::setprecision(10) << sum_Ndvcs
-              << " Nmis_corr_mc=" << sum_Nmis
-              << " Npi0_norm=" << sum_Npi0_data
-              << " Npi0_rec_corr_mc=" << sum_Npi0_rec
+              << " totals: Ndvcs_norm=" << std::setprecision(10) << sum_Ndvcs.v
+              << " Nmis_corr_mc=" << sum_Nmis.v
+              << " Npi0_norm=" << sum_Npi0_data.v
+              << " Npi0_rec_corr_mc=" << sum_Npi0_rec.v
               << " integrated_contam=" << integrated.v
               << " +/- " << integrated.stat
               << std::endl;

@@ -291,8 +291,36 @@ static std::string format_triple(double v, double s_stat, double s_sys) {
     return oss.str();
 }
 
-// S = (1 - c) * N_norm, Var(S) = (1 - c)^2 N_norm + N_norm^2 c_stat^2
+static bool parse_yield_triple_or_empty(const std::string& s,
+                                        double& value,
+                                        double& stat,
+                                        double& sys) {
+    value = 0.0;
+    stat = 0.0;
+    sys = 0.0;
+
+    if (s.empty()) {
+        return true;
+    }
+
+    return parse_contamination_triple(s, value, stat, sys);
+}
+
+static void add_tuple_in_quadrature(double v,
+                                    double stat,
+                                    double sys,
+                                    double& sum_v,
+                                    double& sum_stat_var,
+                                    double& sum_sys_var) {
+    sum_v += v;
+    sum_stat_var += stat * stat;
+    sum_sys_var += sys * sys;
+}
+
+// S = (1 - c) * N_norm
+// Var_stat(S) = (1 - c)^2 Var_stat(N_norm) + N_norm^2 Var_stat(c)
 static void compute_signal_and_stat(double norm_yield,
+                                    double norm_yield_stat,
                                     double c_val,
                                     double c_stat,
                                     double& S,
@@ -303,11 +331,12 @@ static void compute_signal_and_stat(double norm_yield,
         S_stat = 0.0;
         return;
     }
+    if (!std::isfinite(norm_yield_stat) || norm_yield_stat < 0.0) norm_yield_stat = 0.0;
     if (!std::isfinite(c_val)) c_val = 0.0;
-    if (!std::isfinite(c_stat)) c_stat = 0.0;
+    if (!std::isfinite(c_stat) || c_stat < 0.0) c_stat = 0.0;
 
     const double one_minus_c = 1.0 - c_val;
-    const double var = one_minus_c * one_minus_c * norm_yield +
+    const double var = one_minus_c * one_minus_c * norm_yield_stat * norm_yield_stat +
                        norm_yield * norm_yield * c_stat * c_stat;
 
     S = one_minus_c * norm_yield;
@@ -704,6 +733,11 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                     // normalized raw yields summed over topologies for pos/neg
                     double norm_pos = 0.0;
                     double norm_neg = 0.0;
+                    double norm_pos_stat_var = 0.0;
+                    double norm_neg_stat_var = 0.0;
+                    double norm_pos_sys_var = 0.0;
+                    double norm_neg_sys_var = 0.0;
+
                     for (const auto& topo : kTopos) {
                         const int c_pos = raw_idx[topo].at("pos");
                         const int c_neg = raw_idx[topo].at("neg");
@@ -711,37 +745,42 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                         const std::string& s_pos = csv.rows[r][c_pos];
                         const std::string& s_neg = csv.rows[r][c_neg];
 
-                        if (!s_pos.empty()) {
-                            double vpos = CsvDoc::to_double(s_pos);
-                            if (!std::isfinite(vpos)) {
-                                std::cerr << "[pi0_corrected] FATAL: non-numeric normalized pos yield in '"
-                                          << "normalized raw yield, ep->epg, " << topo
-                                          << ", exp, " << period_label << ", pos"
-                                          << "' at row " << r << "\n";
-                                std::exit(EXIT_FAILURE);
-                            }
-                            norm_pos += vpos;
+                        double vpos = 0.0;
+                        double spos = 0.0;
+                        double ypos = 0.0;
+                        if (!parse_yield_triple_or_empty(s_pos, vpos, spos, ypos)) {
+                            std::cerr << "[pi0_corrected] FATAL: failed to parse normalized pos yield triple in '"
+                                      << "normalized raw yield, ep->epg, " << topo
+                                      << ", exp, " << period_label << ", pos"
+                                      << "' at row " << r << " value '" << s_pos << "'\n";
+                            std::exit(EXIT_FAILURE);
                         }
-                        if (!s_neg.empty()) {
-                            double vneg = CsvDoc::to_double(s_neg);
-                            if (!std::isfinite(vneg)) {
-                                std::cerr << "[pi0_corrected] FATAL: non-numeric normalized neg yield in '"
-                                          << "normalized raw yield, ep->epg, " << topo
-                                          << ", exp, " << period_label << ", neg"
-                                          << "' at row " << r << "\n";
-                                std::exit(EXIT_FAILURE);
-                            }
-                            norm_neg += vneg;
+                        add_tuple_in_quadrature(vpos, spos, ypos,
+                                                norm_pos, norm_pos_stat_var, norm_pos_sys_var);
+
+                        double vneg = 0.0;
+                        double sneg = 0.0;
+                        double yneg = 0.0;
+                        if (!parse_yield_triple_or_empty(s_neg, vneg, sneg, yneg)) {
+                            std::cerr << "[pi0_corrected] FATAL: failed to parse normalized neg yield triple in '"
+                                      << "normalized raw yield, ep->epg, " << topo
+                                      << ", exp, " << period_label << ", neg"
+                                      << "' at row " << r << " value '" << s_neg << "'\n";
+                            std::exit(EXIT_FAILURE);
                         }
+                        add_tuple_in_quadrature(vneg, sneg, yneg,
+                                                norm_neg, norm_neg_stat_var, norm_neg_sys_var);
                     }
 
                     double S_pos = 0.0;
                     double S_pos_stat = 0.0;
                     double S_neg = 0.0;
                     double S_neg_stat = 0.0;
-                    compute_signal_and_stat(norm_pos, c_val, c_stat,
+                    compute_signal_and_stat(norm_pos, std::sqrt(std::max(0.0, norm_pos_stat_var)),
+                                            c_val, c_stat,
                                             S_pos, S_pos_stat);
-                    compute_signal_and_stat(norm_neg, c_val, c_stat,
+                    compute_signal_and_stat(norm_neg, std::sqrt(std::max(0.0, norm_neg_stat_var)),
+                                            c_val, c_stat,
                                             S_neg, S_neg_stat);
 
                     C.Yp.push_back(S_pos);

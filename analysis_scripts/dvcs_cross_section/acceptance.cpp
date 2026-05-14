@@ -369,26 +369,82 @@ static bool parse_first_number(const std::string& s, double& value) {
     return std::isfinite(value);
 }
 
-static double cell_value_or_zero(const CSV& csv, int row, int col) {
+struct CellTriple {
+    double value = 0.0;
+    double stat = 0.0;
+    double sys = 0.0;
+};
+
+static bool parse_tuple_numbers(const std::string& s, std::vector<double>& vals) {
+    vals.clear();
+
+    std::string t;
+    t.reserve(s.size());
+    for (char c : s) {
+        if (c == '(' || c == ')' || c == '"') {
+            t.push_back(' ');
+        } else {
+            t.push_back(c);
+        }
+    }
+
+    std::stringstream ss(t);
+    std::string part;
+    while (std::getline(ss, part, ',')) {
+        char* endp = nullptr;
+        const double v = std::strtod(part.c_str(), &endp);
+        if (endp == part.c_str()) {
+            return false;
+        }
+        vals.push_back(v);
+    }
+
+    return !vals.empty();
+}
+
+static CellTriple cell_triple_or_zero(const CSV& csv, int row, int col, const std::string& label) {
+    CellTriple out;
+
     if (row < 0 || row >= (int)csv.rows.size()) {
-        return 0.0;
+        return out;
     }
 
     if (col < 0 || col >= (int)csv.header.size()) {
-        return 0.0;
+        return out;
     }
 
-    double v = 0.0;
-
-    if (!parse_first_number(csv.rows[(size_t)row][(size_t)col], v)) {
-        return 0.0;
+    const std::string& cell = csv.rows[(size_t)row][(size_t)col];
+    if (cell.empty()) {
+        return out;
     }
 
-    if (!std::isfinite(v)) {
-        return 0.0;
+    std::vector<double> vals;
+    if (!parse_tuple_numbers(cell, vals) || vals.size() < 3) {
+        std::ostringstream ss;
+        ss << "[acceptance] FATAL: expected tuple (value,stat,sys) for "
+           << label << ", got '" << cell << "'.";
+        fatal(ss.str());
     }
 
-    return v;
+    out.value = vals[0];
+    out.stat = vals[1];
+    out.sys = vals[2];
+
+    if (!std::isfinite(out.value) || !std::isfinite(out.stat) || !std::isfinite(out.sys) ||
+        out.stat < 0.0 || out.sys < 0.0) {
+        std::ostringstream ss;
+        ss << "[acceptance] FATAL: invalid tuple for " << label
+           << ": '" << cell << "'.";
+        fatal(ss.str());
+    }
+
+    return out;
+}
+
+static void add_cell_triple(CellTriple& total, const CellTriple& x) {
+    total.value += x.value;
+    total.stat = std::sqrt(total.stat * total.stat + x.stat * x.stat);
+    total.sys = std::sqrt(total.sys * total.sys + x.sys * x.sys);
 }
 
 static double cell_value_strict(const CSV& csv,
@@ -553,27 +609,19 @@ static double wrap_phi_deg(double phi) {
     return x;
 }
 
-static double binomial_stat(double n_rec, double n_gen) {
-    if (!is_finite_positive(n_gen)) {
+static double ratio_stat(double numerator,
+                         double numerator_stat,
+                         double denominator,
+                         double denominator_stat) {
+    if (!is_finite_positive(denominator) || !is_finite_nonnegative(numerator)) {
         return 0.0;
     }
 
-    const double a = n_rec / n_gen;
+    const double var = (numerator_stat * numerator_stat) / (denominator * denominator) +
+                       (numerator * numerator * denominator_stat * denominator_stat) /
+                       (denominator * denominator * denominator * denominator);
 
-    if (!std::isfinite(a)) {
-        return 0.0;
-    }
-
-    // With current-corrected reconstructed yields, n_rec can be slightly above
-    // n_gen. Clamp only the variance factor, not the acceptance value itself.
-    const double a_for_var = std::max(0.0, std::min(1.0, a));
-    const double var = a_for_var * (1.0 - a_for_var) / n_gen;
-
-    if (!(var > 0.0)) {
-        return 0.0;
-    }
-
-    return std::sqrt(var);
+    return (var > 0.0) ? std::sqrt(var) : 0.0;
 }
 
 static std::vector<AcceptancePoint> compute_acceptance_for_period(const CSV& csv,
@@ -593,21 +641,24 @@ static std::vector<AcceptancePoint> compute_acceptance_for_period(const CSV& csv
     out.resize(csv.rows.size());
 
     for (int r = 0; r < (int)csv.rows.size(); ++r) {
-        const double n_gen = cell_value_or_zero(csv, r, c_gen);
+        const CellTriple gen = cell_triple_or_zero(csv, r, c_gen, col_generated(period));
 
-        double n_rec = 0.0;
+        CellTriple rec;
+        rec.value = 0.0;
+        rec.stat = 0.0;
+        rec.sys = 0.0;
 
         for (int c : rec_cols) {
-            n_rec += cell_value_or_zero(csv, r, c);
+            add_cell_triple(rec, cell_triple_or_zero(csv, r, c, csv.header[(size_t)c]));
         }
 
         AcceptancePoint p;
-        p.n_gen = n_gen;
-        p.n_rec = n_rec;
+        p.n_gen = gen.value;
+        p.n_rec = rec.value;
 
-        if (is_finite_positive(n_gen) && is_finite_nonnegative(n_rec)) {
-            p.value = n_rec / n_gen;
-            p.stat = binomial_stat(n_rec, n_gen);
+        if (is_finite_positive(gen.value) && is_finite_nonnegative(rec.value)) {
+            p.value = rec.value / gen.value;
+            p.stat = ratio_stat(rec.value, rec.stat, gen.value, gen.stat);
             p.sys = 0.0;
         } else {
             p.value = 0.0;

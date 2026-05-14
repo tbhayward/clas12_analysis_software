@@ -1434,6 +1434,19 @@ static inline std::string fmt0(double v) {
     return oss.str();
 }
 
+static inline std::string fmt_count_triple(double n) {
+    if (!(std::isfinite(n) && n >= 0.0)) {
+        return "";
+    }
+
+    const double stat = (n > 0.0) ? std::sqrt(n) : 0.0;
+
+    std::ostringstream oss;
+    oss << std::setprecision(12)
+        << "(" << n << "," << stat << ",0)";
+    return oss.str();
+}
+
 static RowCounts sum_row_counts(const RowCounts& a, const RowCounts& b) {
     RowCounts out = a;
 
@@ -1495,7 +1508,7 @@ static void write_collection_to_csv(CSV& csv,
                     fatal("[total_counts] FATAL: row index out of range while writing generated MC.");
                 }
 
-                csv.rows[r][c] = fmt0(h.unpol + h.pos + h.neg);
+                csv.rows[r][c] = fmt_count_triple(h.unpol + h.pos + h.neg);
             }
         }
 
@@ -1510,7 +1523,7 @@ static void write_collection_to_csv(CSV& csv,
                     fatal("[total_counts] FATAL: row index out of range while writing reconstructed MC total.");
                 }
 
-                csv.rows[r][c] = fmt0(h.unpol + h.pos + h.neg);
+                csv.rows[r][c] = fmt_count_triple(h.unpol + h.pos + h.neg);
             }
         }
     }
@@ -1556,11 +1569,11 @@ static void write_collection_to_csv(CSV& csv,
 
                     const double unpol = h.pos + h.neg + h.unpol;
 
-                    csv.rows[r][c_unpol] = fmt0(unpol);
+                    csv.rows[r][c_unpol] = fmt_count_triple(unpol);
 
                     if (write_helicity_resolved) {
-                        csv.rows[r][c_pos] = fmt0(h.pos);
-                        csv.rows[r][c_neg] = fmt0(h.neg);
+                        csv.rows[r][c_pos] = fmt_count_triple(h.pos);
+                        csv.rows[r][c_neg] = fmt_count_triple(h.neg);
                     }
                 }
             }
@@ -1576,7 +1589,7 @@ static void write_collection_to_csv(CSV& csv,
                         fatal("[total_counts] FATAL: row index out of range while writing reconstructed MC topology counts.");
                     }
 
-                    csv.rows[r][c_topo] = fmt0(h.unpol + h.pos + h.neg);
+                    csv.rows[r][c_topo] = fmt_count_triple(h.unpol + h.pos + h.neg);
                 }
             }
         }

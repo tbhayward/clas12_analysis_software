@@ -613,10 +613,12 @@ static bool parse_tuple_numbers(const std::string& s, std::vector<double>& vals)
     return !vals.empty();
 }
 
-static double read_current_factor(const CSV& csv,
-                                  const ChannelConfig& cfg,
-                                  const std::string& sample,
-                                  const std::string& period) {
+static void read_current_factor(const CSV& csv,
+                                const ChannelConfig& cfg,
+                                const std::string& sample,
+                                const std::string& period,
+                                double& factor,
+                                double& factor_stat) {
     const std::string name = "current efficiency factor, " + cfg.csv_channel + ", " + sample + ", " + period;
     const int c = col_strict(csv, name);
 
@@ -626,21 +628,51 @@ static double read_current_factor(const CSV& csv,
 
     std::vector<double> vals;
 
-    if (!parse_tuple_numbers(csv.rows.front()[c], vals) || vals.size() < 1) {
+    if (!parse_tuple_numbers(csv.rows.front()[c], vals) || vals.size() < 2) {
         std::ostringstream ss;
         ss << "[eppi0_norm] FATAL: cannot parse current-efficiency tuple from column " << name
            << " value '" << csv.rows.front()[c] << "'.";
         fatal(ss.str());
     }
 
-    if (!(std::isfinite(vals[0]) && vals[0] > 0.0)) {
+    if (!(std::isfinite(vals[0]) && vals[0] > 0.0) ||
+        !(std::isfinite(vals[1]) && vals[1] >= 0.0)) {
         std::ostringstream ss;
-        ss << "[eppi0_norm] FATAL: invalid current-efficiency factor in column " << name
-           << ": " << vals[0];
+        ss << "[eppi0_norm] FATAL: invalid current-efficiency factor tuple in column " << name
+           << ": " << csv.rows.front()[c];
         fatal(ss.str());
     }
 
-    return vals[0];
+    factor = vals[0];
+    factor_stat = vals[1];
+}
+
+static double read_current_factor_value(const CSV& csv,
+                                        const ChannelConfig& cfg,
+                                        const std::string& sample,
+                                        const std::string& period) {
+    double factor = 0.0;
+    double factor_stat = 0.0;
+    read_current_factor(csv, cfg, sample, period, factor, factor_stat);
+    (void)factor_stat;
+    return factor;
+}
+
+static double cubic_eval_stat_diag(const CubicFit& f, double x) {
+    const double basis[4] = {1.0, x, x * x, x * x * x};
+    double var = 0.0;
+
+    for (int i = 0; i < 4; ++i) {
+        var += basis[i] * basis[i] * f.ea[i] * f.ea[i];
+    }
+
+    return (var > 0.0) ? std::sqrt(var) : 0.0;
+}
+
+static std::string tuple3(double a, double b, double c) {
+    std::ostringstream ss;
+    ss << std::setprecision(12) << "(" << a << "," << b << "," << c << ")";
+    return ss.str();
 }
 
 static std::vector<std::string> normalization_regions() {
@@ -2412,8 +2444,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     tags.period_label = parsed.period_label;
     tags.period_code = parsed.period_code;
 
-    const double data_eff = read_current_factor(csv, epi, "exp", period);
-    const double mc_eff = read_current_factor(csv, epi, "mc", period);
+    const double data_eff = read_current_factor_value(csv, epi, "exp", period);
+    const double mc_eff = read_current_factor_value(csv, epi, "mc", period);
 
     const double q_raw = data_charge_for_tree(data_tree, charge_map);
     const double q_mc = q_raw * CHARGE_TO_MC_FACTOR;
@@ -2654,11 +2686,49 @@ static TTree* tree_for_period(const std::map<std::string, TTree*>& trees,
 // data yields because they do not have usable helicity-resolved charge.
 // -----------------------------------------------------------------------------
 
-struct HelCounts {
-    double unpol = 0.0;
-    double pos = 0.0;
-    double neg = 0.0;
+struct WeightedCount {
+    double sum_w = 0.0;
+    double sum_w2 = 0.0;
+    double factor_var_sum = 0.0;
 };
+
+struct HelCounts {
+    WeightedCount unpol;
+    WeightedCount pos;
+    WeightedCount neg;
+};
+
+static inline void add_weighted_count(WeightedCount& c,
+                                      double weight,
+                                      double current_rel_stat,
+                                      double ratio_rel_stat) {
+    c.sum_w += weight;
+    c.sum_w2 += weight * weight;
+    const double rel2 = current_rel_stat * current_rel_stat + ratio_rel_stat * ratio_rel_stat;
+    c.factor_var_sum += weight * weight * rel2;
+}
+
+static inline WeightedCount sum_weighted_counts(const WeightedCount& a,
+                                                const WeightedCount& b,
+                                                const WeightedCount& c) {
+    WeightedCount out;
+    out.sum_w = a.sum_w + b.sum_w + c.sum_w;
+    out.sum_w2 = a.sum_w2 + b.sum_w2 + c.sum_w2;
+    out.factor_var_sum = a.factor_var_sum + b.factor_var_sum + c.factor_var_sum;
+    return out;
+}
+
+static inline std::string format_weighted_count_triple(const WeightedCount& c) {
+    if (!(std::isfinite(c.sum_w) && c.sum_w >= 0.0) ||
+        !(std::isfinite(c.sum_w2) && c.sum_w2 >= 0.0) ||
+        !(std::isfinite(c.factor_var_sum) && c.factor_var_sum >= 0.0)) {
+        return "";
+    }
+
+    const double var = c.sum_w2 + c.factor_var_sum;
+    const double stat = (var > 0.0) ? std::sqrt(var) : 0.0;
+    return tuple3(c.sum_w, stat, 0.0);
+}
 
 using RowCounts = std::unordered_map<int, HelCounts>;
 
@@ -2668,6 +2738,7 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
                                                   const std::vector<RowBin>& rows,
                                                   const TopoCutMap& data_cuts,
                                                   double current_factor,
+                                                  double current_factor_stat,
                                                   const PeriodNormalization& norm,
                                                   std::unordered_map<std::string, RowCounts>& out) {
     if (!tree) {
@@ -2712,12 +2783,16 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
             fatal(ss.str());
         }
 
-        const double ratio = it_region->second.fit.eval(theta);
+        const CubicFit& fit = it_region->second.fit;
+        const double ratio = fit.eval(theta);
 
         if (!(std::isfinite(ratio) && ratio > 0.0)) {
             continue;
         }
 
+        const double ratio_stat = cubic_eval_stat_diag(fit, theta);
+        const double current_rel_stat = (current_factor_stat > 0.0) ? current_factor_stat / current_factor : 0.0;
+        const double ratio_rel_stat = (ratio_stat > 0.0) ? ratio_stat / ratio : 0.0;
         const double weight = 1.0 / (current_factor * ratio);
         const double phi = b.phi_deg();
         const double tabs = b.t_abs();
@@ -2730,11 +2805,11 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
             HelCounts& hc = out[topo][r];
 
             if (b.helicity > 0) {
-                hc.pos += weight;
+                add_weighted_count(hc.pos, weight, current_rel_stat, ratio_rel_stat);
             } else if (b.helicity < 0) {
-                hc.neg += weight;
+                add_weighted_count(hc.neg, weight, current_rel_stat, ratio_rel_stat);
             } else {
-                hc.unpol += weight;
+                add_weighted_count(hc.unpol, weight, current_rel_stat, ratio_rel_stat);
             }
         }
     }
@@ -2768,22 +2843,13 @@ static void write_normalized_counts_to_csv(CSV& csv,
             }
 
             const HelCounts& h = kr.second;
-            const double unpol = h.pos + h.neg + h.unpol;
+            const WeightedCount unpol = sum_weighted_counts(h.pos, h.neg, h.unpol);
 
-            std::ostringstream su;
-            su << std::fixed << std::setprecision(8) << unpol;
-
-            csv.rows[row][c_unpol] = su.str();
+            csv.rows[row][c_unpol] = format_weighted_count_triple(unpol);
 
             if (write_helicity_resolved) {
-                std::ostringstream sp;
-                std::ostringstream sn;
-
-                sp << std::fixed << std::setprecision(8) << h.pos;
-                sn << std::fixed << std::setprecision(8) << h.neg;
-
-                csv.rows[row][c_pos] = sp.str();
-                csv.rows[row][c_neg] = sn.str();
+                csv.rows[row][c_pos] = format_weighted_count_triple(h.pos);
+                csv.rows[row][c_neg] = format_weighted_count_triple(h.neg);
             }
         }
     }
@@ -2816,6 +2882,7 @@ static void fill_normalized_yields(CSV& csv,
         PeriodTags tags;
         TTree* tree = nullptr;
         double current_factor = 1.0;
+        double current_factor_stat = 0.0;
         PeriodNormalization norm;
     };
 
@@ -2836,7 +2903,8 @@ static void fill_normalized_yields(CSV& csv,
             w.cfg = cfg;
             w.tags = tags;
             w.tree = kv.second;
-            w.current_factor = read_current_factor(csv, cfg, "exp", tags.display);
+            read_current_factor(csv, cfg, "exp", tags.display,
+                                w.current_factor, w.current_factor_stat);
             w.norm = find_norm(norms, tags.display);
 
             items.push_back(w);
@@ -2861,6 +2929,7 @@ static void fill_normalized_yields(CSV& csv,
                                               rows,
                                               data_cuts,
                                               items[i].current_factor,
+                                              items[i].current_factor_stat,
                                               items[i].norm,
                                               results[i]);
     }
