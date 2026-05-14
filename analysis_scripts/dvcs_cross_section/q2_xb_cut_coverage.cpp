@@ -41,7 +41,7 @@ static constexpr double kQ2Max = 7.0;
 
 static constexpr int kInbendingColor = kRed + 1;
 static constexpr int kOutbendingColor = kBlue + 1;
-static constexpr int kBinLineColor = kGreen + 2;
+static constexpr int kBinLineColor = kSpring - 5;
 
 static std::string topo_to_key(Topology topo) {
     switch (topo) {
@@ -58,16 +58,19 @@ static bool event_topology_from_detectors(int detector1, int detector2, Topology
         topo = Topology::FD_FD;
         return true;
     }
+    // endif
 
     if (detector1 == 2 && detector2 == 1) {
         topo = Topology::CD_FD;
         return true;
     }
+    // endif
 
     if (detector1 == 2 && detector2 == 0) {
         topo = Topology::CD_FT;
         return true;
     }
+    // endif
 
     return false;
 }
@@ -78,12 +81,15 @@ static std::string period_code_dvcs_from_label(const std::string& run_tag) {
     if (!nice.empty()) {
         nice[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(nice[0])));
     }
+    // endif
 
     for (size_t i = 0; i + 1 < nice.size(); ++i) {
         if (nice[i] == '_') {
             nice[i + 1] = static_cast<char>(std::toupper(static_cast<unsigned char>(nice[i + 1])));
         }
+        // endif
     }
+    // endfor
 
     return std::string("DVCS_") + nice;
 }
@@ -104,11 +110,14 @@ static bool passes_3sigma_cuts(
         if (it == values.end()) {
             continue;
         }
+        // endif
 
         if (!within_3sigma(it->second, stats)) {
             return false;
         }
+        // endif
     }
+    // endfor
 
     return true;
 }
@@ -128,13 +137,16 @@ static std::vector<std::string> parse_csv_line(const std::string& line) {
             } else {
                 in_quotes = !in_quotes;
             }
+            // endif
         } else if (c == ',' && !in_quotes) {
             fields.push_back(cur);
             cur.clear();
         } else {
             cur.push_back(c);
         }
+        // endif
     }
+    // endfor
 
     fields.push_back(cur);
     return fields;
@@ -144,6 +156,7 @@ static double parse_required_double(const std::string& text, const std::string& 
     if (text.empty()) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Empty numeric field while parsing " + context + ".");
     }
+    // endif
 
     char* endptr = nullptr;
     const double val = std::strtod(text.c_str(), &endptr);
@@ -151,6 +164,7 @@ static double parse_required_double(const std::string& text, const std::string& 
     if (endptr == text.c_str()) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Could not parse numeric field '" + text + "' while parsing " + context + ".");
     }
+    // endif
 
     return val;
 }
@@ -160,7 +174,9 @@ static int find_required_column(const std::vector<std::string>& header, const st
         if (header[i] == name) {
             return static_cast<int>(i);
         }
+        // endif
     }
+    // endfor
 
     throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Required CSV column is missing: " + name);
 }
@@ -177,7 +193,9 @@ static void add_unique_edge(std::vector<double>& edges, double val) {
         if (std::abs(existing - rounded) < 1.0e-9) {
             return;
         }
+        // endif
     }
+    // endfor
 
     edges.push_back(rounded);
 }
@@ -187,11 +205,13 @@ static BinGrid load_bin_grid_from_csv(const std::string& csv_path) {
     if (!fin) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Could not open CSV: " + csv_path);
     }
+    // endif
 
     std::string line;
     if (!std::getline(fin, line)) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: CSV is empty: " + csv_path);
     }
+    // endif
 
     const std::vector<std::string> header = parse_csv_line(line);
 
@@ -209,6 +229,7 @@ static BinGrid load_bin_grid_from_csv(const std::string& csv_path) {
         if (line.empty()) {
             continue;
         }
+        // endif
 
         const std::vector<std::string> row = parse_csv_line(line);
 
@@ -219,6 +240,7 @@ static BinGrid load_bin_grid_from_csv(const std::string& csv_path) {
                << " has too few columns.";
             throw std::runtime_error(ss.str());
         }
+        // endif
 
         const double xbmin = parse_required_double(row[ixmin], "xBmin");
         const double xbmax = parse_required_double(row[ixmax], "xBmax");
@@ -237,10 +259,12 @@ static BinGrid load_bin_grid_from_csv(const std::string& csv_path) {
     if (grid.xb_edges.empty()) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: No xB bin edges found in CSV.");
     }
+    // endif
 
     if (grid.q2_edges.empty()) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: No Q2 bin edges found in CSV.");
     }
+    // endif
 
     return grid;
 }
@@ -304,6 +328,7 @@ struct BranchBinder {
         if (!tree) {
             throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Null TTree for key: " + tree_key);
         }
+        // endif
 
         tree->SetBranchStatus("*", 0);
 
@@ -311,6 +336,7 @@ struct BranchBinder {
             if (tree->GetBranch(name)) {
                 tree->SetBranchStatus(name, 1);
             }
+            // endif
         };
 
         enable("runnum");
@@ -345,6 +371,7 @@ struct BranchBinder {
                 tree->SetBranchAddress(name, addr, nullptr, nullptr, kInt_t, false);
                 has_branch = true;
             }
+            // endif
         };
 
         auto bind_double = [&](const char* name, double* addr, bool& has_branch) {
@@ -352,6 +379,7 @@ struct BranchBinder {
                 tree->SetBranchAddress(name, addr, nullptr, nullptr, kDouble_t, false);
                 has_branch = true;
             }
+            // endif
         };
 
         bind_int("runnum", &runnum, has_runnum);
@@ -411,12 +439,15 @@ struct BranchBinder {
                 if (i > 0) {
                     ss << ", ";
                 }
+                // endif
 
                 ss << missing[i];
             }
+            // endfor
 
             throw std::runtime_error(ss.str());
         }
+        // endif
     }
 
     std::map<std::string, double> values_map() const {
@@ -455,6 +486,7 @@ static bool passes_global_for_topology(
     } else {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Unknown topology in passes_global_for_topology.");
     }
+    // endif
 
     if (gcfg.enable_dvcsgen_ycol_cut) {
         std::vector<std::string> missing;
@@ -475,12 +507,15 @@ static bool passes_global_for_topology(
                 if (i > 0) {
                     ss << ", ";
                 }
+                // endif
 
                 ss << missing[i];
             }
+            // endfor
 
             throw std::runtime_error(ss.str());
         }
+        // endif
 
         return passes_global_cuts(
             b.t1,
@@ -498,6 +533,7 @@ static bool passes_global_for_topology(
             gcfg
         );
     }
+    // endif
 
     return passes_global_cuts(
         b.t1,
@@ -536,6 +572,7 @@ static Stats read_stats_from_json(const nlohmann::json& jstats, const std::strin
     if (!jstats.contains("mean") || !jstats.contains("std")) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Cut stats for key '" + key + "' must contain mean and std.");
     }
+    // endif
 
     Stats stats;
     stats.mean = jstats.at("mean").get<double>();
@@ -549,6 +586,7 @@ static CutLookup load_data_cuts(const std::string& json_path) {
     if (!fin) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Could not open combined cuts JSON: " + json_path);
     }
+    // endif
 
     nlohmann::json j;
     fin >> j;
@@ -579,12 +617,14 @@ static CutLookup load_data_cuts(const std::string& json_path) {
             if (!j.contains(full_key)) {
                 throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Missing cuts key in combined cuts JSON: " + full_key);
             }
+            // endif
 
             const nlohmann::json& jobj = j.at(full_key);
 
             if (!jobj.contains("data")) {
                 throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Missing data cuts object for key: " + full_key);
             }
+            // endif
 
             const nlohmann::json& jdata = jobj.at("data");
 
@@ -594,10 +634,13 @@ static CutLookup load_data_cuts(const std::string& json_path) {
                 const std::string var = it.key();
                 cd.data[var] = read_stats_from_json(it.value(), full_key + ".data." + var);
             }
+            // endfor
 
             cuts[period_label][topo] = cd;
         }
+        // endfor
     }
+    // endfor
 
     return cuts;
 }
@@ -611,6 +654,7 @@ static TTree* get_required_tree(
     if (it == trees.end() || !(it->second)) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Required DVCS data tree is missing: " + key);
     }
+    // endif
 
     return it->second;
 }
@@ -624,6 +668,7 @@ static PointSet collect_points_for_period(
     if (period_cut_it == cuts.end()) {
         throw std::runtime_error("[q2_xb_cut_coverage] FATAL: No cut set found for period label: " + period.period_label);
     }
+    // endif
 
     PointSet points;
     points.is_inbending = period.is_inbending;
@@ -643,38 +688,45 @@ static PointSet collect_points_for_period(
         if (is_excluded_run(b.runnum)) {
             continue;
         }
+        // endif
 
         Topology topo = Topology::FD_FD;
         if (!event_topology_from_detectors(b.detector1, b.detector2, topo)) {
             continue;
         }
+        // endif
 
         const auto topo_cut_it = period_cut_it->second.find(topo);
         if (topo_cut_it == period_cut_it->second.end()) {
             throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Missing topology cuts for period label: " + period.period_label);
         }
+        // endif
 
         if (!passes_global_for_topology(b, topo, period.period_label)) {
             continue;
         }
+        // endif
 
         const std::map<std::string, double> values = b.values_map();
 
         if (!passes_3sigma_cuts(topo_cut_it->second.data, values)) {
             continue;
         }
+        // endif
 
         ++accepted;
 
         if (b.x < kXBMin || b.x > kXBMax || b.Q2 < kQ2Min || b.Q2 > kQ2Max) {
             continue;
         }
+        // endif
 
         ++in_range;
 
         points.x.push_back(b.x);
         points.q2.push_back(b.Q2);
     }
+    // endfor
 
     std::cout << "[q2_xb_cut_coverage] " << period.tree_key
               << " entries=" << nentries
@@ -695,6 +747,7 @@ static TGraph* make_graph(
     for (int i = 0; i < static_cast<int>(xs.size()); ++i) {
         graph->SetPoint(i, xs[static_cast<size_t>(i)], ys[static_cast<size_t>(i)]);
     }
+    // endfor
 
     graph->SetMarkerStyle(20);
     graph->SetMarkerSize(0.10);
@@ -711,6 +764,7 @@ static std::string format_axis_value(double x) {
         ss << static_cast<int>(std::round(x));
         return ss.str();
     }
+    // endif
 
     ss << std::fixed << std::setprecision(2) << x;
 
@@ -723,6 +777,7 @@ static std::string format_axis_value(double x) {
     if (!out.empty() && out.back() == '.') {
         out.pop_back();
     }
+    // endif
 
     return out;
 }
@@ -761,29 +816,33 @@ static void draw_bin_boundary_lines_on_top(const BinGrid& grid, DrawnObjects& dr
         if (xb < kXBMin || xb > kXBMax) {
             continue;
         }
+        // endif
 
         auto* line = new TLine(xb, kQ2Min, xb, kQ2Max);
         line->SetLineColor(kBinLineColor);
         line->SetLineStyle(1);
-        line->SetLineWidth(2);
+        line->SetLineWidth(1);
         line->Draw("same");
 
         drawn.lines.push_back(line);
     }
+    // endfor
 
     for (double q2 : grid.q2_edges) {
         if (q2 < kQ2Min || q2 > kQ2Max) {
             continue;
         }
+        // endif
 
         auto* line = new TLine(kXBMin, q2, kXBMax, q2);
         line->SetLineColor(kBinLineColor);
         line->SetLineStyle(1);
-        line->SetLineWidth(2);
+        line->SetLineWidth(1);
         line->Draw("same");
 
         drawn.lines.push_back(line);
     }
+    // endfor
 }
 
 static void draw_custom_bin_edge_labels(const BinGrid& grid, DrawnObjects& drawn) {
@@ -801,12 +860,14 @@ static void draw_custom_bin_edge_labels(const BinGrid& grid, DrawnObjects& drawn
         if (xb < kXBMin || xb > kXBMax) {
             continue;
         }
+        // endif
 
         const double x_ndc = left + (1.0 - left - right) * (xb - kXBMin) / (kXBMax - kXBMin);
         const double y_ndc = bottom * 0.58;
 
         xlatex->DrawLatex(x_ndc, y_ndc, format_axis_value(xb).c_str());
     }
+    // endfor
 
     drawn.latex.push_back(xlatex);
 
@@ -819,12 +880,14 @@ static void draw_custom_bin_edge_labels(const BinGrid& grid, DrawnObjects& drawn
         if (q2 < kQ2Min || q2 > kQ2Max) {
             continue;
         }
+        // endif
 
         const double x_ndc = left * 0.74;
         const double y_ndc = bottom + (1.0 - bottom - top) * (q2 - kQ2Min) / (kQ2Max - kQ2Min);
 
         ylatex->DrawLatex(x_ndc, y_ndc, format_axis_value(q2).c_str());
     }
+    // endfor
 
     drawn.latex.push_back(ylatex);
 }
@@ -883,6 +946,7 @@ static void draw_panel(
     if (graph->GetN() > 0) {
         graph->Draw("P same");
     }
+    // endif
 
     drawn.graphs.push_back(graph);
 
@@ -925,19 +989,23 @@ static bool file_exists_nonempty(const std::string& path) {
     if (!fin) {
         return false;
     }
+    // endif
 
     return fin.tellg() > 0;
 }
 
 static std::string shell_quote(const std::string& s) {
     std::string out = "'";
+
     for (char c : s) {
         if (c == '\'') {
             out += "'\\''";
         } else {
             out += c;
         }
+        // endif
     }
+    // endfor
 
     out += "'";
     return out;
@@ -964,6 +1032,7 @@ static void write_png_from_pdf_or_canvas(
         std::cout << "[q2_xb_cut_coverage] PNG rasterized from PDF using Ghostscript.\n";
         return;
     }
+    // endif
 
     std::cerr << "[q2_xb_cut_coverage] WARNING: Ghostscript PNG rasterization failed. "
               << "Falling back to ROOT canvas PNG output.\n";
@@ -989,6 +1058,7 @@ bool plot_q2_xb_cut_coverage(
         if (!output_dir.empty()) {
             gSystem->mkdir(output_dir.c_str(), true);
         }
+        // endif
 
         const BinGrid grid = load_bin_grid_from_csv(pass2_csv_path);
         const CutLookup cuts = load_data_cuts(combined_cuts_json_path);
@@ -1008,6 +1078,7 @@ bool plot_q2_xb_cut_coverage(
             TTree* tree = get_required_tree(dvcsDataTrees, period.tree_key);
             all_points.push_back(collect_points_for_period(tree, period, cuts));
         }
+        // endfor
 
         DrawnObjects drawn;
 
@@ -1037,6 +1108,7 @@ bool plot_q2_xb_cut_coverage(
             gPad->Modified();
             gPad->Update();
         }
+        // endfor
 
         canvas->cd(6);
         draw_empty_panel(drawn);
@@ -1062,22 +1134,27 @@ bool plot_q2_xb_cut_coverage(
         for (TH2D* obj : drawn.frames) {
             delete obj;
         }
+        // endfor
 
         for (TGraph* obj : drawn.graphs) {
             delete obj;
         }
+        // endfor
 
         for (TLine* obj : drawn.lines) {
             delete obj;
         }
+        // endfor
 
         for (TLatex* obj : drawn.latex) {
             delete obj;
         }
+        // endfor
 
         return true;
     } catch (const std::exception& e) {
         std::cerr << e.what() << "\n";
         return false;
     }
+    // endtry
 }
