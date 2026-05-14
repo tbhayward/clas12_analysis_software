@@ -23,6 +23,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -135,9 +136,11 @@ static void assert_no_duplicate_columns(const std::vector<std::string>& header) 
     if (!duplicates.empty()) {
         std::ostringstream msg;
         msg << "CSV header contains duplicate columns:";
+
         for (const auto& name : duplicates) {
             msg << "\n  - " << name;
         }
+
         throw std::runtime_error(msg.str());
     }
 }
@@ -199,9 +202,11 @@ static void require_columns(const CsvTable& table,
     if (!missing.empty()) {
         std::ostringstream msg;
         msg << "Missing required columns for " << context << ":";
+
         for (const auto& name : missing) {
             msg << "\n  - " << name;
         }
+
         throw std::runtime_error(msg.str());
     }
 }
@@ -229,6 +234,28 @@ static bool parse_double(const std::string& raw, double& out) {
     return std::isfinite(out);
 }
 
+static bool parse_numeric_or_tuple_first(const std::string& raw, double& out) {
+    if (parse_double(raw, out)) {
+        return true;
+    }
+
+    std::string s = trim(raw);
+    if (s.empty()) {
+        return false;
+    }
+
+    if (s.front() == '(' && s.back() == ')') {
+        s = s.substr(1, s.size() - 2);
+    }
+
+    const std::vector<std::string> fields = split_csv_line(s);
+    if (fields.empty()) {
+        return false;
+    }
+
+    return parse_double(fields[0], out);
+}
+
 static TupleValue parse_tuple_value(const std::string& raw) {
     TupleValue out;
     std::string s = trim(raw);
@@ -242,21 +269,18 @@ static TupleValue parse_tuple_value(const std::string& raw) {
     }
 
     const std::vector<std::string> fields = split_csv_line(s);
-    if (fields.empty()) {
+    if (fields.size() < 2) {
         return out;
     }
 
     double value = 0.0;
+    double stat = 0.0;
+
     if (!parse_double(fields[0], value)) {
         return out;
     }
 
-    double stat = 0.0;
-    if (fields.size() >= 2) {
-        if (!parse_double(fields[1], stat)) {
-            return out;
-        }
-    } else {
+    if (!parse_double(fields[1], stat)) {
         return out;
     }
 
@@ -270,16 +294,16 @@ static TupleValue parse_tuple_value(const std::string& raw) {
     return out;
 }
 
-static double get_required_double(const CsvTable& table,
-                                  const std::vector<std::string>& row,
-                                  const std::string& column) {
+static double get_required_numeric_or_tuple_first(const CsvTable& table,
+                                                  const std::vector<std::string>& row,
+                                                  const std::string& column) {
     const auto it = table.index.find(column);
     if (it == table.index.end()) {
         throw std::runtime_error("Missing required column: " + column);
     }
 
     double value = 0.0;
-    if (!parse_double(row[(size_t)it->second], value)) {
+    if (!parse_numeric_or_tuple_first(row[(size_t)it->second], value)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
@@ -413,6 +437,7 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
 
     mean = sum_wx / sum_w;
     mean_stat = 1.0 / std::sqrt(sum_w);
+
     return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
 }
 
@@ -423,7 +448,12 @@ static double compute_chi2_reduced(const std::vector<TupleValue>& values,
     }
 
     double chi2 = 0.0;
+
     for (const auto& v : values) {
+        if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+
         const double residual = v.value - mean;
         chi2 += residual * residual / (v.stat * v.stat);
     }
@@ -444,6 +474,7 @@ static std::vector<double> choose_x_range(const std::vector<double>& xs) {
         if (!std::isfinite(x)) {
             continue;
         }
+
         xmin = std::min(xmin, x);
         xmax = std::max(xmax, x);
     }
@@ -461,79 +492,188 @@ static std::vector<double> choose_x_range(const std::vector<double>& xs) {
     return {xmin - pad, xmax + pad};
 }
 
-static std::vector<double> choose_y_range(const std::vector<PointPack>& packs,
-                                          double floor_value,
-                                          bool include_one) {
-    double ymin = std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
+static double percentile(std::vector<double> values,
+                         double q) {
+    std::vector<double> clean;
 
-    if (include_one) {
-        ymin = std::min(ymin, 1.0);
-        ymax = std::max(ymax, 1.0);
-    }
-
-    for (const auto& pack : packs) {
-        for (size_t i = 0; i < pack.y.size(); ++i) {
-            const double y = pack.y[i];
-            if (!std::isfinite(y)) {
-                continue;
-            }
-
-            const double ey = (i < pack.ey.size() && std::isfinite(pack.ey[i])) ? pack.ey[i] : 0.0;
-            ymin = std::min(ymin, y - ey);
-            ymax = std::max(ymax, y + ey);
+    for (const double v : values) {
+        if (std::isfinite(v)) {
+            clean.push_back(v);
         }
     }
 
-    if (!std::isfinite(ymin) || !std::isfinite(ymax)) {
-        return {floor_value, floor_value + 1.0};
+    if (clean.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
     }
 
-    ymin = std::min(ymin, floor_value);
+    std::sort(clean.begin(), clean.end());
 
-    if (ymin == ymax) {
-        const double pad = (std::abs(ymin) > 0.0) ? 0.20 * std::abs(ymin) : 1.0;
-        return {ymin - pad, ymax + pad};
+    if (q <= 0.0) {
+        return clean.front();
     }
 
-    const double pad = 0.12 * (ymax - ymin);
-    return {std::max(floor_value, ymin - pad), ymax + pad};
+    if (q >= 1.0) {
+        return clean.back();
+    }
+
+    const double pos = q * (double)(clean.size() - 1);
+    const size_t lo = (size_t)std::floor(pos);
+    const size_t hi = (size_t)std::ceil(pos);
+    const double frac = pos - (double)lo;
+
+    if (lo == hi) {
+        return clean[lo];
+    }
+
+    return clean[lo] * (1.0 - frac) + clean[hi] * frac;
+}
+
+static std::vector<double> choose_chi2_y_range(const PointPack& pack) {
+    std::vector<double> ys;
+
+    for (const double y : pack.y) {
+        if (std::isfinite(y) && y >= 0.0) {
+            ys.push_back(y);
+        }
+    }
+
+    if (ys.empty()) {
+        return {0.0, 5.0};
+    }
+
+    const double p95 = percentile(ys, 0.95);
+    double ymax = std::max(5.0, 1.25 * p95);
+
+    if (!std::isfinite(ymax) || ymax <= 0.0) {
+        ymax = 5.0;
+    }
+
+    return {0.0, ymax};
 }
 
 static void set_pad_style() {
     gPad->SetLeftMargin(0.16);
     gPad->SetRightMargin(0.06);
-    gPad->SetTopMargin(0.12);
-    gPad->SetBottomMargin(0.15);
+    gPad->SetTopMargin(0.10);
+    gPad->SetBottomMargin(0.16);
     gPad->SetTicks(1, 1);
+    gPad->SetGrid(0, 0);
 }
 
-static TGraphErrors* make_graph(const PointPack& pack,
-                                int color,
-                                int marker_style) {
-    TGraphErrors* g = new TGraphErrors((int)pack.x.size());
+static TGraph* make_marker_graph(const PointPack& pack,
+                                 int color,
+                                 int marker_style,
+                                 double marker_size) {
+    TGraph* graph = new TGraph((int)pack.x.size());
 
     for (int i = 0; i < (int)pack.x.size(); ++i) {
-        g->SetPoint(i, pack.x[(size_t)i], pack.y[(size_t)i]);
-        const double ey = (i < (int)pack.ey.size()) ? pack.ey[(size_t)i] : 0.0;
-        g->SetPointError(i, 0.0, ey);
+        graph->SetPoint(i, pack.x[(size_t)i], pack.y[(size_t)i]);
     }
 
-    g->SetMarkerColor(color);
-    g->SetLineColor(color);
-    g->SetMarkerStyle(marker_style);
-    g->SetMarkerSize(0.65);
-    g->SetLineWidth(1);
-    return g;
+    graph->SetMarkerColor(color);
+    graph->SetLineColor(color);
+    graph->SetMarkerStyle(marker_style);
+    graph->SetMarkerSize(marker_size);
+    graph->SetLineWidth(1);
+
+    return graph;
 }
 
-static void draw_subpad_title(const std::string& text) {
+static TGraphErrors* make_chi2_graph(const PointPack& pack,
+                                     int color,
+                                     int marker_style,
+                                     double marker_size) {
+    TGraphErrors* graph = new TGraphErrors((int)pack.x.size());
+
+    for (int i = 0; i < (int)pack.x.size(); ++i) {
+        graph->SetPoint(i, pack.x[(size_t)i], pack.y[(size_t)i]);
+        graph->SetPointError(i, 0.0, 0.0);
+    }
+
+    graph->SetMarkerColor(color);
+    graph->SetLineColor(color);
+    graph->SetMarkerStyle(marker_style);
+    graph->SetMarkerSize(marker_size);
+    graph->SetLineWidth(1);
+
+    return graph;
+}
+
+static TH1D* make_frame(const std::string& name,
+                        const std::string& xtitle,
+                        const std::string& ytitle,
+                        double xmin,
+                        double xmax,
+                        double ymin,
+                        double ymax) {
+    TH1D* frame = new TH1D(name.c_str(), "", 100, xmin, xmax);
+    frame->SetDirectory(nullptr);
+    frame->SetMinimum(ymin);
+    frame->SetMaximum(ymax);
+
+    frame->GetXaxis()->SetTitle(xtitle.c_str());
+    frame->GetYaxis()->SetTitle(ytitle.c_str());
+
+    frame->GetXaxis()->CenterTitle();
+    frame->GetYaxis()->CenterTitle();
+
+    frame->GetXaxis()->SetTitleSize(0.060);
+    frame->GetYaxis()->SetTitleSize(0.060);
+
+    frame->GetXaxis()->SetTitleOffset(1.10);
+    frame->GetYaxis()->SetTitleOffset(1.20);
+
+    frame->GetXaxis()->SetLabelSize(0.047);
+    frame->GetYaxis()->SetLabelSize(0.047);
+
+    frame->GetXaxis()->SetNdivisions(505);
+    frame->GetYaxis()->SetNdivisions(505);
+
+    return frame;
+}
+
+static void draw_subpad_label(const std::string& text) {
     TLatex latex;
     latex.SetNDC();
     latex.SetTextFont(42);
-    latex.SetTextSize(0.070);
+    latex.SetTextSize(0.058);
     latex.SetTextAlign(22);
-    latex.DrawLatex(0.50, 0.965, text.c_str());
+    latex.DrawLatex(0.50, 0.940, text.c_str());
+}
+
+static void draw_top_title(TPad* title_pad,
+                           const std::string& title_text) {
+    title_pad->cd();
+
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextSize(0.34);
+    title.SetTextAlign(22);
+    title.DrawLatex(0.50, 0.50, title_text.c_str());
+}
+
+static void make_title_and_grid_pads(TCanvas& canvas,
+                                     TPad*& title_pad,
+                                     TPad*& grid_pad) {
+    canvas.cd();
+
+    title_pad = new TPad("title_pad", "title_pad", 0.0, 0.925, 1.0, 1.0);
+    title_pad->SetFillColor(kWhite);
+    title_pad->SetFrameFillColor(kWhite);
+    title_pad->SetBorderMode(0);
+    title_pad->SetMargin(0.0, 0.0, 0.0, 0.0);
+    title_pad->Draw();
+
+    canvas.cd();
+
+    grid_pad = new TPad("grid_pad", "grid_pad", 0.0, 0.0, 1.0, 0.925);
+    grid_pad->SetFillColor(kWhite);
+    grid_pad->SetFrameFillColor(kWhite);
+    grid_pad->SetBorderMode(0);
+    grid_pad->SetMargin(0.02, 0.02, 0.02, 0.02);
+    grid_pad->Draw();
+    grid_pad->Divide(2, 2, 0.001, 0.001);
 }
 
 static void draw_chi2_canvas(const std::string& out_dir,
@@ -541,67 +681,72 @@ static void draw_chi2_canvas(const std::string& out_dir,
                              const std::map<std::string, PointPack>& chi2_by_var) {
     TCanvas canvas(("c_chi2_" + c.file_tag).c_str(),
                    ("Run-period reduced chi2: " + c.label).c_str(),
-                   1500,
-                   1100);
-    canvas.Divide(2, 2);
+                   1600,
+                   1200);
+    canvas.SetFillColor(kWhite);
+
+    TPad* title_pad = nullptr;
+    TPad* grid_pad = nullptr;
+    make_title_and_grid_pads(canvas, title_pad, grid_pad);
+    draw_top_title(title_pad, "Run-period consistency: " + c.label);
 
     const std::vector<VariableConfig> vars = variable_configs();
 
+    std::vector<std::unique_ptr<TH1D> > frames;
+    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    std::vector<std::unique_ptr<TLine> > lines;
+
     for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
-        canvas.cd(ivar + 1);
+        grid_pad->cd(ivar + 1);
         set_pad_style();
 
         const auto it = chi2_by_var.find(vars[(size_t)ivar].key);
         PointPack pack;
+
         if (it != chi2_by_var.end()) {
             pack = it->second;
         }
 
         const std::vector<double> xr = choose_x_range(pack.x);
-        std::vector<PointPack> ypacks = {pack};
-        const std::vector<double> yr = choose_y_range(ypacks, 0.0, true);
+        const std::vector<double> yr = choose_chi2_y_range(pack);
 
-        TH1D frame(("frame_chi2_" + c.file_tag + "_" + vars[(size_t)ivar].key).c_str(),
-                   "",
-                   100,
-                   xr[0],
-                   xr[1]);
-        frame.SetMinimum(yr[0]);
-        frame.SetMaximum(yr[1]);
-        frame.GetXaxis()->SetTitle(vars[(size_t)ivar].title.c_str());
-        frame.GetYaxis()->SetTitle("#chi^{2}/ndf");
-        frame.GetXaxis()->CenterTitle();
-        frame.GetYaxis()->CenterTitle();
-        frame.GetXaxis()->SetTitleSize(0.060);
-        frame.GetYaxis()->SetTitleSize(0.060);
-        frame.GetXaxis()->SetLabelSize(0.050);
-        frame.GetYaxis()->SetLabelSize(0.050);
-        frame.Draw("AXIS");
+        std::unique_ptr<TH1D> frame(
+            make_frame("frame_chi2_" + c.file_tag + "_" + vars[(size_t)ivar].key,
+                       vars[(size_t)ivar].title,
+                       "#chi^{2}/ndf",
+                       xr[0],
+                       xr[1],
+                       yr[0],
+                       yr[1])
+        );
 
-        TLine line(xr[0], 1.0, xr[1], 1.0);
-        line.SetLineStyle(2);
-        line.SetLineWidth(1);
-        line.SetLineColor(kRed + 1);
-        line.Draw("SAME");
+        frame->Draw("AXIS");
+
+        std::unique_ptr<TLine> line(new TLine(xr[0], 1.0, xr[1], 1.0));
+        line->SetLineStyle(2);
+        line->SetLineWidth(2);
+        line->SetLineColor(kRed + 1);
+        line->Draw("SAME");
 
         if (!pack.x.empty()) {
-            TGraphErrors* graph = make_graph(pack, kBlack, 20);
+            std::unique_ptr<TGraphErrors> graph(make_chi2_graph(pack, kBlack, 20, 0.55));
             graph->Draw("P SAME");
+            graphs.push_back(std::move(graph));
         }
 
-        draw_subpad_title(vars[(size_t)ivar].title);
+        draw_subpad_label(vars[(size_t)ivar].title);
+
+        frames.push_back(std::move(frame));
+        lines.push_back(std::move(line));
     }
 
     canvas.cd();
-    TLatex title;
-    title.SetNDC();
-    title.SetTextFont(42);
-    title.SetTextSize(0.028);
-    title.SetTextAlign(22);
-    title.DrawLatex(0.50, 0.985, ("Run-period consistency: " + c.label).c_str());
+    canvas.Modified();
+    canvas.Update();
 
     const std::string png = out_dir + "/" + c.file_tag + "_reduced_chi2.png";
     const std::string pdf = out_dir + "/" + c.file_tag + "_reduced_chi2.pdf";
+
     canvas.SaveAs(png.c_str());
     canvas.SaveAs(pdf.c_str());
 }
@@ -611,20 +756,45 @@ static void draw_ratio_canvas(const std::string& out_dir,
                               const std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period) {
     TCanvas canvas(("c_ratio_" + c.file_tag).c_str(),
                    ("Run-period ratios: " + c.label).c_str(),
-                   1500,
-                   1100);
-    canvas.Divide(2, 2);
+                   1600,
+                   1200);
+    canvas.SetFillColor(kWhite);
+
+    TPad* title_pad = nullptr;
+    TPad* grid_pad = nullptr;
+    make_title_and_grid_pads(canvas, title_pad, grid_pad);
+    draw_top_title(title_pad, "Run-period ratios: " + c.label);
 
     const std::vector<VariableConfig> vars = variable_configs();
-    const std::vector<int> colors = {kBlack, kRed + 1, kBlue + 1, kGreen + 2, kMagenta + 1, kOrange + 7};
-    const std::vector<int> markers = {20, 24, 21, 25, 22, 26};
+
+    const std::vector<int> colors = {
+        kBlack,
+        kRed + 1,
+        kBlue + 1,
+        kGreen + 2,
+        kMagenta + 1,
+        kOrange + 7
+    };
+
+    const std::vector<int> markers = {
+        20,
+        24,
+        21,
+        25,
+        22,
+        26
+    };
+
+    std::vector<std::unique_ptr<TH1D> > frames;
+    std::vector<std::unique_ptr<TGraph> > graphs;
+    std::vector<std::unique_ptr<TLine> > lines;
+    std::vector<std::unique_ptr<TLegend> > legends;
 
     for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
-        canvas.cd(ivar + 1);
+        grid_pad->cd(ivar + 1);
         set_pad_style();
 
         std::vector<double> all_x;
-        std::vector<PointPack> ypacks;
 
         const auto it_var = ratios_by_var_period.find(vars[(size_t)ivar].key);
         if (it_var != ratios_by_var_period.end()) {
@@ -633,7 +803,7 @@ static void draw_ratio_canvas(const std::string& out_dir,
                 if (it_pack == it_var->second.end()) {
                     continue;
                 }
-                ypacks.push_back(it_pack->second);
+
                 for (const double x : it_pack->second.x) {
                     all_x.push_back(x);
                 }
@@ -641,42 +811,39 @@ static void draw_ratio_canvas(const std::string& out_dir,
         }
 
         const std::vector<double> xr = choose_x_range(all_x);
-        const std::vector<double> yr = choose_y_range(ypacks, 0.0, true);
 
-        TH1D frame(("frame_ratio_" + c.file_tag + "_" + vars[(size_t)ivar].key).c_str(),
-                   "",
-                   100,
-                   xr[0],
-                   xr[1]);
-        frame.SetMinimum(yr[0]);
-        frame.SetMaximum(yr[1]);
-        frame.GetXaxis()->SetTitle(vars[(size_t)ivar].title.c_str());
-        frame.GetYaxis()->SetTitle("#sigma_{i}/#bar{#sigma}");
-        frame.GetXaxis()->CenterTitle();
-        frame.GetYaxis()->CenterTitle();
-        frame.GetXaxis()->SetTitleSize(0.060);
-        frame.GetYaxis()->SetTitleSize(0.060);
-        frame.GetXaxis()->SetLabelSize(0.050);
-        frame.GetYaxis()->SetLabelSize(0.050);
-        frame.Draw("AXIS");
+        std::unique_ptr<TH1D> frame(
+            make_frame("frame_ratio_" + c.file_tag + "_" + vars[(size_t)ivar].key,
+                       vars[(size_t)ivar].title,
+                       "#sigma_{i}/#bar{#sigma}",
+                       xr[0],
+                       xr[1],
+                       0.0,
+                       2.0)
+        );
 
-        TLine line(xr[0], 1.0, xr[1], 1.0);
-        line.SetLineStyle(2);
-        line.SetLineWidth(1);
-        line.SetLineColor(kRed + 1);
-        line.Draw("SAME");
+        frame->Draw("AXIS");
 
-        TLegend legend(0.56, 0.68, 0.93, 0.88);
-        legend.SetBorderSize(1);
-        legend.SetFillStyle(1001);
-        legend.SetFillColor(kWhite);
-        legend.SetTextSize(0.045);
+        std::unique_ptr<TLine> line(new TLine(xr[0], 1.0, xr[1], 1.0));
+        line->SetLineStyle(2);
+        line->SetLineWidth(2);
+        line->SetLineColor(kRed + 1);
+        line->Draw("SAME");
+
+        std::unique_ptr<TLegend> legend(new TLegend(0.54, 0.68, 0.93, 0.89));
+        legend->SetBorderSize(1);
+        legend->SetFillStyle(1001);
+        legend->SetFillColor(kWhite);
+        legend->SetTextFont(42);
+        legend->SetTextSize(0.040);
 
         int iper = 0;
+
         if (it_var != ratios_by_var_period.end()) {
             for (const auto& input : c.inputs) {
                 const auto it_pack = it_var->second.find(input.period);
                 if (it_pack == it_var->second.end()) {
+                    ++iper;
                     continue;
                 }
 
@@ -688,27 +855,31 @@ static void draw_ratio_canvas(const std::string& out_dir,
 
                 const int color = colors[(size_t)(iper % (int)colors.size())];
                 const int marker = markers[(size_t)(iper % (int)markers.size())];
-                TGraphErrors* graph = make_graph(pack, color, marker);
+
+                std::unique_ptr<TGraph> graph(make_marker_graph(pack, color, marker, 0.48));
                 graph->Draw("P SAME");
-                legend.AddEntry(graph, input.period.c_str(), "pe");
+                legend->AddEntry(graph.get(), input.period.c_str(), "p");
+                graphs.push_back(std::move(graph));
+
                 ++iper;
             }
         }
 
-        legend.Draw();
-        draw_subpad_title(vars[(size_t)ivar].title);
+        legend->Draw();
+        draw_subpad_label(vars[(size_t)ivar].title);
+
+        frames.push_back(std::move(frame));
+        lines.push_back(std::move(line));
+        legends.push_back(std::move(legend));
     }
 
     canvas.cd();
-    TLatex title;
-    title.SetNDC();
-    title.SetTextFont(42);
-    title.SetTextSize(0.028);
-    title.SetTextAlign(22);
-    title.DrawLatex(0.50, 0.985, ("Run-period ratios: " + c.label).c_str());
+    canvas.Modified();
+    canvas.Update();
 
     const std::string png = out_dir + "/" + c.file_tag + "_period_ratios.png";
     const std::string pdf = out_dir + "/" + c.file_tag + "_period_ratios.pdf";
+
     canvas.SaveAs(png.c_str());
     canvas.SaveAs(pdf.c_str());
 }
@@ -729,6 +900,7 @@ static void fill_case_outputs(const CsvTable& table,
 
         double mean = 0.0;
         double mean_stat = 0.0;
+
         if (!compute_weighted_mean(values, mean, mean_stat)) {
             continue;
         }
@@ -744,7 +916,8 @@ static void fill_case_outputs(const CsvTable& table,
 
         for (const auto& var : vars) {
             const std::string col = avg_column(var.column_prefix, c.avg_label);
-            const double x = get_required_double(table, row, col);
+            const double x = get_required_numeric_or_tuple_first(table, row, col);
+
             if (!std::isfinite(x)) {
                 continue;
             }
@@ -756,16 +929,15 @@ static void fill_case_outputs(const CsvTable& table,
             for (size_t iper = 0; iper < c.inputs.size(); ++iper) {
                 const TupleValue& v = values[iper];
                 const double ratio = v.value / mean;
-                const double ratio_stat = std::abs(v.stat / mean);
 
-                if (!std::isfinite(ratio) || !std::isfinite(ratio_stat)) {
+                if (!std::isfinite(ratio)) {
                     continue;
                 }
 
                 PointPack& pack = ratios_by_var_period[var.key][c.inputs[iper].period];
                 pack.x.push_back(x);
                 pack.y.push_back(ratio);
-                pack.ey.push_back(ratio_stat);
+                pack.ey.push_back(0.0);
             }
         }
     }
@@ -783,10 +955,14 @@ bool run_period_consistency_systematics(const std::string& csv_path,
         gStyle->SetOptStat(0);
         gStyle->SetTitleFont(42, "XYZ");
         gStyle->SetLabelFont(42, "XYZ");
+        gStyle->SetTitleFont(42, "");
+        gStyle->SetTextFont(42);
+        gStyle->SetEndErrorSize(0);
 
         const CsvTable table = read_csv_or_throw(csv_path);
         const std::vector<ConsistencyCase> cases = consistency_cases();
         const std::vector<VariableConfig> vars = variable_configs();
+
         validate_schema(table, cases, vars);
 
         std::cout << "[run-period-consistency] CSV rows loaded: " << table.rows.size() << "\n";
@@ -797,6 +973,7 @@ bool run_period_consistency_systematics(const std::string& csv_path,
             std::map<std::string, std::map<std::string, PointPack> > ratios_by_var_period;
 
             fill_case_outputs(table, c, chi2_by_var, ratios_by_var_period);
+
             draw_chi2_canvas(out_dir, c, chi2_by_var);
             draw_ratio_canvas(out_dir, c, ratios_by_var_period);
 
