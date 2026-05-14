@@ -1477,7 +1477,12 @@ static void draw_fit_graph(const std::string& out_path,
     frame->GetYaxis()->SetLabelSize(0.040);
 
     g_data.Draw("PE SAME");
-    g_mc.Draw("PE SAME");
+
+    const bool have_mc_points = !mc_points.empty();
+
+    if (have_mc_points) {
+        g_mc.Draw("PE SAME");
+    }
 
     auto draw_line = [&](const FitResult& fit, int color, bool is_relative) {
         if (!std::isfinite(fit.m) || !std::isfinite(fit.b)) {
@@ -1503,14 +1508,21 @@ static void draw_fit_graph(const std::string& out_path,
     };
 
     draw_line(data_fit, kBlack, relative);
-    draw_line(mc_fit, kRed + 1, relative);
+
+    if (have_mc_points) {
+        draw_line(mc_fit, kRed + 1, relative);
+    }
 
     TLegend leg(0.58, 0.72, 0.90, 0.88);
     leg.SetFillStyle(1001);
     leg.SetFillColor(kWhite);
     leg.SetBorderSize(1);
     leg.AddEntry(&g_data, "Data", "pe");
-    leg.AddEntry(&g_mc, "MC", "pe");
+
+    if (have_mc_points) {
+        leg.AddEntry(&g_mc, "MC", "pe");
+    }
+
     leg.Draw();
 
     c.SaveAs(out_path.c_str());
@@ -1580,7 +1592,8 @@ static std::vector<PeriodResult> run_channel_study(
     const TopoCutMap& data_cuts,
     const TopoCutMap& mc_cuts,
     const std::string& output_dir,
-    int max_workers) {
+    int max_workers,
+    bool process_mc) {
 
     std::map<std::string, DataAgg> data_aggs;
     std::mutex data_mutex;
@@ -1617,8 +1630,16 @@ static std::vector<PeriodResult> run_channel_study(
     }
 
     std::map<std::string, McAgg> mc_by_period_current;
+    std::vector<McAgg> mc_aggs;
 
-    for (const auto& kv : gen_trees) {
+    if (!process_mc) {
+        std::cout << "[current_dependence] " << cfg.csv_channel
+                  << ": skipping MC current-dependence scan; MC factor will be built downstream."
+                  << std::endl;
+    }
+
+    if (process_mc) {
+        for (const auto& kv : gen_trees) {
         PeriodTags tags = parse_period_from_key(kv.first);
 
         if (tags.display == "Fa18 Inb Supp") {
@@ -1638,8 +1659,8 @@ static std::vector<PeriodResult> run_channel_study(
 
     std::vector<std::pair<std::string, TTree*>> rec_items;
 
-    for (const auto& kv : rec_trees) {
-        PeriodTags tags = parse_period_from_key(kv.first);
+        for (const auto& kv : rec_trees) {
+            PeriodTags tags = parse_period_from_key(kv.first);
 
         if (tags.display == "Fa18 Inb Supp") {
             continue;
@@ -1676,10 +1697,9 @@ static std::vector<PeriodResult> run_channel_study(
         agg.n_rec += n_rec;
     }
 
-    std::vector<McAgg> mc_aggs;
-
-    for (const auto& kv : mc_by_period_current) {
-        mc_aggs.push_back(kv.second);
+        for (const auto& kv : mc_by_period_current) {
+            mc_aggs.push_back(kv.second);
+        }
     }
 
     std::vector<PeriodResult> results;
@@ -1697,12 +1717,14 @@ static std::vector<PeriodResult> run_channel_study(
             R.data_factor_err = weighted_data_rel_err(R.data_points, R.data_fit);
         }
 
-        R.mc_points = mc_points_from_aggs(mc_aggs, period);
-        R.mc_fit = fit_points(R.mc_points);
+        if (process_mc) {
+            R.mc_points = mc_points_from_aggs(mc_aggs, period);
+            R.mc_fit = fit_points(R.mc_points);
 
-        const int ref = reference_current_nA(period);
-        R.mc_factor = rel_at_current((double)ref, R.mc_fit);
-        R.mc_factor_err = rel_err_at_current((double)ref, R.mc_fit);
+            const int ref = reference_current_nA(period);
+            R.mc_factor = rel_at_current((double)ref, R.mc_fit);
+            R.mc_factor_err = rel_err_at_current((double)ref, R.mc_fit);
+        }
 
         results.push_back(R);
 
@@ -1710,7 +1732,10 @@ static std::vector<PeriodResult> run_channel_study(
         mkdir_p(odir);
 
         write_points_csv(odir + "/data_current_points.csv", R.data_points);
-        write_points_csv(odir + "/mc_current_points.csv", R.mc_points);
+
+        if (process_mc) {
+            write_points_csv(odir + "/mc_current_points.csv", R.mc_points);
+        }
 
         draw_fit_graph(odir + "/current_dependence_absolute.png",
                        cfg.title + "  " + period,
@@ -1731,15 +1756,104 @@ static std::vector<PeriodResult> run_channel_study(
         std::cout << "[current_dependence] " << cfg.csv_channel
                   << " " << period
                   << " data_factor=" << R.data_factor
-                  << " +/- " << R.data_factor_err
-                  << " mc_factor=" << R.mc_factor
-                  << " +/- " << R.mc_factor_err
-                  << std::endl;
+                  << " +/- " << R.data_factor_err;
+
+        if (process_mc) {
+            std::cout << " mc_factor=" << R.mc_factor
+                      << " +/- " << R.mc_factor_err;
+        } else {
+            std::cout << " mc_factor=skipped";
+        }
+
+        std::cout << std::endl;
     }
 
-    write_summary_csv(output_dir + "/" + cfg.output_token + "/period_summary.csv", results);
+    if (process_mc) {
+        write_summary_csv(output_dir + "/" + cfg.output_token + "/period_summary.csv", results);
+    }
 
     return results;
+}
+
+
+static void apply_eppi0_mc_factor_from_dvcs_ratio(std::vector<PeriodResult>& eppi0_results,
+                                                  const std::vector<PeriodResult>& dvcs_results) {
+    std::map<std::string, PeriodResult> dvcs_by_period;
+
+    for (const PeriodResult& r : dvcs_results) {
+        dvcs_by_period[r.period] = r;
+    }
+
+    auto require_finite_positive = [](double value,
+                                      const std::string& quantity,
+                                      const std::string& period) {
+        if (!std::isfinite(value) || !(value > 0.0)) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: cannot build eppi0 MC current factor for "
+               << period << "; " << quantity << " is not finite and positive: "
+               << value;
+            fatal(ss.str());
+        }
+    };
+
+    auto require_finite_nonnegative = [](double value,
+                                         const std::string& quantity,
+                                         const std::string& period) {
+        if (!std::isfinite(value) || value < 0.0) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: cannot build eppi0 MC current factor for "
+               << period << "; " << quantity << " is not finite and non-negative: "
+               << value;
+            fatal(ss.str());
+        }
+    };
+
+    for (PeriodResult& eppi0 : eppi0_results) {
+        auto it = dvcs_by_period.find(eppi0.period);
+
+        if (it == dvcs_by_period.end()) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: missing DVCS current-dependence result for period "
+               << eppi0.period << " while constructing eppi0 MC factor.";
+            fatal(ss.str());
+        }
+
+        const PeriodResult& dvcs = it->second;
+
+        require_finite_positive(eppi0.data_factor, "eppi0 data factor", eppi0.period);
+        require_finite_positive(dvcs.mc_factor, "DVCS MC factor", eppi0.period);
+        require_finite_positive(dvcs.data_factor, "DVCS data factor", eppi0.period);
+
+        require_finite_nonnegative(eppi0.data_factor_err, "eppi0 data factor uncertainty", eppi0.period);
+        require_finite_nonnegative(dvcs.mc_factor_err, "DVCS MC factor uncertainty", eppi0.period);
+        require_finite_nonnegative(dvcs.data_factor_err, "DVCS data factor uncertainty", eppi0.period);
+
+        const double scale = dvcs.mc_factor / dvcs.data_factor;
+        const double corrected = eppi0.data_factor * scale;
+
+        const double rel_var =
+            std::pow(eppi0.data_factor_err / eppi0.data_factor, 2.0) +
+            std::pow(dvcs.mc_factor_err / dvcs.mc_factor, 2.0) +
+            std::pow(dvcs.data_factor_err / dvcs.data_factor, 2.0);
+
+        const double corrected_err = std::fabs(corrected) * std::sqrt(rel_var);
+
+        eppi0.mc_factor = corrected;
+        eppi0.mc_factor_err = corrected_err;
+
+        std::cout << "[current_dependence] Built eppi0 MC current factor for "
+                  << eppi0.period
+                  << " using eppi0_data * (dvcs_mc / dvcs_data): "
+                  << "eppi0_data=" << eppi0.data_factor
+                  << " +/- " << eppi0.data_factor_err
+                  << " dvcs_mc=" << dvcs.mc_factor
+                  << " +/- " << dvcs.mc_factor_err
+                  << " dvcs_data=" << dvcs.data_factor
+                  << " +/- " << dvcs.data_factor_err
+                  << " corrected_eppi0_mc=" << eppi0.mc_factor
+                  << " +/- " << eppi0.mc_factor_err
+                  << std::endl;
+    }
 }
 
 static void write_override_unity(CSV& csv, const ChannelConfig& cfg) {
@@ -2064,7 +2178,8 @@ bool update_current_dependence_factors_csv(
                               data_cuts,
                               mc_cuts,
                               options.output_dir,
-                              options.max_workers);
+                              options.max_workers,
+                              true);
 
         std::vector<PeriodResult> eppi0_results =
             run_channel_study(eppi0,
@@ -2075,7 +2190,11 @@ bool update_current_dependence_factors_csv(
                               data_cuts,
                               mc_cuts,
                               options.output_dir,
-                              options.max_workers);
+                              options.max_workers,
+                              false);
+
+        apply_eppi0_mc_factor_from_dvcs_ratio(eppi0_results, dvcs_results);
+        write_summary_csv(options.output_dir + "/" + eppi0.output_token + "/period_summary.csv", eppi0_results);
 
         write_results_to_csv(csv, dvcs, dvcs_results);
         write_results_to_csv(csv, eppi0, eppi0_results);

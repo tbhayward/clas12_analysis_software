@@ -1,8 +1,10 @@
 // bin_volume.cpp
 // Kinematic bin volume calculator, written into CSV as "(value, stat, sys)"
 // triples in the columns:
-//   "bin_volume, 10.6 GeV"   (Sp18 Inb + Sp18 Out + Fa18 Inb + Fa18 Out)
-//   "bin_volume, 10.2 GeV"   (Sp19 Inb only)
+//   "bin_volume, 10.6 GeV"          phase-space-allowed volume, 10.6 GeV
+//   "bin_volume, 10.2 GeV"          phase-space-allowed volume, 10.2 GeV
+//   "cubic bin_volume, 10.6 GeV"    rectangular/cubic 4D volume, 10.6 GeV
+//   "cubic bin_volume, 10.2 GeV"    rectangular/cubic 4D volume, 10.2 GeV
 //
 // Binning comes from dvcs_pass2_analysis.csv (Lee-style).
 // No MC trees are used. Volumes are purely kinematic:
@@ -22,11 +24,8 @@
 //   output/bin_volume/10.60
 //   output/bin_volume/10.2
 //
-// Only rows where the corresponding xBavg column is filled are used:
-//   - 10.6 GeV: requires "xBavg, 10.6 GeV"
-//   - 10.2 GeV: requires "xBavg, Sp19 Inb"
-//
-// Phi-integrated rows (phi width ~360 deg) are skipped.
+// All valid phi-binned rows in the pass-2 CSV are filled for both beam
+// energies. Phi-integrated rows (phi width ~360 deg) are skipped.
 
 #include "bin_volume.h"
 
@@ -292,11 +291,23 @@ static bool parse_triple(const std::string& s,
 
 // ---------------- deterministic 3D (xB,Q2,t) volume under kinematic masks ----------------
 
-static double calculate_bin_volume(double xB_min, double xB_max,
-                                   double Q2_min, double Q2_max,
-                                   double t_abs_min, double t_abs_max,   // positive |t| edges
-                                   double phi_min, double phi_max,       // radians
-                                   double E_beam)
+static double calculate_cubic_bin_volume(double xB_min, double xB_max,
+                                      double Q2_min, double Q2_max,
+                                      double t_abs_min, double t_abs_max,
+                                      double phi_min, double phi_max)
+{
+    return
+        (xB_max - xB_min) *
+        (Q2_max - Q2_min) *
+        (t_abs_max - t_abs_min) *
+        (phi_max - phi_min);
+}
+
+static double calculate_phase_space_allowed_bin_volume(double xB_min, double xB_max,
+                                                       double Q2_min, double Q2_max,
+                                                       double t_abs_min, double t_abs_max,   // positive |t| edges
+                                                       double phi_min, double phi_max,       // radians
+                                                       double E_beam)
 {
     constexpr int    n_steps = 10;
     constexpr double Mp      = 0.938272; // Proton mass (GeV)
@@ -336,13 +347,14 @@ static double calculate_bin_volume(double xB_min, double xB_max,
     }
 
     const double fraction = (double)valid_count / (double)(n_steps * n_steps * n_steps);
-    const double geometric_volume =
-        (xB_max - xB_min) *
-        (Q2_max - Q2_min) *
-        (t_abs_max - t_abs_min) *
-        (phi_max - phi_min); // phi-extent in radians
+    const double cubic_volume = calculate_cubic_bin_volume(
+        xB_min, xB_max,
+        Q2_min, Q2_max,
+        t_abs_min, t_abs_max,
+        phi_min, phi_max
+    );
 
-    return geometric_volume * fraction;
+    return cubic_volume * fraction;
 }
 
 // ---------------- helpers for deciding which rows to use ----------------
@@ -398,8 +410,9 @@ struct VolumeGroup {
     std::string phiavg_col;   // "phiavg, 10.6 GeV" or "phiavg, Sp19 Inb"
     std::string q2avg_col;    // "Q2avg, 10.6 GeV" or "Q2avg, Sp19 Inb"
     std::string tabavg_col;   // "t_abs_avg, 10.6 GeV" or "t_abs_avg, Sp19 Inb"
-    std::string binvol_col;   // "bin_volume, 10.6 GeV" or "bin_volume, 10.2 GeV"
-    std::string energy_dir;   // "10.60" or "10.2" for directory names
+    std::string binvol_col;         // "bin_volume, 10.6 GeV" or "bin_volume, 10.2 GeV"
+    std::string cubic_binvol_col;   // "cubic bin_volume, 10.6 GeV" or "cubic bin_volume, 10.2 GeV"
+    std::string energy_dir;         // "10.60" or "10.2" for directory names
     double Ebeam;             // beam energy (GeV)
 };
 
@@ -423,7 +436,8 @@ static void compute_bin_volumes_for_group(const VolumeGroup& G,
     const int c_tab_max = csv.col_index("t_abs_max");
     const int c_phi_min = csv.col_index("phimin");
     const int c_phi_max = csv.col_index("phimax");
-    const int c_binvol  = csv.col_index(G.binvol_col);
+    const int c_binvol       = csv.col_index(G.binvol_col);
+    const int c_cubic_binvol = csv.col_index(G.cubic_binvol_col);
 
     if (c_xb_min < 0 || c_xb_max < 0 ||
         c_q2_min < 0 || c_q2_max < 0 ||
@@ -435,8 +449,14 @@ static void compute_bin_volumes_for_group(const VolumeGroup& G,
     }
 
     if (c_binvol < 0) {
-        std::cerr << "[binvol] FATAL: missing bin volume column '"
+        std::cerr << "[binvol] FATAL: missing phase-space bin volume column '"
                   << G.binvol_col << "' in CSV header.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (c_cubic_binvol < 0) {
+        std::cerr << "[binvol] FATAL: missing cubic bin volume column '"
+                  << G.cubic_binvol_col << "' in CSV header.\n";
         std::exit(EXIT_FAILURE);
     }
 
@@ -476,7 +496,14 @@ static void compute_bin_volumes_for_group(const VolumeGroup& G,
         const double phi_min_rad = phimin * PI() / 180.0;
         const double phi_max_rad = phimax * PI() / 180.0;
 
-        const double V = calculate_bin_volume(
+        const double V_cubic = calculate_cubic_bin_volume(
+            xbmin, xbmax,
+            q2min, q2max,
+            tmin,  tmax,
+            phi_min_rad, phi_max_rad
+        );
+
+        const double V_allowed = calculate_phase_space_allowed_bin_volume(
             xbmin, xbmax,
             q2min, q2max,
             tmin,  tmax,
@@ -484,19 +511,24 @@ static void compute_bin_volumes_for_group(const VolumeGroup& G,
             G.Ebeam
         );
 
-        if (!std::isfinite(V)) {
+        if (!std::isfinite(V_cubic) || !std::isfinite(V_allowed)) {
             continue;
         }
 
-        double Vclamped = V;
-        if (Vclamped < 0.0) Vclamped = 0.0;
+        double Vcubic_clamped = V_cubic;
+        if (Vcubic_clamped < 0.0) Vcubic_clamped = 0.0;
 
-        csv.rows[r][c_binvol] = format_triple(Vclamped, 0.0, 0.0);
+        double Vallowed_clamped = V_allowed;
+        if (Vallowed_clamped < 0.0) Vallowed_clamped = 0.0;
+
+        csv.rows[r][c_binvol] = format_triple(Vallowed_clamped, 0.0, 0.0);
+        csv.rows[r][c_cubic_binvol] = format_triple(Vcubic_clamped, 0.0, 0.0);
         ++bins_written;
     }
 
     std::cout << "[binvol] Group " << G.label
-              << ": filled column '" << G.binvol_col
+              << ": filled columns '" << G.binvol_col
+              << "' and '" << G.cubic_binvol_col
               << "' for " << bins_written << " phi-binned rows.\n";
 }
 
@@ -861,8 +893,9 @@ bool update_bin_volume_csv(const std::string& csv_path,
     g10p6.phiavg_col = "phiavg, 10.6 GeV";
     g10p6.q2avg_col  = "Q2avg, 10.6 GeV";
     g10p6.tabavg_col = "t_abs_avg, 10.6 GeV";
-    g10p6.binvol_col = "bin_volume, 10.6 GeV";
-    g10p6.energy_dir = "10.60";
+    g10p6.binvol_col       = "bin_volume, 10.6 GeV";
+    g10p6.cubic_binvol_col = "cubic bin_volume, 10.6 GeV";
+    g10p6.energy_dir       = "10.60";
     g10p6.Ebeam      = 10.60;
 
     VolumeGroup g10p2;
@@ -871,13 +904,16 @@ bool update_bin_volume_csv(const std::string& csv_path,
     g10p2.phiavg_col = "phiavg, Sp19 Inb";
     g10p2.q2avg_col  = "Q2avg, Sp19 Inb";
     g10p2.tabavg_col = "t_abs_avg, Sp19 Inb";
-    g10p2.binvol_col = "bin_volume, 10.2 GeV";
-    g10p2.energy_dir = "10.2";
+    g10p2.binvol_col       = "bin_volume, 10.2 GeV";
+    g10p2.cubic_binvol_col = "cubic bin_volume, 10.2 GeV";
+    g10p2.energy_dir       = "10.2";
     g10p2.Ebeam      = 10.20;
 
-    // Build row_has_data for each group based on xBavg column.
-    std::vector<bool> row_has_data_10p6 = build_row_has_data(csv, g10p6.xbavg_col);
-    std::vector<bool> row_has_data_10p2 = build_row_has_data(csv, g10p2.xbavg_col);
+    // Compute bin volumes for all phi-binned rows for both energies.
+    // Do not gate this on xBavg/data availability: cross_sections.cpp needs
+    // deterministic phase-space volumes wherever a yield later appears.
+    std::vector<bool> row_has_data_10p6(NR, true);
+    std::vector<bool> row_has_data_10p2(NR, true);
 
     // Compute volumes (CSV-only; no trees needed).
     compute_bin_volumes_for_group(g10p6, csv, row_has_data_10p6);

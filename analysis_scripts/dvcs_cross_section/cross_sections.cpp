@@ -81,10 +81,11 @@ using Range = std::pair<double, double>;
 // Configuration
 // -----------------------------------------------------------------------------
 
-// Frad/Fbin/bin_volume are read directly from Lee's imports/all_bin_v3.csv
-// during compute_cross_sections(), matching the historical workflow. The same
-// Lee values are written into both the 10.6 GeV and 10.2 GeV pass-2 CSV columns
-// before the cross sections are computed.
+// Frad/Fbin are read directly from Lee's imports/all_bin_v3.csv. The same
+// Lee Frad/Fbin values are written into both the 10.6 GeV and 10.2 GeV
+// pass-2 CSV columns before the cross sections are computed. The bin volume
+// used in the denominator is the phase-space-allowed value already computed
+// by bin_volume.cpp and stored in the pass-2 CSV.
 
 static std::string canonical_period_dir(const std::string &label) {
     if (label == "Fa18 Inb")      return "Fa18_Inb";
@@ -724,7 +725,6 @@ static double ratio_rel2(double value, double err) {
 struct LeeCorrections {
     Triple frad{0.0, 0.0, 0.0};
     Triple fbin{0.0, 0.0, 0.0};
-    Triple bin_volume{0.0, 0.0, 0.0};
 };
 
 static std::string first_nonempty_bin_index(const std::vector<std::string> &fields,
@@ -763,6 +763,40 @@ static double parse_required_number(const std::string &cell,
     return v;
 }
 
+static Triple parse_required_triple_cell(const std::vector<std::string> &fields,
+                                         int col,
+                                         const std::string &col_name,
+                                         const std::string &context) {
+    if (col < 0 || col >= (int)fields.size()) {
+        std::ostringstream ss;
+        ss << "[cross_sections] FATAL: column index out of range for "
+           << col_name << " while reading " << context;
+        throw std::runtime_error(ss.str());
+    }
+
+    const std::string s = trim(strip_all_outer_quotes(fields[col]));
+    if (s.empty()) {
+        std::ostringstream ss;
+        ss << "[cross_sections] FATAL: empty required tuple cell for "
+           << col_name << " while reading " << context;
+        throw std::runtime_error(ss.str());
+    }
+
+    Triple out = parse_tuple3(fields[col]);
+    if (!std::isfinite(out.value) || out.value <= 0.0) {
+        std::ostringstream ss;
+        ss << "[cross_sections] FATAL: required tuple cell for "
+           << col_name << " is missing, malformed, or non-positive while reading "
+           << context << ". Cell value was '" << s << "'.";
+        throw std::runtime_error(ss.str());
+    }
+
+    if (!std::isfinite(out.stat)) out.stat = 0.0;
+    if (!std::isfinite(out.sys))  out.sys  = 0.0;
+
+    return out;
+}
+
 static std::map<std::string, LeeCorrections>
 load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
     std::ifstream ifs(lee_csv_path);
@@ -788,7 +822,6 @@ load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
 
     const int c_frad = find_col(header, "Frad");
     const int c_fbin = find_col(header, "Fbin");
-    const int c_vbin = find_col(header, "bin_volume");
     const int c_valid = find_col_optional(header, "valid bin");
 
     std::map<std::string, LeeCorrections> out;
@@ -821,15 +854,13 @@ load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
         LeeCorrections c;
         c.frad.value = parse_required_number(fields[c_frad], "Frad", lee_csv_path);
         c.fbin.value = parse_required_number(fields[c_fbin], "Fbin", lee_csv_path);
-        c.bin_volume.value = parse_required_number(fields[c_vbin], "bin_volume", lee_csv_path);
 
-        if (!(c.frad.value > 0.0) || !(c.fbin.value > 0.0) || !(c.bin_volume.value > 0.0)) {
+        if (!(c.frad.value > 0.0) || !(c.fbin.value > 0.0)) {
             std::ostringstream ss;
             ss << "[cross_sections] FATAL: non-positive Lee correction for bin index "
                << bin_index << " in " << lee_csv_path
                << " (Frad=" << c.frad.value
-               << ", Fbin=" << c.fbin.value
-               << ", bin_volume=" << c.bin_volume.value << ")";
+               << ", Fbin=" << c.fbin.value << ")";
             throw std::runtime_error(ss.str());
         }
 
@@ -843,7 +874,7 @@ load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
         ++kept_row;
     }
 
-    std::cout << "[cross_sections] Loaded Lee correction factors from "
+    std::cout << "[cross_sections] Loaded Lee Frad/Fbin correction factors from "
               << lee_csv_path << ": input rows=" << input_row
               << " valid rows=" << kept_row << "\n";
 
@@ -920,20 +951,45 @@ bool compute_cross_sections(const std::string &csv_main,
         return false;
     }
 
-    int c_vbin_106 = find_col_optional(header, "bin_volume, 10.6 GeV");
-    int c_frad_106 = find_col_optional(header, "Frad, 10.6 GeV");
-    int c_fbin_106 = find_col_optional(header, "Fbin, 10.6 GeV");
+    const int c_vbin_106 = find_col_optional(header, "bin_volume, 10.6 GeV");
+    const int c_vbin_102 = find_col_optional(header, "bin_volume, 10.2 GeV");
+    const int c_cubic_vbin_106 = find_col_optional(header, "cubic bin_volume, 10.6 GeV");
+    const int c_cubic_vbin_102 = find_col_optional(header, "cubic bin_volume, 10.2 GeV");
+    const int c_frad_106 = find_col_optional(header, "Frad, 10.6 GeV");
+    const int c_frad_102 = find_col_optional(header, "Frad, 10.2 GeV");
+    const int c_fbin_106 = find_col_optional(header, "Fbin, 10.6 GeV");
+    const int c_fbin_102 = find_col_optional(header, "Fbin, 10.2 GeV");
 
     if (c_vbin_106 < 0) {
-        std::cerr << "[cross_sections] FATAL: missing bin_volume column: bin_volume, 10.6 GeV\n";
+        std::cerr << "[cross_sections] FATAL: missing phase-space bin volume column: bin_volume, 10.6 GeV\n";
+        return false;
+    }
+    if (c_vbin_102 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing phase-space bin volume column: bin_volume, 10.2 GeV\n";
+        return false;
+    }
+    if (c_cubic_vbin_106 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing diagnostic cubic bin volume column: cubic bin_volume, 10.6 GeV\n";
+        return false;
+    }
+    if (c_cubic_vbin_102 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing diagnostic cubic bin volume column: cubic bin_volume, 10.2 GeV\n";
         return false;
     }
     if (c_frad_106 < 0) {
         std::cerr << "[cross_sections] FATAL: missing Frad column: Frad, 10.6 GeV\n";
         return false;
     }
+    if (c_frad_102 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing Frad column: Frad, 10.2 GeV\n";
+        return false;
+    }
     if (c_fbin_106 < 0) {
         std::cerr << "[cross_sections] FATAL: missing Fbin column: Fbin, 10.6 GeV\n";
+        return false;
+    }
+    if (c_fbin_102 < 0) {
+        std::cerr << "[cross_sections] FATAL: missing Fbin column: Fbin, 10.2 GeV\n";
         return false;
     }
 
@@ -1053,6 +1109,8 @@ bool compute_cross_sections(const std::string &csv_main,
               << "Current-efficiency and eppi0 normalization corrections are already upstream.\n";
     std::cout << "[cross_sections] NOTE: combined-label luminosities are row-dependent and "
               << "gated by nonzero member-period acceptance.\n";
+    std::cout << "[cross_sections] NOTE: Frad/Fbin are imported from Lee's CSV for both energies; "
+              << "bin_volume is read from the pass-2 CSV phase-space columns filled by bin_volume.cpp.\n";
 
     int next_pct = 10;
 
@@ -1094,21 +1152,21 @@ bool compute_cross_sections(const std::string &csv_main,
 
         const Triple frad = lee_row->frad;
         const Triple fbin = lee_row->fbin;
-        const Triple vbin = lee_row->bin_volume;
 
+        // Lee provides the Frad/Fbin values; write those into both energy columns.
         fields[c_frad_106] = tuple3_to_cell(frad.value, frad.stat, frad.sys);
+        fields[c_frad_102] = tuple3_to_cell(frad.value, frad.stat, frad.sys);
         fields[c_fbin_106] = tuple3_to_cell(fbin.value, fbin.stat, fbin.sys);
-        fields[c_vbin_106] = tuple3_to_cell(vbin.value, vbin.stat, vbin.sys);
+        fields[c_fbin_102] = tuple3_to_cell(fbin.value, fbin.stat, fbin.sys);
 
         for (const auto &L : labels) {
             const Triple Lumi = lumi_for_label_row(L, fields);
-            const double Ebeam = beam_energy_for_label(L);
+            const bool use_10p2 = (L == "Sp19 Inb" || L == "10.2 GeV");
 
             const Triple &Frad = frad;
             const Triple &Fbin = fbin;
-            const Triple &Vbin = vbin;
 
-            if (Frad.value <= 0.0 || Fbin.value <= 0.0 || Vbin.value <= 0.0) continue;
+            if (Frad.value <= 0.0 || Fbin.value <= 0.0) continue;
 
             for (const auto &h : cross_section_helicities_for_label(L)) {
                 auto it = colmap.find(L + "|" + h);
@@ -1118,6 +1176,23 @@ bool compute_cross_sections(const std::string &csv_main,
                 const int ix = it->second.xs_idx;
                 const Triple Y = parse_tuple3(fields[iy]);
                 if (Y.value <= 0.0) continue;
+
+                const int c_vbin = use_10p2 ? c_vbin_102 : c_vbin_106;
+                const int c_cubic_vbin = use_10p2 ? c_cubic_vbin_102 : c_cubic_vbin_106;
+                const std::string energy_tag = use_10p2 ? "10.2 GeV" : "10.6 GeV";
+
+                const Triple Vbin = parse_required_triple_cell(
+                    fields, c_vbin, "bin_volume, " + energy_tag,
+                    "pass-2 CSV row " + std::to_string(row) + ", label " + L + ", helicity " + h
+                );
+
+                // Validate the diagnostic cubic volume for the same energy. It is not
+                // used in sigma, but it confirms this row came from the new schema
+                // and lets the CSV expose allowed/cubic volume ratios for debugging.
+                (void)parse_required_triple_cell(
+                    fields, c_cubic_vbin, "cubic bin_volume, " + energy_tag,
+                    "pass-2 CSV row " + std::to_string(row) + ", label " + L + ", helicity " + h
+                );
 
                 double lumi_val = 0.0;
                 if (h == "unpol") lumi_val = Lumi.value;

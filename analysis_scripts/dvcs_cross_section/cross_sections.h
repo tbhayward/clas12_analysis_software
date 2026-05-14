@@ -29,8 +29,10 @@ LumiMap build_lumi_map();
 //   - Fill integrated luminosity columns using lumi_map.
 //   - Compute cross sections from already-corrected, already-unfolded yields:
 //       acceptance corrected yield, ep->epg, exp, <label>, <helicity>
-//   - Import Frad/Fbin/bin_volume directly from imports/all_bin_v3.csv.
-//   - Write those imported values into both 10.6 GeV and 10.2 GeV CSV columns.
+//   - Import Frad/Fbin directly from imports/all_bin_v3.csv.
+//   - Write those imported Frad/Fbin values into both 10.6 GeV and 10.2 GeV CSV columns.
+//   - Read the phase-space-allowed bin_volume from the pass-2 CSV columns
+//     filled by bin_volume.cpp; do not import or overwrite bin_volume from Lee's CSV.
 //   - Do not apply imports/efficiency.json or any additional normalization.
 // Returns true on success, false on any fatal CSV or I/O problem.
 bool compute_cross_sections(const std::string &csv_main,
@@ -40,8 +42,8 @@ bool compute_cross_sections(const std::string &csv_main,
 // The expected source columns are:
 //   Frad
 //   Fbin
-//   bin_volume
 // matched by the pass-2 CSV "bin index" column.
+// The Lee bin_volume column, if present, is intentionally ignored.
 bool compute_cross_sections(const std::string &csv_main,
                             const LumiMap &lumi_map,
                             const std::string &lee_csv_path);

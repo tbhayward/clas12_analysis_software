@@ -26,8 +26,13 @@ struct CurrentDependenceOptions {
  *                         current mixture divided by fitted zero-current response
  *
  *   MC:
- *     mc_ref_rel = fitted MC efficiency at the reference current divided by
- *                  fitted zero-current MC efficiency
+ *     For ep->epg, mc_ref_rel is the fitted MC efficiency at the reference
+ *     current divided by fitted zero-current MC efficiency.
+ *
+ *     For ep->eppi0, no non-production-current MC exists, so the MC current
+ *     factor is derived from the data factor scaled by the DVCS MC/data ratio:
+ *
+ *         eppi0_mc_factor = eppi0_data_factor * (dvcs_mc_factor / dvcs_data_factor)
  *
  * and writes:
  *

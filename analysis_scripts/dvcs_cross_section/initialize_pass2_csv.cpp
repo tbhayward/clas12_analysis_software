@@ -553,8 +553,16 @@ static void add_frad_fbin_binvol_columns(std::vector<std::string>& H) {
     H.push_back("Frad, 10.2 GeV");
     H.push_back("Fbin, 10.6 GeV");
     H.push_back("Fbin, 10.2 GeV");
+
+    // Phase-space-allowed bin volumes computed by bin_volume.cpp.
+    // These are the volumes used in cross_sections.cpp.
     H.push_back("bin_volume, 10.6 GeV");
     H.push_back("bin_volume, 10.2 GeV");
+
+    // Rectangular/cubic 4D volumes from the bin boundaries only.
+    // These are diagnostics only and are not used in the cross-section denominator.
+    H.push_back("cubic bin_volume, 10.6 GeV");
+    H.push_back("cubic bin_volume, 10.2 GeV");
 }
 
 static void add_luminosity_columns(std::vector<std::string>& H) {
