@@ -1,3 +1,5 @@
+.RECIPEPREFIX := >
+
 # Compiler and flags
 CXX = g++
 CXXFLAGS = $(shell root-config --cflags) -O2 -std=c++17 -pthread -fopenmp
@@ -35,16 +37,16 @@ NORM_SCENARIO_BIN = norm_scenario_comparison
 all: $(DVCS_BIN) $(LEE_BIN) $(NORM_SCENARIO_BIN)
 
 $(DVCS_BIN): $(DVCS_OBJ)
-    $(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
+>$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
 
 $(LEE_BIN): $(LEE_OBJ)
-    $(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
+>$(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
 
 $(NORM_SCENARIO_BIN): $(NORM_SCENARIO_OBJ)
-    $(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
+>$(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
 
 %.o: %.cpp
-    $(CXX) $(CXXFLAGS) -c $< -o $@
+>$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-    rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN)
+>rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN)
