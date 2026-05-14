@@ -31,6 +31,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "run_period_consistency_systematics.h"
 
 namespace fs = std::filesystem;
 
@@ -315,6 +316,11 @@ int main(int argc, char* argv[]) {
 
         if (!update_combination_systematics_csv_shell(csv_main)) {
             std::cerr << "[systematics] FATAL: update_combination_systematics_csv_shell failed.\n";
+            return 1;
+        }
+
+        if (!run_period_consistency_systematics(csv_main, "output/systematics")) {
+            std::cerr << "[systematics] FATAL: run_period_consistency_systematics failed.\n";
             return 1;
         }
     } catch (const std::exception& e) {
