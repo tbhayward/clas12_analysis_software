@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
 
-    // initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
+    initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
@@ -74,104 +74,104 @@ int main(int argc, char* argv[]) {
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
 
-    // // Run exclusivity cut extraction 
-    // // Record the exact global cuts used:
-    // write_global_cuts_config_json("output/jsons");
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 5
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction 
+    // Record the exact global cuts used:
+    write_global_cuts_config_json("output/jsons");
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 5
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // // --------- Global bin-averaged kinematics (CSV update) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-    //     // Make a simple backup before modifying
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //                                    std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-    //     }
+        // Make a simple backup before modifying
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
 
-    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string out_dir = "output/q2_xb_cut_coverage";
+    // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
+        const std::string out_dir = "output/q2_xb_cut_coverage";
 
-    //     if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
-    //         std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
+            std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Raw yields/counts into CSV + plots ----------
-    // {
-    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // --------- Raw yields/counts into CSV + plots ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-    //     // Make a backup
-    //     try {
-    //         std::filesystem::copy_file(csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup
+        try {
+            std::filesystem::copy_file(csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
 
-    //     // update_total_counts_csv() fills:
-    //     //   - DVCS data raw yields
-    //     //   - eppi0 data raw yields
-    //     //   - DVCS generated/reconstructed MC yields
-    //     //   - eppi0 generated/reconstructed MC yields
-    //     //   - eppi0-background-as-DVCS reconstructed MC yields
-    //     if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
-    //         genMcTrees, recMcTrees,
-    //         eppi0GenMcTrees, eppi0RecMcTrees,
-    //         eppi0BkgTrees,
-    //         cuts_json,
-    //         output_root,
-    //         /*max_workers=*/5)) {
-    //       std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-    //       std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // update_total_counts_csv() fills:
+        //   - DVCS data raw yields
+        //   - eppi0 data raw yields
+        //   - DVCS generated/reconstructed MC yields
+        //   - eppi0 generated/reconstructed MC yields
+        //   - eppi0-background-as-DVCS reconstructed MC yields
+        if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
+            genMcTrees, recMcTrees,
+            eppi0GenMcTrees, eppi0RecMcTrees,
+            eppi0BkgTrees,
+            cuts_json,
+            output_root,
+            /*max_workers=*/5)) {
+          std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+          std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Current-dependence correction factors ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // --------- Current-dependence correction factors ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     CurrentDependenceOptions current_opts;
-    //     current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-    //     current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     current_opts.output_dir = "output/dvcs_current_dependence";
-    //     current_opts.override_to_unity = false;
-    //     current_opts.max_workers = 5;
+        CurrentDependenceOptions current_opts;
+        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        current_opts.output_dir = "output/dvcs_current_dependence";
+        current_opts.override_to_unity = false;
+        current_opts.max_workers = 5;
 
-    //     if (!update_current_dependence_factors_csv(csv_main,
-    //                                                dataTrees,
-    //                                                eppi0DataTrees,
-    //                                                currentStudyGenMcTrees,
-    //                                                currentStudyRecMcTrees,
-    //                                                eppi0GenMcTrees,
-    //                                                eppi0RecMcTrees,
-    //                                                current_opts)) {
-    //         std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_current_dependence_factors_csv(csv_main,
+                                                   dataTrees,
+                                                   eppi0DataTrees,
+                                                   currentStudyGenMcTrees,
+                                                   currentStudyRecMcTrees,
+                                                   eppi0GenMcTrees,
+                                                   eppi0RecMcTrees,
+                                                   current_opts)) {
+            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
     {
@@ -506,7 +506,7 @@ int main(int argc, char* argv[]) {
         // Production-safe default:
         //   true  -> write norm = 1.00 everywhere and skip BH-edge study
         //   false -> run the full BH-edge normalization study and write fitted norms
-        norm_opts.override_to_unity = false;
+        norm_opts.override_to_unity = true;
 
         norm_opts.use_all_points_within_edge_window = true;
         norm_opts.require_positive_dedge = true;

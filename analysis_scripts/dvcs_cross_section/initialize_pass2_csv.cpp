@@ -606,10 +606,26 @@ static void add_cross_section_columns_without_normed(std::vector<std::string>& H
     }
 }
 
+static void add_combination_systematic_columns(std::vector<std::string>& H) {
+    H.push_back("normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys");
+
+    H.push_back("normed cross sections, ep->epg, exp, Fa18, unpol, combination sys");
+    H.push_back("normed cross sections, ep->epg, exp, Fa18, pos, combination sys");
+    H.push_back("normed cross sections, ep->epg, exp, Fa18, neg, combination sys");
+
+    H.push_back("normed cross sections, ep->epg, exp, Sp18, unpol, combination sys");
+
+    // Sp19 Inb is not a multi-period combination, but it is the only 10.2 GeV
+    // period and needs an explicit slot for the corresponding combination-style
+    // systematic bookkeeping used by the systematics executable.
+    H.push_back("normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys");
+}
+
 static void add_cross_section_columns(std::vector<std::string>& H) {
     add_cross_section_columns_without_normed(H, "");
     add_norm_columns(H);
     add_cross_section_columns_without_normed(H, "normed ");
+    add_combination_systematic_columns(H);
 }
 
 static void add_bsa_columns(std::vector<std::string>& H) {

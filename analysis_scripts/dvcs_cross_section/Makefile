@@ -33,8 +33,13 @@ NORM_SCENARIO_SRC = norm_scenario_comparison.cpp
 NORM_SCENARIO_OBJ = $(NORM_SCENARIO_SRC:.cpp=.o)
 NORM_SCENARIO_BIN = norm_scenario_comparison
 
+# ---------- main_systematics ----------
+SYSTEMATICS_SRC = main_systematics.cpp
+SYSTEMATICS_OBJ = $(SYSTEMATICS_SRC:.cpp=.o)
+SYSTEMATICS_BIN = main_systematics
+
 # Build all by default
-all: $(DVCS_BIN) $(LEE_BIN) $(NORM_SCENARIO_BIN)
+all: $(DVCS_BIN) $(LEE_BIN) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_BIN)
 
 $(DVCS_BIN): $(DVCS_OBJ)
 >$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
@@ -45,8 +50,11 @@ $(LEE_BIN): $(LEE_OBJ)
 $(NORM_SCENARIO_BIN): $(NORM_SCENARIO_OBJ)
 >$(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
 
+$(SYSTEMATICS_BIN): $(SYSTEMATICS_OBJ)
+>$(CXX) $(SYSTEMATICS_OBJ) -o $@ $(LDFLAGS)
+
 %.o: %.cpp
 >$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
->rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN)
+>rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_OBJ) $(SYSTEMATICS_BIN)
