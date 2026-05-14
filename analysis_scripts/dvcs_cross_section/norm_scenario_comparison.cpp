@@ -10,7 +10,8 @@
 // This program reads all three CSVs at runtime and makes:
 //   - normed cross-section comparison plots with all three data scenarios and
 //     BH/KM15/VGG predictions overlaid;
-//   - BH-only ratio plots, data / BH, for the same three scenarios.
+//   - data / BH ratio plots for the same three scenarios;
+//   - data / KM15 ratio plots for the same three scenarios.
 //
 // It does not modify any CSV. It only reads the existing columns:
 //   normed cross sections, ep->epg, exp, <label>, <helicity>
@@ -20,7 +21,7 @@
 // Place in:
 //   /u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/
 //
-// Compile through the Makefile target added below.
+// Compile through the Makefile target.
 // -----------------------------------------------------------------------------
 
 #include <TCanvas.h>
@@ -33,6 +34,7 @@
 #include <TStyle.h>
 #include <TAxis.h>
 #include <TH1.h>
+#include <TH1D.h>
 #include <TSystem.h>
 #include <TLine.h>
 
@@ -99,11 +101,26 @@ struct TheoryCurves {
     std::vector<double> vgg[3];
 };
 
+enum class ModelKind {
+    BH,
+    KM15
+};
+
 static const std::vector<std::string> kHelNames = {"unpol", "pos", "neg"};
 static const std::vector<std::string> kHelTitles = {"unpolarized", "+ helicity", "- helicity"};
+
+// IMPORTANT:
+// Do not include "10.2 GeV" here. The 10.2 GeV data lives under Sp19 Inb.
+// Sp19 Inb still maps internally to the 10.2 GeV theory JSON.
 static const std::vector<std::string> kDefaultLabels = {
-    "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out",
-    "Fa18", "Sp18", "10.6 GeV", "10.2 GeV"
+    "Fa18 Inb",
+    "Fa18 Out",
+    "Sp19 Inb",
+    "Sp18 Inb",
+    "Sp18 Out",
+    "Fa18",
+    "Sp18",
+    "10.6 GeV"
 };
 
 static std::string trim(const std::string &s) {
@@ -482,18 +499,37 @@ static double interpolate_curve(const std::vector<double> &xs,
 
     auto hi = std::lower_bound(xs.begin(), xs.end(), x);
     if (hi == xs.end()) return ys.back();
+
     const size_t ihi = (size_t)std::distance(xs.begin(), hi);
     if (ihi == 0U) return ys.front();
-    const size_t ilo = ihi - 1U;
 
+    const size_t ilo = ihi - 1U;
     const double x0 = xs[ilo];
     const double x1 = xs[ihi];
     const double y0 = ys[ilo];
     const double y1 = ys[ihi];
+
     if (x1 == x0) return y0;
 
     const double f = (x - x0) / (x1 - x0);
     return y0 + f * (y1 - y0);
+}
+
+static const std::vector<double> &model_curve(const TheoryCurves &tc,
+                                              ModelKind model,
+                                              int ih) {
+    if (model == ModelKind::BH) return tc.bh[ih];
+    return tc.km[ih];
+}
+
+static std::string model_short_name(ModelKind model) {
+    if (model == ModelKind::BH) return "BH";
+    return "KM15";
+}
+
+static std::string model_file_token(ModelKind model) {
+    if (model == ModelKind::BH) return "bh";
+    return "km15";
 }
 
 static TGraphErrors *make_point_graph(const std::vector<Point> &points,
@@ -539,11 +575,12 @@ static TGraph *make_curve_graph(const std::vector<double> &phi,
     return g;
 }
 
-static TGraphErrors *make_bh_ratio_graph(const std::vector<Point> &points,
-                                         const TheoryCurves &tc,
-                                         int ih,
-                                         int color,
-                                         int marker_style) {
+static TGraphErrors *make_model_ratio_graph(const std::vector<Point> &points,
+                                            const TheoryCurves &tc,
+                                            int ih,
+                                            ModelKind model,
+                                            int color,
+                                            int marker_style) {
     TGraphErrors *g = new TGraphErrors();
     g->SetMarkerStyle(marker_style);
     g->SetMarkerSize(0.8);
@@ -551,16 +588,18 @@ static TGraphErrors *make_bh_ratio_graph(const std::vector<Point> &points,
     g->SetLineColor(color);
     g->SetLineWidth(1);
 
-    if (tc.phi_deg.size() != tc.bh[ih].size()) return g;
+    const std::vector<double> &curve = model_curve(tc, model, ih);
+    if (tc.phi_deg.size() != curve.size()) return g;
 
     int ip = 0;
     for (const auto &p : points) {
         if (!good_positive(p.xs)) continue;
-        const double model = interpolate_curve(tc.phi_deg, tc.bh[ih], p.phi);
-        if (!good_positive(model)) continue;
 
-        g->SetPoint(ip, p.phi, p.xs / model);
-        g->SetPointError(ip, 0.0, std::max(0.0, p.err / model));
+        const double model_value = interpolate_curve(tc.phi_deg, curve, p.phi);
+        if (!good_positive(model_value)) continue;
+
+        g->SetPoint(ip, p.phi, p.xs / model_value);
+        g->SetPointError(ip, 0.0, std::max(0.0, p.err / model_value));
         ++ip;
     }
 
@@ -571,7 +610,12 @@ static void draw_empty_axes(double ymin,
                             double ymax,
                             const std::string &ytitle,
                             bool logy) {
-    TH1D *frame = new TH1D("frame", "", 1, 0.0, 360.0);
+    static int iframe = 0;
+    ++iframe;
+
+    const std::string frame_name = "frame_" + std::to_string(iframe);
+
+    TH1D *frame = new TH1D(frame_name.c_str(), "", 1, 0.0, 360.0);
     frame->SetDirectory(nullptr);
     frame->SetMinimum(ymin);
     frame->SetMaximum(ymax);
@@ -624,7 +668,13 @@ static std::pair<double, double> cross_section_yrange(const std::vector<const Bi
 
     for (const TheoryCurves *tc : theories) {
         if (!tc) continue;
-        const std::vector<const std::vector<double>*> curves = {&tc->bh[ih], &tc->km[ih], &tc->vgg[ih]};
+
+        const std::vector<const std::vector<double>*> curves = {
+            &tc->bh[ih],
+            &tc->km[ih],
+            &tc->vgg[ih]
+        };
+
         for (const auto *curve : curves) {
             for (double y : *curve) {
                 if (!good_positive(y)) continue;
@@ -634,12 +684,16 @@ static std::pair<double, double> cross_section_yrange(const std::vector<const Bi
         }
     }
 
-    if (!good_positive(ymax) || ymin == std::numeric_limits<double>::max()) return {1e-4, 1.0};
+    if (!good_positive(ymax) || ymin == std::numeric_limits<double>::max()) {
+        return {1e-4, 1.0};
+    }
 
     ymin *= 0.50;
     ymax *= 2.00;
+
     if (!good_positive(ymin)) ymin = 1e-4;
     if (ymax <= ymin) ymax = ymin * 10.0;
+
     return {ymin, ymax};
 }
 
@@ -674,6 +728,7 @@ static void make_cross_section_canvas(const std::string &label,
     pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
     pTop->cd();
+
     TLatex head;
     head.SetNDC();
     head.SetTextAlign(22);
@@ -707,9 +762,11 @@ static void make_cross_section_canvas(const std::string &label,
     dummy_bh.SetLineColor(kGreen + 2);
     dummy_bh.SetLineStyle(2);
     dummy_bh.SetLineWidth(2);
+
     dummy_km.SetLineColor(kMagenta + 1);
     dummy_km.SetLineStyle(1);
     dummy_km.SetLineWidth(2);
+
     dummy_vgg.SetLineColor(kOrange + 7);
     dummy_vgg.SetLineStyle(1);
     dummy_vgg.SetLineWidth(2);
@@ -752,11 +809,13 @@ static void make_cross_section_canvas(const std::string &label,
 
             for (const auto &csv : csvs) {
                 const BinData *bd = nullptr;
+
                 auto itx = csv.xb_groups.find(xb);
                 if (itx != csv.xb_groups.end()) {
                     auto itb = itx->second.bins.find(key);
                     if (itb != itx->second.bins.end()) bd = &(itb->second);
                 }
+
                 bin_ptrs.push_back(bd);
 
                 if (bd && bd->have_theory_row) {
@@ -769,15 +828,21 @@ static void make_cross_section_canvas(const std::string &label,
             }
 
             const auto yr = cross_section_yrange(bin_ptrs, tc_ptrs, ih);
-            draw_empty_axes(yr.first, yr.second,
-                            "d^{4}#sigma_{norm} / (dx_{B} dQ^{2} d|t| d#phi)",
-                            true);
+
+            draw_empty_axes(
+                yr.first,
+                yr.second,
+                "d^{4}#sigma_{norm} / (dx_{B} dQ^{2} d|t| d#phi)",
+                true
+            );
+
             draw_bin_title(q2, tt);
 
             if (first_tc) {
                 TGraph *gbh = make_curve_graph(first_tc->phi_deg, first_tc->bh[ih], kGreen + 2, 2, 2);
                 TGraph *gkm = make_curve_graph(first_tc->phi_deg, first_tc->km[ih], kMagenta + 1, 1, 2);
                 TGraph *gvgg = make_curve_graph(first_tc->phi_deg, first_tc->vgg[ih], kOrange + 7, 1, 2);
+
                 gbh->Draw("L SAME");
                 gkm->Draw("L SAME");
                 gvgg->Draw("L SAME");
@@ -785,28 +850,44 @@ static void make_cross_section_canvas(const std::string &label,
 
             for (int is = 0; is < 3; ++is) {
                 if (!bin_ptrs[(size_t)is]) continue;
-                TGraphErrors *gp = make_point_graph(bin_ptrs[(size_t)is]->points[ih],
-                                                    scenario_colors[is],
-                                                    scenario_markers[is]);
+
+                TGraphErrors *gp = make_point_graph(
+                    bin_ptrs[(size_t)is]->points[ih],
+                    scenario_colors[is],
+                    scenario_markers[is]
+                );
+
                 gp->Draw("PE1 SAME");
             }
         }
     }
 
     ensure_dir(outdir);
-    const fs::path out = outdir / ("norm_scenario_compare_" + kHelNames[(size_t)ih] + "_" +
-                                  canonical_dir(label) + "_xB_" + std::to_string(xb_index) + ".png");
+
+    const fs::path out =
+        outdir /
+        (
+            "norm_scenario_compare_" +
+            kHelNames[(size_t)ih] +
+            "_" +
+            canonical_dir(label) +
+            "_xB_" +
+            std::to_string(xb_index) +
+            ".png"
+        );
+
     c->SaveAs(out.string().c_str());
     delete c;
 }
 
-static void make_bh_ratio_canvas(const std::string &label,
-                                 const Range &xb,
-                                 int xb_index,
-                                 int ih,
-                                 const std::vector<CsvData> &csvs,
-                                 const std::map<size_t, TheoryCurves> &theory,
-                                 const fs::path &outdir) {
+static void make_model_ratio_canvas(const std::string &label,
+                                    const Range &xb,
+                                    int xb_index,
+                                    int ih,
+                                    ModelKind model,
+                                    const std::vector<CsvData> &csvs,
+                                    const std::map<size_t, TheoryCurves> &theory,
+                                    const fs::path &outdir) {
     const std::vector<Range> q2_ranges = collect_q2_ranges(csvs, xb);
     const std::vector<Range> t_ranges = collect_t_ranges(csvs, xb);
     if (q2_ranges.empty() || t_ranges.empty()) return;
@@ -816,7 +897,10 @@ static void make_bh_ratio_canvas(const std::string &label,
     const int W = 300 * ncols + 160;
     const int H = 260 * nrows + 240;
 
-    TCanvas *c = new TCanvas("c_norm_scenario_bh_ratio", "c_norm_scenario_bh_ratio", W, H);
+    const std::string model_name = model_short_name(model);
+    const std::string canvas_name = "c_norm_scenario_" + model_file_token(model) + "_ratio";
+
+    TCanvas *c = new TCanvas(canvas_name.c_str(), canvas_name.c_str(), W, H);
 
     TPad *pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
     pTop->SetFillStyle(0);
@@ -831,6 +915,7 @@ static void make_bh_ratio_canvas(const std::string &label,
     pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
     pTop->cd();
+
     TLatex head;
     head.SetNDC();
     head.SetTextAlign(22);
@@ -838,7 +923,7 @@ static void make_bh_ratio_canvas(const std::string &label,
     head.SetTextSize(0.060);
 
     std::ostringstream title;
-    title << "Normed cross-section / BH ratios, ep #rightarrow ep#gamma   "
+    title << "Normed cross-section / " << model_name << " ratios, ep #rightarrow ep#gamma   "
           << label << "   x_{B} in (" << std::fixed << std::setprecision(3)
           << xb.first << ", " << xb.second << ")   (" << kHelTitles[(size_t)ih] << ")";
     head.DrawLatex(0.5, 0.86, title.str().c_str());
@@ -850,6 +935,7 @@ static void make_bh_ratio_canvas(const std::string &label,
     TGraphErrors dummy_s1;
     TGraphErrors dummy_s2;
     TGraphErrors *dummy_s[3] = {&dummy_s0, &dummy_s1, &dummy_s2};
+
     for (int is = 0; is < 3; ++is) {
         dummy_s[is]->SetMarkerStyle(scenario_markers[is]);
         dummy_s[is]->SetMarkerColor(scenario_colors[is]);
@@ -886,8 +972,20 @@ static void make_bh_ratio_canvas(const std::string &label,
             gPad->SetRightMargin(0.07);
             gPad->SetLogy(false);
 
-            draw_empty_axes(0.0, 2.0, "data / BH", false);
+            draw_empty_axes(
+                0.0,
+                3.0,
+                "data / " + model_name,
+                false
+            );
+
             draw_bin_title(q2, tt);
+
+            TLine line_zero(0.0, 0.0, 360.0, 0.0);
+            line_zero.SetLineColor(kBlack);
+            line_zero.SetLineStyle(2);
+            line_zero.SetLineWidth(1);
+            line_zero.Draw("SAME");
 
             TLine line_one(0.0, 1.0, 360.0, 1.0);
             line_one.SetLineColor(kBlack);
@@ -897,6 +995,7 @@ static void make_bh_ratio_canvas(const std::string &label,
 
             for (int is = 0; is < 3; ++is) {
                 const BinData *bd = nullptr;
+
                 auto itx = csvs[(size_t)is].xb_groups.find(xb);
                 if (itx != csvs[(size_t)is].xb_groups.end()) {
                     auto itb = itx->second.bins.find(key);
@@ -908,17 +1007,36 @@ static void make_bh_ratio_canvas(const std::string &label,
                 auto itt = theory.find(bd->theory_row);
                 if (itt == theory.end()) continue;
 
-                TGraphErrors *gr = make_bh_ratio_graph(bd->points[ih], itt->second, ih,
-                                                       scenario_colors[is],
-                                                       scenario_markers[is]);
+                TGraphErrors *gr = make_model_ratio_graph(
+                    bd->points[ih],
+                    itt->second,
+                    ih,
+                    model,
+                    scenario_colors[is],
+                    scenario_markers[is]
+                );
+
                 gr->Draw("PE1 SAME");
             }
         }
     }
 
     ensure_dir(outdir);
-    const fs::path out = outdir / ("norm_scenario_bh_ratio_" + kHelNames[(size_t)ih] + "_" +
-                                  canonical_dir(label) + "_xB_" + std::to_string(xb_index) + ".png");
+
+    const fs::path out =
+        outdir /
+        (
+            "norm_scenario_" +
+            model_file_token(model) +
+            "_ratio_" +
+            kHelNames[(size_t)ih] +
+            "_" +
+            canonical_dir(label) +
+            "_xB_" +
+            std::to_string(xb_index) +
+            ".png"
+        );
+
     c->SaveAs(out.string().c_str());
     delete c;
 }
@@ -929,6 +1047,7 @@ static std::vector<std::string> parse_label_list(int argc,
     if (argc <= first_label_arg) return kDefaultLabels;
 
     std::vector<std::string> labels;
+
     for (int i = first_label_arg; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--label" || arg == "--labels") continue;
@@ -936,9 +1055,17 @@ static std::vector<std::string> parse_label_list(int argc,
         size_t start = 0;
         while (start <= arg.size()) {
             const size_t comma = arg.find(',', start);
-            const std::string token = trim(arg.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+
+            const std::string token = trim(
+                arg.substr(
+                    start,
+                    comma == std::string::npos ? std::string::npos : comma - start
+                )
+            );
+
             if (!token.empty()) labels.push_back(token);
             if (comma == std::string::npos) break;
+
             start = comma + 1U;
         }
     }
@@ -979,8 +1106,11 @@ int main(int argc, char **argv) {
         const std::string csv_eppi0 = argv[2];
         const std::string csv_bh = argv[3];
 
-        const std::string theory_root = (argc >= 5) ? argv[4] : "output/jsons/cross_sections";
-        const std::string out_root = (argc >= 6) ? argv[5] : "output/norm_scenario_comparison";
+        const std::string theory_root =
+            (argc >= 5) ? argv[4] : "output/jsons/cross_sections";
+
+        const std::string out_root =
+            (argc >= 6) ? argv[5] : "output/norm_scenario_comparison";
 
         const std::vector<std::string> labels = parse_label_list(argc, argv, 6);
 
@@ -1000,7 +1130,10 @@ int main(int argc, char **argv) {
 
             std::vector<bool> available(3, false);
             for (int ih = 0; ih < 3; ++ih) {
-                available[(size_t)ih] = avail0[(size_t)ih] || avail1[(size_t)ih] || avail2[(size_t)ih];
+                available[(size_t)ih] =
+                    avail0[(size_t)ih] ||
+                    avail1[(size_t)ih] ||
+                    avail2[(size_t)ih];
             }
 
             if (!available[0] && !available[1] && !available[2]) {
@@ -1009,7 +1142,9 @@ int main(int argc, char **argv) {
                 continue;
             }
 
-            const std::map<size_t, TheoryCurves> theory = load_theory_for_label(label, theory_root);
+            const std::map<size_t, TheoryCurves> theory =
+                load_theory_for_label(label, theory_root);
+
             if (theory.empty()) {
                 std::cout << "[norm_scenario_comparison]   no theory loaded for " << label
                           << "; plots will still be attempted but overlays/ratios may be empty.\n";
@@ -1019,11 +1154,42 @@ int main(int argc, char **argv) {
             ensure_dir(outdir);
 
             const std::vector<Range> xb_ranges = collect_xb_ranges(csvs);
+
             for (size_t ixb = 0; ixb < xb_ranges.size(); ++ixb) {
                 for (int ih = 0; ih < 3; ++ih) {
                     if (!available[(size_t)ih]) continue;
-                    make_cross_section_canvas(label, xb_ranges[ixb], (int)ixb, ih, csvs, theory, outdir);
-                    make_bh_ratio_canvas(label, xb_ranges[ixb], (int)ixb, ih, csvs, theory, outdir);
+
+                    make_cross_section_canvas(
+                        label,
+                        xb_ranges[ixb],
+                        (int)ixb,
+                        ih,
+                        csvs,
+                        theory,
+                        outdir
+                    );
+
+                    make_model_ratio_canvas(
+                        label,
+                        xb_ranges[ixb],
+                        (int)ixb,
+                        ih,
+                        ModelKind::BH,
+                        csvs,
+                        theory,
+                        outdir
+                    );
+
+                    make_model_ratio_canvas(
+                        label,
+                        xb_ranges[ixb],
+                        (int)ixb,
+                        ih,
+                        ModelKind::KM15,
+                        csvs,
+                        theory,
+                        outdir
+                    );
                 }
             }
 
