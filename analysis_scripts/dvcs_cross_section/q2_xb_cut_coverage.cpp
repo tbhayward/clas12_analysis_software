@@ -17,6 +17,7 @@
 #include <TROOT.h>
 #include <TSystem.h>
 #include <TDataType.h>
+#include <TVirtualPad.h>
 
 #include <algorithm>
 #include <cmath>
@@ -508,15 +509,22 @@ static bool passes_global_for_topology(
 struct PeriodInput {
     std::string tree_key;
     std::string period_label;
+    std::string display_label;
     bool is_inbending = true;
 };
 
 struct PointSet {
-    std::vector<double> inb_x;
-    std::vector<double> inb_q2;
+    std::vector<double> x;
+    std::vector<double> q2;
+    bool is_inbending = true;
+    std::string display_label;
+};
 
-    std::vector<double> out_x;
-    std::vector<double> out_q2;
+struct DrawnObjects {
+    std::vector<TH2D*> frames;
+    std::vector<TGraph*> graphs;
+    std::vector<TLegend*> legends;
+    std::vector<TLine*> lines;
 };
 
 using CutLookup = std::map<std::string, std::map<Topology, CutDict>>;
@@ -604,21 +612,22 @@ static TTree* get_required_tree(
     return it->second;
 }
 
-static void collect_points_for_period(
+static PointSet collect_points_for_period(
     TTree* tree,
-    const std::string& tree_key,
-    const std::string& period_label,
-    bool is_inbending,
-    const CutLookup& cuts,
-    PointSet& points
+    const PeriodInput& period,
+    const CutLookup& cuts
 ) {
-    const auto period_cut_it = cuts.find(period_label);
+    const auto period_cut_it = cuts.find(period.period_label);
     if (period_cut_it == cuts.end()) {
-        throw std::runtime_error("[q2_xb_cut_coverage] FATAL: No cut set found for period label: " + period_label);
+        throw std::runtime_error("[q2_xb_cut_coverage] FATAL: No cut set found for period label: " + period.period_label);
     }
 
+    PointSet points;
+    points.is_inbending = period.is_inbending;
+    points.display_label = period.display_label;
+
     BranchBinder b;
-    b.bind(tree, tree_key);
+    b.bind(tree, period.tree_key);
 
     const Long64_t nentries = tree->GetEntries();
 
@@ -639,10 +648,10 @@ static void collect_points_for_period(
 
         const auto topo_cut_it = period_cut_it->second.find(topo);
         if (topo_cut_it == period_cut_it->second.end()) {
-            throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Missing topology cuts for period label: " + period_label);
+            throw std::runtime_error("[q2_xb_cut_coverage] FATAL: Missing topology cuts for period label: " + period.period_label);
         }
 
-        if (!passes_global_for_topology(b, topo, period_label)) {
+        if (!passes_global_for_topology(b, topo, period.period_label)) {
             continue;
         }
 
@@ -660,20 +669,17 @@ static void collect_points_for_period(
 
         ++in_range;
 
-        if (is_inbending) {
-            points.inb_x.push_back(b.x);
-            points.inb_q2.push_back(b.Q2);
-        } else {
-            points.out_x.push_back(b.x);
-            points.out_q2.push_back(b.Q2);
-        }
+        points.x.push_back(b.x);
+        points.q2.push_back(b.Q2);
     }
 
-    std::cout << "[q2_xb_cut_coverage] " << tree_key
+    std::cout << "[q2_xb_cut_coverage] " << period.tree_key
               << " entries=" << nentries
               << " accepted_after_global_and_3sigma=" << accepted
               << " plotted_in_range=" << in_range
               << "\n";
+
+    return points;
 }
 
 static TGraph* make_graph(
@@ -688,14 +694,14 @@ static TGraph* make_graph(
     }
 
     graph->SetMarkerStyle(20);
-    graph->SetMarkerSize(0.18);
+    graph->SetMarkerSize(0.16);
     graph->SetMarkerColor(color);
     graph->SetLineColor(color);
 
     return graph;
 }
 
-static void draw_grid_lines(const BinGrid& grid) {
+static void draw_grid_lines(const BinGrid& grid, DrawnObjects& drawn) {
     for (double xb : grid.xb_edges) {
         if (xb < kXBMin || xb > kXBMax) {
             continue;
@@ -706,6 +712,8 @@ static void draw_grid_lines(const BinGrid& grid) {
         line->SetLineStyle(2);
         line->SetLineWidth(1);
         line->Draw("same");
+
+        drawn.lines.push_back(line);
     }
 
     for (double q2 : grid.q2_edges) {
@@ -718,6 +726,8 @@ static void draw_grid_lines(const BinGrid& grid) {
         line->SetLineStyle(2);
         line->SetLineWidth(1);
         line->Draw("same");
+
+        drawn.lines.push_back(line);
     }
 }
 
@@ -738,54 +748,81 @@ static TH2D* make_frame(const std::string& name, const std::string& title) {
     frame->GetYaxis()->SetTitle("Q^{2} (GeV^{2})");
     frame->GetXaxis()->CenterTitle(true);
     frame->GetYaxis()->CenterTitle(true);
-    frame->GetXaxis()->SetTitleSize(0.055);
-    frame->GetYaxis()->SetTitleSize(0.055);
-    frame->GetXaxis()->SetLabelSize(0.045);
-    frame->GetYaxis()->SetLabelSize(0.045);
-    frame->GetXaxis()->SetTitleOffset(0.95);
-    frame->GetYaxis()->SetTitleOffset(1.20);
+    frame->GetXaxis()->SetTitleSize(0.060);
+    frame->GetYaxis()->SetTitleSize(0.060);
+    frame->GetXaxis()->SetLabelSize(0.050);
+    frame->GetYaxis()->SetLabelSize(0.050);
+    frame->GetXaxis()->SetTitleOffset(0.90);
+    frame->GetYaxis()->SetTitleOffset(1.05);
+    frame->GetXaxis()->SetNdivisions(505);
+    frame->GetYaxis()->SetNdivisions(505);
 
     return frame;
 }
 
 static void draw_panel(
     const std::string& frame_name,
-    const std::string& title,
     const PointSet& points,
     const BinGrid& grid,
-    bool draw_outbending
+    DrawnObjects& drawn
 ) {
+    const std::string title = points.display_label + " DATA after global and 3#sigma DVCS cuts";
+
     TH2D* frame = make_frame(frame_name, title);
     frame->Draw("axis");
+    drawn.frames.push_back(frame);
 
-    draw_grid_lines(grid);
+    draw_grid_lines(grid, drawn);
 
-    TGraph* g_inb = make_graph(points.inb_x, points.inb_q2, kRed + 1);
-    TGraph* g_out = make_graph(points.out_x, points.out_q2, kBlue + 1);
+    const int color = points.is_inbending ? (kRed + 1) : (kBlue + 1);
+    TGraph* graph = make_graph(points.x, points.q2, color);
 
-    if (g_inb->GetN() > 0) {
-        g_inb->Draw("P same");
+    if (graph->GetN() > 0) {
+        graph->Draw("P same");
     }
 
-    if (draw_outbending && g_out->GetN() > 0) {
-        g_out->Draw("P same");
-    }
+    drawn.graphs.push_back(graph);
 
     frame->Draw("axis same");
 
-    auto* legend = new TLegend(0.16, 0.78, 0.52, 0.91);
+    auto* legend = new TLegend(0.16, 0.80, 0.58, 0.91);
     legend->SetFillColor(kWhite);
     legend->SetFillStyle(1001);
     legend->SetBorderSize(1);
-    legend->SetTextSize(0.040);
+    legend->SetTextSize(0.050);
 
-    legend->AddEntry(g_inb, "Inbending DATA", "p");
-
-    if (draw_outbending) {
-        legend->AddEntry(g_out, "Outbending DATA", "p");
+    if (points.is_inbending) {
+        legend->AddEntry(graph, "Inbending DATA", "p");
+    } else {
+        legend->AddEntry(graph, "Outbending DATA", "p");
     }
 
     legend->Draw("same");
+    drawn.legends.push_back(legend);
+}
+
+static void draw_empty_panel() {
+    gPad->SetFillColor(kWhite);
+    gPad->SetFrameFillColor(kWhite);
+    gPad->SetLeftMargin(0.13);
+    gPad->SetRightMargin(0.04);
+    gPad->SetTopMargin(0.10);
+    gPad->SetBottomMargin(0.13);
+
+    auto* latex = new TLatex();
+    latex->SetNDC(true);
+    latex->SetTextAlign(22);
+    latex->SetTextSize(0.060);
+    latex->DrawLatex(0.50, 0.50, "No outbending Sp19 period");
+}
+
+static void setup_pad_margins() {
+    gPad->SetLeftMargin(0.13);
+    gPad->SetRightMargin(0.04);
+    gPad->SetTopMargin(0.12);
+    gPad->SetBottomMargin(0.14);
+    gPad->SetGrid(0, 0);
+    gPad->SetTicks(1, 1);
 }
 
 } // namespace
@@ -799,6 +836,10 @@ bool plot_q2_xb_cut_coverage(
     try {
         gROOT->SetBatch(kTRUE);
         gStyle->SetOptStat(0);
+        gStyle->SetTitleFontSize(0.055);
+        gStyle->SetTitleAlign(23);
+        gStyle->SetTitleX(0.50);
+        gStyle->SetTitleY(0.98);
 
         if (!output_dir.empty()) {
             gSystem->mkdir(output_dir.c_str(), true);
@@ -807,97 +848,92 @@ bool plot_q2_xb_cut_coverage(
         const BinGrid grid = load_bin_grid_from_csv(pass2_csv_path);
         const CutLookup cuts = load_data_cuts(combined_cuts_json_path);
 
-        PointSet fa_sp_18_points;
-        PointSet sp19_points;
-
-        const std::vector<PeriodInput> left_periods = {
-            {"DVCS_Fa18_inb",  "fa18_inb",  true},
-            {"DVCS_Sp18_inb",  "sp18_inb",  true},
-            {"DVCS_Fa18_out",  "fa18_out",  false},
-            {"DVCS_Sp18_out",  "sp18_out",  false}
+        const std::vector<PeriodInput> periods = {
+            {"DVCS_Fa18_inb", "fa18_inb", "Fa18 Inb", true},
+            {"DVCS_Fa18_out", "fa18_out", "Fa18 Out", false},
+            {"DVCS_Sp18_inb", "sp18_inb", "Sp18 Inb", true},
+            {"DVCS_Sp18_out", "sp18_out", "Sp18 Out", false},
+            {"DVCS_Sp19_inb", "sp19_inb", "Sp19 Inb", true}
         };
 
-        const std::vector<PeriodInput> right_periods = {
-            {"DVCS_Sp19_inb",  "sp19_inb",  true}
-        };
+        std::vector<PointSet> all_points;
+        all_points.reserve(periods.size());
 
-        for (const PeriodInput& period : left_periods) {
+        for (const PeriodInput& period : periods) {
             TTree* tree = get_required_tree(dvcsDataTrees, period.tree_key);
-
-            collect_points_for_period(
-                tree,
-                period.tree_key,
-                period.period_label,
-                period.is_inbending,
-                cuts,
-                fa_sp_18_points
-            );
+            all_points.push_back(collect_points_for_period(tree, period, cuts));
         }
 
-        for (const PeriodInput& period : right_periods) {
-            TTree* tree = get_required_tree(dvcsDataTrees, period.tree_key);
-
-            collect_points_for_period(
-                tree,
-                period.tree_key,
-                period.period_label,
-                period.is_inbending,
-                cuts,
-                sp19_points
-            );
-        }
+        DrawnObjects drawn;
 
         auto* canvas = new TCanvas(
             "c_q2_xb_cut_coverage",
             "Q2 vs xB coverage after global and 3sigma cuts",
-            1600,
-            750
+            1800,
+            1200
         );
 
-        canvas->Divide(2, 1);
+        canvas->Divide(2, 3);
 
-        canvas->cd(1);
-        gPad->SetLeftMargin(0.13);
-        gPad->SetRightMargin(0.04);
-        gPad->SetTopMargin(0.10);
-        gPad->SetBottomMargin(0.13);
-        gPad->SetGrid(0, 0);
+        for (int i = 0; i < static_cast<int>(all_points.size()); ++i) {
+            canvas->cd(i + 1);
+            setup_pad_margins();
 
-        draw_panel(
-            "h_q2_xb_frame_fa18_sp18",
-            "Fa18 + Sp18 DATA after global and 3#sigma DVCS cuts",
-            fa_sp_18_points,
-            grid,
-            true
-        );
+            std::ostringstream frame_name;
+            frame_name << "h_q2_xb_frame_" << i;
 
-        canvas->cd(2);
-        gPad->SetLeftMargin(0.13);
-        gPad->SetRightMargin(0.04);
-        gPad->SetTopMargin(0.10);
-        gPad->SetBottomMargin(0.13);
-        gPad->SetGrid(0, 0);
+            draw_panel(
+                frame_name.str(),
+                all_points[static_cast<size_t>(i)],
+                grid,
+                drawn
+            );
 
-        draw_panel(
-            "h_q2_xb_frame_sp19",
-            "Sp19 Inb DATA after global and 3#sigma DVCS cuts",
-            sp19_points,
-            grid,
-            false
-        );
+            gPad->Modified();
+            gPad->Update();
+        }
+
+        canvas->cd(6);
+        draw_empty_panel();
+        gPad->Modified();
+        gPad->Update();
 
         canvas->cd();
+        canvas->Modified();
+        canvas->Update();
+        gSystem->ProcessEvents();
 
-        const std::string out_png = output_dir + "/q2_xb_cut_coverage.png";
-        const std::string out_pdf = output_dir + "/q2_xb_cut_coverage.pdf";
+        const std::string out_png = output_dir + "/q2_xb_cut_coverage_by_period.png";
+        const std::string out_pdf = output_dir + "/q2_xb_cut_coverage_by_period.pdf";
 
-        canvas->SaveAs(out_png.c_str());
         canvas->SaveAs(out_pdf.c_str());
 
-        std::cout << "[q2_xb_cut_coverage] Wrote " << out_png << "\n";
+        canvas->Modified();
+        canvas->Update();
+        gSystem->ProcessEvents();
+
+        canvas->SaveAs(out_png.c_str());
+
         std::cout << "[q2_xb_cut_coverage] Wrote " << out_pdf << "\n";
+        std::cout << "[q2_xb_cut_coverage] Wrote " << out_png << "\n";
 
         delete canvas;
+
+        for (TH2D* obj : drawn.frames) {
+            delete obj;
+        }
+
+        for (TGraph* obj : drawn.graphs) {
+            delete obj;
+        }
+
+        for (TLegend* obj : drawn.legends) {
+            delete obj;
+        }
+
+        for (TLine* obj : drawn.lines) {
+            delete obj;
+        }
 
         return true;
     } catch (const std::exception& e) {
