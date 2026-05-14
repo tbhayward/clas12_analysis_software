@@ -744,10 +744,7 @@ static void draw_chi2_canvas(const std::string& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const std::string png = out_dir + "/" + c.file_tag + "_reduced_chi2.png";
     const std::string pdf = out_dir + "/" + c.file_tag + "_reduced_chi2.pdf";
-
-    canvas.SaveAs(png.c_str());
     canvas.SaveAs(pdf.c_str());
 }
 
@@ -877,10 +874,7 @@ static void draw_ratio_canvas(const std::string& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const std::string png = out_dir + "/" + c.file_tag + "_period_ratios.png";
     const std::string pdf = out_dir + "/" + c.file_tag + "_period_ratios.pdf";
-
-    canvas.SaveAs(png.c_str());
     canvas.SaveAs(pdf.c_str());
 }
 
