@@ -1,7 +1,7 @@
 // cross_section_cross_check.cpp
 // -----------------------------------------------------------------------------
 // Cross-check of experimental cross sections (Hayward pass-2 vs Lee pass-1)
-// using *only* CSVs.
+// using CSVs plus the existing theory JSON used by norm_cross_sections.cpp.
 // - Lee CSV (pass-1): e.g. imports/all_bin_v3.csv
 // - Hayward CSV (pass-2): e.g. output/csvs/dvcs_pass2_analysis.csv
 //
@@ -21,6 +21,9 @@
 // We organize the comparison by xB, Q^{2}, and -t. For each (xB, Q^{2}, -t)
 // cell, we take all rows matching those ranges and use their provided phiavg
 // values as the x-coordinates. We do NOT rebin phi.
+//
+// The counts canvases also overlay the BH theory prediction from:
+//   theory_json_root/10.6_GeV/xs_phi_all.json
 //
 // Output filenames (per xB index ix):
 //   cross_section_counts_xB_<ix>.png
@@ -69,6 +72,8 @@
 #include <TGaxis.h>
 #include <TString.h>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -88,6 +93,7 @@
 #include <cstdlib>
 
 namespace fs = std::filesystem;
+using json = nlohmann::json;
 
 // ---------- small utilities ----------
 
@@ -110,6 +116,29 @@ static inline std::string slower_xs(std::string s) {
     }
     return s;
 }
+
+static std::string canonical_period_dir_xs(const std::string& label) {
+    if (label == "Fa18 Inb")      return "Fa18_Inb";
+    if (label == "Fa18 Out")      return "Fa18_Out";
+    if (label == "Fa18 Inb Supp") return "Fa18_Inb_Supp";
+    if (label == "Sp18 Inb")      return "Sp18_Inb";
+    if (label == "Sp18 Out")      return "Sp18_Out";
+    if (label == "Sp19 Inb")      return "Sp19_Inb";
+    if (label == "Fa18")          return "Fa18";
+    if (label == "Sp18")          return "Sp18";
+    if (label == "10.6 GeV")      return "10.6_GeV";
+    if (label == "10.2 GeV")      return "10.2_GeV";
+
+    std::string out = label;
+    std::replace(out.begin(), out.end(), ' ', '_');
+    return out;
+}
+
+static std::string theory_energy_label_for_xs(const std::string& label) {
+    if (label == "Sp19 Inb" || label == "10.2 GeV") return "10.2 GeV";
+    return "10.6 GeV";
+}
+
 
 // trim leading/trailing whitespace
 static inline std::string trim_xs(const std::string& s) {
@@ -351,6 +380,80 @@ static LeeCsvCols_xs detect_lee_columns_xs(const std::vector<std::string>& heade
     return cols_lee;
 }
 
+
+// ---------- theory helpers ----------
+
+struct TheoryCurves_xs {
+    std::vector<double> phi_deg;
+    std::vector<double> bh_unpol;
+};
+
+static std::map<size_t, TheoryCurves_xs>
+load_bh_theory_for_label_xs(const std::string& label,
+                            const std::string& theory_root) {
+    std::map<size_t, TheoryCurves_xs> out;
+
+    const std::string energy_label = theory_energy_label_for_xs(label);
+    const fs::path dir  = fs::path(theory_root) / canonical_period_dir_xs(energy_label);
+    const fs::path file = dir / "xs_phi_all.json";
+
+    if (!fs::exists(file)) {
+        warn_xs("No theory JSON for label \"" + label + "\" at " + file.string());
+        return out;
+    }
+
+    std::ifstream ifs(file);
+    if (!ifs) {
+        warn_xs("Cannot open theory JSON for label \"" + label + "\" at " + file.string());
+        return out;
+    }
+
+    json j;
+    try {
+        ifs >> j;
+    } catch (...) {
+        warn_xs("Malformed theory JSON for label \"" + label + "\" at " + file.string());
+        return out;
+    }
+
+    const std::vector<double> phi_deg = j.value("phi_deg", std::vector<double>{});
+    if (phi_deg.empty()) {
+        warn_xs("Theory JSON has empty phi_deg at " + file.string());
+        return out;
+    }
+
+    if (!j.contains("rows") || !j["rows"].is_object()) {
+        warn_xs("Theory JSON has no rows object at " + file.string());
+        return out;
+    }
+
+    for (auto it = j["rows"].begin(); it != j["rows"].end(); ++it) {
+        size_t row_index = 0;
+        try {
+            row_index = (size_t)std::stoul(it.key());
+        } catch (...) {
+            continue;
+        }
+
+        const json& cell = it.value();
+        if (!cell.contains("BH") || !cell["BH"].is_object()) continue;
+
+        TheoryCurves_xs tc;
+        tc.phi_deg  = phi_deg;
+        tc.bh_unpol = cell["BH"].value("unpol", std::vector<double>{});
+
+        if (!tc.phi_deg.empty() && tc.phi_deg.size() == tc.bh_unpol.size()) {
+            out[row_index] = std::move(tc);
+        }
+    }
+    // endfor
+
+    info_xs("Loaded BH theory for label \"" + label + "\" (energy " + energy_label + ") rows=" +
+            std::to_string(out.size()) + " from " + file.string());
+
+    return out;
+}
+
 // ---------- bin / axis structs ----------
 
 struct AxisSets_xs {
@@ -376,6 +479,9 @@ struct BinRow_xs {
 
     double my_xs       = 0.0;  // Hayward (normed) cross section value
     double my_xs_err   = 0.0;  // Hayward (normed) cross section stat error
+
+    size_t theory_row = 0;
+    bool have_theory_row = false;
 };
 
 static AxisSets_xs build_axes_from_rows_xs(const std::vector<BinRow_xs>& rows) {
@@ -423,6 +529,10 @@ struct PerPanel_xs {
     // key = (ix, iQ, it)
     std::map<std::tuple<int,int,int>, PanelData_xs> lee;
     std::map<std::tuple<int,int,int>, PanelData_xs> hayward;
+};
+
+struct TheoryPanelMap_xs {
+    std::map<std::tuple<int,int,int>, TheoryCurves_xs> bh;
 };
 
 static PerPanel_xs map_to_panels_xs(const std::vector<BinRow_xs>& rows,
@@ -496,6 +606,39 @@ static PerPanel_xs map_to_panels_xs(const std::vector<BinRow_xs>& rows,
     for (auto& kv : pp.hayward) sort_panel(kv.second);
 
     return pp;
+}
+
+
+static TheoryPanelMap_xs map_theory_to_panels_xs(const std::vector<BinRow_xs>& rows,
+                                                 const AxisSets_xs& ax,
+                                                 const std::map<size_t, TheoryCurves_xs>& theory) {
+    TheoryPanelMap_xs tp;
+
+    for (const auto& r : rows) {
+        if (!r.have_theory_row) continue;
+
+        auto it_th = theory.find(r.theory_row);
+        if (it_th == theory.end()) continue;
+
+        const auto xb = std::make_pair(r.xBmin, r.xBmax);
+        const int ix = find_index_xs(xb, ax.xB);
+        if (ix < 0) continue;
+
+        const auto& Q2s = ax.Q2_by_ix.at(ix);
+        const auto& Ts  = ax.t_by_ix.at(ix);
+
+        const int iQ = find_index_xs(std::make_pair(r.Q2min, r.Q2max), Q2s);
+        const int it = find_index_xs(std::make_pair(r.tmin,  r.tmax),  Ts);
+        if (iQ < 0 || it < 0) continue;
+
+        const auto key = std::make_tuple(ix, iQ, it);
+        if (tp.bh.find(key) == tp.bh.end()) {
+            tp.bh[key] = it_th->second;
+        }
+    }
+    // endfor
+
+    return tp;
 }
 
 // ---------- plotting helpers ----------
@@ -576,6 +719,26 @@ static TGraphAsymmErrors* graph_asymm_y_xs(const std::vector<double>& X,
     return g;
 }
 
+
+static TGraph* graph_line_xs(const std::vector<double>& X,
+                             const std::vector<double>& Y,
+                             int lineStyle,
+                             int color,
+                             int width) {
+    if (X.empty() || Y.empty()) return nullptr;
+    const int n = (int)std::min(X.size(), Y.size());
+    if (n <= 0) return nullptr;
+
+    TGraph* g = new TGraph(n,
+                           const_cast<double*>(X.data()),
+                           const_cast<double*>(Y.data()));
+    g->SetLineStyle(lineStyle);
+    g->SetLineColor(color);
+    g->SetLineWidth(width);
+    g->Draw("L SAME");
+    return g;
+}
+
 static std::string safe_canvas_name_xs(const std::string& out_png) {
     return fs::path(out_png).filename().string();
 }
@@ -609,6 +772,7 @@ static void draw_one_canvas_xs(const std::string& title,
                                const std::vector<std::pair<double,double>>& Q2s,
                                const std::vector<std::pair<double,double>>& Ts,
                                const std::function<void(int,int,PanelData_xs&,PanelData_xs&)>& fetchBoth,
+                               const std::function<bool(int,int,TheoryCurves_xs&)>& fetchBH,
                                const std::string& out_png,
                                CanvasMode_xs mode,
                                int ix_xb) {
@@ -666,6 +830,16 @@ static void draw_one_canvas_xs(const std::string& title,
                 update_minmax(hayward_tmp, false);
                 // Lee: stat+syst(up)
                 update_minmax(lee_tmp, true);
+
+                TheoryCurves_xs bh_tmp;
+                if (fetchBH(ccol, r, bh_tmp)) {
+                    for (double v : bh_tmp.bh_unpol) {
+                        if (v > global_max_counts) global_max_counts = v;
+                        if (v > 0.0) any_positive_counts = true;
+                    }
+                    // endfor
+                }
+                // endif
             }
             // endfor
         }
@@ -748,19 +922,25 @@ static void draw_one_canvas_xs(const std::string& title,
         TMarker* mH       = new TMarker(0.0, 0.0, 20);
         TMarker* mL_stat  = new TMarker(0.0, 0.0, 24);
         TLine*   lnL_syst = new TLine(0.0, 0.0, 1.0, 0.0);
+        TLine*   lnBH     = new TLine(0.0, 0.0, 1.0, 0.0);
 
         mH->SetMarkerColor(black);
         mL_stat->SetMarkerColor(orange);
         lnL_syst->SetLineColor(orange_syst);
         lnL_syst->SetLineWidth(2);
+        lnBH->SetLineColor(kGreen + 2);
+        lnBH->SetLineStyle(2);
+        lnBH->SetLineWidth(2);
 
         legend_keepalive.push_back(mH);
         legend_keepalive.push_back(mL_stat);
         legend_keepalive.push_back(lnL_syst);
+        legend_keepalive.push_back(lnBH);
 
         legTop->AddEntry(mH,       "Hayward (pass-2), stat",     "p");
         legTop->AddEntry(mL_stat,  "Lee (pass-1), stat",         "p");
         legTop->AddEntry(lnL_syst, "Lee (pass-1), stat + syst",  "l");
+        legTop->AddEntry(lnBH,     "BH theory",                  "l");
     } else if (mode == CANVAS_STATERR) {
         TMarker* mH_stat = new TMarker(0.0, 0.0, 20);
         TMarker* mL_stat = new TMarker(0.0, 0.0, 24);
@@ -846,6 +1026,12 @@ static void draw_one_canvas_xs(const std::string& title,
                               Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
                                    Q2s[ccol].first, Q2s[ccol].second,
                                    Ts[r].first,     Ts[r].second));
+
+                TheoryCurves_xs bh;
+                if (fetchBH(ccol, r, bh)) {
+                    graph_line_xs(bh.phi_deg, bh.bh_unpol, 2, kGreen + 2, 2);
+                }
+                // endif
 
                 // Plot Hayward (stat)
                 graph_pe1_xs(hayward.phi, hayward.val, hayward.err_stat, 20, black);
@@ -1185,6 +1371,8 @@ static void fill_hayward_xs(const std::string& hayward_csv_path,
         if (xv.valid) {
             r.my_xs     = xv.value;
             r.my_xs_err = xv.stat_err;
+            r.theory_row = (size_t)input_rows;
+            r.have_theory_row = true;
         }
         ++matched;
     }
@@ -1198,7 +1386,8 @@ static void fill_hayward_xs(const std::string& hayward_csv_path,
 
 void plot_cross_section_cross_checks(const std::string& lee_csv_path,
                                      const std::string& hayward_csv_path,
-                                     const std::string& output_base_dir) {
+                                     const std::string& output_base_dir,
+                                     const std::string& theory_json_root) {
     fs::create_directories(output_base_dir);
 
     gStyle->SetOptTitle(0);
@@ -1218,9 +1407,12 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
     // 2) Load Hayward CSV (normed cross sections)
     fill_hayward_xs(hayward_csv_path, bin_to_index, rows);
 
-    // 3) Build axis sets and per-panel maps
+    // 3) Load BH theory and build axis sets / per-panel maps
+    const std::map<size_t, TheoryCurves_xs> bh_theory = load_bh_theory_for_label_xs("Fa18", theory_json_root);
+
     AxisSets_xs ax = build_axes_from_rows_xs(rows);
     PerPanel_xs pp = map_to_panels_xs(rows, ax);
+    TheoryPanelMap_xs tp = map_theory_to_panels_xs(rows, ax, bh_theory);
 
     info_xs("Axis xB bins: " + std::to_string(ax.xB.size()));
 
@@ -1246,6 +1438,21 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
         };
     };
 
+
+    auto make_fetchBH = [&](int ix) {
+        return [&, ix](int iQcol, int irow,
+                       TheoryCurves_xs& bh) -> bool {
+            auto key = std::make_tuple(ix, iQcol, irow);
+            auto itB = tp.bh.find(key);
+            if (itB == tp.bh.end()) {
+                bh = TheoryCurves_xs();
+                return false;
+            }
+            bh = itB->second;
+            return true;
+        };
+    };
+
     for (int ix = 0; ix < (int)ax.xB.size(); ++ix) {
         const auto& Q2s = ax.Q2_by_ix[ix];
         const auto& Ts  = ax.t_by_ix[ix];
@@ -1264,6 +1471,7 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
                  xb_lo, xb_hi);
 
         auto fetchBoth = make_fetchBoth(ix);
+        auto fetchBH   = make_fetchBH(ix);
 
         const std::string f_counts =
             (fs::path(output_base_dir) / Form("cross_section_counts_xB_%d.png",  ix)).string();
@@ -1272,9 +1480,9 @@ void plot_cross_section_cross_checks(const std::string& lee_csv_path,
         const std::string f_staterr =
             (fs::path(output_base_dir) / Form("cross_section_staterr_xB_%d.png", ix)).string();
 
-        draw_one_canvas_xs(title_counts,  Q2s, Ts, fetchBoth, f_counts,  CANVAS_COUNTS,  ix);
-        draw_one_canvas_xs(title_ratio,   Q2s, Ts, fetchBoth, f_ratio,   CANVAS_RATIO,   ix);
-        draw_one_canvas_xs(title_staterr, Q2s, Ts, fetchBoth, f_staterr, CANVAS_STATERR, ix);
+        draw_one_canvas_xs(title_counts,  Q2s, Ts, fetchBoth, fetchBH, f_counts,  CANVAS_COUNTS,  ix);
+        draw_one_canvas_xs(title_ratio,   Q2s, Ts, fetchBoth, fetchBH, f_ratio,   CANVAS_RATIO,   ix);
+        draw_one_canvas_xs(title_staterr, Q2s, Ts, fetchBoth, fetchBH, f_staterr, CANVAS_STATERR, ix);
 
         info_xs("Saved: " + f_counts);
         info_xs("Saved: " + f_ratio);
