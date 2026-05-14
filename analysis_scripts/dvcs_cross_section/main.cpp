@@ -104,17 +104,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
-        const std::string out_dir = "output/q2_xb_cut_coverage";
+    // // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    //     const std::string out_dir = "output/q2_xb_cut_coverage";
 
-        if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
-            std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
+    //         std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // --------- Raw yields/counts into CSV + plots ----------
     {
