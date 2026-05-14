@@ -989,7 +989,7 @@ static void make_model_ratio_canvas(const std::string &label,
 
             TLine line_one(0.0, 1.0, 360.0, 1.0);
             line_one.SetLineColor(kBlack);
-            line_one.SetLineStyle(1);
+            line_one.SetLineStyle(2);
             line_one.SetLineWidth(1);
             line_one.Draw("SAME");
 
