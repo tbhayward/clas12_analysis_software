@@ -11,7 +11,7 @@ DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp exclus
            cross_sections.cpp model_predictions.cpp overall_normalization_study.cpp \
            bin_centering_corrections.cpp models_vs_data_plots.cpp propagator_study.cpp \
            norm_cross_sections.cpp pass1_paper_plots.cpp branch_data_mc_comparison.cpp \
-           branch_plot_config.cpp
+           branch_plot_config.cpp q2_xb_cut_coverage.cpp
 
 DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
 DVCS_BIN = dvcs_analysis
@@ -26,7 +26,6 @@ LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp raw_signal_cross_check.cpp \
 LEE_OBJ  = $(LEE_SRC:.cpp=.o)
 LEE_BIN  = cross_check_lee
 
-
 # ---------- norm_scenario_comparison ----------
 NORM_SCENARIO_SRC = norm_scenario_comparison.cpp
 NORM_SCENARIO_OBJ = $(NORM_SCENARIO_SRC:.cpp=.o)
@@ -36,16 +35,16 @@ NORM_SCENARIO_BIN = norm_scenario_comparison
 all: $(DVCS_BIN) $(LEE_BIN) $(NORM_SCENARIO_BIN)
 
 $(DVCS_BIN): $(DVCS_OBJ)
-	$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
+    $(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
 
 $(LEE_BIN): $(LEE_OBJ)
-	$(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
+    $(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
 
 $(NORM_SCENARIO_BIN): $(NORM_SCENARIO_OBJ)
-	$(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
+    $(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+    $(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN)
+    rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN)
