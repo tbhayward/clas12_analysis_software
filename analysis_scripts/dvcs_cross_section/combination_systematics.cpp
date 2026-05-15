@@ -36,7 +36,7 @@ struct TupleValue {
 
 struct PeriodInput {
     std::string period;
-    std::string column;
+    std::vector<std::string> columns;
 };
 
 struct CombinationCase {
@@ -354,64 +354,92 @@ static std::string combination_column(const std::string& label,
     return "normed cross sections, ep->epg, exp, " + label + ", " + helicity + ", combination sys";
 }
 
+static PeriodInput single_input(const std::string& period,
+                                const std::string& column) {
+    PeriodInput input;
+    input.period = period;
+    input.columns.push_back(column);
+    return input;
+}
+
+static PeriodInput grouped_input(const std::string& label,
+                                 const std::vector<std::string>& columns) {
+    PeriodInput input;
+    input.period = label;
+    input.columns = columns;
+    return input;
+}
+
 static std::vector<CombinationCase> combination_cases() {
     return {
         {
             "10.6 GeV unpol",
             combination_column("10.6 GeV", "unpol"),
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "unpol")},
-                {"Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")},
-                {"Sp18 Out", cross_section_column("Sp18 Out", "unpol")}
+                single_input("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                single_input("Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
+                single_input("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
+                single_input("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
             }
         },
         {
             "Fa18 unpol",
             combination_column("Fa18", "unpol"),
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "unpol")}
+                single_input("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                single_input("Fa18 Out", cross_section_column("Fa18 Out", "unpol"))
             }
         },
         {
             "Fa18 pos",
             combination_column("Fa18", "pos"),
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "pos")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "pos")}
+                single_input("Fa18 Inb", cross_section_column("Fa18 Inb", "pos")),
+                single_input("Fa18 Out", cross_section_column("Fa18 Out", "pos"))
             }
         },
         {
             "Fa18 neg",
             combination_column("Fa18", "neg"),
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "neg")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "neg")}
+                single_input("Fa18 Inb", cross_section_column("Fa18 Inb", "neg")),
+                single_input("Fa18 Out", cross_section_column("Fa18 Out", "neg"))
             }
         },
         {
             "Sp18 unpol",
             combination_column("Sp18", "unpol"),
             {
-                {"Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")},
-                {"Sp18 Out", cross_section_column("Sp18 Out", "unpol")}
+                single_input("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
+                single_input("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
             }
         },
         {
             "Fa18 vs Sp18 unpol",
             "",
             {
-                {"Fa18", cross_section_column("Fa18", "unpol")},
-                {"Sp18", cross_section_column("Sp18", "unpol")}
+                single_input("Fa18", cross_section_column("Fa18", "unpol")),
+                single_input("Sp18", cross_section_column("Sp18", "unpol"))
             }
         },
         {
             "Inb vs Out unpol",
             "",
             {
-                {"Inb", cross_section_column("Inb", "unpol")},
-                {"Out", cross_section_column("Out", "unpol")}
+                grouped_input(
+                    "Inb",
+                    {
+                        cross_section_column("Fa18 Inb", "unpol"),
+                        cross_section_column("Sp18 Inb", "unpol")
+                    }
+                ),
+                grouped_input(
+                    "Out",
+                    {
+                        cross_section_column("Fa18 Out", "unpol"),
+                        cross_section_column("Sp18 Out", "unpol")
+                    }
+                )
             }
         }
     };
@@ -433,7 +461,9 @@ static void validate_schema(const CsvTable& table,
         }
 
         for (const auto& input : c.inputs) {
-            required.push_back(input.column);
+            for (const auto& col : input.columns) {
+                required.push_back(col);
+            }
         }
     }
 
@@ -468,6 +498,30 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
     mean_stat = 1.0 / std::sqrt(sum_w);
 
     return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
+}
+
+static TupleValue evaluate_input_for_row(const CsvTable& table,
+                                         const std::vector<std::string>& row,
+                                         const PeriodInput& input) {
+    std::vector<TupleValue> values;
+    values.reserve(input.columns.size());
+
+    for (const auto& col : input.columns) {
+        values.push_back(get_tuple(table, row, col));
+    }
+
+    TupleValue out;
+
+    double mean = 0.0;
+    double mean_stat = 0.0;
+    if (!compute_weighted_mean(values, mean, mean_stat)) {
+        return out;
+    }
+
+    out.ok = true;
+    out.value = mean;
+    out.stat = mean_stat;
+    return out;
 }
 
 static std::string format_double(double value) {
@@ -526,7 +580,7 @@ static CombinationResult evaluate_case(const CsvTable& table,
         values.reserve(c.inputs.size());
 
         for (const auto& input : c.inputs) {
-            values.push_back(get_tuple(table, row, input.column));
+            values.push_back(evaluate_input_for_row(table, row, input));
         }
 
         double mean = 0.0;
