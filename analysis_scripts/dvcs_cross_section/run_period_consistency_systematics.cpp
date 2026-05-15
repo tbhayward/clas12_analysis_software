@@ -48,9 +48,14 @@ struct TupleValue {
     double stat = 0.0;
 };
 
+struct ColumnInput {
+    std::string source_period;
+    std::string column;
+};
+
 struct PeriodInput {
     std::string period;
-    std::string column;
+    std::vector<ColumnInput> columns;
 };
 
 struct ConsistencyCase {
@@ -71,6 +76,12 @@ struct VariableConfig {
     std::string key;
     std::string column_prefix;
     std::string title;
+};
+
+struct PeriodRatioAccumulator {
+    double sum_w = 0.0;
+    double sum_wr = 0.0;
+    int n = 0;
 };
 
 static std::string trim(const std::string& s) {
@@ -331,6 +342,31 @@ static std::string avg_column(const std::string& variable_prefix,
     return variable_prefix + ", " + avg_label;
 }
 
+static ColumnInput column_input(const std::string& source_period,
+                                const std::string& column) {
+    ColumnInput input;
+    input.source_period = source_period;
+    input.column = column;
+    return input;
+}
+
+static PeriodInput single_input(const std::string& label,
+                                const std::string& source_period,
+                                const std::string& column) {
+    PeriodInput input;
+    input.period = label;
+    input.columns.push_back(column_input(source_period, column));
+    return input;
+}
+
+static PeriodInput grouped_input(const std::string& label,
+                                 const std::vector<ColumnInput>& columns) {
+    PeriodInput input;
+    input.period = label;
+    input.columns = columns;
+    return input;
+}
+
 static std::vector<ConsistencyCase> consistency_cases() {
     return {
         {
@@ -339,10 +375,10 @@ static std::vector<ConsistencyCase> consistency_cases() {
             "10.6 GeV",
             "unpol",
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "unpol")},
-                {"Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")},
-                {"Sp18 Out", cross_section_column("Sp18 Out", "unpol")}
+                single_input("Fa18 Inb", "Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                single_input("Fa18 Out", "Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
+                single_input("Sp18 Inb", "Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
+                single_input("Sp18 Out", "Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
             }
         },
         {
@@ -351,8 +387,8 @@ static std::vector<ConsistencyCase> consistency_cases() {
             "Fa18",
             "unpol",
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "unpol")}
+                single_input("Fa18 Inb", "Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                single_input("Fa18 Out", "Fa18 Out", cross_section_column("Fa18 Out", "unpol"))
             }
         },
         {
@@ -361,8 +397,8 @@ static std::vector<ConsistencyCase> consistency_cases() {
             "Fa18",
             "pos",
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "pos")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "pos")}
+                single_input("Fa18 Inb", "Fa18 Inb", cross_section_column("Fa18 Inb", "pos")),
+                single_input("Fa18 Out", "Fa18 Out", cross_section_column("Fa18 Out", "pos"))
             }
         },
         {
@@ -371,8 +407,8 @@ static std::vector<ConsistencyCase> consistency_cases() {
             "Fa18",
             "neg",
             {
-                {"Fa18 Inb", cross_section_column("Fa18 Inb", "neg")},
-                {"Fa18 Out", cross_section_column("Fa18 Out", "neg")}
+                single_input("Fa18 Inb", "Fa18 Inb", cross_section_column("Fa18 Inb", "neg")),
+                single_input("Fa18 Out", "Fa18 Out", cross_section_column("Fa18 Out", "neg"))
             }
         },
         {
@@ -381,8 +417,8 @@ static std::vector<ConsistencyCase> consistency_cases() {
             "Sp18",
             "unpol",
             {
-                {"Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")},
-                {"Sp18 Out", cross_section_column("Sp18 Out", "unpol")}
+                single_input("Sp18 Inb", "Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
+                single_input("Sp18 Out", "Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
             }
         },
         {
@@ -391,8 +427,42 @@ static std::vector<ConsistencyCase> consistency_cases() {
             "10.6 GeV",
             "unpol",
             {
-                {"Fa18", cross_section_column("Fa18", "unpol")},
-                {"Sp18", cross_section_column("Sp18", "unpol")}
+                grouped_input(
+                    "Fa18",
+                    {
+                        column_input("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                        column_input("Fa18 Out", cross_section_column("Fa18 Out", "unpol"))
+                    }
+                ),
+                grouped_input(
+                    "Sp18",
+                    {
+                        column_input("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
+                        column_input("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
+                    }
+                )
+            }
+        },
+        {
+            "Inb vs Out unpol",
+            "Inb_vs_Out_unpol",
+            "10.6 GeV",
+            "unpol",
+            {
+                grouped_input(
+                    "Inb",
+                    {
+                        column_input("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                        column_input("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol"))
+                    }
+                ),
+                grouped_input(
+                    "Out",
+                    {
+                        column_input("Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
+                        column_input("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
+                    }
+                )
             }
         }
     };
@@ -414,7 +484,9 @@ static void validate_schema(const CsvTable& table,
 
     for (const auto& c : cases) {
         for (const auto& input : c.inputs) {
-            required.push_back(input.column);
+            for (const auto& col : input.columns) {
+                required.push_back(col.column);
+            }
         }
 
         for (const auto& var : vars) {
@@ -451,6 +523,62 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
     return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
 }
 
+static TupleValue scaled_tuple(const TupleValue& input,
+                               const std::string& source_period,
+                               bool use_scaling,
+                               const std::map<std::string, double>& scale_by_period) {
+    if (!input.ok) {
+        return input;
+    }
+
+    if (!use_scaling) {
+        return input;
+    }
+
+    const auto it = scale_by_period.find(source_period);
+    if (it == scale_by_period.end()) {
+        return input;
+    }
+
+    const double scale = it->second;
+    if (!std::isfinite(scale) || std::abs(scale) <= 0.0) {
+        return input;
+    }
+
+    TupleValue out = input;
+    out.value = input.value / scale;
+    out.stat = input.stat / std::abs(scale);
+    return out;
+}
+
+static TupleValue evaluate_input_for_row(const CsvTable& table,
+                                         const std::vector<std::string>& row,
+                                         const PeriodInput& input,
+                                         bool use_scaling,
+                                         const std::map<std::string, double>& scale_by_period) {
+    std::vector<TupleValue> values;
+    values.reserve(input.columns.size());
+
+    for (const auto& col : input.columns) {
+        TupleValue v = get_tuple(table, row, col.column);
+        v = scaled_tuple(v, col.source_period, use_scaling, scale_by_period);
+        values.push_back(v);
+    }
+
+    TupleValue out;
+
+    double mean = 0.0;
+    double mean_stat = 0.0;
+    if (!compute_weighted_mean(values, mean, mean_stat)) {
+        return out;
+    }
+
+    out.ok = true;
+    out.value = mean;
+    out.stat = mean_stat;
+    return out;
+}
+
 static double compute_chi2_reduced(const std::vector<TupleValue>& values,
                                    double mean) {
     if (values.size() < 2) {
@@ -474,6 +602,92 @@ static double compute_chi2_reduced(const std::vector<TupleValue>& values,
     }
 
     return chi2 / ndf;
+}
+
+static std::vector<std::string> base_periods() {
+    return {
+        "Fa18 Inb",
+        "Fa18 Out",
+        "Sp18 Inb",
+        "Sp18 Out"
+    };
+}
+
+static std::map<std::string, double>
+compute_10p6_unpol_scale_factors(const CsvTable& table) {
+    const std::vector<std::string> periods = base_periods();
+
+    std::map<std::string, PeriodRatioAccumulator> acc_by_period;
+    for (const auto& period : periods) {
+        acc_by_period[period] = PeriodRatioAccumulator();
+    }
+
+    for (const auto& row : table.rows) {
+        std::vector<TupleValue> values;
+        values.reserve(periods.size());
+
+        for (const auto& period : periods) {
+            values.push_back(get_tuple(table, row, cross_section_column(period, "unpol")));
+        }
+
+        double mean = 0.0;
+        double mean_stat = 0.0;
+        if (!compute_weighted_mean(values, mean, mean_stat)) {
+            continue;
+        }
+
+        if (!std::isfinite(mean) || std::abs(mean) <= 0.0) {
+            continue;
+        }
+
+        for (size_t i = 0; i < periods.size(); ++i) {
+            const TupleValue& v = values[i];
+
+            const double ratio = v.value / mean;
+            const double ratio_stat = std::abs(v.stat / mean);
+
+            if (!std::isfinite(ratio) || !std::isfinite(ratio_stat) || ratio_stat <= 0.0) {
+                continue;
+            }
+
+            const double w = 1.0 / (ratio_stat * ratio_stat);
+
+            PeriodRatioAccumulator& acc = acc_by_period[periods[i]];
+            acc.sum_w += w;
+            acc.sum_wr += w * ratio;
+            acc.n += 1;
+        }
+    }
+
+    std::map<std::string, double> scale_by_period;
+
+    std::cout << "[run-period-consistency] 10.6 GeV unpol scale factors used for scaled plots:\n";
+
+    for (const auto& period : periods) {
+        const PeriodRatioAccumulator& acc = acc_by_period[period];
+
+        if (acc.sum_w <= 0.0 || acc.n <= 0) {
+            std::ostringstream msg;
+            msg << "Could not compute 10.6 GeV unpol scale factor for period " << period;
+            throw std::runtime_error(msg.str());
+        }
+
+        const double mean_ratio = acc.sum_wr / acc.sum_w;
+        if (!std::isfinite(mean_ratio) || std::abs(mean_ratio) <= 0.0) {
+            std::ostringstream msg;
+            msg << "Invalid 10.6 GeV unpol scale factor for period " << period;
+            throw std::runtime_error(msg.str());
+        }
+
+        scale_by_period[period] = mean_ratio;
+
+        const double mean_ratio_stat = 1.0 / std::sqrt(acc.sum_w);
+        std::cout << "  " << period << " scale = " << std::setprecision(10)
+                  << mean_ratio << " +/- " << mean_ratio_stat
+                  << "   n=" << acc.n << "\n";
+    }
+
+    return scale_by_period;
 }
 
 static std::vector<double> choose_x_range(const std::vector<double>& xs) {
@@ -686,11 +900,23 @@ static void make_title_and_grid_pads(TCanvas& canvas,
     grid_pad->Divide(2, 2, 0.001, 0.001);
 }
 
+static std::string plot_suffix(bool use_scaling) {
+    return use_scaling ? "_scaled" : "";
+}
+
+static std::string title_prefix(bool use_scaling) {
+    return use_scaling ? "Scaled " : "";
+}
+
 static void draw_chi2_canvas(const std::string& out_dir,
                              const ConsistencyCase& c,
-                             const std::map<std::string, PointPack>& chi2_by_var) {
-    TCanvas canvas(("c_chi2_" + c.file_tag).c_str(),
-                   ("Run-period reduced chi2: " + c.label).c_str(),
+                             const std::map<std::string, PointPack>& chi2_by_var,
+                             bool use_scaling) {
+    const std::string suffix = plot_suffix(use_scaling);
+    const std::string prefix = title_prefix(use_scaling);
+
+    TCanvas canvas(("c_chi2_" + c.file_tag + suffix).c_str(),
+                   (prefix + "Run-period reduced chi2: " + c.label).c_str(),
                    1600,
                    1200);
     canvas.SetFillColor(kWhite);
@@ -698,7 +924,7 @@ static void draw_chi2_canvas(const std::string& out_dir,
     TPad* title_pad = nullptr;
     TPad* grid_pad = nullptr;
     make_title_and_grid_pads(canvas, title_pad, grid_pad);
-    draw_top_title(title_pad, "Run-period consistency: " + c.label);
+    draw_top_title(title_pad, prefix + "Run-period consistency: " + c.label);
 
     const std::vector<VariableConfig> vars = variable_configs();
 
@@ -721,7 +947,7 @@ static void draw_chi2_canvas(const std::string& out_dir,
         const std::vector<double> yr = choose_chi2_y_range(pack);
 
         std::unique_ptr<TH1D> frame(
-            make_frame("frame_chi2_" + c.file_tag + "_" + vars[(size_t)ivar].key,
+            make_frame("frame_chi2_" + c.file_tag + suffix + "_" + vars[(size_t)ivar].key,
                        vars[(size_t)ivar].title,
                        "#chi^{2}/ndf",
                        xr[0],
@@ -754,15 +980,19 @@ static void draw_chi2_canvas(const std::string& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const std::string pdf = out_dir + "/" + c.file_tag + "_reduced_chi2.pdf";
+    const std::string pdf = out_dir + "/" + c.file_tag + suffix + "_reduced_chi2.pdf";
     canvas.SaveAs(pdf.c_str());
 }
 
 static void draw_ratio_canvas(const std::string& out_dir,
                               const ConsistencyCase& c,
-                              const std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period) {
-    TCanvas canvas(("c_ratio_" + c.file_tag).c_str(),
-                   ("Run-period ratios: " + c.label).c_str(),
+                              const std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period,
+                              bool use_scaling) {
+    const std::string suffix = plot_suffix(use_scaling);
+    const std::string prefix = title_prefix(use_scaling);
+
+    TCanvas canvas(("c_ratio_" + c.file_tag + suffix).c_str(),
+                   (prefix + "Run-period ratios: " + c.label).c_str(),
                    1600,
                    1200);
     canvas.SetFillColor(kWhite);
@@ -770,7 +1000,7 @@ static void draw_ratio_canvas(const std::string& out_dir,
     TPad* title_pad = nullptr;
     TPad* grid_pad = nullptr;
     make_title_and_grid_pads(canvas, title_pad, grid_pad);
-    draw_top_title(title_pad, "Run-period ratios: " + c.label);
+    draw_top_title(title_pad, prefix + "Run-period ratios: " + c.label);
 
     const std::vector<VariableConfig> vars = variable_configs();
 
@@ -820,7 +1050,7 @@ static void draw_ratio_canvas(const std::string& out_dir,
         const std::vector<double> xr = choose_x_range(all_x);
 
         std::unique_ptr<TH1D> frame(
-            make_frame("frame_ratio_" + c.file_tag + "_" + vars[(size_t)ivar].key,
+            make_frame("frame_ratio_" + c.file_tag + suffix + "_" + vars[(size_t)ivar].key,
                        vars[(size_t)ivar].title,
                        "#sigma_{i}/#bar{#sigma}",
                        xr[0],
@@ -884,12 +1114,14 @@ static void draw_ratio_canvas(const std::string& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const std::string pdf = out_dir + "/" + c.file_tag + "_period_ratios.pdf";
+    const std::string pdf = out_dir + "/" + c.file_tag + suffix + "_period_ratios.pdf";
     canvas.SaveAs(pdf.c_str());
 }
 
 static void fill_case_outputs(const CsvTable& table,
                               const ConsistencyCase& c,
+                              const std::map<std::string, double>& scale_by_period,
+                              bool use_scaling,
                               std::map<std::string, PointPack>& chi2_by_var,
                               std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period) {
     const std::vector<VariableConfig> vars = variable_configs();
@@ -899,7 +1131,7 @@ static void fill_case_outputs(const CsvTable& table,
         values.reserve(c.inputs.size());
 
         for (const auto& input : c.inputs) {
-            values.push_back(get_tuple(table, row, input.column));
+            values.push_back(evaluate_input_for_row(table, row, input, use_scaling, scale_by_period));
         }
 
         double mean = 0.0;
@@ -947,6 +1179,31 @@ static void fill_case_outputs(const CsvTable& table,
     }
 }
 
+static void make_plots_for_case(const std::string& out_dir,
+                                const CsvTable& table,
+                                const ConsistencyCase& c,
+                                const std::map<std::string, double>& scale_by_period,
+                                bool use_scaling) {
+    std::map<std::string, PointPack> chi2_by_var;
+    std::map<std::string, std::map<std::string, PointPack> > ratios_by_var_period;
+
+    fill_case_outputs(table, c, scale_by_period, use_scaling, chi2_by_var, ratios_by_var_period);
+
+    draw_chi2_canvas(out_dir, c, chi2_by_var, use_scaling);
+    draw_ratio_canvas(out_dir, c, ratios_by_var_period, use_scaling);
+
+    size_t npoints = 0;
+    const auto it = chi2_by_var.find("phi");
+    if (it != chi2_by_var.end()) {
+        npoints = it->second.x.size();
+    }
+
+    std::cout << "[run-period-consistency] Completed "
+              << (use_scaling ? "scaled " : "")
+              << c.label
+              << " with " << npoints << " valid bins.\n";
+}
+
 } // namespace
 
 bool run_period_consistency_systematics(const std::string& csv_path,
@@ -969,26 +1226,15 @@ bool run_period_consistency_systematics(const std::string& csv_path,
 
         validate_schema(table, cases, vars);
 
+        const std::map<std::string, double> scale_by_period =
+            compute_10p6_unpol_scale_factors(table);
+
         std::cout << "[run-period-consistency] CSV rows loaded: " << table.rows.size() << "\n";
         std::cout << "[run-period-consistency] Output directory: " << out_dir << "\n";
 
         for (const auto& c : cases) {
-            std::map<std::string, PointPack> chi2_by_var;
-            std::map<std::string, std::map<std::string, PointPack> > ratios_by_var_period;
-
-            fill_case_outputs(table, c, chi2_by_var, ratios_by_var_period);
-
-            draw_chi2_canvas(out_dir, c, chi2_by_var);
-            draw_ratio_canvas(out_dir, c, ratios_by_var_period);
-
-            size_t npoints = 0;
-            const auto it = chi2_by_var.find("phi");
-            if (it != chi2_by_var.end()) {
-                npoints = it->second.x.size();
-            }
-
-            std::cout << "[run-period-consistency] Completed " << c.label
-                      << " with " << npoints << " valid bins.\n";
+            make_plots_for_case(out_dir, table, c, scale_by_period, false);
+            make_plots_for_case(out_dir, table, c, scale_by_period, true);
         }
 
         return true;
