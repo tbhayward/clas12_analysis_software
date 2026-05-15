@@ -84,6 +84,22 @@ struct PeriodRatioAccumulator {
     int n = 0;
 };
 
+struct RunningStats {
+    int n = 0;
+    double sum = 0.0;
+    double sum2 = 0.0;
+};
+
+struct CaseOutputs {
+    std::map<std::string, PointPack> chi2_by_var;
+    std::map<std::string, std::map<std::string, PointPack> > ratios_by_var_period;
+    std::map<std::string, std::map<std::string, PointPack> > pulls_by_var_period;
+
+    std::map<std::string, std::map<double, RunningStats> > chi2_stats_by_var_x;
+    std::map<std::string, std::map<std::string, std::map<double, RunningStats> > > pull_stats_by_var_period_x;
+    std::map<std::string, RunningStats> pull_stats_by_period;
+};
+
 static std::string trim(const std::string& s) {
     const size_t first = s.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) {
@@ -121,6 +137,32 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
 
     out.push_back(cur);
     return out;
+}
+
+static std::string csv_escape_field(const std::string& s) {
+    const bool need_quotes =
+        (s.find(',') != std::string::npos) ||
+        (s.find('"') != std::string::npos) ||
+        (s.find('\n') != std::string::npos) ||
+        (s.find('\r') != std::string::npos);
+
+    if (!need_quotes) {
+        return s;
+    }
+
+    std::ostringstream oss;
+    oss << '"';
+
+    for (const char ch : s) {
+        if (ch == '"') {
+            oss << "\"\"";
+        } else {
+            oss << ch;
+        }
+    }
+
+    oss << '"';
+    return oss.str();
 }
 
 static std::unordered_map<std::string, int>
@@ -690,6 +732,47 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
     return scale_by_period;
 }
 
+static void add_stat(RunningStats& stats,
+                     double value) {
+    if (!std::isfinite(value)) {
+        return;
+    }
+
+    stats.n += 1;
+    stats.sum += value;
+    stats.sum2 += value * value;
+}
+
+static double mean_stat(const RunningStats& stats) {
+    if (stats.n <= 0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return stats.sum / (double)stats.n;
+}
+
+static double rms_stat(const RunningStats& stats) {
+    if (stats.n <= 0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double mean = mean_stat(stats);
+    const double mean2 = stats.sum2 / (double)stats.n;
+    return std::sqrt(std::max(0.0, mean2 - mean * mean));
+}
+
+static std::string version_tag(bool use_scaling) {
+    return use_scaling ? "scaled" : "unscaled";
+}
+
+static std::string plot_prefix(bool use_scaling) {
+    return use_scaling ? "scaled_" : "";
+}
+
+static std::string title_prefix(bool use_scaling) {
+    return use_scaling ? "Scaled " : "";
+}
+
 static std::vector<double> choose_x_range(const std::vector<double>& xs) {
     double xmin = std::numeric_limits<double>::infinity();
     double xmax = -std::numeric_limits<double>::infinity();
@@ -773,6 +856,34 @@ static std::vector<double> choose_chi2_y_range(const PointPack& pack) {
     }
 
     return {0.0, ymax};
+}
+
+static std::vector<double> choose_pull_y_range(const std::vector<PointPack>& packs) {
+    std::vector<double> ys;
+
+    for (const auto& pack : packs) {
+        for (const double y : pack.y) {
+            if (std::isfinite(y)) {
+                ys.push_back(y);
+            }
+        }
+    }
+
+    if (ys.empty()) {
+        return {-5.0, 5.0};
+    }
+
+    const double p02 = percentile(ys, 0.02);
+    const double p98 = percentile(ys, 0.98);
+
+    double ymin = std::min(-5.0, 1.25 * p02);
+    double ymax = std::max(5.0, 1.25 * p98);
+
+    if (!std::isfinite(ymin) || !std::isfinite(ymax) || ymin >= ymax) {
+        return {-5.0, 5.0};
+    }
+
+    return {ymin, ymax};
 }
 
 static void set_pad_style() {
@@ -900,22 +1011,14 @@ static void make_title_and_grid_pads(TCanvas& canvas,
     grid_pad->Divide(2, 2, 0.001, 0.001);
 }
 
-static std::string plot_suffix(bool use_scaling) {
-    return use_scaling ? "_scaled" : "";
-}
-
-static std::string title_prefix(bool use_scaling) {
-    return use_scaling ? "Scaled " : "";
-}
-
-static void draw_chi2_canvas(const std::string& out_dir,
+static void draw_chi2_canvas(const std::string& case_dir,
                              const ConsistencyCase& c,
-                             const std::map<std::string, PointPack>& chi2_by_var,
+                             const CaseOutputs& outputs,
                              bool use_scaling) {
-    const std::string suffix = plot_suffix(use_scaling);
     const std::string prefix = title_prefix(use_scaling);
+    const std::string file_prefix = plot_prefix(use_scaling);
 
-    TCanvas canvas(("c_chi2_" + c.file_tag + suffix).c_str(),
+    TCanvas canvas(("c_chi2_" + c.file_tag + "_" + version_tag(use_scaling)).c_str(),
                    (prefix + "Run-period reduced chi2: " + c.label).c_str(),
                    1600,
                    1200);
@@ -936,10 +1039,10 @@ static void draw_chi2_canvas(const std::string& out_dir,
         grid_pad->cd(ivar + 1);
         set_pad_style();
 
-        const auto it = chi2_by_var.find(vars[(size_t)ivar].key);
+        const auto it = outputs.chi2_by_var.find(vars[(size_t)ivar].key);
         PointPack pack;
 
-        if (it != chi2_by_var.end()) {
+        if (it != outputs.chi2_by_var.end()) {
             pack = it->second;
         }
 
@@ -947,7 +1050,7 @@ static void draw_chi2_canvas(const std::string& out_dir,
         const std::vector<double> yr = choose_chi2_y_range(pack);
 
         std::unique_ptr<TH1D> frame(
-            make_frame("frame_chi2_" + c.file_tag + suffix + "_" + vars[(size_t)ivar].key,
+            make_frame("frame_chi2_" + c.file_tag + "_" + version_tag(use_scaling) + "_" + vars[(size_t)ivar].key,
                        vars[(size_t)ivar].title,
                        "#chi^{2}/ndf",
                        xr[0],
@@ -980,18 +1083,18 @@ static void draw_chi2_canvas(const std::string& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const std::string pdf = out_dir + "/" + c.file_tag + suffix + "_reduced_chi2.pdf";
+    const std::string pdf = case_dir + "/" + file_prefix + "reduced_chi2.pdf";
     canvas.SaveAs(pdf.c_str());
 }
 
-static void draw_ratio_canvas(const std::string& out_dir,
+static void draw_ratio_canvas(const std::string& case_dir,
                               const ConsistencyCase& c,
-                              const std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period,
+                              const CaseOutputs& outputs,
                               bool use_scaling) {
-    const std::string suffix = plot_suffix(use_scaling);
     const std::string prefix = title_prefix(use_scaling);
+    const std::string file_prefix = plot_prefix(use_scaling);
 
-    TCanvas canvas(("c_ratio_" + c.file_tag + suffix).c_str(),
+    TCanvas canvas(("c_ratio_" + c.file_tag + "_" + version_tag(use_scaling)).c_str(),
                    (prefix + "Run-period ratios: " + c.label).c_str(),
                    1600,
                    1200);
@@ -1033,8 +1136,8 @@ static void draw_ratio_canvas(const std::string& out_dir,
 
         std::vector<double> all_x;
 
-        const auto it_var = ratios_by_var_period.find(vars[(size_t)ivar].key);
-        if (it_var != ratios_by_var_period.end()) {
+        const auto it_var = outputs.ratios_by_var_period.find(vars[(size_t)ivar].key);
+        if (it_var != outputs.ratios_by_var_period.end()) {
             for (const auto& input : c.inputs) {
                 const auto it_pack = it_var->second.find(input.period);
                 if (it_pack == it_var->second.end()) {
@@ -1050,7 +1153,7 @@ static void draw_ratio_canvas(const std::string& out_dir,
         const std::vector<double> xr = choose_x_range(all_x);
 
         std::unique_ptr<TH1D> frame(
-            make_frame("frame_ratio_" + c.file_tag + suffix + "_" + vars[(size_t)ivar].key,
+            make_frame("frame_ratio_" + c.file_tag + "_" + version_tag(use_scaling) + "_" + vars[(size_t)ivar].key,
                        vars[(size_t)ivar].title,
                        "#sigma_{i}/#bar{#sigma}",
                        xr[0],
@@ -1076,7 +1179,7 @@ static void draw_ratio_canvas(const std::string& out_dir,
 
         int iper = 0;
 
-        if (it_var != ratios_by_var_period.end()) {
+        if (it_var != outputs.ratios_by_var_period.end()) {
             for (const auto& input : c.inputs) {
                 const auto it_pack = it_var->second.find(input.period);
                 if (it_pack == it_var->second.end()) {
@@ -1114,7 +1217,161 @@ static void draw_ratio_canvas(const std::string& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const std::string pdf = out_dir + "/" + c.file_tag + suffix + "_period_ratios.pdf";
+    const std::string pdf = case_dir + "/" + file_prefix + "period_ratios.pdf";
+    canvas.SaveAs(pdf.c_str());
+}
+
+static void draw_pull_canvas(const std::string& case_dir,
+                             const ConsistencyCase& c,
+                             const CaseOutputs& outputs,
+                             bool use_scaling) {
+    const std::string prefix = title_prefix(use_scaling);
+    const std::string file_prefix = plot_prefix(use_scaling);
+
+    TCanvas canvas(("c_pulls_" + c.file_tag + "_" + version_tag(use_scaling)).c_str(),
+                   (prefix + "Run-period pulls: " + c.label).c_str(),
+                   1600,
+                   1200);
+    canvas.SetFillColor(kWhite);
+
+    TPad* title_pad = nullptr;
+    TPad* grid_pad = nullptr;
+    make_title_and_grid_pads(canvas, title_pad, grid_pad);
+    draw_top_title(title_pad, prefix + "Run-period pulls: " + c.label);
+
+    const std::vector<VariableConfig> vars = variable_configs();
+
+    const std::vector<int> colors = {
+        kBlack,
+        kRed + 1,
+        kBlue + 1,
+        kGreen + 2,
+        kMagenta + 1,
+        kOrange + 7
+    };
+
+    const std::vector<int> markers = {
+        20,
+        24,
+        21,
+        25,
+        22,
+        26
+    };
+
+    std::vector<std::unique_ptr<TH1D> > frames;
+    std::vector<std::unique_ptr<TGraph> > graphs;
+    std::vector<std::unique_ptr<TLine> > zero_lines;
+    std::vector<std::unique_ptr<TLine> > plus_lines;
+    std::vector<std::unique_ptr<TLine> > minus_lines;
+    std::vector<std::unique_ptr<TLegend> > legends;
+
+    for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
+        grid_pad->cd(ivar + 1);
+        set_pad_style();
+
+        std::vector<double> all_x;
+        std::vector<PointPack> packs_for_y;
+
+        const auto it_var = outputs.pulls_by_var_period.find(vars[(size_t)ivar].key);
+        if (it_var != outputs.pulls_by_var_period.end()) {
+            for (const auto& input : c.inputs) {
+                const auto it_pack = it_var->second.find(input.period);
+                if (it_pack == it_var->second.end()) {
+                    continue;
+                }
+
+                packs_for_y.push_back(it_pack->second);
+
+                for (const double x : it_pack->second.x) {
+                    all_x.push_back(x);
+                }
+            }
+        }
+
+        const std::vector<double> xr = choose_x_range(all_x);
+        const std::vector<double> yr = choose_pull_y_range(packs_for_y);
+
+        std::unique_ptr<TH1D> frame(
+            make_frame("frame_pull_" + c.file_tag + "_" + version_tag(use_scaling) + "_" + vars[(size_t)ivar].key,
+                       vars[(size_t)ivar].title,
+                       "Pull = (#sigma_{i}-#bar{#sigma})/#delta#sigma_{i}",
+                       xr[0],
+                       xr[1],
+                       yr[0],
+                       yr[1])
+        );
+
+        frame->Draw("AXIS");
+
+        std::unique_ptr<TLine> zero_line(new TLine(xr[0], 0.0, xr[1], 0.0));
+        zero_line->SetLineStyle(2);
+        zero_line->SetLineWidth(2);
+        zero_line->SetLineColor(kRed + 1);
+        zero_line->Draw("SAME");
+
+        std::unique_ptr<TLine> plus_line(new TLine(xr[0], 1.0, xr[1], 1.0));
+        plus_line->SetLineStyle(3);
+        plus_line->SetLineWidth(1);
+        plus_line->SetLineColor(kGray + 2);
+        plus_line->Draw("SAME");
+
+        std::unique_ptr<TLine> minus_line(new TLine(xr[0], -1.0, xr[1], -1.0));
+        minus_line->SetLineStyle(3);
+        minus_line->SetLineWidth(1);
+        minus_line->SetLineColor(kGray + 2);
+        minus_line->Draw("SAME");
+
+        std::unique_ptr<TLegend> legend(new TLegend(0.54, 0.68, 0.93, 0.89));
+        legend->SetBorderSize(1);
+        legend->SetFillStyle(1001);
+        legend->SetFillColor(kWhite);
+        legend->SetTextFont(42);
+        legend->SetTextSize(0.040);
+
+        int iper = 0;
+
+        if (it_var != outputs.pulls_by_var_period.end()) {
+            for (const auto& input : c.inputs) {
+                const auto it_pack = it_var->second.find(input.period);
+                if (it_pack == it_var->second.end()) {
+                    ++iper;
+                    continue;
+                }
+
+                const PointPack& pack = it_pack->second;
+                if (pack.x.empty()) {
+                    ++iper;
+                    continue;
+                }
+
+                const int color = colors[(size_t)(iper % (int)colors.size())];
+                const int marker = markers[(size_t)(iper % (int)markers.size())];
+
+                std::unique_ptr<TGraph> graph(make_marker_graph(pack, color, marker, 0.48));
+                graph->Draw("P SAME");
+                legend->AddEntry(graph.get(), input.period.c_str(), "p");
+                graphs.push_back(std::move(graph));
+
+                ++iper;
+            }
+        }
+
+        legend->Draw();
+        draw_subpad_label(vars[(size_t)ivar].title);
+
+        frames.push_back(std::move(frame));
+        zero_lines.push_back(std::move(zero_line));
+        plus_lines.push_back(std::move(plus_line));
+        minus_lines.push_back(std::move(minus_line));
+        legends.push_back(std::move(legend));
+    }
+
+    canvas.cd();
+    canvas.Modified();
+    canvas.Update();
+
+    const std::string pdf = case_dir + "/" + file_prefix + "pulls.pdf";
     canvas.SaveAs(pdf.c_str());
 }
 
@@ -1122,8 +1379,7 @@ static void fill_case_outputs(const CsvTable& table,
                               const ConsistencyCase& c,
                               const std::map<std::string, double>& scale_by_period,
                               bool use_scaling,
-                              std::map<std::string, PointPack>& chi2_by_var,
-                              std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period) {
+                              CaseOutputs& outputs) {
     const std::vector<VariableConfig> vars = variable_configs();
 
     for (const auto& row : table.rows) {
@@ -1158,43 +1414,174 @@ static void fill_case_outputs(const CsvTable& table,
                 continue;
             }
 
-            chi2_by_var[var.key].x.push_back(x);
-            chi2_by_var[var.key].y.push_back(chi2_ndf);
-            chi2_by_var[var.key].ey.push_back(0.0);
+            outputs.chi2_by_var[var.key].x.push_back(x);
+            outputs.chi2_by_var[var.key].y.push_back(chi2_ndf);
+            outputs.chi2_by_var[var.key].ey.push_back(0.0);
+            add_stat(outputs.chi2_stats_by_var_x[var.key][x], chi2_ndf);
 
             for (size_t iper = 0; iper < c.inputs.size(); ++iper) {
                 const TupleValue& v = values[iper];
-                const double ratio = v.value / mean;
 
-                if (!std::isfinite(ratio)) {
+                if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
                     continue;
                 }
 
-                PointPack& pack = ratios_by_var_period[var.key][c.inputs[iper].period];
-                pack.x.push_back(x);
-                pack.y.push_back(ratio);
-                pack.ey.push_back(0.0);
+                const double ratio = v.value / mean;
+                const double pull = (v.value - mean) / v.stat;
+
+                if (std::isfinite(ratio)) {
+                    PointPack& ratio_pack = outputs.ratios_by_var_period[var.key][c.inputs[iper].period];
+                    ratio_pack.x.push_back(x);
+                    ratio_pack.y.push_back(ratio);
+                    ratio_pack.ey.push_back(0.0);
+                }
+
+                if (std::isfinite(pull)) {
+                    PointPack& pull_pack = outputs.pulls_by_var_period[var.key][c.inputs[iper].period];
+                    pull_pack.x.push_back(x);
+                    pull_pack.y.push_back(pull);
+                    pull_pack.ey.push_back(0.0);
+
+                    add_stat(outputs.pull_stats_by_var_period_x[var.key][c.inputs[iper].period][x], pull);
+                    add_stat(outputs.pull_stats_by_period[c.inputs[iper].period], pull);
+                }
             }
         }
     }
 }
 
-static void make_plots_for_case(const std::string& out_dir,
+static void write_chi2_summary_csv(const std::string& case_dir,
+                                   const ConsistencyCase& c,
+                                   const CaseOutputs& outputs,
+                                   bool use_scaling) {
+    const std::string path =
+        case_dir + "/" + plot_prefix(use_scaling) + "mean_chi2_by_kinematic_variable.csv";
+
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open chi2 summary CSV for writing: " + path);
+    }
+
+    fout << "case,version,variable,x,n,mean chi2 over ndf,rms chi2 over ndf\n";
+
+    for (const auto& var_item : outputs.chi2_stats_by_var_x) {
+        const std::string& var_key = var_item.first;
+
+        for (const auto& x_item : var_item.second) {
+            fout << csv_escape_field(c.label) << ","
+                 << version_tag(use_scaling) << ","
+                 << csv_escape_field(var_key) << ","
+                 << std::setprecision(12) << x_item.first << ","
+                 << x_item.second.n << ","
+                 << std::setprecision(12) << mean_stat(x_item.second) << ","
+                 << std::setprecision(12) << rms_stat(x_item.second) << "\n";
+        }
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing chi2 summary CSV: " + path);
+    }
+}
+
+static void write_pull_summary_csv(const std::string& case_dir,
+                                   const ConsistencyCase& c,
+                                   const CaseOutputs& outputs,
+                                   bool use_scaling) {
+    const std::string path =
+        case_dir + "/" + plot_prefix(use_scaling) + "pull_summary.csv";
+
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open pull summary CSV for writing: " + path);
+    }
+
+    fout << "case,version,variable,period,x,n,mean pull,rms pull\n";
+
+    for (const auto& var_item : outputs.pull_stats_by_var_period_x) {
+        const std::string& var_key = var_item.first;
+
+        for (const auto& period_item : var_item.second) {
+            const std::string& period = period_item.first;
+
+            for (const auto& x_item : period_item.second) {
+                fout << csv_escape_field(c.label) << ","
+                     << version_tag(use_scaling) << ","
+                     << csv_escape_field(var_key) << ","
+                     << csv_escape_field(period) << ","
+                     << std::setprecision(12) << x_item.first << ","
+                     << x_item.second.n << ","
+                     << std::setprecision(12) << mean_stat(x_item.second) << ","
+                     << std::setprecision(12) << rms_stat(x_item.second) << "\n";
+            }
+        }
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing pull summary CSV: " + path);
+    }
+}
+
+static void print_case_summary(const ConsistencyCase& c,
+                               const CaseOutputs& outputs,
+                               bool use_scaling) {
+    std::cout << "[run-period-consistency] Summary for "
+              << (use_scaling ? "scaled " : "")
+              << c.label << "\n";
+
+    for (const auto& var_item : outputs.chi2_stats_by_var_x) {
+        RunningStats global;
+
+        for (const auto& x_item : var_item.second) {
+            global.n += x_item.second.n;
+            global.sum += x_item.second.sum;
+            global.sum2 += x_item.second.sum2;
+        }
+
+        std::cout << "    mean chi2/ndf vs " << var_item.first
+                  << ": n=" << global.n
+                  << " mean=" << std::setprecision(8) << mean_stat(global)
+                  << " rms=" << std::setprecision(8) << rms_stat(global)
+                  << "\n";
+    }
+
+    for (const auto& item : outputs.pull_stats_by_period) {
+        std::cout << "    pull " << std::left << std::setw(10) << item.first
+                  << std::right
+                  << ": n=" << item.second.n
+                  << " mean=" << std::setprecision(8) << mean_stat(item.second)
+                  << " rms=" << std::setprecision(8) << rms_stat(item.second)
+                  << "\n";
+    }
+}
+
+static void make_plots_for_case(const std::string& run_period_dir,
                                 const CsvTable& table,
                                 const ConsistencyCase& c,
                                 const std::map<std::string, double>& scale_by_period,
                                 bool use_scaling) {
-    std::map<std::string, PointPack> chi2_by_var;
-    std::map<std::string, std::map<std::string, PointPack> > ratios_by_var_period;
+    const std::string case_dir = run_period_dir + "/" + c.file_tag;
+    fs::create_directories(case_dir);
 
-    fill_case_outputs(table, c, scale_by_period, use_scaling, chi2_by_var, ratios_by_var_period);
+    CaseOutputs outputs;
+    fill_case_outputs(table, c, scale_by_period, use_scaling, outputs);
 
-    draw_chi2_canvas(out_dir, c, chi2_by_var, use_scaling);
-    draw_ratio_canvas(out_dir, c, ratios_by_var_period, use_scaling);
+    draw_chi2_canvas(case_dir, c, outputs, use_scaling);
+    draw_ratio_canvas(case_dir, c, outputs, use_scaling);
+    draw_pull_canvas(case_dir, c, outputs, use_scaling);
+
+    write_chi2_summary_csv(case_dir, c, outputs, use_scaling);
+    write_pull_summary_csv(case_dir, c, outputs, use_scaling);
+    print_case_summary(c, outputs, use_scaling);
 
     size_t npoints = 0;
-    const auto it = chi2_by_var.find("phi");
-    if (it != chi2_by_var.end()) {
+    const auto it = outputs.chi2_by_var.find("phi");
+    if (it != outputs.chi2_by_var.end()) {
         npoints = it->second.x.size();
     }
 
