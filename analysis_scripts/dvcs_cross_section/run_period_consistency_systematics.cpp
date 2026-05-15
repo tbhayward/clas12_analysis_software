@@ -384,6 +384,16 @@ static std::vector<ConsistencyCase> consistency_cases() {
                 {"Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")},
                 {"Sp18 Out", cross_section_column("Sp18 Out", "unpol")}
             }
+        },
+        {
+            "Fa18 vs Sp18 unpol",
+            "Fa18_vs_Sp18_unpol",
+            "10.6 GeV",
+            "unpol",
+            {
+                {"Fa18", cross_section_column("Fa18", "unpol")},
+                {"Sp18", cross_section_column("Sp18", "unpol")}
+            }
         }
     };
 }

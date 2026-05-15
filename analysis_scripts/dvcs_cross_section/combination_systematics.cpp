@@ -397,6 +397,22 @@ static std::vector<CombinationCase> combination_cases() {
                 {"Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")},
                 {"Sp18 Out", cross_section_column("Sp18 Out", "unpol")}
             }
+        },
+        {
+            "Fa18 vs Sp18 unpol",
+            "",
+            {
+                {"Fa18", cross_section_column("Fa18", "unpol")},
+                {"Sp18", cross_section_column("Sp18", "unpol")}
+            }
+        },
+        {
+            "Inb vs Out unpol",
+            "",
+            {
+                {"Inb", cross_section_column("Inb", "unpol")},
+                {"Out", cross_section_column("Out", "unpol")}
+            }
         }
     };
 }
@@ -412,7 +428,9 @@ static void validate_schema(const CsvTable& table,
     std::vector<std::string> required;
 
     for (const auto& c : cases) {
-        required.push_back(c.output_column);
+        if (!c.output_column.empty()) {
+            required.push_back(c.output_column);
+        }
 
         for (const auto& input : c.inputs) {
             required.push_back(input.column);
@@ -664,7 +682,7 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
     std::cout << "\n";
     std::cout << "[combination-systematics] Summary\n";
     std::cout << std::left
-              << std::setw(18) << "case"
+              << std::setw(24) << "case"
               << std::right
               << std::setw(10) << "bins"
               << std::setw(12) << "ratios"
@@ -676,7 +694,7 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
 
     for (const auto& r : results) {
         std::cout << std::left
-                  << std::setw(18) << r.label
+                  << std::setw(24) << r.label
                   << std::right
                   << std::setw(10) << r.valid_bins
                   << std::setw(12) << r.ratio_points
@@ -725,7 +743,9 @@ bool combination_systematics(const std::string& csv_path,
         for (const auto& c : cases) {
             CombinationResult result = evaluate_case(table, c);
 
-            fill_output_column(table, result.output_column, result.s_comb);
+            if (!result.output_column.empty()) {
+                fill_output_column(table, result.output_column, result.s_comb);
+            }
 
             if (c.label == "10.6 GeV unpol") {
                 ten6_unpol_s_comb = result.s_comb;
