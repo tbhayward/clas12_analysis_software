@@ -320,13 +320,13 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        if (!run_period_consistency_systematics(csv_main, "output/systematics")) {
-            std::cerr << "[systematics] FATAL: run_period_consistency_systematics failed.\n";
+        if (!combination_systematics(csv_main, "output/systematics")) {
+            std::cerr << "[systematics] FATAL: combination_systematics failed.\n";
             return 1;
         }
 
-        if (!combination_systematics(csv_main, "output/systematics")) {
-            std::cerr << "[systematics] FATAL: combination_systematics failed.\n";
+        if (!run_period_consistency_systematics(csv_main, "output/systematics")) {
+            std::cerr << "[systematics] FATAL: run_period_consistency_systematics failed.\n";
             return 1;
         }
     } catch (const std::exception& e) {
