@@ -33,6 +33,7 @@
 #include <vector>
 #include "run_period_consistency_systematics.h"
 #include "combination_systematics.h"
+#include "combination_point_to_point_systematics.h"
 
 namespace fs = std::filesystem;
 
@@ -327,6 +328,11 @@ int main(int argc, char* argv[]) {
 
         if (!run_period_consistency_systematics(csv_main, "output/systematics")) {
             std::cerr << "[systematics] FATAL: run_period_consistency_systematics failed.\n";
+            return 1;
+        }
+
+        if (!combination_point_to_point_systematics(csv_main, "output/systematics")) {
+            std::cerr << "[systematics] FATAL: combination_point_to_point_systematics failed.\n";
             return 1;
         }
     } catch (const std::exception& e) {
