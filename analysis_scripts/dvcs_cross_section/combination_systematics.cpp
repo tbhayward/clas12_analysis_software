@@ -45,6 +45,19 @@ struct CombinationCase {
     std::vector<PeriodInput> inputs;
 };
 
+struct PeriodRatioAccumulator {
+    double sum_w = 0.0;
+    double sum_wr = 0.0;
+    int n = 0;
+};
+
+struct PeriodRatioSummary {
+    std::string period;
+    int n = 0;
+    double mean_ratio = 0.0;
+    double mean_ratio_stat = 0.0;
+};
+
 struct CombinationResult {
     std::string label;
     std::string output_column;
@@ -53,7 +66,7 @@ struct CombinationResult {
     double s_obs = 0.0;
     double s_stat_exp = 0.0;
     double s_comb = 0.0;
-    std::map<std::string, double> mean_ratio_by_period;
+    std::vector<PeriodRatioSummary> period_summaries;
 };
 
 static std::string trim(const std::string& s) {
@@ -481,13 +494,14 @@ static CombinationResult evaluate_case(const CsvTable& table,
     result.label = c.label;
     result.output_column = c.output_column;
 
-    std::map<std::string, double> ratio_sum_by_period;
-    std::map<std::string, int> ratio_count_by_period;
+    std::map<std::string, PeriodRatioAccumulator> acc_by_period;
 
-    double sum_obs2 = 0.0;
-    double sum_stat_exp2 = 0.0;
-    int n_ratio = 0;
     int n_valid_bins = 0;
+    int n_ratio = 0;
+
+    for (const auto& input : c.inputs) {
+        acc_by_period[input.period] = PeriodRatioAccumulator();
+    }
 
     for (const auto& row : table.rows) {
         std::vector<TupleValue> values;
@@ -510,56 +524,74 @@ static CombinationResult evaluate_case(const CsvTable& table,
 
         ++n_valid_bins;
 
-        const double mean_var = mean_stat * mean_stat;
-        const double mean2 = mean * mean;
-
         for (size_t i = 0; i < values.size(); ++i) {
             const TupleValue& v = values[i];
 
             const double ratio = v.value / mean;
-            const double residual = ratio - 1.0;
+            const double ratio_stat = std::abs(v.stat / mean);
 
-            if (!std::isfinite(ratio) || !std::isfinite(residual)) {
+            if (!std::isfinite(ratio) || !std::isfinite(ratio_stat) || ratio_stat <= 0.0) {
                 continue;
             }
 
-            const double period_var = v.stat * v.stat;
-            const double residual_stat_var = std::max(0.0, period_var - mean_var);
-            const double residual_stat_frac_var = residual_stat_var / mean2;
+            const double w = 1.0 / (ratio_stat * ratio_stat);
 
-            if (!std::isfinite(residual_stat_frac_var)) {
-                continue;
-            }
+            PeriodRatioAccumulator& acc = acc_by_period[c.inputs[i].period];
+            acc.sum_w += w;
+            acc.sum_wr += w * ratio;
+            acc.n += 1;
 
-            sum_obs2 += residual * residual;
-            sum_stat_exp2 += residual_stat_frac_var;
             ++n_ratio;
-
-            ratio_sum_by_period[c.inputs[i].period] += ratio;
-            ratio_count_by_period[c.inputs[i].period] += 1;
         }
     }
 
     result.valid_bins = n_valid_bins;
     result.ratio_points = n_ratio;
 
-    if (n_ratio > 0) {
-        const double s_obs2 = sum_obs2 / (double)n_ratio;
-        const double s_stat_exp2 = sum_stat_exp2 / (double)n_ratio;
-        const double s_comb2 = std::max(0.0, s_obs2 - s_stat_exp2);
+    double sum_obs_period2 = 0.0;
+    double sum_stat_period2 = 0.0;
+    int n_period = 0;
 
-        result.s_obs = std::sqrt(std::max(0.0, s_obs2));
-        result.s_stat_exp = std::sqrt(std::max(0.0, s_stat_exp2));
-        result.s_comb = std::sqrt(s_comb2);
+    for (const auto& input : c.inputs) {
+        const auto it = acc_by_period.find(input.period);
+        if (it == acc_by_period.end()) {
+            continue;
+        }
+
+        const PeriodRatioAccumulator& acc = it->second;
+        if (acc.sum_w <= 0.0 || acc.n <= 0) {
+            continue;
+        }
+
+        PeriodRatioSummary summary;
+        summary.period = input.period;
+        summary.n = acc.n;
+        summary.mean_ratio = acc.sum_wr / acc.sum_w;
+        summary.mean_ratio_stat = 1.0 / std::sqrt(acc.sum_w);
+
+        if (!std::isfinite(summary.mean_ratio) ||
+            !std::isfinite(summary.mean_ratio_stat) ||
+            summary.mean_ratio_stat <= 0.0) {
+            continue;
+        }
+
+        const double residual = summary.mean_ratio - 1.0;
+
+        sum_obs_period2 += residual * residual;
+        sum_stat_period2 += summary.mean_ratio_stat * summary.mean_ratio_stat;
+        ++n_period;
+
+        result.period_summaries.push_back(summary);
     }
 
-    for (const auto& item : ratio_sum_by_period) {
-        const std::string& period = item.first;
-        const int count = ratio_count_by_period[period];
+    if (n_period > 0) {
+        const double s_obs2 = sum_obs_period2 / (double)n_period;
+        const double s_stat2 = sum_stat_period2 / (double)n_period;
+        const double s_comb2 = std::max(0.0, s_obs2 - s_stat2);
 
-        if (count > 0) {
-            result.mean_ratio_by_period[period] = item.second / (double)count;
-        }
+        result.s_obs = std::sqrt(std::max(0.0, s_obs2));
+        result.s_stat_exp = std::sqrt(std::max(0.0, s_stat2));
+        result.s_comb = std::sqrt(s_comb2);
     }
 
     return result;
@@ -589,30 +621,36 @@ static void write_summary_csv(const std::string& path,
         throw std::runtime_error("Could not open combination-systematics summary CSV: " + path);
     }
 
-    fout << "case,output column,valid bins,ratio points,s_obs,s_stat_exp,s_comb,s_comb percent,mean ratios by period\n";
+    fout << "case,output column,valid bins,ratio points,s_obs_period,s_stat_period,s_comb,s_comb percent,period,period ratio points,period mean ratio,period mean ratio stat\n";
 
     for (const auto& r : results) {
-        std::ostringstream mean_ratios;
-
-        bool first = true;
-        for (const auto& item : r.mean_ratio_by_period) {
-            if (!first) {
-                mean_ratios << "; ";
-            }
-
-            mean_ratios << item.first << "=" << std::setprecision(10) << item.second;
-            first = false;
+        if (r.period_summaries.empty()) {
+            fout << csv_escape_field(r.label) << ","
+                 << csv_escape_field(r.output_column) << ","
+                 << r.valid_bins << ","
+                 << r.ratio_points << ","
+                 << format_double(r.s_obs) << ","
+                 << format_double(r.s_stat_exp) << ","
+                 << format_double(r.s_comb) << ","
+                 << format_double(100.0 * r.s_comb) << ","
+                 << ",,,\n";
+            continue;
         }
 
-        fout << csv_escape_field(r.label) << ","
-             << csv_escape_field(r.output_column) << ","
-             << r.valid_bins << ","
-             << r.ratio_points << ","
-             << format_double(r.s_obs) << ","
-             << format_double(r.s_stat_exp) << ","
-             << format_double(r.s_comb) << ","
-             << format_double(100.0 * r.s_comb) << ","
-             << csv_escape_field(mean_ratios.str()) << "\n";
+        for (const auto& p : r.period_summaries) {
+            fout << csv_escape_field(r.label) << ","
+                 << csv_escape_field(r.output_column) << ","
+                 << r.valid_bins << ","
+                 << r.ratio_points << ","
+                 << format_double(r.s_obs) << ","
+                 << format_double(r.s_stat_exp) << ","
+                 << format_double(r.s_comb) << ","
+                 << format_double(100.0 * r.s_comb) << ","
+                 << csv_escape_field(p.period) << ","
+                 << p.n << ","
+                 << format_double(p.mean_ratio) << ","
+                 << format_double(p.mean_ratio_stat) << "\n";
+        }
     }
 
     fout.close();
@@ -648,9 +686,12 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
                   << std::setw(14) << std::setprecision(6) << 100.0 * r.s_comb
                   << "\n";
 
-        for (const auto& item : r.mean_ratio_by_period) {
-            std::cout << "    mean ratio " << std::setw(10) << std::left << item.first
-                      << " = " << std::right << std::setprecision(8) << item.second
+        for (const auto& p : r.period_summaries) {
+            std::cout << "    period mean ratio "
+                      << std::left << std::setw(10) << p.period
+                      << " = " << std::right << std::setprecision(8) << p.mean_ratio
+                      << " +/- " << std::setprecision(8) << p.mean_ratio_stat
+                      << "   n=" << p.n
                       << "\n";
         }
     }
@@ -677,7 +718,7 @@ bool combination_systematics(const std::string& csv_path,
                   << out_dir << "\n";
 
         std::vector<CombinationResult> results;
-        results.reserve(cases.size());
+        results.reserve(cases.size() + 1);
 
         double ten6_unpol_s_comb = std::numeric_limits<double>::quiet_NaN();
 
