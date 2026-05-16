@@ -619,8 +619,6 @@ static void add_combination_systematic_columns(std::vector<std::string>& H) {
     // period and needs an explicit slot for the corresponding combination-style
     // systematic bookkeeping used by the systematics executable.
     H.push_back("normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys");
-    H.push_back("normed cross sections, ep->epg, exp, Sp19 Inb, pos, combination sys");
-    H.push_back("normed cross sections, ep->epg, exp, Sp19 Inb, neg, combination sys");
 }
 
 static void add_cross_section_columns(std::vector<std::string>& H) {

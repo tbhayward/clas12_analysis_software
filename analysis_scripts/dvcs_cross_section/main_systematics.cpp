@@ -244,9 +244,7 @@ static std::vector<std::string> combined_normed_cross_section_columns() {
         "normed cross sections, ep->epg, exp, Fa18, pos",
         "normed cross sections, ep->epg, exp, Fa18, neg",
         "normed cross sections, ep->epg, exp, Sp18, unpol",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, pos",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, neg"
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol"
     };
 }
 
@@ -257,9 +255,7 @@ static std::vector<std::string> combination_systematic_columns() {
         "normed cross sections, ep->epg, exp, Fa18, pos, combination sys",
         "normed cross sections, ep->epg, exp, Fa18, neg, combination sys",
         "normed cross sections, ep->epg, exp, Sp18, unpol, combination sys",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, pos, combination sys",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, neg, combination sys"
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys"
     };
 }
 

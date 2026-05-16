@@ -377,9 +377,7 @@ static std::vector<CombinationCase> combination_cases() {
 
 static std::vector<std::string> sp19_proxy_output_columns() {
     return {
-        combination_column("Sp19 Inb", "unpol"),
-        combination_column("Sp19 Inb", "pos"),
-        combination_column("Sp19 Inb", "neg")
+        combination_column("Sp19 Inb", "unpol")
     };
 }
 
@@ -595,15 +593,13 @@ bool combination_systematics(const std::string& csv_path,
         }
         for (const auto& col : sp19_proxy_output_columns()) fill_output_column(table, col, ten6_unpol_s_comb);
 
-        for (const std::string& hel : {std::string("unpol"), std::string("pos"), std::string("neg")}) {
-            CombinationResult sp19;
-            sp19.label = "Sp19 Inb " + hel;
-            sp19.reference_column = cross_section_column("Sp19 Inb", hel);
-            sp19.output_column = combination_column("Sp19 Inb", hel);
-            sp19.s_obs = ten6_unpol_s_comb;
-            sp19.s_comb = ten6_unpol_s_comb;
-            results.push_back(sp19);
-        }
+        CombinationResult sp19;
+        sp19.label = "Sp19 Inb unpol";
+        sp19.reference_column = cross_section_column("Sp19 Inb", "unpol");
+        sp19.output_column = combination_column("Sp19 Inb", "unpol");
+        sp19.s_obs = ten6_unpol_s_comb;
+        sp19.s_comb = ten6_unpol_s_comb;
+        results.push_back(sp19);
 
         const std::string summary_csv = out_dir + "/combination_systematics_summary.csv";
         write_summary_csv(summary_csv, results);
