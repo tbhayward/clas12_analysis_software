@@ -177,7 +177,7 @@ public static void main(String[] args) {
             // --- Toggle here ---
             // false -> baseline (no inverse-ISR)
             // true  -> apply inverse-ISR (subtract R from q inside TwoParticles)
-            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/false)
+            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/true)
 
             double Ebeam = (runnum == 11) ? beam_energy : Eb.Eb()
 
