@@ -31,9 +31,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "run_period_consistency_systematics.h"
+
 #include "combination_systematics.h"
 #include "combination_point_to_point_systematics.h"
+#include "run_period_consistency_systematics.h"
 
 namespace fs = std::filesystem;
 
@@ -243,7 +244,9 @@ static std::vector<std::string> combined_normed_cross_section_columns() {
         "normed cross sections, ep->epg, exp, Fa18, pos",
         "normed cross sections, ep->epg, exp, Fa18, neg",
         "normed cross sections, ep->epg, exp, Sp18, unpol",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol"
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        "normed cross sections, ep->epg, exp, Sp19 Inb, pos",
+        "normed cross sections, ep->epg, exp, Sp19 Inb, neg"
     };
 }
 
@@ -254,7 +257,9 @@ static std::vector<std::string> combination_systematic_columns() {
         "normed cross sections, ep->epg, exp, Fa18, pos, combination sys",
         "normed cross sections, ep->epg, exp, Fa18, neg, combination sys",
         "normed cross sections, ep->epg, exp, Sp18, unpol, combination sys",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys"
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys",
+        "normed cross sections, ep->epg, exp, Sp19 Inb, pos, combination sys",
+        "normed cross sections, ep->epg, exp, Sp19 Inb, neg, combination sys"
     };
 }
 
@@ -326,13 +331,13 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        if (!run_period_consistency_systematics(csv_main, "output/systematics")) {
-            std::cerr << "[systematics] FATAL: run_period_consistency_systematics failed.\n";
+        if (!combination_point_to_point_systematics(csv_main, "output/systematics")) {
+            std::cerr << "[systematics] FATAL: combination_point_to_point_systematics failed.\n";
             return 1;
         }
 
-        if (!combination_point_to_point_systematics(csv_main, "output/systematics")) {
-            std::cerr << "[systematics] FATAL: combination_point_to_point_systematics failed.\n";
+        if (!run_period_consistency_systematics(csv_main, "output/systematics")) {
+            std::cerr << "[systematics] FATAL: run_period_consistency_systematics failed.\n";
             return 1;
         }
     } catch (const std::exception& e) {
