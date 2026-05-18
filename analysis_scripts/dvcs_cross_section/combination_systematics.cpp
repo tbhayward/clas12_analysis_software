@@ -149,6 +149,9 @@ struct FitResultSummary {
     double chi2_ndf = std::numeric_limits<double>::quiet_NaN();
     double improvement_from_previous = std::numeric_limits<double>::quiet_NaN();
 
+    double x_min = std::numeric_limits<double>::quiet_NaN();
+    double x_max = std::numeric_limits<double>::quiet_NaN();
+
     std::vector<double> params;
     std::vector<double> errors;
 };
@@ -170,9 +173,11 @@ struct FitTaskResult {
 
 struct ScaleReferencePoint {
     double theta = 0.0;
-    double s_obs = 0.0;
+    int n_valid = 0;
+    double mean_scale = std::numeric_limits<double>::quiet_NaN();
+    double s_obs = std::numeric_limits<double>::quiet_NaN();
     double s_stat = 0.0;
-    double s_comb = 0.0;
+    double s_comb = std::numeric_limits<double>::quiet_NaN();
 };
 
 static std::mutex gPrintMutex;
@@ -1649,6 +1654,8 @@ static FitResultSummary weighted_polynomial_fit(const FitTask& task,
 
     double chi2 = 0.0;
     int n_used = 0;
+    double x_min = std::numeric_limits<double>::infinity();
+    double x_max = -std::numeric_limits<double>::infinity();
 
     for (const auto& p : task.points) {
         if (!std::isfinite(p.x) ||
@@ -1658,6 +1665,9 @@ static FitResultSummary weighted_polynomial_fit(const FitTask& task,
             continue;
         }
 
+        x_min = std::min(x_min, p.x);
+        x_max = std::max(x_max, p.x);
+
         const double residual = p.y - eval_poly(out.params, p.x);
         chi2 += residual * residual / (p.ey * p.ey);
         ++n_used;
@@ -1666,6 +1676,11 @@ static FitResultSummary weighted_polynomial_fit(const FitTask& task,
     out.n = n_used;
     out.ndf = n_used - npar;
     out.chi2 = chi2;
+
+    if (std::isfinite(x_min) && std::isfinite(x_max) && x_min <= x_max) {
+        out.x_min = x_min;
+        out.x_max = x_max;
+    }
 
     if (out.ndf > 0) {
         out.chi2_ndf = out.chi2 / (double)out.ndf;
@@ -1766,7 +1781,7 @@ static void write_fit_summary_csv(const fs::path& path,
     }
 
     fout << "case,central mode,reference type,period,variable,polynomial order,n,ndf,"
-         << "chi2,chi2ndf,improvement from previous,attempted,accepted";
+         << "chi2,chi2ndf,x_min,x_max,improvement from previous,attempted,accepted";
 
     for (int ip = 0; ip <= kMaxPolynomialOrder; ++ip) {
         fout << ",p" << ip << ",p" << ip << " err";
@@ -1786,6 +1801,8 @@ static void write_fit_summary_csv(const fs::path& path,
                  << s.ndf << ","
                  << format_double(s.chi2) << ","
                  << format_double(s.chi2_ndf) << ","
+                 << format_double(s.x_min) << ","
+                 << format_double(s.x_max) << ","
                  << format_double(s.improvement_from_previous) << ","
                  << (s.attempted ? "true" : "false") << ","
                  << (s.accepted ? "true" : "false");
@@ -2176,6 +2193,15 @@ extract_final_e_theta_all_mean_fits(const std::vector<FitTaskResult>& fit_result
     return out;
 }
 
+static bool theta_inside_fit_support(const FitResultSummary& fit,
+                                     double theta) {
+    if (!std::isfinite(fit.x_min) || !std::isfinite(fit.x_max)) {
+        return false;
+    }
+
+    return theta >= fit.x_min && theta <= fit.x_max;
+}
+
 static std::vector<ScaleReferencePoint>
 compute_e_theta_scale_systematic_reference(const std::map<std::string, FitResultSummary>& fits_by_period) {
     std::vector<ScaleReferencePoint> out;
@@ -2183,8 +2209,7 @@ compute_e_theta_scale_systematic_reference(const std::map<std::string, FitResult
     for (int itheta = 1; itheta <= 30; ++itheta) {
         const double theta = (double)itheta;
 
-        std::vector<double> residuals;
-        std::vector<double> stat2_values;
+        std::vector<double> scales;
 
         for (const auto& period : ten6_periods()) {
             const auto it = fits_by_period.find(period);
@@ -2193,41 +2218,41 @@ compute_e_theta_scale_systematic_reference(const std::map<std::string, FitResult
             }
 
             const FitResultSummary& fit = it->second;
+            if (!theta_inside_fit_support(fit, theta)) {
+                continue;
+            }
+
             const double scale = eval_poly(fit.params, theta);
-            const double scale_stat = eval_poly_error_diag_only(fit.errors, theta);
-
-            if (std::isfinite(scale)) {
-                residuals.push_back(scale - 1.0);
+            if (std::isfinite(scale) && scale > 0.0) {
+                scales.push_back(scale);
             }
-
-            if (std::isfinite(scale_stat)) {
-                stat2_values.push_back(scale_stat * scale_stat);
-            }
-        }
-
-        if (residuals.empty()) {
-            continue;
-        }
-
-        double obs2 = 0.0;
-        for (const double r : residuals) {
-            obs2 += r * r;
-        }
-        obs2 /= (double)residuals.size();
-
-        double stat2 = 0.0;
-        if (!stat2_values.empty()) {
-            for (const double v : stat2_values) {
-                stat2 += v;
-            }
-            stat2 /= (double)stat2_values.size();
         }
 
         ScaleReferencePoint p;
         p.theta = theta;
-        p.s_obs = std::sqrt(std::max(0.0, obs2));
-        p.s_stat = std::sqrt(std::max(0.0, stat2));
-        p.s_comb = std::sqrt(std::max(0.0, obs2 - stat2));
+        p.n_valid = (int)scales.size();
+
+        if (scales.size() >= 2U) {
+            double mean_scale = 0.0;
+            for (const double scale : scales) {
+                mean_scale += scale;
+            }
+            mean_scale /= (double)scales.size();
+
+            if (std::isfinite(mean_scale) && std::abs(mean_scale) > 0.0) {
+                double obs2 = 0.0;
+                for (const double scale : scales) {
+                    const double rel = scale / mean_scale - 1.0;
+                    obs2 += rel * rel;
+                }
+                obs2 /= (double)scales.size();
+
+                p.mean_scale = mean_scale;
+                p.s_obs = std::sqrt(std::max(0.0, obs2));
+                p.s_stat = 0.0;
+                p.s_comb = p.s_obs;
+            }
+        }
 
         out.push_back(p);
     }
@@ -2248,24 +2273,27 @@ static void write_e_theta_scale_reference_csv(const fs::path& path,
 
     for (const auto& period : ten6_periods()) {
         fout << "," << csv_escape_field(period) << " scale"
-             << "," << csv_escape_field(period) << " scale stat";
+             << "," << csv_escape_field(period) << " in fit range";
     }
 
-    fout << ",s_obs,s_stat,s_comb,s_comb percent\n";
+    fout << ",n_valid,mean_scale,s_obs,s_stat,s_comb,s_comb percent\n";
 
     for (const auto& ref : reference_points) {
         fout << format_double(ref.theta);
 
         for (const auto& period : ten6_periods()) {
             const FitResultSummary& fit = fits_by_period.at(period);
-            const double scale = eval_poly(fit.params, ref.theta);
-            const double scale_stat = eval_poly_error_diag_only(fit.errors, ref.theta);
+            const bool in_range = theta_inside_fit_support(fit, ref.theta);
+            const double scale = in_range ? eval_poly(fit.params, ref.theta)
+                                          : std::numeric_limits<double>::quiet_NaN();
 
             fout << "," << format_double(scale)
-                 << "," << format_double(scale_stat);
+                 << "," << (in_range ? "true" : "false");
         }
 
-        fout << "," << format_double(ref.s_obs)
+        fout << "," << ref.n_valid
+             << "," << format_double(ref.mean_scale)
+             << "," << format_double(ref.s_obs)
              << "," << format_double(ref.s_stat)
              << "," << format_double(ref.s_comb)
              << "," << format_double(100.0 * ref.s_comb)
@@ -2282,6 +2310,9 @@ static void write_e_theta_scale_reference_csv(const fs::path& path,
 static void print_e_theta_scale_reference(const std::map<std::string, FitResultSummary>& fits_by_period,
                                           const std::vector<ScaleReferencePoint>& reference_points) {
     std::cout << "\n[combination-systematics] e_theta-dependent scale systematic reference\n";
+    std::cout << "[combination-systematics] Reference is computed only inside each period fit's e_theta support; "
+              << "s_comb is the RMS of f_i(theta)/<f(theta)> - 1, without subtracting polynomial-parameter errors.\n";
+
     std::cout << std::left
               << std::setw(10) << "theta"
               << std::right;
@@ -2290,7 +2321,9 @@ static void print_e_theta_scale_reference(const std::map<std::string, FitResultS
         std::cout << std::setw(16) << (sanitize_for_path(period) + "_f");
     }
 
-    std::cout << std::setw(14) << "s_obs"
+    std::cout << std::setw(10) << "n"
+              << std::setw(14) << "mean_f"
+              << std::setw(14) << "s_obs"
               << std::setw(14) << "s_stat"
               << std::setw(14) << "s_comb"
               << std::setw(14) << "percent"
@@ -2303,11 +2336,17 @@ static void print_e_theta_scale_reference(const std::map<std::string, FitResultS
 
         for (const auto& period : ten6_periods()) {
             const FitResultSummary& fit = fits_by_period.at(period);
-            const double scale = eval_poly(fit.params, ref.theta);
-            std::cout << std::setw(16) << std::setprecision(8) << scale;
+            if (theta_inside_fit_support(fit, ref.theta)) {
+                const double scale = eval_poly(fit.params, ref.theta);
+                std::cout << std::setw(16) << std::setprecision(8) << scale;
+            } else {
+                std::cout << std::setw(16) << "out";
+            }
         }
 
-        std::cout << std::setw(14) << std::setprecision(8) << ref.s_obs
+        std::cout << std::setw(10) << ref.n_valid
+                  << std::setw(14) << std::setprecision(8) << ref.mean_scale
+                  << std::setw(14) << std::setprecision(8) << ref.s_obs
                   << std::setw(14) << std::setprecision(8) << ref.s_stat
                   << std::setw(14) << std::setprecision(8) << ref.s_comb
                   << std::setw(14) << std::setprecision(8) << 100.0 * ref.s_comb
