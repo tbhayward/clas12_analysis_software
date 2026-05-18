@@ -85,14 +85,14 @@ struct BinResult {
     double p_theta = std::numeric_limits<double>::quiet_NaN();
     double g_theta = std::numeric_limits<double>::quiet_NaN();
 
-    double mean_scaled = 0.0;
-    double mean_scaled_stat = 0.0;
+    double mean_scaled = std::numeric_limits<double>::quiet_NaN();
+    double mean_scaled_stat = std::numeric_limits<double>::quiet_NaN();
 
-    double chi2_ndf_before = 0.0;
-    double chi2_ndf_after = 0.0;
+    double chi2_ndf_before = std::numeric_limits<double>::quiet_NaN();
+    double chi2_ndf_after = std::numeric_limits<double>::quiet_NaN();
 
-    double f_ptp = 0.0;
-    double f_ptp_percent = 0.0;
+    double f_ptp = std::numeric_limits<double>::quiet_NaN();
+    double f_ptp_percent = std::numeric_limits<double>::quiet_NaN();
 
     int n_periods = 0;
 };
@@ -458,18 +458,20 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
                                   double& mean_stat) {
     double sum_w = 0.0;
     double sum_wx = 0.0;
+    int n_valid = 0;
 
     for (const auto& v : values) {
         if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
-            return false;
+            continue;
         }
 
         const double w = 1.0 / (v.stat * v.stat);
         sum_w += w;
         sum_wx += w * v.value;
+        ++n_valid;
     }
 
-    if (sum_w <= 0.0) {
+    if (n_valid < 2 || sum_w <= 0.0) {
         return false;
     }
 
@@ -477,6 +479,21 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
     mean_stat = 1.0 / std::sqrt(sum_w);
 
     return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
+}
+
+static std::vector<TupleValue> valid_values_only(const std::vector<TupleValue>& values) {
+    std::vector<TupleValue> out;
+    out.reserve(values.size());
+
+    for (const auto& v : values) {
+        if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
+            continue;
+        }
+
+        out.push_back(v);
+    }
+
+    return out;
 }
 
 static std::vector<PeriodScale> compute_10p6_unpol_scale_factors(const CsvTable& table) {
@@ -508,6 +525,10 @@ static std::vector<PeriodScale> compute_10p6_unpol_scale_factors(const CsvTable&
 
         for (size_t i = 0; i < inputs.size(); ++i) {
             const TupleValue& v = values[i];
+
+            if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
+                continue;
+            }
 
             const double ratio = v.value / mean;
             const double ratio_stat = std::abs(v.stat / mean);
@@ -598,23 +619,25 @@ static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& val
 
     double sum_w = 0.0;
     double sum_wx = 0.0;
+    int n_valid = 0;
 
     for (const auto& v : values) {
         if (!v.ok || !std::isfinite(v.value) || !std::isfinite(v.stat) || v.stat <= 0.0) {
-            return false;
+            continue;
         }
 
         const double var = v.stat * v.stat + extra * extra;
         if (!(var > 0.0) || !std::isfinite(var)) {
-            return false;
+            continue;
         }
 
         const double w = 1.0 / var;
         sum_w += w;
         sum_wx += w * v.value;
+        ++n_valid;
     }
 
-    if (sum_w <= 0.0) {
+    if (n_valid < 2 || sum_w <= 0.0) {
         return false;
     }
 
@@ -627,32 +650,36 @@ static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& val
 static double chi2_ndf_with_extra_fraction(const std::vector<TupleValue>& values,
                                            double f,
                                            double reference_mean) {
-    if (values.size() < 2U) {
+    const std::vector<TupleValue> valid_values = valid_values_only(values);
+
+    if (valid_values.size() < 2U) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
     double mean = 0.0;
     double mean_stat = 0.0;
 
-    if (!weighted_mean_with_extra_fraction(values, f, reference_mean, mean, mean_stat)) {
+    if (!weighted_mean_with_extra_fraction(valid_values, f, reference_mean, mean, mean_stat)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
     const double extra = f * std::abs(reference_mean);
 
     double chi2 = 0.0;
+    int n_valid = 0;
 
-    for (const auto& v : values) {
+    for (const auto& v : valid_values) {
         const double var = v.stat * v.stat + extra * extra;
         if (!(var > 0.0) || !std::isfinite(var)) {
-            return std::numeric_limits<double>::quiet_NaN();
+            continue;
         }
 
         const double residual = v.value - mean;
         chi2 += residual * residual / var;
+        ++n_valid;
     }
 
-    const double ndf = (double)values.size() - 1.0;
+    const double ndf = (double)n_valid - 1.0;
     if (ndf <= 0.0) {
         return std::numeric_limits<double>::quiet_NaN();
     }
@@ -765,6 +792,7 @@ static BinResult evaluate_row(const CsvTable& table,
     result.g_theta = get_double_or_nan(table, row, "g_theta, 10.6 GeV");
 
     std::vector<TupleValue> scaled_values;
+    scaled_values.reserve(kBasePeriods.size());
 
     for (const auto& input : base_inputs()) {
         const TupleValue raw = get_tuple(table, row, input.column);
@@ -777,13 +805,17 @@ static BinResult evaluate_row(const CsvTable& table,
         const TupleValue scaled = apply_scale(raw, it_scale->second);
 
         if (!scaled.ok) {
-            return result;
+            continue;
         }
 
         scaled_values.push_back(scaled);
     }
 
     result.n_periods = (int)scaled_values.size();
+
+    if (result.n_periods < 2) {
+        return result;
+    }
 
     double mean = 0.0;
     double mean_stat_value = 0.0;
@@ -826,6 +858,10 @@ evaluate_all_bins(const CsvTable& table,
 
     for (size_t i = 0; i < table.rows.size(); ++i) {
         BinResult result = evaluate_row(table, table.rows[i], i + 1, scale_by_period);
+
+        if (result.n_periods < 2) {
+            continue;
+        }
 
         if (!std::isfinite(result.f_ptp)) {
             continue;
@@ -1184,7 +1220,6 @@ static void draw_one_xb_canvas(const Range& xb_range,
     delete canvas;
 }
 
-
 struct VariableScatterConfig {
     std::string key;
     std::string title;
@@ -1401,6 +1436,7 @@ static void print_global_summary(const std::vector<BinResult>& results) {
     std::vector<double> fvals;
     std::vector<double> chi2_before;
     std::vector<double> chi2_after;
+    std::map<int, int> n_period_counts;
 
     for (const auto& r : results) {
         if (std::isfinite(r.f_ptp_percent)) {
@@ -1414,6 +1450,8 @@ static void print_global_summary(const std::vector<BinResult>& results) {
         if (std::isfinite(r.chi2_ndf_after)) {
             chi2_after.push_back(r.chi2_ndf_after);
         }
+
+        n_period_counts[r.n_periods] += 1;
     }
 
     auto mean = [](const std::vector<double>& v) -> double {
@@ -1442,6 +1480,12 @@ static void print_global_summary(const std::vector<BinResult>& results) {
               << (fvals.empty() ? std::numeric_limits<double>::quiet_NaN()
                                 : *std::max_element(fvals.begin(), fvals.end()))
               << "\n";
+
+    std::cout << "  valid-bin period multiplicity:\n";
+    for (const auto& kv : n_period_counts) {
+        std::cout << "    n_periods = " << kv.first
+                  << " : " << kv.second << " bins\n";
+    }
 }
 
 } // namespace
