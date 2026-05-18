@@ -31,7 +31,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-                && p > 2.0
+                && p > 1.3
                 && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
 //                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, run_Bank)
