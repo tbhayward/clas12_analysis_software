@@ -266,6 +266,7 @@ public static void main(String[] args) {
 
 	                // lab kinematics
 	                e_p = variables.e_p(); // lab frame momentum
+	                println(e_p);
 	                e_theta = variables.e_theta(); // lab polar angle
 	                e_phi = variables.e_phi(); // lab azimuthal angle
 	                p1_phi = variables.p1_phi(); // lab azimuthal angle
