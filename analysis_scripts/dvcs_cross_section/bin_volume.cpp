@@ -339,8 +339,7 @@ static double calculate_phase_space_allowed_bin_volume(double xB_min, double xB_
                 const double W2 = Mp * Mp + Q2 * (1.0 / xB - 1.0);
                 const double W  = (W2 > 0.0) ? std::sqrt(W2) : 0.0;
 
-                // if (t > t_min_val && y > 0.19 && y < 0.8113919276 && W > 2.0) {
-                if (t > t_min_val && y > 0.19 && y < 0.6113919276 && W > 2.0) {
+                if (t > t_min_val && y > 0.19 && y < 0.8113919276 && W > 2.0) {
                     ++valid_count;
                 }
             }
