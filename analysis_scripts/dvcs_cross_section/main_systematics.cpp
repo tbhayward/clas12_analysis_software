@@ -332,10 +332,11 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        if (!run_period_consistency_systematics(csv_main, "output/systematics")) {
+        if (!run_period_consistency_systematics(csv_main, "output/systematics", false)) {
             std::cerr << "[systematics] FATAL: run_period_consistency_systematics failed.\n";
             return 1;
         }
+        
     } catch (const std::exception& e) {
         std::cerr << "[systematics] FATAL: " << e.what() << "\n";
         return 1;

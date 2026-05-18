@@ -2,7 +2,6 @@
 
 #include <TCanvas.h>
 #include <TGraph.h>
-#include <TGraphErrors.h>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TLine.h>
@@ -68,21 +67,12 @@ struct ConsistencyCase {
 struct PointPack {
     std::vector<double> x;
     std::vector<double> y;
-    std::vector<double> ey;
 };
 
 struct VariableConfig {
     std::string key;
     std::string column_prefix;
     std::string title;
-};
-
-struct VariableGroup {
-    std::string label;
-    std::string file_tag;
-    int ncols = 2;
-    int nrows = 2;
-    std::vector<VariableConfig> variables;
 };
 
 struct PeriodRatioAccumulator {
@@ -92,53 +82,63 @@ struct PeriodRatioAccumulator {
 };
 
 static std::string trim(const std::string& s) {
-    const size_t first = s.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return "";
+    size_t b = 0;
+    while (b < s.size() && std::isspace((unsigned char)s[b])) {
+        ++b;
     }
 
-    const size_t last = s.find_last_not_of(" \t\r\n");
-    return s.substr(first, last - first + 1);
+    size_t e = s.size();
+    while (e > b && std::isspace((unsigned char)s[e - 1])) {
+        --e;
+    }
+
+    return s.substr(b, e - b);
 }
 
 static std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> out;
-    std::string cur;
-    cur.reserve(line.size());
-
+    std::string field;
     bool in_quotes = false;
 
     for (size_t i = 0; i < line.size(); ++i) {
         const char c = line[i];
 
-        if (c == '"') {
-            if (in_quotes && i + 1 < line.size() && line[i + 1] == '"') {
-                cur.push_back('"');
-                ++i;
+        if (in_quotes) {
+            if (c == '"') {
+                if (i + 1 < line.size() && line[i + 1] == '"') {
+                    field.push_back('"');
+                    ++i;
+                } else {
+                    in_quotes = false;
+                }
             } else {
-                in_quotes = !in_quotes;
+                field.push_back(c);
             }
-        } else if (c == ',' && !in_quotes) {
-            out.push_back(cur);
-            cur.clear();
         } else {
-            cur.push_back(c);
+            if (c == '"') {
+                in_quotes = true;
+            } else if (c == ',') {
+                out.push_back(field);
+                field.clear();
+            } else {
+                field.push_back(c);
+            }
         }
     }
 
-    out.push_back(cur);
+    out.push_back(field);
     return out;
 }
 
 static std::unordered_map<std::string, int>
 build_header_index(const std::vector<std::string>& header) {
-    std::unordered_map<std::string, int> idx;
+    std::unordered_map<std::string, int> out;
 
     for (int i = 0; i < (int)header.size(); ++i) {
-        idx[trim(header[(size_t)i])] = i;
+        out[trim(header[(size_t)i])] = i;
     }
 
-    return idx;
+    return out;
 }
 
 static void assert_no_duplicate_columns(const std::vector<std::string>& header) {
@@ -291,7 +291,7 @@ static TupleValue parse_tuple_value(const std::string& raw) {
     }
 
     const std::vector<std::string> fields = split_csv_line(s);
-    if (fields.size() < 2) {
+    if (fields.size() < 2U) {
         return out;
     }
 
@@ -313,6 +313,7 @@ static TupleValue parse_tuple_value(const std::string& raw) {
     out.ok = true;
     out.value = value;
     out.stat = stat;
+
     return out;
 }
 
@@ -343,9 +344,9 @@ static TupleValue get_tuple(const CsvTable& table,
     return parse_tuple_value(row[(size_t)it->second]);
 }
 
-static std::string cross_section_column(const std::string& period,
+static std::string cross_section_column(const std::string& label,
                                         const std::string& helicity) {
-    return "normed cross sections, ep->epg, exp, " + period + ", " + helicity;
+    return "normed cross sections, ep->epg, exp, " + label + ", " + helicity;
 }
 
 static std::string avg_column(const std::string& variable_prefix,
@@ -378,7 +379,7 @@ static PeriodInput grouped_input(const std::string& label,
     return out;
 }
 
-static std::vector<ConsistencyCase> consistency_cases() {
+static std::vector<ConsistencyCase> all_consistency_cases() {
     return {
         {
             "10.6 GeV unpol",
@@ -479,41 +480,29 @@ static std::vector<ConsistencyCase> consistency_cases() {
     };
 }
 
-static std::vector<VariableGroup> variable_groups() {
+static std::vector<VariableConfig> physics_variable_configs() {
     return {
-        {
-            "physics kinematics",
-            "physics_kinematics",
-            2,
-            2,
-            {
-                {"xB", "xBavg", "x_{B}"},
-                {"Q2", "Q2avg", "Q^{2} (GeV^{2})"},
-                {"t", "t_abs_avg", "-t (GeV^{2})"},
-                {"phi", "phiavg", "#phi (deg)"}
-            }
-        },
-        {
-            "polar angles",
-            "polar_angles",
-            3,
-            1,
-            {
-                {"e_theta", "e_theta", "#theta_{e} (deg)"},
-                {"p_theta", "p_theta", "#theta_{p} (deg)"},
-                {"g_theta", "g_theta", "#theta_{#gamma} (deg)"}
-            }
-        }
+        {"xB",  "xBavg",      "x_{B}"},
+        {"Q2",  "Q2avg",      "Q^{2} (GeV^{2})"},
+        {"t",   "t_abs_avg",  "-t (GeV^{2})"},
+        {"phi", "phiavg",     "#phi (deg)"}
+    };
+}
+
+static std::vector<VariableConfig> angle_variable_configs() {
+    return {
+        {"e_theta", "e_theta", "#theta_{e} (deg)"},
+        {"p_theta", "p_theta", "#theta_{p} (deg)"},
+        {"g_theta", "g_theta", "#theta_{#gamma} (deg)"}
     };
 }
 
 static std::vector<VariableConfig> all_variable_configs() {
-    std::vector<VariableConfig> out;
+    std::vector<VariableConfig> out = physics_variable_configs();
+    const std::vector<VariableConfig> angles = angle_variable_configs();
 
-    for (const auto& group : variable_groups()) {
-        for (const auto& var : group.variables) {
-            out.push_back(var);
-        }
+    for (const auto& var : angles) {
+        out.push_back(var);
     }
 
     return out;
@@ -522,7 +511,6 @@ static std::vector<VariableConfig> all_variable_configs() {
 static void validate_schema(const CsvTable& table,
                             const std::vector<ConsistencyCase>& cases) {
     std::vector<std::string> required;
-    const std::vector<VariableConfig> vars = all_variable_configs();
 
     for (const auto& c : cases) {
         for (const auto& input : c.inputs) {
@@ -531,7 +519,7 @@ static void validate_schema(const CsvTable& table,
             }
         }
 
-        for (const auto& var : vars) {
+        for (const auto& var : all_variable_configs()) {
             required.push_back(avg_column(var.column_prefix, c.avg_label));
         }
     }
@@ -539,9 +527,9 @@ static void validate_schema(const CsvTable& table,
     require_columns(table, required, "run-period consistency systematics");
 }
 
-static bool compute_weighted_mean(const std::vector<TupleValue>& values,
-                                  double& mean,
-                                  double& mean_stat) {
+static bool compute_weighted_mean_skip_invalid(const std::vector<TupleValue>& values,
+                                               double& mean,
+                                               double& mean_stat) {
     double sum_w = 0.0;
     double sum_wx = 0.0;
 
@@ -616,11 +604,10 @@ static TupleValue evaluate_input_for_row(const CsvTable& table,
     }
 
     TupleValue out;
-
     double mean = 0.0;
     double mean_stat = 0.0;
 
-    if (!compute_weighted_mean(values, mean, mean_stat)) {
+    if (!compute_weighted_mean_skip_invalid(values, mean, mean_stat)) {
         return out;
     }
 
@@ -677,13 +664,16 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
         values.reserve(periods.size());
 
         for (const auto& period : periods) {
-            values.push_back(get_tuple(table, row, cross_section_column(period, "unpol")));
+            const TupleValue v = get_tuple(table, row, cross_section_column(period, "unpol"));
+            if (v.ok) {
+                values.push_back(v);
+            }
         }
 
         double mean = 0.0;
         double mean_stat = 0.0;
 
-        if (!compute_weighted_mean(values, mean, mean_stat)) {
+        if (!compute_weighted_mean_skip_invalid(values, mean, mean_stat)) {
             continue;
         }
 
@@ -691,10 +681,9 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
             continue;
         }
 
-        for (size_t i = 0; i < periods.size(); ++i) {
-            const TupleValue& v = values[i];
-
-            if (!v.ok || !std::isfinite(v.value) || v.stat <= 0.0) {
+        for (const auto& period : periods) {
+            const TupleValue v = get_tuple(table, row, cross_section_column(period, "unpol"));
+            if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
                 continue;
             }
 
@@ -707,7 +696,7 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
 
             const double w = 1.0 / (ratio_stat * ratio_stat);
 
-            PeriodRatioAccumulator& acc = acc_by_period[periods[i]];
+            PeriodRatioAccumulator& acc = acc_by_period[period];
             acc.sum_w += w;
             acc.sum_wr += w * ratio;
             acc.n += 1;
@@ -722,42 +711,76 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
         const PeriodRatioAccumulator& acc = acc_by_period[period];
 
         if (acc.sum_w <= 0.0 || acc.n <= 0) {
-            std::ostringstream msg;
-            msg << "Could not compute 10.6 GeV unpol scale factor for period " << period;
-            throw std::runtime_error(msg.str());
+            throw std::runtime_error("Could not compute 10.6 GeV unpol scale factor for period " + period);
         }
 
         const double mean_ratio = acc.sum_wr / acc.sum_w;
         const double mean_ratio_stat = 1.0 / std::sqrt(acc.sum_w);
 
         if (!std::isfinite(mean_ratio) || std::abs(mean_ratio) <= 0.0) {
-            std::ostringstream msg;
-            msg << "Invalid 10.6 GeV unpol scale factor for period " << period;
-            throw std::runtime_error(msg.str());
+            throw std::runtime_error("Invalid 10.6 GeV unpol scale factor for period " + period);
         }
 
         scale_by_period[period] = mean_ratio;
 
-        std::cout << "  " << period
-                  << " scale = " << std::setprecision(10) << mean_ratio
-                  << " +/- " << mean_ratio_stat
+        std::cout << "  " << std::left << std::setw(10) << period
+                  << " scale = " << std::right << std::setprecision(10)
+                  << mean_ratio << " +/- " << mean_ratio_stat
                   << "   n=" << acc.n << "\n";
     }
 
     return scale_by_period;
 }
 
-static std::vector<double> choose_x_range(const std::vector<double>& xs) {
+static double percentile(std::vector<double> values,
+                         double q) {
+    std::vector<double> clean;
+
+    for (const double v : values) {
+        if (std::isfinite(v)) {
+            clean.push_back(v);
+        }
+    }
+
+    if (clean.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    std::sort(clean.begin(), clean.end());
+
+    if (q <= 0.0) {
+        return clean.front();
+    }
+
+    if (q >= 1.0) {
+        return clean.back();
+    }
+
+    const double pos = q * (double)(clean.size() - 1);
+    const size_t lo = (size_t)std::floor(pos);
+    const size_t hi = (size_t)std::ceil(pos);
+    const double frac = pos - (double)lo;
+
+    if (lo == hi) {
+        return clean[lo];
+    }
+
+    return clean[lo] * (1.0 - frac) + clean[hi] * frac;
+}
+
+static std::vector<double> choose_x_range_from_packs(const std::vector<PointPack>& packs) {
     double xmin = std::numeric_limits<double>::infinity();
     double xmax = -std::numeric_limits<double>::infinity();
 
-    for (const double x : xs) {
-        if (!std::isfinite(x)) {
-            continue;
-        }
+    for (const auto& pack : packs) {
+        for (const double x : pack.x) {
+            if (!std::isfinite(x)) {
+                continue;
+            }
 
-        xmin = std::min(xmin, x);
-        xmax = std::max(xmax, x);
+            xmin = std::min(xmin, x);
+            xmax = std::max(xmax, x);
+        }
     }
 
     if (!std::isfinite(xmin) || !std::isfinite(xmax)) {
@@ -773,85 +796,60 @@ static std::vector<double> choose_x_range(const std::vector<double>& xs) {
     return {xmin - pad, xmax + pad};
 }
 
-static std::vector<double> choose_y_range(const std::vector<PointPack>& packs,
-                                          double floor_value,
-                                          double reference_value,
-                                          bool include_reference,
-                                          bool use_errors) {
-    double ymin = std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
+static std::vector<double> choose_chi2_y_range(const PointPack& pack) {
+    std::vector<double> ys;
 
-    if (include_reference) {
-        ymin = std::min(ymin, reference_value);
-        ymax = std::max(ymax, reference_value);
-    }
-
-    for (const auto& pack : packs) {
-        for (size_t i = 0; i < pack.y.size(); ++i) {
-            const double y = pack.y[i];
-
-            if (!std::isfinite(y)) {
-                continue;
-            }
-
-            double ey = 0.0;
-            if (use_errors && i < pack.ey.size() && std::isfinite(pack.ey[i])) {
-                ey = std::abs(pack.ey[i]);
-            }
-
-            ymin = std::min(ymin, y - ey);
-            ymax = std::max(ymax, y + ey);
+    for (const double y : pack.y) {
+        if (std::isfinite(y) && y >= 0.0) {
+            ys.push_back(y);
         }
     }
 
-    if (!std::isfinite(ymin) || !std::isfinite(ymax)) {
-        return {floor_value, floor_value + 1.0};
+    if (ys.empty()) {
+        return {0.0, 5.0};
     }
 
-    ymin = std::min(ymin, floor_value);
+    double ymax = std::max(5.0, 1.25 * percentile(ys, 0.95));
 
-    if (ymin == ymax) {
-        const double pad = (std::abs(ymin) > 0.0) ? 0.20 * std::abs(ymin) : 1.0;
-        return {ymin - pad, ymax + pad};
+    if (!std::isfinite(ymax) || ymax <= 0.0) {
+        ymax = 5.0;
     }
 
-    const double pad = 0.12 * (ymax - ymin);
-    return {std::max(floor_value, ymin - pad), ymax + pad};
+    return {0.0, ymax};
+}
+
+static std::vector<double> choose_pull_y_range(const std::vector<PointPack>& packs) {
+    std::vector<double> ys;
+
+    for (const auto& pack : packs) {
+        for (const double y : pack.y) {
+            if (std::isfinite(y)) {
+                ys.push_back(y);
+            }
+        }
+    }
+
+    if (ys.empty()) {
+        return {-5.0, 5.0};
+    }
+
+    double ymin = std::min(-5.0, 1.25 * percentile(ys, 0.02));
+    double ymax = std::max(5.0, 1.25 * percentile(ys, 0.98));
+
+    if (!std::isfinite(ymin) || !std::isfinite(ymax) || ymin >= ymax) {
+        return {-5.0, 5.0};
+    }
+
+    return {ymin, ymax};
 }
 
 static void set_pad_style() {
     gPad->SetLeftMargin(0.16);
     gPad->SetRightMargin(0.06);
-    gPad->SetTopMargin(0.14);
-    gPad->SetBottomMargin(0.17);
+    gPad->SetTopMargin(0.12);
+    gPad->SetBottomMargin(0.16);
     gPad->SetTicks(1, 1);
     gPad->SetGrid(0, 0);
-}
-
-static TGraphErrors* make_graph(const PointPack& pack,
-                                int color,
-                                int marker_style,
-                                bool use_errors) {
-    TGraphErrors* graph = new TGraphErrors((int)pack.x.size());
-
-    for (int i = 0; i < (int)pack.x.size(); ++i) {
-        graph->SetPoint(i, pack.x[(size_t)i], pack.y[(size_t)i]);
-
-        const double ey =
-            (use_errors && i < (int)pack.ey.size() && std::isfinite(pack.ey[(size_t)i]))
-            ? pack.ey[(size_t)i]
-            : 0.0;
-
-        graph->SetPointError(i, 0.0, ey);
-    }
-
-    graph->SetMarkerColor(color);
-    graph->SetLineColor(color);
-    graph->SetMarkerStyle(marker_style);
-    graph->SetMarkerSize(0.55);
-    graph->SetLineWidth(1);
-
-    return graph;
 }
 
 static TH1D* make_frame(const std::string& name,
@@ -874,10 +872,11 @@ static TH1D* make_frame(const std::string& name,
 
     frame->GetXaxis()->SetTitleSize(0.060);
     frame->GetYaxis()->SetTitleSize(0.060);
-    frame->GetXaxis()->SetLabelSize(0.050);
-    frame->GetYaxis()->SetLabelSize(0.050);
 
-    frame->GetXaxis()->SetTitleOffset(1.10);
+    frame->GetXaxis()->SetLabelSize(0.047);
+    frame->GetYaxis()->SetLabelSize(0.047);
+
+    frame->GetXaxis()->SetTitleOffset(1.05);
     frame->GetYaxis()->SetTitleOffset(1.20);
 
     frame->GetXaxis()->SetNdivisions(505);
@@ -886,13 +885,32 @@ static TH1D* make_frame(const std::string& name,
     return frame;
 }
 
-static void draw_subpad_title(const std::string& text) {
+static TGraph* make_marker_graph(const PointPack& pack,
+                                 int color,
+                                 int marker_style,
+                                 double marker_size) {
+    TGraph* graph = new TGraph((int)pack.x.size());
+
+    for (int i = 0; i < (int)pack.x.size(); ++i) {
+        graph->SetPoint(i, pack.x[(size_t)i], pack.y[(size_t)i]);
+    }
+
+    graph->SetMarkerColor(color);
+    graph->SetLineColor(color);
+    graph->SetMarkerStyle(marker_style);
+    graph->SetMarkerSize(marker_size);
+    graph->SetLineWidth(1);
+
+    return graph;
+}
+
+static void draw_subpad_label(const std::string& text) {
     TLatex latex;
     latex.SetNDC();
     latex.SetTextFont(42);
-    latex.SetTextSize(0.064);
+    latex.SetTextSize(0.060);
     latex.SetTextAlign(22);
-    latex.DrawLatex(0.50, 0.950, text.c_str());
+    latex.DrawLatex(0.50, 0.955, text.c_str());
 }
 
 static void draw_top_title(TPad* title_pad,
@@ -902,9 +920,9 @@ static void draw_top_title(TPad* title_pad,
     TLatex title;
     title.SetNDC();
     title.SetTextFont(42);
-    title.SetTextSize(0.28);
+    title.SetTextSize(0.30);
     title.SetTextAlign(22);
-    title.DrawLatex(0.50, 0.55, title_text.c_str());
+    title.DrawLatex(0.50, 0.50, title_text.c_str());
 }
 
 static void make_title_and_grid_pads(TCanvas& canvas,
@@ -932,56 +950,72 @@ static void make_title_and_grid_pads(TCanvas& canvas,
     grid_pad->Divide(ncols, nrows, 0.001, 0.001);
 }
 
-static std::string scaled_tag(bool use_scaling) {
+static std::string plot_prefix(bool use_scaling) {
     return use_scaling ? "scaled" : "unscaled";
 }
 
-static std::string scaled_title(bool use_scaling) {
+static std::string title_prefix(bool use_scaling) {
     return use_scaling ? "Scaled " : "Unscaled ";
+}
+
+static std::string canvas_tag_for_vars(const std::string& var_group_tag) {
+    if (var_group_tag == "physics") {
+        return "physics_kinematics";
+    }
+
+    if (var_group_tag == "angles") {
+        return "polar_angles";
+    }
+
+    return var_group_tag;
 }
 
 static void draw_chi2_canvas(const fs::path& out_dir,
                              const ConsistencyCase& c,
-                             const VariableGroup& group,
                              const std::map<std::string, PointPack>& chi2_by_var,
+                             const std::vector<VariableConfig>& vars,
+                             const std::string& var_group_tag,
                              bool use_scaling) {
-    const int width = 760 * group.ncols;
-    const int height = 560 * group.nrows + 120;
+    const int ncols = (var_group_tag == "angles") ? 3 : 2;
+    const int nrows = (var_group_tag == "angles") ? 1 : 2;
+    const int width = (var_group_tag == "angles") ? 1800 : 1600;
+    const int height = (var_group_tag == "angles") ? 720 : 1200;
 
-    TCanvas canvas(("c_chi2_" + c.file_tag + "_" + group.file_tag + "_" + scaled_tag(use_scaling)).c_str(),
-                   "c_chi2",
+    const std::string prefix = plot_prefix(use_scaling);
+    const std::string tag = canvas_tag_for_vars(var_group_tag);
+
+    TCanvas canvas(("c_chi2_" + c.file_tag + "_" + prefix + "_" + tag).c_str(),
+                   ("Run-period reduced chi2: " + c.label).c_str(),
                    width,
                    height);
     canvas.SetFillColor(kWhite);
 
     TPad* title_pad = nullptr;
     TPad* grid_pad = nullptr;
-    make_title_and_grid_pads(canvas, title_pad, grid_pad, group.ncols, group.nrows);
-    draw_top_title(title_pad, scaled_title(use_scaling) + "run-period consistency: " + c.label + " (" + group.label + ")");
+    make_title_and_grid_pads(canvas, title_pad, grid_pad, ncols, nrows);
+    draw_top_title(title_pad, title_prefix(use_scaling) + "run-period consistency: " + c.label + " (" + tag + ")");
 
     std::vector<std::unique_ptr<TH1D> > frames;
-    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    std::vector<std::unique_ptr<TGraph> > graphs;
     std::vector<std::unique_ptr<TLine> > lines;
 
-    for (int ivar = 0; ivar < (int)group.variables.size(); ++ivar) {
+    for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
         grid_pad->cd(ivar + 1);
         set_pad_style();
 
-        const VariableConfig& var = group.variables[(size_t)ivar];
-
         PointPack pack;
-        const auto it = chi2_by_var.find(var.key);
+        const auto it = chi2_by_var.find(vars[(size_t)ivar].key);
         if (it != chi2_by_var.end()) {
             pack = it->second;
         }
 
-        const std::vector<double> xr = choose_x_range(pack.x);
-        const std::vector<PointPack> ypacks = {pack};
-        const std::vector<double> yr = choose_y_range(ypacks, 0.0, 1.0, true, false);
+        const std::vector<PointPack> xpacks = {pack};
+        const std::vector<double> xr = choose_x_range_from_packs(xpacks);
+        const std::vector<double> yr = choose_chi2_y_range(pack);
 
         std::unique_ptr<TH1D> frame(
-            make_frame("frame_chi2_" + c.file_tag + "_" + group.file_tag + "_" + scaled_tag(use_scaling) + "_" + var.key,
-                       var.title,
+            make_frame("frame_chi2_" + c.file_tag + "_" + prefix + "_" + tag + "_" + vars[(size_t)ivar].key,
+                       vars[(size_t)ivar].title,
                        "#chi^{2}/ndf",
                        xr[0],
                        xr[1],
@@ -997,12 +1031,12 @@ static void draw_chi2_canvas(const fs::path& out_dir,
         line->Draw("SAME");
 
         if (!pack.x.empty()) {
-            std::unique_ptr<TGraphErrors> graph(make_graph(pack, kBlack, 20, false));
+            std::unique_ptr<TGraph> graph(make_marker_graph(pack, kBlack, 20, 0.55));
             graph->Draw("P SAME");
             graphs.push_back(std::move(graph));
         }
 
-        draw_subpad_title(var.title);
+        draw_subpad_label(vars[(size_t)ivar].title);
 
         frames.push_back(std::move(frame));
         lines.push_back(std::move(line));
@@ -1012,36 +1046,39 @@ static void draw_chi2_canvas(const fs::path& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const fs::path png =
-        out_dir / (scaled_tag(use_scaling) + "_reduced_chi2_" + group.file_tag + ".png");
-
-    canvas.SaveAs(png.string().c_str());
+    const fs::path out_path = out_dir / (prefix + "_reduced_chi2_" + tag + ".png");
+    canvas.SaveAs(out_path.string().c_str());
 }
 
-static void draw_ratio_canvas(const fs::path& out_dir,
-                              const ConsistencyCase& c,
-                              const VariableGroup& group,
-                              const std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period,
-                              bool use_scaling,
-                              bool use_errors) {
-    const int width = 760 * group.ncols;
-    const int height = 560 * group.nrows + 120;
+static void draw_multi_period_canvas(const fs::path& out_dir,
+                                     const ConsistencyCase& c,
+                                     const std::map<std::string, std::map<std::string, PointPack> >& by_var_period,
+                                     const std::vector<VariableConfig>& vars,
+                                     const std::string& var_group_tag,
+                                     bool use_scaling,
+                                     const std::string& kind,
+                                     const std::string& ytitle,
+                                     double ymin_fixed,
+                                     double ymax_fixed,
+                                     bool fixed_y) {
+    const int ncols = (var_group_tag == "angles") ? 3 : 2;
+    const int nrows = (var_group_tag == "angles") ? 1 : 2;
+    const int width = (var_group_tag == "angles") ? 1800 : 1600;
+    const int height = (var_group_tag == "angles") ? 720 : 1200;
 
-    const std::string error_tag = use_errors ? "_with_stat_errors" : "";
+    const std::string prefix = plot_prefix(use_scaling);
+    const std::string tag = canvas_tag_for_vars(var_group_tag);
 
-    TCanvas canvas(("c_ratio_" + c.file_tag + "_" + group.file_tag + "_" + scaled_tag(use_scaling) + error_tag).c_str(),
-                   "c_ratio",
+    TCanvas canvas(("c_" + kind + "_" + c.file_tag + "_" + prefix + "_" + tag).c_str(),
+                   ("Run-period " + kind + ": " + c.label).c_str(),
                    width,
                    height);
     canvas.SetFillColor(kWhite);
 
     TPad* title_pad = nullptr;
     TPad* grid_pad = nullptr;
-    make_title_and_grid_pads(canvas, title_pad, grid_pad, group.ncols, group.nrows);
-
-    draw_top_title(title_pad,
-                   scaled_title(use_scaling) + "run-period ratios: " + c.label +
-                   " (" + group.label + ")" + (use_errors ? " with stat errors" : ""));
+    make_title_and_grid_pads(canvas, title_pad, grid_pad, ncols, nrows);
+    draw_top_title(title_pad, title_prefix(use_scaling) + "run-period " + kind + ": " + c.label + " (" + tag + ")");
 
     const std::vector<int> colors = {
         kBlack,
@@ -1062,56 +1099,60 @@ static void draw_ratio_canvas(const fs::path& out_dir,
     };
 
     std::vector<std::unique_ptr<TH1D> > frames;
-    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    std::vector<std::unique_ptr<TGraph> > graphs;
     std::vector<std::unique_ptr<TLine> > lines;
     std::vector<std::unique_ptr<TLegend> > legends;
 
-    for (int ivar = 0; ivar < (int)group.variables.size(); ++ivar) {
+    for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
         grid_pad->cd(ivar + 1);
         set_pad_style();
 
-        const VariableConfig& var = group.variables[(size_t)ivar];
-
-        std::vector<double> all_x;
+        std::vector<PointPack> xpacks;
         std::vector<PointPack> ypacks;
 
-        const auto it_var = ratios_by_var_period.find(var.key);
-        if (it_var != ratios_by_var_period.end()) {
+        const auto it_var = by_var_period.find(vars[(size_t)ivar].key);
+        if (it_var != by_var_period.end()) {
             for (const auto& input : c.inputs) {
                 const auto it_pack = it_var->second.find(input.period);
                 if (it_pack == it_var->second.end()) {
                     continue;
                 }
 
+                xpacks.push_back(it_pack->second);
                 ypacks.push_back(it_pack->second);
-
-                for (const double x : it_pack->second.x) {
-                    all_x.push_back(x);
-                }
             }
         }
 
-        const std::vector<double> xr = choose_x_range(all_x);
-        const std::vector<double> yr = choose_y_range(ypacks, 0.0, 1.0, true, use_errors);
+        const std::vector<double> xr = choose_x_range_from_packs(xpacks);
+
+        double ymin = ymin_fixed;
+        double ymax = ymax_fixed;
+        if (!fixed_y) {
+            const std::vector<double> pr = choose_pull_y_range(ypacks);
+            ymin = pr[0];
+            ymax = pr[1];
+        }
 
         std::unique_ptr<TH1D> frame(
-            make_frame("frame_ratio_" + c.file_tag + "_" + group.file_tag + "_" + scaled_tag(use_scaling) + error_tag + "_" + var.key,
-                       var.title,
-                       "#sigma_{i}/#bar{#sigma}",
+            make_frame("frame_" + kind + "_" + c.file_tag + "_" + prefix + "_" + tag + "_" + vars[(size_t)ivar].key,
+                       vars[(size_t)ivar].title,
+                       ytitle,
                        xr[0],
                        xr[1],
-                       yr[0],
-                       yr[1])
+                       ymin,
+                       ymax)
         );
         frame->Draw("AXIS");
 
-        std::unique_ptr<TLine> line(new TLine(xr[0], 1.0, xr[1], 1.0));
+        const double ref_y = (kind == "pulls") ? 0.0 : 1.0;
+
+        std::unique_ptr<TLine> line(new TLine(xr[0], ref_y, xr[1], ref_y));
         line->SetLineStyle(2);
         line->SetLineWidth(2);
         line->SetLineColor(kRed + 1);
         line->Draw("SAME");
 
-        std::unique_ptr<TLegend> legend(new TLegend(0.55, 0.68, 0.93, 0.88));
+        std::unique_ptr<TLegend> legend(new TLegend(0.54, 0.68, 0.93, 0.89));
         legend->SetBorderSize(1);
         legend->SetFillStyle(1001);
         legend->SetFillColor(kWhite);
@@ -1120,16 +1161,11 @@ static void draw_ratio_canvas(const fs::path& out_dir,
 
         int iper = 0;
 
-        if (it_var != ratios_by_var_period.end()) {
+        if (it_var != by_var_period.end()) {
             for (const auto& input : c.inputs) {
                 const auto it_pack = it_var->second.find(input.period);
-                if (it_pack == it_var->second.end()) {
-                    ++iper;
-                    continue;
-                }
 
-                const PointPack& pack = it_pack->second;
-                if (pack.x.empty()) {
+                if (it_pack == it_var->second.end() || it_pack->second.x.empty()) {
                     ++iper;
                     continue;
                 }
@@ -1137,7 +1173,7 @@ static void draw_ratio_canvas(const fs::path& out_dir,
                 const int color = colors[(size_t)(iper % (int)colors.size())];
                 const int marker = markers[(size_t)(iper % (int)markers.size())];
 
-                std::unique_ptr<TGraphErrors> graph(make_graph(pack, color, marker, use_errors));
+                std::unique_ptr<TGraph> graph(make_marker_graph(it_pack->second, color, marker, 0.48));
                 graph->Draw("P SAME");
                 legend->AddEntry(graph.get(), input.period.c_str(), "p");
                 graphs.push_back(std::move(graph));
@@ -1147,7 +1183,7 @@ static void draw_ratio_canvas(const fs::path& out_dir,
         }
 
         legend->Draw();
-        draw_subpad_title(var.title);
+        draw_subpad_label(vars[(size_t)ivar].title);
 
         frames.push_back(std::move(frame));
         lines.push_back(std::move(line));
@@ -1158,10 +1194,70 @@ static void draw_ratio_canvas(const fs::path& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const fs::path png =
-        out_dir / (scaled_tag(use_scaling) + "_period_ratios_" + group.file_tag + error_tag + ".png");
+    const fs::path out_path = out_dir / (prefix + "_" + kind + "_" + tag + ".png");
+    canvas.SaveAs(out_path.string().c_str());
+}
 
-    canvas.SaveAs(png.string().c_str());
+static double mean_vec(const std::vector<double>& values) {
+    if (values.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    double sum = 0.0;
+    for (const double v : values) {
+        sum += v;
+    }
+
+    return sum / (double)values.size();
+}
+
+static double rms_vec(const std::vector<double>& values) {
+    if (values.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double mean = mean_vec(values);
+    double sum = 0.0;
+
+    for (const double v : values) {
+        const double d = v - mean;
+        sum += d * d;
+    }
+
+    return std::sqrt(sum / (double)values.size());
+}
+
+static void print_summary(const ConsistencyCase& c,
+                          bool use_scaling,
+                          const std::map<std::string, PointPack>& chi2_by_var,
+                          const std::map<std::string, std::map<std::string, PointPack> >& pulls_by_var_period) {
+    std::cout << "[run-period-consistency] Summary for "
+              << (use_scaling ? "scaled " : "unscaled ")
+              << c.label << "\n";
+
+    const std::vector<VariableConfig> vars = all_variable_configs();
+
+    for (const auto& var : vars) {
+        const auto it = chi2_by_var.find(var.key);
+        if (it == chi2_by_var.end()) {
+            continue;
+        }
+
+        std::cout << "    chi2/ndf vs " << std::left << std::setw(8) << var.key
+                  << ": n=" << std::right << it->second.y.size()
+                  << " mean=" << std::setprecision(8) << mean_vec(it->second.y)
+                  << " rms=" << rms_vec(it->second.y) << "\n";
+    }
+
+    const auto it_phi = pulls_by_var_period.find("phi");
+    if (it_phi != pulls_by_var_period.end()) {
+        for (const auto& kv : it_phi->second) {
+            std::cout << "    pull " << std::left << std::setw(10) << kv.first
+                      << ": n=" << std::right << kv.second.y.size()
+                      << " mean=" << std::setprecision(8) << mean_vec(kv.second.y)
+                      << " rms=" << rms_vec(kv.second.y) << "\n";
+        }
+    }
 }
 
 static void fill_case_outputs(const CsvTable& table,
@@ -1169,7 +1265,8 @@ static void fill_case_outputs(const CsvTable& table,
                               const std::map<std::string, double>& scale_by_period,
                               bool use_scaling,
                               std::map<std::string, PointPack>& chi2_by_var,
-                              std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period) {
+                              std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period,
+                              std::map<std::string, std::map<std::string, PointPack> >& pulls_by_var_period) {
     const std::vector<VariableConfig> vars = all_variable_configs();
 
     for (const auto& row : table.rows) {
@@ -1187,7 +1284,8 @@ static void fill_case_outputs(const CsvTable& table,
 
         double mean = 0.0;
         double mean_stat = 0.0;
-        if (!compute_weighted_mean(values, mean, mean_stat)) {
+
+        if (!compute_weighted_mean_skip_invalid(values, mean, mean_stat)) {
             continue;
         }
 
@@ -1210,26 +1308,28 @@ static void fill_case_outputs(const CsvTable& table,
 
             chi2_by_var[var.key].x.push_back(x);
             chi2_by_var[var.key].y.push_back(chi2_ndf);
-            chi2_by_var[var.key].ey.push_back(0.0);
 
             for (size_t iper = 0; iper < c.inputs.size(); ++iper) {
                 const TupleValue& v = values[iper];
 
-                if (!v.ok || !std::isfinite(v.value) || v.stat <= 0.0) {
+                if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
                     continue;
                 }
 
                 const double ratio = v.value / mean;
-                const double ratio_stat = std::abs(v.stat / mean);
+                const double pull = (v.value - mean) / v.stat;
 
-                if (!std::isfinite(ratio) || !std::isfinite(ratio_stat)) {
-                    continue;
+                if (std::isfinite(ratio)) {
+                    PointPack& pack = ratios_by_var_period[var.key][c.inputs[iper].period];
+                    pack.x.push_back(x);
+                    pack.y.push_back(ratio);
                 }
 
-                PointPack& pack = ratios_by_var_period[var.key][c.inputs[iper].period];
-                pack.x.push_back(x);
-                pack.y.push_back(ratio);
-                pack.ey.push_back(ratio_stat);
+                if (std::isfinite(pull)) {
+                    PointPack& pack = pulls_by_var_period[var.key][c.inputs[iper].period];
+                    pack.x.push_back(x);
+                    pack.y.push_back(pull);
+                }
             }
         }
     }
@@ -1245,35 +1345,85 @@ static void make_plots_for_case(const fs::path& root_out_dir,
 
     std::map<std::string, PointPack> chi2_by_var;
     std::map<std::string, std::map<std::string, PointPack> > ratios_by_var_period;
+    std::map<std::string, std::map<std::string, PointPack> > pulls_by_var_period;
 
     fill_case_outputs(table,
                       c,
                       scale_by_period,
                       use_scaling,
                       chi2_by_var,
-                      ratios_by_var_period);
+                      ratios_by_var_period,
+                      pulls_by_var_period);
 
-    for (const auto& group : variable_groups()) {
-        draw_chi2_canvas(out_dir,
-                         c,
-                         group,
-                         chi2_by_var,
-                         use_scaling);
+    const std::vector<VariableConfig> physics_vars = physics_variable_configs();
+    const std::vector<VariableConfig> angle_vars = angle_variable_configs();
 
-        draw_ratio_canvas(out_dir,
-                          c,
-                          group,
-                          ratios_by_var_period,
-                          use_scaling,
-                          false);
+    draw_chi2_canvas(out_dir,
+                     c,
+                     chi2_by_var,
+                     physics_vars,
+                     "physics",
+                     use_scaling);
 
-        draw_ratio_canvas(out_dir,
-                          c,
-                          group,
-                          ratios_by_var_period,
-                          use_scaling,
-                          true);
-    }
+    draw_chi2_canvas(out_dir,
+                     c,
+                     chi2_by_var,
+                     angle_vars,
+                     "angles",
+                     use_scaling);
+
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             ratios_by_var_period,
+                             physics_vars,
+                             "physics",
+                             use_scaling,
+                             "period_ratios",
+                             "#sigma_{i}/#bar{#sigma}",
+                             0.0,
+                             3.0,
+                             true);
+
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             ratios_by_var_period,
+                             angle_vars,
+                             "angles",
+                             use_scaling,
+                             "period_ratios",
+                             "#sigma_{i}/#bar{#sigma}",
+                             0.0,
+                             3.0,
+                             true);
+
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             pulls_by_var_period,
+                             physics_vars,
+                             "physics",
+                             use_scaling,
+                             "pulls",
+                             "(#sigma_{i}-#bar{#sigma})/#delta#sigma_{i}",
+                             -5.0,
+                             5.0,
+                             false);
+
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             pulls_by_var_period,
+                             angle_vars,
+                             "angles",
+                             use_scaling,
+                             "pulls",
+                             "(#sigma_{i}-#bar{#sigma})/#delta#sigma_{i}",
+                             -5.0,
+                             5.0,
+                             false);
+
+    print_summary(c,
+                  use_scaling,
+                  chi2_by_var,
+                  pulls_by_var_period);
 
     size_t npoints = 0;
     const auto it = chi2_by_var.find("phi");
@@ -1290,7 +1440,8 @@ static void make_plots_for_case(const fs::path& root_out_dir,
 } // namespace
 
 bool run_period_consistency_systematics(const std::string& csv_path,
-                                        const std::string& output_root_dir) {
+                                        const std::string& output_root_dir,
+                                        bool make_all_cases) {
     try {
         const fs::path out_dir = fs::path(output_root_dir) / "run_period_consistency";
         fs::create_directories(out_dir);
@@ -1302,22 +1453,32 @@ bool run_period_consistency_systematics(const std::string& csv_path,
         gStyle->SetTitleFont(42, "");
         gStyle->SetTextFont(42);
         gStyle->SetEndErrorSize(0);
+        gStyle->SetPadTickX(1);
+        gStyle->SetPadTickY(1);
 
         const CsvTable table = read_csv_or_throw(csv_path);
-        const std::vector<ConsistencyCase> cases = consistency_cases();
+        const std::vector<ConsistencyCase> all_cases = all_consistency_cases();
 
-        validate_schema(table, cases);
+        std::vector<ConsistencyCase> cases_to_run;
+        for (const auto& c : all_cases) {
+            if (make_all_cases || c.file_tag == "10p6_GeV_unpol") {
+                cases_to_run.push_back(c);
+            }
+        }
+
+        validate_schema(table, cases_to_run);
 
         const std::map<std::string, double> scale_by_period =
             compute_10p6_unpol_scale_factors(table);
 
         std::cout << "[run-period-consistency] CSV rows loaded: "
                   << table.rows.size() << "\n";
-
         std::cout << "[run-period-consistency] Output directory: "
                   << out_dir.string() << "\n";
+        std::cout << "[run-period-consistency] make_all_cases = "
+                  << (make_all_cases ? "true" : "false") << "\n";
 
-        for (const auto& c : cases) {
+        for (const auto& c : cases_to_run) {
             make_plots_for_case(out_dir,
                                 table,
                                 c,
