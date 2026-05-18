@@ -168,6 +168,13 @@ struct FitTaskResult {
     std::vector<FitResultSummary> accepted;
 };
 
+struct ScaleReferencePoint {
+    double theta = 0.0;
+    double s_obs = 0.0;
+    double s_stat = 0.0;
+    double s_comb = 0.0;
+};
+
 static std::mutex gPrintMutex;
 
 static std::string trim(const std::string& s) {
@@ -1552,6 +1559,26 @@ static double eval_poly(const std::vector<double>& params,
     return y;
 }
 
+static double eval_poly_error_diag_only(const std::vector<double>& errors,
+                                        double x) {
+    double var = 0.0;
+    double pow_x = 1.0;
+
+    for (const double e : errors) {
+        if (std::isfinite(e)) {
+            var += e * e * pow_x * pow_x;
+        }
+
+        pow_x *= x;
+    }
+
+    if (!std::isfinite(var) || var < 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return std::sqrt(var);
+}
+
 static FitResultSummary weighted_polynomial_fit(const FitTask& task,
                                                 int order,
                                                 double previous_chi2_ndf) {
@@ -2112,6 +2139,184 @@ static std::vector<FitTask> build_fit_tasks(const std::vector<RatioPoint>& all_r
     return tasks;
 }
 
+static std::map<std::string, FitResultSummary>
+extract_final_e_theta_all_mean_fits(const std::vector<FitTaskResult>& fit_results) {
+    std::map<std::string, FitResultSummary> out;
+
+    for (const auto& result : fit_results) {
+        if (result.task.case_label != "10.6 GeV unpol") {
+            continue;
+        }
+
+        if (result.task.central_mode != "stat_weighted") {
+            continue;
+        }
+
+        if (result.task.reference_type != "all_mean") {
+            continue;
+        }
+
+        if (result.task.variable.key != "e_theta") {
+            continue;
+        }
+
+        if (result.accepted.empty()) {
+            continue;
+        }
+
+        out[result.task.period] = result.accepted.back();
+    }
+
+    for (const auto& period : ten6_periods()) {
+        if (out.find(period) == out.end()) {
+            throw std::runtime_error("Missing final accepted all_mean e_theta fit for period " + period);
+        }
+    }
+
+    return out;
+}
+
+static std::vector<ScaleReferencePoint>
+compute_e_theta_scale_systematic_reference(const std::map<std::string, FitResultSummary>& fits_by_period) {
+    std::vector<ScaleReferencePoint> out;
+
+    for (int itheta = 1; itheta <= 30; ++itheta) {
+        const double theta = (double)itheta;
+
+        std::vector<double> residuals;
+        std::vector<double> stat2_values;
+
+        for (const auto& period : ten6_periods()) {
+            const auto it = fits_by_period.find(period);
+            if (it == fits_by_period.end()) {
+                throw std::runtime_error("Missing e_theta fit for period " + period);
+            }
+
+            const FitResultSummary& fit = it->second;
+            const double scale = eval_poly(fit.params, theta);
+            const double scale_stat = eval_poly_error_diag_only(fit.errors, theta);
+
+            if (std::isfinite(scale)) {
+                residuals.push_back(scale - 1.0);
+            }
+
+            if (std::isfinite(scale_stat)) {
+                stat2_values.push_back(scale_stat * scale_stat);
+            }
+        }
+
+        if (residuals.empty()) {
+            continue;
+        }
+
+        double obs2 = 0.0;
+        for (const double r : residuals) {
+            obs2 += r * r;
+        }
+        obs2 /= (double)residuals.size();
+
+        double stat2 = 0.0;
+        if (!stat2_values.empty()) {
+            for (const double v : stat2_values) {
+                stat2 += v;
+            }
+            stat2 /= (double)stat2_values.size();
+        }
+
+        ScaleReferencePoint p;
+        p.theta = theta;
+        p.s_obs = std::sqrt(std::max(0.0, obs2));
+        p.s_stat = std::sqrt(std::max(0.0, stat2));
+        p.s_comb = std::sqrt(std::max(0.0, obs2 - stat2));
+
+        out.push_back(p);
+    }
+
+    return out;
+}
+
+static void write_e_theta_scale_reference_csv(const fs::path& path,
+                                              const std::map<std::string, FitResultSummary>& fits_by_period,
+                                              const std::vector<ScaleReferencePoint>& reference_points) {
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open e_theta scale reference CSV: " + path.string());
+    }
+
+    fout << "theta_e_deg";
+
+    for (const auto& period : ten6_periods()) {
+        fout << "," << csv_escape_field(period) << " scale"
+             << "," << csv_escape_field(period) << " scale stat";
+    }
+
+    fout << ",s_obs,s_stat,s_comb,s_comb percent\n";
+
+    for (const auto& ref : reference_points) {
+        fout << format_double(ref.theta);
+
+        for (const auto& period : ten6_periods()) {
+            const FitResultSummary& fit = fits_by_period.at(period);
+            const double scale = eval_poly(fit.params, ref.theta);
+            const double scale_stat = eval_poly_error_diag_only(fit.errors, ref.theta);
+
+            fout << "," << format_double(scale)
+                 << "," << format_double(scale_stat);
+        }
+
+        fout << "," << format_double(ref.s_obs)
+             << "," << format_double(ref.s_stat)
+             << "," << format_double(ref.s_comb)
+             << "," << format_double(100.0 * ref.s_comb)
+             << "\n";
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing e_theta scale reference CSV: " + path.string());
+    }
+}
+
+static void print_e_theta_scale_reference(const std::map<std::string, FitResultSummary>& fits_by_period,
+                                          const std::vector<ScaleReferencePoint>& reference_points) {
+    std::cout << "\n[combination-systematics] e_theta-dependent scale systematic reference\n";
+    std::cout << std::left
+              << std::setw(10) << "theta"
+              << std::right;
+
+    for (const auto& period : ten6_periods()) {
+        std::cout << std::setw(16) << (sanitize_for_path(period) + "_f");
+    }
+
+    std::cout << std::setw(14) << "s_obs"
+              << std::setw(14) << "s_stat"
+              << std::setw(14) << "s_comb"
+              << std::setw(14) << "percent"
+              << "\n";
+
+    for (const auto& ref : reference_points) {
+        std::cout << std::left
+                  << std::setw(10) << std::setprecision(4) << ref.theta
+                  << std::right;
+
+        for (const auto& period : ten6_periods()) {
+            const FitResultSummary& fit = fits_by_period.at(period);
+            const double scale = eval_poly(fit.params, ref.theta);
+            std::cout << std::setw(16) << std::setprecision(8) << scale;
+        }
+
+        std::cout << std::setw(14) << std::setprecision(8) << ref.s_obs
+                  << std::setw(14) << std::setprecision(8) << ref.s_stat
+                  << std::setw(14) << std::setprecision(8) << ref.s_comb
+                  << std::setw(14) << std::setprecision(8) << 100.0 * ref.s_comb
+                  << "\n";
+    }
+
+    std::cout << "\n";
+}
+
 static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
                                      const std::vector<RatioPoint>& all_loo_ratio_points,
                                      const fs::path& out_dir) {
@@ -2137,8 +2342,26 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
         }
     }
 
+    const std::map<std::string, FitResultSummary> e_theta_fits =
+        extract_final_e_theta_all_mean_fits(fit_results);
+
+    const std::vector<ScaleReferencePoint> reference_points =
+        compute_e_theta_scale_systematic_reference(e_theta_fits);
+
+    const fs::path e_theta_scale_path =
+        fit_root / "e_theta_scale_systematic_reference.csv";
+
+    write_e_theta_scale_reference_csv(e_theta_scale_path,
+                                      e_theta_fits,
+                                      reference_points);
+
+    print_e_theta_scale_reference(e_theta_fits,
+                                  reference_points);
+
     std::cout << "[combination-systematics] Wrote kinematic fit summary CSV: "
               << summary_path.string() << "\n";
+    std::cout << "[combination-systematics] Wrote e_theta scale systematic reference CSV: "
+              << e_theta_scale_path.string() << "\n";
 }
 
 } // namespace

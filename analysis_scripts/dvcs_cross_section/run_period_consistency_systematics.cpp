@@ -81,6 +81,13 @@ struct PeriodRatioAccumulator {
     int n = 0;
 };
 
+struct PolynomialScale {
+    bool ok = false;
+    std::string period;
+    int order = -1;
+    std::vector<double> params;
+};
+
 static std::string trim(const std::string& s) {
     size_t b = 0;
     while (b < s.size() && std::isspace((unsigned char)s[b])) {
@@ -255,6 +262,41 @@ static bool parse_double(const std::string& raw,
     return std::isfinite(out);
 }
 
+static bool parse_int(const std::string& raw,
+                      int& out) {
+    const std::string s = trim(raw);
+    if (s.empty()) {
+        return false;
+    }
+
+    char* end = nullptr;
+    const long value = std::strtol(s.c_str(), &end, 10);
+
+    if (end == s.c_str()) {
+        return false;
+    }
+
+    while (end && *end != '\0') {
+        if (!std::isspace((unsigned char)(*end))) {
+            return false;
+        }
+        ++end;
+    }
+
+    out = (int)value;
+    return true;
+}
+
+static bool parse_bool_string(const std::string& raw) {
+    std::string s = trim(raw);
+
+    for (char& c : s) {
+        c = (char)std::tolower((unsigned char)c);
+    }
+
+    return s == "true" || s == "1" || s == "yes";
+}
+
 static bool parse_numeric_or_tuple_first(const std::string& raw,
                                          double& out) {
     if (parse_double(raw, out)) {
@@ -344,6 +386,17 @@ static TupleValue get_tuple(const CsvTable& table,
     return parse_tuple_value(row[(size_t)it->second]);
 }
 
+static std::string get_string_field(const CsvTable& table,
+                                    const std::vector<std::string>& row,
+                                    const std::string& column) {
+    const auto it = table.index.find(column);
+    if (it == table.index.end()) {
+        throw std::runtime_error("Missing required string column: " + column);
+    }
+
+    return trim(row[(size_t)it->second]);
+}
+
 static std::string cross_section_column(const std::string& label,
                                         const std::string& helicity) {
     return "normed cross sections, ep->epg, exp, " + label + ", " + helicity;
@@ -377,6 +430,15 @@ static PeriodInput grouped_input(const std::string& label,
     out.period = label;
     out.columns = columns;
     return out;
+}
+
+static std::vector<std::string> base_periods() {
+    return {
+        "Fa18 Inb",
+        "Fa18 Out",
+        "Sp18 Inb",
+        "Sp18 Out"
+    };
 }
 
 static std::vector<ConsistencyCase> all_consistency_cases() {
@@ -524,6 +586,8 @@ static void validate_schema(const CsvTable& table,
         }
     }
 
+    required.push_back(avg_column("e_theta", "10.6 GeV"));
+
     require_columns(table, required, "run-period consistency systematics");
 }
 
@@ -586,10 +650,169 @@ static bool compute_leave_one_out_mean(const std::vector<TupleValue>& values,
     return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
 }
 
+static double eval_poly(const std::vector<double>& params,
+                        double x) {
+    double y = 0.0;
+    double pow_x = 1.0;
+
+    for (const double p : params) {
+        y += p * pow_x;
+        pow_x *= x;
+    }
+
+    return y;
+}
+
+static std::map<std::string, PolynomialScale>
+load_e_theta_scale_polynomials(const fs::path& fit_summary_path) {
+    CsvTable fit_table = read_csv_or_throw(fit_summary_path.string());
+
+    require_columns(
+        fit_table,
+        {
+            "case",
+            "central mode",
+            "reference type",
+            "period",
+            "variable",
+            "polynomial order",
+            "accepted",
+            "p0",
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5"
+        },
+        "e_theta polynomial scale factors"
+    );
+
+    std::map<std::string, PolynomialScale> out;
+
+    for (const auto& row : fit_table.rows) {
+        const std::string case_name = get_string_field(fit_table, row, "case");
+        const std::string central_mode = get_string_field(fit_table, row, "central mode");
+        const std::string reference_type = get_string_field(fit_table, row, "reference type");
+        const std::string period = get_string_field(fit_table, row, "period");
+        const std::string variable = get_string_field(fit_table, row, "variable");
+        const bool accepted = parse_bool_string(get_string_field(fit_table, row, "accepted"));
+
+        if (case_name != "10.6 GeV unpol") {
+            continue;
+        }
+
+        if (central_mode != "stat_weighted") {
+            continue;
+        }
+
+        if (reference_type != "all_mean") {
+            continue;
+        }
+
+        if (variable != "e_theta") {
+            continue;
+        }
+
+        if (!accepted) {
+            continue;
+        }
+
+        int order = -1;
+        if (!parse_int(get_string_field(fit_table, row, "polynomial order"), order)) {
+            continue;
+        }
+
+        if (order < 0 || order > 5) {
+            continue;
+        }
+
+        std::vector<double> params;
+        params.reserve((size_t)(order + 1));
+
+        bool ok = true;
+        for (int ip = 0; ip <= order; ++ip) {
+            double p = 0.0;
+            if (!parse_double(get_string_field(fit_table, row, "p" + std::to_string(ip)), p)) {
+                ok = false;
+                break;
+            }
+
+            params.push_back(p);
+        }
+
+        if (!ok) {
+            continue;
+        }
+
+        PolynomialScale scale;
+        scale.ok = true;
+        scale.period = period;
+        scale.order = order;
+        scale.params = params;
+
+        const auto it_existing = out.find(period);
+        if (it_existing == out.end() || order > it_existing->second.order) {
+            out[period] = scale;
+        }
+    }
+
+    for (const auto& period : base_periods()) {
+        const auto it = out.find(period);
+
+        if (it == out.end() || !it->second.ok) {
+            throw std::runtime_error(
+                "Missing final accepted all_mean stat_weighted e_theta polynomial scale for period " +
+                period + " in " + fit_summary_path.string()
+            );
+        }
+    }
+
+    std::cout << "[run-period-consistency] e_theta polynomial scale factors used for scaled plots:\n";
+
+    for (const auto& period : base_periods()) {
+        const PolynomialScale& scale = out.at(period);
+
+        std::cout << "  " << std::left << std::setw(10) << period
+                  << " order = " << std::right << scale.order
+                  << " params =";
+
+        for (const double p : scale.params) {
+            std::cout << " " << std::setprecision(10) << p;
+        }
+
+        std::cout << "\n";
+    }
+
+    std::cout << "[run-period-consistency] e_theta polynomial reference values:\n";
+    std::cout << std::left << std::setw(10) << "theta";
+
+    for (const auto& period : base_periods()) {
+        std::cout << std::right << std::setw(16) << period;
+    }
+
+    std::cout << "\n";
+
+    for (int itheta = 1; itheta <= 30; ++itheta) {
+        const double theta = (double)itheta;
+
+        std::cout << std::left << std::setw(10) << std::setprecision(4) << theta;
+
+        for (const auto& period : base_periods()) {
+            const double scale_value = eval_poly(out.at(period).params, theta);
+            std::cout << std::right << std::setw(16) << std::setprecision(8) << scale_value;
+        }
+
+        std::cout << "\n";
+    }
+
+    return out;
+}
+
 static TupleValue scaled_tuple(const TupleValue& input,
                                const std::string& source_period,
+                               double e_theta_10p6,
                                bool use_scaling,
-                               const std::map<std::string, double>& scale_by_period) {
+                               const std::map<std::string, PolynomialScale>& scale_by_period) {
     if (!input.ok) {
         return input;
     }
@@ -599,17 +822,21 @@ static TupleValue scaled_tuple(const TupleValue& input,
     }
 
     if (source_period.empty()) {
-        return input;
+        throw std::runtime_error("Cannot apply e_theta polynomial scaling because source_period is empty.");
+    }
+
+    if (!std::isfinite(e_theta_10p6)) {
+        return TupleValue();
     }
 
     const auto it = scale_by_period.find(source_period);
-    if (it == scale_by_period.end()) {
-        return input;
+    if (it == scale_by_period.end() || !it->second.ok) {
+        throw std::runtime_error("Missing e_theta polynomial scale for period " + source_period);
     }
 
-    const double scale = it->second;
+    const double scale = eval_poly(it->second.params, e_theta_10p6);
     if (!std::isfinite(scale) || std::abs(scale) <= 0.0) {
-        return input;
+        return TupleValue();
     }
 
     TupleValue out = input;
@@ -623,13 +850,15 @@ static TupleValue evaluate_input_for_row(const CsvTable& table,
                                          const std::vector<std::string>& row,
                                          const PeriodInput& input,
                                          bool use_scaling,
-                                         const std::map<std::string, double>& scale_by_period) {
+                                         const std::map<std::string, PolynomialScale>& scale_by_period) {
     std::vector<TupleValue> values;
     values.reserve(input.columns.size());
 
+    const double e_theta_10p6 = get_numeric_or_nan(table, row, avg_column("e_theta", "10.6 GeV"));
+
     for (const auto& col : input.columns) {
         TupleValue v = get_tuple(table, row, col.column);
-        v = scaled_tuple(v, col.source_period, use_scaling, scale_by_period);
+        v = scaled_tuple(v, col.source_period, e_theta_10p6, use_scaling, scale_by_period);
 
         if (v.ok) {
             values.push_back(v);
@@ -708,96 +937,6 @@ static double compute_leave_one_out_chi2_reduced(const std::vector<TupleValue>& 
     }
 
     return chi2 / ndf;
-}
-
-static std::vector<std::string> base_periods() {
-    return {
-        "Fa18 Inb",
-        "Fa18 Out",
-        "Sp18 Inb",
-        "Sp18 Out"
-    };
-}
-
-static std::map<std::string, double>
-compute_10p6_unpol_scale_factors(const CsvTable& table) {
-    const std::vector<std::string> periods = base_periods();
-
-    std::map<std::string, PeriodRatioAccumulator> acc_by_period;
-    for (const auto& period : periods) {
-        acc_by_period[period] = PeriodRatioAccumulator();
-    }
-
-    for (const auto& row : table.rows) {
-        std::vector<TupleValue> values;
-        values.reserve(periods.size());
-
-        for (const auto& period : periods) {
-            const TupleValue v = get_tuple(table, row, cross_section_column(period, "unpol"));
-            values.push_back(v);
-        }
-
-        double mean = 0.0;
-        double mean_stat = 0.0;
-
-        if (!compute_weighted_mean_skip_invalid(values, mean, mean_stat)) {
-            continue;
-        }
-
-        if (!std::isfinite(mean) || std::abs(mean) <= 0.0) {
-            continue;
-        }
-
-        for (size_t iper = 0; iper < periods.size(); ++iper) {
-            const TupleValue& v = values[iper];
-
-            if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
-                continue;
-            }
-
-            const double ratio = v.value / mean;
-            const double ratio_stat = std::abs(v.stat / mean);
-
-            if (!std::isfinite(ratio) || !std::isfinite(ratio_stat) || ratio_stat <= 0.0) {
-                continue;
-            }
-
-            const double w = 1.0 / (ratio_stat * ratio_stat);
-
-            PeriodRatioAccumulator& acc = acc_by_period[periods[iper]];
-            acc.sum_w += w;
-            acc.sum_wr += w * ratio;
-            acc.n += 1;
-        }
-    }
-
-    std::map<std::string, double> scale_by_period;
-
-    std::cout << "[run-period-consistency] 10.6 GeV unpol scale factors used for scaled plots:\n";
-
-    for (const auto& period : periods) {
-        const PeriodRatioAccumulator& acc = acc_by_period[period];
-
-        if (acc.sum_w <= 0.0 || acc.n <= 0) {
-            throw std::runtime_error("Could not compute 10.6 GeV unpol scale factor for period " + period);
-        }
-
-        const double mean_ratio = acc.sum_wr / acc.sum_w;
-        const double mean_ratio_stat = 1.0 / std::sqrt(acc.sum_w);
-
-        if (!std::isfinite(mean_ratio) || std::abs(mean_ratio) <= 0.0) {
-            throw std::runtime_error("Invalid 10.6 GeV unpol scale factor for period " + period);
-        }
-
-        scale_by_period[period] = mean_ratio;
-
-        std::cout << "  " << std::left << std::setw(10) << period
-                  << " scale = " << std::right << std::setprecision(10)
-                  << mean_ratio << " +/- " << mean_ratio_stat
-                  << "   n=" << acc.n << "\n";
-    }
-
-    return scale_by_period;
 }
 
 static double percentile(std::vector<double> values,
@@ -1019,11 +1158,11 @@ static void make_title_and_grid_pads(TCanvas& canvas,
 }
 
 static std::string plot_prefix(bool use_scaling) {
-    return use_scaling ? "scaled" : "unscaled";
+    return use_scaling ? "scaled_etheta_poly" : "unscaled";
 }
 
 static std::string title_prefix(bool use_scaling) {
-    return use_scaling ? "Scaled " : "Unscaled ";
+    return use_scaling ? "Scaled e_{#theta}-polynomial " : "Unscaled ";
 }
 
 static std::string canvas_tag_for_vars(const std::string& var_group_tag) {
@@ -1330,7 +1469,7 @@ static void print_summary_block(const std::string& label,
 
 static void fill_case_outputs(const CsvTable& table,
                               const ConsistencyCase& c,
-                              const std::map<std::string, double>& scale_by_period,
+                              const std::map<std::string, PolynomialScale>& scale_by_period,
                               bool use_scaling,
                               std::map<std::string, PointPack>& chi2_by_var,
                               std::map<std::string, PointPack>& loo_chi2_by_var,
@@ -1443,7 +1582,7 @@ static void fill_case_outputs(const CsvTable& table,
 static void make_plots_for_case(const fs::path& root_out_dir,
                                 const CsvTable& table,
                                 const ConsistencyCase& c,
-                                const std::map<std::string, double>& scale_by_period,
+                                const std::map<std::string, PolynomialScale>& scale_by_period,
                                 bool use_scaling) {
     const fs::path out_dir = root_out_dir / c.file_tag;
     fs::create_directories(out_dir);
@@ -1613,14 +1752,14 @@ static void make_plots_for_case(const fs::path& root_out_dir,
 
     print_summary_block(
         "[run-period-consistency] All-mean summary for " +
-        std::string(use_scaling ? "scaled " : "unscaled ") + c.label,
+        std::string(use_scaling ? "scaled e_theta-polynomial " : "unscaled ") + c.label,
         chi2_by_var,
         pulls_by_var_period
     );
 
     print_summary_block(
         "[run-period-consistency] Leave-one-out summary for " +
-        std::string(use_scaling ? "scaled " : "unscaled ") + c.label,
+        std::string(use_scaling ? "scaled e_theta-polynomial " : "unscaled ") + c.label,
         loo_chi2_by_var,
         loo_pulls_by_var_period
     );
@@ -1638,7 +1777,7 @@ static void make_plots_for_case(const fs::path& root_out_dir,
     }
 
     std::cout << "[run-period-consistency] Completed "
-              << (use_scaling ? "scaled " : "unscaled ")
+              << (use_scaling ? "scaled e_theta-polynomial " : "unscaled ")
               << c.label
               << " with " << npoints
               << " all-mean valid bins and "
@@ -1677,8 +1816,14 @@ bool run_period_consistency_systematics(const std::string& csv_path,
 
         validate_schema(table, cases_to_run);
 
-        const std::map<std::string, double> scale_by_period =
-            compute_10p6_unpol_scale_factors(table);
+        const fs::path fit_summary_path =
+            fs::path(output_root_dir) /
+            "combination_systematics" /
+            "kinematic_dependence_fits" /
+            "kinematic_dependence_fit_summary.csv";
+
+        const std::map<std::string, PolynomialScale> scale_by_period =
+            load_e_theta_scale_polynomials(fit_summary_path);
 
         std::cout << "[run-period-consistency] CSV rows loaded: "
                   << table.rows.size() << "\n";
@@ -1686,6 +1831,8 @@ bool run_period_consistency_systematics(const std::string& csv_path,
                   << out_dir.string() << "\n";
         std::cout << "[run-period-consistency] make_all_cases = "
                   << (make_all_cases ? "true" : "false") << "\n";
+        std::cout << "[run-period-consistency] Scale source: "
+                  << fit_summary_path.string() << "\n";
 
         for (const auto& c : cases_to_run) {
             make_plots_for_case(out_dir,
