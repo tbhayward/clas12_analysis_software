@@ -40,6 +40,10 @@
 //
 // The model uncertainty is not included. The ratio uncertainty is propagated
 // only from the statistical uncertainty on the normalized data point.
+//
+// Ratio plot convention:
+//   - Only linear-y ratio plots are produced.
+//   - The ratio y-axis is fixed to 0.0 to 2.0.
 // -----------------------------------------------------------------------------
 
 #include "norm_cross_sections.h"
@@ -106,7 +110,6 @@ static const std::vector<std::string>& normed_helicities_for_label(const std::st
     return kUnpolarizedOnlyHelicities;
 }
 
-
 struct Triple {
     double value;
     double stat;
@@ -114,7 +117,7 @@ struct Triple {
 };
 
 // -----------------------------------------------------------------------------
-// Label helpers (match cross_sections.cpp behavior / your conventions)
+// Label helpers
 // -----------------------------------------------------------------------------
 
 static std::string canonical_period_dir(const std::string &label) {
@@ -140,7 +143,7 @@ static std::string theory_energy_label_for(const std::string &label) {
 }
 
 // -----------------------------------------------------------------------------
-// CSV helpers (robust for quoted fields with escaped quotes)
+// CSV helpers
 // -----------------------------------------------------------------------------
 
 static std::string trim(const std::string &s) {
@@ -353,7 +356,7 @@ static void ensure_dir(const fs::path &p) {
 }
 
 // -----------------------------------------------------------------------------
-// Theory loading (same JSON structure as cross_sections.cpp generator)
+// Theory loading
 // -----------------------------------------------------------------------------
 
 struct TheoryCurves {
@@ -497,13 +500,13 @@ static void normalize_one_sigma_cell(const Triple &sigma_raw,
 }
 
 // -----------------------------------------------------------------------------
-// Plotting structures (mirrors cross_sections style)
+// Plotting structures
 // -----------------------------------------------------------------------------
 
 struct Point {
     double phi;
     double xs;
-    double xs_err; // using stat as error bars (matches cross_sections.cpp style)
+    double xs_err;
 };
 
 struct RatioPoint {
@@ -521,7 +524,7 @@ struct BinData {
     bool   have_theory_row = false;
 };
 
-using QTKey = std::pair<Range, Range>; // (Q2, |t|)
+using QTKey = std::pair<Range, Range>;
 
 struct XSGroupByXB {
     std::map<QTKey, BinData> bins;
@@ -541,18 +544,6 @@ enum class RatioModel {
     VGG
 };
 
-static std::string ratio_model_name(RatioModel model) {
-    if (model == RatioModel::KM15) return "KM15";
-    if (model == RatioModel::BH)   return "BH";
-    return "VGG";
-}
-
-static int ratio_model_color(RatioModel model) {
-    if (model == RatioModel::KM15) return kMagenta + 1;
-    if (model == RatioModel::BH)   return kGreen + 2;
-    return kOrange + 7;
-}
-
 static std::string ratio_mode_prefix(XSecPanelMode mode) {
     if (mode == XSecPanelMode::UnpolOnly) return "unpol";
     if (mode == XSecPanelMode::PosOnly)   return "pos";
@@ -565,6 +556,12 @@ static std::string ratio_mode_label(XSecPanelMode mode) {
     if (mode == XSecPanelMode::PosOnly)   return "+ helicity";
     if (mode == XSecPanelMode::NegOnly)   return "- helicity";
     return "all helicities";
+}
+
+static int ratio_model_color(RatioModel model) {
+    if (model == RatioModel::KM15) return kMagenta + 1;
+    if (model == RatioModel::BH)   return kGreen + 2;
+    return kOrange + 7;
 }
 
 static const std::vector<Point> *points_for_mode(const BinData &bin,
@@ -848,67 +845,8 @@ static std::vector<RatioPoint> build_ratios_for_points(
     return ratios;
 }
 
-static std::pair<double, double> compute_ratio_yrange_for_bin_and_mode(
-    const BinData *bin,
-    const std::map<size_t, TheoryCurves> &theory,
-    XSecPanelMode mode) {
-
-    double ymin = std::numeric_limits<double>::max();
-    double ymax = 0.0;
-
-    if (bin && bin->have_theory_row) {
-        const auto it_th = theory.find(bin->theory_row);
-
-        if (it_th != theory.end()) {
-            const TheoryCurves &tc = it_th->second;
-            const std::vector<Point> *points = points_for_mode(*bin, mode);
-
-            if (points) {
-                const std::vector<RatioModel> models = {
-                    RatioModel::KM15,
-                    RatioModel::BH,
-                    RatioModel::VGG
-                };
-
-                for (RatioModel model : models) {
-                    const std::vector<RatioPoint> ratios =
-                        build_ratios_for_points(*points, tc, model, mode);
-
-                    for (const auto &p : ratios) {
-                        if (!std::isfinite(p.ratio)) continue;
-                        if (!std::isfinite(p.ratio_err)) continue;
-
-                        const double lo = std::max(0.0, p.ratio - p.ratio_err);
-                        const double hi = p.ratio + p.ratio_err;
-
-                        if (lo < ymin) ymin = lo;
-                        if (hi > ymax) ymax = hi;
-                    }
-                }
-            }
-        }
-    }
-
-    if (!(ymax > 0.0) || !std::isfinite(ymax)) {
-        return std::make_pair(0.0, 2.0);
-    }
-
-    if (!std::isfinite(ymin) || ymin == std::numeric_limits<double>::max()) {
-        ymin = 0.0;
-    }
-
-    ymin = std::max(0.0, ymin * 0.80);
-    ymax = ymax * 1.20;
-
-    if (ymax < 2.0) {
-        ymax = 2.0;
-    }
-
-    return std::make_pair(ymin, ymax);
-}
-
 // -----------------------------------------------------------------------------
-// Canvas builder (one xB bin, one cross-section view mode)
+// Canvas builder: one xB bin, one cross-section view mode
 // -----------------------------------------------------------------------------
 
 static void make_normed_xsec_canvas_for_mode(
@@ -1256,7 +1194,7 @@ static void make_normed_xsec_canvas_for_mode(
 }
 
 // -----------------------------------------------------------------------------
-// Canvas builder (one xB bin, one helicity mode, combined KM15/BH/VGG ratios)
+// Canvas builder: one xB bin, one helicity mode, combined KM15/BH/VGG ratios
 // -----------------------------------------------------------------------------
 
 static void make_ratio_canvas_for_mode(
@@ -1271,8 +1209,7 @@ static void make_ratio_canvas_for_mode(
     XSecPanelMode mode,
     int ncols,
     int nrows,
-    int nPads,
-    bool log_y) {
+    int nPads) {
 
     (void)nPads;
 
@@ -1285,8 +1222,7 @@ static void make_ratio_canvas_for_mode(
     const int W = 300 * ncols + 160;
     const int H = 260 * nrows + 240;
 
-    const char *canvas_name = log_y ? "c_normed_xsec_ratios_logy" : "c_normed_xsec_ratios";
-    TCanvas *c = new TCanvas(canvas_name, canvas_name, W, H);
+    TCanvas *c = new TCanvas("c_normed_xsec_ratios", "c_normed_xsec_ratios", W, H);
 
     TPad *pTop = new TPad("pTopRatio", "pTopRatio", 0.0, 0.78, 1.0, 1.0);
     pTop->SetFillStyle(0);
@@ -1310,9 +1246,8 @@ static void make_ratio_canvas_for_mode(
 
     std::ostringstream tit;
 
-    tit << "Normed cross-section data/model ratios"
-        << (log_y ? " (log y)" : "")
-        << ", ep #rightarrow ep#gamma   " << label
+    tit << "Normed cross-section data/model ratios, ep #rightarrow ep#gamma   "
+        << label
         << "   " << ratio_mode_label(mode)
         << "   x_{B} in ("
         << std::fixed << std::setprecision(3)
@@ -1373,7 +1308,7 @@ static void make_ratio_canvas_for_mode(
             gPad->SetBottomMargin(0.18);
             gPad->SetLeftMargin(0.16);
             gPad->SetRightMargin(0.07);
-            gPad->SetLogy(log_y);
+            gPad->SetLogy(false);
 
             QTKey key(q2_range, t_range);
 
@@ -1384,9 +1319,8 @@ static void make_ratio_canvas_for_mode(
                 bin_ptr = &(it_bin->second);
             }
 
-            auto yr = compute_ratio_yrange_for_bin_and_mode(bin_ptr, theory, mode);
-            const double ymin_canvas = log_y ? 0.1 : yr.first;
-            const double ymax_canvas = log_y ? 20.0 : yr.second;
+            const double ymin_canvas = 0.0;
+            const double ymax_canvas = 2.0;
 
             TH1 *frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
 
@@ -1451,13 +1385,8 @@ static void make_ratio_canvas_for_mode(
     fname << "normed_cross_sections_ratios_"
           << ratio_mode_prefix(mode) << "_"
           << canonical_period_dir(label)
-          << "_xB_" << xb_idx_for_name;
-
-    if (log_y) {
-        fname << "_logy";
-    }
-
-    fname << ".png";
+          << "_xB_" << xb_idx_for_name
+          << ".png";
 
     fs::path outpath = outdir / fname.str();
 
@@ -1469,7 +1398,7 @@ static void make_ratio_canvas_for_mode(
 } // end anonymous namespace
 
 // -----------------------------------------------------------------------------
-// Public API: wrapper overload (fixes your original main.cpp call)
+// Public API: wrapper overload
 // -----------------------------------------------------------------------------
 
 bool update_normed_cross_sections_csv(const std::string &csv_main) {
@@ -1642,7 +1571,7 @@ bool update_normed_cross_sections_csv(const std::string &csv_main,
 }
 
 // -----------------------------------------------------------------------------
-// Plotting normalized cross sections (with theory curves)
+// Plotting normalized cross sections with theory curves
 // -----------------------------------------------------------------------------
 
 bool plot_normed_cross_sections_for_label(const std::string &csv_main,
@@ -1769,8 +1698,9 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         }
 
         const Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
-        Triple xs_pos;
-        Triple xs_neg;
+        Triple xs_pos{0.0, 0.0, 0.0};
+        Triple xs_neg{0.0, 0.0, 0.0};
+
         if (has_hel) {
             xs_pos = parse_tuple3(fields[c_xs_pos]);
             xs_neg = parse_tuple3(fields[c_xs_neg]);
@@ -1807,6 +1737,7 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         };
 
         add_point(xs_unpol, bin.unpol);
+
         if (has_hel) {
             add_point(xs_pos, bin.pos);
             add_point(xs_neg, bin.neg);
@@ -1904,16 +1835,7 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                    theory, outdir,
                                    xb_idx_for_name,
                                    XSecPanelMode::UnpolOnly,
-                                   ncols, nrows, nPads,
-                                   false);
-
-        make_ratio_canvas_for_mode(label, xb_range, group,
-                                   q2_slice, t_slice,
-                                   theory, outdir,
-                                   xb_idx_for_name,
-                                   XSecPanelMode::UnpolOnly,
-                                   ncols, nrows, nPads,
-                                   true);
+                                   ncols, nrows, nPads);
 
         if (has_hel) {
             make_ratio_canvas_for_mode(label, xb_range, group,
@@ -1921,32 +1843,14 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                        theory, outdir,
                                        xb_idx_for_name,
                                        XSecPanelMode::PosOnly,
-                                       ncols, nrows, nPads,
-                                       false);
-
-            make_ratio_canvas_for_mode(label, xb_range, group,
-                                       q2_slice, t_slice,
-                                       theory, outdir,
-                                       xb_idx_for_name,
-                                       XSecPanelMode::PosOnly,
-                                       ncols, nrows, nPads,
-                                       true);
+                                       ncols, nrows, nPads);
 
             make_ratio_canvas_for_mode(label, xb_range, group,
                                        q2_slice, t_slice,
                                        theory, outdir,
                                        xb_idx_for_name,
                                        XSecPanelMode::NegOnly,
-                                       ncols, nrows, nPads,
-                                       false);
-
-            make_ratio_canvas_for_mode(label, xb_range, group,
-                                       q2_slice, t_slice,
-                                       theory, outdir,
-                                       xb_idx_for_name,
-                                       XSecPanelMode::NegOnly,
-                                       ncols, nrows, nPads,
-                                       true);
+                                       ncols, nrows, nPads);
         }
 
         ++xb_canvas_counter;
