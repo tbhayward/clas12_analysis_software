@@ -11,6 +11,7 @@
 #include <TAxis.h>
 #include <TH1.h>
 #include <TLine.h>
+#include <TF1.h>
 
 #include <algorithm>
 #include <cmath>
@@ -22,6 +23,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -93,6 +95,7 @@ struct BinResult {
 
     double f_ptp = std::numeric_limits<double>::quiet_NaN();
     double f_ptp_percent = std::numeric_limits<double>::quiet_NaN();
+    double f_ptp_stat_percent = std::numeric_limits<double>::quiet_NaN();
 
     int n_periods = 0;
 };
@@ -110,6 +113,12 @@ struct GroupByXB {
     std::map<QTKey, BinData> bins;
     Range xb_range;
     int xb_index = -1;
+};
+
+struct VariableScatterConfig {
+    std::string key;
+    std::string title;
+    bool angle_canvas = false;
 };
 
 static const std::vector<std::string> kBasePeriods = {
@@ -458,7 +467,6 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
                                   double& mean_stat) {
     double sum_w = 0.0;
     double sum_wx = 0.0;
-    int n_valid = 0;
 
     for (const auto& v : values) {
         if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
@@ -468,10 +476,9 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
         const double w = 1.0 / (v.stat * v.stat);
         sum_w += w;
         sum_wx += w * v.value;
-        ++n_valid;
     }
 
-    if (n_valid < 2 || sum_w <= 0.0) {
+    if (sum_w <= 0.0) {
         return false;
     }
 
@@ -479,21 +486,6 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
     mean_stat = 1.0 / std::sqrt(sum_w);
 
     return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
-}
-
-static std::vector<TupleValue> valid_values_only(const std::vector<TupleValue>& values) {
-    std::vector<TupleValue> out;
-    out.reserve(values.size());
-
-    for (const auto& v : values) {
-        if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
-            continue;
-        }
-
-        out.push_back(v);
-    }
-
-    return out;
 }
 
 static std::vector<PeriodScale> compute_10p6_unpol_scale_factors(const CsvTable& table) {
@@ -619,7 +611,6 @@ static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& val
 
     double sum_w = 0.0;
     double sum_wx = 0.0;
-    int n_valid = 0;
 
     for (const auto& v : values) {
         if (!v.ok || !std::isfinite(v.value) || !std::isfinite(v.stat) || v.stat <= 0.0) {
@@ -634,10 +625,9 @@ static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& val
         const double w = 1.0 / var;
         sum_w += w;
         sum_wx += w * v.value;
-        ++n_valid;
     }
 
-    if (n_valid < 2 || sum_w <= 0.0) {
+    if (sum_w <= 0.0) {
         return false;
     }
 
@@ -650,25 +640,24 @@ static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& val
 static double chi2_ndf_with_extra_fraction(const std::vector<TupleValue>& values,
                                            double f,
                                            double reference_mean) {
-    const std::vector<TupleValue> valid_values = valid_values_only(values);
-
-    if (valid_values.size() < 2U) {
-        return std::numeric_limits<double>::quiet_NaN();
-    }
+    int n = 0;
 
     double mean = 0.0;
     double mean_stat = 0.0;
 
-    if (!weighted_mean_with_extra_fraction(valid_values, f, reference_mean, mean, mean_stat)) {
+    if (!weighted_mean_with_extra_fraction(values, f, reference_mean, mean, mean_stat)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
     const double extra = f * std::abs(reference_mean);
 
     double chi2 = 0.0;
-    int n_valid = 0;
 
-    for (const auto& v : valid_values) {
+    for (const auto& v : values) {
+        if (!v.ok || !std::isfinite(v.value) || !std::isfinite(v.stat) || v.stat <= 0.0) {
+            continue;
+        }
+
         const double var = v.stat * v.stat + extra * extra;
         if (!(var > 0.0) || !std::isfinite(var)) {
             continue;
@@ -676,10 +665,10 @@ static double chi2_ndf_with_extra_fraction(const std::vector<TupleValue>& values
 
         const double residual = v.value - mean;
         chi2 += residual * residual / var;
-        ++n_valid;
+        ++n;
     }
 
-    const double ndf = (double)n_valid - 1.0;
+    const double ndf = (double)n - 1.0;
     if (ndf <= 0.0) {
         return std::numeric_limits<double>::quiet_NaN();
     }
@@ -792,7 +781,6 @@ static BinResult evaluate_row(const CsvTable& table,
     result.g_theta = get_double_or_nan(table, row, "g_theta, 10.6 GeV");
 
     std::vector<TupleValue> scaled_values;
-    scaled_values.reserve(kBasePeriods.size());
 
     for (const auto& input : base_inputs()) {
         const TupleValue raw = get_tuple(table, row, input.column);
@@ -804,15 +792,12 @@ static BinResult evaluate_row(const CsvTable& table,
 
         const TupleValue scaled = apply_scale(raw, it_scale->second);
 
-        if (!scaled.ok) {
-            continue;
+        if (scaled.ok) {
+            scaled_values.push_back(scaled);
         }
-
-        scaled_values.push_back(scaled);
     }
 
     result.n_periods = (int)scaled_values.size();
-
     if (result.n_periods < 2) {
         return result;
     }
@@ -845,6 +830,11 @@ static BinResult evaluate_row(const CsvTable& table,
                                          result.f_ptp,
                                          result.mean_scaled);
         result.f_ptp_percent = 100.0 * result.f_ptp;
+
+        if (std::isfinite(result.mean_scaled_stat) && std::abs(result.mean_scaled) > 0.0) {
+            result.f_ptp_stat_percent =
+                100.0 * result.mean_scaled_stat / std::abs(result.mean_scaled);
+        }
     }
 
     return result;
@@ -858,10 +848,6 @@ evaluate_all_bins(const CsvTable& table,
 
     for (size_t i = 0; i < table.rows.size(); ++i) {
         BinResult result = evaluate_row(table, table.rows[i], i + 1, scale_by_period);
-
-        if (result.n_periods < 2) {
-            continue;
-        }
 
         if (!std::isfinite(result.f_ptp)) {
             continue;
@@ -922,7 +908,7 @@ static void write_bin_summary_csv(const std::string& path,
     fout << "row index,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
          << "xBavg,Q2avg,t_abs_avg,phiavg,e_theta,p_theta,g_theta,n periods,"
          << "mean scaled,mean scaled stat,chi2ndf before,chi2ndf after,"
-         << "f_ptp,f_ptp percent\n";
+         << "f_ptp,f_ptp percent,f_ptp stat percent\n";
 
     for (const auto& r : results) {
         fout << r.row_index << ","
@@ -945,7 +931,8 @@ static void write_bin_summary_csv(const std::string& path,
              << format_double(r.chi2_ndf_before) << ","
              << format_double(r.chi2_ndf_after) << ","
              << format_double(r.f_ptp) << ","
-             << format_double(r.f_ptp_percent) << "\n";
+             << format_double(r.f_ptp_percent) << ","
+             << format_double(r.f_ptp_stat_percent) << "\n";
     }
 
     fout.close();
@@ -1220,12 +1207,6 @@ static void draw_one_xb_canvas(const Range& xb_range,
     delete canvas;
 }
 
-struct VariableScatterConfig {
-    std::string key;
-    std::string title;
-    bool angle_canvas = false;
-};
-
 static std::vector<VariableScatterConfig> physics_scatter_variables() {
     return {
         {"xB", "x_{B}", false},
@@ -1252,6 +1233,7 @@ static double value_for_scatter_variable(const BinResult& r,
     if (key == "e_theta") return r.e_theta;
     if (key == "p_theta") return r.p_theta;
     if (key == "g_theta") return r.g_theta;
+
     return std::numeric_limits<double>::quiet_NaN();
 }
 
@@ -1260,7 +1242,10 @@ static std::vector<double> choose_scatter_x_range(const std::vector<double>& xs)
     double xmax = -std::numeric_limits<double>::infinity();
 
     for (const double x : xs) {
-        if (!std::isfinite(x)) continue;
+        if (!std::isfinite(x)) {
+            continue;
+        }
+
         xmin = std::min(xmin, x);
         xmax = std::max(xmax, x);
     }
@@ -1280,18 +1265,158 @@ static std::vector<double> choose_scatter_x_range(const std::vector<double>& xs)
 
 static TGraph* make_scatter_graph(const std::vector<double>& x,
                                   const std::vector<double>& y) {
-    if (x.empty() || y.empty() || x.size() != y.size()) return nullptr;
+    if (x.empty() || y.empty() || x.size() != y.size()) {
+        return nullptr;
+    }
 
     TGraph* graph = new TGraph((int)x.size());
+
     for (int i = 0; i < (int)x.size(); ++i) {
         graph->SetPoint(i, x[(size_t)i], y[(size_t)i]);
     }
+
     graph->SetMarkerStyle(20);
     graph->SetMarkerSize(0.55);
     graph->SetMarkerColor(kBlack);
     graph->SetLineColor(kBlack);
     graph->SetLineWidth(1);
+
     return graph;
+}
+
+static TGraphErrors* make_scatter_graph_errors(const std::vector<double>& x,
+                                               const std::vector<double>& y,
+                                               const std::vector<double>& ey) {
+    if (x.empty() || y.empty() || ey.empty()) {
+        return nullptr;
+    }
+
+    if (x.size() != y.size() || x.size() != ey.size()) {
+        return nullptr;
+    }
+
+    TGraphErrors* graph = new TGraphErrors((int)x.size());
+
+    for (int i = 0; i < (int)x.size(); ++i) {
+        graph->SetPoint(i, x[(size_t)i], y[(size_t)i]);
+        graph->SetPointError(i, 0.0, ey[(size_t)i]);
+    }
+
+    graph->SetMarkerStyle(20);
+    graph->SetMarkerSize(0.55);
+    graph->SetMarkerColor(kBlack);
+    graph->SetLineColor(kBlack);
+    graph->SetLineWidth(1);
+
+    return graph;
+}
+
+static std::string poly_formula(int order) {
+    if (order < 0 || order > 5) {
+        throw std::runtime_error("Invalid polynomial order requested.");
+    }
+
+    if (order == 0) return "[0]";
+    if (order == 1) return "[0] + [1]*x";
+    if (order == 2) return "[0] + [1]*x + [2]*x*x";
+    if (order == 3) return "[0] + [1]*x + [2]*x*x + [3]*x*x*x";
+    if (order == 4) return "[0] + [1]*x + [2]*x*x + [3]*x*x*x + [4]*x*x*x*x";
+
+    return "[0] + [1]*x + [2]*x*x + [3]*x*x*x + [4]*x*x*x*x + [5]*x*x*x*x*x";
+}
+
+static int poly_color(int order) {
+    if (order == 0) return kRed + 1;
+    if (order == 1) return kBlue + 1;
+    if (order == 2) return kGreen + 2;
+    if (order == 3) return kMagenta + 1;
+    if (order == 4) return kOrange + 7;
+
+    return kCyan + 2;
+}
+
+static int poly_line_style(int order) {
+    if (order == 0) return 2;
+    if (order == 1) return 3;
+    if (order == 2) return 4;
+    if (order == 3) return 5;
+    if (order == 4) return 6;
+
+    return 7;
+}
+
+static void fit_and_draw_polynomials(TGraphErrors* graph,
+                                     const std::string& fit_tag,
+                                     const std::string& variable_key,
+                                     double xmin,
+                                     double xmax,
+                                     TLegend* legend,
+                                     std::vector<std::unique_ptr<TF1> >& fit_functions) {
+    if (!graph) {
+        return;
+    }
+
+    const int n_points = graph->GetN();
+    if (n_points < 2) {
+        return;
+    }
+
+    std::cout << "[combination-ptp] Polynomial fits for "
+              << fit_tag << " vs " << variable_key
+              << " with n=" << n_points << "\n";
+
+    for (int order = 0; order <= 5; ++order) {
+        if (n_points <= order + 1) {
+            std::cout << "    p" << order << ": skipped, not enough points for fit\n";
+            continue;
+        }
+
+        const std::string name =
+            "fit_" + fit_tag + "_" + variable_key + "_p" + std::to_string(order);
+
+        std::unique_ptr<TF1> fit(new TF1(name.c_str(),
+                                         poly_formula(order).c_str(),
+                                         xmin,
+                                         xmax));
+
+        fit->SetLineColor(poly_color(order));
+        fit->SetLineStyle(poly_line_style(order));
+        fit->SetLineWidth(2);
+
+        graph->Fit(fit.get(), "Q0");
+
+        const double chi2 = fit->GetChisquare();
+        const int ndf = fit->GetNDF();
+        const double chi2_ndf =
+            (ndf > 0 ? chi2 / (double)ndf : std::numeric_limits<double>::quiet_NaN());
+
+        fit->Draw("SAME");
+
+        std::ostringstream leg_label;
+        leg_label << "p" << order << " #chi^{2}/ndf=";
+
+        if (std::isfinite(chi2_ndf)) {
+            leg_label << std::fixed << std::setprecision(2) << chi2_ndf;
+        } else {
+            leg_label << "n/a";
+        }
+
+        legend->AddEntry(fit.get(), leg_label.str().c_str(), "l");
+
+        std::cout << "    p" << order
+                  << ": chi2=" << std::setprecision(10) << chi2
+                  << " ndf=" << ndf
+                  << " chi2/ndf=" << chi2_ndf;
+
+        for (int ip = 0; ip <= order; ++ip) {
+            std::cout << " p" << ip << "=" << fit->GetParameter(ip)
+                      << " +/- " << fit->GetParError(ip);
+        }
+
+        std::cout << "\n";
+
+        fit_functions.push_back(std::move(fit));
+    }
 }
 
 static void draw_scatter_canvas(const std::vector<BinResult>& results,
@@ -1302,7 +1427,9 @@ static void draw_scatter_canvas(const std::vector<BinResult>& results,
                                 int ncols,
                                 int nrows,
                                 double y_max_percent) {
-    if (results.empty()) return;
+    if (results.empty()) {
+        return;
+    }
 
     const int width = 650 * ncols;
     const int height = 520 * nrows + 140;
@@ -1311,14 +1438,22 @@ static void draw_scatter_canvas(const std::vector<BinResult>& results,
                                   width,
                                   height);
 
-    TPad* pTop = new TPad(("pTop_" + file_tag).c_str(), ("pTop_" + file_tag).c_str(),
-                          0.0, 0.89, 1.0, 1.0);
+    TPad* pTop = new TPad(("pTop_" + file_tag).c_str(),
+                          ("pTop_" + file_tag).c_str(),
+                          0.0,
+                          0.89,
+                          1.0,
+                          1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
     pTop->Draw();
 
-    TPad* pGrid = new TPad(("pGrid_" + file_tag).c_str(), ("pGrid_" + file_tag).c_str(),
-                           0.0, 0.00, 1.0, 0.89);
+    TPad* pGrid = new TPad(("pGrid_" + file_tag).c_str(),
+                           ("pGrid_" + file_tag).c_str(),
+                           0.0,
+                           0.00,
+                           1.0,
+                           0.89);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
     pGrid->Draw();
@@ -1326,6 +1461,7 @@ static void draw_scatter_canvas(const std::vector<BinResult>& results,
     pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
     pTop->cd();
+
     TLatex head;
     head.SetNDC();
     head.SetTextAlign(22);
@@ -1337,6 +1473,7 @@ static void draw_scatter_canvas(const std::vector<BinResult>& results,
 
     for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
         pGrid->cd(ivar + 1);
+
         gPad->SetGrid(1, 1);
         gPad->SetTopMargin(0.14);
         gPad->SetBottomMargin(0.18);
@@ -1346,10 +1483,15 @@ static void draw_scatter_canvas(const std::vector<BinResult>& results,
 
         std::vector<double> xs;
         std::vector<double> ys;
+
         for (const auto& r : results) {
             const double x = value_for_scatter_variable(r, vars[(size_t)ivar].key);
             const double y = r.f_ptp_percent;
-            if (!std::isfinite(x) || !std::isfinite(y)) continue;
+
+            if (!std::isfinite(x) || !std::isfinite(y)) {
+                continue;
+            }
+
             xs.push_back(x);
             ys.push_back(y);
         }
@@ -1385,13 +1527,171 @@ static void draw_scatter_canvas(const std::vector<BinResult>& results,
     canvas->cd();
     canvas->Modified();
     canvas->Update();
+
     canvas->SaveAs((out_dir / ("combination_point_to_point_sys_" + file_tag + ".pdf")).string().c_str());
+
+    delete canvas;
+}
+
+static void draw_scatter_canvas_with_errors_and_fits(
+    const std::vector<BinResult>& results,
+    const std::vector<VariableScatterConfig>& vars,
+    const fs::path& out_dir,
+    const std::string& file_tag,
+    const std::string& title_tag,
+    int ncols,
+    int nrows,
+    double y_max_percent) {
+    if (results.empty()) {
+        return;
+    }
+
+    const int width = 650 * ncols;
+    const int height = 520 * nrows + 140;
+    TCanvas* canvas = new TCanvas(("c_ptp_scatter_err_fit_" + file_tag).c_str(),
+                                  ("c_ptp_scatter_err_fit_" + file_tag).c_str(),
+                                  width,
+                                  height);
+
+    TPad* pTop = new TPad(("pTop_err_fit_" + file_tag).c_str(),
+                          ("pTop_err_fit_" + file_tag).c_str(),
+                          0.0,
+                          0.89,
+                          1.0,
+                          1.0);
+    pTop->SetFillStyle(0);
+    pTop->SetBorderSize(0);
+    pTop->Draw();
+
+    TPad* pGrid = new TPad(("pGrid_err_fit_" + file_tag).c_str(),
+                           ("pGrid_err_fit_" + file_tag).c_str(),
+                           0.0,
+                           0.00,
+                           1.0,
+                           0.89);
+    pGrid->SetFillStyle(0);
+    pGrid->SetBorderSize(0);
+    pGrid->Draw();
+    pGrid->cd();
+    pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+    pTop->cd();
+
+    TLatex head;
+    head.SetNDC();
+    head.SetTextAlign(22);
+    head.SetTextFont(42);
+    head.SetTextSize(0.065);
+    head.DrawLatex(0.5, 0.64, title_tag.c_str());
+
+    TLatex sub;
+    sub.SetNDC();
+    sub.SetTextAlign(22);
+    sub.SetTextFont(42);
+    sub.SetTextSize(0.038);
+    sub.DrawLatex(0.5, 0.30,
+                  "Error bars show 100 #times #delta#bar{#sigma}_{scaled}/|#bar{#sigma}_{scaled}|; fits are p0 through p5");
+
+    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    std::vector<std::unique_ptr<TLegend> > legends;
+    std::vector<std::unique_ptr<TF1> > fit_functions;
+
+    for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
+        pGrid->cd(ivar + 1);
+
+        gPad->SetGrid(1, 1);
+        gPad->SetTopMargin(0.14);
+        gPad->SetBottomMargin(0.18);
+        gPad->SetLeftMargin(0.16);
+        gPad->SetRightMargin(0.07);
+        gPad->SetTicks(1, 1);
+
+        std::vector<double> xs;
+        std::vector<double> ys;
+        std::vector<double> eys;
+
+        for (const auto& r : results) {
+            const double x = value_for_scatter_variable(r, vars[(size_t)ivar].key);
+            const double y = r.f_ptp_percent;
+            double ey = r.f_ptp_stat_percent;
+
+            if (!std::isfinite(x) || !std::isfinite(y)) {
+                continue;
+            }
+
+            if (!std::isfinite(ey) || ey < 0.0) {
+                ey = 0.0;
+            }
+
+            xs.push_back(x);
+            ys.push_back(y);
+            eys.push_back(ey);
+        }
+
+        const std::vector<double> xr = choose_scatter_x_range(xs);
+        TH1* frame = gPad->DrawFrame(xr[0], 0.0, xr[1], y_max_percent);
+        frame->GetXaxis()->SetTitle(vars[(size_t)ivar].title.c_str());
+        frame->GetYaxis()->SetTitle("Combination point-to-point sys (%)");
+        frame->GetXaxis()->CenterTitle();
+        frame->GetYaxis()->CenterTitle();
+        frame->GetXaxis()->SetNdivisions(505);
+        frame->GetXaxis()->SetTitleSize(0.060);
+        frame->GetYaxis()->SetTitleSize(0.060);
+        frame->GetXaxis()->SetLabelSize(0.050);
+        frame->GetYaxis()->SetLabelSize(0.050);
+        frame->GetXaxis()->SetTitleOffset(1.15);
+        frame->GetYaxis()->SetTitleOffset(1.25);
+
+        TLatex lab;
+        lab.SetNDC();
+        lab.SetTextFont(42);
+        lab.SetTextSize(0.060);
+        lab.SetTextAlign(22);
+        lab.DrawLatex(0.50, 0.93, vars[(size_t)ivar].title.c_str());
+
+        std::unique_ptr<TLegend> legend(new TLegend(0.50, 0.50, 0.93, 0.89));
+        legend->SetBorderSize(1);
+        legend->SetFillColor(kWhite);
+        legend->SetFillStyle(1001);
+        legend->SetTextFont(42);
+        legend->SetTextSize(0.032);
+
+        TGraphErrors* graph = make_scatter_graph_errors(xs, ys, eys);
+
+        if (graph) {
+            graph->Draw("P SAME");
+            legend->AddEntry(graph, "points", "lep");
+
+            fit_and_draw_polynomials(graph,
+                                     file_tag,
+                                     vars[(size_t)ivar].key,
+                                     xr[0],
+                                     xr[1],
+                                     legend.get(),
+                                     fit_functions);
+
+            graphs.emplace_back(graph);
+        }
+
+        legend->Draw();
+        legends.push_back(std::move(legend));
+    }
+
+    canvas->cd();
+    canvas->Modified();
+    canvas->Update();
+
+    canvas->SaveAs((out_dir / ("combination_point_to_point_sys_" +
+                               file_tag +
+                               "_with_stat_errors_and_fits.pdf")).string().c_str());
+
     delete canvas;
 }
 
 static void make_global_scatter_plots(const std::vector<BinResult>& results,
                                       const fs::path& out_dir) {
     const double y_max_percent = choose_global_ymax_percent(results);
+
     draw_scatter_canvas(results,
                         physics_scatter_variables(),
                         out_dir,
@@ -1400,6 +1700,7 @@ static void make_global_scatter_plots(const std::vector<BinResult>& results,
                         2,
                         2,
                         y_max_percent);
+
     draw_scatter_canvas(results,
                         angle_scatter_variables(),
                         out_dir,
@@ -1408,6 +1709,26 @@ static void make_global_scatter_plots(const std::vector<BinResult>& results,
                         3,
                         1,
                         y_max_percent);
+
+    draw_scatter_canvas_with_errors_and_fits(
+        results,
+        physics_scatter_variables(),
+        out_dir,
+        "physics_kinematics",
+        "Point-to-point run-period combination systematic vs physics kinematics",
+        2,
+        2,
+        y_max_percent);
+
+    draw_scatter_canvas_with_errors_and_fits(
+        results,
+        angle_scatter_variables(),
+        out_dir,
+        "polar_angles",
+        "Point-to-point run-period combination systematic vs polar angles",
+        3,
+        1,
+        y_max_percent);
 }
 
 static void make_ptp_plots(const std::vector<BinResult>& results,
@@ -1427,6 +1748,19 @@ static void make_ptp_plots(const std::vector<BinResult>& results,
     }
 }
 
+static double mean_vec(const std::vector<double>& values) {
+    if (values.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    double sum = 0.0;
+    for (const double v : values) {
+        sum += v;
+    }
+
+    return sum / (double)values.size();
+}
+
 static void print_global_summary(const std::vector<BinResult>& results) {
     if (results.empty()) {
         std::cout << "[combination-ptp] No valid bins.\n";
@@ -1434,13 +1768,17 @@ static void print_global_summary(const std::vector<BinResult>& results) {
     }
 
     std::vector<double> fvals;
+    std::vector<double> fstat_vals;
     std::vector<double> chi2_before;
     std::vector<double> chi2_after;
-    std::map<int, int> n_period_counts;
 
     for (const auto& r : results) {
         if (std::isfinite(r.f_ptp_percent)) {
             fvals.push_back(r.f_ptp_percent);
+        }
+
+        if (std::isfinite(r.f_ptp_stat_percent)) {
+            fstat_vals.push_back(r.f_ptp_stat_percent);
         }
 
         if (std::isfinite(r.chi2_ndf_before)) {
@@ -1450,28 +1788,14 @@ static void print_global_summary(const std::vector<BinResult>& results) {
         if (std::isfinite(r.chi2_ndf_after)) {
             chi2_after.push_back(r.chi2_ndf_after);
         }
-
-        n_period_counts[r.n_periods] += 1;
     }
-
-    auto mean = [](const std::vector<double>& v) -> double {
-        if (v.empty()) {
-            return std::numeric_limits<double>::quiet_NaN();
-        }
-
-        double sum = 0.0;
-        for (const double x : v) {
-            sum += x;
-        }
-
-        return sum / (double)v.size();
-    };
 
     std::cout << "[combination-ptp] Summary for 10.6 GeV unpol residual point-to-point systematic\n";
     std::cout << "  valid bins                  = " << results.size() << "\n";
-    std::cout << "  mean chi2/ndf before        = " << std::setprecision(8) << mean(chi2_before) << "\n";
-    std::cout << "  mean chi2/ndf after         = " << std::setprecision(8) << mean(chi2_after) << "\n";
-    std::cout << "  mean f_ptp percent          = " << std::setprecision(8) << mean(fvals) << "\n";
+    std::cout << "  mean chi2/ndf before        = " << std::setprecision(8) << mean_vec(chi2_before) << "\n";
+    std::cout << "  mean chi2/ndf after         = " << std::setprecision(8) << mean_vec(chi2_after) << "\n";
+    std::cout << "  mean f_ptp percent          = " << std::setprecision(8) << mean_vec(fvals) << "\n";
+    std::cout << "  mean f_ptp stat percent     = " << std::setprecision(8) << mean_vec(fstat_vals) << "\n";
     std::cout << "  median f_ptp percent        = " << std::setprecision(8) << percentile(fvals, 0.50) << "\n";
     std::cout << "  p68 f_ptp percent           = " << std::setprecision(8) << percentile(fvals, 0.68) << "\n";
     std::cout << "  p90 f_ptp percent           = " << std::setprecision(8) << percentile(fvals, 0.90) << "\n";
@@ -1480,12 +1804,6 @@ static void print_global_summary(const std::vector<BinResult>& results) {
               << (fvals.empty() ? std::numeric_limits<double>::quiet_NaN()
                                 : *std::max_element(fvals.begin(), fvals.end()))
               << "\n";
-
-    std::cout << "  valid-bin period multiplicity:\n";
-    for (const auto& kv : n_period_counts) {
-        std::cout << "    n_periods = " << kv.first
-                  << " : " << kv.second << " bins\n";
-    }
 }
 
 } // namespace
