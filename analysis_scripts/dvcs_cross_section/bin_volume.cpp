@@ -14,7 +14,7 @@
 //
 // where mask enforces:
 //   - t > t_min(xB, Q2) (DVCS kinematics, t is negative)
-//   - 0.19 < y < 0.80, with y = Q2 / (2 Mp xB E_beam)
+//   - 0.19 < y < 0.8113919276, with y = Q2 / (2 Mp xB E_beam)
 //   - W > 2.0, with W^2 = Mp^2 + Q2 (1/xB - 1)
 //
 // Volumes are computed via a deterministic 3D grid in (xB, Q2, t) and
@@ -339,7 +339,7 @@ static double calculate_phase_space_allowed_bin_volume(double xB_min, double xB_
                 const double W2 = Mp * Mp + Q2 * (1.0 / xB - 1.0);
                 const double W  = (W2 > 0.0) ? std::sqrt(W2) : 0.0;
 
-                if (t > t_min_val && y > 0.19 && y < 0.80 && W > 2.0) {
+                if (t > t_min_val && y > 0.19 && y < 0.8113919276 && W > 2.0) {
                     ++valid_count;
                 }
             }
