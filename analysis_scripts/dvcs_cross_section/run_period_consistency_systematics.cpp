@@ -553,6 +553,39 @@ static bool compute_weighted_mean_skip_invalid(const std::vector<TupleValue>& va
     return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
 }
 
+static bool compute_leave_one_out_mean(const std::vector<TupleValue>& values,
+                                       size_t leave_out_index,
+                                       double& mean,
+                                       double& mean_stat) {
+    double sum_w = 0.0;
+    double sum_wx = 0.0;
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i == leave_out_index) {
+            continue;
+        }
+
+        const TupleValue& v = values[i];
+
+        if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
+            continue;
+        }
+
+        const double w = 1.0 / (v.stat * v.stat);
+        sum_w += w;
+        sum_wx += w * v.value;
+    }
+
+    if (sum_w <= 0.0) {
+        return false;
+    }
+
+    mean = sum_wx / sum_w;
+    mean_stat = 1.0 / std::sqrt(sum_w);
+
+    return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
+}
+
 static TupleValue scaled_tuple(const TupleValue& input,
                                const std::string& source_period,
                                bool use_scaling,
@@ -641,6 +674,42 @@ static double compute_chi2_reduced(const std::vector<TupleValue>& values,
     return chi2 / ndf;
 }
 
+static double compute_leave_one_out_chi2_reduced(const std::vector<TupleValue>& values) {
+    int n = 0;
+    double chi2 = 0.0;
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        const TupleValue& v = values[i];
+
+        if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
+            continue;
+        }
+
+        double loo_mean = 0.0;
+        double loo_mean_stat = 0.0;
+
+        if (!compute_leave_one_out_mean(values, i, loo_mean, loo_mean_stat)) {
+            continue;
+        }
+
+        const double var = v.stat * v.stat + loo_mean_stat * loo_mean_stat;
+        if (!std::isfinite(var) || var <= 0.0) {
+            continue;
+        }
+
+        const double residual = v.value - loo_mean;
+        chi2 += residual * residual / var;
+        ++n;
+    }
+
+    const double ndf = (double)n - 1.0;
+    if (ndf <= 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return chi2 / ndf;
+}
+
 static std::vector<std::string> base_periods() {
     return {
         "Fa18 Inb",
@@ -665,9 +734,7 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
 
         for (const auto& period : periods) {
             const TupleValue v = get_tuple(table, row, cross_section_column(period, "unpol"));
-            if (v.ok) {
-                values.push_back(v);
-            }
+            values.push_back(v);
         }
 
         double mean = 0.0;
@@ -681,8 +748,9 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
             continue;
         }
 
-        for (const auto& period : periods) {
-            const TupleValue v = get_tuple(table, row, cross_section_column(period, "unpol"));
+        for (size_t iper = 0; iper < periods.size(); ++iper) {
+            const TupleValue& v = values[iper];
+
             if (!v.ok || v.stat <= 0.0 || !std::isfinite(v.value)) {
                 continue;
             }
@@ -696,7 +764,7 @@ compute_10p6_unpol_scale_factors(const CsvTable& table) {
 
             const double w = 1.0 / (ratio_stat * ratio_stat);
 
-            PeriodRatioAccumulator& acc = acc_by_period[period];
+            PeriodRatioAccumulator& acc = acc_by_period[periods[iper]];
             acc.sum_w += w;
             acc.sum_wr += w * ratio;
             acc.n += 1;
@@ -975,7 +1043,9 @@ static void draw_chi2_canvas(const fs::path& out_dir,
                              const std::map<std::string, PointPack>& chi2_by_var,
                              const std::vector<VariableConfig>& vars,
                              const std::string& var_group_tag,
-                             bool use_scaling) {
+                             bool use_scaling,
+                             const std::string& diagnostic_tag,
+                             const std::string& diagnostic_title) {
     const int ncols = (var_group_tag == "angles") ? 3 : 2;
     const int nrows = (var_group_tag == "angles") ? 1 : 2;
     const int width = (var_group_tag == "angles") ? 1800 : 1600;
@@ -984,7 +1054,7 @@ static void draw_chi2_canvas(const fs::path& out_dir,
     const std::string prefix = plot_prefix(use_scaling);
     const std::string tag = canvas_tag_for_vars(var_group_tag);
 
-    TCanvas canvas(("c_chi2_" + c.file_tag + "_" + prefix + "_" + tag).c_str(),
+    TCanvas canvas(("c_chi2_" + c.file_tag + "_" + prefix + "_" + diagnostic_tag + "_" + tag).c_str(),
                    ("Run-period reduced chi2: " + c.label).c_str(),
                    width,
                    height);
@@ -993,7 +1063,7 @@ static void draw_chi2_canvas(const fs::path& out_dir,
     TPad* title_pad = nullptr;
     TPad* grid_pad = nullptr;
     make_title_and_grid_pads(canvas, title_pad, grid_pad, ncols, nrows);
-    draw_top_title(title_pad, title_prefix(use_scaling) + "run-period consistency: " + c.label + " (" + tag + ")");
+    draw_top_title(title_pad, title_prefix(use_scaling) + diagnostic_title + ": " + c.label + " (" + tag + ")");
 
     std::vector<std::unique_ptr<TH1D> > frames;
     std::vector<std::unique_ptr<TGraph> > graphs;
@@ -1014,7 +1084,7 @@ static void draw_chi2_canvas(const fs::path& out_dir,
         const std::vector<double> yr = choose_chi2_y_range(pack);
 
         std::unique_ptr<TH1D> frame(
-            make_frame("frame_chi2_" + c.file_tag + "_" + prefix + "_" + tag + "_" + vars[(size_t)ivar].key,
+            make_frame("frame_chi2_" + c.file_tag + "_" + prefix + "_" + diagnostic_tag + "_" + tag + "_" + vars[(size_t)ivar].key,
                        vars[(size_t)ivar].title,
                        "#chi^{2}/ndf",
                        xr[0],
@@ -1046,7 +1116,7 @@ static void draw_chi2_canvas(const fs::path& out_dir,
     canvas.Modified();
     canvas.Update();
 
-    const fs::path out_path = out_dir / (prefix + "_reduced_chi2_" + tag + ".png");
+    const fs::path out_path = out_dir / (prefix + "_" + diagnostic_tag + "_reduced_chi2_" + tag + ".png");
     canvas.SaveAs(out_path.string().c_str());
 }
 
@@ -1060,7 +1130,8 @@ static void draw_multi_period_canvas(const fs::path& out_dir,
                                      const std::string& ytitle,
                                      double ymin_fixed,
                                      double ymax_fixed,
-                                     bool fixed_y) {
+                                     bool fixed_y,
+                                     const std::string& diagnostic_title) {
     const int ncols = (var_group_tag == "angles") ? 3 : 2;
     const int nrows = (var_group_tag == "angles") ? 1 : 2;
     const int width = (var_group_tag == "angles") ? 1800 : 1600;
@@ -1078,7 +1149,7 @@ static void draw_multi_period_canvas(const fs::path& out_dir,
     TPad* title_pad = nullptr;
     TPad* grid_pad = nullptr;
     make_title_and_grid_pads(canvas, title_pad, grid_pad, ncols, nrows);
-    draw_top_title(title_pad, title_prefix(use_scaling) + "run-period " + kind + ": " + c.label + " (" + tag + ")");
+    draw_top_title(title_pad, title_prefix(use_scaling) + diagnostic_title + ": " + c.label + " (" + tag + ")");
 
     const std::vector<int> colors = {
         kBlack,
@@ -1144,7 +1215,7 @@ static void draw_multi_period_canvas(const fs::path& out_dir,
         );
         frame->Draw("AXIS");
 
-        const double ref_y = (kind == "pulls") ? 0.0 : 1.0;
+        const double ref_y = (kind.find("pulls") != std::string::npos) ? 0.0 : 1.0;
 
         std::unique_ptr<TLine> line(new TLine(xr[0], ref_y, xr[1], ref_y));
         line->SetLineStyle(2);
@@ -1227,13 +1298,10 @@ static double rms_vec(const std::vector<double>& values) {
     return std::sqrt(sum / (double)values.size());
 }
 
-static void print_summary(const ConsistencyCase& c,
-                          bool use_scaling,
-                          const std::map<std::string, PointPack>& chi2_by_var,
-                          const std::map<std::string, std::map<std::string, PointPack> >& pulls_by_var_period) {
-    std::cout << "[run-period-consistency] Summary for "
-              << (use_scaling ? "scaled " : "unscaled ")
-              << c.label << "\n";
+static void print_summary_block(const std::string& label,
+                                const std::map<std::string, PointPack>& chi2_by_var,
+                                const std::map<std::string, std::map<std::string, PointPack> >& pulls_by_var_period) {
+    std::cout << label << "\n";
 
     const std::vector<VariableConfig> vars = all_variable_configs();
 
@@ -1265,8 +1333,11 @@ static void fill_case_outputs(const CsvTable& table,
                               const std::map<std::string, double>& scale_by_period,
                               bool use_scaling,
                               std::map<std::string, PointPack>& chi2_by_var,
+                              std::map<std::string, PointPack>& loo_chi2_by_var,
                               std::map<std::string, std::map<std::string, PointPack> >& ratios_by_var_period,
-                              std::map<std::string, std::map<std::string, PointPack> >& pulls_by_var_period) {
+                              std::map<std::string, std::map<std::string, PointPack> >& pulls_by_var_period,
+                              std::map<std::string, std::map<std::string, PointPack> >& loo_ratios_by_var_period,
+                              std::map<std::string, std::map<std::string, PointPack> >& loo_pulls_by_var_period) {
     const std::vector<VariableConfig> vars = all_variable_configs();
 
     for (const auto& row : table.rows) {
@@ -1275,11 +1346,7 @@ static void fill_case_outputs(const CsvTable& table,
 
         for (const auto& input : c.inputs) {
             const TupleValue v = evaluate_input_for_row(table, row, input, use_scaling, scale_by_period);
-            if (v.ok) {
-                values.push_back(v);
-            } else {
-                values.push_back(TupleValue());
-            }
+            values.push_back(v);
         }
 
         double mean = 0.0;
@@ -1294,7 +1361,9 @@ static void fill_case_outputs(const CsvTable& table,
         }
 
         const double chi2_ndf = compute_chi2_reduced(values, mean);
-        if (!std::isfinite(chi2_ndf)) {
+        const double loo_chi2_ndf = compute_leave_one_out_chi2_reduced(values);
+
+        if (!std::isfinite(chi2_ndf) && !std::isfinite(loo_chi2_ndf)) {
             continue;
         }
 
@@ -1306,8 +1375,15 @@ static void fill_case_outputs(const CsvTable& table,
                 continue;
             }
 
-            chi2_by_var[var.key].x.push_back(x);
-            chi2_by_var[var.key].y.push_back(chi2_ndf);
+            if (std::isfinite(chi2_ndf)) {
+                chi2_by_var[var.key].x.push_back(x);
+                chi2_by_var[var.key].y.push_back(chi2_ndf);
+            }
+
+            if (std::isfinite(loo_chi2_ndf)) {
+                loo_chi2_by_var[var.key].x.push_back(x);
+                loo_chi2_by_var[var.key].y.push_back(loo_chi2_ndf);
+            }
 
             for (size_t iper = 0; iper < c.inputs.size(); ++iper) {
                 const TupleValue& v = values[iper];
@@ -1330,6 +1406,35 @@ static void fill_case_outputs(const CsvTable& table,
                     pack.x.push_back(x);
                     pack.y.push_back(pull);
                 }
+
+                double loo_mean = 0.0;
+                double loo_mean_stat = 0.0;
+
+                if (!compute_leave_one_out_mean(values, iper, loo_mean, loo_mean_stat)) {
+                    continue;
+                }
+
+                if (!std::isfinite(loo_mean) || std::abs(loo_mean) <= 0.0) {
+                    continue;
+                }
+
+                const double loo_ratio = v.value / loo_mean;
+                const double loo_var = v.stat * v.stat + loo_mean_stat * loo_mean_stat;
+                const double loo_pull = (loo_var > 0.0 && std::isfinite(loo_var))
+                                      ? (v.value - loo_mean) / std::sqrt(loo_var)
+                                      : std::numeric_limits<double>::quiet_NaN();
+
+                if (std::isfinite(loo_ratio)) {
+                    PointPack& pack = loo_ratios_by_var_period[var.key][c.inputs[iper].period];
+                    pack.x.push_back(x);
+                    pack.y.push_back(loo_ratio);
+                }
+
+                if (std::isfinite(loo_pull)) {
+                    PointPack& pack = loo_pulls_by_var_period[var.key][c.inputs[iper].period];
+                    pack.x.push_back(x);
+                    pack.y.push_back(loo_pull);
+                }
             }
         }
     }
@@ -1344,16 +1449,24 @@ static void make_plots_for_case(const fs::path& root_out_dir,
     fs::create_directories(out_dir);
 
     std::map<std::string, PointPack> chi2_by_var;
+    std::map<std::string, PointPack> loo_chi2_by_var;
+
     std::map<std::string, std::map<std::string, PointPack> > ratios_by_var_period;
     std::map<std::string, std::map<std::string, PointPack> > pulls_by_var_period;
+
+    std::map<std::string, std::map<std::string, PointPack> > loo_ratios_by_var_period;
+    std::map<std::string, std::map<std::string, PointPack> > loo_pulls_by_var_period;
 
     fill_case_outputs(table,
                       c,
                       scale_by_period,
                       use_scaling,
                       chi2_by_var,
+                      loo_chi2_by_var,
                       ratios_by_var_period,
-                      pulls_by_var_period);
+                      pulls_by_var_period,
+                      loo_ratios_by_var_period,
+                      loo_pulls_by_var_period);
 
     const std::vector<VariableConfig> physics_vars = physics_variable_configs();
     const std::vector<VariableConfig> angle_vars = angle_variable_configs();
@@ -1363,14 +1476,36 @@ static void make_plots_for_case(const fs::path& root_out_dir,
                      chi2_by_var,
                      physics_vars,
                      "physics",
-                     use_scaling);
+                     use_scaling,
+                     "all_mean",
+                     "all-mean #chi^{2}/ndf");
 
     draw_chi2_canvas(out_dir,
                      c,
                      chi2_by_var,
                      angle_vars,
                      "angles",
-                     use_scaling);
+                     use_scaling,
+                     "all_mean",
+                     "all-mean #chi^{2}/ndf");
+
+    draw_chi2_canvas(out_dir,
+                     c,
+                     loo_chi2_by_var,
+                     physics_vars,
+                     "physics",
+                     use_scaling,
+                     "leave_one_out",
+                     "leave-one-out #chi^{2}/ndf");
+
+    draw_chi2_canvas(out_dir,
+                     c,
+                     loo_chi2_by_var,
+                     angle_vars,
+                     "angles",
+                     use_scaling,
+                     "leave_one_out",
+                     "leave-one-out #chi^{2}/ndf");
 
     draw_multi_period_canvas(out_dir,
                              c,
@@ -1378,11 +1513,12 @@ static void make_plots_for_case(const fs::path& root_out_dir,
                              physics_vars,
                              "physics",
                              use_scaling,
-                             "period_ratios",
-                             "#sigma_{i}/#bar{#sigma}",
+                             "all_mean_period_ratios",
+                             "#sigma_{i}/#bar{#sigma}_{all}",
                              0.0,
                              3.0,
-                             true);
+                             true,
+                             "all-mean period ratios");
 
     draw_multi_period_canvas(out_dir,
                              c,
@@ -1390,11 +1526,38 @@ static void make_plots_for_case(const fs::path& root_out_dir,
                              angle_vars,
                              "angles",
                              use_scaling,
-                             "period_ratios",
-                             "#sigma_{i}/#bar{#sigma}",
+                             "all_mean_period_ratios",
+                             "#sigma_{i}/#bar{#sigma}_{all}",
                              0.0,
                              3.0,
-                             true);
+                             true,
+                             "all-mean period ratios");
+
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             loo_ratios_by_var_period,
+                             physics_vars,
+                             "physics",
+                             use_scaling,
+                             "leave_one_out_period_ratios",
+                             "#sigma_{i}/#bar{#sigma}_{-i}",
+                             0.0,
+                             3.0,
+                             true,
+                             "leave-one-out period ratios");
+
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             loo_ratios_by_var_period,
+                             angle_vars,
+                             "angles",
+                             use_scaling,
+                             "leave_one_out_period_ratios",
+                             "#sigma_{i}/#bar{#sigma}_{-i}",
+                             0.0,
+                             3.0,
+                             true,
+                             "leave-one-out period ratios");
 
     draw_multi_period_canvas(out_dir,
                              c,
@@ -1402,11 +1565,12 @@ static void make_plots_for_case(const fs::path& root_out_dir,
                              physics_vars,
                              "physics",
                              use_scaling,
-                             "pulls",
-                             "(#sigma_{i}-#bar{#sigma})/#delta#sigma_{i}",
+                             "all_mean_pulls",
+                             "(#sigma_{i}-#bar{#sigma}_{all})/#delta#sigma_{i}",
                              -5.0,
                              5.0,
-                             false);
+                             false,
+                             "all-mean pulls");
 
     draw_multi_period_canvas(out_dir,
                              c,
@@ -1414,16 +1578,52 @@ static void make_plots_for_case(const fs::path& root_out_dir,
                              angle_vars,
                              "angles",
                              use_scaling,
-                             "pulls",
-                             "(#sigma_{i}-#bar{#sigma})/#delta#sigma_{i}",
+                             "all_mean_pulls",
+                             "(#sigma_{i}-#bar{#sigma}_{all})/#delta#sigma_{i}",
                              -5.0,
                              5.0,
-                             false);
+                             false,
+                             "all-mean pulls");
 
-    print_summary(c,
-                  use_scaling,
-                  chi2_by_var,
-                  pulls_by_var_period);
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             loo_pulls_by_var_period,
+                             physics_vars,
+                             "physics",
+                             use_scaling,
+                             "leave_one_out_pulls",
+                             "(#sigma_{i}-#bar{#sigma}_{-i})/#sqrt{#delta#sigma_{i}^{2}+#delta#bar{#sigma}_{-i}^{2}}",
+                             -5.0,
+                             5.0,
+                             false,
+                             "leave-one-out pulls");
+
+    draw_multi_period_canvas(out_dir,
+                             c,
+                             loo_pulls_by_var_period,
+                             angle_vars,
+                             "angles",
+                             use_scaling,
+                             "leave_one_out_pulls",
+                             "(#sigma_{i}-#bar{#sigma}_{-i})/#sqrt{#delta#sigma_{i}^{2}+#delta#bar{#sigma}_{-i}^{2}}",
+                             -5.0,
+                             5.0,
+                             false,
+                             "leave-one-out pulls");
+
+    print_summary_block(
+        "[run-period-consistency] All-mean summary for " +
+        std::string(use_scaling ? "scaled " : "unscaled ") + c.label,
+        chi2_by_var,
+        pulls_by_var_period
+    );
+
+    print_summary_block(
+        "[run-period-consistency] Leave-one-out summary for " +
+        std::string(use_scaling ? "scaled " : "unscaled ") + c.label,
+        loo_chi2_by_var,
+        loo_pulls_by_var_period
+    );
 
     size_t npoints = 0;
     const auto it = chi2_by_var.find("phi");
@@ -1431,10 +1631,19 @@ static void make_plots_for_case(const fs::path& root_out_dir,
         npoints = it->second.x.size();
     }
 
+    size_t loo_npoints = 0;
+    const auto it_loo = loo_chi2_by_var.find("phi");
+    if (it_loo != loo_chi2_by_var.end()) {
+        loo_npoints = it_loo->second.x.size();
+    }
+
     std::cout << "[run-period-consistency] Completed "
               << (use_scaling ? "scaled " : "unscaled ")
               << c.label
-              << " with " << npoints << " valid bins.\n";
+              << " with " << npoints
+              << " all-mean valid bins and "
+              << loo_npoints
+              << " leave-one-out valid bins.\n";
 }
 
 } // namespace
@@ -1494,7 +1703,8 @@ bool run_period_consistency_systematics(const std::string& csv_path,
 
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "[run-period-consistency] FATAL: " << e.what() << "\n";
+        std::cerr << "[run-period-consistency] FATAL: "
+                  << e.what() << "\n";
         return false;
     }
 }
