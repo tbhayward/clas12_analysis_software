@@ -116,6 +116,7 @@ struct VariableConfig {
     std::string key;
     std::string column_prefix;
     std::string title;
+    std::string plain_title;
 };
 
 struct RatioPoint {
@@ -862,13 +863,13 @@ static std::vector<std::string> sp19_proxy_output_columns() {
 
 static std::vector<VariableConfig> fit_variable_configs() {
     return {
-        {"xB",      "xBavg",     "x_{B}"},
-        {"Q2",      "Q2avg",     "Q^{2} (GeV^{2})"},
-        {"t",       "t_abs_avg", "-t (GeV^{2})"},
-        {"phi",     "phiavg",    "#phi (deg)"},
-        {"e_theta", "e_theta",   "#theta_{e} (deg)"},
-        {"p_theta", "p_theta",   "#theta_{p} (deg)"},
-        {"g_theta", "g_theta",   "#theta_{#gamma} (deg)"}
+        {"xB",      "xBavg",     "x_{B}",                  "xB"},
+        {"Q2",      "Q2avg",     "Q^{2} (GeV^{2})",        "Q2"},
+        {"t",       "t_abs_avg", "-t (GeV^{2})",           "t"},
+        {"phi",     "phiavg",    "#phi (deg)",             "phi"},
+        {"e_theta", "e_theta",   "#theta_{e} (deg)",       "e_theta"},
+        {"p_theta", "p_theta",   "#theta_{p} (deg)",       "p_theta"},
+        {"g_theta", "g_theta",   "#theta_{#gamma} (deg)",  "g_theta"}
     };
 }
 
@@ -1797,7 +1798,7 @@ static TGraphErrors* make_ratio_graph(const std::vector<RatioPoint>& points,
     }
 
     graph->SetMarkerStyle(marker_style);
-    graph->SetMarkerSize(0.50);
+    graph->SetMarkerSize(0.34);
     graph->SetMarkerColor(color);
     graph->SetLineColor(color);
     graph->SetLineWidth(1);
@@ -1861,6 +1862,7 @@ static std::vector<double> get_combined_x_range_for_canvas(const std::vector<Fit
 
 static std::string fit_function_formula(int order) {
     std::ostringstream oss;
+
     for (int i = 0; i <= order; ++i) {
         if (i > 0) {
             oss << " + ";
@@ -1973,22 +1975,25 @@ static void draw_kinematic_canvas_for_variable(const fs::path& out_dir,
                        xr[0],
                        xr[1],
                        0.0,
-                       3.0)
+                       2.0)
         );
         frame->Draw("AXIS");
 
         std::unique_ptr<TLine> unity(new TLine(xr[0], 1.0, xr[1], 1.0));
         unity->SetLineColor(kRed + 1);
         unity->SetLineStyle(2);
-        unity->SetLineWidth(2);
+        unity->SetLineWidth(1);
         unity->Draw("SAME");
 
-        std::unique_ptr<TLegend> legend(new TLegend(0.47, 0.57, 0.94, 0.88));
+        std::unique_ptr<TLegend> legend(new TLegend(0.56, 0.735, 0.94, 0.895));
         legend->SetBorderSize(1);
         legend->SetFillStyle(1001);
         legend->SetFillColor(kWhite);
         legend->SetTextFont(42);
-        legend->SetTextSize(0.026);
+        legend->SetTextSize(0.019);
+        legend->SetTextAlign(32);
+        legend->SetMargin(0.10);
+        legend->SetEntrySeparation(0.05);
 
         const auto it_period = by_period.find(period);
 
@@ -2039,14 +2044,15 @@ static void draw_kinematic_canvas_for_variable(const fs::path& out_dir,
     TLatex title;
     title.SetNDC();
     title.SetTextFont(42);
-    title.SetTextSize(0.020);
+    title.SetTextSize(0.018);
     title.SetTextAlign(22);
 
     std::ostringstream title_text;
     title_text << "10.6 GeV unpol, stat weighted, "
                << reference_type
                << ", kinematic dependence vs "
-               << variable.title;
+               << variable.plain_title;
+
     title.DrawLatex(0.50, 0.992, title_text.str().c_str());
 
     canvas.Modified();
@@ -2150,7 +2156,8 @@ bool combination_systematics(const std::string& csv_path,
         gStyle->SetLabelFont(42, "XYZ");
         gStyle->SetTitleFont(42, "");
         gStyle->SetTextFont(42);
-        gStyle->SetEndErrorSize(0);
+        gStyle->SetEndErrorSize(1);
+        gStyle->SetErrorX(0.0);
         gStyle->SetPadTickX(1);
         gStyle->SetPadTickY(1);
 
