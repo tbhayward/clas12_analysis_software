@@ -45,7 +45,7 @@ enum class CentralValueMode {
 
 static constexpr CentralValueMode kFillOutputMode = CentralValueMode::StatWeighted;
 static constexpr int kMaxPolynomialOrder = 5;
-static constexpr double kMinChi2NdfImprovement = 0.05;
+static constexpr double kMinChi2NdfImprovement = 0.01;
 static constexpr int kMaxFitWorkers = 5;
 
 struct CsvTable {
