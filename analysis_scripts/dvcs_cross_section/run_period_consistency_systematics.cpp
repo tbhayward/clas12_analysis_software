@@ -774,8 +774,7 @@ static void fill_case_outputs(const CsvTable& table,
 } // namespace
 
 bool run_period_consistency_systematics(const std::string& csv_path,
-                                        const std::string& output_root_dir,
-                                        bool make_all_cases) {
+                                        const std::string& output_root_dir) {
     try {
         const std::string out_dir = output_root_dir + "/run_period_consistency";
         fs::create_directories(out_dir);
