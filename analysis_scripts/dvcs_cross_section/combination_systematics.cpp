@@ -10,8 +10,6 @@
 #include <TROOT.h>
 #include <TStyle.h>
 #include <TAxis.h>
-#include <TFitResultPtr.h>
-#include <TFitResult.h>
 
 #include <algorithm>
 #include <cmath>
@@ -19,15 +17,18 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -44,6 +45,8 @@ enum class CentralValueMode {
 
 static constexpr CentralValueMode kFillOutputMode = CentralValueMode::StatWeighted;
 static constexpr int kMaxPolynomialOrder = 5;
+static constexpr double kMinChi2NdfImprovement = 0.05;
+static constexpr int kMaxFitWorkers = 5;
 
 struct CsvTable {
     std::vector<std::string> header;
@@ -133,14 +136,38 @@ struct FitResultSummary {
     std::string reference_type;
     std::string period;
     std::string variable_key;
+
     int order = 0;
     int n = 0;
     int ndf = 0;
+
+    bool accepted = false;
+    bool attempted = false;
+
     double chi2 = std::numeric_limits<double>::quiet_NaN();
     double chi2_ndf = std::numeric_limits<double>::quiet_NaN();
+    double improvement_from_previous = std::numeric_limits<double>::quiet_NaN();
+
     std::vector<double> params;
     std::vector<double> errors;
 };
+
+struct FitTask {
+    std::string case_label;
+    std::string central_mode;
+    std::string reference_type;
+    std::string period;
+    VariableConfig variable;
+    std::vector<RatioPoint> points;
+};
+
+struct FitTaskResult {
+    FitTask task;
+    std::vector<FitResultSummary> attempted;
+    std::vector<FitResultSummary> accepted;
+};
+
+static std::mutex gPrintMutex;
 
 static std::string trim(const std::string& s) {
     size_t b = 0;
@@ -845,6 +872,15 @@ static std::vector<VariableConfig> fit_variable_configs() {
     };
 }
 
+static std::vector<std::string> ten6_periods() {
+    return {
+        "Fa18 Inb",
+        "Fa18 Out",
+        "Sp18 Inb",
+        "Sp18 Out"
+    };
+}
+
 static void validate_schema(const CsvTable& table,
                             const std::vector<CombinationCase>& cases) {
     std::vector<std::string> required;
@@ -859,10 +895,10 @@ static void validate_schema(const CsvTable& table,
                 required.push_back(col);
             }
         }
+    }
 
-        for (const auto& var : fit_variable_configs()) {
-            required.push_back(avg_column(var.column_prefix, "10.6 GeV"));
-        }
+    for (const auto& var : fit_variable_configs()) {
+        required.push_back(avg_column(var.column_prefix, "10.6 GeV"));
     }
 
     for (const auto& col : sp19_proxy_output_columns()) {
@@ -934,6 +970,14 @@ static void append_ratio_points_for_row(const CsvTable& table,
                                         const TupleValue& ref,
                                         std::vector<RatioPoint>& ratio_points,
                                         std::vector<RatioPoint>& loo_ratio_points) {
+    if (c.label != "10.6 GeV unpol") {
+        return;
+    }
+
+    if (mode != CentralValueMode::StatWeighted) {
+        return;
+    }
+
     for (const auto& var : fit_variable_configs()) {
         const std::string col = avg_column(var.column_prefix, "10.6 GeV");
         const double x = get_numeric_or_nan(table, row, col);
@@ -1329,78 +1373,6 @@ static bool is_fill_mode(CentralValueMode mode) {
     return mode == kFillOutputMode;
 }
 
-static std::vector<double> choose_x_range(const std::vector<RatioPoint>& points) {
-    double xmin = std::numeric_limits<double>::infinity();
-    double xmax = -std::numeric_limits<double>::infinity();
-
-    for (const auto& p : points) {
-        if (!std::isfinite(p.x)) {
-            continue;
-        }
-
-        xmin = std::min(xmin, p.x);
-        xmax = std::max(xmax, p.x);
-    }
-
-    if (!std::isfinite(xmin) || !std::isfinite(xmax)) {
-        return {0.0, 1.0};
-    }
-
-    if (xmin == xmax) {
-        const double pad = (std::abs(xmin) > 0.0) ? 0.05 * std::abs(xmin) : 1.0;
-        return {xmin - pad, xmax + pad};
-    }
-
-    const double pad = 0.07 * (xmax - xmin);
-    return {xmin - pad, xmax + pad};
-}
-
-static std::vector<double> choose_y_range(const std::vector<RatioPoint>& points) {
-    double ymin = 1.0;
-    double ymax = 1.0;
-
-    for (const auto& p : points) {
-        if (!std::isfinite(p.y)) {
-            continue;
-        }
-
-        const double ey = (std::isfinite(p.ey) && p.ey > 0.0) ? p.ey : 0.0;
-
-        ymin = std::min(ymin, p.y - ey);
-        ymax = std::max(ymax, p.y + ey);
-    }
-
-    if (!std::isfinite(ymin) || !std::isfinite(ymax)) {
-        return {0.0, 2.0};
-    }
-
-    ymin = std::max(0.0, ymin - 0.12 * (ymax - ymin));
-    ymax = ymax + 0.12 * (ymax - ymin);
-
-    if (ymax < 2.0) {
-        ymax = 2.0;
-    }
-
-    if (ymin >= ymax) {
-        ymin = 0.0;
-        ymax = 2.0;
-    }
-
-    return {ymin, ymax};
-}
-
-static const VariableConfig* find_variable_config(const std::string& key) {
-    static const std::vector<VariableConfig> vars = fit_variable_configs();
-
-    for (const auto& var : vars) {
-        if (var.key == key) {
-            return &var;
-        }
-    }
-
-    return nullptr;
-}
-
 static std::vector<RatioPoint> filter_ratio_points(const std::vector<RatioPoint>& points,
                                                    const std::string& case_label,
                                                    const std::string& central_mode,
@@ -1448,7 +1420,371 @@ static std::vector<RatioPoint> filter_ratio_points(const std::vector<RatioPoint>
     return out;
 }
 
-static TGraphErrors* make_ratio_graph(const std::vector<RatioPoint>& points) {
+static std::vector<double> choose_x_range_from_points(const std::vector<RatioPoint>& points) {
+    double xmin = std::numeric_limits<double>::infinity();
+    double xmax = -std::numeric_limits<double>::infinity();
+
+    for (const auto& p : points) {
+        if (!std::isfinite(p.x)) {
+            continue;
+        }
+
+        xmin = std::min(xmin, p.x);
+        xmax = std::max(xmax, p.x);
+    }
+
+    if (!std::isfinite(xmin) || !std::isfinite(xmax)) {
+        return {0.0, 1.0};
+    }
+
+    if (xmin == xmax) {
+        const double pad = (std::abs(xmin) > 0.0) ? 0.05 * std::abs(xmin) : 1.0;
+        return {xmin - pad, xmax + pad};
+    }
+
+    const double pad = 0.07 * (xmax - xmin);
+    return {xmin - pad, xmax + pad};
+}
+
+static bool solve_linear_system(std::vector<std::vector<double> > a,
+                                std::vector<double> b,
+                                std::vector<double>& x) {
+    const int n = (int)b.size();
+
+    if ((int)a.size() != n) {
+        return false;
+    }
+
+    for (int col = 0; col < n; ++col) {
+        int pivot = col;
+        double best = std::abs(a[(size_t)pivot][(size_t)col]);
+
+        for (int row = col + 1; row < n; ++row) {
+            const double v = std::abs(a[(size_t)row][(size_t)col]);
+            if (v > best) {
+                best = v;
+                pivot = row;
+            }
+        }
+
+        if (!std::isfinite(best) || best <= 1.0e-30) {
+            return false;
+        }
+
+        if (pivot != col) {
+            std::swap(a[(size_t)pivot], a[(size_t)col]);
+            std::swap(b[(size_t)pivot], b[(size_t)col]);
+        }
+
+        const double diag = a[(size_t)col][(size_t)col];
+
+        for (int j = col; j < n; ++j) {
+            a[(size_t)col][(size_t)j] /= diag;
+        }
+        b[(size_t)col] /= diag;
+
+        for (int row = 0; row < n; ++row) {
+            if (row == col) {
+                continue;
+            }
+
+            const double factor = a[(size_t)row][(size_t)col];
+            if (factor == 0.0) {
+                continue;
+            }
+
+            for (int j = col; j < n; ++j) {
+                a[(size_t)row][(size_t)j] -= factor * a[(size_t)col][(size_t)j];
+            }
+            b[(size_t)row] -= factor * b[(size_t)col];
+        }
+    }
+
+    x = b;
+
+    for (const double v : x) {
+        if (!std::isfinite(v)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool invert_matrix(const std::vector<std::vector<double> >& a,
+                          std::vector<std::vector<double> >& inv) {
+    const int n = (int)a.size();
+
+    if (n <= 0) {
+        return false;
+    }
+
+    inv.assign((size_t)n, std::vector<double>((size_t)n, 0.0));
+
+    for (int col = 0; col < n; ++col) {
+        std::vector<double> rhs((size_t)n, 0.0);
+        rhs[(size_t)col] = 1.0;
+
+        std::vector<double> sol;
+        if (!solve_linear_system(a, rhs, sol)) {
+            return false;
+        }
+
+        for (int row = 0; row < n; ++row) {
+            inv[(size_t)row][(size_t)col] = sol[(size_t)row];
+        }
+    }
+
+    return true;
+}
+
+static double eval_poly(const std::vector<double>& params,
+                        double x) {
+    double y = 0.0;
+    double pow_x = 1.0;
+
+    for (const double p : params) {
+        y += p * pow_x;
+        pow_x *= x;
+    }
+
+    return y;
+}
+
+static FitResultSummary weighted_polynomial_fit(const FitTask& task,
+                                                int order,
+                                                double previous_chi2_ndf) {
+    FitResultSummary out;
+    out.case_label = task.case_label;
+    out.central_mode = task.central_mode;
+    out.reference_type = task.reference_type;
+    out.period = task.period;
+    out.variable_key = task.variable.key;
+    out.order = order;
+    out.n = (int)task.points.size();
+    out.attempted = true;
+
+    const int npar = order + 1;
+    out.ndf = out.n - npar;
+
+    if (out.n < npar || out.ndf <= 0) {
+        return out;
+    }
+
+    std::vector<std::vector<double> > normal((size_t)npar, std::vector<double>((size_t)npar, 0.0));
+    std::vector<double> rhs((size_t)npar, 0.0);
+
+    for (const auto& p : task.points) {
+        if (!std::isfinite(p.x) ||
+            !std::isfinite(p.y) ||
+            !std::isfinite(p.ey) ||
+            p.ey <= 0.0) {
+            continue;
+        }
+
+        const double w = 1.0 / (p.ey * p.ey);
+        std::vector<double> xp((size_t)npar, 1.0);
+
+        for (int i = 1; i < npar; ++i) {
+            xp[(size_t)i] = xp[(size_t)(i - 1)] * p.x;
+        }
+
+        for (int i = 0; i < npar; ++i) {
+            rhs[(size_t)i] += w * xp[(size_t)i] * p.y;
+
+            for (int j = 0; j < npar; ++j) {
+                normal[(size_t)i][(size_t)j] += w * xp[(size_t)i] * xp[(size_t)j];
+            }
+        }
+    }
+
+    std::vector<double> params;
+    if (!solve_linear_system(normal, rhs, params)) {
+        return out;
+    }
+
+    out.params = params;
+
+    std::vector<std::vector<double> > cov;
+    if (invert_matrix(normal, cov)) {
+        out.errors.assign((size_t)npar, 0.0);
+
+        for (int i = 0; i < npar; ++i) {
+            const double v = cov[(size_t)i][(size_t)i];
+            if (std::isfinite(v) && v >= 0.0) {
+                out.errors[(size_t)i] = std::sqrt(v);
+            }
+        }
+    } else {
+        out.errors.assign((size_t)npar, std::numeric_limits<double>::quiet_NaN());
+    }
+
+    double chi2 = 0.0;
+    int n_used = 0;
+
+    for (const auto& p : task.points) {
+        if (!std::isfinite(p.x) ||
+            !std::isfinite(p.y) ||
+            !std::isfinite(p.ey) ||
+            p.ey <= 0.0) {
+            continue;
+        }
+
+        const double residual = p.y - eval_poly(out.params, p.x);
+        chi2 += residual * residual / (p.ey * p.ey);
+        ++n_used;
+    }
+
+    out.n = n_used;
+    out.ndf = n_used - npar;
+    out.chi2 = chi2;
+
+    if (out.ndf > 0) {
+        out.chi2_ndf = out.chi2 / (double)out.ndf;
+    }
+
+    if (order == 0) {
+        out.improvement_from_previous = std::numeric_limits<double>::quiet_NaN();
+        out.accepted = std::isfinite(out.chi2_ndf);
+    } else if (std::isfinite(previous_chi2_ndf) && std::isfinite(out.chi2_ndf)) {
+        out.improvement_from_previous = previous_chi2_ndf - out.chi2_ndf;
+        out.accepted = out.improvement_from_previous >= kMinChi2NdfImprovement;
+    }
+
+    return out;
+}
+
+static FitTaskResult run_iterative_fit_task(const FitTask& task) {
+    FitTaskResult result;
+    result.task = task;
+
+    double previous_chi2_ndf = std::numeric_limits<double>::quiet_NaN();
+
+    for (int order = 0; order <= kMaxPolynomialOrder; ++order) {
+        FitResultSummary fit = weighted_polynomial_fit(task, order, previous_chi2_ndf);
+        result.attempted.push_back(fit);
+
+        {
+            std::lock_guard<std::mutex> lock(gPrintMutex);
+
+            std::cout << "[combination-systematics][fit] "
+                      << fit.case_label << " "
+                      << fit.central_mode << " "
+                      << fit.reference_type << " "
+                      << fit.period << " "
+                      << fit.variable_key << " p" << fit.order
+                      << " n=" << fit.n
+                      << " chi2/ndf=" << std::setprecision(8)
+                      << fit.chi2_ndf;
+
+            if (order > 0) {
+                std::cout << " improvement=" << std::setprecision(8)
+                          << fit.improvement_from_previous;
+            }
+
+            std::cout << (fit.accepted ? " accepted" : " rejected")
+                      << "\n";
+        }
+
+        if (!fit.accepted) {
+            break;
+        }
+
+        previous_chi2_ndf = fit.chi2_ndf;
+        result.accepted.push_back(fit);
+    }
+
+    return result;
+}
+
+static std::vector<FitTaskResult> run_fit_tasks_parallel(const std::vector<FitTask>& tasks) {
+    std::vector<FitTaskResult> results;
+    results.reserve(tasks.size());
+
+    const unsigned int hardware_threads = std::max(1U, std::thread::hardware_concurrency());
+    const int n_workers = std::max(1, std::min(kMaxFitWorkers, (int)hardware_threads));
+
+    std::cout << "[combination-systematics] Running kinematic-dependence fits with "
+              << n_workers << " worker(s).\n";
+
+    size_t next_task = 0;
+
+    while (next_task < tasks.size()) {
+        std::vector<std::future<FitTaskResult> > futures;
+
+        for (int i = 0; i < n_workers && next_task < tasks.size(); ++i) {
+            const FitTask task = tasks[next_task];
+            futures.push_back(std::async(std::launch::async,
+                                         [task]() {
+                                             return run_iterative_fit_task(task);
+                                         }));
+            ++next_task;
+        }
+
+        for (auto& fut : futures) {
+            results.push_back(fut.get());
+        }
+    }
+
+    return results;
+}
+
+static void write_fit_summary_csv(const fs::path& path,
+                                  const std::vector<FitTaskResult>& task_results) {
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open fit summary CSV: " + path.string());
+    }
+
+    fout << "case,central mode,reference type,period,variable,polynomial order,n,ndf,"
+         << "chi2,chi2ndf,improvement from previous,attempted,accepted";
+
+    for (int ip = 0; ip <= kMaxPolynomialOrder; ++ip) {
+        fout << ",p" << ip << ",p" << ip << " err";
+    }
+
+    fout << "\n";
+
+    for (const auto& task_result : task_results) {
+        for (const auto& s : task_result.attempted) {
+            fout << csv_escape_field(s.case_label) << ","
+                 << csv_escape_field(s.central_mode) << ","
+                 << csv_escape_field(s.reference_type) << ","
+                 << csv_escape_field(s.period) << ","
+                 << csv_escape_field(s.variable_key) << ","
+                 << s.order << ","
+                 << s.n << ","
+                 << s.ndf << ","
+                 << format_double(s.chi2) << ","
+                 << format_double(s.chi2_ndf) << ","
+                 << format_double(s.improvement_from_previous) << ","
+                 << (s.attempted ? "true" : "false") << ","
+                 << (s.accepted ? "true" : "false");
+
+            for (int ip = 0; ip <= kMaxPolynomialOrder; ++ip) {
+                if (ip < (int)s.params.size()) {
+                    fout << "," << format_double(s.params[(size_t)ip])
+                         << "," << format_double(s.errors[(size_t)ip]);
+                } else {
+                    fout << ",,";
+                }
+            }
+
+            fout << "\n";
+        }
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing fit summary CSV: " + path.string());
+    }
+}
+
+static TGraphErrors* make_ratio_graph(const std::vector<RatioPoint>& points,
+                                      int color,
+                                      int marker_style) {
     if (points.empty()) {
         return nullptr;
     }
@@ -1460,10 +1796,10 @@ static TGraphErrors* make_ratio_graph(const std::vector<RatioPoint>& points) {
         graph->SetPointError(i, 0.0, points[(size_t)i].ey);
     }
 
-    graph->SetMarkerStyle(20);
-    graph->SetMarkerSize(0.55);
-    graph->SetMarkerColor(kBlack);
-    graph->SetLineColor(kBlack);
+    graph->SetMarkerStyle(marker_style);
+    graph->SetMarkerSize(0.50);
+    graph->SetMarkerColor(color);
+    graph->SetLineColor(color);
     graph->SetLineWidth(1);
 
     return graph;
@@ -1472,7 +1808,7 @@ static TGraphErrors* make_ratio_graph(const std::vector<RatioPoint>& points) {
 static void set_plot_style() {
     gPad->SetLeftMargin(0.16);
     gPad->SetRightMargin(0.06);
-    gPad->SetTopMargin(0.12);
+    gPad->SetTopMargin(0.13);
     gPad->SetBottomMargin(0.16);
     gPad->SetTicks(1, 1);
     gPad->SetGrid(0, 0);
@@ -1496,289 +1832,304 @@ static TH1D* make_frame(const std::string& name,
     frame->GetYaxis()->CenterTitle();
     frame->GetXaxis()->SetNdivisions(505);
     frame->GetYaxis()->SetNdivisions(505);
-    frame->GetXaxis()->SetTitleSize(0.055);
-    frame->GetYaxis()->SetTitleSize(0.055);
-    frame->GetXaxis()->SetLabelSize(0.045);
-    frame->GetYaxis()->SetLabelSize(0.045);
+    frame->GetXaxis()->SetTitleSize(0.060);
+    frame->GetYaxis()->SetTitleSize(0.060);
+    frame->GetXaxis()->SetLabelSize(0.050);
+    frame->GetYaxis()->SetLabelSize(0.050);
     frame->GetXaxis()->SetTitleOffset(1.10);
-    frame->GetYaxis()->SetTitleOffset(1.25);
+    frame->GetYaxis()->SetTitleOffset(1.20);
 
     return frame;
 }
 
-static std::string polynomial_formula(int order) {
-    if (order < 0 || order > kMaxPolynomialOrder) {
-        throw std::runtime_error("Unsupported polynomial order.");
+static std::vector<double> get_combined_x_range_for_canvas(const std::vector<FitTaskResult>& period_results) {
+    double xmin = std::numeric_limits<double>::infinity();
+    double xmax = -std::numeric_limits<double>::infinity();
+
+    for (const auto& r : period_results) {
+        const std::vector<double> xr = choose_x_range_from_points(r.task.points);
+        xmin = std::min(xmin, xr[0]);
+        xmax = std::max(xmax, xr[1]);
     }
 
-    std::ostringstream oss;
-    oss << "pol" << order;
-    return oss.str();
+    if (!std::isfinite(xmin) || !std::isfinite(xmax) || xmin >= xmax) {
+        return {0.0, 1.0};
+    }
+
+    return {xmin, xmax};
 }
 
-static FitResultSummary draw_and_fit_one_subset(const std::vector<RatioPoint>& points,
-                                                const fs::path& out_dir,
-                                                const std::string& case_label,
-                                                const std::string& central_mode,
-                                                const std::string& reference_type,
-                                                const std::string& period,
-                                                const VariableConfig& var,
-                                                int order) {
-    fs::create_directories(out_dir);
+static std::string fit_function_formula(int order) {
+    std::ostringstream oss;
+    for (int i = 0; i <= order; ++i) {
+        if (i > 0) {
+            oss << " + ";
+        }
 
-    FitResultSummary summary;
-    summary.case_label = case_label;
-    summary.central_mode = central_mode;
-    summary.reference_type = reference_type;
-    summary.period = period;
-    summary.variable_key = var.key;
-    summary.order = order;
-    summary.n = (int)points.size();
+        oss << "[" << i << "]";
 
-    const std::vector<double> xr = choose_x_range(points);
-    const std::vector<double> yr = choose_y_range(points);
-
-    const std::string canvas_name =
-        "c_fit_" + sanitize_for_path(case_label) + "_" +
-        sanitize_for_path(central_mode) + "_" +
-        sanitize_for_path(reference_type) + "_" +
-        sanitize_for_path(period) + "_" +
-        sanitize_for_path(var.key) + "_p" + std::to_string(order);
-
-    TCanvas canvas(canvas_name.c_str(), canvas_name.c_str(), 1200, 900);
-    canvas.SetFillColor(kWhite);
-    canvas.cd();
-    set_plot_style();
-
-    std::unique_ptr<TH1D> frame(
-        make_frame("frame_" + canvas_name,
-                   var.title,
-                   "#sigma_{i}/#bar{#sigma}",
-                   xr[0],
-                   xr[1],
-                   yr[0],
-                   yr[1])
-    );
-
-    frame->Draw("AXIS");
-
-    TLine unity(xr[0], 1.0, xr[1], 1.0);
-    unity.SetLineColor(kRed + 1);
-    unity.SetLineStyle(2);
-    unity.SetLineWidth(2);
-    unity.Draw("SAME");
-
-    std::unique_ptr<TGraphErrors> graph(make_ratio_graph(points));
-
-    TF1* fit = nullptr;
-
-    if (graph) {
-        graph->Draw("P SAME");
-
-        const std::string formula = polynomial_formula(order);
-        fit = new TF1(("fit_" + canvas_name).c_str(), formula.c_str(), xr[0], xr[1]);
-        fit->SetLineColor(kBlue + 1);
-        fit->SetLineWidth(3);
-
-        if ((int)points.size() >= order + 1) {
-            TFitResultPtr fit_ptr = graph->Fit(fit, "QRS");
-
-            fit->Draw("SAME");
-
-            summary.chi2 = fit->GetChisquare();
-            summary.ndf = fit->GetNDF();
-
-            if (summary.ndf > 0) {
-                summary.chi2_ndf = summary.chi2 / (double)summary.ndf;
-            }
-
-            for (int ip = 0; ip <= order; ++ip) {
-                summary.params.push_back(fit->GetParameter(ip));
-                summary.errors.push_back(fit->GetParError(ip));
-            }
-        } else {
-            summary.ndf = (int)points.size() - (order + 1);
+        if (i == 1) {
+            oss << "*x";
+        } else if (i > 1) {
+            oss << "*TMath::Power(x," << i << ")";
         }
     }
 
-    TLegend legend(0.50, 0.68, 0.93, 0.88);
-    legend.SetBorderSize(1);
-    legend.SetFillStyle(1001);
-    legend.SetFillColor(kWhite);
-    legend.SetTextFont(42);
-    legend.SetTextSize(0.032);
+    return oss.str();
+}
 
-    if (graph) {
-        legend.AddEntry(graph.get(), period.c_str(), "pe");
+static TF1* make_root_fit_function(const FitResultSummary& summary,
+                                   double xmin,
+                                   double xmax,
+                                   int color) {
+    const std::string name =
+        "f_" + sanitize_for_path(summary.reference_type) + "_" +
+        sanitize_for_path(summary.period) + "_" +
+        sanitize_for_path(summary.variable_key) + "_p" +
+        std::to_string(summary.order);
+
+    TF1* f = new TF1(name.c_str(), fit_function_formula(summary.order).c_str(), xmin, xmax);
+
+    for (int i = 0; i < (int)summary.params.size(); ++i) {
+        f->SetParameter(i, summary.params[(size_t)i]);
     }
 
-    if (fit && std::isfinite(summary.chi2_ndf)) {
-        std::ostringstream fit_label;
-        fit_label << "p" << order << ", #chi^{2}/ndf = "
-                  << std::fixed << std::setprecision(2)
-                  << summary.chi2_ndf;
-        legend.AddEntry(fit, fit_label.str().c_str(), "l");
-    } else if (fit) {
-        std::ostringstream fit_label;
-        fit_label << "p" << order << ", fit unavailable";
-        legend.AddEntry(fit, fit_label.str().c_str(), "l");
+    f->SetLineColor(color);
+    f->SetLineWidth(2);
+    f->SetLineStyle(1 + summary.order);
+
+    return f;
+}
+
+static void draw_kinematic_canvas_for_variable(const fs::path& out_dir,
+                                               const std::string& reference_type,
+                                               const VariableConfig& variable,
+                                               const std::vector<FitTaskResult>& all_results) {
+    std::vector<FitTaskResult> period_results;
+
+    for (const auto& r : all_results) {
+        if (r.task.reference_type != reference_type) {
+            continue;
+        }
+
+        if (r.task.variable.key != variable.key) {
+            continue;
+        }
+
+        period_results.push_back(r);
     }
 
-    legend.Draw();
+    if (period_results.empty()) {
+        return;
+    }
+
+    std::map<std::string, FitTaskResult> by_period;
+    for (const auto& r : period_results) {
+        by_period[r.task.period] = r;
+    }
+
+    const std::vector<double> xr = get_combined_x_range_for_canvas(period_results);
+
+    const fs::path ref_dir = out_dir / "kinematic_dependence_fits" / sanitize_for_path(reference_type);
+    fs::create_directories(ref_dir);
+
+    const std::string canvas_name =
+        "c_kinematic_dependence_" +
+        sanitize_for_path(reference_type) + "_" +
+        sanitize_for_path(variable.key);
+
+    TCanvas canvas(canvas_name.c_str(), canvas_name.c_str(), 1700, 1300);
+    canvas.SetFillColor(kWhite);
+    canvas.Divide(2, 2, 0.001, 0.001);
+
+    const std::vector<int> fit_colors = {
+        kBlue + 1,
+        kRed + 1,
+        kGreen + 2,
+        kMagenta + 1,
+        kOrange + 7,
+        kCyan + 2
+    };
+
+    const std::vector<std::string> periods = ten6_periods();
+
+    std::vector<std::unique_ptr<TH1D> > frames;
+    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    std::vector<std::unique_ptr<TLine> > unity_lines;
+    std::vector<std::unique_ptr<TLegend> > legends;
+    std::vector<std::unique_ptr<TLatex> > labels;
+    std::vector<std::unique_ptr<TF1> > functions;
+
+    for (int iper = 0; iper < (int)periods.size(); ++iper) {
+        canvas.cd(iper + 1);
+        set_plot_style();
+
+        const std::string& period = periods[(size_t)iper];
+
+        std::unique_ptr<TH1D> frame(
+            make_frame("frame_" + canvas_name + "_" + sanitize_for_path(period),
+                       variable.title,
+                       "#sigma_{i}/#bar{#sigma}",
+                       xr[0],
+                       xr[1],
+                       0.0,
+                       3.0)
+        );
+        frame->Draw("AXIS");
+
+        std::unique_ptr<TLine> unity(new TLine(xr[0], 1.0, xr[1], 1.0));
+        unity->SetLineColor(kRed + 1);
+        unity->SetLineStyle(2);
+        unity->SetLineWidth(2);
+        unity->Draw("SAME");
+
+        std::unique_ptr<TLegend> legend(new TLegend(0.47, 0.57, 0.94, 0.88));
+        legend->SetBorderSize(1);
+        legend->SetFillStyle(1001);
+        legend->SetFillColor(kWhite);
+        legend->SetTextFont(42);
+        legend->SetTextSize(0.026);
+
+        const auto it_period = by_period.find(period);
+
+        if (it_period != by_period.end()) {
+            std::unique_ptr<TGraphErrors> graph(make_ratio_graph(it_period->second.task.points, kBlack, 20));
+
+            if (graph) {
+                graph->Draw("P SAME");
+                legend->AddEntry(graph.get(), period.c_str(), "pe");
+                graphs.push_back(std::move(graph));
+            }
+
+            for (int ifit = 0; ifit < (int)it_period->second.accepted.size(); ++ifit) {
+                const FitResultSummary& fit = it_period->second.accepted[(size_t)ifit];
+                const int color = fit_colors[(size_t)(ifit % (int)fit_colors.size())];
+
+                std::unique_ptr<TF1> func(make_root_fit_function(fit, xr[0], xr[1], color));
+                func->Draw("SAME");
+
+                std::ostringstream label;
+                label << "p" << fit.order
+                      << ", #chi^{2}/ndf = "
+                      << std::fixed << std::setprecision(2)
+                      << fit.chi2_ndf;
+
+                legend->AddEntry(func.get(), label.str().c_str(), "l");
+                functions.push_back(std::move(func));
+            }
+        }
+
+        legend->Draw();
+
+        std::unique_ptr<TLatex> sublabel(new TLatex());
+        sublabel->SetNDC();
+        sublabel->SetTextFont(42);
+        sublabel->SetTextSize(0.055);
+        sublabel->SetTextAlign(22);
+        sublabel->DrawLatex(0.50, 0.945, period.c_str());
+
+        frames.push_back(std::move(frame));
+        unity_lines.push_back(std::move(unity));
+        legends.push_back(std::move(legend));
+        labels.push_back(std::move(sublabel));
+    }
+
+    canvas.cd();
 
     TLatex title;
     title.SetNDC();
     title.SetTextFont(42);
-    title.SetTextSize(0.034);
+    title.SetTextSize(0.020);
     title.SetTextAlign(22);
 
     std::ostringstream title_text;
-    title_text << case_label << "   " << central_mode
-               << "   " << reference_type
-               << "   " << period
-               << "   p" << order;
-    title.DrawLatex(0.50, 0.965, title_text.str().c_str());
+    title_text << "10.6 GeV unpol, stat weighted, "
+               << reference_type
+               << ", kinematic dependence vs "
+               << variable.title;
+    title.DrawLatex(0.50, 0.992, title_text.str().c_str());
 
     canvas.Modified();
     canvas.Update();
 
     const fs::path out_path =
-        out_dir /
-        ("fit_" + sanitize_for_path(case_label) + "_" +
-         sanitize_for_path(central_mode) + "_" +
+        ref_dir /
+        ("kinematic_dependence_" +
          sanitize_for_path(reference_type) + "_" +
-         sanitize_for_path(period) + "_" +
-         sanitize_for_path(var.key) + "_p" +
-         std::to_string(order) + ".png");
+         sanitize_for_path(variable.key) + ".png");
 
     canvas.SaveAs(out_path.string().c_str());
-
-    delete fit;
-
-    return summary;
 }
 
-static void write_fit_summary_csv(const fs::path& path,
-                                  const std::vector<FitResultSummary>& summaries) {
-    std::ofstream fout(path);
+static std::vector<FitTask> build_fit_tasks(const std::vector<RatioPoint>& all_ratio_points,
+                                            const std::vector<RatioPoint>& all_loo_ratio_points) {
+    std::vector<FitTask> tasks;
 
-    if (!fout.is_open()) {
-        throw std::runtime_error("Could not open fit summary CSV: " + path.string());
-    }
+    const std::string case_label = "10.6 GeV unpol";
+    const std::string central_mode = central_value_mode_name(CentralValueMode::StatWeighted);
+    const std::vector<std::string> reference_types = {
+        "all_mean",
+        "leave_one_out"
+    };
 
-    fout << "case,central mode,reference type,period,variable,polynomial order,n,ndf,chi2,chi2ndf";
+    for (const auto& reference_type : reference_types) {
+        const std::vector<RatioPoint>& source_points =
+            (reference_type == "all_mean") ? all_ratio_points : all_loo_ratio_points;
 
-    for (int ip = 0; ip <= kMaxPolynomialOrder; ++ip) {
-        fout << ",p" << ip << ",p" << ip << " err";
-    }
+        for (const auto& period : ten6_periods()) {
+            for (const auto& variable : fit_variable_configs()) {
+                std::vector<RatioPoint> points =
+                    filter_ratio_points(source_points,
+                                        case_label,
+                                        central_mode,
+                                        reference_type,
+                                        period,
+                                        variable.key);
 
-    fout << "\n";
+                if (points.empty()) {
+                    continue;
+                }
 
-    for (const auto& s : summaries) {
-        fout << csv_escape_field(s.case_label) << ","
-             << csv_escape_field(s.central_mode) << ","
-             << csv_escape_field(s.reference_type) << ","
-             << csv_escape_field(s.period) << ","
-             << csv_escape_field(s.variable_key) << ","
-             << s.order << ","
-             << s.n << ","
-             << s.ndf << ","
-             << format_double(s.chi2) << ","
-             << format_double(s.chi2_ndf);
+                FitTask task;
+                task.case_label = case_label;
+                task.central_mode = central_mode;
+                task.reference_type = reference_type;
+                task.period = period;
+                task.variable = variable;
+                task.points = std::move(points);
 
-        for (int ip = 0; ip <= kMaxPolynomialOrder; ++ip) {
-            if (ip < (int)s.params.size()) {
-                fout << "," << format_double(s.params[(size_t)ip])
-                     << "," << format_double(s.errors[(size_t)ip]);
-            } else {
-                fout << ",,";
+                tasks.push_back(std::move(task));
             }
         }
-
-        fout << "\n";
     }
 
-    fout.close();
-
-    if (!fout) {
-        throw std::runtime_error("Failed while writing fit summary CSV: " + path.string());
-    }
+    return tasks;
 }
 
 static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
                                      const std::vector<RatioPoint>& all_loo_ratio_points,
-                                     const std::vector<CombinationCase>& cases,
                                      const fs::path& out_dir) {
     const fs::path fit_root = out_dir / "kinematic_dependence_fits";
     fs::create_directories(fit_root);
 
-    std::vector<FitResultSummary> summaries;
+    std::vector<FitTask> tasks = build_fit_tasks(all_ratio_points, all_loo_ratio_points);
 
-    const std::vector<VariableConfig> variables = fit_variable_configs();
+    std::cout << "[combination-systematics] Kinematic-dependence fit tasks: "
+              << tasks.size() << "\n";
 
-    for (const auto& c : cases) {
-        for (const auto& mode : central_value_modes()) {
-            const std::string mode_name = central_value_mode_name(mode);
-
-            for (const std::string& reference_type : {"all_mean", "leave_one_out"}) {
-                const std::vector<RatioPoint>& source_points =
-                    (reference_type == "all_mean") ? all_ratio_points : all_loo_ratio_points;
-
-                for (const auto& input : c.inputs) {
-                    for (const auto& var : variables) {
-                        const std::vector<RatioPoint> points =
-                            filter_ratio_points(source_points,
-                                                c.label,
-                                                mode_name,
-                                                reference_type,
-                                                input.period,
-                                                var.key);
-
-                        if (points.empty()) {
-                            continue;
-                        }
-
-                        for (int order = 0; order <= kMaxPolynomialOrder; ++order) {
-                            const fs::path subset_dir =
-                                fit_root /
-                                sanitize_for_path(c.label) /
-                                sanitize_for_path(mode_name) /
-                                sanitize_for_path(reference_type) /
-                                sanitize_for_path(input.period) /
-                                sanitize_for_path(var.key) /
-                                ("p" + std::to_string(order));
-
-                            FitResultSummary s =
-                                draw_and_fit_one_subset(points,
-                                                        subset_dir,
-                                                        c.label,
-                                                        mode_name,
-                                                        reference_type,
-                                                        input.period,
-                                                        var,
-                                                        order);
-
-                            summaries.push_back(s);
-
-                            std::cout << "[combination-systematics][fit] "
-                                      << c.label << " "
-                                      << mode_name << " "
-                                      << reference_type << " "
-                                      << input.period << " "
-                                      << var.key << " p" << order
-                                      << " n=" << s.n
-                                      << " chi2/ndf=" << std::setprecision(8)
-                                      << s.chi2_ndf
-                                      << "\n";
-                        }
-                    }
-                }
-            }
-        }
-    }
+    std::vector<FitTaskResult> fit_results = run_fit_tasks_parallel(tasks);
 
     const fs::path summary_path = fit_root / "kinematic_dependence_fit_summary.csv";
-    write_fit_summary_csv(summary_path, summaries);
+    write_fit_summary_csv(summary_path, fit_results);
+
+    for (const std::string& reference_type : {"all_mean", "leave_one_out"}) {
+        for (const auto& variable : fit_variable_configs()) {
+            draw_kinematic_canvas_for_variable(out_dir,
+                                               reference_type,
+                                               variable,
+                                               fit_results);
+        }
+    }
 
     std::cout << "[combination-systematics] Wrote kinematic fit summary CSV: "
               << summary_path.string() << "\n";
@@ -1872,7 +2223,6 @@ bool combination_systematics(const std::string& csv_path,
 
         make_kinematic_fit_plots(all_ratio_points,
                                  all_loo_ratio_points,
-                                 cases,
                                  out_dir);
 
         write_csv_or_throw(csv_path, table);
