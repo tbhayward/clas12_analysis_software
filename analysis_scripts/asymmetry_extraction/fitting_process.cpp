@@ -3842,7 +3842,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->SetTextAlign(12);
     L->SetMargin(0.10);
 
-    if (!g_ge_compact_legend) {
+    if (true) {
       L->AddEntry((TObject*)0,
         Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
              globalChi2, globalNdf,
