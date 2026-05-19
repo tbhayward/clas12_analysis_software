@@ -3833,7 +3833,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->Draw("L same");
 
     // Legend
-    TLegend* L = new TLegend(0.56, 0.72, 0.95, 0.94 );
+    TLegend* L = new TLegend(0.56, 0.72, 0.95, 0.94);
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
@@ -3880,9 +3880,9 @@ static void plotHistogramAndFit_GeneralExclusive(
   };
 
   // ---------------- Draw the three panels -------------------------------------
-  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.30, 0.30);
-  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.30, 0.30);
-  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.60, 0.60);
+  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.40, 0.40);
+  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.40, 0.40);
+  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -1.00, 1.00);
 
   // ---------------- Title and save --------------------------------------------
   const double vminB = allBins[currentFits][binIndex];
