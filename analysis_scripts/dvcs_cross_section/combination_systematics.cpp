@@ -713,6 +713,24 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
+            "Fa18 Inb vs Sp18 Inb unpol",
+            "",
+            false,
+            {
+                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                input_single("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol"))
+            }
+        },
+        {
+            "Fa18 Out vs Sp18 Out unpol",
+            "",
+            false,
+            {
+                input_single("Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
+                input_single("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
+            }
+        },
+        {
             "Fa18 Inb vs Sp19 Inb unpol",
             "",
             false,
