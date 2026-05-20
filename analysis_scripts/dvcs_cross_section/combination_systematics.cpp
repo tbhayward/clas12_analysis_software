@@ -2484,6 +2484,104 @@ static void print_e_theta_scale_reference(const std::map<std::string, FitResultS
     std::cout << "\n";
 }
 
+static void draw_e_theta_s_obs_canvas(const fs::path& fit_root,
+                                      const std::vector<ScaleReferencePoint>& reference_points) {
+    std::vector<double> x;
+    std::vector<double> y;
+
+    for (const auto& ref : reference_points) {
+        if (ref.n_valid < 2) {
+            continue;
+        }
+
+        if (!std::isfinite(ref.theta) ||
+            !std::isfinite(ref.s_obs)) {
+            continue;
+        }
+
+        x.push_back(ref.theta);
+        y.push_back(ref.s_obs);
+    }
+
+    if (x.empty()) {
+        std::cout << "[combination-systematics] No finite e_theta s_obs points available for plotting.\n";
+        return;
+    }
+
+    double xmin = 7.5;
+    double xmax = 30.5;
+    double ymax = 0.0;
+
+    for (const double v : y) {
+        if (std::isfinite(v)) {
+            ymax = std::max(ymax, v);
+        }
+    }
+
+    if (!std::isfinite(ymax) || ymax <= 0.0) {
+        ymax = 1.0;
+    } else {
+        ymax *= 1.20;
+    }
+
+    TCanvas canvas("c_e_theta_s_obs_dependence",
+                   "e_theta s_obs dependence",
+                   1100,
+                   850);
+    canvas.SetFillColor(kWhite);
+    set_plot_style();
+
+    std::unique_ptr<TH1D> frame(
+        make_frame("frame_e_theta_s_obs_dependence",
+                   "#theta_{e} (deg)",
+                   "s_{obs}",
+                   xmin,
+                   xmax,
+                   0.0,
+                   ymax)
+    );
+
+    frame->Draw("AXIS");
+
+    TGraphErrors graph((int)x.size());
+
+    for (int i = 0; i < (int)x.size(); ++i) {
+        graph.SetPoint(i, x[(size_t)i], y[(size_t)i]);
+        graph.SetPointError(i, 0.0, 0.0);
+    }
+
+    graph.SetMarkerStyle(20);
+    graph.SetMarkerSize(0.9);
+    graph.SetMarkerColor(kBlack);
+    graph.SetLineColor(kBlack);
+    graph.SetLineWidth(2);
+    graph.Draw("PL SAME");
+
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextSize(0.038);
+    title.SetTextAlign(22);
+    title.DrawLatex(0.50, 0.955, "e_{#theta}-dependent observed spread from run-period fits");
+
+    TLatex note;
+    note.SetNDC();
+    note.SetTextFont(42);
+    note.SetTextSize(0.026);
+    note.SetTextAlign(13);
+    note.DrawLatex(0.19, 0.86, "s_{obs} = RMS[f_{i}(#theta_{e})/#LT f(#theta_{e})#GT - 1]");
+    note.DrawLatex(0.19, 0.82, "Only #theta_{e} values inside each period fit support are used.");
+
+    canvas.Modified();
+    canvas.Update();
+
+    const fs::path out_path = fit_root / "e_theta_s_obs_dependence.png";
+    canvas.SaveAs(out_path.string().c_str());
+
+    std::cout << "[combination-systematics] Wrote e_theta s_obs plot: "
+              << out_path.string() << "\n";
+}
+
 static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
                                      const fs::path& out_dir) {
     const fs::path fit_root = out_dir / "kinematic_dependence_fits";
@@ -2521,6 +2619,9 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
 
     print_e_theta_scale_reference(e_theta_fits,
                                   reference_points);
+
+    draw_e_theta_s_obs_canvas(fit_root,
+                              reference_points);
 
     std::cout << "[combination-systematics] Wrote kinematic fit summary CSV: "
               << summary_path.string() << "\n";
