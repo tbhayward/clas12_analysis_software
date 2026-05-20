@@ -4172,9 +4172,9 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.SetErrorDef(1.0);
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
 
-    minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -0.01,  0.01);
-    minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -0.01,  0.01);
-    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.001,  -0.1,  0.22);
+    minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -0.1,  0.1);
+    minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -0.1,  0.1);
+    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.10,  0.0001,  -0.1,  0.32);
     minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.001,  -1.0,  1.0);
     minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.001,  -1.0,  1.0);
     minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.001,  -1.0,  1.0);
