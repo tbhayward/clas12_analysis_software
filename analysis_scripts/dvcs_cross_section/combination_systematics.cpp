@@ -37,13 +37,6 @@ namespace fs = std::filesystem;
 
 namespace {
 
-enum class CentralValueMode {
-    StatWeighted,
-    EqualPeriod,
-    RandomEffects
-};
-
-static constexpr CentralValueMode kFillOutputMode = CentralValueMode::StatWeighted;
 static constexpr int kMaxPolynomialOrder = 5;
 static constexpr double kMinChi2NdfImprovement = 0.01;
 static constexpr int kMaxFitWorkers = 5;
@@ -94,7 +87,7 @@ struct PeriodRatioSummary {
 
 struct CombinationResult {
     std::string label;
-    std::string central_value_mode;
+    std::string central_value_mode = "stat_weighted";
     std::string output_column;
     bool fill_output = false;
 
@@ -245,30 +238,6 @@ static std::string sanitize_for_path(const std::string& s) {
     }
 
     return out;
-}
-
-static std::string central_value_mode_name(CentralValueMode mode) {
-    if (mode == CentralValueMode::StatWeighted) {
-        return "stat_weighted";
-    }
-
-    if (mode == CentralValueMode::EqualPeriod) {
-        return "equal_period";
-    }
-
-    if (mode == CentralValueMode::RandomEffects) {
-        return "random_effects";
-    }
-
-    return "unknown";
-}
-
-static std::vector<CentralValueMode> central_value_modes() {
-    return {
-        CentralValueMode::StatWeighted,
-        CentralValueMode::EqualPeriod,
-        CentralValueMode::RandomEffects
-    };
 }
 
 static std::vector<std::string> split_csv_line(const std::string& line) {
@@ -621,140 +590,9 @@ static bool combine_stat_weighted(const std::vector<TupleValue>& values,
            out.stat > 0.0;
 }
 
-static bool combine_equal_period(const std::vector<TupleValue>& values,
-                                 TupleValue& out) {
-    const std::vector<TupleValue> valid = valid_values_only(values);
-
-    if (valid.empty()) {
-        return false;
-    }
-
-    double sum_x = 0.0;
-    double sum_stat2 = 0.0;
-
-    for (const auto& v : valid) {
-        sum_x += v.value;
-        sum_stat2 += v.stat * v.stat;
-    }
-
-    const double n = (double)valid.size();
-
-    out.ok = true;
-    out.value = sum_x / n;
-    out.stat = std::sqrt(sum_stat2) / n;
-    out.sys = 0.0;
-
-    return std::isfinite(out.value) &&
-           std::isfinite(out.stat) &&
-           out.stat > 0.0;
-}
-
-static double dersimonian_laird_tau2(const std::vector<TupleValue>& valid) {
-    if (valid.size() < 2U) {
-        return 0.0;
-    }
-
-    double sum_w = 0.0;
-    double sum_w2 = 0.0;
-    double sum_wx = 0.0;
-
-    for (const auto& v : valid) {
-        const double w = 1.0 / (v.stat * v.stat);
-        sum_w += w;
-        sum_w2 += w * w;
-        sum_wx += w * v.value;
-    }
-
-    if (sum_w <= 0.0) {
-        return 0.0;
-    }
-
-    const double mean = sum_wx / sum_w;
-
-    double q = 0.0;
-    for (const auto& v : valid) {
-        const double w = 1.0 / (v.stat * v.stat);
-        const double residual = v.value - mean;
-        q += w * residual * residual;
-    }
-
-    const double ndf = (double)valid.size() - 1.0;
-    const double c = sum_w - (sum_w2 / sum_w);
-
-    if (c <= 0.0) {
-        return 0.0;
-    }
-
-    const double tau2 = (q - ndf) / c;
-
-    if (!std::isfinite(tau2) || tau2 <= 0.0) {
-        return 0.0;
-    }
-
-    return tau2;
-}
-
-static bool combine_random_effects(const std::vector<TupleValue>& values,
-                                   TupleValue& out) {
-    const std::vector<TupleValue> valid = valid_values_only(values);
-
-    if (valid.empty()) {
-        return false;
-    }
-
-    const double tau2 = dersimonian_laird_tau2(valid);
-
-    double sum_w = 0.0;
-    double sum_wx = 0.0;
-
-    for (const auto& v : valid) {
-        const double var = v.stat * v.stat + tau2;
-
-        if (!std::isfinite(var) || var <= 0.0) {
-            continue;
-        }
-
-        const double w = 1.0 / var;
-        sum_w += w;
-        sum_wx += w * v.value;
-    }
-
-    if (sum_w <= 0.0) {
-        return false;
-    }
-
-    out.ok = true;
-    out.value = sum_wx / sum_w;
-    out.stat = 1.0 / std::sqrt(sum_w);
-    out.sys = std::sqrt(std::max(0.0, tau2));
-
-    return std::isfinite(out.value) &&
-           std::isfinite(out.stat) &&
-           out.stat > 0.0;
-}
-
-static bool combine_values(const std::vector<TupleValue>& values,
-                           CentralValueMode mode,
-                           TupleValue& out) {
-    if (mode == CentralValueMode::StatWeighted) {
-        return combine_stat_weighted(values, out);
-    }
-
-    if (mode == CentralValueMode::EqualPeriod) {
-        return combine_equal_period(values, out);
-    }
-
-    if (mode == CentralValueMode::RandomEffects) {
-        return combine_random_effects(values, out);
-    }
-
-    return false;
-}
-
 static TupleValue get_input_value(const CsvTable& table,
                                   const std::vector<std::string>& row,
-                                  const PeriodInput& input,
-                                  CentralValueMode mode) {
+                                  const PeriodInput& input) {
     std::vector<TupleValue> values;
     values.reserve(input.columns.size());
 
@@ -764,7 +602,7 @@ static TupleValue get_input_value(const CsvTable& table,
 
     TupleValue out;
 
-    if (!combine_values(values, mode, out)) {
+    if (!combine_stat_weighted(values, out)) {
         return TupleValue();
     }
 
@@ -992,7 +830,6 @@ static std::string csv_escape_field(const std::string& s) {
 
 static bool get_leave_one_out_reference(const std::vector<TupleValue>& input_values,
                                         size_t leave_out_index,
-                                        CentralValueMode mode,
                                         TupleValue& ref_out) {
     std::vector<TupleValue> loo_values;
     loo_values.reserve(input_values.size());
@@ -1005,22 +842,17 @@ static bool get_leave_one_out_reference(const std::vector<TupleValue>& input_val
         loo_values.push_back(input_values[i]);
     }
 
-    return combine_values(loo_values, mode, ref_out);
+    return combine_stat_weighted(loo_values, ref_out);
 }
 
 static void append_ratio_points_for_row(const CsvTable& table,
                                         const std::vector<std::string>& row,
                                         const CombinationCase& c,
-                                        CentralValueMode mode,
                                         const std::vector<TupleValue>& input_values,
                                         const TupleValue& ref,
                                         std::vector<RatioPoint>& ratio_points,
                                         std::vector<RatioPoint>& loo_ratio_points) {
     if (c.label != "10.6 GeV unpol") {
-        return;
-    }
-
-    if (mode != CentralValueMode::StatWeighted) {
         return;
     }
 
@@ -1053,7 +885,7 @@ static void append_ratio_points_for_row(const CsvTable& table,
                 ratio_stat > 0.0) {
                 RatioPoint p;
                 p.case_label = c.label;
-                p.central_mode = central_value_mode_name(mode);
+                p.central_mode = "stat_weighted";
                 p.reference_type = "all_mean";
                 p.period = c.inputs[i].period;
                 p.variable_key = var.key;
@@ -1064,7 +896,7 @@ static void append_ratio_points_for_row(const CsvTable& table,
             }
 
             TupleValue loo_ref;
-            if (get_leave_one_out_reference(input_values, i, mode, loo_ref) &&
+            if (get_leave_one_out_reference(input_values, i, loo_ref) &&
                 loo_ref.ok &&
                 std::isfinite(loo_ref.value) &&
                 std::isfinite(loo_ref.stat) &&
@@ -1081,7 +913,7 @@ static void append_ratio_points_for_row(const CsvTable& table,
                     loo_ratio_stat > 0.0) {
                     RatioPoint p;
                     p.case_label = c.label;
-                    p.central_mode = central_value_mode_name(mode);
+                    p.central_mode = "stat_weighted";
                     p.reference_type = "leave_one_out";
                     p.period = c.inputs[i].period;
                     p.variable_key = var.key;
@@ -1097,12 +929,11 @@ static void append_ratio_points_for_row(const CsvTable& table,
 
 static CombinationResult evaluate_case(const CsvTable& table,
                                        const CombinationCase& c,
-                                       CentralValueMode mode,
                                        std::vector<RatioPoint>* ratio_points,
                                        std::vector<RatioPoint>* loo_ratio_points) {
     CombinationResult result;
     result.label = c.label;
-    result.central_value_mode = central_value_mode_name(mode);
+    result.central_value_mode = "stat_weighted";
     result.output_column = c.output_column;
     result.fill_output = c.fill_output;
 
@@ -1119,11 +950,11 @@ static CombinationResult evaluate_case(const CsvTable& table,
         input_values.reserve(c.inputs.size());
 
         for (const auto& input : c.inputs) {
-            input_values.push_back(get_input_value(table, row, input, mode));
+            input_values.push_back(get_input_value(table, row, input));
         }
 
         TupleValue ref;
-        if (!combine_values(input_values, mode, ref)) {
+        if (!combine_stat_weighted(input_values, ref)) {
             continue;
         }
 
@@ -1135,7 +966,6 @@ static CombinationResult evaluate_case(const CsvTable& table,
             append_ratio_points_for_row(table,
                                         row,
                                         c,
-                                        mode,
                                         input_values,
                                         ref,
                                         *ratio_points,
@@ -1169,7 +999,7 @@ static CombinationResult evaluate_case(const CsvTable& table,
             }
 
             TupleValue loo_ref;
-            if (get_leave_one_out_reference(input_values, i, mode, loo_ref) &&
+            if (get_leave_one_out_reference(input_values, i, loo_ref) &&
                 loo_ref.ok &&
                 std::isfinite(loo_ref.value) &&
                 std::isfinite(loo_ref.stat) &&
@@ -1415,10 +1245,6 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
     std::cout << "\n";
 }
 
-static bool is_fill_mode(CentralValueMode mode) {
-    return mode == kFillOutputMode;
-}
-
 static std::vector<RatioPoint> filter_ratio_points(const std::vector<RatioPoint>& points,
                                                    const std::string& case_label,
                                                    const std::string& central_mode,
@@ -1595,26 +1421,6 @@ static double eval_poly(const std::vector<double>& params,
     }
 
     return y;
-}
-
-static double eval_poly_error_diag_only(const std::vector<double>& errors,
-                                        double x) {
-    double var = 0.0;
-    double pow_x = 1.0;
-
-    for (const double e : errors) {
-        if (std::isfinite(e)) {
-            var += e * e * pow_x * pow_x;
-        }
-
-        pow_x *= x;
-    }
-
-    if (!std::isfinite(var) || var < 0.0) {
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-
-    return std::sqrt(var);
 }
 
 static FitResultSummary weighted_polynomial_fit(const FitTask& task,
@@ -2555,7 +2361,7 @@ static std::vector<FitTask> build_fit_tasks(const std::vector<RatioPoint>& all_r
     std::vector<FitTask> tasks;
 
     const std::string case_label = "10.6 GeV unpol";
-    const std::string central_mode = central_value_mode_name(CentralValueMode::StatWeighted);
+    const std::string central_mode = "stat_weighted";
     const std::vector<std::string> reference_types = {
         "all_mean",
         "leave_one_out"
@@ -2750,7 +2556,7 @@ static void print_e_theta_scale_reference(const std::map<std::string, FitResultS
                                           const std::vector<ScaleReferencePoint>& reference_points) {
     std::cout << "\n[combination-systematics] e_theta-dependent scale systematic reference\n";
     std::cout << "[combination-systematics] Reference is computed only inside each period fit's e_theta support; "
-              << "s_comb is the RMS of f_i(theta)/<f(theta)> - 1, without subtracting polynomial-parameter errors.\n";
+              << "s_comb is the RMS of f_i(theta)/<f(theta)> - 1.\n";
 
     std::cout << std::left
               << std::setw(10) << "theta"
@@ -2871,11 +2677,10 @@ bool combination_systematics(const std::string& csv_path,
                   << table.rows.size() << "\n";
         std::cout << "[combination-systematics] Output directory: "
                   << out_dir_string << "\n";
-        std::cout << "[combination-systematics] CSV output columns filled using central mode: "
-                  << central_value_mode_name(kFillOutputMode) << "\n";
+        std::cout << "[combination-systematics] CSV output columns filled using central mode: stat_weighted\n";
 
         std::vector<CombinationResult> results;
-        results.reserve(cases.size() * central_value_modes().size() + 1);
+        results.reserve(cases.size() + 1);
 
         std::vector<RatioPoint> all_ratio_points;
         std::vector<RatioPoint> all_loo_ratio_points;
@@ -2883,25 +2688,22 @@ bool combination_systematics(const std::string& csv_path,
         double ten6_unpol_s_comb_for_fill =
             std::numeric_limits<double>::quiet_NaN();
 
-        for (const auto& mode : central_value_modes()) {
-            for (const auto& c : cases) {
-                CombinationResult result =
-                    evaluate_case(table,
-                                  c,
-                                  mode,
-                                  &all_ratio_points,
-                                  &all_loo_ratio_points);
+        for (const auto& c : cases) {
+            CombinationResult result =
+                evaluate_case(table,
+                              c,
+                              &all_ratio_points,
+                              &all_loo_ratio_points);
 
-                if (is_fill_mode(mode) && c.fill_output) {
-                    fill_output_column(table, result.output_column, result.s_comb);
-                }
-
-                if (is_fill_mode(mode) && c.label == "10.6 GeV unpol") {
-                    ten6_unpol_s_comb_for_fill = result.s_comb;
-                }
-
-                results.push_back(result);
+            if (c.fill_output) {
+                fill_output_column(table, result.output_column, result.s_comb);
             }
+
+            if (c.label == "10.6 GeV unpol") {
+                ten6_unpol_s_comb_for_fill = result.s_comb;
+            }
+
+            results.push_back(result);
         }
 
         if (!std::isfinite(ten6_unpol_s_comb_for_fill)) {
@@ -2914,7 +2716,7 @@ bool combination_systematics(const std::string& csv_path,
 
         CombinationResult sp19;
         sp19.label = "Sp19 Inb unpol";
-        sp19.central_value_mode = central_value_mode_name(kFillOutputMode);
+        sp19.central_value_mode = "stat_weighted";
         sp19.output_column = combination_column("Sp19 Inb", "unpol");
         sp19.fill_output = true;
         sp19.s_obs = ten6_unpol_s_comb_for_fill;
