@@ -47,6 +47,7 @@ static constexpr CentralValueMode kFillOutputMode = CentralValueMode::StatWeight
 static constexpr int kMaxPolynomialOrder = 5;
 static constexpr double kMinChi2NdfImprovement = 0.01;
 static constexpr int kMaxFitWorkers = 5;
+static constexpr double kExpectedSp19OverFa18InbRatio = 0.95;
 
 struct CsvTable {
     std::vector<std::string> header;
@@ -129,6 +130,22 @@ struct RatioPoint {
     double x = 0.0;
     double y = 0.0;
     double ey = 0.0;
+};
+
+struct DirectRatioPoint {
+    std::string variable_key;
+    double x = 0.0;
+    double y = 0.0;
+    double ey = 0.0;
+};
+
+struct DirectRatioSummary {
+    std::string label;
+    int n = 0;
+    double weighted_mean = std::numeric_limits<double>::quiet_NaN();
+    double weighted_mean_stat = std::numeric_limits<double>::quiet_NaN();
+    double pull_from_unity = std::numeric_limits<double>::quiet_NaN();
+    double pull_from_expected = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct FitResultSummary {
@@ -863,6 +880,15 @@ static std::vector<CombinationCase> combination_cases() {
                     cross_section_column("Sp18 Out", "unpol")
                 })
             }
+        },
+        {
+            "Fa18 Inb vs Sp19 Inb unpol",
+            "",
+            false,
+            {
+                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+                input_single("Sp19 Inb", cross_section_column("Sp19 Inb", "unpol"))
+            }
         }
     };
 }
@@ -916,6 +942,13 @@ static void validate_schema(const CsvTable& table,
 
     for (const auto& col : sp19_proxy_output_columns()) {
         required.push_back(col);
+    }
+
+    required.push_back(cross_section_column("Fa18 Inb", "unpol"));
+    required.push_back(cross_section_column("Sp19 Inb", "unpol"));
+
+    for (const auto& var : fit_variable_configs()) {
+        required.push_back(avg_column(var.column_prefix, "Sp19 Inb"));
     }
 
     require_columns(table, required, "combination systematics");
@@ -1330,7 +1363,7 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
     std::cout << "\n[combination-systematics] Summary\n";
 
     std::cout << std::left
-              << std::setw(30) << "case"
+              << std::setw(34) << "case"
               << std::setw(18) << "central"
               << std::right
               << std::setw(10) << "bins"
@@ -1346,7 +1379,7 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
 
     for (const auto& r : results) {
         std::cout << std::left
-                  << std::setw(30) << r.label
+                  << std::setw(34) << r.label
                   << std::setw(18) << r.central_value_mode
                   << std::right
                   << std::setw(10) << r.valid_bins
@@ -1947,6 +1980,412 @@ static TF1* make_root_fit_function(const FitResultSummary& summary,
     return f;
 }
 
+static DirectRatioSummary summarize_direct_ratio_points(const std::vector<DirectRatioPoint>& points,
+                                                        const std::string& label) {
+    DirectRatioSummary summary;
+    summary.label = label;
+
+    double sum_w = 0.0;
+    double sum_wr = 0.0;
+
+    for (const auto& p : points) {
+        if (!std::isfinite(p.y) ||
+            !std::isfinite(p.ey) ||
+            p.ey <= 0.0) {
+            continue;
+        }
+
+        const double w = 1.0 / (p.ey * p.ey);
+        sum_w += w;
+        sum_wr += w * p.y;
+        summary.n += 1;
+    }
+
+    if (sum_w > 0.0 && summary.n > 0) {
+        summary.weighted_mean = sum_wr / sum_w;
+        summary.weighted_mean_stat = 1.0 / std::sqrt(sum_w);
+
+        if (summary.weighted_mean_stat > 0.0) {
+            summary.pull_from_unity =
+                (summary.weighted_mean - 1.0) / summary.weighted_mean_stat;
+
+            summary.pull_from_expected =
+                (summary.weighted_mean - kExpectedSp19OverFa18InbRatio) /
+                summary.weighted_mean_stat;
+        }
+    }
+
+    return summary;
+}
+
+static std::map<std::string, std::vector<DirectRatioPoint> >
+build_fa18_inb_sp19_inb_direct_ratio_points(const CsvTable& table) {
+    std::map<std::string, std::vector<DirectRatioPoint> > out;
+
+    const std::string fa18_col = cross_section_column("Fa18 Inb", "unpol");
+    const std::string sp19_col = cross_section_column("Sp19 Inb", "unpol");
+
+    for (const auto& row : table.rows) {
+        const TupleValue fa18 = get_tuple(table, row, fa18_col);
+        const TupleValue sp19 = get_tuple(table, row, sp19_col);
+
+        if (!fa18.ok ||
+            !sp19.ok ||
+            !std::isfinite(fa18.value) ||
+            !std::isfinite(sp19.value) ||
+            !std::isfinite(fa18.stat) ||
+            !std::isfinite(sp19.stat) ||
+            fa18.stat <= 0.0 ||
+            sp19.stat <= 0.0 ||
+            std::abs(fa18.value) <= 0.0 ||
+            std::abs(sp19.value) <= 0.0) {
+            continue;
+        }
+
+        const double ratio = sp19.value / fa18.value;
+        const double ratio_stat = std::abs(ratio) * std::sqrt(
+            (sp19.stat / sp19.value) * (sp19.stat / sp19.value) +
+            (fa18.stat / fa18.value) * (fa18.stat / fa18.value)
+        );
+
+        if (!std::isfinite(ratio) ||
+            !std::isfinite(ratio_stat) ||
+            ratio_stat <= 0.0) {
+            continue;
+        }
+
+        for (const auto& var : fit_variable_configs()) {
+            const std::string x_col = avg_column(var.column_prefix, "Sp19 Inb");
+            const double x = get_numeric_or_nan(table, row, x_col);
+
+            if (!std::isfinite(x)) {
+                continue;
+            }
+
+            DirectRatioPoint p;
+            p.variable_key = var.key;
+            p.x = x;
+            p.y = ratio;
+            p.ey = ratio_stat;
+
+            out[var.key].push_back(p);
+        }
+    }
+
+    for (auto& kv : out) {
+        std::sort(kv.second.begin(),
+                  kv.second.end(),
+                  [](const DirectRatioPoint& a, const DirectRatioPoint& b) {
+                      return a.x < b.x;
+                  });
+    }
+
+    return out;
+}
+
+static std::vector<double> choose_direct_ratio_x_range(const std::vector<DirectRatioPoint>& points) {
+    double xmin = std::numeric_limits<double>::infinity();
+    double xmax = -std::numeric_limits<double>::infinity();
+
+    for (const auto& p : points) {
+        if (!std::isfinite(p.x)) {
+            continue;
+        }
+
+        xmin = std::min(xmin, p.x);
+        xmax = std::max(xmax, p.x);
+    }
+
+    if (!std::isfinite(xmin) || !std::isfinite(xmax)) {
+        return {0.0, 1.0};
+    }
+
+    if (xmin == xmax) {
+        const double pad = (std::abs(xmin) > 0.0) ? 0.05 * std::abs(xmin) : 1.0;
+        return {xmin - pad, xmax + pad};
+    }
+
+    const double pad = 0.07 * (xmax - xmin);
+    return {xmin - pad, xmax + pad};
+}
+
+static TGraphErrors* make_direct_ratio_graph(const std::vector<DirectRatioPoint>& points) {
+    if (points.empty()) {
+        return nullptr;
+    }
+
+    TGraphErrors* graph = new TGraphErrors((int)points.size());
+
+    for (int i = 0; i < (int)points.size(); ++i) {
+        graph->SetPoint(i, points[(size_t)i].x, points[(size_t)i].y);
+        graph->SetPointError(i, 0.0, points[(size_t)i].ey);
+    }
+
+    graph->SetMarkerStyle(20);
+    graph->SetMarkerSize(0.36);
+    graph->SetMarkerColor(kBlack);
+    graph->SetLineColor(kBlack);
+    graph->SetLineWidth(1);
+
+    return graph;
+}
+
+static void write_fa18_inb_sp19_inb_direct_ratio_csv(
+    const fs::path& path,
+    const std::map<std::string, std::vector<DirectRatioPoint> >& points_by_var) {
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open Fa18/Sp19 direct-ratio CSV: " + path.string());
+    }
+
+    fout << "variable,x,sp19_over_fa18_inb,sp19_over_fa18_inb_stat\n";
+
+    for (const auto& var : fit_variable_configs()) {
+        const auto it = points_by_var.find(var.key);
+        if (it == points_by_var.end()) {
+            continue;
+        }
+
+        for (const auto& p : it->second) {
+            fout << csv_escape_field(var.key) << ","
+                 << format_double(p.x) << ","
+                 << format_double(p.y) << ","
+                 << format_double(p.ey) << "\n";
+        }
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing Fa18/Sp19 direct-ratio CSV: " + path.string());
+    }
+}
+
+static void write_fa18_inb_sp19_inb_direct_ratio_summary_csv(
+    const fs::path& path,
+    const std::map<std::string, std::vector<DirectRatioPoint> >& points_by_var) {
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open Fa18/Sp19 direct-ratio summary CSV: " + path.string());
+    }
+
+    fout << "variable,n,weighted mean,weighted mean stat,pull from 1,pull from expected 0.95,expected ratio\n";
+
+    for (const auto& var : fit_variable_configs()) {
+        const auto it = points_by_var.find(var.key);
+        if (it == points_by_var.end()) {
+            continue;
+        }
+
+        const DirectRatioSummary s =
+            summarize_direct_ratio_points(it->second, var.key);
+
+        fout << csv_escape_field(var.key) << ","
+             << s.n << ","
+             << format_double(s.weighted_mean) << ","
+             << format_double(s.weighted_mean_stat) << ","
+             << format_double(s.pull_from_unity) << ","
+             << format_double(s.pull_from_expected) << ","
+             << format_double(kExpectedSp19OverFa18InbRatio) << "\n";
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing Fa18/Sp19 direct-ratio summary CSV: " + path.string());
+    }
+}
+
+static void print_fa18_inb_sp19_inb_direct_ratio_summary(
+    const std::map<std::string, std::vector<DirectRatioPoint> >& points_by_var) {
+    std::cout << "\n[combination-systematics] Fa18 Inb vs Sp19 Inb direct diagnostic\n";
+    std::cout << "[combination-systematics] Ratio shown is Sp19 Inb / Fa18 Inb. "
+              << "BH-only expectation supplied by user: approximately "
+              << kExpectedSp19OverFa18InbRatio << ".\n";
+
+    std::cout << std::left
+              << std::setw(12) << "variable"
+              << std::right
+              << std::setw(10) << "n"
+              << std::setw(16) << "mean"
+              << std::setw(16) << "stat"
+              << std::setw(16) << "pull_1"
+              << std::setw(16) << "pull_0.95"
+              << "\n";
+
+    for (const auto& var : fit_variable_configs()) {
+        const auto it = points_by_var.find(var.key);
+        if (it == points_by_var.end()) {
+            continue;
+        }
+
+        const DirectRatioSummary s =
+            summarize_direct_ratio_points(it->second, var.key);
+
+        std::cout << std::left
+                  << std::setw(12) << var.key
+                  << std::right
+                  << std::setw(10) << s.n
+                  << std::setw(16) << std::setprecision(8) << s.weighted_mean
+                  << std::setw(16) << std::setprecision(8) << s.weighted_mean_stat
+                  << std::setw(16) << std::setprecision(8) << s.pull_from_unity
+                  << std::setw(16) << std::setprecision(8) << s.pull_from_expected
+                  << "\n";
+    }
+
+    std::cout << "\n";
+}
+
+static void draw_fa18_inb_sp19_inb_direct_ratio_canvas(
+    const fs::path& out_dir,
+    const std::map<std::string, std::vector<DirectRatioPoint> >& points_by_var) {
+    const fs::path diag_dir = out_dir / "fa18_inb_vs_sp19_inb";
+    fs::create_directories(diag_dir);
+
+    const std::string canvas_name = "c_fa18_inb_vs_sp19_inb_direct_ratio";
+    TCanvas canvas(canvas_name.c_str(), canvas_name.c_str(), 1900, 1300);
+    canvas.SetFillColor(kWhite);
+    canvas.Divide(4, 2, 0.001, 0.001);
+
+    std::vector<std::unique_ptr<TH1D> > frames;
+    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    std::vector<std::unique_ptr<TLine> > lines;
+    std::vector<std::unique_ptr<TLegend> > legends;
+    std::vector<std::unique_ptr<TLatex> > labels;
+
+    const std::vector<VariableConfig> vars = fit_variable_configs();
+
+    for (int ivar = 0; ivar < (int)vars.size(); ++ivar) {
+        canvas.cd(ivar + 1);
+        set_plot_style();
+
+        std::vector<DirectRatioPoint> points;
+        const auto it = points_by_var.find(vars[(size_t)ivar].key);
+        if (it != points_by_var.end()) {
+            points = it->second;
+        }
+
+        const std::vector<double> xr = choose_direct_ratio_x_range(points);
+
+        std::unique_ptr<TH1D> frame(
+            make_frame("frame_fa18_sp19_" + vars[(size_t)ivar].key,
+                       vars[(size_t)ivar].title,
+                       "#sigma_{Sp19 Inb}/#sigma_{Fa18 Inb}",
+                       xr[0],
+                       xr[1],
+                       0.0,
+                       2.0)
+        );
+
+        frame->Draw("AXIS");
+
+        std::unique_ptr<TLine> unity(new TLine(xr[0], 1.0, xr[1], 1.0));
+        unity->SetLineColor(kRed + 1);
+        unity->SetLineStyle(2);
+        unity->SetLineWidth(2);
+        unity->Draw("SAME");
+
+        std::unique_ptr<TLine> expected(new TLine(xr[0],
+                                                  kExpectedSp19OverFa18InbRatio,
+                                                  xr[1],
+                                                  kExpectedSp19OverFa18InbRatio));
+        expected->SetLineColor(kBlue + 1);
+        expected->SetLineStyle(7);
+        expected->SetLineWidth(2);
+        expected->Draw("SAME");
+
+        std::unique_ptr<TGraphErrors> graph(make_direct_ratio_graph(points));
+
+        if (graph) {
+            graph->Draw("P SAME");
+        }
+
+        std::unique_ptr<TLegend> legend(new TLegend(0.48, 0.70, 0.94, 0.89));
+        legend->SetBorderSize(1);
+        legend->SetFillStyle(1001);
+        legend->SetFillColor(kWhite);
+        legend->SetTextFont(42);
+        legend->SetTextSize(0.030);
+
+        if (graph) {
+            legend->AddEntry(graph.get(), "Sp19 Inb / Fa18 Inb", "pe");
+        }
+
+        legend->AddEntry(unity.get(), "unity", "l");
+        legend->AddEntry(expected.get(), "BH-only expected #approx 0.95", "l");
+        legend->Draw();
+
+        std::unique_ptr<TLatex> label(new TLatex());
+        label->SetNDC();
+        label->SetTextFont(42);
+        label->SetTextSize(0.055);
+        label->SetTextAlign(22);
+        label->DrawLatex(0.50, 0.955, vars[(size_t)ivar].title.c_str());
+
+        frames.push_back(std::move(frame));
+        lines.push_back(std::move(unity));
+        lines.push_back(std::move(expected));
+        graphs.push_back(std::move(graph));
+        legends.push_back(std::move(legend));
+        labels.push_back(std::move(label));
+    }
+
+    canvas.cd(8);
+    gPad->SetFillColor(kWhite);
+
+    TLatex info;
+    info.SetNDC();
+    info.SetTextFont(42);
+    info.SetTextSize(0.055);
+    info.SetTextAlign(22);
+    info.DrawLatex(0.50, 0.78, "Direct energy/timing diagnostic");
+    info.DrawLatex(0.50, 0.64, "Sp19 Inb: 10.200 GeV");
+    info.DrawLatex(0.50, 0.52, "Fa18 Inb: 10.604 GeV");
+    info.DrawLatex(0.50, 0.40, "Same torus orientation");
+    info.DrawLatex(0.50, 0.28, "Same reconstruction pass");
+
+    canvas.cd();
+
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextSize(0.022);
+    title.SetTextAlign(22);
+    title.DrawLatex(0.50,
+                    0.992,
+                    "Fa18 Inb vs Sp19 Inb unpolarized direct comparison");
+
+    canvas.Modified();
+    canvas.Update();
+
+    const fs::path out_path = diag_dir / "fa18_inb_vs_sp19_inb_direct_ratio.png";
+    canvas.SaveAs(out_path.string().c_str());
+}
+
+static void make_fa18_inb_sp19_inb_direct_diagnostic(const CsvTable& table,
+                                                     const fs::path& out_dir) {
+    const fs::path diag_dir = out_dir / "fa18_inb_vs_sp19_inb";
+    fs::create_directories(diag_dir);
+
+    const std::map<std::string, std::vector<DirectRatioPoint> > points_by_var =
+        build_fa18_inb_sp19_inb_direct_ratio_points(table);
+
+    const fs::path point_csv = diag_dir / "fa18_inb_vs_sp19_inb_direct_ratio_points.csv";
+    const fs::path summary_csv = diag_dir / "fa18_inb_vs_sp19_inb_direct_ratio_summary.csv";
+
+    write_fa18_inb_sp19_inb_direct_ratio_csv(point_csv, points_by_var);
+    write_fa18_inb_sp19_inb_direct_ratio_summary_csv(summary_csv, points_by_var);
+    print_fa18_inb_sp19_inb_direct_ratio_summary(points_by_var);
+    draw_fa18_inb_sp19_inb_direct_ratio_canvas(out_dir, points_by_var);
+
+    std::cout << "[combination-systematics] Wrote Fa18 Inb vs Sp19 Inb direct ratio CSV: "
+              << point_csv.string() << "\n";
+    std::cout << "[combination-systematics] Wrote Fa18 Inb vs Sp19 Inb direct ratio summary CSV: "
+              << summary_csv.string() << "\n";
+}
+
 static void draw_kinematic_canvas_for_variable(const fs::path& out_dir,
                                                const std::string& reference_type,
                                                const VariableConfig& variable,
@@ -2206,7 +2645,7 @@ static std::vector<ScaleReferencePoint>
 compute_e_theta_scale_systematic_reference(const std::map<std::string, FitResultSummary>& fits_by_period) {
     std::vector<ScaleReferencePoint> out;
 
-    for (int itheta = 1; itheta <= 30; ++itheta) {
+    for (int itheta = 8; itheta <= 30; ++itheta) {
         const double theta = (double)itheta;
 
         std::vector<double> scales;
@@ -2493,6 +2932,9 @@ bool combination_systematics(const std::string& csv_path,
         make_kinematic_fit_plots(all_ratio_points,
                                  all_loo_ratio_points,
                                  out_dir);
+
+        make_fa18_inb_sp19_inb_direct_diagnostic(table,
+                                                 out_dir);
 
         write_csv_or_throw(csv_path, table);
 
