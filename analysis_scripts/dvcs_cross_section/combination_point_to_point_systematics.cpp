@@ -41,6 +41,7 @@ using QTKey = std::pair<Range, Range>;
 
 static constexpr int kMaxEThetaScaleFitOrder = 5;
 static constexpr double kMinEThetaScaleFitImprovement = 0.01;
+static constexpr double kAdditionalPointSystematicFraction = 0.1855;
 
 struct CsvTable {
     std::vector<std::string> header;
@@ -147,7 +148,10 @@ struct EThetaScaleFit {
 struct ScaleModel {
     std::string tag;
     std::string label;
+
     bool use_e_theta_fit = false;
+    double additional_point_sys_fraction = 0.0;
+
     std::vector<PeriodScale> constant_scales;
     std::map<std::string, double> constant_scale_by_period;
     std::map<std::string, EThetaScaleFit> etheta_fit_by_period;
@@ -528,6 +532,27 @@ static void validate_schema(const CsvTable& table) {
     require_columns(table, required, "combination point-to-point systematics");
 }
 
+static double point_total_uncertainty(const TupleValue& v,
+                                      double additional_fraction) {
+    if (!v.ok ||
+        !std::isfinite(v.value) ||
+        !std::isfinite(v.stat) ||
+        v.stat <= 0.0 ||
+        !std::isfinite(additional_fraction) ||
+        additional_fraction < 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double additional = additional_fraction * std::abs(v.value);
+    const double variance = v.stat * v.stat + additional * additional;
+
+    if (!std::isfinite(variance) || variance <= 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return std::sqrt(variance);
+}
+
 static bool compute_weighted_mean(const std::vector<TupleValue>& values,
                                   double& mean,
                                   double& mean_stat) {
@@ -540,6 +565,36 @@ static bool compute_weighted_mean(const std::vector<TupleValue>& values,
         }
 
         const double w = 1.0 / (v.stat * v.stat);
+        sum_w += w;
+        sum_wx += w * v.value;
+    }
+
+    if (sum_w <= 0.0) {
+        return false;
+    }
+
+    mean = sum_wx / sum_w;
+    mean_stat = 1.0 / std::sqrt(sum_w);
+
+    return std::isfinite(mean) && std::isfinite(mean_stat) && mean_stat > 0.0;
+}
+
+static bool compute_weighted_mean_with_additional_point_sys(
+    const std::vector<TupleValue>& values,
+    double additional_fraction,
+    double& mean,
+    double& mean_stat) {
+    double sum_w = 0.0;
+    double sum_wx = 0.0;
+
+    for (const auto& v : values) {
+        const double sigma = point_total_uncertainty(v, additional_fraction);
+
+        if (!std::isfinite(sigma) || sigma <= 0.0) {
+            continue;
+        }
+
+        const double w = 1.0 / (sigma * sigma);
         sum_w += w;
         sum_wx += w * v.value;
     }
@@ -1089,9 +1144,14 @@ static TupleValue apply_scale(const TupleValue& input,
 static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& values,
                                               double f,
                                               double reference_mean,
+                                              double additional_point_sys_fraction,
                                               double& mean,
                                               double& mean_stat) {
-    if (!std::isfinite(f) || f < 0.0 || !std::isfinite(reference_mean)) {
+    if (!std::isfinite(f) ||
+        f < 0.0 ||
+        !std::isfinite(reference_mean) ||
+        !std::isfinite(additional_point_sys_fraction) ||
+        additional_point_sys_fraction < 0.0) {
         return false;
     }
 
@@ -1105,7 +1165,12 @@ static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& val
             continue;
         }
 
-        const double var = v.stat * v.stat + extra * extra;
+        const double fixed_point_sys = additional_point_sys_fraction * std::abs(v.value);
+        const double var =
+            v.stat * v.stat +
+            fixed_point_sys * fixed_point_sys +
+            extra * extra;
+
         if (!(var > 0.0) || !std::isfinite(var)) {
             continue;
         }
@@ -1127,13 +1192,19 @@ static bool weighted_mean_with_extra_fraction(const std::vector<TupleValue>& val
 
 static double chi2_ndf_with_extra_fraction(const std::vector<TupleValue>& values,
                                            double f,
-                                           double reference_mean) {
+                                           double reference_mean,
+                                           double additional_point_sys_fraction) {
     int n = 0;
 
     double mean = 0.0;
     double mean_stat = 0.0;
 
-    if (!weighted_mean_with_extra_fraction(values, f, reference_mean, mean, mean_stat)) {
+    if (!weighted_mean_with_extra_fraction(values,
+                                           f,
+                                           reference_mean,
+                                           additional_point_sys_fraction,
+                                           mean,
+                                           mean_stat)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
@@ -1146,7 +1217,12 @@ static double chi2_ndf_with_extra_fraction(const std::vector<TupleValue>& values
             continue;
         }
 
-        const double var = v.stat * v.stat + extra * extra;
+        const double fixed_point_sys = additional_point_sys_fraction * std::abs(v.value);
+        const double var =
+            v.stat * v.stat +
+            fixed_point_sys * fixed_point_sys +
+            extra * extra;
+
         if (!(var > 0.0) || !std::isfinite(var)) {
             continue;
         }
@@ -1166,7 +1242,8 @@ static double chi2_ndf_with_extra_fraction(const std::vector<TupleValue>& values
 
 static double solve_fraction_for_chi2_unity(const std::vector<TupleValue>& scaled_values,
                                             double reference_mean,
-                                            double chi2_initial) {
+                                            double chi2_initial,
+                                            double additional_point_sys_fraction) {
     if (!std::isfinite(chi2_initial)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
@@ -1179,7 +1256,11 @@ static double solve_fraction_for_chi2_unity(const std::vector<TupleValue>& scale
     double hi = 0.01;
 
     for (int iter = 0; iter < 80; ++iter) {
-        const double chi2_hi = chi2_ndf_with_extra_fraction(scaled_values, hi, reference_mean);
+        const double chi2_hi =
+            chi2_ndf_with_extra_fraction(scaled_values,
+                                         hi,
+                                         reference_mean,
+                                         additional_point_sys_fraction);
 
         if (std::isfinite(chi2_hi) && chi2_hi <= 1.0) {
             break;
@@ -1194,7 +1275,11 @@ static double solve_fraction_for_chi2_unity(const std::vector<TupleValue>& scale
 
     for (int iter = 0; iter < 100; ++iter) {
         const double mid = 0.5 * (lo + hi);
-        const double chi2_mid = chi2_ndf_with_extra_fraction(scaled_values, mid, reference_mean);
+        const double chi2_mid =
+            chi2_ndf_with_extra_fraction(scaled_values,
+                                         mid,
+                                         reference_mean,
+                                         additional_point_sys_fraction);
 
         if (!std::isfinite(chi2_mid)) {
             hi = mid;
@@ -1323,7 +1408,10 @@ static BinResult evaluate_row(const CsvTable& table,
     double mean = 0.0;
     double mean_stat_value = 0.0;
 
-    if (!compute_weighted_mean(scaled_values, mean, mean_stat_value)) {
+    if (!compute_weighted_mean_with_additional_point_sys(scaled_values,
+                                                         model.additional_point_sys_fraction,
+                                                         mean,
+                                                         mean_stat_value)) {
         return result;
     }
 
@@ -1335,18 +1423,23 @@ static BinResult evaluate_row(const CsvTable& table,
     result.mean_scaled_stat = mean_stat_value;
 
     result.chi2_ndf_before =
-        chi2_ndf_with_extra_fraction(scaled_values, 0.0, result.mean_scaled);
+        chi2_ndf_with_extra_fraction(scaled_values,
+                                     0.0,
+                                     result.mean_scaled,
+                                     model.additional_point_sys_fraction);
 
     result.f_ptp =
         solve_fraction_for_chi2_unity(scaled_values,
                                       result.mean_scaled,
-                                      result.chi2_ndf_before);
+                                      result.chi2_ndf_before,
+                                      model.additional_point_sys_fraction);
 
     if (std::isfinite(result.f_ptp)) {
         result.chi2_ndf_after =
             chi2_ndf_with_extra_fraction(scaled_values,
                                          result.f_ptp,
-                                         result.mean_scaled);
+                                         result.mean_scaled,
+                                         model.additional_point_sys_fraction);
         result.f_ptp_percent = 100.0 * result.f_ptp;
 
         if (std::isfinite(result.mean_scaled_stat) && std::abs(result.mean_scaled) > 0.0) {
@@ -1703,18 +1796,26 @@ static void draw_one_xb_canvas(const Range& xb_range,
     sub.SetNDC();
     sub.SetTextAlign(22);
     sub.SetTextFont(42);
-    sub.SetTextSize(0.040);
+    sub.SetTextSize(0.037);
 
-    std::string subtitle;
+    std::ostringstream subtitle;
+
     if (model.use_e_theta_fit) {
-        subtitle =
-            "e_{#theta}-dependent period scale offsets removed first; plotted value is the residual fractional uncertainty needed to make #chi^{2}/ndf = 1";
+        subtitle << "e_{#theta}-dependent period scale offsets removed first";
     } else {
-        subtitle =
-            "Constant global period scale offsets removed first; plotted value is the residual fractional uncertainty needed to make #chi^{2}/ndf = 1";
+        subtitle << "Constant global period scale offsets removed first";
     }
 
-    sub.DrawLatex(0.5, 0.50, subtitle.c_str());
+    if (model.additional_point_sys_fraction > 0.0) {
+        subtitle << "; includes fixed "
+                 << std::fixed << std::setprecision(2)
+                 << 100.0 * model.additional_point_sys_fraction
+                 << "% point systematic before residual extraction";
+    } else {
+        subtitle << "; statistical errors only before residual extraction";
+    }
+
+    sub.DrawLatex(0.5, 0.50, subtitle.str().c_str());
 
     for (int r = 0; r < nrows; ++r) {
         const Range& t_range = t_slice[(size_t)r];
@@ -2423,6 +2524,8 @@ static void write_global_summary_csv_line(std::ofstream& fout,
 
     fout << csv_escape_field(model.tag) << ","
          << csv_escape_field(model.label) << ","
+         << format_double(model.additional_point_sys_fraction) << ","
+         << format_double(100.0 * model.additional_point_sys_fraction) << ","
          << results.size() << ","
          << format_double(mean_vec(chi2_before)) << ","
          << format_double(mean_vec(chi2_after)) << ","
@@ -2445,7 +2548,8 @@ static void write_global_comparison_summary_csv(const fs::path& path,
         throw std::runtime_error("Could not open global comparison summary CSV for writing: " + path.string());
     }
 
-    fout << "model tag,model label,valid bins,mean chi2ndf before,mean chi2ndf after,"
+    fout << "model tag,model label,additional point sys fraction,additional point sys percent,"
+         << "valid bins,mean chi2ndf before,mean chi2ndf after,"
          << "mean f_ptp percent,mean f_ptp stat percent,median f_ptp percent,"
          << "p68 f_ptp percent,p90 f_ptp percent,p95 f_ptp percent,max f_ptp percent\n";
 
@@ -2594,26 +2698,29 @@ static void draw_e_theta_scale_fit_canvas(const std::vector<RatioPoint>& all_poi
     delete canvas;
 }
 
-static void draw_model_comparison_scatter(const std::vector<BinResult>& constant_results,
-                                          const std::vector<BinResult>& etheta_results,
-                                          const fs::path& out_dir) {
-    std::map<size_t, BinResult> constant_by_row;
-    std::map<size_t, BinResult> etheta_by_row;
+static void draw_model_comparison_scatter(const std::vector<BinResult>& first_results,
+                                          const std::vector<BinResult>& second_results,
+                                          const fs::path& out_dir,
+                                          const std::string& first_label,
+                                          const std::string& second_label,
+                                          const std::string& file_tag) {
+    std::map<size_t, BinResult> first_by_row;
+    std::map<size_t, BinResult> second_by_row;
 
-    for (const auto& r : constant_results) {
-        constant_by_row[r.row_index] = r;
+    for (const auto& r : first_results) {
+        first_by_row[r.row_index] = r;
     }
 
-    for (const auto& r : etheta_results) {
-        etheta_by_row[r.row_index] = r;
+    for (const auto& r : second_results) {
+        second_by_row[r.row_index] = r;
     }
 
-    std::vector<double> x_const;
-    std::vector<double> y_etheta;
+    std::vector<double> x_first;
+    std::vector<double> y_second;
 
-    for (const auto& kv : constant_by_row) {
-        const auto it = etheta_by_row.find(kv.first);
-        if (it == etheta_by_row.end()) {
+    for (const auto& kv : first_by_row) {
+        const auto it = second_by_row.find(kv.first);
+        if (it == second_by_row.end()) {
             continue;
         }
 
@@ -2622,25 +2729,25 @@ static void draw_model_comparison_scatter(const std::vector<BinResult>& constant
             continue;
         }
 
-        x_const.push_back(kv.second.f_ptp_percent);
-        y_etheta.push_back(it->second.f_ptp_percent);
+        x_first.push_back(kv.second.f_ptp_percent);
+        y_second.push_back(it->second.f_ptp_percent);
     }
 
-    if (x_const.empty()) {
+    if (x_first.empty()) {
         return;
     }
 
     double max_value = 0.0;
 
-    for (size_t i = 0; i < x_const.size(); ++i) {
-        max_value = std::max(max_value, x_const[i]);
-        max_value = std::max(max_value, y_etheta[i]);
+    for (size_t i = 0; i < x_first.size(); ++i) {
+        max_value = std::max(max_value, x_first[i]);
+        max_value = std::max(max_value, y_second[i]);
     }
 
     max_value = std::max(5.0, 1.15 * max_value);
 
-    TCanvas* canvas = new TCanvas("c_ptp_constant_vs_etheta",
-                                  "c_ptp_constant_vs_etheta",
+    TCanvas* canvas = new TCanvas(("c_ptp_comparison_" + file_tag).c_str(),
+                                  ("c_ptp_comparison_" + file_tag).c_str(),
                                   900,
                                   800);
 
@@ -2652,8 +2759,8 @@ static void draw_model_comparison_scatter(const std::vector<BinResult>& constant
     gPad->SetTicks(1, 1);
 
     TH1* frame = gPad->DrawFrame(0.0, 0.0, max_value, max_value);
-    frame->GetXaxis()->SetTitle("P2P sys with constant scale removal (%)");
-    frame->GetYaxis()->SetTitle("P2P sys with e_{#theta}-dependent scale removal (%)");
+    frame->GetXaxis()->SetTitle((first_label + " (%)").c_str());
+    frame->GetYaxis()->SetTitle((second_label + " (%)").c_str());
     frame->GetXaxis()->CenterTitle();
     frame->GetYaxis()->CenterTitle();
     frame->GetXaxis()->SetNdivisions(505);
@@ -2671,9 +2778,9 @@ static void draw_model_comparison_scatter(const std::vector<BinResult>& constant
     unity.SetLineWidth(2);
     unity.Draw("SAME");
 
-    TGraph* graph = new TGraph((int)x_const.size());
-    for (int i = 0; i < (int)x_const.size(); ++i) {
-        graph->SetPoint(i, x_const[(size_t)i], y_etheta[(size_t)i]);
+    TGraph* graph = new TGraph((int)x_first.size());
+    for (int i = 0; i < (int)x_first.size(); ++i) {
+        graph->SetPoint(i, x_first[(size_t)i], y_second[(size_t)i]);
     }
 
     graph->SetMarkerStyle(20);
@@ -2685,9 +2792,9 @@ static void draw_model_comparison_scatter(const std::vector<BinResult>& constant
     TLatex title;
     title.SetNDC();
     title.SetTextFont(42);
-    title.SetTextSize(0.038);
+    title.SetTextSize(0.035);
     title.SetTextAlign(22);
-    title.DrawLatex(0.50, 0.955, "Point-to-point systematic comparison by scale-removal method");
+    title.DrawLatex(0.50, 0.955, "Point-to-point systematic comparison by method");
 
     TLegend legend(0.20, 0.76, 0.58, 0.88);
     legend.SetBorderSize(1);
@@ -2702,7 +2809,7 @@ static void draw_model_comparison_scatter(const std::vector<BinResult>& constant
     canvas->Modified();
     canvas->Update();
 
-    const fs::path out_path = out_dir / "comparison_constant_vs_e_theta_ptp_sys.pdf";
+    const fs::path out_path = out_dir / ("comparison_" + file_tag + ".pdf");
     canvas->SaveAs(out_path.string().c_str());
 
     delete graph;
@@ -2758,6 +2865,10 @@ bool combination_point_to_point_systematics(const std::string& csv_path,
                   << table.rows.size() << "\n";
         std::cout << "[combination-ptp] Output directory: "
                   << out_dir.string() << "\n";
+        std::cout << "[combination-ptp] Additional fixed point systematic option: "
+                  << std::setprecision(8)
+                  << 100.0 * kAdditionalPointSystematicFraction
+                  << "%\n";
 
         const std::vector<PeriodScale> constant_scales =
             compute_10p6_unpol_scale_factors(table);
@@ -2783,21 +2894,42 @@ bool combination_point_to_point_systematics(const std::string& csv_path,
 
         ScaleModel constant_model;
         constant_model.tag = "constant_scale";
-        constant_model.label = "constant period-scale removal";
+        constant_model.label = "constant period-scale removal, statistical errors only";
         constant_model.use_e_theta_fit = false;
+        constant_model.additional_point_sys_fraction = 0.0;
         constant_model.constant_scales = constant_scales;
         constant_model.constant_scale_by_period = constant_scale_by_period;
 
         ScaleModel etheta_model;
         etheta_model.tag = "e_theta_scale";
-        etheta_model.label = "e_{#theta}-dependent period-scale removal";
+        etheta_model.label = "e_{#theta}-dependent period-scale removal, statistical errors only";
         etheta_model.use_e_theta_fit = true;
+        etheta_model.additional_point_sys_fraction = 0.0;
         etheta_model.constant_scales = constant_scales;
         etheta_model.constant_scale_by_period = constant_scale_by_period;
         etheta_model.etheta_fit_by_period = etheta_fit_by_period;
 
+        ScaleModel constant_with_sys_model;
+        constant_with_sys_model.tag = "constant_scale_with_18p55_sys";
+        constant_with_sys_model.label = "constant period-scale removal, stat #oplus 18.55% point systematic";
+        constant_with_sys_model.use_e_theta_fit = false;
+        constant_with_sys_model.additional_point_sys_fraction = kAdditionalPointSystematicFraction;
+        constant_with_sys_model.constant_scales = constant_scales;
+        constant_with_sys_model.constant_scale_by_period = constant_scale_by_period;
+
+        ScaleModel etheta_with_sys_model;
+        etheta_with_sys_model.tag = "e_theta_scale_with_18p55_sys";
+        etheta_with_sys_model.label = "e_{#theta}-dependent period-scale removal, stat #oplus 18.55% point systematic";
+        etheta_with_sys_model.use_e_theta_fit = true;
+        etheta_with_sys_model.additional_point_sys_fraction = kAdditionalPointSystematicFraction;
+        etheta_with_sys_model.constant_scales = constant_scales;
+        etheta_with_sys_model.constant_scale_by_period = constant_scale_by_period;
+        etheta_with_sys_model.etheta_fit_by_period = etheta_fit_by_period;
+
         std::vector<BinResult> constant_results;
         std::vector<BinResult> etheta_results;
+        std::vector<BinResult> constant_with_sys_results;
+        std::vector<BinResult> etheta_with_sys_results;
 
         run_one_model_outputs(table,
                               constant_model,
@@ -2809,13 +2941,49 @@ bool combination_point_to_point_systematics(const std::string& csv_path,
                               out_dir / "e_theta_scale",
                               etheta_results);
 
+        run_one_model_outputs(table,
+                              constant_with_sys_model,
+                              out_dir / "constant_scale_with_18p55_sys",
+                              constant_with_sys_results);
+
+        run_one_model_outputs(table,
+                              etheta_with_sys_model,
+                              out_dir / "e_theta_scale_with_18p55_sys",
+                              etheta_with_sys_results);
+
         draw_model_comparison_scatter(constant_results,
                                       etheta_results,
-                                      out_dir);
+                                      out_dir,
+                                      "P2P sys with constant scale removal",
+                                      "P2P sys with e_{#theta}-dependent scale removal",
+                                      "constant_vs_e_theta_ptp_sys");
+
+        draw_model_comparison_scatter(constant_with_sys_results,
+                                      etheta_with_sys_results,
+                                      out_dir,
+                                      "P2P sys with constant scale removal, stat #oplus 18.55% sys",
+                                      "P2P sys with e_{#theta}-dependent scale removal, stat #oplus 18.55% sys",
+                                      "constant_vs_e_theta_ptp_sys_with_18p55_sys");
+
+        draw_model_comparison_scatter(constant_results,
+                                      constant_with_sys_results,
+                                      out_dir,
+                                      "P2P sys with constant scale removal, stat only",
+                                      "P2P sys with constant scale removal, stat #oplus 18.55% sys",
+                                      "constant_stat_only_vs_with_18p55_sys");
+
+        draw_model_comparison_scatter(etheta_results,
+                                      etheta_with_sys_results,
+                                      out_dir,
+                                      "P2P sys with e_{#theta}-dependent scale removal, stat only",
+                                      "P2P sys with e_{#theta}-dependent scale removal, stat #oplus 18.55% sys",
+                                      "e_theta_stat_only_vs_with_18p55_sys");
 
         std::vector<std::pair<ScaleModel, std::vector<BinResult> > > all_results;
         all_results.push_back(std::make_pair(constant_model, constant_results));
         all_results.push_back(std::make_pair(etheta_model, etheta_results));
+        all_results.push_back(std::make_pair(constant_with_sys_model, constant_with_sys_results));
+        all_results.push_back(std::make_pair(etheta_with_sys_model, etheta_with_sys_results));
 
         const fs::path global_summary_csv =
             out_dir / "combination_point_to_point_systematics_global_summary.csv";
