@@ -79,10 +79,6 @@ struct PeriodRatioSummary {
     int n = 0;
     double mean_ratio = 0.0;
     double mean_ratio_stat = 0.0;
-
-    int loo_n = 0;
-    double loo_mean_ratio = 0.0;
-    double loo_mean_ratio_stat = 0.0;
 };
 
 struct CombinationResult {
@@ -93,15 +89,12 @@ struct CombinationResult {
 
     int valid_bins = 0;
     int ratio_points = 0;
-    int loo_ratio_points = 0;
 
     double s_obs = 0.0;
     double s_stat_exp = 0.0;
     double s_comb = 0.0;
 
-    double loo_s_obs = 0.0;
-    double loo_s_stat_exp = 0.0;
-    double loo_s_comb = 0.0;
+    double half_width = 0.0;
 
     std::vector<PeriodRatioSummary> period_summaries;
 };
@@ -828,30 +821,12 @@ static std::string csv_escape_field(const std::string& s) {
     return oss.str();
 }
 
-static bool get_leave_one_out_reference(const std::vector<TupleValue>& input_values,
-                                        size_t leave_out_index,
-                                        TupleValue& ref_out) {
-    std::vector<TupleValue> loo_values;
-    loo_values.reserve(input_values.size());
-
-    for (size_t i = 0; i < input_values.size(); ++i) {
-        if (i == leave_out_index) {
-            continue;
-        }
-
-        loo_values.push_back(input_values[i]);
-    }
-
-    return combine_stat_weighted(loo_values, ref_out);
-}
-
 static void append_ratio_points_for_row(const CsvTable& table,
                                         const std::vector<std::string>& row,
                                         const CombinationCase& c,
                                         const std::vector<TupleValue>& input_values,
                                         const TupleValue& ref,
-                                        std::vector<RatioPoint>& ratio_points,
-                                        std::vector<RatioPoint>& loo_ratio_points) {
+                                        std::vector<RatioPoint>& ratio_points) {
     if (c.label != "10.6 GeV unpol") {
         return;
     }
@@ -894,43 +869,13 @@ static void append_ratio_points_for_row(const CsvTable& table,
                 p.ey = ratio_stat;
                 ratio_points.push_back(p);
             }
-
-            TupleValue loo_ref;
-            if (get_leave_one_out_reference(input_values, i, loo_ref) &&
-                loo_ref.ok &&
-                std::isfinite(loo_ref.value) &&
-                std::isfinite(loo_ref.stat) &&
-                std::abs(loo_ref.value) > 0.0 &&
-                std::abs(v.value) > 0.0) {
-                const double loo_ratio = v.value / loo_ref.value;
-                const double loo_ratio_stat = std::abs(loo_ratio) * std::sqrt(
-                    (v.stat / v.value) * (v.stat / v.value) +
-                    (loo_ref.stat / loo_ref.value) * (loo_ref.stat / loo_ref.value)
-                );
-
-                if (std::isfinite(loo_ratio) &&
-                    std::isfinite(loo_ratio_stat) &&
-                    loo_ratio_stat > 0.0) {
-                    RatioPoint p;
-                    p.case_label = c.label;
-                    p.central_mode = "stat_weighted";
-                    p.reference_type = "leave_one_out";
-                    p.period = c.inputs[i].period;
-                    p.variable_key = var.key;
-                    p.x = x;
-                    p.y = loo_ratio;
-                    p.ey = loo_ratio_stat;
-                    loo_ratio_points.push_back(p);
-                }
-            }
         }
     }
 }
 
 static CombinationResult evaluate_case(const CsvTable& table,
                                        const CombinationCase& c,
-                                       std::vector<RatioPoint>* ratio_points,
-                                       std::vector<RatioPoint>* loo_ratio_points) {
+                                       std::vector<RatioPoint>* ratio_points) {
     CombinationResult result;
     result.label = c.label;
     result.central_value_mode = "stat_weighted";
@@ -938,11 +883,9 @@ static CombinationResult evaluate_case(const CsvTable& table,
     result.fill_output = c.fill_output;
 
     std::map<std::string, PeriodRatioAccumulator> acc_by_period;
-    std::map<std::string, PeriodRatioAccumulator> loo_acc_by_period;
 
     for (const auto& input : c.inputs) {
         acc_by_period[input.period] = PeriodRatioAccumulator();
-        loo_acc_by_period[input.period] = PeriodRatioAccumulator();
     }
 
     for (const auto& row : table.rows) {
@@ -962,14 +905,13 @@ static CombinationResult evaluate_case(const CsvTable& table,
             continue;
         }
 
-        if (ratio_points != nullptr && loo_ratio_points != nullptr) {
+        if (ratio_points != nullptr) {
             append_ratio_points_for_row(table,
                                         row,
                                         c,
                                         input_values,
                                         ref,
-                                        *ratio_points,
-                                        *loo_ratio_points);
+                                        *ratio_points);
         }
 
         int n_valid_in_bin = 0;
@@ -997,34 +939,6 @@ static CombinationResult evaluate_case(const CsvTable& table,
                 ++result.ratio_points;
                 ++n_valid_in_bin;
             }
-
-            TupleValue loo_ref;
-            if (get_leave_one_out_reference(input_values, i, loo_ref) &&
-                loo_ref.ok &&
-                std::isfinite(loo_ref.value) &&
-                std::isfinite(loo_ref.stat) &&
-                std::abs(loo_ref.value) > 0.0 &&
-                std::abs(v.value) > 0.0) {
-                const double loo_ratio = v.value / loo_ref.value;
-
-                const double loo_ratio_stat = std::abs(loo_ratio) * std::sqrt(
-                    (v.stat / v.value) * (v.stat / v.value) +
-                    (loo_ref.stat / loo_ref.value) * (loo_ref.stat / loo_ref.value)
-                );
-
-                if (std::isfinite(loo_ratio) &&
-                    std::isfinite(loo_ratio_stat) &&
-                    loo_ratio_stat > 0.0) {
-                    const double loo_w = 1.0 / (loo_ratio_stat * loo_ratio_stat);
-
-                    PeriodRatioAccumulator& loo_acc = loo_acc_by_period[c.inputs[i].period];
-                    loo_acc.sum_w += loo_w;
-                    loo_acc.sum_wr += loo_w * loo_ratio;
-                    loo_acc.n += 1;
-
-                    ++result.loo_ratio_points;
-                }
-            }
         }
 
         if (n_valid_in_bin >= 2) {
@@ -1036,15 +950,15 @@ static CombinationResult evaluate_case(const CsvTable& table,
     double sum_stat2 = 0.0;
     int n_period = 0;
 
-    double loo_sum_obs2 = 0.0;
-    double loo_sum_stat2 = 0.0;
-    int loo_n_period = 0;
+    double min_ratio = std::numeric_limits<double>::infinity();
+    double max_ratio = -std::numeric_limits<double>::infinity();
 
     for (const auto& input : c.inputs) {
         PeriodRatioSummary p;
         p.period = input.period;
 
         const PeriodRatioAccumulator& acc = acc_by_period[input.period];
+
         if (acc.sum_w > 0.0 && acc.n > 0) {
             p.n = acc.n;
             p.mean_ratio = acc.sum_wr / acc.sum_w;
@@ -1057,26 +971,11 @@ static CombinationResult evaluate_case(const CsvTable& table,
                 sum_obs2 += residual * residual;
                 sum_stat2 += p.mean_ratio_stat * p.mean_ratio_stat;
                 ++n_period;
+
+                min_ratio = std::min(min_ratio, p.mean_ratio);
+                max_ratio = std::max(max_ratio, p.mean_ratio);
             }
-        }
 
-        const PeriodRatioAccumulator& loo_acc = loo_acc_by_period[input.period];
-        if (loo_acc.sum_w > 0.0 && loo_acc.n > 0) {
-            p.loo_n = loo_acc.n;
-            p.loo_mean_ratio = loo_acc.sum_wr / loo_acc.sum_w;
-            p.loo_mean_ratio_stat = 1.0 / std::sqrt(loo_acc.sum_w);
-
-            if (std::isfinite(p.loo_mean_ratio) &&
-                std::isfinite(p.loo_mean_ratio_stat) &&
-                p.loo_mean_ratio_stat > 0.0) {
-                const double loo_residual = p.loo_mean_ratio - 1.0;
-                loo_sum_obs2 += loo_residual * loo_residual;
-                loo_sum_stat2 += p.loo_mean_ratio_stat * p.loo_mean_ratio_stat;
-                ++loo_n_period;
-            }
-        }
-
-        if (p.n > 0 || p.loo_n > 0) {
             result.period_summaries.push_back(p);
         }
     }
@@ -1091,14 +990,10 @@ static CombinationResult evaluate_case(const CsvTable& table,
         ));
     }
 
-    if (loo_n_period > 0) {
-        result.loo_s_obs = std::sqrt(std::max(0.0, loo_sum_obs2 / (double)loo_n_period));
-        result.loo_s_stat_exp = std::sqrt(std::max(0.0, loo_sum_stat2 / (double)loo_n_period));
-        result.loo_s_comb = std::sqrt(std::max(
-            0.0,
-            result.loo_s_obs * result.loo_s_obs -
-            result.loo_s_stat_exp * result.loo_s_stat_exp
-        ));
+    if (std::isfinite(min_ratio) &&
+        std::isfinite(max_ratio) &&
+        max_ratio >= min_ratio) {
+        result.half_width = 0.5 * (max_ratio - min_ratio);
     }
 
     return result;
@@ -1129,11 +1024,9 @@ static void write_summary_csv(const std::string& path,
         throw std::runtime_error("Could not open summary CSV: " + path);
     }
 
-    fout << "case,central value mode,output column,fill output,valid bins,ratio points,loo ratio points,"
-         << "s_obs_period,s_stat_period,s_comb,s_comb percent,"
-         << "loo_s_obs_period,loo_s_stat_period,loo_s_comb,loo_s_comb percent,"
-         << "period,period ratio points,period mean ratio,period mean ratio stat,"
-         << "period loo ratio points,period loo mean ratio,period loo mean ratio stat\n";
+    fout << "case,central value mode,output column,fill output,valid bins,ratio points,"
+         << "s_obs_period,s_comb,s_comb percent,half max width,half max width percent,s_stat_period,"
+         << "period,period ratio points,period mean ratio,period mean ratio stat\n";
 
     for (const auto& r : results) {
         if (r.period_summaries.empty()) {
@@ -1143,16 +1036,13 @@ static void write_summary_csv(const std::string& path,
                  << (r.fill_output ? "true" : "false") << ","
                  << r.valid_bins << ","
                  << r.ratio_points << ","
-                 << r.loo_ratio_points << ","
                  << format_double(r.s_obs) << ","
-                 << format_double(r.s_stat_exp) << ","
                  << format_double(r.s_comb) << ","
                  << format_double(100.0 * r.s_comb) << ","
-                 << format_double(r.loo_s_obs) << ","
-                 << format_double(r.loo_s_stat_exp) << ","
-                 << format_double(r.loo_s_comb) << ","
-                 << format_double(100.0 * r.loo_s_comb) << ","
-                 << ",,,,,,\n";
+                 << format_double(r.half_width) << ","
+                 << format_double(100.0 * r.half_width) << ","
+                 << format_double(r.s_stat_exp) << ","
+                 << ",,,\n";
             continue;
         }
 
@@ -1163,22 +1053,16 @@ static void write_summary_csv(const std::string& path,
                  << (r.fill_output ? "true" : "false") << ","
                  << r.valid_bins << ","
                  << r.ratio_points << ","
-                 << r.loo_ratio_points << ","
                  << format_double(r.s_obs) << ","
-                 << format_double(r.s_stat_exp) << ","
                  << format_double(r.s_comb) << ","
                  << format_double(100.0 * r.s_comb) << ","
-                 << format_double(r.loo_s_obs) << ","
-                 << format_double(r.loo_s_stat_exp) << ","
-                 << format_double(r.loo_s_comb) << ","
-                 << format_double(100.0 * r.loo_s_comb) << ","
+                 << format_double(r.half_width) << ","
+                 << format_double(100.0 * r.half_width) << ","
+                 << format_double(r.s_stat_exp) << ","
                  << csv_escape_field(p.period) << ","
                  << p.n << ","
                  << format_double(p.mean_ratio) << ","
-                 << format_double(p.mean_ratio_stat) << ","
-                 << p.loo_n << ","
-                 << format_double(p.loo_mean_ratio) << ","
-                 << format_double(p.loo_mean_ratio_stat) << "\n";
+                 << format_double(p.mean_ratio_stat) << "\n";
         }
     }
 
@@ -1198,13 +1082,12 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
               << std::right
               << std::setw(10) << "bins"
               << std::setw(12) << "ratios"
-              << std::setw(12) << "loo"
               << std::setw(14) << "s_obs"
-              << std::setw(14) << "s_stat"
               << std::setw(14) << "s_comb"
               << std::setw(14) << "percent"
-              << std::setw(14) << "loo_comb"
-              << std::setw(14) << "loo_percent"
+              << std::setw(14) << "half_width"
+              << std::setw(14) << "half_percent"
+              << std::setw(14) << "s_stat"
               << "\n";
 
     for (const auto& r : results) {
@@ -1214,13 +1097,12 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
                   << std::right
                   << std::setw(10) << r.valid_bins
                   << std::setw(12) << r.ratio_points
-                  << std::setw(12) << r.loo_ratio_points
                   << std::setw(14) << std::setprecision(6) << r.s_obs
-                  << std::setw(14) << std::setprecision(6) << r.s_stat_exp
                   << std::setw(14) << std::setprecision(6) << r.s_comb
                   << std::setw(14) << std::setprecision(6) << 100.0 * r.s_comb
-                  << std::setw(14) << std::setprecision(6) << r.loo_s_comb
-                  << std::setw(14) << std::setprecision(6) << 100.0 * r.loo_s_comb
+                  << std::setw(14) << std::setprecision(6) << r.half_width
+                  << std::setw(14) << std::setprecision(6) << 100.0 * r.half_width
+                  << std::setw(14) << std::setprecision(6) << r.s_stat_exp
                   << "\n";
 
         for (const auto& p : r.period_summaries) {
@@ -1230,14 +1112,6 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
                       << std::setprecision(8) << p.mean_ratio
                       << " +/- " << std::setprecision(8) << p.mean_ratio_stat
                       << "   n=" << p.n
-                      << "\n";
-
-            std::cout << "    leave-one-out ratio "
-                      << std::left << std::setw(10) << p.period
-                      << " = " << std::right
-                      << std::setprecision(8) << p.loo_mean_ratio
-                      << " +/- " << std::setprecision(8) << p.loo_mean_ratio_stat
-                      << "   n=" << p.loo_n
                       << "\n";
         }
     }
@@ -2356,45 +2230,36 @@ static void draw_kinematic_canvas_for_variable(const fs::path& out_dir,
     canvas.SaveAs(out_path.string().c_str());
 }
 
-static std::vector<FitTask> build_fit_tasks(const std::vector<RatioPoint>& all_ratio_points,
-                                            const std::vector<RatioPoint>& all_loo_ratio_points) {
+static std::vector<FitTask> build_fit_tasks(const std::vector<RatioPoint>& all_ratio_points) {
     std::vector<FitTask> tasks;
 
     const std::string case_label = "10.6 GeV unpol";
     const std::string central_mode = "stat_weighted";
-    const std::vector<std::string> reference_types = {
-        "all_mean",
-        "leave_one_out"
-    };
+    const std::string reference_type = "all_mean";
 
-    for (const auto& reference_type : reference_types) {
-        const std::vector<RatioPoint>& source_points =
-            (reference_type == "all_mean") ? all_ratio_points : all_loo_ratio_points;
+    for (const auto& period : ten6_periods()) {
+        for (const auto& variable : fit_variable_configs()) {
+            std::vector<RatioPoint> points =
+                filter_ratio_points(all_ratio_points,
+                                    case_label,
+                                    central_mode,
+                                    reference_type,
+                                    period,
+                                    variable.key);
 
-        for (const auto& period : ten6_periods()) {
-            for (const auto& variable : fit_variable_configs()) {
-                std::vector<RatioPoint> points =
-                    filter_ratio_points(source_points,
-                                        case_label,
-                                        central_mode,
-                                        reference_type,
-                                        period,
-                                        variable.key);
-
-                if (points.empty()) {
-                    continue;
-                }
-
-                FitTask task;
-                task.case_label = case_label;
-                task.central_mode = central_mode;
-                task.reference_type = reference_type;
-                task.period = period;
-                task.variable = variable;
-                task.points = std::move(points);
-
-                tasks.push_back(std::move(task));
+            if (points.empty()) {
+                continue;
             }
+
+            FitTask task;
+            task.case_label = case_label;
+            task.central_mode = central_mode;
+            task.reference_type = reference_type;
+            task.period = period;
+            task.variable = variable;
+            task.points = std::move(points);
+
+            tasks.push_back(std::move(task));
         }
     }
 
@@ -2556,7 +2421,7 @@ static void print_e_theta_scale_reference(const std::map<std::string, FitResultS
                                           const std::vector<ScaleReferencePoint>& reference_points) {
     std::cout << "\n[combination-systematics] e_theta-dependent scale systematic reference\n";
     std::cout << "[combination-systematics] Reference is computed only inside each period fit's e_theta support; "
-              << "s_comb is the RMS of f_i(theta)/<f(theta)> - 1.\n";
+              << "s_comb is the RMS of f_i(theta)/<f(theta)> - 1, without subtracting polynomial-parameter errors.\n";
 
     std::cout << std::left
               << std::setw(10) << "theta"
@@ -2602,12 +2467,11 @@ static void print_e_theta_scale_reference(const std::map<std::string, FitResultS
 }
 
 static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
-                                     const std::vector<RatioPoint>& all_loo_ratio_points,
                                      const fs::path& out_dir) {
     const fs::path fit_root = out_dir / "kinematic_dependence_fits";
     fs::create_directories(fit_root);
 
-    std::vector<FitTask> tasks = build_fit_tasks(all_ratio_points, all_loo_ratio_points);
+    std::vector<FitTask> tasks = build_fit_tasks(all_ratio_points);
 
     std::cout << "[combination-systematics] Kinematic-dependence fit tasks: "
               << tasks.size() << "\n";
@@ -2617,13 +2481,11 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
     const fs::path summary_path = fit_root / "kinematic_dependence_fit_summary.csv";
     write_fit_summary_csv(summary_path, fit_results);
 
-    for (const std::string& reference_type : {"all_mean", "leave_one_out"}) {
-        for (const auto& variable : fit_variable_configs()) {
-            draw_kinematic_canvas_for_variable(out_dir,
-                                               reference_type,
-                                               variable,
-                                               fit_results);
-        }
+    for (const auto& variable : fit_variable_configs()) {
+        draw_kinematic_canvas_for_variable(out_dir,
+                                           "all_mean",
+                                           variable,
+                                           fit_results);
     }
 
     const std::map<std::string, FitResultSummary> e_theta_fits =
@@ -2683,7 +2545,6 @@ bool combination_systematics(const std::string& csv_path,
         results.reserve(cases.size() + 1);
 
         std::vector<RatioPoint> all_ratio_points;
-        std::vector<RatioPoint> all_loo_ratio_points;
 
         double ten6_unpol_s_comb_for_fill =
             std::numeric_limits<double>::quiet_NaN();
@@ -2692,8 +2553,7 @@ bool combination_systematics(const std::string& csv_path,
             CombinationResult result =
                 evaluate_case(table,
                               c,
-                              &all_ratio_points,
-                              &all_loo_ratio_points);
+                              &all_ratio_points);
 
             if (c.fill_output) {
                 fill_output_column(table, result.output_column, result.s_comb);
@@ -2721,8 +2581,7 @@ bool combination_systematics(const std::string& csv_path,
         sp19.fill_output = true;
         sp19.s_obs = ten6_unpol_s_comb_for_fill;
         sp19.s_comb = ten6_unpol_s_comb_for_fill;
-        sp19.loo_s_obs = ten6_unpol_s_comb_for_fill;
-        sp19.loo_s_comb = ten6_unpol_s_comb_for_fill;
+        sp19.half_width = ten6_unpol_s_comb_for_fill;
         results.push_back(sp19);
 
         const std::string summary_csv =
@@ -2732,7 +2591,6 @@ bool combination_systematics(const std::string& csv_path,
         print_summary_table(results);
 
         make_kinematic_fit_plots(all_ratio_points,
-                                 all_loo_ratio_points,
                                  out_dir);
 
         make_fa18_inb_sp19_inb_direct_diagnostic(table,
