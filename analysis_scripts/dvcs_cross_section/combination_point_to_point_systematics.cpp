@@ -39,6 +39,9 @@ namespace {
 using Range = std::pair<double, double>;
 using QTKey = std::pair<Range, Range>;
 
+static constexpr int kMaxEThetaScaleFitOrder = 5;
+static constexpr double kMinEThetaScaleFitImprovement = 0.01;
+
 struct CsvTable {
     std::vector<std::string> header;
     std::vector<std::vector<std::string> > rows;
@@ -121,6 +124,35 @@ struct VariableScatterConfig {
     bool angle_canvas = false;
 };
 
+struct RatioPoint {
+    std::string period;
+    double e_theta = std::numeric_limits<double>::quiet_NaN();
+    double ratio = std::numeric_limits<double>::quiet_NaN();
+    double ratio_stat = std::numeric_limits<double>::quiet_NaN();
+};
+
+struct EThetaScaleFit {
+    std::string period;
+    int order = -1;
+    int n = 0;
+    int ndf = 0;
+    double chi2 = std::numeric_limits<double>::quiet_NaN();
+    double chi2_ndf = std::numeric_limits<double>::quiet_NaN();
+    double x_min = std::numeric_limits<double>::quiet_NaN();
+    double x_max = std::numeric_limits<double>::quiet_NaN();
+    std::vector<double> params;
+    std::vector<double> errors;
+};
+
+struct ScaleModel {
+    std::string tag;
+    std::string label;
+    bool use_e_theta_fit = false;
+    std::vector<PeriodScale> constant_scales;
+    std::map<std::string, double> constant_scale_by_period;
+    std::map<std::string, EThetaScaleFit> etheta_fit_by_period;
+};
+
 static const std::vector<std::string> kBasePeriods = {
     "Fa18 Inb",
     "Fa18 Out",
@@ -140,6 +172,40 @@ static std::string trim(const std::string& s) {
     }
 
     return s.substr(b, e - b);
+}
+
+static std::string sanitize_for_path(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+
+    for (const char c : s) {
+        if (std::isalnum((unsigned char)c)) {
+            out.push_back(c);
+        } else if (c == '+' || c == '-') {
+            out.push_back(c);
+        } else {
+            out.push_back('_');
+        }
+    }
+
+    while (out.find("__") != std::string::npos) {
+        const size_t pos = out.find("__");
+        out.replace(pos, 2, "_");
+    }
+
+    if (!out.empty() && out.front() == '_') {
+        out.erase(out.begin());
+    }
+
+    if (!out.empty() && out.back() == '_') {
+        out.pop_back();
+    }
+
+    if (out.empty()) {
+        out = "unnamed";
+    }
+
+    return out;
 }
 
 static std::vector<std::string> split_csv_line(const std::string& line) {
@@ -541,13 +607,13 @@ static std::vector<PeriodScale> compute_10p6_unpol_scale_factors(const CsvTable&
     std::vector<PeriodScale> scales;
     scales.reserve(inputs.size());
 
-    std::cout << "[combination-ptp] 10.6 GeV unpol scale factors used before point-to-point estimate:\n";
+    std::cout << "[combination-ptp] 10.6 GeV unpol constant scale factors:\n";
 
     for (const auto& input : inputs) {
         const PeriodRatioAccumulator& acc = acc_by_period[input.period];
 
         if (acc.sum_w <= 0.0 || acc.n <= 0) {
-            throw std::runtime_error("Could not compute scale factor for period: " + input.period);
+            throw std::runtime_error("Could not compute constant scale factor for period: " + input.period);
         }
 
         PeriodScale scale;
@@ -557,7 +623,7 @@ static std::vector<PeriodScale> compute_10p6_unpol_scale_factors(const CsvTable&
         scale.n = acc.n;
 
         if (!std::isfinite(scale.scale) || std::abs(scale.scale) <= 0.0) {
-            throw std::runtime_error("Invalid scale factor for period: " + input.period);
+            throw std::runtime_error("Invalid constant scale factor for period: " + input.period);
         }
 
         std::cout << "  " << scale.period
@@ -580,6 +646,428 @@ scale_map_from_vector(const std::vector<PeriodScale>& scales) {
     }
 
     return out;
+}
+
+static bool solve_linear_system(std::vector<std::vector<double> > a,
+                                std::vector<double> b,
+                                std::vector<double>& x) {
+    const int n = (int)b.size();
+
+    if ((int)a.size() != n) {
+        return false;
+    }
+
+    for (int col = 0; col < n; ++col) {
+        int pivot = col;
+        double best = std::abs(a[(size_t)pivot][(size_t)col]);
+
+        for (int row = col + 1; row < n; ++row) {
+            const double v = std::abs(a[(size_t)row][(size_t)col]);
+            if (v > best) {
+                best = v;
+                pivot = row;
+            }
+        }
+
+        if (!std::isfinite(best) || best <= 1.0e-30) {
+            return false;
+        }
+
+        if (pivot != col) {
+            std::swap(a[(size_t)pivot], a[(size_t)col]);
+            std::swap(b[(size_t)pivot], b[(size_t)col]);
+        }
+
+        const double diag = a[(size_t)col][(size_t)col];
+
+        for (int j = col; j < n; ++j) {
+            a[(size_t)col][(size_t)j] /= diag;
+        }
+        b[(size_t)col] /= diag;
+
+        for (int row = 0; row < n; ++row) {
+            if (row == col) {
+                continue;
+            }
+
+            const double factor = a[(size_t)row][(size_t)col];
+            if (factor == 0.0) {
+                continue;
+            }
+
+            for (int j = col; j < n; ++j) {
+                a[(size_t)row][(size_t)j] -= factor * a[(size_t)col][(size_t)j];
+            }
+            b[(size_t)row] -= factor * b[(size_t)col];
+        }
+    }
+
+    x = b;
+
+    for (const double v : x) {
+        if (!std::isfinite(v)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool invert_matrix(const std::vector<std::vector<double> >& a,
+                          std::vector<std::vector<double> >& inv) {
+    const int n = (int)a.size();
+
+    if (n <= 0) {
+        return false;
+    }
+
+    inv.assign((size_t)n, std::vector<double>((size_t)n, 0.0));
+
+    for (int col = 0; col < n; ++col) {
+        std::vector<double> rhs((size_t)n, 0.0);
+        rhs[(size_t)col] = 1.0;
+
+        std::vector<double> sol;
+        if (!solve_linear_system(a, rhs, sol)) {
+            return false;
+        }
+
+        for (int row = 0; row < n; ++row) {
+            inv[(size_t)row][(size_t)col] = sol[(size_t)row];
+        }
+    }
+
+    return true;
+}
+
+static double eval_poly(const std::vector<double>& params,
+                        double x) {
+    double y = 0.0;
+    double pow_x = 1.0;
+
+    for (const double p : params) {
+        y += p * pow_x;
+        pow_x *= x;
+    }
+
+    return y;
+}
+
+static std::vector<RatioPoint> build_e_theta_ratio_points(const CsvTable& table) {
+    const std::vector<PeriodInput> inputs = base_inputs();
+    std::vector<RatioPoint> points;
+
+    for (const auto& row : table.rows) {
+        const double e_theta = get_double_or_nan(table, row, "e_theta, 10.6 GeV");
+
+        if (!std::isfinite(e_theta)) {
+            continue;
+        }
+
+        std::vector<TupleValue> values;
+        values.reserve(inputs.size());
+
+        for (const auto& input : inputs) {
+            values.push_back(get_tuple(table, row, input.column));
+        }
+
+        double mean = 0.0;
+        double mean_stat = 0.0;
+
+        if (!compute_weighted_mean(values, mean, mean_stat)) {
+            continue;
+        }
+
+        if (!std::isfinite(mean) || std::abs(mean) <= 0.0) {
+            continue;
+        }
+
+        for (size_t i = 0; i < inputs.size(); ++i) {
+            const TupleValue& v = values[i];
+
+            if (!v.ok || !std::isfinite(v.value) || !std::isfinite(v.stat) || v.stat <= 0.0) {
+                continue;
+            }
+
+            RatioPoint p;
+            p.period = inputs[i].period;
+            p.e_theta = e_theta;
+            p.ratio = v.value / mean;
+            p.ratio_stat = std::abs(v.stat / mean);
+
+            if (!std::isfinite(p.ratio) ||
+                !std::isfinite(p.ratio_stat) ||
+                p.ratio_stat <= 0.0) {
+                continue;
+            }
+
+            points.push_back(p);
+        }
+    }
+
+    return points;
+}
+
+static std::vector<RatioPoint> filter_ratio_points_for_period(const std::vector<RatioPoint>& points,
+                                                              const std::string& period) {
+    std::vector<RatioPoint> out;
+
+    for (const auto& p : points) {
+        if (p.period != period) {
+            continue;
+        }
+
+        if (!std::isfinite(p.e_theta) ||
+            !std::isfinite(p.ratio) ||
+            !std::isfinite(p.ratio_stat) ||
+            p.ratio_stat <= 0.0) {
+            continue;
+        }
+
+        out.push_back(p);
+    }
+
+    std::sort(out.begin(), out.end(),
+              [](const RatioPoint& a, const RatioPoint& b) {
+                  return a.e_theta < b.e_theta;
+              });
+
+    return out;
+}
+
+static EThetaScaleFit weighted_polynomial_fit_ratio_points(const std::string& period,
+                                                           const std::vector<RatioPoint>& points,
+                                                           int order,
+                                                           double previous_chi2_ndf) {
+    EThetaScaleFit out;
+    out.period = period;
+    out.order = order;
+    out.n = (int)points.size();
+
+    const int npar = order + 1;
+    out.ndf = out.n - npar;
+
+    if (out.n < npar || out.ndf <= 0) {
+        return out;
+    }
+
+    std::vector<std::vector<double> > normal((size_t)npar, std::vector<double>((size_t)npar, 0.0));
+    std::vector<double> rhs((size_t)npar, 0.0);
+
+    for (const auto& p : points) {
+        if (!std::isfinite(p.e_theta) ||
+            !std::isfinite(p.ratio) ||
+            !std::isfinite(p.ratio_stat) ||
+            p.ratio_stat <= 0.0) {
+            continue;
+        }
+
+        const double w = 1.0 / (p.ratio_stat * p.ratio_stat);
+        std::vector<double> xp((size_t)npar, 1.0);
+
+        for (int i = 1; i < npar; ++i) {
+            xp[(size_t)i] = xp[(size_t)(i - 1)] * p.e_theta;
+        }
+
+        for (int i = 0; i < npar; ++i) {
+            rhs[(size_t)i] += w * xp[(size_t)i] * p.ratio;
+
+            for (int j = 0; j < npar; ++j) {
+                normal[(size_t)i][(size_t)j] += w * xp[(size_t)i] * xp[(size_t)j];
+            }
+        }
+    }
+
+    std::vector<double> params;
+    if (!solve_linear_system(normal, rhs, params)) {
+        return out;
+    }
+
+    out.params = params;
+
+    std::vector<std::vector<double> > cov;
+    if (invert_matrix(normal, cov)) {
+        out.errors.assign((size_t)npar, 0.0);
+
+        for (int i = 0; i < npar; ++i) {
+            const double v = cov[(size_t)i][(size_t)i];
+
+            if (std::isfinite(v) && v >= 0.0) {
+                out.errors[(size_t)i] = std::sqrt(v);
+            } else {
+                out.errors[(size_t)i] = std::numeric_limits<double>::quiet_NaN();
+            }
+        }
+    } else {
+        out.errors.assign((size_t)npar, std::numeric_limits<double>::quiet_NaN());
+    }
+
+    double chi2 = 0.0;
+    int n_used = 0;
+    double x_min = std::numeric_limits<double>::infinity();
+    double x_max = -std::numeric_limits<double>::infinity();
+
+    for (const auto& p : points) {
+        if (!std::isfinite(p.e_theta) ||
+            !std::isfinite(p.ratio) ||
+            !std::isfinite(p.ratio_stat) ||
+            p.ratio_stat <= 0.0) {
+            continue;
+        }
+
+        x_min = std::min(x_min, p.e_theta);
+        x_max = std::max(x_max, p.e_theta);
+
+        const double residual = p.ratio - eval_poly(out.params, p.e_theta);
+        chi2 += residual * residual / (p.ratio_stat * p.ratio_stat);
+        ++n_used;
+    }
+
+    out.n = n_used;
+    out.ndf = n_used - npar;
+    out.chi2 = chi2;
+
+    if (std::isfinite(x_min) && std::isfinite(x_max) && x_min <= x_max) {
+        out.x_min = x_min;
+        out.x_max = x_max;
+    }
+
+    if (out.ndf > 0) {
+        out.chi2_ndf = out.chi2 / (double)out.ndf;
+    }
+
+    bool accepted = false;
+
+    if (order == 0) {
+        accepted = std::isfinite(out.chi2_ndf);
+    } else if (std::isfinite(previous_chi2_ndf) && std::isfinite(out.chi2_ndf)) {
+        const double improvement = previous_chi2_ndf - out.chi2_ndf;
+        accepted = improvement >= kMinEThetaScaleFitImprovement;
+    }
+
+    if (!accepted) {
+        out.params.clear();
+        out.errors.clear();
+    }
+
+    return out;
+}
+
+static EThetaScaleFit choose_e_theta_scale_fit(const std::string& period,
+                                               const std::vector<RatioPoint>& points) {
+    double previous_chi2_ndf = std::numeric_limits<double>::quiet_NaN();
+    EThetaScaleFit last_accepted;
+
+    for (int order = 0; order <= kMaxEThetaScaleFitOrder; ++order) {
+        EThetaScaleFit fit =
+            weighted_polynomial_fit_ratio_points(period,
+                                                 points,
+                                                 order,
+                                                 previous_chi2_ndf);
+
+        const bool attempted_ok =
+            !fit.params.empty() &&
+            std::isfinite(fit.chi2_ndf) &&
+            fit.ndf > 0;
+
+        bool accepted = false;
+
+        if (attempted_ok) {
+            if (order == 0) {
+                accepted = true;
+            } else {
+                const double improvement = previous_chi2_ndf - fit.chi2_ndf;
+                accepted = std::isfinite(improvement) &&
+                           improvement >= kMinEThetaScaleFitImprovement;
+            }
+        }
+
+        std::cout << "[combination-ptp][e-theta-scale-fit] "
+                  << period
+                  << " p" << order
+                  << " n=" << fit.n
+                  << " chi2/ndf=" << std::setprecision(8) << fit.chi2_ndf
+                  << (accepted ? " accepted" : " rejected")
+                  << "\n";
+
+        if (!accepted) {
+            break;
+        }
+
+        previous_chi2_ndf = fit.chi2_ndf;
+        last_accepted = fit;
+    }
+
+    if (last_accepted.params.empty()) {
+        throw std::runtime_error("Could not determine e_theta scale fit for period: " + period);
+    }
+
+    return last_accepted;
+}
+
+static std::map<std::string, EThetaScaleFit>
+compute_e_theta_scale_fits(const CsvTable& table) {
+    const std::vector<RatioPoint> all_points = build_e_theta_ratio_points(table);
+
+    std::map<std::string, EThetaScaleFit> out;
+
+    std::cout << "[combination-ptp] 10.6 GeV unpol e_theta-dependent scale factors:\n";
+
+    for (const auto& period : kBasePeriods) {
+        const std::vector<RatioPoint> points =
+            filter_ratio_points_for_period(all_points, period);
+
+        if (points.empty()) {
+            throw std::runtime_error("No e_theta ratio points available for period: " + period);
+        }
+
+        EThetaScaleFit fit = choose_e_theta_scale_fit(period, points);
+
+        std::cout << "  " << period
+                  << " selected p" << fit.order
+                  << " chi2/ndf=" << std::setprecision(10) << fit.chi2_ndf
+                  << " support=(" << fit.x_min << ", " << fit.x_max << ")";
+
+        for (int ip = 0; ip < (int)fit.params.size(); ++ip) {
+            std::cout << " p" << ip << "=" << fit.params[(size_t)ip];
+
+            if (ip < (int)fit.errors.size()) {
+                std::cout << "+/-" << fit.errors[(size_t)ip];
+            }
+        }
+
+        std::cout << "\n";
+
+        out[period] = fit;
+    }
+
+    return out;
+}
+
+static double e_theta_fit_scale_value(const EThetaScaleFit& fit,
+                                      double e_theta) {
+    if (!std::isfinite(e_theta)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    if (!std::isfinite(fit.x_min) ||
+        !std::isfinite(fit.x_max) ||
+        e_theta < fit.x_min ||
+        e_theta > fit.x_max) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    if (fit.params.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double scale = eval_poly(fit.params, e_theta);
+
+    if (!std::isfinite(scale) || std::abs(scale) <= 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return scale;
 }
 
 static TupleValue apply_scale(const TupleValue& input,
@@ -738,11 +1226,10 @@ static int optional_xb_index(const CsvTable& table,
     return (int)std::llround(value);
 }
 
-static BinResult evaluate_row(const CsvTable& table,
-                              const std::vector<std::string>& row,
-                              size_t row_index,
-                              const std::map<std::string, double>& scale_by_period) {
-    BinResult result;
+static void fill_common_bin_metadata(const CsvTable& table,
+                                     const std::vector<std::string>& row,
+                                     size_t row_index,
+                                     BinResult& result) {
     result.row_index = row_index;
 
     result.xb_range = Range(
@@ -779,18 +1266,49 @@ static BinResult evaluate_row(const CsvTable& table,
     result.e_theta = get_double_or_nan(table, row, "e_theta, 10.6 GeV");
     result.p_theta = get_double_or_nan(table, row, "p_theta, 10.6 GeV");
     result.g_theta = get_double_or_nan(table, row, "g_theta, 10.6 GeV");
+}
+
+static double scale_value_for_period_and_row(const ScaleModel& model,
+                                             const std::string& period,
+                                             double e_theta) {
+    if (!model.use_e_theta_fit) {
+        const auto it = model.constant_scale_by_period.find(period);
+
+        if (it == model.constant_scale_by_period.end()) {
+            throw std::runtime_error("Missing constant scale factor for period: " + period);
+        }
+
+        return it->second;
+    }
+
+    const auto it = model.etheta_fit_by_period.find(period);
+
+    if (it == model.etheta_fit_by_period.end()) {
+        throw std::runtime_error("Missing e_theta scale fit for period: " + period);
+    }
+
+    return e_theta_fit_scale_value(it->second, e_theta);
+}
+
+static BinResult evaluate_row(const CsvTable& table,
+                              const std::vector<std::string>& row,
+                              size_t row_index,
+                              const ScaleModel& model) {
+    BinResult result;
+    fill_common_bin_metadata(table, row, row_index, result);
 
     std::vector<TupleValue> scaled_values;
 
     for (const auto& input : base_inputs()) {
         const TupleValue raw = get_tuple(table, row, input.column);
+        const double scale =
+            scale_value_for_period_and_row(model, input.period, result.e_theta);
 
-        const auto it_scale = scale_by_period.find(input.period);
-        if (it_scale == scale_by_period.end()) {
-            throw std::runtime_error("Missing scale factor for period: " + input.period);
+        if (!std::isfinite(scale) || std::abs(scale) <= 0.0) {
+            continue;
         }
 
-        const TupleValue scaled = apply_scale(raw, it_scale->second);
+        const TupleValue scaled = apply_scale(raw, scale);
 
         if (scaled.ok) {
             scaled_values.push_back(scaled);
@@ -842,12 +1360,12 @@ static BinResult evaluate_row(const CsvTable& table,
 
 static std::vector<BinResult>
 evaluate_all_bins(const CsvTable& table,
-                  const std::map<std::string, double>& scale_by_period) {
+                  const ScaleModel& model) {
     std::vector<BinResult> results;
     results.reserve(table.rows.size());
 
     for (size_t i = 0; i < table.rows.size(); ++i) {
-        BinResult result = evaluate_row(table, table.rows[i], i + 1, scale_by_period);
+        BinResult result = evaluate_row(table, table.rows[i], i + 1, model);
 
         if (!std::isfinite(result.f_ptp)) {
             continue;
@@ -873,12 +1391,12 @@ static std::string format_double(double value) {
     return oss.str();
 }
 
-static void write_scale_summary_csv(const std::string& path,
-                                    const std::vector<PeriodScale>& scales) {
+static void write_constant_scale_summary_csv(const std::string& path,
+                                             const std::vector<PeriodScale>& scales) {
     std::ofstream fout(path);
 
     if (!fout.is_open()) {
-        throw std::runtime_error("Could not open scale summary CSV for writing: " + path);
+        throw std::runtime_error("Could not open constant scale summary CSV for writing: " + path);
     }
 
     fout << "period,scale,scale stat,n\n";
@@ -893,7 +1411,59 @@ static void write_scale_summary_csv(const std::string& path,
     fout.close();
 
     if (!fout) {
-        throw std::runtime_error("Failed while writing scale summary CSV: " + path);
+        throw std::runtime_error("Failed while writing constant scale summary CSV: " + path);
+    }
+}
+
+static void write_e_theta_fit_summary_csv(const std::string& path,
+                                          const std::map<std::string, EThetaScaleFit>& fits) {
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open e_theta scale fit summary CSV for writing: " + path);
+    }
+
+    fout << "period,order,n,ndf,chi2,chi2ndf,e_theta_min,e_theta_max";
+
+    for (int ip = 0; ip <= kMaxEThetaScaleFitOrder; ++ip) {
+        fout << ",p" << ip << ",p" << ip << " err";
+    }
+
+    fout << "\n";
+
+    for (const auto& kv : fits) {
+        const EThetaScaleFit& fit = kv.second;
+
+        fout << csv_escape_field(fit.period) << ","
+             << fit.order << ","
+             << fit.n << ","
+             << fit.ndf << ","
+             << format_double(fit.chi2) << ","
+             << format_double(fit.chi2_ndf) << ","
+             << format_double(fit.x_min) << ","
+             << format_double(fit.x_max);
+
+        for (int ip = 0; ip <= kMaxEThetaScaleFitOrder; ++ip) {
+            if (ip < (int)fit.params.size()) {
+                fout << "," << format_double(fit.params[(size_t)ip]);
+
+                if (ip < (int)fit.errors.size()) {
+                    fout << "," << format_double(fit.errors[(size_t)ip]);
+                } else {
+                    fout << ",";
+                }
+            } else {
+                fout << ",,";
+            }
+        }
+
+        fout << "\n";
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing e_theta scale fit summary CSV: " + path);
     }
 }
 
@@ -1065,7 +1635,8 @@ static void draw_one_xb_canvas(const Range& xb_range,
                                const GroupByXB& group,
                                int xb_counter,
                                double y_max_percent,
-                               const fs::path& out_dir) {
+                               const fs::path& out_dir,
+                               const ScaleModel& model) {
     if (group.bins.empty()) {
         return;
     }
@@ -1091,18 +1662,20 @@ static void draw_one_xb_canvas(const Range& xb_range,
     const int width = 300 * ncols + 160;
     const int height = 260 * nrows + 240;
 
-    TCanvas* canvas = new TCanvas("c_combination_ptp",
-                                  "c_combination_ptp",
+    TCanvas* canvas = new TCanvas(("c_combination_ptp_" + model.tag).c_str(),
+                                  ("c_combination_ptp_" + model.tag).c_str(),
                                   width,
                                   height);
 
-    TPad* pTop = new TPad("pTopCombinationPtp", "pTopCombinationPtp",
+    TPad* pTop = new TPad(("pTopCombinationPtp_" + model.tag).c_str(),
+                          ("pTopCombinationPtp_" + model.tag).c_str(),
                           0.0, 0.78, 1.0, 1.0);
     pTop->SetFillStyle(0);
     pTop->SetBorderSize(0);
     pTop->Draw();
 
-    TPad* pGrid = new TPad("pGridCombinationPtp", "pGridCombinationPtp",
+    TPad* pGrid = new TPad(("pGridCombinationPtp_" + model.tag).c_str(),
+                           ("pGridCombinationPtp_" + model.tag).c_str(),
                            0.0, 0.00, 1.0, 0.78);
     pGrid->SetFillStyle(0);
     pGrid->SetBorderSize(0);
@@ -1131,8 +1704,17 @@ static void draw_one_xb_canvas(const Range& xb_range,
     sub.SetTextAlign(22);
     sub.SetTextFont(42);
     sub.SetTextSize(0.040);
-    sub.DrawLatex(0.5, 0.50,
-                  "Global period scale offsets removed first; plotted value is the residual fractional uncertainty needed to make #chi^{2}/ndf = 1");
+
+    std::string subtitle;
+    if (model.use_e_theta_fit) {
+        subtitle =
+            "e_{#theta}-dependent period scale offsets removed first; plotted value is the residual fractional uncertainty needed to make #chi^{2}/ndf = 1";
+    } else {
+        subtitle =
+            "Constant global period scale offsets removed first; plotted value is the residual fractional uncertainty needed to make #chi^{2}/ndf = 1";
+    }
+
+    sub.DrawLatex(0.5, 0.50, subtitle.c_str());
 
     for (int r = 0; r < nrows; ++r) {
         const Range& t_range = t_slice[(size_t)r];
@@ -1198,7 +1780,9 @@ static void draw_one_xb_canvas(const Range& xb_range,
         (group.xb_index >= 0 ? group.xb_index : xb_counter);
 
     std::ostringstream fname;
-    fname << "combination_point_to_point_sys_10p6_GeV_unpol_xB_"
+    fname << "combination_point_to_point_sys_10p6_GeV_unpol_"
+          << model.tag
+          << "_xB_"
           << xb_name << ".pdf";
 
     const fs::path out_path = out_dir / fname.str();
@@ -1689,14 +2273,15 @@ static void draw_scatter_canvas_with_errors_and_fits(
 }
 
 static void make_global_scatter_plots(const std::vector<BinResult>& results,
-                                      const fs::path& out_dir) {
+                                      const fs::path& out_dir,
+                                      const ScaleModel& model) {
     const double y_max_percent = choose_global_ymax_percent(results);
 
     draw_scatter_canvas(results,
                         physics_scatter_variables(),
                         out_dir,
-                        "physics_kinematics",
-                        "Point-to-point run-period combination systematic vs physics kinematics",
+                        model.tag + "_physics_kinematics",
+                        "Point-to-point run-period combination systematic vs physics kinematics, " + model.label,
                         2,
                         2,
                         y_max_percent);
@@ -1704,8 +2289,8 @@ static void make_global_scatter_plots(const std::vector<BinResult>& results,
     draw_scatter_canvas(results,
                         angle_scatter_variables(),
                         out_dir,
-                        "polar_angles",
-                        "Point-to-point run-period combination systematic vs polar angles",
+                        model.tag + "_polar_angles",
+                        "Point-to-point run-period combination systematic vs polar angles, " + model.label,
                         3,
                         1,
                         y_max_percent);
@@ -1714,8 +2299,8 @@ static void make_global_scatter_plots(const std::vector<BinResult>& results,
         results,
         physics_scatter_variables(),
         out_dir,
-        "physics_kinematics",
-        "Point-to-point run-period combination systematic vs physics kinematics",
+        model.tag + "_physics_kinematics",
+        "Point-to-point run-period combination systematic vs physics kinematics, " + model.label,
         2,
         2,
         y_max_percent);
@@ -1724,15 +2309,16 @@ static void make_global_scatter_plots(const std::vector<BinResult>& results,
         results,
         angle_scatter_variables(),
         out_dir,
-        "polar_angles",
-        "Point-to-point run-period combination systematic vs polar angles",
+        model.tag + "_polar_angles",
+        "Point-to-point run-period combination systematic vs polar angles, " + model.label,
         3,
         1,
         y_max_percent);
 }
 
 static void make_ptp_plots(const std::vector<BinResult>& results,
-                           const fs::path& out_dir) {
+                           const fs::path& out_dir,
+                           const ScaleModel& model) {
     const std::map<Range, GroupByXB> grouped = group_results_by_xb(results);
     const double y_max_percent = choose_global_ymax_percent(results);
 
@@ -1743,7 +2329,8 @@ static void make_ptp_plots(const std::vector<BinResult>& results,
                            kv.second,
                            xb_counter,
                            y_max_percent,
-                           out_dir);
+                           out_dir,
+                           model);
         ++xb_counter;
     }
 }
@@ -1761,9 +2348,10 @@ static double mean_vec(const std::vector<double>& values) {
     return sum / (double)values.size();
 }
 
-static void print_global_summary(const std::vector<BinResult>& results) {
+static void print_global_summary(const std::vector<BinResult>& results,
+                                 const ScaleModel& model) {
     if (results.empty()) {
-        std::cout << "[combination-ptp] No valid bins.\n";
+        std::cout << "[combination-ptp] No valid bins for " << model.tag << ".\n";
         return;
     }
 
@@ -1790,7 +2378,8 @@ static void print_global_summary(const std::vector<BinResult>& results) {
         }
     }
 
-    std::cout << "[combination-ptp] Summary for 10.6 GeV unpol residual point-to-point systematic\n";
+    std::cout << "[combination-ptp] Summary for 10.6 GeV unpol residual point-to-point systematic, "
+              << model.label << "\n";
     std::cout << "  valid bins                  = " << results.size() << "\n";
     std::cout << "  mean chi2/ndf before        = " << std::setprecision(8) << mean_vec(chi2_before) << "\n";
     std::cout << "  mean chi2/ndf after         = " << std::setprecision(8) << mean_vec(chi2_after) << "\n";
@@ -1804,6 +2393,344 @@ static void print_global_summary(const std::vector<BinResult>& results) {
               << (fvals.empty() ? std::numeric_limits<double>::quiet_NaN()
                                 : *std::max_element(fvals.begin(), fvals.end()))
               << "\n";
+}
+
+static void write_global_summary_csv_line(std::ofstream& fout,
+                                          const ScaleModel& model,
+                                          const std::vector<BinResult>& results) {
+    std::vector<double> fvals;
+    std::vector<double> fstat_vals;
+    std::vector<double> chi2_before;
+    std::vector<double> chi2_after;
+
+    for (const auto& r : results) {
+        if (std::isfinite(r.f_ptp_percent)) {
+            fvals.push_back(r.f_ptp_percent);
+        }
+
+        if (std::isfinite(r.f_ptp_stat_percent)) {
+            fstat_vals.push_back(r.f_ptp_stat_percent);
+        }
+
+        if (std::isfinite(r.chi2_ndf_before)) {
+            chi2_before.push_back(r.chi2_ndf_before);
+        }
+
+        if (std::isfinite(r.chi2_ndf_after)) {
+            chi2_after.push_back(r.chi2_ndf_after);
+        }
+    }
+
+    fout << csv_escape_field(model.tag) << ","
+         << csv_escape_field(model.label) << ","
+         << results.size() << ","
+         << format_double(mean_vec(chi2_before)) << ","
+         << format_double(mean_vec(chi2_after)) << ","
+         << format_double(mean_vec(fvals)) << ","
+         << format_double(mean_vec(fstat_vals)) << ","
+         << format_double(percentile(fvals, 0.50)) << ","
+         << format_double(percentile(fvals, 0.68)) << ","
+         << format_double(percentile(fvals, 0.90)) << ","
+         << format_double(percentile(fvals, 0.95)) << ","
+         << format_double(fvals.empty() ? std::numeric_limits<double>::quiet_NaN()
+                                        : *std::max_element(fvals.begin(), fvals.end()))
+         << "\n";
+}
+
+static void write_global_comparison_summary_csv(const fs::path& path,
+                                                const std::vector<std::pair<ScaleModel, std::vector<BinResult> > >& all_results) {
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open global comparison summary CSV for writing: " + path.string());
+    }
+
+    fout << "model tag,model label,valid bins,mean chi2ndf before,mean chi2ndf after,"
+         << "mean f_ptp percent,mean f_ptp stat percent,median f_ptp percent,"
+         << "p68 f_ptp percent,p90 f_ptp percent,p95 f_ptp percent,max f_ptp percent\n";
+
+    for (const auto& item : all_results) {
+        write_global_summary_csv_line(fout, item.first, item.second);
+    }
+
+    fout.close();
+
+    if (!fout) {
+        throw std::runtime_error("Failed while writing global comparison summary CSV: " + path.string());
+    }
+}
+
+static void draw_e_theta_scale_fit_canvas(const std::vector<RatioPoint>& all_points,
+                                          const std::map<std::string, EThetaScaleFit>& fits,
+                                          const fs::path& out_dir) {
+    TCanvas* canvas = new TCanvas("c_e_theta_scale_fits",
+                                  "c_e_theta_scale_fits",
+                                  1700,
+                                  1300);
+
+    canvas->Divide(2, 2, 0.001, 0.001);
+
+    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    std::vector<std::unique_ptr<TF1> > funcs;
+    std::vector<std::unique_ptr<TLegend> > legends;
+
+    for (int iper = 0; iper < (int)kBasePeriods.size(); ++iper) {
+        const std::string& period = kBasePeriods[(size_t)iper];
+
+        canvas->cd(iper + 1);
+        gPad->SetGrid(1, 1);
+        gPad->SetTopMargin(0.15);
+        gPad->SetBottomMargin(0.16);
+        gPad->SetLeftMargin(0.16);
+        gPad->SetRightMargin(0.07);
+        gPad->SetTicks(1, 1);
+
+        const std::vector<RatioPoint> points =
+            filter_ratio_points_for_period(all_points, period);
+
+        std::vector<double> xs;
+        for (const auto& p : points) {
+            xs.push_back(p.e_theta);
+        }
+
+        const std::vector<double> xr = choose_scatter_x_range(xs);
+        TH1* frame = gPad->DrawFrame(xr[0], 0.0, xr[1], 2.0);
+        frame->GetXaxis()->SetTitle("#theta_{e} (deg)");
+        frame->GetYaxis()->SetTitle("#sigma_{i}/#bar{#sigma}");
+        frame->GetXaxis()->CenterTitle();
+        frame->GetYaxis()->CenterTitle();
+        frame->GetXaxis()->SetNdivisions(505);
+        frame->GetYaxis()->SetNdivisions(505);
+        frame->GetXaxis()->SetTitleSize(0.060);
+        frame->GetYaxis()->SetTitleSize(0.060);
+        frame->GetXaxis()->SetLabelSize(0.050);
+        frame->GetYaxis()->SetLabelSize(0.050);
+        frame->GetXaxis()->SetTitleOffset(1.10);
+        frame->GetYaxis()->SetTitleOffset(1.15);
+
+        TLine unity(xr[0], 1.0, xr[1], 1.0);
+        unity.SetLineColor(kRed + 1);
+        unity.SetLineStyle(2);
+        unity.SetLineWidth(1);
+        unity.Draw("SAME");
+
+        std::unique_ptr<TGraphErrors> graph(new TGraphErrors((int)points.size()));
+
+        for (int i = 0; i < (int)points.size(); ++i) {
+            graph->SetPoint(i, points[(size_t)i].e_theta, points[(size_t)i].ratio);
+            graph->SetPointError(i, 0.0, points[(size_t)i].ratio_stat);
+        }
+
+        graph->SetMarkerStyle(20);
+        graph->SetMarkerSize(0.35);
+        graph->SetMarkerColor(kBlack);
+        graph->SetLineColor(kBlack);
+        graph->SetLineWidth(1);
+        graph->Draw("P SAME");
+
+        std::unique_ptr<TLegend> legend(new TLegend(0.48, 0.70, 0.93, 0.88));
+        legend->SetBorderSize(1);
+        legend->SetFillColor(kWhite);
+        legend->SetFillStyle(1001);
+        legend->SetTextFont(42);
+        legend->SetTextSize(0.032);
+        legend->AddEntry(graph.get(), period.c_str(), "pe");
+
+        const auto it_fit = fits.find(period);
+        if (it_fit == fits.end()) {
+            throw std::runtime_error("Missing e_theta fit while drawing fit canvas for period: " + period);
+        }
+
+        const EThetaScaleFit& fit = it_fit->second;
+        std::unique_ptr<TF1> func(new TF1(("f_e_theta_scale_" + sanitize_for_path(period)).c_str(),
+                                          poly_formula(fit.order).c_str(),
+                                          fit.x_min,
+                                          fit.x_max));
+
+        for (int ip = 0; ip < (int)fit.params.size(); ++ip) {
+            func->SetParameter(ip, fit.params[(size_t)ip]);
+        }
+
+        func->SetLineColor(kBlue + 1);
+        func->SetLineWidth(2);
+        func->SetLineStyle(1);
+        func->Draw("SAME");
+
+        std::ostringstream fit_label;
+        fit_label << "p" << fit.order
+                  << ", #chi^{2}/ndf="
+                  << std::fixed << std::setprecision(2)
+                  << fit.chi2_ndf;
+        legend->AddEntry(func.get(), fit_label.str().c_str(), "l");
+        legend->Draw();
+
+        TLatex lab;
+        lab.SetNDC();
+        lab.SetTextFont(42);
+        lab.SetTextSize(0.055);
+        lab.SetTextAlign(22);
+        lab.DrawLatex(0.50, 0.94, period.c_str());
+
+        graphs.push_back(std::move(graph));
+        funcs.push_back(std::move(func));
+        legends.push_back(std::move(legend));
+    }
+
+    canvas->cd();
+
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextSize(0.022);
+    title.SetTextAlign(22);
+    title.DrawLatex(0.50, 0.992, "10.6 GeV unpol e_{#theta}-dependent period scale fits");
+
+    canvas->Modified();
+    canvas->Update();
+
+    const fs::path out_path = out_dir / "e_theta_dependent_period_scale_fits.pdf";
+    canvas->SaveAs(out_path.string().c_str());
+
+    delete canvas;
+}
+
+static void draw_model_comparison_scatter(const std::vector<BinResult>& constant_results,
+                                          const std::vector<BinResult>& etheta_results,
+                                          const fs::path& out_dir) {
+    std::map<size_t, BinResult> constant_by_row;
+    std::map<size_t, BinResult> etheta_by_row;
+
+    for (const auto& r : constant_results) {
+        constant_by_row[r.row_index] = r;
+    }
+
+    for (const auto& r : etheta_results) {
+        etheta_by_row[r.row_index] = r;
+    }
+
+    std::vector<double> x_const;
+    std::vector<double> y_etheta;
+
+    for (const auto& kv : constant_by_row) {
+        const auto it = etheta_by_row.find(kv.first);
+        if (it == etheta_by_row.end()) {
+            continue;
+        }
+
+        if (!std::isfinite(kv.second.f_ptp_percent) ||
+            !std::isfinite(it->second.f_ptp_percent)) {
+            continue;
+        }
+
+        x_const.push_back(kv.second.f_ptp_percent);
+        y_etheta.push_back(it->second.f_ptp_percent);
+    }
+
+    if (x_const.empty()) {
+        return;
+    }
+
+    double max_value = 0.0;
+
+    for (size_t i = 0; i < x_const.size(); ++i) {
+        max_value = std::max(max_value, x_const[i]);
+        max_value = std::max(max_value, y_etheta[i]);
+    }
+
+    max_value = std::max(5.0, 1.15 * max_value);
+
+    TCanvas* canvas = new TCanvas("c_ptp_constant_vs_etheta",
+                                  "c_ptp_constant_vs_etheta",
+                                  900,
+                                  800);
+
+    gPad->SetGrid(1, 1);
+    gPad->SetTopMargin(0.10);
+    gPad->SetBottomMargin(0.14);
+    gPad->SetLeftMargin(0.16);
+    gPad->SetRightMargin(0.06);
+    gPad->SetTicks(1, 1);
+
+    TH1* frame = gPad->DrawFrame(0.0, 0.0, max_value, max_value);
+    frame->GetXaxis()->SetTitle("P2P sys with constant scale removal (%)");
+    frame->GetYaxis()->SetTitle("P2P sys with e_{#theta}-dependent scale removal (%)");
+    frame->GetXaxis()->CenterTitle();
+    frame->GetYaxis()->CenterTitle();
+    frame->GetXaxis()->SetNdivisions(505);
+    frame->GetYaxis()->SetNdivisions(505);
+    frame->GetXaxis()->SetTitleSize(0.050);
+    frame->GetYaxis()->SetTitleSize(0.050);
+    frame->GetXaxis()->SetLabelSize(0.043);
+    frame->GetYaxis()->SetLabelSize(0.043);
+    frame->GetXaxis()->SetTitleOffset(1.20);
+    frame->GetYaxis()->SetTitleOffset(1.35);
+
+    TLine unity(0.0, 0.0, max_value, max_value);
+    unity.SetLineColor(kRed + 1);
+    unity.SetLineStyle(2);
+    unity.SetLineWidth(2);
+    unity.Draw("SAME");
+
+    TGraph* graph = new TGraph((int)x_const.size());
+    for (int i = 0; i < (int)x_const.size(); ++i) {
+        graph->SetPoint(i, x_const[(size_t)i], y_etheta[(size_t)i]);
+    }
+
+    graph->SetMarkerStyle(20);
+    graph->SetMarkerSize(0.55);
+    graph->SetMarkerColor(kBlack);
+    graph->SetLineColor(kBlack);
+    graph->Draw("P SAME");
+
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextSize(0.038);
+    title.SetTextAlign(22);
+    title.DrawLatex(0.50, 0.955, "Point-to-point systematic comparison by scale-removal method");
+
+    TLegend legend(0.20, 0.76, 0.58, 0.88);
+    legend.SetBorderSize(1);
+    legend.SetFillColor(kWhite);
+    legend.SetFillStyle(1001);
+    legend.SetTextFont(42);
+    legend.SetTextSize(0.030);
+    legend.AddEntry(graph, "matched bins", "p");
+    legend.AddEntry(&unity, "same value", "l");
+    legend.Draw();
+
+    canvas->Modified();
+    canvas->Update();
+
+    const fs::path out_path = out_dir / "comparison_constant_vs_e_theta_ptp_sys.pdf";
+    canvas->SaveAs(out_path.string().c_str());
+
+    delete graph;
+    delete canvas;
+}
+
+static void run_one_model_outputs(const CsvTable& table,
+                                  const ScaleModel& model,
+                                  const fs::path& model_dir,
+                                  std::vector<BinResult>& results_out) {
+    fs::create_directories(model_dir);
+
+    const std::vector<BinResult> results =
+        evaluate_all_bins(table, model);
+
+    results_out = results;
+
+    const fs::path bin_csv =
+        model_dir / "combination_point_to_point_systematics_by_bin.csv";
+
+    write_bin_summary_csv(bin_csv.string(), results);
+
+    make_ptp_plots(results, model_dir, model);
+    make_global_scatter_plots(results, model_dir, model);
+    print_global_summary(results, model);
+
+    std::cout << "[combination-ptp] Wrote bin summary for " << model.tag
+              << ": " << bin_csv.string() << "\n";
 }
 
 } // namespace
@@ -1832,32 +2759,76 @@ bool combination_point_to_point_systematics(const std::string& csv_path,
         std::cout << "[combination-ptp] Output directory: "
                   << out_dir.string() << "\n";
 
-        const std::vector<PeriodScale> scales =
+        const std::vector<PeriodScale> constant_scales =
             compute_10p6_unpol_scale_factors(table);
 
-        const std::map<std::string, double> scale_by_period =
-            scale_map_from_vector(scales);
+        const std::map<std::string, double> constant_scale_by_period =
+            scale_map_from_vector(constant_scales);
 
-        const std::vector<BinResult> results =
-            evaluate_all_bins(table, scale_by_period);
+        const std::map<std::string, EThetaScaleFit> etheta_fit_by_period =
+            compute_e_theta_scale_fits(table);
 
-        const fs::path scale_csv =
-            out_dir / "period_scale_factors_used.csv";
+        const std::vector<RatioPoint> etheta_ratio_points =
+            build_e_theta_ratio_points(table);
 
-        const fs::path bin_csv =
-            out_dir / "combination_point_to_point_systematics_by_bin.csv";
+        const fs::path constant_scale_csv =
+            out_dir / "constant_period_scale_factors_used.csv";
 
-        write_scale_summary_csv(scale_csv.string(), scales);
-        write_bin_summary_csv(bin_csv.string(), results);
+        const fs::path etheta_fit_csv =
+            out_dir / "e_theta_dependent_period_scale_fits.csv";
 
-        make_ptp_plots(results, out_dir);
-        make_global_scatter_plots(results, out_dir);
-        print_global_summary(results);
+        write_constant_scale_summary_csv(constant_scale_csv.string(), constant_scales);
+        write_e_theta_fit_summary_csv(etheta_fit_csv.string(), etheta_fit_by_period);
+        draw_e_theta_scale_fit_canvas(etheta_ratio_points, etheta_fit_by_period, out_dir);
 
-        std::cout << "[combination-ptp] Wrote scale summary: "
-                  << scale_csv.string() << "\n";
-        std::cout << "[combination-ptp] Wrote bin summary: "
-                  << bin_csv.string() << "\n";
+        ScaleModel constant_model;
+        constant_model.tag = "constant_scale";
+        constant_model.label = "constant period-scale removal";
+        constant_model.use_e_theta_fit = false;
+        constant_model.constant_scales = constant_scales;
+        constant_model.constant_scale_by_period = constant_scale_by_period;
+
+        ScaleModel etheta_model;
+        etheta_model.tag = "e_theta_scale";
+        etheta_model.label = "e_{#theta}-dependent period-scale removal";
+        etheta_model.use_e_theta_fit = true;
+        etheta_model.constant_scales = constant_scales;
+        etheta_model.constant_scale_by_period = constant_scale_by_period;
+        etheta_model.etheta_fit_by_period = etheta_fit_by_period;
+
+        std::vector<BinResult> constant_results;
+        std::vector<BinResult> etheta_results;
+
+        run_one_model_outputs(table,
+                              constant_model,
+                              out_dir / "constant_scale",
+                              constant_results);
+
+        run_one_model_outputs(table,
+                              etheta_model,
+                              out_dir / "e_theta_scale",
+                              etheta_results);
+
+        draw_model_comparison_scatter(constant_results,
+                                      etheta_results,
+                                      out_dir);
+
+        std::vector<std::pair<ScaleModel, std::vector<BinResult> > > all_results;
+        all_results.push_back(std::make_pair(constant_model, constant_results));
+        all_results.push_back(std::make_pair(etheta_model, etheta_results));
+
+        const fs::path global_summary_csv =
+            out_dir / "combination_point_to_point_systematics_global_summary.csv";
+
+        write_global_comparison_summary_csv(global_summary_csv,
+                                            all_results);
+
+        std::cout << "[combination-ptp] Wrote constant scale summary: "
+                  << constant_scale_csv.string() << "\n";
+        std::cout << "[combination-ptp] Wrote e_theta scale fit summary: "
+                  << etheta_fit_csv.string() << "\n";
+        std::cout << "[combination-ptp] Wrote global comparison summary: "
+                  << global_summary_csv.string() << "\n";
 
         return true;
     } catch (const std::exception& e) {
