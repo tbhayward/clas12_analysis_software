@@ -3535,7 +3535,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 
   // φ-binning
   // const int nPhiBins = 18;
-  const int nPhiBins = 9;
+  const int nPhiBins = 11;
   const double phiMin = 0.0;
   const double phiMax = 2.0*TMath::Pi();
 
