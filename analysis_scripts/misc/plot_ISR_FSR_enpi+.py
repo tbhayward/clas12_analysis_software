@@ -36,9 +36,17 @@ It then generates, for each x_B bin:
     2) A 2x3 delta plot:
         Delta = Baseline minus ISR&FSR
 
+        Since the Baseline and ISR/FSR fits are made from the same underlying
+        data, the delta points are plotted without statistical error bars.
+        The two fit results are correlated, so the uncorrelated expression
+
+            sigma_Delta = sqrt(sigma_Baseline^2 + sigma_ISRFSR^2)
+
+        is intentionally not used.
+
     3) Per-bin CSV files with:
         -t' (GeV^2), Baseline value, Baseline sigma,
-        ISR&FSR value, ISR&FSR sigma, Delta, sigma(Delta), Delta/sigma
+        ISR&FSR value, ISR&FSR sigma, Delta
 
     4) A text delta summary
 
@@ -266,11 +274,10 @@ def to_series(triples, negate_x=True, sort=True):
 
     return x, y, e
 
-def delta(yb, eb, yi, ei):
-    """Baseline minus ISR&FSR with uncorrelated error propagation."""
+def delta(yb, yi):
+    """Baseline minus ISR&FSR central-value difference only."""
     d = yb - yi
-    ed = np.sqrt(eb**2 + ei**2)
-    return d, ed
+    return d
 
 def assert_same_length(bin_tag, series_name, xb, xi):
     if len(xb) != len(xi):
@@ -365,16 +372,13 @@ def draw_delta_indexed(ax, baseline, isrfsr, bin_tag, series_name, ylabel):
         print(f"[WARN] x mismatch in {bin_tag}:{series_name} (index-paired).")
     #endif
 
-    yd, ed = delta(yb, eb, yi, ei)
+    yd = delta(yb, yi)
 
-    ax.errorbar(
+    ax.plot(
         xb,
         yd,
-        yerr=ed,
-        fmt="o",
+        "o",
         color="k",
-        ecolor="k",
-        capsize=CAPSIZE,
         markersize=MS,
         linestyle="None",
     )
@@ -535,21 +539,25 @@ def collect_delta_sf(baseline, isrfsr, bin_tag, series_name):
         print(f"[WARN] x mismatch in {bin_tag}:{series_name} while collecting delta.")
     #endif
 
-    d, ed = delta(yb, eb, yi, ei)
+    d = delta(yb, yi)
 
-    return xb, yb, eb, yi, ei, d, ed
+    return xb, yb, eb, yi, ei, d
 
 def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
     path = os.path.join(out_dir, "ISR_FSR_delta_summary.txt")
 
     with open(path, "w", encoding="utf-8") as f:
-        f.write("Signed Delta summary: Delta = Baseline minus ISR&FSR with propagated sigma_Delta (uncorrelated)\n")
+        f.write("Signed Delta summary: Delta = Baseline minus ISR&FSR\n")
         f.write("Units: -t' in GeV^2\n")
+        f.write("\n")
+        f.write("Important uncertainty convention:\n")
+        f.write("  Baseline and ISR&FSR are fits to the same underlying data.\n")
+        f.write("  Therefore the Delta values are correlated differences and are listed without sigma_Delta.\n")
+        f.write("  The uncorrelated expression sqrt(sigma_Baseline^2 + sigma_ISRFSR^2) is intentionally not used.\n")
         f.write("=" * 88 + "\n")
 
         col_t = "-t'"
         col_d = "Delta"
-        col_s = "sigma_Delta"
 
         for b in bin_tags:
             f.write(f"\nBin: {b}    x_B range: {XB_LABELS.get(b, '')}\n")
@@ -564,13 +572,13 @@ def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
                     continue
                 #endif
 
-                x, _, _, _, _, d, ed = res
+                x, _, _, _, _, d = res
 
                 f.write(f"Series: {label}\n")
-                f.write("{:>8}    {:>12}    {:>12}\n".format(col_t, col_d, col_s))
+                f.write("{:>8}    {:>12}\n".format(col_t, col_d))
 
-                for xi, di_, ei in zip(x, d, ed):
-                    f.write(f"{xi:8.5f}    {di_:12.6f}    {ei:12.6f}\n")
+                for xi, di_ in zip(x, d):
+                    f.write(f"{xi:8.5f}    {di_:12.6f}\n")
                 #endfor
 
                 f.write("\n")
@@ -581,7 +589,7 @@ def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
     print(f"[OK] Wrote Delta summary: {path}")
 
 def write_bin_csvs(out_dir, baseline, isrfsr, bin_tag):
-    """Per-series CSV with x, baseline, isrfsr, deltas."""
+    """Per-series CSV with x, baseline, isrfsr, and central-value delta."""
     bin_dir = os.path.join(out_dir, f"csv_{SAVE_TAG.get(bin_tag, bin_tag)}")
     os.makedirs(bin_dir, exist_ok=True)
 
@@ -593,9 +601,8 @@ def write_bin_csvs(out_dir, baseline, isrfsr, bin_tag):
             continue
         #endif
 
-        x, yb, eb, yi, ei, d, ed = res
+        x, yb, eb, yi, ei, d = res
         fname = key + ".csv"
-        ratio = np.divide(d, ed, out=np.zeros_like(d), where=ed > 0)
 
         with open(os.path.join(bin_dir, fname), "w", newline="") as fh:
             w = csv.writer(fh)
@@ -607,11 +614,9 @@ def write_bin_csvs(out_dir, baseline, isrfsr, bin_tag):
                 f"ISR&FSR {label}",
                 "sigma(I)",
                 "Delta",
-                "sigma(Delta)",
-                "Delta/sigma",
             ])
 
-            for row in zip(x, yb, eb, yi, ei, d, ed, ratio):
+            for row in zip(x, yb, eb, yi, ei, d):
                 w.writerow([f"{row[0]:.6f}"] + [f"{v:.6g}" for v in row[1:]])
             #endfor
         #endwith
@@ -658,7 +663,7 @@ def sanity_lines_for_bin(baseline, isrfsr, bin_tag):
         close_equal = same_len and np.allclose(yb, yi)
 
         if same_len:
-            d, _ = delta(yb, eb, yi, ei)
+            d = delta(yb, yi)
             zero_delta = d.size > 0 and np.allclose(d, 0.0, atol=ATOL_ZERO)
             max_abs_d = float(np.max(np.abs(d))) if d.size else float("nan")
         else:
@@ -688,7 +693,8 @@ def write_sanity_report(out_dir, baseline, isrfsr, bin_tags):
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("Sanity report (index-based Delta pairing)\n")
-        f.write("Flags identical series / zero-Delta after pairing / x-grid mismatches.\n\n")
+        f.write("Flags identical series / zero-Delta after pairing / x-grid mismatches.\n")
+        f.write("Delta is computed as Baseline minus ISR&FSR central values only.\n\n")
 
         for b in bin_tags:
             for line in sanity_lines_for_bin(baseline, isrfsr, b):
@@ -751,6 +757,7 @@ def main():
     #endif
 
     print("[OK] Common bins to process:")
+
     for b in bin_tags:
         print(f"     {b}")
     #endfor
