@@ -48,14 +48,14 @@ Optional Phase 3 (event-level mixing into a new ROOT file):
         mc_t, mc_tmin, mc_tprime from generated kinematics and (mc_x,mc_Q2)
   - Bin assignment for mixing uses recomputed reco (x, tprime).
 
-Outputs (unchanged from prior behavior):
+Outputs:
   output/yields.png           : data vs aaogen vs clasdis (shape-only) per pad
   output/yields_mix.png       : data vs per-bin mixture per pad, legend shows w[r,c]
   output/yields_data_only.png : integrated (all bins summed) data vs aaogen vs clasdis
   output/weights.txt          : per-bin w[r,c], w_unclipped, chi2 summary
   --out mixed MC root         : optional mixed MC ROOT file (Phase 3)
 
-New debug outputs (Phase 3 only):
+Debug outputs:
   output/mix_debug_report.txt : detailed per-bin and global counters for the mixed ROOT file
   output/mix_debug_mx2.png    : integrated Mx2 shapes of events WRITTEN to the output, split by source
 
@@ -63,8 +63,8 @@ Optional diagnostics:
   --force: override a few w[r,c] values (after the fit) for debugging:
       Row 0, Col 2 = 0.05
       Row 0, Col 3 = 0.08
-      Row 0, Col 4 = 0.08
-      Row 0, Col 5 = 0.08
+      Row 0, Col 4 = 0.03
+      Row 0, Col 5 = 0.03
 """
 
 import os
@@ -80,18 +80,20 @@ TREE_NAME = "PhysicsEvents"
 XB_EDGES = [0.10, 0.25, 0.35, 0.45, 0.60]  # 4 rows
 TNEG_EDGES = [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]  # 6 cols in -tprime
 
-# Histogram window (also fit window)
+# Histogram window.
 MX2_MIN = 0.3
 MX2_MAX = 2.0
-MX2_NBINS = 100
 
-# Fit window used for solving w and computing chi2 (kept explicit even if identical)
-MX2_FIT_MIN = 0.4
-MX2_FIT_MAX = 2.0
+# One third of the previous 100 Mx2 bins.
+MX2_NBINS = 33
+
+# Peak-focused fit window used for solving w and computing chi2.
+MX2_FIT_MIN = 0.81
+MX2_FIT_MAX = 1.10
 
 OUTPUT_YIELDS_PNG = "output/yields.png"
 OUTPUT_MIX_PNG = "output/yields_mix.png"
-OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"  # integrated 1-pad three-way
+OUTPUT_DATAONLY_PNG = "output/yields_data_only.png"
 OUTPUT_WEIGHTS_TXT = "output/weights.txt"
 
 DEFAULT_MIXED_MC_ROOT = "output/mixed_mc.root"
@@ -105,7 +107,7 @@ MC_EB_FIXED = 10.55
 
 # Masses (GeV)
 MASS_E = 0.000511
-MASS_PI = 0.139570  # used for the hadron 4-vector in t computation; change if needed
+MASS_PI = 0.139570
 MASS_N = 0.9382720813
 
 
@@ -118,6 +120,7 @@ def require_file(path):
     if path is None or str(path).strip() == "":
         fatal("Missing required input path.")
     #endif
+
     if not os.path.isfile(path):
         fatal("File not found: " + str(path))
     #endif
@@ -129,10 +132,12 @@ def open_tree(path, tree_name):
     if not f or f.IsZombie():
         fatal("Failed to open ROOT file: " + str(path))
     #endif
+
     t = f.Get(tree_name)
     if not t:
         fatal("Tree '" + str(tree_name) + "' not found in: " + str(path))
     #endif
+
     return f, t
 #enddef
 
@@ -142,12 +147,14 @@ def require_branches(t, needed, label):
     if not blist:
         fatal("No branch list available for tree in: " + str(label))
     #endif
+
     missing = []
     for b in needed:
         if not blist.FindObject(b):
             missing.append(b)
         #endif
     #endfor
+
     if len(missing) > 0:
         fatal("Missing required branches in " + str(label) + ": " + ", ".join(missing))
     #endif
@@ -158,15 +165,19 @@ def beam_energy(runnum):
     if runnum >= 6616 and runnum <= 6783:
         return 10.1998
     #endif
+
     if runnum >= 16042 and runnum <= 17065:
         return 10.5473
     #endif
+
     if runnum >= 17067 and runnum <= 17724:
         return 10.5563
     #endif
+
     if runnum >= 17725 and runnum <= 17811:
         return 10.5593
     #endif
+
     return 10.5563
 #enddef
 
@@ -207,6 +218,7 @@ def compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi):
 
 def compute_tmin_exact(xB, Q2):
     xb_ok = (xB > 0.0 and xB < 1.0)
+
     if Q2 <= 0.0 or (not xb_ok):
         if xb_ok:
             denom = (1.0 - xB)
@@ -214,6 +226,7 @@ def compute_tmin_exact(xB, Q2):
                 return - (MASS_N * xB) * (MASS_N * xB) / denom
             #endif
         #endif
+
         return 0.0
     #endif
 
@@ -221,9 +234,11 @@ def compute_tmin_exact(xB, Q2):
     root = math.sqrt(1.0 + eps2)
     num = Q2 * (2.0 * (1.0 - xB) * (1.0 - root) + eps2)
     den = 4.0 * xB * (1.0 - xB) + eps2
+
     if den == 0.0:
         return 0.0
     #endif
+
     return - num / den
 #enddef
 
@@ -234,6 +249,7 @@ def find_bin(val, edges):
             return i
         #endif
     #endfor
+
     return -1
 #enddef
 
@@ -256,16 +272,20 @@ def style_hist(h, color, width, linestyle):
 
 def make_hist_grid(prefix, nrows, ncols):
     grid = []
+
     for r in range(nrows):
         row = []
+
         for c in range(ncols):
             name = f"{prefix}_r{r}_c{c}"
             h = ROOT.TH1F(name, "", MX2_NBINS, MX2_MIN, MX2_MAX)
             h.Sumw2()
             row.append(h)
         #endfor
+
         grid.append(row)
     #endfor
+
     return grid
 #enddef
 
@@ -304,6 +324,7 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
     tree.SetBranchAddress("Mx2", Mx2)
 
     n_entries = int(tree.GetEntries())
+
     if max_events is None:
         n_to_process = n_entries
     else:
@@ -315,15 +336,23 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
 
         xb_val = float(xB[0])
         rb = find_bin(xb_val, XB_EDGES)
+
         if rb < 0:
             continue
         #endif
 
         Q2_val = float(Q2[0])
 
-        t_val = compute_t_scalar(int(runnum[0]),
-                                 float(e_p[0]), float(e_theta[0]), float(e_phi[0]),
-                                 float(p_p[0]), float(p_theta[0]), float(p_phi[0]))
+        t_val = compute_t_scalar(
+            int(runnum[0]),
+            float(e_p[0]),
+            float(e_theta[0]),
+            float(e_phi[0]),
+            float(p_p[0]),
+            float(p_theta[0]),
+            float(p_phi[0])
+        )
+
         tmin_val = compute_tmin_exact(xb_val, Q2_val)
         tprime = t_val - tmin_val
         tneg = -tprime
@@ -353,9 +382,11 @@ def sigma_from_raw_counts(n_i, N_pad):
     if N_pad <= 0:
         return 1.0
     #endif
+
     if n_i <= 0.0:
         return 1.0 / float(N_pad)
     #endif
+
     return math.sqrt(n_i) / float(N_pad)
 #enddef
 
@@ -374,6 +405,7 @@ def compute_best_w_weighted_for_pad(hd_norm, ha_norm, hc_norm, hd_raw):
 
     for i in range(1, nb + 1):
         xcen = hd_norm.GetXaxis().GetBinCenter(i)
+
         if xcen < MX2_FIT_MIN or xcen > MX2_FIT_MAX:
             continue
         #endif
@@ -384,9 +416,11 @@ def compute_best_w_weighted_for_pad(hd_norm, ha_norm, hc_norm, hd_raw):
 
         n_i = hd_raw.GetBinContent(i)
         sig = sigma_from_raw_counts(n_i, N_pad)
+
         if sig <= 0.0:
             continue
         #endif
+
         wgt = 1.0 / (sig * sig)
 
         X = (A - C)
@@ -404,16 +438,20 @@ def compute_best_w_weighted_for_pad(hd_norm, ha_norm, hc_norm, hd_raw):
     #endif
 
     w = w_unclipped
+
     if w < 0.0:
         w = 0.0
     #endif
+
     if w > 1.0:
         w = 1.0
     #endif
 
     chi2 = 0.0
+
     for i in range(1, nb + 1):
         xcen = hd_norm.GetXaxis().GetBinCenter(i)
+
         if xcen < MX2_FIT_MIN or xcen > MX2_FIT_MAX:
             continue
         #endif
@@ -423,6 +461,7 @@ def compute_best_w_weighted_for_pad(hd_norm, ha_norm, hc_norm, hd_raw):
 
         n_i = hd_raw.GetBinContent(i)
         sig = sigma_from_raw_counts(n_i, N_pad)
+
         if sig <= 0.0:
             continue
         #endif
@@ -444,8 +483,10 @@ def compute_chi2_for_pad_given_w(hd_norm, ha_norm, hc_norm, hd_raw, w):
     #endif
 
     chi2 = 0.0
+
     for i in range(1, nb + 1):
         xcen = hd_norm.GetXaxis().GetBinCenter(i)
+
         if xcen < MX2_FIT_MIN or xcen > MX2_FIT_MAX:
             continue
         #endif
@@ -455,6 +496,7 @@ def compute_chi2_for_pad_given_w(hd_norm, ha_norm, hc_norm, hd_raw, w):
 
         n_i = hd_raw.GetBinContent(i)
         sig = sigma_from_raw_counts(n_i, N_pad)
+
         if sig <= 0.0:
             continue
         #endif
@@ -478,6 +520,7 @@ def compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw):
 
     for r in range(nrows):
         row = []
+
         for c in range(ncols):
             hd = h_data[r][c]
             ha = h_aao[r][c]
@@ -485,6 +528,7 @@ def compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw):
             hdr = h_data_raw[r][c]
 
             w, w_unclipped, chi2 = compute_best_w_weighted_for_pad(hd, ha, hc, hdr)
+
             w_grid[r][c] = w
             wun_grid[r][c] = w_unclipped
             chi2_grid[r][c] = chi2
@@ -495,6 +539,7 @@ def compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw):
             hm.Add(hc, (1.0 - w))
             row.append(hm)
         #endfor
+
         h_mix.append(row)
     #endfor
 
@@ -512,7 +557,6 @@ def pad_set_margins(pad):
 
 
 def set_axes_and_range(h_frame, ymax):
-    # Use ROOT TLatex-style syntax in axis titles:
     h_frame.GetXaxis().SetTitle("M_{x}^{2} (GeV^{2})")
     h_frame.GetYaxis().SetTitle("Normalized yield")
     h_frame.GetXaxis().SetTitleSize(0.06)
@@ -529,11 +573,13 @@ def sum_counts_grid(cgrid):
     nrows = len(cgrid)
     ncols = len(cgrid[0])
     tot = 0
+
     for r in range(nrows):
         for c in range(ncols):
             tot += int(cgrid[r][c])
         #endfor
     #endfor
+
     return tot
 #enddef
 
@@ -541,13 +587,16 @@ def sum_counts_grid(cgrid):
 def make_integrated_hist_from_grid(hgrid, name):
     nrows = len(hgrid)
     ncols = len(hgrid[0])
+
     hsum = hgrid[0][0].Clone(name)
     hsum.Reset("ICESM")
+
     for r in range(nrows):
         for c in range(ncols):
             hsum.Add(hgrid[r][c])
         #endfor
     #endfor
+
     return hsum
 #enddef
 
@@ -564,9 +613,11 @@ def draw_canvas_integrated_threeway(hd_int, ha_int, hc_int, Nd, Na, Nc, outpng):
     pad.SetTopMargin(0.08)
 
     ymax = max(hd_int.GetMaximum(), ha_int.GetMaximum(), hc_int.GetMaximum())
+
     if ymax <= 0.0:
         ymax = 1.0
     #endif
+
     ymax = 1.2 * ymax
 
     set_axes_and_range(hd_int, ymax)
@@ -602,6 +653,7 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
     canv.Divide(ncols, nrows, 0.001, 0.001)
 
     pad_idx = 1
+
     for r in range(nrows):
         xb_lo = XB_EDGES[r]
         xb_hi = XB_EDGES[r + 1]
@@ -619,9 +671,11 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
             hc = h_dis[r][c]
 
             ymax = max(hd.GetMaximum(), ha.GetMaximum(), hc.GetMaximum())
+
             if ymax <= 0.0:
                 ymax = 1.0
             #endif
+
             ymax = 1.2 * ymax
 
             set_axes_and_range(hd, ymax)
@@ -644,7 +698,8 @@ def draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, outpng):
             tex.SetNDC(True)
             tex.SetTextSize(0.05)
             tex.DrawLatex(
-                0.14, 0.93,
+                0.14,
+                0.93,
                 f"x_{{B}} [{xb_lo:.2f}, {xb_hi:.2f})   #minus t^{{#prime}} [{t_lo:.2f}, {t_hi:.2f}) (GeV^{{2}})"
             )
         #endfor
@@ -662,6 +717,7 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
     canv.Divide(ncols, nrows, 0.001, 0.001)
 
     pad_idx = 1
+
     for r in range(nrows):
         xb_lo = XB_EDGES[r]
         xb_hi = XB_EDGES[r + 1]
@@ -679,9 +735,11 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
             w = w_grid[r][c]
 
             ymax = max(hd.GetMaximum(), hm.GetMaximum())
+
             if ymax <= 0.0:
                 ymax = 1.0
             #endif
+
             ymax = 1.2 * ymax
 
             set_axes_and_range(hd, ymax)
@@ -696,14 +754,15 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
             leg.SetTextSize(0.040)
             leg.AddEntry(hd, f"data (N={int(c_data[r][c])})", "l")
             leg.AddEntry(hm, f"mix (aaogen frac w={w:.4f})", "l")
-            leg.AddEntry("", f"fit window: [{MX2_FIT_MIN:.1f}, {MX2_FIT_MAX:.1f}]", "")
+            leg.AddEntry("", f"peak window: [{MX2_FIT_MIN:.2f}, {MX2_FIT_MAX:.2f}]", "")
             leg.Draw()
 
             tex = ROOT.TLatex()
             tex.SetNDC(True)
             tex.SetTextSize(0.05)
             tex.DrawLatex(
-                0.14, 0.93,
+                0.14,
+                0.93,
                 f"x_{{B}} [{xb_lo:.2f}, {xb_hi:.2f})   #minus t^{{#prime}} [{t_lo:.2f}, {t_hi:.2f}) (GeV^{{2}})"
             )
         #endfor
@@ -715,10 +774,12 @@ def draw_canvas_mix(h_data, h_mix, c_data, w_grid, outpng):
 
 def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path, forced_map=None):
     ensure_outdir(path)
+
     nrows = len(w_grid)
     ncols = len(w_grid[0])
 
     total_chi2 = 0.0
+
     for r in range(nrows):
         for c in range(ncols):
             total_chi2 += chi2_grid[r][c]
@@ -728,12 +789,15 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
     with open(path, "w") as f:
         f.write("Per-bin mixture weights (shape-only, WEIGHTED chi2)\n")
         f.write("Definition: H_mix = w * H_aaogen + (1-w) * H_clasdis\n")
-        f.write(f"Fit window for w and chi2: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}]\n")
+        f.write(f"Peak window for w and chi2: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}]\n")
+        f.write(f"Histogram binning: {MX2_NBINS} bins from {MX2_MIN:.3f} to {MX2_MAX:.3f} GeV^2\n")
         f.write("Weights: sigma_i from RAW data counts in the pad: sigma_i = sqrt(n_i)/N (floor for n_i=0)\n")
         f.write("Note: w is clipped to [0,1]. Report includes w_unclipped for diagnostics.\n")
+
         if forced_map is not None and len(forced_map) > 0:
             f.write("NOTE: Some w values were FORCED by --force and chi2 was recomputed for those pads.\n")
         #endif
+
         f.write("\n")
         f.write(f"Total chi2 (sum over pads) = {total_chi2:.6e}\n\n")
 
@@ -741,6 +805,7 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
             xb_lo = XB_EDGES[r]
             xb_hi = XB_EDGES[r + 1]
             f.write(f"Row {r}: xB [{xb_lo:.2f}, {xb_hi:.2f})\n")
+
             for c in range(ncols):
                 t_lo = TNEG_EDGES[c]
                 t_hi = TNEG_EDGES[c + 1]
@@ -752,6 +817,7 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
                 Nc = int(c_dis[r][c])
 
                 tag = ""
+
                 if forced_map is not None:
                     if (r, c) in forced_map:
                         tag = "  FORCED"
@@ -764,8 +830,10 @@ def write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, path
                     f"N(data,aao,dis)=({Nd},{Na},{Nc}){tag}\n"
                 )
             #endfor
+
             f.write("\n")
         #endfor
+    #endwith
 #enddef
 
 
@@ -785,25 +853,33 @@ def compute_bin_indices_from_reco(x_val, Q2_val, e_p, e_theta, e_phi, p_p, p_the
     if r < 0:
         return -1, -1, t_val, tmin_val, tprime_val
     #endif
+
     c = find_bin(tneg, TNEG_EDGES)
     if c < 0:
         return -1, -1, t_val, tmin_val, tprime_val
     #endif
+
     return r, c, t_val, tmin_val, tprime_val
 #enddef
 
 
-def compute_mc_t_quantities_from_gen(mc_x_val, mc_Q2_val,
-                                    mc_e_p, mc_e_theta, mc_e_phi,
-                                    mc_p_p, mc_p_theta, mc_p_phi):
+def compute_mc_t_quantities_from_gen(mc_x_val, mc_Q2_val, mc_e_p, mc_e_theta, mc_e_phi, mc_p_p, mc_p_theta, mc_p_phi):
     """
     Recompute generated-level t, tmin, tprime using fixed Eb=MC_EB_FIXED.
     """
-    mc_t_val = compute_t_scalar_from_Eb(MC_EB_FIXED,
-                                        mc_e_p, mc_e_theta, mc_e_phi,
-                                        mc_p_p, mc_p_theta, mc_p_phi)
+    mc_t_val = compute_t_scalar_from_Eb(
+        MC_EB_FIXED,
+        mc_e_p,
+        mc_e_theta,
+        mc_e_phi,
+        mc_p_p,
+        mc_p_theta,
+        mc_p_phi
+    )
+
     mc_tmin_val = compute_tmin_exact(mc_x_val, mc_Q2_val)
     mc_tprime_val = mc_t_val - mc_tmin_val
+
     return mc_t_val, mc_tmin_val, mc_tprime_val
 #enddef
 
@@ -815,8 +891,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     f_aao, t_aao = open_tree(mc_aao_path, TREE_NAME)
     f_dis, t_dis = open_tree(mc_dis_path, TREE_NAME)
 
-    # Updated MC schema (phi is trento_phi; DepA..DepW instead of Depolarization_*).
-    # NOTE: We do NOT require input t/tmin/mc_t/mc_tmin because we will ignore them.
     mc_needed = [
         "e_p", "e_theta", "e_phi", "vz_e",
         "p_p", "p_theta", "p_phi", "vz_p",
@@ -829,6 +903,7 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         "mc_DepA", "mc_DepB", "mc_DepC", "mc_DepV", "mc_DepW",
         "matching_e_pid", "matching_p1_pid", "mc_p1_parent"
     ]
+
     require_branches(t_aao, mc_needed, "mc_aaogen")
     require_branches(t_dis, mc_needed, "mc_clasdis")
 
@@ -841,7 +916,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
 
     tout = ROOT.TTree(TREE_NAME, "Mixed MC: write ALL clasdis; top up aaogen in-grid using w_grid")
 
-    # Output buffers
     e_p = array("d", [0.0])
     e_theta = array("d", [0.0])
     e_phi = array("d", [0.0])
@@ -898,7 +972,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     matching_p1_pid = array("i", [0])
     mc_p1_parent = array("i", [0])
 
-    # Newly recomputed branches (ALWAYS recomputed; any input t/tmin are ignored)
     t = array("d", [0.0])
     tmin = array("d", [0.0])
     tprime = array("d", [0.0])
@@ -906,7 +979,6 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     mc_tmin = array("d", [0.0])
     mc_tprime = array("d", [0.0])
 
-    # Create branches in output
     tout.Branch("e_p", e_p, "e_p/D")
     tout.Branch("e_theta", e_theta, "e_theta/D")
     tout.Branch("e_phi", e_phi, "e_phi/D")
@@ -973,10 +1045,8 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     nrows = len(XB_EDGES) - 1
     ncols = len(TNEG_EDGES) - 1
 
-    # Track clasdis counts per in-grid bin for quota computation
     Ndis = [[0 for _ in range(ncols)] for _ in range(nrows)]
 
-    # Global debug counters
     clasdis_written_total = 0
     clasdis_written_in_grid = 0
     clasdis_written_out_grid = 0
@@ -989,6 +1059,7 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
 
     def bind_mc_tree(tree):
         tree.SetBranchStatus("*", 0)
+
         for bn in mc_needed:
             tree.SetBranchStatus(bn, 1)
         #endfor
@@ -1050,14 +1121,10 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         tree.SetBranchAddress("mc_p1_parent", mc_p1_parent)
     #enddef
 
-    # -------------------------------------------------------------------------
-    # PASS 1: clasdis
-    # NEW BEHAVIOR: write ALL clasdis events, regardless of in-grid or out-of-grid.
-    # The grid is ONLY used to count Ndis[r][c] for aaogen quota computation.
-    # -------------------------------------------------------------------------
     bind_mc_tree(t_dis)
 
     n_entries_dis = int(t_dis.GetEntries())
+
     if max_events is None:
         n_to_process_dis = n_entries_dis
     else:
@@ -1067,17 +1134,26 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
     for i in range(n_to_process_dis):
         t_dis.GetEntry(i)
 
-        # Recompute reco t variables (NO Mx2 cuts of any kind; we always keep the event)
         r, c, t_val, tmin_val, tp_val = compute_bin_indices_from_reco(
-            float(x[0]), float(Q2[0]),
-            float(e_p[0]), float(e_theta[0]), float(e_phi[0]),
-            float(p_p[0]), float(p_theta[0]), float(p_phi[0])
+            float(x[0]),
+            float(Q2[0]),
+            float(e_p[0]),
+            float(e_theta[0]),
+            float(e_phi[0]),
+            float(p_p[0]),
+            float(p_theta[0]),
+            float(p_phi[0])
         )
 
         mc_t_val, mc_tmin_val, mc_tp_val = compute_mc_t_quantities_from_gen(
-            float(mc_x[0]), float(mc_Q2[0]),
-            float(mc_e_p[0]), float(mc_e_theta[0]), float(mc_e_phi[0]),
-            float(mc_p_p[0]), float(mc_p_theta[0]), float(mc_p_phi[0])
+            float(mc_x[0]),
+            float(mc_Q2[0]),
+            float(mc_e_p[0]),
+            float(mc_e_theta[0]),
+            float(mc_e_phi[0]),
+            float(mc_p_p[0]),
+            float(mc_p_theta[0]),
+            float(mc_p_phi[0])
         )
 
         t[0] = float(t_val)
@@ -1098,10 +1174,8 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         #endif
     #endfor
 
-    # -------------------------------------------------------------------------
-    # Compute target Naao per in-grid bin using Ndis and w_grid
-    # -------------------------------------------------------------------------
     Naao_target = [[0 for _ in range(ncols)] for _ in range(nrows)]
+
     for r in range(nrows):
         for c in range(ncols):
             w = float(w_grid[r][c])
@@ -1118,7 +1192,7 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
             #endif
 
             if w >= 1.0:
-                Naao_target[r][c] = 10**18  # effectively "as many as exist"
+                Naao_target[r][c] = 10**18
                 continue
             #endif
 
@@ -1127,17 +1201,12 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         #endfor
     #endfor
 
-    # -------------------------------------------------------------------------
-    # PASS 2: aaogen
-    # Behavior unchanged:
-    #   - ONLY write aaogen that falls into an in-grid (r,c),
-    #   - ONLY until Naao_target[r][c] is reached.
-    # -------------------------------------------------------------------------
     Naao_written = [[0 for _ in range(ncols)] for _ in range(nrows)]
 
     bind_mc_tree(t_aao)
 
     n_entries_aao = int(t_aao.GetEntries())
+
     if max_events is None:
         n_to_process_aao = n_entries_aao
     else:
@@ -1148,9 +1217,14 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         t_aao.GetEntry(i)
 
         r, c, t_val, tmin_val, tp_val = compute_bin_indices_from_reco(
-            float(x[0]), float(Q2[0]),
-            float(e_p[0]), float(e_theta[0]), float(e_phi[0]),
-            float(p_p[0]), float(p_theta[0]), float(p_phi[0])
+            float(x[0]),
+            float(Q2[0]),
+            float(e_p[0]),
+            float(e_theta[0]),
+            float(e_phi[0]),
+            float(p_p[0]),
+            float(p_theta[0]),
+            float(p_phi[0])
         )
 
         if r < 0 or c < 0:
@@ -1164,9 +1238,14 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         #endif
 
         mc_t_val, mc_tmin_val, mc_tp_val = compute_mc_t_quantities_from_gen(
-            float(mc_x[0]), float(mc_Q2[0]),
-            float(mc_e_p[0]), float(mc_e_theta[0]), float(mc_e_phi[0]),
-            float(mc_p_p[0]), float(mc_p_theta[0]), float(mc_p_phi[0])
+            float(mc_x[0]),
+            float(mc_Q2[0]),
+            float(mc_e_p[0]),
+            float(mc_e_theta[0]),
+            float(mc_e_phi[0]),
+            float(mc_p_p[0]),
+            float(mc_p_theta[0]),
+            float(mc_p_phi[0])
         )
 
         t[0] = float(t_val)
@@ -1177,34 +1256,33 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
         mc_tprime[0] = float(mc_tp_val)
 
         tout.Fill()
+
         Naao_written[r][c] += 1
 
         aaogen_written_total += 1
         aaogen_written_in_grid += 1
     #endfor
 
-    # -------------------------------------------------------------------------
-    # Write output and print debug summary
-    # -------------------------------------------------------------------------
     fout.cd()
     tout.Write()
     fout.Close()
     f_aao.Close()
     f_dis.Close()
 
-    print("Phase 3 debug (NEW behavior):")
+    print("Phase 3 debug:")
     print("  Wrote ALL clasdis events (in-grid + out-of-grid). No Mx2 cuts were applied.")
-    print(f"  clasdis written total      = {clasdis_written_total}")
-    print(f"  clasdis written in-grid    = {clasdis_written_in_grid}")
-    print(f"  clasdis written out-of-grid= {clasdis_written_out_grid}")
-    print(f"  aaogen  written total      = {aaogen_written_total}")
-    print(f"  aaogen  written in-grid    = {aaogen_written_in_grid}")
-    print(f"  aaogen  skipped out-of-grid= {aaogen_skipped_out_grid}")
-    print(f"  aaogen  skipped quota met  = {aaogen_skipped_quota_met}")
+    print(f"  clasdis written total       = {clasdis_written_total}")
+    print(f"  clasdis written in-grid     = {clasdis_written_in_grid}")
+    print(f"  clasdis written out-of-grid = {clasdis_written_out_grid}")
+    print(f"  aaogen written total        = {aaogen_written_total}")
+    print(f"  aaogen written in-grid      = {aaogen_written_in_grid}")
+    print(f"  aaogen skipped out-of-grid  = {aaogen_skipped_out_grid}")
+    print(f"  aaogen skipped quota met    = {aaogen_skipped_quota_met}")
 
     denom = float(aaogen_written_total + clasdis_written_total)
+
     if denom > 0.0:
-        print(f"  achieved global aaogen fraction (written) = {aaogen_written_total/denom:.6f}")
+        print(f"  achieved global aaogen fraction (written) = {aaogen_written_total / denom:.6f}")
     else:
         print("  achieved global aaogen fraction (written) = 0.0")
     #endif
@@ -1213,19 +1291,16 @@ def mix_mc_to_output_root(mc_aao_path, mc_dis_path, out_root_path, w_grid, max_e
 
 def main():
     ap = argparse.ArgumentParser()
+
     ap.add_argument("--data", required=True, help="Path to data ROOT file")
     ap.add_argument("--aaogen", required=True, help="Path to aaogen ROOT file")
     ap.add_argument("--clasdis", required=True, help="Path to clasdis ROOT file")
-    ap.add_argument("--max_events", type=int, default=-1,
-                    help="Max events per file (-1 means all events)")
-    ap.add_argument("--mc_aaogen", default=None,
-                    help="Optional: Path to MC aaogen ROOT file for event-level mixing")
-    ap.add_argument("--mc_clasdis", default=None,
-                    help="Optional: Path to MC clasdis ROOT file for event-level mixing")
-    ap.add_argument("--out", default=DEFAULT_MIXED_MC_ROOT,
-                    help="Optional: Output ROOT file for mixed MC (default: output/mixed_mc.root)")
-    ap.add_argument("--force", action="store_true",
-                    help="Optional diagnostic: force specific w[r,c] values after fit")
+    ap.add_argument("--max_events", type=int, default=-1, help="Max events per file (-1 means all events)")
+    ap.add_argument("--mc_aaogen", default=None, help="Optional: Path to MC aaogen ROOT file for event-level mixing")
+    ap.add_argument("--mc_clasdis", default=None, help="Optional: Path to MC clasdis ROOT file for event-level mixing")
+    ap.add_argument("--out", default=DEFAULT_MIXED_MC_ROOT, help="Optional: Output ROOT file for mixed MC")
+    ap.add_argument("--force", action="store_true", help="Optional diagnostic: force specific w[r,c] values after fit")
+
     args = ap.parse_args()
 
     require_file(args.data)
@@ -1241,6 +1316,7 @@ def main():
     f_dis, t_dis = open_tree(args.clasdis, TREE_NAME)
 
     needed = ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
+
     require_branches(t_data, needed, "data")
     require_branches(t_aao, needed, "aaogen")
     require_branches(t_dis, needed, "clasdis")
@@ -1263,23 +1339,28 @@ def main():
     c_aao = make_count_grid(nrows, ncols)
     c_dis = make_count_grid(nrows, ncols)
 
-    max_events = None if args.max_events is None or int(args.max_events) < 0 else int(args.max_events)
+    if args.max_events is None or int(args.max_events) < 0:
+        max_events = None
+    else:
+        max_events = int(args.max_events)
+    #endif
 
     fill_all_bins_single_pass(t_data, h_data, c_data, max_events)
     fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
     fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
 
-    # Keep RAW data histograms for sigma_i computation in the weighted fit.
     h_data_raw = []
+
     for r in range(nrows):
         row = []
+
         for c in range(ncols):
             row.append(h_data[r][c].Clone(f"h_data_raw_r{r}_c{c}"))
         #endfor
+
         h_data_raw.append(row)
     #endfor
 
-    # Integrated histograms from RAW (unnormalized).
     h_data_int = make_integrated_hist_from_grid(h_data, "h_data_integrated")
     h_aao_int = make_integrated_hist_from_grid(h_aao, "h_aaogen_integrated")
     h_dis_int = make_integrated_hist_from_grid(h_dis, "h_clasdis_integrated")
@@ -1288,7 +1369,6 @@ def main():
     Na_tot = sum_counts_grid(c_aao)
     Nc_tot = sum_counts_grid(c_dis)
 
-    # Normalize integrated shapes (match per-pad behavior).
     normalize_unit_area(h_data_int)
     normalize_unit_area(h_aao_int)
     normalize_unit_area(h_dis_int)
@@ -1301,7 +1381,6 @@ def main():
     style_hist(h_aao_int, col_aao, 2, 2)
     style_hist(h_dis_int, col_dis, 2, 3)
 
-    # Normalize per-pad histograms to unit area (shape-only).
     for r in range(nrows):
         for c in range(ncols):
             normalize_unit_area(h_data[r][c])
@@ -1321,12 +1400,10 @@ def main():
     draw_canvas_threeway(h_data, h_aao, h_dis, c_data, c_aao, c_dis, OUTPUT_YIELDS_PNG)
     draw_canvas_integrated_threeway(h_data_int, h_aao_int, h_dis_int, Nd_tot, Na_tot, Nc_tot, OUTPUT_DATAONLY_PNG)
 
-    # Weighted per-pad mixture fit (weights from RAW data stats).
     w_grid, wun_grid, chi2_grid, h_mix = compute_w_grid_and_mix(h_data, h_aao, h_dis, h_data_raw)
 
     forced_map = {}
 
-    # Optional override for diagnostics
     if args.force:
         forced_map[(0, 2)] = 0.05
         forced_map[(0, 3)] = 0.08
@@ -1334,19 +1411,22 @@ def main():
         forced_map[(0, 5)] = 0.03
 
         print("FORCE mode enabled: overriding selected w[r,c] after fit:")
+
         for (rr, cc), wv in forced_map.items():
             old = float(w_grid[rr][cc])
             w_grid[rr][cc] = float(wv)
 
-            # Rebuild mixture histogram for that pad
             hm = h_mix[rr][cc]
             hm.Reset("ICESM")
             hm.Add(h_aao[rr][cc], float(w_grid[rr][cc]))
             hm.Add(h_dis[rr][cc], float(1.0 - w_grid[rr][cc]))
 
-            # Recompute chi2 for that pad using the forced w
             chi2_grid[rr][cc] = compute_chi2_for_pad_given_w(
-                h_data[rr][cc], h_aao[rr][cc], h_dis[rr][cc], h_data_raw[rr][cc], float(w_grid[rr][cc])
+                h_data[rr][cc],
+                h_aao[rr][cc],
+                h_dis[rr][cc],
+                h_data_raw[rr][cc],
+                float(w_grid[rr][cc])
             )
 
             print(f"  Row {rr}, Col {cc}: w {old:.6f} -> {w_grid[rr][cc]:.6f}")
@@ -1354,6 +1434,7 @@ def main():
     #endif
 
     col_mix = ROOT.kGreen + 2
+
     for r in range(nrows):
         for c in range(ncols):
             style_hist(h_mix[r][c], col_mix, 3, 1)
@@ -1361,28 +1442,32 @@ def main():
     #endfor
 
     total_chi2 = 0.0
+
     for r in range(nrows):
         for c in range(ncols):
             total_chi2 += chi2_grid[r][c]
         #endfor
     #endfor
+
     print("Per-bin mixture fit (shape-only, WEIGHTED chi2):")
-    print(f"  fit window: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}]")
+    print(f"  histogram binning: {MX2_NBINS} bins from {MX2_MIN:.3f} to {MX2_MAX:.3f} GeV^2")
+    print(f"  peak window: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}] GeV^2")
     print(f"  total chi2 = {total_chi2:.6e}")
     print(f"  wrote weights report: {OUTPUT_WEIGHTS_TXT}")
 
     write_weights_report(w_grid, wun_grid, chi2_grid, c_data, c_aao, c_dis, OUTPUT_WEIGHTS_TXT, forced_map)
     draw_canvas_mix(h_data, h_mix, c_data, w_grid, OUTPUT_MIX_PNG)
 
-    # Optional Phase 3: event-level mixed MC output file.
     if args.mc_aaogen is not None or args.mc_clasdis is not None:
         if args.mc_aaogen is None or args.mc_clasdis is None:
             fatal("If using Phase 3, you must provide BOTH --mc_aaogen and --mc_clasdis.")
         #endif
+
         require_file(args.mc_aaogen)
         require_file(args.mc_clasdis)
 
         out_path = str(args.out)
+
         if out_path.strip() == "":
             fatal("--out may not be empty when Phase 3 is enabled.")
         #endif
@@ -1396,6 +1481,7 @@ def main():
         print(f"  will write debug Mx2 png: {OUTPUT_MIX_DEBUG_MX2_PNG}")
 
         mix_mc_to_output_root(args.mc_aaogen, args.mc_clasdis, out_path, w_grid, max_events)
+
         print("  wrote mixed MC:", out_path)
     #endif
 
