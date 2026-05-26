@@ -1482,7 +1482,7 @@ def main():
 
         mix_mc_to_output_root(args.mc_aaogen, args.mc_clasdis, out_path, w_grid, max_events)
 
-        print("  wrote mixed MC:", out_path)
+        print("  wrote mixed MC: ", out_path)
     #endif
 
     f_data.Close()
