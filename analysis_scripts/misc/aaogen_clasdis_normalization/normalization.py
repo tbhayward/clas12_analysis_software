@@ -6,7 +6,9 @@ normalization.py
 
 Phase 1:
   - Fill 4x6 Mx2 histograms binned in (xB, -tprime) for data, aaogen, clasdis
-  - Compute t, tmin, tprime on-the-fly (from runnum-based beam energy)
+  - Compute t, tmin, tprime on-the-fly
+      data: use runnum-based beam energy
+      aaogen/clasdis: use fixed MC_EB_FIXED
   - Normalize each histogram to unit area per (xB, -tprime) bin (shape-only)
 
 Phase 2:
@@ -102,7 +104,7 @@ DEFAULT_MIXED_MC_ROOT = "output/mixed_mc.root"
 OUTPUT_MIX_DEBUG_TXT = "output/mix_debug_report.txt"
 OUTPUT_MIX_DEBUG_MX2_PNG = "output/mix_debug_mx2.png"
 
-# Fixed beam energy for MC mixing stage (no runnum in MC files)
+# Fixed beam energy for aaogen/clasdis histogram filling and optional MC mixing stage.
 MC_EB_FIXED = 10.55
 
 # Masses (GeV)
@@ -1367,9 +1369,9 @@ def main():
         max_events = int(args.max_events)
     #endif
 
-    fill_all_bins_single_pass(t_data, h_data, c_data, max_events)
-    fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events)
-    fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events)
+    fill_all_bins_single_pass(t_data, h_data, c_data, max_events, True, MC_EB_FIXED)
+    fill_all_bins_single_pass(t_aao, h_aao, c_aao, max_events, False, MC_EB_FIXED)
+    fill_all_bins_single_pass(t_dis, h_dis, c_dis, max_events, False, MC_EB_FIXED)
 
     h_data_raw = []
 
@@ -1474,6 +1476,7 @@ def main():
     print("Per-bin mixture fit (shape-only, WEIGHTED chi2):")
     print(f"  histogram binning: {MX2_NBINS} bins from {MX2_MIN:.3f} to {MX2_MAX:.3f} GeV^2")
     print(f"  peak window: Mx2 in [{MX2_FIT_MIN:.3f}, {MX2_FIT_MAX:.3f}] GeV^2")
+    print(f"  fixed MC-like beam energy for aaogen/clasdis histogram filling = {MC_EB_FIXED:.3f} GeV")
     print(f"  total chi2 = {total_chi2:.6e}")
     print(f"  wrote weights report: {OUTPUT_WEIGHTS_TXT}")
 
