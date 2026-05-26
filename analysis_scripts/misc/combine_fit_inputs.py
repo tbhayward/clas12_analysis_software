@@ -160,40 +160,31 @@ def weighted_average_triplet(triples, variable_name, point_index):
 
       (mean_tprime, asymmetry_value, uncertainty)
 
-    The weighted average uses weights:
-
+    Normal fitted case:
       w_i = 1 / sigma_i^2
 
-    for both mean_tprime and asymmetry_value.
+      mean_tprime_avg = sum_i(w_i mean_tprime_i) / sum_i(w_i)
+      A_avg           = sum_i(w_i A_i)           / sum_i(w_i)
+      sigma_avg       = 1 / sqrt(sum_i w_i)
 
-    The propagated uncertainty is:
+    Placeholder/unfit case:
+      If all three uncertainties are exactly zero, return:
 
-      sigma_avg = 1 / sqrt(sum_i w_i)
+        (0.0, 0.0, 0.0)
 
-    Special case:
-      If every uncertainty is exactly zero, this script requires all values
-      to be identical. It then returns that identical value with zero uncertainty.
+      This handles modulations that were intentionally not fit for stability.
     """
 
     zero_uncertainty_count = sum(1 for _, _, dy_val in triples if dy_val == 0.0)
 
     if zero_uncertainty_count == len(triples):
-        first_x = triples[0][0]
-        first_y = triples[0][1]
+        print(
+            f"[INFO] Variable '{variable_name}', point index {point_index}: "
+            f"all three uncertainties are zero, so this point is treated as an "
+            f"unfit placeholder and combined as {{0, 0, 0}}."
+        )
 
-        for x_val, y_val, dy_val in triples:
-            if x_val != first_x or y_val != first_y:
-                fatal(
-                    f"All uncertainties are zero for variable '{variable_name}', "
-                    f"point index {point_index}, but the central values are not identical. "
-                    f"Cannot compute a finite weighted average."
-                )
-
-            #endif
-
-        #endfor
-
-        return first_x, first_y, 0.0
+        return 0.0, 0.0, 0.0
 
     #endif
 
