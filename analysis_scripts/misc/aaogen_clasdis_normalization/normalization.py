@@ -295,7 +295,7 @@ def make_count_grid(nrows, ncols):
 #enddef
 
 
-def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
+def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events, use_runnum, fixed_Eb):
     runnum = array("i", [0])
     e_p = array("d", [0.0])
     e_theta = array("d", [0.0])
@@ -308,11 +308,20 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
     Mx2 = array("d", [0.0])
 
     tree.SetBranchStatus("*", 0)
-    for bn in ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]:
+
+    needed = ["e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
+    if use_runnum:
+        needed.append("runnum")
+    #endif
+
+    for bn in needed:
         tree.SetBranchStatus(bn, 1)
     #endfor
 
-    tree.SetBranchAddress("runnum", runnum)
+    if use_runnum:
+        tree.SetBranchAddress("runnum", runnum)
+    #endif
+
     tree.SetBranchAddress("e_p", e_p)
     tree.SetBranchAddress("e_theta", e_theta)
     tree.SetBranchAddress("e_phi", e_phi)
@@ -343,15 +352,27 @@ def fill_all_bins_single_pass(tree, hgrid, cgrid, max_events):
 
         Q2_val = float(Q2[0])
 
-        t_val = compute_t_scalar(
-            int(runnum[0]),
-            float(e_p[0]),
-            float(e_theta[0]),
-            float(e_phi[0]),
-            float(p_p[0]),
-            float(p_theta[0]),
-            float(p_phi[0])
-        )
+        if use_runnum:
+            t_val = compute_t_scalar(
+                int(runnum[0]),
+                float(e_p[0]),
+                float(e_theta[0]),
+                float(e_phi[0]),
+                float(p_p[0]),
+                float(p_theta[0]),
+                float(p_phi[0])
+            )
+        else:
+            t_val = compute_t_scalar_from_Eb(
+                float(fixed_Eb),
+                float(e_p[0]),
+                float(e_theta[0]),
+                float(e_phi[0]),
+                float(p_p[0]),
+                float(p_theta[0]),
+                float(p_phi[0])
+            )
+        #endif
 
         tmin_val = compute_tmin_exact(xb_val, Q2_val)
         tprime = t_val - tmin_val
@@ -1315,11 +1336,12 @@ def main():
     f_aao, t_aao = open_tree(args.aaogen, TREE_NAME)
     f_dis, t_dis = open_tree(args.clasdis, TREE_NAME)
 
-    needed = ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
+    needed_data = ["runnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
+    needed_mc_like = ["e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "x", "Q2", "Mx2"]
 
-    require_branches(t_data, needed, "data")
-    require_branches(t_aao, needed, "aaogen")
-    require_branches(t_dis, needed, "clasdis")
+    require_branches(t_data, needed_data, "data")
+    require_branches(t_aao, needed_mc_like, "aaogen")
+    require_branches(t_dis, needed_mc_like, "clasdis")
 
     ensure_outdir(OUTPUT_YIELDS_PNG)
     ensure_outdir(OUTPUT_MIX_PNG)
