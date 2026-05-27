@@ -58,7 +58,7 @@ def print_summary_and_large_differences(merged, charge_column, label):
     median_percent_difference = np.median(percent_diffs)
 
     print("")
-    print("Charge cross-check: Hayward ({}) vs Neupane".format(label))
+    print("Charge cross-check: Hayward ({}) vs Neupane RUN::Scaler".format(label))
     print("Common runs:", len(local))
     print("Mean percent difference   = {:.6f}%".format(mean_percent_difference))
     print("Median percent difference = {:.6f}%".format(median_percent_difference))
@@ -96,7 +96,7 @@ def plot_panel(ax_top, ax_bottom, local, charge_column, title):
         marker="o",
         linestyle="none",
         markersize=4,
-        label="Neupane",
+        label="Neupane, RUN::Scaler",
     )
 
     ax_top.plot(
@@ -105,7 +105,7 @@ def plot_panel(ax_top, ax_bottom, local, charge_column, title):
         marker="s",
         linestyle="none",
         markersize=4,
-        label="Hayward",
+        label=title,
     )
 
     ax_top.set_ylabel("Accumulated charge (nC)")
@@ -148,21 +148,24 @@ def main():
     left = print_summary_and_large_differences(
         merged,
         "hayward_charge_col2",
-        "column 2",
+        "RUN::Scaler",
     )
 
     right = print_summary_and_large_differences(
         merged,
         "hayward_charge_col3_col4",
-        "column 3 + column 4",
+        "HEL::Scaler",
     )
 
-    fig = plt.figure(figsize=(18, 8))
+    fig = plt.figure(
+        figsize=(18, 8),
+        constrained_layout=True,
+    )
 
     outer = fig.add_gridspec(
         1,
         2,
-        wspace=0.20,
+        wspace=0.12,
     )
 
     left_grid = outer[0].subgridspec(
@@ -190,7 +193,7 @@ def main():
         ax_left_bottom,
         left,
         "hayward_charge_col2",
-        "Hayward column 2 vs Neupane column 2",
+        "Hayward, RUN::Scaler",
     )
 
     plot_panel(
@@ -198,14 +201,13 @@ def main():
         ax_right_bottom,
         right,
         "hayward_charge_col3_col4",
-        "Hayward column 3 + column 4 vs Neupane column 2",
+        "Hayward, HEL::Scaler",
     )
 
     plt.setp(ax_left_top.get_xticklabels(), visible=False)
     plt.setp(ax_right_top.get_xticklabels(), visible=False)
 
     fig.suptitle("Run-by-run accumulated charge comparison", fontsize=16)
-    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
 
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
