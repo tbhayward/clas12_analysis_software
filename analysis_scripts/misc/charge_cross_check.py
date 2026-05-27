@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
 
 import os
+import csv
 import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
+def fatal(message):
+    raise RuntimeError(message)
+#enddef
+
+
 def read_neupane_csv(path):
+    if not os.path.exists(path):
+        fatal("Neupane CSV does not exist: {}".format(path))
+    #endif
+
     df = pd.read_csv(path)
+
+    if df.shape[1] < 2:
+        fatal("Neupane CSV must have at least 2 columns: {}".format(path))
+    #endif
 
     out = pd.DataFrame()
     out["runnum"] = pd.to_numeric(df.iloc[:, 0], errors="coerce")
@@ -22,7 +36,15 @@ def read_neupane_csv(path):
 
 
 def read_hayward_csv(path):
+    if not os.path.exists(path):
+        fatal("Hayward CSV does not exist: {}".format(path))
+    #endif
+
     df = pd.read_csv(path, header=None)
+
+    if df.shape[1] < 4:
+        fatal("Hayward CSV must have at least 4 columns: {}".format(path))
+    #endif
 
     out = pd.DataFrame()
     out["runnum"] = pd.to_numeric(df.iloc[:, 0], errors="coerce")
@@ -39,8 +61,16 @@ def read_hayward_csv(path):
 #enddef
 
 
-def read_run_period_charge_file(path):
-    df = pd.read_csv(path, header=None)
+def read_flat_charge_file(path):
+    if not os.path.exists(path):
+        fatal("Charge file does not exist: {}".format(path))
+    #endif
+
+    df = pd.read_csv(path, header=None, comment="#")
+
+    if df.shape[1] < 4:
+        fatal("Flat charge file must have at least 4 columns: {}".format(path))
+    #endif
 
     out = pd.DataFrame()
     out["runnum"] = pd.to_numeric(df.iloc[:, 0], errors="coerce")
@@ -54,6 +84,106 @@ def read_run_period_charge_file(path):
     out["runnum"] = out["runnum"].astype(int)
 
     return out
+#enddef
+
+
+def read_sectioned_charge_file(path, section_header):
+    if not os.path.exists(path):
+        fatal("Sectioned charge file does not exist: {}".format(path))
+    #endif
+
+    rows = []
+    active = False
+    found_header = False
+
+    with open(path, "r") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+
+            if line == "":
+                continue
+            #endif
+
+            if line.startswith("#"):
+                if line == section_header:
+                    active = True
+                    found_header = True
+                    continue
+                #endif
+
+                if active:
+                    break
+                #endif
+
+                continue
+            #endif
+
+            if not active:
+                continue
+            #endif
+
+            fields = next(csv.reader([line]))
+
+            if len(fields) < 4:
+                fatal(
+                    "Malformed numeric row in section '{}'. Expected at least 4 columns, got {}: {}".format(
+                        section_header,
+                        len(fields),
+                        line,
+                    )
+                )
+            #endif
+
+            try:
+                runnum = int(float(fields[0]))
+                run_scaler = float(fields[1])
+                hel_scaler = float(fields[2]) + float(fields[3])
+            except Exception as exc:
+                fatal(
+                    "Could not parse numeric row in section '{}': {}\nError: {}".format(
+                        section_header,
+                        line,
+                        exc,
+                    )
+                )
+            #endtry
+
+            rows.append(
+                {
+                    "runnum": runnum,
+                    "run_scaler": run_scaler,
+                    "hel_scaler": hel_scaler,
+                }
+            )
+        #endfor
+    #endwith
+
+    if not found_header:
+        fatal("Did not find section header '{}' in {}".format(section_header, path))
+    #endif
+
+    if len(rows) == 0:
+        fatal("Section '{}' in {} contained no numeric rows.".format(section_header, path))
+    #endif
+
+    out = pd.DataFrame(rows)
+    out = out.dropna(subset=["runnum", "run_scaler", "hel_scaler"])
+    out["runnum"] = out["runnum"].astype(int)
+
+    return out
+#enddef
+
+
+def read_charge_source(source):
+    if source["kind"] == "flat":
+        return read_flat_charge_file(source["path"])
+    #endif
+
+    if source["kind"] == "sectioned":
+        return read_sectioned_charge_file(source["path"], source["section_header"])
+    #endif
+
+    fatal("Unknown source kind '{}' for label '{}'.".format(source["kind"], source["label"]))
 #enddef
 
 
@@ -196,7 +326,7 @@ def plot_run_period_panel(ax_top, ax_mid, ax_bottom, comparison_local, title):
         comparison_local["run_scaler"],
         marker="o",
         linestyle="none",
-        markersize=4,
+        markersize=3,
         label="RUN::Scaler",
     )
 
@@ -205,13 +335,13 @@ def plot_run_period_panel(ax_top, ax_mid, ax_bottom, comparison_local, title):
         comparison_local["hel_scaler"],
         marker="s",
         linestyle="none",
-        markersize=4,
+        markersize=3,
         label="HEL::Scaler",
     )
 
     ax_top.set_ylabel("Charge (nC)")
     ax_top.set_title(title)
-    ax_top.legend(fontsize=8)
+    ax_top.legend(fontsize=7)
     ax_top.grid(True, alpha=0.3)
 
     ax_mid.axhline(0.0, linewidth=1)
@@ -222,7 +352,7 @@ def plot_run_period_panel(ax_top, ax_mid, ax_bottom, comparison_local, title):
         comparison_local["percent_difference"],
         marker="o",
         linestyle="none",
-        markersize=3,
+        markersize=2,
     )
 
     ax_mid.set_ylabel("% diff.")
@@ -234,7 +364,7 @@ def plot_run_period_panel(ax_top, ax_mid, ax_bottom, comparison_local, title):
         comparison_local["percent_difference"],
         marker="o",
         linestyle="none",
-        markersize=3,
+        markersize=2,
     )
 
     ax_bottom.set_ylim(-10.0, 10.0)
@@ -252,7 +382,7 @@ def make_neupane_hayward_comparison_plot(neupane_path, hayward_path, output_path
     merged = merged.sort_values("runnum").reset_index(drop=True)
 
     if len(merged) == 0:
-        raise RuntimeError("No common run numbers found between Neupane and Hayward CSV files.")
+        fatal("No common run numbers found between Neupane and Hayward CSV files.")
     #endif
 
     left_base = pd.DataFrame()
@@ -353,25 +483,25 @@ def make_neupane_hayward_comparison_plot(neupane_path, hayward_path, output_path
 #enddef
 
 
-def make_run_period_scaler_comparison_plot(run_period_files, output_path):
+def make_run_period_scaler_comparison_plot(run_period_sources, output_path):
     outlier_threshold_percent = 10.0
 
     fig = plt.figure(
-        figsize=(18, 8),
+        figsize=(24, 18),
         constrained_layout=True,
     )
 
     outer = fig.add_gridspec(
-        1,
+        3,
         3,
         wspace=0.18,
+        hspace=0.22,
     )
 
-    for index, item in enumerate(run_period_files):
-        label = item["label"]
-        path = item["path"]
+    for index, source in enumerate(run_period_sources):
+        label = source["label"]
 
-        local = read_run_period_charge_file(path)
+        local = read_charge_source(source)
         local = local.sort_values("runnum").reset_index(drop=True)
 
         comparison_local = compute_percent_difference(
@@ -382,7 +512,7 @@ def make_run_period_scaler_comparison_plot(run_period_files, output_path):
         )
 
         if len(comparison_local) == 0:
-            raise RuntimeError("No nonzero RUN::Scaler and HEL::Scaler entries found for {}.".format(label))
+            fatal("No nonzero RUN::Scaler and HEL::Scaler entries found for {}.".format(label))
         #endif
 
         print_run_period_summary(
@@ -391,7 +521,10 @@ def make_run_period_scaler_comparison_plot(run_period_files, output_path):
             outlier_threshold_percent,
         )
 
-        inner = outer[index].subgridspec(
+        row = index // 3
+        col = index % 3
+
+        inner = outer[row, col].subgridspec(
             3,
             1,
             height_ratios=[3, 1, 1],
@@ -414,7 +547,7 @@ def make_run_period_scaler_comparison_plot(run_period_files, output_path):
         plt.setp(ax_mid.get_xticklabels(), visible=False)
     #endfor
 
-    fig.suptitle("RUN::Scaler vs HEL::Scaler accumulated charge comparison", fontsize=16)
+    fig.suptitle("RUN::Scaler vs HEL::Scaler accumulated charge comparison", fontsize=18)
 
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
@@ -425,10 +558,11 @@ def make_run_period_scaler_comparison_plot(run_period_files, output_path):
 
 
 def main():
-    base_dir = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity"
+    rga_charge_dir = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity"
+    rgc_run_info_path = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
-    neupane_path = os.path.join(base_dir, "krishnas_charges.csv")
-    hayward_path = os.path.join(base_dir, "global.csv")
+    neupane_path = os.path.join(rga_charge_dir, "krishnas_charges.csv")
+    hayward_path = os.path.join(rga_charge_dir, "global.csv")
 
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
@@ -439,23 +573,62 @@ def main():
         os.path.join(output_dir, "charge_cross_check.png"),
     )
 
-    run_period_files = [
+    run_period_sources = [
         {
-            "label": "Fa18 Inb",
-            "path": os.path.join(base_dir, "rga_fa18_inb.txt"),
+            "label": "RGA Fa18 Inb",
+            "kind": "flat",
+            "path": os.path.join(rga_charge_dir, "rga_fa18_inb.txt"),
         },
         {
-            "label": "Fa18 Out",
-            "path": os.path.join(base_dir, "rga_fa18_out.txt"),
+            "label": "RGA Fa18 Out",
+            "kind": "flat",
+            "path": os.path.join(rga_charge_dir, "rga_fa18_out.txt"),
         },
         {
-            "label": "Sp19 Inb",
-            "path": os.path.join(base_dir, "rga_sp19_inb.txt"),
+            "label": "RGA Sp19 Inb",
+            "kind": "flat",
+            "path": os.path.join(rga_charge_dir, "rga_sp19_inb.txt"),
+        },
+        {
+            "label": "RGC Su22 NH3",
+            "kind": "sectioned",
+            "path": rgc_run_info_path,
+            "section_header": "# RGC Su22 NH3",
+        },
+        {
+            "label": "RGC Fa22 NH3",
+            "kind": "sectioned",
+            "path": rgc_run_info_path,
+            "section_header": "# RGC Fa22 NH3",
+        },
+        {
+            "label": "RGC Sp23 NH3",
+            "kind": "sectioned",
+            "path": rgc_run_info_path,
+            "section_header": "# RGC Sp23 NH3",
+        },
+        {
+            "label": "RGC Su22 ND3",
+            "kind": "sectioned",
+            "path": rgc_run_info_path,
+            "section_header": "# RGC Su22 Inb ND3 Runs",
+        },
+        {
+            "label": "RGC Fa22 ND3",
+            "kind": "sectioned",
+            "path": rgc_run_info_path,
+            "section_header": "# RGC Fa22 Inb ND3 Runs",
+        },
+        {
+            "label": "RGC Sp23 ND3",
+            "kind": "sectioned",
+            "path": rgc_run_info_path,
+            "section_header": "# RGC Sp23 ND3",
         },
     ]
 
     make_run_period_scaler_comparison_plot(
-        run_period_files,
+        run_period_sources,
         os.path.join(output_dir, "run_period_scaler_cross_check.png"),
     )
 #enddef
