@@ -230,6 +230,14 @@ def compute_percent_difference(df, numerator_column, denominator_column, output_
 #enddef
 
 
+def split_outliers(local, outlier_threshold_percent):
+    non_outliers = local[np.abs(local["percent_difference"]) <= outlier_threshold_percent].copy()
+    outliers = local[np.abs(local["percent_difference"]) > outlier_threshold_percent].copy()
+
+    return non_outliers, outliers
+#enddef
+
+
 def compute_mean_and_rms(values):
     arr = np.asarray(values, dtype=float)
     arr = arr[np.isfinite(arr)]
@@ -284,19 +292,21 @@ def print_neupane_hayward_summary(local, hayward_label, print_large_differences)
 
 
 def print_run_period_summary(label, local, outlier_threshold_percent, print_outliers):
-    percent_diffs = local["percent_difference"].to_numpy()
+    non_outliers, outliers = split_outliers(local, outlier_threshold_percent)
 
-    mean_percent_difference, rms_percent_difference = compute_mean_and_rms(percent_diffs)
+    clean_percent_diffs = non_outliers["percent_difference"].to_numpy()
+    clean_mean, clean_rms = compute_mean_and_rms(clean_percent_diffs)
 
     print("")
     print("RUN::Scaler vs HEL::Scaler charge cross-check: {}".format(label))
-    print("Nonzero-charge runs used in comparison:", len(local))
-    print("Mean percent difference = {:.6f}%".format(mean_percent_difference))
-    print("RMS percent difference  = {:.6f}%".format(rms_percent_difference))
+    print("Nonzero-charge runs found:", len(local))
+    print("Outlier definition: |percent difference| > {:.3f}%".format(outlier_threshold_percent))
+    print("Outlier runs excluded from mean/RMS:", len(outliers))
+    print("Non-outlier runs used in mean/RMS:", len(non_outliers))
+    print("Mean percent difference = {:.6f}%".format(clean_mean))
+    print("RMS percent difference  = {:.6f}%".format(clean_rms))
     print("Percent difference definition:")
     print("  100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler")
-
-    outliers = local[np.abs(local["percent_difference"]) > outlier_threshold_percent].copy()
 
     if print_outliers:
         print("")
@@ -330,13 +340,6 @@ def print_run_period_summary(label, local, outlier_threshold_percent, print_outl
             )
         #endif
     #endif
-
-    non_outliers = local[np.abs(local["percent_difference"]) <= outlier_threshold_percent].copy()
-
-    clean_mean, clean_rms = compute_mean_and_rms(non_outliers["percent_difference"].to_numpy())
-
-    print("Mean percent difference, ignoring outliers = {:.6f}%".format(clean_mean))
-    print("RMS percent difference, ignoring outliers  = {:.6f}%".format(clean_rms))
 #enddef
 
 
@@ -664,9 +667,10 @@ def make_run_period_scaler_comparison_plot(run_period_sources, output_path):
             print_outliers=use_outlier_axis,
         )
 
-        non_outliers = comparison_local[
-            np.abs(comparison_local["percent_difference"]) <= outlier_threshold_percent
-        ].copy()
+        non_outliers, outliers = split_outliers(
+            comparison_local,
+            outlier_threshold_percent,
+        )
 
         clean_summary_values.append(
             {
