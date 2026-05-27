@@ -25,15 +25,106 @@ def read_hayward_csv(path):
 
     out = pd.DataFrame()
     out["runnum"] = pd.to_numeric(df.iloc[:, 0], errors="coerce")
-    out["hayward_charge"] = (
+    out["hayward_charge_col2"] = pd.to_numeric(df.iloc[:, 1], errors="coerce")
+    out["hayward_charge_col3_col4"] = (
         pd.to_numeric(df.iloc[:, 2], errors="coerce")
         + pd.to_numeric(df.iloc[:, 3], errors="coerce")
     )
 
-    out = out.dropna(subset=["runnum", "hayward_charge"])
+    out = out.dropna(subset=["runnum", "hayward_charge_col2", "hayward_charge_col3_col4"])
     out["runnum"] = out["runnum"].astype(int)
 
     return out
+#enddef
+
+
+def print_summary_and_large_differences(merged, charge_column, label):
+    local = merged.copy()
+
+    local = local[local["neupane_charge"] != 0].copy()
+
+    if len(local) == 0:
+        raise RuntimeError("No common runs with nonzero Neupane charge for {}.".format(label))
+    #endif
+
+    local["percent_difference"] = 100.0 * (
+        local[charge_column] - local["neupane_charge"]
+    ) / local["neupane_charge"]
+
+    finite = np.isfinite(local["percent_difference"].to_numpy())
+    percent_diffs = local.loc[finite, "percent_difference"].to_numpy()
+
+    mean_percent_difference = np.mean(percent_diffs)
+    median_percent_difference = np.median(percent_diffs)
+
+    print("")
+    print("Charge cross-check: Hayward ({}) vs Neupane".format(label))
+    print("Common runs:", len(local))
+    print("Mean percent difference   = {:.6f}%".format(mean_percent_difference))
+    print("Median percent difference = {:.6f}%".format(median_percent_difference))
+    print("Percent difference definition:")
+    print("  100 * (Hayward - Neupane) / Neupane")
+    print("")
+
+    large = local[np.abs(local["percent_difference"]) > 1.0].copy()
+
+    if len(large) == 0:
+        print("No runs differ by more than 1 percent for {}.".format(label))
+    else:
+        print("Runs differing by more than 1 percent for {}:".format(label))
+        print("runnum, neupane_charge, hayward_charge, percent_difference")
+        for _, row in large.iterrows():
+            print(
+                "{}, {:.6f}, {:.6f}, {:.6f}%".format(
+                    int(row["runnum"]),
+                    row["neupane_charge"],
+                    row[charge_column],
+                    row["percent_difference"],
+                )
+            )
+        #endfor
+    #endif
+
+    return local
+#enddef
+
+
+def plot_panel(ax_top, ax_bottom, local, charge_column, title):
+    ax_top.plot(
+        local["runnum"],
+        local["neupane_charge"],
+        marker="o",
+        linestyle="none",
+        markersize=4,
+        label="Neupane",
+    )
+
+    ax_top.plot(
+        local["runnum"],
+        local[charge_column],
+        marker="s",
+        linestyle="none",
+        markersize=4,
+        label="Hayward",
+    )
+
+    ax_top.set_ylabel("Accumulated charge (nC)")
+    ax_top.set_title(title)
+    ax_top.legend()
+    ax_top.grid(True, alpha=0.3)
+
+    ax_bottom.axhline(0.0, linewidth=1)
+    ax_bottom.plot(
+        local["runnum"],
+        local["percent_difference"],
+        marker="o",
+        linestyle="none",
+        markersize=4,
+    )
+
+    ax_bottom.set_xlabel("Run number")
+    ax_bottom.set_ylabel("% diff.")
+    ax_bottom.grid(True, alpha=0.3)
 #enddef
 
 
@@ -54,80 +145,72 @@ def main():
         raise RuntimeError("No common run numbers found between Neupane and Hayward CSV files.")
     #endif
 
-    merged = merged[(merged["neupane_charge"] != 0) | (merged["hayward_charge"] != 0)].copy()
+    left = print_summary_and_large_differences(
+        merged,
+        "hayward_charge_col2",
+        "column 2",
+    )
 
-    if len(merged) == 0:
-        raise RuntimeError("Common runs exist, but all common charge values are zero.")
-    #endif
+    right = print_summary_and_large_differences(
+        merged,
+        "hayward_charge_col3_col4",
+        "column 3 + column 4",
+    )
 
-    merged["percent_difference"] = 100.0 * (
-        merged["hayward_charge"] - merged["neupane_charge"]
-    ) / merged["neupane_charge"]
+    fig = plt.figure(figsize=(18, 8))
 
-    finite = np.isfinite(merged["percent_difference"].to_numpy())
-    percent_diffs = merged.loc[finite, "percent_difference"].to_numpy()
+    outer = fig.add_gridspec(
+        1,
+        2,
+        wspace=0.20,
+    )
 
-    mean_percent_difference = np.mean(percent_diffs)
-    median_percent_difference = np.median(percent_diffs)
-
-    print("")
-    print("Charge cross-check: Hayward vs Neupane")
-    print("Common runs:", len(merged))
-    print("Mean percent difference   = {:.6f}%".format(mean_percent_difference))
-    print("Median percent difference = {:.6f}%".format(median_percent_difference))
-    print("")
-    print("Percent difference definition:")
-    print("  100 * (Hayward - Neupane) / Neupane")
-    print("")
-
-    fig, (ax_top, ax_bottom) = plt.subplots(
+    left_grid = outer[0].subgridspec(
         2,
         1,
-        figsize=(13, 8),
-        sharex=True,
-        gridspec_kw={"height_ratios": [3, 1]},
+        height_ratios=[3, 1],
+        hspace=0.05,
     )
 
-    ax_top.plot(
-        merged["runnum"],
-        merged["neupane_charge"],
-        marker="o",
-        linestyle="none",
-        markersize=4,
-        label="Neupane",
+    right_grid = outer[1].subgridspec(
+        2,
+        1,
+        height_ratios=[3, 1],
+        hspace=0.05,
     )
 
-    ax_top.plot(
-        merged["runnum"],
-        merged["hayward_charge"],
-        marker="s",
-        linestyle="none",
-        markersize=4,
-        label="Hayward",
+    ax_left_top = fig.add_subplot(left_grid[0])
+    ax_left_bottom = fig.add_subplot(left_grid[1], sharex=ax_left_top)
+
+    ax_right_top = fig.add_subplot(right_grid[0])
+    ax_right_bottom = fig.add_subplot(right_grid[1], sharex=ax_right_top)
+
+    plot_panel(
+        ax_left_top,
+        ax_left_bottom,
+        left,
+        "hayward_charge_col2",
+        "Hayward column 2 vs Neupane column 2",
     )
 
-    ax_top.set_ylabel("Accumulated charge (nC)")
-    ax_top.set_title("Run-by-run accumulated charge comparison")
-    ax_top.legend()
-    ax_top.grid(True, alpha=0.3)
-
-    ax_bottom.axhline(0.0, linewidth=1)
-    ax_bottom.plot(
-        merged["runnum"],
-        merged["percent_difference"],
-        marker="o",
-        linestyle="none",
-        markersize=4,
+    plot_panel(
+        ax_right_top,
+        ax_right_bottom,
+        right,
+        "hayward_charge_col3_col4",
+        "Hayward column 3 + column 4 vs Neupane column 2",
     )
 
-    ax_bottom.set_xlabel("Run number")
-    ax_bottom.set_ylabel("% diff.")
-    ax_bottom.grid(True, alpha=0.3)
+    plt.setp(ax_left_top.get_xticklabels(), visible=False)
+    plt.setp(ax_right_top.get_xticklabels(), visible=False)
 
-    fig.tight_layout()
+    fig.suptitle("Run-by-run accumulated charge comparison", fontsize=16)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
 
+    print("")
     print("Saved:", output_path)
 #enddef
 
