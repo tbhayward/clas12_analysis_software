@@ -113,7 +113,7 @@ def print_neupane_hayward_summary(local, hayward_label, print_large_differences)
 #enddef
 
 
-def print_run_period_summary(label, local):
+def print_run_period_summary(label, local, outlier_threshold_percent):
     percent_diffs = local["percent_difference"].to_numpy()
 
     mean_percent_difference = np.mean(percent_diffs)
@@ -126,6 +126,28 @@ def print_run_period_summary(label, local):
     print("RMS percent difference  = {:.6f}%".format(rms_percent_difference))
     print("Percent difference definition:")
     print("  100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler")
+
+    outliers = local[np.abs(local["percent_difference"]) > outlier_threshold_percent].copy()
+
+    print("")
+    print("Outlier threshold for {}: |percent difference| > {:.3f}%".format(label, outlier_threshold_percent))
+
+    if len(outliers) == 0:
+        print("No outlier runs found for {}.".format(label))
+    else:
+        print("Outlier runs for {}:".format(label))
+        print("runnum, RUN::Scaler, HEL::Scaler, percent_difference")
+        for _, row in outliers.iterrows():
+            print(
+                "{}, {:.6f}, {:.6f}, {:.6f}%".format(
+                    int(row["runnum"]),
+                    row["run_scaler"],
+                    row["hel_scaler"],
+                    row["percent_difference"],
+                )
+            )
+        #endfor
+    #endif
 #enddef
 
 
@@ -168,7 +190,7 @@ def plot_neupane_hayward_panel(ax_top, ax_bottom, merged_all, comparison_local, 
 #enddef
 
 
-def plot_run_period_panel(ax_top, ax_bottom, comparison_local, title):
+def plot_run_period_panel(ax_top, ax_mid, ax_bottom, comparison_local, title):
     ax_top.plot(
         comparison_local["runnum"],
         comparison_local["run_scaler"],
@@ -192,6 +214,20 @@ def plot_run_period_panel(ax_top, ax_bottom, comparison_local, title):
     ax_top.legend(fontsize=8)
     ax_top.grid(True, alpha=0.3)
 
+    ax_mid.axhline(0.0, linewidth=1)
+    ax_mid.axhline(10.0, linewidth=1, linestyle="--")
+    ax_mid.axhline(-10.0, linewidth=1, linestyle="--")
+    ax_mid.plot(
+        comparison_local["runnum"],
+        comparison_local["percent_difference"],
+        marker="o",
+        linestyle="none",
+        markersize=3,
+    )
+
+    ax_mid.set_ylabel("% diff.")
+    ax_mid.grid(True, alpha=0.3)
+
     ax_bottom.axhline(0.0, linewidth=1)
     ax_bottom.plot(
         comparison_local["runnum"],
@@ -201,6 +237,7 @@ def plot_run_period_panel(ax_top, ax_bottom, comparison_local, title):
         markersize=3,
     )
 
+    ax_bottom.set_ylim(-10.0, 10.0)
     ax_bottom.set_xlabel("Run number")
     ax_bottom.set_ylabel("% diff.")
     ax_bottom.grid(True, alpha=0.3)
@@ -317,8 +354,10 @@ def make_neupane_hayward_comparison_plot(neupane_path, hayward_path, output_path
 
 
 def make_run_period_scaler_comparison_plot(run_period_files, output_path):
+    outlier_threshold_percent = 10.0
+
     fig = plt.figure(
-        figsize=(18, 6),
+        figsize=(18, 8),
         constrained_layout=True,
     )
 
@@ -346,26 +385,33 @@ def make_run_period_scaler_comparison_plot(run_period_files, output_path):
             raise RuntimeError("No nonzero RUN::Scaler and HEL::Scaler entries found for {}.".format(label))
         #endif
 
-        print_run_period_summary(label, comparison_local)
+        print_run_period_summary(
+            label,
+            comparison_local,
+            outlier_threshold_percent,
+        )
 
         inner = outer[index].subgridspec(
-            2,
+            3,
             1,
-            height_ratios=[3, 1],
+            height_ratios=[3, 1, 1],
             hspace=0.05,
         )
 
         ax_top = fig.add_subplot(inner[0])
-        ax_bottom = fig.add_subplot(inner[1], sharex=ax_top)
+        ax_mid = fig.add_subplot(inner[1], sharex=ax_top)
+        ax_bottom = fig.add_subplot(inner[2], sharex=ax_top)
 
         plot_run_period_panel(
             ax_top,
+            ax_mid,
             ax_bottom,
             comparison_local,
             label,
         )
 
         plt.setp(ax_top.get_xticklabels(), visible=False)
+        plt.setp(ax_mid.get_xticklabels(), visible=False)
     #endfor
 
     fig.suptitle("RUN::Scaler vs HEL::Scaler accumulated charge comparison", fontsize=16)
