@@ -59,7 +59,11 @@ def read_run_period_charge_file(path):
 
 def compute_percent_difference(df, numerator_column, denominator_column, output_column):
     local = df.copy()
-    local = local[local[denominator_column] != 0].copy()
+
+    local = local[
+        (local[numerator_column] != 0.0)
+        & (local[denominator_column] != 0.0)
+    ].copy()
 
     local[output_column] = 100.0 * (
         local[numerator_column] - local[denominator_column]
@@ -79,7 +83,7 @@ def print_neupane_hayward_summary(local, hayward_label, print_large_differences)
 
     print("")
     print("Charge cross-check: Hayward {} vs Neupane RUN::Scaler".format(hayward_label))
-    print("Common runs:", len(local))
+    print("Common nonzero-charge runs used in comparison:", len(local))
     print("Mean percent difference   = {:.6f}%".format(mean_percent_difference))
     print("Median percent difference = {:.6f}%".format(median_percent_difference))
     print("Percent difference definition:")
@@ -117,7 +121,7 @@ def print_run_period_summary(label, local):
 
     print("")
     print("RUN::Scaler vs HEL::Scaler charge cross-check: {}".format(label))
-    print("Runs:", len(local))
+    print("Nonzero-charge runs used in comparison:", len(local))
     print("Mean percent difference = {:.6f}%".format(mean_percent_difference))
     print("RMS percent difference  = {:.6f}%".format(rms_percent_difference))
     print("Percent difference definition:")
@@ -125,10 +129,10 @@ def print_run_period_summary(label, local):
 #enddef
 
 
-def plot_neupane_hayward_panel(ax_top, ax_bottom, local, hayward_column, title):
+def plot_neupane_hayward_panel(ax_top, ax_bottom, merged_all, comparison_local, hayward_column, title):
     ax_top.plot(
-        local["runnum"],
-        local["neupane_charge"],
+        merged_all["runnum"],
+        merged_all["neupane_charge"],
         marker="o",
         linestyle="none",
         markersize=4,
@@ -136,8 +140,8 @@ def plot_neupane_hayward_panel(ax_top, ax_bottom, local, hayward_column, title):
     )
 
     ax_top.plot(
-        local["runnum"],
-        local[hayward_column],
+        merged_all["runnum"],
+        merged_all[hayward_column],
         marker="s",
         linestyle="none",
         markersize=4,
@@ -151,8 +155,8 @@ def plot_neupane_hayward_panel(ax_top, ax_bottom, local, hayward_column, title):
 
     ax_bottom.axhline(0.0, linewidth=1)
     ax_bottom.plot(
-        local["runnum"],
-        local["percent_difference"],
+        comparison_local["runnum"],
+        comparison_local["percent_difference"],
         marker="o",
         linestyle="none",
         markersize=4,
@@ -164,10 +168,10 @@ def plot_neupane_hayward_panel(ax_top, ax_bottom, local, hayward_column, title):
 #enddef
 
 
-def plot_run_period_panel(ax_top, ax_bottom, local, title):
+def plot_run_period_panel(ax_top, ax_bottom, comparison_local, title):
     ax_top.plot(
-        local["runnum"],
-        local["run_scaler"],
+        comparison_local["runnum"],
+        comparison_local["run_scaler"],
         marker="o",
         linestyle="none",
         markersize=4,
@@ -175,8 +179,8 @@ def plot_run_period_panel(ax_top, ax_bottom, local, title):
     )
 
     ax_top.plot(
-        local["runnum"],
-        local["hel_scaler"],
+        comparison_local["runnum"],
+        comparison_local["hel_scaler"],
         marker="s",
         linestyle="none",
         markersize=4,
@@ -190,8 +194,8 @@ def plot_run_period_panel(ax_top, ax_bottom, local, title):
 
     ax_bottom.axhline(0.0, linewidth=1)
     ax_bottom.plot(
-        local["runnum"],
-        local["percent_difference"],
+        comparison_local["runnum"],
+        comparison_local["percent_difference"],
         marker="o",
         linestyle="none",
         markersize=3,
@@ -284,16 +288,18 @@ def make_neupane_hayward_comparison_plot(neupane_path, hayward_path, output_path
     plot_neupane_hayward_panel(
         ax_left_top,
         ax_left_bottom,
+        merged,
         left,
-        "hayward_charge",
+        "hayward_run_scaler",
         "Hayward, RUN::Scaler",
     )
 
     plot_neupane_hayward_panel(
         ax_right_top,
         ax_right_bottom,
+        merged,
         right,
-        "hayward_charge",
+        "hayward_hel_scaler",
         "Hayward, HEL::Scaler",
     )
 
@@ -312,41 +318,37 @@ def make_neupane_hayward_comparison_plot(neupane_path, hayward_path, output_path
 
 def make_run_period_scaler_comparison_plot(run_period_files, output_path):
     fig = plt.figure(
-        figsize=(18, 10),
+        figsize=(18, 6),
         constrained_layout=True,
     )
 
     outer = fig.add_gridspec(
-        2,
+        1,
         3,
         wspace=0.18,
-        hspace=0.20,
     )
 
     for index, item in enumerate(run_period_files):
         label = item["label"]
         path = item["path"]
 
-        row = index // 3
-        col = index % 3
-
         local = read_run_period_charge_file(path)
         local = local.sort_values("runnum").reset_index(drop=True)
 
-        local = compute_percent_difference(
+        comparison_local = compute_percent_difference(
             local,
             "hel_scaler",
             "run_scaler",
             "percent_difference",
         )
 
-        if len(local) == 0:
-            raise RuntimeError("No nonzero RUN::Scaler entries found for {}.".format(label))
+        if len(comparison_local) == 0:
+            raise RuntimeError("No nonzero RUN::Scaler and HEL::Scaler entries found for {}.".format(label))
         #endif
 
-        print_run_period_summary(label, local)
+        print_run_period_summary(label, comparison_local)
 
-        inner = outer[row, col].subgridspec(
+        inner = outer[index].subgridspec(
             2,
             1,
             height_ratios=[3, 1],
@@ -359,15 +361,12 @@ def make_run_period_scaler_comparison_plot(run_period_files, output_path):
         plot_run_period_panel(
             ax_top,
             ax_bottom,
-            local,
+            comparison_local,
             label,
         )
 
         plt.setp(ax_top.get_xticklabels(), visible=False)
     #endfor
-
-    blank_ax = fig.add_subplot(outer[1, 2])
-    blank_ax.axis("off")
 
     fig.suptitle("RUN::Scaler vs HEL::Scaler accumulated charge comparison", fontsize=16)
 
@@ -402,14 +401,6 @@ def main():
         {
             "label": "Fa18 Out",
             "path": os.path.join(base_dir, "rga_fa18_out.txt"),
-        },
-        {
-            "label": "Sp18 Inb",
-            "path": os.path.join(base_dir, "rga_sp18_inb.txt"),
-        },
-        {
-            "label": "Sp18 Out",
-            "path": os.path.join(base_dir, "rga_sp18_out.txt"),
         },
         {
             "label": "Sp19 Inb",
