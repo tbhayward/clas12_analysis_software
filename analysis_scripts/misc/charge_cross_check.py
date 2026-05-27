@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -25,40 +26,59 @@ def read_hayward_csv(path):
 
     out = pd.DataFrame()
     out["runnum"] = pd.to_numeric(df.iloc[:, 0], errors="coerce")
-    out["hayward_charge_col2"] = pd.to_numeric(df.iloc[:, 1], errors="coerce")
-    out["hayward_charge_col3_col4"] = (
+    out["hayward_run_scaler"] = pd.to_numeric(df.iloc[:, 1], errors="coerce")
+    out["hayward_hel_scaler"] = (
         pd.to_numeric(df.iloc[:, 2], errors="coerce")
         + pd.to_numeric(df.iloc[:, 3], errors="coerce")
     )
 
-    out = out.dropna(subset=["runnum", "hayward_charge_col2", "hayward_charge_col3_col4"])
+    out = out.dropna(subset=["runnum", "hayward_run_scaler", "hayward_hel_scaler"])
     out["runnum"] = out["runnum"].astype(int)
 
     return out
 #enddef
 
 
-def print_summary_and_large_differences(merged, charge_column, label):
-    local = merged.copy()
+def read_run_period_charge_file(path):
+    df = pd.read_csv(path, header=None)
 
-    local = local[local["neupane_charge"] != 0].copy()
+    out = pd.DataFrame()
+    out["runnum"] = pd.to_numeric(df.iloc[:, 0], errors="coerce")
+    out["run_scaler"] = pd.to_numeric(df.iloc[:, 1], errors="coerce")
+    out["hel_scaler"] = (
+        pd.to_numeric(df.iloc[:, 2], errors="coerce")
+        + pd.to_numeric(df.iloc[:, 3], errors="coerce")
+    )
 
-    if len(local) == 0:
-        raise RuntimeError("No common runs with nonzero Neupane charge for {}.".format(label))
-    #endif
+    out = out.dropna(subset=["runnum", "run_scaler", "hel_scaler"])
+    out["runnum"] = out["runnum"].astype(int)
 
-    local["percent_difference"] = 100.0 * (
-        local[charge_column] - local["neupane_charge"]
-    ) / local["neupane_charge"]
+    return out
+#enddef
 
-    finite = np.isfinite(local["percent_difference"].to_numpy())
-    percent_diffs = local.loc[finite, "percent_difference"].to_numpy()
+
+def compute_percent_difference(df, numerator_column, denominator_column, output_column):
+    local = df.copy()
+    local = local[local[denominator_column] != 0].copy()
+
+    local[output_column] = 100.0 * (
+        local[numerator_column] - local[denominator_column]
+    ) / local[denominator_column]
+
+    local = local[np.isfinite(local[output_column].to_numpy())].copy()
+
+    return local
+#enddef
+
+
+def print_neupane_hayward_summary(local, hayward_label, print_large_differences):
+    percent_diffs = local["percent_difference"].to_numpy()
 
     mean_percent_difference = np.mean(percent_diffs)
     median_percent_difference = np.median(percent_diffs)
 
     print("")
-    print("Charge cross-check: Hayward ({}) vs Neupane RUN::Scaler".format(label))
+    print("Charge cross-check: Hayward {} vs Neupane RUN::Scaler".format(hayward_label))
     print("Common runs:", len(local))
     print("Mean percent difference   = {:.6f}%".format(mean_percent_difference))
     print("Median percent difference = {:.6f}%".format(median_percent_difference))
@@ -66,30 +86,46 @@ def print_summary_and_large_differences(merged, charge_column, label):
     print("  100 * (Hayward - Neupane) / Neupane")
     print("")
 
-    large = local[np.abs(local["percent_difference"]) > 1.0].copy()
+    if print_large_differences:
+        large = local[np.abs(local["percent_difference"]) > 1.0].copy()
 
-    if len(large) == 0:
-        print("No runs differ by more than 1 percent for {}.".format(label))
-    else:
-        print("Runs differing by more than 1 percent for {}:".format(label))
-        print("runnum, neupane_charge, hayward_charge, percent_difference")
-        for _, row in large.iterrows():
-            print(
-                "{}, {:.6f}, {:.6f}, {:.6f}%".format(
-                    int(row["runnum"]),
-                    row["neupane_charge"],
-                    row[charge_column],
-                    row["percent_difference"],
+        if len(large) == 0:
+            print("No runs differ by more than 1 percent for Hayward {}.".format(hayward_label))
+        else:
+            print("Runs differing by more than 1 percent for Hayward {}:".format(hayward_label))
+            print("runnum, neupane_charge, hayward_charge, percent_difference")
+            for _, row in large.iterrows():
+                print(
+                    "{}, {:.6f}, {:.6f}, {:.6f}%".format(
+                        int(row["runnum"]),
+                        row["neupane_charge"],
+                        row["hayward_charge"],
+                        row["percent_difference"],
+                    )
                 )
-            )
-        #endfor
+            #endfor
+        #endif
     #endif
-
-    return local
 #enddef
 
 
-def plot_panel(ax_top, ax_bottom, local, charge_column, title):
+def print_run_period_summary(label, local):
+    percent_diffs = local["percent_difference"].to_numpy()
+
+    mean_percent_difference = np.mean(percent_diffs)
+    rms_percent_difference = math.sqrt(np.mean(percent_diffs * percent_diffs))
+
+    print("")
+    print("RUN::Scaler vs HEL::Scaler charge cross-check: {}".format(label))
+    print("Runs:", len(local))
+    print("Mean percent difference = {:.6f}%".format(mean_percent_difference))
+    print("RMS percent difference  = {:.6f}%".format(rms_percent_difference))
+    print("Percent difference definition:")
+    print("  100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler")
+#enddef
+
+
+def plot_neupane_hayward_panel(ax_top, ax_bottom, local, hayward_column, title):
     ax_top.plot(
         local["runnum"],
         local["neupane_charge"],
@@ -101,7 +137,7 @@ def plot_panel(ax_top, ax_bottom, local, charge_column, title):
 
     ax_top.plot(
         local["runnum"],
-        local[charge_column],
+        local[hayward_column],
         marker="s",
         linestyle="none",
         markersize=4,
@@ -128,13 +164,46 @@ def plot_panel(ax_top, ax_bottom, local, charge_column, title):
 #enddef
 
 
-def main():
-    neupane_path = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/krishnas_charges.csv"
-    hayward_path = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
+def plot_run_period_panel(ax_top, ax_bottom, local, title):
+    ax_top.plot(
+        local["runnum"],
+        local["run_scaler"],
+        marker="o",
+        linestyle="none",
+        markersize=4,
+        label="RUN::Scaler",
+    )
 
-    output_path = "output/charge_cross_check.png"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    ax_top.plot(
+        local["runnum"],
+        local["hel_scaler"],
+        marker="s",
+        linestyle="none",
+        markersize=4,
+        label="HEL::Scaler",
+    )
 
+    ax_top.set_ylabel("Charge (nC)")
+    ax_top.set_title(title)
+    ax_top.legend(fontsize=8)
+    ax_top.grid(True, alpha=0.3)
+
+    ax_bottom.axhline(0.0, linewidth=1)
+    ax_bottom.plot(
+        local["runnum"],
+        local["percent_difference"],
+        marker="o",
+        linestyle="none",
+        markersize=3,
+    )
+
+    ax_bottom.set_xlabel("Run number")
+    ax_bottom.set_ylabel("% diff.")
+    ax_bottom.grid(True, alpha=0.3)
+#enddef
+
+
+def make_neupane_hayward_comparison_plot(neupane_path, hayward_path, output_path):
     neupane = read_neupane_csv(neupane_path)
     hayward = read_hayward_csv(hayward_path)
 
@@ -145,16 +214,40 @@ def main():
         raise RuntimeError("No common run numbers found between Neupane and Hayward CSV files.")
     #endif
 
-    left = print_summary_and_large_differences(
-        merged,
-        "hayward_charge_col2",
-        "RUN::Scaler",
+    left_base = pd.DataFrame()
+    left_base["runnum"] = merged["runnum"]
+    left_base["neupane_charge"] = merged["neupane_charge"]
+    left_base["hayward_charge"] = merged["hayward_run_scaler"]
+
+    right_base = pd.DataFrame()
+    right_base["runnum"] = merged["runnum"]
+    right_base["neupane_charge"] = merged["neupane_charge"]
+    right_base["hayward_charge"] = merged["hayward_hel_scaler"]
+
+    left = compute_percent_difference(
+        left_base,
+        "hayward_charge",
+        "neupane_charge",
+        "percent_difference",
     )
 
-    right = print_summary_and_large_differences(
-        merged,
-        "hayward_charge_col3_col4",
+    right = compute_percent_difference(
+        right_base,
+        "hayward_charge",
+        "neupane_charge",
+        "percent_difference",
+    )
+
+    print_neupane_hayward_summary(
+        left,
+        "RUN::Scaler",
+        print_large_differences=True,
+    )
+
+    print_neupane_hayward_summary(
+        right,
         "HEL::Scaler",
+        print_large_differences=False,
     )
 
     fig = plt.figure(
@@ -188,19 +281,19 @@ def main():
     ax_right_top = fig.add_subplot(right_grid[0])
     ax_right_bottom = fig.add_subplot(right_grid[1], sharex=ax_right_top)
 
-    plot_panel(
+    plot_neupane_hayward_panel(
         ax_left_top,
         ax_left_bottom,
         left,
-        "hayward_charge_col2",
+        "hayward_charge",
         "Hayward, RUN::Scaler",
     )
 
-    plot_panel(
+    plot_neupane_hayward_panel(
         ax_right_top,
         ax_right_bottom,
         right,
-        "hayward_charge_col3_col4",
+        "hayward_charge",
         "Hayward, HEL::Scaler",
     )
 
@@ -214,6 +307,120 @@ def main():
 
     print("")
     print("Saved:", output_path)
+#enddef
+
+
+def make_run_period_scaler_comparison_plot(run_period_files, output_path):
+    fig = plt.figure(
+        figsize=(18, 10),
+        constrained_layout=True,
+    )
+
+    outer = fig.add_gridspec(
+        2,
+        3,
+        wspace=0.18,
+        hspace=0.20,
+    )
+
+    for index, item in enumerate(run_period_files):
+        label = item["label"]
+        path = item["path"]
+
+        row = index // 3
+        col = index % 3
+
+        local = read_run_period_charge_file(path)
+        local = local.sort_values("runnum").reset_index(drop=True)
+
+        local = compute_percent_difference(
+            local,
+            "hel_scaler",
+            "run_scaler",
+            "percent_difference",
+        )
+
+        if len(local) == 0:
+            raise RuntimeError("No nonzero RUN::Scaler entries found for {}.".format(label))
+        #endif
+
+        print_run_period_summary(label, local)
+
+        inner = outer[row, col].subgridspec(
+            2,
+            1,
+            height_ratios=[3, 1],
+            hspace=0.05,
+        )
+
+        ax_top = fig.add_subplot(inner[0])
+        ax_bottom = fig.add_subplot(inner[1], sharex=ax_top)
+
+        plot_run_period_panel(
+            ax_top,
+            ax_bottom,
+            local,
+            label,
+        )
+
+        plt.setp(ax_top.get_xticklabels(), visible=False)
+    #endfor
+
+    blank_ax = fig.add_subplot(outer[1, 2])
+    blank_ax.axis("off")
+
+    fig.suptitle("RUN::Scaler vs HEL::Scaler accumulated charge comparison", fontsize=16)
+
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    print("")
+    print("Saved:", output_path)
+#enddef
+
+
+def main():
+    base_dir = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity"
+
+    neupane_path = os.path.join(base_dir, "krishnas_charges.csv")
+    hayward_path = os.path.join(base_dir, "global.csv")
+
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    make_neupane_hayward_comparison_plot(
+        neupane_path,
+        hayward_path,
+        os.path.join(output_dir, "charge_cross_check.png"),
+    )
+
+    run_period_files = [
+        {
+            "label": "Fa18 Inb",
+            "path": os.path.join(base_dir, "rga_fa18_inb.txt"),
+        },
+        {
+            "label": "Fa18 Out",
+            "path": os.path.join(base_dir, "rga_fa18_out.txt"),
+        },
+        {
+            "label": "Sp18 Inb",
+            "path": os.path.join(base_dir, "rga_sp18_inb.txt"),
+        },
+        {
+            "label": "Sp18 Out",
+            "path": os.path.join(base_dir, "rga_sp18_out.txt"),
+        },
+        {
+            "label": "Sp19 Inb",
+            "path": os.path.join(base_dir, "rga_sp19_inb.txt"),
+        },
+    ]
+
+    make_run_period_scaler_comparison_plot(
+        run_period_files,
+        os.path.join(output_dir, "run_period_scaler_cross_check.png"),
+    )
 #enddef
 
 
