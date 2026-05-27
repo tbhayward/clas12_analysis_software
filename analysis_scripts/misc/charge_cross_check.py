@@ -238,7 +238,7 @@ def split_outliers(local, outlier_threshold_percent):
 #enddef
 
 
-def compute_mean_and_rms(values):
+def compute_mean_and_std(values):
     arr = np.asarray(values, dtype=float)
     arr = arr[np.isfinite(arr)]
 
@@ -247,9 +247,9 @@ def compute_mean_and_rms(values):
     #endif
 
     mean_value = float(np.mean(arr))
-    rms_value = float(math.sqrt(np.mean(arr * arr)))
+    std_value = float(math.sqrt(np.mean((arr - mean_value) * (arr - mean_value))))
 
-    return mean_value, rms_value
+    return mean_value, std_value
 #enddef
 
 
@@ -295,16 +295,16 @@ def print_run_period_summary(label, local, outlier_threshold_percent, print_outl
     non_outliers, outliers = split_outliers(local, outlier_threshold_percent)
 
     clean_percent_diffs = non_outliers["percent_difference"].to_numpy()
-    clean_mean, clean_rms = compute_mean_and_rms(clean_percent_diffs)
+    clean_mean, clean_std = compute_mean_and_std(clean_percent_diffs)
 
     print("")
     print("RUN::Scaler vs HEL::Scaler charge cross-check: {}".format(label))
     print("Nonzero-charge runs found:", len(local))
     print("Outlier definition: |percent difference| > {:.3f}%".format(outlier_threshold_percent))
-    print("Outlier runs excluded from mean/RMS:", len(outliers))
-    print("Non-outlier runs used in mean/RMS:", len(non_outliers))
+    print("Outlier runs excluded from mean/std:", len(outliers))
+    print("Non-outlier runs used in mean/std:", len(non_outliers))
     print("Mean percent difference = {:.6f}%".format(clean_mean))
-    print("RMS percent difference  = {:.6f}%".format(clean_rms))
+    print("Std. dev. percent difference = {:.6f}%".format(clean_std))
     print("Percent difference definition:")
     print("  100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler")
 
@@ -362,9 +362,9 @@ def print_final_summary(clean_summary_values):
         #endif
     #endfor
 
-    rga_mean, rga_rms = compute_mean_and_rms(rga_values)
-    rgc_mean, rgc_rms = compute_mean_and_rms(rgc_values)
-    overall_mean, overall_rms = compute_mean_and_rms(overall_values)
+    rga_mean, rga_std = compute_mean_and_std(rga_values)
+    rgc_mean, rgc_std = compute_mean_and_std(rgc_values)
+    overall_mean, overall_std = compute_mean_and_std(overall_values)
 
     print("")
     print("============================================================")
@@ -373,12 +373,12 @@ def print_final_summary(clean_summary_values):
     print("Percent difference definition:")
     print("  100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler")
     print("")
-    print("Mean RGA percent difference     = {:.6f}%".format(rga_mean))
-    print("RMS RGA percent difference      = {:.6f}%".format(rga_rms))
-    print("Mean RGC percent difference     = {:.6f}%".format(rgc_mean))
-    print("RMS RGC percent difference      = {:.6f}%".format(rgc_rms))
-    print("Mean overall percent difference = {:.6f}%".format(overall_mean))
-    print("RMS overall percent difference  = {:.6f}%".format(overall_rms))
+    print("Mean RGA percent difference             = {:.6f}%".format(rga_mean))
+    print("Std. dev. RGA percent difference        = {:.6f}%".format(rga_std))
+    print("Mean RGC percent difference             = {:.6f}%".format(rgc_mean))
+    print("Std. dev. RGC percent difference        = {:.6f}%".format(rgc_std))
+    print("Mean overall percent difference         = {:.6f}%".format(overall_mean))
+    print("Std. dev. overall percent difference    = {:.6f}%".format(overall_std))
     print("============================================================")
 #enddef
 
