@@ -183,6 +183,31 @@ def read_charge_source(source):
         return read_sectioned_charge_file(source["path"], source["section_header"])
     #endif
 
+    if source["kind"] == "combined_sectioned":
+        frames = []
+
+        for section_header in source["section_headers"]:
+            frames.append(read_sectioned_charge_file(source["path"], section_header))
+        #endfor
+
+        out = pd.concat(frames, ignore_index=True)
+        out = out.sort_values("runnum").reset_index(drop=True)
+
+        duplicate_runnums = out[out.duplicated(subset=["runnum"], keep=False)]["runnum"].unique()
+
+        if len(duplicate_runnums) > 0:
+            duplicate_string = ", ".join(str(int(x)) for x in duplicate_runnums)
+            fatal(
+                "Duplicate run numbers found while combining sections for '{}': {}".format(
+                    source["label"],
+                    duplicate_string,
+                )
+            )
+        #endif
+
+        return out
+    #endif
+
     fatal("Unknown source kind '{}' for label '{}'.".format(source["kind"], source["label"]))
 #enddef
 
@@ -202,6 +227,21 @@ def compute_percent_difference(df, numerator_column, denominator_column, output_
     local = local[np.isfinite(local[output_column].to_numpy())].copy()
 
     return local
+#enddef
+
+
+def compute_mean_and_rms(values):
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+
+    if len(arr) == 0:
+        return float("nan"), float("nan")
+    #endif
+
+    mean_value = float(np.mean(arr))
+    rms_value = float(math.sqrt(np.mean(arr * arr)))
+
+    return mean_value, rms_value
 #enddef
 
 
@@ -243,11 +283,10 @@ def print_neupane_hayward_summary(local, hayward_label, print_large_differences)
 #enddef
 
 
-def print_run_period_summary(label, local, outlier_threshold_percent):
+def print_run_period_summary(label, local, outlier_threshold_percent, print_outliers):
     percent_diffs = local["percent_difference"].to_numpy()
 
-    mean_percent_difference = np.mean(percent_diffs)
-    rms_percent_difference = math.sqrt(np.mean(percent_diffs * percent_diffs))
+    mean_percent_difference, rms_percent_difference = compute_mean_and_rms(percent_diffs)
 
     print("")
     print("RUN::Scaler vs HEL::Scaler charge cross-check: {}".format(label))
@@ -259,25 +298,85 @@ def print_run_period_summary(label, local, outlier_threshold_percent):
 
     outliers = local[np.abs(local["percent_difference"]) > outlier_threshold_percent].copy()
 
-    print("")
-    print("Outlier threshold for {}: |percent difference| > {:.3f}%".format(label, outlier_threshold_percent))
+    if print_outliers:
+        print("")
+        print("Outlier threshold for {}: |percent difference| > {:.3f}%".format(label, outlier_threshold_percent))
 
-    if len(outliers) == 0:
-        print("No outlier runs found for {}.".format(label))
+        if len(outliers) == 0:
+            print("No outlier runs found for {}.".format(label))
+        else:
+            print("Outlier runs for {}:".format(label))
+            print("runnum, RUN::Scaler, HEL::Scaler, percent_difference")
+            for _, row in outliers.iterrows():
+                print(
+                    "{}, {:.6f}, {:.6f}, {:.6f}%".format(
+                        int(row["runnum"]),
+                        row["run_scaler"],
+                        row["hel_scaler"],
+                        row["percent_difference"],
+                    )
+                )
+            #endfor
+        #endif
     else:
-        print("Outlier runs for {}:".format(label))
-        print("runnum, RUN::Scaler, HEL::Scaler, percent_difference")
-        for _, row in outliers.iterrows():
+        if len(outliers) > 0:
+            print("")
             print(
-                "{}, {:.6f}, {:.6f}, {:.6f}%".format(
-                    int(row["runnum"]),
-                    row["run_scaler"],
-                    row["hel_scaler"],
-                    row["percent_difference"],
+                "Note: {} has {} runs beyond |percent difference| > {:.3f}%, but detailed outlier printing is disabled for this panel.".format(
+                    label,
+                    len(outliers),
+                    outlier_threshold_percent,
                 )
             )
-        #endfor
+        #endif
     #endif
+
+    non_outliers = local[np.abs(local["percent_difference"]) <= outlier_threshold_percent].copy()
+
+    clean_mean, clean_rms = compute_mean_and_rms(non_outliers["percent_difference"].to_numpy())
+
+    print("Mean percent difference, ignoring outliers = {:.6f}%".format(clean_mean))
+    print("RMS percent difference, ignoring outliers  = {:.6f}%".format(clean_rms))
+#enddef
+
+
+def print_final_summary(clean_summary_values):
+    rga_values = []
+    rgc_values = []
+    overall_values = []
+
+    for item in clean_summary_values:
+        values = item["percent_differences"]
+
+        overall_values.extend(values)
+
+        if item["group"] == "RGA":
+            rga_values.extend(values)
+        elif item["group"] == "RGC":
+            rgc_values.extend(values)
+        else:
+            fatal("Unknown summary group '{}'.".format(item["group"]))
+        #endif
+    #endfor
+
+    rga_mean, rga_rms = compute_mean_and_rms(rga_values)
+    rgc_mean, rgc_rms = compute_mean_and_rms(rgc_values)
+    overall_mean, overall_rms = compute_mean_and_rms(overall_values)
+
+    print("")
+    print("============================================================")
+    print("Final summary, ignoring outliers")
+    print("Outlier definition used here: |percent difference| > 10%")
+    print("Percent difference definition:")
+    print("  100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler")
+    print("")
+    print("Mean RGA percent difference     = {:.6f}%".format(rga_mean))
+    print("RMS RGA percent difference      = {:.6f}%".format(rga_rms))
+    print("Mean RGC percent difference     = {:.6f}%".format(rgc_mean))
+    print("RMS RGC percent difference      = {:.6f}%".format(rgc_rms))
+    print("Mean overall percent difference = {:.6f}%".format(overall_mean))
+    print("RMS overall percent difference  = {:.6f}%".format(overall_rms))
+    print("============================================================")
 #enddef
 
 
@@ -320,7 +419,7 @@ def plot_neupane_hayward_panel(ax_top, ax_bottom, merged_all, comparison_local, 
 #enddef
 
 
-def plot_run_period_panel(ax_top, ax_mid, ax_bottom, comparison_local, title):
+def plot_run_period_panel_with_outlier_axis(ax_top, ax_mid, ax_bottom, comparison_local, title):
     ax_top.plot(
         comparison_local["runnum"],
         comparison_local["run_scaler"],
@@ -357,6 +456,46 @@ def plot_run_period_panel(ax_top, ax_mid, ax_bottom, comparison_local, title):
 
     ax_mid.set_ylabel("% diff.")
     ax_mid.grid(True, alpha=0.3)
+
+    ax_bottom.axhline(0.0, linewidth=1)
+    ax_bottom.plot(
+        comparison_local["runnum"],
+        comparison_local["percent_difference"],
+        marker="o",
+        linestyle="none",
+        markersize=2,
+    )
+
+    ax_bottom.set_ylim(-10.0, 10.0)
+    ax_bottom.set_xlabel("Run number")
+    ax_bottom.set_ylabel("% diff.")
+    ax_bottom.grid(True, alpha=0.3)
+#enddef
+
+
+def plot_run_period_panel_zoom_only(ax_top, ax_bottom, comparison_local, title):
+    ax_top.plot(
+        comparison_local["runnum"],
+        comparison_local["run_scaler"],
+        marker="o",
+        linestyle="none",
+        markersize=3,
+        label="RUN::Scaler",
+    )
+
+    ax_top.plot(
+        comparison_local["runnum"],
+        comparison_local["hel_scaler"],
+        marker="s",
+        linestyle="none",
+        markersize=3,
+        label="HEL::Scaler",
+    )
+
+    ax_top.set_ylabel("Charge (nC)")
+    ax_top.set_title(title)
+    ax_top.legend(fontsize=7)
+    ax_top.grid(True, alpha=0.3)
 
     ax_bottom.axhline(0.0, linewidth=1)
     ax_bottom.plot(
@@ -485,14 +624,15 @@ def make_neupane_hayward_comparison_plot(neupane_path, hayward_path, output_path
 
 def make_run_period_scaler_comparison_plot(run_period_sources, output_path):
     outlier_threshold_percent = 10.0
+    clean_summary_values = []
 
     fig = plt.figure(
-        figsize=(24, 18),
+        figsize=(24, 14),
         constrained_layout=True,
     )
 
     outer = fig.add_gridspec(
-        3,
+        2,
         3,
         wspace=0.18,
         hspace=0.22,
@@ -500,6 +640,8 @@ def make_run_period_scaler_comparison_plot(run_period_sources, output_path):
 
     for index, source in enumerate(run_period_sources):
         label = source["label"]
+        group = source["group"]
+        use_outlier_axis = source["use_outlier_axis"]
 
         local = read_charge_source(source)
         local = local.sort_values("runnum").reset_index(drop=True)
@@ -519,32 +661,66 @@ def make_run_period_scaler_comparison_plot(run_period_sources, output_path):
             label,
             comparison_local,
             outlier_threshold_percent,
+            print_outliers=use_outlier_axis,
+        )
+
+        non_outliers = comparison_local[
+            np.abs(comparison_local["percent_difference"]) <= outlier_threshold_percent
+        ].copy()
+
+        clean_summary_values.append(
+            {
+                "label": label,
+                "group": group,
+                "percent_differences": non_outliers["percent_difference"].to_numpy().tolist(),
+            }
         )
 
         row = index // 3
         col = index % 3
 
-        inner = outer[row, col].subgridspec(
-            3,
-            1,
-            height_ratios=[3, 1, 1],
-            hspace=0.05,
-        )
+        if use_outlier_axis:
+            inner = outer[row, col].subgridspec(
+                3,
+                1,
+                height_ratios=[3, 1, 1],
+                hspace=0.05,
+            )
 
-        ax_top = fig.add_subplot(inner[0])
-        ax_mid = fig.add_subplot(inner[1], sharex=ax_top)
-        ax_bottom = fig.add_subplot(inner[2], sharex=ax_top)
+            ax_top = fig.add_subplot(inner[0])
+            ax_mid = fig.add_subplot(inner[1], sharex=ax_top)
+            ax_bottom = fig.add_subplot(inner[2], sharex=ax_top)
 
-        plot_run_period_panel(
-            ax_top,
-            ax_mid,
-            ax_bottom,
-            comparison_local,
-            label,
-        )
+            plot_run_period_panel_with_outlier_axis(
+                ax_top,
+                ax_mid,
+                ax_bottom,
+                comparison_local,
+                label,
+            )
 
-        plt.setp(ax_top.get_xticklabels(), visible=False)
-        plt.setp(ax_mid.get_xticklabels(), visible=False)
+            plt.setp(ax_top.get_xticklabels(), visible=False)
+            plt.setp(ax_mid.get_xticklabels(), visible=False)
+        else:
+            inner = outer[row, col].subgridspec(
+                2,
+                1,
+                height_ratios=[3, 1],
+                hspace=0.05,
+            )
+
+            ax_top = fig.add_subplot(inner[0])
+            ax_bottom = fig.add_subplot(inner[1], sharex=ax_top)
+
+            plot_run_period_panel_zoom_only(
+                ax_top,
+                ax_bottom,
+                comparison_local,
+                label,
+            )
+
+            plt.setp(ax_top.get_xticklabels(), visible=False)
+        #endif
     #endfor
 
     fig.suptitle("RUN::Scaler vs HEL::Scaler accumulated charge comparison", fontsize=18)
@@ -554,6 +730,8 @@ def make_run_period_scaler_comparison_plot(run_period_sources, output_path):
 
     print("")
     print("Saved:", output_path)
+
+    print_final_summary(clean_summary_values)
 #enddef
 
 
@@ -576,54 +754,57 @@ def main():
     run_period_sources = [
         {
             "label": "RGA Fa18 Inb",
+            "group": "RGA",
             "kind": "flat",
             "path": os.path.join(rga_charge_dir, "rga_fa18_inb.txt"),
+            "use_outlier_axis": True,
         },
         {
             "label": "RGA Fa18 Out",
+            "group": "RGA",
             "kind": "flat",
             "path": os.path.join(rga_charge_dir, "rga_fa18_out.txt"),
+            "use_outlier_axis": True,
         },
         {
             "label": "RGA Sp19 Inb",
+            "group": "RGA",
             "kind": "flat",
             "path": os.path.join(rga_charge_dir, "rga_sp19_inb.txt"),
+            "use_outlier_axis": True,
         },
         {
-            "label": "RGC Su22 NH3",
-            "kind": "sectioned",
+            "label": "RGC Su22 Inb",
+            "group": "RGC",
+            "kind": "combined_sectioned",
             "path": rgc_run_info_path,
-            "section_header": "# RGC Su22 NH3",
+            "section_headers": [
+                "# RGC Su22 NH3",
+                "# RGC Su22 Inb ND3 Runs",
+            ],
+            "use_outlier_axis": False,
         },
         {
-            "label": "RGC Fa22 NH3",
-            "kind": "sectioned",
+            "label": "RGC Fa22 Inb",
+            "group": "RGC",
+            "kind": "combined_sectioned",
             "path": rgc_run_info_path,
-            "section_header": "# RGC Fa22 NH3",
+            "section_headers": [
+                "# RGC Fa22 NH3",
+                "# RGC Fa22 Inb ND3 Runs",
+            ],
+            "use_outlier_axis": False,
         },
         {
-            "label": "RGC Sp23 NH3",
-            "kind": "sectioned",
+            "label": "RGC Sp23",
+            "group": "RGC",
+            "kind": "combined_sectioned",
             "path": rgc_run_info_path,
-            "section_header": "# RGC Sp23 NH3",
-        },
-        {
-            "label": "RGC Su22 ND3",
-            "kind": "sectioned",
-            "path": rgc_run_info_path,
-            "section_header": "# RGC Su22 Inb ND3 Runs",
-        },
-        {
-            "label": "RGC Fa22 ND3",
-            "kind": "sectioned",
-            "path": rgc_run_info_path,
-            "section_header": "# RGC Fa22 Inb ND3 Runs",
-        },
-        {
-            "label": "RGC Sp23 ND3",
-            "kind": "sectioned",
-            "path": rgc_run_info_path,
-            "section_header": "# RGC Sp23 ND3",
+            "section_headers": [
+                "# RGC Sp23 NH3",
+                "# RGC Sp23 ND3",
+            ],
+            "use_outlier_axis": False,
         },
     ]
 
