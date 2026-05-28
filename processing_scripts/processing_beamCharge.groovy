@@ -103,7 +103,7 @@ public class processing_beamCharge {
 			beamChargeList+=posHelbeamChargeTotal.toString()+","
 			beamChargeList+=negHelbeamChargeTotal.toString()+","
 			beamChargeList+=noHelbeamChargeTotal.toString()+",0,0\n";
-			beamChargeList+="0,0\n";
+			// beamChargeList+="0,0\n";
 			println(); println(); println();
 			print(beamChargeList);
 			println();
