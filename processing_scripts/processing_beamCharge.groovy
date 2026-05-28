@@ -75,7 +75,7 @@ public class processing_beamCharge {
 				}
 
 				if (event.hasBank("RUN::scaler")) {
-					float runScalerCharge = event.getBank("RUN::scaler").getFloat("fcupgated",0);
+					runScalerCharge = event.getBank("RUN::scaler").getFloat("fcupgated",0);
 				}
 
     			if (event.hasBank("HEL::scaler")) {
