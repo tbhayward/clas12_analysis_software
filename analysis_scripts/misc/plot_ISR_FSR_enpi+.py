@@ -51,7 +51,8 @@ It then generates, for each xB bin:
 
        where:
         Delta_rad_signed = Baseline - ISR&FSR
-        sigma_rad        = abs(Delta_rad_signed)
+        abs_Delta_rad    = abs(Delta_rad_signed)
+        sigma_rad        = sqrt(abs_Delta_rad^2 + EXTRA_RAD_SYS_ABS^2)
 
     4) A text radiative-correction summary in the block format expected by
        the downstream plotting script:
@@ -61,7 +62,7 @@ It then generates, for each xB bin:
            A_Born = A_baseline - Delta
 
        and uses:
-           sigma_rad = abs(Delta)
+           sigma_rad = sqrt(abs(Delta)^2 + EXTRA_RAD_SYS_ABS^2)
 
     5) A flat machine-readable CSV:
            ISR_FSR_radiative_corrections.csv
@@ -72,6 +73,18 @@ It then generates, for each xB bin:
         - identical series
         - zero deltas
         - x-grid mismatches
+
+Important radiative-systematic convention:
+    The signed radiative correction is still:
+
+        Delta_rad = Baseline - ISR&FSR
+
+    The assigned radiative systematic is now:
+
+        sigma_rad = sqrt(abs(Delta_rad)^2 + 0.02^2)
+
+    where 0.02 is an absolute 2 percent systematic uncertainty on the
+    dimensionless asymmetry / structure-function ratio.
 
 Dilution-factor panels and hard-coded dilution-factor arrays have been removed.
 """
@@ -89,6 +102,19 @@ import matplotlib.pyplot as plt
 DEFAULT_BASELINE_PATH = "/u/home/thayward/tims_fits/RGC.txt"
 DEFAULT_ISRFSR_PATH = "/u/home/thayward/tims_fits/RGC_ISR.txt"
 DEFAULT_OUT_DIR = os.path.join("output", "enpi+")
+
+# =========================
+# Radiative systematic convention
+# =========================
+# Reviewer-coordinated extra absolute radiative systematic uncertainty.
+# This is interpreted as an absolute 2 percent uncertainty on the
+# dimensionless fitted structure-function ratio.
+#
+# Final radiative systematic written to output:
+#   sigma_rad = sqrt(abs(Delta_rad)^2 + EXTRA_RAD_SYS_ABS^2)
+#
+# The signed Delta_rad correction itself is NOT changed.
+EXTRA_RAD_SYS_ABS = 0.02
 
 # =========================
 # Plot styling / constants
@@ -182,6 +208,8 @@ def read_text(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
     #endwith
+#enddef
+
 
 def parse_fit_text(path):
     """
@@ -256,6 +284,8 @@ def parse_fit_text(path):
     #endif
 
     return data
+#enddef
+
 
 def summarize_loaded_data(label, data):
     n_bins = len(data)
@@ -267,6 +297,8 @@ def summarize_loaded_data(label, data):
         available = sorted(data[b].keys())
         print(f"     {b}: {len(available)} series")
     #endfor
+#enddef
+
 
 # =========
 # Helpers
@@ -289,11 +321,34 @@ def to_series(triples, negate_x=True, sort=True):
     #endif
 
     return x, y, e
+#enddef
+
 
 def delta_rad(yb, yi):
     """Signed radiative correction shift: Baseline minus ISR&FSR."""
     d = yb - yi
     return d
+#enddef
+
+
+def compute_sigma_rad(delta_values):
+    """
+    Compute the radiative systematic uncertainty.
+
+    The signed correction is:
+        Delta_rad = Baseline - ISR&FSR
+
+    The assigned uncertainty is:
+        sigma_rad = sqrt(abs(Delta_rad)^2 + EXTRA_RAD_SYS_ABS^2)
+
+    EXTRA_RAD_SYS_ABS is the reviewer-coordinated additional absolute
+    2 percent systematic uncertainty used to cover unresolved radiative
+    effects such as external radiation.
+    """
+    d = np.asarray(delta_values, dtype=float)
+    return np.sqrt(np.abs(d) * np.abs(d) + EXTRA_RAD_SYS_ABS * EXTRA_RAD_SYS_ABS)
+#enddef
+
 
 def assert_same_length(bin_tag, series_name, xb, xi):
     if len(xb) != len(xi):
@@ -302,9 +357,13 @@ def assert_same_length(bin_tag, series_name, xb, xi):
             f"mismatched counts (Baseline {len(xb)} vs ISR&FSR {len(xi)})."
         )
     #endif
+#enddef
+
 
 def get_bin_title(bin_tag):
     return r"$ep \rightarrow en\pi^{+}$ -- " + XB_LABELS.get(bin_tag, bin_tag)
+#enddef
+
 
 def get_existing_bin_tags(baseline, isrfsr):
     tags = []
@@ -322,6 +381,8 @@ def get_existing_bin_tags(baseline, isrfsr):
     #endfor
 
     return tags
+#enddef
+
 
 # =========
 # Plotters
@@ -333,6 +394,8 @@ def legend_on(ax, loc="upper right"):
         leg = ax.legend(h, l, frameon=True, edgecolor="black", fontsize=11, loc=loc)
         leg.get_frame().set_alpha(0.9)
     #endif
+#enddef
+
 
 def draw_compare(ax, baseline, isrfsr, bin_tag, series_name, ylabel, ylim=None):
     sources = [
@@ -370,6 +433,8 @@ def draw_compare(ax, baseline, isrfsr, bin_tag, series_name, ylabel, ylim=None):
     ax.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel=ylabel)
     ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
+#enddef
+
 
 def draw_delta_indexed(ax, baseline, isrfsr, bin_tag, series_name, ylabel):
     b = baseline.get(bin_tag, {}).get(series_name)
@@ -402,6 +467,8 @@ def draw_delta_indexed(ax, baseline, isrfsr, bin_tag, series_name, ylabel):
     ax.set(xlim=XLIM_T, ylim=YLIM_DELTA, xlabel=X_LABEL, ylabel=ylabel)
     ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
+#enddef
+
 
 def plot_bin(baseline, isrfsr, bin_tag, out_dir):
     fig, axes = plt.subplots(2, 3, figsize=(13.2, 8.6))
@@ -472,6 +539,8 @@ def plot_bin(baseline, isrfsr, bin_tag, out_dir):
     plt.close(fig)
 
     print(f"[OK] Saved: {path}")
+#enddef
+
 
 def plot_bin_delta(baseline, isrfsr, bin_tag, out_dir):
     fig, axes = plt.subplots(2, 3, figsize=(13.2, 8.6))
@@ -534,6 +603,8 @@ def plot_bin_delta(baseline, isrfsr, bin_tag, out_dir):
     plt.close(fig)
 
     print(f"[OK] Saved: {path}")
+#enddef
+
 
 # =================
 # Text/CSV outputs
@@ -556,9 +627,12 @@ def collect_delta_sf(baseline, isrfsr, bin_tag, series_name):
     #endif
 
     d = delta_rad(yb, yi)
-    s_rad = np.abs(d)
+    abs_d = np.abs(d)
+    s_rad = compute_sigma_rad(d)
 
-    return xb, yb, eb, yi, ei, d, s_rad
+    return xb, yb, eb, yi, ei, d, abs_d, s_rad
+#enddef
+
 
 def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
     """
@@ -568,13 +642,13 @@ def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
         Bin: <bin_tag> ...
         Series: <LaTeX label>
              -t'       Delta    sigma_rad
-          0.12345   signed_D   abs(signed_D)
+          0.12345   signed_D   sqrt(abs(signed_D)^2 + 0.02^2)
 
     The downstream script applies:
         y <- y - Delta
 
     and uses:
-        sigma_rad = abs(Delta)
+        sigma_rad = sqrt(abs(Delta)^2 + EXTRA_RAD_SYS_ABS^2)
     """
     path = os.path.join(out_dir, "ISR_FSR_delta_summary.txt")
 
@@ -589,7 +663,9 @@ def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
         f.write("Uncertainty convention:\n")
         f.write("  Baseline and ISR&FSR are fits to the same underlying data.\n")
         f.write("  Therefore the uncorrelated expression sqrt(sigma_Baseline^2 + sigma_ISRFSR^2) is not used.\n")
-        f.write("  The assigned radiative systematic is sigma_rad = abs(Delta_rad).\n")
+        f.write("  The assigned radiative systematic is sigma_rad = sqrt(abs(Delta_rad)^2 + extra_rad_sys^2).\n")
+        f.write("  extra_rad_sys = {:.6f}, an absolute 2 percent bin-by-bin systematic uncertainty.\n".format(EXTRA_RAD_SYS_ABS))
+        f.write("  This extra term covers unresolved/undetermined radiative effects, including external radiation.\n")
         f.write("=" * 88 + "\n")
 
         col_t = "-t'"
@@ -609,7 +685,7 @@ def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
                     continue
                 #endif
 
-                x, _, _, _, _, d, s_rad = res
+                x, _, _, _, _, d, abs_d, s_rad = res
 
                 f.write(f"Series: {label}\n")
                 f.write("{:>8}    {:>12}    {:>12}\n".format(col_t, col_d, col_s))
@@ -624,6 +700,8 @@ def write_delta_summary(out_dir, baseline, isrfsr, bin_tags):
     #endwith
 
     print(f"[OK] Wrote radiative correction summary: {path}")
+#enddef
+
 
 def write_machine_readable_corrections_csv(out_dir, baseline, isrfsr, bin_tags):
     """
@@ -631,7 +709,8 @@ def write_machine_readable_corrections_csv(out_dir, baseline, isrfsr, bin_tags):
 
     The essential columns are:
         delta_rad_signed = Baseline - ISR&FSR
-        sigma_rad        = abs(delta_rad_signed)
+        abs_delta_rad    = abs(delta_rad_signed)
+        sigma_rad        = sqrt(abs_delta_rad^2 + EXTRA_RAD_SYS_ABS^2)
 
     This file is intentionally redundant with ISR_FSR_delta_summary.txt, but is
     more convenient for future programmatic use.
@@ -653,6 +732,7 @@ def write_machine_readable_corrections_csv(out_dir, baseline, isrfsr, bin_tags):
             "sigma_isrfsr",
             "delta_rad_signed",
             "abs_delta_rad",
+            "extra_rad_sys_abs",
             "sigma_rad",
         ])
 
@@ -664,9 +744,9 @@ def write_machine_readable_corrections_csv(out_dir, baseline, isrfsr, bin_tags):
                     continue
                 #endif
 
-                x, yb, eb, yi, ei, d, s_rad = res
+                x, yb, eb, yi, ei, d, abs_d, s_rad = res
 
-                for row in zip(x, yb, eb, yi, ei, d, np.abs(d), s_rad):
+                for row in zip(x, yb, eb, yi, ei, d, abs_d, s_rad):
                     w.writerow([
                         b,
                         XB_LABELS.get(b, ""),
@@ -679,6 +759,7 @@ def write_machine_readable_corrections_csv(out_dir, baseline, isrfsr, bin_tags):
                         f"{row[4]:.9g}",
                         f"{row[5]:.9g}",
                         f"{row[6]:.9g}",
+                        f"{EXTRA_RAD_SYS_ABS:.9g}",
                         f"{row[7]:.9g}",
                     ])
                 #endfor
@@ -687,6 +768,8 @@ def write_machine_readable_corrections_csv(out_dir, baseline, isrfsr, bin_tags):
     #endwith
 
     print(f"[OK] Wrote machine-readable correction CSV: {path}")
+#enddef
+
 
 def write_bin_csvs(out_dir, baseline, isrfsr, bin_tag):
     """Per-series CSV with x, baseline, isrfsr, signed delta, and sigma_rad."""
@@ -701,7 +784,7 @@ def write_bin_csvs(out_dir, baseline, isrfsr, bin_tag):
             continue
         #endif
 
-        x, yb, eb, yi, ei, d, s_rad = res
+        x, yb, eb, yi, ei, d, abs_d, s_rad = res
         fname = series_name + ".csv"
 
         with open(os.path.join(bin_dir, fname), "w", newline="") as fh:
@@ -715,26 +798,42 @@ def write_bin_csvs(out_dir, baseline, isrfsr, bin_tag):
                 "sigma(I)",
                 "Delta_rad_signed",
                 "abs_Delta_rad",
+                "extra_rad_sys_abs",
                 "sigma_rad",
             ])
 
-            for row in zip(x, yb, eb, yi, ei, d, np.abs(d), s_rad):
-                w.writerow([f"{row[0]:.6f}"] + [f"{v:.6g}" for v in row[1:]])
+            for row in zip(x, yb, eb, yi, ei, d, abs_d, s_rad):
+                w.writerow([
+                    f"{row[0]:.6f}",
+                    f"{row[1]:.6g}",
+                    f"{row[2]:.6g}",
+                    f"{row[3]:.6g}",
+                    f"{row[4]:.6g}",
+                    f"{row[5]:.6g}",
+                    f"{row[6]:.6g}",
+                    f"{EXTRA_RAD_SYS_ABS:.6g}",
+                    f"{row[7]:.6g}",
+                ])
             #endfor
         #endwith
     #endfor
+#enddef
+
 
 def write_abs_shift_summary(out_dir, baseline, isrfsr, bin_tags):
     """
-    Write a compact text summary of absolute shift magnitudes:
-        [min abs(Delta_rad), mean abs(Delta_rad), max abs(Delta_rad)]
+    Write a compact text summary of absolute shift magnitudes and final
+    radiative systematic magnitudes:
+        [min, mean, max]
     """
     path = os.path.join(out_dir, "ISR_FSR_abs_shift_summary.txt")
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("Absolute radiative shift summary\n")
-        f.write("Each entry is [min abs(Delta_rad), mean abs(Delta_rad), max abs(Delta_rad)].\n")
-        f.write("sigma_rad is assigned as abs(Delta_rad), so this is also the sigma_rad summary.\n")
+        f.write("For abs(Delta_rad), each entry is [min, mean, max].\n")
+        f.write("For sigma_rad, each entry is [min, mean, max].\n")
+        f.write("sigma_rad = sqrt(abs(Delta_rad)^2 + extra_rad_sys^2).\n")
+        f.write("extra_rad_sys = {:.6f}, an absolute 2 percent bin-by-bin systematic uncertainty.\n".format(EXTRA_RAD_SYS_ABS))
         f.write("=" * 88 + "\n")
 
         for b in bin_tags:
@@ -748,16 +847,19 @@ def write_abs_shift_summary(out_dir, baseline, isrfsr, bin_tags):
                     continue
                 #endif
 
-                _, _, _, _, _, _, s_rad = res
+                _, _, _, _, _, _, abs_d, s_rad = res
                 f.write(
                     f"{series_key:8s}  {label:40s}  "
-                    f"[{np.min(s_rad):.6f}, {np.mean(s_rad):.6f}, {np.max(s_rad):.6f}]\n"
+                    f"absDelta=[{np.min(abs_d):.6f}, {np.mean(abs_d):.6f}, {np.max(abs_d):.6f}]  "
+                    f"sigmaRad=[{np.min(s_rad):.6f}, {np.mean(s_rad):.6f}, {np.max(s_rad):.6f}]\n"
                 )
             #endfor
         #endfor
     #endwith
 
     print(f"[OK] Wrote absolute shift summary: {path}")
+#enddef
+
 
 # ==========================
 # Sanity / debug report
@@ -804,17 +906,23 @@ def sanity_lines_for_bin(baseline, isrfsr, bin_tag):
             zero_delta = d.size > 0 and np.allclose(d, 0.0, atol=ATOL_ZERO)
             max_abs_d = float(np.max(np.abs(d))) if d.size else float("nan")
             mean_abs_d = float(np.mean(np.abs(d))) if d.size else float("nan")
+            s_rad = compute_sigma_rad(d)
+            max_s_rad = float(np.max(s_rad)) if s_rad.size else float("nan")
+            mean_s_rad = float(np.mean(s_rad)) if s_rad.size else float("nan")
         else:
             zero_delta = False
             max_abs_d = float("nan")
             mean_abs_d = float("nan")
+            max_s_rad = float("nan")
+            mean_s_rad = float("nan")
         #endif
 
         lines.append(
             f"  {s}: lenB={len(yb)} lenI={len(yi)} "
             f"exact_equal={exact_equal} close_equal={close_equal} "
             f"Delta_all_zero={zero_delta} "
-            f"mean|Delta|={mean_abs_d:.6g} max|Delta|={max_abs_d:.6g}"
+            f"mean|Delta|={mean_abs_d:.6g} max|Delta|={max_abs_d:.6g} "
+            f"meanSigmaRad={mean_s_rad:.6g} maxSigmaRad={max_s_rad:.6g}"
         )
 
         if same_len and not np.allclose(xb, xi, atol=1e-6):
@@ -827,6 +935,8 @@ def sanity_lines_for_bin(baseline, isrfsr, bin_tag):
     #endfor
 
     return lines
+#enddef
+
 
 def write_sanity_report(out_dir, baseline, isrfsr, bin_tags):
     path = os.path.join(out_dir, "ISR_FSR_sanity_report.txt")
@@ -835,7 +945,8 @@ def write_sanity_report(out_dir, baseline, isrfsr, bin_tags):
         f.write("Sanity report (index-based Delta_rad pairing)\n")
         f.write("Flags identical series / zero-Delta after pairing / x-grid mismatches.\n")
         f.write("Delta_rad is computed as Baseline minus ISR&FSR central values.\n")
-        f.write("sigma_rad is assigned as abs(Delta_rad).\n\n")
+        f.write("sigma_rad is assigned as sqrt(abs(Delta_rad)^2 + extra_rad_sys^2).\n")
+        f.write("extra_rad_sys = {:.6f}, an absolute 2 percent bin-by-bin systematic uncertainty.\n\n".format(EXTRA_RAD_SYS_ABS))
 
         for b in bin_tags:
             for line in sanity_lines_for_bin(baseline, isrfsr, b):
@@ -847,6 +958,8 @@ def write_sanity_report(out_dir, baseline, isrfsr, bin_tags):
     #endwith
 
     print(f"[OK] Wrote sanity report: {path}")
+#enddef
+
 
 # ==========================
 # Argument parsing
@@ -875,6 +988,8 @@ def parse_args():
     )
 
     return parser.parse_args()
+#enddef
+
 
 # =====
 # Main
@@ -884,6 +999,15 @@ def main():
 
     out_dir = args.out_dir
     os.makedirs(out_dir, exist_ok=True)
+
+    print("[INFO] Radiative systematic convention:")
+    print("[INFO]   Delta_rad = Baseline - ISR&FSR")
+    print("[INFO]   Downstream central-value correction: A_Born = A_baseline - Delta_rad")
+    print("[INFO]   sigma_rad = sqrt(abs(Delta_rad)^2 + extra_rad_sys^2)")
+    print("[INFO]   extra_rad_sys = {:.6f} absolute, i.e. 2 percent bin-by-bin systematic".format(EXTRA_RAD_SYS_ABS))
+    print("[INFO]   The signed Delta_rad values are unchanged by this extra uncertainty.")
+    print("[INFO]   Only the sigma_rad output column is enlarged by the quadrature term.")
+    print("")
 
     baseline = parse_fit_text(args.baseline)
     isrfsr = parse_fit_text(args.isrfsr)
@@ -914,6 +1038,12 @@ def main():
     write_delta_summary(out_dir, baseline, isrfsr, bin_tags)
     write_machine_readable_corrections_csv(out_dir, baseline, isrfsr, bin_tags)
     write_abs_shift_summary(out_dir, baseline, isrfsr, bin_tags)
+
+    print("")
+    print("[OK] Completed ISR/FSR radiative correction outputs.")
+    print("[OK] Reminder: sigma_rad now includes the extra 0.02 absolute systematic in quadrature.")
+#enddef
+
 
 if __name__ == "__main__":
     main()
