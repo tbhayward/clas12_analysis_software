@@ -1299,7 +1299,7 @@ def main():
         file_prefix="polarized_structure_functions_migrated",
     )
 
-    save_migration_sys_canvases(baseline_for_plots)
+    save_migration_sys_canvases(baseline_for_plots, out_dir)
 
     sys.stdout.write("\nSign convention reminder:\n")
     sys.stdout.write("  delta = migrated - original\n")
