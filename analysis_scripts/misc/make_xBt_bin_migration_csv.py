@@ -802,8 +802,8 @@ def parse_args():
     parser.add_argument(
         "--nsigma",
         type=float,
-        default=3.0,
-        help="Mx2 cut width: mu +/- nsigma*sigma. Default: 3.0",
+        default=2.0,
+        help="Mx2 cut width: mu +/- nsigma*sigma. Default: 2.0",
     )
 
     parser.add_argument(
