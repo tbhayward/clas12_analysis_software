@@ -1363,11 +1363,17 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
     Central values:
       y_corr = y - Delta_rad + diff_mig + diff_fermi
 
-    Total systematic (UPDATED):
+    Total systematic:
       sigma_tot = sqrt( sigma_rad^2 + sigma_resmig^2 + sigma_fermi^2 )
+
     where:
-      sigma_resmig = |diff_mig|   (if --migration present)
-      sigma_fermi  = |diff_fermi| (if --fermi_migration present)
+      sigma_resmig = |diff_mig|   if --migration is present
+      sigma_fermi  = |diff_fermi| if --fermi_migration is present
+
+    Table x-axis convention:
+      Use the ALUsin -t' values as the reference row labels for all modulations.
+      The modulation-specific tmean values are intentionally ignored for the
+      table row labels. Corrections are paired by index.
     """
     p = build_period_dict(comb_parsed, bin_tag)
 
@@ -1377,14 +1383,31 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
         raise RuntimeError(f"FATAL: missing Combined fit series for bin={bin_tag}: {missing}")
     #endif
 
-    series_list = [p[k] for k in required]
-    _assert_same_x(series_list, required, tol=1.0e-6)
+    x_ref = np.asarray(p["ALUsin"]["x"], dtype=float)
+    n = x_ref.size
 
-    x = p["ALUsin"]["x"]
-    n = x.size
     if n <= 0:
         raise RuntimeError(f"FATAL: no rows for bin={bin_tag}")
     #endif
+
+    for key in required:
+        x_key = np.asarray(p[key]["x"], dtype=float)
+        if x_key.size != n:
+            raise RuntimeError(
+                f"FATAL: x-size mismatch in LaTeX table for bin={bin_tag}: "
+                f"ALUsin has {n}, {key} has {x_key.size}"
+            )
+        #endif
+
+        max_dx = float(np.max(np.abs(x_key - x_ref))) if n > 0 else 0.0
+        if max_dx > 1.0e-6:
+            print(
+                f"[WARN] LaTeX table {bin_tag}: using ALUsin -t' row labels. "
+                f"{key} differs from ALUsin by max |Delta(-t')| = {max_dx:.6e}; "
+                "corrections and values are paired by index."
+            )
+        #endif
+    #endfor
 
     if rad_all is None or mig_all is None:
         raise RuntimeError("FATAL: LaTeX tables require BOTH --rad and --migration.")
@@ -1397,6 +1420,7 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
     if rad_bin is None:
         raise RuntimeError(f"FATAL: missing bin in rad summary: {bin_tag}")
     #endif
+
     if mig_bin is None:
         raise RuntimeError(f"FATAL: missing bin in migration summary: {bin_tag}")
     #endif
@@ -1409,26 +1433,39 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
         y = np.asarray(p[key]["y"], dtype=float)
         ye = np.asarray(p[key]["yerr"], dtype=float)
 
+        if y.size != n or ye.size != n:
+            raise RuntimeError(
+                f"FATAL: data-size mismatch in LaTeX table for bin={bin_tag}, key={key}: "
+                f"n={n}, y={y.size}, yerr={ye.size}"
+            )
+        #endif
+
         d_rad, s_rad = _get_rad_arrays(rad_bin, key, n)
 
-        d_mig,  s_res  = _get_mig_delta_arrays(mig_bin, key, n, label="--migration")
-        d_fermi, s_fermi = _get_mig_delta_arrays(fermi_bin, key, n, label="--fermi_migration") if (fermi_bin is not None) else (None, None)
+        d_mig, s_res = _get_mig_delta_arrays(mig_bin, key, n, label="--migration")
 
-        # Central shifts: y - Delta_rad + diff_mig + diff_fermi
+        if fermi_bin is not None:
+            d_fermi, s_fermi = _get_mig_delta_arrays(fermi_bin, key, n, label="--fermi_migration")
+        else:
+            d_fermi, s_fermi = None, None
+        #endif
+
         y_shift = y - d_rad
+
         if d_mig is not None:
             y_shift = y_shift + d_mig
         #endif
+
         if d_fermi is not None:
             y_shift = y_shift + d_fermi
         #endif
 
-        # Systematics: quadrature of rad + resmig + fermi
         s_tot_sq = s_rad * s_rad
 
         if s_res is not None:
             s_tot_sq = s_tot_sq + s_res * s_res
         #endif
+
         if s_fermi is not None:
             s_tot_sq = s_tot_sq + s_fermi * s_fermi
         #endif
@@ -1453,7 +1490,11 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
     caption = (
         "\\end{tabular}\n"
         "\\renewcommand{\\arraystretch}{1.0}\n"
-        "\\caption{Fitted structure-function ratios per bin. Entries are $\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$.\\label{"
+        "\\caption{Fitted structure-function ratios per bin. Entries are "
+        "$\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$. "
+        "The $\\langle -t' \\rangle$ values are taken from the "
+        "$F_{LU}^{\\sin\\phi}/F_{UU}$ fit output for the corresponding "
+        "$x_B$ bin.\\label{"
         + label +
         "}}\n"
         "\\end{table}\n"
@@ -1462,15 +1503,16 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
     print("")
     print("% -----------------------------------------------------------------------------")
     print(f"% LaTeX table for bin: {bin_tag}  ({XB_BINS.get(bin_tag, bin_tag)})")
-    print("% Central values: y - Delta_rad + diff_mig + diff_fermi (if provided).")
+    print("% Central values: y - Delta_rad + diff_mig + diff_fermi if provided.")
     print("% Total syst: sqrt( sigma_rad^2 + sigma_resmig^2 + sigma_fermi^2 ).")
     print("%   sigma_resmig = |diff_mig|, sigma_fermi = |diff_fermi|.")
+    print("% Row labels use ALUsin -t' values; all other series are paired by index.")
     print("% Rows ordered in increasing -t'.")
     print("% -----------------------------------------------------------------------------")
     print(header, end="")
 
     for i in range(n):
-        tmean = float(x[i])
+        tmean = float(x_ref[i])
 
         c1 = _fmt_cell(float(vals["ALUsin"][i]),  float(stats["ALUsin"][i]),  float(systs["ALUsin"][i]),  ndp=3)
         c2 = _fmt_cell(float(vals["AULsin"][i]),  float(stats["AULsin"][i]),  float(systs["AULsin"][i]),  ndp=3)
@@ -1483,6 +1525,7 @@ def print_latex_table_for_bin(bin_tag, comb_parsed, rad_all, mig_all, fermi_all)
     #endfor
 
     print(caption, end="")
+#enddef
 
 # ---------------------------------------------------------------------
 # Main
