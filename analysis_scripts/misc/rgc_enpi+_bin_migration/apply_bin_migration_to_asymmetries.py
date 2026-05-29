@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # apply_bin_migration_to_asymmetries.py
 #
-# Usage (tcsh one-liner example):
+# Usage:
 # python3 apply_bin_migration_to_asymmetries.py mc_bin_migration.csv fit_results.txt fit_results_migrated.txt
 #
 # Purpose:
@@ -23,20 +23,36 @@
 #   output/rgc_enpi+_bin_migration_study/
 #
 #   (1) Migrated/corrected fit file:
-#         name = {{tmean_ALUsinphi, migrated_value, stat_original}, ...};
+#         name = {{tmean_ALUsinphi, corrected_value, stat_original}, ...};
 #
-#   (2) Diff/correction file:
-#         name_delta = {{tmean_ALUsinphi, migrated-original}, ...};          signed delta
-#         name_abs   = {{tmean_ALUsinphi, |migrated-original|}, ...};        magnitude
-#         name_ratio = {{tmean_ALUsinphi, (migrated-original)/original}, ...}; signed ratio
+#   (2) Diff/correction/systematics file:
+#         name_delta = {{tmean_ALUsinphi, signed_scaled_smoothed_delta}, ...};
+#         name_abs   = {{tmean_ALUsinphi, scaled_smoothed_abs_delta}, ...};
+#         name_ratio = {{tmean_ALUsinphi, signed_scaled_smoothed_delta/original}, ...};
+#
+#      Audit/debug quantities are also written:
+#         name_raw_delta = {{tmean_ALUsinphi, raw_migrated-original}, ...};
+#         name_raw_abs   = {{tmean_ALUsinphi, abs(raw_migrated-original)}, ...};
+#         name_raw_ratio = {{tmean_ALUsinphi, raw_delta/original}, ...};
 #
 # IMPORTANT:
-#   - The migration difference is a SIGNED correction:
-#       delta = migrated - original
-#   - The corrected central value is:
-#       corrected = migrated
-#   - The systematic magnitude conventionally used for plotting is:
-#       sigma_migration = |delta|
+#   - The raw migration difference is:
+#       raw_delta = raw_migrated - original
+#
+#   - The migration systematic magnitude is smoothed as a function of -tprime
+#     within each xB bin and each modulation.
+#
+#   - The smoothed migration systematic is scaled by:
+#       MIGRATION_SYS_SCALE = 1.5
+#
+#   - The exported signed delta uses:
+#       final_delta = sign(raw_delta) * 1.5 * smooth(abs(raw_delta))
+#
+#   - Therefore the exported migrated/corrected fit file is:
+#       corrected = original + final_delta
+#
+#   - The audit quantities preserve the raw matrix result before smoothing and
+#     before the 1.5 scale factor.
 #
 # Important tmean convention:
 #   For each xB group, this script uses the tmean values from:
@@ -44,7 +60,7 @@
 #   as the canonical tmean values for ALL five fitted structure-function ratios.
 #
 #   This intentionally ignores small modulation-to-modulation tmean differences.
-#   The migration correction itself remains index-based.
+#   The migration calculation itself remains index-based.
 #
 # Plots:
 #   (A) 4 PDF canvases for baseline/original points with migration sys rectangles:
@@ -73,6 +89,23 @@ import re
 import sys
 
 
+MIGRATION_SYS_SCALE = 1.5
+
+SMOOTHING_ENABLED = True
+
+# Weak three-point smoothing kernel for the interior points:
+#   smooth[i] = 0.25*y[i-1] + 0.50*y[i] + 0.25*y[i+1]
+SMOOTHING_LEFT_WEIGHT = 0.25
+SMOOTHING_CENTER_WEIGHT = 0.50
+SMOOTHING_RIGHT_WEIGHT = 0.25
+
+# One-sided edge smoothing:
+#   smooth[0]  = 0.75*y[0]  + 0.25*y[1]
+#   smooth[-1] = 0.75*y[-1] + 0.25*y[-2]
+SMOOTHING_EDGE_SELF_WEIGHT = 0.75
+SMOOTHING_EDGE_NEIGHBOR_WEIGHT = 0.25
+
+
 # ---------------------------------------------------------------------------
 # Basic helpers
 # ---------------------------------------------------------------------------
@@ -85,6 +118,11 @@ def fatal(msg):
 
 def warn(msg):
     sys.stderr.write("WARNING: " + msg + "\n")
+#enddef
+
+
+def info(msg):
+    sys.stdout.write("INFO: " + msg + "\n")
 #enddef
 
 
@@ -101,6 +139,19 @@ def ensure_is_basename(path_like, what):
     if os.path.basename(path_like) != path_like:
         fatal("{} must be a file name only, no directory. Got: '{}'".format(what, path_like))
     #endif
+#enddef
+
+
+def sign_of(x):
+    if x > 0.0:
+        return 1.0
+    #endif
+
+    if x < 0.0:
+        return -1.0
+    #endif
+
+    return 0.0
 #enddef
 
 
@@ -373,29 +424,185 @@ def validate_fit_data(fit_map, required_varnames):
 
 
 # ---------------------------------------------------------------------------
+# Smoothing and scale-factor treatment
+# ---------------------------------------------------------------------------
+
+def smooth_abs_values(abs_values):
+    """
+    Apply a weak three-point smoothing filter to a one-dimensional six-point
+    migration-systematic magnitude sequence.
+
+    Interior points:
+        y_smooth[i] = 0.25*y[i-1] + 0.50*y[i] + 0.25*y[i+1]
+
+    Edge points:
+        y_smooth[0]  = 0.75*y[0]  + 0.25*y[1]
+        y_smooth[-1] = 0.75*y[-1] + 0.25*y[-2]
+
+    The function is intentionally weak: it reduces isolated bin-to-bin
+    fluctuations while preserving broad trends in -tprime.
+    """
+    n = len(abs_values)
+
+    if n == 0:
+        return []
+    #endif
+
+    if n == 1:
+        return [float(abs_values[0])]
+    #endif
+
+    smoothed = [0.0 for _ in range(n)]
+
+    smoothed[0] = (
+        SMOOTHING_EDGE_SELF_WEIGHT * float(abs_values[0])
+        + SMOOTHING_EDGE_NEIGHBOR_WEIGHT * float(abs_values[1])
+    )
+
+    for i in range(1, n - 1):
+        smoothed[i] = (
+            SMOOTHING_LEFT_WEIGHT * float(abs_values[i - 1])
+            + SMOOTHING_CENTER_WEIGHT * float(abs_values[i])
+            + SMOOTHING_RIGHT_WEIGHT * float(abs_values[i + 1])
+        )
+    #endfor
+
+    smoothed[n - 1] = (
+        SMOOTHING_EDGE_SELF_WEIGHT * float(abs_values[n - 1])
+        + SMOOTHING_EDGE_NEIGHBOR_WEIGHT * float(abs_values[n - 2])
+    )
+
+    return smoothed
+#enddef
+
+
+def apply_smoothing_and_scale_to_diffs(raw_diffs_signed, raw_diffs_mag):
+    """
+    Convert raw migration deltas to final exported deltas and systematics.
+
+    Input:
+      raw_diffs_signed[var] = [[tmean, raw_delta], ...]
+      raw_diffs_mag[var]    = [[tmean, abs(raw_delta)], ...]
+
+    Output:
+      final_diffs_signed[var] = [[tmean, sign(raw_delta)*1.5*smooth(abs(raw_delta))], ...]
+      final_diffs_mag[var]    = [[tmean, 1.5*smooth(abs(raw_delta))], ...]
+
+    This is done independently for every modulation and every xB group, because
+    each variable has its own six-point -tprime dependence.
+    """
+    final_diffs_signed = {}
+    final_diffs_mag = {}
+
+    for name in raw_diffs_signed:
+        if name not in raw_diffs_mag:
+            fatal("Internal error: '{}' missing from raw_diffs_mag.".format(name))
+        #endif
+
+        signed_series = raw_diffs_signed[name]
+        mag_series = raw_diffs_mag[name]
+
+        if len(signed_series) != len(mag_series):
+            fatal("Internal error: length mismatch in raw diff series for '{}'.".format(name))
+        #endif
+
+        tmeans = []
+        signs = []
+        mags = []
+
+        for i in range(len(signed_series)):
+            t_signed = float(signed_series[i][0])
+            d_raw = float(signed_series[i][1])
+            t_mag = float(mag_series[i][0])
+            m_raw = float(mag_series[i][1])
+
+            if abs(t_signed - t_mag) > 1.0e-9:
+                fatal("Internal error: tmean mismatch between raw signed and raw mag series for '{}' index {}.".format(name, i))
+            #endif
+
+            tmeans.append(t_signed)
+            signs.append(sign_of(d_raw))
+            mags.append(abs(m_raw))
+        #endfor
+
+        if SMOOTHING_ENABLED:
+            mags_smoothed = smooth_abs_values(mags)
+        else:
+            mags_smoothed = list(mags)
+        #endif
+
+        final_signed_list = []
+        final_mag_list = []
+
+        for i in range(len(mags_smoothed)):
+            final_mag = MIGRATION_SYS_SCALE * float(mags_smoothed[i])
+            final_signed = signs[i] * final_mag
+
+            final_signed_list.append([tmeans[i], final_signed])
+            final_mag_list.append([tmeans[i], final_mag])
+        #endfor
+
+        final_diffs_signed[name] = final_signed_list
+        final_diffs_mag[name] = final_mag_list
+    #endfor
+
+    return final_diffs_mag, final_diffs_signed
+#enddef
+
+
+def print_smoothing_and_scale_summary(raw_diffs_mag, final_diffs_mag):
+    info("Migration systematic treatment:")
+    info("  Raw migration differences are first converted to magnitudes |delta_raw|.")
+    info("  A weak 3-point smoothing filter is applied independently to each modulation and xB bin.")
+    info("  Interior smoothing: 0.25*left + 0.50*center + 0.25*right.")
+    info("  Edge smoothing: 0.75*edge + 0.25*nearest_neighbor.")
+    info("  The smoothed magnitudes are then multiplied by {:.3f}.".format(MIGRATION_SYS_SCALE))
+    info("  The exported signed delta keeps the original raw sign but uses the scaled/smoothed magnitude.")
+    info("  Raw audit series are also written as *_raw_delta, *_raw_abs, and *_raw_ratio.")
+
+    max_raw = 0.0
+    max_final = 0.0
+
+    for name in raw_diffs_mag:
+        for ent in raw_diffs_mag[name]:
+            max_raw = max(max_raw, abs(float(ent[1])))
+        #endfor
+    #endfor
+
+    for name in final_diffs_mag:
+        for ent in final_diffs_mag[name]:
+            max_final = max(max_final, abs(float(ent[1])))
+        #endfor
+    #endfor
+
+    info("  Maximum raw migration magnitude over all points: {:.9f}".format(max_raw))
+    info("  Maximum final scaled/smoothed magnitude over all points: {:.9f}".format(max_final))
+#enddef
+
+
+# ---------------------------------------------------------------------------
 # Migration calculation
 # ---------------------------------------------------------------------------
 
-def compute_migrated_values(weights, fit_map, renormalize, tol):
+def compute_raw_migrated_values(weights, fit_map, renormalize, tol):
     """
     For each target reconstructed bin b:
-      migrated(b) = sum_j w_bj * value(j)
+      raw_migrated(b) = sum_j w_bj * value(j)
 
     where:
       b = target reconstructed bin
       j = generated/source bin
 
-    Correction convention:
-      delta = migrated - original
-      corrected value = migrated
+    Raw correction convention:
+      raw_delta = raw_migrated - original
 
     Important:
       The tmean written to every output point is the canonical ALUsinphi tmean
       for that xB group and t index.
     """
-    migrated = {}
-    diffs_mag = {}
-    diffs_signed = {}
+    raw_migrated = {}
+    raw_diffs_mag = {}
+    raw_diffs_signed = {}
 
     for suffix in sf_suffixes():
         for xb_group_idx in range(4):
@@ -464,13 +671,54 @@ def compute_migrated_values(weights, fit_map, renormalize, tol):
                 diff_signed_list.append([tmean_canonical, delta_signed])
             #endfor
 
-            migrated[varname] = out_list
-            diffs_mag[varname] = diff_mag_list
-            diffs_signed[varname] = diff_signed_list
+            raw_migrated[varname] = out_list
+            raw_diffs_mag[varname] = diff_mag_list
+            raw_diffs_signed[varname] = diff_signed_list
         #endfor
     #endfor
 
-    return migrated, diffs_mag, diffs_signed
+    return raw_migrated, raw_diffs_mag, raw_diffs_signed
+#enddef
+
+
+def build_final_corrected_values(fit_map, final_diffs_signed):
+    """
+    Build corrected output values using:
+        corrected = original + final_delta
+
+    where final_delta is the signed scaled/smoothed migration effect.
+
+    Statistical uncertainties are kept unchanged from the original fit input.
+    """
+    corrected = {}
+
+    for g in xb_group_names():
+        canonical_tmeans = get_canonical_tmeans_for_group(fit_map, g)
+
+        for s in sf_suffixes():
+            name = g + s
+
+            if name not in final_diffs_signed:
+                fatal("Internal error: final_diffs_signed missing '{}'.".format(name))
+            #endif
+
+            out_list = []
+
+            for i in range(6):
+                tmean = float(canonical_tmeans[i])
+                original_val = float(fit_map[name][i][1])
+                stat = float(fit_map[name][i][2])
+                delta = float(final_diffs_signed[name][i][1])
+
+                corrected_val = original_val + delta
+                out_list.append([tmean, corrected_val, stat])
+            #endfor
+
+            corrected[name] = out_list
+        #endfor
+    #endfor
+
+    return corrected
 #enddef
 
 
@@ -514,30 +762,61 @@ def format_mathematica_list_pair(lst):
 #enddef
 
 
-def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signed, fit_map):
+def build_ratio_list(diff_signed, fit_map, name):
+    eps = 1.0e-15
+    ratio_list = []
+
+    for k in range(6):
+        tmean = float(diff_signed[name][k][0])
+        delta = float(diff_signed[name][k][1])
+        before_val = float(fit_map[name][k][1])
+
+        if abs(before_val) < eps:
+            fatal(
+                "Cannot compute signed ratio for {} at index {}: "
+                "baseline value is {:.17g}.".format(name, k, before_val)
+            )
+        #endif
+
+        ratio = delta / before_val
+        ratio_list.append([tmean, ratio])
+    #endfor
+
+    return ratio_list
+#enddef
+
+
+def write_output_files(
+    out_path,
+    out_diff_path,
+    corrected,
+    final_diffs_mag,
+    final_diffs_signed,
+    raw_diffs_mag,
+    raw_diffs_signed,
+    fit_map,
+):
     """
     Writes:
       - out_path:
-          migrated corrected triples
+          corrected triples using final signed scaled/smoothed delta
 
       - out_diff_path:
-          signed delta, absolute delta, signed ratio delta/original
+          final signed delta, final absolute systematic, final signed ratio
 
-    Naming convention:
-      var_delta
-      var_abs
-      var_ratio
+        and audit quantities:
+          raw signed delta, raw absolute delta, raw signed ratio
     """
     with open(out_path, "w") as f:
         for g in xb_group_names():
             for s in sf_suffixes():
                 name = g + s
 
-                if name not in migrated:
-                    fatal("Internal error: migrated missing variable '{}'.".format(name))
+                if name not in corrected:
+                    fatal("Internal error: corrected missing variable '{}'.".format(name))
                 #endif
 
-                rhs = format_mathematica_list_triple(migrated[name])
+                rhs = format_mathematica_list_triple(corrected[name])
                 f.write(name + " = " + rhs + ";\n")
             #endfor
 
@@ -545,51 +824,58 @@ def write_output_files(out_path, out_diff_path, migrated, diffs_mag, diffs_signe
         #endfor
     #endwith
 
-    eps = 1.0e-15
-
     with open(out_diff_path, "w") as f:
+        f.write("# Migration systematic treatment applied in this file:\n")
+        f.write("#   raw_delta = raw_migrated - original\n")
+        f.write("#   abs(raw_delta) is weakly smoothed versus -tprime within each xB bin and modulation\n")
+        f.write("#   final_abs = {:.9f} * smooth(abs(raw_delta))\n".format(MIGRATION_SYS_SCALE))
+        f.write("#   final_delta = sign(raw_delta) * final_abs\n")
+        f.write("#   *_delta, *_abs, *_ratio use the final scaled/smoothed values\n")
+        f.write("#   *_raw_delta, *_raw_abs, *_raw_ratio preserve unsmoothed/unscaled audit values\n\n")
+
         for g in xb_group_names():
             for s in sf_suffixes():
                 name = g + s
 
-                if name not in diffs_signed:
-                    fatal("Internal error: diffs_signed missing variable '{}'.".format(name))
+                if name not in final_diffs_signed:
+                    fatal("Internal error: final_diffs_signed missing variable '{}'.".format(name))
                 #endif
 
-                if name not in diffs_mag:
-                    fatal("Internal error: diffs_mag missing variable '{}'.".format(name))
+                if name not in final_diffs_mag:
+                    fatal("Internal error: final_diffs_mag missing variable '{}'.".format(name))
+                #endif
+
+                if name not in raw_diffs_signed:
+                    fatal("Internal error: raw_diffs_signed missing variable '{}'.".format(name))
+                #endif
+
+                if name not in raw_diffs_mag:
+                    fatal("Internal error: raw_diffs_mag missing variable '{}'.".format(name))
                 #endif
 
                 if name not in fit_map:
                     fatal("Internal error: fit_map missing variable '{}' for ratio.".format(name))
                 #endif
 
-                rhs_delta = format_mathematica_list_pair(diffs_signed[name])
+                rhs_delta = format_mathematica_list_pair(final_diffs_signed[name])
                 f.write(name + "_delta = " + rhs_delta + ";\n")
 
-                rhs_abs = format_mathematica_list_pair(diffs_mag[name])
+                rhs_abs = format_mathematica_list_pair(final_diffs_mag[name])
                 f.write(name + "_abs = " + rhs_abs + ";\n")
 
-                ratio_list = []
-
-                for k in range(6):
-                    tmean = float(diffs_signed[name][k][0])
-                    delta = float(diffs_signed[name][k][1])
-                    before_val = float(fit_map[name][k][1])
-
-                    if abs(before_val) < eps:
-                        fatal(
-                            "Cannot compute signed ratio for {} at index {}: "
-                            "baseline value is {:.17g}.".format(name, k, before_val)
-                        )
-                    #endif
-
-                    ratio = delta / before_val
-                    ratio_list.append([tmean, ratio])
-                #endfor
-
+                ratio_list = build_ratio_list(final_diffs_signed, fit_map, name)
                 rhs_ratio = format_mathematica_list_pair(ratio_list)
-                f.write(name + "_ratio = " + rhs_ratio + ";\n\n")
+                f.write(name + "_ratio = " + rhs_ratio + ";\n")
+
+                rhs_raw_delta = format_mathematica_list_pair(raw_diffs_signed[name])
+                f.write(name + "_raw_delta = " + rhs_raw_delta + ";\n")
+
+                rhs_raw_abs = format_mathematica_list_pair(raw_diffs_mag[name])
+                f.write(name + "_raw_abs = " + rhs_raw_abs + ";\n")
+
+                raw_ratio_list = build_ratio_list(raw_diffs_signed, fit_map, name)
+                rhs_raw_ratio = format_mathematica_list_pair(raw_ratio_list)
+                f.write(name + "_raw_ratio = " + rhs_raw_ratio + ";\n\n")
             #endfor
         #endfor
     #endwith
@@ -888,25 +1174,23 @@ def canonicalize_fit_map_tmeans(fit_map, required_varnames):
 #enddef
 
 
-def inject_migration_sys_for_plotting(fit_map, diffs_mag, required_varnames):
+def inject_migration_sys_for_plotting(fit_map, final_diffs_mag, required_varnames):
     """
-    Inject migration systematic magnitudes as:
-      <varname>Sys = {{canonical_tmean, |delta|}, ...}
-
-    The tmean values in diffs_mag already use ALUsinphi canonical tmeans.
+    Inject final scaled/smoothed migration systematic magnitudes as:
+      <varname>Sys = {{canonical_tmean, final_abs_delta}, ...}
     """
     out = dict(fit_map)
 
     for v in required_varnames:
-        if v not in diffs_mag:
-            fatal("Internal error: diffs_mag missing '{}' for sys injection.".format(v))
+        if v not in final_diffs_mag:
+            fatal("Internal error: final_diffs_mag missing '{}' for sys injection.".format(v))
         #endif
 
         sys_pairs = []
 
-        for ent in diffs_mag[v]:
+        for ent in final_diffs_mag[v]:
             if (not isinstance(ent, (list, tuple))) or (len(ent) != 2):
-                fatal("Internal error: diffs_mag['{}'] entry must be [tmean, sysmag].".format(v))
+                fatal("Internal error: final_diffs_mag['{}'] entry must be [tmean, sysmag].".format(v))
             #endif
 
             tmean = float(ent[0])
@@ -1089,7 +1373,8 @@ def save_polarized_structure_function_canvases(fit_map, out_dir, file_prefix):
 
 def save_migration_sys_canvases(fit_map, out_dir):
     """
-    Make 4 PDFs, one per xB group, showing only migration systematic magnitudes.
+    Make 4 PDFs, one per xB group, showing only final scaled/smoothed migration
+    systematic magnitudes.
 
     All x-values are taken from the ALUsinphi canonical x-axis in each group.
     """
@@ -1257,6 +1542,23 @@ def main():
     out_path = os.path.join(out_dir, args.fit_out_name)
     out_diff_path = os.path.join(out_dir, out_diff_name)
 
+    info("Starting bin-migration systematic calculation.")
+    info("Input migration CSV: {}".format(args.migration_csv))
+    info("Input fit-results file: {}".format(args.fit_txt))
+    info("Output migrated/corrected file: {}".format(out_path))
+    info("Output diff/systematics file: {}".format(out_diff_path))
+
+    warn("Reviewer-coordinated migration systematic scale factor is active: {:.3f}".format(MIGRATION_SYS_SCALE))
+
+    if SMOOTHING_ENABLED:
+        warn("Weak smoothing of migration systematic magnitudes is active.")
+        warn("Smoothing is applied to |raw_delta| versus -tprime for each modulation in each xB bin.")
+        warn("Interior kernel: 0.25*left + 0.50*center + 0.25*right.")
+        warn("Edge kernel: 0.75*edge + 0.25*nearest_neighbor.")
+    else:
+        warn("Smoothing is disabled.")
+    #endif
+
     weights, meta = read_migration_csv(args.migration_csv)
 
     fit_map_original = parse_fit_results_text(args.fit_txt)
@@ -1265,27 +1567,44 @@ def main():
 
     fit_map_canonical = canonicalize_fit_map_tmeans(fit_map_original, required)
 
-    migrated, diffs_mag, diffs_signed = compute_migrated_values(
+    raw_migrated, raw_diffs_mag, raw_diffs_signed = compute_raw_migrated_values(
         weights=weights,
         fit_map=fit_map_canonical,
         renormalize=args.renormalize,
         tol=args.tol,
     )
 
+    final_diffs_mag, final_diffs_signed = apply_smoothing_and_scale_to_diffs(
+        raw_diffs_signed=raw_diffs_signed,
+        raw_diffs_mag=raw_diffs_mag,
+    )
+
+    print_smoothing_and_scale_summary(
+        raw_diffs_mag=raw_diffs_mag,
+        final_diffs_mag=final_diffs_mag,
+    )
+
+    corrected = build_final_corrected_values(
+        fit_map=fit_map_canonical,
+        final_diffs_signed=final_diffs_signed,
+    )
+
     write_output_files(
         out_path=out_path,
         out_diff_path=out_diff_path,
-        migrated=migrated,
-        diffs_mag=diffs_mag,
-        diffs_signed=diffs_signed,
+        corrected=corrected,
+        final_diffs_mag=final_diffs_mag,
+        final_diffs_signed=final_diffs_signed,
+        raw_diffs_mag=raw_diffs_mag,
+        raw_diffs_signed=raw_diffs_signed,
         fit_map=fit_map_canonical,
     )
 
-    sys.stdout.write("Wrote migrated fit file: {}\n".format(out_path))
-    sys.stdout.write("Wrote difference file:   {}\n".format(out_diff_path))
+    sys.stdout.write("Wrote migrated/corrected fit file: {}\n".format(out_path))
+    sys.stdout.write("Wrote difference/systematics file: {}\n".format(out_diff_path))
 
-    baseline_for_plots = inject_migration_sys_for_plotting(fit_map_canonical, diffs_mag, required)
-    migrated_for_plots = inject_migration_sys_for_plotting(migrated, diffs_mag, required)
+    baseline_for_plots = inject_migration_sys_for_plotting(fit_map_canonical, final_diffs_mag, required)
+    corrected_for_plots = inject_migration_sys_for_plotting(corrected, final_diffs_mag, required)
 
     save_polarized_structure_function_canvases(
         baseline_for_plots,
@@ -1294,7 +1613,7 @@ def main():
     )
 
     save_polarized_structure_function_canvases(
-        migrated_for_plots,
+        corrected_for_plots,
         out_dir,
         file_prefix="polarized_structure_functions_migrated",
     )
@@ -1302,11 +1621,17 @@ def main():
     save_migration_sys_canvases(baseline_for_plots, out_dir)
 
     sys.stdout.write("\nSign convention reminder:\n")
-    sys.stdout.write("  delta = migrated - original\n")
-    sys.stdout.write("  corrected value written to migrated fit file is the migrated value.\n")
-    sys.stdout.write("  delta > 0 shifts asymmetry upward, numerically larger.\n")
-    sys.stdout.write("\n")
-    sys.stdout.write("tmean convention reminder:\n")
+    sys.stdout.write("  raw_delta = raw_migrated - original\n")
+    sys.stdout.write("  final_abs = {:.3f} * smooth(abs(raw_delta))\n".format(MIGRATION_SYS_SCALE))
+    sys.stdout.write("  final_delta = sign(raw_delta) * final_abs\n")
+    sys.stdout.write("  corrected value written to migrated/corrected file is original + final_delta.\n")
+    sys.stdout.write("  final_delta > 0 shifts asymmetry upward, numerically larger.\n")
+
+    sys.stdout.write("\nAudit reminder:\n")
+    sys.stdout.write("  *_delta, *_abs, *_ratio use scaled/smoothed migration systematics.\n")
+    sys.stdout.write("  *_raw_delta, *_raw_abs, *_raw_ratio preserve the unsmoothed/unscaled matrix result.\n")
+
+    sys.stdout.write("\ntmean convention reminder:\n")
     sys.stdout.write("  All output tmean values use the ALUsinphi tmean values for the corresponding xB group.\n")
 #enddef
 
