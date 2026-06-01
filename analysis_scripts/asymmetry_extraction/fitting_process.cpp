@@ -3534,8 +3534,8 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   const double varMax = allBins[currentFits][binIndex + 1];
 
   // φ-binning
-  // const int nPhiBins = 18;
-  const int nPhiBins = 9;
+  const int nPhiBins = 18;
+  // const int nPhiBins = 9;
   const double phiMin = 0.0;
   const double phiMax = 2.0*TMath::Pi();
 
@@ -4180,8 +4180,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.001,  -1.0,  1.0);
     minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.001,  -1.0,  1.0);
     minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.001,  -1.0,  1.0);
-    // minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
-    // minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1.0,  1.0);
     // minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.01,  -1.0,  1.0);
     // minuit.DefineParameter(10, "A_T_LL",          0.00,  0.01,  -1.0,  1.0);
     // minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.00,  -1.0,  1.0);
