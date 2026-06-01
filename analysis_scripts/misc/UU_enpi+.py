@@ -121,18 +121,19 @@ def compute_two_file_pulls(y_fixed, dy_fixed, y_free, dy_free):
     return pulls
 
 
-def compute_three_file_pulls(arrays):
+def compute_three_file_weighted_consistency(arrays):
     """
-    Compute pulls for the three-file run-period comparison mode.
+    Compute the weighted-mean consistency test for the three-file run-period mode.
 
-    The point-by-point reference is the simple arithmetic mean of the three
-    fitted values:
+    For each point i:
 
-      mean_i = (y_i,Su22 + y_i,Fa22 + y_i,Sp23) / 3
+      ybar_i = sum_r y_i,r / sigma_i,r^2 / sum_r 1 / sigma_i,r^2
 
-    The pull for each run period is:
+      pull_i,r = (y_i,r - ybar_i) / sigma_i,r
 
-      pull_i,r = (y_i,r - mean_i) / sigma_i,r
+      chi2_i = sum_r (y_i,r - ybar_i)^2 / sigma_i,r^2
+
+    For three run periods, ndf_i = 3 - 1 = 2 per point.
 
     Parameters
     ----------
@@ -143,25 +144,100 @@ def compute_three_file_pulls(arrays):
     -------
     pulls_by_period : list of numpy arrays
         One pull array per run period.
-    mean_values : numpy array
-        The point-by-point mean fitted value.
+
+    weighted_mean_values : numpy array
+        The point-by-point weighted mean fitted value.
+
+    weighted_mean_errors : numpy array
+        The point-by-point uncertainty on the weighted mean.
+
+    chi2_by_point : numpy array
+        The point-by-point chi2 values.
+
+    total_chi2 : float
+        Sum of point-by-point chi2 values.
+
+    total_ndf : int
+        Total number of degrees of freedom.
+
+    reduced_chi2 : float
+        total_chi2 / total_ndf.
     """
+
+    n_periods = len(arrays)
+    n_points = arrays[0].shape[0]
 
     y_values = np.vstack([arr[:, 1] for arr in arrays])
     dy_values = np.vstack([arr[:, 2] for arr in arrays])
 
-    mean_values = np.mean(y_values, axis=0)
+    weighted_mean_values = np.full(n_points, np.nan, dtype=float)
+    weighted_mean_errors = np.full(n_points, np.nan, dtype=float)
+    chi2_by_point = np.full(n_points, np.nan, dtype=float)
 
     pulls_by_period = []
-
-    for i_period in range(len(arrays)):
-        pulls = np.full(24, np.nan, dtype=float)
-        good = dy_values[i_period, :] > 0.0
-        pulls[good] = (y_values[i_period, good] - mean_values[good]) / dy_values[i_period, good]
-        pulls_by_period.append(pulls)
+    for i_period in range(n_periods):
+        pulls_by_period.append(np.full(n_points, np.nan, dtype=float))
     #endfor
 
-    return pulls_by_period, mean_values
+    total_chi2 = 0.0
+    total_ndf = 0
+
+    for i_point in range(n_points):
+        sigmas = dy_values[:, i_point]
+        values = y_values[:, i_point]
+
+        good = sigmas > 0.0
+        n_good = np.count_nonzero(good)
+
+        if n_good < 2:
+            continue
+        #endif
+
+        weights = np.zeros(n_periods, dtype=float)
+        weights[good] = 1.0 / (sigmas[good] * sigmas[good])
+
+        weight_sum = np.sum(weights)
+
+        if weight_sum <= 0.0:
+            continue
+        #endif
+
+        weighted_mean = np.sum(weights * values) / weight_sum
+        weighted_mean_error = np.sqrt(1.0 / weight_sum)
+
+        weighted_mean_values[i_point] = weighted_mean
+        weighted_mean_errors[i_point] = weighted_mean_error
+
+        chi2 = 0.0
+
+        for i_period in range(n_periods):
+            if not good[i_period]:
+                continue
+            #endif
+
+            pull = (values[i_period] - weighted_mean) / sigmas[i_period]
+            pulls_by_period[i_period][i_point] = pull
+            chi2 += pull * pull
+        #endfor
+
+        ndf = n_good - 1
+
+        chi2_by_point[i_point] = chi2
+        total_chi2 += chi2
+        total_ndf += ndf
+    #endfor
+
+    reduced_chi2 = total_chi2 / total_ndf if total_ndf > 0 else np.nan
+
+    return (
+        pulls_by_period,
+        weighted_mean_values,
+        weighted_mean_errors,
+        chi2_by_point,
+        total_chi2,
+        total_ndf,
+        reduced_chi2,
+    )
 
 
 def summarize_pulls(pulls):
@@ -220,16 +296,36 @@ def print_two_file_pull_summary(modulation, pulls):
     print(f"  sigma pull             = {stats['sigma']:.6f}")
 
 
-def print_three_file_pull_summary(modulation, labels, pulls_by_period):
+def print_three_file_consistency_summary(
+    modulation,
+    labels,
+    pulls_by_period,
+    chi2_by_point,
+    total_chi2,
+    total_ndf,
+    reduced_chi2,
+):
     """
-    Print pull summaries for each run period with respect to the point-by-point
-    mean of the three run periods.
+    Print weighted-mean chi2/ndf and pull summaries for each run period.
     """
+
+    finite_chi2 = chi2_by_point[np.isfinite(chi2_by_point)]
 
     print("")
     print(f"{modulation}")
     print("-" * len(modulation))
-    print("  comparison             = each run period - point-by-point mean of three")
+    print("  comparison             = weighted-mean consistency of Su22/Fa22/Sp23")
+    print(f"  number of points       = {finite_chi2.size:d}")
+    print(f"  total chi2             = {total_chi2:.6f}")
+    print(f"  total ndf              = {total_ndf:d}")
+    print(f"  chi2/ndf               = {reduced_chi2:.6f}")
+
+    if finite_chi2.size > 0:
+        print(f"  mean point chi2        = {np.mean(finite_chi2):.6f}")
+        print(f"  median point chi2      = {np.median(finite_chi2):.6f}")
+        print(f"  max point chi2         = {np.max(finite_chi2):.6f}")
+        print(f"  max point index        = {np.argmax(chi2_by_point) + 1:d}")
+    #endif
 
     for label, pulls in zip(labels, pulls_by_period):
         stats = summarize_pulls(pulls)
@@ -240,7 +336,7 @@ def print_three_file_pull_summary(modulation, labels, pulls_by_period):
         #endif
 
         print(f"  {label}")
-        print(f"    number of points     = {stats['n']:d}")
+        print(f"    number of pulls      = {stats['n']:d}")
         print(f"    mean pull            = {stats['mean']:.6f}")
         print(f"    median pull          = {stats['median']:.6f}")
         print(f"    mean |pull|          = {stats['mean_abs']:.6f}")
@@ -396,15 +492,25 @@ def make_three_file_comparison_plot(
     Make a two-panel comparison plot for one modulation in three-run-period mode.
 
     Top panel:
-      Su22, Fa22, Sp23 fitted values.
+      Su22, Fa22, Sp23 fitted values and the point-by-point weighted mean.
 
     Bottom panel:
-      Pulls with respect to the point-by-point mean of the three fitted values.
+      Pulls with respect to the point-by-point weighted mean.
+
+    The console output also prints the total chi2/ndf over all 24 points.
     """
 
     point_index = np.arange(1, 25)
 
-    pulls_by_period, mean_values = compute_three_file_pulls(arrays)
+    (
+        pulls_by_period,
+        weighted_mean_values,
+        weighted_mean_errors,
+        chi2_by_point,
+        total_chi2,
+        total_ndf,
+        reduced_chi2,
+    ) = compute_three_file_weighted_consistency(arrays)
 
     fig, (ax_top, ax_pull) = plt.subplots(
         2,
@@ -433,6 +539,18 @@ def make_three_file_comparison_plot(
         )
     #endfor
 
+    ax_top.errorbar(
+        point_index,
+        weighted_mean_values,
+        yerr=weighted_mean_errors,
+        fmt="x",
+        markersize=4,
+        capsize=2,
+        linewidth=1,
+        linestyle="--",
+        label="weighted mean",
+    )
+
     for pulls, label, marker_style in zip(pulls_by_period, labels, marker_styles):
         ax_pull.plot(
             point_index,
@@ -444,18 +562,20 @@ def make_three_file_comparison_plot(
         )
     #endfor
 
-    ax_top.plot(
-        point_index,
-        mean_values,
-        linestyle="--",
-        linewidth=1,
-        label="mean",
-    )
-
     ax_top.set_ylabel(modulation_label(modulation), fontsize=14)
     ax_top.set_title(
         f"Exclusive $e p \\rightarrow e n \\pi^+$ run-period comparison: {modulation_label(modulation)}",
         fontsize=15,
+    )
+
+    ax_top.text(
+        0.02,
+        0.04,
+        rf"$\chi^2/\mathrm{{ndf}}={reduced_chi2:.3f}$",
+        transform=ax_top.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=12,
     )
 
     add_common_formatting(ax_top, ax_pull)
@@ -467,7 +587,16 @@ def make_three_file_comparison_plot(
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
 
-    print_three_file_pull_summary(modulation, labels, pulls_by_period)
+    print_three_file_consistency_summary(
+        modulation=modulation,
+        labels=labels,
+        pulls_by_period=pulls_by_period,
+        chi2_by_point=chi2_by_point,
+        total_chi2=total_chi2,
+        total_ndf=total_ndf,
+        reduced_chi2=reduced_chi2,
+    )
+
     print(f"  saved plot             = {output_path}")
 
 
@@ -539,7 +668,8 @@ def main():
         description=(
             "Compare fit-parameter text files. "
             "With two files, the script compares AUU fixed vs AUU free. "
-            "With three files, the script compares Su22, Fa22, and Sp23."
+            "With three files, the script compares Su22, Fa22, and Sp23 "
+            "using a weighted-mean chi2/ndf consistency test."
         )
     )
 
