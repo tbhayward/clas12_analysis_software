@@ -41,7 +41,7 @@ def constant_fit(y_values, y_errors):
     good = y_errors > 0.0
 
     if np.count_nonzero(good) < 2:
-        return np.nan, np.nan, np.nan, 0
+        return np.nan, np.nan
     #endif
 
     weights = np.zeros_like(y_values, dtype=float)
@@ -50,17 +50,13 @@ def constant_fit(y_values, y_errors):
     weight_sum = np.sum(weights)
 
     if weight_sum <= 0.0:
-        return np.nan, np.nan, np.nan, 0
+        return np.nan, np.nan
     #endif
 
     fit_value = np.sum(weights * y_values) / weight_sum
     fit_error = np.sqrt(1.0 / weight_sum)
 
-    chi2 = np.sum(((y_values[good] - fit_value) / y_errors[good]) ** 2)
-    ndf = np.count_nonzero(good) - 1
-    chi2_ndf = chi2 / ndf if ndf > 0 else np.nan
-
-    return fit_value, fit_error, chi2_ndf, ndf
+    return fit_value, fit_error
 
 
 def make_vz_e_modulation_plot():
@@ -111,10 +107,13 @@ def make_vz_e_modulation_plot():
         2,
         3,
         figsize=(15.0, 8.0),
-        sharex=True,
+        sharex=False,
     )
 
     axes_flat = axes.flatten()
+
+    x_tick_values = data["ALUsinphi"][:, 0]
+    x_tick_labels = [f"{x:.1f}" for x in x_tick_values]
 
     for i_mod, modulation in enumerate(modulations):
         ax = axes_flat[i_mod]
@@ -124,7 +123,7 @@ def make_vz_e_modulation_plot():
         asymmetry = arr[:, 1]
         asymmetry_err = arr[:, 2]
 
-        fit_value, fit_error, chi2_ndf, ndf = constant_fit(asymmetry, asymmetry_err)
+        fit_value, fit_error = constant_fit(asymmetry, asymmetry_err)
 
         ax.errorbar(
             vz_e,
@@ -145,7 +144,7 @@ def make_vz_e_modulation_plot():
                 linestyle="--",
                 linewidth=1,
                 color="black",
-                label=rf"const. fit, $\chi^2/\mathrm{{ndf}}={chi2_ndf:.2f}$",
+                label="constant fit",
             )
         #endif
 
@@ -156,6 +155,10 @@ def make_vz_e_modulation_plot():
         ax.set_xlabel(r"$v_{z}^{e}$ (cm)", fontsize=13)
         ax.set_ylabel("asymmetry", fontsize=13)
         ax.set_ylim(*y_axis_range(modulation))
+
+        ax.set_xticks(x_tick_values)
+        ax.set_xticklabels(x_tick_labels, fontsize=11)
+
         ax.legend(loc="best", fontsize=10, frameon=True)
     #endfor
 
