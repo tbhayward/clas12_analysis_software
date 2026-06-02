@@ -17,6 +17,52 @@ def modulation_label(modulation):
     return labels[modulation]
 
 
+def y_axis_range(modulation):
+    if modulation in ["ALUsinphi", "AULsinphi"]:
+        return 0.0, 0.2
+    #endif
+
+    if modulation == "AULsin2phi":
+        return -0.2, 0.0
+    #endif
+
+    if modulation == "ALL":
+        return 0.5, 0.7
+    #endif
+
+    if modulation == "ALLcosphi":
+        return 0.0, 0.3
+    #endif
+
+    raise ValueError(f"Unknown modulation: {modulation}")
+
+
+def constant_fit(y_values, y_errors):
+    good = y_errors > 0.0
+
+    if np.count_nonzero(good) < 2:
+        return np.nan, np.nan, np.nan, 0
+    #endif
+
+    weights = np.zeros_like(y_values, dtype=float)
+    weights[good] = 1.0 / (y_errors[good] * y_errors[good])
+
+    weight_sum = np.sum(weights)
+
+    if weight_sum <= 0.0:
+        return np.nan, np.nan, np.nan, 0
+    #endif
+
+    fit_value = np.sum(weights * y_values) / weight_sum
+    fit_error = np.sqrt(1.0 / weight_sum)
+
+    chi2 = np.sum(((y_values[good] - fit_value) / y_errors[good]) ** 2)
+    ndf = np.count_nonzero(good) - 1
+    chi2_ndf = chi2 / ndf if ndf > 0 else np.nan
+
+    return fit_value, fit_error, chi2_ndf, ndf
+
+
 def make_vz_e_modulation_plot():
     output_path = "output/vz_e_modulations.png"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -78,6 +124,8 @@ def make_vz_e_modulation_plot():
         asymmetry = arr[:, 1]
         asymmetry_err = arr[:, 2]
 
+        fit_value, fit_error, chi2_ndf, ndf = constant_fit(asymmetry, asymmetry_err)
+
         ax.errorbar(
             vz_e,
             asymmetry,
@@ -88,22 +136,27 @@ def make_vz_e_modulation_plot():
             linewidth=1,
         )
 
-        ax.axhline(0.0, linestyle="--", linewidth=1)
+        if np.isfinite(fit_value):
+            x_fit = np.array([np.min(vz_e), np.max(vz_e)], dtype=float)
+
+            ax.plot(
+                x_fit,
+                np.full_like(x_fit, fit_value),
+                linestyle="--",
+                linewidth=1,
+                color="black",
+                label=rf"const. fit, $\chi^2/\mathrm{{ndf}}={chi2_ndf:.2f}$",
+            )
+        #endif
+
+        ax.axhline(0.0, linestyle=":", linewidth=1)
         ax.grid(True, alpha=0.3)
 
         ax.set_title(modulation_label(modulation), fontsize=15)
         ax.set_xlabel(r"$v_{z}^{e}$ (cm)", fontsize=13)
         ax.set_ylabel("asymmetry", fontsize=13)
-
-        y_min = np.min(asymmetry - asymmetry_err)
-        y_max = np.max(asymmetry + asymmetry_err)
-        y_pad = 0.20 * (y_max - y_min)
-
-        if y_pad <= 0.0:
-            y_pad = 0.01
-        #endif
-
-        ax.set_ylim(y_min - y_pad, y_max + y_pad)
+        ax.set_ylim(*y_axis_range(modulation))
+        ax.legend(loc="best", fontsize=10, frameon=True)
     #endfor
 
     axes_flat[5].axis("off")
