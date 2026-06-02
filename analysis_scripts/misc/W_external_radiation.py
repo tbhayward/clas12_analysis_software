@@ -150,11 +150,11 @@ def main():
     ])
 
     fig, (ax_overlay, ax_ratio, ax_corr) = plt.subplots(
-        nrows=3,
-        ncols=1,
-        figsize=(12, 15),
+        nrows=1,
+        ncols=3,
+        figsize=(24, 7),
         sharex=False,
-        gridspec_kw={"height_ratios": [1.0, 1.0, 1.15], "hspace": 0.28}
+        gridspec_kw={"width_ratios": [1.0, 1.0, 1.1], "wspace": 0.28}
     )
 
     for i in range(len(normalized_histograms)):
@@ -168,11 +168,12 @@ def main():
     #endfor
 
     ax_overlay.set_xlim(W_min, W_max)
+    ax_overlay.set_xlabel("W (GeV)")
     ax_overlay.set_ylabel("Counts normalized in 2.0 < W < 2.5")
     ax_overlay.set_title("W distributions in bins of vz_e")
     ax_overlay.tick_params(direction="in", top=True, right=True)
     ax_overlay.grid(alpha=0.25)
-    ax_overlay.legend(fontsize=8, ncol=2, frameon=False)
+    ax_overlay.legend(fontsize=8, ncol=1, frameon=False)
 
     for i in range(len(ratios)):
         ax_ratio.step(
