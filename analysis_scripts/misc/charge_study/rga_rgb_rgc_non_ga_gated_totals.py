@@ -10,7 +10,7 @@ INPUT_CSV = "non_qa_gated_totals.csv"
 OUTPUT_PNG = "output/rga_rgb_rgc_non_gated_totals.png"
 OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
 
-RUN_OUTLIER_SIGMA_THRESHOLD = 3.0
+RUN_OUTLIER_SIGMA_THRESHOLD = 5.0
 
 # If the gap between adjacent run periods is larger than this,
 # compress the empty space down to this size on the plot.
@@ -140,37 +140,6 @@ def write_sorted_period_charge_file(periods, output_path):
     #endwith
 
 
-def mean_and_std(values):
-    """
-    Compute the ordinary equal-run-weighted mean and standard deviation.
-
-    The standard deviation here uses the population convention:
-
-        std = sqrt(mean((x - mean)^2))
-
-    This matches the previous RMS-style convention used in the script.
-    """
-
-    arr = np.asarray(values, dtype=float)
-    arr = arr[np.isfinite(arr)]
-
-    n = len(arr)
-
-    if n == 0:
-        return np.nan, np.nan, 0
-    #endif
-
-    mean_value = float(np.mean(arr))
-
-    if n > 1:
-        std_value = float(np.sqrt(np.mean((arr - mean_value) ** 2)))
-    else:
-        std_value = 0.0
-    #endif
-
-    return mean_value, std_value, n
-
-
 def constant_fit(values):
     """
     Constant fit for unweighted points.
@@ -209,23 +178,49 @@ def constant_fit(values):
     return mean, err, rms, n
 
 
-def find_run_outliers_mean_std(
+def robust_sigma_from_mad(values):
+    """
+    Estimate a robust sigma using the median absolute deviation.
+
+        sigma ~= 1.4826 * median(|x - median(x)|)
+
+    For Gaussian-distributed data, this estimates the ordinary standard deviation.
+    """
+
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+
+    if len(arr) == 0:
+        return np.nan, np.nan
+    #endif
+
+    median_value = float(np.median(arr))
+    mad_value = float(np.median(np.abs(arr - median_value)))
+
+    robust_sigma = 1.4826 * mad_value
+
+    return median_value, robust_sigma
+
+
+def find_run_outliers_iterative_robust(
     rows,
     runnums,
     percent_differences,
     sigma_threshold,
 ):
     """
-    Identify individual run-level outliers inside one period using one ordinary
-    mean and one ordinary standard deviation.
+    Identify individual run-level outliers inside one period using iterative
+    robust median/MAD clipping.
 
     Procedure:
-      1. Treat each finite run equally.
-      2. Compute the period mean and standard deviation using all finite runs.
-      3. Mark runs with |value - mean| > sigma_threshold * std as outliers.
-      4. Return a mask that excludes those outliers.
+      1. Start with all finite points in the period.
+      2. Compute the median percent difference.
+      3. Compute robust_sigma = 1.4826 * MAD.
+      4. Remove points farther than sigma_threshold * robust_sigma.
+      5. Repeat until no additional points are removed.
 
-    The period fit line is later computed from the remaining non-outlier runs.
+    This avoids having extreme runs define the average and width used to find
+    other extreme runs.
     """
 
     runnums = np.asarray(runnums, dtype=float)
@@ -233,41 +228,54 @@ def find_run_outliers_mean_std(
 
     finite_mask = np.isfinite(values)
     keep_mask = finite_mask.copy()
+
     outlier_info = []
+    iteration = 0
 
-    finite_values = values[finite_mask]
+    while True:
+        iteration += 1
 
-    if len(finite_values) < 2:
-        return keep_mask, outlier_info, np.nan, np.nan
-    #endif
+        current_values = values[keep_mask]
 
-    initial_mean, initial_std, n_finite = mean_and_std(finite_values)
+        if len(current_values) < 3:
+            break
+        #endif
 
-    if not np.isfinite(initial_std) or initial_std == 0.0:
-        return keep_mask, outlier_info, initial_mean, initial_std
-    #endif
+        median_value, robust_sigma = robust_sigma_from_mad(current_values)
 
-    z_values = (values - initial_mean) / initial_std
-    outlier_mask = finite_mask & (np.abs(z_values) > sigma_threshold)
-    outlier_indices = np.where(outlier_mask)[0]
+        if not np.isfinite(robust_sigma) or robust_sigma == 0.0:
+            break
+        #endif
 
-    for idx in outlier_indices:
-        keep_mask[idx] = False
+        current_indices = np.where(keep_mask)[0]
+        z_values_current = (values[current_indices] - median_value) / robust_sigma
+        bad_local = np.abs(z_values_current) > sigma_threshold
 
-        outlier_info.append(
-            {
-                "runnum": int(runnums[idx]),
-                "run_scaler": float(rows[idx]["run_scaler"]),
-                "hel_sum": float(rows[idx]["hel_sum"]),
-                "percent_difference": float(values[idx]),
-                "initial_mean": initial_mean,
-                "initial_std": initial_std,
-                "z_value": float(z_values[idx]),
-            }
-        )
-    #endfor
+        if not np.any(bad_local):
+            break
+        #endif
 
-    return keep_mask, outlier_info, initial_mean, initial_std
+        bad_indices = current_indices[bad_local]
+
+        for idx in bad_indices:
+            keep_mask[idx] = False
+
+            outlier_info.append(
+                {
+                    "iteration": iteration,
+                    "runnum": int(runnums[idx]),
+                    "run_scaler": float(rows[idx]["run_scaler"]),
+                    "hel_sum": float(rows[idx]["hel_sum"]),
+                    "percent_difference": float(values[idx]),
+                    "median_used": median_value,
+                    "robust_sigma_used": robust_sigma,
+                    "z_value": float((values[idx] - median_value) / robust_sigma),
+                }
+            )
+        #endfor
+    #endwhile
+
+    return keep_mask, outlier_info
 
 
 def build_compressed_x_mapping(period_fit_info, max_empty_gap_to_keep):
@@ -454,10 +462,16 @@ def main():
     print("Run-level outlier search:")
     print(
         f"  Outlier definition inside each period: "
-        f"|percent difference - period mean| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f} * period std"
+        f"|robust median/MAD z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}"
     )
-    print("  The initial period mean and std are computed with each finite run weighted equally.")
-    print("  The reported constant fit is then recomputed after removing those outlier runs.")
+    print(
+        "  z_i = (run_i percent difference - median of current kept runs) "
+        "/ (1.4826 * MAD of current kept runs)"
+    )
+    print()
+    print("Percent difference definition:")
+    print("  100 * (HEL sum - RUN::Scaler) / RUN::Scaler")
+    print("  HEL sum = HEL+ + HEL- + HEL(unassigned)")
 
     any_run_outliers = False
 
@@ -475,7 +489,7 @@ def main():
             dtype=float,
         )
 
-        keep_mask, outlier_info, initial_mean, initial_std = find_run_outliers_mean_std(
+        keep_mask, outlier_info = find_run_outliers_iterative_robust(
             rows,
             runnums,
             percent_differences,
@@ -487,23 +501,25 @@ def main():
             print()
             print(f"Outlier runs removed from period average for {period_name}:")
             print(
+                f"{'iter':>4} "
                 f"{'runnum':>8} "
                 f"{'RUN::Scaler [nC]':>18} "
                 f"{'HEL sum [nC]':>18} "
                 f"{'percent_diff [%]':>18} "
-                f"{'initial mean [%]':>18} "
-                f"{'initial std [%]':>17} "
+                f"{'median [%]':>14} "
+                f"{'robust sigma [%]':>18} "
                 f"{'z':>12}"
             )
 
             for item in outlier_info:
                 print(
+                    f"{item['iteration']:>4d} "
                     f"{item['runnum']:>8d} "
                     f"{item['run_scaler']:>18.6f} "
                     f"{item['hel_sum']:>18.6f} "
                     f"{item['percent_difference']:>18.7f} "
-                    f"{item['initial_mean']:>18.7f} "
-                    f"{item['initial_std']:>17.7f} "
+                    f"{item['median_used']:>14.7f} "
+                    f"{item['robust_sigma_used']:>18.7f} "
                     f"{item['z_value']:>12.3f}"
                 )
             #endfor
@@ -522,8 +538,6 @@ def main():
                 "n_fit": n_fit,
                 "n_total_finite": int(np.sum(np.isfinite(percent_differences))),
                 "n_run_outliers": len(outlier_info),
-                "initial_mean": initial_mean,
-                "initial_std": initial_std,
                 "rows": rows,
                 "runnums": runnums,
                 "percent_differences": percent_differences,
@@ -537,7 +551,7 @@ def main():
         print()
         print(
             f"No individual run-level outliers found using "
-            f"{RUN_OUTLIER_SIGMA_THRESHOLD:.1f} sigma from the initial period mean."
+            f"|robust z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}."
         )
     #endif
 
@@ -567,20 +581,17 @@ def main():
     print("Constant fits to percent difference after removing run-level outliers:")
     print("  percent difference = 100 * (sum(HEL::Scaler) - RUN::Scaler) / RUN::Scaler")
     print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
-    print("  outlier definition: |percent difference - initial mean| > 3 * initial std")
-    print("-" * 138)
+    print("-" * 104)
     print(
         f"{'Period':<20} "
         f"{'N used':>8} "
         f"{'N total':>8} "
         f"{'N out':>7} "
-        f"{'initial mean [%]':>18} "
-        f"{'initial std [%]':>17} "
         f"{'constant [%]':>16} "
         f"{'err [%]':>14} "
         f"{'RMS [%]':>14}"
     )
-    print("-" * 138)
+    print("-" * 104)
 
     for item in period_fit_info:
         print(
@@ -588,15 +599,13 @@ def main():
             f"{item['n_fit']:>8d} "
             f"{item['n_total_finite']:>8d} "
             f"{item['n_run_outliers']:>7d} "
-            f"{item['initial_mean']:>18.7f} "
-            f"{item['initial_std']:>17.7f} "
             f"{item['fit_value']:>16.7f} "
             f"{item['fit_err']:>14.7f} "
             f"{item['fit_rms']:>14.7f}"
         )
     #endfor
 
-    print("-" * 138)
+    print("-" * 104)
     print()
     print("Overall average of period constants after run-level outlier removal:")
     print(f"  average = {overall_period_average:.7f}%")
