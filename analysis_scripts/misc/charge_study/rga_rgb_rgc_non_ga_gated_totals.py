@@ -13,7 +13,7 @@ OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
 # Options:
 #   "RUN" -> percent_difference = 100 * (HEL - RUN) / RUN
 #   "HEL" -> percent_difference = 100 * (HEL - RUN) / HEL
-PERCENT_DIFFERENCE_DENOMINATOR = "RUN"
+PERCENT_DIFFERENCE_DENOMINATOR = "HEL"
 
 RUN_OUTLIER_SIGMA_THRESHOLD = 5.0
 
