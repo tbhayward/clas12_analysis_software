@@ -16,6 +16,10 @@ RUN_OUTLIER_SIGMA_THRESHOLD = 5.0
 # compress the empty space down to this size on the plot.
 MAX_EMPTY_GAP_TO_KEEP = 350.0
 
+# Minimum horizontal separation between x tick labels in compressed coordinates.
+# Increase this if x labels still overlap.
+MIN_XTICK_SEPARATION = 180.0
+
 
 def read_period_charge_file(path):
     """
@@ -174,16 +178,52 @@ def constant_fit(values):
     return mean, err, rms, n
 
 
-def find_run_outliers_leave_one_out(runnums, percent_differences, sigma_threshold):
+def robust_sigma_from_mad(values):
     """
-    Identify individual run-level outliers inside one period.
+    Estimate a robust sigma using the median absolute deviation.
 
-    For each run i, compare its percent difference y_i against the mean and RMS
-    of all other runs in the same period:
+        sigma ~= 1.4826 * median(|x - median(x)|)
 
-        z_i = (y_i - mean_others) / RMS_others
+    For Gaussian-distributed data, this estimates the ordinary standard deviation.
+    """
 
-    If |z_i| > sigma_threshold, the run is flagged as an outlier.
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+
+    if len(arr) == 0:
+        return np.nan, np.nan
+    #endif
+
+    median_value = float(np.median(arr))
+    mad_value = float(np.median(np.abs(arr - median_value)))
+
+    robust_sigma = 1.4826 * mad_value
+
+    return median_value, robust_sigma
+
+
+def find_run_outliers_iterative_robust(
+    rows,
+    runnums,
+    percent_differences,
+    sigma_threshold,
+):
+    """
+    Identify individual run-level outliers inside one period using iterative
+    robust median/MAD clipping.
+
+    This is better than one-pass mean/RMS clipping when there are large tails,
+    because a few pathological runs can inflate the RMS and hide other bad runs.
+
+    A run is removed if:
+
+        |percent_difference - median| / robust_sigma > sigma_threshold
+
+    where:
+
+        robust_sigma = 1.4826 * median_absolute_deviation
+
+    The clipping repeats until no new runs are removed.
     """
 
     runnums = np.asarray(runnums, dtype=float)
@@ -191,49 +231,54 @@ def find_run_outliers_leave_one_out(runnums, percent_differences, sigma_threshol
 
     finite_mask = np.isfinite(values)
     keep_mask = finite_mask.copy()
-    z_values = np.full(len(values), np.nan, dtype=float)
+
     outlier_info = []
+    iteration = 0
 
-    finite_indices = np.where(finite_mask)[0]
+    while True:
+        iteration += 1
 
-    if len(finite_indices) < 3:
-        return keep_mask, outlier_info, z_values
-    #endif
+        current_values = values[keep_mask]
 
-    for idx in finite_indices:
-        other_indices = finite_indices[finite_indices != idx]
-        other_values = values[other_indices]
-
-        if len(other_values) < 2:
-            continue
+        if len(current_values) < 3:
+            break
         #endif
 
-        mean_others = float(np.mean(other_values))
-        rms_others = float(np.sqrt(np.mean((other_values - mean_others) ** 2)))
+        median_value, robust_sigma = robust_sigma_from_mad(current_values)
 
-        if rms_others == 0.0:
-            continue
+        if not np.isfinite(robust_sigma) or robust_sigma == 0.0:
+            break
         #endif
 
-        z_value = (values[idx] - mean_others) / rms_others
-        z_values[idx] = z_value
+        current_indices = np.where(keep_mask)[0]
+        z_values_current = (values[current_indices] - median_value) / robust_sigma
+        bad_local = np.abs(z_values_current) > sigma_threshold
 
-        if abs(z_value) > sigma_threshold:
+        if not np.any(bad_local):
+            break
+        #endif
+
+        bad_indices = current_indices[bad_local]
+
+        for idx in bad_indices:
             keep_mask[idx] = False
 
             outlier_info.append(
                 {
+                    "iteration": iteration,
                     "runnum": int(runnums[idx]),
+                    "run_scaler": float(rows[idx]["run_scaler"]),
+                    "hel_sum": float(rows[idx]["hel_sum"]),
                     "percent_difference": float(values[idx]),
-                    "mean_others": mean_others,
-                    "rms_others": rms_others,
-                    "z_value": float(z_value),
+                    "median_used": median_value,
+                    "robust_sigma_used": robust_sigma,
+                    "z_value": float((values[idx] - median_value) / robust_sigma),
                 }
             )
-        #endif
-    #endfor
+        #endfor
+    #endwhile
 
-    return keep_mask, outlier_info, z_values
+    return keep_mask, outlier_info
 
 
 def build_compressed_x_mapping(period_fit_info, max_empty_gap_to_keep):
@@ -242,11 +287,6 @@ def build_compressed_x_mapping(period_fit_info, max_empty_gap_to_keep):
 
     The run numbers inside each period keep their true internal spacing.
     Large gaps between periods are compressed down to max_empty_gap_to_keep.
-
-    Returns
-    -------
-    mapping_info : dict
-        Contains per-period x offsets and boundary information.
     """
 
     valid_periods = []
@@ -340,13 +380,15 @@ def compress_runnums_for_period(runnums, period_name, mapping_info):
     return runnums.copy()
 
 
-def make_compressed_xticks(mapping_info):
+def make_compressed_xticks(mapping_info, min_tick_separation):
     """
     Construct x-axis tick positions and labels for the compressed axis.
+
+    This version deliberately suppresses ticks that are too close together,
+    which prevents the run-number labels from clipping/overlapping.
     """
 
-    tick_positions = []
-    tick_labels = []
+    candidate_ticks = []
 
     for period_info in mapping_info["valid_periods"]:
         real_min = period_info["real_min"]
@@ -357,22 +399,15 @@ def make_compressed_xticks(mapping_info):
 
         if real_span <= 0.0:
             real_ticks = [real_min]
-        elif real_span < 250.0:
+        elif real_span < 400.0:
             real_ticks = [
                 real_min,
-                real_max,
-            ]
-        elif real_span < 800.0:
-            real_ticks = [
-                real_min,
-                0.5 * (real_min + real_max),
                 real_max,
             ]
         else:
             real_ticks = [
                 real_min,
-                real_min + 0.33 * real_span,
-                real_min + 0.67 * real_span,
+                0.5 * (real_min + real_max),
                 real_max,
             ]
         #endif
@@ -380,10 +415,39 @@ def make_compressed_xticks(mapping_info):
         for real_tick in real_ticks:
             plot_tick = plot_min + (real_tick - real_min)
 
-            tick_positions.append(plot_tick)
-            tick_labels.append(str(int(round(real_tick))))
+            candidate_ticks.append(
+                {
+                    "plot_tick": plot_tick,
+                    "real_tick": real_tick,
+                }
+            )
         #endfor
     #endfor
+
+    candidate_ticks = sorted(candidate_ticks, key=lambda item: item["plot_tick"])
+
+    kept_ticks = []
+
+    for item in candidate_ticks:
+        if len(kept_ticks) == 0:
+            kept_ticks.append(item)
+            continue
+        #endif
+
+        previous = kept_ticks[-1]
+
+        if item["plot_tick"] - previous["plot_tick"] >= min_tick_separation:
+            kept_ticks.append(item)
+        else:
+            # If two labels are too close, prefer keeping the one closer to
+            # the edge of its local period only if it is much farther from the
+            # previous accepted tick. Otherwise keep the existing one.
+            continue
+        #endif
+    #endfor
+
+    tick_positions = [item["plot_tick"] for item in kept_ticks]
+    tick_labels = [str(int(round(item["real_tick"]))) for item in kept_ticks]
 
     return tick_positions, tick_labels
 
@@ -404,11 +468,11 @@ def main():
     print("Run-level outlier search:")
     print(
         f"  Outlier definition inside each period: "
-        f"|leave-one-out z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}"
+        f"|robust median/MAD z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}"
     )
     print(
-        "  z_i = (run_i percent difference - mean of other runs in same period) "
-        "/ RMS of other runs in same period"
+        "  z_i = (run_i percent difference - median of current kept runs) "
+        "/ (1.4826 * MAD of current kept runs)"
     )
 
     any_run_outliers = False
@@ -427,7 +491,8 @@ def main():
             dtype=float,
         )
 
-        keep_mask, outlier_info, z_values = find_run_outliers_leave_one_out(
+        keep_mask, outlier_info = find_run_outliers_iterative_robust(
+            rows,
             runnums,
             percent_differences,
             RUN_OUTLIER_SIGMA_THRESHOLD,
@@ -438,19 +503,25 @@ def main():
             print()
             print(f"Outlier runs removed from period average for {period_name}:")
             print(
+                f"{'iter':>4} "
                 f"{'runnum':>8} "
+                f"{'RUN::Scaler [nC]':>18} "
+                f"{'HEL sum [nC]':>18} "
                 f"{'percent_diff [%]':>18} "
-                f"{'mean_others [%]':>18} "
-                f"{'RMS_others [%]':>18} "
+                f"{'median [%]':>14} "
+                f"{'robust sigma [%]':>18} "
                 f"{'z':>12}"
             )
 
             for item in outlier_info:
                 print(
+                    f"{item['iteration']:>4d} "
                     f"{item['runnum']:>8d} "
+                    f"{item['run_scaler']:>18.6f} "
+                    f"{item['hel_sum']:>18.6f} "
                     f"{item['percent_difference']:>18.7f} "
-                    f"{item['mean_others']:>18.7f} "
-                    f"{item['rms_others']:>18.7f} "
+                    f"{item['median_used']:>14.7f} "
+                    f"{item['robust_sigma_used']:>18.7f} "
                     f"{item['z_value']:>12.3f}"
                 )
             #endfor
@@ -474,7 +545,6 @@ def main():
                 "percent_differences": percent_differences,
                 "keep_mask": keep_mask,
                 "outlier_info": outlier_info,
-                "z_values": z_values,
             }
         )
     #endfor
@@ -483,7 +553,7 @@ def main():
         print()
         print(
             f"No individual run-level outliers found using "
-            f"|z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}."
+            f"|robust z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}."
         )
     #endif
 
@@ -564,7 +634,6 @@ def main():
     fig, ax = plt.subplots(figsize=(18, 7))
 
     all_plot_runs = []
-    all_percent_differences = []
 
     for i_period, item in enumerate(period_fit_info):
         period_name = item["name"]
@@ -651,7 +720,6 @@ def main():
         )
 
         all_plot_runs.extend(plot_runnums[finite_mask].tolist())
-        all_percent_differences.extend(percent_differences[finite_mask].tolist())
     #endfor
 
     for gap in mapping_info["gap_breaks"]:
@@ -706,10 +774,18 @@ def main():
         )
     #endif
 
-    tick_positions, tick_labels = make_compressed_xticks(mapping_info)
+    tick_positions, tick_labels = make_compressed_xticks(
+        mapping_info,
+        MIN_XTICK_SEPARATION,
+    )
 
     ax.set_xticks(tick_positions)
-    ax.set_xticklabels(tick_labels, rotation=0)
+    ax.set_xticklabels(
+        tick_labels,
+        rotation=35,
+        ha="right",
+        fontsize=8,
+    )
 
     ax.set_xlabel("Run Number")
     ax.set_ylabel(
