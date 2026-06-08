@@ -2,18 +2,14 @@
 
 import os
 import csv
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-INPUT_CSV = "non_qa_gated_totals.csv"
-OUTPUT_PNG = "output/rga_rgb_rgc_non_gated_totals.png"
-OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
-
-# Options:
-#   "RUN" -> percent_difference = 100 * (HEL - RUN) / RUN
-#   "HEL" -> percent_difference = 100 * (HEL - RUN) / HEL
-PERCENT_DIFFERENCE_DENOMINATOR = "RUN"
+DEFAULT_INPUT_CSV = "non_qa_gated_totals.csv"
+DEFAULT_OUTPUT_PNG = "output/rga_rgb_rgc_non_gated_totals.png"
+DEFAULT_OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
 
 RUN_OUTLIER_SIGMA_THRESHOLD = 5.0
 
@@ -26,112 +22,204 @@ MAX_EMPTY_GAP_TO_KEEP = 350.0
 MIN_XTICK_SEPARATION = 180.0
 
 
-def validate_percent_difference_denominator(denominator):
-    allowed = ["RUN", "HEL"]
-
-    if denominator not in allowed:
-        raise RuntimeError(
-            "PERCENT_DIFFERENCE_DENOMINATOR must be one of {}, got '{}'.".format(
-                allowed,
-                denominator,
-            )
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Plot RUN::Scaler vs HEL::Scaler charge percent differences by run period."
         )
+    )
+
+    parser.add_argument(
+        "--input",
+        default=DEFAULT_INPUT_CSV,
+        help=f"Input sectioned CSV file. Default: {DEFAULT_INPUT_CSV}",
+    )
+
+    parser.add_argument(
+        "--output",
+        default=DEFAULT_OUTPUT_PNG,
+        help=f"Output plot path. Default: {DEFAULT_OUTPUT_PNG}",
+    )
+
+    parser.add_argument(
+        "--sorted-output",
+        default=DEFAULT_OUTPUT_SORTED_CSV,
+        help=f"Output sorted CSV path. Default: {DEFAULT_OUTPUT_SORTED_CSV}",
+    )
+
+    parser.add_argument(
+        "--numerator",
+        choices=["HEL", "RUN"],
+        default="HEL",
+        help=(
+            "Top of the percent-difference numerator. "
+            "'HEL' gives HEL - RUN. "
+            "'RUN' gives RUN - HEL. "
+            "Default: HEL"
+        ),
+    )
+
+    parser.add_argument(
+        "--denominator",
+        choices=["RUN", "HEL"],
+        default="RUN",
+        help=(
+            "Denominator of the percent difference. "
+            "'RUN' divides by RUN::Scaler. "
+            "'HEL' divides by HEL sum. "
+            "Default: RUN"
+        ),
+    )
+
+    parser.add_argument(
+        "--outlier-sigma",
+        type=float,
+        default=RUN_OUTLIER_SIGMA_THRESHOLD,
+        help=(
+            "Robust median/MAD outlier threshold in sigma-like units. "
+            f"Default: {RUN_OUTLIER_SIGMA_THRESHOLD}"
+        ),
+    )
+
+    parser.add_argument(
+        "--max-gap",
+        type=float,
+        default=MAX_EMPTY_GAP_TO_KEEP,
+        help=(
+            "Maximum empty run-number gap to keep in compressed x-axis coordinates. "
+            f"Default: {MAX_EMPTY_GAP_TO_KEEP}"
+        ),
+    )
+
+    parser.add_argument(
+        "--min-xtick-separation",
+        type=float,
+        default=MIN_XTICK_SEPARATION,
+        help=(
+            "Minimum separation between compressed x tick labels. "
+            f"Default: {MIN_XTICK_SEPARATION}"
+        ),
+    )
+
+    return parser.parse_args()
+#enddef
+
+
+def compute_percent_difference(run_scaler, hel_sum, numerator_choice, denominator_choice):
+    """
+    Compute percent difference with independent numerator and denominator choices.
+
+    numerator_choice = "HEL":
+
+        numerator = HEL - RUN
+
+    numerator_choice = "RUN":
+
+        numerator = RUN - HEL
+
+    denominator_choice = "RUN":
+
+        denominator = RUN
+
+    denominator_choice = "HEL":
+
+        denominator = HEL
+
+    Therefore examples are:
+
+        --numerator HEL --denominator RUN:
+
+            100 * (HEL - RUN) / RUN
+
+        --numerator RUN --denominator HEL:
+
+            100 * (RUN - HEL) / HEL
+    """
+
+    if numerator_choice == "HEL":
+        numerator = hel_sum - run_scaler
+    elif numerator_choice == "RUN":
+        numerator = run_scaler - hel_sum
+    else:
+        raise RuntimeError(f"Unknown numerator choice: {numerator_choice}")
     #endif
 
-
-def compute_percent_difference(run_scaler, hel_sum, denominator):
-    """
-    Compute the percent difference using the requested denominator convention.
-
-    denominator = "RUN":
-
-        100 * (HEL - RUN) / RUN
-
-    denominator = "HEL":
-
-        100 * (HEL - RUN) / HEL
-    """
-
-    validate_percent_difference_denominator(denominator)
-
-    numerator = hel_sum - run_scaler
-
-    if denominator == "RUN":
-        if run_scaler == 0.0:
-            return np.nan
-        #endif
-
-        return 100.0 * numerator / run_scaler
+    if denominator_choice == "RUN":
+        denominator = run_scaler
+    elif denominator_choice == "HEL":
+        denominator = hel_sum
+    else:
+        raise RuntimeError(f"Unknown denominator choice: {denominator_choice}")
     #endif
 
-    if denominator == "HEL":
-        if hel_sum == 0.0:
-            return np.nan
-        #endif
-
-        return 100.0 * numerator / hel_sum
+    if denominator == 0.0:
+        return np.nan
     #endif
 
-    return np.nan
+    return 100.0 * numerator / denominator
+#enddef
 
 
-def get_percent_difference_definition_string(denominator):
-    """
-    Return a human-readable definition string for terminal output.
-    """
-
-    validate_percent_difference_denominator(denominator)
-
-    if denominator == "RUN":
-        return "100 * (HEL sum - RUN::Scaler) / RUN::Scaler"
+def get_percent_difference_definition_string(numerator_choice, denominator_choice):
+    if numerator_choice == "HEL":
+        numerator_string = "HEL sum - RUN::Scaler"
+    elif numerator_choice == "RUN":
+        numerator_string = "RUN::Scaler - HEL sum"
+    else:
+        numerator_string = "unknown numerator"
     #endif
 
-    if denominator == "HEL":
-        return "100 * (HEL sum - RUN::Scaler) / HEL sum"
+    if denominator_choice == "RUN":
+        denominator_string = "RUN::Scaler"
+    elif denominator_choice == "HEL":
+        denominator_string = "HEL sum"
+    else:
+        denominator_string = "unknown denominator"
     #endif
 
-    return "unknown"
+    return f"100 * ({numerator_string}) / {denominator_string}"
+#enddef
 
 
-def get_ylabel(denominator):
-    """
-    Return the axis label for the selected denominator convention.
-    """
-
-    validate_percent_difference_denominator(denominator)
-
-    if denominator == "RUN":
-        return (
-            r"$100 \times "
-            r"\left["
+def get_ylabel(numerator_choice, denominator_choice):
+    if numerator_choice == "HEL":
+        numerator_latex = (
             r"\left("
             r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
             r"\right)"
             r" - \mathrm{RUN}"
-            r"\right] / \mathrm{RUN}$ [%]"
         )
-    #endif
-
-    if denominator == "HEL":
-        return (
-            r"$100 \times "
-            r"\left["
+    else:
+        numerator_latex = (
+            r"\mathrm{RUN} - "
             r"\left("
             r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
             r"\right)"
-            r" - \mathrm{RUN}"
-            r"\right]"
-            r"/"
-            r"\left("
-            r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
-            r"\right)$ [%]"
         )
     #endif
 
-    return "Percent difference [%]"
+    if denominator_choice == "RUN":
+        denominator_latex = r"\mathrm{RUN}"
+    else:
+        denominator_latex = (
+            r"\left("
+            r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
+            r"\right)"
+        )
+    #endif
+
+    return (
+        r"$100 \times "
+        r"\left["
+        + numerator_latex
+        + r"\right] / "
+        + denominator_latex
+        + r"$ [%]"
+    )
+#enddef
 
 
-def read_period_charge_file(path, denominator):
+def read_period_charge_file(path, numerator_choice, denominator_choice):
     """
     Read a sectioned charge CSV.
 
@@ -141,24 +229,22 @@ def read_period_charge_file(path, denominator):
         run,RUN::Scaler,HEL::Scaler(+),HEL::Scaler(-),HEL::Scaler(unassigned),0,0
         ...
 
-    Convention
-    ----------
-    The plotted quantity depends on PERCENT_DIFFERENCE_DENOMINATOR.
+    The plotted percent difference is selected at runtime.
 
-    If PERCENT_DIFFERENCE_DENOMINATOR = "RUN":
+    Examples
+    --------
+    --numerator HEL --denominator RUN:
 
-        percent_difference = 100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler
+        100 * (HEL - RUN) / RUN
 
-    If PERCENT_DIFFERENCE_DENOMINATOR = "HEL":
+    --numerator RUN --denominator HEL:
 
-        percent_difference = 100 * (HEL::Scaler - RUN::Scaler) / HEL::Scaler
+        100 * (RUN - HEL) / HEL
 
     where:
 
-        HEL::Scaler = HEL+ + HEL- + HEL(unassigned)
+        HEL = HEL+ + HEL- + HEL(unassigned)
     """
-
-    validate_percent_difference_denominator(denominator)
 
     periods = []
     current_period = None
@@ -207,7 +293,8 @@ def read_period_charge_file(path, denominator):
             percent_difference = compute_percent_difference(
                 run_scaler,
                 hel_sum,
-                denominator,
+                numerator_choice,
+                denominator_choice,
             )
 
             current_period["rows"].append(
@@ -226,6 +313,7 @@ def read_period_charge_file(path, denominator):
     #endwith
 
     return periods
+#enddef
 
 
 def write_sorted_period_charge_file(periods, output_path):
@@ -256,6 +344,7 @@ def write_sorted_period_charge_file(periods, output_path):
             #endfor
         #endfor
     #endwith
+#enddef
 
 
 def constant_fit(values):
@@ -294,6 +383,7 @@ def constant_fit(values):
     #endif
 
     return mean, err, rms, n
+#enddef
 
 
 def robust_sigma_from_mad(values):
@@ -318,6 +408,7 @@ def robust_sigma_from_mad(values):
     robust_sigma = 1.4826 * mad_value
 
     return median_value, robust_sigma
+#enddef
 
 
 def find_run_outliers_iterative_robust(
@@ -336,9 +427,6 @@ def find_run_outliers_iterative_robust(
       3. Compute robust_sigma = 1.4826 * MAD.
       4. Remove points farther than sigma_threshold * robust_sigma.
       5. Repeat until no additional points are removed.
-
-    This avoids having extreme runs define the average and width used to find
-    other extreme runs.
     """
 
     runnums = np.asarray(runnums, dtype=float)
@@ -394,6 +482,7 @@ def find_run_outliers_iterative_robust(
     #endwhile
 
     return keep_mask, outlier_info
+#enddef
 
 
 def build_compressed_x_mapping(period_fit_info, max_empty_gap_to_keep):
@@ -475,6 +564,7 @@ def build_compressed_x_mapping(period_fit_info, max_empty_gap_to_keep):
         "valid_periods": valid_periods,
         "gap_breaks": gap_breaks,
     }
+#enddef
 
 
 def compress_runnums_for_period(runnums, period_name, mapping_info):
@@ -493,14 +583,14 @@ def compress_runnums_for_period(runnums, period_name, mapping_info):
     #endfor
 
     return runnums.copy()
+#enddef
 
 
 def make_compressed_xticks(mapping_info, min_tick_separation):
     """
     Construct x-axis tick positions and labels for the compressed axis.
 
-    This version deliberately suppresses ticks that are too close together,
-    which prevents the run-number labels from clipping/overlapping.
+    This version deliberately suppresses ticks that are too close together.
     """
 
     candidate_ticks = []
@@ -562,21 +652,36 @@ def make_compressed_xticks(mapping_info, min_tick_separation):
     tick_labels = [str(int(round(item["real_tick"]))) for item in kept_ticks]
 
     return tick_positions, tick_labels
+#enddef
 
 
 def main():
-    validate_percent_difference_denominator(PERCENT_DIFFERENCE_DENOMINATOR)
+    args = parse_args()
+
+    input_csv = args.input
+    output_png = args.output
+    output_sorted_csv = args.sorted_output
+    numerator_choice = args.numerator
+    denominator_choice = args.denominator
+    outlier_sigma_threshold = args.outlier_sigma
+    max_empty_gap_to_keep = args.max_gap
+    min_xtick_separation = args.min_xtick_separation
 
     periods = read_period_charge_file(
-        INPUT_CSV,
-        PERCENT_DIFFERENCE_DENOMINATOR,
+        input_csv,
+        numerator_choice,
+        denominator_choice,
     )
 
-    os.makedirs(os.path.dirname(OUTPUT_PNG), exist_ok=True)
+    output_dir = os.path.dirname(output_png)
+
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    #endif
 
     write_sorted_period_charge_file(
         periods,
-        OUTPUT_SORTED_CSV,
+        output_sorted_csv,
     )
 
     period_fit_info = []
@@ -585,7 +690,7 @@ def main():
     print("Run-level outlier search:")
     print(
         f"  Outlier definition inside each period: "
-        f"|robust median/MAD z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}"
+        f"|robust median/MAD z| > {outlier_sigma_threshold:.1f}"
     )
     print(
         "  z_i = (run_i percent difference - median of current kept runs) "
@@ -593,9 +698,10 @@ def main():
     )
     print()
     print("Percent difference definition:")
-    print(f"  {get_percent_difference_definition_string(PERCENT_DIFFERENCE_DENOMINATOR)}")
+    print(f"  {get_percent_difference_definition_string(numerator_choice, denominator_choice)}")
     print("  HEL sum = HEL+ + HEL- + HEL(unassigned)")
-    print(f"  denominator override = {PERCENT_DIFFERENCE_DENOMINATOR}")
+    print(f"  numerator choice   = {numerator_choice}")
+    print(f"  denominator choice = {denominator_choice}")
 
     any_run_outliers = False
 
@@ -617,7 +723,7 @@ def main():
             rows,
             runnums,
             percent_differences,
-            RUN_OUTLIER_SIGMA_THRESHOLD,
+            outlier_sigma_threshold,
         )
 
         if len(outlier_info) > 0:
@@ -675,7 +781,7 @@ def main():
         print()
         print(
             f"No individual run-level outliers found using "
-            f"|robust z| > {RUN_OUTLIER_SIGMA_THRESHOLD:.1f}."
+            f"|robust z| > {outlier_sigma_threshold:.1f}."
         )
     #endif
 
@@ -703,7 +809,7 @@ def main():
 
     print()
     print("Constant fits to percent difference after removing run-level outliers:")
-    print(f"  percent difference = {get_percent_difference_definition_string(PERCENT_DIFFERENCE_DENOMINATOR)}")
+    print(f"  percent difference = {get_percent_difference_definition_string(numerator_choice, denominator_choice)}")
     print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
     print("-" * 104)
     print(
@@ -738,7 +844,7 @@ def main():
 
     mapping_info = build_compressed_x_mapping(
         period_fit_info,
-        MAX_EMPTY_GAP_TO_KEEP,
+        max_empty_gap_to_keep,
     )
 
     if len(mapping_info["gap_breaks"]) > 0:
@@ -902,7 +1008,7 @@ def main():
 
     tick_positions, tick_labels = make_compressed_xticks(
         mapping_info,
-        MIN_XTICK_SEPARATION,
+        min_xtick_separation,
     )
 
     ax.set_xticks(tick_positions)
@@ -914,7 +1020,7 @@ def main():
     )
 
     ax.set_xlabel("Run Number")
-    ax.set_ylabel(get_ylabel(PERCENT_DIFFERENCE_DENOMINATOR))
+    ax.set_ylabel(get_ylabel(numerator_choice, denominator_choice))
 
     ax.set_ylim(-20.0, 20.0)
 
@@ -944,11 +1050,11 @@ def main():
     )
 
     fig.tight_layout()
-    fig.savefig(OUTPUT_PNG, dpi=300)
+    fig.savefig(output_png, dpi=300)
     plt.close(fig)
 
-    print(f"Saved plot to: {OUTPUT_PNG}")
-    print(f"Saved sorted CSV to: {OUTPUT_SORTED_CSV}")
+    print(f"Saved plot to: {output_png}")
+    print(f"Saved sorted CSV to: {output_sorted_csv}")
 
 
 if __name__ == "__main__":
