@@ -162,7 +162,7 @@ int main(int argc, char* argv[]) {
         //   false -> compute current-efficiency factors normally
         //   true  -> write all current-efficiency factors as (1,0)
         current_opts.override_to_unity = false;
-        current_opts.use_second_column_charge_for_all_unpolarized = true;
+        current_opts.use_second_column_charge_for_all_unpolarized = false;
 
         current_opts.max_workers = 5;
 
@@ -490,7 +490,7 @@ int main(int argc, char* argv[]) {
       // In both modes, polarized cross sections still use:
       //   pos -> column 3
       //   neg -> column 4
-      lumi_opts.use_second_column_charge_for_all_unpolarized = true;
+      lumi_opts.use_second_column_charge_for_all_unpolarized = false;
 
       LumiMap lumi_map = build_lumi_map(lumi_opts);
 
