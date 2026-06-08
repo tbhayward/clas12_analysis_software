@@ -10,6 +10,8 @@ INPUT_CSV = "non_qa_gated_totals.csv"
 OUTPUT_PNG = "output/rga_rgb_rgc_non_gated_totals.png"
 OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
 
+OUTLIER_SIGMA_THRESHOLD = 5.0
+
 
 def read_period_charge_file(path):
     """
@@ -21,21 +23,13 @@ def read_period_charge_file(path):
         run,RUN::Scaler,HEL::Scaler(+),HEL::Scaler(-),HEL::Scaler(unassigned),0,0
         ...
 
-    Returns
-    -------
-    periods : list of dict
-        Each entry has:
-            name : str
-            rows : list of dict
-
     Convention
     ----------
-    The plotted quantity is the same convention as the older scaler
-    cross-check script:
+    Plotted quantity:
 
         percent_difference = 100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler
 
-    where here:
+    where:
 
         HEL::Scaler = HEL+ + HEL- + HEL(unassigned)
     """
@@ -84,8 +78,6 @@ def read_period_charge_file(path):
             hel_unassigned = float(parts[4])
             hel_sum = hel_pos + hel_neg + hel_unassigned
 
-            extra_columns = parts[5:]
-
             if run_scaler == 0.0:
                 percent_difference = np.nan
             else:
@@ -102,7 +94,6 @@ def read_period_charge_file(path):
                     "hel_sum": hel_sum,
                     "percent_difference": percent_difference,
                     "original_parts": parts,
-                    "extra_columns": extra_columns,
                 }
             )
         #endfor
@@ -115,9 +106,6 @@ def write_sorted_period_charge_file(periods, output_path):
     """
     Write a copy of the input CSV with the same period headers and same row
     contents, but with numeric rows sorted by run number inside each period.
-
-    This intentionally preserves the original columns from the input rows.
-    It does not add the computed HEL sum or percent difference to the CSV.
     """
 
     output_dir = os.path.dirname(output_path)
@@ -147,17 +135,6 @@ def write_sorted_period_charge_file(periods, output_path):
 def constant_fit(values):
     """
     Constant fit for unweighted points.
-
-    Returns
-    -------
-    mean : float
-        Best-fit constant for equal point weights.
-    err : float
-        Standard error on the mean using the sample RMS / sqrt(N).
-    rms : float
-        RMS scatter about the mean.
-    n : int
-        Number of finite points.
     """
 
     arr = np.asarray(values, dtype=float)
@@ -182,6 +159,59 @@ def constant_fit(values):
     return mean, err, rms, n
 
 
+def find_period_outliers(period_fit_info, sigma_threshold):
+    """
+    Identify period-level outliers using a leave-one-out comparison.
+
+    For each period i, compare its fitted constant C_i against the mean and
+    RMS of the fitted constants from all other periods:
+
+        z_i = (C_i - mean_others) / RMS_others
+
+    If |z_i| > sigma_threshold, the period is flagged as an outlier.
+
+    If RMS_others is zero, no sigma test is applied for that period.
+    """
+
+    outlier_names = set()
+
+    valid = [
+        item for item in period_fit_info
+        if np.isfinite(item["fit_value"])
+    ]
+
+    if len(valid) < 3:
+        return outlier_names
+    #endif
+
+    for item in valid:
+        others = [
+            other["fit_value"] for other in valid
+            if other["name"] != item["name"]
+        ]
+
+        others = np.asarray(others, dtype=float)
+        mean_others = float(np.mean(others))
+        rms_others = float(np.sqrt(np.mean((others - mean_others) ** 2)))
+
+        if rms_others == 0.0:
+            continue
+        #endif
+
+        z_value = (item["fit_value"] - mean_others) / rms_others
+
+        item["leave_one_out_mean"] = mean_others
+        item["leave_one_out_rms"] = rms_others
+        item["leave_one_out_z"] = z_value
+
+        if abs(z_value) > sigma_threshold:
+            outlier_names.add(item["name"])
+        #endif
+    #endfor
+
+    return outlier_names
+
+
 def main():
     periods = read_period_charge_file(INPUT_CSV)
 
@@ -192,24 +222,7 @@ def main():
         OUTPUT_SORTED_CSV,
     )
 
-    fig, ax = plt.subplots(figsize=(16, 7))
-
-    print()
-    print("Constant fits to percent difference:")
-    print("  percent difference = 100 * (sum(HEL::Scaler) - RUN::Scaler) / RUN::Scaler")
-    print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
-    print("-" * 86)
-    print(
-        f"{'Period':<20} "
-        f"{'N':>5} "
-        f"{'constant [%]':>16} "
-        f"{'err [%]':>14} "
-        f"{'RMS [%]':>14}"
-    )
-    print("-" * 86)
-
-    all_runs = []
-    all_percent_differences = []
+    period_fit_info = []
 
     for period in periods:
         period_name = period["name"]
@@ -228,17 +241,157 @@ def main():
         finite_mask = np.isfinite(percent_differences)
 
         if not np.any(finite_mask):
-            print(
-                f"{period_name:<20} "
-                f"{0:>5d} "
-                f"{'nan':>16} "
-                f"{'nan':>14} "
-                f"{'nan':>14}"
+            period_fit_info.append(
+                {
+                    "name": period_name,
+                    "fit_value": np.nan,
+                    "fit_err": np.nan,
+                    "fit_rms": np.nan,
+                    "n_fit": 0,
+                    "rows": rows,
+                    "runnums": runnums,
+                    "percent_differences": percent_differences,
+                    "finite_mask": finite_mask,
+                }
             )
             continue
         #endif
 
         fit_value, fit_err, fit_rms, n_fit = constant_fit(percent_differences)
+
+        period_fit_info.append(
+            {
+                "name": period_name,
+                "fit_value": fit_value,
+                "fit_err": fit_err,
+                "fit_rms": fit_rms,
+                "n_fit": n_fit,
+                "rows": rows,
+                "runnums": runnums,
+                "percent_differences": percent_differences,
+                "finite_mask": finite_mask,
+            }
+        )
+    #endfor
+
+    outlier_period_names = find_period_outliers(
+        period_fit_info,
+        OUTLIER_SIGMA_THRESHOLD,
+    )
+
+    clean_period_fit_values = [
+        item["fit_value"] for item in period_fit_info
+        if np.isfinite(item["fit_value"])
+        and item["name"] not in outlier_period_names
+    ]
+
+    if len(clean_period_fit_values) > 0:
+        overall_period_average = float(np.mean(clean_period_fit_values))
+        overall_period_rms = float(
+            np.sqrt(
+                np.mean(
+                    (
+                        np.asarray(clean_period_fit_values, dtype=float)
+                        - overall_period_average
+                    ) ** 2
+                )
+            )
+        )
+    else:
+        overall_period_average = np.nan
+        overall_period_rms = np.nan
+    #endif
+
+    print()
+    print("Constant fits to percent difference:")
+    print("  percent difference = 100 * (sum(HEL::Scaler) - RUN::Scaler) / RUN::Scaler")
+    print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
+    print("-" * 112)
+    print(
+        f"{'Period':<20} "
+        f"{'N':>5} "
+        f"{'constant [%]':>16} "
+        f"{'err [%]':>14} "
+        f"{'RMS [%]':>14} "
+        f"{'period-z':>12} "
+        f"{'used in avg?':>14}"
+    )
+    print("-" * 112)
+
+    for item in period_fit_info:
+        period_z = item.get("leave_one_out_z", np.nan)
+
+        if item["name"] in outlier_period_names:
+            used_string = "NO"
+        elif np.isfinite(item["fit_value"]):
+            used_string = "YES"
+        else:
+            used_string = "NO"
+        #endif
+
+        print(
+            f"{item['name']:<20} "
+            f"{item['n_fit']:>5d} "
+            f"{item['fit_value']:>16.7f} "
+            f"{item['fit_err']:>14.7f} "
+            f"{item['fit_rms']:>14.7f} "
+            f"{period_z:>12.3f} "
+            f"{used_string:>14}"
+        )
+    #endfor
+
+    print("-" * 112)
+
+    if len(outlier_period_names) > 0:
+        print()
+        print(
+            f"Period-level outliers removed from overall average "
+            f"using |z| > {OUTLIER_SIGMA_THRESHOLD:.1f}:"
+        )
+
+        for item in period_fit_info:
+            if item["name"] not in outlier_period_names:
+                continue
+            #endif
+
+            print(
+                f"  {item['name']}: "
+                f"C = {item['fit_value']:.7f}%, "
+                f"other-period mean = {item.get('leave_one_out_mean', np.nan):.7f}%, "
+                f"other-period RMS = {item.get('leave_one_out_rms', np.nan):.7f}%, "
+                f"z = {item.get('leave_one_out_z', np.nan):.3f}"
+            )
+        #endfor
+    else:
+        print()
+        print(
+            f"No period-level outliers found using "
+            f"|z| > {OUTLIER_SIGMA_THRESHOLD:.1f}."
+        )
+    #endif
+
+    print()
+    print("Overall average of period constants, after period-outlier removal:")
+    print(f"  average = {overall_period_average:.7f}%")
+    print(f"  RMS     = {overall_period_rms:.7f}%")
+    print()
+
+    fig, ax = plt.subplots(figsize=(18, 7))
+
+    all_runs = []
+    all_percent_differences = []
+
+    for i_period, item in enumerate(period_fit_info):
+        period_name = item["name"]
+        runnums = item["runnums"]
+        percent_differences = item["percent_differences"]
+        finite_mask = item["finite_mask"]
+
+        if not np.any(finite_mask):
+            continue
+        #endif
+
+        fit_value = item["fit_value"]
 
         ax.plot(
             runnums[finite_mask],
@@ -252,58 +405,69 @@ def main():
         xmin = float(np.min(runnums))
         xmax = float(np.max(runnums))
 
+        if period_name in outlier_period_names:
+            fit_linestyle = "--"
+            fit_linewidth = 1.0
+        else:
+            fit_linestyle = "-"
+            fit_linewidth = 1.2
+        #endif
+
         ax.hlines(
             fit_value,
             xmin,
             xmax,
-            linewidth=1.2,
-            linestyle="-",
+            linewidth=fit_linewidth,
+            linestyle=fit_linestyle,
         )
 
         text_x = 0.5 * (xmin + xmax)
-        text_y = fit_value + 1.0
 
-        if text_y > 18.0:
-            text_y = fit_value - 2.5
+        if i_period % 2 == 0:
+            text_y = -18.8
+        else:
+            text_y = -16.3
+        #endif
+
+        if period_name in outlier_period_names:
+            label_text = f"{period_name}: C = {fit_value:.3f}% OUT"
+        else:
+            label_text = f"{period_name}: C = {fit_value:.3f}%"
         #endif
 
         ax.text(
             text_x,
             text_y,
-            f"{period_name}\nC = {fit_value:.3f}%",
+            label_text,
             ha="center",
             va="bottom",
             fontsize=8,
-            rotation=90,
-        )
-
-        print(
-            f"{period_name:<20} "
-            f"{n_fit:>5d} "
-            f"{fit_value:>16.7f} "
-            f"{fit_err:>14.7f} "
-            f"{fit_rms:>14.7f}"
+            rotation=0,
+            clip_on=False,
+            bbox={
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.75,
+                "pad": 1.5,
+            },
         )
 
         all_runs.extend(runnums[finite_mask].tolist())
         all_percent_differences.extend(percent_differences[finite_mask].tolist())
 
-        period["sorted_rows"] = rows
-        period["max_runnum"] = int(np.max(runnums))
+        item["sorted_rows"] = item["rows"]
+        item["max_runnum"] = int(np.max(runnums))
     #endfor
 
-    print("-" * 86)
-    print()
-
-    sorted_periods = [
-        period for period in periods
-        if "max_runnum" in period
+    sorted_periods_for_boundaries = [
+        item for item in period_fit_info
+        if "max_runnum" in item
     ]
 
-    for i_period, period in enumerate(sorted_periods[:-1]):
-        this_max = period["max_runnum"]
+    for i_period, item in enumerate(sorted_periods_for_boundaries[:-1]):
+        this_max = item["max_runnum"]
 
-        next_rows = sorted_periods[i_period + 1]["sorted_rows"]
+        next_rows = sorted_periods_for_boundaries[i_period + 1]["sorted_rows"]
         next_min = min(row["runnum"] for row in next_rows)
 
         boundary_x = 0.5 * (this_max + next_min)
@@ -322,6 +486,15 @@ def main():
         linewidth=0.8,
         linestyle="--",
     )
+
+    if np.isfinite(overall_period_average):
+        ax.axhline(
+            overall_period_average,
+            color="black",
+            linewidth=0.9,
+            linestyle=":",
+        )
+    #endif
 
     ax.set_xlabel("Run Number")
     ax.set_ylabel(
