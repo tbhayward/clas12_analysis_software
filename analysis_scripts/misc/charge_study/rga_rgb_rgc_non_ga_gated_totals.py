@@ -10,6 +10,11 @@ INPUT_CSV = "non_qa_gated_totals.csv"
 OUTPUT_PNG = "output/rga_rgb_rgc_non_gated_totals.png"
 OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
 
+# Options:
+#   "RUN" -> percent_difference = 100 * (HEL - RUN) / RUN
+#   "HEL" -> percent_difference = 100 * (HEL - RUN) / HEL
+PERCENT_DIFFERENCE_DENOMINATOR = "RUN"
+
 RUN_OUTLIER_SIGMA_THRESHOLD = 5.0
 
 # If the gap between adjacent run periods is larger than this,
@@ -21,7 +26,112 @@ MAX_EMPTY_GAP_TO_KEEP = 350.0
 MIN_XTICK_SEPARATION = 180.0
 
 
-def read_period_charge_file(path):
+def validate_percent_difference_denominator(denominator):
+    allowed = ["RUN", "HEL"]
+
+    if denominator not in allowed:
+        raise RuntimeError(
+            "PERCENT_DIFFERENCE_DENOMINATOR must be one of {}, got '{}'.".format(
+                allowed,
+                denominator,
+            )
+        )
+    #endif
+
+
+def compute_percent_difference(run_scaler, hel_sum, denominator):
+    """
+    Compute the percent difference using the requested denominator convention.
+
+    denominator = "RUN":
+
+        100 * (HEL - RUN) / RUN
+
+    denominator = "HEL":
+
+        100 * (HEL - RUN) / HEL
+    """
+
+    validate_percent_difference_denominator(denominator)
+
+    numerator = hel_sum - run_scaler
+
+    if denominator == "RUN":
+        if run_scaler == 0.0:
+            return np.nan
+        #endif
+
+        return 100.0 * numerator / run_scaler
+    #endif
+
+    if denominator == "HEL":
+        if hel_sum == 0.0:
+            return np.nan
+        #endif
+
+        return 100.0 * numerator / hel_sum
+    #endif
+
+    return np.nan
+
+
+def get_percent_difference_definition_string(denominator):
+    """
+    Return a human-readable definition string for terminal output.
+    """
+
+    validate_percent_difference_denominator(denominator)
+
+    if denominator == "RUN":
+        return "100 * (HEL sum - RUN::Scaler) / RUN::Scaler"
+    #endif
+
+    if denominator == "HEL":
+        return "100 * (HEL sum - RUN::Scaler) / HEL sum"
+    #endif
+
+    return "unknown"
+
+
+def get_ylabel(denominator):
+    """
+    Return the axis label for the selected denominator convention.
+    """
+
+    validate_percent_difference_denominator(denominator)
+
+    if denominator == "RUN":
+        return (
+            r"$100 \times "
+            r"\left["
+            r"\left("
+            r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
+            r"\right)"
+            r" - \mathrm{RUN}"
+            r"\right] / \mathrm{RUN}$ [%]"
+        )
+    #endif
+
+    if denominator == "HEL":
+        return (
+            r"$100 \times "
+            r"\left["
+            r"\left("
+            r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
+            r"\right)"
+            r" - \mathrm{RUN}"
+            r"\right]"
+            r"/"
+            r"\left("
+            r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
+            r"\right)$ [%]"
+        )
+    #endif
+
+    return "Percent difference [%]"
+
+
+def read_period_charge_file(path, denominator):
     """
     Read a sectioned charge CSV.
 
@@ -33,14 +143,22 @@ def read_period_charge_file(path):
 
     Convention
     ----------
-    Plotted quantity:
+    The plotted quantity depends on PERCENT_DIFFERENCE_DENOMINATOR.
+
+    If PERCENT_DIFFERENCE_DENOMINATOR = "RUN":
 
         percent_difference = 100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler
+
+    If PERCENT_DIFFERENCE_DENOMINATOR = "HEL":
+
+        percent_difference = 100 * (HEL::Scaler - RUN::Scaler) / HEL::Scaler
 
     where:
 
         HEL::Scaler = HEL+ + HEL- + HEL(unassigned)
     """
+
+    validate_percent_difference_denominator(denominator)
 
     periods = []
     current_period = None
@@ -86,11 +204,11 @@ def read_period_charge_file(path):
             hel_unassigned = float(parts[4])
             hel_sum = hel_pos + hel_neg + hel_unassigned
 
-            if run_scaler == 0.0:
-                percent_difference = np.nan
-            else:
-                percent_difference = 100.0 * (hel_sum - run_scaler) / run_scaler
-            #endif
+            percent_difference = compute_percent_difference(
+                run_scaler,
+                hel_sum,
+                denominator,
+            )
 
             current_period["rows"].append(
                 {
@@ -447,7 +565,12 @@ def make_compressed_xticks(mapping_info, min_tick_separation):
 
 
 def main():
-    periods = read_period_charge_file(INPUT_CSV)
+    validate_percent_difference_denominator(PERCENT_DIFFERENCE_DENOMINATOR)
+
+    periods = read_period_charge_file(
+        INPUT_CSV,
+        PERCENT_DIFFERENCE_DENOMINATOR,
+    )
 
     os.makedirs(os.path.dirname(OUTPUT_PNG), exist_ok=True)
 
@@ -470,8 +593,9 @@ def main():
     )
     print()
     print("Percent difference definition:")
-    print("  100 * (HEL sum - RUN::Scaler) / RUN::Scaler")
+    print(f"  {get_percent_difference_definition_string(PERCENT_DIFFERENCE_DENOMINATOR)}")
     print("  HEL sum = HEL+ + HEL- + HEL(unassigned)")
+    print(f"  denominator override = {PERCENT_DIFFERENCE_DENOMINATOR}")
 
     any_run_outliers = False
 
@@ -579,7 +703,7 @@ def main():
 
     print()
     print("Constant fits to percent difference after removing run-level outliers:")
-    print("  percent difference = 100 * (sum(HEL::Scaler) - RUN::Scaler) / RUN::Scaler")
+    print(f"  percent difference = {get_percent_difference_definition_string(PERCENT_DIFFERENCE_DENOMINATOR)}")
     print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
     print("-" * 104)
     print(
@@ -790,15 +914,7 @@ def main():
     )
 
     ax.set_xlabel("Run Number")
-    ax.set_ylabel(
-        r"$100 \times "
-        r"\left["
-        r"\left("
-        r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
-        r"\right)"
-        r" - \mathrm{RUN}"
-        r"\right] / \mathrm{RUN}$ [%]"
-    )
+    ax.set_ylabel(get_ylabel(PERCENT_DIFFERENCE_DENOMINATOR))
 
     ax.set_ylim(-20.0, 20.0)
 
