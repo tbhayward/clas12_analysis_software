@@ -655,7 +655,7 @@ def main():
 
         fit_value = item["fit_value"]
 
-        ax.plot(
+        normal_points = ax.plot(
             plot_runnums[keep_mask],
             percent_differences[keep_mask],
             marker="o",
@@ -663,6 +663,8 @@ def main():
             markersize=4,
             label=period_name,
         )
+
+        period_color = normal_points[0].get_color()
 
         if np.any(outlier_mask):
             ax.plot(
@@ -672,6 +674,7 @@ def main():
                 linestyle="none",
                 markersize=7,
                 markeredgewidth=1.4,
+                color=period_color,
             )
         #endif
 
