@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 INPUT_CSV = "non_qa_gated_totals.csv"
 OUTPUT_PNG = "output/rga_rgb_rgc_non_gated_totals.png"
+OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
 
 
 def read_period_charge_file(path):
@@ -26,6 +27,17 @@ def read_period_charge_file(path):
         Each entry has:
             name : str
             rows : list of dict
+
+    Convention
+    ----------
+    The plotted quantity is the same convention as the older scaler
+    cross-check script:
+
+        percent_difference = 100 * (HEL::Scaler - RUN::Scaler) / RUN::Scaler
+
+    where here:
+
+        HEL::Scaler = HEL+ + HEL- + HEL(unassigned)
     """
 
     periods = []
@@ -72,10 +84,12 @@ def read_period_charge_file(path):
             hel_unassigned = float(parts[4])
             hel_sum = hel_pos + hel_neg + hel_unassigned
 
-            if hel_sum == 0.0:
-                ratio = np.nan
+            extra_columns = parts[5:]
+
+            if run_scaler == 0.0:
+                percent_difference = np.nan
             else:
-                ratio = run_scaler / hel_sum
+                percent_difference = 100.0 * (hel_sum - run_scaler) / run_scaler
             #endif
 
             current_period["rows"].append(
@@ -86,13 +100,48 @@ def read_period_charge_file(path):
                     "hel_neg": hel_neg,
                     "hel_unassigned": hel_unassigned,
                     "hel_sum": hel_sum,
-                    "ratio": ratio,
+                    "percent_difference": percent_difference,
+                    "original_parts": parts,
+                    "extra_columns": extra_columns,
                 }
             )
         #endfor
     #endwith
 
     return periods
+
+
+def write_sorted_period_charge_file(periods, output_path):
+    """
+    Write a copy of the input CSV with the same period headers and same row
+    contents, but with numeric rows sorted by run number inside each period.
+
+    This intentionally preserves the original columns from the input rows.
+    It does not add the computed HEL sum or percent difference to the CSV.
+    """
+
+    output_dir = os.path.dirname(output_path)
+
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    #endif
+
+    with open(output_path, "w", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")
+
+        for period in periods:
+            f.write(f"# {period['name']}\n")
+
+            sorted_rows = sorted(
+                period["rows"],
+                key=lambda row: row["runnum"],
+            )
+
+            for row in sorted_rows:
+                writer.writerow(row["original_parts"])
+            #endfor
+        #endfor
+    #endwith
 
 
 def constant_fit(values):
@@ -138,16 +187,29 @@ def main():
 
     os.makedirs(os.path.dirname(OUTPUT_PNG), exist_ok=True)
 
+    write_sorted_period_charge_file(
+        periods,
+        OUTPUT_SORTED_CSV,
+    )
+
     fig, ax = plt.subplots(figsize=(16, 7))
 
     print()
-    print("Constant fits to RUN::Scaler / sum(HEL::Scaler):")
-    print("-" * 72)
-    print(f"{'Period':<20} {'N':>5} {'constant':>14} {'err':>14} {'RMS':>14}")
-    print("-" * 72)
+    print("Constant fits to percent difference:")
+    print("  percent difference = 100 * (sum(HEL::Scaler) - RUN::Scaler) / RUN::Scaler")
+    print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
+    print("-" * 86)
+    print(
+        f"{'Period':<20} "
+        f"{'N':>5} "
+        f"{'constant [%]':>16} "
+        f"{'err [%]':>14} "
+        f"{'RMS [%]':>14}"
+    )
+    print("-" * 86)
 
     all_runs = []
-    all_ratios = []
+    all_percent_differences = []
 
     for period in periods:
         period_name = period["name"]
@@ -158,20 +220,29 @@ def main():
         #endif
 
         runnums = np.array([row["runnum"] for row in rows], dtype=float)
-        ratios = np.array([row["ratio"] for row in rows], dtype=float)
+        percent_differences = np.array(
+            [row["percent_difference"] for row in rows],
+            dtype=float,
+        )
 
-        finite_mask = np.isfinite(ratios)
+        finite_mask = np.isfinite(percent_differences)
 
         if not np.any(finite_mask):
-            print(f"{period_name:<20} {'0':>5} {'nan':>14} {'nan':>14} {'nan':>14}")
+            print(
+                f"{period_name:<20} "
+                f"{0:>5d} "
+                f"{'nan':>16} "
+                f"{'nan':>14} "
+                f"{'nan':>14}"
+            )
             continue
         #endif
 
-        fit_value, fit_err, fit_rms, n_fit = constant_fit(ratios)
+        fit_value, fit_err, fit_rms, n_fit = constant_fit(percent_differences)
 
         ax.plot(
             runnums[finite_mask],
-            ratios[finite_mask],
+            percent_differences[finite_mask],
             marker="o",
             linestyle="none",
             markersize=4,
@@ -190,16 +261,16 @@ def main():
         )
 
         text_x = 0.5 * (xmin + xmax)
-        text_y = fit_value + 0.012
+        text_y = fit_value + 1.0
 
-        if text_y > 1.17:
-            text_y = fit_value - 0.025
+        if text_y > 18.0:
+            text_y = fit_value - 2.5
         #endif
 
         ax.text(
             text_x,
             text_y,
-            f"{period_name}\nC = {fit_value:.5f}",
+            f"{period_name}\nC = {fit_value:.3f}%",
             ha="center",
             va="bottom",
             fontsize=8,
@@ -209,19 +280,19 @@ def main():
         print(
             f"{period_name:<20} "
             f"{n_fit:>5d} "
-            f"{fit_value:>14.7f} "
+            f"{fit_value:>16.7f} "
             f"{fit_err:>14.7f} "
             f"{fit_rms:>14.7f}"
         )
 
         all_runs.extend(runnums[finite_mask].tolist())
-        all_ratios.extend(ratios[finite_mask].tolist())
+        all_percent_differences.extend(percent_differences[finite_mask].tolist())
 
         period["sorted_rows"] = rows
         period["max_runnum"] = int(np.max(runnums))
     #endfor
 
-    print("-" * 72)
+    print("-" * 86)
     print()
 
     sorted_periods = [
@@ -246,7 +317,7 @@ def main():
     #endfor
 
     ax.axhline(
-        1.0,
+        0.0,
         color="black",
         linewidth=0.8,
         linestyle="--",
@@ -254,20 +325,30 @@ def main():
 
     ax.set_xlabel("Run Number")
     ax.set_ylabel(
-        r"RUN::Scaler charge / "
-        r"$\left(\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}\right)$ charge"
+        r"$100 \times "
+        r"\left["
+        r"\left("
+        r"\mathrm{HEL}^{+} + \mathrm{HEL}^{-} + \mathrm{HEL}^{\mathrm{unassigned}}"
+        r"\right)"
+        r" - \mathrm{RUN}"
+        r"\right] / \mathrm{RUN}$ [%]"
     )
 
-    ax.set_ylim(0.8, 1.2)
+    ax.set_ylim(-20.0, 20.0)
 
     if len(all_runs) > 0:
         xmin_all = min(all_runs)
         xmax_all = max(all_runs)
         dx = xmax_all - xmin_all
-        ax.set_xlim(xmin_all - 0.02 * dx, xmax_all + 0.02 * dx)
+
+        if dx == 0.0:
+            ax.set_xlim(xmin_all - 1.0, xmax_all + 1.0)
+        else:
+            ax.set_xlim(xmin_all - 0.02 * dx, xmax_all + 0.02 * dx)
+        #endif
     #endif
 
-    ax.set_title("Non-QA-gated charge comparison by run period")
+    ax.set_title("Non-QA-gated RUN::Scaler vs HEL::Scaler charge comparison by run period")
 
     ax.grid(True, alpha=0.25)
 
@@ -283,6 +364,7 @@ def main():
     plt.close(fig)
 
     print(f"Saved plot to: {OUTPUT_PNG}")
+    print(f"Saved sorted CSV to: {OUTPUT_SORTED_CSV}")
 
 
 if __name__ == "__main__":
