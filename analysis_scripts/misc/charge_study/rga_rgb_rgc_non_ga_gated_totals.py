@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 
 
 DEFAULT_INPUT_CSV = "non_qa_gated_totals.csv"
+DEFAULT_QA_INPUT_CSV = "qa_gated_totals.csv"
+
 DEFAULT_OUTPUT_PNG = "output/rga_rgb_rgc_non_gated_totals.png"
 DEFAULT_OUTPUT_SORTED_CSV = "output/non_qa_gated_totals_sorted_by_period.csv"
 
@@ -25,26 +27,33 @@ MIN_XTICK_SEPARATION = 180.0
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Plot RUN::Scaler vs HEL::Scaler charge percent differences by run period."
+            "Compare RUN::Scaler and HEL::Scaler charge totals for "
+            "non-QA-gated and QA-gated CSV files."
         )
     )
 
     parser.add_argument(
         "--input",
         default=DEFAULT_INPUT_CSV,
-        help=f"Input sectioned CSV file. Default: {DEFAULT_INPUT_CSV}",
+        help=f"Input non-QA-gated sectioned CSV file. Default: {DEFAULT_INPUT_CSV}",
+    )
+
+    parser.add_argument(
+        "--qa-input",
+        default=DEFAULT_QA_INPUT_CSV,
+        help=f"Input QA-gated sectioned CSV file. Default: {DEFAULT_QA_INPUT_CSV}",
     )
 
     parser.add_argument(
         "--output",
         default=DEFAULT_OUTPUT_PNG,
-        help=f"Output plot path. Default: {DEFAULT_OUTPUT_PNG}",
+        help=f"Output non-QA-gated plot path. Default: {DEFAULT_OUTPUT_PNG}",
     )
 
     parser.add_argument(
         "--sorted-output",
         default=DEFAULT_OUTPUT_SORTED_CSV,
-        help=f"Output sorted CSV path. Default: {DEFAULT_OUTPUT_SORTED_CSV}",
+        help=f"Output sorted non-QA-gated CSV path. Default: {DEFAULT_OUTPUT_SORTED_CSV}",
     )
 
     parser.add_argument(
@@ -105,6 +114,17 @@ def parse_args():
 #enddef
 
 
+def derive_output_path(path, suffix):
+    base, ext = os.path.splitext(path)
+
+    if ext == "":
+        ext = ".png"
+    #endif
+
+    return f"{base}{suffix}{ext}"
+#enddef
+
+
 def compute_percent_difference(run_scaler, hel_sum, numerator_choice, denominator_choice):
     """
     Compute percent difference with independent numerator and denominator choices.
@@ -124,16 +144,6 @@ def compute_percent_difference(run_scaler, hel_sum, numerator_choice, denominato
     denominator_choice = "HEL":
 
         denominator = HEL
-
-    Therefore examples are:
-
-        --numerator HEL --denominator RUN:
-
-            100 * (HEL - RUN) / RUN
-
-        --numerator RUN --denominator HEL:
-
-            100 * (RUN - HEL) / HEL
     """
 
     if numerator_choice == "HEL":
@@ -227,24 +237,17 @@ def read_period_charge_file(path, numerator_choice, denominator_choice):
 
         # RGA Fa18 Inb
         run,RUN::Scaler,HEL::Scaler(+),HEL::Scaler(-),HEL::Scaler(unassigned),0,0
-        ...
 
-    The plotted percent difference is selected at runtime.
+    The file may also contain QA-removed rows like:
 
-    Examples
-    --------
-    --numerator HEL --denominator RUN:
+        run,0.0,0.0,0.0,0.0
 
-        100 * (HEL - RUN) / RUN
-
-    --numerator RUN --denominator HEL:
-
-        100 * (RUN - HEL) / HEL
-
-    where:
-
-        HEL = HEL+ + HEL- + HEL(unassigned)
+    where the percent difference becomes NaN because the denominator is zero.
     """
+
+    if not os.path.exists(path):
+        raise RuntimeError(f"Input CSV does not exist: {path}")
+    #endif
 
     periods = []
     current_period = None
@@ -271,7 +274,7 @@ def read_period_charge_file(path, numerator_choice, denominator_choice):
 
             if current_period is None:
                 raise RuntimeError(
-                    f"Found data line before any period header: {line}"
+                    f"Found data line before any period header in {path}: {line}"
                 )
             #endif
 
@@ -279,7 +282,8 @@ def read_period_charge_file(path, numerator_choice, denominator_choice):
 
             if len(parts) < 5:
                 raise RuntimeError(
-                    f"Expected at least 5 comma-separated columns, got {len(parts)}: {line}"
+                    f"Expected at least 5 comma-separated columns in {path}, "
+                    f"got {len(parts)}: {line}"
                 )
             #endif
 
@@ -297,8 +301,11 @@ def read_period_charge_file(path, numerator_choice, denominator_choice):
                 denominator_choice,
             )
 
+            qadb_fully_removed = run_scaler == 0.0
+
             current_period["rows"].append(
                 {
+                    "period": current_period["name"],
                     "runnum": runnum,
                     "run_scaler": run_scaler,
                     "hel_pos": hel_pos,
@@ -306,6 +313,7 @@ def read_period_charge_file(path, numerator_choice, denominator_choice):
                     "hel_unassigned": hel_unassigned,
                     "hel_sum": hel_sum,
                     "percent_difference": percent_difference,
+                    "qadb_fully_removed": qadb_fully_removed,
                     "original_parts": parts,
                 }
             )
@@ -313,6 +321,76 @@ def read_period_charge_file(path, numerator_choice, denominator_choice):
     #endwith
 
     return periods
+#enddef
+
+
+def flatten_rows(periods):
+    rows = []
+
+    for period in periods:
+        for row in period["rows"]:
+            rows.append(row)
+        #endfor
+    #endfor
+
+    return rows
+#enddef
+
+
+def make_run_lookup(periods):
+    lookup = {}
+
+    for period in periods:
+        for row in period["rows"]:
+            lookup[row["runnum"]] = row
+        #endfor
+    #endfor
+
+    return lookup
+#enddef
+
+
+def find_qadb_removed_runs(nonqa_periods, qa_periods):
+    """
+    Return run numbers whose QA-gated RUN::Scaler column is exactly zero.
+
+    The non-QA-gated rows are used for plotting the red open circles, because
+    fully removed QA rows do not have a meaningful QA-gated percent difference.
+    """
+
+    nonqa_lookup = make_run_lookup(nonqa_periods)
+    removed = []
+
+    for qa_row in flatten_rows(qa_periods):
+        if qa_row["run_scaler"] != 0.0:
+            continue
+        #endif
+
+        runnum = qa_row["runnum"]
+
+        if runnum not in nonqa_lookup:
+            removed.append(
+                {
+                    "runnum": runnum,
+                    "period": qa_row["period"],
+                    "nonqa_row": None,
+                    "qa_row": qa_row,
+                }
+            )
+            continue
+        #endif
+
+        removed.append(
+            {
+                "runnum": runnum,
+                "period": qa_row["period"],
+                "nonqa_row": nonqa_lookup[runnum],
+                "qa_row": qa_row,
+            }
+        )
+    #endfor
+
+    return removed
 #enddef
 
 
@@ -350,17 +428,6 @@ def write_sorted_period_charge_file(periods, output_path):
 def constant_fit(values):
     """
     Constant fit for unweighted points.
-
-    Returns
-    -------
-    mean : float
-        Best-fit constant for equal point weights.
-    err : float
-        Standard error on the mean using sample std / sqrt(N).
-    rms : float
-        Population RMS scatter about the mean.
-    n : int
-        Number of finite points.
     """
 
     arr = np.asarray(values, dtype=float)
@@ -469,6 +536,7 @@ def find_run_outliers_iterative_robust(
             outlier_info.append(
                 {
                     "iteration": iteration,
+                    "period": rows[idx]["period"],
                     "runnum": int(runnums[idx]),
                     "run_scaler": float(rows[idx]["run_scaler"]),
                     "hel_sum": float(rows[idx]["hel_sum"]),
@@ -482,6 +550,195 @@ def find_run_outliers_iterative_robust(
     #endwhile
 
     return keep_mask, outlier_info
+#enddef
+
+
+def process_periods(
+    periods,
+    dataset_label,
+    numerator_choice,
+    denominator_choice,
+    outlier_sigma_threshold,
+):
+    """
+    Run robust outlier identification and constant fits for one dataset.
+    """
+
+    period_fit_info = []
+    all_outliers = []
+
+    print()
+    print("======================================================================")
+    print(f"{dataset_label}")
+    print("======================================================================")
+    print("Run-level outlier search:")
+    print(
+        f"  Outlier definition inside each period: "
+        f"|robust median/MAD z| > {outlier_sigma_threshold:.1f}"
+    )
+    print(
+        "  z_i = (run_i percent difference - median of current kept runs) "
+        "/ (1.4826 * MAD of current kept runs)"
+    )
+    print()
+    print("Percent difference definition:")
+    print(f"  {get_percent_difference_definition_string(numerator_choice, denominator_choice)}")
+    print("  HEL sum = HEL+ + HEL- + HEL(unassigned)")
+    print(f"  numerator choice   = {numerator_choice}")
+    print(f"  denominator choice = {denominator_choice}")
+
+    any_run_outliers = False
+
+    for period in periods:
+        period_name = period["name"]
+        rows = sorted(period["rows"], key=lambda row: row["runnum"])
+
+        if len(rows) == 0:
+            continue
+        #endif
+
+        runnums = np.array([row["runnum"] for row in rows], dtype=float)
+        percent_differences = np.array(
+            [row["percent_difference"] for row in rows],
+            dtype=float,
+        )
+
+        keep_mask, outlier_info = find_run_outliers_iterative_robust(
+            rows,
+            runnums,
+            percent_differences,
+            outlier_sigma_threshold,
+        )
+
+        all_outliers.extend(outlier_info)
+
+        if len(outlier_info) > 0:
+            any_run_outliers = True
+            print()
+            print(f"Outlier runs removed from period average for {period_name}:")
+            print(
+                f"{'iter':>4} "
+                f"{'runnum':>8} "
+                f"{'RUN::Scaler [nC]':>18} "
+                f"{'HEL sum [nC]':>18} "
+                f"{'percent_diff [%]':>18} "
+                f"{'median [%]':>14} "
+                f"{'robust sigma [%]':>18} "
+                f"{'z':>12}"
+            )
+
+            for item in outlier_info:
+                print(
+                    f"{item['iteration']:>4d} "
+                    f"{item['runnum']:>8d} "
+                    f"{item['run_scaler']:>18.6f} "
+                    f"{item['hel_sum']:>18.6f} "
+                    f"{item['percent_difference']:>18.7f} "
+                    f"{item['median_used']:>14.7f} "
+                    f"{item['robust_sigma_used']:>18.7f} "
+                    f"{item['z_value']:>12.3f}"
+                )
+            #endfor
+        #endif
+
+        fit_value, fit_err, fit_rms, n_fit = constant_fit(
+            percent_differences[keep_mask]
+        )
+
+        period_fit_info.append(
+            {
+                "name": period_name,
+                "dataset_label": dataset_label,
+                "fit_value": fit_value,
+                "fit_err": fit_err,
+                "fit_rms": fit_rms,
+                "n_fit": n_fit,
+                "n_total_finite": int(np.sum(np.isfinite(percent_differences))),
+                "n_total_rows": len(rows),
+                "n_run_outliers": len(outlier_info),
+                "rows": rows,
+                "runnums": runnums,
+                "percent_differences": percent_differences,
+                "keep_mask": keep_mask,
+                "outlier_info": outlier_info,
+            }
+        )
+    #endfor
+
+    if not any_run_outliers:
+        print()
+        print(
+            f"No individual run-level outliers found using "
+            f"|robust z| > {outlier_sigma_threshold:.1f}."
+        )
+    #endif
+
+    clean_period_fit_values = [
+        item["fit_value"] for item in period_fit_info
+        if np.isfinite(item["fit_value"])
+    ]
+
+    if len(clean_period_fit_values) > 0:
+        overall_period_average = float(np.mean(clean_period_fit_values))
+        overall_period_rms = float(
+            np.sqrt(
+                np.mean(
+                    (
+                        np.asarray(clean_period_fit_values, dtype=float)
+                        - overall_period_average
+                    ) ** 2
+                )
+            )
+        )
+    else:
+        overall_period_average = np.nan
+        overall_period_rms = np.nan
+    #endif
+
+    print()
+    print("Constant fits to percent difference after removing run-level outliers:")
+    print(f"  percent difference = {get_percent_difference_definition_string(numerator_choice, denominator_choice)}")
+    print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
+    print("-" * 119)
+    print(
+        f"{'Period':<20} "
+        f"{'N used':>8} "
+        f"{'N finite':>8} "
+        f"{'N rows':>8} "
+        f"{'N out':>7} "
+        f"{'constant [%]':>16} "
+        f"{'err [%]':>14} "
+        f"{'RMS [%]':>14}"
+    )
+    print("-" * 119)
+
+    for item in period_fit_info:
+        print(
+            f"{item['name']:<20} "
+            f"{item['n_fit']:>8d} "
+            f"{item['n_total_finite']:>8d} "
+            f"{item['n_total_rows']:>8d} "
+            f"{item['n_run_outliers']:>7d} "
+            f"{item['fit_value']:>16.7f} "
+            f"{item['fit_err']:>14.7f} "
+            f"{item['fit_rms']:>14.7f}"
+        )
+    #endfor
+
+    print("-" * 119)
+    print()
+    print("Overall average of period constants after run-level outlier removal:")
+    print(f"  average = {overall_period_average:.7f}%")
+    print(f"  RMS     = {overall_period_rms:.7f}%")
+    print()
+
+    return {
+        "dataset_label": dataset_label,
+        "period_fit_info": period_fit_info,
+        "all_outliers": all_outliers,
+        "overall_period_average": overall_period_average,
+        "overall_period_rms": overall_period_rms,
+    }
 #enddef
 
 
@@ -589,8 +846,6 @@ def compress_runnums_for_period(runnums, period_name, mapping_info):
 def make_compressed_xticks(mapping_info, min_tick_separation):
     """
     Construct x-axis tick positions and labels for the compressed axis.
-
-    This version deliberately suppresses ticks that are too close together.
     """
 
     candidate_ticks = []
@@ -655,23 +910,25 @@ def make_compressed_xticks(mapping_info, min_tick_separation):
 #enddef
 
 
-def main():
-    args = parse_args()
+def plot_processed_dataset(
+    processed,
+    output_png,
+    title,
+    numerator_choice,
+    denominator_choice,
+    max_empty_gap_to_keep,
+    min_xtick_separation,
+    qadb_removed_runs=None,
+):
+    """
+    Plot one processed dataset.
 
-    input_csv = args.input
-    output_png = args.output
-    output_sorted_csv = args.sorted_output
-    numerator_choice = args.numerator
-    denominator_choice = args.denominator
-    outlier_sigma_threshold = args.outlier_sigma
-    max_empty_gap_to_keep = args.max_gap
-    min_xtick_separation = args.min_xtick_separation
+    If qadb_removed_runs is provided, red open circles are drawn around the
+    corresponding non-QA-gated points.
+    """
 
-    periods = read_period_charge_file(
-        input_csv,
-        numerator_choice,
-        denominator_choice,
-    )
+    period_fit_info = processed["period_fit_info"]
+    overall_period_average = processed["overall_period_average"]
 
     output_dir = os.path.dirname(output_png)
 
@@ -679,176 +936,13 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
     #endif
 
-    write_sorted_period_charge_file(
-        periods,
-        output_sorted_csv,
-    )
-
-    period_fit_info = []
-
-    print()
-    print("Run-level outlier search:")
-    print(
-        f"  Outlier definition inside each period: "
-        f"|robust median/MAD z| > {outlier_sigma_threshold:.1f}"
-    )
-    print(
-        "  z_i = (run_i percent difference - median of current kept runs) "
-        "/ (1.4826 * MAD of current kept runs)"
-    )
-    print()
-    print("Percent difference definition:")
-    print(f"  {get_percent_difference_definition_string(numerator_choice, denominator_choice)}")
-    print("  HEL sum = HEL+ + HEL- + HEL(unassigned)")
-    print(f"  numerator choice   = {numerator_choice}")
-    print(f"  denominator choice = {denominator_choice}")
-
-    any_run_outliers = False
-
-    for period in periods:
-        period_name = period["name"]
-        rows = sorted(period["rows"], key=lambda row: row["runnum"])
-
-        if len(rows) == 0:
-            continue
-        #endif
-
-        runnums = np.array([row["runnum"] for row in rows], dtype=float)
-        percent_differences = np.array(
-            [row["percent_difference"] for row in rows],
-            dtype=float,
-        )
-
-        keep_mask, outlier_info = find_run_outliers_iterative_robust(
-            rows,
-            runnums,
-            percent_differences,
-            outlier_sigma_threshold,
-        )
-
-        if len(outlier_info) > 0:
-            any_run_outliers = True
-            print()
-            print(f"Outlier runs removed from period average for {period_name}:")
-            print(
-                f"{'iter':>4} "
-                f"{'runnum':>8} "
-                f"{'RUN::Scaler [nC]':>18} "
-                f"{'HEL sum [nC]':>18} "
-                f"{'percent_diff [%]':>18} "
-                f"{'median [%]':>14} "
-                f"{'robust sigma [%]':>18} "
-                f"{'z':>12}"
-            )
-
-            for item in outlier_info:
-                print(
-                    f"{item['iteration']:>4d} "
-                    f"{item['runnum']:>8d} "
-                    f"{item['run_scaler']:>18.6f} "
-                    f"{item['hel_sum']:>18.6f} "
-                    f"{item['percent_difference']:>18.7f} "
-                    f"{item['median_used']:>14.7f} "
-                    f"{item['robust_sigma_used']:>18.7f} "
-                    f"{item['z_value']:>12.3f}"
-                )
-            #endfor
-        #endif
-
-        fit_value, fit_err, fit_rms, n_fit = constant_fit(
-            percent_differences[keep_mask]
-        )
-
-        period_fit_info.append(
-            {
-                "name": period_name,
-                "fit_value": fit_value,
-                "fit_err": fit_err,
-                "fit_rms": fit_rms,
-                "n_fit": n_fit,
-                "n_total_finite": int(np.sum(np.isfinite(percent_differences))),
-                "n_run_outliers": len(outlier_info),
-                "rows": rows,
-                "runnums": runnums,
-                "percent_differences": percent_differences,
-                "keep_mask": keep_mask,
-                "outlier_info": outlier_info,
-            }
-        )
-    #endfor
-
-    if not any_run_outliers:
-        print()
-        print(
-            f"No individual run-level outliers found using "
-            f"|robust z| > {outlier_sigma_threshold:.1f}."
-        )
-    #endif
-
-    clean_period_fit_values = [
-        item["fit_value"] for item in period_fit_info
-        if np.isfinite(item["fit_value"])
-    ]
-
-    if len(clean_period_fit_values) > 0:
-        overall_period_average = float(np.mean(clean_period_fit_values))
-        overall_period_rms = float(
-            np.sqrt(
-                np.mean(
-                    (
-                        np.asarray(clean_period_fit_values, dtype=float)
-                        - overall_period_average
-                    ) ** 2
-                )
-            )
-        )
-    else:
-        overall_period_average = np.nan
-        overall_period_rms = np.nan
-    #endif
-
-    print()
-    print("Constant fits to percent difference after removing run-level outliers:")
-    print(f"  percent difference = {get_percent_difference_definition_string(numerator_choice, denominator_choice)}")
-    print("  sum(HEL::Scaler) = HEL+ + HEL- + HEL(unassigned)")
-    print("-" * 104)
-    print(
-        f"{'Period':<20} "
-        f"{'N used':>8} "
-        f"{'N total':>8} "
-        f"{'N out':>7} "
-        f"{'constant [%]':>16} "
-        f"{'err [%]':>14} "
-        f"{'RMS [%]':>14}"
-    )
-    print("-" * 104)
-
-    for item in period_fit_info:
-        print(
-            f"{item['name']:<20} "
-            f"{item['n_fit']:>8d} "
-            f"{item['n_total_finite']:>8d} "
-            f"{item['n_run_outliers']:>7d} "
-            f"{item['fit_value']:>16.7f} "
-            f"{item['fit_err']:>14.7f} "
-            f"{item['fit_rms']:>14.7f}"
-        )
-    #endfor
-
-    print("-" * 104)
-    print()
-    print("Overall average of period constants after run-level outlier removal:")
-    print(f"  average = {overall_period_average:.7f}%")
-    print(f"  RMS     = {overall_period_rms:.7f}%")
-    print()
-
     mapping_info = build_compressed_x_mapping(
         period_fit_info,
         max_empty_gap_to_keep,
     )
 
     if len(mapping_info["gap_breaks"]) > 0:
-        print("Compressed large run-number gaps on the plot:")
+        print(f"Compressed large run-number gaps on plot {output_png}:")
         for gap in mapping_info["gap_breaks"]:
             print(
                 f"  {gap['left_period']} -> {gap['right_period']}: "
@@ -859,9 +953,21 @@ def main():
         print()
     #endif
 
+    removed_run_set = set()
+
+    if qadb_removed_runs is not None:
+        removed_run_set = {
+            item["runnum"] for item in qadb_removed_runs
+            if item["nonqa_row"] is not None
+            and np.isfinite(item["nonqa_row"]["percent_difference"])
+        }
+    #endif
+
     fig, ax = plt.subplots(figsize=(18, 7))
 
     all_plot_runs = []
+    removed_plot_x = []
+    removed_plot_y = []
 
     for i_period, item in enumerate(period_fit_info):
         period_name = item["name"]
@@ -905,6 +1011,21 @@ def main():
                 color=period_color,
             )
         #endif
+
+        for i_point in range(len(runnums)):
+            runnum = int(runnums[i_point])
+
+            if runnum not in removed_run_set:
+                continue
+            #endif
+
+            if not np.isfinite(percent_differences[i_point]):
+                continue
+            #endif
+
+            removed_plot_x.append(plot_runnums[i_point])
+            removed_plot_y.append(percent_differences[i_point])
+        #endfor
 
         xmin = float(np.min(plot_runnums[finite_mask]))
         xmax = float(np.max(plot_runnums[finite_mask]))
@@ -953,6 +1074,20 @@ def main():
 
         all_plot_runs.extend(plot_runnums[finite_mask].tolist())
     #endfor
+
+    if len(removed_plot_x) > 0:
+        ax.plot(
+            removed_plot_x,
+            removed_plot_y,
+            marker="o",
+            linestyle="none",
+            markersize=11,
+            markerfacecolor="none",
+            markeredgecolor="red",
+            markeredgewidth=1.5,
+            label="QADB fully removed",
+        )
+    #endif
 
     for gap in mapping_info["gap_breaks"]:
         gap_x = gap["plot_x"]
@@ -1021,7 +1156,6 @@ def main():
 
     ax.set_xlabel("Run Number")
     ax.set_ylabel(get_ylabel(numerator_choice, denominator_choice))
-
     ax.set_ylim(-20.0, 20.0)
 
     if len(all_plot_runs) > 0:
@@ -1036,10 +1170,7 @@ def main():
         #endif
     #endif
 
-    ax.set_title(
-        "Non-QA-gated RUN::Scaler vs HEL::Scaler charge comparison by run period"
-    )
-
+    ax.set_title(title)
     ax.grid(True, alpha=0.25)
 
     ax.legend(
@@ -1054,7 +1185,343 @@ def main():
     plt.close(fig)
 
     print(f"Saved plot to: {output_png}")
-    print(f"Saved sorted CSV to: {output_sorted_csv}")
+#enddef
+
+
+def outlier_lookup(processed):
+    lookup = {}
+
+    for item in processed["all_outliers"]:
+        lookup[item["runnum"]] = item
+    #endfor
+
+    return lookup
+#enddef
+
+
+def row_lookup_from_period_fit_info(period_fit_info):
+    lookup = {}
+
+    for period in period_fit_info:
+        for row in period["rows"]:
+            lookup[row["runnum"]] = row
+        #endfor
+    #endfor
+
+    return lookup
+#enddef
+
+
+def print_qadb_removed_runs(qadb_removed_runs):
+    print()
+    print("======================================================================")
+    print("Runs fully removed by QADB")
+    print("======================================================================")
+    print("Definition: QA-gated RUN::Scaler column is exactly zero.")
+    print()
+
+    if len(qadb_removed_runs) == 0:
+        print("No fully QADB-removed runs found.")
+        return
+    #endif
+
+    print(
+        f"{'period':<20} "
+        f"{'runnum':>8} "
+        f"{'nonQA RUN [nC]':>18} "
+        f"{'nonQA HEL sum [nC]':>20} "
+        f"{'nonQA percent diff [%]':>24}"
+    )
+
+    for item in qadb_removed_runs:
+        nonqa_row = item["nonqa_row"]
+        qa_row = item["qa_row"]
+
+        if nonqa_row is None:
+            print(
+                f"{qa_row['period']:<20} "
+                f"{qa_row['runnum']:>8d} "
+                f"{'missing':>18} "
+                f"{'missing':>20} "
+                f"{'missing':>24}"
+            )
+            continue
+        #endif
+
+        print(
+            f"{nonqa_row['period']:<20} "
+            f"{nonqa_row['runnum']:>8d} "
+            f"{nonqa_row['run_scaler']:>18.6f} "
+            f"{nonqa_row['hel_sum']:>20.6f} "
+            f"{nonqa_row['percent_difference']:>24.7f}"
+        )
+    #endfor
+#enddef
+
+
+def print_method_specific_outliers(nonqa_processed, qa_processed, qadb_removed_runs):
+    """
+    Print runs that are outliers in non-QA but not QA, or QA but not non-QA.
+
+    Fully QADB-removed runs are reported separately, because the QA-gated
+    percent difference is undefined when the QA-gated charge is zero.
+    """
+
+    nonqa_outliers = outlier_lookup(nonqa_processed)
+    qa_outliers = outlier_lookup(qa_processed)
+
+    nonqa_rows = row_lookup_from_period_fit_info(nonqa_processed["period_fit_info"])
+    qa_rows = row_lookup_from_period_fit_info(qa_processed["period_fit_info"])
+
+    qadb_removed_set = {item["runnum"] for item in qadb_removed_runs}
+
+    nonqa_only = sorted(
+        runnum for runnum in nonqa_outliers.keys()
+        if runnum not in qa_outliers
+        and runnum not in qadb_removed_set
+    )
+
+    qa_only = sorted(
+        runnum for runnum in qa_outliers.keys()
+        if runnum not in nonqa_outliers
+    )
+
+    nonqa_outlier_qadb_removed = sorted(
+        runnum for runnum in nonqa_outliers.keys()
+        if runnum in qadb_removed_set
+    )
+
+    print()
+    print("======================================================================")
+    print("Method-specific scaler-bank discrepancies")
+    print("======================================================================")
+    print("These are runs that are robust median/MAD outliers in one dataset but not the other.")
+    print("Fully QADB-removed runs are listed separately because their QA-gated percent")
+    print("difference is undefined.")
+    print()
+
+    if len(nonqa_only) == 0:
+        print("No runs are non-QA-gated outliers while remaining non-outliers in QA-gated data.")
+    else:
+        print("Runs that are outliers in NON-QA-gated data but not in QA-gated data:")
+        print(
+            f"{'runnum':>8} "
+            f"{'period':<20} "
+            f"{'nonQA diff [%]':>18} "
+            f"{'nonQA z':>12} "
+            f"{'QA diff [%]':>18} "
+            f"{'QA RUN [nC]':>16} "
+            f"{'QA HEL sum [nC]':>18}"
+        )
+
+        for runnum in nonqa_only:
+            nonqa_out = nonqa_outliers[runnum]
+            qa_row = qa_rows.get(runnum)
+
+            if qa_row is None or not np.isfinite(qa_row["percent_difference"]):
+                qa_diff_string = "undefined"
+                qa_run_string = "missing"
+                qa_hel_string = "missing"
+            else:
+                qa_diff_string = f"{qa_row['percent_difference']:.7f}"
+                qa_run_string = f"{qa_row['run_scaler']:.6f}"
+                qa_hel_string = f"{qa_row['hel_sum']:.6f}"
+            #endif
+
+            print(
+                f"{runnum:>8d} "
+                f"{nonqa_out['period']:<20} "
+                f"{nonqa_out['percent_difference']:>18.7f} "
+                f"{nonqa_out['z_value']:>12.3f} "
+                f"{qa_diff_string:>18} "
+                f"{qa_run_string:>16} "
+                f"{qa_hel_string:>18}"
+            )
+        #endfor
+    #endif
+
+    print()
+
+    if len(qa_only) == 0:
+        print("No runs are QA-gated outliers while remaining non-outliers in non-QA-gated data.")
+    else:
+        print("Runs that are outliers in QA-gated data but not in NON-QA-gated data:")
+        print(
+            f"{'runnum':>8} "
+            f"{'period':<20} "
+            f"{'QA diff [%]':>18} "
+            f"{'QA z':>12} "
+            f"{'nonQA diff [%]':>18} "
+            f"{'nonQA RUN [nC]':>18} "
+            f"{'nonQA HEL sum [nC]':>20}"
+        )
+
+        for runnum in qa_only:
+            qa_out = qa_outliers[runnum]
+            nonqa_row = nonqa_rows.get(runnum)
+
+            if nonqa_row is None or not np.isfinite(nonqa_row["percent_difference"]):
+                nonqa_diff_string = "undefined"
+                nonqa_run_string = "missing"
+                nonqa_hel_string = "missing"
+            else:
+                nonqa_diff_string = f"{nonqa_row['percent_difference']:.7f}"
+                nonqa_run_string = f"{nonqa_row['run_scaler']:.6f}"
+                nonqa_hel_string = f"{nonqa_row['hel_sum']:.6f}"
+            #endif
+
+            print(
+                f"{runnum:>8d} "
+                f"{qa_out['period']:<20} "
+                f"{qa_out['percent_difference']:>18.7f} "
+                f"{qa_out['z_value']:>12.3f} "
+                f"{nonqa_diff_string:>18} "
+                f"{nonqa_run_string:>18} "
+                f"{nonqa_hel_string:>20}"
+            )
+        #endfor
+    #endif
+
+    print()
+
+    if len(nonqa_outlier_qadb_removed) == 0:
+        print("No non-QA-gated outlier runs were fully removed by QADB.")
+    else:
+        print("Runs that were non-QA-gated outliers and then fully removed by QADB:")
+        print(
+            f"{'runnum':>8} "
+            f"{'period':<20} "
+            f"{'nonQA diff [%]':>18} "
+            f"{'nonQA z':>12} "
+            f"{'nonQA RUN [nC]':>18} "
+            f"{'nonQA HEL sum [nC]':>20}"
+        )
+
+        for runnum in nonqa_outlier_qadb_removed:
+            nonqa_out = nonqa_outliers[runnum]
+            nonqa_row = nonqa_rows.get(runnum)
+
+            print(
+                f"{runnum:>8d} "
+                f"{nonqa_out['period']:<20} "
+                f"{nonqa_out['percent_difference']:>18.7f} "
+                f"{nonqa_out['z_value']:>12.3f} "
+                f"{nonqa_row['run_scaler']:>18.6f} "
+                f"{nonqa_row['hel_sum']:>20.6f}"
+            )
+        #endfor
+    #endif
+#enddef
+
+
+def main():
+    args = parse_args()
+
+    input_csv = args.input
+    qa_input_csv = args.qa_input
+    output_png = args.output
+    output_sorted_csv = args.sorted_output
+    numerator_choice = args.numerator
+    denominator_choice = args.denominator
+    outlier_sigma_threshold = args.outlier_sigma
+    max_empty_gap_to_keep = args.max_gap
+    min_xtick_separation = args.min_xtick_separation
+
+    qadb_overlay_png = derive_output_path(output_png, "_qadb_removed_circled")
+    qa_output_png = derive_output_path(output_png, "_qa_gated")
+
+    qa_sorted_output_csv = derive_output_path(output_sorted_csv, "_qa_gated")
+
+    nonqa_periods = read_period_charge_file(
+        input_csv,
+        numerator_choice,
+        denominator_choice,
+    )
+
+    qa_periods = read_period_charge_file(
+        qa_input_csv,
+        numerator_choice,
+        denominator_choice,
+    )
+
+    write_sorted_period_charge_file(
+        nonqa_periods,
+        output_sorted_csv,
+    )
+
+    write_sorted_period_charge_file(
+        qa_periods,
+        qa_sorted_output_csv,
+    )
+
+    qadb_removed_runs = find_qadb_removed_runs(
+        nonqa_periods,
+        qa_periods,
+    )
+
+    print_qadb_removed_runs(qadb_removed_runs)
+
+    nonqa_processed = process_periods(
+        nonqa_periods,
+        "NON-QA-gated charge totals",
+        numerator_choice,
+        denominator_choice,
+        outlier_sigma_threshold,
+    )
+
+    qa_processed = process_periods(
+        qa_periods,
+        "QA-gated charge totals",
+        numerator_choice,
+        denominator_choice,
+        outlier_sigma_threshold,
+    )
+
+    print_method_specific_outliers(
+        nonqa_processed,
+        qa_processed,
+        qadb_removed_runs,
+    )
+
+    plot_processed_dataset(
+        nonqa_processed,
+        output_png,
+        "Non-QA-gated RUN::Scaler vs HEL::Scaler charge comparison by run period",
+        numerator_choice,
+        denominator_choice,
+        max_empty_gap_to_keep,
+        min_xtick_separation,
+        qadb_removed_runs=None,
+    )
+
+    plot_processed_dataset(
+        nonqa_processed,
+        qadb_overlay_png,
+        "Non-QA-gated charge comparison with QADB-removed runs circled",
+        numerator_choice,
+        denominator_choice,
+        max_empty_gap_to_keep,
+        min_xtick_separation,
+        qadb_removed_runs=qadb_removed_runs,
+    )
+
+    plot_processed_dataset(
+        qa_processed,
+        qa_output_png,
+        "QA-gated RUN::Scaler vs HEL::Scaler charge comparison by run period",
+        numerator_choice,
+        denominator_choice,
+        max_empty_gap_to_keep,
+        min_xtick_separation,
+        qadb_removed_runs=None,
+    )
+
+    print(f"Saved sorted non-QA CSV to: {output_sorted_csv}")
+    print(f"Saved sorted QA CSV to: {qa_sorted_output_csv}")
+    print(f"Saved non-QA plot to: {output_png}")
+    print(f"Saved non-QA plot with QADB-removed runs circled to: {qadb_overlay_png}")
+    print(f"Saved QA-gated plot to: {qa_output_png}")
+#enddef
 
 
 if __name__ == "__main__":
