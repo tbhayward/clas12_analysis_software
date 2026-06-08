@@ -98,6 +98,7 @@ static std::string canonical_period_dir(const std::string &label) {
     if (label == "Sp18")          return "Sp18";
     if (label == "10.6 GeV")      return "10.6_GeV";
     if (label == "10.2 GeV")      return "10.2_GeV";
+
     std::string out = label;
     std::replace(out.begin(), out.end(), ' ', '_');
     return out;
@@ -113,9 +114,9 @@ static double beam_energy_for_label(const std::string &label) {
     if (label == "Sp19 Inb" || label == "10.2 GeV") {
         return 10.2;
     }
+
     return 10.6;
 }
-
 
 // -----------------------------------------------------------------------------
 // Theory/model helper wrappers
@@ -175,6 +176,7 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
 
     for (size_t i = 0; i < line.size(); ++i) {
         char c = line[i];
+
         if (c == '"') {
             in_quotes = !in_quotes;
             field.push_back(c);
@@ -185,6 +187,7 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
             field.push_back(c);
         }
     }
+
     out.push_back(field);
     return out;
 }
@@ -192,8 +195,10 @@ static std::vector<std::string> split_csv_line(const std::string &line) {
 static std::string trim(const std::string &s) {
     size_t b = 0;
     while (b < s.size() && std::isspace((unsigned char)s[b])) ++b;
+
     size_t e = s.size();
     while (e > b && std::isspace((unsigned char)s[e - 1])) --e;
+
     return s.substr(b, e - b);
 }
 
@@ -201,6 +206,7 @@ static std::string unquote(const std::string &s) {
     if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
         std::string inner = s.substr(1, s.size() - 2);
         std::string out;
+
         for (size_t i = 0; i < inner.size(); ++i) {
             if (inner[i] == '"' && i + 1 < inner.size() && inner[i + 1] == '"') {
                 out.push_back('"');
@@ -209,36 +215,44 @@ static std::string unquote(const std::string &s) {
                 out.push_back(inner[i]);
             }
         }
+
         return out;
     }
+
     return s;
 }
 
 static std::string quote_if_needed(const std::string &s) {
     bool need = false;
+
     for (char c : s) {
         if (c == ',' || c == '"' || std::isspace((unsigned char)c)) {
             need = true;
             break;
         }
     }
+
     if (!need) return s;
 
     std::string out = "\"";
+
     for (char c : s) {
         if (c == '"') out += "\"\"";
         else out += c;
     }
+
     out += "\"";
     return out;
 }
 
 static std::string join_csv_line(const std::vector<std::string> &fields) {
     std::ostringstream oss;
+
     for (size_t i = 0; i < fields.size(); ++i) {
         if (i > 0) oss << ",";
         oss << quote_if_needed(fields[i]);
     }
+
     return oss.str();
 }
 
@@ -249,6 +263,7 @@ static int find_col(const std::vector<std::string> &header,
             return (int)i;
         }
     }
+
     throw std::runtime_error("Missing required column: \"" + target + "\"");
 }
 
@@ -259,6 +274,7 @@ static int find_col_optional(const std::vector<std::string> &header,
             return (int)i;
         }
     }
+
     return -1;
 }
 
@@ -266,19 +282,19 @@ static int find_col_optional(const std::vector<std::string> &header,
 // Triple helpers (value, stat, sys) from cross_sections.h
 // -----------------------------------------------------------------------------
 
-// Triple is declared in cross_sections.h:
-//   struct Triple { double value; double stat; double sys; };
-
 // Helper: strip all outer quote layers (CSV and nested quotes)
 static std::string strip_all_outer_quotes(std::string s) {
     s = unquote(s);
     s = trim(s);
 
     bool changed = true;
+
     while (changed && s.size() >= 2) {
         changed = false;
+
         char first = s.front();
         char last  = s.back();
+
         if ((first == '"' && last == '"') ||
             (first == '\'' && last == '\'')) {
             s = s.substr(1, s.size() - 2);
@@ -286,6 +302,7 @@ static std::string strip_all_outer_quotes(std::string s) {
             changed = true;
         }
     }
+
     return s;
 }
 
@@ -297,6 +314,7 @@ static Triple parse_tuple3(const std::string &cell) {
 
     std::string s = strip_all_outer_quotes(cell);
     s = trim(s);
+
     if (s.empty()) {
         return out;
     }
@@ -304,6 +322,7 @@ static Triple parse_tuple3(const std::string &cell) {
     if (s.front() == '(' && s.back() == ')') {
         s = s.substr(1, s.size() - 2);
         s = trim(s);
+
         if (s.empty()) {
             return out;
         }
@@ -311,6 +330,7 @@ static Triple parse_tuple3(const std::string &cell) {
 
     std::vector<std::string> parts;
     std::string token;
+
     for (char c : s) {
         if (c == ',') {
             parts.push_back(trim(token));
@@ -319,6 +339,7 @@ static Triple parse_tuple3(const std::string &cell) {
             token.push_back(c);
         }
     }
+
     if (!token.empty()) {
         parts.push_back(trim(token));
     }
@@ -327,15 +348,18 @@ static Triple parse_tuple3(const std::string &cell) {
         if (str.empty()) {
             return 0.0;
         }
+
         return std::atof(str.c_str());
     };
 
     if (!parts.empty()) {
         out.value = to_double_or_zero(parts[0]);
     }
+
     if (parts.size() > 1U) {
         out.stat = to_double_or_zero(parts[1]);
     }
+
     if (parts.size() > 2U) {
         out.sys = to_double_or_zero(parts[2]);
     }
@@ -345,10 +369,12 @@ static Triple parse_tuple3(const std::string &cell) {
 
 static std::string tuple3_to_cell(double value, double stat, double sys) {
     std::ostringstream oss;
+
     oss << "("
         << std::setprecision(10) << value << ", "
         << std::setprecision(10) << stat  << ", "
         << std::setprecision(10) << sys   << ")";
+
     return oss.str();
 }
 
@@ -359,6 +385,7 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
 static Triple load_rga_lumi_file(const std::string &path,
                                  bool unpolarized_total_from_pos_plus_neg) {
     std::ifstream ifs(path);
+
     if (!ifs) {
         std::cerr << "[cross_sections] FATAL: cannot open lumi file: "
                   << path << "\n";
@@ -374,12 +401,14 @@ static Triple load_rga_lumi_file(const std::string &path,
 
     while (std::getline(ifs, line)) {
         std::string s = trim(line);
+
         if (s.empty()) continue;
         if (!s.empty() && s[0] == '#') continue;
 
         std::vector<std::string> fields;
         std::string field;
         std::istringstream iss(s);
+
         while (std::getline(iss, field, ',')) {
             fields.push_back(trim(field));
         }
@@ -486,6 +515,7 @@ LumiMap build_lumi_map(const LumiBuildOptions &options) {
 
         for (const auto &k : keys) {
             auto it = m.find(k);
+
             if (it == m.end()) {
                 std::cerr << "[cross_sections] ERROR: missing lumi for \""
                           << k << "\" while building combined groups.\n";
@@ -539,56 +569,6 @@ LumiMap build_lumi_map(const LumiBuildOptions &options) {
     return m;
 }
 
-LumiMap build_lumi_map() {
-    LumiMap m;
-    const std::string base = "imports/integrated_luminosity";
-
-    try {
-        m["Fa18 Inb"]      = load_rga_lumi_file(base + "/rga_fa18_inb.txt",  true);
-        m["Fa18 Out"]      = load_rga_lumi_file(base + "/rga_fa18_out.txt",  true);
-        m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
-        m["Sp18 Inb"]      = load_rga_lumi_file(base + "/rga_sp18_inb.txt", false);
-        m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt", false);
-        m["Sp19 Inb"]      = load_rga_lumi_file(base + "/rga_sp19_inb.txt", true);
-    } catch (const std::exception &e) {
-        std::cerr << "[cross_sections] FATAL in build_lumi_map: "
-                  << e.what() << "\n";
-        throw;
-    }
-
-    auto sum_labels = [&](const std::vector<std::string> &keys) -> Triple {
-        Triple r{0.0, 0.0, 0.0};
-        for (const auto &k : keys) {
-            auto it = m.find(k);
-            if (it == m.end()) {
-                std::cerr << "[cross_sections] ERROR: missing lumi for \""
-                          << k << "\" while building combined groups.\n";
-                continue;
-            }
-            r.value += it->second.value;
-            r.stat  += it->second.stat;
-            r.sys   += it->second.sys;
-        }
-        return r;
-    };
-
-    // Supplemental is intentionally not included in the combined groups used for
-    // the production cross-section normalization.
-    m["Fa18"]     = sum_labels({"Fa18 Inb", "Fa18 Out"});
-    m["Sp18"]     = sum_labels({"Sp18 Inb", "Sp18 Out"});
-    m["10.6 GeV"] = sum_labels({"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"});
-    m["10.2 GeV"] = sum_labels({"Sp19 Inb"});
-
-    std::cout << "[cross_sections] build_lumi_map summary:"
-              << " Fa18 Inb total=" << m["Fa18 Inb"].value
-              << " Sp19 Inb total=" << m["Sp19 Inb"].value
-              << " Sp18 Inb total=" << m["Sp18 Inb"].value
-              << " (10.6 GeV total=" << m["10.6 GeV"].value
-              << ", 10.2 GeV total=" << m["10.2 GeV"].value << ")\n";
-
-    return m;
-}
-
 // -----------------------------------------------------------------------------
 // Theory JSON generation (xs_phi_all.json)
 // -----------------------------------------------------------------------------
@@ -597,7 +577,6 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
                                          const std::string &theory_json_root,
                                          double Ebeam,
                                          const std::string &energy_label) {
-
     std::vector<double> phi_deg;
     phi_deg.reserve(38);
 
@@ -608,15 +587,18 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
     for (int i = 0; i < N; ++i) {
         double phi = phi_min + step * (double)i;
+
         if (i == N - 1) {
             phi = phi_max;
         }
+
         phi_deg.push_back(phi);
     }
 
     const int n_phi = (int)phi_deg.size();
 
     std::ifstream ifs(csv_main);
+
     if (!ifs) {
         std::cerr << "[cross_sections] FATAL: cannot open " << csv_main
                   << " for theory JSON generation (energy " << energy_label
@@ -626,9 +608,11 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
     std::vector<std::string> lines;
     std::string line;
+
     while (std::getline(ifs, line)) {
         lines.push_back(line);
     }
+
     ifs.close();
 
     if (lines.empty()) {
@@ -639,9 +623,13 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
     std::vector<std::string> header = split_csv_line(lines[0]);
 
-    int c_xb_min = -1, c_xb_max = -1;
-    int c_q2_min = -1, c_q2_max = -1;
-    int c_t_min  = -1, c_t_max  = -1;
+    int c_xb_min = -1;
+    int c_xb_max = -1;
+    int c_q2_min = -1;
+    int c_q2_max = -1;
+    int c_t_min  = -1;
+    int c_t_max  = -1;
+
     try {
         c_xb_min = find_col(header, "xBmin");
         c_xb_max = find_col(header, "xBmax");
@@ -660,6 +648,7 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
     json rows_json = json::object();
 
     const size_t n_rows = lines.size();
+
     std::cout << "[cross_sections] Generating theory JSON for energy \""
               << energy_label << "\" (Ebeam=" << Ebeam
               << ") for " << (n_rows > 0 ? n_rows - 1 : 0)
@@ -672,6 +661,7 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
         if (n_rows > 1 && next_pct <= 100) {
             double frac = 100.0 * (double)row / (double)(n_rows - 1);
+
             if (frac >= next_pct) {
                 std::cout << "[cross_sections] theory JSON ("
                           << energy_label << "): ~"
@@ -682,6 +672,7 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
         }
 
         std::vector<std::string> fields = split_csv_line(lines[row]);
+
         if (fields.size() != header.size()) {
             std::cerr << "[cross_sections] WARNING: row " << row
                       << " has wrong number of fields, skipping.\n";
@@ -703,9 +694,17 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
             continue;
         }
 
-        std::vector<double> bh_unpol(n_phi), bh_pos(n_phi), bh_neg(n_phi);
-        std::vector<double> km_unpol(n_phi), km_pos(n_phi), km_neg(n_phi);
-        std::vector<double> vgg_unpol(n_phi), vgg_pos(n_phi), vgg_neg(n_phi);
+        std::vector<double> bh_unpol(n_phi);
+        std::vector<double> bh_pos(n_phi);
+        std::vector<double> bh_neg(n_phi);
+
+        std::vector<double> km_unpol(n_phi);
+        std::vector<double> km_pos(n_phi);
+        std::vector<double> km_neg(n_phi);
+
+        std::vector<double> vgg_unpol(n_phi);
+        std::vector<double> vgg_pos(n_phi);
+        std::vector<double> vgg_neg(n_phi);
 
         for (int i = 0; i < n_phi; ++i) {
             double phideg = phi_deg[i];
@@ -725,7 +724,10 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
             vgg_neg[i]   = eval_vgg_xs(Ebeam, xB_mid, Q2_mid, t_mid, phirad, "neg");
         }
 
-        json bh_json, km_json, vgg_json;
+        json bh_json;
+        json km_json;
+        json vgg_json;
+
         bh_json["unpol"] = bh_unpol;
         bh_json["pos"]   = bh_pos;
         bh_json["neg"]   = bh_neg;
@@ -750,9 +752,11 @@ static bool write_theory_json_for_energy(const std::string &csv_main,
 
     fs::path dir  = fs::path(theory_json_root) / canonical_period_dir(energy_label);
     ensure_dir(dir);
+
     fs::path file = dir / "xs_phi_all.json";
 
     std::ofstream ofs(file);
+
     if (!ofs) {
         std::cerr << "[cross_sections] FATAL: cannot open "
                   << file.string()
@@ -773,6 +777,7 @@ bool regenerate_theory_jsons(const std::string &csv_main,
                              const std::string &theory_json_root) {
     bool ok_106 = write_theory_json_for_energy(csv_main, theory_json_root,
                                                10.6, "10.6 GeV");
+
     bool ok_102 = write_theory_json_for_energy(csv_main, theory_json_root,
                                                10.2, "10.2 GeV");
 
@@ -798,6 +803,7 @@ static std::vector<std::string> combined_members_for(const std::string &L) {
     if (L == "Fa18") return {"Fa18 Inb", "Fa18 Out"};
     if (L == "Sp18") return {"Sp18 Inb", "Sp18 Out"};
     if (L == "10.6 GeV") return {"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"};
+
     return {};
 }
 
@@ -830,15 +836,18 @@ static std::string lumi_col_for_label(const std::string &L) {
     if (L == "Fa18") return "integrated luminosity, Fa18 (nC)";
     if (L == "Sp18") return "integrated luminosity, Sp18 (nC)";
     if (L == "10.6 GeV") return "integrated luminosity, 10.6 GeV (nC)";
+
     return "";
 }
 
 static double ratio_rel2(double value, double err) {
-    if (value == 0.0 || !std::isfinite(value) || !std::isfinite(err) || err <= 0.0) return 0.0;
+    if (value == 0.0 || !std::isfinite(value) || !std::isfinite(err) || err <= 0.0) {
+        return 0.0;
+    }
+
     const double r = err / value;
     return r * r;
 }
-
 
 // -----------------------------------------------------------------------------
 // Lee correction-factor import
@@ -854,6 +863,7 @@ static std::string first_nonempty_bin_index(const std::vector<std::string> &fiel
                                             int one_based_row_number) {
     if (c_bin_index >= 0 && c_bin_index < (int)fields.size()) {
         const std::string v = trim(unquote(fields[c_bin_index]));
+
         if (!v.empty()) return v;
     }
 
@@ -866,6 +876,7 @@ static double parse_required_number(const std::string &cell,
                                     const std::string &label,
                                     const std::string &source) {
     const std::string s = trim(unquote(cell));
+
     if (s.empty()) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: empty numeric cell for " << label
@@ -875,6 +886,7 @@ static double parse_required_number(const std::string &cell,
 
     char *endp = nullptr;
     const double v = std::strtod(s.c_str(), &endp);
+
     if (endp == s.c_str() || !std::isfinite(v)) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: could not parse numeric cell for " << label
@@ -897,6 +909,7 @@ static Triple parse_required_triple_cell(const std::vector<std::string> &fields,
     }
 
     const std::string s = trim(strip_all_outer_quotes(fields[col]));
+
     if (s.empty()) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: empty required tuple cell for "
@@ -905,6 +918,7 @@ static Triple parse_required_triple_cell(const std::vector<std::string> &fields,
     }
 
     Triple out = parse_tuple3(fields[col]);
+
     if (!std::isfinite(out.value) || out.value <= 0.0) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: required tuple cell for "
@@ -922,6 +936,7 @@ static Triple parse_required_triple_cell(const std::vector<std::string> &fields,
 static std::map<std::string, LeeCorrections>
 load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
     std::ifstream ifs(lee_csv_path);
+
     if (!ifs) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: cannot open Lee correction CSV: "
@@ -930,6 +945,7 @@ load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
     }
 
     std::string line;
+
     if (!std::getline(ifs, line)) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: Lee correction CSV is empty: "
@@ -940,7 +956,10 @@ load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
     std::vector<std::string> header = split_csv_line(line);
 
     int c_bin_index = find_col_optional(header, "bin index");
-    if (c_bin_index < 0) c_bin_index = find_col_optional(header, "");
+
+    if (c_bin_index < 0) {
+        c_bin_index = find_col_optional(header, "");
+    }
 
     const int c_frad = find_col(header, "Frad");
     const int c_fbin = find_col(header, "Fbin");
@@ -953,10 +972,15 @@ load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
 
     while (std::getline(ifs, line)) {
         ++input_row;
+
         if (line.empty()) continue;
 
         std::vector<std::string> fields = split_csv_line(line);
-        if (fields.size() < header.size()) fields.resize(header.size());
+
+        if (fields.size() < header.size()) {
+            fields.resize(header.size());
+        }
+
         if (fields.size() != header.size()) {
             std::ostringstream ss;
             ss << "[cross_sections] FATAL: Lee row width mismatch in "
@@ -966,7 +990,9 @@ load_lee_corrections_by_bin_index(const std::string &lee_csv_path) {
 
         if (c_valid >= 0) {
             const std::string valid_s = trim(unquote(fields[c_valid]));
-            if (!(valid_s == "1" || valid_s == "1.0" || valid_s == "true" || valid_s == "TRUE")) {
+
+            if (!(valid_s == "1" || valid_s == "1.0" ||
+                  valid_s == "true" || valid_s == "TRUE")) {
                 continue;
             }
         }
@@ -1014,6 +1040,7 @@ static const LeeCorrections& lee_for_pass2_row(
     }
 
     const std::string bin_index = trim(unquote(fields[c_pass2_bin_index]));
+
     if (bin_index.empty()) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: empty bin index on pass-2 CSV data row "
@@ -1022,6 +1049,7 @@ static const LeeCorrections& lee_for_pass2_row(
     }
 
     auto it = lee.find(bin_index);
+
     if (it == lee.end()) {
         std::ostringstream ss;
         ss << "[cross_sections] FATAL: no Lee correction found for pass-2 bin index "
@@ -1041,6 +1069,7 @@ bool compute_cross_sections(const std::string &csv_main,
                             const LumiMap &lumi_map,
                             const std::string &lee_csv_path) {
     std::map<std::string, LeeCorrections> lee_corrections;
+
     try {
         lee_corrections = load_lee_corrections_by_bin_index(lee_csv_path);
     } catch (const std::exception &e) {
@@ -1049,6 +1078,7 @@ bool compute_cross_sections(const std::string &csv_main,
     }
 
     std::ifstream ifs(csv_main);
+
     if (!ifs) {
         std::cerr << "[cross_sections] ERROR: cannot open " << csv_main << " for reading.\n";
         return false;
@@ -1056,7 +1086,11 @@ bool compute_cross_sections(const std::string &csv_main,
 
     std::vector<std::string> lines;
     std::string line;
-    while (std::getline(ifs, line)) lines.push_back(line);
+
+    while (std::getline(ifs, line)) {
+        lines.push_back(line);
+    }
+
     ifs.close();
 
     if (lines.empty()) {
@@ -1068,6 +1102,7 @@ bool compute_cross_sections(const std::string &csv_main,
     const size_t n_data_rows = lines.size() - 1;
 
     const int c_pass2_bin_index = find_col_optional(header, "bin index");
+
     if (c_pass2_bin_index < 0) {
         std::cerr << "[cross_sections] FATAL: missing pass-2 CSV column: bin index\n";
         return false;
@@ -1086,47 +1121,62 @@ bool compute_cross_sections(const std::string &csv_main,
         std::cerr << "[cross_sections] FATAL: missing phase-space bin volume column: bin_volume, 10.6 GeV\n";
         return false;
     }
+
     if (c_vbin_102 < 0) {
         std::cerr << "[cross_sections] FATAL: missing phase-space bin volume column: bin_volume, 10.2 GeV\n";
         return false;
     }
+
     if (c_cubic_vbin_106 < 0) {
         std::cerr << "[cross_sections] FATAL: missing diagnostic cubic bin volume column: cubic bin_volume, 10.6 GeV\n";
         return false;
     }
+
     if (c_cubic_vbin_102 < 0) {
         std::cerr << "[cross_sections] FATAL: missing diagnostic cubic bin volume column: cubic bin_volume, 10.2 GeV\n";
         return false;
     }
+
     if (c_frad_106 < 0) {
         std::cerr << "[cross_sections] FATAL: missing Frad column: Frad, 10.6 GeV\n";
         return false;
     }
+
     if (c_frad_102 < 0) {
         std::cerr << "[cross_sections] FATAL: missing Frad column: Frad, 10.2 GeV\n";
         return false;
     }
+
     if (c_fbin_106 < 0) {
         std::cerr << "[cross_sections] FATAL: missing Fbin column: Fbin, 10.6 GeV\n";
         return false;
     }
+
     if (c_fbin_102 < 0) {
         std::cerr << "[cross_sections] FATAL: missing Fbin column: Fbin, 10.2 GeV\n";
         return false;
     }
 
     const std::vector<std::string> base_periods = {
-        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
+        "Fa18 Inb",
+        "Fa18 Out",
+        "Sp19 Inb",
+        "Sp18 Inb",
+        "Sp18 Out"
     };
 
     std::map<std::string, int> acc_col_idx;
+
     for (const auto &p : base_periods) {
         const std::string col = "acceptance, " + p;
         int idx = find_col_optional(header, col);
+
         if (idx < 0) {
-            std::cerr << "[cross_sections] FATAL: missing required acceptance column: " << col << "\n";
+            std::cerr << "[cross_sections] FATAL: missing required acceptance column: "
+                      << col << "\n";
             return false;
         }
+
         acc_col_idx[p] = idx;
     }
 
@@ -1142,33 +1192,50 @@ bool compute_cross_sections(const std::string &csv_main,
     };
 
     std::map<std::string, int> lumi_col_idx;
+
     for (const auto &name : lumi_cols_required) {
         int idx = find_col_optional(header, name);
+
         if (idx < 0) {
-            std::cerr << "[cross_sections] FATAL: missing luminosity column: " << name << "\n";
+            std::cerr << "[cross_sections] FATAL: missing luminosity column: "
+                      << name << "\n";
             return false;
         }
+
         lumi_col_idx[name] = idx;
     }
 
     const std::vector<std::string> labels = {
-        "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-        "Fa18", "Sp18", "10.6 GeV"
+        "Fa18 Inb",
+        "Fa18 Out",
+        "Sp18 Inb",
+        "Sp18 Out",
+        "Sp19 Inb",
+        "Fa18",
+        "Sp18",
+        "10.6 GeV"
     };
 
-    struct ColPair { int yield_idx = -1; int xs_idx = -1; };
+    struct ColPair {
+        int yield_idx = -1;
+        int xs_idx = -1;
+    };
+
     std::map<std::string, ColPair> colmap;
 
     for (const auto &L : labels) {
         const std::string YL = yield_label_for(L);
+
         for (const auto &h : cross_section_helicities_for_label(L)) {
             const std::string yield_col =
                 "acceptance corrected yield, ep->epg, exp, " + YL + ", " + h;
+
             const std::string xs_col =
                 "cross sections, ep->epg, exp, " + L + ", " + h;
 
             const int iy = find_col_optional(header, yield_col);
             const int ix = find_col_optional(header, xs_col);
+
             if (iy >= 0 && ix >= 0) {
                 colmap[L + "|" + h] = ColPair{iy, ix};
             } else if (iy >= 0 && ix < 0) {
@@ -1186,7 +1253,9 @@ bool compute_cross_sections(const std::string &csv_main,
     auto period_has_acceptance = [&](const std::string &period,
                                      const std::vector<std::string> &fields) -> bool {
         auto it = acc_col_idx.find(period);
+
         if (it == acc_col_idx.end()) return false;
+
         const Triple a = parse_tuple3(fields[it->second]);
         return a.value > 0.0;
     };
@@ -1195,28 +1264,39 @@ bool compute_cross_sections(const std::string &csv_main,
                                   const std::vector<std::string> &fields) -> Triple {
         if (!is_combined_label(L)) {
             auto it = lumi_map.find(L);
+
             if (it == lumi_map.end()) return Triple{0.0, 0.0, 0.0};
+
             return it->second;
         }
 
         Triple out{0.0, 0.0, 0.0};
+
         for (const auto &m : combined_members_for(L)) {
             if (!period_has_acceptance(m, fields)) continue;
+
             auto itLm = lumi_map.find(m);
+
             if (itLm == lumi_map.end()) continue;
+
             out.value += itLm->second.value;
             out.stat  += itLm->second.stat;
             out.sys   += itLm->second.sys;
         }
+
         return out;
     };
 
     auto write_lumi_columns_for_row = [&](std::vector<std::string> &fields) {
         for (const auto &L : labels) {
             const std::string name = lumi_col_for_label(L);
+
             if (name.empty()) continue;
+
             auto itc = lumi_col_idx.find(name);
+
             if (itc == lumi_col_idx.end()) continue;
+
             Triple lum = lumi_for_label_row(L, fields);
             fields[itc->second] = tuple3_to_cell(lum.value, lum.stat, lum.sys);
         }
@@ -1226,11 +1306,15 @@ bool compute_cross_sections(const std::string &csv_main,
     out_lines.reserve(lines.size());
     out_lines.push_back(lines[0]);
 
-    std::cout << "[cross_sections] compute_cross_sections: data rows = " << n_data_rows << "\n";
+    std::cout << "[cross_sections] compute_cross_sections: data rows = "
+              << n_data_rows << "\n";
+
     std::cout << "[cross_sections] NOTE: no imports/efficiency.json correction is applied here. "
               << "Current-efficiency and eppi0 normalization corrections are already upstream.\n";
+
     std::cout << "[cross_sections] NOTE: combined-label luminosities are row-dependent and "
               << "gated by nonzero member-period acceptance.\n";
+
     std::cout << "[cross_sections] NOTE: Frad/Fbin are imported from Lee's CSV for both energies; "
               << "bin_volume is read from the pass-2 CSV phase-space columns filled by bin_volume.cpp.\n";
 
@@ -1244,13 +1328,16 @@ bool compute_cross_sections(const std::string &csv_main,
 
         if (n_data_rows > 0) {
             const int pct = (int)std::floor(100.0 * (double)row / (double)n_data_rows);
+
             if (pct >= next_pct) {
-                std::cout << "[cross_sections] compute_cross_sections: ~" << next_pct << "% rows processed\n";
+                std::cout << "[cross_sections] compute_cross_sections: ~"
+                          << next_pct << "% rows processed\n";
                 next_pct += 10;
             }
         }
 
         std::vector<std::string> fields = split_csv_line(lines[row]);
+
         if (fields.size() != header.size()) {
             std::cerr << "[cross_sections] WARNING: row " << row
                       << " has " << fields.size() << " fields; expected "
@@ -1262,6 +1349,7 @@ bool compute_cross_sections(const std::string &csv_main,
         write_lumi_columns_for_row(fields);
 
         const LeeCorrections *lee_row = nullptr;
+
         try {
             lee_row = &lee_for_pass2_row(lee_corrections,
                                          fields,
@@ -1292,11 +1380,14 @@ bool compute_cross_sections(const std::string &csv_main,
 
             for (const auto &h : cross_section_helicities_for_label(L)) {
                 auto it = colmap.find(L + "|" + h);
+
                 if (it == colmap.end()) continue;
 
                 const int iy = it->second.yield_idx;
                 const int ix = it->second.xs_idx;
+
                 const Triple Y = parse_tuple3(fields[iy]);
+
                 if (Y.value <= 0.0) continue;
 
                 const int c_vbin = use_10p2 ? c_vbin_102 : c_vbin_106;
@@ -1304,7 +1395,9 @@ bool compute_cross_sections(const std::string &csv_main,
                 const std::string energy_tag = use_10p2 ? "10.2 GeV" : "10.6 GeV";
 
                 const Triple Vbin = parse_required_triple_cell(
-                    fields, c_vbin, "bin_volume, " + energy_tag,
+                    fields,
+                    c_vbin,
+                    "bin_volume, " + energy_tag,
                     "pass-2 CSV row " + std::to_string(row) + ", label " + L + ", helicity " + h
                 );
 
@@ -1312,18 +1405,26 @@ bool compute_cross_sections(const std::string &csv_main,
                 // used in sigma, but it confirms this row came from the new schema
                 // and lets the CSV expose allowed/cubic volume ratios for debugging.
                 (void)parse_required_triple_cell(
-                    fields, c_cubic_vbin, "cubic bin_volume, " + energy_tag,
+                    fields,
+                    c_cubic_vbin,
+                    "cubic bin_volume, " + energy_tag,
                     "pass-2 CSV row " + std::to_string(row) + ", label " + L + ", helicity " + h
                 );
 
                 double lumi_val = 0.0;
-                if (h == "unpol") lumi_val = Lumi.value;
-                else if (h == "pos") lumi_val = Lumi.stat;
-                else if (h == "neg") lumi_val = Lumi.sys;
+
+                if (h == "unpol") {
+                    lumi_val = Lumi.value;
+                } else if (h == "pos") {
+                    lumi_val = Lumi.stat;
+                } else if (h == "neg") {
+                    lumi_val = Lumi.sys;
+                }
 
                 if (lumi_val <= 0.0) continue;
 
                 const double denom = lumi_val * Vbin.value;
+
                 if (denom <= 0.0) continue;
 
                 const double sigma = Y.value * Frad.value * Fbin.value / denom;
@@ -1340,8 +1441,11 @@ bool compute_cross_sections(const std::string &csv_main,
                 sys_rel2 += ratio_rel2(Fbin.value, Fbin.sys);
                 sys_rel2 += ratio_rel2(Vbin.value, Vbin.sys);
 
-                const double sigma_stat = (stat_rel2 > 0.0) ? sigma * std::sqrt(stat_rel2) : 0.0;
-                const double sigma_sys  = (sys_rel2  > 0.0) ? sigma * std::sqrt(sys_rel2)  : 0.0;
+                const double sigma_stat =
+                    (stat_rel2 > 0.0) ? sigma * std::sqrt(stat_rel2) : 0.0;
+
+                const double sigma_sys =
+                    (sys_rel2 > 0.0) ? sigma * std::sqrt(sys_rel2) : 0.0;
 
                 fields[ix] = tuple3_to_cell(sigma, sigma_stat, sigma_sys);
             }
@@ -1355,33 +1459,44 @@ bool compute_cross_sections(const std::string &csv_main,
     tmp_path += ".tmp";
 
     std::ofstream ofs(tmp_path);
+
     if (!ofs) {
-        std::cerr << "[cross_sections] ERROR: cannot open " << tmp_path << " for writing.\n";
+        std::cerr << "[cross_sections] ERROR: cannot open "
+                  << tmp_path << " for writing.\n";
         return false;
     }
-    for (const auto &lout : out_lines) ofs << lout << "\n";
+
+    for (const auto &lout : out_lines) {
+        ofs << lout << "\n";
+    }
+
     ofs.close();
 
     if (!ofs) {
-        std::cerr << "[cross_sections] ERROR: failed while writing " << tmp_path << "\n";
+        std::cerr << "[cross_sections] ERROR: failed while writing "
+                  << tmp_path << "\n";
         return false;
     }
 
     std::error_code ec;
     fs::rename(tmp_path, csv_path, ec);
+
     if (ec) {
         fs::remove(csv_path, ec);
         ec.clear();
         fs::rename(tmp_path, csv_path, ec);
+
         if (ec) {
-            std::cerr << "[cross_sections] ERROR: failed to replace " << csv_main
-                      << " with " << tmp_path << ": " << ec.message() << "\n";
+            std::cerr << "[cross_sections] ERROR: failed to replace "
+                      << csv_main << " with " << tmp_path << ": "
+                      << ec.message() << "\n";
             return false;
         }
     }
 
     std::cout << "[cross_sections] Updated CSV with luminosities and cross sections: "
               << csv_main << "\n";
+
     return true;
 }
 
@@ -1400,7 +1515,7 @@ struct BinData {
     std::vector<Point> pos;
     std::vector<Point> neg;
     size_t theory_row = 0;
-    bool   have_theory_row = false;
+    bool have_theory_row = false;
 };
 
 using QTKey = std::pair<Range, Range>;
@@ -1412,9 +1527,15 @@ struct XSGroupByXB {
 
 struct TheoryCurves {
     std::vector<double> phi_deg;
-    std::vector<double> bh_unpol, bh_pos, bh_neg;
-    std::vector<double> km_unpol, km_pos, km_neg;
-    std::vector<double> vgg_unpol, vgg_pos, vgg_neg;
+    std::vector<double> bh_unpol;
+    std::vector<double> bh_pos;
+    std::vector<double> bh_neg;
+    std::vector<double> km_unpol;
+    std::vector<double> km_pos;
+    std::vector<double> km_neg;
+    std::vector<double> vgg_unpol;
+    std::vector<double> vgg_pos;
+    std::vector<double> vgg_neg;
 };
 
 static std::string theory_energy_label_for(const std::string &label) {
@@ -1438,6 +1559,7 @@ load_theory_for_label(const std::string &label,
     }
 
     std::ifstream ifs(file);
+
     if (!ifs) {
         std::cerr << "[cross_sections] WARNING: cannot open theory JSON for label \""
                   << label << "\" at " << file.string() << "\n";
@@ -1445,6 +1567,7 @@ load_theory_for_label(const std::string &label,
     }
 
     json j;
+
     try {
         ifs >> j;
     } catch (...) {
@@ -1454,6 +1577,7 @@ load_theory_for_label(const std::string &label,
     }
 
     std::vector<double> phi_deg = j.value("phi_deg", std::vector<double>{});
+
     if (phi_deg.empty()) {
         std::cerr << "[cross_sections] WARNING: theory JSON for label \""
                   << label << "\" has empty phi_deg.\n";
@@ -1471,6 +1595,7 @@ load_theory_for_label(const std::string &label,
         const json &cell = it.value();
 
         size_t row_index = 0;
+
         try {
             row_index = (size_t)std::stoul(row_key);
         } catch (...) {
@@ -1521,14 +1646,17 @@ static std::pair<double, double> compute_yrange_for_bin(
             if (p.xs > 0.0) {
                 double ylow  = std::max(1e-12, p.xs - p.xs_err);
                 double yhigh = p.xs + p.xs_err;
+
                 if (ylow  > 0.0 && ylow  < ymin) ymin = ylow;
                 if (yhigh > ymax) ymax = yhigh;
             }
         }
     };
+
     auto update_from_curve = [&](const std::vector<double> &ys) {
         for (double y : ys) {
             if (y <= 0.0) continue;
+
             if (y < ymin) ymin = y;
             if (y > ymax) ymax = y;
         }
@@ -1538,17 +1666,21 @@ static std::pair<double, double> compute_yrange_for_bin(
         if (mode == XSecPanelMode::All || mode == XSecPanelMode::UnpolOnly) {
             update_from_points(bin->unpol);
         }
+
         if (mode == XSecPanelMode::All || mode == XSecPanelMode::PosOnly) {
             update_from_points(bin->pos);
         }
+
         if (mode == XSecPanelMode::All || mode == XSecPanelMode::NegOnly) {
             update_from_points(bin->neg);
         }
 
         if (bin->have_theory_row) {
             auto it_th = theory.find(bin->theory_row);
+
             if (it_th != theory.end()) {
                 const TheoryCurves &tc = it_th->second;
+
                 if (mode == XSecPanelMode::All) {
                     update_from_curve(tc.bh_unpol);
                     update_from_curve(tc.km_unpol);
@@ -1581,8 +1713,10 @@ static std::pair<double, double> compute_yrange_for_bin(
         if (ymin <= 0.0 || !std::isfinite(ymin)) {
             ymin = ymax * 1e-3;
         }
+
         double logmin = std::pow(10.0, std::floor(std::log10(ymin)));
         double logmax = std::pow(10.0, std::ceil(std::log10(ymax)));
+
         ymin = std::max(1e-4, logmin);
         ymax = logmax;
     }
@@ -1591,22 +1725,31 @@ static std::pair<double, double> compute_yrange_for_bin(
 }
 
 static TGraphErrors *make_xsec_graph(const std::vector<Point> &v,
-                                     int mstyle, int mcolor) {
+                                     int mstyle,
+                                     int mcolor) {
     if (v.empty()) return nullptr;
+
     int N = (int)v.size();
-    std::vector<double> x(N), y(N), ex(N), ey(N);
+
+    std::vector<double> x(N);
+    std::vector<double> y(N);
+    std::vector<double> ex(N);
+    std::vector<double> ey(N);
+
     for (int i = 0; i < N; ++i) {
         x[i]  = v[i].phi;
         y[i]  = v[i].xs;
         ex[i] = 0.0;
         ey[i] = v[i].xs_err;
     }
+
     TGraphErrors *g = new TGraphErrors(N, x.data(), y.data(), ex.data(), ey.data());
     g->SetMarkerStyle(mstyle);
     g->SetMarkerSize(1.0);
     g->SetLineWidth(2);
     g->SetLineColor(mcolor);
     g->SetMarkerColor(mcolor);
+
     return g;
 }
 
@@ -1629,34 +1772,45 @@ static void make_xsec_canvas_for_mode(
     int nPads) {
 
     const auto &bins_for_xB = group.bins;
+
     if (bins_for_xB.empty()) return;
 
     int W = 280 * ncols + 160;
     int H = 260 * nrows + 260;
+
     if (W < 1200) W = 1200;
     if (H < 900)  H = 900;
 
     double titleSize       = 0.18;
     double legendTextSize  = 0.11;
     double cellLabelSize   = 0.070;
+
     if (nPads <= 4) {
         titleSize      = 0.14;
         legendTextSize = 0.09;
         cellLabelSize  = 0.060;
     }
+
     if (nPads == 1) {
         titleSize      = 0.12;
         legendTextSize = 0.085;
         cellLabelSize  = 0.055;
     }
+
     titleSize      *= 0.5;
     legendTextSize *= 0.5;
 
     std::ostringstream cname;
     cname << "c_xsec_";
-    if (mode == XSecPanelMode::UnpolOnly) cname << "unpol_";
-    else if (mode == XSecPanelMode::PosOnly) cname << "pos_";
-    else if (mode == XSecPanelMode::NegOnly) cname << "neg_";
+
+    if (mode == XSecPanelMode::UnpolOnly) {
+        cname << "unpol_";
+    } else if (mode == XSecPanelMode::PosOnly) {
+        cname << "pos_";
+    } else if (mode == XSecPanelMode::NegOnly) {
+        cname << "neg_";
+    }
+
     cname << canonical_period_dir(label) << "_xB" << xb_idx_for_name;
 
     TCanvas *c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
@@ -1674,6 +1828,7 @@ static void make_xsec_canvas_for_mode(
     pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
     pTop->cd();
+
     TLatex head;
     head.SetNDC();
     head.SetTextAlign(22);
@@ -1685,13 +1840,21 @@ static void make_xsec_canvas_for_mode(
         << "   x_{B} in ("
         << std::fixed << std::setprecision(3)
         << xb_range.first << ", " << xb_range.second << ")";
-    if      (mode == XSecPanelMode::UnpolOnly) tit << "   (unpolarized only)";
-    else if (mode == XSecPanelMode::PosOnly)   tit << "   (+ helicity only)";
-    else if (mode == XSecPanelMode::NegOnly)   tit << "   (- helicity only)";
+
+    if (mode == XSecPanelMode::UnpolOnly) {
+        tit << "   (unpolarized only)";
+    } else if (mode == XSecPanelMode::PosOnly) {
+        tit << "   (+ helicity only)";
+    } else if (mode == XSecPanelMode::NegOnly) {
+        tit << "   (- helicity only)";
+    }
 
     head.DrawLatex(0.5, 0.86, tit.str().c_str());
 
-    TGraphErrors dummy_unpol, dummy_pos, dummy_neg;
+    TGraphErrors dummy_unpol;
+    TGraphErrors dummy_pos;
+    TGraphErrors dummy_neg;
+
     dummy_unpol.SetMarkerStyle(20);
     dummy_unpol.SetMarkerSize(1.0);
     dummy_unpol.SetLineWidth(2);
@@ -1710,8 +1873,13 @@ static void make_xsec_canvas_for_mode(
     dummy_neg.SetMarkerColor(kBlue + 1);
     dummy_neg.SetLineColor(kBlue + 1);
 
-    TGraph dummy_bh, dummy_km_unpol, dummy_km_pos, dummy_km_neg;
-    TGraph dummy_vgg_unpol, dummy_vgg_pos, dummy_vgg_neg;
+    TGraph dummy_bh;
+    TGraph dummy_km_unpol;
+    TGraph dummy_km_pos;
+    TGraph dummy_km_neg;
+    TGraph dummy_vgg_unpol;
+    TGraph dummy_vgg_pos;
+    TGraph dummy_vgg_neg;
 
     dummy_bh.SetLineWidth(2);
     dummy_bh.SetLineStyle(2);
@@ -1801,6 +1969,7 @@ static void make_xsec_canvas_for_mode(
 
     for (int r = 0; r < nrows; ++r) {
         const Range &t_range = t_slice[r];
+
         for (int cc = 0; cc < ncols; ++cc) {
             const Range &q2_range = q2_slice[cc];
 
@@ -1814,13 +1983,16 @@ static void make_xsec_canvas_for_mode(
 
             QTKey key(q2_range, t_range);
             auto it_bin = bins_for_xB.find(key);
+
             const BinData *bin_ptr = nullptr;
+
             if (it_bin != bins_for_xB.end()) {
                 bin_ptr = &(it_bin->second);
             }
 
             double ymin_canvas = 1e-4;
             double ymax_canvas = 1.0;
+
             {
                 auto yr = compute_yrange_for_bin(bin_ptr, theory, mode);
                 ymin_canvas = yr.first;
@@ -1855,42 +2027,63 @@ static void make_xsec_canvas_for_mode(
             if (!bin_ptr) continue;
 
             BinData bin = *bin_ptr;
+
             auto sort_by_phi = [](std::vector<Point> &v) {
                 std::sort(v.begin(), v.end(),
                           [](const Point &a, const Point &b) {
                               return a.phi < b.phi;
                           });
             };
+
             sort_by_phi(bin.unpol);
             sort_by_phi(bin.pos);
             sort_by_phi(bin.neg);
 
             if (mode == XSecPanelMode::All || mode == XSecPanelMode::UnpolOnly) {
                 TGraphErrors *g_unpol = make_xsec_graph(bin.unpol, 20, kBlack);
-                if (g_unpol) g_unpol->Draw("P SAME");
+
+                if (g_unpol) {
+                    g_unpol->Draw("P SAME");
+                }
             }
+
             if (mode == XSecPanelMode::All || mode == XSecPanelMode::PosOnly) {
                 TGraphErrors *g_pos = make_xsec_graph(bin.pos, 24, kRed + 1);
-                if (g_pos) g_pos->Draw("P SAME");
+
+                if (g_pos) {
+                    g_pos->Draw("P SAME");
+                }
             }
+
             if (mode == XSecPanelMode::All || mode == XSecPanelMode::NegOnly) {
                 TGraphErrors *g_neg = make_xsec_graph(bin.neg, 25, kBlue + 1);
-                if (g_neg) g_neg->Draw("P SAME");
+
+                if (g_neg) {
+                    g_neg->Draw("P SAME");
+                }
             }
 
             if (bin.have_theory_row) {
                 auto it_th = theory.find(bin.theory_row);
+
                 if (it_th != theory.end()) {
                     const TheoryCurves &tc = it_th->second;
+
                     auto draw_curve = [&](const std::vector<double> &ys,
-                                          int lstyle, int lcolor) {
+                                          int lstyle,
+                                          int lcolor) {
                         if (tc.phi_deg.size() != ys.size() || ys.empty()) return;
+
                         int M = (int)ys.size();
-                        std::vector<double> xp(M), yp(M);
+
+                        std::vector<double> xp(M);
+                        std::vector<double> yp(M);
+
                         for (int i = 0; i < M; ++i) {
                             xp[i] = tc.phi_deg[i];
                             yp[i] = ys[i];
                         }
+
                         TGraph *gth = new TGraph(M, xp.data(), yp.data());
                         gth->SetLineStyle(lstyle);
                         gth->SetLineWidth(2);
@@ -1926,9 +2119,15 @@ static void make_xsec_canvas_for_mode(
 
     std::ostringstream fname;
     fname << "cross_sections_";
-    if (mode == XSecPanelMode::UnpolOnly)      fname << "unpol_";
-    else if (mode == XSecPanelMode::PosOnly)   fname << "pos_";
-    else if (mode == XSecPanelMode::NegOnly)   fname << "neg_";
+
+    if (mode == XSecPanelMode::UnpolOnly) {
+        fname << "unpol_";
+    } else if (mode == XSecPanelMode::PosOnly) {
+        fname << "pos_";
+    } else if (mode == XSecPanelMode::NegOnly) {
+        fname << "neg_";
+    }
+
     fname << canonical_period_dir(label)
           << "_xB_" << xb_idx_for_name << ".png";
 
@@ -1947,6 +2146,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                                    const std::string &theory_json_root,
                                    const std::string &out_root_dir) {
     std::ifstream ifs(csv_main);
+
     if (!ifs) {
         std::cerr << "[cross_sections] ERROR: cannot open " << csv_main
                   << " for plotting.\n";
@@ -1955,9 +2155,11 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     std::vector<std::string> lines;
     std::string line;
+
     while (std::getline(ifs, line)) {
         lines.push_back(line);
     }
+
     ifs.close();
 
     if (lines.empty()) {
@@ -1968,9 +2170,13 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     std::vector<std::string> header = split_csv_line(lines[0]);
 
-    int c_xb_min = -1, c_xb_max = -1;
-    int c_q2_min = -1, c_q2_max = -1;
-    int c_t_min  = -1, c_t_max  = -1;
+    int c_xb_min = -1;
+    int c_xb_max = -1;
+    int c_q2_min = -1;
+    int c_q2_max = -1;
+    int c_t_min  = -1;
+    int c_t_max  = -1;
+
     try {
         c_xb_min = find_col(header, "xBmin");
         c_xb_max = find_col(header, "xBmax");
@@ -1987,10 +2193,13 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
     int c_xb_idx = find_col_optional(header, "xB index");
 
     int c_phiavg = find_col_optional(header, "phiavg, " + label);
-    int c_phimin = -1, c_phimax = -1;
+    int c_phimin = -1;
+    int c_phimax = -1;
+
     if (c_phiavg < 0) {
         c_phimin = find_col_optional(header, "phimin");
         c_phimax = find_col_optional(header, "phimax");
+
         if (c_phimin < 0 || c_phimax < 0) {
             std::cerr << "[cross_sections] FATAL: no phiavg or phimin/phimax "
                       << "available for label " << label << ".\n";
@@ -2000,9 +2209,11 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     int c_xs_unpol = find_col_optional(
         header, "cross sections, ep->epg, exp, " + label + ", unpol");
-    int c_xs_pos   = find_col_optional(
+
+    int c_xs_pos = find_col_optional(
         header, "cross sections, ep->epg, exp, " + label + ", pos");
-    int c_xs_neg   = find_col_optional(
+
+    int c_xs_neg = find_col_optional(
         header, "cross sections, ep->epg, exp, " + label + ", neg");
 
     if (c_xs_unpol < 0 && c_xs_pos < 0 && c_xs_neg < 0) {
@@ -2018,6 +2229,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
     }
 
     const bool has_hel = has_helicity_resolved_cross_sections(label);
+
     if (has_hel && (c_xs_pos < 0 || c_xs_neg < 0)) {
         std::cerr << "[cross_sections] FATAL: incomplete helicity-resolved cross section columns "
                   << "for label " << label << " (need unpol/pos/neg).\n";
@@ -2028,7 +2240,9 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     for (size_t row = 1; row < lines.size(); ++row) {
         if (lines[row].empty()) continue;
+
         std::vector<std::string> fields = split_csv_line(lines[row]);
+
         if (fields.size() != header.size()) continue;
 
         double xbmin = std::atof(trim(unquote(fields[c_xb_min])).c_str());
@@ -2043,6 +2257,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         Range t_range(tmin,  tmax);
 
         double phi = 0.0;
+
         if (c_phiavg >= 0) {
             phi = std::atof(trim(unquote(fields[c_phiavg])).c_str());
         } else {
@@ -2052,8 +2267,9 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         }
 
         Triple xs_unpol = parse_tuple3(fields[c_xs_unpol]);
-        Triple xs_pos;
-        Triple xs_neg;
+        Triple xs_pos{0.0, 0.0, 0.0};
+        Triple xs_neg{0.0, 0.0, 0.0};
+
         if (has_hel) {
             xs_pos = parse_tuple3(fields[c_xs_pos]);
             xs_neg = parse_tuple3(fields[c_xs_neg]);
@@ -2065,12 +2281,14 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         }
 
         XSGroupByXB &group = by_xb[xb_range];
+
         if (group.xb_index < 0 && c_xb_idx >= 0) {
             group.xb_index = std::atoi(trim(unquote(fields[c_xb_idx])).c_str());
         }
 
         QTKey key(q2_range, t_range);
         BinData &bin = group.bins[key];
+
         if (!bin.have_theory_row) {
             bin.theory_row      = row;
             bin.have_theory_row = true;
@@ -2078,6 +2296,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
         auto add_point = [&](const Triple &xs, std::vector<Point> &vec) {
             if (xs.value <= 0.0) return;
+
             Point p;
             p.phi    = phi;
             p.xs     = xs.value;
@@ -2086,6 +2305,7 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
         };
 
         add_point(xs_unpol, bin.unpol);
+
         if (has_hel) {
             add_point(xs_pos, bin.pos);
             add_point(xs_neg, bin.neg);
@@ -2114,20 +2334,26 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
     ensure_dir(outdir);
 
     int xb_canvas_counter = 0;
+
     for (const auto &kv_xb : by_xb) {
         const Range &xb_range = kv_xb.first;
         const XSGroupByXB &group = kv_xb.second;
         const auto &bins_for_xB = group.bins;
+
         if (bins_for_xB.empty()) continue;
 
-        std::set<Range> q2_set, t_set;
+        std::set<Range> q2_set;
+        std::set<Range> t_set;
+
         for (const auto &kv : bins_for_xB) {
             const QTKey &qt = kv.first;
             q2_set.insert(qt.first);
             t_set.insert(qt.second);
         }
+
         std::vector<Range> q2_slice(q2_set.begin(), q2_set.end());
         std::vector<Range> t_slice(t_set.begin(), t_set.end());
+
         if (q2_slice.empty() || t_slice.empty()) continue;
 
         int ncols = (int)q2_slice.size();
@@ -2174,5 +2400,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
 
     std::cout << "[cross_sections] Plotted cross sections for label "
               << label << " into " << outdir.string() << "\n";
+
     return true;
 }
