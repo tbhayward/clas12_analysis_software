@@ -132,10 +132,10 @@ public static void main(String[] args) {
 	qa.checkForDefect('ChargeNegative')
 	qa.checkForDefect('ChargeUnknown')
 	[ // list of runs with `Misc` that should be allowed
-		5418, 5419, // RGA Fa18 Inb 5nA run
-		5443, // RGA Fa18 Out 5nA run
-		5444, // RGA Fa18 Out 20nA run
-		6616, // RGA Sp19 Inb 5nA run
+		// 5418, 5419, // RGA Fa18 Inb 5nA run
+		// 5443, // RGA Fa18 Out 5nA run
+		// 5444, // RGA Fa18 Out 20nA run
+		// 6616, // RGA Sp19 Inb 5nA run
   		6736, 6737, 6738, 6739, 6740, 6741, 
   			6742, 6743, 6744, 6746, 6747, 6748, 
   			6749, 6750, 6751, 6753, 6754, 6755, 
