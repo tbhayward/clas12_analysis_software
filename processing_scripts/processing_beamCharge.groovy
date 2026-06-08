@@ -90,7 +90,6 @@ public class processing_beamCharge {
     					noHelbeamChargeTotal+=undfbeamCharge;
 					}
     			}
-    			beamCharge += posHelbeamChargeTotal + negHelbeamChargeTotal + noHelbeamChargeTotal;
 
 				// get run and event numbers
 				event = reader.getNextEvent();
@@ -103,14 +102,13 @@ public class processing_beamCharge {
 			beamChargeList+=posHelbeamChargeTotal.toString()+","
 			beamChargeList+=negHelbeamChargeTotal.toString()+","
 			beamChargeList+=noHelbeamChargeTotal.toString()+",0,0\n";
-			// beamChargeList+="0,0\n";
 			println(); println(); println();
 			print(beamChargeList);
 			println();
-			beamCharge = 0;
 			posHelbeamChargeTotal = 0;
 			negHelbeamChargeTotal = 0;
 			noHelbeamChargeTotal = 0;
+			runScalerCharge = 0;
 		}
 
 	}
