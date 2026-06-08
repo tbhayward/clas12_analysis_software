@@ -10,7 +10,25 @@ struct CurrentDependenceOptions {
     std::string charge_csv_path = "imports/integrated_luminosity/global.csv";
     std::string combined_cuts_json = "output/jsons/combined_cuts.json";
     std::string output_dir = "output/dvcs_current_dependence";
+
+    // Existing override:
+    //   true  -> write all current-efficiency factors as (1,0)
+    //   false -> compute the current-efficiency factors normally
     bool override_to_unity = false;
+
+    // Charge-column convention for unpolarized data normalization.
+    //
+    // If true:
+    //   Use column 2 of the integrated-luminosity CSV for all periods.
+    //
+    // If false:
+    //   Preserve the older mixed convention:
+    //     Spring 2018 -> column 2
+    //     Fall 2018 and Spring 2019 -> column 3 + column 4
+    //
+    // Spring 2018 is always forced to column 2 internally.
+    bool use_second_column_charge_for_all_unpolarized = true;
+
     int max_workers = 5;
 };
 

@@ -13,6 +13,7 @@
 #include <TH1.h>
 #include <TH1D.h>
 #include <TStyle.h>
+#include <TGraph.h>
 
 #include <nlohmann/json.hpp>
 
@@ -108,9 +109,10 @@ static void fatal(const std::string& msg) {
 }
 
 static std::string lower_ascii(std::string s) {
-    for (char& c : s) {
+    for ( char& c : s ) {
         c = (char)std::tolower((unsigned char)c);
     }
+
     return s;
 }
 
@@ -304,6 +306,7 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
 
         if (quote) {
             oss << '"';
+
             for (char ch : s) {
                 if (ch == '"') {
                     oss << "\"\"";
@@ -311,6 +314,7 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
                     oss << ch;
                 }
             }
+
             oss << '"';
         } else {
             oss << s;
@@ -442,7 +446,37 @@ static std::string current_eff_col(const ChannelConfig& cfg,
 // Charge and current maps
 // -----------------------------------------------------------------------------
 
-static std::unordered_map<int, double> read_charge_csv(const std::string& path) {
+struct ChargeEntry {
+    double run_scaler = std::numeric_limits<double>::quiet_NaN();
+    double hel_pos = std::numeric_limits<double>::quiet_NaN();
+    double hel_neg = std::numeric_limits<double>::quiet_NaN();
+
+    bool has_run_scaler = false;
+    bool has_hel_pos = false;
+    bool has_hel_neg = false;
+};
+
+static double parse_optional_double(const std::vector<std::string>& fields,
+                                    size_t index,
+                                    bool& ok) {
+    ok = false;
+
+    if (index >= fields.size()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    char* endp = nullptr;
+    const double v = std::strtod(fields[index].c_str(), &endp);
+
+    if (endp == fields[index].c_str()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    ok = std::isfinite(v);
+    return v;
+}
+
+static std::unordered_map<int, ChargeEntry> read_charge_csv(const std::string& path) {
     std::ifstream fin(path);
 
     if (!fin.is_open()) {
@@ -451,7 +485,7 @@ static std::unordered_map<int, double> read_charge_csv(const std::string& path) 
         fatal(ss.str());
     }
 
-    std::unordered_map<int, double> out;
+    std::unordered_map<int, ChargeEntry> out;
     std::string line;
 
     while (std::getline(fin, line)) {
@@ -476,20 +510,100 @@ static std::unordered_map<int, double> read_charge_csv(const std::string& path) 
             continue;
         }
 
-        endp = nullptr;
-        const double charge = std::strtod(fields[1].c_str(), &endp);
+        ChargeEntry entry;
 
-        if (endp == fields[1].c_str()) {
+        bool ok_run = false;
+        bool ok_pos = false;
+        bool ok_neg = false;
+
+        entry.run_scaler = parse_optional_double(fields, 1, ok_run);
+        entry.hel_pos = parse_optional_double(fields, 2, ok_pos);
+        entry.hel_neg = parse_optional_double(fields, 3, ok_neg);
+
+        entry.has_run_scaler = ok_run;
+        entry.has_hel_pos = ok_pos;
+        entry.has_hel_neg = ok_neg;
+
+        if (!entry.has_run_scaler && !(entry.has_hel_pos && entry.has_hel_neg)) {
             continue;
         }
 
-        out[run] = charge;
+        out[run] = entry;
     }
 
     std::cout << "[current_dependence] Loaded " << out.size()
               << " run-charge entries from " << path << std::endl;
 
+    std::cout << "[current_dependence] Charge CSV interpretation:"
+              << " column 1 = run number,"
+              << " column 2 = RUN::Scaler-like total,"
+              << " column 3 = positive-helicity scaler,"
+              << " column 4 = negative-helicity scaler."
+              << std::endl;
+
     return out;
+}
+
+static bool is_spring_2018_period(const std::string& period_display) {
+    return period_display == "Sp18 Inb" || period_display == "Sp18 Out";
+}
+
+static bool select_unpolarized_charge_for_period(
+    const PeriodTags& tags,
+    int runnum,
+    const ChargeEntry& entry,
+    bool use_second_column_charge_for_all_unpolarized,
+    double& charge) {
+
+    charge = std::numeric_limits<double>::quiet_NaN();
+
+    if (is_spring_2018_period(tags.display)) {
+        if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
+            std::cout << "[current_dependence] WARNING: missing/non-positive column-2 charge"
+                      << " for Spring 2018 run=" << runnum
+                      << " period=" << tags.display
+                      << std::endl;
+            return false;
+        }
+
+        charge = entry.run_scaler;
+        return true;
+    }
+
+    if (use_second_column_charge_for_all_unpolarized) {
+        if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
+            std::cout << "[current_dependence] WARNING: missing/non-positive column-2 charge"
+                      << " for run=" << runnum
+                      << " period=" << tags.display
+                      << std::endl;
+            return false;
+        }
+
+        charge = entry.run_scaler;
+        return true;
+    }
+
+    if (!(entry.has_hel_pos && entry.has_hel_neg)) {
+        std::cout << "[current_dependence] WARNING: missing helicity charge columns"
+                  << " in legacy charge mode for run=" << runnum
+                  << " period=" << tags.display
+                  << std::endl;
+        return false;
+    }
+
+    charge = entry.hel_pos + entry.hel_neg;
+
+    if (!(charge > 0.0)) {
+        std::cout << "[current_dependence] WARNING: non-positive helicity-summed charge"
+                  << " in legacy charge mode for run=" << runnum
+                  << " period=" << tags.display
+                  << " hel_pos=" << entry.hel_pos
+                  << " hel_neg=" << entry.hel_neg
+                  << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 static const std::unordered_map<int, int>& fa18_inb_current_map() {
@@ -1102,11 +1216,14 @@ struct DataAgg {
     std::map<int, double> charge_by_run;
 };
 
-static DataAgg process_data_tree(const ChannelConfig& cfg,
-                                 const std::string& key,
-                                 TTree* tree,
-                                 const std::unordered_map<int, double>& charge_map,
-                                 const TopoCutMap& data_cuts) {
+static DataAgg process_data_tree(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    bool use_second_column_charge_for_all_unpolarized) {
+
     PeriodTags tags = parse_period_from_key(key);
 
     DataAgg out;
@@ -1144,7 +1261,15 @@ static DataAgg process_data_tree(const ChannelConfig& cfg,
             continue;
         }
 
-        const double charge = charge_it->second;
+        double charge = std::numeric_limits<double>::quiet_NaN();
+
+        if (!select_unpolarized_charge_for_period(tags,
+                                                  b.runnum,
+                                                  charge_it->second,
+                                                  use_second_column_charge_for_all_unpolarized,
+                                                  charge)) {
+            continue;
+        }
 
         if (!(charge > 0.0)) {
             continue;
@@ -1383,7 +1508,11 @@ static void draw_fit_graph(const std::string& out_path,
                            const std::vector<CurrentPoint>& mc_points,
                            const FitResult& mc_fit,
                            bool relative) {
-    mkdir_p(out_path.substr(0, out_path.find_last_of('/')));
+    const size_t slash_pos = out_path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(out_path.substr(0, slash_pos));
+    }
 
     TCanvas c("c_current_dependence", "", 1100, 800);
     c.SetGrid(1, 1);
@@ -1438,20 +1567,24 @@ static void draw_fit_graph(const std::string& out_path,
     for (const CurrentPoint& p : data_points) {
         double y = p.y;
         double ey = p.sy;
+
         if (relative && std::isfinite(data_fit.b) && data_fit.b != 0.0) {
             y /= data_fit.b;
             ey /= std::fabs(data_fit.b);
         }
+
         ymax = std::max(ymax, y + ey);
     }
 
     for (const CurrentPoint& p : mc_points) {
         double y = p.y;
         double ey = p.sy;
+
         if (relative && std::isfinite(mc_fit.b) && mc_fit.b != 0.0) {
             y /= mc_fit.b;
             ey /= std::fabs(mc_fit.b);
         }
+
         ymax = std::max(ymax, y + ey);
     }
 
@@ -1466,7 +1599,7 @@ static void draw_fit_graph(const std::string& out_path,
     if (relative) {
         frame->GetYaxis()->SetTitle("Relative response to 0 nA");
     } else {
-        frame->GetYaxis()->SetTitle("Data counts / nC or MC efficiency");
+        frame->GetYaxis()->SetTitle("Data counts / charge or MC efficiency");
     }
 
     frame->GetXaxis()->CenterTitle(true);
@@ -1530,7 +1663,11 @@ static void draw_fit_graph(const std::string& out_path,
 
 static void write_points_csv(const std::string& path,
                              const std::vector<CurrentPoint>& points) {
-    mkdir_p(path.substr(0, path.find_last_of('/')));
+    const size_t slash_pos = path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(path.substr(0, slash_pos));
+    }
 
     std::ofstream fout(path);
 
@@ -1553,7 +1690,11 @@ static void write_points_csv(const std::string& path,
 
 static void write_summary_csv(const std::string& path,
                               const std::vector<PeriodResult>& rows) {
-    mkdir_p(path.substr(0, path.find_last_of('/')));
+    const size_t slash_pos = path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(path.substr(0, slash_pos));
+    }
 
     std::ofstream fout(path);
 
@@ -1588,12 +1729,13 @@ static std::vector<PeriodResult> run_channel_study(
     const std::map<std::string, TTree*>& data_trees,
     const std::map<std::string, TTree*>& gen_trees,
     const std::map<std::string, TTree*>& rec_trees,
-    const std::unordered_map<int, double>& charge_map,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
     const TopoCutMap& data_cuts,
     const TopoCutMap& mc_cuts,
     const std::string& output_dir,
     int max_workers,
-    bool process_mc) {
+    bool process_mc,
+    bool use_second_column_charge_for_all_unpolarized) {
 
     std::map<std::string, DataAgg> data_aggs;
     std::mutex data_mutex;
@@ -1623,7 +1765,8 @@ static std::vector<PeriodResult> run_channel_study(
                                         item.first,
                                         item.second,
                                         charge_map,
-                                        data_cuts);
+                                        data_cuts,
+                                        use_second_column_charge_for_all_unpolarized);
 
         std::lock_guard<std::mutex> lock(data_mutex);
         data_aggs[agg.period] = std::move(agg);
@@ -1640,62 +1783,62 @@ static std::vector<PeriodResult> run_channel_study(
 
     if (process_mc) {
         for (const auto& kv : gen_trees) {
-        PeriodTags tags = parse_period_from_key(kv.first);
+            PeriodTags tags = parse_period_from_key(kv.first);
 
-        if (tags.display == "Fa18 Inb Supp") {
-            continue;
+            if (tags.display == "Fa18 Inb Supp") {
+                continue;
+            }
+
+            const int current = parse_current_from_key(kv.first);
+
+            std::ostringstream key;
+            key << tags.display << "_" << current;
+
+            McAgg& agg = mc_by_period_current[key.str()];
+            agg.period = tags.display;
+            agg.current_nA = current;
+            agg.n_gen += count_generated_tree(kv.second);
         }
 
-        const int current = parse_current_from_key(kv.first);
-
-        std::ostringstream key;
-        key << tags.display << "_" << current;
-
-        McAgg& agg = mc_by_period_current[key.str()];
-        agg.period = tags.display;
-        agg.current_nA = current;
-        agg.n_gen += count_generated_tree(kv.second);
-    }
-
-    std::vector<std::pair<std::string, TTree*>> rec_items;
+        std::vector<std::pair<std::string, TTree*>> rec_items;
 
         for (const auto& kv : rec_trees) {
             PeriodTags tags = parse_period_from_key(kv.first);
 
-        if (tags.display == "Fa18 Inb Supp") {
-            continue;
+            if (tags.display == "Fa18 Inb Supp") {
+                continue;
+            }
+
+            rec_items.push_back(kv);
         }
 
-        rec_items.push_back(kv);
-    }
-
-    std::mutex rec_mutex;
-    nth = std::max(1, std::min(5, max_workers));
-    nth = std::min(nth, std::max(1, (int)rec_items.size()));
+        std::mutex rec_mutex;
+        nth = std::max(1, std::min(5, max_workers));
+        nth = std::min(nth, std::max(1, (int)rec_items.size()));
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
 #endif
-    for (int i = 0; i < (int)rec_items.size(); ++i) {
-        const auto& item = rec_items[i];
+        for (int i = 0; i < (int)rec_items.size(); ++i) {
+            const auto& item = rec_items[i];
 
-        PeriodTags tags = parse_period_from_key(item.first);
-        const int current = parse_current_from_key(item.first);
+            PeriodTags tags = parse_period_from_key(item.first);
+            const int current = parse_current_from_key(item.first);
 
-        const long long n_rec = count_reconstructed_tree(cfg,
-                                                         item.first,
-                                                         item.second,
-                                                         mc_cuts);
+            const long long n_rec = count_reconstructed_tree(cfg,
+                                                             item.first,
+                                                             item.second,
+                                                             mc_cuts);
 
-        std::ostringstream key;
-        key << tags.display << "_" << current;
+            std::ostringstream key;
+            key << tags.display << "_" << current;
 
-        std::lock_guard<std::mutex> lock(rec_mutex);
-        McAgg& agg = mc_by_period_current[key.str()];
-        agg.period = tags.display;
-        agg.current_nA = current;
-        agg.n_rec += n_rec;
-    }
+            std::lock_guard<std::mutex> lock(rec_mutex);
+            McAgg& agg = mc_by_period_current[key.str()];
+            agg.period = tags.display;
+            agg.current_nA = current;
+            agg.n_rec += n_rec;
+        }
 
         for (const auto& kv : mc_by_period_current) {
             mc_aggs.push_back(kv.second);
@@ -1774,7 +1917,6 @@ static std::vector<PeriodResult> run_channel_study(
 
     return results;
 }
-
 
 static void apply_eppi0_mc_factor_from_dvcs_ratio(std::vector<PeriodResult>& eppi0_results,
                                                   const std::vector<PeriodResult>& dvcs_results) {
@@ -1912,6 +2054,7 @@ static const std::vector<std::string>& topology_labels() {
         "(CD, FD)",
         "(CD, FT)"
     };
+
     return v;
 }
 
@@ -1920,6 +2063,7 @@ static bool parse_tuple_numbers_cell(const std::string& cell, std::vector<double
 
     std::string s;
     s.reserve(cell.size());
+
     for (char c : cell) {
         if (c == '(' || c == ')' || c == '"') {
             s.push_back(' ');
@@ -1934,9 +2078,11 @@ static bool parse_tuple_numbers_cell(const std::string& cell, std::vector<double
     while (std::getline(ss, part, ',')) {
         char* endp = nullptr;
         const double v = std::strtod(part.c_str(), &endp);
+
         if (endp == part.c_str()) {
             return false;
         }
+
         vals.push_back(v);
     }
 
@@ -1947,6 +2093,7 @@ static bool parse_first_number(const std::string& cell, double& value) {
     value = std::numeric_limits<double>::quiet_NaN();
 
     std::vector<double> vals;
+
     if (!parse_tuple_numbers_cell(cell, vals) || vals.empty()) {
         return false;
     }
@@ -1964,6 +2111,7 @@ static bool parse_value_stat_sys(const std::string& cell,
     sys = 0.0;
 
     std::vector<double> vals;
+
     if (!parse_tuple_numbers_cell(cell, vals) || vals.size() < 3) {
         return false;
     }
@@ -1972,8 +2120,11 @@ static bool parse_value_stat_sys(const std::string& cell,
     stat = vals[1];
     sys = vals[2];
 
-    return std::isfinite(value) && std::isfinite(stat) && std::isfinite(sys) &&
-           stat >= 0.0 && sys >= 0.0;
+    return std::isfinite(value) &&
+           std::isfinite(stat) &&
+           std::isfinite(sys) &&
+           stat >= 0.0 &&
+           sys >= 0.0;
 }
 
 static std::string format_scalar(double v) {
@@ -1988,9 +2139,11 @@ static std::string format_scalar(double v) {
     while (!out.empty() && out.back() == '0') {
         out.pop_back();
     }
+
     if (!out.empty() && out.back() == '.') {
         out.pop_back();
     }
+
     if (out.empty() || out == "-0") {
         out = "0";
     }
@@ -2032,10 +2185,10 @@ static std::string rec_current_corrected_topo_col(const std::string& channel,
 }
 
 static void read_mc_current_factor_from_csv(const CSV& csv,
-                                                const ChannelConfig& cfg,
-                                                const std::string& period,
-                                                double& factor,
-                                                double& factor_stat) {
+                                            const ChannelConfig& cfg,
+                                            const std::string& period,
+                                            double& factor,
+                                            double& factor_stat) {
     const int c = col_strict(csv, current_eff_col(cfg, "mc", period));
 
     if (csv.rows.empty()) {
@@ -2043,7 +2196,9 @@ static void read_mc_current_factor_from_csv(const CSV& csv,
     }
 
     std::vector<double> vals;
-    if (!parse_tuple_numbers_cell(csv.rows.front()[c], vals) || vals.size() < 2 ||
+
+    if (!parse_tuple_numbers_cell(csv.rows.front()[c], vals) ||
+        vals.size() < 2 ||
         !(std::isfinite(vals[0]) && vals[0] > 0.0) ||
         !(std::isfinite(vals[1]) && vals[1] >= 0.0)) {
         std::ostringstream ss;
@@ -2075,6 +2230,7 @@ static long long apply_one_current_correction_column(CSV& csv,
         double raw = 0.0;
         double raw_stat = 0.0;
         double raw_sys = 0.0;
+
         if (!parse_value_stat_sys(row[c_src], raw, raw_stat, raw_sys) ||
             !(std::isfinite(raw) && raw > 0.0)) {
             row[c_dst].clear();
@@ -2082,9 +2238,11 @@ static long long apply_one_current_correction_column(CSV& csv,
         }
 
         const double corrected = raw / factor;
-        const double var_stat = (raw_stat * raw_stat) / (factor * factor) +
-                                (raw * raw * factor_stat * factor_stat) /
-                                (factor * factor * factor * factor);
+        const double var_stat =
+            (raw_stat * raw_stat) / (factor * factor) +
+            (raw * raw * factor_stat * factor_stat) /
+            (factor * factor * factor * factor);
+
         const double corrected_stat = (var_stat > 0.0) ? std::sqrt(var_stat) : 0.0;
         row[c_dst] = format_triple(corrected, corrected_stat, 0.0);
 
@@ -2105,6 +2263,7 @@ static long long apply_mc_current_corrections_for_channel(CSV& csv,
     for (const std::string& period : CSV_PERIOD_ORDER) {
         double f_mc = 0.0;
         double f_mc_stat = 0.0;
+
         read_mc_current_factor_from_csv(csv, factor_cfg, period, f_mc, f_mc_stat);
 
         const long long n_total = apply_one_current_correction_column(
@@ -2113,6 +2272,7 @@ static long long apply_mc_current_corrections_for_channel(CSV& csv,
             rec_current_corrected_total_col(source_channel, period),
             f_mc,
             f_mc_stat);
+
         total_positive += n_total;
 
         std::cout << "[current_dependence] Applied MC current correction for "
@@ -2128,6 +2288,7 @@ static long long apply_mc_current_corrections_for_channel(CSV& csv,
                 rec_current_corrected_topo_col(source_channel, topo, period),
                 f_mc,
                 f_mc_stat);
+
             total_positive += n_topo;
 
             std::cout << "[current_dependence] Applied MC current correction for "
@@ -2163,9 +2324,11 @@ static void apply_all_mc_current_corrections(CSV& csv,
     if (n_dvcs <= 0) {
         fatal("[current_dependence] FATAL: applying DVCS MC current corrections produced zero positive cells.");
     }
+
     if (n_eppi0 <= 0) {
         fatal("[current_dependence] FATAL: applying eppi0 MC current corrections produced zero positive cells.");
     }
+
     if (n_eppi0_bkg <= 0) {
         fatal("[current_dependence] FATAL: applying eppi0->epg background MC current corrections produced zero positive cells.");
     }
@@ -2201,7 +2364,8 @@ bool update_current_dependence_factors_csv(
         const ChannelConfig eppi0 = eppi0_config();
 
         if (options.override_to_unity) {
-            std::cout << "[current_dependence] Override enabled: writing all current-efficiency factors as (1,0)." << std::endl;
+            std::cout << "[current_dependence] Override enabled: writing all current-efficiency factors as (1,0)."
+                      << std::endl;
 
             write_override_unity(csv, dvcs);
             write_override_unity(csv, eppi0);
@@ -2217,8 +2381,19 @@ bool update_current_dependence_factors_csv(
 
         mkdir_p(options.output_dir);
 
-        const std::unordered_map<int, double> charge_map =
+        const std::unordered_map<int, ChargeEntry> charge_map =
             read_charge_csv(options.charge_csv_path);
+
+        std::cout << "[current_dependence] Unpolarized data charge-normalization mode: ";
+
+        if (options.use_second_column_charge_for_all_unpolarized) {
+            std::cout << "column 2 for all periods. Spring 2018 is also column 2."
+                      << std::endl;
+        } else {
+            std::cout << "legacy mixed mode: Spring 2018 uses column 2; "
+                      << "Fall 2018 and Spring 2019 use column 3 + column 4."
+                      << std::endl;
+        }
 
         const TopoCutMap data_cuts =
             load_sigma_cuts(options.combined_cuts_json, "data");
@@ -2236,7 +2411,8 @@ bool update_current_dependence_factors_csv(
                               mc_cuts,
                               options.output_dir,
                               options.max_workers,
-                              true);
+                              true,
+                              options.use_second_column_charge_for_all_unpolarized);
 
         std::vector<PeriodResult> eppi0_results =
             run_channel_study(eppi0,
@@ -2248,7 +2424,8 @@ bool update_current_dependence_factors_csv(
                               mc_cuts,
                               options.output_dir,
                               options.max_workers,
-                              false);
+                              false,
+                              options.use_second_column_charge_for_all_unpolarized);
 
         apply_eppi0_mc_factor_from_dvcs_ratio(eppi0_results, dvcs_results);
         write_summary_csv(options.output_dir + "/" + eppi0.output_token + "/period_summary.csv", eppi0_results);

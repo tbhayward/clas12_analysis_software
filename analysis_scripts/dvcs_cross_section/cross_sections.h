@@ -21,9 +21,33 @@ struct Triple {
 //   sys   = - helicity accumulated charge
 using LumiMap = std::map<std::string, Triple>;
 
+// Options controlling how the luminosity map is built from the RGA
+// integrated-luminosity text files.
+struct LumiBuildOptions {
+    // If true:
+    //   Use column 2 of the integrated-luminosity import files for the
+    //   unpolarized accumulated charge for all run periods.
+    //
+    // If false:
+    //   Preserve the older mixed convention:
+    //     Sp18 Inb / Sp18 Out             -> column 2
+    //     Fa18 Inb / Fa18 Out / Sp19 Inb -> column 3 + column 4
+    //
+    // In both modes, the helicity-resolved luminosities are still read as:
+    //   stat = column 3 = + helicity accumulated charge
+    //   sys  = column 4 = - helicity accumulated charge
+    //
+    // Spring 2018 is always forced to use column 2 for the unpolarized total.
+    bool use_second_column_charge_for_all_unpolarized = true;
+};
+
 // Build luminosity map from RGA text files in imports/integrated_luminosity/.
-// Uses the conventions described in cross_sections.cpp comments.
+// Default behavior is the new convention:
+//   all unpolarized cross sections use column 2 totals.
 LumiMap build_lumi_map();
+
+// Build luminosity map with explicit charge-column convention control.
+LumiMap build_lumi_map(const LumiBuildOptions &options);
 
 // Update dvcs_pass2_analysis.csv:
 //   - Fill integrated luminosity columns using lumi_map.
@@ -64,7 +88,6 @@ bool plot_cross_sections_for_label(const std::string &csv_main,
                                    const std::string &label,
                                    const std::string &theory_json_root,
                                    const std::string &out_root_dir);
-
 
 // Regenerate BH / KM / VGG theory curves vs phi and write:
 //   output/jsons/cross_sections/10.6_GeV/xs_phi_all.json

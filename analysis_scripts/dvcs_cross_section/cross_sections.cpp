@@ -356,9 +356,8 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
 // Luminosity helpers
 // -----------------------------------------------------------------------------
 
-
 static Triple load_rga_lumi_file(const std::string &path,
-                                 bool total_from_pos_neg) {
+                                 bool unpolarized_total_from_pos_plus_neg) {
     std::ifstream ifs(path);
     if (!ifs) {
         std::cerr << "[cross_sections] FATAL: cannot open lumi file: "
@@ -392,29 +391,152 @@ static Triple load_rga_lumi_file(const std::string &path,
             continue;
         }
 
-        double total = std::atof(fields[1].c_str());
-        double pos   = std::atof(fields[2].c_str());
-        double neg   = std::atof(fields[3].c_str());
+        const double total_col = std::atof(fields[1].c_str());
+        const double pos       = std::atof(fields[2].c_str());
+        const double neg       = std::atof(fields[3].c_str());
 
-        sum_total_col += total;
+        sum_total_col += total_col;
         sum_pos       += pos;
         sum_neg       += neg;
         ++n_lines;
     }
 
-    double final_total = total_from_pos_neg ? (sum_pos + sum_neg) : sum_total_col;
+    const double final_total =
+        unpolarized_total_from_pos_plus_neg ? (sum_pos + sum_neg) : sum_total_col;
 
     std::cout << "[cross_sections] Loaded lumi from " << path
               << " over " << n_lines << " runs: "
-              << "total=" << final_total
-              << " pos="   << sum_pos
-              << " neg="   << sum_neg << "\n";
+              << "unpolarized_total=" << final_total
+              << " total_col=" << sum_total_col
+              << " pos=" << sum_pos
+              << " neg=" << sum_neg;
+
+    if (unpolarized_total_from_pos_plus_neg) {
+        std::cout << "  [unpolarized source: pos+neg columns]";
+    } else {
+        std::cout << "  [unpolarized source: column 2]";
+    }
+
+    std::cout << "\n";
 
     Triple out;
     out.value = final_total;
     out.stat  = sum_pos;
     out.sys   = sum_neg;
     return out;
+}
+
+LumiMap build_lumi_map() {
+    LumiBuildOptions options;
+    options.use_second_column_charge_for_all_unpolarized = true;
+    return build_lumi_map(options);
+}
+
+LumiMap build_lumi_map(const LumiBuildOptions &options) {
+    LumiMap m;
+    const std::string base = "imports/integrated_luminosity";
+
+    const bool use_col2_for_all =
+        options.use_second_column_charge_for_all_unpolarized;
+
+    std::cout << "[cross_sections] build_lumi_map charge convention: ";
+
+    if (use_col2_for_all) {
+        std::cout << "using column 2 for unpolarized accumulated charge for all periods.\n";
+    } else {
+        std::cout << "legacy mixed mode: Sp18 uses column 2; Fa18 and Sp19 use columns 3+4.\n";
+    }
+
+    // This bool controls only Triple.value, i.e. the unpolarized luminosity.
+    //
+    // Triple.stat and Triple.sys are always filled from columns 3 and 4,
+    // respectively, so the polarized cross sections remain normalized with the
+    // helicity-specific accumulated charges.
+    //
+    // Spring 2018 is always forced to column 2 for unpolarized normalization.
+    const bool fa18_unpol_from_pos_neg = !use_col2_for_all;
+    const bool sp19_unpol_from_pos_neg = !use_col2_for_all;
+    const bool sp18_unpol_from_pos_neg = false;
+
+    try {
+        m["Fa18 Inb"]      = load_rga_lumi_file(base + "/rga_fa18_inb.txt",
+                                                fa18_unpol_from_pos_neg);
+
+        m["Fa18 Out"]      = load_rga_lumi_file(base + "/rga_fa18_out.txt",
+                                                fa18_unpol_from_pos_neg);
+
+        m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
+
+        m["Sp18 Inb"]      = load_rga_lumi_file(base + "/rga_sp18_inb.txt",
+                                                sp18_unpol_from_pos_neg);
+
+        m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt",
+                                                sp18_unpol_from_pos_neg);
+
+        m["Sp19 Inb"]      = load_rga_lumi_file(base + "/rga_sp19_inb.txt",
+                                                sp19_unpol_from_pos_neg);
+    } catch (const std::exception &e) {
+        std::cerr << "[cross_sections] FATAL in build_lumi_map: "
+                  << e.what() << "\n";
+        throw;
+    }
+
+    auto sum_labels = [&](const std::vector<std::string> &keys) -> Triple {
+        Triple r{0.0, 0.0, 0.0};
+
+        for (const auto &k : keys) {
+            auto it = m.find(k);
+            if (it == m.end()) {
+                std::cerr << "[cross_sections] ERROR: missing lumi for \""
+                          << k << "\" while building combined groups.\n";
+                continue;
+            }
+
+            r.value += it->second.value;
+            r.stat  += it->second.stat;
+            r.sys   += it->second.sys;
+        }
+
+        return r;
+    };
+
+    // Supplemental is intentionally not included in the combined groups used for
+    // the production cross-section normalization.
+    m["Fa18"]     = sum_labels({"Fa18 Inb", "Fa18 Out"});
+    m["Sp18"]     = sum_labels({"Sp18 Inb", "Sp18 Out"});
+    m["10.6 GeV"] = sum_labels({"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"});
+    m["10.2 GeV"] = sum_labels({"Sp19 Inb"});
+
+    std::cout << "[cross_sections] build_lumi_map summary:\n"
+              << "  Fa18 Inb  value=" << m["Fa18 Inb"].value
+              << " pos=" << m["Fa18 Inb"].stat
+              << " neg=" << m["Fa18 Inb"].sys << "\n"
+              << "  Fa18 Out  value=" << m["Fa18 Out"].value
+              << " pos=" << m["Fa18 Out"].stat
+              << " neg=" << m["Fa18 Out"].sys << "\n"
+              << "  Sp18 Inb  value=" << m["Sp18 Inb"].value
+              << " pos=" << m["Sp18 Inb"].stat
+              << " neg=" << m["Sp18 Inb"].sys << "\n"
+              << "  Sp18 Out  value=" << m["Sp18 Out"].value
+              << " pos=" << m["Sp18 Out"].stat
+              << " neg=" << m["Sp18 Out"].sys << "\n"
+              << "  Sp19 Inb  value=" << m["Sp19 Inb"].value
+              << " pos=" << m["Sp19 Inb"].stat
+              << " neg=" << m["Sp19 Inb"].sys << "\n"
+              << "  Fa18      value=" << m["Fa18"].value
+              << " pos=" << m["Fa18"].stat
+              << " neg=" << m["Fa18"].sys << "\n"
+              << "  Sp18      value=" << m["Sp18"].value
+              << " pos=" << m["Sp18"].stat
+              << " neg=" << m["Sp18"].sys << "\n"
+              << "  10.6 GeV  value=" << m["10.6 GeV"].value
+              << " pos=" << m["10.6 GeV"].stat
+              << " neg=" << m["10.6 GeV"].sys << "\n"
+              << "  10.2 GeV  value=" << m["10.2 GeV"].value
+              << " pos=" << m["10.2 GeV"].stat
+              << " neg=" << m["10.2 GeV"].sys << "\n";
+
+    return m;
 }
 
 LumiMap build_lumi_map() {

@@ -157,7 +157,13 @@ int main(int argc, char* argv[]) {
         current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
         current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
         current_opts.output_dir = "output/dvcs_current_dependence";
+
+        // Existing override:
+        //   false -> compute current-efficiency factors normally
+        //   true  -> write all current-efficiency factors as (1,0)
         current_opts.override_to_unity = false;
+        current_opts.use_second_column_charge_for_all_unpolarized = false;
+
         current_opts.max_workers = 5;
 
         if (!update_current_dependence_factors_csv(csv_main,
@@ -456,45 +462,58 @@ int main(int argc, char* argv[]) {
 
 
     // --------- Cross sections (CSV update + theory JSON + plots) ----------
-    {
-        const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root = "output/jsons/cross_sections";
-        const std::string xs_out_root      = "output/cross_sections";
+  {
+      const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+      const std::string theory_json_root = "output/jsons/cross_sections";
+      const std::string xs_out_root      = "output/cross_sections";
 
-        // // --------- Theory grids (xs_phi_all.json generation) ----------
-        // {
-        //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-        //     const std::string theory_json_root = "output/jsons/cross_sections";
+      // // --------- Theory grids (xs_phi_all.json generation) ----------
+      // {
+      //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+      //     const std::string theory_json_root = "output/jsons/cross_sections";
+      //
+      //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
+      //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
+      //         return 1;
+      //     }
+      // }
 
-        //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
-        //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
-        //         return 1;
-        //     }
-        // }
+      // Build luminosity map from imports/integrated_luminosity/.
+      LumiBuildOptions lumi_opts;
 
-        // Build luminosity map (fill actual values in build_lumi_map() in cross_sections.cpp)
-        LumiMap lumi_map = build_lumi_map();
+      // New default behavior:
+      //   true -> unpolarized cross sections use column 2 for all periods.
+      //
+      // Legacy behavior:
+      //   false -> Sp18 uses column 2, while Fa18 and Sp19 use column 3 + column 4.
+      //
+      // In both modes, polarized cross sections still use:
+      //   pos -> column 3
+      //   neg -> column 4
+      lumi_opts.use_second_column_charge_for_all_unpolarized = false;
 
-        // Step 1: heavy numerical work (CSV cross sections + theory JSON)
-        if (!compute_cross_sections(csv_main, lumi_map)) {
-            std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
-        }
+      LumiMap lumi_map = build_lumi_map(lumi_opts);
 
-        // Step 2: plotting only (can be rerun freely to adjust aesthetics)
-        const std::vector<std::string> labels_to_plot = {
-            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-            "Fa18", "Sp18", "10.6 GeV"
-        };
+      // Step 1: heavy numerical work (CSV cross sections + theory JSON)
+      if (!compute_cross_sections(csv_main, lumi_map)) {
+          std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+      }
 
-        for (const auto &label : labels_to_plot) {
-            if (!plot_cross_sections_for_label(csv_main, label,
-                theory_json_root, xs_out_root)) {
-                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
-                          << label << "\n";
-            }
-        }
-    }
+      // Step 2: plotting only (can be rerun freely to adjust aesthetics)
+      const std::vector<std::string> labels_to_plot = {
+          "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+          "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+          "Fa18", "Sp18", "10.6 GeV"
+      };
+
+      for (const auto &label : labels_to_plot) {
+          if (!plot_cross_sections_for_label(csv_main, label,
+              theory_json_root, xs_out_root)) {
+              std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
+                        << label << "\n";
+          }
+      }
+  }
 
 
     // --------- Overall BH-edge normalization study ----------
