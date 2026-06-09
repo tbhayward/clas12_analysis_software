@@ -1156,7 +1156,7 @@ def plot_processed_dataset(
 
     ax.set_xlabel("Run Number")
     ax.set_ylabel(get_ylabel(numerator_choice, denominator_choice))
-    ax.set_ylim(-20.0, 20.0)
+    ax.set_ylim(-30.0, 30.0)
 
     if len(all_plot_runs) > 0:
         xmin_all = min(all_plot_runs)
@@ -1526,4 +1526,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-#endif
+#endi
