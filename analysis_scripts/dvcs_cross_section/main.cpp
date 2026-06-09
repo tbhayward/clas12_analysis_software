@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
 
-    initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
+    // initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
@@ -74,35 +74,35 @@ int main(int argc, char* argv[]) {
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
 
-    // Run exclusivity cut extraction 
-    // Record the exact global cuts used:
-    write_global_cuts_config_json("output/jsons");
-    runAllExclusivityCuts(
-        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 5
-    );
-    std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // // Run exclusivity cut extraction 
+    // // Record the exact global cuts used:
+    // write_global_cuts_config_json("output/jsons");
+    // runAllExclusivityCuts(
+    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+    //     "output/jsons", "output/exclusivity_plots", 5
+    // );
+    // std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // // --------- Global bin-averaged kinematics (CSV update) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-    //     // Make a simple backup before modifying
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //                                    std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-    //     }
+        // Make a simple backup before modifying
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
 
-    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
     // {
