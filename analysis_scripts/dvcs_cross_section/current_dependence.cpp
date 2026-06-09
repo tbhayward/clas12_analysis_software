@@ -1640,7 +1640,7 @@ static TGraphErrors* make_percent_points_graph(const std::vector<CurrentPoint>& 
     }
 
     g->SetMarkerStyle(20);
-    g->SetMarkerSize(0.85);
+    g->SetMarkerSize(1.25);
     g->SetMarkerColor(color);
     g->SetLineColor(color);
     g->SetLineWidth(2);
