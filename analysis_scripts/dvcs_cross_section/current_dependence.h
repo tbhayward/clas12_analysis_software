@@ -29,6 +29,27 @@ struct CurrentDependenceOptions {
     // Spring 2018 is always forced to column 2 internally.
     bool use_second_column_charge_for_all_unpolarized = true;
 
+    // New default behavior:
+    //
+    // If true:
+    //   The Sp19 Inb current-efficiency factors written to the CSV are copied
+    //   from Fa18 Inb instead of being taken from the Sp19 Inb luminosity scan.
+    //
+    // Motivation:
+    //   The only low-current Sp19 Inb scan point is run 6616 at 5 nA, whose
+    //   Faraday Cup charge total is currently suspect. Therefore the Sp19 Inb
+    //   fitted slope is not used by default.
+    //
+    // This replacement is applied to:
+    //   current efficiency factor, ep->epg,   exp, Sp19 Inb
+    //   current efficiency factor, ep->epg,   mc,  Sp19 Inb
+    //   current efficiency factor, ep->eppi0, exp, Sp19 Inb
+    //   current efficiency factor, ep->eppi0, mc,  Sp19 Inb
+    //
+    // The raw Sp19 Inb scan is still processed and plotted for diagnostic
+    // purposes, but the saved CSV values used downstream are Fa18 Inb values.
+    bool use_fa18_inb_current_efficiency_for_sp19_inb = true;
+
     int max_workers = 5;
 };
 
@@ -58,6 +79,10 @@ struct CurrentDependenceOptions {
  *   current efficiency factor, ep->epg,   mc,  <period> = (mc_ref_rel,stat)
  *   current efficiency factor, ep->eppi0, exp, <period> = (weighted_data_rel,stat)
  *   current efficiency factor, ep->eppi0, mc,  <period> = (mc_ref_rel,stat)
+ *
+ * If options.use_fa18_inb_current_efficiency_for_sp19_inb is true, the Sp19 Inb
+ * factors written to the CSV are copied from Fa18 Inb. The raw Sp19 Inb fit is
+ * still produced in the diagnostic output.
  *
  * It also applies the saved MC current-efficiency factors to the reconstructed
  * MC yield columns and writes the current-corrected reconstructed MC columns

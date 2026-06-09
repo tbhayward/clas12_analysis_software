@@ -1,3 +1,34 @@
+// current_dependence.cpp
+// -----------------------------------------------------------------------------
+// Current-dependence correction study for DVCS ep -> ep gamma and
+// ep -> ep pi0 channels.
+//
+// Main outputs:
+//   1. Current-efficiency factor columns in the pass-2 analysis CSV.
+//   2. Current-corrected reconstructed MC yield columns.
+//   3. Per-period diagnostic plots.
+//   4. 3x2 all-period summary plots with the five RGA periods plus overlay.
+//
+// Important convention:
+//   - The fitted current response is normalized to the fitted zero-current
+//     intercept b.
+//   - The plotted quantity in the all-period canvas is:
+//
+//         100 * y(I) / b
+//
+//     so the intercept is 100% by construction and the fitted slope shown in
+//     the legend is:
+//
+//         100 * m / b   [% / nA]
+//
+// Sp19 Inb default behavior:
+//   - The Sp19 Inb luminosity scan contains only one low-current point at 5 nA.
+//   - That run currently has suspect Faraday Cup charge.
+//   - Therefore, by default, the Sp19 Inb current-efficiency factors written
+//     to the CSV are copied from Fa18 Inb.
+//   - The raw Sp19 Inb scan is still processed and plotted diagnostically.
+// -----------------------------------------------------------------------------
+
 #include "current_dependence.h"
 
 #include "global_cuts.h"
@@ -109,7 +140,7 @@ static void fatal(const std::string& msg) {
 }
 
 static std::string lower_ascii(std::string s) {
-    for ( char& c : s ) {
+    for (char& c : s) {
         c = (char)std::tolower((unsigned char)c);
     }
 
@@ -1498,7 +1529,374 @@ static double weighted_data_rel_err(const std::vector<CurrentPoint>& points,
 }
 
 // -----------------------------------------------------------------------------
-// Plots
+// Plot helpers
+// -----------------------------------------------------------------------------
+
+static int period_color(const std::string& period) {
+    if (period == "Sp18 Inb") return kAzure + 1;
+    if (period == "Sp18 Out") return kOrange + 7;
+    if (period == "Fa18 Inb") return kGreen + 2;
+    if (period == "Fa18 Out") return kRed + 1;
+    if (period == "Sp19 Inb") return kViolet + 1;
+    return kBlack;
+}
+
+static double fit_percent_slope(const FitResult& f) {
+    if (!std::isfinite(f.m) || !std::isfinite(f.b) || f.b == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return 100.0 * f.m / f.b;
+}
+
+static double fit_percent_slope_err(const FitResult& f) {
+    if (!std::isfinite(f.m) ||
+        !std::isfinite(f.b) ||
+        !std::isfinite(f.sm) ||
+        !std::isfinite(f.sb) ||
+        !std::isfinite(f.cov_mb) ||
+        f.b == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double dm = 100.0 / f.b;
+    const double db = -100.0 * f.m / (f.b * f.b);
+
+    double var =
+        dm * dm * f.sm * f.sm +
+        db * db * f.sb * f.sb +
+        2.0 * dm * db * f.cov_mb;
+
+    if (var < 0.0 && std::fabs(var) < 1.0e-15) {
+        var = 0.0;
+    }
+
+    if (var < 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return std::sqrt(var);
+}
+
+static double percent_response_at_current(double current, const FitResult& f) {
+    if (!std::isfinite(f.m) || !std::isfinite(f.b) || f.b == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return 100.0 * (f.m * current + f.b) / f.b;
+}
+
+static double percent_response_err_at_current(double current, const FitResult& f) {
+    if (!std::isfinite(f.m) ||
+        !std::isfinite(f.b) ||
+        !std::isfinite(f.sm) ||
+        !std::isfinite(f.sb) ||
+        !std::isfinite(f.cov_mb) ||
+        f.b == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double dm = 100.0 * current / f.b;
+    const double db = -100.0 * f.m * current / (f.b * f.b);
+
+    double var =
+        dm * dm * f.sm * f.sm +
+        db * db * f.sb * f.sb +
+        2.0 * dm * db * f.cov_mb;
+
+    if (var < 0.0 && std::fabs(var) < 1.0e-15) {
+        var = 0.0;
+    }
+
+    if (var < 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return std::sqrt(var);
+}
+
+static TGraphErrors* make_percent_points_graph(const std::vector<CurrentPoint>& points,
+                                               const FitResult& fit,
+                                               int color) {
+    TGraphErrors* g = new TGraphErrors();
+
+    int ip = 0;
+
+    for (const CurrentPoint& p : points) {
+        if (!std::isfinite(fit.b) || fit.b == 0.0) {
+            continue;
+        }
+
+        const double y = 100.0 * p.y / fit.b;
+        const double ey = 100.0 * p.sy / std::fabs(fit.b);
+
+        if (!std::isfinite(y) || !std::isfinite(ey)) {
+            continue;
+        }
+
+        g->SetPoint(ip, (double)p.current_nA, y);
+        g->SetPointError(ip, 0.0, ey);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(20);
+    g->SetMarkerSize(0.85);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+
+    return g;
+}
+
+static TGraph* make_percent_fit_line(const FitResult& fit,
+                                     int color,
+                                     double xmin,
+                                     double xmax) {
+    TGraph* g = new TGraph();
+
+    int ip = 0;
+
+    for (int i = 0; i < 200; ++i) {
+        const double x = xmin + (xmax - xmin) * (double)i / 199.0;
+        const double y = percent_response_at_current(x, fit);
+
+        if (!std::isfinite(y)) {
+            continue;
+        }
+
+        g->SetPoint(ip, x, y);
+        ++ip;
+    }
+
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+
+    return g;
+}
+
+static TGraphErrors* make_percent_fit_band(const FitResult& fit,
+                                           int color,
+                                           double xmin,
+                                           double xmax) {
+    TGraphErrors* g = new TGraphErrors();
+
+    int ip = 0;
+
+    for (int i = 0; i < 200; ++i) {
+        const double x = xmin + (xmax - xmin) * (double)i / 199.0;
+        const double y = percent_response_at_current(x, fit);
+        const double ey = percent_response_err_at_current(x, fit);
+
+        if (!std::isfinite(y) || !std::isfinite(ey)) {
+            continue;
+        }
+
+        g->SetPoint(ip, x, y);
+        g->SetPointError(ip, 0.0, ey);
+        ++ip;
+    }
+
+    g->SetFillColorAlpha(color, 0.18);
+    g->SetLineColor(color);
+    g->SetLineWidth(1);
+
+    return g;
+}
+
+static void style_current_pad() {
+    gPad->SetGrid(1, 1);
+    gPad->SetLeftMargin(0.12);
+    gPad->SetRightMargin(0.04);
+    gPad->SetBottomMargin(0.13);
+    gPad->SetTopMargin(0.08);
+}
+
+static void draw_current_frame(const std::string& title) {
+    TH1D* frame = (TH1D*)gPad->DrawFrame(0.0, 0.0, 100.0, 150.0);
+    frame->SetTitle(title.c_str());
+    frame->GetXaxis()->SetTitle("Beam current (nA)");
+    frame->GetYaxis()->SetTitle("Percent of intercept b (%)");
+
+    frame->GetXaxis()->CenterTitle(true);
+    frame->GetYaxis()->CenterTitle(true);
+
+    frame->GetXaxis()->SetTitleSize(0.045);
+    frame->GetYaxis()->SetTitleSize(0.045);
+    frame->GetXaxis()->SetLabelSize(0.040);
+    frame->GetYaxis()->SetLabelSize(0.040);
+}
+
+static void draw_period_panel(const PeriodResult& r,
+                              bool use_replacement_annotation) {
+    const int color = period_color(r.period);
+
+    draw_current_frame(r.period);
+
+    TGraphErrors* band = make_percent_fit_band(r.data_fit, color, 0.0, 100.0);
+    TGraph* line = make_percent_fit_line(r.data_fit, color, 0.0, 100.0);
+    TGraphErrors* points = make_percent_points_graph(r.data_points, r.data_fit, color);
+
+    if (band && band->GetN() > 0) {
+        band->Draw("3 SAME");
+    }
+
+    if (line && line->GetN() > 0) {
+        line->Draw("L SAME");
+    }
+
+    if (points && points->GetN() > 0) {
+        points->Draw("PE SAME");
+    }
+
+    const double slope = fit_percent_slope(r.data_fit);
+    const double slope_err = fit_percent_slope_err(r.data_fit);
+
+    TLegend* leg = new TLegend(0.40, 0.82, 0.94, 0.96);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetBorderSize(1);
+    leg->SetTextSize(0.032);
+
+    std::ostringstream l1;
+    l1 << "b=" << std::fixed << std::setprecision(5) << r.data_fit.b
+       << " +/- " << std::setprecision(5) << r.data_fit.sb;
+
+    std::ostringstream l2;
+    l2 << "slope=" << std::fixed << std::setprecision(5) << slope
+       << " +/- " << std::setprecision(5) << slope_err << " (%/nA)";
+
+    leg->AddEntry(points, l1.str().c_str(), "pe");
+    leg->AddEntry((TObject*)nullptr, l2.str().c_str(), "");
+    leg->Draw();
+
+    if (use_replacement_annotation && r.period == "Sp19 Inb") {
+        TLatex lat;
+        lat.SetNDC(true);
+        lat.SetTextSize(0.032);
+        lat.SetTextColor(kRed + 2);
+        lat.DrawLatex(0.16, 0.76, "CSV value replaced by Fa18 Inb");
+    }
+}
+
+static void draw_summary_panel(const std::vector<PeriodResult>& results,
+                               bool use_fa18_for_sp19) {
+    draw_current_frame("All periods (overlay)");
+
+    TLegend* leg = new TLegend(0.34, 0.67, 0.96, 0.96);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetBorderSize(1);
+    leg->SetTextSize(0.028);
+
+    for (const std::string& period : PERIOD_ORDER) {
+        auto it = std::find_if(results.begin(), results.end(),
+                               [&](const PeriodResult& r) {
+                                   return r.period == period;
+                               });
+
+        if (it == results.end()) {
+            continue;
+        }
+
+        const PeriodResult& r = *it;
+        const int color = period_color(r.period);
+
+        TGraphErrors* band = make_percent_fit_band(r.data_fit, color, 0.0, 100.0);
+        TGraph* line = make_percent_fit_line(r.data_fit, color, 0.0, 100.0);
+        TGraphErrors* points = make_percent_points_graph(r.data_points, r.data_fit, color);
+
+        if (band && band->GetN() > 0) {
+            band->Draw("3 SAME");
+        }
+
+        if (line && line->GetN() > 0) {
+            line->Draw("L SAME");
+        }
+
+        if (points && points->GetN() > 0) {
+            points->Draw("PE SAME");
+        }
+
+        const double slope = fit_percent_slope(r.data_fit);
+        const double slope_err = fit_percent_slope_err(r.data_fit);
+
+        std::ostringstream label;
+        label << r.period << ": slope="
+              << std::fixed << std::setprecision(5) << slope
+              << " +/- " << std::setprecision(5) << slope_err
+              << " (%/nA)";
+
+        if (use_fa18_for_sp19 && r.period == "Sp19 Inb") {
+            label << " [diagnostic]";
+        }
+
+        leg->AddEntry(points, label.str().c_str(), "pe");
+    }
+
+    leg->Draw();
+
+    if (use_fa18_for_sp19) {
+        TLatex lat;
+        lat.SetNDC(true);
+        lat.SetTextSize(0.029);
+        lat.SetTextColor(kRed + 2);
+        lat.DrawLatex(0.15, 0.61, "Sp19 Inb CSV factor copied from Fa18 Inb");
+    }
+}
+
+static void draw_all_period_current_canvas(const std::string& out_path,
+                                           const std::string& canvas_title,
+                                           const std::vector<PeriodResult>& results,
+                                           bool use_fa18_for_sp19) {
+    const size_t slash_pos = out_path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(out_path.substr(0, slash_pos));
+    }
+
+    TCanvas c("c_all_period_current_dependence", canvas_title.c_str(), 1800, 1000);
+    c.Divide(3, 2, 0.001, 0.001);
+
+    int pad = 1;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        c.cd(pad);
+        style_current_pad();
+
+        auto it = std::find_if(results.begin(), results.end(),
+                               [&](const PeriodResult& r) {
+                                   return r.period == period;
+                               });
+
+        if (it != results.end()) {
+            draw_period_panel(*it, use_fa18_for_sp19);
+        } else {
+            draw_current_frame(period);
+        }
+
+        ++pad;
+    }
+
+    c.cd(6);
+    style_current_pad();
+    draw_summary_panel(results, use_fa18_for_sp19);
+
+    c.SaveAs(out_path.c_str());
+
+    std::string pdf_path = out_path;
+    const size_t dot = pdf_path.find_last_of('.');
+
+    if (dot != std::string::npos) {
+        pdf_path = pdf_path.substr(0, dot) + ".pdf";
+    } else {
+        pdf_path += ".pdf";
+    }
+
+    c.SaveAs(pdf_path.c_str());
+}
+
+// -----------------------------------------------------------------------------
+// Existing per-period plots
 // -----------------------------------------------------------------------------
 
 static void draw_fit_graph(const std::string& out_path,
@@ -1705,7 +2103,8 @@ static void write_summary_csv(const std::string& path,
     }
 
     fout << "period,data_factor,data_factor_stat,mc_factor,mc_factor_stat,"
-         << "data_m,data_b,mc_m,mc_b\n";
+         << "data_m,data_b,data_sm,data_sb,data_cov_mb,data_slope_percent_per_nA,data_slope_percent_per_nA_stat,"
+         << "mc_m,mc_b,mc_sm,mc_sb,mc_cov_mb\n";
 
     for (const PeriodResult& r : rows) {
         fout << r.period << ","
@@ -1715,9 +2114,64 @@ static void write_summary_csv(const std::string& path,
              << std::setprecision(12) << r.mc_factor_err << ","
              << std::setprecision(12) << r.data_fit.m << ","
              << std::setprecision(12) << r.data_fit.b << ","
+             << std::setprecision(12) << r.data_fit.sm << ","
+             << std::setprecision(12) << r.data_fit.sb << ","
+             << std::setprecision(12) << r.data_fit.cov_mb << ","
+             << std::setprecision(12) << fit_percent_slope(r.data_fit) << ","
+             << std::setprecision(12) << fit_percent_slope_err(r.data_fit) << ","
              << std::setprecision(12) << r.mc_fit.m << ","
-             << std::setprecision(12) << r.mc_fit.b << "\n";
+             << std::setprecision(12) << r.mc_fit.b << ","
+             << std::setprecision(12) << r.mc_fit.sm << ","
+             << std::setprecision(12) << r.mc_fit.sb << ","
+             << std::setprecision(12) << r.mc_fit.cov_mb << "\n";
     }
+}
+
+// -----------------------------------------------------------------------------
+// Sp19 replacement helpers
+// -----------------------------------------------------------------------------
+
+static void copy_period_result_values(PeriodResult& dst,
+                                      const PeriodResult& src,
+                                      const std::string& reason) {
+    dst.data_factor = src.data_factor;
+    dst.data_factor_err = src.data_factor_err;
+    dst.mc_factor = src.mc_factor;
+    dst.mc_factor_err = src.mc_factor_err;
+
+    std::cout << "[current_dependence] " << reason
+              << ": copied current-efficiency factors from "
+              << src.period << " to " << dst.period
+              << " data_factor=" << dst.data_factor
+              << " +/- " << dst.data_factor_err
+              << " mc_factor=" << dst.mc_factor
+              << " +/- " << dst.mc_factor_err
+              << std::endl;
+}
+
+static void replace_sp19_inb_factors_with_fa18_inb(std::vector<PeriodResult>& results,
+                                                   const std::string& channel_label) {
+    auto it_fa18 = std::find_if(results.begin(), results.end(),
+                                [](const PeriodResult& r) {
+                                    return r.period == "Fa18 Inb";
+                                });
+
+    auto it_sp19 = std::find_if(results.begin(), results.end(),
+                                [](const PeriodResult& r) {
+                                    return r.period == "Sp19 Inb";
+                                });
+
+    if (it_fa18 == results.end()) {
+        fatal("[current_dependence] FATAL: cannot copy Fa18 Inb factor to Sp19 Inb; missing Fa18 Inb result.");
+    }
+
+    if (it_sp19 == results.end()) {
+        fatal("[current_dependence] FATAL: cannot copy Fa18 Inb factor to Sp19 Inb; missing Sp19 Inb result.");
+    }
+
+    copy_period_result_values(*it_sp19,
+                              *it_fa18,
+                              "channel=" + channel_label + " Sp19 Inb replacement");
 }
 
 // -----------------------------------------------------------------------------
@@ -1899,7 +2353,10 @@ static std::vector<PeriodResult> run_channel_study(
         std::cout << "[current_dependence] " << cfg.csv_channel
                   << " " << period
                   << " data_factor=" << R.data_factor
-                  << " +/- " << R.data_factor_err;
+                  << " +/- " << R.data_factor_err
+                  << " data_slope=" << fit_percent_slope(R.data_fit)
+                  << " +/- " << fit_percent_slope_err(R.data_fit)
+                  << " %/nA";
 
         if (process_mc) {
             std::cout << " mc_factor=" << R.mc_factor
@@ -1911,9 +2368,12 @@ static std::vector<PeriodResult> run_channel_study(
         std::cout << std::endl;
     }
 
-    if (process_mc) {
-        write_summary_csv(output_dir + "/" + cfg.output_token + "/period_summary.csv", results);
-    }
+    draw_all_period_current_canvas(output_dir + "/" + cfg.output_token + "/all_periods_current_dependence.png",
+                                   cfg.title,
+                                   results,
+                                   false);
+
+    write_summary_csv(output_dir + "/" + cfg.output_token + "/period_summary_raw_fit_values.csv", results);
 
     return results;
 }
@@ -2395,6 +2855,19 @@ bool update_current_dependence_factors_csv(
                       << std::endl;
         }
 
+        if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
+            std::cout << "[current_dependence] Sp19 Inb replacement mode enabled: "
+                      << "Sp19 Inb current-efficiency factors written to the CSV "
+                      << "will be copied from Fa18 Inb. The raw Sp19 Inb scan "
+                      << "will still be processed and plotted for diagnostics."
+                      << std::endl;
+        } else {
+            std::cout << "[current_dependence] Sp19 Inb replacement mode disabled: "
+                      << "the directly fitted Sp19 Inb luminosity-scan factor "
+                      << "will be written to the CSV."
+                      << std::endl;
+        }
+
         const TopoCutMap data_cuts =
             load_sigma_cuts(options.combined_cuts_json, "data");
 
@@ -2427,7 +2900,27 @@ bool update_current_dependence_factors_csv(
                               false,
                               options.use_second_column_charge_for_all_unpolarized);
 
+        if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
+            replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
+        }
+
         apply_eppi0_mc_factor_from_dvcs_ratio(eppi0_results, dvcs_results);
+
+        if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
+            replace_sp19_inb_factors_with_fa18_inb(eppi0_results, eppi0.csv_channel);
+        }
+
+        draw_all_period_current_canvas(options.output_dir + "/" + dvcs.output_token + "/all_periods_current_dependence_csv_values.png",
+                                       dvcs.title + " CSV values",
+                                       dvcs_results,
+                                       options.use_fa18_inb_current_efficiency_for_sp19_inb);
+
+        draw_all_period_current_canvas(options.output_dir + "/" + eppi0.output_token + "/all_periods_current_dependence_csv_values.png",
+                                       eppi0.title + " CSV values",
+                                       eppi0_results,
+                                       options.use_fa18_inb_current_efficiency_for_sp19_inb);
+
+        write_summary_csv(options.output_dir + "/" + dvcs.output_token + "/period_summary.csv", dvcs_results);
         write_summary_csv(options.output_dir + "/" + eppi0.output_token + "/period_summary.csv", eppi0_results);
 
         write_results_to_csv(csv, dvcs, dvcs_results);
