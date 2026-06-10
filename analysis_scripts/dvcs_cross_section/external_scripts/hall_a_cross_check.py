@@ -6,8 +6,8 @@ Standalone Hall A / CLAS12 DVCS cross-section cross-check.
 
 This script reads the final DVCS pass-2 analysis CSV and compares the CLAS12
 cross sections in one overlapping bin against the Hall A Kin363 cross-section
-table. It can also overlay the previous pass-1 Hall B / CLAS12 Fa18 result
-from all_bin_v3.csv.
+table. It also overlays the previous pass-1 Hall B / CLAS12 Fa18 result from
+all_bin_v3.csv in the top row by default.
 
 The Hall A values are hard-coded from the right-most column of the Hall A table:
 
@@ -35,16 +35,16 @@ which corresponds nominally to:
   Q2  in [4.326, 5.761] GeV^2
   |t| in [0.40, 0.60] GeV^2
 
-The plot title shows weighted average CLAS12 kinematics computed from the
-selected pass-2 CSV rows. By default, the weights are inverse statistical
+The plot title shows weighted average pass-2 CLAS12 kinematics computed from
+the selected pass-2 CSV rows. By default, the weights are inverse statistical
 variance from the pass-2 10.6 GeV cross-section column.
 
 The script makes a 2x2 canvas:
 
   top-left:     pass-2 10.6 GeV, pass-1 Fa18, and Hall A cross sections vs phi
   top-right:    pass-2 10.6 GeV / Hall A and pass-1 Fa18 / Hall A ratios vs phi
-  bottom-left:  individual pass-2 run periods, pass-1 Fa18, and Hall A cross sections vs phi
-  bottom-right: individual pass-2 run periods / Hall A and pass-1 Fa18 / Hall A ratios vs phi
+  bottom-left:  individual pass-2 run-period cross sections vs phi with Hall A
+  bottom-right: individual pass-2 run-period ratios to Hall A
 
 All plots use stat+sys error bars.
 
@@ -137,6 +137,16 @@ TARGET_T_ABS_MAX = 0.60
 
 
 # -----------------------------------------------------------------------------
+# Default pass-1 path.
+# -----------------------------------------------------------------------------
+
+DEFAULT_PASS1_CSV = (
+    "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
+    "dvcs_cross_section/imports/all_bin_v3.csv"
+)
+
+
+# -----------------------------------------------------------------------------
 # Hall A kinematics for the selected table column.
 # -----------------------------------------------------------------------------
 
@@ -182,7 +192,6 @@ BOTTOM_COMPARISON_SERIES = [
     "Sp18 Out",
     "Fa18 Inb",
     "Fa18 Out",
-    PASS1_DISPLAY_LABEL,
 ]
 
 ALL_PASS2_CSV_PERIODS = [
@@ -195,10 +204,12 @@ ALL_PASS2_CSV_PERIODS = [
 
 
 # Hall A is always black.
+# pass-1 Fa18 intentionally uses the same color as pass-2 10.6 GeV,
+# but is drawn as an open circle in plot_dataset().
 SERIES_STYLE = {
     "Hall A": dict(marker="s", linestyle="None", color="black"),
     PASS2_COMBINED_DISPLAY_LABEL: dict(marker="o", linestyle="None", color="tab:red"),
-    PASS1_DISPLAY_LABEL: dict(marker="X", linestyle="None", color="tab:brown"),
+    PASS1_DISPLAY_LABEL: dict(marker="o", linestyle="None", color="tab:red"),
     "Sp18 Inb": dict(marker="D", linestyle="None", color="tab:green"),
     "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
     "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
@@ -491,7 +502,6 @@ def hall_a_points() -> List[DataPoint]:
 
 def pass2_points_for_period(
     selected: pd.DataFrame,
-    display_label: str,
     csv_period: str,
     clas12_scale: float,
     include_clas12_estimated_sys: bool,
@@ -499,31 +509,7 @@ def pass2_points_for_period(
 ) -> List[DataPoint]:
     """
     Extract pass-2 CLAS12 phi-dependent points for one period.
-
-    Cross-section cells are assumed to be stored as:
-
-      (value, stat, sys_csv)
-
-    The value, stat, and sys_csv are all multiplied by clas12_scale.
-
-    If include_clas12_estimated_sys is true, an additional fractional systematic
-    is assigned:
-
-      sys_est = clas12_bin_to_bin_sys_frac * abs(sigma)
-
-    The total systematic stored in DataPoint.sys is:
-
-      sys_total = sqrt(sys_csv^2 + sys_est^2)
-
-    The plotted total uncertainty is:
-
-      err_total = sqrt(stat^2 + sys_total^2)
-
-    If the period-specific phi average column exists, it is used for the x-position.
-    Otherwise, the phi-bin midpoint is used.
     """
-
-    del display_label
 
     xs_col = pass2_cross_section_column(csv_period)
     phi_avg_col = average_phi_column(csv_period)
@@ -708,27 +694,6 @@ def compute_weighted_kinematic_averages(
 ) -> KinematicAverages:
     """
     Compute weighted average pass-2 CLAS12 kinematics from the selected CSV rows.
-
-    The averages are computed from:
-
-      xBavg, <period>
-      Q2avg, <period>
-      t_abs_avg, <period>
-
-    The weights are inverse statistical variance from:
-
-      normed cross sections, ep->epg, exp, <period>, unpol
-
-    i.e.
-
-      w_i = 1 / stat_i^2
-
-    Fallback behavior:
-      - If the requested period average columns are unavailable, try fallback
-        periods.
-      - If a point has missing/zero stat uncertainty, it gets weight 1.
-      - If no weighted points survive, use an unweighted finite average.
-      - If no average column exists at all, use the bin midpoint.
     """
 
     if fallback_periods is None:
@@ -881,15 +846,6 @@ def points_to_arrays(points: List[DataPoint]) -> Tuple[np.ndarray, np.ndarray, n
 def periodic_interp(phi_query: float, phi_values: np.ndarray, y_values: np.ndarray) -> float:
     """
     Periodically linearly interpolate y(phi) at phi_query.
-
-    Explanation:
-      np.interp itself is not periodic. To make it periodic, we copy the Hall A
-      data three times:
-
-        phi - 360, phi, phi + 360
-
-      Then interpolation near 0 or 360 degrees can see the neighboring points
-      across the boundary.
     """
 
     phi_mod = phi_query % 360.0
@@ -923,9 +879,6 @@ def periodic_interp(phi_query: float, phi_values: np.ndarray, y_values: np.ndarr
 def interpolate_hall_a_point(phi_query: float, hall_a_points_input: List[DataPoint]) -> DataPoint:
     """
     Interpolate Hall A sigma, lower error, and upper error to the requested phi.
-
-    This is used for the ratio panel and chi2/ndf because the CLAS12 phi averages
-    are not necessarily identical to the Hall A phi centers.
     """
 
     phi, sigma, err_low, err_high = points_to_arrays(hall_a_points_input)
@@ -958,16 +911,6 @@ def chi2_ndf_to_hall_a(
     """
     Compute chi2/ndf comparing one CLAS12 dataset to Hall A interpolated to the
     CLAS12 phi points.
-
-    This uses the combined total uncertainty:
-
-      variance = err_CLAS12^2 + err_HallA_interp^2
-
-    where asymmetric errors are symmetrized as:
-
-      err = 0.5 * (err_low + err_high)
-
-    No fit parameters are extracted, so ndf = number of compared points.
     """
 
     chi2 = 0.0
@@ -1020,23 +963,6 @@ def ratio_to_hall_a(
 ) -> List[DataPoint]:
     """
     Compute CLAS12 / Hall A ratios.
-
-    Hall A is periodically linearly interpolated to each CLAS12 phi value.
-
-    Error propagation uses asymmetric Hall A uncertainty:
-
-      R = B / A
-
-      delta_R_up^2 =
-          (delta_B_up / A)^2
-        + (B * delta_A_down / A^2)^2
-
-      delta_R_down^2 =
-          (delta_B_down / A)^2
-        + (B * delta_A_up / A^2)^2
-
-    This convention follows the fact that a lower Hall A denominator increases
-    the ratio, while an upper Hall A denominator decreases the ratio.
     """
 
     ratios: List[DataPoint] = []
@@ -1100,17 +1026,37 @@ def plot_dataset(
         legend_label = label
     # endif
 
-    ax.errorbar(
-        phi,
-        sigma,
-        yerr=np.vstack([err_low, err_high]),
-        label=legend_label,
-        markersize=5.5,
-        linewidth=0.0,
-        elinewidth=1.0,
-        capsize=2.5,
-        **style,
-    )
+    if label == PASS1_DISPLAY_LABEL:
+        # Open circle, same color as pass-2 combined.
+        ax.errorbar(
+            phi,
+            sigma,
+            yerr=np.vstack([err_low, err_high]),
+            label=legend_label,
+            markersize=6.0,
+            linewidth=0.0,
+            elinewidth=1.0,
+            capsize=2.5,
+            marker=style["marker"],
+            linestyle=style["linestyle"],
+            color=style["color"],
+            markerfacecolor="none",
+            markeredgecolor=style["color"],
+            markeredgewidth=1.3,
+        )
+    else:
+        ax.errorbar(
+            phi,
+            sigma,
+            yerr=np.vstack([err_low, err_high]),
+            label=legend_label,
+            markersize=5.5,
+            linewidth=0.0,
+            elinewidth=1.0,
+            capsize=2.5,
+            **style,
+        )
+    # endif
 
 
 def auto_ratio_ylim(ax, points_by_label: dict) -> None:
@@ -1258,7 +1204,6 @@ def make_plot(
     points_by_label = {
         PASS2_COMBINED_DISPLAY_LABEL: pass2_points_for_period(
             selected=pass2_selected,
-            display_label=PASS2_COMBINED_DISPLAY_LABEL,
             csv_period=PASS2_COMBINED_CSV_PERIOD,
             clas12_scale=clas12_scale,
             include_clas12_estimated_sys=include_clas12_estimated_sys,
@@ -1269,7 +1214,6 @@ def make_plot(
     for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
         points_by_label[display_label] = pass2_points_for_period(
             selected=pass2_selected,
-            display_label=display_label,
             csv_period=csv_period,
             clas12_scale=clas12_scale,
             include_clas12_estimated_sys=include_clas12_estimated_sys,
@@ -1348,16 +1292,23 @@ def make_plot(
     )
 
     for label in TOP_COMPARISON_SERIES:
+        if label not in points_by_label:
+            continue
+        # endif
+
         plot_dataset(
             ax=top_left,
             points=points_by_label.get(label, []),
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
+            legend_label=format_label_with_chi2(
+                label,
+                chi2_by_label.get(label, (math.nan, 0, math.nan)),
+            ),
         )
     # endfor
 
     top_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
-    top_left.set_title("Cross sections: combined/pass-1 comparison")
+    top_left.set_title("Cross sections: pass-2 combined and pass-1")
     top_left.grid(True, alpha=0.25)
     top_left.legend(fontsize=8, frameon=True)
 
@@ -1368,6 +1319,10 @@ def make_plot(
     top_ratios = {}
 
     for label in TOP_COMPARISON_SERIES:
+        if label not in ratios_by_label:
+            continue
+        # endif
+
         ratios = ratios_by_label.get(label, [])
         top_ratios[label] = ratios
 
@@ -1375,7 +1330,10 @@ def make_plot(
             ax=top_right,
             points=ratios,
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
+            legend_label=format_label_with_chi2(
+                label,
+                chi2_by_label.get(label, (math.nan, 0, math.nan)),
+            ),
         )
     # endfor
 
@@ -1388,13 +1346,13 @@ def make_plot(
     )
 
     top_right.set_ylabel(r"CLAS12 / Hall A")
-    top_right.set_title("Ratio to Hall A: combined/pass-1 comparison")
+    top_right.set_title("Ratio to Hall A: pass-2 combined and pass-1")
     top_right.grid(True, alpha=0.25)
     top_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(top_right, top_ratios)
 
     # -------------------------------------------------------------------------
-    # Bottom-left: individual pass-2 periods, pass-1, and Hall A.
+    # Bottom-left: individual pass-2 periods and Hall A only.
     # -------------------------------------------------------------------------
 
     plot_dataset(
@@ -1409,18 +1367,21 @@ def make_plot(
             ax=bottom_left,
             points=points_by_label.get(label, []),
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
+            legend_label=format_label_with_chi2(
+                label,
+                chi2_by_label.get(label, (math.nan, 0, math.nan)),
+            ),
         )
     # endfor
 
     bottom_left.set_xlabel(r"$\phi$ [deg]")
     bottom_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
-    bottom_left.set_title("Cross sections: individual pass-2 periods plus pass-1")
+    bottom_left.set_title("Cross sections: individual pass-2 periods")
     bottom_left.grid(True, alpha=0.25)
     bottom_left.legend(fontsize=8, frameon=True)
 
     # -------------------------------------------------------------------------
-    # Bottom-right: individual pass-2 periods / Hall A plus pass-1 / Hall A.
+    # Bottom-right: individual pass-2 periods / Hall A only.
     # -------------------------------------------------------------------------
 
     bottom_ratios = {}
@@ -1433,7 +1394,10 @@ def make_plot(
             ax=bottom_right,
             points=ratios,
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
+            legend_label=format_label_with_chi2(
+                label,
+                chi2_by_label.get(label, (math.nan, 0, math.nan)),
+            ),
         )
     # endfor
 
@@ -1447,7 +1411,7 @@ def make_plot(
 
     bottom_right.set_xlabel(r"$\phi$ [deg]")
     bottom_right.set_ylabel(r"CLAS12 / Hall A")
-    bottom_right.set_title("Ratio to Hall A: individual pass-2 periods plus pass-1")
+    bottom_right.set_title("Ratio to Hall A: individual pass-2 periods")
     bottom_right.grid(True, alpha=0.25)
     bottom_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(bottom_right, bottom_ratios)
@@ -1516,11 +1480,17 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--pass1-csv",
-        default="all_bin_v3.csv",
+        default=DEFAULT_PASS1_CSV,
         help=(
-            "Input pass-1 Hall B / CLAS12 CSV. Default: all_bin_v3.csv. "
-            "Set to an empty string to skip pass-1 plotting."
+            "Input pass-1 Hall B / CLAS12 CSV. "
+            f"Default: {DEFAULT_PASS1_CSV}"
         ),
+    )
+
+    parser.add_argument(
+        "--no-pass1",
+        action="store_true",
+        help="Disable pass-1 Fa18 overlay.",
     )
 
     parser.add_argument(
@@ -1651,7 +1621,7 @@ def main() -> None:
 
     pass1_selected: Optional[pd.DataFrame] = None
 
-    if args.pass1_csv.strip() != "":
+    if not args.no_pass1:
         if not os.path.exists(args.pass1_csv):
             print()
             print("WARNING: pass-1 CSV was requested but not found:")
@@ -1711,7 +1681,12 @@ def main() -> None:
         )
     # endif
 
-    print(f"  pass-1 normalization systematic: {args.pass1_norm_sys_frac:.6f}")
+    if args.no_pass1:
+        print("  pass-1 Fa18 overlay: disabled")
+    else:
+        print(f"  pass-1 CSV: {args.pass1_csv}")
+        print(f"  pass-1 normalization systematic: {args.pass1_norm_sys_frac:.6f}")
+    # endif
 
     make_plot(
         pass2_selected=pass2_selected,
