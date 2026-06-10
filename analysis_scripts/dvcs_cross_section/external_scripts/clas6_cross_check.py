@@ -16,12 +16,14 @@ from the pass-1 analysis note:
     <xB>  = 0.185
     <Q2>  = 1.630 GeV^2
     <|t|> = 0.200 GeV^2
+    Ebeam = 5.75 GeV
 
   CLAS12:
     Bin Name = 58
     xB  in [0.155, 0.204]
     Q2  in [1.456, 1.912] GeV^2
     |t| in [0.15, 0.25] GeV^2
+    Ebeam = 10.604 GeV
 
 The CLAS6 data are loaded from Gepard, by default dataset id 98:
 
@@ -31,8 +33,8 @@ This corresponds to the unpolarized cross section measurement from:
 
   H.S. Jo et al., Phys. Rev. Lett. 115, 212003 (2015)
 
-Important fixes relative to the first draft
--------------------------------------------
+Important behavior
+------------------
 
 1. Zero-placeholder Gepard points are removed.
 
@@ -40,24 +42,37 @@ Important fixes relative to the first draft
 
      val = 0, errstat = 0, errsyst = 0
 
-   at phi values where no physical data point should be plotted. These are
-   placeholders and badly distort the plot and interpolation if kept.
+   at phi values where no physical data point should be plotted.
 
 2. The CLAS12 bin is hard-coded.
 
-   The previous pass-1 comparison did not simply choose the nearest CLAS12 bin
-   independently for every CLAS6 |t| point. For the first comparison, the correct
-   CLAS12 bin is Bin Name 58.
+   The previous pass-1 comparison used a fixed manual CLAS-to-CLAS12 bin
+   mapping. For this first comparison, the correct CLAS12 bin is Bin Name 58.
+
+3. CLAS12 points are corrected to the CLAS6 kinematics using KM15.
+
+   The correction factor is:
+
+     C(phi) =
+       sigma_KM15(E=5.75,  xB=0.185, Q2=1.630, |t|=0.200, phi)
+       /
+       sigma_KM15(E=10.604, xB=<CLAS12>, Q2=<CLAS12>, |t|=<CLAS12>, phi)
+
+   and the plotted CLAS12 result is:
+
+     sigma_corrected = C(phi) * sigma_raw
+
+   with all CLAS12 uncertainties scaled by the same factor.
 
 Plot layout
 -----------
 
 The script makes one 2x2 figure:
 
-  top-left:     pass-2 10.6 GeV, pass-1 Fa18, and CLAS6 cross sections vs phi
-  top-right:    pass-2 10.6 GeV / CLAS6 ratio vs phi
-  bottom-left:  individual pass-2 run periods and CLAS6 cross sections vs phi
-  bottom-right: individual pass-2 run periods / CLAS6 ratios vs phi
+  top-left:     corrected pass-2 10.6 GeV, corrected pass-1 Fa18, and CLAS6
+  top-right:    corrected pass-2 10.6 GeV / CLAS6
+  bottom-left:  corrected individual pass-2 run periods and CLAS6
+  bottom-right: corrected individual pass-2 run periods / CLAS6
 
 The pass-1 result is shown only in the top-left panel.
 
@@ -98,12 +113,6 @@ pass-1 CLAS12:
     err_up   = sqrt(stat^2 + sys_up^2 + norm^2)
     err_down = sqrt(stat^2 + sys_down^2 + norm^2)
 
-Units
------
-
-By default, pass-2, pass-1, and CLAS6 are all left in their native units,
-expected to be nb/GeV^4 for this CLAS6 comparison.
-
 Output
 ------
 
@@ -111,6 +120,7 @@ Output
 """
 
 import argparse
+import copy
 import math
 import os
 import re
@@ -131,6 +141,7 @@ COMPARISON_LABEL = "26"
 CLAS6_TARGET_XB = 0.185
 CLAS6_TARGET_Q2 = 1.630
 CLAS6_TARGET_T_ABS = 0.200
+CLAS6_EBEAM = 5.75
 
 PASS2_BIN_NAME = 58
 
@@ -142,6 +153,8 @@ PASS2_EXPECTED_Q2_MAX = 1.912
 
 PASS2_EXPECTED_T_ABS_MIN = 0.15
 PASS2_EXPECTED_T_ABS_MAX = 0.25
+
+CLAS12_EBEAM = 10.604
 
 
 # -----------------------------------------------------------------------------
@@ -244,6 +257,7 @@ class DataPoint:
     sys_csv: float = 0.0
     sys_est: float = 0.0
     norm: float = 0.0
+    model_corr: float = 1.0
 
 
 @dataclass
@@ -403,7 +417,7 @@ def avg_column(quantity: str, csv_period: str) -> str:
 
 
 # -----------------------------------------------------------------------------
-# Gepard / CLAS6.
+# Gepard / KM15 helpers.
 # -----------------------------------------------------------------------------
 
 def import_gepard():
@@ -421,6 +435,18 @@ def import_gepard():
     return g
 
 
+def import_km15():
+    try:
+        from gepard.fits import th_KM15
+    except ImportError as exc:
+        raise RuntimeError(
+            "Could not import th_KM15 from gepard.fits."
+        ) from exc
+    # endtry
+
+    return th_KM15
+
+
 def get_attr_any(obj, names: List[str], default=math.nan):
     for name in names:
         if hasattr(obj, name):
@@ -430,6 +456,157 @@ def get_attr_any(obj, names: List[str], default=math.nan):
 
     return default
 
+
+def make_gepard_xs_point(
+    g,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+):
+    """
+    Build a Gepard DataPoint for a fixed-target unpolarized cross section.
+
+    We construct the point in Trento phi and then call to_conventions(), since
+    Gepard internally evaluates in BMK convention.
+    """
+
+    pt = g.DataPoint(
+        xB=float(xB),
+        Q2=float(Q2),
+        t=-abs(float(t_abs)),
+        phi=math.radians(float(phi_deg_trento)),
+        frame="Trento",
+        process="ep2epgamma",
+        exptype="fixed target",
+        in1energy=float(ebeam),
+        in1charge=-1,
+        in1polarization=0,
+        observable="XS",
+    )
+
+    if hasattr(pt, "to_conventions"):
+        pt.to_conventions()
+    # endif
+
+    return pt
+
+
+def km15_xs(
+    g,
+    th_km15,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+) -> float:
+    pt = make_gepard_xs_point(
+        g=g,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi_deg_trento,
+        ebeam=ebeam,
+    )
+
+    prediction = th_km15.predict(pt)
+
+    return float(prediction)
+
+
+def km15_transfer_factor(
+    g,
+    th_km15,
+    phi_deg_trento: float,
+    source_kin: KinematicPoint,
+    source_ebeam: float,
+    target_kin: KinematicPoint,
+    target_ebeam: float,
+) -> float:
+    """
+    Transfer source CLAS12 data to target CLAS6 kinematics:
+
+      C(phi) = KM15(target CLAS6 kinematics) / KM15(source CLAS12 kinematics)
+    """
+
+    numerator = km15_xs(
+        g=g,
+        th_km15=th_km15,
+        xB=target_kin.xB,
+        Q2=target_kin.Q2,
+        t_abs=target_kin.t_abs,
+        phi_deg_trento=phi_deg_trento,
+        ebeam=target_ebeam,
+    )
+
+    denominator = km15_xs(
+        g=g,
+        th_km15=th_km15,
+        xB=source_kin.xB,
+        Q2=source_kin.Q2,
+        t_abs=source_kin.t_abs,
+        phi_deg_trento=phi_deg_trento,
+        ebeam=source_ebeam,
+    )
+
+    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator == 0.0:
+        return math.nan
+    # endif
+
+    return numerator / denominator
+
+
+def apply_model_correction(
+    raw_points: List[DataPoint],
+    g,
+    th_km15,
+    source_kin: KinematicPoint,
+    source_ebeam: float,
+    target_kin: KinematicPoint,
+    target_ebeam: float,
+) -> List[DataPoint]:
+    corrected_points: List[DataPoint] = []
+
+    for point in raw_points:
+        corr = km15_transfer_factor(
+            g=g,
+            th_km15=th_km15,
+            phi_deg_trento=point.phi,
+            source_kin=source_kin,
+            source_ebeam=source_ebeam,
+            target_kin=target_kin,
+            target_ebeam=target_ebeam,
+        )
+
+        if not np.isfinite(corr):
+            continue
+        # endif
+
+        corrected = copy.copy(point)
+
+        corrected.sigma *= corr
+        corrected.err_low *= abs(corr)
+        corrected.err_high *= abs(corr)
+        corrected.stat *= abs(corr)
+        corrected.sys *= abs(corr)
+        corrected.sys_csv *= abs(corr)
+        corrected.sys_est *= abs(corr)
+        corrected.norm *= abs(corr)
+        corrected.model_corr = corr
+
+        corrected_points.append(corrected)
+    # endfor
+
+    corrected_points.sort(key=lambda p: p.phi)
+
+    return corrected_points
+
+
+# -----------------------------------------------------------------------------
+# Gepard / CLAS6 data.
+# -----------------------------------------------------------------------------
 
 def convert_gepard_phi_to_degrees(pt, phi_convention: str) -> float:
     """
@@ -529,12 +706,14 @@ def clas6_point_from_gepard(
         sys_csv=sys,
         sys_est=0.0,
         norm=0.0,
+        model_corr=1.0,
     )
 
     return kin, data
 
 
 def load_clas6_points_for_target(
+    g,
     dataset_id: int,
     clas6_scale: float,
     phi_convention: str,
@@ -545,8 +724,6 @@ def load_clas6_points_for_target(
     tolerance_Q2: float,
     tolerance_t: float,
 ) -> Tuple[KinematicPoint, List[DataPoint], int, int]:
-    g = import_gepard()
-
     if dataset_id not in g.dset:
         raise RuntimeError(
             f"Gepard dataset id {dataset_id} is not available in g.dset."
@@ -873,6 +1050,7 @@ def pass2_points_for_period(
                 sys_csv=sys_csv,
                 sys_est=sys_est,
                 norm=0.0,
+                model_corr=1.0,
             )
         )
     # endfor
@@ -951,6 +1129,7 @@ def pass1_points(
                 sys_csv=0.5 * (abs(sys_up) + abs(sys_down)),
                 sys_est=0.0,
                 norm=norm,
+                model_corr=1.0,
             )
         )
     # endfor
@@ -1200,6 +1379,8 @@ def make_plot(
             rf"$\langle x_B\rangle={pass2_avg.xB:.3f}$, "
             rf"$\langle Q^2\rangle={pass2_avg.Q2:.3f}~{{\rm GeV}}^2$, "
             rf"$\langle |t|\rangle={pass2_avg.t_abs:.3f}~{{\rm GeV}}^2$"
+            "\n"
+            r"CLAS12 points corrected to CLAS6 kinematics with KM15"
         ),
         fontsize=13,
     )
@@ -1234,7 +1415,7 @@ def make_plot(
     # endfor
 
     top_left.set_ylabel(rf"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [{y_units}]")
-    top_left.set_title("Cross sections: pass-2 combined, pass-1, and CLAS6")
+    top_left.set_title("Cross sections: corrected pass-2, corrected pass-1, and CLAS6")
     top_left.grid(True, alpha=0.25)
     top_left.legend(fontsize=8, frameon=True)
 
@@ -1264,8 +1445,8 @@ def make_plot(
     # endfor
 
     top_right.axhline(1.0, color="0.35", linewidth=1.0, linestyle="--", zorder=0)
-    top_right.set_ylabel(r"pass-2 CLAS12 / CLAS6")
-    top_right.set_title("Ratio to CLAS6: pass-2 combined only")
+    top_right.set_ylabel(r"corrected pass-2 CLAS12 / CLAS6")
+    top_right.set_title("Ratio to CLAS6: corrected pass-2 combined")
     top_right.grid(True, alpha=0.25)
     top_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(top_right, top_ratios)
@@ -1292,7 +1473,7 @@ def make_plot(
 
     bottom_left.set_xlabel(r"$\phi$ [deg]")
     bottom_left.set_ylabel(rf"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [{y_units}]")
-    bottom_left.set_title("Cross sections: individual pass-2 periods and CLAS6")
+    bottom_left.set_title("Cross sections: corrected individual pass-2 periods and CLAS6")
     bottom_left.grid(True, alpha=0.25)
     bottom_left.legend(fontsize=8, frameon=True)
 
@@ -1320,8 +1501,8 @@ def make_plot(
 
     bottom_right.axhline(1.0, color="0.35", linewidth=1.0, linestyle="--", zorder=0)
     bottom_right.set_xlabel(r"$\phi$ [deg]")
-    bottom_right.set_ylabel(r"pass-2 CLAS12 / CLAS6")
-    bottom_right.set_title("Ratio to CLAS6: individual pass-2 periods")
+    bottom_right.set_ylabel(r"corrected pass-2 CLAS12 / CLAS6")
+    bottom_right.set_title("Ratio to CLAS6: corrected individual pass-2 periods")
     bottom_right.grid(True, alpha=0.25)
     bottom_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(bottom_right, bottom_ratios)
@@ -1347,16 +1528,22 @@ def print_point_summary(label: str, points: List[DataPoint]) -> None:
     total_values = [symmetric_error(p) for p in points if np.isfinite(symmetric_error(p))]
     stat_values = [p.stat for p in points if np.isfinite(p.stat)]
     sys_values = [p.sys for p in points if np.isfinite(p.sys)]
+    corr_values = [p.model_corr for p in points if np.isfinite(p.model_corr)]
 
     mean_total = float(np.mean(total_values)) if len(total_values) > 0 else math.nan
     mean_stat = float(np.mean(stat_values)) if len(stat_values) > 0 else math.nan
     mean_sys = float(np.mean(sys_values)) if len(sys_values) > 0 else math.nan
+    mean_corr = float(np.mean(corr_values)) if len(corr_values) > 0 else math.nan
+    min_corr = float(np.min(corr_values)) if len(corr_values) > 0 else math.nan
+    max_corr = float(np.max(corr_values)) if len(corr_values) > 0 else math.nan
 
     print(f"  {label}")
     print(f"    points          = {len(points)}")
     print(f"    mean stat err   = {mean_stat:.6g}")
     print(f"    mean sys err    = {mean_sys:.6g}")
     print(f"    mean total err  = {mean_total:.6g}")
+    print(f"    KM15 corr mean  = {mean_corr:.6g}")
+    print(f"    KM15 corr range = [{min_corr:.6g}, {max_corr:.6g}]")
 
     if len(points) > 0:
         first = points[0]
@@ -1365,7 +1552,8 @@ def print_point_summary(label: str, points: List[DataPoint]) -> None:
             f"sigma {first.sigma:.6g}, "
             f"stat {first.stat:.6g}, "
             f"sys {first.sys:.6g}, "
-            f"total {symmetric_error(first):.6g}"
+            f"total {symmetric_error(first):.6g}, "
+            f"corr {first.model_corr:.6g}"
         )
     # endif
 
@@ -1499,6 +1687,12 @@ def parse_args() -> argparse.Namespace:
         help="Use linear y-scale for cross-section panels. Default is log scale.",
     )
 
+    parser.add_argument(
+        "--no-km15-correction",
+        action="store_true",
+        help="Disable KM15 correction and plot raw CLAS12 points.",
+    )
+
     return parser.parse_args()
 
 
@@ -1524,6 +1718,9 @@ def main() -> None:
     if args.pass1_norm_sys_frac < 0.0:
         raise ValueError("--pass1-norm-sys-frac must be non-negative.")
     # endif
+
+    g = import_gepard()
+    th_km15 = import_km15()
 
     pass2_required = [
         "Bin Name",
@@ -1555,6 +1752,18 @@ def main() -> None:
     pass2_avg = compute_weighted_kinematic_averages(
         selected=pass2_selected,
         csv_period=args.avg_period,
+    )
+
+    pass2_source_kin = KinematicPoint(
+        xB=pass2_avg.xB,
+        Q2=pass2_avg.Q2,
+        t_abs=pass2_avg.t_abs,
+    )
+
+    clas6_target_kin = KinematicPoint(
+        xB=CLAS6_TARGET_XB,
+        Q2=CLAS6_TARGET_Q2,
+        t_abs=CLAS6_TARGET_T_ABS,
     )
 
     pass1_df: Optional[pd.DataFrame] = None
@@ -1594,6 +1803,7 @@ def main() -> None:
     print(f"    xB={CLAS6_TARGET_XB:.6f}")
     print(f"    Q2={CLAS6_TARGET_Q2:.6f}")
     print(f"    |t|={CLAS6_TARGET_T_ABS:.6f}")
+    print(f"    Ebeam={CLAS6_EBEAM:.6f} GeV")
 
     (
         clas6_kin,
@@ -1601,6 +1811,7 @@ def main() -> None:
         n_raw_matching_kinematics,
         n_zero_placeholders_removed,
     ) = load_clas6_points_for_target(
+        g=g,
         dataset_id=args.clas6_dataset_id,
         clas6_scale=args.clas6_scale,
         phi_convention=args.clas6_phi_convention,
@@ -1631,6 +1842,7 @@ def main() -> None:
     print(f"  weighted <Q2>               = {pass2_avg.Q2:.6f} GeV^2")
     print(f"  weighted <|t|>              = {pass2_avg.t_abs:.6f} GeV^2")
     print(f"  weighting period            = {pass2_avg.weight_period}")
+    print(f"  Ebeam                       = {CLAS12_EBEAM:.6f} GeV")
 
     if pass1_selected is not None:
         print()
@@ -1639,9 +1851,9 @@ def main() -> None:
         print(f"  rows                        = {len(pass1_selected)}")
     # endif
 
-    points_by_label: Dict[str, List[DataPoint]] = {}
+    raw_points_by_label: Dict[str, List[DataPoint]] = {}
 
-    points_by_label[PASS2_COMBINED_DISPLAY_LABEL] = pass2_points_for_period(
+    raw_points_by_label[PASS2_COMBINED_DISPLAY_LABEL] = pass2_points_for_period(
         selected=pass2_selected,
         csv_period=PASS2_COMBINED_CSV_PERIOD,
         pass2_scale=args.pass2_scale,
@@ -1650,7 +1862,7 @@ def main() -> None:
     )
 
     for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
-        points_by_label[display_label] = pass2_points_for_period(
+        raw_points_by_label[display_label] = pass2_points_for_period(
             selected=pass2_selected,
             csv_period=csv_period,
             pass2_scale=args.pass2_scale,
@@ -1660,11 +1872,29 @@ def main() -> None:
     # endfor
 
     if pass1_selected is not None:
-        points_by_label[PASS1_DISPLAY_LABEL] = pass1_points(
+        raw_points_by_label[PASS1_DISPLAY_LABEL] = pass1_points(
             selected=pass1_selected,
             pass1_scale=args.pass1_scale,
             pass1_norm_sys_frac=args.pass1_norm_sys_frac,
         )
+    # endif
+
+    if args.no_km15_correction:
+        points_by_label = raw_points_by_label
+    else:
+        points_by_label = {}
+
+        for label, points in raw_points_by_label.items():
+            points_by_label[label] = apply_model_correction(
+                raw_points=points,
+                g=g,
+                th_km15=th_km15,
+                source_kin=pass2_source_kin,
+                source_ebeam=CLAS12_EBEAM,
+                target_kin=clas6_target_kin,
+                target_ebeam=CLAS6_EBEAM,
+            )
+        # endfor
     # endif
 
     chi2_by_label = {
