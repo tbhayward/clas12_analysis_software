@@ -56,9 +56,9 @@ For CLAS12 / Hall B:
   the CSV columns are read as:
     (value, stat, sys_csv)
 
-  By default, this script additionally assigns a 10% estimated bin-to-bin
+  By default, this script additionally assigns a 15% estimated bin-to-bin
   systematic:
-    sys_est = 0.10 * sigma
+    sys_est = 0.15 * sigma
 
   The plotted Hall B systematic is:
     sys_total = sqrt(sys_csv^2 + sys_est^2)
@@ -66,11 +66,11 @@ For CLAS12 / Hall B:
   The plotted Hall B total uncertainty is:
     err_total = sqrt(stat^2 + sys_total^2)
 
-  Disable the estimated 10% systematic with:
+  Disable the estimated 15% systematic with:
     --no-clas12-estimated-sys
 
   Change the estimated fraction with:
-    --clas12-bin-to-bin-sys-frac 0.10
+    --clas12-bin-to-bin-sys-frac 0.15
 
 Important unit convention:
   The Hall A table is in pb/GeV^4. The current CLAS12 CSV cross-section values
@@ -135,7 +135,7 @@ PROTON_MASS_GEV = 0.9382720813
 # -----------------------------------------------------------------------------
 
 DEFAULT_CLAS12_SCALE = 1000.0
-DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC = 0.10
+DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC = 0.15
 
 
 # -----------------------------------------------------------------------------
