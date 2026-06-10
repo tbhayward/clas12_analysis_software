@@ -125,13 +125,14 @@ ALL_HALL_B_SERIES = [
 ]
 
 
+# Hall A is always black.
 SERIES_STYLE = {
-    "10.6 GeV": dict(marker="o", linestyle="None", color="black"),
+    "Hall A": dict(marker="s", linestyle="None", color="black"),
+    "10.6 GeV": dict(marker="o", linestyle="None", color="tab:red"),
     "Sp18 Inb": dict(marker="D", linestyle="None", color="tab:green"),
     "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
     "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
     "Fa18 Out": dict(marker="v", linestyle="None", color="tab:orange"),
-    "Hall A": dict(marker="s", linestyle="None", color="tab:red"),
 }
 
 
@@ -185,6 +186,8 @@ class DataPoint:
     sigma: float
     err_low: float
     err_high: float
+    stat: float = 0.0
+    sys: float = 0.0
 
 
 def compute_tmin_exact(xb: float, q2: float, mass: float = PROTON_MASS_GEV) -> float:
@@ -385,6 +388,8 @@ def hall_a_points() -> List[DataPoint]:
                 sigma=sigma,
                 err_low=err_low,
                 err_high=err_high,
+                stat=stat,
+                sys=0.5 * (abs(sys_up) + abs(sys_down)),
             )
         )
     # endfor
@@ -466,6 +471,8 @@ def hall_b_points_for_period(
                 sigma=sigma,
                 err_low=err,
                 err_high=err,
+                stat=stat,
+                sys=sys,
             )
         )
     # endfor
@@ -545,6 +552,8 @@ def interpolate_hall_a_point(phi_query: float, hall_a_points_input: List[DataPoi
         sigma=sigma_interp,
         err_low=err_low_interp,
         err_high=err_high_interp,
+        stat=0.0,
+        sys=0.0,
     )
 
 
@@ -669,6 +678,8 @@ def ratio_to_hall_a(
                 sigma=ratio,
                 err_low=ratio_err_low,
                 err_high=ratio_err_high,
+                stat=0.0,
+                sys=0.0,
             )
         )
     # endfor
@@ -739,6 +750,60 @@ def auto_ratio_ylim(ax, points_by_period: dict) -> None:
     span = max(span_low, span_high, 0.35)
 
     ax.set_ylim(1.0 - 1.10 * span, 1.0 + 1.10 * span)
+
+
+def print_period_diagnostics(
+    hall_b_by_period: dict,
+    clas12_scale: float,
+) -> None:
+    print()
+    print("CLAS12 period extraction diagnostic:")
+    print("  The script uses exact CSV column names, not column ordering.")
+    print(f"  clas12_scale = {clas12_scale:g}")
+
+    for period in ALL_HALL_B_SERIES:
+        xs_col = cross_section_column(period)
+        points = hall_b_by_period.get(period, [])
+
+        stat_values = [
+            p.stat
+            for p in points
+            if np.isfinite(p.stat)
+        ]
+
+        total_values = [
+            symmetric_error(p)
+            for p in points
+            if np.isfinite(symmetric_error(p))
+        ]
+
+        if len(stat_values) > 0:
+            mean_stat = float(np.mean(stat_values))
+        else:
+            mean_stat = math.nan
+        # endif
+
+        if len(total_values) > 0:
+            mean_total = float(np.mean(total_values))
+        else:
+            mean_total = math.nan
+        # endif
+
+        print(f"  {period}")
+        print(f"    column          = {xs_col}")
+        print(f"    points          = {len(points)}")
+        print(f"    mean stat error = {mean_stat:.6g} pb/GeV^4")
+        print(f"    mean total err  = {mean_total:.6g} pb/GeV^4")
+
+        if len(points) > 0:
+            first = points[0]
+            print(
+                f"    first point     = phi {first.phi:.3f} deg, "
+                f"sigma {first.sigma:.6g} pb/GeV^4, "
+                f"stat {first.stat:.6g}, sys {first.sys:.6g}"
+            )
+        # endif
+    # endfor
 
 
 def make_plot(
@@ -955,22 +1020,10 @@ def make_plot(
         # endif
     # endfor
 
-    print()
-    print("Extracted CLAS12 points after applying scale factor:")
-    print(f"  clas12_scale = {clas12_scale:g}")
-
-    for period in ALL_HALL_B_SERIES:
-        points = hall_b_by_period.get(period, [])
-        print(f"  {period}: {len(points)} points")
-
-        if len(points) > 0:
-            first = points[0]
-            print(
-                f"    first point: phi = {first.phi:.3f} deg, "
-                f"sigma = {first.sigma:.6g} pb/GeV^4"
-            )
-        # endif
-    # endfor
+    print_period_diagnostics(
+        hall_b_by_period=hall_b_by_period,
+        clas12_scale=clas12_scale,
+    )
 
 
 def parse_args() -> argparse.Namespace:
