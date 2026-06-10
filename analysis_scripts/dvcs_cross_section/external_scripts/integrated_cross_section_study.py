@@ -52,6 +52,16 @@ and weights those sub-bin average values by event/yield columns if available.
 If no suitable yield/count column is found, it falls back to a finite-value
 average of the sub-bin average kinematics. If that also fails, it falls back
 to the bin midpoint.
+
+By default, plotted y-error bars are statistical only.
+
+If --include-bin-to-bin-sys is passed, the plotted y-error bars are changed to:
+
+  total_error = sqrt(stat_error^2 + (bin_to_bin_sys_fraction * cross_section)^2)
+
+where bin_to_bin_sys_fraction defaults to 0.18 and can be changed with:
+
+  --bin-to-bin-sys-frac 0.18
 """
 
 import argparse
@@ -104,12 +114,12 @@ RIGHT_SERIES = [
 # -----------------------------------------------------------------------------
 
 SERIES_STYLE = {
-    "10.6 GeV": dict(marker="o", linestyle="None", color="black"),
-    "Sp18 Inb": dict(marker="D", linestyle="None", color="tab:green"),
-    "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
-    "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
-    "Fa18 Out": dict(marker="v", linestyle="None", color="tab:orange"),
-    "Sp19 Inb": dict(marker="s", linestyle="None", color="tab:red"),
+    "10.6 GeV": dict(marker="o", linestyle="-", color="black"),
+    "Sp18 Inb": dict(marker="D", linestyle="-", color="tab:green"),
+    "Sp18 Out": dict(marker="P", linestyle="-", color="tab:purple"),
+    "Fa18 Inb": dict(marker="^", linestyle="-", color="tab:blue"),
+    "Fa18 Out": dict(marker="v", linestyle="-", color="tab:orange"),
+    "Sp19 Inb": dict(marker="s", linestyle="-", color="tab:red"),
 }
 
 
@@ -556,13 +566,61 @@ def integrated_points_for_period(
     return points
 
 
-def points_to_arrays(points: List[Point]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    return (
-        np.array([p.x for p in points], dtype=float),
-        np.array([p.y for p in points], dtype=float),
-        np.array([p.stat for p in points], dtype=float),
-        np.array([p.sys for p in points], dtype=float),
+def point_plot_error(
+    point: Point,
+    include_bin_to_bin_sys: bool,
+    bin_to_bin_sys_frac: float,
+) -> float:
+    """
+    Return the y-error to draw for a cross-section or ratio point.
+
+    By default:
+      error = stat
+
+    With --include-bin-to-bin-sys:
+      error = sqrt(stat^2 + (f * y)^2)
+
+    where f defaults to 0.18.
+    """
+
+    stat = point.stat if np.isfinite(point.stat) else 0.0
+
+    if not include_bin_to_bin_sys:
+        return stat
+    # endif
+
+    if not np.isfinite(point.y):
+        return stat
+    # endif
+
+    sys_bin_to_bin = bin_to_bin_sys_frac * abs(point.y)
+
+    return math.sqrt(stat * stat + sys_bin_to_bin * sys_bin_to_bin)
+
+
+def points_to_arrays(
+    points: List[Point],
+    include_bin_to_bin_sys: bool,
+    bin_to_bin_sys_frac: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    x = np.array([p.x for p in points], dtype=float)
+    y = np.array([p.y for p in points], dtype=float)
+
+    stat = np.array([p.stat for p in points], dtype=float)
+
+    yerr = np.array(
+        [
+            point_plot_error(
+                point=p,
+                include_bin_to_bin_sys=include_bin_to_bin_sys,
+                bin_to_bin_sys_frac=bin_to_bin_sys_frac,
+            )
+            for p in points
+        ],
+        dtype=float,
     )
+
+    return x, y, stat, yerr
 
 
 def ratio_points(numerator: List[Point], denominator: List[Point]) -> List[Point]:
@@ -707,21 +765,33 @@ def ratio_to_fa18_sp19_weighted_mean(
     return ratios
 
 
-def plot_points(ax, points: List[Point], label: str, ratio: bool = False) -> None:
+def plot_points(
+    ax,
+    points: List[Point],
+    label: str,
+    ratio: bool,
+    include_bin_to_bin_sys: bool,
+    bin_to_bin_sys_frac: float,
+) -> None:
     if len(points) == 0:
         return
     # endif
 
-    x, y, stat, _ = points_to_arrays(points)
+    x, y, _, yerr = points_to_arrays(
+        points=points,
+        include_bin_to_bin_sys=include_bin_to_bin_sys,
+        bin_to_bin_sys_frac=bin_to_bin_sys_frac,
+    )
+
     style = SERIES_STYLE.get(label, dict(marker="o", linestyle="None"))
 
     ax.errorbar(
         x,
         y,
-        yerr=stat,
+        yerr=yerr,
         label=label,
         markersize=5.5,
-        linewidth=0.0,
+        linewidth=1.2,
         elinewidth=1.0,
         capsize=2.5,
         **style,
@@ -750,6 +820,8 @@ def make_projection_plot(
     projection: str,
     output_dir: str,
     no_width_weighting: bool,
+    include_bin_to_bin_sys: bool,
+    bin_to_bin_sys_frac: float,
 ) -> None:
     info = PROJECTIONS[projection]
 
@@ -787,6 +859,8 @@ def make_projection_plot(
             points=points_by_period.get(period, []),
             label=period,
             ratio=False,
+            include_bin_to_bin_sys=include_bin_to_bin_sys,
+            bin_to_bin_sys_frac=bin_to_bin_sys_frac,
         )
     # endfor
 
@@ -805,6 +879,8 @@ def make_projection_plot(
             points=ratio_points(points_by_period.get(period, []), denom_106),
             label=period,
             ratio=True,
+            include_bin_to_bin_sys=include_bin_to_bin_sys,
+            bin_to_bin_sys_frac=bin_to_bin_sys_frac,
         )
     # endfor
 
@@ -826,6 +902,8 @@ def make_projection_plot(
             ),
             label=period,
             ratio=True,
+            include_bin_to_bin_sys=include_bin_to_bin_sys,
+            bin_to_bin_sys_frac=bin_to_bin_sys_frac,
         )
     # endfor
 
@@ -876,11 +954,34 @@ def parse_args() -> argparse.Namespace:
         help="Use phi bin widths in degrees instead of radians for integration weights.",
     )
 
+    parser.add_argument(
+        "--include-bin-to-bin-sys",
+        action="store_true",
+        help=(
+            "Draw total error bars instead of stat-only error bars, using "
+            "sqrt(stat^2 + (f * y)^2). The default f is 0.18."
+        ),
+    )
+
+    parser.add_argument(
+        "--bin-to-bin-sys-frac",
+        type=float,
+        default=0.18,
+        help=(
+            "Fractional bin-to-bin systematic uncertainty used when "
+            "--include-bin-to-bin-sys is enabled. Default: 0.18."
+        ),
+    )
+
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    if args.bin_to_bin_sys_frac < 0.0:
+        raise ValueError("--bin-to-bin-sys-frac must be non-negative.")
+    # endif
 
     required = [
         "xBmin",
@@ -911,8 +1012,19 @@ def main() -> None:
             projection=projection,
             output_dir=args.output_dir,
             no_width_weighting=args.no_width_weighting,
+            include_bin_to_bin_sys=args.include_bin_to_bin_sys,
+            bin_to_bin_sys_frac=args.bin_to_bin_sys_frac,
         )
     # endfor
+
+    if args.include_bin_to_bin_sys:
+        print(
+            "Using plotted y-errors: "
+            f"sqrt(stat^2 + ({args.bin_to_bin_sys_frac:.4f} * y)^2)"
+        )
+    else:
+        print("Using plotted y-errors: statistical only")
+    # endif
 
     print(f"Wrote integrated study PNG plots to: {args.output_dir}")
 
