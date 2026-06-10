@@ -319,12 +319,16 @@ def make_gepard_xs_point(
     """
     Build a Gepard DataPoint at fixed-target kinematics.
 
-    The explicit y and eps2 assignments are needed by Gepard's BH prefactor
-    machinery, e.g. PreFacSigma(pt) and TBH2unp(pt), even when KM15 predict(pt)
-    can evaluate without them.
+    Gepard's BH machinery expects derived kinematic quantities such as y, eps2,
+    K2, K, and P1P2 to already exist on the point. These are filled by
+    gepard.kinematics.prepare(pt), provided that the point has W, xB, Q2, t,
+    phi, process, exptype, and in1energy.
     """
 
+    from gepard.kinematics import prepare
+
     proton_mass = 0.9382720813
+    proton_mass2 = proton_mass * proton_mass
 
     xB = float(xB)
     Q2 = float(Q2)
@@ -332,16 +336,20 @@ def make_gepard_xs_point(
     phi_deg_trento = float(phi_deg_trento)
     ebeam = float(ebeam)
 
-    y = Q2 / (2.0 * proton_mass * ebeam * xB)
-    eps2 = 4.0 * proton_mass * proton_mass * xB * xB / Q2
+    W2 = proton_mass2 + Q2 * (1.0 / xB - 1.0)
+
+    if W2 <= 0.0:
+        raise ValueError(
+            f"Invalid W^2={W2} for xB={xB}, Q2={Q2}."
+        )
+    # endif
 
     pt = g.DataPoint(
         xB=xB,
         Q2=Q2,
+        W=math.sqrt(W2),
         t=-abs(t_abs),
         phi=math.radians(phi_deg_trento),
-        y=y,
-        eps2=eps2,
         frame="Trento",
         process="ep2epgamma",
         exptype="fixed target",
@@ -354,6 +362,8 @@ def make_gepard_xs_point(
     if hasattr(pt, "to_conventions"):
         pt.to_conventions()
     # endif
+
+    prepare(pt)
 
     return pt
 
