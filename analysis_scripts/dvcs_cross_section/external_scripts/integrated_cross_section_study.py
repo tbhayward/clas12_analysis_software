@@ -7,17 +7,24 @@ Standalone projection/integration study for the DVCS pass-2 CSV.
 The script reads the final analysis CSV and makes four 1x3 canvases in
 output/integrated_study/:
 
-  integrated_xB_dependence.png/.pdf
-  integrated_Q2_dependence.png/.pdf
-  integrated_t_dependence.png/.pdf
-  integrated_phi_dependence.png/.pdf
+  integrated_xB_dependence.png
+  integrated_Q2_dependence.png
+  integrated_t_dependence.png
+  integrated_phi_dependence.png
 
 Each canvas contains:
 
-  left:   integrated normed cross sections for 10.6 GeV, Sp19 Inb, and the
-          four individual 10.6-GeV run periods.
+  left:   integrated normed cross sections for:
+            10.6 GeV
+            Sp18 Inb
+            Sp18 Out
+            Fa18 Inb
+            Fa18 Out
+            Sp19 Inb
+
   middle: ratios of the four individual 10.6-GeV run periods to the combined
           10.6-GeV result.
+
   right:  ratios of Fa18 Inb and Sp19 Inb to the weighted mean of Fa18 Inb
           and Sp19 Inb.
 
@@ -32,6 +39,19 @@ cross sections:
 The phi width is converted from degrees to radians by default, since the usual
 DVCS differential cross section convention is per radian. Use --phi-degrees if
 you intentionally want degree-weighted phi integration instead.
+
+For the plotted x-position in each projected bin, the script tries to use the
+available per-bin average kinematic columns, for example:
+
+  xBavg, Fa18 Inb
+  Q2avg, Fa18 Inb
+  t_abs_avg, Fa18 Inb
+  phiavg, Fa18 Inb
+
+and weights those sub-bin average values by event/yield columns if available.
+If no suitable yield/count column is found, it falls back to a finite-value
+average of the sub-bin average kinematics. If that also fails, it falls back
+to the bin midpoint.
 """
 
 import argparse
@@ -46,33 +66,52 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+# -----------------------------------------------------------------------------
+# Plot order requested by user.
+# -----------------------------------------------------------------------------
+
 RUN_PERIODS_106 = [
-    "Fa18 Inb",
-    "Fa18 Out",
     "Sp18 Inb",
     "Sp18 Out",
+    "Fa18 Inb",
+    "Fa18 Out",
 ]
 
 LEFT_SERIES = [
     "10.6 GeV",
-    "Sp19 Inb",
-    "Fa18 Inb",
-    "Fa18 Out",
     "Sp18 Inb",
     "Sp18 Out",
+    "Fa18 Inb",
+    "Fa18 Out",
+    "Sp19 Inb",
 ]
 
-MIDDLE_SERIES = RUN_PERIODS_106
-RIGHT_SERIES = ["Fa18 Inb", "Sp19 Inb"]
+MIDDLE_SERIES = [
+    "Sp18 Inb",
+    "Sp18 Out",
+    "Fa18 Inb",
+    "Fa18 Out",
+]
+
+RIGHT_SERIES = [
+    "Fa18 Inb",
+    "Sp19 Inb",
+]
+
+
+# -----------------------------------------------------------------------------
+# Marker-only styles. No connecting lines.
+# -----------------------------------------------------------------------------
 
 SERIES_STYLE = {
-    "10.6 GeV": dict(marker="o", linestyle="-",  color="black"),
-    "Sp19 Inb": dict(marker="s", linestyle="-", color="tab:red"),
-    "Fa18 Inb": dict(marker="^", linestyle="-", color="tab:blue"),
-    "Fa18 Out": dict(marker="v", linestyle="-", color="tab:orange"),
-    "Sp18 Inb": dict(marker="D", linestyle="-", color="tab:green"),
-    "Sp18 Out": dict(marker="P", linestyle="-", color="tab:purple"),
+    "10.6 GeV": dict(marker="o", linestyle="None", color="black"),
+    "Sp18 Inb": dict(marker="D", linestyle="None", color="tab:green"),
+    "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
+    "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
+    "Fa18 Out": dict(marker="v", linestyle="None", color="tab:orange"),
+    "Sp19 Inb": dict(marker="s", linestyle="None", color="tab:red"),
 }
+
 
 PROJECTIONS = {
     "xB": {
@@ -117,31 +156,29 @@ PROJECTIONS = {
     },
 }
 
-WIDTH_COLUMNS = {
-    "xB": ("xBmin", "xBmax"),
-    "Q2": ("Q2min", "Q2max"),
-    "t": ("t_abs_min", "t_abs_max"),
-    "phi": ("phimin", "phimax"),
-}
-
-
-@dataclass
-class Point:
-    key: Tuple[float, float]
-    x: float
-    xerr: float
-    y: float
-    stat: float
-    sys: float
-
 
 FLOAT_PATTERN = re.compile(
     r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
 )
 
 
+@dataclass
+class Point:
+    key: Tuple[float, float]
+    x: float
+    y: float
+    stat: float
+    sys: float
+
+
 def parse_tuple3(value) -> Tuple[float, float, float]:
-    """Parse a CSV cell holding either NaN, scalar, or '(value, stat, sys)'."""
+    """
+    Parse a CSV cell holding either NaN, scalar, or '(value, stat, sys)'.
+
+    Returns
+    -------
+    value, stat, sys : tuple of floats
+    """
 
     if value is None:
         return (math.nan, math.nan, math.nan)
@@ -156,21 +193,59 @@ def parse_tuple3(value) -> Tuple[float, float, float]:
     # endif
 
     text = str(value).strip()
+
     if text == "" or text.lower() in {"nan", "none", "null"}:
         return (math.nan, math.nan, math.nan)
     # endif
 
     numbers = FLOAT_PATTERN.findall(text)
+
     if len(numbers) == 0:
         return (math.nan, math.nan, math.nan)
     # endif
 
     parsed = [float(x) for x in numbers]
+
     while len(parsed) < 3:
         parsed.append(0.0)
     # endwhile
 
     return (parsed[0], parsed[1], parsed[2])
+
+
+def parse_scalar_from_cell(value) -> float:
+    """
+    Parse a scalar-like CSV cell.
+
+    If the cell is a tuple such as '(value, stat, sys)', this returns the first
+    number. This is useful for yield/count columns that may be stored as tuple3.
+    """
+
+    if value is None:
+        return math.nan
+    # endif
+
+    if isinstance(value, float) and math.isnan(value):
+        return math.nan
+    # endif
+
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value)
+    # endif
+
+    text = str(value).strip()
+
+    if text == "" or text.lower() in {"nan", "none", "null"}:
+        return math.nan
+    # endif
+
+    numbers = FLOAT_PATTERN.findall(text)
+
+    if len(numbers) == 0:
+        return math.nan
+    # endif
+
+    return float(numbers[0])
 
 
 def cross_section_column(period: str) -> str:
@@ -179,6 +254,7 @@ def cross_section_column(period: str) -> str:
 
 def require_columns(df: pd.DataFrame, columns: Iterable[str]) -> None:
     missing = [c for c in columns if c not in df.columns]
+
     if missing:
         raise KeyError(
             "The input CSV is missing required columns:\n  " + "\n  ".join(missing)
@@ -189,11 +265,26 @@ def require_columns(df: pd.DataFrame, columns: Iterable[str]) -> None:
 def add_width_columns(df: pd.DataFrame, phi_degrees: bool) -> pd.DataFrame:
     out = df.copy()
 
-    out["_width_xB"] = pd.to_numeric(out["xBmax"], errors="coerce") - pd.to_numeric(out["xBmin"], errors="coerce")
-    out["_width_Q2"] = pd.to_numeric(out["Q2max"], errors="coerce") - pd.to_numeric(out["Q2min"], errors="coerce")
-    out["_width_t"] = pd.to_numeric(out["t_abs_max"], errors="coerce") - pd.to_numeric(out["t_abs_min"], errors="coerce")
+    out["_width_xB"] = (
+        pd.to_numeric(out["xBmax"], errors="coerce")
+        - pd.to_numeric(out["xBmin"], errors="coerce")
+    )
 
-    phi_width_deg = pd.to_numeric(out["phimax"], errors="coerce") - pd.to_numeric(out["phimin"], errors="coerce")
+    out["_width_Q2"] = (
+        pd.to_numeric(out["Q2max"], errors="coerce")
+        - pd.to_numeric(out["Q2min"], errors="coerce")
+    )
+
+    out["_width_t"] = (
+        pd.to_numeric(out["t_abs_max"], errors="coerce")
+        - pd.to_numeric(out["t_abs_min"], errors="coerce")
+    )
+
+    phi_width_deg = (
+        pd.to_numeric(out["phimax"], errors="coerce")
+        - pd.to_numeric(out["phimin"], errors="coerce")
+    )
+
     if phi_degrees:
         out["_width_phi"] = phi_width_deg
     else:
@@ -203,45 +294,177 @@ def add_width_columns(df: pd.DataFrame, phi_degrees: bool) -> pd.DataFrame:
     return out
 
 
-def weight_for_row(row: pd.Series, integrate_widths: List[str], no_width_weighting: bool) -> float:
+def weight_for_row(
+    row: pd.Series,
+    integrate_widths: List[str],
+    no_width_weighting: bool,
+) -> float:
     if no_width_weighting:
         return 1.0
     # endif
 
     weight = 1.0
+
     for axis in integrate_widths:
         width = row[f"_width_{axis}"]
+
         if not np.isfinite(width) or width <= 0.0:
             return math.nan
         # endif
+
         weight *= float(width)
     # endfor
 
     return weight
 
 
+def candidate_yield_columns_for_period(df: pd.DataFrame, period: str) -> List[str]:
+    """
+    Return candidate yield/count columns that can be used to weight the average
+    x-position of an integrated/projection point.
+
+    The code intentionally searches broadly because these CSVs have gone through
+    several naming conventions. The priority is:
+
+      1. pi0-corrected / signal yield columns,
+      2. acceptance-corrected yield columns,
+      3. unfolded yield columns,
+      4. any other relevant count/yield column for the period.
+
+    The function only returns columns that actually exist in the CSV.
+    """
+
+    period_lower = period.lower()
+
+    priority_phrases = [
+        "pi0 corrected",
+        "pi0-corrected",
+        "pi0_corrected",
+        "signal yield",
+        "acceptance corrected yield",
+        "acceptance-corrected yield",
+        "acceptance_corrected_yield",
+        "unfolded yield",
+        "corrected yield",
+        "yield",
+        "counts",
+        "num events",
+        "numEvents",
+    ]
+
+    candidates: List[str] = []
+
+    for phrase in priority_phrases:
+        phrase_lower = phrase.lower()
+
+        for col in df.columns:
+            col_lower = str(col).lower()
+
+            if period_lower not in col_lower:
+                continue
+            # endif
+
+            if "unpol" not in col_lower:
+                continue
+            # endif
+
+            if phrase_lower not in col_lower:
+                continue
+            # endif
+
+            if col in candidates:
+                continue
+            # endif
+
+            candidates.append(col)
+        # endfor
+    # endfor
+
+    return candidates
+
+
+def event_weight_for_average(row: pd.Series, candidate_columns: List[str]) -> float:
+    """
+    Determine the event/yield weight for placing the x-position.
+
+    Returns NaN if no useful positive weight is found.
+    """
+
+    for col in candidate_columns:
+        val = parse_scalar_from_cell(row[col])
+
+        if np.isfinite(val) and val > 0.0:
+            return float(val)
+        # endif
+    # endfor
+
+    return math.nan
+
+
 def average_x_for_group(
     group: pd.DataFrame,
     projection_info: Dict[str, object],
     period: str,
-) -> Tuple[float, float]:
+    yield_weight_columns: List[str],
+) -> float:
+    """
+    Compute the plotted x-position for a projected bin.
+
+    Preferred behavior:
+      x_plot = sum_j N_j * <x>_j / sum_j N_j
+
+    where j runs over the hidden sub-bins being integrated over. The N_j are
+    taken from pi0-corrected/signal/acceptance-corrected yield columns if found.
+
+    Fallbacks:
+      1. simple finite average of the per-sub-bin average kinematic values,
+      2. midpoint of the projected bin.
+    """
+
     avg_col = f"{projection_info['avg_prefix']}, {period}"
     min_col = str(projection_info["min_col"])
     max_col = str(projection_info["max_col"])
 
     xlo = float(pd.to_numeric(group[min_col], errors="coerce").iloc[0])
     xhi = float(pd.to_numeric(group[max_col], errors="coerce").iloc[0])
-    xcenter = 0.5 * (xlo + xhi)
+    midpoint = 0.5 * (xlo + xhi)
 
-    if avg_col in group.columns:
-        vals = pd.to_numeric(group[avg_col], errors="coerce")
-        finite = vals[np.isfinite(vals)]
-        if len(finite) > 0:
-            xcenter = float(np.mean(finite))
-        # endif
+    if avg_col not in group.columns:
+        return midpoint
     # endif
 
-    return xcenter, 0.5 * (xhi - xlo)
+    numerator = 0.0
+    denominator = 0.0
+    finite_avg_values: List[float] = []
+
+    for _, row in group.iterrows():
+        xavg = parse_scalar_from_cell(row[avg_col])
+
+        if not np.isfinite(xavg):
+            continue
+        # endif
+
+        finite_avg_values.append(float(xavg))
+
+        w = event_weight_for_average(row, yield_weight_columns)
+
+        if not np.isfinite(w) or w <= 0.0:
+            continue
+        # endif
+
+        numerator += w * xavg
+        denominator += w
+    # endfor
+
+    if denominator > 0.0:
+        return numerator / denominator
+    # endif
+
+    if len(finite_avg_values) > 0:
+        return float(np.mean(np.array(finite_avg_values, dtype=float)))
+    # endif
+
+    return midpoint
 
 
 def integrated_points_for_period(
@@ -252,14 +475,18 @@ def integrated_points_for_period(
 ) -> List[Point]:
     info = PROJECTIONS[projection]
     col = cross_section_column(period)
+
     if col not in df.columns:
         return []
     # endif
+
+    yield_weight_columns = candidate_yield_columns_for_period(df, period)
 
     group_cols = [str(info["min_col"]), str(info["max_col"])]
     points: List[Point] = []
 
     sorted_df = df.sort_values(group_cols)
+
     for _, group in sorted_df.groupby(group_cols, sort=True, dropna=True):
         y_sum = 0.0
         stat2_sum = 0.0
@@ -268,17 +495,28 @@ def integrated_points_for_period(
 
         for _, row in group.iterrows():
             value, stat, sys = parse_tuple3(row[col])
+
             if not np.isfinite(value):
                 continue
             # endif
 
-            weight = weight_for_row(row, list(info["integrate_widths"]), no_width_weighting)
+            weight = weight_for_row(
+                row=row,
+                integrate_widths=list(info["integrate_widths"]),
+                no_width_weighting=no_width_weighting,
+            )
+
             if not np.isfinite(weight):
                 continue
             # endif
 
-            stat = 0.0 if not np.isfinite(stat) else stat
-            sys = 0.0 if not np.isfinite(sys) else sys
+            if not np.isfinite(stat):
+                stat = 0.0
+            # endif
+
+            if not np.isfinite(sys):
+                sys = 0.0
+            # endif
 
             y_sum += value * weight
             stat2_sum += (stat * weight) ** 2
@@ -290,19 +528,37 @@ def integrated_points_for_period(
             continue
         # endif
 
-        x, xerr = average_x_for_group(group, info, period)
-        key = (float(group[str(info["min_col"])].iloc[0]), float(group[str(info["max_col"])].iloc[0]))
-        points.append(Point(key=key, x=x, xerr=xerr, y=y_sum, stat=math.sqrt(stat2_sum), sys=math.sqrt(sys2_sum)))
+        x = average_x_for_group(
+            group=group,
+            projection_info=info,
+            period=period,
+            yield_weight_columns=yield_weight_columns,
+        )
+
+        key = (
+            float(group[str(info["min_col"])].iloc[0]),
+            float(group[str(info["max_col"])].iloc[0]),
+        )
+
+        points.append(
+            Point(
+                key=key,
+                x=x,
+                y=y_sum,
+                stat=math.sqrt(stat2_sum),
+                sys=math.sqrt(sys2_sum),
+            )
+        )
     # endfor
 
     points.sort(key=lambda p: p.x)
+
     return points
 
 
-def points_to_arrays(points: List[Point]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def points_to_arrays(points: List[Point]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     return (
         np.array([p.x for p in points], dtype=float),
-        np.array([p.xerr for p in points], dtype=float),
         np.array([p.y for p in points], dtype=float),
         np.array([p.stat for p in points], dtype=float),
         np.array([p.sys for p in points], dtype=float),
@@ -310,51 +566,77 @@ def points_to_arrays(points: List[Point]) -> Tuple[np.ndarray, np.ndarray, np.nd
 
 
 def ratio_points(numerator: List[Point], denominator: List[Point]) -> List[Point]:
-    n_by_x = {p.key: p for p in numerator}
-    d_by_x = {p.key: p for p in denominator}
+    n_by_key = {p.key: p for p in numerator}
+    d_by_key = {p.key: p for p in denominator}
 
     ratios: List[Point] = []
-    common_keys = sorted(set(n_by_x.keys()) & set(d_by_x.keys()))
+    common_keys = sorted(set(n_by_key.keys()) & set(d_by_key.keys()))
 
     for key in common_keys:
-        n = n_by_x[key]
-        d = d_by_x[key]
+        n = n_by_key[key]
+        d = d_by_key[key]
+
         if not np.isfinite(n.y) or not np.isfinite(d.y) or d.y == 0.0:
             continue
         # endif
 
         r = n.y / d.y
+
         rel2 = 0.0
+
         if n.y != 0.0 and np.isfinite(n.stat):
             rel2 += (n.stat / n.y) ** 2
         # endif
+
         if np.isfinite(d.stat):
             rel2 += (d.stat / d.y) ** 2
         # endif
 
-        ratios.append(Point(key=n.key, x=n.x, xerr=n.xerr, y=r, stat=abs(r) * math.sqrt(rel2), sys=0.0))
+        ratios.append(
+            Point(
+                key=n.key,
+                x=n.x,
+                y=r,
+                stat=abs(r) * math.sqrt(rel2),
+                sys=0.0,
+            )
+        )
     # endfor
 
     return ratios
 
 
 def weighted_mean_two_points(a: Point, b: Point) -> Optional[Point]:
-    values = []
-    weights = []
+    """
+    Weighted mean of two points using statistical uncertainties only.
+
+    mean = sum_i y_i / stat_i^2 / sum_i 1 / stat_i^2
+    stat = sqrt(1 / sum_i 1 / stat_i^2)
+
+    If one point has invalid or zero uncertainty, it is skipped. If both are
+    unusable as weighted measurements, return None.
+    """
+
+    values: List[float] = []
+    weights: List[float] = []
 
     for p in [a, b]:
         if not np.isfinite(p.y):
             continue
         # endif
+
         if np.isfinite(p.stat) and p.stat > 0.0:
             w = 1.0 / (p.stat * p.stat)
         else:
             w = 0.0
         # endif
-        if w > 0.0:
-            values.append(p.y)
-            weights.append(w)
+
+        if w <= 0.0:
+            continue
         # endif
+
+        values.append(float(p.y))
+        weights.append(float(w))
     # endfor
 
     if len(values) == 0:
@@ -363,9 +645,17 @@ def weighted_mean_two_points(a: Point, b: Point) -> Optional[Point]:
 
     values_arr = np.array(values, dtype=float)
     weights_arr = np.array(weights, dtype=float)
+
     mean = float(np.sum(weights_arr * values_arr) / np.sum(weights_arr))
     stat = float(math.sqrt(1.0 / np.sum(weights_arr)))
-    return Point(key=a.key, x=a.x, xerr=a.xerr, y=mean, stat=stat, sys=0.0)
+
+    return Point(
+        key=a.key,
+        x=a.x,
+        y=mean,
+        stat=stat,
+        sys=0.0,
+    )
 
 
 def ratio_to_fa18_sp19_weighted_mean(
@@ -377,10 +667,15 @@ def ratio_to_fa18_sp19_weighted_mean(
     target_points = {p.key: p for p in points_by_period.get(period, [])}
 
     ratios: List[Point] = []
-    common_keys = sorted(set(fa_points.keys()) & set(sp_points.keys()) & set(target_points.keys()))
+    common_keys = sorted(
+        set(fa_points.keys())
+        & set(sp_points.keys())
+        & set(target_points.keys())
+    )
 
     for key in common_keys:
         mean_point = weighted_mean_two_points(fa_points[key], sp_points[key])
+
         if mean_point is None or mean_point.y == 0.0:
             continue
         # endif
@@ -389,14 +684,24 @@ def ratio_to_fa18_sp19_weighted_mean(
         r = p.y / mean_point.y
 
         rel2 = 0.0
+
         if p.y != 0.0 and np.isfinite(p.stat):
             rel2 += (p.stat / p.y) ** 2
         # endif
+
         if np.isfinite(mean_point.stat):
             rel2 += (mean_point.stat / mean_point.y) ** 2
         # endif
 
-        ratios.append(Point(key=p.key, x=p.x, xerr=p.xerr, y=r, stat=abs(r) * math.sqrt(rel2), sys=0.0))
+        ratios.append(
+            Point(
+                key=p.key,
+                x=p.x,
+                y=r,
+                stat=abs(r) * math.sqrt(rel2),
+                sys=0.0,
+            )
+        )
     # endfor
 
     return ratios
@@ -407,30 +712,36 @@ def plot_points(ax, points: List[Point], label: str, ratio: bool = False) -> Non
         return
     # endif
 
-    x, xerr, y, stat, _ = points_to_arrays(points)
-    style = SERIES_STYLE.get(label, dict(marker="o", linestyle="-"))
+    x, y, stat, _ = points_to_arrays(points)
+    style = SERIES_STYLE.get(label, dict(marker="o", linestyle="None"))
 
     ax.errorbar(
         x,
         y,
-        xerr=xerr,
         yerr=stat,
         label=label,
-        markersize=5.0,
-        linewidth=1.2,
+        markersize=5.5,
+        linewidth=0.0,
         elinewidth=1.0,
         capsize=2.5,
         **style,
     )
 
     if ratio:
-        ax.axhline(1.0, color="0.35", linewidth=1.0, linestyle="--", zorder=0)
+        ax.axhline(
+            1.0,
+            color="0.35",
+            linewidth=1.0,
+            linestyle="--",
+            zorder=0,
+        )
     # endif
 
 
 def auto_ratio_ylim(ax, center: float = 1.0, min_span: float = 0.35) -> None:
     ylo, yhi = ax.get_ylim()
     span = max(abs(yhi - center), abs(center - ylo), min_span)
+
     ax.set_ylim(center - 1.15 * span, center + 1.15 * span)
 
 
@@ -439,23 +750,46 @@ def make_projection_plot(
     projection: str,
     output_dir: str,
     no_width_weighting: bool,
-    show_sys_band: bool,
 ) -> None:
     info = PROJECTIONS[projection]
 
-    all_needed_periods = sorted(set(LEFT_SERIES + MIDDLE_SERIES + RIGHT_SERIES))
+    all_needed_periods = []
+    for period in LEFT_SERIES + MIDDLE_SERIES + RIGHT_SERIES:
+        if period not in all_needed_periods:
+            all_needed_periods.append(period)
+        # endif
+    # endfor
+
     points_by_period = {
-        period: integrated_points_for_period(df, projection, period, no_width_weighting)
+        period: integrated_points_for_period(
+            df=df,
+            projection=projection,
+            period=period,
+            no_width_weighting=no_width_weighting,
+        )
         for period in all_needed_periods
     }
 
-    fig, axes = plt.subplots(1, 3, figsize=(18.0, 5.5), constrained_layout=True)
+    fig, axes = plt.subplots(
+        1,
+        3,
+        figsize=(18.0, 5.5),
+        constrained_layout=True,
+    )
+
     fig.suptitle(str(info["title"]), fontsize=16)
 
     left = axes[0]
+
     for period in LEFT_SERIES:
-        plot_points(left, points_by_period.get(period, []), period, ratio=False)
+        plot_points(
+            ax=left,
+            points=points_by_period.get(period, []),
+            label=period,
+            ratio=False,
+        )
     # endfor
+
     left.set_xlabel(str(info["xlabel"]))
     left.set_ylabel(str(info["ylabel"]))
     left.set_title("Integrated cross sections")
@@ -464,9 +798,16 @@ def make_projection_plot(
 
     middle = axes[1]
     denom_106 = points_by_period.get("10.6 GeV", [])
+
     for period in MIDDLE_SERIES:
-        plot_points(middle, ratio_points(points_by_period.get(period, []), denom_106), period, ratio=True)
+        plot_points(
+            ax=middle,
+            points=ratio_points(points_by_period.get(period, []), denom_106),
+            label=period,
+            ratio=True,
+        )
     # endfor
+
     middle.set_xlabel(str(info["xlabel"]))
     middle.set_ylabel(r"run period / 10.6 GeV")
     middle.set_title("10.6-GeV period consistency")
@@ -475,14 +816,19 @@ def make_projection_plot(
     auto_ratio_ylim(middle)
 
     right = axes[2]
+
     for period in RIGHT_SERIES:
         plot_points(
-            right,
-            ratio_to_fa18_sp19_weighted_mean(points_by_period, period),
-            period,
+            ax=right,
+            points=ratio_to_fa18_sp19_weighted_mean(
+                points_by_period=points_by_period,
+                period=period,
+            ),
+            label=period,
             ratio=True,
         )
     # endfor
+
     right.set_xlabel(str(info["xlabel"]))
     right.set_ylabel(r"period / weighted mean")
     right.set_title("Fa18 Inb vs Sp19 Inb")
@@ -490,47 +836,46 @@ def make_projection_plot(
     right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(right)
 
-    if show_sys_band:
-        # This hook is intentionally left simple: current ratio panels use stat errors
-        # only, while the left panel can already be inspected with statistical error bars.
-        # Add filled systematic bands here if desired later.
-        pass
-    # endif
+    outbase = os.path.join(
+        output_dir,
+        f"integrated_{info['outfile_tag']}_dependence",
+    )
 
-    outbase = os.path.join(output_dir, f"integrated_{info['outfile_tag']}_dependence")
     fig.savefig(outbase + ".png", dpi=200)
-    fig.savefig(outbase + ".pdf")
     plt.close(fig)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Make integrated xB, Q2, |t|, and phi dependence plots from a final DVCS pass-2 CSV."
+        description=(
+            "Make integrated xB, Q2, |t|, and phi dependence plots from a "
+            "final DVCS pass-2 analysis CSV."
+        )
     )
+
     parser.add_argument(
         "csv_file",
         help="Input final DVCS pass-2 analysis CSV.",
     )
+
     parser.add_argument(
         "--output-dir",
         default="output/integrated_study",
         help="Directory for output plots. Default: output/integrated_study",
     )
+
     parser.add_argument(
         "--no-width-weighting",
         action="store_true",
         help="Use raw sums instead of bin-width weighted integrations.",
     )
+
     parser.add_argument(
         "--phi-degrees",
         action="store_true",
         help="Use phi bin widths in degrees instead of radians for integration weights.",
     )
-    parser.add_argument(
-        "--show-sys-band",
-        action="store_true",
-        help="Reserved option for future systematic-band plotting; current plots use stat error bars.",
-    )
+
     return parser.parse_args()
 
 
@@ -538,16 +883,25 @@ def main() -> None:
     args = parse_args()
 
     required = [
-        "xBmin", "xBmax",
-        "Q2min", "Q2max",
-        "t_abs_min", "t_abs_max",
-        "phimin", "phimax",
+        "xBmin",
+        "xBmax",
+        "Q2min",
+        "Q2max",
+        "t_abs_min",
+        "t_abs_max",
+        "phimin",
+        "phimax",
     ]
+
     required += [cross_section_column(period) for period in LEFT_SERIES]
 
     df = pd.read_csv(args.csv_file)
     require_columns(df, required)
-    df = add_width_columns(df, phi_degrees=args.phi_degrees)
+
+    df = add_width_columns(
+        df=df,
+        phi_degrees=args.phi_degrees,
+    )
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -557,11 +911,10 @@ def main() -> None:
             projection=projection,
             output_dir=args.output_dir,
             no_width_weighting=args.no_width_weighting,
-            show_sys_band=args.show_sys_band,
         )
     # endfor
 
-    print(f"Wrote integrated study plots to: {args.output_dir}")
+    print(f"Wrote integrated study PNG plots to: {args.output_dir}")
 
 
 if __name__ == "__main__":
