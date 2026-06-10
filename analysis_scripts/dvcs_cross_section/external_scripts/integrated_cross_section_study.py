@@ -79,7 +79,7 @@ to the Fa18 beam energy before integration:
   E_source = 10.1998 GeV
   E_target = 10.6040 GeV
 
-The row-by-row correction factor is:
+The row-by-row applied correction factor is:
 
   C_i = KM15(E_target, xB_i, Q2_i, |t|_i, phi_i)
       / KM15(E_source, xB_i, Q2_i, |t|_i, phi_i)
@@ -93,13 +93,20 @@ and the scaled Sp19 contribution is:
 This is enabled by default. Disable with:
 
   --no-sp19-km15-energy-scaling
+
+The analogous BH-only ratio is also computed and printed as a diagnostic:
+
+  C_i^BH = BH(E_target, xB_i, Q2_i, |t|_i, phi_i)
+         / BH(E_source, xB_i, Q2_i, |t|_i, phi_i)
+
+but the BH ratio is not applied to the data.
 """
 
 import argparse
 import math
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
@@ -113,6 +120,14 @@ import matplotlib.pyplot as plt
 
 FA18_INB_EBEAM_GEV = 10.6040
 SP19_INB_EBEAM_GEV = 10.1998
+
+
+# -----------------------------------------------------------------------------
+# Ratio-axis settings.
+# -----------------------------------------------------------------------------
+
+RATIO_YMIN = 0.5
+RATIO_YMAX = 1.5
 
 
 # -----------------------------------------------------------------------------
@@ -151,11 +166,6 @@ RIGHT_SERIES_LABELS = [
     "Fa18 Inb, 10.604 GeV",
     "Sp19 Inb -> 10.604 GeV, KM15",
 ]
-
-RIGHT_LABEL_TO_PERIOD = {
-    "Fa18 Inb, 10.604 GeV": "Fa18 Inb",
-    "Sp19 Inb -> 10.604 GeV, KM15": "Sp19 Inb",
-}
 
 
 # -----------------------------------------------------------------------------
@@ -237,14 +247,22 @@ class ModelContext:
     enabled: bool
     g: object = None
     th_km15: object = None
-    correction_min: float = math.inf
-    correction_max: float = -math.inf
-    correction_sum: float = 0.0
-    correction_count: int = 0
+
+    km15_correction_min: float = math.inf
+    km15_correction_max: float = -math.inf
+    km15_correction_sum: float = 0.0
+    km15_correction_count: int = 0
+
+    bh_correction_min: float = math.inf
+    bh_correction_max: float = -math.inf
+    bh_correction_sum: float = 0.0
+    bh_correction_count: int = 0
+
+    correction_cache: Dict[Tuple[float, float, float, float], Tuple[float, float]] = field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
-# Gepard / KM15 helpers.
+# Gepard / KM15 / BH helpers.
 # -----------------------------------------------------------------------------
 
 def import_gepard():
@@ -333,18 +351,198 @@ def km15_xs(
     return float(model_context.th_km15.predict(pt))
 
 
+def bh_xs(
+    model_context: ModelContext,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+) -> float:
+    """
+    BH-only unpolarized cross section diagnostic.
+
+    The returned value is used only in a ratio, so the exact absolute unit
+    convention cancels as long as numerator and denominator are evaluated
+    consistently.
+    """
+
+    pt = make_gepard_xs_point(
+        g=model_context.g,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi_deg_trento,
+        ebeam=ebeam,
+    )
+
+    if hasattr(model_context.th_km15, "PreFacSigma") and hasattr(model_context.th_km15, "TBH2unp"):
+        return float(model_context.th_km15.PreFacSigma(pt) * model_context.th_km15.TBH2unp(pt))
+    # endif
+
+    raise RuntimeError(
+        "The loaded KM15 theory object does not expose PreFacSigma(pt) and TBH2unp(pt), "
+        "so the BH-only diagnostic ratio cannot be computed."
+    )
+
+
 def update_model_correction_diagnostics(
     model_context: ModelContext,
     correction: float,
+    model_name: str,
 ) -> None:
     if not np.isfinite(correction):
         return
     # endif
 
-    model_context.correction_min = min(model_context.correction_min, correction)
-    model_context.correction_max = max(model_context.correction_max, correction)
-    model_context.correction_sum += correction
-    model_context.correction_count += 1
+    if model_name == "KM15":
+        model_context.km15_correction_min = min(model_context.km15_correction_min, correction)
+        model_context.km15_correction_max = max(model_context.km15_correction_max, correction)
+        model_context.km15_correction_sum += correction
+        model_context.km15_correction_count += 1
+
+    elif model_name == "BH":
+        model_context.bh_correction_min = min(model_context.bh_correction_min, correction)
+        model_context.bh_correction_max = max(model_context.bh_correction_max, correction)
+        model_context.bh_correction_sum += correction
+        model_context.bh_correction_count += 1
+
+    else:
+        raise ValueError(f"Unknown model_name={model_name!r}")
+    # endif
+
+
+def correction_cache_key(
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi: float,
+) -> Tuple[float, float, float, float]:
+    """
+    Round the kinematics enough to make repeated CSV-row accesses share cached
+    model corrections, without meaningfully changing the evaluated kinematics.
+    """
+
+    return (
+        round(float(xB), 8),
+        round(float(Q2), 8),
+        round(float(t_abs), 8),
+        round(float(phi), 8),
+    )
+
+
+def km15_and_bh_sp19_to_fa18_corrections(
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi: float,
+    model_context: ModelContext,
+) -> Tuple[float, float]:
+    """
+    Compute and cache both:
+
+      KM15(10.604 GeV) / KM15(10.1998 GeV)
+      BH(10.604 GeV)   / BH(10.1998 GeV)
+
+    The KM15 ratio is applied to data. The BH ratio is diagnostic only.
+    """
+
+    key = correction_cache_key(xB=xB, Q2=Q2, t_abs=t_abs, phi=phi)
+
+    if key in model_context.correction_cache:
+        km15_corr, bh_corr = model_context.correction_cache[key]
+
+        update_model_correction_diagnostics(
+            model_context=model_context,
+            correction=km15_corr,
+            model_name="KM15",
+        )
+
+        update_model_correction_diagnostics(
+            model_context=model_context,
+            correction=bh_corr,
+            model_name="BH",
+        )
+
+        return km15_corr, bh_corr
+    # endif
+
+    km15_numerator = km15_xs(
+        model_context=model_context,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi,
+        ebeam=FA18_INB_EBEAM_GEV,
+    )
+
+    km15_denominator = km15_xs(
+        model_context=model_context,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi,
+        ebeam=SP19_INB_EBEAM_GEV,
+    )
+
+    if (
+        not np.isfinite(km15_numerator)
+        or not np.isfinite(km15_denominator)
+        or km15_denominator == 0.0
+    ):
+        return math.nan, math.nan
+    # endif
+
+    km15_corr = km15_numerator / km15_denominator
+
+    bh_corr = math.nan
+
+    try:
+        bh_numerator = bh_xs(
+            model_context=model_context,
+            xB=xB,
+            Q2=Q2,
+            t_abs=t_abs,
+            phi_deg_trento=phi,
+            ebeam=FA18_INB_EBEAM_GEV,
+        )
+
+        bh_denominator = bh_xs(
+            model_context=model_context,
+            xB=xB,
+            Q2=Q2,
+            t_abs=t_abs,
+            phi_deg_trento=phi,
+            ebeam=SP19_INB_EBEAM_GEV,
+        )
+
+        if (
+            np.isfinite(bh_numerator)
+            and np.isfinite(bh_denominator)
+            and bh_denominator != 0.0
+        ):
+            bh_corr = bh_numerator / bh_denominator
+        # endif
+
+    except Exception:
+        bh_corr = math.nan
+    # endtry
+
+    model_context.correction_cache[key] = (km15_corr, bh_corr)
+
+    update_model_correction_diagnostics(
+        model_context=model_context,
+        correction=km15_corr,
+        model_name="KM15",
+    )
+
+    update_model_correction_diagnostics(
+        model_context=model_context,
+        correction=bh_corr,
+        model_name="BH",
+    )
+
+    return km15_corr, bh_corr
 
 
 def sp19_to_fa18_energy_correction(
@@ -355,12 +553,12 @@ def sp19_to_fa18_energy_correction(
     """
     Compute the KM15 beam-energy correction:
 
-      C = KM15(E=10.6040 GeV) / KM15(E=10.1998 GeV)
+      C_KM15 = KM15(E=10.6040 GeV) / KM15(E=10.1998 GeV)
 
     using the row's period-specific average kinematics.
 
-    If a required average column is missing or invalid, the function falls back
-    to the bin midpoint for that variable.
+    The analogous BH-only ratio is computed and stored for printed diagnostics,
+    but the returned correction is always the KM15 ratio.
     """
 
     if not model_context.enabled:
@@ -404,32 +602,15 @@ def sp19_to_fa18_energy_correction(
         return math.nan
     # endif
 
-    numerator = km15_xs(
-        model_context=model_context,
+    km15_corr, _ = km15_and_bh_sp19_to_fa18_corrections(
         xB=xB,
         Q2=Q2,
         t_abs=t_abs,
-        phi_deg_trento=phi,
-        ebeam=FA18_INB_EBEAM_GEV,
-    )
-
-    denominator = km15_xs(
+        phi=phi,
         model_context=model_context,
-        xB=xB,
-        Q2=Q2,
-        t_abs=t_abs,
-        phi_deg_trento=phi,
-        ebeam=SP19_INB_EBEAM_GEV,
     )
 
-    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator == 0.0:
-        return math.nan
-    # endif
-
-    correction = numerator / denominator
-    update_model_correction_diagnostics(model_context, correction)
-
-    return correction
+    return km15_corr
 
 
 # -----------------------------------------------------------------------------
@@ -1141,16 +1322,8 @@ def plot_points(
     # endif
 
 
-def auto_ratio_ylim(ax) -> None:
-    ylo, yhi = ax.get_ylim()
-
-    if not np.isfinite(yhi):
-        ax.set_ylim(0.0, 2.0)
-        return
-    # endif
-
-    upper = max(1.25, 1.10 * yhi)
-    ax.set_ylim(0.0, upper)
+def set_ratio_ylim(ax) -> None:
+    ax.set_ylim(RATIO_YMIN, RATIO_YMAX)
 
 
 def make_projection_plot(
@@ -1246,7 +1419,7 @@ def make_projection_plot(
     middle.set_title("10.6-GeV period consistency")
     middle.grid(True, alpha=0.25)
     middle.legend(fontsize=8, frameon=True)
-    auto_ratio_ylim(middle)
+    set_ratio_ylim(middle)
 
     right = axes[2]
 
@@ -1269,7 +1442,7 @@ def make_projection_plot(
     right.set_title(r"Fa18 Inb vs Sp19 Inb scaled to 10.604 GeV")
     right.grid(True, alpha=0.25)
     right.legend(fontsize=7, frameon=True)
-    auto_ratio_ylim(right)
+    set_ratio_ylim(right)
 
     outbase = os.path.join(
         output_dir,
@@ -1280,26 +1453,66 @@ def make_projection_plot(
     plt.close(fig)
 
 
+# -----------------------------------------------------------------------------
+# Diagnostics.
+# -----------------------------------------------------------------------------
+
+def print_single_correction_summary(
+    title: str,
+    count: int,
+    correction_sum: float,
+    correction_min: float,
+    correction_max: float,
+) -> None:
+    if count <= 0:
+        print(f"{title}: no corrections were evaluated")
+        return
+    # endif
+
+    mean_corr = correction_sum / count
+
+    print(f"{title}:")
+    print(f"  correction count   = {count}")
+    print(f"  correction mean    = {mean_corr:.6g}")
+    print(f"  correction range   = [{correction_min:.6g}, {correction_max:.6g}]")
+
+
 def print_model_correction_summary(model_context: ModelContext) -> None:
     if not model_context.enabled:
-        print("Sp19 -> 10.604 GeV KM15 beam-energy scaling: disabled")
+        print("Sp19 -> 10.604 GeV beam-energy scaling: disabled")
         return
     # endif
 
-    if model_context.correction_count <= 0:
-        print("Sp19 -> 10.604 GeV KM15 beam-energy scaling: enabled, but no corrections were evaluated")
-        return
-    # endif
-
-    mean_corr = model_context.correction_sum / model_context.correction_count
-
-    print("Sp19 -> 10.604 GeV KM15 beam-energy scaling:")
+    print("Sp19 -> 10.604 GeV beam-energy scaling:")
     print(f"  source beam energy = {SP19_INB_EBEAM_GEV:.6f} GeV")
     print(f"  target beam energy = {FA18_INB_EBEAM_GEV:.6f} GeV")
-    print(f"  correction count   = {model_context.correction_count}")
-    print(f"  correction mean    = {mean_corr:.6g}")
-    print(f"  correction range   = [{model_context.correction_min:.6g}, {model_context.correction_max:.6g}]")
+    print("  applied correction = KM15")
+    print("  BH correction      = diagnostic only")
+    print(f"  unique cached correction kinematic points = {len(model_context.correction_cache)}")
+    print()
 
+    print_single_correction_summary(
+        title="KM15 ratio, KM15(10.604 GeV) / KM15(10.1998 GeV)",
+        count=model_context.km15_correction_count,
+        correction_sum=model_context.km15_correction_sum,
+        correction_min=model_context.km15_correction_min,
+        correction_max=model_context.km15_correction_max,
+    )
+
+    print()
+
+    print_single_correction_summary(
+        title="BH ratio, BH(10.604 GeV) / BH(10.1998 GeV)",
+        count=model_context.bh_correction_count,
+        correction_sum=model_context.bh_correction_sum,
+        correction_min=model_context.bh_correction_min,
+        correction_max=model_context.bh_correction_max,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Argument parsing and main.
+# -----------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -1418,6 +1631,8 @@ def main() -> None:
     else:
         print("Using plotted y-errors: statistical only")
     # endif
+
+    print(f"All ratio-plot y axes fixed to [{RATIO_YMIN:.2f}, {RATIO_YMAX:.2f}]")
 
     print_model_correction_summary(model_context)
 
