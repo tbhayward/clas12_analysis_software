@@ -316,11 +316,22 @@ def make_gepard_xs_point(
     phi_deg_trento: float,
     ebeam: float,
 ):
+    """
+    Build a Gepard DataPoint at fixed-target kinematics.
+
+    The explicit y assignment is needed by Gepard's BH prefactor machinery,
+    e.g. PreFacSigma(pt), even when KM15 predict(pt) can evaluate without it.
+    """
+
+    proton_mass = 0.9382720813
+    y = float(Q2) / (2.0 * proton_mass * float(ebeam) * float(xB))
+
     pt = g.DataPoint(
         xB=float(xB),
         Q2=float(Q2),
         t=-abs(float(t_abs)),
         phi=math.radians(float(phi_deg_trento)),
+        y=y,
         frame="Trento",
         process="ep2epgamma",
         exptype="fixed target",
