@@ -6,7 +6,8 @@ Standalone Hall A / CLAS12 DVCS cross-section cross-check.
 
 This script reads the final DVCS pass-2 analysis CSV and compares the CLAS12
 cross sections in one overlapping bin against the Hall A Kin363 cross-section
-table.
+table. It can also overlay the previous pass-1 Hall B / CLAS12 Fa18 result
+from all_bin_v3.csv.
 
 The Hall A values are hard-coded from the right-most column of the Hall A table:
 
@@ -35,15 +36,15 @@ which corresponds nominally to:
   |t| in [0.40, 0.60] GeV^2
 
 The plot title shows weighted average CLAS12 kinematics computed from the
-selected CSV rows. By default, the weights are inverse statistical variance from
-the 10.6 GeV cross-section column.
+selected pass-2 CSV rows. By default, the weights are inverse statistical
+variance from the pass-2 10.6 GeV cross-section column.
 
 The script makes a 2x2 canvas:
 
-  top-left:     10.6 GeV CLAS12 and Hall A cross sections vs phi
-  top-right:    10.6 GeV CLAS12 / Hall A ratio vs phi
-  bottom-left:  individual 10.6-GeV run-period CLAS12 and Hall A cross sections vs phi
-  bottom-right: individual 10.6-GeV run-period CLAS12 / Hall A ratios vs phi
+  top-left:     pass-2 10.6 GeV, pass-1 Fa18, and Hall A cross sections vs phi
+  top-right:    pass-2 10.6 GeV / Hall A and pass-1 Fa18 / Hall A ratios vs phi
+  bottom-left:  individual pass-2 run periods, pass-1 Fa18, and Hall A cross sections vs phi
+  bottom-right: individual pass-2 run periods / Hall A and pass-1 Fa18 / Hall A ratios vs phi
 
 All plots use stat+sys error bars.
 
@@ -52,7 +53,7 @@ For Hall A:
     err_up   = sqrt(stat^2 + sys_up^2)
     err_down = sqrt(stat^2 + sys_down^2)
 
-For CLAS12 / Hall B:
+For pass-2 CLAS12 / Hall B:
   the CSV columns are read as:
     (value, stat, sys_csv)
 
@@ -60,10 +61,10 @@ For CLAS12 / Hall B:
   systematic:
     sys_est = 0.15 * sigma
 
-  The plotted Hall B systematic is:
+  The plotted pass-2 Hall B systematic is:
     sys_total = sqrt(sys_csv^2 + sys_est^2)
 
-  The plotted Hall B total uncertainty is:
+  The plotted pass-2 Hall B total uncertainty is:
     err_total = sqrt(stat^2 + sys_total^2)
 
   Disable the estimated 15% systematic with:
@@ -72,13 +73,28 @@ For CLAS12 / Hall B:
   Change the estimated fraction with:
     --clas12-bin-to-bin-sys-frac 0.15
 
+For pass-1 Fa18:
+  the CSV columns are read as:
+    cross sections, ep->epg, exp
+    cross sections, ep->epg, exp, stat. unc.
+    cross sections, ep->epg, exp, syst. unc. (up)
+    cross sections, ep->epg, exp, syst. unc. (down)
+
+  The script additionally includes a 31% normalization uncertainty:
+    norm = 0.31 * sigma
+
+  The pass-1 total upper/lower errors are:
+    err_up   = sqrt(stat^2 + sys_up^2 + norm^2)
+    err_down = sqrt(stat^2 + sys_down^2 + norm^2)
+
 Important unit convention:
   The Hall A table is in pb/GeV^4. The current CLAS12 CSV cross-section values
-  in this bin appear to be in nb/GeV^4 relative to the Hall A table, so the
+  in these files appear to be in nb/GeV^4 relative to the Hall A table, so the
   script multiplies CLAS12 cross sections by 1000 by default.
 
   Override with:
     --clas12-scale 1.0
+    --pass1-scale 1.0
 
 Interpolation convention:
   The CLAS12 and Hall A phi points are not necessarily identical. For the ratio
@@ -135,26 +151,42 @@ PROTON_MASS_GEV = 0.9382720813
 # -----------------------------------------------------------------------------
 
 DEFAULT_CLAS12_SCALE = 1000.0
+DEFAULT_PASS1_SCALE = 1000.0
 DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC = 0.15
+DEFAULT_PASS1_NORM_SYS_FRAC = 0.31
 
 
 # -----------------------------------------------------------------------------
-# Plot order.
+# Plot labels and period mapping.
 # -----------------------------------------------------------------------------
 
-HALL_B_COMBINED_SERIES = [
-    "10.6 GeV",
+PASS2_COMBINED_DISPLAY_LABEL = "pass-2 10.6 GeV"
+PASS2_COMBINED_CSV_PERIOD = "10.6 GeV"
+
+PASS1_DISPLAY_LABEL = "pass-1 Fa18"
+
+PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD = {
+    "Sp18 Inb": "Sp18 Inb",
+    "Sp18 Out": "Sp18 Out",
+    "Fa18 Inb": "Fa18 Inb",
+    "Fa18 Out": "Fa18 Out",
+}
+
+TOP_COMPARISON_SERIES = [
+    PASS2_COMBINED_DISPLAY_LABEL,
+    PASS1_DISPLAY_LABEL,
 ]
 
-HALL_B_PERIOD_SERIES = [
+BOTTOM_COMPARISON_SERIES = [
     "Sp18 Inb",
     "Sp18 Out",
     "Fa18 Inb",
     "Fa18 Out",
+    PASS1_DISPLAY_LABEL,
 ]
 
-ALL_HALL_B_SERIES = [
-    "10.6 GeV",
+ALL_PASS2_CSV_PERIODS = [
+    PASS2_COMBINED_CSV_PERIOD,
     "Sp18 Inb",
     "Sp18 Out",
     "Fa18 Inb",
@@ -165,7 +197,8 @@ ALL_HALL_B_SERIES = [
 # Hall A is always black.
 SERIES_STYLE = {
     "Hall A": dict(marker="s", linestyle="None", color="black"),
-    "10.6 GeV": dict(marker="o", linestyle="None", color="tab:red"),
+    PASS2_COMBINED_DISPLAY_LABEL: dict(marker="o", linestyle="None", color="tab:red"),
+    PASS1_DISPLAY_LABEL: dict(marker="X", linestyle="None", color="tab:brown"),
     "Sp18 Inb": dict(marker="D", linestyle="None", color="tab:green"),
     "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
     "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
@@ -227,6 +260,7 @@ class DataPoint:
     sys: float = 0.0
     sys_csv: float = 0.0
     sys_est: float = 0.0
+    norm: float = 0.0
 
 
 @dataclass
@@ -354,24 +388,25 @@ def parse_scalar_from_cell(value) -> float:
     return float(numbers[0])
 
 
-def cross_section_column(period: str) -> str:
-    return f"normed cross sections, ep->epg, exp, {period}, unpol"
+def pass2_cross_section_column(csv_period: str) -> str:
+    return f"normed cross sections, ep->epg, exp, {csv_period}, unpol"
 
 
-def average_phi_column(period: str) -> str:
-    return f"phiavg, {period}"
+def average_phi_column(csv_period: str) -> str:
+    return f"phiavg, {csv_period}"
 
 
-def avg_column(quantity: str, period: str) -> str:
-    return f"{quantity}, {period}"
+def avg_column(quantity: str, csv_period: str) -> str:
+    return f"{quantity}, {csv_period}"
 
 
-def require_columns(df: pd.DataFrame, columns: Iterable[str]) -> None:
+def require_columns(df: pd.DataFrame, columns: Iterable[str], context: str) -> None:
     missing = [c for c in columns if c not in df.columns]
 
     if missing:
         raise KeyError(
-            "The input CSV is missing required columns:\n  " + "\n  ".join(missing)
+            f"The {context} CSV is missing required columns:\n  "
+            + "\n  ".join(missing)
         )
     # endif
 
@@ -381,9 +416,9 @@ def float_close(series: pd.Series, value: float, tolerance: float = 1.0e-6) -> p
     return np.isclose(numeric, value, rtol=0.0, atol=tolerance)
 
 
-def select_hall_b_overlap_bin(df: pd.DataFrame, bin_name: Optional[int]) -> pd.DataFrame:
+def select_overlap_bin(df: pd.DataFrame, bin_name: Optional[int], context: str) -> pd.DataFrame:
     """
-    Select the CLAS12 bin overlapping the converted Hall A t' point.
+    Select the bin overlapping the converted Hall A t' point.
 
     Preferred selection:
       Bin Name == 138
@@ -414,7 +449,7 @@ def select_hall_b_overlap_bin(df: pd.DataFrame, bin_name: Optional[int]) -> pd.D
 
     if len(selected) == 0:
         raise RuntimeError(
-            "Could not find the requested Hall A overlap bin in the CSV:\n"
+            f"Could not find the requested Hall A overlap bin in the {context} CSV:\n"
             f"  Bin Name = {bin_name}\n"
             f"  xB  [{TARGET_XB_MIN}, {TARGET_XB_MAX}]\n"
             f"  Q2  [{TARGET_Q2_MIN}, {TARGET_Q2_MAX}]\n"
@@ -444,6 +479,7 @@ def hall_a_points() -> List[DataPoint]:
                 sys=0.5 * (abs(sys_up) + abs(sys_down)),
                 sys_csv=0.5 * (abs(sys_up) + abs(sys_down)),
                 sys_est=0.0,
+                norm=0.0,
             )
         )
     # endfor
@@ -453,15 +489,16 @@ def hall_a_points() -> List[DataPoint]:
     return points
 
 
-def hall_b_points_for_period(
+def pass2_points_for_period(
     selected: pd.DataFrame,
-    period: str,
+    display_label: str,
+    csv_period: str,
     clas12_scale: float,
     include_clas12_estimated_sys: bool,
     clas12_bin_to_bin_sys_frac: float,
 ) -> List[DataPoint]:
     """
-    Extract Hall B / CLAS12 phi-dependent points for one period.
+    Extract pass-2 CLAS12 phi-dependent points for one period.
 
     Cross-section cells are assumed to be stored as:
 
@@ -486,8 +523,10 @@ def hall_b_points_for_period(
     Otherwise, the phi-bin midpoint is used.
     """
 
-    xs_col = cross_section_column(period)
-    phi_avg_col = average_phi_column(period)
+    del display_label
+
+    xs_col = pass2_cross_section_column(csv_period)
+    phi_avg_col = average_phi_column(csv_period)
 
     if xs_col not in selected.columns:
         return []
@@ -548,6 +587,111 @@ def hall_b_points_for_period(
                 sys=sys_total,
                 sys_csv=sys_csv,
                 sys_est=sys_est,
+                norm=0.0,
+            )
+        )
+    # endfor
+
+    points.sort(key=lambda p: p.phi)
+
+    return points
+
+
+def pass1_points(
+    selected: pd.DataFrame,
+    pass1_scale: float,
+    pass1_norm_sys_frac: float,
+) -> List[DataPoint]:
+    """
+    Extract pass-1 Fa18 points from all_bin_v3.csv.
+
+    Required pass-1 columns:
+      cross sections, ep->epg, exp
+      cross sections, ep->epg, exp, stat. unc.
+      cross sections, ep->epg, exp, syst. unc. (up)
+      cross sections, ep->epg, exp, syst. unc. (down)
+
+    The pass-1 values are multiplied by pass1_scale.
+
+    The additional normalization uncertainty is:
+      norm = pass1_norm_sys_frac * abs(sigma)
+
+    Total asymmetric errors:
+      err_up   = sqrt(stat^2 + sys_up^2 + norm^2)
+      err_down = sqrt(stat^2 + sys_down^2 + norm^2)
+    """
+
+    required = [
+        "cross sections, ep->epg, exp",
+        "cross sections, ep->epg, exp, stat. unc.",
+        "cross sections, ep->epg, exp, syst. unc. (up)",
+        "cross sections, ep->epg, exp, syst. unc. (down)",
+        "phiavg",
+        "phimin",
+        "phimax",
+    ]
+
+    for col in required:
+        if col not in selected.columns:
+            return []
+        # endif
+    # endfor
+
+    points: List[DataPoint] = []
+
+    sorted_df = selected.sort_values("phimin")
+
+    for _, row in sorted_df.iterrows():
+        sigma = parse_scalar_from_cell(row["cross sections, ep->epg, exp"])
+        stat = parse_scalar_from_cell(row["cross sections, ep->epg, exp, stat. unc."])
+        sys_up = parse_scalar_from_cell(row["cross sections, ep->epg, exp, syst. unc. (up)"])
+        sys_down = parse_scalar_from_cell(row["cross sections, ep->epg, exp, syst. unc. (down)"])
+
+        if not np.isfinite(sigma):
+            continue
+        # endif
+
+        if not np.isfinite(stat):
+            stat = 0.0
+        # endif
+
+        if not np.isfinite(sys_up):
+            sys_up = 0.0
+        # endif
+
+        if not np.isfinite(sys_down):
+            sys_down = 0.0
+        # endif
+
+        sigma *= pass1_scale
+        stat *= pass1_scale
+        sys_up *= pass1_scale
+        sys_down *= pass1_scale
+
+        norm = pass1_norm_sys_frac * abs(sigma)
+
+        err_high = math.sqrt(stat * stat + sys_up * sys_up + norm * norm)
+        err_low = math.sqrt(stat * stat + sys_down * sys_down + norm * norm)
+
+        phi = parse_scalar_from_cell(row["phiavg"])
+
+        if not np.isfinite(phi):
+            phi_min = parse_scalar_from_cell(row["phimin"])
+            phi_max = parse_scalar_from_cell(row["phimax"])
+            phi = 0.5 * (phi_min + phi_max)
+        # endif
+
+        points.append(
+            DataPoint(
+                phi=phi,
+                sigma=sigma,
+                err_low=err_low,
+                err_high=err_high,
+                stat=stat,
+                sys=0.5 * (abs(sys_up) + abs(sys_down)),
+                sys_csv=0.5 * (abs(sys_up) + abs(sys_down)),
+                sys_est=0.0,
+                norm=norm,
             )
         )
     # endfor
@@ -559,11 +703,11 @@ def hall_b_points_for_period(
 
 def compute_weighted_kinematic_averages(
     selected: pd.DataFrame,
-    period: str = "10.6 GeV",
+    csv_period: str = "10.6 GeV",
     fallback_periods: Optional[List[str]] = None,
 ) -> KinematicAverages:
     """
-    Compute weighted average CLAS12 kinematics from the selected CSV rows.
+    Compute weighted average pass-2 CLAS12 kinematics from the selected CSV rows.
 
     The averages are computed from:
 
@@ -597,7 +741,7 @@ def compute_weighted_kinematic_averages(
         ]
     # endif
 
-    candidate_periods = [period]
+    candidate_periods = [csv_period]
 
     for p in fallback_periods:
         if p not in candidate_periods:
@@ -605,7 +749,7 @@ def compute_weighted_kinematic_averages(
         # endif
     # endfor
 
-    chosen_period = period
+    chosen_period = csv_period
 
     for p in candidate_periods:
         required_avg_cols = [
@@ -623,7 +767,7 @@ def compute_weighted_kinematic_averages(
     xb_col = avg_column("xBavg", chosen_period)
     q2_col = avg_column("Q2avg", chosen_period)
     t_col = avg_column("t_abs_avg", chosen_period)
-    xs_col = cross_section_column(chosen_period)
+    xs_col = pass2_cross_section_column(chosen_period)
 
     def fallback_midpoint(min_col: str, max_col: str) -> float:
         lo = pd.to_numeric(selected[min_col], errors="coerce")
@@ -799,6 +943,7 @@ def interpolate_hall_a_point(phi_query: float, hall_a_points_input: List[DataPoi
         sys=0.0,
         sys_csv=0.0,
         sys_est=0.0,
+        norm=0.0,
     )
 
 
@@ -807,19 +952,20 @@ def symmetric_error(point: DataPoint) -> float:
 
 
 def chi2_ndf_to_hall_a(
-    hall_b_points: List[DataPoint],
+    comparison_points: List[DataPoint],
     hall_a_points_input: List[DataPoint],
 ) -> Tuple[float, int, float]:
     """
-    Compute chi2/ndf comparing Hall B to Hall A interpolated to Hall B phi points.
+    Compute chi2/ndf comparing one CLAS12 dataset to Hall A interpolated to the
+    CLAS12 phi points.
 
     This uses the combined total uncertainty:
 
-      variance = err_B^2 + err_A_interp^2
+      variance = err_CLAS12^2 + err_HallA_interp^2
 
-    where asymmetric Hall A errors are symmetrized as:
+    where asymmetric errors are symmetrized as:
 
-      err_A = 0.5 * (err_A_low + err_A_high)
+      err = 0.5 * (err_low + err_high)
 
     No fit parameters are extracted, so ndf = number of compared points.
     """
@@ -827,7 +973,7 @@ def chi2_ndf_to_hall_a(
     chi2 = 0.0
     ndf = 0
 
-    for b in hall_b_points:
+    for b in comparison_points:
         a = interpolate_hall_a_point(
             phi_query=b.phi,
             hall_a_points_input=hall_a_points_input,
@@ -869,11 +1015,11 @@ def format_label_with_chi2(label: str, chi2_info: Tuple[float, int, float]) -> s
 
 
 def ratio_to_hall_a(
-    hall_b_points: List[DataPoint],
+    comparison_points: List[DataPoint],
     hall_a_points_input: List[DataPoint],
 ) -> List[DataPoint]:
     """
-    Compute Hall B / Hall A ratios.
+    Compute CLAS12 / Hall A ratios.
 
     Hall A is periodically linearly interpolated to each CLAS12 phi value.
 
@@ -895,7 +1041,7 @@ def ratio_to_hall_a(
 
     ratios: List[DataPoint] = []
 
-    for b in hall_b_points:
+    for b in comparison_points:
         a = interpolate_hall_a_point(
             phi_query=b.phi,
             hall_a_points_input=hall_a_points_input,
@@ -927,6 +1073,7 @@ def ratio_to_hall_a(
                 sys=0.0,
                 sys_csv=0.0,
                 sys_est=0.0,
+                norm=0.0,
             )
         )
     # endfor
@@ -966,12 +1113,12 @@ def plot_dataset(
     )
 
 
-def auto_ratio_ylim(ax, points_by_period: dict) -> None:
+def auto_ratio_ylim(ax, points_by_label: dict) -> None:
     yvals: List[float] = []
     yerr_lows: List[float] = []
     yerr_highs: List[float] = []
 
-    for points in points_by_period.values():
+    for points in points_by_label.values():
         for p in points:
             if np.isfinite(p.sigma):
                 yvals.append(p.sigma)
@@ -999,26 +1146,28 @@ def auto_ratio_ylim(ax, points_by_period: dict) -> None:
     ax.set_ylim(1.0 - 1.10 * span, 1.0 + 1.10 * span)
 
 
-def print_period_diagnostics(
-    hall_b_by_period: dict,
+def print_dataset_diagnostics(
+    points_by_label: dict,
     clas12_scale: float,
+    pass1_scale: float,
     include_clas12_estimated_sys: bool,
     clas12_bin_to_bin_sys_frac: float,
+    pass1_norm_sys_frac: float,
 ) -> None:
     print()
-    print("CLAS12 period extraction diagnostic:")
+    print("CLAS12 dataset extraction diagnostic:")
     print("  The script uses exact CSV column names, not column ordering.")
-    print(f"  clas12_scale = {clas12_scale:g}")
-    print(f"  include estimated CLAS12 sys = {include_clas12_estimated_sys}")
+    print(f"  pass-2 clas12_scale = {clas12_scale:g}")
+    print(f"  pass-1 pass1_scale  = {pass1_scale:g}")
+    print(f"  include estimated pass-2 CLAS12 sys = {include_clas12_estimated_sys}")
 
     if include_clas12_estimated_sys:
-        print(f"  estimated CLAS12 sys fraction = {clas12_bin_to_bin_sys_frac:.6f}")
+        print(f"  estimated pass-2 CLAS12 sys fraction = {clas12_bin_to_bin_sys_frac:.6f}")
     # endif
 
-    for period in ALL_HALL_B_SERIES:
-        xs_col = cross_section_column(period)
-        points = hall_b_by_period.get(period, [])
+    print(f"  pass-1 normalization sys fraction = {pass1_norm_sys_frac:.6f}")
 
+    for label, points in points_by_label.items():
         stat_values = [
             p.stat
             for p in points
@@ -1037,6 +1186,12 @@ def print_period_diagnostics(
             if np.isfinite(p.sys_est)
         ]
 
+        norm_values = [
+            p.norm
+            for p in points
+            if np.isfinite(p.norm)
+        ]
+
         sys_total_values = [
             p.sys
             for p in points
@@ -1049,43 +1204,20 @@ def print_period_diagnostics(
             if np.isfinite(symmetric_error(p))
         ]
 
-        if len(stat_values) > 0:
-            mean_stat = float(np.mean(stat_values))
-        else:
-            mean_stat = math.nan
-        # endif
+        mean_stat = float(np.mean(stat_values)) if len(stat_values) > 0 else math.nan
+        mean_sys_csv = float(np.mean(sys_csv_values)) if len(sys_csv_values) > 0 else math.nan
+        mean_sys_est = float(np.mean(sys_est_values)) if len(sys_est_values) > 0 else math.nan
+        mean_norm = float(np.mean(norm_values)) if len(norm_values) > 0 else math.nan
+        mean_sys_total = float(np.mean(sys_total_values)) if len(sys_total_values) > 0 else math.nan
+        mean_total = float(np.mean(total_values)) if len(total_values) > 0 else math.nan
 
-        if len(sys_csv_values) > 0:
-            mean_sys_csv = float(np.mean(sys_csv_values))
-        else:
-            mean_sys_csv = math.nan
-        # endif
-
-        if len(sys_est_values) > 0:
-            mean_sys_est = float(np.mean(sys_est_values))
-        else:
-            mean_sys_est = math.nan
-        # endif
-
-        if len(sys_total_values) > 0:
-            mean_sys_total = float(np.mean(sys_total_values))
-        else:
-            mean_sys_total = math.nan
-        # endif
-
-        if len(total_values) > 0:
-            mean_total = float(np.mean(total_values))
-        else:
-            mean_total = math.nan
-        # endif
-
-        print(f"  {period}")
-        print(f"    column              = {xs_col}")
+        print(f"  {label}")
         print(f"    points              = {len(points)}")
         print(f"    mean stat error     = {mean_stat:.6g} pb/GeV^4")
         print(f"    mean CSV sys        = {mean_sys_csv:.6g} pb/GeV^4")
         print(f"    mean estimated sys  = {mean_sys_est:.6g} pb/GeV^4")
-        print(f"    mean total sys      = {mean_sys_total:.6g} pb/GeV^4")
+        print(f"    mean norm sys       = {mean_norm:.6g} pb/GeV^4")
+        print(f"    mean stored sys     = {mean_sys_total:.6g} pb/GeV^4")
         print(f"    mean total err      = {mean_total:.6g} pb/GeV^4")
 
         if len(points) > 0:
@@ -1096,7 +1228,8 @@ def print_period_diagnostics(
                 f"stat {first.stat:.6g}, "
                 f"csv_sys {first.sys_csv:.6g}, "
                 f"est_sys {first.sys_est:.6g}, "
-                f"total_sys {first.sys:.6g}, "
+                f"norm {first.norm:.6g}, "
+                f"stored_sys {first.sys:.6g}, "
                 f"total_err {symmetric_error(first):.6g}"
             )
         # endif
@@ -1104,46 +1237,68 @@ def print_period_diagnostics(
 
 
 def make_plot(
-    selected: pd.DataFrame,
+    pass2_selected: pd.DataFrame,
+    pass1_selected: Optional[pd.DataFrame],
     output_dir: str,
     output_name: str,
     clas12_scale: float,
+    pass1_scale: float,
     avg_period: str,
     include_clas12_estimated_sys: bool,
     clas12_bin_to_bin_sys_frac: float,
+    pass1_norm_sys_frac: float,
 ) -> None:
     hall_a = hall_a_points()
 
     clas12_avg = compute_weighted_kinematic_averages(
-        selected=selected,
-        period=avg_period,
+        selected=pass2_selected,
+        csv_period=avg_period,
     )
 
-    hall_b_by_period = {
-        period: hall_b_points_for_period(
-            selected=selected,
-            period=period,
+    points_by_label = {
+        PASS2_COMBINED_DISPLAY_LABEL: pass2_points_for_period(
+            selected=pass2_selected,
+            display_label=PASS2_COMBINED_DISPLAY_LABEL,
+            csv_period=PASS2_COMBINED_CSV_PERIOD,
             clas12_scale=clas12_scale,
             include_clas12_estimated_sys=include_clas12_estimated_sys,
             clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
         )
-        for period in ALL_HALL_B_SERIES
     }
 
-    chi2_by_period = {
-        period: chi2_ndf_to_hall_a(
-            hall_b_points=hall_b_by_period.get(period, []),
+    for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
+        points_by_label[display_label] = pass2_points_for_period(
+            selected=pass2_selected,
+            display_label=display_label,
+            csv_period=csv_period,
+            clas12_scale=clas12_scale,
+            include_clas12_estimated_sys=include_clas12_estimated_sys,
+            clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
+        )
+    # endfor
+
+    if pass1_selected is not None:
+        points_by_label[PASS1_DISPLAY_LABEL] = pass1_points(
+            selected=pass1_selected,
+            pass1_scale=pass1_scale,
+            pass1_norm_sys_frac=pass1_norm_sys_frac,
+        )
+    # endif
+
+    chi2_by_label = {
+        label: chi2_ndf_to_hall_a(
+            comparison_points=points,
             hall_a_points_input=hall_a,
         )
-        for period in ALL_HALL_B_SERIES
+        for label, points in points_by_label.items()
     }
 
-    ratios_by_period = {
-        period: ratio_to_hall_a(
-            hall_b_points=hall_b_by_period.get(period, []),
+    ratios_by_label = {
+        label: ratio_to_hall_a(
+            comparison_points=points,
             hall_a_points_input=hall_a,
         )
-        for period in ALL_HALL_B_SERIES
+        for label, points in points_by_label.items()
     }
 
     hall_a_tmin = compute_tmin_exact(HALL_A_XB, HALL_A_Q2)
@@ -1161,7 +1316,7 @@ def make_plot(
     fig.suptitle(
         (
             "Hall A / CLAS12 DVCS cross-section cross-check\n"
-            r"CLAS12: "
+            r"pass-2 CLAS12: "
             rf"$\langle x_B\rangle={clas12_avg.xB:.3f}$, "
             rf"$\langle Q^2\rangle={clas12_avg.Q2:.3f}~{{\rm GeV}}^2$, "
             rf"$\langle |t|\rangle={clas12_avg.t_abs:.3f}~{{\rm GeV}}^2$"
@@ -1182,7 +1337,7 @@ def make_plot(
     bottom_right = axes[1, 1]
 
     # -------------------------------------------------------------------------
-    # Top-left: combined 10.6 GeV vs Hall A.
+    # Top-left: pass-2 combined, pass-1, and Hall A.
     # -------------------------------------------------------------------------
 
     plot_dataset(
@@ -1192,35 +1347,35 @@ def make_plot(
         legend_label="Hall A",
     )
 
-    for label in HALL_B_COMBINED_SERIES:
+    for label in TOP_COMPARISON_SERIES:
         plot_dataset(
             ax=top_left,
-            points=hall_b_by_period.get(label, []),
+            points=points_by_label.get(label, []),
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
         )
     # endfor
 
     top_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
-    top_left.set_title("Cross sections: combined 10.6 GeV")
+    top_left.set_title("Cross sections: combined/pass-1 comparison")
     top_left.grid(True, alpha=0.25)
     top_left.legend(fontsize=8, frameon=True)
 
     # -------------------------------------------------------------------------
-    # Top-right: combined 10.6 GeV / Hall A.
+    # Top-right: ratios for pass-2 combined and pass-1.
     # -------------------------------------------------------------------------
 
     top_ratios = {}
 
-    for label in HALL_B_COMBINED_SERIES:
-        ratios = ratios_by_period.get(label, [])
+    for label in TOP_COMPARISON_SERIES:
+        ratios = ratios_by_label.get(label, [])
         top_ratios[label] = ratios
 
         plot_dataset(
             ax=top_right,
             points=ratios,
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
         )
     # endfor
 
@@ -1233,13 +1388,13 @@ def make_plot(
     )
 
     top_right.set_ylabel(r"CLAS12 / Hall A")
-    top_right.set_title("Ratio to Hall A: combined 10.6 GeV")
+    top_right.set_title("Ratio to Hall A: combined/pass-1 comparison")
     top_right.grid(True, alpha=0.25)
     top_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(top_right, top_ratios)
 
     # -------------------------------------------------------------------------
-    # Bottom-left: individual periods vs Hall A.
+    # Bottom-left: individual pass-2 periods, pass-1, and Hall A.
     # -------------------------------------------------------------------------
 
     plot_dataset(
@@ -1249,36 +1404,36 @@ def make_plot(
         legend_label="Hall A",
     )
 
-    for label in HALL_B_PERIOD_SERIES:
+    for label in BOTTOM_COMPARISON_SERIES:
         plot_dataset(
             ax=bottom_left,
-            points=hall_b_by_period.get(label, []),
+            points=points_by_label.get(label, []),
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
         )
     # endfor
 
     bottom_left.set_xlabel(r"$\phi$ [deg]")
     bottom_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
-    bottom_left.set_title("Cross sections: individual run periods")
+    bottom_left.set_title("Cross sections: individual pass-2 periods plus pass-1")
     bottom_left.grid(True, alpha=0.25)
     bottom_left.legend(fontsize=8, frameon=True)
 
     # -------------------------------------------------------------------------
-    # Bottom-right: individual periods / Hall A.
+    # Bottom-right: individual pass-2 periods / Hall A plus pass-1 / Hall A.
     # -------------------------------------------------------------------------
 
     bottom_ratios = {}
 
-    for label in HALL_B_PERIOD_SERIES:
-        ratios = ratios_by_period.get(label, [])
+    for label in BOTTOM_COMPARISON_SERIES:
+        ratios = ratios_by_label.get(label, [])
         bottom_ratios[label] = ratios
 
         plot_dataset(
             ax=bottom_right,
             points=ratios,
             label=label,
-            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+            legend_label=format_label_with_chi2(label, chi2_by_label.get(label, (math.nan, 0, math.nan))),
         )
     # endfor
 
@@ -1292,7 +1447,7 @@ def make_plot(
 
     bottom_right.set_xlabel(r"$\phi$ [deg]")
     bottom_right.set_ylabel(r"CLAS12 / Hall A")
-    bottom_right.set_title("Ratio to Hall A: individual run periods")
+    bottom_right.set_title("Ratio to Hall A: individual pass-2 periods plus pass-1")
     bottom_right.grid(True, alpha=0.25)
     bottom_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(bottom_right, bottom_ratios)
@@ -1306,7 +1461,7 @@ def make_plot(
     print(f"Wrote: {output_path}")
 
     print()
-    print("CLAS12 weighted average kinematics used in title:")
+    print("pass-2 CLAS12 weighted average kinematics used in title:")
     print(f"  weighting period = {clas12_avg.weight_period}")
     print(f"  points used      = {clas12_avg.n_points}")
     print(f"  <xB>             = {clas12_avg.xB:.6f}")
@@ -1325,21 +1480,27 @@ def make_plot(
 
     print()
     print("Chi2/ndf summary against Hall A interpolation:")
-    for period in ALL_HALL_B_SERIES:
-        chi2, ndf, chi2ndf = chi2_by_period[period]
+    for label in TOP_COMPARISON_SERIES + BOTTOM_COMPARISON_SERIES:
+        if label not in chi2_by_label:
+            continue
+        # endif
+
+        chi2, ndf, chi2ndf = chi2_by_label[label]
 
         if ndf > 0 and np.isfinite(chi2ndf):
-            print(f"  {period:8s}: chi2 = {chi2:.4f}, ndf = {ndf:d}, chi2/ndf = {chi2ndf:.4f}")
+            print(f"  {label:18s}: chi2 = {chi2:.4f}, ndf = {ndf:d}, chi2/ndf = {chi2ndf:.4f}")
         else:
-            print(f"  {period:8s}: chi2/ndf = N/A")
+            print(f"  {label:18s}: chi2/ndf = N/A")
         # endif
     # endfor
 
-    print_period_diagnostics(
-        hall_b_by_period=hall_b_by_period,
+    print_dataset_diagnostics(
+        points_by_label=points_by_label,
         clas12_scale=clas12_scale,
+        pass1_scale=pass1_scale,
         include_clas12_estimated_sys=include_clas12_estimated_sys,
         clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
+        pass1_norm_sys_frac=pass1_norm_sys_frac,
     )
 
 
@@ -1350,7 +1511,16 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "csv_file",
-        help="Input final DVCS pass-2 analysis CSV.",
+        help="Input final pass-2 DVCS analysis CSV.",
+    )
+
+    parser.add_argument(
+        "--pass1-csv",
+        default="all_bin_v3.csv",
+        help=(
+            "Input pass-1 Hall B / CLAS12 CSV. Default: all_bin_v3.csv. "
+            "Set to an empty string to skip pass-1 plotting."
+        ),
     )
 
     parser.add_argument(
@@ -1377,9 +1547,19 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_CLAS12_SCALE,
         help=(
-            "Scale factor applied to CLAS12 cross sections and uncertainties. "
+            "Scale factor applied to pass-2 CLAS12 cross sections and uncertainties. "
             f"Default: {DEFAULT_CLAS12_SCALE:g}, useful if the CSV is effectively "
             "in nb/GeV^4 and Hall A is in pb/GeV^4."
+        ),
+    )
+
+    parser.add_argument(
+        "--pass1-scale",
+        type=float,
+        default=DEFAULT_PASS1_SCALE,
+        help=(
+            "Scale factor applied to pass-1 CLAS12 cross sections and uncertainties. "
+            f"Default: {DEFAULT_PASS1_SCALE:g}."
         ),
     )
 
@@ -1387,7 +1567,7 @@ def parse_args() -> argparse.Namespace:
         "--avg-period",
         default="10.6 GeV",
         help=(
-            "Period used for weighted average CLAS12 kinematics in the plot title. "
+            "Pass-2 period used for weighted average CLAS12 kinematics in the plot title. "
             "Default: '10.6 GeV'."
         ),
     )
@@ -1396,8 +1576,8 @@ def parse_args() -> argparse.Namespace:
         "--no-clas12-estimated-sys",
         action="store_true",
         help=(
-            "Disable the extra estimated CLAS12 bin-to-bin systematic uncertainty. "
-            "By default, the script adds a 10 percent CLAS12 systematic in quadrature."
+            "Disable the extra estimated pass-2 CLAS12 bin-to-bin systematic uncertainty. "
+            "By default, the script adds a 15 percent pass-2 CLAS12 systematic in quadrature."
         ),
     )
 
@@ -1406,8 +1586,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC,
         help=(
-            "Estimated fractional CLAS12 bin-to-bin systematic uncertainty. "
+            "Estimated fractional pass-2 CLAS12 bin-to-bin systematic uncertainty. "
             f"Default: {DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC:.2f}."
+        ),
+    )
+
+    parser.add_argument(
+        "--pass1-norm-sys-frac",
+        type=float,
+        default=DEFAULT_PASS1_NORM_SYS_FRAC,
+        help=(
+            "Additional fractional normalization systematic applied to pass-1 Fa18. "
+            f"Default: {DEFAULT_PASS1_NORM_SYS_FRAC:.2f}."
         ),
     )
 
@@ -1421,11 +1611,19 @@ def main() -> None:
         raise ValueError("--clas12-scale must be positive.")
     # endif
 
+    if args.pass1_scale <= 0.0:
+        raise ValueError("--pass1-scale must be positive.")
+    # endif
+
     if args.clas12_bin_to_bin_sys_frac < 0.0:
         raise ValueError("--clas12-bin-to-bin-sys-frac must be non-negative.")
     # endif
 
-    required = [
+    if args.pass1_norm_sys_frac < 0.0:
+        raise ValueError("--pass1-norm-sys-frac must be non-negative.")
+    # endif
+
+    pass2_required = [
         "Bin Name",
         "xBmin",
         "xBmax",
@@ -1437,41 +1635,95 @@ def main() -> None:
         "phimax",
     ]
 
-    required += [cross_section_column(period) for period in ALL_HALL_B_SERIES]
+    pass2_required += [
+        pass2_cross_section_column(csv_period)
+        for csv_period in ALL_PASS2_CSV_PERIODS
+    ]
 
-    df = pd.read_csv(args.csv_file)
-    require_columns(df, required)
+    pass2_df = pd.read_csv(args.csv_file)
+    require_columns(pass2_df, pass2_required, context="pass-2")
 
-    selected = select_hall_b_overlap_bin(
-        df=df,
+    pass2_selected = select_overlap_bin(
+        df=pass2_df,
         bin_name=args.bin_name,
+        context="pass-2",
     )
 
-    print("Selected Hall A overlap bin from CSV:")
-    print(f"  rows: {len(selected)}")
+    pass1_selected: Optional[pd.DataFrame] = None
+
+    if args.pass1_csv.strip() != "":
+        if not os.path.exists(args.pass1_csv):
+            print()
+            print("WARNING: pass-1 CSV was requested but not found:")
+            print(f"  {args.pass1_csv}")
+            print("  Continuing without pass-1 Fa18.")
+        else:
+            pass1_required = [
+                "Bin Name",
+                "xBmin",
+                "xBmax",
+                "Q2min",
+                "Q2max",
+                "t_abs_min",
+                "t_abs_max",
+                "phimin",
+                "phimax",
+                "phiavg",
+                "cross sections, ep->epg, exp",
+                "cross sections, ep->epg, exp, stat. unc.",
+                "cross sections, ep->epg, exp, syst. unc. (up)",
+                "cross sections, ep->epg, exp, syst. unc. (down)",
+            ]
+
+            pass1_df = pd.read_csv(args.pass1_csv)
+            require_columns(pass1_df, pass1_required, context="pass-1")
+
+            pass1_selected = select_overlap_bin(
+                df=pass1_df,
+                bin_name=args.bin_name,
+                context="pass-1",
+            )
+        # endif
+    # endif
+
+    print("Selected Hall A overlap bin from pass-2 CSV:")
+    print(f"  rows: {len(pass2_selected)}")
     print(f"  Bin Name: {args.bin_name}")
     print(f"  nominal xB:  [{TARGET_XB_MIN}, {TARGET_XB_MAX}]")
     print(f"  nominal Q2:  [{TARGET_Q2_MIN}, {TARGET_Q2_MAX}] GeV^2")
     print(f"  nominal |t|: [{TARGET_T_ABS_MIN}, {TARGET_T_ABS_MAX}] GeV^2")
-    print(f"  phi bins present: {len(selected)}")
+    print(f"  phi bins present: {len(pass2_selected)}")
+
+    if pass1_selected is not None:
+        print()
+        print("Selected Hall A overlap bin from pass-1 CSV:")
+        print(f"  rows: {len(pass1_selected)}")
+        print(f"  Bin Name: {args.bin_name}")
+        print(f"  phi bins present: {len(pass1_selected)}")
+    # endif
 
     if args.no_clas12_estimated_sys:
-        print("  CLAS12 estimated bin-to-bin systematic: disabled")
+        print("  pass-2 CLAS12 estimated bin-to-bin systematic: disabled")
     else:
         print(
-            "  CLAS12 estimated bin-to-bin systematic: "
+            "  pass-2 CLAS12 estimated bin-to-bin systematic: "
             f"{args.clas12_bin_to_bin_sys_frac:.6f}"
         )
     # endif
 
+    print(f"  pass-1 normalization systematic: {args.pass1_norm_sys_frac:.6f}")
+
     make_plot(
-        selected=selected,
+        pass2_selected=pass2_selected,
+        pass1_selected=pass1_selected,
         output_dir=args.output_dir,
         output_name=args.output_name,
         clas12_scale=args.clas12_scale,
+        pass1_scale=args.pass1_scale,
         avg_period=args.avg_period,
         include_clas12_estimated_sys=not args.no_clas12_estimated_sys,
         clas12_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
+        pass1_norm_sys_frac=args.pass1_norm_sys_frac,
     )
 
 
