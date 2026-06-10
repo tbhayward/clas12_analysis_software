@@ -34,10 +34,9 @@ which corresponds nominally to:
   Q2  in [4.326, 5.761] GeV^2
   |t| in [0.40, 0.60] GeV^2
 
-The plot title does not show those bin ranges. Instead, it shows weighted
-average CLAS12 kinematics computed from the selected CSV rows. By default, the
-weights are inverse statistical variance from the 10.6 GeV cross-section
-column.
+The plot title shows weighted average CLAS12 kinematics computed from the
+selected CSV rows. By default, the weights are inverse statistical variance from
+the 10.6 GeV cross-section column.
 
 The script makes a 2x2 canvas:
 
@@ -47,6 +46,31 @@ The script makes a 2x2 canvas:
   bottom-right: individual 10.6-GeV run-period CLAS12 / Hall A ratios vs phi
 
 All plots use stat+sys error bars.
+
+For Hall A:
+  total upper/lower errors are:
+    err_up   = sqrt(stat^2 + sys_up^2)
+    err_down = sqrt(stat^2 + sys_down^2)
+
+For CLAS12 / Hall B:
+  the CSV columns are read as:
+    (value, stat, sys_csv)
+
+  By default, this script additionally assigns a 10% estimated bin-to-bin
+  systematic:
+    sys_est = 0.10 * sigma
+
+  The plotted Hall B systematic is:
+    sys_total = sqrt(sys_csv^2 + sys_est^2)
+
+  The plotted Hall B total uncertainty is:
+    err_total = sqrt(stat^2 + sys_total^2)
+
+  Disable the estimated 10% systematic with:
+    --no-clas12-estimated-sys
+
+  Change the estimated fraction with:
+    --clas12-bin-to-bin-sys-frac 0.10
 
 Important unit convention:
   The Hall A table is in pb/GeV^4. The current CLAS12 CSV cross-section values
@@ -104,6 +128,14 @@ HALL_A_XB = 0.371
 HALL_A_Q2 = 4.568
 HALL_A_TPRIME = -0.303
 PROTON_MASS_GEV = 0.9382720813
+
+
+# -----------------------------------------------------------------------------
+# Default uncertainty/systematic choices.
+# -----------------------------------------------------------------------------
+
+DEFAULT_CLAS12_SCALE = 1000.0
+DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC = 0.10
 
 
 # -----------------------------------------------------------------------------
@@ -193,6 +225,8 @@ class DataPoint:
     err_high: float
     stat: float = 0.0
     sys: float = 0.0
+    sys_csv: float = 0.0
+    sys_est: float = 0.0
 
 
 @dataclass
@@ -408,6 +442,8 @@ def hall_a_points() -> List[DataPoint]:
                 err_high=err_high,
                 stat=stat,
                 sys=0.5 * (abs(sys_up) + abs(sys_down)),
+                sys_csv=0.5 * (abs(sys_up) + abs(sys_down)),
+                sys_est=0.0,
             )
         )
     # endfor
@@ -421,19 +457,30 @@ def hall_b_points_for_period(
     selected: pd.DataFrame,
     period: str,
     clas12_scale: float,
+    include_clas12_estimated_sys: bool,
+    clas12_bin_to_bin_sys_frac: float,
 ) -> List[DataPoint]:
     """
     Extract Hall B / CLAS12 phi-dependent points for one period.
 
     Cross-section cells are assumed to be stored as:
 
-      (value, stat, sys)
+      (value, stat, sys_csv)
 
-    The plotted error is:
+    The value, stat, and sys_csv are all multiplied by clas12_scale.
 
-      sqrt(stat^2 + sys^2)
+    If include_clas12_estimated_sys is true, an additional fractional systematic
+    is assigned:
 
-    The value, stat, and sys are all multiplied by clas12_scale.
+      sys_est = clas12_bin_to_bin_sys_frac * abs(sigma)
+
+    The total systematic stored in DataPoint.sys is:
+
+      sys_total = sqrt(sys_csv^2 + sys_est^2)
+
+    The plotted total uncertainty is:
+
+      err_total = sqrt(stat^2 + sys_total^2)
 
     If the period-specific phi average column exists, it is used for the x-position.
     Otherwise, the phi-bin midpoint is used.
@@ -451,7 +498,7 @@ def hall_b_points_for_period(
     sorted_df = selected.sort_values("phimin")
 
     for _, row in sorted_df.iterrows():
-        sigma, stat, sys = parse_tuple3(row[xs_col])
+        sigma, stat, sys_csv = parse_tuple3(row[xs_col])
 
         if not np.isfinite(sigma):
             continue
@@ -461,13 +508,21 @@ def hall_b_points_for_period(
             stat = 0.0
         # endif
 
-        if not np.isfinite(sys):
-            sys = 0.0
+        if not np.isfinite(sys_csv):
+            sys_csv = 0.0
         # endif
 
         sigma *= clas12_scale
         stat *= clas12_scale
-        sys *= clas12_scale
+        sys_csv *= clas12_scale
+
+        if include_clas12_estimated_sys:
+            sys_est = clas12_bin_to_bin_sys_frac * abs(sigma)
+        else:
+            sys_est = 0.0
+        # endif
+
+        sys_total = math.sqrt(sys_csv * sys_csv + sys_est * sys_est)
 
         if phi_avg_col in selected.columns:
             phi = parse_scalar_from_cell(row[phi_avg_col])
@@ -481,16 +536,18 @@ def hall_b_points_for_period(
             phi = 0.5 * (phi_min + phi_max)
         # endif
 
-        err = math.sqrt(stat * stat + sys * sys)
+        err_total = math.sqrt(stat * stat + sys_total * sys_total)
 
         points.append(
             DataPoint(
                 phi=phi,
                 sigma=sigma,
-                err_low=err,
-                err_high=err,
+                err_low=err_total,
+                err_high=err_total,
                 stat=stat,
-                sys=sys,
+                sys=sys_total,
+                sys_csv=sys_csv,
+                sys_est=sys_est,
             )
         )
     # endfor
@@ -541,6 +598,7 @@ def compute_weighted_kinematic_averages(
     # endif
 
     candidate_periods = [period]
+
     for p in fallback_periods:
         if p not in candidate_periods:
             candidate_periods.append(p)
@@ -739,6 +797,8 @@ def interpolate_hall_a_point(phi_query: float, hall_a_points_input: List[DataPoi
         err_high=err_high_interp,
         stat=0.0,
         sys=0.0,
+        sys_csv=0.0,
+        sys_est=0.0,
     )
 
 
@@ -865,6 +925,8 @@ def ratio_to_hall_a(
                 err_high=ratio_err_high,
                 stat=0.0,
                 sys=0.0,
+                sys_csv=0.0,
+                sys_est=0.0,
             )
         )
     # endfor
@@ -940,11 +1002,18 @@ def auto_ratio_ylim(ax, points_by_period: dict) -> None:
 def print_period_diagnostics(
     hall_b_by_period: dict,
     clas12_scale: float,
+    include_clas12_estimated_sys: bool,
+    clas12_bin_to_bin_sys_frac: float,
 ) -> None:
     print()
     print("CLAS12 period extraction diagnostic:")
     print("  The script uses exact CSV column names, not column ordering.")
     print(f"  clas12_scale = {clas12_scale:g}")
+    print(f"  include estimated CLAS12 sys = {include_clas12_estimated_sys}")
+
+    if include_clas12_estimated_sys:
+        print(f"  estimated CLAS12 sys fraction = {clas12_bin_to_bin_sys_frac:.6f}")
+    # endif
 
     for period in ALL_HALL_B_SERIES:
         xs_col = cross_section_column(period)
@@ -954,6 +1023,24 @@ def print_period_diagnostics(
             p.stat
             for p in points
             if np.isfinite(p.stat)
+        ]
+
+        sys_csv_values = [
+            p.sys_csv
+            for p in points
+            if np.isfinite(p.sys_csv)
+        ]
+
+        sys_est_values = [
+            p.sys_est
+            for p in points
+            if np.isfinite(p.sys_est)
+        ]
+
+        sys_total_values = [
+            p.sys
+            for p in points
+            if np.isfinite(p.sys)
         ]
 
         total_values = [
@@ -968,6 +1055,24 @@ def print_period_diagnostics(
             mean_stat = math.nan
         # endif
 
+        if len(sys_csv_values) > 0:
+            mean_sys_csv = float(np.mean(sys_csv_values))
+        else:
+            mean_sys_csv = math.nan
+        # endif
+
+        if len(sys_est_values) > 0:
+            mean_sys_est = float(np.mean(sys_est_values))
+        else:
+            mean_sys_est = math.nan
+        # endif
+
+        if len(sys_total_values) > 0:
+            mean_sys_total = float(np.mean(sys_total_values))
+        else:
+            mean_sys_total = math.nan
+        # endif
+
         if len(total_values) > 0:
             mean_total = float(np.mean(total_values))
         else:
@@ -975,17 +1080,24 @@ def print_period_diagnostics(
         # endif
 
         print(f"  {period}")
-        print(f"    column          = {xs_col}")
-        print(f"    points          = {len(points)}")
-        print(f"    mean stat error = {mean_stat:.6g} pb/GeV^4")
-        print(f"    mean total err  = {mean_total:.6g} pb/GeV^4")
+        print(f"    column              = {xs_col}")
+        print(f"    points              = {len(points)}")
+        print(f"    mean stat error     = {mean_stat:.6g} pb/GeV^4")
+        print(f"    mean CSV sys        = {mean_sys_csv:.6g} pb/GeV^4")
+        print(f"    mean estimated sys  = {mean_sys_est:.6g} pb/GeV^4")
+        print(f"    mean total sys      = {mean_sys_total:.6g} pb/GeV^4")
+        print(f"    mean total err      = {mean_total:.6g} pb/GeV^4")
 
         if len(points) > 0:
             first = points[0]
             print(
-                f"    first point     = phi {first.phi:.3f} deg, "
+                f"    first point         = phi {first.phi:.3f} deg, "
                 f"sigma {first.sigma:.6g} pb/GeV^4, "
-                f"stat {first.stat:.6g}, sys {first.sys:.6g}"
+                f"stat {first.stat:.6g}, "
+                f"csv_sys {first.sys_csv:.6g}, "
+                f"est_sys {first.sys_est:.6g}, "
+                f"total_sys {first.sys:.6g}, "
+                f"total_err {symmetric_error(first):.6g}"
             )
         # endif
     # endfor
@@ -997,6 +1109,8 @@ def make_plot(
     output_name: str,
     clas12_scale: float,
     avg_period: str,
+    include_clas12_estimated_sys: bool,
+    clas12_bin_to_bin_sys_frac: float,
 ) -> None:
     hall_a = hall_a_points()
 
@@ -1010,6 +1124,8 @@ def make_plot(
             selected=selected,
             period=period,
             clas12_scale=clas12_scale,
+            include_clas12_estimated_sys=include_clas12_estimated_sys,
+            clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
         )
         for period in ALL_HALL_B_SERIES
     }
@@ -1222,6 +1338,8 @@ def make_plot(
     print_period_diagnostics(
         hall_b_by_period=hall_b_by_period,
         clas12_scale=clas12_scale,
+        include_clas12_estimated_sys=include_clas12_estimated_sys,
+        clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
     )
 
 
@@ -1257,11 +1375,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--clas12-scale",
         type=float,
-        default=1000.0,
+        default=DEFAULT_CLAS12_SCALE,
         help=(
             "Scale factor applied to CLAS12 cross sections and uncertainties. "
-            "Default: 1000.0, useful if the CSV is effectively in nb/GeV^4 "
-            "and Hall A is in pb/GeV^4."
+            f"Default: {DEFAULT_CLAS12_SCALE:g}, useful if the CSV is effectively "
+            "in nb/GeV^4 and Hall A is in pb/GeV^4."
         ),
     )
 
@@ -1274,6 +1392,25 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--no-clas12-estimated-sys",
+        action="store_true",
+        help=(
+            "Disable the extra estimated CLAS12 bin-to-bin systematic uncertainty. "
+            "By default, the script adds a 10 percent CLAS12 systematic in quadrature."
+        ),
+    )
+
+    parser.add_argument(
+        "--clas12-bin-to-bin-sys-frac",
+        type=float,
+        default=DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC,
+        help=(
+            "Estimated fractional CLAS12 bin-to-bin systematic uncertainty. "
+            f"Default: {DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC:.2f}."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -1282,6 +1419,10 @@ def main() -> None:
 
     if args.clas12_scale <= 0.0:
         raise ValueError("--clas12-scale must be positive.")
+    # endif
+
+    if args.clas12_bin_to_bin_sys_frac < 0.0:
+        raise ValueError("--clas12-bin-to-bin-sys-frac must be non-negative.")
     # endif
 
     required = [
@@ -1314,12 +1455,23 @@ def main() -> None:
     print(f"  nominal |t|: [{TARGET_T_ABS_MIN}, {TARGET_T_ABS_MAX}] GeV^2")
     print(f"  phi bins present: {len(selected)}")
 
+    if args.no_clas12_estimated_sys:
+        print("  CLAS12 estimated bin-to-bin systematic: disabled")
+    else:
+        print(
+            "  CLAS12 estimated bin-to-bin systematic: "
+            f"{args.clas12_bin_to_bin_sys_frac:.6f}"
+        )
+    # endif
+
     make_plot(
         selected=selected,
         output_dir=args.output_dir,
         output_name=args.output_name,
         clas12_scale=args.clas12_scale,
         avg_period=args.avg_period,
+        include_clas12_estimated_sys=not args.no_clas12_estimated_sys,
+        clas12_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
     )
 
 
