@@ -9,6 +9,24 @@ cross sections in one overlapping bin against the Hall A Kin363 cross-section
 table. It also overlays the previous pass-1 Hall B / CLAS12 Fa18 result from
 all_bin_v3.csv in the top row by default.
 
+The script also makes a second 1x2 canvas comparing:
+
+  Fa18 Inb, 10.604 GeV
+  Sp19 Inb -> 10.604 GeV, KM15
+  Hall A
+
+where the Sp19 Inb points are scaled row-by-row from 10.1998 GeV to 10.6040 GeV
+using:
+
+  C_i = KM15(E_target, xB_i, Q2_i, |t|_i, phi_i)
+      / KM15(E_source, xB_i, Q2_i, |t|_i, phi_i)
+
+and:
+
+  sigma_i_scaled = C_i * sigma_i
+  stat_i_scaled  = |C_i| * stat_i
+  sys_i_scaled   = |C_i| * sys_i
+
 The Hall A values are hard-coded from the right-most column of the Hall A table:
 
   <xB>  = 0.371
@@ -35,16 +53,17 @@ which corresponds nominally to:
   Q2  in [4.326, 5.761] GeV^2
   |t| in [0.40, 0.60] GeV^2
 
-The plot title shows weighted average pass-2 CLAS12 kinematics computed from
-the selected pass-2 CSV rows. By default, the weights are inverse statistical
-variance from the pass-2 10.6 GeV cross-section column.
-
-The script makes a 2x2 canvas:
+The first plot is a 2x2 canvas:
 
   top-left:     pass-2 10.6 GeV, pass-1 Fa18, and Hall A cross sections vs phi
   top-right:    pass-2 10.6 GeV / Hall A and pass-1 Fa18 / Hall A ratios vs phi
   bottom-left:  individual pass-2 run-period cross sections vs phi with Hall A
   bottom-right: individual pass-2 run-period ratios to Hall A
+
+The second plot is a 1x2 canvas:
+
+  left:   Fa18 Inb, Sp19 Inb -> 10.604 GeV with KM15, and Hall A cross sections vs phi
+  right:  Fa18 Inb / Hall A and scaled Sp19 Inb / Hall A ratios vs phi
 
 All plots use stat+sys error bars.
 
@@ -106,14 +125,15 @@ Interpolation convention:
 Output:
 
   output/hall_a_cross_check/hall_a_cross_check.png
+  output/hall_a_cross_check/hall_a_fa18_sp19_km15_cross_check.png
 """
 
 import argparse
 import math
 import os
 import re
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -137,13 +157,17 @@ TARGET_T_ABS_MAX = 0.60
 
 
 # -----------------------------------------------------------------------------
-# Default pass-1 path.
+# Default paths and output names.
 # -----------------------------------------------------------------------------
 
 DEFAULT_PASS1_CSV = (
     "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
     "dvcs_cross_section/imports/all_bin_v3.csv"
 )
+
+DEFAULT_OUTPUT_DIR = "output/hall_a_cross_check"
+DEFAULT_OUTPUT_NAME = "hall_a_cross_check.png"
+DEFAULT_FA18_SP19_OUTPUT_NAME = "hall_a_fa18_sp19_km15_cross_check.png"
 
 
 # -----------------------------------------------------------------------------
@@ -154,6 +178,14 @@ HALL_A_XB = 0.371
 HALL_A_Q2 = 4.568
 HALL_A_TPRIME = -0.303
 PROTON_MASS_GEV = 0.9382720813
+
+
+# -----------------------------------------------------------------------------
+# Beam energies.
+# -----------------------------------------------------------------------------
+
+FA18_INB_EBEAM_GEV = 10.6040
+SP19_INB_EBEAM_GEV = 10.1998
 
 
 # -----------------------------------------------------------------------------
@@ -175,6 +207,10 @@ PASS2_COMBINED_CSV_PERIOD = "10.6 GeV"
 
 PASS1_DISPLAY_LABEL = "pass-1 Fa18"
 
+FA18_INB_DISPLAY_LABEL = "Fa18 Inb"
+SP19_INB_DISPLAY_LABEL = "Sp19 Inb"
+SP19_KM15_DISPLAY_LABEL = "Sp19 Inb -> 10.604 GeV, KM15"
+
 PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD = {
     "Sp18 Inb": "Sp18 Inb",
     "Sp18 Out": "Sp18 Out",
@@ -194,12 +230,18 @@ BOTTOM_COMPARISON_SERIES = [
     "Fa18 Out",
 ]
 
+FA18_SP19_COMPARISON_SERIES = [
+    FA18_INB_DISPLAY_LABEL,
+    SP19_KM15_DISPLAY_LABEL,
+]
+
 ALL_PASS2_CSV_PERIODS = [
     PASS2_COMBINED_CSV_PERIOD,
     "Sp18 Inb",
     "Sp18 Out",
     "Fa18 Inb",
     "Fa18 Out",
+    "Sp19 Inb",
 ]
 
 
@@ -213,6 +255,8 @@ SERIES_STYLE = {
     "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
     "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
     "Fa18 Out": dict(marker="v", linestyle="None", color="tab:orange"),
+    "Sp19 Inb": dict(marker="s", linestyle="None", color="tab:red"),
+    SP19_KM15_DISPLAY_LABEL: dict(marker="s", linestyle="None", color="tab:red"),
 }
 
 
@@ -282,6 +326,22 @@ class KinematicAverages:
     n_points: int
 
 
+@dataclass
+class ModelContext:
+    enabled: bool
+    g: object = None
+    th_km15: object = None
+    correction_min: float = math.inf
+    correction_max: float = -math.inf
+    correction_sum: float = 0.0
+    correction_count: int = 0
+    correction_cache: Dict[Tuple[float, float, float, float], float] = field(default_factory=dict)
+
+
+# -----------------------------------------------------------------------------
+# Kinematic helpers.
+# -----------------------------------------------------------------------------
+
 def compute_tmin_exact(xb: float, q2: float, mass: float = PROTON_MASS_GEV) -> float:
     """
     Compute exact DVCS t_min.
@@ -321,6 +381,212 @@ def hall_a_converted_t() -> float:
     tmin = compute_tmin_exact(HALL_A_XB, HALL_A_Q2)
     return tmin + HALL_A_TPRIME
 
+
+# -----------------------------------------------------------------------------
+# Gepard / KM15 helpers.
+# -----------------------------------------------------------------------------
+
+def import_gepard():
+    try:
+        import gepard as g
+    except ImportError as exc:
+        raise RuntimeError(
+            "Could not import the Gepard package.\n\n"
+            "Install it into the Python interpreter used to run this script.\n"
+            "On ifarm, prefer:\n"
+            "  python -m pip install --user gepard\n"
+        ) from exc
+    # endtry
+
+    return g
+
+
+def import_km15():
+    try:
+        from gepard.fits import th_KM15
+    except ImportError as exc:
+        raise RuntimeError("Could not import th_KM15 from gepard.fits.") from exc
+    # endtry
+
+    return th_KM15
+
+
+def make_model_context(enabled: bool) -> ModelContext:
+    if not enabled:
+        return ModelContext(enabled=False)
+    # endif
+
+    return ModelContext(
+        enabled=True,
+        g=import_gepard(),
+        th_km15=import_km15(),
+    )
+
+
+def make_gepard_xs_point(
+    g,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+):
+    """
+    Build a Gepard DataPoint at fixed-target kinematics.
+
+    Do not pass W together with xB and Q2. Gepard treats {xB, W, Q2} as an
+    overdetermined kinematic set. Instead, give xB and Q2 and let Gepard fill
+    the basic missing DIS kinematics.
+    """
+
+    xB = float(xB)
+    Q2 = float(Q2)
+    t_abs = float(t_abs)
+    phi_deg_trento = float(phi_deg_trento)
+    ebeam = float(ebeam)
+
+    pt = g.DataPoint(
+        xB=xB,
+        Q2=Q2,
+        t=-abs(t_abs),
+        phi=math.radians(phi_deg_trento),
+        frame="Trento",
+        process="ep2epgamma",
+        exptype="fixed target",
+        in1energy=ebeam,
+        in1charge=-1,
+        in1polarization=0,
+        observable="XS",
+    )
+
+    if hasattr(pt, "to_conventions"):
+        pt.to_conventions()
+    # endif
+
+    return pt
+
+
+def km15_xs(
+    model_context: ModelContext,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+) -> float:
+    pt = make_gepard_xs_point(
+        g=model_context.g,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi_deg_trento,
+        ebeam=ebeam,
+    )
+
+    return float(model_context.th_km15.predict(pt))
+
+
+def correction_cache_key(
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi: float,
+) -> Tuple[float, float, float, float]:
+    return (
+        round(float(xB), 8),
+        round(float(Q2), 8),
+        round(float(t_abs), 8),
+        round(float(phi), 8),
+    )
+
+
+def update_km15_correction_diagnostics(
+    model_context: ModelContext,
+    correction: float,
+) -> None:
+    if not np.isfinite(correction):
+        return
+    # endif
+
+    model_context.correction_min = min(model_context.correction_min, correction)
+    model_context.correction_max = max(model_context.correction_max, correction)
+    model_context.correction_sum += correction
+    model_context.correction_count += 1
+
+
+def sp19_to_fa18_km15_correction(
+    model_context: ModelContext,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi: float,
+) -> float:
+    """
+    Compute and cache:
+
+      KM15(10.604 GeV) / KM15(10.1998 GeV)
+
+    at the row-level Sp19 kinematics.
+    """
+
+    if not model_context.enabled:
+        return 1.0
+    # endif
+
+    if not (
+        np.isfinite(xB)
+        and np.isfinite(Q2)
+        and np.isfinite(t_abs)
+        and np.isfinite(phi)
+    ):
+        return math.nan
+    # endif
+
+    key = correction_cache_key(
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi=phi,
+    )
+
+    if key in model_context.correction_cache:
+        correction = model_context.correction_cache[key]
+        update_km15_correction_diagnostics(model_context, correction)
+        return correction
+    # endif
+
+    numerator = km15_xs(
+        model_context=model_context,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi,
+        ebeam=FA18_INB_EBEAM_GEV,
+    )
+
+    denominator = km15_xs(
+        model_context=model_context,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi,
+        ebeam=SP19_INB_EBEAM_GEV,
+    )
+
+    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator == 0.0:
+        return math.nan
+    # endif
+
+    correction = numerator / denominator
+    model_context.correction_cache[key] = correction
+    update_km15_correction_diagnostics(model_context, correction)
+
+    return correction
+
+
+# -----------------------------------------------------------------------------
+# Parsing and CSV helpers.
+# -----------------------------------------------------------------------------
 
 def parse_tuple3(value) -> Tuple[float, float, float]:
     """
@@ -426,6 +692,30 @@ def float_close(series: pd.Series, value: float, tolerance: float = 1.0e-6) -> p
     return np.isclose(numeric, value, rtol=0.0, atol=tolerance)
 
 
+def row_average_or_midpoint(
+    row: pd.Series,
+    avg_col: str,
+    min_col: str,
+    max_col: str,
+) -> float:
+    if avg_col in row.index:
+        avg_value = parse_scalar_from_cell(row[avg_col])
+
+        if np.isfinite(avg_value):
+            return avg_value
+        # endif
+    # endif
+
+    lo = parse_scalar_from_cell(row[min_col])
+    hi = parse_scalar_from_cell(row[max_col])
+
+    if np.isfinite(lo) and np.isfinite(hi):
+        return 0.5 * (lo + hi)
+    # endif
+
+    return math.nan
+
+
 def select_overlap_bin(df: pd.DataFrame, bin_name: Optional[int], context: str) -> pd.DataFrame:
     """
     Select the bin overlapping the converted Hall A t' point.
@@ -472,6 +762,10 @@ def select_overlap_bin(df: pd.DataFrame, bin_name: Optional[int], context: str) 
     return selected
 
 
+# -----------------------------------------------------------------------------
+# Point extraction.
+# -----------------------------------------------------------------------------
+
 def hall_a_points() -> List[DataPoint]:
     points: List[DataPoint] = []
 
@@ -505,9 +799,15 @@ def pass2_points_for_period(
     clas12_scale: float,
     include_clas12_estimated_sys: bool,
     clas12_bin_to_bin_sys_frac: float,
+    model_context: Optional[ModelContext] = None,
+    apply_sp19_to_fa18_km15_scaling: bool = False,
 ) -> List[DataPoint]:
     """
     Extract pass-2 CLAS12 phi-dependent points for one period.
+
+    If apply_sp19_to_fa18_km15_scaling is true, the point is scaled row-by-row
+    by KM15(10.604 GeV) / KM15(10.1998 GeV) before applying the external
+    clas12_scale and before computing the estimated fractional systematic.
     """
 
     xs_col = pass2_cross_section_column(csv_period)
@@ -536,18 +836,6 @@ def pass2_points_for_period(
             sys_csv = 0.0
         # endif
 
-        sigma *= clas12_scale
-        stat *= clas12_scale
-        sys_csv *= clas12_scale
-
-        if include_clas12_estimated_sys:
-            sys_est = clas12_bin_to_bin_sys_frac * abs(sigma)
-        else:
-            sys_est = 0.0
-        # endif
-
-        sys_total = math.sqrt(sys_csv * sys_csv + sys_est * sys_est)
-
         if phi_avg_col in selected.columns:
             phi = parse_scalar_from_cell(row[phi_avg_col])
         else:
@@ -560,6 +848,62 @@ def pass2_points_for_period(
             phi = 0.5 * (phi_min + phi_max)
         # endif
 
+        if apply_sp19_to_fa18_km15_scaling:
+            if model_context is None or not model_context.enabled:
+                raise RuntimeError(
+                    "Sp19 -> Fa18 KM15 scaling requested, but the model context is disabled."
+                )
+            # endif
+
+            xB = row_average_or_midpoint(
+                row=row,
+                avg_col=avg_column("xBavg", csv_period),
+                min_col="xBmin",
+                max_col="xBmax",
+            )
+
+            Q2 = row_average_or_midpoint(
+                row=row,
+                avg_col=avg_column("Q2avg", csv_period),
+                min_col="Q2min",
+                max_col="Q2max",
+            )
+
+            t_abs = row_average_or_midpoint(
+                row=row,
+                avg_col=avg_column("t_abs_avg", csv_period),
+                min_col="t_abs_min",
+                max_col="t_abs_max",
+            )
+
+            correction = sp19_to_fa18_km15_correction(
+                model_context=model_context,
+                xB=xB,
+                Q2=Q2,
+                t_abs=t_abs,
+                phi=phi,
+            )
+
+            if not np.isfinite(correction):
+                continue
+            # endif
+
+            sigma *= correction
+            stat *= abs(correction)
+            sys_csv *= abs(correction)
+        # endif
+
+        sigma *= clas12_scale
+        stat *= clas12_scale
+        sys_csv *= clas12_scale
+
+        if include_clas12_estimated_sys:
+            sys_est = clas12_bin_to_bin_sys_frac * abs(sigma)
+        else:
+            sys_est = 0.0
+        # endif
+
+        sys_total = math.sqrt(sys_csv * sys_csv + sys_est * sys_est)
         err_total = math.sqrt(stat * stat + sys_total * sys_total)
 
         points.append(
@@ -686,6 +1030,10 @@ def pass1_points(
     return points
 
 
+# -----------------------------------------------------------------------------
+# Averages, interpolation, ratios, chi2.
+# -----------------------------------------------------------------------------
+
 def compute_weighted_kinematic_averages(
     selected: pd.DataFrame,
     csv_period: str = "10.6 GeV",
@@ -702,6 +1050,7 @@ def compute_weighted_kinematic_averages(
             "Fa18 Out",
             "Sp18 Inb",
             "Sp18 Out",
+            "Sp19 Inb",
         ]
     # endif
 
@@ -1008,6 +1357,10 @@ def ratio_to_hall_a(
     return ratios
 
 
+# -----------------------------------------------------------------------------
+# Plotting.
+# -----------------------------------------------------------------------------
+
 def plot_dataset(
     ax,
     points: List[DataPoint],
@@ -1026,7 +1379,6 @@ def plot_dataset(
     # endif
 
     if label == PASS1_DISPLAY_LABEL:
-        # Open circle, same color as pass-2 combined.
         ax.errorbar(
             phi,
             sigma,
@@ -1090,6 +1442,43 @@ def auto_ratio_ylim(ax, points_by_label: dict) -> None:
 
     ax.set_ylim(1.0 - 1.10 * span, 1.0 + 1.10 * span)
 
+
+def common_cross_section_ylim(
+    points_groups: List[List[DataPoint]],
+) -> Tuple[float, float]:
+    values: List[float] = []
+    lows: List[float] = []
+    highs: List[float] = []
+
+    for points in points_groups:
+        for p in points:
+            if not np.isfinite(p.sigma):
+                continue
+            # endif
+
+            values.append(p.sigma)
+            lows.append(p.sigma - (p.err_low if np.isfinite(p.err_low) else 0.0))
+            highs.append(p.sigma + (p.err_high if np.isfinite(p.err_high) else 0.0))
+        # endfor
+    # endfor
+
+    if len(values) == 0:
+        return (0.0, 1.0)
+    # endif
+
+    ymin = min(0.0, float(np.nanmin(lows)))
+    ymax = float(np.nanmax(highs))
+
+    if not np.isfinite(ymax) or ymax <= ymin:
+        return (0.0, 1.0)
+    # endif
+
+    return (ymin, 1.10 * ymax)
+
+
+# -----------------------------------------------------------------------------
+# Diagnostics.
+# -----------------------------------------------------------------------------
 
 def print_dataset_diagnostics(
     points_by_label: dict,
@@ -1180,6 +1569,35 @@ def print_dataset_diagnostics(
         # endif
     # endfor
 
+
+def print_model_correction_summary(model_context: ModelContext) -> None:
+    if not model_context.enabled:
+        print()
+        print("Sp19 -> 10.604 GeV KM15 scaling: disabled")
+        return
+    # endif
+
+    print()
+    print("Sp19 -> 10.604 GeV KM15 scaling diagnostic:")
+    print(f"  source beam energy = {SP19_INB_EBEAM_GEV:.6f} GeV")
+    print(f"  target beam energy = {FA18_INB_EBEAM_GEV:.6f} GeV")
+    print(f"  unique cached correction kinematic points = {len(model_context.correction_cache)}")
+
+    if model_context.correction_count <= 0:
+        print("  no corrections were evaluated")
+        return
+    # endif
+
+    mean_corr = model_context.correction_sum / model_context.correction_count
+
+    print(f"  correction count   = {model_context.correction_count}")
+    print(f"  correction mean    = {mean_corr:.6g}")
+    print(f"  correction range   = [{model_context.correction_min:.6g}, {model_context.correction_max:.6g}]")
+
+
+# -----------------------------------------------------------------------------
+# Plot builders.
+# -----------------------------------------------------------------------------
 
 def make_plot(
     pass2_selected: pd.DataFrame,
@@ -1279,10 +1697,6 @@ def make_plot(
     bottom_left = axes[1, 0]
     bottom_right = axes[1, 1]
 
-    # -------------------------------------------------------------------------
-    # Top-left: pass-2 combined, pass-1, and Hall A.
-    # -------------------------------------------------------------------------
-
     plot_dataset(
         ax=top_left,
         points=hall_a,
@@ -1306,14 +1720,10 @@ def make_plot(
         )
     # endfor
 
-    top_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
+    top_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$)")
     top_left.set_title("Cross sections: pass-2 combined and pass-1")
     top_left.grid(True, alpha=0.25)
     top_left.legend(fontsize=8, frameon=True)
-
-    # -------------------------------------------------------------------------
-    # Top-right: ratios for pass-2 combined and pass-1.
-    # -------------------------------------------------------------------------
 
     top_ratios = {}
 
@@ -1350,10 +1760,6 @@ def make_plot(
     top_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(top_right, top_ratios)
 
-    # -------------------------------------------------------------------------
-    # Bottom-left: individual pass-2 periods and Hall A only.
-    # -------------------------------------------------------------------------
-
     plot_dataset(
         ax=bottom_left,
         points=hall_a,
@@ -1373,15 +1779,11 @@ def make_plot(
         )
     # endfor
 
-    bottom_left.set_xlabel(r"$\phi$ [deg]")
-    bottom_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
+    bottom_left.set_xlabel(r"$\phi$ (deg)")
+    bottom_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$)")
     bottom_left.set_title("Cross sections: individual pass-2 periods")
     bottom_left.grid(True, alpha=0.25)
     bottom_left.legend(fontsize=8, frameon=True)
-
-    # -------------------------------------------------------------------------
-    # Bottom-right: individual pass-2 periods / Hall A only.
-    # -------------------------------------------------------------------------
 
     bottom_ratios = {}
 
@@ -1408,7 +1810,7 @@ def make_plot(
         zorder=0,
     )
 
-    bottom_right.set_xlabel(r"$\phi$ [deg]")
+    bottom_right.set_xlabel(r"$\phi$ (deg)")
     bottom_right.set_ylabel(r"CLAS12 / Hall A")
     bottom_right.set_title("Ratio to Hall A: individual pass-2 periods")
     bottom_right.grid(True, alpha=0.25)
@@ -1467,6 +1869,190 @@ def make_plot(
     )
 
 
+def make_fa18_sp19_km15_plot(
+    pass2_selected: pd.DataFrame,
+    output_dir: str,
+    output_name: str,
+    clas12_scale: float,
+    include_clas12_estimated_sys: bool,
+    clas12_bin_to_bin_sys_frac: float,
+    model_context: ModelContext,
+) -> None:
+    hall_a = hall_a_points()
+
+    fa18_points = pass2_points_for_period(
+        selected=pass2_selected,
+        csv_period="Fa18 Inb",
+        clas12_scale=clas12_scale,
+        include_clas12_estimated_sys=include_clas12_estimated_sys,
+        clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
+    )
+
+    sp19_scaled_points = pass2_points_for_period(
+        selected=pass2_selected,
+        csv_period="Sp19 Inb",
+        clas12_scale=clas12_scale,
+        include_clas12_estimated_sys=include_clas12_estimated_sys,
+        clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
+        model_context=model_context,
+        apply_sp19_to_fa18_km15_scaling=model_context.enabled,
+    )
+
+    points_by_label = {
+        FA18_INB_DISPLAY_LABEL: fa18_points,
+        SP19_KM15_DISPLAY_LABEL: sp19_scaled_points,
+    }
+
+    chi2_by_label = {
+        label: chi2_ndf_to_hall_a(
+            comparison_points=points,
+            hall_a_points_input=hall_a,
+        )
+        for label, points in points_by_label.items()
+    }
+
+    ratios_by_label = {
+        label: ratio_to_hall_a(
+            comparison_points=points,
+            hall_a_points_input=hall_a,
+        )
+        for label, points in points_by_label.items()
+    }
+
+    fa18_avg = compute_weighted_kinematic_averages(
+        selected=pass2_selected,
+        csv_period="Fa18 Inb",
+    )
+
+    sp19_avg = compute_weighted_kinematic_averages(
+        selected=pass2_selected,
+        csv_period="Sp19 Inb",
+    )
+
+    hall_a_tmin = compute_tmin_exact(HALL_A_XB, HALL_A_Q2)
+    hall_a_t = hall_a_converted_t()
+    hall_a_t_abs = abs(hall_a_t)
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(15.5, 5.8),
+        constrained_layout=True,
+        sharex=True,
+    )
+
+    fig.suptitle(
+        (
+            "Hall A / CLAS12 Fa18-Sp19 energy-scaled cross-section cross-check\n"
+            rf"Fa18 Inb: $\langle x_B\rangle={fa18_avg.xB:.3f}$, "
+            rf"$\langle Q^2\rangle={fa18_avg.Q2:.3f}~{{\rm GeV}}^2$, "
+            rf"$\langle |t|\rangle={fa18_avg.t_abs:.3f}~{{\rm GeV}}^2$"
+            "\n"
+            rf"Sp19 Inb scaled with KM15: $E={SP19_INB_EBEAM_GEV:.4f}\rightarrow {FA18_INB_EBEAM_GEV:.4f}~{{\rm GeV}}$, "
+            rf"$\langle x_B\rangle={sp19_avg.xB:.3f}$, "
+            rf"$\langle Q^2\rangle={sp19_avg.Q2:.3f}~{{\rm GeV}}^2$, "
+            rf"$\langle |t|\rangle={sp19_avg.t_abs:.3f}~{{\rm GeV}}^2$"
+            "\n"
+            r"Hall A: "
+            rf"$\langle x_B\rangle={HALL_A_XB:.3f}$, "
+            rf"$\langle Q^2\rangle={HALL_A_Q2:.3f}~{{\rm GeV}}^2$, "
+            rf"$|t|_{{\rm equiv.}}={hall_a_t_abs:.3f}~{{\rm GeV}}^2$"
+        ),
+        fontsize=12,
+    )
+
+    left = axes[0]
+    right = axes[1]
+
+    plot_dataset(
+        ax=left,
+        points=hall_a,
+        label="Hall A",
+        legend_label="Hall A",
+    )
+
+    for label in FA18_SP19_COMPARISON_SERIES:
+        plot_dataset(
+            ax=left,
+            points=points_by_label.get(label, []),
+            label=label,
+            legend_label=format_label_with_chi2(
+                label,
+                chi2_by_label.get(label, (math.nan, 0, math.nan)),
+            ),
+        )
+    # endfor
+
+    left.set_xlabel(r"$\phi$ (deg)")
+    left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$)")
+    left.set_title("Cross sections: Fa18 and Sp19 scaled to 10.604 GeV")
+    left.grid(True, alpha=0.25)
+    left.legend(fontsize=8, frameon=True)
+
+    ylo, yhi = common_cross_section_ylim([hall_a, fa18_points, sp19_scaled_points])
+    left.set_ylim(ylo, yhi)
+
+    for label in FA18_SP19_COMPARISON_SERIES:
+        plot_dataset(
+            ax=right,
+            points=ratios_by_label.get(label, []),
+            label=label,
+            legend_label=format_label_with_chi2(
+                label,
+                chi2_by_label.get(label, (math.nan, 0, math.nan)),
+            ),
+        )
+    # endfor
+
+    right.axhline(
+        1.0,
+        color="0.35",
+        linewidth=1.0,
+        linestyle="--",
+        zorder=0,
+    )
+
+    right.set_xlabel(r"$\phi$ (deg)")
+    right.set_ylabel(r"CLAS12 / Hall A")
+    right.set_title("Ratio to Hall A: Fa18 and scaled Sp19")
+    right.grid(True, alpha=0.25)
+    right.legend(fontsize=8, frameon=True)
+    auto_ratio_ylim(right, ratios_by_label)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    output_path = os.path.join(output_dir, output_name)
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+    print(f"Wrote: {output_path}")
+
+    print()
+    print("Fa18 vs Sp19 KM15-scaled Hall A comparison diagnostic:")
+    print(f"  Fa18 points                = {len(fa18_points)}")
+    print(f"  Sp19 scaled points          = {len(sp19_scaled_points)}")
+    print(f"  Hall A points               = {len(hall_a)}")
+    print(f"  Hall A computed tmin        = {hall_a_tmin:.6f} GeV^2")
+    print(f"  Hall A converted t          = {hall_a_t:.6f} GeV^2")
+    print(f"  Hall A converted |t|        = {hall_a_t_abs:.6f} GeV^2")
+
+    print()
+    print("Fa18 vs Sp19 KM15-scaled chi2/ndf summary against Hall A interpolation:")
+    for label in FA18_SP19_COMPARISON_SERIES:
+        chi2, ndf, chi2ndf = chi2_by_label.get(label, (math.nan, 0, math.nan))
+
+        if ndf > 0 and np.isfinite(chi2ndf):
+            print(f"  {label:30s}: chi2 = {chi2:.4f}, ndf = {ndf:d}, chi2/ndf = {chi2ndf:.4f}")
+        else:
+            print(f"  {label:30s}: chi2/ndf = N/A")
+        # endif
+    # endfor
+
+
+# -----------------------------------------------------------------------------
+# Argument parsing and main.
+# -----------------------------------------------------------------------------
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Make a Hall A / CLAS12 DVCS cross-section cross-check plot."
@@ -1494,14 +2080,29 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--output-dir",
-        default="output/hall_a_cross_check",
-        help="Directory for output plot. Default: output/hall_a_cross_check",
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"Directory for output plots. Default: {DEFAULT_OUTPUT_DIR}",
     )
 
     parser.add_argument(
         "--output-name",
-        default="hall_a_cross_check.png",
-        help="Output PNG filename. Default: hall_a_cross_check.png",
+        default=DEFAULT_OUTPUT_NAME,
+        help=f"Output PNG filename for the original 2x2 plot. Default: {DEFAULT_OUTPUT_NAME}",
+    )
+
+    parser.add_argument(
+        "--fa18-sp19-output-name",
+        default=DEFAULT_FA18_SP19_OUTPUT_NAME,
+        help=(
+            "Output PNG filename for the Fa18/Sp19 KM15-scaled 1x2 plot. "
+            f"Default: {DEFAULT_FA18_SP19_OUTPUT_NAME}"
+        ),
+    )
+
+    parser.add_argument(
+        "--no-fa18-sp19-plot",
+        action="store_true",
+        help="Disable the additional Fa18/Sp19 KM15-scaled Hall A comparison plot.",
     )
 
     parser.add_argument(
@@ -1570,6 +2171,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--no-sp19-km15-energy-scaling",
+        action="store_true",
+        help=(
+            "Disable the KM15 beam-energy scaling of Sp19 Inb from "
+            "10.1998 GeV to 10.604 GeV in the additional Fa18/Sp19 comparison plot."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -1608,6 +2218,15 @@ def main() -> None:
         pass2_cross_section_column(csv_period)
         for csv_period in ALL_PASS2_CSV_PERIODS
     ]
+
+    for period in ["10.6 GeV", "Fa18 Inb", "Sp19 Inb"]:
+        pass2_required += [
+            avg_column("xBavg", period),
+            avg_column("Q2avg", period),
+            avg_column("t_abs_avg", period),
+            average_phi_column(period),
+        ]
+    # endfor
 
     pass2_df = pd.read_csv(args.csv_file)
     require_columns(pass2_df, pass2_required, context="pass-2")
@@ -1699,6 +2318,27 @@ def main() -> None:
         clas12_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
         pass1_norm_sys_frac=args.pass1_norm_sys_frac,
     )
+
+    model_context = make_model_context(
+        enabled=not args.no_sp19_km15_energy_scaling,
+    )
+
+    if args.no_fa18_sp19_plot:
+        print()
+        print("Additional Fa18/Sp19 KM15-scaled Hall A comparison plot: disabled")
+    else:
+        make_fa18_sp19_km15_plot(
+            pass2_selected=pass2_selected,
+            output_dir=args.output_dir,
+            output_name=args.fa18_sp19_output_name,
+            clas12_scale=args.clas12_scale,
+            include_clas12_estimated_sys=not args.no_clas12_estimated_sys,
+            clas12_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
+            model_context=model_context,
+        )
+    # endif
+
+    print_model_correction_summary(model_context)
 
 
 if __name__ == "__main__":
