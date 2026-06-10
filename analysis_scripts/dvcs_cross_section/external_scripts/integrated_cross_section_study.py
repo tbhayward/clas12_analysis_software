@@ -55,13 +55,17 @@ to the bin midpoint.
 
 By default, plotted y-error bars are statistical only.
 
-If --include-bin-to-bin-sys is passed, the plotted y-error bars are changed to:
+If --include-bin-to-bin-sys is passed, each point shows two error bars:
 
-  total_error = sqrt(stat_error^2 + (bin_to_bin_sys_fraction * cross_section)^2)
+  inner darker error bar:
+    stat_error
 
-where bin_to_bin_sys_fraction defaults to 0.18 and can be changed with:
+  outer lighter error bar:
+    total_error = sqrt(stat_error^2 + (bin_to_bin_sys_fraction * cross_section)^2)
 
-  --bin-to-bin-sys-frac 0.18
+where bin_to_bin_sys_fraction defaults to 0.10 and can be changed with:
+
+  --bin-to-bin-sys-frac 0.10
 """
 
 import argparse
@@ -110,7 +114,7 @@ RIGHT_SERIES = [
 
 
 # -----------------------------------------------------------------------------
-# Marker-only styles. No connecting lines.
+# Marker and line styles.
 # -----------------------------------------------------------------------------
 
 SERIES_STYLE = {
@@ -566,21 +570,21 @@ def integrated_points_for_period(
     return points
 
 
-def point_plot_error(
+def point_total_error(
     point: Point,
     include_bin_to_bin_sys: bool,
     bin_to_bin_sys_frac: float,
 ) -> float:
     """
-    Return the y-error to draw for a cross-section or ratio point.
+    Return the outer y-error to draw for a cross-section or ratio point.
 
-    By default:
-      error = stat
+    If include_bin_to_bin_sys is false:
+      total_error = stat
 
-    With --include-bin-to-bin-sys:
-      error = sqrt(stat^2 + (f * y)^2)
+    If include_bin_to_bin_sys is true:
+      total_error = sqrt(stat^2 + (f * y)^2)
 
-    where f defaults to 0.18.
+    where f defaults to 0.10.
     """
 
     stat = point.stat if np.isfinite(point.stat) else 0.0
@@ -606,11 +610,17 @@ def points_to_arrays(
     x = np.array([p.x for p in points], dtype=float)
     y = np.array([p.y for p in points], dtype=float)
 
-    stat = np.array([p.stat for p in points], dtype=float)
-
-    yerr = np.array(
+    stat_err = np.array(
         [
-            point_plot_error(
+            p.stat if np.isfinite(p.stat) else 0.0
+            for p in points
+        ],
+        dtype=float,
+    )
+
+    total_err = np.array(
+        [
+            point_total_error(
                 point=p,
                 include_bin_to_bin_sys=include_bin_to_bin_sys,
                 bin_to_bin_sys_frac=bin_to_bin_sys_frac,
@@ -620,7 +630,7 @@ def points_to_arrays(
         dtype=float,
     )
 
-    return x, y, stat, yerr
+    return x, y, stat_err, total_err
 
 
 def ratio_points(numerator: List[Point], denominator: List[Point]) -> List[Point]:
@@ -777,23 +787,43 @@ def plot_points(
         return
     # endif
 
-    x, y, _, yerr = points_to_arrays(
+    x, y, stat_err, total_err = points_to_arrays(
         points=points,
         include_bin_to_bin_sys=include_bin_to_bin_sys,
         bin_to_bin_sys_frac=bin_to_bin_sys_frac,
     )
 
-    style = SERIES_STYLE.get(label, dict(marker="o", linestyle="None"))
+    style = SERIES_STYLE.get(label, dict(marker="o", linestyle="-"))
+    color = style.get("color", None)
+
+    if include_bin_to_bin_sys:
+        outer_style = dict(style)
+        outer_style["marker"] = "None"
+
+        ax.errorbar(
+            x,
+            y,
+            yerr=total_err,
+            label=None,
+            linewidth=0.0,
+            elinewidth=2.2,
+            capsize=4.0,
+            alpha=0.28,
+            color=color,
+            zorder=1,
+        )
+    # endif
 
     ax.errorbar(
         x,
         y,
-        yerr=yerr,
+        yerr=stat_err,
         label=label,
         markersize=5.5,
         linewidth=1.2,
         elinewidth=1.0,
         capsize=2.5,
+        zorder=3,
         **style,
     )
 
@@ -826,6 +856,7 @@ def make_projection_plot(
     info = PROJECTIONS[projection]
 
     all_needed_periods = []
+
     for period in LEFT_SERIES + MIDDLE_SERIES + RIGHT_SERIES:
         if period not in all_needed_periods:
             all_needed_periods.append(period)
@@ -958,18 +989,19 @@ def parse_args() -> argparse.Namespace:
         "--include-bin-to-bin-sys",
         action="store_true",
         help=(
-            "Draw total error bars instead of stat-only error bars, using "
-            "sqrt(stat^2 + (f * y)^2). The default f is 0.18."
+            "Draw both statistical error bars and total stat+bin-to-bin-systematic "
+            "error bars. The total error is sqrt(stat^2 + (f * y)^2). "
+            "The default f is 0.10."
         ),
     )
 
     parser.add_argument(
         "--bin-to-bin-sys-frac",
         type=float,
-        default=0.18,
+        default=0.10,
         help=(
             "Fractional bin-to-bin systematic uncertainty used when "
-            "--include-bin-to-bin-sys is enabled. Default: 0.18."
+            "--include-bin-to-bin-sys is enabled. Default: 0.10."
         ),
     )
 
@@ -1019,7 +1051,7 @@ def main() -> None:
 
     if args.include_bin_to_bin_sys:
         print(
-            "Using plotted y-errors: "
+            "Using plotted y-errors: statistical bars plus outer total bars "
             f"sqrt(stat^2 + ({args.bin_to_bin_sys_frac:.4f} * y)^2)"
         )
     else:
