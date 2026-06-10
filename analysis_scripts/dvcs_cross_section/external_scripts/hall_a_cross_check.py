@@ -28,11 +28,16 @@ bin is selected by default using:
 
   Bin Name = 138
 
-which corresponds to:
+which corresponds nominally to:
 
   xB  in [0.357, 0.446]
   Q2  in [4.326, 5.761] GeV^2
   |t| in [0.40, 0.60] GeV^2
+
+The plot title does not show those bin ranges. Instead, it shows weighted
+average CLAS12 kinematics computed from the selected CSV rows. By default, the
+weights are inverse statistical variance from the 10.6 GeV cross-section
+column.
 
 The script makes a 2x2 canvas:
 
@@ -190,6 +195,15 @@ class DataPoint:
     sys: float = 0.0
 
 
+@dataclass
+class KinematicAverages:
+    xB: float
+    Q2: float
+    t_abs: float
+    weight_period: str
+    n_points: int
+
+
 def compute_tmin_exact(xb: float, q2: float, mass: float = PROTON_MASS_GEV) -> float:
     """
     Compute exact DVCS t_min.
@@ -312,6 +326,10 @@ def cross_section_column(period: str) -> str:
 
 def average_phi_column(period: str) -> str:
     return f"phiavg, {period}"
+
+
+def avg_column(quantity: str, period: str) -> str:
+    return f"{quantity}, {period}"
 
 
 def require_columns(df: pd.DataFrame, columns: Iterable[str]) -> None:
@@ -480,6 +498,173 @@ def hall_b_points_for_period(
     points.sort(key=lambda p: p.phi)
 
     return points
+
+
+def compute_weighted_kinematic_averages(
+    selected: pd.DataFrame,
+    period: str = "10.6 GeV",
+    fallback_periods: Optional[List[str]] = None,
+) -> KinematicAverages:
+    """
+    Compute weighted average CLAS12 kinematics from the selected CSV rows.
+
+    The averages are computed from:
+
+      xBavg, <period>
+      Q2avg, <period>
+      t_abs_avg, <period>
+
+    The weights are inverse statistical variance from:
+
+      normed cross sections, ep->epg, exp, <period>, unpol
+
+    i.e.
+
+      w_i = 1 / stat_i^2
+
+    Fallback behavior:
+      - If the requested period average columns are unavailable, try fallback
+        periods.
+      - If a point has missing/zero stat uncertainty, it gets weight 1.
+      - If no weighted points survive, use an unweighted finite average.
+      - If no average column exists at all, use the bin midpoint.
+    """
+
+    if fallback_periods is None:
+        fallback_periods = [
+            "10.6 GeV",
+            "Fa18 Inb",
+            "Fa18 Out",
+            "Sp18 Inb",
+            "Sp18 Out",
+        ]
+    # endif
+
+    candidate_periods = [period]
+    for p in fallback_periods:
+        if p not in candidate_periods:
+            candidate_periods.append(p)
+        # endif
+    # endfor
+
+    chosen_period = period
+
+    for p in candidate_periods:
+        required_avg_cols = [
+            avg_column("xBavg", p),
+            avg_column("Q2avg", p),
+            avg_column("t_abs_avg", p),
+        ]
+
+        if all(col in selected.columns for col in required_avg_cols):
+            chosen_period = p
+            break
+        # endif
+    # endfor
+
+    xb_col = avg_column("xBavg", chosen_period)
+    q2_col = avg_column("Q2avg", chosen_period)
+    t_col = avg_column("t_abs_avg", chosen_period)
+    xs_col = cross_section_column(chosen_period)
+
+    def fallback_midpoint(min_col: str, max_col: str) -> float:
+        lo = pd.to_numeric(selected[min_col], errors="coerce")
+        hi = pd.to_numeric(selected[max_col], errors="coerce")
+
+        if len(lo) > 0 and np.isfinite(lo.iloc[0]) and np.isfinite(hi.iloc[0]):
+            return 0.5 * (float(lo.iloc[0]) + float(hi.iloc[0]))
+        # endif
+
+        return math.nan
+
+    if xb_col not in selected.columns:
+        xb_value = fallback_midpoint("xBmin", "xBmax")
+        q2_value = fallback_midpoint("Q2min", "Q2max")
+        t_value = fallback_midpoint("t_abs_min", "t_abs_max")
+
+        return KinematicAverages(
+            xB=xb_value,
+            Q2=q2_value,
+            t_abs=t_value,
+            weight_period="bin midpoint fallback",
+            n_points=0,
+        )
+    # endif
+
+    weighted_sums = {
+        "xB": 0.0,
+        "Q2": 0.0,
+        "t_abs": 0.0,
+    }
+
+    unweighted_values = {
+        "xB": [],
+        "Q2": [],
+        "t_abs": [],
+    }
+
+    weight_sum = 0.0
+    n_points = 0
+
+    for _, row in selected.iterrows():
+        xB = parse_scalar_from_cell(row[xb_col])
+        Q2 = parse_scalar_from_cell(row[q2_col])
+        t_abs = parse_scalar_from_cell(row[t_col])
+
+        if not (np.isfinite(xB) and np.isfinite(Q2) and np.isfinite(t_abs)):
+            continue
+        # endif
+
+        unweighted_values["xB"].append(xB)
+        unweighted_values["Q2"].append(Q2)
+        unweighted_values["t_abs"].append(t_abs)
+
+        weight = 1.0
+
+        if xs_col in selected.columns:
+            _, stat, _ = parse_tuple3(row[xs_col])
+
+            if np.isfinite(stat) and stat > 0.0:
+                weight = 1.0 / (stat * stat)
+            else:
+                weight = 1.0
+            # endif
+        # endif
+
+        weighted_sums["xB"] += weight * xB
+        weighted_sums["Q2"] += weight * Q2
+        weighted_sums["t_abs"] += weight * t_abs
+        weight_sum += weight
+        n_points += 1
+    # endfor
+
+    if weight_sum > 0.0:
+        return KinematicAverages(
+            xB=weighted_sums["xB"] / weight_sum,
+            Q2=weighted_sums["Q2"] / weight_sum,
+            t_abs=weighted_sums["t_abs"] / weight_sum,
+            weight_period=chosen_period,
+            n_points=n_points,
+        )
+    # endif
+
+    if len(unweighted_values["xB"]) > 0:
+        return KinematicAverages(
+            xB=float(np.mean(unweighted_values["xB"])),
+            Q2=float(np.mean(unweighted_values["Q2"])),
+            t_abs=float(np.mean(unweighted_values["t_abs"])),
+            weight_period=f"{chosen_period}, unweighted fallback",
+            n_points=len(unweighted_values["xB"]),
+        )
+    # endif
+
+    return KinematicAverages(
+        xB=fallback_midpoint("xBmin", "xBmax"),
+        Q2=fallback_midpoint("Q2min", "Q2max"),
+        t_abs=fallback_midpoint("t_abs_min", "t_abs_max"),
+        weight_period="bin midpoint fallback",
+        n_points=0,
+    )
 
 
 def points_to_arrays(points: List[DataPoint]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -811,8 +996,14 @@ def make_plot(
     output_dir: str,
     output_name: str,
     clas12_scale: float,
+    avg_period: str,
 ) -> None:
     hall_a = hall_a_points()
+
+    clas12_avg = compute_weighted_kinematic_averages(
+        selected=selected,
+        period=avg_period,
+    )
 
     hall_b_by_period = {
         period: hall_b_points_for_period(
@@ -854,10 +1045,10 @@ def make_plot(
     fig.suptitle(
         (
             "Hall A / CLAS12 DVCS cross-section cross-check\n"
-            r"CLAS12 bin: "
-            r"$0.357<x_B<0.446$, "
-            r"$4.326<Q^2<5.761~{\rm GeV}^2$, "
-            r"$0.40<|t|<0.60~{\rm GeV}^2$"
+            r"CLAS12: "
+            rf"$\langle x_B\rangle={clas12_avg.xB:.3f}$, "
+            rf"$\langle Q^2\rangle={clas12_avg.Q2:.3f}~{{\rm GeV}}^2$, "
+            rf"$\langle |t|\rangle={clas12_avg.t_abs:.3f}~{{\rm GeV}}^2$"
             "\n"
             r"Hall A: "
             rf"$\langle x_B\rangle={HALL_A_XB:.3f}$, "
@@ -999,6 +1190,14 @@ def make_plot(
     print(f"Wrote: {output_path}")
 
     print()
+    print("CLAS12 weighted average kinematics used in title:")
+    print(f"  weighting period = {clas12_avg.weight_period}")
+    print(f"  points used      = {clas12_avg.n_points}")
+    print(f"  <xB>             = {clas12_avg.xB:.6f}")
+    print(f"  <Q2>             = {clas12_avg.Q2:.6f} GeV^2")
+    print(f"  <|t|>            = {clas12_avg.t_abs:.6f} GeV^2")
+
+    print()
     print("Hall A t' -> t diagnostic:")
     print(f"  Hall A <xB>      = {HALL_A_XB:.6f}")
     print(f"  Hall A <Q2>      = {HALL_A_Q2:.6f} GeV^2")
@@ -1066,6 +1265,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--avg-period",
+        default="10.6 GeV",
+        help=(
+            "Period used for weighted average CLAS12 kinematics in the plot title. "
+            "Default: '10.6 GeV'."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -1101,9 +1309,9 @@ def main() -> None:
     print("Selected Hall A overlap bin from CSV:")
     print(f"  rows: {len(selected)}")
     print(f"  Bin Name: {args.bin_name}")
-    print(f"  xB:  [{TARGET_XB_MIN}, {TARGET_XB_MAX}]")
-    print(f"  Q2:  [{TARGET_Q2_MIN}, {TARGET_Q2_MAX}] GeV^2")
-    print(f"  |t|: [{TARGET_T_ABS_MIN}, {TARGET_T_ABS_MAX}] GeV^2")
+    print(f"  nominal xB:  [{TARGET_XB_MIN}, {TARGET_XB_MAX}]")
+    print(f"  nominal Q2:  [{TARGET_Q2_MIN}, {TARGET_Q2_MAX}] GeV^2")
+    print(f"  nominal |t|: [{TARGET_T_ABS_MIN}, {TARGET_T_ABS_MAX}] GeV^2")
     print(f"  phi bins present: {len(selected)}")
 
     make_plot(
@@ -1111,6 +1319,7 @@ def main() -> None:
         output_dir=args.output_dir,
         output_name=args.output_name,
         clas12_scale=args.clas12_scale,
+        avg_period=args.avg_period,
     )
 
 
