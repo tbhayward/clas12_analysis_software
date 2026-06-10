@@ -2,13 +2,13 @@
 """
 hall_a_cross_check.py
 
-Standalone Hall A / Hall B DVCS cross-section cross-check.
+Standalone Hall A / CLAS12 DVCS cross-section cross-check.
 
 This script reads the final DVCS pass-2 analysis CSV and compares the CLAS12
 cross sections in one overlapping bin against the Hall A Kin363 cross-section
 table.
 
-The Hall A values are hard-coded from the right-most column of Table D.5:
+The Hall A values are hard-coded from the right-most column of the Hall A table:
 
   <xB>  = 0.371
   <Q2>  = 4.568 GeV^2
@@ -18,7 +18,11 @@ with cross sections listed in pb/GeV^4 as:
 
   sigma +/- stat ^{+ sys_up}_{- sys_down}
 
-The corresponding CLAS12 bin is selected as:
+The corresponding CLAS12 bin is selected by default using:
+
+  Bin Name = 137
+
+which corresponds to:
 
   xB  in [0.357, 0.446]
   Q2  in [4.326, 5.761] GeV^2
@@ -29,8 +33,20 @@ The script makes a 1x2 canvas:
   left:  Hall B / CLAS12 and Hall A cross sections vs phi
   right: Hall B / Hall A ratios vs phi
 
-Both panels show stat+sys error bars. Hall A errors are asymmetric because the
-published systematic uncertainty is asymmetric.
+Both panels show stat+sys error bars.
+
+Important unit convention:
+  The Hall A table is in pb/GeV^4. The current CLAS12 CSV cross-section values
+  in this bin appear to be in nb/GeV^4 relative to the Hall A table, so the
+  script multiplies CLAS12 cross sections by 1000 by default.
+
+  Override with:
+    --clas12-scale 1.0
+
+The CLAS12 and Hall A phi points are not identical. For the ratio panel, Hall A
+is periodically linearly interpolated to the CLAS12 phi value before forming:
+
+  ratio = CLAS12(phi_CLAS12) / HallA_interpolated(phi_CLAS12)
 
 Output:
 
@@ -42,7 +58,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -50,8 +66,10 @@ import matplotlib.pyplot as plt
 
 
 # -----------------------------------------------------------------------------
-# CLAS12 bin corresponding to the Hall A overlap point.
+# Default CLAS12 bin corresponding to the Hall A overlap point.
 # -----------------------------------------------------------------------------
+
+DEFAULT_BIN_NAME = 137
 
 TARGET_XB_MIN = 0.357
 TARGET_XB_MAX = 0.446
@@ -64,7 +82,7 @@ TARGET_T_ABS_MAX = 0.40
 
 
 # -----------------------------------------------------------------------------
-# Plot order requested by user.
+# Plot order.
 # -----------------------------------------------------------------------------
 
 HALL_B_SERIES = [
@@ -246,33 +264,48 @@ def float_close(series: pd.Series, value: float, tolerance: float = 1.0e-6) -> p
     return np.isclose(numeric, value, rtol=0.0, atol=tolerance)
 
 
-def select_hall_b_overlap_bin(df: pd.DataFrame) -> pd.DataFrame:
+def select_hall_b_overlap_bin(df: pd.DataFrame, bin_name: Optional[int]) -> pd.DataFrame:
     """
     Select the CLAS12 bin overlapping the Hall A Kin363 point.
 
-    The selection is intentionally done using exact bin edges with a small
-    tolerance. This avoids accidentally selecting nearby bins.
+    Preferred selection:
+      Bin Name == 137
+
+    Fallback selection:
+      exact bin edges with a small tolerance.
     """
 
-    mask = (
-        float_close(df["xBmin"], TARGET_XB_MIN)
-        & float_close(df["xBmax"], TARGET_XB_MAX)
-        & float_close(df["Q2min"], TARGET_Q2_MIN)
-        & float_close(df["Q2max"], TARGET_Q2_MAX)
-        & float_close(df["t_abs_min"], TARGET_T_ABS_MIN)
-        & float_close(df["t_abs_max"], TARGET_T_ABS_MAX)
-    )
+    selected = pd.DataFrame()
 
-    selected = df.loc[mask].copy()
+    if bin_name is not None and "Bin Name" in df.columns:
+        bin_numeric = pd.to_numeric(df["Bin Name"], errors="coerce")
+        selected = df.loc[bin_numeric == int(bin_name)].copy()
+    # endif
+
+    if len(selected) == 0:
+        mask = (
+            float_close(df["xBmin"], TARGET_XB_MIN)
+            & float_close(df["xBmax"], TARGET_XB_MAX)
+            & float_close(df["Q2min"], TARGET_Q2_MIN)
+            & float_close(df["Q2max"], TARGET_Q2_MAX)
+            & float_close(df["t_abs_min"], TARGET_T_ABS_MIN)
+            & float_close(df["t_abs_max"], TARGET_T_ABS_MAX)
+        )
+
+        selected = df.loc[mask].copy()
+    # endif
 
     if len(selected) == 0:
         raise RuntimeError(
             "Could not find the requested Hall A overlap bin in the CSV:\n"
+            f"  Bin Name = {bin_name}\n"
             f"  xB  [{TARGET_XB_MIN}, {TARGET_XB_MAX}]\n"
             f"  Q2  [{TARGET_Q2_MIN}, {TARGET_Q2_MAX}]\n"
             f"  |t| [{TARGET_T_ABS_MIN}, {TARGET_T_ABS_MAX}]\n"
         )
     # endif
+
+    selected = selected.sort_values(["phimin", "phimax"]).copy()
 
     return selected
 
@@ -294,10 +327,16 @@ def hall_a_points() -> List[DataPoint]:
         )
     # endfor
 
+    points.sort(key=lambda p: p.phi)
+
     return points
 
 
-def hall_b_points_for_period(selected: pd.DataFrame, period: str) -> List[DataPoint]:
+def hall_b_points_for_period(
+    selected: pd.DataFrame,
+    period: str,
+    clas12_scale: float,
+) -> List[DataPoint]:
     """
     Extract Hall B / CLAS12 phi-dependent points for one period.
 
@@ -308,6 +347,8 @@ def hall_b_points_for_period(selected: pd.DataFrame, period: str) -> List[DataPo
     The plotted error is:
 
       sqrt(stat^2 + sys^2)
+
+    The value, stat, and sys are all multiplied by clas12_scale.
 
     If the period-specific phi average column exists, it is used for the x-position.
     Otherwise, the phi-bin midpoint is used.
@@ -338,6 +379,10 @@ def hall_b_points_for_period(selected: pd.DataFrame, period: str) -> List[DataPo
         if not np.isfinite(sys):
             sys = 0.0
         # endif
+
+        sigma *= clas12_scale
+        stat *= clas12_scale
+        sys *= clas12_scale
 
         if phi_avg_col in selected.columns:
             phi = parse_scalar_from_cell(row[phi_avg_col])
@@ -377,17 +422,71 @@ def points_to_arrays(points: List[DataPoint]) -> Tuple[np.ndarray, np.ndarray, n
     return phi, sigma, err_low, err_high
 
 
-def hall_a_by_phi(points: List[DataPoint]) -> dict:
-    return {round(p.phi, 6): p for p in points}
+def periodic_interp(phi_query: float, phi_values: np.ndarray, y_values: np.ndarray) -> float:
+    """
+    Periodically linearly interpolate y(phi) at phi_query.
+
+    phi is treated as periodic over 360 degrees.
+    """
+
+    phi_mod = phi_query % 360.0
+
+    phi_base = np.array(phi_values, dtype=float)
+    y_base = np.array(y_values, dtype=float)
+
+    order = np.argsort(phi_base)
+    phi_base = phi_base[order]
+    y_base = y_base[order]
+
+    phi_ext = np.concatenate(
+        [
+            phi_base - 360.0,
+            phi_base,
+            phi_base + 360.0,
+        ]
+    )
+
+    y_ext = np.concatenate(
+        [
+            y_base,
+            y_base,
+            y_base,
+        ]
+    )
+
+    return float(np.interp(phi_mod, phi_ext, y_ext))
+
+
+def interpolate_hall_a_point(phi_query: float, hall_a_points_input: List[DataPoint]) -> DataPoint:
+    """
+    Interpolate Hall A sigma, lower error, and upper error to the requested phi.
+
+    This is used only for the ratio panel because the CLAS12 phi averages are not
+    identical to the Hall A phi centers.
+    """
+
+    phi, sigma, err_low, err_high = points_to_arrays(hall_a_points_input)
+
+    sigma_interp = periodic_interp(phi_query, phi, sigma)
+    err_low_interp = periodic_interp(phi_query, phi, err_low)
+    err_high_interp = periodic_interp(phi_query, phi, err_high)
+
+    return DataPoint(
+        phi=phi_query,
+        sigma=sigma_interp,
+        err_low=err_low_interp,
+        err_high=err_high_interp,
+    )
 
 
 def ratio_to_hall_a(
     hall_b_points: List[DataPoint],
     hall_a_points_input: List[DataPoint],
-    phi_tolerance: float = 1.0e-4,
 ) -> List[DataPoint]:
     """
     Compute Hall B / Hall A ratios.
+
+    Hall A is periodically linearly interpolated to each CLAS12 phi value.
 
     Error propagation uses asymmetric Hall A uncertainty:
 
@@ -408,36 +507,25 @@ def ratio_to_hall_a(
     ratios: List[DataPoint] = []
 
     for b in hall_b_points:
-        best_a = None
-        best_delta = float("inf")
+        a = interpolate_hall_a_point(
+            phi_query=b.phi,
+            hall_a_points_input=hall_a_points_input,
+        )
 
-        for a in hall_a_points_input:
-            delta = abs(b.phi - a.phi)
-
-            if delta < best_delta:
-                best_delta = delta
-                best_a = a
-            # endif
-        # endfor
-
-        if best_a is None or best_delta > phi_tolerance:
+        if not np.isfinite(a.sigma) or a.sigma == 0.0:
             continue
         # endif
 
-        if not np.isfinite(best_a.sigma) or best_a.sigma == 0.0:
-            continue
-        # endif
-
-        ratio = b.sigma / best_a.sigma
+        ratio = b.sigma / a.sigma
 
         ratio_err_high = math.sqrt(
-            (b.err_high / best_a.sigma) ** 2
-            + (b.sigma * best_a.err_low / (best_a.sigma * best_a.sigma)) ** 2
+            (b.err_high / a.sigma) ** 2
+            + (b.sigma * a.err_low / (a.sigma * a.sigma)) ** 2
         )
 
         ratio_err_low = math.sqrt(
-            (b.err_low / best_a.sigma) ** 2
-            + (b.sigma * best_a.err_high / (best_a.sigma * best_a.sigma)) ** 2
+            (b.err_low / a.sigma) ** 2
+            + (b.sigma * a.err_high / (a.sigma * a.sigma)) ** 2
         )
 
         ratios.append(
@@ -476,15 +564,54 @@ def plot_dataset(ax, points: List[DataPoint], label: str) -> None:
     )
 
 
+def auto_ratio_ylim(ax, points_by_period: dict) -> None:
+    yvals: List[float] = []
+
+    for points in points_by_period.values():
+        for p in points:
+            if np.isfinite(p.sigma):
+                yvals.append(p.sigma)
+            # endif
+        # endfor
+    # endfor
+
+    if len(yvals) == 0:
+        ax.set_ylim(0.0, 2.0)
+        return
+    # endif
+
+    ymin = min(yvals)
+    ymax = max(yvals)
+
+    span_low = abs(1.0 - ymin)
+    span_high = abs(ymax - 1.0)
+    span = max(span_low, span_high, 0.35)
+
+    ax.set_ylim(1.0 - 1.20 * span, 1.0 + 1.20 * span)
+
+
 def make_plot(
     selected: pd.DataFrame,
     output_dir: str,
     output_name: str,
+    clas12_scale: float,
 ) -> None:
     hall_a = hall_a_points()
 
     hall_b_by_period = {
-        period: hall_b_points_for_period(selected, period)
+        period: hall_b_points_for_period(
+            selected=selected,
+            period=period,
+            clas12_scale=clas12_scale,
+        )
+        for period in HALL_B_SERIES
+    }
+
+    ratios_by_period = {
+        period: ratio_to_hall_a(
+            hall_b_points=hall_b_by_period.get(period, []),
+            hall_a_points_input=hall_a,
+        )
         for period in HALL_B_SERIES
     }
 
@@ -525,12 +652,7 @@ def make_plot(
     right = axes[1]
 
     for label in HALL_B_SERIES:
-        ratios = ratio_to_hall_a(
-            hall_b_points=hall_b_by_period.get(label, []),
-            hall_a_points_input=hall_a,
-        )
-
-        plot_dataset(right, ratios, label)
+        plot_dataset(right, ratios_by_period.get(label, []), label)
     # endfor
 
     right.axhline(
@@ -546,6 +668,7 @@ def make_plot(
     right.set_title("Ratio to Hall A")
     right.grid(True, alpha=0.25)
     right.legend(fontsize=8, frameon=True)
+    auto_ratio_ylim(right, ratios_by_period)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -554,6 +677,23 @@ def make_plot(
     plt.close(fig)
 
     print(f"Wrote: {output_path}")
+
+    print()
+    print("Extracted CLAS12 points after applying scale factor:")
+    print(f"  clas12_scale = {clas12_scale:g}")
+
+    for period in HALL_B_SERIES:
+        points = hall_b_by_period.get(period, [])
+        print(f"  {period}: {len(points)} points")
+
+        if len(points) > 0:
+            first = points[0]
+            print(
+                f"    first point: phi = {first.phi:.3f} deg, "
+                f"sigma = {first.sigma:.6g} pb/GeV^4"
+            )
+        # endif
+    # endfor
 
 
 def parse_args() -> argparse.Namespace:
@@ -578,13 +718,36 @@ def parse_args() -> argparse.Namespace:
         help="Output PNG filename. Default: hall_a_cross_check.png",
     )
 
+    parser.add_argument(
+        "--bin-name",
+        type=int,
+        default=DEFAULT_BIN_NAME,
+        help=f"CLAS12 Bin Name to select. Default: {DEFAULT_BIN_NAME}",
+    )
+
+    parser.add_argument(
+        "--clas12-scale",
+        type=float,
+        default=1000.0,
+        help=(
+            "Scale factor applied to CLAS12 cross sections and uncertainties. "
+            "Default: 1000.0, useful if the CSV is effectively in nb/GeV^4 "
+            "and Hall A is in pb/GeV^4."
+        ),
+    )
+
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
 
+    if args.clas12_scale <= 0.0:
+        raise ValueError("--clas12-scale must be positive.")
+    # endif
+
     required = [
+        "Bin Name",
         "xBmin",
         "xBmax",
         "Q2min",
@@ -600,18 +763,24 @@ def main() -> None:
     df = pd.read_csv(args.csv_file)
     require_columns(df, required)
 
-    selected = select_hall_b_overlap_bin(df)
+    selected = select_hall_b_overlap_bin(
+        df=df,
+        bin_name=args.bin_name,
+    )
 
     print("Selected Hall A overlap bin from CSV:")
     print(f"  rows: {len(selected)}")
+    print(f"  Bin Name: {args.bin_name}")
     print(f"  xB:  [{TARGET_XB_MIN}, {TARGET_XB_MAX}]")
     print(f"  Q2:  [{TARGET_Q2_MIN}, {TARGET_Q2_MAX}] GeV^2")
     print(f"  |t|: [{TARGET_T_ABS_MIN}, {TARGET_T_ABS_MAX}] GeV^2")
+    print(f"  phi bins present: {len(selected)}")
 
     make_plot(
         selected=selected,
         output_dir=args.output_dir,
         output_name=args.output_name,
+        clas12_scale=args.clas12_scale,
     )
 
 
