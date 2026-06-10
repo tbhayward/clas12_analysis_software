@@ -204,12 +204,11 @@ ALL_PASS2_CSV_PERIODS = [
 
 
 # Hall A is always black.
-# pass-1 Fa18 intentionally uses the same color as pass-2 10.6 GeV,
-# but is drawn as an open circle in plot_dataset().
+# pass-1 Fa18 is drawn as an open circle with a distinct cyan color.
 SERIES_STYLE = {
     "Hall A": dict(marker="s", linestyle="None", color="black"),
     PASS2_COMBINED_DISPLAY_LABEL: dict(marker="o", linestyle="None", color="tab:red"),
-    PASS1_DISPLAY_LABEL: dict(marker="o", linestyle="None", color="tab:red"),
+    PASS1_DISPLAY_LABEL: dict(marker="o", linestyle="None", color="tab:cyan"),
     "Sp18 Inb": dict(marker="D", linestyle="None", color="tab:green"),
     "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
     "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
