@@ -100,6 +100,8 @@ The analogous BH-only ratio is also computed and printed as a diagnostic:
          / BH(E_source, xB_i, Q2_i, |t|_i, phi_i)
 
 but the BH ratio is not applied to the data.
+
+All ratio-plot y axes are fixed to 0.5--1.5.
 """
 
 import argparse
@@ -131,7 +133,7 @@ RATIO_YMAX = 1.5
 
 
 # -----------------------------------------------------------------------------
-# Plot order requested by user.
+# Plot order.
 # -----------------------------------------------------------------------------
 
 RUN_PERIODS_106 = [
@@ -257,8 +259,12 @@ class ModelContext:
     bh_correction_max: float = -math.inf
     bh_correction_sum: float = 0.0
     bh_correction_count: int = 0
+    bh_failure_message: Optional[str] = None
 
-    correction_cache: Dict[Tuple[float, float, float, float], Tuple[float, float]] = field(default_factory=dict)
+    correction_cache: Dict[
+        Tuple[float, float, float, float],
+        Tuple[float, float],
+    ] = field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
@@ -362,9 +368,11 @@ def bh_xs(
     """
     BH-only unpolarized cross section diagnostic.
 
-    The returned value is used only in a ratio, so the exact absolute unit
-    convention cancels as long as numerator and denominator are evaluated
-    consistently.
+    This is used only in a ratio, so the exact absolute unit convention cancels
+    as long as numerator and denominator are evaluated consistently.
+
+    If the loaded Gepard theory object does not expose the expected BH methods,
+    the calling function records the failure reason and continues.
     """
 
     pt = make_gepard_xs_point(
@@ -380,9 +388,15 @@ def bh_xs(
         return float(model_context.th_km15.PreFacSigma(pt) * model_context.th_km15.TBH2unp(pt))
     # endif
 
+    available = [
+        name
+        for name in dir(model_context.th_km15)
+        if "BH" in name or "bh" in name or "PreFac" in name or "prefac" in name
+    ]
+
     raise RuntimeError(
-        "The loaded KM15 theory object does not expose PreFacSigma(pt) and TBH2unp(pt), "
-        "so the BH-only diagnostic ratio cannot be computed."
+        "The loaded KM15 theory object does not expose PreFacSigma(pt) and TBH2unp(pt). "
+        f"Candidate BH/prefactor-like attributes found: {available}"
     )
 
 
@@ -396,14 +410,26 @@ def update_model_correction_diagnostics(
     # endif
 
     if model_name == "KM15":
-        model_context.km15_correction_min = min(model_context.km15_correction_min, correction)
-        model_context.km15_correction_max = max(model_context.km15_correction_max, correction)
+        model_context.km15_correction_min = min(
+            model_context.km15_correction_min,
+            correction,
+        )
+        model_context.km15_correction_max = max(
+            model_context.km15_correction_max,
+            correction,
+        )
         model_context.km15_correction_sum += correction
         model_context.km15_correction_count += 1
 
     elif model_name == "BH":
-        model_context.bh_correction_min = min(model_context.bh_correction_min, correction)
-        model_context.bh_correction_max = max(model_context.bh_correction_max, correction)
+        model_context.bh_correction_min = min(
+            model_context.bh_correction_min,
+            correction,
+        )
+        model_context.bh_correction_max = max(
+            model_context.bh_correction_max,
+            correction,
+        )
         model_context.bh_correction_sum += correction
         model_context.bh_correction_count += 1
 
@@ -420,7 +446,7 @@ def correction_cache_key(
 ) -> Tuple[float, float, float, float]:
     """
     Round the kinematics enough to make repeated CSV-row accesses share cached
-    model corrections, without meaningfully changing the evaluated kinematics.
+    model corrections without meaningfully changing the evaluated kinematics.
     """
 
     return (
@@ -447,7 +473,12 @@ def km15_and_bh_sp19_to_fa18_corrections(
     The KM15 ratio is applied to data. The BH ratio is diagnostic only.
     """
 
-    key = correction_cache_key(xB=xB, Q2=Q2, t_abs=t_abs, phi=phi)
+    key = correction_cache_key(
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi=phi,
+    )
 
     if key in model_context.correction_cache:
         km15_corr, bh_corr = model_context.correction_cache[key]
@@ -524,8 +555,12 @@ def km15_and_bh_sp19_to_fa18_corrections(
             bh_corr = bh_numerator / bh_denominator
         # endif
 
-    except Exception:
+    except Exception as exc:
         bh_corr = math.nan
+
+        if model_context.bh_failure_message is None:
+            model_context.bh_failure_message = repr(exc)
+        # endif
     # endtry
 
     model_context.correction_cache[key] = (km15_corr, bh_corr)
@@ -1508,6 +1543,12 @@ def print_model_correction_summary(model_context: ModelContext) -> None:
         correction_min=model_context.bh_correction_min,
         correction_max=model_context.bh_correction_max,
     )
+
+    if model_context.bh_correction_count <= 0 and model_context.bh_failure_message is not None:
+        print()
+        print("BH diagnostic failure reason:")
+        print(f"  {model_context.bh_failure_message}")
+    # endif
 
 
 # -----------------------------------------------------------------------------
