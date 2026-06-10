@@ -18,22 +18,30 @@ with cross sections listed in pb/GeV^4 as:
 
   sigma +/- stat ^{+ sys_up}_{- sys_down}
 
-The corresponding CLAS12 bin is selected by default using:
+Since the Hall A value is t' rather than t, the script computes:
 
-  Bin Name = 137
+  t = t_min + t'
+
+using the exact DVCS t_min formula. For the Hall A central kinematics, this
+places the comparison around |t| ~= 0.483 GeV^2, so the corresponding CLAS12
+bin is selected by default using:
+
+  Bin Name = 138
 
 which corresponds to:
 
   xB  in [0.357, 0.446]
   Q2  in [4.326, 5.761] GeV^2
-  |t| in [0.25, 0.40] GeV^2
+  |t| in [0.40, 0.60] GeV^2
 
-The script makes a 1x2 canvas:
+The script makes a 2x2 canvas:
 
-  left:  Hall B / CLAS12 and Hall A cross sections vs phi
-  right: Hall B / Hall A ratios vs phi
+  top-left:     10.6 GeV CLAS12 and Hall A cross sections vs phi
+  top-right:    10.6 GeV CLAS12 / Hall A ratio vs phi
+  bottom-left:  individual 10.6-GeV run-period CLAS12 and Hall A cross sections vs phi
+  bottom-right: individual 10.6-GeV run-period CLAS12 / Hall A ratios vs phi
 
-Both panels show stat+sys error bars.
+All plots use stat+sys error bars.
 
 Important unit convention:
   The Hall A table is in pb/GeV^4. The current CLAS12 CSV cross-section values
@@ -43,10 +51,12 @@ Important unit convention:
   Override with:
     --clas12-scale 1.0
 
-The CLAS12 and Hall A phi points are not identical. For the ratio panel, Hall A
-is periodically linearly interpolated to the CLAS12 phi value before forming:
+Interpolation convention:
+  The CLAS12 and Hall A phi points are not necessarily identical. For the ratio
+  panel and chi2/ndf, Hall A is periodically linearly interpolated to each CLAS12
+  phi value before forming:
 
-  ratio = CLAS12(phi_CLAS12) / HallA_interpolated(phi_CLAS12)
+    ratio = CLAS12(phi_CLAS12) / HallA_interpolated(phi_CLAS12)
 
 Output:
 
@@ -66,10 +76,10 @@ import matplotlib.pyplot as plt
 
 
 # -----------------------------------------------------------------------------
-# Default CLAS12 bin corresponding to the Hall A overlap point.
+# Default CLAS12 bin corresponding to the converted Hall A t' overlap point.
 # -----------------------------------------------------------------------------
 
-DEFAULT_BIN_NAME = 137
+DEFAULT_BIN_NAME = 138
 
 TARGET_XB_MIN = 0.357
 TARGET_XB_MAX = 0.446
@@ -77,39 +87,51 @@ TARGET_XB_MAX = 0.446
 TARGET_Q2_MIN = 4.326
 TARGET_Q2_MAX = 5.761
 
-TARGET_T_ABS_MIN = 0.25
-TARGET_T_ABS_MAX = 0.40
+TARGET_T_ABS_MIN = 0.40
+TARGET_T_ABS_MAX = 0.60
+
+
+# -----------------------------------------------------------------------------
+# Hall A kinematics for the selected table column.
+# -----------------------------------------------------------------------------
+
+HALL_A_XB = 0.371
+HALL_A_Q2 = 4.568
+HALL_A_TPRIME = -0.303
+PROTON_MASS_GEV = 0.9382720813
 
 
 # -----------------------------------------------------------------------------
 # Plot order.
 # -----------------------------------------------------------------------------
 
-HALL_B_SERIES = [
+HALL_B_COMBINED_SERIES = [
     "10.6 GeV",
+]
+
+HALL_B_PERIOD_SERIES = [
     "Sp18 Inb",
     "Sp18 Out",
     "Fa18 Inb",
     "Fa18 Out",
 ]
 
-LEFT_SERIES = [
+ALL_HALL_B_SERIES = [
     "10.6 GeV",
     "Sp18 Inb",
     "Sp18 Out",
     "Fa18 Inb",
     "Fa18 Out",
-    "Hall A",
 ]
 
 
 SERIES_STYLE = {
-    "10.6 GeV": dict(marker="o", linestyle="-", color="black"),
-    "Sp18 Inb": dict(marker="D", linestyle="-", color="tab:green"),
-    "Sp18 Out": dict(marker="P", linestyle="-", color="tab:purple"),
-    "Fa18 Inb": dict(marker="^", linestyle="-", color="tab:blue"),
-    "Fa18 Out": dict(marker="v", linestyle="-", color="tab:orange"),
-    "Hall A": dict(marker="s", linestyle="-", color="tab:red"),
+    "10.6 GeV": dict(marker="o", linestyle="None", color="black"),
+    "Sp18 Inb": dict(marker="D", linestyle="None", color="tab:green"),
+    "Sp18 Out": dict(marker="P", linestyle="None", color="tab:purple"),
+    "Fa18 Inb": dict(marker="^", linestyle="None", color="tab:blue"),
+    "Fa18 Out": dict(marker="v", linestyle="None", color="tab:orange"),
+    "Hall A": dict(marker="s", linestyle="None", color="tab:red"),
 }
 
 
@@ -163,6 +185,46 @@ class DataPoint:
     sigma: float
     err_low: float
     err_high: float
+
+
+def compute_tmin_exact(xb: float, q2: float, mass: float = PROTON_MASS_GEV) -> float:
+    """
+    Compute exact DVCS t_min.
+
+    Convention:
+      t is negative.
+      t_min is the least negative kinematically allowed t value.
+
+    Formula:
+      epsilon^2 = 4 M^2 xB^2 / Q^2
+
+      t_min = -Q^2 *
+        [2(1-xB)(1-sqrt(1+epsilon^2)) + epsilon^2]
+        /
+        [4 xB(1-xB) + epsilon^2]
+    """
+
+    eps2 = 4.0 * mass * mass * xb * xb / q2
+
+    numerator = 2.0 * (1.0 - xb) * (1.0 - math.sqrt(1.0 + eps2)) + eps2
+    denominator = 4.0 * xb * (1.0 - xb) + eps2
+
+    return -q2 * numerator / denominator
+
+
+def hall_a_converted_t() -> float:
+    """
+    Convert the Hall A quoted t' value into actual t.
+
+    Convention:
+      t' = t - t_min
+
+    Therefore:
+      t = t_min + t'
+    """
+
+    tmin = compute_tmin_exact(HALL_A_XB, HALL_A_Q2)
+    return tmin + HALL_A_TPRIME
 
 
 def parse_tuple3(value) -> Tuple[float, float, float]:
@@ -266,10 +328,10 @@ def float_close(series: pd.Series, value: float, tolerance: float = 1.0e-6) -> p
 
 def select_hall_b_overlap_bin(df: pd.DataFrame, bin_name: Optional[int]) -> pd.DataFrame:
     """
-    Select the CLAS12 bin overlapping the Hall A Kin363 point.
+    Select the CLAS12 bin overlapping the converted Hall A t' point.
 
     Preferred selection:
-      Bin Name == 137
+      Bin Name == 138
 
     Fallback selection:
       exact bin edges with a small tolerance.
@@ -426,7 +488,14 @@ def periodic_interp(phi_query: float, phi_values: np.ndarray, y_values: np.ndarr
     """
     Periodically linearly interpolate y(phi) at phi_query.
 
-    phi is treated as periodic over 360 degrees.
+    Explanation:
+      np.interp itself is not periodic. To make it periodic, we copy the Hall A
+      data three times:
+
+        phi - 360, phi, phi + 360
+
+      Then interpolation near 0 or 360 degrees can see the neighboring points
+      across the boundary.
     """
 
     phi_mod = phi_query % 360.0
@@ -461,8 +530,8 @@ def interpolate_hall_a_point(phi_query: float, hall_a_points_input: List[DataPoi
     """
     Interpolate Hall A sigma, lower error, and upper error to the requested phi.
 
-    This is used only for the ratio panel because the CLAS12 phi averages are not
-    identical to the Hall A phi centers.
+    This is used for the ratio panel and chi2/ndf because the CLAS12 phi averages
+    are not necessarily identical to the Hall A phi centers.
     """
 
     phi, sigma, err_low, err_high = points_to_arrays(hall_a_points_input)
@@ -477,6 +546,72 @@ def interpolate_hall_a_point(phi_query: float, hall_a_points_input: List[DataPoi
         err_low=err_low_interp,
         err_high=err_high_interp,
     )
+
+
+def symmetric_error(point: DataPoint) -> float:
+    return 0.5 * (point.err_low + point.err_high)
+
+
+def chi2_ndf_to_hall_a(
+    hall_b_points: List[DataPoint],
+    hall_a_points_input: List[DataPoint],
+) -> Tuple[float, int, float]:
+    """
+    Compute chi2/ndf comparing Hall B to Hall A interpolated to Hall B phi points.
+
+    This uses the combined total uncertainty:
+
+      variance = err_B^2 + err_A_interp^2
+
+    where asymmetric Hall A errors are symmetrized as:
+
+      err_A = 0.5 * (err_A_low + err_A_high)
+
+    No fit parameters are extracted, so ndf = number of compared points.
+    """
+
+    chi2 = 0.0
+    ndf = 0
+
+    for b in hall_b_points:
+        a = interpolate_hall_a_point(
+            phi_query=b.phi,
+            hall_a_points_input=hall_a_points_input,
+        )
+
+        if not np.isfinite(a.sigma):
+            continue
+        # endif
+
+        err_b = symmetric_error(b)
+        err_a = symmetric_error(a)
+
+        variance = err_b * err_b + err_a * err_a
+
+        if variance <= 0.0 or not np.isfinite(variance):
+            continue
+        # endif
+
+        residual = b.sigma - a.sigma
+        chi2 += residual * residual / variance
+        ndf += 1
+    # endfor
+
+    if ndf <= 0:
+        return (math.nan, 0, math.nan)
+    # endif
+
+    return (chi2, ndf, chi2 / ndf)
+
+
+def format_label_with_chi2(label: str, chi2_info: Tuple[float, int, float]) -> str:
+    chi2, ndf, chi2ndf = chi2_info
+
+    if ndf <= 0 or not np.isfinite(chi2ndf):
+        return f"{label} ($\\chi^2$/ndf=N/A)"
+    # endif
+
+    return f"{label} ($\\chi^2$/ndf={chi2ndf:.2f})"
 
 
 def ratio_to_hall_a(
@@ -543,21 +678,30 @@ def ratio_to_hall_a(
     return ratios
 
 
-def plot_dataset(ax, points: List[DataPoint], label: str) -> None:
+def plot_dataset(
+    ax,
+    points: List[DataPoint],
+    label: str,
+    legend_label: Optional[str] = None,
+) -> None:
     if len(points) == 0:
         return
     # endif
 
     phi, sigma, err_low, err_high = points_to_arrays(points)
-    style = SERIES_STYLE.get(label, dict(marker="o", linestyle="-"))
+    style = SERIES_STYLE.get(label, dict(marker="o", linestyle="None"))
+
+    if legend_label is None:
+        legend_label = label
+    # endif
 
     ax.errorbar(
         phi,
         sigma,
         yerr=np.vstack([err_low, err_high]),
-        label=label,
+        label=legend_label,
         markersize=5.5,
-        linewidth=1.2,
+        linewidth=0.0,
         elinewidth=1.0,
         capsize=2.5,
         **style,
@@ -566,11 +710,15 @@ def plot_dataset(ax, points: List[DataPoint], label: str) -> None:
 
 def auto_ratio_ylim(ax, points_by_period: dict) -> None:
     yvals: List[float] = []
+    yerr_lows: List[float] = []
+    yerr_highs: List[float] = []
 
     for points in points_by_period.values():
         for p in points:
             if np.isfinite(p.sigma):
                 yvals.append(p.sigma)
+                yerr_lows.append(p.err_low if np.isfinite(p.err_low) else 0.0)
+                yerr_highs.append(p.err_high if np.isfinite(p.err_high) else 0.0)
             # endif
         # endfor
     # endfor
@@ -580,14 +728,17 @@ def auto_ratio_ylim(ax, points_by_period: dict) -> None:
         return
     # endif
 
-    ymin = min(yvals)
-    ymax = max(yvals)
+    lows = np.array(yvals) - np.array(yerr_lows)
+    highs = np.array(yvals) + np.array(yerr_highs)
+
+    ymin = float(np.nanmin(lows))
+    ymax = float(np.nanmax(highs))
 
     span_low = abs(1.0 - ymin)
     span_high = abs(ymax - 1.0)
     span = max(span_low, span_high, 0.35)
 
-    ax.set_ylim(1.0 - 1.20 * span, 1.0 + 1.20 * span)
+    ax.set_ylim(1.0 - 1.10 * span, 1.0 + 1.10 * span)
 
 
 def make_plot(
@@ -604,7 +755,15 @@ def make_plot(
             period=period,
             clas12_scale=clas12_scale,
         )
-        for period in HALL_B_SERIES
+        for period in ALL_HALL_B_SERIES
+    }
+
+    chi2_by_period = {
+        period: chi2_ndf_to_hall_a(
+            hall_b_points=hall_b_by_period.get(period, []),
+            hall_a_points_input=hall_a,
+        )
+        for period in ALL_HALL_B_SERIES
     }
 
     ratios_by_period = {
@@ -612,14 +771,19 @@ def make_plot(
             hall_b_points=hall_b_by_period.get(period, []),
             hall_a_points_input=hall_a,
         )
-        for period in HALL_B_SERIES
+        for period in ALL_HALL_B_SERIES
     }
 
+    hall_a_tmin = compute_tmin_exact(HALL_A_XB, HALL_A_Q2)
+    hall_a_t = hall_a_converted_t()
+    hall_a_t_abs = abs(hall_a_t)
+
     fig, axes = plt.subplots(
-        1,
         2,
-        figsize=(14.0, 5.5),
+        2,
+        figsize=(15.0, 10.0),
         constrained_layout=True,
+        sharex=True,
     )
 
     fig.suptitle(
@@ -628,34 +792,67 @@ def make_plot(
             r"CLAS12 bin: "
             r"$0.357<x_B<0.446$, "
             r"$4.326<Q^2<5.761~{\rm GeV}^2$, "
-            r"$0.25<|t|<0.40~{\rm GeV}^2$"
+            r"$0.40<|t|<0.60~{\rm GeV}^2$"
+            "\n"
+            r"Hall A: "
+            rf"$\langle x_B\rangle={HALL_A_XB:.3f}$, "
+            rf"$\langle Q^2\rangle={HALL_A_Q2:.3f}~{{\rm GeV}}^2$, "
+            rf"$\langle t'\rangle={HALL_A_TPRIME:.3f}~{{\rm GeV}}^2$, "
+            rf"$t_{{\min}}={hall_a_tmin:.3f}~{{\rm GeV}}^2$, "
+            rf"$|t|_{{\rm equiv.}}={hall_a_t_abs:.3f}~{{\rm GeV}}^2$"
         ),
         fontsize=13,
     )
 
-    left = axes[0]
+    top_left = axes[0, 0]
+    top_right = axes[0, 1]
+    bottom_left = axes[1, 0]
+    bottom_right = axes[1, 1]
 
-    for label in LEFT_SERIES:
-        if label == "Hall A":
-            plot_dataset(left, hall_a, label)
-        else:
-            plot_dataset(left, hall_b_by_period.get(label, []), label)
-        # endif
+    # -------------------------------------------------------------------------
+    # Top-left: combined 10.6 GeV vs Hall A.
+    # -------------------------------------------------------------------------
+
+    plot_dataset(
+        ax=top_left,
+        points=hall_a,
+        label="Hall A",
+        legend_label="Hall A",
+    )
+
+    for label in HALL_B_COMBINED_SERIES:
+        plot_dataset(
+            ax=top_left,
+            points=hall_b_by_period.get(label, []),
+            label=label,
+            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+        )
     # endfor
 
-    left.set_xlabel(r"$\phi$ [deg]")
-    left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
-    left.set_title("Cross sections")
-    left.grid(True, alpha=0.25)
-    left.legend(fontsize=8, frameon=True)
+    top_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
+    top_left.set_title("Cross sections: combined 10.6 GeV")
+    top_left.grid(True, alpha=0.25)
+    top_left.legend(fontsize=8, frameon=True)
 
-    right = axes[1]
+    # -------------------------------------------------------------------------
+    # Top-right: combined 10.6 GeV / Hall A.
+    # -------------------------------------------------------------------------
 
-    for label in HALL_B_SERIES:
-        plot_dataset(right, ratios_by_period.get(label, []), label)
+    top_ratios = {}
+
+    for label in HALL_B_COMBINED_SERIES:
+        ratios = ratios_by_period.get(label, [])
+        top_ratios[label] = ratios
+
+        plot_dataset(
+            ax=top_right,
+            points=ratios,
+            label=label,
+            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+        )
     # endfor
 
-    right.axhline(
+    top_right.axhline(
         1.0,
         color="0.35",
         linewidth=1.0,
@@ -663,12 +860,70 @@ def make_plot(
         zorder=0,
     )
 
-    right.set_xlabel(r"$\phi$ [deg]")
-    right.set_ylabel(r"CLAS12 / Hall A")
-    right.set_title("Ratio to Hall A")
-    right.grid(True, alpha=0.25)
-    right.legend(fontsize=8, frameon=True)
-    auto_ratio_ylim(right, ratios_by_period)
+    top_right.set_ylabel(r"CLAS12 / Hall A")
+    top_right.set_title("Ratio to Hall A: combined 10.6 GeV")
+    top_right.grid(True, alpha=0.25)
+    top_right.legend(fontsize=8, frameon=True)
+    auto_ratio_ylim(top_right, top_ratios)
+
+    # -------------------------------------------------------------------------
+    # Bottom-left: individual periods vs Hall A.
+    # -------------------------------------------------------------------------
+
+    plot_dataset(
+        ax=bottom_left,
+        points=hall_a,
+        label="Hall A",
+        legend_label="Hall A",
+    )
+
+    for label in HALL_B_PERIOD_SERIES:
+        plot_dataset(
+            ax=bottom_left,
+            points=hall_b_by_period.get(label, []),
+            label=label,
+            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+        )
+    # endfor
+
+    bottom_left.set_xlabel(r"$\phi$ [deg]")
+    bottom_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [pb/GeV$^4$]")
+    bottom_left.set_title("Cross sections: individual run periods")
+    bottom_left.grid(True, alpha=0.25)
+    bottom_left.legend(fontsize=8, frameon=True)
+
+    # -------------------------------------------------------------------------
+    # Bottom-right: individual periods / Hall A.
+    # -------------------------------------------------------------------------
+
+    bottom_ratios = {}
+
+    for label in HALL_B_PERIOD_SERIES:
+        ratios = ratios_by_period.get(label, [])
+        bottom_ratios[label] = ratios
+
+        plot_dataset(
+            ax=bottom_right,
+            points=ratios,
+            label=label,
+            legend_label=format_label_with_chi2(label, chi2_by_period[label]),
+        )
+    # endfor
+
+    bottom_right.axhline(
+        1.0,
+        color="0.35",
+        linewidth=1.0,
+        linestyle="--",
+        zorder=0,
+    )
+
+    bottom_right.set_xlabel(r"$\phi$ [deg]")
+    bottom_right.set_ylabel(r"CLAS12 / Hall A")
+    bottom_right.set_title("Ratio to Hall A: individual run periods")
+    bottom_right.grid(True, alpha=0.25)
+    bottom_right.legend(fontsize=8, frameon=True)
+    auto_ratio_ylim(bottom_right, bottom_ratios)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -679,10 +934,32 @@ def make_plot(
     print(f"Wrote: {output_path}")
 
     print()
+    print("Hall A t' -> t diagnostic:")
+    print(f"  Hall A <xB>      = {HALL_A_XB:.6f}")
+    print(f"  Hall A <Q2>      = {HALL_A_Q2:.6f} GeV^2")
+    print(f"  Hall A <t'>      = {HALL_A_TPRIME:.6f} GeV^2")
+    print(f"  computed tmin    = {hall_a_tmin:.6f} GeV^2")
+    print(f"  converted t      = tmin + t' = {hall_a_t:.6f} GeV^2")
+    print(f"  converted |t|    = {hall_a_t_abs:.6f} GeV^2")
+    print(f"  selected CLAS12 |t| bin = [{TARGET_T_ABS_MIN:.3f}, {TARGET_T_ABS_MAX:.3f}] GeV^2")
+
+    print()
+    print("Chi2/ndf summary against Hall A interpolation:")
+    for period in ALL_HALL_B_SERIES:
+        chi2, ndf, chi2ndf = chi2_by_period[period]
+
+        if ndf > 0 and np.isfinite(chi2ndf):
+            print(f"  {period:8s}: chi2 = {chi2:.4f}, ndf = {ndf:d}, chi2/ndf = {chi2ndf:.4f}")
+        else:
+            print(f"  {period:8s}: chi2/ndf = N/A")
+        # endif
+    # endfor
+
+    print()
     print("Extracted CLAS12 points after applying scale factor:")
     print(f"  clas12_scale = {clas12_scale:g}")
 
-    for period in HALL_B_SERIES:
+    for period in ALL_HALL_B_SERIES:
         points = hall_b_by_period.get(period, [])
         print(f"  {period}: {len(points)} points")
 
@@ -758,7 +1035,7 @@ def main() -> None:
         "phimax",
     ]
 
-    required += [cross_section_column(period) for period in HALL_B_SERIES]
+    required += [cross_section_column(period) for period in ALL_HALL_B_SERIES]
 
     df = pd.read_csv(args.csv_file)
     require_columns(df, required)
