@@ -2,86 +2,76 @@
 """
 clas6_cross_check.py
 
-Single-bin CLAS6 / CLAS12 DVCS cross-section cross-check.
-
-This script compares the current pass-2 CLAS12 / Hall B result against:
-
+Compare current CLAS12 / Hall B pass-2 DVCS cross sections against:
   - previous pass-1 CLAS12 / Hall B Fa18 result
   - CLAS6 unpolarized cross sections from Gepard
 
-For now this script is intentionally hard-coded to the first comparison bin
-from the pass-1 analysis note:
+This script uses the CLAS6 comparison points listed in the previous pass-1
+analysis note and makes one 2x2 PNG per comparison point.
 
-  CLAS6:
-    <xB>  = 0.185
-    <Q2>  = 1.630 GeV^2
-    <|t|> = 0.200 GeV^2
-    Ebeam = 5.75 GeV
+Important conventions
+---------------------
 
-  CLAS12:
-    Bin Name = 58
-    xB  in [0.155, 0.204]
-    Q2  in [1.456, 1.912] GeV^2
-    |t| in [0.15, 0.25] GeV^2
-    Ebeam = 10.604 GeV
+1. CLAS6 data are loaded from Gepard, by default dataset id 98:
 
-The CLAS6 data are loaded from Gepard, by default dataset id 98:
+     [98] CLAS 2640 XUU 1504.02009 CLAS data base E145M1
 
-  [98] CLAS 2640 XUU 1504.02009 CLAS data base E145M1
+   corresponding to H.S. Jo et al., Phys. Rev. Lett. 115, 212003 (2015).
 
-This corresponds to the unpolarized cross section measurement from:
+2. Gepard zero-placeholder points are removed.
 
-  H.S. Jo et al., Phys. Rev. Lett. 115, 212003 (2015)
+   Dataset 98 contains entries with val=0 and uncertainties=0 in some phi bins.
+   These are not physical cross-section measurements and are not plotted.
 
-Important behavior
-------------------
+3. The selected CLAS12 pass-2 bin is found automatically.
 
-1. Zero-placeholder Gepard points are removed.
+   For each CLAS6 comparison target, the script:
+     - selects the matching CLAS6 kinematic group from Gepard,
+     - scans all pass-2 CLAS12 bins,
+     - computes weighted-average CLAS12 kinematics for each bin,
+     - chooses the closest pass-2 bin in scaled (xB,Q2,|t|) distance.
 
-   Gepard dataset 98 includes entries with:
+4. CLAS6 is corrected to the selected CLAS12 pass-2 kinematics using KM15.
 
-     val = 0, errstat = 0, errsyst = 0
-
-   at phi values where no physical data point should be plotted.
-
-2. The CLAS12 bin is hard-coded.
-
-   The previous pass-1 comparison used a fixed manual CLAS-to-CLAS12 bin
-   mapping. For this first comparison, the correct CLAS12 bin is Bin Name 58.
-
-3. CLAS12 points are corrected to the CLAS6 kinematics using KM15.
-
-   The correction factor is:
+   For each CLAS6 phi point, the correction is:
 
      C(phi) =
-       sigma_KM15(E=5.75,  xB=0.185, Q2=1.630, |t|=0.200, phi)
-       /
        sigma_KM15(E=10.604, xB=<CLAS12>, Q2=<CLAS12>, |t|=<CLAS12>, phi)
+       /
+       sigma_KM15(E=5.75,  xB=<CLAS6>,  Q2=<CLAS6>,  |t|=<CLAS6>,  phi)
 
-   and the plotted CLAS12 result is:
+   and the plotted CLAS6 point is:
 
-     sigma_corrected = C(phi) * sigma_raw
+     sigma_CLAS6_corrected = C(phi) * sigma_CLAS6_raw
 
-   with all CLAS12 uncertainties scaled by the same factor.
+   with CLAS6 uncertainties scaled by the same factor.
+
+   This is the opposite direction from the previous single-bin test: we now put
+   CLAS6 onto the CLAS12/pass-2 kinematics and beam energy.
+
+5. Ratio plots are pass-2 / corrected-CLAS6 only.
+
+   The corrected CLAS6 points are linearly interpolated only inside the actual
+   CLAS6 phi coverage. No extrapolation is performed below the lowest CLAS6 phi
+   point or above the highest CLAS6 phi point.
 
 Plot layout
 -----------
 
-The script makes one 2x2 figure:
+For each comparison target:
 
-  top-left:     corrected pass-2 10.6 GeV, corrected pass-1 Fa18, and CLAS6
-  top-right:    corrected pass-2 10.6 GeV / CLAS6
-  bottom-left:  corrected individual pass-2 run periods and CLAS6
-  bottom-right: corrected individual pass-2 run periods / CLAS6
-
-The pass-1 result is shown only in the top-left panel.
+  top-left:     pass-2 10.6 GeV, pass-1 Fa18, corrected CLAS6
+  top-right:    pass-2 10.6 GeV / corrected CLAS6
+  bottom-left:  individual pass-2 run periods and corrected CLAS6
+  bottom-right: individual pass-2 run periods / corrected CLAS6
 
 Uncertainty treatment
 ---------------------
 
 CLAS6:
   total uncertainty is sqrt(errstat^2 + errsyst^2) when available. If no
-  stat/sys decomposition exists, the Gepard err value is used.
+  stat/sys decomposition exists, the Gepard err value is used. The KM15
+  kinematic-transfer factor scales both central values and uncertainties.
 
 pass-2 CLAS12:
   CSV tuple is read as:
@@ -116,7 +106,7 @@ pass-1 CLAS12:
 Output
 ------
 
-  output/clas6_cross_check/clas6_cross_check_26_p2bin58.png
+  output/clas6_cross_check/clas6_cross_check_<label>_p2bin<bin>.png
 """
 
 import argparse
@@ -133,28 +123,24 @@ import matplotlib.pyplot as plt
 
 
 # -----------------------------------------------------------------------------
-# Hard-coded comparison definition.
+# CLAS6 comparison targets from the pass-1 analysis note.
 # -----------------------------------------------------------------------------
 
-COMPARISON_LABEL = "26"
-
-CLAS6_TARGET_XB = 0.185
-CLAS6_TARGET_Q2 = 1.630
-CLAS6_TARGET_T_ABS = 0.200
 CLAS6_EBEAM = 5.75
-
-PASS2_BIN_NAME = 58
-
-PASS2_EXPECTED_XB_MIN = 0.155
-PASS2_EXPECTED_XB_MAX = 0.204
-
-PASS2_EXPECTED_Q2_MIN = 1.456
-PASS2_EXPECTED_Q2_MAX = 1.912
-
-PASS2_EXPECTED_T_ABS_MIN = 0.15
-PASS2_EXPECTED_T_ABS_MAX = 0.25
-
 CLAS12_EBEAM = 10.604
+
+CLAS6_TARGETS = [
+    # label, xB, Q2, |t|
+    ("26",  0.185, 1.630, 0.200),
+    ("27",  0.185, 1.630, 0.260),
+    ("28",  0.185, 1.630, 0.340),
+    ("29",  0.185, 1.630, 0.450),
+    ("52",  0.245, 2.120, 0.340),
+    ("53",  0.245, 2.120, 0.450),
+    ("64",  0.275, 2.350, 0.340),
+    ("86",  0.335, 2.780, 0.340),
+    ("108", 0.451, 3.630, 0.340),
+]
 
 
 # -----------------------------------------------------------------------------
@@ -179,7 +165,6 @@ DEFAULT_PASS2_BIN_TO_BIN_SYS_FRAC = 0.15
 DEFAULT_PASS1_NORM_SYS_FRAC = 0.31
 
 DEFAULT_CLAS6_DATASET_ID = 98
-
 DEFAULT_OUTPUT_DIR = "output/clas6_cross_check"
 
 
@@ -191,7 +176,7 @@ PASS2_COMBINED_DISPLAY_LABEL = "pass-2 10.6 GeV"
 PASS2_COMBINED_CSV_PERIOD = "10.6 GeV"
 
 PASS1_DISPLAY_LABEL = "pass-1 Fa18"
-CLAS6_DISPLAY_LABEL = "CLAS6"
+CLAS6_DISPLAY_LABEL = "CLAS6 corrected to pass-2"
 
 PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD = {
     "Sp18 Inb": "Sp18 Inb",
@@ -274,6 +259,24 @@ class KinematicAverages:
     t_abs: float
     weight_period: str
     n_points: int
+
+
+@dataclass
+class TargetSpec:
+    label: str
+    xB: float
+    Q2: float
+    t_abs: float
+
+
+@dataclass
+class BinChoice:
+    bin_name: int
+    xB: float
+    Q2: float
+    t_abs: float
+    distance: float
+    n_rows: int
 
 
 # -----------------------------------------------------------------------------
@@ -396,10 +399,6 @@ def require_columns(df: pd.DataFrame, columns: Iterable[str], context: str) -> N
     # endif
 
 
-def value_close(a: float, b: float, tolerance: float = 1.0e-6) -> bool:
-    return abs(float(a) - float(b)) <= tolerance
-
-
 # -----------------------------------------------------------------------------
 # CSV column helpers.
 # -----------------------------------------------------------------------------
@@ -439,9 +438,7 @@ def import_km15():
     try:
         from gepard.fits import th_KM15
     except ImportError as exc:
-        raise RuntimeError(
-            "Could not import th_KM15 from gepard.fits."
-        ) from exc
+        raise RuntimeError("Could not import th_KM15 from gepard.fits.") from exc
     # endtry
 
     return th_KM15
@@ -465,13 +462,6 @@ def make_gepard_xs_point(
     phi_deg_trento: float,
     ebeam: float,
 ):
-    """
-    Build a Gepard DataPoint for a fixed-target unpolarized cross section.
-
-    We construct the point in Trento phi and then call to_conventions(), since
-    Gepard internally evaluates in BMK convention.
-    """
-
     pt = g.DataPoint(
         xB=float(xB),
         Q2=float(Q2),
@@ -511,44 +501,45 @@ def km15_xs(
         ebeam=ebeam,
     )
 
-    prediction = th_km15.predict(pt)
-
-    return float(prediction)
+    return float(th_km15.predict(pt))
 
 
-def km15_transfer_factor(
+def km15_transfer_factor_clas6_to_clas12(
     g,
     th_km15,
     phi_deg_trento: float,
-    source_kin: KinematicPoint,
-    source_ebeam: float,
-    target_kin: KinematicPoint,
-    target_ebeam: float,
+    clas6_kin: KinematicPoint,
+    clas6_ebeam: float,
+    clas12_kin: KinematicPoint,
+    clas12_ebeam: float,
 ) -> float:
     """
-    Transfer source CLAS12 data to target CLAS6 kinematics:
+    Transfer CLAS6 data to CLAS12/pass-2 kinematics:
 
-      C(phi) = KM15(target CLAS6 kinematics) / KM15(source CLAS12 kinematics)
+      C(phi) =
+        KM15(CLAS12 kinematics, 10.604 GeV)
+        /
+        KM15(CLAS6 kinematics, 5.75 GeV)
     """
 
     numerator = km15_xs(
         g=g,
         th_km15=th_km15,
-        xB=target_kin.xB,
-        Q2=target_kin.Q2,
-        t_abs=target_kin.t_abs,
+        xB=clas12_kin.xB,
+        Q2=clas12_kin.Q2,
+        t_abs=clas12_kin.t_abs,
         phi_deg_trento=phi_deg_trento,
-        ebeam=target_ebeam,
+        ebeam=clas12_ebeam,
     )
 
     denominator = km15_xs(
         g=g,
         th_km15=th_km15,
-        xB=source_kin.xB,
-        Q2=source_kin.Q2,
-        t_abs=source_kin.t_abs,
+        xB=clas6_kin.xB,
+        Q2=clas6_kin.Q2,
+        t_abs=clas6_kin.t_abs,
         phi_deg_trento=phi_deg_trento,
-        ebeam=source_ebeam,
+        ebeam=clas6_ebeam,
     )
 
     if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator == 0.0:
@@ -558,26 +549,26 @@ def km15_transfer_factor(
     return numerator / denominator
 
 
-def apply_model_correction(
+def apply_model_correction_to_clas6(
     raw_points: List[DataPoint],
     g,
     th_km15,
-    source_kin: KinematicPoint,
-    source_ebeam: float,
-    target_kin: KinematicPoint,
-    target_ebeam: float,
+    clas6_kin: KinematicPoint,
+    clas6_ebeam: float,
+    clas12_kin: KinematicPoint,
+    clas12_ebeam: float,
 ) -> List[DataPoint]:
     corrected_points: List[DataPoint] = []
 
     for point in raw_points:
-        corr = km15_transfer_factor(
+        corr = km15_transfer_factor_clas6_to_clas12(
             g=g,
             th_km15=th_km15,
             phi_deg_trento=point.phi,
-            source_kin=source_kin,
-            source_ebeam=source_ebeam,
-            target_kin=target_kin,
-            target_ebeam=target_ebeam,
+            clas6_kin=clas6_kin,
+            clas6_ebeam=clas6_ebeam,
+            clas12_kin=clas12_kin,
+            clas12_ebeam=clas12_ebeam,
         )
 
         if not np.isfinite(corr):
@@ -618,10 +609,6 @@ def convert_gepard_phi_to_degrees(pt, phi_convention: str) -> float:
       phi_Trento = pi - phi_BMK
 
     modulo 2pi.
-
-    The conversion is applied only when:
-      --clas6-phi-convention trento
-    and the stored point reports frame='Trento'.
     """
 
     phi_raw = get_attr_any(pt, ["phi"])
@@ -712,55 +699,20 @@ def clas6_point_from_gepard(
     return kin, data
 
 
-def load_clas6_points_for_target(
+def load_all_clas6_points(
     g,
     dataset_id: int,
     clas6_scale: float,
     phi_convention: str,
-    target_xB: float,
-    target_Q2: float,
-    target_t_abs: float,
-    tolerance_xB: float,
-    tolerance_Q2: float,
-    tolerance_t: float,
-) -> Tuple[KinematicPoint, List[DataPoint], int, int]:
+) -> List[Tuple[KinematicPoint, DataPoint]]:
     if dataset_id not in g.dset:
-        raise RuntimeError(
-            f"Gepard dataset id {dataset_id} is not available in g.dset."
-        )
+        raise RuntimeError(f"Gepard dataset id {dataset_id} is not available in g.dset.")
     # endif
 
     dataset = g.dset[dataset_id]
-
-    selected_points: List[Tuple[KinematicPoint, DataPoint]] = []
-    n_raw_matching_kinematics = 0
-    n_zero_placeholders_removed = 0
+    points: List[Tuple[KinematicPoint, DataPoint]] = []
 
     for pt in dataset:
-        xB = float(get_attr_any(pt, ["xB", "xb"]))
-        Q2 = float(get_attr_any(pt, ["Q2", "q2"]))
-        t = float(get_attr_any(pt, ["t"]))
-
-        if not (
-            abs(xB - target_xB) <= tolerance_xB
-            and abs(Q2 - target_Q2) <= tolerance_Q2
-            and abs(abs(t) - target_t_abs) <= tolerance_t
-        ):
-            continue
-        # endif
-
-        n_raw_matching_kinematics += 1
-
-        val = float(get_attr_any(pt, ["val", "value"], default=math.nan))
-        stat = get_attr_any(pt, ["errstat", "err_stat", "stat"], default=math.nan)
-        sys = get_attr_any(pt, ["errsyst", "errsys", "err_syst", "sys"], default=math.nan)
-        err = get_attr_any(pt, ["err"], default=math.nan)
-
-        if is_zero_placeholder(val, stat, sys, err):
-            n_zero_placeholders_removed += 1
-            continue
-        # endif
-
         converted = clas6_point_from_gepard(
             pt=pt,
             clas6_scale=clas6_scale,
@@ -771,83 +723,100 @@ def load_clas6_points_for_target(
             continue
         # endif
 
-        selected_points.append(converted)
+        points.append(converted)
     # endfor
 
-    if len(selected_points) == 0:
-        raise RuntimeError(
-            "No nonzero CLAS6 points were selected from Gepard for target:\n"
-            f"  xB={target_xB}, Q2={target_Q2}, |t|={target_t_abs}\n"
-            f"  dataset id={dataset_id}"
-        )
-    # endif
+    return points
 
-    kin = KinematicPoint(
-        xB=float(np.mean([item[0].xB for item in selected_points])),
-        Q2=float(np.mean([item[0].Q2 for item in selected_points])),
-        t_abs=float(np.mean([item[0].t_abs for item in selected_points])),
+
+def group_clas6_points(
+    clas6_points: List[Tuple[KinematicPoint, DataPoint]],
+    round_digits: int,
+) -> Dict[Tuple[float, float, float], List[Tuple[KinematicPoint, DataPoint]]]:
+    groups: Dict[Tuple[float, float, float], List[Tuple[KinematicPoint, DataPoint]]] = {}
+
+    for kin, point in clas6_points:
+        key = (
+            round(kin.xB, round_digits),
+            round(kin.Q2, round_digits),
+            round(kin.t_abs, round_digits),
+        )
+
+        if key not in groups:
+            groups[key] = []
+        # endif
+
+        groups[key].append((kin, point))
+    # endfor
+
+    return groups
+
+
+def mean_kinematics_for_group(group: List[Tuple[KinematicPoint, DataPoint]]) -> KinematicPoint:
+    return KinematicPoint(
+        xB=float(np.mean([item[0].xB for item in group])),
+        Q2=float(np.mean([item[0].Q2 for item in group])),
+        t_abs=float(np.mean([item[0].t_abs for item in group])),
     )
 
-    points = [item[1] for item in selected_points]
-    points.sort(key=lambda p: p.phi)
 
-    return kin, points, n_raw_matching_kinematics, n_zero_placeholders_removed
-
-
-# -----------------------------------------------------------------------------
-# CLAS12 pass-2 selection and averages.
-# -----------------------------------------------------------------------------
-
-def select_bin_by_name(df: pd.DataFrame, bin_name: int) -> pd.DataFrame:
-    selected = df.loc[pd.to_numeric(df["Bin Name"], errors="coerce") == int(bin_name)].copy()
-    selected = selected.sort_values(["phimin", "phimax"]).copy()
-
-    if len(selected) == 0:
-        raise RuntimeError(f"Could not find Bin Name {bin_name} in CSV.")
-    # endif
-
-    return selected
+def scaled_kinematic_distance(
+    a: KinematicPoint,
+    b: KinematicPoint,
+    xB_scale: float,
+    Q2_scale: float,
+    t_scale: float,
+) -> float:
+    return math.sqrt(
+        ((a.xB - b.xB) / xB_scale) ** 2
+        + ((a.Q2 - b.Q2) / Q2_scale) ** 2
+        + ((a.t_abs - b.t_abs) / t_scale) ** 2
+    )
 
 
-def validate_pass2_bin_edges(selected: pd.DataFrame, tolerance: float = 1.0e-6) -> None:
-    first = selected.iloc[0]
+def select_nearest_clas6_group(
+    groups: Dict[Tuple[float, float, float], List[Tuple[KinematicPoint, DataPoint]]],
+    target: TargetSpec,
+    xB_scale: float,
+    Q2_scale: float,
+    t_scale: float,
+) -> Tuple[KinematicPoint, List[DataPoint], float]:
+    target_kin = KinematicPoint(xB=target.xB, Q2=target.Q2, t_abs=target.t_abs)
 
-    xBmin = parse_scalar_from_cell(first["xBmin"])
-    xBmax = parse_scalar_from_cell(first["xBmax"])
-    Q2min = parse_scalar_from_cell(first["Q2min"])
-    Q2max = parse_scalar_from_cell(first["Q2max"])
-    tmin = parse_scalar_from_cell(first["t_abs_min"])
-    tmax = parse_scalar_from_cell(first["t_abs_max"])
+    best_key = None
+    best_distance = math.inf
+    best_kin = None
 
-    checks = [
-        ("xBmin", xBmin, PASS2_EXPECTED_XB_MIN),
-        ("xBmax", xBmax, PASS2_EXPECTED_XB_MAX),
-        ("Q2min", Q2min, PASS2_EXPECTED_Q2_MIN),
-        ("Q2max", Q2max, PASS2_EXPECTED_Q2_MAX),
-        ("t_abs_min", tmin, PASS2_EXPECTED_T_ABS_MIN),
-        ("t_abs_max", tmax, PASS2_EXPECTED_T_ABS_MAX),
-    ]
+    for key, group in groups.items():
+        kin = mean_kinematics_for_group(group)
+        distance = scaled_kinematic_distance(
+            a=kin,
+            b=target_kin,
+            xB_scale=xB_scale,
+            Q2_scale=Q2_scale,
+            t_scale=t_scale,
+        )
 
-    failed = []
-
-    for name, actual, expected in checks:
-        if not value_close(actual, expected, tolerance=tolerance):
-            failed.append((name, actual, expected))
+        if distance < best_distance:
+            best_key = key
+            best_distance = distance
+            best_kin = kin
         # endif
     # endfor
 
-    if failed:
-        message = [
-            f"Selected Bin Name {PASS2_BIN_NAME} does not have the expected bin edges."
-        ]
-
-        for name, actual, expected in failed:
-            message.append(f"  {name}: actual={actual}, expected={expected}")
-        # endfor
-
-        raise RuntimeError("\n".join(message))
+    if best_key is None or best_kin is None:
+        raise RuntimeError("No CLAS6 groups were available after loading Gepard data.")
     # endif
 
+    points = [item[1] for item in groups[best_key]]
+    points.sort(key=lambda p: p.phi)
+
+    return best_kin, points, best_distance
+
+
+# -----------------------------------------------------------------------------
+# CLAS12 pass-2 bin matching.
+# -----------------------------------------------------------------------------
 
 def compute_weighted_kinematic_averages(
     selected: pd.DataFrame,
@@ -979,8 +948,78 @@ def compute_weighted_kinematic_averages(
     )
 
 
+def select_pass2_bin_nearest_to_kinematics(
+    pass2_df: pd.DataFrame,
+    target_kin: KinematicPoint,
+    xB_scale: float,
+    Q2_scale: float,
+    t_scale: float,
+    avg_period: str,
+) -> Tuple[pd.DataFrame, BinChoice]:
+    best_choice: Optional[BinChoice] = None
+    best_rows: Optional[pd.DataFrame] = None
+
+    bin_names = sorted(
+        int(x)
+        for x in pd.to_numeric(pass2_df["Bin Name"], errors="coerce").dropna().unique()
+    )
+
+    bin_numeric_all = pd.to_numeric(pass2_df["Bin Name"], errors="coerce")
+
+    for bin_name in bin_names:
+        rows = pass2_df.loc[bin_numeric_all == bin_name].copy()
+
+        if len(rows) == 0:
+            continue
+        # endif
+
+        avg = compute_weighted_kinematic_averages(
+            selected=rows,
+            csv_period=avg_period,
+        )
+
+        if not (np.isfinite(avg.xB) and np.isfinite(avg.Q2) and np.isfinite(avg.t_abs)):
+            continue
+        # endif
+
+        kin = KinematicPoint(xB=avg.xB, Q2=avg.Q2, t_abs=avg.t_abs)
+
+        distance = scaled_kinematic_distance(
+            a=kin,
+            b=target_kin,
+            xB_scale=xB_scale,
+            Q2_scale=Q2_scale,
+            t_scale=t_scale,
+        )
+
+        if best_choice is None or distance < best_choice.distance:
+            best_choice = BinChoice(
+                bin_name=bin_name,
+                xB=avg.xB,
+                Q2=avg.Q2,
+                t_abs=avg.t_abs,
+                distance=distance,
+                n_rows=len(rows),
+            )
+            best_rows = rows.sort_values(["phimin", "phimax"]).copy()
+        # endif
+    # endfor
+
+    if best_choice is None or best_rows is None:
+        raise RuntimeError("Could not select a nearest pass-2 CLAS12 bin.")
+    # endif
+
+    return best_rows, best_choice
+
+
+def select_bin_by_name(df: pd.DataFrame, bin_name: int) -> pd.DataFrame:
+    selected = df.loc[pd.to_numeric(df["Bin Name"], errors="coerce") == int(bin_name)].copy()
+    selected = selected.sort_values(["phimin", "phimax"]).copy()
+    return selected
+
+
 # -----------------------------------------------------------------------------
-# CLAS12 point extraction.
+# Pass-2 and pass-1 extraction.
 # -----------------------------------------------------------------------------
 
 def pass2_points_for_period(
@@ -1139,11 +1178,21 @@ def pass1_points(
 
 
 # -----------------------------------------------------------------------------
-# Interpolation, ratios, chi2.
+# Non-extrapolating interpolation, ratios, chi2.
 # -----------------------------------------------------------------------------
 
-def periodic_interp(phi_query: float, phi_values: np.ndarray, y_values: np.ndarray) -> float:
-    phi_mod = phi_query % 360.0
+def bounded_linear_interp(
+    phi_query: float,
+    phi_values: np.ndarray,
+    y_values: np.ndarray,
+) -> float:
+    """
+    Linear interpolation only inside the actual reference phi range.
+
+    This intentionally does not use periodic extension. It prevents ratio points
+    from being made where CLAS6 has no actual nearby data and the old script
+    would have extrapolated across the 0/360 boundary.
+    """
 
     phi_base = np.array(phi_values, dtype=float)
     y_base = np.array(y_values, dtype=float)
@@ -1156,20 +1205,27 @@ def periodic_interp(phi_query: float, phi_values: np.ndarray, y_values: np.ndarr
     phi_base = phi_base[order]
     y_base = y_base[order]
 
-    phi_ext = np.concatenate([phi_base - 360.0, phi_base, phi_base + 360.0])
-    y_ext = np.concatenate([y_base, y_base, y_base])
+    phi_min = float(np.nanmin(phi_base))
+    phi_max = float(np.nanmax(phi_base))
 
-    return float(np.interp(phi_mod, phi_ext, y_ext))
+    if phi_query < phi_min or phi_query > phi_max:
+        return math.nan
+    # endif
+
+    return float(np.interp(phi_query, phi_base, y_base))
 
 
-def interpolate_reference_point(phi_query: float, reference_points: List[DataPoint]) -> DataPoint:
+def interpolate_reference_point_bounded(
+    phi_query: float,
+    reference_points: List[DataPoint],
+) -> DataPoint:
     phi, sigma, err_low, err_high = points_to_arrays(reference_points)
 
     return DataPoint(
         phi=phi_query,
-        sigma=periodic_interp(phi_query, phi, sigma),
-        err_low=periodic_interp(phi_query, phi, err_low),
-        err_high=periodic_interp(phi_query, phi, err_high),
+        sigma=bounded_linear_interp(phi_query, phi, sigma),
+        err_low=bounded_linear_interp(phi_query, phi, err_low),
+        err_high=bounded_linear_interp(phi_query, phi, err_high),
     )
 
 
@@ -1180,12 +1236,17 @@ def ratio_to_reference(
     ratios: List[DataPoint] = []
 
     for num in numerator_points:
-        ref = interpolate_reference_point(
+        ref = interpolate_reference_point_bounded(
             phi_query=num.phi,
             reference_points=reference_points,
         )
 
-        if not np.isfinite(ref.sigma) or ref.sigma == 0.0:
+        if (
+            not np.isfinite(ref.sigma)
+            or not np.isfinite(ref.err_low)
+            or not np.isfinite(ref.err_high)
+            or ref.sigma == 0.0
+        ):
             continue
         # endif
 
@@ -1223,7 +1284,7 @@ def chi2_ndf_to_reference(
     ndf = 0
 
     for comp in comparison_points:
-        ref = interpolate_reference_point(
+        ref = interpolate_reference_point_bounded(
             phi_query=comp.phi,
             reference_points=reference_points,
         )
@@ -1349,10 +1410,11 @@ def auto_ratio_ylim(ax, points_by_label: Dict[str, List[DataPoint]]) -> None:
     ax.set_ylim(1.0 - 1.10 * span, 1.0 + 1.10 * span)
 
 
-def make_plot(
-    clas6_kin: KinematicPoint,
-    clas6_points: List[DataPoint],
-    pass2_avg: KinematicAverages,
+def make_one_plot(
+    target: TargetSpec,
+    raw_clas6_kin: KinematicPoint,
+    corrected_clas6_points: List[DataPoint],
+    pass2_choice: BinChoice,
     points_by_label: Dict[str, List[DataPoint]],
     ratios_by_label: Dict[str, List[DataPoint]],
     chi2_by_label: Dict[str, Tuple[float, int, float]],
@@ -1370,17 +1432,19 @@ def make_plot(
 
     fig.suptitle(
         (
-            f"CLAS6 / CLAS12 DVCS cross-section cross-check: note label {COMPARISON_LABEL}\n"
-            rf"CLAS6: $\langle x_B\rangle={clas6_kin.xB:.3f}$, "
-            rf"$\langle Q^2\rangle={clas6_kin.Q2:.3f}~{{\rm GeV}}^2$, "
-            rf"$\langle |t|\rangle={clas6_kin.t_abs:.3f}~{{\rm GeV}}^2$"
+            f"CLAS6 / CLAS12 DVCS cross-section cross-check: note label {target.label}\n"
+            rf"CLAS6 raw: $\langle x_B\rangle={raw_clas6_kin.xB:.3f}$, "
+            rf"$\langle Q^2\rangle={raw_clas6_kin.Q2:.3f}~{{\rm GeV}}^2$, "
+            rf"$\langle |t|\rangle={raw_clas6_kin.t_abs:.3f}~{{\rm GeV}}^2$, "
+            rf"$E={CLAS6_EBEAM:.2f}~{{\rm GeV}}$"
             "\n"
-            rf"pass-2 bin {PASS2_BIN_NAME}: "
-            rf"$\langle x_B\rangle={pass2_avg.xB:.3f}$, "
-            rf"$\langle Q^2\rangle={pass2_avg.Q2:.3f}~{{\rm GeV}}^2$, "
-            rf"$\langle |t|\rangle={pass2_avg.t_abs:.3f}~{{\rm GeV}}^2$"
+            rf"pass-2 bin {pass2_choice.bin_name}: "
+            rf"$\langle x_B\rangle={pass2_choice.xB:.3f}$, "
+            rf"$\langle Q^2\rangle={pass2_choice.Q2:.3f}~{{\rm GeV}}^2$, "
+            rf"$\langle |t|\rangle={pass2_choice.t_abs:.3f}~{{\rm GeV}}^2$, "
+            rf"$E={CLAS12_EBEAM:.3f}~{{\rm GeV}}$"
             "\n"
-            r"CLAS12 points corrected to CLAS6 kinematics with KM15"
+            r"CLAS6 points corrected to selected pass-2 kinematics with KM15"
         ),
         fontsize=13,
     )
@@ -1390,10 +1454,9 @@ def make_plot(
     bottom_left = axes[1, 0]
     bottom_right = axes[1, 1]
 
-    # Top-left.
     plot_dataset(
         ax=top_left,
-        points=clas6_points,
+        points=corrected_clas6_points,
         label=CLAS6_DISPLAY_LABEL,
         legend_label=CLAS6_DISPLAY_LABEL,
     )
@@ -1415,7 +1478,7 @@ def make_plot(
     # endfor
 
     top_left.set_ylabel(rf"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [{y_units}]")
-    top_left.set_title("Cross sections: corrected pass-2, corrected pass-1, and CLAS6")
+    top_left.set_title("Cross sections: pass-2, pass-1, and corrected CLAS6")
     top_left.grid(True, alpha=0.25)
     top_left.legend(fontsize=8, frameon=True)
 
@@ -1423,7 +1486,6 @@ def make_plot(
         top_left.set_yscale("log")
     # endif
 
-    # Top-right.
     top_ratios = {}
 
     for label in TOP_RATIO_SERIES:
@@ -1431,11 +1493,12 @@ def make_plot(
             continue
         # endif
 
-        top_ratios[label] = ratios_by_label[label]
+        ratios = ratios_by_label[label]
+        top_ratios[label] = ratios
 
         plot_dataset(
             ax=top_right,
-            points=ratios_by_label[label],
+            points=ratios,
             label=label,
             legend_label=format_label_with_chi2(
                 label,
@@ -1445,16 +1508,15 @@ def make_plot(
     # endfor
 
     top_right.axhline(1.0, color="0.35", linewidth=1.0, linestyle="--", zorder=0)
-    top_right.set_ylabel(r"corrected pass-2 CLAS12 / CLAS6")
-    top_right.set_title("Ratio to CLAS6: corrected pass-2 combined")
+    top_right.set_ylabel(r"pass-2 CLAS12 / corrected CLAS6")
+    top_right.set_title("Ratio to corrected CLAS6: pass-2 combined")
     top_right.grid(True, alpha=0.25)
     top_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(top_right, top_ratios)
 
-    # Bottom-left.
     plot_dataset(
         ax=bottom_left,
-        points=clas6_points,
+        points=corrected_clas6_points,
         label=CLAS6_DISPLAY_LABEL,
         legend_label=CLAS6_DISPLAY_LABEL,
     )
@@ -1473,7 +1535,7 @@ def make_plot(
 
     bottom_left.set_xlabel(r"$\phi$ [deg]")
     bottom_left.set_ylabel(rf"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [{y_units}]")
-    bottom_left.set_title("Cross sections: corrected individual pass-2 periods and CLAS6")
+    bottom_left.set_title("Cross sections: individual pass-2 periods and corrected CLAS6")
     bottom_left.grid(True, alpha=0.25)
     bottom_left.legend(fontsize=8, frameon=True)
 
@@ -1481,7 +1543,6 @@ def make_plot(
         bottom_left.set_yscale("log")
     # endif
 
-    # Bottom-right.
     bottom_ratios = {}
 
     for label in BOTTOM_RATIO_SERIES:
@@ -1501,8 +1562,8 @@ def make_plot(
 
     bottom_right.axhline(1.0, color="0.35", linewidth=1.0, linestyle="--", zorder=0)
     bottom_right.set_xlabel(r"$\phi$ [deg]")
-    bottom_right.set_ylabel(r"corrected pass-2 CLAS12 / CLAS6")
-    bottom_right.set_title("Ratio to CLAS6: corrected individual pass-2 periods")
+    bottom_right.set_ylabel(r"pass-2 CLAS12 / corrected CLAS6")
+    bottom_right.set_title("Ratio to corrected CLAS6: individual pass-2 periods")
     bottom_right.grid(True, alpha=0.25)
     bottom_right.legend(fontsize=8, frameon=True)
     auto_ratio_ylim(bottom_right, bottom_ratios)
@@ -1511,7 +1572,7 @@ def make_plot(
 
     output_path = os.path.join(
         output_dir,
-        f"clas6_cross_check_{COMPARISON_LABEL}_p2bin{PASS2_BIN_NAME}.png",
+        f"clas6_cross_check_{target.label}_p2bin{pass2_choice.bin_name}.png",
     )
 
     fig.savefig(output_path, dpi=200)
@@ -1559,12 +1620,35 @@ def print_point_summary(label: str, points: List[DataPoint]) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Main.
+# Main workflow.
 # -----------------------------------------------------------------------------
+
+def parse_targets(selection: str) -> List[TargetSpec]:
+    all_targets = [
+        TargetSpec(label=label, xB=xB, Q2=Q2, t_abs=t_abs)
+        for label, xB, Q2, t_abs in CLAS6_TARGETS
+    ]
+
+    if selection.strip().lower() in {"all", ""}:
+        return all_targets
+    # endif
+
+    wanted = {x.strip() for x in selection.split(",") if x.strip() != ""}
+    selected = [t for t in all_targets if t.label in wanted]
+
+    if len(selected) == 0:
+        raise ValueError(
+            f"No valid targets selected from --targets={selection!r}. "
+            f"Available labels: {', '.join(t.label for t in all_targets)}"
+        )
+    # endif
+
+    return selected
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare pass-2 CLAS12 DVCS cross sections to pass-1 and CLAS6 for one hard-coded bin."
+        description="Compare pass-2 CLAS12 DVCS cross sections to pass-1 and CLAS6."
     )
 
     parser.add_argument(
@@ -1589,6 +1673,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_CLAS6_DATASET_ID,
         help=f"Gepard dataset id for CLAS6 unpolarized cross sections. Default: {DEFAULT_CLAS6_DATASET_ID}.",
+    )
+
+    parser.add_argument(
+        "--targets",
+        default="all",
+        help="Comma-separated target labels, e.g. '26,27,52', or 'all'. Default: all.",
     )
 
     parser.add_argument(
@@ -1651,6 +1741,13 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--clas6-round-digits",
+        type=int,
+        default=6,
+        help="Rounding digits used to group CLAS6 Gepard points by xB,Q2,|t|. Default: 6.",
+    )
+
+    parser.add_argument(
         "--clas6-phi-convention",
         choices=["trento", "gepard"],
         default="trento",
@@ -1661,24 +1758,24 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--clas6-tolerance-xB",
+        "--match-xB-scale",
         type=float,
-        default=1.0e-6,
-        help="Tolerance for selecting the CLAS6 xB group. Default: 1e-6.",
+        default=0.05,
+        help="Scale for xB in nearest-bin matching distance. Default: 0.05.",
     )
 
     parser.add_argument(
-        "--clas6-tolerance-Q2",
+        "--match-Q2-scale",
         type=float,
-        default=1.0e-6,
-        help="Tolerance for selecting the CLAS6 Q2 group. Default: 1e-6.",
+        default=0.50,
+        help="Scale for Q2 in nearest-bin matching distance. Default: 0.50.",
     )
 
     parser.add_argument(
-        "--clas6-tolerance-t",
+        "--match-t-scale",
         type=float,
-        default=1.0e-6,
-        help="Tolerance for selecting the CLAS6 |t| group. Default: 1e-6.",
+        default=0.10,
+        help="Scale for |t| in nearest-bin matching distance. Default: 0.10.",
     )
 
     parser.add_argument(
@@ -1690,7 +1787,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-km15-correction",
         action="store_true",
-        help="Disable KM15 correction and plot raw CLAS12 points.",
+        help="Disable KM15 correction and plot raw CLAS6 points.",
     )
 
     return parser.parse_args()
@@ -1719,6 +1816,8 @@ def main() -> None:
         raise ValueError("--pass1-norm-sys-frac must be non-negative.")
     # endif
 
+    targets = parse_targets(args.targets)
+
     g = import_gepard()
     th_km15 = import_km15()
 
@@ -1742,32 +1841,7 @@ def main() -> None:
     pass2_df = pd.read_csv(args.pass2_csv)
     require_columns(pass2_df, pass2_required, context="pass-2")
 
-    pass2_selected = select_bin_by_name(
-        df=pass2_df,
-        bin_name=PASS2_BIN_NAME,
-    )
-
-    validate_pass2_bin_edges(pass2_selected)
-
-    pass2_avg = compute_weighted_kinematic_averages(
-        selected=pass2_selected,
-        csv_period=args.avg_period,
-    )
-
-    pass2_source_kin = KinematicPoint(
-        xB=pass2_avg.xB,
-        Q2=pass2_avg.Q2,
-        t_abs=pass2_avg.t_abs,
-    )
-
-    clas6_target_kin = KinematicPoint(
-        xB=CLAS6_TARGET_XB,
-        Q2=CLAS6_TARGET_Q2,
-        t_abs=CLAS6_TARGET_T_ABS,
-    )
-
     pass1_df: Optional[pd.DataFrame] = None
-    pass1_selected: Optional[pd.DataFrame] = None
 
     if not args.no_pass1:
         if not os.path.exists(args.pass1_csv):
@@ -1789,164 +1863,180 @@ def main() -> None:
 
             pass1_df = pd.read_csv(args.pass1_csv)
             require_columns(pass1_df, pass1_required, context="pass-1")
-
-            pass1_selected = select_bin_by_name(
-                df=pass1_df,
-                bin_name=PASS2_BIN_NAME,
-            )
         # endif
     # endif
 
     print("Loading CLAS6 data from Gepard...")
     print(f"  dataset id = {args.clas6_dataset_id}")
-    print("  hard-coded CLAS6 target:")
-    print(f"    xB={CLAS6_TARGET_XB:.6f}")
-    print(f"    Q2={CLAS6_TARGET_Q2:.6f}")
-    print(f"    |t|={CLAS6_TARGET_T_ABS:.6f}")
-    print(f"    Ebeam={CLAS6_EBEAM:.6f} GeV")
 
-    (
-        clas6_kin,
-        clas6_points,
-        n_raw_matching_kinematics,
-        n_zero_placeholders_removed,
-    ) = load_clas6_points_for_target(
+    clas6_all_points = load_all_clas6_points(
         g=g,
         dataset_id=args.clas6_dataset_id,
         clas6_scale=args.clas6_scale,
         phi_convention=args.clas6_phi_convention,
-        target_xB=CLAS6_TARGET_XB,
-        target_Q2=CLAS6_TARGET_Q2,
-        target_t_abs=CLAS6_TARGET_T_ABS,
-        tolerance_xB=args.clas6_tolerance_xB,
-        tolerance_Q2=args.clas6_tolerance_Q2,
-        tolerance_t=args.clas6_tolerance_t,
     )
 
-    print("Selected CLAS6 group:")
-    print(f"  raw matching kinematic rows = {n_raw_matching_kinematics}")
-    print(f"  zero placeholders removed   = {n_zero_placeholders_removed}")
-    print(f"  plotted CLAS6 points        = {len(clas6_points)}")
-    print(f"  <xB>                        = {clas6_kin.xB:.6f}")
-    print(f"  <Q2>                        = {clas6_kin.Q2:.6f} GeV^2")
-    print(f"  <|t|>                       = {clas6_kin.t_abs:.6f} GeV^2")
+    clas6_groups = group_clas6_points(
+        clas6_points=clas6_all_points,
+        round_digits=args.clas6_round_digits,
+    )
 
-    print()
-    print("Selected pass-2 CLAS12 bin:")
-    print(f"  Bin Name                    = {PASS2_BIN_NAME}")
-    print(f"  rows                        = {len(pass2_selected)}")
-    print(f"  expected xB bin             = [{PASS2_EXPECTED_XB_MIN}, {PASS2_EXPECTED_XB_MAX}]")
-    print(f"  expected Q2 bin             = [{PASS2_EXPECTED_Q2_MIN}, {PASS2_EXPECTED_Q2_MAX}] GeV^2")
-    print(f"  expected |t| bin            = [{PASS2_EXPECTED_T_ABS_MIN}, {PASS2_EXPECTED_T_ABS_MAX}] GeV^2")
-    print(f"  weighted <xB>               = {pass2_avg.xB:.6f}")
-    print(f"  weighted <Q2>               = {pass2_avg.Q2:.6f} GeV^2")
-    print(f"  weighted <|t|>              = {pass2_avg.t_abs:.6f} GeV^2")
-    print(f"  weighting period            = {pass2_avg.weight_period}")
-    print(f"  Ebeam                       = {CLAS12_EBEAM:.6f} GeV")
+    print(f"  loaded nonzero CLAS6 points = {len(clas6_all_points)}")
+    print(f"  grouped CLAS6 kinematic bins = {len(clas6_groups)}")
 
-    if pass1_selected is not None:
+    for target in targets:
         print()
-        print("Selected pass-1 CLAS12 bin:")
-        print(f"  Bin Name                    = {PASS2_BIN_NAME}")
-        print(f"  rows                        = {len(pass1_selected)}")
-    # endif
+        print("=" * 80)
+        print(f"Processing CLAS6 comparison target {target.label}")
+        print(
+            f"  requested CLAS6 target: "
+            f"xB={target.xB:.6f}, Q2={target.Q2:.6f}, |t|={target.t_abs:.6f}"
+        )
 
-    raw_points_by_label: Dict[str, List[DataPoint]] = {}
+        raw_clas6_kin, raw_clas6_points, clas6_distance = select_nearest_clas6_group(
+            groups=clas6_groups,
+            target=target,
+            xB_scale=args.match_xB_scale,
+            Q2_scale=args.match_Q2_scale,
+            t_scale=args.match_t_scale,
+        )
 
-    raw_points_by_label[PASS2_COMBINED_DISPLAY_LABEL] = pass2_points_for_period(
-        selected=pass2_selected,
-        csv_period=PASS2_COMBINED_CSV_PERIOD,
-        pass2_scale=args.pass2_scale,
-        include_pass2_estimated_sys=not args.no_clas12_estimated_sys,
-        pass2_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
-    )
+        print("  selected CLAS6 group:")
+        print(
+            f"    xB={raw_clas6_kin.xB:.6f}, "
+            f"Q2={raw_clas6_kin.Q2:.6f}, "
+            f"|t|={raw_clas6_kin.t_abs:.6f}"
+        )
+        print(f"    nonzero points={len(raw_clas6_points)}, scaled distance={clas6_distance:.6f}")
 
-    for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
-        raw_points_by_label[display_label] = pass2_points_for_period(
+        pass2_selected, pass2_choice = select_pass2_bin_nearest_to_kinematics(
+            pass2_df=pass2_df,
+            target_kin=raw_clas6_kin,
+            xB_scale=args.match_xB_scale,
+            Q2_scale=args.match_Q2_scale,
+            t_scale=args.match_t_scale,
+            avg_period=args.avg_period,
+        )
+
+        pass2_kin = KinematicPoint(
+            xB=pass2_choice.xB,
+            Q2=pass2_choice.Q2,
+            t_abs=pass2_choice.t_abs,
+        )
+
+        print("  selected pass-2 CLAS12 bin:")
+        print(f"    Bin Name={pass2_choice.bin_name}, rows={pass2_choice.n_rows}")
+        print(
+            f"    xB={pass2_choice.xB:.6f}, "
+            f"Q2={pass2_choice.Q2:.6f}, "
+            f"|t|={pass2_choice.t_abs:.6f}"
+        )
+        print(f"    scaled distance to CLAS6={pass2_choice.distance:.6f}")
+
+        if args.no_km15_correction:
+            corrected_clas6_points = raw_clas6_points
+        else:
+            corrected_clas6_points = apply_model_correction_to_clas6(
+                raw_points=raw_clas6_points,
+                g=g,
+                th_km15=th_km15,
+                clas6_kin=raw_clas6_kin,
+                clas6_ebeam=CLAS6_EBEAM,
+                clas12_kin=pass2_kin,
+                clas12_ebeam=CLAS12_EBEAM,
+            )
+        # endif
+
+        points_by_label: Dict[str, List[DataPoint]] = {}
+
+        points_by_label[PASS2_COMBINED_DISPLAY_LABEL] = pass2_points_for_period(
             selected=pass2_selected,
-            csv_period=csv_period,
+            csv_period=PASS2_COMBINED_CSV_PERIOD,
             pass2_scale=args.pass2_scale,
             include_pass2_estimated_sys=not args.no_clas12_estimated_sys,
             pass2_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
         )
-    # endfor
 
-    if pass1_selected is not None:
-        raw_points_by_label[PASS1_DISPLAY_LABEL] = pass1_points(
-            selected=pass1_selected,
-            pass1_scale=args.pass1_scale,
-            pass1_norm_sys_frac=args.pass1_norm_sys_frac,
-        )
-    # endif
-
-    if args.no_km15_correction:
-        points_by_label = raw_points_by_label
-    else:
-        points_by_label = {}
-
-        for label, points in raw_points_by_label.items():
-            points_by_label[label] = apply_model_correction(
-                raw_points=points,
-                g=g,
-                th_km15=th_km15,
-                source_kin=pass2_source_kin,
-                source_ebeam=CLAS12_EBEAM,
-                target_kin=clas6_target_kin,
-                target_ebeam=CLAS6_EBEAM,
+        for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
+            points_by_label[display_label] = pass2_points_for_period(
+                selected=pass2_selected,
+                csv_period=csv_period,
+                pass2_scale=args.pass2_scale,
+                include_pass2_estimated_sys=not args.no_clas12_estimated_sys,
+                pass2_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
             )
         # endfor
-    # endif
 
-    chi2_by_label = {
-        label: chi2_ndf_to_reference(
-            comparison_points=points,
-            reference_points=clas6_points,
-        )
-        for label, points in points_by_label.items()
-    }
+        if pass1_df is not None:
+            pass1_selected = select_bin_by_name(
+                df=pass1_df,
+                bin_name=pass2_choice.bin_name,
+            )
 
-    ratios_by_label = {
-        label: ratio_to_reference(
-            numerator_points=points,
-            reference_points=clas6_points,
-        )
-        for label, points in points_by_label.items()
-        if label != PASS1_DISPLAY_LABEL
-    }
+            if len(pass1_selected) > 0:
+                points_by_label[PASS1_DISPLAY_LABEL] = pass1_points(
+                    selected=pass1_selected,
+                    pass1_scale=args.pass1_scale,
+                    pass1_norm_sys_frac=args.pass1_norm_sys_frac,
+                )
 
-    print()
-    print("Dataset summaries:")
-    print_point_summary(CLAS6_DISPLAY_LABEL, clas6_points)
-
-    for label in TOP_CROSS_SECTION_SERIES + BOTTOM_CROSS_SECTION_SERIES:
-        if label in points_by_label:
-            print_point_summary(label, points_by_label[label])
+                print("  selected pass-1 CLAS12 bin:")
+                print(f"    Bin Name={pass2_choice.bin_name}, rows={len(pass1_selected)}")
+            else:
+                print("  pass-1 CLAS12 bin not found for selected pass-2 Bin Name.")
+            # endif
         # endif
+
+        chi2_by_label = {
+            label: chi2_ndf_to_reference(
+                comparison_points=points,
+                reference_points=corrected_clas6_points,
+            )
+            for label, points in points_by_label.items()
+        }
+
+        ratios_by_label = {
+            label: ratio_to_reference(
+                numerator_points=points,
+                reference_points=corrected_clas6_points,
+            )
+            for label, points in points_by_label.items()
+            if label != PASS1_DISPLAY_LABEL
+        }
+
+        print("  dataset summaries:")
+        print_point_summary(CLAS6_DISPLAY_LABEL, corrected_clas6_points)
+
+        for label in TOP_CROSS_SECTION_SERIES + BOTTOM_CROSS_SECTION_SERIES:
+            if label in points_by_label:
+                print_point_summary(label, points_by_label[label])
+            # endif
+        # endfor
+
+        print("  chi2/ndf against corrected CLAS6:")
+        for label, chi2_info in chi2_by_label.items():
+            chi2, ndf, chi2ndf = chi2_info
+
+            if ndf > 0 and np.isfinite(chi2ndf):
+                print(f"    {label:18s}: chi2={chi2:.4f}, ndf={ndf:d}, chi2/ndf={chi2ndf:.4f}")
+            else:
+                print(f"    {label:18s}: chi2/ndf=N/A")
+            # endif
+        # endfor
+
+        make_one_plot(
+            target=target,
+            raw_clas6_kin=raw_clas6_kin,
+            corrected_clas6_points=corrected_clas6_points,
+            pass2_choice=pass2_choice,
+            points_by_label=points_by_label,
+            ratios_by_label=ratios_by_label,
+            chi2_by_label=chi2_by_label,
+            output_dir=args.output_dir,
+            y_units=args.y_units,
+            use_log_cross_section=not args.linear_cross_section,
+        )
     # endfor
-
-    print()
-    print("Chi2/ndf against CLAS6:")
-    for label, chi2_info in chi2_by_label.items():
-        chi2, ndf, chi2ndf = chi2_info
-
-        if ndf > 0 and np.isfinite(chi2ndf):
-            print(f"  {label:18s}: chi2={chi2:.4f}, ndf={ndf:d}, chi2/ndf={chi2ndf:.4f}")
-        else:
-            print(f"  {label:18s}: chi2/ndf=N/A")
-        # endif
-    # endfor
-
-    make_plot(
-        clas6_kin=clas6_kin,
-        clas6_points=clas6_points,
-        pass2_avg=pass2_avg,
-        points_by_label=points_by_label,
-        ratios_by_label=ratios_by_label,
-        chi2_by_label=chi2_by_label,
-        output_dir=args.output_dir,
-        y_units=args.y_units,
-        use_log_cross_section=not args.linear_cross_section,
-    )
 
 
 if __name__ == "__main__":
