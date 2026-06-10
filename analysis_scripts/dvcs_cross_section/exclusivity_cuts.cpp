@@ -145,6 +145,8 @@ struct BranchBinder {
     double e_theta = 0.0;   bool has_e_theta = false;
     double e_phi = 0.0;     bool has_e_phi = false;
 
+    double p1_phi = 0.0;    bool has_p1_phi = false;
+
     double p2_p = 0.0;      bool has_p2_p = false;
     double p2_theta = 0.0;  bool has_p2_theta = false;
     double p2_phi = 0.0;    bool has_p2_phi = false;
@@ -181,6 +183,7 @@ struct BranchBinder {
         ena("e_p");
         ena("e_theta");
         ena("e_phi");
+        ena("p1_phi");
         ena("p2_p");
         ena("p2_theta");
         ena("p2_phi");
@@ -214,6 +217,7 @@ struct BranchBinder {
         bD("e_p",     &e_p,     has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
         bD("e_phi",   &e_phi,   has_e_phi);
+        bD("p1_phi",  &p1_phi,  has_p1_phi);
 
         bD("p2_p",     &p2_p,     has_p2_p);
         bD("p2_theta", &p2_theta, has_p2_theta);
@@ -335,14 +339,25 @@ static FilledHists fillStageHists(
         if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
         if (!(b.has_detector1 && b.has_detector2)) return false;
 
+        if (global_cuts_require_sector_phi(gcfg)) {
+            if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+                throw std::runtime_error("[exclusivity_cuts] FATAL: sector selection requires e_phi, p1_phi, p2_phi.");
+            }
+        }
+
         if (gcfg.enable_dvcsgen_ycol_cut) {
             if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
                   b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
-                std::ostringstream ss;
-                ss << "dvcsgen ycol cut enabled, but required branches are missing for period_label='"
-                   << period_label << "'. Missing one or more of: "
-                   << "e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.";
-                throw std::runtime_error(std::string("[exclusivity_cuts] FATAL: ") + ss.str());
+                throw std::runtime_error("[exclusivity_cuts] FATAL: dvcsgen ycol cut requires e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.");
+            }
+
+            if (global_cuts_require_sector_phi(gcfg)) {
+                return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                          b.detector1, b.detector2,
+                                          period_label,
+                                          b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                          b.p2_p, b.p2_theta, b.p2_phi,
+                                          gcfg);
             }
 
             return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
@@ -350,6 +365,13 @@ static FilledHists fillStageHists(
                                       period_label,
                                       b.e_p, b.e_theta, b.e_phi,
                                       b.p2_p, b.p2_theta, b.p2_phi,
+                                      gcfg);
+        }
+
+        if (global_cuts_require_sector_phi(gcfg)) {
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      b.e_phi, b.p1_phi, b.p2_phi,
                                       gcfg);
         }
 

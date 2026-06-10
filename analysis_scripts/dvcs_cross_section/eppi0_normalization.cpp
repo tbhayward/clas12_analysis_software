@@ -1045,48 +1045,55 @@ struct Branches {
     }
 };
 
-static bool passes_global_dispatch(const Branches& b, const PeriodTags& tags) {
-    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) {
-        return false;
-    }
-
-    if (b.has_runnum && is_excluded_run(b.runnum)) {
-        return false;
-    }
+static bool passes_global_dispatch(const Branches& b,
+                                   const PeriodTags& tags) {
+    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
+    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
 
     const GlobalCutConfig& cfg = default_global_cuts();
-
-    if (cfg.enable_dvcsgen_ycol_cut) {
-        if (!(b.has_detector1 && b.has_detector2 &&
-              b.has_e_p && b.has_e_theta && b.has_e_phi &&
-              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
-            fatal("[eppi0_norm] FATAL: missing branches required by global ycol/topology cuts.");
-        }
-
-        return passes_global_cuts(b.t1,
-                                  b.open_angle_ep2,
-                                  b.pTmiss,
-                                  b.detector1,
-                                  b.detector2,
-                                  tags.period_label,
-                                  b.e_p,
-                                  b.e_theta,
-                                  b.e_phi,
-                                  b.p2_p,
-                                  b.p2_theta,
-                                  b.p2_phi,
-                                  cfg);
-    }
 
     if (!(b.has_detector1 && b.has_detector2)) {
         fatal("[eppi0_norm] FATAL: missing detector1/detector2.");
     }
 
-    return passes_global_cuts(b.t1,
-                              b.open_angle_ep2,
-                              b.pTmiss,
-                              b.detector1,
-                              b.detector2,
+    if (global_cuts_require_sector_phi(cfg)) {
+        if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+            fatal("[eppi0_norm] FATAL: sector selection requires e_phi, p1_phi, p2_phi.");
+        }
+    }
+
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            fatal("[eppi0_norm] FATAL: missing branches required by global ycol cuts.");
+        }
+
+        if (global_cuts_require_sector_phi(cfg)) {
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      tags.period_label,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      cfg);
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  tags.period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  cfg);
+    }
+
+    if (global_cuts_require_sector_phi(cfg)) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  b.e_phi, b.p1_phi, b.p2_phi,
+                                  cfg);
+    }
+
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                              b.detector1, b.detector2,
                               cfg);
 }
 

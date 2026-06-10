@@ -40,6 +40,57 @@ int main(int argc, char* argv[]) {
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
 
+    // -------------------------------------------------------------------------
+    // Global event-selection toggles for topology/sector systematics studies.
+    //
+    // Nominal inclusive setting: leave every enable_* flag below false.
+    // The selected configuration is installed once here and then used by every
+    // stage through default_global_cuts().
+    //
+    // Detector topology codes:
+    //   FD-FD = proton FD, photon FD = detector1=1, detector2=1
+    //   CD-FD = proton CD, photon FD = detector1=2, detector2=1
+    //   CD-FT = proton CD, photon FT = detector1=2, detector2=0
+    //
+    // FD sectors:
+    //   1: 330-30 deg, 2: 30-90 deg, 3: 90-150 deg,
+    //   4: 150-210 deg, 5: 210-270 deg, 6: 270-330 deg
+    // CD sectors:
+    //   1: 272.5-32.5 deg, 2: 32.5-150.5 deg, 3: 150.5-272.5 deg
+    // -------------------------------------------------------------------------
+    GlobalCutConfig global_cfg;
+
+    // Single-topology study. Enable exactly one topology by setting this true
+    // and editing required_detector1/required_detector2.
+    global_cfg.enable_topology_filter = false;
+    global_cfg.required_detector1 = 2;  // 1 FD proton, 2 CD proton
+    global_cfg.required_detector2 = 0;  // 0 FT photon, 1 FD photon
+
+    // Electron FD sector study. Electron is always FD.
+    global_cfg.enable_electron_fd_sector_filter = false;
+    global_cfg.electron_fd_sector = 1;
+
+    // Proton FD sector study. This automatically keeps only FD-FD events.
+    global_cfg.enable_proton_fd_sector_filter = false;
+    global_cfg.proton_fd_sector = 1;
+
+    // Proton CD sector study. This automatically keeps only CD-FD and CD-FT events.
+    global_cfg.enable_proton_cd_sector_filter = false;
+    global_cfg.proton_cd_sector = 1;
+
+    // Photon FD sector study. This automatically keeps only CD-FD and FD-FD events.
+    global_cfg.enable_photon_fd_sector_filter = false;
+    global_cfg.photon_fd_sector = 1;
+
+    // Existing optional propagator/ycol mirror cut.
+    global_cfg.enable_dvcsgen_ycol_cut = false;
+    global_cfg.dvcsgen_ycol_cut = 0.005;
+
+    set_default_global_cuts(global_cfg);
+
+    std::cout << "[main] Global cut analysis tag: "
+              << global_cuts_analysis_tag(default_global_cuts()) << std::endl;
+
     // initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)

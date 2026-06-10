@@ -7,46 +7,80 @@
 // -----------------------------------------------------------------------------
 // GlobalCutConfig
 //
-// This struct defines analysis-wide cuts that all stages should share.
-// It is intentionally "fail-fast":
-//   - If enable_dvcsgen_ycol_cut is true, callers must use the overloads that
-//     provide the required kinematics.
-//   - If enable_topology_filter is true, callers must use the overloads that
-//     provide detector1 and detector2.
+// Analysis-wide cuts shared by all event-loop stages.
+//
+// Detector codes used by the pass2 trees:
+//   detector1 = proton detector: 1 FD, 2 CD
+//   detector2 = photon detector: 0 FT, 1 FD
+//
+// Azimuthal branch convention:
+//   e_phi, p1_phi, p2_phi are expected in radians.
+//   All sector boundaries below are in degrees.
+//
+// Sector filters are intentionally fail-fast. If any sector filter is enabled,
+// callers must use a sector-aware passes_global_cuts(...) overload that provides
+// e_phi, p1_phi, and p2_phi. This prevents silently producing an inclusive result
+// when the user intended a sector-restricted result.
 // -----------------------------------------------------------------------------
 struct GlobalCutConfig {
-    // Baseline global DVCS exclusivity-style cuts
+    // Baseline global DVCS exclusivity-style cuts.
     double t1_abs_max         = 1.0;  // cut is (-t1) < t1_abs_max
     double open_angle_min_deg = 5.0;  // open_angle_ep2_deg > open_angle_min_deg
     double pTmiss_max         = 0.2;  // pTmiss <= pTmiss_max
 
-    // Optional dvcsgen P2_pos (ycol / propagator) cut
+    // Optional dvcsgen P2_pos (ycol / propagator) cut.
     bool   enable_dvcsgen_ycol_cut = false;
     double dvcsgen_ycol_cut        = 0.005;
 
-    // Optional topology filter (detector1/detector2)
-    //
-    // detector1 is proton region (expected: 1 FD or 2 CD)
-    // detector2 is photon region (expected: 0 FT or 1 FD)
-    //
-    // If enable_topology_filter is true, ALL callers must use the overloads
-    // that provide detector1 and detector2; otherwise we throw FATAL.
+    // Optional single-topology filter.
+    // required_detector1/2 set as (p-region, gamma-region):
+    //   FD-FD: (1, 1)
+    //   CD-FD: (2, 1)
+    //   CD-FT: (2, 0)
     bool enable_topology_filter = false;
+    int  required_detector1     = 2;
+    int  required_detector2     = 0;
 
-    // Required detector assignments when topology filtering is enabled.
-    // Must be in {0,1,2} when enable_topology_filter == true.
-    // 0 = FT, 1 = FD, 2 = CD
-    int required_detector1 = 2;  // proton detector (ignored unless enabled)
-    int required_detector2 = 0;  // photon detector (ignored unless enabled)
+    // Optional electron FD-sector filter. Electron is always FD in this analysis.
+    // Valid sector: 1..6.
+    bool enable_electron_fd_sector_filter = false;
+    int  electron_fd_sector               = 1;
 
-    // Run blacklist (global)
+    // Optional proton FD-sector filter. Only applies to events where detector1==1.
+    // Therefore this naturally selects the FD-FD topology.
+    // Valid sector: 1..6.
+    bool enable_proton_fd_sector_filter = false;
+    int  proton_fd_sector               = 1;
+
+    // Optional proton CD-sector filter. Only applies to events where detector1==2.
+    // Therefore this naturally selects CD-FD and CD-FT topologies.
+    // Valid sector: 1..3.
+    bool enable_proton_cd_sector_filter = false;
+    int  proton_cd_sector               = 1;
+
+    // Optional photon FD-sector filter. Only applies to events where detector2==1.
+    // Therefore this naturally selects CD-FD and FD-FD topologies.
+    // Valid sector: 1..6.
+    bool enable_photon_fd_sector_filter = false;
+    int  photon_fd_sector               = 1;
+
+    // Run blacklist.
     std::vector<int> excluded_runs;
 };
 
-// Default config instance (process-wide)
+// Process-wide default config.
 const GlobalCutConfig& default_global_cuts();
+void set_default_global_cuts(const GlobalCutConfig& cfg);
 
-// dvcsgen ycol helper (exposed for diagnostics/plotting)
+// Convenience diagnostics.
+bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg = default_global_cuts());
+std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg = default_global_cuts());
+
+// Sector helpers. Input phi is in radians.
+int fd_sector_from_phi_rad(double phi_rad);
+int cd_sector_from_phi_rad(double phi_rad);
+
+// dvcsgen ycol helper (exposed for diagnostics/plotting).
 double dvcsgen_ycol_value(double Ebeam,
                           double e_p,
                           double e_theta,
@@ -65,23 +99,13 @@ double dvcsgen_ycol_value(const std::string& period_label,
                           double p2_phi,
                           const GlobalCutConfig& cfg);
 
-// -----------------------------------------------------------------------------
-// passes_global_cuts overloads
-//
-// NOTE:
-//  - If cfg.enable_dvcsgen_ycol_cut is true, you must call an overload that
-//    provides the needed kinematics (or we throw FATAL).
-//  - If cfg.enable_topology_filter is true, you must call an overload that
-//    provides detector1 and detector2 (or we throw FATAL).
-// -----------------------------------------------------------------------------
-
-// Legacy overload: no kinematics, no topology.
+// Legacy overload: no kinematics, no topology, no sectors.
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
                         double pTmiss,
                         const GlobalCutConfig& cfg);
 
-// Legacy overload: with ycol kinematics, but no topology.
+// Legacy overload: with ycol kinematics, but no topology/sectors.
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
                         double pTmiss,
@@ -106,7 +130,7 @@ bool passes_global_cuts(double t1,
                         double p2_phi,
                         const GlobalCutConfig& cfg);
 
-// NEW: topology-aware overloads (detector1/detector2), no ycol kinematics.
+// Topology-aware overloads without sector phi.
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
                         double pTmiss,
@@ -114,7 +138,6 @@ bool passes_global_cuts(double t1,
                         int detector2,
                         const GlobalCutConfig& cfg);
 
-// NEW: topology-aware overloads with ycol kinematics.
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
                         double pTmiss,
@@ -143,13 +166,55 @@ bool passes_global_cuts(double t1,
                         double p2_phi,
                         const GlobalCutConfig& cfg);
 
-// Run exclusion helper
+// Full sector-aware overloads. These are the preferred overloads for production
+// event loops because they support topology, ycol, and particle-sector filters.
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        double e_phi,
+                        double p1_phi,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        double Ebeam,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p1_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const std::string& period_label,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p1_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+// Run exclusion helper.
 bool is_excluded_run(int runnum, const GlobalCutConfig& cfg = default_global_cuts());
 
-// ROOT TCut helper (only valid when ycol and topology filters are disabled)
+// ROOT TCut helper. Only valid when all cuts are representable as a simple TCut.
 std::string global_cuts_tcut(const GlobalCutConfig& cfg = default_global_cuts());
 
-// JSON writer for config echoing
+// JSON writer for config echoing.
 void write_global_cuts_config_json(const std::string& out_json_dir,
                                   const GlobalCutConfig& cfg = default_global_cuts());
 

@@ -882,11 +882,15 @@ struct Branches {
 
 static bool passes_global_cuts_for_event(const Branches& b,
                                          const PeriodTags& tags) {
-    if (is_excluded_run(b.runnum)) {
-        return false;
-    }
+    if (is_excluded_run(b.runnum)) return false;
 
     const GlobalCutConfig& cfg = default_global_cuts();
+
+    if (global_cuts_require_sector_phi(cfg)) {
+        if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+            fatal("sector selection requires e_phi, p1_phi, and p2_phi branches.");
+        }
+    }
 
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
@@ -894,26 +898,32 @@ static bool passes_global_cuts_for_event(const Branches& b,
             fatal("P2/ycol cut is enabled but required branches are missing.");
         }
 
-        return passes_global_cuts(b.t1,
-                                  b.open_angle_ep2,
-                                  b.pTmiss,
-                                  b.detector1,
-                                  b.detector2,
+        if (global_cuts_require_sector_phi(cfg)) {
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      tags.period_label,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      cfg);
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
                                   tags.period_label,
-                                  b.e_p,
-                                  b.e_theta,
-                                  b.e_phi,
-                                  b.p2_p,
-                                  b.p2_theta,
-                                  b.p2_phi,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
                                   cfg);
     }
 
-    return passes_global_cuts(b.t1,
-                              b.open_angle_ep2,
-                              b.pTmiss,
-                              b.detector1,
-                              b.detector2,
+    if (global_cuts_require_sector_phi(cfg)) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  b.e_phi, b.p1_phi, b.p2_phi,
+                                  cfg);
+    }
+
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                              b.detector1, b.detector2,
                               cfg);
 }
 

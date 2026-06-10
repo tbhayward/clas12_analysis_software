@@ -994,6 +994,8 @@ struct BranchBinder {
     double e_theta = 0.0;   bool has_e_theta = false;
     double e_phi = 0.0;     bool has_e_phi = false;
 
+    double p1_phi = 0.0;    bool has_p1_phi = false;
+
     double p2_p = 0.0;      bool has_p2_p = false;
     double p2_theta = 0.0;  bool has_p2_theta = false;
     double p2_phi = 0.0;    bool has_p2_phi = false;
@@ -1038,6 +1040,7 @@ struct BranchBinder {
         ena("e_p");
         ena("e_theta");
         ena("e_phi");
+        ena("p1_phi");
         ena("p2_p");
         ena("p2_theta");
         ena("p2_phi");
@@ -1083,6 +1086,7 @@ struct BranchBinder {
         bD("e_p",     &e_p,     has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
         bD("e_phi",   &e_phi,   has_e_phi);
+        bD("p1_phi",  &p1_phi,  has_p1_phi);
 
         bD("p2_p",     &p2_p,     has_p2_p);
         bD("p2_theta", &p2_theta, has_p2_theta);
@@ -1195,56 +1199,55 @@ static inline bool passes_sigma_cuts(const ChannelConfig& channel_cfg,
 
 static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
                                                const std::string& period_label) {
-    if (!(b.has_t1 && b.has_open_angle && b.has_pTmiss)) {
-        return false;
-    }
-
-    if (b.has_runnum && is_excluded_run(b.runnum)) {
-        return false;
-    }
+    if (!(b.has_t1 && b.has_open_angle && b.has_pTmiss)) return false;
+    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
 
     const GlobalCutConfig& cfg = default_global_cuts();
 
-    if (cfg.enable_topology_filter) {
+    if (cfg.enable_topology_filter || global_cuts_require_sector_phi(cfg) || cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_detector1 && b.has_detector2)) {
-            std::ostringstream ss;
-            ss << "[total_counts] FATAL: topology filter enabled in global cuts, "
-               << "but detector1/detector2 branches are missing.";
-            fatal(ss.str());
+            fatal("[total_counts] FATAL: topology/sector/global-ycol selection requires detector1/detector2 branches.");
+        }
+    }
+
+    if (global_cuts_require_sector_phi(cfg)) {
+        if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+            fatal("[total_counts] FATAL: sector selection requires e_phi, p1_phi, and p2_phi branches.");
         }
     }
 
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
-            std::ostringstream ss;
-            ss << "[total_counts] FATAL: dvcsgen ycol cut enabled, but required "
-               << "branches are missing for period_label='" << period_label
-               << "'. Missing one or more of: e_p, e_theta, e_phi, "
-               << "p2_p, p2_theta, p2_phi.";
-            fatal(ss.str());
+            fatal("[total_counts] FATAL: dvcsgen ycol cut requires e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi branches.");
         }
 
-        return passes_global_cuts(b.t1,
-                                  b.open_angle_ep2,
-                                  b.pTmiss,
-                                  b.detector1,
-                                  b.detector2,
+        if (global_cuts_require_sector_phi(cfg)) {
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      period_label,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      cfg);
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
                                   period_label,
-                                  b.e_p,
-                                  b.e_theta,
-                                  b.e_phi,
-                                  b.p2_p,
-                                  b.p2_theta,
-                                  b.p2_phi,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
                                   cfg);
     }
 
-    return passes_global_cuts(b.t1,
-                              b.open_angle_ep2,
-                              b.pTmiss,
-                              b.detector1,
-                              b.detector2,
+    if (global_cuts_require_sector_phi(cfg)) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  b.e_phi, b.p1_phi, b.p2_phi,
+                                  cfg);
+    }
+
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                              b.detector1, b.detector2,
                               cfg);
 }
 

@@ -299,8 +299,9 @@ struct BranchBinder {
     double p2_theta = 0.0;       bool has_p2_theta = false; // radians (also used for bin means: photon theta)
     double p2_phi = 0.0;         bool has_p2_phi = false;
 
-    // proton theta (branch name p1_theta, radians)
+    // proton theta/phi (branch names p1_theta/p1_phi, radians)
     double p1_theta = 0.0;       bool has_p1_theta = false;
+    double p1_phi = 0.0;         bool has_p1_phi = false;
 
     // binning vars
     double x = 0.0;              bool has_x = false;
@@ -338,6 +339,7 @@ struct BranchBinder {
         enable("e_p");
         enable("e_theta");
         enable("e_phi");
+        enable("p1_phi");
         enable("p2_p");
         enable("p2_theta");
         enable("p2_phi");
@@ -377,6 +379,7 @@ struct BranchBinder {
         bindD("e_p",     &e_p,     has_e_p);
         bindD("e_theta", &e_theta, has_e_theta);
         bindD("e_phi",   &e_phi,   has_e_phi);
+        bindD("p1_phi",  &p1_phi,  has_p1_phi);
 
         bindD("p2_p",     &p2_p,     has_p2_p);
         bindD("p2_theta", &p2_theta, has_p2_theta);
@@ -438,72 +441,62 @@ struct BranchBinder {
 static inline bool passes_global(const BranchBinder& b, const std::string& period_label) {
     if (!b.readyForCuts()) return false;
 
-    // Global run blacklist (from global_cuts.h), if runnum is available.
     if (b.has_runnum && is_excluded_run(b.runnum)) return false;
 
     const GlobalCutConfig& cfg = default_global_cuts();
 
-    // If topology filtering is enabled in global_cuts, we must provide detector1/detector2
-    // to passes_global_cuts(). Fail fast if missing.
-    if (cfg.enable_topology_filter) {
+    if (cfg.enable_topology_filter || global_cuts_require_sector_phi(cfg) || cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_det1 && b.has_det2)) {
-            std::cerr << "[bin_means] FATAL: cfg.enable_topology_filter is true, but detector1/detector2 "
-                      << "are not available in this tree. You must bind detector1/detector2 when topology "
-                      << "filtering is enabled."
-                      << std::endl;
+            std::cerr << "[bin_means] FATAL: topology/sector/global-ycol selection requires detector1/detector2.\n";
             std::exit(EXIT_FAILURE);
         }
     }
 
-    // dvcsgen ycol cut path
+    if (global_cuts_require_sector_phi(cfg)) {
+        if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+            std::cerr << "[bin_means] FATAL: sector selection requires e_phi, p1_phi, and p2_phi branches.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
     if (cfg.enable_dvcsgen_ycol_cut) {
-        // Ensure required branches exist
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
-            std::cerr << "[bin_means] FATAL: dvcsgen ycol cut enabled, but required branches are missing "
-                      << "for period_label '" << period_label << "'. Missing one or more of: "
-                      << "e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi."
-                      << std::endl;
+            std::cerr << "[bin_means] FATAL: dvcsgen ycol cut requires e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.\n";
             std::exit(EXIT_FAILURE);
         }
 
-        // Choose correct overload based on topology filtering
-        if (cfg.enable_topology_filter) {
-            // 13-arg overload: includes det1/det2 + period_label + ycol inputs
-            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                    b.detector1, b.detector2,
-                                    period_label,
-                                    b.e_p, b.e_theta, b.e_phi,
-                                    b.p2_p, b.p2_theta, b.p2_phi,
-                                    cfg)) {
-                return false;
-            }
-        } else {
-            // 11-arg overload: includes period_label + ycol inputs
-            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                    period_label,
-                                    b.e_p, b.e_theta, b.e_phi,
-                                    b.p2_p, b.p2_theta, b.p2_phi,
-                                    cfg)) {
-                return false;
-            }
+        if (global_cuts_require_sector_phi(cfg)) {
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      period_label,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      cfg);
         }
-    } else {
-        // No dvcsgen ycol cut: choose overload based on topology filtering
-        if (cfg.enable_topology_filter) {
-            // 6-arg overload: includes det1/det2
-            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                    b.detector1, b.detector2,
-                                    cfg)) {
-                return false;
-            }
-        } else {
-            // 4-arg overload: simplest global cuts only
-            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg)) return false;
-        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  cfg);
     }
 
-    return true;
+    if (global_cuts_require_sector_phi(cfg)) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  b.e_phi, b.p1_phi, b.p2_phi,
+                                  cfg);
+    }
+
+    if (cfg.enable_topology_filter) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  cfg);
+    }
+
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg);
 } //endfor
 
 struct Sigmas {
