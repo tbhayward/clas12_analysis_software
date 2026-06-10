@@ -319,16 +319,14 @@ def make_gepard_xs_point(
     """
     Build a Gepard DataPoint at fixed-target kinematics.
 
-    Gepard's BH machinery expects derived kinematic quantities such as y, eps2,
-    K2, K, and P1P2 to already exist on the point. These are filled by
-    gepard.kinematics.prepare(pt), provided that the point has W, xB, Q2, t,
-    phi, process, exptype, and in1energy.
+    Do not pass W together with xB and Q2. Gepard treats {xB, W, Q2} as an
+    overdetermined kinematic set and will raise a KinematicsError. Instead,
+    give xB and Q2, let DataPoint fill the basic missing DIS kinematics, then
+    call gepard.kinematics.prepare(pt) to fill derived DVCS/BH quantities such
+    as y, eps2, K2, K, and P1P2.
     """
 
     from gepard.kinematics import prepare
-
-    proton_mass = 0.9382720813
-    proton_mass2 = proton_mass * proton_mass
 
     xB = float(xB)
     Q2 = float(Q2)
@@ -336,18 +334,9 @@ def make_gepard_xs_point(
     phi_deg_trento = float(phi_deg_trento)
     ebeam = float(ebeam)
 
-    W2 = proton_mass2 + Q2 * (1.0 / xB - 1.0)
-
-    if W2 <= 0.0:
-        raise ValueError(
-            f"Invalid W^2={W2} for xB={xB}, Q2={Q2}."
-        )
-    # endif
-
     pt = g.DataPoint(
         xB=xB,
         Q2=Q2,
-        W=math.sqrt(W2),
         t=-abs(t_abs),
         phi=math.radians(phi_deg_trento),
         frame="Trento",
