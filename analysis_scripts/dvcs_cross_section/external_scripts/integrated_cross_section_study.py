@@ -25,8 +25,11 @@ Each canvas contains:
   middle: ratios of the four individual 10.6-GeV run periods to the combined
           10.6-GeV result.
 
-  right:  ratios of Fa18 Inb and Sp19 Inb to the weighted mean of Fa18 Inb
-          and Sp19 Inb.
+  right:  comparison of:
+            Fa18 Inb, 10.604 GeV
+            Sp19 Inb -> 10.604 GeV, KM15
+
+          Each is divided by the weighted mean of those two values.
 
 By default the integration is bin-width weighted, appropriate for differential
 cross sections:
@@ -66,6 +69,30 @@ If --include-bin-to-bin-sys is passed, each point shows two error bars:
 where bin_to_bin_sys_fraction defaults to 0.10 and can be changed with:
 
   --bin-to-bin-sys-frac 0.10
+
+Sp19 -> Fa18 beam-energy scaling
+--------------------------------
+
+For the right-panel Fa18/Sp19 comparison, Sp19 Inb is scaled from its beam energy
+to the Fa18 beam energy before integration:
+
+  E_source = 10.1998 GeV
+  E_target = 10.6040 GeV
+
+The row-by-row correction factor is:
+
+  C_i = KM15(E_target, xB_i, Q2_i, |t|_i, phi_i)
+      / KM15(E_source, xB_i, Q2_i, |t|_i, phi_i)
+
+and the scaled Sp19 contribution is:
+
+  sigma_i_scaled = C_i * sigma_i
+  stat_i_scaled  = |C_i| * stat_i
+  sys_i_scaled   = |C_i| * sys_i
+
+This is enabled by default. Disable with:
+
+  --no-sp19-km15-energy-scaling
 """
 
 import argparse
@@ -78,6 +105,14 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
+
+# -----------------------------------------------------------------------------
+# Beam energies.
+# -----------------------------------------------------------------------------
+
+FA18_INB_EBEAM_GEV = 10.6040
+SP19_INB_EBEAM_GEV = 10.1998
 
 
 # -----------------------------------------------------------------------------
@@ -107,10 +142,20 @@ MIDDLE_SERIES = [
     "Fa18 Out",
 ]
 
-RIGHT_SERIES = [
+RIGHT_RAW_PERIODS = [
     "Fa18 Inb",
     "Sp19 Inb",
 ]
+
+RIGHT_SERIES_LABELS = [
+    "Fa18 Inb, 10.604 GeV",
+    "Sp19 Inb -> 10.604 GeV, KM15",
+]
+
+RIGHT_LABEL_TO_PERIOD = {
+    "Fa18 Inb, 10.604 GeV": "Fa18 Inb",
+    "Sp19 Inb -> 10.604 GeV, KM15": "Sp19 Inb",
+}
 
 
 # -----------------------------------------------------------------------------
@@ -124,6 +169,8 @@ SERIES_STYLE = {
     "Fa18 Inb": dict(marker="^", linestyle="-", color="tab:blue"),
     "Fa18 Out": dict(marker="v", linestyle="-", color="tab:orange"),
     "Sp19 Inb": dict(marker="s", linestyle="-", color="tab:red"),
+    "Fa18 Inb, 10.604 GeV": dict(marker="^", linestyle="-", color="tab:blue"),
+    "Sp19 Inb -> 10.604 GeV, KM15": dict(marker="s", linestyle="-", color="tab:red"),
 }
 
 
@@ -184,6 +231,210 @@ class Point:
     stat: float
     sys: float
 
+
+@dataclass
+class ModelContext:
+    enabled: bool
+    g: object = None
+    th_km15: object = None
+    correction_min: float = math.inf
+    correction_max: float = -math.inf
+    correction_sum: float = 0.0
+    correction_count: int = 0
+
+
+# -----------------------------------------------------------------------------
+# Gepard / KM15 helpers.
+# -----------------------------------------------------------------------------
+
+def import_gepard():
+    try:
+        import gepard as g
+    except ImportError as exc:
+        raise RuntimeError(
+            "Could not import the Gepard package.\n\n"
+            "Install it into the Python interpreter used to run this script.\n"
+            "On ifarm, prefer:\n"
+            "  python -m pip install --user gepard\n"
+        ) from exc
+    # endtry
+
+    return g
+
+
+def import_km15():
+    try:
+        from gepard.fits import th_KM15
+    except ImportError as exc:
+        raise RuntimeError("Could not import th_KM15 from gepard.fits.") from exc
+    # endtry
+
+    return th_KM15
+
+
+def make_model_context(enabled: bool) -> ModelContext:
+    if not enabled:
+        return ModelContext(enabled=False)
+    # endif
+
+    return ModelContext(
+        enabled=True,
+        g=import_gepard(),
+        th_km15=import_km15(),
+    )
+
+
+def make_gepard_xs_point(
+    g,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+):
+    pt = g.DataPoint(
+        xB=float(xB),
+        Q2=float(Q2),
+        t=-abs(float(t_abs)),
+        phi=math.radians(float(phi_deg_trento)),
+        frame="Trento",
+        process="ep2epgamma",
+        exptype="fixed target",
+        in1energy=float(ebeam),
+        in1charge=-1,
+        in1polarization=0,
+        observable="XS",
+    )
+
+    if hasattr(pt, "to_conventions"):
+        pt.to_conventions()
+    # endif
+
+    return pt
+
+
+def km15_xs(
+    model_context: ModelContext,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+) -> float:
+    pt = make_gepard_xs_point(
+        g=model_context.g,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi_deg_trento,
+        ebeam=ebeam,
+    )
+
+    return float(model_context.th_km15.predict(pt))
+
+
+def update_model_correction_diagnostics(
+    model_context: ModelContext,
+    correction: float,
+) -> None:
+    if not np.isfinite(correction):
+        return
+    # endif
+
+    model_context.correction_min = min(model_context.correction_min, correction)
+    model_context.correction_max = max(model_context.correction_max, correction)
+    model_context.correction_sum += correction
+    model_context.correction_count += 1
+
+
+def sp19_to_fa18_energy_correction(
+    row: pd.Series,
+    period: str,
+    model_context: ModelContext,
+) -> float:
+    """
+    Compute the KM15 beam-energy correction:
+
+      C = KM15(E=10.6040 GeV) / KM15(E=10.1998 GeV)
+
+    using the row's period-specific average kinematics.
+
+    If a required average column is missing or invalid, the function falls back
+    to the bin midpoint for that variable.
+    """
+
+    if not model_context.enabled:
+        return 1.0
+    # endif
+
+    xB = row_average_or_midpoint(
+        row=row,
+        avg_col=f"xBavg, {period}",
+        min_col="xBmin",
+        max_col="xBmax",
+    )
+
+    Q2 = row_average_or_midpoint(
+        row=row,
+        avg_col=f"Q2avg, {period}",
+        min_col="Q2min",
+        max_col="Q2max",
+    )
+
+    t_abs = row_average_or_midpoint(
+        row=row,
+        avg_col=f"t_abs_avg, {period}",
+        min_col="t_abs_min",
+        max_col="t_abs_max",
+    )
+
+    phi = row_average_or_midpoint(
+        row=row,
+        avg_col=f"phiavg, {period}",
+        min_col="phimin",
+        max_col="phimax",
+    )
+
+    if not (
+        np.isfinite(xB)
+        and np.isfinite(Q2)
+        and np.isfinite(t_abs)
+        and np.isfinite(phi)
+    ):
+        return math.nan
+    # endif
+
+    numerator = km15_xs(
+        model_context=model_context,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi,
+        ebeam=FA18_INB_EBEAM_GEV,
+    )
+
+    denominator = km15_xs(
+        model_context=model_context,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi,
+        ebeam=SP19_INB_EBEAM_GEV,
+    )
+
+    if not np.isfinite(numerator) or not np.isfinite(denominator) or denominator == 0.0:
+        return math.nan
+    # endif
+
+    correction = numerator / denominator
+    update_model_correction_diagnostics(model_context, correction)
+
+    return correction
+
+
+# -----------------------------------------------------------------------------
+# Parsing and CSV helpers.
+# -----------------------------------------------------------------------------
 
 def parse_tuple3(value) -> Tuple[float, float, float]:
     """
@@ -262,6 +513,30 @@ def parse_scalar_from_cell(value) -> float:
     return float(numbers[0])
 
 
+def row_average_or_midpoint(
+    row: pd.Series,
+    avg_col: str,
+    min_col: str,
+    max_col: str,
+) -> float:
+    if avg_col in row.index:
+        avg_value = parse_scalar_from_cell(row[avg_col])
+
+        if np.isfinite(avg_value):
+            return avg_value
+        # endif
+    # endif
+
+    lo = parse_scalar_from_cell(row[min_col])
+    hi = parse_scalar_from_cell(row[max_col])
+
+    if np.isfinite(lo) and np.isfinite(hi):
+        return 0.5 * (lo + hi)
+    # endif
+
+    return math.nan
+
+
 def cross_section_column(period: str) -> str:
     return f"normed cross sections, ep->epg, exp, {period}, unpol"
 
@@ -336,16 +611,6 @@ def candidate_yield_columns_for_period(df: pd.DataFrame, period: str) -> List[st
     """
     Return candidate yield/count columns that can be used to weight the average
     x-position of an integrated/projection point.
-
-    The code intentionally searches broadly because these CSVs have gone through
-    several naming conventions. The priority is:
-
-      1. pi0-corrected / signal yield columns,
-      2. acceptance-corrected yield columns,
-      3. unfolded yield columns,
-      4. any other relevant count/yield column for the period.
-
-    The function only returns columns that actually exist in the CSV.
     """
 
     period_lower = period.lower()
@@ -481,11 +746,17 @@ def average_x_for_group(
     return midpoint
 
 
+# -----------------------------------------------------------------------------
+# Integration.
+# -----------------------------------------------------------------------------
+
 def integrated_points_for_period(
     df: pd.DataFrame,
     projection: str,
     period: str,
     no_width_weighting: bool,
+    model_context: Optional[ModelContext] = None,
+    apply_sp19_to_fa18_scaling: bool = False,
 ) -> List[Point]:
     info = PROJECTIONS[projection]
     col = cross_section_column(period)
@@ -531,6 +802,30 @@ def integrated_points_for_period(
             if not np.isfinite(sys):
                 sys = 0.0
             # endif
+
+            model_scale = 1.0
+
+            if apply_sp19_to_fa18_scaling:
+                if model_context is None or not model_context.enabled:
+                    raise RuntimeError(
+                        "Sp19 -> Fa18 KM15 scaling requested, but the model context is disabled."
+                    )
+                # endif
+
+                model_scale = sp19_to_fa18_energy_correction(
+                    row=row,
+                    period=period,
+                    model_context=model_context,
+                )
+
+                if not np.isfinite(model_scale):
+                    continue
+                # endif
+            # endif
+
+            value *= model_scale
+            stat *= abs(model_scale)
+            sys *= abs(model_scale)
 
             y_sum += value * weight
             stat2_sum += (stat * weight) ** 2
@@ -633,6 +928,10 @@ def points_to_arrays(
     return x, y, stat_err, total_err
 
 
+# -----------------------------------------------------------------------------
+# Ratios.
+# -----------------------------------------------------------------------------
+
 def ratio_points(numerator: List[Point], denominator: List[Point]) -> List[Point]:
     n_by_key = {p.key: p for p in numerator}
     d_by_key = {p.key: p for p in denominator}
@@ -726,13 +1025,16 @@ def weighted_mean_two_points(a: Point, b: Point) -> Optional[Point]:
     )
 
 
-def ratio_to_fa18_sp19_weighted_mean(
-    points_by_period: Dict[str, List[Point]],
-    period: str,
+def ratio_to_fa18_scaled_sp19_weighted_mean(
+    right_points_by_label: Dict[str, List[Point]],
+    label: str,
 ) -> List[Point]:
-    fa_points = {p.key: p for p in points_by_period.get("Fa18 Inb", [])}
-    sp_points = {p.key: p for p in points_by_period.get("Sp19 Inb", [])}
-    target_points = {p.key: p for p in points_by_period.get(period, [])}
+    fa_label = "Fa18 Inb, 10.604 GeV"
+    sp_label = "Sp19 Inb -> 10.604 GeV, KM15"
+
+    fa_points = {p.key: p for p in right_points_by_label.get(fa_label, [])}
+    sp_points = {p.key: p for p in right_points_by_label.get(sp_label, [])}
+    target_points = {p.key: p for p in right_points_by_label.get(label, [])}
 
     ratios: List[Point] = []
     common_keys = sorted(
@@ -775,6 +1077,10 @@ def ratio_to_fa18_sp19_weighted_mean(
     return ratios
 
 
+# -----------------------------------------------------------------------------
+# Plotting.
+# -----------------------------------------------------------------------------
+
 def plot_points(
     ax,
     points: List[Point],
@@ -797,9 +1103,6 @@ def plot_points(
     color = style.get("color", None)
 
     if include_bin_to_bin_sys:
-        outer_style = dict(style)
-        outer_style["marker"] = "None"
-
         ax.errorbar(
             x,
             y,
@@ -838,11 +1141,16 @@ def plot_points(
     # endif
 
 
-def auto_ratio_ylim(ax, center: float = 1.0, min_span: float = 0.35) -> None:
+def auto_ratio_ylim(ax) -> None:
     ylo, yhi = ax.get_ylim()
-    span = max(abs(yhi - center), abs(center - ylo), min_span)
 
-    ax.set_ylim(center - 1.15 * span, center + 1.15 * span)
+    if not np.isfinite(yhi):
+        ax.set_ylim(0.0, 2.0)
+        return
+    # endif
+
+    upper = max(1.25, 1.10 * yhi)
+    ax.set_ylim(0.0, upper)
 
 
 def make_projection_plot(
@@ -852,12 +1160,13 @@ def make_projection_plot(
     no_width_weighting: bool,
     include_bin_to_bin_sys: bool,
     bin_to_bin_sys_frac: float,
+    model_context: ModelContext,
 ) -> None:
     info = PROJECTIONS[projection]
 
     all_needed_periods = []
 
-    for period in LEFT_SERIES + MIDDLE_SERIES + RIGHT_SERIES:
+    for period in LEFT_SERIES + MIDDLE_SERIES + RIGHT_RAW_PERIODS:
         if period not in all_needed_periods:
             all_needed_periods.append(period)
         # endif
@@ -871,6 +1180,23 @@ def make_projection_plot(
             no_width_weighting=no_width_weighting,
         )
         for period in all_needed_periods
+    }
+
+    right_points_by_label: Dict[str, List[Point]] = {
+        "Fa18 Inb, 10.604 GeV": integrated_points_for_period(
+            df=df,
+            projection=projection,
+            period="Fa18 Inb",
+            no_width_weighting=no_width_weighting,
+        ),
+        "Sp19 Inb -> 10.604 GeV, KM15": integrated_points_for_period(
+            df=df,
+            projection=projection,
+            period="Sp19 Inb",
+            no_width_weighting=no_width_weighting,
+            model_context=model_context,
+            apply_sp19_to_fa18_scaling=model_context.enabled,
+        ),
     }
 
     fig, axes = plt.subplots(
@@ -924,14 +1250,14 @@ def make_projection_plot(
 
     right = axes[2]
 
-    for period in RIGHT_SERIES:
+    for label in RIGHT_SERIES_LABELS:
         plot_points(
             ax=right,
-            points=ratio_to_fa18_sp19_weighted_mean(
-                points_by_period=points_by_period,
-                period=period,
+            points=ratio_to_fa18_scaled_sp19_weighted_mean(
+                right_points_by_label=right_points_by_label,
+                label=label,
             ),
-            label=period,
+            label=label,
             ratio=True,
             include_bin_to_bin_sys=include_bin_to_bin_sys,
             bin_to_bin_sys_frac=bin_to_bin_sys_frac,
@@ -940,9 +1266,9 @@ def make_projection_plot(
 
     right.set_xlabel(str(info["xlabel"]))
     right.set_ylabel(r"period / weighted mean")
-    right.set_title("Fa18 Inb vs Sp19 Inb")
+    right.set_title(r"Fa18 Inb vs Sp19 Inb scaled to 10.604 GeV")
     right.grid(True, alpha=0.25)
-    right.legend(fontsize=8, frameon=True)
+    right.legend(fontsize=7, frameon=True)
     auto_ratio_ylim(right)
 
     outbase = os.path.join(
@@ -952,6 +1278,27 @@ def make_projection_plot(
 
     fig.savefig(outbase + ".png", dpi=200)
     plt.close(fig)
+
+
+def print_model_correction_summary(model_context: ModelContext) -> None:
+    if not model_context.enabled:
+        print("Sp19 -> 10.604 GeV KM15 beam-energy scaling: disabled")
+        return
+    # endif
+
+    if model_context.correction_count <= 0:
+        print("Sp19 -> 10.604 GeV KM15 beam-energy scaling: enabled, but no corrections were evaluated")
+        return
+    # endif
+
+    mean_corr = model_context.correction_sum / model_context.correction_count
+
+    print("Sp19 -> 10.604 GeV KM15 beam-energy scaling:")
+    print(f"  source beam energy = {SP19_INB_EBEAM_GEV:.6f} GeV")
+    print(f"  target beam energy = {FA18_INB_EBEAM_GEV:.6f} GeV")
+    print(f"  correction count   = {model_context.correction_count}")
+    print(f"  correction mean    = {mean_corr:.6g}")
+    print(f"  correction range   = [{model_context.correction_min:.6g}, {model_context.correction_max:.6g}]")
 
 
 def parse_args() -> argparse.Namespace:
@@ -1005,6 +1352,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--no-sp19-km15-energy-scaling",
+        action="store_true",
+        help=(
+            "Disable the KM15 beam-energy scaling of Sp19 Inb from "
+            "10.1998 GeV to 10.604 GeV in the right-panel Fa18/Sp19 comparison."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -1036,6 +1392,10 @@ def main() -> None:
         phi_degrees=args.phi_degrees,
     )
 
+    model_context = make_model_context(
+        enabled=not args.no_sp19_km15_energy_scaling,
+    )
+
     os.makedirs(args.output_dir, exist_ok=True)
 
     for projection in ["xB", "Q2", "t", "phi"]:
@@ -1046,6 +1406,7 @@ def main() -> None:
             no_width_weighting=args.no_width_weighting,
             include_bin_to_bin_sys=args.include_bin_to_bin_sys,
             bin_to_bin_sys_frac=args.bin_to_bin_sys_frac,
+            model_context=model_context,
         )
     # endfor
 
@@ -1057,6 +1418,8 @@ def main() -> None:
     else:
         print("Using plotted y-errors: statistical only")
     # endif
+
+    print_model_correction_summary(model_context)
 
     print(f"Wrote integrated study PNG plots to: {args.output_dir}")
 
