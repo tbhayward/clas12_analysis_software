@@ -265,31 +265,31 @@ public static void main(String[] args) {
 		    if (process_event) {
 
 		    	int num_photons = research_Event.countByPid(22);
-		    	// for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
-		    	// 	for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
-		    	// 		if (current_gamma1 == current_gamma2) continue;
+		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
+		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
+		    			if (current_gamma1 == current_gamma2) continue;
 
-		    	// 		// supply runnum and boolean for radiative simulation or not
-				// 		BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
-				// 		// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
-				// 		double energy = (runnum == 11) ? beam_energy : Eb.Eb();
-			    //         ThreeParticles variables = new ThreeParticles(event, research_Event, 
-				// 			22, current_gamma1, 22, current_gamma2, energy);
+		    			// supply runnum and boolean for radiative simulation or not
+						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
+							22, current_gamma1, 22, current_gamma2, energy);
 
-			    //         Mh_gammagamma = variables.Mh();
-			    //         if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
-			    //         if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
+			            Mh_gammagamma = variables.Mh();
+			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 			            
-			    //         detector_gamma1 = variables.get_detector1();
-			    //         detector_gamma2 = variables.get_detector2();
-			    //         open_angle_egamma1 = variables.open_angle_ep1();
-			    //         open_angle_egamma2 = variables.open_angle_ep2();
-			    //         gamma_phi1 = variables.phi1();
-			    //         gamma_phi2 = variables.phi2();
-		    	// 	}
-		    	// }
-		    	// if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
-		    	// if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
+			            detector_gamma1 = variables.get_detector1();
+			            detector_gamma2 = variables.get_detector2();
+			            open_angle_egamma1 = variables.open_angle_ep1();
+			            open_angle_egamma2 = variables.open_angle_ep2();
+			            gamma_phi1 = variables.phi1();
+			            gamma_phi2 = variables.phi2();
+		    		}
+		    	}
+		    	if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+		    	if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 
         		// supply runnum and boolean for radiative simulation or not
 				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
