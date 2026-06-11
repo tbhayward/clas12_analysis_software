@@ -31,6 +31,16 @@ Each canvas contains:
 
           Each is divided by the weighted mean of those two values.
 
+The script also makes one additional 2x2 canvas:
+
+  km15_kinematic_dependences.png
+
+showing the KM15 model prediction for the same four kinematic dependences:
+xB, Q2, |t|, and phi. For each projected bin, the non-plotted variables are
+represented by count/yield-weighted average kinematics from the CSV, and the
+KM15 prediction is multiplied by the same integrated bin-width factor used for
+the data projection.
+
 By default the integration is bin-width weighted, appropriate for differential
 cross sections:
 
@@ -101,7 +111,7 @@ The analogous BH-only ratio is also computed and printed as a diagnostic:
 
 but the BH ratio is not applied to the data.
 
-All ratio-plot y axes are fixed to 0.5--1.5.
+All ratio-plot y axes are fixed to RATIO_YMIN--RATIO_YMAX.
 """
 
 import argparse
@@ -130,6 +140,16 @@ SP19_INB_EBEAM_GEV = 10.1998
 
 RATIO_YMIN = 0.0
 RATIO_YMAX = 1.6
+
+
+# -----------------------------------------------------------------------------
+# KM15 prediction-plot settings.
+# -----------------------------------------------------------------------------
+
+DEFAULT_KM15_PREDICTION_OUTPUT_NAME = "km15_kinematic_dependences.png"
+DEFAULT_KM15_PREDICTION_PERIOD = "10.6 GeV"
+DEFAULT_KM15_PREDICTION_EBEAM_GEV = FA18_INB_EBEAM_GEV
+KM15_PREDICTION_LABEL = "KM15, 10.604 GeV"
 
 
 # -----------------------------------------------------------------------------
@@ -183,6 +203,7 @@ SERIES_STYLE = {
     "Sp19 Inb": dict(marker="s", linestyle="-", color="tab:red"),
     "Fa18 Inb, 10.604 GeV": dict(marker="^", linestyle="-", color="tab:blue"),
     "Sp19 Inb -> 10.604 GeV, KM15": dict(marker="s", linestyle="-", color="tab:red"),
+    KM15_PREDICTION_LABEL: dict(marker="o", linestyle="-", color="black"),
 }
 
 
@@ -245,6 +266,16 @@ class Point:
 
 
 @dataclass
+class RepresentativeKinematics:
+    xB: float
+    Q2: float
+    t_abs: float
+    phi: float
+    integration_weight_sum: float
+    n_rows: int
+
+
+@dataclass
 class ModelContext:
     enabled: bool
     g: object = None
@@ -264,6 +295,11 @@ class ModelContext:
     correction_cache: Dict[
         Tuple[float, float, float, float],
         Tuple[float, float],
+    ] = field(default_factory=dict)
+
+    km15_prediction_cache: Dict[
+        Tuple[float, float, float, float, float],
+        float,
     ] = field(default_factory=dict)
 
 
@@ -375,6 +411,40 @@ def km15_xs(
     )
 
     return float(model_context.th_km15.predict(pt))
+
+
+def km15_xs_cached(
+    model_context: ModelContext,
+    xB: float,
+    Q2: float,
+    t_abs: float,
+    phi_deg_trento: float,
+    ebeam: float,
+) -> float:
+    key = (
+        round(float(xB), 8),
+        round(float(Q2), 8),
+        round(float(t_abs), 8),
+        round(float(phi_deg_trento), 8),
+        round(float(ebeam), 8),
+    )
+
+    if key in model_context.km15_prediction_cache:
+        return model_context.km15_prediction_cache[key]
+    # endif
+
+    value = km15_xs(
+        model_context=model_context,
+        xB=xB,
+        Q2=Q2,
+        t_abs=t_abs,
+        phi_deg_trento=phi_deg_trento,
+        ebeam=ebeam,
+    )
+
+    model_context.km15_prediction_cache[key] = value
+
+    return value
 
 
 def bh_xs(
@@ -916,6 +986,21 @@ def event_weight_for_average(row: pd.Series, candidate_columns: List[str]) -> fl
     return math.nan
 
 
+def fallback_count_weight_for_model(row: pd.Series, period: str) -> float:
+    """
+    Determine a fallback row weight for representative KM15 kinematics.
+
+    Preferred weighting is by available yield/count columns. If no such column
+    exists, use 1 for each finite row rather than cross-section size, so the
+    representative model point remains a simple accepted-bin average.
+    """
+
+    _ = row
+    _ = period
+
+    return 1.0
+
+
 def average_x_for_group(
     group: pd.DataFrame,
     projection_info: Dict[str, object],
@@ -1092,6 +1177,229 @@ def integrated_points_for_period(
                 y=y_sum,
                 stat=math.sqrt(stat2_sum),
                 sys=math.sqrt(sys2_sum),
+            )
+        )
+    # endfor
+
+    points.sort(key=lambda p: p.x)
+
+    return points
+
+
+def representative_kinematics_for_group(
+    group: pd.DataFrame,
+    projection: str,
+    period: str,
+    no_width_weighting: bool,
+    yield_weight_columns: List[str],
+) -> RepresentativeKinematics:
+    """
+    Compute representative count/yield-weighted kinematics for one projected bin.
+
+    The non-plotted variables are represented by weighted averages of the
+    available per-row average kinematics in the CSV. The weights are yield/count
+    columns if available. If no such columns exist, every finite row receives
+    weight 1.
+
+    The returned integration_weight_sum is the sum of the same bin-width
+    integration weights used in the data projection, so a point prediction can be
+    put on the same projected-cross-section scale as the data.
+    """
+
+    info = PROJECTIONS[projection]
+
+    xB_sum = 0.0
+    Q2_sum = 0.0
+    t_sum = 0.0
+    phi_sum = 0.0
+    rep_weight_sum = 0.0
+    integration_weight_sum = 0.0
+    n_rows = 0
+
+    xs_col = cross_section_column(period)
+
+    for _, row in group.iterrows():
+        if xs_col in row.index:
+            observed_value, _, _ = parse_tuple3(row[xs_col])
+
+            if not np.isfinite(observed_value):
+                continue
+            # endif
+        # endif
+
+        xB = row_average_or_midpoint(
+            row=row,
+            avg_col=f"xBavg, {period}",
+            min_col="xBmin",
+            max_col="xBmax",
+        )
+
+        Q2 = row_average_or_midpoint(
+            row=row,
+            avg_col=f"Q2avg, {period}",
+            min_col="Q2min",
+            max_col="Q2max",
+        )
+
+        t_abs = row_average_or_midpoint(
+            row=row,
+            avg_col=f"t_abs_avg, {period}",
+            min_col="t_abs_min",
+            max_col="t_abs_max",
+        )
+
+        phi = row_average_or_midpoint(
+            row=row,
+            avg_col=f"phiavg, {period}",
+            min_col="phimin",
+            max_col="phimax",
+        )
+
+        if not (
+            np.isfinite(xB)
+            and np.isfinite(Q2)
+            and np.isfinite(t_abs)
+            and np.isfinite(phi)
+        ):
+            continue
+        # endif
+
+        integration_weight = weight_for_row(
+            row=row,
+            integrate_widths=list(info["integrate_widths"]),
+            no_width_weighting=no_width_weighting,
+        )
+
+        if not np.isfinite(integration_weight):
+            continue
+        # endif
+
+        rep_weight = event_weight_for_average(row, yield_weight_columns)
+
+        if not np.isfinite(rep_weight) or rep_weight <= 0.0:
+            rep_weight = fallback_count_weight_for_model(row=row, period=period)
+        # endif
+
+        if not np.isfinite(rep_weight) or rep_weight <= 0.0:
+            continue
+        # endif
+
+        xB_sum += rep_weight * xB
+        Q2_sum += rep_weight * Q2
+        t_sum += rep_weight * t_abs
+        phi_sum += rep_weight * phi
+        rep_weight_sum += rep_weight
+        integration_weight_sum += integration_weight
+        n_rows += 1
+    # endfor
+
+    if rep_weight_sum <= 0.0 or n_rows == 0:
+        return RepresentativeKinematics(
+            xB=math.nan,
+            Q2=math.nan,
+            t_abs=math.nan,
+            phi=math.nan,
+            integration_weight_sum=math.nan,
+            n_rows=0,
+        )
+    # endif
+
+    return RepresentativeKinematics(
+        xB=xB_sum / rep_weight_sum,
+        Q2=Q2_sum / rep_weight_sum,
+        t_abs=t_sum / rep_weight_sum,
+        phi=phi_sum / rep_weight_sum,
+        integration_weight_sum=integration_weight_sum,
+        n_rows=n_rows,
+    )
+
+
+def km15_prediction_points_for_projection(
+    df: pd.DataFrame,
+    projection: str,
+    period: str,
+    no_width_weighting: bool,
+    model_context: ModelContext,
+    ebeam: float,
+) -> List[Point]:
+    """
+    Build projected KM15 prediction points for a single kinematic dependence.
+
+    For each projected bin, this uses count/yield-weighted representative
+    kinematics from the CSV and multiplies the KM15 four-fold cross section by
+    the summed integration width over the non-plotted variables.
+    """
+
+    if not model_context.enabled:
+        return []
+    # endif
+
+    info = PROJECTIONS[projection]
+
+    yield_weight_columns = candidate_yield_columns_for_period(df, period)
+
+    group_cols = [str(info["min_col"]), str(info["max_col"])]
+    points: List[Point] = []
+
+    sorted_df = df.sort_values(group_cols)
+
+    for _, group in sorted_df.groupby(group_cols, sort=True, dropna=True):
+        rep = representative_kinematics_for_group(
+            group=group,
+            projection=projection,
+            period=period,
+            no_width_weighting=no_width_weighting,
+            yield_weight_columns=yield_weight_columns,
+        )
+
+        if rep.n_rows <= 0:
+            continue
+        # endif
+
+        if not (
+            np.isfinite(rep.xB)
+            and np.isfinite(rep.Q2)
+            and np.isfinite(rep.t_abs)
+            and np.isfinite(rep.phi)
+            and np.isfinite(rep.integration_weight_sum)
+        ):
+            continue
+        # endif
+
+        km15_value = km15_xs_cached(
+            model_context=model_context,
+            xB=rep.xB,
+            Q2=rep.Q2,
+            t_abs=rep.t_abs,
+            phi_deg_trento=rep.phi,
+            ebeam=ebeam,
+        )
+
+        if not np.isfinite(km15_value):
+            continue
+        # endif
+
+        y = km15_value * rep.integration_weight_sum
+
+        x = average_x_for_group(
+            group=group,
+            projection_info=info,
+            period=period,
+            yield_weight_columns=yield_weight_columns,
+        )
+
+        key = (
+            float(group[str(info["min_col"])].iloc[0]),
+            float(group[str(info["max_col"])].iloc[0]),
+        )
+
+        points.append(
+            Point(
+                key=key,
+                x=x,
+                y=y,
+                stat=0.0,
+                sys=0.0,
             )
         )
     # endfor
@@ -1389,6 +1697,7 @@ def make_projection_plot(
     include_bin_to_bin_sys: bool,
     bin_to_bin_sys_frac: float,
     model_context: ModelContext,
+    apply_sp19_to_fa18_scaling: bool,
 ) -> None:
     info = PROJECTIONS[projection]
 
@@ -1423,7 +1732,7 @@ def make_projection_plot(
             period="Sp19 Inb",
             no_width_weighting=no_width_weighting,
             model_context=model_context,
-            apply_sp19_to_fa18_scaling=model_context.enabled,
+            apply_sp19_to_fa18_scaling=apply_sp19_to_fa18_scaling,
         ),
     }
 
@@ -1508,6 +1817,75 @@ def make_projection_plot(
     plt.close(fig)
 
 
+def make_km15_prediction_plot(
+    df: pd.DataFrame,
+    output_dir: str,
+    output_name: str,
+    no_width_weighting: bool,
+    model_context: ModelContext,
+    prediction_period: str,
+    prediction_ebeam: float,
+) -> None:
+    if not model_context.enabled:
+        print()
+        print("KM15 kinematic-dependence prediction plot: disabled because model context is disabled")
+        return
+    # endif
+
+    projection_order = ["xB", "Q2", "t", "phi"]
+
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(14.0, 10.0),
+        constrained_layout=True,
+    )
+
+    fig.suptitle(
+        (
+            "KM15 projected cross-section predictions\n"
+            rf"CSV representative kinematics from {prediction_period}; "
+            rf"$E_{{beam}}={prediction_ebeam:.4f}$ GeV"
+        ),
+        fontsize=15,
+    )
+
+    for ax, projection in zip(axes.ravel(), projection_order):
+        info = PROJECTIONS[projection]
+
+        points = km15_prediction_points_for_projection(
+            df=df,
+            projection=projection,
+            period=prediction_period,
+            no_width_weighting=no_width_weighting,
+            model_context=model_context,
+            ebeam=prediction_ebeam,
+        )
+
+        plot_points(
+            ax=ax,
+            points=points,
+            label=KM15_PREDICTION_LABEL,
+            ratio=False,
+            include_bin_to_bin_sys=False,
+            bin_to_bin_sys_frac=0.0,
+        )
+
+        ax.set_xlabel(str(info["xlabel"]))
+        ax.set_ylabel(str(info["ylabel"]))
+        ax.set_title(str(info["title"]))
+        ax.grid(True, alpha=0.25)
+        ax.legend(fontsize=8, frameon=True)
+    # endfor
+
+    output_path = os.path.join(output_dir, output_name)
+
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+    print(f"Wrote KM15 prediction PNG plot to: {output_path}")
+
+
 # -----------------------------------------------------------------------------
 # Diagnostics.
 # -----------------------------------------------------------------------------
@@ -1569,6 +1947,10 @@ def print_model_correction_summary(model_context: ModelContext) -> None:
         print("BH diagnostic failure reason:")
         print(f"  {model_context.bh_failure_message}")
     # endif
+
+    print()
+    print("KM15 prediction cache:")
+    print(f"  unique cached prediction kinematic points = {len(model_context.km15_prediction_cache)}")
 
 
 # -----------------------------------------------------------------------------
@@ -1635,6 +2017,40 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--no-km15-prediction-plot",
+        action="store_true",
+        help="Disable the additional 2x2 KM15 kinematic-dependence prediction plot.",
+    )
+
+    parser.add_argument(
+        "--km15-prediction-output-name",
+        default=DEFAULT_KM15_PREDICTION_OUTPUT_NAME,
+        help=(
+            "Output PNG filename for the KM15 kinematic-dependence prediction plot. "
+            f"Default: {DEFAULT_KM15_PREDICTION_OUTPUT_NAME}"
+        ),
+    )
+
+    parser.add_argument(
+        "--km15-prediction-period",
+        default=DEFAULT_KM15_PREDICTION_PERIOD,
+        help=(
+            "CSV period whose average kinematic columns are used for the KM15 "
+            "prediction plot. Default: '10.6 GeV'."
+        ),
+    )
+
+    parser.add_argument(
+        "--km15-prediction-ebeam",
+        type=float,
+        default=DEFAULT_KM15_PREDICTION_EBEAM_GEV,
+        help=(
+            "Beam energy in GeV used for the KM15 prediction plot. "
+            f"Default: {DEFAULT_KM15_PREDICTION_EBEAM_GEV:.4f}."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -1643,6 +2059,10 @@ def main() -> None:
 
     if args.bin_to_bin_sys_frac < 0.0:
         raise ValueError("--bin-to-bin-sys-frac must be non-negative.")
+    # endif
+
+    if args.km15_prediction_ebeam <= 0.0:
+        raise ValueError("--km15-prediction-ebeam must be positive.")
     # endif
 
     required = [
@@ -1666,8 +2086,13 @@ def main() -> None:
         phi_degrees=args.phi_degrees,
     )
 
+    need_model_context = (
+        not args.no_sp19_km15_energy_scaling
+        or not args.no_km15_prediction_plot
+    )
+
     model_context = make_model_context(
-        enabled=not args.no_sp19_km15_energy_scaling,
+        enabled=need_model_context,
     )
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -1681,8 +2106,21 @@ def main() -> None:
             include_bin_to_bin_sys=args.include_bin_to_bin_sys,
             bin_to_bin_sys_frac=args.bin_to_bin_sys_frac,
             model_context=model_context,
+            apply_sp19_to_fa18_scaling=not args.no_sp19_km15_energy_scaling,
         )
     # endfor
+
+    if not args.no_km15_prediction_plot:
+        make_km15_prediction_plot(
+            df=df,
+            output_dir=args.output_dir,
+            output_name=args.km15_prediction_output_name,
+            no_width_weighting=args.no_width_weighting,
+            model_context=model_context,
+            prediction_period=args.km15_prediction_period,
+            prediction_ebeam=args.km15_prediction_ebeam,
+        )
+    # endif
 
     if args.include_bin_to_bin_sys:
         print(
@@ -1694,6 +2132,16 @@ def main() -> None:
     # endif
 
     print(f"All ratio-plot y axes fixed to [{RATIO_YMIN:.2f}, {RATIO_YMAX:.2f}]")
+
+    if args.no_km15_prediction_plot:
+        print("KM15 kinematic-dependence prediction plot: disabled")
+    else:
+        print(
+            "KM15 kinematic-dependence prediction plot:"
+            f" period = {args.km15_prediction_period},"
+            f" Ebeam = {args.km15_prediction_ebeam:.6f} GeV"
+        )
+    # endif
 
     print_model_correction_summary(model_context)
 
