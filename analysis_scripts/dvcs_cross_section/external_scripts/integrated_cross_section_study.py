@@ -4,15 +4,24 @@ integrated_cross_section_study.py
 
 Standalone projection/integration study for the DVCS pass-2 CSV.
 
-The script reads the final analysis CSV and makes four 1x3 canvases in
+The script reads the final analysis CSV and makes 1x3 canvases in
 output/integrated_study/:
 
   integrated_xB_dependence.png
   integrated_Q2_dependence.png
   integrated_t_dependence.png
   integrated_phi_dependence.png
+  integrated_e_theta_dependence.png
+  integrated_p_theta_dependence.png
+  integrated_g_theta_dependence.png
 
-Each canvas contains:
+The detector-angle plots are made only if the corresponding CSV columns exist:
+
+  e_theta_min, e_theta_max, e_theta_avg, <period>
+  p_theta_min, p_theta_max, p_theta_avg, <period>
+  g_theta_min, g_theta_max, g_theta_avg, <period>
+
+Each 1x3 canvas contains:
 
   left:   integrated normed cross sections for:
             10.6 GeV
@@ -35,7 +44,7 @@ The script also makes one additional 2x2 canvas:
 
   km15_kinematic_dependences.png
 
-showing the KM15 model prediction for the same four kinematic dependences:
+showing the KM15 model prediction for the four physical kinematic dependences:
 xB, Q2, |t|, and phi.
 
 By default the KM15 prediction plot uses representative mode:
@@ -60,6 +69,14 @@ cross sections:
   d sigma / d|t|      = sum_i sigma_i * dxB_i * dQ2_i * dphi_i
   d sigma / dphi      = sum_i sigma_i * dxB_i * dQ2_i * dt_i
 
+For detector-angle projections, the script integrates over the full physics
+volume:
+
+  sigma(theta bin) = sum_i sigma_i * dxB_i * dQ2_i * dt_i * dphi_i
+
+so those y axes are labeled as integrated cross sections rather than
+d sigma / d theta.
+
 The phi width is converted from degrees to radians by default, since the usual
 DVCS differential cross section convention is per radian. Use --phi-degrees if
 you intentionally want degree-weighted phi integration instead.
@@ -71,6 +88,9 @@ available per-bin average kinematic columns, for example:
   Q2avg, Fa18 Inb
   t_abs_avg, Fa18 Inb
   phiavg, Fa18 Inb
+  e_theta_avg, Fa18 Inb
+  p_theta_avg, Fa18 Inb
+  g_theta_avg, Fa18 Inb
 
 and weights those sub-bin average values by event/yield columns if available.
 If no suitable yield/count column is found, it falls back to a finite-value
@@ -267,6 +287,8 @@ PROJECTIONS = {
         "title": r"$x_B$ dependence",
         "integrate_widths": ["Q2", "t", "phi"],
         "outfile_tag": "xB",
+        "required": True,
+        "km15_prediction": True,
     },
     "Q2": {
         "min_col": "Q2min",
@@ -277,6 +299,8 @@ PROJECTIONS = {
         "title": r"$Q^2$ dependence",
         "integrate_widths": ["xB", "t", "phi"],
         "outfile_tag": "Q2",
+        "required": True,
+        "km15_prediction": True,
     },
     "t": {
         "min_col": "t_abs_min",
@@ -287,6 +311,8 @@ PROJECTIONS = {
         "title": r"$|t|$ dependence",
         "integrate_widths": ["xB", "Q2", "phi"],
         "outfile_tag": "t",
+        "required": True,
+        "km15_prediction": True,
     },
     "phi": {
         "min_col": "phimin",
@@ -297,8 +323,63 @@ PROJECTIONS = {
         "title": r"$\phi$ dependence",
         "integrate_widths": ["xB", "Q2", "t"],
         "outfile_tag": "phi",
+        "required": True,
+        "km15_prediction": True,
+    },
+    "e_theta": {
+        "min_col": "e_theta_min",
+        "max_col": "e_theta_max",
+        "avg_prefix": "e_theta_avg",
+        "xlabel": r"$\theta_{e}$  (deg)",
+        "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
+        "title": r"electron polar-angle dependence",
+        "integrate_widths": ["xB", "Q2", "t", "phi"],
+        "outfile_tag": "e_theta",
+        "required": False,
+        "km15_prediction": False,
+    },
+    "p_theta": {
+        "min_col": "p_theta_min",
+        "max_col": "p_theta_max",
+        "avg_prefix": "p_theta_avg",
+        "xlabel": r"$\theta_{p}$  (deg)",
+        "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
+        "title": r"proton polar-angle dependence",
+        "integrate_widths": ["xB", "Q2", "t", "phi"],
+        "outfile_tag": "p_theta",
+        "required": False,
+        "km15_prediction": False,
+    },
+    "g_theta": {
+        "min_col": "g_theta_min",
+        "max_col": "g_theta_max",
+        "avg_prefix": "g_theta_avg",
+        "xlabel": r"$\theta_{\gamma}$  (deg)",
+        "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
+        "title": r"photon polar-angle dependence",
+        "integrate_widths": ["xB", "Q2", "t", "phi"],
+        "outfile_tag": "g_theta",
+        "required": False,
+        "km15_prediction": False,
     },
 }
+
+DATA_PROJECTION_ORDER = [
+    "xB",
+    "Q2",
+    "t",
+    "phi",
+    "e_theta",
+    "p_theta",
+    "g_theta",
+]
+
+KM15_PREDICTION_PROJECTION_ORDER = [
+    "xB",
+    "Q2",
+    "t",
+    "phi",
+]
 
 
 FLOAT_PATTERN = re.compile(
@@ -451,31 +532,19 @@ def make_gepard_xs_point(
 ):
     """
     Build a Gepard DataPoint at fixed-target kinematics.
-
-    Do not pass W together with xB and Q2. Gepard treats {xB, W, Q2} as an
-    overdetermined kinematic set and will raise a KinematicsError. Instead,
-    give xB and Q2, let DataPoint fill the basic missing DIS kinematics, then
-    call gepard.kinematics.prepare(pt) to fill derived DVCS/BH quantities such
-    as y, eps2, K2, K, and P1P2.
     """
 
     from gepard.kinematics import prepare
 
-    xB = float(xB)
-    Q2 = float(Q2)
-    t_abs = float(t_abs)
-    phi_deg_trento = float(phi_deg_trento)
-    ebeam = float(ebeam)
-
     pt = g.DataPoint(
-        xB=xB,
-        Q2=Q2,
-        t=-abs(t_abs),
-        phi=math.radians(phi_deg_trento),
+        xB=float(xB),
+        Q2=float(Q2),
+        t=-abs(float(t_abs)),
+        phi=math.radians(float(phi_deg_trento)),
         frame="Trento",
         process="ep2epgamma",
         exptype="fixed target",
-        in1energy=ebeam,
+        in1energy=float(ebeam),
         in1charge=-1,
         in1polarization=0,
         observable="XS",
@@ -552,13 +621,6 @@ def bh_xs(
     phi_deg_trento: float,
     ebeam: float,
 ) -> float:
-    """
-    BH-only unpolarized cross section diagnostic.
-
-    This is used only in a ratio, so the exact absolute unit convention cancels
-    as long as numerator and denominator are evaluated consistently.
-    """
-
     pt = make_gepard_xs_point(
         g=model_context.g,
         xB=xB,
@@ -590,11 +652,6 @@ def correction_cache_key(
     t_abs: float,
     phi: float,
 ) -> Tuple[float, float, float, float]:
-    """
-    Round the kinematics enough to make repeated CSV-row accesses share cached
-    model corrections without meaningfully changing the evaluated kinematics.
-    """
-
     return (
         round(float(xB), 8),
         round(float(Q2), 8),
@@ -613,26 +670,14 @@ def update_model_correction_diagnostics(
     # endif
 
     if model_name == "KM15":
-        diagnostics.km15_correction_min = min(
-            diagnostics.km15_correction_min,
-            correction,
-        )
-        diagnostics.km15_correction_max = max(
-            diagnostics.km15_correction_max,
-            correction,
-        )
+        diagnostics.km15_correction_min = min(diagnostics.km15_correction_min, correction)
+        diagnostics.km15_correction_max = max(diagnostics.km15_correction_max, correction)
         diagnostics.km15_correction_sum += correction
         diagnostics.km15_correction_count += 1
 
     elif model_name == "BH":
-        diagnostics.bh_correction_min = min(
-            diagnostics.bh_correction_min,
-            correction,
-        )
-        diagnostics.bh_correction_max = max(
-            diagnostics.bh_correction_max,
-            correction,
-        )
+        diagnostics.bh_correction_min = min(diagnostics.bh_correction_min, correction)
+        diagnostics.bh_correction_max = max(diagnostics.bh_correction_max, correction)
         diagnostics.bh_correction_sum += correction
         diagnostics.bh_correction_count += 1
 
@@ -649,15 +694,6 @@ def km15_and_bh_sp19_to_fa18_corrections_direct(
     compute_bh_diagnostic: bool,
     model_context: ModelContext,
 ) -> Tuple[float, float, Optional[str]]:
-    """
-    Compute both:
-
-      KM15(10.604 GeV) / KM15(10.1998 GeV)
-      BH(10.604 GeV)   / BH(10.1998 GeV)
-
-    The BH ratio is only computed if compute_bh_diagnostic is true.
-    """
-
     km15_numerator = km15_xs(
         model_context=model_context,
         xB=xB,
@@ -729,13 +765,6 @@ def km15_and_bh_sp19_to_fa18_corrections_direct(
 
 
 def worker_sp19_correction(task: Tuple[int, float, float, float, float, bool]) -> Tuple[int, float, float, Optional[str], Optional[str]]:
-    """
-    Worker for one unique Sp19 correction kinematic point.
-
-    Returns:
-      task_id, km15_corr, bh_corr, bh_failure_message, fatal_error_message
-    """
-
     task_id, xB, Q2, t_abs, phi, compute_bh_diagnostic = task
 
     try:
@@ -758,13 +787,6 @@ def worker_sp19_correction(task: Tuple[int, float, float, float, float, bool]) -
 
 
 def worker_km15_prediction(task: Tuple[int, float, float, float, float, float]) -> Tuple[int, float, Optional[str]]:
-    """
-    Worker for one KM15 prediction kinematic point.
-
-    Returns:
-      task_id, km15_value, fatal_error_message
-    """
-
     task_id, xB, Q2, t_abs, phi, ebeam = task
 
     try:
@@ -791,14 +813,6 @@ def worker_km15_prediction(task: Tuple[int, float, float, float, float, float]) 
 # -----------------------------------------------------------------------------
 
 def parse_tuple3(value) -> Tuple[float, float, float]:
-    """
-    Parse a CSV cell holding either NaN, scalar, or '(value, stat, sys)'.
-
-    Returns
-    -------
-    value, stat, sys : tuple of floats
-    """
-
     if value is None:
         return (math.nan, math.nan, math.nan)
     # endif
@@ -833,13 +847,6 @@ def parse_tuple3(value) -> Tuple[float, float, float]:
 
 
 def parse_scalar_from_cell(value) -> float:
-    """
-    Parse a scalar-like CSV cell.
-
-    If the cell is a tuple such as '(value, stat, sys)', this returns the first
-    number. This is useful for yield/count columns that may be stored as tuple3.
-    """
-
     if value is None:
         return math.nan
     # endif
@@ -905,6 +912,13 @@ def require_columns(df: pd.DataFrame, columns: Iterable[str]) -> None:
     # endif
 
 
+def projection_columns_exist(df: pd.DataFrame, projection: str) -> bool:
+    info = PROJECTIONS[projection]
+    needed = [str(info["min_col"]), str(info["max_col"])]
+
+    return all(col in df.columns for col in needed)
+
+
 def add_width_columns(df: pd.DataFrame, phi_degrees: bool) -> pd.DataFrame:
     out = df.copy()
 
@@ -962,11 +976,6 @@ def weight_for_row(
 
 
 def candidate_yield_columns_for_period(df: pd.DataFrame, period: str) -> List[str]:
-    """
-    Return candidate yield/count columns that can be used to weight the average
-    x-position of an integrated/projection point.
-    """
-
     period_lower = period.lower()
 
     priority_phrases = [
@@ -1017,12 +1026,6 @@ def candidate_yield_columns_for_period(df: pd.DataFrame, period: str) -> List[st
 
 
 def event_weight_for_average(row: pd.Series, candidate_columns: List[str]) -> float:
-    """
-    Determine the event/yield weight for placing the x-position.
-
-    Returns NaN if no useful positive weight is found.
-    """
-
     for col in candidate_columns:
         val = parse_scalar_from_cell(row[col])
 
@@ -1035,14 +1038,6 @@ def event_weight_for_average(row: pd.Series, candidate_columns: List[str]) -> fl
 
 
 def fallback_count_weight_for_model(row: pd.Series, period: str) -> float:
-    """
-    Determine a fallback row weight for representative KM15 kinematics.
-
-    Preferred weighting is by available yield/count columns. If no such column
-    exists, use 1 for each finite row rather than cross-section size, so the
-    representative model point remains a simple accepted-bin average.
-    """
-
     _ = row
     _ = period
 
@@ -1055,20 +1050,6 @@ def average_x_for_group(
     period: str,
     yield_weight_columns: List[str],
 ) -> float:
-    """
-    Compute the plotted x-position for a projected bin.
-
-    Preferred behavior:
-      x_plot = sum_j N_j * <x>_j / sum_j N_j
-
-    where j runs over the hidden sub-bins being integrated over. The N_j are
-    taken from pi0-corrected/signal/acceptance-corrected yield columns if found.
-
-    Fallbacks:
-      1. simple finite average of the per-sub-bin average kinematic values,
-      2. midpoint of the projected bin.
-    """
-
     avg_col = f"{projection_info['avg_prefix']}, {period}"
     min_col = str(projection_info["min_col"])
     max_col = str(projection_info["max_col"])
@@ -1124,13 +1105,6 @@ def run_sp19_correction_tasks(
     max_workers: int,
     no_parallel_km15: bool,
 ) -> Dict[int, Tuple[float, float, Optional[str], Optional[str]]]:
-    """
-    Run unique Sp19 correction tasks.
-
-    Returns:
-      result[task_id] = (km15_corr, bh_corr, bh_failure_message, fatal_error_message)
-    """
-
     results: Dict[int, Tuple[float, float, Optional[str], Optional[str]]] = {}
 
     if len(tasks) == 0:
@@ -1182,13 +1156,6 @@ def precompute_sp19_to_fa18_km15_scales(
     max_workers: int,
     no_parallel_km15: bool,
 ) -> Tuple[pd.DataFrame, ModelDiagnostics]:
-    """
-    Precompute Sp19 -> Fa18 KM15 correction factors once and store them in the
-    dataframe.
-
-    This avoids calling Gepard/KM15 repeatedly inside each projection plot.
-    """
-
     out = df.copy()
     diagnostics = ModelDiagnostics(enabled=enabled)
 
@@ -1346,13 +1313,6 @@ def run_km15_prediction_tasks(
     max_workers: int,
     no_parallel_km15: bool,
 ) -> Dict[int, Tuple[float, Optional[str]]]:
-    """
-    Run KM15 prediction tasks.
-
-    Returns:
-      result[task_id] = (km15_value, fatal_error_message)
-    """
-
     results: Dict[int, Tuple[float, Optional[str]]] = {}
 
     if len(tasks) == 0:
@@ -1403,6 +1363,10 @@ def integrated_points_for_period(
     no_width_weighting: bool,
     apply_sp19_to_fa18_scaling: bool = False,
 ) -> List[Point]:
+    if not projection_columns_exist(df, projection):
+        return []
+    # endif
+
     info = PROJECTIONS[projection]
     col = cross_section_column(period)
 
@@ -1514,19 +1478,6 @@ def representative_kinematics_for_group(
     no_width_weighting: bool,
     yield_weight_columns: List[str],
 ) -> RepresentativeKinematics:
-    """
-    Compute representative count/yield-weighted kinematics for one projected bin.
-
-    The non-plotted variables are represented by weighted averages of the
-    available per-row average kinematics in the CSV. The weights are yield/count
-    columns if available. If no such columns exist, every finite row receives
-    weight 1.
-
-    The returned integration_weight_sum is the sum of the same bin-width
-    integration weights used in the data projection, so a point prediction can be
-    put on the same projected-cross-section scale as the data.
-    """
-
     info = PROJECTIONS[projection]
 
     xB_sum = 0.0
@@ -1645,32 +1596,23 @@ def build_km15_prediction_points_all_projections(
     no_parallel_km15: bool,
     diagnostics: ModelDiagnostics,
 ) -> Dict[str, List[Point]]:
-    """
-    Build projected KM15 prediction points for all four kinematic dependences.
-
-    Modes:
-      representative:
-        one KM15 call per projected bin, using representative weighted average
-        kinematics for that projected bin.
-
-      row-sum:
-        one KM15 call per underlying multidimensional CSV row, summed with the
-        same integration weights as the data projection.
-    """
-
     if prediction_mode not in {"representative", "row-sum"}:
         raise ValueError(
             "--km15-prediction-mode must be either 'representative' or 'row-sum'."
         )
     # endif
 
-    projection_order = ["xB", "Q2", "t", "phi"]
+    projection_order = KM15_PREDICTION_PROJECTION_ORDER
 
     task_id = 0
     tasks: List[Tuple[int, float, float, float, float, float]] = []
     task_metadata: Dict[int, Dict[str, object]] = {}
 
     for projection in projection_order:
+        if not projection_columns_exist(df, projection):
+            continue
+        # endif
+
         info = PROJECTIONS[projection]
         yield_weight_columns = candidate_yield_columns_for_period(df, prediction_period)
         group_cols = [str(info["min_col"]), str(info["max_col"])]
@@ -1949,18 +1891,6 @@ def point_total_error(
     include_bin_to_bin_sys: bool,
     bin_to_bin_sys_frac: float,
 ) -> float:
-    """
-    Return the outer y-error to draw for a cross-section or ratio point.
-
-    If include_bin_to_bin_sys is false:
-      total_error = stat
-
-    If include_bin_to_bin_sys is true:
-      total_error = sqrt(stat^2 + (f * y)^2)
-
-    where f defaults to 0.10.
-    """
-
     stat = point.stat if np.isfinite(point.stat) else 0.0
 
     if not include_bin_to_bin_sys:
@@ -2053,16 +1983,6 @@ def ratio_points(numerator: List[Point], denominator: List[Point]) -> List[Point
 
 
 def weighted_mean_two_points(a: Point, b: Point) -> Optional[Point]:
-    """
-    Weighted mean of two points using statistical uncertainties only.
-
-    mean = sum_i y_i / stat_i^2 / sum_i 1 / stat_i^2
-    stat = sqrt(1 / sum_i 1 / stat_i^2)
-
-    If one point has invalid or zero uncertainty, it is skipped. If both are
-    unusable as weighted measurements, return None.
-    """
-
     values: List[float] = []
     weights: List[float] = []
 
@@ -2232,7 +2152,15 @@ def make_projection_plot(
     include_bin_to_bin_sys: bool,
     bin_to_bin_sys_frac: float,
     apply_sp19_to_fa18_scaling: bool,
-) -> None:
+) -> bool:
+    if not projection_columns_exist(df, projection):
+        print(
+            f"Skipping {projection} dependence: missing "
+            f"{PROJECTIONS[projection]['min_col']} and/or {PROJECTIONS[projection]['max_col']}"
+        )
+        return False
+    # endif
+
     info = PROJECTIONS[projection]
 
     all_needed_periods = []
@@ -2349,6 +2277,8 @@ def make_projection_plot(
     fig.savefig(outbase + ".png", dpi=200)
     plt.close(fig)
 
+    return True
+
 
 def make_km15_prediction_plot(
     prediction_points_by_projection: Dict[str, List[Point]],
@@ -2358,8 +2288,6 @@ def make_km15_prediction_plot(
     prediction_ebeam: float,
     prediction_mode: str,
 ) -> None:
-    projection_order = ["xB", "Q2", "t", "phi"]
-
     fig, axes = plt.subplots(
         2,
         2,
@@ -2377,7 +2305,7 @@ def make_km15_prediction_plot(
         fontsize=15,
     )
 
-    for ax, projection in zip(axes.ravel(), projection_order):
+    for ax, projection in zip(axes.ravel(), KM15_PREDICTION_PROJECTION_ORDER):
         info = PROJECTIONS[projection]
         points = prediction_points_by_projection.get(projection, [])
 
@@ -2487,8 +2415,8 @@ def print_model_correction_summary(diagnostics: ModelDiagnostics) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Make integrated xB, Q2, |t|, and phi dependence plots from a "
-            "final DVCS pass-2 analysis CSV."
+            "Make integrated xB, Q2, |t|, phi, and optional detector-angle "
+            "dependence plots from a final DVCS pass-2 analysis CSV."
         )
     )
 
@@ -2671,8 +2599,10 @@ def main() -> None:
         no_parallel_km15=args.no_parallel_km15,
     )
 
-    for projection in ["xB", "Q2", "t", "phi"]:
-        make_projection_plot(
+    made_projection_count = 0
+
+    for projection in DATA_PROJECTION_ORDER:
+        made_plot = make_projection_plot(
             df=df,
             projection=projection,
             output_dir=args.output_dir,
@@ -2681,6 +2611,10 @@ def main() -> None:
             bin_to_bin_sys_frac=args.bin_to_bin_sys_frac,
             apply_sp19_to_fa18_scaling=not args.no_sp19_km15_energy_scaling,
         )
+
+        if made_plot:
+            made_projection_count += 1
+        # endif
     # endfor
 
     if not args.no_km15_prediction_plot:
@@ -2729,7 +2663,7 @@ def main() -> None:
 
     print_model_correction_summary(diagnostics)
 
-    print(f"Wrote integrated study PNG plots to: {args.output_dir}")
+    print(f"Wrote {made_projection_count} integrated dependence PNG plots to: {args.output_dir}")
 
 
 if __name__ == "__main__":
