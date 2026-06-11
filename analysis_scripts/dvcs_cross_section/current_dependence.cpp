@@ -481,10 +481,12 @@ struct ChargeEntry {
     double run_scaler = std::numeric_limits<double>::quiet_NaN();
     double hel_pos = std::numeric_limits<double>::quiet_NaN();
     double hel_neg = std::numeric_limits<double>::quiet_NaN();
+    double col5 = std::numeric_limits<double>::quiet_NaN();
 
     bool has_run_scaler = false;
     bool has_hel_pos = false;
     bool has_hel_neg = false;
+    bool has_col5 = false;
 };
 
 static double parse_optional_double(const std::vector<std::string>& fields,
@@ -546,14 +548,17 @@ static std::unordered_map<int, ChargeEntry> read_charge_csv(const std::string& p
         bool ok_run = false;
         bool ok_pos = false;
         bool ok_neg = false;
+        bool ok_col5 = false;
 
         entry.run_scaler = parse_optional_double(fields, 1, ok_run);
         entry.hel_pos = parse_optional_double(fields, 2, ok_pos);
         entry.hel_neg = parse_optional_double(fields, 3, ok_neg);
+        entry.col5 = parse_optional_double(fields, 4, ok_col5);
 
         entry.has_run_scaler = ok_run;
         entry.has_hel_pos = ok_pos;
         entry.has_hel_neg = ok_neg;
+        entry.has_col5 = ok_col5;
 
         if (!entry.has_run_scaler && !(entry.has_hel_pos && entry.has_hel_neg)) {
             continue;
@@ -569,7 +574,8 @@ static std::unordered_map<int, ChargeEntry> read_charge_csv(const std::string& p
               << " column 1 = run number,"
               << " column 2 = RUN::Scaler-like total,"
               << " column 3 = positive-helicity scaler,"
-              << " column 4 = negative-helicity scaler."
+              << " column 4 = negative-helicity scaler,"
+              << " column 5 = auxiliary scaler component used only by the optional columns-3-to-5 mode."
               << std::endl;
 
     return out;
@@ -584,9 +590,38 @@ static bool select_unpolarized_charge_for_period(
     int runnum,
     const ChargeEntry& entry,
     bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+    double columns_3_to_5_charge_sum_scale,
     double& charge) {
 
     charge = std::numeric_limits<double>::quiet_NaN();
+
+    if (use_columns_3_to_5_charge_sum_scaled_for_unpolarized) {
+        if (!(entry.has_hel_pos && entry.has_hel_neg && entry.has_col5)) {
+            std::cout << "[current_dependence] WARNING: missing one or more columns 3-5"
+                      << " in scaled columns-3-to-5 charge mode for run=" << runnum
+                      << " period=" << tags.display
+                      << std::endl;
+            return false;
+        }
+
+        const double raw_sum = entry.hel_pos + entry.hel_neg + entry.col5;
+        charge = columns_3_to_5_charge_sum_scale * raw_sum;
+
+        if (!(charge > 0.0)) {
+            std::cout << "[current_dependence] WARNING: non-positive scaled columns-3-to-5 charge"
+                      << " for run=" << runnum
+                      << " period=" << tags.display
+                      << " col3=" << entry.hel_pos
+                      << " col4=" << entry.hel_neg
+                      << " col5=" << entry.col5
+                      << " scale=" << columns_3_to_5_charge_sum_scale
+                      << std::endl;
+            return false;
+        }
+
+        return true;
+    }
 
     if (is_spring_2018_period(tags.display)) {
         if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
@@ -1262,7 +1297,9 @@ static DataAgg process_data_tree(
     TTree* tree,
     const std::unordered_map<int, ChargeEntry>& charge_map,
     const TopoCutMap& data_cuts,
-    bool use_second_column_charge_for_all_unpolarized) {
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
 
     PeriodTags tags = parse_period_from_key(key);
 
@@ -1307,6 +1344,8 @@ static DataAgg process_data_tree(
                                                   b.runnum,
                                                   charge_it->second,
                                                   use_second_column_charge_for_all_unpolarized,
+                                                  use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                                                  columns_3_to_5_charge_sum_scale,
                                                   charge)) {
             continue;
         }
@@ -2198,7 +2237,9 @@ static std::vector<PeriodResult> run_channel_study(
     const std::string& output_dir,
     int max_workers,
     bool process_mc,
-    bool use_second_column_charge_for_all_unpolarized) {
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
 
     std::map<std::string, DataAgg> data_aggs;
     std::mutex data_mutex;
@@ -2229,7 +2270,9 @@ static std::vector<PeriodResult> run_channel_study(
                                         item.second,
                                         charge_map,
                                         data_cuts,
-                                        use_second_column_charge_for_all_unpolarized);
+                                        use_second_column_charge_for_all_unpolarized,
+                                        use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                                        columns_3_to_5_charge_sum_scale);
 
         std::lock_guard<std::mutex> lock(data_mutex);
         data_aggs[agg.period] = std::move(agg);
@@ -2855,7 +2898,12 @@ bool update_current_dependence_factors_csv(
 
         std::cout << "[current_dependence] Unpolarized data charge-normalization mode: ";
 
-        if (options.use_second_column_charge_for_all_unpolarized) {
+        if (options.use_columns_3_to_5_charge_sum_scaled_for_unpolarized) {
+            std::cout << "scaled columns-3-to-5 mode: charge = "
+                      << options.columns_3_to_5_charge_sum_scale
+                      << " * (column 3 + column 4 + column 5) for all periods."
+                      << std::endl;
+        } else if (options.use_second_column_charge_for_all_unpolarized) {
             std::cout << "column 2 for all periods. Spring 2018 is also column 2."
                       << std::endl;
         } else {
@@ -2894,7 +2942,9 @@ bool update_current_dependence_factors_csv(
                               options.output_dir,
                               options.max_workers,
                               true,
-                              options.use_second_column_charge_for_all_unpolarized);
+                              options.use_second_column_charge_for_all_unpolarized,
+                              options.use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                              options.columns_3_to_5_charge_sum_scale);
 
         std::vector<PeriodResult> eppi0_results =
             run_channel_study(eppi0,
@@ -2907,7 +2957,9 @@ bool update_current_dependence_factors_csv(
                               options.output_dir,
                               options.max_workers,
                               false,
-                              options.use_second_column_charge_for_all_unpolarized);
+                              options.use_second_column_charge_for_all_unpolarized,
+                              options.use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                              options.columns_3_to_5_charge_sum_scale);
 
         if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
