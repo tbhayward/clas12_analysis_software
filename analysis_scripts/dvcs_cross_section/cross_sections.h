@@ -7,7 +7,7 @@
 // Simple triple used throughout:
 //   value = main quantity
 //   stat  = statistical component
-//   sys   = systematic component (often 0 here)
+//   sys   = systematic component
 struct Triple {
     double value;
     double stat;
@@ -15,39 +15,57 @@ struct Triple {
 };
 
 // Map from period/group label to its luminosity triple.
+//
 // Convention for LumiMap entries:
-//   value = total (unpolarized) accumulated charge
-//   stat  = + helicity accumulated charge
-//   sys   = - helicity accumulated charge
+//   value = total unpolarized accumulated charge
+//   stat  = positive-helicity accumulated charge
+//   sys   = negative-helicity accumulated charge
 using LumiMap = std::map<std::string, Triple>;
 
-// Options controlling how the luminosity map is built from the RGA
-// integrated-luminosity text files.
 struct LumiBuildOptions {
-    // If true:
-    //   Use column 2 of the integrated-luminosity import files for the
-    //   unpolarized accumulated charge for all run periods.
+    // Existing charge-column behavior:
     //
-    // If false:
-    //   Preserve the older mixed convention:
-    //     Sp18 Inb / Sp18 Out             -> column 2
-    //     Fa18 Inb / Fa18 Out / Sp19 Inb -> column 3 + column 4
+    //   true:
+    //     use column 2 of the integrated-luminosity import files for all
+    //     unpolarized cross-section luminosities.
     //
-    // In both modes, the helicity-resolved luminosities are still read as:
-    //   stat = column 3 = + helicity accumulated charge
-    //   sys  = column 4 = - helicity accumulated charge
+    //   false:
+    //     use the legacy mixed convention:
+    //       Sp18 Inb / Sp18 Out             -> column 2
+    //       Fa18 Inb / Fa18 Out / Sp19 Inb -> column 3 + column 4
     //
-    // Spring 2018 is always forced to use column 2 for the unpolarized total.
+    // This option is ignored if
+    // use_columns_3_to_5_charge_sum_scaled_for_unpolarized is true.
     bool use_second_column_charge_for_all_unpolarized = true;
+
+    // New optional unpolarized luminosity mode:
+    //
+    //   true:
+    //     use
+    //
+    //       L_unpol = columns_3_to_5_charge_sum_scale
+    //                 * (column 3 + column 4 + column 5)
+    //
+    //     for all unpolarized cross-section luminosities.
+    //
+    //   false:
+    //     fall back to use_second_column_charge_for_all_unpolarized / legacy mode.
+    //
+    // This option has priority over use_second_column_charge_for_all_unpolarized.
+    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized = false;
+
+    // Scale applied in the optional columns-3-to-5 mode.
+    // For a 2.5% upward scale, use 1.025.
+    double columns_3_to_5_charge_sum_scale = 1.025;
 };
 
-// Build luminosity map from RGA text files in imports/integrated_luminosity/.
-// Default behavior is the new convention:
-//   all unpolarized cross sections use column 2 totals.
+// Build luminosity map from imports/integrated_luminosity/.
+// Default behavior remains:
+//   unpolarized luminosity uses column 2 for all periods.
 LumiMap build_lumi_map();
 
 // Build luminosity map with explicit charge-column convention control.
-LumiMap build_lumi_map(const LumiBuildOptions &options);
+LumiMap build_lumi_map(const LumiBuildOptions& options);
 
 // Update dvcs_pass2_analysis.csv:
 //   - Fill integrated luminosity columns using lumi_map.
@@ -56,45 +74,26 @@ LumiMap build_lumi_map(const LumiBuildOptions &options);
 //   - Import Frad/Fbin directly from imports/all_bin_v3.csv.
 //   - Write those imported Frad/Fbin values into both 10.6 GeV and 10.2 GeV CSV columns.
 //   - Read the phase-space-allowed bin_volume from the pass-2 CSV columns
-//     filled by bin_volume.cpp; do not import or overwrite bin_volume from Lee's CSV.
+//     filled by bin_volume.cpp.
 //   - Do not apply imports/efficiency.json or any additional normalization.
-// Returns true on success, false on any fatal CSV or I/O problem.
-bool compute_cross_sections(const std::string &csv_main,
-                            const LumiMap &lumi_map);
+bool compute_cross_sections(const std::string& csv_main,
+                            const LumiMap& lumi_map);
 
 // Same as above, but lets the caller explicitly choose the Lee/pass-1 CSV.
-// The expected source columns are:
-//   Frad
-//   Fbin
-// matched by the pass-2 CSV "bin index" column.
-// The Lee bin_volume column, if present, is intentionally ignored.
-bool compute_cross_sections(const std::string &csv_main,
-                            const LumiMap &lumi_map,
-                            const std::string &lee_csv_path);
+bool compute_cross_sections(const std::string& csv_main,
+                            const LumiMap& lumi_map,
+                            const std::string& lee_csv_path);
 
-// Plot cross sections vs phi for a given label:
-//   - Reads cross section columns for that label from csv_main.
-//   - Groups rows by xB range, then lays out subpads in Q2 x |t| grid.
-//   - Uses log scale on Y.
-//   - Uses a single legend at the top of the canvas.
-//   - Overlays BH/KM/VGG theory curves if a xs_phi_all.json exists for
-//     this label under theory_json_root.
-// Saves PNGs under out_root_dir/<PeriodDir>/.
-//
-// Returns true on success. If the required cross section columns for this
-// particular label do not exist, it prints a message and returns true
-// (nothing to plot for that label).
-bool plot_cross_sections_for_label(const std::string &csv_main,
-                                   const std::string &label,
-                                   const std::string &theory_json_root,
-                                   const std::string &out_root_dir);
+// Plot cross sections vs phi for a given label.
+bool plot_cross_sections_for_label(const std::string& csv_main,
+                                   const std::string& label,
+                                   const std::string& theory_json_root,
+                                   const std::string& out_root_dir);
 
 // Regenerate BH / KM / VGG theory curves vs phi and write:
 //   output/jsons/cross_sections/10.6_GeV/xs_phi_all.json
 //   output/jsons/cross_sections/10.2_GeV/xs_phi_all.json
-//
-// This function overwrites any existing files. It does NOT modify the CSV.
-bool regenerate_theory_jsons(const std::string &csv_main,
-                             const std::string &theory_json_root);
+bool regenerate_theory_jsons(const std::string& csv_main,
+                             const std::string& theory_json_root);
 
 #endif // CROSS_SECTIONS_H
