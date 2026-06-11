@@ -167,87 +167,87 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // --------- Raw yields/counts into CSV + plots ----------
-    {
-        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // // --------- Raw yields/counts into CSV + plots ----------
+    // {
+    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make a backup
-        try {
-            std::filesystem::copy_file(csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup
+    //     try {
+    //         std::filesystem::copy_file(csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+    //     }
 
-        // update_total_counts_csv() fills:
-        //   - DVCS data raw yields
-        //   - eppi0 data raw yields
-        //   - DVCS generated/reconstructed MC yields
-        //   - eppi0 generated/reconstructed MC yields
-        //   - eppi0-background-as-DVCS reconstructed MC yields
-        if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
-            genMcTrees, recMcTrees,
-            eppi0GenMcTrees, eppi0RecMcTrees,
-            eppi0BkgTrees,
-            cuts_json,
-            output_root,
-            /*max_workers=*/5)) {
-          std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-          std::exit(EXIT_FAILURE);
-        }
-    }
+    //     // update_total_counts_csv() fills:
+    //     //   - DVCS data raw yields
+    //     //   - eppi0 data raw yields
+    //     //   - DVCS generated/reconstructed MC yields
+    //     //   - eppi0 generated/reconstructed MC yields
+    //     //   - eppi0-background-as-DVCS reconstructed MC yields
+    //     if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
+    //         genMcTrees, recMcTrees,
+    //         eppi0GenMcTrees, eppi0RecMcTrees,
+    //         eppi0BkgTrees,
+    //         cuts_json,
+    //         output_root,
+    //         /*max_workers=*/5)) {
+    //       std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+    //       std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- Current-dependence correction factors ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // // --------- Current-dependence correction factors ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        CurrentDependenceOptions current_opts;
-        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-        current_opts.output_dir = "output/dvcs_current_dependence";
+    //     CurrentDependenceOptions current_opts;
+    //     current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+    //     current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     current_opts.output_dir = "output/dvcs_current_dependence";
 
-        // Existing override:
-        //   false -> compute current-efficiency factors normally
-        //   true  -> write all current-efficiency factors as (1,0)
-        current_opts.override_to_unity = false;
+    //     // Existing override:
+    //     //   false -> compute current-efficiency factors normally
+    //     //   true  -> write all current-efficiency factors as (1,0)
+    //     current_opts.override_to_unity = false;
 
-        // Existing charge-column behavior.
-        // This remains available, but it is ignored when the columns-3-to-5
-        // scaled mode below is enabled.
-        current_opts.use_second_column_charge_for_all_unpolarized = false;
+    //     // Existing charge-column behavior.
+    //     // This remains available, but it is ignored when the columns-3-to-5
+    //     // scaled mode below is enabled.
+    //     current_opts.use_second_column_charge_for_all_unpolarized = false;
 
-        // New optional unpolarized charge-normalization mode:
-        //
-        //   charge_unpol = 1.025 * (column 3 + column 4 + column 5)
-        //
-        // This overrides use_second_column_charge_for_all_unpolarized.
-        current_opts.use_columns_3_to_5_charge_sum_scaled_for_unpolarized = true;
-        current_opts.columns_3_to_5_charge_sum_scale = 1.025;
+    //     // New optional unpolarized charge-normalization mode:
+    //     //
+    //     //   charge_unpol = 1.025 * (column 3 + column 4 + column 5)
+    //     //
+    //     // This overrides use_second_column_charge_for_all_unpolarized.
+    //     current_opts.use_columns_3_to_5_charge_sum_scaled_for_unpolarized = true;
+    //     current_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
-        // Default behavior:
-        //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
-        //            because the Sp19 5 nA luminosity-scan point has suspect
-        //            Faraday Cup charge.
-        //   false -> use the directly fitted Sp19 Inb current-dependence factor.
-        current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
+    //     // Default behavior:
+    //     //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
+    //     //            because the Sp19 5 nA luminosity-scan point has suspect
+    //     //            Faraday Cup charge.
+    //     //   false -> use the directly fitted Sp19 Inb current-dependence factor.
+    //     current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
 
-        current_opts.max_workers = 5;
+    //     current_opts.max_workers = 5;
 
-        if (!update_current_dependence_factors_csv(csv_main,
-                                                   dataTrees,
-                                                   eppi0DataTrees,
-                                                   currentStudyGenMcTrees,
-                                                   currentStudyRecMcTrees,
-                                                   eppi0GenMcTrees,
-                                                   eppi0RecMcTrees,
-                                                   current_opts)) {
-            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_current_dependence_factors_csv(csv_main,
+    //                                                dataTrees,
+    //                                                eppi0DataTrees,
+    //                                                currentStudyGenMcTrees,
+    //                                                currentStudyRecMcTrees,
+    //                                                eppi0GenMcTrees,
+    //                                                eppi0RecMcTrees,
+    //                                                current_opts)) {
+    //         std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
     // {
