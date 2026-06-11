@@ -7,102 +7,74 @@
 class TTree;
 
 struct CurrentDependenceOptions {
+    // Path to the run charge CSV.
+    // Expected columns:
+    //   column 1 = run number
+    //   column 2 = total RUN::Scaler-like charge
+    //   column 3 = positive-helicity charge
+    //   column 4 = negative-helicity charge
+    //   column 5 = auxiliary scaler component, used only by the optional
+    //              columns-3-to-5 scaled mode
     std::string charge_csv_path = "imports/integrated_luminosity/global.csv";
+
+    // Combined 3-sigma cut JSON produced upstream.
     std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+
+    // Output directory for current-dependence diagnostics.
     std::string output_dir = "output/dvcs_current_dependence";
 
     // Existing override:
+    //   false -> compute current-efficiency factors normally
     //   true  -> write all current-efficiency factors as (1,0)
-    //   false -> compute the current-efficiency factors normally
     bool override_to_unity = false;
 
-    // Charge-column convention for unpolarized data normalization.
+    // Existing charge-column mode:
     //
-    // If true:
-    //   Use column 2 of the integrated-luminosity CSV for all periods.
+    //   true:
+    //     use column 2 of the charge import file for all unpolarized data
+    //     charge normalization.
     //
-    // If false:
-    //   Preserve the older mixed convention:
-    //     Spring 2018 -> column 2
-    //     Fall 2018 and Spring 2019 -> column 3 + column 4
+    //   false:
+    //     use the legacy mixed behavior:
+    //       Sp18 Inb / Sp18 Out             -> column 2
+    //       Fa18 Inb / Fa18 Out / Sp19 Inb -> column 3 + column 4
     //
-    // Spring 2018 is always forced to column 2 internally.
+    // Spring 2018 is always forced to column 2 in legacy mode.
+    //
+    // This option is ignored if
+    // use_columns_3_to_5_charge_sum_scaled_for_unpolarized is true.
     bool use_second_column_charge_for_all_unpolarized = true;
 
-    // New default behavior:
+    // New optional charge-column mode:
     //
-    // If true:
-    //   The Sp19 Inb current-efficiency factors written to the CSV are copied
-    //   from Fa18 Inb instead of being taken from the Sp19 Inb luminosity scan.
+    //   true:
+    //     use
     //
-    // Motivation:
-    //   The only low-current Sp19 Inb scan point is run 6616 at 5 nA, whose
-    //   Faraday Cup charge total is currently suspect. Therefore the Sp19 Inb
-    //   fitted slope is not used by default.
+    //       charge_unpol = columns_3_to_5_charge_sum_scale
+    //                      * (column 3 + column 4 + column 5)
     //
-    // This replacement is applied to:
-    //   current efficiency factor, ep->epg,   exp, Sp19 Inb
-    //   current efficiency factor, ep->epg,   mc,  Sp19 Inb
-    //   current efficiency factor, ep->eppi0, exp, Sp19 Inb
-    //   current efficiency factor, ep->eppi0, mc,  Sp19 Inb
+    //     for all unpolarized current-dependence data charge normalization.
     //
-    // The raw Sp19 Inb scan is still processed and plotted for diagnostic
-    // purposes, but the saved CSV values used downstream are Fa18 Inb values.
+    //   false:
+    //     fall back to use_second_column_charge_for_all_unpolarized / legacy mode.
+    //
+    // This option has priority over use_second_column_charge_for_all_unpolarized.
+    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized = false;
+
+    // Default scale for the optional columns-3-to-5 mode.
+    double columns_3_to_5_charge_sum_scale = 1.025;
+
+    // Default behavior:
+    //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
+    //            because the Sp19 5 nA luminosity-scan point has suspect
+    //            Faraday Cup charge.
+    //   false -> use the directly fitted Sp19 Inb current-dependence factor.
     bool use_fa18_inb_current_efficiency_for_sp19_inb = true;
 
+    // Maximum number of OpenMP workers used internally.
     int max_workers = 5;
 };
 
-/**
- * update_current_dependence_factors_csv
- *
- * Performs the current-dependence study adapted from dvcs_current_dependence.py.
- *
- * For each channel and period, it determines:
- *
- *   DATA:
- *     weighted_data_rel = event-weighted fitted data response at the actual
- *                         current mixture divided by fitted zero-current response
- *
- *   MC:
- *     For ep->epg, mc_ref_rel is the fitted MC efficiency at the reference
- *     current divided by fitted zero-current MC efficiency.
- *
- *     For ep->eppi0, no non-production-current MC exists, so the MC current
- *     factor is derived from the data factor scaled by the DVCS MC/data ratio:
- *
- *         eppi0_mc_factor = eppi0_data_factor * (dvcs_mc_factor / dvcs_data_factor)
- *
- * and writes:
- *
- *   current efficiency factor, ep->epg,   exp, <period> = (weighted_data_rel,stat)
- *   current efficiency factor, ep->epg,   mc,  <period> = (mc_ref_rel,stat)
- *   current efficiency factor, ep->eppi0, exp, <period> = (weighted_data_rel,stat)
- *   current efficiency factor, ep->eppi0, mc,  <period> = (mc_ref_rel,stat)
- *
- * If options.use_fa18_inb_current_efficiency_for_sp19_inb is true, the Sp19 Inb
- * factors written to the CSV are copied from Fa18 Inb. The raw Sp19 Inb fit is
- * still produced in the diagnostic output.
- *
- * It also applies the saved MC current-efficiency factors to the reconstructed
- * MC yield columns and writes the current-corrected reconstructed MC columns
- * needed by downstream eppi0 normalization, pi0-contamination, acceptance, and
- * unfolding modules:
- *
- *   reconstructed current corrected yield, ep->epg, mc, <period>
- *   reconstructed current corrected yield, ep->epg, <topology>, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0, <topology>, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0->epg, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0->epg, <topology>, mc, <period>
- *
- * The correction applied is N_rec,current-corrected = N_rec / f_current^MC.
- *
- * If options.override_to_unity is true, no ROOT loops are performed, all
- * current-efficiency factors are written as (1,0), and the current-corrected MC
- * reconstructed-yield columns are copied from the uncorrected reconstructed-yield
- * columns.
- */
 bool update_current_dependence_factors_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
