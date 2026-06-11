@@ -15,6 +15,19 @@ output/integrated_study/:
   integrated_p_theta_dependence.png
   integrated_g_theta_dependence.png
 
+The detector-angle projections are derived from period-specific average-angle
+columns such as:
+
+  e_theta, 10.6 GeV
+  p_theta, 10.6 GeV
+  g_theta, 10.6 GeV
+
+By default, the rows are binned into 7 equal-width theta bins using the 10.6 GeV
+average-angle columns. Change this with:
+
+  --theta-bins 7
+  --theta-binning-period "10.6 GeV"
+
 Each 1x3 canvas contains:
 
   left:   integrated normed cross sections for:
@@ -74,22 +87,6 @@ d sigma / d theta.
 The phi width is converted from degrees to radians by default, since the usual
 DVCS differential cross section convention is per radian. Use --phi-degrees if
 you intentionally want degree-weighted phi integration instead.
-
-For the plotted x-position in each projected bin, the script tries to use the
-available per-bin average kinematic columns, for example:
-
-  xBavg, Fa18 Inb
-  Q2avg, Fa18 Inb
-  t_abs_avg, Fa18 Inb
-  phiavg, Fa18 Inb
-  e_theta_avg, Fa18 Inb
-  p_theta_avg, Fa18 Inb
-  g_theta_avg, Fa18 Inb
-
-and weights those sub-bin average values by event/yield columns if available.
-If no suitable yield/count column is found, it falls back to a finite-value
-average of the sub-bin average kinematics. If that also fails, it falls back
-to the bin midpoint.
 
 By default, plotted y-error bars are statistical only.
 
@@ -156,8 +153,6 @@ KM15 model evaluations are parallelized by default using process workers:
 Disable process parallelization with:
 
   --no-parallel-km15
-
-All ratio-plot y axes are fixed to RATIO_YMIN--RATIO_YMAX.
 """
 
 import argparse
@@ -195,6 +190,14 @@ RATIO_YMAX = 1.6
 # -----------------------------------------------------------------------------
 
 DEFAULT_MAX_WORKERS = 5
+
+
+# -----------------------------------------------------------------------------
+# Derived theta-binning settings.
+# -----------------------------------------------------------------------------
+
+DEFAULT_THETA_BINS = 7
+DEFAULT_THETA_BINNING_PERIOD = "10.6 GeV"
 
 
 # -----------------------------------------------------------------------------
@@ -283,6 +286,7 @@ PROJECTIONS = {
         "outfile_tag": "xB",
         "required": True,
         "km15_prediction": True,
+        "derived_theta": False,
     },
     "Q2": {
         "min_col": "Q2min",
@@ -295,6 +299,7 @@ PROJECTIONS = {
         "outfile_tag": "Q2",
         "required": True,
         "km15_prediction": True,
+        "derived_theta": False,
     },
     "t": {
         "min_col": "t_abs_min",
@@ -307,6 +312,7 @@ PROJECTIONS = {
         "outfile_tag": "t",
         "required": True,
         "km15_prediction": True,
+        "derived_theta": False,
     },
     "phi": {
         "min_col": "phimin",
@@ -319,11 +325,13 @@ PROJECTIONS = {
         "outfile_tag": "phi",
         "required": True,
         "km15_prediction": True,
+        "derived_theta": False,
     },
     "e_theta": {
-        "min_col": "e_theta_min",
-        "max_col": "e_theta_max",
-        "avg_prefix": "e_theta_avg",
+        "min_col": "_bin_e_theta_min",
+        "max_col": "_bin_e_theta_max",
+        "avg_prefix": "e_theta",
+        "theta_source_prefix": "e_theta",
         "xlabel": r"$\theta_{e}$  (deg)",
         "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
         "title": r"electron polar-angle dependence",
@@ -331,11 +339,13 @@ PROJECTIONS = {
         "outfile_tag": "e_theta",
         "required": True,
         "km15_prediction": False,
+        "derived_theta": True,
     },
     "p_theta": {
-        "min_col": "p_theta_min",
-        "max_col": "p_theta_max",
-        "avg_prefix": "p_theta_avg",
+        "min_col": "_bin_p_theta_min",
+        "max_col": "_bin_p_theta_max",
+        "avg_prefix": "p_theta",
+        "theta_source_prefix": "p_theta",
         "xlabel": r"$\theta_{p}$  (deg)",
         "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
         "title": r"proton polar-angle dependence",
@@ -343,11 +353,13 @@ PROJECTIONS = {
         "outfile_tag": "p_theta",
         "required": True,
         "km15_prediction": False,
+        "derived_theta": True,
     },
     "g_theta": {
-        "min_col": "g_theta_min",
-        "max_col": "g_theta_max",
-        "avg_prefix": "g_theta_avg",
+        "min_col": "_bin_g_theta_min",
+        "max_col": "_bin_g_theta_max",
+        "avg_prefix": "g_theta",
+        "theta_source_prefix": "g_theta",
         "xlabel": r"$\theta_{\gamma}$  (deg)",
         "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
         "title": r"photon polar-angle dependence",
@@ -355,6 +367,7 @@ PROJECTIONS = {
         "outfile_tag": "g_theta",
         "required": True,
         "km15_prediction": False,
+        "derived_theta": True,
     },
 }
 
@@ -947,6 +960,10 @@ def cross_section_column(period: str) -> str:
     return f"normed cross sections, ep->epg, exp, {period}, unpol"
 
 
+def theta_average_column(theta_prefix: str, period: str) -> str:
+    return f"{theta_prefix}, {period}"
+
+
 def require_columns(df: pd.DataFrame, columns: Iterable[str]) -> None:
     missing = [c for c in columns if c not in df.columns]
 
@@ -970,7 +987,7 @@ def require_projection_columns(df: pd.DataFrame, projections: Iterable[str]) -> 
     for projection in projections:
         info = PROJECTIONS[projection]
 
-        if bool(info.get("required", False)):
+        if bool(info.get("required", False)) and not bool(info.get("derived_theta", False)):
             needed.append(str(info["min_col"]))
             needed.append(str(info["max_col"]))
         # endif
@@ -1007,6 +1024,98 @@ def add_width_columns(df: pd.DataFrame, phi_degrees: bool) -> pd.DataFrame:
     else:
         out["_width_phi"] = np.deg2rad(phi_width_deg)
     # endif
+
+    return out
+
+
+def add_derived_theta_bin_columns(
+    df: pd.DataFrame,
+    theta_binning_period: str,
+    theta_bins: int,
+) -> pd.DataFrame:
+    """
+    Add derived theta-bin edge columns for e_theta, p_theta, and g_theta.
+
+    The input CSV stores only average detector angles, not theta-bin edges.
+    This function derives common theta bins from the selected reference period,
+    usually "10.6 GeV", and assigns every row to one of those bins.
+
+    Creates:
+      _bin_e_theta_min, _bin_e_theta_max
+      _bin_p_theta_min, _bin_p_theta_max
+      _bin_g_theta_min, _bin_g_theta_max
+    """
+
+    if theta_bins <= 0:
+        raise ValueError("--theta-bins must be positive.")
+    # endif
+
+    out = df.copy()
+
+    for projection in ["e_theta", "p_theta", "g_theta"]:
+        info = PROJECTIONS[projection]
+        theta_prefix = str(info["theta_source_prefix"])
+        source_col = theta_average_column(theta_prefix, theta_binning_period)
+
+        if source_col not in out.columns:
+            raise KeyError(
+                "The input CSV is missing the angle-average column needed for "
+                f"{projection} binning:\n  {source_col}\n\n"
+                "Use --theta-binning-period to select a period whose angle-average "
+                "columns exist."
+            )
+        # endif
+
+        values = out[source_col].apply(parse_scalar_from_cell).astype(float)
+        finite = values[np.isfinite(values)]
+
+        if len(finite) == 0:
+            raise RuntimeError(
+                f"No finite values found in {source_col}; cannot build {projection} bins."
+            )
+        # endif
+
+        vmin = float(np.min(finite))
+        vmax = float(np.max(finite))
+
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
+            raise RuntimeError(
+                f"Invalid range for {source_col}: min={vmin}, max={vmax}."
+            )
+        # endif
+
+        edges = np.linspace(vmin, vmax, theta_bins + 1)
+
+        min_col = str(info["min_col"])
+        max_col = str(info["max_col"])
+
+        out[min_col] = math.nan
+        out[max_col] = math.nan
+
+        for idx, val in values.items():
+            if not np.isfinite(val):
+                continue
+            # endif
+
+            bin_index = int(np.searchsorted(edges, val, side="right") - 1)
+
+            if bin_index < 0:
+                bin_index = 0
+            # endif
+
+            if bin_index >= theta_bins:
+                bin_index = theta_bins - 1
+            # endif
+
+            out.at[idx, min_col] = float(edges[bin_index])
+            out.at[idx, max_col] = float(edges[bin_index + 1])
+        # endfor
+
+        print(
+            f"Derived {projection} bins from {source_col}: "
+            f"{theta_bins} bins from {vmin:.6g} to {vmax:.6g} deg"
+        )
+    # endfor
 
     return out
 
@@ -2578,6 +2687,25 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--theta-bins",
+        type=int,
+        default=DEFAULT_THETA_BINS,
+        help=(
+            "Number of equal-width bins used for each derived detector-angle "
+            f"projection. Default: {DEFAULT_THETA_BINS}."
+        ),
+    )
+
+    parser.add_argument(
+        "--theta-binning-period",
+        default=DEFAULT_THETA_BINNING_PERIOD,
+        help=(
+            "Period whose average detector-angle columns define the derived "
+            f"theta bins. Default: '{DEFAULT_THETA_BINNING_PERIOD}'."
+        ),
+    )
+
+    parser.add_argument(
         "--include-bin-to-bin-sys",
         action="store_true",
         help=(
@@ -2687,6 +2815,10 @@ def main() -> None:
         raise ValueError("--bin-to-bin-sys-frac must be non-negative.")
     # endif
 
+    if args.theta_bins <= 0:
+        raise ValueError("--theta-bins must be positive.")
+    # endif
+
     if args.km15_prediction_ebeam <= 0.0:
         raise ValueError("--km15-prediction-ebeam must be positive.")
     # endif
@@ -2713,6 +2845,12 @@ def main() -> None:
         "phimax",
     ]
 
+    required += [
+        theta_average_column("e_theta", args.theta_binning_period),
+        theta_average_column("p_theta", args.theta_binning_period),
+        theta_average_column("g_theta", args.theta_binning_period),
+    ]
+
     required += [cross_section_column(period) for period in LEFT_SERIES]
 
     df = pd.read_csv(args.csv_file)
@@ -2722,6 +2860,12 @@ def main() -> None:
     df = add_width_columns(
         df=df,
         phi_degrees=args.phi_degrees,
+    )
+
+    df = add_derived_theta_bin_columns(
+        df=df,
+        theta_binning_period=args.theta_binning_period,
+        theta_bins=args.theta_bins,
     )
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -2784,6 +2928,7 @@ def main() -> None:
     # endif
 
     print(f"All ratio-plot y axes fixed to [{RATIO_YMIN:.2f}, {RATIO_YMAX:.2f}]")
+    print(f"Derived theta projections used {args.theta_bins} bins from period '{args.theta_binning_period}'.")
 
     if args.no_km15_prediction_plot:
         print("KM15 kinematic-dependence prediction plot: disabled")
