@@ -38,26 +38,25 @@ The theta-bin edges are derived from:
   g_theta, 10.6 GeV
 
 by default, with seven equal-width bins. Change with:
+
   --theta-bins 7
   --theta-binning-period "10.6 GeV"
 
-The plotted point for each run period is the mean metric value inside each
-derived theta bin. The error bar is the standard error of the mean over CSV rows
-in that theta bin.
+The plotted point for each run period is the mean acceptance inside each derived
+theta bin. The error bar is the standard error of the mean over CSV rows in that
+theta bin.
 
-Speed notes:
-  - Reads only required CSV columns.
-  - Uses vectorized numpy/pandas binning instead of row loops.
-  - Computes the three theta projections in parallel by default.
+This version intentionally avoids multiprocessing. For this task, multiprocessing
+is usually slower because it copies large pandas objects between processes.
 """
 
 import argparse
-import concurrent.futures
 import math
 import os
 import re
+import time
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -69,7 +68,6 @@ DEFAULT_OUTPUT_NAME = "acceptance_vs_theta.png"
 
 DEFAULT_THETA_BINS = 7
 DEFAULT_THETA_BINNING_PERIOD = "10.6 GeV"
-DEFAULT_MAX_WORKERS = 3
 
 RUN_PERIODS = [
     "Fa18 Inb",
@@ -112,7 +110,7 @@ THETA_ORDER = [
 ]
 
 FLOAT_PATTERN = re.compile(
-    r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+    r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)"
 )
 
 
@@ -131,68 +129,33 @@ class ProjectionResult:
     points_by_period: Dict[str, List[BinnedPoint]]
 
 
+def log(message: str) -> None:
+    now = time.strftime("%H:%M:%S")
+    print(f"[{now}] {message}", flush=True)
+
+
+class Timer:
+    def __init__(self, label: str):
+        self.label = label
+        self.t0 = 0.0
+
+    def __enter__(self):
+        self.t0 = time.perf_counter()
+        log(f"START: {self.label}")
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        dt = time.perf_counter() - self.t0
+        log(f"DONE:  {self.label}  ({dt:.3f} s)")
+        return False
+
+
 def metric_column(period: str) -> str:
     return f"acceptance, {period}"
 
 
 def theta_column(theta_prefix: str, period: str) -> str:
     return f"{theta_prefix}, {period}"
-
-
-def parse_scalar_from_cell(value) -> float:
-    if value is None:
-        return math.nan
-    # endif
-
-    if isinstance(value, float) and math.isnan(value):
-        return math.nan
-    # endif
-
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        return float(value)
-    # endif
-
-    text = str(value).strip()
-
-    if text == "" or text.lower() in {"nan", "none", "null"}:
-        return math.nan
-    # endif
-
-    numbers = FLOAT_PATTERN.findall(text)
-
-    if len(numbers) == 0:
-        return math.nan
-    # endif
-
-    return float(numbers[0])
-
-
-def series_to_float(series: pd.Series) -> pd.Series:
-    """
-    Fast conversion for mostly-numeric columns, with regex fallback for tuple-like
-    or string cells.
-    """
-
-    numeric = pd.to_numeric(series, errors="coerce")
-
-    if numeric.notna().sum() == series.notna().sum():
-        return numeric.astype(float)
-    # endif
-
-    return series.map(parse_scalar_from_cell).astype(float)
-
-
-def require_columns_from_header(csv_file: str, columns: Iterable[str]) -> None:
-    header = pd.read_csv(csv_file, nrows=0)
-    existing = set(header.columns)
-    missing = [col for col in columns if col not in existing]
-
-    if missing:
-        raise KeyError(
-            "The input CSV is missing required columns:\n  "
-            + "\n  ".join(missing)
-        )
-    # endif
 
 
 def required_columns(theta_binning_period: str) -> List[str]:
@@ -213,21 +176,102 @@ def required_columns(theta_binning_period: str) -> List[str]:
     return sorted(set(cols))
 
 
+def require_columns_from_header(csv_file: str, columns: Iterable[str]) -> None:
+    with Timer("reading CSV header"):
+        header = pd.read_csv(csv_file, nrows=0)
+    # endwith
+
+    existing = set(header.columns)
+    missing = [col for col in columns if col not in existing]
+
+    log(f"CSV header contains {len(header.columns)} columns")
+    log(f"Script requires {len(list(columns))} unique columns")
+
+    if missing:
+        raise KeyError(
+            "The input CSV is missing required columns:\n  "
+            + "\n  ".join(missing)
+        )
+    # endif
+
+
 def read_reduced_csv(csv_file: str, theta_binning_period: str) -> pd.DataFrame:
     cols = required_columns(theta_binning_period)
     require_columns_from_header(csv_file, cols)
 
-    return pd.read_csv(csv_file, usecols=cols)
+    with Timer(f"reading reduced CSV with usecols={len(cols)}"):
+        df = pd.read_csv(csv_file, usecols=cols, low_memory=False)
+    # endwith
+
+    memory_mb = df.memory_usage(deep=True).sum() / 1024.0 / 1024.0
+    log(f"Reduced dataframe shape: {df.shape[0]} rows x {df.shape[1]} columns")
+    log(f"Reduced dataframe memory: {memory_mb:.2f} MB")
+
+    return df
+
+
+def numeric_array_from_series(series: pd.Series, column_name: str) -> np.ndarray:
+    """
+    Convert a pandas Series to a float numpy array.
+
+    First try fast pd.to_numeric. If that gives almost no finite values, use a
+    vectorized regex extraction of the first number in the string. This avoids
+    Python-level per-row loops.
+    """
+
+    with Timer(f"converting column to float: {column_name}"):
+        numeric = pd.to_numeric(series, errors="coerce")
+        arr = numeric.to_numpy(dtype=float)
+        finite_count = int(np.isfinite(arr).sum())
+
+        if finite_count > 0:
+            log(
+                f"  {column_name}: pd.to_numeric finite count = "
+                f"{finite_count}/{len(arr)}"
+            )
+            return arr
+        # endif
+
+        log(
+            f"  {column_name}: pd.to_numeric found zero finite values; "
+            "trying vectorized regex extraction"
+        )
+
+        extracted = series.astype(str).str.extract(FLOAT_PATTERN, expand=False)
+        numeric = pd.to_numeric(extracted, errors="coerce")
+        arr = numeric.to_numpy(dtype=float)
+        finite_count = int(np.isfinite(arr).sum())
+
+        log(
+            f"  {column_name}: regex finite count = "
+            f"{finite_count}/{len(arr)}"
+        )
+
+        return arr
+    # endwith
+
+
+def build_numeric_cache(df: pd.DataFrame) -> Dict[str, np.ndarray]:
+    cache: Dict[str, np.ndarray] = {}
+
+    log("Building numeric array cache for all loaded columns")
+
+    for i, col in enumerate(df.columns, start=1):
+        log(f"Column {i}/{len(df.columns)}")
+        cache[col] = numeric_array_from_series(df[col], col)
+    # endfor
+
+    return cache
 
 
 def make_theta_edges(
-    df: pd.DataFrame,
+    numeric_cache: Dict[str, np.ndarray],
     theta_prefix: str,
     theta_binning_period: str,
     theta_bins: int,
 ) -> np.ndarray:
     source_col = theta_column(theta_prefix, theta_binning_period)
-    values = series_to_float(df[source_col]).to_numpy(dtype=float)
+    values = numeric_cache[source_col]
     finite = values[np.isfinite(values)]
 
     if len(finite) == 0:
@@ -243,17 +287,28 @@ def make_theta_edges(
         )
     # endif
 
-    return np.linspace(vmin, vmax, theta_bins + 1)
+    edges = np.linspace(vmin, vmax, theta_bins + 1)
+
+    log(
+        f"  theta edges from {source_col}: "
+        f"{theta_bins} bins, min={vmin:.6g}, max={vmax:.6g}"
+    )
+
+    return edges
 
 
-def binned_metric_points_vectorized(
+def binned_metric_points_numpy(
     theta_values: np.ndarray,
     metric_values: np.ndarray,
     theta_edges: np.ndarray,
+    debug_label: str,
 ) -> List[BinnedPoint]:
     finite_mask = np.isfinite(theta_values) & np.isfinite(metric_values)
+    n_finite = int(np.count_nonzero(finite_mask))
 
-    if not np.any(finite_mask):
+    log(f"    {debug_label}: finite theta+metric rows = {n_finite}")
+
+    if n_finite == 0:
         return []
     # endif
 
@@ -263,24 +318,29 @@ def binned_metric_points_vectorized(
     bin_indices = np.searchsorted(theta_edges, theta, side="right") - 1
     bin_indices = np.clip(bin_indices, 0, len(theta_edges) - 2)
 
+    nbins = len(theta_edges) - 1
+
+    counts = np.bincount(bin_indices, minlength=nbins).astype(float)
+    sum_metric = np.bincount(bin_indices, weights=metric, minlength=nbins)
+    sum_metric2 = np.bincount(bin_indices, weights=metric * metric, minlength=nbins)
+    sum_theta = np.bincount(bin_indices, weights=theta, minlength=nbins)
+
     points: List[BinnedPoint] = []
 
-    for bin_index in range(len(theta_edges) - 1):
-        mask = bin_indices == bin_index
+    for bin_index in range(nbins):
+        n = int(counts[bin_index])
 
-        if not np.any(mask):
+        if n <= 0:
             continue
         # endif
 
-        theta_bin = theta[mask]
-        metric_bin = metric[mask]
-
-        n = int(metric_bin.size)
-        x = float(np.mean(theta_bin))
-        y = float(np.mean(metric_bin))
+        x = float(sum_theta[bin_index] / counts[bin_index])
+        y = float(sum_metric[bin_index] / counts[bin_index])
 
         if n > 1:
-            yerr = float(np.std(metric_bin, ddof=1) / math.sqrt(n))
+            variance_num = sum_metric2[bin_index] - (sum_metric[bin_index] * sum_metric[bin_index] / counts[bin_index])
+            variance = max(0.0, variance_num / (counts[bin_index] - 1.0))
+            yerr = float(math.sqrt(variance) / math.sqrt(counts[bin_index]))
         else:
             yerr = 0.0
         # endif
@@ -297,78 +357,70 @@ def binned_metric_points_vectorized(
 
     points.sort(key=lambda p: p.x)
 
+    bin_count_text = ", ".join(str(p.n) for p in points)
+    log(f"    {debug_label}: nonempty bins = {len(points)}; counts = [{bin_count_text}]")
+
     return points
 
 
 def compute_projection_result(
-    args_tuple: Tuple[pd.DataFrame, str, int, str],
+    numeric_cache: Dict[str, np.ndarray],
+    projection_key: str,
+    theta_bins: int,
+    theta_binning_period: str,
 ) -> ProjectionResult:
-    df, projection_key, theta_bins, theta_binning_period = args_tuple
+    with Timer(f"computing projection: {projection_key}"):
+        info = THETA_PROJECTIONS[projection_key]
+        theta_prefix = str(info["theta_prefix"])
 
-    info = THETA_PROJECTIONS[projection_key]
-    theta_prefix = str(info["theta_prefix"])
-
-    theta_edges = make_theta_edges(
-        df=df,
-        theta_prefix=theta_prefix,
-        theta_binning_period=theta_binning_period,
-        theta_bins=theta_bins,
-    )
-
-    points_by_period: Dict[str, List[BinnedPoint]] = {}
-
-    metric_cache: Dict[str, np.ndarray] = {}
-
-    for period in RUN_PERIODS:
-        theta_col = theta_column(theta_prefix, period)
-        metric_col = metric_column(period)
-
-        theta_values = series_to_float(df[theta_col]).to_numpy(dtype=float)
-
-        if metric_col not in metric_cache:
-            metric_cache[metric_col] = series_to_float(df[metric_col]).to_numpy(dtype=float)
-        # endif
-
-        metric_values = metric_cache[metric_col]
-
-        points_by_period[period] = binned_metric_points_vectorized(
-            theta_values=theta_values,
-            metric_values=metric_values,
-            theta_edges=theta_edges,
+        theta_edges = make_theta_edges(
+            numeric_cache=numeric_cache,
+            theta_prefix=theta_prefix,
+            theta_binning_period=theta_binning_period,
+            theta_bins=theta_bins,
         )
-    # endfor
 
-    return ProjectionResult(
-        projection_key=projection_key,
-        theta_edges=theta_edges,
-        points_by_period=points_by_period,
-    )
+        points_by_period: Dict[str, List[BinnedPoint]] = {}
+
+        for period in RUN_PERIODS:
+            theta_col = theta_column(theta_prefix, period)
+            metric_col = metric_column(period)
+
+            log(f"  {projection_key}, {period}: theta_col={theta_col}, metric_col={metric_col}")
+
+            points_by_period[period] = binned_metric_points_numpy(
+                theta_values=numeric_cache[theta_col],
+                metric_values=numeric_cache[metric_col],
+                theta_edges=theta_edges,
+                debug_label=f"{projection_key}, {period}",
+            )
+        # endfor
+
+        return ProjectionResult(
+            projection_key=projection_key,
+            theta_edges=theta_edges,
+            points_by_period=points_by_period,
+        )
+    # endwith
 
 
 def compute_all_projection_results(
-    df: pd.DataFrame,
+    numeric_cache: Dict[str, np.ndarray],
     theta_bins: int,
     theta_binning_period: str,
-    max_workers: int,
-    no_parallel: bool,
 ) -> Dict[str, ProjectionResult]:
-    tasks = [
-        (df, projection_key, theta_bins, theta_binning_period)
-        for projection_key in THETA_ORDER
-    ]
+    results: Dict[str, ProjectionResult] = {}
 
-    if no_parallel or max_workers <= 1:
-        results = [compute_projection_result(task) for task in tasks]
-    else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            results = list(executor.map(compute_projection_result, tasks))
-        # endwith
-    # endif
+    for projection_key in THETA_ORDER:
+        results[projection_key] = compute_projection_result(
+            numeric_cache=numeric_cache,
+            projection_key=projection_key,
+            theta_bins=theta_bins,
+            theta_binning_period=theta_binning_period,
+        )
+    # endfor
 
-    return {
-        result.projection_key: result
-        for result in results
-    }
+    return results
 
 
 def plot_binned_points(ax, points: List[BinnedPoint], label: str) -> None:
@@ -402,48 +454,50 @@ def make_plot(
     theta_bins: int,
     theta_binning_period: str,
 ) -> None:
-    fig, axes = plt.subplots(
-        1,
-        3,
-        figsize=(18.0, 5.2),
-        constrained_layout=True,
-    )
-
-    fig.suptitle("Acceptance vs detector polar angle", fontsize=16)
-
-    for ax, projection_key in zip(axes, THETA_ORDER):
-        info = THETA_PROJECTIONS[projection_key]
-        result = results_by_projection[projection_key]
-        theta_prefix = str(info["theta_prefix"])
-
-        print(
-            f"{projection_key}: {theta_bins} bins from "
-            f"{result.theta_edges[0]:.6g} to {result.theta_edges[-1]:.6g} deg "
-            f"using {theta_column(theta_prefix, theta_binning_period)}"
+    with Timer("making matplotlib canvas"):
+        fig, axes = plt.subplots(
+            1,
+            3,
+            figsize=(18.0, 5.2),
+            constrained_layout=True,
         )
 
-        for period in RUN_PERIODS:
-            plot_binned_points(
-                ax=ax,
-                points=result.points_by_period.get(period, []),
-                label=period,
+        fig.suptitle("Acceptance vs detector polar angle", fontsize=16)
+
+        for ax, projection_key in zip(axes, THETA_ORDER):
+            info = THETA_PROJECTIONS[projection_key]
+            result = results_by_projection[projection_key]
+            theta_prefix = str(info["theta_prefix"])
+
+            log(
+                f"{projection_key}: plotting {theta_bins} bins from "
+                f"{result.theta_edges[0]:.6g} to {result.theta_edges[-1]:.6g} deg "
+                f"using {theta_column(theta_prefix, theta_binning_period)}"
             )
+
+            for period in RUN_PERIODS:
+                plot_binned_points(
+                    ax=ax,
+                    points=result.points_by_period.get(period, []),
+                    label=period,
+                )
+            # endfor
+
+            ax.set_xlabel(str(info["xlabel"]))
+            ax.set_ylabel("acceptance")
+            ax.set_title(str(info["title"]))
+            ax.grid(True, alpha=0.25)
+            ax.legend(fontsize=8, frameon=True)
         # endfor
 
-        ax.set_xlabel(str(info["xlabel"]))
-        ax.set_ylabel("acceptance")
-        ax.set_title(str(info["title"]))
-        ax.grid(True, alpha=0.25)
-        ax.legend(fontsize=8, frameon=True)
-    # endfor
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, output_name)
 
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, output_name)
+        fig.savefig(output_path, dpi=200)
+        plt.close(fig)
 
-    fig.savefig(output_path, dpi=200)
-    plt.close(fig)
-
-    print(f"Wrote: {output_path}")
+        log(f"Wrote: {output_path}")
+    # endwith
 
 
 def parse_args() -> argparse.Namespace:
@@ -484,38 +538,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    parser.add_argument(
-        "--max-workers",
-        type=int,
-        default=DEFAULT_MAX_WORKERS,
-        help=f"Maximum projection workers. Default: {DEFAULT_MAX_WORKERS}.",
-    )
-
-    parser.add_argument(
-        "--no-parallel",
-        action="store_true",
-        help="Disable parallel computation of the three theta projections.",
-    )
-
     return parser.parse_args()
 
 
 def main() -> None:
+    total_t0 = time.perf_counter()
     args = parse_args()
+
+    log("============================================================")
+    log("plot_acceptance_vs_theta.py")
+    log("============================================================")
+    log(f"Input CSV: {args.csv_file}")
+    log(f"Output dir: {args.output_dir}")
+    log(f"Output name: {args.output_name}")
+    log(f"Theta bins: {args.theta_bins}")
+    log(f"Theta binning period: {args.theta_binning_period}")
 
     if args.theta_bins <= 0:
         raise ValueError("--theta-bins must be positive.")
-    # endif
-
-    if args.max_workers <= 0:
-        raise ValueError("--max-workers must be positive.")
-    # endif
-
-    if args.max_workers > DEFAULT_MAX_WORKERS:
-        print(
-            f"Requested --max-workers {args.max_workers}; capping to {DEFAULT_MAX_WORKERS}."
-        )
-        args.max_workers = DEFAULT_MAX_WORKERS
     # endif
 
     df = read_reduced_csv(
@@ -523,16 +563,12 @@ def main() -> None:
         theta_binning_period=args.theta_binning_period,
     )
 
-    print(f"Read reduced CSV with {len(df)} rows and {len(df.columns)} columns.")
-    print(f"Parallel theta projections: {not args.no_parallel and args.max_workers > 1}")
-    print(f"Max workers: {args.max_workers}")
+    numeric_cache = build_numeric_cache(df)
 
     results_by_projection = compute_all_projection_results(
-        df=df,
+        numeric_cache=numeric_cache,
         theta_bins=args.theta_bins,
         theta_binning_period=args.theta_binning_period,
-        max_workers=args.max_workers,
-        no_parallel=args.no_parallel,
     )
 
     make_plot(
@@ -542,6 +578,10 @@ def main() -> None:
         theta_bins=args.theta_bins,
         theta_binning_period=args.theta_binning_period,
     )
+
+    total_dt = time.perf_counter() - total_t0
+    log(f"TOTAL RUNTIME: {total_dt:.3f} s")
+    log("Done.")
 
 
 if __name__ == "__main__":
