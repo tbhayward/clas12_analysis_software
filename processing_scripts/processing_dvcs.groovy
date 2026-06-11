@@ -286,7 +286,7 @@ public static void main(String[] args) {
 
 	                // DIS variables
 	                Q2 = variables.Q2(); // exchanged virtual photon energy
-	                if (torus == -1 && Q2 < 1.5) { continue;}
+	                if (torus == -1 && Q2 < 1.456) { continue;}
 
 	                W = variables.W(); // hadronic mass
 	                x = variables.x(); // Bjorken-x
