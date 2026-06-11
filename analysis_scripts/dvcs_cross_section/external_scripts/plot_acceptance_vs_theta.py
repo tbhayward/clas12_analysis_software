@@ -48,6 +48,10 @@ theta bin.
 
 This version intentionally avoids multiprocessing. For this task, multiprocessing
 is usually slower because it copies large pandas objects between processes.
+
+This version also forces a noninteractive Matplotlib backend and puts the
+Matplotlib cache/config directory in /tmp to avoid slow or locked network-home
+font-cache behavior on ifarm-like systems.
 """
 
 import argparse
@@ -56,7 +60,15 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List
+
+# Must happen before importing pyplot.
+os.environ.setdefault("MPLBACKEND", "Agg")
+os.environ.setdefault("MPLCONFIGDIR", f"/tmp/matplotlib-{os.getuid()}")
+os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
+
+import matplotlib
+matplotlib.use("Agg", force=True)
 
 import numpy as np
 import pandas as pd
@@ -177,6 +189,8 @@ def required_columns(theta_binning_period: str) -> List[str]:
 
 
 def require_columns_from_header(csv_file: str, columns: Iterable[str]) -> None:
+    columns = list(columns)
+
     with Timer("reading CSV header"):
         header = pd.read_csv(csv_file, nrows=0)
     # endwith
@@ -185,7 +199,7 @@ def require_columns_from_header(csv_file: str, columns: Iterable[str]) -> None:
     missing = [col for col in columns if col not in existing]
 
     log(f"CSV header contains {len(header.columns)} columns")
-    log(f"Script requires {len(list(columns))} unique columns")
+    log(f"Script requires {len(columns)} unique columns")
 
     if missing:
         raise KeyError(
@@ -214,7 +228,7 @@ def numeric_array_from_series(series: pd.Series, column_name: str) -> np.ndarray
     """
     Convert a pandas Series to a float numpy array.
 
-    First try fast pd.to_numeric. If that gives almost no finite values, use a
+    First try fast pd.to_numeric. If that gives zero finite values, use a
     vectorized regex extraction of the first number in the string. This avoids
     Python-level per-row loops.
     """
@@ -338,7 +352,10 @@ def binned_metric_points_numpy(
         y = float(sum_metric[bin_index] / counts[bin_index])
 
         if n > 1:
-            variance_num = sum_metric2[bin_index] - (sum_metric[bin_index] * sum_metric[bin_index] / counts[bin_index])
+            variance_num = (
+                sum_metric2[bin_index]
+                - (sum_metric[bin_index] * sum_metric[bin_index] / counts[bin_index])
+            )
             variance = max(0.0, variance_num / (counts[bin_index] - 1.0))
             yerr = float(math.sqrt(variance) / math.sqrt(counts[bin_index]))
         else:
@@ -454,50 +471,65 @@ def make_plot(
     theta_bins: int,
     theta_binning_period: str,
 ) -> None:
-    with Timer("making matplotlib canvas"):
+    with Timer("making matplotlib figure object"):
         fig, axes = plt.subplots(
             1,
             3,
             figsize=(18.0, 5.2),
-            constrained_layout=True,
+            constrained_layout=False,
         )
-
-        fig.suptitle("Acceptance vs detector polar angle", fontsize=16)
-
-        for ax, projection_key in zip(axes, THETA_ORDER):
-            info = THETA_PROJECTIONS[projection_key]
-            result = results_by_projection[projection_key]
-            theta_prefix = str(info["theta_prefix"])
-
-            log(
-                f"{projection_key}: plotting {theta_bins} bins from "
-                f"{result.theta_edges[0]:.6g} to {result.theta_edges[-1]:.6g} deg "
-                f"using {theta_column(theta_prefix, theta_binning_period)}"
-            )
-
-            for period in RUN_PERIODS:
-                plot_binned_points(
-                    ax=ax,
-                    points=result.points_by_period.get(period, []),
-                    label=period,
-                )
-            # endfor
-
-            ax.set_xlabel(str(info["xlabel"]))
-            ax.set_ylabel("acceptance")
-            ax.set_title(str(info["title"]))
-            ax.grid(True, alpha=0.25)
-            ax.legend(fontsize=8, frameon=True)
-        # endfor
-
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, output_name)
-
-        fig.savefig(output_path, dpi=200)
-        plt.close(fig)
-
-        log(f"Wrote: {output_path}")
     # endwith
+
+    with Timer("setting figure title"):
+        fig.suptitle("Acceptance vs detector polar angle", fontsize=16)
+    # endwith
+
+    with Timer("drawing panels"):
+        for ax, projection_key in zip(axes, THETA_ORDER):
+            with Timer(f"drawing panel: {projection_key}"):
+                info = THETA_PROJECTIONS[projection_key]
+                result = results_by_projection[projection_key]
+                theta_prefix = str(info["theta_prefix"])
+
+                log(
+                    f"{projection_key}: plotting {theta_bins} bins from "
+                    f"{result.theta_edges[0]:.6g} to {result.theta_edges[-1]:.6g} deg "
+                    f"using {theta_column(theta_prefix, theta_binning_period)}"
+                )
+
+                for period in RUN_PERIODS:
+                    plot_binned_points(
+                        ax=ax,
+                        points=result.points_by_period.get(period, []),
+                        label=period,
+                    )
+                # endfor
+
+                ax.set_xlabel(str(info["xlabel"]))
+                ax.set_ylabel("acceptance")
+                ax.set_title(str(info["title"]))
+                ax.grid(True, alpha=0.25)
+                ax.legend(fontsize=8, frameon=True)
+            # endwith
+        # endfor
+    # endwith
+
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, output_name)
+
+    with Timer("applying tight_layout"):
+        fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.92])
+    # endwith
+
+    with Timer(f"saving figure to {output_path}"):
+        fig.savefig(output_path, dpi=150)
+    # endwith
+
+    with Timer("closing figure"):
+        plt.close(fig)
+    # endwith
+
+    log(f"Wrote: {output_path}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -538,6 +570,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--skip-tight-layout",
+        action="store_true",
+        help="Skip fig.tight_layout. Useful if layout solving hangs on a batch system.",
+    )
+
     return parser.parse_args()
 
 
@@ -553,6 +591,9 @@ def main() -> None:
     log(f"Output name: {args.output_name}")
     log(f"Theta bins: {args.theta_bins}")
     log(f"Theta binning period: {args.theta_binning_period}")
+    log(f"MPLBACKEND: {os.environ.get('MPLBACKEND')}")
+    log(f"MPLCONFIGDIR: {os.environ.get('MPLCONFIGDIR')}")
+    log(f"matplotlib backend: {matplotlib.get_backend()}")
 
     if args.theta_bins <= 0:
         raise ValueError("--theta-bins must be positive.")
@@ -570,6 +611,77 @@ def main() -> None:
         theta_bins=args.theta_bins,
         theta_binning_period=args.theta_binning_period,
     )
+
+    if args.skip_tight_layout:
+        global make_plot
+        original_make_plot = make_plot
+
+        def make_plot_without_tight_layout(
+            results_by_projection: Dict[str, ProjectionResult],
+            output_dir: str,
+            output_name: str,
+            theta_bins: int,
+            theta_binning_period: str,
+        ) -> None:
+            with Timer("making matplotlib figure object"):
+                fig, axes = plt.subplots(
+                    1,
+                    3,
+                    figsize=(18.0, 5.2),
+                    constrained_layout=False,
+                )
+            # endwith
+
+            with Timer("setting figure title"):
+                fig.suptitle("Acceptance vs detector polar angle", fontsize=16)
+            # endwith
+
+            with Timer("drawing panels"):
+                for ax, projection_key in zip(axes, THETA_ORDER):
+                    with Timer(f"drawing panel: {projection_key}"):
+                        info = THETA_PROJECTIONS[projection_key]
+                        result = results_by_projection[projection_key]
+                        theta_prefix = str(info["theta_prefix"])
+
+                        log(
+                            f"{projection_key}: plotting {theta_bins} bins from "
+                            f"{result.theta_edges[0]:.6g} to {result.theta_edges[-1]:.6g} deg "
+                            f"using {theta_column(theta_prefix, theta_binning_period)}"
+                        )
+
+                        for period in RUN_PERIODS:
+                            plot_binned_points(
+                                ax=ax,
+                                points=result.points_by_period.get(period, []),
+                                label=period,
+                            )
+                        # endfor
+
+                        ax.set_xlabel(str(info["xlabel"]))
+                        ax.set_ylabel("acceptance")
+                        ax.set_title(str(info["title"]))
+                        ax.grid(True, alpha=0.25)
+                        ax.legend(fontsize=8, frameon=True)
+                    # endwith
+                # endfor
+            # endwith
+
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, output_name)
+
+            with Timer(f"saving figure to {output_path}"):
+                fig.savefig(output_path, dpi=150)
+            # endwith
+
+            with Timer("closing figure"):
+                plt.close(fig)
+            # endwith
+
+            log(f"Wrote: {output_path}")
+
+        make_plot = make_plot_without_tight_layout
+        _ = original_make_plot
+    # endif
 
     make_plot(
         results_by_projection=results_by_projection,
