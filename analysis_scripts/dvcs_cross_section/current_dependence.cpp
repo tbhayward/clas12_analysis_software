@@ -575,7 +575,7 @@ static std::unordered_map<int, ChargeEntry> read_charge_csv(const std::string& p
               << " column 2 = RUN::Scaler-like total,"
               << " column 3 = positive-helicity scaler,"
               << " column 4 = negative-helicity scaler,"
-              << " column 5 = auxiliary scaler component used only by the optional columns-3-to-5 mode."
+              << " column 5 = auxiliary scaler component used only by the optional Fa18/Sp19 columns-3-to-5 mode."
               << std::endl;
 
     return out;
@@ -590,39 +590,14 @@ static bool select_unpolarized_charge_for_period(
     int runnum,
     const ChargeEntry& entry,
     bool use_second_column_charge_for_all_unpolarized,
-    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
     double columns_3_to_5_charge_sum_scale,
     double& charge) {
 
     charge = std::numeric_limits<double>::quiet_NaN();
 
-    if (use_columns_3_to_5_charge_sum_scaled_for_unpolarized) {
-        if (!(entry.has_hel_pos && entry.has_hel_neg && entry.has_col5)) {
-            std::cout << "[current_dependence] WARNING: missing one or more columns 3-5"
-                      << " in scaled columns-3-to-5 charge mode for run=" << runnum
-                      << " period=" << tags.display
-                      << std::endl;
-            return false;
-        }
-
-        const double raw_sum = entry.hel_pos + entry.hel_neg + entry.col5;
-        charge = columns_3_to_5_charge_sum_scale * raw_sum;
-
-        if (!(charge > 0.0)) {
-            std::cout << "[current_dependence] WARNING: non-positive scaled columns-3-to-5 charge"
-                      << " for run=" << runnum
-                      << " period=" << tags.display
-                      << " col3=" << entry.hel_pos
-                      << " col4=" << entry.hel_neg
-                      << " col5=" << entry.col5
-                      << " scale=" << columns_3_to_5_charge_sum_scale
-                      << std::endl;
-            return false;
-        }
-
-        return true;
-    }
-
+    // Spring 2018 has zeros in the helicity/auxiliary scaler columns for this
+    // purpose, so it must always use column 2 for unpolarized normalization.
     if (is_spring_2018_period(tags.display)) {
         if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
             std::cout << "[current_dependence] WARNING: missing/non-positive column-2 charge"
@@ -633,6 +608,35 @@ static bool select_unpolarized_charge_for_period(
         }
 
         charge = entry.run_scaler;
+        return true;
+    }
+
+    // Optional new mode for Fa18 and Sp19 only:
+    //   charge_unpol = scale * (column 3 + column 4 + column 5)
+    if (use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized) {
+        if (!(entry.has_hel_pos && entry.has_hel_neg && entry.has_col5)) {
+            std::cout << "[current_dependence] WARNING: missing one or more columns 3-5"
+                      << " in scaled Fa18/Sp19 columns-3-to-5 charge mode for run=" << runnum
+                      << " period=" << tags.display
+                      << std::endl;
+            return false;
+        }
+
+        const double raw_sum = entry.hel_pos + entry.hel_neg + entry.col5;
+        charge = columns_3_to_5_charge_sum_scale * raw_sum;
+
+        if (!(charge > 0.0)) {
+            std::cout << "[current_dependence] WARNING: non-positive scaled Fa18/Sp19 columns-3-to-5 charge"
+                      << " for run=" << runnum
+                      << " period=" << tags.display
+                      << " col3=" << entry.hel_pos
+                      << " col4=" << entry.hel_neg
+                      << " col5=" << entry.col5
+                      << " scale=" << columns_3_to_5_charge_sum_scale
+                      << std::endl;
+            return false;
+        }
+
         return true;
     }
 
@@ -671,6 +675,7 @@ static bool select_unpolarized_charge_for_period(
 
     return true;
 }
+
 
 static const std::unordered_map<int, int>& fa18_inb_current_map() {
     static const std::unordered_map<int, int> m = {
@@ -1298,7 +1303,7 @@ static DataAgg process_data_tree(
     const std::unordered_map<int, ChargeEntry>& charge_map,
     const TopoCutMap& data_cuts,
     bool use_second_column_charge_for_all_unpolarized,
-    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
     double columns_3_to_5_charge_sum_scale) {
 
     PeriodTags tags = parse_period_from_key(key);
@@ -1344,7 +1349,7 @@ static DataAgg process_data_tree(
                                                   b.runnum,
                                                   charge_it->second,
                                                   use_second_column_charge_for_all_unpolarized,
-                                                  use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                                                  use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                                                   columns_3_to_5_charge_sum_scale,
                                                   charge)) {
             continue;
@@ -2238,7 +2243,7 @@ static std::vector<PeriodResult> run_channel_study(
     int max_workers,
     bool process_mc,
     bool use_second_column_charge_for_all_unpolarized,
-    bool use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
     double columns_3_to_5_charge_sum_scale) {
 
     std::map<std::string, DataAgg> data_aggs;
@@ -2271,7 +2276,7 @@ static std::vector<PeriodResult> run_channel_study(
                                         charge_map,
                                         data_cuts,
                                         use_second_column_charge_for_all_unpolarized,
-                                        use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                                        use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                                         columns_3_to_5_charge_sum_scale);
 
         std::lock_guard<std::mutex> lock(data_mutex);
@@ -2898,10 +2903,11 @@ bool update_current_dependence_factors_csv(
 
         std::cout << "[current_dependence] Unpolarized data charge-normalization mode: ";
 
-        if (options.use_columns_3_to_5_charge_sum_scaled_for_unpolarized) {
-            std::cout << "scaled columns-3-to-5 mode: charge = "
+        if (options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized) {
+            std::cout << "Fa18/Sp19 scaled columns-3-to-5 mode: charge = "
                       << options.columns_3_to_5_charge_sum_scale
-                      << " * (column 3 + column 4 + column 5) for all periods."
+                      << " * (column 3 + column 4 + column 5) for Fa18 and Sp19; "
+                      << "Spring 2018 uses column 2."
                       << std::endl;
         } else if (options.use_second_column_charge_for_all_unpolarized) {
             std::cout << "column 2 for all periods. Spring 2018 is also column 2."
@@ -2943,7 +2949,7 @@ bool update_current_dependence_factors_csv(
                               options.max_workers,
                               true,
                               options.use_second_column_charge_for_all_unpolarized,
-                              options.use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                              options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                               options.columns_3_to_5_charge_sum_scale);
 
         std::vector<PeriodResult> eppi0_results =
@@ -2958,7 +2964,7 @@ bool update_current_dependence_factors_csv(
                               options.max_workers,
                               false,
                               options.use_second_column_charge_for_all_unpolarized,
-                              options.use_columns_3_to_5_charge_sum_scaled_for_unpolarized,
+                              options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                               options.columns_3_to_5_charge_sum_scale);
 
         if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {

@@ -214,17 +214,16 @@ int main(int argc, char* argv[]) {
         //   true  -> write all current-efficiency factors as (1,0)
         current_opts.override_to_unity = false;
 
-        // Existing charge-column behavior.
-        // This remains available, but it is ignored when the columns-3-to-5
-        // scaled mode below is enabled.
-        current_opts.use_second_column_charge_for_all_unpolarized = false;
+        // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
+        current_opts.use_second_column_charge_for_all_unpolarized = true;
 
-        // New optional unpolarized charge-normalization mode:
+        // New mode:
+        //   Sp18 Inb / Sp18 Out:
+        //     charge_unpol = column 2
         //
-        //   charge_unpol = 1.025 * (column 3 + column 4 + column 5)
-        //
-        // This overrides use_second_column_charge_for_all_unpolarized.
-        current_opts.use_columns_3_to_5_charge_sum_scaled_for_unpolarized = true;
+        //   Fa18 Inb / Fa18 Out / Sp19 Inb:
+        //     charge_unpol = 1.025 * (column 3 + column 4 + column 5)
+        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
         current_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
         // Default behavior:
@@ -531,7 +530,7 @@ int main(int argc, char* argv[]) {
     // }
 
 
-  // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    // --------- Cross sections (CSV update + theory JSON + plots) ----------
     {
         const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string theory_json_root = "output/jsons/cross_sections";
@@ -548,32 +547,30 @@ int main(int argc, char* argv[]) {
         //     }
         // }
 
-        // Build luminosity map from imports/integrated_luminosity/.
         LumiBuildOptions lumi_opts;
 
-        // Existing charge-column behavior.
-        // This remains available, but it is ignored when the columns-3-to-5
-        // scaled mode below is enabled.
-        lumi_opts.use_second_column_charge_for_all_unpolarized = false;
-        // New optional unpolarized luminosity mode:
+        // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
+        lumi_opts.use_second_column_charge_for_all_unpolarized = true;
+
+        // New mode:
+        //   Sp18 Inb / Sp18 Out:
+        //     L_unpol = column 2
         //
-        //   L_unpol = 1.025 * (column 3 + column 4 + column 5)
+        //   Fa18 Inb / Fa18 Out / Sp19 Inb:
+        //     L_unpol = 1.025 * (column 3 + column 4 + column 5)
         //
-        // This only changes the unpolarized luminosity, i.e. Triple.value.
-        // The polarized luminosities remain:
+        // Polarized luminosities remain:
         //   pos -> column 3
         //   neg -> column 4
-        lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_unpolarized = true;
+        lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
         lumi_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
         LumiMap lumi_map = build_lumi_map(lumi_opts);
 
-        // Step 1: heavy numerical work (CSV cross sections + theory JSON)
         if (!compute_cross_sections(csv_main, lumi_map)) {
             std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
         }
 
-        // Step 2: plotting only (can be rerun freely to adjust aesthetics)
         const std::vector<std::string> labels_to_plot = {
             "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
             "Sp18 Inb", "Sp18 Out", "Sp19 Inb",

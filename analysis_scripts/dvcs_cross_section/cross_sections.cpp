@@ -383,7 +383,9 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
 // -----------------------------------------------------------------------------
 
 static Triple load_rga_lumi_file(const std::string &path,
-                                 bool unpolarized_total_from_pos_plus_neg) {
+                                 bool unpolarized_total_from_pos_plus_neg,
+                                 bool use_scaled_columns_3_to_5_for_unpolarized,
+                                 double columns_3_to_5_charge_sum_scale) {
     std::ifstream ifs(path);
 
     if (!ifs) {
@@ -395,6 +397,7 @@ static Triple load_rga_lumi_file(const std::string &path,
     double sum_total_col = 0.0;
     double sum_pos       = 0.0;
     double sum_neg       = 0.0;
+    double sum_col5      = 0.0;
 
     std::string line;
     size_t n_lines = 0;
@@ -420,33 +423,50 @@ static Triple load_rga_lumi_file(const std::string &path,
             continue;
         }
 
+        if (use_scaled_columns_3_to_5_for_unpolarized && fields.size() < 5) {
+            std::cerr << "[cross_sections] WARNING: lumi file " << path
+                      << " has a line with fewer than 5 columns in scaled columns-3-to-5 mode, skipping: "
+                      << s << "\n";
+            continue;
+        }
+
         const double total_col = std::atof(fields[1].c_str());
         const double pos       = std::atof(fields[2].c_str());
         const double neg       = std::atof(fields[3].c_str());
+        const double col5      = (fields.size() >= 5) ? std::atof(fields[4].c_str()) : 0.0;
 
         sum_total_col += total_col;
         sum_pos       += pos;
         sum_neg       += neg;
+        sum_col5      += col5;
         ++n_lines;
     }
 
-    const double final_total =
-        unpolarized_total_from_pos_plus_neg ? (sum_pos + sum_neg) : sum_total_col;
+    double final_total = sum_total_col;
+    std::string source = "column 2";
+
+    if (use_scaled_columns_3_to_5_for_unpolarized) {
+        final_total = columns_3_to_5_charge_sum_scale * (sum_pos + sum_neg + sum_col5);
+        source = "scaled columns 3+4+5";
+    } else if (unpolarized_total_from_pos_plus_neg) {
+        final_total = sum_pos + sum_neg;
+        source = "pos+neg columns";
+    }
 
     std::cout << "[cross_sections] Loaded lumi from " << path
               << " over " << n_lines << " runs: "
               << "unpolarized_total=" << final_total
               << " total_col=" << sum_total_col
               << " pos=" << sum_pos
-              << " neg=" << sum_neg;
+              << " neg=" << sum_neg
+              << " col5=" << sum_col5
+              << "  [unpolarized source: " << source;
 
-    if (unpolarized_total_from_pos_plus_neg) {
-        std::cout << "  [unpolarized source: pos+neg columns]";
-    } else {
-        std::cout << "  [unpolarized source: column 2]";
+    if (use_scaled_columns_3_to_5_for_unpolarized) {
+        std::cout << ", scale=" << columns_3_to_5_charge_sum_scale;
     }
 
-    std::cout << "\n";
+    std::cout << "]\n";
 
     Triple out;
     out.value = final_total;
@@ -454,6 +474,7 @@ static Triple load_rga_lumi_file(const std::string &path,
     out.sys   = sum_neg;
     return out;
 }
+
 
 LumiMap build_lumi_map() {
     LumiBuildOptions options;
@@ -468,42 +489,61 @@ LumiMap build_lumi_map(const LumiBuildOptions &options) {
     const bool use_col2_for_all =
         options.use_second_column_charge_for_all_unpolarized;
 
+    const bool use_scaled_fa18_sp19 =
+        options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized;
+
     std::cout << "[cross_sections] build_lumi_map charge convention: ";
 
-    if (use_col2_for_all) {
+    if (use_scaled_fa18_sp19) {
+        std::cout << "Fa18/Sp19 use scale * (columns 3+4+5), scale="
+                  << options.columns_3_to_5_charge_sum_scale
+                  << "; Sp18 uses column 2.\n";
+    } else if (use_col2_for_all) {
         std::cout << "using column 2 for unpolarized accumulated charge for all periods.\n";
     } else {
         std::cout << "legacy mixed mode: Sp18 uses column 2; Fa18 and Sp19 use columns 3+4.\n";
     }
 
-    // This bool controls only Triple.value, i.e. the unpolarized luminosity.
-    //
+    // These settings control only Triple.value, i.e. the unpolarized luminosity.
     // Triple.stat and Triple.sys are always filled from columns 3 and 4,
-    // respectively, so the polarized cross sections remain normalized with the
+    // respectively, so polarized cross sections remain normalized with the
     // helicity-specific accumulated charges.
-    //
     // Spring 2018 is always forced to column 2 for unpolarized normalization.
-    const bool fa18_unpol_from_pos_neg = !use_col2_for_all;
-    const bool sp19_unpol_from_pos_neg = !use_col2_for_all;
+    const bool fa18_unpol_from_pos_neg = (!use_col2_for_all && !use_scaled_fa18_sp19);
+    const bool sp19_unpol_from_pos_neg = (!use_col2_for_all && !use_scaled_fa18_sp19);
     const bool sp18_unpol_from_pos_neg = false;
+
+    const bool fa18_use_scaled_cols_3_to_5 = use_scaled_fa18_sp19;
+    const bool sp19_use_scaled_cols_3_to_5 = use_scaled_fa18_sp19;
+    const bool sp18_use_scaled_cols_3_to_5 = false;
 
     try {
         m["Fa18 Inb"]      = load_rga_lumi_file(base + "/rga_fa18_inb.txt",
-                                                fa18_unpol_from_pos_neg);
+                                                fa18_unpol_from_pos_neg,
+                                                fa18_use_scaled_cols_3_to_5,
+                                                options.columns_3_to_5_charge_sum_scale);
 
         m["Fa18 Out"]      = load_rga_lumi_file(base + "/rga_fa18_out.txt",
-                                                fa18_unpol_from_pos_neg);
+                                                fa18_unpol_from_pos_neg,
+                                                fa18_use_scaled_cols_3_to_5,
+                                                options.columns_3_to_5_charge_sum_scale);
 
         m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
 
         m["Sp18 Inb"]      = load_rga_lumi_file(base + "/rga_sp18_inb.txt",
-                                                sp18_unpol_from_pos_neg);
+                                                sp18_unpol_from_pos_neg,
+                                                sp18_use_scaled_cols_3_to_5,
+                                                options.columns_3_to_5_charge_sum_scale);
 
         m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt",
-                                                sp18_unpol_from_pos_neg);
+                                                sp18_unpol_from_pos_neg,
+                                                sp18_use_scaled_cols_3_to_5,
+                                                options.columns_3_to_5_charge_sum_scale);
 
         m["Sp19 Inb"]      = load_rga_lumi_file(base + "/rga_sp19_inb.txt",
-                                                sp19_unpol_from_pos_neg);
+                                                sp19_unpol_from_pos_neg,
+                                                sp19_use_scaled_cols_3_to_5,
+                                                options.columns_3_to_5_charge_sum_scale);
     } catch (const std::exception &e) {
         std::cerr << "[cross_sections] FATAL in build_lumi_map: "
                   << e.what() << "\n";
