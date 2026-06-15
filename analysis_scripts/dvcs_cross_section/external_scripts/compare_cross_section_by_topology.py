@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-compare_cross_sections_by_topology.py
+compare_cross_section_by_topology.py
 
 Compare integrated DVCS cross sections from separate topology-resolved CSV files.
 
 Expected usage:
 
-  python compare_cross_sections_by_topology.py FD-FD.csv CD-FT.csv CD-FD.csv
+  python compare_cross_section_by_topology.py FD-FD.csv CD-FT.csv CD-FD.csv
 
 The input CSVs should each have the usual pass-2 columns, for example:
 
@@ -20,7 +20,11 @@ The script makes one 2x3 canvas per projection:
 
   xB, Q2, |t|, phi, theta_e, theta_p, theta_gamma
 
-Each canvas has one subplot per run period, with the three topologies overlaid.
+Each canvas has one subplot per run period. Each subplot has two panels:
+
+  top:    absolute integrated cross sections
+  bottom: each curve divided by the arithmetic average of the available curves
+          in that same run-period panel and projected bin.
 
 Outputs:
 
@@ -41,6 +45,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Tuple
 
+# Must happen before importing pyplot.
 os.environ.setdefault("MPLBACKEND", "Agg")
 os.environ.setdefault("MPLCONFIGDIR", f"/tmp/matplotlib-{os.getuid()}")
 os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
@@ -53,75 +58,146 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-RUN_PERIODS = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"]
+# -----------------------------------------------------------------------------
+# Defaults.
+# -----------------------------------------------------------------------------
 
-DEFAULT_LABELS = ["FD-FD", "CD-FT", "CD-FD"]
+RUN_PERIODS = [
+    "Fa18 Inb",
+    "Fa18 Out",
+    "Sp19 Inb",
+    "Sp18 Inb",
+    "Sp18 Out",
+]
+
+DEFAULT_LABELS = [
+    "FD-FD",
+    "CD-FT",
+    "CD-FD",
+]
+
 DEFAULT_OUTPUT_DIR = "output/topology_comparison"
 DEFAULT_OUTPUT_PREFIX = "topology"
 DEFAULT_THETA_BINS = 7
 DEFAULT_THETA_BINNING_PERIOD = "10.6 GeV"
 DEFAULT_XS_TEMPLATE = "normed cross sections, ep->epg, exp, {period}, unpol"
 
+RATIO_YMIN = 0.0
+RATIO_YMAX = 2.0
+
 CATEGORY_STYLE = {
     "FD-FD": dict(marker="o", linestyle="-", color="tab:blue"),
     "CD-FT": dict(marker="s", linestyle="-", color="tab:orange"),
     "CD-FD": dict(marker="^", linestyle="-", color="tab:green"),
+
+    "S1": dict(marker="o", linestyle="-", color="tab:blue"),
+    "S2": dict(marker="s", linestyle="-", color="tab:orange"),
+    "S3": dict(marker="^", linestyle="-", color="tab:green"),
+    "S4": dict(marker="v", linestyle="-", color="tab:red"),
+    "S5": dict(marker="D", linestyle="-", color="tab:purple"),
+    "S6": dict(marker="P", linestyle="-", color="tab:brown"),
+
+    "CD S1": dict(marker="o", linestyle="-", color="tab:blue"),
+    "CD S2": dict(marker="s", linestyle="-", color="tab:orange"),
+    "CD S3": dict(marker="^", linestyle="-", color="tab:green"),
 }
 
 PROJECTIONS = {
     "xB": {
-        "min_col": "xBmin", "max_col": "xBmax", "avg_prefix": "xBavg",
-        "xlabel": r"$x_B$", "ylabel": r"$d\sigma/dx_B$  (pb)",
-        "title": r"$x_B$ dependence", "integrate_widths": ["Q2", "t", "phi"],
-        "outfile_tag": "xB", "derived_theta": False,
+        "min_col": "xBmin",
+        "max_col": "xBmax",
+        "avg_prefix": "xBavg",
+        "xlabel": r"$x_B$",
+        "ylabel": r"$d\sigma/dx_B$  (pb)",
+        "title": r"$x_B$ dependence",
+        "integrate_widths": ["Q2", "t", "phi"],
+        "outfile_tag": "xB",
+        "derived_theta": False,
     },
     "Q2": {
-        "min_col": "Q2min", "max_col": "Q2max", "avg_prefix": "Q2avg",
-        "xlabel": r"$Q^2$  (GeV$^2$)", "ylabel": r"$d\sigma/dQ^2$  (pb/GeV$^2$)",
-        "title": r"$Q^2$ dependence", "integrate_widths": ["xB", "t", "phi"],
-        "outfile_tag": "Q2", "derived_theta": False,
+        "min_col": "Q2min",
+        "max_col": "Q2max",
+        "avg_prefix": "Q2avg",
+        "xlabel": r"$Q^2$  (GeV$^2$)",
+        "ylabel": r"$d\sigma/dQ^2$  (pb/GeV$^2$)",
+        "title": r"$Q^2$ dependence",
+        "integrate_widths": ["xB", "t", "phi"],
+        "outfile_tag": "Q2",
+        "derived_theta": False,
     },
     "t": {
-        "min_col": "t_abs_min", "max_col": "t_abs_max", "avg_prefix": "t_abs_avg",
-        "xlabel": r"$|t|$  (GeV$^2$)", "ylabel": r"$d\sigma/d|t|$  (pb/GeV$^2$)",
-        "title": r"$|t|$ dependence", "integrate_widths": ["xB", "Q2", "phi"],
-        "outfile_tag": "t", "derived_theta": False,
+        "min_col": "t_abs_min",
+        "max_col": "t_abs_max",
+        "avg_prefix": "t_abs_avg",
+        "xlabel": r"$|t|$  (GeV$^2$)",
+        "ylabel": r"$d\sigma/d|t|$  (pb/GeV$^2$)",
+        "title": r"$|t|$ dependence",
+        "integrate_widths": ["xB", "Q2", "phi"],
+        "outfile_tag": "t",
+        "derived_theta": False,
     },
     "phi": {
-        "min_col": "phimin", "max_col": "phimax", "avg_prefix": "phiavg",
-        "xlabel": r"$\phi$  (deg)", "ylabel": r"$d\sigma/d\phi$  (pb/rad)",
-        "title": r"$\phi$ dependence", "integrate_widths": ["xB", "Q2", "t"],
-        "outfile_tag": "phi", "derived_theta": False,
+        "min_col": "phimin",
+        "max_col": "phimax",
+        "avg_prefix": "phiavg",
+        "xlabel": r"$\phi$  (deg)",
+        "ylabel": r"$d\sigma/d\phi$  (pb/rad)",
+        "title": r"$\phi$ dependence",
+        "integrate_widths": ["xB", "Q2", "t"],
+        "outfile_tag": "phi",
+        "derived_theta": False,
     },
     "e_theta": {
-        "min_col": "_bin_e_theta_min", "max_col": "_bin_e_theta_max",
-        "avg_prefix": "e_theta", "theta_source_prefix": "e_theta",
-        "xlabel": r"$\theta_{e}$  (deg)", "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
+        "min_col": "_bin_e_theta_min",
+        "max_col": "_bin_e_theta_max",
+        "avg_prefix": "e_theta",
+        "theta_source_prefix": "e_theta",
+        "xlabel": r"$\theta_{e}$  (deg)",
+        "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
         "title": r"electron polar-angle dependence",
         "integrate_widths": ["xB", "Q2", "t", "phi"],
-        "outfile_tag": "e_theta", "derived_theta": True,
+        "outfile_tag": "e_theta",
+        "derived_theta": True,
     },
     "p_theta": {
-        "min_col": "_bin_p_theta_min", "max_col": "_bin_p_theta_max",
-        "avg_prefix": "p_theta", "theta_source_prefix": "p_theta",
-        "xlabel": r"$\theta_{p}$  (deg)", "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
+        "min_col": "_bin_p_theta_min",
+        "max_col": "_bin_p_theta_max",
+        "avg_prefix": "p_theta",
+        "theta_source_prefix": "p_theta",
+        "xlabel": r"$\theta_{p}$  (deg)",
+        "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
         "title": r"proton polar-angle dependence",
         "integrate_widths": ["xB", "Q2", "t", "phi"],
-        "outfile_tag": "p_theta", "derived_theta": True,
+        "outfile_tag": "p_theta",
+        "derived_theta": True,
     },
     "g_theta": {
-        "min_col": "_bin_g_theta_min", "max_col": "_bin_g_theta_max",
-        "avg_prefix": "g_theta", "theta_source_prefix": "g_theta",
-        "xlabel": r"$\theta_{\gamma}$  (deg)", "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
+        "min_col": "_bin_g_theta_min",
+        "max_col": "_bin_g_theta_max",
+        "avg_prefix": "g_theta",
+        "theta_source_prefix": "g_theta",
+        "xlabel": r"$\theta_{\gamma}$  (deg)",
+        "ylabel": r"$\sigma_{\mathrm{int}}$  (pb)",
         "title": r"photon polar-angle dependence",
         "integrate_widths": ["xB", "Q2", "t", "phi"],
-        "outfile_tag": "g_theta", "derived_theta": True,
+        "outfile_tag": "g_theta",
+        "derived_theta": True,
     },
 }
 
-PROJECTION_ORDER = ["xB", "Q2", "t", "phi", "e_theta", "p_theta", "g_theta"]
+PROJECTION_ORDER = [
+    "xB",
+    "Q2",
+    "t",
+    "phi",
+    "e_theta",
+    "p_theta",
+    "g_theta",
+]
 
-FLOAT_PATTERN = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
+FLOAT_PATTERN = re.compile(
+    r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+)
 
 
 @dataclass
@@ -132,6 +208,10 @@ class Point:
     stat: float
     sys: float
 
+
+# -----------------------------------------------------------------------------
+# Logging.
+# -----------------------------------------------------------------------------
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -148,49 +228,80 @@ class Timer:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        log(f"DONE:  {self.label}  ({time.perf_counter() - self.t0:.3f} s)")
+        dt = time.perf_counter() - self.t0
+        log(f"DONE:  {self.label}  ({dt:.3f} s)")
         return False
 
+
+# -----------------------------------------------------------------------------
+# Parsing.
+# -----------------------------------------------------------------------------
 
 def parse_tuple3(value) -> Tuple[float, float, float]:
     if value is None:
         return math.nan, math.nan, math.nan
+    # endif
+
     if isinstance(value, float) and math.isnan(value):
         return math.nan, math.nan, math.nan
+    # endif
+
     if isinstance(value, (int, float, np.integer, np.floating)):
         return float(value), 0.0, 0.0
+    # endif
 
     text = str(value).strip()
+
     if text == "" or text.lower() in {"nan", "none", "null"}:
         return math.nan, math.nan, math.nan
+    # endif
 
     nums = FLOAT_PATTERN.findall(text)
+
     if not nums:
         return math.nan, math.nan, math.nan
+    # endif
 
     vals = [float(x) for x in nums]
+
     while len(vals) < 3:
         vals.append(0.0)
+    # endwhile
+
     return vals[0], vals[1], vals[2]
 
 
 def parse_scalar(value) -> float:
     if value is None:
         return math.nan
+    # endif
+
     if isinstance(value, float) and math.isnan(value):
         return math.nan
+    # endif
+
     if isinstance(value, (int, float, np.integer, np.floating)):
         return float(value)
+    # endif
 
     text = str(value).strip()
+
     if text == "" or text.lower() in {"nan", "none", "null"}:
         return math.nan
+    # endif
 
     nums = FLOAT_PATTERN.findall(text)
+
     if not nums:
         return math.nan
+    # endif
+
     return float(nums[0])
 
+
+# -----------------------------------------------------------------------------
+# Column helpers.
+# -----------------------------------------------------------------------------
 
 def xs_col(period: str, template: str) -> str:
     return template.format(period=period)
@@ -202,82 +313,180 @@ def theta_col(prefix: str, period: str) -> str:
 
 def require_columns(df: pd.DataFrame, columns: Iterable[str], label: str) -> None:
     missing = [c for c in columns if c not in df.columns]
+
     if missing:
         log(f"Missing columns for {label}:")
+
         for c in missing:
             print(f"  {c}")
-        relevant = [c for c in df.columns if "cross sections" in c.lower()]
+        # endfor
+
+        relevant = [
+            c for c in df.columns
+            if "cross sections" in c.lower() or "cross section" in c.lower()
+        ]
+
         if relevant:
             log("Cross-section-like columns present:")
-            for c in relevant[:80]:
+
+            for c in relevant[:120]:
                 print(f"  {c}")
+            # endfor
+        # endif
+
         raise KeyError(f"{label} is missing {len(missing)} required columns")
+    # endif
 
 
-def read_inputs(paths: List[str], labels: List[str], template: str) -> Dict[str, pd.DataFrame]:
-    required_base = [
-        "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max", "phimin", "phimax",
+# -----------------------------------------------------------------------------
+# Input handling.
+# -----------------------------------------------------------------------------
+
+def required_input_columns(template: str) -> List[str]:
+    cols = [
+        "xBmin",
+        "xBmax",
+        "Q2min",
+        "Q2max",
+        "t_abs_min",
+        "t_abs_max",
+        "phimin",
+        "phimax",
     ]
 
     for period in RUN_PERIODS:
-        required_base += [
-            f"xBavg, {period}", f"Q2avg, {period}", f"t_abs_avg, {period}",
-            f"phiavg, {period}", f"e_theta, {period}", f"p_theta, {period}", f"g_theta, {period}",
+        cols += [
+            f"xBavg, {period}",
+            f"Q2avg, {period}",
+            f"t_abs_avg, {period}",
+            f"phiavg, {period}",
+            f"e_theta, {period}",
+            f"p_theta, {period}",
+            f"g_theta, {period}",
             xs_col(period, template),
         ]
+    # endfor
 
-    out = {}
+    return sorted(set(cols))
+
+
+def read_inputs(
+    paths: List[str],
+    labels: List[str],
+    template: str,
+) -> Dict[str, pd.DataFrame]:
+    needed = required_input_columns(template)
+
+    out: Dict[str, pd.DataFrame] = {}
+
     for path, label in zip(paths, labels):
         with Timer(f"reading {label}: {path}"):
             df = pd.read_csv(path, low_memory=False)
-        require_columns(df, required_base, label)
+        # endwith
+
+        require_columns(df, needed, label)
+
         out[label] = df
+
         log(f"{label}: {df.shape[0]} rows x {df.shape[1]} columns")
+    # endfor
+
     return out
 
+
+# -----------------------------------------------------------------------------
+# Binning and preparation.
+# -----------------------------------------------------------------------------
 
 def add_width_columns(df: pd.DataFrame, phi_degrees: bool) -> pd.DataFrame:
     out = df.copy()
-    out["_width_xB"] = pd.to_numeric(out["xBmax"], errors="coerce") - pd.to_numeric(out["xBmin"], errors="coerce")
-    out["_width_Q2"] = pd.to_numeric(out["Q2max"], errors="coerce") - pd.to_numeric(out["Q2min"], errors="coerce")
-    out["_width_t"] = pd.to_numeric(out["t_abs_max"], errors="coerce") - pd.to_numeric(out["t_abs_min"], errors="coerce")
-    phi_width_deg = pd.to_numeric(out["phimax"], errors="coerce") - pd.to_numeric(out["phimin"], errors="coerce")
-    out["_width_phi"] = phi_width_deg if phi_degrees else np.deg2rad(phi_width_deg)
+
+    out["_width_xB"] = (
+        pd.to_numeric(out["xBmax"], errors="coerce")
+        - pd.to_numeric(out["xBmin"], errors="coerce")
+    )
+
+    out["_width_Q2"] = (
+        pd.to_numeric(out["Q2max"], errors="coerce")
+        - pd.to_numeric(out["Q2min"], errors="coerce")
+    )
+
+    out["_width_t"] = (
+        pd.to_numeric(out["t_abs_max"], errors="coerce")
+        - pd.to_numeric(out["t_abs_min"], errors="coerce")
+    )
+
+    phi_width_deg = (
+        pd.to_numeric(out["phimax"], errors="coerce")
+        - pd.to_numeric(out["phimin"], errors="coerce")
+    )
+
+    if phi_degrees:
+        out["_width_phi"] = phi_width_deg
+    else:
+        out["_width_phi"] = np.deg2rad(phi_width_deg)
+    # endif
+
     return out
 
 
-def build_common_theta_edges(dfs: Dict[str, pd.DataFrame], theta_binning_period: str, theta_bins: int) -> Dict[str, np.ndarray]:
-    edges_by_projection = {}
+def build_common_theta_edges(
+    dfs: Dict[str, pd.DataFrame],
+    theta_binning_period: str,
+    theta_bins: int,
+) -> Dict[str, np.ndarray]:
+    edges_by_projection: Dict[str, np.ndarray] = {}
 
     for projection in ["e_theta", "p_theta", "g_theta"]:
-        prefix = PROJECTIONS[projection]["theta_source_prefix"]
+        prefix = str(PROJECTIONS[projection]["theta_source_prefix"])
         col = theta_col(prefix, theta_binning_period)
 
         all_vals = []
+
         for label, df in dfs.items():
             if col not in df.columns:
                 raise KeyError(f"{label} missing theta-binning column {col}")
+            # endif
+
             vals = df[col].apply(parse_scalar).astype(float).to_numpy()
             all_vals.append(vals[np.isfinite(vals)])
+        # endfor
 
         merged = np.concatenate(all_vals) if all_vals else np.array([], dtype=float)
+
         if len(merged) == 0:
             raise RuntimeError(f"No finite theta values for {col}")
+        # endif
 
         vmin = float(np.min(merged))
         vmax = float(np.max(merged))
-        edges_by_projection[projection] = np.linspace(vmin, vmax, theta_bins + 1)
-        log(f"{projection}: common theta edges from {col}: {theta_bins} bins, {vmin:.6g} to {vmax:.6g} deg")
+
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
+            raise RuntimeError(f"Invalid theta range for {col}: {vmin}, {vmax}")
+        # endif
+
+        edges = np.linspace(vmin, vmax, theta_bins + 1)
+        edges_by_projection[projection] = edges
+
+        log(
+            f"{projection}: common theta edges from {col}: "
+            f"{theta_bins} bins, {vmin:.6g} to {vmax:.6g} deg"
+        )
+    # endfor
 
     return edges_by_projection
 
 
-def add_theta_bins(df: pd.DataFrame, edges_by_projection: Dict[str, np.ndarray], theta_binning_period: str) -> pd.DataFrame:
+def add_theta_bins(
+    df: pd.DataFrame,
+    edges_by_projection: Dict[str, np.ndarray],
+    theta_binning_period: str,
+) -> pd.DataFrame:
     out = df.copy()
 
     for projection, edges in edges_by_projection.items():
         info = PROJECTIONS[projection]
-        prefix = info["theta_source_prefix"]
+        prefix = str(info["theta_source_prefix"])
         src = theta_col(prefix, theta_binning_period)
 
         vals = out[src].apply(parse_scalar).astype(float).to_numpy()
@@ -286,63 +495,121 @@ def add_theta_bins(df: pd.DataFrame, edges_by_projection: Dict[str, np.ndarray],
         idx = np.searchsorted(edges, vals, side="right") - 1
         idx = np.clip(idx, 0, len(edges) - 2)
 
-        min_col = info["min_col"]
-        max_col = info["max_col"]
+        min_col = str(info["min_col"])
+        max_col = str(info["max_col"])
 
         out[min_col] = math.nan
         out[max_col] = math.nan
+
         out.loc[finite, min_col] = edges[idx[finite]]
         out.loc[finite, max_col] = edges[idx[finite] + 1]
+    # endfor
 
     return out
 
 
-def prepare_dataframes(dfs: Dict[str, pd.DataFrame], theta_binning_period: str, theta_bins: int, phi_degrees: bool) -> Dict[str, pd.DataFrame]:
-    prepared = {label: add_width_columns(df, phi_degrees) for label, df in dfs.items()}
-    edges = build_common_theta_edges(prepared, theta_binning_period, theta_bins)
-    prepared = {label: add_theta_bins(df, edges, theta_binning_period) for label, df in prepared.items()}
+def prepare_dataframes(
+    dfs: Dict[str, pd.DataFrame],
+    theta_binning_period: str,
+    theta_bins: int,
+    phi_degrees: bool,
+) -> Dict[str, pd.DataFrame]:
+    prepared = {
+        label: add_width_columns(df, phi_degrees)
+        for label, df in dfs.items()
+    }
+
+    edges = build_common_theta_edges(
+        dfs=prepared,
+        theta_binning_period=theta_binning_period,
+        theta_bins=theta_bins,
+    )
+
+    prepared = {
+        label: add_theta_bins(df, edges, theta_binning_period)
+        for label, df in prepared.items()
+    }
+
     return prepared
 
 
-def row_weight(row: pd.Series, widths: List[str], no_width_weighting: bool) -> float:
+# -----------------------------------------------------------------------------
+# Integration.
+# -----------------------------------------------------------------------------
+
+def row_weight(
+    row: pd.Series,
+    widths: List[str],
+    no_width_weighting: bool,
+) -> float:
     if no_width_weighting:
         return 1.0
+    # endif
+
     w = 1.0
+
     for axis in widths:
         val = row[f"_width_{axis}"]
-        if not np.isfinite(val) or val <= 0:
+
+        if not np.isfinite(val) or val <= 0.0:
             return math.nan
+        # endif
+
         w *= float(val)
+    # endfor
+
     return w
 
 
-def x_position(group: pd.DataFrame, info: Dict[str, object], period: str) -> float:
-    min_col = info["min_col"]
-    max_col = info["max_col"]
+def x_position(
+    group: pd.DataFrame,
+    info: Dict[str, object],
+    period: str,
+) -> float:
+    min_col = str(info["min_col"])
+    max_col = str(info["max_col"])
+
     midpoint = 0.5 * (
         float(pd.to_numeric(group[min_col], errors="coerce").iloc[0])
         + float(pd.to_numeric(group[max_col], errors="coerce").iloc[0])
     )
 
     avg_col = f"{info['avg_prefix']}, {period}"
+
     if avg_col not in group.columns:
         return midpoint
+    # endif
 
     vals = group[avg_col].apply(parse_scalar).astype(float)
     vals = vals[np.isfinite(vals)]
+
     if len(vals) == 0:
         return midpoint
+    # endif
+
     return float(np.mean(vals))
 
 
-def integrated_points(df: pd.DataFrame, projection: str, period: str, template: str, no_width_weighting: bool) -> List[Point]:
+def integrated_points(
+    df: pd.DataFrame,
+    projection: str,
+    period: str,
+    template: str,
+    no_width_weighting: bool,
+) -> List[Point]:
     info = PROJECTIONS[projection]
     col = xs_col(period, template)
 
-    points = []
-    group_cols = [info["min_col"], info["max_col"]]
+    if col not in df.columns:
+        return []
+    # endif
 
-    for _, group in df.sort_values(group_cols).groupby(group_cols, sort=True, dropna=True):
+    points: List[Point] = []
+    group_cols = [str(info["min_col"]), str(info["max_col"])]
+
+    sorted_df = df.sort_values(group_cols)
+
+    for _, group in sorted_df.groupby(group_cols, sort=True, dropna=True):
         y = 0.0
         stat2 = 0.0
         sys2 = 0.0
@@ -350,12 +617,20 @@ def integrated_points(df: pd.DataFrame, projection: str, period: str, template: 
 
         for _, row in group.iterrows():
             val, stat, sys = parse_tuple3(row[col])
+
             if not np.isfinite(val):
                 continue
+            # endif
 
-            w = row_weight(row, info["integrate_widths"], no_width_weighting)
+            w = row_weight(
+                row=row,
+                widths=list(info["integrate_widths"]),
+                no_width_weighting=no_width_weighting,
+            )
+
             if not np.isfinite(w):
                 continue
+            # endif
 
             stat = 0.0 if not np.isfinite(stat) else stat
             sys = 0.0 if not np.isfinite(sys) else sys
@@ -364,40 +639,256 @@ def integrated_points(df: pd.DataFrame, projection: str, period: str, template: 
             stat2 += (stat * w) ** 2
             sys2 += (sys * w) ** 2
             n += 1
+        # endfor
 
         if n == 0:
             continue
+        # endif
 
-        key = (float(group[info["min_col"]].iloc[0]), float(group[info["max_col"]].iloc[0]))
-        points.append(Point(key=key, x=x_position(group, info, period), y=y, stat=math.sqrt(stat2), sys=math.sqrt(sys2)))
+        key = (
+            float(group[str(info["min_col"])].iloc[0]),
+            float(group[str(info["max_col"])].iloc[0]),
+        )
+
+        points.append(
+            Point(
+                key=key,
+                x=x_position(group, info, period),
+                y=y,
+                stat=math.sqrt(stat2),
+                sys=math.sqrt(sys2),
+            )
+        )
+    # endfor
 
     points.sort(key=lambda p: p.x)
+
     return points
 
 
-def total_error(point: Point, include_bin_to_bin_sys: bool, frac: float) -> float:
+# -----------------------------------------------------------------------------
+# Ratio to average.
+# -----------------------------------------------------------------------------
+
+def average_points_by_key(
+    points_by_label: Dict[str, List[Point]],
+) -> Dict[Tuple[float, float], Point]:
+    all_keys = sorted(
+        {
+            p.key
+            for points in points_by_label.values()
+            for p in points
+        }
+    )
+
+    lookup = {
+        label: {p.key: p for p in points}
+        for label, points in points_by_label.items()
+    }
+
+    avg_by_key: Dict[Tuple[float, float], Point] = {}
+
+    for key in all_keys:
+        used: List[Point] = []
+
+        for label in points_by_label:
+            p = lookup[label].get(key)
+
+            if p is None:
+                continue
+            # endif
+
+            if not np.isfinite(p.y):
+                continue
+            # endif
+
+            used.append(p)
+        # endfor
+
+        if len(used) == 0:
+            continue
+        # endif
+
+        yvals = np.array([p.y for p in used], dtype=float)
+        xvals = np.array([p.x for p in used], dtype=float)
+        statvals = np.array(
+            [
+                p.stat if np.isfinite(p.stat) else 0.0
+                for p in used
+            ],
+            dtype=float,
+        )
+
+        mean_y = float(np.mean(yvals))
+        mean_x = float(np.mean(xvals))
+        mean_stat = float(math.sqrt(np.sum(statvals * statvals)) / len(used))
+
+        avg_by_key[key] = Point(
+            key=key,
+            x=mean_x,
+            y=mean_y,
+            stat=mean_stat,
+            sys=0.0,
+        )
+    # endfor
+
+    return avg_by_key
+
+
+def ratio_points_to_average(
+    points: List[Point],
+    avg_by_key: Dict[Tuple[float, float], Point],
+) -> List[Point]:
+    ratios: List[Point] = []
+
+    for p in points:
+        avg = avg_by_key.get(p.key)
+
+        if avg is None:
+            continue
+        # endif
+
+        if not np.isfinite(p.y) or not np.isfinite(avg.y) or avg.y == 0.0:
+            continue
+        # endif
+
+        r = p.y / avg.y
+        rel2 = 0.0
+
+        if p.y != 0.0 and np.isfinite(p.stat):
+            rel2 += (p.stat / p.y) ** 2
+        # endif
+
+        if avg.y != 0.0 and np.isfinite(avg.stat):
+            rel2 += (avg.stat / avg.y) ** 2
+        # endif
+
+        ratios.append(
+            Point(
+                key=p.key,
+                x=p.x,
+                y=r,
+                stat=abs(r) * math.sqrt(rel2),
+                sys=0.0,
+            )
+        )
+    # endfor
+
+    ratios.sort(key=lambda p: p.x)
+
+    return ratios
+
+
+# -----------------------------------------------------------------------------
+# Plotting.
+# -----------------------------------------------------------------------------
+
+def total_error(
+    point: Point,
+    include_bin_to_bin_sys: bool,
+    frac: float,
+) -> float:
     stat = point.stat if np.isfinite(point.stat) else 0.0
+
     if not include_bin_to_bin_sys:
         return stat
+    # endif
+
     return math.sqrt(stat * stat + (frac * abs(point.y)) ** 2)
 
 
-def plot_points(ax, points: List[Point], label: str, include_bin_to_bin_sys: bool, frac: float) -> None:
+def plot_points(
+    ax,
+    points: List[Point],
+    label: str,
+    include_bin_to_bin_sys: bool,
+    frac: float,
+) -> None:
     if not points:
         return
+    # endif
 
-    x = np.array([p.x for p in points])
-    y = np.array([p.y for p in points])
-    stat = np.array([p.stat if np.isfinite(p.stat) else 0.0 for p in points])
-    outer = np.array([total_error(p, include_bin_to_bin_sys, frac) for p in points])
+    x = np.array([p.x for p in points], dtype=float)
+    y = np.array([p.y for p in points], dtype=float)
+    stat = np.array(
+        [
+            p.stat if np.isfinite(p.stat) else 0.0
+            for p in points
+        ],
+        dtype=float,
+    )
+
+    outer = np.array(
+        [
+            total_error(p, include_bin_to_bin_sys, frac)
+            for p in points
+        ],
+        dtype=float,
+    )
 
     style = CATEGORY_STYLE.get(label, dict(marker="o", linestyle="-"))
     color = style.get("color", None)
 
     if include_bin_to_bin_sys:
-        ax.errorbar(x, y, yerr=outer, linewidth=0, elinewidth=2.0, capsize=4.0, alpha=0.25, color=color, zorder=1)
+        ax.errorbar(
+            x,
+            y,
+            yerr=outer,
+            linewidth=0.0,
+            elinewidth=2.0,
+            capsize=4.0,
+            alpha=0.25,
+            color=color,
+            zorder=1,
+        )
+    # endif
 
-    ax.errorbar(x, y, yerr=stat, label=label, markersize=5.0, linewidth=1.1, elinewidth=1.0, capsize=2.0, zorder=3, **style)
+    ax.errorbar(
+        x,
+        y,
+        yerr=stat,
+        label=label,
+        markersize=5.0,
+        linewidth=1.1,
+        elinewidth=1.0,
+        capsize=2.0,
+        zorder=3,
+        **style,
+    )
+
+
+def plot_ratio_points(
+    ax,
+    points: List[Point],
+    label: str,
+) -> None:
+    if not points:
+        return
+    # endif
+
+    x = np.array([p.x for p in points], dtype=float)
+    y = np.array([p.y for p in points], dtype=float)
+    stat = np.array(
+        [
+            p.stat if np.isfinite(p.stat) else 0.0
+            for p in points
+        ],
+        dtype=float,
+    )
+
+    style = CATEGORY_STYLE.get(label, dict(marker="o", linestyle="-"))
+
+    ax.errorbar(
+        x,
+        y,
+        yerr=stat,
+        markersize=4.0,
+        linewidth=1.0,
+        elinewidth=0.9,
+        capsize=2.0,
+        zorder=3,
+        **style,
+    )
 
 
 def make_projection_canvas(
@@ -409,51 +900,234 @@ def make_projection_canvas(
     no_width_weighting: bool,
     include_bin_to_bin_sys: bool,
     frac: float,
+    comparison_name: str,
 ) -> None:
     info = PROJECTIONS[projection]
 
-    fig, axes = plt.subplots(2, 3, figsize=(18.0, 10.0), constrained_layout=False)
-    axes_flat = axes.ravel()
-    fig.suptitle(f"{info['title']} by topology", fontsize=16)
+    fig = plt.figure(figsize=(18.0, 11.0))
 
-    for i, period in enumerate(RUN_PERIODS):
-        ax = axes_flat[i]
+    outer = fig.add_gridspec(
+        2,
+        3,
+        left=0.075,
+        right=0.985,
+        bottom=0.075,
+        top=0.91,
+        wspace=0.28,
+        hspace=0.33,
+    )
+
+    fig.suptitle(f"{info['title']} by {comparison_name}", fontsize=16)
+
+    for panel_index, period in enumerate(RUN_PERIODS):
+        row = panel_index // 3
+        col = panel_index % 3
+
+        inner = outer[row, col].subgridspec(
+            2,
+            1,
+            height_ratios=[3.0, 1.0],
+            hspace=0.05,
+        )
+
+        ax_top = fig.add_subplot(inner[0])
+        ax_ratio = fig.add_subplot(inner[1], sharex=ax_top)
+
+        points_by_label: Dict[str, List[Point]] = {}
 
         for label, df in dfs.items():
-            pts = integrated_points(df, projection, period, template, no_width_weighting)
-            plot_points(ax, pts, label, include_bin_to_bin_sys, frac)
+            points = integrated_points(
+                df=df,
+                projection=projection,
+                period=period,
+                template=template,
+                no_width_weighting=no_width_weighting,
+            )
 
-        ax.set_title(period)
-        ax.set_xlabel(info["xlabel"])
-        ax.set_ylabel(info["ylabel"])
-        ax.grid(True, alpha=0.25)
-        ax.legend(fontsize=8, frameon=True)
+            points_by_label[label] = points
 
-    axes_flat[5].axis("off")
+            plot_points(
+                ax=ax_top,
+                points=points,
+                label=label,
+                include_bin_to_bin_sys=include_bin_to_bin_sys,
+                frac=frac,
+            )
+        # endfor
 
-    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.075, top=0.91, wspace=0.28, hspace=0.33)
+        avg_by_key = average_points_by_key(points_by_label)
+
+        for label, points in points_by_label.items():
+            ratios = ratio_points_to_average(
+                points=points,
+                avg_by_key=avg_by_key,
+            )
+
+            plot_ratio_points(
+                ax=ax_ratio,
+                points=ratios,
+                label=label,
+            )
+        # endfor
+
+        ax_top.set_title(period)
+        ax_top.set_ylabel(str(info["ylabel"]))
+        ax_top.grid(True, alpha=0.25)
+        ax_top.legend(fontsize=8, frameon=True)
+
+        ax_ratio.axhline(
+            1.0,
+            color="0.35",
+            linewidth=1.0,
+            linestyle="--",
+            zorder=0,
+        )
+
+        ax_ratio.set_ylim(RATIO_YMIN, RATIO_YMAX)
+        ax_ratio.set_xlabel(str(info["xlabel"]))
+        ax_ratio.set_ylabel("ratio")
+        ax_ratio.grid(True, alpha=0.25)
+
+        plt.setp(ax_top.get_xticklabels(), visible=False)
+    # endfor
+
+    empty_inner = outer[1, 2].subgridspec(
+        2,
+        1,
+        height_ratios=[3.0, 1.0],
+        hspace=0.05,
+    )
+
+    empty_top = fig.add_subplot(empty_inner[0])
+    empty_ratio = fig.add_subplot(empty_inner[1])
+    empty_top.axis("off")
+    empty_ratio.axis("off")
 
     os.makedirs(output_dir, exist_ok=True)
-    out = os.path.join(output_dir, f"{output_prefix}_{info['outfile_tag']}_comparison.png")
+
+    out = os.path.join(
+        output_dir,
+        f"{output_prefix}_{info['outfile_tag']}_comparison.png",
+    )
+
     fig.savefig(out, dpi=150)
     plt.close(fig)
+
     log(f"Wrote: {out}")
 
 
+def make_all_projection_canvases(
+    dfs: Dict[str, pd.DataFrame],
+    output_dir: str,
+    output_prefix: str,
+    template: str,
+    no_width_weighting: bool,
+    include_bin_to_bin_sys: bool,
+    frac: float,
+    comparison_name: str,
+) -> None:
+    for projection in PROJECTION_ORDER:
+        with Timer(f"plotting {projection}"):
+            make_projection_canvas(
+                dfs=dfs,
+                projection=projection,
+                output_dir=output_dir,
+                output_prefix=output_prefix,
+                template=template,
+                no_width_weighting=no_width_weighting,
+                include_bin_to_bin_sys=include_bin_to_bin_sys,
+                frac=frac,
+                comparison_name=comparison_name,
+            )
+        # endwith
+    # endfor
+
+
+# -----------------------------------------------------------------------------
+# CLI.
+# -----------------------------------------------------------------------------
+
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Compare topology-resolved DVCS cross sections from separate CSVs.")
-    p.add_argument("csv_files", nargs=3, help="CSV files in order: FD-FD CD-FT CD-FD")
-    p.add_argument("--labels", nargs=3, default=DEFAULT_LABELS, help="Labels for the three CSVs.")
-    p.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
-    p.add_argument("--output-prefix", default=DEFAULT_OUTPUT_PREFIX)
-    p.add_argument("--xs-template", default=DEFAULT_XS_TEMPLATE, help="Cross-section column template with {period}.")
-    p.add_argument("--no-width-weighting", action="store_true")
-    p.add_argument("--phi-degrees", action="store_true")
-    p.add_argument("--theta-bins", type=int, default=DEFAULT_THETA_BINS)
-    p.add_argument("--theta-binning-period", default=DEFAULT_THETA_BINNING_PERIOD)
-    p.add_argument("--include-bin-to-bin-sys", action="store_true")
-    p.add_argument("--bin-to-bin-sys-frac", type=float, default=0.10)
-    return p.parse_args()
+    parser = argparse.ArgumentParser(
+        description="Compare topology-resolved DVCS cross sections from separate CSVs."
+    )
+
+    parser.add_argument(
+        "csv_files",
+        nargs=3,
+        help="CSV files in order: FD-FD CD-FT CD-FD",
+    )
+
+    parser.add_argument(
+        "--labels",
+        nargs=3,
+        default=DEFAULT_LABELS,
+        help="Labels for the three CSVs. Default: FD-FD CD-FT CD-FD",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"Output directory. Default: {DEFAULT_OUTPUT_DIR}",
+    )
+
+    parser.add_argument(
+        "--output-prefix",
+        default=DEFAULT_OUTPUT_PREFIX,
+        help=f"Output filename prefix. Default: {DEFAULT_OUTPUT_PREFIX}",
+    )
+
+    parser.add_argument(
+        "--xs-template",
+        default=DEFAULT_XS_TEMPLATE,
+        help=f"Cross-section column template with {{period}}. Default: {DEFAULT_XS_TEMPLATE!r}",
+    )
+
+    parser.add_argument(
+        "--no-width-weighting",
+        action="store_true",
+        help="Use raw sums instead of bin-width weighted integrations.",
+    )
+
+    parser.add_argument(
+        "--phi-degrees",
+        action="store_true",
+        help="Use phi bin widths in degrees instead of radians.",
+    )
+
+    parser.add_argument(
+        "--theta-bins",
+        type=int,
+        default=DEFAULT_THETA_BINS,
+        help=f"Number of derived theta bins. Default: {DEFAULT_THETA_BINS}",
+    )
+
+    parser.add_argument(
+        "--theta-binning-period",
+        default=DEFAULT_THETA_BINNING_PERIOD,
+        help=f"Theta binning reference period. Default: {DEFAULT_THETA_BINNING_PERIOD!r}",
+    )
+
+    parser.add_argument(
+        "--include-bin-to-bin-sys",
+        action="store_true",
+        help="Draw outer stat+fractional-bin-to-bin-systematic bars.",
+    )
+
+    parser.add_argument(
+        "--bin-to-bin-sys-frac",
+        type=float,
+        default=0.10,
+        help="Fractional bin-to-bin systematic uncertainty. Default: 0.10",
+    )
+
+    parser.add_argument(
+        "--comparison-name",
+        default="topology",
+        help="Text used in figure titles. Default: topology",
+    )
+
+    return parser.parse_args()
 
 
 def main() -> None:
@@ -461,28 +1135,50 @@ def main() -> None:
     args = parse_args()
 
     log("============================================================")
-    log("compare_cross_sections_by_topology.py")
+    log("compare_cross_section_by_topology.py")
     log("============================================================")
     log(f"CSV files: {args.csv_files}")
     log(f"Labels: {args.labels}")
     log(f"Output dir: {args.output_dir}")
     log(f"XS template: {args.xs_template}")
+    log(f"Theta bins: {args.theta_bins}")
+    log(f"Theta binning period: {args.theta_binning_period}")
 
-    dfs = read_inputs(args.csv_files, args.labels, args.xs_template)
-    dfs = prepare_dataframes(dfs, args.theta_binning_period, args.theta_bins, args.phi_degrees)
+    if "{period}" not in args.xs_template:
+        raise ValueError("--xs-template must contain {period}")
+    # endif
 
-    for projection in PROJECTION_ORDER:
-        with Timer(f"plotting {projection}"):
-            make_projection_canvas(
-                dfs=dfs,
-                projection=projection,
-                output_dir=args.output_dir,
-                output_prefix=args.output_prefix,
-                template=args.xs_template,
-                no_width_weighting=args.no_width_weighting,
-                include_bin_to_bin_sys=args.include_bin_to_bin_sys,
-                frac=args.bin_to_bin_sys_frac,
-            )
+    if args.theta_bins <= 0:
+        raise ValueError("--theta-bins must be positive")
+    # endif
+
+    if args.bin_to_bin_sys_frac < 0.0:
+        raise ValueError("--bin-to-bin-sys-frac must be non-negative")
+    # endif
+
+    dfs = read_inputs(
+        paths=args.csv_files,
+        labels=args.labels,
+        template=args.xs_template,
+    )
+
+    dfs = prepare_dataframes(
+        dfs=dfs,
+        theta_binning_period=args.theta_binning_period,
+        theta_bins=args.theta_bins,
+        phi_degrees=args.phi_degrees,
+    )
+
+    make_all_projection_canvases(
+        dfs=dfs,
+        output_dir=args.output_dir,
+        output_prefix=args.output_prefix,
+        template=args.xs_template,
+        no_width_weighting=args.no_width_weighting,
+        include_bin_to_bin_sys=args.include_bin_to_bin_sys,
+        frac=args.bin_to_bin_sys_frac,
+        comparison_name=args.comparison_name,
+    )
 
     log(f"TOTAL RUNTIME: {time.perf_counter() - t0:.3f} s")
     log("Done.")

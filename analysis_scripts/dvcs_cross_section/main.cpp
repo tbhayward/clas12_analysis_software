@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     // and editing required_detector1/required_detector2.
     global_cfg.enable_topology_filter = false;
     global_cfg.required_detector1 = 2;  // 1 FD proton, 2 CD proton
-    global_cfg.required_detector2 = 2;  // 0 FT photon, 1 FD photon
+    global_cfg.required_detector2 = 1;  // 0 FT photon, 1 FD photon
 
     // Electron FD sector study. Electron is always FD.
     global_cfg.enable_electron_fd_sector_filter = false;
@@ -75,7 +75,7 @@ int main(int argc, char* argv[]) {
     global_cfg.proton_fd_sector = 1;
 
     // Proton CD sector study. This automatically keeps only CD-FD and CD-FT events.
-    global_cfg.enable_proton_cd_sector_filter = true;
+    global_cfg.enable_proton_cd_sector_filter = false;
     global_cfg.proton_cd_sector = 1;
 
     // Photon FD sector study. This automatically keeps only CD-FD and FD-FD events.
