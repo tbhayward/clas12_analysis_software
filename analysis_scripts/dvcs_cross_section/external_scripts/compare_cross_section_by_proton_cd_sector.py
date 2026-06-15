@@ -18,7 +18,7 @@ Outputs one 2x3 canvas per projection:
   xB, Q2, |t|, phi, theta_e, theta_p, theta_gamma
 """
 
-from compare_cross_sections_by_topology import (
+from compare_cross_section_by_topology import (
     DEFAULT_THETA_BINS,
     DEFAULT_THETA_BINNING_PERIOD,
     DEFAULT_XS_TEMPLATE,
