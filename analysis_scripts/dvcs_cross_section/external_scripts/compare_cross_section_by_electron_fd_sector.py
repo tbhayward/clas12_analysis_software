@@ -25,6 +25,8 @@ Each canvas has one subplot per run period. Each subplot has two panels:
   bottom: each sector divided by the arithmetic average of available sectors
           in that same run-period panel and projected bin.
 
+A diagnostic chi2/ndf is printed in each run-period panel.
+
 Outputs by default:
 
   output/electron_fd_sector_comparison/electron_fd_sector_xB_comparison.png
@@ -43,7 +45,6 @@ from compare_cross_section_by_topology import (
     DEFAULT_THETA_BINS,
     DEFAULT_THETA_BINNING_PERIOD,
     DEFAULT_XS_TEMPLATE,
-    Timer,
     log,
     read_inputs,
     prepare_dataframes,

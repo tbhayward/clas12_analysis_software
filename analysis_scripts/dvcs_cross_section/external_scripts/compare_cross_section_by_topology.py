@@ -26,6 +26,23 @@ Each canvas has one subplot per run period. Each subplot has two panels:
   bottom: each curve divided by the arithmetic average of the available curves
           in that same run-period panel and projected bin.
 
+The ratio panel uses:
+
+  R_i = sigma_i / <sigma>
+
+where <sigma> is the arithmetic mean over the available CSV curves in that
+period/projection bin.
+
+A diagnostic chi2/ndf is printed in each run-period panel:
+
+  chi2 = sum_i ((R_i - 1) / dR_i)^2
+  ndf  = N_ratio_points - N_projected_bins
+
+The uncertainty dR_i includes the statistical uncertainty on the numerator and
+the propagated statistical uncertainty on the arithmetic mean. Correlations are
+ignored, so this chi2 is a diagnostic consistency metric rather than a formal
+hypothesis test.
+
 Outputs:
 
   output/topology_comparison/topology_xB_comparison.png
@@ -43,7 +60,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 # Must happen before importing pyplot.
 os.environ.setdefault("MPLBACKEND", "Agg")
@@ -84,6 +101,10 @@ DEFAULT_XS_TEMPLATE = "normed cross sections, ep->epg, exp, {period}, unpol"
 
 RATIO_YMIN = 0.0
 RATIO_YMAX = 2.0
+
+# Larger than before, but still leaves the absolute panel dominant.
+TOP_PANEL_HEIGHT = 2.2
+RATIO_PANEL_HEIGHT = 1.0
 
 CATEGORY_STYLE = {
     "FD-FD": dict(marker="o", linestyle="-", color="tab:blue"),
@@ -667,7 +688,7 @@ def integrated_points(
 
 
 # -----------------------------------------------------------------------------
-# Ratio to average.
+# Ratio to average and chi2.
 # -----------------------------------------------------------------------------
 
 def average_points_by_key(
@@ -777,6 +798,52 @@ def ratio_points_to_average(
     ratios.sort(key=lambda p: p.x)
 
     return ratios
+
+
+def chi2_ndf_for_ratio_points(
+    ratio_points_by_label: Dict[str, List[Point]],
+) -> Tuple[float, int, int]:
+    chi2 = 0.0
+    n_used = 0
+
+    used_keys = set()
+
+    for points in ratio_points_by_label.values():
+        for p in points:
+            if not np.isfinite(p.y):
+                continue
+            # endif
+
+            if not np.isfinite(p.stat) or p.stat <= 0.0:
+                continue
+            # endif
+
+            chi2 += ((p.y - 1.0) / p.stat) ** 2
+            n_used += 1
+            used_keys.add(p.key)
+        # endfor
+    # endfor
+
+    n_constraints = len(used_keys)
+    ndf = n_used - n_constraints
+
+    return chi2, ndf, n_used
+
+
+def chi2_label_text(
+    ratio_points_by_label: Dict[str, List[Point]],
+) -> str:
+    chi2, ndf, n_used = chi2_ndf_for_ratio_points(ratio_points_by_label)
+
+    if n_used <= 0:
+        return r"$\chi^2/\mathrm{ndf}$: n/a"
+    # endif
+
+    if ndf <= 0:
+        return rf"$\chi^2$: {chi2:.1f}"
+    # endif
+
+    return rf"$\chi^2/\mathrm{{ndf}} = {chi2:.1f}/{ndf:d} = {chi2 / ndf:.2f}$"
 
 
 # -----------------------------------------------------------------------------
@@ -891,6 +958,24 @@ def plot_ratio_points(
     )
 
 
+def add_chi2_box(ax, text: str) -> None:
+    ax.text(
+        0.025,
+        0.95,
+        text,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=8,
+        bbox=dict(
+            boxstyle="round,pad=0.25",
+            facecolor="white",
+            edgecolor="0.65",
+            alpha=0.85,
+        ),
+    )
+
+
 def make_projection_canvas(
     dfs: Dict[str, pd.DataFrame],
     projection: str,
@@ -904,7 +989,7 @@ def make_projection_canvas(
 ) -> None:
     info = PROJECTIONS[projection]
 
-    fig = plt.figure(figsize=(18.0, 11.0))
+    fig = plt.figure(figsize=(18.0, 11.5))
 
     outer = fig.add_gridspec(
         2,
@@ -926,7 +1011,7 @@ def make_projection_canvas(
         inner = outer[row, col].subgridspec(
             2,
             1,
-            height_ratios=[3.0, 1.0],
+            height_ratios=[TOP_PANEL_HEIGHT, RATIO_PANEL_HEIGHT],
             hspace=0.05,
         )
 
@@ -956,6 +1041,7 @@ def make_projection_canvas(
         # endfor
 
         avg_by_key = average_points_by_key(points_by_label)
+        ratio_points_by_label: Dict[str, List[Point]] = {}
 
         for label, points in points_by_label.items():
             ratios = ratio_points_to_average(
@@ -963,12 +1049,19 @@ def make_projection_canvas(
                 avg_by_key=avg_by_key,
             )
 
+            ratio_points_by_label[label] = ratios
+
             plot_ratio_points(
                 ax=ax_ratio,
                 points=ratios,
                 label=label,
             )
         # endfor
+
+        add_chi2_box(
+            ax=ax_top,
+            text=chi2_label_text(ratio_points_by_label),
+        )
 
         ax_top.set_title(period)
         ax_top.set_ylabel(str(info["ylabel"]))
@@ -994,7 +1087,7 @@ def make_projection_canvas(
     empty_inner = outer[1, 2].subgridspec(
         2,
         1,
-        height_ratios=[3.0, 1.0],
+        height_ratios=[TOP_PANEL_HEIGHT, RATIO_PANEL_HEIGHT],
         hspace=0.05,
     )
 
