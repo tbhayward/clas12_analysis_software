@@ -18,13 +18,20 @@ The input CSVs should each have the usual pass-2 columns, for example:
 
 The script makes one 2x3 canvas per projection:
 
-  xB, Q2, |t|, phi, theta_e, theta_p, theta_gamma
+  xB, Q2, |t|, theta_e, theta_p, theta_gamma
+
+The phi projection is intentionally omitted.
 
 Each canvas has one subplot per run period. Each subplot has two panels:
 
   top:    absolute integrated cross sections
   bottom: each curve divided by the arithmetic average of the available curves
           in that same run-period panel and projected bin.
+
+Run-period panel order:
+
+  top row:    Sp18 Inb, Sp18 Out, empty
+  bottom row: Fa18 Inb, Fa18 Out, Sp19 Inb
 
 The ratio panel uses:
 
@@ -43,12 +50,30 @@ the propagated statistical uncertainty on the arithmetic mean. Correlations are
 ignored, so this chi2 is a diagnostic consistency metric rather than a formal
 hypothesis test.
 
+For topology studies only, the script also makes an additional set of 2x3
+canvases:
+
+  output/topology_comparison/topology_period_ratio_xB_comparison.png
+  output/topology_comparison/topology_period_ratio_Q2_comparison.png
+  output/topology_comparison/topology_period_ratio_t_comparison.png
+  output/topology_comparison/topology_period_ratio_e_theta_comparison.png
+  output/topology_comparison/topology_period_ratio_p_theta_comparison.png
+  output/topology_comparison/topology_period_ratio_g_theta_comparison.png
+
+These canvases are arranged as:
+
+  columns: FD-FD, CD-FT, CD-FD
+  rows:    inbending, outbending
+
+Each subplot shows the ratio topology / mean(topologies) for the appropriate run
+periods. This is the fairer diagnostic for asking whether topology-fraction
+patterns are stable between run periods with the same torus setting.
+
 Outputs:
 
   output/topology_comparison/topology_xB_comparison.png
   output/topology_comparison/topology_Q2_comparison.png
   output/topology_comparison/topology_t_comparison.png
-  output/topology_comparison/topology_phi_comparison.png
   output/topology_comparison/topology_e_theta_comparison.png
   output/topology_comparison/topology_p_theta_comparison.png
   output/topology_comparison/topology_g_theta_comparison.png
@@ -60,7 +85,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 # Must happen before importing pyplot.
 os.environ.setdefault("MPLBACKEND", "Agg")
@@ -87,6 +112,26 @@ RUN_PERIODS = [
     "Sp18 Out",
 ]
 
+RUN_PERIOD_PANEL_ORDER = [
+    "Sp18 Inb",
+    "Sp18 Out",
+    None,
+    "Fa18 Inb",
+    "Fa18 Out",
+    "Sp19 Inb",
+]
+
+INBENDING_PERIODS = [
+    "Sp18 Inb",
+    "Fa18 Inb",
+    "Sp19 Inb",
+]
+
+OUTBENDING_PERIODS = [
+    "Sp18 Out",
+    "Fa18 Out",
+]
+
 DEFAULT_LABELS = [
     "FD-FD",
     "CD-FT",
@@ -99,12 +144,9 @@ DEFAULT_THETA_BINS = 7
 DEFAULT_THETA_BINNING_PERIOD = "10.6 GeV"
 DEFAULT_XS_TEMPLATE = "normed cross sections, ep->epg, exp, {period}, unpol"
 
-RATIO_YMIN = 0.0
-RATIO_YMAX = 2.0
-
-# Larger than before, but still leaves the absolute panel dominant.
-TOP_PANEL_HEIGHT = 2.2
-RATIO_PANEL_HEIGHT = 1.0
+# Top panel is still larger, but ratio panel now takes a larger fraction.
+TOP_PANEL_HEIGHT = 2.0
+RATIO_PANEL_HEIGHT = 1.25
 
 CATEGORY_STYLE = {
     "FD-FD": dict(marker="o", linestyle="-", color="tab:blue"),
@@ -121,6 +163,14 @@ CATEGORY_STYLE = {
     "CD S1": dict(marker="o", linestyle="-", color="tab:blue"),
     "CD S2": dict(marker="s", linestyle="-", color="tab:orange"),
     "CD S3": dict(marker="^", linestyle="-", color="tab:green"),
+}
+
+PERIOD_STYLE = {
+    "Sp18 Inb": dict(marker="D", linestyle="-", color="tab:green"),
+    "Fa18 Inb": dict(marker="^", linestyle="-", color="tab:blue"),
+    "Sp19 Inb": dict(marker="s", linestyle="-", color="tab:red"),
+    "Sp18 Out": dict(marker="P", linestyle="-", color="tab:purple"),
+    "Fa18 Out": dict(marker="v", linestyle="-", color="tab:orange"),
 }
 
 PROJECTIONS = {
@@ -155,17 +205,6 @@ PROJECTIONS = {
         "title": r"$|t|$ dependence",
         "integrate_widths": ["xB", "Q2", "phi"],
         "outfile_tag": "t",
-        "derived_theta": False,
-    },
-    "phi": {
-        "min_col": "phimin",
-        "max_col": "phimax",
-        "avg_prefix": "phiavg",
-        "xlabel": r"$\phi$  (deg)",
-        "ylabel": r"$d\sigma/d\phi$  (pb/rad)",
-        "title": r"$\phi$ dependence",
-        "integrate_widths": ["xB", "Q2", "t"],
-        "outfile_tag": "phi",
         "derived_theta": False,
     },
     "e_theta": {
@@ -210,7 +249,6 @@ PROJECTION_ORDER = [
     "xB",
     "Q2",
     "t",
-    "phi",
     "e_theta",
     "p_theta",
     "g_theta",
@@ -687,6 +725,31 @@ def integrated_points(
     return points
 
 
+def precompute_all_points(
+    dfs: Dict[str, pd.DataFrame],
+    projection: str,
+    template: str,
+    no_width_weighting: bool,
+) -> Dict[str, Dict[str, List[Point]]]:
+    points_by_label_period: Dict[str, Dict[str, List[Point]]] = {}
+
+    for label, df in dfs.items():
+        points_by_label_period[label] = {}
+
+        for period in RUN_PERIODS:
+            points_by_label_period[label][period] = integrated_points(
+                df=df,
+                projection=projection,
+                period=period,
+                template=template,
+                no_width_weighting=no_width_weighting,
+            )
+        # endfor
+    # endfor
+
+    return points_by_label_period
+
+
 # -----------------------------------------------------------------------------
 # Ratio to average and chi2.
 # -----------------------------------------------------------------------------
@@ -800,12 +863,28 @@ def ratio_points_to_average(
     return ratios
 
 
+def ratios_for_period(
+    points_by_label_period: Dict[str, Dict[str, List[Point]]],
+    period: str,
+) -> Dict[str, List[Point]]:
+    points_by_label = {
+        label: points_by_period.get(period, [])
+        for label, points_by_period in points_by_label_period.items()
+    }
+
+    avg_by_key = average_points_by_key(points_by_label)
+
+    return {
+        label: ratio_points_to_average(points, avg_by_key)
+        for label, points in points_by_label.items()
+    }
+
+
 def chi2_ndf_for_ratio_points(
     ratio_points_by_label: Dict[str, List[Point]],
 ) -> Tuple[float, int, int]:
     chi2 = 0.0
     n_used = 0
-
     used_keys = set()
 
     for points in ratio_points_by_label.values():
@@ -847,7 +926,7 @@ def chi2_label_text(
 
 
 # -----------------------------------------------------------------------------
-# Plotting.
+# Plot helpers.
 # -----------------------------------------------------------------------------
 
 def total_error(
@@ -864,6 +943,55 @@ def total_error(
     return math.sqrt(stat * stat + (frac * abs(point.y)) ** 2)
 
 
+def collect_y_values(points_by_label: Dict[str, List[Point]]) -> List[float]:
+    values: List[float] = []
+
+    for points in points_by_label.values():
+        for p in points:
+            if np.isfinite(p.y):
+                values.append(float(p.y))
+            # endif
+        # endfor
+    # endfor
+
+    return values
+
+
+def dynamic_ratio_ylim(
+    ratio_points_by_label: Dict[str, List[Point]],
+) -> Tuple[float, float]:
+    values = collect_y_values(ratio_points_by_label)
+
+    if len(values) == 0:
+        return 0.8, 1.2
+    # endif
+
+    ymin_data = min(values)
+    ymax_data = max(values)
+
+    if not np.isfinite(ymin_data) or not np.isfinite(ymax_data):
+        return 0.8, 1.2
+    # endif
+
+    ymin = math.floor(ymin_data * 10.0) / 10.0
+    ymax = math.ceil(ymax_data * 10.0) / 10.0
+
+    if ymin == ymax:
+        ymin -= 0.1
+        ymax += 0.1
+    # endif
+
+    if ymin > 1.0:
+        ymin = 1.0
+    # endif
+
+    if ymax < 1.0:
+        ymax = 1.0
+    # endif
+
+    return ymin, ymax
+
+
 def plot_points(
     ax,
     points: List[Point],
@@ -877,6 +1005,7 @@ def plot_points(
 
     x = np.array([p.x for p in points], dtype=float)
     y = np.array([p.y for p in points], dtype=float)
+
     stat = np.array(
         [
             p.stat if np.isfinite(p.stat) else 0.0
@@ -893,7 +1022,7 @@ def plot_points(
         dtype=float,
     )
 
-    style = CATEGORY_STYLE.get(label, dict(marker="o", linestyle="-"))
+    style = CATEGORY_STYLE.get(label, PERIOD_STYLE.get(label, dict(marker="o", linestyle="-")))
     color = style.get("color", None)
 
     if include_bin_to_bin_sys:
@@ -928,6 +1057,7 @@ def plot_ratio_points(
     ax,
     points: List[Point],
     label: str,
+    use_period_style: bool = False,
 ) -> None:
     if not points:
         return
@@ -935,6 +1065,7 @@ def plot_ratio_points(
 
     x = np.array([p.x for p in points], dtype=float)
     y = np.array([p.y for p in points], dtype=float)
+
     stat = np.array(
         [
             p.stat if np.isfinite(p.stat) else 0.0
@@ -943,12 +1074,17 @@ def plot_ratio_points(
         dtype=float,
     )
 
-    style = CATEGORY_STYLE.get(label, dict(marker="o", linestyle="-"))
+    if use_period_style:
+        style = PERIOD_STYLE.get(label, dict(marker="o", linestyle="-"))
+    else:
+        style = CATEGORY_STYLE.get(label, dict(marker="o", linestyle="-"))
+    # endif
 
     ax.errorbar(
         x,
         y,
         yerr=stat,
+        label=label,
         markersize=4.0,
         linewidth=1.0,
         elinewidth=0.9,
@@ -976,6 +1112,10 @@ def add_chi2_box(ax, text: str) -> None:
     )
 
 
+# -----------------------------------------------------------------------------
+# Standard 2x3 run-period canvases.
+# -----------------------------------------------------------------------------
+
 def make_projection_canvas(
     dfs: Dict[str, pd.DataFrame],
     projection: str,
@@ -988,6 +1128,15 @@ def make_projection_canvas(
     comparison_name: str,
 ) -> None:
     info = PROJECTIONS[projection]
+
+    with Timer(f"integrating {projection}"):
+        points_by_label_period = precompute_all_points(
+            dfs=dfs,
+            projection=projection,
+            template=template,
+            no_width_weighting=no_width_weighting,
+        )
+    # endwith
 
     fig = plt.figure(figsize=(18.0, 11.5))
 
@@ -1004,7 +1153,7 @@ def make_projection_canvas(
 
     fig.suptitle(f"{info['title']} by {comparison_name}", fontsize=16)
 
-    for panel_index, period in enumerate(RUN_PERIODS):
+    for panel_index, period in enumerate(RUN_PERIOD_PANEL_ORDER):
         row = panel_index // 3
         col = panel_index % 3
 
@@ -1018,19 +1167,18 @@ def make_projection_canvas(
         ax_top = fig.add_subplot(inner[0])
         ax_ratio = fig.add_subplot(inner[1], sharex=ax_top)
 
-        points_by_label: Dict[str, List[Point]] = {}
+        if period is None:
+            ax_top.axis("off")
+            ax_ratio.axis("off")
+            continue
+        # endif
 
-        for label, df in dfs.items():
-            points = integrated_points(
-                df=df,
-                projection=projection,
-                period=period,
-                template=template,
-                no_width_weighting=no_width_weighting,
-            )
+        points_by_label = {
+            label: points_by_period.get(period, [])
+            for label, points_by_period in points_by_label_period.items()
+        }
 
-            points_by_label[label] = points
-
+        for label, points in points_by_label.items():
             plot_points(
                 ax=ax_top,
                 points=points,
@@ -1040,21 +1188,17 @@ def make_projection_canvas(
             )
         # endfor
 
-        avg_by_key = average_points_by_key(points_by_label)
-        ratio_points_by_label: Dict[str, List[Point]] = {}
+        ratio_points_by_label = ratios_for_period(
+            points_by_label_period=points_by_label_period,
+            period=period,
+        )
 
-        for label, points in points_by_label.items():
-            ratios = ratio_points_to_average(
-                points=points,
-                avg_by_key=avg_by_key,
-            )
-
-            ratio_points_by_label[label] = ratios
-
+        for label, ratios in ratio_points_by_label.items():
             plot_ratio_points(
                 ax=ax_ratio,
                 points=ratios,
                 label=label,
+                use_period_style=False,
             )
         # endfor
 
@@ -1076,25 +1220,14 @@ def make_projection_canvas(
             zorder=0,
         )
 
-        ax_ratio.set_ylim(RATIO_YMIN, RATIO_YMAX)
+        ymin, ymax = dynamic_ratio_ylim(ratio_points_by_label)
+        ax_ratio.set_ylim(ymin, ymax)
         ax_ratio.set_xlabel(str(info["xlabel"]))
         ax_ratio.set_ylabel("ratio")
         ax_ratio.grid(True, alpha=0.25)
 
         plt.setp(ax_top.get_xticklabels(), visible=False)
     # endfor
-
-    empty_inner = outer[1, 2].subgridspec(
-        2,
-        1,
-        height_ratios=[TOP_PANEL_HEIGHT, RATIO_PANEL_HEIGHT],
-        hspace=0.05,
-    )
-
-    empty_top = fig.add_subplot(empty_inner[0])
-    empty_ratio = fig.add_subplot(empty_inner[1])
-    empty_top.axis("off")
-    empty_ratio.axis("off")
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1131,6 +1264,136 @@ def make_all_projection_canvases(
                 include_bin_to_bin_sys=include_bin_to_bin_sys,
                 frac=frac,
                 comparison_name=comparison_name,
+            )
+        # endwith
+    # endfor
+
+
+# -----------------------------------------------------------------------------
+# Topology-specific period-comparison ratio canvases.
+# -----------------------------------------------------------------------------
+
+def make_topology_period_ratio_canvas(
+    dfs: Dict[str, pd.DataFrame],
+    projection: str,
+    output_dir: str,
+    output_prefix: str,
+    template: str,
+    no_width_weighting: bool,
+) -> None:
+    info = PROJECTIONS[projection]
+
+    labels = list(dfs.keys())
+
+    with Timer(f"integrating topology-period-ratio {projection}"):
+        points_by_label_period = precompute_all_points(
+            dfs=dfs,
+            projection=projection,
+            template=template,
+            no_width_weighting=no_width_weighting,
+        )
+    # endwith
+
+    ratios_by_period = {
+        period: ratios_for_period(
+            points_by_label_period=points_by_label_period,
+            period=period,
+        )
+        for period in RUN_PERIODS
+    }
+
+    fig, axes = plt.subplots(
+        2,
+        3,
+        figsize=(18.0, 8.5),
+        constrained_layout=False,
+    )
+
+    fig.suptitle(
+        f"{info['title']}: topology ratio stability by torus setting",
+        fontsize=16,
+    )
+
+    row_periods = [
+        ("inbending", INBENDING_PERIODS),
+        ("outbending", OUTBENDING_PERIODS),
+    ]
+
+    for row_index, (row_label, periods) in enumerate(row_periods):
+        for col_index, topology_label in enumerate(labels):
+            ax = axes[row_index, col_index]
+
+            ratio_points_for_axis: Dict[str, List[Point]] = {}
+
+            for period in periods:
+                ratios = ratios_by_period.get(period, {}).get(topology_label, [])
+                ratio_points_for_axis[period] = ratios
+
+                plot_ratio_points(
+                    ax=ax,
+                    points=ratios,
+                    label=period,
+                    use_period_style=True,
+                )
+            # endfor
+
+            ax.axhline(
+                1.0,
+                color="0.35",
+                linewidth=1.0,
+                linestyle="--",
+                zorder=0,
+            )
+
+            ymin, ymax = dynamic_ratio_ylim(ratio_points_for_axis)
+            ax.set_ylim(ymin, ymax)
+
+            ax.set_title(f"{topology_label} / mean, {row_label}")
+            ax.set_xlabel(str(info["xlabel"]))
+            ax.set_ylabel("topology / mean")
+            ax.grid(True, alpha=0.25)
+            ax.legend(fontsize=8, frameon=True)
+        # endfor
+    # endfor
+
+    fig.subplots_adjust(
+        left=0.075,
+        right=0.985,
+        bottom=0.075,
+        top=0.90,
+        wspace=0.28,
+        hspace=0.35,
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    out = os.path.join(
+        output_dir,
+        f"{output_prefix}_period_ratio_{info['outfile_tag']}_comparison.png",
+    )
+
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+    log(f"Wrote: {out}")
+
+
+def make_all_topology_period_ratio_canvases(
+    dfs: Dict[str, pd.DataFrame],
+    output_dir: str,
+    output_prefix: str,
+    template: str,
+    no_width_weighting: bool,
+) -> None:
+    for projection in PROJECTION_ORDER:
+        with Timer(f"plotting topology-period-ratio {projection}"):
+            make_topology_period_ratio_canvas(
+                dfs=dfs,
+                projection=projection,
+                output_dir=output_dir,
+                output_prefix=output_prefix,
+                template=template,
+                no_width_weighting=no_width_weighting,
             )
         # endwith
     # endfor
@@ -1220,6 +1483,12 @@ def parse_args() -> argparse.Namespace:
         help="Text used in figure titles. Default: topology",
     )
 
+    parser.add_argument(
+        "--no-topology-period-ratio-plots",
+        action="store_true",
+        help="Disable the additional topology ratio stability canvases.",
+    )
+
     return parser.parse_args()
 
 
@@ -1236,6 +1505,7 @@ def main() -> None:
     log(f"XS template: {args.xs_template}")
     log(f"Theta bins: {args.theta_bins}")
     log(f"Theta binning period: {args.theta_binning_period}")
+    log("phi dependence plots: disabled")
 
     if "{period}" not in args.xs_template:
         raise ValueError("--xs-template must contain {period}")
@@ -1272,6 +1542,16 @@ def main() -> None:
         frac=args.bin_to_bin_sys_frac,
         comparison_name=args.comparison_name,
     )
+
+    if not args.no_topology_period_ratio_plots:
+        make_all_topology_period_ratio_canvases(
+            dfs=dfs,
+            output_dir=args.output_dir,
+            output_prefix=args.output_prefix,
+            template=args.xs_template,
+            no_width_weighting=args.no_width_weighting,
+        )
+    # endif
 
     log(f"TOTAL RUNTIME: {time.perf_counter() - t0:.3f} s")
     log("Done.")

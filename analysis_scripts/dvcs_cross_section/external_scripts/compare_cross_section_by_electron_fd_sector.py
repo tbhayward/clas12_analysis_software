@@ -17,13 +17,20 @@ for example:
 
 The script makes one 2x3 canvas per projection:
 
-  xB, Q2, |t|, phi, theta_e, theta_p, theta_gamma
+  xB, Q2, |t|, theta_e, theta_p, theta_gamma
+
+The phi projection is intentionally omitted.
 
 Each canvas has one subplot per run period. Each subplot has two panels:
 
   top:    absolute integrated cross sections
   bottom: each sector divided by the arithmetic average of available sectors
           in that same run-period panel and projected bin.
+
+Run-period panel order:
+
+  top row:    Sp18 Inb, Sp18 Out, empty
+  bottom row: Fa18 Inb, Fa18 Out, Sp19 Inb
 
 A diagnostic chi2/ndf is printed in each run-period panel.
 
@@ -32,7 +39,6 @@ Outputs by default:
   output/electron_fd_sector_comparison/electron_fd_sector_xB_comparison.png
   output/electron_fd_sector_comparison/electron_fd_sector_Q2_comparison.png
   output/electron_fd_sector_comparison/electron_fd_sector_t_comparison.png
-  output/electron_fd_sector_comparison/electron_fd_sector_phi_comparison.png
   output/electron_fd_sector_comparison/electron_fd_sector_e_theta_comparison.png
   output/electron_fd_sector_comparison/electron_fd_sector_p_theta_comparison.png
   output/electron_fd_sector_comparison/electron_fd_sector_g_theta_comparison.png
@@ -153,6 +159,7 @@ def main() -> None:
     log(f"XS template: {args.xs_template}")
     log(f"Theta bins: {args.theta_bins}")
     log(f"Theta binning period: {args.theta_binning_period}")
+    log("phi dependence plots: disabled")
 
     if "{period}" not in args.xs_template:
         raise ValueError("--xs-template must contain {period}")
