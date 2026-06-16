@@ -1,14 +1,44 @@
 #!/usr/bin/env python3
 """
-compare_cross_section_by_electron_fd_sector.py
+compare_cross_section_by_sector.py
 
-Compare integrated DVCS cross sections from separate electron-FD-sector CSV files.
+Compare integrated DVCS cross sections from separate sector-resolved CSV files.
 
-Expected usage:
+This is a generic sector-comparison wrapper around the shared plotting engine in:
 
-  python compare_cross_section_by_electron_fd_sector.py \
-    elec_sec1.csv elec_sec2.csv elec_sec3.csv \
-    elec_sec4.csv elec_sec5.csv elec_sec6.csv
+  compare_cross_section_by_topology.py
+
+It can be used for electron, photon, or proton sector studies.
+
+Examples:
+
+  Electron FD sectors:
+
+    python compare_cross_section_by_sector.py \
+      elec_sec1.csv elec_sec2.csv elec_sec3.csv \
+      elec_sec4.csv elec_sec5.csv elec_sec6.csv \
+      --particle electron
+
+  Photon FD sectors:
+
+    python compare_cross_section_by_sector.py \
+      photon_sec1.csv photon_sec2.csv photon_sec3.csv \
+      photon_sec4.csv photon_sec5.csv photon_sec6.csv \
+      --particle photon
+
+  Proton sectors:
+
+    python compare_cross_section_by_sector.py \
+      proton_sec1.csv proton_sec2.csv proton_sec3.csv \
+      proton_sec4.csv proton_sec5.csv proton_sec6.csv \
+      --particle proton
+
+  Proton CD sectors, if only three sector files exist:
+
+    python compare_cross_section_by_sector.py \
+      proton_cd_sec1.csv proton_cd_sec2.csv proton_cd_sec3.csv \
+      --particle proton \
+      --sector-system "CD sector"
 
 Each input CSV should have the same normal pass-2 cross-section column names,
 for example:
@@ -19,7 +49,7 @@ The script makes one 2x3 canvas per projection:
 
   xB, Q2, |t|, theta_e, theta_p, theta_gamma
 
-The phi projection is intentionally omitted.
+The phi projection is intentionally omitted by the shared plotting engine.
 
 Each canvas has one subplot per run period. Each subplot has two panels:
 
@@ -34,18 +64,33 @@ Run-period panel order:
 
 A diagnostic chi2/ndf is printed in each run-period panel.
 
-Outputs by default:
+Defaults depend on --particle:
 
-  output/electron_fd_sector_comparison/electron_fd_sector_xB_comparison.png
-  output/electron_fd_sector_comparison/electron_fd_sector_Q2_comparison.png
-  output/electron_fd_sector_comparison/electron_fd_sector_t_comparison.png
-  output/electron_fd_sector_comparison/electron_fd_sector_e_theta_comparison.png
-  output/electron_fd_sector_comparison/electron_fd_sector_p_theta_comparison.png
-  output/electron_fd_sector_comparison/electron_fd_sector_g_theta_comparison.png
+  --particle electron:
+    output dir    = output/electron_fd_sector_comparison
+    output prefix = electron_fd_sector
+    title text    = electron FD sector
+
+  --particle photon:
+    output dir    = output/photon_fd_sector_comparison
+    output prefix = photon_fd_sector
+    title text    = photon FD sector
+
+  --particle proton:
+    output dir    = output/proton_fd_sector_comparison
+    output prefix = proton_fd_sector
+    title text    = proton FD sector
+
+Use --sector-system to override the detector-sector text, for example:
+
+  --sector-system "CD sector"
+
+Use --comparison-name to override the full figure-title comparison text.
 """
 
 import argparse
 import time
+from typing import List
 
 from compare_cross_section_by_topology import (
     DEFAULT_THETA_BINS,
@@ -58,45 +103,127 @@ from compare_cross_section_by_topology import (
 )
 
 
-DEFAULT_OUTPUT_DIR = "output/electron_fd_sector_comparison"
-DEFAULT_OUTPUT_PREFIX = "electron_fd_sector"
-DEFAULT_LABELS = ["S1", "S2", "S3", "S4", "S5", "S6"]
+DEFAULT_PARTICLE = "electron"
+DEFAULT_SECTOR_SYSTEM = "FD sector"
+
+
+def sanitize_for_path(text: str) -> str:
+    """
+    Convert a short human-readable label into a safe filename/directory component.
+    """
+
+    cleaned = text.strip().lower()
+    cleaned = cleaned.replace("/", "_")
+    cleaned = cleaned.replace("\\", "_")
+    cleaned = cleaned.replace("-", "_")
+    cleaned = cleaned.replace(" ", "_")
+
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    # endwhile
+
+    return cleaned.strip("_")
+
+
+def default_labels_for_n_files(n_files: int) -> List[str]:
+    return [f"S{i}" for i in range(1, n_files + 1)]
+
+
+def default_comparison_name(particle: str, sector_system: str) -> str:
+    return f"{particle} {sector_system}"
+
+
+def default_output_prefix(particle: str, sector_system: str) -> str:
+    return sanitize_for_path(default_comparison_name(particle, sector_system))
+
+
+def default_output_dir(particle: str, sector_system: str) -> str:
+    return f"output/{default_output_prefix(particle, sector_system)}_comparison"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare electron-FD-sector DVCS cross sections from separate CSVs."
+        description=(
+            "Compare sector-resolved DVCS cross sections from separate CSV files. "
+            "Use --particle electron/photon/proton to control labels, titles, "
+            "and output defaults."
+        )
     )
 
     parser.add_argument(
         "csv_files",
-        nargs=6,
-        help="CSV files in order: S1 S2 S3 S4 S5 S6",
+        nargs="+",
+        help=(
+            "Sector CSV files. Usually six files ordered S1 S2 S3 S4 S5 S6. "
+            "Three files are also allowed for studies with only three sectors."
+        ),
+    )
+
+    parser.add_argument(
+        "--particle",
+        choices=["electron", "photon", "proton"],
+        default=DEFAULT_PARTICLE,
+        help=(
+            "Which particle's sectors are being compared. This controls the "
+            "default output directory, output prefix, and figure-title text. "
+            f"Default: {DEFAULT_PARTICLE}"
+        ),
+    )
+
+    parser.add_argument(
+        "--sector-system",
+        default=DEFAULT_SECTOR_SYSTEM,
+        help=(
+            "Detector-sector system text used in default titles/output names. "
+            "Examples: 'FD sector', 'CD sector'. "
+            f"Default: '{DEFAULT_SECTOR_SYSTEM}'"
+        ),
     )
 
     parser.add_argument(
         "--labels",
-        nargs=6,
-        default=DEFAULT_LABELS,
-        help="Labels for the six CSVs. Default: S1 S2 S3 S4 S5 S6",
+        nargs="+",
+        default=None,
+        help=(
+            "Labels for the input CSVs. If omitted, labels are generated as "
+            "S1, S2, ..., SN."
+        ),
     )
 
     parser.add_argument(
         "--output-dir",
-        default=DEFAULT_OUTPUT_DIR,
-        help=f"Output directory. Default: {DEFAULT_OUTPUT_DIR}",
+        default=None,
+        help=(
+            "Output directory. If omitted, this is derived from --particle and "
+            "--sector-system, e.g. output/photon_fd_sector_comparison."
+        ),
     )
 
     parser.add_argument(
         "--output-prefix",
-        default=DEFAULT_OUTPUT_PREFIX,
-        help=f"Output filename prefix. Default: {DEFAULT_OUTPUT_PREFIX}",
+        default=None,
+        help=(
+            "Output filename prefix. If omitted, this is derived from --particle "
+            "and --sector-system, e.g. photon_fd_sector."
+        ),
+    )
+
+    parser.add_argument(
+        "--comparison-name",
+        default=None,
+        help=(
+            "Text used in figure titles. If omitted, this is derived from "
+            "--particle and --sector-system, e.g. 'photon FD sector'."
+        ),
     )
 
     parser.add_argument(
         "--xs-template",
         default=DEFAULT_XS_TEMPLATE,
-        help=f"Cross-section column template with {{period}}. Default: {DEFAULT_XS_TEMPLATE!r}",
+        help=(
+            "Cross-section column template with {period}. "
+            f"Default: {DEFAULT_XS_TEMPLATE!r}"
+        ),
     )
 
     parser.add_argument(
@@ -121,7 +248,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--theta-binning-period",
         default=DEFAULT_THETA_BINNING_PERIOD,
-        help=f"Theta binning reference period. Default: {DEFAULT_THETA_BINNING_PERIOD!r}",
+        help=(
+            "Theta binning reference period. "
+            f"Default: {DEFAULT_THETA_BINNING_PERIOD!r}"
+        ),
     )
 
     parser.add_argument(
@@ -137,25 +267,67 @@ def parse_args() -> argparse.Namespace:
         help="Fractional bin-to-bin systematic uncertainty. Default: 0.10",
     )
 
-    parser.add_argument(
-        "--comparison-name",
-        default="electron FD sector",
-        help="Text used in figure titles. Default: electron FD sector",
-    )
-
     return parser.parse_args()
+
+
+def finalize_runtime_options(args: argparse.Namespace) -> argparse.Namespace:
+    n_files = len(args.csv_files)
+
+    if n_files < 2:
+        raise ValueError("At least two sector CSV files are required.")
+    # endif
+
+    if args.labels is None:
+        args.labels = default_labels_for_n_files(n_files)
+    # endif
+
+    if len(args.labels) != n_files:
+        raise ValueError(
+            f"Number of --labels entries ({len(args.labels)}) must match "
+            f"number of CSV files ({n_files})."
+        )
+    # endif
+
+    if args.output_prefix is None:
+        args.output_prefix = default_output_prefix(
+            particle=args.particle,
+            sector_system=args.sector_system,
+        )
+    # endif
+
+    if args.output_dir is None:
+        args.output_dir = default_output_dir(
+            particle=args.particle,
+            sector_system=args.sector_system,
+        )
+    # endif
+
+    if args.comparison_name is None:
+        args.comparison_name = default_comparison_name(
+            particle=args.particle,
+            sector_system=args.sector_system,
+        )
+    # endif
+
+    return args
 
 
 def main() -> None:
     t0 = time.perf_counter()
+
     args = parse_args()
+    args = finalize_runtime_options(args)
 
     log("============================================================")
-    log("compare_cross_section_by_electron_fd_sector.py")
+    log("compare_cross_section_by_sector.py")
     log("============================================================")
+    log(f"Particle: {args.particle}")
+    log(f"Sector system: {args.sector_system}")
+    log(f"Comparison name: {args.comparison_name}")
     log(f"CSV files: {args.csv_files}")
     log(f"Labels: {args.labels}")
     log(f"Output dir: {args.output_dir}")
+    log(f"Output prefix: {args.output_prefix}")
     log(f"XS template: {args.xs_template}")
     log(f"Theta bins: {args.theta_bins}")
     log(f"Theta binning period: {args.theta_binning_period}")
