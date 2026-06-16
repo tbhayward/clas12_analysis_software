@@ -144,9 +144,13 @@ DEFAULT_THETA_BINS = 7
 DEFAULT_THETA_BINNING_PERIOD = "10.6 GeV"
 DEFAULT_XS_TEMPLATE = "normed cross sections, ep->epg, exp, {period}, unpol"
 
-# Top panel is still larger, but ratio panel now takes a larger fraction.
-TOP_PANEL_HEIGHT = 2.0
-RATIO_PANEL_HEIGHT = 1.25
+# 50/50 split between cross-section and ratio panels.
+TOP_PANEL_HEIGHT = 1.0
+RATIO_PANEL_HEIGHT = 1.0
+
+# Topology stability canvases are deliberately standardized.
+TOPOLOGY_STABILITY_RATIO_YMIN = 0.0
+TOPOLOGY_STABILITY_RATIO_YMAX = 2.0
 
 CATEGORY_STYLE = {
     "FD-FD": dict(marker="o", linestyle="-", color="tab:blue"),
@@ -957,11 +961,57 @@ def collect_y_values(points_by_label: Dict[str, List[Point]]) -> List[float]:
     return values
 
 
-def dynamic_ratio_ylim(
-    ratio_points_by_label: Dict[str, List[Point]],
-) -> Tuple[float, float]:
-    values = collect_y_values(ratio_points_by_label)
+def collect_all_absolute_y_values(
+    points_by_label_period: Dict[str, Dict[str, List[Point]]],
+) -> List[float]:
+    values: List[float] = []
 
+    for points_by_period in points_by_label_period.values():
+        for period in RUN_PERIODS:
+            for p in points_by_period.get(period, []):
+                if np.isfinite(p.y):
+                    values.append(float(p.y))
+                # endif
+            # endfor
+        # endfor
+    # endfor
+
+    return values
+
+
+def collect_all_ratio_y_values(
+    ratio_points_by_period_label: Dict[str, Dict[str, List[Point]]],
+) -> List[float]:
+    values: List[float] = []
+
+    for ratio_points_by_label in ratio_points_by_period_label.values():
+        values.extend(collect_y_values(ratio_points_by_label))
+    # endfor
+
+    return values
+
+
+def dynamic_absolute_ylim_from_values(values: List[float]) -> Tuple[float, float]:
+    if len(values) == 0:
+        return 0.0, 0.01
+    # endif
+
+    ymax_data = max(values)
+
+    if not np.isfinite(ymax_data) or ymax_data <= 0.0:
+        return 0.0, 0.01
+    # endif
+
+    ymax = math.ceil(ymax_data / 0.01) * 0.01
+
+    if ymax <= 0.0:
+        ymax = 0.01
+    # endif
+
+    return 0.0, ymax
+
+
+def dynamic_ratio_ylim_from_values(values: List[float]) -> Tuple[float, float]:
     if len(values) == 0:
         return 0.8, 1.2
     # endif
@@ -1138,17 +1188,33 @@ def make_projection_canvas(
         )
     # endwith
 
-    fig = plt.figure(figsize=(18.0, 11.5))
+    ratio_points_by_period_label = {
+        period: ratios_for_period(
+            points_by_label_period=points_by_label_period,
+            period=period,
+        )
+        for period in RUN_PERIODS
+    }
+
+    absolute_ylim = dynamic_absolute_ylim_from_values(
+        collect_all_absolute_y_values(points_by_label_period)
+    )
+
+    ratio_ylim = dynamic_ratio_ylim_from_values(
+        collect_all_ratio_y_values(ratio_points_by_period_label)
+    )
+
+    fig = plt.figure(figsize=(18.5, 10.4))
 
     outer = fig.add_gridspec(
         2,
         3,
-        left=0.075,
-        right=0.985,
-        bottom=0.075,
-        top=0.91,
-        wspace=0.28,
-        hspace=0.33,
+        left=0.055,
+        right=0.992,
+        bottom=0.060,
+        top=0.920,
+        wspace=0.205,
+        hspace=0.265,
     )
 
     fig.suptitle(f"{info['title']} by {comparison_name}", fontsize=16)
@@ -1161,7 +1227,7 @@ def make_projection_canvas(
             2,
             1,
             height_ratios=[TOP_PANEL_HEIGHT, RATIO_PANEL_HEIGHT],
-            hspace=0.05,
+            hspace=0.035,
         )
 
         ax_top = fig.add_subplot(inner[0])
@@ -1188,10 +1254,7 @@ def make_projection_canvas(
             )
         # endfor
 
-        ratio_points_by_label = ratios_for_period(
-            points_by_label_period=points_by_label_period,
-            period=period,
-        )
+        ratio_points_by_label = ratio_points_by_period_label[period]
 
         for label, ratios in ratio_points_by_label.items():
             plot_ratio_points(
@@ -1207,10 +1270,11 @@ def make_projection_canvas(
             text=chi2_label_text(ratio_points_by_label),
         )
 
-        ax_top.set_title(period)
+        ax_top.set_title(period, fontsize=11)
         ax_top.set_ylabel(str(info["ylabel"]))
+        ax_top.set_ylim(*absolute_ylim)
         ax_top.grid(True, alpha=0.25)
-        ax_top.legend(fontsize=8, frameon=True)
+        ax_top.legend(fontsize=8, frameon=True, loc="best")
 
         ax_ratio.axhline(
             1.0,
@@ -1220,8 +1284,7 @@ def make_projection_canvas(
             zorder=0,
         )
 
-        ymin, ymax = dynamic_ratio_ylim(ratio_points_by_label)
-        ax_ratio.set_ylim(ymin, ymax)
+        ax_ratio.set_ylim(*ratio_ylim)
         ax_ratio.set_xlabel(str(info["xlabel"]))
         ax_ratio.set_ylabel("ratio")
         ax_ratio.grid(True, alpha=0.25)
@@ -1305,7 +1368,7 @@ def make_topology_period_ratio_canvas(
     fig, axes = plt.subplots(
         2,
         3,
-        figsize=(18.0, 8.5),
+        figsize=(18.5, 8.2),
         constrained_layout=False,
     )
 
@@ -1323,11 +1386,8 @@ def make_topology_period_ratio_canvas(
         for col_index, topology_label in enumerate(labels):
             ax = axes[row_index, col_index]
 
-            ratio_points_for_axis: Dict[str, List[Point]] = {}
-
             for period in periods:
                 ratios = ratios_by_period.get(period, {}).get(topology_label, [])
-                ratio_points_for_axis[period] = ratios
 
                 plot_ratio_points(
                     ax=ax,
@@ -1345,24 +1405,26 @@ def make_topology_period_ratio_canvas(
                 zorder=0,
             )
 
-            ymin, ymax = dynamic_ratio_ylim(ratio_points_for_axis)
-            ax.set_ylim(ymin, ymax)
+            ax.set_ylim(
+                TOPOLOGY_STABILITY_RATIO_YMIN,
+                TOPOLOGY_STABILITY_RATIO_YMAX,
+            )
 
-            ax.set_title(f"{topology_label} / mean, {row_label}")
+            ax.set_title(f"{topology_label} / mean, {row_label}", fontsize=11)
             ax.set_xlabel(str(info["xlabel"]))
             ax.set_ylabel("topology / mean")
             ax.grid(True, alpha=0.25)
-            ax.legend(fontsize=8, frameon=True)
+            ax.legend(fontsize=8, frameon=True, loc="best")
         # endfor
     # endfor
 
     fig.subplots_adjust(
-        left=0.075,
-        right=0.985,
-        bottom=0.075,
-        top=0.90,
-        wspace=0.28,
-        hspace=0.35,
+        left=0.055,
+        right=0.992,
+        bottom=0.070,
+        top=0.900,
+        wspace=0.205,
+        hspace=0.300,
     )
 
     os.makedirs(output_dir, exist_ok=True)
