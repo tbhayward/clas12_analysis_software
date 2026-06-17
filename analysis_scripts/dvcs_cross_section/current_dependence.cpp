@@ -5,10 +5,11 @@
 //
 // Main outputs:
 //   1. Current-efficiency factor columns in the pass-2 analysis CSV.
-//   2. Current-corrected normalized raw DATA yield columns.
-//   3. Current-corrected reconstructed MC yield columns.
-//   4. Per-period diagnostic plots.
-//   5. 3x2 all-period summary plots with the five RGA periods plus overlay.
+//   2. Unity fallback eppi0 AAOGEN normalization columns.
+//   3. Current-corrected normalized raw DATA yield columns.
+//   4. Current-corrected reconstructed MC yield columns.
+//   5. Per-period diagnostic plots.
+//   6. 3x2 all-period summary plots with the five RGA periods plus overlay.
 //
 // Important convention:
 //   - The fitted current response is normalized to the fitted zero-current
@@ -475,6 +476,13 @@ static std::string tuple2(double v, double e) {
     return ss.str();
 }
 
+static std::string tuple4(double a, double b, double c, double d) {
+    std::ostringstream ss;
+    ss << std::setprecision(12)
+       << "(" << a << "," << b << "," << c << "," << d << ")";
+    return ss.str();
+}
+
 static std::string current_eff_col(const ChannelConfig& cfg,
                                    const std::string& sample,
                                    const std::string& period) {
@@ -607,6 +615,8 @@ static bool select_unpolarized_charge_for_period(
 
     charge = std::numeric_limits<double>::quiet_NaN();
 
+    // Spring 2018 has zeros in the helicity/auxiliary scaler columns for this
+    // purpose, so it must always use column 2 for unpolarized normalization.
     if (is_spring_2018_period(tags.display)) {
         if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
             std::cout << "[current_dependence] WARNING: missing/non-positive column-2 charge"
@@ -620,6 +630,8 @@ static bool select_unpolarized_charge_for_period(
         return true;
     }
 
+    // Optional mode for Fa18 and Sp19 only:
+    //   charge_unpol = scale * (column 3 + column 4 + column 5)
     if (use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized) {
         if (!(entry.has_hel_pos && entry.has_hel_neg && entry.has_col5)) {
             std::cout << "[current_dependence] WARNING: missing one or more columns 3-5"
@@ -1941,17 +1953,6 @@ static void draw_all_period_current_canvas(const std::string& out_path,
     draw_summary_panel(results, use_fa18_for_sp19);
 
     c.SaveAs(out_path.c_str());
-
-    std::string pdf_path = out_path;
-    const size_t dot = pdf_path.find_last_of('.');
-
-    if (dot != std::string::npos) {
-        pdf_path = pdf_path.substr(0, dot) + ".pdf";
-    } else {
-        pdf_path += ".pdf";
-    }
-
-    c.SaveAs(pdf_path.c_str());
 }
 
 // -----------------------------------------------------------------------------
@@ -2568,6 +2569,68 @@ static void write_results_to_csv(CSV& csv,
 }
 
 // -----------------------------------------------------------------------------
+// Deprecated eppi0 AAOGEN normalization compatibility fallback
+// -----------------------------------------------------------------------------
+
+static const std::vector<std::string>& eppi0_normalization_regions() {
+    static const std::vector<std::string> v = {
+        "Sector 1",
+        "Sector 2",
+        "Sector 3",
+        "Sector 4",
+        "Sector 5",
+        "Sector 6",
+        "CD"
+    };
+
+    return v;
+}
+
+static std::string eppi0_norm_factor_col(const std::string& period,
+                                         const std::string& region) {
+    return "eppi0 cross-section normalization factor, ep->eppi0, data_over_mc, " +
+           region + ", " + period;
+}
+
+static std::string eppi0_norm_cubic_col(const std::string& period,
+                                        const std::string& region) {
+    return "eppi0 cross-section normalization cubic, ep->eppi0, data_over_mc, " +
+           region + ", " + period;
+}
+
+static void write_unity_eppi0_normalization_columns(CSV& csv) {
+    const std::string factor_cell = tuple2(1.0, 0.0);
+    const std::string cubic_cell  = tuple4(1.0, 0.0, 0.0, 0.0);
+
+    long long n_factor_cells = 0;
+    long long n_cubic_cells = 0;
+
+    for (const std::string& period : CSV_PERIOD_ORDER) {
+        for (const std::string& region : eppi0_normalization_regions()) {
+            const std::string factor_col = eppi0_norm_factor_col(period, region);
+            const std::string cubic_col  = eppi0_norm_cubic_col(period, region);
+
+            const int c_factor = col_strict(csv, factor_col);
+            const int c_cubic  = col_strict(csv, cubic_col);
+
+            for (auto& row : csv.rows) {
+                row[c_factor] = factor_cell;
+                row[c_cubic]  = cubic_cell;
+                ++n_factor_cells;
+                ++n_cubic_cells;
+            }
+        }
+    }
+
+    std::cout << "[current_dependence] Wrote unity fallback eppi0 normalization columns: "
+              << "factor_cells=" << n_factor_cells
+              << " cubic_cells=" << n_cubic_cells
+              << " using factor=" << factor_cell
+              << " cubic=" << cubic_cell
+              << std::endl;
+}
+
+// -----------------------------------------------------------------------------
 // Apply saved current-efficiency factors to DATA and MC yield columns
 // -----------------------------------------------------------------------------
 
@@ -2993,6 +3056,11 @@ bool update_current_dependence_factors_csv(
             write_override_unity(csv, dvcs);
             write_override_unity(csv, eppi0);
 
+            // Compatibility fallback now that eppi0_normalization.cpp may be
+            // disabled. If the real eppi0 normalization stage is re-enabled
+            // after current_dependence.cpp, it can overwrite these unity values.
+            write_unity_eppi0_normalization_columns(csv);
+
             // Even in unity-override mode, this stage now owns the production
             // of normalized raw DATA yields. With f=(1,0), this copies raw
             // yields into normalized raw yields while preserving uncertainties.
@@ -3004,8 +3072,8 @@ bool update_current_dependence_factors_csv(
 
             write_csv_atomic(csv_path, csv);
 
-            std::cout << "[current_dependence] Updated CSV with unity current-efficiency factors "
-                      << "and unity current-corrected DATA/MC yields: "
+            std::cout << "[current_dependence] Updated CSV with unity current-efficiency factors, "
+                      << "unity eppi0 normalization fallback columns, and unity current-corrected DATA/MC yields: "
                       << csv_path << std::endl;
 
             return true;
@@ -3111,7 +3179,17 @@ bool update_current_dependence_factors_csv(
         write_results_to_csv(csv, dvcs, dvcs_results);
         write_results_to_csv(csv, eppi0, eppi0_results);
 
-        // 2. Apply DATA current factors to raw yields and fill normalized raw
+        // 2. Write unity fallback for the deprecated eppi0 AAOGEN normalization
+        // columns. This preserves downstream code expecting:
+        //
+        //   eppi0 cross-section normalization factor, ...
+        //   eppi0 cross-section normalization cubic, ...
+        //
+        // If the real eppi0_normalization.cpp stage is later re-enabled after
+        // this stage, it can overwrite these unity values.
+        write_unity_eppi0_normalization_columns(csv);
+
+        // 3. Apply DATA current factors to raw yields and fill normalized raw
         // yield columns. This replaces the old eppi0_normalization.cpp role
         // when that stage was run with override_to_unity=true.
         //
@@ -3121,13 +3199,14 @@ bool update_current_dependence_factors_csv(
         //
         apply_all_data_current_corrections(csv, dvcs, eppi0);
 
-        // 3. Apply MC current factors to reconstructed MC yields and fill
+        // 4. Apply MC current factors to reconstructed MC yields and fill
         // reconstructed current-corrected yield columns.
         apply_all_mc_current_corrections(csv, dvcs, eppi0);
 
         write_csv_atomic(csv_path, csv);
 
         std::cout << "[current_dependence] Updated current-efficiency factors, "
+                  << "unity eppi0 normalization fallback columns, "
                   << "normalized raw DATA yields, and current-corrected MC yields in: "
                   << csv_path << std::endl;
 
