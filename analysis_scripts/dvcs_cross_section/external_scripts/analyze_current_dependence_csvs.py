@@ -27,7 +27,7 @@ with columns like:
 
 Usage for six electron/photon/proton FD sector summaries:
 
-  python analyze_current_dependence_csvs.py \
+  python3 analyze_current_dependence_csvs.py \
     sec1/period_summary.csv \
     sec2/period_summary.csv \
     sec3/period_summary.csv \
@@ -36,42 +36,14 @@ Usage for six electron/photon/proton FD sector summaries:
     sec6/period_summary.csv \
     --labels S1 S2 S3 S4 S5 S6
 
-Usage for three proton CD sector summaries:
-
-  python analyze_current_dependence_csvs.py \
-    cd_sec1/period_summary.csv \
-    cd_sec2/period_summary.csv \
-    cd_sec3/period_summary.csv \
-    --labels "CD S1" "CD S2" "CD S3"
-
 Outputs by default:
 
-  output/current_dependence_sector_diagnostics/current_dependence_values.csv
+  output/current_dependence_sector_diagnostics/current_dependence_values_long.csv
+  output/current_dependence_sector_diagnostics/current_dependence_values_wide.csv
   output/current_dependence_sector_diagnostics/current_dependence_diagnostics.csv
   output/current_dependence_sector_diagnostics/current_dependence_report.txt
 
-The long values CSV contains one row per:
-
-  input label, period, sample type, quantity
-
-The diagnostics CSV contains one row per:
-
-  period, sample type, quantity
-
-with:
-
-  unweighted mean
-  standard deviation
-  RMS spread about the mean
-  RMS/mean percent
-  weighted mean
-  weighted-mean uncertainty
-  chi2
-  ndf
-  chi2/ndf
-  p-value if scipy is available
-  largest pairwise pull
-  min/max labels and values
+and PNG plots in the same directory.
 
 Statistical-consistency convention:
 
@@ -85,10 +57,6 @@ Statistical-consistency convention:
 This assumes the input uncertainties are independent. That is probably not
 strictly true for sector splits from the same data set, so chi2/ndf should be
 treated as a diagnostic tension metric, not a formal hypothesis test.
-
-If some uncertainties are missing or non-positive, the script still reports
-unweighted means/RMS spreads. Weighted chi2 diagnostics are computed only from
-points with finite positive uncertainty.
 """
 
 import argparse
@@ -99,13 +67,28 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Tuple
 
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import numpy as np
 import pandas as pd
+
+import matplotlib
+matplotlib.use("Agg", force=True)
+import matplotlib.pyplot as plt
 
 
 PERIOD_ORDER = [
     "Sp18 Inb",
     "Sp18 Out",
+    "Fa18 Inb",
+    "Fa18 Out",
+    "Sp19 Inb",
+]
+
+PANEL_PERIOD_ORDER = [
+    "Sp18 Inb",
+    "Sp18 Out",
+    None,
     "Fa18 Inb",
     "Fa18 Out",
     "Sp19 Inb",
@@ -127,6 +110,44 @@ DEFAULT_OUTPUT_PREFIX = "current_dependence"
 FLOAT_PATTERN = re.compile(
     r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
 )
+
+PLOT_DPI = 200
+
+MARKERS = [
+    "o",
+    "s",
+    "^",
+    "v",
+    "D",
+    "P",
+    "X",
+    "*",
+    "<",
+    ">",
+]
+
+LINESTYLES = [
+    "-",
+    "--",
+    "-.",
+    ":",
+    "-",
+    "--",
+    "-.",
+    ":",
+    "-",
+    "--",
+]
+
+QUANTITY_LABEL = {
+    "current_efficiency_factor": "Current-efficiency factor",
+    "slope_percent_per_nA": "Current-dependence slope (%/nA)",
+}
+
+QUANTITY_SHORT = {
+    "current_efficiency_factor": "factor",
+    "slope_percent_per_nA": "slope",
+}
 
 
 @dataclass
@@ -171,27 +192,22 @@ class Timer:
 def parse_first_number(value) -> float:
     if value is None:
         return math.nan
-    # endif
 
     if isinstance(value, float) and math.isnan(value):
         return math.nan
-    # endif
 
     if isinstance(value, (int, float, np.integer, np.floating)):
         return float(value)
-    # endif
 
     text = str(value).strip()
 
     if text == "" or text.lower() in {"nan", "none", "null"}:
         return math.nan
-    # endif
 
     nums = FLOAT_PATTERN.findall(text)
 
     if not nums:
         return math.nan
-    # endif
 
     return float(nums[0])
 
@@ -204,16 +220,29 @@ def require_columns(df: pd.DataFrame, columns: Iterable[str], path: str) -> None
         print(f"Missing required columns in: {path}")
         for c in missing:
             print(f"  {c}")
-        # endfor
 
         print()
         print("Available columns:")
         for c in df.columns:
             print(f"  {c}")
-        # endfor
 
         raise KeyError(f"{path} is missing {len(missing)} required columns.")
-    # endif
+
+
+def safe_filename_token(text: str) -> str:
+    out = text.strip().lower()
+    out = out.replace("/", "_")
+    out = out.replace("\\", "_")
+    out = out.replace(" ", "_")
+    out = out.replace("-", "_")
+    out = out.replace("%", "percent")
+    out = out.replace("(", "")
+    out = out.replace(")", "")
+
+    while "__" in out:
+        out = out.replace("__", "_")
+
+    return out.strip("_")
 
 
 # -----------------------------------------------------------------------------
@@ -223,7 +252,6 @@ def require_columns(df: pd.DataFrame, columns: Iterable[str], path: str) -> None
 def percent_slope(m: float, b: float) -> float:
     if not np.isfinite(m) or not np.isfinite(b) or b == 0.0:
         return math.nan
-    # endif
 
     return 100.0 * m / b
 
@@ -244,7 +272,6 @@ def percent_slope_err(
         or b == 0.0
     ):
         return math.nan
-    # endif
 
     dm = 100.0 / b
     db = -100.0 * m / (b * b)
@@ -257,11 +284,9 @@ def percent_slope_err(
 
     if var < 0.0 and abs(var) < 1.0e-15:
         var = 0.0
-    # endif
 
     if var < 0.0:
         return math.nan
-    # endif
 
     return math.sqrt(var)
 
@@ -269,7 +294,6 @@ def percent_slope_err(
 def get_scalar(row: pd.Series, column: str) -> float:
     if column not in row.index:
         return math.nan
-    # endif
 
     return parse_first_number(row[column])
 
@@ -280,7 +304,6 @@ def get_data_slope_value_and_error(row: pd.Series) -> Tuple[float, float]:
 
     if np.isfinite(value):
         return value, stat
-    # endif
 
     m = get_scalar(row, "data_m")
     b = get_scalar(row, "data_b")
@@ -298,8 +321,6 @@ def get_mc_slope_value_and_error(row: pd.Series) -> Tuple[float, float]:
 
         if np.isfinite(value):
             return value, stat
-        # endif
-    # endif
 
     m = get_scalar(row, "mc_m")
     b = get_scalar(row, "mc_b")
@@ -338,7 +359,6 @@ def read_one_summary_csv(
 
     with Timer(f"reading {label}: {path}"):
         df = pd.read_csv(path, low_memory=False)
-    # endwith
 
     require_columns(df, required, path)
 
@@ -351,7 +371,6 @@ def read_one_summary_csv(
 
         if period == "" or period.lower() == "nan":
             continue
-        # endif
 
         data_factor = get_scalar(row, "data_factor")
         data_factor_stat = get_scalar(row, "data_factor_stat")
@@ -409,7 +428,6 @@ def read_one_summary_csv(
                 stat=mc_slope_stat,
             )
         )
-    # endfor
 
     return entries
 
@@ -423,7 +441,6 @@ def read_all_summary_csvs(
     for path, label in zip(paths, labels):
         entries = read_one_summary_csv(path=path, label=label)
         all_entries.extend(entries)
-    # endfor
 
     return all_entries
 
@@ -435,14 +452,12 @@ def read_all_summary_csvs(
 def chi2_pvalue(chi2: float, ndf: int) -> float:
     if not np.isfinite(chi2) or ndf <= 0:
         return math.nan
-    # endif
 
     try:
         from scipy.stats import chi2 as scipy_chi2
         return float(scipy_chi2.sf(chi2, ndf))
     except Exception:
         return math.nan
-    # endtry
 
 
 def weighted_mean_and_chi2(
@@ -468,14 +483,12 @@ def weighted_mean_and_chi2(
 
     if len(v) == 0:
         return math.nan, math.nan, math.nan, 0, math.nan, 0
-    # endif
 
     w = 1.0 / (s * s)
     wsum = float(np.sum(w))
 
     if not np.isfinite(wsum) or wsum <= 0.0:
         return math.nan, math.nan, math.nan, 0, math.nan, 0
-    # endif
 
     mean = float(np.sum(w * v) / wsum)
     mean_stat = float(math.sqrt(1.0 / wsum))
@@ -512,13 +525,11 @@ def max_pairwise_pull(
                 and sj >= 0.0
             ):
                 continue
-            # endif
 
             denom = math.sqrt(si * si + sj * sj)
 
             if denom <= 0.0:
                 continue
-            # endif
 
             pull = abs(xi - xj) / denom
 
@@ -526,23 +537,45 @@ def max_pairwise_pull(
                 best_pull = float(pull)
                 best_a = labels[i]
                 best_b = labels[j]
-            # endif
-        # endfor
-    # endfor
 
     return best_pull, best_a, best_b
+
+
+def empty_diagnostics() -> Dict[str, object]:
+    return {
+        "n_finite": 0,
+        "n_weighted": 0,
+        "mean": math.nan,
+        "std": math.nan,
+        "rms_about_mean": math.nan,
+        "rms_over_mean_percent": math.nan,
+        "min_label": "",
+        "min_value": math.nan,
+        "max_label": "",
+        "max_value": math.nan,
+        "max_over_min": math.nan,
+        "weighted_mean": math.nan,
+        "weighted_mean_stat": math.nan,
+        "reference_mean": math.nan,
+        "reference_mean_type": "",
+        "chi2": math.nan,
+        "ndf": 0,
+        "chi2_ndf": math.nan,
+        "p_value": math.nan,
+        "max_pair_pull": math.nan,
+        "max_pair_pull_a": "",
+        "max_pair_pull_b": "",
+    }
 
 
 def diagnostics_for_group(group: pd.DataFrame) -> Dict[str, object]:
     if len(group) == 0:
         return empty_diagnostics()
-    # endif
 
     finite = group[np.isfinite(group["value"].astype(float))].copy()
 
     if len(finite) == 0:
         return empty_diagnostics()
-    # endif
 
     values = finite["value"].astype(float).to_numpy()
     stats = finite["stat"].astype(float).to_numpy()
@@ -556,7 +589,6 @@ def diagnostics_for_group(group: pd.DataFrame) -> Dict[str, object]:
         rms_over_mean_percent = 100.0 * rms / abs(mean)
     else:
         rms_over_mean_percent = math.nan
-    # endif
 
     imin = int(np.argmin(values))
     imax = int(np.argmax(values))
@@ -570,12 +602,18 @@ def diagnostics_for_group(group: pd.DataFrame) -> Dict[str, object]:
         max_over_min = max_value / min_value
     else:
         max_over_min = math.nan
-    # endif
 
     weighted_mean, weighted_mean_stat, chi2, ndf, p_value, n_weighted = weighted_mean_and_chi2(
         values=values,
         stats=stats,
     )
+
+    if np.isfinite(weighted_mean):
+        reference_mean = weighted_mean
+        reference_mean_type = "weighted"
+    else:
+        reference_mean = mean
+        reference_mean_type = "unweighted"
 
     chi2_ndf = chi2 / ndf if np.isfinite(chi2) and ndf > 0 else math.nan
 
@@ -599,6 +637,8 @@ def diagnostics_for_group(group: pd.DataFrame) -> Dict[str, object]:
         "max_over_min": max_over_min,
         "weighted_mean": weighted_mean,
         "weighted_mean_stat": weighted_mean_stat,
+        "reference_mean": reference_mean,
+        "reference_mean_type": reference_mean_type,
         "chi2": chi2,
         "ndf": int(ndf),
         "chi2_ndf": chi2_ndf,
@@ -606,31 +646,6 @@ def diagnostics_for_group(group: pd.DataFrame) -> Dict[str, object]:
         "max_pair_pull": max_pull,
         "max_pair_pull_a": max_pull_a,
         "max_pair_pull_b": max_pull_b,
-    }
-
-
-def empty_diagnostics() -> Dict[str, object]:
-    return {
-        "n_finite": 0,
-        "n_weighted": 0,
-        "mean": math.nan,
-        "std": math.nan,
-        "rms_about_mean": math.nan,
-        "rms_over_mean_percent": math.nan,
-        "min_label": "",
-        "min_value": math.nan,
-        "max_label": "",
-        "max_value": math.nan,
-        "max_over_min": math.nan,
-        "weighted_mean": math.nan,
-        "weighted_mean_stat": math.nan,
-        "chi2": math.nan,
-        "ndf": 0,
-        "chi2_ndf": math.nan,
-        "p_value": math.nan,
-        "max_pair_pull": math.nan,
-        "max_pair_pull_a": "",
-        "max_pair_pull_b": "",
     }
 
 
@@ -649,7 +664,6 @@ def build_values_dataframe(entries: List[ValueEntry]) -> pd.DataFrame:
                 "stat": e.stat,
             }
         )
-    # endfor
 
     return pd.DataFrame(rows)
 
@@ -681,9 +695,6 @@ def build_diagnostics_dataframe(values_df: pd.DataFrame) -> pd.DataFrame:
 
                 row.update(d)
                 rows.append(row)
-            # endfor
-        # endfor
-    # endfor
 
     return pd.DataFrame(rows)
 
@@ -695,11 +706,9 @@ def build_diagnostics_dataframe(values_df: pd.DataFrame) -> pd.DataFrame:
 def format_value_err(value: float, err: float) -> str:
     if not np.isfinite(value):
         return "nan"
-    # endif
 
     if np.isfinite(err) and err >= 0.0:
         return f"{value:.8g} +/- {err:.3g}"
-    # endif
 
     return f"{value:.8g}"
 
@@ -728,7 +737,6 @@ def print_group_list(
     for label in labels:
         value, err = lookup.get(label, (math.nan, math.nan))
         print(f"    {label:>10s}: {format_value_err(value, err)}", file=fout)
-    # endfor
 
 
 def print_diagnostic_line(
@@ -746,7 +754,6 @@ def print_diagnostic_line(
 
     if len(row_df) == 0:
         return
-    # endif
 
     row = row_df.iloc[0]
 
@@ -783,7 +790,6 @@ def write_text_report(
         print("Input labels:", file=fout)
         for label in labels:
             print(f"  {label}", file=fout)
-        # endfor
 
         print("", file=fout)
 
@@ -817,9 +823,6 @@ def write_text_report(
                     )
 
                     print("", file=fout)
-                # endfor
-            # endfor
-        # endfor
 
 
 def print_console_summary(diagnostics_df: pd.DataFrame) -> None:
@@ -837,11 +840,10 @@ def print_console_summary(diagnostics_df: pd.DataFrame) -> None:
             f"max-pull={row['max_pair_pull']:8.3g} "
             f"({row['max_pair_pull_a']} vs {row['max_pair_pull_b']})"
         )
-    # endfor
 
 
 # -----------------------------------------------------------------------------
-# Optional wide summary table.
+# Wide values.
 # -----------------------------------------------------------------------------
 
 def build_wide_values_dataframe(values_df: pd.DataFrame, labels: List[str]) -> pd.DataFrame:
@@ -876,14 +878,594 @@ def build_wide_values_dataframe(values_df: pd.DataFrame, labels: List[str]) -> p
                     value, stat = lookup.get(label, (math.nan, math.nan))
                     row[label] = value
                     row[f"{label}_stat"] = stat
-                # endfor
 
                 rows.append(row)
-            # endfor
-        # endfor
-    # endfor
 
     return pd.DataFrame(rows)
+
+
+# -----------------------------------------------------------------------------
+# Plot helpers.
+# -----------------------------------------------------------------------------
+
+def label_style(label: str, index: int) -> Dict[str, object]:
+    return {
+        "marker": MARKERS[index % len(MARKERS)],
+        "linestyle": LINESTYLES[index % len(LINESTYLES)],
+    }
+
+
+def finite_min_max(values: List[float]) -> Tuple[float, float]:
+    finite = [v for v in values if np.isfinite(v)]
+
+    if not finite:
+        return 0.0, 1.0
+
+    vmin = min(finite)
+    vmax = max(finite)
+
+    if vmin == vmax:
+        pad = 0.1 * abs(vmax) if vmax != 0.0 else 1.0
+        return vmin - pad, vmax + pad
+
+    pad = 0.12 * (vmax - vmin)
+    return vmin - pad, vmax + pad
+
+
+def period_order_from_values(values_df: pd.DataFrame) -> List[str]:
+    available_periods = set(values_df["period"].astype(str))
+    known_periods = [p for p in PERIOD_ORDER if p in available_periods]
+    extra_periods = sorted(available_periods - set(known_periods))
+    return known_periods + extra_periods
+
+
+def get_group(
+    values_df: pd.DataFrame,
+    period: str,
+    sample: str,
+    quantity: str,
+) -> pd.DataFrame:
+    return values_df[
+        (values_df["period"] == period)
+        & (values_df["sample"] == sample)
+        & (values_df["quantity"] == quantity)
+    ].copy()
+
+
+def get_diag_row(
+    diagnostics_df: pd.DataFrame,
+    period: str,
+    sample: str,
+    quantity: str,
+) -> pd.Series:
+    rows = diagnostics_df[
+        (diagnostics_df["period"] == period)
+        & (diagnostics_df["sample"] == sample)
+        & (diagnostics_df["quantity"] == quantity)
+    ]
+
+    if len(rows) == 0:
+        return pd.Series(dtype=object)
+
+    return rows.iloc[0]
+
+
+def value_lookup_for_group(group: pd.DataFrame) -> Dict[str, Tuple[float, float]]:
+    out = {}
+
+    for _, row in group.iterrows():
+        out[str(row["label"])] = (
+            float(row["value"]),
+            float(row["stat"]),
+        )
+
+    return out
+
+
+def draw_mean_reference(ax, mean: float, mean_stat: float, label: str = "mean") -> None:
+    if not np.isfinite(mean):
+        return
+
+    ax.axhline(mean, linewidth=1.2, linestyle="--", color="black", label=label)
+
+    if np.isfinite(mean_stat) and mean_stat > 0.0:
+        ax.axhspan(mean - mean_stat, mean + mean_stat, alpha=0.15, color="gray")
+
+
+def plot_values_by_period(
+    values_df: pd.DataFrame,
+    diagnostics_df: pd.DataFrame,
+    labels: List[str],
+    sample: str,
+    quantity: str,
+    output_dir: str,
+    output_prefix: str,
+) -> str:
+    periods = period_order_from_values(values_df)
+
+    fig = plt.figure(figsize=(18.5, 10.2))
+    gs = fig.add_gridspec(
+        2,
+        3,
+        left=0.055,
+        right=0.990,
+        bottom=0.075,
+        top=0.900,
+        wspace=0.220,
+        hspace=0.300,
+    )
+
+    all_y = []
+
+    for period in periods:
+        group = get_group(values_df, period, sample, quantity)
+        all_y.extend(group["value"].astype(float).tolist())
+
+    ymin, ymax = finite_min_max(all_y)
+
+    axes = []
+
+    for ipanel, period in enumerate(PANEL_PERIOD_ORDER):
+        ax = fig.add_subplot(gs[ipanel // 3, ipanel % 3])
+        axes.append(ax)
+
+        if period is None:
+            ax.axis("off")
+            continue
+
+        group = get_group(values_df, period, sample, quantity)
+        lookup = value_lookup_for_group(group)
+        diag = get_diag_row(diagnostics_df, period, sample, quantity)
+
+        x = np.arange(1, len(labels) + 1, dtype=float)
+
+        y = []
+        ey = []
+
+        for label in labels:
+            value, stat = lookup.get(label, (math.nan, math.nan))
+            y.append(value)
+            ey.append(stat if np.isfinite(stat) and stat >= 0.0 else 0.0)
+
+        ax.errorbar(
+            x,
+            y,
+            yerr=ey,
+            fmt="o",
+            capsize=3,
+            linewidth=1.2,
+            markersize=6.5,
+        )
+
+        ref_mean = float(diag.get("reference_mean", math.nan))
+        ref_type = str(diag.get("reference_mean_type", "mean"))
+        ref_stat = float(diag.get("weighted_mean_stat", math.nan))
+
+        if ref_type != "weighted":
+            ref_stat = math.nan
+
+        draw_mean_reference(ax, ref_mean, ref_stat, label=ref_type)
+
+        chi2_ndf = float(diag.get("chi2_ndf", math.nan))
+        rms_percent = float(diag.get("rms_over_mean_percent", math.nan))
+        max_pull = float(diag.get("max_pair_pull", math.nan))
+
+        ax.set_title(
+            f"{period}\n"
+            f"RMS/mean={rms_percent:.3g}%, "
+            f"chi2/ndf={chi2_ndf:.3g}, "
+            f"max pull={max_pull:.3g}",
+            fontsize=11,
+        )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.set_ylim(ymin, ymax)
+        ax.grid(True, alpha=0.35)
+        ax.tick_params(axis="both", labelsize=10)
+
+        if ipanel % 3 == 0:
+            ax.set_ylabel(QUANTITY_LABEL.get(quantity, quantity), fontsize=11)
+
+        if ipanel // 3 == 1:
+            ax.set_xlabel("Sector/input label", fontsize=11)
+
+        if ipanel == 0:
+            ax.legend(fontsize=9, loc="best")
+
+    fig.suptitle(
+        f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)} by sector/input",
+        fontsize=16,
+        y=0.975,
+    )
+
+    outfile = os.path.join(
+        output_dir,
+        f"{output_prefix}_values_by_period_{sample}_{safe_filename_token(quantity)}.png",
+    )
+
+    fig.savefig(outfile, dpi=PLOT_DPI)
+    plt.close(fig)
+
+    return outfile
+
+
+def plot_ratio_to_mean_by_period(
+    values_df: pd.DataFrame,
+    diagnostics_df: pd.DataFrame,
+    labels: List[str],
+    sample: str,
+    quantity: str,
+    output_dir: str,
+    output_prefix: str,
+) -> str:
+    fig = plt.figure(figsize=(18.5, 10.2))
+    gs = fig.add_gridspec(
+        2,
+        3,
+        left=0.055,
+        right=0.990,
+        bottom=0.075,
+        top=0.900,
+        wspace=0.220,
+        hspace=0.300,
+    )
+
+    all_ratios = []
+
+    for period in period_order_from_values(values_df):
+        group = get_group(values_df, period, sample, quantity)
+        diag = get_diag_row(diagnostics_df, period, sample, quantity)
+        ref_mean = float(diag.get("reference_mean", math.nan))
+
+        if not np.isfinite(ref_mean) or ref_mean == 0.0:
+            continue
+
+        for value in group["value"].astype(float):
+            if np.isfinite(value):
+                all_ratios.append(value / ref_mean)
+
+    ymin, ymax = finite_min_max(all_ratios)
+    ymin = min(ymin, 0.95)
+    ymax = max(ymax, 1.05)
+
+    for ipanel, period in enumerate(PANEL_PERIOD_ORDER):
+        ax = fig.add_subplot(gs[ipanel // 3, ipanel % 3])
+
+        if period is None:
+            ax.axis("off")
+            continue
+
+        group = get_group(values_df, period, sample, quantity)
+        lookup = value_lookup_for_group(group)
+        diag = get_diag_row(diagnostics_df, period, sample, quantity)
+
+        ref_mean = float(diag.get("reference_mean", math.nan))
+        ref_type = str(diag.get("reference_mean_type", "mean"))
+
+        x = np.arange(1, len(labels) + 1, dtype=float)
+
+        ratios = []
+        ratio_errs = []
+
+        for label in labels:
+            value, stat = lookup.get(label, (math.nan, math.nan))
+
+            if np.isfinite(value) and np.isfinite(ref_mean) and ref_mean != 0.0:
+                ratios.append(value / ref_mean)
+
+                if np.isfinite(stat) and stat >= 0.0:
+                    ratio_errs.append(stat / abs(ref_mean))
+                else:
+                    ratio_errs.append(0.0)
+            else:
+                ratios.append(math.nan)
+                ratio_errs.append(0.0)
+
+        ax.errorbar(
+            x,
+            ratios,
+            yerr=ratio_errs,
+            fmt="o",
+            capsize=3,
+            linewidth=1.2,
+            markersize=6.5,
+        )
+
+        ax.axhline(1.0, linewidth=1.2, linestyle="--", color="black")
+
+        chi2_ndf = float(diag.get("chi2_ndf", math.nan))
+        rms_percent = float(diag.get("rms_over_mean_percent", math.nan))
+        max_pull = float(diag.get("max_pair_pull", math.nan))
+
+        ax.set_title(
+            f"{period}\n"
+            f"ratio to {ref_type} mean; "
+            f"RMS/mean={rms_percent:.3g}%, "
+            f"chi2/ndf={chi2_ndf:.3g}",
+            fontsize=11,
+        )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.set_ylim(ymin, ymax)
+        ax.grid(True, alpha=0.35)
+        ax.tick_params(axis="both", labelsize=10)
+
+        if ipanel % 3 == 0:
+            ax.set_ylabel("Value / sector mean", fontsize=11)
+
+        if ipanel // 3 == 1:
+            ax.set_xlabel("Sector/input label", fontsize=11)
+
+    fig.suptitle(
+        f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)} sector ratios",
+        fontsize=16,
+        y=0.975,
+    )
+
+    outfile = os.path.join(
+        output_dir,
+        f"{output_prefix}_ratio_to_mean_{sample}_{safe_filename_token(quantity)}.png",
+    )
+
+    fig.savefig(outfile, dpi=PLOT_DPI)
+    plt.close(fig)
+
+    return outfile
+
+
+def plot_spread_summary(
+    diagnostics_df: pd.DataFrame,
+    output_dir: str,
+    output_prefix: str,
+) -> str:
+    period_order = [
+        p for p in PERIOD_ORDER
+        if p in set(diagnostics_df["period"].astype(str))
+    ]
+
+    extra_periods = sorted(set(diagnostics_df["period"].astype(str)) - set(period_order))
+    period_order = period_order + extra_periods
+
+    fig = plt.figure(figsize=(18.5, 10.0))
+    gs = fig.add_gridspec(
+        2,
+        2,
+        left=0.060,
+        right=0.985,
+        bottom=0.080,
+        top=0.900,
+        wspace=0.220,
+        hspace=0.300,
+    )
+
+    combos = [
+        ("data", "current_efficiency_factor"),
+        ("mc", "current_efficiency_factor"),
+        ("data", "slope_percent_per_nA"),
+        ("mc", "slope_percent_per_nA"),
+    ]
+
+    x = np.arange(len(period_order), dtype=float)
+    width = 0.36
+
+    for i, (sample, quantity) in enumerate(combos):
+        ax = fig.add_subplot(gs[i // 2, i % 2])
+
+        subset = diagnostics_df[
+            (diagnostics_df["sample"] == sample)
+            & (diagnostics_df["quantity"] == quantity)
+        ].copy()
+
+        lookup = {
+            str(row["period"]): row
+            for _, row in subset.iterrows()
+        }
+
+        rms = []
+        chi2ndf = []
+
+        for period in period_order:
+            row = lookup.get(period, None)
+
+            if row is None:
+                rms.append(math.nan)
+                chi2ndf.append(math.nan)
+            else:
+                rms.append(float(row["rms_over_mean_percent"]))
+                chi2ndf.append(float(row["chi2_ndf"]))
+
+        ax.bar(x - 0.5 * width, rms, width=width, label="RMS/mean (%)")
+        ax.bar(x + 0.5 * width, chi2ndf, width=width, label="chi2/ndf")
+
+        ax.axhline(1.0, linewidth=1.0, linestyle="--", color="black", alpha=0.8)
+
+        ax.set_title(
+            f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)}",
+            fontsize=12,
+        )
+        ax.set_xticks(x)
+        ax.set_xticklabels(period_order, rotation=25, ha="right")
+        ax.set_ylabel("Diagnostic value")
+        ax.grid(True, axis="y", alpha=0.35)
+        ax.legend(fontsize=9)
+
+    fig.suptitle(
+        "Current-dependence sector spread summary",
+        fontsize=16,
+        y=0.975,
+    )
+
+    outfile = os.path.join(
+        output_dir,
+        f"{output_prefix}_spread_summary.png",
+    )
+
+    fig.savefig(outfile, dpi=PLOT_DPI)
+    plt.close(fig)
+
+    return outfile
+
+
+def plot_sector_pull_heatmap(
+    values_df: pd.DataFrame,
+    diagnostics_df: pd.DataFrame,
+    labels: List[str],
+    sample: str,
+    quantity: str,
+    output_dir: str,
+    output_prefix: str,
+) -> str:
+    periods = period_order_from_values(values_df)
+
+    matrix = np.full((len(periods), len(labels)), np.nan)
+
+    for ip, period in enumerate(periods):
+        group = get_group(values_df, period, sample, quantity)
+        lookup = value_lookup_for_group(group)
+        diag = get_diag_row(diagnostics_df, period, sample, quantity)
+
+        ref_mean = float(diag.get("reference_mean", math.nan))
+
+        for il, label in enumerate(labels):
+            value, stat = lookup.get(label, (math.nan, math.nan))
+
+            if (
+                np.isfinite(value)
+                and np.isfinite(stat)
+                and stat > 0.0
+                and np.isfinite(ref_mean)
+            ):
+                matrix[ip, il] = (value - ref_mean) / stat
+
+    finite = matrix[np.isfinite(matrix)]
+
+    if finite.size > 0:
+        vmax = float(np.nanmax(np.abs(finite)))
+        vmax = max(vmax, 1.0)
+    else:
+        vmax = 1.0
+
+    fig, ax = plt.subplots(figsize=(12.0, 6.8))
+
+    im = ax.imshow(
+        matrix,
+        aspect="auto",
+        vmin=-vmax,
+        vmax=vmax,
+        cmap="coolwarm",
+    )
+
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels)
+    ax.set_yticks(np.arange(len(periods)))
+    ax.set_yticklabels(periods)
+
+    ax.set_xlabel("Sector/input label")
+    ax.set_ylabel("Run period")
+
+    ax.set_title(
+        f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)} signed pull to sector mean"
+    )
+
+    for ip in range(len(periods)):
+        for il in range(len(labels)):
+            val = matrix[ip, il]
+            if np.isfinite(val):
+                ax.text(
+                    il,
+                    ip,
+                    f"{val:.1f}",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                )
+            else:
+                ax.text(
+                    il,
+                    ip,
+                    "nan",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                )
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("(value - mean) / stat")
+
+    fig.tight_layout()
+
+    outfile = os.path.join(
+        output_dir,
+        f"{output_prefix}_sector_pull_heatmap_{sample}_{safe_filename_token(quantity)}.png",
+    )
+
+    fig.savefig(outfile, dpi=PLOT_DPI)
+    plt.close(fig)
+
+    return outfile
+
+
+def make_all_plots(
+    values_df: pd.DataFrame,
+    diagnostics_df: pd.DataFrame,
+    labels: List[str],
+    output_dir: str,
+    output_prefix: str,
+) -> List[str]:
+    os.makedirs(output_dir, exist_ok=True)
+
+    outputs = []
+
+    with Timer("making current-dependence plots"):
+        for quantity in QUANTITY_ORDER:
+            for sample in SAMPLE_ORDER:
+                outputs.append(
+                    plot_values_by_period(
+                        values_df=values_df,
+                        diagnostics_df=diagnostics_df,
+                        labels=labels,
+                        sample=sample,
+                        quantity=quantity,
+                        output_dir=output_dir,
+                        output_prefix=output_prefix,
+                    )
+                )
+
+                outputs.append(
+                    plot_ratio_to_mean_by_period(
+                        values_df=values_df,
+                        diagnostics_df=diagnostics_df,
+                        labels=labels,
+                        sample=sample,
+                        quantity=quantity,
+                        output_dir=output_dir,
+                        output_prefix=output_prefix,
+                    )
+                )
+
+                outputs.append(
+                    plot_sector_pull_heatmap(
+                        values_df=values_df,
+                        diagnostics_df=diagnostics_df,
+                        labels=labels,
+                        sample=sample,
+                        quantity=quantity,
+                        output_dir=output_dir,
+                        output_prefix=output_prefix,
+                    )
+                )
+
+        outputs.append(
+            plot_spread_summary(
+                diagnostics_df=diagnostics_df,
+                output_dir=output_dir,
+                output_prefix=output_prefix,
+            )
+        )
+
+    return outputs
 
 
 # -----------------------------------------------------------------------------
@@ -929,26 +1511,29 @@ def parse_args() -> argparse.Namespace:
         help=f"Output filename prefix. Default: {DEFAULT_OUTPUT_PREFIX}",
     )
 
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="Skip PNG plot creation.",
+    )
+
     return parser.parse_args()
 
 
 def validate_args(args: argparse.Namespace) -> List[str]:
     if len(args.csv_files) < 2:
         raise ValueError("Need at least two current-dependence CSV files to compare.")
-    # endif
 
     if args.labels is None:
         labels = [f"S{i}" for i in range(1, len(args.csv_files) + 1)]
     else:
         labels = list(args.labels)
-    # endif
 
     if len(labels) != len(args.csv_files):
         raise ValueError(
             f"Number of labels ({len(labels)}) must match number of CSV files "
             f"({len(args.csv_files)})."
         )
-    # endif
 
     return labels
 
@@ -1008,16 +1593,32 @@ def main() -> None:
         labels=labels,
     )
 
+    plot_outputs = []
+
+    if not args.no_plots:
+        plot_outputs = make_all_plots(
+            values_df=values_df,
+            diagnostics_df=diagnostics_df,
+            labels=labels,
+            output_dir=args.output_dir,
+            output_prefix=args.output_prefix,
+        )
+
     print_console_summary(diagnostics_df)
 
     log(f"Wrote long values CSV:  {values_path}")
     log(f"Wrote wide values CSV:  {wide_values_path}")
     log(f"Wrote diagnostics CSV:  {diagnostics_path}")
     log(f"Wrote text report:      {report_path}")
+
+    if plot_outputs:
+        log("Wrote plots:")
+        for path in plot_outputs:
+            log(f"  {path}")
+
     log(f"TOTAL RUNTIME: {time.perf_counter() - t0:.3f} s")
     log("Done.")
 
 
 if __name__ == "__main__":
     main()
-# endif
