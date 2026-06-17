@@ -7,7 +7,7 @@ import ROOT
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Make 1x3 2D correlation plots of theta branches versus phi2."
+        description="Make 1x3 2D correlation plots of theta branches versus phi2 converted from radians to degrees."
     )
     parser.add_argument(
         "input_root",
@@ -51,13 +51,13 @@ def main():
         "--phi-min",
         type=float,
         default=-180.0,
-        help="Minimum phi2 value. Default: -180.0"
+        help="Minimum phi2 value in degrees after conversion. Default: -180.0"
     )
     parser.add_argument(
         "--phi-max",
         type=float,
         default=180.0,
-        help="Maximum phi2 value. Default: 180.0"
+        help="Maximum phi2 value in degrees after conversion. Default: 180.0"
     )
 
     args = parser.parse_args()
@@ -92,22 +92,24 @@ def main():
         #endif
     #endfor
 
+    phi2_deg_expression = "phi2 * 180.0 / TMath::Pi()"
+
     plots = [
         {
             "hist_name": "h_e_theta_phi2",
-            "x_branch": "phi2",
+            "x_expression": phi2_deg_expression,
             "y_branch": "e_theta",
             "title": "e_{#theta} vs #phi_{2};#phi_{2} (deg);e_{#theta} (deg)",
         },
         {
             "hist_name": "h_p1_theta_phi2",
-            "x_branch": "phi2",
+            "x_expression": phi2_deg_expression,
             "y_branch": "p1_theta",
             "title": "p1_{#theta} vs #phi_{2};#phi_{2} (deg);p1_{#theta} (deg)",
         },
         {
             "hist_name": "h_p2_theta_phi2",
-            "x_branch": "phi2",
+            "x_expression": phi2_deg_expression,
             "y_branch": "p2_theta",
             "title": "p2_{#theta} vs #phi_{2};#phi_{2} (deg);p2_{#theta} (deg)",
         },
@@ -139,12 +141,12 @@ def main():
         )
 
         draw_expression = (
-            f"{plot['y_branch']}:{plot['x_branch']}>>{plot['hist_name']}"
+            f"{plot['y_branch']}:({plot['x_expression']})>>{plot['hist_name']}"
         )
 
         cut_expression = (
-            f"({plot['x_branch']} > {args.phi_min}) && "
-            f"({plot['x_branch']} < {args.phi_max}) && "
+            f"(({plot['x_expression']}) > {args.phi_min}) && "
+            f"(({plot['x_expression']}) < {args.phi_max}) && "
             f"({plot['y_branch']} > {args.theta_min}) && "
             f"({plot['y_branch']} < {args.theta_max})"
         )
