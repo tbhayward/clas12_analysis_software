@@ -7,7 +7,7 @@ import ROOT
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Make 1x3 2D correlation plots of e_phi, p1_phi, and p2_phi versus phi2, with all angles converted from radians to degrees and wrapped to [0, 360)."
+        description="Make 1x3 2D correlation plots of e_phi, p1_phi, and p2_phi versus phi2, with all angles converted from radians to degrees."
     )
     parser.add_argument(
         "input_root",
@@ -36,28 +36,16 @@ def main():
         help="Number of phi2 bins. Default: 180"
     )
     parser.add_argument(
-        "--y-min",
+        "--angle-min",
         type=float,
         default=0.0,
-        help="Minimum y-axis angle value in degrees after wrapping. Default: 0.0"
+        help="Minimum angle value in degrees after conversion. Default: 0.0"
     )
     parser.add_argument(
-        "--y-max",
+        "--angle-max",
         type=float,
         default=360.0,
-        help="Maximum y-axis angle value in degrees after wrapping. Default: 360.0"
-    )
-    parser.add_argument(
-        "--phi2-min",
-        type=float,
-        default=0.0,
-        help="Minimum phi2 value in degrees after wrapping. Default: 0.0"
-    )
-    parser.add_argument(
-        "--phi2-max",
-        type=float,
-        default=360.0,
-        help="Maximum phi2 value in degrees after wrapping. Default: 360.0"
+        help="Maximum angle value in degrees after conversion. Default: 360.0"
     )
 
     args = parser.parse_args()
@@ -92,14 +80,12 @@ def main():
         #endif
     #endfor
 
-    def wrapped_phi_deg_expression(branch_name):
-        return f"TMath::Fmod(({branch_name} * 180.0 / TMath::Pi()) + 360.0, 360.0)"
-    #endfor
+    rad_to_deg = "180.0 / TMath::Pi()"
 
-    phi2_deg_expression = wrapped_phi_deg_expression("phi2")
-    e_phi_deg_expression = wrapped_phi_deg_expression("e_phi")
-    p1_phi_deg_expression = wrapped_phi_deg_expression("p1_phi")
-    p2_phi_deg_expression = wrapped_phi_deg_expression("p2_phi")
+    phi2_deg_expression = f"phi2 * {rad_to_deg}"
+    e_phi_deg_expression = f"e_phi * {rad_to_deg}"
+    p1_phi_deg_expression = f"p1_phi * {rad_to_deg}"
+    p2_phi_deg_expression = f"p2_phi * {rad_to_deg}"
 
     plots = [
         {
@@ -140,11 +126,11 @@ def main():
             plot["hist_name"],
             plot["title"],
             args.bins_phi2,
-            args.phi2_min,
-            args.phi2_max,
+            args.angle_min,
+            args.angle_max,
             args.bins_y,
-            args.y_min,
-            args.y_max,
+            args.angle_min,
+            args.angle_max,
         )
 
         draw_expression = (
@@ -152,13 +138,20 @@ def main():
         )
 
         cut_expression = (
-            f"(({plot['x_expression']}) >= {args.phi2_min}) && "
-            f"(({plot['x_expression']}) < {args.phi2_max}) && "
-            f"(({plot['y_expression']}) >= {args.y_min}) && "
-            f"(({plot['y_expression']}) < {args.y_max})"
+            f"(({plot['x_expression']}) >= {args.angle_min}) && "
+            f"(({plot['x_expression']}) <= {args.angle_max}) && "
+            f"(({plot['y_expression']}) >= {args.angle_min}) && "
+            f"(({plot['y_expression']}) <= {args.angle_max})"
         )
 
-        tree.Draw(draw_expression, cut_expression, "COLZ")
+        entries_drawn = tree.Draw(draw_expression, cut_expression, "COLZ")
+
+        if entries_drawn <= 0:
+            print(
+                f"WARNING: no entries drawn for {plot['hist_name']}. "
+                f"Check branch ranges and angle units."
+            )
+        #endif
 
         hist.GetXaxis().SetTitleSize(0.045)
         hist.GetYaxis().SetTitleSize(0.045)
