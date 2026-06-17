@@ -5,9 +5,10 @@
 //
 // Main outputs:
 //   1. Current-efficiency factor columns in the pass-2 analysis CSV.
-//   2. Current-corrected reconstructed MC yield columns.
-//   3. Per-period diagnostic plots.
-//   4. 3x2 all-period summary plots with the five RGA periods plus overlay.
+//   2. Current-corrected normalized raw DATA yield columns.
+//   3. Current-corrected reconstructed MC yield columns.
+//   4. Per-period diagnostic plots.
+//   5. 3x2 all-period summary plots with the five RGA periods plus overlay.
 //
 // Important convention:
 //   - The fitted current response is normalized to the fitted zero-current
@@ -458,6 +459,16 @@ static int col_strict(const CSV& csv, const std::string& name) {
     return it->second;
 }
 
+static int col_optional(const CSV& csv, const std::string& name) {
+    auto it = csv.index.find(name);
+
+    if (it == csv.index.end()) {
+        return -1;
+    }
+
+    return it->second;
+}
+
 static std::string tuple2(double v, double e) {
     std::ostringstream ss;
     ss << std::setprecision(12) << "(" << v << "," << e << ")";
@@ -596,8 +607,6 @@ static bool select_unpolarized_charge_for_period(
 
     charge = std::numeric_limits<double>::quiet_NaN();
 
-    // Spring 2018 has zeros in the helicity/auxiliary scaler columns for this
-    // purpose, so it must always use column 2 for unpolarized normalization.
     if (is_spring_2018_period(tags.display)) {
         if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
             std::cout << "[current_dependence] WARNING: missing/non-positive column-2 charge"
@@ -611,8 +620,6 @@ static bool select_unpolarized_charge_for_period(
         return true;
     }
 
-    // Optional new mode for Fa18 and Sp19 only:
-    //   charge_unpol = scale * (column 3 + column 4 + column 5)
     if (use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized) {
         if (!(entry.has_hel_pos && entry.has_hel_neg && entry.has_col5)) {
             std::cout << "[current_dependence] WARNING: missing one or more columns 3-5"
@@ -675,7 +682,6 @@ static bool select_unpolarized_charge_for_period(
 
     return true;
 }
-
 
 static const std::unordered_map<int, int>& fa18_inb_current_map() {
     static const std::unordered_map<int, int> m = {
@@ -2562,7 +2568,7 @@ static void write_results_to_csv(CSV& csv,
 }
 
 // -----------------------------------------------------------------------------
-// Apply saved MC current-efficiency factors to reconstructed MC yield columns
+// Apply saved current-efficiency factors to DATA and MC yield columns
 // -----------------------------------------------------------------------------
 
 static const std::vector<std::string>& topology_labels() {
@@ -2570,6 +2576,16 @@ static const std::vector<std::string>& topology_labels() {
         "(FD, FD)",
         "(CD, FD)",
         "(CD, FT)"
+    };
+
+    return v;
+}
+
+static const std::vector<std::string>& helicity_labels() {
+    static const std::vector<std::string> v = {
+        "unpol",
+        "pos",
+        "neg"
     };
 
     return v;
@@ -2606,19 +2622,6 @@ static bool parse_tuple_numbers_cell(const std::string& cell, std::vector<double
     return !vals.empty();
 }
 
-static bool parse_first_number(const std::string& cell, double& value) {
-    value = std::numeric_limits<double>::quiet_NaN();
-
-    std::vector<double> vals;
-
-    if (!parse_tuple_numbers_cell(cell, vals) || vals.empty()) {
-        return false;
-    }
-
-    value = vals[0];
-    return std::isfinite(value);
-}
-
 static bool parse_value_stat_sys(const std::string& cell,
                                  double& value,
                                  double& stat,
@@ -2642,30 +2645,6 @@ static bool parse_value_stat_sys(const std::string& cell,
            std::isfinite(sys) &&
            stat >= 0.0 &&
            sys >= 0.0;
-}
-
-static std::string format_scalar(double v) {
-    if (!std::isfinite(v)) {
-        return "";
-    }
-
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(6) << v;
-    std::string out = ss.str();
-
-    while (!out.empty() && out.back() == '0') {
-        out.pop_back();
-    }
-
-    if (!out.empty() && out.back() == '.') {
-        out.pop_back();
-    }
-
-    if (out.empty() || out == "-0") {
-        out = "0";
-    }
-
-    return out;
 }
 
 static std::string format_triple(double v, double stat, double sys) {
@@ -2701,12 +2680,28 @@ static std::string rec_current_corrected_topo_col(const std::string& channel,
     return "reconstructed current corrected yield, " + channel + ", " + topo + ", mc, " + period;
 }
 
-static void read_mc_current_factor_from_csv(const CSV& csv,
-                                            const ChannelConfig& cfg,
-                                            const std::string& period,
-                                            double& factor,
-                                            double& factor_stat) {
-    const int c = col_strict(csv, current_eff_col(cfg, "mc", period));
+static std::string raw_yield_topo_col(const std::string& channel,
+                                      const std::string& topo,
+                                      const std::string& period,
+                                      const std::string& helicity) {
+    return "raw yield, " + channel + ", " + topo + ", exp, " + period + ", " + helicity;
+}
+
+static std::string normalized_raw_yield_topo_col(const std::string& channel,
+                                                 const std::string& topo,
+                                                 const std::string& period,
+                                                 const std::string& helicity) {
+    return "normalized raw yield, " + channel + ", " + topo + ", exp, " + period + ", " + helicity;
+}
+
+static void read_current_factor_from_csv(const CSV& csv,
+                                         const ChannelConfig& cfg,
+                                         const std::string& sample,
+                                         const std::string& period,
+                                         double& factor,
+                                         double& factor_stat) {
+    const std::string colname = current_eff_col(cfg, sample, period);
+    const int c = col_strict(csv, colname);
 
     if (csv.rows.empty()) {
         fatal("[current_dependence] FATAL: cannot read current factor from empty CSV.");
@@ -2719,13 +2714,29 @@ static void read_mc_current_factor_from_csv(const CSV& csv,
         !(std::isfinite(vals[0]) && vals[0] > 0.0) ||
         !(std::isfinite(vals[1]) && vals[1] >= 0.0)) {
         std::ostringstream ss;
-        ss << "[current_dependence] FATAL: invalid MC current-efficiency factor tuple in column '"
-           << current_eff_col(cfg, "mc", period) << "': '" << csv.rows.front()[c] << "'.";
+        ss << "[current_dependence] FATAL: invalid current-efficiency factor tuple in column '"
+           << colname << "': '" << csv.rows.front()[c] << "'.";
         fatal(ss.str());
     }
 
     factor = vals[0];
     factor_stat = vals[1];
+}
+
+static void read_mc_current_factor_from_csv(const CSV& csv,
+                                            const ChannelConfig& cfg,
+                                            const std::string& period,
+                                            double& factor,
+                                            double& factor_stat) {
+    read_current_factor_from_csv(csv, cfg, "mc", period, factor, factor_stat);
+}
+
+static void read_exp_current_factor_from_csv(const CSV& csv,
+                                             const ChannelConfig& cfg,
+                                             const std::string& period,
+                                             double& factor,
+                                             double& factor_stat) {
+    read_current_factor_from_csv(csv, cfg, "exp", period, factor, factor_stat);
 }
 
 static long long apply_one_current_correction_column(CSV& csv,
@@ -2755,13 +2766,24 @@ static long long apply_one_current_correction_column(CSV& csv,
         }
 
         const double corrected = raw / factor;
+
+        // The current-efficiency factor is a fitted statistical correction applied
+        // once to the already-binned yield. Its uncertainty therefore enters as
+        // the ordinary multiplicative error-propagation term:
+        //
+        //   Var(raw/f) = Var(raw)/f^2 + raw^2 Var(f)/f^4 .
+        //
+        // Do not sum this term event-by-event; that artificially suppresses the
+        // factor uncertainty by roughly 1/sqrt(N).
         const double var_stat =
             (raw_stat * raw_stat) / (factor * factor) +
             (raw * raw * factor_stat * factor_stat) /
             (factor * factor * factor * factor);
 
         const double corrected_stat = (var_stat > 0.0) ? std::sqrt(var_stat) : 0.0;
-        row[c_dst] = format_triple(corrected, corrected_stat, 0.0);
+        const double corrected_sys = raw_sys / factor;
+
+        row[c_dst] = format_triple(corrected, corrected_stat, corrected_sys);
 
         if (corrected > 0.0) {
             ++n_positive;
@@ -2769,6 +2791,90 @@ static long long apply_one_current_correction_column(CSV& csv,
     }
 
     return n_positive;
+}
+
+static long long apply_data_current_corrections_for_channel(CSV& csv,
+                                                            const ChannelConfig& cfg,
+                                                            const std::string& log_label) {
+    long long total_positive = 0;
+
+    for (const std::string& period : CSV_PERIOD_ORDER) {
+        double f_exp = 0.0;
+        double f_exp_stat = 0.0;
+
+        read_exp_current_factor_from_csv(csv, cfg, period, f_exp, f_exp_stat);
+
+        for (const std::string& topo : topology_labels()) {
+            for (const std::string& hel : helicity_labels()) {
+                const std::string src_col =
+                    raw_yield_topo_col(cfg.csv_channel, topo, period, hel);
+
+                const std::string dst_col =
+                    normalized_raw_yield_topo_col(cfg.csv_channel, topo, period, hel);
+
+                const int c_src = col_optional(csv, src_col);
+                const int c_dst = col_optional(csv, dst_col);
+
+                // Not all periods have helicity-resolved data columns.
+                // Spring 2018 currently has only unpolarized data columns.
+                if (c_src < 0 && c_dst < 0) {
+                    continue;
+                }
+
+                if (c_src < 0 || c_dst < 0) {
+                    std::ostringstream ss;
+                    ss << "[current_dependence] FATAL: mismatched DATA current-correction columns: "
+                       << "src='" << src_col << "' exists=" << (c_src >= 0)
+                       << " dst='" << dst_col << "' exists=" << (c_dst >= 0);
+                    fatal(ss.str());
+                }
+
+                const long long n = apply_one_current_correction_column(
+                    csv,
+                    src_col,
+                    dst_col,
+                    f_exp,
+                    f_exp_stat);
+
+                total_positive += n;
+
+                std::cout << "[current_dependence] Applied DATA current correction for "
+                          << log_label
+                          << " period=" << period
+                          << " topo=" << topo
+                          << " hel=" << hel
+                          << " factor=" << f_exp
+                          << " +/- " << f_exp_stat
+                          << " positive_rows=" << n
+                          << std::endl;
+            }
+        }
+    }
+
+    return total_positive;
+}
+
+static void apply_all_data_current_corrections(CSV& csv,
+                                               const ChannelConfig& dvcs,
+                                               const ChannelConfig& eppi0) {
+    const long long n_dvcs =
+        apply_data_current_corrections_for_channel(csv, dvcs, "ep->epg");
+
+    const long long n_eppi0 =
+        apply_data_current_corrections_for_channel(csv, eppi0, "ep->eppi0");
+
+    if (n_dvcs <= 0) {
+        fatal("[current_dependence] FATAL: applying DVCS DATA current corrections produced zero positive cells.");
+    }
+
+    if (n_eppi0 <= 0) {
+        fatal("[current_dependence] FATAL: applying eppi0 DATA current corrections produced zero positive cells.");
+    }
+
+    std::cout << "[current_dependence] DATA current-corrected normalized raw yield cells written: "
+              << "ep->epg=" << n_dvcs
+              << " ep->eppi0=" << n_eppi0
+              << std::endl;
 }
 
 static long long apply_mc_current_corrections_for_channel(CSV& csv,
@@ -2886,11 +2992,20 @@ bool update_current_dependence_factors_csv(
 
             write_override_unity(csv, dvcs);
             write_override_unity(csv, eppi0);
+
+            // Even in unity-override mode, this stage now owns the production
+            // of normalized raw DATA yields. With f=(1,0), this copies raw
+            // yields into normalized raw yields while preserving uncertainties.
+            apply_all_data_current_corrections(csv, dvcs, eppi0);
+
+            // With f=(1,0), this copies reconstructed MC yields into
+            // reconstructed current-corrected MC yield columns.
             apply_all_mc_current_corrections(csv, dvcs, eppi0);
 
             write_csv_atomic(csv_path, csv);
 
-            std::cout << "[current_dependence] Updated CSV with unity current-efficiency factors: "
+            std::cout << "[current_dependence] Updated CSV with unity current-efficiency factors "
+                      << "and unity current-corrected DATA/MC yields: "
                       << csv_path << std::endl;
 
             return true;
@@ -2971,6 +3086,8 @@ bool update_current_dependence_factors_csv(
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
         }
 
+        // eppi0 reconstructed MC current dependence is still derived from the
+        // DVCS MC/data ratio because the eppi0 MC scan is intentionally skipped.
         apply_eppi0_mc_factor_from_dvcs_ratio(eppi0_results, dvcs_results);
 
         if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
@@ -2990,13 +3107,28 @@ bool update_current_dependence_factors_csv(
         write_summary_csv(options.output_dir + "/" + dvcs.output_token + "/period_summary.csv", dvcs_results);
         write_summary_csv(options.output_dir + "/" + eppi0.output_token + "/period_summary.csv", eppi0_results);
 
+        // 1. Write the current-efficiency factor columns.
         write_results_to_csv(csv, dvcs, dvcs_results);
         write_results_to_csv(csv, eppi0, eppi0_results);
+
+        // 2. Apply DATA current factors to raw yields and fill normalized raw
+        // yield columns. This replaces the old eppi0_normalization.cpp role
+        // when that stage was run with override_to_unity=true.
+        //
+        // The current-factor uncertainty is propagated as statistical:
+        //
+        //   Var(Y/f) = Var(Y)/f^2 + Y^2 Var(f)/f^4.
+        //
+        apply_all_data_current_corrections(csv, dvcs, eppi0);
+
+        // 3. Apply MC current factors to reconstructed MC yields and fill
+        // reconstructed current-corrected yield columns.
         apply_all_mc_current_corrections(csv, dvcs, eppi0);
 
         write_csv_atomic(csv_path, csv);
 
-        std::cout << "[current_dependence] Updated current-efficiency factor columns in: "
+        std::cout << "[current_dependence] Updated current-efficiency factors, "
+                  << "normalized raw DATA yields, and current-corrected MC yields in: "
                   << csv_path << std::endl;
 
         return true;
