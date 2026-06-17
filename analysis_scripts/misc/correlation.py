@@ -7,7 +7,7 @@ import ROOT
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Make 1x3 2D correlation plots of theta branches versus phi2 converted from radians to degrees."
+        description="Make 1x3 2D correlation plots with all angular branches converted from radians to degrees."
     )
     parser.add_argument(
         "input_root",
@@ -39,13 +39,13 @@ def main():
         "--theta-min",
         type=float,
         default=0.0,
-        help="Minimum theta value. Default: 0.0"
+        help="Minimum theta value in degrees after conversion. Default: 0.0"
     )
     parser.add_argument(
         "--theta-max",
         type=float,
         default=60.0,
-        help="Maximum theta value. Default: 60.0"
+        help="Maximum theta value in degrees after conversion. Default: 60.0"
     )
     parser.add_argument(
         "--phi-min",
@@ -92,25 +92,30 @@ def main():
         #endif
     #endfor
 
-    phi2_deg_expression = "phi2 * 180.0 / TMath::Pi()"
+    rad_to_deg = "180.0 / TMath::Pi()"
+
+    phi2_deg_expression = f"phi2 * {rad_to_deg}"
+    e_theta_deg_expression = f"e_theta * {rad_to_deg}"
+    p1_theta_deg_expression = f"p1_theta * {rad_to_deg}"
+    p2_theta_deg_expression = f"p2_theta * {rad_to_deg}"
 
     plots = [
         {
             "hist_name": "h_e_theta_phi2",
             "x_expression": phi2_deg_expression,
-            "y_branch": "e_theta",
+            "y_expression": e_theta_deg_expression,
             "title": "e_{#theta} vs #phi_{2};#phi_{2} (deg);e_{#theta} (deg)",
         },
         {
             "hist_name": "h_p1_theta_phi2",
             "x_expression": phi2_deg_expression,
-            "y_branch": "p1_theta",
+            "y_expression": p1_theta_deg_expression,
             "title": "p1_{#theta} vs #phi_{2};#phi_{2} (deg);p1_{#theta} (deg)",
         },
         {
             "hist_name": "h_p2_theta_phi2",
             "x_expression": phi2_deg_expression,
-            "y_branch": "p2_theta",
+            "y_expression": p2_theta_deg_expression,
             "title": "p2_{#theta} vs #phi_{2};#phi_{2} (deg);p2_{#theta} (deg)",
         },
     ]
@@ -141,14 +146,14 @@ def main():
         )
 
         draw_expression = (
-            f"{plot['y_branch']}:({plot['x_expression']})>>{plot['hist_name']}"
+            f"({plot['y_expression']}):({plot['x_expression']})>>{plot['hist_name']}"
         )
 
         cut_expression = (
             f"(({plot['x_expression']}) > {args.phi_min}) && "
             f"(({plot['x_expression']}) < {args.phi_max}) && "
-            f"({plot['y_branch']} > {args.theta_min}) && "
-            f"({plot['y_branch']} < {args.theta_max})"
+            f"(({plot['y_expression']}) > {args.theta_min}) && "
+            f"(({plot['y_expression']}) < {args.theta_max})"
         )
 
         tree.Draw(draw_expression, cut_expression, "COLZ")
