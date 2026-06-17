@@ -30,10 +30,10 @@ def main():
         help="Number of y-axis angle bins. Default: 180"
     )
     parser.add_argument(
-        "--bins-phi2",
+        "--bins-phi",
         type=int,
         default=180,
-        help="Number of phi2 bins. Default: 180"
+        help="Number of phi bins. Default: 180"
     )
     parser.add_argument(
         "--angle-min",
@@ -82,33 +82,33 @@ def main():
 
     rad_to_deg = "180.0 / TMath::Pi()"
 
-    phi2_deg_expression = f"phi2 * {rad_to_deg}"
+    phi_deg_expression = f"phi2 * {rad_to_deg}"
     e_phi_deg_expression = f"e_phi * {rad_to_deg}"
-    p1_phi_deg_expression = f"p1_phi * {rad_to_deg}"
-    p2_phi_deg_expression = f"p2_phi * {rad_to_deg}"
+    p_phi_deg_expression = f"p1_phi * {rad_to_deg}"
+    gamma_phi_deg_expression = f"p2_phi * {rad_to_deg}"
 
     plots = [
         {
-            "hist_name": "h_e_phi_phi2",
-            "x_expression": phi2_deg_expression,
+            "hist_name": "h_e_phi_phi",
+            "x_expression": phi_deg_expression,
             "y_expression": e_phi_deg_expression,
-            "title": "e_{#phi} vs #phi_{2};#phi_{2} (deg);e_{#phi} (deg)",
+            "title": "e_{#phi} vs #phi;#phi (deg);e_{#phi} (deg)",
         },
         {
-            "hist_name": "h_p1_phi_phi2",
-            "x_expression": phi2_deg_expression,
-            "y_expression": p1_phi_deg_expression,
-            "title": "p1_{#phi} vs #phi_{2};#phi_{2} (deg);p1_{#phi} (deg)",
+            "hist_name": "h_p_phi_phi",
+            "x_expression": phi_deg_expression,
+            "y_expression": p_phi_deg_expression,
+            "title": "p_{#phi} vs #phi;#phi (deg);p_{#phi} (deg)",
         },
         {
-            "hist_name": "h_p2_phi_phi2",
-            "x_expression": phi2_deg_expression,
-            "y_expression": p2_phi_deg_expression,
-            "title": "p2_{#phi} vs #phi_{2};#phi_{2} (deg);p2_{#phi} (deg)",
+            "hist_name": "h_gamma_phi_phi",
+            "x_expression": phi_deg_expression,
+            "y_expression": gamma_phi_deg_expression,
+            "title": "#gamma_{#phi} vs #phi;#phi (deg);#gamma_{#phi} (deg)",
         },
     ]
 
-    canvas = ROOT.TCanvas("canvas", "Phi correlations with phi2", 1800, 600)
+    canvas = ROOT.TCanvas("canvas", "Phi correlations", 1800, 600)
     canvas.Divide(3, 1)
 
     histograms = []
@@ -125,7 +125,7 @@ def main():
         hist = ROOT.TH2D(
             plot["hist_name"],
             plot["title"],
-            args.bins_phi2,
+            args.bins_phi,
             args.angle_min,
             args.angle_max,
             args.bins_y,
