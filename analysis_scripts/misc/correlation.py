@@ -7,7 +7,7 @@ import ROOT
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Make 1x3 2D correlation plots of e_phi, p1_phi, and p2_phi versus phi2, with all angles converted from radians to degrees."
+        description="Make 1x3 2D correlation plots of e_phi, p1_phi, and p2_phi versus phi2, with all angles converted from radians to degrees and wrapped to [0, 360)."
     )
     parser.add_argument(
         "input_root",
@@ -38,26 +38,26 @@ def main():
     parser.add_argument(
         "--y-min",
         type=float,
-        default=-180.0,
-        help="Minimum y-axis angle value in degrees after conversion. Default: -180.0"
+        default=0.0,
+        help="Minimum y-axis angle value in degrees after wrapping. Default: 0.0"
     )
     parser.add_argument(
         "--y-max",
         type=float,
-        default=180.0,
-        help="Maximum y-axis angle value in degrees after conversion. Default: 180.0"
+        default=360.0,
+        help="Maximum y-axis angle value in degrees after wrapping. Default: 360.0"
     )
     parser.add_argument(
         "--phi2-min",
         type=float,
-        default=-180.0,
-        help="Minimum phi2 value in degrees after conversion. Default: -180.0"
+        default=0.0,
+        help="Minimum phi2 value in degrees after wrapping. Default: 0.0"
     )
     parser.add_argument(
         "--phi2-max",
         type=float,
-        default=180.0,
-        help="Maximum phi2 value in degrees after conversion. Default: 180.0"
+        default=360.0,
+        help="Maximum phi2 value in degrees after wrapping. Default: 360.0"
     )
 
     args = parser.parse_args()
@@ -92,12 +92,14 @@ def main():
         #endif
     #endfor
 
-    rad_to_deg = "180.0 / TMath::Pi()"
+    def wrapped_phi_deg_expression(branch_name):
+        return f"TMath::Fmod(({branch_name} * 180.0 / TMath::Pi()) + 360.0, 360.0)"
+    #endfor
 
-    phi2_deg_expression = f"phi2 * {rad_to_deg}"
-    e_phi_deg_expression = f"e_phi * {rad_to_deg}"
-    p1_phi_deg_expression = f"p1_phi * {rad_to_deg}"
-    p2_phi_deg_expression = f"p2_phi * {rad_to_deg}"
+    phi2_deg_expression = wrapped_phi_deg_expression("phi2")
+    e_phi_deg_expression = wrapped_phi_deg_expression("e_phi")
+    p1_phi_deg_expression = wrapped_phi_deg_expression("p1_phi")
+    p2_phi_deg_expression = wrapped_phi_deg_expression("p2_phi")
 
     plots = [
         {
@@ -150,9 +152,9 @@ def main():
         )
 
         cut_expression = (
-            f"(({plot['x_expression']}) > {args.phi2_min}) && "
+            f"(({plot['x_expression']}) >= {args.phi2_min}) && "
             f"(({plot['x_expression']}) < {args.phi2_max}) && "
-            f"(({plot['y_expression']}) > {args.y_min}) && "
+            f"(({plot['y_expression']}) >= {args.y_min}) && "
             f"(({plot['y_expression']}) < {args.y_max})"
         )
 
