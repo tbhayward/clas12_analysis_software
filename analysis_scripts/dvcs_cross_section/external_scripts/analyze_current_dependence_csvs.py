@@ -45,6 +45,19 @@ Outputs by default:
 
 and PNG plots in the same directory.
 
+Plot behavior:
+
+  - Individual DATA-only and MC-only value canvases.
+  - Individual DATA-only and MC-only ratio-to-sector-mean canvases.
+  - DATA+MC overlay value canvases.
+  - DATA+MC overlay ratio-to-sector-mean canvases.
+  - Pull heatmaps.
+  - Spread-summary canvas.
+
+By default, the value canvases use local per-panel y-axis ranges so each period
+is visually zoomed to its own sector/input spread. Use --shared-y-range to force
+one common y-axis range across all panels in a given canvas.
+
 Statistical-consistency convention:
 
   weighted mean:
@@ -149,6 +162,21 @@ QUANTITY_SHORT = {
     "slope_percent_per_nA": "slope",
 }
 
+SAMPLE_STYLE = {
+    "data": {
+        "label": "DATA",
+        "color": "tab:blue",
+        "marker": "o",
+        "offset": -0.08,
+    },
+    "mc": {
+        "label": "MC",
+        "color": "tab:orange",
+        "marker": "s",
+        "offset": 0.08,
+    },
+}
+
 
 @dataclass
 class ValueEntry:
@@ -243,6 +271,15 @@ def safe_filename_token(text: str) -> str:
         out = out.replace("__", "_")
 
     return out.strip("_")
+
+
+def finite_float(value, default: float = math.nan) -> float:
+    try:
+        v = float(value)
+    except Exception:
+        return default
+
+    return v if np.isfinite(v) else default
 
 
 # -----------------------------------------------------------------------------
@@ -895,7 +932,7 @@ def label_style(label: str, index: int) -> Dict[str, object]:
     }
 
 
-def finite_min_max(values: List[float]) -> Tuple[float, float]:
+def finite_min_max(values: List[float], pad_fraction: float = 0.12) -> Tuple[float, float]:
     finite = [v for v in values if np.isfinite(v)]
 
     if not finite:
@@ -905,10 +942,50 @@ def finite_min_max(values: List[float]) -> Tuple[float, float]:
     vmax = max(finite)
 
     if vmin == vmax:
-        pad = 0.1 * abs(vmax) if vmax != 0.0 else 1.0
+        pad = pad_fraction * abs(vmax) if vmax != 0.0 else 1.0
         return vmin - pad, vmax + pad
 
-    pad = 0.12 * (vmax - vmin)
+    pad = pad_fraction * (vmax - vmin)
+    return vmin - pad, vmax + pad
+
+
+def finite_min_max_with_errors(
+    values: List[float],
+    errors: List[float],
+    pad_fraction: float = 0.20,
+    min_abs_pad_fraction: float = 0.002,
+) -> Tuple[float, float]:
+    lows = []
+    highs = []
+
+    for value, err in zip(values, errors):
+        if not np.isfinite(value):
+            continue
+
+        if np.isfinite(err) and err >= 0.0:
+            lows.append(value - err)
+            highs.append(value + err)
+        else:
+            lows.append(value)
+            highs.append(value)
+
+    if not lows or not highs:
+        return 0.0, 1.0
+
+    vmin = min(lows)
+    vmax = max(highs)
+
+    center = 0.5 * (vmin + vmax)
+    span = vmax - vmin
+
+    if not np.isfinite(span) or span <= 0.0:
+        abs_pad = min_abs_pad_fraction * abs(center) if center != 0.0 else 1.0
+        return center - abs_pad, center + abs_pad
+
+    pad = pad_fraction * span
+    min_pad = min_abs_pad_fraction * abs(center) if center != 0.0 else 0.0
+    pad = max(pad, min_pad)
+
     return vmin - pad, vmax + pad
 
 
@@ -962,15 +1039,96 @@ def value_lookup_for_group(group: pd.DataFrame) -> Dict[str, Tuple[float, float]
     return out
 
 
-def draw_mean_reference(ax, mean: float, mean_stat: float, label: str = "mean") -> None:
+def draw_mean_reference(
+    ax,
+    mean: float,
+    mean_stat: float,
+    label: str = "mean",
+    color: str = "black",
+    alpha: float = 0.15,
+) -> None:
     if not np.isfinite(mean):
         return
 
-    ax.axhline(mean, linewidth=1.2, linestyle="--", color="black", label=label)
+    ax.axhline(mean, linewidth=1.2, linestyle="--", color=color, label=label)
 
     if np.isfinite(mean_stat) and mean_stat > 0.0:
-        ax.axhspan(mean - mean_stat, mean + mean_stat, alpha=0.15, color="gray")
+        ax.axhspan(mean - mean_stat, mean + mean_stat, alpha=alpha, color=color)
 
+
+def collect_values_and_errors_for_period(
+    values_df: pd.DataFrame,
+    period: str,
+    samples: List[str],
+    quantity: str,
+) -> Tuple[List[float], List[float]]:
+    vals = []
+    errs = []
+
+    for sample in samples:
+        group = get_group(values_df, period, sample, quantity)
+
+        for _, row in group.iterrows():
+            value = finite_float(row["value"])
+            stat = finite_float(row["stat"], default=0.0)
+
+            if np.isfinite(value):
+                vals.append(value)
+                errs.append(stat if np.isfinite(stat) and stat >= 0.0 else 0.0)
+
+    return vals, errs
+
+
+def collect_values_and_errors_for_canvas(
+    values_df: pd.DataFrame,
+    samples: List[str],
+    quantity: str,
+) -> Tuple[List[float], List[float]]:
+    vals = []
+    errs = []
+
+    for period in period_order_from_values(values_df):
+        period_vals, period_errs = collect_values_and_errors_for_period(
+            values_df=values_df,
+            period=period,
+            samples=samples,
+            quantity=quantity,
+        )
+        vals.extend(period_vals)
+        errs.extend(period_errs)
+
+    return vals, errs
+
+
+def get_panel_ylim(
+    values_df: pd.DataFrame,
+    period: str,
+    samples: List[str],
+    quantity: str,
+    shared_y_range: bool,
+    shared_ylim: Tuple[float, float],
+    y_padding_fraction: float,
+) -> Tuple[float, float]:
+    if shared_y_range:
+        return shared_ylim
+
+    vals, errs = collect_values_and_errors_for_period(
+        values_df=values_df,
+        period=period,
+        samples=samples,
+        quantity=quantity,
+    )
+
+    return finite_min_max_with_errors(
+        values=vals,
+        errors=errs,
+        pad_fraction=y_padding_fraction,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Individual DATA-only or MC-only value plots.
+# -----------------------------------------------------------------------------
 
 def plot_values_by_period(
     values_df: pd.DataFrame,
@@ -980,9 +1138,9 @@ def plot_values_by_period(
     quantity: str,
     output_dir: str,
     output_prefix: str,
+    shared_y_range: bool,
+    y_padding_fraction: float,
 ) -> str:
-    periods = period_order_from_values(values_df)
-
     fig = plt.figure(figsize=(18.5, 10.2))
     gs = fig.add_gridspec(
         2,
@@ -995,19 +1153,20 @@ def plot_values_by_period(
         hspace=0.300,
     )
 
-    all_y = []
+    shared_vals, shared_errs = collect_values_and_errors_for_canvas(
+        values_df=values_df,
+        samples=[sample],
+        quantity=quantity,
+    )
 
-    for period in periods:
-        group = get_group(values_df, period, sample, quantity)
-        all_y.extend(group["value"].astype(float).tolist())
-
-    ymin, ymax = finite_min_max(all_y)
-
-    axes = []
+    shared_ylim = finite_min_max_with_errors(
+        values=shared_vals,
+        errors=shared_errs,
+        pad_fraction=y_padding_fraction,
+    )
 
     for ipanel, period in enumerate(PANEL_PERIOD_ORDER):
         ax = fig.add_subplot(gs[ipanel // 3, ipanel % 3])
-        axes.append(ax)
 
         if period is None:
             ax.axis("off")
@@ -1031,24 +1190,32 @@ def plot_values_by_period(
             x,
             y,
             yerr=ey,
-            fmt="o",
+            fmt=SAMPLE_STYLE.get(sample, {}).get("marker", "o"),
+            color=SAMPLE_STYLE.get(sample, {}).get("color", None),
             capsize=3,
             linewidth=1.2,
             markersize=6.5,
         )
 
-        ref_mean = float(diag.get("reference_mean", math.nan))
+        ref_mean = finite_float(diag.get("reference_mean", math.nan))
         ref_type = str(diag.get("reference_mean_type", "mean"))
-        ref_stat = float(diag.get("weighted_mean_stat", math.nan))
+        ref_stat = finite_float(diag.get("weighted_mean_stat", math.nan))
 
         if ref_type != "weighted":
             ref_stat = math.nan
 
-        draw_mean_reference(ax, ref_mean, ref_stat, label=ref_type)
+        draw_mean_reference(
+            ax,
+            ref_mean,
+            ref_stat,
+            label=ref_type,
+            color="black",
+            alpha=0.15,
+        )
 
-        chi2_ndf = float(diag.get("chi2_ndf", math.nan))
-        rms_percent = float(diag.get("rms_over_mean_percent", math.nan))
-        max_pull = float(diag.get("max_pair_pull", math.nan))
+        chi2_ndf = finite_float(diag.get("chi2_ndf", math.nan))
+        rms_percent = finite_float(diag.get("rms_over_mean_percent", math.nan))
+        max_pull = finite_float(diag.get("max_pair_pull", math.nan))
 
         ax.set_title(
             f"{period}\n"
@@ -1060,7 +1227,18 @@ def plot_values_by_period(
 
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
+
+        ymin, ymax = get_panel_ylim(
+            values_df=values_df,
+            period=period,
+            samples=[sample],
+            quantity=quantity,
+            shared_y_range=shared_y_range,
+            shared_ylim=shared_ylim,
+            y_padding_fraction=y_padding_fraction,
+        )
         ax.set_ylim(ymin, ymax)
+
         ax.grid(True, alpha=0.35)
         ax.tick_params(axis="both", labelsize=10)
 
@@ -1073,15 +1251,18 @@ def plot_values_by_period(
         if ipanel == 0:
             ax.legend(fontsize=9, loc="best")
 
+    y_mode = "shared y" if shared_y_range else "local y"
     fig.suptitle(
-        f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)} by sector/input",
+        f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)} by sector/input ({y_mode})",
         fontsize=16,
         y=0.975,
     )
 
+    suffix = "shared_y" if shared_y_range else "local_y"
+
     outfile = os.path.join(
         output_dir,
-        f"{output_prefix}_values_by_period_{sample}_{safe_filename_token(quantity)}.png",
+        f"{output_prefix}_values_by_period_{sample}_{safe_filename_token(quantity)}_{suffix}.png",
     )
 
     fig.savefig(outfile, dpi=PLOT_DPI)
@@ -1090,14 +1271,19 @@ def plot_values_by_period(
     return outfile
 
 
-def plot_ratio_to_mean_by_period(
+# -----------------------------------------------------------------------------
+# Combined DATA+MC value plots.
+# -----------------------------------------------------------------------------
+
+def plot_data_mc_values_by_period(
     values_df: pd.DataFrame,
     diagnostics_df: pd.DataFrame,
     labels: List[str],
-    sample: str,
     quantity: str,
     output_dir: str,
     output_prefix: str,
+    shared_y_range: bool,
+    y_padding_fraction: float,
 ) -> str:
     fig = plt.figure(figsize=(18.5, 10.2))
     gs = fig.add_gridspec(
@@ -1111,23 +1297,185 @@ def plot_ratio_to_mean_by_period(
         hspace=0.300,
     )
 
-    all_ratios = []
+    shared_vals, shared_errs = collect_values_and_errors_for_canvas(
+        values_df=values_df,
+        samples=["data", "mc"],
+        quantity=quantity,
+    )
+
+    shared_ylim = finite_min_max_with_errors(
+        values=shared_vals,
+        errors=shared_errs,
+        pad_fraction=y_padding_fraction,
+    )
+
+    for ipanel, period in enumerate(PANEL_PERIOD_ORDER):
+        ax = fig.add_subplot(gs[ipanel // 3, ipanel % 3])
+
+        if period is None:
+            ax.axis("off")
+            continue
+
+        x_base = np.arange(1, len(labels) + 1, dtype=float)
+
+        title_lines = [period]
+
+        for sample in SAMPLE_ORDER:
+            group = get_group(values_df, period, sample, quantity)
+            lookup = value_lookup_for_group(group)
+            diag = get_diag_row(diagnostics_df, period, sample, quantity)
+
+            style = SAMPLE_STYLE[sample]
+            x = x_base + float(style["offset"])
+
+            y = []
+            ey = []
+
+            for label in labels:
+                value, stat = lookup.get(label, (math.nan, math.nan))
+                y.append(value)
+                ey.append(stat if np.isfinite(stat) and stat >= 0.0 else 0.0)
+
+            ax.errorbar(
+                x,
+                y,
+                yerr=ey,
+                fmt=style["marker"],
+                color=style["color"],
+                label=style["label"],
+                capsize=3,
+                linewidth=1.2,
+                markersize=6.2,
+            )
+
+            ref_mean = finite_float(diag.get("reference_mean", math.nan))
+            ref_type = str(diag.get("reference_mean_type", "mean"))
+            ref_stat = finite_float(diag.get("weighted_mean_stat", math.nan))
+
+            if ref_type != "weighted":
+                ref_stat = math.nan
+
+            draw_mean_reference(
+                ax,
+                ref_mean,
+                ref_stat,
+                label=f"{style['label']} {ref_type}",
+                color=style["color"],
+                alpha=0.10,
+            )
+
+            chi2_ndf = finite_float(diag.get("chi2_ndf", math.nan))
+            rms_percent = finite_float(diag.get("rms_over_mean_percent", math.nan))
+            max_pull = finite_float(diag.get("max_pair_pull", math.nan))
+
+            title_lines.append(
+                f"{style['label']}: RMS/mean={rms_percent:.3g}%, "
+                f"chi2/ndf={chi2_ndf:.3g}, max={max_pull:.3g}"
+            )
+
+        ax.set_title("\n".join(title_lines), fontsize=10)
+
+        ax.set_xticks(x_base)
+        ax.set_xticklabels(labels)
+
+        ymin, ymax = get_panel_ylim(
+            values_df=values_df,
+            period=period,
+            samples=["data", "mc"],
+            quantity=quantity,
+            shared_y_range=shared_y_range,
+            shared_ylim=shared_ylim,
+            y_padding_fraction=y_padding_fraction,
+        )
+        ax.set_ylim(ymin, ymax)
+
+        ax.grid(True, alpha=0.35)
+        ax.tick_params(axis="both", labelsize=10)
+
+        if ipanel % 3 == 0:
+            ax.set_ylabel(QUANTITY_LABEL.get(quantity, quantity), fontsize=11)
+
+        if ipanel // 3 == 1:
+            ax.set_xlabel("Sector/input label", fontsize=11)
+
+        if ipanel == 0:
+            ax.legend(fontsize=9, loc="best")
+
+    y_mode = "shared y" if shared_y_range else "local y"
+    fig.suptitle(
+        f"DATA and MC {QUANTITY_LABEL.get(quantity, quantity)} by sector/input ({y_mode})",
+        fontsize=16,
+        y=0.975,
+    )
+
+    suffix = "shared_y" if shared_y_range else "local_y"
+
+    outfile = os.path.join(
+        output_dir,
+        f"{output_prefix}_values_by_period_data_mc_{safe_filename_token(quantity)}_{suffix}.png",
+    )
+
+    fig.savefig(outfile, dpi=PLOT_DPI)
+    plt.close(fig)
+
+    return outfile
+
+
+# -----------------------------------------------------------------------------
+# Individual DATA-only or MC-only ratio plots.
+# -----------------------------------------------------------------------------
+
+def plot_ratio_to_mean_by_period(
+    values_df: pd.DataFrame,
+    diagnostics_df: pd.DataFrame,
+    labels: List[str],
+    sample: str,
+    quantity: str,
+    output_dir: str,
+    output_prefix: str,
+    shared_y_range: bool,
+    y_padding_fraction: float,
+) -> str:
+    shared_ratios = []
+    shared_ratio_errs = []
 
     for period in period_order_from_values(values_df):
         group = get_group(values_df, period, sample, quantity)
         diag = get_diag_row(diagnostics_df, period, sample, quantity)
-        ref_mean = float(diag.get("reference_mean", math.nan))
+        ref_mean = finite_float(diag.get("reference_mean", math.nan))
 
         if not np.isfinite(ref_mean) or ref_mean == 0.0:
             continue
 
-        for value in group["value"].astype(float):
-            if np.isfinite(value):
-                all_ratios.append(value / ref_mean)
+        for _, row in group.iterrows():
+            value = finite_float(row["value"])
+            stat = finite_float(row["stat"], default=0.0)
 
-    ymin, ymax = finite_min_max(all_ratios)
-    ymin = min(ymin, 0.95)
-    ymax = max(ymax, 1.05)
+            if np.isfinite(value):
+                shared_ratios.append(value / ref_mean)
+                shared_ratio_errs.append(stat / abs(ref_mean) if stat >= 0.0 else 0.0)
+
+    shared_ylim = finite_min_max_with_errors(
+        values=shared_ratios,
+        errors=shared_ratio_errs,
+        pad_fraction=y_padding_fraction,
+    )
+    shared_ylim = (
+        min(shared_ylim[0], 0.995),
+        max(shared_ylim[1], 1.005),
+    )
+
+    fig = plt.figure(figsize=(18.5, 10.2))
+    gs = fig.add_gridspec(
+        2,
+        3,
+        left=0.055,
+        right=0.990,
+        bottom=0.075,
+        top=0.900,
+        wspace=0.220,
+        hspace=0.300,
+    )
 
     for ipanel, period in enumerate(PANEL_PERIOD_ORDER):
         ax = fig.add_subplot(gs[ipanel // 3, ipanel % 3])
@@ -1140,7 +1488,7 @@ def plot_ratio_to_mean_by_period(
         lookup = value_lookup_for_group(group)
         diag = get_diag_row(diagnostics_df, period, sample, quantity)
 
-        ref_mean = float(diag.get("reference_mean", math.nan))
+        ref_mean = finite_float(diag.get("reference_mean", math.nan))
         ref_type = str(diag.get("reference_mean_type", "mean"))
 
         x = np.arange(1, len(labels) + 1, dtype=float)
@@ -1166,7 +1514,8 @@ def plot_ratio_to_mean_by_period(
             x,
             ratios,
             yerr=ratio_errs,
-            fmt="o",
+            fmt=SAMPLE_STYLE.get(sample, {}).get("marker", "o"),
+            color=SAMPLE_STYLE.get(sample, {}).get("color", None),
             capsize=3,
             linewidth=1.2,
             markersize=6.5,
@@ -1174,9 +1523,8 @@ def plot_ratio_to_mean_by_period(
 
         ax.axhline(1.0, linewidth=1.2, linestyle="--", color="black")
 
-        chi2_ndf = float(diag.get("chi2_ndf", math.nan))
-        rms_percent = float(diag.get("rms_over_mean_percent", math.nan))
-        max_pull = float(diag.get("max_pair_pull", math.nan))
+        chi2_ndf = finite_float(diag.get("chi2_ndf", math.nan))
+        rms_percent = finite_float(diag.get("rms_over_mean_percent", math.nan))
 
         ax.set_title(
             f"{period}\n"
@@ -1188,7 +1536,20 @@ def plot_ratio_to_mean_by_period(
 
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
+
+        if shared_y_range:
+            ymin, ymax = shared_ylim
+        else:
+            ymin, ymax = finite_min_max_with_errors(
+                values=ratios,
+                errors=ratio_errs,
+                pad_fraction=y_padding_fraction,
+            )
+            ymin = min(ymin, 0.995)
+            ymax = max(ymax, 1.005)
+
         ax.set_ylim(ymin, ymax)
+
         ax.grid(True, alpha=0.35)
         ax.tick_params(axis="both", labelsize=10)
 
@@ -1198,15 +1559,18 @@ def plot_ratio_to_mean_by_period(
         if ipanel // 3 == 1:
             ax.set_xlabel("Sector/input label", fontsize=11)
 
+    y_mode = "shared y" if shared_y_range else "local y"
     fig.suptitle(
-        f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)} sector ratios",
+        f"{sample.upper()} {QUANTITY_LABEL.get(quantity, quantity)} sector ratios ({y_mode})",
         fontsize=16,
         y=0.975,
     )
 
+    suffix = "shared_y" if shared_y_range else "local_y"
+
     outfile = os.path.join(
         output_dir,
-        f"{output_prefix}_ratio_to_mean_{sample}_{safe_filename_token(quantity)}.png",
+        f"{output_prefix}_ratio_to_mean_{sample}_{safe_filename_token(quantity)}_{suffix}.png",
     )
 
     fig.savefig(outfile, dpi=PLOT_DPI)
@@ -1214,6 +1578,182 @@ def plot_ratio_to_mean_by_period(
 
     return outfile
 
+
+# -----------------------------------------------------------------------------
+# Combined DATA+MC ratio plots.
+# -----------------------------------------------------------------------------
+
+def plot_data_mc_ratio_to_mean_by_period(
+    values_df: pd.DataFrame,
+    diagnostics_df: pd.DataFrame,
+    labels: List[str],
+    quantity: str,
+    output_dir: str,
+    output_prefix: str,
+    shared_y_range: bool,
+    y_padding_fraction: float,
+) -> str:
+    shared_ratios = []
+    shared_ratio_errs = []
+
+    for period in period_order_from_values(values_df):
+        for sample in SAMPLE_ORDER:
+            group = get_group(values_df, period, sample, quantity)
+            diag = get_diag_row(diagnostics_df, period, sample, quantity)
+            ref_mean = finite_float(diag.get("reference_mean", math.nan))
+
+            if not np.isfinite(ref_mean) or ref_mean == 0.0:
+                continue
+
+            for _, row in group.iterrows():
+                value = finite_float(row["value"])
+                stat = finite_float(row["stat"], default=0.0)
+
+                if np.isfinite(value):
+                    shared_ratios.append(value / ref_mean)
+                    shared_ratio_errs.append(stat / abs(ref_mean) if stat >= 0.0 else 0.0)
+
+    shared_ylim = finite_min_max_with_errors(
+        values=shared_ratios,
+        errors=shared_ratio_errs,
+        pad_fraction=y_padding_fraction,
+    )
+    shared_ylim = (
+        min(shared_ylim[0], 0.995),
+        max(shared_ylim[1], 1.005),
+    )
+
+    fig = plt.figure(figsize=(18.5, 10.2))
+    gs = fig.add_gridspec(
+        2,
+        3,
+        left=0.055,
+        right=0.990,
+        bottom=0.075,
+        top=0.900,
+        wspace=0.220,
+        hspace=0.300,
+    )
+
+    for ipanel, period in enumerate(PANEL_PERIOD_ORDER):
+        ax = fig.add_subplot(gs[ipanel // 3, ipanel % 3])
+
+        if period is None:
+            ax.axis("off")
+            continue
+
+        x_base = np.arange(1, len(labels) + 1, dtype=float)
+
+        panel_ratios = []
+        panel_ratio_errs = []
+
+        title_lines = [period]
+
+        for sample in SAMPLE_ORDER:
+            style = SAMPLE_STYLE[sample]
+            group = get_group(values_df, period, sample, quantity)
+            lookup = value_lookup_for_group(group)
+            diag = get_diag_row(diagnostics_df, period, sample, quantity)
+
+            ref_mean = finite_float(diag.get("reference_mean", math.nan))
+            ref_type = str(diag.get("reference_mean_type", "mean"))
+
+            ratios = []
+            ratio_errs = []
+
+            for label in labels:
+                value, stat = lookup.get(label, (math.nan, math.nan))
+
+                if np.isfinite(value) and np.isfinite(ref_mean) and ref_mean != 0.0:
+                    ratio = value / ref_mean
+                    ratios.append(ratio)
+                    panel_ratios.append(ratio)
+
+                    if np.isfinite(stat) and stat >= 0.0:
+                        ratio_err = stat / abs(ref_mean)
+                    else:
+                        ratio_err = 0.0
+
+                    ratio_errs.append(ratio_err)
+                    panel_ratio_errs.append(ratio_err)
+                else:
+                    ratios.append(math.nan)
+                    ratio_errs.append(0.0)
+
+            ax.errorbar(
+                x_base + float(style["offset"]),
+                ratios,
+                yerr=ratio_errs,
+                fmt=style["marker"],
+                color=style["color"],
+                label=f"{style['label']} / {ref_type} mean",
+                capsize=3,
+                linewidth=1.2,
+                markersize=6.2,
+            )
+
+            rms_percent = finite_float(diag.get("rms_over_mean_percent", math.nan))
+            chi2_ndf = finite_float(diag.get("chi2_ndf", math.nan))
+            title_lines.append(
+                f"{style['label']}: RMS/mean={rms_percent:.3g}%, "
+                f"chi2/ndf={chi2_ndf:.3g}"
+            )
+
+        ax.axhline(1.0, linewidth=1.2, linestyle="--", color="black")
+
+        ax.set_title("\n".join(title_lines), fontsize=10)
+
+        ax.set_xticks(x_base)
+        ax.set_xticklabels(labels)
+
+        if shared_y_range:
+            ymin, ymax = shared_ylim
+        else:
+            ymin, ymax = finite_min_max_with_errors(
+                values=panel_ratios,
+                errors=panel_ratio_errs,
+                pad_fraction=y_padding_fraction,
+            )
+            ymin = min(ymin, 0.995)
+            ymax = max(ymax, 1.005)
+
+        ax.set_ylim(ymin, ymax)
+
+        ax.grid(True, alpha=0.35)
+        ax.tick_params(axis="both", labelsize=10)
+
+        if ipanel % 3 == 0:
+            ax.set_ylabel("Value / sector mean", fontsize=11)
+
+        if ipanel // 3 == 1:
+            ax.set_xlabel("Sector/input label", fontsize=11)
+
+        if ipanel == 0:
+            ax.legend(fontsize=9, loc="best")
+
+    y_mode = "shared y" if shared_y_range else "local y"
+    fig.suptitle(
+        f"DATA and MC {QUANTITY_LABEL.get(quantity, quantity)} sector ratios ({y_mode})",
+        fontsize=16,
+        y=0.975,
+    )
+
+    suffix = "shared_y" if shared_y_range else "local_y"
+
+    outfile = os.path.join(
+        output_dir,
+        f"{output_prefix}_ratio_to_mean_data_mc_{safe_filename_token(quantity)}_{suffix}.png",
+    )
+
+    fig.savefig(outfile, dpi=PLOT_DPI)
+    plt.close(fig)
+
+    return outfile
+
+
+# -----------------------------------------------------------------------------
+# Spread and heatmap plots.
+# -----------------------------------------------------------------------------
 
 def plot_spread_summary(
     diagnostics_df: pd.DataFrame,
@@ -1326,7 +1866,7 @@ def plot_sector_pull_heatmap(
         lookup = value_lookup_for_group(group)
         diag = get_diag_row(diagnostics_df, period, sample, quantity)
 
-        ref_mean = float(diag.get("reference_mean", math.nan))
+        ref_mean = finite_float(diag.get("reference_mean", math.nan))
 
         for il, label in enumerate(labels):
             value, stat = lookup.get(label, (math.nan, math.nan))
@@ -1407,12 +1947,18 @@ def plot_sector_pull_heatmap(
     return outfile
 
 
+# -----------------------------------------------------------------------------
+# Plot driver.
+# -----------------------------------------------------------------------------
+
 def make_all_plots(
     values_df: pd.DataFrame,
     diagnostics_df: pd.DataFrame,
     labels: List[str],
     output_dir: str,
     output_prefix: str,
+    shared_y_range: bool,
+    y_padding_fraction: float,
 ) -> List[str]:
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1430,6 +1976,8 @@ def make_all_plots(
                         quantity=quantity,
                         output_dir=output_dir,
                         output_prefix=output_prefix,
+                        shared_y_range=shared_y_range,
+                        y_padding_fraction=y_padding_fraction,
                     )
                 )
 
@@ -1442,6 +1990,8 @@ def make_all_plots(
                         quantity=quantity,
                         output_dir=output_dir,
                         output_prefix=output_prefix,
+                        shared_y_range=shared_y_range,
+                        y_padding_fraction=y_padding_fraction,
                     )
                 )
 
@@ -1456,6 +2006,32 @@ def make_all_plots(
                         output_prefix=output_prefix,
                     )
                 )
+
+            outputs.append(
+                plot_data_mc_values_by_period(
+                    values_df=values_df,
+                    diagnostics_df=diagnostics_df,
+                    labels=labels,
+                    quantity=quantity,
+                    output_dir=output_dir,
+                    output_prefix=output_prefix,
+                    shared_y_range=shared_y_range,
+                    y_padding_fraction=y_padding_fraction,
+                )
+            )
+
+            outputs.append(
+                plot_data_mc_ratio_to_mean_by_period(
+                    values_df=values_df,
+                    diagnostics_df=diagnostics_df,
+                    labels=labels,
+                    quantity=quantity,
+                    output_dir=output_dir,
+                    output_prefix=output_prefix,
+                    shared_y_range=shared_y_range,
+                    y_padding_fraction=y_padding_fraction,
+                )
+            )
 
         outputs.append(
             plot_spread_summary(
@@ -1512,6 +2088,25 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--shared-y-range",
+        action="store_true",
+        help=(
+            "Use one common y-axis range across all panels in each value/ratio canvas. "
+            "Default is local per-panel y-axis zoom."
+        ),
+    )
+
+    parser.add_argument(
+        "--y-padding-fraction",
+        type=float,
+        default=0.30,
+        help=(
+            "Fractional padding around the finite value/error range for zoomed y axes. "
+            "Default: 0.30."
+        ),
+    )
+
+    parser.add_argument(
         "--no-plots",
         action="store_true",
         help="Skip PNG plot creation.",
@@ -1535,6 +2130,9 @@ def validate_args(args: argparse.Namespace) -> List[str]:
             f"({len(args.csv_files)})."
         )
 
+    if args.y_padding_fraction < 0.0:
+        raise ValueError("--y-padding-fraction must be non-negative.")
+
     return labels
 
 
@@ -1550,6 +2148,8 @@ def main() -> None:
     log(f"Labels: {labels}")
     log(f"Output dir: {args.output_dir}")
     log(f"Output prefix: {args.output_prefix}")
+    log(f"Shared y range: {args.shared_y_range}")
+    log(f"Y padding fraction: {args.y_padding_fraction}")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -1602,6 +2202,8 @@ def main() -> None:
             labels=labels,
             output_dir=args.output_dir,
             output_prefix=args.output_prefix,
+            shared_y_range=args.shared_y_range,
+            y_padding_fraction=args.y_padding_fraction,
         )
 
     print_console_summary(diagnostics_df)
