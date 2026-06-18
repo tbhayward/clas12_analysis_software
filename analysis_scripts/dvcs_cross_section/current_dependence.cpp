@@ -141,6 +141,18 @@ static void fatal(const std::string& msg) {
     throw std::runtime_error(msg);
 }
 
+static void warning_once(const std::string& key,
+                         const std::string& message) {
+    static std::mutex warn_mutex;
+    static std::set<std::string> issued_warnings;
+
+    std::lock_guard<std::mutex> lock(warn_mutex);
+
+    if (issued_warnings.insert(key).second) {
+        std::cout << message << std::endl;
+    }
+}
+
 static std::string lower_ascii(std::string s) {
     for (char& c : s) {
         c = (char)std::tolower((unsigned char)c);
@@ -619,10 +631,15 @@ static bool select_unpolarized_charge_for_period(
     // purpose, so it must always use column 2 for unpolarized normalization.
     if (is_spring_2018_period(tags.display)) {
         if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
-            std::cout << "[current_dependence] WARNING: missing/non-positive column-2 charge"
-                      << " for Spring 2018 run=" << runnum
-                      << " period=" << tags.display
-                      << std::endl;
+            std::ostringstream ss;
+            ss << "[current_dependence] WARNING: missing/non-positive column-2 charge"
+               << " for Spring 2018. First occurrence: run=" << runnum
+               << " period=" << tags.display
+               << ". Further warnings of this type for this period are suppressed.";
+
+            warning_once("spring2018_col2_missing_or_nonpositive_" + tags.display,
+                         ss.str());
+
             return false;
         }
 
@@ -634,10 +651,19 @@ static bool select_unpolarized_charge_for_period(
     //   charge_unpol = scale * (column 3 + column 4 + column 5)
     if (use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized) {
         if (!(entry.has_hel_pos && entry.has_hel_neg && entry.has_col5)) {
-            std::cout << "[current_dependence] WARNING: missing one or more columns 3-5"
-                      << " in scaled Fa18/Sp19 columns-3-to-5 charge mode for run=" << runnum
-                      << " period=" << tags.display
-                      << std::endl;
+            std::ostringstream ss;
+            ss << "[current_dependence] WARNING: missing one or more columns 3-5"
+               << " in scaled Fa18/Sp19 columns-3-to-5 charge mode."
+               << " First occurrence: run=" << runnum
+               << " period=" << tags.display
+               << " has_col3=" << entry.has_hel_pos
+               << " has_col4=" << entry.has_hel_neg
+               << " has_col5=" << entry.has_col5
+               << ". Further warnings of this type for this period are suppressed.";
+
+            warning_once("fa18_sp19_scaled_cols3to5_missing_" + tags.display,
+                         ss.str());
+
             return false;
         }
 
@@ -645,14 +671,19 @@ static bool select_unpolarized_charge_for_period(
         charge = columns_3_to_5_charge_sum_scale * raw_sum;
 
         if (!(charge > 0.0)) {
-            std::cout << "[current_dependence] WARNING: non-positive scaled Fa18/Sp19 columns-3-to-5 charge"
-                      << " for run=" << runnum
-                      << " period=" << tags.display
-                      << " col3=" << entry.hel_pos
-                      << " col4=" << entry.hel_neg
-                      << " col5=" << entry.col5
-                      << " scale=" << columns_3_to_5_charge_sum_scale
-                      << std::endl;
+            std::ostringstream ss;
+            ss << "[current_dependence] WARNING: non-positive scaled Fa18/Sp19 columns-3-to-5 charge"
+               << ". First occurrence: run=" << runnum
+               << " period=" << tags.display
+               << " col3=" << entry.hel_pos
+               << " col4=" << entry.hel_neg
+               << " col5=" << entry.col5
+               << " scale=" << columns_3_to_5_charge_sum_scale
+               << ". Further warnings of this type for this period are suppressed.";
+
+            warning_once("fa18_sp19_scaled_cols3to5_nonpositive_" + tags.display,
+                         ss.str());
+
             return false;
         }
 
@@ -661,10 +692,15 @@ static bool select_unpolarized_charge_for_period(
 
     if (use_second_column_charge_for_all_unpolarized) {
         if (!entry.has_run_scaler || !(entry.run_scaler > 0.0)) {
-            std::cout << "[current_dependence] WARNING: missing/non-positive column-2 charge"
-                      << " for run=" << runnum
-                      << " period=" << tags.display
-                      << std::endl;
+            std::ostringstream ss;
+            ss << "[current_dependence] WARNING: missing/non-positive column-2 charge"
+               << ". First occurrence: run=" << runnum
+               << " period=" << tags.display
+               << ". Further warnings of this type for this period are suppressed.";
+
+            warning_once("all_periods_col2_missing_or_nonpositive_" + tags.display,
+                         ss.str());
+
             return false;
         }
 
@@ -673,22 +709,34 @@ static bool select_unpolarized_charge_for_period(
     }
 
     if (!(entry.has_hel_pos && entry.has_hel_neg)) {
-        std::cout << "[current_dependence] WARNING: missing helicity charge columns"
-                  << " in legacy charge mode for run=" << runnum
-                  << " period=" << tags.display
-                  << std::endl;
+        std::ostringstream ss;
+        ss << "[current_dependence] WARNING: missing helicity charge columns"
+           << " in legacy charge mode. First occurrence: run=" << runnum
+           << " period=" << tags.display
+           << " has_hel_pos=" << entry.has_hel_pos
+           << " has_hel_neg=" << entry.has_hel_neg
+           << ". Further warnings of this type for this period are suppressed.";
+
+        warning_once("legacy_helicity_columns_missing_" + tags.display,
+                     ss.str());
+
         return false;
     }
 
     charge = entry.hel_pos + entry.hel_neg;
 
     if (!(charge > 0.0)) {
-        std::cout << "[current_dependence] WARNING: non-positive helicity-summed charge"
-                  << " in legacy charge mode for run=" << runnum
-                  << " period=" << tags.display
-                  << " hel_pos=" << entry.hel_pos
-                  << " hel_neg=" << entry.hel_neg
-                  << std::endl;
+        std::ostringstream ss;
+        ss << "[current_dependence] WARNING: non-positive helicity-summed charge"
+           << " in legacy charge mode. First occurrence: run=" << runnum
+           << " period=" << tags.display
+           << " hel_pos=" << entry.hel_pos
+           << " hel_neg=" << entry.hel_neg
+           << ". Further warnings of this type for this period are suppressed.";
+
+        warning_once("legacy_helicity_sum_nonpositive_" + tags.display,
+                     ss.str());
+
         return false;
     }
 

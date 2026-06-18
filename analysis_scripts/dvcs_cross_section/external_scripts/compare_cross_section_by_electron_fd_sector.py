@@ -14,28 +14,28 @@ Examples:
 
   Electron FD sectors:
 
-    python compare_cross_section_by_sector.py \
+    python3 compare_cross_section_by_sector.py \
       elec_sec1.csv elec_sec2.csv elec_sec3.csv \
       elec_sec4.csv elec_sec5.csv elec_sec6.csv \
       --particle electron
 
   Photon FD sectors:
 
-    python compare_cross_section_by_sector.py \
+    python3 compare_cross_section_by_sector.py \
       photon_sec1.csv photon_sec2.csv photon_sec3.csv \
       photon_sec4.csv photon_sec5.csv photon_sec6.csv \
       --particle photon
 
   Proton sectors:
 
-    python compare_cross_section_by_sector.py \
+    python3 compare_cross_section_by_sector.py \
       proton_sec1.csv proton_sec2.csv proton_sec3.csv \
       proton_sec4.csv proton_sec5.csv proton_sec6.csv \
       --particle proton
 
   Proton CD sectors, if only three sector files exist:
 
-    python compare_cross_section_by_sector.py \
+    python3 compare_cross_section_by_sector.py \
       proton_cd_sec1.csv proton_cd_sec2.csv proton_cd_sec3.csv \
       --particle proton \
       --sector-system "CD sector"
@@ -64,33 +64,18 @@ Run-period panel order:
 
 A diagnostic chi2/ndf is printed in each run-period panel.
 
-Defaults depend on --particle:
-
-  --particle electron:
-    output dir    = output/electron_fd_sector_comparison
-    output prefix = electron_fd_sector
-    title text    = electron FD sector
-
-  --particle photon:
-    output dir    = output/photon_fd_sector_comparison
-    output prefix = photon_fd_sector
-    title text    = photon FD sector
-
-  --particle proton:
-    output dir    = output/proton_fd_sector_comparison
-    output prefix = proton_fd_sector
-    title text    = proton FD sector
-
-Use --sector-system to override the detector-sector text, for example:
-
-  --sector-system "CD sector"
-
-Use --comparison-name to override the full figure-title comparison text.
+This wrapper now performs an explicit input-file preflight check before calling
+the shared plotting engine. That avoids misleading pandas EmptyDataError traces
+when one sector file is missing, zero bytes, unreadable, or not parseable.
 """
 
 import argparse
+import os
+import sys
 import time
 from typing import List
+
+import pandas as pd
 
 from compare_cross_section_by_topology import (
     DEFAULT_THETA_BINS,
@@ -120,7 +105,6 @@ def sanitize_for_path(text: str) -> str:
 
     while "__" in cleaned:
         cleaned = cleaned.replace("__", "_")
-    # endwhile
 
     return cleaned.strip("_")
 
@@ -139,6 +123,157 @@ def default_output_prefix(particle: str, sector_system: str) -> str:
 
 def default_output_dir(particle: str, sector_system: str) -> str:
     return f"output/{default_output_prefix(particle, sector_system)}_comparison"
+
+
+def read_first_bytes(path: str, nbytes: int = 512) -> bytes:
+    """
+    Read the first bytes of a file for diagnostics.
+    """
+
+    try:
+        with open(path, "rb") as fin:
+            return fin.read(nbytes)
+    except Exception as exc:
+        return f"<could not read first bytes: {exc}>".encode("utf-8", errors="replace")
+
+
+def file_diagnostic_string(path: str) -> str:
+    """
+    Return a compact diagnostic string for one path.
+    """
+
+    exists = os.path.exists(path)
+
+    if not exists:
+        return (
+            f"path={path!r}\n"
+            f"  exists=False"
+        )
+
+    try:
+        size = os.path.getsize(path)
+    except Exception as exc:
+        return (
+            f"path={path!r}\n"
+            f"  exists=True\n"
+            f"  size=<could not stat: {exc}>"
+        )
+
+    first = read_first_bytes(path, 256)
+
+    return (
+        f"path={path!r}\n"
+        f"  exists=True\n"
+        f"  size={size} bytes\n"
+        f"  first_256_bytes={first!r}"
+    )
+
+
+def preflight_check_one_csv(path: str, label: str, template: str) -> None:
+    """
+    Check that one CSV exists, is non-empty, and can be parsed by pandas.
+
+    This intentionally reads only the first few rows. The full read is still
+    performed later by compare_cross_section_by_topology.read_inputs().
+    """
+
+    log(f"Preflight input {label}: {path!r}")
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Input CSV for {label} does not exist.\n"
+            f"{file_diagnostic_string(path)}"
+        )
+
+    size = os.path.getsize(path)
+
+    if size <= 0:
+        raise RuntimeError(
+            f"Input CSV for {label} is zero bytes.\n"
+            f"{file_diagnostic_string(path)}"
+        )
+
+    try:
+        preview = pd.read_csv(path, low_memory=False, nrows=3)
+    except pd.errors.EmptyDataError as exc:
+        raise RuntimeError(
+            f"Input CSV for {label} exists but pandas found no parseable columns.\n"
+            f"{file_diagnostic_string(path)}"
+        ) from exc
+    except Exception as exc:
+        raise RuntimeError(
+            f"Input CSV for {label} exists but failed a pandas preview read.\n"
+            f"{type(exc).__name__}: {exc}\n"
+            f"{file_diagnostic_string(path)}"
+        ) from exc
+
+    if preview.shape[1] <= 0:
+        raise RuntimeError(
+            f"Input CSV for {label} preview read produced zero columns.\n"
+            f"{file_diagnostic_string(path)}"
+        )
+
+    log(
+        f"Preflight OK for {label}: "
+        f"{preview.shape[1]} columns visible in preview, "
+        f"{size / (1024.0 * 1024.0):.2f} MB"
+    )
+
+    # Check for at least one expected cross-section column in the header.
+    # This catches cases where the path accidentally points to a non-pass2 CSV.
+    expected_any = [
+        template.format(period="Fa18 Inb"),
+        template.format(period="Fa18 Out"),
+        template.format(period="Sp19 Inb"),
+        template.format(period="Sp18 Inb"),
+        template.format(period="Sp18 Out"),
+    ]
+
+    available = set(str(c) for c in preview.columns)
+    found = [c for c in expected_any if c in available]
+
+    if not found:
+        print()
+        print(f"[compare_cross_section_by_sector] WARNING for {label}:")
+        print("  File is parseable, but none of the expected cross-section columns")
+        print("  from --xs-template were found in the preview header.")
+        print()
+        print("  Expected one of:")
+        for c in expected_any:
+            print(f"    {c}")
+        print()
+        print("  First 25 available columns:")
+        for c in list(preview.columns[:25]):
+            print(f"    {c}")
+        print()
+        print("  Continuing anyway; the shared read_inputs() routine will perform")
+        print("  the final required-column checks.")
+        print()
+
+
+def preflight_check_all_csvs(paths: List[str], labels: List[str], template: str) -> None:
+    """
+    Check all inputs before the shared plotting engine tries to read them.
+    """
+
+    log("============================================================")
+    log("Preflight CSV checks")
+    log("============================================================")
+
+    if len(paths) != len(labels):
+        raise ValueError(
+            f"Internal error: paths length ({len(paths)}) does not match "
+            f"labels length ({len(labels)})."
+        )
+
+    for path, label in zip(paths, labels):
+        preflight_check_one_csv(
+            path=path,
+            label=label,
+            template=template,
+        )
+
+    log("All preflight CSV checks passed.")
 
 
 def parse_args() -> argparse.Namespace:
@@ -267,6 +402,15 @@ def parse_args() -> argparse.Namespace:
         help="Fractional bin-to-bin systematic uncertainty. Default: 0.10",
     )
 
+    parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help=(
+            "Skip the explicit input-file preflight checks and call the shared "
+            "read_inputs() routine directly."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -275,49 +419,47 @@ def finalize_runtime_options(args: argparse.Namespace) -> argparse.Namespace:
 
     if n_files < 2:
         raise ValueError("At least two sector CSV files are required.")
-    # endif
 
     if args.labels is None:
         args.labels = default_labels_for_n_files(n_files)
-    # endif
 
     if len(args.labels) != n_files:
         raise ValueError(
             f"Number of --labels entries ({len(args.labels)}) must match "
             f"number of CSV files ({n_files})."
         )
-    # endif
 
     if args.output_prefix is None:
         args.output_prefix = default_output_prefix(
             particle=args.particle,
             sector_system=args.sector_system,
         )
-    # endif
 
     if args.output_dir is None:
         args.output_dir = default_output_dir(
             particle=args.particle,
             sector_system=args.sector_system,
         )
-    # endif
 
     if args.comparison_name is None:
         args.comparison_name = default_comparison_name(
             particle=args.particle,
             sector_system=args.sector_system,
         )
-    # endif
+
+    if "{period}" not in args.xs_template:
+        raise ValueError("--xs-template must contain {period}")
+
+    if args.theta_bins <= 0:
+        raise ValueError("--theta-bins must be positive")
+
+    if args.bin_to_bin_sys_frac < 0.0:
+        raise ValueError("--bin-to-bin-sys-frac must be non-negative")
 
     return args
 
 
-def main() -> None:
-    t0 = time.perf_counter()
-
-    args = parse_args()
-    args = finalize_runtime_options(args)
-
+def print_runtime_summary(args: argparse.Namespace) -> None:
     log("============================================================")
     log("compare_cross_section_by_sector.py")
     log("============================================================")
@@ -331,48 +473,91 @@ def main() -> None:
     log(f"XS template: {args.xs_template}")
     log(f"Theta bins: {args.theta_bins}")
     log(f"Theta binning period: {args.theta_binning_period}")
+    log(f"Width weighting: {'disabled' if args.no_width_weighting else 'enabled'}")
+    log(f"Phi bin widths: {'degrees' if args.phi_degrees else 'radians'}")
+    log(f"Bin-to-bin sys bars: {'enabled' if args.include_bin_to_bin_sys else 'disabled'}")
+    log(f"Bin-to-bin sys frac: {args.bin_to_bin_sys_frac}")
+    log(f"Preflight checks: {'disabled' if args.skip_preflight else 'enabled'}")
     log("phi dependence plots: disabled")
 
-    if "{period}" not in args.xs_template:
-        raise ValueError("--xs-template must contain {period}")
-    # endif
 
-    if args.theta_bins <= 0:
-        raise ValueError("--theta-bins must be positive")
-    # endif
+def read_inputs_with_diagnostics(args: argparse.Namespace):
+    """
+    Call the shared read_inputs(), but make pandas EmptyDataError messages less
+    ambiguous if something still fails after preflight.
+    """
 
-    if args.bin_to_bin_sys_frac < 0.0:
-        raise ValueError("--bin-to-bin-sys-frac must be non-negative")
-    # endif
+    try:
+        return read_inputs(
+            paths=args.csv_files,
+            labels=args.labels,
+            template=args.xs_template,
+        )
+    except pd.errors.EmptyDataError as exc:
+        print()
+        print("[compare_cross_section_by_sector] ERROR:")
+        print("  The shared read_inputs() routine hit pandas EmptyDataError.")
+        print("  Reprinting file diagnostics for every input:")
+        print()
 
-    dfs = read_inputs(
-        paths=args.csv_files,
-        labels=args.labels,
-        template=args.xs_template,
-    )
+        for path, label in zip(args.csv_files, args.labels):
+            print(f"--- {label} ---")
+            print(file_diagnostic_string(path))
+            print()
 
-    dfs = prepare_dataframes(
-        dfs=dfs,
-        theta_binning_period=args.theta_binning_period,
-        theta_bins=args.theta_bins,
-        phi_degrees=args.phi_degrees,
-    )
+        raise RuntimeError(
+            "Shared read_inputs() failed with EmptyDataError. "
+            "Check the diagnostics above for the file with zero size, no header, "
+            "or unreadable contents."
+        ) from exc
 
-    make_all_projection_canvases(
-        dfs=dfs,
-        output_dir=args.output_dir,
-        output_prefix=args.output_prefix,
-        template=args.xs_template,
-        no_width_weighting=args.no_width_weighting,
-        include_bin_to_bin_sys=args.include_bin_to_bin_sys,
-        frac=args.bin_to_bin_sys_frac,
-        comparison_name=args.comparison_name,
-    )
 
-    log(f"TOTAL RUNTIME: {time.perf_counter() - t0:.3f} s")
-    log("Done.")
+def main() -> None:
+    t0 = time.perf_counter()
+
+    try:
+        args = parse_args()
+        args = finalize_runtime_options(args)
+
+        print_runtime_summary(args)
+
+        if not args.skip_preflight:
+            preflight_check_all_csvs(
+                paths=args.csv_files,
+                labels=args.labels,
+                template=args.xs_template,
+            )
+
+        dfs = read_inputs_with_diagnostics(args)
+
+        dfs = prepare_dataframes(
+            dfs=dfs,
+            theta_binning_period=args.theta_binning_period,
+            theta_bins=args.theta_bins,
+            phi_degrees=args.phi_degrees,
+        )
+
+        make_all_projection_canvases(
+            dfs=dfs,
+            output_dir=args.output_dir,
+            output_prefix=args.output_prefix,
+            template=args.xs_template,
+            no_width_weighting=args.no_width_weighting,
+            include_bin_to_bin_sys=args.include_bin_to_bin_sys,
+            frac=args.bin_to_bin_sys_frac,
+            comparison_name=args.comparison_name,
+        )
+
+        log(f"TOTAL RUNTIME: {time.perf_counter() - t0:.3f} s")
+        log("Done.")
+
+    except Exception as exc:
+        print()
+        print("[compare_cross_section_by_sector] FATAL:")
+        print(f"  {type(exc).__name__}: {exc}")
+        print()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-# endif
