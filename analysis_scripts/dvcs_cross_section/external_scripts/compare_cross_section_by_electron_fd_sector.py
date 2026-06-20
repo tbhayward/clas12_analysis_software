@@ -64,32 +64,37 @@ Run-period panel order:
 
 A diagnostic chi2/ndf is printed in each run-period panel.
 
-This wrapper now performs an explicit input-file preflight check before calling
-the shared plotting engine. That avoids misleading pandas EmptyDataError traces
-when one sector file is missing, zero bytes, unreadable, or not parseable.
+This wrapper performs an explicit input-file preflight check before calling the
+shared plotting engine. That avoids misleading pandas EmptyDataError traces when
+one sector file is missing, zero bytes, unreadable, or not parseable.
+
+By default, this wrapper also forces all ratio panels in the shared plotting
+engine to use a fixed y-axis range:
+
+  0.0 <= ratio <= 2.0
+
+This can be changed with:
+
+  --ratio-ymin VALUE
+  --ratio-ymax VALUE
 """
 
 import argparse
 import os
 import sys
 import time
-from typing import List
+from typing import List, Tuple
 
 import pandas as pd
 
-from compare_cross_section_by_topology import (
-    DEFAULT_THETA_BINS,
-    DEFAULT_THETA_BINNING_PERIOD,
-    DEFAULT_XS_TEMPLATE,
-    log,
-    read_inputs,
-    prepare_dataframes,
-    make_all_projection_canvases,
-)
+import compare_cross_section_by_topology as topology_engine
 
 
 DEFAULT_PARTICLE = "electron"
 DEFAULT_SECTOR_SYSTEM = "FD sector"
+
+DEFAULT_RATIO_YMIN = 0.0
+DEFAULT_RATIO_YMAX = 2.0
 
 
 def sanitize_for_path(text: str) -> str:
@@ -123,6 +128,17 @@ def default_output_prefix(particle: str, sector_system: str) -> str:
 
 def default_output_dir(particle: str, sector_system: str) -> str:
     return f"output/{default_output_prefix(particle, sector_system)}_comparison"
+
+
+def log(msg: str) -> None:
+    """
+    Use the shared topology-engine logger when available.
+    """
+
+    if hasattr(topology_engine, "log"):
+        topology_engine.log(msg)
+    else:
+        print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def read_first_bytes(path: str, nbytes: int = 512) -> bytes:
@@ -219,8 +235,6 @@ def preflight_check_one_csv(path: str, label: str, template: str) -> None:
         f"{size / (1024.0 * 1024.0):.2f} MB"
     )
 
-    # Check for at least one expected cross-section column in the header.
-    # This catches cases where the path accidentally points to a non-pass2 CSV.
     expected_any = [
         template.format(period="Fa18 Inb"),
         template.format(period="Fa18 Out"),
@@ -274,6 +288,39 @@ def preflight_check_all_csvs(paths: List[str], labels: List[str], template: str)
         )
 
     log("All preflight CSV checks passed.")
+
+
+def force_shared_engine_ratio_ylim(ratio_ymin: float, ratio_ymax: float) -> None:
+    """
+    Force the shared compare_cross_section_by_topology.py plotting engine to use
+    a fixed ratio-panel y-axis range.
+
+    The shared engine computes ratio_ylim through dynamic_ratio_ylim_from_values().
+    This wrapper replaces that function at runtime with a fixed-range version.
+    """
+
+    if ratio_ymax <= ratio_ymin:
+        raise ValueError(
+            f"Invalid ratio y-axis range: ymin={ratio_ymin}, ymax={ratio_ymax}"
+        )
+
+    def fixed_ratio_ylim_from_values(_values) -> Tuple[float, float]:
+        return float(ratio_ymin), float(ratio_ymax)
+
+    if not hasattr(topology_engine, "dynamic_ratio_ylim_from_values"):
+        raise RuntimeError(
+            "The shared plotting engine does not define "
+            "dynamic_ratio_ylim_from_values(), so this wrapper cannot force "
+            "the ratio-panel y-axis range. Update compare_cross_section_by_topology.py "
+            "or remove this wrapper-level patch."
+        )
+
+    topology_engine.dynamic_ratio_ylim_from_values = fixed_ratio_ylim_from_values
+
+    log(
+        "Forced shared plotting-engine ratio y-axis range: "
+        f"{ratio_ymin:g} to {ratio_ymax:g}"
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -354,10 +401,10 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--xs-template",
-        default=DEFAULT_XS_TEMPLATE,
+        default=topology_engine.DEFAULT_XS_TEMPLATE,
         help=(
             "Cross-section column template with {period}. "
-            f"Default: {DEFAULT_XS_TEMPLATE!r}"
+            f"Default: {topology_engine.DEFAULT_XS_TEMPLATE!r}"
         ),
     )
 
@@ -376,16 +423,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--theta-bins",
         type=int,
-        default=DEFAULT_THETA_BINS,
-        help=f"Number of derived theta bins. Default: {DEFAULT_THETA_BINS}",
+        default=topology_engine.DEFAULT_THETA_BINS,
+        help=f"Number of derived theta bins. Default: {topology_engine.DEFAULT_THETA_BINS}",
     )
 
     parser.add_argument(
         "--theta-binning-period",
-        default=DEFAULT_THETA_BINNING_PERIOD,
+        default=topology_engine.DEFAULT_THETA_BINNING_PERIOD,
         help=(
             "Theta binning reference period. "
-            f"Default: {DEFAULT_THETA_BINNING_PERIOD!r}"
+            f"Default: {topology_engine.DEFAULT_THETA_BINNING_PERIOD!r}"
         ),
     )
 
@@ -400,6 +447,20 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.10,
         help="Fractional bin-to-bin systematic uncertainty. Default: 0.10",
+    )
+
+    parser.add_argument(
+        "--ratio-ymin",
+        type=float,
+        default=DEFAULT_RATIO_YMIN,
+        help=f"Fixed minimum y value for all ratio panels. Default: {DEFAULT_RATIO_YMIN}",
+    )
+
+    parser.add_argument(
+        "--ratio-ymax",
+        type=float,
+        default=DEFAULT_RATIO_YMAX,
+        help=f"Fixed maximum y value for all ratio panels. Default: {DEFAULT_RATIO_YMAX}",
     )
 
     parser.add_argument(
@@ -456,6 +517,12 @@ def finalize_runtime_options(args: argparse.Namespace) -> argparse.Namespace:
     if args.bin_to_bin_sys_frac < 0.0:
         raise ValueError("--bin-to-bin-sys-frac must be non-negative")
 
+    if args.ratio_ymax <= args.ratio_ymin:
+        raise ValueError(
+            f"--ratio-ymax must be greater than --ratio-ymin. "
+            f"Got ymin={args.ratio_ymin}, ymax={args.ratio_ymax}."
+        )
+
     return args
 
 
@@ -477,6 +544,7 @@ def print_runtime_summary(args: argparse.Namespace) -> None:
     log(f"Phi bin widths: {'degrees' if args.phi_degrees else 'radians'}")
     log(f"Bin-to-bin sys bars: {'enabled' if args.include_bin_to_bin_sys else 'disabled'}")
     log(f"Bin-to-bin sys frac: {args.bin_to_bin_sys_frac}")
+    log(f"Ratio y-axis range: {args.ratio_ymin:g} to {args.ratio_ymax:g}")
     log(f"Preflight checks: {'disabled' if args.skip_preflight else 'enabled'}")
     log("phi dependence plots: disabled")
 
@@ -488,7 +556,7 @@ def read_inputs_with_diagnostics(args: argparse.Namespace):
     """
 
     try:
-        return read_inputs(
+        return topology_engine.read_inputs(
             paths=args.csv_files,
             labels=args.labels,
             template=args.xs_template,
@@ -521,6 +589,11 @@ def main() -> None:
 
         print_runtime_summary(args)
 
+        force_shared_engine_ratio_ylim(
+            ratio_ymin=args.ratio_ymin,
+            ratio_ymax=args.ratio_ymax,
+        )
+
         if not args.skip_preflight:
             preflight_check_all_csvs(
                 paths=args.csv_files,
@@ -530,14 +603,14 @@ def main() -> None:
 
         dfs = read_inputs_with_diagnostics(args)
 
-        dfs = prepare_dataframes(
+        dfs = topology_engine.prepare_dataframes(
             dfs=dfs,
             theta_binning_period=args.theta_binning_period,
             theta_bins=args.theta_bins,
             phi_degrees=args.phi_degrees,
         )
 
-        make_all_projection_canvases(
+        topology_engine.make_all_projection_canvases(
             dfs=dfs,
             output_dir=args.output_dir,
             output_prefix=args.output_prefix,
