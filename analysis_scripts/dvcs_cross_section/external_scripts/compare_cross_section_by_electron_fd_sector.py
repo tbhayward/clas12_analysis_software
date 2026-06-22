@@ -2,7 +2,7 @@
 """
 compare_cross_section_by_sector.py
 
-Compare integrated DVCS cross sections from separate sector-resolved CSV files.
+Compare sector-resolved DVCS pass-2 quantities from separate CSV files.
 
 This is a generic sector-comparison wrapper around the shared plotting engine in:
 
@@ -33,50 +33,17 @@ Examples:
       proton_sec4.csv proton_sec5.csv proton_sec6.csv \
       --particle proton
 
-  Proton CD sectors, if only three sector files exist:
-
-    python3 compare_cross_section_by_sector.py \
-      proton_cd_sec1.csv proton_cd_sec2.csv proton_cd_sec3.csv \
-      --particle proton \
-      --sector-system "CD sector"
-
-Each input CSV should have the same normal pass-2 cross-section column names,
-for example:
+Each input CSV should have the same normal pass-2 column names, for example:
 
   normed cross sections, ep->epg, exp, Fa18 Inb, unpol
 
-The script makes one 2x3 canvas per projection:
+The original cross-section comparison functionality is preserved. In addition,
+this wrapper now asks the shared engine to produce step-by-step diagnostic plots
+for raw yields, current factors, normalized raw yields, generated/reconstructed
+MC yields, pi0 contamination, signal yields, acceptance, and
+acceptance-corrected yields.
 
-  xB, Q2, |t|, theta_e, theta_p, theta_gamma
-
-The phi projection is intentionally omitted by the shared plotting engine.
-
-Each canvas has one subplot per run period. Each subplot has two panels:
-
-  top:    absolute integrated cross sections
-  bottom: each sector divided by the arithmetic average of available sectors
-          in that same run-period panel and projected bin.
-
-Run-period panel order:
-
-  top row:    Sp18 Inb, Sp18 Out, empty
-  bottom row: Fa18 Inb, Fa18 Out, Sp19 Inb
-
-A diagnostic chi2/ndf is printed in each run-period panel.
-
-This wrapper performs an explicit input-file preflight check before calling the
-shared plotting engine. That avoids misleading pandas EmptyDataError traces when
-one sector file is missing, zero bytes, unreadable, or not parseable.
-
-By default, this wrapper also forces all ratio panels in the shared plotting
-engine to use a fixed y-axis range:
-
-  0.0 <= ratio <= 2.0
-
-This can be changed with:
-
-  --ratio-ymin VALUE
-  --ratio-ymax VALUE
+All ratio panels are standardized to 0 <= ratio <= 2 by default.
 """
 
 import argparse
@@ -98,10 +65,6 @@ DEFAULT_RATIO_YMAX = 2.0
 
 
 def sanitize_for_path(text: str) -> str:
-    """
-    Convert a short human-readable label into a safe filename/directory component.
-    """
-
     cleaned = text.strip().lower()
     cleaned = cleaned.replace("/", "_")
     cleaned = cleaned.replace("\\", "_")
@@ -131,10 +94,6 @@ def default_output_dir(particle: str, sector_system: str) -> str:
 
 
 def log(msg: str) -> None:
-    """
-    Use the shared topology-engine logger when available.
-    """
-
     if hasattr(topology_engine, "log"):
         topology_engine.log(msg)
     else:
@@ -142,10 +101,6 @@ def log(msg: str) -> None:
 
 
 def read_first_bytes(path: str, nbytes: int = 512) -> bytes:
-    """
-    Read the first bytes of a file for diagnostics.
-    """
-
     try:
         with open(path, "rb") as fin:
             return fin.read(nbytes)
@@ -154,10 +109,6 @@ def read_first_bytes(path: str, nbytes: int = 512) -> bytes:
 
 
 def file_diagnostic_string(path: str) -> str:
-    """
-    Return a compact diagnostic string for one path.
-    """
-
     exists = os.path.exists(path)
 
     if not exists:
@@ -186,13 +137,6 @@ def file_diagnostic_string(path: str) -> str:
 
 
 def preflight_check_one_csv(path: str, label: str, template: str) -> None:
-    """
-    Check that one CSV exists, is non-empty, and can be parsed by pandas.
-
-    This intentionally reads only the first few rows. The full read is still
-    performed later by compare_cross_section_by_topology.read_inputs().
-    """
-
     log(f"Preflight input {label}: {path!r}")
 
     if not os.path.exists(path):
@@ -266,10 +210,6 @@ def preflight_check_one_csv(path: str, label: str, template: str) -> None:
 
 
 def preflight_check_all_csvs(paths: List[str], labels: List[str], template: str) -> None:
-    """
-    Check all inputs before the shared plotting engine tries to read them.
-    """
-
     log("============================================================")
     log("Preflight CSV checks")
     log("============================================================")
@@ -291,14 +231,6 @@ def preflight_check_all_csvs(paths: List[str], labels: List[str], template: str)
 
 
 def force_shared_engine_ratio_ylim(ratio_ymin: float, ratio_ymax: float) -> None:
-    """
-    Force the shared compare_cross_section_by_topology.py plotting engine to use
-    a fixed ratio-panel y-axis range.
-
-    The shared engine computes ratio_ylim through dynamic_ratio_ylim_from_values().
-    This wrapper replaces that function at runtime with a fixed-range version.
-    """
-
     if ratio_ymax <= ratio_ymin:
         raise ValueError(
             f"Invalid ratio y-axis range: ymin={ratio_ymin}, ymax={ratio_ymax}"
@@ -307,15 +239,13 @@ def force_shared_engine_ratio_ylim(ratio_ymin: float, ratio_ymax: float) -> None
     def fixed_ratio_ylim_from_values(_values) -> Tuple[float, float]:
         return float(ratio_ymin), float(ratio_ymax)
 
-    if not hasattr(topology_engine, "dynamic_ratio_ylim_from_values"):
-        raise RuntimeError(
-            "The shared plotting engine does not define "
-            "dynamic_ratio_ylim_from_values(), so this wrapper cannot force "
-            "the ratio-panel y-axis range. Update compare_cross_section_by_topology.py "
-            "or remove this wrapper-level patch."
-        )
-
     topology_engine.dynamic_ratio_ylim_from_values = fixed_ratio_ylim_from_values
+
+    if hasattr(topology_engine, "DEFAULT_RATIO_YMIN"):
+        topology_engine.DEFAULT_RATIO_YMIN = float(ratio_ymin)
+
+    if hasattr(topology_engine, "DEFAULT_RATIO_YMAX"):
+        topology_engine.DEFAULT_RATIO_YMAX = float(ratio_ymax)
 
     log(
         "Forced shared plotting-engine ratio y-axis range: "
@@ -326,7 +256,7 @@ def force_shared_engine_ratio_ylim(ratio_ymin: float, ratio_ymax: float) -> None
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare sector-resolved DVCS cross sections from separate CSV files. "
+            "Compare sector-resolved DVCS pass-2 quantities from separate CSV files. "
             "Use --particle electron/photon/proton to control labels, titles, "
             "and output defaults."
         )
@@ -411,7 +341,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-width-weighting",
         action="store_true",
-        help="Use raw sums instead of bin-width weighted integrations.",
+        help=(
+            "Use raw sums instead of bin-width weighted integrations for "
+            "width-weighted metrics. Yield diagnostics are always raw sums."
+        ),
     )
 
     parser.add_argument(
@@ -469,6 +402,22 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Skip the explicit input-file preflight checks and call the shared "
             "read_inputs() routine directly."
+        ),
+    )
+
+    parser.add_argument(
+        "--no-step-diagnostics",
+        action="store_true",
+        help="Disable expanded step-by-step diagnostic canvases.",
+    )
+
+    parser.add_argument(
+        "--diagnostic-metrics",
+        nargs="+",
+        default=None,
+        help=(
+            "Optional subset of diagnostic metric tags to plot. "
+            "Use output/.../step_diagnostics/*_step_diagnostics_index.txt for the tag list."
         ),
     )
 
@@ -546,15 +495,13 @@ def print_runtime_summary(args: argparse.Namespace) -> None:
     log(f"Bin-to-bin sys frac: {args.bin_to_bin_sys_frac}")
     log(f"Ratio y-axis range: {args.ratio_ymin:g} to {args.ratio_ymax:g}")
     log(f"Preflight checks: {'disabled' if args.skip_preflight else 'enabled'}")
+    log(f"Step diagnostics: {'disabled' if args.no_step_diagnostics else 'enabled'}")
+    if args.diagnostic_metrics:
+        log(f"Diagnostic metric subset: {args.diagnostic_metrics}")
     log("phi dependence plots: disabled")
 
 
 def read_inputs_with_diagnostics(args: argparse.Namespace):
-    """
-    Call the shared read_inputs(), but make pandas EmptyDataError messages less
-    ambiguous if something still fails after preflight.
-    """
-
     try:
         return topology_engine.read_inputs(
             paths=args.csv_files,
@@ -610,6 +557,7 @@ def main() -> None:
             phi_degrees=args.phi_degrees,
         )
 
+        # Original/final cross-section comparison canvases, same filenames as before.
         topology_engine.make_all_projection_canvases(
             dfs=dfs,
             output_dir=args.output_dir,
@@ -620,6 +568,19 @@ def main() -> None:
             frac=args.bin_to_bin_sys_frac,
             comparison_name=args.comparison_name,
         )
+
+        # Expanded upstream/downstream pass-2 diagnostic canvases.
+        if not args.no_step_diagnostics:
+            topology_engine.make_all_step_diagnostic_canvases(
+                dfs=dfs,
+                output_dir=args.output_dir,
+                output_prefix=args.output_prefix,
+                no_width_weighting=args.no_width_weighting,
+                include_bin_to_bin_sys=args.include_bin_to_bin_sys,
+                frac=args.bin_to_bin_sys_frac,
+                comparison_name=args.comparison_name,
+                metric_tags=args.diagnostic_metrics,
+            )
 
         log(f"TOTAL RUNTIME: {time.perf_counter() - t0:.3f} s")
         log("Done.")
