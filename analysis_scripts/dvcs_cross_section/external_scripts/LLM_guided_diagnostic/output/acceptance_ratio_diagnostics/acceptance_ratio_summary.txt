@@ -1,0 +1,96 @@
+Selection: CD-FD
+================
+
+Fa18 Inb / Sp18 Inb
+-------------------
+xB         acceptance median=1.746, p16=1.67, p84=1.792, gen median=1.897, reco median=3.1, reco_cc median=3.328
+Q2         acceptance median=1.741, p16=1.72, p84=1.785, gen median=1.898, reco median=3.078, reco_cc median=3.304
+t          acceptance median=1.782, p16=1.702, p84=1.829, gen median=1.899, reco median=3.156, reco_cc median=3.388
+phi        acceptance median=1.725, p16=1.673, p84=1.799, gen median=1.902, reco median=3.093, reco_cc median=3.32
+e_theta    acceptance median=1.738, p16=1.703, p84=1.765, gen median=1.9, reco median=3.042, reco_cc median=3.266
+p_theta    acceptance median=1.736, p16=1.718, p84=1.798, gen median=1.899, reco median=3.057, reco_cc median=3.282
+g_theta    acceptance median=1.748, p16=1.685, p84=1.846, gen median=1.898, reco median=3.028, reco_cc median=3.25
+
+Fa18 Out / Sp18 Out
+-------------------
+xB         acceptance median=1.297, p16=1.238, p84=1.309, gen median=1.119, reco median=1.538, reco_cc median=1.463
+Q2         acceptance median=1.298, p16=1.278, p84=1.308, gen median=1.12, reco median=1.528, reco_cc median=1.454
+t          acceptance median=1.309, p16=1.268, p84=1.364, gen median=1.12, reco median=1.576, reco_cc median=1.499
+phi        acceptance median=1.295, p16=1.246, p84=1.332, gen median=1.121, reco median=1.535, reco_cc median=1.46
+e_theta    acceptance median=1.288, p16=1.281, p84=1.304, gen median=1.12, reco median=1.531, reco_cc median=1.457
+p_theta    acceptance median=1.28, p16=1.253, p84=1.326, gen median=1.12, reco median=1.501, reco_cc median=1.428
+g_theta    acceptance median=1.274, p16=1.25, p84=1.42, gen median=1.119, reco median=1.485, reco_cc median=1.413
+
+
+Selection: CD-FT
+================
+
+Fa18 Inb / Sp18 Inb
+-------------------
+xB         acceptance median=1.423, p16=1.406, p84=1.487, gen median=1.898, reco median=2.64, reco_cc median=2.697
+Q2         acceptance median=1.424, p16=1.405, p84=1.526, gen median=1.899, reco median=2.64, reco_cc median=2.698
+t          acceptance median=1.432, p16=1.405, p84=1.476, gen median=1.899, reco median=2.673, reco_cc median=2.731
+phi        acceptance median=1.392, p16=1.356, p84=1.453, gen median=1.903, reco median=2.588, reco_cc median=2.645
+e_theta    acceptance median=1.411, p16=1.407, p84=1.448, gen median=1.9, reco median=2.631, reco_cc median=2.688
+p_theta    acceptance median=1.421, p16=1.406, p84=1.438, gen median=1.899, reco median=2.644, reco_cc median=2.702
+g_theta    acceptance median=1.42, p16=1.358, p84=1.446, gen median=1.9, reco median=2.613, reco_cc median=2.67
+
+Fa18 Out / Sp18 Out
+-------------------
+xB         acceptance median=1.161, p16=1.151, p84=1.182, gen median=1.12, reco median=1.408, reco_cc median=1.294
+Q2         acceptance median=1.163, p16=1.136, p84=1.182, gen median=1.12, reco median=1.416, reco_cc median=1.302
+t          acceptance median=1.152, p16=1.15, p84=1.181, gen median=1.121, reco median=1.402, reco_cc median=1.289
+phi        acceptance median=1.153, p16=1.061, p84=1.162, gen median=1.122, reco median=1.401, reco_cc median=1.288
+e_theta    acceptance median=1.158, p16=1.135, p84=1.18, gen median=1.122, reco median=1.414, reco_cc median=1.299
+p_theta    acceptance median=1.162, p16=1.142, p84=1.182, gen median=1.121, reco median=1.416, reco_cc median=1.302
+g_theta    acceptance median=1.149, p16=1.115, p84=1.17, gen median=1.12, reco median=1.386, reco_cc median=1.274
+
+
+Selection: FD-FD
+================
+
+Fa18 Inb / Sp18 Inb
+-------------------
+xB         acceptance median=1.417, p16=1.211, p84=1.667, gen median=1.9, reco median=2.605, reco_cc median=3.092
+Q2         acceptance median=1.442, p16=1.384, p84=1.616, gen median=1.901, reco median=2.687, reco_cc median=3.188
+t          acceptance median=1.437, p16=1.265, p84=2.078, gen median=1.901, reco median=2.371, reco_cc median=2.814
+phi        acceptance median=1.462, p16=1.306, p84=1.623, gen median=1.902, reco median=2.616, reco_cc median=3.104
+e_theta    acceptance median=1.453, p16=1.311, p84=1.499, gen median=1.9, reco median=2.572, reco_cc median=3.052
+p_theta    acceptance median=1.66, p16=1.322, p84=1.768, gen median=1.898, reco median=2.922, reco_cc median=3.468
+g_theta    acceptance median=1.516, p16=1.355, p84=1.916, gen median=1.899, reco median=2.581, reco_cc median=3.063
+
+Fa18 Out / Sp18 Out
+-------------------
+xB         acceptance median=1.177, p16=1.018, p84=2.988, gen median=1.118, reco median=1.259, reco_cc median=1.403
+Q2         acceptance median=1.132, p16=1.08, p84=1.895, gen median=1.119, reco median=1.221, reco_cc median=1.361
+t          acceptance median=1.163, p16=1.052, p84=2.086, gen median=1.12, reco median=1.186, reco_cc median=1.322
+phi        acceptance median=1.158, p16=1.04, p84=1.215, gen median=1.12, reco median=1.218, reco_cc median=1.357
+e_theta    acceptance median=1.129, p16=0.9828, p84=1.18, gen median=1.119, reco median=1.185, reco_cc median=1.32
+p_theta    acceptance median=1.244, p16=1.14, p84=2.151, gen median=1.119, reco median=1.334, reco_cc median=1.486
+g_theta    acceptance median=1.188, p16=1.11, p84=1.423, gen median=1.119, reco median=1.23, reco_cc median=1.371
+
+
+Selection: all_data
+===================
+
+Fa18 Inb / Sp18 Inb
+-------------------
+xB         acceptance median=1.528, p16=1.308, p84=1.576, gen median=1.898, reco median=2.7, reco_cc median=2.811
+Q2         acceptance median=1.461, p16=1.385, p84=1.55, gen median=1.899, reco median=2.731, reco_cc median=2.844
+t          acceptance median=1.471, p16=1.377, p84=1.552, gen median=1.899, reco median=2.725, reco_cc median=2.838
+phi        acceptance median=1.477, p16=1.332, p84=1.536, gen median=1.902, reco median=2.842, reco_cc median=2.959
+e_theta    acceptance median=1.469, p16=1.38, p84=1.539, gen median=1.899, reco median=2.715, reco_cc median=2.827
+p_theta    acceptance median=1.578, p16=1.407, p84=1.643, gen median=1.9, reco median=2.769, reco_cc median=2.883
+g_theta    acceptance median=1.506, p16=1.374, p84=1.651, gen median=1.899, reco median=2.803, reco_cc median=2.919
+
+Fa18 Out / Sp18 Out
+-------------------
+xB         acceptance median=1.213, p16=1.036, p84=1.237, gen median=1.12, reco median=1.437, reco_cc median=1.342
+Q2         acceptance median=1.181, p16=1.117, p84=1.252, gen median=1.12, reco median=1.446, reco_cc median=1.351
+t          acceptance median=1.182, p16=1.11, p84=1.231, gen median=1.12, reco median=1.444, reco_cc median=1.349
+phi        acceptance median=1.183, p16=1.067, p84=1.209, gen median=1.121, reco median=1.464, reco_cc median=1.367
+e_theta    acceptance median=1.172, p16=1.145, p84=1.19, gen median=1.121, reco median=1.434, reco_cc median=1.34
+p_theta    acceptance median=1.236, p16=1.087, p84=1.243, gen median=1.12, reco median=1.455, reco_cc median=1.359
+g_theta    acceptance median=1.195, p16=1.069, p84=1.275, gen median=1.119, reco median=1.43, reco_cc median=1.336
+
+
