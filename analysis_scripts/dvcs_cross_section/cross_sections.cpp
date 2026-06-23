@@ -16,6 +16,16 @@
 //   - This module reads the already-unfolded yields from:
 //       acceptance corrected yield, ep->epg, exp, <label>, <helicity>
 //
+//   - For single run-period labels, the cross section is computed directly from
+//     that period's acceptance-corrected yield and that period's luminosity.
+//
+//   - [FIX] For combined labels, this module now recomputes the combined
+//     acceptance-corrected yield row-by-row from the member-period
+//     acceptance-corrected yields, using the same member-period validity mask
+//     for both the numerator and the luminosity denominator. This avoids a
+//     combined cross section being pulled by a signed/negative member-period
+//     yield whose standalone cross section would not be reported.
+//
 //   - It reads correction factors already stored in the CSV:
 //       Frad, <energy>
 //       Fbin, <energy>
@@ -25,12 +35,12 @@
 //       sigma = Y_unfolded * Frad * Fbin / (L * bin_volume)
 //
 //   - It writes:
+//       acceptance corrected yield, ep->epg, exp, <combined label>, <helicity>
 //       cross sections, ep->epg, exp, <label>, <helicity>
 //
 //   - It also fills integrated luminosity columns in the CSV. For combined
 //     labels, luminosity remains row-dependent and includes only member periods
-//     whose acceptance is nonzero in that row. This avoids normalizing a combined
-//     yield by charge from a period that did not contribute acceptance in the bin.
+//     that pass the same validity mask used in the combined yield numerator.
 //
 // Plotting and theory JSON generation are preserved from the previous version.
 // -----------------------------------------------------------------------------
@@ -376,6 +386,30 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
         << std::setprecision(10) << sys   << ")";
 
     return oss.str();
+}
+
+static Triple add_triples_quadrature_errors(const std::vector<Triple> &terms) {
+    Triple out{0.0, 0.0, 0.0};
+
+    double stat2 = 0.0;
+    double sys2  = 0.0;
+
+    for (const auto &t : terms) {
+        out.value += t.value;
+
+        if (std::isfinite(t.stat)) {
+            stat2 += t.stat * t.stat;
+        }
+
+        if (std::isfinite(t.sys)) {
+            sys2 += t.sys * t.sys;
+        }
+    }
+
+    out.stat = std::sqrt(stat2);
+    out.sys  = std::sqrt(sys2);
+
+    return out;
 }
 
 // -----------------------------------------------------------------------------
@@ -880,6 +914,15 @@ static std::string lumi_col_for_label(const std::string &L) {
     return "";
 }
 
+static double lumi_component_for_helicity(const Triple &Lumi,
+                                          const std::string &helicity) {
+    if (helicity == "unpol") return Lumi.value;
+    if (helicity == "pos")   return Lumi.stat;
+    if (helicity == "neg")   return Lumi.sys;
+
+    return 0.0;
+}
+
 static double ratio_rel2(double value, double err) {
     if (value == 0.0 || !std::isfinite(value) || !std::isfinite(err) || err <= 0.0) {
         return 0.0;
@@ -1290,6 +1333,24 @@ bool compute_cross_sections(const std::string &csv_main,
         }
     }
 
+    // [FIX] Explicit map of single-period acceptance-corrected yield columns.
+    // Combined labels are recomputed from these columns instead of trusting the
+    // upstream pre-combined yield blindly.
+    std::map<std::string, int> member_yield_col_idx;
+
+    for (const auto &p : base_periods) {
+        for (const auto &h : cross_section_helicities_for_label(p)) {
+            const std::string yield_col =
+                "acceptance corrected yield, ep->epg, exp, " + p + ", " + h;
+
+            const int iy = find_col_optional(header, yield_col);
+
+            if (iy >= 0) {
+                member_yield_col_idx[p + "|" + h] = iy;
+            }
+        }
+    }
+
     auto period_has_acceptance = [&](const std::string &period,
                                      const std::vector<std::string> &fields) -> bool {
         auto it = acc_col_idx.find(period);
@@ -1297,10 +1358,60 @@ bool compute_cross_sections(const std::string &csv_main,
         if (it == acc_col_idx.end()) return false;
 
         const Triple a = parse_tuple3(fields[it->second]);
-        return a.value > 0.0;
+        return a.value > 0.0 && std::isfinite(a.value);
     };
 
+    auto member_period_lumi = [&](const std::string &period) -> Triple {
+        auto it = lumi_map.find(period);
+
+        if (it == lumi_map.end()) return Triple{0.0, 0.0, 0.0};
+
+        return it->second;
+    };
+
+    auto member_yield_col = [&](const std::string &period,
+                                const std::string &helicity) -> int {
+        auto it = member_yield_col_idx.find(period + "|" + helicity);
+
+        if (it == member_yield_col_idx.end()) return -1;
+
+        return it->second;
+    };
+
+    // [FIX] This is the important validity definition. A combined-period member
+    // contributes to the combined numerator and denominator only if it has:
+    //   acceptance > 0,
+    //   acceptance-corrected yield > 0,
+    //   finite positive statistical uncertainty,
+    //   and positive luminosity for the requested helicity.
+    auto member_is_valid_for_combination =
+        [&](const std::string &period,
+            const std::string &helicity,
+            const std::vector<std::string> &fields) -> bool {
+
+            if (!period_has_acceptance(period, fields)) return false;
+
+            const int iy = member_yield_col(period, helicity);
+
+            if (iy < 0 || iy >= (int)fields.size()) return false;
+
+            const Triple Y = parse_tuple3(fields[iy]);
+
+            if (!std::isfinite(Y.value) || Y.value <= 0.0) return false;
+            if (!std::isfinite(Y.stat)  || Y.stat  <= 0.0) return false;
+
+            const Triple L = member_period_lumi(period);
+            const double lumi_val = lumi_component_for_helicity(L, helicity);
+
+            if (!std::isfinite(lumi_val) || lumi_val <= 0.0) return false;
+
+            return true;
+        };
+
+    // [FIX] Combined luminosity now uses the same validity mask as the combined
+    // yield numerator. The old code used only acceptance > 0.
     auto lumi_for_label_row = [&](const std::string &L,
+                                  const std::string &helicity,
                                   const std::vector<std::string> &fields) -> Triple {
         if (!is_combined_label(L)) {
             auto it = lumi_map.find(L);
@@ -1313,7 +1424,7 @@ bool compute_cross_sections(const std::string &csv_main,
         Triple out{0.0, 0.0, 0.0};
 
         for (const auto &m : combined_members_for(L)) {
-            if (!period_has_acceptance(m, fields)) continue;
+            if (!member_is_valid_for_combination(m, helicity, fields)) continue;
 
             auto itLm = lumi_map.find(m);
 
@@ -1327,6 +1438,8 @@ bool compute_cross_sections(const std::string &csv_main,
         return out;
     };
 
+    // [FIX] Luminosity columns are scalar/unpolarized columns, so they are written
+    // using the unpolarized validity mask.
     auto write_lumi_columns_for_row = [&](std::vector<std::string> &fields) {
         for (const auto &L : labels) {
             const std::string name = lumi_col_for_label(L);
@@ -1337,10 +1450,51 @@ bool compute_cross_sections(const std::string &csv_main,
 
             if (itc == lumi_col_idx.end()) continue;
 
-            Triple lum = lumi_for_label_row(L, fields);
+            Triple lum = lumi_for_label_row(L, "unpol", fields);
             fields[itc->second] = tuple3_to_cell(lum.value, lum.stat, lum.sys);
         }
     };
+
+    // [FIX] Recompute combined acceptance-corrected yields from valid member
+    // periods. This intentionally overwrites the upstream combined yield cell
+    // for Fa18, Sp18, and 10.6 GeV.
+    auto recompute_combined_yield_for_label =
+        [&](const std::string &L,
+            const std::string &helicity,
+            std::vector<std::string> &fields) -> bool {
+
+            if (!is_combined_label(L)) return true;
+
+            auto it_out = colmap.find(L + "|" + helicity);
+
+            if (it_out == colmap.end()) return true;
+
+            const int combined_yield_idx = it_out->second.yield_idx;
+
+            std::vector<Triple> valid_terms;
+            valid_terms.reserve(combined_members_for(L).size());
+
+            for (const auto &m : combined_members_for(L)) {
+                if (!member_is_valid_for_combination(m, helicity, fields)) continue;
+
+                const int iy = member_yield_col(m, helicity);
+
+                if (iy < 0 || iy >= (int)fields.size()) continue;
+
+                valid_terms.push_back(parse_tuple3(fields[iy]));
+            }
+
+            if (valid_terms.empty()) {
+                fields[combined_yield_idx] = "";
+                return false;
+            }
+
+            const Triple combined = add_triples_quadrature_errors(valid_terms);
+            fields[combined_yield_idx] = tuple3_to_cell(combined.value,
+                                                        combined.stat,
+                                                        combined.sys);
+            return true;
+        };
 
     std::vector<std::string> out_lines;
     out_lines.reserve(lines.size());
@@ -1353,7 +1507,10 @@ bool compute_cross_sections(const std::string &csv_main,
               << "Current-efficiency and eppi0 normalization corrections are already upstream.\n";
 
     std::cout << "[cross_sections] NOTE: combined-label luminosities are row-dependent and "
-              << "gated by nonzero member-period acceptance.\n";
+              << "now gated by the same positive-yield validity mask used for the combined-yield numerator.\n";
+
+    std::cout << "[cross_sections] NOTE: combined-label acceptance-corrected yields are recomputed "
+              << "inside cross_sections.cpp from valid member periods only.\n";
 
     std::cout << "[cross_sections] NOTE: Frad/Fbin are imported from Lee's CSV for both energies; "
               << "bin_volume is read from the pass-2 CSV phase-space columns filled by bin_volume.cpp.\n";
@@ -1386,8 +1543,6 @@ bool compute_cross_sections(const std::string &csv_main,
             continue;
         }
 
-        write_lumi_columns_for_row(fields);
-
         const LeeCorrections *lee_row = nullptr;
 
         try {
@@ -1409,8 +1564,19 @@ bool compute_cross_sections(const std::string &csv_main,
         fields[c_fbin_106] = tuple3_to_cell(fbin.value, fbin.stat, fbin.sys);
         fields[c_fbin_102] = tuple3_to_cell(fbin.value, fbin.stat, fbin.sys);
 
+        // [FIX] Recompute combined yields before luminosity columns and cross
+        // sections are written, so numerator and denominator share the same mask.
         for (const auto &L : labels) {
-            const Triple Lumi = lumi_for_label_row(L, fields);
+            if (!is_combined_label(L)) continue;
+
+            for (const auto &h : cross_section_helicities_for_label(L)) {
+                (void)recompute_combined_yield_for_label(L, h, fields);
+            }
+        }
+
+        write_lumi_columns_for_row(fields);
+
+        for (const auto &L : labels) {
             const bool use_10p2 = (L == "Sp19 Inb" || L == "10.2 GeV");
 
             const Triple &Frad = frad;
@@ -1426,9 +1592,13 @@ bool compute_cross_sections(const std::string &csv_main,
                 const int iy = it->second.yield_idx;
                 const int ix = it->second.xs_idx;
 
+                // Clear the destination first so rerunning this module cannot
+                // leave stale positive cross sections in bins that are no longer valid.
+                fields[ix] = "";
+
                 const Triple Y = parse_tuple3(fields[iy]);
 
-                if (Y.value <= 0.0) continue;
+                if (Y.value <= 0.0 || !std::isfinite(Y.value)) continue;
 
                 const int c_vbin = use_10p2 ? c_vbin_102 : c_vbin_106;
                 const int c_cubic_vbin = use_10p2 ? c_cubic_vbin_102 : c_cubic_vbin_106;
@@ -1451,23 +1621,18 @@ bool compute_cross_sections(const std::string &csv_main,
                     "pass-2 CSV row " + std::to_string(row) + ", label " + L + ", helicity " + h
                 );
 
-                double lumi_val = 0.0;
+                const Triple Lumi = lumi_for_label_row(L, h, fields);
+                const double lumi_val = lumi_component_for_helicity(Lumi, h);
 
-                if (h == "unpol") {
-                    lumi_val = Lumi.value;
-                } else if (h == "pos") {
-                    lumi_val = Lumi.stat;
-                } else if (h == "neg") {
-                    lumi_val = Lumi.sys;
-                }
-
-                if (lumi_val <= 0.0) continue;
+                if (lumi_val <= 0.0 || !std::isfinite(lumi_val)) continue;
 
                 const double denom = lumi_val * Vbin.value;
 
-                if (denom <= 0.0) continue;
+                if (denom <= 0.0 || !std::isfinite(denom)) continue;
 
                 const double sigma = Y.value * Frad.value * Fbin.value / denom;
+
+                if (!std::isfinite(sigma) || sigma <= 0.0) continue;
 
                 double stat_rel2 = 0.0;
                 stat_rel2 += ratio_rel2(Y.value, Y.stat);
