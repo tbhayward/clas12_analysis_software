@@ -19,6 +19,7 @@
 #include <TString.h>
 #include <TDataType.h>  // kInt_t, kDouble_t and EDataType
 #include <TSystem.h>
+#include <TLine.h>
 
 // C++ stdlib
 #include <algorithm>
@@ -34,6 +35,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <set>
 #include <thread>
 #include <chrono>
 #include <utility>
@@ -810,6 +812,422 @@ static void processPeriod(
     }
 }
 
+
+// -------------------- optional deep diagnostics --------------------
+
+static std::string periodTitleFromCode(const std::string& code) {
+    if (code.find("Fa18_Inb") != std::string::npos) return "Fa18 Inb";
+    if (code.find("Sp18_Inb") != std::string::npos) return "Sp18 Inb";
+    if (code.find("Fa18_Out") != std::string::npos) return "Fa18 Out";
+    if (code.find("Sp18_Out") != std::string::npos) return "Sp18 Out";
+    if (code.find("Sp19_Inb") != std::string::npos) return "Sp19 Inb";
+    return code;
+}
+
+static int periodColor(const std::string& code) {
+    if (code.find("Fa18_Inb") != std::string::npos) return kBlue + 1;
+    if (code.find("Sp18_Inb") != std::string::npos) return kRed + 1;
+    if (code.find("Fa18_Out") != std::string::npos) return kGreen + 2;
+    if (code.find("Sp18_Out") != std::string::npos) return kMagenta + 1;
+    if (code.find("Sp19_Inb") != std::string::npos) return kOrange + 7;
+    return kBlack;
+}
+
+static int periodMarker(const std::string& code) {
+    if (code.find("Fa18_Inb") != std::string::npos) return 20;
+    if (code.find("Sp18_Inb") != std::string::npos) return 21;
+    if (code.find("Fa18_Out") != std::string::npos) return 22;
+    if (code.find("Sp18_Out") != std::string::npos) return 23;
+    if (code.find("Sp19_Inb") != std::string::npos) return 33;
+    return 20;
+}
+
+static GlobalCutConfig globalConfigForTopo(Topology topo, bool bypassGlobalPTmiss) {
+    GlobalCutConfig gcfg = default_global_cuts();
+    gcfg.enable_topology_filter = true;
+
+    if (topo == Topology::FD_FD) { gcfg.required_detector1 = 1; gcfg.required_detector2 = 1; }
+    if (topo == Topology::CD_FD) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 1; }
+    if (topo == Topology::CD_FT) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 0; }
+
+    if (bypassGlobalPTmiss) {
+        gcfg.pTmiss_max = 1.0e9;
+    }
+
+    return gcfg;
+}
+
+static bool passesGlobalWithConfig(const BranchBinder& b,
+                                   const std::string& period_label,
+                                   const GlobalCutConfig& gcfg) {
+    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
+    if (!(b.has_detector1 && b.has_detector2)) return false;
+
+    if (global_cuts_require_sector_phi(gcfg)) {
+        if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+            throw std::runtime_error("[exclusivity_cuts] FATAL: sector selection requires e_phi, p1_phi, p2_phi.");
+        }
+    }
+
+    if (gcfg.enable_dvcsgen_ycol_cut) {
+        if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            throw std::runtime_error("[exclusivity_cuts] FATAL: dvcsgen ycol cut requires e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.");
+        }
+
+        if (global_cuts_require_sector_phi(gcfg)) {
+            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                      b.detector1, b.detector2,
+                                      period_label,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
+                                      gcfg);
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  gcfg);
+    }
+
+    if (global_cuts_require_sector_phi(gcfg)) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  b.e_phi, b.p1_phi, b.p2_phi,
+                                  gcfg);
+    }
+
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                              b.detector1, b.detector2,
+                              gcfg);
+}
+
+static bool passesCutsExceptVariable(const std::map<std::string, Stats>& cuts,
+                                     const std::map<std::string, double>& values,
+                                     const std::string& exceptVar) {
+    for (const auto& kv : cuts) {
+        if (kv.first == exceptVar) continue;
+
+        auto it = values.find(kv.first);
+        if (it == values.end()) continue;
+
+        const Stats& s = kv.second;
+        if (!(std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0)) continue;
+
+        if (!within3Sigma(it->second, s)) return false;
+    }
+
+    return true;
+}
+
+static std::vector<std::string> defaultDiagnosticVariables(Channel ch,
+                                                           const ExclusivityDiagnosticConfig& diagCfg) {
+    if (!diagCfg.variables.empty()) {
+        std::vector<std::string> vars;
+        const HistList cfg = getHistConfigs(ch);
+        std::set<std::string> allowed;
+        for (const auto& kv : cfg) allowed.insert(kv.first);
+
+        for (const std::string& v : diagCfg.variables) {
+            if (allowed.count(v)) vars.push_back(v);
+        }
+        return vars;
+    }
+
+    if (ch == Channel::DVCS) {
+        return {"pTmiss", "theta_gamma_gamma", "Emiss2", "Mx2_1"};
+    }
+
+    return {"pTmiss", "theta_pi0_pi0", "Emiss2", "Mx2_1"};
+}
+
+static const HistCfg* findHistCfg(const HistList& cfg, const std::string& var) {
+    for (const auto& kv : cfg) {
+        if (kv.first == var) return &(kv.second);
+    }
+    return nullptr;
+}
+
+struct DiagnosticHistResult {
+    std::unique_ptr<TH1D> hist;
+    double selected = 0.0;
+    double passSymmetric = 0.0;
+    double passOneSidedUpper = 0.0;
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std = std::numeric_limits<double>::quiet_NaN();
+};
+
+static DiagnosticHistResult fillMcDiagnosticHist(TTree* tree,
+                                                 Channel ch,
+                                                 Topology topo,
+                                                 const std::string& period_label,
+                                                 const std::string& period_code,
+                                                 const std::string& var,
+                                                 const HistCfg& hc,
+                                                 const CutDict& finalCuts,
+                                                 bool bypassGlobalPTmiss) {
+    DiagnosticHistResult R;
+    const std::string hname = "diag_mc_" + channelToStr(ch) + "_" + period_code + "_" + topoToKey(topo) + "_" + var +
+                              (bypassGlobalPTmiss ? "_bypassGlobalPT" : "_afterGlobal");
+    R.hist.reset(new TH1D(hname.c_str(), "", hc.nbins, hc.xlow, hc.xhigh));
+    R.hist->SetDirectory(nullptr);
+    R.hist->Sumw2();
+
+    if (!tree) return R;
+
+    GlobalCutConfig gcfg = globalConfigForTopo(topo, bypassGlobalPTmiss);
+
+    BranchBinder b;
+    b.bind(tree, ch);
+
+    Long64_t n = tree->GetEntries();
+    for (Long64_t i = 0; i < n; ++i) {
+        tree->GetEntry(i);
+
+        if (b.has_runnum && is_excluded_run(b.runnum)) continue;
+        if (!(b.has_detector1 && b.has_detector2)) continue;
+        if (!passesTopology(b.detector1, b.detector2, topo)) continue;
+        if (!passesGlobalWithConfig(b, period_label, gcfg)) continue;
+
+        auto vals = b.valuesMap(ch);
+        auto it = vals.find(var);
+        if (it == vals.end()) continue;
+        if (!std::isfinite(it->second)) continue;
+
+        if (!passesCutsExceptVariable(finalCuts.mc, vals, var)) continue;
+
+        R.hist->Fill(it->second);
+        R.selected += 1.0;
+
+        auto cs = finalCuts.mc.find(var);
+        if (cs != finalCuts.mc.end()) {
+            const double lo = cs->second.mean - 3.0 * cs->second.std;
+            const double hi = cs->second.mean + 3.0 * cs->second.std;
+            if (it->second >= lo && it->second <= hi) R.passSymmetric += 1.0;
+            if (it->second <= hi) R.passOneSidedUpper += 1.0;
+        }
+    }
+
+    if (R.hist && R.hist->GetEntries() > 0) {
+        R.mean = R.hist->GetMean();
+        R.std = R.hist->GetStdDev();
+    }
+
+    return R;
+}
+
+static void drawVerticalLine(double x, double yMax, int color, int style, int width = 2) {
+    TLine* line = new TLine(x, 0.0, x, yMax);
+    line->SetLineColor(color);
+    line->SetLineStyle(style);
+    line->SetLineWidth(width);
+    line->Draw("SAME");
+}
+
+static void runExclusivityOverlayDiagnosticsForChannel(
+    Channel ch,
+    const std::vector<PeriodWork>& work,
+    const std::string& outJsonDir,
+    const std::string& outPlotDir,
+    const std::map<std::string, CutDict>& combined,
+    const ExclusivityDiagnosticConfig& diagCfg)
+{
+    if (!diagCfg.make_mc_period_overlay_plots && !diagCfg.write_mc_period_overlay_csv) return;
+
+    const std::string diagPlotDir = outPlotDir + "/diagnostics";
+    gSystem->mkdir(diagPlotDir.c_str(), true);
+
+    const std::string csvPath = outJsonDir + "/exclusivity_mc_overlay_diagnostic_counts.csv";
+    static std::mutex csv_mutex;
+
+    std::ofstream csv;
+    if (diagCfg.write_mc_period_overlay_csv) {
+        std::lock_guard<std::mutex> lock(csv_mutex);
+        const bool exists = !std::ifstream(csvPath).fail();
+        csv.open(csvPath, std::ios::app);
+        if (!exists) {
+            csv << "channel,topology,variable,mode,period,selected,pass_symmetric,pass_one_sided_upper,"
+                << "frac_symmetric,frac_one_sided_upper,mean,std,cut_mean,cut_std,cut_low,cut_high,global_pTmiss_max\n";
+        }
+    }
+
+    const HistList cfg = getHistConfigs(ch);
+    const std::vector<std::string> vars = defaultDiagnosticVariables(ch, diagCfg);
+    const std::vector<Topology> topologies = {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT};
+
+    for (Topology topo : topologies) {
+        for (const std::string& var : vars) {
+            const HistCfg* hc = findHistCfg(cfg, var);
+            if (!hc) continue;
+
+            std::vector<bool> bypassModes = {false};
+            if (var == "pTmiss" && diagCfg.make_pTmiss_before_global_pTmiss_plots) {
+                bypassModes.push_back(true);
+            }
+
+            for (bool bypassGlobalPTmiss : bypassModes) {
+                const std::string mode = bypassGlobalPTmiss ? "before_global_pTmiss" : "after_global_cuts";
+
+                std::vector<std::string> codes;
+                std::vector<DiagnosticHistResult> results;
+                std::vector<Stats> cutStats;
+
+                for (const auto& W : work) {
+                    TTree* tree = (ch == Channel::DVCS) ? W.dvcs_mc : W.eppi0_mc;
+                    if (!tree) continue;
+
+                    const std::string code = periodCode(ch, W.label);
+                    const std::string key = code + "_" + topoToKey(topo);
+                    auto itCut = combined.find(key);
+                    if (itCut == combined.end()) continue;
+
+                    auto itVarCut = itCut->second.mc.find(var);
+                    if (itVarCut == itCut->second.mc.end()) continue;
+
+                    DiagnosticHistResult R = fillMcDiagnosticHist(tree, ch, topo, W.label, code, var, *hc, itCut->second, bypassGlobalPTmiss);
+
+                    if (diagCfg.write_mc_period_overlay_csv && csv) {
+                        const double fracSym = safeRatio(R.passSymmetric, R.selected);
+                        const double fracOne = safeRatio(R.passOneSidedUpper, R.selected);
+                        const double lo = itVarCut->second.mean - 3.0 * itVarCut->second.std;
+                        const double hi = itVarCut->second.mean + 3.0 * itVarCut->second.std;
+                        csv << channelPretty(ch) << "," << topoToKey(topo) << "," << var << "," << mode << "," << periodTitleFromCode(code) << ","
+                            << fmtDiag(R.selected, 0) << "," << fmtDiag(R.passSymmetric, 0) << "," << fmtDiag(R.passOneSidedUpper, 0) << ","
+                            << fmtDiag(fracSym) << "," << fmtDiag(fracOne) << ","
+                            << fmtDiag(R.mean) << "," << fmtDiag(R.std) << ","
+                            << fmtDiag(itVarCut->second.mean) << "," << fmtDiag(itVarCut->second.std) << ","
+                            << fmtDiag(lo) << "," << fmtDiag(hi) << ","
+                            << fmtDiag(default_global_cuts().pTmiss_max) << "\n";
+                    }
+
+                    codes.push_back(code);
+                    cutStats.push_back(itVarCut->second);
+                    results.push_back(std::move(R));
+                }
+
+                if (!diagCfg.make_mc_period_overlay_plots || results.empty()) continue;
+
+                std::lock_guard<std::mutex> lock(g_plot_mutex);
+
+                TCanvas c("c_diag", "", 1400, 950);
+                c.SetLeftMargin(0.12);
+                c.SetBottomMargin(0.12);
+                c.SetRightMargin(0.04);
+                c.SetTopMargin(0.08);
+                c.SetTickx(1);
+                c.SetTicky(1);
+
+                double maxv = 0.0;
+                for (auto& R : results) {
+                    if (!R.hist) continue;
+                    normalizeHist(R.hist.get());
+                    maxv = std::max(maxv, R.hist->GetMaximum());
+                }
+                if (maxv <= 0.0) maxv = 1.0;
+
+                bool drawn = false;
+                TLegend leg(0.55, 0.60, 0.94, 0.90);
+                leg.SetFillColor(kWhite);
+                leg.SetBorderSize(1);
+                leg.SetTextFont(42);
+                leg.SetTextSize(0.030);
+
+                for (size_t i = 0; i < results.size(); ++i) {
+                    TH1D* h = results[i].hist.get();
+                    if (!h) continue;
+
+                    const int col = periodColor(codes[i]);
+                    h->SetLineColor(col);
+                    h->SetMarkerColor(col);
+                    h->SetMarkerStyle(periodMarker(codes[i]));
+                    h->SetMarkerSize(0.7);
+                    h->SetLineWidth(2);
+                    h->SetStats(0);
+                    h->SetMaximum(maxv * 1.45);
+                    h->GetYaxis()->SetTitle("Normalized counts");
+                    h->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
+                    h->GetXaxis()->SetTitleOffset(1.05);
+                    h->GetYaxis()->SetTitleOffset(1.25);
+
+                    const std::string label = periodTitleFromCode(codes[i]) +
+                        TString::Format(" (#mu=%.3g, #sigma=%.3g)", results[i].mean, results[i].std).Data();
+
+                    h->Draw(drawn ? "E1 SAME" : "E1");
+                    drawn = true;
+                    leg.AddEntry(h, label.c_str(), "lep");
+                }
+
+                const double yMax = maxv * 1.35;
+                for (size_t i = 0; i < cutStats.size(); ++i) {
+                    const int col = periodColor(codes[i]);
+                    const double lo = cutStats[i].mean - 3.0 * cutStats[i].std;
+                    const double hi = cutStats[i].mean + 3.0 * cutStats[i].std;
+
+                    if (diagCfg.draw_symmetric_3sigma_windows) {
+                        drawVerticalLine(lo, yMax, col, 3, 1);
+                    }
+                    if (diagCfg.draw_symmetric_3sigma_windows || diagCfg.draw_one_sided_upper_windows) {
+                        drawVerticalLine(hi, yMax, col, 2, 2);
+                    }
+                }
+
+                if (var == "pTmiss" && diagCfg.draw_global_pTmiss_cut) {
+                    drawVerticalLine(default_global_cuts().pTmiss_max, yMax, kBlack, 1, 3);
+                    leg.AddEntry((TObject*)nullptr, TString::Format("global p_{T}^{miss} < %.3g", default_global_cuts().pTmiss_max), "");
+                }
+
+                leg.AddEntry((TObject*)nullptr, "dashed upper lines: #mu+3#sigma", "");
+                if (diagCfg.draw_symmetric_3sigma_windows) {
+                    leg.AddEntry((TObject*)nullptr, "dotted lower lines: #mu-3#sigma", "");
+                }
+                leg.Draw();
+
+                TPaveText title(0.10, 0.925, 0.90, 0.985, "NDC");
+                title.SetFillColor(0);
+                title.SetFillStyle(0);
+                title.SetBorderSize(0);
+                title.SetTextAlign(22);
+                title.SetTextFont(42);
+                title.SetTextSize(0.030);
+                const std::string titleText = channelPretty(ch) + " MC diagnostic | " + topoToKey(topo) + " | " + var + " | " + mode;
+                title.AddText(titleText.c_str());
+                title.Draw();
+
+                const std::string fname = diagPlotDir + "/mc_overlay_" + channelToStr(ch) + "_" + topoToKey(topo) + "_" + var + "_" + mode + ".png";
+                c.SaveAs(fname.c_str());
+
+                std::cout << "[exclusivity_cuts][DIAG-PLOT] " << fname << std::endl;
+            }
+        }
+    }
+
+    if (csv) {
+        std::cout << "[exclusivity_cuts] Wrote MC overlay diagnostic CSV: " << csvPath << std::endl;
+    }
+}
+
+static void runOptionalExclusivityDiagnostics(
+    const std::vector<PeriodWork>& work,
+    const std::string& outJsonDir,
+    const std::string& outPlotDir,
+    const std::map<std::string, CutDict>& combined,
+    const ExclusivityDiagnosticConfig& diagCfg)
+{
+    if (!diagCfg.enable) return;
+
+    std::cout << "[exclusivity_cuts] Optional deep diagnostics enabled." << std::endl;
+
+    if (diagCfg.include_dvcs) {
+        runExclusivityOverlayDiagnosticsForChannel(Channel::DVCS, work, outJsonDir, outPlotDir, combined, diagCfg);
+    }
+
+    if (diagCfg.include_eppi0) {
+        runExclusivityOverlayDiagnosticsForChannel(Channel::EPPI0, work, outJsonDir, outPlotDir, combined, diagCfg);
+    }
+}
+
 // -------------------- dispatcher --------------------
 
 void runAllExclusivityCuts(
@@ -819,7 +1237,8 @@ void runAllExclusivityCuts(
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
     const std::string& outJsonDir,
     const std::string& outPlotDir,
-    int maxThreads)
+    int maxThreads,
+    const ExclusivityDiagnosticConfig& diagCfg)
 {
     ROOT::EnableThreadSafety();
     TH1::AddDirectory(kFALSE);
@@ -903,6 +1322,7 @@ void runAllExclusivityCuts(
 
     writeCombinedJson(outJsonDir, combined);
     writeExclusivityRatioDiagnostics(outJsonDir, combined);
+    runOptionalExclusivityDiagnostics(work, outJsonDir, outPlotDir, combined, diagCfg);
 
     std::cout << "[All done] Exclusivity cuts ran for " << work.size()
               << " period(s) with up to " << nworkers << " worker(s)." << std::endl;
