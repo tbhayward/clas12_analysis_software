@@ -158,119 +158,119 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // // --------- Global bin-averaged kinematics (CSV update) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-    //     // Make a simple backup before modifying
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //                                    std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-    //     }
+        // Make a simple backup before modifying
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
 
-    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string out_dir = "output/q2_xb_cut_coverage";
+    // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
+        const std::string out_dir = "output/q2_xb_cut_coverage";
 
-    //     if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
-    //         std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
+            std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Raw yields/counts into CSV + plots ----------
-    // {
-    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // --------- Raw yields/counts into CSV + plots ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-    //     // Make a backup
-    //     try {
-    //         std::filesystem::copy_file(csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup
+        try {
+            std::filesystem::copy_file(csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
 
-    //     // update_total_counts_csv() fills:
-    //     //   - DVCS data raw yields
-    //     //   - eppi0 data raw yields
-    //     //   - DVCS generated/reconstructed MC yields
-    //     //   - eppi0 generated/reconstructed MC yields
-    //     //   - eppi0-background-as-DVCS reconstructed MC yields
-    //     if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
-    //         genMcTrees, recMcTrees,
-    //         eppi0GenMcTrees, eppi0RecMcTrees,
-    //         eppi0BkgTrees,
-    //         cuts_json,
-    //         output_root,
-    //         /*max_workers=*/5)) {
-    //       std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-    //       std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        // update_total_counts_csv() fills:
+        //   - DVCS data raw yields
+        //   - eppi0 data raw yields
+        //   - DVCS generated/reconstructed MC yields
+        //   - eppi0 generated/reconstructed MC yields
+        //   - eppi0-background-as-DVCS reconstructed MC yields
+        if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
+            genMcTrees, recMcTrees,
+            eppi0GenMcTrees, eppi0RecMcTrees,
+            eppi0BkgTrees,
+            cuts_json,
+            output_root,
+            /*max_workers=*/5)) {
+          std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+          std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Current-dependence correction factors ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // --------- Current-dependence correction factors ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     CurrentDependenceOptions current_opts;
-    //     current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-    //     current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     current_opts.output_dir = "output/dvcs_current_dependence";
+        CurrentDependenceOptions current_opts;
+        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        current_opts.output_dir = "output/dvcs_current_dependence";
 
-    //     // Existing override:
-    //     //   false -> compute current-efficiency factors normally
-    //     //   true  -> write all current-efficiency factors as (1,0)
-    //     current_opts.override_to_unity = false;
+        // Existing override:
+        //   false -> compute current-efficiency factors normally
+        //   true  -> write all current-efficiency factors as (1,0)
+        current_opts.override_to_unity = false;
 
-    //     // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
-    //     current_opts.use_second_column_charge_for_all_unpolarized = true;
+        // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
+        current_opts.use_second_column_charge_for_all_unpolarized = true;
 
-    //     // New mode:
-    //     //   Sp18 Inb / Sp18 Out:
-    //     //     charge_unpol = column 2
-    //     //
-    //     //   Fa18 Inb / Fa18 Out / Sp19 Inb:
-    //     //     charge_unpol = 1.025 * (column 3 + column 4 + column 5)
-    //     current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
-    //     current_opts.columns_3_to_5_charge_sum_scale = 1.025;
+        // New mode:
+        //   Sp18 Inb / Sp18 Out:
+        //     charge_unpol = column 2
+        //
+        //   Fa18 Inb / Fa18 Out / Sp19 Inb:
+        //     charge_unpol = 1.025 * (column 3 + column 4 + column 5)
+        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
+        current_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
-    //     // Default behavior:
-    //     //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
-    //     //            because the Sp19 5 nA luminosity-scan point has suspect
-    //     //            Faraday Cup charge.
-    //     //   false -> use the directly fitted Sp19 Inb current-dependence factor.
-    //     current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
+        // Default behavior:
+        //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
+        //            because the Sp19 5 nA luminosity-scan point has suspect
+        //            Faraday Cup charge.
+        //   false -> use the directly fitted Sp19 Inb current-dependence factor.
+        current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
 
-    //     current_opts.max_workers = 5;
+        current_opts.max_workers = 5;
 
-    //     if (!update_current_dependence_factors_csv(csv_main,
-    //                                                dataTrees,
-    //                                                eppi0DataTrees,
-    //                                                currentStudyGenMcTrees,
-    //                                                currentStudyRecMcTrees,
-    //                                                eppi0GenMcTrees,
-    //                                                eppi0RecMcTrees,
-    //                                                current_opts)) {
-    //         std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_current_dependence_factors_csv(csv_main,
+                                                   dataTrees,
+                                                   eppi0DataTrees,
+                                                   currentStudyGenMcTrees,
+                                                   currentStudyRecMcTrees,
+                                                   eppi0GenMcTrees,
+                                                   eppi0RecMcTrees,
+                                                   current_opts)) {
+            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
     // {
@@ -297,76 +297,76 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
-    // {
-    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-    //     makeOutputDirs();
+        makeOutputDirs();
 
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    //     }
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
 
-    //     const int max_workers = 1;
+        const int max_workers = 1;
 
-    //     if (!compute_pi0_contamination_overall(
-    //             dataTrees,
-    //             eppi0DataTrees,
-    //             eppi0RecMcTrees,
-    //             eppi0BkgTrees,
-    //             cuts_json,
-    //             csv_main,
-    //             output_root,
-    //             max_workers))
-    //     {
-    //         std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    //     std::cout << "pi0 contamination stage finished.\n";
-    // }
+        if (!compute_pi0_contamination_overall(
+                dataTrees,
+                eppi0DataTrees,
+                eppi0RecMcTrees,
+                eppi0BkgTrees,
+                cuts_json,
+                csv_main,
+                output_root,
+                max_workers))
+        {
+            std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        std::cout << "pi0 contamination stage finished.\n";
+    }
 
-    // // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
+    // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
 
-    //     // Make a backup before modifying the signal-yield columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for signal yields failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the signal-yield columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for signal yields failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
-    //         std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
+            std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Yield totals by current ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string output_txt = "output/yield_totals/yield_totals_by_current.txt";
+    // --------- Yield totals by current ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
+        const std::string output_txt = "output/yield_totals/yield_totals_by_current.txt";
 
-    //     if (!compute_yield_totals(csv_main,
-    //                               dataTrees, eppi0DataTrees,
-    //                               cuts_json,
-    //                               output_txt)) {
-    //         std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!compute_yield_totals(csv_main,
+                                  dataTrees, eppi0DataTrees,
+                                  cuts_json,
+                                  output_txt)) {
+            std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // // --------- Data/MC comparison ----------
     // // runAllBranchDataMcComparisons(
@@ -378,54 +378,54 @@ int main(int argc, char* argv[]) {
     // //     "output"
     // // );
 
-    // // --------- DVCS MC acceptance (CSV + plots) ----------
-    // {
-    //     const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
-    //     const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+    // --------- DVCS MC acceptance (CSV + plots) ----------
+    {
+        const std::string csv_main          = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+        const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
+        const std::string csv_backup        = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
 
-    //     // Make a backup before modifying the acceptance columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for acceptance failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the acceptance columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for acceptance failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_acceptance_csv(csv_main,
-    //                                genMcTrees,
-    //                                recMcTrees,
-    //                                combined_cuts_json,
-    //                                global_cuts_json,
-    //                                output_root)) {
-    //         std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_acceptance_csv(csv_main,
+                                   genMcTrees,
+                                   recMcTrees,
+                                   combined_cuts_json,
+                                   global_cuts_json,
+                                   output_root)) {
+            std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
-    // // --------- Unfolding: acceptance-corrected DVCS yields ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_unfolding.csv";
+    // --------- Unfolding: acceptance-corrected DVCS yields ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_unfolding.csv";
 
-    //     // Make a backup before modifying the unfolded-yield columns
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //             std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_unfolding.csv\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: backup for unfolding failed ("
-    //                   << e.what() << "). Continuing.\n";
-    //     }
+        // Make a backup before modifying the unfolded-yield columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_unfolding.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for unfolding failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    //     if (!update_unfolded_yields_csv(csv_main, output_root)) {
-    //         std::cerr << "[main] ERROR: update_unfolded_yields_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_unfolded_yields_csv(csv_main, output_root)) {
+            std::cerr << "[main] ERROR: update_unfolded_yields_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- Radiative corrections (Frad factors) ----------
     // {
@@ -451,28 +451,28 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // --------- Kinematic bin volumes into CSV + plots ----------
-    // {
-    //     const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string out_root_dir = "output";
+    // --------- Kinematic bin volumes into CSV + plots ----------
+    {
+        const std::string csv_main     = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string out_root_dir = "output";
 
-    //     // Make a backup specific to the bin-volume step
-    //     try {
-    //         std::filesystem::copy_file(
-    //             csv_main,
-    //             "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
-    //             std::filesystem::copy_options::overwrite_existing
-    //         );
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
-    //                   << e.what() << "\n";
-    //     }
+        // Make a backup specific to the bin-volume step
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_bin_volume.csv",
+                std::filesystem::copy_options::overwrite_existing
+            );
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: failed to backup CSV for bin_volume: "
+                      << e.what() << "\n";
+        }
 
-    //     if (!update_bin_volume_csv(csv_main, out_root_dir)) {
-    //         std::cerr << "[main] ERROR: bin_volume step failed.\n";
-    //         return 1;
-    //     }
-    // }
+        if (!update_bin_volume_csv(csv_main, out_root_dir)) {
+            std::cerr << "[main] ERROR: bin_volume step failed.\n";
+            return 1;
+        }
+    }
 
     // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
     // {
@@ -554,130 +554,130 @@ int main(int argc, char* argv[]) {
     // }
 
 
-    // // --------- Cross sections (CSV update + theory JSON + plots) ----------
-    // {
-    //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string theory_json_root = "output/jsons/cross_sections";
-    //     const std::string xs_out_root      = "output/cross_sections";
+    // --------- Cross sections (CSV update + theory JSON + plots) ----------
+    {
+        const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string theory_json_root = "output/jsons/cross_sections";
+        const std::string xs_out_root      = "output/cross_sections";
 
-    //     // // --------- Theory grids (xs_phi_all.json generation) ----------
-    //     // {
-    //     //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-    //     //     const std::string theory_json_root = "output/jsons/cross_sections";
-    //     //
-    //     //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
-    //     //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
-    //     //         return 1;
-    //     //     }
-    //     // }
+        // // --------- Theory grids (xs_phi_all.json generation) ----------
+        // {
+        //     const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
+        //     const std::string theory_json_root = "output/jsons/cross_sections";
+        //
+        //     if (!regenerate_theory_jsons(csv_main, theory_json_root)) {
+        //         std::cerr << "[main] ERROR: regenerate_theory_jsons failed.\n";
+        //         return 1;
+        //     }
+        // }
 
-    //     LumiBuildOptions lumi_opts;
+        LumiBuildOptions lumi_opts;
 
-    //     // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
-    //     lumi_opts.use_second_column_charge_for_all_unpolarized = true;
+        // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
+        lumi_opts.use_second_column_charge_for_all_unpolarized = true;
 
-    //     // New mode:
-    //     //   Sp18 Inb / Sp18 Out:
-    //     //     L_unpol = column 2
-    //     //
-    //     //   Fa18 Inb / Fa18 Out / Sp19 Inb:
-    //     //     L_unpol = 1.025 * (column 3 + column 4 + column 5)
-    //     //
-    //     // Polarized luminosities remain:
-    //     //   pos -> column 3
-    //     //   neg -> column 4
-    //     lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
-    //     lumi_opts.columns_3_to_5_charge_sum_scale = 1.025;
+        // New mode:
+        //   Sp18 Inb / Sp18 Out:
+        //     L_unpol = column 2
+        //
+        //   Fa18 Inb / Fa18 Out / Sp19 Inb:
+        //     L_unpol = 1.025 * (column 3 + column 4 + column 5)
+        //
+        // Polarized luminosities remain:
+        //   pos -> column 3
+        //   neg -> column 4
+        lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
+        lumi_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
-    //     LumiMap lumi_map = build_lumi_map(lumi_opts);
+        LumiMap lumi_map = build_lumi_map(lumi_opts);
 
-    //     if (!compute_cross_sections(csv_main, lumi_map)) {
-    //         std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
-    //     }
+        if (!compute_cross_sections(csv_main, lumi_map)) {
+            std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+        }
 
-    //     const std::vector<std::string> labels_to_plot = {
-    //         "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-    //         "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-    //         "Fa18", "Sp18", "10.6 GeV"
-    //     };
+        const std::vector<std::string> labels_to_plot = {
+            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
+            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+            "Fa18", "Sp18", "10.6 GeV"
+        };
 
-    //     for (const auto &label : labels_to_plot) {
-    //         if (!plot_cross_sections_for_label(csv_main, label,
-    //             theory_json_root, xs_out_root)) {
-    //             std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
-    //                       << label << "\n";
-    //         }
-    //     }
-    // }
+        for (const auto &label : labels_to_plot) {
+            if (!plot_cross_sections_for_label(csv_main, label,
+                theory_json_root, xs_out_root)) {
+                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
+                          << label << "\n";
+            }
+        }
+    }
 
 
-    // // --------- Overall BH-edge normalization study ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // --------- Overall BH-edge normalization study ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     OverallNormalizationOptions norm_opts;
+        OverallNormalizationOptions norm_opts;
 
-    //     // Production-safe default:
-    //     //   true  -> write norm = 1.00 everywhere and skip BH-edge study
-    //     //   false -> run the full BH-edge normalization study and write fitted norms
-    //     norm_opts.override_to_unity = true;
+        // Production-safe default:
+        //   true  -> write norm = 1.00 everywhere and skip BH-edge study
+        //   false -> run the full BH-edge normalization study and write fitted norms
+        norm_opts.override_to_unity = true;
 
-    //     norm_opts.use_all_points_within_edge_window = true;
-    //     norm_opts.require_positive_dedge = true;
-    //     norm_opts.max_dedge_for_normalization_deg = 10.0;
-    //     norm_opts.norm_x_axis = OverallNormXAxis::XB;
-    //     norm_opts.output_dir = "output/normalization_study";
+        norm_opts.use_all_points_within_edge_window = true;
+        norm_opts.require_positive_dedge = true;
+        norm_opts.max_dedge_for_normalization_deg = 10.0;
+        norm_opts.norm_x_axis = OverallNormXAxis::XB;
+        norm_opts.output_dir = "output/normalization_study";
 
-    //     const std::vector<std::string> norm_labels = {
-    //         "Fa18 Inb",
-    //         "Fa18 Out",
-    //         "Sp19 Inb",
-    //         "Sp18 Inb",
-    //         "Sp18 Out",
-    //         "Fa18",
-    //         "Sp18",
-    //         "10.6 GeV"
-    //     };
+        const std::vector<std::string> norm_labels = {
+            "Fa18 Inb",
+            "Fa18 Out",
+            "Sp19 Inb",
+            "Sp18 Inb",
+            "Sp18 Out",
+            "Fa18",
+            "Sp18",
+            "10.6 GeV"
+        };
 
-    //     for (const std::string& label : norm_labels) {
-    //         if (!update_overall_normalization_study_csv(csv_main,
-    //                                                     label,
-    //                                                     "unpol",
-    //                                                     norm_opts)) {
-    //             std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
-    //                       << label << ".\n";
-    //             std::exit(EXIT_FAILURE);
-    //         }
-    //     }
-    // }
+        for (const std::string& label : norm_labels) {
+            if (!update_overall_normalization_study_csv(csv_main,
+                                                        label,
+                                                        "unpol",
+                                                        norm_opts)) {
+                std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
+                          << label << ".\n";
+                std::exit(EXIT_FAILURE);
+            }
+        }
+    }
 
-    // // --------- DVCS normalized cross sections (CSV + plots) ----------
-    // {
-    //     const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string theory_json_root   = "output/jsons/cross_sections";
-    //     const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
+    // --------- DVCS normalized cross sections (CSV + plots) ----------
+    {
+        const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string theory_json_root   = "output/jsons/cross_sections";
+        const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
 
-    //     if (!update_normed_cross_sections_csv(csv_main)) {
-    //         std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
-    //         return 1;
-    //     }
+        if (!update_normed_cross_sections_csv(csv_main)) {
+            std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
+            return 1;
+        }
 
-    //     const std::vector<std::string> labels = {
-    //         "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-    //         "Fa18", "Sp18", "10.6 GeV"
-    //     };
+        const std::vector<std::string> labels = {
+            "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
+            "Fa18", "Sp18", "10.6 GeV"
+        };
 
-    //     for (const auto &lab : labels) {
-    //         if (!plot_normed_cross_sections_for_label(csv_main,
-    //                                                   lab,
-    //                                                   theory_json_root,
-    //                                                   out_norm_xsec_root)) {
-    //             std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
-    //                       << lab << "\n";
-    //             return 1;
-    //         }
-    //     }
-    // }
+        for (const auto &lab : labels) {
+            if (!plot_normed_cross_sections_for_label(csv_main,
+                                                      lab,
+                                                      theory_json_root,
+                                                      out_norm_xsec_root)) {
+                std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
+                          << lab << "\n";
+                return 1;
+            }
+        }
+    }
 
     std::cout << "All done." << std::endl;
     return 0;
