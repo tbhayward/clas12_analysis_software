@@ -1122,9 +1122,23 @@ struct HelCounts {
 
 using RowCounts = std::unordered_map<int, HelCounts>;
 
+struct CutFlowSummary {
+    long long entries = 0;
+    long long valid_topology = 0;
+    long long global_pass = 0;
+    long long sigma_pass = 0;
+    long long matched = 0;
+
+    std::unordered_map<std::string, long long> topology_entries;
+    std::unordered_map<std::string, long long> topology_global_pass;
+    std::unordered_map<std::string, long long> topology_sigma_pass;
+    std::unordered_map<std::string, long long> topology_matched;
+};
+
 struct WorkCounts {
     RowCounts total_counts;
     std::unordered_map<std::string, RowCounts> topo_counts;
+    CutFlowSummary flow;
 };
 
 static inline bool passes_sigma_cuts(const ChannelConfig& channel_cfg,
@@ -1316,6 +1330,8 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     long long n_sigma_pass  = 0;
     long long n_used        = 0;
 
+    out.flow.entries = (long long)N;
+
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
 
@@ -1328,11 +1344,16 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                 continue;
             }
 
+            ++out.flow.valid_topology;
+            ++out.flow.topology_entries[topoDir];
+
             if (!passes_global_cuts_dispatch(b, tags.period_label)) {
                 continue;
             }
 
             ++n_global_pass;
+            ++out.flow.global_pass;
+            ++out.flow.topology_global_pass[topoDir];
 
             const std::string sig_key = combined_cuts_key(work_cfg.channel_cfg, tags, topoDir);
 
@@ -1341,6 +1362,8 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
             }
 
             ++n_sigma_pass;
+            ++out.flow.sigma_pass;
+            ++out.flow.topology_sigma_pass[topoDir];
         }
 
         const double phi_deg = b.phi_deg();
@@ -1397,6 +1420,11 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
 
         if (matched_any) {
             ++n_used;
+            ++out.flow.matched;
+
+            if (!is_gen) {
+                ++out.flow.topology_matched[topoDir];
+            }
         }
 
         if (dbg && i < 3) {
@@ -1467,10 +1495,46 @@ static RowCounts sum_row_counts(const RowCounts& a, const RowCounts& b) {
     return out;
 }
 
+static void add_count_map(std::unordered_map<std::string, long long>& dst,
+                          const std::unordered_map<std::string, long long>& src) {
+    for (const auto& kv : src) {
+        dst[kv.first] += kv.second;
+    }
+}
+
+static CutFlowSummary sum_cut_flow(const CutFlowSummary& a, const CutFlowSummary& b) {
+    CutFlowSummary out = a;
+
+    out.entries += b.entries;
+    out.valid_topology += b.valid_topology;
+    out.global_pass += b.global_pass;
+    out.sigma_pass += b.sigma_pass;
+    out.matched += b.matched;
+
+    add_count_map(out.topology_entries, b.topology_entries);
+    add_count_map(out.topology_global_pass, b.topology_global_pass);
+    add_count_map(out.topology_sigma_pass, b.topology_sigma_pass);
+    add_count_map(out.topology_matched, b.topology_matched);
+
+    return out;
+}
+
+static double row_counts_total(const RowCounts& rc) {
+    double total = 0.0;
+
+    for (const auto& kv : rc) {
+        const HelCounts& h = kv.second;
+        total += h.unpol + h.pos + h.neg;
+    }
+
+    return total;
+}
+
 struct CountCollection {
     WorkConfig work_cfg;
     std::unordered_map<std::string, RowCounts> total_by_period;
     std::unordered_map<std::string, std::unordered_map<std::string, RowCounts>> topo_by_period;
+    std::unordered_map<std::string, CutFlowSummary> flow_by_period;
 };
 
 static std::string collection_key(const WorkConfig& cfg) {
@@ -1486,6 +1550,314 @@ static std::string collection_key(const WorkConfig& cfg) {
     }
 
     return ss.str();
+}
+
+
+static const std::vector<std::string>& diagnostic_period_order() {
+    static const std::vector<std::string> periods = {
+        "Fa18 Inb",
+        "Sp18 Inb",
+        "Fa18 Out",
+        "Sp18 Out",
+        "Sp19 Inb"
+    };
+
+    return periods;
+}
+
+static const std::vector<std::string>& diagnostic_topology_order() {
+    static const std::vector<std::string> topologies = {
+        "FD_FD",
+        "CD_FD",
+        "CD_FT"
+    };
+
+    return topologies;
+}
+
+static double safe_ratio(double numerator, double denominator) {
+    if (!(std::isfinite(numerator) && std::isfinite(denominator)) || denominator == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return numerator / denominator;
+}
+
+static std::string fmt_diag(double v, int precision = 6) {
+    if (!std::isfinite(v)) {
+        return "nan";
+    }
+
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(precision) << v;
+    return ss.str();
+}
+
+static long long flow_stage_value(const CutFlowSummary& f, const std::string& stage) {
+    if (stage == "entries") return f.entries;
+    if (stage == "topology") return f.valid_topology;
+    if (stage == "global") return f.global_pass;
+    if (stage == "sigma") return f.sigma_pass;
+    if (stage == "matched") return f.matched;
+    return 0;
+}
+
+static long long flow_topology_stage_value(const CutFlowSummary& f,
+                                           const std::string& topo,
+                                           const std::string& stage) {
+    const std::unordered_map<std::string, long long>* m = nullptr;
+
+    if (stage == "topology") {
+        m = &f.topology_entries;
+    } else if (stage == "global") {
+        m = &f.topology_global_pass;
+    } else if (stage == "sigma") {
+        m = &f.topology_sigma_pass;
+    } else if (stage == "matched") {
+        m = &f.topology_matched;
+    } else {
+        return 0;
+    }
+
+    auto it = m->find(topo);
+    return (it == m->end()) ? 0 : it->second;
+}
+
+static const CountCollection* find_collection_by_channel_and_kind(
+    const std::map<std::string, CountCollection>& collections,
+    const std::string& csv_channel,
+    SampleKind kind) {
+
+    for (const auto& kv : collections) {
+        const CountCollection& C = kv.second;
+
+        if (C.work_cfg.channel_cfg.csv_channel == csv_channel &&
+            C.work_cfg.sample_kind == kind) {
+            return &C;
+        }
+    }
+
+    return nullptr;
+}
+
+static double period_row_count_total(const CountCollection* C,
+                                     const std::string& period) {
+    if (!C) return std::numeric_limits<double>::quiet_NaN();
+
+    auto it = C->total_by_period.find(period);
+    if (it == C->total_by_period.end()) return 0.0;
+
+    return row_counts_total(it->second);
+}
+
+static double period_topology_row_count_total(const CountCollection* C,
+                                              const std::string& period,
+                                              const std::string& topo) {
+    if (!C) return std::numeric_limits<double>::quiet_NaN();
+
+    auto ip = C->topo_by_period.find(period);
+    if (ip == C->topo_by_period.end()) return 0.0;
+
+    auto it = ip->second.find(topo);
+    if (it == ip->second.end()) return 0.0;
+
+    return row_counts_total(it->second);
+}
+
+static const CutFlowSummary* period_flow(const CountCollection& C,
+                                         const std::string& period) {
+    auto it = C.flow_by_period.find(period);
+    if (it == C.flow_by_period.end()) return nullptr;
+    return &(it->second);
+}
+
+static void print_period_ratio_line(const CountCollection& recC,
+                                    const CountCollection* genC,
+                                    const std::string& numerator,
+                                    const std::string& denominator) {
+    const CutFlowSummary* fn = period_flow(recC, numerator);
+    const CutFlowSummary* fd = period_flow(recC, denominator);
+
+    if (!fn || !fd) {
+        std::cout << "[total_counts][REC-MC-RATIO] channel="
+                  << recC.work_cfg.channel_cfg.csv_channel
+                  << " ratio=" << numerator << "/" << denominator
+                  << " missing_period_flow" << std::endl;
+        return;
+    }
+
+    const double gen_num = period_row_count_total(genC, numerator);
+    const double gen_den = period_row_count_total(genC, denominator);
+    const double rec_num = period_row_count_total(&recC, numerator);
+    const double rec_den = period_row_count_total(&recC, denominator);
+    const double acc_num = safe_ratio(rec_num, gen_num);
+    const double acc_den = safe_ratio(rec_den, gen_den);
+
+    std::cout << "[total_counts][REC-MC-RATIO] channel="
+              << recC.work_cfg.channel_cfg.csv_channel
+              << " ratio=" << numerator << "/" << denominator
+              << " entries=" << fmt_diag(safe_ratio((double)fn->entries, (double)fd->entries))
+              << " topology=" << fmt_diag(safe_ratio((double)fn->valid_topology, (double)fd->valid_topology))
+              << " global=" << fmt_diag(safe_ratio((double)fn->global_pass, (double)fd->global_pass))
+              << " sigma=" << fmt_diag(safe_ratio((double)fn->sigma_pass, (double)fd->sigma_pass))
+              << " matched=" << fmt_diag(safe_ratio((double)fn->matched, (double)fd->matched))
+              << " gen_matched=" << fmt_diag(safe_ratio(gen_num, gen_den))
+              << " csv_acceptance_like_double_input=" << fmt_diag(safe_ratio(acc_num, acc_den))
+              << " acc_num=" << fmt_diag(acc_num)
+              << " acc_den=" << fmt_diag(acc_den)
+              << std::endl;
+}
+
+static void print_topology_ratio_line(const CountCollection& recC,
+                                      const CountCollection* genC,
+                                      const std::string& numerator,
+                                      const std::string& denominator,
+                                      const std::string& topo) {
+    const CutFlowSummary* fn = period_flow(recC, numerator);
+    const CutFlowSummary* fd = period_flow(recC, denominator);
+
+    if (!fn || !fd) return;
+
+    const double gen_num = period_row_count_total(genC, numerator);
+    const double gen_den = period_row_count_total(genC, denominator);
+    const double rec_num = period_topology_row_count_total(&recC, numerator, topo);
+    const double rec_den = period_topology_row_count_total(&recC, denominator, topo);
+    const double acc_num = safe_ratio(rec_num, gen_num);
+    const double acc_den = safe_ratio(rec_den, gen_den);
+
+    std::cout << "[total_counts][REC-MC-TOPO-RATIO] channel="
+              << recC.work_cfg.channel_cfg.csv_channel
+              << " topo=" << topo
+              << " ratio=" << numerator << "/" << denominator
+              << " topology_entries=" << fmt_diag(safe_ratio(
+                     (double)flow_topology_stage_value(*fn, topo, "topology"),
+                     (double)flow_topology_stage_value(*fd, topo, "topology")))
+              << " global=" << fmt_diag(safe_ratio(
+                     (double)flow_topology_stage_value(*fn, topo, "global"),
+                     (double)flow_topology_stage_value(*fd, topo, "global")))
+              << " sigma=" << fmt_diag(safe_ratio(
+                     (double)flow_topology_stage_value(*fn, topo, "sigma"),
+                     (double)flow_topology_stage_value(*fd, topo, "sigma")))
+              << " matched=" << fmt_diag(safe_ratio(
+                     (double)flow_topology_stage_value(*fn, topo, "matched"),
+                     (double)flow_topology_stage_value(*fd, topo, "matched")))
+              << " rec_topo_over_gen_ratio=" << fmt_diag(safe_ratio(acc_num, acc_den))
+              << " acc_num=" << fmt_diag(acc_num)
+              << " acc_den=" << fmt_diag(acc_den)
+              << std::endl;
+}
+
+static void print_reconstructed_mc_survival_summary(
+    const std::map<std::string, CountCollection>& collections) {
+
+    std::cout << "\n[total_counts][REC-MC-SURVIVAL] =====================================================" << std::endl;
+    std::cout << "[total_counts][REC-MC-SURVIVAL] Reconstructed-MC cut-flow diagnostic." << std::endl;
+    std::cout << "[total_counts][REC-MC-SURVIVAL] Key stages: entries -> valid topology -> global cuts -> 3sigma cuts -> matched CSV bin." << std::endl;
+    std::cout << "[total_counts][REC-MC-SURVIVAL] The acceptance-like number here is final reconstructed matched counts divided by generated matched counts." << std::endl;
+
+    for (const auto& kv : collections) {
+        const CountCollection& recC = kv.second;
+
+        if (recC.work_cfg.sample_kind != SampleKind::MC_REC) {
+            continue;
+        }
+
+        const CountCollection* genC = find_collection_by_channel_and_kind(
+            collections,
+            recC.work_cfg.channel_cfg.csv_channel,
+            SampleKind::MC_GEN);
+
+        std::cout << "\n[total_counts][REC-MC-SURVIVAL] channel="
+                  << recC.work_cfg.channel_cfg.csv_channel << std::endl;
+
+        for (const std::string& period : diagnostic_period_order()) {
+            const CutFlowSummary* f = period_flow(recC, period);
+
+            if (!f) {
+                continue;
+            }
+
+            const double gen_matched = period_row_count_total(genC, period);
+            const double rec_matched = period_row_count_total(&recC, period);
+            const double acc_like = safe_ratio(rec_matched, gen_matched);
+
+            std::cout << "[total_counts][REC-MC-SURVIVAL] period=" << std::setw(9) << period
+                      << " entries=" << f->entries
+                      << " topology=" << f->valid_topology
+                      << " global=" << f->global_pass
+                      << " sigma=" << f->sigma_pass
+                      << " matched=" << f->matched
+                      << " f_topology=" << fmt_diag(safe_ratio((double)f->valid_topology, (double)f->entries))
+                      << " f_global/topology=" << fmt_diag(safe_ratio((double)f->global_pass, (double)f->valid_topology))
+                      << " f_sigma/global=" << fmt_diag(safe_ratio((double)f->sigma_pass, (double)f->global_pass))
+                      << " f_matched/sigma=" << fmt_diag(safe_ratio((double)f->matched, (double)f->sigma_pass))
+                      << " gen_matched=" << fmt_diag(gen_matched, 0)
+                      << " rec_matched=" << fmt_diag(rec_matched, 0)
+                      << " rec/gen=" << fmt_diag(acc_like)
+                      << std::endl;
+
+            for (const std::string& topo : diagnostic_topology_order()) {
+                const long long te = flow_topology_stage_value(*f, topo, "topology");
+                const long long tg = flow_topology_stage_value(*f, topo, "global");
+                const long long ts = flow_topology_stage_value(*f, topo, "sigma");
+                const long long tm = flow_topology_stage_value(*f, topo, "matched");
+                const double topo_rec_matched = period_topology_row_count_total(&recC, period, topo);
+                const double topo_acc_like = safe_ratio(topo_rec_matched, gen_matched);
+
+                std::cout << "[total_counts][REC-MC-SURVIVAL-TOPO] period=" << std::setw(9) << period
+                          << " topo=" << topo
+                          << " topology=" << te
+                          << " global=" << tg
+                          << " sigma=" << ts
+                          << " matched=" << tm
+                          << " f_global/topology=" << fmt_diag(safe_ratio((double)tg, (double)te))
+                          << " f_sigma/global=" << fmt_diag(safe_ratio((double)ts, (double)tg))
+                          << " f_matched/sigma=" << fmt_diag(safe_ratio((double)tm, (double)ts))
+                          << " rec_topo_matched=" << fmt_diag(topo_rec_matched, 0)
+                          << " rec_topo/gen=" << fmt_diag(topo_acc_like)
+                          << std::endl;
+            }
+        }
+
+        print_period_ratio_line(recC, genC, "Sp18 Inb", "Fa18 Inb");
+        print_period_ratio_line(recC, genC, "Sp18 Out", "Fa18 Out");
+
+        const CutFlowSummary* f_si = period_flow(recC, "Sp18 Inb");
+        const CutFlowSummary* f_fi = period_flow(recC, "Fa18 Inb");
+        const CutFlowSummary* f_so = period_flow(recC, "Sp18 Out");
+        const CutFlowSummary* f_fo = period_flow(recC, "Fa18 Out");
+
+        if (f_si && f_fi && f_so && f_fo) {
+            const std::vector<std::string> stages = {"entries", "topology", "global", "sigma", "matched"};
+
+            std::cout << "[total_counts][REC-MC-DOUBLE-RATIO] channel="
+                      << recC.work_cfg.channel_cfg.csv_channel;
+
+            for (const std::string& stage : stages) {
+                const double rinb = safe_ratio((double)flow_stage_value(*f_si, stage),
+                                               (double)flow_stage_value(*f_fi, stage));
+                const double rout = safe_ratio((double)flow_stage_value(*f_so, stage),
+                                               (double)flow_stage_value(*f_fo, stage));
+
+                std::cout << " " << stage << "=" << fmt_diag(safe_ratio(rinb, rout));
+            }
+
+            const double acc_si = safe_ratio(period_row_count_total(&recC, "Sp18 Inb"), period_row_count_total(genC, "Sp18 Inb"));
+            const double acc_fi = safe_ratio(period_row_count_total(&recC, "Fa18 Inb"), period_row_count_total(genC, "Fa18 Inb"));
+            const double acc_so = safe_ratio(period_row_count_total(&recC, "Sp18 Out"), period_row_count_total(genC, "Sp18 Out"));
+            const double acc_fo = safe_ratio(period_row_count_total(&recC, "Fa18 Out"), period_row_count_total(genC, "Fa18 Out"));
+
+            std::cout << " acceptance_like=" << fmt_diag(safe_ratio(safe_ratio(acc_si, acc_fi), safe_ratio(acc_so, acc_fo)))
+                      << std::endl;
+        }
+
+        for (const std::string& topo : diagnostic_topology_order()) {
+            print_topology_ratio_line(recC, genC, "Sp18 Inb", "Fa18 Inb", topo);
+            print_topology_ratio_line(recC, genC, "Sp18 Out", "Fa18 Out", topo);
+        }
+    }
+
+    std::cout << "[total_counts][REC-MC-SURVIVAL] =====================================================\n" << std::endl;
 }
 
 static void write_collection_to_csv(CSV& csv,
@@ -2243,6 +2615,10 @@ bool update_total_counts_csv(const std::string& csv_path,
                 sum_row_counts(C.total_by_period[w.tags.period_display],
                                counts.total_counts);
 
+            C.flow_by_period[w.tags.period_display] =
+                sum_cut_flow(C.flow_by_period[w.tags.period_display],
+                             counts.flow);
+
             for (const auto& kv : counts.topo_counts) {
                 const std::string& topoDir = kv.first;
                 const RowCounts& rc = kv.second;
@@ -2252,6 +2628,8 @@ bool update_total_counts_csv(const std::string& csv_path,
                                    rc);
             }
         }
+
+        print_reconstructed_mc_survival_summary(collections);
 
         for (const auto& kv : collections) {
             write_collection_to_csv(csv, kv.second);
