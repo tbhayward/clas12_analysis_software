@@ -1168,6 +1168,21 @@ struct BranchBinder {
     double t_abs() const {
         return std::fabs(t1);
     }
+
+    double delta_phi_value(bool& has_val) const {
+        if (has_Delta_phi) {
+            has_val = true;
+            return Delta_phi;
+        }
+
+        if (has_p1_phi && has_p2_phi) {
+            has_val = true;
+            return delta_phi_rad_from_two_phi(p1_phi, p2_phi);
+        }
+
+        has_val = false;
+        return 0.0;
+    }
 };
 
 // -----------------------------------------------------------------------------
