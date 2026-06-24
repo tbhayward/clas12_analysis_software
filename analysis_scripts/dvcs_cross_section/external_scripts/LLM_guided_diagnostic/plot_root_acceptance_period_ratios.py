@@ -60,6 +60,7 @@ class VariableConfig:
     xmax: float
     use_abs: bool = False
     wrap_phi_deg: bool = False
+    radians_to_degrees: bool = False
 
 
 VARIABLES = [
@@ -109,6 +110,7 @@ VARIABLES = [
         nbins=24,
         xmin=5.0,
         xmax=35.0,
+        radians_to_degrees=True,
     ),
     VariableConfig(
         key="theta_p",
@@ -118,6 +120,7 @@ VARIABLES = [
         nbins=24,
         xmin=15.0,
         xmax=75.0,
+        radians_to_degrees=True,
     ),
     VariableConfig(
         key="theta_gamma",
@@ -127,6 +130,7 @@ VARIABLES = [
         nbins=24,
         xmin=0.0,
         xmax=35.0,
+        radians_to_degrees=True,
     ),
     VariableConfig(
         key="W",
@@ -202,25 +206,36 @@ def find_tree_name(path: str, requested_tree: Optional[str] = None) -> str:
     raise RuntimeError(f"No TTree found in {path}")
 
 
+def auto_radians_to_degrees_if_needed(values: np.ndarray) -> np.ndarray:
+    x = np.asarray(values, dtype=float)
+    finite = x[np.isfinite(x)]
+
+    if finite.size == 0:
+        return x
+    #endif
+
+    max_abs = np.nanmax(np.abs(finite))
+
+    if max_abs <= 2.0 * math.pi + 0.1:
+        return x * 180.0 / math.pi
+    #endif
+
+    return x
+
+
 def transform_values(values: np.ndarray, cfg: VariableConfig) -> np.ndarray:
     x = np.asarray(values, dtype=float)
+
+    if cfg.radians_to_degrees:
+        x = auto_radians_to_degrees_if_needed(x)
+    #endif
 
     if cfg.use_abs:
         x = np.abs(x)
     #endif
 
     if cfg.wrap_phi_deg:
-        finite = x[np.isfinite(x)]
-
-        if finite.size > 0:
-            max_abs = np.nanmax(np.abs(finite))
-
-            # If phi appears to be in radians, convert to degrees.
-            if max_abs <= 2.0 * math.pi + 0.1:
-                x = x * 180.0 / math.pi
-            #endif
-        #endif
-
+        x = auto_radians_to_degrees_if_needed(x)
         x = np.mod(x + 360.0, 360.0)
     #endif
 
@@ -240,8 +255,6 @@ def hist_file_task(
     #endif
 
     actual_tree = find_tree_name(path, tree_name)
-
-    branches = sorted(set(cfg.branch for cfg in variable_configs))
 
     out = {
         "period": period,
@@ -275,12 +288,15 @@ def hist_file_task(
 
         for cfg in usable_configs:
             edges = np.linspace(cfg.xmin, cfg.xmax, cfg.nbins + 1)
+
             out["variables"][cfg.key] = {
                 "branch": cfg.branch,
                 "edges": edges,
                 "counts": np.zeros(cfg.nbins, dtype=float),
                 "n_finite": 0,
                 "n_in_range": 0,
+                "finite_min": np.nan,
+                "finite_max": np.nan,
             }
         #endfor
 
@@ -302,6 +318,10 @@ def hist_file_task(
                 finite_mask = np.isfinite(vals)
                 vals_finite = vals[finite_mask]
 
+                if vals_finite.size == 0:
+                    continue
+                #endif
+
                 edges = out["variables"][cfg.key]["edges"]
                 counts, _ = np.histogram(vals_finite, bins=edges)
 
@@ -310,9 +330,29 @@ def hist_file_task(
                     & (vals_finite < cfg.xmax)
                 )
 
+                old_min = out["variables"][cfg.key]["finite_min"]
+                old_max = out["variables"][cfg.key]["finite_max"]
+
+                batch_min = float(np.nanmin(vals_finite))
+                batch_max = float(np.nanmax(vals_finite))
+
+                if not np.isfinite(old_min):
+                    new_min = batch_min
+                else:
+                    new_min = min(old_min, batch_min)
+                #endif
+
+                if not np.isfinite(old_max):
+                    new_max = batch_max
+                else:
+                    new_max = max(old_max, batch_max)
+                #endif
+
                 out["variables"][cfg.key]["counts"] += counts.astype(float)
                 out["variables"][cfg.key]["n_finite"] += int(vals_finite.size)
                 out["variables"][cfg.key]["n_in_range"] += int(np.sum(in_range))
+                out["variables"][cfg.key]["finite_min"] = new_min
+                out["variables"][cfg.key]["finite_max"] = new_max
             #endfor
         #endfor
     #endwith
@@ -333,18 +373,16 @@ def compute_acceptance(
     valid = gen > 0.0
     acc[valid] = rec[valid] / gen[valid]
 
-    # Binomial-style uncertainty. This is approximate; it is mainly diagnostic.
     good = valid & (acc >= 0.0)
-
     acc_clipped = np.clip(acc[good], 0.0, 1.0)
+
     acc_err[good] = np.sqrt(acc_clipped * (1.0 - acc_clipped) / gen[good])
 
-    # If rec/gen exceeds one because of weighting or bookkeeping, fall back to
-    # independent Poisson propagation.
     above_one = valid & (acc > 1.0)
     rel2 = np.zeros_like(gen, dtype=float)
 
     rec_pos = rec > 0.0
+
     rel2[above_one & rec_pos] += 1.0 / rec[above_one & rec_pos]
     rel2[above_one] += 1.0 / gen[above_one]
 
@@ -384,6 +422,36 @@ def ratio_with_error(
     return ratio, ratio_err
 
 
+def integrated_acceptance_from_counts(
+    gen_counts: np.ndarray,
+    rec_counts: np.ndarray,
+) -> Tuple[float, float, float, float]:
+    gen_total = float(np.nansum(gen_counts))
+    rec_total = float(np.nansum(rec_counts))
+
+    if gen_total <= 0.0:
+        return gen_total, rec_total, np.nan, np.nan
+    #endif
+
+    acc = rec_total / gen_total
+
+    acc_clipped = min(max(acc, 0.0), 1.0)
+    acc_err = math.sqrt(acc_clipped * (1.0 - acc_clipped) / gen_total)
+
+    if acc > 1.0:
+        rel2 = 0.0
+
+        if rec_total > 0.0:
+            rel2 += 1.0 / rec_total
+        #endif
+
+        rel2 += 1.0 / gen_total
+        acc_err = acc * math.sqrt(rel2)
+    #endif
+
+    return gen_total, rec_total, acc, acc_err
+
+
 def make_variable_plot(
     cfg: VariableConfig,
     acceptances: Dict,
@@ -416,6 +484,19 @@ def make_variable_plot(
         edges = acceptances[num_period][cfg.key]["edges"]
         centers = 0.5 * (edges[:-1] + edges[1:])
 
+        _, _, integrated_num, integrated_num_err = integrated_acceptance_from_counts(gen_num, rec_num)
+        _, _, integrated_den, integrated_den_err = integrated_acceptance_from_counts(gen_den, rec_den)
+
+        integrated_ratio_arr, integrated_ratio_err_arr = ratio_with_error(
+            np.array([integrated_num]),
+            np.array([integrated_den]),
+            np.array([integrated_num_err]),
+            np.array([integrated_den_err]),
+        )
+
+        integrated_ratio = integrated_ratio_arr[0]
+        integrated_ratio_err = integrated_ratio_err_arr[0]
+
         ax.errorbar(
             centers,
             ratio,
@@ -427,6 +508,16 @@ def make_variable_plot(
             capsize=2.5,
             label=panel_title,
         )
+
+        if np.isfinite(integrated_ratio):
+            ax.axhline(
+                integrated_ratio,
+                linestyle="--",
+                linewidth=1.0,
+                alpha=0.8,
+                label=f"integrated = {integrated_ratio:.3f}",
+            )
+        #endif
 
         ax.axhline(1.0, linestyle=":", linewidth=1.2)
         ax.set_title(panel_title, fontsize=13)
@@ -457,6 +548,12 @@ def make_variable_plot(
                 "acceptance_den_err": acc_den_err[ibin],
                 "acceptance_ratio": ratio[ibin],
                 "acceptance_ratio_err": ratio_err[ibin],
+                "integrated_acceptance_num": integrated_num,
+                "integrated_acceptance_num_err": integrated_num_err,
+                "integrated_acceptance_den": integrated_den,
+                "integrated_acceptance_den_err": integrated_den_err,
+                "integrated_acceptance_ratio": integrated_ratio,
+                "integrated_acceptance_ratio_err": integrated_ratio_err,
             })
         #endfor
     #endfor
@@ -505,6 +602,17 @@ def write_summary(path: str, file_results: Dict, acceptances: Dict, diagnostic_r
         f.write("ROOT-level DVCS MC acceptance comparison\n")
         f.write("========================================\n\n")
 
+        f.write("Interpretation note\n")
+        f.write("-------------------\n")
+        f.write(
+            "This script computes acceptance directly from ROOT trees as N_rec/N_gen.\n"
+            "It does not apply the later DVCS analysis binning, topology filters,\n"
+            "fiducial/exclusivity cuts, or CSV-level validity masks. Therefore, if\n"
+            "these ROOT-level ratios are similar for inbending and outbending but the\n"
+            "CSV-level ratios are not, the discrepancy is likely introduced downstream\n"
+            "in the analysis code that reads and filters these trees.\n\n"
+        )
+
         f.write("Files processed\n")
         f.write("---------------\n")
 
@@ -546,6 +654,33 @@ def write_summary(path: str, file_results: Dict, acceptances: Dict, diagnostic_r
             #endfor
         #endfor
 
+        f.write("\nBranch finite ranges after transformations\n")
+        f.write("------------------------------------------\n")
+
+        for cfg in VARIABLES:
+            f.write(f"\n{cfg.key} ({cfg.branch})\n")
+
+            for period in ["Fa18 Inb", "Sp18 Inb", "Fa18 Out", "Sp18 Out"]:
+                for sample_type in ["gen", "rec"]:
+                    r = file_results[period][sample_type]
+
+                    if cfg.key not in r["variables"]:
+                        continue
+                    #endif
+
+                    vr = r["variables"][cfg.key]
+
+                    f.write(
+                        f"  {period:10s} {sample_type:3s} "
+                        f"finite_min={vr['finite_min']:.6g} "
+                        f"finite_max={vr['finite_max']:.6g} "
+                        f"n_finite={vr['n_finite']} "
+                        f"n_in_range={vr['n_in_range']}\n"
+                    )
+                #endfor
+            #endfor
+        #endfor
+
         f.write("\nMedian acceptance ratios by variable\n")
         f.write("------------------------------------\n")
 
@@ -566,17 +701,33 @@ def write_summary(path: str, file_results: Dict, acceptances: Dict, diagnostic_r
                     )
                 ]
 
+                integrated_vals = [
+                    row["integrated_acceptance_ratio"]
+                    for row in diagnostic_rows
+                    if (
+                        row["variable"] == cfg.key
+                        and row["ratio_label"] == ratio_label
+                        and np.isfinite(row["integrated_acceptance_ratio"])
+                    )
+                ]
+
                 if not vals:
                     continue
                 #endif
 
                 vals = np.asarray(vals, dtype=float)
 
+                integrated_ratio = np.nan
+                if integrated_vals:
+                    integrated_ratio = float(integrated_vals[0])
+                #endif
+
                 f.write(
                     f"  {ratio_label:35s} "
                     f"median={np.nanmedian(vals):.4g} "
                     f"p16={np.nanpercentile(vals, 16):.4g} "
-                    f"p84={np.nanpercentile(vals, 84):.4g}\n"
+                    f"p84={np.nanpercentile(vals, 84):.4g} "
+                    f"integrated={integrated_ratio:.4g}\n"
                 )
             #endfor
         #endfor
@@ -652,6 +803,7 @@ def main() -> None:
             #endtry
 
             file_results[period][sample_type] = result
+
             print(
                 f"[root acceptance] Done {period:10s} {sample_type:3s}: "
                 f"entries={result['n_entries_tree']} tree={result['tree']}"
