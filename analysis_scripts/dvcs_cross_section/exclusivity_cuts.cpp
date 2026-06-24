@@ -30,6 +30,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -596,6 +598,128 @@ static void writeCutDictJson(std::ostream& os, const CutDict& cd) {
     os << "}}";
 }
 
+static double safeRatio(double num, double den) {
+    if (!(std::isfinite(num) && std::isfinite(den)) || den == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    return num / den;
+}
+
+static std::string fmtDiag(double v, int precision = 6) {
+    if (!std::isfinite(v)) {
+        return "nan";
+    }
+
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(precision) << v;
+    return ss.str();
+}
+
+static const CutDict* findCutDict(const std::map<std::string, CutDict>& combined,
+                                  const std::string& prefix,
+                                  const std::string& period,
+                                  const std::string& topo) {
+    const std::string key = prefix + "_" + period + "_" + topo;
+    auto it = combined.find(key);
+
+    if (it == combined.end()) {
+        return nullptr;
+    }
+
+    return &(it->second);
+}
+
+static void writeExclusivityRatioDiagnostics(const std::string& outJsonDir,
+                                             const std::map<std::string, CutDict>& combined) {
+    const std::string path = outJsonDir + "/exclusivity_mc_shape_double_ratios.csv";
+    std::ofstream out(path);
+
+    if (!out) {
+        std::cerr << "[exclusivity_cuts] WARNING: cannot write diagnostic CSV: " << path << std::endl;
+        return;
+    }
+
+    out << "channel,topology,variable,"
+        << "fa18_inb_mean,sp18_inb_mean,fa18_out_mean,sp18_out_mean,"
+        << "sp18_inb_over_fa18_inb_mean,sp18_out_over_fa18_out_mean,mean_double_ratio,"
+        << "fa18_inb_std,sp18_inb_std,fa18_out_std,sp18_out_std,"
+        << "sp18_inb_over_fa18_inb_std,sp18_out_over_fa18_out_std,std_double_ratio\n";
+
+    const std::vector<std::string> channels = {"DVCS", "eppi0"};
+    const std::vector<std::string> topologies = {"FD_FD", "CD_FD", "CD_FT"};
+
+    for (const std::string& ch : channels) {
+        for (const std::string& topo : topologies) {
+            const CutDict* fa_in = findCutDict(combined, ch, "Fa18_Inb", topo);
+            const CutDict* sp_in = findCutDict(combined, ch, "Sp18_Inb", topo);
+            const CutDict* fa_out = findCutDict(combined, ch, "Fa18_Out", topo);
+            const CutDict* sp_out = findCutDict(combined, ch, "Sp18_Out", topo);
+
+            if (!(fa_in && sp_in && fa_out && sp_out)) {
+                continue;
+            }
+
+            std::vector<std::string> vars;
+
+            for (const auto& kv : fa_in->mc) {
+                vars.push_back(kv.first);
+            }
+
+            std::sort(vars.begin(), vars.end());
+
+            for (const std::string& var : vars) {
+                auto getStats = [&](const CutDict* cd)->Stats {
+                    auto it = cd->mc.find(var);
+                    if (it == cd->mc.end()) {
+                        return {std::numeric_limits<double>::quiet_NaN(),
+                                std::numeric_limits<double>::quiet_NaN()};
+                    }
+                    return it->second;
+                };
+
+                const Stats fi = getStats(fa_in);
+                const Stats si = getStats(sp_in);
+                const Stats fo = getStats(fa_out);
+                const Stats so = getStats(sp_out);
+
+                const double rin_mean = safeRatio(si.mean, fi.mean);
+                const double rout_mean = safeRatio(so.mean, fo.mean);
+                const double d_mean = safeRatio(rin_mean, rout_mean);
+
+                const double rin_std = safeRatio(si.std, fi.std);
+                const double rout_std = safeRatio(so.std, fo.std);
+                const double d_std = safeRatio(rin_std, rout_std);
+
+                out << ch << "," << topo << "," << var << ","
+                    << fmtDiag(fi.mean) << "," << fmtDiag(si.mean) << ","
+                    << fmtDiag(fo.mean) << "," << fmtDiag(so.mean) << ","
+                    << fmtDiag(rin_mean) << "," << fmtDiag(rout_mean) << ","
+                    << fmtDiag(d_mean) << ","
+                    << fmtDiag(fi.std) << "," << fmtDiag(si.std) << ","
+                    << fmtDiag(fo.std) << "," << fmtDiag(so.std) << ","
+                    << fmtDiag(rin_std) << "," << fmtDiag(rout_std) << ","
+                    << fmtDiag(d_std) << "\n";
+
+                if (ch == "DVCS") {
+                    std::cout << "[exclusivity_cuts][MC-SHAPE-RATIO] channel=" << ch
+                              << " topo=" << topo
+                              << " var=" << var
+                              << " mean_Sp18Inb/Fa18Inb=" << fmtDiag(rin_mean)
+                              << " mean_Sp18Out/Fa18Out=" << fmtDiag(rout_mean)
+                              << " mean_double=" << fmtDiag(d_mean)
+                              << " std_Sp18Inb/Fa18Inb=" << fmtDiag(rin_std)
+                              << " std_Sp18Out/Fa18Out=" << fmtDiag(rout_std)
+                              << " std_double=" << fmtDiag(d_std)
+                              << std::endl;
+                }
+            }
+        }
+    }
+
+    std::cout << "[exclusivity_cuts] Wrote MC shape-ratio diagnostic CSV: " << path << std::endl;
+}
+
 static void writeCombinedJson(const std::string& outJsonDir,
                               const std::map<std::string, CutDict>& combined) {
     std::string path = outJsonDir + "/combined_cuts.json";
@@ -778,6 +902,7 @@ void runAllExclusivityCuts(
     for (auto& t : threads) t.join();
 
     writeCombinedJson(outJsonDir, combined);
+    writeExclusivityRatioDiagnostics(outJsonDir, combined);
 
     std::cout << "[All done] Exclusivity cuts ran for " << work.size()
               << " period(s) with up to " << nworkers << " worker(s)." << std::endl;

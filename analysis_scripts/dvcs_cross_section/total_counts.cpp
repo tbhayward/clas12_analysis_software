@@ -1133,6 +1133,15 @@ struct CutFlowSummary {
     std::unordered_map<std::string, long long> topology_global_pass;
     std::unordered_map<std::string, long long> topology_sigma_pass;
     std::unordered_map<std::string, long long> topology_matched;
+
+    // Diagnostic only. These are evaluated after topology + global cuts.
+    // sigma_single_pass[var] = number of events passing that one 3-sigma cut alone.
+    // sigma_cumulative_pass[var] = number of events surviving the ordered cumulative
+    // sequence up to and including that variable.
+    std::unordered_map<std::string, long long> sigma_single_pass;
+    std::unordered_map<std::string, long long> sigma_cumulative_pass;
+    std::unordered_map<std::string, std::unordered_map<std::string, long long>> topology_sigma_single_pass;
+    std::unordered_map<std::string, std::unordered_map<std::string, long long>> topology_sigma_cumulative_pass;
 };
 
 struct WorkCounts {
@@ -1141,10 +1150,81 @@ struct WorkCounts {
     CutFlowSummary flow;
 };
 
-static inline bool passes_sigma_cuts(const ChannelConfig& channel_cfg,
-                                     const TopoCutMap& cuts,
-                                     const std::string& key,
-                                     const BranchBinder& b) {
+static std::vector<std::string> sigma_variable_order(const ChannelConfig& channel_cfg) {
+    std::vector<std::string> vars;
+
+    vars.push_back("Emiss2");
+    vars.push_back("Mx2");
+    vars.push_back("Mx2_1");
+    vars.push_back("Mx2_2");
+    vars.push_back("pTmiss");
+    vars.push_back("xF");
+
+    if (channel_cfg.channel == Channel::EPPI0) {
+        vars.push_back("theta_pi0_pi0");
+    } else {
+        vars.push_back("theta_gamma_gamma");
+    }
+
+    return vars;
+}
+
+static inline double branch_value_for_sigma_var(const BranchBinder& b,
+                                                const std::string& var,
+                                                bool& has_val) {
+    has_val = true;
+
+    if (var == "Emiss2") {
+        has_val = b.has_Emiss2;
+        return b.Emiss2;
+    }
+
+    if (var == "Mx2") {
+        has_val = b.has_Mx2;
+        return b.Mx2;
+    }
+
+    if (var == "Mx2_1") {
+        has_val = b.has_Mx2_1;
+        return b.Mx2_1;
+    }
+
+    if (var == "Mx2_2") {
+        has_val = b.has_Mx2_2;
+        return b.Mx2_2;
+    }
+
+    if (var == "pTmiss") {
+        has_val = b.has_pTmiss;
+        return b.pTmiss;
+    }
+
+    if (var == "xF") {
+        has_val = b.has_xF;
+        return b.xF;
+    }
+
+    if (var == "theta_gamma_gamma") {
+        has_val = b.has_theta_gamma_gamma;
+        return b.theta_gamma_gamma;
+    }
+
+    if (var == "theta_pi0_pi0") {
+        has_val = b.has_theta_pi0_pi0;
+        return b.theta_pi0_pi0;
+    }
+
+    has_val = false;
+    return 0.0;
+}
+
+static inline bool passes_one_sigma_cut(const ChannelConfig& channel_cfg,
+                                        const TopoCutMap& cuts,
+                                        const std::string& key,
+                                        const BranchBinder& b,
+                                        const std::string& var) {
+    (void)channel_cfg;
+
     auto it = cuts.find(key);
 
     if (it == cuts.end()) {
@@ -1155,60 +1235,72 @@ static inline bool passes_sigma_cuts(const ChannelConfig& channel_cfg,
     }
 
     const CutVarMap& vm = it->second;
+    auto iv = vm.find(var);
 
-    auto check = [&](const char* var, bool has_val, double val) {
-        auto iv = vm.find(var);
-
-        if (iv == vm.end()) {
-            return true;
-        }
-
-        if (!has_val) {
-            std::ostringstream ss;
-            ss << "[total_counts] FATAL: cut key '" << key
-               << "' requires variable '" << var
-               << "', but the branch is missing in this tree.";
-            fatal(ss.str());
-        }
-
-        return within_3sigma(val, iv->second);
-    };
-
-    if (!check("Emiss2", b.has_Emiss2, b.Emiss2)) {
-        return false;
+    // If this variable is not in the cut map, it is not active for this channel/topology.
+    if (iv == vm.end()) {
+        return true;
     }
 
-    if (!check("Mx2", b.has_Mx2, b.Mx2)) {
-        return false;
+    bool has_val = false;
+    const double val = branch_value_for_sigma_var(b, var, has_val);
+
+    if (!has_val) {
+        std::ostringstream ss;
+        ss << "[total_counts] FATAL: cut key '" << key
+           << "' requires variable '" << var
+           << "', but the branch is missing in this tree.";
+        fatal(ss.str());
     }
 
-    if (!check("Mx2_1", b.has_Mx2_1, b.Mx2_1)) {
-        return false;
-    }
+    return within_3sigma(val, iv->second);
+}
 
-    if (!check("Mx2_2", b.has_Mx2_2, b.Mx2_2)) {
-        return false;
-    }
+static inline bool passes_sigma_cuts(const ChannelConfig& channel_cfg,
+                                     const TopoCutMap& cuts,
+                                     const std::string& key,
+                                     const BranchBinder& b) {
+    const std::vector<std::string> vars = sigma_variable_order(channel_cfg);
 
-    if (!check("pTmiss", b.has_pTmiss, b.pTmiss)) {
-        return false;
-    }
-
-    if (!check("xF", b.has_xF, b.xF)) {
-        return false;
-    }
-
-    if (channel_cfg.channel == Channel::EPPI0) {
-        if (!check("theta_pi0_pi0", b.has_theta_pi0_pi0, b.theta_pi0_pi0)) {
-            return false;
-        }
-    } else {
-        if (!check("theta_gamma_gamma", b.has_theta_gamma_gamma, b.theta_gamma_gamma)) {
+    for (const std::string& var : vars) {
+        if (!passes_one_sigma_cut(channel_cfg, cuts, key, b, var)) {
             return false;
         }
     }
 
     return true;
+}
+
+static inline bool fill_sigma_cut_diagnostics(const ChannelConfig& channel_cfg,
+                                              const TopoCutMap& cuts,
+                                              const std::string& key,
+                                              const BranchBinder& b,
+                                              CutFlowSummary& flow,
+                                              const std::string& topoDir) {
+    const std::vector<std::string> vars = sigma_variable_order(channel_cfg);
+
+    bool cumulative_ok = true;
+    bool all_ok = true;
+
+    for (const std::string& var : vars) {
+        const bool pass_this = passes_one_sigma_cut(channel_cfg, cuts, key, b, var);
+
+        if (pass_this) {
+            ++flow.sigma_single_pass[var];
+            ++flow.topology_sigma_single_pass[topoDir][var];
+        } else {
+            all_ok = false;
+        }
+
+        if (cumulative_ok && pass_this) {
+            ++flow.sigma_cumulative_pass[var];
+            ++flow.topology_sigma_cumulative_pass[topoDir][var];
+        } else {
+            cumulative_ok = false;
+        }
+    }
+
+    return all_ok;
 }
 
 static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
@@ -1357,7 +1449,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
 
             const std::string sig_key = combined_cuts_key(work_cfg.channel_cfg, tags, topoDir);
 
-            if (!passes_sigma_cuts(work_cfg.channel_cfg, sigma_cuts, sig_key, b)) {
+            if (!fill_sigma_cut_diagnostics(work_cfg.channel_cfg, sigma_cuts, sig_key, b, out.flow, topoDir)) {
                 continue;
             }
 
@@ -1502,6 +1594,16 @@ static void add_count_map(std::unordered_map<std::string, long long>& dst,
     }
 }
 
+static void add_nested_count_map(
+    std::unordered_map<std::string, std::unordered_map<std::string, long long>>& dst,
+    const std::unordered_map<std::string, std::unordered_map<std::string, long long>>& src) {
+    for (const auto& outer : src) {
+        for (const auto& inner : outer.second) {
+            dst[outer.first][inner.first] += inner.second;
+        }
+    }
+}
+
 static CutFlowSummary sum_cut_flow(const CutFlowSummary& a, const CutFlowSummary& b) {
     CutFlowSummary out = a;
 
@@ -1515,6 +1617,11 @@ static CutFlowSummary sum_cut_flow(const CutFlowSummary& a, const CutFlowSummary
     add_count_map(out.topology_global_pass, b.topology_global_pass);
     add_count_map(out.topology_sigma_pass, b.topology_sigma_pass);
     add_count_map(out.topology_matched, b.topology_matched);
+
+    add_count_map(out.sigma_single_pass, b.sigma_single_pass);
+    add_count_map(out.sigma_cumulative_pass, b.sigma_cumulative_pass);
+    add_nested_count_map(out.topology_sigma_single_pass, b.topology_sigma_single_pass);
+    add_nested_count_map(out.topology_sigma_cumulative_pass, b.topology_sigma_cumulative_pass);
 
     return out;
 }
@@ -1747,6 +1854,260 @@ static void print_topology_ratio_line(const CountCollection& recC,
               << std::endl;
 }
 
+static long long flow_sigma_var_value(const CutFlowSummary& f,
+                                      const std::string& mode,
+                                      const std::string& var) {
+    const std::unordered_map<std::string, long long>* m = nullptr;
+
+    if (mode == "single") {
+        m = &f.sigma_single_pass;
+    } else if (mode == "cumulative") {
+        m = &f.sigma_cumulative_pass;
+    } else {
+        return 0;
+    }
+
+    auto it = m->find(var);
+    return (it == m->end()) ? 0 : it->second;
+}
+
+static long long flow_topology_sigma_var_value(const CutFlowSummary& f,
+                                               const std::string& topo,
+                                               const std::string& mode,
+                                               const std::string& var) {
+    const std::unordered_map<std::string, std::unordered_map<std::string, long long>>* outer = nullptr;
+
+    if (mode == "single") {
+        outer = &f.topology_sigma_single_pass;
+    } else if (mode == "cumulative") {
+        outer = &f.topology_sigma_cumulative_pass;
+    } else {
+        return 0;
+    }
+
+    auto ito = outer->find(topo);
+
+    if (ito == outer->end()) {
+        return 0;
+    }
+
+    auto iti = ito->second.find(var);
+    return (iti == ito->second.end()) ? 0 : iti->second;
+}
+
+static void print_sigma_variable_period_lines(const CountCollection& recC,
+                                              const CutFlowSummary& f,
+                                              const std::string& period,
+                                              const std::string& topo) {
+    const std::vector<std::string> vars = sigma_variable_order(recC.work_cfg.channel_cfg);
+
+    const double denominator = (topo == "ALL")
+        ? (double)f.global_pass
+        : (double)flow_topology_stage_value(f, topo, "global");
+
+    for (const std::string& var : vars) {
+        const long long single_count = (topo == "ALL")
+            ? flow_sigma_var_value(f, "single", var)
+            : flow_topology_sigma_var_value(f, topo, "single", var);
+
+        const long long cumulative_count = (topo == "ALL")
+            ? flow_sigma_var_value(f, "cumulative", var)
+            : flow_topology_sigma_var_value(f, topo, "cumulative", var);
+
+        std::cout << "[total_counts][REC-MC-SIGMA-CUT] channel="
+                  << recC.work_cfg.channel_cfg.csv_channel
+                  << " period=" << period
+                  << " topo=" << topo
+                  << " var=" << var
+                  << " single=" << single_count
+                  << " cumulative=" << cumulative_count
+                  << " single/global=" << fmt_diag(safe_ratio((double)single_count, denominator))
+                  << " cumulative/global=" << fmt_diag(safe_ratio((double)cumulative_count, denominator))
+                  << std::endl;
+    }
+}
+
+static void print_sigma_variable_ratio_lines(const CountCollection& recC,
+                                             const std::string& topo) {
+    const CutFlowSummary* f_si = period_flow(recC, "Sp18 Inb");
+    const CutFlowSummary* f_fi = period_flow(recC, "Fa18 Inb");
+    const CutFlowSummary* f_so = period_flow(recC, "Sp18 Out");
+    const CutFlowSummary* f_fo = period_flow(recC, "Fa18 Out");
+
+    if (!(f_si && f_fi && f_so && f_fo)) {
+        return;
+    }
+
+    const std::vector<std::string> vars = sigma_variable_order(recC.work_cfg.channel_cfg);
+
+    auto denom = [&](const CutFlowSummary& f)->double {
+        return (topo == "ALL")
+            ? (double)f.global_pass
+            : (double)flow_topology_stage_value(f, topo, "global");
+    };
+
+    auto val = [&](const CutFlowSummary& f, const std::string& mode, const std::string& var)->double {
+        const long long n = (topo == "ALL")
+            ? flow_sigma_var_value(f, mode, var)
+            : flow_topology_sigma_var_value(f, topo, mode, var);
+
+        return safe_ratio((double)n, denom(f));
+    };
+
+    for (const std::string& var : vars) {
+        for (const std::string& mode : {std::string("single"), std::string("cumulative")}) {
+            const double rinb = safe_ratio(val(*f_si, mode, var), val(*f_fi, mode, var));
+            const double rout = safe_ratio(val(*f_so, mode, var), val(*f_fo, mode, var));
+
+            std::cout << "[total_counts][REC-MC-SIGMA-RATIO] channel="
+                      << recC.work_cfg.channel_cfg.csv_channel
+                      << " topo=" << topo
+                      << " var=" << var
+                      << " mode=" << mode
+                      << " Sp18Inb_over_Fa18Inb=" << fmt_diag(rinb)
+                      << " Sp18Out_over_Fa18Out=" << fmt_diag(rout)
+                      << " double_ratio=" << fmt_diag(safe_ratio(rinb, rout))
+                      << std::endl;
+        }
+    }
+}
+
+static void write_reconstructed_mc_survival_csv(const std::map<std::string, CountCollection>& collections,
+                                                const std::string& out_root_dir) {
+    const std::string root = normalize_total_counts_root(out_root_dir);
+    mkdir_p(root);
+
+    const std::string path = root + "/reconstructed_mc_cutflow_diagnostics.csv";
+    std::ofstream out(path);
+
+    if (!out) {
+        std::cerr << "[total_counts] WARNING: could not write diagnostic CSV: " << path << std::endl;
+        return;
+    }
+
+    out << "channel,period,topology,stage,variable,mode,count,denominator,fraction,"
+        << "Sp18Inb_over_Fa18Inb,Sp18Out_over_Fa18Out,double_ratio\n";
+
+    auto write_row = [&](const std::string& channel,
+                         const std::string& period,
+                         const std::string& topo,
+                         const std::string& stage,
+                         const std::string& var,
+                         const std::string& mode,
+                         double count,
+                         double denominator,
+                         double rinb,
+                         double rout) {
+        out << channel << "," << period << "," << topo << ","
+            << stage << "," << var << "," << mode << ","
+            << fmt_diag(count) << "," << fmt_diag(denominator) << ","
+            << fmt_diag(safe_ratio(count, denominator)) << ","
+            << fmt_diag(rinb) << "," << fmt_diag(rout) << ","
+            << fmt_diag(safe_ratio(rinb, rout)) << "\n";
+    };
+
+    for (const auto& kv : collections) {
+        const CountCollection& recC = kv.second;
+
+        if (recC.work_cfg.sample_kind != SampleKind::MC_REC) {
+            continue;
+        }
+
+        for (const std::string& period : diagnostic_period_order()) {
+            const CutFlowSummary* f = period_flow(recC, period);
+
+            if (!f) {
+                continue;
+            }
+
+            for (const std::string& topo : std::vector<std::string>{"ALL", "FD_FD", "CD_FD", "CD_FT"}) {
+                const double den = (topo == "ALL")
+                    ? (double)f->global_pass
+                    : (double)flow_topology_stage_value(*f, topo, "global");
+
+                const long long sigma_count = (topo == "ALL")
+                    ? f->sigma_pass
+                    : flow_topology_stage_value(*f, topo, "sigma");
+
+                write_row(recC.work_cfg.channel_cfg.csv_channel, period, topo,
+                          "sigma_all", "all", "all", sigma_count, den,
+                          std::numeric_limits<double>::quiet_NaN(),
+                          std::numeric_limits<double>::quiet_NaN());
+
+                for (const std::string& var : sigma_variable_order(recC.work_cfg.channel_cfg)) {
+                    const long long single_count = (topo == "ALL")
+                        ? flow_sigma_var_value(*f, "single", var)
+                        : flow_topology_sigma_var_value(*f, topo, "single", var);
+                    const long long cumulative_count = (topo == "ALL")
+                        ? flow_sigma_var_value(*f, "cumulative", var)
+                        : flow_topology_sigma_var_value(*f, topo, "cumulative", var);
+
+                    write_row(recC.work_cfg.channel_cfg.csv_channel, period, topo,
+                              "sigma_var", var, "single", single_count, den,
+                              std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::quiet_NaN());
+
+                    write_row(recC.work_cfg.channel_cfg.csv_channel, period, topo,
+                              "sigma_var", var, "cumulative", cumulative_count, den,
+                              std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::quiet_NaN());
+                }
+            }
+        }
+
+        for (const std::string& topo : std::vector<std::string>{"ALL", "FD_FD", "CD_FD", "CD_FT"}) {
+            const CutFlowSummary* f_si = period_flow(recC, "Sp18 Inb");
+            const CutFlowSummary* f_fi = period_flow(recC, "Fa18 Inb");
+            const CutFlowSummary* f_so = period_flow(recC, "Sp18 Out");
+            const CutFlowSummary* f_fo = period_flow(recC, "Fa18 Out");
+
+            if (!(f_si && f_fi && f_so && f_fo)) {
+                continue;
+            }
+
+            auto den = [&](const CutFlowSummary& f)->double {
+                return (topo == "ALL")
+                    ? (double)f.global_pass
+                    : (double)flow_topology_stage_value(f, topo, "global");
+            };
+
+            auto frac = [&](const CutFlowSummary& f, const std::string& mode, const std::string& var)->double {
+                const long long n = (mode == "all")
+                    ? ((topo == "ALL") ? f.sigma_pass : flow_topology_stage_value(f, topo, "sigma"))
+                    : ((topo == "ALL")
+                        ? flow_sigma_var_value(f, mode, var)
+                        : flow_topology_sigma_var_value(f, topo, mode, var));
+
+                return safe_ratio((double)n, den(f));
+            };
+
+            for (const std::string& var : sigma_variable_order(recC.work_cfg.channel_cfg)) {
+                for (const std::string& mode : {std::string("single"), std::string("cumulative")}) {
+                    const double rinb = safe_ratio(frac(*f_si, mode, var), frac(*f_fi, mode, var));
+                    const double rout = safe_ratio(frac(*f_so, mode, var), frac(*f_fo, mode, var));
+
+                    write_row(recC.work_cfg.channel_cfg.csv_channel, "RATIO", topo,
+                              "sigma_var", var, mode,
+                              std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::quiet_NaN(),
+                              rinb, rout);
+                }
+            }
+
+            const double rinb_all = safe_ratio(frac(*f_si, "all", "all"), frac(*f_fi, "all", "all"));
+            const double rout_all = safe_ratio(frac(*f_so, "all", "all"), frac(*f_fo, "all", "all"));
+
+            write_row(recC.work_cfg.channel_cfg.csv_channel, "RATIO", topo,
+                      "sigma_all", "all", "all",
+                      std::numeric_limits<double>::quiet_NaN(),
+                      std::numeric_limits<double>::quiet_NaN(),
+                      rinb_all, rout_all);
+        }
+    }
+
+    std::cout << "[total_counts][REC-MC-SURVIVAL] Wrote diagnostic CSV: " << path << std::endl;
+}
+
 static void print_reconstructed_mc_survival_summary(
     const std::map<std::string, CountCollection>& collections) {
 
@@ -1817,6 +2178,24 @@ static void print_reconstructed_mc_survival_summary(
                           << " rec_topo/gen=" << fmt_diag(topo_acc_like)
                           << std::endl;
             }
+        }
+
+        for (const std::string& period : diagnostic_period_order()) {
+            const CutFlowSummary* f = period_flow(recC, period);
+
+            if (!f) {
+                continue;
+            }
+
+            print_sigma_variable_period_lines(recC, *f, period, "ALL");
+
+            for (const std::string& topo : diagnostic_topology_order()) {
+                print_sigma_variable_period_lines(recC, *f, period, topo);
+            }
+        }
+
+        for (const std::string& topo : std::vector<std::string>{"ALL", "FD_FD", "CD_FD", "CD_FT"}) {
+            print_sigma_variable_ratio_lines(recC, topo);
         }
 
         print_period_ratio_line(recC, genC, "Sp18 Inb", "Fa18 Inb");
@@ -2630,6 +3009,7 @@ bool update_total_counts_csv(const std::string& csv_path,
         }
 
         print_reconstructed_mc_survival_summary(collections);
+        write_reconstructed_mc_survival_csv(collections, out_root_dir);
 
         for (const auto& kv : collections) {
             write_collection_to_csv(csv, kv.second);
