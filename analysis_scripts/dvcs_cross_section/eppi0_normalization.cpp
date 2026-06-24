@@ -351,6 +351,21 @@ static double wrap_phi_deg(double v) {
     return p;
 }
 
+
+static inline double delta_phi_rad_from_two_phi(double phi_a, double phi_b) {
+    double d = std::fmod(phi_a - phi_b, 2.0 * PI);
+
+    if (d <= -PI) {
+        d += 2.0 * PI;
+    }
+
+    if (d > PI) {
+        d -= 2.0 * PI;
+    }
+
+    return std::fabs(d);
+}
+
 static bool in_range(double v, double a, double b) {
     return v >= a && v < b;
 }
@@ -941,6 +956,7 @@ struct Branches {
     double xF = 0.0; bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
+    double Delta_phi = 0.0; bool has_Delta_phi = false;
 
     double e_p = 0.0; bool has_e_p = false;
     double e_theta = 0.0; bool has_e_theta = false;
@@ -983,6 +999,7 @@ struct Branches {
         ena("xF");
         ena("theta_gamma_gamma");
         ena("theta_pi0_pi0");
+        ena("Delta_phi");
 
         ena("e_p");
         ena("e_theta");
@@ -1036,6 +1053,7 @@ struct Branches {
         bD("xF", &xF, has_xF);
         bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         bD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+        bD("Delta_phi", &Delta_phi, has_Delta_phi);
 
         bD("e_p", &e_p, has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
@@ -1064,6 +1082,21 @@ struct Branches {
 
     double p2_phi_deg() const {
         return wrap_phi_deg(p2_phi * RAD2DEG);
+    }
+
+    double delta_phi_value(bool& has_val) const {
+        if (has_Delta_phi) {
+            has_val = true;
+            return Delta_phi;
+        }
+
+        if (has_p1_phi && has_p2_phi) {
+            has_val = true;
+            return delta_phi_rad_from_two_phi(p1_phi, p2_phi);
+        }
+
+        has_val = false;
+        return 0.0;
     }
 };
 
@@ -1150,7 +1183,9 @@ static bool passes_sigma_dispatch(const ChannelConfig& cfg,
     if (!check_sigma(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
     if (!check_sigma(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
     if (!check_sigma(vm, "Mx2_2", b.has_Mx2_2, b.Mx2_2)) return false;
-    if (!check_sigma(vm, "Delta_phi", b.has_Delta_phi, b.Delta_phi)) return false;
+    bool has_delta_phi = false;
+    const double delta_phi = b.delta_phi_value(has_delta_phi);
+    if (!check_sigma(vm, "Delta_phi", has_delta_phi, delta_phi)) return false;
     if (!check_sigma(vm, "pTmiss", b.has_pTmiss, b.pTmiss)) return false;
     if (!check_sigma(vm, "xF", b.has_xF, b.xF)) return false;
 

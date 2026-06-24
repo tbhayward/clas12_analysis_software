@@ -102,6 +102,21 @@ static double wrap_phi_deg(double phi_deg) {
     return p;
 }
 
+
+static double delta_phi_rad_from_two_phi(double phi_a, double phi_b) {
+    double d = std::fmod(phi_a - phi_b, 2.0 * PI);
+
+    if (d <= -PI) {
+        d += 2.0 * PI;
+    }
+
+    if (d > PI) {
+        d -= 2.0 * PI;
+    }
+
+    return std::fabs(d);
+}
+
 static bool in_range(double v, double lo, double hi) {
     return v >= lo && v < hi;
 }
@@ -903,6 +918,21 @@ struct Branches {
     double p1_phi_deg() const {
         return wrap_phi_deg(p1_phi * RAD2DEG);
     }
+
+    double delta_phi_value(bool& has_val) const {
+        if (has_Delta_phi) {
+            has_val = true;
+            return Delta_phi;
+        }
+
+        if (has_p1_phi && has_p2_phi) {
+            has_val = true;
+            return delta_phi_rad_from_two_phi(p1_phi, p2_phi);
+        }
+
+        has_val = false;
+        return 0.0;
+    }
 };
 
 static bool passes_global_cuts_for_event(const Branches& b,
@@ -968,7 +998,9 @@ static bool passes_sigma_cuts_for_event(const std::string& key,
     if (!check_sigma(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
     if (!check_sigma(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
     if (!check_sigma(vm, "Mx2_2", b.has_Mx2_2, b.Mx2_2)) return false;
-    if (!check_sigma(vm, "Delta_phi", b.has_Delta_phi, b.Delta_phi)) return false;
+    bool has_delta_phi = false;
+    const double delta_phi = b.delta_phi_value(has_delta_phi);
+    if (!check_sigma(vm, "Delta_phi", has_delta_phi, delta_phi)) return false;
     if (!check_sigma(vm, "pTmiss", b.has_pTmiss, b.pTmiss)) return false;
     if (!check_sigma(vm, "xF", b.has_xF, b.xF)) return false;
 

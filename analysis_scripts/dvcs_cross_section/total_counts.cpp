@@ -181,6 +181,21 @@ static inline double wrap_phi_deg(double phi_deg) {
     return p;
 }
 
+
+static inline double delta_phi_rad_from_two_phi(double phi_a, double phi_b) {
+    double d = std::fmod(phi_a - phi_b, 2.0 * PI);
+
+    if (d <= -PI) {
+        d += 2.0 * PI;
+    }
+
+    if (d > PI) {
+        d -= 2.0 * PI;
+    }
+
+    return std::fabs(d);
+}
+
 static inline bool in_range(double v, double a, double b) {
     return (v >= a) && (v < b);
 }
@@ -1241,8 +1256,7 @@ static inline double branch_value_for_sigma_var(const BranchBinder& b,
     }
 
     if (var == "Delta_phi") {
-        has_val = b.has_Delta_phi;
-        return b.Delta_phi;
+        return b.delta_phi_value(has_val);
     }
 
     if (var == "pTmiss") {

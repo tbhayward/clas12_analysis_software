@@ -81,6 +81,21 @@ static constexpr double MIN_E_GAMMA_CONE_ANGLE_DEG = 7.0;
 static constexpr double COS_MIN_E_GAMMA_CONE =
     0.9925461516413220; // cos(7 deg)
 
+
+static inline double delta_phi_rad_from_two_phi(double phi_a, double phi_b) {
+    double d = std::fmod(phi_a - phi_b, 2.0 * PI);
+
+    if (d <= -PI) {
+        d += 2.0 * PI;
+    }
+
+    if (d > PI) {
+        d -= 2.0 * PI;
+    }
+
+    return std::fabs(d);
+}
+
 static const std::vector<std::string> PERIOD_ORDER = {
     "Sp18 Inb",
     "Sp18 Out",
@@ -1352,7 +1367,9 @@ static bool passes_sigma_dispatch(const ChannelConfig& cfg,
     if (!check_sigma_var(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
     if (!check_sigma_var(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
     if (!check_sigma_var(vm, "Mx2_2", b.has_Mx2_2, b.Mx2_2)) return false;
-    if (!check_sigma_var(vm, "Delta_phi", b.has_Delta_phi, b.Delta_phi)) return false;
+    bool has_delta_phi = false;
+    const double delta_phi = b.delta_phi_value(has_delta_phi);
+    if (!check_sigma_var(vm, "Delta_phi", has_delta_phi, delta_phi)) return false;
     if (!check_sigma_var(vm, "pTmiss", b.has_pTmiss, b.pTmiss)) return false;
     if (!check_sigma_var(vm, "xF", b.has_xF, b.xF)) return false;
 

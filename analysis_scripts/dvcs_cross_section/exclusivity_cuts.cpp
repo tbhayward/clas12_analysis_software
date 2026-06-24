@@ -41,6 +41,22 @@
 #include <utility>
 #include <vector>
 
+static constexpr double PI = 3.14159265358979323846;
+
+static inline double delta_phi_rad_from_two_phi(double phi_a, double phi_b) {
+    double d = std::fmod(phi_a - phi_b, 2.0 * PI);
+
+    if (d <= -PI) {
+        d += 2.0 * PI;
+    }
+
+    if (d > PI) {
+        d -= 2.0 * PI;
+    }
+
+    return std::fabs(d);
+}
+
 // -------------------- helpers: strings and keys --------------------
 
 static std::string channelToStr(Channel ch) {
@@ -252,9 +268,26 @@ struct BranchBinder {
         bD("p2_phi",   &p2_phi,   has_p2_phi);
     }
 
+    double delta_phi_value(bool& has_val) const {
+        if (has_Delta_phi) {
+            has_val = true;
+            return Delta_phi;
+        }
+
+        if (has_p1_phi && has_p2_phi) {
+            has_val = true;
+            return delta_phi_rad_from_two_phi(p1_phi, p2_phi);
+        }
+
+        has_val = false;
+        return 0.0;
+    }
+
     std::map<std::string, double> valuesMap(Channel ch) const {
         std::map<std::string, double> m;
-        if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
+        bool has_delta_phi = false;
+        const double delta_phi = delta_phi_value(has_delta_phi);
+        if (has_delta_phi) m["Delta_phi"] = delta_phi;
         if (ch == Channel::DVCS) { if (has_theta_gamma_gamma) m["theta_gamma_gamma"] = theta_gamma_gamma; }
         else { if (has_theta_pi0_pi0) m["theta_pi0_pi0"] = theta_pi0_pi0; }
         if (has_pTmiss) m["pTmiss"] = pTmiss;
