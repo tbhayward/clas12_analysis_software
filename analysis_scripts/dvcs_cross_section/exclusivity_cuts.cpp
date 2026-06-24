@@ -94,8 +94,8 @@ static std::vector<StagePlan> buildStages(Channel ch) {
     std::vector<StagePlan> stages;
     stages.push_back(StagePlan{{"Mx2", "Mx2_1"}});       // stage 0
     stages.push_back(StagePlan{{"Emiss2", "Mx2_2"}});    // stage 1
-    if (ch == Channel::DVCS) stages.push_back(StagePlan{{"pTmiss", "xF", "theta_gamma_gamma"}});
-    else                     stages.push_back(StagePlan{{"pTmiss", "xF", "theta_pi0_pi0"}});
+    if (ch == Channel::DVCS) stages.push_back(StagePlan{{"Delta_phi", "pTmiss", "xF", "theta_gamma_gamma"}});
+    else                     stages.push_back(StagePlan{{"Delta_phi", "pTmiss", "xF", "theta_pi0_pi0"}});
     return stages; // final pass is len(stages)+1 in driver
 }
 
@@ -108,8 +108,32 @@ static bool passesTopology(int detector1, int detector2, Topology topo) {
     return false;
 }
 
-static bool within3Sigma(double val, const Stats& s) {
-    return (val >= s.mean - 3.0 * s.std) && (val <= s.mean + 3.0 * s.std);
+static bool isUpperTailQuantileVar(const std::string& var) {
+    return (var == "pTmiss" || var == "theta_gamma_gamma" || var == "theta_pi0_pi0");
+}
+
+static bool isUpperTailCut(const Stats& s) {
+    return (s.mode == "upper_quantile");
+}
+
+static bool withinCutWindow(double val, const Stats& s) {
+    if (!std::isfinite(val)) return false;
+
+    if (isUpperTailCut(s)) {
+        if (!std::isfinite(s.cut_high)) return true;
+        return val <= s.cut_high;
+    }
+
+    double lo = s.cut_low;
+    double hi = s.cut_high;
+
+    if (!(std::isfinite(lo) && std::isfinite(hi)) || hi <= lo) {
+        if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) return true;
+        lo = s.mean - 3.0 * s.std;
+        hi = s.mean + 3.0 * s.std;
+    }
+
+    return (val >= lo && val <= hi);
 }
 
 static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
@@ -117,7 +141,7 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
     for (const auto& kv : cuts) {
         auto it = values.find(kv.first);
         if (it == values.end()) continue;
-        if (!within3Sigma(it->second, kv.second)) return false;
+        if (!withinCutWindow(it->second, kv.second)) return false;
     }
     return true;
 }
@@ -340,7 +364,8 @@ static FilledHists fillStageHists(
     if (topo == Topology::CD_FT) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 0; }
 
     auto passesGlobal = [&](const BranchBinder& b)->bool {
-        if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
+        if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
+        if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
         if (!(b.has_detector1 && b.has_detector2)) return false;
 
         if (global_cuts_require_sector_phi(gcfg)) {
@@ -552,23 +577,64 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
     c.SaveAs(fname.c_str());
 }
 
+
+// -------------------- cut statistics --------------------
+
+static double histQuantile(TH1D* h, double q) {
+    if (!h || h->GetEntries() <= 0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    q = std::max(0.0, std::min(1.0, q));
+    double prob[1] = {q};
+    double quant[1] = {std::numeric_limits<double>::quiet_NaN()};
+    h->GetQuantiles(1, quant, prob);
+    return quant[0];
+}
+
+static Stats makeSymmetric3SigmaStats(TH1D* h) {
+    Stats s = meanStd(h);
+    s.mode = "symmetric_3sigma";
+    s.quantile = 0.0;
+
+    if (std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0) {
+        s.cut_low = s.mean - 3.0 * s.std;
+        s.cut_high = s.mean + 3.0 * s.std;
+    } else {
+        s.cut_low = -1.0e99;
+        s.cut_high =  1.0e99;
+    }
+
+    return s;
+}
+
+static Stats makeUpperQuantileStats(TH1D* h, double q) {
+    Stats s = meanStd(h);
+    s.mode = "upper_quantile";
+    s.quantile = q;
+    s.cut_low = 0.0;
+    s.cut_high = histQuantile(h, q);
+
+    if (!std::isfinite(s.cut_high)) {
+        s.cut_high = 1.0e99;
+    }
+
+    return s;
+}
+
 // -------------------- cumulative updates --------------------
 
-static void updateCumulativeCuts(const FilledHists& H, const StagePlan& stage, CutDict& cumulative) {
-    auto isGaussianVar = [&](const std::string& v)->bool {
-        return (v == "theta_gamma_gamma" || v == "theta_pi0_pi0" || v == "pTmiss");
-    };
+static void updateCumulativeCuts(const FilledHists& H, const StagePlan& stage, CutDict& cumulative, double upperTailQuantile) {
     for (const std::string& var : stage.vars) {
         TH1D* dh = H.data.count(var) ? H.data.at(var) : nullptr;
         TH1D* mh = H.mc.count(var)   ? H.mc.at(var)   : nullptr;
-        if (isGaussianVar(var)) {
-            auto d = fitGaussianLeftSide(dh);
-            auto m = fitGaussianLeftSide(mh);
-            cumulative.data[var] = {d.first, std::abs(d.second)};
-            cumulative.mc[var]   = {m.first, std::abs(m.second)};
+
+        if (isUpperTailQuantileVar(var)) {
+            cumulative.data[var] = makeUpperQuantileStats(dh, upperTailQuantile);
+            cumulative.mc[var]   = makeUpperQuantileStats(mh, upperTailQuantile);
         } else {
-            cumulative.data[var] = meanStd(dh);
-            cumulative.mc[var]   = meanStd(mh);
+            cumulative.data[var] = makeSymmetric3SigmaStats(dh);
+            cumulative.mc[var]   = makeSymmetric3SigmaStats(mh);
         }
     }
 }
@@ -577,7 +643,12 @@ static void updateCumulativeCuts(const FilledHists& H, const StagePlan& stage, C
 
 static void writeStatsJson(std::ostream& os, const Stats& s) {
     os << "{\"mean\":" << std::setprecision(8) << s.mean
-       << ",\"std\":"  << std::setprecision(8) << s.std << "}";
+       << ",\"std\":"  << std::setprecision(8) << s.std
+       << ",\"cut_low\":" << std::setprecision(8) << s.cut_low
+       << ",\"cut_high\":" << std::setprecision(8) << s.cut_high
+       << ",\"mode\":\"" << s.mode << "\""
+       << ",\"quantile\":" << std::setprecision(8) << s.quantile
+       << "}";
 }
 
 static void writeCutDictJson(std::ostream& os, const CutDict& cd) {
@@ -758,7 +829,8 @@ static void processOneChannelOneTopology(
     const std::string& period_label,
     TTree* dataTree, TTree* mcTree,
     const std::string& outPlotDir,
-    CutDict& outCutsForTopo)
+    CutDict& outCutsForTopo,
+    double upperTailQuantile)
 {
     auto stages = buildStages(ch);
     auto cfg    = getHistConfigs(ch);
@@ -769,7 +841,7 @@ static void processOneChannelOneTopology(
         auto H = fillStageHists(dataTree, mcTree, topo, ch, period_label, cumulative, cfg, s);
         saveStagePlots(H, cfg, ch, prettyPeriod, topo, outPlotDir, "cut_" + std::to_string(s));
         if (s < static_cast<int>(stages.size())) {
-            updateCumulativeCuts(H, stages[s], cumulative);
+            updateCumulativeCuts(H, stages[s], cumulative, upperTailQuantile);
         }
         for (auto& kv : H.data) delete kv.second;
         for (auto& kv : H.mc)   delete kv.second;
@@ -783,7 +855,8 @@ static void processPeriod(
     const std::string& outJsonDir,
     const std::string& outPlotDir,
     std::map<std::string, CutDict>& combined_out,
-    std::mutex& combined_mutex)
+    std::mutex& combined_mutex,
+    double upperTailQuantile)
 {
     TH1::AddDirectory(kFALSE);
 
@@ -792,7 +865,7 @@ static void processPeriod(
         for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
             CutDict cutsDVCS;
             processOneChannelOneTopology(pretty, Channel::DVCS, topo, W.label,
-                                         W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS);
+                                         W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS, upperTailQuantile);
             std::lock_guard<std::mutex> lock(combined_mutex);
             combined_out[pretty + "_" + topoToKey(topo)] = cutsDVCS;
         }
@@ -804,7 +877,7 @@ static void processPeriod(
         for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
             CutDict cutsPI0;
             processOneChannelOneTopology(pretty, Channel::EPPI0, topo, W.label,
-                                         W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0);
+                                         W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0, upperTailQuantile);
             std::lock_guard<std::mutex> lock(combined_mutex);
             combined_out[pretty + "_" + topoToKey(topo)] = cutsPI0;
         }
@@ -851,6 +924,7 @@ static GlobalCutConfig globalConfigForTopo(Topology topo, bool bypassGlobalPTmis
     if (topo == Topology::CD_FT) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 0; }
 
     if (bypassGlobalPTmiss) {
+        gcfg.enable_pTmiss_cut = false;
         gcfg.pTmiss_max = 1.0e9;
     }
 
@@ -860,7 +934,8 @@ static GlobalCutConfig globalConfigForTopo(Topology topo, bool bypassGlobalPTmis
 static bool passesGlobalWithConfig(const BranchBinder& b,
                                    const std::string& period_label,
                                    const GlobalCutConfig& gcfg) {
-    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
+    if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
+    if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
     if (!(b.has_detector1 && b.has_detector2)) return false;
 
     if (global_cuts_require_sector_phi(gcfg)) {
@@ -916,7 +991,7 @@ static bool passesCutsExceptVariable(const std::map<std::string, Stats>& cuts,
         const Stats& s = kv.second;
         if (!(std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0)) continue;
 
-        if (!within3Sigma(it->second, s)) return false;
+        if (!withinCutWindow(it->second, s)) return false;
     }
 
     return true;
@@ -1003,10 +1078,8 @@ static DiagnosticHistResult fillMcDiagnosticHist(TTree* tree,
 
         auto cs = finalCuts.mc.find(var);
         if (cs != finalCuts.mc.end()) {
-            const double lo = cs->second.mean - 3.0 * cs->second.std;
-            const double hi = cs->second.mean + 3.0 * cs->second.std;
-            if (it->second >= lo && it->second <= hi) R.passSymmetric += 1.0;
-            if (it->second <= hi) R.passOneSidedUpper += 1.0;
+            if (withinCutWindow(it->second, cs->second)) R.passSymmetric += 1.0;
+            if (it->second <= cs->second.cut_high) R.passOneSidedUpper += 1.0;
         }
     }
 
@@ -1048,8 +1121,8 @@ static void runExclusivityOverlayDiagnosticsForChannel(
         const bool exists = !std::ifstream(csvPath).fail();
         csv.open(csvPath, std::ios::app);
         if (!exists) {
-            csv << "channel,topology,variable,mode,period,selected,pass_symmetric,pass_one_sided_upper,"
-                << "frac_symmetric,frac_one_sided_upper,mean,std,cut_mean,cut_std,cut_low,cut_high,global_pTmiss_max\n";
+            csv << "channel,topology,variable,mode,period,selected,pass_nominal,pass_upper_bound,"
+                << "frac_nominal,frac_upper_bound,mean,std,cut_mean,cut_std,cut_low,cut_high,cut_mode,quantile,global_pTmiss_enabled,global_pTmiss_max\n";
         }
     }
 
@@ -1091,14 +1164,16 @@ static void runExclusivityOverlayDiagnosticsForChannel(
                     if (diagCfg.write_mc_period_overlay_csv && csv) {
                         const double fracSym = safeRatio(R.passSymmetric, R.selected);
                         const double fracOne = safeRatio(R.passOneSidedUpper, R.selected);
-                        const double lo = itVarCut->second.mean - 3.0 * itVarCut->second.std;
-                        const double hi = itVarCut->second.mean + 3.0 * itVarCut->second.std;
+                        const double lo = itVarCut->second.cut_low;
+                        const double hi = itVarCut->second.cut_high;
                         csv << channelPretty(ch) << "," << topoToKey(topo) << "," << var << "," << mode << "," << periodTitleFromCode(code) << ","
                             << fmtDiag(R.selected, 0) << "," << fmtDiag(R.passSymmetric, 0) << "," << fmtDiag(R.passOneSidedUpper, 0) << ","
                             << fmtDiag(fracSym) << "," << fmtDiag(fracOne) << ","
                             << fmtDiag(R.mean) << "," << fmtDiag(R.std) << ","
                             << fmtDiag(itVarCut->second.mean) << "," << fmtDiag(itVarCut->second.std) << ","
                             << fmtDiag(lo) << "," << fmtDiag(hi) << ","
+                            << itVarCut->second.mode << "," << fmtDiag(itVarCut->second.quantile) << ","
+                            << (default_global_cuts().enable_pTmiss_cut ? "true" : "false") << ","
                             << fmtDiag(default_global_cuts().pTmiss_max) << "\n";
                     }
 
@@ -1162,10 +1237,10 @@ static void runExclusivityOverlayDiagnosticsForChannel(
                 const double yMax = maxv * 1.35;
                 for (size_t i = 0; i < cutStats.size(); ++i) {
                     const int col = periodColor(codes[i]);
-                    const double lo = cutStats[i].mean - 3.0 * cutStats[i].std;
-                    const double hi = cutStats[i].mean + 3.0 * cutStats[i].std;
+                    const double lo = cutStats[i].cut_low;
+                    const double hi = cutStats[i].cut_high;
 
-                    if (diagCfg.draw_symmetric_3sigma_windows) {
+                    if (cutStats[i].mode == "symmetric_3sigma" && diagCfg.draw_symmetric_3sigma_windows) {
                         drawVerticalLine(lo, yMax, col, 3, 1);
                     }
                     if (diagCfg.draw_symmetric_3sigma_windows || diagCfg.draw_one_sided_upper_windows) {
@@ -1173,14 +1248,14 @@ static void runExclusivityOverlayDiagnosticsForChannel(
                     }
                 }
 
-                if (var == "pTmiss" && diagCfg.draw_global_pTmiss_cut) {
+                if (var == "pTmiss" && diagCfg.draw_global_pTmiss_cut && default_global_cuts().enable_pTmiss_cut) {
                     drawVerticalLine(default_global_cuts().pTmiss_max, yMax, kBlack, 1, 3);
                     leg.AddEntry((TObject*)nullptr, TString::Format("global p_{T}^{miss} < %.3g", default_global_cuts().pTmiss_max), "");
                 }
 
-                leg.AddEntry((TObject*)nullptr, "dashed upper lines: #mu+3#sigma", "");
+                leg.AddEntry((TObject*)nullptr, "dashed upper lines: active upper bound", "");
                 if (diagCfg.draw_symmetric_3sigma_windows) {
-                    leg.AddEntry((TObject*)nullptr, "dotted lower lines: #mu-3#sigma", "");
+                    leg.AddEntry((TObject*)nullptr, "dotted lower lines: symmetric-cut lower bound", "");
                 }
                 leg.Draw();
 
@@ -1313,7 +1388,7 @@ void runAllExclusivityCuts(
         while (true) {
             size_t i = idx.fetch_add(1);
             if (i >= work.size()) break;
-            processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex);
+            processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex, diagCfg.upper_tail_quantile);
         }
     };
 

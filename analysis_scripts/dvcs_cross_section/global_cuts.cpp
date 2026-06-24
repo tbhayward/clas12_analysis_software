@@ -246,7 +246,7 @@ static bool passes_basic_cuts(double t1,
     validate_cfg_or_fatal(cfg);
     if ((-t1) >= cfg.t1_abs_max) return false;
     if (open_angle_ep2_deg <= cfg.open_angle_min_deg) return false;
-    if (pTmiss > cfg.pTmiss_max) return false;
+    if (cfg.enable_pTmiss_cut && pTmiss > cfg.pTmiss_max) return false;
     return true;
 }
 
@@ -422,8 +422,10 @@ std::string global_cuts_tcut(const GlobalCutConfig& cfg) {
 
     std::ostringstream ss;
     ss << "(-t1) < " << std::fixed << std::setprecision(3) << cfg.t1_abs_max
-       << " && open_angle_ep2 > " << std::fixed << std::setprecision(1) << cfg.open_angle_min_deg
-       << " && pTmiss <= " << std::fixed << std::setprecision(2) << cfg.pTmiss_max;
+       << " && open_angle_ep2 > " << std::fixed << std::setprecision(1) << cfg.open_angle_min_deg;
+    if (cfg.enable_pTmiss_cut) {
+        ss << " && pTmiss <= " << std::fixed << std::setprecision(2) << cfg.pTmiss_max;
+    }
     return ss.str();
 }
 
@@ -440,6 +442,7 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"analysis_tag\": \"" << global_cuts_analysis_tag(cfg) << "\",\n"
         << "  \"t1_abs_max\": " << std::setprecision(6) << cfg.t1_abs_max << ",\n"
         << "  \"open_angle_min_deg\": " << std::setprecision(6) << cfg.open_angle_min_deg << ",\n"
+        << "  \"enable_pTmiss_cut\": " << (cfg.enable_pTmiss_cut ? "true" : "false") << ",\n"
         << "  \"pTmiss_max\": " << std::setprecision(6) << cfg.pTmiss_max << ",\n"
         << "  \"enable_dvcsgen_ycol_cut\": " << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false") << ",\n"
         << "  \"dvcsgen_ycol_cut\": " << std::setprecision(6) << cfg.dvcsgen_ycol_cut << ",\n"

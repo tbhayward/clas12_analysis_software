@@ -664,6 +664,10 @@ static bool resolve_current(const std::string& period_internal,
 struct SigmaStats {
     double mean = std::numeric_limits<double>::quiet_NaN();
     double std = std::numeric_limits<double>::quiet_NaN();
+    double cut_low = std::numeric_limits<double>::quiet_NaN();
+    double cut_high = std::numeric_limits<double>::quiet_NaN();
+    double quantile = 0.0;
+    std::string mode = "symmetric_3sigma";
 };
 
 using CutVarMap = std::unordered_map<std::string, SigmaStats>;
@@ -699,7 +703,17 @@ static TopoCutMap load_sigma_cuts(const std::string& path,
             SigmaStats s;
             s.mean = obj["mean"].get<double>();
             s.std = obj["std"].get<double>();
-            if (std::isfinite(s.std) && s.std > 0.0) {
+            if (obj.contains("cut_low")) s.cut_low = obj["cut_low"].get<double>();
+            if (obj.contains("cut_high")) s.cut_high = obj["cut_high"].get<double>();
+            if (obj.contains("quantile")) s.quantile = obj["quantile"].get<double>();
+            if (obj.contains("mode")) s.mode = obj["mode"].get<std::string>();
+            if (!std::isfinite(s.cut_low) || !std::isfinite(s.cut_high) || s.cut_high <= s.cut_low) {
+                if (std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0) {
+                    s.cut_low = s.mean - 3.0 * s.std;
+                    s.cut_high = s.mean + 3.0 * s.std;
+                }
+            }
+            if (std::isfinite(s.cut_high)) {
                 vm[var] = s;
             }
         }
@@ -712,11 +726,20 @@ static TopoCutMap load_sigma_cuts(const std::string& path,
     return out;
 }
 
-static bool within_3sigma(double value, const SigmaStats& s) {
-    if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) {
-        return true;
+static bool within_cut_window(double value, const SigmaStats& s) {
+    if (!std::isfinite(value)) return false;
+    if (s.mode == "upper_quantile") {
+        if (!std::isfinite(s.cut_high)) return true;
+        return value <= s.cut_high;
     }
-    return std::fabs(value - s.mean) <= 3.0 * s.std;
+    double lo = s.cut_low;
+    double hi = s.cut_high;
+    if (!(std::isfinite(lo) && std::isfinite(hi)) || hi <= lo) {
+        if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) return true;
+        lo = s.mean - 3.0 * s.std;
+        hi = s.mean + 3.0 * s.std;
+    }
+    return (value >= lo && value <= hi);
 }
 
 static bool check_sigma(const CutVarMap& vm,
@@ -730,7 +753,7 @@ static bool check_sigma(const CutVarMap& vm,
     if (!has_value) {
         fatal("required sigma-cut branch missing: " + var);
     }
-    return within_3sigma(value, it->second);
+    return within_cut_window(value, it->second);
 }
 
 // -----------------------------------------------------------------------------
@@ -751,6 +774,7 @@ struct Branches {
 
     double open_angle_ep2 = 0.0; bool has_open_angle_ep2 = false;
     double pTmiss = 0.0; bool has_pTmiss = false;
+    double Delta_phi = 0.0; bool has_Delta_phi = false;
 
     double Emiss2 = 0.0; bool has_Emiss2 = false;
     double Mx2 = 0.0; bool has_Mx2 = false;
@@ -837,6 +861,7 @@ struct Branches {
 
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
         bD("pTmiss", &pTmiss, has_pTmiss);
+        bD("Delta_phi", &Delta_phi, has_Delta_phi);
 
         bD("Emiss2", &Emiss2, has_Emiss2);
         bD("Mx2", &Mx2, has_Mx2);
@@ -858,8 +883,8 @@ struct Branches {
         bD("p2_phi", &p2_phi, has_p2_phi);
 
         if (!(has_runnum && has_detector1 && has_detector2 && has_x && has_Q2 &&
-              has_t1 && has_phi2 && has_open_angle_ep2 && has_pTmiss && has_p1_theta && has_p1_phi)) {
-            fatal("tree is missing one or more required branches: runnum, detector1, detector2, x, Q2, t1, phi2, open_angle_ep2, pTmiss, p1_theta, p1_phi.");
+              has_t1 && has_phi2 && has_open_angle_ep2 && has_p1_theta && has_p1_phi)) {
+            fatal("tree is missing one or more required branches: runnum, detector1, detector2, x, Q2, t1, phi2, open_angle_ep2, p1_theta, p1_phi.");
         }
     }
 
@@ -882,9 +907,10 @@ struct Branches {
 
 static bool passes_global_cuts_for_event(const Branches& b,
                                          const PeriodTags& tags) {
-    if (is_excluded_run(b.runnum)) return false;
-
     const GlobalCutConfig& cfg = default_global_cuts();
+
+    if (cfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
+    if (is_excluded_run(b.runnum)) return false;
 
     if (global_cuts_require_sector_phi(cfg)) {
         if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
@@ -942,6 +968,7 @@ static bool passes_sigma_cuts_for_event(const std::string& key,
     if (!check_sigma(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
     if (!check_sigma(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
     if (!check_sigma(vm, "Mx2_2", b.has_Mx2_2, b.Mx2_2)) return false;
+    if (!check_sigma(vm, "Delta_phi", b.has_Delta_phi, b.Delta_phi)) return false;
     if (!check_sigma(vm, "pTmiss", b.has_pTmiss, b.pTmiss)) return false;
     if (!check_sigma(vm, "xF", b.has_xF, b.xF)) return false;
 

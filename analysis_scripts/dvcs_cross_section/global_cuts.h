@@ -26,7 +26,10 @@ struct GlobalCutConfig {
     // Baseline global DVCS exclusivity-style cuts.
     double t1_abs_max         = 1.0;  // cut is (-t1) < t1_abs_max
     double open_angle_min_deg = 5.0;  // open_angle_ep2_deg > open_angle_min_deg
-    double pTmiss_max         = 0.2;  // pTmiss <= pTmiss_max
+    // The old global pTmiss pre-cut is now disabled by default.
+    // pTmiss is handled as a topology/period-dependent quantile exclusivity cut.
+    bool   enable_pTmiss_cut = false;
+    double pTmiss_max        = 0.2;  // used only if enable_pTmiss_cut=true
 
     // Optional dvcsgen P2_pos (ycol / propagator) cut.
     bool   enable_dvcsgen_ycol_cut = false;

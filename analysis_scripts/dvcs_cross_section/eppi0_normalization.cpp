@@ -804,6 +804,10 @@ static std::unordered_map<int, double> read_charge_csv(const std::string& path) 
 struct SigmaStats {
     double mean = std::numeric_limits<double>::quiet_NaN();
     double std = std::numeric_limits<double>::quiet_NaN();
+    double cut_low = std::numeric_limits<double>::quiet_NaN();
+    double cut_high = std::numeric_limits<double>::quiet_NaN();
+    double quantile = 0.0;
+    std::string mode = "symmetric_3sigma";
 };
 
 using CutVarMap = std::unordered_map<std::string, SigmaStats>;
@@ -849,6 +853,16 @@ static TopoCutMap load_sigma_cuts(const std::string& path, const std::string& sa
             SigmaStats s;
             s.mean = obj["mean"].get<double>();
             s.std = obj["std"].get<double>();
+            if (obj.contains("cut_low")) s.cut_low = obj["cut_low"].get<double>();
+            if (obj.contains("cut_high")) s.cut_high = obj["cut_high"].get<double>();
+            if (obj.contains("quantile")) s.quantile = obj["quantile"].get<double>();
+            if (obj.contains("mode")) s.mode = obj["mode"].get<std::string>();
+            if (!std::isfinite(s.cut_low) || !std::isfinite(s.cut_high) || s.cut_high <= s.cut_low) {
+                if (std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0) {
+                    s.cut_low = s.mean - 3.0 * s.std;
+                    s.cut_high = s.mean + 3.0 * s.std;
+                }
+            }
             vm[vit.key()] = s;
         }
 
@@ -860,12 +874,20 @@ static TopoCutMap load_sigma_cuts(const std::string& path, const std::string& sa
     return out;
 }
 
-static bool within_3sigma(double v, const SigmaStats& s) {
-    if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) {
-        return true;
+static bool within_cut_window(double v, const SigmaStats& s) {
+    if (!std::isfinite(v)) return false;
+    if (s.mode == "upper_quantile") {
+        if (!std::isfinite(s.cut_high)) return true;
+        return v <= s.cut_high;
     }
-
-    return std::fabs(v - s.mean) <= 3.0 * s.std;
+    double lo = s.cut_low;
+    double hi = s.cut_high;
+    if (!(std::isfinite(lo) && std::isfinite(hi)) || hi <= lo) {
+        if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) return true;
+        lo = s.mean - 3.0 * s.std;
+        hi = s.mean + 3.0 * s.std;
+    }
+    return (v >= lo && v <= hi);
 }
 
 static bool check_sigma(const CutVarMap& vm, const std::string& var, bool has, double val) {
@@ -881,7 +903,7 @@ static bool check_sigma(const CutVarMap& vm, const std::string& var, bool has, d
         fatal(ss.str());
     }
 
-    return within_3sigma(val, it->second);
+    return within_cut_window(val, it->second);
 }
 
 // -----------------------------------------------------------------------------
@@ -1047,10 +1069,11 @@ struct Branches {
 
 static bool passes_global_dispatch(const Branches& b,
                                    const PeriodTags& tags) {
-    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
-    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
-
     const GlobalCutConfig& cfg = default_global_cuts();
+
+    if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
+    if (cfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
+    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
 
     if (!(b.has_detector1 && b.has_detector2)) {
         fatal("[eppi0_norm] FATAL: missing detector1/detector2.");
@@ -1127,6 +1150,7 @@ static bool passes_sigma_dispatch(const ChannelConfig& cfg,
     if (!check_sigma(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
     if (!check_sigma(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
     if (!check_sigma(vm, "Mx2_2", b.has_Mx2_2, b.Mx2_2)) return false;
+    if (!check_sigma(vm, "Delta_phi", b.has_Delta_phi, b.Delta_phi)) return false;
     if (!check_sigma(vm, "pTmiss", b.has_pTmiss, b.pTmiss)) return false;
     if (!check_sigma(vm, "xF", b.has_xF, b.xF)) return false;
 

@@ -18,7 +18,20 @@ class TTree;
 enum class Channel { DVCS, EPPI0 };
 enum class Topology { FD_FD, CD_FD, CD_FT };
 
-struct Stats { double mean = 0.0; double std = 0.0; };
+struct Stats {
+    // mean/std are retained for diagnostics and for symmetric-Gaussian cuts.
+    double mean = 0.0;
+    double std = 0.0;
+
+    // Explicit pass window.  For positive-definite tail variables this is
+    // [0, q99].  For centered variables this is [mean-3sigma, mean+3sigma].
+    double cut_low = 0.0;
+    double cut_high = 0.0;
+    double quantile = 0.0;
+
+    // "symmetric_3sigma" or "upper_quantile".
+    std::string mode = "symmetric_3sigma";
+};
 struct CutDict { std::map<std::string, Stats> data, mc; };
 struct HistCfg { int nbins = 100; double xlow = 0.0; double xhigh = 1.0; };
 struct StagePlan { std::vector<std::string> vars; };
@@ -37,15 +50,18 @@ struct ExclusivityDiagnosticConfig {
     // Draw final period-specific MC cut boundaries on the overlay plots.
     bool draw_symmetric_3sigma_windows = true;
     bool draw_one_sided_upper_windows = true;
-    bool draw_global_pTmiss_cut = true;
+    bool draw_global_pTmiss_cut = false;
 
-    // For pTmiss only, also make a version where the early global pTmiss cut is bypassed.
-    // This is useful because pTmiss is both a global pre-cut and a later exclusivity cut.
-    bool make_pTmiss_before_global_pTmiss_plots = true;
+    // Retained for backward compatibility.  The global pTmiss cut is disabled by
+    // default in global_cuts, so the before/after plots should normally agree.
+    bool make_pTmiss_before_global_pTmiss_plots = false;
+
+    // Quantile used for pTmiss and theta_gamma_gamma/theta_pi0_pi0.
+    double upper_tail_quantile = 0.99;
 
     // If empty, defaults are chosen internally:
-    // DVCS: pTmiss, theta_gamma_gamma, Emiss2, Mx2_1
-    // eppi0: pTmiss, theta_pi0_pi0, Emiss2, Mx2_1
+    // DVCS: Delta_phi, pTmiss, theta_gamma_gamma, Emiss2, Mx2_1
+    // eppi0: Delta_phi, pTmiss, theta_pi0_pi0, Emiss2, Mx2_1
     std::vector<std::string> variables;
 };
 

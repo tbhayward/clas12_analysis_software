@@ -858,17 +858,39 @@ static FastBinning build_fast_binning(const std::vector<RowBin>& rows) {
 struct SigmaStats {
     double mean = std::numeric_limits<double>::quiet_NaN();
     double std  = std::numeric_limits<double>::quiet_NaN();
+    double cut_low = std::numeric_limits<double>::quiet_NaN();
+    double cut_high = std::numeric_limits<double>::quiet_NaN();
+    double quantile = 0.0;
+    std::string mode = "symmetric_3sigma";
 };
 
 using CutVarMap = std::unordered_map<std::string, SigmaStats>;
 using TopoCutMap = std::unordered_map<std::string, CutVarMap>;
 
-static inline bool within_3sigma(double v, const SigmaStats& s) {
-    if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) {
-        return true;
+static inline bool within_cut_window(double v, const SigmaStats& s) {
+    if (!std::isfinite(v)) {
+        return false;
     }
 
-    return (std::fabs(v - s.mean) <= 3.0 * s.std);
+    if (s.mode == "upper_quantile") {
+        if (!std::isfinite(s.cut_high)) {
+            return true;
+        }
+        return v <= s.cut_high;
+    }
+
+    double lo = s.cut_low;
+    double hi = s.cut_high;
+
+    if (!(std::isfinite(lo) && std::isfinite(hi)) || hi <= lo) {
+        if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) {
+            return true;
+        }
+        lo = s.mean - 3.0 * s.std;
+        hi = s.mean + 3.0 * s.std;
+    }
+
+    return (v >= lo && v <= hi);
 }
 
 static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json,
@@ -939,11 +961,31 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json,
             try {
                 s.mean = stats["mean"].get<double>();
                 s.std  = stats["std"].get<double>();
+
+                if (stats.contains("cut_low")) {
+                    s.cut_low = stats["cut_low"].get<double>();
+                }
+                if (stats.contains("cut_high")) {
+                    s.cut_high = stats["cut_high"].get<double>();
+                }
+                if (stats.contains("quantile")) {
+                    s.quantile = stats["quantile"].get<double>();
+                }
+                if (stats.contains("mode")) {
+                    s.mode = stats["mode"].get<std::string>();
+                }
             } catch (...) {
                 continue;
             }
 
-            if (std::isfinite(s.std)) {
+            if (!std::isfinite(s.cut_low) || !std::isfinite(s.cut_high) || s.cut_high <= s.cut_low) {
+                if (std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0) {
+                    s.cut_low = s.mean - 3.0 * s.std;
+                    s.cut_high = s.mean + 3.0 * s.std;
+                }
+            }
+
+            if (std::isfinite(s.cut_high)) {
                 vm.emplace(var, s);
             }
         }
@@ -978,6 +1020,7 @@ struct BranchBinder {
     double Q2 = 0.0;    bool has_Q2 = false;
     double t1 = 0.0;    bool has_t1 = false;
     double phi2 = 0.0;  bool has_phi2 = false;
+    double Delta_phi = 0.0; bool has_Delta_phi = false;
 
     double open_angle_ep2 = 0.0; bool has_open_angle = false;
     double pTmiss = 0.0;         bool has_pTmiss = false;
@@ -1025,6 +1068,7 @@ struct BranchBinder {
         ena("Q2");
         ena("t1");
         ena("phi2");
+        ena("Delta_phi");
 
         ena("open_angle_ep2");
         ena("pTmiss");
@@ -1071,6 +1115,7 @@ struct BranchBinder {
         bD("Q2",   &Q2,   has_Q2);
         bD("t1",   &t1,   has_t1);
         bD("phi2", &phi2, has_phi2);
+        bD("Delta_phi", &Delta_phi, has_Delta_phi);
 
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle);
         bD("pTmiss",         &pTmiss,         has_pTmiss);
@@ -1157,6 +1202,7 @@ static std::vector<std::string> sigma_variable_order(const ChannelConfig& channe
     vars.push_back("Mx2");
     vars.push_back("Mx2_1");
     vars.push_back("Mx2_2");
+    vars.push_back("Delta_phi");
     vars.push_back("pTmiss");
     vars.push_back("xF");
 
@@ -1192,6 +1238,11 @@ static inline double branch_value_for_sigma_var(const BranchBinder& b,
     if (var == "Mx2_2") {
         has_val = b.has_Mx2_2;
         return b.Mx2_2;
+    }
+
+    if (var == "Delta_phi") {
+        has_val = b.has_Delta_phi;
+        return b.Delta_phi;
     }
 
     if (var == "pTmiss") {
@@ -1253,7 +1304,7 @@ static inline bool passes_one_sigma_cut(const ChannelConfig& channel_cfg,
         fatal(ss.str());
     }
 
-    return within_3sigma(val, iv->second);
+    return within_cut_window(val, iv->second);
 }
 
 static inline bool passes_sigma_cuts(const ChannelConfig& channel_cfg,
@@ -1305,10 +1356,11 @@ static inline bool fill_sigma_cut_diagnostics(const ChannelConfig& channel_cfg,
 
 static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
                                                const std::string& period_label) {
-    if (!(b.has_t1 && b.has_open_angle && b.has_pTmiss)) return false;
-    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
-
     const GlobalCutConfig& cfg = default_global_cuts();
+
+    if (!(b.has_t1 && b.has_open_angle)) return false;
+    if (cfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
+    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
 
     if (cfg.enable_topology_filter || global_cuts_require_sector_phi(cfg) || cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_detector1 && b.has_detector2)) {
