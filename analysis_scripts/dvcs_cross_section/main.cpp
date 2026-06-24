@@ -125,128 +125,146 @@ int main(int argc, char* argv[]) {
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
 
-    // Run exclusivity cut extraction 
+    // Run exclusivity cut extraction
     // Record the exact global cuts used:
     write_global_cuts_config_json("output/jsons");
+    ExclusivityDiagnosticConfig excl_diag;
+    excl_diag.enable = true;
+    excl_diag.include_dvcs = true;
+    excl_diag.include_eppi0 = false;
+    // Focus on the variables most relevant to the present acceptance issue.
+    // Leave this empty to use the internal default:
+    //   DVCS: pTmiss, theta_gamma_gamma, Emiss2, Mx2_1
+    excl_diag.variables = { "pTmiss", "theta_gamma_gamma", "Emiss2", "Mx2_1"
+    };
+
+    excl_diag.make_mc_period_overlay_plots = true;
+    excl_diag.write_mc_period_overlay_csv = true;
+    excl_diag.draw_symmetric_3sigma_windows = true;
+    excl_diag.draw_one_sided_upper_windows = true;
+    excl_diag.draw_global_pTmiss_cut = true;
+    excl_diag.make_pTmiss_before_global_pTmiss_plots = true;
+
     runAllExclusivityCuts(
         dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 5
+        "output/jsons", "output/exclusivity_plots", 5, excl_diag
     );
+
     std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // --------- Global bin-averaged kinematics (CSV update) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // // --------- Global bin-averaged kinematics (CSV update) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-        // Make a simple backup before modifying
-        try {
-            std::filesystem::copy_file(csv_main, csv_backup,
-                                       std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-        }
+    //     // Make a simple backup before modifying
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //                                    std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+    //     }
 
-        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
-        const std::string out_dir = "output/q2_xb_cut_coverage";
+    // // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
+    //     const std::string out_dir = "output/q2_xb_cut_coverage";
 
-        if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
-            std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
+    //         std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- Raw yields/counts into CSV + plots ----------
-    {
-        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // // --------- Raw yields/counts into CSV + plots ----------
+    // {
+    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        // Make a backup
-        try {
-            std::filesystem::copy_file(csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-        }
+    //     // Make a backup
+    //     try {
+    //         std::filesystem::copy_file(csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+    //     }
 
-        // update_total_counts_csv() fills:
-        //   - DVCS data raw yields
-        //   - eppi0 data raw yields
-        //   - DVCS generated/reconstructed MC yields
-        //   - eppi0 generated/reconstructed MC yields
-        //   - eppi0-background-as-DVCS reconstructed MC yields
-        if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
-            genMcTrees, recMcTrees,
-            eppi0GenMcTrees, eppi0RecMcTrees,
-            eppi0BkgTrees,
-            cuts_json,
-            output_root,
-            /*max_workers=*/5)) {
-          std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-          std::exit(EXIT_FAILURE);
-        }
-    }
+    //     // update_total_counts_csv() fills:
+    //     //   - DVCS data raw yields
+    //     //   - eppi0 data raw yields
+    //     //   - DVCS generated/reconstructed MC yields
+    //     //   - eppi0 generated/reconstructed MC yields
+    //     //   - eppi0-background-as-DVCS reconstructed MC yields
+    //     if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
+    //         genMcTrees, recMcTrees,
+    //         eppi0GenMcTrees, eppi0RecMcTrees,
+    //         eppi0BkgTrees,
+    //         cuts_json,
+    //         output_root,
+    //         /*max_workers=*/5)) {
+    //       std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+    //       std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    // --------- Current-dependence correction factors ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // // --------- Current-dependence correction factors ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        CurrentDependenceOptions current_opts;
-        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-        current_opts.output_dir = "output/dvcs_current_dependence";
+    //     CurrentDependenceOptions current_opts;
+    //     current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+    //     current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     current_opts.output_dir = "output/dvcs_current_dependence";
 
-        // Existing override:
-        //   false -> compute current-efficiency factors normally
-        //   true  -> write all current-efficiency factors as (1,0)
-        current_opts.override_to_unity = false;
+    //     // Existing override:
+    //     //   false -> compute current-efficiency factors normally
+    //     //   true  -> write all current-efficiency factors as (1,0)
+    //     current_opts.override_to_unity = false;
 
-        // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
-        current_opts.use_second_column_charge_for_all_unpolarized = true;
+    //     // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
+    //     current_opts.use_second_column_charge_for_all_unpolarized = true;
 
-        // New mode:
-        //   Sp18 Inb / Sp18 Out:
-        //     charge_unpol = column 2
-        //
-        //   Fa18 Inb / Fa18 Out / Sp19 Inb:
-        //     charge_unpol = 1.025 * (column 3 + column 4 + column 5)
-        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
-        current_opts.columns_3_to_5_charge_sum_scale = 1.025;
+    //     // New mode:
+    //     //   Sp18 Inb / Sp18 Out:
+    //     //     charge_unpol = column 2
+    //     //
+    //     //   Fa18 Inb / Fa18 Out / Sp19 Inb:
+    //     //     charge_unpol = 1.025 * (column 3 + column 4 + column 5)
+    //     current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
+    //     current_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
-        // Default behavior:
-        //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
-        //            because the Sp19 5 nA luminosity-scan point has suspect
-        //            Faraday Cup charge.
-        //   false -> use the directly fitted Sp19 Inb current-dependence factor.
-        current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
+    //     // Default behavior:
+    //     //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
+    //     //            because the Sp19 5 nA luminosity-scan point has suspect
+    //     //            Faraday Cup charge.
+    //     //   false -> use the directly fitted Sp19 Inb current-dependence factor.
+    //     current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
 
-        current_opts.max_workers = 5;
+    //     current_opts.max_workers = 5;
 
-        if (!update_current_dependence_factors_csv(csv_main,
-                                                   dataTrees,
-                                                   eppi0DataTrees,
-                                                   currentStudyGenMcTrees,
-                                                   currentStudyRecMcTrees,
-                                                   eppi0GenMcTrees,
-                                                   eppi0RecMcTrees,
-                                                   current_opts)) {
-            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_current_dependence_factors_csv(csv_main,
+    //                                                dataTrees,
+    //                                                eppi0DataTrees,
+    //                                                currentStudyGenMcTrees,
+    //                                                currentStudyRecMcTrees,
+    //                                                eppi0GenMcTrees,
+    //                                                eppi0RecMcTrees,
+    //                                                current_opts)) {
+    //         std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
     // {
@@ -344,15 +362,15 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // // // --------- Data/MC comparison ----------
-    // // // runAllBranchDataMcComparisons(
-    // // //     dataTrees,
-    // // //     recMcTrees,
-    // // //     eppi0DataTrees,
-    // // //     eppi0RecMcTrees,
-    // // //     "output/jsons/combined_cuts.json",
-    // // //     "output"
-    // // // );
+    // // // --------- Data/MC comparison ----------
+    // // runAllBranchDataMcComparisons(
+    // //     dataTrees,
+    // //     recMcTrees,
+    // //     eppi0DataTrees,
+    // //     eppi0RecMcTrees,
+    // //     "output/jsons/combined_cuts.json",
+    // //     "output"
+    // // );
 
     // // --------- DVCS MC acceptance (CSV + plots) ----------
     // {
@@ -403,29 +421,29 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // // --------- Radiative corrections (Frad factors) ----------
-    // // {
-    // //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    // //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
+    // // --------- Radiative corrections (Frad factors) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
 
-    // //     // Make a backup before modifying the radiative-correction columns
-    // //     try {
-    // //         std::filesystem::copy_file(
-    // //             csv_main,
-    // //             csv_backup,
-    // //             std::filesystem::copy_options::overwrite_existing
-    // //         );
-    // //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
-    // //     } catch (const std::exception& e) {
-    // //         std::cerr << "[main] WARNING: backup for radiative corrections failed ("
-    // //                   << e.what() << "). Continuing.\n";
-    // //     }
+    //     // Make a backup before modifying the radiative-correction columns
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             csv_backup,
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup for radiative corrections failed ("
+    //                   << e.what() << "). Continuing.\n";
+    //     }
 
-    // //     if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
-    // //         std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
-    // //         std::exit(EXIT_FAILURE);
-    // //     }
-    // // }
+    //     if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
+    //         std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- Kinematic bin volumes into CSV + plots ----------
     // {
@@ -450,84 +468,84 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
-    // // {
-    // //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    // //     // Make a dedicated backup before modifying Fbin columns.
-    // //     try {
-    // //         std::filesystem::copy_file(
-    // //             csv_main,
-    // //             "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
-    // //             std::filesystem::copy_options::overwrite_existing
-    // //         );
-    // //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
-    // //     } catch (const std::exception& ex) {
-    // //         std::cerr << "[main] WARNING: failed to create bin-centering backup: "
-    // //                   << ex.what() << "\n";
-    // //     }
+    //     // Make a dedicated backup before modifying Fbin columns.
+    //     try {
+    //         std::filesystem::copy_file(
+    //             csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
+    //             std::filesystem::copy_options::overwrite_existing
+    //         );
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
+    //     } catch (const std::exception& ex) {
+    //         std::cerr << "[main] WARNING: failed to create bin-centering backup: "
+    //                   << ex.what() << "\n";
+    //     }
 
-    // //     ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
-    // //     const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
-    // //     const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
+    //     ModelPaths model_paths;   // use env/defaults for dvcsgen and km15_cli
+    //     const bool vgg_globalfit = false;  // set true if you want --globalfit for VGG
+    //     const int  n_steps       = 3;      // sub-bins per dimension (xB,Q2,t,phi)
 
-    // //     if (!update_bin_centering_corrections_csv(
-    // //             csv_main,
-    // //             n_steps,
-    // //             model_paths,
-    // //             vgg_globalfit,
-    // //             ModelChoice::Both)) {
-    // //         std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
-    // //         return 1;
-    // //     }
+    //     if (!update_bin_centering_corrections_csv(
+    //             csv_main,
+    //             n_steps,
+    //             model_paths,
+    //             vgg_globalfit,
+    //             ModelChoice::Both)) {
+    //         std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
+    //         return 1;
+    //     }
 
-    // //     // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
-    // //     // Uses Fbin triples and phiavg columns from the updated CSV.
-    // //     plot_bin_centering_fbin_vs_phi(
-    // //         csv_main,
-    // //         "output/bin_centering_plots");
-    // // }
+    //     // Debug plots: Fbin vs phi for 10.6 and 10.2 GeV.
+    //     // Uses Fbin triples and phiavg columns from the updated CSV.
+    //     plot_bin_centering_fbin_vs_phi(
+    //         csv_main,
+    //         "output/bin_centering_plots");
+    // }
 
 
-    // // {
-    // //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-    // //     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
-    // //     const std::string outdir = "output/propagator_study";
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     const std::string outdir = "output/propagator_study";
 
-    // //     // Build the exact keying scheme required by propagator_study.cpp:
-    // //     // required keys: fa18_inb, fa18_out, sp18_inb, sp18_out, sp19_inb
-    // //     std::map<std::string, std::vector<TTree*>> dataTreesByPeriod;
+    //     // Build the exact keying scheme required by propagator_study.cpp:
+    //     // required keys: fa18_inb, fa18_out, sp18_inb, sp18_out, sp19_inb
+    //     std::map<std::string, std::vector<TTree*>> dataTreesByPeriod;
 
-    // //     auto require_tree = [&](const std::string& in_key,
-    // //                             const std::string& out_key) {
-    // //         auto it = dataTrees.find(in_key);
-    // //         if (it == dataTrees.end() || it->second == nullptr) {
-    // //             std::cerr << "[main] FATAL: missing required data tree key \"" << in_key << "\"\n";
-    // //             std::cerr << "[main] Available dataTrees keys are:\n";
-    // //             for (const auto& kv : dataTrees) {
-    // //                 std::cerr << "  - " << kv.first << "\n";
-    // //             } //endfor
-    // //             std::exit(EXIT_FAILURE);
-    // //         }
-    // //         dataTreesByPeriod[out_key].push_back(it->second);
-    // //     };
+    //     auto require_tree = [&](const std::string& in_key,
+    //                             const std::string& out_key) {
+    //         auto it = dataTrees.find(in_key);
+    //         if (it == dataTrees.end() || it->second == nullptr) {
+    //             std::cerr << "[main] FATAL: missing required data tree key \"" << in_key << "\"\n";
+    //             std::cerr << "[main] Available dataTrees keys are:\n";
+    //             for (const auto& kv : dataTrees) {
+    //                 std::cerr << "  - " << kv.first << "\n";
+    //             } //endfor
+    //             std::exit(EXIT_FAILURE);
+    //         }
+    //         dataTreesByPeriod[out_key].push_back(it->second);
+    //     };
 
-    // //     // These input keys must match exactly whatever loadTrees() uses.
-    // //     // Based on your comment earlier ("keys like DVCS_Fa18_inb, ..."), this is the expected mapping:
-    // //     require_tree("DVCS_Fa18_inb", "fa18_inb");
-    // //     require_tree("DVCS_Fa18_out", "fa18_out");
-    // //     require_tree("DVCS_Sp18_inb", "sp18_inb");
-    // //     require_tree("DVCS_Sp18_out", "sp18_out");
-    // //     require_tree("DVCS_Sp19_inb", "sp19_inb");
+    //     // These input keys must match exactly whatever loadTrees() uses.
+    //     // Based on your comment earlier ("keys like DVCS_Fa18_inb, ..."), this is the expected mapping:
+    //     require_tree("DVCS_Fa18_inb", "fa18_inb");
+    //     require_tree("DVCS_Fa18_out", "fa18_out");
+    //     require_tree("DVCS_Sp18_inb", "sp18_inb");
+    //     require_tree("DVCS_Sp18_out", "sp18_out");
+    //     require_tree("DVCS_Sp19_inb", "sp19_inb");
 
-    // //     if (!propagator_study::run_propagator_study(csv_main,
-    // //                                                 dataTreesByPeriod,
-    // //                                                 combined_cuts_json,
-    // //                                                 outdir)) {
-    // //         std::cerr << "[main] ERROR: propagator study failed\n";
-    // //         return 1;
-    // //     }
-    // // }
+    //     if (!propagator_study::run_propagator_study(csv_main,
+    //                                                 dataTreesByPeriod,
+    //                                                 combined_cuts_json,
+    //                                                 outdir)) {
+    //         std::cerr << "[main] ERROR: propagator study failed\n";
+    //         return 1;
+    //     }
+    // }
 
 
     // // --------- Cross sections (CSV update + theory JSON + plots) ----------
