@@ -1259,6 +1259,21 @@ struct Branches {
         bD("p2_theta", &p2_theta, has_p2_theta);
         bD("p2_phi", &p2_phi, has_p2_phi);
     }
+
+    double delta_phi_value(bool& has_val) const {
+        if (has_Delta_phi) {
+            has_val = true;
+            return Delta_phi;
+        }
+
+        if (has_p1_phi && has_p2_phi) {
+            has_val = true;
+            return delta_phi_rad_from_two_phi(p1_phi, p2_phi);
+        }
+
+        has_val = false;
+        return 0.0;
+    }
 };
 
 static bool passes_cone_cut(const Branches& b) {
