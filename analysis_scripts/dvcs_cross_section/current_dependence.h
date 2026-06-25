@@ -70,6 +70,18 @@ struct CurrentDependenceOptions {
     // purposes, but the saved CSV values used downstream are Fa18 Inb values.
     bool use_fa18_inb_current_efficiency_for_sp19_inb = true;
 
+    // Optional DVCS MC acceptance override.
+    //
+    // If true:
+    //   The ep->epg MC current-efficiency factors written to the CSV are forced
+    //   to unity because the no-background dvcsgen files are being used for
+    //   ep->epg generated/reconstructed MC counts upstream in total_counts.cpp.
+    //
+    // This affects only ep->epg MC. DATA factors and the ep->eppi0 /
+    // ep->eppi0->epg treatment are unchanged. The scan is still processed and
+    // plotted diagnostically.
+    bool use_nobkg_dvcs_mc_counts = false;
+
     // If true, DATA raw-yield corrections use a period-dependent linear
     // current-efficiency factor in electron polar angle,
     //
