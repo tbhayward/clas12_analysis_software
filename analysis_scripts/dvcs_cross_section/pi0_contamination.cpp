@@ -34,6 +34,8 @@
 #include <TTree.h>
 #include <TLeaf.h>
 #include <TAxis.h>
+#include <TBranch.h>
+#include <TObjArray.h>
 
 #include <algorithm>
 #include <cmath>
@@ -829,13 +831,51 @@ struct TreeDiagLeaves {
     TLeaf* p2_phi = nullptr;
     std::string used_var_name;
 
+    static std::string normalized_leaf_name(std::string s) {
+        std::string out;
+        out.reserve(s.size());
+        for (char c : s) {
+            if (c == '_' || c == '-' || c == ' ' || c == '.') continue;
+            out.push_back((char)std::tolower((unsigned char)c));
+        }
+        return out;
+    }
+
     static TLeaf* leaf_after_enabling(TTree* t, const std::string& name) {
         if (!t || name.empty()) return nullptr;
+
         // Previous stages sometimes disable branches to speed up tree scans.
         // Explicitly re-enable the branches needed by this diagnostic before
-        // checking/filling them.
+        // checking/filling them. Try both exact branch/leaf access and a final
+        // case/underscore-insensitive leaf search for older tree variants.
         t->SetBranchStatus(name.c_str(), 1);
-        return t->GetLeaf(name.c_str());
+
+        if (TLeaf* leaf = t->GetLeaf(name.c_str())) return leaf;
+        if (TBranch* branch = t->GetBranch(name.c_str())) {
+            branch->SetStatus(1);
+            if (TLeaf* leaf = branch->GetLeaf(name.c_str())) return leaf;
+            TObjArray* leaves = branch->GetListOfLeaves();
+            if (leaves && leaves->GetEntriesFast() == 1) {
+                return dynamic_cast<TLeaf*>(leaves->At(0));
+            }
+        }
+
+        const std::string want = normalized_leaf_name(name);
+        TObjArray* leaves = t->GetListOfLeaves();
+        if (!leaves) return nullptr;
+        for (int i = 0; i < leaves->GetEntriesFast(); ++i) {
+            TLeaf* leaf = dynamic_cast<TLeaf*>(leaves->At(i));
+            if (!leaf) continue;
+            const std::string lname = leaf->GetName() ? leaf->GetName() : "";
+            if (normalized_leaf_name(lname) == want) {
+                if (TBranch* branch = leaf->GetBranch()) {
+                    branch->SetStatus(1);
+                }
+                return leaf;
+            }
+        }
+
+        return nullptr;
     }
 
     bool init(TTree* t, const std::vector<std::string>& var_aliases) {
@@ -1168,6 +1208,9 @@ static void make_exclusivity_variable_diagnostics(
     const std::map<std::string, TTree*>& eppi0BkgTrees,
     const std::string& output_root_dir) {
 
+    (void)csv;
+    (void)bins;
+
     const std::string diag_dir = join_path(join_path(output_root_dir, "pi0_contamination_plots"),
                                            "exclusivity_variable_diagnostics");
     mkdir_p(diag_dir);
@@ -1179,11 +1222,6 @@ static void make_exclusivity_variable_diagnostics(
             std::map<std::string, std::vector<DiagnosticBinRow>> rows_by_topology;
 
             for (const std::string& topo : kTopologies) {
-                const Triple total_dvcs = topology_data_yield_integrated(csv, bins, "ep->epg", topo, period);
-                const Triple total_pi0_data = topology_data_yield_integrated(csv, bins, "ep->eppi0", topo, period);
-                const Triple total_pi0_rec = topology_mc_yield_integrated(csv, bins, "ep->eppi0", topo, period);
-                const Triple total_mis = topology_mc_yield_integrated(csv, bins, "ep->eppi0->epg", topo, period);
-
                 const std::string hbase = safe_file_token(period + "_" + topo + "_" + varcfg.name);
 
                 TH1D h_dvcs(("h_dvcs_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
@@ -1217,8 +1255,6 @@ static void make_exclusivity_variable_diagnostics(
                                                 false, h_mis, nt_mis, ns_mis, nf_mis);
 
                 const bool have_all_trees = (nt_dvcs > 0 && nt_pi0_data > 0 && nt_pi0_rec > 0 && nt_mis > 0);
-                const bool have_all_totals = (total_dvcs.v > 0.0 && total_pi0_data.v > 0.0 &&
-                                              total_pi0_rec.v > 0.0 && total_mis.v > 0.0);
 
                 if (!have_all_trees) {
                     std::cout << "[pi0_contamination] diagnostic: insufficient trees for "
@@ -1228,27 +1264,22 @@ static void make_exclusivity_variable_diagnostics(
                               << std::endl;
                 }
 
-                if (!have_all_totals) {
-                    std::cout << "[pi0_contamination] diagnostic: insufficient CSV normalization totals for "
-                              << period << " " << topo << " " << varcfg.name
-                              << " totals(dvcs,pi0data,pi0rec,mis)=("
-                              << total_dvcs.v << "," << total_pi0_data.v << ","
-                              << total_pi0_rec.v << "," << total_mis.v << ")." << std::endl;
-                }
-
-                if (have_all_trees && have_all_totals) {
-                    scale_hist_to_yield(h_dvcs, total_dvcs);
-                    scale_hist_to_yield(h_pi0_data, total_pi0_data);
-                    scale_hist_to_yield(h_pi0_rec, total_pi0_rec);
-                    scale_hist_to_yield(h_mis, total_mis);
-                }
+                // Do not renormalize these diagnostic histograms to CSV-integrated
+                // totals. This study is the same pi0-contamination formula evaluated
+                // directly as a function of the plotted exclusivity variable:
+                //
+                //   c(x) = Nmis_mc(x) * Npi0_data(x)
+                //        / [Npi0_rec_mc(x) * Ndvcs_data(x)]
+                //
+                // i.e. the same structure used in the main calculation, but binned
+                // in Delta_phi, pTmiss, Mx2, etc. rather than in xB, Q2, |t|, phi.
 
                 std::vector<DiagnosticBinRow> plot_rows;
                 plot_rows.reserve(varcfg.nbins);
                 for (int ibin = 1; ibin <= varcfg.nbins; ++ibin) {
                     DiagnosticBinRow row = compute_diagnostic_bin(period, topo, varcfg.name, ibin,
                                                                   h_dvcs, h_pi0_data, h_pi0_rec, h_mis);
-                    if (!have_all_trees || !have_all_totals) {
+                    if (!have_all_trees) {
                         row.valid = false;
                     }
                     all_rows.push_back(row);
@@ -1262,8 +1293,7 @@ static void make_exclusivity_variable_diagnostics(
                           << ns_dvcs << "," << ns_pi0_data << "," << ns_pi0_rec << "," << ns_mis
                           << ") filled(dvcs,pi0data,pi0rec,mis)=("
                           << nf_dvcs << "," << nf_pi0_data << "," << nf_pi0_rec << "," << nf_mis
-                          << ") scaled_to_totals=(" << total_dvcs.v << "," << total_pi0_data.v << ","
-                          << total_pi0_rec.v << "," << total_mis.v << ")" << std::endl;
+                          << ")" << std::endl;
             }
 
             const std::string out_png = join_path(diag_dir,
