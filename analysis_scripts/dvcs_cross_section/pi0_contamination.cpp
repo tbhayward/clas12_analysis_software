@@ -721,6 +721,52 @@ struct DiagnosticBinRow {
     bool valid = false;
 };
 
+
+struct DiagnosticHist {
+    int nbins = 0;
+    double xmin = 0.0;
+    double xmax = 1.0;
+    double width = 1.0;
+    std::vector<double> sumw;
+    std::vector<double> sumw2;
+
+    DiagnosticHist() = default;
+    DiagnosticHist(int n, double lo, double hi) {
+        reset(n, lo, hi);
+    }
+
+    void reset(int n, double lo, double hi) {
+        nbins = std::max(1, n);
+        xmin = lo;
+        xmax = hi;
+        width = (xmax > xmin) ? (xmax - xmin) / (double)nbins : 1.0;
+        sumw.assign((size_t)nbins + 1, 0.0);   // 1-based bin indexing; bin 0 unused
+        sumw2.assign((size_t)nbins + 1, 0.0);
+    }
+
+    void Fill(double x, double w = 1.0) {
+        if (!(x >= xmin && x < xmax) || !(width > 0.0)) return;
+        int ibin = 1 + (int)((x - xmin) / width);
+        if (ibin < 1) ibin = 1;
+        if (ibin > nbins) ibin = nbins;
+        sumw[(size_t)ibin] += w;
+        sumw2[(size_t)ibin] += w * w;
+    }
+
+    int GetNbinsX() const { return nbins; }
+    double GetBinContent(int ibin) const {
+        if (ibin < 1 || ibin > nbins) return 0.0;
+        return sumw[(size_t)ibin];
+    }
+    double GetBinError(int ibin) const {
+        if (ibin < 1 || ibin > nbins) return 0.0;
+        return std::sqrt(std::max(0.0, sumw2[(size_t)ibin]));
+    }
+    double GetBinLowEdge(int ibin) const { return xmin + (double)(ibin - 1) * width; }
+    double GetBinUpEdge(int ibin) const { return xmin + (double)ibin * width; }
+    double GetBinCenter(int ibin) const { return 0.5 * (GetBinLowEdge(ibin) + GetBinUpEdge(ibin)); }
+};
+
 struct DiagnosticCut {
     double mean = std::numeric_limits<double>::quiet_NaN();
     double std = std::numeric_limits<double>::quiet_NaN();
@@ -1274,7 +1320,7 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
                                             const DiagnosticVar& varcfg,
                                             bool eppi0_exclusive_sample,
                                             const DiagnosticCutMap* cuts,
-                                            TH1D& hist,
+                                            DiagnosticHist& hist,
                                             int& trees_used,
                                             long long& events_seen,
                                             long long& events_filled) {
@@ -1378,18 +1424,18 @@ static DiagnosticBinRow compute_diagnostic_bin(const std::string& period,
                                                const std::string& topo,
                                                const std::string& var,
                                                int ibin,
-                                               const TH1D& h_dvcs,
-                                               const TH1D& h_pi0_data,
-                                               const TH1D& h_pi0_rec,
-                                               const TH1D& h_mis) {
+                                               const DiagnosticHist& h_dvcs,
+                                               const DiagnosticHist& h_pi0_data,
+                                               const DiagnosticHist& h_pi0_rec,
+                                               const DiagnosticHist& h_mis) {
     DiagnosticBinRow row;
     row.period = period;
     row.topology = topo;
     row.variable = var;
     row.bin = ibin;
-    row.xmin = h_dvcs.GetXaxis()->GetBinLowEdge(ibin);
-    row.xmax = h_dvcs.GetXaxis()->GetBinUpEdge(ibin);
-    row.xcenter = h_dvcs.GetXaxis()->GetBinCenter(ibin);
+    row.xmin = h_dvcs.GetBinLowEdge(ibin);
+    row.xmax = h_dvcs.GetBinUpEdge(ibin);
+    row.xcenter = h_dvcs.GetBinCenter(ibin);
 
     row.Ndvcs_data = h_dvcs.GetBinContent(ibin);
     row.Ndvcs_data_stat = h_dvcs.GetBinError(ibin);
@@ -1564,22 +1610,10 @@ static void make_exclusivity_variable_diagnostics(
             for (const std::string& topo : kTopologies) {
                 const std::string hbase = safe_file_token(period + "_" + topo + "_" + varcfg.name);
 
-                TH1D h_dvcs(("h_dvcs_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
-                TH1D h_pi0_data(("h_pi0_data_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
-                TH1D h_pi0_rec(("h_pi0_rec_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
-                TH1D h_mis(("h_mis_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
-                h_dvcs.SetDirectory(nullptr);
-                h_pi0_data.SetDirectory(nullptr);
-                h_pi0_rec.SetDirectory(nullptr);
-                h_mis.SetDirectory(nullptr);
-                h_dvcs.SetBuffer(0);
-                h_pi0_data.SetBuffer(0);
-                h_pi0_rec.SetBuffer(0);
-                h_mis.SetBuffer(0);
-                h_dvcs.Sumw2();
-                h_pi0_data.Sumw2();
-                h_pi0_rec.Sumw2();
-                h_mis.Sumw2();
+                DiagnosticHist h_dvcs(varcfg.nbins, varcfg.xmin, varcfg.xmax);
+                DiagnosticHist h_pi0_data(varcfg.nbins, varcfg.xmin, varcfg.xmax);
+                DiagnosticHist h_pi0_rec(varcfg.nbins, varcfg.xmin, varcfg.xmax);
+                DiagnosticHist h_mis(varcfg.nbins, varcfg.xmin, varcfg.xmax);
 
                 int nt_dvcs = 0, nt_pi0_data = 0, nt_pi0_rec = 0, nt_mis = 0;
                 long long ns_dvcs = 0, ns_pi0_data = 0, ns_pi0_rec = 0, ns_mis = 0;
