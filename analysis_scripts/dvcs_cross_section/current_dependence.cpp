@@ -2995,7 +2995,8 @@ static PeriodKinematicAggMap build_kinematic_current_diagnostic_aggs(
     const std::vector<KinematicVarConfig>& vars,
     bool use_second_column_charge_for_all_unpolarized,
     bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-    double columns_3_to_5_charge_sum_scale) {
+    double columns_3_to_5_charge_sum_scale,
+    int max_workers) {
 
     PeriodKinematicAggMap out;
 
@@ -3010,12 +3011,30 @@ static PeriodKinematicAggMap build_kinematic_current_diagnostic_aggs(
         }
     }
 
+    std::vector<std::pair<std::string, TTree*>> items;
+    items.reserve(data_trees.size());
+
     for (const auto& kv : data_trees) {
         PeriodTags tags = parse_period_from_key(kv.first);
 
         if (tags.display == "Fa18 Inb Supp") {
             continue;
         }
+
+        items.push_back(kv);
+    }
+
+    const int nth = std::max(1, std::min(max_workers, std::max(1, (int)items.size())));
+    std::cout << "[current_dependence] Kinematic DATA diagnostics: processing "
+              << items.size() << " trees with " << nth << " worker(s)." << std::endl;
+    std::mutex out_mutex;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < (int)items.size(); ++i) {
+        const auto& kv = items[i];
+        PeriodTags tags = parse_period_from_key(kv.first);
 
         KinematicAggMap one = process_data_tree_for_kinematic_current_diagnostics(
             cfg,
@@ -3027,6 +3046,8 @@ static PeriodKinematicAggMap build_kinematic_current_diagnostic_aggs(
             use_second_column_charge_for_all_unpolarized,
             use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
             columns_3_to_5_charge_sum_scale);
+
+        std::lock_guard<std::mutex> lock(out_mutex);
 
         for (const KinematicVarConfig& v : vars) {
             auto it = one.find(v.key);
@@ -3190,7 +3211,8 @@ static PeriodKinematicMcAggMap build_kinematic_current_diagnostic_mc_aggs(
     const std::map<std::string, TTree*>& gen_trees,
     const std::map<std::string, TTree*>& rec_trees,
     const TopoCutMap& mc_cuts,
-    const std::vector<KinematicVarConfig>& vars) {
+    const std::vector<KinematicVarConfig>& vars,
+    int max_workers) {
 
     PeriodKinematicMcAggMap out;
 
@@ -3204,7 +3226,7 @@ static PeriodKinematicMcAggMap build_kinematic_current_diagnostic_mc_aggs(
         }
     }
 
-    auto merge_one = [&](const KinematicMcAggMap& one, const std::string& period) {
+    auto merge_one_locked = [&](const KinematicMcAggMap& one, const std::string& period) {
         for (const KinematicVarConfig& v : vars) {
             auto it = one.find(v.key);
             if (it == one.end()) {
@@ -3219,24 +3241,60 @@ static PeriodKinematicMcAggMap build_kinematic_current_diagnostic_mc_aggs(
         }
     };
 
+    std::mutex out_mutex;
+
+    std::vector<std::pair<std::string, TTree*>> gen_items;
+    gen_items.reserve(gen_trees.size());
     for (const auto& kv : gen_trees) {
         PeriodTags tags = parse_period_from_key(kv.first);
         if (tags.display == "Fa18 Inb Supp") {
             continue;
         }
-        KinematicMcAggMap one = process_generated_tree_for_kinematic_current_diagnostics(
-            cfg, kv.first, kv.second, vars);
-        merge_one(one, tags.display);
+        gen_items.push_back(kv);
     }
 
+    int nth = std::max(1, std::min(max_workers, std::max(1, (int)gen_items.size())));
+    std::cout << "[current_dependence] Kinematic MC diagnostics: processing "
+              << gen_items.size() << " generated trees with " << nth << " worker(s)." << std::endl;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < (int)gen_items.size(); ++i) {
+        const auto& kv = gen_items[i];
+        PeriodTags tags = parse_period_from_key(kv.first);
+        KinematicMcAggMap one = process_generated_tree_for_kinematic_current_diagnostics(
+            cfg, kv.first, kv.second, vars);
+
+        std::lock_guard<std::mutex> lock(out_mutex);
+        merge_one_locked(one, tags.display);
+    }
+
+    std::vector<std::pair<std::string, TTree*>> rec_items;
+    rec_items.reserve(rec_trees.size());
     for (const auto& kv : rec_trees) {
         PeriodTags tags = parse_period_from_key(kv.first);
         if (tags.display == "Fa18 Inb Supp") {
             continue;
         }
+        rec_items.push_back(kv);
+    }
+
+    nth = std::max(1, std::min(max_workers, std::max(1, (int)rec_items.size())));
+    std::cout << "[current_dependence] Kinematic MC diagnostics: processing "
+              << rec_items.size() << " reconstructed trees with " << nth << " worker(s)." << std::endl;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < (int)rec_items.size(); ++i) {
+        const auto& kv = rec_items[i];
+        PeriodTags tags = parse_period_from_key(kv.first);
         KinematicMcAggMap one = process_reconstructed_tree_for_kinematic_current_diagnostics(
             cfg, kv.first, kv.second, mc_cuts, vars);
-        merge_one(one, tags.display);
+
+        std::lock_guard<std::mutex> lock(out_mutex);
+        merge_one_locked(one, tags.display);
     }
 
     return out;
@@ -3509,7 +3567,8 @@ static void draw_kinematic_current_efficiency_diagnostics(
     bool use_second_column_charge_for_all_unpolarized,
     bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
     double columns_3_to_5_charge_sum_scale,
-    bool hide_sp19_inb_from_all_period_plots) {
+    bool hide_sp19_inb_from_all_period_plots,
+    int max_workers) {
 
     const std::vector<KinematicVarConfig> vars = kinematic_current_var_configs();
     const std::string odir = output_dir + "/" + cfg.output_token + "/kinematic_current_efficiency_diagnostics";
@@ -3531,14 +3590,16 @@ static void draw_kinematic_current_efficiency_diagnostics(
         vars,
         use_second_column_charge_for_all_unpolarized,
         use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-        columns_3_to_5_charge_sum_scale);
+        columns_3_to_5_charge_sum_scale,
+        max_workers);
 
     PeriodKinematicMcAggMap mc_aggs = build_kinematic_current_diagnostic_mc_aggs(
         cfg,
         gen_trees,
         rec_trees,
         mc_cuts,
-        vars);
+        vars,
+        max_workers);
 
     std::map<std::string, double> integrated_data = integrated_data_factor_by_period(integrated_results);
     std::map<std::string, double> integrated_mc;
@@ -4747,7 +4808,8 @@ bool update_current_dependence_factors_csv(
             options.use_second_column_charge_for_all_unpolarized,
             options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
             options.columns_3_to_5_charge_sum_scale,
-            options.use_fa18_inb_current_efficiency_for_sp19_inb);
+            options.use_fa18_inb_current_efficiency_for_sp19_inb,
+            options.max_workers);
 
         // eppi0 reconstructed MC current dependence is still derived from the
         // DVCS MC/data ratio because the eppi0 MC scan is intentionally skipped.
