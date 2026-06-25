@@ -711,20 +711,20 @@ struct DiagnosticBinRow {
     double Npi0_rec_mc_stat = 0.0;
     double Nmis_mc = 0.0;
     double Nmis_mc_stat = 0.0;
-    double contamination = 0.0;
-    double contamination_stat = 0.0;
+    double contamination = 0.0;       // fraction, not percent
+    double contamination_stat = 0.0;  // fraction, not percent
     bool valid = false;
 };
 
 static const std::vector<DiagnosticVar> kDiagnosticVars = {
-    {"Delta_phi",           "#Delta#phi (rad)",                    100, 2.84159, 3.44159},
+    {"Delta_phi",           "#Delta#phi (rad)",                                   100, 2.84159, 3.44159},
     {"theta_gamma_gamma",   "#theta_{#gamma#gamma} / #theta_{#pi^{0}#pi^{0}} (rad)", 100, 0.0, 2.0},
-    {"pTmiss",              "p_{T}^{miss} (GeV)",                  100, 0.0, 0.3},
-    {"xF",                  "x_{F}",                               100, -0.4, 0.2},
-    {"Emiss2",              "E_{miss}^{2} (GeV^{2})",              100, -1.0, 2.0},
-    {"Mx2",                 "M_{x}^{2} (GeV^{2})",                 100, -0.03, 0.03},
-    {"Mx2_1",               "M_{x1}^{2} (GeV^{2})",                100, -1.5, 1.5},
-    {"Mx2_2",               "M_{x2}^{2} (GeV^{2})",                100, 0.0, 3.0}
+    {"pTmiss",              "p_{T}^{miss} (GeV)",                                 100, 0.0, 0.3},
+    {"xF",                  "x_{F}",                                              100, -0.4, 0.2},
+    {"Emiss2",              "E_{miss}^{2} (GeV^{2})",                             100, -1.0, 2.0},
+    {"Mx2",                 "M_{x}^{2} (GeV^{2})",                                100, -0.03, 0.03},
+    {"Mx2_1",               "M_{x1}^{2} (GeV^{2})",                               100, -1.5, 1.5},
+    {"Mx2_2",               "M_{x2}^{2} (GeV^{2})",                               100, 0.0, 3.0}
 };
 
 static std::string to_lower_ascii(std::string s) {
@@ -733,7 +733,6 @@ static std::string to_lower_ascii(std::string s) {
     }
     return s;
 }
-
 
 static bool key_matches_period(const std::string& key, const std::string& period) {
     const std::string k = to_lower_ascii(key);
@@ -765,12 +764,40 @@ static bool passes_topology_ids(int detector1, int detector2, const std::string&
     return detector1 == topology_detector1(topo) && detector2 == topology_detector2(topo);
 }
 
-static std::string diagnostic_sample_variable(const std::string& requested_variable,
-                                              bool eppi0_exclusive_sample) {
-    if (requested_variable == "theta_gamma_gamma" && eppi0_exclusive_sample) {
-        return "theta_pi0_pi0";
+static std::vector<std::string> diagnostic_variable_aliases(const std::string& requested_variable,
+                                                            bool eppi0_exclusive_sample) {
+    if (requested_variable == "theta_gamma_gamma") {
+        if (eppi0_exclusive_sample) return {"theta_pi0_pi0", "theta_gamma_gamma"};
+        return {"theta_gamma_gamma", "theta_pi0_pi0"};
     }
-    return requested_variable;
+
+    if (requested_variable == "Delta_phi") {
+        return {"Delta_phi"};
+    }
+
+    // Most trees use the nominal names below. The extra aliases are deliberately
+    // harmless fallbacks for older skim variants. They also make the diagnostic
+    // more robust if a channel-specific tree used a slightly different spelling.
+    if (requested_variable == "Mx2") {
+        return {"Mx2", "Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0"};
+    }
+    if (requested_variable == "Mx2_1") {
+        return {"Mx2_1", "Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p"};
+    }
+    if (requested_variable == "Mx2_2") {
+        return {"Mx2_2", "Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"};
+    }
+
+    return {requested_variable};
+}
+
+static std::string join_aliases_for_log(const std::vector<std::string>& aliases) {
+    std::ostringstream os;
+    for (size_t i = 0; i < aliases.size(); ++i) {
+        if (i) os << "/";
+        os << aliases[i];
+    }
+    return os.str();
 }
 
 static std::string safe_file_token(const std::string& s) {
@@ -800,20 +827,43 @@ struct TreeDiagLeaves {
     TLeaf* Delta_phi = nullptr;
     TLeaf* p1_phi = nullptr;
     TLeaf* p2_phi = nullptr;
+    std::string used_var_name;
 
-    bool init(TTree* t, const std::string& varname) {
+    static TLeaf* leaf_after_enabling(TTree* t, const std::string& name) {
+        if (!t || name.empty()) return nullptr;
+        // Previous stages sometimes disable branches to speed up tree scans.
+        // Explicitly re-enable the branches needed by this diagnostic before
+        // checking/filling them.
+        t->SetBranchStatus(name.c_str(), 1);
+        return t->GetLeaf(name.c_str());
+    }
+
+    bool init(TTree* t, const std::vector<std::string>& var_aliases) {
         tree = t;
         if (!tree) return false;
-        detector1 = tree->GetLeaf("detector1");
-        detector2 = tree->GetLeaf("detector2");
-        var = tree->GetLeaf(varname.c_str());
-        Delta_phi = tree->GetLeaf("Delta_phi");
-        p1_phi = tree->GetLeaf("p1_phi");
-        p2_phi = tree->GetLeaf("p2_phi");
-        if (!detector1 || !detector2) return false;
-        if (varname == "Delta_phi") {
-            return (var != nullptr) || (p1_phi != nullptr && p2_phi != nullptr);
+
+        detector1 = leaf_after_enabling(tree, "detector1");
+        detector2 = leaf_after_enabling(tree, "detector2");
+        Delta_phi = leaf_after_enabling(tree, "Delta_phi");
+        p1_phi = leaf_after_enabling(tree, "p1_phi");
+        p2_phi = leaf_after_enabling(tree, "p2_phi");
+
+        for (const std::string& alias : var_aliases) {
+            TLeaf* leaf = leaf_after_enabling(tree, alias);
+            if (leaf) {
+                var = leaf;
+                used_var_name = alias;
+                break;
+            }
         }
+
+        if (!detector1 || !detector2) return false;
+
+        // Delta_phi can be stored directly or computed from p1_phi and p2_phi.
+        if (var_aliases.size() == 1 && var_aliases.front() == "Delta_phi") {
+            return (var != nullptr) || (Delta_phi != nullptr) || (p1_phi != nullptr && p2_phi != nullptr);
+        }
+
         return var != nullptr;
     }
 
@@ -848,7 +898,7 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
                                             const std::string& period,
                                             const std::string& topology,
                                             const DiagnosticVar& varcfg,
-                                            const std::string& sample_var,
+                                            bool eppi0_exclusive_sample,
                                             TH1D& hist,
                                             int& trees_used,
                                             long long& events_seen,
@@ -857,15 +907,22 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
     events_seen = 0;
     events_filled = 0;
 
+    const std::vector<std::string> aliases = diagnostic_variable_aliases(varcfg.name, eppi0_exclusive_sample);
+    static std::set<std::string> warned_missing;
+
     for (const auto& kv : trees) {
         if (!kv.second) continue;
         if (!key_matches_period(kv.first, period)) continue;
 
         TreeDiagLeaves leaves;
-        if (!leaves.init(kv.second, sample_var)) {
-            std::cout << "[pi0_contamination] diagnostic: skipping tree key='" << kv.first
-                      << "' for variable " << sample_var
-                      << " because required branch(es) are missing." << std::endl;
+        if (!leaves.init(kv.second, aliases)) {
+            const std::string warn_key = kv.first + "|" + varcfg.name + "|" + (eppi0_exclusive_sample ? "pi0" : "dvcs");
+            if (warned_missing.insert(warn_key).second) {
+                std::cout << "[pi0_contamination] diagnostic: skipping tree key='" << kv.first
+                          << "' for variable " << varcfg.name
+                          << " because required branch(es) are missing. Tried aliases="
+                          << join_aliases_for_log(aliases) << "." << std::endl;
+            }
             continue;
         }
 
@@ -996,7 +1053,8 @@ static void write_diagnostic_csv(const std::string& path,
     out << "period,topology,variable,bin,xmin,xmax,xcenter,"
         << "Ndvcs_data,Ndvcs_data_stat,Npi0_data,Npi0_data_stat,"
         << "Npi0_rec_mc,Npi0_rec_mc_stat,Nmis_mc,Nmis_mc_stat,"
-        << "contamination,contamination_stat,valid\n";
+        << "contamination_fraction,contamination_fraction_stat,"
+        << "contamination_percent,contamination_percent_stat,valid\n";
 
     out << std::setprecision(12);
     for (const DiagnosticBinRow& r : rows) {
@@ -1007,16 +1065,45 @@ static void write_diagnostic_csv(const std::string& path,
             << r.Npi0_rec_mc << ',' << r.Npi0_rec_mc_stat << ','
             << r.Nmis_mc << ',' << r.Nmis_mc_stat << ','
             << r.contamination << ',' << r.contamination_stat << ','
+            << 100.0 * r.contamination << ',' << 100.0 * r.contamination_stat << ','
             << (r.valid ? 1 : 0) << '\n';
     }
 }
 
-static void plot_diagnostic_graph(const std::string& out_png,
-                                  const std::string& period,
-                                  const std::string& topo,
-                                  const DiagnosticVar& varcfg,
-                                  const std::vector<DiagnosticBinRow>& rows_for_plot) {
-    TCanvas c("c_pi0_contamination_vs_excl", "", 1100, 800);
+static void draw_topology_graph(const std::vector<DiagnosticBinRow>& rows,
+                                int color,
+                                int marker,
+                                const char* draw_opt,
+                                TLegend& leg,
+                                const std::string& topo) {
+    TGraphErrors* g = new TGraphErrors();
+    g->SetName(("g_" + safe_file_token(topo)).c_str());
+
+    int ip = 0;
+    for (const DiagnosticBinRow& r : rows) {
+        if (!r.valid) continue;
+        g->SetPoint(ip, r.xcenter, 100.0 * r.contamination);
+        g->SetPointError(ip, 0.5 * (r.xmax - r.xmin), 100.0 * r.contamination_stat);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(marker);
+    g->SetMarkerSize(0.75);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(1);
+
+    if (ip > 0) {
+        g->Draw(draw_opt);
+        leg.AddEntry(g, topo.c_str(), "pe");
+    }
+}
+
+static void plot_diagnostic_overlay(const std::string& out_png,
+                                    const std::string& period,
+                                    const DiagnosticVar& varcfg,
+                                    const std::map<std::string, std::vector<DiagnosticBinRow>>& rows_by_topology) {
+    TCanvas c("c_pi0_contamination_vs_excl_overlay", "", 1100, 800);
     c.SetLeftMargin(0.12);
     c.SetRightMargin(0.05);
     c.SetTopMargin(0.10);
@@ -1025,17 +1112,10 @@ static void plot_diagnostic_graph(const std::string& out_png,
     c.SetTickx(1);
     c.SetTicky(1);
 
-    double ymax = 0.0;
-    for (const DiagnosticBinRow& r : rows_for_plot) {
-        if (!r.valid) continue;
-        ymax = std::max(ymax, r.contamination + r.contamination_stat);
-    }
-    if (!(ymax > 0.0)) ymax = 0.02;
-
-    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 1.25 * ymax);
+    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 10.0);
     frame->SetTitle("");
     frame->GetXaxis()->SetTitle(varcfg.label.c_str());
-    frame->GetYaxis()->SetTitle("#pi_{0} contamination");
+    frame->GetYaxis()->SetTitle("predicted #pi_{0} contamination (%)");
     frame->GetXaxis()->CenterTitle(true);
     frame->GetYaxis()->CenterTitle(true);
     frame->GetXaxis()->SetTitleSize(0.045);
@@ -1044,28 +1124,36 @@ static void plot_diagnostic_graph(const std::string& out_png,
     frame->GetYaxis()->SetLabelSize(0.040);
     frame->GetYaxis()->SetTitleOffset(1.25);
 
-    TGraphErrors g;
-    int ip = 0;
-    for (const DiagnosticBinRow& r : rows_for_plot) {
-        if (!r.valid) continue;
-        g.SetPoint(ip, r.xcenter, r.contamination);
-        g.SetPointError(ip, 0.5 * (r.xmax - r.xmin), r.contamination_stat);
-        ++ip;
+    TLegend leg(0.68, 0.70, 0.93, 0.88);
+    leg.SetBorderSize(0);
+    leg.SetFillStyle(0);
+    leg.SetTextFont(42);
+    leg.SetTextSize(0.035);
+
+    const std::vector<int> colors = {kBlack, kBlue + 1, kRed + 1};
+    const std::vector<int> markers = {20, 21, 22};
+
+    int itopo = 0;
+    for (const std::string& topo : kTopologies) {
+        auto it = rows_by_topology.find(topo);
+        if (it == rows_by_topology.end()) continue;
+        draw_topology_graph(it->second,
+                            colors[itopo % (int)colors.size()],
+                            markers[itopo % (int)markers.size()],
+                            "PE SAME",
+                            leg,
+                            topo);
+        ++itopo;
     }
 
-    g.SetMarkerStyle(20);
-    g.SetMarkerSize(0.9);
-    g.SetMarkerColor(kBlack);
-    g.SetLineColor(kBlack);
-    g.SetLineWidth(1);
-    g.Draw("PE SAME");
+    leg.Draw();
 
     TLatex title;
     title.SetNDC(true);
     title.SetTextFont(42);
     title.SetTextSize(0.040);
     std::ostringstream ss;
-    ss << period << "   " << topo << "   predicted #pi_{0} contamination vs " << varcfg.name;
+    ss << period << "   predicted #pi_{0} contamination vs " << varcfg.name;
     title.DrawLatex(0.12, 0.935, ss.str().c_str());
 
     c.SaveAs(out_png.c_str());
@@ -1087,13 +1175,15 @@ static void make_exclusivity_variable_diagnostics(
     std::vector<DiagnosticBinRow> all_rows;
 
     for (const std::string& period : kPeriods) {
-        for (const std::string& topo : kTopologies) {
-            const Triple total_dvcs = topology_data_yield_integrated(csv, bins, "ep->epg", topo, period);
-            const Triple total_pi0_data = topology_data_yield_integrated(csv, bins, "ep->eppi0", topo, period);
-            const Triple total_pi0_rec = topology_mc_yield_integrated(csv, bins, "ep->eppi0", topo, period);
-            const Triple total_mis = topology_mc_yield_integrated(csv, bins, "ep->eppi0->epg", topo, period);
+        for (const DiagnosticVar& varcfg : kDiagnosticVars) {
+            std::map<std::string, std::vector<DiagnosticBinRow>> rows_by_topology;
 
-            for (const DiagnosticVar& varcfg : kDiagnosticVars) {
+            for (const std::string& topo : kTopologies) {
+                const Triple total_dvcs = topology_data_yield_integrated(csv, bins, "ep->epg", topo, period);
+                const Triple total_pi0_data = topology_data_yield_integrated(csv, bins, "ep->eppi0", topo, period);
+                const Triple total_pi0_rec = topology_mc_yield_integrated(csv, bins, "ep->eppi0", topo, period);
+                const Triple total_mis = topology_mc_yield_integrated(csv, bins, "ep->eppi0->epg", topo, period);
+
                 const std::string hbase = safe_file_token(period + "_" + topo + "_" + varcfg.name);
 
                 TH1D h_dvcs(("h_dvcs_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
@@ -1118,19 +1208,19 @@ static void make_exclusivity_variable_diagnostics(
                 long long nf_dvcs = 0, nf_pi0_data = 0, nf_pi0_rec = 0, nf_mis = 0;
 
                 fill_diagnostic_hist_from_trees(dvcsDataTrees, period, topo, varcfg,
-                                                diagnostic_sample_variable(varcfg.name, false),
-                                                h_dvcs, nt_dvcs, ns_dvcs, nf_dvcs);
+                                                false, h_dvcs, nt_dvcs, ns_dvcs, nf_dvcs);
                 fill_diagnostic_hist_from_trees(eppi0DataTrees, period, topo, varcfg,
-                                                diagnostic_sample_variable(varcfg.name, true),
-                                                h_pi0_data, nt_pi0_data, ns_pi0_data, nf_pi0_data);
+                                                true, h_pi0_data, nt_pi0_data, ns_pi0_data, nf_pi0_data);
                 fill_diagnostic_hist_from_trees(eppi0RecMcTrees, period, topo, varcfg,
-                                                diagnostic_sample_variable(varcfg.name, true),
-                                                h_pi0_rec, nt_pi0_rec, ns_pi0_rec, nf_pi0_rec);
+                                                true, h_pi0_rec, nt_pi0_rec, ns_pi0_rec, nf_pi0_rec);
                 fill_diagnostic_hist_from_trees(eppi0BkgTrees, period, topo, varcfg,
-                                                diagnostic_sample_variable(varcfg.name, false),
-                                                h_mis, nt_mis, ns_mis, nf_mis);
+                                                false, h_mis, nt_mis, ns_mis, nf_mis);
 
-                if (nt_dvcs == 0 || nt_pi0_data == 0 || nt_pi0_rec == 0 || nt_mis == 0) {
+                const bool have_all_trees = (nt_dvcs > 0 && nt_pi0_data > 0 && nt_pi0_rec > 0 && nt_mis > 0);
+                const bool have_all_totals = (total_dvcs.v > 0.0 && total_pi0_data.v > 0.0 &&
+                                              total_pi0_rec.v > 0.0 && total_mis.v > 0.0);
+
+                if (!have_all_trees) {
                     std::cout << "[pi0_contamination] diagnostic: insufficient trees for "
                               << period << " " << topo << " " << varcfg.name
                               << " trees(dvcs,pi0data,pi0rec,mis)=("
@@ -1138,24 +1228,34 @@ static void make_exclusivity_variable_diagnostics(
                               << std::endl;
                 }
 
-                scale_hist_to_yield(h_dvcs, total_dvcs);
-                scale_hist_to_yield(h_pi0_data, total_pi0_data);
-                scale_hist_to_yield(h_pi0_rec, total_pi0_rec);
-                scale_hist_to_yield(h_mis, total_mis);
+                if (!have_all_totals) {
+                    std::cout << "[pi0_contamination] diagnostic: insufficient CSV normalization totals for "
+                              << period << " " << topo << " " << varcfg.name
+                              << " totals(dvcs,pi0data,pi0rec,mis)=("
+                              << total_dvcs.v << "," << total_pi0_data.v << ","
+                              << total_pi0_rec.v << "," << total_mis.v << ")." << std::endl;
+                }
+
+                if (have_all_trees && have_all_totals) {
+                    scale_hist_to_yield(h_dvcs, total_dvcs);
+                    scale_hist_to_yield(h_pi0_data, total_pi0_data);
+                    scale_hist_to_yield(h_pi0_rec, total_pi0_rec);
+                    scale_hist_to_yield(h_mis, total_mis);
+                }
 
                 std::vector<DiagnosticBinRow> plot_rows;
                 plot_rows.reserve(varcfg.nbins);
                 for (int ibin = 1; ibin <= varcfg.nbins; ++ibin) {
                     DiagnosticBinRow row = compute_diagnostic_bin(period, topo, varcfg.name, ibin,
                                                                   h_dvcs, h_pi0_data, h_pi0_rec, h_mis);
+                    if (!have_all_trees || !have_all_totals) {
+                        row.valid = false;
+                    }
                     all_rows.push_back(row);
                     plot_rows.push_back(row);
                 }
 
-                const std::string out_png = join_path(diag_dir,
-                    "pi0_contamination_vs_" + safe_file_token(varcfg.name) + "_" +
-                    safe_file_token(period) + "_" + safe_file_token(topo) + ".png");
-                plot_diagnostic_graph(out_png, period, topo, varcfg, plot_rows);
+                rows_by_topology[topo] = plot_rows;
 
                 std::cout << "[pi0_contamination] diagnostic " << period << " " << topo << " " << varcfg.name
                           << ": seen(dvcs,pi0data,pi0rec,mis)=("
@@ -1165,6 +1265,11 @@ static void make_exclusivity_variable_diagnostics(
                           << ") scaled_to_totals=(" << total_dvcs.v << "," << total_pi0_data.v << ","
                           << total_pi0_rec.v << "," << total_mis.v << ")" << std::endl;
             }
+
+            const std::string out_png = join_path(diag_dir,
+                "pi0_contamination_vs_" + safe_file_token(varcfg.name) + "_" +
+                safe_file_token(period) + "_topologies.png");
+            plot_diagnostic_overlay(out_png, period, varcfg, rows_by_topology);
         }
     }
 
