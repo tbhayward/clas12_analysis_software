@@ -176,7 +176,7 @@ int main(int argc, char* argv[]) {
     // //
     // // This affects only ep->epg MC. Data, ep->eppi0 MC, and ep->eppi0->epg
     // // background MC are kept in their standard treatment.
-    // const bool use_nobkg_dvcs_mc_for_acceptance = false;
+    const bool use_nobkg_dvcs_mc_for_acceptance = false;
 
     // // --------- Raw yields/counts into CSV + plots ----------
     // {
