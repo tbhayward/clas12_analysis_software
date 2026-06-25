@@ -867,6 +867,108 @@ static bool diagnostic_within_cut(double v, const DiagnosticCut& c) {
     return v >= lo && v <= hi;
 }
 
+static bool diagnostic_cut_range(const DiagnosticCut& c,
+                                 double fallback_low,
+                                 double fallback_high,
+                                 double& lo,
+                                 double& hi) {
+    if (c.mode == "upper_quantile") {
+        lo = std::isfinite(c.cut_low) ? c.cut_low : fallback_low;
+        hi = std::isfinite(c.cut_high) ? c.cut_high : fallback_high;
+    } else {
+        lo = c.cut_low;
+        hi = c.cut_high;
+        if (!(std::isfinite(lo) && std::isfinite(hi)) || hi <= lo) {
+            if (!std::isfinite(c.mean) || !std::isfinite(c.std) || c.std <= 0.0) return false;
+            lo = c.mean - 3.0 * c.std;
+            hi = c.mean + 3.0 * c.std;
+        }
+    }
+
+    return std::isfinite(lo) && std::isfinite(hi) && hi > lo;
+}
+
+static bool expand_range_from_cut_map(const DiagnosticCutMap* cuts,
+                                      const DiagnosticVar& varcfg,
+                                      bool eppi0_exclusive_sample,
+                                      double& xmin,
+                                      double& xmax) {
+    if (!cuts) return false;
+
+    bool found = false;
+    const std::vector<std::string> aliases = diagnostic_variable_aliases(varcfg.name, eppi0_exclusive_sample);
+    for (const std::string& alias : aliases) {
+        auto it = cuts->find(alias);
+        if (it == cuts->end()) continue;
+
+        double lo = 0.0;
+        double hi = 0.0;
+        if (!diagnostic_cut_range(it->second, varcfg.xmin, varcfg.xmax, lo, hi)) continue;
+
+        if (!found) {
+            xmin = lo;
+            xmax = hi;
+            found = true;
+        } else {
+            xmin = std::min(xmin, lo);
+            xmax = std::max(xmax, hi);
+        }
+    }
+
+    return found;
+}
+
+static DiagnosticVar diagnostic_var_with_data_cut_range(const DiagnosticVar& base,
+                                                        const std::string& period,
+                                                        const DiagnosticTopoCutMap& data_cuts) {
+    DiagnosticVar out = base;
+    out.nbins = std::max(8, (base.nbins + 2) / 3);
+
+    bool found = false;
+    double xmin = 0.0;
+    double xmax = 0.0;
+
+    for (const std::string& topo : kTopologies) {
+        const std::string dvcs_key = diagnostic_cut_key("DVCS", period, topo);
+        const std::string eppi0_key = diagnostic_cut_key("eppi0", period, topo);
+
+        double lo = 0.0;
+        double hi = 0.0;
+        auto it_dvcs = data_cuts.find(dvcs_key);
+        if (it_dvcs != data_cuts.end() &&
+            expand_range_from_cut_map(&it_dvcs->second, base, false, lo, hi)) {
+            if (!found) {
+                xmin = lo;
+                xmax = hi;
+                found = true;
+            } else {
+                xmin = std::min(xmin, lo);
+                xmax = std::max(xmax, hi);
+            }
+        }
+
+        auto it_eppi0 = data_cuts.find(eppi0_key);
+        if (it_eppi0 != data_cuts.end() &&
+            expand_range_from_cut_map(&it_eppi0->second, base, true, lo, hi)) {
+            if (!found) {
+                xmin = lo;
+                xmax = hi;
+                found = true;
+            } else {
+                xmin = std::min(xmin, lo);
+                xmax = std::max(xmax, hi);
+            }
+        }
+    }
+
+    if (found && std::isfinite(xmin) && std::isfinite(xmax) && xmax > xmin) {
+        out.xmin = xmin;
+        out.xmax = xmax;
+    }
+
+    return out;
+}
+
 static DiagnosticTopoCutMap load_diagnostic_combined_cuts(const std::string& combined_cuts_json,
                                                           const std::string& sample_key) {
     DiagnosticTopoCutMap out;
@@ -1387,7 +1489,7 @@ static void plot_diagnostic_overlay(const std::string& out_png,
     c.SetTickx(1);
     c.SetTicky(1);
 
-    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 10.0);
+    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 50.0);
     frame->SetTitle("");
     frame->GetXaxis()->SetTitle(varcfg.label.c_str());
     frame->GetYaxis()->SetTitle("predicted #pi_{0} contamination (%)");
@@ -1455,7 +1557,8 @@ static void make_exclusivity_variable_diagnostics(
     std::vector<DiagnosticBinRow> all_rows;
 
     for (const std::string& period : kPeriods) {
-        for (const DiagnosticVar& varcfg : kDiagnosticVars) {
+        for (const DiagnosticVar& base_varcfg : kDiagnosticVars) {
+            const DiagnosticVar varcfg = diagnostic_var_with_data_cut_range(base_varcfg, period, data_cuts);
             std::map<std::string, std::vector<DiagnosticBinRow>> rows_by_topology;
 
             for (const std::string& topo : kTopologies) {
