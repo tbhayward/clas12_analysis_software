@@ -2938,6 +2938,24 @@ static void append_items(std::vector<WorkItem>& out,
     out.insert(out.end(), add.begin(), add.end());
 }
 
+static bool looks_like_nobkg_dvcs_mc_key(const std::string& key) {
+    const std::string k = to_lower_ascii(key);
+
+    // Preferred explicit tag.
+    if (k.find("nobkg") != std::string::npos) {
+        return true;
+    }
+
+    // Backward-compatible with the current load_trees.cpp convention: the
+    // no-background dvcsgen files are loaded into the current-study maps and
+    // tagged as 0nA rather than nobkg.
+    if (k.find("0na") != std::string::npos) {
+        return true;
+    }
+
+    return false;
+}
+
 static std::map<std::string, TTree*> filter_nobkg_tree_map(
     const std::map<std::string, TTree*>& in) {
 
@@ -2948,7 +2966,7 @@ static std::map<std::string, TTree*> filter_nobkg_tree_map(
             continue;
         }
 
-        if (to_lower_ascii(kv.first).find("nobkg") != std::string::npos) {
+        if (looks_like_nobkg_dvcs_mc_key(kv.first)) {
             out[kv.first] = kv.second;
         }
     }
@@ -3042,14 +3060,26 @@ bool update_total_counts_csv(const std::string& csv_path,
             dvcs_rec_for_counts = filter_nobkg_tree_map(rec_source);
 
             if (dvcs_gen_for_counts.empty() || dvcs_rec_for_counts.empty()) {
-                fatal("[total_counts] FATAL: no-background DVCS MC override was enabled, "
-                      "but no nobkg generated/reconstructed DVCS trees were found.");
+                std::cerr << "[total_counts] FATAL: no-background DVCS MC override was enabled, "
+                          << "but no no-background generated/reconstructed DVCS trees were found. "
+                          << "Accepted key tags are explicit 'nobkg' or the existing current-study "
+                          << "'0nA' convention." << std::endl;
+                std::cerr << "[total_counts] Available generated DVCS override/source keys:" << std::endl;
+                for (const auto& kv : gen_source) {
+                    std::cerr << "  gen key: " << kv.first << std::endl;
+                }
+                std::cerr << "[total_counts] Available reconstructed DVCS override/source keys:" << std::endl;
+                for (const auto& kv : rec_source) {
+                    std::cerr << "  rec key: " << kv.first << std::endl;
+                }
+                fatal("[total_counts] FATAL: no-background DVCS MC override has no usable input trees.");
             }
 
             std::cout << "[total_counts] No-background DVCS MC override enabled: "
                       << "using " << dvcs_gen_for_counts.size()
                       << " generated and " << dvcs_rec_for_counts.size()
-                      << " reconstructed nobkg ep->epg MC tree(s) for DVCS MC counts. "
+                      << " reconstructed no-background ep->epg MC tree(s) for DVCS MC counts "
+                      << "(accepted tags: 'nobkg' or '0nA'). "
                       << "Data, ep->eppi0 MC, and ep->eppi0->epg background MC are unchanged."
                       << std::endl;
         }
