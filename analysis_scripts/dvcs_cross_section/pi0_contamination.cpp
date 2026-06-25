@@ -21,6 +21,7 @@
 // -----------------------------------------------------------------------------
 
 #include "pi0_contamination.h"
+#include "global_cuts.h"
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
@@ -36,6 +37,8 @@
 #include <TAxis.h>
 #include <TBranch.h>
 #include <TObjArray.h>
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -692,7 +695,7 @@ static void plot_period_contamination(const std::string& period,
 struct DiagnosticVar {
     std::string name;
     std::string label;
-    int nbins = 50;
+    int nbins = 100;
     double xmin = 0.0;
     double xmax = 1.0;
 };
@@ -717,6 +720,18 @@ struct DiagnosticBinRow {
     double contamination_stat = 0.0;  // fraction, not percent
     bool valid = false;
 };
+
+struct DiagnosticCut {
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std = std::numeric_limits<double>::quiet_NaN();
+    double cut_low = std::numeric_limits<double>::quiet_NaN();
+    double cut_high = std::numeric_limits<double>::quiet_NaN();
+    std::string mode = "symmetric_3sigma";
+};
+
+using DiagnosticCutMap = std::map<std::string, DiagnosticCut>;
+using DiagnosticTopoCutMap = std::map<std::string, DiagnosticCutMap>;
+
 
 static const std::vector<DiagnosticVar> kDiagnosticVars = {
     {"Delta_phi",           "#Delta#phi (rad)",                                   100, 2.84159, 3.44159},
@@ -802,6 +817,110 @@ static std::string join_aliases_for_log(const std::vector<std::string>& aliases)
     return os.str();
 }
 
+static std::string period_code_for_cut_key(const std::string& period) {
+    if (period == "Fa18 Inb") return "Fa18_Inb";
+    if (period == "Fa18 Out") return "Fa18_Out";
+    if (period == "Sp18 Inb") return "Sp18_Inb";
+    if (period == "Sp18 Out") return "Sp18_Out";
+    if (period == "Sp19 Inb") return "Sp19_Inb";
+    return period;
+}
+
+static std::string period_label_for_global_cuts(const std::string& period) {
+    if (period == "Fa18 Inb") return "fa18_inb";
+    if (period == "Fa18 Out") return "fa18_out";
+    if (period == "Sp18 Inb") return "sp18_inb";
+    if (period == "Sp18 Out") return "sp18_out";
+    if (period == "Sp19 Inb") return "sp19_inb";
+    return period;
+}
+
+static std::string topology_code_for_cut_key(const std::string& topo) {
+    if (topo == "(FD, FD)") return "FD_FD";
+    if (topo == "(CD, FD)") return "CD_FD";
+    if (topo == "(CD, FT)") return "CD_FT";
+    return topo;
+}
+
+static std::string diagnostic_cut_key(const std::string& prefix,
+                                      const std::string& period,
+                                      const std::string& topo) {
+    return prefix + "_" + period_code_for_cut_key(period) + "_" + topology_code_for_cut_key(topo);
+}
+
+static bool diagnostic_within_cut(double v, const DiagnosticCut& c) {
+    if (!std::isfinite(v)) return false;
+
+    if (c.mode == "upper_quantile") {
+        if (!std::isfinite(c.cut_high)) return true;
+        return v <= c.cut_high;
+    }
+
+    double lo = c.cut_low;
+    double hi = c.cut_high;
+    if (!(std::isfinite(lo) && std::isfinite(hi)) || hi <= lo) {
+        if (!std::isfinite(c.mean) || !std::isfinite(c.std) || c.std <= 0.0) return true;
+        lo = c.mean - 3.0 * c.std;
+        hi = c.mean + 3.0 * c.std;
+    }
+
+    return v >= lo && v <= hi;
+}
+
+static DiagnosticTopoCutMap load_diagnostic_combined_cuts(const std::string& combined_cuts_json,
+                                                          const std::string& sample_key) {
+    DiagnosticTopoCutMap out;
+
+    std::ifstream fin(combined_cuts_json);
+    if (!fin.is_open()) {
+        std::cerr << "[pi0_contamination] WARNING: cannot open combined cuts JSON for diagnostics: "
+                  << combined_cuts_json << ". Exclusivity-variable diagnostics will not impose sigma cuts."
+                  << std::endl;
+        return out;
+    }
+
+    nlohmann::json j;
+    try {
+        fin >> j;
+    } catch (const std::exception& e) {
+        std::cerr << "[pi0_contamination] WARNING: cannot parse combined cuts JSON for diagnostics: "
+                  << e.what() << ". Exclusivity-variable diagnostics will not impose sigma cuts."
+                  << std::endl;
+        return out;
+    }
+
+    if (!j.is_object()) return out;
+
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string key = it.key();
+        const auto& block = it.value();
+        if (!block.is_object() || !block.contains(sample_key) || !block[sample_key].is_object()) continue;
+
+        DiagnosticCutMap cm;
+        for (auto vit = block[sample_key].begin(); vit != block[sample_key].end(); ++vit) {
+            if (!vit.value().is_object()) continue;
+            DiagnosticCut c;
+            try {
+                const auto& js = vit.value();
+                if (js.contains("mean")) c.mean = js["mean"].get<double>();
+                if (js.contains("std")) c.std = js["std"].get<double>();
+                if (js.contains("cut_low")) c.cut_low = js["cut_low"].get<double>();
+                if (js.contains("cut_high")) c.cut_high = js["cut_high"].get<double>();
+                if (js.contains("mode")) c.mode = js["mode"].get<std::string>();
+            } catch (...) {
+                continue;
+            }
+            cm[vit.key()] = c;
+        }
+        if (!cm.empty()) out[key] = std::move(cm);
+    }
+
+    std::cout << "[pi0_contamination] Loaded " << sample_key << " exclusivity diagnostic cuts for "
+              << out.size() << " topology keys from " << combined_cuts_json << std::endl;
+    return out;
+}
+
+
 static std::string safe_file_token(const std::string& s) {
     std::string out;
     out.reserve(s.size());
@@ -829,7 +948,18 @@ struct TreeDiagLeaves {
     TLeaf* Delta_phi = nullptr;
     TLeaf* p1_phi = nullptr;
     TLeaf* p2_phi = nullptr;
+    TLeaf* runnum = nullptr;
+    TLeaf* t1 = nullptr;
+    TLeaf* open_angle_ep2 = nullptr;
+    TLeaf* pTmiss_leaf = nullptr;
+    TLeaf* e_p = nullptr;
+    TLeaf* e_theta = nullptr;
+    TLeaf* e_phi = nullptr;
+    TLeaf* p2_p = nullptr;
+    TLeaf* p2_theta = nullptr;
     std::string used_var_name;
+    std::map<std::string, TLeaf*> cut_leaves;
+
 
     static std::string normalized_leaf_name(std::string s) {
         std::string out;
@@ -878,7 +1008,10 @@ struct TreeDiagLeaves {
         return nullptr;
     }
 
-    bool init(TTree* t, const std::vector<std::string>& var_aliases) {
+    bool init(TTree* t,
+              const std::vector<std::string>& var_aliases,
+              const DiagnosticCutMap* cuts,
+              bool eppi0_exclusive_sample) {
         tree = t;
         if (!tree) return false;
 
@@ -887,6 +1020,15 @@ struct TreeDiagLeaves {
         Delta_phi = leaf_after_enabling(tree, "Delta_phi");
         p1_phi = leaf_after_enabling(tree, "p1_phi");
         p2_phi = leaf_after_enabling(tree, "p2_phi");
+        runnum = leaf_after_enabling(tree, "runnum");
+        t1 = leaf_after_enabling(tree, "t1");
+        open_angle_ep2 = leaf_after_enabling(tree, "open_angle_ep2");
+        pTmiss_leaf = leaf_after_enabling(tree, "pTmiss");
+        e_p = leaf_after_enabling(tree, "e_p");
+        e_theta = leaf_after_enabling(tree, "e_theta");
+        e_phi = leaf_after_enabling(tree, "e_phi");
+        p2_p = leaf_after_enabling(tree, "p2_p");
+        p2_theta = leaf_after_enabling(tree, "p2_theta");
 
         for (const std::string& alias : var_aliases) {
             TLeaf* leaf = leaf_after_enabling(tree, alias);
@@ -894,6 +1036,19 @@ struct TreeDiagLeaves {
                 var = leaf;
                 used_var_name = alias;
                 break;
+            }
+        }
+
+        if (cuts) {
+            for (const auto& kv : *cuts) {
+                const std::vector<std::string> aliases = diagnostic_variable_aliases(kv.first, eppi0_exclusive_sample);
+                for (const std::string& alias : aliases) {
+                    TLeaf* leaf = leaf_after_enabling(tree, alias);
+                    if (leaf) {
+                        cut_leaves[kv.first] = leaf;
+                        break;
+                    }
+                }
             }
         }
 
@@ -932,6 +1087,83 @@ struct TreeDiagLeaves {
 
         return std::isfinite(value);
     }
+
+    bool value_for_cut_var(const std::string& cut_var, double& value) const {
+        if (cut_var == "Delta_phi") {
+            if (Delta_phi) {
+                value = Delta_phi->GetValue();
+            } else if (p1_phi && p2_phi) {
+                value = wrapped_abs_delta_phi(p1_phi->GetValue(), p2_phi->GetValue());
+            } else {
+                return false;
+            }
+            return std::isfinite(value);
+        }
+
+        auto it = cut_leaves.find(cut_var);
+        if (it == cut_leaves.end() || !it->second) return false;
+        value = it->second->GetValue();
+        return std::isfinite(value);
+    }
+
+    bool passes_global_selection(const std::string& period, int d1, int d2) const {
+        const GlobalCutConfig& cfg = default_global_cuts();
+
+        if (!t1 || !open_angle_ep2 || !pTmiss_leaf) return false;
+        if (runnum && is_excluded_run((int)std::llround(runnum->GetValue()))) return false;
+
+        const double t1v = t1->GetValue();
+        const double openv = open_angle_ep2->GetValue();
+        const double ptv = pTmiss_leaf->GetValue();
+
+        if (global_cuts_require_sector_phi(cfg)) {
+            if (!(e_phi && p1_phi && p2_phi)) return false;
+        }
+
+        if (cfg.enable_dvcsgen_ycol_cut) {
+            if (!(e_p && e_theta && e_phi && p2_p && p2_theta && p2_phi)) return false;
+
+            if (global_cuts_require_sector_phi(cfg)) {
+                return passes_global_cuts(t1v, openv, ptv,
+                                          d1, d2,
+                                          period_label_for_global_cuts(period),
+                                          e_p->GetValue(), e_theta->GetValue(), e_phi->GetValue(),
+                                          p1_phi->GetValue(),
+                                          p2_p->GetValue(), p2_theta->GetValue(), p2_phi->GetValue(),
+                                          cfg);
+            }
+
+            return passes_global_cuts(t1v, openv, ptv,
+                                      d1, d2,
+                                      period_label_for_global_cuts(period),
+                                      e_p->GetValue(), e_theta->GetValue(), e_phi->GetValue(),
+                                      p2_p->GetValue(), p2_theta->GetValue(), p2_phi->GetValue(),
+                                      cfg);
+        }
+
+        if (global_cuts_require_sector_phi(cfg)) {
+            return passes_global_cuts(t1v, openv, ptv,
+                                      d1, d2,
+                                      e_phi->GetValue(), p1_phi->GetValue(), p2_phi->GetValue(),
+                                      cfg);
+        }
+
+        return passes_global_cuts(t1v, openv, ptv, d1, d2, cfg);
+    }
+
+    bool passes_cuts(const DiagnosticCutMap* cuts) const {
+        if (!cuts) return true;
+        for (const auto& kv : *cuts) {
+            double value = 0.0;
+            if (!value_for_cut_var(kv.first, value)) {
+                return false;
+            }
+            if (!diagnostic_within_cut(value, kv.second)) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>& trees,
@@ -939,6 +1171,7 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
                                             const std::string& topology,
                                             const DiagnosticVar& varcfg,
                                             bool eppi0_exclusive_sample,
+                                            const DiagnosticCutMap* cuts,
                                             TH1D& hist,
                                             int& trees_used,
                                             long long& events_seen,
@@ -955,7 +1188,7 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
         if (!key_matches_period(kv.first, period)) continue;
 
         TreeDiagLeaves leaves;
-        if (!leaves.init(kv.second, aliases)) {
+        if (!leaves.init(kv.second, aliases, cuts, eppi0_exclusive_sample)) {
             const std::string warn_key = kv.first + "|" + varcfg.name + "|" + (eppi0_exclusive_sample ? "pi0" : "dvcs");
             if (warned_missing.insert(warn_key).second) {
                 std::cout << "[pi0_contamination] diagnostic: skipping tree key='" << kv.first
@@ -977,6 +1210,8 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
             int d2 = 0;
             if (!leaves.get(x, d1, d2)) continue;
             if (!passes_topology_ids(d1, d2, topology)) continue;
+            if (!leaves.passes_global_selection(period, d1, d2)) continue;
+            if (!leaves.passes_cuts(cuts)) continue;
             if (x < varcfg.xmin || x >= varcfg.xmax) continue;
 
             hist.Fill(x);
@@ -1128,7 +1363,7 @@ static void draw_topology_graph(const std::vector<DiagnosticBinRow>& rows,
     }
 
     g->SetMarkerStyle(marker);
-    g->SetMarkerSize(0.75);
+    g->SetMarkerSize(1.25);
     g->SetMarkerColor(color);
     g->SetLineColor(color);
     g->SetLineWidth(1);
@@ -1152,7 +1387,7 @@ static void plot_diagnostic_overlay(const std::string& out_png,
     c.SetTickx(1);
     c.SetTicky(1);
 
-    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 50.0);
+    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 10.0);
     frame->SetTitle("");
     frame->GetXaxis()->SetTitle(varcfg.label.c_str());
     frame->GetYaxis()->SetTitle("predicted #pi_{0} contamination (%)");
@@ -1206,6 +1441,8 @@ static void make_exclusivity_variable_diagnostics(
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
     const std::map<std::string, TTree*>& eppi0BkgTrees,
+    const DiagnosticTopoCutMap& data_cuts,
+    const DiagnosticTopoCutMap& mc_cuts,
     const std::string& output_root_dir) {
 
     (void)csv;
@@ -1245,14 +1482,33 @@ static void make_exclusivity_variable_diagnostics(
                 long long ns_dvcs = 0, ns_pi0_data = 0, ns_pi0_rec = 0, ns_mis = 0;
                 long long nf_dvcs = 0, nf_pi0_data = 0, nf_pi0_rec = 0, nf_mis = 0;
 
+                const std::string dvcs_cut_key = diagnostic_cut_key("DVCS", period, topo);
+                const std::string eppi0_cut_key = diagnostic_cut_key("eppi0", period, topo);
+                const DiagnosticCutMap* dvcs_data_cuts = nullptr;
+                const DiagnosticCutMap* eppi0_data_cuts = nullptr;
+                const DiagnosticCutMap* dvcs_mc_cuts = nullptr;
+                const DiagnosticCutMap* eppi0_mc_cuts = nullptr;
+                auto it_dvcs_data_cuts = data_cuts.find(dvcs_cut_key);
+                if (it_dvcs_data_cuts != data_cuts.end()) dvcs_data_cuts = &it_dvcs_data_cuts->second;
+                auto it_eppi0_data_cuts = data_cuts.find(eppi0_cut_key);
+                if (it_eppi0_data_cuts != data_cuts.end()) eppi0_data_cuts = &it_eppi0_data_cuts->second;
+                auto it_dvcs_mc_cuts = mc_cuts.find(dvcs_cut_key);
+                if (it_dvcs_mc_cuts != mc_cuts.end()) dvcs_mc_cuts = &it_dvcs_mc_cuts->second;
+                auto it_eppi0_mc_cuts = mc_cuts.find(eppi0_cut_key);
+                if (it_eppi0_mc_cuts != mc_cuts.end()) eppi0_mc_cuts = &it_eppi0_mc_cuts->second;
+
                 fill_diagnostic_hist_from_trees(dvcsDataTrees, period, topo, varcfg,
-                                                false, h_dvcs, nt_dvcs, ns_dvcs, nf_dvcs);
+                                                false, dvcs_data_cuts,
+                                                h_dvcs, nt_dvcs, ns_dvcs, nf_dvcs);
                 fill_diagnostic_hist_from_trees(eppi0DataTrees, period, topo, varcfg,
-                                                true, h_pi0_data, nt_pi0_data, ns_pi0_data, nf_pi0_data);
+                                                true, eppi0_data_cuts,
+                                                h_pi0_data, nt_pi0_data, ns_pi0_data, nf_pi0_data);
                 fill_diagnostic_hist_from_trees(eppi0RecMcTrees, period, topo, varcfg,
-                                                true, h_pi0_rec, nt_pi0_rec, ns_pi0_rec, nf_pi0_rec);
+                                                true, eppi0_mc_cuts,
+                                                h_pi0_rec, nt_pi0_rec, ns_pi0_rec, nf_pi0_rec);
                 fill_diagnostic_hist_from_trees(eppi0BkgTrees, period, topo, varcfg,
-                                                false, h_mis, nt_mis, ns_mis, nf_mis);
+                                                false, dvcs_mc_cuts,
+                                                h_mis, nt_mis, ns_mis, nf_mis);
 
                 const bool have_all_trees = (nt_dvcs > 0 && nt_pi0_data > 0 && nt_pi0_rec > 0 && nt_mis > 0);
 
@@ -1264,9 +1520,11 @@ static void make_exclusivity_variable_diagnostics(
                               << std::endl;
                 }
 
-                // Do not renormalize these diagnostic histograms to CSV-integrated
-                // totals. This study is the same pi0-contamination formula evaluated
-                // directly as a function of the plotted exclusivity variable:
+                // These histograms are filled after the same period/topology/channel
+                // exclusivity-cut maps used by total_counts.cpp. They are not
+                // renormalized to CSV-integrated totals; instead this study evaluates
+                // the pi0-contamination formula directly as a function of the plotted
+                // exclusivity variable:
                 //
                 //   c(x) = Nmis_mc(x) * Npi0_data(x)
                 //        / [Npi0_rec_mc(x) * Ndvcs_data(x)]
@@ -1390,7 +1648,6 @@ bool compute_pi0_contamination_overall(
     const std::string &csv_main,
     const std::string &output_root_dir,
     int max_workers) {
-    (void)combined_cuts_json;
     (void)max_workers;
 
     try {
@@ -1409,12 +1666,19 @@ bool compute_pi0_contamination_overall(
             compute_period(csv, bins, period, output_root_dir);
         }
 
+        const DiagnosticTopoCutMap diagnostic_data_cuts =
+            load_diagnostic_combined_cuts(combined_cuts_json, "data");
+        const DiagnosticTopoCutMap diagnostic_mc_cuts =
+            load_diagnostic_combined_cuts(combined_cuts_json, "mc");
+
         make_exclusivity_variable_diagnostics(csv,
                                               bins,
                                               dvcsDataTrees,
                                               eppi0DataTrees,
                                               eppi0RecMcTrees,
                                               eppi0BkgTrees,
+                                              diagnostic_data_cuts,
+                                              diagnostic_mc_cuts,
                                               output_root_dir);
 
         write_csv_atomic(csv_main, csv);
