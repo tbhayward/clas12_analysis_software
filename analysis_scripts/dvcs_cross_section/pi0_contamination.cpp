@@ -921,10 +921,23 @@ static Triple topology_mc_yield_integrated(const CSV& csv,
 }
 
 static void scale_hist_to_yield(TH1D& h, const Triple& target) {
-    const double raw = h.Integral(1, h.GetNbinsX());
+    // Avoid TH1::Integral()/TH1::Scale() here. In this diagnostic pass we create
+    // many short-lived stack histograms after long TTree scans. On some ROOT
+    // builds TH1 can still have an internal fill buffer, and Integral() may call
+    // BufferEmpty(), which has shown intermittent bus errors. The diagnostic only
+    // needs ordinary bin sums, so do the scaling explicitly.
+    double raw = 0.0;
+    for (int ibin = 1; ibin <= h.GetNbinsX(); ++ibin) {
+        raw += h.GetBinContent(ibin);
+    }
+
     if (!(raw > 0.0) || !(target.v > 0.0)) return;
+
     const double scale = target.v / raw;
-    h.Scale(scale);
+    for (int ibin = 1; ibin <= h.GetNbinsX(); ++ibin) {
+        h.SetBinContent(ibin, h.GetBinContent(ibin) * scale);
+        h.SetBinError(ibin, h.GetBinError(ibin) * scale);
+    }
 }
 
 static DiagnosticBinRow compute_diagnostic_bin(const std::string& period,
@@ -1087,6 +1100,14 @@ static void make_exclusivity_variable_diagnostics(
                 TH1D h_pi0_data(("h_pi0_data_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
                 TH1D h_pi0_rec(("h_pi0_rec_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
                 TH1D h_mis(("h_mis_" + hbase).c_str(), "", varcfg.nbins, varcfg.xmin, varcfg.xmax);
+                h_dvcs.SetDirectory(nullptr);
+                h_pi0_data.SetDirectory(nullptr);
+                h_pi0_rec.SetDirectory(nullptr);
+                h_mis.SetDirectory(nullptr);
+                h_dvcs.SetBuffer(0);
+                h_pi0_data.SetBuffer(0);
+                h_pi0_rec.SetBuffer(0);
+                h_mis.SetBuffer(0);
                 h_dvcs.Sumw2();
                 h_pi0_data.Sumw2();
                 h_pi0_rec.Sumw2();
