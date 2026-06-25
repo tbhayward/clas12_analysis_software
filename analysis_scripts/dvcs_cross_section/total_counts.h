@@ -6,6 +6,14 @@
 
 class TTree;
 
+struct TotalCountsOptions {
+    // If true, DVCS generated/reconstructed MC count columns are filled from
+    // no-background dvcsgen files instead of the production-current/background
+    // overlaid files. This affects only ep->epg MC counts; data, ep->eppi0 MC,
+    // and ep->eppi0->epg background MC are unchanged.
+    bool use_nobkg_dvcs_mc_counts = false;
+};
+
 /**
  * update_total_counts_csv
  *
@@ -45,6 +53,9 @@ bool update_total_counts_csv(const std::string& csv_path,
                              const std::map<std::string, TTree*>& eppi0BkgTrees,
                              const std::string& combined_cuts_json,
                              const std::string& out_root_dir,
-                             int max_workers);
+                             int max_workers,
+                             const TotalCountsOptions& options = TotalCountsOptions(),
+                             const std::map<std::string, TTree*>& dvcsNoBkgGenMcTrees = std::map<std::string, TTree*>(),
+                             const std::map<std::string, TTree*>& dvcsNoBkgRecMcTrees = std::map<std::string, TTree*>());
 
 #endif // TOTAL_COUNTS_H

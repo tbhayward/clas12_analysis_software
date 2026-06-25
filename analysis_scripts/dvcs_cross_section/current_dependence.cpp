@@ -2685,6 +2685,19 @@ static void write_results_to_csv(CSV& csv,
     }
 }
 
+static std::vector<PeriodResult> with_mc_factors_forced_to_unity(
+    const std::vector<PeriodResult>& in) {
+
+    std::vector<PeriodResult> out = in;
+
+    for (PeriodResult& r : out) {
+        r.mc_factor = 1.0;
+        r.mc_factor_err = 0.0;
+    }
+
+    return out;
+}
+
 // -----------------------------------------------------------------------------
 // Deprecated eppi0 AAOGEN normalization compatibility fallback
 // -----------------------------------------------------------------------------
@@ -3292,8 +3305,21 @@ bool update_current_dependence_factors_csv(
         write_summary_csv(options.output_dir + "/" + dvcs.output_token + "/period_summary.csv", dvcs_results);
         write_summary_csv(options.output_dir + "/" + eppi0.output_token + "/period_summary.csv", eppi0_results);
 
+        std::vector<PeriodResult> dvcs_results_for_csv = dvcs_results;
+
+        if (options.use_nobkg_dvcs_mc_counts) {
+            dvcs_results_for_csv = with_mc_factors_forced_to_unity(dvcs_results);
+
+            std::cout << "[current_dependence] No-background DVCS MC override enabled: "
+                      << "writing ep->epg MC current-efficiency factors as (1,0) "
+                      << "and copying ep->epg reconstructed MC yields into the "
+                      << "current-corrected reconstructed-yield columns. "
+                      << "The ep->epg data factors and all ep->eppi0 factors are unchanged."
+                      << std::endl;
+        }
+
         // 1. Write the current-efficiency factor columns.
-        write_results_to_csv(csv, dvcs, dvcs_results);
+        write_results_to_csv(csv, dvcs, dvcs_results_for_csv);
         write_results_to_csv(csv, eppi0, eppi0_results);
 
         // 2. Write unity fallback for the deprecated eppi0 AAOGEN normalization

@@ -125,37 +125,13 @@ int main(int argc, char* argv[]) {
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
 
-    // Run exclusivity cut extraction.
-    // The global pTmiss pre-cut is disabled by default in global_cuts.
-    // pTmiss and theta_gamma_gamma/theta_pi0_pi0 are now handled as
-    // topology- and period-dependent q=0.99 upper-quantile cuts.
+    // Run exclusivity cut extraction 
+    // Record the exact global cuts used:
     write_global_cuts_config_json("output/jsons");
-
-    ExclusivityDiagnosticConfig excl_diag;
-    excl_diag.enable = true;
-    excl_diag.include_dvcs = true;
-    excl_diag.include_eppi0 = true;
-    excl_diag.upper_tail_quantile = 0.99;
-    excl_diag.variables = {
-        "Delta_phi",
-        "pTmiss",
-        "theta_gamma_gamma",
-        "theta_pi0_pi0",
-        "Emiss2",
-        "Mx2_1"
-    };
-    excl_diag.make_mc_period_overlay_plots = true;
-    excl_diag.write_mc_period_overlay_csv = true;
-    excl_diag.draw_symmetric_3sigma_windows = true;
-    excl_diag.draw_one_sided_upper_windows = true;
-    excl_diag.draw_global_pTmiss_cut = false;
-    excl_diag.make_pTmiss_before_global_pTmiss_plots = false;
-
     runAllExclusivityCuts(
         dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 5, excl_diag
+        "output/jsons", "output/exclusivity_plots", 5
     );
-
     std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // --------- Global bin-averaged kinematics (CSV update) ----------
@@ -191,6 +167,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Optional DVCS MC acceptance override:
+    //   false -> use the standard production-current/background-overlaid DVCS MC
+    //            for ep->epg generated/reconstructed counts and apply the fitted
+    //            ep->epg MC current correction.
+    //   true  -> use the no-background dvcsgen files for ep->epg MC counts and
+    //            write ep->epg MC current-efficiency factors as unity.
+    //
+    // This affects only ep->epg MC. Data, ep->eppi0 MC, and ep->eppi0->epg
+    // background MC are kept in their standard treatment.
+    const bool use_nobkg_dvcs_mc_for_acceptance = true;
+
     // --------- Raw yields/counts into CSV + plots ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
@@ -212,13 +199,19 @@ int main(int argc, char* argv[]) {
         //   - DVCS generated/reconstructed MC yields
         //   - eppi0 generated/reconstructed MC yields
         //   - eppi0-background-as-DVCS reconstructed MC yields
+        TotalCountsOptions total_count_opts;
+        total_count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+
         if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
             genMcTrees, recMcTrees,
             eppi0GenMcTrees, eppi0RecMcTrees,
             eppi0BkgTrees,
             cuts_json,
             output_root,
-            /*max_workers=*/5)) {
+            /*max_workers=*/5,
+            total_count_opts,
+            currentStudyGenMcTrees,
+            currentStudyRecMcTrees)) {
           std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
           std::exit(EXIT_FAILURE);
         }
@@ -256,6 +249,11 @@ int main(int argc, char* argv[]) {
         //            Faraday Cup charge.
         //   false -> use the directly fitted Sp19 Inb current-dependence factor.
         current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
+
+        // Match the total-counts override above. If true, ep->epg MC current
+        // factors written to the CSV are forced to (1,0). The scan is still
+        // processed diagnostically, and the pi0 treatment is unchanged.
+        current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
 
         current_opts.max_workers = 5;
 

@@ -2938,6 +2938,24 @@ static void append_items(std::vector<WorkItem>& out,
     out.insert(out.end(), add.begin(), add.end());
 }
 
+static std::map<std::string, TTree*> filter_nobkg_tree_map(
+    const std::map<std::string, TTree*>& in) {
+
+    std::map<std::string, TTree*> out;
+
+    for (const auto& kv : in) {
+        if (!kv.second) {
+            continue;
+        }
+
+        if (to_lower_ascii(kv.first).find("nobkg") != std::string::npos) {
+            out[kv.first] = kv.second;
+        }
+    }
+
+    return out;
+}
+
 // -----------------------------------------------------------------------------
 // Public entry
 // -----------------------------------------------------------------------------
@@ -2954,7 +2972,10 @@ bool update_total_counts_csv(const std::string& csv_path,
                              const std::map<std::string, TTree*>& eppi0BkgTrees,
                              const std::string& combined_cuts_json,
                              const std::string& out_root_dir,
-                             int max_workers) {
+                             int max_workers,
+                             const TotalCountsOptions& options,
+                             const std::map<std::string, TTree*>& dvcsNoBkgGenMcTrees,
+                             const std::map<std::string, TTree*>& dvcsNoBkgRecMcTrees) {
     try {
         ROOT::EnableThreadSafety();
         TH1::AddDirectory(kFALSE);
@@ -3008,12 +3029,37 @@ bool update_total_counts_csv(const std::string& csv_path,
         eppi0_bkg_rec.sample_kind = SampleKind::MC_REC;
         eppi0_bkg_rec.write_mc_reconstructed_columns = true;
 
+        std::map<std::string, TTree*> dvcs_gen_for_counts = dvcsGenMcTrees;
+        std::map<std::string, TTree*> dvcs_rec_for_counts = dvcsRecMcTrees;
+
+        if (options.use_nobkg_dvcs_mc_counts) {
+            const std::map<std::string, TTree*>& gen_source =
+                dvcsNoBkgGenMcTrees.empty() ? dvcsGenMcTrees : dvcsNoBkgGenMcTrees;
+            const std::map<std::string, TTree*>& rec_source =
+                dvcsNoBkgRecMcTrees.empty() ? dvcsRecMcTrees : dvcsNoBkgRecMcTrees;
+
+            dvcs_gen_for_counts = filter_nobkg_tree_map(gen_source);
+            dvcs_rec_for_counts = filter_nobkg_tree_map(rec_source);
+
+            if (dvcs_gen_for_counts.empty() || dvcs_rec_for_counts.empty()) {
+                fatal("[total_counts] FATAL: no-background DVCS MC override was enabled, "
+                      "but no nobkg generated/reconstructed DVCS trees were found.");
+            }
+
+            std::cout << "[total_counts] No-background DVCS MC override enabled: "
+                      << "using " << dvcs_gen_for_counts.size()
+                      << " generated and " << dvcs_rec_for_counts.size()
+                      << " reconstructed nobkg ep->epg MC tree(s) for DVCS MC counts. "
+                      << "Data, ep->eppi0 MC, and ep->eppi0->epg background MC are unchanged."
+                      << std::endl;
+        }
+
         std::vector<WorkItem> work_items;
 
         append_items(work_items, build_work_items_for_map(dvcs_data, dvcsDataTrees));
         append_items(work_items, build_work_items_for_map(eppi0_data, eppi0DataTrees));
-        append_items(work_items, build_work_items_for_map(dvcs_gen, dvcsGenMcTrees));
-        append_items(work_items, build_work_items_for_map(dvcs_rec, dvcsRecMcTrees));
+        append_items(work_items, build_work_items_for_map(dvcs_gen, dvcs_gen_for_counts));
+        append_items(work_items, build_work_items_for_map(dvcs_rec, dvcs_rec_for_counts));
         append_items(work_items, build_work_items_for_map(eppi0_gen, eppi0GenMcTrees));
         append_items(work_items, build_work_items_for_map(eppi0_rec, eppi0RecMcTrees));
         append_items(work_items, build_work_items_for_map(eppi0_bkg_rec, eppi0BkgTrees));

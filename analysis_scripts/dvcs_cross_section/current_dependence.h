@@ -60,6 +60,16 @@ struct CurrentDependenceOptions {
     //   Faraday Cup charge total is currently suspect. Therefore the Sp19 Inb
     //   fitted slope is not used by default.
     //
+    // If true, DVCS acceptance is assumed to use no-background dvcsgen MC counts.
+    // In that mode the ep->epg MC current-efficiency factors written to the CSV
+    // are forced to (1,0), and the ep->epg reconstructed current-corrected MC
+    // yield columns are copied from the uncorrected reconstructed yield columns.
+    //
+    // The ep->epg MC current scan is still processed for diagnostics and for
+    // the existing ep->eppi0 MC-current-factor construction. This option does
+    // not change ep->eppi0 or ep->eppi0->epg MC current correction.
+    bool use_nobkg_dvcs_mc_counts = false;
+
     // This replacement is applied to:
     //   current efficiency factor, ep->epg,   exp, Sp19 Inb
     //   current efficiency factor, ep->epg,   mc,  Sp19 Inb
