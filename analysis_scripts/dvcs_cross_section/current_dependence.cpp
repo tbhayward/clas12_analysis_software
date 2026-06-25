@@ -1153,6 +1153,10 @@ struct Branches {
     int detector1 = 0; bool has_detector1 = false;
     int detector2 = 0; bool has_detector2 = false;
 
+    double x = 0.0; bool has_x = false;
+    double Q2 = 0.0; bool has_Q2 = false;
+    double phi2 = 0.0; bool has_phi2 = false;
+
     double t1 = 0.0; bool has_t1 = false;
     double open_angle_ep2 = 0.0; bool has_open_angle_ep2 = false;
     double pTmiss = 0.0; bool has_pTmiss = false;
@@ -1191,6 +1195,10 @@ struct Branches {
         ena("runnum");
         ena("detector1");
         ena("detector2");
+
+        ena("x");
+        ena("Q2");
+        ena("phi2");
 
         ena("t1");
         ena("open_angle_ep2");
@@ -1235,6 +1243,10 @@ struct Branches {
         bI("runnum", &runnum, has_runnum);
         bI("detector1", &detector1, has_detector1);
         bI("detector2", &detector2, has_detector2);
+
+        bD("x", &x, has_x);
+        bD("Q2", &Q2, has_Q2);
+        bD("phi2", &phi2, has_phi2);
 
         bD("t1", &t1, has_t1);
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
@@ -2745,6 +2757,498 @@ static void replace_sp19_inb_factors_with_fa18_inb(std::vector<PeriodResult>& re
 // Main channel worker
 // -----------------------------------------------------------------------------
 
+
+// -----------------------------------------------------------------------------
+// Kinematic current-efficiency diagnostic canvas
+// -----------------------------------------------------------------------------
+
+struct KinematicVarConfig {
+    std::string key;
+    std::string title;
+    std::string x_label;
+    std::vector<double> edges;
+};
+
+struct KinematicBinResult {
+    double x_low = 0.0;
+    double x_high = 0.0;
+    double x_center = 0.0;
+    double x_err = 0.0;
+    double factor = std::numeric_limits<double>::quiet_NaN();
+    double factor_err = std::numeric_limits<double>::quiet_NaN();
+    double total_counts = 0.0;
+    int n_current_points = 0;
+};
+
+static std::vector<KinematicVarConfig> kinematic_current_var_configs() {
+    return {
+        {"Q2",      "Q^{2}",          "Q^{2} (GeV^{2})",          {1.0, 1.4, 1.8, 2.3, 3.0, 4.0, 5.2, 6.5}},
+        {"xB",      "x_{B}",          "x_{B}",                    {0.06, 0.10, 0.14, 0.18, 0.25, 0.35, 0.45, 0.60}},
+        {"t",       "|t|",            "|t| (GeV^{2})",            {0.05, 0.15, 0.25, 0.35, 0.50, 0.70, 0.90, 1.25}},
+        {"phi",     "#phi",           "#phi (deg)",               {0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0, 360.0}},
+        {"e_theta", "#theta_{e}",     "#theta_{e} (deg)",         {5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0}},
+        {"p_theta", "#theta_{p}",     "#theta_{p} (deg)",         {10.0, 18.0, 24.0, 30.0, 38.0, 46.0, 54.0, 62.0}},
+        {"g_theta", "#theta_{#gamma}","#theta_{#gamma} (deg)",    {2.0, 6.0, 10.0, 14.0, 18.0, 22.0, 26.0, 30.0}}
+    };
+}
+
+static bool kinematic_value_for_config(const Branches& b,
+                                       const KinematicVarConfig& cfg,
+                                       double& value) {
+    if (cfg.key == "Q2") {
+        if (!b.has_Q2) return false;
+        value = b.Q2;
+        return std::isfinite(value);
+    }
+
+    if (cfg.key == "xB") {
+        if (!b.has_x) return false;
+        value = b.x;
+        return std::isfinite(value);
+    }
+
+    if (cfg.key == "t") {
+        if (!b.has_t1) return false;
+        value = std::fabs(b.t1);
+        return std::isfinite(value);
+    }
+
+    if (cfg.key == "phi") {
+        if (!b.has_phi2) return false;
+        value = std::fmod(b.phi2 * RAD2DEG, 360.0);
+        if (value < 0.0) value += 360.0;
+        return std::isfinite(value);
+    }
+
+    if (cfg.key == "e_theta") {
+        if (!b.has_e_theta) return false;
+        value = b.e_theta * RAD2DEG;
+        return std::isfinite(value);
+    }
+
+    if (cfg.key == "p_theta") {
+        if (!b.has_p1_theta) return false;
+        value = b.p1_theta * RAD2DEG;
+        return std::isfinite(value);
+    }
+
+    if (cfg.key == "g_theta") {
+        if (!b.has_p2_theta) return false;
+        value = b.p2_theta * RAD2DEG;
+        return std::isfinite(value);
+    }
+
+    return false;
+}
+
+static int find_bin_index(const std::vector<double>& edges, double value) {
+    if (edges.size() < 2 || !std::isfinite(value)) {
+        return -1;
+    }
+
+    if (value < edges.front() || value > edges.back()) {
+        return -1;
+    }
+
+    if (value == edges.back()) {
+        return (int)edges.size() - 2;
+    }
+
+    auto it = std::upper_bound(edges.begin(), edges.end(), value);
+    int idx = (int)std::distance(edges.begin(), it) - 1;
+
+    if (idx < 0 || idx >= (int)edges.size() - 1) {
+        return -1;
+    }
+
+    return idx;
+}
+
+using KinematicAggMap = std::map<std::string, std::vector<DataAgg>>;
+using PeriodKinematicAggMap = std::map<std::string, KinematicAggMap>;
+
+static KinematicAggMap process_data_tree_for_kinematic_current_diagnostics(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const std::vector<KinematicVarConfig>& vars,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
+
+    KinematicAggMap out;
+    PeriodTags tags = parse_period_from_key(key);
+
+    for (const KinematicVarConfig& v : vars) {
+        std::vector<DataAgg>& bins = out[v.key];
+        bins.resize(v.edges.size() > 1 ? v.edges.size() - 1 : 0);
+
+        for (DataAgg& a : bins) {
+            a.period = tags.display;
+        }
+    }
+
+    if (!tree || tags.display == "Fa18 Inb Supp") {
+        return out;
+    }
+
+    Branches b;
+    b.bind(tree);
+
+    if (!b.has_runnum) {
+        fatal("[current_dependence] FATAL: kinematic diagnostic data tree missing runnum.");
+    }
+
+    const Long64_t N = tree->GetEntries();
+
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+
+        if (!passes_cone_cut(b)) {
+            continue;
+        }
+
+        int current = 0;
+
+        if (!resolve_current(tags.internal, b.runnum, current)) {
+            continue;
+        }
+
+        auto charge_it = charge_map.find(b.runnum);
+
+        if (charge_it == charge_map.end()) {
+            continue;
+        }
+
+        double charge = std::numeric_limits<double>::quiet_NaN();
+
+        if (!select_unpolarized_charge_for_period(tags,
+                                                  b.runnum,
+                                                  charge_it->second,
+                                                  use_second_column_charge_for_all_unpolarized,
+                                                  use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                                                  columns_3_to_5_charge_sum_scale,
+                                                  charge)) {
+            continue;
+        }
+
+        if (!(charge > 0.0)) {
+            continue;
+        }
+
+        if (!passes_global_dispatch(b, tags)) {
+            continue;
+        }
+
+        if (!passes_sigma_dispatch(cfg, tags, data_cuts, b)) {
+            continue;
+        }
+
+        for (const KinematicVarConfig& v : vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+
+            if (!kinematic_value_for_config(b, v, value)) {
+                continue;
+            }
+
+            const int ibin = find_bin_index(v.edges, value);
+
+            if (ibin < 0) {
+                continue;
+            }
+
+            DataAgg& agg = out[v.key][ibin];
+            agg.counts_by_run[b.runnum] += 1;
+            agg.current_by_run[b.runnum] = current;
+            agg.charge_by_run[b.runnum] = charge;
+        }
+    }
+
+    return out;
+}
+
+static void merge_data_agg(DataAgg& dst, const DataAgg& src) {
+    if (dst.period.empty()) {
+        dst.period = src.period;
+    }
+
+    for (const auto& kv : src.counts_by_run) {
+        dst.counts_by_run[kv.first] += kv.second;
+    }
+
+    for (const auto& kv : src.current_by_run) {
+        dst.current_by_run[kv.first] = kv.second;
+    }
+
+    for (const auto& kv : src.charge_by_run) {
+        dst.charge_by_run[kv.first] = kv.second;
+    }
+}
+
+static PeriodKinematicAggMap build_kinematic_current_diagnostic_aggs(
+    const ChannelConfig& cfg,
+    const std::map<std::string, TTree*>& data_trees,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const std::vector<KinematicVarConfig>& vars,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
+
+    PeriodKinematicAggMap out;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        for (const KinematicVarConfig& v : vars) {
+            std::vector<DataAgg>& bins = out[period][v.key];
+            bins.resize(v.edges.size() > 1 ? v.edges.size() - 1 : 0);
+
+            for (DataAgg& a : bins) {
+                a.period = period;
+            }
+        }
+    }
+
+    for (const auto& kv : data_trees) {
+        PeriodTags tags = parse_period_from_key(kv.first);
+
+        if (tags.display == "Fa18 Inb Supp") {
+            continue;
+        }
+
+        KinematicAggMap one = process_data_tree_for_kinematic_current_diagnostics(
+            cfg,
+            kv.first,
+            kv.second,
+            charge_map,
+            data_cuts,
+            vars,
+            use_second_column_charge_for_all_unpolarized,
+            use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+            columns_3_to_5_charge_sum_scale);
+
+        for (const KinematicVarConfig& v : vars) {
+            auto it = one.find(v.key);
+
+            if (it == one.end()) {
+                continue;
+            }
+
+            std::vector<DataAgg>& dst_bins = out[tags.display][v.key];
+            const std::vector<DataAgg>& src_bins = it->second;
+            const size_t n = std::min(dst_bins.size(), src_bins.size());
+
+            for (size_t ib = 0; ib < n; ++ib) {
+                merge_data_agg(dst_bins[ib], src_bins[ib]);
+            }
+        }
+    }
+
+    return out;
+}
+
+static KinematicBinResult current_factor_for_kinematic_bin(const DataAgg& agg,
+                                                           double xlo,
+                                                           double xhi) {
+    KinematicBinResult r;
+    r.x_low = xlo;
+    r.x_high = xhi;
+    r.x_center = 0.5 * (xlo + xhi);
+    r.x_err = 0.5 * (xhi - xlo);
+
+    std::vector<CurrentPoint> pts = data_points_from_agg(agg);
+    r.n_current_points = (int)pts.size();
+
+    for (const CurrentPoint& p : pts) {
+        r.total_counts += p.counts;
+    }
+
+    if (pts.empty()) {
+        return r;
+    }
+
+    FitResult fit = fit_points(pts);
+    r.factor = weighted_data_rel(pts, fit);
+    r.factor_err = weighted_data_rel_err(pts, fit);
+
+    return r;
+}
+
+static TGraphErrors* make_kinematic_factor_graph(const std::vector<KinematicBinResult>& bins,
+                                                 int color) {
+    TGraphErrors* g = new TGraphErrors();
+    int ip = 0;
+
+    for (const KinematicBinResult& b : bins) {
+        if (!std::isfinite(b.factor) || !std::isfinite(b.factor_err) || b.total_counts <= 0.0) {
+            continue;
+        }
+
+        g->SetPoint(ip, b.x_center, b.factor);
+        g->SetPointError(ip, b.x_err, b.factor_err);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(20);
+    g->SetMarkerSize(1.05);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+
+    return g;
+}
+
+static std::map<std::string, double> integrated_data_factor_by_period(const std::vector<PeriodResult>& results) {
+    std::map<std::string, double> out;
+
+    for (const PeriodResult& r : results) {
+        out[r.period] = r.data_factor;
+    }
+
+    return out;
+}
+
+static void draw_kinematic_current_efficiency_diagnostics(
+    const ChannelConfig& cfg,
+    const std::map<std::string, TTree*>& data_trees,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const std::vector<PeriodResult>& integrated_results,
+    const std::string& output_dir,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale,
+    bool hide_sp19_inb_from_all_period_plots) {
+
+    const std::vector<KinematicVarConfig> vars = kinematic_current_var_configs();
+    const std::string odir = output_dir + "/" + cfg.output_token + "/kinematic_current_efficiency_diagnostics";
+    mkdir_p(odir);
+
+    std::cout << "[current_dependence] Building kinematic current-efficiency diagnostics in "
+              << odir << std::endl;
+
+    std::cout << "[current_dependence] Kinematic diagnostic branch map: "
+              << "Q2 -> Q2, xB -> x, |t| -> fabs(t1), phi -> phi2 [deg], "
+              << "e_theta -> e_theta [deg], p_theta -> p1_theta [deg], "
+              << "g_theta -> p2_theta [deg]." << std::endl;
+
+    PeriodKinematicAggMap aggs = build_kinematic_current_diagnostic_aggs(
+        cfg,
+        data_trees,
+        charge_map,
+        data_cuts,
+        vars,
+        use_second_column_charge_for_all_unpolarized,
+        use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+        columns_3_to_5_charge_sum_scale);
+
+    std::map<std::string, double> integrated = integrated_data_factor_by_period(integrated_results);
+
+    std::ofstream csv(odir + "/current_efficiency_vs_kinematics.csv");
+    csv << "period,variable,bin,x_low,x_high,x_center,x_error,current_efficiency_factor,current_efficiency_factor_stat,integrated_current_efficiency_factor,n_current_points,total_counts\n";
+
+    TCanvas c("c_kinematic_current_efficiency", "current efficiency vs kinematics", 2200, 1100);
+    c.Divide(4, 2, 0.001, 0.001);
+
+    for (size_t iv = 0; iv < vars.size(); ++iv) {
+        const KinematicVarConfig& v = vars[iv];
+        c.cd((int)iv + 1);
+        gPad->SetGrid(1, 1);
+        gPad->SetTicks(1, 1);
+        gPad->SetLeftMargin(0.13);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.13);
+        gPad->SetTopMargin(0.09);
+
+        const double xmin = v.edges.front();
+        const double xmax = v.edges.back();
+        TH1F* frame = gPad->DrawFrame(xmin, 0.35, xmax, 1.15);
+        frame->SetTitle((v.title + " dependence").c_str());
+        frame->GetXaxis()->SetTitle(v.x_label.c_str());
+        frame->GetYaxis()->SetTitle("Current-efficiency factor");
+        frame->GetXaxis()->CenterTitle(true);
+        frame->GetYaxis()->CenterTitle(true);
+        frame->GetYaxis()->SetTitleOffset(1.35);
+
+        TLegend* leg = new TLegend(0.48, 0.62, 0.94, 0.90);
+        leg->SetBorderSize(1);
+        leg->SetFillStyle(1001);
+        leg->SetTextSize(0.026);
+
+        std::vector<TGraphErrors*> graphs;
+
+        for (const std::string& period : PERIOD_ORDER) {
+            if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) {
+                continue;
+            }
+
+            auto it_period = aggs.find(period);
+            if (it_period == aggs.end()) {
+                continue;
+            }
+
+            auto it_var = it_period->second.find(v.key);
+            if (it_var == it_period->second.end()) {
+                continue;
+            }
+
+            std::vector<KinematicBinResult> bin_results;
+            const std::vector<DataAgg>& bins = it_var->second;
+
+            for (size_t ib = 0; ib < bins.size(); ++ib) {
+                KinematicBinResult br = current_factor_for_kinematic_bin(bins[ib], v.edges[ib], v.edges[ib + 1]);
+                bin_results.push_back(br);
+
+                const double int_factor = integrated.count(period) ? integrated[period] : std::numeric_limits<double>::quiet_NaN();
+                csv << period << ","
+                    << v.key << ","
+                    << ib << ","
+                    << br.x_low << ","
+                    << br.x_high << ","
+                    << br.x_center << ","
+                    << br.x_err << ","
+                    << br.factor << ","
+                    << br.factor_err << ","
+                    << int_factor << ","
+                    << br.n_current_points << ","
+                    << br.total_counts << "\n";
+            }
+
+            TGraphErrors* g = make_kinematic_factor_graph(bin_results, period_color(period));
+            graphs.push_back(g);
+            g->Draw("P SAME");
+
+            std::ostringstream lab;
+            lab << period;
+            auto it_int = integrated.find(period);
+            if (it_int != integrated.end() && std::isfinite(it_int->second)) {
+                lab << "  int=" << std::fixed << std::setprecision(3) << it_int->second;
+            }
+            leg->AddEntry(g, lab.str().c_str(), "pe");
+        }
+
+        leg->Draw();
+    }
+
+    c.cd(8);
+    gPad->SetLeftMargin(0.05);
+    gPad->SetRightMargin(0.05);
+    gPad->SetBottomMargin(0.05);
+    gPad->SetTopMargin(0.05);
+    gPad->DrawFrame(0.0, 0.0, 1.0, 1.0);
+    TLatex lat;
+    lat.SetNDC(true);
+    lat.SetTextSize(0.045);
+    lat.DrawLatex(0.15, 0.70, "DVCS data current-efficiency diagnostics");
+    lat.SetTextSize(0.032);
+    lat.DrawLatex(0.15, 0.58, "Points: per-bin current-efficiency factor");
+    lat.DrawLatex(0.15, 0.50, "Legend: integrated factor currently written to CSV");
+    lat.DrawLatex(0.15, 0.42, "Selection: global + topology-dependent exclusivity cuts");
+
+    c.SaveAs((odir + "/current_efficiency_vs_kinematics.png").c_str());
+}
+
 static std::vector<PeriodResult> run_channel_study(
     const ChannelConfig& cfg,
     const std::map<std::string, TTree*>& data_trees,
@@ -3681,6 +4185,18 @@ bool update_current_dependence_factors_csv(
         if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
         }
+
+        draw_kinematic_current_efficiency_diagnostics(
+            dvcs,
+            dvcsDataTrees,
+            charge_map,
+            data_cuts,
+            dvcs_results,
+            options.output_dir,
+            options.use_second_column_charge_for_all_unpolarized,
+            options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+            options.columns_3_to_5_charge_sum_scale,
+            options.use_fa18_inb_current_efficiency_for_sp19_inb);
 
         // eppi0 reconstructed MC current dependence is still derived from the
         // DVCS MC/data ratio because the eppi0 MC scan is intentionally skipped.
