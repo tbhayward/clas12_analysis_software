@@ -1088,126 +1088,116 @@ static std::string safe_file_token(const std::string& s) {
     return out.empty() ? "unnamed" : out;
 }
 
-struct TreeDiagLeaves {
+
+struct TreeDiagBranches {
     TTree* tree = nullptr;
-    TLeaf* detector1 = nullptr;
-    TLeaf* detector2 = nullptr;
-    TLeaf* var = nullptr;
-    TLeaf* Delta_phi = nullptr;
-    TLeaf* p1_phi = nullptr;
-    TLeaf* p2_phi = nullptr;
-    TLeaf* runnum = nullptr;
-    TLeaf* t1 = nullptr;
-    TLeaf* open_angle_ep2 = nullptr;
-    TLeaf* pTmiss_leaf = nullptr;
-    TLeaf* e_p = nullptr;
-    TLeaf* e_theta = nullptr;
-    TLeaf* e_phi = nullptr;
-    TLeaf* p2_p = nullptr;
-    TLeaf* p2_theta = nullptr;
-    std::string used_var_name;
-    std::map<std::string, TLeaf*> cut_leaves;
 
+    int runnum = 0; bool has_runnum = false;
+    int detector1 = 0; bool has_detector1 = false;
+    int detector2 = 0; bool has_detector2 = false;
 
-    static std::string normalized_leaf_name(std::string s) {
-        std::string out;
-        out.reserve(s.size());
-        for (char c : s) {
-            if (c == '_' || c == '-' || c == ' ' || c == '.') continue;
-            out.push_back((char)std::tolower((unsigned char)c));
-        }
-        return out;
-    }
+    double Delta_phi = 0.0; bool has_Delta_phi = false;
+    double p1_phi = 0.0; bool has_p1_phi = false;
+    double p2_phi = 0.0; bool has_p2_phi = false;
 
-    static TLeaf* leaf_after_enabling(TTree* t, const std::string& name) {
-        if (!t || name.empty()) return nullptr;
+    double t1 = 0.0; bool has_t1 = false;
+    double open_angle_ep2 = 0.0; bool has_open_angle_ep2 = false;
+    double pTmiss = 0.0; bool has_pTmiss = false;
 
-        // Previous stages sometimes disable branches to speed up tree scans.
-        // Explicitly re-enable the branches needed by this diagnostic before
-        // checking/filling them. Try both exact branch/leaf access and a final
-        // case/underscore-insensitive leaf search for older tree variants.
-        t->SetBranchStatus(name.c_str(), 1);
+    double e_p = 0.0; bool has_e_p = false;
+    double e_theta = 0.0; bool has_e_theta = false;
+    double e_phi = 0.0; bool has_e_phi = false;
 
-        if (TLeaf* leaf = t->GetLeaf(name.c_str())) return leaf;
-        if (TBranch* branch = t->GetBranch(name.c_str())) {
-            branch->SetStatus(1);
-            if (TLeaf* leaf = branch->GetLeaf(name.c_str())) return leaf;
-            TObjArray* leaves = branch->GetListOfLeaves();
-            if (leaves && leaves->GetEntriesFast() == 1) {
-                return dynamic_cast<TLeaf*>(leaves->At(0));
-            }
-        }
+    double p2_p = 0.0; bool has_p2_p = false;
+    double p2_theta = 0.0; bool has_p2_theta = false;
 
-        const std::string want = normalized_leaf_name(name);
-        TObjArray* leaves = t->GetListOfLeaves();
-        if (!leaves) return nullptr;
-        for (int i = 0; i < leaves->GetEntriesFast(); ++i) {
-            TLeaf* leaf = dynamic_cast<TLeaf*>(leaves->At(i));
-            if (!leaf) continue;
-            const std::string lname = leaf->GetName() ? leaf->GetName() : "";
-            if (normalized_leaf_name(lname) == want) {
-                if (TBranch* branch = leaf->GetBranch()) {
-                    branch->SetStatus(1);
-                }
-                return leaf;
-            }
-        }
+    double Emiss2 = 0.0; bool has_Emiss2 = false;
+    double Mx2 = 0.0; bool has_Mx2 = false;
+    double Mx2_1 = 0.0; bool has_Mx2_1 = false;
+    double Mx2_2 = 0.0; bool has_Mx2_2 = false;
+    double xF = 0.0; bool has_xF = false;
+    double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
+    double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
 
-        return nullptr;
-    }
-
-    bool init(TTree* t,
-              const std::vector<std::string>& var_aliases,
-              const DiagnosticCutMap* cuts,
-              bool eppi0_exclusive_sample) {
+    bool bind(TTree* t) {
         tree = t;
         if (!tree) return false;
 
-        detector1 = leaf_after_enabling(tree, "detector1");
-        detector2 = leaf_after_enabling(tree, "detector2");
-        Delta_phi = leaf_after_enabling(tree, "Delta_phi");
-        p1_phi = leaf_after_enabling(tree, "p1_phi");
-        p2_phi = leaf_after_enabling(tree, "p2_phi");
-        runnum = leaf_after_enabling(tree, "runnum");
-        t1 = leaf_after_enabling(tree, "t1");
-        open_angle_ep2 = leaf_after_enabling(tree, "open_angle_ep2");
-        pTmiss_leaf = leaf_after_enabling(tree, "pTmiss");
-        e_p = leaf_after_enabling(tree, "e_p");
-        e_theta = leaf_after_enabling(tree, "e_theta");
-        e_phi = leaf_after_enabling(tree, "e_phi");
-        p2_p = leaf_after_enabling(tree, "p2_p");
-        p2_theta = leaf_after_enabling(tree, "p2_theta");
+        // Use explicit branch-address binding instead of TLeaf::GetValue().
+        // The diagnostic is sometimes run after several other stages have
+        // modified ROOT branch statuses/addresses, and holding TLeaf pointers
+        // across GetEntry calls has produced intermittent crashes. This local
+        // binder follows the same robust pattern used elsewhere in the analysis:
+        // enable only the needed branches, bind them into local C++ storage, and
+        // read those values after GetEntry().
+        tree->SetBranchStatus("*", 0);
 
-        for (const std::string& alias : var_aliases) {
-            TLeaf* leaf = leaf_after_enabling(tree, alias);
-            if (leaf) {
-                var = leaf;
-                used_var_name = alias;
-                break;
+        auto enable = [&](const char* name) {
+            if (tree->GetBranch(name)) tree->SetBranchStatus(name, 1);
+        };
+
+        enable("runnum");
+        enable("detector1");
+        enable("detector2");
+        enable("Delta_phi");
+        enable("p1_phi");
+        enable("p2_phi");
+        enable("t1");
+        enable("open_angle_ep2");
+        enable("pTmiss");
+        enable("e_p");
+        enable("e_theta");
+        enable("e_phi");
+        enable("p2_p");
+        enable("p2_theta");
+        enable("Emiss2");
+        enable("Mx2");
+        enable("Mx2_1");
+        enable("Mx2_2");
+        enable("xF");
+        enable("theta_gamma_gamma");
+        enable("theta_pi0_pi0");
+
+        tree->SetCacheSize(0);
+
+        auto bI = [&](const char* name, int* addr, bool& flag) {
+            if (tree->GetBranch(name)) {
+                tree->SetBranchAddress(name, addr);
+                flag = true;
             }
-        }
-
-        if (cuts) {
-            for (const auto& kv : *cuts) {
-                const std::vector<std::string> aliases = diagnostic_variable_aliases(kv.first, eppi0_exclusive_sample);
-                for (const std::string& alias : aliases) {
-                    TLeaf* leaf = leaf_after_enabling(tree, alias);
-                    if (leaf) {
-                        cut_leaves[kv.first] = leaf;
-                        break;
-                    }
-                }
+        };
+        auto bD = [&](const char* name, double* addr, bool& flag) {
+            if (tree->GetBranch(name)) {
+                tree->SetBranchAddress(name, addr);
+                flag = true;
             }
-        }
+        };
 
-        if (!detector1 || !detector2) return false;
+        bI("runnum", &runnum, has_runnum);
+        bI("detector1", &detector1, has_detector1);
+        bI("detector2", &detector2, has_detector2);
 
-        // Delta_phi can be stored directly or computed from p1_phi and p2_phi.
-        if (var_aliases.size() == 1 && var_aliases.front() == "Delta_phi") {
-            return (var != nullptr) || (Delta_phi != nullptr) || (p1_phi != nullptr && p2_phi != nullptr);
-        }
+        bD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bD("p1_phi", &p1_phi, has_p1_phi);
+        bD("p2_phi", &p2_phi, has_p2_phi);
+        bD("t1", &t1, has_t1);
+        bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
+        bD("pTmiss", &pTmiss, has_pTmiss);
+        bD("e_p", &e_p, has_e_p);
+        bD("e_theta", &e_theta, has_e_theta);
+        bD("e_phi", &e_phi, has_e_phi);
+        bD("p2_p", &p2_p, has_p2_p);
+        bD("p2_theta", &p2_theta, has_p2_theta);
 
-        return var != nullptr;
+        bD("Emiss2", &Emiss2, has_Emiss2);
+        bD("Mx2", &Mx2, has_Mx2);
+        bD("Mx2_1", &Mx2_1, has_Mx2_1);
+        bD("Mx2_2", &Mx2_2, has_Mx2_2);
+        bD("xF", &xF, has_xF);
+        bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
+        bD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+
+        return has_detector1 && has_detector2;
     }
 
     static double wrapped_abs_delta_phi(double a, double b) {
@@ -1218,17 +1208,39 @@ struct TreeDiagLeaves {
         return std::fabs(d);
     }
 
-    bool get(double& value, int& d1, int& d2) const {
-        if (!tree || !detector1 || !detector2) return false;
-        d1 = (int)std::llround(detector1->GetValue());
-        d2 = (int)std::llround(detector2->GetValue());
-
-        if (var) {
-            value = var->GetValue();
-        } else if (Delta_phi) {
-            value = Delta_phi->GetValue();
-        } else if (p1_phi && p2_phi) {
-            value = wrapped_abs_delta_phi(p1_phi->GetValue(), p2_phi->GetValue());
+    bool named_value(const std::string& name, double& value) const {
+        if (name == "Delta_phi") {
+            if (has_Delta_phi) {
+                value = Delta_phi;
+            } else if (has_p1_phi && has_p2_phi) {
+                value = wrapped_abs_delta_phi(p1_phi, p2_phi);
+            } else {
+                return false;
+            }
+        } else if (name == "Emiss2") {
+            if (!has_Emiss2) return false;
+            value = Emiss2;
+        } else if (name == "Mx2") {
+            if (!has_Mx2) return false;
+            value = Mx2;
+        } else if (name == "Mx2_1") {
+            if (!has_Mx2_1) return false;
+            value = Mx2_1;
+        } else if (name == "Mx2_2") {
+            if (!has_Mx2_2) return false;
+            value = Mx2_2;
+        } else if (name == "xF") {
+            if (!has_xF) return false;
+            value = xF;
+        } else if (name == "pTmiss") {
+            if (!has_pTmiss) return false;
+            value = pTmiss;
+        } else if (name == "theta_gamma_gamma") {
+            if (!has_theta_gamma_gamma) return false;
+            value = theta_gamma_gamma;
+        } else if (name == "theta_pi0_pi0") {
+            if (!has_theta_pi0_pi0) return false;
+            value = theta_pi0_pi0;
         } else {
             return false;
         }
@@ -1236,74 +1248,79 @@ struct TreeDiagLeaves {
         return std::isfinite(value);
     }
 
-    bool value_for_cut_var(const std::string& cut_var, double& value) const {
-        if (cut_var == "Delta_phi") {
-            if (Delta_phi) {
-                value = Delta_phi->GetValue();
-            } else if (p1_phi && p2_phi) {
-                value = wrapped_abs_delta_phi(p1_phi->GetValue(), p2_phi->GetValue());
-            } else {
-                return false;
-            }
-            return std::isfinite(value);
+    bool value_from_aliases(const std::vector<std::string>& aliases, double& value) const {
+        for (const std::string& alias : aliases) {
+            if (named_value(alias, value)) return true;
         }
+        return false;
+    }
 
-        auto it = cut_leaves.find(cut_var);
-        if (it == cut_leaves.end() || !it->second) return false;
-        value = it->second->GetValue();
-        return std::isfinite(value);
+    bool get_main_value(const DiagnosticVar& varcfg,
+                        bool eppi0_exclusive_sample,
+                        double& value,
+                        int& d1,
+                        int& d2) const {
+        if (!tree || !has_detector1 || !has_detector2) return false;
+        d1 = detector1;
+        d2 = detector2;
+        const std::vector<std::string> aliases = diagnostic_variable_aliases(varcfg.name, eppi0_exclusive_sample);
+        return value_from_aliases(aliases, value);
+    }
+
+    bool value_for_cut_var(const std::string& cut_var,
+                           bool eppi0_exclusive_sample,
+                           double& value) const {
+        const std::vector<std::string> aliases = diagnostic_variable_aliases(cut_var, eppi0_exclusive_sample);
+        return value_from_aliases(aliases, value);
     }
 
     bool passes_global_selection(const std::string& period, int d1, int d2) const {
         const GlobalCutConfig& cfg = default_global_cuts();
 
-        if (!t1 || !open_angle_ep2 || !pTmiss_leaf) return false;
-        if (runnum && is_excluded_run((int)std::llround(runnum->GetValue()))) return false;
-
-        const double t1v = t1->GetValue();
-        const double openv = open_angle_ep2->GetValue();
-        const double ptv = pTmiss_leaf->GetValue();
+        if (!(has_t1 && has_open_angle_ep2 && has_pTmiss)) return false;
+        if (has_runnum && is_excluded_run(runnum)) return false;
 
         if (global_cuts_require_sector_phi(cfg)) {
-            if (!(e_phi && p1_phi && p2_phi)) return false;
+            if (!(has_e_phi && has_p1_phi && has_p2_phi)) return false;
         }
 
         if (cfg.enable_dvcsgen_ycol_cut) {
-            if (!(e_p && e_theta && e_phi && p2_p && p2_theta && p2_phi)) return false;
+            if (!(has_e_p && has_e_theta && has_e_phi && has_p2_p && has_p2_theta && has_p2_phi)) return false;
 
             if (global_cuts_require_sector_phi(cfg)) {
-                return passes_global_cuts(t1v, openv, ptv,
+                return passes_global_cuts(t1, open_angle_ep2, pTmiss,
                                           d1, d2,
                                           period_label_for_global_cuts(period),
-                                          e_p->GetValue(), e_theta->GetValue(), e_phi->GetValue(),
-                                          p1_phi->GetValue(),
-                                          p2_p->GetValue(), p2_theta->GetValue(), p2_phi->GetValue(),
+                                          e_p, e_theta, e_phi,
+                                          p1_phi,
+                                          p2_p, p2_theta, p2_phi,
                                           cfg);
             }
 
-            return passes_global_cuts(t1v, openv, ptv,
+            return passes_global_cuts(t1, open_angle_ep2, pTmiss,
                                       d1, d2,
                                       period_label_for_global_cuts(period),
-                                      e_p->GetValue(), e_theta->GetValue(), e_phi->GetValue(),
-                                      p2_p->GetValue(), p2_theta->GetValue(), p2_phi->GetValue(),
+                                      e_p, e_theta, e_phi,
+                                      p2_p, p2_theta, p2_phi,
                                       cfg);
         }
 
         if (global_cuts_require_sector_phi(cfg)) {
-            return passes_global_cuts(t1v, openv, ptv,
+            return passes_global_cuts(t1, open_angle_ep2, pTmiss,
                                       d1, d2,
-                                      e_phi->GetValue(), p1_phi->GetValue(), p2_phi->GetValue(),
+                                      e_phi, p1_phi, p2_phi,
                                       cfg);
         }
 
-        return passes_global_cuts(t1v, openv, ptv, d1, d2, cfg);
+        return passes_global_cuts(t1, open_angle_ep2, pTmiss, d1, d2, cfg);
     }
 
-    bool passes_cuts(const DiagnosticCutMap* cuts) const {
+    bool passes_cuts(const DiagnosticCutMap* cuts,
+                     bool eppi0_exclusive_sample) const {
         if (!cuts) return true;
         for (const auto& kv : *cuts) {
             double value = 0.0;
-            if (!value_for_cut_var(kv.first, value)) {
+            if (!value_for_cut_var(kv.first, eppi0_exclusive_sample, value)) {
                 return false;
             }
             if (!diagnostic_within_cut(value, kv.second)) {
@@ -1335,8 +1352,8 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
         if (!kv.second) continue;
         if (!key_matches_period(kv.first, period)) continue;
 
-        TreeDiagLeaves leaves;
-        if (!leaves.init(kv.second, aliases, cuts, eppi0_exclusive_sample)) {
+        TreeDiagBranches branches;
+        if (!branches.bind(kv.second)) {
             const std::string warn_key = kv.first + "|" + varcfg.name + "|" + (eppi0_exclusive_sample ? "pi0" : "dvcs");
             if (warned_missing.insert(warn_key).second) {
                 std::cout << "[pi0_contamination] diagnostic: skipping tree key='" << kv.first
@@ -1356,10 +1373,10 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
             double x = 0.0;
             int d1 = 0;
             int d2 = 0;
-            if (!leaves.get(x, d1, d2)) continue;
+            if (!branches.get_main_value(varcfg, eppi0_exclusive_sample, x, d1, d2)) continue;
             if (!passes_topology_ids(d1, d2, topology)) continue;
-            if (!leaves.passes_global_selection(period, d1, d2)) continue;
-            if (!leaves.passes_cuts(cuts)) continue;
+            if (!branches.passes_global_selection(period, d1, d2)) continue;
+            if (!branches.passes_cuts(cuts, eppi0_exclusive_sample)) continue;
             if (x < varcfg.xmin || x >= varcfg.xmax) continue;
 
             hist.Fill(x);
