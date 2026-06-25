@@ -109,15 +109,15 @@ int main(int argc, char* argv[]) {
     std::map<std::string, TTree*> currentStudyGenMcTrees;     // DVCS generated MC for current-dependence study
     std::map<std::string, TTree*> currentStudyRecMcTrees;     // DVCS reconstructed MC for current-dependence study
 
-    // // Load all trees from files
-    // if (!loadTrees(dataTrees, genMcTrees, recMcTrees,
-    //     eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
-    //     eppi0BkgTrees,
-    //     radGenMcTrees, radRecMcTrees,
-    //     currentStudyGenMcTrees, currentStudyRecMcTrees)) {
-    //     std::cerr << "[main] FATAL: loadTrees failed.\n";
-    //     return 1;
-    // }
+    // Load all trees from files
+    if (!loadTrees(dataTrees, genMcTrees, recMcTrees,
+        eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
+        eppi0BkgTrees,
+        radGenMcTrees, radRecMcTrees,
+        currentStudyGenMcTrees, currentStudyRecMcTrees)) {
+        std::cerr << "[main] FATAL: loadTrees failed.\n";
+        return 1;
+    }
 
     // std::cout << "All trees loaded successfully." << std::endl;
     // std::cout << "Current-study generated MC trees loaded: "
