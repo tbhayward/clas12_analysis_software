@@ -167,16 +167,16 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // Optional DVCS MC acceptance override:
-    // //   false -> use the standard production-current/background-overlaid DVCS MC
-    // //            for ep->epg generated/reconstructed counts and apply the fitted
-    // //            ep->epg MC current correction.
-    // //   true  -> use the no-background dvcsgen files for ep->epg MC counts and
-    // //            write ep->epg MC current-efficiency factors as unity.
-    // //
-    // // This affects only ep->epg MC. Data, ep->eppi0 MC, and ep->eppi0->epg
-    // // background MC are kept in their standard treatment.
-    // const bool use_nobkg_dvcs_mc_for_acceptance = false;
+    // Optional DVCS MC acceptance override:
+    //   false -> use the standard production-current/background-overlaid DVCS MC
+    //            for ep->epg generated/reconstructed counts and apply the fitted
+    //            ep->epg MC current correction.
+    //   true  -> use the no-background dvcsgen files for ep->epg MC counts and
+    //            write ep->epg MC current-efficiency factors as unity.
+    //
+    // This affects only ep->epg MC. Data, ep->eppi0 MC, and ep->eppi0->epg
+    // background MC are kept in their standard treatment.
+    const bool use_nobkg_dvcs_mc_for_acceptance = false;
 
     // // --------- Raw yields/counts into CSV + plots ----------
     // {
