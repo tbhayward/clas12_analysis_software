@@ -3048,6 +3048,233 @@ static PeriodKinematicAggMap build_kinematic_current_diagnostic_aggs(
     return out;
 }
 
+
+struct McKinematicBinAgg {
+    std::string period;
+    std::map<int, McAgg> by_current;
+};
+
+using KinematicMcAggMap = std::map<std::string, std::vector<McKinematicBinAgg>>;
+using PeriodKinematicMcAggMap = std::map<std::string, KinematicMcAggMap>;
+
+static KinematicMcAggMap process_generated_tree_for_kinematic_current_diagnostics(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const std::vector<KinematicVarConfig>& vars) {
+
+    (void)cfg;
+    KinematicMcAggMap out;
+    PeriodTags tags = parse_period_from_key(key);
+    const int current = parse_current_from_key(key);
+
+    for (const KinematicVarConfig& v : vars) {
+        std::vector<McKinematicBinAgg>& bins = out[v.key];
+        bins.resize(v.edges.size() > 1 ? v.edges.size() - 1 : 0);
+        for (McKinematicBinAgg& a : bins) {
+            a.period = tags.display;
+        }
+    }
+
+    if (!tree || tags.display == "Fa18 Inb Supp") {
+        return out;
+    }
+
+    Branches b;
+    b.bind(tree);
+
+    const Long64_t N = tree->GetEntries();
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+
+        for (const KinematicVarConfig& v : vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) {
+                continue;
+            }
+
+            const int ibin = find_bin_index(v.edges, value);
+            if (ibin < 0) {
+                continue;
+            }
+
+            McAgg& a = out[v.key][ibin].by_current[current];
+            a.period = tags.display;
+            a.current_nA = current;
+            a.n_gen += 1;
+        }
+    }
+
+    return out;
+}
+
+static KinematicMcAggMap process_reconstructed_tree_for_kinematic_current_diagnostics(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const TopoCutMap& mc_cuts,
+    const std::vector<KinematicVarConfig>& vars) {
+
+    KinematicMcAggMap out;
+    PeriodTags tags = parse_period_from_key(key);
+    const int current = parse_current_from_key(key);
+
+    for (const KinematicVarConfig& v : vars) {
+        std::vector<McKinematicBinAgg>& bins = out[v.key];
+        bins.resize(v.edges.size() > 1 ? v.edges.size() - 1 : 0);
+        for (McKinematicBinAgg& a : bins) {
+            a.period = tags.display;
+        }
+    }
+
+    if (!tree || tags.display == "Fa18 Inb Supp") {
+        return out;
+    }
+
+    Branches b;
+    b.bind(tree);
+
+    const Long64_t N = tree->GetEntries();
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+
+        if (!passes_cone_cut(b)) {
+            continue;
+        }
+        if (!passes_global_dispatch(b, tags)) {
+            continue;
+        }
+        if (!passes_sigma_dispatch(cfg, tags, mc_cuts, b)) {
+            continue;
+        }
+
+        for (const KinematicVarConfig& v : vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) {
+                continue;
+            }
+
+            const int ibin = find_bin_index(v.edges, value);
+            if (ibin < 0) {
+                continue;
+            }
+
+            McAgg& a = out[v.key][ibin].by_current[current];
+            a.period = tags.display;
+            a.current_nA = current;
+            a.n_rec += 1;
+        }
+    }
+
+    return out;
+}
+
+static void merge_mc_kinematic_bin(McKinematicBinAgg& dst, const McKinematicBinAgg& src) {
+    if (dst.period.empty()) {
+        dst.period = src.period;
+    }
+
+    for (const auto& kv : src.by_current) {
+        const int current = kv.first;
+        const McAgg& s = kv.second;
+        McAgg& d = dst.by_current[current];
+        d.period = s.period;
+        d.current_nA = current;
+        d.n_gen += s.n_gen;
+        d.n_rec += s.n_rec;
+    }
+}
+
+static PeriodKinematicMcAggMap build_kinematic_current_diagnostic_mc_aggs(
+    const ChannelConfig& cfg,
+    const std::map<std::string, TTree*>& gen_trees,
+    const std::map<std::string, TTree*>& rec_trees,
+    const TopoCutMap& mc_cuts,
+    const std::vector<KinematicVarConfig>& vars) {
+
+    PeriodKinematicMcAggMap out;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        for (const KinematicVarConfig& v : vars) {
+            std::vector<McKinematicBinAgg>& bins = out[period][v.key];
+            bins.resize(v.edges.size() > 1 ? v.edges.size() - 1 : 0);
+            for (McKinematicBinAgg& a : bins) {
+                a.period = period;
+            }
+        }
+    }
+
+    auto merge_one = [&](const KinematicMcAggMap& one, const std::string& period) {
+        for (const KinematicVarConfig& v : vars) {
+            auto it = one.find(v.key);
+            if (it == one.end()) {
+                continue;
+            }
+            std::vector<McKinematicBinAgg>& dst_bins = out[period][v.key];
+            const std::vector<McKinematicBinAgg>& src_bins = it->second;
+            const size_t n = std::min(dst_bins.size(), src_bins.size());
+            for (size_t ib = 0; ib < n; ++ib) {
+                merge_mc_kinematic_bin(dst_bins[ib], src_bins[ib]);
+            }
+        }
+    };
+
+    for (const auto& kv : gen_trees) {
+        PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display == "Fa18 Inb Supp") {
+            continue;
+        }
+        KinematicMcAggMap one = process_generated_tree_for_kinematic_current_diagnostics(
+            cfg, kv.first, kv.second, vars);
+        merge_one(one, tags.display);
+    }
+
+    for (const auto& kv : rec_trees) {
+        PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display == "Fa18 Inb Supp") {
+            continue;
+        }
+        KinematicMcAggMap one = process_reconstructed_tree_for_kinematic_current_diagnostics(
+            cfg, kv.first, kv.second, mc_cuts, vars);
+        merge_one(one, tags.display);
+    }
+
+    return out;
+}
+
+static KinematicBinResult current_factor_for_kinematic_mc_bin(const McKinematicBinAgg& agg,
+                                                              double xlo,
+                                                              double xhi) {
+    KinematicBinResult r;
+    r.x_low = xlo;
+    r.x_high = xhi;
+    r.x_center = 0.5 * (xlo + xhi);
+    r.x_err = 0.5 * (xhi - xlo);
+
+    std::vector<McAgg> aggs;
+    for (const auto& kv : agg.by_current) {
+        aggs.push_back(kv.second);
+    }
+
+    std::vector<CurrentPoint> pts = mc_points_from_aggs(aggs, agg.period);
+    r.n_current_points = (int)pts.size();
+
+    for (const CurrentPoint& p : pts) {
+        r.total_counts += p.counts;
+    }
+
+    if (pts.empty()) {
+        return r;
+    }
+
+    FitResult fit = fit_points(pts);
+    const int ref = reference_current_nA(agg.period);
+    r.factor = rel_at_current((double)ref, fit);
+    r.factor_err = rel_err_at_current((double)ref, fit);
+
+    return r;
+}
+
 static KinematicBinResult current_factor_for_kinematic_bin(const DataAgg& agg,
                                                            double xlo,
                                                            double xhi) {
@@ -3086,7 +3313,8 @@ static TGraphErrors* make_kinematic_factor_graph(const std::vector<KinematicBinR
         }
 
         g->SetPoint(ip, b.x_center, b.factor);
-        g->SetPointError(ip, b.x_err, b.factor_err);
+        // Deliberately suppress horizontal error bars in this diagnostic plot.
+        g->SetPointError(ip, 0.0, b.factor_err);
         ++ip;
     }
 
@@ -3097,6 +3325,165 @@ static TGraphErrors* make_kinematic_factor_graph(const std::vector<KinematicBinR
     g->SetLineWidth(2);
 
     return g;
+}
+
+
+struct LinearFitSummary {
+    bool valid = false;
+    double m = std::numeric_limits<double>::quiet_NaN();
+    double b = std::numeric_limits<double>::quiet_NaN();
+    double m_err = std::numeric_limits<double>::quiet_NaN();
+    double b_err = std::numeric_limits<double>::quiet_NaN();
+    double cov_mb = std::numeric_limits<double>::quiet_NaN();
+    double chi2 = std::numeric_limits<double>::quiet_NaN();
+    int ndf = 0;
+    int npoints = 0;
+};
+
+static LinearFitSummary fit_kinematic_factor_linear(const std::vector<KinematicBinResult>& bins) {
+    LinearFitSummary out;
+
+    double S = 0.0;
+    double Sx = 0.0;
+    double Sy = 0.0;
+    double Sxx = 0.0;
+    double Sxy = 0.0;
+
+    for (const KinematicBinResult& p : bins) {
+        if (!std::isfinite(p.x_center) ||
+            !std::isfinite(p.factor) ||
+            !std::isfinite(p.factor_err) ||
+            !(p.factor_err > 0.0) ||
+            p.total_counts <= 0.0) {
+            continue;
+        }
+
+        const double w = 1.0 / (p.factor_err * p.factor_err);
+        S += w;
+        Sx += w * p.x_center;
+        Sy += w * p.factor;
+        Sxx += w * p.x_center * p.x_center;
+        Sxy += w * p.x_center * p.factor;
+        out.npoints += 1;
+    }
+
+    if (out.npoints < 2) {
+        return out;
+    }
+
+    const double det = S * Sxx - Sx * Sx;
+    if (!(det > 0.0) || !std::isfinite(det)) {
+        return out;
+    }
+
+    out.b = (Sxx * Sy - Sx * Sxy) / det;
+    out.m = (S * Sxy - Sx * Sy) / det;
+    out.b_err = std::sqrt(Sxx / det);
+    out.m_err = std::sqrt(S / det);
+    out.cov_mb = -Sx / det;
+    out.ndf = out.npoints - 2;
+
+    double chi2 = 0.0;
+    for (const KinematicBinResult& p : bins) {
+        if (!std::isfinite(p.x_center) ||
+            !std::isfinite(p.factor) ||
+            !std::isfinite(p.factor_err) ||
+            !(p.factor_err > 0.0) ||
+            p.total_counts <= 0.0) {
+            continue;
+        }
+
+        const double yfit = out.m * p.x_center + out.b;
+        const double pull = (p.factor - yfit) / p.factor_err;
+        chi2 += pull * pull;
+    }
+
+    out.chi2 = chi2;
+    out.valid = std::isfinite(out.m) && std::isfinite(out.b) &&
+                std::isfinite(out.m_err) && std::isfinite(out.b_err) &&
+                std::isfinite(out.cov_mb);
+    return out;
+}
+
+static double linear_fit_prediction_uncertainty(const LinearFitSummary& fit, double x) {
+    if (!fit.valid) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double var = fit.b_err * fit.b_err +
+                       x * x * fit.m_err * fit.m_err +
+                       2.0 * x * fit.cov_mb;
+
+    if (!(var >= 0.0) || !std::isfinite(var)) {
+        return 0.0;
+    }
+
+    return std::sqrt(var);
+}
+
+static TGraph* make_linear_fit_line_graph(const LinearFitSummary& fit,
+                                          double xmin,
+                                          double xmax,
+                                          int color) {
+    TGraph* g = new TGraph();
+    if (!fit.valid) {
+        return g;
+    }
+
+    const int n = 120;
+    for (int i = 0; i < n; ++i) {
+        const double f = (n == 1) ? 0.0 : double(i) / double(n - 1);
+        const double x = xmin + f * (xmax - xmin);
+        const double y = fit.m * x + fit.b;
+        g->SetPoint(i, x, y);
+    }
+
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+    return g;
+}
+
+static TGraph* make_linear_fit_band_graph(const LinearFitSummary& fit,
+                                          double xmin,
+                                          double xmax,
+                                          int color) {
+    TGraph* g = new TGraph();
+    if (!fit.valid) {
+        return g;
+    }
+
+    const int n = 120;
+    for (int i = 0; i < n; ++i) {
+        const double f = (n == 1) ? 0.0 : double(i) / double(n - 1);
+        const double x = xmin + f * (xmax - xmin);
+        const double y = fit.m * x + fit.b;
+        const double ey = linear_fit_prediction_uncertainty(fit, x);
+        g->SetPoint(i, x, y + ey);
+    }
+
+    for (int i = 0; i < n; ++i) {
+        const double f = (n == 1) ? 0.0 : double(n - 1 - i) / double(n - 1);
+        const double x = xmin + f * (xmax - xmin);
+        const double y = fit.m * x + fit.b;
+        const double ey = linear_fit_prediction_uncertainty(fit, x);
+        g->SetPoint(n + i, x, y - ey);
+    }
+
+    g->SetFillColorAlpha(color, 0.18);
+    g->SetLineColor(color);
+    g->SetLineWidth(0);
+    return g;
+}
+
+static TLegend* make_kinematic_compact_legend(bool fit_legend) {
+    TLegend* leg = new TLegend(0.14, 0.13, 0.92, fit_legend ? 0.27 : 0.24);
+    leg->SetBorderSize(1);
+    leg->SetFillStyle(1001);
+    leg->SetNColumns(2);
+    leg->SetTextSize(fit_legend ? 0.013 : 0.016);
+    leg->SetMargin(0.10);
+    leg->SetColumnSeparation(0.02);
+    return leg;
 }
 
 static std::map<std::string, double> integrated_data_factor_by_period(const std::vector<PeriodResult>& results) {
@@ -3112,8 +3499,11 @@ static std::map<std::string, double> integrated_data_factor_by_period(const std:
 static void draw_kinematic_current_efficiency_diagnostics(
     const ChannelConfig& cfg,
     const std::map<std::string, TTree*>& data_trees,
+    const std::map<std::string, TTree*>& gen_trees,
+    const std::map<std::string, TTree*>& rec_trees,
     const std::unordered_map<int, ChargeEntry>& charge_map,
     const TopoCutMap& data_cuts,
+    const TopoCutMap& mc_cuts,
     const std::vector<PeriodResult>& integrated_results,
     const std::string& output_dir,
     bool use_second_column_charge_for_all_unpolarized,
@@ -3133,7 +3523,7 @@ static void draw_kinematic_current_efficiency_diagnostics(
               << "e_theta -> e_theta [deg], p_theta -> p1_theta [deg], "
               << "g_theta -> p2_theta [deg]." << std::endl;
 
-    PeriodKinematicAggMap aggs = build_kinematic_current_diagnostic_aggs(
+    PeriodKinematicAggMap data_aggs = build_kinematic_current_diagnostic_aggs(
         cfg,
         data_trees,
         charge_map,
@@ -3143,110 +3533,268 @@ static void draw_kinematic_current_efficiency_diagnostics(
         use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
         columns_3_to_5_charge_sum_scale);
 
-    std::map<std::string, double> integrated = integrated_data_factor_by_period(integrated_results);
+    PeriodKinematicMcAggMap mc_aggs = build_kinematic_current_diagnostic_mc_aggs(
+        cfg,
+        gen_trees,
+        rec_trees,
+        mc_cuts,
+        vars);
 
-    std::ofstream csv(odir + "/current_efficiency_vs_kinematics.csv");
-    csv << "period,variable,bin,x_low,x_high,x_center,x_error,current_efficiency_factor,current_efficiency_factor_stat,integrated_current_efficiency_factor,n_current_points,total_counts\n";
+    std::map<std::string, double> integrated_data = integrated_data_factor_by_period(integrated_results);
+    std::map<std::string, double> integrated_mc;
+    for (const PeriodResult& r : integrated_results) {
+        integrated_mc[r.period] = r.mc_factor;
+    }
 
-    TCanvas c("c_kinematic_current_efficiency", "current efficiency vs kinematics", 2200, 1100);
-    c.Divide(4, 2, 0.001, 0.001);
+    using VarPeriodResults = std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>>;
+    VarPeriodResults data_results_by_var_period;
+    VarPeriodResults mc_results_by_var_period;
+    std::map<std::string, std::map<std::string, LinearFitSummary>> data_fits_by_var_period;
+    std::map<std::string, std::map<std::string, LinearFitSummary>> mc_fits_by_var_period;
 
-    for (size_t iv = 0; iv < vars.size(); ++iv) {
-        const KinematicVarConfig& v = vars[iv];
-        c.cd((int)iv + 1);
-        gPad->SetGrid(1, 1);
-        gPad->SetTicks(1, 1);
-        gPad->SetLeftMargin(0.13);
-        gPad->SetRightMargin(0.04);
-        gPad->SetBottomMargin(0.13);
-        gPad->SetTopMargin(0.09);
+    std::ofstream data_csv(odir + "/current_efficiency_vs_kinematics_data.csv");
+    data_csv << "sample,period,variable,bin,x_low,x_high,x_center,current_efficiency_factor,current_efficiency_factor_stat,integrated_current_efficiency_factor,n_current_points,total_counts\n";
 
-        const double xmin = v.edges.front();
-        const double xmax = v.edges.back();
-        TH1F* frame = gPad->DrawFrame(xmin, 0.35, xmax, 1.15);
-        frame->SetTitle((v.title + " dependence").c_str());
-        frame->GetXaxis()->SetTitle(v.x_label.c_str());
-        frame->GetYaxis()->SetTitle("Current-efficiency factor");
-        frame->GetXaxis()->CenterTitle(true);
-        frame->GetYaxis()->CenterTitle(true);
-        frame->GetYaxis()->SetTitleOffset(1.35);
+    std::ofstream mc_csv(odir + "/current_efficiency_vs_kinematics_mc.csv");
+    mc_csv << "sample,period,variable,bin,x_low,x_high,x_center,current_efficiency_factor,current_efficiency_factor_stat,integrated_current_efficiency_factor,n_current_points,total_counts\n";
 
-        TLegend* leg = new TLegend(0.48, 0.62, 0.94, 0.90);
-        leg->SetBorderSize(1);
-        leg->SetFillStyle(1001);
-        leg->SetTextSize(0.026);
+    std::ofstream data_fit_csv(odir + "/current_efficiency_vs_kinematics_data_linear_fits.csv");
+    data_fit_csv << "sample,period,variable,slope,intercept,slope_stat,intercept_stat,cov_slope_intercept,chi2,ndf,npoints\n";
 
-        std::vector<TGraphErrors*> graphs;
+    std::ofstream mc_fit_csv(odir + "/current_efficiency_vs_kinematics_mc_linear_fits.csv");
+    mc_fit_csv << "sample,period,variable,slope,intercept,slope_stat,intercept_stat,cov_slope_intercept,chi2,ndf,npoints\n";
 
+    // Backward-compatible filenames from the first data-only implementation.
+    std::ofstream legacy_data_csv(odir + "/current_efficiency_vs_kinematics.csv");
+    legacy_data_csv << "period,variable,bin,x_low,x_high,x_center,x_error,current_efficiency_factor,current_efficiency_factor_stat,integrated_current_efficiency_factor,n_current_points,total_counts\n";
+
+    std::ofstream legacy_data_fit_csv(odir + "/current_efficiency_vs_kinematics_linear_fits.csv");
+    legacy_data_fit_csv << "period,variable,slope,intercept,slope_stat,intercept_stat,cov_slope_intercept,chi2,ndf,npoints\n";
+
+    for (const KinematicVarConfig& v : vars) {
         for (const std::string& period : PERIOD_ORDER) {
             if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) {
                 continue;
             }
 
-            auto it_period = aggs.find(period);
-            if (it_period == aggs.end()) {
-                continue;
+            // DATA results.
+            auto it_period_data = data_aggs.find(period);
+            if (it_period_data != data_aggs.end()) {
+                auto it_var = it_period_data->second.find(v.key);
+                if (it_var != it_period_data->second.end()) {
+                    std::vector<KinematicBinResult> bin_results;
+                    const std::vector<DataAgg>& bins = it_var->second;
+
+                    for (size_t ib = 0; ib < bins.size(); ++ib) {
+                        KinematicBinResult br = current_factor_for_kinematic_bin(bins[ib], v.edges[ib], v.edges[ib + 1]);
+                        bin_results.push_back(br);
+
+                        const double int_factor = integrated_data.count(period) ? integrated_data[period] : std::numeric_limits<double>::quiet_NaN();
+                        data_csv << "data," << period << "," << v.key << "," << ib << ","
+                                 << br.x_low << "," << br.x_high << "," << br.x_center << ","
+                                 << br.factor << "," << br.factor_err << "," << int_factor << ","
+                                 << br.n_current_points << "," << br.total_counts << "\n";
+                        legacy_data_csv << period << "," << v.key << "," << ib << ","
+                                        << br.x_low << "," << br.x_high << "," << br.x_center << "," << br.x_err << ","
+                                        << br.factor << "," << br.factor_err << "," << int_factor << ","
+                                        << br.n_current_points << "," << br.total_counts << "\n";
+                    }
+
+                    data_results_by_var_period[v.key][period] = bin_results;
+                    LinearFitSummary fit = fit_kinematic_factor_linear(bin_results);
+                    data_fits_by_var_period[v.key][period] = fit;
+                    data_fit_csv << "data," << period << "," << v.key << ","
+                                 << fit.m << "," << fit.b << "," << fit.m_err << "," << fit.b_err << ","
+                                 << fit.cov_mb << "," << fit.chi2 << "," << fit.ndf << "," << fit.npoints << "\n";
+                    legacy_data_fit_csv << period << "," << v.key << ","
+                                        << fit.m << "," << fit.b << "," << fit.m_err << "," << fit.b_err << ","
+                                        << fit.cov_mb << "," << fit.chi2 << "," << fit.ndf << "," << fit.npoints << "\n";
+                }
             }
 
-            auto it_var = it_period->second.find(v.key);
-            if (it_var == it_period->second.end()) {
-                continue;
+            // MC results.
+            auto it_period_mc = mc_aggs.find(period);
+            if (it_period_mc != mc_aggs.end()) {
+                auto it_var = it_period_mc->second.find(v.key);
+                if (it_var != it_period_mc->second.end()) {
+                    std::vector<KinematicBinResult> bin_results;
+                    const std::vector<McKinematicBinAgg>& bins = it_var->second;
+
+                    for (size_t ib = 0; ib < bins.size(); ++ib) {
+                        KinematicBinResult br = current_factor_for_kinematic_mc_bin(bins[ib], v.edges[ib], v.edges[ib + 1]);
+                        bin_results.push_back(br);
+
+                        const double int_factor = integrated_mc.count(period) ? integrated_mc[period] : std::numeric_limits<double>::quiet_NaN();
+                        mc_csv << "mc," << period << "," << v.key << "," << ib << ","
+                               << br.x_low << "," << br.x_high << "," << br.x_center << ","
+                               << br.factor << "," << br.factor_err << "," << int_factor << ","
+                               << br.n_current_points << "," << br.total_counts << "\n";
+                    }
+
+                    mc_results_by_var_period[v.key][period] = bin_results;
+                    LinearFitSummary fit = fit_kinematic_factor_linear(bin_results);
+                    mc_fits_by_var_period[v.key][period] = fit;
+                    mc_fit_csv << "mc," << period << "," << v.key << ","
+                               << fit.m << "," << fit.b << "," << fit.m_err << "," << fit.b_err << ","
+                               << fit.cov_mb << "," << fit.chi2 << "," << fit.ndf << "," << fit.npoints << "\n";
+                }
             }
-
-            std::vector<KinematicBinResult> bin_results;
-            const std::vector<DataAgg>& bins = it_var->second;
-
-            for (size_t ib = 0; ib < bins.size(); ++ib) {
-                KinematicBinResult br = current_factor_for_kinematic_bin(bins[ib], v.edges[ib], v.edges[ib + 1]);
-                bin_results.push_back(br);
-
-                const double int_factor = integrated.count(period) ? integrated[period] : std::numeric_limits<double>::quiet_NaN();
-                csv << period << ","
-                    << v.key << ","
-                    << ib << ","
-                    << br.x_low << ","
-                    << br.x_high << ","
-                    << br.x_center << ","
-                    << br.x_err << ","
-                    << br.factor << ","
-                    << br.factor_err << ","
-                    << int_factor << ","
-                    << br.n_current_points << ","
-                    << br.total_counts << "\n";
-            }
-
-            TGraphErrors* g = make_kinematic_factor_graph(bin_results, period_color(period));
-            graphs.push_back(g);
-            g->Draw("P SAME");
-
-            std::ostringstream lab;
-            lab << period;
-            auto it_int = integrated.find(period);
-            if (it_int != integrated.end() && std::isfinite(it_int->second)) {
-                lab << "  int=" << std::fixed << std::setprecision(3) << it_int->second;
-            }
-            leg->AddEntry(g, lab.str().c_str(), "pe");
         }
-
-        leg->Draw();
     }
 
-    c.cd(8);
-    gPad->SetLeftMargin(0.05);
-    gPad->SetRightMargin(0.05);
-    gPad->SetBottomMargin(0.05);
-    gPad->SetTopMargin(0.05);
-    gPad->DrawFrame(0.0, 0.0, 1.0, 1.0);
-    TLatex lat;
-    lat.SetNDC(true);
-    lat.SetTextSize(0.045);
-    lat.DrawLatex(0.15, 0.70, "DVCS data current-efficiency diagnostics");
-    lat.SetTextSize(0.032);
-    lat.DrawLatex(0.15, 0.58, "Points: per-bin current-efficiency factor");
-    lat.DrawLatex(0.15, 0.50, "Legend: integrated factor currently written to CSV");
-    lat.DrawLatex(0.15, 0.42, "Selection: global + topology-dependent exclusivity cuts");
+    auto draw_info_panel = [](const std::string& sample_label, bool fit_version) {
+        gPad->SetLeftMargin(0.05);
+        gPad->SetRightMargin(0.05);
+        gPad->SetBottomMargin(0.05);
+        gPad->SetTopMargin(0.05);
+        gPad->DrawFrame(0.0, 0.0, 1.0, 1.0);
+        TLatex lat;
+        lat.SetNDC(true);
+        lat.SetTextSize(0.043);
+        lat.DrawLatex(0.12, 0.72, ("DVCS " + sample_label + " current-efficiency diagnostics").c_str());
+        lat.SetTextSize(0.030);
+        lat.DrawLatex(0.12, 0.60, "Points: per-bin current-efficiency factor");
+        if (fit_version) {
+            lat.DrawLatex(0.12, 0.52, "Lines: weighted linear fits, y = mx + b");
+            lat.DrawLatex(0.12, 0.44, "Bands: one-standard-deviation fit uncertainty");
+            lat.DrawLatex(0.12, 0.36, "Legend: #chi^{2}/ndf for each period");
+        } else {
+            lat.DrawLatex(0.12, 0.52, "Legend: integrated factor currently written to CSV");
+        }
+        lat.DrawLatex(0.12, 0.28, "Selection: global + topology-dependent exclusivity cuts");
+    };
 
-    c.SaveAs((odir + "/current_efficiency_vs_kinematics.png").c_str());
+    auto draw_one_canvas = [&](const std::string& canvas_name,
+                               const std::string& output_name,
+                               const std::string& sample_label,
+                               const VarPeriodResults& results_by_var_period,
+                               const std::map<std::string, std::map<std::string, LinearFitSummary>>& fits_by_var_period,
+                               const std::map<std::string, double>& integrated,
+                               bool fit_version) {
+        TCanvas c(canvas_name.c_str(), canvas_name.c_str(), 2200, 1100);
+        c.Divide(4, 2, 0.001, 0.001);
+
+        for (size_t iv = 0; iv < vars.size(); ++iv) {
+            const KinematicVarConfig& v = vars[iv];
+            c.cd((int)iv + 1);
+            gPad->SetGrid(1, 1);
+            gPad->SetTicks(1, 1);
+            gPad->SetLeftMargin(0.13);
+            gPad->SetRightMargin(0.04);
+            gPad->SetBottomMargin(0.13);
+            gPad->SetTopMargin(0.09);
+
+            const double xmin = v.edges.front();
+            const double xmax = v.edges.back();
+            TH1F* frame = gPad->DrawFrame(xmin, 0.20, xmax, 1.20);
+            frame->SetTitle((v.title + " dependence").c_str());
+            frame->GetXaxis()->SetTitle(v.x_label.c_str());
+            frame->GetYaxis()->SetTitle("Current-efficiency factor");
+            frame->GetXaxis()->CenterTitle(true);
+            frame->GetYaxis()->CenterTitle(true);
+            frame->GetYaxis()->SetTitleOffset(1.35);
+
+            TLegend* leg = make_kinematic_compact_legend(fit_version);
+
+            // Draw shaded fit bands first, then fit lines, then points.
+            if (fit_version) {
+                for (const std::string& period : PERIOD_ORDER) {
+                    if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) continue;
+                    const auto it_var = fits_by_var_period.find(v.key);
+                    if (it_var == fits_by_var_period.end()) continue;
+                    const auto it_fit = it_var->second.find(period);
+                    if (it_fit == it_var->second.end() || !it_fit->second.valid) continue;
+                    TGraph* band = make_linear_fit_band_graph(it_fit->second, xmin, xmax, period_color(period));
+                    band->Draw("F SAME");
+                }
+
+                for (const std::string& period : PERIOD_ORDER) {
+                    if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) continue;
+                    const auto it_var = fits_by_var_period.find(v.key);
+                    if (it_var == fits_by_var_period.end()) continue;
+                    const auto it_fit = it_var->second.find(period);
+                    if (it_fit == it_var->second.end() || !it_fit->second.valid) continue;
+                    TGraph* line = make_linear_fit_line_graph(it_fit->second, xmin, xmax, period_color(period));
+                    line->Draw("L SAME");
+                }
+            }
+
+            for (const std::string& period : PERIOD_ORDER) {
+                if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) {
+                    continue;
+                }
+
+                const auto it_var = results_by_var_period.find(v.key);
+                if (it_var == results_by_var_period.end()) continue;
+                const auto it_period = it_var->second.find(period);
+                if (it_period == it_var->second.end()) continue;
+
+                TGraphErrors* g = make_kinematic_factor_graph(it_period->second, period_color(period));
+                g->Draw("P SAME");
+
+                std::ostringstream lab;
+                lab << period;
+
+                if (fit_version) {
+                    const auto it_fit_var = fits_by_var_period.find(v.key);
+                    if (it_fit_var != fits_by_var_period.end()) {
+                        const auto it_fit = it_fit_var->second.find(period);
+                        if (it_fit != it_fit_var->second.end() && it_fit->second.valid && it_fit->second.ndf > 0) {
+                            lab << " #chi^{2}/ndf=" << std::fixed << std::setprecision(1)
+                                << (it_fit->second.chi2 / double(it_fit->second.ndf));
+                        } else {
+                            lab << " #chi^{2}/ndf=n/a";
+                        }
+                    }
+                } else {
+                    auto it_int = integrated.find(period);
+                    if (it_int != integrated.end() && std::isfinite(it_int->second)) {
+                        lab << " int=" << std::fixed << std::setprecision(3) << it_int->second;
+                    }
+                }
+
+                leg->AddEntry(g, lab.str().c_str(), "pe");
+            }
+
+            leg->Draw();
+        }
+
+        c.cd(8);
+        draw_info_panel(sample_label, fit_version);
+        c.SaveAs((odir + "/" + output_name).c_str());
+    };
+
+    draw_one_canvas("c_kinematic_current_efficiency_data",
+                    "current_efficiency_vs_kinematics.png",
+                    "data",
+                    data_results_by_var_period,
+                    data_fits_by_var_period,
+                    integrated_data,
+                    false);
+
+    draw_one_canvas("c_kinematic_current_efficiency_data_linear_fits",
+                    "current_efficiency_vs_kinematics_linear_fits.png",
+                    "data",
+                    data_results_by_var_period,
+                    data_fits_by_var_period,
+                    integrated_data,
+                    true);
+
+    draw_one_canvas("c_kinematic_current_efficiency_mc",
+                    "current_efficiency_vs_kinematics_mc.png",
+                    "MC",
+                    mc_results_by_var_period,
+                    mc_fits_by_var_period,
+                    integrated_mc,
+                    false);
+
+    draw_one_canvas("c_kinematic_current_efficiency_mc_linear_fits",
+                    "current_efficiency_vs_kinematics_mc_linear_fits.png",
+                    "MC",
+                    mc_results_by_var_period,
+                    mc_fits_by_var_period,
+                    integrated_mc,
+                    true);
 }
 
 static std::vector<PeriodResult> run_channel_study(
@@ -4189,8 +4737,11 @@ bool update_current_dependence_factors_csv(
         draw_kinematic_current_efficiency_diagnostics(
             dvcs,
             dvcsDataTrees,
+            dvcsGenMcTrees,
+            dvcsRecMcTrees,
             charge_map,
             data_cuts,
+            mc_cuts,
             dvcs_results,
             options.output_dir,
             options.use_second_column_charge_for_all_unpolarized,
