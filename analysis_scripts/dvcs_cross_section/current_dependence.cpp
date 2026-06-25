@@ -3533,12 +3533,119 @@ static TGraph* make_linear_fit_band_graph(const LinearFitSummary& fit,
     return g;
 }
 
+
+using PeriodLinearFitMap = std::map<std::string, LinearFitSummary>;
+
+static LinearFitSummary copy_linear_fit_summary(const LinearFitSummary& src) {
+    return src;
+}
+
+static void copy_fa18_inb_linear_fit_to_sp19_inb(PeriodLinearFitMap& fits,
+                                                 const std::string& label) {
+    auto it_fa18 = fits.find("Fa18 Inb");
+    if (it_fa18 == fits.end() || !it_fa18->second.valid) {
+        std::cout << "[current_dependence] WARNING: cannot copy Fa18 Inb e_theta fit to Sp19 Inb for "
+                  << label << "; Fa18 Inb fit is missing or invalid." << std::endl;
+        return;
+    }
+
+    fits["Sp19 Inb"] = copy_linear_fit_summary(it_fa18->second);
+    std::cout << "[current_dependence] " << label
+              << " Sp19 Inb e_theta data current-efficiency fit copied from Fa18 Inb."
+              << std::endl;
+}
+
+static PeriodLinearFitMap build_e_theta_data_current_fits(
+    const ChannelConfig& cfg,
+    const std::map<std::string, TTree*>& data_trees,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale,
+    bool hide_sp19_inb_from_all_period_plots,
+    int max_workers) {
+
+    std::vector<KinematicVarConfig> vars;
+    for (const KinematicVarConfig& v : kinematic_current_var_configs()) {
+        if (v.key == "e_theta") {
+            vars.push_back(v);
+            break;
+        }
+    }
+
+    if (vars.empty()) {
+        fatal("[current_dependence] FATAL: internal error; missing e_theta kinematic configuration.");
+    }
+
+    PeriodKinematicAggMap aggs = build_kinematic_current_diagnostic_aggs(
+        cfg,
+        data_trees,
+        charge_map,
+        data_cuts,
+        vars,
+        use_second_column_charge_for_all_unpolarized,
+        use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+        columns_3_to_5_charge_sum_scale,
+        max_workers);
+
+    PeriodLinearFitMap out;
+    const KinematicVarConfig& v = vars.front();
+
+    for (const std::string& period : PERIOD_ORDER) {
+        if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) {
+            continue;
+        }
+
+        auto it_period = aggs.find(period);
+        if (it_period == aggs.end()) {
+            continue;
+        }
+
+        auto it_var = it_period->second.find(v.key);
+        if (it_var == it_period->second.end()) {
+            continue;
+        }
+
+        std::vector<KinematicBinResult> bin_results;
+        const std::vector<DataAgg>& bins = it_var->second;
+
+        for (size_t ib = 0; ib < bins.size(); ++ib) {
+            bin_results.push_back(current_factor_for_kinematic_bin(bins[ib],
+                                                                   v.edges[ib],
+                                                                   v.edges[ib + 1]));
+        }
+
+        LinearFitSummary fit = fit_kinematic_factor_linear(bin_results);
+        out[period] = fit;
+
+        if (fit.valid) {
+            const double chi2ndf = (fit.ndf > 0) ? fit.chi2 / double(fit.ndf)
+                                                : std::numeric_limits<double>::quiet_NaN();
+            std::cout << "[current_dependence] " << cfg.csv_channel
+                      << " DATA e_theta current-efficiency fit " << period
+                      << ": f(theta_e)= " << fit.m << " * theta_e + " << fit.b
+                      << " +/- slope=" << fit.m_err
+                      << " intercept=" << fit.b_err
+                      << " chi2/ndf=" << chi2ndf
+                      << std::endl;
+        } else {
+            std::cout << "[current_dependence] WARNING: " << cfg.csv_channel
+                      << " DATA e_theta current-efficiency fit is invalid for "
+                      << period << "; integrated factor fallback will be used for this period."
+                      << std::endl;
+        }
+    }
+
+    return out;
+}
+
 static TLegend* make_kinematic_compact_legend(bool fit_legend) {
     TLegend* leg = new TLegend(0.14, 0.13, 0.92, fit_legend ? 0.27 : 0.24);
     leg->SetBorderSize(1);
     leg->SetFillStyle(1001);
     leg->SetNColumns(2);
-    leg->SetTextSize(fit_legend ? 0.013 : 0.016);
+    leg->SetTextSize(fit_legend ? 0.017 : 0.020);
     leg->SetMargin(0.10);
     leg->SetColumnSeparation(0.02);
     return leg;
@@ -3554,7 +3661,7 @@ static std::map<std::string, double> integrated_data_factor_by_period(const std:
     return out;
 }
 
-static void draw_kinematic_current_efficiency_diagnostics(
+static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency_diagnostics(
     const ChannelConfig& cfg,
     const std::map<std::string, TTree*>& data_trees,
     const std::map<std::string, TTree*>& gen_trees,
@@ -3747,7 +3854,7 @@ static void draw_kinematic_current_efficiency_diagnostics(
 
             const double xmin = v.edges.front();
             const double xmax = v.edges.back();
-            TH1F* frame = gPad->DrawFrame(xmin, 0.20, xmax, 1.20);
+            TH1F* frame = gPad->DrawFrame(xmin, 0.00, xmax, 1.40);
             frame->SetTitle((v.title + " dependence").c_str());
             frame->GetXaxis()->SetTitle(v.x_label.c_str());
             frame->GetYaxis()->SetTitle("Current-efficiency factor");
@@ -3856,6 +3963,13 @@ static void draw_kinematic_current_efficiency_diagnostics(
                     mc_fits_by_var_period,
                     integrated_mc,
                     true);
+
+    std::map<std::string, LinearFitSummary> e_theta_fits;
+    auto it_e_theta = data_fits_by_var_period.find("e_theta");
+    if (it_e_theta != data_fits_by_var_period.end()) {
+        e_theta_fits = it_e_theta->second;
+    }
+    return e_theta_fits;
 }
 
 static std::vector<PeriodResult> run_channel_study(
@@ -4441,6 +4555,61 @@ static void read_exp_current_factor_from_csv(const CSV& csv,
     read_current_factor_from_csv(csv, cfg, "exp", period, factor, factor_stat);
 }
 
+
+
+static bool parse_plain_number_cell(const std::string& cell, double& value) {
+    value = std::numeric_limits<double>::quiet_NaN();
+
+    const char* begin = cell.c_str();
+    while (*begin && std::isspace(static_cast<unsigned char>(*begin))) {
+        ++begin;
+    }
+
+    if (!*begin) {
+        return false;
+    }
+
+    char* endp = nullptr;
+    value = std::strtod(begin, &endp);
+    if (endp == begin) {
+        return false;
+    }
+
+    while (endp && *endp) {
+        if (!std::isspace(static_cast<unsigned char>(*endp))) {
+            return false;
+        }
+        ++endp;
+    }
+
+    return std::isfinite(value);
+}
+
+static std::string e_theta_avg_col(const std::string& period) {
+    return "e_theta, " + period;
+}
+
+static bool finite_positive_factor(double f, double ferr) {
+    return std::isfinite(f) && f > 0.0 && std::isfinite(ferr) && ferr >= 0.0;
+}
+
+static bool evaluate_e_theta_current_fit(const LinearFitSummary& fit,
+                                         double e_theta_deg,
+                                         double& factor,
+                                         double& factor_stat) {
+    factor = std::numeric_limits<double>::quiet_NaN();
+    factor_stat = std::numeric_limits<double>::quiet_NaN();
+
+    if (!fit.valid || !std::isfinite(e_theta_deg)) {
+        return false;
+    }
+
+    factor = fit.m * e_theta_deg + fit.b;
+    factor_stat = linear_fit_prediction_uncertainty(fit, e_theta_deg);
+
+    return finite_positive_factor(factor, factor_stat);
+}
+
 static long long apply_one_current_correction_column(CSV& csv,
                                                      const std::string& src_col,
                                                      const std::string& dst_col,
@@ -4495,16 +4664,117 @@ static long long apply_one_current_correction_column(CSV& csv,
     return n_positive;
 }
 
+static long long apply_one_data_current_correction_column(CSV& csv,
+                                                          const std::string& src_col,
+                                                          const std::string& dst_col,
+                                                          const std::string& period,
+                                                          double integrated_factor,
+                                                          double integrated_factor_stat,
+                                                          const LinearFitSummary* e_theta_fit,
+                                                          bool use_e_theta_linear_fit,
+                                                          long long& n_fit_rows,
+                                                          long long& n_integrated_fallback_rows) {
+    const int c_src = col_strict(csv, src_col);
+    const int c_dst = col_strict(csv, dst_col);
+    const int c_eth = col_optional(csv, e_theta_avg_col(period));
+
+    if (!finite_positive_factor(integrated_factor, integrated_factor_stat)) {
+        fatal("[current_dependence] FATAL: invalid integrated DATA current factor passed to correction writer.");
+    }
+
+    long long n_positive = 0;
+
+    for (auto& row : csv.rows) {
+        double raw = 0.0;
+        double raw_stat = 0.0;
+        double raw_sys = 0.0;
+
+        if (!parse_value_stat_sys(row[c_src], raw, raw_stat, raw_sys) ||
+            !(std::isfinite(raw) && raw > 0.0)) {
+            row[c_dst].clear();
+            continue;
+        }
+
+        double factor = integrated_factor;
+        double factor_stat = integrated_factor_stat;
+        bool used_fit = false;
+
+        if (use_e_theta_linear_fit && e_theta_fit && e_theta_fit->valid && c_eth >= 0) {
+            double eth = std::numeric_limits<double>::quiet_NaN();
+            if (parse_plain_number_cell(row[c_eth], eth)) {
+                double f_fit = std::numeric_limits<double>::quiet_NaN();
+                double f_fit_stat = std::numeric_limits<double>::quiet_NaN();
+                if (evaluate_e_theta_current_fit(*e_theta_fit, eth, f_fit, f_fit_stat)) {
+                    factor = f_fit;
+                    factor_stat = f_fit_stat;
+                    used_fit = true;
+                }
+            }
+        }
+
+        if (used_fit) {
+            ++n_fit_rows;
+        } else {
+            ++n_integrated_fallback_rows;
+        }
+
+        const double corrected = raw / factor;
+        const double var_stat =
+            (raw_stat * raw_stat) / (factor * factor) +
+            (raw * raw * factor_stat * factor_stat) /
+            (factor * factor * factor * factor);
+
+        const double corrected_stat = (var_stat > 0.0) ? std::sqrt(var_stat) : 0.0;
+        const double corrected_sys = raw_sys / factor;
+
+        row[c_dst] = format_triple(corrected, corrected_stat, corrected_sys);
+
+        if (corrected > 0.0) {
+            ++n_positive;
+        }
+    }
+
+    return n_positive;
+}
+
 static long long apply_data_current_corrections_for_channel(CSV& csv,
                                                             const ChannelConfig& cfg,
-                                                            const std::string& log_label) {
+                                                            const std::string& log_label,
+                                                            const PeriodLinearFitMap& e_theta_fits,
+                                                            bool use_e_theta_linear_data_current_efficiency) {
     long long total_positive = 0;
+    long long total_fit_rows = 0;
+    long long total_fallback_rows = 0;
 
     for (const std::string& period : CSV_PERIOD_ORDER) {
         double f_exp = 0.0;
         double f_exp_stat = 0.0;
 
         read_exp_current_factor_from_csv(csv, cfg, period, f_exp, f_exp_stat);
+
+        const LinearFitSummary* fit_ptr = nullptr;
+        auto it_fit = e_theta_fits.find(period);
+        if (it_fit != e_theta_fits.end() && it_fit->second.valid) {
+            fit_ptr = &it_fit->second;
+        }
+
+        if (use_e_theta_linear_data_current_efficiency) {
+            if (fit_ptr) {
+                std::cout << "[current_dependence] DATA current correction for "
+                          << log_label << " period=" << period
+                          << " will use e_theta-dependent factor f(theta_e)="
+                          << fit_ptr->m << "*theta_e + " << fit_ptr->b
+                          << " with integrated fallback=" << f_exp
+                          << " +/- " << f_exp_stat
+                          << std::endl;
+            } else {
+                std::cout << "[current_dependence] WARNING: DATA current correction for "
+                          << log_label << " period=" << period
+                          << " has no valid e_theta fit; using integrated factor="
+                          << f_exp << " +/- " << f_exp_stat
+                          << std::endl;
+            }
+        }
 
         for (const std::string& topo : topology_labels()) {
             for (const std::string& hel : helicity_labels()) {
@@ -4531,26 +4801,54 @@ static long long apply_data_current_corrections_for_channel(CSV& csv,
                     fatal(ss.str());
                 }
 
-                const long long n = apply_one_current_correction_column(
+                long long n_fit_rows = 0;
+                long long n_fallback_rows = 0;
+
+                const long long n = apply_one_data_current_correction_column(
                     csv,
                     src_col,
                     dst_col,
+                    period,
                     f_exp,
-                    f_exp_stat);
+                    f_exp_stat,
+                    fit_ptr,
+                    use_e_theta_linear_data_current_efficiency,
+                    n_fit_rows,
+                    n_fallback_rows);
 
                 total_positive += n;
+                total_fit_rows += n_fit_rows;
+                total_fallback_rows += n_fallback_rows;
 
                 std::cout << "[current_dependence] Applied DATA current correction for "
                           << log_label
                           << " period=" << period
                           << " topo=" << topo
-                          << " hel=" << hel
-                          << " factor=" << f_exp
-                          << " +/- " << f_exp_stat
-                          << " positive_rows=" << n
+                          << " hel=" << hel;
+
+                if (use_e_theta_linear_data_current_efficiency && fit_ptr) {
+                    std::cout << " e_theta_fit=(m=" << fit_ptr->m
+                              << ", b=" << fit_ptr->b << ")"
+                              << " integrated_fallback=" << f_exp
+                              << " +/- " << f_exp_stat
+                              << " fit_rows=" << n_fit_rows
+                              << " fallback_rows=" << n_fallback_rows;
+                } else {
+                    std::cout << " factor=" << f_exp
+                              << " +/- " << f_exp_stat;
+                }
+
+                std::cout << " positive_rows=" << n
                           << std::endl;
             }
         }
+    }
+
+    if (use_e_theta_linear_data_current_efficiency) {
+        std::cout << "[current_dependence] DATA current correction for "
+                  << log_label << " used e_theta fit rows=" << total_fit_rows
+                  << " integrated fallback rows=" << total_fallback_rows
+                  << std::endl;
     }
 
     return total_positive;
@@ -4558,12 +4856,23 @@ static long long apply_data_current_corrections_for_channel(CSV& csv,
 
 static void apply_all_data_current_corrections(CSV& csv,
                                                const ChannelConfig& dvcs,
-                                               const ChannelConfig& eppi0) {
+                                               const ChannelConfig& eppi0,
+                                               const PeriodLinearFitMap& dvcs_e_theta_fits,
+                                               const PeriodLinearFitMap& eppi0_e_theta_fits,
+                                               bool use_e_theta_linear_data_current_efficiency) {
     const long long n_dvcs =
-        apply_data_current_corrections_for_channel(csv, dvcs, "ep->epg");
+        apply_data_current_corrections_for_channel(csv,
+                                                   dvcs,
+                                                   "ep->epg",
+                                                   dvcs_e_theta_fits,
+                                                   use_e_theta_linear_data_current_efficiency);
 
     const long long n_eppi0 =
-        apply_data_current_corrections_for_channel(csv, eppi0, "ep->eppi0");
+        apply_data_current_corrections_for_channel(csv,
+                                                   eppi0,
+                                                   "ep->eppi0",
+                                                   eppi0_e_theta_fits,
+                                                   use_e_theta_linear_data_current_efficiency);
 
     if (n_dvcs <= 0) {
         fatal("[current_dependence] FATAL: applying DVCS DATA current corrections produced zero positive cells.");
@@ -4575,8 +4884,13 @@ static void apply_all_data_current_corrections(CSV& csv,
 
     std::cout << "[current_dependence] DATA current-corrected normalized raw yield cells written: "
               << "ep->epg=" << n_dvcs
-              << " ep->eppi0=" << n_eppi0
-              << std::endl;
+              << " ep->eppi0=" << n_eppi0;
+
+    if (use_e_theta_linear_data_current_efficiency) {
+        std::cout << " using e_theta-dependent DATA current-efficiency fits";
+    }
+
+    std::cout << std::endl;
 }
 
 static long long apply_mc_current_corrections_for_channel(CSV& csv,
@@ -4703,7 +5017,12 @@ bool update_current_dependence_factors_csv(
             // Even in unity-override mode, this stage now owns the production
             // of normalized raw DATA yields. With f=(1,0), this copies raw
             // yields into normalized raw yields while preserving uncertainties.
-            apply_all_data_current_corrections(csv, dvcs, eppi0);
+            apply_all_data_current_corrections(csv,
+                                           dvcs,
+                                           eppi0,
+                                           dvcs_e_theta_data_fits,
+                                           eppi0_e_theta_data_fits,
+                                           options.use_e_theta_linear_data_current_efficiency);
 
             // With f=(1,0), this copies reconstructed MC yields into
             // reconstructed current-corrected MC yield columns.
@@ -4795,21 +5114,43 @@ bool update_current_dependence_factors_csv(
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
         }
 
-        draw_kinematic_current_efficiency_diagnostics(
-            dvcs,
-            dvcsDataTrees,
-            dvcsGenMcTrees,
-            dvcsRecMcTrees,
-            charge_map,
-            data_cuts,
-            mc_cuts,
-            dvcs_results,
-            options.output_dir,
-            options.use_second_column_charge_for_all_unpolarized,
-            options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-            options.columns_3_to_5_charge_sum_scale,
-            options.use_fa18_inb_current_efficiency_for_sp19_inb,
-            options.max_workers);
+        PeriodLinearFitMap dvcs_e_theta_data_fits =
+            draw_kinematic_current_efficiency_diagnostics(
+                dvcs,
+                dvcsDataTrees,
+                dvcsGenMcTrees,
+                dvcsRecMcTrees,
+                charge_map,
+                data_cuts,
+                mc_cuts,
+                dvcs_results,
+                options.output_dir,
+                options.use_second_column_charge_for_all_unpolarized,
+                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                options.columns_3_to_5_charge_sum_scale,
+                options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                options.max_workers);
+
+        PeriodLinearFitMap eppi0_e_theta_data_fits;
+        if (options.use_e_theta_linear_data_current_efficiency) {
+            std::cout << "[current_dependence] Building ep->eppi0 DATA e_theta current-efficiency fits "
+                      << "for normalized raw-yield corrections." << std::endl;
+            eppi0_e_theta_data_fits = build_e_theta_data_current_fits(
+                eppi0,
+                eppi0DataTrees,
+                charge_map,
+                data_cuts,
+                options.use_second_column_charge_for_all_unpolarized,
+                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                options.columns_3_to_5_charge_sum_scale,
+                options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                options.max_workers);
+
+            if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
+                copy_fa18_inb_linear_fit_to_sp19_inb(dvcs_e_theta_data_fits, dvcs.csv_channel);
+                copy_fa18_inb_linear_fit_to_sp19_inb(eppi0_e_theta_data_fits, eppi0.csv_channel);
+            }
+        }
 
         // eppi0 reconstructed MC current dependence is still derived from the
         // DVCS MC/data ratio because the eppi0 MC scan is intentionally skipped.
@@ -4877,7 +5218,12 @@ bool update_current_dependence_factors_csv(
         //
         //   Var(Y/f) = Var(Y)/f^2 + Y^2 Var(f)/f^4.
         //
-        apply_all_data_current_corrections(csv, dvcs, eppi0);
+        apply_all_data_current_corrections(csv,
+                                           dvcs,
+                                           eppi0,
+                                           dvcs_e_theta_data_fits,
+                                           eppi0_e_theta_data_fits,
+                                           options.use_e_theta_linear_data_current_efficiency);
 
         // 4. Apply MC current factors to reconstructed MC yields and fill
         // reconstructed current-corrected yield columns.

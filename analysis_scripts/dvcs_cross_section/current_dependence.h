@@ -60,16 +60,6 @@ struct CurrentDependenceOptions {
     //   Faraday Cup charge total is currently suspect. Therefore the Sp19 Inb
     //   fitted slope is not used by default.
     //
-    // If true, DVCS acceptance is assumed to use no-background dvcsgen MC counts.
-    // In that mode the ep->epg MC current-efficiency factors written to the CSV
-    // are forced to (1,0), and the ep->epg reconstructed current-corrected MC
-    // yield columns are copied from the uncorrected reconstructed yield columns.
-    //
-    // The ep->epg MC current scan is still processed for diagnostics and for
-    // the existing ep->eppi0 MC-current-factor construction. This option does
-    // not change ep->eppi0 or ep->eppi0->epg MC current correction.
-    bool use_nobkg_dvcs_mc_counts = false;
-
     // This replacement is applied to:
     //   current efficiency factor, ep->epg,   exp, Sp19 Inb
     //   current efficiency factor, ep->epg,   mc,  Sp19 Inb
@@ -79,6 +69,20 @@ struct CurrentDependenceOptions {
     // The raw Sp19 Inb scan is still processed and plotted for diagnostic
     // purposes, but the saved CSV values used downstream are Fa18 Inb values.
     bool use_fa18_inb_current_efficiency_for_sp19_inb = true;
+
+    // If true, DATA raw-yield corrections use a period-dependent linear
+    // current-efficiency factor in electron polar angle,
+    //
+    //     f_current(theta_e) = m theta_e + b,
+    //
+    // obtained from the same kinematic current-efficiency diagnostic machinery.
+    // This is applied to both ep->epg and ep->eppi0 DATA normalized raw yields.
+    // The CSV current-efficiency-factor columns still store the integrated
+    // factors for bookkeeping and diagnostics; only the DATA yield correction
+    // uses the theta_e-dependent factor. If a row has no finite theta_e value
+    // or a valid fit cannot be built, the code falls back to the integrated
+    // current-efficiency factor for that row.
+    bool use_e_theta_linear_data_current_efficiency = true;
 
     int max_workers = 5;
 };
