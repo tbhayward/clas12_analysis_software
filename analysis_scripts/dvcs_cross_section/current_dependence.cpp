@@ -1920,16 +1920,24 @@ static bool hide_sp19_inb_from_replacement_plots(bool use_fa18_for_sp19,
     return use_fa18_for_sp19 && period == "Sp19 Inb";
 }
 
-static void draw_replacement_hidden_panel(const std::string& period) {
+static void draw_replacement_hidden_panel(const std::string& period,
+                                          bool suppress_axis_titles = false) {
     draw_current_frame(period);
+
+    TH1* frame = gPad ? dynamic_cast<TH1*>(gPad->GetPrimitive("hframe")) : nullptr;
+
+    if (suppress_axis_titles && frame) {
+        frame->GetYaxis()->SetTitle("");
+        frame->GetXaxis()->SetTitle("");
+    }
 
     TLatex lat;
     lat.SetNDC(true);
     lat.SetTextSize(0.035);
     lat.SetTextColor(kRed + 2);
-    lat.DrawLatex(0.15, 0.58, "Not plotted");
-    lat.DrawLatex(0.15, 0.50, "CSV current-efficiency");
-    lat.DrawLatex(0.15, 0.42, "factor copied from Fa18 Inb");
+    lat.DrawLatex(0.18, 0.58, "Not plotted");
+    lat.DrawLatex(0.18, 0.50, "CSV current-efficiency");
+    lat.DrawLatex(0.18, 0.42, "factor copied from Fa18 Inb");
 }
 
 static void draw_period_panel(const PeriodResult& r,
@@ -2306,10 +2314,7 @@ static void draw_data_mc_period_stack(const PeriodResult* rptr,
                 leg_top->AddEntry(pts_data, "Data", "pe");
                 leg_top->AddEntry(pts_mc, "MC", "pe");
             } else if (summary_panel) {
-                std::string ldata = r.period + " data";
-                std::string lmc = r.period + " MC";
-                leg_top->AddEntry(pts_data, ldata.c_str(), "pe");
-                leg_top->AddEntry(pts_mc, lmc.c_str(), "pe");
+                leg_top->AddEntry(pts_data, r.period.c_str(), "pe");
             }
         } else if (add_simple_legend) {
             leg_top->AddEntry(pts_data, "Data", "pe");
@@ -2333,11 +2338,11 @@ static void draw_data_mc_period_stack(const PeriodResult* rptr,
 
         TLatex ref;
         ref.SetNDC(true);
-        ref.SetTextSize(0.040);
+        ref.SetTextSize(0.038);
         ref.SetTextColor(kBlack);
         std::ostringstream ss;
         ss << "MC ref in acceptance: " << reference_current_nA(rptr->period) << " nA";
-        ref.DrawLatex(0.08, 0.08, ss.str().c_str());
+        ref.DrawLatex(0.18, 0.08, ss.str().c_str());
 
         if (use_fa18_for_sp19 && rptr->period == "Sp19 Inb") {
             TLatex lat;
@@ -2441,7 +2446,7 @@ static void draw_all_period_data_mc_canvas(const std::string& out_path,
                                });
 
         if (hide_sp19_inb_from_replacement_plots(use_fa18_for_sp19, period)) {
-            draw_replacement_hidden_panel(period);
+            draw_replacement_hidden_panel(period, true);
         } else if (it != results.end()) {
             draw_data_mc_period_stack(&(*it), period, false, results, use_fa18_for_sp19);
         } else {
