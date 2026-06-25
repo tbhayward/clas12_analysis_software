@@ -5002,6 +5002,9 @@ bool update_current_dependence_factors_csv(
         const ChannelConfig dvcs = dvcs_config();
         const ChannelConfig eppi0 = eppi0_config();
 
+        PeriodLinearFitMap dvcs_e_theta_data_fits;
+        PeriodLinearFitMap eppi0_e_theta_data_fits;
+
         if (options.override_to_unity) {
             std::cout << "[current_dependence] Override enabled: writing all current-efficiency factors as (1,0)."
                       << std::endl;
@@ -5114,7 +5117,7 @@ bool update_current_dependence_factors_csv(
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
         }
 
-        PeriodLinearFitMap dvcs_e_theta_data_fits =
+        dvcs_e_theta_data_fits =
             draw_kinematic_current_efficiency_diagnostics(
                 dvcs,
                 dvcsDataTrees,
@@ -5131,7 +5134,6 @@ bool update_current_dependence_factors_csv(
                 options.use_fa18_inb_current_efficiency_for_sp19_inb,
                 options.max_workers);
 
-        PeriodLinearFitMap eppi0_e_theta_data_fits;
         if (options.use_e_theta_linear_data_current_efficiency) {
             std::cout << "[current_dependence] Building ep->eppi0 DATA e_theta current-efficiency fits "
                       << "for normalized raw-yield corrections." << std::endl;
