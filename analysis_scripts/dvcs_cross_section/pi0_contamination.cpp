@@ -1505,8 +1505,8 @@ static void draw_topology_graph(const std::vector<DiagnosticBinRow>& rows,
     int ip = 0;
     for (const DiagnosticBinRow& r : rows) {
         if (!r.valid) continue;
-        g->SetPoint(ip, r.xcenter, 100.0 * r.contamination);
-        g->SetPointError(ip, 0.5 * (r.xmax - r.xmin), 100.0 * r.contamination_stat);
+        g->SetPoint(ip, r.xcenter, r.contamination);
+        g->SetPointError(ip, 0.5 * (r.xmax - r.xmin), r.contamination_stat);
         ++ip;
     }
 
@@ -1538,7 +1538,7 @@ static void plot_diagnostic_overlay(const std::string& out_png,
     TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 1.0);
     frame->SetTitle("");
     frame->GetXaxis()->SetTitle(varcfg.label.c_str());
-    frame->GetYaxis()->SetTitle("predicted #pi^{0} contamination (%)");
+    frame->GetYaxis()->SetTitle("predicted #pi^{0} contamination");
     frame->GetXaxis()->CenterTitle(true);
     frame->GetYaxis()->CenterTitle(true);
     frame->GetXaxis()->SetTitleSize(0.045);
