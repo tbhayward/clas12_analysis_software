@@ -47,6 +47,7 @@
 #include <TH1D.h>
 #include <TStyle.h>
 #include <TGraph.h>
+#include <TLine.h>
 
 #include <nlohmann/json.hpp>
 
@@ -2072,6 +2073,357 @@ static void draw_all_period_current_canvas(const std::string& out_path,
     c.SaveAs(out_path.c_str());
 }
 
+
+
+// -----------------------------------------------------------------------------
+// Data/MC overlay 3x2 diagnostic canvas
+// -----------------------------------------------------------------------------
+
+static TGraphErrors* make_percent_points_graph_style(const std::vector<CurrentPoint>& points,
+                                                     const FitResult& fit,
+                                                     int color,
+                                                     int marker_style,
+                                                     double marker_size) {
+    TGraphErrors* g = new TGraphErrors();
+
+    int ip = 0;
+
+    for (const CurrentPoint& p : points) {
+        if (!std::isfinite(fit.b) || fit.b == 0.0) {
+            continue;
+        }
+
+        const double y = 100.0 * p.y / fit.b;
+        const double ey = 100.0 * p.sy / std::fabs(fit.b);
+
+        if (!std::isfinite(y) || !std::isfinite(ey)) {
+            continue;
+        }
+
+        g->SetPoint(ip, (double)p.current_nA, y);
+        g->SetPointError(ip, 0.0, ey);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(marker_style);
+    g->SetMarkerSize(marker_size);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+
+    return g;
+}
+
+static TGraph* make_percent_fit_line_style(const FitResult& fit,
+                                           int color,
+                                           int line_style,
+                                           double xmin,
+                                           double xmax) {
+    TGraph* g = make_percent_fit_line(fit, color, xmin, xmax);
+    g->SetLineStyle(line_style);
+    g->SetLineWidth(2);
+    return g;
+}
+
+static TGraphErrors* make_ratio_points_graph(const PeriodResult& r,
+                                             int color) {
+    TGraphErrors* g = new TGraphErrors();
+    int ip = 0;
+
+    for (const CurrentPoint& p : r.data_points) {
+        const double y_data = percent_response_at_current((double)p.current_nA, r.data_fit);
+        const double y_mc = percent_response_at_current((double)p.current_nA, r.mc_fit);
+
+        if (!std::isfinite(y_data) || !std::isfinite(y_mc) || y_mc == 0.0 ||
+            !std::isfinite(r.data_fit.b) || r.data_fit.b == 0.0) {
+            continue;
+        }
+
+        const double point_data = 100.0 * p.y / r.data_fit.b;
+        const double point_data_err = 100.0 * p.sy / std::fabs(r.data_fit.b);
+
+        if (!std::isfinite(point_data) || !std::isfinite(point_data_err)) {
+            continue;
+        }
+
+        const double ratio = point_data / y_mc;
+        const double ratio_err = point_data_err / std::fabs(y_mc);
+
+        if (!std::isfinite(ratio) || !std::isfinite(ratio_err)) {
+            continue;
+        }
+
+        g->SetPoint(ip, (double)p.current_nA, ratio);
+        g->SetPointError(ip, 0.0, ratio_err);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(20);
+    g->SetMarkerSize(1.05);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+
+    return g;
+}
+
+static TGraph* make_ratio_fit_line(const PeriodResult& r,
+                                   int color,
+                                   double xmin,
+                                   double xmax) {
+    TGraph* g = new TGraph();
+    int ip = 0;
+
+    for (int i = 0; i < 200; ++i) {
+        const double x = xmin + (xmax - xmin) * (double)i / 199.0;
+        const double y_data = percent_response_at_current(x, r.data_fit);
+        const double y_mc = percent_response_at_current(x, r.mc_fit);
+
+        if (!std::isfinite(y_data) || !std::isfinite(y_mc) || y_mc == 0.0) {
+            continue;
+        }
+
+        g->SetPoint(ip, x, y_data / y_mc);
+        ++ip;
+    }
+
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+    return g;
+}
+
+static bool has_valid_mc_fit_or_points(const PeriodResult& r) {
+    if (!r.mc_points.empty()) {
+        return true;
+    }
+
+    return std::isfinite(r.mc_fit.m) && std::isfinite(r.mc_fit.b) && r.mc_fit.b != 0.0;
+}
+
+static void style_data_mc_subpad(bool top_pad) {
+    gPad->SetGrid(1, 1);
+    gPad->SetLeftMargin(0.13);
+    gPad->SetRightMargin(0.04);
+
+    if (top_pad) {
+        gPad->SetBottomMargin(0.02);
+        gPad->SetTopMargin(0.10);
+    } else {
+        gPad->SetBottomMargin(0.28);
+        gPad->SetTopMargin(0.02);
+    }
+}
+
+static void draw_data_mc_period_stack(const PeriodResult* rptr,
+                                      const std::string& title,
+                                      bool summary_panel,
+                                      const std::vector<PeriodResult>& all_results,
+                                      bool use_fa18_for_sp19) {
+    TPad* top = new TPad((title + "_top").c_str(), "", 0.0, 0.36, 1.0, 1.0);
+    TPad* bot = new TPad((title + "_bot").c_str(), "", 0.0, 0.0, 1.0, 0.36);
+    top->Draw();
+    bot->Draw();
+
+    top->cd();
+    style_data_mc_subpad(true);
+
+    TH1D* frame_top = (TH1D*)gPad->DrawFrame(0.0, 40.0, 80.0, 120.0);
+    frame_top->SetTitle(title.c_str());
+    frame_top->GetXaxis()->SetTitle("");
+    frame_top->GetXaxis()->SetLabelSize(0.0);
+    frame_top->GetYaxis()->SetTitle("Efficiency relative to fitted 0 nA (%)");
+    frame_top->GetYaxis()->CenterTitle(true);
+    frame_top->GetYaxis()->SetTitleSize(0.060);
+    frame_top->GetYaxis()->SetLabelSize(0.052);
+    frame_top->GetYaxis()->SetTitleOffset(0.80);
+
+    TLegend* leg_top = nullptr;
+
+    if (summary_panel) {
+        leg_top = new TLegend(0.08, 0.06, 0.48, 0.55);
+        leg_top->SetTextSize(0.030);
+    } else {
+        leg_top = new TLegend(0.68, 0.74, 0.95, 0.95);
+        leg_top->SetTextSize(0.040);
+    }
+
+    leg_top->SetFillStyle(1001);
+    leg_top->SetFillColor(kWhite);
+    leg_top->SetBorderSize(1);
+
+    auto draw_top_one = [&](const PeriodResult& r, bool add_simple_legend) {
+        const int color = period_color(r.period);
+
+        TGraphErrors* band_data = make_percent_fit_band(r.data_fit, color, 0.0, 80.0);
+        TGraph* line_data = make_percent_fit_line_style(r.data_fit, color, 1, 0.0, 80.0);
+        TGraphErrors* pts_data = make_percent_points_graph_style(r.data_points, r.data_fit, color, 20, summary_panel ? 0.80 : 1.20);
+
+        if (band_data && band_data->GetN() > 0 && !summary_panel) {
+            band_data->Draw("3 SAME");
+        }
+        if (line_data && line_data->GetN() > 0) {
+            line_data->Draw("L SAME");
+        }
+        if (pts_data && pts_data->GetN() > 0) {
+            pts_data->Draw("PE SAME");
+        }
+
+        if (has_valid_mc_fit_or_points(r)) {
+            TGraph* line_mc = make_percent_fit_line_style(r.mc_fit, color, 2, 0.0, 80.0);
+            TGraphErrors* pts_mc = make_percent_points_graph_style(r.mc_points, r.mc_fit, color, 24, summary_panel ? 0.80 : 1.20);
+
+            if (line_mc && line_mc->GetN() > 0) {
+                line_mc->Draw("L SAME");
+            }
+            if (pts_mc && pts_mc->GetN() > 0) {
+                pts_mc->Draw("PE SAME");
+            }
+
+            if (add_simple_legend) {
+                leg_top->AddEntry(pts_data, "Data", "pe");
+                leg_top->AddEntry(pts_mc, "MC", "pe");
+            } else if (summary_panel) {
+                std::string ldata = r.period + " data";
+                std::string lmc = r.period + " MC";
+                leg_top->AddEntry(pts_data, ldata.c_str(), "pe");
+                leg_top->AddEntry(pts_mc, lmc.c_str(), "pe");
+            }
+        } else if (add_simple_legend) {
+            leg_top->AddEntry(pts_data, "Data", "pe");
+        }
+    };
+
+    if (summary_panel) {
+        for (const std::string& period : PERIOD_ORDER) {
+            auto it = std::find_if(all_results.begin(), all_results.end(),
+                                   [&](const PeriodResult& r) { return r.period == period; });
+            if (it != all_results.end()) {
+                draw_top_one(*it, false);
+            }
+        }
+    } else if (rptr) {
+        draw_top_one(*rptr, true);
+
+        TLatex ref;
+        ref.SetNDC(true);
+        ref.SetTextSize(0.040);
+        ref.SetTextColor(kBlack);
+        std::ostringstream ss;
+        ss << "MC ref in acceptance: " << reference_current_nA(rptr->period) << " nA";
+        ref.DrawLatex(0.08, 0.08, ss.str().c_str());
+
+        if (use_fa18_for_sp19 && rptr->period == "Sp19 Inb") {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextSize(0.035);
+            lat.SetTextColor(kRed + 2);
+            lat.DrawLatex(0.08, 0.17, "CSV value replaced by Fa18 Inb");
+        }
+    }
+
+    leg_top->Draw();
+
+    bot->cd();
+    style_data_mc_subpad(false);
+
+    TH1D* frame_bot = (TH1D*)gPad->DrawFrame(0.0, 0.70, 80.0, 1.10);
+    frame_bot->SetTitle("");
+    frame_bot->GetXaxis()->SetTitle("Beam current (nA)");
+    frame_bot->GetYaxis()->SetTitle("Data/MC");
+    frame_bot->GetXaxis()->CenterTitle(true);
+    frame_bot->GetYaxis()->CenterTitle(true);
+    frame_bot->GetXaxis()->SetTitleSize(0.095);
+    frame_bot->GetYaxis()->SetTitleSize(0.090);
+    frame_bot->GetXaxis()->SetLabelSize(0.080);
+    frame_bot->GetYaxis()->SetLabelSize(0.080);
+    frame_bot->GetYaxis()->SetTitleOffset(0.55);
+
+    TLine unity(0.0, 1.0, 80.0, 1.0);
+    unity.SetLineColor(kGray + 2);
+    unity.SetLineStyle(2);
+    unity.SetLineWidth(2);
+    unity.Draw("SAME");
+
+    auto draw_ratio_one = [&](const PeriodResult& r) {
+        if (!has_valid_mc_fit_or_points(r)) {
+            return;
+        }
+
+        const int color = period_color(r.period);
+        TGraph* line = make_ratio_fit_line(r, color, 0.0, 80.0);
+        TGraphErrors* pts = make_ratio_points_graph(r, color);
+
+        if (line && line->GetN() > 0) {
+            line->Draw("L SAME");
+        }
+        if (pts && pts->GetN() > 0) {
+            pts->Draw("PE SAME");
+        }
+    };
+
+    if (summary_panel) {
+        for (const std::string& period : PERIOD_ORDER) {
+            auto it = std::find_if(all_results.begin(), all_results.end(),
+                                   [&](const PeriodResult& r) { return r.period == period; });
+            if (it != all_results.end()) {
+                draw_ratio_one(*it);
+            }
+        }
+    } else if (rptr) {
+        draw_ratio_one(*rptr);
+    }
+}
+
+static void draw_all_period_data_mc_canvas(const std::string& out_path,
+                                           const std::string& canvas_title,
+                                           const std::vector<PeriodResult>& results,
+                                           bool use_fa18_for_sp19) {
+    const bool have_any_mc = std::any_of(results.begin(), results.end(),
+                                         [](const PeriodResult& r) {
+                                             return has_valid_mc_fit_or_points(r);
+                                         });
+
+    if (!have_any_mc) {
+        std::cout << "[current_dependence] Skipping data/MC overlay canvas "
+                  << out_path << " because no MC current-dependence points are available."
+                  << std::endl;
+        return;
+    }
+
+    const size_t slash_pos = out_path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(out_path.substr(0, slash_pos));
+    }
+
+    TCanvas c("c_all_period_data_mc_current_dependence", canvas_title.c_str(), 1800, 1200);
+    c.Divide(3, 2, 0.001, 0.001);
+
+    int pad = 1;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        c.cd(pad);
+
+        auto it = std::find_if(results.begin(), results.end(),
+                               [&](const PeriodResult& r) {
+                                   return r.period == period;
+                               });
+
+        if (it != results.end()) {
+            draw_data_mc_period_stack(&(*it), period, false, results, use_fa18_for_sp19);
+        } else {
+            draw_data_mc_period_stack(nullptr, period, false, results, use_fa18_for_sp19);
+        }
+
+        ++pad;
+    }
+
+    c.cd(6);
+    draw_data_mc_period_stack(nullptr, "All periods", true, results, use_fa18_for_sp19);
+
+    c.SaveAs(out_path.c_str());
+}
+
 // -----------------------------------------------------------------------------
 // Existing per-period plots
 // -----------------------------------------------------------------------------
@@ -2550,6 +2902,11 @@ static std::vector<PeriodResult> run_channel_study(
     }
 
     draw_all_period_current_canvas(output_dir + "/" + cfg.output_token + "/all_periods_current_dependence.png",
+                                   cfg.title,
+                                   results,
+                                   false);
+
+    draw_all_period_data_mc_canvas(output_dir + "/" + cfg.output_token + "/all_periods_current_dependence_data_mc.png",
                                    cfg.title,
                                    results,
                                    false);
@@ -3297,7 +3654,17 @@ bool update_current_dependence_factors_csv(
                                        dvcs_results,
                                        options.use_fa18_inb_current_efficiency_for_sp19_inb);
 
+        draw_all_period_data_mc_canvas(options.output_dir + "/" + dvcs.output_token + "/all_periods_current_dependence_data_mc_csv_values.png",
+                                       dvcs.title + " CSV values",
+                                       dvcs_results,
+                                       options.use_fa18_inb_current_efficiency_for_sp19_inb);
+
         draw_all_period_current_canvas(options.output_dir + "/" + eppi0.output_token + "/all_periods_current_dependence_csv_values.png",
+                                       eppi0.title + " CSV values",
+                                       eppi0_results,
+                                       options.use_fa18_inb_current_efficiency_for_sp19_inb);
+
+        draw_all_period_data_mc_canvas(options.output_dir + "/" + eppi0.output_token + "/all_periods_current_dependence_data_mc_csv_values.png",
                                        eppi0.title + " CSV values",
                                        eppi0_results,
                                        options.use_fa18_inb_current_efficiency_for_sp19_inb);

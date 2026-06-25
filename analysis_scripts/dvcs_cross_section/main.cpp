@@ -217,58 +217,58 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // // --------- Current-dependence correction factors ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // --------- Current-dependence correction factors ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-    //     CurrentDependenceOptions current_opts;
-    //     current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-    //     current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     current_opts.output_dir = "output/dvcs_current_dependence";
+        CurrentDependenceOptions current_opts;
+        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        current_opts.output_dir = "output/dvcs_current_dependence";
 
-    //     // Existing override:
-    //     //   false -> compute current-efficiency factors normally
-    //     //   true  -> write all current-efficiency factors as (1,0)
-    //     current_opts.override_to_unity = false;
+        // Existing override:
+        //   false -> compute current-efficiency factors normally
+        //   true  -> write all current-efficiency factors as (1,0)
+        current_opts.override_to_unity = false;
 
-    //     // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
-    //     current_opts.use_second_column_charge_for_all_unpolarized = true;
+        // Fallback mode if the Fa18/Sp19 columns-3-to-5 mode below is disabled.
+        current_opts.use_second_column_charge_for_all_unpolarized = true;
 
-    //     // New mode:
-    //     //   Sp18 Inb / Sp18 Out:
-    //     //     charge_unpol = column 2
-    //     //
-    //     //   Fa18 Inb / Fa18 Out / Sp19 Inb:
-    //     //     charge_unpol = 1.025 * (column 3 + column 4 + column 5)
-    //     current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
-    //     current_opts.columns_3_to_5_charge_sum_scale = 1.025;
+        // New mode:
+        //   Sp18 Inb / Sp18 Out:
+        //     charge_unpol = column 2
+        //
+        //   Fa18 Inb / Fa18 Out / Sp19 Inb:
+        //     charge_unpol = 1.025 * (column 3 + column 4 + column 5)
+        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
+        current_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
-    //     // Default behavior:
-    //     //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
-    //     //            because the Sp19 5 nA luminosity-scan point has suspect
-    //     //            Faraday Cup charge.
-    //     //   false -> use the directly fitted Sp19 Inb current-dependence factor.
-    //     current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
+        // Default behavior:
+        //   true  -> write Sp19 Inb current-efficiency factors using Fa18 Inb
+        //            because the Sp19 5 nA luminosity-scan point has suspect
+        //            Faraday Cup charge.
+        //   false -> use the directly fitted Sp19 Inb current-dependence factor.
+        current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
 
-    //     // Match the total-counts override above. If true, ep->epg MC current
-    //     // factors written to the CSV are forced to (1,0). The scan is still
-    //     // processed diagnostically, and the pi0 treatment is unchanged.
-    //     current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+        // Match the total-counts override above. If true, ep->epg MC current
+        // factors written to the CSV are forced to (1,0). The scan is still
+        // processed diagnostically, and the pi0 treatment is unchanged.
+        current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
 
-    //     current_opts.max_workers = 5;
+        current_opts.max_workers = 5;
 
-    //     if (!update_current_dependence_factors_csv(csv_main,
-    //                                                dataTrees,
-    //                                                eppi0DataTrees,
-    //                                                currentStudyGenMcTrees,
-    //                                                currentStudyRecMcTrees,
-    //                                                eppi0GenMcTrees,
-    //                                                eppi0RecMcTrees,
-    //                                                current_opts)) {
-    //         std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_current_dependence_factors_csv(csv_main,
+                                                   dataTrees,
+                                                   eppi0DataTrees,
+                                                   currentStudyGenMcTrees,
+                                                   currentStudyRecMcTrees,
+                                                   eppi0GenMcTrees,
+                                                   eppi0RecMcTrees,
+                                                   current_opts)) {
+            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
     // {
