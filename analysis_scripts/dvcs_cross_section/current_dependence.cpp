@@ -1915,6 +1915,23 @@ static void draw_current_frame(const std::string& title) {
     frame->GetYaxis()->SetLabelSize(0.040);
 }
 
+static bool hide_sp19_inb_from_replacement_plots(bool use_fa18_for_sp19,
+                                                    const std::string& period) {
+    return use_fa18_for_sp19 && period == "Sp19 Inb";
+}
+
+static void draw_replacement_hidden_panel(const std::string& period) {
+    draw_current_frame(period);
+
+    TLatex lat;
+    lat.SetNDC(true);
+    lat.SetTextSize(0.035);
+    lat.SetTextColor(kRed + 2);
+    lat.DrawLatex(0.15, 0.58, "Not plotted");
+    lat.DrawLatex(0.15, 0.50, "CSV current-efficiency");
+    lat.DrawLatex(0.15, 0.42, "factor copied from Fa18 Inb");
+}
+
 static void draw_period_panel(const PeriodResult& r,
                               bool use_replacement_annotation) {
     const int color = period_color(r.period);
@@ -1984,6 +2001,10 @@ static void draw_summary_panel(const std::vector<PeriodResult>& results,
                                });
 
         if (it == results.end()) {
+            continue;
+        }
+
+        if (hide_sp19_inb_from_replacement_plots(use_fa18_for_sp19, period)) {
             continue;
         }
 
@@ -2057,7 +2078,9 @@ static void draw_all_period_current_canvas(const std::string& out_path,
                                    return r.period == period;
                                });
 
-        if (it != results.end()) {
+        if (hide_sp19_inb_from_replacement_plots(use_fa18_for_sp19, period)) {
+            draw_replacement_hidden_panel(period);
+        } else if (it != results.end()) {
             draw_period_panel(*it, use_fa18_for_sp19);
         } else {
             draw_current_frame(period);
@@ -2295,6 +2318,10 @@ static void draw_data_mc_period_stack(const PeriodResult* rptr,
 
     if (summary_panel) {
         for (const std::string& period : PERIOD_ORDER) {
+            if (hide_sp19_inb_from_replacement_plots(use_fa18_for_sp19, period)) {
+                continue;
+            }
+
             auto it = std::find_if(all_results.begin(), all_results.end(),
                                    [&](const PeriodResult& r) { return r.period == period; });
             if (it != all_results.end()) {
@@ -2363,6 +2390,10 @@ static void draw_data_mc_period_stack(const PeriodResult* rptr,
 
     if (summary_panel) {
         for (const std::string& period : PERIOD_ORDER) {
+            if (hide_sp19_inb_from_replacement_plots(use_fa18_for_sp19, period)) {
+                continue;
+            }
+
             auto it = std::find_if(all_results.begin(), all_results.end(),
                                    [&](const PeriodResult& r) { return r.period == period; });
             if (it != all_results.end()) {
@@ -2409,7 +2440,9 @@ static void draw_all_period_data_mc_canvas(const std::string& out_path,
                                    return r.period == period;
                                });
 
-        if (it != results.end()) {
+        if (hide_sp19_inb_from_replacement_plots(use_fa18_for_sp19, period)) {
+            draw_replacement_hidden_panel(period);
+        } else if (it != results.end()) {
             draw_data_mc_period_stack(&(*it), period, false, results, use_fa18_for_sp19);
         } else {
             draw_data_mc_period_stack(nullptr, period, false, results, use_fa18_for_sp19);
@@ -2720,7 +2753,8 @@ static std::vector<PeriodResult> run_channel_study(
     bool process_mc,
     bool use_second_column_charge_for_all_unpolarized,
     bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-    double columns_3_to_5_charge_sum_scale) {
+    double columns_3_to_5_charge_sum_scale,
+    bool hide_sp19_inb_from_all_period_plots) {
 
     std::map<std::string, DataAgg> data_aggs;
     std::mutex data_mutex;
@@ -2904,12 +2938,12 @@ static std::vector<PeriodResult> run_channel_study(
     draw_all_period_current_canvas(output_dir + "/" + cfg.output_token + "/all_periods_current_dependence.png",
                                    cfg.title,
                                    results,
-                                   false);
+                                   hide_sp19_inb_from_all_period_plots);
 
     draw_all_period_data_mc_canvas(output_dir + "/" + cfg.output_token + "/all_periods_current_dependence_data_mc.png",
                                    cfg.title,
                                    results,
-                                   false);
+                                   hide_sp19_inb_from_all_period_plots);
 
     write_summary_csv(output_dir + "/" + cfg.output_token + "/period_summary_raw_fit_values.csv", results);
 
@@ -3620,7 +3654,8 @@ bool update_current_dependence_factors_csv(
                               true,
                               options.use_second_column_charge_for_all_unpolarized,
                               options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-                              options.columns_3_to_5_charge_sum_scale);
+                              options.columns_3_to_5_charge_sum_scale,
+                              options.use_fa18_inb_current_efficiency_for_sp19_inb);
 
         std::vector<PeriodResult> eppi0_results =
             run_channel_study(eppi0,
@@ -3635,7 +3670,8 @@ bool update_current_dependence_factors_csv(
                               false,
                               options.use_second_column_charge_for_all_unpolarized,
                               options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-                              options.columns_3_to_5_charge_sum_scale);
+                              options.columns_3_to_5_charge_sum_scale,
+                              options.use_fa18_inb_current_efficiency_for_sp19_inb);
 
         if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
