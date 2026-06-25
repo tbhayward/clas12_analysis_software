@@ -125,14 +125,14 @@ int main(int argc, char* argv[]) {
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
 
-    // Run exclusivity cut extraction 
-    // Record the exact global cuts used:
-    write_global_cuts_config_json("output/jsons");
-    runAllExclusivityCuts(
-        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 5
-    );
-    std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // // Run exclusivity cut extraction 
+    // // Record the exact global cuts used:
+    // write_global_cuts_config_json("output/jsons");
+    // runAllExclusivityCuts(
+    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+    //     "output/jsons", "output/exclusivity_plots", 5
+    // );
+    // std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // // --------- Global bin-averaged kinematics (CSV update) ----------
     // {
