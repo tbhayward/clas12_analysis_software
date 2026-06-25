@@ -692,7 +692,7 @@ static void plot_period_contamination(const std::string& period,
 struct DiagnosticVar {
     std::string name;
     std::string label;
-    int nbins = 100;
+    int nbins = 50;
     double xmin = 0.0;
     double xmax = 1.0;
 };
@@ -1152,7 +1152,7 @@ static void plot_diagnostic_overlay(const std::string& out_png,
     c.SetTickx(1);
     c.SetTicky(1);
 
-    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 10.0);
+    TH1F* frame = (TH1F*)gPad->DrawFrame(varcfg.xmin, 0.0, varcfg.xmax, 50.0);
     frame->SetTitle("");
     frame->GetXaxis()->SetTitle(varcfg.label.c_str());
     frame->GetYaxis()->SetTitle("predicted #pi_{0} contamination (%)");
