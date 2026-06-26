@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+import argparse
 import uproot
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -6,12 +9,63 @@ import os
 import math
 from collections import defaultdict
 
-# Create output directory if it doesn't exist
-output_dir = "output/dvcs_per_run"
+
+# -----------------------
+# Argument parsing
+# -----------------------
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Make per-run events/nC diagnostic plots for either DVCS epgamma "
+            "or exclusive eppi0 data samples."
+        )
+    )
+
+    parser.add_argument(
+        "--eppi0",
+        action="store_true",
+        help=(
+            "Use eppi0 data ROOT files instead of the default DVCS epgamma files. "
+            "The same events/nC run-stability diagnostic is performed."
+        ),
+    )
+
+    parser.add_argument(
+        "--csv-file",
+        default="/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv",
+        help="Path to global charge CSV. Default is the DVCS integrated luminosity global.csv.",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help=(
+            "Optional output directory. If not supplied, defaults to "
+            "output/dvcs_per_run for DVCS and output/eppi0_per_run for eppi0."
+        ),
+    )
+
+    return parser.parse_args()
+#enddef
+
+
+args = parse_args()
+
+channel = "eppi0" if args.eppi0 else "dvcs"
+channel_label = "eppi0" if args.eppi0 else "DVCS"
+tree_name = "PhysicsEvents"
+
+if args.output_dir is not None:
+    output_dir = args.output_dir
+else:
+    output_dir = "output/eppi0_per_run" if args.eppi0 else "output/dvcs_per_run"
+#endif
+
 os.makedirs(output_dir, exist_ok=True)
 
 # Path to CSV with run information
-csv_file = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_luminosity/global.csv"
+csv_file = args.csv_file
 
 # Read CSV, skipping comment lines
 run_info_df = pd.read_csv(
@@ -23,6 +77,7 @@ run_info_df = pd.read_csv(
 
 # Create a dictionary mapping run number to accumulated charge
 run_charge_map = dict(zip(run_info_df["runnum"], run_info_df["charge_nC"]))
+
 
 # -----------------------
 # Run -> current maps
@@ -184,6 +239,7 @@ def resolve_current(period_label, runnum):
         if 3306 <= runnum <= 3411:
             return True, 35
         #endif
+
         # 50 nA from 3431-4325
         if 3431 <= runnum <= 4325:
             return True, 50
@@ -281,13 +337,26 @@ def add_trigger_annotations(ax, x_min, x_max, y_min, y_max):
             va="center",
             fontsize=9,
             color="0.25",
-            bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.70, edgecolor="none"),
+            bbox=dict(
+                boxstyle="round,pad=0.15",
+                facecolor="white",
+                alpha=0.70,
+                edgecolor="none",
+            ),
         )
     #endfor
 #enddef
 
 
-def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_charge_count, zero_charge_count, unknown_current_count, make_trigger_version=False):
+def make_period_plot(
+    period_label,
+    per_current_stats,
+    total_valid_runs,
+    missing_charge_count,
+    zero_charge_count,
+    unknown_current_count,
+    make_trigger_version=False,
+):
     plt.figure(figsize=(12, 6))
 
     color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9"]
@@ -312,9 +381,11 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
         if len(runs) > 0:
             local_x_min = float(np.min(runs))
             local_x_max = float(np.max(runs))
+
             if local_x_min < x_min:
                 x_min = local_x_min
             #endif
+
             if local_x_max > x_max:
                 x_max = local_x_max
             #endif
@@ -322,7 +393,7 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
 
         inmask = ~outmask
 
-        # Inliers (solid circles) with label for legend
+        # Inliers: solid circles with label for legend
         if np.any(inmask):
             plt.errorbar(
                 runs[inmask],
@@ -338,7 +409,7 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
             )
         #endif
 
-        # Outliers (open circles), no label
+        # Outliers: open circles, no label
         if np.any(outmask):
             plt.errorbar(
                 runs[outmask],
@@ -366,16 +437,16 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
 
     plt.xlabel("Run Number")
     plt.ylabel("Events / nC")
-    plt.title(f"DVCS Events per nC by Run Number ({period_label})")
+    plt.title(f"{channel_label} Events per nC by Run Number ({period_label})")
     plt.grid(True, alpha=0.3)
     plt.xticks(rotation=45)
     plt.legend(title="Beam current (nA)", fontsize=10)
     plt.tight_layout()
 
     if make_trigger_version:
-        out_path = os.path.join(output_dir, f"dvcs_per_nC_{period_label}_trigger.png")
+        out_path = os.path.join(output_dir, f"{channel}_per_nC_{period_label}_trigger.png")
     else:
-        out_path = os.path.join(output_dir, f"dvcs_per_nC_{period_label}.png")
+        out_path = os.path.join(output_dir, f"{channel}_per_nC_{period_label}.png")
     #endif
 
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -383,49 +454,78 @@ def make_period_plot(period_label, per_current_stats, total_valid_runs, missing_
 
     print(f"\nPlot saved to {out_path}")
     print(f"Processed {total_valid_runs} runs with valid charge and current info for {period_label}")
+
     if missing_charge_count > 0:
         print(f"{missing_charge_count} runs were missing from the charge CSV for this period.")
     #endif
+
     if zero_charge_count > 0:
         print(f"{zero_charge_count} runs had zero or negative charge recorded and were skipped.")
     #endif
+
     if unknown_current_count > 0:
         print(f"{unknown_current_count} runs had no current mapping and were skipped.")
     #endif
 #enddef
 
 
-# Define all periods and their ROOT files, with fa18_inb first
-period_files = [
-    ("rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
-    ("rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"),
-    ("rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"),
-    ("rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
-    ("rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
-]
+def get_period_files(use_eppi0):
+    if use_eppi0:
+        return [
+            ("rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root"),
+            ("rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root"),
+            ("rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root"),
+            ("rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root"),
+            ("rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root"),
+        ]
+    #endif
+
+    return [
+        ("rga_fa18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"),
+        ("rga_fa18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"),
+        ("rga_sp19_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"),
+        ("rga_sp18_inb", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"),
+        ("rga_sp18_out", "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"),
+    ]
+#enddef
+
+
+period_files = get_period_files(args.eppi0)
+
+print("")
+print("=" * 80)
+print(f"Running per-run events/nC diagnostic for channel: {channel_label}")
+print(f"Using charge CSV: {csv_file}")
+print(f"Output directory: {output_dir}")
+print("=" * 80)
 
 
 for period_label, root_path in period_files:
     print("\n" + "=" * 80)
     print(f"Processing period: {period_label}")
+    print(f"Input ROOT file: {root_path}")
     print("=" * 80)
 
     # Check that the ROOT file exists
     if not os.path.exists(root_path):
         print(f"Warning: ROOT file for {period_label} not found at {root_path}, skipping.")
-        #endif
         continue
     #endif
 
     # Open the ROOT file and access the PhysicsEvents tree
     root_file = uproot.open(root_path)
-    if "PhysicsEvents" not in root_file:
-        print(f"Warning: 'PhysicsEvents' tree not found in {root_path}, skipping.")
-        #endif
+
+    if tree_name not in root_file:
+        print(f"Warning: '{tree_name}' tree not found in {root_path}, skipping.")
         continue
     #endif
 
-    tree = root_file["PhysicsEvents"]
+    tree = root_file[tree_name]
+
+    if "runnum" not in tree:
+        print(f"Warning: 'runnum' branch not found in {root_path}:{tree_name}, skipping.")
+        continue
+    #endif
 
     # Get the runnum branch data
     runnum_data = tree["runnum"].array(library="np")
@@ -453,6 +553,7 @@ for period_label, root_path in period_files:
         #endif
 
         charge = run_charge_map[run_num_int]
+
         if charge <= 0.0:
             print(f"Warning: Run {run_num_int} has zero or negative charge, skipping.")
             zero_charge_count += 1
@@ -465,8 +566,12 @@ for period_label, root_path in period_files:
 
         # Resolve current
         ok_cur, current_nA = resolve_current(period_label, run_num_int)
+
         if not ok_cur:
-            print(f"Warning: Run {run_num_int} has charge info but no current mapping for period {period_label}; skipping in plot.")
+            print(
+                f"Warning: Run {run_num_int} has charge info but no current mapping "
+                f"for period {period_label}; skipping in plot."
+            )
             unknown_current_count += 1
             continue
         #endif
@@ -479,17 +584,20 @@ for period_label, root_path in period_files:
     # If no runs with both charge and current info, skip plotting
     if not per_current_runs:
         print(f"\nNo runs with both charge and current mapping were found for period {period_label}.")
+
         if missing_charge_count > 0:
             print(f"  Note: {missing_charge_count} runs from this ROOT file are missing in the charge CSV.")
         #endif
+
         if zero_charge_count > 0:
             print(f"  Note: {zero_charge_count} runs had zero or negative charge recorded.")
         #endif
+
         if unknown_current_count > 0:
             print(f"  Note: {unknown_current_count} runs had no current mapping and were skipped.")
         #endif
+
         print("Skipping plot for this period.\n")
-        #endif
         continue
     #endif
 
@@ -509,7 +617,7 @@ for period_label, root_path in period_files:
         errs_sorted = errs_arr[sort_idx]
 
         # -------------------------
-        # Stage 1: initial mean and >10 sigma (per-run) extreme outliers
+        # Stage 1: initial mean and >10 sigma per-run extreme outliers
         # -------------------------
         if len(vals_sorted) > 1:
             mean0 = np.mean(vals_sorted)
@@ -528,7 +636,7 @@ for period_label, root_path in period_files:
         #endif
 
         # -------------------------
-        # Stage 2: trimmed mean and 5 sigma (per-run) outliers
+        # Stage 2: trimmed mean and 5 sigma per-run outliers
         # -------------------------
         if len(trimmed_vals) > 1:
             mean_trimmed = np.mean(trimmed_vals)
@@ -550,6 +658,7 @@ for period_label, root_path in period_files:
             "extreme_mask": extreme_mask,
             "outliers": final_outlier_mask,
         }
+
         total_valid_runs += len(runs_sorted)
     #endfor
 
@@ -568,7 +677,9 @@ for period_label, root_path in period_files:
     # Extra diagnostic for Sp18 Out 30 nA
     if period_label == "rga_sp18_out" and 30 in per_current_stats:
         print("\nFULL 30 nA run list for rga_sp18_out:")
+
         st = per_current_stats[30]
+
         for run, val, err in zip(st["runs"], st["vals"], st["errs"]):
             print(f"  run {int(run)}: {val:.6f} +/- {err:.6f}")
         #endfor
@@ -583,8 +694,10 @@ for period_label, root_path in period_files:
 
         total_counts_30 = 0.0
         total_charge_30 = 0.0
+
         for run, val in zip(st["runs"], st["vals"]):
             run_int = int(run)
+
             if run_int in run_charge_map:
                 charge = float(run_charge_map[run_int])
                 counts = val * charge
@@ -598,8 +711,10 @@ for period_label, root_path in period_files:
     #endif
 
     # Print outliers
-    print("\nRuns more than 5 sigma (per-run stat error) from the trimmed mean (and >10 sigma extremes):")
+    print("\nRuns more than 5 sigma (per-run stat error) from the trimmed mean and >10 sigma extremes:")
+
     any_outliers = False
+
     for current in sorted(per_current_stats.keys()):
         st = per_current_stats[current]
         runs = st["runs"]
@@ -613,11 +728,18 @@ for period_label, root_path in period_files:
                 if not any_outliers:
                     any_outliers = True
                 #endif
+
                 tag = "EXTREME(>10sigma)" if is_extreme else ">5sigma"
-                print(f"  Run {int(run)} (current {current} nA): {val:.6f} +/- {err:.6f} events/nC  [{tag}]")
+
+                print(
+                    f"  Run {int(run)} "
+                    f"(current {current} nA): "
+                    f"{val:.6f} +/- {err:.6f} events/nC  [{tag}]"
+                )
             #endif
         #endfor
     #endfor
+
     if not any_outliers:
         print("  None")
     #endif
