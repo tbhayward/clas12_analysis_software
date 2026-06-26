@@ -6,6 +6,17 @@
 
 class TTree;
 
+struct Pi0ContaminationOptions {
+    // Current correction convention for N_mis = ep->eppi0->epg MC.
+    //
+    // true  -> default: correct the misidentified-background MC with the
+    //          ep->epg MC current-efficiency factor because the reconstructed
+    //          final state being counted is epgamma.
+    // false -> previous behavior: use the ep->eppi0 MC current-efficiency
+    //          factor for the misidentified-background MC.
+    bool use_epg_mc_current_factor_for_eppi0_bkg = true;
+};
+
 // Computes the pi0 contamination ratio using only quantities already stored in
 // dvcs_pass2_analysis.csv. The TTree maps are retained in the signature for
 // compatibility with the existing main.cpp call, but this implementation does
@@ -20,7 +31,10 @@ class TTree;
 //   N_dvcs_data   = sum_topo normalized raw yield, ep->epg,        topo, exp, period, unpol
 //   N_pi0_data    = sum_topo normalized raw yield, ep->eppi0,      topo, exp, period, unpol
 //   N_pi0_rec_mc  = sum_topo reconstructed current corrected yield, ep->eppi0,      topo, mc, period
-//   N_mis         = sum_topo reconstructed current corrected yield, ep->eppi0->epg, topo, mc, period
+//   N_mis         = sum_topo reconstructed yield, ep->eppi0->epg, topo, mc, period
+//                   divided by either the ep->epg MC current-efficiency factor
+//                   (default) or the ep->eppi0 MC current-efficiency factor
+//                   (legacy option).
 //
 // The output is written to:
 //
@@ -39,6 +53,7 @@ bool compute_pi0_contamination_overall(
     const std::string &combined_cuts_json,
     const std::string &csv_main,
     const std::string &output_root_dir,
-    int max_workers);
+    int max_workers,
+    const Pi0ContaminationOptions& options = Pi0ContaminationOptions());
 
 #endif // PI0_CONTAMINATION_H

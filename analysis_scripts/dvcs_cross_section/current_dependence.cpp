@@ -4944,7 +4944,8 @@ static long long apply_mc_current_corrections_for_channel(CSV& csv,
 
 static void apply_all_mc_current_corrections(CSV& csv,
                                              const ChannelConfig& dvcs,
-                                             const ChannelConfig& eppi0) {
+                                             const ChannelConfig& eppi0,
+                                             bool use_epg_mc_current_factor_for_eppi0_bkg) {
     const long long n_dvcs = apply_mc_current_corrections_for_channel(csv,
                                                                       "ep->epg",
                                                                       dvcs,
@@ -4955,10 +4956,15 @@ static void apply_all_mc_current_corrections(CSV& csv,
                                                                        eppi0,
                                                                        "ep->eppi0");
 
+    const ChannelConfig& eppi0_bkg_factor_cfg =
+        use_epg_mc_current_factor_for_eppi0_bkg ? dvcs : eppi0;
+
     const long long n_eppi0_bkg = apply_mc_current_corrections_for_channel(csv,
                                                                            "ep->eppi0->epg",
-                                                                           eppi0,
-                                                                           "ep->eppi0->epg");
+                                                                           eppi0_bkg_factor_cfg,
+                                                                           use_epg_mc_current_factor_for_eppi0_bkg
+                                                                               ? "ep->eppi0->epg (using ep->epg MC factor)"
+                                                                               : "ep->eppi0->epg (using ep->eppi0 MC factor)");
 
     if (n_dvcs <= 0) {
         fatal("[current_dependence] FATAL: applying DVCS MC current corrections produced zero positive cells.");
@@ -5029,7 +5035,10 @@ bool update_current_dependence_factors_csv(
 
             // With f=(1,0), this copies reconstructed MC yields into
             // reconstructed current-corrected MC yield columns.
-            apply_all_mc_current_corrections(csv, dvcs, eppi0);
+            apply_all_mc_current_corrections(csv,
+                                     dvcs,
+                                     eppi0,
+                                     options.use_epg_mc_current_factor_for_eppi0_bkg);
 
             write_csv_atomic(csv_path, csv);
 
@@ -5229,7 +5238,10 @@ bool update_current_dependence_factors_csv(
 
         // 4. Apply MC current factors to reconstructed MC yields and fill
         // reconstructed current-corrected yield columns.
-        apply_all_mc_current_corrections(csv, dvcs, eppi0);
+        apply_all_mc_current_corrections(csv,
+                                     dvcs,
+                                     eppi0,
+                                     options.use_epg_mc_current_factor_for_eppi0_bkg);
 
         write_csv_atomic(csv_path, csv);
 

@@ -96,6 +96,16 @@ struct CurrentDependenceOptions {
     // current-efficiency factor for that row.
     bool use_e_theta_linear_data_current_efficiency = true;
 
+    // Current correction convention for the misidentified pi0 background MC
+    // sample ep->eppi0->epg.
+    //
+    // true  -> use the ep->epg MC current-efficiency factor. This is the
+    //          default because the reconstructed final state being counted is
+    //          epgamma, even though the generated sample is ep->eppi0.
+    // false -> use the ep->eppi0 MC current-efficiency factor, which was the
+    //          previous behavior.
+    bool use_epg_mc_current_factor_for_eppi0_bkg = true;
+
     int max_workers = 5;
 };
 

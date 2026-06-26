@@ -178,6 +178,14 @@ int main(int argc, char* argv[]) {
     // background MC are kept in their standard treatment.
     const bool use_nobkg_dvcs_mc_for_acceptance = false;
 
+    // Misidentified pi0-background MC current-correction convention:
+    //   true  -> default: correct ep->eppi0->epg MC with the ep->epg MC
+    //            current-efficiency factor, because the reconstructed final
+    //            state being counted is epgamma.
+    //   false -> legacy behavior: correct ep->eppi0->epg MC with the ep->eppi0
+    //            MC current-efficiency factor.
+    const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
+
     // --------- Raw yields/counts into CSV + plots ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
@@ -254,6 +262,7 @@ int main(int argc, char* argv[]) {
         // factors written to the CSV are forced to (1,0). The scan is still
         // processed diagnostically, and the pi0 treatment is unchanged.
         current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+        current_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
 
         current_opts.max_workers = 5;
 
@@ -314,6 +323,10 @@ int main(int argc, char* argv[]) {
 
         const int max_workers = 1;
 
+        Pi0ContaminationOptions pi0_contamination_opts;
+        pi0_contamination_opts.use_epg_mc_current_factor_for_eppi0_bkg =
+            use_epg_mc_current_factor_for_eppi0_bkg;
+
         if (!compute_pi0_contamination_overall(
                 dataTrees,
                 eppi0DataTrees,
@@ -322,7 +335,8 @@ int main(int argc, char* argv[]) {
                 cuts_json,
                 csv_main,
                 output_root,
-                max_workers))
+                max_workers,
+                pi0_contamination_opts))
         {
             std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
             std::exit(EXIT_FAILURE);
