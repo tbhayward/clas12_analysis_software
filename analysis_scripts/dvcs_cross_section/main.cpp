@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
 
     // Electron FD sector study. Electron is always FD.
     global_cfg.enable_electron_fd_sector_filter = true;
-    global_cfg.electron_fd_sector = 2;
+    global_cfg.electron_fd_sector = 3;
 
     // Proton FD sector study. This automatically keeps only FD-FD events.
     global_cfg.enable_proton_fd_sector_filter = false;
