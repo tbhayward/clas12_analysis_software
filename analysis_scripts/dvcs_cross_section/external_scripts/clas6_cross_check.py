@@ -7,7 +7,7 @@ Compare current CLAS12 / Hall B pass-2 DVCS cross sections against:
   - CLAS6 unpolarized cross sections from Gepard
 
 This script uses the CLAS6 comparison points listed in the previous pass-1
-analysis note and makes one 2x2 PNG per comparison point.
+analysis note and makes one PNG per comparison point.
 
 Important conventions
 ---------------------
@@ -46,8 +46,7 @@ Important conventions
 
    with CLAS6 uncertainties scaled by the same factor.
 
-   This is the opposite direction from the previous single-bin test: we now put
-   CLAS6 onto the CLAS12/pass-2 kinematics and beam energy.
+   This puts CLAS6 onto the selected CLAS12/pass-2 kinematics and beam energy.
 
 5. Ratio plots are pass-2 / corrected-CLAS6 only.
 
@@ -58,12 +57,22 @@ Important conventions
 Plot layout
 -----------
 
-For each comparison target:
+Default layout:
 
   top-left:     pass-2 10.6 GeV, pass-1 Fa18, corrected CLAS6
   top-right:    pass-2 10.6 GeV / corrected CLAS6
   bottom-left:  individual pass-2 run periods and corrected CLAS6
   bottom-right: individual pass-2 run periods / corrected CLAS6
+
+Simple layout, enabled with --simple:
+
+  left:   pass-2 10.6 GeV and corrected CLAS6
+  right:  pass-2 10.6 GeV / corrected CLAS6
+
+In --simple mode:
+  - pass-1 is not loaded or plotted.
+  - individual pass-2 run periods are not extracted or plotted.
+  - only the combined 10.6 GeV pass-2 cross-section column is required.
 
 Uncertainty treatment
 ---------------------
@@ -214,6 +223,10 @@ ALL_PASS2_CSV_PERIODS = [
     "Sp18 Out",
     "Fa18 Inb",
     "Fa18 Out",
+]
+
+SIMPLE_PASS2_CSV_PERIODS = [
+    PASS2_COMBINED_CSV_PERIOD,
 ]
 
 SERIES_STYLE = {
@@ -1410,7 +1423,138 @@ def auto_ratio_ylim(ax, points_by_label: Dict[str, List[DataPoint]]) -> None:
     ax.set_ylim(1.0 - 1.10 * span, 1.0 + 1.10 * span)
 
 
-def make_one_plot(
+def figure_suptitle_text(
+    target: TargetSpec,
+    raw_clas6_kin: KinematicPoint,
+    pass2_choice: BinChoice,
+) -> str:
+    return (
+        f"CLAS6 / CLAS12 DVCS cross-section cross-check: note label {target.label}\n"
+        rf"CLAS6 raw: $\langle x_B\rangle={raw_clas6_kin.xB:.3f}$, "
+        rf"$\langle Q^2\rangle={raw_clas6_kin.Q2:.3f}~{{\rm GeV}}^2$, "
+        rf"$\langle |t|\rangle={raw_clas6_kin.t_abs:.3f}~{{\rm GeV}}^2$, "
+        rf"$E={CLAS6_EBEAM:.2f}~{{\rm GeV}}$"
+        "\n"
+        rf"pass-2 bin {pass2_choice.bin_name}: "
+        rf"$\langle x_B\rangle={pass2_choice.xB:.3f}$, "
+        rf"$\langle Q^2\rangle={pass2_choice.Q2:.3f}~{{\rm GeV}}^2$, "
+        rf"$\langle |t|\rangle={pass2_choice.t_abs:.3f}~{{\rm GeV}}^2$, "
+        rf"$E={CLAS12_EBEAM:.3f}~{{\rm GeV}}$"
+        "\n"
+        r"CLAS6 points corrected to selected pass-2 kinematics with KM15"
+    )
+
+
+def output_path_for_target(
+    output_dir: str,
+    target: TargetSpec,
+    pass2_choice: BinChoice,
+    simple: bool,
+) -> str:
+    if simple:
+        filename = f"clas6_cross_check_{target.label}_p2bin{pass2_choice.bin_name}_simple.png"
+    else:
+        filename = f"clas6_cross_check_{target.label}_p2bin{pass2_choice.bin_name}.png"
+    # endif
+
+    return os.path.join(output_dir, filename)
+
+
+def make_simple_plot(
+    target: TargetSpec,
+    raw_clas6_kin: KinematicPoint,
+    corrected_clas6_points: List[DataPoint],
+    pass2_choice: BinChoice,
+    points_by_label: Dict[str, List[DataPoint]],
+    ratios_by_label: Dict[str, List[DataPoint]],
+    chi2_by_label: Dict[str, Tuple[float, int, float]],
+    output_dir: str,
+    y_units: str,
+    use_log_cross_section: bool,
+) -> None:
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(15.0, 5.6),
+        constrained_layout=True,
+        sharex=True,
+    )
+
+    fig.suptitle(
+        figure_suptitle_text(
+            target=target,
+            raw_clas6_kin=raw_clas6_kin,
+            pass2_choice=pass2_choice,
+        ),
+        fontsize=12,
+    )
+
+    left = axes[0]
+    right = axes[1]
+
+    plot_dataset(
+        ax=left,
+        points=corrected_clas6_points,
+        label=CLAS6_DISPLAY_LABEL,
+        legend_label=CLAS6_DISPLAY_LABEL,
+    )
+
+    plot_dataset(
+        ax=left,
+        points=points_by_label.get(PASS2_COMBINED_DISPLAY_LABEL, []),
+        label=PASS2_COMBINED_DISPLAY_LABEL,
+        legend_label=format_label_with_chi2(
+            PASS2_COMBINED_DISPLAY_LABEL,
+            chi2_by_label.get(PASS2_COMBINED_DISPLAY_LABEL, (math.nan, 0, math.nan)),
+        ),
+    )
+
+    left.set_xlabel(r"$\phi$ [deg]")
+    left.set_ylabel(rf"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ [{y_units}]")
+    left.set_title("Cross sections: pass-2 combined and corrected CLAS6")
+    left.grid(True, alpha=0.25)
+    left.legend(fontsize=8, frameon=True)
+
+    if use_log_cross_section:
+        left.set_yscale("log")
+    # endif
+
+    ratios = ratios_by_label.get(PASS2_COMBINED_DISPLAY_LABEL, [])
+
+    plot_dataset(
+        ax=right,
+        points=ratios,
+        label=PASS2_COMBINED_DISPLAY_LABEL,
+        legend_label=format_label_with_chi2(
+            PASS2_COMBINED_DISPLAY_LABEL,
+            chi2_by_label.get(PASS2_COMBINED_DISPLAY_LABEL, (math.nan, 0, math.nan)),
+        ),
+    )
+
+    right.axhline(1.0, color="0.35", linewidth=1.0, linestyle="--", zorder=0)
+    right.set_xlabel(r"$\phi$ [deg]")
+    right.set_ylabel(r"pass-2 CLAS12 / corrected CLAS6")
+    right.set_title("Ratio to corrected CLAS6: pass-2 combined")
+    right.grid(True, alpha=0.25)
+    right.legend(fontsize=8, frameon=True)
+    auto_ratio_ylim(right, {PASS2_COMBINED_DISPLAY_LABEL: ratios})
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    output_path = output_path_for_target(
+        output_dir=output_dir,
+        target=target,
+        pass2_choice=pass2_choice,
+        simple=True,
+    )
+
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+    print(f"Wrote: {output_path}")
+
+
+def make_full_plot(
     target: TargetSpec,
     raw_clas6_kin: KinematicPoint,
     corrected_clas6_points: List[DataPoint],
@@ -1431,20 +1575,10 @@ def make_one_plot(
     )
 
     fig.suptitle(
-        (
-            f"CLAS6 / CLAS12 DVCS cross-section cross-check: note label {target.label}\n"
-            rf"CLAS6 raw: $\langle x_B\rangle={raw_clas6_kin.xB:.3f}$, "
-            rf"$\langle Q^2\rangle={raw_clas6_kin.Q2:.3f}~{{\rm GeV}}^2$, "
-            rf"$\langle |t|\rangle={raw_clas6_kin.t_abs:.3f}~{{\rm GeV}}^2$, "
-            rf"$E={CLAS6_EBEAM:.2f}~{{\rm GeV}}$"
-            "\n"
-            rf"pass-2 bin {pass2_choice.bin_name}: "
-            rf"$\langle x_B\rangle={pass2_choice.xB:.3f}$, "
-            rf"$\langle Q^2\rangle={pass2_choice.Q2:.3f}~{{\rm GeV}}^2$, "
-            rf"$\langle |t|\rangle={pass2_choice.t_abs:.3f}~{{\rm GeV}}^2$, "
-            rf"$E={CLAS12_EBEAM:.3f}~{{\rm GeV}}$"
-            "\n"
-            r"CLAS6 points corrected to selected pass-2 kinematics with KM15"
+        figure_suptitle_text(
+            target=target,
+            raw_clas6_kin=raw_clas6_kin,
+            pass2_choice=pass2_choice,
         ),
         fontsize=13,
     )
@@ -1570,15 +1704,59 @@ def make_one_plot(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    output_path = os.path.join(
-        output_dir,
-        f"clas6_cross_check_{target.label}_p2bin{pass2_choice.bin_name}.png",
+    output_path = output_path_for_target(
+        output_dir=output_dir,
+        target=target,
+        pass2_choice=pass2_choice,
+        simple=False,
     )
 
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
 
     print(f"Wrote: {output_path}")
+
+
+def make_one_plot(
+    target: TargetSpec,
+    raw_clas6_kin: KinematicPoint,
+    corrected_clas6_points: List[DataPoint],
+    pass2_choice: BinChoice,
+    points_by_label: Dict[str, List[DataPoint]],
+    ratios_by_label: Dict[str, List[DataPoint]],
+    chi2_by_label: Dict[str, Tuple[float, int, float]],
+    output_dir: str,
+    y_units: str,
+    use_log_cross_section: bool,
+    simple: bool,
+) -> None:
+    if simple:
+        make_simple_plot(
+            target=target,
+            raw_clas6_kin=raw_clas6_kin,
+            corrected_clas6_points=corrected_clas6_points,
+            pass2_choice=pass2_choice,
+            points_by_label=points_by_label,
+            ratios_by_label=ratios_by_label,
+            chi2_by_label=chi2_by_label,
+            output_dir=output_dir,
+            y_units=y_units,
+            use_log_cross_section=use_log_cross_section,
+        )
+    else:
+        make_full_plot(
+            target=target,
+            raw_clas6_kin=raw_clas6_kin,
+            corrected_clas6_points=corrected_clas6_points,
+            pass2_choice=pass2_choice,
+            points_by_label=points_by_label,
+            ratios_by_label=ratios_by_label,
+            chi2_by_label=chi2_by_label,
+            output_dir=output_dir,
+            y_units=y_units,
+            use_log_cross_section=use_log_cross_section,
+        )
+    # endif
 
 
 # -----------------------------------------------------------------------------
@@ -1654,6 +1832,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "pass2_csv",
         help="Input final pass-2 DVCS analysis CSV.",
+    )
+
+    parser.add_argument(
+        "--simple",
+        action="store_true",
+        help=(
+            "Make a compact 1x2 plot containing only corrected CLAS6, "
+            "pass-2 combined 10.6 GeV, and pass-2/CLAS6 ratio. "
+            "This mode automatically disables pass-1 and individual run-period panels."
+        ),
     )
 
     parser.add_argument(
@@ -1796,6 +1984,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
+    if args.simple:
+        args.no_pass1 = True
+    # endif
+
     if args.pass2_scale <= 0.0:
         raise ValueError("--pass2-scale must be positive.")
     # endif
@@ -1833,9 +2025,11 @@ def main() -> None:
         "phimax",
     ]
 
+    required_pass2_periods = SIMPLE_PASS2_CSV_PERIODS if args.simple else ALL_PASS2_CSV_PERIODS
+
     pass2_required += [
         pass2_cross_section_column(csv_period)
-        for csv_period in ALL_PASS2_CSV_PERIODS
+        for csv_period in required_pass2_periods
     ]
 
     pass2_df = pd.read_csv(args.pass2_csv)
@@ -1868,6 +2062,12 @@ def main() -> None:
 
     print("Loading CLAS6 data from Gepard...")
     print(f"  dataset id = {args.clas6_dataset_id}")
+
+    if args.simple:
+        print("  simple mode = enabled")
+        print("  pass-1 overlay = disabled")
+        print("  individual pass-2 run-period panels = disabled")
+    # endif
 
     clas6_all_points = load_all_clas6_points(
         g=g,
@@ -1957,15 +2157,17 @@ def main() -> None:
             pass2_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
         )
 
-        for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
-            points_by_label[display_label] = pass2_points_for_period(
-                selected=pass2_selected,
-                csv_period=csv_period,
-                pass2_scale=args.pass2_scale,
-                include_pass2_estimated_sys=not args.no_clas12_estimated_sys,
-                pass2_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
-            )
-        # endfor
+        if not args.simple:
+            for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
+                points_by_label[display_label] = pass2_points_for_period(
+                    selected=pass2_selected,
+                    csv_period=csv_period,
+                    pass2_scale=args.pass2_scale,
+                    include_pass2_estimated_sys=not args.no_clas12_estimated_sys,
+                    pass2_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
+                )
+            # endfor
+        # endif
 
         if pass1_df is not None:
             pass1_selected = select_bin_by_name(
@@ -2007,7 +2209,15 @@ def main() -> None:
         print("  dataset summaries:")
         print_point_summary(CLAS6_DISPLAY_LABEL, corrected_clas6_points)
 
-        for label in TOP_CROSS_SECTION_SERIES + BOTTOM_CROSS_SECTION_SERIES:
+        if args.simple:
+            summary_labels = [
+                PASS2_COMBINED_DISPLAY_LABEL,
+            ]
+        else:
+            summary_labels = TOP_CROSS_SECTION_SERIES + BOTTOM_CROSS_SECTION_SERIES
+        # endif
+
+        for label in summary_labels:
             if label in points_by_label:
                 print_point_summary(label, points_by_label[label])
             # endif
@@ -2035,6 +2245,7 @@ def main() -> None:
             output_dir=args.output_dir,
             y_units=args.y_units,
             use_log_cross_section=not args.linear_cross_section,
+            simple=args.simple,
         )
     # endfor
 
