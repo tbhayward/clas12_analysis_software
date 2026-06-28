@@ -1,0 +1,133 @@
+Step diagnostics written
+========================
+
+comparison_name = photon FD sector
+ratio_y_range = 0.0 to 2.0
+
+Available diagnostic metric tags:
+  normed_cross_section_epg_unpol                           normed DVCS cross section
+  cross_section_epg_unpol                                  raw-normalization DVCS cross section
+  raw_yield_epg_unpol                                      raw yield, ep->epg, unpol
+  normalized_raw_yield_epg_unpol                           normalized raw yield, ep->epg, unpol
+  raw_yield_eppi0_unpol                                    raw yield, ep->eppi0, unpol
+  normalized_raw_yield_eppi0_unpol                         normalized raw yield, ep->eppi0, unpol
+  current_efficiency_factor_epg_data                       current-efficiency factor, ep->epg, DATA
+  current_efficiency_factor_epg_mc                         current-efficiency factor, ep->epg, MC
+  current_efficiency_factor_eppi0_data                     current-efficiency factor, ep->eppi0, DATA
+  current_efficiency_factor_eppi0_mc                       current-efficiency factor, ep->eppi0, MC
+  generated_yield_epg                                      generated yield, ep->epg, MC
+  generated_yield_eppi0                                    generated yield, ep->eppi0, MC
+  reconstructed_yield_epg                                  reconstructed yield, ep->epg, MC
+  reconstructed_current_corrected_yield_epg                reconstructed current-corrected yield, ep->epg, MC
+  reconstructed_yield_eppi0                                reconstructed yield, ep->eppi0, MC
+  reconstructed_current_corrected_yield_eppi0              reconstructed current-corrected yield, ep->eppi0, MC
+  reconstructed_yield_eppi0_to_epg                         reconstructed yield, ep->eppi0->epg, MC
+  reconstructed_current_corrected_yield_eppi0_to_epg       reconstructed current-corrected yield, ep->eppi0->epg, MC
+  contamination_ratio                                      pi0 contamination ratio
+  signal_yield_epg_unpol                                   signal yield, ep->epg, unpol
+  acceptance                                               acceptance
+  acceptance_corrected_yield_epg_unpol                     acceptance-corrected yield, ep->epg, unpol
+
+Canvases successfully attempted with finite points:
+  cross_section_epg_unpol                                  xB
+  cross_section_epg_unpol                                  Q2
+  cross_section_epg_unpol                                  t
+  cross_section_epg_unpol                                  e_theta
+  cross_section_epg_unpol                                  p_theta
+  cross_section_epg_unpol                                  g_theta
+  raw_yield_epg_unpol                                      xB
+  raw_yield_epg_unpol                                      Q2
+  raw_yield_epg_unpol                                      t
+  raw_yield_epg_unpol                                      e_theta
+  raw_yield_epg_unpol                                      p_theta
+  raw_yield_epg_unpol                                      g_theta
+  normalized_raw_yield_epg_unpol                           xB
+  normalized_raw_yield_epg_unpol                           Q2
+  normalized_raw_yield_epg_unpol                           t
+  normalized_raw_yield_epg_unpol                           e_theta
+  normalized_raw_yield_epg_unpol                           p_theta
+  normalized_raw_yield_epg_unpol                           g_theta
+  raw_yield_eppi0_unpol                                    xB
+  raw_yield_eppi0_unpol                                    Q2
+  raw_yield_eppi0_unpol                                    t
+  raw_yield_eppi0_unpol                                    e_theta
+  raw_yield_eppi0_unpol                                    p_theta
+  raw_yield_eppi0_unpol                                    g_theta
+  normalized_raw_yield_eppi0_unpol                         xB
+  normalized_raw_yield_eppi0_unpol                         Q2
+  normalized_raw_yield_eppi0_unpol                         t
+  normalized_raw_yield_eppi0_unpol                         e_theta
+  normalized_raw_yield_eppi0_unpol                         p_theta
+  normalized_raw_yield_eppi0_unpol                         g_theta
+  generated_yield_epg                                      xB
+  generated_yield_epg                                      Q2
+  generated_yield_epg                                      t
+  generated_yield_epg                                      e_theta
+  generated_yield_epg                                      p_theta
+  generated_yield_epg                                      g_theta
+  generated_yield_eppi0                                    xB
+  generated_yield_eppi0                                    Q2
+  generated_yield_eppi0                                    t
+  generated_yield_eppi0                                    e_theta
+  generated_yield_eppi0                                    p_theta
+  generated_yield_eppi0                                    g_theta
+  reconstructed_yield_epg                                  xB
+  reconstructed_yield_epg                                  Q2
+  reconstructed_yield_epg                                  t
+  reconstructed_yield_epg                                  e_theta
+  reconstructed_yield_epg                                  p_theta
+  reconstructed_yield_epg                                  g_theta
+  reconstructed_current_corrected_yield_epg                xB
+  reconstructed_current_corrected_yield_epg                Q2
+  reconstructed_current_corrected_yield_epg                t
+  reconstructed_current_corrected_yield_epg                e_theta
+  reconstructed_current_corrected_yield_epg                p_theta
+  reconstructed_current_corrected_yield_epg                g_theta
+  reconstructed_yield_eppi0                                xB
+  reconstructed_yield_eppi0                                Q2
+  reconstructed_yield_eppi0                                t
+  reconstructed_yield_eppi0                                e_theta
+  reconstructed_yield_eppi0                                p_theta
+  reconstructed_yield_eppi0                                g_theta
+  reconstructed_current_corrected_yield_eppi0              xB
+  reconstructed_current_corrected_yield_eppi0              Q2
+  reconstructed_current_corrected_yield_eppi0              t
+  reconstructed_current_corrected_yield_eppi0              e_theta
+  reconstructed_current_corrected_yield_eppi0              p_theta
+  reconstructed_current_corrected_yield_eppi0              g_theta
+  reconstructed_yield_eppi0_to_epg                         xB
+  reconstructed_yield_eppi0_to_epg                         Q2
+  reconstructed_yield_eppi0_to_epg                         t
+  reconstructed_yield_eppi0_to_epg                         e_theta
+  reconstructed_yield_eppi0_to_epg                         p_theta
+  reconstructed_yield_eppi0_to_epg                         g_theta
+  reconstructed_current_corrected_yield_eppi0_to_epg       xB
+  reconstructed_current_corrected_yield_eppi0_to_epg       Q2
+  reconstructed_current_corrected_yield_eppi0_to_epg       t
+  reconstructed_current_corrected_yield_eppi0_to_epg       e_theta
+  reconstructed_current_corrected_yield_eppi0_to_epg       p_theta
+  reconstructed_current_corrected_yield_eppi0_to_epg       g_theta
+  contamination_ratio                                      xB
+  contamination_ratio                                      Q2
+  contamination_ratio                                      t
+  contamination_ratio                                      e_theta
+  contamination_ratio                                      p_theta
+  contamination_ratio                                      g_theta
+  signal_yield_epg_unpol                                   xB
+  signal_yield_epg_unpol                                   Q2
+  signal_yield_epg_unpol                                   t
+  signal_yield_epg_unpol                                   e_theta
+  signal_yield_epg_unpol                                   p_theta
+  signal_yield_epg_unpol                                   g_theta
+  acceptance                                               xB
+  acceptance                                               Q2
+  acceptance                                               t
+  acceptance                                               e_theta
+  acceptance                                               p_theta
+  acceptance                                               g_theta
+  acceptance_corrected_yield_epg_unpol                     xB
+  acceptance_corrected_yield_epg_unpol                     Q2
+  acceptance_corrected_yield_epg_unpol                     t
+  acceptance_corrected_yield_epg_unpol                     e_theta
+  acceptance_corrected_yield_epg_unpol                     p_theta
+  acceptance_corrected_yield_epg_unpol                     g_theta
