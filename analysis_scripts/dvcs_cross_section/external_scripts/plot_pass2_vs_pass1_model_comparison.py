@@ -10,6 +10,12 @@ Usage:
         pass2_dvcs.csv pass1_lee.csv \
         --output-dir output/pass2_vs_pass1_model_comparison
 
+Optional two-panel mode:
+    python3 plot_pass2_vs_pass1_model_comparison.py \
+        pass2_dvcs.csv pass1_lee.csv \
+        --output-dir output/pass2_vs_pass1_model_comparison \
+        --two-panel
+
 Default assumptions implemented here:
   * Positional input order is pass-2 CSV first, pass-1 CSV second.
   * Pass-2 data use the 10.6 GeV unpolarized normalized cross-section column.
@@ -22,8 +28,18 @@ Default assumptions implemented here:
   * One PNG is saved for every unique (xB, Q2, |t|) bin found in either CSV.
   * The model curves are BH and KM15 only, evaluated at the bin midpoint and
     drawn as functions of phi.
-  * Pass-1 and pass-2 markers are shifted slightly in phi so overlapping
-    points/error bars remain visually distinguishable.
+  * Pass-1 and pass-2 markers are shifted slightly in phi on the cross-section
+    panel so overlapping points/error bars remain visually distinguishable.
+
+Two-panel mode:
+  * If --two-panel is set, each output image is a 1x2 canvas.
+  * Left panel is the usual cross-section plot.
+  * Right panel shows:
+      pass-2 / pass-1,
+      pass-2 / KM15,
+      pass-2 / BH.
+  * Pass-2/pass-1 uncertainty is propagated from both data sets.
+  * KM15 and BH are treated as exact, zero-error denominators.
 
 Parallelization:
   * Each unique (xB, Q2, |t|) panel is processed independently.
@@ -119,6 +135,8 @@ PASS1_NORMALIZATION_FRACTION = 0.31
 PASS1_PHI_OFFSET_DEG = -1.25
 PASS2_PHI_OFFSET_DEG = +1.25
 
+PASS1_PASS2_RATIO_MATCH_TOLERANCE_DEG = 2.0
+
 
 # Column names used by the Sangbaek Lee / pass-1 cross-check file.
 PASS1_XS_COL = "cross sections, ep->epg, exp"
@@ -172,6 +190,15 @@ class ModelCurves:
 
 
 @dataclass
+class RatioPoint:
+    phi: float
+    ratio: float
+    err_low: float
+    err_high: float
+    label: str
+
+
+@dataclass
 class ModelConfig:
     e_beam: float
     dvcsgen_dir: str
@@ -193,6 +220,7 @@ class WorkerJob:
     pass2_label: str
     pass1_label: str
     logy: bool
+    two_panel: bool
     skip_models: bool
     model_cfg: ModelConfig
     cached_model_entry: Optional[Dict[str, List[float]]]
@@ -246,6 +274,7 @@ def format_seconds(seconds: float) -> str:
 
     hours = minutes // 60
     minutes = minutes % 60
+
     return f"{hours:d} h {minutes:d} min {rem:.1f} s"
 
 
@@ -352,6 +381,7 @@ def safe_filename_piece(value: float) -> str:
     text = text.replace("-", "m")
     text = text.replace("+", "p")
     text = text.replace(".", "p")
+
     return text
 
 
@@ -710,6 +740,7 @@ def bh_xs(xb: float, q2: float, t_abs: float, phi_deg: float, cfg: ModelConfig) 
     env["CLASDVCS_PDF"] = cfg.dvcsgen_dir
 
     out = run_command_capture(cmd, env=env)
+
     return parse_last_numeric_token(out, which_from_end=1)
 
 
@@ -732,6 +763,7 @@ def km15_xs(xb: float, q2: float, t_abs: float, phi_deg: float, cfg: ModelConfig
     env.pop("PYTHONPATH", None)
 
     out = run_command_capture(cmd, env=env).strip()
+
     return to_float(out, default=0.0)
 
 
@@ -855,6 +887,204 @@ def compute_model_curves_without_cache(key: BinKey, cfg: ModelConfig) -> ModelCu
 
 
 # ---------------------------------------------------------------------------
+# Ratio helpers
+# ---------------------------------------------------------------------------
+def linear_interpolate(x: float, xs: Sequence[float], ys: Sequence[float]) -> Optional[float]:
+    if len(xs) == 0 or len(ys) == 0 or len(xs) != len(ys):
+        return None
+    #endif
+
+    if len(xs) == 1:
+        if abs(x - xs[0]) < 1.0e-9:
+            return ys[0]
+        #endif
+
+        return None
+    #endif
+
+    pairs = sorted(zip(xs, ys), key=lambda item: item[0])
+    x_sorted = [p[0] for p in pairs]
+    y_sorted = [p[1] for p in pairs]
+
+    if x < x_sorted[0] or x > x_sorted[-1]:
+        return None
+    #endif
+
+    for i in range(len(x_sorted) - 1):
+        x0 = x_sorted[i]
+        x1 = x_sorted[i + 1]
+        y0 = y_sorted[i]
+        y1 = y_sorted[i + 1]
+
+        if abs(x - x0) < 1.0e-9:
+            return y0
+        #endif
+
+        if abs(x - x1) < 1.0e-9:
+            return y1
+        #endif
+
+        if x0 <= x <= x1:
+            if abs(x1 - x0) < 1.0e-12:
+                return y0
+            #endif
+
+            frac = (x - x0) / (x1 - x0)
+
+            return y0 + frac * (y1 - y0)
+        #endif
+    #endfor
+
+    return None
+
+
+def find_nearest_pass1_point(phi: float, pass1_points: Sequence[DataPoint]) -> Optional[DataPoint]:
+    if not pass1_points:
+        return None
+    #endif
+
+    best_point: Optional[DataPoint] = None
+    best_delta = float("inf")
+
+    for point in pass1_points:
+        delta = abs(point.phi - phi)
+
+        if delta < best_delta:
+            best_delta = delta
+            best_point = point
+        #endif
+    #endfor
+
+    if best_point is None:
+        return None
+    #endif
+
+    if best_delta > PASS1_PASS2_RATIO_MATCH_TOLERANCE_DEG:
+        return None
+    #endif
+
+    return best_point
+
+
+def pass2_over_pass1_ratio_points(panel: PanelData) -> List[RatioPoint]:
+    ratio_points: List[RatioPoint] = []
+
+    for p2 in panel.pass2:
+        p1 = find_nearest_pass1_point(p2.phi, panel.pass1)
+
+        if p1 is None:
+            continue
+        #endif
+
+        if not finite_positive(p2.xs) or not finite_positive(p1.xs):
+            continue
+        #endif
+
+        ratio = p2.xs / p1.xs
+
+        rel_p2_low = p2.err_low / p2.xs
+        rel_p2_high = p2.err_high / p2.xs
+
+        # For a downward ratio excursion, numerator moves down and denominator
+        # moves up. For an upward ratio excursion, numerator moves up and
+        # denominator moves down.
+        rel_low = math.sqrt(rel_p2_low * rel_p2_low + (p1.err_high / p1.xs) * (p1.err_high / p1.xs))
+        rel_high = math.sqrt(rel_p2_high * rel_p2_high + (p1.err_low / p1.xs) * (p1.err_low / p1.xs))
+
+        ratio_points.append(
+            RatioPoint(
+                phi=p2.phi,
+                ratio=ratio,
+                err_low=ratio * rel_low,
+                err_high=ratio * rel_high,
+                label="pass2/pass1",
+            )
+        )
+    #endfor
+
+    return ratio_points
+
+
+def pass2_over_model_ratio_points(
+    panel: PanelData,
+    curves: Optional[ModelCurves],
+    model_name: str,
+) -> List[RatioPoint]:
+    ratio_points: List[RatioPoint] = []
+
+    if curves is None:
+        return ratio_points
+    #endif
+
+    if model_name == "KM15":
+        model_y = curves.km15
+    elif model_name == "BH":
+        model_y = curves.bh
+    else:
+        return ratio_points
+    #endif
+
+    for p2 in panel.pass2:
+        denominator = linear_interpolate(p2.phi, curves.phi, model_y)
+
+        if denominator is None:
+            continue
+        #endif
+
+        if not finite_positive(p2.xs) or not finite_positive(denominator):
+            continue
+        #endif
+
+        ratio = p2.xs / denominator
+
+        ratio_points.append(
+            RatioPoint(
+                phi=p2.phi,
+                ratio=ratio,
+                err_low=p2.err_low / denominator,
+                err_high=p2.err_high / denominator,
+                label=f"pass2/{model_name}",
+            )
+        )
+    #endfor
+
+    return ratio_points
+
+
+def ratio_axis_limits(ratio_sets: Sequence[Sequence[RatioPoint]]) -> Tuple[float, float]:
+    vals: List[float] = []
+
+    for ratio_points in ratio_sets:
+        for point in ratio_points:
+            vals.append(point.ratio - point.err_low)
+            vals.append(point.ratio + point.err_high)
+        #endfor
+    #endfor
+
+    vals = [v for v in vals if math.isfinite(v)]
+
+    if not vals:
+        return 0.0, 2.0
+    #endif
+
+    ymin = min(vals)
+    ymax = max(vals)
+
+    ymin = min(ymin, 1.0)
+    ymax = max(ymax, 1.0)
+
+    span = ymax - ymin
+
+    if span <= 0.0:
+        return ymin - 0.5, ymax + 0.5
+    #endif
+
+    pad = 0.15 * span
+
+    return ymin - pad, ymax + pad
+
+
+# ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
 def y_limits(pass2: Sequence[DataPoint], pass1: Sequence[DataPoint], curves: Optional[ModelCurves]) -> Tuple[float, float]:
@@ -896,16 +1126,15 @@ def y_limits(pass2: Sequence[DataPoint], pass1: Sequence[DataPoint], curves: Opt
     return 0.55 * ymin, 1.75 * ymax
 
 
-def draw_panel(
+def draw_cross_section_axis(
+    ax,
     panel: PanelData,
     curves: Optional[ModelCurves],
-    output_path: Path,
     pass2_label: str,
     pass1_label: str,
     logy: bool,
+    include_title: bool,
 ) -> None:
-    fig, ax = plt.subplots(figsize=(8.4, 6.0))
-
     if curves is not None:
         ax.plot(curves.phi, curves.bh, linewidth=2.0, linestyle="-", label="BH")
         ax.plot(curves.phi, curves.km15, linewidth=2.0, linestyle="--", label="KM15")
@@ -948,15 +1177,19 @@ def draw_panel(
     #endif
 
     key = panel.key
-    title = (
-        rf"$x_B \in [{key.xb_min:.3g}, {key.xb_max:.3g}]$, "
-        rf"$Q^2 \in [{key.q2_min:.3g}, {key.q2_max:.3g}]$ (GeV$^2$), "
-        rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)"
-    )
 
-    ax.set_title(title)
+    if include_title:
+        title = (
+            rf"$x_B \in [{key.xb_min:.3g}, {key.xb_max:.3g}]$, "
+            rf"$Q^2 \in [{key.q2_min:.3g}, {key.q2_max:.3g}]$ (GeV$^2$), "
+            rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)"
+        )
+
+        ax.set_title(title)
+    #endif
+
     ax.set_xlabel(r"$\phi$ (deg)")
-    ax.set_ylabel(r"$d\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$)")
+    ax.set_ylabel(r"$d\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$/rad)")
     ax.set_xlim(0.0, 360.0)
     ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
 
@@ -970,7 +1203,124 @@ def draw_panel(
     ax.grid(True, which="major", alpha=0.25)
     ax.legend(loc="best", fontsize=9, frameon=True)
 
-    fig.tight_layout()
+
+def draw_ratio_axis(ax, panel: PanelData, curves: Optional[ModelCurves]) -> None:
+    p2_over_p1 = pass2_over_pass1_ratio_points(panel)
+    p2_over_km15 = pass2_over_model_ratio_points(panel, curves, "KM15")
+    p2_over_bh = pass2_over_model_ratio_points(panel, curves, "BH")
+
+    if p2_over_p1:
+        ax.errorbar(
+            [p.phi for p in p2_over_p1],
+            [p.ratio for p in p2_over_p1],
+            yerr=[[p.err_low for p in p2_over_p1], [p.err_high for p in p2_over_p1]],
+            fmt="o",
+            markersize=5,
+            capsize=2,
+            linewidth=1.2,
+            linestyle="None",
+            label="pass-2 / pass-1",
+        )
+    #endif
+
+    if p2_over_km15:
+        ax.errorbar(
+            [p.phi for p in p2_over_km15],
+            [p.ratio for p in p2_over_km15],
+            yerr=[[p.err_low for p in p2_over_km15], [p.err_high for p in p2_over_km15]],
+            fmt="^",
+            markersize=5,
+            capsize=2,
+            linewidth=1.2,
+            linestyle="None",
+            label="pass-2 / KM15",
+        )
+    #endif
+
+    if p2_over_bh:
+        ax.errorbar(
+            [p.phi for p in p2_over_bh],
+            [p.ratio for p in p2_over_bh],
+            yerr=[[p.err_low for p in p2_over_bh], [p.err_high for p in p2_over_bh]],
+            fmt="v",
+            markersize=5,
+            capsize=2,
+            linewidth=1.2,
+            linestyle="None",
+            label="pass-2 / BH",
+        )
+    #endif
+
+    ax.axhline(1.0, linewidth=1.2, linestyle="--")
+
+    ymin, ymax = ratio_axis_limits([p2_over_p1, p2_over_km15, p2_over_bh])
+
+    ax.set_ylim(ymin, ymax)
+    ax.set_xlim(0.0, 360.0)
+    ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
+    ax.set_xlabel(r"$\phi$ (deg)")
+    ax.set_ylabel("Ratio")
+    ax.set_title("Ratios")
+    ax.grid(True, which="major", alpha=0.25)
+    ax.legend(loc="best", fontsize=9, frameon=True)
+
+
+def draw_panel(
+    panel: PanelData,
+    curves: Optional[ModelCurves],
+    output_path: Path,
+    pass2_label: str,
+    pass1_label: str,
+    logy: bool,
+    two_panel: bool,
+) -> None:
+    if two_panel:
+        fig, axes = plt.subplots(1, 2, figsize=(15.5, 6.0))
+
+        key = panel.key
+        title = (
+            rf"$x_B \in [{key.xb_min:.3g}, {key.xb_max:.3g}]$, "
+            rf"$Q^2 \in [{key.q2_min:.3g}, {key.q2_max:.3g}]$ (GeV$^2$), "
+            rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)"
+        )
+
+        fig.suptitle(title, fontsize=13)
+
+        draw_cross_section_axis(
+            ax=axes[0],
+            panel=panel,
+            curves=curves,
+            pass2_label=pass2_label,
+            pass1_label=pass1_label,
+            logy=logy,
+            include_title=False,
+        )
+
+        axes[0].set_title("Cross sections")
+
+        draw_ratio_axis(
+            ax=axes[1],
+            panel=panel,
+            curves=curves,
+        )
+
+        fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+    else:
+        fig, ax = plt.subplots(figsize=(8.4, 6.0))
+
+        draw_cross_section_axis(
+            ax=ax,
+            panel=panel,
+            curves=curves,
+            pass2_label=pass2_label,
+            pass1_label=pass1_label,
+            logy=logy,
+            include_title=True,
+        )
+
+        fig.tight_layout()
+    #endif
+
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
 
@@ -1026,7 +1376,12 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             pass2_label=job.pass2_label,
             pass1_label=job.pass1_label,
             logy=job.logy,
+            two_panel=job.two_panel,
         )
+
+        n_pass2_pass1_ratio = len(pass2_over_pass1_ratio_points(job.panel))
+        n_pass2_km15_ratio = len(pass2_over_model_ratio_points(job.panel, curves, "KM15"))
+        n_pass2_bh_ratio = len(pass2_over_model_ratio_points(job.panel, curves, "BH"))
 
         manifest_entry: Dict[str, object] = {
             "file": job.filename,
@@ -1036,6 +1391,10 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             "n_pass2_points": len(job.panel.pass2),
             "n_pass1_points": len(job.panel.pass1),
             "has_models": curves is not None,
+            "two_panel": job.two_panel,
+            "n_ratio_pass2_over_pass1": n_pass2_pass1_ratio,
+            "n_ratio_pass2_over_km15": n_pass2_km15_ratio,
+            "n_ratio_pass2_over_bh": n_pass2_bh_ratio,
             "model_status": model_status,
         }
 
@@ -1044,6 +1403,7 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
         message = (
             f"[{job.index}/{job.total}] wrote {output_path} "
             f"({model_status}, pass2 points={len(job.panel.pass2)}, pass1 points={len(job.panel.pass1)}, "
+            f"ratios: p2/p1={n_pass2_pass1_ratio}, p2/KM15={n_pass2_km15_ratio}, p2/BH={n_pass2_bh_ratio}, "
             f"elapsed={format_seconds(elapsed)})"
         )
 
@@ -1113,6 +1473,7 @@ def resolve_km15_cli(user_value: str) -> str:
     #endfor
 
     tried = "\n".join(f"  - {c}" for c in candidates)
+
     die(f"Could not find km15_cli.py. Tried:\n{tried}\nUse --km15-cli /full/path/to/km15_cli.py.")
 
 
@@ -1161,6 +1522,7 @@ def resolve_python_executable(user_value: str) -> str:
     #endif
 
     log("Path setup: falling back to literal 'python3' for KM15.")
+
     return "python3"
 
 
@@ -1224,6 +1586,7 @@ def build_jobs(
     pass2_label: str,
     pass1_label: str,
     logy: bool,
+    two_panel: bool,
     skip_models: bool,
     model_cfg: ModelConfig,
     cache: Dict[str, Dict[str, List[float]]],
@@ -1264,6 +1627,7 @@ def build_jobs(
                 pass2_label=pass2_label,
                 pass1_label=pass1_label,
                 logy=logy,
+                two_panel=two_panel,
                 skip_models=skip_models,
                 model_cfg=model_cfg,
                 cached_model_entry=cached_model_entry,
@@ -1319,6 +1683,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-missing-models", action="store_true", help="Still make data plots if BH/KM15 commands fail.")
     parser.add_argument("--skip-models", action="store_true", help="Do not compute or draw BH/KM15 curves.")
     parser.add_argument("--linear-y", action="store_true", help="Use linear y scale instead of the default log y scale.")
+    parser.add_argument("--two-panel", action="store_true", help="Make a 1x2 figure: cross sections on left, pass-2 ratios on right.")
     parser.add_argument("--print-columns", action="store_true", help="Print detected CSV columns before plotting.")
     parser.add_argument(
         "--workers",
@@ -1366,6 +1731,7 @@ def main() -> int:
     log(f"  no_cache               = {args.no_cache}")
     log(f"  allow_missing_models   = {args.allow_missing_models}")
     log(f"  linear_y               = {args.linear_y}")
+    log(f"  two_panel              = {args.two_panel}")
     log(f"  quiet_workers          = {args.quiet_workers}")
     log(f"  progress_every         = {args.progress_every}")
     log(f"  pass2 estimated syst   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
@@ -1373,6 +1739,10 @@ def main() -> int:
     log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}%")
     log(f"  pass1 phi offset       = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
     log(f"  pass2 phi offset       = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
+
+    if args.two_panel and args.skip_models:
+        warn("--two-panel was requested together with --skip-models. The pass-2/KM15 and pass-2/BH ratios will be absent.")
+    #endif
 
     if not args.pass2_csv.exists():
         die(f"Pass-2 CSV does not exist: {args.pass2_csv}")
@@ -1448,6 +1818,7 @@ def main() -> int:
         pass2_label=args.pass2_label,
         pass1_label=args.pass1_label,
         logy=not args.linear_y,
+        two_panel=args.two_panel,
         skip_models=args.skip_models,
         model_cfg=model_cfg,
         cache=cache,
@@ -1617,6 +1988,7 @@ def main() -> int:
     log(f"  output directory          = {args.output_dir.resolve()}")
     log(f"  total panels written      = {len(manifest)}")
     log(f"  workers used              = {n_workers}")
+    log(f"  two-panel mode            = {args.two_panel}")
     log(f"  model phi points          = {model_cfg.phi_dense}")
     log(f"  pass2 uncertainty         = stat ⊕ estimated systematics ⊕ 8.3% norm")
     log(f"  pass1 uncertainty         = stat ⊕ syst ⊕ 31% norm")
