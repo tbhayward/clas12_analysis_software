@@ -868,6 +868,8 @@ def draw_panel(
     pass1_label: str,
     logy: bool,
 ) -> None:
+    phi_offset_deg = 1.25
+
     fig, ax = plt.subplots(figsize=(8.4, 6.0))
 
     if curves is not None:
@@ -876,7 +878,7 @@ def draw_panel(
     #endif
 
     if panel.pass1:
-        x = [p.phi for p in panel.pass1]
+        x = [p.phi - phi_offset_deg for p in panel.pass1]
         y = [p.xs for p in panel.pass1]
         yerr = [[p.err_low for p in panel.pass1], [p.err_high for p in panel.pass1]]
 
@@ -894,7 +896,7 @@ def draw_panel(
     #endif
 
     if panel.pass2:
-        x = [p.phi for p in panel.pass2]
+        x = [p.phi + phi_offset_deg for p in panel.pass2]
         y = [p.xs for p in panel.pass2]
         yerr = [p.err_high for p in panel.pass2]
 
@@ -907,7 +909,7 @@ def draw_panel(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass2_label}: stat ⊕ est. syst",
+            label=f"{pass2_label}: stat ⊕ estimated systematics",
         )
     #endif
 
