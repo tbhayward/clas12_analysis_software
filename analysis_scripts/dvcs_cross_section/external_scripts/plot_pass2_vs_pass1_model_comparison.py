@@ -13,19 +13,23 @@ Usage:
 Default assumptions implemented here:
   * Positional input order is pass-2 CSV first, pass-1 CSV second.
   * Pass-2 data use the 10.6 GeV unpolarized normalized cross-section column.
-    The statistical uncertainty is read from the tuple cell, then a 18% scale
-    systematic is added in quadrature.
+    The statistical uncertainty is read from the tuple cell, then an 18%
+    estimated point-to-point/systematic uncertainty and an 8.3% normalization
+    uncertainty are added in quadrature.
   * Pass-1 data use the Lee-style central/stat/syst-up/syst-down columns.
     The pass-1 total uncertainty adds stat, the provided syst column, and an
     additional 31% normalization uncertainty in quadrature.
   * One PNG is saved for every unique (xB, Q2, |t|) bin found in either CSV.
   * The model curves are BH and KM15 only, evaluated at the bin midpoint and
     drawn as functions of phi.
+  * Pass-1 and pass-2 markers are shifted slightly in phi so overlapping
+    points/error bars remain visually distinguishable.
 
 Parallelization:
   * Each unique (xB, Q2, |t|) panel is processed independently.
   * By default, up to 5 worker processes are used.
   * Use --workers N to change this.
+  * Values above 5 are capped to 5.
   * Use --workers 1 for fully serial debugging.
 
 Status output:
@@ -47,6 +51,8 @@ Efficiency:
   * The default theory curve grid is 73 phi points, i.e. 5-degree spacing.
     This is usually visually smooth while avoiding unnecessary dvcsgen/km15
     subprocess calls. Use --phi-dense 181 if you want 2-degree spacing.
+  * For extremely fast testing, use --phi-dense 5, --phi-dense 2, or
+    --skip-models.
   * Matplotlib uses the non-interactive Agg backend for safe ifarm/batch use.
 
 External model tools:
@@ -97,6 +103,21 @@ ANALYSIS_DIR = SCRIPT_DIR.parent
 
 DEFAULT_DVCSGEN_DIR = "/u/home/thayward/dvcsgens/dvcsgen_print"
 DEFAULT_KM15_CLI = str(ANALYSIS_DIR / "km15_cli.py")
+
+
+# ---------------------------------------------------------------------------
+# Uncertainty prescriptions.
+# ---------------------------------------------------------------------------
+PASS2_ESTIMATED_SYSTEMATIC_FRACTION = 0.18
+PASS2_NORMALIZATION_FRACTION = 0.083
+PASS1_NORMALIZATION_FRACTION = 0.31
+
+
+# ---------------------------------------------------------------------------
+# Plotting prescription.
+# ---------------------------------------------------------------------------
+PASS1_PHI_OFFSET_DEG = -1.25
+PASS2_PHI_OFFSET_DEG = +1.25
 
 
 # Column names used by the Sangbaek Lee / pass-1 cross-check file.
@@ -446,6 +467,19 @@ def parse_tuple_cell(cell: str) -> Tuple[float, float, float, bool]:
     return 0.0, 0.0, 0.0, False
 
 
+def pass2_total_uncertainty(xs: float, stat: float) -> float:
+    estimated_syst = PASS2_ESTIMATED_SYSTEMATIC_FRACTION * xs
+    norm = PASS2_NORMALIZATION_FRACTION * xs
+
+    return math.sqrt(stat * stat + estimated_syst * estimated_syst + norm * norm)
+
+
+def pass1_total_uncertainty(xs: float, stat: float, syst: float) -> float:
+    norm = PASS1_NORMALIZATION_FRACTION * xs
+
+    return math.sqrt(stat * stat + syst * syst + norm * norm)
+
+
 def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = False) -> Dict[BinKey, List[DataPoint]]:
     t0 = time.time()
 
@@ -470,7 +504,10 @@ def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = F
         xs_col = xs_column or find_column(fieldnames, PASS2_XS_CANDIDATES)
 
         log(f"Pass-2: cross-section column -> {xs_col}")
-        log("Pass-2: uncertainty prescription -> total = sqrt(stat^2 + (0.18 * cross_section)^2).")
+        log(
+            "Pass-2: uncertainty prescription -> "
+            "total = sqrt(stat^2 + (0.18 * cross_section)^2 + (0.083 * cross_section)^2)."
+        )
         log("Pass-2: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
@@ -496,7 +533,7 @@ def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = F
                 continue
             #endif
 
-            err = math.sqrt(stat * stat + (0.18 * xs) * (0.18 * xs))
+            err = pass2_total_uncertainty(xs=xs, stat=stat)
             point = DataPoint(phi=phi, xs=xs, stat=stat, err_low=err, err_high=err, source="pass2")
 
             out.setdefault(key, []).append(point)
@@ -578,9 +615,8 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 continue
             #endif
 
-            norm = 0.31 * xs
-            err_high = math.sqrt(stat * stat + syst_up * syst_up + norm * norm)
-            err_low = math.sqrt(stat * stat + syst_dn * syst_dn + norm * norm)
+            err_high = pass1_total_uncertainty(xs=xs, stat=stat, syst=syst_up)
+            err_low = pass1_total_uncertainty(xs=xs, stat=stat, syst=syst_dn)
 
             if err_low <= 0.0:
                 err_low = err_high
@@ -868,8 +904,6 @@ def draw_panel(
     pass1_label: str,
     logy: bool,
 ) -> None:
-    phi_offset_deg = 1.25
-
     fig, ax = plt.subplots(figsize=(8.4, 6.0))
 
     if curves is not None:
@@ -878,7 +912,7 @@ def draw_panel(
     #endif
 
     if panel.pass1:
-        x = [p.phi - phi_offset_deg for p in panel.pass1]
+        x = [p.phi + PASS1_PHI_OFFSET_DEG for p in panel.pass1]
         y = [p.xs for p in panel.pass1]
         yerr = [[p.err_low for p in panel.pass1], [p.err_high for p in panel.pass1]]
 
@@ -896,7 +930,7 @@ def draw_panel(
     #endif
 
     if panel.pass2:
-        x = [p.phi + phi_offset_deg for p in panel.pass2]
+        x = [p.phi + PASS2_PHI_OFFSET_DEG for p in panel.pass2]
         y = [p.xs for p in panel.pass2]
         yerr = [p.err_high for p in panel.pass2]
 
@@ -909,7 +943,7 @@ def draw_panel(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass2_label}: stat ⊕ estimated systematics",
+            label=f"{pass2_label}: stat ⊕ estimated systematics ⊕ 8.3% norm",
         )
     #endif
 
@@ -1334,6 +1368,11 @@ def main() -> int:
     log(f"  linear_y               = {args.linear_y}")
     log(f"  quiet_workers          = {args.quiet_workers}")
     log(f"  progress_every         = {args.progress_every}")
+    log(f"  pass2 estimated syst   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
+    log(f"  pass2 normalization    = {100.0 * PASS2_NORMALIZATION_FRACTION:.1f}%")
+    log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}%")
+    log(f"  pass1 phi offset       = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
+    log(f"  pass2 phi offset       = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
 
     if not args.pass2_csv.exists():
         die(f"Pass-2 CSV does not exist: {args.pass2_csv}")
@@ -1579,6 +1618,8 @@ def main() -> int:
     log(f"  total panels written      = {len(manifest)}")
     log(f"  workers used              = {n_workers}")
     log(f"  model phi points          = {model_cfg.phi_dense}")
+    log(f"  pass2 uncertainty         = stat ⊕ estimated systematics ⊕ 8.3% norm")
+    log(f"  pass1 uncertainty         = stat ⊕ syst ⊕ 31% norm")
     log(f"  cache entries after run   = {len(cache) if not args.skip_models else 0}")
     log(f"  total elapsed             = {format_seconds(total_dt)}")
     log("Done.")
