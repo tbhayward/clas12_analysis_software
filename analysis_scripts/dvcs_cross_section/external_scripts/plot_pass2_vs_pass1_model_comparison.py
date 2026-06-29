@@ -907,7 +907,7 @@ def draw_panel(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass2_label}: stat ⊕ 18% syst",
+            label=f"{pass2_label}: stat ⊕ est. syst",
         )
     #endif
 
