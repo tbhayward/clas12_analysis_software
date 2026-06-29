@@ -34,12 +34,15 @@ Default assumptions implemented here:
 Two-panel mode:
   * If --two-panel is set, each output image is a 1x2 canvas.
   * Left panel is the usual cross-section plot.
-  * Right panel shows:
-      pass-2 / pass-1,
-      pass-2 / KM15,
-      pass-2 / BH.
-  * Pass-2/pass-1 uncertainty is propagated from both data sets.
-  * KM15 and BH are treated as exact, zero-error denominators.
+  * Right panel shows only pass-2 / pass-1.
+  * The left panel is unchanged:
+      pass-2 left-panel uncertainty = stat ⊕ 18% estimated syst ⊕ 8.3% norm
+      pass-1 left-panel uncertainty = stat ⊕ provided syst ⊕ 31% norm
+  * The right-panel ratio uncertainty is deliberately different:
+      pass-2 ratio uncertainty = stat ⊕ 8.3% norm only
+      pass-1 ratio uncertainty = stat ⊕ 31% norm only
+    Therefore the ratio panel excludes the 18% estimated pass-2 systematic
+    and excludes the provided pass-1 systematic columns.
 
 Parallelization:
   * Each unique (xB, Q2, |t|) panel is processed independently.
@@ -138,14 +141,19 @@ PASS2_PHI_OFFSET_DEG = +1.25
 PASS1_PASS2_RATIO_MATCH_TOLERANCE_DEG = 2.0
 
 
-# Column names used by the Sangbaek Lee / pass-1 cross-check file.
+# ---------------------------------------------------------------------------
+# Pass-1 / Lee CSV column names.
+# ---------------------------------------------------------------------------
 PASS1_XS_COL = "cross sections, ep->epg, exp"
 PASS1_STAT_COL = "cross sections, ep->epg, exp, stat. unc."
 PASS1_SYST_UP_COL = "cross sections, ep->epg, exp, syst. unc. (up)"
 PASS1_SYST_DN_COL = "cross sections, ep->epg, exp, syst. unc. (down)"
 
 
-# Pass-2 10.6 GeV column candidates. The script picks the first existing one.
+# ---------------------------------------------------------------------------
+# Pass-2 10.6 GeV column candidates.
+# The script picks the first existing one.
+# ---------------------------------------------------------------------------
 PASS2_XS_CANDIDATES = [
     "normed cross sections, ep->epg, exp, 10.6 GeV, unpol",
     "normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys",
@@ -467,7 +475,7 @@ def row_phi(row: Dict[str, str], cols: Dict[str, str]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Cross-section value parsing
+# Cross-section value parsing and uncertainty prescriptions
 # ---------------------------------------------------------------------------
 def parse_tuple_cell(cell: str) -> Tuple[float, float, float, bool]:
     """
@@ -497,17 +505,49 @@ def parse_tuple_cell(cell: str) -> Tuple[float, float, float, bool]:
     return 0.0, 0.0, 0.0, False
 
 
-def pass2_total_uncertainty(xs: float, stat: float) -> float:
+def pass2_left_panel_uncertainty(xs: float, stat: float) -> float:
+    """
+    Left-panel pass-2 uncertainty:
+        stat ⊕ 18% estimated systematics ⊕ 8.3% normalization
+    """
     estimated_syst = PASS2_ESTIMATED_SYSTEMATIC_FRACTION * xs
     norm = PASS2_NORMALIZATION_FRACTION * xs
 
     return math.sqrt(stat * stat + estimated_syst * estimated_syst + norm * norm)
 
 
-def pass1_total_uncertainty(xs: float, stat: float, syst: float) -> float:
+def pass1_left_panel_uncertainty(xs: float, stat: float, syst: float) -> float:
+    """
+    Left-panel pass-1 uncertainty:
+        stat ⊕ provided systematic ⊕ 31% normalization
+    """
     norm = PASS1_NORMALIZATION_FRACTION * xs
 
     return math.sqrt(stat * stat + syst * syst + norm * norm)
+
+
+def pass2_ratio_uncertainty(xs: float, stat: float) -> float:
+    """
+    Right-panel pass-2/pass-1 ratio uncertainty contribution for pass-2:
+        stat ⊕ 8.3% normalization only
+
+    This deliberately excludes the 18% estimated pass-2 systematic uncertainty.
+    """
+    norm = PASS2_NORMALIZATION_FRACTION * xs
+
+    return math.sqrt(stat * stat + norm * norm)
+
+
+def pass1_ratio_uncertainty(xs: float, stat: float) -> float:
+    """
+    Right-panel pass-2/pass-1 ratio uncertainty contribution for pass-1:
+        stat ⊕ 31% normalization only
+
+    This deliberately excludes the provided pass-1 systematic uncertainty columns.
+    """
+    norm = PASS1_NORMALIZATION_FRACTION * xs
+
+    return math.sqrt(stat * stat + norm * norm)
 
 
 def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = False) -> Dict[BinKey, List[DataPoint]]:
@@ -535,7 +575,7 @@ def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = F
 
         log(f"Pass-2: cross-section column -> {xs_col}")
         log(
-            "Pass-2: uncertainty prescription -> "
+            "Pass-2: left-panel uncertainty prescription -> "
             "total = sqrt(stat^2 + (0.18 * cross_section)^2 + (0.083 * cross_section)^2)."
         )
         log("Pass-2: reading rows.")
@@ -563,7 +603,7 @@ def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = F
                 continue
             #endif
 
-            err = pass2_total_uncertainty(xs=xs, stat=stat)
+            err = pass2_left_panel_uncertainty(xs=xs, stat=stat)
             point = DataPoint(phi=phi, xs=xs, stat=stat, err_low=err, err_high=err, source="pass2")
 
             out.setdefault(key, []).append(point)
@@ -615,7 +655,10 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
         log(f"Pass-1: stat uncertainty column -> {stat_col}")
         log(f"Pass-1: syst up uncertainty column -> {syst_up_col}")
         log(f"Pass-1: syst down uncertainty column -> {syst_dn_col}")
-        log("Pass-1: uncertainty prescription -> total = sqrt(stat^2 + syst^2 + (0.31 * cross_section)^2).")
+        log(
+            "Pass-1: left-panel uncertainty prescription -> "
+            "total = sqrt(stat^2 + syst^2 + (0.31 * cross_section)^2)."
+        )
         log("Pass-1: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
@@ -645,8 +688,8 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 continue
             #endif
 
-            err_high = pass1_total_uncertainty(xs=xs, stat=stat, syst=syst_up)
-            err_low = pass1_total_uncertainty(xs=xs, stat=stat, syst=syst_dn)
+            err_high = pass1_left_panel_uncertainty(xs=xs, stat=stat, syst=syst_up)
+            err_low = pass1_left_panel_uncertainty(xs=xs, stat=stat, syst=syst_dn)
 
             if err_low <= 0.0:
                 err_low = err_high
@@ -874,7 +917,8 @@ def compute_model_curves_without_cache(key: BinKey, cfg: ModelConfig) -> ModelCu
             print(
                 f"[pass2-vs-pass1][worker {os.getpid()}] "
                 f"model point {i_phi}/{len(phi_grid)} for "
-                f"xB=[{key.xb_min},{key.xb_max}], Q2=[{key.q2_min},{key.q2_max}], |t|=[{key.t_min},{key.t_max}], phi={phi:.1f}",
+                f"xB=[{key.xb_min},{key.xb_max}], Q2=[{key.q2_min},{key.q2_max}], "
+                f"|t|=[{key.t_min},{key.t_max}], phi={phi:.1f}",
                 flush=True,
             )
         #endif
@@ -889,55 +933,6 @@ def compute_model_curves_without_cache(key: BinKey, cfg: ModelConfig) -> ModelCu
 # ---------------------------------------------------------------------------
 # Ratio helpers
 # ---------------------------------------------------------------------------
-def linear_interpolate(x: float, xs: Sequence[float], ys: Sequence[float]) -> Optional[float]:
-    if len(xs) == 0 or len(ys) == 0 or len(xs) != len(ys):
-        return None
-    #endif
-
-    if len(xs) == 1:
-        if abs(x - xs[0]) < 1.0e-9:
-            return ys[0]
-        #endif
-
-        return None
-    #endif
-
-    pairs = sorted(zip(xs, ys), key=lambda item: item[0])
-    x_sorted = [p[0] for p in pairs]
-    y_sorted = [p[1] for p in pairs]
-
-    if x < x_sorted[0] or x > x_sorted[-1]:
-        return None
-    #endif
-
-    for i in range(len(x_sorted) - 1):
-        x0 = x_sorted[i]
-        x1 = x_sorted[i + 1]
-        y0 = y_sorted[i]
-        y1 = y_sorted[i + 1]
-
-        if abs(x - x0) < 1.0e-9:
-            return y0
-        #endif
-
-        if abs(x - x1) < 1.0e-9:
-            return y1
-        #endif
-
-        if x0 <= x <= x1:
-            if abs(x1 - x0) < 1.0e-12:
-                return y0
-            #endif
-
-            frac = (x - x0) / (x1 - x0)
-
-            return y0 + frac * (y1 - y0)
-        #endif
-    #endfor
-
-    return None
-
-
 def find_nearest_pass1_point(phi: float, pass1_points: Sequence[DataPoint]) -> Optional[DataPoint]:
     if not pass1_points:
         return None
@@ -982,68 +977,33 @@ def pass2_over_pass1_ratio_points(panel: PanelData) -> List[RatioPoint]:
 
         ratio = p2.xs / p1.xs
 
-        rel_p2_low = p2.err_low / p2.xs
-        rel_p2_high = p2.err_high / p2.xs
+        # Right-panel-only uncertainty prescription:
+        #
+        #   pass-2 contribution: stat ⊕ 8.3% normalization only
+        #   pass-1 contribution: stat ⊕ 31% normalization only
+        #
+        # This intentionally excludes:
+        #   - the 18% estimated pass-2 systematic uncertainty,
+        #   - the provided pass-1 systematic uncertainty columns.
+        #
+        # The left panel is unchanged because the left-panel error bars use
+        # p.err_low / p.err_high loaded from the full uncertainty prescriptions.
+        p2_err = pass2_ratio_uncertainty(xs=p2.xs, stat=p2.stat)
+        p1_err = pass1_ratio_uncertainty(xs=p1.xs, stat=p1.stat)
 
-        # For a downward ratio excursion, numerator moves down and denominator
-        # moves up. For an upward ratio excursion, numerator moves up and
-        # denominator moves down.
-        rel_low = math.sqrt(rel_p2_low * rel_p2_low + (p1.err_high / p1.xs) * (p1.err_high / p1.xs))
-        rel_high = math.sqrt(rel_p2_high * rel_p2_high + (p1.err_low / p1.xs) * (p1.err_low / p1.xs))
+        rel_p2 = p2_err / p2.xs
+        rel_p1 = p1_err / p1.xs
+        rel_ratio = math.sqrt(rel_p2 * rel_p2 + rel_p1 * rel_p1)
+
+        ratio_err = ratio * rel_ratio
 
         ratio_points.append(
             RatioPoint(
                 phi=p2.phi,
                 ratio=ratio,
-                err_low=ratio * rel_low,
-                err_high=ratio * rel_high,
+                err_low=ratio_err,
+                err_high=ratio_err,
                 label="pass2/pass1",
-            )
-        )
-    #endfor
-
-    return ratio_points
-
-
-def pass2_over_model_ratio_points(
-    panel: PanelData,
-    curves: Optional[ModelCurves],
-    model_name: str,
-) -> List[RatioPoint]:
-    ratio_points: List[RatioPoint] = []
-
-    if curves is None:
-        return ratio_points
-    #endif
-
-    if model_name == "KM15":
-        model_y = curves.km15
-    elif model_name == "BH":
-        model_y = curves.bh
-    else:
-        return ratio_points
-    #endif
-
-    for p2 in panel.pass2:
-        denominator = linear_interpolate(p2.phi, curves.phi, model_y)
-
-        if denominator is None:
-            continue
-        #endif
-
-        if not finite_positive(p2.xs) or not finite_positive(denominator):
-            continue
-        #endif
-
-        ratio = p2.xs / denominator
-
-        ratio_points.append(
-            RatioPoint(
-                phi=p2.phi,
-                ratio=ratio,
-                err_low=p2.err_low / denominator,
-                err_high=p2.err_high / denominator,
-                label=f"pass2/{model_name}",
             )
         )
     #endfor
@@ -1204,10 +1164,8 @@ def draw_cross_section_axis(
     ax.legend(loc="best", fontsize=9, frameon=True)
 
 
-def draw_ratio_axis(ax, panel: PanelData, curves: Optional[ModelCurves]) -> None:
+def draw_ratio_axis(ax, panel: PanelData) -> None:
     p2_over_p1 = pass2_over_pass1_ratio_points(panel)
-    p2_over_km15 = pass2_over_model_ratio_points(panel, curves, "KM15")
-    p2_over_bh = pass2_over_model_ratio_points(panel, curves, "BH")
 
     if p2_over_p1:
         ax.errorbar(
@@ -1219,48 +1177,20 @@ def draw_ratio_axis(ax, panel: PanelData, curves: Optional[ModelCurves]) -> None
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label="pass-2 / pass-1",
-        )
-    #endif
-
-    if p2_over_km15:
-        ax.errorbar(
-            [p.phi for p in p2_over_km15],
-            [p.ratio for p in p2_over_km15],
-            yerr=[[p.err_low for p in p2_over_km15], [p.err_high for p in p2_over_km15]],
-            fmt="^",
-            markersize=5,
-            capsize=2,
-            linewidth=1.2,
-            linestyle="None",
-            label="pass-2 / KM15",
-        )
-    #endif
-
-    if p2_over_bh:
-        ax.errorbar(
-            [p.phi for p in p2_over_bh],
-            [p.ratio for p in p2_over_bh],
-            yerr=[[p.err_low for p in p2_over_bh], [p.err_high for p in p2_over_bh]],
-            fmt="v",
-            markersize=5,
-            capsize=2,
-            linewidth=1.2,
-            linestyle="None",
-            label="pass-2 / BH",
+            label="pass-2 / pass-1: stat ⊕ norm only",
         )
     #endif
 
     ax.axhline(1.0, linewidth=1.2, linestyle="--")
 
-    ymin, ymax = ratio_axis_limits([p2_over_p1, p2_over_km15, p2_over_bh])
+    ymin, ymax = ratio_axis_limits([p2_over_p1])
 
     ax.set_ylim(ymin, ymax)
     ax.set_xlim(0.0, 360.0)
     ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
     ax.set_xlabel(r"$\phi$ (deg)")
-    ax.set_ylabel("Ratio")
-    ax.set_title("Ratios")
+    ax.set_ylabel("pass-2 / pass-1")
+    ax.set_title("Ratio")
     ax.grid(True, which="major", alpha=0.25)
     ax.legend(loc="best", fontsize=9, frameon=True)
 
@@ -1301,7 +1231,6 @@ def draw_panel(
         draw_ratio_axis(
             ax=axes[1],
             panel=panel,
-            curves=curves,
         )
 
         fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
@@ -1380,8 +1309,6 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
         )
 
         n_pass2_pass1_ratio = len(pass2_over_pass1_ratio_points(job.panel))
-        n_pass2_km15_ratio = len(pass2_over_model_ratio_points(job.panel, curves, "KM15"))
-        n_pass2_bh_ratio = len(pass2_over_model_ratio_points(job.panel, curves, "BH"))
 
         manifest_entry: Dict[str, object] = {
             "file": job.filename,
@@ -1393,8 +1320,7 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             "has_models": curves is not None,
             "two_panel": job.two_panel,
             "n_ratio_pass2_over_pass1": n_pass2_pass1_ratio,
-            "n_ratio_pass2_over_km15": n_pass2_km15_ratio,
-            "n_ratio_pass2_over_bh": n_pass2_bh_ratio,
+            "ratio_uncertainty": "pass2 stat+8.3% norm; pass1 stat+31% norm",
             "model_status": model_status,
         }
 
@@ -1403,7 +1329,7 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
         message = (
             f"[{job.index}/{job.total}] wrote {output_path} "
             f"({model_status}, pass2 points={len(job.panel.pass2)}, pass1 points={len(job.panel.pass1)}, "
-            f"ratios: p2/p1={n_pass2_pass1_ratio}, p2/KM15={n_pass2_km15_ratio}, p2/BH={n_pass2_bh_ratio}, "
+            f"ratios: p2/p1={n_pass2_pass1_ratio}, "
             f"elapsed={format_seconds(elapsed)})"
         )
 
@@ -1683,7 +1609,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-missing-models", action="store_true", help="Still make data plots if BH/KM15 commands fail.")
     parser.add_argument("--skip-models", action="store_true", help="Do not compute or draw BH/KM15 curves.")
     parser.add_argument("--linear-y", action="store_true", help="Use linear y scale instead of the default log y scale.")
-    parser.add_argument("--two-panel", action="store_true", help="Make a 1x2 figure: cross sections on left, pass-2 ratios on right.")
+    parser.add_argument("--two-panel", action="store_true", help="Make a 1x2 figure: cross sections on left, pass-2/pass-1 on right.")
     parser.add_argument("--print-columns", action="store_true", help="Print detected CSV columns before plotting.")
     parser.add_argument(
         "--workers",
@@ -1734,14 +1660,15 @@ def main() -> int:
     log(f"  two_panel              = {args.two_panel}")
     log(f"  quiet_workers          = {args.quiet_workers}")
     log(f"  progress_every         = {args.progress_every}")
-    log(f"  pass2 estimated syst   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
+    log(f"  pass2 left-panel syst  = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
     log(f"  pass2 normalization    = {100.0 * PASS2_NORMALIZATION_FRACTION:.1f}%")
     log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}%")
+    log(f"  right-panel ratio unc  = pass2 stat+8.3% norm; pass1 stat+31% norm")
     log(f"  pass1 phi offset       = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
     log(f"  pass2 phi offset       = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
 
     if args.two_panel and args.skip_models:
-        warn("--two-panel was requested together with --skip-models. The pass-2/KM15 and pass-2/BH ratios will be absent.")
+        warn("--two-panel was requested together with --skip-models. Left-panel BH/KM15 curves will be absent.")
     #endif
 
     if not args.pass2_csv.exists():
@@ -1990,8 +1917,10 @@ def main() -> int:
     log(f"  workers used              = {n_workers}")
     log(f"  two-panel mode            = {args.two_panel}")
     log(f"  model phi points          = {model_cfg.phi_dense}")
-    log(f"  pass2 uncertainty         = stat ⊕ estimated systematics ⊕ 8.3% norm")
-    log(f"  pass1 uncertainty         = stat ⊕ syst ⊕ 31% norm")
+    log(f"  left pass2 uncertainty    = stat ⊕ estimated systematics ⊕ 8.3% norm")
+    log(f"  left pass1 uncertainty    = stat ⊕ syst ⊕ 31% norm")
+    log(f"  right panel ratio         = pass-2 / pass-1 only")
+    log(f"  right ratio uncertainty   = pass2 stat ⊕ 8.3% norm; pass1 stat ⊕ 31% norm")
     log(f"  cache entries after run   = {len(cache) if not args.skip_models else 0}")
     log(f"  total elapsed             = {format_seconds(total_dt)}")
     log("Done.")
