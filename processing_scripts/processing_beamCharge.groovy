@@ -108,9 +108,7 @@ public class processing_beamCharge {
                 if (runScalerBank.getRows() > 0) {
 
                     /*
-                     * RUN::scaler fcupgated is usually cumulative in the scaler stream.
-                     * Therefore, for a run/file total, keeping the largest value is safer
-                     * than summing over scaler rows/events.
+                     * RUN::scaler fcupgated is cumulative in the scaler stream.
                      */
                     float thisRunScalerCharge = runScalerBank.getFloat("fcupgated", 0);
 
