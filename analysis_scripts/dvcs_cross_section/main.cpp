@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     // and editing required_detector1/required_detector2.
     global_cfg.enable_topology_filter = true;
     global_cfg.required_detector1 = 2;  // 1 FD proton, 2 CD proton
-    global_cfg.required_detector2 = 1;  // 0 FT photon, 1 FD photon
+    global_cfg.required_detector2 = 0;  // 0 FT photon, 1 FD photon
 
     // Electron FD sector study. Electron is always FD.
     global_cfg.enable_electron_fd_sector_filter = false;
