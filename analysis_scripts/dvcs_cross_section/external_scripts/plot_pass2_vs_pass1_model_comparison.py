@@ -81,11 +81,11 @@ Implemented uncertainty prescription:
   * Additional standalone stat-only pull diagnostic:
       For every pass-2/pass-1 matched point, compute
 
-          pull(N) = (N * pass2 - pass1) /
-                    sqrt((N * pass2_stat)^2 + pass1_stat^2)
+          pull(N) = (pass2 - N * pass1) /
+                    sqrt(pass2_stat^2 + (N * pass1_stat)^2)
 
       using statistical uncertainties only. The script writes a histogram of
-      the pull distribution before and after fitting a global pass-2
+      the pull distribution before and after fitting a global pass-1
       normalization N. N is bounded to [0.69, 1.31], i.e. +/-31%.
 
       This diagnostic deliberately does not use:
@@ -99,7 +99,7 @@ Implemented uncertainty prescription:
     drawn as functions of phi.
   * Pass-1 and pass-2 markers are shifted slightly in phi on the cross-section
     panel so overlapping points/error bars remain visually distinguishable.
-  * By default, log-y plots use a lower visible floor of 1e-3. Change with
+  * By default, log-y plots use a lower visible floor of 10e-5. Change with
     --log-y-min.
 
 Parallelization:
@@ -129,7 +129,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -172,6 +172,8 @@ SCALE_BOX_ALPHA = 0.18
 
 PULL_FIT_NORM_MIN = 1.0 - PASS1_NORMALIZATION_FRACTION
 PULL_FIT_NORM_MAX = 1.0 + PASS1_NORMALIZATION_FRACTION
+
+DEFAULT_LOG_Y_MIN = 10.0e-5
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +308,7 @@ class StatOnlyComparisonPoint:
 @dataclass
 class StatOnlyPullSummary:
     n_points: int = 0
-    best_norm: float = 1.0
+    best_pass1_norm: float = 1.0
     best_norm_min: float = PULL_FIT_NORM_MIN
     best_norm_max: float = PULL_FIT_NORM_MAX
     chi2_nominal: float = 0.0
@@ -820,7 +822,12 @@ def compute_local_pass2_scale(period_values: Sequence[TupleValue]) -> LocalScale
     return out
 
 
-def summarize_local_scale_results(local_scales: Sequence[float], n_less_than_two: int, n_rows: int, n_central: int) -> PointScaleSummary:
+def summarize_local_scale_results(
+    local_scales: Sequence[float],
+    n_less_than_two: int,
+    n_rows: int,
+    n_central: int,
+) -> PointScaleSummary:
     valid_nonzero = [v for v in local_scales if math.isfinite(v) and v > 0.0]
 
     return PointScaleSummary(
@@ -864,7 +871,10 @@ def write_pass2_local_scale_summary(output_dir: Path, summary: PointScaleSummary
     #endwith
 
 
-def write_pass2_local_scale_points_csv(output_dir: Path, points: Sequence[Tuple[BinKey, float, LocalScaleResult, float]]) -> None:
+def write_pass2_local_scale_points_csv(
+    output_dir: Path,
+    points: Sequence[Tuple[BinKey, float, LocalScaleResult, float]],
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "pass2_point_by_point_scale_points.csv"
 
@@ -996,14 +1006,8 @@ def load_pass2_csv(
             log(f"Pass-2: local scale input {period:10s} -> {period_cols[period]}")
         #endfor
 
-        log(
-            "Pass-2: cross-section vertical error bars -> "
-            "sqrt(stat^2 + (0.18 * xs)^2)."
-        )
-        log(
-            "Pass-2: cross-section external scale boxes -> "
-            "local point-by-point s_comb(row) * xs."
-        )
+        log("Pass-2: cross-section vertical error bars -> sqrt(stat^2 + (0.18 * xs)^2).")
+        log("Pass-2: cross-section external scale boxes -> local point-by-point s_comb(row) * xs.")
         log("Pass-2: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
@@ -1138,14 +1142,8 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
         log(f"Pass-1: stat uncertainty column -> {stat_col}")
         log(f"Pass-1: syst up uncertainty column -> {syst_up_col}")
         log(f"Pass-1: syst down uncertainty column -> {syst_dn_col}")
-        log(
-            "Pass-1: cross-section vertical error bars -> "
-            "sqrt(stat^2 + provided_syst^2)."
-        )
-        log(
-            "Pass-1: cross-section external scale boxes -> "
-            "0.31 * xs."
-        )
+        log("Pass-1: cross-section vertical error bars -> sqrt(stat^2 + provided_syst^2).")
+        log("Pass-1: cross-section external scale boxes -> 0.31 * xs.")
         log("Pass-1: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
@@ -1575,24 +1573,24 @@ def build_stat_only_comparison_points(panels: Sequence[PanelData]) -> List[StatO
     return points
 
 
-def stat_only_pull(point: StatOnlyComparisonPoint, pass2_norm: float) -> float:
-    denom2 = (pass2_norm * point.pass2_stat) * (pass2_norm * point.pass2_stat)
-    denom2 += point.pass1_stat * point.pass1_stat
+def stat_only_pull(point: StatOnlyComparisonPoint, pass1_norm: float) -> float:
+    denom2 = point.pass2_stat * point.pass2_stat
+    denom2 += (pass1_norm * point.pass1_stat) * (pass1_norm * point.pass1_stat)
 
     if denom2 <= 0.0 or not math.isfinite(denom2):
         return float("nan")
     #endif
 
-    numerator = pass2_norm * point.pass2_xs - point.pass1_xs
+    numerator = point.pass2_xs - pass1_norm * point.pass1_xs
 
     return numerator / math.sqrt(denom2)
 
 
-def stat_only_chi2(points: Sequence[StatOnlyComparisonPoint], pass2_norm: float) -> float:
+def stat_only_chi2(points: Sequence[StatOnlyComparisonPoint], pass1_norm: float) -> float:
     total = 0.0
 
     for point in points:
-        pull = stat_only_pull(point, pass2_norm)
+        pull = stat_only_pull(point, pass1_norm)
 
         if math.isfinite(pull):
             total += pull * pull
@@ -1671,10 +1669,10 @@ def percent_within(pulls: Sequence[float], threshold: float) -> float:
 
 def summarize_stat_only_pulls(
     points: Sequence[StatOnlyComparisonPoint],
-    best_norm: float,
+    best_pass1_norm: float,
 ) -> StatOnlyPullSummary:
     nominal_pulls = [stat_only_pull(point, 1.0) for point in points]
-    best_pulls = [stat_only_pull(point, best_norm) for point in points]
+    best_pulls = [stat_only_pull(point, best_pass1_norm) for point in points]
 
     nominal_pulls = [p for p in nominal_pulls if math.isfinite(p)]
     best_pulls = [p for p in best_pulls if math.isfinite(p)]
@@ -1688,7 +1686,7 @@ def summarize_stat_only_pulls(
 
     return StatOnlyPullSummary(
         n_points=n_points,
-        best_norm=best_norm,
+        best_pass1_norm=best_pass1_norm,
         best_norm_min=PULL_FIT_NORM_MIN,
         best_norm_max=PULL_FIT_NORM_MAX,
         chi2_nominal=chi2_nominal,
@@ -1711,7 +1709,7 @@ def summarize_stat_only_pulls(
 def write_stat_only_pull_points_csv(
     output_dir: Path,
     points: Sequence[StatOnlyComparisonPoint],
-    best_norm: float,
+    best_pass1_norm: float,
 ) -> None:
     path = output_dir / "pass1_pass2_stat_only_pull_points.csv"
 
@@ -1721,12 +1719,12 @@ def write_stat_only_pull_points_csv(
         handle.write(
             "xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
             "phi_pass2,phi_pass1,pass2_xs,pass2_stat,pass1_xs,pass1_stat,"
-            "pull_nominal,pull_best_norm,chi2_nominal,chi2_best_norm,best_norm\n"
+            "pull_nominal,pull_best_norm,chi2_nominal,chi2_best_norm,best_pass1_norm\n"
         )
 
         for point in points:
             pull_nominal = stat_only_pull(point, 1.0)
-            pull_best = stat_only_pull(point, best_norm)
+            pull_best = stat_only_pull(point, best_pass1_norm)
 
             handle.write(
                 f"{format_float(point.key.xb_min)},"
@@ -1745,7 +1743,7 @@ def write_stat_only_pull_points_csv(
                 f"{format_float(pull_best)},"
                 f"{format_float(pull_nominal * pull_nominal)},"
                 f"{format_float(pull_best * pull_best)},"
-                f"{format_float(best_norm)}\n"
+                f"{format_float(best_pass1_norm)}\n"
             )
         #endfor
     #endwith
@@ -1758,7 +1756,7 @@ def write_stat_only_pull_summary_csv(output_dir: Path, summary: StatOnlyPullSumm
 
     with path.open("w", newline="") as handle:
         handle.write(
-            "n_points,best_pass2_norm,best_pass2_norm_percent,"
+            "n_points,best_pass1_norm,best_pass1_norm_percent,"
             "norm_min,norm_max,chi2_nominal,ndf_nominal,chi2_ndf_nominal,"
             "chi2_best,ndf_best,chi2_ndf_best,"
             "pct_within_1sigma_nominal,pct_within_3sigma_nominal,"
@@ -1768,8 +1766,8 @@ def write_stat_only_pull_summary_csv(output_dir: Path, summary: StatOnlyPullSumm
 
         handle.write(
             f"{summary.n_points},"
-            f"{format_float(summary.best_norm)},"
-            f"{format_float(100.0 * (summary.best_norm - 1.0))},"
+            f"{format_float(summary.best_pass1_norm)},"
+            f"{format_float(100.0 * (summary.best_pass1_norm - 1.0))},"
             f"{format_float(summary.best_norm_min)},"
             f"{format_float(summary.best_norm_max)},"
             f"{format_float(summary.chi2_nominal)},"
@@ -1798,7 +1796,7 @@ def draw_stat_only_pull_distribution(
     path = output_dir / "pass1_pass2_stat_only_pull_distribution.png"
 
     nominal_pulls = [stat_only_pull(point, 1.0) for point in points]
-    best_pulls = [stat_only_pull(point, summary.best_norm) for point in points]
+    best_pulls = [stat_only_pull(point, summary.best_pass1_norm) for point in points]
 
     nominal_pulls = [p for p in nominal_pulls if math.isfinite(p)]
     best_pulls = [p for p in best_pulls if math.isfinite(p)]
@@ -1843,7 +1841,7 @@ def draw_stat_only_pull_distribution(
         range=(xmin, xmax),
         histtype="step",
         linewidth=1.8,
-        label=f"Best N = {summary.best_norm:.5f}",
+        label=f"Best pass-1 N = {summary.best_pass1_norm:.5f}",
     )
 
     ax.axvline(0.0, linewidth=1.0, linestyle="-")
@@ -1853,13 +1851,13 @@ def draw_stat_only_pull_distribution(
     ax.axvline(+3.0, linewidth=1.0, linestyle=":")
 
     text = (
-        "Stat-only pass-1/pass-2 pulls\n"
-        rf"$z=(N\sigma_{{p2}}-\sigma_{{p1}})/"
-        rf"\sqrt{{(N\delta_{{p2,stat}})^2+\delta_{{p1,stat}}^2}}$" "\n"
+        "Stat-only pass-2/pass-1 pulls\n"
+        rf"$z=(\sigma_{{p2}}-N\sigma_{{p1}})/"
+        rf"\sqrt{{\delta_{{p2,stat}}^2+(N\delta_{{p1,stat}})^2}}$" "\n"
         f"Matched points: {summary.n_points}\n"
-        f"Best N in [{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}]: "
-        f"{summary.best_norm:.5f} "
-        f"({100.0 * (summary.best_norm - 1.0):+.2f}%)\n"
+        f"Best pass-1 N in [{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}]: "
+        f"{summary.best_pass1_norm:.5f} "
+        f"({100.0 * (summary.best_pass1_norm - 1.0):+.2f}%)\n"
         f"χ²/ndf N=1: {summary.chi2_ndf_nominal:.3g} "
         f"({summary.chi2_nominal:.3g}/{summary.ndf_nominal})\n"
         f"χ²/ndf best: {summary.chi2_ndf_best:.3g} "
@@ -1912,7 +1910,7 @@ def make_stat_only_pull_diagnostic(
 
     log(f"Stat-only pull diagnostic: matched points={len(points)}.")
     log(
-        "Stat-only pull diagnostic: minimizing global chi2 with pass-2 normalization "
+        "Stat-only pull diagnostic: minimizing global chi2 with pass-1 normalization "
         f"N constrained to [{PULL_FIT_NORM_MIN:.3f}, {PULL_FIT_NORM_MAX:.3f}]."
     )
 
@@ -1924,12 +1922,12 @@ def make_stat_only_pull_diagnostic(
         max_iter=300,
     )
 
-    summary = summarize_stat_only_pulls(points=points, best_norm=best_norm)
+    summary = summarize_stat_only_pulls(points=points, best_pass1_norm=best_norm)
 
     log(
         "Stat-only pull diagnostic: "
-        f"best N={summary.best_norm:.10g} "
-        f"({100.0 * (summary.best_norm - 1.0):+.5g}%), "
+        f"best pass-1 N={summary.best_pass1_norm:.10g} "
+        f"({100.0 * (summary.best_pass1_norm - 1.0):+.5g}%), "
         f"chi2={best_chi2:.10g}, "
         f"chi2/ndf={summary.chi2_ndf_best:.10g}."
     )
@@ -1941,11 +1939,11 @@ def make_stat_only_pull_diagnostic(
     )
     log(
         "Stat-only pull diagnostic: "
-        f"best N |z|<=1={summary.pct_within_1sigma_best:.4g}%, "
+        f"best pass-1 N |z|<=1={summary.pct_within_1sigma_best:.4g}%, "
         f"|z|<=3={summary.pct_within_3sigma_best:.4g}%."
     )
 
-    write_stat_only_pull_points_csv(output_dir=output_dir, points=points, best_norm=best_norm)
+    write_stat_only_pull_points_csv(output_dir=output_dir, points=points, best_pass1_norm=best_norm)
     write_stat_only_pull_summary_csv(output_dir=output_dir, summary=summary)
     draw_stat_only_pull_distribution(output_dir=output_dir, points=points, summary=summary)
 
@@ -2629,8 +2627,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--log-y-min",
         type=float,
-        default=1.0e-3,
-        help="Visible lower y-limit floor for log-y plots. Default is 1e-3.",
+        default=DEFAULT_LOG_Y_MIN,
+        help="Visible lower y-limit floor for log-y plots. Default is 10e-5.",
     )
     parser.add_argument("--two-panel", action="store_true", help="Make a 1x2 figure: cross sections on left, pass-2/pass-1 on right.")
     parser.add_argument("--print-columns", action="store_true", help="Print detected CSV columns before plotting.")
@@ -2688,7 +2686,7 @@ def main() -> int:
     log("  pass2 scale boxes      = point-by-point local period-spread s_comb(row)")
     log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}% drawn as external boxes")
     log(
-        "  stat-only pull fit     = pass-2 normalization floated in "
+        "  stat-only pull fit     = pass-1 normalization floated in "
         f"[{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}] using stats only"
     )
     log(f"  scale box half width   = {SCALE_BOX_HALF_WIDTH_DEG:g} deg")
@@ -2708,8 +2706,8 @@ def main() -> int:
     #endif
 
     if args.log_y_min <= 0.0:
-        warn(f"Requested --log-y-min {args.log_y_min:g} is not positive; using 1e-3.")
-        args.log_y_min = 1.0e-3
+        warn(f"Requested --log-y-min {args.log_y_min:g} is not positive; using {DEFAULT_LOG_Y_MIN:g}.")
+        args.log_y_min = DEFAULT_LOG_Y_MIN
     #endif
 
     log("Output setup: creating output directory if needed.")
@@ -2936,8 +2934,8 @@ def main() -> int:
 
     for index in sorted(manifest_by_index):
         entry = manifest_by_index[index]
-        entry["stat_only_pull_best_pass2_norm"] = stat_only_summary.best_norm
-        entry["stat_only_pull_best_pass2_norm_percent"] = 100.0 * (stat_only_summary.best_norm - 1.0)
+        entry["stat_only_pull_best_pass1_norm"] = stat_only_summary.best_pass1_norm
+        entry["stat_only_pull_best_pass1_norm_percent"] = 100.0 * (stat_only_summary.best_pass1_norm - 1.0)
         entry["stat_only_pull_chi2_ndf_nominal"] = stat_only_summary.chi2_ndf_nominal
         entry["stat_only_pull_chi2_ndf_best"] = stat_only_summary.chi2_ndf_best
         manifest.append(entry)
@@ -2980,9 +2978,9 @@ def main() -> int:
     log("  right ratio scale boxes       = local pass2 scale ⊕ pass1 31% norm")
     log(f"  stat-only matched points      = {stat_only_summary.n_points}")
     log(
-        "  stat-only best pass2 norm     = "
-        f"{stat_only_summary.best_norm:.10g} "
-        f"({100.0 * (stat_only_summary.best_norm - 1.0):+.6g}%)"
+        "  stat-only best pass1 norm     = "
+        f"{stat_only_summary.best_pass1_norm:.10g} "
+        f"({100.0 * (stat_only_summary.best_pass1_norm - 1.0):+.6g}%)"
     )
     log(
         "  stat-only chi2/ndf            = "
