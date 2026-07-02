@@ -16,7 +16,7 @@ Optional two-panel mode:
         --output-dir output/pass2_vs_pass1_model_comparison \
         --two-panel
 
-Optional removal of point-to-point systematics from plotted vertical bars:
+Optional point-to-point-systematic override:
     python3 plot_pass2_vs_pass1_model_comparison.py \
         pass2_dvcs.csv pass1_lee.csv \
         --output-dir output/pass2_vs_pass1_model_comparison \
@@ -60,12 +60,7 @@ Implemented uncertainty prescription:
     scale systematic. Rows with fewer than two valid period entries get local
     s_comb = 0.
 
-  * The script writes a standalone histogram of the point-by-point s_obs(row)
-    values:
-
-        pass2_point_by_point_s_obs_distribution.png
-
-  * Cross-section panel, default:
+  * Cross-section panel:
       pass-2 vertical error bars:
           stat ⊕ 18% estimated point-to-point/systematic
 
@@ -78,18 +73,11 @@ Implemented uncertainty prescription:
       pass-1 external scale boxes:
           31% normalization * cross_section
 
-  * Cross-section panel with --no-point-to-point-systematics:
-      pass-2 vertical error bars:
-          stat only
+      If --no-point-to-point-systematics is used:
+          pass-2 vertical error bars = stat only
+          pass-1 vertical error bars = stat only
 
-      pass-2 external scale boxes:
-          local point-by-point s_comb(row) * cross_section
-
-      pass-1 vertical error bars:
-          stat only
-
-      pass-1 external scale boxes:
-          31% normalization * cross_section
+      The external scale boxes are still drawn.
 
   * Ratio panel:
       pass-2/pass-1 vertical error bars:
@@ -106,12 +94,12 @@ Implemented uncertainty prescription:
   * Additional standalone stat-only pull diagnostic:
       For every pass-2/pass-1 matched point, compute
 
-          pull(M) = (pass2 - M * pass1) /
-                    sqrt(pass2_stat^2 + (M * pass1_stat)^2)
+          pull(N) = (pass2 - N * pass1) /
+                    sqrt(pass2_stat^2 + (N * pass1_stat)^2)
 
       using statistical uncertainties only. The script writes a histogram of
       the pull distribution before and after fitting a global pass-1
-      normalization M. M is bounded to [0.69, 1.31], i.e. +/-31%.
+      normalization N. N is bounded to [0.69, 1.31], i.e. +/-31%.
 
       This diagnostic deliberately does not use:
           - pass-2 estimated 18% point-to-point systematic,
@@ -119,13 +107,25 @@ Implemented uncertainty prescription:
           - pass-2 local scale systematic,
           - pass-1 31% normalization uncertainty.
 
+  * Additional standalone local pass-2 s_comb diagnostics:
+      The script writes three histograms of local point-by-point s_comb:
+
+          pass2_point_by_point_s_comb_distribution_ge2_good_periods.png
+          pass2_point_by_point_s_comb_distribution_ge3_good_periods.png
+          pass2_point_by_point_s_comb_distribution_4_good_periods.png
+
+      These correspond to rows with:
+          - at least 2 valid 10.6 GeV periods,
+          - at least 3 valid 10.6 GeV periods,
+          - exactly 4 valid 10.6 GeV periods.
+
   * One PNG is saved for every unique (xB, Q2, |t|) bin found in either CSV.
   * The model curves are BH and KM15 only, evaluated at the bin midpoint and
     drawn as functions of phi.
   * Pass-1 and pass-2 markers are shifted slightly in phi on the cross-section
     panel so overlapping points/error bars remain visually distinguishable.
-  * By default, log-y plots use a lower visible floor of 1e-5. Change with
-    --log-y-min.
+  * By default, log-y plots use a lower visible floor of 1e-4, i.e. 10e-5.
+    Change with --log-y-min.
 
 Parallelization:
   * Each unique (xB, Q2, |t|) panel is processed independently.
@@ -156,7 +156,7 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
 
@@ -194,6 +194,8 @@ PASS1_PASS2_RATIO_MATCH_TOLERANCE_DEG = 2.0
 
 SCALE_BOX_HALF_WIDTH_DEG = 3.0
 SCALE_BOX_ALPHA = 0.18
+
+DEFAULT_LOG_Y_MIN = 1.0e-4
 
 PULL_FIT_NORM_MIN = 1.0 - PASS1_NORMALIZATION_FRACTION
 PULL_FIT_NORM_MAX = 1.0 + PASS1_NORMALIZATION_FRACTION
@@ -262,6 +264,14 @@ class LocalScaleResult:
     min_ratio: float = 0.0
     max_ratio: float = 0.0
     half_width: float = 0.0
+
+
+@dataclass
+class LocalScalePoint:
+    key: BinKey
+    phi: float
+    pass2_xs: float
+    local: LocalScaleResult
 
 
 @dataclass
@@ -335,7 +345,7 @@ class StatOnlyComparisonPoint:
 @dataclass
 class StatOnlyPullSummary:
     n_points: int = 0
-    best_pass1_norm: float = 1.0
+    best_norm: float = 1.0
     best_norm_min: float = PULL_FIT_NORM_MIN
     best_norm_max: float = PULL_FIT_NORM_MAX
     chi2_nominal: float = 0.0
@@ -364,7 +374,6 @@ class ModelConfig:
     use_cache: bool
     allow_missing_models: bool
     verbose_worker_models: bool
-    include_point_to_point: bool
 
 
 @dataclass
@@ -645,22 +654,22 @@ def median(values: Sequence[float]) -> float:
     return 0.5 * (vals[mid - 1] + vals[mid])
 
 
-def quantile(values: Sequence[float], q: float) -> float:
+def percentile(values: Sequence[float], pct: float) -> float:
     vals = sorted(v for v in values if math.isfinite(v))
 
     if not vals:
         return 0.0
     #endif
 
-    if q <= 0.0:
+    if pct <= 0.0:
         return vals[0]
     #endif
 
-    if q >= 1.0:
+    if pct >= 100.0:
         return vals[-1]
     #endif
 
-    pos = q * float(len(vals) - 1)
+    pos = (pct / 100.0) * (len(vals) - 1)
     lo = int(math.floor(pos))
     hi = int(math.ceil(pos))
 
@@ -668,9 +677,9 @@ def quantile(values: Sequence[float], q: float) -> float:
         return vals[lo]
     #endif
 
-    frac = pos - float(lo)
+    frac = pos - lo
 
-    return (1.0 - frac) * vals[lo] + frac * vals[hi]
+    return vals[lo] * (1.0 - frac) + vals[hi] * frac
 
 
 # ---------------------------------------------------------------------------
@@ -878,29 +887,32 @@ def compute_local_pass2_scale(period_values: Sequence[TupleValue]) -> LocalScale
     return out
 
 
-def summarize_local_scale_results(
-    local_scales: Sequence[float],
-    local_s_obs_values: Sequence[float],
-    n_less_than_two: int,
-    n_rows: int,
-    n_central: int,
-) -> PointScaleSummary:
-    valid_nonzero_s_comb = [v for v in local_scales if math.isfinite(v) and v > 0.0]
-    valid_s_obs = [v for v in local_s_obs_values if math.isfinite(v) and v >= 0.0]
+def summarize_local_scale_results(local_points: Sequence[LocalScalePoint], n_less_than_two: int, n_rows: int, n_central: int) -> PointScaleSummary:
+    s_comb_values = [
+        p.local.s_comb
+        for p in local_points
+        if p.local.n_valid_periods >= 2 and math.isfinite(p.local.s_comb) and p.local.s_comb > 0.0
+    ]
+
+    s_obs_values = [
+        p.local.s_obs
+        for p in local_points
+        if p.local.n_valid_periods >= 2 and math.isfinite(p.local.s_obs) and p.local.s_obs > 0.0
+    ]
 
     return PointScaleSummary(
         n_rows=n_rows,
         n_rows_with_central_value=n_central,
-        n_rows_with_local_scale=len(valid_nonzero_s_comb),
+        n_rows_with_local_scale=len(s_comb_values),
         n_rows_with_less_than_two_periods=n_less_than_two,
-        mean_s_comb=mean(valid_nonzero_s_comb),
-        rms_s_comb=rms(valid_nonzero_s_comb),
-        median_s_comb=median(valid_nonzero_s_comb),
-        max_s_comb=max(valid_nonzero_s_comb) if valid_nonzero_s_comb else 0.0,
-        mean_s_obs=mean(valid_s_obs),
-        rms_s_obs=rms(valid_s_obs),
-        median_s_obs=median(valid_s_obs),
-        max_s_obs=max(valid_s_obs) if valid_s_obs else 0.0,
+        mean_s_comb=mean(s_comb_values),
+        rms_s_comb=rms(s_comb_values),
+        median_s_comb=median(s_comb_values),
+        max_s_comb=max(s_comb_values) if s_comb_values else 0.0,
+        mean_s_obs=mean(s_obs_values),
+        rms_s_obs=rms(s_obs_values),
+        median_s_obs=median(s_obs_values),
+        max_s_obs=max(s_obs_values) if s_obs_values else 0.0,
     )
 
 
@@ -912,7 +924,7 @@ def write_pass2_local_scale_summary(output_dir: Path, summary: PointScaleSummary
 
     with path.open("w", newline="") as handle:
         handle.write(
-            "rows,rows with central value,rows with nonzero local scale,"
+            "rows,rows with central value,rows with nonzero local s_comb,"
             "rows with fewer than two valid periods,"
             "mean s_comb,rms s_comb,median s_comb,max s_comb,"
             "mean s_comb percent,rms s_comb percent,median s_comb percent,max s_comb percent,"
@@ -944,10 +956,7 @@ def write_pass2_local_scale_summary(output_dir: Path, summary: PointScaleSummary
     #endwith
 
 
-def write_pass2_local_scale_points_csv(
-    output_dir: Path,
-    points: Sequence[Tuple[BinKey, float, LocalScaleResult, float]],
-) -> None:
+def write_pass2_local_scale_points_csv(output_dir: Path, points: Sequence[LocalScalePoint]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "pass2_point_by_point_scale_points.csv"
 
@@ -961,7 +970,10 @@ def write_pass2_local_scale_points_csv(
             "s_comb,s_comb_percent,min_ratio,max_ratio,half_width\n"
         )
 
-        for key, phi, local, xs in points:
+        for p in points:
+            local = p.local
+            key = p.key
+
             handle.write(
                 f"{format_float(key.xb_min)},"
                 f"{format_float(key.xb_max)},"
@@ -969,8 +981,8 @@ def write_pass2_local_scale_points_csv(
                 f"{format_float(key.q2_max)},"
                 f"{format_float(key.t_min)},"
                 f"{format_float(key.t_max)},"
-                f"{format_float(phi)},"
-                f"{format_float(xs)},"
+                f"{format_float(p.phi)},"
+                f"{format_float(p.pass2_xs)},"
                 f"{local.n_valid_periods},"
                 f"{format_float(local.ref_value)},"
                 f"{format_float(local.ref_stat)},"
@@ -988,65 +1000,102 @@ def write_pass2_local_scale_points_csv(
     #endwith
 
 
-def draw_pass2_local_s_obs_distribution(
+def selected_local_scale_values(
+    points: Sequence[LocalScalePoint],
+    min_good_periods: int,
+    exact_good_periods: Optional[int],
+) -> List[float]:
+    values: List[float] = []
+
+    for p in points:
+        n = p.local.n_valid_periods
+
+        if exact_good_periods is not None:
+            if n != exact_good_periods:
+                continue
+            #endif
+        elif n < min_good_periods:
+            continue
+        #endif
+
+        value = p.local.s_comb
+
+        if math.isfinite(value) and value >= 0.0:
+            values.append(value)
+        #endif
+    #endfor
+
+    return values
+
+
+def draw_one_pass2_s_comb_distribution(
     output_dir: Path,
-    points: Sequence[Tuple[BinKey, float, LocalScaleResult, float]],
+    points: Sequence[LocalScalePoint],
+    min_good_periods: int,
+    exact_good_periods: Optional[int],
+    filename_suffix: str,
+    title_suffix: str,
 ) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / "pass2_point_by_point_s_obs_distribution.png"
+    values = selected_local_scale_values(
+        points=points,
+        min_good_periods=min_good_periods,
+        exact_good_periods=exact_good_periods,
+    )
 
-    s_obs_values = [
-        local.s_obs
-        for _, _, local, _ in points
-        if local.n_valid_periods >= 2 and math.isfinite(local.s_obs) and local.s_obs >= 0.0
-    ]
-
-    if not s_obs_values:
-        warn("Pass-2 local scale systematic: no valid s_obs values; skipping s_obs histogram.")
+    if not values:
+        warn(f"Pass-2 local s_comb histogram: no values available for {title_suffix}; skipping.")
         return
     #endif
 
-    x_max_full = max(s_obs_values)
-    x_max_quantile = quantile(s_obs_values, 0.995)
-    x_max = max(0.05, x_max_quantile)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"pass2_point_by_point_s_comb_distribution_{filename_suffix}.png"
 
-    if x_max_full <= 1.05 * x_max:
-        x_max = x_max_full
-        n_overflow = 0
-        range_note = "Full range shown"
-    else:
-        n_overflow = sum(1 for v in s_obs_values if v > x_max)
-        range_note = f"Shown range ends at 99.5th percentile; overflow={n_overflow}"
+    p995 = percentile(values, 99.5)
+    shown_max = max(p995, 1.0e-12)
+
+    shown_values = [v for v in values if v <= shown_max]
+    overflow = len(values) - len(shown_values)
+
+    if not shown_values:
+        shown_values = values
+        shown_max = max(values)
+        overflow = 0
     #endif
 
-    if x_max <= 0.0 or not math.isfinite(x_max):
-        x_max = 1.0
+    if shown_max <= 0.0:
+        shown_max = 1.0
     #endif
 
-    n_bins = 80
-    fig, ax = plt.subplots(figsize=(9.4, 6.6))
+    n_bins = 70
+    x_max = 1.10 * shown_max
+
+    fig, ax = plt.subplots(figsize=(10.0, 6.6))
 
     ax.hist(
-        s_obs_values,
+        shown_values,
         bins=n_bins,
         range=(0.0, x_max),
-        histtype="stepfilled",
         alpha=0.35,
-        linewidth=1.4,
-        label=r"$s_{\mathrm{obs}}$",
+        label=r"$s_{\mathrm{comb}}$",
     )
 
-    ax.axvline(mean(s_obs_values), linewidth=1.2, linestyle="--", label="Mean")
-    ax.axvline(median(s_obs_values), linewidth=1.2, linestyle=":", label="Median")
+    value_mean = mean(values)
+    value_median = median(values)
+    value_rms = rms(values)
+    value_max = max(values)
+
+    ax.axvline(value_mean, linewidth=1.4, linestyle="--", label="Mean")
+    ax.axvline(value_median, linewidth=1.4, linestyle=":", label="Median")
 
     text = (
-        r"Point-by-point $s_{\mathrm{obs}}$" "\n"
-        f"Entries: {len(s_obs_values)}\n"
-        f"Mean: {mean(s_obs_values):.5g} ({100.0 * mean(s_obs_values):.3g}%)\n"
-        f"Median: {median(s_obs_values):.5g} ({100.0 * median(s_obs_values):.3g}%)\n"
-        f"RMS: {rms(s_obs_values):.5g} ({100.0 * rms(s_obs_values):.3g}%)\n"
-        f"Max: {x_max_full:.5g} ({100.0 * x_max_full:.3g}%)\n"
-        f"{range_note}"
+        rf"Point-by-point $s_{{\mathrm{{comb}}}}$" "\n"
+        f"{title_suffix}\n"
+        f"Entries: {len(values)}\n"
+        f"Mean: {value_mean:.5g} ({100.0 * value_mean:.3g}%)\n"
+        f"Median: {value_median:.5g} ({100.0 * value_median:.3g}%)\n"
+        f"RMS: {value_rms:.5g} ({100.0 * value_rms:.3g}%)\n"
+        f"Max: {value_max:.5g} ({100.0 * value_max:.3g}%)\n"
+        f"Shown range ends at 99.5th percentile; overflow={overflow}"
     )
 
     ax.text(
@@ -1057,12 +1106,12 @@ def draw_pass2_local_s_obs_distribution(
         ha="right",
         va="top",
         fontsize=10,
-        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.88},
     )
 
-    ax.set_xlabel(r"$s_{\mathrm{obs}} = \sqrt{\langle(r_i - 1)^2\rangle}$")
+    ax.set_xlabel(r"$s_{\mathrm{comb}}=\sqrt{\max(0, s_{\mathrm{obs}}^2-s_{\mathrm{stat}}^2)}$")
     ax.set_ylabel("Point count")
-    ax.set_title(r"Pass-2 point-by-point observed period-spread distribution")
+    ax.set_title(f"Pass-2 point-by-point combination period-spread distribution ({title_suffix})")
     ax.grid(True, which="major", alpha=0.25)
     ax.legend(loc="upper left", fontsize=10, frameon=True)
 
@@ -1070,14 +1119,43 @@ def draw_pass2_local_s_obs_distribution(
     fig.savefig(path, dpi=200)
     plt.close(fig)
 
-    log(f"Pass-2 local scale systematic: wrote s_obs histogram to {path}")
+    log(f"Pass-2 local s_comb histogram: wrote {path}")
+
+
+def draw_pass2_s_comb_distribution_plots(output_dir: Path, points: Sequence[LocalScalePoint]) -> None:
+    draw_one_pass2_s_comb_distribution(
+        output_dir=output_dir,
+        points=points,
+        min_good_periods=2,
+        exact_good_periods=None,
+        filename_suffix="ge2_good_periods",
+        title_suffix="at least 2 good periods",
+    )
+
+    draw_one_pass2_s_comb_distribution(
+        output_dir=output_dir,
+        points=points,
+        min_good_periods=3,
+        exact_good_periods=None,
+        filename_suffix="ge3_good_periods",
+        title_suffix="at least 3 good periods",
+    )
+
+    draw_one_pass2_s_comb_distribution(
+        output_dir=output_dir,
+        points=points,
+        min_good_periods=4,
+        exact_good_periods=4,
+        filename_suffix="4_good_periods",
+        title_suffix="exactly 4 good periods",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Uncertainty prescriptions.
 # ---------------------------------------------------------------------------
-def pass2_cross_section_point_uncertainty(xs: float, stat: float, include_point_to_point: bool) -> float:
-    if not include_point_to_point:
+def pass2_cross_section_point_uncertainty(xs: float, stat: float, no_point_to_point_systematics: bool) -> float:
+    if no_point_to_point_systematics:
         return abs(stat)
     #endif
 
@@ -1086,13 +1164,8 @@ def pass2_cross_section_point_uncertainty(xs: float, stat: float, include_point_
     return math.sqrt(stat * stat + estimated_syst * estimated_syst)
 
 
-def pass1_cross_section_point_uncertainty(
-    xs: float,
-    stat: float,
-    syst: float,
-    include_point_to_point: bool,
-) -> float:
-    if not include_point_to_point:
+def pass1_cross_section_point_uncertainty(xs: float, stat: float, syst: float, no_point_to_point_systematics: bool) -> float:
+    if no_point_to_point_systematics:
         return abs(stat)
     #endif
 
@@ -1135,7 +1208,7 @@ def load_pass2_csv(
     path: Path,
     xs_column: Optional[str],
     output_dir: Path,
-    include_point_to_point: bool,
+    no_point_to_point_systematics: bool,
     print_columns: bool = False,
 ) -> Tuple[Dict[BinKey, List[DataPoint]], PointScaleSummary]:
     t0 = time.time()
@@ -1177,23 +1250,22 @@ def load_pass2_csv(
         }
 
         log(f"Pass-2: central cross-section column -> {xs_col}")
+
         for period in PASS2_PERIODS_10P6_UNPOL:
             log(f"Pass-2: local scale input {period:10s} -> {period_cols[period]}")
         #endfor
 
-        if include_point_to_point:
-            log("Pass-2: cross-section vertical error bars -> sqrt(stat^2 + (0.18 * xs)^2).")
-        else:
+        if no_point_to_point_systematics:
             log("Pass-2: cross-section vertical error bars -> stat only.")
+        else:
+            log("Pass-2: cross-section vertical error bars -> sqrt(stat^2 + (0.18 * xs)^2).")
         #endif
 
         log("Pass-2: cross-section external scale boxes -> local point-by-point s_comb(row) * xs.")
         log("Pass-2: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
-        local_scale_points: List[Tuple[BinKey, float, LocalScaleResult, float]] = []
-        local_scale_values: List[float] = []
-        local_s_obs_values: List[float] = []
+        local_scale_points: List[LocalScalePoint] = []
 
         kept = 0
         skipped_invalid = 0
@@ -1240,7 +1312,7 @@ def load_pass2_csv(
             point_err = pass2_cross_section_point_uncertainty(
                 xs=xs,
                 stat=stat,
-                include_point_to_point=include_point_to_point,
+                no_point_to_point_systematics=no_point_to_point_systematics,
             )
 
             point = DataPoint(
@@ -1259,13 +1331,7 @@ def load_pass2_csv(
             )
 
             out.setdefault(key, []).append(point)
-            local_scale_points.append((key, phi, local, xs))
-            local_scale_values.append(local_scale_frac)
-
-            if local.n_valid_periods >= 2 and math.isfinite(local.s_obs) and local.s_obs >= 0.0:
-                local_s_obs_values.append(local.s_obs)
-            #endif
-
+            local_scale_points.append(LocalScalePoint(key=key, phi=phi, pass2_xs=xs, local=local))
             kept += 1
         #endfor
     #endwith
@@ -1275,8 +1341,7 @@ def load_pass2_csv(
     #endfor
 
     summary = summarize_local_scale_results(
-        local_scales=local_scale_values,
-        local_s_obs_values=local_s_obs_values,
+        local_points=local_scale_points,
         n_less_than_two=n_less_than_two,
         n_rows=total_rows,
         n_central=n_central,
@@ -1284,7 +1349,7 @@ def load_pass2_csv(
 
     write_pass2_local_scale_points_csv(output_dir, local_scale_points)
     write_pass2_local_scale_summary(output_dir, summary)
-    draw_pass2_local_s_obs_distribution(output_dir, local_scale_points)
+    draw_pass2_s_comb_distribution_plots(output_dir, local_scale_points)
 
     dt = time.time() - t0
 
@@ -1292,18 +1357,18 @@ def load_pass2_csv(
     log(f"Pass-2: total rows={total_rows}, kept={kept}, skipped invalid-bin={skipped_invalid}, skipped bad/nonpositive xs={skipped_bad_xs}.")
     log(f"Pass-2: rows with fewer than two valid 10.6 GeV period entries={n_less_than_two}.")
     log(
-        "Pass-2: local s_obs summary over rows with at least two valid period entries -> "
-        f"mean={summary.mean_s_obs:.10g} ({100.0 * summary.mean_s_obs:.4g}%), "
-        f"median={summary.median_s_obs:.10g} ({100.0 * summary.median_s_obs:.4g}%), "
-        f"rms={summary.rms_s_obs:.10g} ({100.0 * summary.rms_s_obs:.4g}%), "
-        f"max={summary.max_s_obs:.10g} ({100.0 * summary.max_s_obs:.4g}%)."
-    )
-    log(
-        "Pass-2: local s_comb summary over nonzero local scales -> "
+        "Pass-2: local s_comb summary over nonzero local s_comb values -> "
         f"mean={summary.mean_s_comb:.10g} ({100.0 * summary.mean_s_comb:.4g}%), "
         f"median={summary.median_s_comb:.10g} ({100.0 * summary.median_s_comb:.4g}%), "
         f"rms={summary.rms_s_comb:.10g} ({100.0 * summary.rms_s_comb:.4g}%), "
         f"max={summary.max_s_comb:.10g} ({100.0 * summary.max_s_comb:.4g}%)."
+    )
+    log(
+        "Pass-2: local s_obs summary over nonzero local s_obs values -> "
+        f"mean={summary.mean_s_obs:.10g} ({100.0 * summary.mean_s_obs:.4g}%), "
+        f"median={summary.median_s_obs:.10g} ({100.0 * summary.median_s_obs:.4g}%), "
+        f"rms={summary.rms_s_obs:.10g} ({100.0 * summary.rms_s_obs:.4g}%), "
+        f"max={summary.max_s_obs:.10g} ({100.0 * summary.max_s_obs:.4g}%)."
     )
     log(f"Pass-2: unique (xB,Q2,|t|) bins with data={len(out)}.")
 
@@ -1312,7 +1377,7 @@ def load_pass2_csv(
 
 def load_pass1_csv(
     path: Path,
-    include_point_to_point: bool,
+    no_point_to_point_systematics: bool,
     print_columns: bool = False,
 ) -> Dict[BinKey, List[DataPoint]]:
     t0 = time.time()
@@ -1346,10 +1411,10 @@ def load_pass1_csv(
         log(f"Pass-1: syst up uncertainty column -> {syst_up_col}")
         log(f"Pass-1: syst down uncertainty column -> {syst_dn_col}")
 
-        if include_point_to_point:
-            log("Pass-1: cross-section vertical error bars -> sqrt(stat^2 + provided_syst^2).")
-        else:
+        if no_point_to_point_systematics:
             log("Pass-1: cross-section vertical error bars -> stat only.")
+        else:
+            log("Pass-1: cross-section vertical error bars -> sqrt(stat^2 + provided_syst^2).")
         #endif
 
         log("Pass-1: cross-section external scale boxes -> 0.31 * xs.")
@@ -1386,13 +1451,13 @@ def load_pass1_csv(
                 xs=xs,
                 stat=stat,
                 syst=syst_up,
-                include_point_to_point=include_point_to_point,
+                no_point_to_point_systematics=no_point_to_point_systematics,
             )
             err_low = pass1_cross_section_point_uncertainty(
                 xs=xs,
                 stat=stat,
                 syst=syst_dn,
-                include_point_to_point=include_point_to_point,
+                no_point_to_point_systematics=no_point_to_point_systematics,
             )
 
             if err_low <= 0.0:
@@ -1574,7 +1639,6 @@ def load_model_cache(path: Path) -> Dict[str, Dict[str, List[float]]]:
             #endfor
 
             dt = time.time() - t0
-
             log(f"Cache: loaded {len(good)} valid entries in {format_seconds(dt)}; rejected {rejected} malformed entries.")
             return good
         #endif
@@ -1820,7 +1884,7 @@ def stat_only_chi2(points: Sequence[StatOnlyComparisonPoint], pass1_norm: float)
 
 
 def bounded_minimize_golden_section(
-    func: Callable[[float], float],
+    func,
     xmin: float,
     xmax: float,
     tolerance: float = 1.0e-8,
@@ -1888,10 +1952,10 @@ def percent_within(pulls: Sequence[float], threshold: float) -> float:
 
 def summarize_stat_only_pulls(
     points: Sequence[StatOnlyComparisonPoint],
-    best_pass1_norm: float,
+    best_norm: float,
 ) -> StatOnlyPullSummary:
     nominal_pulls = [stat_only_pull(point, 1.0) for point in points]
-    best_pulls = [stat_only_pull(point, best_pass1_norm) for point in points]
+    best_pulls = [stat_only_pull(point, best_norm) for point in points]
 
     nominal_pulls = [p for p in nominal_pulls if math.isfinite(p)]
     best_pulls = [p for p in best_pulls if math.isfinite(p)]
@@ -1905,7 +1969,7 @@ def summarize_stat_only_pulls(
 
     return StatOnlyPullSummary(
         n_points=n_points,
-        best_pass1_norm=best_pass1_norm,
+        best_norm=best_norm,
         best_norm_min=PULL_FIT_NORM_MIN,
         best_norm_max=PULL_FIT_NORM_MAX,
         chi2_nominal=chi2_nominal,
@@ -1928,7 +1992,7 @@ def summarize_stat_only_pulls(
 def write_stat_only_pull_points_csv(
     output_dir: Path,
     points: Sequence[StatOnlyComparisonPoint],
-    best_pass1_norm: float,
+    best_norm: float,
 ) -> None:
     path = output_dir / "pass1_pass2_stat_only_pull_points.csv"
 
@@ -1938,12 +2002,12 @@ def write_stat_only_pull_points_csv(
         handle.write(
             "xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
             "phi_pass2,phi_pass1,pass2_xs,pass2_stat,pass1_xs,pass1_stat,"
-            "pull_nominal,pull_best_norm,chi2_nominal,chi2_best_norm,best_pass1_norm\n"
+            "pull_nominal,pull_best_pass1_norm,chi2_nominal,chi2_best_pass1_norm,best_pass1_norm\n"
         )
 
         for point in points:
             pull_nominal = stat_only_pull(point, 1.0)
-            pull_best = stat_only_pull(point, best_pass1_norm)
+            pull_best = stat_only_pull(point, best_norm)
 
             handle.write(
                 f"{format_float(point.key.xb_min)},"
@@ -1962,7 +2026,7 @@ def write_stat_only_pull_points_csv(
                 f"{format_float(pull_best)},"
                 f"{format_float(pull_nominal * pull_nominal)},"
                 f"{format_float(pull_best * pull_best)},"
-                f"{format_float(best_pass1_norm)}\n"
+                f"{format_float(best_norm)}\n"
             )
         #endfor
     #endwith
@@ -1985,8 +2049,8 @@ def write_stat_only_pull_summary_csv(output_dir: Path, summary: StatOnlyPullSumm
 
         handle.write(
             f"{summary.n_points},"
-            f"{format_float(summary.best_pass1_norm)},"
-            f"{format_float(100.0 * (summary.best_pass1_norm - 1.0))},"
+            f"{format_float(summary.best_norm)},"
+            f"{format_float(100.0 * (summary.best_norm - 1.0))},"
             f"{format_float(summary.best_norm_min)},"
             f"{format_float(summary.best_norm_max)},"
             f"{format_float(summary.chi2_nominal)},"
@@ -2015,7 +2079,7 @@ def draw_stat_only_pull_distribution(
     path = output_dir / "pass1_pass2_stat_only_pull_distribution.png"
 
     nominal_pulls = [stat_only_pull(point, 1.0) for point in points]
-    best_pulls = [stat_only_pull(point, summary.best_pass1_norm) for point in points]
+    best_pulls = [stat_only_pull(point, summary.best_norm) for point in points]
 
     nominal_pulls = [p for p in nominal_pulls if math.isfinite(p)]
     best_pulls = [p for p in best_pulls if math.isfinite(p)]
@@ -2051,7 +2115,7 @@ def draw_stat_only_pull_distribution(
         range=(xmin, xmax),
         histtype="step",
         linewidth=1.8,
-        label="M = 1",
+        label="N = 1",
     )
 
     ax.hist(
@@ -2060,7 +2124,7 @@ def draw_stat_only_pull_distribution(
         range=(xmin, xmax),
         histtype="step",
         linewidth=1.8,
-        label=f"Best M = {summary.best_pass1_norm:.5f}",
+        label=f"Best N = {summary.best_norm:.5f}",
     )
 
     ax.axvline(0.0, linewidth=1.0, linestyle="-")
@@ -2071,13 +2135,13 @@ def draw_stat_only_pull_distribution(
 
     text = (
         "Stat-only pass-2/pass-1 pulls\n"
-        rf"$z=(\sigma_{{p2}}-M\sigma_{{p1}})/"
-        rf"\sqrt{{\delta_{{p2,stat}}^2+(M\delta_{{p1,stat}})^2}}$" "\n"
+        rf"$z=(\sigma_{{p2}}-N\sigma_{{p1}})/"
+        rf"\sqrt{{\delta_{{p2,stat}}^2+(N\delta_{{p1,stat}})^2}}$" "\n"
         f"Matched points: {summary.n_points}\n"
-        f"Best pass-1 M in [{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}]: "
-        f"{summary.best_pass1_norm:.5f} "
-        f"({100.0 * (summary.best_pass1_norm - 1.0):+.2f}%)\n"
-        f"χ²/ndf M=1: {summary.chi2_ndf_nominal:.3g} "
+        f"Best pass-1 N in [{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}]: "
+        f"{summary.best_norm:.5f} "
+        f"({100.0 * (summary.best_norm - 1.0):+.2f}%)\n"
+        f"χ²/ndf N=1: {summary.chi2_ndf_nominal:.3g} "
         f"({summary.chi2_nominal:.3g}/{summary.ndf_nominal})\n"
         f"χ²/ndf best: {summary.chi2_ndf_best:.3g} "
         f"({summary.chi2_best:.3g}/{summary.ndf_best})\n"
@@ -2130,7 +2194,7 @@ def make_stat_only_pull_diagnostic(
     log(f"Stat-only pull diagnostic: matched points={len(points)}.")
     log(
         "Stat-only pull diagnostic: minimizing global chi2 with pass-1 normalization "
-        f"M constrained to [{PULL_FIT_NORM_MIN:.3f}, {PULL_FIT_NORM_MAX:.3f}]."
+        f"N constrained to [{PULL_FIT_NORM_MIN:.3f}, {PULL_FIT_NORM_MAX:.3f}]."
     )
 
     best_norm, best_chi2 = bounded_minimize_golden_section(
@@ -2141,28 +2205,28 @@ def make_stat_only_pull_diagnostic(
         max_iter=300,
     )
 
-    summary = summarize_stat_only_pulls(points=points, best_pass1_norm=best_norm)
+    summary = summarize_stat_only_pulls(points=points, best_norm=best_norm)
 
     log(
         "Stat-only pull diagnostic: "
-        f"best pass-1 M={summary.best_pass1_norm:.10g} "
-        f"({100.0 * (summary.best_pass1_norm - 1.0):+.5g}%), "
+        f"best pass-1 N={summary.best_norm:.10g} "
+        f"({100.0 * (summary.best_norm - 1.0):+.5g}%), "
         f"chi2={best_chi2:.10g}, "
         f"chi2/ndf={summary.chi2_ndf_best:.10g}."
     )
     log(
         "Stat-only pull diagnostic: "
-        f"M=1 chi2/ndf={summary.chi2_ndf_nominal:.10g}, "
+        f"N=1 chi2/ndf={summary.chi2_ndf_nominal:.10g}, "
         f"|z|<=1={summary.pct_within_1sigma_nominal:.4g}%, "
         f"|z|<=3={summary.pct_within_3sigma_nominal:.4g}%."
     )
     log(
         "Stat-only pull diagnostic: "
-        f"best M |z|<=1={summary.pct_within_1sigma_best:.4g}%, "
+        f"best N |z|<=1={summary.pct_within_1sigma_best:.4g}%, "
         f"|z|<=3={summary.pct_within_3sigma_best:.4g}%."
     )
 
-    write_stat_only_pull_points_csv(output_dir=output_dir, points=points, best_pass1_norm=best_norm)
+    write_stat_only_pull_points_csv(output_dir=output_dir, points=points, best_norm=best_norm)
     write_stat_only_pull_summary_csv(output_dir=output_dir, summary=summary)
     draw_stat_only_pull_distribution(output_dir=output_dir, points=points, summary=summary)
 
@@ -2184,7 +2248,7 @@ def y_limits(
 ) -> Tuple[float, float]:
     vals: List[float] = []
 
-    floor = log_y_min if logy and log_y_min > 0.0 else 1e-30
+    floor = log_y_min if logy and log_y_min > 0.0 else 1.0e-30
 
     for p in list(pass2) + list(pass1):
         point_extent = max(p.err_low, p.err_high, p.scale_syst_abs)
@@ -2281,15 +2345,11 @@ def draw_cross_section_axis(
     logy: bool,
     log_y_min: float,
     include_title: bool,
-    include_point_to_point: bool,
 ) -> None:
     if curves is not None:
         ax.plot(curves.phi, curves.bh, linewidth=2.0, linestyle="-", label="BH", zorder=2)
         ax.plot(curves.phi, curves.km15, linewidth=2.0, linestyle="--", label="KM15", zorder=2)
     #endif
-
-    pass1_error_label = "stat ⊕ syst" if include_point_to_point else "stat only"
-    pass2_error_label = "stat ⊕ 18% point-to-point" if include_point_to_point else "stat only"
 
     if panel.pass1:
         x = [p.phi + PASS1_PHI_OFFSET_DEG for p in panel.pass1]
@@ -2305,7 +2365,7 @@ def draw_cross_section_axis(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass1_label}: {pass1_error_label}",
+            label=f"{pass1_label}: vertical errors",
             zorder=4,
         )
 
@@ -2338,7 +2398,7 @@ def draw_cross_section_axis(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass2_label}: {pass2_error_label}",
+            label=f"{pass2_label}: vertical errors",
             zorder=5,
         )
 
@@ -2350,7 +2410,7 @@ def draw_cross_section_axis(
             y_values=y,
             scale_values=[p.scale_syst_abs for p in panel.pass2],
             half_width=SCALE_BOX_HALF_WIDTH_DEG,
-            label=f"{pass2_label}: local period-spread box",
+            label=f"{pass2_label}: local $s_{{comb}}$ box",
             color=pass2_color,
             logy=logy,
             log_y_min=log_y_min,
@@ -2440,7 +2500,6 @@ def draw_panel(
     logy: bool,
     log_y_min: float,
     two_panel: bool,
-    include_point_to_point: bool,
 ) -> None:
     if two_panel:
         fig, axes = plt.subplots(1, 2, figsize=(15.5, 6.0))
@@ -2463,7 +2522,6 @@ def draw_panel(
             logy=logy,
             log_y_min=log_y_min,
             include_title=False,
-            include_point_to_point=include_point_to_point,
         )
 
         axes[0].set_title("Cross sections")
@@ -2486,7 +2544,6 @@ def draw_panel(
             logy=logy,
             log_y_min=log_y_min,
             include_title=True,
-            include_point_to_point=include_point_to_point,
         )
 
         fig.tight_layout()
@@ -2549,12 +2606,21 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             logy=job.logy,
             log_y_min=job.log_y_min,
             two_panel=job.two_panel,
-            include_point_to_point=job.model_cfg.include_point_to_point,
         )
 
         ratio_points = pass2_over_pass1_ratio_points(job.panel)
+
         pass2_local_scales = [p.scale_syst_frac for p in job.panel.pass2 if math.isfinite(p.scale_syst_frac)]
-        pass2_local_s_obs_values = [p.local_scale_s_obs for p in job.panel.pass2 if math.isfinite(p.local_scale_s_obs)]
+        pass2_local_scales_ge3 = [
+            p.scale_syst_frac
+            for p in job.panel.pass2
+            if math.isfinite(p.scale_syst_frac) and p.local_scale_n_periods >= 3
+        ]
+        pass2_local_scales_4 = [
+            p.scale_syst_frac
+            for p in job.panel.pass2
+            if math.isfinite(p.scale_syst_frac) and p.local_scale_n_periods == 4
+        ]
 
         manifest_entry: Dict[str, object] = {
             "file": job.filename,
@@ -2566,16 +2632,14 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             "has_models": curves is not None,
             "two_panel": job.two_panel,
             "n_ratio_pass2_over_pass1": len(ratio_points),
-            "pass2_local_s_obs_mean_in_panel": mean(pass2_local_s_obs_values),
-            "pass2_local_s_obs_rms_in_panel": rms(pass2_local_s_obs_values),
-            "pass2_local_s_obs_max_in_panel": max(pass2_local_s_obs_values) if pass2_local_s_obs_values else 0.0,
             "pass2_local_s_comb_mean_in_panel": mean(pass2_local_scales),
             "pass2_local_s_comb_rms_in_panel": rms(pass2_local_scales),
             "pass2_local_s_comb_max_in_panel": max(pass2_local_scales) if pass2_local_scales else 0.0,
-            "point_to_point_systematics_in_vertical_bars": job.model_cfg.include_point_to_point,
-            "left_pass2_error_bars": "stat + 18% estimated point-to-point only" if job.model_cfg.include_point_to_point else "stat only",
+            "pass2_local_s_comb_mean_ge3_in_panel": mean(pass2_local_scales_ge3),
+            "pass2_local_s_comb_mean_4_in_panel": mean(pass2_local_scales_4),
+            "left_pass2_error_bars": "stat or stat+18% estimated point-to-point, depending on --no-point-to-point-systematics",
             "left_pass2_scale_boxes": "point-by-point local period-spread s_comb(row)",
-            "left_pass1_error_bars": "stat + provided syst only" if job.model_cfg.include_point_to_point else "stat only",
+            "left_pass1_error_bars": "stat or stat+provided syst, depending on --no-point-to-point-systematics",
             "left_pass1_scale_boxes": "31% normalization",
             "ratio_error_bars": "pass2 stat and pass1 stat only",
             "ratio_scale_boxes": "local pass2 s_comb(row) scale and pass1 31% normalization",
@@ -2858,17 +2922,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--log-y-min",
         type=float,
-        default=1.0e-5,
-        help="Visible lower y-limit floor for log-y plots. Default is 1e-5.",
+        default=DEFAULT_LOG_Y_MIN,
+        help="Visible lower y-limit floor for log-y plots. Default is 1e-4, i.e. 10e-5.",
     )
     parser.add_argument("--two-panel", action="store_true", help="Make a 1x2 figure: cross sections on left, pass-2/pass-1 on right.")
     parser.add_argument(
         "--no-point-to-point-systematics",
         action="store_true",
         help=(
-            "Remove point-to-point systematics from plotted vertical error bars. "
-            "Pass-2 bars become stat only instead of stat⊕18%; pass-1 bars become stat only instead of stat⊕Lee syst. "
-            "External pass-2 local scale boxes and pass-1 31% normalization boxes are still drawn."
+            "Use stat-only vertical error bars for both pass-1 and pass-2. "
+            "External scale boxes are still drawn."
         ),
     )
     parser.add_argument("--print-columns", action="store_true", help="Print detected CSV columns before plotting.")
@@ -2907,35 +2970,40 @@ def main() -> int:
 
     args = parse_args()
 
-    include_point_to_point = not args.no_point_to_point_systematics
-
     log("Command-line configuration:")
-    log(f"  pass2_csv                       = {args.pass2_csv}")
-    log(f"  pass1_csv                       = {args.pass1_csv}")
-    log(f"  output_dir                      = {args.output_dir}")
-    log(f"  e_beam                          = {args.e_beam:g} GeV")
-    log(f"  requested workers               = {args.workers}")
-    log(f"  phi_dense                       = {args.phi_dense}")
-    log(f"  skip_models                     = {args.skip_models}")
-    log(f"  no_cache                        = {args.no_cache}")
-    log(f"  allow_missing_models            = {args.allow_missing_models}")
-    log(f"  linear_y                        = {args.linear_y}")
-    log(f"  log_y_min                       = {args.log_y_min:g}")
-    log(f"  two_panel                       = {args.two_panel}")
-    log(f"  quiet_workers                   = {args.quiet_workers}")
-    log(f"  progress_every                  = {args.progress_every}")
-    log(f"  point-to-point systematics bars = {include_point_to_point}")
-    log(f"  pass2 point-to-point            = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
-    log("  pass2 scale boxes               = point-by-point local period-spread s_comb(row)")
-    log("  pass2 s_obs histogram           = pass2_point_by_point_s_obs_distribution.png")
-    log(f"  pass1 normalization             = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}% drawn as external boxes")
+    log(f"  pass2_csv                    = {args.pass2_csv}")
+    log(f"  pass1_csv                    = {args.pass1_csv}")
+    log(f"  output_dir                   = {args.output_dir}")
+    log(f"  e_beam                       = {args.e_beam:g} GeV")
+    log(f"  requested workers            = {args.workers}")
+    log(f"  phi_dense                    = {args.phi_dense}")
+    log(f"  skip_models                  = {args.skip_models}")
+    log(f"  no_cache                     = {args.no_cache}")
+    log(f"  allow_missing_models         = {args.allow_missing_models}")
+    log(f"  linear_y                     = {args.linear_y}")
+    log(f"  log_y_min                    = {args.log_y_min:g}")
+    log(f"  two_panel                    = {args.two_panel}")
+    log(f"  no point-to-point systematics= {args.no_point_to_point_systematics}")
+    log(f"  quiet_workers                = {args.quiet_workers}")
+    log(f"  progress_every               = {args.progress_every}")
+
+    if args.no_point_to_point_systematics:
+        log("  pass2 vertical errors        = stat only")
+        log("  pass1 vertical errors        = stat only")
+    else:
+        log(f"  pass2 vertical errors        = stat ⊕ {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}% point-to-point")
+        log("  pass1 vertical errors        = stat ⊕ provided systematic")
+    #endif
+
+    log("  pass2 scale boxes            = point-by-point local period-spread s_comb(row)")
+    log(f"  pass1 normalization boxes    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}%")
     log(
-        "  stat-only pull fit              = pass-1 normalization floated in "
+        "  stat-only pull fit           = pass-1 normalization floated in "
         f"[{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}] using stats only"
     )
-    log(f"  scale box half width            = {SCALE_BOX_HALF_WIDTH_DEG:g} deg")
-    log(f"  pass1 phi offset                = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
-    log(f"  pass2 phi offset                = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
+    log(f"  scale box half width         = {SCALE_BOX_HALF_WIDTH_DEG:g} deg")
+    log(f"  pass1 phi offset             = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
+    log(f"  pass2 phi offset             = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
 
     if args.two_panel and args.skip_models:
         warn("--two-panel was requested together with --skip-models. Left-panel BH/KM15 curves will be absent.")
@@ -2950,8 +3018,8 @@ def main() -> int:
     #endif
 
     if args.log_y_min <= 0.0:
-        warn(f"Requested --log-y-min {args.log_y_min:g} is not positive; using 1e-5.")
-        args.log_y_min = 1.0e-5
+        warn(f"Requested --log-y-min {args.log_y_min:g} is not positive; using {DEFAULT_LOG_Y_MIN:g}.")
+        args.log_y_min = DEFAULT_LOG_Y_MIN
     #endif
 
     log("Output setup: creating output directory if needed.")
@@ -2965,19 +3033,19 @@ def main() -> int:
     args.km15_cli = resolve_km15_cli(args.km15_cli)
     args.py_km15 = resolve_python_executable(args.py_km15)
 
-    log("Input setup: loading pass-2 data and computing point-by-point local scale systematics.")
+    log("Input setup: loading pass-2 data and computing point-by-point local s_comb scale systematics.")
     pass2, pass2_local_scale_summary = load_pass2_csv(
         path=args.pass2_csv,
         xs_column=args.pass2_xs_column,
         output_dir=args.output_dir,
-        include_point_to_point=include_point_to_point,
+        no_point_to_point_systematics=args.no_point_to_point_systematics,
         print_columns=args.print_columns,
     )
 
     log("Input setup: loading pass-1 data.")
     pass1 = load_pass1_csv(
         path=args.pass1_csv,
-        include_point_to_point=include_point_to_point,
+        no_point_to_point_systematics=args.no_point_to_point_systematics,
         print_columns=args.print_columns,
     )
 
@@ -3011,7 +3079,6 @@ def main() -> int:
         use_cache=not args.no_cache,
         allow_missing_models=args.allow_missing_models,
         verbose_worker_models=args.verbose_worker_models,
-        include_point_to_point=include_point_to_point,
     )
 
     cache: Dict[str, Dict[str, List[float]]] = {}
@@ -3184,11 +3251,11 @@ def main() -> int:
 
     for index in sorted(manifest_by_index):
         entry = manifest_by_index[index]
-        entry["stat_only_pull_best_pass1_norm"] = stat_only_summary.best_pass1_norm
-        entry["stat_only_pull_best_pass1_norm_percent"] = 100.0 * (stat_only_summary.best_pass1_norm - 1.0)
+        entry["stat_only_pull_best_pass1_norm"] = stat_only_summary.best_norm
+        entry["stat_only_pull_best_pass1_norm_percent"] = 100.0 * (stat_only_summary.best_norm - 1.0)
         entry["stat_only_pull_chi2_ndf_nominal"] = stat_only_summary.chi2_ndf_nominal
         entry["stat_only_pull_chi2_ndf_best"] = stat_only_summary.chi2_ndf_best
-        entry["point_to_point_systematics_in_vertical_bars"] = include_point_to_point
+        entry["no_point_to_point_systematics"] = args.no_point_to_point_systematics
         manifest.append(entry)
     #endfor
 
@@ -3215,50 +3282,38 @@ def main() -> int:
     log(f"  workers used                  = {n_workers}")
     log(f"  two-panel mode                = {args.two_panel}")
     log(f"  model phi points              = {model_cfg.phi_dense}")
-    log(f"  point-to-point syst bars      = {include_point_to_point}")
+    log(f"  no point-to-point systematics = {args.no_point_to_point_systematics}")
     log(f"  pass2 local scale rows        = {pass2_local_scale_summary.n_rows_with_local_scale}")
-    log(f"  pass2 local s_obs mean        = {pass2_local_scale_summary.mean_s_obs:.10g} ({100.0 * pass2_local_scale_summary.mean_s_obs:.6g}%)")
-    log(f"  pass2 local s_obs median      = {pass2_local_scale_summary.median_s_obs:.10g} ({100.0 * pass2_local_scale_summary.median_s_obs:.6g}%)")
-    log(f"  pass2 local s_obs rms         = {pass2_local_scale_summary.rms_s_obs:.10g} ({100.0 * pass2_local_scale_summary.rms_s_obs:.6g}%)")
-    log(f"  pass2 local s_obs max         = {pass2_local_scale_summary.max_s_obs:.10g} ({100.0 * pass2_local_scale_summary.max_s_obs:.6g}%)")
     log(f"  pass2 local s_comb mean       = {pass2_local_scale_summary.mean_s_comb:.10g} ({100.0 * pass2_local_scale_summary.mean_s_comb:.6g}%)")
     log(f"  pass2 local s_comb median     = {pass2_local_scale_summary.median_s_comb:.10g} ({100.0 * pass2_local_scale_summary.median_s_comb:.6g}%)")
     log(f"  pass2 local s_comb rms        = {pass2_local_scale_summary.rms_s_comb:.10g} ({100.0 * pass2_local_scale_summary.rms_s_comb:.6g}%)")
     log(f"  pass2 local s_comb max        = {pass2_local_scale_summary.max_s_comb:.10g} ({100.0 * pass2_local_scale_summary.max_s_comb:.6g}%)")
-    log("  s_obs histogram               = pass2_point_by_point_s_obs_distribution.png")
-
-    if include_point_to_point:
-        log("  left pass2 error bars         = stat ⊕ 18% point-to-point")
-        log("  left pass1 error bars         = stat ⊕ provided syst")
-    else:
-        log("  left pass2 error bars         = stat only")
-        log("  left pass1 error bars         = stat only")
-    #endif
-
-    log("  left pass2 scale boxes        = local point-by-point period spread")
+    log(f"  pass2 local s_obs mean        = {pass2_local_scale_summary.mean_s_obs:.10g} ({100.0 * pass2_local_scale_summary.mean_s_obs:.6g}%)")
+    log(f"  pass2 local s_obs median      = {pass2_local_scale_summary.median_s_obs:.10g} ({100.0 * pass2_local_scale_summary.median_s_obs:.6g}%)")
+    log("  left pass2 scale boxes        = local point-by-point s_comb")
     log("  left pass1 scale boxes        = 31% normalization")
     log("  right panel ratio             = pass-2 / pass-1 only")
     log("  right ratio error bars        = pass2 stat ⊕ pass1 stat")
-    log("  right ratio scale boxes       = local pass2 scale ⊕ pass1 31% norm")
+    log("  right ratio scale boxes       = local pass2 s_comb ⊕ pass1 31% norm")
     log(f"  stat-only matched points      = {stat_only_summary.n_points}")
     log(
         "  stat-only best pass1 norm     = "
-        f"{stat_only_summary.best_pass1_norm:.10g} "
-        f"({100.0 * (stat_only_summary.best_pass1_norm - 1.0):+.6g}%)"
+        f"{stat_only_summary.best_norm:.10g} "
+        f"({100.0 * (stat_only_summary.best_norm - 1.0):+.6g}%)"
     )
     log(
         "  stat-only chi2/ndf            = "
-        f"M=1 {stat_only_summary.chi2_ndf_nominal:.10g}, "
+        f"N=1 {stat_only_summary.chi2_ndf_nominal:.10g}, "
         f"best {stat_only_summary.chi2_ndf_best:.10g}"
     )
     log(
         "  stat-only |pull|<=1           = "
-        f"M=1 {stat_only_summary.pct_within_1sigma_nominal:.4g}%, "
+        f"N=1 {stat_only_summary.pct_within_1sigma_nominal:.4g}%, "
         f"best {stat_only_summary.pct_within_1sigma_best:.4g}%"
     )
     log(
         "  stat-only |pull|<=3           = "
-        f"M=1 {stat_only_summary.pct_within_3sigma_nominal:.4g}%, "
+        f"N=1 {stat_only_summary.pct_within_3sigma_nominal:.4g}%, "
         f"best {stat_only_summary.pct_within_3sigma_best:.4g}%"
     )
     log(f"  log-y visible floor           = {args.log_y_min:g}")
