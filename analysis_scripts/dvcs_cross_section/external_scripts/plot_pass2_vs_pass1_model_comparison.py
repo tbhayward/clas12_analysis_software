@@ -19,9 +19,17 @@ Optional two-panel mode:
 Default assumptions implemented here:
   * Positional input order is pass-2 CSV first, pass-1 CSV second.
   * Pass-2 data use the 10.6 GeV unpolarized normalized cross-section column.
-    The statistical uncertainty is read from the tuple cell, then an 18%
-    estimated point-to-point/systematic uncertainty and an 8.3% normalization
-    uncertainty are added in quadrature.
+    The script now prefers the "combination sys" pass-2 column because that
+    column is expected to contain tuple cells of the form:
+
+        (cross_section, stat_uncertainty, bin_by_bin_scale_systematic)
+
+    The third tuple value is treated as an absolute uncertainty in the same
+    units as the cross section. This replaces the older hard-coded 8.3%
+    pass-2 scale/normalization uncertainty.
+  * Pass-2 left-panel uncertainty adds:
+        stat ⊕ 18% estimated point-to-point/systematic uncertainty
+             ⊕ bin-by-bin scale systematic from the CSV tuple.
   * Pass-1 data use the Lee-style central/stat/syst-up/syst-down columns.
     The pass-1 total uncertainty adds stat, the provided syst column, and an
     additional 31% normalization uncertainty in quadrature.
@@ -35,11 +43,11 @@ Two-panel mode:
   * If --two-panel is set, each output image is a 1x2 canvas.
   * Left panel is the usual cross-section plot.
   * Right panel shows only pass-2 / pass-1.
-  * The left panel is unchanged:
-      pass-2 left-panel uncertainty = stat ⊕ 18% estimated syst ⊕ 8.3% norm
-      pass-1 left-panel uncertainty = stat ⊕ provided syst ⊕ 31% norm
+  * The left panel uses:
+      pass-2 uncertainty = stat ⊕ 18% estimated syst ⊕ CSV scale sys
+      pass-1 uncertainty = stat ⊕ provided syst ⊕ 31% norm
   * The right-panel ratio uncertainty is deliberately different:
-      pass-2 ratio uncertainty = stat ⊕ 8.3% norm only
+      pass-2 ratio uncertainty = stat ⊕ CSV scale sys only
       pass-1 ratio uncertainty = stat ⊕ 31% norm only
     Therefore the ratio panel excludes the 18% estimated pass-2 systematic
     and excludes the provided pass-1 systematic columns.
@@ -128,7 +136,6 @@ DEFAULT_KM15_CLI = str(ANALYSIS_DIR / "km15_cli.py")
 # Uncertainty prescriptions.
 # ---------------------------------------------------------------------------
 PASS2_ESTIMATED_SYSTEMATIC_FRACTION = 0.18
-PASS2_NORMALIZATION_FRACTION = 0.083
 PASS1_NORMALIZATION_FRACTION = 0.31
 
 
@@ -153,13 +160,21 @@ PASS1_SYST_DN_COL = "cross sections, ep->epg, exp, syst. unc. (down)"
 # ---------------------------------------------------------------------------
 # Pass-2 10.6 GeV column candidates.
 # The script picks the first existing one.
+#
+# IMPORTANT:
+#   Prefer the "combination sys" column because its tuple is expected to be:
+#
+#       (cross_section, stat_uncertainty, bin_by_bin_scale_or_combination_sys)
+#
+#   The third tuple entry is used as the pass-2 scale systematic instead of
+#   applying a fixed 8.3% normalization uncertainty to every bin.
 # ---------------------------------------------------------------------------
 PASS2_XS_CANDIDATES = [
-    "normed cross sections, ep->epg, exp, 10.6 GeV, unpol",
     "normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys",
+    "cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys",
+    "normed cross sections, ep->epg, exp, 10.6 GeV, unpol",
     "normed cross sections, ep->epg, exp, Fa18, unpol",
     "cross sections, ep->epg, exp, 10.6 GeV, unpol",
-    "cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys",
 ]
 
 
@@ -181,6 +196,7 @@ class DataPoint:
     err_low: float
     err_high: float
     source: str
+    scale_syst: float = 0.0
 
 
 @dataclass
@@ -480,11 +496,19 @@ def row_phi(row: Dict[str, str], cols: Dict[str, str]) -> float:
 def parse_tuple_cell(cell: str) -> Tuple[float, float, float, bool]:
     """
     Parse tuple-like pass-2 cells such as:
-        (value, stat_err, syst_err)
-        value, stat_err, syst_err
+        (value, stat_err, scale_or_combination_syst)
+        value, stat_err, scale_or_combination_syst
 
     Returns:
-        (value, stat, syst, ok)
+        (value, stat, scale_syst, ok)
+
+    Convention:
+      * value      = central cross section
+      * stat       = statistical uncertainty
+      * scale_syst = bin-by-bin scale/combination systematic from the CSV
+
+    The third tuple value is treated as an absolute uncertainty in the same
+    units as the cross section, not as a fractional percent.
     """
     text = str(cell).strip()
 
@@ -495,7 +519,11 @@ def parse_tuple_cell(cell: str) -> Tuple[float, float, float, bool]:
     values = [float(x) for x in re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", text)]
 
     if len(values) >= 2:
-        return values[0], abs(values[1]), abs(values[2]) if len(values) >= 3 else 0.0, True
+        value = values[0]
+        stat = abs(values[1])
+        scale_syst = abs(values[2]) if len(values) >= 3 else 0.0
+
+        return value, stat, scale_syst, True
     #endif
 
     if len(values) == 1:
@@ -505,15 +533,18 @@ def parse_tuple_cell(cell: str) -> Tuple[float, float, float, bool]:
     return 0.0, 0.0, 0.0, False
 
 
-def pass2_left_panel_uncertainty(xs: float, stat: float) -> float:
+def pass2_left_panel_uncertainty(xs: float, stat: float, scale_syst: float) -> float:
     """
     Left-panel pass-2 uncertainty:
-        stat ⊕ 18% estimated systematics ⊕ 8.3% normalization
+        stat ⊕ 18% estimated systematics ⊕ bin-by-bin scale systematic
+
+    The scale systematic is read from the third value in the pass-2 CSV tuple.
+    This replaces the old hard-coded 8.3% normalization uncertainty.
     """
     estimated_syst = PASS2_ESTIMATED_SYSTEMATIC_FRACTION * xs
-    norm = PASS2_NORMALIZATION_FRACTION * xs
+    scale = abs(scale_syst)
 
-    return math.sqrt(stat * stat + estimated_syst * estimated_syst + norm * norm)
+    return math.sqrt(stat * stat + estimated_syst * estimated_syst + scale * scale)
 
 
 def pass1_left_panel_uncertainty(xs: float, stat: float, syst: float) -> float:
@@ -526,16 +557,17 @@ def pass1_left_panel_uncertainty(xs: float, stat: float, syst: float) -> float:
     return math.sqrt(stat * stat + syst * syst + norm * norm)
 
 
-def pass2_ratio_uncertainty(xs: float, stat: float) -> float:
+def pass2_ratio_uncertainty(xs: float, stat: float, scale_syst: float) -> float:
     """
     Right-panel pass-2/pass-1 ratio uncertainty contribution for pass-2:
-        stat ⊕ 8.3% normalization only
+        stat ⊕ bin-by-bin scale systematic only
 
     This deliberately excludes the 18% estimated pass-2 systematic uncertainty.
+    The scale systematic is read from the third value in the pass-2 CSV tuple.
     """
-    norm = PASS2_NORMALIZATION_FRACTION * xs
+    scale = abs(scale_syst)
 
-    return math.sqrt(stat * stat + norm * norm)
+    return math.sqrt(stat * stat + scale * scale)
 
 
 def pass1_ratio_uncertainty(xs: float, stat: float) -> float:
@@ -576,14 +608,16 @@ def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = F
         log(f"Pass-2: cross-section column -> {xs_col}")
         log(
             "Pass-2: left-panel uncertainty prescription -> "
-            "total = sqrt(stat^2 + (0.18 * cross_section)^2 + (0.083 * cross_section)^2)."
+            "total = sqrt(stat^2 + (0.18 * cross_section)^2 + scale_sys_csv^2)."
         )
+        log("Pass-2: scale_sys_csv is read from the third value in the selected pass-2 tuple column.")
         log("Pass-2: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
         kept = 0
         skipped_invalid = 0
         skipped_bad_xs = 0
+        skipped_missing_scale_syst = 0
         total_rows = 0
 
         for row in reader:
@@ -596,15 +630,28 @@ def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = F
 
             key = make_bin_key(row, cols)
             phi = row_phi(row, cols)
-            xs, stat, _ignored_syst, ok = parse_tuple_cell(row.get(xs_col, ""))
+            xs, stat, scale_syst, ok = parse_tuple_cell(row.get(xs_col, ""))
 
             if not ok or not finite_positive(xs):
                 skipped_bad_xs += 1
                 continue
             #endif
 
-            err = pass2_left_panel_uncertainty(xs=xs, stat=stat)
-            point = DataPoint(phi=phi, xs=xs, stat=stat, err_low=err, err_high=err, source="pass2")
+            if scale_syst <= 0.0:
+                skipped_missing_scale_syst += 1
+            #endif
+
+            err = pass2_left_panel_uncertainty(xs=xs, stat=stat, scale_syst=scale_syst)
+
+            point = DataPoint(
+                phi=phi,
+                xs=xs,
+                stat=stat,
+                err_low=err,
+                err_high=err,
+                source="pass2",
+                scale_syst=scale_syst,
+            )
 
             out.setdefault(key, []).append(point)
             kept += 1
@@ -619,6 +666,7 @@ def load_pass2_csv(path: Path, xs_column: Optional[str], print_columns: bool = F
 
     log(f"Pass-2: finished reading in {format_seconds(dt)}.")
     log(f"Pass-2: total rows={total_rows}, kept={kept}, skipped invalid-bin={skipped_invalid}, skipped bad/nonpositive xs={skipped_bad_xs}.")
+    log(f"Pass-2: rows kept with zero/missing CSV scale systematic={skipped_missing_scale_syst}.")
     log(f"Pass-2: unique (xB,Q2,|t|) bins with data={len(out)}.")
 
     return out
@@ -699,7 +747,15 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 err_high = err_low
             #endif
 
-            point = DataPoint(phi=phi, xs=xs, stat=stat, err_low=err_low, err_high=err_high, source="pass1")
+            point = DataPoint(
+                phi=phi,
+                xs=xs,
+                stat=stat,
+                err_low=err_low,
+                err_high=err_high,
+                source="pass1",
+                scale_syst=0.0,
+            )
 
             out.setdefault(key, []).append(point)
             kept += 1
@@ -979,16 +1035,16 @@ def pass2_over_pass1_ratio_points(panel: PanelData) -> List[RatioPoint]:
 
         # Right-panel-only uncertainty prescription:
         #
-        #   pass-2 contribution: stat ⊕ 8.3% normalization only
+        #   pass-2 contribution: stat ⊕ bin-by-bin scale systematic from CSV
         #   pass-1 contribution: stat ⊕ 31% normalization only
         #
         # This intentionally excludes:
         #   - the 18% estimated pass-2 systematic uncertainty,
         #   - the provided pass-1 systematic uncertainty columns.
         #
-        # The left panel is unchanged because the left-panel error bars use
-        # p.err_low / p.err_high loaded from the full uncertainty prescriptions.
-        p2_err = pass2_ratio_uncertainty(xs=p2.xs, stat=p2.stat)
+        # The left panel is unchanged except that the pass-2 scale term is now
+        # bin-by-bin from the CSV instead of a fixed 8.3%.
+        p2_err = pass2_ratio_uncertainty(xs=p2.xs, stat=p2.stat, scale_syst=p2.scale_syst)
         p1_err = pass1_ratio_uncertainty(xs=p1.xs, stat=p1.stat)
 
         rel_p2 = p2_err / p2.xs
@@ -1132,7 +1188,7 @@ def draw_cross_section_axis(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass2_label}: stat ⊕ estimated systematics ⊕ 8.3% norm",
+            label=f"{pass2_label}: stat ⊕ 18% syst ⊕ bin-by-bin scale sys",
         )
     #endif
 
@@ -1177,7 +1233,7 @@ def draw_ratio_axis(ax, panel: PanelData) -> None:
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label="pass-2 / pass-1: stat ⊕ norm only",
+            label="pass-2 / pass-1: pass-2 stat ⊕ bin-by-bin scale sys; pass-1 stat ⊕ 31% norm",
         )
     #endif
 
@@ -1320,7 +1376,7 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             "has_models": curves is not None,
             "two_panel": job.two_panel,
             "n_ratio_pass2_over_pass1": n_pass2_pass1_ratio,
-            "ratio_uncertainty": "pass2 stat+8.3% norm; pass1 stat+31% norm",
+            "ratio_uncertainty": "pass2 stat+bin-by-bin CSV scale sys; pass1 stat+31% norm",
             "model_status": model_status,
         }
 
@@ -1661,9 +1717,9 @@ def main() -> int:
     log(f"  quiet_workers          = {args.quiet_workers}")
     log(f"  progress_every         = {args.progress_every}")
     log(f"  pass2 left-panel syst  = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
-    log(f"  pass2 normalization    = {100.0 * PASS2_NORMALIZATION_FRACTION:.1f}%")
+    log("  pass2 scale systematic = bin-by-bin from selected pass-2 CSV tuple third value")
     log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}%")
-    log(f"  right-panel ratio unc  = pass2 stat+8.3% norm; pass1 stat+31% norm")
+    log("  right-panel ratio unc  = pass2 stat+CSV scale sys; pass1 stat+31% norm")
     log(f"  pass1 phi offset       = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
     log(f"  pass2 phi offset       = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
 
@@ -1917,10 +1973,10 @@ def main() -> int:
     log(f"  workers used              = {n_workers}")
     log(f"  two-panel mode            = {args.two_panel}")
     log(f"  model phi points          = {model_cfg.phi_dense}")
-    log(f"  left pass2 uncertainty    = stat ⊕ estimated systematics ⊕ 8.3% norm")
-    log(f"  left pass1 uncertainty    = stat ⊕ syst ⊕ 31% norm")
-    log(f"  right panel ratio         = pass-2 / pass-1 only")
-    log(f"  right ratio uncertainty   = pass2 stat ⊕ 8.3% norm; pass1 stat ⊕ 31% norm")
+    log("  left pass2 uncertainty    = stat ⊕ estimated systematics ⊕ CSV scale sys")
+    log("  left pass1 uncertainty    = stat ⊕ syst ⊕ 31% norm")
+    log("  right panel ratio         = pass-2 / pass-1 only")
+    log("  right ratio uncertainty   = pass2 stat ⊕ CSV scale sys; pass1 stat ⊕ 31% norm")
     log(f"  cache entries after run   = {len(cache) if not args.skip_models else 0}")
     log(f"  total elapsed             = {format_seconds(total_dt)}")
     log("Done.")
