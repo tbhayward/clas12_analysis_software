@@ -60,6 +60,22 @@ Implemented uncertainty prescription:
       systematic columns are intentionally not included in the ratio-panel error
       bars or ratio-panel scale boxes.
 
+  * Additional standalone stat-only pull diagnostic:
+      For every pass-2/pass-1 matched point, compute
+
+          pull(N) = (N * pass2 - pass1) /
+                    sqrt((N * pass2_stat)^2 + pass1_stat^2)
+
+      using statistical uncertainties only. The script writes a histogram of
+      the pull distribution before and after fitting a global pass-2
+      normalization N. N is bounded to [0.69, 1.31], i.e. +/-31%.
+
+      This diagnostic deliberately does not use:
+          - pass-2 estimated 18% point-to-point systematic,
+          - pass-1 provided systematic,
+          - pass-2 s_comb scale systematic,
+          - pass-1 31% normalization uncertainty.
+
   * One PNG is saved for every unique (xB, Q2, |t|) bin found in either CSV.
   * The model curves are BH and KM15 only, evaluated at the bin midpoint and
     drawn as functions of phi.
@@ -135,6 +151,9 @@ PASS1_PASS2_RATIO_MATCH_TOLERANCE_DEG = 2.0
 
 SCALE_BOX_HALF_WIDTH_DEG = 3.0
 SCALE_BOX_ALPHA = 0.18
+
+PULL_FIT_NORM_MIN = 1.0 - PASS1_NORMALIZATION_FRACTION
+PULL_FIT_NORM_MAX = 1.0 + PASS1_NORMALIZATION_FRACTION
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +270,39 @@ class RatioPoint:
     stat_err_high: float
     scale_err: float
     label: str
+
+
+@dataclass
+class StatOnlyComparisonPoint:
+    key: BinKey
+    phi_pass2: float
+    phi_pass1: float
+    pass2_xs: float
+    pass2_stat: float
+    pass1_xs: float
+    pass1_stat: float
+
+
+@dataclass
+class StatOnlyPullSummary:
+    n_points: int = 0
+    best_norm: float = 1.0
+    best_norm_min: float = PULL_FIT_NORM_MIN
+    best_norm_max: float = PULL_FIT_NORM_MAX
+    chi2_nominal: float = 0.0
+    chi2_best: float = 0.0
+    ndf_nominal: int = 0
+    ndf_best: int = 0
+    chi2_ndf_nominal: float = 0.0
+    chi2_ndf_best: float = 0.0
+    pct_within_1sigma_nominal: float = 0.0
+    pct_within_3sigma_nominal: float = 0.0
+    pct_within_1sigma_best: float = 0.0
+    pct_within_3sigma_best: float = 0.0
+    mean_pull_nominal: float = 0.0
+    rms_pull_nominal: float = 0.0
+    mean_pull_best: float = 0.0
+    rms_pull_best: float = 0.0
 
 
 @dataclass
@@ -514,6 +566,26 @@ def format_float(value: float) -> str:
     #endif
 
     return f"{value:.12g}"
+
+
+def mean(values: Sequence[float]) -> float:
+    vals = [v for v in values if math.isfinite(v)]
+
+    if not vals:
+        return 0.0
+    #endif
+
+    return sum(vals) / float(len(vals))
+
+
+def rms(values: Sequence[float]) -> float:
+    vals = [v for v in values if math.isfinite(v)]
+
+    if not vals:
+        return 0.0
+    #endif
+
+    return math.sqrt(sum(v * v for v in vals) / float(len(vals)))
 
 
 # ---------------------------------------------------------------------------
@@ -1361,7 +1433,7 @@ def compute_model_curves_without_cache(key: BinKey, cfg: ModelConfig) -> ModelCu
 
 
 # ---------------------------------------------------------------------------
-# Ratio helpers.
+# Ratio and matching helpers.
 # ---------------------------------------------------------------------------
 def find_nearest_pass1_point(phi: float, pass1_points: Sequence[DataPoint]) -> Optional[DataPoint]:
     if not pass1_points:
@@ -1464,6 +1536,426 @@ def ratio_axis_limits(ratio_sets: Sequence[Sequence[RatioPoint]]) -> Tuple[float
     pad = 0.15 * span
 
     return ymin - pad, ymax + pad
+
+
+# ---------------------------------------------------------------------------
+# Stat-only pass-1/pass-2 pull diagnostic.
+# ---------------------------------------------------------------------------
+def build_stat_only_comparison_points(panels: Sequence[PanelData]) -> List[StatOnlyComparisonPoint]:
+    points: List[StatOnlyComparisonPoint] = []
+
+    for panel in panels:
+        for p2 in panel.pass2:
+            p1 = find_nearest_pass1_point(p2.phi, panel.pass1)
+
+            if p1 is None:
+                continue
+            #endif
+
+            if not finite_positive(p2.xs) or not finite_positive(p1.xs):
+                continue
+            #endif
+
+            if not finite_positive(p2.stat) or not finite_positive(p1.stat):
+                continue
+            #endif
+
+            points.append(
+                StatOnlyComparisonPoint(
+                    key=panel.key,
+                    phi_pass2=p2.phi,
+                    phi_pass1=p1.phi,
+                    pass2_xs=p2.xs,
+                    pass2_stat=p2.stat,
+                    pass1_xs=p1.xs,
+                    pass1_stat=p1.stat,
+                )
+            )
+        #endfor
+    #endfor
+
+    return points
+
+
+def stat_only_pull(point: StatOnlyComparisonPoint, pass2_norm: float) -> float:
+    denom2 = (pass2_norm * point.pass2_stat) * (pass2_norm * point.pass2_stat)
+    denom2 += point.pass1_stat * point.pass1_stat
+
+    if denom2 <= 0.0 or not math.isfinite(denom2):
+        return float("nan")
+    #endif
+
+    numerator = pass2_norm * point.pass2_xs - point.pass1_xs
+
+    return numerator / math.sqrt(denom2)
+
+
+def stat_only_chi2(points: Sequence[StatOnlyComparisonPoint], pass2_norm: float) -> float:
+    total = 0.0
+
+    for point in points:
+        pull = stat_only_pull(point, pass2_norm)
+
+        if math.isfinite(pull):
+            total += pull * pull
+        #endif
+    #endfor
+
+    return total
+
+
+def bounded_minimize_golden_section(
+    func,
+    xmin: float,
+    xmax: float,
+    tolerance: float = 1.0e-8,
+    max_iter: int = 200,
+) -> Tuple[float, float]:
+    gr = 0.5 * (math.sqrt(5.0) - 1.0)
+
+    a = xmin
+    b = xmax
+
+    c = b - gr * (b - a)
+    d = a + gr * (b - a)
+
+    fc = func(c)
+    fd = func(d)
+
+    for _ in range(max_iter):
+        if abs(b - a) <= tolerance:
+            break
+        #endif
+
+        if fc < fd:
+            b = d
+            d = c
+            fd = fc
+            c = b - gr * (b - a)
+            fc = func(c)
+        else:
+            a = c
+            c = d
+            fc = fd
+            d = a + gr * (b - a)
+            fd = func(d)
+        #endif
+    #endfor
+
+    xbest = 0.5 * (a + b)
+    fbest = func(xbest)
+
+    endpoint_min = func(xmin)
+    endpoint_max = func(xmax)
+
+    if endpoint_min < fbest and endpoint_min <= endpoint_max:
+        return xmin, endpoint_min
+    #endif
+
+    if endpoint_max < fbest and endpoint_max < endpoint_min:
+        return xmax, endpoint_max
+    #endif
+
+    return xbest, fbest
+
+
+def percent_within(pulls: Sequence[float], threshold: float) -> float:
+    vals = [p for p in pulls if math.isfinite(p)]
+
+    if not vals:
+        return 0.0
+    #endif
+
+    n_within = sum(1 for p in vals if abs(p) <= threshold)
+
+    return 100.0 * float(n_within) / float(len(vals))
+
+
+def summarize_stat_only_pulls(
+    points: Sequence[StatOnlyComparisonPoint],
+    best_norm: float,
+) -> StatOnlyPullSummary:
+    nominal_pulls = [stat_only_pull(point, 1.0) for point in points]
+    best_pulls = [stat_only_pull(point, best_norm) for point in points]
+
+    nominal_pulls = [p for p in nominal_pulls if math.isfinite(p)]
+    best_pulls = [p for p in best_pulls if math.isfinite(p)]
+
+    n_points = min(len(nominal_pulls), len(best_pulls))
+    chi2_nominal = sum(p * p for p in nominal_pulls)
+    chi2_best = sum(p * p for p in best_pulls)
+
+    ndf_nominal = n_points
+    ndf_best = max(1, n_points - 1)
+
+    return StatOnlyPullSummary(
+        n_points=n_points,
+        best_norm=best_norm,
+        best_norm_min=PULL_FIT_NORM_MIN,
+        best_norm_max=PULL_FIT_NORM_MAX,
+        chi2_nominal=chi2_nominal,
+        chi2_best=chi2_best,
+        ndf_nominal=ndf_nominal,
+        ndf_best=ndf_best,
+        chi2_ndf_nominal=chi2_nominal / float(ndf_nominal) if ndf_nominal > 0 else 0.0,
+        chi2_ndf_best=chi2_best / float(ndf_best) if ndf_best > 0 else 0.0,
+        pct_within_1sigma_nominal=percent_within(nominal_pulls, 1.0),
+        pct_within_3sigma_nominal=percent_within(nominal_pulls, 3.0),
+        pct_within_1sigma_best=percent_within(best_pulls, 1.0),
+        pct_within_3sigma_best=percent_within(best_pulls, 3.0),
+        mean_pull_nominal=mean(nominal_pulls),
+        rms_pull_nominal=rms(nominal_pulls),
+        mean_pull_best=mean(best_pulls),
+        rms_pull_best=rms(best_pulls),
+    )
+
+
+def write_stat_only_pull_points_csv(
+    output_dir: Path,
+    points: Sequence[StatOnlyComparisonPoint],
+    best_norm: float,
+) -> None:
+    path = output_dir / "pass1_pass2_stat_only_pull_points.csv"
+
+    log(f"Stat-only pull diagnostic: writing point CSV to {path}")
+
+    with path.open("w", newline="") as handle:
+        handle.write(
+            "xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
+            "phi_pass2,phi_pass1,pass2_xs,pass2_stat,pass1_xs,pass1_stat,"
+            "pull_nominal,pull_best_norm,chi2_nominal,chi2_best_norm,best_norm\n"
+        )
+
+        for point in points:
+            pull_nominal = stat_only_pull(point, 1.0)
+            pull_best = stat_only_pull(point, best_norm)
+
+            handle.write(
+                f"{format_float(point.key.xb_min)},"
+                f"{format_float(point.key.xb_max)},"
+                f"{format_float(point.key.q2_min)},"
+                f"{format_float(point.key.q2_max)},"
+                f"{format_float(point.key.t_min)},"
+                f"{format_float(point.key.t_max)},"
+                f"{format_float(point.phi_pass2)},"
+                f"{format_float(point.phi_pass1)},"
+                f"{format_float(point.pass2_xs)},"
+                f"{format_float(point.pass2_stat)},"
+                f"{format_float(point.pass1_xs)},"
+                f"{format_float(point.pass1_stat)},"
+                f"{format_float(pull_nominal)},"
+                f"{format_float(pull_best)},"
+                f"{format_float(pull_nominal * pull_nominal)},"
+                f"{format_float(pull_best * pull_best)},"
+                f"{format_float(best_norm)}\n"
+            )
+        #endfor
+    #endwith
+
+
+def write_stat_only_pull_summary_csv(output_dir: Path, summary: StatOnlyPullSummary) -> None:
+    path = output_dir / "pass1_pass2_stat_only_pull_summary.csv"
+
+    log(f"Stat-only pull diagnostic: writing summary CSV to {path}")
+
+    with path.open("w", newline="") as handle:
+        handle.write(
+            "n_points,best_pass2_norm,best_pass2_norm_percent,"
+            "norm_min,norm_max,chi2_nominal,ndf_nominal,chi2_ndf_nominal,"
+            "chi2_best,ndf_best,chi2_ndf_best,"
+            "pct_within_1sigma_nominal,pct_within_3sigma_nominal,"
+            "pct_within_1sigma_best,pct_within_3sigma_best,"
+            "mean_pull_nominal,rms_pull_nominal,mean_pull_best,rms_pull_best\n"
+        )
+
+        handle.write(
+            f"{summary.n_points},"
+            f"{format_float(summary.best_norm)},"
+            f"{format_float(100.0 * (summary.best_norm - 1.0))},"
+            f"{format_float(summary.best_norm_min)},"
+            f"{format_float(summary.best_norm_max)},"
+            f"{format_float(summary.chi2_nominal)},"
+            f"{summary.ndf_nominal},"
+            f"{format_float(summary.chi2_ndf_nominal)},"
+            f"{format_float(summary.chi2_best)},"
+            f"{summary.ndf_best},"
+            f"{format_float(summary.chi2_ndf_best)},"
+            f"{format_float(summary.pct_within_1sigma_nominal)},"
+            f"{format_float(summary.pct_within_3sigma_nominal)},"
+            f"{format_float(summary.pct_within_1sigma_best)},"
+            f"{format_float(summary.pct_within_3sigma_best)},"
+            f"{format_float(summary.mean_pull_nominal)},"
+            f"{format_float(summary.rms_pull_nominal)},"
+            f"{format_float(summary.mean_pull_best)},"
+            f"{format_float(summary.rms_pull_best)}\n"
+        )
+    #endwith
+
+
+def draw_stat_only_pull_distribution(
+    output_dir: Path,
+    points: Sequence[StatOnlyComparisonPoint],
+    summary: StatOnlyPullSummary,
+) -> None:
+    path = output_dir / "pass1_pass2_stat_only_pull_distribution.png"
+
+    nominal_pulls = [stat_only_pull(point, 1.0) for point in points]
+    best_pulls = [stat_only_pull(point, summary.best_norm) for point in points]
+
+    nominal_pulls = [p for p in nominal_pulls if math.isfinite(p)]
+    best_pulls = [p for p in best_pulls if math.isfinite(p)]
+
+    if not nominal_pulls or not best_pulls:
+        warn("Stat-only pull diagnostic: no valid pulls; skipping histogram.")
+        return
+    #endif
+
+    all_pulls = nominal_pulls + best_pulls
+    finite_pulls = [p for p in all_pulls if math.isfinite(p)]
+
+    pmin = min(finite_pulls)
+    pmax = max(finite_pulls)
+
+    xmin = min(-5.0, pmin)
+    xmax = max(+5.0, pmax)
+
+    if xmin == xmax:
+        xmin -= 1.0
+        xmax += 1.0
+    #endif
+
+    span = xmax - xmin
+    xmin -= 0.05 * span
+    xmax += 0.05 * span
+
+    n_bins = 80
+    fig, ax = plt.subplots(figsize=(9.4, 6.6))
+
+    ax.hist(
+        nominal_pulls,
+        bins=n_bins,
+        range=(xmin, xmax),
+        histtype="step",
+        linewidth=1.8,
+        label="N = 1",
+    )
+
+    ax.hist(
+        best_pulls,
+        bins=n_bins,
+        range=(xmin, xmax),
+        histtype="step",
+        linewidth=1.8,
+        label=f"Best N = {summary.best_norm:.5f}",
+    )
+
+    ax.axvline(0.0, linewidth=1.0, linestyle="-")
+    ax.axvline(-1.0, linewidth=1.0, linestyle="--")
+    ax.axvline(+1.0, linewidth=1.0, linestyle="--")
+    ax.axvline(-3.0, linewidth=1.0, linestyle=":")
+    ax.axvline(+3.0, linewidth=1.0, linestyle=":")
+
+    text = (
+        "Stat-only pass-1/pass-2 pulls\n"
+        rf"$z=(N\sigma_{{p2}}-\sigma_{{p1}})/"
+        rf"\sqrt{{(N\delta_{{p2,stat}})^2+\delta_{{p1,stat}}^2}}$" "\n"
+        f"Matched points: {summary.n_points}\n"
+        f"Best N in [{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}]: "
+        f"{summary.best_norm:.5f} "
+        f"({100.0 * (summary.best_norm - 1.0):+.2f}%)\n"
+        f"χ²/ndf N=1: {summary.chi2_ndf_nominal:.3g} "
+        f"({summary.chi2_nominal:.3g}/{summary.ndf_nominal})\n"
+        f"χ²/ndf best: {summary.chi2_ndf_best:.3g} "
+        f"({summary.chi2_best:.3g}/{summary.ndf_best})\n"
+        f"|z|≤1: {summary.pct_within_1sigma_nominal:.1f}% → "
+        f"{summary.pct_within_1sigma_best:.1f}%\n"
+        f"|z|≤3: {summary.pct_within_3sigma_nominal:.1f}% → "
+        f"{summary.pct_within_3sigma_best:.1f}%"
+    )
+
+    ax.text(
+        0.97,
+        0.97,
+        text,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=10,
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
+    )
+
+    ax.set_xlabel("Stat-only pull")
+    ax.set_ylabel("Point count")
+    ax.set_title("Pass-2 vs pass-1 point-by-point stat-only pull distribution")
+    ax.grid(True, which="major", alpha=0.25)
+    ax.legend(loc="upper left", fontsize=10, frameon=True)
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+
+    log(f"Stat-only pull diagnostic: wrote histogram to {path}")
+
+
+def make_stat_only_pull_diagnostic(
+    output_dir: Path,
+    panels: Sequence[PanelData],
+) -> StatOnlyPullSummary:
+    t0 = time.time()
+
+    log("Stat-only pull diagnostic: building matched pass-2/pass-1 point list.")
+    points = build_stat_only_comparison_points(panels)
+
+    if not points:
+        warn("Stat-only pull diagnostic: no matched points found.")
+        summary = StatOnlyPullSummary()
+        write_stat_only_pull_summary_csv(output_dir, summary)
+        return summary
+    #endif
+
+    log(f"Stat-only pull diagnostic: matched points={len(points)}.")
+    log(
+        "Stat-only pull diagnostic: minimizing global chi2 with pass-2 normalization "
+        f"N constrained to [{PULL_FIT_NORM_MIN:.3f}, {PULL_FIT_NORM_MAX:.3f}]."
+    )
+
+    best_norm, best_chi2 = bounded_minimize_golden_section(
+        func=lambda norm: stat_only_chi2(points, norm),
+        xmin=PULL_FIT_NORM_MIN,
+        xmax=PULL_FIT_NORM_MAX,
+        tolerance=1.0e-10,
+        max_iter=300,
+    )
+
+    summary = summarize_stat_only_pulls(points=points, best_norm=best_norm)
+
+    log(
+        "Stat-only pull diagnostic: "
+        f"best N={summary.best_norm:.10g} "
+        f"({100.0 * (summary.best_norm - 1.0):+.5g}%), "
+        f"chi2={best_chi2:.10g}, "
+        f"chi2/ndf={summary.chi2_ndf_best:.10g}."
+    )
+    log(
+        "Stat-only pull diagnostic: "
+        f"N=1 chi2/ndf={summary.chi2_ndf_nominal:.10g}, "
+        f"|z|<=1={summary.pct_within_1sigma_nominal:.4g}%, "
+        f"|z|<=3={summary.pct_within_3sigma_nominal:.4g}%."
+    )
+    log(
+        "Stat-only pull diagnostic: "
+        f"best N |z|<=1={summary.pct_within_1sigma_best:.4g}%, "
+        f"|z|<=3={summary.pct_within_3sigma_best:.4g}%."
+    )
+
+    write_stat_only_pull_points_csv(output_dir=output_dir, points=points, best_norm=best_norm)
+    write_stat_only_pull_summary_csv(output_dir=output_dir, summary=summary)
+    draw_stat_only_pull_distribution(output_dir=output_dir, points=points, summary=summary)
+
+    dt = time.time() - t0
+    log(f"Stat-only pull diagnostic: finished in {format_seconds(dt)}.")
+
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -2207,6 +2699,10 @@ def main() -> int:
     log(f"  pass2 point-to-point   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}% included in vertical error bars")
     log("  pass2 combination sys  = internally computed 10.6 GeV unpol s_comb, drawn as external boxes")
     log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}% drawn as external boxes")
+    log(
+        "  stat-only pull fit     = pass-2 normalization floated in "
+        f"[{PULL_FIT_NORM_MIN:.2f}, {PULL_FIT_NORM_MAX:.2f}] using stats only"
+    )
     log(f"  scale box half width   = {SCALE_BOX_HALF_WIDTH_DEG:g} deg")
     log(f"  pass1 phi offset       = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
     log(f"  pass2 phi offset       = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
@@ -2270,6 +2766,11 @@ def main() -> int:
     #endif
 
     log(f"Panel setup: unique (xB,Q2,|t|) panels to write: {len(panels)}")
+
+    stat_only_summary = make_stat_only_pull_diagnostic(
+        output_dir=args.output_dir,
+        panels=panels,
+    )
 
     n_workers = max(1, min(int(args.workers), 5, len(panels)))
 
@@ -2460,7 +2961,12 @@ def main() -> int:
     log("Manifest: sorting manifest entries by panel index.")
 
     for index in sorted(manifest_by_index):
-        manifest.append(manifest_by_index[index])
+        entry = manifest_by_index[index]
+        entry["stat_only_pull_best_pass2_norm"] = stat_only_summary.best_norm
+        entry["stat_only_pull_best_pass2_norm_percent"] = 100.0 * (stat_only_summary.best_norm - 1.0)
+        entry["stat_only_pull_chi2_ndf_nominal"] = stat_only_summary.chi2_ndf_nominal
+        entry["stat_only_pull_chi2_ndf_best"] = stat_only_summary.chi2_ndf_best
+        manifest.append(entry)
     #endfor
 
     if not args.skip_models:
@@ -2496,6 +3002,27 @@ def main() -> int:
     log("  right panel ratio         = pass-2 / pass-1 only")
     log("  right ratio error bars    = pass2 stat ⊕ pass1 stat")
     log("  right ratio scale boxes   = pass2 s_comb ⊕ pass1 31% norm")
+    log(f"  stat-only matched points  = {stat_only_summary.n_points}")
+    log(
+        "  stat-only best pass2 norm = "
+        f"{stat_only_summary.best_norm:.10g} "
+        f"({100.0 * (stat_only_summary.best_norm - 1.0):+.6g}%)"
+    )
+    log(
+        "  stat-only chi2/ndf        = "
+        f"N=1 {stat_only_summary.chi2_ndf_nominal:.10g}, "
+        f"best {stat_only_summary.chi2_ndf_best:.10g}"
+    )
+    log(
+        "  stat-only |pull|<=1       = "
+        f"N=1 {stat_only_summary.pct_within_1sigma_nominal:.4g}%, "
+        f"best {stat_only_summary.pct_within_1sigma_best:.4g}%"
+    )
+    log(
+        "  stat-only |pull|<=3       = "
+        f"N=1 {stat_only_summary.pct_within_3sigma_nominal:.4g}%, "
+        f"best {stat_only_summary.pct_within_3sigma_best:.4g}%"
+    )
     log(f"  log-y visible floor       = {args.log_y_min:g}")
     log(f"  cache entries after run   = {len(cache) if not args.skip_models else 0}")
     log(f"  total elapsed             = {format_seconds(total_dt)}")
