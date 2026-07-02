@@ -374,9 +374,12 @@ double asymmetry_error_calculation(double currentVariable,
   // double sigmaPtp = 0.0368;
   // double sigmaPtm = 0.0367;
   // Fa22
-  double sigmaPb = 0.0045;
-  double sigmaPtp = 0.0243;
-  double sigmaPtm = 0.0243;
+  // double sigmaPb = 0.0045;
+  // double sigmaPtp = 0.0243;
+  // double sigmaPtm = 0.0243;
+  double sigmaPb = 0.00;
+  double sigmaPtp = 0.00;
+  double sigmaPtm = 0.00;
   // // Sp23
   // double sigmaPb = 0.0061;
   // double sigmaPtp = 0.0378;
