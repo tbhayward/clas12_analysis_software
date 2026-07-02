@@ -16,42 +16,56 @@ Optional two-panel mode:
         --output-dir output/pass2_vs_pass1_model_comparison \
         --two-panel
 
-Important pass-2 convention:
-  * The pass-2 central cross section is always read from the plain central-value
-    column, usually:
+Implemented uncertainty prescription:
+  * Positional input order is pass-2 CSV first, pass-1 CSV second.
+  * Pass-2 central values are read from the 10.6 GeV unpolarized normalized
+    cross-section column:
 
         normed cross sections, ep->epg, exp, 10.6 GeV, unpol
 
-    The script deliberately does NOT use the "combination sys" column as the
-    central-value column.
-  * The pass-2 bin-by-bin scale systematic is read separately from:
+    The script intentionally does NOT use:
 
         normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys
 
-    when that column exists.
-  * If the scale-systematic column is missing, the script can calculate a
-    bin-by-bin period-spread scale systematic from the four 10.6 GeV unpolarized
-    period columns:
+    as a cross-section input. That column is treated as an output/fill column
+    from the analysis chain, not as a central-value source for this comparison.
+  * The pass-2 combination scale systematic is computed internally as s_comb
+    using the same period-ratio/stat-weighted logic as combination_systematics.cpp
+    for the "10.6 GeV unpol" case:
+
         Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out
 
-    The computed prescription is:
-        scale_fraction = 0.5 * (max(period_i / weighted_mean) -
-                                min(period_i / weighted_mean))
+  * For pass-2 left-panel uncertainties:
 
-        scale_uncertainty_abs = scale_fraction * central_cross_section
+        total = stat ⊕ 18% estimated point-to-point/systematic
+                    ⊕ (s_comb * cross_section)
 
-Uncertainty prescriptions:
-  * Pass-2 left-panel uncertainty:
-        stat ⊕ 18% estimated point-to-point/systematic uncertainty
-             ⊕ bin-by-bin scale systematic
-  * Pass-2 ratio-panel uncertainty:
-        stat ⊕ bin-by-bin scale systematic
-    The ratio panel deliberately excludes the 18% estimated systematic.
-  * Pass-1 left-panel uncertainty:
+  * For pass-2/pass-1 ratio-panel uncertainties:
+
+        pass-2 contribution = stat ⊕ (s_comb * cross_section)
+
+    The 18% estimated pass-2 systematic is intentionally excluded from the
+    ratio panel.
+
+  * Pass-1 data use Lee-style central/stat/syst-up/syst-down columns.
+    The pass-1 left-panel total uncertainty is:
+
         stat ⊕ provided syst ⊕ 31% normalization
-  * Pass-1 ratio-panel uncertainty:
+
+    The pass-1 ratio-panel uncertainty contribution is:
+
         stat ⊕ 31% normalization
-    The ratio panel deliberately excludes the provided pass-1 syst columns.
+
+    The provided pass-1 systematic columns are intentionally excluded from the
+    ratio panel.
+
+  * One PNG is saved for every unique (xB, Q2, |t|) bin found in either CSV.
+  * The model curves are BH and KM15 only, evaluated at the bin midpoint and
+    drawn as functions of phi.
+  * Pass-1 and pass-2 markers are shifted slightly in phi on the cross-section
+    panel so overlapping points/error bars remain visually distinguishable.
+  * By default, log-y plots use a lower visible floor of 1e-3. Change with
+    --log-y-min.
 
 Parallelization:
   * Each unique (xB, Q2, |t|) panel is processed independently.
@@ -60,10 +74,9 @@ Parallelization:
   * Values above 5 are capped to 5.
   * Use --workers 1 for fully serial debugging.
 
-Output:
-  * One PNG per unique (xB, Q2, |t|) bin.
-  * A manifest.json file.
-  * A model_curve_cache.json file unless --skip-models or --no-cache is used.
+External model tools:
+  * BH is evaluated by running dvcsgen.
+  * KM15 is evaluated by running km15_cli.py.
 """
 
 from __future__ import annotations
@@ -81,7 +94,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -131,30 +144,15 @@ PASS1_SYST_DN_COL = "cross sections, ep->epg, exp, syst. unc. (down)"
 # ---------------------------------------------------------------------------
 # Pass-2 central-value column candidates.
 #
-# CRITICAL:
-#   Do NOT include the "combination sys" column here. That column is a
-#   systematic-uncertainty column, not the central cross section.
+# The combination-sys column is deliberately excluded from this list.
 # ---------------------------------------------------------------------------
 PASS2_CENTRAL_XS_CANDIDATES = [
     "normed cross sections, ep->epg, exp, 10.6 GeV, unpol",
     "cross sections, ep->epg, exp, 10.6 GeV, unpol",
-    "normed cross sections, ep->epg, exp, Fa18, unpol",
 ]
 
 
-# ---------------------------------------------------------------------------
-# Pass-2 bin-by-bin scale-systematic column candidates.
-# ---------------------------------------------------------------------------
-PASS2_SCALE_SYS_CANDIDATES = [
-    "normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys",
-    "cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys",
-]
-
-
-# ---------------------------------------------------------------------------
-# Pass-2 period columns used to compute a bin-by-bin period-spread scale sys.
-# ---------------------------------------------------------------------------
-PASS2_PERIODS_10P6 = [
+PASS2_PERIODS_10P6_UNPOL = [
     "Fa18 Inb",
     "Fa18 Out",
     "Sp18 Inb",
@@ -162,10 +160,13 @@ PASS2_PERIODS_10P6 = [
 ]
 
 
-def pass2_period_column(period: str) -> str:
+def pass2_period_cross_section_column(period: str) -> str:
     return f"normed cross sections, ep->epg, exp, {period}, unpol"
 
 
+# ---------------------------------------------------------------------------
+# Data containers.
+# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class BinKey:
     xb_min: float
@@ -177,6 +178,42 @@ class BinKey:
 
 
 @dataclass
+class TupleValue:
+    ok: bool = False
+    value: float = 0.0
+    stat: float = 0.0
+    sys: float = 0.0
+
+
+@dataclass
+class PeriodRatioAccumulator:
+    sum_w: float = 0.0
+    sum_wr: float = 0.0
+    n: int = 0
+
+
+@dataclass
+class PeriodRatioSummary:
+    period: str = ""
+    n: int = 0
+    mean_ratio: float = 0.0
+    mean_ratio_stat: float = 0.0
+
+
+@dataclass
+class CombinationSystematicResult:
+    label: str = "10.6 GeV unpol"
+    central_value_mode: str = "stat_weighted"
+    valid_bins: int = 0
+    ratio_points: int = 0
+    s_obs: float = 0.0
+    s_stat_exp: float = 0.0
+    s_comb: float = 0.0
+    half_width: float = 0.0
+    period_summaries: List[PeriodRatioSummary] = field(default_factory=list)
+
+
+@dataclass
 class DataPoint:
     phi: float
     xs: float
@@ -184,8 +221,7 @@ class DataPoint:
     err_low: float
     err_high: float
     source: str
-    scale_syst: float = 0.0
-    scale_syst_source: str = ""
+    scale_syst_abs: float = 0.0
 
 
 @dataclass
@@ -232,7 +268,9 @@ class WorkerJob:
     filename: str
     pass2_label: str
     pass1_label: str
+    pass2_s_comb: float
     logy: bool
+    log_y_min: float
     two_panel: bool
     skip_models: bool
     model_cfg: ModelConfig
@@ -291,6 +329,14 @@ def format_seconds(seconds: float) -> str:
     return f"{hours:d} h {minutes:d} min {rem:.1f} s"
 
 
+def format_fraction_percent(frac: float) -> str:
+    if not math.isfinite(frac):
+        return "nan%"
+    #endif
+
+    return f"{100.0 * frac:.2f}%"
+
+
 def canonical_header_map(fieldnames: Sequence[str]) -> Dict[str, str]:
     out: Dict[str, str] = {}
 
@@ -320,6 +366,22 @@ def find_column(fieldnames: Sequence[str], candidates: Sequence[str], required: 
     return None
 
 
+def require_columns(fieldnames: Sequence[str], required: Sequence[str], context: str) -> None:
+    missing: List[str] = []
+    cmap = canonical_header_map(fieldnames)
+
+    for col in required:
+        if col.strip().lower() not in cmap:
+            missing.append(col)
+        #endif
+    #endfor
+
+    if missing:
+        formatted = "\n".join(f"  - {m}" for m in missing)
+        die(f"Missing required columns for {context}:\n{formatted}")
+    #endif
+
+
 def to_float(value: object, default: float = 0.0) -> float:
     if value is None:
         return default
@@ -337,23 +399,25 @@ def to_float(value: object, default: float = 0.0) -> float:
         if math.isfinite(out):
             return out
         #endif
+
+        return default
     except ValueError:
-        pass
+        match = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", text)
+
+        if match:
+            try:
+                out = float(match.group(0))
+
+                if math.isfinite(out):
+                    return out
+                #endif
+
+                return default
+            except ValueError:
+                return default
+            #endtry
+        #endif
     #endtry
-
-    match = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", text)
-
-    if match:
-        try:
-            out = float(match.group(0))
-
-            if math.isfinite(out):
-                return out
-            #endif
-        except ValueError:
-            return default
-        #endtry
-    #endif
 
     return default
 
@@ -378,6 +442,10 @@ def to_int(value: object, default: int = 0) -> int:
 
 def finite_positive(value: float) -> bool:
     return math.isfinite(value) and value > 0.0
+
+
+def finite_nonzero(value: float) -> bool:
+    return math.isfinite(value) and abs(value) > 0.0
 
 
 def round_key_value(value: float, ndigits: int = 6) -> float:
@@ -415,6 +483,31 @@ def panel_filename(key: BinKey, index: int) -> str:
         f"Q2_{safe_filename_piece(key.q2_min)}_{safe_filename_piece(key.q2_max)}_"
         f"t_{safe_filename_piece(key.t_min)}_{safe_filename_piece(key.t_max)}.png"
     )
+
+
+def csv_field_escape(s: str) -> str:
+    text = str(s)
+
+    need_quote = (
+        "," in text or
+        '"' in text or
+        "\n" in text or
+        "\r" in text
+    )
+
+    if not need_quote:
+        return text
+    #endif
+
+    return '"' + text.replace('"', '""') + '"'
+
+
+def format_float(value: float) -> str:
+    if not math.isfinite(value):
+        return ""
+    #endif
+
+    return f"{value:.12g}"
 
 
 # ---------------------------------------------------------------------------
@@ -490,213 +583,315 @@ def row_phi(row: Dict[str, str], cols: Dict[str, str]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Cross-section and systematic parsing.
+# Tuple parsing and stat-weighted combination.
 # ---------------------------------------------------------------------------
-def extract_numbers(cell: object) -> List[float]:
+def parse_tuple_cell(cell: object) -> TupleValue:
     text = str(cell).strip()
 
     if text == "":
-        return []
+        return TupleValue()
     #endif
 
-    out: List[float] = []
+    values = [float(x) for x in re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", text)]
 
-    for raw in re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", text):
-        try:
-            value = float(raw)
+    if len(values) < 2:
+        return TupleValue()
+    #endif
 
-            if math.isfinite(value):
-                out.append(value)
-            #endif
-        except ValueError:
-            continue
-        #endtry
+    value = values[0]
+    stat = abs(values[1])
+    sys_value = values[2] if len(values) >= 3 else 0.0
+
+    if not math.isfinite(value):
+        return TupleValue()
+    #endif
+
+    if not math.isfinite(stat) or stat <= 0.0:
+        return TupleValue()
+    #endif
+
+    if not math.isfinite(sys_value):
+        sys_value = 0.0
+    #endif
+
+    return TupleValue(ok=True, value=value, stat=stat, sys=sys_value)
+
+
+def valid_values_only(values: Sequence[TupleValue]) -> List[TupleValue]:
+    out: List[TupleValue] = []
+
+    for v in values:
+        if (
+            v.ok and
+            math.isfinite(v.value) and
+            math.isfinite(v.stat) and
+            v.stat > 0.0
+        ):
+            out.append(v)
+        #endif
     #endfor
 
     return out
 
 
-def parse_value_stat_tuple_cell(cell: object) -> Tuple[float, float, bool]:
-    """
-    Parse central-value tuple-like cells:
-        (value, stat)
-        (value, stat, anything_else)
+def combine_stat_weighted(values: Sequence[TupleValue]) -> TupleValue:
+    valid = valid_values_only(values)
 
-    Returns:
-        value, stat, ok
-    """
-    values = extract_numbers(cell)
-
-    if len(values) >= 2:
-        return values[0], abs(values[1]), True
+    if not valid:
+        return TupleValue()
     #endif
 
-    if len(values) == 1:
-        return values[0], 0.0, True
-    #endif
-
-    return 0.0, 0.0, False
-
-
-def parse_scale_systematic_cell(cell: object, central_xs: float) -> Tuple[float, bool, str]:
-    """
-    Parse a scale-systematic cell.
-
-    The combination-sys column in the pass-2 CSV should normally contain an
-    absolute uncertainty. In some workflows it may contain a tuple. This parser
-    handles both cases conservatively:
-
-      * one number:
-            use that number as the absolute systematic uncertainty
-
-      * three or more numbers and first number is close to central_xs:
-            interpret as (value, stat, syst) and use the third number
-
-      * three or more numbers and first number is not close to central_xs:
-            interpret the first number as the systematic uncertainty
-
-      * two numbers:
-            use the first number unless it is clearly a value close to central_xs,
-            in which case use the second number
-    """
-    values = extract_numbers(cell)
-
-    if not values:
-        return 0.0, False, "missing"
-    #endif
-
-    if not finite_positive(central_xs):
-        return abs(values[0]), True, "csv_scale_first_number"
-    #endif
-
-    def close_to_central(value: float) -> bool:
-        rel = abs(value - central_xs) / max(abs(central_xs), 1.0e-30)
-
-        return rel < 0.20
-    #enddef
-
-    if len(values) >= 3:
-        if close_to_central(values[0]):
-            return abs(values[2]), True, "csv_tuple_third_number"
-        #endif
-
-        return abs(values[0]), True, "csv_scale_first_number"
-    #endif
-
-    if len(values) == 2:
-        if close_to_central(values[0]):
-            return abs(values[1]), True, "csv_tuple_second_number"
-        #endif
-
-        return abs(values[0]), True, "csv_scale_first_number"
-    #endif
-
-    return abs(values[0]), True, "csv_scale_first_number"
-
-
-def compute_weighted_mean(values: Sequence[Tuple[float, float]]) -> Tuple[float, float, bool]:
     sum_w = 0.0
     sum_wx = 0.0
 
-    for value, stat in values:
-        if not finite_positive(value):
-            continue
-        #endif
-
-        if finite_positive(stat):
-            w = 1.0 / (stat * stat)
-        else:
-            w = 1.0
-        #endif
-
+    for v in valid:
+        w = 1.0 / (v.stat * v.stat)
         sum_w += w
-        sum_wx += w * value
+        sum_wx += w * v.value
     #endfor
 
     if sum_w <= 0.0:
-        return 0.0, 0.0, False
+        return TupleValue()
     #endif
 
-    mean = sum_wx / sum_w
-    mean_stat = 1.0 / math.sqrt(sum_w)
+    value = sum_wx / sum_w
+    stat = 1.0 / math.sqrt(sum_w)
 
-    if not finite_positive(mean):
-        return 0.0, 0.0, False
+    if not math.isfinite(value) or not math.isfinite(stat) or stat <= 0.0:
+        return TupleValue()
     #endif
 
-    return mean, mean_stat, True
+    return TupleValue(ok=True, value=value, stat=stat, sys=0.0)
 
 
-def compute_period_spread_scale_systematic(
-    row: Dict[str, str],
-    period_cols: Dict[str, str],
-    central_xs: float,
-) -> Tuple[float, bool, str]:
-    """
-    Compute an absolute bin-by-bin scale systematic from the four period columns.
+# ---------------------------------------------------------------------------
+# Pass-2 s_comb calculation matching combination_systematics.cpp.
+# ---------------------------------------------------------------------------
+def compute_pass2_10p6_unpol_s_comb(path: Path, print_columns: bool = False) -> CombinationSystematicResult:
+    t0 = time.time()
 
-    This mirrors the half-width logic used for period consistency:
-        period_ratio_i = period_value_i / weighted_mean
-        scale_fraction = 0.5 * (max(period_ratio_i) - min(period_ratio_i))
-        absolute_scale_unc = central_xs * scale_fraction
-    """
-    period_values: List[Tuple[float, float]] = []
+    log("Pass-2 combination systematic: computing 10.6 GeV unpol s_comb internally.")
+    log(f"Pass-2 combination systematic: opening CSV: {path}")
 
-    for period in PASS2_PERIODS_10P6:
-        col = period_cols.get(period, "")
+    with path.open("r", newline="") as handle:
+        reader = csv.DictReader(handle)
 
-        if col == "":
-            continue
+        if reader.fieldnames is None:
+            die(f"Pass-2 CSV appears empty: {path}")
         #endif
 
-        value, stat, ok = parse_value_stat_tuple_cell(row.get(col, ""))
+        fieldnames = reader.fieldnames
 
-        if not ok or not finite_positive(value):
-            continue
+        if print_columns:
+            log("Pass-2 columns:\n" + "\n".join(f"  [{i}] {name}" for i, name in enumerate(fieldnames)))
         #endif
 
-        period_values.append((value, stat))
+        required = [pass2_period_cross_section_column(period) for period in PASS2_PERIODS_10P6_UNPOL]
+        require_columns(fieldnames, required, "pass-2 10.6 GeV unpol s_comb calculation")
+
+        period_columns = {
+            period: find_column(fieldnames, [pass2_period_cross_section_column(period)])
+            for period in PASS2_PERIODS_10P6_UNPOL
+        }
+
+        for period in PASS2_PERIODS_10P6_UNPOL:
+            log(f"Pass-2 combination systematic: {period:10s} -> {period_columns[period]}")
+        #endfor
+
+        result = CombinationSystematicResult()
+        acc_by_period: Dict[str, PeriodRatioAccumulator] = {
+            period: PeriodRatioAccumulator()
+            for period in PASS2_PERIODS_10P6_UNPOL
+        }
+
+        n_rows = 0
+        n_rows_no_ref = 0
+
+        for row in reader:
+            n_rows += 1
+
+            input_values: List[TupleValue] = []
+
+            for period in PASS2_PERIODS_10P6_UNPOL:
+                col = period_columns[period]
+                input_values.append(parse_tuple_cell(row.get(col, "")))
+            #endfor
+
+            ref = combine_stat_weighted(input_values)
+
+            if not ref.ok or not math.isfinite(ref.value) or abs(ref.value) <= 0.0:
+                n_rows_no_ref += 1
+                continue
+            #endif
+
+            n_valid_in_bin = 0
+
+            for i_period, period in enumerate(PASS2_PERIODS_10P6_UNPOL):
+                v = input_values[i_period]
+
+                if not v.ok or not math.isfinite(v.value) or not math.isfinite(v.stat) or v.stat <= 0.0:
+                    continue
+                #endif
+
+                ratio = v.value / ref.value
+                ratio_stat = abs(v.stat / ref.value)
+
+                if math.isfinite(ratio) and math.isfinite(ratio_stat) and ratio_stat > 0.0:
+                    w = 1.0 / (ratio_stat * ratio_stat)
+
+                    acc = acc_by_period[period]
+                    acc.sum_w += w
+                    acc.sum_wr += w * ratio
+                    acc.n += 1
+
+                    result.ratio_points += 1
+                    n_valid_in_bin += 1
+                #endif
+            #endfor
+
+            if n_valid_in_bin >= 2:
+                result.valid_bins += 1
+            #endif
+        #endfor
+    #endwith
+
+    sum_obs2 = 0.0
+    sum_stat2 = 0.0
+    n_period = 0
+
+    min_ratio = float("inf")
+    max_ratio = -float("inf")
+
+    for period in PASS2_PERIODS_10P6_UNPOL:
+        acc = acc_by_period[period]
+
+        if acc.sum_w > 0.0 and acc.n > 0:
+            mean_ratio = acc.sum_wr / acc.sum_w
+            mean_ratio_stat = 1.0 / math.sqrt(acc.sum_w)
+
+            summary = PeriodRatioSummary(
+                period=period,
+                n=acc.n,
+                mean_ratio=mean_ratio,
+                mean_ratio_stat=mean_ratio_stat,
+            )
+
+            if (
+                math.isfinite(mean_ratio) and
+                math.isfinite(mean_ratio_stat) and
+                mean_ratio_stat > 0.0
+            ):
+                residual = mean_ratio - 1.0
+                sum_obs2 += residual * residual
+                sum_stat2 += mean_ratio_stat * mean_ratio_stat
+                n_period += 1
+
+                min_ratio = min(min_ratio, mean_ratio)
+                max_ratio = max(max_ratio, mean_ratio)
+            #endif
+
+            result.period_summaries.append(summary)
+        #endif
     #endfor
 
-    if len(period_values) < 2:
-        return 0.0, False, "period_spread_insufficient_periods"
+    if n_period > 0:
+        result.s_obs = math.sqrt(max(0.0, sum_obs2 / float(n_period)))
+        result.s_stat_exp = math.sqrt(max(0.0, sum_stat2 / float(n_period)))
+        result.s_comb = math.sqrt(max(0.0, result.s_obs * result.s_obs - result.s_stat_exp * result.s_stat_exp))
     #endif
 
-    mean, _mean_stat, ok_mean = compute_weighted_mean(period_values)
-
-    if not ok_mean or not finite_positive(mean):
-        return 0.0, False, "period_spread_bad_mean"
+    if math.isfinite(min_ratio) and math.isfinite(max_ratio) and max_ratio >= min_ratio:
+        result.half_width = 0.5 * (max_ratio - min_ratio)
     #endif
 
-    ratios: List[float] = []
+    dt = time.time() - t0
 
-    for value, _stat in period_values:
-        ratio = value / mean
+    log(f"Pass-2 combination systematic: finished in {format_seconds(dt)}.")
+    log(f"Pass-2 combination systematic: rows scanned={n_rows}, rows without valid stat-weighted ref={n_rows_no_ref}.")
+    log(f"Pass-2 combination systematic: valid bins={result.valid_bins}, ratio points={result.ratio_points}.")
+    log(
+        "Pass-2 combination systematic: "
+        f"s_obs={result.s_obs:.10g}, "
+        f"s_stat={result.s_stat_exp:.10g}, "
+        f"s_comb={result.s_comb:.10g} "
+        f"({100.0 * result.s_comb:.4g}%)."
+    )
 
-        if math.isfinite(ratio) and ratio > 0.0:
-            ratios.append(ratio)
-        #endif
+    for summary in result.period_summaries:
+        log(
+            "Pass-2 combination systematic: "
+            f"period mean ratio {summary.period:10s} = "
+            f"{summary.mean_ratio:.10g} +/- {summary.mean_ratio_stat:.10g}, "
+            f"n={summary.n}"
+        )
     #endfor
 
-    if len(ratios) < 2:
-        return 0.0, False, "period_spread_insufficient_ratios"
+    if result.s_comb <= 0.0:
+        warn("Computed pass-2 s_comb is zero or non-positive. Pass-2 scale systematic contribution will be zero.")
     #endif
 
-    scale_fraction = 0.5 * (max(ratios) - min(ratios))
-    scale_abs = abs(central_xs) * scale_fraction
-
-    if not math.isfinite(scale_abs):
-        return 0.0, False, "period_spread_nonfinite"
-    #endif
-
-    return scale_abs, True, "period_spread_half_width"
+    return result
 
 
-def pass2_left_panel_uncertainty(xs: float, stat: float, scale_syst: float) -> float:
+def write_pass2_s_comb_summary(output_dir: Path, result: CombinationSystematicResult) -> None:
+    path = output_dir / "pass2_internal_s_comb_summary.csv"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    log(f"Pass-2 combination systematic: writing summary CSV to {path}")
+
+    with path.open("w", newline="") as handle:
+        handle.write(
+            "case,central value mode,valid bins,ratio points,"
+            "s_obs_period,s_comb,s_comb percent,half max width,"
+            "half max width percent,s_stat_period,period,period ratio points,"
+            "period mean ratio,period mean ratio stat\n"
+        )
+
+        if not result.period_summaries:
+            handle.write(
+                f"{csv_field_escape(result.label)},"
+                f"{csv_field_escape(result.central_value_mode)},"
+                f"{result.valid_bins},"
+                f"{result.ratio_points},"
+                f"{format_float(result.s_obs)},"
+                f"{format_float(result.s_comb)},"
+                f"{format_float(100.0 * result.s_comb)},"
+                f"{format_float(result.half_width)},"
+                f"{format_float(100.0 * result.half_width)},"
+                f"{format_float(result.s_stat_exp)},"
+                ",,,\n"
+            )
+        else:
+            for p in result.period_summaries:
+                handle.write(
+                    f"{csv_field_escape(result.label)},"
+                    f"{csv_field_escape(result.central_value_mode)},"
+                    f"{result.valid_bins},"
+                    f"{result.ratio_points},"
+                    f"{format_float(result.s_obs)},"
+                    f"{format_float(result.s_comb)},"
+                    f"{format_float(100.0 * result.s_comb)},"
+                    f"{format_float(result.half_width)},"
+                    f"{format_float(100.0 * result.half_width)},"
+                    f"{format_float(result.s_stat_exp)},"
+                    f"{csv_field_escape(p.period)},"
+                    f"{p.n},"
+                    f"{format_float(p.mean_ratio)},"
+                    f"{format_float(p.mean_ratio_stat)}\n"
+                )
+            #endfor
+        #endif
+    #endwith
+
+
+# ---------------------------------------------------------------------------
+# Uncertainty prescriptions.
+# ---------------------------------------------------------------------------
+def pass2_left_panel_uncertainty(xs: float, stat: float, s_comb: float) -> float:
     estimated_syst = PASS2_ESTIMATED_SYSTEMATIC_FRACTION * xs
-    scale = abs(scale_syst)
+    scale_syst = abs(s_comb * xs)
 
-    return math.sqrt(stat * stat + estimated_syst * estimated_syst + scale * scale)
+    return math.sqrt(stat * stat + estimated_syst * estimated_syst + scale_syst * scale_syst)
 
 
 def pass1_left_panel_uncertainty(xs: float, stat: float, syst: float) -> float:
@@ -705,10 +900,10 @@ def pass1_left_panel_uncertainty(xs: float, stat: float, syst: float) -> float:
     return math.sqrt(stat * stat + syst * syst + norm * norm)
 
 
-def pass2_ratio_uncertainty(xs: float, stat: float, scale_syst: float) -> float:
-    scale = abs(scale_syst)
+def pass2_ratio_uncertainty(xs: float, stat: float, s_comb: float) -> float:
+    scale_syst = abs(s_comb * xs)
 
-    return math.sqrt(stat * stat + scale * scale)
+    return math.sqrt(stat * stat + scale_syst * scale_syst)
 
 
 def pass1_ratio_uncertainty(xs: float, stat: float) -> float:
@@ -718,13 +913,12 @@ def pass1_ratio_uncertainty(xs: float, stat: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# CSV loaders.
+# Input loaders.
 # ---------------------------------------------------------------------------
 def load_pass2_csv(
     path: Path,
     xs_column: Optional[str],
-    scale_sys_column: Optional[str],
-    scale_sys_mode: str,
+    s_comb: float,
     print_columns: bool = False,
 ) -> Dict[BinKey, List[DataPoint]]:
     t0 = time.time()
@@ -747,42 +941,24 @@ def load_pass2_csv(
         #endif
 
         cols = detect_common_columns(fieldnames, "Pass-2")
+        xs_col = xs_column or find_column(fieldnames, PASS2_CENTRAL_XS_CANDIDATES)
 
-        central_xs_col = xs_column or find_column(fieldnames, PASS2_CENTRAL_XS_CANDIDATES)
-        detected_scale_col = scale_sys_column or find_column(fieldnames, PASS2_SCALE_SYS_CANDIDATES, required=False)
-
-        period_cols: Dict[str, str] = {}
-
-        for period in PASS2_PERIODS_10P6:
-            period_cols[period] = find_column(fieldnames, [pass2_period_column(period)], required=False) or ""
-        #endfor
-
-        log(f"Pass-2: central cross-section column -> {central_xs_col}")
-
-        if detected_scale_col:
-            log(f"Pass-2: CSV scale-systematic column -> {detected_scale_col}")
-        else:
-            log("Pass-2: CSV scale-systematic column -> (none found)")
+        if "combination sys" in xs_col.lower():
+            die(
+                "The selected pass-2 cross-section column contains 'combination sys'. "
+                "This script must use a central cross-section column, not the combination-sys output column. "
+                f"Selected column was: {xs_col}"
+            )
         #endif
 
-        log(f"Pass-2: scale-systematic mode -> {scale_sys_mode}")
-
-        if scale_sys_mode in ("auto", "period-spread"):
-            missing_periods = [p for p in PASS2_PERIODS_10P6 if period_cols.get(p, "") == ""]
-
-            if missing_periods:
-                warn(
-                    "Pass-2: some period columns needed for period-spread scale systematic are missing: "
-                    + ", ".join(missing_periods)
-                )
-            else:
-                log("Pass-2: all four 10.6 GeV period columns found for period-spread scale systematic.")
-            #endif
-        #endif
-
+        log(f"Pass-2: central cross-section column -> {xs_col}")
         log(
             "Pass-2: left-panel uncertainty prescription -> "
-            "sqrt(stat^2 + (0.18 * cross_section)^2 + scale_sys^2)."
+            f"sqrt(stat^2 + (0.18 * xs)^2 + ({s_comb:.10g} * xs)^2)."
+        )
+        log(
+            "Pass-2: ratio-panel uncertainty contribution -> "
+            f"sqrt(stat^2 + ({s_comb:.10g} * xs)^2)."
         )
         log("Pass-2: reading rows.")
 
@@ -790,9 +966,6 @@ def load_pass2_csv(
         kept = 0
         skipped_invalid = 0
         skipped_bad_xs = 0
-        scale_from_csv = 0
-        scale_from_period_spread = 0
-        scale_zero_or_missing = 0
         total_rows = 0
 
         for row in reader:
@@ -806,70 +979,17 @@ def load_pass2_csv(
             key = make_bin_key(row, cols)
             phi = row_phi(row, cols)
 
-            xs, stat, ok_xs = parse_value_stat_tuple_cell(row.get(central_xs_col, ""))
+            tuple_value = parse_tuple_cell(row.get(xs_col, ""))
+            xs = tuple_value.value
+            stat = tuple_value.stat
 
-            if not ok_xs or not finite_positive(xs):
+            if not tuple_value.ok or not finite_positive(xs):
                 skipped_bad_xs += 1
                 continue
             #endif
 
-            scale_syst = 0.0
-            scale_syst_source = "none"
-
-            if scale_sys_mode == "none":
-                scale_syst = 0.0
-                scale_syst_source = "none"
-            elif scale_sys_mode == "csv":
-                if not detected_scale_col:
-                    die("Pass-2 scale-systematic mode is 'csv', but no scale-systematic column was found.")
-                #endif
-
-                scale_syst, ok_scale, scale_syst_source = parse_scale_systematic_cell(row.get(detected_scale_col, ""), xs)
-
-                if ok_scale:
-                    scale_from_csv += 1
-                else:
-                    scale_zero_or_missing += 1
-                #endif
-            elif scale_sys_mode == "period-spread":
-                scale_syst, ok_scale, scale_syst_source = compute_period_spread_scale_systematic(row, period_cols, xs)
-
-                if ok_scale:
-                    scale_from_period_spread += 1
-                else:
-                    scale_zero_or_missing += 1
-                #endif
-            elif scale_sys_mode == "auto":
-                ok_scale = False
-
-                if detected_scale_col:
-                    scale_syst, ok_scale, scale_syst_source = parse_scale_systematic_cell(row.get(detected_scale_col, ""), xs)
-
-                    if ok_scale:
-                        scale_from_csv += 1
-                    #endif
-                #endif
-
-                if not ok_scale:
-                    scale_syst, ok_scale, scale_syst_source = compute_period_spread_scale_systematic(row, period_cols, xs)
-
-                    if ok_scale:
-                        scale_from_period_spread += 1
-                    else:
-                        scale_zero_or_missing += 1
-                    #endif
-                #endif
-            else:
-                die(f"Unknown pass-2 scale systematic mode: {scale_sys_mode}")
-            #endif
-
-            if not math.isfinite(scale_syst) or scale_syst < 0.0:
-                scale_syst = 0.0
-                scale_syst_source = "bad_reset_to_zero"
-                scale_zero_or_missing += 1
-            #endif
-
-            err = pass2_left_panel_uncertainty(xs=xs, stat=stat, scale_syst=scale_syst)
+            scale_syst_abs = abs(s_comb * xs)
+            err = pass2_left_panel_uncertainty(xs=xs, stat=stat, s_comb=s_comb)
 
             point = DataPoint(
                 phi=phi,
@@ -878,8 +998,7 @@ def load_pass2_csv(
                 err_low=err,
                 err_high=err,
                 source="pass2",
-                scale_syst=scale_syst,
-                scale_syst_source=scale_syst_source,
+                scale_syst_abs=scale_syst_abs,
             )
 
             out.setdefault(key, []).append(point)
@@ -895,7 +1014,6 @@ def load_pass2_csv(
 
     log(f"Pass-2: finished reading in {format_seconds(dt)}.")
     log(f"Pass-2: total rows={total_rows}, kept={kept}, skipped invalid-bin={skipped_invalid}, skipped bad/nonpositive xs={skipped_bad_xs}.")
-    log(f"Pass-2: scale systematic counts -> csv={scale_from_csv}, period-spread={scale_from_period_spread}, zero/missing={scale_zero_or_missing}.")
     log(f"Pass-2: unique (xB,Q2,|t|) bins with data={len(out)}.")
 
     return out
@@ -932,7 +1050,14 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
         log(f"Pass-1: stat uncertainty column -> {stat_col}")
         log(f"Pass-1: syst up uncertainty column -> {syst_up_col}")
         log(f"Pass-1: syst down uncertainty column -> {syst_dn_col}")
-        log("Pass-1: left-panel uncertainty prescription -> sqrt(stat^2 + syst^2 + (0.31 * cross_section)^2).")
+        log(
+            "Pass-1: left-panel uncertainty prescription -> "
+            "sqrt(stat^2 + syst^2 + (0.31 * xs)^2)."
+        )
+        log(
+            "Pass-1: ratio-panel uncertainty contribution -> "
+            "sqrt(stat^2 + (0.31 * xs)^2)."
+        )
         log("Pass-1: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
@@ -980,8 +1105,7 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 err_low=err_low,
                 err_high=err_high,
                 source="pass1",
-                scale_syst=0.0,
-                scale_syst_source="pass1_not_used",
+                scale_syst_abs=0.0,
             )
 
             out.setdefault(key, []).append(point)
@@ -1244,7 +1368,7 @@ def find_nearest_pass1_point(phi: float, pass1_points: Sequence[DataPoint]) -> O
     return best_point
 
 
-def pass2_over_pass1_ratio_points(panel: PanelData) -> List[RatioPoint]:
+def pass2_over_pass1_ratio_points(panel: PanelData, pass2_s_comb: float) -> List[RatioPoint]:
     ratio_points: List[RatioPoint] = []
 
     for p2 in panel.pass2:
@@ -1260,7 +1384,7 @@ def pass2_over_pass1_ratio_points(panel: PanelData) -> List[RatioPoint]:
 
         ratio = p2.xs / p1.xs
 
-        p2_err = pass2_ratio_uncertainty(xs=p2.xs, stat=p2.stat, scale_syst=p2.scale_syst)
+        p2_err = pass2_ratio_uncertainty(xs=p2.xs, stat=p2.stat, s_comb=pass2_s_comb)
         p1_err = pass1_ratio_uncertainty(xs=p1.xs, stat=p1.stat)
 
         rel_p2 = p2_err / p2.xs
@@ -1319,12 +1443,21 @@ def ratio_axis_limits(ratio_sets: Sequence[Sequence[RatioPoint]]) -> Tuple[float
 # ---------------------------------------------------------------------------
 # Plotting.
 # ---------------------------------------------------------------------------
-def y_limits(pass2: Sequence[DataPoint], pass1: Sequence[DataPoint], curves: Optional[ModelCurves]) -> Tuple[float, float]:
+def y_limits(
+    pass2: Sequence[DataPoint],
+    pass1: Sequence[DataPoint],
+    curves: Optional[ModelCurves],
+    logy: bool,
+    log_y_min: float,
+) -> Tuple[float, float]:
     vals: List[float] = []
 
+    floor = log_y_min if logy and log_y_min > 0.0 else 1e-30
+
     for p in list(pass2) + list(pass1):
-        vals.append(max(1e-30, p.xs - p.err_low))
-        vals.append(max(1e-30, p.xs + p.err_high))
+        vals.append(max(floor, p.xs - p.err_low))
+        vals.append(max(floor, p.xs + p.err_high))
+        vals.append(max(floor, p.xs))
     #endfor
 
     if curves is not None:
@@ -1335,27 +1468,25 @@ def y_limits(pass2: Sequence[DataPoint], pass1: Sequence[DataPoint], curves: Opt
     vals = [v for v in vals if finite_positive(v)]
 
     if not vals:
-        return 1e-4, 1.0
+        return floor, 1.0
     #endif
 
     ymin = min(vals)
     ymax = max(vals)
 
-    if ymin <= 0.0 or not math.isfinite(ymin):
-        positive_vals = [v for v in vals if v > 0.0]
+    if logy:
+        ymin = max(log_y_min, ymin)
+    #endif
 
-        if positive_vals:
-            ymin = min(positive_vals)
-        else:
-            ymin = 1e-4
-        #endif
+    if ymin <= 0.0 or not math.isfinite(ymin):
+        ymin = floor
     #endif
 
     if ymax <= ymin:
         ymax = 10.0 * ymin
     #endif
 
-    return 0.55 * ymin, 1.75 * ymax
+    return ymin, 1.75 * ymax
 
 
 def draw_cross_section_axis(
@@ -1364,7 +1495,9 @@ def draw_cross_section_axis(
     curves: Optional[ModelCurves],
     pass2_label: str,
     pass1_label: str,
+    pass2_s_comb: float,
     logy: bool,
+    log_y_min: float,
     include_title: bool,
 ) -> None:
     if curves is not None:
@@ -1404,7 +1537,10 @@ def draw_cross_section_axis(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass2_label}: stat ⊕ 18% syst ⊕ bin-by-bin scale sys",
+            label=(
+                f"{pass2_label}: stat ⊕ 18% syst ⊕ "
+                f"{format_fraction_percent(pass2_s_comb)} comb sys"
+            ),
         )
     #endif
 
@@ -1425,7 +1561,7 @@ def draw_cross_section_axis(
     ax.set_xlim(0.0, 360.0)
     ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
 
-    ymin, ymax = y_limits(panel.pass2, panel.pass1, curves)
+    ymin, ymax = y_limits(panel.pass2, panel.pass1, curves, logy=logy, log_y_min=log_y_min)
     ax.set_ylim(ymin, ymax)
 
     if logy:
@@ -1436,8 +1572,8 @@ def draw_cross_section_axis(
     ax.legend(loc="best", fontsize=9, frameon=True)
 
 
-def draw_ratio_axis(ax, panel: PanelData) -> None:
-    p2_over_p1 = pass2_over_pass1_ratio_points(panel)
+def draw_ratio_axis(ax, panel: PanelData, pass2_s_comb: float) -> None:
+    p2_over_p1 = pass2_over_pass1_ratio_points(panel, pass2_s_comb=pass2_s_comb)
 
     if p2_over_p1:
         ax.errorbar(
@@ -1449,7 +1585,11 @@ def draw_ratio_axis(ax, panel: PanelData) -> None:
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label="pass-2 / pass-1: p2 stat ⊕ scale sys; p1 stat ⊕ 31% norm",
+            label=(
+                "pass-2 / pass-1: "
+                f"pass-2 stat ⊕ {format_fraction_percent(pass2_s_comb)} comb sys; "
+                "pass-1 stat ⊕ 31% norm"
+            ),
         )
     #endif
 
@@ -1464,7 +1604,7 @@ def draw_ratio_axis(ax, panel: PanelData) -> None:
     ax.set_ylabel("pass-2 / pass-1")
     ax.set_title("Ratio")
     ax.grid(True, which="major", alpha=0.25)
-    ax.legend(loc="best", fontsize=9, frameon=True)
+    ax.legend(loc="best", fontsize=8, frameon=True)
 
 
 def draw_panel(
@@ -1473,7 +1613,9 @@ def draw_panel(
     output_path: Path,
     pass2_label: str,
     pass1_label: str,
+    pass2_s_comb: float,
     logy: bool,
+    log_y_min: float,
     two_panel: bool,
 ) -> None:
     if two_panel:
@@ -1494,7 +1636,9 @@ def draw_panel(
             curves=curves,
             pass2_label=pass2_label,
             pass1_label=pass1_label,
+            pass2_s_comb=pass2_s_comb,
             logy=logy,
+            log_y_min=log_y_min,
             include_title=False,
         )
 
@@ -1503,6 +1647,7 @@ def draw_panel(
         draw_ratio_axis(
             ax=axes[1],
             panel=panel,
+            pass2_s_comb=pass2_s_comb,
         )
 
         fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
@@ -1515,7 +1660,9 @@ def draw_panel(
             curves=curves,
             pass2_label=pass2_label,
             pass1_label=pass1_label,
+            pass2_s_comb=pass2_s_comb,
             logy=logy,
+            log_y_min=log_y_min,
             include_title=True,
         )
 
@@ -1576,11 +1723,13 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             output_path=output_path,
             pass2_label=job.pass2_label,
             pass1_label=job.pass1_label,
+            pass2_s_comb=job.pass2_s_comb,
             logy=job.logy,
+            log_y_min=job.log_y_min,
             two_panel=job.two_panel,
         )
 
-        n_pass2_pass1_ratio = len(pass2_over_pass1_ratio_points(job.panel))
+        n_pass2_pass1_ratio = len(pass2_over_pass1_ratio_points(job.panel, pass2_s_comb=job.pass2_s_comb))
 
         manifest_entry: Dict[str, object] = {
             "file": job.filename,
@@ -1591,8 +1740,11 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             "n_pass1_points": len(job.panel.pass1),
             "has_models": curves is not None,
             "two_panel": job.two_panel,
+            "pass2_s_comb_fraction": job.pass2_s_comb,
+            "pass2_s_comb_percent": 100.0 * job.pass2_s_comb,
             "n_ratio_pass2_over_pass1": n_pass2_pass1_ratio,
-            "ratio_uncertainty": "pass2 stat+bin-by-bin scale sys; pass1 stat+31% norm",
+            "left_pass2_uncertainty": "stat + 18% estimated syst + internally computed s_comb scale",
+            "ratio_uncertainty": "pass2 stat+s_comb scale; pass1 stat+31% norm",
             "model_status": model_status,
         }
 
@@ -1769,7 +1921,9 @@ def build_jobs(
     output_dir: Path,
     pass2_label: str,
     pass1_label: str,
+    pass2_s_comb: float,
     logy: bool,
+    log_y_min: float,
     two_panel: bool,
     skip_models: bool,
     model_cfg: ModelConfig,
@@ -1810,7 +1964,9 @@ def build_jobs(
                 filename=filename,
                 pass2_label=pass2_label,
                 pass1_label=pass1_label,
+                pass2_s_comb=pass2_s_comb,
                 logy=logy,
+                log_y_min=log_y_min,
                 two_panel=two_panel,
                 skip_models=skip_models,
                 model_cfg=model_cfg,
@@ -1841,20 +1997,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("pass2_csv", type=Path, help="Pass-2 CSV. This must be the first positional input.")
     parser.add_argument("pass1_csv", type=Path, help="Pass-1 / Lee CSV. This must be the second positional input.")
     parser.add_argument("--output-dir", type=Path, default=Path("output/pass2_vs_pass1_model_comparison"))
-    parser.add_argument("--pass2-xs-column", default=None, help="Override the pass-2 CENTRAL cross-section column name.")
-    parser.add_argument("--pass2-scale-sys-column", default=None, help="Override the pass-2 scale-systematic column name.")
-    parser.add_argument(
-        "--pass2-scale-sys-mode",
-        choices=["auto", "csv", "period-spread", "none"],
-        default="auto",
-        help=(
-            "How to get pass-2 bin-by-bin scale systematic. "
-            "auto: use CSV scale column if present, otherwise period-spread. "
-            "csv: require scale-systematic column. "
-            "period-spread: compute from Fa18/Sp18 Inb/Out period columns. "
-            "none: no pass-2 scale systematic."
-        ),
-    )
+    parser.add_argument("--pass2-xs-column", default=None, help="Override the pass-2 central cross-section column name.")
     parser.add_argument("--pass2-label", default="CLAS12 pass-2")
     parser.add_argument("--pass1-label", default="CLAS12 pass-1")
     parser.add_argument("--e-beam", type=float, default=10.604, help="Beam energy used for BH/KM15 curves (GeV).")
@@ -1880,6 +2023,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-missing-models", action="store_true", help="Still make data plots if BH/KM15 commands fail.")
     parser.add_argument("--skip-models", action="store_true", help="Do not compute or draw BH/KM15 curves.")
     parser.add_argument("--linear-y", action="store_true", help="Use linear y scale instead of the default log y scale.")
+    parser.add_argument(
+        "--log-y-min",
+        type=float,
+        default=1.0e-3,
+        help="Visible lower y-limit floor for log-y plots. Default is 1e-3.",
+    )
     parser.add_argument("--two-panel", action="store_true", help="Make a 1x2 figure: cross sections on left, pass-2/pass-1 on right.")
     parser.add_argument("--print-columns", action="store_true", help="Print detected CSV columns before plotting.")
     parser.add_argument(
@@ -1928,11 +2077,12 @@ def main() -> int:
     log(f"  no_cache               = {args.no_cache}")
     log(f"  allow_missing_models   = {args.allow_missing_models}")
     log(f"  linear_y               = {args.linear_y}")
+    log(f"  log_y_min              = {args.log_y_min:g}")
     log(f"  two_panel              = {args.two_panel}")
     log(f"  quiet_workers          = {args.quiet_workers}")
     log(f"  progress_every         = {args.progress_every}")
-    log(f"  pass2 scale sys mode   = {args.pass2_scale_sys_mode}")
-    log(f"  pass2 left-panel syst  = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
+    log(f"  pass2 estimated syst   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
+    log("  pass2 combination sys  = internally computed 10.6 GeV unpol s_comb from period columns")
     log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}%")
     log(f"  pass1 phi offset       = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
     log(f"  pass2 phi offset       = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
@@ -1949,12 +2099,30 @@ def main() -> int:
         die(f"Pass-1 CSV does not exist: {args.pass1_csv}")
     #endif
 
+    if args.log_y_min <= 0.0:
+        warn(f"Requested --log-y-min {args.log_y_min:g} is not positive; using 1e-3.")
+        args.log_y_min = 1.0e-3
+    #endif
+
     log("Output setup: creating output directory if needed.")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     log(f"Output setup: output directory ready: {args.output_dir.resolve()}")
 
     cache_path = args.model_cache or (args.output_dir / "model_curve_cache.json")
     log(f"Output setup: model cache path: {cache_path}")
+
+    log("Input setup: computing pass-2 internal s_comb from period columns.")
+    pass2_combination = compute_pass2_10p6_unpol_s_comb(
+        path=args.pass2_csv,
+        print_columns=args.print_columns,
+    )
+    write_pass2_s_comb_summary(args.output_dir, pass2_combination)
+    pass2_s_comb = pass2_combination.s_comb
+
+    log(
+        "Input setup: using pass-2 s_comb scale fraction "
+        f"{pass2_s_comb:.10g} ({100.0 * pass2_s_comb:.6g}%)."
+    )
 
     args.dvcsgen_dir = validate_dvcsgen_dir(args.dvcsgen_dir)
     args.km15_cli = resolve_km15_cli(args.km15_cli)
@@ -1964,9 +2132,8 @@ def main() -> int:
     pass2 = load_pass2_csv(
         path=args.pass2_csv,
         xs_column=args.pass2_xs_column,
-        scale_sys_column=args.pass2_scale_sys_column,
-        scale_sys_mode=args.pass2_scale_sys_mode,
-        print_columns=args.print_columns,
+        s_comb=pass2_s_comb,
+        print_columns=False,
     )
 
     log("Input setup: loading pass-1 data.")
@@ -2020,7 +2187,9 @@ def main() -> int:
         output_dir=args.output_dir,
         pass2_label=args.pass2_label,
         pass1_label=args.pass1_label,
+        pass2_s_comb=pass2_s_comb,
         logy=not args.linear_y,
+        log_y_min=args.log_y_min,
         two_panel=args.two_panel,
         skip_models=args.skip_models,
         model_cfg=model_cfg,
@@ -2193,11 +2362,14 @@ def main() -> int:
     log(f"  workers used              = {n_workers}")
     log(f"  two-panel mode            = {args.two_panel}")
     log(f"  model phi points          = {model_cfg.phi_dense}")
-    log(f"  pass2 scale sys mode      = {args.pass2_scale_sys_mode}")
-    log("  left pass2 uncertainty    = stat ⊕ 18% syst ⊕ bin-by-bin scale sys")
+    log(f"  pass2 s_obs               = {pass2_combination.s_obs:.10g}")
+    log(f"  pass2 s_stat              = {pass2_combination.s_stat_exp:.10g}")
+    log(f"  pass2 s_comb              = {pass2_combination.s_comb:.10g} ({100.0 * pass2_combination.s_comb:.6g}%)")
+    log("  left pass2 uncertainty    = stat ⊕ 18% estimated syst ⊕ s_comb scale")
     log("  left pass1 uncertainty    = stat ⊕ syst ⊕ 31% norm")
     log("  right panel ratio         = pass-2 / pass-1 only")
-    log("  right ratio uncertainty   = pass2 stat ⊕ scale sys; pass1 stat ⊕ 31% norm")
+    log("  right ratio uncertainty   = pass2 stat ⊕ s_comb scale; pass1 stat ⊕ 31% norm")
+    log(f"  log-y visible floor       = {args.log_y_min:g}")
     log(f"  cache entries after run   = {len(cache) if not args.skip_models else 0}")
     log(f"  total elapsed             = {format_seconds(total_dt)}")
     log("Done.")
