@@ -18,6 +18,7 @@ Optional two-panel mode:
 
 Implemented uncertainty prescription:
   * Positional input order is pass-2 CSV first, pass-1 CSV second.
+
   * Pass-2 central values are read from the 10.6 GeV unpolarized normalized
     cross-section column:
 
@@ -27,21 +28,37 @@ Implemented uncertainty prescription:
 
         normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys
 
-    as a cross-section input. That column is treated as an output/fill column
-    from the analysis chain, not as a central-value source for this comparison.
+    as a cross-section input. That column is treated as an analysis-chain
+    output/fill column, not as a central-value source for this comparison.
 
-  * The pass-2 combination scale systematic is computed internally as s_comb
-    using the same period-ratio/stat-weighted logic as combination_systematics.cpp
-    for the "10.6 GeV unpol" case:
+  * Pass-2 scale systematic is computed point-by-point from the four 10.6 GeV
+    unpolarized period columns in the same row:
 
         Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out
+
+    For each row:
+      1. Form a stat-weighted reference from the valid period tuples.
+      2. Form period/reference ratios for all valid period tuples.
+      3. Compute
+
+             s_obs(row)  = RMS_i(r_i - 1)
+             s_stat(row) = RMS_i(stat_i / ref)
+             s_comb(row) = sqrt(max(0, s_obs(row)^2 - s_stat(row)^2))
+
+      4. The pass-2 scale box for that point is:
+
+             s_comb(row) * sigma_pass2(row)
+
+    A row must have at least two valid period entries to get a nonzero local
+    scale systematic. Rows with fewer than two valid period entries get local
+    s_comb = 0.
 
   * Cross-section panel:
       pass-2 vertical error bars:
           stat ⊕ 18% estimated point-to-point/systematic
 
       pass-2 external scale boxes:
-          s_comb * cross_section
+          local point-by-point s_comb(row) * cross_section
 
       pass-1 vertical error bars:
           stat ⊕ provided Lee systematic
@@ -54,7 +71,8 @@ Implemented uncertainty prescription:
           propagated statistical uncertainty only
 
       pass-2/pass-1 external scale boxes:
-          propagated scale uncertainty from pass-2 s_comb and pass-1 31% norm
+          propagated scale uncertainty from local pass-2 s_comb(row)
+          and pass-1 31% normalization
 
       The pass-2 18% estimated point-to-point systematic and the pass-1 provided
       systematic columns are intentionally not included in the ratio-panel error
@@ -73,7 +91,7 @@ Implemented uncertainty prescription:
       This diagnostic deliberately does not use:
           - pass-2 estimated 18% point-to-point systematic,
           - pass-1 provided systematic,
-          - pass-2 s_comb scale systematic,
+          - pass-2 local scale systematic,
           - pass-1 31% normalization uncertainty.
 
   * One PNG is saved for every unique (xB, Q2, |t|) bin found in either CSV.
@@ -167,7 +185,6 @@ PASS1_SYST_DN_COL = "cross sections, ep->epg, exp, syst. unc. (down)"
 
 # ---------------------------------------------------------------------------
 # Pass-2 central-value column candidates.
-#
 # The combination-sys column is deliberately excluded from this list.
 # ---------------------------------------------------------------------------
 PASS2_CENTRAL_XS_CANDIDATES = [
@@ -210,31 +227,28 @@ class TupleValue:
 
 
 @dataclass
-class PeriodRatioAccumulator:
-    sum_w: float = 0.0
-    sum_wr: float = 0.0
-    n: int = 0
-
-
-@dataclass
-class PeriodRatioSummary:
-    period: str = ""
-    n: int = 0
-    mean_ratio: float = 0.0
-    mean_ratio_stat: float = 0.0
-
-
-@dataclass
-class CombinationSystematicResult:
-    label: str = "10.6 GeV unpol"
-    central_value_mode: str = "stat_weighted"
-    valid_bins: int = 0
-    ratio_points: int = 0
+class LocalScaleResult:
+    n_valid_periods: int = 0
+    ref_value: float = 0.0
+    ref_stat: float = 0.0
     s_obs: float = 0.0
     s_stat_exp: float = 0.0
     s_comb: float = 0.0
+    min_ratio: float = 0.0
+    max_ratio: float = 0.0
     half_width: float = 0.0
-    period_summaries: List[PeriodRatioSummary] = field(default_factory=list)
+
+
+@dataclass
+class PointScaleSummary:
+    n_rows: int = 0
+    n_rows_with_central_value: int = 0
+    n_rows_with_local_scale: int = 0
+    n_rows_with_less_than_two_periods: int = 0
+    mean_s_comb: float = 0.0
+    rms_s_comb: float = 0.0
+    median_s_comb: float = 0.0
+    max_s_comb: float = 0.0
 
 
 @dataclass
@@ -246,6 +260,11 @@ class DataPoint:
     err_high: float
     source: str
     scale_syst_abs: float = 0.0
+    scale_syst_frac: float = 0.0
+    local_scale_n_periods: int = 0
+    local_scale_s_obs: float = 0.0
+    local_scale_s_stat: float = 0.0
+    local_scale_half_width: float = 0.0
 
 
 @dataclass
@@ -269,6 +288,7 @@ class RatioPoint:
     stat_err_low: float
     stat_err_high: float
     scale_err: float
+    pass2_scale_frac: float
     label: str
 
 
@@ -326,7 +346,6 @@ class WorkerJob:
     filename: str
     pass2_label: str
     pass1_label: str
-    pass2_s_comb: float
     logy: bool
     log_y_min: float
     two_panel: bool
@@ -502,10 +521,6 @@ def finite_positive(value: float) -> bool:
     return math.isfinite(value) and value > 0.0
 
 
-def finite_nonzero(value: float) -> bool:
-    return math.isfinite(value) and abs(value) > 0.0
-
-
 def round_key_value(value: float, ndigits: int = 6) -> float:
     return round(float(value), ndigits)
 
@@ -546,12 +561,7 @@ def panel_filename(key: BinKey, index: int) -> str:
 def csv_field_escape(s: str) -> str:
     text = str(s)
 
-    need_quote = (
-        "," in text or
-        '"' in text or
-        "\n" in text or
-        "\r" in text
-    )
+    need_quote = "," in text or '"' in text or "\n" in text or "\r" in text
 
     if not need_quote:
         return text
@@ -586,6 +596,23 @@ def rms(values: Sequence[float]) -> float:
     #endif
 
     return math.sqrt(sum(v * v for v in vals) / float(len(vals)))
+
+
+def median(values: Sequence[float]) -> float:
+    vals = sorted(v for v in values if math.isfinite(v))
+
+    if not vals:
+        return 0.0
+    #endif
+
+    n = len(vals)
+    mid = n // 2
+
+    if n % 2 == 1:
+        return vals[mid]
+    #endif
+
+    return 0.5 * (vals[mid - 1] + vals[mid])
 
 
 # ---------------------------------------------------------------------------
@@ -699,12 +726,7 @@ def valid_values_only(values: Sequence[TupleValue]) -> List[TupleValue]:
     out: List[TupleValue] = []
 
     for v in values:
-        if (
-            v.ok and
-            math.isfinite(v.value) and
-            math.isfinite(v.stat) and
-            v.stat > 0.0
-        ):
+        if v.ok and math.isfinite(v.value) and math.isfinite(v.stat) and v.stat > 0.0:
             out.append(v)
         #endif
     #endfor
@@ -743,222 +765,140 @@ def combine_stat_weighted(values: Sequence[TupleValue]) -> TupleValue:
 
 
 # ---------------------------------------------------------------------------
-# Pass-2 s_comb calculation matching combination_systematics.cpp.
+# Point-by-point pass-2 scale systematic.
 # ---------------------------------------------------------------------------
-def compute_pass2_10p6_unpol_s_comb(path: Path, print_columns: bool = False) -> CombinationSystematicResult:
-    t0 = time.time()
+def compute_local_pass2_scale(period_values: Sequence[TupleValue]) -> LocalScaleResult:
+    valid = valid_values_only(period_values)
 
-    log("Pass-2 combination systematic: computing 10.6 GeV unpol s_comb internally.")
-    log(f"Pass-2 combination systematic: opening CSV: {path}")
+    out = LocalScaleResult(n_valid_periods=len(valid))
 
-    with path.open("r", newline="") as handle:
-        reader = csv.DictReader(handle)
+    if len(valid) < 2:
+        return out
+    #endif
 
-        if reader.fieldnames is None:
-            die(f"Pass-2 CSV appears empty: {path}")
-        #endif
+    ref = combine_stat_weighted(valid)
 
-        fieldnames = reader.fieldnames
+    if not ref.ok or not math.isfinite(ref.value) or abs(ref.value) <= 0.0:
+        return out
+    #endif
 
-        if print_columns:
-            log("Pass-2 columns:\n" + "\n".join(f"  [{i}] {name}" for i, name in enumerate(fieldnames)))
-        #endif
+    ratios: List[float] = []
+    ratio_stats: List[float] = []
 
-        required = [pass2_period_cross_section_column(period) for period in PASS2_PERIODS_10P6_UNPOL]
-        require_columns(fieldnames, required, "pass-2 10.6 GeV unpol s_comb calculation")
+    for v in valid:
+        ratio = v.value / ref.value
+        ratio_stat = abs(v.stat / ref.value)
 
-        period_columns = {
-            period: find_column(fieldnames, [pass2_period_cross_section_column(period)])
-            for period in PASS2_PERIODS_10P6_UNPOL
-        }
-
-        for period in PASS2_PERIODS_10P6_UNPOL:
-            log(f"Pass-2 combination systematic: {period:10s} -> {period_columns[period]}")
-        #endfor
-
-        result = CombinationSystematicResult()
-        acc_by_period: Dict[str, PeriodRatioAccumulator] = {
-            period: PeriodRatioAccumulator()
-            for period in PASS2_PERIODS_10P6_UNPOL
-        }
-
-        n_rows = 0
-        n_rows_no_ref = 0
-
-        for row in reader:
-            n_rows += 1
-
-            input_values: List[TupleValue] = []
-
-            for period in PASS2_PERIODS_10P6_UNPOL:
-                col = period_columns[period]
-                input_values.append(parse_tuple_cell(row.get(col, "")))
-            #endfor
-
-            ref = combine_stat_weighted(input_values)
-
-            if not ref.ok or not math.isfinite(ref.value) or abs(ref.value) <= 0.0:
-                n_rows_no_ref += 1
-                continue
-            #endif
-
-            n_valid_in_bin = 0
-
-            for i_period, period in enumerate(PASS2_PERIODS_10P6_UNPOL):
-                v = input_values[i_period]
-
-                if not v.ok or not math.isfinite(v.value) or not math.isfinite(v.stat) or v.stat <= 0.0:
-                    continue
-                #endif
-
-                ratio = v.value / ref.value
-                ratio_stat = abs(v.stat / ref.value)
-
-                if math.isfinite(ratio) and math.isfinite(ratio_stat) and ratio_stat > 0.0:
-                    w = 1.0 / (ratio_stat * ratio_stat)
-
-                    acc = acc_by_period[period]
-                    acc.sum_w += w
-                    acc.sum_wr += w * ratio
-                    acc.n += 1
-
-                    result.ratio_points += 1
-                    n_valid_in_bin += 1
-                #endif
-            #endfor
-
-            if n_valid_in_bin >= 2:
-                result.valid_bins += 1
-            #endif
-        #endfor
-    #endwith
-
-    sum_obs2 = 0.0
-    sum_stat2 = 0.0
-    n_period = 0
-
-    min_ratio = float("inf")
-    max_ratio = -float("inf")
-
-    for period in PASS2_PERIODS_10P6_UNPOL:
-        acc = acc_by_period[period]
-
-        if acc.sum_w > 0.0 and acc.n > 0:
-            mean_ratio = acc.sum_wr / acc.sum_w
-            mean_ratio_stat = 1.0 / math.sqrt(acc.sum_w)
-
-            summary = PeriodRatioSummary(
-                period=period,
-                n=acc.n,
-                mean_ratio=mean_ratio,
-                mean_ratio_stat=mean_ratio_stat,
-            )
-
-            if (
-                math.isfinite(mean_ratio) and
-                math.isfinite(mean_ratio_stat) and
-                mean_ratio_stat > 0.0
-            ):
-                residual = mean_ratio - 1.0
-                sum_obs2 += residual * residual
-                sum_stat2 += mean_ratio_stat * mean_ratio_stat
-                n_period += 1
-
-                min_ratio = min(min_ratio, mean_ratio)
-                max_ratio = max(max_ratio, mean_ratio)
-            #endif
-
-            result.period_summaries.append(summary)
+        if math.isfinite(ratio) and math.isfinite(ratio_stat) and ratio_stat > 0.0:
+            ratios.append(ratio)
+            ratio_stats.append(ratio_stat)
         #endif
     #endfor
 
-    if n_period > 0:
-        result.s_obs = math.sqrt(max(0.0, sum_obs2 / float(n_period)))
-        result.s_stat_exp = math.sqrt(max(0.0, sum_stat2 / float(n_period)))
-        result.s_comb = math.sqrt(max(0.0, result.s_obs * result.s_obs - result.s_stat_exp * result.s_stat_exp))
+    if len(ratios) < 2:
+        return out
     #endif
 
-    if math.isfinite(min_ratio) and math.isfinite(max_ratio) and max_ratio >= min_ratio:
-        result.half_width = 0.5 * (max_ratio - min_ratio)
-    #endif
+    residuals = [r - 1.0 for r in ratios]
+    s_obs = rms(residuals)
+    s_stat_exp = rms(ratio_stats)
+    s_comb = math.sqrt(max(0.0, s_obs * s_obs - s_stat_exp * s_stat_exp))
 
-    dt = time.time() - t0
+    min_ratio = min(ratios)
+    max_ratio = max(ratios)
 
-    log(f"Pass-2 combination systematic: finished in {format_seconds(dt)}.")
-    log(f"Pass-2 combination systematic: rows scanned={n_rows}, rows without valid stat-weighted ref={n_rows_no_ref}.")
-    log(f"Pass-2 combination systematic: valid bins={result.valid_bins}, ratio points={result.ratio_points}.")
-    log(
-        "Pass-2 combination systematic: "
-        f"s_obs={result.s_obs:.10g}, "
-        f"s_stat={result.s_stat_exp:.10g}, "
-        f"s_comb={result.s_comb:.10g} "
-        f"({100.0 * result.s_comb:.4g}%)."
+    out.n_valid_periods = len(ratios)
+    out.ref_value = ref.value
+    out.ref_stat = ref.stat
+    out.s_obs = s_obs
+    out.s_stat_exp = s_stat_exp
+    out.s_comb = s_comb
+    out.min_ratio = min_ratio
+    out.max_ratio = max_ratio
+    out.half_width = 0.5 * (max_ratio - min_ratio)
+
+    return out
+
+
+def summarize_local_scale_results(local_scales: Sequence[float], n_less_than_two: int, n_rows: int, n_central: int) -> PointScaleSummary:
+    valid_nonzero = [v for v in local_scales if math.isfinite(v) and v > 0.0]
+
+    return PointScaleSummary(
+        n_rows=n_rows,
+        n_rows_with_central_value=n_central,
+        n_rows_with_local_scale=len(valid_nonzero),
+        n_rows_with_less_than_two_periods=n_less_than_two,
+        mean_s_comb=mean(valid_nonzero),
+        rms_s_comb=rms(valid_nonzero),
+        median_s_comb=median(valid_nonzero),
+        max_s_comb=max(valid_nonzero) if valid_nonzero else 0.0,
     )
 
-    for summary in result.period_summaries:
-        log(
-            "Pass-2 combination systematic: "
-            f"period mean ratio {summary.period:10s} = "
-            f"{summary.mean_ratio:.10g} +/- {summary.mean_ratio_stat:.10g}, "
-            f"n={summary.n}"
-        )
-    #endfor
 
-    if result.s_comb <= 0.0:
-        warn("Computed pass-2 s_comb is zero or non-positive. Pass-2 external scale boxes will have zero height.")
-    #endif
-
-    return result
-
-
-def write_pass2_s_comb_summary(output_dir: Path, result: CombinationSystematicResult) -> None:
-    path = output_dir / "pass2_internal_s_comb_summary.csv"
+def write_pass2_local_scale_summary(output_dir: Path, summary: PointScaleSummary) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "pass2_point_by_point_scale_summary.csv"
 
-    log(f"Pass-2 combination systematic: writing summary CSV to {path}")
+    log(f"Pass-2 local scale systematic: writing summary CSV to {path}")
 
     with path.open("w", newline="") as handle:
         handle.write(
-            "case,central value mode,valid bins,ratio points,"
-            "s_obs_period,s_comb,s_comb percent,half max width,"
-            "half max width percent,s_stat_period,period,period ratio points,"
-            "period mean ratio,period mean ratio stat\n"
+            "rows,rows with central value,rows with nonzero local scale,"
+            "rows with fewer than two valid periods,mean s_comb,rms s_comb,"
+            "median s_comb,max s_comb,mean percent,rms percent,median percent,max percent\n"
+        )
+        handle.write(
+            f"{summary.n_rows},"
+            f"{summary.n_rows_with_central_value},"
+            f"{summary.n_rows_with_local_scale},"
+            f"{summary.n_rows_with_less_than_two_periods},"
+            f"{format_float(summary.mean_s_comb)},"
+            f"{format_float(summary.rms_s_comb)},"
+            f"{format_float(summary.median_s_comb)},"
+            f"{format_float(summary.max_s_comb)},"
+            f"{format_float(100.0 * summary.mean_s_comb)},"
+            f"{format_float(100.0 * summary.rms_s_comb)},"
+            f"{format_float(100.0 * summary.median_s_comb)},"
+            f"{format_float(100.0 * summary.max_s_comb)}\n"
+        )
+    #endwith
+
+
+def write_pass2_local_scale_points_csv(output_dir: Path, points: Sequence[Tuple[BinKey, float, LocalScaleResult, float]]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "pass2_point_by_point_scale_points.csv"
+
+    log(f"Pass-2 local scale systematic: writing point CSV to {path}")
+
+    with path.open("w", newline="") as handle:
+        handle.write(
+            "xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phi,"
+            "pass2_xs,n_valid_periods,ref_value,ref_stat,"
+            "s_obs,s_stat,s_comb,s_comb_percent,min_ratio,max_ratio,half_width\n"
         )
 
-        if not result.period_summaries:
+        for key, phi, local, xs in points:
             handle.write(
-                f"{csv_field_escape(result.label)},"
-                f"{csv_field_escape(result.central_value_mode)},"
-                f"{result.valid_bins},"
-                f"{result.ratio_points},"
-                f"{format_float(result.s_obs)},"
-                f"{format_float(result.s_comb)},"
-                f"{format_float(100.0 * result.s_comb)},"
-                f"{format_float(result.half_width)},"
-                f"{format_float(100.0 * result.half_width)},"
-                f"{format_float(result.s_stat_exp)},"
-                ",,,\n"
+                f"{format_float(key.xb_min)},"
+                f"{format_float(key.xb_max)},"
+                f"{format_float(key.q2_min)},"
+                f"{format_float(key.q2_max)},"
+                f"{format_float(key.t_min)},"
+                f"{format_float(key.t_max)},"
+                f"{format_float(phi)},"
+                f"{format_float(xs)},"
+                f"{local.n_valid_periods},"
+                f"{format_float(local.ref_value)},"
+                f"{format_float(local.ref_stat)},"
+                f"{format_float(local.s_obs)},"
+                f"{format_float(local.s_stat_exp)},"
+                f"{format_float(local.s_comb)},"
+                f"{format_float(100.0 * local.s_comb)},"
+                f"{format_float(local.min_ratio)},"
+                f"{format_float(local.max_ratio)},"
+                f"{format_float(local.half_width)}\n"
             )
-        else:
-            for p in result.period_summaries:
-                handle.write(
-                    f"{csv_field_escape(result.label)},"
-                    f"{csv_field_escape(result.central_value_mode)},"
-                    f"{result.valid_bins},"
-                    f"{result.ratio_points},"
-                    f"{format_float(result.s_obs)},"
-                    f"{format_float(result.s_comb)},"
-                    f"{format_float(100.0 * result.s_comb)},"
-                    f"{format_float(result.half_width)},"
-                    f"{format_float(100.0 * result.half_width)},"
-                    f"{format_float(result.s_stat_exp)},"
-                    f"{csv_field_escape(p.period)},"
-                    f"{p.n},"
-                    f"{format_float(p.mean_ratio)},"
-                    f"{format_float(p.mean_ratio_stat)}\n"
-                )
-            #endfor
-        #endif
+        #endfor
     #endwith
 
 
@@ -969,10 +909,6 @@ def pass2_cross_section_point_uncertainty(xs: float, stat: float) -> float:
     estimated_syst = PASS2_ESTIMATED_SYSTEMATIC_FRACTION * xs
 
     return math.sqrt(stat * stat + estimated_syst * estimated_syst)
-
-
-def pass2_cross_section_scale_uncertainty(xs: float, s_comb: float) -> float:
-    return abs(s_comb * xs)
 
 
 def pass1_cross_section_point_uncertainty(xs: float, stat: float, syst: float) -> float:
@@ -999,8 +935,11 @@ def pass1_ratio_stat_uncertainty(xs: float, stat: float) -> float:
     return abs(stat)
 
 
-def ratio_scale_uncertainty(ratio: float, pass2_s_comb: float) -> float:
-    rel = math.sqrt(pass2_s_comb * pass2_s_comb + PASS1_NORMALIZATION_FRACTION * PASS1_NORMALIZATION_FRACTION)
+def ratio_scale_uncertainty(ratio: float, pass2_local_scale_frac: float) -> float:
+    rel = math.sqrt(
+        pass2_local_scale_frac * pass2_local_scale_frac +
+        PASS1_NORMALIZATION_FRACTION * PASS1_NORMALIZATION_FRACTION
+    )
 
     return abs(ratio * rel)
 
@@ -1011,9 +950,9 @@ def ratio_scale_uncertainty(ratio: float, pass2_s_comb: float) -> float:
 def load_pass2_csv(
     path: Path,
     xs_column: Optional[str],
-    s_comb: float,
+    output_dir: Path,
     print_columns: bool = False,
-) -> Dict[BinKey, List[DataPoint]]:
+) -> Tuple[Dict[BinKey, List[DataPoint]], PointScaleSummary]:
     t0 = time.time()
 
     log(f"Pass-2: opening CSV: {path}")
@@ -1044,22 +983,39 @@ def load_pass2_csv(
             )
         #endif
 
+        required_period_cols = [pass2_period_cross_section_column(period) for period in PASS2_PERIODS_10P6_UNPOL]
+        require_columns(fieldnames, required_period_cols, "pass-2 point-by-point local scale systematic")
+
+        period_cols = {
+            period: find_column(fieldnames, [pass2_period_cross_section_column(period)])
+            for period in PASS2_PERIODS_10P6_UNPOL
+        }
+
         log(f"Pass-2: central cross-section column -> {xs_col}")
+        for period in PASS2_PERIODS_10P6_UNPOL:
+            log(f"Pass-2: local scale input {period:10s} -> {period_cols[period]}")
+        #endfor
+
         log(
             "Pass-2: cross-section vertical error bars -> "
             "sqrt(stat^2 + (0.18 * xs)^2)."
         )
         log(
             "Pass-2: cross-section external scale boxes -> "
-            f"{s_comb:.10g} * xs."
+            "local point-by-point s_comb(row) * xs."
         )
         log("Pass-2: reading rows.")
 
         out: Dict[BinKey, List[DataPoint]] = {}
+        local_scale_points: List[Tuple[BinKey, float, LocalScaleResult, float]] = []
+        local_scale_values: List[float] = []
+
         kept = 0
         skipped_invalid = 0
         skipped_bad_xs = 0
         total_rows = 0
+        n_less_than_two = 0
+        n_central = 0
 
         for row in reader:
             total_rows += 1
@@ -1073,15 +1029,29 @@ def load_pass2_csv(
             phi = row_phi(row, cols)
 
             tuple_value = parse_tuple_cell(row.get(xs_col, ""))
-            xs = tuple_value.value
-            stat = tuple_value.stat
 
-            if not tuple_value.ok or not finite_positive(xs):
+            if not tuple_value.ok or not finite_positive(tuple_value.value):
                 skipped_bad_xs += 1
                 continue
             #endif
 
-            scale_syst_abs = pass2_cross_section_scale_uncertainty(xs=xs, s_comb=s_comb)
+            n_central += 1
+
+            period_values = [
+                parse_tuple_cell(row.get(period_cols[period], ""))
+                for period in PASS2_PERIODS_10P6_UNPOL
+            ]
+
+            local = compute_local_pass2_scale(period_values)
+
+            if local.n_valid_periods < 2:
+                n_less_than_two += 1
+            #endif
+
+            xs = tuple_value.value
+            stat = tuple_value.stat
+            local_scale_frac = local.s_comb
+            scale_syst_abs = abs(local_scale_frac * xs)
             point_err = pass2_cross_section_point_uncertainty(xs=xs, stat=stat)
 
             point = DataPoint(
@@ -1092,9 +1062,16 @@ def load_pass2_csv(
                 err_high=point_err,
                 source="pass2",
                 scale_syst_abs=scale_syst_abs,
+                scale_syst_frac=local_scale_frac,
+                local_scale_n_periods=local.n_valid_periods,
+                local_scale_s_obs=local.s_obs,
+                local_scale_s_stat=local.s_stat_exp,
+                local_scale_half_width=local.half_width,
             )
 
             out.setdefault(key, []).append(point)
+            local_scale_points.append((key, phi, local, xs))
+            local_scale_values.append(local_scale_frac)
             kept += 1
         #endfor
     #endwith
@@ -1103,13 +1080,31 @@ def load_pass2_csv(
         points.sort(key=lambda p: p.phi)
     #endfor
 
+    summary = summarize_local_scale_results(
+        local_scales=local_scale_values,
+        n_less_than_two=n_less_than_two,
+        n_rows=total_rows,
+        n_central=n_central,
+    )
+
+    write_pass2_local_scale_points_csv(output_dir, local_scale_points)
+    write_pass2_local_scale_summary(output_dir, summary)
+
     dt = time.time() - t0
 
     log(f"Pass-2: finished reading in {format_seconds(dt)}.")
     log(f"Pass-2: total rows={total_rows}, kept={kept}, skipped invalid-bin={skipped_invalid}, skipped bad/nonpositive xs={skipped_bad_xs}.")
+    log(f"Pass-2: rows with fewer than two valid 10.6 GeV period entries={n_less_than_two}.")
+    log(
+        "Pass-2: local s_comb summary over nonzero local scales -> "
+        f"mean={summary.mean_s_comb:.10g} ({100.0 * summary.mean_s_comb:.4g}%), "
+        f"median={summary.median_s_comb:.10g} ({100.0 * summary.median_s_comb:.4g}%), "
+        f"rms={summary.rms_s_comb:.10g} ({100.0 * summary.rms_s_comb:.4g}%), "
+        f"max={summary.max_s_comb:.10g} ({100.0 * summary.max_s_comb:.4g}%)."
+    )
     log(f"Pass-2: unique (xB,Q2,|t|) bins with data={len(out)}.")
 
-    return out
+    return out, summary
 
 
 def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List[DataPoint]]:
@@ -1201,6 +1196,7 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 err_high=err_high,
                 source="pass1",
                 scale_syst_abs=scale_syst_abs,
+                scale_syst_frac=PASS1_NORMALIZATION_FRACTION,
             )
 
             out.setdefault(key, []).append(point)
@@ -1463,7 +1459,7 @@ def find_nearest_pass1_point(phi: float, pass1_points: Sequence[DataPoint]) -> O
     return best_point
 
 
-def pass2_over_pass1_ratio_points(panel: PanelData, pass2_s_comb: float) -> List[RatioPoint]:
+def pass2_over_pass1_ratio_points(panel: PanelData) -> List[RatioPoint]:
     ratio_points: List[RatioPoint] = []
 
     for p2 in panel.pass2:
@@ -1487,7 +1483,8 @@ def pass2_over_pass1_ratio_points(panel: PanelData, pass2_s_comb: float) -> List
         rel_ratio_stat = math.sqrt(rel_p2_stat * rel_p2_stat + rel_p1_stat * rel_p1_stat)
         ratio_stat_err = abs(ratio * rel_ratio_stat)
 
-        scale_err = ratio_scale_uncertainty(ratio=ratio, pass2_s_comb=pass2_s_comb)
+        pass2_scale_frac = p2.scale_syst_frac
+        scale_err = ratio_scale_uncertainty(ratio=ratio, pass2_local_scale_frac=pass2_scale_frac)
 
         ratio_points.append(
             RatioPoint(
@@ -1496,6 +1493,7 @@ def pass2_over_pass1_ratio_points(panel: PanelData, pass2_s_comb: float) -> List
                 stat_err_low=ratio_stat_err,
                 stat_err_high=ratio_stat_err,
                 scale_err=scale_err,
+                pass2_scale_frac=pass2_scale_frac,
                 label="pass2/pass1",
             )
         )
@@ -1810,8 +1808,7 @@ def draw_stat_only_pull_distribution(
         return
     #endif
 
-    all_pulls = nominal_pulls + best_pulls
-    finite_pulls = [p for p in all_pulls if math.isfinite(p)]
+    finite_pulls = nominal_pulls + best_pulls
 
     pmin = min(finite_pulls)
     pmax = max(finite_pulls)
@@ -2064,7 +2061,6 @@ def draw_cross_section_axis(
     curves: Optional[ModelCurves],
     pass2_label: str,
     pass1_label: str,
-    pass2_s_comb: float,
     logy: bool,
     log_y_min: float,
     include_title: bool,
@@ -2133,7 +2129,7 @@ def draw_cross_section_axis(
             y_values=y,
             scale_values=[p.scale_syst_abs for p in panel.pass2],
             half_width=SCALE_BOX_HALF_WIDTH_DEG,
-            label=f"{pass2_label}: {format_fraction_percent(pass2_s_comb)} comb box",
+            label=f"{pass2_label}: local period-spread box",
             color=pass2_color,
             logy=logy,
             log_y_min=log_y_min,
@@ -2168,8 +2164,8 @@ def draw_cross_section_axis(
     ax.legend(loc="best", fontsize=8, frameon=True)
 
 
-def draw_ratio_axis(ax, panel: PanelData, pass2_s_comb: float) -> None:
-    p2_over_p1 = pass2_over_pass1_ratio_points(panel, pass2_s_comb=pass2_s_comb)
+def draw_ratio_axis(ax, panel: PanelData) -> None:
+    p2_over_p1 = pass2_over_pass1_ratio_points(panel)
 
     if p2_over_p1:
         container = ax.errorbar(
@@ -2193,11 +2189,7 @@ def draw_ratio_axis(ax, panel: PanelData, pass2_s_comb: float) -> None:
             y_values=[p.ratio for p in p2_over_p1],
             scale_values=[p.scale_err for p in p2_over_p1],
             half_width=SCALE_BOX_HALF_WIDTH_DEG,
-            label=(
-                "scale box: "
-                f"{format_fraction_percent(pass2_s_comb)} pass-2 ⊕ "
-                "31% pass-1"
-            ),
+            label="scale box: local pass-2 ⊕ 31% pass-1",
             color=color,
             logy=False,
             log_y_min=1.0e-30,
@@ -2224,7 +2216,6 @@ def draw_panel(
     output_path: Path,
     pass2_label: str,
     pass1_label: str,
-    pass2_s_comb: float,
     logy: bool,
     log_y_min: float,
     two_panel: bool,
@@ -2247,7 +2238,6 @@ def draw_panel(
             curves=curves,
             pass2_label=pass2_label,
             pass1_label=pass1_label,
-            pass2_s_comb=pass2_s_comb,
             logy=logy,
             log_y_min=log_y_min,
             include_title=False,
@@ -2258,7 +2248,6 @@ def draw_panel(
         draw_ratio_axis(
             ax=axes[1],
             panel=panel,
-            pass2_s_comb=pass2_s_comb,
         )
 
         fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
@@ -2271,7 +2260,6 @@ def draw_panel(
             curves=curves,
             pass2_label=pass2_label,
             pass1_label=pass1_label,
-            pass2_s_comb=pass2_s_comb,
             logy=logy,
             log_y_min=log_y_min,
             include_title=True,
@@ -2334,13 +2322,14 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             output_path=output_path,
             pass2_label=job.pass2_label,
             pass1_label=job.pass1_label,
-            pass2_s_comb=job.pass2_s_comb,
             logy=job.logy,
             log_y_min=job.log_y_min,
             two_panel=job.two_panel,
         )
 
-        n_pass2_pass1_ratio = len(pass2_over_pass1_ratio_points(job.panel, pass2_s_comb=job.pass2_s_comb))
+        ratio_points = pass2_over_pass1_ratio_points(job.panel)
+
+        pass2_local_scales = [p.scale_syst_frac for p in job.panel.pass2 if math.isfinite(p.scale_syst_frac)]
 
         manifest_entry: Dict[str, object] = {
             "file": job.filename,
@@ -2351,15 +2340,16 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             "n_pass1_points": len(job.panel.pass1),
             "has_models": curves is not None,
             "two_panel": job.two_panel,
-            "pass2_s_comb_fraction": job.pass2_s_comb,
-            "pass2_s_comb_percent": 100.0 * job.pass2_s_comb,
-            "n_ratio_pass2_over_pass1": n_pass2_pass1_ratio,
+            "n_ratio_pass2_over_pass1": len(ratio_points),
+            "pass2_local_s_comb_mean_in_panel": mean(pass2_local_scales),
+            "pass2_local_s_comb_rms_in_panel": rms(pass2_local_scales),
+            "pass2_local_s_comb_max_in_panel": max(pass2_local_scales) if pass2_local_scales else 0.0,
             "left_pass2_error_bars": "stat + 18% estimated point-to-point only",
-            "left_pass2_scale_boxes": "internally computed s_comb scale",
+            "left_pass2_scale_boxes": "point-by-point local period-spread s_comb(row)",
             "left_pass1_error_bars": "stat + provided syst only",
             "left_pass1_scale_boxes": "31% normalization",
             "ratio_error_bars": "pass2 stat and pass1 stat only",
-            "ratio_scale_boxes": "pass2 s_comb scale and pass1 31% normalization",
+            "ratio_scale_boxes": "local pass2 s_comb(row) scale and pass1 31% normalization",
             "model_status": model_status,
         }
 
@@ -2368,7 +2358,7 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
         message = (
             f"[{job.index}/{job.total}] wrote {output_path} "
             f"({model_status}, pass2 points={len(job.panel.pass2)}, pass1 points={len(job.panel.pass1)}, "
-            f"ratios: p2/p1={n_pass2_pass1_ratio}, "
+            f"ratios: p2/p1={len(ratio_points)}, "
             f"elapsed={format_seconds(elapsed)})"
         )
 
@@ -2536,7 +2526,6 @@ def build_jobs(
     output_dir: Path,
     pass2_label: str,
     pass1_label: str,
-    pass2_s_comb: float,
     logy: bool,
     log_y_min: float,
     two_panel: bool,
@@ -2579,7 +2568,6 @@ def build_jobs(
                 filename=filename,
                 pass2_label=pass2_label,
                 pass1_label=pass1_label,
-                pass2_s_comb=pass2_s_comb,
                 logy=logy,
                 log_y_min=log_y_min,
                 two_panel=two_panel,
@@ -2697,7 +2685,7 @@ def main() -> int:
     log(f"  quiet_workers          = {args.quiet_workers}")
     log(f"  progress_every         = {args.progress_every}")
     log(f"  pass2 point-to-point   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}% included in vertical error bars")
-    log("  pass2 combination sys  = internally computed 10.6 GeV unpol s_comb, drawn as external boxes")
+    log("  pass2 scale boxes      = point-by-point local period-spread s_comb(row)")
     log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}% drawn as external boxes")
     log(
         "  stat-only pull fit     = pass-2 normalization floated in "
@@ -2731,29 +2719,16 @@ def main() -> int:
     cache_path = args.model_cache or (args.output_dir / "model_curve_cache.json")
     log(f"Output setup: model cache path: {cache_path}")
 
-    log("Input setup: computing pass-2 internal s_comb from period columns.")
-    pass2_combination = compute_pass2_10p6_unpol_s_comb(
-        path=args.pass2_csv,
-        print_columns=args.print_columns,
-    )
-    write_pass2_s_comb_summary(args.output_dir, pass2_combination)
-    pass2_s_comb = pass2_combination.s_comb
-
-    log(
-        "Input setup: using pass-2 s_comb scale fraction "
-        f"{pass2_s_comb:.10g} ({100.0 * pass2_s_comb:.6g}%)."
-    )
-
     args.dvcsgen_dir = validate_dvcsgen_dir(args.dvcsgen_dir)
     args.km15_cli = resolve_km15_cli(args.km15_cli)
     args.py_km15 = resolve_python_executable(args.py_km15)
 
-    log("Input setup: loading pass-2 data.")
-    pass2 = load_pass2_csv(
+    log("Input setup: loading pass-2 data and computing point-by-point local scale systematics.")
+    pass2, pass2_local_scale_summary = load_pass2_csv(
         path=args.pass2_csv,
         xs_column=args.pass2_xs_column,
-        s_comb=pass2_s_comb,
-        print_columns=False,
+        output_dir=args.output_dir,
+        print_columns=args.print_columns,
     )
 
     log("Input setup: loading pass-1 data.")
@@ -2812,7 +2787,6 @@ def main() -> int:
         output_dir=args.output_dir,
         pass2_label=args.pass2_label,
         pass1_label=args.pass1_label,
-        pass2_s_comb=pass2_s_comb,
         logy=not args.linear_y,
         log_y_min=args.log_y_min,
         two_panel=args.two_panel,
@@ -2987,45 +2961,47 @@ def main() -> int:
     total_dt = time.time() - script_t0
 
     log("Final summary:")
-    log(f"  output directory          = {args.output_dir.resolve()}")
-    log(f"  total panels written      = {len(manifest)}")
-    log(f"  workers used              = {n_workers}")
-    log(f"  two-panel mode            = {args.two_panel}")
-    log(f"  model phi points          = {model_cfg.phi_dense}")
-    log(f"  pass2 s_obs               = {pass2_combination.s_obs:.10g}")
-    log(f"  pass2 s_stat              = {pass2_combination.s_stat_exp:.10g}")
-    log(f"  pass2 s_comb              = {pass2_combination.s_comb:.10g} ({100.0 * pass2_combination.s_comb:.6g}%)")
-    log("  left pass2 error bars     = stat ⊕ 18% point-to-point")
-    log("  left pass2 scale boxes    = s_comb normalization/scale")
-    log("  left pass1 error bars     = stat ⊕ provided syst")
-    log("  left pass1 scale boxes    = 31% normalization")
-    log("  right panel ratio         = pass-2 / pass-1 only")
-    log("  right ratio error bars    = pass2 stat ⊕ pass1 stat")
-    log("  right ratio scale boxes   = pass2 s_comb ⊕ pass1 31% norm")
-    log(f"  stat-only matched points  = {stat_only_summary.n_points}")
+    log(f"  output directory              = {args.output_dir.resolve()}")
+    log(f"  total panels written          = {len(manifest)}")
+    log(f"  workers used                  = {n_workers}")
+    log(f"  two-panel mode                = {args.two_panel}")
+    log(f"  model phi points              = {model_cfg.phi_dense}")
+    log(f"  pass2 local scale rows        = {pass2_local_scale_summary.n_rows_with_local_scale}")
+    log(f"  pass2 local s_comb mean       = {pass2_local_scale_summary.mean_s_comb:.10g} ({100.0 * pass2_local_scale_summary.mean_s_comb:.6g}%)")
+    log(f"  pass2 local s_comb median     = {pass2_local_scale_summary.median_s_comb:.10g} ({100.0 * pass2_local_scale_summary.median_s_comb:.6g}%)")
+    log(f"  pass2 local s_comb rms        = {pass2_local_scale_summary.rms_s_comb:.10g} ({100.0 * pass2_local_scale_summary.rms_s_comb:.6g}%)")
+    log(f"  pass2 local s_comb max        = {pass2_local_scale_summary.max_s_comb:.10g} ({100.0 * pass2_local_scale_summary.max_s_comb:.6g}%)")
+    log("  left pass2 error bars         = stat ⊕ 18% point-to-point")
+    log("  left pass2 scale boxes        = local point-by-point period spread")
+    log("  left pass1 error bars         = stat ⊕ provided syst")
+    log("  left pass1 scale boxes        = 31% normalization")
+    log("  right panel ratio             = pass-2 / pass-1 only")
+    log("  right ratio error bars        = pass2 stat ⊕ pass1 stat")
+    log("  right ratio scale boxes       = local pass2 scale ⊕ pass1 31% norm")
+    log(f"  stat-only matched points      = {stat_only_summary.n_points}")
     log(
-        "  stat-only best pass2 norm = "
+        "  stat-only best pass2 norm     = "
         f"{stat_only_summary.best_norm:.10g} "
         f"({100.0 * (stat_only_summary.best_norm - 1.0):+.6g}%)"
     )
     log(
-        "  stat-only chi2/ndf        = "
+        "  stat-only chi2/ndf            = "
         f"N=1 {stat_only_summary.chi2_ndf_nominal:.10g}, "
         f"best {stat_only_summary.chi2_ndf_best:.10g}"
     )
     log(
-        "  stat-only |pull|<=1       = "
+        "  stat-only |pull|<=1           = "
         f"N=1 {stat_only_summary.pct_within_1sigma_nominal:.4g}%, "
         f"best {stat_only_summary.pct_within_1sigma_best:.4g}%"
     )
     log(
-        "  stat-only |pull|<=3       = "
+        "  stat-only |pull|<=3           = "
         f"N=1 {stat_only_summary.pct_within_3sigma_nominal:.4g}%, "
         f"best {stat_only_summary.pct_within_3sigma_best:.4g}%"
     )
-    log(f"  log-y visible floor       = {args.log_y_min:g}")
-    log(f"  cache entries after run   = {len(cache) if not args.skip_models else 0}")
-    log(f"  total elapsed             = {format_seconds(total_dt)}")
+    log(f"  log-y visible floor           = {args.log_y_min:g}")
+    log(f"  cache entries after run       = {len(cache) if not args.skip_models else 0}")
+    log(f"  total elapsed                 = {format_seconds(total_dt)}")
     log("Done.")
 
     return 0
