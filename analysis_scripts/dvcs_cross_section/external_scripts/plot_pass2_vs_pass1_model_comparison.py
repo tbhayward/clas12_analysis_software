@@ -29,35 +29,36 @@ Implemented uncertainty prescription:
 
     as a cross-section input. That column is treated as an output/fill column
     from the analysis chain, not as a central-value source for this comparison.
+
   * The pass-2 combination scale systematic is computed internally as s_comb
     using the same period-ratio/stat-weighted logic as combination_systematics.cpp
     for the "10.6 GeV unpol" case:
 
         Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out
 
-  * For pass-2 left-panel uncertainties:
+  * Cross-section panel:
+      pass-2 vertical error bars:
+          stat ⊕ 18% estimated point-to-point/systematic
 
-        total = stat ⊕ 18% estimated point-to-point/systematic
-                    ⊕ (s_comb * cross_section)
+      pass-2 external scale boxes:
+          s_comb * cross_section
 
-  * For pass-2/pass-1 ratio-panel uncertainties:
+      pass-1 vertical error bars:
+          stat ⊕ provided Lee systematic
 
-        pass-2 contribution = stat ⊕ (s_comb * cross_section)
+      pass-1 external scale boxes:
+          31% normalization * cross_section
 
-    The 18% estimated pass-2 systematic is intentionally excluded from the
-    ratio panel.
+  * Ratio panel:
+      pass-2/pass-1 vertical error bars:
+          propagated statistical uncertainty only
 
-  * Pass-1 data use Lee-style central/stat/syst-up/syst-down columns.
-    The pass-1 left-panel total uncertainty is:
+      pass-2/pass-1 external scale boxes:
+          propagated scale uncertainty from pass-2 s_comb and pass-1 31% norm
 
-        stat ⊕ provided syst ⊕ 31% normalization
-
-    The pass-1 ratio-panel uncertainty contribution is:
-
-        stat ⊕ 31% normalization
-
-    The provided pass-1 systematic columns are intentionally excluded from the
-    ratio panel.
+      The pass-2 18% estimated point-to-point systematic and the pass-1 provided
+      systematic columns are intentionally not included in the ratio-panel error
+      bars or ratio-panel scale boxes.
 
   * One PNG is saved for every unique (xB, Q2, |t|) bin found in either CSV.
   * The model curves are BH and KM15 only, evaluated at the bin midpoint and
@@ -103,6 +104,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +132,9 @@ PASS1_PHI_OFFSET_DEG = -1.25
 PASS2_PHI_OFFSET_DEG = +1.25
 
 PASS1_PASS2_RATIO_MATCH_TOLERANCE_DEG = 2.0
+
+SCALE_BOX_HALF_WIDTH_DEG = 3.0
+SCALE_BOX_ALPHA = 0.18
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +247,9 @@ class ModelCurves:
 class RatioPoint:
     phi: float
     ratio: float
-    err_low: float
-    err_high: float
+    stat_err_low: float
+    stat_err_high: float
+    scale_err: float
     label: str
 
 
@@ -827,7 +833,7 @@ def compute_pass2_10p6_unpol_s_comb(path: Path, print_columns: bool = False) -> 
     #endfor
 
     if result.s_comb <= 0.0:
-        warn("Computed pass-2 s_comb is zero or non-positive. Pass-2 scale systematic contribution will be zero.")
+        warn("Computed pass-2 s_comb is zero or non-positive. Pass-2 external scale boxes will have zero height.")
     #endif
 
     return result
@@ -887,29 +893,44 @@ def write_pass2_s_comb_summary(output_dir: Path, result: CombinationSystematicRe
 # ---------------------------------------------------------------------------
 # Uncertainty prescriptions.
 # ---------------------------------------------------------------------------
-def pass2_left_panel_uncertainty(xs: float, stat: float, s_comb: float) -> float:
+def pass2_cross_section_point_uncertainty(xs: float, stat: float) -> float:
     estimated_syst = PASS2_ESTIMATED_SYSTEMATIC_FRACTION * xs
-    scale_syst = abs(s_comb * xs)
 
-    return math.sqrt(stat * stat + estimated_syst * estimated_syst + scale_syst * scale_syst)
-
-
-def pass1_left_panel_uncertainty(xs: float, stat: float, syst: float) -> float:
-    norm = PASS1_NORMALIZATION_FRACTION * xs
-
-    return math.sqrt(stat * stat + syst * syst + norm * norm)
+    return math.sqrt(stat * stat + estimated_syst * estimated_syst)
 
 
-def pass2_ratio_uncertainty(xs: float, stat: float, s_comb: float) -> float:
-    scale_syst = abs(s_comb * xs)
-
-    return math.sqrt(stat * stat + scale_syst * scale_syst)
+def pass2_cross_section_scale_uncertainty(xs: float, s_comb: float) -> float:
+    return abs(s_comb * xs)
 
 
-def pass1_ratio_uncertainty(xs: float, stat: float) -> float:
-    norm = PASS1_NORMALIZATION_FRACTION * xs
+def pass1_cross_section_point_uncertainty(xs: float, stat: float, syst: float) -> float:
+    return math.sqrt(stat * stat + syst * syst)
 
-    return math.sqrt(stat * stat + norm * norm)
+
+def pass1_cross_section_scale_uncertainty(xs: float) -> float:
+    return abs(PASS1_NORMALIZATION_FRACTION * xs)
+
+
+def pass2_ratio_stat_uncertainty(xs: float, stat: float) -> float:
+    if not finite_positive(xs):
+        return 0.0
+    #endif
+
+    return abs(stat)
+
+
+def pass1_ratio_stat_uncertainty(xs: float, stat: float) -> float:
+    if not finite_positive(xs):
+        return 0.0
+    #endif
+
+    return abs(stat)
+
+
+def ratio_scale_uncertainty(ratio: float, pass2_s_comb: float) -> float:
+    rel = math.sqrt(pass2_s_comb * pass2_s_comb + PASS1_NORMALIZATION_FRACTION * PASS1_NORMALIZATION_FRACTION)
+
+    return abs(ratio * rel)
 
 
 # ---------------------------------------------------------------------------
@@ -953,12 +974,12 @@ def load_pass2_csv(
 
         log(f"Pass-2: central cross-section column -> {xs_col}")
         log(
-            "Pass-2: left-panel uncertainty prescription -> "
-            f"sqrt(stat^2 + (0.18 * xs)^2 + ({s_comb:.10g} * xs)^2)."
+            "Pass-2: cross-section vertical error bars -> "
+            "sqrt(stat^2 + (0.18 * xs)^2)."
         )
         log(
-            "Pass-2: ratio-panel uncertainty contribution -> "
-            f"sqrt(stat^2 + ({s_comb:.10g} * xs)^2)."
+            "Pass-2: cross-section external scale boxes -> "
+            f"{s_comb:.10g} * xs."
         )
         log("Pass-2: reading rows.")
 
@@ -988,15 +1009,15 @@ def load_pass2_csv(
                 continue
             #endif
 
-            scale_syst_abs = abs(s_comb * xs)
-            err = pass2_left_panel_uncertainty(xs=xs, stat=stat, s_comb=s_comb)
+            scale_syst_abs = pass2_cross_section_scale_uncertainty(xs=xs, s_comb=s_comb)
+            point_err = pass2_cross_section_point_uncertainty(xs=xs, stat=stat)
 
             point = DataPoint(
                 phi=phi,
                 xs=xs,
                 stat=stat,
-                err_low=err,
-                err_high=err,
+                err_low=point_err,
+                err_high=point_err,
                 source="pass2",
                 scale_syst_abs=scale_syst_abs,
             )
@@ -1051,12 +1072,12 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
         log(f"Pass-1: syst up uncertainty column -> {syst_up_col}")
         log(f"Pass-1: syst down uncertainty column -> {syst_dn_col}")
         log(
-            "Pass-1: left-panel uncertainty prescription -> "
-            "sqrt(stat^2 + syst^2 + (0.31 * xs)^2)."
+            "Pass-1: cross-section vertical error bars -> "
+            "sqrt(stat^2 + provided_syst^2)."
         )
         log(
-            "Pass-1: ratio-panel uncertainty contribution -> "
-            "sqrt(stat^2 + (0.31 * xs)^2)."
+            "Pass-1: cross-section external scale boxes -> "
+            "0.31 * xs."
         )
         log("Pass-1: reading rows.")
 
@@ -1087,8 +1108,8 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 continue
             #endif
 
-            err_high = pass1_left_panel_uncertainty(xs=xs, stat=stat, syst=syst_up)
-            err_low = pass1_left_panel_uncertainty(xs=xs, stat=stat, syst=syst_dn)
+            err_high = pass1_cross_section_point_uncertainty(xs=xs, stat=stat, syst=syst_up)
+            err_low = pass1_cross_section_point_uncertainty(xs=xs, stat=stat, syst=syst_dn)
 
             if err_low <= 0.0:
                 err_low = err_high
@@ -1098,6 +1119,8 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 err_high = err_low
             #endif
 
+            scale_syst_abs = pass1_cross_section_scale_uncertainty(xs=xs)
+
             point = DataPoint(
                 phi=phi,
                 xs=xs,
@@ -1105,7 +1128,7 @@ def load_pass1_csv(path: Path, print_columns: bool = False) -> Dict[BinKey, List
                 err_low=err_low,
                 err_high=err_high,
                 source="pass1",
-                scale_syst_abs=0.0,
+                scale_syst_abs=scale_syst_abs,
             )
 
             out.setdefault(key, []).append(point)
@@ -1384,21 +1407,23 @@ def pass2_over_pass1_ratio_points(panel: PanelData, pass2_s_comb: float) -> List
 
         ratio = p2.xs / p1.xs
 
-        p2_err = pass2_ratio_uncertainty(xs=p2.xs, stat=p2.stat, s_comb=pass2_s_comb)
-        p1_err = pass1_ratio_uncertainty(xs=p1.xs, stat=p1.stat)
+        p2_stat_err = pass2_ratio_stat_uncertainty(xs=p2.xs, stat=p2.stat)
+        p1_stat_err = pass1_ratio_stat_uncertainty(xs=p1.xs, stat=p1.stat)
 
-        rel_p2 = p2_err / p2.xs
-        rel_p1 = p1_err / p1.xs
-        rel_ratio = math.sqrt(rel_p2 * rel_p2 + rel_p1 * rel_p1)
+        rel_p2_stat = p2_stat_err / p2.xs
+        rel_p1_stat = p1_stat_err / p1.xs
+        rel_ratio_stat = math.sqrt(rel_p2_stat * rel_p2_stat + rel_p1_stat * rel_p1_stat)
+        ratio_stat_err = abs(ratio * rel_ratio_stat)
 
-        ratio_err = ratio * rel_ratio
+        scale_err = ratio_scale_uncertainty(ratio=ratio, pass2_s_comb=pass2_s_comb)
 
         ratio_points.append(
             RatioPoint(
                 phi=p2.phi,
                 ratio=ratio,
-                err_low=ratio_err,
-                err_high=ratio_err,
+                stat_err_low=ratio_stat_err,
+                stat_err_high=ratio_stat_err,
+                scale_err=scale_err,
                 label="pass2/pass1",
             )
         )
@@ -1412,8 +1437,9 @@ def ratio_axis_limits(ratio_sets: Sequence[Sequence[RatioPoint]]) -> Tuple[float
 
     for ratio_points in ratio_sets:
         for point in ratio_points:
-            vals.append(point.ratio - point.err_low)
-            vals.append(point.ratio + point.err_high)
+            point_extent = max(point.stat_err_low, point.stat_err_high, point.scale_err)
+            vals.append(point.ratio - point_extent)
+            vals.append(point.ratio + point_extent)
         #endfor
     #endfor
 
@@ -1455,8 +1481,9 @@ def y_limits(
     floor = log_y_min if logy and log_y_min > 0.0 else 1e-30
 
     for p in list(pass2) + list(pass1):
-        vals.append(max(floor, p.xs - p.err_low))
-        vals.append(max(floor, p.xs + p.err_high))
+        point_extent = max(p.err_low, p.err_high, p.scale_syst_abs)
+        vals.append(max(floor, p.xs - point_extent))
+        vals.append(max(floor, p.xs + point_extent))
         vals.append(max(floor, p.xs))
     #endfor
 
@@ -1489,6 +1516,56 @@ def y_limits(
     return ymin, 1.75 * ymax
 
 
+def draw_scale_boxes(
+    ax,
+    x_values: Sequence[float],
+    y_values: Sequence[float],
+    scale_values: Sequence[float],
+    half_width: float,
+    label: str,
+    color,
+    logy: bool,
+    log_y_min: float,
+) -> None:
+    first = True
+
+    for x, y, scale in zip(x_values, y_values, scale_values):
+        if not math.isfinite(x) or not math.isfinite(y) or not math.isfinite(scale):
+            continue
+        #endif
+
+        if scale <= 0.0:
+            continue
+        #endif
+
+        bottom = y - scale
+        top = y + scale
+
+        if logy:
+            bottom = max(log_y_min, bottom)
+        #endif
+
+        if top <= bottom:
+            continue
+        #endif
+
+        patch = Rectangle(
+            (x - half_width, bottom),
+            2.0 * half_width,
+            top - bottom,
+            facecolor=color,
+            edgecolor=color,
+            alpha=SCALE_BOX_ALPHA,
+            linewidth=1.0,
+            label=label if first else None,
+            zorder=1,
+        )
+
+        ax.add_patch(patch)
+        first = False
+    #endfor
+
+
 def draw_cross_section_axis(
     ax,
     panel: PanelData,
@@ -1501,8 +1578,8 @@ def draw_cross_section_axis(
     include_title: bool,
 ) -> None:
     if curves is not None:
-        ax.plot(curves.phi, curves.bh, linewidth=2.0, linestyle="-", label="BH")
-        ax.plot(curves.phi, curves.km15, linewidth=2.0, linestyle="--", label="KM15")
+        ax.plot(curves.phi, curves.bh, linewidth=2.0, linestyle="-", label="BH", zorder=2)
+        ax.plot(curves.phi, curves.km15, linewidth=2.0, linestyle="--", label="KM15", zorder=2)
     #endif
 
     if panel.pass1:
@@ -1510,7 +1587,7 @@ def draw_cross_section_axis(
         y = [p.xs for p in panel.pass1]
         yerr = [[p.err_low for p in panel.pass1], [p.err_high for p in panel.pass1]]
 
-        ax.errorbar(
+        pass1_container = ax.errorbar(
             x,
             y,
             yerr=yerr,
@@ -1519,7 +1596,22 @@ def draw_cross_section_axis(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=f"{pass1_label}: stat ⊕ syst ⊕ 31% norm",
+            label=f"{pass1_label}: stat ⊕ syst",
+            zorder=4,
+        )
+
+        pass1_color = pass1_container.lines[0].get_color()
+
+        draw_scale_boxes(
+            ax=ax,
+            x_values=x,
+            y_values=y,
+            scale_values=[p.scale_syst_abs for p in panel.pass1],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+            label=f"{pass1_label}: 31% norm box",
+            color=pass1_color,
+            logy=logy,
+            log_y_min=log_y_min,
         )
     #endif
 
@@ -1528,7 +1620,7 @@ def draw_cross_section_axis(
         y = [p.xs for p in panel.pass2]
         yerr = [p.err_high for p in panel.pass2]
 
-        ax.errorbar(
+        pass2_container = ax.errorbar(
             x,
             y,
             yerr=yerr,
@@ -1537,10 +1629,22 @@ def draw_cross_section_axis(
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label=(
-                f"{pass2_label}: stat ⊕ 18% syst ⊕ "
-                f"{format_fraction_percent(pass2_s_comb)} comb sys"
-            ),
+            label=f"{pass2_label}: stat ⊕ 18% point-to-point",
+            zorder=5,
+        )
+
+        pass2_color = pass2_container.lines[0].get_color()
+
+        draw_scale_boxes(
+            ax=ax,
+            x_values=x,
+            y_values=y,
+            scale_values=[p.scale_syst_abs for p in panel.pass2],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+            label=f"{pass2_label}: {format_fraction_percent(pass2_s_comb)} comb box",
+            color=pass2_color,
+            logy=logy,
+            log_y_min=log_y_min,
         )
     #endif
 
@@ -1569,31 +1673,46 @@ def draw_cross_section_axis(
     #endif
 
     ax.grid(True, which="major", alpha=0.25)
-    ax.legend(loc="best", fontsize=9, frameon=True)
+    ax.legend(loc="best", fontsize=8, frameon=True)
 
 
 def draw_ratio_axis(ax, panel: PanelData, pass2_s_comb: float) -> None:
     p2_over_p1 = pass2_over_pass1_ratio_points(panel, pass2_s_comb=pass2_s_comb)
 
     if p2_over_p1:
-        ax.errorbar(
+        container = ax.errorbar(
             [p.phi for p in p2_over_p1],
             [p.ratio for p in p2_over_p1],
-            yerr=[[p.err_low for p in p2_over_p1], [p.err_high for p in p2_over_p1]],
+            yerr=[[p.stat_err_low for p in p2_over_p1], [p.stat_err_high for p in p2_over_p1]],
             fmt="o",
             markersize=5,
             capsize=2,
             linewidth=1.2,
             linestyle="None",
+            label="pass-2 / pass-1: stat only",
+            zorder=5,
+        )
+
+        color = container.lines[0].get_color()
+
+        draw_scale_boxes(
+            ax=ax,
+            x_values=[p.phi for p in p2_over_p1],
+            y_values=[p.ratio for p in p2_over_p1],
+            scale_values=[p.scale_err for p in p2_over_p1],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
             label=(
-                "pass-2 / pass-1: "
-                f"pass-2 stat ⊕ {format_fraction_percent(pass2_s_comb)} comb sys; "
-                "pass-1 stat ⊕ 31% norm"
+                "scale box: "
+                f"{format_fraction_percent(pass2_s_comb)} pass-2 ⊕ "
+                "31% pass-1"
             ),
+            color=color,
+            logy=False,
+            log_y_min=1.0e-30,
         )
     #endif
 
-    ax.axhline(1.0, linewidth=1.2, linestyle="--")
+    ax.axhline(1.0, linewidth=1.2, linestyle="--", zorder=2)
 
     ymin, ymax = ratio_axis_limits([p2_over_p1])
 
@@ -1743,8 +1862,12 @@ def process_one_panel(job: WorkerJob) -> WorkerResult:
             "pass2_s_comb_fraction": job.pass2_s_comb,
             "pass2_s_comb_percent": 100.0 * job.pass2_s_comb,
             "n_ratio_pass2_over_pass1": n_pass2_pass1_ratio,
-            "left_pass2_uncertainty": "stat + 18% estimated syst + internally computed s_comb scale",
-            "ratio_uncertainty": "pass2 stat+s_comb scale; pass1 stat+31% norm",
+            "left_pass2_error_bars": "stat + 18% estimated point-to-point only",
+            "left_pass2_scale_boxes": "internally computed s_comb scale",
+            "left_pass1_error_bars": "stat + provided syst only",
+            "left_pass1_scale_boxes": "31% normalization",
+            "ratio_error_bars": "pass2 stat and pass1 stat only",
+            "ratio_scale_boxes": "pass2 s_comb scale and pass1 31% normalization",
             "model_status": model_status,
         }
 
@@ -2081,9 +2204,10 @@ def main() -> int:
     log(f"  two_panel              = {args.two_panel}")
     log(f"  quiet_workers          = {args.quiet_workers}")
     log(f"  progress_every         = {args.progress_every}")
-    log(f"  pass2 estimated syst   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}%")
-    log("  pass2 combination sys  = internally computed 10.6 GeV unpol s_comb from period columns")
-    log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}%")
+    log(f"  pass2 point-to-point   = {100.0 * PASS2_ESTIMATED_SYSTEMATIC_FRACTION:.1f}% included in vertical error bars")
+    log("  pass2 combination sys  = internally computed 10.6 GeV unpol s_comb, drawn as external boxes")
+    log(f"  pass1 normalization    = {100.0 * PASS1_NORMALIZATION_FRACTION:.1f}% drawn as external boxes")
+    log(f"  scale box half width   = {SCALE_BOX_HALF_WIDTH_DEG:g} deg")
     log(f"  pass1 phi offset       = {PASS1_PHI_OFFSET_DEG:+.2f} deg")
     log(f"  pass2 phi offset       = {PASS2_PHI_OFFSET_DEG:+.2f} deg")
 
@@ -2365,10 +2489,13 @@ def main() -> int:
     log(f"  pass2 s_obs               = {pass2_combination.s_obs:.10g}")
     log(f"  pass2 s_stat              = {pass2_combination.s_stat_exp:.10g}")
     log(f"  pass2 s_comb              = {pass2_combination.s_comb:.10g} ({100.0 * pass2_combination.s_comb:.6g}%)")
-    log("  left pass2 uncertainty    = stat ⊕ 18% estimated syst ⊕ s_comb scale")
-    log("  left pass1 uncertainty    = stat ⊕ syst ⊕ 31% norm")
+    log("  left pass2 error bars     = stat ⊕ 18% point-to-point")
+    log("  left pass2 scale boxes    = s_comb normalization/scale")
+    log("  left pass1 error bars     = stat ⊕ provided syst")
+    log("  left pass1 scale boxes    = 31% normalization")
     log("  right panel ratio         = pass-2 / pass-1 only")
-    log("  right ratio uncertainty   = pass2 stat ⊕ s_comb scale; pass1 stat ⊕ 31% norm")
+    log("  right ratio error bars    = pass2 stat ⊕ pass1 stat")
+    log("  right ratio scale boxes   = pass2 s_comb ⊕ pass1 31% norm")
     log(f"  log-y visible floor       = {args.log_y_min:g}")
     log(f"  cache entries after run   = {len(cache) if not args.skip_models else 0}")
     log(f"  total elapsed             = {format_seconds(total_dt)}")
