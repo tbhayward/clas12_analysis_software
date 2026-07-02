@@ -10,6 +10,7 @@
 //   4. Current-corrected reconstructed MC yield columns.
 //   5. Per-period diagnostic plots.
 //   6. 3x2 all-period summary plots with the five RGA periods plus overlay.
+//   7. Cross-channel DATA slope summary plots comparing epg and eppi0.
 //
 // Important convention:
 //   - The fitted current response is normalized to the fitted zero-current
@@ -2472,6 +2473,564 @@ static void draw_all_period_data_mc_canvas(const std::string& out_path,
     draw_data_mc_period_stack(nullptr, "All periods", true, results, use_fa18_for_sp19);
 
     c.SaveAs(out_path.c_str());
+}
+
+
+// -----------------------------------------------------------------------------
+// Cross-channel DATA slope summary plots: epg versus eppi0
+// -----------------------------------------------------------------------------
+
+static const PeriodResult* find_period_result(const std::vector<PeriodResult>& results,
+                                              const std::string& period) {
+    auto it = std::find_if(results.begin(), results.end(),
+                           [&](const PeriodResult& r) {
+                               return r.period == period;
+                           });
+
+    if (it == results.end()) {
+        return nullptr;
+    }
+
+    return &(*it);
+}
+
+static bool finite_slope_value(const PeriodResult* r) {
+    if (!r) {
+        return false;
+    }
+
+    const double slope = fit_percent_slope(r->data_fit);
+    const double slope_err = fit_percent_slope_err(r->data_fit);
+
+    return std::isfinite(slope) && std::isfinite(slope_err);
+}
+
+static void write_data_channel_slope_comparison_csv(
+    const std::string& path,
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results) {
+
+    const size_t slash_pos = path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(path.substr(0, slash_pos));
+    }
+
+    std::ofstream fout(path);
+
+    if (!fout.is_open()) {
+        std::ostringstream ss;
+        ss << "[current_dependence] FATAL: cannot write: " << path;
+        fatal(ss.str());
+    }
+
+    fout << "period,"
+         << "epg_data_slope_percent_per_nA,epg_data_slope_percent_per_nA_stat,"
+         << "eppi0_data_slope_percent_per_nA,eppi0_data_slope_percent_per_nA_stat,"
+         << "eppi0_minus_epg_slope_percent_per_nA,eppi0_minus_epg_slope_percent_per_nA_stat,"
+         << "epg_data_fit_intercept,epg_data_fit_intercept_stat,"
+         << "eppi0_data_fit_intercept,eppi0_data_fit_intercept_stat\n";
+
+    for (const std::string& period : PERIOD_ORDER) {
+        const PeriodResult* epg = find_period_result(dvcs_results, period);
+        const PeriodResult* pi0 = find_period_result(eppi0_results, period);
+
+        const double epg_slope = epg ? fit_percent_slope(epg->data_fit) : std::numeric_limits<double>::quiet_NaN();
+        const double epg_err = epg ? fit_percent_slope_err(epg->data_fit) : std::numeric_limits<double>::quiet_NaN();
+        const double pi0_slope = pi0 ? fit_percent_slope(pi0->data_fit) : std::numeric_limits<double>::quiet_NaN();
+        const double pi0_err = pi0 ? fit_percent_slope_err(pi0->data_fit) : std::numeric_limits<double>::quiet_NaN();
+
+        double diff = std::numeric_limits<double>::quiet_NaN();
+        double diff_err = std::numeric_limits<double>::quiet_NaN();
+
+        if (std::isfinite(epg_slope) && std::isfinite(pi0_slope)) {
+            diff = pi0_slope - epg_slope;
+        }
+
+        if (std::isfinite(epg_err) && std::isfinite(pi0_err)) {
+            diff_err = std::sqrt(epg_err * epg_err + pi0_err * pi0_err);
+        }
+
+        fout << period << ","
+             << std::setprecision(12) << epg_slope << ","
+             << std::setprecision(12) << epg_err << ","
+             << std::setprecision(12) << pi0_slope << ","
+             << std::setprecision(12) << pi0_err << ","
+             << std::setprecision(12) << diff << ","
+             << std::setprecision(12) << diff_err << ","
+             << std::setprecision(12) << (epg ? epg->data_fit.b : std::numeric_limits<double>::quiet_NaN()) << ","
+             << std::setprecision(12) << (epg ? epg->data_fit.sb : std::numeric_limits<double>::quiet_NaN()) << ","
+             << std::setprecision(12) << (pi0 ? pi0->data_fit.b : std::numeric_limits<double>::quiet_NaN()) << ","
+             << std::setprecision(12) << (pi0 ? pi0->data_fit.sb : std::numeric_limits<double>::quiet_NaN()) << "\n";
+    }
+}
+
+static TGraphErrors* make_channel_slope_graph(const std::vector<PeriodResult>& results,
+                                               double x_offset,
+                                               int color,
+                                               int marker_style) {
+    TGraphErrors* g = new TGraphErrors();
+    int ip = 0;
+
+    for (int i = 0; i < (int)PERIOD_ORDER.size(); ++i) {
+        const PeriodResult* r = find_period_result(results, PERIOD_ORDER[i]);
+
+        if (!finite_slope_value(r)) {
+            continue;
+        }
+
+        const double slope = fit_percent_slope(r->data_fit);
+        const double slope_err = fit_percent_slope_err(r->data_fit);
+
+        g->SetPoint(ip, (double)(i + 1) + x_offset, slope);
+        g->SetPointError(ip, 0.0, slope_err);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(marker_style);
+    g->SetMarkerSize(1.45);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+
+    return g;
+}
+
+static TGraphErrors* make_channel_slope_difference_graph(
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results,
+    int color,
+    int marker_style) {
+
+    TGraphErrors* g = new TGraphErrors();
+    int ip = 0;
+
+    for (int i = 0; i < (int)PERIOD_ORDER.size(); ++i) {
+        const std::string& period = PERIOD_ORDER[i];
+        const PeriodResult* epg = find_period_result(dvcs_results, period);
+        const PeriodResult* pi0 = find_period_result(eppi0_results, period);
+
+        if (!finite_slope_value(epg) || !finite_slope_value(pi0)) {
+            continue;
+        }
+
+        const double epg_slope = fit_percent_slope(epg->data_fit);
+        const double epg_err = fit_percent_slope_err(epg->data_fit);
+        const double pi0_slope = fit_percent_slope(pi0->data_fit);
+        const double pi0_err = fit_percent_slope_err(pi0->data_fit);
+
+        const double diff = pi0_slope - epg_slope;
+        const double diff_err = std::sqrt(epg_err * epg_err + pi0_err * pi0_err);
+
+        g->SetPoint(ip, (double)(i + 1), diff);
+        g->SetPointError(ip, 0.0, diff_err);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(marker_style);
+    g->SetMarkerSize(1.45);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+
+    return g;
+}
+
+static void style_period_axis_labels(TAxis* axis) {
+    if (!axis) {
+        return;
+    }
+
+    for (int i = 0; i < (int)PERIOD_ORDER.size(); ++i) {
+        axis->SetBinLabel(i + 1, PERIOD_ORDER[i].c_str());
+    }
+
+    axis->LabelsOption("h");
+    axis->CenterTitle(true);
+}
+
+
+static std::pair<double, double> data_channel_slope_range(
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results) {
+
+    std::vector<double> values;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        const PeriodResult* epg = find_period_result(dvcs_results, period);
+        const PeriodResult* pi0 = find_period_result(eppi0_results, period);
+
+        if (finite_slope_value(epg)) {
+            const double y = fit_percent_slope(epg->data_fit);
+            const double ey = fit_percent_slope_err(epg->data_fit);
+            values.push_back(y - ey);
+            values.push_back(y + ey);
+        }
+
+        if (finite_slope_value(pi0)) {
+            const double y = fit_percent_slope(pi0->data_fit);
+            const double ey = fit_percent_slope_err(pi0->data_fit);
+            values.push_back(y - ey);
+            values.push_back(y + ey);
+        }
+    }
+
+    if (values.empty()) {
+        return std::make_pair(-1.0, 1.0);
+    }
+
+    double ymin = *std::min_element(values.begin(), values.end());
+    double ymax = *std::max_element(values.begin(), values.end());
+
+    ymin = std::min(ymin, 0.0);
+    ymax = std::max(ymax, 0.0);
+
+    double span = ymax - ymin;
+    if (!(span > 0.0)) {
+        span = 1.0;
+    }
+
+    ymin -= 0.18 * span;
+    ymax += 0.18 * span;
+
+    return std::make_pair(ymin, ymax);
+}
+
+static std::pair<double, double> data_channel_slope_difference_range(
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results) {
+
+    std::vector<double> values;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        const PeriodResult* epg = find_period_result(dvcs_results, period);
+        const PeriodResult* pi0 = find_period_result(eppi0_results, period);
+
+        if (!finite_slope_value(epg) || !finite_slope_value(pi0)) {
+            continue;
+        }
+
+        const double epg_slope = fit_percent_slope(epg->data_fit);
+        const double epg_err = fit_percent_slope_err(epg->data_fit);
+        const double pi0_slope = fit_percent_slope(pi0->data_fit);
+        const double pi0_err = fit_percent_slope_err(pi0->data_fit);
+        const double diff = pi0_slope - epg_slope;
+        const double diff_err = std::sqrt(epg_err * epg_err + pi0_err * pi0_err);
+
+        values.push_back(diff - diff_err);
+        values.push_back(diff + diff_err);
+    }
+
+    if (values.empty()) {
+        return std::make_pair(-1.0, 1.0);
+    }
+
+    double ymin = *std::min_element(values.begin(), values.end());
+    double ymax = *std::max_element(values.begin(), values.end());
+
+    ymin = std::min(ymin, 0.0);
+    ymax = std::max(ymax, 0.0);
+
+    double span = ymax - ymin;
+    if (!(span > 0.0)) {
+        span = 1.0;
+    }
+
+    ymin -= 0.18 * span;
+    ymax += 0.18 * span;
+
+    return std::make_pair(ymin, ymax);
+}
+
+static void draw_data_channel_slope_comparison_canvas(
+    const std::string& out_path,
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results,
+    bool use_fa18_for_sp19) {
+
+    const size_t slash_pos = out_path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(out_path.substr(0, slash_pos));
+    }
+
+    TCanvas c("c_data_channel_slope_comparison", "DATA current slopes: epg versus eppi0", 1500, 850);
+    c.SetGrid(1, 1);
+    c.SetLeftMargin(0.11);
+    c.SetRightMargin(0.03);
+    c.SetBottomMargin(0.12);
+    c.SetTopMargin(0.08);
+
+    const std::pair<double, double> yrange = data_channel_slope_range(dvcs_results, eppi0_results);
+
+    TH1D frame("h_data_channel_slope_comparison_frame", "DATA current-dependence slopes", 5, 0.5, 5.5);
+    frame.SetMinimum(yrange.first);
+    frame.SetMaximum(yrange.second);
+    frame.GetXaxis()->SetTitle("Run period");
+    frame.GetYaxis()->SetTitle("DATA slope (%/nA)");
+    frame.GetXaxis()->SetTitleSize(0.045);
+    frame.GetYaxis()->SetTitleSize(0.045);
+    frame.GetXaxis()->SetLabelSize(0.040);
+    frame.GetYaxis()->SetLabelSize(0.040);
+    frame.GetXaxis()->CenterTitle(true);
+    frame.GetYaxis()->CenterTitle(true);
+    style_period_axis_labels(frame.GetXaxis());
+    frame.Draw("AXIS");
+
+    TLine zero(0.5, 0.0, 5.5, 0.0);
+    zero.SetLineColor(kGray + 2);
+    zero.SetLineStyle(2);
+    zero.SetLineWidth(2);
+    zero.Draw("SAME");
+
+    TGraphErrors* g_epg = make_channel_slope_graph(dvcs_results, -0.10, kBlue + 1, 20);
+    TGraphErrors* g_pi0 = make_channel_slope_graph(eppi0_results, +0.10, kRed + 1, 21);
+
+    if (g_epg && g_epg->GetN() > 0) {
+        g_epg->Draw("PE SAME");
+    }
+
+    if (g_pi0 && g_pi0->GetN() > 0) {
+        g_pi0->Draw("PE SAME");
+    }
+
+    TLegend* leg = new TLegend(0.64, 0.75, 0.96, 0.92);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetBorderSize(1);
+    leg->SetTextSize(0.036);
+    leg->AddEntry(g_epg, "DATA ep #rightarrow ep#gamma", "pe");
+    leg->AddEntry(g_pi0, "DATA ep #rightarrow ep#pi^{0}", "pe");
+    leg->Draw();
+
+    if (use_fa18_for_sp19) {
+        TLatex lat;
+        lat.SetNDC(true);
+        lat.SetTextSize(0.030);
+        lat.SetTextColor(kRed + 2);
+        lat.DrawLatex(0.15, 0.84, "Sp19 Inb point shows direct diagnostic fit; CSV factor is copied from Fa18 Inb.");
+    }
+
+    c.SaveAs(out_path.c_str());
+}
+
+static void draw_data_channel_slope_difference_canvas(
+    const std::string& out_path,
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results,
+    bool use_fa18_for_sp19) {
+
+    const size_t slash_pos = out_path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(out_path.substr(0, slash_pos));
+    }
+
+    TCanvas c("c_data_channel_slope_difference", "DATA current slope difference: eppi0 minus epg", 1500, 850);
+    c.SetGrid(1, 1);
+    c.SetLeftMargin(0.11);
+    c.SetRightMargin(0.03);
+    c.SetBottomMargin(0.12);
+    c.SetTopMargin(0.08);
+
+    const std::pair<double, double> yrange = data_channel_slope_difference_range(dvcs_results, eppi0_results);
+
+    TH1D frame("h_data_channel_slope_difference_frame", "DATA current-dependence slope difference", 5, 0.5, 5.5);
+    frame.SetMinimum(yrange.first);
+    frame.SetMaximum(yrange.second);
+    frame.GetXaxis()->SetTitle("Run period");
+    frame.GetYaxis()->SetTitle("e#pi^{0} slope - ep#gamma slope (%/nA)");
+    frame.GetXaxis()->SetTitleSize(0.045);
+    frame.GetYaxis()->SetTitleSize(0.045);
+    frame.GetXaxis()->SetLabelSize(0.040);
+    frame.GetYaxis()->SetLabelSize(0.040);
+    frame.GetXaxis()->CenterTitle(true);
+    frame.GetYaxis()->CenterTitle(true);
+    style_period_axis_labels(frame.GetXaxis());
+    frame.Draw("AXIS");
+
+    TLine zero(0.5, 0.0, 5.5, 0.0);
+    zero.SetLineColor(kGray + 2);
+    zero.SetLineStyle(2);
+    zero.SetLineWidth(2);
+    zero.Draw("SAME");
+
+    TGraphErrors* g_diff = make_channel_slope_difference_graph(dvcs_results, eppi0_results, kBlack, 20);
+
+    if (g_diff && g_diff->GetN() > 0) {
+        g_diff->Draw("PE SAME");
+    }
+
+    TLegend* leg = new TLegend(0.59, 0.80, 0.96, 0.92);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetBorderSize(1);
+    leg->SetTextSize(0.036);
+    leg->AddEntry(g_diff, "DATA ep#pi^{0} - DATA ep#gamma", "pe");
+    leg->Draw();
+
+    if (use_fa18_for_sp19) {
+        TLatex lat;
+        lat.SetNDC(true);
+        lat.SetTextSize(0.030);
+        lat.SetTextColor(kRed + 2);
+        lat.DrawLatex(0.15, 0.84, "Sp19 Inb point shows direct diagnostic fit; CSV factor is copied from Fa18 Inb.");
+    }
+
+    c.SaveAs(out_path.c_str());
+}
+
+static void draw_data_channel_current_response_comparison_canvas(
+    const std::string& out_path,
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results,
+    bool use_fa18_for_sp19) {
+
+    const size_t slash_pos = out_path.find_last_of('/');
+
+    if (slash_pos != std::string::npos) {
+        mkdir_p(out_path.substr(0, slash_pos));
+    }
+
+    TCanvas c("c_data_channel_current_response_comparison", "DATA current response: epg versus eppi0", 1800, 1000);
+    c.Divide(3, 2, 0.001, 0.001);
+
+    int pad = 1;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        c.cd(pad);
+        style_current_pad();
+        draw_current_frame(period);
+
+        const PeriodResult* epg = find_period_result(dvcs_results, period);
+        const PeriodResult* pi0 = find_period_result(eppi0_results, period);
+
+        TLegend* leg = new TLegend(0.36, 0.72, 0.96, 0.96);
+        leg->SetFillStyle(1001);
+        leg->SetFillColor(kWhite);
+        leg->SetBorderSize(1);
+        leg->SetTextSize(0.030);
+
+        if (epg && std::isfinite(epg->data_fit.b) && epg->data_fit.b != 0.0) {
+            TGraphErrors* band = make_percent_fit_band(epg->data_fit, kBlue + 1, 0.0, 100.0);
+            TGraph* line = make_percent_fit_line_style(epg->data_fit, kBlue + 1, 1, 0.0, 100.0);
+            TGraphErrors* points = make_percent_points_graph_style(epg->data_points, epg->data_fit, kBlue + 1, 20, 1.05);
+
+            if (band && band->GetN() > 0) band->Draw("3 SAME");
+            if (line && line->GetN() > 0) line->Draw("L SAME");
+            if (points && points->GetN() > 0) points->Draw("PE SAME");
+
+            std::ostringstream ss;
+            ss << "ep#gamma slope=" << std::fixed << std::setprecision(4)
+               << fit_percent_slope(epg->data_fit) << " +/- "
+               << fit_percent_slope_err(epg->data_fit);
+            leg->AddEntry(points, ss.str().c_str(), "pe");
+        }
+
+        if (pi0 && std::isfinite(pi0->data_fit.b) && pi0->data_fit.b != 0.0) {
+            TGraphErrors* band = make_percent_fit_band(pi0->data_fit, kRed + 1, 0.0, 100.0);
+            TGraph* line = make_percent_fit_line_style(pi0->data_fit, kRed + 1, 2, 0.0, 100.0);
+            TGraphErrors* points = make_percent_points_graph_style(pi0->data_points, pi0->data_fit, kRed + 1, 21, 1.05);
+
+            if (band && band->GetN() > 0) band->Draw("3 SAME");
+            if (line && line->GetN() > 0) line->Draw("L SAME");
+            if (points && points->GetN() > 0) points->Draw("PE SAME");
+
+            std::ostringstream ss;
+            ss << "e#pi^{0} slope=" << std::fixed << std::setprecision(4)
+               << fit_percent_slope(pi0->data_fit) << " +/- "
+               << fit_percent_slope_err(pi0->data_fit);
+            leg->AddEntry(points, ss.str().c_str(), "pe");
+        }
+
+        leg->Draw();
+
+        if (use_fa18_for_sp19 && period == "Sp19 Inb") {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextSize(0.028);
+            lat.SetTextColor(kRed + 2);
+            lat.DrawLatex(0.16, 0.64, "Direct diagnostic fit shown");
+            lat.DrawLatex(0.16, 0.58, "CSV factor copied from Fa18 Inb");
+        }
+
+        ++pad;
+    }
+
+    c.cd(6);
+    gPad->SetGrid(1, 1);
+    gPad->SetLeftMargin(0.12);
+    gPad->SetRightMargin(0.04);
+    gPad->SetBottomMargin(0.13);
+    gPad->SetTopMargin(0.08);
+
+    const std::pair<double, double> yrange = data_channel_slope_range(dvcs_results, eppi0_results);
+
+    TH1D frame("h_data_channel_current_response_summary_frame", "DATA slope summary", 5, 0.5, 5.5);
+    frame.SetMinimum(yrange.first);
+    frame.SetMaximum(yrange.second);
+    frame.GetXaxis()->SetTitle("Run period");
+    frame.GetYaxis()->SetTitle("DATA slope (%/nA)");
+    frame.GetXaxis()->SetTitleSize(0.045);
+    frame.GetYaxis()->SetTitleSize(0.045);
+    frame.GetXaxis()->SetLabelSize(0.036);
+    frame.GetYaxis()->SetLabelSize(0.040);
+    frame.GetXaxis()->CenterTitle(true);
+    frame.GetYaxis()->CenterTitle(true);
+    style_period_axis_labels(frame.GetXaxis());
+    frame.Draw("AXIS");
+
+    TLine zero(0.5, 0.0, 5.5, 0.0);
+    zero.SetLineColor(kGray + 2);
+    zero.SetLineStyle(2);
+    zero.SetLineWidth(2);
+    zero.Draw("SAME");
+
+    TGraphErrors* g_epg = make_channel_slope_graph(dvcs_results, -0.10, kBlue + 1, 20);
+    TGraphErrors* g_pi0 = make_channel_slope_graph(eppi0_results, +0.10, kRed + 1, 21);
+
+    if (g_epg && g_epg->GetN() > 0) g_epg->Draw("PE SAME");
+    if (g_pi0 && g_pi0->GetN() > 0) g_pi0->Draw("PE SAME");
+
+    TLegend* leg = new TLegend(0.50, 0.76, 0.96, 0.93);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(kWhite);
+    leg->SetBorderSize(1);
+    leg->SetTextSize(0.034);
+    leg->AddEntry(g_epg, "ep#gamma", "pe");
+    leg->AddEntry(g_pi0, "e#pi^{0}", "pe");
+    leg->Draw();
+
+    c.SaveAs(out_path.c_str());
+}
+
+static void draw_data_channel_slope_summary_outputs(
+    const std::string& output_dir,
+    const std::vector<PeriodResult>& dvcs_results,
+    const std::vector<PeriodResult>& eppi0_results,
+    bool use_fa18_for_sp19) {
+
+    const std::string dir = output_dir + "/summary";
+    mkdir_p(dir);
+
+    draw_data_channel_slope_comparison_canvas(dir + "/data_epg_eppi0_slope_comparison.png",
+                                              dvcs_results,
+                                              eppi0_results,
+                                              use_fa18_for_sp19);
+
+    draw_data_channel_slope_difference_canvas(dir + "/data_eppi0_minus_epg_slope_difference.png",
+                                              dvcs_results,
+                                              eppi0_results,
+                                              use_fa18_for_sp19);
+
+    draw_data_channel_current_response_comparison_canvas(dir + "/data_epg_eppi0_current_response_overlay.png",
+                                                         dvcs_results,
+                                                         eppi0_results,
+                                                         use_fa18_for_sp19);
+
+    write_data_channel_slope_comparison_csv(dir + "/data_epg_eppi0_slope_comparison.csv",
+                                            dvcs_results,
+                                            eppi0_results);
 }
 
 // -----------------------------------------------------------------------------
@@ -5190,6 +5749,11 @@ bool update_current_dependence_factors_csv(
                                        eppi0.title + " CSV values",
                                        eppi0_results,
                                        options.use_fa18_inb_current_efficiency_for_sp19_inb);
+
+        draw_data_channel_slope_summary_outputs(options.output_dir,
+                                                dvcs_results,
+                                                eppi0_results,
+                                                options.use_fa18_inb_current_efficiency_for_sp19_inb);
 
         write_summary_csv(options.output_dir + "/" + dvcs.output_token + "/period_summary.csv", dvcs_results);
         write_summary_csv(options.output_dir + "/" + eppi0.output_token + "/period_summary.csv", eppi0_results);
