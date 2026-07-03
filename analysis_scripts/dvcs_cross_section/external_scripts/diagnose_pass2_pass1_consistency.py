@@ -45,6 +45,9 @@ Diagnostics included:
        pass2_local_s_comb_mean_by_xB_bin.png
        pass2_local_s_comb_mean_by_Q2_bin.png
        pass2_local_s_comb_mean_by_t_bin.png
+       pass2_local_s_comb_mean_by_e_theta_bin.png
+       pass2_local_s_comb_mean_by_p_theta_bin.png
+       pass2_local_s_comb_mean_by_g_theta_bin.png
 
   5. Stat-only pass-2/pass-1 pull diagnostic:
        z(N) = (pass2 - N * pass1) /
@@ -92,6 +95,7 @@ PULL_FIT_NORM_MAX = 1.0 + PASS1_NORMALIZATION_FRACTION
 DEFAULT_PULL_MATCH_TOLERANCE_DEG = 2.0
 DEFAULT_HIST_PERCENTILE_MAX = 99.5
 DEFAULT_HIST_BINS = 70
+DEFAULT_THETA_BINS = 8
 
 PASS1_XS_COL = "cross sections, ep->epg, exp"
 PASS1_STAT_COL = "cross sections, ep->epg, exp, stat. unc."
@@ -574,7 +578,7 @@ def detect_theta_columns(fieldnames: Sequence[str], label: str) -> Dict[str, Opt
 
     for key, col in cols.items():
         if col is None:
-            warn(f"{label}: optional {key} column not found; corresponding polar-angle plot will be skipped.")
+            warn(f"{label}: optional {key} column not found; corresponding polar-angle plots will be skipped.")
         else:
             log(f"{label}: optional {key} column -> {col}")
         #endif
@@ -1454,6 +1458,111 @@ def draw_mean_s_comb_by_bin(
     log(f"Wrote grouped kinematic plot: {path}")
 
 
+def draw_mean_s_comb_by_continuous_bins(
+    output_dir: Path,
+    points: Sequence[LocalScalePoint],
+    variable: str,
+    xlabel: str,
+    filename: str,
+    min_good_periods: int,
+    n_bins: int,
+) -> None:
+    selected = nonzero_local_points(points, min_good_periods=min_good_periods)
+
+    pairs: List[Tuple[float, float]] = []
+
+    for p in selected:
+        x = point_variable_value(p, variable)
+        y = p.local.s_comb
+
+        if math.isfinite(x) and math.isfinite(y):
+            pairs.append((x, y))
+        #endif
+    #endfor
+
+    if not pairs:
+        warn(f"No finite grouped values for {filename}; skipping.")
+        return
+    #endif
+
+    x_values = [pair[0] for pair in pairs]
+    xmin = min(x_values)
+    xmax = max(x_values)
+
+    if not math.isfinite(xmin) or not math.isfinite(xmax) or xmin >= xmax:
+        warn(f"Bad x range for {filename}; skipping.")
+        return
+    #endif
+
+    n_bins = max(1, int(n_bins))
+    width = (xmax - xmin) / float(n_bins)
+
+    labels: List[str] = []
+    means: List[float] = []
+    medians: List[float] = []
+    counts: List[int] = []
+
+    for i in range(n_bins):
+        lo = xmin + float(i) * width
+        hi = xmin + float(i + 1) * width
+
+        if i == n_bins - 1:
+            vals = [y for x, y in pairs if x >= lo and x <= hi]
+        else:
+            vals = [y for x, y in pairs if x >= lo and x < hi]
+        #endif
+
+        if not vals:
+            continue
+        #endif
+
+        labels.append(f"[{lo:.3g},{hi:.3g}]")
+        means.append(mean(vals))
+        medians.append(median(vals))
+        counts.append(len(vals))
+    #endfor
+
+    if not labels:
+        warn(f"No nonempty bins for {filename}; skipping.")
+        return
+    #endif
+
+    indices = list(range(len(labels)))
+
+    fig, ax = plt.subplots(figsize=(10.0, 6.0))
+
+    ax.plot(indices, means, marker="o", linestyle="-", label="Mean")
+    ax.plot(indices, medians, marker="s", linestyle="--", label="Median")
+
+    ax.set_xticks(indices)
+    ax.set_xticklabels(labels, rotation=35, ha="right")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(r"Local $s_{\mathrm{comb}}$")
+    ax.set_title(f"Nonzero local pass-2 $s_{{comb}}$ by {xlabel} bin")
+    ax.grid(True, which="major", alpha=0.25)
+    ax.legend(loc="best", frameon=True)
+
+    text = f"Nonempty bins: {len(labels)}\nPoints used: {sum(counts)}"
+
+    ax.text(
+        0.97,
+        0.97,
+        text,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
+    )
+
+    fig.tight_layout()
+    path = output_dir / filename
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+
+    log(f"Wrote grouped continuous-bin plot: {path}")
+
+
 def write_kinematic_summary_by_bin(output_dir: Path, points: Sequence[LocalScalePoint], min_good_periods: int) -> None:
     path = output_dir / "pass2_local_s_comb_kinematic_summary_by_bin.csv"
 
@@ -1509,7 +1618,12 @@ def write_kinematic_summary_by_bin(output_dir: Path, points: Sequence[LocalScale
     #endwith
 
 
-def draw_kinematic_diagnostics(output_dir: Path, points: Sequence[LocalScalePoint], min_good_periods: int) -> None:
+def draw_kinematic_diagnostics(
+    output_dir: Path,
+    points: Sequence[LocalScalePoint],
+    min_good_periods: int,
+    theta_bins: int,
+) -> None:
     draw_s_comb_vs_variable(output_dir, points, "phi", r"$\phi$ (deg)", "pass2_local_s_comb_vs_phi.png", min_good_periods)
     draw_s_comb_vs_variable(output_dir, points, "xB", r"$x_B$", "pass2_local_s_comb_vs_xB.png", min_good_periods)
     draw_s_comb_vs_variable(output_dir, points, "Q2", r"$Q^2$ (GeV$^2$)", "pass2_local_s_comb_vs_Q2.png", min_good_periods)
@@ -1522,6 +1636,36 @@ def draw_kinematic_diagnostics(output_dir: Path, points: Sequence[LocalScalePoin
     draw_mean_s_comb_by_bin(output_dir, points, "xB", r"$x_B$", "pass2_local_s_comb_mean_by_xB_bin.png", min_good_periods)
     draw_mean_s_comb_by_bin(output_dir, points, "Q2", r"$Q^2$ (GeV$^2$)", "pass2_local_s_comb_mean_by_Q2_bin.png", min_good_periods)
     draw_mean_s_comb_by_bin(output_dir, points, "t", r"$|t|$ (GeV$^2$)", "pass2_local_s_comb_mean_by_t_bin.png", min_good_periods)
+
+    draw_mean_s_comb_by_continuous_bins(
+        output_dir=output_dir,
+        points=points,
+        variable="e_theta",
+        xlabel=r"$\theta_e$ (deg)",
+        filename="pass2_local_s_comb_mean_by_e_theta_bin.png",
+        min_good_periods=min_good_periods,
+        n_bins=theta_bins,
+    )
+
+    draw_mean_s_comb_by_continuous_bins(
+        output_dir=output_dir,
+        points=points,
+        variable="p_theta",
+        xlabel=r"$\theta_p$ (deg)",
+        filename="pass2_local_s_comb_mean_by_p_theta_bin.png",
+        min_good_periods=min_good_periods,
+        n_bins=theta_bins,
+    )
+
+    draw_mean_s_comb_by_continuous_bins(
+        output_dir=output_dir,
+        points=points,
+        variable="g_theta",
+        xlabel=r"$\theta_\gamma$ (deg)",
+        filename="pass2_local_s_comb_mean_by_g_theta_bin.png",
+        min_good_periods=min_good_periods,
+        n_bins=theta_bins,
+    )
 
     write_kinematic_summary_by_bin(output_dir, points, min_good_periods=min_good_periods)
 
@@ -1985,6 +2129,12 @@ def parse_args() -> argparse.Namespace:
         help=f"Histogram bin count. Default {DEFAULT_HIST_BINS}.",
     )
     parser.add_argument(
+        "--theta-bins",
+        type=int,
+        default=DEFAULT_THETA_BINS,
+        help=f"Number of equal-width bins for theta mean/median plots. Default {DEFAULT_THETA_BINS}.",
+    )
+    parser.add_argument(
         "--top-outliers",
         type=int,
         default=100,
@@ -2019,6 +2169,7 @@ def main() -> int:
     log(f"  output_dir             = {args.output_dir}")
     log(f"  hist_percentile_max    = {args.hist_percentile_max:g}")
     log(f"  hist_bins              = {args.hist_bins}")
+    log(f"  theta_bins             = {args.theta_bins}")
     log(f"  top_outliers           = {args.top_outliers}")
     log(f"  pull_match_tolerance   = {args.pull_match_tolerance_deg:g} deg")
     log(f"  no_pull_diagnostic     = {args.no_pull_diagnostic}")
@@ -2042,6 +2193,11 @@ def main() -> int:
         args.hist_bins = DEFAULT_HIST_BINS
     #endif
 
+    if args.theta_bins <= 0:
+        warn(f"Invalid --theta-bins {args.theta_bins}; using {DEFAULT_THETA_BINS}.")
+        args.theta_bins = DEFAULT_THETA_BINS
+    #endif
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     pass2_points, local_points = load_pass2_points(
@@ -2058,6 +2214,7 @@ def main() -> int:
     write_local_scale_points_csv(args.output_dir, local_points)
     write_local_scale_summary_csv(args.output_dir, local_points)
     write_top_outliers_csv(args.output_dir, local_points, top_n=max(1, int(args.top_outliers)))
+
     draw_all_histograms(
         output_dir=args.output_dir,
         points=local_points,
@@ -2070,6 +2227,7 @@ def main() -> int:
             output_dir=args.output_dir,
             points=local_points,
             min_good_periods=max(2, int(args.kinematic_min_good_periods)),
+            theta_bins=max(1, int(args.theta_bins)),
         )
     #endif
 
@@ -2097,6 +2255,7 @@ def main() -> int:
         "median_s_comb_ge2": median(s_comb_ge2),
         "rms_s_comb_ge2": rms(s_comb_ge2),
         "max_s_comb_ge2": max(s_comb_ge2) if s_comb_ge2 else 0.0,
+        "theta_bins": int(args.theta_bins),
         "pull_diagnostic_enabled": not args.no_pull_diagnostic,
         "pull_matched_points": pull_summary.n_points,
         "pull_best_pass1_norm": pull_summary.best_norm,
@@ -2121,6 +2280,7 @@ def main() -> int:
     log(f"  median local s_comb ge2       = {run_summary['median_s_comb_ge2']:.10g} ({100.0 * run_summary['median_s_comb_ge2']:.6g}%)")
     log(f"  rms local s_comb ge2          = {run_summary['rms_s_comb_ge2']:.10g} ({100.0 * run_summary['rms_s_comb_ge2']:.6g}%)")
     log(f"  max local s_comb ge2          = {run_summary['max_s_comb_ge2']:.10g} ({100.0 * run_summary['max_s_comb_ge2']:.6g}%)")
+    log(f"  theta bins                    = {args.theta_bins}")
 
     if not args.no_pull_diagnostic:
         log(f"  stat-only matched points      = {pull_summary.n_points}")
