@@ -1570,11 +1570,10 @@ def draw_global_bin_ratio_plot(
 
     log(f"Global bin-number plot: writing PNG to {path}")
 
-    x_pass1 = [p.bin_number - 0.12 for p in points]
-    x_pass2 = [p.bin_number + 0.12 for p in points]
+    x = [p.bin_number for p in points]
 
-    y_pass1 = [p.pass1_y for p in points]
-    yerr_pass1 = [p.pass1_yerr for p in points]
+    pass1_upper = [p.pass1_y + p.pass1_yerr for p in points]
+    pass1_lower = [p.pass1_y - p.pass1_yerr for p in points]
 
     y_pass2 = [p.pass2_y for p in points]
     yerr_pass2 = [p.pass2_yerr for p in points]
@@ -1582,21 +1581,28 @@ def draw_global_bin_ratio_plot(
     fig_width = max(12.0, min(28.0, 7.0 + 0.006 * len(points)))
     fig, ax = plt.subplots(figsize=(fig_width, 6.8))
 
-    ax.errorbar(
-        x_pass1,
-        y_pass1,
-        yerr=yerr_pass1,
-        fmt="s",
-        markersize=2.8,
-        capsize=1.0,
-        linewidth=0.8,
-        linestyle="None",
-        label=f"{pass1_label}: normalized to 1, stat ⊕ 31% norm",
-        zorder=4,
+    ax.plot(
+        x,
+        pass1_upper,
+        linewidth=1.4,
+        linestyle="-",
+        color="C0",
+        label=f"{pass1_label}: 1 ± (stat ⊕ 31% norm)",
+        zorder=3,
+    )
+
+    ax.plot(
+        x,
+        pass1_lower,
+        linewidth=1.4,
+        linestyle="-",
+        color="C0",
+        label=None,
+        zorder=3,
     )
 
     ax.errorbar(
-        x_pass2,
+        x,
         y_pass2,
         yerr=yerr_pass2,
         fmt="o",
@@ -1604,11 +1610,19 @@ def draw_global_bin_ratio_plot(
         capsize=1.0,
         linewidth=0.8,
         linestyle="None",
+        color="C1",
         label=f"{pass2_label}: pass-2/pass-1, stat ⊕ local $s_{{comb}}$",
         zorder=5,
     )
 
-    ax.axhline(1.0, linewidth=1.2, linestyle="--", zorder=2)
+    ax.axhline(
+        1.0,
+        linewidth=1.1,
+        linestyle="--",
+        color="0.25",
+        label="pass-1 central value",
+        zorder=2,
+    )
 
     ymin, ymax = global_ratio_y_limits(points, user_ymin=user_ymin, user_ymax=user_ymax)
 
@@ -1619,28 +1633,13 @@ def draw_global_bin_ratio_plot(
     ax.set_ylabel("Normalized cross section ratio")
     ax.set_title("Global pass-2 vs pass-1 comparison by matched point number")
     ax.grid(True, which="major", alpha=0.25)
-    ax.legend(loc="best", fontsize=9, frameon=True)
-
-    text = (
-        f"Matched points: {len(points)}\n"
-        "pass-1: y=1, error=stat ⊕ 31% norm\n"
-        r"pass-2: y=$\sigma_{p2}/\sigma_{p1}$, error=pass-2 stat $\oplus$ local $s_{\mathrm{comb}}$"
-    )
-
-    ax.text(
-        0.01,
-        0.02,
-        text,
-        transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=9,
-        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
-    )
+    ax.legend(loc="upper right", fontsize=9, frameon=True)
 
     fig.tight_layout()
     fig.savefig(path, dpi=200)
     plt.close(fig)
+
+    log(f"Global bin-number plot: wrote {path}")
 
 
 # ---------------------------------------------------------------------------
