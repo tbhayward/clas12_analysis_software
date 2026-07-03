@@ -9,7 +9,8 @@ This script intentionally does only the comparison plotting:
   - optional BH and KM15 curves,
   - optional pass-2/pass-1 ratio panel,
   - pass-2 point-by-point local s_comb scale boxes,
-  - pass-1 31% normalization boxes.
+  - pass-1 31% normalization boxes,
+  - one global 1-D bin-number comparison plot.
 
 Diagnostics such as s_comb histograms, pull distributions, outlier tables,
 and kinematic maps belong in diagnose_pass2_pass1_consistency.py.
@@ -31,6 +32,33 @@ Optional point-to-point-systematic override:
         --output-dir output/pass2_vs_pass1_model_comparison \
         --two-panel \
         --no-point-to-point-systematics
+
+New global bin-number comparison:
+  The script also writes:
+
+      pass1_pass2_bin_number_ratio_comparison.png
+      pass1_pass2_bin_number_ratio_comparison.csv
+
+  For each matched pass-2/pass-1 point, ordered by (xB, Q2, |t|, phi):
+
+      x = sequential matched-point number, starting at 1
+
+      pass-1 y = 1
+
+      pass-1 y error =
+          sqrt( (pass1_stat / pass1_xs)^2 + 0.31^2 )
+
+      pass-2 y =
+          pass2_xs / pass1_xs
+
+      pass-2 y error =
+          (pass2_xs / pass1_xs) *
+          sqrt( (pass2_stat / pass2_xs)^2 + s_comb(row)^2 )
+
+  This global plot is intended as a compact visual check of all matched
+  pass-2/pass-1 points at once. The pass-1 denominator uncertainty is not
+  folded into the pass-2 ratio error here, because pass-1 is shown separately
+  as the normalized reference band/points.
 
 Uncertainty prescription:
   * Pass-2 central values are read from:
@@ -247,6 +275,24 @@ class RatioPoint:
     stat_err_high: float
     scale_err: float
     pass2_scale_frac: float
+
+
+@dataclass
+class GlobalBinRatioPoint:
+    bin_number: int
+    key: BinKey
+    phi_pass2: float
+    phi_pass1: float
+    pass1_y: float
+    pass1_yerr: float
+    pass2_y: float
+    pass2_yerr: float
+    pass1_xs: float
+    pass1_stat: float
+    pass2_xs: float
+    pass2_stat: float
+    pass2_s_comb: float
+    pass2_n_good_periods: int
 
 
 @dataclass
@@ -729,6 +775,28 @@ def ratio_scale_uncertainty(ratio: float, pass2_local_scale_frac: float) -> floa
     rel = math.sqrt(pass2_local_scale_frac ** 2 + PASS1_NORMALIZATION_FRACTION ** 2)
 
     return abs(ratio * rel)
+
+
+def global_pass1_normalized_yerr(pass1_point: DataPoint) -> float:
+    if not finite_positive(pass1_point.xs):
+        return float("nan")
+    #endif
+
+    rel_stat = abs(pass1_point.stat / pass1_point.xs)
+
+    return math.sqrt(rel_stat * rel_stat + PASS1_NORMALIZATION_FRACTION * PASS1_NORMALIZATION_FRACTION)
+
+
+def global_pass2_ratio_yerr(pass2_point: DataPoint, pass1_point: DataPoint) -> float:
+    if not finite_positive(pass2_point.xs) or not finite_positive(pass1_point.xs):
+        return float("nan")
+    #endif
+
+    ratio = pass2_point.xs / pass1_point.xs
+    rel_stat = abs(pass2_point.stat / pass2_point.xs)
+    rel_scale = abs(pass2_point.scale_syst_frac)
+
+    return abs(ratio * math.sqrt(rel_stat * rel_stat + rel_scale * rel_scale))
 
 
 # ---------------------------------------------------------------------------
@@ -1320,6 +1388,259 @@ def ratio_axis_limits(ratio_sets: Sequence[Sequence[RatioPoint]]) -> Tuple[float
     pad = 0.15 * span
 
     return ymin - pad, ymax + pad
+
+
+# ---------------------------------------------------------------------------
+# Global bin-number comparison.
+# ---------------------------------------------------------------------------
+def build_global_bin_ratio_points(panels: Sequence[PanelData]) -> List[GlobalBinRatioPoint]:
+    out: List[GlobalBinRatioPoint] = []
+    bin_number = 0
+
+    sorted_panels = sorted(panels, key=lambda p: key_sort_tuple(p.key))
+
+    for panel in sorted_panels:
+        pass2_points = sorted(panel.pass2, key=lambda p: p.phi)
+
+        for p2 in pass2_points:
+            p1 = find_nearest_pass1_point(p2.phi, panel.pass1)
+
+            if p1 is None:
+                continue
+            #endif
+
+            if not finite_positive(p1.xs) or not finite_positive(p2.xs):
+                continue
+            #endif
+
+            pass1_y = 1.0
+            pass1_yerr = global_pass1_normalized_yerr(p1)
+            pass2_y = p2.xs / p1.xs
+            pass2_yerr = global_pass2_ratio_yerr(p2, p1)
+
+            if not math.isfinite(pass1_yerr) or not math.isfinite(pass2_yerr):
+                continue
+            #endif
+
+            bin_number += 1
+
+            out.append(
+                GlobalBinRatioPoint(
+                    bin_number=bin_number,
+                    key=panel.key,
+                    phi_pass2=p2.phi,
+                    phi_pass1=p1.phi,
+                    pass1_y=pass1_y,
+                    pass1_yerr=pass1_yerr,
+                    pass2_y=pass2_y,
+                    pass2_yerr=pass2_yerr,
+                    pass1_xs=p1.xs,
+                    pass1_stat=p1.stat,
+                    pass2_xs=p2.xs,
+                    pass2_stat=p2.stat,
+                    pass2_s_comb=p2.scale_syst_frac,
+                    pass2_n_good_periods=p2.local_scale_n_periods,
+                )
+            )
+        #endfor
+    #endfor
+
+    return out
+
+
+def write_global_bin_ratio_csv(output_dir: Path, points: Sequence[GlobalBinRatioPoint]) -> None:
+    path = output_dir / "pass1_pass2_bin_number_ratio_comparison.csv"
+
+    log(f"Global bin-number plot: writing CSV to {path}")
+
+    with path.open("w", newline="") as handle:
+        handle.write(
+            "bin_number,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
+            "phi_pass2,phi_pass1,"
+            "pass1_normalized_y,pass1_yerr_stat_plus_31percent_norm,"
+            "pass2_over_pass1,pass2_yerr_stat_plus_s_comb,"
+            "pass1_xs,pass1_stat,pass1_norm_frac,"
+            "pass2_xs,pass2_stat,pass2_s_comb,pass2_n_good_periods\n"
+        )
+
+        for p in points:
+            key = p.key
+
+            handle.write(
+                f"{p.bin_number},"
+                f"{format_float(key.xb_min)},"
+                f"{format_float(key.xb_max)},"
+                f"{format_float(key.q2_min)},"
+                f"{format_float(key.q2_max)},"
+                f"{format_float(key.t_min)},"
+                f"{format_float(key.t_max)},"
+                f"{format_float(p.phi_pass2)},"
+                f"{format_float(p.phi_pass1)},"
+                f"{format_float(p.pass1_y)},"
+                f"{format_float(p.pass1_yerr)},"
+                f"{format_float(p.pass2_y)},"
+                f"{format_float(p.pass2_yerr)},"
+                f"{format_float(p.pass1_xs)},"
+                f"{format_float(p.pass1_stat)},"
+                f"{format_float(PASS1_NORMALIZATION_FRACTION)},"
+                f"{format_float(p.pass2_xs)},"
+                f"{format_float(p.pass2_stat)},"
+                f"{format_float(p.pass2_s_comb)},"
+                f"{p.pass2_n_good_periods}\n"
+            )
+        #endfor
+    #endwith
+
+
+def global_ratio_y_limits(
+    points: Sequence[GlobalBinRatioPoint],
+    user_ymin: Optional[float],
+    user_ymax: Optional[float],
+) -> Tuple[float, float]:
+    if user_ymin is not None and user_ymax is not None:
+        if user_ymax > user_ymin:
+            return user_ymin, user_ymax
+        #endif
+    #endif
+
+    vals: List[float] = []
+
+    for p in points:
+        vals.append(p.pass1_y - p.pass1_yerr)
+        vals.append(p.pass1_y + p.pass1_yerr)
+        vals.append(p.pass2_y - p.pass2_yerr)
+        vals.append(p.pass2_y + p.pass2_yerr)
+        vals.append(1.0)
+    #endfor
+
+    vals = [v for v in vals if math.isfinite(v)]
+
+    if not vals:
+        ymin = 0.0
+        ymax = 2.0
+    else:
+        ymin = min(vals)
+        ymax = max(vals)
+
+        span = ymax - ymin
+
+        if span <= 0.0:
+            ymin -= 0.5
+            ymax += 0.5
+        else:
+            pad = 0.10 * span
+            ymin -= pad
+            ymax += pad
+        #endif
+    #endif
+
+    if user_ymin is not None:
+        ymin = user_ymin
+    #endif
+
+    if user_ymax is not None:
+        ymax = user_ymax
+    #endif
+
+    if ymax <= ymin:
+        ymax = ymin + 1.0
+    #endif
+
+    return ymin, ymax
+
+
+def draw_global_bin_ratio_plot(
+    output_dir: Path,
+    panels: Sequence[PanelData],
+    pass2_label: str,
+    pass1_label: str,
+    user_ymin: Optional[float],
+    user_ymax: Optional[float],
+) -> None:
+    points = build_global_bin_ratio_points(panels)
+
+    if not points:
+        warn("Global bin-number plot: no matched pass-2/pass-1 points; skipping.")
+        return
+    #endif
+
+    write_global_bin_ratio_csv(output_dir, points)
+
+    path = output_dir / "pass1_pass2_bin_number_ratio_comparison.png"
+
+    log(f"Global bin-number plot: writing PNG to {path}")
+
+    x_pass1 = [p.bin_number - 0.12 for p in points]
+    x_pass2 = [p.bin_number + 0.12 for p in points]
+
+    y_pass1 = [p.pass1_y for p in points]
+    yerr_pass1 = [p.pass1_yerr for p in points]
+
+    y_pass2 = [p.pass2_y for p in points]
+    yerr_pass2 = [p.pass2_yerr for p in points]
+
+    fig_width = max(12.0, min(28.0, 7.0 + 0.006 * len(points)))
+    fig, ax = plt.subplots(figsize=(fig_width, 6.8))
+
+    ax.errorbar(
+        x_pass1,
+        y_pass1,
+        yerr=yerr_pass1,
+        fmt="s",
+        markersize=2.8,
+        capsize=1.0,
+        linewidth=0.8,
+        linestyle="None",
+        label=f"{pass1_label}: normalized to 1, stat ⊕ 31% norm",
+        zorder=4,
+    )
+
+    ax.errorbar(
+        x_pass2,
+        y_pass2,
+        yerr=yerr_pass2,
+        fmt="o",
+        markersize=2.8,
+        capsize=1.0,
+        linewidth=0.8,
+        linestyle="None",
+        label=f"{pass2_label}: pass-2/pass-1, stat ⊕ local $s_{{comb}}$",
+        zorder=5,
+    )
+
+    ax.axhline(1.0, linewidth=1.2, linestyle="--", zorder=2)
+
+    ymin, ymax = global_ratio_y_limits(points, user_ymin=user_ymin, user_ymax=user_ymax)
+
+    ax.set_xlim(0.0, float(len(points)) + 1.0)
+    ax.set_ylim(ymin, ymax)
+
+    ax.set_xlabel("Matched point number")
+    ax.set_ylabel("Normalized cross section ratio")
+    ax.set_title("Global pass-2 vs pass-1 comparison by matched point number")
+    ax.grid(True, which="major", alpha=0.25)
+    ax.legend(loc="best", fontsize=9, frameon=True)
+
+    text = (
+        f"Matched points: {len(points)}\n"
+        "pass-1: y=1, error=stat ⊕ 31% norm\n"
+        r"pass-2: y=$\sigma_{p2}/\sigma_{p1}$, error=pass-2 stat $\oplus$ local $s_{\mathrm{comb}}$"
+    )
+
+    ax.text(
+        0.01,
+        0.02,
+        text,
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=9,
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
+    )
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -1920,6 +2241,24 @@ def parse_args() -> argparse.Namespace:
         help="Use stat-only vertical error bars for pass-1 and pass-2. Scale boxes remain.",
     )
 
+    parser.add_argument(
+        "--no-global-bin-plot",
+        action="store_true",
+        help="Skip the global matched-point bin-number pass-1/pass-2 comparison plot.",
+    )
+    parser.add_argument(
+        "--global-ratio-y-min",
+        type=float,
+        default=None,
+        help="Optional fixed y-axis minimum for pass1_pass2_bin_number_ratio_comparison.png.",
+    )
+    parser.add_argument(
+        "--global-ratio-y-max",
+        type=float,
+        default=None,
+        help="Optional fixed y-axis maximum for pass1_pass2_bin_number_ratio_comparison.png.",
+    )
+
     parser.add_argument("--print-columns", action="store_true")
     parser.add_argument("--workers", type=int, default=5)
     parser.add_argument("--progress-every", type=int, default=1)
@@ -1943,6 +2282,9 @@ def main() -> int:
     log(f"  output_dir                     = {args.output_dir}")
     log(f"  two_panel                      = {args.two_panel}")
     log(f"  no_point_to_point_systematics  = {args.no_point_to_point_systematics}")
+    log(f"  no_global_bin_plot             = {args.no_global_bin_plot}")
+    log(f"  global_ratio_y_min             = {args.global_ratio_y_min}")
+    log(f"  global_ratio_y_max             = {args.global_ratio_y_max}")
     log(f"  skip_models                    = {args.skip_models}")
     log(f"  e_beam                         = {args.e_beam:g} GeV")
     log(f"  log_y_min                      = {args.log_y_min:g}")
@@ -1987,6 +2329,17 @@ def main() -> int:
 
     if not panels:
         die("No panels to write.")
+    #endif
+
+    if not args.no_global_bin_plot:
+        draw_global_bin_ratio_plot(
+            output_dir=args.output_dir,
+            panels=panels,
+            pass2_label=args.pass2_label,
+            pass1_label=args.pass1_label,
+            user_ymin=args.global_ratio_y_min,
+            user_ymax=args.global_ratio_y_max,
+        )
     #endif
 
     model_cfg = ModelConfig(
@@ -2140,6 +2493,7 @@ def main() -> int:
     log("Final summary:")
     log(f"  output directory              = {args.output_dir.resolve()}")
     log(f"  panels written                = {len(manifest)}")
+    log(f"  global bin-number plot        = {not args.no_global_bin_plot}")
     log(f"  no point-to-point systematics = {args.no_point_to_point_systematics}")
     log(f"  two-panel mode                = {args.two_panel}")
     log(f"  workers used                  = {n_workers}")
