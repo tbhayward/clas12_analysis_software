@@ -2249,13 +2249,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--global-ratio-y-min",
         type=float,
-        default=None,
+        default=0,
         help="Optional fixed y-axis minimum for pass1_pass2_bin_number_ratio_comparison.png.",
     )
     parser.add_argument(
         "--global-ratio-y-max",
         type=float,
-        default=None,
+        default=2,
         help="Optional fixed y-axis maximum for pass1_pass2_bin_number_ratio_comparison.png.",
     )
 
