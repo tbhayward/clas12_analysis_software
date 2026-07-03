@@ -21,6 +21,9 @@ Diagnostics included:
        pass2_point_by_point_scale_summary.csv
        pass2_local_s_comb_kinematic_summary_by_bin.csv
        pass2_local_s_comb_top_outliers.csv
+       pass1_pass2_stat_only_pull_points.csv
+       pass1_pass2_stat_only_pull_summary.csv
+       diagnostic_run_summary.json
 
   3. Histograms:
        pass2_point_by_point_s_comb_distribution_ge2_good_periods.png
@@ -38,6 +41,7 @@ Diagnostics included:
        pass2_local_s_comb_vs_e_theta.png
        pass2_local_s_comb_vs_p_theta.png
        pass2_local_s_comb_vs_g_theta.png
+
        pass2_local_s_comb_mean_by_xB_bin.png
        pass2_local_s_comb_mean_by_Q2_bin.png
        pass2_local_s_comb_mean_by_t_bin.png
@@ -87,6 +91,7 @@ PULL_FIT_NORM_MAX = 1.0 + PASS1_NORMALIZATION_FRACTION
 
 DEFAULT_PULL_MATCH_TOLERANCE_DEG = 2.0
 DEFAULT_HIST_PERCENTILE_MAX = 99.5
+DEFAULT_HIST_BINS = 70
 
 PASS1_XS_COL = "cross sections, ep->epg, exp"
 PASS1_STAT_COL = "cross sections, ep->epg, exp, stat. unc."
@@ -448,16 +453,6 @@ def percentile(values: Sequence[float], pct: float) -> float:
     return vals[lo] * (1.0 - frac) + vals[hi] * frac
 
 
-def csv_escape(s: object) -> str:
-    text = str(s)
-
-    if "," not in text and '"' not in text and "\n" not in text and "\r" not in text:
-        return text
-    #endif
-
-    return '"' + text.replace('"', '""') + '"'
-
-
 # ---------------------------------------------------------------------------
 # Common CSV kinematics.
 # ---------------------------------------------------------------------------
@@ -496,6 +491,14 @@ def detect_theta_columns(fieldnames: Sequence[str], label: str) -> Dict[str, Opt
     cols["e_theta"] = find_column_fuzzy(
         fieldnames,
         [
+            "e_theta, 10.6 GeV",
+            "e_theta, Fa18",
+            "e_theta, Sp18",
+            "e_theta, Fa18 Inb",
+            "e_theta, Fa18 Out",
+            "e_theta, Sp19 Inb",
+            "e_theta, Sp18 Inb",
+            "e_theta, Sp18 Out",
             "e_theta",
             "e_theta_avg",
             "etheta",
@@ -514,6 +517,14 @@ def detect_theta_columns(fieldnames: Sequence[str], label: str) -> Dict[str, Opt
     cols["p_theta"] = find_column_fuzzy(
         fieldnames,
         [
+            "p_theta, 10.6 GeV",
+            "p_theta, Fa18",
+            "p_theta, Sp18",
+            "p_theta, Fa18 Inb",
+            "p_theta, Fa18 Out",
+            "p_theta, Sp19 Inb",
+            "p_theta, Sp18 Inb",
+            "p_theta, Sp18 Out",
             "p_theta",
             "p_theta_avg",
             "ptheta",
@@ -532,6 +543,14 @@ def detect_theta_columns(fieldnames: Sequence[str], label: str) -> Dict[str, Opt
     cols["g_theta"] = find_column_fuzzy(
         fieldnames,
         [
+            "g_theta, 10.6 GeV",
+            "g_theta, Fa18",
+            "g_theta, Sp18",
+            "g_theta, Fa18 Inb",
+            "g_theta, Fa18 Out",
+            "g_theta, Sp19 Inb",
+            "g_theta, Sp18 Inb",
+            "g_theta, Sp18 Out",
             "g_theta",
             "g_theta_avg",
             "gtheta",
@@ -615,14 +634,6 @@ def key_center_q2(key: BinKey) -> float:
 
 def key_center_t(key: BinKey) -> float:
     return 0.5 * (key.t_min + key.t_max)
-
-
-def key_label(key: BinKey) -> str:
-    return (
-        f"xB=[{key.xb_min:.4g},{key.xb_max:.4g}], "
-        f"Q2=[{key.q2_min:.4g},{key.q2_max:.4g}], "
-        f"t=[{key.t_min:.4g},{key.t_max:.4g}]"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -802,6 +813,12 @@ def load_pass2_points(
             period: find_column(fieldnames, [pass2_period_cross_section_column(period)])
             for period in PASS2_PERIODS_10P6_UNPOL
         }
+
+        log(f"Pass-2: central cross-section column -> {xs_col}")
+
+        for period in PASS2_PERIODS_10P6_UNPOL:
+            log(f"Pass-2: local scale input {period:10s} -> {period_cols[period]}")
+        #endfor
 
         pass2_points: List[Pass2Point] = []
         local_points: List[LocalScalePoint] = []
@@ -1169,6 +1186,7 @@ def draw_quantity_histogram(
     filename_suffix: str,
     title_suffix: str,
     percentile_max: float,
+    hist_bins: int,
 ) -> None:
     vals = values_for(points, quantity=quantity, min_good=min_good, exact_good=exact_good)
 
@@ -1196,7 +1214,6 @@ def draw_quantity_histogram(
     #endif
 
     x_max = 1.10 * x_shown_max
-    n_bins = 70
 
     label_map = {
         "s_comb": r"$s_{\mathrm{comb}}$",
@@ -1216,7 +1233,7 @@ def draw_quantity_histogram(
 
     ax.hist(
         shown,
-        bins=n_bins,
+        bins=hist_bins,
         range=(0.0, x_max),
         alpha=0.35,
         label=label_map.get(quantity, quantity),
@@ -1265,14 +1282,19 @@ def draw_quantity_histogram(
     log(f"Wrote histogram: {path}")
 
 
-def draw_all_histograms(output_dir: Path, points: Sequence[LocalScalePoint], percentile_max: float) -> None:
-    draw_quantity_histogram(output_dir, points, "s_comb", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max)
-    draw_quantity_histogram(output_dir, points, "s_comb", 3, None, "ge3_good_periods", "at least 3 good periods", percentile_max)
-    draw_quantity_histogram(output_dir, points, "s_comb", 4, 4, "4_good_periods", "exactly 4 good periods", percentile_max)
+def draw_all_histograms(
+    output_dir: Path,
+    points: Sequence[LocalScalePoint],
+    percentile_max: float,
+    hist_bins: int,
+) -> None:
+    draw_quantity_histogram(output_dir, points, "s_comb", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max, hist_bins)
+    draw_quantity_histogram(output_dir, points, "s_comb", 3, None, "ge3_good_periods", "at least 3 good periods", percentile_max, hist_bins)
+    draw_quantity_histogram(output_dir, points, "s_comb", 4, 4, "4_good_periods", "exactly 4 good periods", percentile_max, hist_bins)
 
-    draw_quantity_histogram(output_dir, points, "s_obs", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max)
-    draw_quantity_histogram(output_dir, points, "s_stat", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max)
-    draw_quantity_histogram(output_dir, points, "half_width", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max)
+    draw_quantity_histogram(output_dir, points, "s_obs", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max, hist_bins)
+    draw_quantity_histogram(output_dir, points, "s_stat", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max, hist_bins)
+    draw_quantity_histogram(output_dir, points, "half_width", 2, None, "ge2_good_periods", "at least 2 good periods", percentile_max, hist_bins)
 
 
 # ---------------------------------------------------------------------------
@@ -1957,6 +1979,12 @@ def parse_args() -> argparse.Namespace:
         help="Histogram shown x-range upper percentile. Default 99.5.",
     )
     parser.add_argument(
+        "--hist-bins",
+        type=int,
+        default=DEFAULT_HIST_BINS,
+        help=f"Histogram bin count. Default {DEFAULT_HIST_BINS}.",
+    )
+    parser.add_argument(
         "--top-outliers",
         type=int,
         default=100,
@@ -1990,6 +2018,7 @@ def main() -> int:
     log(f"  pass1_csv              = {args.pass1_csv}")
     log(f"  output_dir             = {args.output_dir}")
     log(f"  hist_percentile_max    = {args.hist_percentile_max:g}")
+    log(f"  hist_bins              = {args.hist_bins}")
     log(f"  top_outliers           = {args.top_outliers}")
     log(f"  pull_match_tolerance   = {args.pull_match_tolerance_deg:g} deg")
     log(f"  no_pull_diagnostic     = {args.no_pull_diagnostic}")
@@ -2008,6 +2037,11 @@ def main() -> int:
         args.hist_percentile_max = DEFAULT_HIST_PERCENTILE_MAX
     #endif
 
+    if args.hist_bins <= 0:
+        warn(f"Invalid --hist-bins {args.hist_bins}; using {DEFAULT_HIST_BINS}.")
+        args.hist_bins = DEFAULT_HIST_BINS
+    #endif
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     pass2_points, local_points = load_pass2_points(
@@ -2024,7 +2058,12 @@ def main() -> int:
     write_local_scale_points_csv(args.output_dir, local_points)
     write_local_scale_summary_csv(args.output_dir, local_points)
     write_top_outliers_csv(args.output_dir, local_points, top_n=max(1, int(args.top_outliers)))
-    draw_all_histograms(args.output_dir, local_points, percentile_max=args.hist_percentile_max)
+    draw_all_histograms(
+        output_dir=args.output_dir,
+        points=local_points,
+        percentile_max=args.hist_percentile_max,
+        hist_bins=args.hist_bins,
+    )
 
     if not args.no_kinematic_plots:
         draw_kinematic_diagnostics(
