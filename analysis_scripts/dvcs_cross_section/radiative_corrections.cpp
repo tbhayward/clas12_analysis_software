@@ -394,6 +394,18 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
     require_bool("enable_dvcsgen_ycol_cut", cfg.enable_dvcsgen_ycol_cut);
     require_number("dvcsgen_ycol_cut", cfg.dvcsgen_ycol_cut);
 
+    if (auto it = j.find("enable_auxiliary_fiducial_cuts"); it != j.end()) cfg.enable_auxiliary_fiducial_cuts = it->get<bool>();
+    if (auto it = j.find("auxiliary_require_distinct_fd_sectors"); it != j.end()) cfg.auxiliary_require_distinct_fd_sectors = it->get<bool>();
+    if (auto it = j.find("auxiliary_e_theta_min_deg"); it != j.end()) cfg.auxiliary_e_theta_min_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_e_theta_max_deg"); it != j.end()) cfg.auxiliary_e_theta_max_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_fd_proton_theta_min_deg"); it != j.end()) cfg.auxiliary_fd_proton_theta_min_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_fd_proton_theta_max_deg"); it != j.end()) cfg.auxiliary_fd_proton_theta_max_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_fd_photon_theta_min_deg"); it != j.end()) cfg.auxiliary_fd_photon_theta_min_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_fd_photon_theta_max_deg"); it != j.end()) cfg.auxiliary_fd_photon_theta_max_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_cd_proton_theta_min_deg"); it != j.end()) cfg.auxiliary_cd_proton_theta_min_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_cd_proton_theta_max_deg"); it != j.end()) cfg.auxiliary_cd_proton_theta_max_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_ft_photon_p_min_GeV"); it != j.end()) cfg.auxiliary_ft_photon_p_min_GeV = it->get<double>();
+
     require_bool("enable_topology_filter", cfg.enable_topology_filter);
     require_int("required_detector1", cfg.required_detector1);
     require_int("required_detector2", cfg.required_detector2);
@@ -429,6 +441,7 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
               << " pTmiss_max=" << cfg.pTmiss_max << "\n";
     std::cout << "          enable_dvcsgen_ycol_cut=" << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false")
               << " dvcsgen_ycol_cut=" << cfg.dvcsgen_ycol_cut << "\n";
+    std::cout << "          enable_auxiliary_fiducial_cuts=" << (cfg.enable_auxiliary_fiducial_cuts ? "true" : "false") << "\n";
     std::cout << "          enable_topology_filter=" << (cfg.enable_topology_filter ? "true" : "false")
               << " required_detector1=" << cfg.required_detector1
               << " required_detector2=" << cfg.required_detector2 << "\n";
@@ -668,6 +681,14 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     const char* br_Emiss2 = "Emiss2";
     const char* br_det1   = "detector1";
     const char* br_det2   = "detector2";
+    const char* br_e_p = "e_p";
+    const char* br_e_theta = "e_theta";
+    const char* br_e_phi = "e_phi";
+    const char* br_p1_theta = "p1_theta";
+    const char* br_p1_phi = "p1_phi";
+    const char* br_p2_p = "p2_p";
+    const char* br_p2_theta = "p2_theta";
+    const char* br_p2_phi = "p2_phi";
 
     if (!tree->GetBranch(br_x) ||
         !tree->GetBranch(br_Q2) ||
@@ -684,6 +705,17 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         std::exit(EXIT_FAILURE);
     }
 
+    if (global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut) {
+        if (!tree->GetBranch(br_e_theta) || !tree->GetBranch(br_e_phi) ||
+            !tree->GetBranch(br_p1_theta) || !tree->GetBranch(br_p1_phi) ||
+            !tree->GetBranch(br_p2_p) || !tree->GetBranch(br_p2_theta) || !tree->GetBranch(br_p2_phi) ||
+            (global_cfg.enable_dvcsgen_ycol_cut && !tree->GetBranch(br_e_p))) {
+            std::cerr << "[radcorr] FATAL: auxiliary/ycol global cuts require e_p(if ycol), e_theta, e_phi, p1_theta, p1_phi, p2_p, p2_theta, p2_phi branches in generated MC tree for "
+                      << group_label << " (" << tree_label << ").\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
     double g_x = 0.0;
     double g_Q2 = 0.0;
     double g_t1 = 0.0;
@@ -693,6 +725,14 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     double g_Emiss2 = 0.0;
     int g_det1 = 0;
     int g_det2 = 0;
+    double g_e_p = 0.0;
+    double g_e_theta = 0.0;
+    double g_e_phi = 0.0;
+    double g_p1_theta = 0.0;
+    double g_p1_phi = 0.0;
+    double g_p2_p = 0.0;
+    double g_p2_theta = 0.0;
+    double g_p2_phi = 0.0;
 
     tree->SetBranchAddress(br_x, &g_x);
     tree->SetBranchAddress(br_Q2, &g_Q2);
@@ -703,6 +743,14 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     tree->SetBranchAddress(br_Emiss2, &g_Emiss2);
     tree->SetBranchAddress(br_det1, &g_det1);
     tree->SetBranchAddress(br_det2, &g_det2);
+    if (tree->GetBranch(br_e_p)) tree->SetBranchAddress(br_e_p, &g_e_p);
+    if (tree->GetBranch(br_e_theta)) tree->SetBranchAddress(br_e_theta, &g_e_theta);
+    if (tree->GetBranch(br_e_phi)) tree->SetBranchAddress(br_e_phi, &g_e_phi);
+    if (tree->GetBranch(br_p1_theta)) tree->SetBranchAddress(br_p1_theta, &g_p1_theta);
+    if (tree->GetBranch(br_p1_phi)) tree->SetBranchAddress(br_p1_phi, &g_p1_phi);
+    if (tree->GetBranch(br_p2_p)) tree->SetBranchAddress(br_p2_p, &g_p2_p);
+    if (tree->GetBranch(br_p2_theta)) tree->SetBranchAddress(br_p2_theta, &g_p2_theta);
+    if (tree->GetBranch(br_p2_phi)) tree->SetBranchAddress(br_p2_phi, &g_p2_phi);
 
     const Long64_t N = tree->GetEntries();
     Long64_t used = 0;
@@ -716,7 +764,19 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         //   passes_global_cuts(t1, open_angle_ep2_deg, pTmiss, det1, det2, cfg)
         //
         // NOTE: user confirmed open_angle_ep2 is already in degrees.
-        if (!passes_global_cuts(g_t1, g_open_angle, g_pTmiss, g_det1, g_det2, global_cfg)) {
+        bool pass_global = false;
+        if (global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut) {
+            pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss,
+                                             g_det1, g_det2,
+                                             10.6,
+                                             g_e_p, g_e_theta, g_e_phi,
+                                             g_p1_theta, g_p1_phi,
+                                             g_p2_p, g_p2_theta, g_p2_phi,
+                                             global_cfg);
+        } else {
+            pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss, g_det1, g_det2, global_cfg);
+        }
+        if (!pass_global) {
             if (N > 0 && next_pct <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)N;
                 while (pct >= (double)next_pct && next_pct <= 100) {

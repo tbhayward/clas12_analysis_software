@@ -292,6 +292,7 @@ struct BranchBinder {
     double e_p = 0.0;
     double e_theta = 0.0;
     double e_phi = 0.0;
+    double p1_theta = 0.0;
     double p1_phi = 0.0;
 
     double p2_p = 0.0;
@@ -320,6 +321,7 @@ struct BranchBinder {
     bool has_e_p = false;
     bool has_e_theta = false;
     bool has_e_phi = false;
+    bool has_p1_theta = false;
     bool has_p1_phi = false;
 
     bool has_p2_p = false;
@@ -363,6 +365,7 @@ struct BranchBinder {
         enable("e_p");
         enable("e_theta");
         enable("e_phi");
+        enable("p1_theta");
         enable("p1_phi");
 
         enable("p2_p");
@@ -407,6 +410,7 @@ struct BranchBinder {
         bind_double("e_p", &e_p, has_e_p);
         bind_double("e_theta", &e_theta, has_e_theta);
         bind_double("e_phi", &e_phi, has_e_phi);
+        bind_double("p1_theta", &p1_theta, has_p1_theta);
         bind_double("p1_phi", &p1_phi, has_p1_phi);
 
         bind_double("p2_p", &p2_p, has_p2_p);
@@ -508,6 +512,34 @@ static bool passes_global_for_topology(
         }
     }
 
+    if (global_cuts_require_auxiliary_kinematics(gcfg)) {
+        std::vector<std::string> missing;
+        if (!b.has_e_theta)  missing.push_back("e_theta");
+        if (!b.has_e_phi)    missing.push_back("e_phi");
+        if (!b.has_p1_theta) missing.push_back("p1_theta");
+        if (!b.has_p1_phi)   missing.push_back("p1_phi");
+        if (!b.has_p2_p)     missing.push_back("p2_p");
+        if (!b.has_p2_theta) missing.push_back("p2_theta");
+        if (!b.has_p2_phi)   missing.push_back("p2_phi");
+        if (!missing.empty()) {
+            std::ostringstream ss;
+            ss << "[q2_xb_cut_coverage] FATAL: auxiliary fiducial cuts require missing branch(es): ";
+            for (size_t i = 0; i < missing.size(); ++i) {
+                if (i > 0) ss << ", ";
+                ss << missing[i];
+            }
+            throw std::runtime_error(ss.str());
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p1_theta, b.p1_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  gcfg);
+    }
+
     if (gcfg.enable_dvcsgen_ycol_cut) {
         std::vector<std::string> missing;
         if (!b.has_e_p)      missing.push_back("e_p");
@@ -530,7 +562,7 @@ static bool passes_global_for_topology(
             return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                       b.detector1, b.detector2,
                                       period_label,
-                                      b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_theta, b.p1_phi,
                                       b.p2_p, b.p2_theta, b.p2_phi,
                                       gcfg);
         }

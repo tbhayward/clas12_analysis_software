@@ -83,6 +83,11 @@ int main(int argc, char* argv[]) {
     global_cfg.enable_photon_fd_sector_filter = false;
     global_cfg.photon_fd_sector = 1;
 
+    // Auxiliary fiducial cuts. Enable this single switch to apply the additional
+    // FD-sector separation, particle-angle, and FT-photon momentum cuts
+    // analysis-wide. The numerical values are defined in GlobalCutConfig.
+    global_cfg.enable_auxiliary_fiducial_cuts = true;
+
     // Existing optional propagator/ycol mirror cut.
     global_cfg.enable_dvcsgen_ycol_cut = false;
     global_cfg.dvcsgen_ycol_cut = 0.005;

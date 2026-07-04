@@ -35,6 +35,27 @@ struct GlobalCutConfig {
     bool   enable_dvcsgen_ycol_cut = false;
     double dvcsgen_ycol_cut        = 0.005;
 
+    // Optional auxiliary fiducial cuts. These are stricter analysis-wide
+    // particle-angle/topology cuts used for detector-acceptance diagnostics and
+    // systematic studies. Angles in this config are degrees; tree branches are
+    // still expected in radians.
+    bool   enable_auxiliary_fiducial_cuts = false;
+    bool   auxiliary_require_distinct_fd_sectors = true;
+
+    double auxiliary_e_theta_min_deg = 8.0;
+    double auxiliary_e_theta_max_deg = 25.0;  // applied only in CD-FD and FD-FD
+
+    double auxiliary_fd_proton_theta_min_deg = 8.0;
+    double auxiliary_fd_proton_theta_max_deg = 40.0;
+
+    double auxiliary_fd_photon_theta_min_deg = 8.0;  // applied only in FD-FD
+    double auxiliary_fd_photon_theta_max_deg = 40.0; // applied to all FD photons
+
+    double auxiliary_cd_proton_theta_min_deg = 40.0;
+    double auxiliary_cd_proton_theta_max_deg = 64.23;
+
+    double auxiliary_ft_photon_p_min_GeV = 4.0;
+
     // Optional single-topology filter.
     // required_detector1/2 set as (p-region, gamma-region):
     //   FD-FD: (1, 1)
@@ -77,6 +98,7 @@ void set_default_global_cuts(const GlobalCutConfig& cfg);
 
 // Convenience diagnostics.
 bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg = default_global_cuts());
+bool global_cuts_require_auxiliary_kinematics(const GlobalCutConfig& cfg = default_global_cuts());
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg = default_global_cuts());
 
 // Sector helpers. Input phi is in radians.
@@ -169,8 +191,45 @@ bool passes_global_cuts(double t1,
                         double p2_phi,
                         const GlobalCutConfig& cfg);
 
+// Full auxiliary-aware overloads. These are preferred whenever
+// enable_auxiliary_fiducial_cuts may be true because they provide all particle
+// momenta/angles needed by that cut set.
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        double Ebeam,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p1_theta,
+                        double p1_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const std::string& period_label,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p1_theta,
+                        double p1_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
 // Full sector-aware overloads. These are the preferred overloads for production
 // event loops because they support topology, ycol, and particle-sector filters.
+// They intentionally fail if enable_auxiliary_fiducial_cuts=true because the
+// auxiliary cut set also requires p1_theta.
 bool passes_global_cuts(double t1,
                         double open_angle_ep2_deg,
                         double pTmiss,

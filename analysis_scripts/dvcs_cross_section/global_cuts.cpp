@@ -64,7 +64,13 @@ bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg) {
     return cfg.enable_electron_fd_sector_filter ||
            cfg.enable_proton_fd_sector_filter   ||
            cfg.enable_proton_cd_sector_filter   ||
-           cfg.enable_photon_fd_sector_filter;
+           cfg.enable_photon_fd_sector_filter   ||
+           (cfg.enable_auxiliary_fiducial_cuts &&
+            cfg.auxiliary_require_distinct_fd_sectors);
+}
+
+bool global_cuts_require_auxiliary_kinematics(const GlobalCutConfig& cfg) {
+    return cfg.enable_auxiliary_fiducial_cuts;
 }
 
 static void validate_cfg_or_fatal(const GlobalCutConfig& cfg) {
@@ -97,6 +103,28 @@ static void validate_cfg_or_fatal(const GlobalCutConfig& cfg) {
     if (cfg.enable_proton_fd_sector_filter && cfg.enable_proton_cd_sector_filter) {
         fatal_global("proton FD-sector and proton CD-sector filters are mutually exclusive.");
     }
+
+    if (cfg.enable_auxiliary_fiducial_cuts) {
+        auto check_range = [](double lo, double hi) {
+            return std::isfinite(lo) && std::isfinite(hi) && lo < hi;
+        };
+        if (!check_range(cfg.auxiliary_e_theta_min_deg, cfg.auxiliary_e_theta_max_deg)) {
+            fatal_global("invalid auxiliary electron theta range");
+        }
+        if (!check_range(cfg.auxiliary_fd_proton_theta_min_deg, cfg.auxiliary_fd_proton_theta_max_deg)) {
+            fatal_global("invalid auxiliary FD-proton theta range");
+        }
+        if (!check_range(cfg.auxiliary_fd_photon_theta_min_deg, cfg.auxiliary_fd_photon_theta_max_deg)) {
+            fatal_global("invalid auxiliary FD-photon theta range");
+        }
+        if (!check_range(cfg.auxiliary_cd_proton_theta_min_deg, cfg.auxiliary_cd_proton_theta_max_deg)) {
+            fatal_global("invalid auxiliary CD-proton theta range");
+        }
+        if (!std::isfinite(cfg.auxiliary_ft_photon_p_min_GeV) ||
+            cfg.auxiliary_ft_photon_p_min_GeV < 0.0) {
+            fatal_global("invalid auxiliary FT-photon momentum threshold");
+        }
+    }
 }
 
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
@@ -117,6 +145,7 @@ std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
     if (cfg.enable_proton_fd_sector_filter)   pieces.push_back("pFDsec" + std::to_string(cfg.proton_fd_sector));
     if (cfg.enable_proton_cd_sector_filter)   pieces.push_back("pCDsec" + std::to_string(cfg.proton_cd_sector));
     if (cfg.enable_photon_fd_sector_filter)   pieces.push_back("gFDsec" + std::to_string(cfg.photon_fd_sector));
+    if (cfg.enable_auxiliary_fiducial_cuts)   pieces.push_back("auxfid");
     if (pieces.empty()) return "nominal";
 
     std::ostringstream ss;
@@ -158,6 +187,88 @@ static bool passes_sector_filters(int detector1,
     if (cfg.enable_photon_fd_sector_filter) {
         if (detector2 != 1) return false;
         if (fd_sector_from_phi_rad(p2_phi) != cfg.photon_fd_sector) return false;
+    }
+
+    return true;
+}
+
+static bool passes_auxiliary_fiducial_cuts(int detector1,
+                                           int detector2,
+                                           double e_theta,
+                                           double e_phi,
+                                           double p1_theta,
+                                           double p1_phi,
+                                           double p2_p,
+                                           double p2_theta,
+                                           double p2_phi,
+                                           const GlobalCutConfig& cfg) {
+    validate_cfg_or_fatal(cfg);
+    if (!cfg.enable_auxiliary_fiducial_cuts) return true;
+
+    const double e_theta_deg  = e_theta  * RAD2DEG;
+    const double p1_theta_deg = p1_theta * RAD2DEG;
+    const double p2_theta_deg = p2_theta * RAD2DEG;
+
+    if (!(std::isfinite(e_theta_deg) &&
+          std::isfinite(p1_theta_deg) &&
+          std::isfinite(p2_theta_deg) &&
+          std::isfinite(p2_p))) {
+        return false;
+    }
+
+    if (!(e_theta_deg > cfg.auxiliary_e_theta_min_deg)) return false;
+
+    // Apply the electron upper-angle requirement only in topologies with an FD
+    // photon: CD-FD and FD-FD.
+    if (detector2 == 1) {
+        if (!(e_theta_deg < cfg.auxiliary_e_theta_max_deg)) return false;
+    }
+
+    if (detector1 == 1) {
+        if (!(p1_theta_deg > cfg.auxiliary_fd_proton_theta_min_deg)) return false;
+        if (!(p1_theta_deg < cfg.auxiliary_fd_proton_theta_max_deg)) return false;
+    } else if (detector1 == 2) {
+        if (!(p1_theta_deg > cfg.auxiliary_cd_proton_theta_min_deg)) return false;
+        if (!(p1_theta_deg < cfg.auxiliary_cd_proton_theta_max_deg)) return false;
+    } else {
+        return false;
+    }
+
+    if (detector2 == 1) {
+        // The requested FD-photon lower bound is applied only in FD-FD.
+        if (detector1 == 1) {
+            if (!(p2_theta_deg > cfg.auxiliary_fd_photon_theta_min_deg)) return false;
+        }
+        if (!(p2_theta_deg < cfg.auxiliary_fd_photon_theta_max_deg)) return false;
+    } else if (detector2 == 0) {
+        if (!(p2_p > cfg.auxiliary_ft_photon_p_min_GeV)) return false;
+    } else {
+        return false;
+    }
+
+    if (cfg.auxiliary_require_distinct_fd_sectors) {
+        std::vector<int> fd_sectors;
+        const int e_sector = fd_sector_from_phi_rad(e_phi);
+        if (e_sector < 1) return false;
+        fd_sectors.push_back(e_sector);
+
+        if (detector1 == 1) {
+            const int p_sector = fd_sector_from_phi_rad(p1_phi);
+            if (p_sector < 1) return false;
+            fd_sectors.push_back(p_sector);
+        }
+
+        if (detector2 == 1) {
+            const int g_sector = fd_sector_from_phi_rad(p2_phi);
+            if (g_sector < 1) return false;
+            fd_sectors.push_back(g_sector);
+        }
+
+        for (std::size_t i = 0; i < fd_sectors.size(); ++i) {
+            for (std::size_t j = i + 1; j < fd_sectors.size(); ++j) {
+                if (fd_sectors[i] == fd_sectors[j]) return false;
+            }
+        }
     }
 
     return true;
@@ -303,6 +414,7 @@ bool passes_global_cuts(double t1,
                         int detector2,
                         const GlobalCutConfig& cfg) {
     if (cfg.enable_dvcsgen_ycol_cut) fatal_global("dvcsgen ycol cut enabled but called without kinematics");
+    if (global_cuts_require_auxiliary_kinematics(cfg)) fatal_global("auxiliary fiducial cuts enabled but called without particle kinematics");
     if (global_cuts_require_sector_phi(cfg)) fatal_global("sector filter enabled but called without particle phi branches");
     if (!passes_topology_filter(detector1, detector2, cfg)) return false;
     return passes_basic_cuts(t1, open_angle_ep2_deg, pTmiss, cfg);
@@ -321,7 +433,8 @@ bool passes_global_cuts(double t1,
                         double p2_theta,
                         double p2_phi,
                         const GlobalCutConfig& cfg) {
-    if (global_cuts_require_sector_phi(cfg)) fatal_global("sector filter enabled but called without p1_phi");
+    if (global_cuts_require_sector_phi(cfg)) fatal_global("sector/auxiliary FD-sector cut enabled but called without p1_phi");
+    if (global_cuts_require_auxiliary_kinematics(cfg)) fatal_global("auxiliary fiducial cuts enabled but called without p1_theta");
     if (!passes_topology_filter(detector1, detector2, cfg)) return false;
     if (!passes_basic_cuts(t1, open_angle_ep2_deg, pTmiss, cfg)) return false;
     if (cfg.enable_dvcsgen_ycol_cut) {
@@ -359,9 +472,63 @@ bool passes_global_cuts(double t1,
                         double p2_phi,
                         const GlobalCutConfig& cfg) {
     if (cfg.enable_dvcsgen_ycol_cut) fatal_global("dvcsgen ycol cut enabled but called sector overload without ycol kinematics");
+    if (global_cuts_require_auxiliary_kinematics(cfg)) fatal_global("auxiliary fiducial cuts enabled but called without particle theta/momentum branches");
     if (!passes_topology_filter(detector1, detector2, cfg)) return false;
     if (!passes_sector_filters(detector1, detector2, e_phi, p1_phi, p2_phi, cfg)) return false;
     return passes_basic_cuts(t1, open_angle_ep2_deg, pTmiss, cfg);
+}
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        double Ebeam,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p1_theta,
+                        double p1_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg) {
+    if (!passes_topology_filter(detector1, detector2, cfg)) return false;
+    if (!passes_sector_filters(detector1, detector2, e_phi, p1_phi, p2_phi, cfg)) return false;
+    if (!passes_basic_cuts(t1, open_angle_ep2_deg, pTmiss, cfg)) return false;
+    if (!passes_auxiliary_fiducial_cuts(detector1, detector2,
+                                        e_theta, e_phi,
+                                        p1_theta, p1_phi,
+                                        p2_p, p2_theta, p2_phi,
+                                        cfg)) return false;
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        if (!(compute_P2_pos(Ebeam, e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi) > cfg.dvcsgen_ycol_cut)) return false;
+    }
+    return true;
+}
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const std::string& period_label,
+                        double e_p,
+                        double e_theta,
+                        double e_phi,
+                        double p1_theta,
+                        double p1_phi,
+                        double p2_p,
+                        double p2_theta,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg) {
+    return passes_global_cuts(t1, open_angle_ep2_deg, pTmiss,
+                              detector1, detector2,
+                              beam_energy_for_period_label(period_label),
+                              e_p, e_theta, e_phi,
+                              p1_theta, p1_phi,
+                              p2_p, p2_theta, p2_phi,
+                              cfg);
 }
 
 bool passes_global_cuts(double t1,
@@ -378,6 +545,7 @@ bool passes_global_cuts(double t1,
                         double p2_theta,
                         double p2_phi,
                         const GlobalCutConfig& cfg) {
+    if (global_cuts_require_auxiliary_kinematics(cfg)) fatal_global("auxiliary fiducial cuts enabled but called without p1_theta");
     if (!passes_topology_filter(detector1, detector2, cfg)) return false;
     if (!passes_sector_filters(detector1, detector2, e_phi, p1_phi, p2_phi, cfg)) return false;
     if (!passes_basic_cuts(t1, open_angle_ep2_deg, pTmiss, cfg)) return false;
@@ -419,6 +587,7 @@ std::string global_cuts_tcut(const GlobalCutConfig& cfg) {
     if (cfg.enable_dvcsgen_ycol_cut) fatal_global("global_cuts_tcut: dvcsgen ycol cut enabled; use C++ cut");
     if (cfg.enable_topology_filter) fatal_global("global_cuts_tcut: topology filter enabled; use C++ cut");
     if (global_cuts_require_sector_phi(cfg)) fatal_global("global_cuts_tcut: sector filter enabled; use C++ cut");
+    if (global_cuts_require_auxiliary_kinematics(cfg)) fatal_global("global_cuts_tcut: auxiliary fiducial cuts enabled; use C++ cut");
 
     std::ostringstream ss;
     ss << "(-t1) < " << std::fixed << std::setprecision(3) << cfg.t1_abs_max
@@ -446,6 +615,17 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"pTmiss_max\": " << std::setprecision(6) << cfg.pTmiss_max << ",\n"
         << "  \"enable_dvcsgen_ycol_cut\": " << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false") << ",\n"
         << "  \"dvcsgen_ycol_cut\": " << std::setprecision(6) << cfg.dvcsgen_ycol_cut << ",\n"
+        << "  \"enable_auxiliary_fiducial_cuts\": " << (cfg.enable_auxiliary_fiducial_cuts ? "true" : "false") << ",\n"
+        << "  \"auxiliary_require_distinct_fd_sectors\": " << (cfg.auxiliary_require_distinct_fd_sectors ? "true" : "false") << ",\n"
+        << "  \"auxiliary_e_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_e_theta_min_deg << ",\n"
+        << "  \"auxiliary_e_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_e_theta_max_deg << ",\n"
+        << "  \"auxiliary_fd_proton_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_proton_theta_min_deg << ",\n"
+        << "  \"auxiliary_fd_proton_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_proton_theta_max_deg << ",\n"
+        << "  \"auxiliary_fd_photon_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_photon_theta_min_deg << ",\n"
+        << "  \"auxiliary_fd_photon_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_photon_theta_max_deg << ",\n"
+        << "  \"auxiliary_cd_proton_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_cd_proton_theta_min_deg << ",\n"
+        << "  \"auxiliary_cd_proton_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_cd_proton_theta_max_deg << ",\n"
+        << "  \"auxiliary_ft_photon_p_min_GeV\": " << std::setprecision(6) << cfg.auxiliary_ft_photon_p_min_GeV << ",\n"
         << "  \"enable_topology_filter\": " << (cfg.enable_topology_filter ? "true" : "false") << ",\n"
         << "  \"required_detector1\": " << cfg.required_detector1 << ",\n"
         << "  \"required_detector2\": " << cfg.required_detector2 << ",\n"

@@ -1185,6 +1185,7 @@ struct TreeDiagBranches {
     int detector2 = 0; bool has_detector2 = false;
 
     double Delta_phi = 0.0; bool has_Delta_phi = false;
+    double p1_theta = 0.0; bool has_p1_theta = false;
     double p1_phi = 0.0; bool has_p1_phi = false;
     double p2_phi = 0.0; bool has_p2_phi = false;
 
@@ -1228,6 +1229,7 @@ struct TreeDiagBranches {
         enable("detector1");
         enable("detector2");
         enable("Delta_phi");
+        enable("p1_theta");
         enable("p1_phi");
         enable("p2_phi");
         enable("t1");
@@ -1266,6 +1268,7 @@ struct TreeDiagBranches {
         bI("detector2", &detector2, has_detector2);
 
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bD("p1_theta", &p1_theta, has_p1_theta);
         bD("p1_phi", &p1_phi, has_p1_phi);
         bD("p2_phi", &p2_phi, has_p2_phi);
         bD("t1", &t1, has_t1);
@@ -1372,6 +1375,20 @@ struct TreeDiagBranches {
             if (!(has_e_phi && has_p1_phi && has_p2_phi)) return false;
         }
 
+        if (global_cuts_require_auxiliary_kinematics(cfg)) {
+            if (!(has_e_theta && has_e_phi &&
+                  has_p1_theta && has_p1_phi &&
+                  has_p2_p && has_p2_theta && has_p2_phi)) return false;
+
+            return passes_global_cuts(t1, open_angle_ep2, pTmiss,
+                                      d1, d2,
+                                      period_label_for_global_cuts(period),
+                                      e_p, e_theta, e_phi,
+                                      p1_theta, p1_phi,
+                                      p2_p, p2_theta, p2_phi,
+                                      cfg);
+        }
+
         if (cfg.enable_dvcsgen_ycol_cut) {
             if (!(has_e_p && has_e_theta && has_e_phi && has_p2_p && has_p2_theta && has_p2_phi)) return false;
 
@@ -1380,7 +1397,7 @@ struct TreeDiagBranches {
                                           d1, d2,
                                           period_label_for_global_cuts(period),
                                           e_p, e_theta, e_phi,
-                                          p1_phi,
+                                          p1_theta, p1_phi,
                                           p2_p, p2_theta, p2_phi,
                                           cfg);
             }

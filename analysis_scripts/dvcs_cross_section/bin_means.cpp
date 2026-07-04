@@ -459,6 +459,23 @@ static inline bool passes_global(const BranchBinder& b, const std::string& perio
         }
     }
 
+    if (global_cuts_require_auxiliary_kinematics(cfg)) {
+        if (!(b.has_e_theta && b.has_e_phi &&
+              b.has_p1_theta && b.has_p1_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            std::cerr << "[bin_means] FATAL: auxiliary fiducial cuts require e_theta, e_phi, p1_theta, p1_phi, p2_p, p2_theta, p2_phi branches.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p1_theta, b.p1_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  cfg);
+    }
+
     if (cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
               b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
@@ -470,7 +487,7 @@ static inline bool passes_global(const BranchBinder& b, const std::string& perio
             return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                       b.detector1, b.detector2,
                                       period_label,
-                                      b.e_p, b.e_theta, b.e_phi, b.p1_phi,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_theta, b.p1_phi,
                                       b.p2_p, b.p2_theta, b.p2_phi,
                                       cfg);
         }
