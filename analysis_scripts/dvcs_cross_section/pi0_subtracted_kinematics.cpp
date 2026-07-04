@@ -63,6 +63,46 @@ struct PlotVar {
     bool radians_to_degrees = false;
 };
 
+enum class DataShapeMode {
+    RawPostExclusivity,
+    Pi0Subtracted
+};
+
+struct PanelSpec {
+    std::string label;
+    PeriodDef period;
+    int detector1_filter = -1;
+    int detector2_filter = -1;
+    int electron_sector_filter = -1;
+};
+
+struct WeightSummary {
+    std::string period;
+    int n_valid_bins = 0;
+    int n_positive_weight_bins = 0;
+    int n_zero_weight_bins = 0;
+    int n_negative_signal_bins = 0;
+    double total_csv_raw_epg = 0.0;
+    double total_csv_signal = 0.0;
+    double sum_weight = 0.0;
+    double sum_weight2 = 0.0;
+    double max_weight = 0.0;
+};
+
+struct FillSummary {
+    std::string mode;
+    std::string category;
+    std::string panel;
+    std::string period;
+    std::string sample;
+    long long entries = 0;
+    long long pass_global = 0;
+    long long pass_selector = 0;
+    long long pass_exclusivity = 0;
+    long long filled_events = 0;
+    double filled_weight_sum = 0.0;
+};
+
 struct RowBin {
     double xBmin = 0.0;
     double xBmax = 0.0;
@@ -81,6 +121,7 @@ struct CsvInfo {
     std::vector<std::vector<std::string> > rows;
     std::vector<RowBin> bins;
     std::map<std::string, std::vector<double> > data_weight_by_period_row;
+    std::map<std::string, WeightSummary> weight_summary_by_period;
 };
 
 static std::mutex g_root_mutex;
@@ -195,6 +236,23 @@ static const std::vector<std::string>& topo_labels() {
         "(CD, FT)"
     };
     return labels;
+}
+
+static std::string topo_dir_name(int detector1, int detector2) {
+    if (detector1 == 1 && detector2 == 1) return "FD_FD";
+    if (detector1 == 2 && detector2 == 1) return "CD_FD";
+    if (detector1 == 2 && detector2 == 0) return "CD_FT";
+    return "unknown_topology";
+}
+
+static std::string data_mode_name(DataShapeMode mode) {
+    if (mode == DataShapeMode::RawPostExclusivity) return "raw_post_exclusivity";
+    return "pi0_subtracted";
+}
+
+static std::string data_mode_title(DataShapeMode mode) {
+    if (mode == DataShapeMode::RawPostExclusivity) return "raw post-exclusivity";
+    return "#pi^{0}-subtracted";
 }
 
 static double wrap_phi_deg(double phi_deg) {
@@ -327,9 +385,14 @@ static CsvInfo load_csv_info(const std::string& path) {
         }
 
         std::vector<double> weights(csv.rows.size(), 0.0);
+        WeightSummary summary;
+        summary.period = p.pretty;
+
         for (size_t ir = 0; ir < csv.rows.size(); ++ir) {
             const auto& row = csv.rows[ir];
             if (!csv.bins[ir].valid) continue;
+
+            summary.n_valid_bins += 1;
 
             const double signal = first_tuple_value_or_default(row[(size_t)c_sig], 0.0);
             double raw_sum = 0.0;
@@ -338,11 +401,27 @@ static CsvInfo load_csv_info(const std::string& path) {
                 if (std::isfinite(v) && v > 0.0) raw_sum += v;
             }
 
+            if (std::isfinite(raw_sum) && raw_sum > 0.0) {
+                summary.total_csv_raw_epg += raw_sum;
+            }
+            if (std::isfinite(signal)) {
+                summary.total_csv_signal += signal;
+                if (signal < 0.0) summary.n_negative_signal_bins += 1;
+            }
+
             if (std::isfinite(signal) && signal > 0.0 && raw_sum > 0.0) {
-                weights[ir] = signal / raw_sum;
+                const double w = signal / raw_sum;
+                weights[ir] = w;
+                summary.n_positive_weight_bins += 1;
+                summary.sum_weight += w;
+                summary.sum_weight2 += w * w;
+                summary.max_weight = std::max(summary.max_weight, w);
+            } else {
+                summary.n_zero_weight_bins += 1;
             }
         }
 
+        csv.weight_summary_by_period[p.pretty] = summary;
         csv.data_weight_by_period_row[p.pretty] = std::move(weights);
     }
 
@@ -654,22 +733,6 @@ static double data_weight_for_event(const CsvInfo& csv,
     return w;
 }
 
-static void normalize_hist(TH1D* h) {
-    if (!h) return;
-    const double integral = h->Integral();
-    if (integral > 0.0) h->Scale(1.0 / integral);
-}
-
-static void style_hist(TH1D* h, int color, int marker) {
-    if (!h) return;
-    h->SetLineColor(color);
-    h->SetMarkerColor(color);
-    h->SetMarkerStyle(marker);
-    h->SetMarkerSize(0.80);
-    h->SetLineWidth(2);
-    h->SetStats(0);
-}
-
 static void require_trees(const std::vector<PeriodDef>& ps,
                           const std::map<std::string, TTree*>& dataTrees,
                           const std::map<std::string, TTree*>& mcTrees) {
@@ -692,14 +755,47 @@ static void require_trees(const std::vector<PeriodDef>& ps,
     }
 }
 
-static void fill_tree(TTree* tree,
-                      const PeriodDef& period,
-                      const std::vector<PlotVar>& vars,
-                      const std::map<std::string, CutDict>& cuts,
-                      const CsvInfo& csv,
-                      bool is_data,
-                      std::vector<TH1D*>& hists) {
+static bool passes_panel_selector(const Branches& b, const PanelSpec& panel) {
+    if (panel.detector1_filter >= 0) {
+        if (!b.has_detector1 || b.detector1 != panel.detector1_filter) return false;
+    }
+    if (panel.detector2_filter >= 0) {
+        if (!b.has_detector2 || b.detector2 != panel.detector2_filter) return false;
+    }
+    if (panel.electron_sector_filter >= 0) {
+        if (!b.has_e_phi) return false;
+        return fd_sector_from_phi_rad(b.e_phi) == panel.electron_sector_filter;
+    }
+    return true;
+}
+
+static double event_weight_for_mode(const CsvInfo& csv,
+                                    const PeriodDef& period,
+                                    const Branches& b,
+                                    DataShapeMode mode) {
+    if (mode == DataShapeMode::RawPostExclusivity) {
+        return 1.0;
+    }
+    return data_weight_for_event(csv, period, b);
+}
+
+static FillSummary fill_tree_panel(TTree* tree,
+                                   const PanelSpec& panel,
+                                   const std::vector<PlotVar>& vars,
+                                   const std::map<std::string, CutDict>& cuts,
+                                   const CsvInfo& csv,
+                                   bool is_data,
+                                   DataShapeMode mode,
+                                   const std::string& category,
+                                   std::vector<TH1D*>& hists) {
     if (!tree) fatal("[pi0_subtracted_kinematics] FATAL: null TTree.");
+
+    FillSummary summary;
+    summary.mode = data_mode_name(mode);
+    summary.category = category;
+    summary.panel = panel.label;
+    summary.period = panel.period.pretty;
+    summary.sample = is_data ? "data" : "mc";
 
     {
         std::lock_guard<std::mutex> lock(g_root_mutex);
@@ -713,25 +809,28 @@ static void fill_tree(TTree* tree,
     }
 
     const Long64_t nentries = tree->GetEntries();
-    long long n_global = 0;
-    long long n_excl = 0;
-    long long n_weight = 0;
+    summary.entries = (long long)nentries;
 
     for (Long64_t i = 0; i < nentries; ++i) {
         tree->GetEntry(i);
 
-        if (!passes_global_cuts_for_event(b, period)) continue;
-        ++n_global;
+        if (!passes_global_cuts_for_event(b, panel.period)) continue;
+        summary.pass_global += 1;
 
-        if (!passes_exclusivity_cuts(b, period, cuts, is_data)) continue;
-        ++n_excl;
+        if (!passes_panel_selector(b, panel)) continue;
+        summary.pass_selector += 1;
+
+        if (!passes_exclusivity_cuts(b, panel.period, cuts, is_data)) continue;
+        summary.pass_exclusivity += 1;
 
         double weight = 1.0;
         if (is_data) {
-            weight = data_weight_for_event(csv, period, b);
-            if (!(weight > 0.0)) continue;
+            weight = event_weight_for_mode(csv, panel.period, b, mode);
+            if (!(std::isfinite(weight) && weight > 0.0)) continue;
         }
-        ++n_weight;
+
+        summary.filled_events += 1;
+        summary.filled_weight_sum += weight;
 
         for (size_t iv = 0; iv < vars.size(); ++iv) {
             bool ok = false;
@@ -747,22 +846,82 @@ static void fill_tree(TTree* tree,
     }
 
     std::cout << "[pi0_subtracted_kinematics] "
-              << (is_data ? "DATA" : "MC")
-              << " period=" << period.pretty
-              << " entries=" << (long long)nentries
-              << " pass_global=" << n_global
-              << " pass_exclusivity=" << n_excl
-              << " filled=" << n_weight
+              << summary.sample
+              << " mode=" << summary.mode
+              << " category=" << category
+              << " panel=" << panel.label
+              << " period=" << panel.period.pretty
+              << " entries=" << summary.entries
+              << " pass_global=" << summary.pass_global
+              << " pass_selector=" << summary.pass_selector
+              << " pass_exclusivity=" << summary.pass_exclusivity
+              << " filled=" << summary.filled_events
+              << " weight_sum=" << summary.filled_weight_sum
               << std::endl;
+
+    return summary;
 }
 
-static void save_canvas(const PlotVar& var,
-                        const std::vector<PeriodDef>& ps,
-                        const std::vector<TH1D*>& data_hists,
-                        const std::vector<TH1D*>& mc_hists,
-                        const std::string& out_dir) {
+static void normalize_hist(TH1D* h) {
+    if (!h) return;
+    const double integral = h->Integral();
+    if (integral > 0.0) h->Scale(1.0 / integral);
+}
+
+static void style_hist(TH1D* h, int color, int marker) {
+    if (!h) return;
+    h->SetLineColor(color);
+    h->SetMarkerColor(color);
+    h->SetMarkerStyle(marker);
+    h->SetMarkerSize(0.80);
+    h->SetLineWidth(2);
+    h->SetStats(0);
+}
+
+static void draw_info_pad(const PlotVar& var,
+                          DataShapeMode mode,
+                          const std::string& category_title) {
+    gPad->SetLeftMargin(0.05);
+    gPad->SetRightMargin(0.05);
+    gPad->SetBottomMargin(0.05);
+    gPad->SetTopMargin(0.05);
+    gPad->DrawFrame(0.0, 0.0, 1.0, 1.0);
+
+    TLatex lat;
+    lat.SetNDC(true);
+    lat.SetTextFont(42);
+    lat.SetTextAlign(22);
+    lat.SetTextSize(0.050);
+    lat.DrawLatex(0.50, 0.78, ("DVCS shape: " + var.title).c_str());
+    lat.SetTextSize(0.036);
+    lat.DrawLatex(0.50, 0.67, category_title.c_str());
+
+    lat.SetTextSize(0.031);
+    if (mode == DataShapeMode::Pi0Subtracted) {
+        lat.DrawLatex(0.50, 0.56, "DATA: accepted ep#gamma events weighted to CSV #pi^{0}-subtracted signal yield per 4D bin");
+        lat.DrawLatex(0.50, 0.47, "This is a bin-weighted signal-shape approximation, not event-level background tagging");
+    } else {
+        lat.DrawLatex(0.50, 0.56, "DATA: raw accepted ep#gamma candidates after global and topology-dependent exclusivity cuts");
+        lat.DrawLatex(0.50, 0.47, "No #pi^{0}-subtraction weights are applied in this diagnostic");
+    }
+    lat.DrawLatex(0.50, 0.38, "MC: reconstructed DVCS MC with the same global and topology-dependent exclusivity cuts");
+    lat.DrawLatex(0.50, 0.29, "Each DATA and MC histogram is normalized to its own integral");
+    lat.DrawLatex(0.50, 0.20, "Angles are converted from radians to degrees");
+
+    std::ostringstream range_ss;
+    range_ss << "Range: [" << var.xmin << ", " << var.xmax << "], bins=" << var.nbins;
+    lat.DrawLatex(0.50, 0.11, range_ss.str().c_str());
+}
+
+static void save_canvas_panels(const PlotVar& var,
+                               const std::vector<PanelSpec>& panels,
+                               const std::vector<TH1D*>& data_hists,
+                               const std::vector<TH1D*>& mc_hists,
+                               DataShapeMode mode,
+                               const std::string& category_title,
+                               const std::string& out_dir) {
     double ymax = 0.0;
-    for (size_t ip = 0; ip < ps.size(); ++ip) {
+    for (size_t ip = 0; ip < panels.size(); ++ip) {
         normalize_hist(data_hists[ip]);
         normalize_hist(mc_hists[ip]);
         style_hist(data_hists[ip], kBlue + 1, 20);
@@ -772,11 +931,17 @@ static void save_canvas(const PlotVar& var,
     }
     if (!(ymax > 0.0)) ymax = 1.0;
 
-    TCanvas c(("c_pi0_subtracted_" + sanitize(var.branch)).c_str(), "", 2100, 1200);
+    std::filesystem::create_directories(out_dir);
+
+    TCanvas c(("c_" + data_mode_name(mode) + "_" + sanitize(category_title) + "_" + sanitize(var.branch)).c_str(),
+              "",
+              2100,
+              1200);
     c.Divide(3, 2, 0.002, 0.002);
 
-    for (size_t ip = 0; ip < ps.size(); ++ip) {
-        c.cd((int)ip + 1);
+    const int npanels_to_draw = std::min((int)panels.size(), 6);
+    for (int ip = 0; ip < npanels_to_draw; ++ip) {
+        c.cd(ip + 1);
         gPad->SetLeftMargin(0.15);
         gPad->SetRightMargin(0.05);
         gPad->SetBottomMargin(0.13);
@@ -785,8 +950,8 @@ static void save_canvas(const PlotVar& var,
         gPad->SetTicky(1);
         gPad->SetGrid(1, 1);
 
-        TH1D* hd = data_hists[ip];
-        TH1D* hm = mc_hists[ip];
+        TH1D* hd = data_hists[(size_t)ip];
+        TH1D* hm = mc_hists[(size_t)ip];
         hd->SetTitle("");
         hd->SetMaximum(1.25 * ymax);
         hd->GetXaxis()->SetTitle(var.x_label.c_str());
@@ -804,7 +969,7 @@ static void save_canvas(const PlotVar& var,
         leg->SetBorderSize(1);
         leg->SetTextFont(42);
         leg->SetTextSize(0.034);
-        leg->AddEntry(hd, "Data, #pi^{0}-subtracted", "l");
+        leg->AddEntry(hd, (std::string("Data, ") + data_mode_title(mode)).c_str(), "l");
         leg->AddEntry(hm, "Reconstructed DVCS MC", "l");
         leg->Draw();
 
@@ -813,34 +978,197 @@ static void save_canvas(const PlotVar& var,
         lat.SetTextFont(42);
         lat.SetTextSize(0.052);
         lat.SetTextAlign(13);
-        lat.DrawLatex(0.18, 0.92, ps[ip].pretty.c_str());
+        lat.DrawLatex(0.18, 0.92, panels[(size_t)ip].label.c_str());
     }
 
-    c.cd(6);
-    gPad->SetLeftMargin(0.05);
-    gPad->SetRightMargin(0.05);
-    gPad->SetBottomMargin(0.05);
-    gPad->SetTopMargin(0.05);
-    gPad->DrawFrame(0.0, 0.0, 1.0, 1.0);
+    if (panels.size() < 6) {
+        c.cd(6);
+        draw_info_pad(var, mode, category_title);
+    }
 
-    TLatex lat;
-    lat.SetNDC(true);
-    lat.SetTextFont(42);
-    lat.SetTextAlign(22);
-    lat.SetTextSize(0.052);
-    lat.DrawLatex(0.50, 0.76, ("DVCS #pi^{0}-subtracted shape: " + var.title).c_str());
-    lat.SetTextSize(0.034);
-    lat.DrawLatex(0.50, 0.62, "DATA: event weights normalized to CSV signal yield per 4D bin");
-    lat.DrawLatex(0.50, 0.53, "MC: reconstructed DVCS MC, same global and topology-dependent exclusivity cuts");
-    lat.DrawLatex(0.50, 0.44, "Each DATA and MC histogram is normalized to its own integral");
-    lat.DrawLatex(0.50, 0.35, "Angles are converted from radians to degrees");
-
-    std::ostringstream range_ss;
-    range_ss << "Range: [" << var.xmin << ", " << var.xmax << "], bins=" << var.nbins;
-    lat.DrawLatex(0.50, 0.26, range_ss.str().c_str());
-
-    const std::string out_path = out_dir + "/" + sanitize(var.branch) + "_pi0_subtracted_data_vs_rec_mc.png";
+    const std::string out_path = out_dir + "/" + sanitize(var.branch) + "_" + data_mode_name(mode) + "_data_vs_rec_mc.png";
     c.SaveAs(out_path.c_str());
+}
+
+static TH1D* make_hist(const std::string& name, const PlotVar& v) {
+    TH1D* h = new TH1D(name.c_str(), "", v.nbins, v.xmin, v.xmax);
+    h->SetDirectory(nullptr);
+    h->Sumw2();
+    return h;
+}
+
+static void write_weight_diagnostics_csv(const CsvInfo& csv, const std::string& diagnostics_dir) {
+    std::filesystem::create_directories(diagnostics_dir);
+    const std::string path = diagnostics_dir + "/data_pi0_weight_summary.csv";
+    std::ofstream fout(path);
+    if (!fout.is_open()) {
+        fatal("[pi0_subtracted_kinematics] FATAL: cannot write " + path);
+    }
+
+    fout << "period,n_valid_bins,n_positive_weight_bins,n_zero_or_unusable_weight_bins,n_negative_signal_bins,"
+         << "total_csv_raw_epgamma,total_csv_pi0_subtracted_signal,mean_positive_weight,rms_positive_weight,max_positive_weight\n";
+
+    for (const PeriodDef& p : periods()) {
+        auto it = csv.weight_summary_by_period.find(p.pretty);
+        if (it == csv.weight_summary_by_period.end()) continue;
+        const WeightSummary& s = it->second;
+        double mean = std::numeric_limits<double>::quiet_NaN();
+        double rms = std::numeric_limits<double>::quiet_NaN();
+        if (s.n_positive_weight_bins > 0) {
+            mean = s.sum_weight / double(s.n_positive_weight_bins);
+            const double mean2 = s.sum_weight2 / double(s.n_positive_weight_bins);
+            const double var = std::max(0.0, mean2 - mean * mean);
+            rms = std::sqrt(var);
+        }
+
+        fout << p.pretty << ","
+             << s.n_valid_bins << ","
+             << s.n_positive_weight_bins << ","
+             << s.n_zero_weight_bins << ","
+             << s.n_negative_signal_bins << ","
+             << std::setprecision(12) << s.total_csv_raw_epg << ","
+             << std::setprecision(12) << s.total_csv_signal << ","
+             << std::setprecision(12) << mean << ","
+             << std::setprecision(12) << rms << ","
+             << std::setprecision(12) << s.max_weight << "\n";
+    }
+}
+
+static void write_fill_diagnostics_csv(const std::vector<FillSummary>& summaries,
+                                       const std::string& diagnostics_dir) {
+    std::filesystem::create_directories(diagnostics_dir);
+    const std::string path = diagnostics_dir + "/event_fill_summary.csv";
+    std::ofstream fout(path);
+    if (!fout.is_open()) {
+        fatal("[pi0_subtracted_kinematics] FATAL: cannot write " + path);
+    }
+
+    fout << "mode,category,panel,period,sample,entries,pass_global,pass_selector,pass_exclusivity,filled_events,filled_weight_sum\n";
+    for (const FillSummary& s : summaries) {
+        fout << s.mode << ","
+             << s.category << ","
+             << s.panel << ","
+             << s.period << ","
+             << s.sample << ","
+             << s.entries << ","
+             << s.pass_global << ","
+             << s.pass_selector << ","
+             << s.pass_exclusivity << ","
+             << s.filled_events << ","
+             << std::setprecision(12) << s.filled_weight_sum << "\n";
+    }
+}
+
+static std::vector<PanelSpec> inclusive_period_panels(const std::vector<PeriodDef>& ps) {
+    std::vector<PanelSpec> panels;
+    for (const PeriodDef& p : ps) {
+        PanelSpec panel;
+        panel.label = p.pretty;
+        panel.period = p;
+        panels.push_back(panel);
+    }
+    return panels;
+}
+
+static std::vector<PanelSpec> topology_period_panels(const std::vector<PeriodDef>& ps,
+                                                     int detector1,
+                                                     int detector2) {
+    std::vector<PanelSpec> panels;
+    for (const PeriodDef& p : ps) {
+        PanelSpec panel;
+        panel.label = p.pretty;
+        panel.period = p;
+        panel.detector1_filter = detector1;
+        panel.detector2_filter = detector2;
+        panels.push_back(panel);
+    }
+    return panels;
+}
+
+static std::vector<PanelSpec> sp18_out_electron_sector_panels(const std::vector<PeriodDef>& ps) {
+    auto it = std::find_if(ps.begin(), ps.end(), [](const PeriodDef& p) { return p.pretty == "Sp18 Out"; });
+    if (it == ps.end()) {
+        fatal("[pi0_subtracted_kinematics] FATAL: cannot find Sp18 Out period definition.");
+    }
+
+    std::vector<PanelSpec> panels;
+    for (int sector = 1; sector <= 6; ++sector) {
+        PanelSpec panel;
+        panel.label = "Electron sector " + std::to_string(sector);
+        panel.period = *it;
+        panel.electron_sector_filter = sector;
+        panels.push_back(panel);
+    }
+    return panels;
+}
+
+static void make_panel_plot_set(const std::string& category_key,
+                                const std::string& category_title,
+                                const std::string& out_dir,
+                                DataShapeMode mode,
+                                const std::vector<PanelSpec>& panels,
+                                const std::vector<PlotVar>& vars,
+                                const std::map<std::string, TTree*>& dataTrees,
+                                const std::map<std::string, TTree*>& mcTrees,
+                                const std::map<std::string, CutDict>& cuts,
+                                const CsvInfo& csv,
+                                std::vector<FillSummary>& fill_summaries) {
+    std::filesystem::create_directories(out_dir);
+
+    std::vector<std::vector<TH1D*> > data_hists(panels.size());
+    std::vector<std::vector<TH1D*> > mc_hists(panels.size());
+
+    for (size_t ip = 0; ip < panels.size(); ++ip) {
+        for (const PlotVar& v : vars) {
+            data_hists[ip].push_back(make_hist("h_data_" + sanitize(category_key) + "_" + data_mode_name(mode) + "_" + sanitize(panels[ip].label) + "_" + sanitize(v.branch), v));
+            mc_hists[ip].push_back(make_hist("h_mc_" + sanitize(category_key) + "_" + data_mode_name(mode) + "_" + sanitize(panels[ip].label) + "_" + sanitize(v.branch), v));
+        }
+    }
+
+    for (size_t ip = 0; ip < panels.size(); ++ip) {
+        const PanelSpec& panel = panels[ip];
+        auto itd = dataTrees.find(panel.period.data_key);
+        auto itm = mcTrees.find(panel.period.mc_key);
+        if (itd == dataTrees.end() || itd->second == nullptr || itm == mcTrees.end() || itm->second == nullptr) {
+            fatal("[pi0_subtracted_kinematics] FATAL: missing tree while making category " + category_key + " panel " + panel.label);
+        }
+
+        fill_summaries.push_back(fill_tree_panel(itd->second,
+                                                 panel,
+                                                 vars,
+                                                 cuts,
+                                                 csv,
+                                                 true,
+                                                 mode,
+                                                 category_key,
+                                                 data_hists[ip]));
+        fill_summaries.push_back(fill_tree_panel(itm->second,
+                                                 panel,
+                                                 vars,
+                                                 cuts,
+                                                 csv,
+                                                 false,
+                                                 mode,
+                                                 category_key,
+                                                 mc_hists[ip]));
+    }
+
+    for (size_t iv = 0; iv < vars.size(); ++iv) {
+        std::vector<TH1D*> data_for_var;
+        std::vector<TH1D*> mc_for_var;
+        data_for_var.reserve(panels.size());
+        mc_for_var.reserve(panels.size());
+        for (size_t ip = 0; ip < panels.size(); ++ip) {
+            data_for_var.push_back(data_hists[ip][iv]);
+            mc_for_var.push_back(mc_hists[ip][iv]);
+        }
+        save_canvas_panels(vars[iv], panels, data_for_var, mc_for_var, mode, category_title, out_dir);
+    }
+
+    for (size_t ip = 0; ip < panels.size(); ++ip) {
+        for (TH1D* h : data_hists[ip]) delete h;
+        for (TH1D* h : mc_hists[ip]) delete h;
+    }
 }
 
 } // namespace
@@ -853,6 +1181,8 @@ bool plot_pi0_subtracted_dvcs_kinematics(
     const std::string& out_dir,
     int max_workers) {
 
+    (void)max_workers;
+
     try {
         ROOT::EnableThreadSafety();
         TH1::AddDirectory(kFALSE);
@@ -860,6 +1190,7 @@ bool plot_pi0_subtracted_dvcs_kinematics(
         gStyle->SetOptStat(0);
 
         std::filesystem::create_directories(out_dir);
+        std::filesystem::create_directories(out_dir + "/diagnostics");
 
         const CsvInfo csv = load_csv_info(csv_path);
         const std::map<std::string, CutDict> cuts = load_combined_cuts_json(combined_cuts_json);
@@ -868,80 +1199,74 @@ bool plot_pi0_subtracted_dvcs_kinematics(
 
         require_trees(ps, dvcsDataTrees, dvcsRecMcTrees);
 
-        std::vector<std::vector<TH1D*> > data_hists(ps.size());
-        std::vector<std::vector<TH1D*> > mc_hists(ps.size());
+        std::vector<FillSummary> fill_summaries;
 
-        for (size_t ip = 0; ip < ps.size(); ++ip) {
-            for (const PlotVar& v : vars) {
-                TH1D* hd = new TH1D(
-                    ("h_data_pi0sub_" + sanitize(ps[ip].period_label) + "_" + sanitize(v.branch)).c_str(),
-                    "",
-                    v.nbins,
-                    v.xmin,
-                    v.xmax);
-                hd->SetDirectory(nullptr);
-                hd->Sumw2();
-                data_hists[ip].push_back(hd);
+        write_weight_diagnostics_csv(csv, out_dir + "/diagnostics");
 
-                TH1D* hm = new TH1D(
-                    ("h_mc_pi0sub_" + sanitize(ps[ip].period_label) + "_" + sanitize(v.branch)).c_str(),
-                    "",
-                    v.nbins,
-                    v.xmin,
-                    v.xmax);
-                hm->SetDirectory(nullptr);
-                hm->Sumw2();
-                mc_hists[ip].push_back(hm);
-            }
-        }
+        const std::vector<DataShapeMode> modes = {
+            DataShapeMode::Pi0Subtracted,
+            DataShapeMode::RawPostExclusivity
+        };
 
-        int nth = std::max(1, std::min(5, max_workers));
-        nth = std::min(nth, std::max(1, (int)ps.size()));
+        for (DataShapeMode mode : modes) {
+            const std::string mode_dir = data_mode_name(mode);
 
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
-#endif
-        for (int ip_int = 0; ip_int < (int)ps.size(); ++ip_int) {
-            const size_t ip = (size_t)ip_int;
-            const PeriodDef& p = ps[ip];
+            make_panel_plot_set("inclusive",
+                                "Inclusive over topology and electron sector",
+                                out_dir + "/inclusive/" + mode_dir,
+                                mode,
+                                inclusive_period_panels(ps),
+                                vars,
+                                dvcsDataTrees,
+                                dvcsRecMcTrees,
+                                cuts,
+                                csv,
+                                fill_summaries);
 
-            fill_tree(dvcsDataTrees.at(p.data_key),
-                      p,
-                      vars,
-                      cuts,
-                      csv,
-                      true,
-                      data_hists[ip]);
+            struct TopologyRequest {
+                int detector1;
+                int detector2;
+            };
 
-            fill_tree(dvcsRecMcTrees.at(p.mc_key),
-                      p,
-                      vars,
-                      cuts,
-                      csv,
-                      false,
-                      mc_hists[ip]);
-        }
+            const std::vector<TopologyRequest> topologies = {
+                {1, 1},
+                {2, 1},
+                {2, 0}
+            };
 
-        for (size_t iv = 0; iv < vars.size(); ++iv) {
-            std::vector<TH1D*> data_for_var;
-            std::vector<TH1D*> mc_for_var;
-            data_for_var.reserve(ps.size());
-            mc_for_var.reserve(ps.size());
-
-            for (size_t ip = 0; ip < ps.size(); ++ip) {
-                data_for_var.push_back(data_hists[ip][iv]);
-                mc_for_var.push_back(mc_hists[ip][iv]);
+            for (const TopologyRequest& tr : topologies) {
+                const std::string tdir = topo_dir_name(tr.detector1, tr.detector2);
+                make_panel_plot_set("topology_" + tdir,
+                                    "Topology " + tdir,
+                                    out_dir + "/topology/" + mode_dir + "/" + tdir,
+                                    mode,
+                                    topology_period_panels(ps, tr.detector1, tr.detector2),
+                                    vars,
+                                    dvcsDataTrees,
+                                    dvcsRecMcTrees,
+                                    cuts,
+                                    csv,
+                                    fill_summaries);
             }
 
-            save_canvas(vars[iv], ps, data_for_var, mc_for_var, out_dir);
+            make_panel_plot_set("sp18_out_electron_sector",
+                                "Sp18 Out by electron FD sector",
+                                out_dir + "/electron_sector_sp18_out/" + mode_dir,
+                                mode,
+                                sp18_out_electron_sector_panels(ps),
+                                vars,
+                                dvcsDataTrees,
+                                dvcsRecMcTrees,
+                                cuts,
+                                csv,
+                                fill_summaries);
         }
 
-        for (size_t ip = 0; ip < ps.size(); ++ip) {
-            for (TH1D* h : data_hists[ip]) delete h;
-            for (TH1D* h : mc_hists[ip]) delete h;
-        }
+        write_fill_diagnostics_csv(fill_summaries, out_dir + "/diagnostics");
 
-        std::cout << "[pi0_subtracted_kinematics] Wrote plots to " << out_dir << std::endl;
+        std::cout << "[pi0_subtracted_kinematics] Wrote inclusive, raw, topology-split, "
+                  << "Sp18 Out electron-sector, and diagnostics outputs below "
+                  << out_dir << std::endl;
         return true;
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
