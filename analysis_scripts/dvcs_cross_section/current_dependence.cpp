@@ -1443,6 +1443,11 @@ struct DataAgg {
     std::map<int, long long> counts_by_run;
     std::map<int, int> current_by_run;
     std::map<int, double> charge_by_run;
+
+    // Used only by the kinematic current-efficiency diagnostics.
+    // For the ordinary integrated current-dependence fits this remains zero.
+    double kinematic_value_sum = 0.0;
+    long long kinematic_value_count = 0;
 };
 
 static DataAgg process_data_tree(
@@ -2117,6 +2122,30 @@ static void draw_all_period_current_canvas(const std::string& out_path,
     c.SaveAs(out_path.c_str());
 }
 
+static double mean_or_bin_center(double xlo,
+                                 double xhi,
+                                 double sum,
+                                 long long count) {
+    const double bin_center = 0.5 * (xlo + xhi);
+
+    if (count <= 0) {
+        return bin_center;
+    }
+
+    const double mean = sum / (double)count;
+
+    if (!std::isfinite(mean)) {
+        return bin_center;
+    }
+
+    // The value should normally lie inside the bin by construction.
+    // Keep the fallback conservative in case of a malformed branch value.
+    if (mean < xlo || mean > xhi) {
+        return bin_center;
+    }
+
+    return mean;
+}
 
 
 // -----------------------------------------------------------------------------
@@ -3522,6 +3551,8 @@ static KinematicAggMap process_data_tree_for_kinematic_current_diagnostics(
             agg.counts_by_run[b.runnum] += 1;
             agg.current_by_run[b.runnum] = current;
             agg.charge_by_run[b.runnum] = charge;
+            agg.kinematic_value_sum += value;
+            agg.kinematic_value_count += 1;
         }
     }
 
@@ -3544,6 +3575,9 @@ static void merge_data_agg(DataAgg& dst, const DataAgg& src) {
     for (const auto& kv : src.charge_by_run) {
         dst.charge_by_run[kv.first] = kv.second;
     }
+
+    dst.kinematic_value_sum += src.kinematic_value_sum;
+    dst.kinematic_value_count += src.kinematic_value_count;
 }
 
 static PeriodKinematicAggMap build_kinematic_current_diagnostic_aggs(
@@ -3632,6 +3666,16 @@ static PeriodKinematicAggMap build_kinematic_current_diagnostic_aggs(
 struct McKinematicBinAgg {
     std::string period;
     std::map<int, McAgg> by_current;
+
+    // Mean x-position for MC kinematic diagnostic points.
+    // Prefer the generated denominator distribution, since the MC current
+    // factor is reconstructed/generated. Fall back to reconstructed if the
+    // generated tree is unavailable.
+    double generated_kinematic_value_sum = 0.0;
+    long long generated_kinematic_value_count = 0;
+
+    double reconstructed_kinematic_value_sum = 0.0;
+    long long reconstructed_kinematic_value_count = 0;
 };
 
 using KinematicMcAggMap = std::map<std::string, std::vector<McKinematicBinAgg>>;
@@ -3678,10 +3722,14 @@ static KinematicMcAggMap process_generated_tree_for_kinematic_current_diagnostic
                 continue;
             }
 
-            McAgg& a = out[v.key][ibin].by_current[current];
+            McKinematicBinAgg& bin = out[v.key][ibin];
+            McAgg& a = bin.by_current[current];
             a.period = tags.display;
             a.current_nA = current;
             a.n_gen += 1;
+
+            bin.generated_kinematic_value_sum += value;
+            bin.generated_kinematic_value_count += 1;
         }
     }
 
@@ -3739,10 +3787,14 @@ static KinematicMcAggMap process_reconstructed_tree_for_kinematic_current_diagno
                 continue;
             }
 
-            McAgg& a = out[v.key][ibin].by_current[current];
+            McKinematicBinAgg& bin = out[v.key][ibin];
+            McAgg& a = bin.by_current[current];
             a.period = tags.display;
             a.current_nA = current;
             a.n_rec += 1;
+
+            bin.reconstructed_kinematic_value_sum += value;
+            bin.reconstructed_kinematic_value_count += 1;
         }
     }
 
@@ -3763,6 +3815,12 @@ static void merge_mc_kinematic_bin(McKinematicBinAgg& dst, const McKinematicBinA
         d.n_gen += s.n_gen;
         d.n_rec += s.n_rec;
     }
+
+    dst.generated_kinematic_value_sum += src.generated_kinematic_value_sum;
+    dst.generated_kinematic_value_count += src.generated_kinematic_value_count;
+
+    dst.reconstructed_kinematic_value_sum += src.reconstructed_kinematic_value_sum;
+    dst.reconstructed_kinematic_value_count += src.reconstructed_kinematic_value_count;
 }
 
 static PeriodKinematicMcAggMap build_kinematic_current_diagnostic_mc_aggs(
@@ -3865,7 +3923,19 @@ static KinematicBinResult current_factor_for_kinematic_mc_bin(const McKinematicB
     KinematicBinResult r;
     r.x_low = xlo;
     r.x_high = xhi;
-    r.x_center = 0.5 * (xlo + xhi);
+
+    if (agg.generated_kinematic_value_count > 0) {
+        r.x_center = mean_or_bin_center(xlo,
+                                        xhi,
+                                        agg.generated_kinematic_value_sum,
+                                        agg.generated_kinematic_value_count);
+    } else {
+        r.x_center = mean_or_bin_center(xlo,
+                                        xhi,
+                                        agg.reconstructed_kinematic_value_sum,
+                                        agg.reconstructed_kinematic_value_count);
+    }
+
     r.x_err = 0.5 * (xhi - xlo);
 
     std::vector<McAgg> aggs;
@@ -3898,7 +3968,10 @@ static KinematicBinResult current_factor_for_kinematic_bin(const DataAgg& agg,
     KinematicBinResult r;
     r.x_low = xlo;
     r.x_high = xhi;
-    r.x_center = 0.5 * (xlo + xhi);
+    r.x_center = mean_or_bin_center(xlo,
+                                    xhi,
+                                    agg.kinematic_value_sum,
+                                    agg.kinematic_value_count);
     r.x_err = 0.5 * (xhi - xlo);
 
     std::vector<CurrentPoint> pts = data_points_from_agg(agg);
