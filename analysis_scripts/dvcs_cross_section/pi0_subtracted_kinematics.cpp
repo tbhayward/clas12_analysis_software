@@ -74,6 +74,7 @@ struct PanelSpec {
     int detector1_filter = -1;
     int detector2_filter = -1;
     int electron_sector_filter = -1;
+    int proton_fd_sector_filter = -1;
 };
 
 struct WeightSummary {
@@ -764,7 +765,12 @@ static bool passes_panel_selector(const Branches& b, const PanelSpec& panel) {
     }
     if (panel.electron_sector_filter >= 0) {
         if (!b.has_e_phi) return false;
-        return fd_sector_from_phi_rad(b.e_phi) == panel.electron_sector_filter;
+        if (fd_sector_from_phi_rad(b.e_phi) != panel.electron_sector_filter) return false;
+    }
+    if (panel.proton_fd_sector_filter >= 0) {
+        if (!b.has_detector1 || b.detector1 != 1) return false;
+        if (!b.has_p1_phi) return false;
+        if (fd_sector_from_phi_rad(b.p1_phi) != panel.proton_fd_sector_filter) return false;
     }
     return true;
 }
@@ -1102,6 +1108,24 @@ static std::vector<PanelSpec> sp18_out_electron_sector_panels(const std::vector<
     return panels;
 }
 
+static std::vector<PanelSpec> sp18_out_proton_fd_sector_panels(const std::vector<PeriodDef>& ps) {
+    auto it = std::find_if(ps.begin(), ps.end(), [](const PeriodDef& p) { return p.pretty == "Sp18 Out"; });
+    if (it == ps.end()) {
+        fatal("[pi0_subtracted_kinematics] FATAL: cannot find Sp18 Out period definition.");
+    }
+
+    std::vector<PanelSpec> panels;
+    for (int sector = 1; sector <= 6; ++sector) {
+        PanelSpec panel;
+        panel.label = "Proton FD sector " + std::to_string(sector);
+        panel.period = *it;
+        panel.detector1_filter = 1;
+        panel.proton_fd_sector_filter = sector;
+        panels.push_back(panel);
+    }
+    return panels;
+}
+
 static void make_panel_plot_set(const std::string& category_key,
                                 const std::string& category_title,
                                 const std::string& out_dir,
@@ -1260,12 +1284,24 @@ bool plot_pi0_subtracted_dvcs_kinematics(
                                 cuts,
                                 csv,
                                 fill_summaries);
+
+            make_panel_plot_set("sp18_out_proton_fd_sector",
+                                "Sp18 Out by proton FD sector",
+                                out_dir + "/proton_fd_sector_sp18_out/" + mode_dir,
+                                mode,
+                                sp18_out_proton_fd_sector_panels(ps),
+                                vars,
+                                dvcsDataTrees,
+                                dvcsRecMcTrees,
+                                cuts,
+                                csv,
+                                fill_summaries);
         }
 
         write_fill_diagnostics_csv(fill_summaries, out_dir + "/diagnostics");
 
         std::cout << "[pi0_subtracted_kinematics] Wrote inclusive, raw, topology-split, "
-                  << "Sp18 Out electron-sector, and diagnostics outputs below "
+                  << "Sp18 Out electron-sector, Sp18 Out proton-FD-sector, and diagnostics outputs below "
                   << out_dir << std::endl;
         return true;
     } catch (const std::exception& e) {
