@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
     global_cfg.required_detector2 = 0;  // 0 FT photon, 1 FD photon
 
     // Electron FD sector study. Electron is always FD.
-    global_cfg.enable_electron_fd_sector_filter = false;
+    global_cfg.enable_electron_fd_sector_filter = true;
     global_cfg.electron_fd_sector = 1;
 
     // Proton FD sector study. This automatically keeps only FD-FD events.
