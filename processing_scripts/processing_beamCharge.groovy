@@ -1,7 +1,7 @@
 /*
  * author Timothy B. Hayward
  *
- * Read only HIPO tag-1 events and extract RUN::scaler / HEL::scaler charge.
+ * extract RUN::scaler / HEL::scaler charge.
  */
 
 import java.io.File;
@@ -43,25 +43,17 @@ public class processing_beamCharge {
             println("There are ${hipo_list.size()} files.");
         }
 
-        // HIPO event tag to process.
-        // Tag 1 is usually the scaler / configuration stream.
         int hipo_tag = 1;
-
         int num_events = 0;
         int current_file = 0;
-
         String beamChargeList = "";
-
         while (current_file < n_files) {
 
             File inputFile = hipo_list[current_file];
 
             println();
-            println();
             println("Opening file " + Integer.toString(current_file + 1) + " out of " + n_files);
             println("File: " + inputFile.getAbsolutePath());
-            println("Reading only HIPO tag-" + hipo_tag + " events");
-            println();
             println();
 
             float beamChargeMax = 0.0f;
@@ -73,19 +65,10 @@ public class processing_beamCharge {
             int runnum = 0;
 
             HipoReader reader = new HipoReader();
-
-            /*
-             * This is the important line.
-             *
-             * It must be called before reader.open(...).
-             * Only events with HIPO tag 1 will be returned by reader.nextEvent(event).
-             */
             reader.setTags(hipo_tag);
-
             reader.open(inputFile.getAbsolutePath());
 
             SchemaFactory schema = reader.getSchemaFactory();
-
             Bank runConfigBank = new Bank(schema.getSchema("RUN::config"));
             Bank runScalerBank = new Bank(schema.getSchema("RUN::scaler"));
             Bank helScalerBank = new Bank(schema.getSchema("HEL::scaler"));
