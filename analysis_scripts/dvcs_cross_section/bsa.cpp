@@ -1,1354 +1,1771 @@
-// bsa.cpp (uses pi0_corrected_counts_all_groups.json as the ONLY input for counts,
-// and (optionally) uses rad_corrected_xsec_<E>.json files to overlay BSA from
-// radiatively corrected cross sections).
+// bsa.cpp
+// -----------------------------------------------------------------------------
+// Direct count-based beam-spin asymmetry stage for the DVCS pass-2 workflow.
 //
-// Behavior summary:
-// - Reads contamination-corrected helicity counts from:
-//       <out_root_dir>/jsons/pi0_corrected_counts_all_groups.json
-// - For each requested group (period), computes a SINGLE scalar polarization P
-//   as the mean of the tree branch "beam_pol" over ALL DVCS events in that period.
-// - Uses that constant P to build per-phi BSA points from corrected counts and fit:
-//       y(phi) = C + [A*sin(phi)] / [1 + B*cos(phi)]
-// - BLUE canvas: plots the counts-based BSA points (blue) and a thin dashed blue fit.
-// - RED OVERLAY canvas: in the same layout, adds points and a thin dashed fit for the
-//   BSA computed from radiatively-corrected cross sections:
-//       A_LU(phi) = [sigma_plus - sigma_minus] / [ P * (sigma_plus + sigma_minus) ]
-//   with error propagation from sigma uncertainties.
-// - Writes per-group fit JSONs (counts-based) to: <out_root_dir>/jsons/BSA_fits/BSA_fits_<group>.json
-// - Writes all-periods rollup (counts-based) to:   <out_root_dir>/jsons/BSA_fits_all_periods.json
-// - Writes 10.6 combined (counts-based) to:        <out_root_dir>/jsons/BSA_fits_combined_10.6.json
-// - Saves BLUE plots under:                         <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
-// - Saves OVERLAY plots under:                      <out_root_dir>/bsa_plots/<group>/plot_bsa_vs_xsec_<group>_xB_<ix>.png
-// - NEW: Saves single-cell OVERLAY plots under:     <out_root_dir>/bsa_plots/<group>/single/plot_bsa_vs_xsec_<group>_xB_<ix>_Q_<iQ>_t_<it>.png
+// The observable written by this module is intentionally a direct measured-count
+// BSA, not an unfolded or acceptance-corrected cross-section-level BSA. The
+// default estimator does, however, subtract the pi0 background helicity by
+// helicity:
 //
-// Names and bridging:
-// - Corrected-counts master JSON groups use lower-case, no DVCS_ prefix, e.g. "sp18_inb".
-// - DVCS data trees in memory are keyed like "DVCS_Sp18_inb".
-// - This file resolves tree keys -> counts keys robustly.
+//   S+ = G+ - f_pi0 * P+
+//   S- = G- - f_pi0 * P-
 //
-// Polarization policy (simple and robust):
-// - Per period: P_period = avg over all events of beam_pol (finite and > 0).
-// - Combined 10.6: P_106 = avg over all events from component trees.
-// - No per-phi or per-bin polarization is computed anywhere.
+// where G are measured ep->epgamma counts, P are measured ep->eppi0 counts and
+// f_pi0 is inferred bin-by-bin from the existing CSV contamination ratio:
 //
-// Style: K&R braces, ASCII-only.
+//   contamination = N_false_epgamma_from_pi0 / N_epgamma
+//   f_pi0         = contamination * N_epgamma_norm / N_eppi0_norm
+//
+// The BSA written to the CSV is then
+//
+//   A_LU = (S+ - S-) / [P_b * (S+ + S-)]
+//
+// for single periods. For combined groups with different beam polarizations, the
+// period-specific polarized denominators are summed directly:
+//
+//   A_LU = sum_i(S_i+ - S_i-) / sum_i[P_b,i * (S_i+ + S_i-)].
+//
+// This avoids reintroducing the old unfolding/GEMC-dependent BSA machinery while
+// retaining the most important background correction for the measured epgamma
+// asymmetry.
+// -----------------------------------------------------------------------------
 
 #include "bsa.h"
-#include "load_binning_scheme.h"
 
+#include "global_cuts.h"
+
+// ROOT
 #include <TCanvas.h>
-#include <TGraph.h>
-#include <TGraphErrors.h>
-#include <TLegend.h>
-#include <TAxis.h>
-#include <TStyle.h>
-#include <TH1.h>
 #include <TF1.h>
+#include <TGraphErrors.h>
+#include <TH1F.h>
+#include <TLegend.h>
 #include <TLatex.h>
-#include <TFitResult.h>
-#include <TPad.h>
-#include <TGaxis.h>
+#include <TROOT.h>
+#include <TStyle.h>
+#include <TSystem.h>
 #include <TTree.h>
-#include <TString.h>
 
-#include <Math/Factory.h>
-#include <Math/Minimizer.h>
-#include <Math/Functor.h>
+// JSON
+#include <nlohmann/json.hpp>
 
+// C++ stdlib
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstdio>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
-#include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
-#include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
-// JSON for reading cross-section overlays
-#include <nlohmann/json.hpp>
-using json = nlohmann::json;
-
 namespace {
 
-// =================== global style ===================
+static constexpr double PI      = 3.14159265358979323846;
+static constexpr double RAD2DEG = 180.0 / PI;
+
 struct StyleInit {
     StyleInit() {
         gStyle->SetOptTitle(0);
         gStyle->SetOptStat(0);
-        gStyle->SetFrameLineWidth(2);
-        gStyle->SetLineWidth(2);
         gStyle->SetPadTickX(1);
         gStyle->SetPadTickY(1);
-        gStyle->SetLegendBorderSize(1);
-        const int rf = 42; // Helvetica
-        gStyle->SetTitleFont(rf, "XYZ");
-        gStyle->SetLabelFont(rf, "XYZ");
-        gStyle->SetTextFont(rf);
+        gStyle->SetTitleFont(42, "XYZ");
+        gStyle->SetLabelFont(42, "XYZ");
+        gStyle->SetTextFont(42);
+        gStyle->SetFrameLineWidth(2);
     }
-} _style_bootstrap;
+} g_style_init;
 
-constexpr int    N_PHI_BINS = 12;
-constexpr double TWO_PI     = 2.0 * M_PI;
+static std::mutex g_root_bind_mutex;
 
-// ---- BSA fit stabilization knobs (single-cos denominator) ----
-constexpr double EPS_DEN_FLOOR = 1e-2;   // demand D(phi) >= this across [0,2pi)
-constexpr double LAMBDA_DEN    = 1e6;    // penalty multiplier for denominator floor
-constexpr double EPS_DEN_EVAL  = 1e-6;   // evaluation clamp for denominator
-
-constexpr double A_MAX_AMP     = 0.999;  // soft box for |B|
-constexpr double LAMBDA_AMP    = 1e5;    // penalty multiplier for amplitude box
-
-// Jeffreys prior alpha for counts
-constexpr double JEFFREYS_ALPHA = 0.5;
-
-using BinKey = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
-struct HelCorr { double Np=0.0; double Nm=0.0; double ep=0.0; double em=0.0; };
-using GroupTable = std::map<BinKey, HelCorr>;
-using AllGroups  = std::map<std::string, GroupTable>;
-
-struct XsecBin12 {
-    std::array<double, N_PHI_BINS> xphi{};
-    std::array<double, N_PHI_BINS> splus{};
-    std::array<double, N_PHI_BINS> splus_err{};
-    std::array<double, N_PHI_BINS> sminus{};
-    std::array<double, N_PHI_BINS> sminus_err{};
-    bool valid = false;
-};
-using XsecTable = std::map<std::tuple<int,int,int>, XsecBin12>; // (ix,iQ,it) -> 12-bin struct
-using XsecByEnergy = std::map<std::string, XsecTable>; // energy string -> table
-
-// ------------ tiny helpers ------------
-[[noreturn]] static void fatal(const std::string& msg) {
-    std::cerr << "[bsa][FATAL] " << msg << std::endl;
-    std::exit(EXIT_FAILURE);
+static inline void fatal(const std::string& msg) {
+    throw std::runtime_error(msg);
 }
 
-static inline std::string key4s(int ix,int iQ,int it,int ip) {
-    std::ostringstream os; os << "(" << ix << "," << iQ << "," << it << "," << ip << ")";
-    return os.str();
-}
-
-static bool parse_tuple_key(const std::string& s, BinKey& out) {
-    int ix,iQ,it,ip;
-    if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
-    out = BinKey(ix,iQ,it,ip);
-    return true;
-}
-
-static bool parse_tuple3_key(const std::string& s, int& ix,int& iQ,int& it) {
-    if (std::sscanf(s.c_str(),"(%d,%d,%d)",&ix,&iQ,&it)!=3) return false;
-    return true;
-}
-
-static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
-    std::set<std::pair<double,double>> s;
-    for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
+static inline std::string to_lower_ascii(std::string s) {
+    for (char& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
-    return {s.begin(), s.end()};
-}
-
-static inline std::vector<double> phiCentersRad() {
-    std::vector<double> v(N_PHI_BINS);
-    const double step = TWO_PI / double(N_PHI_BINS);
-    for (int i=0;i<N_PHI_BINS;++i) v[i] = (i+0.5)*step;
-    return v;
-}
-static inline std::vector<double> phiCentersDeg() {
-    std::vector<double> d(N_PHI_BINS);
-    const double step = 360.0/double(N_PHI_BINS);
-    for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
-    return d;
-}
-
-static inline int findIndex(const std::pair<double,double>& range,
-                            const std::vector<std::pair<double,double>>& ranges) {
-    for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i;
-    return -1;
-}
-
-static void uniqueQT_for_xB(
-    const std::vector<Binning>& scheme,
-    const std::pair<double,double>& xBrange,
-    std::vector<std::pair<double,double>>& Q2_list,
-    std::vector<std::pair<double,double>>& t_list
-) {
-    std::set<std::pair<double,double>> qs, ts;
-    for (const auto& b : scheme) {
-        if (std::make_pair(b.xBmin,b.xBmax) == xBrange) {
-            qs.emplace(b.Q2min,b.Q2max);
-            ts.emplace(b.tmin,b.tmax);
-        }
-    }
-    Q2_list.assign(qs.begin(), qs.end());
-    t_list.assign(ts.begin(), ts.end());
-}
-
-// Extract {...} block that follows a key (tiny JSON helper for counts master)
-static std::string objForKey(const std::string& s, const std::string& key) {
-    size_t p = s.find(key);
-    if (p==std::string::npos) fatal(std::string("Key '") + key + "' not found.");
-    size_t br = s.find('{', p);
-    if (br==std::string::npos) fatal(std::string("Malformed JSON after key '") + key + "'");
-    int d=0; size_t i=br;
-    for (; i<s.size(); ++i) {
-        if (s[i]=='{') d++;
-        else if (s[i]=='}') { d--; if (!d) { ++i; break; } }
-    }
-    if (d!=0) fatal(std::string("Unbalanced braces near key '") + key + "'");
-    return s.substr(br, i-br);
-}
-
-static long long parseIntAfterColon_strict(const std::string& s, size_t cpos, const std::string& ctx) {
-    size_t a = cpos + 1;
-    while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
-    size_t b = a;
-    while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+')) ++b;
-    try { return std::stoll(s.substr(a,b-a)); }
-    catch(...) { fatal(std::string("Non-integer value in ") + ctx); }
-    return 0;
-}
-
-static double parseDoubleAfterColon_num(const std::string& s, size_t cpos, const std::string& ctx) {
-    size_t a = cpos + 1;
-    while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
-    size_t b = a;
-    auto isdelim = [](char c)->bool{
-        return std::isspace((unsigned char)c) || c==',' || c=='}' || c==']';
-    };
-    while (b < s.size() && !isdelim(s[b])) ++b;
-    std::string raw = s.substr(a, b-a);
-    try { return std::stod(raw); } catch(...) { fatal(std::string("Non-numeric value in ") + ctx); }
-    return 0.0;
-}
-
-// ------------ load pi0_corrected_counts_all_groups.json ------------
-struct BinningMeta { int phi_bins=0; size_t nx=0, nQ=0, nt=0; };
-
-static BinningMeta load_meta_from_master(const std::string& s) {
-    std::string meta = objForKey(s, R"("binning_meta")");
-    auto findN = [&](const char* k, const char* ctx)->int{
-        size_t p = meta.find(k); if (p==std::string::npos) fatal(std::string("binning_meta missing ") + k);
-        size_t c = meta.find(':', p); if (c==std::string::npos) fatal(std::string("binning_meta malformed for ") + k);
-        return (int)parseIntAfterColon_strict(meta, c, ctx);
-    };
-    BinningMeta bm;
-    bm.phi_bins = findN(R"("phi_bins")", "phi_bins");
-    bm.nx       = (size_t)findN(R"("xB_bins")", "xB_bins");
-    bm.nQ       = (size_t)findN(R"("Q2_bins")", "Q2_bins");
-    bm.nt       = (size_t)findN(R"("t_bins")",  "t_bins");
-    if (bm.phi_bins != N_PHI_BINS) fatal("phi_bins mismatch: expected 12.");
-    return bm;
-}
-
-static AllGroups load_corrected_master(const std::string& master_path,
-                                       BinningMeta& out_meta,
-                                       std::vector<std::string>& group_order) {
-    std::ifstream ifs(master_path);
-    if (!ifs) fatal(std::string("Cannot open master corrected counts: ") + master_path);
-    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-
-    out_meta = load_meta_from_master(s);
-
-    std::string groupsObj = objForKey(s, R"("groups")");
-
-    AllGroups out;
-    size_t gk=0;
-    while (true) {
-        size_t q1 = groupsObj.find('"', gk); if (q1==std::string::npos) break;
-        size_t q2 = groupsObj.find('"', q1+1); if (q2==std::string::npos) fatal("Malformed group name.");
-        std::string gname = groupsObj.substr(q1+1, q2-q1-1);
-        group_order.push_back(gname);
-
-        size_t binsS = groupsObj.find(R"("bins")", q2);
-        if (binsS==std::string::npos) fatal(std::string("Group ") + gname + " missing 'bins' object.");
-        int d=0; size_t br = groupsObj.find('{', binsS); if (br==std::string::npos) fatal(std::string("Malformed 'bins' in group ") + gname);
-        size_t i=br; for (; i<groupsObj.size(); ++i) {
-            if (groupsObj[i]=='{') ++d;
-            else if (groupsObj[i]=='}') { --d; if (!d) { ++i; break; } }
-        }
-        std::string binsObj = groupsObj.substr(br, i-br);
-
-        GroupTable tbl;
-        size_t p=0; int nb=0;
-        while (true) {
-            size_t k1=binsObj.find('"', p); if (k1==std::string::npos) break;
-            size_t k2=binsObj.find('"', k1+1); if (k2==std::string::npos) fatal(std::string("Malformed bin key in ") + gname);
-            std::string key = binsObj.substr(k1+1, k2-k1-1);
-            BinKey bk; if (!parse_tuple_key(key, bk)) fatal(std::string("Bad bin tuple key in ") + gname);
-
-            size_t vS = binsObj.find('{', k2); if (vS==std::string::npos) fatal(std::string("Missing bin object in ") + gname);
-            int d2=0; size_t j=vS;
-            for (; j<binsObj.size(); ++j) {
-                if (binsObj[j]=='{') ++d2;
-                else if (binsObj[j]=='}') { --d2; if (!d2) { ++j; break; } }
-            }
-            std::string v = binsObj.substr(vS, j-vS);
-
-            // helicity +1
-            size_t hp = v.find(R"("+1")");
-            if (hp==std::string::npos) fatal(std::string("Missing +1 block in ")+gname);
-            size_t hv = v.find(R"("value")", hp); if (hv==std::string::npos) fatal(std::string("Missing +1.value in ")+gname);
-            size_t hc = v.find(':', hv);         if (hc==std::string::npos) fatal(std::string("Malformed +1.value in ")+gname);
-            double Np = parseDoubleAfterColon_num(v, hc, gname+" (+1).value");
-
-            size_t he = v.find(R"("err")", hp);  if (he==std::string::npos) fatal(std::string("Missing +1.err in ")+gname);
-            size_t hce = v.find(':', he);        if (hce==std::string::npos) fatal(std::string("Malformed +1.err in ")+gname);
-            double ep = parseDoubleAfterColon_num(v, hce, gname+" (+1).err");
-
-            // helicity -1
-            size_t mp = v.find(R"("-1")");
-            if (mp==std::string::npos) fatal(std::string("Missing -1 block in ")+gname);
-            size_t mv = v.find(R"("value")", mp); if (mv==std::string::npos) fatal(std::string("Missing -1.value in ")+gname);
-            size_t mc = v.find(':', mv);         if (mc==std::string::npos) fatal(std::string("Malformed -1.value in ")+gname);
-            double Nm = parseDoubleAfterColon_num(v, mc, gname+" (-1).value");
-
-            size_t me = v.find(R"("err")", mp);  if (me==std::string::npos) fatal(std::string("Missing -1.err in ")+gname);
-            size_t mce = v.find(':', me);        if (mce==std::string::npos) fatal(std::string("Malformed -1.err in ")+gname);
-            double em = parseDoubleAfterColon_num(v, mce, gname+" (-1).err");
-
-            (void)ep; (void)em;
-            tbl[bk] = HelCorr{Np, Nm, ep, em};
-            p = j; ++nb;
-        }
-        if (nb==0) {
-            std::cerr << "[bsa][WARN] Group '"<<gname<<"' has zero bins in corrected master.\n";
-        }
-        out[gname] = std::move(tbl);
-        gk = i;
-    }
-    if (out.empty()) fatal("No groups parsed from corrected master.");
-    return out;
-}
-
-// ------------ name resolver: DVCS_* tree key -> counts key ------------
-static std::string counts_key_from_tree_key(const std::string& treeKey) {
-    static const std::map<std::string,std::string> M = {
-        {"DVCS_Sp18_inb",        "sp18_inb"},
-        {"DVCS_Sp18_out",        "sp18_out"},
-        {"DVCS_Fa18_inb",        "fa18_inb"},
-        {"DVCS_Fa18_inb_supp",   "fa18_inb_supp"},
-        {"DVCS_Fa18_out",        "fa18_out"},
-        {"DVCS_Sp19_inb",        "sp19_inb"}
-    };
-    auto it = M.find(treeKey);
-    if (it != M.end()) return it->second;
-
-    std::string s = treeKey;
-    const std::string pre = "DVCS_";
-    if (s.rfind(pre,0)==0) s = s.substr(pre.size());
-    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
     return s;
 }
 
-// ------------ simple map: period -> energies used for rad xsec ------------
-static std::vector<std::string> energies_for_group(const std::string& group) {
-    if (group == "sp18_inb" || group == "sp18_out") return {"10.59"};
-    if (group == "fa18_inb" || group == "fa18_out" || group == "fa18_inb_supp") return {"10.60"};
-    if (group == "sp19_inb") return {"10.2"};
-    if (group == "10.6_GeV") return {"10.59","10.60"};
+static inline std::string sanitize_token(std::string s) {
+    for (char& c : s) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            continue;
+        }
+        c = '_';
+    }
+    return s;
+}
+
+static inline double wrap_phi_deg(double phi_deg) {
+    double p = std::fmod(phi_deg, 360.0);
+    if (p < 0.0) {
+        p += 360.0;
+    }
+    if (p >= 360.0) {
+        p = std::nextafter(360.0, 0.0);
+    }
+    return p;
+}
+
+static inline double delta_phi_rad_from_two_phi(double phi_a, double phi_b) {
+    double d = std::fmod(phi_a - phi_b, 2.0 * PI);
+    if (d <= -PI) {
+        d += 2.0 * PI;
+    }
+    if (d > PI) {
+        d -= 2.0 * PI;
+    }
+    return std::fabs(d);
+}
+
+static inline bool in_range(double v, double a, double b) {
+    return (v >= a) && (v < b);
+}
+
+static inline bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
+    if (pmax_deg > pmin_deg) {
+        return in_range(phi_deg, pmin_deg, pmax_deg);
+    }
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
+}
+
+static inline double phi_center_deg(double pmin_deg, double pmax_deg) {
+    double lo = wrap_phi_deg(pmin_deg);
+    double hi = wrap_phi_deg(pmax_deg);
+    if (hi <= lo) {
+        hi += 360.0;
+    }
+    return wrap_phi_deg(0.5 * (lo + hi));
+}
+
+static inline double phi_half_width_deg(double pmin_deg, double pmax_deg) {
+    double lo = wrap_phi_deg(pmin_deg);
+    double hi = wrap_phi_deg(pmax_deg);
+    if (hi <= lo) {
+        hi += 360.0;
+    }
+    return 0.5 * (hi - lo);
+}
+
+static inline std::string topo_dir(int det1, int det2) {
+    if (det1 == 1 && det2 == 1) {
+        return "FD_FD";
+    }
+    if (det1 == 2 && det2 == 1) {
+        return "CD_FD";
+    }
+    if (det1 == 2 && det2 == 0) {
+        return "CD_FT";
+    }
+    return "";
+}
+
+static inline std::string period_display_from_tree_key(const std::string& tree_key) {
+    const std::string s = to_lower_ascii(tree_key);
+    const auto has = [&](const char* sub) { return s.find(sub) != std::string::npos; };
+
+    if (has("fa18") && has("inb") && !has("supp")) return "Fa18 Inb";
+    if (has("fa18") && has("out")) return "Fa18 Out";
+    if (has("sp19") && has("inb")) return "Sp19 Inb";
+    if (has("sp18") && has("inb")) return "Sp18 Inb";
+    if (has("sp18") && has("out")) return "Sp18 Out";
+
+    return "";
+}
+
+static inline std::string period_code_from_display(const std::string& period) {
+    if (period == "Fa18 Inb") return "Fa18_Inb";
+    if (period == "Fa18 Out") return "Fa18_Out";
+    if (period == "Sp19 Inb") return "Sp19_Inb";
+    if (period == "Sp18 Inb") return "Sp18_Inb";
+    if (period == "Sp18 Out") return "Sp18_Out";
+    fatal("[bsa] unknown period label: " + period);
+    return "";
+}
+
+static inline double beam_pol_for_period(const std::string& period, const BSAOptions& opt) {
+    if (period == "Sp18 Inb") return opt.beam_pol_sp18_inb;
+    if (period == "Sp18 Out") return opt.beam_pol_sp18_out;
+    if (period == "Fa18 Inb") return opt.beam_pol_fa18_inb;
+    if (period == "Fa18 Out") return opt.beam_pol_fa18_out;
+    if (period == "Sp19 Inb") return opt.beam_pol_sp19_inb;
+    fatal("[bsa] no beam polarization configured for period: " + period);
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+static const std::vector<std::string>& base_period_order() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb",
+        "Fa18 Out",
+        "Sp19 Inb",
+        "Sp18 Inb",
+        "Sp18 Out"
+    };
+    return v;
+}
+
+static const std::vector<std::string>& output_group_order() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb",
+        "Fa18 Out",
+        "Sp19 Inb",
+        "Sp18 Inb",
+        "Sp18 Out",
+        "Fa18",
+        "Sp18",
+        "10.6 GeV"
+    };
+    return v;
+}
+
+static std::vector<std::string> component_periods_for_group(const std::string& group) {
+    if (group == "Fa18 Inb") return {"Fa18 Inb"};
+    if (group == "Fa18 Out") return {"Fa18 Out"};
+    if (group == "Sp19 Inb") return {"Sp19 Inb"};
+    if (group == "Sp18 Inb") return {"Sp18 Inb"};
+    if (group == "Sp18 Out") return {"Sp18 Out"};
+    if (group == "Fa18") return {"Fa18 Inb", "Fa18 Out"};
+    if (group == "Sp18") return {"Sp18 Inb", "Sp18 Out"};
+    if (group == "10.6 GeV") return {"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"};
+    fatal("[bsa] unknown BSA output group: " + group);
     return {};
 }
 
-// ------------ compute simple mean beam polarization from a tree ------------
-struct PolMean { double P=0.0; long long n=0; };
+// -----------------------------------------------------------------------------
+// CSV helpers
+// -----------------------------------------------------------------------------
 
-static PolMean mean_beam_polarization(TTree* t) {
-    if (!t) return PolMean{0.0,0};
-    double beam_pol = 0.0;
-    bool hasPol = (t->GetBranch("beam_pol") != nullptr);
-    if (!hasPol) return PolMean{0.0,0};
-
-    t->SetBranchAddress("beam_pol", &beam_pol);
-
-    const Long64_t nent = t->GetEntries();
-    long long n = 0;
-    double mean = 0.0;
-    for (Long64_t i=0;i<nent;++i) {
-        t->GetEntry(i);
-        if (!std::isfinite(beam_pol)) continue;
-        if (beam_pol <= 0.0) continue;
-        mean += (beam_pol - mean) / double(n+1);
-        ++n;
-    }
-    return PolMean{mean, n};
-}
-
-static PolMean mean_beam_polarization_multi(const std::vector<TTree*>& trees) {
-    long long total_n = 0;
-    double acc_weighted = 0.0;
-    for (TTree* t : trees) {
-        PolMean pm = mean_beam_polarization(t);
-        if (pm.n > 0) {
-            acc_weighted += pm.P * double(pm.n);
-            total_n += pm.n;
-        }
-    }
-    if (total_n == 0) return PolMean{0.0,0};
-    return PolMean{acc_weighted / double(total_n), total_n};
-}
-
-// ------------ math helpers for stabilizer penalties ------------
-static inline double Dmin_single(double B) { return 1.0 - std::fabs(B); }
-static inline double overBox(double A){ double v = std::fabs(A) - A_MAX_AMP; return (v>0.0)? v*v : 0.0; }
-
-// ------------ BSA computation core ------------
-struct BSApt { double phi=0.0; double bsa=0.0; double err=0.0; bool valid=false; };
-struct FitRes { double A=0, Aerr=0, B1=0, B1err=0, B2=0, B2err=0, C=0, Cerr=0; double chi2=0; int ndf=0; int status=0; };
-struct CellResult {
-    std::vector<BSApt> points; FitRes fit;
-    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=false;
+struct CSV {
+    std::vector<std::string> header;
+    std::unordered_map<std::string, int> index;
+    std::vector<std::vector<std::string>> rows;
 };
 
-// fit
-static FitRes fit_cell(const std::vector<BSApt>& pts){
-    std::vector<double> x, y, ey;
-    x.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
-    for (const auto& p : pts) {
-        if (!p.valid) continue;
-        x.push_back(p.phi);
-        y.push_back(p.bsa);
-        ey.push_back(std::max(p.err, 1e-6));
+static std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> out;
+    std::string cur;
+    cur.reserve(line.size());
+
+    bool inq = false;
+    for (size_t i = 0; i < line.size(); ++i) {
+        const char c = line[i];
+        if (c == '"') {
+            if (inq && i + 1 < line.size() && line[i + 1] == '"') {
+                cur.push_back('"');
+                ++i;
+            } else {
+                inq = !inq;
+            }
+        } else if (c == ',' && !inq) {
+            out.push_back(cur);
+            cur.clear();
+        } else {
+            cur.push_back(c);
+        }
     }
-    FitRes fr;
-    const int n = (int)x.size();
-    if (n < 3) { fr.status = 1; fr.ndf = 0; return fr; }
+    out.push_back(cur);
+    return out;
+}
 
-    auto chi2pen = [&](const double *par){
-        const double A  = par[0];
-        const double B1 = par[1];
-        const double C  = par[2];
+static bool load_csv(const std::string& path, CSV& csv) {
+    std::ifstream fin(path);
+    if (!fin.is_open()) {
+        fatal("[bsa] cannot open CSV: " + path);
+    }
 
-        double chi2 = 0.0;
-        for (int i=0;i<n;++i){
-            const double phi = x[i];
-            double denom = 1.0 + B1*std::cos(phi);
-            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-            const double yhat = C + (A*std::sin(phi))/denom;
-            const double pull = (y[i] - yhat)/ey[i];
-            chi2 += pull*pull;
+    std::string line;
+    if (!std::getline(fin, line)) {
+        fatal("[bsa] empty CSV: " + path);
+    }
+
+    csv.header = split_csv_line(line);
+    csv.index.clear();
+    for (int i = 0; i < static_cast<int>(csv.header.size()); ++i) {
+        if (csv.index.count(csv.header[i])) {
+            fatal("[bsa] duplicate CSV column: " + csv.header[i]);
+        }
+        csv.index[csv.header[i]] = i;
+    }
+
+    csv.rows.clear();
+    while (std::getline(fin, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        std::vector<std::string> row = split_csv_line(line);
+        if (row.size() < csv.header.size()) {
+            row.resize(csv.header.size(), "");
+        }
+        if (row.size() != csv.header.size()) {
+            fatal("[bsa] CSV row width mismatch in " + path);
+        }
+        csv.rows.push_back(std::move(row));
+    }
+
+    return true;
+}
+
+static void write_csv_atomic(const std::string& path, const CSV& csv) {
+    const std::string tmp = path + ".tmp";
+    std::ofstream fout(tmp);
+    if (!fout.is_open()) {
+        fatal("[bsa] cannot write temporary CSV: " + tmp);
+    }
+
+    auto write_cell = [&](const std::string& s) {
+        const bool quote =
+            s.find(',')  != std::string::npos ||
+            s.find('"') != std::string::npos ||
+            s.find('\n') != std::string::npos ||
+            s.find('\r') != std::string::npos;
+
+        if (!quote) {
+            fout << s;
+            return;
         }
 
-        const double Dmin = Dmin_single(B1);
-        double pen_den = 0.0;
-        if (Dmin < EPS_DEN_FLOOR) {
-            const double deficit = EPS_DEN_FLOOR - Dmin;
-            pen_den = LAMBDA_DEN * deficit * deficit;
+        fout << '"';
+        for (char c : s) {
+            if (c == '"') fout << "\"\"";
+            else fout << c;
         }
-        double pen_amp = overBox(B1);
-        return chi2 + pen_den + LAMBDA_AMP*pen_amp;
+        fout << '"';
     };
 
-    std::unique_ptr<ROOT::Math::Minimizer> min(
-        ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"));
-    min->SetMaxFunctionCalls(10000);
-    min->SetMaxIterations(10000);
-    min->SetTolerance(1e-6);
-    min->SetPrintLevel(0);
-
-    ROOT::Math::Functor fcn(chi2pen, 3);
-    min->SetFunction(fcn);
-
-    min->SetLimitedVariable(0, "A",  0.10, 0.02, -1.0,  1.0);
-    min->SetLimitedVariable(1, "B1", 0.00, 0.02, -1.0,  1.0);
-    min->SetLimitedVariable(2, "C",  0.00, 0.02, -0.5,  0.5);
-
-    const bool ok = min->Minimize();
-    fr.status = ok ? 0 : 1;
-
-    const double *par = min->X();
-    const double *err = min->Errors();
-
-    fr.A  = par[0]; fr.Aerr  = err[0];
-    fr.B1 = par[1]; fr.B1err = err[1];
-    fr.B2 = 0.0;    fr.B2err = 0.0;
-    fr.C  = par[2]; fr.Cerr  = err[2];
-
-    fr.chi2 = chi2pen(par);
-    fr.ndf  = std::max(0, n - 3);
-    return fr;
-}
-
-// JSON writers (schema preserved) for counts-based outputs
-static void write_period_bsa_json(
-    const std::string& out_path,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, CellResult>& cells)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr<<"[bsa][ERROR] Cannot open "<<out_path<<"\n"; return; }
-    ofs<<std::fixed<<std::setprecision(8);
-    ofs<<"{\n";
-    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
-    ofs<<"  \"bins\": {\n";
-    bool first=true;
-    for (const auto& kv : cells){
-        if (!first) ofs<<",\n"; first=false;
-        int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-        const auto& cr = kv.second;
-        ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {\n";
-        ofs<<"      \"phi\": [";
-        for (size_t i=0;i<cr.points.size();++i){ if(i) ofs<<","; ofs<<cr.points[i].phi; } ofs<<"],\n";
-        ofs<<"      \"bsa\": [";
-        for (size_t i=0;i<cr.points.size();++i){ if(i) ofs<<","; ofs<<cr.points[i].bsa; } ofs<<"],\n";
-        ofs<<"      \"bsa_err\": [";
-        for (size_t i=0;i<cr.points.size();++i){ if(i) ofs<<","; ofs<<cr.points[i].err; } ofs<<"],\n";
-        ofs<<"      \"fit\": {"
-              "\"A\": {\"val\": "<<cr.fit.A<<", \"err\": "<<cr.fit.Aerr<<"}, "
-              "\"B1\": {\"val\": "<<cr.fit.B1<<", \"err\": "<<cr.fit.B1err<<"}, "
-              "\"B2\": {\"val\": 0.0, \"err\": 0.0}, "
-              "\"C\": {\"val\": "<<cr.fit.C<<", \"err\": "<<cr.fit.Cerr<<"}, "
-              "\"chi2\": "<<cr.fit.chi2<<", \"ndf\": "<<cr.fit.ndf<<", \"status\": "<<cr.fit.status<<"},\n";
-        ofs<<"      \"polarization\": {\"per_bin\": false, \"P_used\": "<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}\n";
-        ofs<<"    }";
+    for (size_t i = 0; i < csv.header.size(); ++i) {
+        write_cell(csv.header[i]);
+        if (i + 1 < csv.header.size()) fout << ',';
     }
-    ofs<<"\n  }\n}\n";
-    std::cout << "[bsa] Wrote " << out_path << "\n";
-}
+    fout << '\n';
 
-static void write_all_periods_json(
-    const std::string& out_path,
-    const std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>>& perPeriod,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr<<"[bsa][ERROR] Cannot open "<<out_path<<"\n"; return; }
-    ofs<<std::fixed<<std::setprecision(8);
-    ofs<<"{\n";
-    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
-    ofs<<"  \"periods\": {\n";
-    bool firstP=true;
-    for (const auto& pkv : perPeriod){
-        if (!firstP) ofs<<",\n"; firstP=false;
-        ofs<<"    \""<<pkv.first<<"\": {\n      \"bins\": {\n";
-        bool firstB=true;
-        for (const auto& kv : pkv.second){
-            if (!firstB) ofs<<",\n"; firstB=false;
-            int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-            const auto& cr = kv.second;
-            ofs<<"        \"("<<ix<<","<<iQ<<","<<it<<")\": {";
-            ofs<<"\"phi\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].phi; } ofs<<"],";
-            ofs<<"\"bsa\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].bsa; } ofs<<"],";
-            ofs<<"\"bsa_err\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].err; } ofs<<"],";
-            ofs<<"\"fit\":{"
-                  "\"A\":{\"val\":"<<cr.fit.A<<",\"err\":"<<cr.fit.Aerr<<"},"
-                  "\"B1\":{\"val\":"<<cr.fit.B1<<",\"err\":"<<cr.fit.B1err<<"},"
-                  "\"B2\":{\"val\":0.0,\"err\":0.0},"
-                  "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
-                  "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"},";
-            ofs<<"\"polarization\":{\"per_bin\":false,\"P_used\":"<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}";
-            ofs<<"}";
+    for (const auto& row : csv.rows) {
+        if (row.size() != csv.header.size()) {
+            fatal("[bsa] CSV row width mismatch while writing");
         }
-        ofs<<"\n      }\n    }";
+        for (size_t i = 0; i < row.size(); ++i) {
+            write_cell(row[i]);
+            if (i + 1 < row.size()) fout << ',';
+        }
+        fout << '\n';
     }
-    ofs<<"\n  }\n}\n";
-    std::cout << "[bsa] Wrote " << out_path << "\n";
+
+    fout.close();
+    if (!fout) {
+        fatal("[bsa] failed while writing temporary CSV: " + tmp);
+    }
+
+    (void)std::remove(path.c_str());
+    if (std::rename(tmp.c_str(), path.c_str()) != 0) {
+        fatal("[bsa] failed to rename " + tmp + " to " + path);
+    }
 }
 
-// ------------ plotting helpers ------------
-static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
-    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
-    ax->SetLabelFont(42);
-    ax->SetLabelSize(labelSize);
-    ax->SetLabelOffset(0.012);
-    ax->SetTitle("");
-    ax->SetTickSize(0.02);
-    ax->Draw();
+static int col_strict(const CSV& csv, const std::string& name) {
+    auto it = csv.index.find(name);
+    if (it == csv.index.end()) {
+        fatal("[bsa] missing required CSV column: " + name);
+    }
+    return it->second;
 }
 
-static std::string plot_subdir_for_group(const std::string& group) {
-    if (group == "10.6_GeV") return "10.6_combined";
-    return group;
+static inline double to_double_strict(const std::string& s, const std::string& what) {
+    if (s.empty()) {
+        fatal("[bsa] empty numeric cell for " + what);
+    }
+    char* end = nullptr;
+    const double v = std::strtod(s.c_str(), &end);
+    if (end == s.c_str()) {
+        fatal("[bsa] parse failure for " + what + " value " + s);
+    }
+    return v;
 }
 
-// ------------ load a single energy rad-corrected xsec file into XsecTable ------------
-static XsecTable load_xsec_energy_file(const std::string& path) {
-    XsecTable table;
-    std::ifstream ifs(path);
-    if (!ifs) {
-        std::cerr << "[bsa][xsec] WARN: cannot open " << path << "\n";
-        return table;
-    }
-    json j;
-    try { ifs >> j; } catch(...) {
-        std::cerr << "[bsa][xsec] WARN: malformed JSON in " << path << "\n";
-        return table;
-    }
-    if (!j.contains("bins")) return table;
-    const json& jb = j["bins"];
-    for (auto it = jb.begin(); it != jb.end(); ++it) {
-        const std::string k = it.key();
-        int ix=-1,iQ=-1,itb=-1;
-        if (!parse_tuple3_key(k, ix,iQ,itb)) continue;
-        const json& cell = it.value();
-        if (!cell.contains("helicity_plus") || !cell.contains("helicity_minus")) continue;
-
-        auto read12 = [&](const json& h, std::array<double,N_PHI_BINS>& phi,
-                          std::array<double,N_PHI_BINS>& val, std::array<double,N_PHI_BINS>& err)->bool {
-            if (!h.contains("phi") || !h.contains("xsec")) return false;
-            const auto& p = h["phi"];
-            const auto& v = h["xsec"];
-            const bool has_err = h.contains("xsec_err");
-            if ((int)p.size()!=N_PHI_BINS || (int)v.size()!=N_PHI_BINS) return false;
-            for (int i=0;i<N_PHI_BINS;++i) {
-                phi[i] = p[i].get<double>();
-                val[i] = v[i].get<double>();
-                err[i] = (has_err ? h["xsec_err"][i].get<double>() : 0.0);
-            }
-            return true;
-        };
-
-        XsecBin12 xb;
-        std::array<double,N_PHI_BINS> phi1{}, phi2{};
-        if (!read12(cell["helicity_plus"],  phi1, xb.splus,  xb.splus_err)) continue;
-        if (!read12(cell["helicity_minus"], phi2, xb.sminus, xb.sminus_err)) continue;
-
-        for (int i=0;i<N_PHI_BINS;++i) xb.xphi[i] = phi1[i];
-        xb.valid = true;
-
-        table[std::make_tuple(ix,iQ,itb)] = xb;
-    }
-    return table;
+static inline bool to_bool_valid(const std::string& s) {
+    return (s == "1" || s == "1.0" || s == "true" || s == "TRUE");
 }
 
-// ------------ assemble overlay (possibly many energies) into one table ------------
-static XsecTable build_overlay_table(const std::string& dir, const std::vector<std::string>& energies) {
-    XsecTable acc;
-    for (const auto& E : energies) {
-        const std::string path = (std::filesystem::path(dir)/("rad_corrected_xsec_"+E+".json")).string();
-        XsecTable one = load_xsec_energy_file(path);
-        for (const auto& kv : one) {
-            auto key = kv.first;
-            const XsecBin12& add = kv.second;
-            if (!add.valid) continue;
-            auto& dst = acc[key];
-            if (!dst.valid) {
-                dst = add;
-            } else {
-                for (int i=0;i<N_PHI_BINS;++i) {
-                    dst.splus[i]      += add.splus[i];
-                    dst.sminus[i]     += add.sminus[i];
-                    dst.splus_err[i]   = std::sqrt(dst.splus_err[i]*dst.splus_err[i] + add.splus_err[i]*add.splus_err[i]);
-                    dst.sminus_err[i]  = std::sqrt(dst.sminus_err[i]*dst.sminus_err[i] + add.sminus_err[i]*add.sminus_err[i]);
-                }
-            }
-            dst.valid = true;
+// -----------------------------------------------------------------------------
+// Row binning
+// -----------------------------------------------------------------------------
+
+struct RowBin {
+    double xBmin = std::numeric_limits<double>::quiet_NaN();
+    double xBmax = std::numeric_limits<double>::quiet_NaN();
+    double Q2min = std::numeric_limits<double>::quiet_NaN();
+    double Q2max = std::numeric_limits<double>::quiet_NaN();
+    double tmin  = std::numeric_limits<double>::quiet_NaN();
+    double tmax  = std::numeric_limits<double>::quiet_NaN();
+    double pmin  = std::numeric_limits<double>::quiet_NaN();
+    double pmax  = std::numeric_limits<double>::quiet_NaN();
+    bool valid = false;
+};
+
+struct AxisBin {
+    double min = 0.0;
+    double max = 0.0;
+};
+
+struct FastBinning {
+    std::vector<AxisBin> xbins;
+    std::vector<AxisBin> qbins;
+    std::vector<AxisBin> tbins;
+    std::vector<std::vector<std::vector<std::vector<int>>>> rows_by_xqt;
+};
+
+static std::vector<RowBin> load_row_bins_from_csv(const CSV& csv) {
+    const int c_xBmin = col_strict(csv, "xBmin");
+    const int c_xBmax = col_strict(csv, "xBmax");
+    const int c_Q2min = col_strict(csv, "Q2min");
+    const int c_Q2max = col_strict(csv, "Q2max");
+    const int c_tmin  = col_strict(csv, "t_abs_min");
+    const int c_tmax  = col_strict(csv, "t_abs_max");
+    const int c_pmin  = col_strict(csv, "phimin");
+    const int c_pmax  = col_strict(csv, "phimax");
+    const int c_valid = col_strict(csv, "valid bin");
+
+    std::vector<RowBin> rows;
+    rows.reserve(csv.rows.size());
+    for (int r = 0; r < static_cast<int>(csv.rows.size()); ++r) {
+        const auto& row = csv.rows[r];
+        RowBin b;
+        b.xBmin = to_double_strict(row[c_xBmin], "xBmin");
+        b.xBmax = to_double_strict(row[c_xBmax], "xBmax");
+        b.Q2min = to_double_strict(row[c_Q2min], "Q2min");
+        b.Q2max = to_double_strict(row[c_Q2max], "Q2max");
+        b.tmin  = to_double_strict(row[c_tmin],  "t_abs_min");
+        b.tmax  = to_double_strict(row[c_tmax],  "t_abs_max");
+        b.pmin  = to_double_strict(row[c_pmin],  "phimin");
+        b.pmax  = to_double_strict(row[c_pmax],  "phimax");
+        b.valid = to_bool_valid(row[c_valid]);
+        rows.push_back(b);
+    }
+    return rows;
+}
+
+static inline bool axis_bin_equal(const AxisBin& a, const AxisBin& b) {
+    return a.min == b.min && a.max == b.max;
+}
+
+static void add_unique_axis_bin(std::vector<AxisBin>& bins, double minv, double maxv) {
+    AxisBin b{minv, maxv};
+    auto it = std::find_if(bins.begin(), bins.end(), [&](const AxisBin& x) {
+        return axis_bin_equal(x, b);
+    });
+    if (it == bins.end()) {
+        bins.push_back(b);
+    }
+}
+
+static void sort_axis_bins(std::vector<AxisBin>& bins) {
+    std::sort(bins.begin(), bins.end(), [](const AxisBin& a, const AxisBin& b) {
+        if (a.min != b.min) return a.min < b.min;
+        return a.max < b.max;
+    });
+}
+
+static int find_axis_bin_index(const std::vector<AxisBin>& bins, double value) {
+    for (int i = 0; i < static_cast<int>(bins.size()); ++i) {
+        if (value >= bins[i].min && value < bins[i].max) {
+            return i;
         }
     }
-    return acc;
+    return -1;
 }
 
-// ------------ form BSA points from xsec overlay for a cell ------------
-static std::vector<BSApt> bsa_from_xsec_cell(const XsecBin12& xb, double P_used) {
-    std::vector<BSApt> pts(N_PHI_BINS);
-    for (int i=0; i<N_PHI_BINS; ++i) {
-        const double sp  = xb.splus[i];
-        const double sm  = xb.sminus[i];
-        const double esp = xb.splus_err[i];
-        const double esm = xb.sminus_err[i];
+static int find_axis_bin_exact(const std::vector<AxisBin>& bins, double minv, double maxv) {
+    for (int i = 0; i < static_cast<int>(bins.size()); ++i) {
+        if (bins[i].min == minv && bins[i].max == maxv) {
+            return i;
+        }
+    }
+    return -1;
+}
 
-        BSApt p;
-        p.phi = xb.xphi[i] * (TWO_PI/360.0);
+static FastBinning build_fast_binning(const std::vector<RowBin>& rows) {
+    FastBinning fb;
 
-        const double S = sp + sm;
-        const double D = sp - sm;
-        if (!(S > 0.0) || !(sp>=0.0) || !(sm>=0.0)) {
-            p.valid = false;
-            p.bsa = 0.0;
-            p.err = 0.0;
-            pts[i] = p;
+    for (const auto& r : rows) {
+        if (!r.valid) {
+            continue;
+        }
+        add_unique_axis_bin(fb.xbins, r.xBmin, r.xBmax);
+        add_unique_axis_bin(fb.qbins, r.Q2min, r.Q2max);
+        add_unique_axis_bin(fb.tbins, r.tmin, r.tmax);
+    }
+
+    sort_axis_bins(fb.xbins);
+    sort_axis_bins(fb.qbins);
+    sort_axis_bins(fb.tbins);
+
+    fb.rows_by_xqt.resize(fb.xbins.size());
+    for (size_t ix = 0; ix < fb.xbins.size(); ++ix) {
+        fb.rows_by_xqt[ix].resize(fb.qbins.size());
+        for (size_t iq = 0; iq < fb.qbins.size(); ++iq) {
+            fb.rows_by_xqt[ix][iq].resize(fb.tbins.size());
+        }
+    }
+
+    for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+        const RowBin& row = rows[r];
+        if (!row.valid) {
             continue;
         }
 
-        const double invS2 = 1.0 / (S*S);
-        const double dAsp  = (2.0*sm) * invS2;
-        const double dAsm  = (-2.0*sp) * invS2;
-        const double var_raw = dAsp*dAsp*esp*esp + dAsm*dAsm*esm*esm;
-
-        p.bsa  = (D / S) / P_used;
-        p.err  = std::sqrt(std::max(0.0, var_raw)) / std::max(P_used, 1e-12);
-        p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
-        pts[i] = p;
+        const int ix = find_axis_bin_exact(fb.xbins, row.xBmin, row.xBmax);
+        const int iq = find_axis_bin_exact(fb.qbins, row.Q2min, row.Q2max);
+        const int it = find_axis_bin_exact(fb.tbins, row.tmin, row.tmax);
+        if (ix < 0 || iq < 0 || it < 0) {
+            fatal("[bsa] failed to build fast row-bin lookup");
+        }
+        fb.rows_by_xqt[ix][iq][it].push_back(r);
     }
-    return pts;
+
+    std::cout << "[bsa] Fast bin lookup built with "
+              << fb.xbins.size() << " xB bins, "
+              << fb.qbins.size() << " Q2 bins, "
+              << fb.tbins.size() << " |t| bins.\n";
+    return fb;
 }
 
-// ------------ single-cell OVERLAY plot (counts vs xsec) ------------
-static void plot_single_cell_overlay_canvas(
-    const std::string& period,
-    const std::pair<double,double>& xb_range,
-    const std::pair<double,double>& Q2_range,
-    const std::pair<double,double>& t_range,
-    const std::vector<double>& phi_deg,
-    const CellResult& countsCell,
-    const XsecBin12* xsecCell,
-    const std::string& out_png_path) {
-    const int W = 700, H = 550;
-    TCanvas* c = new TCanvas("c_single", "c_single", W, H);
-    c->cd();
+// -----------------------------------------------------------------------------
+// Combined cuts loader
+// -----------------------------------------------------------------------------
 
-    gPad->SetGrid(1,1);
-    gPad->SetTopMargin(0.12);
-    gPad->SetBottomMargin(0.18);
-    gPad->SetLeftMargin(0.16);
-    gPad->SetRightMargin(0.14);
+struct SigmaStats {
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std  = std::numeric_limits<double>::quiet_NaN();
+    double cut_low = std::numeric_limits<double>::quiet_NaN();
+    double cut_high = std::numeric_limits<double>::quiet_NaN();
+    double quantile = 0.0;
+    std::string mode = "symmetric_3sigma";
+};
 
-    TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
-    TAxis* ax = frame->GetXaxis();
-    TAxis* ay = frame->GetYaxis();
+using CutVarMap = std::unordered_map<std::string, SigmaStats>;
+using TopoCutMap = std::unordered_map<std::string, CutVarMap>;
 
-    ax->SetLabelSize(0.0001);
-    ax->SetTitle("#phi (deg)");
-    ay->SetTitle("A_{LU}");
-    ax->CenterTitle(); ay->CenterTitle();
-    ax->SetNdivisions(505);
-
-    ax->SetTitleSize(0.060);
-    ay->SetTitleSize(0.060);
-    ay->SetLabelSize(0.048);
-
-    ax->SetTitleOffset(1.25);
-    ay->SetTitleOffset(1.40);
-
-    drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
-
-    {
-        TLatex subt;
-        subt.SetNDC();
-        subt.SetTextFont(42);
-        subt.SetTextSize(0.04);
-        subt.SetTextAlign(21);
-        std::ostringstream st;
-        st << Form("Fall 2018 -- x_{B} #in [%.2g, %.2g]; Q^{2} #in [%.2g, %.2g]; -t #in [%.2g, %.2g]",
-                   period.c_str(),
-                   xb_range.first, xb_range.second,
-                   Q2_range.first, Q2_range.second,
-                   t_range.first,  t_range.second);
-        subt.DrawLatex(0.50, 0.94, st.str().c_str());
+static inline bool within_cut_window(double v, const SigmaStats& s) {
+    if (!std::isfinite(v)) {
+        return false;
     }
 
-    // keep handles for legend
-    TGraphErrors* grCountsPts = nullptr;
-    TGraphErrors* grSigmaPts  = nullptr;
-
-    // BLUE counts points
-    std::vector<double> xc, yc, eyc;
-    for (int ip=0; ip<N_PHI_BINS; ++ip) {
-        const auto& p = countsCell.points[ip];
-        if (!p.valid) continue;
-        xc.push_back(phi_deg[ip]);
-        yc.push_back(p.bsa);
-        eyc.push_back(std::max(1e-6, p.err));
-    }
-    if (!xc.empty()) {
-        grCountsPts = new TGraphErrors((int)xc.size(), xc.data(), yc.data(), nullptr, eyc.data());
-        grCountsPts->SetMarkerStyle(20);      // closed circle
-        grCountsPts->SetMarkerSize(1.1);
-        grCountsPts->SetLineWidth(2);
-        grCountsPts->SetLineColor(kBlue+1);
-        grCountsPts->SetMarkerColor(kBlue+1);
-        grCountsPts->Draw("P SAME");
-    }
-
-    // BLUE fit
-    if (countsCell.fit.ndf > 0 || countsCell.fit.status == 0) {
-        const int NS=721;
-        std::vector<double> xd(NS), yd(NS);
-        for (int i=0;i<NS;++i){
-            double deg = double(i)*0.5;
-            double rad = deg * (TWO_PI/360.0);
-            double denom = 1.0 + countsCell.fit.B1*std::cos(rad);
-            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-            double val = countsCell.fit.C + (countsCell.fit.A*std::sin(rad))/denom;
-            xd[i] = deg; yd[i] = val;
+    if (s.mode == "upper_quantile") {
+        if (!std::isfinite(s.cut_high)) {
+            return true;
         }
-        TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
-        gfit->SetLineColor(kBlue+1);
-        gfit->SetLineStyle(2);
-        gfit->SetLineWidth(1);
-        gfit->Draw("L SAME");
+        return v <= s.cut_high;
     }
 
-    // RED overlay points and fit (if provided)
-    FitRes redFit{};
-    bool haveRed = false;
-    if (xsecCell && xsecCell->valid) {
-        const double P_used = std::max(1e-12, countsCell.P_used);
-        auto redPts = bsa_from_xsec_cell(*xsecCell, P_used);
-
-        std::vector<double> xr, yr, eyr;
-        for (int ip=0; ip<N_PHI_BINS; ++ip) {
-            if (!redPts[ip].valid) continue;
-            xr.push_back(phi_deg[ip]);
-            yr.push_back(redPts[ip].bsa);
-            eyr.push_back(std::max(1e-6, redPts[ip].err));
+    double lo = s.cut_low;
+    double hi = s.cut_high;
+    if (!(std::isfinite(lo) && std::isfinite(hi)) || hi <= lo) {
+        if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) {
+            return true;
         }
-        if (!xr.empty()) {
-            grSigmaPts = new TGraphErrors((int)xr.size(), xr.data(), yr.data(), nullptr, eyr.data());
-            grSigmaPts->SetMarkerStyle(24);   // open circle
-            grSigmaPts->SetMarkerSize(1.1);
-            grSigmaPts->SetLineWidth(2);
-            grSigmaPts->SetLineColor(kRed+1);
-            grSigmaPts->SetMarkerColor(kRed+1);
-            grSigmaPts->Draw("P SAME");
-        }
-
-        redFit = fit_cell(redPts);
-        if (redFit.ndf > 0 || redFit.status == 0) {
-            const int NS=721;
-            std::vector<double> xfd(NS), yfd(NS);
-            for (int i=0;i<NS;++i){
-                double deg = double(i)*0.5;
-                double rad = deg * (TWO_PI/360.0);
-                double denom = 1.0 + redFit.B1*std::cos(rad);
-                if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                double val = redFit.C + (redFit.A*std::sin(rad))/denom;
-                xfd[i] = deg; yfd[i] = val;
-            }
-            TGraph* gfitr = new TGraph(NS, xfd.data(), yfd.data());
-            gfitr->SetLineColor(kRed+1);
-            gfitr->SetLineStyle(2);
-            gfitr->SetLineWidth(1);
-            gfitr->Draw("L SAME");
-        }
-        haveRed = true;
+        lo = s.mean - 3.0 * s.std;
+        hi = s.mean + 3.0 * s.std;
     }
 
-    // Minimal legend update: only two items, using markers with colors
-    TLegend* leg = new TLegend(0.38, 0.68, 0.86, 0.88);
-    leg->SetMargin(0.04);
-    leg->SetBorderSize(1);
-    leg->SetLineColor(kBlack);
-    leg->SetFillColor(kWhite);
-    leg->SetFillStyle(1001);
-    leg->SetTextFont(42);
-    leg->SetTextSize(0.042);
-
-    if (grCountsPts) {
-        leg->AddEntry(grCountsPts,
-                      Form("counts: A = %.3f #pm %.3f",
-                           countsCell.fit.A, countsCell.fit.Aerr),
-                      "p");
-    } else {
-        leg->AddEntry((TObject*)nullptr,
-                      Form("counts: A = %.3f #pm %.3f",
-                           countsCell.fit.A, countsCell.fit.Aerr),
-                      "");
-    }
-
-    if (haveRed && grSigmaPts) {
-        leg->AddEntry(grSigmaPts,
-                      Form("#sigma: A = %.3f #pm %.3f",
-                           redFit.A, redFit.Aerr),
-                      "p");
-    } else if (haveRed) {
-        leg->AddEntry((TObject*)nullptr,
-                      Form("#sigma: A = %.3f #pm %.3f",
-                           redFit.A, redFit.Aerr),
-                      "");
-    } else {
-        leg->AddEntry((TObject*)nullptr, "#sigma: missing", "");
-    }
-
-    leg->Draw();
-
-    c->SaveAs(out_png_path.c_str());
-    std::cout << "[bsa] Wrote " << out_png_path << "\n";
-    delete c;
+    return (v >= lo && v <= hi);
 }
 
-// ------------ plot counts-based cells (BLUE), optionally overlay xsec (RED) ------------
-static void plot_cells_for_period(
-    const std::string& period,
-    const std::vector<Binning>& binning_scheme,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, CellResult>& cells,
-    const std::string& out_dir_plots,
-    const XsecTable* xsec_overlay // pass nullptr for BLUE-only canvas, non-null for overlay canvas
-) {
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    fs::create_directories(out_dir_plots, ec);
-
-    // also make a "single" subdir for the per-cell overlay plots
-    fs::create_directories(fs::path(out_dir_plots)/"single", ec);
-
-    static const auto PHI_DEG = phiCentersDeg();
-
-    for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-        const auto xb = xB_bins[ix];
-
-        std::vector<std::pair<double,double>> Q2_slice, t_slice;
-        uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
-        if (Q2_slice.empty() || t_slice.empty()) continue;
-
-        const int nrows = (int)t_slice.size();
-        const int ncols = (int)Q2_slice.size();
-
-        const int W = 280*ncols + 160;
-        const int H = 240*nrows + 170;
-
-        // Canvas title and filename
-        std::ostringstream cname;
-        if (xsec_overlay)
-            cname<<"c_bsa_vs_xsec_"<<period<<"_xB"<<ix;
-        else
-            cname<<"c_bsa_"<<period<<"_xB"<<ix;
-
-        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
-
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
-        pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
-
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
-        pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-        pGrid->cd();
-        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
-
-        // ---------- smaller canvas title; counts/#sigma wording ----------
-        pTop->cd();
-        {
-            TLatex head;
-            head.SetNDC(); head.SetTextAlign(22);
-            head.SetTextFont(42);
-            head.SetTextSize(0.18); // was 0.36
-            std::ostringstream tit;
-            if (xsec_overlay)
-                tit << Form("BSA %s x_{B} #in [%.2g, %.2g] (counts: blue, #sigma: red)",
-                            period.c_str(), xb.first, xb.second);
-            else
-                tit << Form("BSA %s x_{B} #in [%.2g, %.2g]",
-                            period.c_str(), xb.first, xb.second);
-            head.DrawLatex(0.5, 0.55, tit.str().c_str());
-        }
-
-        for (int r = 0; r < nrows; ++r) {
-            const int it_global = findIndex(t_slice[r], t_bins);
-            if (it_global < 0) continue;
-
-            for (int ccol = 0; ccol < ncols; ++ccol) {
-                const int iQ_global = findIndex(Q2_slice[ccol], Q2_bins);
-                if (iQ_global < 0) continue;
-
-                pGrid->cd(r*ncols + ccol + 1);
-                gPad->SetGrid(1,1);
-
-                // ---- margins tuned to avoid clipping of y-title and legend
-                gPad->SetTopMargin(0.12);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.16);
-                gPad->SetRightMargin(0.14);
-
-                TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
-                TAxis* ax = frame->GetXaxis();
-                TAxis* ay = frame->GetYaxis();
-
-                ax->SetLabelSize(0.0001);
-                ax->SetTitle("#phi (deg)");
-                ay->SetTitle("A_{LU}");
-                ax->CenterTitle(); ay->CenterTitle();
-                ax->SetNdivisions(505);
-
-                ax->SetTitleSize(0.060);
-                ay->SetTitleSize(0.060);
-                ay->SetLabelSize(0.048);
-
-                ax->SetTitleOffset(1.25);
-                ay->SetTitleOffset(1.40);
-
-                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
-
-                // ---- per-subplot title with smaller font
-                {
-                    TLatex subt;
-                    subt.SetNDC();
-                    subt.SetTextFont(42);
-                    subt.SetTextSize(0.05);
-                    subt.SetTextAlign(21);
-                    std::ostringstream st;
-                    st << Form("Q^{2} #in [%.2g, %.2g]   -t #in [%.2g, %.2g]",
-                               Q2_slice[ccol].first, Q2_slice[ccol].second,
-                               t_slice[r].first,     t_slice[r].second);
-                    subt.DrawLatex(0.50, 0.94, st.str().c_str());
-                }
-
-                // ---------- BLUE (counts-based) ----------
-                auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
-                if (itCell != cells.end()) {
-                    const auto& cr = itCell->second;
-
-                    std::vector<double> xBv, yBv, eyBv;
-                    xBv.reserve(N_PHI_BINS); yBv.reserve(N_PHI_BINS); eyBv.reserve(N_PHI_BINS);
-                    for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                        const auto& p = cr.points[ip];
-                        if (!p.valid) continue;
-                        xBv.push_back(PHI_DEG[ip]);
-                        yBv.push_back(p.bsa);
-                        eyBv.push_back(std::max(1e-6, p.err));
-                    }
-                    if (!xBv.empty()) {
-                        TGraphErrors* gr = new TGraphErrors((int)xBv.size(), xBv.data(), yBv.data(), nullptr, eyBv.data());
-                        gr->SetMarkerStyle(20);
-                        gr->SetMarkerSize(1.1);
-                        gr->SetLineWidth(2);
-                        gr->SetLineColor(kBlue+1);
-                        gr->SetMarkerColor(kBlue+1);
-                        gr->Draw("P SAME");
-                    }
-
-                    // Blue fit
-                    FitRes blueFit = cr.fit;
-                    if (blueFit.status == 0 || blueFit.ndf > 0) {
-                        const int NS=721;
-                        std::vector<double> xd(NS), yd(NS);
-                        for (int i=0;i<NS;++i){
-                            double deg = double(i)*0.5;
-                            double rad = deg * (TWO_PI/360.0);
-                            double denom = 1.0 + blueFit.B1*std::cos(rad);
-                            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                            double val = blueFit.C + (blueFit.A*std::sin(rad))/denom;
-                            xd[i] = deg; yd[i] = val;
-                        }
-                        TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
-                        gfit->SetLineColor(kBlue+1);
-                        gfit->SetLineStyle(2);
-                        gfit->SetLineWidth(1);
-                        gfit->Draw("L SAME");
-                    }
-
-                    // --------- Legend
-                    TLegend* leg = new TLegend(0.38, 0.68, 0.86, 0.88);
-                    leg->SetMargin(0.04);
-                    leg->SetBorderSize(1);
-                    leg->SetLineColor(kBlack);
-                    leg->SetFillColor(kWhite);
-                    leg->SetFillStyle(1001);
-                    leg->SetTextFont(42);
-                    leg->SetTextSize(0.044);
-
-                    leg->AddEntry((TObject*)nullptr,
-                                  Form("counts: A = %.3f #pm %.3f", blueFit.A, blueFit.Aerr),
-                                  "");
-
-                    // If overlay present, add red points/fit
-                    if (xsec_overlay) {
-                        auto itX = xsec_overlay->find(std::make_tuple(ix, iQ_global, it_global));
-                        if (itX != xsec_overlay->end() && itX->second.valid) {
-                            const double P_used = cr.P_used;
-                            const auto redPts = bsa_from_xsec_cell(itX->second, std::max(1e-12, P_used));
-
-                            // red points
-                            std::vector<double> xr, yr, eyr;
-                            xr.reserve(N_PHI_BINS); yr.reserve(N_PHI_BINS); eyr.reserve(N_PHI_BINS);
-                            for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                                if (!redPts[ip].valid) continue;
-                                xr.push_back(PHI_DEG[ip]);
-                                yr.push_back(redPts[ip].bsa);
-                                eyr.push_back(std::max(1e-6, redPts[ip].err));
-                            }
-                            if (!xr.empty()) {
-                                TGraphErrors* grr = new TGraphErrors((int)xr.size(), xr.data(), yr.data(), nullptr, eyr.data());
-                                grr->SetMarkerStyle(24);
-                                grr->SetMarkerSize(1.1);
-                                grr->SetLineWidth(2);
-                                grr->SetLineColor(kRed+1);
-                                grr->SetMarkerColor(kRed+1);
-                                grr->Draw("P SAME");
-                            }
-
-                            // red fit
-                            FitRes redFit = fit_cell(redPts);
-                            if (redFit.status == 0 || redFit.ndf > 0) {
-                                const int NS=721;
-                                std::vector<double> xfd(NS), yfd(NS);
-                                for (int i=0;i<NS;++i){
-                                    double deg = double(i)*0.5;
-                                    double rad = deg * (TWO_PI/360.0);
-                                    double denom = 1.0 + redFit.B1*std::cos(rad);
-                                    if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                                    double val = redFit.C + (redFit.A*std::sin(rad))/denom;
-                                    xfd[i] = deg; yfd[i] = val;
-                                }
-                                TGraph* gfitr = new TGraph(NS, xfd.data(), yfd.data());
-                                gfitr->SetLineColor(kRed+1);
-                                gfitr->SetLineStyle(2);
-                                gfitr->SetLineWidth(1);
-                                gfitr->Draw("L SAME");
-
-                                leg->AddEntry((TObject*)nullptr,
-                                              Form("#sigma: A = %.3f #pm %.3f", redFit.A, redFit.Aerr),
-                                              "");
-                            } else {
-                                leg->AddEntry((TObject*)nullptr, "#sigma: A = n/a", "");
-                            }
-
-                            // --------- NEW: write single-cell overlay canvas too
-                            std::ostringstream op;
-                            op << out_dir_plots << "/single/plot_bsa_vs_xsec_" << period
-                               << "_xB_" << ix << "_Q_" << iQ_global << "_t_" << it_global << ".png";
-                            plot_single_cell_overlay_canvas(
-                                period, xb, Q2_slice[ccol], t_slice[r], PHI_DEG, cr, &(itX->second), op.str()
-                            );
-
-                        } else {
-                            leg->AddEntry((TObject*)nullptr, "#sigma: missing", "");
-                        }
-                    }
-
-                    leg->Draw();
-                }
-            }
-        }
-
-        std::ostringstream fout;
-        if (xsec_overlay)
-            fout << out_dir_plots << "/plot_bsa_vs_xsec_" << period << "_xB_" << ix << ".png";
-        else
-            fout << out_dir_plots << "/plot_bsa_" << period << "_xB_" << ix << ".png";
-        c->SaveAs(fout.str().c_str());
-        delete c;
-        std::cout << "[bsa] Wrote " << fout.str() << "\n";
-    }
-}
-
-} // end anonymous namespace
-
-// =======================================================
-// Public driver
-// =======================================================
-void compute_and_plot_bsa_helicity(
-    const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies, // unused now; kept for interface compatibility
-    const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dvcsDataTrees,
-    const std::string& pi0_corrected_counts_json_path,
-    const std::string& out_root_dir,
-    const std::string& radcorr_xsec_json_dir
-)
-{
-    namespace fs = std::filesystem;
-
-    BinningMeta master_meta;
-    std::vector<std::string> group_order_in_master;
-    AllGroups allGroups = load_corrected_master(pi0_corrected_counts_json_path, master_meta, group_order_in_master);
-
-    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
-    const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
-    const auto t_bins  = uniqueRanges(binning_scheme, 't');
-    if (xB_bins.size() != master_meta.nx || Q2_bins.size() != master_meta.nQ || t_bins.size() != master_meta.nt) {
-        fatal("Binning mismatch between runtime binning_scheme and corrected master binning_meta.");
+static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json) {
+    std::ifstream fin(combined_cuts_json);
+    if (!fin.is_open()) {
+        fatal("[bsa] cannot open combined cuts JSON: " + combined_cuts_json);
     }
 
-    const auto PHI_RAD = phiCentersRad();
+    nlohmann::json j;
+    fin >> j;
+    if (!j.is_object()) {
+        fatal("[bsa] combined cuts JSON is not an object: " + combined_cuts_json);
+    }
 
-    const fs::path json_period_dir = fs::path(out_root_dir)/"jsons"/"BSA_fits";
-    std::error_code ecDir;
-    fs::create_directories(json_period_dir, ecDir);
-
-    std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
-
-    // ---------- Per-period processing (counts path) ----------
-    for (const auto& treeKey : periods) {
-        const std::string countsKey = counts_key_from_tree_key(treeKey);
-
-        auto itG = allGroups.find(countsKey);
-        if (itG == allGroups.end()) {
-            std::ostringstream avail;
-            avail << "Available groups:";
-            for (const auto& gkv : allGroups) avail << " " << gkv.first;
-            fatal(std::string("Requested group '")+countsKey+"' not present in corrected master. " + avail.str());
-        }
-        const GroupTable& table = itG->second;
-
-        auto itT = dvcsDataTrees.find(treeKey);
-        if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal(std::string("Missing DVCS polarization tree for requested period '")+treeKey+"'.");
-        }
-        TTree* t = itT->second;
-
-        PolMean pm = mean_beam_polarization(t);
-        if (pm.n == 0 || !(pm.P > 0.0) || !std::isfinite(pm.P)) {
-            fatal(std::string("Cannot compute mean beam polarization for period '")+treeKey+"': no valid beam_pol entries.");
-        }
-        const double P_here = pm.P;
-
-        std::map<std::tuple<int,int,int>, CellResult> cells;
-
-        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-        for (int itb=0; itb<(int)t_bins.size(); ++itb) {
-            CellResult result;
-            result.points.resize(N_PHI_BINS);
-            result.P_per_bin = false;
-            result.P_used = P_here;
-
-            for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                const BinKey bk(ix,iQ,itb,ip);
-
-                double Np = 0.0, Nm = 0.0;
-                auto itB = table.find(bk);
-                if (itB != table.end()) {
-                    Np = itB->second.Np;
-                    Nm = itB->second.Nm;
-                }
-
-                BSApt p;
-                p.phi = PHI_RAD[ip];
-
-                if (!(Np > 0.0 && Nm > 0.0)) {
-                    p.valid = false;
-                    p.bsa = 0.0;
-                    p.err = 0.0;
-                    result.points[ip] = p;
-                    continue;
-                }
-
-                const double a = Np + JEFFREYS_ALPHA;
-                const double b = Nm + JEFFREYS_ALPHA;
-                const double S = a + b;
-                const double D = a - b;
-
-                const double A_raw   = D / S;
-                const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
-                p.bsa  = A_raw / P_here;
-                p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
-                p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
-
-                result.points[ip] = p;
-            }
-
-            result.fit = fit_cell(result.points);
-            cells[std::make_tuple(ix,iQ,itb)] = std::move(result);
+    TopoCutMap out;
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string key = it.key();
+        const auto& block = it.value();
+        if (!block.is_object()) {
+            continue;
         }
 
-        const fs::path outP = json_period_dir/("BSA_fits_"+countsKey+".json");
-        write_period_bsa_json(outP.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
-
-        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(countsKey);
-        std::error_code ec; fs::create_directories(plots_dir, ec);
-        plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), nullptr);
-
-        XsecTable overlay;
-        const auto energies = energies_for_group(countsKey);
-        if (!energies.empty()) {
-            overlay = build_overlay_table(radcorr_xsec_json_dir, energies);
-            plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), &overlay);
+        // Current combined_cuts.json layout is:
+        //   key : { "data" : { var : stats }, "mc" : { ... } }
+        // Keep fallbacks for older JSON attempts that nested the data block
+        // under a channel name.
+        const nlohmann::json* data = nullptr;
+        if (block.contains("data") && block["data"].is_object()) {
+            data = &block["data"];
+        } else if (block.contains("DVCS") && block["DVCS"].is_object()) {
+            data = &block["DVCS"];
+        } else if (block.contains("eppi0") && block["eppi0"].is_object()) {
+            data = &block["eppi0"];
         } else {
-            std::cerr << "[bsa][xsec] NOTE: no energy mapping for group '"<<countsKey<<"' -> skipping overlay.\n";
+            data = &block;
         }
 
-        allPeriodCells[countsKey] = std::move(cells);
-    }
-
-    write_all_periods_json(
-        (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
-        allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
-
-    // ---- Combined 10.6 output (counts path) ----
-    auto it106 = allGroups.find("10.6_GeV");
-    if (it106 == allGroups.end()) {
-        fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
-    }
-    const GroupTable& table106 = it106->second;
-
-    const std::vector<std::pair<std::string,std::string>> comps = {
-        {"sp18_inb", "DVCS_Sp18_inb"},
-        {"sp18_out", "DVCS_Sp18_out"},
-        {"fa18_inb", "DVCS_Fa18_inb"},
-        {"fa18_out", "DVCS_Fa18_out"}
-    };
-
-    std::vector<TTree*> compTrees;
-    for (const auto& kv : comps) {
-        auto itT = dvcsDataTrees.find(kv.second);
-        if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal(std::string("Missing DVCS polarization tree for 10.6_GeV component '")+kv.second+"'.");
-        }
-        compTrees.push_back(itT->second);
-    }
-
-    PolMean pm106 = mean_beam_polarization_multi(compTrees);
-    if (pm106.n == 0 || !(pm106.P > 0.0) || !std::isfinite(pm106.P)) {
-        fatal("Could not build polarization for 10.6_GeV: no valid beam_pol entries across components.");
-    }
-    const double P_106 = pm106.P;
-
-    std::map<std::tuple<int,int,int>, CellResult> combCells;
-    for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-    for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-    for (int itb=0; itb<(int)t_bins.size(); ++itb) {
-        CellResult cr; cr.points.resize(N_PHI_BINS);
-        cr.P_per_bin = false;
-        cr.P_used = P_106;
-
-        for (int ip=0; ip<N_PHI_BINS; ++ip){
-            const BinKey bk(ix,iQ,itb,ip);
-            BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
-
-            double Np = 0.0, Nm = 0.0;
-            auto it = table106.find(bk);
-            if (it != table106.end()) {
-                Np = it->second.Np;
-                Nm = it->second.Nm;
-            }
-
-            if (!(Np > 0.0 && Nm > 0.0)) {
-                cr.points[ip] = p;
+        CutVarMap vm;
+        for (auto vit = data->begin(); vit != data->end(); ++vit) {
+            const std::string var = vit.key();
+            const auto& stats = vit.value();
+            if (!stats.is_object() || !stats.contains("mean") || !stats.contains("std")) {
                 continue;
             }
 
-            const double a = Np + JEFFREYS_ALPHA;
-            const double b = Nm + JEFFREYS_ALPHA;
-            const double S = a + b;
-            const double D = a - b;
+            SigmaStats s;
+            try {
+                s.mean = stats["mean"].get<double>();
+                s.std  = stats["std"].get<double>();
+                if (stats.contains("cut_low"))  s.cut_low  = stats["cut_low"].get<double>();
+                if (stats.contains("cut_high")) s.cut_high = stats["cut_high"].get<double>();
+                if (stats.contains("quantile")) s.quantile = stats["quantile"].get<double>();
+                if (stats.contains("mode"))     s.mode     = stats["mode"].get<std::string>();
+            } catch (...) {
+                continue;
+            }
 
-            const double A_raw   = D / S;
-            const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
-            p.bsa  = A_raw / P_106;
-            p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_106;
-            p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+            if (!std::isfinite(s.cut_low) || !std::isfinite(s.cut_high) || s.cut_high <= s.cut_low) {
+                if (std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0) {
+                    s.cut_low  = s.mean - 3.0 * s.std;
+                    s.cut_high = s.mean + 3.0 * s.std;
+                }
+            }
 
-            cr.points[ip] = p;
+            if (std::isfinite(s.cut_high)) {
+                vm.emplace(var, s);
+            }
         }
 
-        cr.fit = fit_cell(cr.points);
-        combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
+        if (!vm.empty()) {
+            out.emplace(key, std::move(vm));
+        }
     }
 
-    const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
-    write_period_bsa_json(outC.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combCells);
+    std::cout << "[bsa] Loaded " << out.size()
+              << " data cut blocks from " << combined_cuts_json << "\n";
+    return out;
+}
 
-    const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
-    std::error_code ec; fs::create_directories(plots_comb106, ec);
-    plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string(), nullptr);
+// -----------------------------------------------------------------------------
+// Branch binding and event selection
+// -----------------------------------------------------------------------------
 
-    {
-        const auto energies106 = energies_for_group("10.6_GeV");
-        if (!energies106.empty()) {
-            XsecTable overlay106 = build_overlay_table(radcorr_xsec_json_dir, energies106);
-            plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string(), &overlay106);
-        } else {
-            std::cerr << "[bsa][xsec] NOTE: no energy mapping for '10.6_GeV' combined overlay.\n";
+struct BranchBinder {
+    int runnum = 0; bool has_runnum = false;
+    int detector1 = 0; bool has_detector1 = false;
+    int detector2 = 0; bool has_detector2 = false;
+    int helicity = 0; bool has_helicity = false;
+
+    double x = 0.0; bool has_x = false;
+    double Q2 = 0.0; bool has_Q2 = false;
+    double t1 = 0.0; bool has_t1 = false;
+    double phi2 = 0.0; bool has_phi2 = false;
+    double Delta_phi = 0.0; bool has_Delta_phi = false;
+
+    double open_angle_ep2 = 0.0; bool has_open_angle = false;
+    double pTmiss = 0.0; bool has_pTmiss = false;
+    double Emiss2 = 0.0; bool has_Emiss2 = false;
+    double Mx2 = 0.0; bool has_Mx2 = false;
+    double Mx2_1 = 0.0; bool has_Mx2_1 = false;
+    double Mx2_2 = 0.0; bool has_Mx2_2 = false;
+    double xF = 0.0; bool has_xF = false;
+    double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
+    double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
+
+    double e_p = 0.0; bool has_e_p = false;
+    double e_theta = 0.0; bool has_e_theta = false;
+    double e_phi = 0.0; bool has_e_phi = false;
+    double p1_theta = 0.0; bool has_p1_theta = false;
+    double p1_phi = 0.0; bool has_p1_phi = false;
+    double p2_p = 0.0; bool has_p2_p = false;
+    double p2_theta = 0.0; bool has_p2_theta = false;
+    double p2_phi = 0.0; bool has_p2_phi = false;
+
+    void bind(TTree* t) {
+        if (!t) return;
+
+        std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+        t->SetBranchStatus("*", 0);
+
+        auto enable = [&](const char* name) {
+            if (t->GetBranch(name)) {
+                t->SetBranchStatus(name, 1);
+            }
+        };
+
+        const char* names[] = {
+            "runnum", "detector1", "detector2", "helicity",
+            "x", "Q2", "t1", "phi2", "Delta_phi",
+            "open_angle_ep2", "pTmiss", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
+            "xF", "theta_gamma_gamma", "theta_pi0_pi0",
+            "e_p", "e_theta", "e_phi", "p1_theta", "p1_phi",
+            "p2_p", "p2_theta", "p2_phi"
+        };
+
+        for (const char* name : names) {
+            enable(name);
         }
+
+        t->SetCacheSize(0);
+
+        auto bind_int = [&](const char* name, int* ptr, bool& has) {
+            if (t->GetBranch(name)) {
+                t->SetBranchAddress(name, ptr);
+                has = true;
+            }
+        };
+
+        auto bind_double = [&](const char* name, double* ptr, bool& has) {
+            if (t->GetBranch(name)) {
+                t->SetBranchAddress(name, ptr);
+                has = true;
+            }
+        };
+
+        bind_int("runnum", &runnum, has_runnum);
+        bind_int("detector1", &detector1, has_detector1);
+        bind_int("detector2", &detector2, has_detector2);
+        bind_int("helicity", &helicity, has_helicity);
+
+        bind_double("x", &x, has_x);
+        bind_double("Q2", &Q2, has_Q2);
+        bind_double("t1", &t1, has_t1);
+        bind_double("phi2", &phi2, has_phi2);
+        bind_double("Delta_phi", &Delta_phi, has_Delta_phi);
+        bind_double("open_angle_ep2", &open_angle_ep2, has_open_angle);
+        bind_double("pTmiss", &pTmiss, has_pTmiss);
+        bind_double("Emiss2", &Emiss2, has_Emiss2);
+        bind_double("Mx2", &Mx2, has_Mx2);
+        bind_double("Mx2_1", &Mx2_1, has_Mx2_1);
+        bind_double("Mx2_2", &Mx2_2, has_Mx2_2);
+        bind_double("xF", &xF, has_xF);
+        bind_double("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
+        bind_double("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+        bind_double("e_p", &e_p, has_e_p);
+        bind_double("e_theta", &e_theta, has_e_theta);
+        bind_double("e_phi", &e_phi, has_e_phi);
+        bind_double("p1_theta", &p1_theta, has_p1_theta);
+        bind_double("p1_phi", &p1_phi, has_p1_phi);
+        bind_double("p2_p", &p2_p, has_p2_p);
+        bind_double("p2_theta", &p2_theta, has_p2_theta);
+        bind_double("p2_phi", &p2_phi, has_p2_phi);
+    }
+
+    double phi_deg() const { return wrap_phi_deg(phi2 * RAD2DEG); }
+    double t_abs() const { return std::fabs(t1); }
+
+    double delta_phi_value(bool& has_val) const {
+        if (has_Delta_phi) {
+            has_val = true;
+            return Delta_phi;
+        }
+        if (has_p1_phi && has_p2_phi) {
+            has_val = true;
+            return delta_phi_rad_from_two_phi(p1_phi, p2_phi);
+        }
+        has_val = false;
+        return 0.0;
+    }
+};
+
+static inline double branch_value_for_sigma_var(const BranchBinder& b,
+                                                const std::string& var,
+                                                bool& has_val) {
+    has_val = true;
+
+    if (var == "Emiss2") { has_val = b.has_Emiss2; return b.Emiss2; }
+    if (var == "Mx2") { has_val = b.has_Mx2; return b.Mx2; }
+    if (var == "Mx2_1") { has_val = b.has_Mx2_1; return b.Mx2_1; }
+    if (var == "Mx2_2") { has_val = b.has_Mx2_2; return b.Mx2_2; }
+    if (var == "Delta_phi") { return b.delta_phi_value(has_val); }
+    if (var == "pTmiss") { has_val = b.has_pTmiss; return b.pTmiss; }
+    if (var == "xF") { has_val = b.has_xF; return b.xF; }
+    if (var == "theta_gamma_gamma") { has_val = b.has_theta_gamma_gamma; return b.theta_gamma_gamma; }
+    if (var == "theta_pi0_pi0") { has_val = b.has_theta_pi0_pi0; return b.theta_pi0_pi0; }
+
+    has_val = false;
+    return 0.0;
+}
+
+static bool passes_one_sigma_cut(const TopoCutMap& cuts,
+                                 const std::string& key,
+                                 const BranchBinder& b,
+                                 const std::string& var) {
+    auto it = cuts.find(key);
+    if (it == cuts.end()) {
+        fatal("[bsa] missing 3-sigma cut key in combined_cuts.json: " + key);
+    }
+
+    const CutVarMap& vm = it->second;
+    auto iv = vm.find(var);
+    if (iv == vm.end()) {
+        return true;
+    }
+
+    bool has_val = false;
+    const double val = branch_value_for_sigma_var(b, var, has_val);
+    if (!has_val) {
+        fatal("[bsa] cut key " + key + " requires missing branch: " + var);
+    }
+
+    return within_cut_window(val, iv->second);
+}
+
+enum class BSASample { EPG, EPPI0 };
+
+static const std::vector<std::string>& sigma_vars_for_sample(BSASample sample) {
+    static const std::vector<std::string> epg_vars = {
+        "Emiss2",
+        "Mx2",
+        "Mx2_1",
+        "Mx2_2",
+        "Delta_phi",
+        "pTmiss",
+        "xF",
+        "theta_gamma_gamma"
+    };
+
+    static const std::vector<std::string> eppi0_vars = {
+        "Emiss2",
+        "Mx2",
+        "Mx2_1",
+        "Mx2_2",
+        "Delta_phi",
+        "pTmiss",
+        "xF",
+        "theta_pi0_pi0"
+    };
+
+    return (sample == BSASample::EPG) ? epg_vars : eppi0_vars;
+}
+
+static std::string sample_prefix(BSASample sample) {
+    return (sample == BSASample::EPG) ? "DVCS_" : "eppi0_";
+}
+
+static std::string sample_label(BSASample sample) {
+    return (sample == BSASample::EPG) ? "epg" : "eppi0";
+}
+
+static bool passes_sigma_cuts(const TopoCutMap& cuts,
+                              const std::string& key,
+                              const BranchBinder& b,
+                              BSASample sample) {
+    const std::vector<std::string>& vars = sigma_vars_for_sample(sample);
+    for (const std::string& var : vars) {
+        if (!passes_one_sigma_cut(cuts, key, b, var)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool passes_global_cuts_dispatch(const BranchBinder& b,
+                                        const std::string& period_label) {
+    const GlobalCutConfig& cfg = default_global_cuts();
+
+    if (!(b.has_t1 && b.has_open_angle)) return false;
+    if (cfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
+    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
+
+    if (cfg.enable_topology_filter || global_cuts_require_sector_phi(cfg) || cfg.enable_dvcsgen_ycol_cut) {
+        if (!(b.has_detector1 && b.has_detector2)) {
+            fatal("[bsa] topology/sector/ycol selection requires detector1 and detector2 branches");
+        }
+    }
+
+    if (global_cuts_require_sector_phi(cfg)) {
+        if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+            fatal("[bsa] sector selection requires e_phi, p1_phi and p2_phi branches");
+        }
+    }
+
+    if (global_cuts_require_auxiliary_kinematics(cfg)) {
+        if (!(b.has_e_theta && b.has_e_phi &&
+              b.has_p1_theta && b.has_p1_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            fatal("[bsa] auxiliary fiducial cuts require e_theta, e_phi, p1_theta, p1_phi, p2_p, p2_theta and p2_phi branches");
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p1_theta, b.p1_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  cfg);
+    }
+
+    if (cfg.enable_dvcsgen_ycol_cut) {
+        if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            fatal("[bsa] dvcsgen ycol cut requires e_p, e_theta, e_phi, p2_p, p2_theta and p2_phi branches");
+        }
+
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  cfg);
+    }
+
+    if (global_cuts_require_sector_phi(cfg)) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  b.e_phi, b.p1_phi, b.p2_phi,
+                                  cfg);
+    }
+
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                              b.detector1, b.detector2,
+                              cfg);
+}
+
+
+// -----------------------------------------------------------------------------
+// Pi0 leakage scale factors from the CSV contamination-ratio columns
+// -----------------------------------------------------------------------------
+
+struct TripleValue {
+    bool ok = false;
+    double v = 0.0;
+    double stat = 0.0;
+    double sys = 0.0;
+};
+
+struct Pi0Scale {
+    bool valid = false;
+    double contamination = 0.0;
+    double contamination_stat = 0.0;
+    double epg_norm = 0.0;
+    double eppi0_norm = 0.0;
+    double f = 0.0;
+};
+
+using PeriodScaleMap = std::unordered_map<std::string, std::vector<Pi0Scale>>;
+
+static bool parse_tuple_numbers(const std::string& cell, std::vector<double>& vals) {
+    vals.clear();
+    std::string s = cell;
+    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c) {
+        return std::isspace(c);
+    }), s.end());
+
+    if (s.empty()) {
+        return false;
+    }
+
+    if (s.front() == '(' && s.back() == ')') {
+        s = s.substr(1, s.size() - 2);
+    }
+
+    std::stringstream ss(s);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) {
+        if (tok.empty()) {
+            return false;
+        }
+        char* end = nullptr;
+        const double v = std::strtod(tok.c_str(), &end);
+        if (end == tok.c_str()) {
+            return false;
+        }
+        vals.push_back(v);
+    }
+
+    return !vals.empty();
+}
+
+static TripleValue parse_triple_or_zero(const std::string& cell) {
+    TripleValue t;
+    if (cell.empty()) {
+        t.ok = true;
+        return t;
+    }
+
+    std::vector<double> vals;
+    if (!parse_tuple_numbers(cell, vals)) {
+        char* end = nullptr;
+        const double v = std::strtod(cell.c_str(), &end);
+        if (end != cell.c_str()) {
+            t.ok = true;
+            t.v = v;
+            t.stat = 0.0;
+            t.sys = 0.0;
+            return t;
+        }
+        return t;
+    }
+
+    t.ok = true;
+    t.v = vals.size() > 0 ? vals[0] : 0.0;
+    t.stat = vals.size() > 1 ? vals[1] : 0.0;
+    t.sys = vals.size() > 2 ? vals[2] : 0.0;
+    if (!std::isfinite(t.v)) t.v = 0.0;
+    if (!std::isfinite(t.stat)) t.stat = 0.0;
+    if (!std::isfinite(t.sys)) t.sys = 0.0;
+    return t;
+}
+
+static std::string normalized_raw_yield_col(const std::string& channel,
+                                            const std::string& topo,
+                                            const std::string& period,
+                                            const std::string& helicity) {
+    return "normalized raw yield, " + channel + ", " + topo + ", exp, " + period + ", " + helicity;
+}
+
+static std::string contamination_col_for_period(const std::string& period) {
+    return "contamination ratio, " + period;
+}
+
+static const std::vector<std::string>& topology_labels_for_csv() {
+    static const std::vector<std::string> v = {"(FD, FD)", "(CD, FD)", "(CD, FT)"};
+    return v;
+}
+
+static double sum_normalized_yield_for_period(const CSV& csv,
+                                              const std::vector<std::string>& row,
+                                              const std::string& channel,
+                                              const std::string& period) {
+    double total = 0.0;
+    for (const std::string& topo : topology_labels_for_csv()) {
+        const std::string colname = normalized_raw_yield_col(channel, topo, period, "unpol");
+        auto it = csv.index.find(colname);
+        if (it == csv.index.end()) {
+            fatal("[bsa] missing normalized-yield column needed for pi0 subtraction scale: " + colname);
+        }
+        const TripleValue y = parse_triple_or_zero(row[it->second]);
+        if (!y.ok) {
+            fatal("[bsa] could not parse normalized-yield tuple in column: " + colname);
+        }
+        total += y.v;
+    }
+    return total;
+}
+
+static PeriodScaleMap compute_pi0_scale_factors_from_csv(const CSV& csv,
+                                                         const std::vector<RowBin>& rows) {
+    PeriodScaleMap scales;
+
+    for (const std::string& period : base_period_order()) {
+        std::vector<Pi0Scale> per(rows.size());
+        const std::string ccol = contamination_col_for_period(period);
+        auto ic = csv.index.find(ccol);
+        if (ic == csv.index.end()) {
+            fatal("[bsa] missing contamination-ratio column needed for pi0-subtracted BSA: " + ccol);
+        }
+
+        int n_valid = 0;
+        for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+            Pi0Scale sc;
+            if (!rows[r].valid) {
+                per[r] = sc;
+                continue;
+            }
+
+            const TripleValue c = parse_triple_or_zero(csv.rows[r][ic->second]);
+            if (!c.ok) {
+                fatal("[bsa] could not parse contamination-ratio tuple in column: " + ccol);
+            }
+
+            const double epg_norm = sum_normalized_yield_for_period(csv, csv.rows[r], "ep->epg", period);
+            const double eppi0_norm = sum_normalized_yield_for_period(csv, csv.rows[r], "ep->eppi0", period);
+
+            sc.contamination = std::max(0.0, c.v);
+            sc.contamination_stat = std::max(0.0, c.stat);
+            sc.epg_norm = epg_norm;
+            sc.eppi0_norm = eppi0_norm;
+
+            if (sc.contamination > 0.0 && epg_norm > 0.0 && eppi0_norm > 0.0) {
+                sc.f = sc.contamination * epg_norm / eppi0_norm;
+                sc.valid = std::isfinite(sc.f) && sc.f >= 0.0;
+            } else {
+                sc.f = 0.0;
+                sc.valid = true;
+            }
+
+            if (sc.valid) {
+                ++n_valid;
+            }
+            per[r] = sc;
+        }
+
+        std::cout << "[bsa] pi0 leakage scale factors for " << period
+                  << ": valid rows=" << n_valid << "/" << rows.size() << "\n";
+        scales[period] = std::move(per);
+    }
+
+    return scales;
+}
+
+// -----------------------------------------------------------------------------
+// Counts and BSA math
+// -----------------------------------------------------------------------------
+
+struct HelCounts {
+    double plus = 0.0;
+    double minus = 0.0;
+};
+
+using RowCounts = std::unordered_map<int, HelCounts>;
+using PeriodCounts = std::unordered_map<std::string, RowCounts>;
+
+struct AsymResult {
+    bool valid = false;
+    double value = 0.0;
+    double stat = 0.0;
+    double n_plus = 0.0;
+    double n_minus = 0.0;
+    double denominator = 0.0;
+};
+
+struct RowBSAResult {
+    AsymResult subtracted;
+    AsymResult raw_epg;
+    AsymResult pi0;
+
+    double gamma_plus = 0.0;
+    double gamma_minus = 0.0;
+    double pi0_plus = 0.0;
+    double pi0_minus = 0.0;
+    double signal_plus = 0.0;
+    double signal_minus = 0.0;
+    double effective_pi0_scale = 0.0;
+    double contamination_weighted = 0.0;
+    bool pi0_scale_valid = false;
+};
+
+static inline void add_event(HelCounts& h, int helicity) {
+    if (helicity > 0) {
+        h.plus += 1.0;
+    } else if (helicity < 0) {
+        h.minus += 1.0;
+    }
+}
+
+static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees,
+                                      const std::vector<RowBin>& rows,
+                                      const FastBinning& fast_bins,
+                                      const TopoCutMap& sigma_cuts,
+                                      BSASample sample) {
+    PeriodCounts out;
+
+    for (const std::string& period : base_period_order()) {
+        out[period] = RowCounts();
+    }
+
+    for (const auto& kv : trees) {
+        const std::string& tree_key = kv.first;
+        TTree* tree = kv.second;
+        if (!tree) {
+            continue;
+        }
+
+        const std::string period = period_display_from_tree_key(tree_key);
+        if (period.empty()) {
+            std::cout << "[bsa] Skipping non-canonical or supplemental " << sample_label(sample)
+                      << " data tree key: " << tree_key << "\n";
+            continue;
+        }
+
+        BranchBinder b;
+        b.bind(tree);
+
+        if (!(b.has_detector1 && b.has_detector2 && b.has_helicity &&
+              b.has_x && b.has_Q2 && b.has_t1 && b.has_phi2)) {
+            fatal("[bsa] tree " + tree_key + " is missing one or more required branches: detector1, detector2, helicity, x, Q2, t1, phi2");
+        }
+
+        const std::string period_code = period_code_from_display(period);
+        const std::string cut_prefix = sample_prefix(sample);
+        const Long64_t n_entries = tree->GetEntries();
+
+        long long n_topology = 0;
+        long long n_global = 0;
+        long long n_sigma = 0;
+        long long n_matched = 0;
+
+        for (Long64_t i = 0; i < n_entries; ++i) {
+            tree->GetEntry(i);
+
+            const std::string topo = topo_dir(b.detector1, b.detector2);
+            if (topo.empty()) {
+                continue;
+            }
+            ++n_topology;
+
+            if (!passes_global_cuts_dispatch(b, period)) {
+                continue;
+            }
+            ++n_global;
+
+            const std::string cut_key = cut_prefix + period_code + "_" + topo;
+            if (!passes_sigma_cuts(sigma_cuts, cut_key, b, sample)) {
+                continue;
+            }
+            ++n_sigma;
+
+            const int ix = find_axis_bin_index(fast_bins.xbins, b.x);
+            if (ix < 0) continue;
+            const int iq = find_axis_bin_index(fast_bins.qbins, b.Q2);
+            if (iq < 0) continue;
+            const int it = find_axis_bin_index(fast_bins.tbins, b.t_abs());
+            if (it < 0) continue;
+
+            const double phi_deg = b.phi_deg();
+            const std::vector<int>& candidate_rows = fast_bins.rows_by_xqt[ix][iq][it];
+            bool matched = false;
+
+            for (int row_index : candidate_rows) {
+                const RowBin& rb = rows[row_index];
+                if (!row_accepts_phi(phi_deg, rb.pmin, rb.pmax)) {
+                    continue;
+                }
+                add_event(out[period][row_index], b.helicity);
+                matched = true;
+            }
+
+            if (matched) {
+                ++n_matched;
+            }
+        }
+
+        std::cout << "[bsa] sample=" << sample_label(sample)
+                  << " tree=" << tree_key
+                  << " period=" << period
+                  << " entries=" << static_cast<long long>(n_entries)
+                  << " topology=" << n_topology
+                  << " global=" << n_global
+                  << " sigma=" << n_sigma
+                  << " matched=" << n_matched
+                  << "\n";
+    }
+
+    return out;
+}
+
+static HelCounts counts_for_row(const PeriodCounts& counts,
+                                const std::string& period,
+                                int row_index) {
+    auto ip = counts.find(period);
+    if (ip == counts.end()) {
+        return HelCounts();
+    }
+    auto ir = ip->second.find(row_index);
+    if (ir == ip->second.end()) {
+        return HelCounts();
+    }
+    return ir->second;
+}
+
+static AsymResult compute_group_bsa_raw_counts(const PeriodCounts& counts,
+                                               const std::vector<std::string>& component_periods,
+                                               int row_index,
+                                               const BSAOptions& opt) {
+    AsymResult r;
+
+    double numerator = 0.0;
+    double denominator = 0.0;
+    double variance_numerator = 0.0;
+    double n_plus_total = 0.0;
+    double n_minus_total = 0.0;
+
+    for (const std::string& period : component_periods) {
+        const HelCounts h = counts_for_row(counts, period, row_index);
+        const double np = h.plus;
+        const double nm = h.minus;
+        const double sum = np + nm;
+        const double diff = np - nm;
+        if (!(sum > 0.0)) {
+            continue;
+        }
+
+        const double P = beam_pol_for_period(period, opt);
+        numerator += diff;
+        denominator += P * sum;
+        n_plus_total += np;
+        n_minus_total += nm;
+        variance_numerator += std::max(0.0, sum - (diff * diff / sum));
+    }
+
+    r.n_plus = n_plus_total;
+    r.n_minus = n_minus_total;
+    r.denominator = denominator;
+
+    if (!(denominator > 0.0)) {
+        return r;
+    }
+
+    r.value = numerator / denominator;
+    r.stat = std::sqrt(std::max(0.0, variance_numerator)) / denominator;
+    r.valid = std::isfinite(r.value) && std::isfinite(r.stat);
+    return r;
+}
+
+static RowBSAResult compute_group_bsa_pi0_subtracted(const PeriodCounts& gamma_counts,
+                                                     const PeriodCounts& pi0_counts,
+                                                     const PeriodScaleMap& pi0_scales,
+                                                     const std::vector<std::string>& component_periods,
+                                                     int row_index,
+                                                     const BSAOptions& opt) {
+    RowBSAResult out;
+    out.raw_epg = compute_group_bsa_raw_counts(gamma_counts, component_periods, row_index, opt);
+    out.pi0 = compute_group_bsa_raw_counts(pi0_counts, component_periods, row_index, opt);
+
+    double numerator = 0.0;
+    double denominator = 0.0;
+
+    struct VarianceTerm {
+        double sp = 0.0;
+        double sm = 0.0;
+        double var_sp = 0.0;
+        double var_sm = 0.0;
+        double beam_pol = 0.0;
+    };
+    std::vector<VarianceTerm> terms;
+
+    double weighted_f_num = 0.0;
+    double weighted_f_den = 0.0;
+    double weighted_c_num = 0.0;
+    double weighted_c_den = 0.0;
+    bool any_scale_valid = false;
+
+    for (const std::string& period : component_periods) {
+        const HelCounts g = counts_for_row(gamma_counts, period, row_index);
+        const HelCounts p = counts_for_row(pi0_counts, period, row_index);
+
+        double f = 0.0;
+        double c = 0.0;
+        bool scale_valid = true;
+        auto is = pi0_scales.find(period);
+        if (is != pi0_scales.end() && row_index >= 0 && row_index < static_cast<int>(is->second.size())) {
+            const Pi0Scale& sc = is->second[row_index];
+            f = sc.f;
+            c = sc.contamination;
+            scale_valid = sc.valid;
+        } else {
+            scale_valid = false;
+        }
+
+        if (!opt.enable_pi0_subtraction) {
+            f = 0.0;
+            c = 0.0;
+            scale_valid = true;
+        }
+
+        if (!scale_valid || !std::isfinite(f) || f < 0.0) {
+            continue;
+        }
+
+        any_scale_valid = true;
+
+        const double sp = g.plus - f * p.plus;
+        const double sm = g.minus - f * p.minus;
+        const double signal_sum = sp + sm;
+        const double signal_diff = sp - sm;
+        if (!(std::isfinite(signal_sum) && std::isfinite(signal_diff))) {
+            continue;
+        }
+
+        const double Pbeam = beam_pol_for_period(period, opt);
+        numerator += signal_diff;
+        denominator += Pbeam * signal_sum;
+
+        out.gamma_plus += g.plus;
+        out.gamma_minus += g.minus;
+        out.pi0_plus += p.plus;
+        out.pi0_minus += p.minus;
+        out.signal_plus += sp;
+        out.signal_minus += sm;
+
+        const double weight = std::max(0.0, p.plus + p.minus);
+        weighted_f_num += f * weight;
+        weighted_f_den += weight;
+
+        const double gweight = std::max(0.0, g.plus + g.minus);
+        weighted_c_num += c * gweight;
+        weighted_c_den += gweight;
+
+        VarianceTerm vt;
+        vt.sp = sp;
+        vt.sm = sm;
+        vt.var_sp = std::max(0.0, g.plus + f * f * p.plus);
+        vt.var_sm = std::max(0.0, g.minus + f * f * p.minus);
+        vt.beam_pol = Pbeam;
+        terms.push_back(vt);
+    }
+
+    out.pi0_scale_valid = any_scale_valid;
+    out.effective_pi0_scale = (weighted_f_den > 0.0) ? weighted_f_num / weighted_f_den : 0.0;
+    out.contamination_weighted = (weighted_c_den > 0.0) ? weighted_c_num / weighted_c_den : 0.0;
+
+    out.subtracted.n_plus = out.signal_plus;
+    out.subtracted.n_minus = out.signal_minus;
+    out.subtracted.denominator = denominator;
+
+    if (!(denominator > 0.0) || !any_scale_valid) {
+        return out;
+    }
+
+    out.subtracted.value = numerator / denominator;
+
+    double var_A = 0.0;
+    for (const VarianceTerm& vt : terms) {
+        const double dA_dSp = (denominator - numerator * vt.beam_pol) / (denominator * denominator);
+        const double dA_dSm = (-denominator - numerator * vt.beam_pol) / (denominator * denominator);
+        var_A += dA_dSp * dA_dSp * vt.var_sp;
+        var_A += dA_dSm * dA_dSm * vt.var_sm;
+    }
+
+    out.subtracted.stat = std::sqrt(std::max(0.0, var_A));
+    out.subtracted.valid = std::isfinite(out.subtracted.value) && std::isfinite(out.subtracted.stat);
+    return out;
+}
+
+static std::string fmt_tuple(double value, double stat) {
+    if (!(std::isfinite(value) && std::isfinite(stat))) {
+        return "";
+    }
+    std::ostringstream ss;
+    ss << std::setprecision(12) << "(" << value << "," << stat << ",0)";
+    return ss.str();
+}
+
+// -----------------------------------------------------------------------------
+// JSON and plots
+// -----------------------------------------------------------------------------
+
+static void add_asym_json(nlohmann::json& row,
+                          const std::string& prefix,
+                          const AsymResult& a) {
+    row[prefix + "_valid"] = a.valid;
+    row[prefix + "_Nplus"] = a.n_plus;
+    row[prefix + "_Nminus"] = a.n_minus;
+    row[prefix + "_polarized_denominator"] = a.denominator;
+    if (a.valid) {
+        row[prefix + "_BSA"] = a.value;
+        row[prefix + "_stat"] = a.stat;
+    }
+}
+
+static void write_json_summary(const std::string& path,
+                               const std::vector<RowBin>& rows,
+                               const std::map<std::string, std::vector<RowBSAResult>>& results,
+                               const BSAOptions& opt) {
+    nlohmann::json j;
+    j["description"] = "Direct measured-count beam-spin asymmetries after global cuts and 3-sigma exclusivity cuts.";
+    j["default_csv_quantity"] = opt.enable_pi0_subtraction ?
+        "pi0-subtracted epgamma BSA" : "raw epgamma BSA";
+    j["pi0_subtraction_enabled"] = opt.enable_pi0_subtraction;
+    j["estimator_single_period"] = "A_LU = (Splus - Sminus)/(Pbeam*(Splus + Sminus))";
+    j["estimator_combined"] = "A_LU = sum_i(Splus_i - Sminus_i)/sum_i[Pbeam_i*(Splus_i + Sminus_i)]";
+    j["signal_definition"] = "Splus/minus = N_epgamma_plus/minus - f_pi0*N_eppi0_plus/minus";
+    j["pi0_scale_definition"] = "f_pi0 = contamination_ratio * normalized_epgamma_yield / normalized_eppi0_yield";
+    j["pi0_scale_uncertainty_included"] = false;
+
+    for (const auto& group_pair : results) {
+        const std::string& group = group_pair.first;
+        const auto& vec = group_pair.second;
+        nlohmann::json rows_json = nlohmann::json::array();
+
+        for (int r = 0; r < static_cast<int>(vec.size()); ++r) {
+            const RowBSAResult& a = vec[r];
+            const RowBin& rb = rows[r];
+            nlohmann::json row;
+            row["row"] = r;
+            row["xBmin"] = rb.xBmin;
+            row["xBmax"] = rb.xBmax;
+            row["Q2min"] = rb.Q2min;
+            row["Q2max"] = rb.Q2max;
+            row["t_abs_min"] = rb.tmin;
+            row["t_abs_max"] = rb.tmax;
+            row["phimin"] = rb.pmin;
+            row["phimax"] = rb.pmax;
+
+            row["gamma_plus"] = a.gamma_plus;
+            row["gamma_minus"] = a.gamma_minus;
+            row["pi0_plus"] = a.pi0_plus;
+            row["pi0_minus"] = a.pi0_minus;
+            row["signal_plus"] = a.signal_plus;
+            row["signal_minus"] = a.signal_minus;
+            row["effective_pi0_scale"] = a.effective_pi0_scale;
+            row["contamination_weighted"] = a.contamination_weighted;
+            row["pi0_scale_valid"] = a.pi0_scale_valid;
+
+            add_asym_json(row, "subtracted", a.subtracted);
+            add_asym_json(row, "raw_epg", a.raw_epg);
+            add_asym_json(row, "pi0", a.pi0);
+
+            rows_json.push_back(row);
+        }
+
+        j["groups"][group] = rows_json;
+    }
+
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        fatal("[bsa] cannot write JSON summary: " + path);
+    }
+    out << std::setw(2) << j << "\n";
+}
+
+struct CellKey {
+    double xBmin = 0.0;
+    double xBmax = 0.0;
+    double Q2min = 0.0;
+    double Q2max = 0.0;
+    double tmin = 0.0;
+    double tmax = 0.0;
+
+    bool operator<(const CellKey& other) const {
+        return std::tie(xBmin, xBmax, Q2min, Q2max, tmin, tmax) <
+               std::tie(other.xBmin, other.xBmax, other.Q2min, other.Q2max, other.tmin, other.tmax);
+    }
+};
+
+struct PlotPoint {
+    double phi = 0.0;
+    double phi_err = 0.0;
+    double y_sub = 0.0;
+    double ey_sub = 0.0;
+    bool has_sub = false;
+    double y_raw = 0.0;
+    double ey_raw = 0.0;
+    bool has_raw = false;
+    double y_pi0 = 0.0;
+    double ey_pi0 = 0.0;
+    bool has_pi0 = false;
+};
+
+static void fill_graph_from_points(TGraphErrors& gr,
+                                   const std::vector<PlotPoint>& pts,
+                                   char which) {
+    int ip = 0;
+    for (const PlotPoint& p : pts) {
+        bool ok = false;
+        double y = 0.0;
+        double ey = 0.0;
+        if (which == 's') { ok = p.has_sub; y = p.y_sub; ey = p.ey_sub; }
+        if (which == 'r') { ok = p.has_raw; y = p.y_raw; ey = p.ey_raw; }
+        if (which == 'p') { ok = p.has_pi0; y = p.y_pi0; ey = p.ey_pi0; }
+        if (!ok) continue;
+        gr.SetPoint(ip, p.phi, y);
+        gr.SetPointError(ip, 0.0, ey);
+        ++ip;
+    }
+}
+
+static void make_bsa_plots(const std::string& output_root,
+                           const std::vector<RowBin>& rows,
+                           const std::map<std::string, std::vector<RowBSAResult>>& results) {
+    const std::filesystem::path base = std::filesystem::path(output_root) / "bsa_plots";
+    std::filesystem::create_directories(base);
+
+    for (const auto& group_pair : results) {
+        const std::string& group = group_pair.first;
+        const std::vector<RowBSAResult>& vec = group_pair.second;
+        const std::filesystem::path out_dir = base / sanitize_token(group);
+        std::filesystem::create_directories(out_dir);
+
+        std::map<CellKey, std::vector<PlotPoint>> cells;
+        for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+            const RowBSAResult& rr = vec[r];
+            if (!(rr.subtracted.valid || rr.raw_epg.valid || rr.pi0.valid)) {
+                continue;
+            }
+            const RowBin& rb = rows[r];
+            CellKey key{rb.xBmin, rb.xBmax, rb.Q2min, rb.Q2max, rb.tmin, rb.tmax};
+            PlotPoint p;
+            p.phi = phi_center_deg(rb.pmin, rb.pmax);
+            p.phi_err = phi_half_width_deg(rb.pmin, rb.pmax);
+            p.has_sub = rr.subtracted.valid;
+            p.y_sub = rr.subtracted.value;
+            p.ey_sub = rr.subtracted.stat;
+            p.has_raw = rr.raw_epg.valid;
+            p.y_raw = rr.raw_epg.value;
+            p.ey_raw = rr.raw_epg.stat;
+            p.has_pi0 = rr.pi0.valid;
+            p.y_pi0 = rr.pi0.value;
+            p.ey_pi0 = rr.pi0.stat;
+            cells[key].push_back(p);
+        }
+
+        int canvas_index = 0;
+        for (auto& cell_pair : cells) {
+            CellKey key = cell_pair.first;
+            std::vector<PlotPoint>& pts = cell_pair.second;
+            if (pts.empty()) {
+                continue;
+            }
+
+            std::sort(pts.begin(), pts.end(), [](const PlotPoint& a, const PlotPoint& b) {
+                return a.phi < b.phi;
+            });
+
+            TCanvas c(Form("c_bsa_%s_%d", sanitize_token(group).c_str(), canvas_index),
+                      "BSA", 1100, 800);
+            c.SetLeftMargin(0.12);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.12);
+            c.SetTopMargin(0.08);
+            c.SetGrid(1, 1);
+
+            TH1F* frame = static_cast<TH1F*>(gPad->DrawFrame(0.0, -1.0, 360.0, 1.0));
+            frame->SetTitle("");
+            frame->GetXaxis()->SetTitle("#phi (deg)");
+            frame->GetYaxis()->SetTitle("A_{LU}");
+            frame->GetXaxis()->CenterTitle(true);
+            frame->GetYaxis()->CenterTitle(true);
+
+            TGraphErrors gr_sub;
+            TGraphErrors gr_raw;
+            TGraphErrors gr_pi0;
+            fill_graph_from_points(gr_sub, pts, 's');
+            fill_graph_from_points(gr_raw, pts, 'r');
+            fill_graph_from_points(gr_pi0, pts, 'p');
+
+            gr_sub.SetMarkerStyle(20);
+            gr_sub.SetMarkerSize(1.0);
+            gr_sub.SetLineWidth(2);
+            gr_raw.SetMarkerStyle(24);
+            gr_raw.SetMarkerSize(0.9);
+            gr_raw.SetLineWidth(2);
+            gr_pi0.SetMarkerStyle(25);
+            gr_pi0.SetMarkerSize(0.9);
+            gr_pi0.SetLineWidth(2);
+
+            if (gr_raw.GetN() > 0) gr_raw.Draw("PE SAME");
+            if (gr_pi0.GetN() > 0) gr_pi0.Draw("PE SAME");
+            if (gr_sub.GetN() > 0) gr_sub.Draw("PE SAME");
+
+            TF1 fit("fit_sin", "[0]*sin(x*TMath::Pi()/180.0)", 0.0, 360.0);
+            fit.SetParameter(0, 0.0);
+            if (gr_sub.GetN() >= 3) {
+                gr_sub.Fit(&fit, "Q0");
+                fit.SetLineWidth(2);
+                fit.Draw("same");
+            }
+
+            TLegend leg(0.62, 0.72, 0.94, 0.90);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.SetTextFont(42);
+            leg.SetTextSize(0.032);
+            if (gr_sub.GetN() > 0) leg.AddEntry(&gr_sub, "#pi^{0}-subtracted ep#gamma", "pe");
+            if (gr_raw.GetN() > 0) leg.AddEntry(&gr_raw, "raw ep#gamma", "pe");
+            if (gr_pi0.GetN() > 0) leg.AddEntry(&gr_pi0, "measured ep#pi^{0}", "pe");
+            leg.Draw();
+
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextFont(42);
+            lat.SetTextSize(0.034);
+            lat.DrawLatex(0.16, 0.92, Form("%s", group.c_str()));
+            lat.DrawLatex(0.16, 0.875,
+                          Form("%.3g < x_{B} < %.3g, %.3g < Q^{2} < %.3g GeV^{2}",
+                               key.xBmin, key.xBmax, key.Q2min, key.Q2max));
+            lat.DrawLatex(0.16, 0.83,
+                          Form("%.3g < |t| < %.3g GeV^{2}", key.tmin, key.tmax));
+            if (gr_sub.GetN() >= 3) {
+                lat.DrawLatex(0.16, 0.785,
+                              Form("subtracted sin#phi amp. = %.4f #pm %.4f", fit.GetParameter(0), fit.GetParError(0)));
+            }
+
+            const std::string name =
+                (out_dir / Form("bsa_%s_xB_%g_%g_Q2_%g_%g_t_%g_%g.png",
+                                sanitize_token(group).c_str(),
+                                key.xBmin, key.xBmax,
+                                key.Q2min, key.Q2max,
+                                key.tmin, key.tmax)).string();
+            c.SaveAs(name.c_str());
+            ++canvas_index;
+        }
+
+        std::cout << "[bsa] Wrote " << canvas_index
+                  << " BSA comparison plots for group " << group
+                  << " to " << out_dir.string() << "\n";
+    }
+}
+
+} // namespace
+
+bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
+                           const std::map<std::string, TTree*>& eppi0DataTrees,
+                           const BSAOptions& options) {
+    try {
+        CSV csv;
+        load_csv(options.csv_path, csv);
+
+        const std::vector<RowBin> rows = load_row_bins_from_csv(csv);
+        const FastBinning fast_bins = build_fast_binning(rows);
+        const TopoCutMap sigma_cuts = load_combined_cuts(options.combined_cuts_json);
+        const PeriodScaleMap pi0_scales = compute_pi0_scale_factors_from_csv(csv, rows);
+
+        PeriodCounts gamma_counts = accumulate_counts(dvcsDataTrees, rows, fast_bins, sigma_cuts, BSASample::EPG);
+        PeriodCounts pi0_counts = accumulate_counts(eppi0DataTrees, rows, fast_bins, sigma_cuts, BSASample::EPPI0);
+
+        std::map<std::string, std::vector<RowBSAResult>> results;
+        for (const std::string& group : output_group_order()) {
+            const std::vector<std::string> components = component_periods_for_group(group);
+            std::vector<RowBSAResult> group_results(rows.size());
+
+            for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+                if (!rows[r].valid) {
+                    continue;
+                }
+                group_results[r] = compute_group_bsa_pi0_subtracted(
+                    gamma_counts, pi0_counts, pi0_scales, components, r, options);
+            }
+
+            results[group] = std::move(group_results);
+        }
+
+        for (const std::string& group : output_group_order()) {
+            const std::string col_name = "BSA, counts, " + group;
+            const int c = col_strict(csv, col_name);
+            const auto& vec = results.at(group);
+            for (int r = 0; r < static_cast<int>(csv.rows.size()); ++r) {
+                if (r >= static_cast<int>(vec.size()) || !vec[r].subtracted.valid) {
+                    csv.rows[r][c].clear();
+                    continue;
+                }
+                csv.rows[r][c] = fmt_tuple(vec[r].subtracted.value, vec[r].subtracted.stat);
+            }
+        }
+
+        write_csv_atomic(options.csv_path, csv);
+        std::cout << "[bsa] Updated pi0-subtracted BSA count columns in "
+                  << options.csv_path << "\n";
+
+        const std::filesystem::path json_path =
+            std::filesystem::path(options.output_root) / "jsons" / "BSA_counts" / "bsa_counts_summary.json";
+        write_json_summary(json_path.string(), rows, results, options);
+        std::cout << "[bsa] Wrote JSON summary to " << json_path.string() << "\n";
+
+        if (options.make_plots) {
+            make_bsa_plots(options.output_root, rows, results);
+        }
+
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "[bsa] ERROR: " << e.what() << "\n";
+        return false;
     }
 }

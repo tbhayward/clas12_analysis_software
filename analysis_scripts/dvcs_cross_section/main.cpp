@@ -371,6 +371,42 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // --------- Pi0-subtracted direct count-based beam-spin asymmetries ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
+
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_bsa.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bsa.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for BSA failed ("
+                      << e.what() << "). Continuing.\n";
+        }
+
+        BSAOptions bsa_opts;
+        bsa_opts.csv_path = csv_main;
+        bsa_opts.combined_cuts_json = cuts_json;
+        bsa_opts.output_root = output_root;
+        bsa_opts.beam_pol_sp18_inb = 0.8882;
+        bsa_opts.beam_pol_sp18_out = 0.8882;
+        bsa_opts.beam_pol_fa18_inb = 0.8592;
+        bsa_opts.beam_pol_fa18_out = 0.8922;
+        bsa_opts.beam_pol_sp19_inb = 0.8453;
+        bsa_opts.enable_pi0_subtraction = true;
+        bsa_opts.make_plots = true;
+        bsa_opts.max_workers = 1;
+
+        if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa_opts)) {
+            std::cerr << "[main] ERROR: update_bsa_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
+
     // // --------- Pi0-subtracted DVCS kinematic DATA/MC shape comparisons ----------
     // {
     //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
