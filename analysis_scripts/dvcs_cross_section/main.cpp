@@ -76,12 +76,12 @@ int main(int argc, char* argv[]) {
     global_cfg.proton_fd_sector = 1;
 
     // Proton CD sector study. This automatically keeps only CD-FD and CD-FT events.
-    global_cfg.enable_proton_cd_sector_filter = false;
+    global_cfg.enable_proton_cd_sector_filter = true;
     global_cfg.proton_cd_sector = 1;
 
     // Photon FD sector study. This automatically keeps only CD-FD and FD-FD events.
-    global_cfg.enable_photon_fd_sector_filter = true;
-    global_cfg.photon_fd_sector = 6;
+    global_cfg.enable_photon_fd_sector_filter = false;
+    global_cfg.photon_fd_sector = 1;
 
     // Auxiliary fiducial cuts. Enable this single switch to apply the additional
     // FD-sector separation, particle-angle, and FT-photon momentum cuts
