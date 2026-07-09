@@ -1461,8 +1461,10 @@ static void make_bsa_plots(const std::string& output_root,
                     gr.SetMarkerStyle(20);
                     gr.SetMarkerSize(0.72);
                     gr.SetLineWidth(1);
-                    configure_pad_axes(gr, left_col, bottom_row);
-                    gr.Draw("AP");
+                    // Draw an explicit fixed frame first.  Relying on TGraphErrors::Draw("AP")
+                    // gave poorly visible/partly missing pad boxes on dense matrix canvases.
+                    draw_empty_frame(left_col, bottom_row);
+                    gr.Draw("P SAME");
 
                     TF1 fit(Form("fit_bsa_%d_%d", iq, it),
                             "[0]*sin(x*TMath::Pi()/180.0)/(1.0 + [1]*cos(x*TMath::Pi()/180.0))",
@@ -1491,17 +1493,10 @@ static void make_bsa_plots(const std::string& output_root,
 
             if (n_populated_pads == 0) continue;
 
-            c.cd(0);
-            TLatex title_lat;
-            title_lat.SetNDC();
-            title_lat.SetTextFont(42);
-            title_lat.SetTextSize(0.024);
-            title_lat.DrawLatex(0.055, 0.955,
-                                Form("%s, #pi^{0}-subtracted ep#gamma BSA, x_{B}: %.3g-%.3g",
-                                     group.c_str(), xbr.lo, xbr.hi));
-            title_lat.SetTextSize(0.017);
-            title_lat.DrawLatex(0.055, 0.928,
-                                "Data fit: A sin#phi / (1 + B cos#phi); rows are Q^{2}, columns are |t|");
+            // Do not draw a canvas-level title here.  The matrix pads occupy the full
+            // canvas after TCanvas::Divide, so a global TLatex title overlaps the first
+            // row of physics panels.  The group and xB range are encoded in the output
+            // directory and filename, while each pad labels its Q2 and |t| bin.
 
             const std::string name =
                 (out_dir / Form("bsa_matrix_%s_%s.png",
