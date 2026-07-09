@@ -1687,12 +1687,13 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
     ax.grid(True, which="major", alpha=0.25)
 
     title_target = "10.6 GeV average" if target == "10.6 GeV" else "10.2 GeV / Sp19 Inb"
-    ax.set_title(
-        rf"BSA comparison, {title_target}\n"
+    title = (
+        f"BSA comparison, {title_target}\n"
         rf"$x_B \in [{key.xb_min:.3g}, {key.xb_max:.3g}]$, "
         rf"$Q^2 \in [{key.q2_min:.3g}, {key.q2_max:.3g}]$ (GeV$^2$), "
         rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)"
     )
+    ax.set_title(title, fontsize=11, pad=10)
 
     text = f"pass-1 points: {len(pass1_points)}\npass-2 points: {len(pass2_points)}"
     ax.text(
