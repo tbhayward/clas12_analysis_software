@@ -1681,7 +1681,7 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
     ax.axhline(0.0, linewidth=1.0, linestyle="--", color="0.35", zorder=1)
     ax.set_xlim(0.0, 360.0)
     ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
-    ax.set_ylim(-1.05, 1.05)
+    ax.set_ylim(-0.4, 0.4)
     ax.set_xlabel(r"$\phi$ (deg)")
     ax.set_ylabel(r"$A_{LU}$")
     ax.grid(True, which="major", alpha=0.25)
@@ -1694,7 +1694,7 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
         rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)"
     )
 
-    text = f"pass-1 points: {len(pass1_points)}\npass-2 points: {len(pass2_points)}\nKM15 curve: {'yes' if km15_curve is not None else 'not available'}"
+    text = f"pass-1 points: {len(pass1_points)}\npass-2 points: {len(pass2_points)}"
     ax.text(
         0.02,
         0.03,
@@ -1759,26 +1759,40 @@ def run_pass1_pass2_bsa_comparison(pass2_csv: Path, pass1_bsa_text: Path, bsa_ou
             if not p1 and not p2:
                 continue
 
+            log(
+                f"BSA comparison: target={target}, panel {i}/{len(keys)}; "
+                f"xB=[{key.xb_min:g},{key.xb_max:g}], "
+                f"Q2=[{key.q2_min:g},{key.q2_max:g}], "
+                f"|t|=[{key.t_min:g},{key.t_max:g}], "
+                f"pass1 points={len(p1)}, pass2 points={len(p2)}"
+            )
+
             km15_curve: Optional[BSAModelCurve] = None
+            bsa_model_status = "models skipped" if skip_models else "not requested"
             if not skip_models:
                 ckey = bsa_model_cache_key(key, target, model_cfg.phi_dense)
                 entry = bsa_cache.get(ckey)
                 if entry is not None:
                     km15_curve = make_bsa_model_from_cache_entry(entry)
+                    bsa_model_status = "KM15 cache hit"
                 else:
                     try:
+                        log(f"BSA comparison: target={target}, panel {i}/{len(keys)}; computing KM15 BSA curve.")
                         km15_curve = compute_bsa_km15_curve_without_cache(key, target, model_cfg)
                         bsa_cache[ckey] = make_bsa_model_cache_entry(km15_curve)
                         cache_new += 1
+                        bsa_model_status = "KM15 computed"
                     except Exception as exc:
                         model_failures += 1
                         if model_cfg.allow_missing_models:
                             km15_curve = None
+                            bsa_model_status = "KM15 failed; plotted without model"
                             warn(f"BSA KM15 model failed for {target}, {key}; plotting BSA points without KM15: {exc}")
                         else:
                             raise RuntimeError(f"BSA KM15 model failed for {target}, {key}: {exc}") from exc
 
             output_path = target_dir / bsa_panel_filename(target, key, i)
+            log(f"BSA comparison: target={target}, panel {i}/{len(keys)}; writing {output_path} ({bsa_model_status}).")
             draw_one_bsa_comparison_panel(
                 output_path=output_path,
                 target=target,
@@ -1790,6 +1804,7 @@ def run_pass1_pass2_bsa_comparison(pass2_csv: Path, pass1_bsa_text: Path, bsa_ou
                 pass2_label=pass2_label,
             )
             total_plots += 1
+            log(f"BSA comparison: target={target}, panel {i}/{len(keys)}; wrote {output_path}.")
             summary_rows.append(
                 BSAComparisonResult(
                     target_label=target,
