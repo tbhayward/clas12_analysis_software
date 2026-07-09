@@ -40,6 +40,7 @@
 #include <TStyle.h>
 #include <TSystem.h>
 #include <TTree.h>
+#include <TAxis.h>
 
 // JSON
 #include <nlohmann/json.hpp>
