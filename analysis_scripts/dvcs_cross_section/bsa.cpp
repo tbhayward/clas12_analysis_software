@@ -21,8 +21,9 @@
 // For combined groups with multiple beam polarizations:
 //   A_LU = sum_i(S_i+ - S_i-) / sum_i[P_i * (S_i+ + S_i-)]
 //
-// Plots are xB-matrix canvases: rows are Q2 bins, columns are |t| bins and
-// each pad is A_LU(phi). No theory curves or functional fits are drawn here.
+// Plots are compact xB-slice canvases. Each populated pad is one (Q2, |t|) bin
+// and shows A_LU(phi) with statistical error bars only. No theory curve or
+// functional fit is drawn in this stage.
 // ROOT tree loops and ROOT plotting are intentionally serial.
 // -----------------------------------------------------------------------------
 
@@ -35,7 +36,6 @@
 #include <TGraphErrors.h>
 #include <TH1F.h>
 #include <TLatex.h>
-#include <TLegend.h>
 #include <TLine.h>
 #include <TPad.h>
 #include <TROOT.h>
@@ -1337,21 +1337,39 @@ static inline double range_center(const BinRange& r) {
     return 0.5 * (r.lo + r.hi);
 }
 
-static TH1F* draw_bsa_frame() {
+
+struct BSAPanel {
+    BinRange q2;
+    BinRange tabs;
+    std::vector<double> x;
+    std::vector<double> y;
+    std::vector<double> ex;
+    std::vector<double> ey;
+};
+
+static void draw_bsa_frame(bool left_col, bool bottom_row) {
     TH1F* frame = static_cast<TH1F*>(gPad->DrawFrame(0.0, -1.0, 360.0, 1.0, ""));
-    frame->GetXaxis()->SetTitle("#phi (deg)");
-    frame->GetYaxis()->SetTitle("A_{LU}");
+    frame->GetXaxis()->SetTitle(bottom_row ? "#phi (deg)" : "");
+    frame->GetYaxis()->SetTitle(left_col ? "A_{LU}" : "");
     frame->GetXaxis()->CenterTitle();
     frame->GetYaxis()->CenterTitle();
     frame->GetXaxis()->SetNdivisions(505);
     frame->GetYaxis()->SetNdivisions(505);
-    frame->GetXaxis()->SetTitleSize(0.060);
-    frame->GetYaxis()->SetTitleSize(0.060);
-    frame->GetXaxis()->SetLabelSize(0.048);
-    frame->GetYaxis()->SetLabelSize(0.048);
+    frame->GetXaxis()->SetTitleSize(bottom_row ? 0.060 : 0.0);
+    frame->GetYaxis()->SetTitleSize(left_col ? 0.065 : 0.0);
+    frame->GetXaxis()->SetLabelSize(bottom_row ? 0.050 : 0.0);
+    frame->GetYaxis()->SetLabelSize(left_col ? 0.050 : 0.0);
     frame->GetXaxis()->SetTitleOffset(1.10);
-    frame->GetYaxis()->SetTitleOffset(1.35);
-    return frame;
+    frame->GetYaxis()->SetTitleOffset(1.25);
+}
+
+static int choose_bsa_ncols(int n_pads) {
+    if (n_pads <= 0) return 1;
+    if (n_pads <= 3) return n_pads;
+    if (n_pads <= 6) return 3;
+    if (n_pads <= 12) return 4;
+    if (n_pads <= 20) return 5;
+    return 6;
 }
 
 static void make_bsa_plots(const std::string& output_root,
@@ -1361,22 +1379,27 @@ static void make_bsa_plots(const std::string& output_root,
     std::filesystem::create_directories(base);
 
     std::set<BinRange> xB_set;
-    std::set<BinRange> q2_set;
-    std::set<BinRange> t_set;
     for (const RowBin& rb : rows) {
         if (!rb.valid) continue;
         xB_set.insert(BinRange{rb.xBmin, rb.xBmax});
-        q2_set.insert(BinRange{rb.Q2min, rb.Q2max});
-        t_set.insert(BinRange{rb.tmin, rb.tmax});
     } //endfor
 
     std::vector<BinRange> xB_bins(xB_set.begin(), xB_set.end());
-    std::vector<BinRange> q2_bins(q2_set.begin(), q2_set.end());
-    std::vector<BinRange> t_bins(t_set.begin(), t_set.end());
-    if (xB_bins.empty() || q2_bins.empty() || t_bins.empty()) {
-        std::cerr << "[bsa] WARNING: no valid bin ranges found; skipping BSA plots.\n";
+    if (xB_bins.empty()) {
+        std::cerr << "[bsa] WARNING: no valid xB bin ranges found; skipping BSA plots.\n";
         return;
     } //endif
+
+    gROOT->SetBatch(true);
+    gStyle->SetOptStat(0);
+    gStyle->SetOptTitle(0);
+    gStyle->SetTitleFont(42, "XYZ");
+    gStyle->SetLabelFont(42, "XYZ");
+    gStyle->SetTextFont(42);
+    gStyle->SetLineWidth(2);
+    gStyle->SetFrameLineWidth(2);
+    gStyle->SetPadTickX(1);
+    gStyle->SetPadTickY(1);
 
     for (const auto& group_pair : results) {
         const std::string& group = group_pair.first;
@@ -1386,41 +1409,88 @@ static void make_bsa_plots(const std::string& output_root,
 
         int canvas_count = 0;
         for (const BinRange& xbr : xB_bins) {
-            const int n_rows = static_cast<int>(q2_bins.size());
-            const int n_cols = static_cast<int>(t_bins.size());
-            const int n_pads = n_rows * n_cols;
+            std::map<std::pair<BinRange, BinRange>, BSAPanel> panel_map;
+
+            for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+                if (!rows[r].valid || r >= static_cast<int>(vec.size())) continue;
+                if (!vec[r].valid) continue;
+                if (!same_range(rows[r].xBmin, rows[r].xBmax, xbr)) continue;
+
+                const BinRange q2{rows[r].Q2min, rows[r].Q2max};
+                const BinRange tt{rows[r].tmin, rows[r].tmax};
+                auto key = std::make_pair(q2, tt);
+
+                BSAPanel& panel = panel_map[key];
+                panel.q2 = q2;
+                panel.tabs = tt;
+                panel.x.push_back(phi_center_deg(rows[r].pmin, rows[r].pmax));
+                panel.y.push_back(vec[r].value);
+                panel.ex.push_back(phi_half_width_deg(rows[r].pmin, rows[r].pmax));
+                panel.ey.push_back(vec[r].stat);
+            } //endfor
+
+            std::vector<BSAPanel> panels;
+            panels.reserve(panel_map.size());
+            for (auto& kv : panel_map) {
+                if (kv.second.x.empty()) continue;
+
+                std::vector<size_t> order(kv.second.x.size());
+                for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+                std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+                    return kv.second.x[a] < kv.second.x[b];
+                });
+
+                BSAPanel sorted;
+                sorted.q2 = kv.second.q2;
+                sorted.tabs = kv.second.tabs;
+                for (size_t idx : order) {
+                    sorted.x.push_back(kv.second.x[idx]);
+                    sorted.y.push_back(kv.second.y[idx]);
+                    sorted.ex.push_back(kv.second.ex[idx]);
+                    sorted.ey.push_back(kv.second.ey[idx]);
+                } //endfor
+                panels.push_back(std::move(sorted));
+            } //endfor
+
+            if (panels.empty()) continue;
+
+            // Sort panels in the same visual order as the cross-section canvases:
+            // increasing |t| row by row, with increasing Q2 across each row.
+            std::sort(panels.begin(), panels.end(), [](const BSAPanel& a, const BSAPanel& b) {
+                if (std::abs(a.tabs.lo - b.tabs.lo) > 1e-9) return a.tabs.lo < b.tabs.lo;
+                if (std::abs(a.tabs.hi - b.tabs.hi) > 1e-9) return a.tabs.hi < b.tabs.hi;
+                if (std::abs(a.q2.lo - b.q2.lo) > 1e-9) return a.q2.lo < b.q2.lo;
+                return a.q2.hi < b.q2.hi;
+            });
+
+            const int n_pads = static_cast<int>(panels.size());
+            const int n_cols = choose_bsa_ncols(n_pads);
+            const int n_rows = (n_pads + n_cols - 1) / n_cols;
 
             int canvas_w = 280 * n_cols + 160;
-            int canvas_h = 260 * n_rows + 260;
-            if (canvas_w < 1200) canvas_w = 1200;
-            if (canvas_h < 900)  canvas_h = 900;
+            int canvas_h = 260 * n_rows + 150;
+            if (canvas_w < 900) canvas_w = 900;
+            if (canvas_h < 650) canvas_h = 650;
 
-            double title_size = 0.18;
-            double legend_text_size = 0.11;
-            double cell_label_size = 0.070;
+            double title_size = 0.050;
+            double panel_label_size = 0.060;
             if (n_pads <= 4) {
-                title_size = 0.14;
-                legend_text_size = 0.09;
-                cell_label_size = 0.060;
-            } //endif
+                title_size = 0.045;
+                panel_label_size = 0.055;
+            }
             if (n_pads == 1) {
-                title_size = 0.12;
-                legend_text_size = 0.085;
-                cell_label_size = 0.055;
-            } //endif
-            title_size *= 0.5;
-            legend_text_size *= 0.5;
+                title_size = 0.040;
+                panel_label_size = 0.050;
+            }
 
-            TCanvas* c = new TCanvas(
-                Form("c_bsa_matrix_%s_%s", sanitize_token(group).c_str(), range_token("xB", xbr).c_str()),
-                "", canvas_w, canvas_h);
+            TCanvas c("c_bsa_compact", "", canvas_w, canvas_h);
 
-            TPad* pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
+            TPad* pTop = new TPad("pTop", "pTop", 0.0, 0.90, 1.0, 1.0);
             pTop->SetFillStyle(0);
             pTop->SetBorderSize(0);
             pTop->Draw();
 
-            TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.78);
+            TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.0, 1.0, 0.90);
             pGrid->SetFillStyle(0);
             pGrid->SetBorderSize(0);
             pGrid->Draw();
@@ -1434,135 +1504,74 @@ static void make_bsa_plots(const std::string& output_root,
             head.SetTextFont(42);
             head.SetTextSize(title_size);
             head.DrawLatex(
-                0.5, 0.86,
+                0.5, 0.55,
                 Form("#pi^{0}-subtracted ep#gamma BSA   %s   x_{B} in (%.3f, %.3f)",
-                     group.c_str(), xbr.lo, xbr.hi));
+                     group.c_str(), xbr.lo, xbr.hi)
+            );
 
-            TLatex subhead;
-            subhead.SetNDC();
-            subhead.SetTextAlign(22);
-            subhead.SetTextFont(42);
-            subhead.SetTextSize(0.75 * title_size);
-            subhead.DrawLatex(0.5, 0.58, "Rows are Q^{2}; columns are |t|. No fit or theory curve is shown.");
-
-            TGraphErrors dummy_data;
-            dummy_data.SetMarkerStyle(20);
-            dummy_data.SetMarkerSize(1.0);
-            dummy_data.SetLineWidth(1);
-            dummy_data.SetMarkerColor(kBlack);
-            dummy_data.SetLineColor(kBlack);
-
-            TLine dummy_zero;
-            dummy_zero.SetLineColor(kGray + 2);
-            dummy_zero.SetLineStyle(2);
-            dummy_zero.SetLineWidth(1);
-
-            TLegend* leg = new TLegend(0.02, 0.08, 0.35, 0.48);
-            leg->SetBorderSize(1);
-            leg->SetLineColor(kBlack);
-            leg->SetFillColor(kWhite);
-            leg->SetFillStyle(1001);
-            leg->SetTextFont(42);
-            leg->SetTextSize(legend_text_size);
-            leg->AddEntry(&dummy_data, "pass-2 data", "lep");
-            leg->AddEntry(&dummy_zero, "zero", "l");
-            leg->Draw();
-
-            // ROOT pads keep pointers to drawn objects. Keep graphs and lines alive
-            // until after SaveAs().
             std::vector<std::unique_ptr<TGraphErrors>> owned_graphs;
             std::vector<std::unique_ptr<TLine>> owned_lines;
 
-            int n_populated_pads = 0;
-            for (int iq = 0; iq < n_rows; ++iq) {
-                for (int it = 0; it < n_cols; ++it) {
-                    const int pad_id = iq * n_cols + it + 1;
-                    pGrid->cd(pad_id);
-                    if (!gPad) continue;
+            for (int ip = 0; ip < n_pads; ++ip) {
+                const int row = ip / n_cols;
+                const int col = ip % n_cols;
+                const bool left_col = (col == 0);
+                const bool bottom_row = (row == n_rows - 1);
 
-                    gPad->SetGrid(1, 1);
-                    gPad->SetTickx(1);
-                    gPad->SetTicky(1);
-                    gPad->SetTopMargin(0.12);
-                    gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.16);
-                    gPad->SetRightMargin(0.10);
+                pGrid->cd(ip + 1);
+                gPad->SetGrid(1, 1);
+                gPad->SetTickx(1);
+                gPad->SetTicky(1);
+                gPad->SetTopMargin(0.12);
+                gPad->SetBottomMargin(bottom_row ? 0.18 : 0.10);
+                gPad->SetLeftMargin(left_col ? 0.16 : 0.09);
+                gPad->SetRightMargin(0.06);
 
-                    std::vector<double> x_sub;
-                    std::vector<double> y_sub;
-                    std::vector<double> ex_sub;
-                    std::vector<double> ey_sub;
+                draw_bsa_frame(left_col, bottom_row);
 
-                    for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
-                        if (!rows[r].valid || r >= static_cast<int>(vec.size())) continue;
-                        if (!vec[r].valid) continue;
-                        if (!same_range(rows[r].xBmin, rows[r].xBmax, xbr)) continue;
-                        if (!same_range(rows[r].Q2min, rows[r].Q2max, q2_bins[iq])) continue;
-                        if (!same_range(rows[r].tmin, rows[r].tmax, t_bins[it])) continue;
+                auto zero = std::make_unique<TLine>(0.0, 0.0, 360.0, 0.0);
+                zero->SetLineStyle(2);
+                zero->SetLineWidth(1);
+                zero->SetLineColor(kGray + 2);
+                zero->Draw("SAME");
 
-                        x_sub.push_back(phi_center_deg(rows[r].pmin, rows[r].pmax));
-                        y_sub.push_back(vec[r].value);
-                        ex_sub.push_back(phi_half_width_deg(rows[r].pmin, rows[r].pmax));
-                        ey_sub.push_back(vec[r].stat);
-                    } //endfor
+                const BSAPanel& panel = panels[ip];
+                auto gr = std::make_unique<TGraphErrors>(
+                    static_cast<int>(panel.x.size()),
+                    panel.x.data(), panel.y.data(), panel.ex.data(), panel.ey.data());
+                gr->SetName(Form("gr_bsa_%d", ip));
+                gr->SetMarkerStyle(20);
+                gr->SetMarkerSize(0.75);
+                gr->SetMarkerColor(kBlack);
+                gr->SetLineColor(kBlack);
+                gr->SetLineWidth(1);
+                gr->Draw("P SAME");
 
-                    draw_bsa_frame();
-                    auto zero = std::make_unique<TLine>(0.0, 0.0, 360.0, 0.0);
-                    zero->SetLineColor(kGray + 2);
-                    zero->SetLineStyle(2);
-                    zero->SetLineWidth(1);
-                    zero->Draw("SAME");
-                    owned_lines.push_back(std::move(zero));
+                TLatex lab;
+                lab.SetNDC();
+                lab.SetTextFont(42);
+                lab.SetTextAlign(11);
+                lab.SetTextSize(panel_label_size);
+                lab.DrawLatex(
+                    0.14, 0.93,
+                    Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
+                         panel.q2.lo, panel.q2.hi, panel.tabs.lo, panel.tabs.hi)
+                );
 
-                    TLatex lab;
-                    lab.SetNDC();
-                    lab.SetTextFont(42);
-                    lab.SetTextSize(cell_label_size);
-                    lab.SetTextAlign(11);
-                    lab.DrawLatex(
-                        0.14, 0.93,
-                        Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
-                             q2_bins[iq].lo, q2_bins[iq].hi,
-                             t_bins[it].lo,  t_bins[it].hi));
-
-                    if (x_sub.empty()) {
-                        lab.SetTextSize(0.80 * cell_label_size);
-                        lab.DrawLatex(0.14, 0.78, "no valid BSA points");
-                        continue;
-                    } //endif
-
-                    ++n_populated_pads;
-
-                    auto gr = std::make_unique<TGraphErrors>(
-                        static_cast<int>(x_sub.size()),
-                        x_sub.data(), y_sub.data(), ex_sub.data(), ey_sub.data());
-                    gr->SetName(Form("gr_bsa_%d_%d", iq, it));
-                    gr->SetMarkerStyle(20);
-                    gr->SetMarkerSize(0.85);
-                    gr->SetMarkerColor(kBlack);
-                    gr->SetLineColor(kBlack);
-                    gr->SetLineWidth(1);
-                    gr->Draw("P SAME");
-                    owned_graphs.push_back(std::move(gr));
-                } //endfor
+                owned_lines.push_back(std::move(zero));
+                owned_graphs.push_back(std::move(gr));
             } //endfor
 
-            if (n_populated_pads == 0) {
-                delete c;
-                continue;
-            } //endif
-
             const std::string name =
-                (out_dir / Form("bsa_matrix_%s_%s.png",
+                (out_dir / Form("bsa_%s_%s.png",
                                 sanitize_token(group).c_str(),
                                 range_token("xB", xbr).c_str())).string();
-            c->SaveAs(name.c_str());
-            delete c;
+            c.SaveAs(name.c_str());
             ++canvas_count;
         } //endfor
 
         std::cout << "[bsa] Wrote " << canvas_count
-                  << " xB-matrix BSA canvases for group " << group
+                  << " compact BSA canvases for group " << group
                   << " to " << out_dir.string() << "\n";
     } //endfor
 }
