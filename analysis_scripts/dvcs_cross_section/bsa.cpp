@@ -22,7 +22,7 @@
 //   A_LU = sum_i(S_i+ - S_i-) / sum_i[P_i * (S_i+ + S_i-)]
 //
 // Plots are xB-matrix canvases: rows are Q2 bins, columns are |t| bins and
-// each pad is A_LU(phi). Data are fit to A sin(phi)/(1 + B cos(phi)).
+// each pad is A_LU(phi). No theory curves or functional fits are drawn here.
 // ROOT tree loops and ROOT plotting are intentionally serial.
 // -----------------------------------------------------------------------------
 
@@ -32,10 +32,12 @@
 // ROOT
 #include <TAxis.h>
 #include <TCanvas.h>
-#include <TF1.h>
 #include <TGraphErrors.h>
 #include <TH1F.h>
 #include <TLatex.h>
+#include <TLegend.h>
+#include <TLine.h>
+#include <TPad.h>
 #include <TROOT.h>
 #include <TStyle.h>
 #include <TSystem.h>
@@ -1335,33 +1337,21 @@ static inline double range_center(const BinRange& r) {
     return 0.5 * (r.lo + r.hi);
 }
 
-static void configure_pad_axes(TGraphErrors& gr, bool left_col, bool bottom_row) {
-    gr.GetXaxis()->SetLimits(0.0, 360.0);
-    gr.GetYaxis()->SetRangeUser(-1.0, 1.0);
-    gr.GetXaxis()->SetTitle(bottom_row ? "#phi (deg)" : "");
-    gr.GetYaxis()->SetTitle(left_col ? "A_{LU}" : "");
-    gr.GetXaxis()->SetTitleSize(bottom_row ? 0.075 : 0.0);
-    gr.GetYaxis()->SetTitleSize(left_col ? 0.080 : 0.0);
-    gr.GetXaxis()->SetLabelSize(bottom_row ? 0.060 : 0.0);
-    gr.GetYaxis()->SetLabelSize(left_col ? 0.058 : 0.0);
-    gr.GetXaxis()->SetTitleOffset(0.95);
-    gr.GetYaxis()->SetTitleOffset(0.92);
-    gr.GetXaxis()->SetNdivisions(505);
-    gr.GetYaxis()->SetNdivisions(505);
-}
-
-static void draw_empty_frame(bool left_col, bool bottom_row) {
-    TH1F* frame = gPad->DrawFrame(0.0, -1.0, 360.0, 1.0, "");
-    frame->GetXaxis()->SetTitle(bottom_row ? "#phi (deg)" : "");
-    frame->GetYaxis()->SetTitle(left_col ? "A_{LU}" : "");
-    frame->GetXaxis()->SetTitleSize(bottom_row ? 0.075 : 0.0);
-    frame->GetYaxis()->SetTitleSize(left_col ? 0.080 : 0.0);
-    frame->GetXaxis()->SetLabelSize(bottom_row ? 0.060 : 0.0);
-    frame->GetYaxis()->SetLabelSize(left_col ? 0.058 : 0.0);
-    frame->GetXaxis()->SetTitleOffset(0.95);
-    frame->GetYaxis()->SetTitleOffset(0.92);
+static TH1F* draw_bsa_frame() {
+    TH1F* frame = static_cast<TH1F*>(gPad->DrawFrame(0.0, -1.0, 360.0, 1.0, ""));
+    frame->GetXaxis()->SetTitle("#phi (deg)");
+    frame->GetYaxis()->SetTitle("A_{LU}");
+    frame->GetXaxis()->CenterTitle();
+    frame->GetYaxis()->CenterTitle();
     frame->GetXaxis()->SetNdivisions(505);
     frame->GetYaxis()->SetNdivisions(505);
+    frame->GetXaxis()->SetTitleSize(0.060);
+    frame->GetYaxis()->SetTitleSize(0.060);
+    frame->GetXaxis()->SetLabelSize(0.048);
+    frame->GetYaxis()->SetLabelSize(0.048);
+    frame->GetXaxis()->SetTitleOffset(1.10);
+    frame->GetYaxis()->SetTitleOffset(1.35);
+    return frame;
 }
 
 static void make_bsa_plots(const std::string& output_root,
@@ -1398,38 +1388,105 @@ static void make_bsa_plots(const std::string& output_root,
         for (const BinRange& xbr : xB_bins) {
             const int n_rows = static_cast<int>(q2_bins.size());
             const int n_cols = static_cast<int>(t_bins.size());
+            const int n_pads = n_rows * n_cols;
 
-            const int canvas_w = std::max(1400, 360 * n_cols);
-            const int canvas_h = std::max(900, 285 * n_rows);
-            TCanvas c("c_bsa_matrix", "", canvas_w, canvas_h);
-            c.SetTopMargin(0.02);
-            c.SetBottomMargin(0.02);
-            c.SetLeftMargin(0.02);
-            c.SetRightMargin(0.02);
-            c.Divide(n_cols, n_rows, 0.0005, 0.0005);
+            int canvas_w = 280 * n_cols + 160;
+            int canvas_h = 260 * n_rows + 260;
+            if (canvas_w < 1200) canvas_w = 1200;
+            if (canvas_h < 900)  canvas_h = 900;
 
-            // ROOT pads keep pointers to drawn objects.  Graphs/functions created
-            // on the stack are destroyed at the end of each pad iteration before
-            // SaveAs(), which leaves only the frame/text visible.  Keep all drawn
-            // physics objects alive until after the canvas is written.
+            double title_size = 0.18;
+            double legend_text_size = 0.11;
+            double cell_label_size = 0.070;
+            if (n_pads <= 4) {
+                title_size = 0.14;
+                legend_text_size = 0.09;
+                cell_label_size = 0.060;
+            } //endif
+            if (n_pads == 1) {
+                title_size = 0.12;
+                legend_text_size = 0.085;
+                cell_label_size = 0.055;
+            } //endif
+            title_size *= 0.5;
+            legend_text_size *= 0.5;
+
+            TCanvas* c = new TCanvas(
+                Form("c_bsa_matrix_%s_%s", sanitize_token(group).c_str(), range_token("xB", xbr).c_str()),
+                "", canvas_w, canvas_h);
+
+            TPad* pTop = new TPad("pTop", "pTop", 0.0, 0.78, 1.0, 1.0);
+            pTop->SetFillStyle(0);
+            pTop->SetBorderSize(0);
+            pTop->Draw();
+
+            TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.78);
+            pGrid->SetFillStyle(0);
+            pGrid->SetBorderSize(0);
+            pGrid->Draw();
+            pGrid->cd();
+            pGrid->Divide(n_cols, n_rows, 0.0001, 0.0001);
+
+            pTop->cd();
+            TLatex head;
+            head.SetNDC();
+            head.SetTextAlign(22);
+            head.SetTextFont(42);
+            head.SetTextSize(title_size);
+            head.DrawLatex(
+                0.5, 0.86,
+                Form("#pi^{0}-subtracted ep#gamma BSA   %s   x_{B} in (%.3f, %.3f)",
+                     group.c_str(), xbr.lo, xbr.hi));
+
+            TLatex subhead;
+            subhead.SetNDC();
+            subhead.SetTextAlign(22);
+            subhead.SetTextFont(42);
+            subhead.SetTextSize(0.75 * title_size);
+            subhead.DrawLatex(0.5, 0.58, "Rows are Q^{2}; columns are |t|. No fit or theory curve is shown.");
+
+            TGraphErrors dummy_data;
+            dummy_data.SetMarkerStyle(20);
+            dummy_data.SetMarkerSize(1.0);
+            dummy_data.SetLineWidth(1);
+            dummy_data.SetMarkerColor(kBlack);
+            dummy_data.SetLineColor(kBlack);
+
+            TLine dummy_zero;
+            dummy_zero.SetLineColor(kGray + 2);
+            dummy_zero.SetLineStyle(2);
+            dummy_zero.SetLineWidth(1);
+
+            TLegend* leg = new TLegend(0.02, 0.08, 0.35, 0.48);
+            leg->SetBorderSize(1);
+            leg->SetLineColor(kBlack);
+            leg->SetFillColor(kWhite);
+            leg->SetFillStyle(1001);
+            leg->SetTextFont(42);
+            leg->SetTextSize(legend_text_size);
+            leg->AddEntry(&dummy_data, "pass-2 data", "lep");
+            leg->AddEntry(&dummy_zero, "zero", "l");
+            leg->Draw();
+
+            // ROOT pads keep pointers to drawn objects. Keep graphs and lines alive
+            // until after SaveAs().
             std::vector<std::unique_ptr<TGraphErrors>> owned_graphs;
-            std::vector<std::unique_ptr<TF1>> owned_fits;
+            std::vector<std::unique_ptr<TLine>> owned_lines;
 
             int n_populated_pads = 0;
             for (int iq = 0; iq < n_rows; ++iq) {
                 for (int it = 0; it < n_cols; ++it) {
                     const int pad_id = iq * n_cols + it + 1;
-                    TVirtualPad* pad = c.cd(pad_id);
-                    if (!pad) continue;
+                    pGrid->cd(pad_id);
+                    if (!gPad) continue;
 
-                    const bool left_col = (it == 0);
-                    const bool bottom_row = (iq == n_rows - 1);
-                    pad->SetTickx(1);
-                    pad->SetTicky(1);
-                    pad->SetLeftMargin(left_col ? 0.18 : 0.08);
-                    pad->SetRightMargin(0.04);
-                    pad->SetBottomMargin(bottom_row ? 0.17 : 0.08);
-                    pad->SetTopMargin(0.08);
+                    gPad->SetGrid(1, 1);
+                    gPad->SetTickx(1);
+                    gPad->SetTicky(1);
+                    gPad->SetTopMargin(0.12);
+                    gPad->SetBottomMargin(0.18);
+                    gPad->SetLeftMargin(0.16);
+                    gPad->SetRightMargin(0.10);
 
                     std::vector<double> x_sub;
                     std::vector<double> y_sub;
@@ -1449,15 +1506,28 @@ static void make_bsa_plots(const std::string& output_root,
                         ey_sub.push_back(vec[r].stat);
                     } //endfor
 
+                    draw_bsa_frame();
+                    auto zero = std::make_unique<TLine>(0.0, 0.0, 360.0, 0.0);
+                    zero->SetLineColor(kGray + 2);
+                    zero->SetLineStyle(2);
+                    zero->SetLineWidth(1);
+                    zero->Draw("SAME");
+                    owned_lines.push_back(std::move(zero));
+
+                    TLatex lab;
+                    lab.SetNDC();
+                    lab.SetTextFont(42);
+                    lab.SetTextSize(cell_label_size);
+                    lab.SetTextAlign(11);
+                    lab.DrawLatex(
+                        0.14, 0.93,
+                        Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
+                             q2_bins[iq].lo, q2_bins[iq].hi,
+                             t_bins[it].lo,  t_bins[it].hi));
+
                     if (x_sub.empty()) {
-                        draw_empty_frame(left_col, bottom_row);
-                        TLatex empty_lat;
-                        empty_lat.SetNDC();
-                        empty_lat.SetTextFont(42);
-                        empty_lat.SetTextSize(0.070);
-                        empty_lat.DrawLatex(0.20, 0.82, Form("Q^{2}: %.3g-%.3g", q2_bins[iq].lo, q2_bins[iq].hi));
-                        empty_lat.DrawLatex(0.20, 0.72, Form("|t|: %.3g-%.3g", t_bins[it].lo, t_bins[it].hi));
-                        empty_lat.DrawLatex(0.20, 0.58, "no valid BSA points");
+                        lab.SetTextSize(0.80 * cell_label_size);
+                        lab.DrawLatex(0.14, 0.78, "no valid BSA points");
                         continue;
                     } //endif
 
@@ -1468,58 +1538,26 @@ static void make_bsa_plots(const std::string& output_root,
                         x_sub.data(), y_sub.data(), ex_sub.data(), ey_sub.data());
                     gr->SetName(Form("gr_bsa_%d_%d", iq, it));
                     gr->SetMarkerStyle(20);
-                    gr->SetMarkerSize(0.95);
+                    gr->SetMarkerSize(0.85);
+                    gr->SetMarkerColor(kBlack);
+                    gr->SetLineColor(kBlack);
                     gr->SetLineWidth(1);
-
-                    // Draw an explicit fixed frame first.  The graph is kept alive
-                    // in owned_graphs until after SaveAs(), otherwise ROOT stores a
-                    // dangling pointer and the saved PNG contains only the frame/text.
-                    draw_empty_frame(left_col, bottom_row);
                     gr->Draw("P SAME");
-
-                    TF1* fit_for_label = nullptr;
-                    if (x_sub.size() >= 3) {
-                        auto fit = std::make_unique<TF1>(
-                            Form("fit_bsa_%d_%d", iq, it),
-                            "[0]*sin(x*TMath::Pi()/180.0)/(1.0 + [1]*cos(x*TMath::Pi()/180.0))",
-                            0.0, 360.0);
-                        fit->SetParameters(0.0, 0.0);
-                        fit->SetParNames("A", "B");
-                        fit->SetParLimits(1, -0.95, 0.95);
-                        fit->SetLineWidth(2);
-                        gr->Fit(fit.get(), "Q0");
-                        fit->Draw("SAME");
-                        fit_for_label = fit.get();
-                        owned_fits.push_back(std::move(fit));
-                    } //endif
-
-                    TLatex lat;
-                    lat.SetNDC();
-                    lat.SetTextFont(42);
-                    lat.SetTextSize(0.058);
-                    lat.DrawLatex(0.20, 0.84, Form("Q^{2}: %.3g-%.3g", q2_bins[iq].lo, q2_bins[iq].hi));
-                    lat.DrawLatex(0.20, 0.75, Form("|t|: %.3g-%.3g", t_bins[it].lo, t_bins[it].hi));
-                    if (fit_for_label) {
-                        lat.DrawLatex(0.20, 0.66, Form("A=%.3f#pm%.3f", fit_for_label->GetParameter(0), fit_for_label->GetParError(0)));
-                        lat.DrawLatex(0.20, 0.57, Form("B=%.3f#pm%.3f", fit_for_label->GetParameter(1), fit_for_label->GetParError(1)));
-                    } //endif
-
                     owned_graphs.push_back(std::move(gr));
                 } //endfor
             } //endfor
 
-            if (n_populated_pads == 0) continue;
-
-            // Do not draw a canvas-level title here.  The matrix pads occupy the full
-            // canvas after TCanvas::Divide, so a global TLatex title overlaps the first
-            // row of physics panels.  The group and xB range are encoded in the output
-            // directory and filename, while each pad labels its Q2 and |t| bin.
+            if (n_populated_pads == 0) {
+                delete c;
+                continue;
+            } //endif
 
             const std::string name =
                 (out_dir / Form("bsa_matrix_%s_%s.png",
                                 sanitize_token(group).c_str(),
                                 range_token("xB", xbr).c_str())).string();
-            c.SaveAs(name.c_str());
+            c->SaveAs(name.c_str());
+            delete c;
             ++canvas_count;
         } //endfor
 
