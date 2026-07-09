@@ -2,32 +2,28 @@
 // -----------------------------------------------------------------------------
 // Direct count-based beam-spin asymmetry stage for the DVCS pass-2 workflow.
 //
-// The observable written by this module is intentionally a direct measured-count
-// BSA, not an unfolded or acceptance-corrected cross-section-level BSA. The
-// default estimator does, however, subtract the pi0 background helicity by
-// helicity:
+// This replaces the old BSA module that used stale pi0-corrected-count JSONs and
+// fit machinery. The updated logic is deliberately direct:
 //
-//   S+ = G+ - f_pi0 * P+
-//   S- = G- - f_pi0 * P-
+//   1. Loop over the measured DVCS data trees.
+//   2. Apply the same analysis-wide global cuts used by the rest of the workflow.
+//   3. Apply the same period/topology-dependent DVCS 3-sigma exclusivity cuts
+//      from output/jsons/combined_cuts.json.
+//   4. Bin surviving events into the existing pass-2 CSV rows using xB, Q2, |t|
+//      and phi.
+//   5. Count helicity-positive and helicity-negative events.
+//   6. Write A_LU = (N+ - N-) / (P_b * (N+ + N-)) into the
+//      "BSA, counts, ..." columns.
 //
-// where G are measured ep->epgamma counts, P are measured ep->eppi0 counts and
-// f_pi0 is inferred bin-by-bin from the existing CSV contamination ratio:
+// For combined groups with different beam polarizations, the estimator is not
+// formed by dividing by an arbitrary average polarization. Instead, for each CSV
+// row:
 //
-//   contamination = N_false_epgamma_from_pi0 / N_epgamma
-//   f_pi0         = contamination * N_epgamma_norm / N_eppi0_norm
+//   A_LU = sum_i (N_i+ - N_i-) / sum_i [P_i * (N_i+ + N_i-)]
 //
-// The BSA written to the CSV is then
-//
-//   A_LU = (S+ - S-) / [P_b * (S+ + S-)]
-//
-// for single periods. For combined groups with different beam polarizations, the
-// period-specific polarized denominators are summed directly:
-//
-//   A_LU = sum_i(S_i+ - S_i-) / sum_i[P_b,i * (S_i+ + S_i-)].
-//
-// This avoids reintroducing the old unfolding/GEMC-dependent BSA machinery while
-// retaining the most important background correction for the measured epgamma
-// asymmetry.
+// where i runs over the component periods in the group. This reduces exactly to
+// the usual single-period expression when all component periods have the same
+// beam polarization.
 // -----------------------------------------------------------------------------
 
 #include "bsa.h"
@@ -38,7 +34,6 @@
 #include <TCanvas.h>
 #include <TF1.h>
 #include <TGraphErrors.h>
-#include <TH1F.h>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TROOT.h>
@@ -600,27 +595,17 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json) {
     for (auto it = j.begin(); it != j.end(); ++it) {
         const std::string key = it.key();
         const auto& block = it.value();
-        if (!block.is_object()) {
+        if (!block.is_object() || !block.contains("DVCS")) {
             continue;
         }
 
-        // Current combined_cuts.json layout is:
-        //   key : { "data" : { var : stats }, "mc" : { ... } }
-        // Keep fallbacks for older JSON attempts that nested the data block
-        // under a channel name.
-        const nlohmann::json* data = nullptr;
-        if (block.contains("data") && block["data"].is_object()) {
-            data = &block["data"];
-        } else if (block.contains("DVCS") && block["DVCS"].is_object()) {
-            data = &block["DVCS"];
-        } else if (block.contains("eppi0") && block["eppi0"].is_object()) {
-            data = &block["eppi0"];
-        } else {
-            data = &block;
+        const auto& data = block["DVCS"];
+        if (!data.is_object()) {
+            continue;
         }
 
         CutVarMap vm;
-        for (auto vit = data->begin(); vit != data->end(); ++vit) {
+        for (auto vit = data.begin(); vit != data.end(); ++vit) {
             const std::string var = vit.key();
             const auto& stats = vit.value();
             if (!stats.is_object() || !stats.contains("mean") || !stats.contains("std")) {
@@ -657,7 +642,8 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json) {
     }
 
     std::cout << "[bsa] Loaded " << out.size()
-              << " data cut blocks from " << combined_cuts_json << "\n";
+              << " DVCS topology/period cut blocks from "
+              << combined_cuts_json << "\n";
     return out;
 }
 
@@ -685,7 +671,6 @@ struct BranchBinder {
     double Mx2_2 = 0.0; bool has_Mx2_2 = false;
     double xF = 0.0; bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
-    double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
 
     double e_p = 0.0; bool has_e_p = false;
     double e_theta = 0.0; bool has_e_theta = false;
@@ -712,7 +697,7 @@ struct BranchBinder {
             "runnum", "detector1", "detector2", "helicity",
             "x", "Q2", "t1", "phi2", "Delta_phi",
             "open_angle_ep2", "pTmiss", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
-            "xF", "theta_gamma_gamma", "theta_pi0_pi0",
+            "xF", "theta_gamma_gamma",
             "e_p", "e_theta", "e_phi", "p1_theta", "p1_phi",
             "p2_p", "p2_theta", "p2_phi"
         };
@@ -755,7 +740,6 @@ struct BranchBinder {
         bind_double("Mx2_2", &Mx2_2, has_Mx2_2);
         bind_double("xF", &xF, has_xF);
         bind_double("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
-        bind_double("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
         bind_double("e_p", &e_p, has_e_p);
         bind_double("e_theta", &e_theta, has_e_theta);
         bind_double("e_phi", &e_phi, has_e_phi);
@@ -796,7 +780,6 @@ static inline double branch_value_for_sigma_var(const BranchBinder& b,
     if (var == "pTmiss") { has_val = b.has_pTmiss; return b.pTmiss; }
     if (var == "xF") { has_val = b.has_xF; return b.xF; }
     if (var == "theta_gamma_gamma") { has_val = b.has_theta_gamma_gamma; return b.theta_gamma_gamma; }
-    if (var == "theta_pi0_pi0") { has_val = b.has_theta_pi0_pi0; return b.theta_pi0_pi0; }
 
     has_val = false;
     return 0.0;
@@ -826,10 +809,10 @@ static bool passes_one_sigma_cut(const TopoCutMap& cuts,
     return within_cut_window(val, iv->second);
 }
 
-enum class BSASample { EPG, EPPI0 };
-
-static const std::vector<std::string>& sigma_vars_for_sample(BSASample sample) {
-    static const std::vector<std::string> epg_vars = {
+static bool passes_sigma_cuts(const TopoCutMap& cuts,
+                              const std::string& key,
+                              const BranchBinder& b) {
+    static const std::vector<std::string> vars = {
         "Emiss2",
         "Mx2",
         "Mx2_1",
@@ -840,33 +823,6 @@ static const std::vector<std::string>& sigma_vars_for_sample(BSASample sample) {
         "theta_gamma_gamma"
     };
 
-    static const std::vector<std::string> eppi0_vars = {
-        "Emiss2",
-        "Mx2",
-        "Mx2_1",
-        "Mx2_2",
-        "Delta_phi",
-        "pTmiss",
-        "xF",
-        "theta_pi0_pi0"
-    };
-
-    return (sample == BSASample::EPG) ? epg_vars : eppi0_vars;
-}
-
-static std::string sample_prefix(BSASample sample) {
-    return (sample == BSASample::EPG) ? "DVCS_" : "eppi0_";
-}
-
-static std::string sample_label(BSASample sample) {
-    return (sample == BSASample::EPG) ? "epg" : "eppi0";
-}
-
-static bool passes_sigma_cuts(const TopoCutMap& cuts,
-                              const std::string& key,
-                              const BranchBinder& b,
-                              BSASample sample) {
-    const std::vector<std::string>& vars = sigma_vars_for_sample(sample);
     for (const std::string& var : vars) {
         if (!passes_one_sigma_cut(cuts, key, b, var)) {
             return false;
@@ -937,183 +893,6 @@ static bool passes_global_cuts_dispatch(const BranchBinder& b,
                               cfg);
 }
 
-
-// -----------------------------------------------------------------------------
-// Pi0 leakage scale factors from the CSV contamination-ratio columns
-// -----------------------------------------------------------------------------
-
-struct TripleValue {
-    bool ok = false;
-    double v = 0.0;
-    double stat = 0.0;
-    double sys = 0.0;
-};
-
-struct Pi0Scale {
-    bool valid = false;
-    double contamination = 0.0;
-    double contamination_stat = 0.0;
-    double epg_norm = 0.0;
-    double eppi0_norm = 0.0;
-    double f = 0.0;
-};
-
-using PeriodScaleMap = std::unordered_map<std::string, std::vector<Pi0Scale>>;
-
-static bool parse_tuple_numbers(const std::string& cell, std::vector<double>& vals) {
-    vals.clear();
-    std::string s = cell;
-    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c) {
-        return std::isspace(c);
-    }), s.end());
-
-    if (s.empty()) {
-        return false;
-    }
-
-    if (s.front() == '(' && s.back() == ')') {
-        s = s.substr(1, s.size() - 2);
-    }
-
-    std::stringstream ss(s);
-    std::string tok;
-    while (std::getline(ss, tok, ',')) {
-        if (tok.empty()) {
-            return false;
-        }
-        char* end = nullptr;
-        const double v = std::strtod(tok.c_str(), &end);
-        if (end == tok.c_str()) {
-            return false;
-        }
-        vals.push_back(v);
-    }
-
-    return !vals.empty();
-}
-
-static TripleValue parse_triple_or_zero(const std::string& cell) {
-    TripleValue t;
-    if (cell.empty()) {
-        t.ok = true;
-        return t;
-    }
-
-    std::vector<double> vals;
-    if (!parse_tuple_numbers(cell, vals)) {
-        char* end = nullptr;
-        const double v = std::strtod(cell.c_str(), &end);
-        if (end != cell.c_str()) {
-            t.ok = true;
-            t.v = v;
-            t.stat = 0.0;
-            t.sys = 0.0;
-            return t;
-        }
-        return t;
-    }
-
-    t.ok = true;
-    t.v = vals.size() > 0 ? vals[0] : 0.0;
-    t.stat = vals.size() > 1 ? vals[1] : 0.0;
-    t.sys = vals.size() > 2 ? vals[2] : 0.0;
-    if (!std::isfinite(t.v)) t.v = 0.0;
-    if (!std::isfinite(t.stat)) t.stat = 0.0;
-    if (!std::isfinite(t.sys)) t.sys = 0.0;
-    return t;
-}
-
-static std::string normalized_raw_yield_col(const std::string& channel,
-                                            const std::string& topo,
-                                            const std::string& period,
-                                            const std::string& helicity) {
-    return "normalized raw yield, " + channel + ", " + topo + ", exp, " + period + ", " + helicity;
-}
-
-static std::string contamination_col_for_period(const std::string& period) {
-    return "contamination ratio, " + period;
-}
-
-static const std::vector<std::string>& topology_labels_for_csv() {
-    static const std::vector<std::string> v = {"(FD, FD)", "(CD, FD)", "(CD, FT)"};
-    return v;
-}
-
-static double sum_normalized_yield_for_period(const CSV& csv,
-                                              const std::vector<std::string>& row,
-                                              const std::string& channel,
-                                              const std::string& period) {
-    double total = 0.0;
-    for (const std::string& topo : topology_labels_for_csv()) {
-        const std::string colname = normalized_raw_yield_col(channel, topo, period, "unpol");
-        auto it = csv.index.find(colname);
-        if (it == csv.index.end()) {
-            fatal("[bsa] missing normalized-yield column needed for pi0 subtraction scale: " + colname);
-        }
-        const TripleValue y = parse_triple_or_zero(row[it->second]);
-        if (!y.ok) {
-            fatal("[bsa] could not parse normalized-yield tuple in column: " + colname);
-        }
-        total += y.v;
-    }
-    return total;
-}
-
-static PeriodScaleMap compute_pi0_scale_factors_from_csv(const CSV& csv,
-                                                         const std::vector<RowBin>& rows) {
-    PeriodScaleMap scales;
-
-    for (const std::string& period : base_period_order()) {
-        std::vector<Pi0Scale> per(rows.size());
-        const std::string ccol = contamination_col_for_period(period);
-        auto ic = csv.index.find(ccol);
-        if (ic == csv.index.end()) {
-            fatal("[bsa] missing contamination-ratio column needed for pi0-subtracted BSA: " + ccol);
-        }
-
-        int n_valid = 0;
-        for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
-            Pi0Scale sc;
-            if (!rows[r].valid) {
-                per[r] = sc;
-                continue;
-            }
-
-            const TripleValue c = parse_triple_or_zero(csv.rows[r][ic->second]);
-            if (!c.ok) {
-                fatal("[bsa] could not parse contamination-ratio tuple in column: " + ccol);
-            }
-
-            const double epg_norm = sum_normalized_yield_for_period(csv, csv.rows[r], "ep->epg", period);
-            const double eppi0_norm = sum_normalized_yield_for_period(csv, csv.rows[r], "ep->eppi0", period);
-
-            sc.contamination = std::max(0.0, c.v);
-            sc.contamination_stat = std::max(0.0, c.stat);
-            sc.epg_norm = epg_norm;
-            sc.eppi0_norm = eppi0_norm;
-
-            if (sc.contamination > 0.0 && epg_norm > 0.0 && eppi0_norm > 0.0) {
-                sc.f = sc.contamination * epg_norm / eppi0_norm;
-                sc.valid = std::isfinite(sc.f) && sc.f >= 0.0;
-            } else {
-                sc.f = 0.0;
-                sc.valid = true;
-            }
-
-            if (sc.valid) {
-                ++n_valid;
-            }
-            per[r] = sc;
-        }
-
-        std::cout << "[bsa] pi0 leakage scale factors for " << period
-                  << ": valid rows=" << n_valid << "/" << rows.size() << "\n";
-        scales[period] = std::move(per);
-    }
-
-    return scales;
-}
-
 // -----------------------------------------------------------------------------
 // Counts and BSA math
 // -----------------------------------------------------------------------------
@@ -1135,22 +914,6 @@ struct AsymResult {
     double denominator = 0.0;
 };
 
-struct RowBSAResult {
-    AsymResult subtracted;
-    AsymResult raw_epg;
-    AsymResult pi0;
-
-    double gamma_plus = 0.0;
-    double gamma_minus = 0.0;
-    double pi0_plus = 0.0;
-    double pi0_minus = 0.0;
-    double signal_plus = 0.0;
-    double signal_minus = 0.0;
-    double effective_pi0_scale = 0.0;
-    double contamination_weighted = 0.0;
-    bool pi0_scale_valid = false;
-};
-
 static inline void add_event(HelCounts& h, int helicity) {
     if (helicity > 0) {
         h.plus += 1.0;
@@ -1162,8 +925,7 @@ static inline void add_event(HelCounts& h, int helicity) {
 static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees,
                                       const std::vector<RowBin>& rows,
                                       const FastBinning& fast_bins,
-                                      const TopoCutMap& sigma_cuts,
-                                      BSASample sample) {
+                                      const TopoCutMap& sigma_cuts) {
     PeriodCounts out;
 
     for (const std::string& period : base_period_order()) {
@@ -1179,8 +941,8 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
 
         const std::string period = period_display_from_tree_key(tree_key);
         if (period.empty()) {
-            std::cout << "[bsa] Skipping non-canonical or supplemental " << sample_label(sample)
-                      << " data tree key: " << tree_key << "\n";
+            std::cout << "[bsa] Skipping non-canonical or supplemental data tree key: "
+                      << tree_key << "\n";
             continue;
         }
 
@@ -1193,7 +955,6 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
         }
 
         const std::string period_code = period_code_from_display(period);
-        const std::string cut_prefix = sample_prefix(sample);
         const Long64_t n_entries = tree->GetEntries();
 
         long long n_topology = 0;
@@ -1215,8 +976,8 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             }
             ++n_global;
 
-            const std::string cut_key = cut_prefix + period_code + "_" + topo;
-            if (!passes_sigma_cuts(sigma_cuts, cut_key, b, sample)) {
+            const std::string cut_key = "DVCS_" + period_code + "_" + topo;
+            if (!passes_sigma_cuts(sigma_cuts, cut_key, b)) {
                 continue;
             }
             ++n_sigma;
@@ -1246,8 +1007,7 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             }
         }
 
-        std::cout << "[bsa] sample=" << sample_label(sample)
-                  << " tree=" << tree_key
+        std::cout << "[bsa] tree=" << tree_key
                   << " period=" << period
                   << " entries=" << static_cast<long long>(n_entries)
                   << " topology=" << n_topology
@@ -1260,24 +1020,10 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
     return out;
 }
 
-static HelCounts counts_for_row(const PeriodCounts& counts,
-                                const std::string& period,
-                                int row_index) {
-    auto ip = counts.find(period);
-    if (ip == counts.end()) {
-        return HelCounts();
-    }
-    auto ir = ip->second.find(row_index);
-    if (ir == ip->second.end()) {
-        return HelCounts();
-    }
-    return ir->second;
-}
-
-static AsymResult compute_group_bsa_raw_counts(const PeriodCounts& counts,
-                                               const std::vector<std::string>& component_periods,
-                                               int row_index,
-                                               const BSAOptions& opt) {
+static AsymResult compute_group_bsa(const PeriodCounts& counts,
+                                    const std::vector<std::string>& component_periods,
+                                    int row_index,
+                                    const BSAOptions& opt) {
     AsymResult r;
 
     double numerator = 0.0;
@@ -1287,21 +1033,32 @@ static AsymResult compute_group_bsa_raw_counts(const PeriodCounts& counts,
     double n_minus_total = 0.0;
 
     for (const std::string& period : component_periods) {
-        const HelCounts h = counts_for_row(counts, period, row_index);
-        const double np = h.plus;
-        const double nm = h.minus;
-        const double sum = np + nm;
-        const double diff = np - nm;
-        if (!(sum > 0.0)) {
+        auto ip = counts.find(period);
+        if (ip == counts.end()) {
+            continue;
+        }
+        auto ir = ip->second.find(row_index);
+        if (ir == ip->second.end()) {
+            continue;
+        }
+
+        const double np = ir->second.plus;
+        const double nm = ir->second.minus;
+        const double s = np + nm;
+        const double d = np - nm;
+        if (!(s > 0.0)) {
             continue;
         }
 
         const double P = beam_pol_for_period(period, opt);
-        numerator += diff;
-        denominator += P * sum;
+        numerator += d;
+        denominator += P * s;
         n_plus_total += np;
         n_minus_total += nm;
-        variance_numerator += std::max(0.0, sum - (diff * diff / sum));
+
+        // Conditional-binomial variance for D = N+ - N- at fixed S. This is
+        // equivalent to 4*N+*N-/S and gives the usual asymmetry uncertainty.
+        variance_numerator += std::max(0.0, s - (d * d / s));
     }
 
     r.n_plus = n_plus_total;
@@ -1318,126 +1075,6 @@ static AsymResult compute_group_bsa_raw_counts(const PeriodCounts& counts,
     return r;
 }
 
-static RowBSAResult compute_group_bsa_pi0_subtracted(const PeriodCounts& gamma_counts,
-                                                     const PeriodCounts& pi0_counts,
-                                                     const PeriodScaleMap& pi0_scales,
-                                                     const std::vector<std::string>& component_periods,
-                                                     int row_index,
-                                                     const BSAOptions& opt) {
-    RowBSAResult out;
-    out.raw_epg = compute_group_bsa_raw_counts(gamma_counts, component_periods, row_index, opt);
-    out.pi0 = compute_group_bsa_raw_counts(pi0_counts, component_periods, row_index, opt);
-
-    double numerator = 0.0;
-    double denominator = 0.0;
-
-    struct VarianceTerm {
-        double sp = 0.0;
-        double sm = 0.0;
-        double var_sp = 0.0;
-        double var_sm = 0.0;
-        double beam_pol = 0.0;
-    };
-    std::vector<VarianceTerm> terms;
-
-    double weighted_f_num = 0.0;
-    double weighted_f_den = 0.0;
-    double weighted_c_num = 0.0;
-    double weighted_c_den = 0.0;
-    bool any_scale_valid = false;
-
-    for (const std::string& period : component_periods) {
-        const HelCounts g = counts_for_row(gamma_counts, period, row_index);
-        const HelCounts p = counts_for_row(pi0_counts, period, row_index);
-
-        double f = 0.0;
-        double c = 0.0;
-        bool scale_valid = true;
-        auto is = pi0_scales.find(period);
-        if (is != pi0_scales.end() && row_index >= 0 && row_index < static_cast<int>(is->second.size())) {
-            const Pi0Scale& sc = is->second[row_index];
-            f = sc.f;
-            c = sc.contamination;
-            scale_valid = sc.valid;
-        } else {
-            scale_valid = false;
-        }
-
-        if (!opt.enable_pi0_subtraction) {
-            f = 0.0;
-            c = 0.0;
-            scale_valid = true;
-        }
-
-        if (!scale_valid || !std::isfinite(f) || f < 0.0) {
-            continue;
-        }
-
-        any_scale_valid = true;
-
-        const double sp = g.plus - f * p.plus;
-        const double sm = g.minus - f * p.minus;
-        const double signal_sum = sp + sm;
-        const double signal_diff = sp - sm;
-        if (!(std::isfinite(signal_sum) && std::isfinite(signal_diff))) {
-            continue;
-        }
-
-        const double Pbeam = beam_pol_for_period(period, opt);
-        numerator += signal_diff;
-        denominator += Pbeam * signal_sum;
-
-        out.gamma_plus += g.plus;
-        out.gamma_minus += g.minus;
-        out.pi0_plus += p.plus;
-        out.pi0_minus += p.minus;
-        out.signal_plus += sp;
-        out.signal_minus += sm;
-
-        const double weight = std::max(0.0, p.plus + p.minus);
-        weighted_f_num += f * weight;
-        weighted_f_den += weight;
-
-        const double gweight = std::max(0.0, g.plus + g.minus);
-        weighted_c_num += c * gweight;
-        weighted_c_den += gweight;
-
-        VarianceTerm vt;
-        vt.sp = sp;
-        vt.sm = sm;
-        vt.var_sp = std::max(0.0, g.plus + f * f * p.plus);
-        vt.var_sm = std::max(0.0, g.minus + f * f * p.minus);
-        vt.beam_pol = Pbeam;
-        terms.push_back(vt);
-    }
-
-    out.pi0_scale_valid = any_scale_valid;
-    out.effective_pi0_scale = (weighted_f_den > 0.0) ? weighted_f_num / weighted_f_den : 0.0;
-    out.contamination_weighted = (weighted_c_den > 0.0) ? weighted_c_num / weighted_c_den : 0.0;
-
-    out.subtracted.n_plus = out.signal_plus;
-    out.subtracted.n_minus = out.signal_minus;
-    out.subtracted.denominator = denominator;
-
-    if (!(denominator > 0.0) || !any_scale_valid) {
-        return out;
-    }
-
-    out.subtracted.value = numerator / denominator;
-
-    double var_A = 0.0;
-    for (const VarianceTerm& vt : terms) {
-        const double dA_dSp = (denominator - numerator * vt.beam_pol) / (denominator * denominator);
-        const double dA_dSm = (-denominator - numerator * vt.beam_pol) / (denominator * denominator);
-        var_A += dA_dSp * dA_dSp * vt.var_sp;
-        var_A += dA_dSm * dA_dSm * vt.var_sm;
-    }
-
-    out.subtracted.stat = std::sqrt(std::max(0.0, var_A));
-    out.subtracted.valid = std::isfinite(out.subtracted.value) && std::isfinite(out.subtracted.stat);
-    return out;
-}
-
 static std::string fmt_tuple(double value, double stat) {
     if (!(std::isfinite(value) && std::isfinite(stat))) {
         return "";
@@ -1451,33 +1088,12 @@ static std::string fmt_tuple(double value, double stat) {
 // JSON and plots
 // -----------------------------------------------------------------------------
 
-static void add_asym_json(nlohmann::json& row,
-                          const std::string& prefix,
-                          const AsymResult& a) {
-    row[prefix + "_valid"] = a.valid;
-    row[prefix + "_Nplus"] = a.n_plus;
-    row[prefix + "_Nminus"] = a.n_minus;
-    row[prefix + "_polarized_denominator"] = a.denominator;
-    if (a.valid) {
-        row[prefix + "_BSA"] = a.value;
-        row[prefix + "_stat"] = a.stat;
-    }
-}
-
 static void write_json_summary(const std::string& path,
                                const std::vector<RowBin>& rows,
-                               const std::map<std::string, std::vector<RowBSAResult>>& results,
-                               const BSAOptions& opt) {
+                               const std::map<std::string, std::vector<AsymResult>>& results) {
     nlohmann::json j;
-    j["description"] = "Direct measured-count beam-spin asymmetries after global cuts and 3-sigma exclusivity cuts.";
-    j["default_csv_quantity"] = opt.enable_pi0_subtraction ?
-        "pi0-subtracted epgamma BSA" : "raw epgamma BSA";
-    j["pi0_subtraction_enabled"] = opt.enable_pi0_subtraction;
-    j["estimator_single_period"] = "A_LU = (Splus - Sminus)/(Pbeam*(Splus + Sminus))";
-    j["estimator_combined"] = "A_LU = sum_i(Splus_i - Sminus_i)/sum_i[Pbeam_i*(Splus_i + Sminus_i)]";
-    j["signal_definition"] = "Splus/minus = N_epgamma_plus/minus - f_pi0*N_eppi0_plus/minus";
-    j["pi0_scale_definition"] = "f_pi0 = contamination_ratio * normalized_epgamma_yield / normalized_eppi0_yield";
-    j["pi0_scale_uncertainty_included"] = false;
+    j["description"] = "Direct count-based DVCS beam-spin asymmetries after global cuts and DVCS 3-sigma exclusivity cuts.";
+    j["estimator"] = "A_LU = sum_i(Nplus_i - Nminus_i) / sum_i[Pbeam_i*(Nplus_i + Nminus_i)]";
 
     for (const auto& group_pair : results) {
         const std::string& group = group_pair.first;
@@ -1485,7 +1101,7 @@ static void write_json_summary(const std::string& path,
         nlohmann::json rows_json = nlohmann::json::array();
 
         for (int r = 0; r < static_cast<int>(vec.size()); ++r) {
-            const RowBSAResult& a = vec[r];
+            const AsymResult& a = vec[r];
             const RowBin& rb = rows[r];
             nlohmann::json row;
             row["row"] = r;
@@ -1497,21 +1113,14 @@ static void write_json_summary(const std::string& path,
             row["t_abs_max"] = rb.tmax;
             row["phimin"] = rb.pmin;
             row["phimax"] = rb.pmax;
-
-            row["gamma_plus"] = a.gamma_plus;
-            row["gamma_minus"] = a.gamma_minus;
-            row["pi0_plus"] = a.pi0_plus;
-            row["pi0_minus"] = a.pi0_minus;
-            row["signal_plus"] = a.signal_plus;
-            row["signal_minus"] = a.signal_minus;
-            row["effective_pi0_scale"] = a.effective_pi0_scale;
-            row["contamination_weighted"] = a.contamination_weighted;
-            row["pi0_scale_valid"] = a.pi0_scale_valid;
-
-            add_asym_json(row, "subtracted", a.subtracted);
-            add_asym_json(row, "raw_epg", a.raw_epg);
-            add_asym_json(row, "pi0", a.pi0);
-
+            row["Nplus"] = a.n_plus;
+            row["Nminus"] = a.n_minus;
+            row["polarized_denominator"] = a.denominator;
+            row["valid"] = a.valid;
+            if (a.valid) {
+                row["BSA"] = a.value;
+                row["stat"] = a.stat;
+            }
             rows_json.push_back(row);
         }
 
@@ -1543,51 +1152,25 @@ struct CellKey {
 struct PlotPoint {
     double phi = 0.0;
     double phi_err = 0.0;
-    double y_sub = 0.0;
-    double ey_sub = 0.0;
-    bool has_sub = false;
-    double y_raw = 0.0;
-    double ey_raw = 0.0;
-    bool has_raw = false;
-    double y_pi0 = 0.0;
-    double ey_pi0 = 0.0;
-    bool has_pi0 = false;
+    double bsa = 0.0;
+    double bsa_err = 0.0;
 };
-
-static void fill_graph_from_points(TGraphErrors& gr,
-                                   const std::vector<PlotPoint>& pts,
-                                   char which) {
-    int ip = 0;
-    for (const PlotPoint& p : pts) {
-        bool ok = false;
-        double y = 0.0;
-        double ey = 0.0;
-        if (which == 's') { ok = p.has_sub; y = p.y_sub; ey = p.ey_sub; }
-        if (which == 'r') { ok = p.has_raw; y = p.y_raw; ey = p.ey_raw; }
-        if (which == 'p') { ok = p.has_pi0; y = p.y_pi0; ey = p.ey_pi0; }
-        if (!ok) continue;
-        gr.SetPoint(ip, p.phi, y);
-        gr.SetPointError(ip, 0.0, ey);
-        ++ip;
-    }
-}
 
 static void make_bsa_plots(const std::string& output_root,
                            const std::vector<RowBin>& rows,
-                           const std::map<std::string, std::vector<RowBSAResult>>& results) {
+                           const std::map<std::string, std::vector<AsymResult>>& results) {
     const std::filesystem::path base = std::filesystem::path(output_root) / "bsa_plots";
     std::filesystem::create_directories(base);
 
     for (const auto& group_pair : results) {
         const std::string& group = group_pair.first;
-        const std::vector<RowBSAResult>& vec = group_pair.second;
+        const std::vector<AsymResult>& vec = group_pair.second;
         const std::filesystem::path out_dir = base / sanitize_token(group);
         std::filesystem::create_directories(out_dir);
 
         std::map<CellKey, std::vector<PlotPoint>> cells;
         for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
-            const RowBSAResult& rr = vec[r];
-            if (!(rr.subtracted.valid || rr.raw_epg.valid || rr.pi0.valid)) {
+            if (!vec[r].valid) {
                 continue;
             }
             const RowBin& rb = rows[r];
@@ -1595,15 +1178,8 @@ static void make_bsa_plots(const std::string& output_root,
             PlotPoint p;
             p.phi = phi_center_deg(rb.pmin, rb.pmax);
             p.phi_err = phi_half_width_deg(rb.pmin, rb.pmax);
-            p.has_sub = rr.subtracted.valid;
-            p.y_sub = rr.subtracted.value;
-            p.ey_sub = rr.subtracted.stat;
-            p.has_raw = rr.raw_epg.valid;
-            p.y_raw = rr.raw_epg.value;
-            p.ey_raw = rr.raw_epg.stat;
-            p.has_pi0 = rr.pi0.valid;
-            p.y_pi0 = rr.pi0.value;
-            p.ey_pi0 = rr.pi0.stat;
+            p.bsa = vec[r].value;
+            p.bsa_err = vec[r].stat;
             cells[key].push_back(p);
         }
 
@@ -1619,59 +1195,42 @@ static void make_bsa_plots(const std::string& output_root,
                 return a.phi < b.phi;
             });
 
+            std::vector<double> x, y, ex, ey;
+            x.reserve(pts.size());
+            y.reserve(pts.size());
+            ex.reserve(pts.size());
+            ey.reserve(pts.size());
+            for (const PlotPoint& p : pts) {
+                x.push_back(p.phi);
+                y.push_back(p.bsa);
+                ex.push_back(0.0);
+                ey.push_back(p.bsa_err);
+            }
+
             TCanvas c(Form("c_bsa_%s_%d", sanitize_token(group).c_str(), canvas_index),
                       "BSA", 1100, 800);
             c.SetLeftMargin(0.12);
             c.SetRightMargin(0.04);
             c.SetBottomMargin(0.12);
             c.SetTopMargin(0.08);
-            c.SetGrid(1, 1);
 
-            TH1F* frame = static_cast<TH1F*>(gPad->DrawFrame(0.0, -1.0, 360.0, 1.0));
-            frame->SetTitle("");
-            frame->GetXaxis()->SetTitle("#phi (deg)");
-            frame->GetYaxis()->SetTitle("A_{LU}");
-            frame->GetXaxis()->CenterTitle(true);
-            frame->GetYaxis()->CenterTitle(true);
-
-            TGraphErrors gr_sub;
-            TGraphErrors gr_raw;
-            TGraphErrors gr_pi0;
-            fill_graph_from_points(gr_sub, pts, 's');
-            fill_graph_from_points(gr_raw, pts, 'r');
-            fill_graph_from_points(gr_pi0, pts, 'p');
-
-            gr_sub.SetMarkerStyle(20);
-            gr_sub.SetMarkerSize(1.0);
-            gr_sub.SetLineWidth(2);
-            gr_raw.SetMarkerStyle(24);
-            gr_raw.SetMarkerSize(0.9);
-            gr_raw.SetLineWidth(2);
-            gr_pi0.SetMarkerStyle(25);
-            gr_pi0.SetMarkerSize(0.9);
-            gr_pi0.SetLineWidth(2);
-
-            if (gr_raw.GetN() > 0) gr_raw.Draw("PE SAME");
-            if (gr_pi0.GetN() > 0) gr_pi0.Draw("PE SAME");
-            if (gr_sub.GetN() > 0) gr_sub.Draw("PE SAME");
+            TGraphErrors gr(static_cast<int>(x.size()), x.data(), y.data(), ex.data(), ey.data());
+            gr.SetMarkerStyle(20);
+            gr.SetMarkerSize(1.0);
+            gr.SetLineWidth(2);
+            gr.GetXaxis()->SetTitle("#phi (deg)");
+            gr.GetYaxis()->SetTitle("A_{LU}");
+            gr.GetXaxis()->SetLimits(0.0, 360.0);
+            gr.GetYaxis()->SetRangeUser(-1.0, 1.0);
+            gr.Draw("AP");
 
             TF1 fit("fit_sin", "[0]*sin(x*TMath::Pi()/180.0)", 0.0, 360.0);
             fit.SetParameter(0, 0.0);
-            if (gr_sub.GetN() >= 3) {
-                gr_sub.Fit(&fit, "Q0");
+            if (x.size() >= 3) {
+                gr.Fit(&fit, "Q0");
                 fit.SetLineWidth(2);
                 fit.Draw("same");
             }
-
-            TLegend leg(0.62, 0.72, 0.94, 0.90);
-            leg.SetBorderSize(0);
-            leg.SetFillStyle(0);
-            leg.SetTextFont(42);
-            leg.SetTextSize(0.032);
-            if (gr_sub.GetN() > 0) leg.AddEntry(&gr_sub, "#pi^{0}-subtracted ep#gamma", "pe");
-            if (gr_raw.GetN() > 0) leg.AddEntry(&gr_raw, "raw ep#gamma", "pe");
-            if (gr_pi0.GetN() > 0) leg.AddEntry(&gr_pi0, "measured ep#pi^{0}", "pe");
-            leg.Draw();
 
             TLatex lat;
             lat.SetNDC(true);
@@ -1683,9 +1242,9 @@ static void make_bsa_plots(const std::string& output_root,
                                key.xBmin, key.xBmax, key.Q2min, key.Q2max));
             lat.DrawLatex(0.16, 0.83,
                           Form("%.3g < |t| < %.3g GeV^{2}", key.tmin, key.tmax));
-            if (gr_sub.GetN() >= 3) {
+            if (x.size() >= 3) {
                 lat.DrawLatex(0.16, 0.785,
-                              Form("subtracted sin#phi amp. = %.4f #pm %.4f", fit.GetParameter(0), fit.GetParError(0)));
+                              Form("sin#phi amplitude = %.4f #pm %.4f", fit.GetParameter(0), fit.GetParError(0)));
             }
 
             const std::string name =
@@ -1699,7 +1258,7 @@ static void make_bsa_plots(const std::string& output_root,
         }
 
         std::cout << "[bsa] Wrote " << canvas_index
-                  << " BSA comparison plots for group " << group
+                  << " phi-dependence plots for group " << group
                   << " to " << out_dir.string() << "\n";
     }
 }
@@ -1707,7 +1266,6 @@ static void make_bsa_plots(const std::string& output_root,
 } // namespace
 
 bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
-                           const std::map<std::string, TTree*>& eppi0DataTrees,
                            const BSAOptions& options) {
     try {
         CSV csv;
@@ -1716,22 +1274,19 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
         const std::vector<RowBin> rows = load_row_bins_from_csv(csv);
         const FastBinning fast_bins = build_fast_binning(rows);
         const TopoCutMap sigma_cuts = load_combined_cuts(options.combined_cuts_json);
-        const PeriodScaleMap pi0_scales = compute_pi0_scale_factors_from_csv(csv, rows);
 
-        PeriodCounts gamma_counts = accumulate_counts(dvcsDataTrees, rows, fast_bins, sigma_cuts, BSASample::EPG);
-        PeriodCounts pi0_counts = accumulate_counts(eppi0DataTrees, rows, fast_bins, sigma_cuts, BSASample::EPPI0);
+        PeriodCounts counts = accumulate_counts(dvcsDataTrees, rows, fast_bins, sigma_cuts);
 
-        std::map<std::string, std::vector<RowBSAResult>> results;
+        std::map<std::string, std::vector<AsymResult>> results;
         for (const std::string& group : output_group_order()) {
             const std::vector<std::string> components = component_periods_for_group(group);
-            std::vector<RowBSAResult> group_results(rows.size());
+            std::vector<AsymResult> group_results(rows.size());
 
             for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
                 if (!rows[r].valid) {
                     continue;
                 }
-                group_results[r] = compute_group_bsa_pi0_subtracted(
-                    gamma_counts, pi0_counts, pi0_scales, components, r, options);
+                group_results[r] = compute_group_bsa(counts, components, r, options);
             }
 
             results[group] = std::move(group_results);
@@ -1742,21 +1297,20 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
             const int c = col_strict(csv, col_name);
             const auto& vec = results.at(group);
             for (int r = 0; r < static_cast<int>(csv.rows.size()); ++r) {
-                if (r >= static_cast<int>(vec.size()) || !vec[r].subtracted.valid) {
+                if (r >= static_cast<int>(vec.size()) || !vec[r].valid) {
                     csv.rows[r][c].clear();
                     continue;
                 }
-                csv.rows[r][c] = fmt_tuple(vec[r].subtracted.value, vec[r].subtracted.stat);
+                csv.rows[r][c] = fmt_tuple(vec[r].value, vec[r].stat);
             }
         }
 
         write_csv_atomic(options.csv_path, csv);
-        std::cout << "[bsa] Updated pi0-subtracted BSA count columns in "
-                  << options.csv_path << "\n";
+        std::cout << "[bsa] Updated BSA count columns in " << options.csv_path << "\n";
 
         const std::filesystem::path json_path =
             std::filesystem::path(options.output_root) / "jsons" / "BSA_counts" / "bsa_counts_summary.json";
-        write_json_summary(json_path.string(), rows, results, options);
+        write_json_summary(json_path.string(), rows, results);
         std::cout << "[bsa] Wrote JSON summary to " << json_path.string() << "\n";
 
         if (options.make_plots) {
