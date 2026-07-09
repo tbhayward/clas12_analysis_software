@@ -40,6 +40,7 @@
 #include <TSystem.h>
 #include <TTree.h>
 #include <TVirtualPad.h>
+#include <TH1F.h>
 
 // JSON
 #include <nlohmann/json.hpp>
