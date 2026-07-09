@@ -24,38 +24,17 @@ struct BSAOptions {
     double beam_pol_fa18_out = 0.8922;
     double beam_pol_sp19_inb = 0.8453;
 
-    // If true, subtract the helicity-separated measured ep->eppi0 contribution
-    // using the existing bin-by-bin pi0 leakage scale factors derived from the
-    // contamination-ratio and normalized-yield CSV columns:
-    //
-    //   S+ = G+ - f_pi0 * P+
-    //   S- = G- - f_pi0 * P-
-    //
-    // If false, compute the raw ep->epgamma count asymmetry only.
-    bool enable_pi0_subtraction = true;
-
-    // If true, create xB-matrix canvases. Each canvas corresponds to one xB bin,
-    // with rows in Q2 and columns in |t|. Each subplot shows A_LU(phi).
+    // If true, create one phi-dependence canvas per populated xB,Q2,|t| cell.
     bool make_plots = true;
 
-    // Maximum number of worker threads used for KM15 theory-curve evaluation.
-    // ROOT tree loops and ROOT plotting remain serial. The implementation caps
-    // this internally at five workers for safety.
+    // Placeholder for future parallelization. The current implementation is
+    // intentionally serial because ROOT branch binding is global-state-heavy and
+    // the BSA loop is cheap compared with the other production stages.
     int max_workers = 1;
 };
 
-// Recompute beam-spin asymmetries directly from helicity-split measured counts
-// after the standard global cuts and data-derived 3-sigma exclusivity cuts.
-//
-// The function counts both:
-//   G+/- = measured ep->epgamma counts
-//   P+/- = measured ep->eppi0 counts
-//
-// and, when enable_pi0_subtraction is true, computes:
-//   S+ = G+ - f_pi0 * P+
-//   S- = G- - f_pi0 * P-
-//
-// The BSA columns filled are:
+// Recompute beam-spin asymmetries directly from helicity-split DVCS data counts
+// after the standard global cuts and DVCS 3-sigma exclusivity cuts. This fills:
 //   BSA, counts, Fa18 Inb
 //   BSA, counts, Fa18 Out
 //   BSA, counts, Sp19 Inb
@@ -64,11 +43,8 @@ struct BSAOptions {
 //   BSA, counts, Fa18
 //   BSA, counts, Sp18
 //   BSA, counts, 10.6 GeV
-//
-// Each filled CSV cell has the usual tuple form:
-//   (value,stat_unc,0)
+// Each filled CSV cell has the usual tuple form: (value,stat_unc,0).
 bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
-                           const std::map<std::string, TTree*>& eppi0DataTrees,
                            const BSAOptions& options = BSAOptions());
 
 #endif // BSA_H
