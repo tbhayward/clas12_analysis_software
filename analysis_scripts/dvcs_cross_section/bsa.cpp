@@ -1472,25 +1472,28 @@ static void make_bsa_plots(const std::string& output_root,
             if (canvas_w < 900) canvas_w = 900;
             if (canvas_h < 650) canvas_h = 650;
 
-            double title_size = 0.050;
+            // This title is drawn inside the top header pad. TLatex text size is
+            // relative to the current pad, not the full canvas, so the title
+            // size must be much larger than the per-panel label sizes.
+            double title_size = 0.285;
             double panel_label_size = 0.060;
             if (n_pads <= 4) {
-                title_size = 0.045;
+                title_size = 0.260;
                 panel_label_size = 0.055;
             }
             if (n_pads == 1) {
-                title_size = 0.040;
+                title_size = 0.240;
                 panel_label_size = 0.050;
             }
 
             TCanvas c("c_bsa_compact", "", canvas_w, canvas_h);
 
-            TPad* pTop = new TPad("pTop", "pTop", 0.0, 0.90, 1.0, 1.0);
+            TPad* pTop = new TPad("pTop", "pTop", 0.0, 0.88, 1.0, 1.0);
             pTop->SetFillStyle(0);
             pTop->SetBorderSize(0);
             pTop->Draw();
 
-            TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.0, 1.0, 0.90);
+            TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.0, 1.0, 0.88);
             pGrid->SetFillStyle(0);
             pGrid->SetBorderSize(0);
             pGrid->Draw();
@@ -1504,7 +1507,7 @@ static void make_bsa_plots(const std::string& output_root,
             head.SetTextFont(42);
             head.SetTextSize(title_size);
             head.DrawLatex(
-                0.5, 0.55,
+                0.5, 0.52,
                 Form("#pi^{0}-subtracted ep#gamma BSA   %s   x_{B} in (%.3f, %.3f)",
                      group.c_str(), xbr.lo, xbr.hi)
             );
