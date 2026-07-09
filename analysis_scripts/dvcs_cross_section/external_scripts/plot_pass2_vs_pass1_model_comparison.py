@@ -268,6 +268,49 @@ class ModelCurves:
 
 
 @dataclass
+class BSAPoint:
+    phi_deg: float
+    value: float
+    stat: float
+    xb: float
+    q2: float
+    t_abs: float
+    eb: float
+    source: str
+    key: BinKey
+    target_label: str
+
+
+@dataclass
+class BSAFitResult:
+    ok: bool
+    A: float = 0.0
+    B: float = 0.0
+    A_err: float = 0.0
+    chi2: float = 0.0
+    ndf: int = 0
+    message: str = ""
+
+
+@dataclass
+class BSAComparisonResult:
+    target_label: str
+    key: BinKey
+    n_pass1: int
+    n_pass2: int
+    fit_ok: bool
+    A: float
+    B: float
+    A_err: float
+    pass1_fit_chi2: float
+    pass1_fit_ndf: int
+    pass2_vs_pass1_fit_chi2: float
+    pass2_vs_pass1_fit_ndf: int
+    pass2_vs_pass1_fit_pseudo_sigma: float
+    output_file: str
+
+
+@dataclass
 class RatioPoint:
     phi: float
     ratio: float
@@ -1110,6 +1153,605 @@ def load_pass1_csv(
 
     return out
 
+
+
+# ---------------------------------------------------------------------------
+# Pass-1/pass-2 BSA comparison helpers.
+# ---------------------------------------------------------------------------
+PASS2_BSA_TARGET_COLUMNS = {
+    "10.6 GeV": "BSA, counts, 10.6 GeV",
+    "Sp19 Inb": "BSA, counts, Sp19 Inb",
+}
+
+
+def bsa_target_from_ebeam(ebeam: float) -> str:
+    if abs(ebeam - 10.2) < abs(ebeam - 10.6):
+        return "Sp19 Inb"
+    #endif
+
+    return "10.6 GeV"
+
+
+def bsa_target_dirname(target_label: str) -> str:
+    if target_label == "10.6 GeV":
+        return "10p6_GeV_average"
+    #endif
+
+    if target_label == "Sp19 Inb":
+        return "10p2_GeV_Sp19_Inb"
+    #endif
+
+    return re.sub(r"[^A-Za-z0-9_]+", "_", target_label)
+
+
+def bsa_model_value(phi_deg: float, A: float, B: float) -> float:
+    phi = math.radians(phi_deg)
+    den = 1.0 + B * math.cos(phi)
+    if abs(den) < 1.0e-12:
+        return float("nan")
+    #endif
+
+    return A * math.sin(phi) / den
+
+
+def fit_bsa_asin_over_1pcos(points: Sequence[BSAPoint]) -> BSAFitResult:
+    good = [p for p in points if math.isfinite(p.value) and math.isfinite(p.stat) and p.stat > 0.0]
+
+    if len(good) < 3:
+        return BSAFitResult(ok=False, message=f"need at least 3 pass-1 points, got {len(good)}")
+    #endif
+
+    def solve_A_and_chi2(B: float) -> Tuple[float, float, float]:
+        s_ff = 0.0
+        s_fy = 0.0
+        for p in good:
+            phi = math.radians(p.phi_deg)
+            den = 1.0 + B * math.cos(phi)
+            if abs(den) < 1.0e-12:
+                return 0.0, float("inf"), 0.0
+            #endif
+            f = math.sin(phi) / den
+            w = 1.0 / (p.stat * p.stat)
+            s_ff += w * f * f
+            s_fy += w * f * p.value
+        #endfor
+
+        if s_ff <= 0.0:
+            return 0.0, float("inf"), 0.0
+        #endif
+
+        A = s_fy / s_ff
+        chi2 = 0.0
+        for p in good:
+            pred = bsa_model_value(p.phi_deg, A, B)
+            chi2 += ((p.value - pred) / p.stat) ** 2
+        #endfor
+
+        A_err = math.sqrt(1.0 / s_ff)
+        return A, chi2, A_err
+
+    # Coarse scan first. This avoids convergence to a local edge artifact.
+    best_B = 0.0
+    best_A = 0.0
+    best_chi2 = float("inf")
+    best_A_err = 0.0
+
+    n_scan = 381
+    for i in range(n_scan):
+        B = -0.95 + 1.90 * i / float(n_scan - 1)
+        A, chi2, A_err = solve_A_and_chi2(B)
+        if chi2 < best_chi2:
+            best_A = A
+            best_B = B
+            best_chi2 = chi2
+            best_A_err = A_err
+        #endif
+    #endfor
+
+    # Golden-section refinement around the best coarse point.
+    step = 1.90 / float(n_scan - 1)
+    lo = max(-0.95, best_B - 2.0 * step)
+    hi = min(+0.95, best_B + 2.0 * step)
+    gr = 0.5 * (math.sqrt(5.0) - 1.0)
+
+    c = hi - gr * (hi - lo)
+    d = lo + gr * (hi - lo)
+    _, fc, _ = solve_A_and_chi2(c)
+    _, fd, _ = solve_A_and_chi2(d)
+
+    for _ in range(80):
+        if abs(hi - lo) < 1.0e-7:
+            break
+        #endif
+
+        if fc < fd:
+            hi = d
+            d = c
+            fd = fc
+            c = hi - gr * (hi - lo)
+            _, fc, _ = solve_A_and_chi2(c)
+        else:
+            lo = c
+            c = d
+            fc = fd
+            d = lo + gr * (hi - lo)
+            _, fd, _ = solve_A_and_chi2(d)
+        #endif
+    #endfor
+
+    B = 0.5 * (lo + hi)
+    A, chi2, A_err = solve_A_and_chi2(B)
+
+    if not (math.isfinite(A) and math.isfinite(B) and math.isfinite(chi2)):
+        return BSAFitResult(ok=False, message="fit produced non-finite result")
+    #endif
+
+    return BSAFitResult(
+        ok=True,
+        A=A,
+        B=B,
+        A_err=A_err,
+        chi2=chi2,
+        ndf=max(0, len(good) - 2),
+        message="ok",
+    )
+
+
+def closest_bsa_bin_key(point_xb: float, point_q2: float, point_t_abs: float, keys: Sequence[BinKey]) -> Optional[BinKey]:
+    if not keys:
+        return None
+    #endif
+
+    containing: List[BinKey] = []
+    for key in keys:
+        if (
+            key.xb_min <= point_xb < key.xb_max and
+            key.q2_min <= point_q2 < key.q2_max and
+            key.t_min <= point_t_abs < key.t_max
+        ):
+            containing.append(key)
+        #endif
+    #endfor
+
+    candidates = containing if containing else list(keys)
+
+    best_key: Optional[BinKey] = None
+    best_score = float("inf")
+
+    for key in candidates:
+        xb_c = 0.5 * (key.xb_min + key.xb_max)
+        q2_c = 0.5 * (key.q2_min + key.q2_max)
+        t_c = 0.5 * (key.t_min + key.t_max)
+        xb_w = max(key.xb_max - key.xb_min, 1.0e-9)
+        q2_w = max(key.q2_max - key.q2_min, 1.0e-9)
+        t_w = max(key.t_max - key.t_min, 1.0e-9)
+        score = ((point_xb - xb_c) / xb_w) ** 2 + ((point_q2 - q2_c) / q2_w) ** 2 + ((point_t_abs - t_c) / t_w) ** 2
+
+        if score < best_score:
+            best_score = score
+            best_key = key
+        #endif
+    #endfor
+
+    return best_key
+
+
+def load_pass2_bsa_from_csv(path: Path) -> Dict[str, Dict[BinKey, List[BSAPoint]]]:
+    log(f"BSA pass-2: opening CSV: {path}")
+
+    out: Dict[str, Dict[BinKey, List[BSAPoint]]] = {target: {} for target in PASS2_BSA_TARGET_COLUMNS}
+
+    with path.open("r", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            die(f"Pass-2 CSV appears empty while loading BSA: {path}")
+        #endif
+
+        fieldnames = reader.fieldnames
+        cols = detect_common_columns(fieldnames, "Pass-2 BSA")
+
+        bsa_cols: Dict[str, str] = {}
+        for target, candidate in PASS2_BSA_TARGET_COLUMNS.items():
+            found = find_column(fieldnames, [candidate], required=False)
+            if found is None:
+                warn(f"BSA pass-2: missing column '{candidate}'; target {target} will be skipped.")
+                continue
+            #endif
+            bsa_cols[target] = found
+            log(f"BSA pass-2: target {target} -> {found}")
+        #endfor
+
+        if not bsa_cols:
+            warn("BSA pass-2: no BSA columns found; skipping BSA comparison.")
+            return out
+        #endif
+
+        n_rows = 0
+        n_kept = {target: 0 for target in bsa_cols}
+
+        for row in reader:
+            n_rows += 1
+            if not row_is_valid(row, cols["valid"]):
+                continue
+            #endif
+
+            key = make_bin_key(row, cols)
+            phi = row_phi(row, cols)
+            xb_c = 0.5 * (key.xb_min + key.xb_max)
+            q2_c = 0.5 * (key.q2_min + key.q2_max)
+            t_c = 0.5 * (key.t_min + key.t_max)
+
+            for target, col in bsa_cols.items():
+                tv = parse_tuple_cell(row.get(col, ""))
+                if not tv.ok or not math.isfinite(tv.value) or not math.isfinite(tv.stat) or tv.stat <= 0.0:
+                    continue
+                #endif
+
+                eb = 10.2 if target == "Sp19 Inb" else 10.6
+                p = BSAPoint(
+                    phi_deg=phi,
+                    value=tv.value,
+                    stat=tv.stat,
+                    xb=xb_c,
+                    q2=q2_c,
+                    t_abs=t_c,
+                    eb=eb,
+                    source="pass2",
+                    key=key,
+                    target_label=target,
+                )
+                out.setdefault(target, {}).setdefault(key, []).append(p)
+                n_kept[target] += 1
+            #endfor
+        #endfor
+    #endwith
+
+    for target in out:
+        for points in out[target].values():
+            points.sort(key=lambda p: p.phi_deg)
+        #endfor
+    #endfor
+
+    log(f"BSA pass-2: scanned rows={n_rows}; kept points=" + ", ".join(f"{k}:{v}" for k, v in n_kept.items()))
+    return out
+
+
+def load_pass1_bsa_text(path: Path, pass2_bsa: Dict[str, Dict[BinKey, List[BSAPoint]]]) -> Dict[str, Dict[BinKey, List[BSAPoint]]]:
+    log(f"BSA pass-1: opening text file: {path}")
+
+    out: Dict[str, Dict[BinKey, List[BSAPoint]]] = {target: {} for target in PASS2_BSA_TARGET_COLUMNS}
+    keys_by_target = {target: sorted(list(bins.keys()), key=key_sort_tuple) for target, bins in pass2_bsa.items()}
+
+    total = 0
+    kept = 0
+    skipped = 0
+    counts = {target: 0 for target in PASS2_BSA_TARGET_COLUMNS}
+
+    with path.open("r") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            #endif
+
+            parts = text.split()
+            if len(parts) < 7:
+                skipped += 1
+                continue
+            #endif
+
+            total += 1
+            try:
+                phi_rad = float(parts[0])
+                q2 = float(parts[1])
+                xb = float(parts[2])
+                t_abs = abs(float(parts[3]))
+                eb = float(parts[4])
+                asym = float(parts[5])
+                sig = abs(float(parts[6]))
+            except ValueError:
+                warn(f"BSA pass-1: could not parse line {line_number}: {text}")
+                skipped += 1
+                continue
+            #endtry
+
+            if not (math.isfinite(phi_rad) and math.isfinite(q2) and math.isfinite(xb) and math.isfinite(t_abs) and math.isfinite(eb) and math.isfinite(asym) and math.isfinite(sig) and sig > 0.0):
+                skipped += 1
+                continue
+            #endif
+
+            target = bsa_target_from_ebeam(eb)
+            key = closest_bsa_bin_key(xb, q2, t_abs, keys_by_target.get(target, []))
+            if key is None:
+                skipped += 1
+                continue
+            #endif
+
+            p = BSAPoint(
+                phi_deg=(math.degrees(phi_rad) % 360.0),
+                value=asym,
+                stat=sig,
+                xb=xb,
+                q2=q2,
+                t_abs=t_abs,
+                eb=eb,
+                source="pass1",
+                key=key,
+                target_label=target,
+            )
+            out.setdefault(target, {}).setdefault(key, []).append(p)
+            counts[target] += 1
+            kept += 1
+        #endfor
+    #endwith
+
+    for target in out:
+        for points in out[target].values():
+            points.sort(key=lambda p: p.phi_deg)
+        #endfor
+    #endfor
+
+    log(
+        f"BSA pass-1: total data lines={total}, kept={kept}, skipped={skipped}, "
+        + ", ".join(f"{k}:{v}" for k, v in counts.items())
+    )
+    return out
+
+
+def bsa_pass2_vs_fit_chi2(points: Sequence[BSAPoint], fit: BSAFitResult) -> Tuple[float, int, float]:
+    if not fit.ok:
+        return 0.0, 0, 0.0
+    #endif
+
+    chi2 = 0.0
+    n = 0
+    for p in points:
+        if not (math.isfinite(p.value) and math.isfinite(p.stat) and p.stat > 0.0):
+            continue
+        #endif
+        pred = bsa_model_value(p.phi_deg, fit.A, fit.B)
+        if not math.isfinite(pred):
+            continue
+        #endif
+        chi2 += ((p.value - pred) / p.stat) ** 2
+        n += 1
+    #endfor
+
+    if n <= 0:
+        return 0.0, 0, 0.0
+    #endif
+
+    # Simple signed-less normal approximation to chi2 fluctuations.
+    pseudo_sigma = (chi2 - n) / math.sqrt(2.0 * n) if n > 0 else 0.0
+    return chi2, n, pseudo_sigma
+
+
+def bsa_panel_filename(target: str, key: BinKey, index: int) -> str:
+    return (
+        f"bsa_{index:03d}_{bsa_target_dirname(target)}_"
+        f"xB_{safe_filename_piece(key.xb_min)}_{safe_filename_piece(key.xb_max)}_"
+        f"Q2_{safe_filename_piece(key.q2_min)}_{safe_filename_piece(key.q2_max)}_"
+        f"t_{safe_filename_piece(key.t_min)}_{safe_filename_piece(key.t_max)}.png"
+    )
+
+
+def draw_one_bsa_comparison_panel(
+    output_path: Path,
+    target: str,
+    key: BinKey,
+    pass1_points: Sequence[BSAPoint],
+    pass2_points: Sequence[BSAPoint],
+    fit: BSAFitResult,
+    chi2_p2: float,
+    ndf_p2: int,
+    pseudo_sigma: float,
+    pass1_label: str,
+    pass2_label: str,
+) -> None:
+    fig, ax = plt.subplots(figsize=(8.6, 6.0))
+
+    if pass1_points:
+        ax.errorbar(
+            [p.phi_deg + PASS1_PHI_OFFSET_DEG for p in pass1_points],
+            [p.value for p in pass1_points],
+            yerr=[p.stat for p in pass1_points],
+            fmt="s",
+            markersize=5,
+            capsize=2,
+            linewidth=1.2,
+            linestyle="None",
+            label=f"{pass1_label} BSA",
+            zorder=4,
+        )
+    #endif
+
+    if pass2_points:
+        ax.errorbar(
+            [p.phi_deg + PASS2_PHI_OFFSET_DEG for p in pass2_points],
+            [p.value for p in pass2_points],
+            yerr=[p.stat for p in pass2_points],
+            fmt="o",
+            markersize=5,
+            capsize=2,
+            linewidth=1.2,
+            linestyle="None",
+            label=f"{pass2_label} BSA",
+            zorder=5,
+        )
+    #endif
+
+    if fit.ok:
+        phi_grid = [360.0 * i / 360.0 for i in range(361)]
+        y_fit = [bsa_model_value(phi, fit.A, fit.B) for phi in phi_grid]
+        ax.plot(
+            phi_grid,
+            y_fit,
+            linewidth=2.0,
+            linestyle="-",
+            label=rf"pass-1 fit: $A\sin\phi/(1+B\cos\phi)$",
+            zorder=3,
+        )
+    #endif
+
+    ax.axhline(0.0, linewidth=1.0, linestyle="--", color="0.35", zorder=1)
+    ax.set_xlim(0.0, 360.0)
+    ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
+    ax.set_ylim(-1.05, 1.05)
+    ax.set_xlabel(r"$\phi$ (deg)")
+    ax.set_ylabel(r"$A_{LU}$")
+    ax.grid(True, which="major", alpha=0.25)
+
+    title_target = "10.6 GeV average" if target == "10.6 GeV" else "10.2 GeV / Sp19 Inb"
+    ax.set_title(
+        rf"BSA comparison, {title_target}\n"
+        rf"$x_B \in [{key.xb_min:.3g}, {key.xb_max:.3g}]$, "
+        rf"$Q^2 \in [{key.q2_min:.3g}, {key.q2_max:.3g}]$ (GeV$^2$), "
+        rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)"
+    )
+
+    if fit.ok:
+        p2_red = chi2_p2 / ndf_p2 if ndf_p2 > 0 else float("nan")
+        fit_red = fit.chi2 / fit.ndf if fit.ndf > 0 else float("nan")
+        text = (
+            rf"pass-1 fit: $A={fit.A:.3f}\pm{fit.A_err:.3f}$, $B={fit.B:.3f}$" + "\n" +
+            rf"pass-1 fit $\chi^2$/ndf = {fit.chi2:.1f}/{fit.ndf:d} = {fit_red:.2f}" + "\n" +
+            rf"pass-2 vs fit $\chi^2$/N = {chi2_p2:.1f}/{ndf_p2:d} = {p2_red:.2f}" + "\n" +
+            rf"normal approx = {pseudo_sigma:.2f}$\sigma$"
+        )
+    else:
+        text = f"pass-1 fit failed: {fit.message}"
+    #endif
+
+    ax.text(
+        0.02,
+        0.03,
+        text,
+        transform=ax.transAxes,
+        fontsize=8.5,
+        va="bottom",
+        ha="left",
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.82, "edgecolor": "0.6"},
+    )
+
+    ax.legend(loc="best", fontsize=8, frameon=True)
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+def write_bsa_comparison_summary_csv(output_dir: Path, rows: Sequence[BSAComparisonResult]) -> None:
+    path = output_dir / "pass1_pass2_bsa_fit_comparison_summary.csv"
+    log(f"BSA comparison: writing summary CSV to {path}")
+
+    with path.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow([
+            "target_label",
+            "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max",
+            "n_pass1", "n_pass2", "fit_ok",
+            "A", "A_err", "B",
+            "pass1_fit_chi2", "pass1_fit_ndf", "pass1_fit_chi2_ndf",
+            "pass2_vs_pass1_fit_chi2", "pass2_vs_pass1_fit_ndf", "pass2_vs_pass1_fit_chi2_ndf",
+            "pass2_vs_pass1_fit_pseudo_sigma",
+            "output_file",
+        ])
+
+        for row in rows:
+            key = row.key
+            writer.writerow([
+                row.target_label,
+                format_float(key.xb_min), format_float(key.xb_max),
+                format_float(key.q2_min), format_float(key.q2_max),
+                format_float(key.t_min), format_float(key.t_max),
+                row.n_pass1, row.n_pass2, int(row.fit_ok),
+                format_float(row.A), format_float(row.A_err), format_float(row.B),
+                format_float(row.pass1_fit_chi2), row.pass1_fit_ndf,
+                format_float(row.pass1_fit_chi2 / row.pass1_fit_ndf if row.pass1_fit_ndf > 0 else float("nan")),
+                format_float(row.pass2_vs_pass1_fit_chi2), row.pass2_vs_pass1_fit_ndf,
+                format_float(row.pass2_vs_pass1_fit_chi2 / row.pass2_vs_pass1_fit_ndf if row.pass2_vs_pass1_fit_ndf > 0 else float("nan")),
+                format_float(row.pass2_vs_pass1_fit_pseudo_sigma),
+                row.output_file,
+            ])
+        #endfor
+    #endwith
+
+
+def run_pass1_pass2_bsa_comparison(
+    pass2_csv: Path,
+    pass1_bsa_text: Path,
+    output_dir: Path,
+    pass2_label: str,
+    pass1_label: str,
+) -> None:
+    if not pass1_bsa_text.exists():
+        die(f"Pass-1 BSA text file does not exist: {pass1_bsa_text}")
+    #endif
+
+    bsa_output_dir = output_dir / "pass1_pass2_bsa_comparison"
+    bsa_output_dir.mkdir(parents=True, exist_ok=True)
+
+    pass2_bsa = load_pass2_bsa_from_csv(pass2_csv)
+    pass1_bsa = load_pass1_bsa_text(pass1_bsa_text, pass2_bsa)
+
+    summary_rows: List[BSAComparisonResult] = []
+    total_plots = 0
+
+    for target in PASS2_BSA_TARGET_COLUMNS:
+        keys = sorted(set(pass1_bsa.get(target, {}).keys()) | set(pass2_bsa.get(target, {}).keys()), key=key_sort_tuple)
+        target_dir = bsa_output_dir / bsa_target_dirname(target)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        for i, key in enumerate(keys, start=1):
+            p1 = pass1_bsa.get(target, {}).get(key, [])
+            p2 = pass2_bsa.get(target, {}).get(key, [])
+
+            if not p1 and not p2:
+                continue
+            #endif
+
+            fit = fit_bsa_asin_over_1pcos(p1)
+            chi2_p2, ndf_p2, pseudo_sigma = bsa_pass2_vs_fit_chi2(p2, fit)
+
+            output_path = target_dir / bsa_panel_filename(target, key, i)
+            draw_one_bsa_comparison_panel(
+                output_path=output_path,
+                target=target,
+                key=key,
+                pass1_points=p1,
+                pass2_points=p2,
+                fit=fit,
+                chi2_p2=chi2_p2,
+                ndf_p2=ndf_p2,
+                pseudo_sigma=pseudo_sigma,
+                pass1_label=pass1_label,
+                pass2_label=pass2_label,
+            )
+            total_plots += 1
+
+            summary_rows.append(
+                BSAComparisonResult(
+                    target_label=target,
+                    key=key,
+                    n_pass1=len(p1),
+                    n_pass2=len(p2),
+                    fit_ok=fit.ok,
+                    A=fit.A,
+                    B=fit.B,
+                    A_err=fit.A_err,
+                    pass1_fit_chi2=fit.chi2,
+                    pass1_fit_ndf=fit.ndf,
+                    pass2_vs_pass1_fit_chi2=chi2_p2,
+                    pass2_vs_pass1_fit_ndf=ndf_p2,
+                    pass2_vs_pass1_fit_pseudo_sigma=pseudo_sigma,
+                    output_file=str(output_path),
+                )
+            )
+        #endfor
+    #endfor
+
+    write_bsa_comparison_summary_csv(bsa_output_dir, summary_rows)
+    log(f"BSA comparison: wrote {total_plots} plot(s) under {bsa_output_dir}")
 
 # ---------------------------------------------------------------------------
 # External model helpers.
@@ -2219,6 +2861,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pass2-xs-column", default=None, help="Override pass-2 central cross-section column.")
     parser.add_argument("--pass2-label", default="CLAS12 pass-2")
     parser.add_argument("--pass1-label", default="CLAS12 pass-1")
+    parser.add_argument(
+        "--pass1-bsa-text",
+        type=Path,
+        default=None,
+        help=(
+            "Optional pass-1 BSA text file with columns: "
+            "phi(rad) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA. "
+            "Eb≈10.6 is compared to pass-2 10.6 GeV average; "
+            "Eb≈10.2 is compared to pass-2 Sp19 Inb."
+        ),
+    )
 
     parser.add_argument("--e-beam", type=float, default=10.604, help="Beam energy for BH/KM15 curves (GeV).")
     parser.add_argument("--dvcsgen-dir", default=os.environ.get("DVCSGEN_PATH", DEFAULT_DVCSGEN_DIR))
@@ -2278,6 +2931,7 @@ def main() -> int:
     log("Configuration:")
     log(f"  pass2_csv                      = {args.pass2_csv}")
     log(f"  pass1_csv                      = {args.pass1_csv}")
+    log(f"  pass1_bsa_text                 = {args.pass1_bsa_text}")
     log(f"  output_dir                     = {args.output_dir}")
     log(f"  two_panel                      = {args.two_panel}")
     log(f"  no_point_to_point_systematics  = {args.no_point_to_point_systematics}")
@@ -2323,6 +2977,16 @@ def main() -> int:
         no_point_to_point_systematics=args.no_point_to_point_systematics,
         print_columns=args.print_columns,
     )
+
+    if args.pass1_bsa_text is not None:
+        run_pass1_pass2_bsa_comparison(
+            pass2_csv=args.pass2_csv,
+            pass1_bsa_text=args.pass1_bsa_text,
+            output_dir=args.output_dir,
+            pass2_label=args.pass2_label,
+            pass1_label=args.pass1_label,
+        )
+    #endif
 
     panels = build_panels(pass2, pass1)
 

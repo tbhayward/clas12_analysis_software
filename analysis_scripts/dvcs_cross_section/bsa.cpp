@@ -22,20 +22,17 @@
 //   A_LU = sum_i(S_i+ - S_i-) / sum_i[P_i * (S_i+ + S_i-)]
 //
 // Plots are xB-matrix canvases: rows are Q2 bins, columns are |t| bins and
-// each pad is A_LU(phi). Data are fit to A sin(phi)/(1 + B cos(phi)). KM15 is
-// evaluated at 16 phi points per populated pad, with at most five worker threads.
+// each pad is A_LU(phi). Data are fit to A sin(phi)/(1 + B cos(phi)).
 // ROOT tree loops and ROOT plotting are intentionally serial.
 // -----------------------------------------------------------------------------
 
 #include "bsa.h"
 #include "global_cuts.h"
-#include "model_predictions.h"
 
 // ROOT
 #include <TAxis.h>
 #include <TCanvas.h>
 #include <TF1.h>
-#include <TGraph.h>
 #include <TGraphErrors.h>
 #include <TH1F.h>
 #include <TLatex.h>
@@ -50,7 +47,6 @@
 
 // C++ stdlib
 #include <algorithm>
-#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -66,7 +62,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -1339,115 +1334,6 @@ static inline double range_center(const BinRange& r) {
     return 0.5 * (r.lo + r.hi);
 }
 
-static inline double km15_beam_energy_for_group(const std::string& group) {
-    if (group == "Sp19 Inb") return 10.2;
-    return 10.6;
-}
-
-struct KM15TheoryCurve {
-    bool valid = false;
-    std::vector<double> phi_deg;
-    std::vector<double> alu;
-};
-
-struct KM15TheoryTask {
-    int iq = -1;
-    int it = -1;
-    BinRange xB;
-    BinRange q2;
-    BinRange t;
-    std::string group;
-};
-
-static KM15TheoryCurve evaluate_km15_bsa_curve(const KM15TheoryTask& task) {
-    KM15TheoryCurve curve;
-
-    const double xB_c = range_center(task.xB);
-    const double Q2_c = range_center(task.q2);
-    const double t_c = range_center(task.t);
-    const double E = km15_beam_energy_for_group(task.group);
-
-    curve.phi_deg.reserve(16);
-    curve.alu.reserve(16);
-
-    for (int i = 0; i < 16; ++i) {
-        const double phi = 360.0 * static_cast<double>(i) / 16.0;
-        double sp = std::numeric_limits<double>::quiet_NaN();
-        double sm = std::numeric_limits<double>::quiet_NaN();
-
-        try {
-            sp = km15_xs(xB_c, Q2_c, t_c, phi, E, Helicity::Plus, ModelPaths());
-            sm = km15_xs(xB_c, Q2_c, t_c, phi, E, Helicity::Minus, ModelPaths());
-        } catch (const std::exception& e) {
-            std::cerr << "[bsa] WARNING: KM15 evaluation failed for group=" << task.group
-                      << " xB=" << xB_c
-                      << " Q2=" << Q2_c
-                      << " |t|=" << t_c
-                      << " phi=" << phi
-                      << ": " << e.what() << "\n";
-            continue;
-        } //endtry
-
-        const double den = sp + sm;
-        if (!std::isfinite(sp) || !std::isfinite(sm) || !(den > 0.0)) continue;
-
-        curve.phi_deg.push_back(phi);
-        curve.alu.push_back((sp - sm) / den);
-    } //endfor
-
-    curve.valid = curve.phi_deg.size() >= 3;
-    return curve;
-}
-
-static std::map<std::pair<int, int>, KM15TheoryCurve>
-evaluate_km15_bsa_curves_parallel(const std::vector<KM15TheoryTask>& tasks,
-                                  int requested_workers) {
-    std::map<std::pair<int, int>, KM15TheoryCurve> curves;
-    if (tasks.empty()) return curves;
-
-    const char* py_km15_env = std::getenv("PY_KM15");
-    if (!py_km15_env || std::string(py_km15_env).empty()) {
-        std::cerr << "[bsa] WARNING: PY_KM15 is not set; skipping KM15 BSA theory curves.\n";
-        return curves;
-    } //endif
-
-    const int n_workers = std::max(1, std::min(5, requested_workers));
-    std::atomic<size_t> next_index{0};
-    std::mutex curves_mutex;
-    std::mutex cerr_mutex;
-
-    auto worker = [&]() {
-        while (true) {
-            const size_t idx = next_index.fetch_add(1);
-            if (idx >= tasks.size()) break;
-
-            const KM15TheoryTask task = tasks[idx];
-            KM15TheoryCurve curve;
-            try {
-                curve = evaluate_km15_bsa_curve(task);
-            } catch (const std::exception& e) {
-                std::lock_guard<std::mutex> lock(cerr_mutex);
-                std::cerr << "[bsa] WARNING: KM15 task failed: " << e.what() << "\n";
-                continue;
-            } //endtry
-
-            if (curve.valid) {
-                std::lock_guard<std::mutex> lock(curves_mutex);
-                curves[std::make_pair(task.iq, task.it)] = std::move(curve);
-            } //endif
-        } //endwhile
-    };
-
-    std::vector<std::thread> threads;
-    threads.reserve(static_cast<size_t>(n_workers));
-    for (int i = 0; i < n_workers; ++i) threads.emplace_back(worker);
-    for (auto& th : threads) {
-        if (th.joinable()) th.join();
-    } //endfor
-
-    return curves;
-}
-
 static void configure_pad_axes(TGraphErrors& gr, bool left_col, bool bottom_row) {
     gr.GetXaxis()->SetLimits(0.0, 360.0);
     gr.GetYaxis()->SetRangeUser(-1.0, 1.0);
@@ -1479,8 +1365,7 @@ static void draw_empty_frame(bool left_col, bool bottom_row) {
 
 static void make_bsa_plots(const std::string& output_root,
                            const std::vector<RowBin>& rows,
-                           const std::map<std::string, std::vector<AsymResult>>& results,
-                           int max_workers) {
+                           const std::map<std::string, std::vector<AsymResult>>& results) {
     const std::filesystem::path base = std::filesystem::path(output_root) / "bsa_plots";
     std::filesystem::create_directories(base);
 
@@ -1512,38 +1397,6 @@ static void make_bsa_plots(const std::string& output_root,
         for (const BinRange& xbr : xB_bins) {
             const int n_rows = static_cast<int>(q2_bins.size());
             const int n_cols = static_cast<int>(t_bins.size());
-
-            std::vector<KM15TheoryTask> km15_tasks;
-            km15_tasks.reserve(static_cast<size_t>(n_rows * n_cols));
-
-            for (int iq_task = 0; iq_task < n_rows; ++iq_task) {
-                for (int it_task = 0; it_task < n_cols; ++it_task) {
-                    bool has_data = false;
-                    for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
-                        if (!rows[r].valid || r >= static_cast<int>(vec.size())) continue;
-                        if (!vec[r].valid) continue;
-                        if (!same_range(rows[r].xBmin, rows[r].xBmax, xbr)) continue;
-                        if (!same_range(rows[r].Q2min, rows[r].Q2max, q2_bins[iq_task])) continue;
-                        if (!same_range(rows[r].tmin, rows[r].tmax, t_bins[it_task])) continue;
-                        has_data = true;
-                        break;
-                    } //endfor
-
-                    if (has_data) {
-                        KM15TheoryTask task;
-                        task.iq = iq_task;
-                        task.it = it_task;
-                        task.xB = xbr;
-                        task.q2 = q2_bins[iq_task];
-                        task.t = t_bins[it_task];
-                        task.group = group;
-                        km15_tasks.push_back(task);
-                    } //endif
-                } //endfor
-            } //endfor
-
-            const std::map<std::pair<int, int>, KM15TheoryCurve> km15_curves =
-                evaluate_km15_bsa_curves_parallel(km15_tasks, max_workers);
 
             const int canvas_w = std::max(1400, 360 * n_cols);
             const int canvas_h = std::max(900, 285 * n_rows);
@@ -1611,20 +1464,6 @@ static void make_bsa_plots(const std::string& output_root,
                     configure_pad_axes(gr, left_col, bottom_row);
                     gr.Draw("AP");
 
-                    TGraph gr_km15;
-                    auto ikm15 = km15_curves.find(std::make_pair(iq, it));
-                    if (ikm15 != km15_curves.end() && ikm15->second.valid) {
-                        const KM15TheoryCurve& km15 = ikm15->second;
-                        for (int ip = 0; ip < static_cast<int>(km15.phi_deg.size()); ++ip) {
-                            gr_km15.SetPoint(ip, km15.phi_deg[ip], km15.alu[ip]);
-                        } //endfor
-                        gr_km15.SetName(Form("gr_km15_bsa_%d_%d", iq, it));
-                        gr_km15.SetLineColor(kBlue + 1);
-                        gr_km15.SetLineStyle(2);
-                        gr_km15.SetLineWidth(2);
-                        gr_km15.Draw("L SAME");
-                    } //endif
-
                     TF1 fit(Form("fit_bsa_%d_%d", iq, it),
                             "[0]*sin(x*TMath::Pi()/180.0)/(1.0 + [1]*cos(x*TMath::Pi()/180.0))",
                             0.0, 360.0);
@@ -1662,7 +1501,7 @@ static void make_bsa_plots(const std::string& output_root,
                                      group.c_str(), xbr.lo, xbr.hi));
             title_lat.SetTextSize(0.017);
             title_lat.DrawLatex(0.055, 0.928,
-                                "Data fit: A sin#phi / (1 + B cos#phi); dashed blue: KM15; rows are Q^{2}, columns are |t|");
+                                "Data fit: A sin#phi / (1 + B cos#phi); rows are Q^{2}, columns are |t|");
 
             const std::string name =
                 (out_dir / Form("bsa_matrix_%s_%s.png",
@@ -1734,7 +1573,7 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
         std::cout << "[bsa] Wrote JSON summary to " << json_path.string() << "\n";
 
         if (options.make_plots) {
-            make_bsa_plots(options.output_root, rows, results, options.max_workers);
+            make_bsa_plots(options.output_root, rows, results);
         } //endif
 
         return true;

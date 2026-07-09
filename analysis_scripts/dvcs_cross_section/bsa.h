@@ -36,9 +36,7 @@ struct BSAOptions {
     // with rows in Q2 and columns in |t|. Each subplot shows A_LU(phi).
     bool make_plots = true;
 
-    // Maximum number of worker threads used for KM15 theory-curve evaluation.
-    // ROOT tree loops and ROOT plotting remain serial. The implementation caps
-    // this internally at five workers for safety.
+    // Kept for compatibility with main.cpp. The current BSA stage is serial.
     int max_workers = 1;
 };
 
