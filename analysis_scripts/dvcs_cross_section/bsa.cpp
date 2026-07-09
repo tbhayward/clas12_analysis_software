@@ -57,6 +57,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -1407,6 +1408,13 @@ static void make_bsa_plots(const std::string& output_root,
             c.SetRightMargin(0.02);
             c.Divide(n_cols, n_rows, 0.0005, 0.0005);
 
+            // ROOT pads keep pointers to drawn objects.  Graphs/functions created
+            // on the stack are destroyed at the end of each pad iteration before
+            // SaveAs(), which leaves only the frame/text visible.  Keep all drawn
+            // physics objects alive until after the canvas is written.
+            std::vector<std::unique_ptr<TGraphErrors>> owned_graphs;
+            std::vector<std::unique_ptr<TF1>> owned_fits;
+
             int n_populated_pads = 0;
             for (int iq = 0; iq < n_rows; ++iq) {
                 for (int it = 0; it < n_cols; ++it) {
@@ -1455,27 +1463,34 @@ static void make_bsa_plots(const std::string& output_root,
 
                     ++n_populated_pads;
 
-                    TGraphErrors gr(static_cast<int>(x_sub.size()),
-                                    x_sub.data(), y_sub.data(), ex_sub.data(), ey_sub.data());
-                    gr.SetName(Form("gr_bsa_%d_%d", iq, it));
-                    gr.SetMarkerStyle(20);
-                    gr.SetMarkerSize(0.72);
-                    gr.SetLineWidth(1);
-                    // Draw an explicit fixed frame first.  Relying on TGraphErrors::Draw("AP")
-                    // gave poorly visible/partly missing pad boxes on dense matrix canvases.
-                    draw_empty_frame(left_col, bottom_row);
-                    gr.Draw("P SAME");
+                    auto gr = std::make_unique<TGraphErrors>(
+                        static_cast<int>(x_sub.size()),
+                        x_sub.data(), y_sub.data(), ex_sub.data(), ey_sub.data());
+                    gr->SetName(Form("gr_bsa_%d_%d", iq, it));
+                    gr->SetMarkerStyle(20);
+                    gr->SetMarkerSize(0.95);
+                    gr->SetLineWidth(1);
 
-                    TF1 fit(Form("fit_bsa_%d_%d", iq, it),
+                    // Draw an explicit fixed frame first.  The graph is kept alive
+                    // in owned_graphs until after SaveAs(), otherwise ROOT stores a
+                    // dangling pointer and the saved PNG contains only the frame/text.
+                    draw_empty_frame(left_col, bottom_row);
+                    gr->Draw("P SAME");
+
+                    TF1* fit_for_label = nullptr;
+                    if (x_sub.size() >= 3) {
+                        auto fit = std::make_unique<TF1>(
+                            Form("fit_bsa_%d_%d", iq, it),
                             "[0]*sin(x*TMath::Pi()/180.0)/(1.0 + [1]*cos(x*TMath::Pi()/180.0))",
                             0.0, 360.0);
-                    fit.SetParameters(0.0, 0.0);
-                    fit.SetParNames("A", "B");
-                    fit.SetParLimits(1, -0.95, 0.95);
-                    fit.SetLineWidth(2);
-                    if (x_sub.size() >= 3) {
-                        gr.Fit(&fit, "Q0");
-                        fit.Draw("SAME");
+                        fit->SetParameters(0.0, 0.0);
+                        fit->SetParNames("A", "B");
+                        fit->SetParLimits(1, -0.95, 0.95);
+                        fit->SetLineWidth(2);
+                        gr->Fit(fit.get(), "Q0");
+                        fit->Draw("SAME");
+                        fit_for_label = fit.get();
+                        owned_fits.push_back(std::move(fit));
                     } //endif
 
                     TLatex lat;
@@ -1484,10 +1499,12 @@ static void make_bsa_plots(const std::string& output_root,
                     lat.SetTextSize(0.058);
                     lat.DrawLatex(0.20, 0.84, Form("Q^{2}: %.3g-%.3g", q2_bins[iq].lo, q2_bins[iq].hi));
                     lat.DrawLatex(0.20, 0.75, Form("|t|: %.3g-%.3g", t_bins[it].lo, t_bins[it].hi));
-                    if (x_sub.size() >= 3) {
-                        lat.DrawLatex(0.20, 0.66, Form("A=%.3f#pm%.3f", fit.GetParameter(0), fit.GetParError(0)));
-                        lat.DrawLatex(0.20, 0.57, Form("B=%.3f#pm%.3f", fit.GetParameter(1), fit.GetParError(1)));
+                    if (fit_for_label) {
+                        lat.DrawLatex(0.20, 0.66, Form("A=%.3f#pm%.3f", fit_for_label->GetParameter(0), fit_for_label->GetParError(0)));
+                        lat.DrawLatex(0.20, 0.57, Form("B=%.3f#pm%.3f", fit_for_label->GetParameter(1), fit_for_label->GetParError(1)));
                     } //endif
+
+                    owned_graphs.push_back(std::move(gr));
                 } //endfor
             } //endfor
 
