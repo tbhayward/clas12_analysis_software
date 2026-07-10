@@ -3630,8 +3630,8 @@ static void make_gamma_binned_ptheta_scale_reference(
               << summary_path.string() << "\n";
 }
 
-static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
-                                     const fs::path& out_dir) {
+static std::vector<ScaleReferencePoint> make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
+                                                               const fs::path& out_dir) {
     const fs::path fit_root = out_dir / "kinematic_dependence_fits";
     fs::create_directories(fit_root);
 
@@ -3695,6 +3695,170 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
               << summary_path.string() << "\n";
     std::cout << "[combination-systematics] Wrote variable-dependent scale-reference CSVs under: "
               << fit_root.string() << "\n";
+
+    return inclusive_ptheta_reference_points;
+}
+
+static double interpolate_reference_s_obs_clamped(const std::vector<ScaleReferencePoint>& reference_points,
+                                                  const double x,
+                                                  bool& clamped) {
+    clamped = false;
+
+    std::vector<std::pair<double, double> > xy;
+    xy.reserve(reference_points.size());
+
+    for (const auto& ref : reference_points) {
+        if (ref.n_valid >= 2 &&
+            std::isfinite(ref.theta) &&
+            std::isfinite(ref.s_obs)) {
+            xy.emplace_back(ref.theta, ref.s_obs);
+        }
+    }
+
+    if (xy.empty() || !std::isfinite(x)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    std::sort(xy.begin(), xy.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    constexpr double kExactTolerance = 1.0e-9;
+    for (const auto& p : xy) {
+        if (std::abs(p.first - x) < kExactTolerance) {
+            return p.second;
+        }
+    }
+
+    if (x < xy.front().first) {
+        clamped = true;
+        return xy.front().second;
+    }
+
+    if (x > xy.back().first) {
+        clamped = true;
+        return xy.back().second;
+    }
+
+    for (size_t i = 1; i < xy.size(); ++i) {
+        const double x0 = xy[i - 1].first;
+        const double y0 = xy[i - 1].second;
+        const double x1 = xy[i].first;
+        const double y1 = xy[i].second;
+
+        if (x >= x0 && x <= x1 && x1 > x0) {
+            const double f = (x - x0) / (x1 - x0);
+            return y0 + f * (y1 - y0);
+        }
+    }
+
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+static int fill_cross_section_combination_column_from_ptheta_reference(
+    CsvTable& table,
+    const std::string& output_column,
+    const std::string& ptheta_average_label,
+    const std::vector<ScaleReferencePoint>& ptheta_reference,
+    const double fallback_value,
+    int& n_interpolated,
+    int& n_clamped,
+    int& n_fallback) {
+
+    n_interpolated = 0;
+    n_clamped = 0;
+    n_fallback = 0;
+
+    ensure_column(table, output_column);
+
+    const auto it_out = table.index.find(output_column);
+    if (it_out == table.index.end()) {
+        throw std::runtime_error("Missing output column after ensure_column: " + output_column);
+    }
+
+    const std::string ptheta_column = avg_column("p_theta", ptheta_average_label);
+    const auto it_theta = table.index.find(ptheta_column);
+    if (it_theta == table.index.end()) {
+        throw std::runtime_error("Missing proton-angle column needed for theta_p-dependent systematic fill: " + ptheta_column);
+    }
+
+    for (auto& row : table.rows) {
+        if (row.size() < table.header.size()) {
+            row.resize(table.header.size());
+        }
+
+        double theta_p = std::numeric_limits<double>::quiet_NaN();
+        parse_numeric_or_tuple_first(row[(size_t)it_theta->second], theta_p);
+
+        bool clamped = false;
+        double assigned = interpolate_reference_s_obs_clamped(ptheta_reference,
+                                                              theta_p,
+                                                              clamped);
+
+        if (std::isfinite(assigned)) {
+            ++n_interpolated;
+            if (clamped) {
+                ++n_clamped;
+            }
+        } else if (std::isfinite(fallback_value)) {
+            assigned = fallback_value;
+            ++n_fallback;
+        }
+
+        if (std::isfinite(assigned)) {
+            row[(size_t)it_out->second] = format_double(assigned);
+        }
+    }
+
+    return n_interpolated + n_fallback;
+}
+
+static void fill_final_cross_section_combination_systematics_from_ptheta_reference(
+    CsvTable& table,
+    const std::vector<ScaleReferencePoint>& ptheta_reference,
+    const double fallback_ten6_s_comb) {
+
+    if (ptheta_reference.empty()) {
+        std::cout << "[combination-systematics] theta_p reference is empty; "
+                  << "retaining scalar cross-section combination-systematic fills.\n";
+        return;
+    }
+
+    int n_interp_10p6 = 0;
+    int n_clamp_10p6 = 0;
+    int n_fallback_10p6 = 0;
+    const int n_fill_10p6 = fill_cross_section_combination_column_from_ptheta_reference(
+        table,
+        combination_column("10.6 GeV", "unpol"),
+        "10.6 GeV",
+        ptheta_reference,
+        fallback_ten6_s_comb,
+        n_interp_10p6,
+        n_clamp_10p6,
+        n_fallback_10p6);
+
+    int n_interp_sp19 = 0;
+    int n_clamp_sp19 = 0;
+    int n_fallback_sp19 = 0;
+    const int n_fill_sp19 = fill_cross_section_combination_column_from_ptheta_reference(
+        table,
+        combination_column("Sp19 Inb", "unpol"),
+        "Sp19 Inb",
+        ptheta_reference,
+        fallback_ten6_s_comb,
+        n_interp_sp19,
+        n_clamp_sp19,
+        n_fallback_sp19);
+
+    std::cout << "[combination-systematics] Filled final cross-section combination-sys columns "
+              << "from the inclusive theta_p scale-reference curve.\n";
+    std::cout << "[combination-systematics]   10.6 GeV unpol: "
+              << n_fill_10p6 << " rows filled, "
+              << n_clamp_10p6 << " endpoint-clamped, "
+              << n_fallback_10p6 << " scalar-fallback.\n";
+    std::cout << "[combination-systematics]   Sp19 Inb unpol proxy: "
+              << n_fill_sp19 << " rows filled, "
+              << n_clamp_sp19 << " endpoint-clamped, "
+              << n_fallback_sp19 << " scalar-fallback.\n";
 }
 
 } // namespace
@@ -3804,8 +3968,14 @@ bool combination_systematics(const std::string& csv_path,
         write_summary_csv(summary_csv, results);
         print_summary_table(results);
 
-        make_kinematic_fit_plots(all_ratio_points,
-                                 out_dir);
+        const std::vector<ScaleReferencePoint> inclusive_ptheta_reference_points =
+            make_kinematic_fit_plots(all_ratio_points,
+                                     out_dir);
+
+        fill_final_cross_section_combination_systematics_from_ptheta_reference(
+            table,
+            inclusive_ptheta_reference_points,
+            ten6_unpol_s_comb_for_fill);
 
         make_fa18_inb_sp19_inb_direct_diagnostic(table,
                                                  out_dir);
