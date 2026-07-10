@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -50,6 +51,9 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <atomic>
+#include <mutex>
+#include <thread>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -64,6 +68,7 @@ namespace {
 static constexpr double kE10p6 = 10.604;
 static constexpr double kE10p2 = 10.1998;
 static constexpr int kNBinsDiagnostic = 12;
+static constexpr int kMaxSp19ScaleWorkers = 6;
 
 static const std::string kColFa18Inb =
     "normed cross sections, ep->epg, exp, Fa18 Inb, unpol";
@@ -140,6 +145,35 @@ struct BinnedPoint {
     int n = 0;
 };
 
+
+struct WorkItem {
+    int row_index = -1;
+    double xB_model = 0.0;
+    double Q2_model = 0.0;
+    double t_model = 0.0;
+    double phi_model = 0.0;
+    double xB = 0.0;
+    double Q2 = 0.0;
+    double t = 0.0;
+    double phi = 0.0;
+    double e_theta = 0.0;
+    double p_theta = 0.0;
+    double g_theta = 0.0;
+    TupleValue fa18;
+    TupleValue sp19;
+    TupleValue ten6;
+};
+
+struct WorkResult {
+    bool ok = false;
+    bool missing_model = false;
+    WorkItem item;
+    RowPoint point;
+    double bh_ratio = std::numeric_limits<double>::quiet_NaN();
+    double vgg_ratio = std::numeric_limits<double>::quiet_NaN();
+    double km15_ratio = std::numeric_limits<double>::quiet_NaN();
+};
+
 static std::string trim_copy(const std::string& s) {
     const size_t a = s.find_first_not_of(" \t\r\n");
     if (a == std::string::npos) return std::string();
@@ -182,7 +216,7 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
         if (quote) {
             oss << '"';
             for (const char c : s) {
-                if (c == '"') oss << "\"\"";
+                if (c == '"') oss << """";
                 else oss << c;
             }
             oss << '"';
@@ -415,17 +449,9 @@ static void write_model_cache(const std::string& path,
     }
 }
 
-static bool model_xs_cached(const std::string& model,
-                            double xB, double Q2, double t, double phi, double ebeam,
-                            std::unordered_map<std::string, double>& cache,
-                            double& xs) {
-    const std::string key = model_key(model, xB, Q2, t, phi, ebeam);
-    auto it = cache.find(key);
-    if (it != cache.end()) {
-        xs = it->second;
-        return std::isfinite(xs) && xs > 0.0;
-    }
-
+static bool model_xs_uncached(const std::string& model,
+                              double xB, double Q2, double t, double phi, double ebeam,
+                              double& xs) {
     double val = 0.0;
     try {
         if (model == "BH") {
@@ -442,15 +468,40 @@ static bool model_xs_cached(const std::string& model,
         val = 0.0;
     }
 
-    cache[key] = val;
     xs = val;
     return std::isfinite(xs) && xs > 0.0;
 }
 
-static bool energy_correction_factor(double xB, double Q2, double t, double phi,
-                                     std::unordered_map<std::string, double>& cache,
-                                     double& avg, double& rms, int& nvalid,
-                                     double& bh_ratio, double& vgg_ratio, double& km15_ratio) {
+static bool model_xs_cached_threadsafe(const std::string& model,
+                                       double xB, double Q2, double t, double phi, double ebeam,
+                                       std::unordered_map<std::string, double>& cache,
+                                       std::mutex& cache_mutex,
+                                       double& xs) {
+    const std::string key = model_key(model, xB, Q2, t, phi, ebeam);
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        auto it = cache.find(key);
+        if (it != cache.end()) {
+            xs = it->second;
+            return std::isfinite(xs) && xs > 0.0;
+        }
+    }
+
+    double val = 0.0;
+    const bool ok = model_xs_uncached(model, xB, Q2, t, phi, ebeam, val);
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        cache[key] = val;
+    }
+    xs = val;
+    return ok;
+}
+
+static bool energy_correction_factor_threadsafe(double xB, double Q2, double t, double phi,
+                                                std::unordered_map<std::string, double>& cache,
+                                                std::mutex& cache_mutex,
+                                                double& avg, double& rms, int& nvalid,
+                                                double& bh_ratio, double& vgg_ratio, double& km15_ratio) {
     avg = 0.0;
     rms = 0.0;
     nvalid = 0;
@@ -459,8 +510,8 @@ static bool energy_correction_factor(double xB, double Q2, double t, double phi,
     std::vector<double> ratios;
     for (const std::string model : {std::string("BH"), std::string("VGG"), std::string("KM15")}) {
         double xs_hi = 0.0, xs_lo = 0.0;
-        const bool ok_hi = model_xs_cached(model, xB, Q2, t, phi, kE10p6, cache, xs_hi);
-        const bool ok_lo = model_xs_cached(model, xB, Q2, t, phi, kE10p2, cache, xs_lo);
+        const bool ok_hi = model_xs_cached_threadsafe(model, xB, Q2, t, phi, kE10p6, cache, cache_mutex, xs_hi);
+        const bool ok_lo = model_xs_cached_threadsafe(model, xB, Q2, t, phi, kE10p2, cache, cache_mutex, xs_lo);
         if (ok_hi && ok_lo && xs_lo > 0.0) {
             const double r = xs_hi / xs_lo;
             if (std::isfinite(r) && r > 0.0) {
@@ -479,6 +530,60 @@ static bool energy_correction_factor(double xB, double Q2, double t, double phi,
     rms = std::sqrt(ss / (double)ratios.size());
     nvalid = (int)ratios.size();
     return std::isfinite(avg) && avg > 0.0;
+}
+
+static WorkResult process_sp19_scale_item(const WorkItem& item,
+                                          std::unordered_map<std::string, double>& model_cache,
+                                          std::mutex& cache_mutex) {
+    WorkResult res;
+    res.item = item;
+
+    double bh_r = 0.0, vgg_r = 0.0, km15_r = 0.0;
+    double cE = 0.0, cE_rms = 0.0;
+    int cE_n = 0;
+    if (!energy_correction_factor_threadsafe(item.xB_model, item.Q2_model, item.t_model, item.phi_model,
+                                             model_cache, cache_mutex,
+                                             cE, cE_rms, cE_n,
+                                             bh_r, vgg_r, km15_r)) {
+        res.missing_model = true;
+        return res;
+    }
+
+    RowPoint p;
+    p.row_index = item.row_index;
+    p.xB = item.xB;
+    p.Q2 = item.Q2;
+    p.t = item.t;
+    p.phi = item.phi;
+    p.e_theta = item.e_theta;
+    p.p_theta = item.p_theta;
+    p.g_theta = item.g_theta;
+    p.fa18 = item.fa18.value;
+    p.fa18_stat = item.fa18.stat;
+    p.sp19 = item.sp19.value;
+    p.sp19_stat = item.sp19.stat;
+    p.ten6 = item.ten6.value;
+    p.ten6_stat = item.ten6.stat;
+    p.cE = cE;
+    p.cE_rms = cE_rms;
+    p.cE_n = cE_n;
+    p.sp19_corr = item.sp19.value * cE;
+    p.sp19_corr_stat = item.sp19.stat * cE;
+    p.ratio_to_fa18 = p.sp19_corr / item.fa18.value;
+    p.ratio_to_fa18_stat = ratio_stat_error(p.ratio_to_fa18, p.sp19_corr, p.sp19_corr_stat, item.fa18.value, item.fa18.stat);
+    p.ratio_to_ten6 = p.sp19_corr / item.ten6.value;
+    p.ratio_to_ten6_stat = ratio_stat_error(p.ratio_to_ten6, p.sp19_corr, p.sp19_corr_stat, item.ten6.value, item.ten6.stat);
+    p.scale_to_fa18 = item.fa18.value / p.sp19_corr;
+    p.scale_to_fa18_stat = ratio_stat_error(p.scale_to_fa18, item.fa18.value, item.fa18.stat, p.sp19_corr, p.sp19_corr_stat);
+    p.scale_to_ten6 = item.ten6.value / p.sp19_corr;
+    p.scale_to_ten6_stat = ratio_stat_error(p.scale_to_ten6, item.ten6.value, item.ten6.stat, p.sp19_corr, p.sp19_corr_stat);
+
+    res.ok = true;
+    res.point = p;
+    res.bh_ratio = bh_r;
+    res.vgg_ratio = vgg_r;
+    res.km15_ratio = km15_r;
+    return res;
 }
 
 static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& rows,
@@ -693,10 +798,12 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
         points.reserve(table.rows.size());
         int n_missing_data = 0;
         int n_missing_model = 0;
-        int n_rows_reported = 0;
+
+        std::vector<WorkItem> work_items;
+        work_items.reserve(table.rows.size());
 
         for (int ir = 0; ir < (int)table.rows.size(); ++ir) {
-            auto& row = table.rows[(size_t)ir];
+            const auto& row = table.rows[(size_t)ir];
 
             TupleValue fa18, sp19, ten6;
             const bool ok_fa18 = get_tuple_col(table, row, kColFa18Inb, fa18);
@@ -708,55 +815,87 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
                 continue;
             }
 
-            const double xB = get_period_or_bin_average(table, row, "xBavg", "Sp19 Inb", "xBmin", "xBmax");
-            const double Q2 = get_period_or_bin_average(table, row, "Q2avg", "Sp19 Inb", "Q2min", "Q2max");
-            const double t = get_period_or_bin_average(table, row, "t_abs_avg", "Sp19 Inb", "t_abs_min", "t_abs_max");
-            const double phi = get_period_or_bin_average(table, row, "phiavg", "Sp19 Inb", "phimin", "phimax");
+            const double xB_model = get_period_or_bin_average(table, row, "xBavg", "Sp19 Inb", "xBmin", "xBmax");
+            const double Q2_model = get_period_or_bin_average(table, row, "Q2avg", "Sp19 Inb", "Q2min", "Q2max");
+            const double t_model = get_period_or_bin_average(table, row, "t_abs_avg", "Sp19 Inb", "t_abs_min", "t_abs_max");
+            const double phi_model = get_period_or_bin_average(table, row, "phiavg", "Sp19 Inb", "phimin", "phimax");
 
-            if (!(std::isfinite(xB) && std::isfinite(Q2) && std::isfinite(t) && std::isfinite(phi)) ||
-                xB <= 0.0 || Q2 <= 0.0 || t <= 0.0) {
+            if (!(std::isfinite(xB_model) && std::isfinite(Q2_model) && std::isfinite(t_model) && std::isfinite(phi_model)) ||
+                xB_model <= 0.0 || Q2_model <= 0.0 || t_model <= 0.0) {
                 ++n_missing_data;
                 continue;
             }
 
-            double bh_r = 0.0, vgg_r = 0.0, km15_r = 0.0;
-            double cE = 0.0, cE_rms = 0.0;
-            int cE_n = 0;
-            if (!energy_correction_factor(xB, Q2, t, phi, model_cache,
-                                          cE, cE_rms, cE_n,
-                                          bh_r, vgg_r, km15_r)) {
-                ++n_missing_model;
+            WorkItem item;
+            item.row_index = ir;
+            item.xB_model = xB_model;
+            item.Q2_model = Q2_model;
+            item.t_model = t_model;
+            item.phi_model = phi_model;
+            item.xB = get_average_pair_or_fallback(table, row, "xBavg", "xBmin", "xBmax");
+            item.Q2 = get_average_pair_or_fallback(table, row, "Q2avg", "Q2min", "Q2max");
+            item.t = get_average_pair_or_fallback(table, row, "t_abs_avg", "t_abs_min", "t_abs_max");
+            item.phi = get_average_pair_or_fallback(table, row, "phiavg", "phimin", "phimax");
+            item.e_theta = get_average_pair_or_fallback(table, row, "e_theta", "", "");
+            item.p_theta = get_average_pair_or_fallback(table, row, "p_theta", "", "");
+            item.g_theta = get_average_pair_or_fallback(table, row, "g_theta", "", "");
+            item.fa18 = fa18;
+            item.sp19 = sp19;
+            item.ten6 = ten6;
+            work_items.push_back(item);
+        }
+
+        int requested_workers = kMaxSp19ScaleWorkers;
+        if (const char* env_workers = std::getenv("SP19_SCALE_WORKERS")) {
+            try {
+                requested_workers = std::stoi(env_workers);
+            } catch (...) {
+                requested_workers = kMaxSp19ScaleWorkers;
+            }
+        }
+        const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
+        const int n_workers = std::max(1, std::min(kMaxSp19ScaleWorkers,
+                                  std::min(requested_workers, (int)hw)));
+        std::cout << "[sp19-scale] Queued " << work_items.size()
+                  << " valid Sp19/Fa18 rows for model energy correction."
+                  << " Using " << n_workers << " worker(s)"
+                  << " (set SP19_SCALE_WORKERS to override, capped at 6).\n";
+
+        std::vector<WorkResult> results(work_items.size());
+        std::atomic<size_t> next_index{0};
+        std::atomic<size_t> completed{0};
+        std::mutex cache_mutex;
+        std::mutex cout_mutex;
+
+        auto worker = [&]() {
+            while (true) {
+                const size_t i = next_index.fetch_add(1);
+                if (i >= work_items.size()) break;
+                results[i] = process_sp19_scale_item(work_items[i], model_cache, cache_mutex);
+                const size_t done = completed.fetch_add(1) + 1;
+                if (done == work_items.size() || done % 50 == 0) {
+                    std::lock_guard<std::mutex> lock(cout_mutex);
+                    std::cout << "[sp19-scale] Model corrections completed "
+                              << done << "/" << work_items.size() << " rows...\n";
+                }
+            }
+        };
+
+        std::vector<std::thread> threads;
+        threads.reserve((size_t)n_workers);
+        for (int iw = 0; iw < n_workers; ++iw) threads.emplace_back(worker);
+        for (auto& th : threads) th.join();
+
+        for (const auto& r : results) {
+            if (!r.ok) {
+                if (r.missing_model) ++n_missing_model;
                 continue;
             }
-
-            RowPoint p;
-            p.row_index = ir;
-            p.xB = get_average_pair_or_fallback(table, row, "xBavg", "xBmin", "xBmax");
-            p.Q2 = get_average_pair_or_fallback(table, row, "Q2avg", "Q2min", "Q2max");
-            p.t = get_average_pair_or_fallback(table, row, "t_abs_avg", "t_abs_min", "t_abs_max");
-            p.phi = get_average_pair_or_fallback(table, row, "phiavg", "phimin", "phimax");
-            p.e_theta = get_average_pair_or_fallback(table, row, "e_theta", "", "");
-            p.p_theta = get_average_pair_or_fallback(table, row, "p_theta", "", "");
-            p.g_theta = get_average_pair_or_fallback(table, row, "g_theta", "", "");
-            p.fa18 = fa18.value;
-            p.fa18_stat = fa18.stat;
-            p.sp19 = sp19.value;
-            p.sp19_stat = sp19.stat;
-            p.ten6 = ten6.value;
-            p.ten6_stat = ten6.stat;
-            p.cE = cE;
-            p.cE_rms = cE_rms;
-            p.cE_n = cE_n;
-            p.sp19_corr = sp19.value * cE;
-            p.sp19_corr_stat = sp19.stat * cE;
-            p.ratio_to_fa18 = p.sp19_corr / fa18.value;
-            p.ratio_to_fa18_stat = ratio_stat_error(p.ratio_to_fa18, p.sp19_corr, p.sp19_corr_stat, fa18.value, fa18.stat);
-            p.ratio_to_ten6 = p.sp19_corr / ten6.value;
-            p.ratio_to_ten6_stat = ratio_stat_error(p.ratio_to_ten6, p.sp19_corr, p.sp19_corr_stat, ten6.value, ten6.stat);
-            p.scale_to_fa18 = fa18.value / p.sp19_corr;
-            p.scale_to_fa18_stat = ratio_stat_error(p.scale_to_fa18, fa18.value, fa18.stat, p.sp19_corr, p.sp19_corr_stat);
-            p.scale_to_ten6 = ten6.value / p.sp19_corr;
-            p.scale_to_ten6_stat = ratio_stat_error(p.scale_to_ten6, ten6.value, ten6.stat, p.sp19_corr, p.sp19_corr_stat);
+            const RowPoint& p = r.point;
+            auto& row = table.rows[(size_t)p.row_index];
+            const double cE = p.cE;
+            const double cE_rms = p.cE_rms;
+            const int cE_n = p.cE_n;
 
             row[(size_t)idx_cE] = format_double(cE, 12);
             row[(size_t)idx_cE_rms] = format_double(cE_rms, 12);
@@ -766,13 +905,7 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
             row[(size_t)idx_ratio_ten6] = format_tuple(p.ratio_to_ten6, p.ratio_to_ten6_stat, (cE > 0.0 ? cE_rms / cE * p.ratio_to_ten6 : 0.0));
             row[(size_t)idx_scale_fa18] = format_tuple(p.scale_to_fa18, p.scale_to_fa18_stat, (cE > 0.0 ? cE_rms / cE * p.scale_to_fa18 : 0.0));
             row[(size_t)idx_scale_ten6] = format_tuple(p.scale_to_ten6, p.scale_to_ten6_stat, (cE > 0.0 ? cE_rms / cE * p.scale_to_ten6 : 0.0));
-
             points.push_back(p);
-            ++n_rows_reported;
-            if (n_rows_reported % 100 == 0) {
-                std::cout << "[sp19-scale] Processed " << n_rows_reported
-                          << " valid Sp19/Fa18 comparison rows...\n";
-            }
         }
 
         write_model_cache(cache_path, model_cache);
