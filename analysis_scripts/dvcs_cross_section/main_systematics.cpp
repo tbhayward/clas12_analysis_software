@@ -269,7 +269,8 @@ static std::vector<std::string> pass1_fixed_systematic_columns() {
         "Syst. err (pi0 subtraction)",
         "Syst. err (Acceptance)",
         "Syst.err (Frad)",
-        "Syst.err (Fbin)"
+        "Syst.err (Fbin)",
+        "Syst. err (point-to-point total)"
     };
 }
 
@@ -285,6 +286,48 @@ static void validate_combination_systematics_schema(const CsvTable& table) {
     require_columns(table,
                     pass1_fixed_systematic_columns(),
                     "pass-1 fixed systematic outputs");
+}
+
+static void ensure_column(CsvTable& table,
+                          const std::string& column,
+                          const std::string& initial_value = "") {
+    if (table.index.find(column) != table.index.end()) {
+        return;
+    }
+
+    table.index[column] = (int)table.header.size();
+    table.header.push_back(column);
+
+    for (auto& row : table.rows) {
+        row.push_back(initial_value);
+    }
+}
+
+static bool ensure_systematics_output_columns(const std::string& csv_path) {
+    CsvTable table = read_csv_or_throw(csv_path);
+
+    size_t n_added = 0;
+    auto add_if_missing = [&](const std::string& col) {
+        if (table.index.find(col) == table.index.end()) {
+            ensure_column(table, col);
+            ++n_added;
+        }
+    };
+
+    for (const auto& col : pass1_fixed_systematic_columns()) {
+        add_if_missing(col);
+    }
+    for (const auto& col : combination_systematic_columns()) {
+        add_if_missing(col);
+    }
+
+    if (n_added > 0) {
+        write_csv_or_throw(csv_path, table);
+        std::cout << "[systematics] Added " << n_added
+                  << " missing systematics output columns to " << csv_path << "\n";
+    }
+
+    return n_added > 0;
 }
 
 static void make_output_dirs() {
@@ -328,6 +371,8 @@ int main(int argc, char* argv[]) {
 
         backup_csv_or_throw(csv_main, backup_path);
         std::cout << "[systematics] Backed up CSV to " << backup_path << "\n";
+
+        ensure_systematics_output_columns(csv_main);
 
         if (!validate_systematics_csv_schema(csv_main)) {
             std::cerr << "[systematics] FATAL: validate_systematics_csv_schema failed.\n";
