@@ -136,6 +136,13 @@ PASS2_BSA_TARGET_COLUMNS = {
     "Sp19 Inb": "BSA, counts, Sp19 Inb",
 }
 
+# Fixed BSA plotting colors.  These are intentionally independent of which
+# series are present in a given panel, so pass-2 does not change color when
+# pass-1 has no points.
+BSA_KM15_COLOR = "C0"
+BSA_PASS1_COLOR = "C1"
+BSA_PASS2_COLOR = "C2"
+
 
 def pass2_period_cross_section_column(period: str) -> str:
     return f"normed cross sections, ep->epg, exp, {period}, unpol"
@@ -1680,7 +1687,15 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
     fig, ax = plt.subplots(figsize=(8.6, 6.0))
 
     if km15_curve is not None:
-        ax.plot(km15_curve.phi, km15_curve.km15_bsa, linewidth=2.0, linestyle="-", label="KM15", zorder=3)
+        ax.plot(
+            km15_curve.phi,
+            km15_curve.km15_bsa,
+            linewidth=2.0,
+            linestyle="-",
+            color=BSA_KM15_COLOR,
+            label="KM15",
+            zorder=3,
+        )
 
     if pass1_points:
         ax.errorbar(
@@ -1692,6 +1707,10 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
             capsize=2,
             linewidth=1.2,
             linestyle="None",
+            color=BSA_PASS1_COLOR,
+            ecolor=BSA_PASS1_COLOR,
+            markerfacecolor=BSA_PASS1_COLOR,
+            markeredgecolor=BSA_PASS1_COLOR,
             label=f"{pass1_label} BSA",
             zorder=4,
         )
@@ -1706,6 +1725,10 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
             capsize=2,
             linewidth=1.2,
             linestyle="None",
+            color=BSA_PASS2_COLOR,
+            ecolor=BSA_PASS2_COLOR,
+            markerfacecolor=BSA_PASS2_COLOR,
+            markeredgecolor=BSA_PASS2_COLOR,
             label=f"{pass2_label} BSA",
             zorder=5,
         )
