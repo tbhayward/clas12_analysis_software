@@ -12,6 +12,7 @@
 #include <sstream>
 #include <vector>
 #include <iostream>
+#include <sys/stat.h>
 
 #ifdef _WIN32
 #  define POPEN  _popen
@@ -94,6 +95,47 @@ static std::string run_and_capture_stdout(const std::string& cmd, bool require_o
     }
 
     return out;
+}
+
+
+static bool executable_exists(const std::string& path) {
+    if (path.empty()) return false;
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return false;
+    return (st.st_mode & S_IXUSR) || (st.st_mode & S_IXGRP) || (st.st_mode & S_IXOTH);
+}
+
+static std::string shell_command_stdout_quiet(const std::string& cmd) {
+    return run_and_capture_stdout(cmd + " 2>/dev/null", /*require_ok=*/false);
+}
+
+static std::string find_python3_on_path() {
+#ifndef _WIN32
+    const std::string out = shell_command_stdout_quiet("command -v python3");
+    const std::string py = trim_copy(out);
+    if (!py.empty() && executable_exists(py)) return py;
+#endif
+    return std::string("python3");
+}
+
+static std::string resolve_km15_python() {
+#ifndef _WIN32
+    const char* py_km15_env = std::getenv("PY_KM15");
+    static bool warned_bad_py = false;
+    if (py_km15_env && std::strlen(py_km15_env) > 0) {
+        const std::string requested(py_km15_env);
+        if (executable_exists(requested)) return requested;
+        if (!warned_bad_py) {
+            std::cerr << "[km15_xs] WARNING: PY_KM15 points to a missing/non-executable file: "
+                      << requested << "\n";
+            std::cerr << "[km15_xs] Falling back to python3 from PATH, matching the external plotting script behavior.\n";
+            warned_bad_py = true;
+        }
+    }
+    return find_python3_on_path();
+#else
+    return std::string("python");
+#endif
 }
 
 // Map helicity to which dvcsgen line to parse (matching your Python logic):
@@ -219,17 +261,11 @@ double km15_xs(double xB, double Q2, double t_pos, double phi_deg,
     if (helicity == Helicity::Minus) hel_int = -1;
 
 #ifndef _WIN32
-    // Require PY_KM15 so we do not accidentally use the module python (often 3.13 with ROOT).
-    const char* py_km15_env = std::getenv("PY_KM15");
-    if (!py_km15_env || std::string(py_km15_env).empty()) {
-        std::cerr << "[km15_xs] FATAL: PY_KM15 is not set.\n";
-        std::cerr << "[km15_xs] Set PY_KM15 to your KM15 venv python, e.g.:\n";
-        std::cerr << "  setenv PY_KM15 /u/home/thayward/venvs/km15_py312/bin/python3\n";
-        std::exit(EXIT_FAILURE);
-    }
-    const std::string py_km15 = std::string(py_km15_env);
+    const std::string py_km15 = resolve_km15_python();
 
-    // Critical: drop PYTHONPATH for this subprocess only.
+    // Critical: drop PYTHONPATH for this subprocess only.  Also suppress stderr here:
+    // km15_cli.py prints 0.0 on normal model errors, and repeated Python/env errors
+    // otherwise flood long systematic jobs.
     std::ostringstream cmd;
     cmd << "env -u PYTHONPATH "
         << shell_quote_posix(py_km15) << " "
@@ -253,7 +289,7 @@ double km15_xs(double xB, double Q2, double t_pos, double phi_deg,
         << " XS";
 #endif
 
-    const std::string out = run_and_capture_stdout(cmd.str(), /*require_ok=*/false);
+    const std::string out = run_and_capture_stdout(cmd.str() + " 2>/dev/null", /*require_ok=*/false);
     if (out.empty()) return 0.0;
 
     try {
