@@ -236,6 +236,38 @@ class BSAComparisonResult:
 
 
 @dataclass
+class BSAWorkerJob:
+    index: int
+    total: int
+    target: str
+    key: BinKey
+    pass1_points: List[BSAPoint]
+    pass2_points: List[BSAPoint]
+    output_path: str
+    pass2_label: str
+    pass1_label: str
+    model_cfg: ModelConfig
+    skip_models: bool
+    cached_model_entry: Optional[Dict[str, List[float]]]
+
+
+@dataclass
+class BSAWorkerResult:
+    ok: bool
+    index: int
+    target: str
+    key: BinKey
+    output_path: str
+    summary_row: Optional[BSAComparisonResult]
+    cache_key: Optional[str]
+    cache_entry: Optional[Dict[str, List[float]]]
+    model_status: str
+    elapsed_seconds: float
+    message: str
+    error: str
+
+
+@dataclass
 class RatioPoint:
     phi: float
     ratio: float
@@ -1736,7 +1768,103 @@ def write_bsa_comparison_summary_csv(output_dir: Path, rows: Sequence[BSACompari
             ])
 
 
-def run_pass1_pass2_bsa_comparison(pass2_csv: Path, pass1_bsa_text: Path, bsa_output_dir: Path, pass2_label: str, pass1_label: str, model_cfg: ModelConfig, skip_models: bool, bsa_cache: Dict[str, Dict[str, List[float]]]) -> int:
+def process_one_bsa_panel(job: BSAWorkerJob) -> BSAWorkerResult:
+    t0 = time.time()
+    ckey: Optional[str] = None
+    cache_entry: Optional[Dict[str, List[float]]] = None
+    km15_curve: Optional[BSAModelCurve] = None
+    model_status = "models skipped" if job.skip_models else "not requested"
+
+    try:
+        if not job.skip_models:
+            ckey = bsa_model_cache_key(job.key, job.target, job.model_cfg.phi_dense)
+            if job.cached_model_entry is not None:
+                km15_curve = make_bsa_model_from_cache_entry(job.cached_model_entry)
+                model_status = "KM15 cache hit"
+            else:
+                try:
+                    km15_curve = compute_bsa_km15_curve_without_cache(job.key, job.target, job.model_cfg)
+                    cache_entry = make_bsa_model_cache_entry(km15_curve)
+                    model_status = "KM15 computed"
+                except Exception as exc:
+                    if job.model_cfg.allow_missing_models:
+                        km15_curve = None
+                        model_status = "KM15 failed; plotted without model"
+                    else:
+                        raise RuntimeError(f"BSA KM15 model failed for {job.target}, {job.key}: {exc}") from exc
+
+        output_path = Path(job.output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        draw_one_bsa_comparison_panel(
+            output_path=output_path,
+            target=job.target,
+            key=job.key,
+            pass1_points=job.pass1_points,
+            pass2_points=job.pass2_points,
+            km15_curve=km15_curve,
+            pass1_label=job.pass1_label,
+            pass2_label=job.pass2_label,
+        )
+
+        elapsed = time.time() - t0
+        summary_row = BSAComparisonResult(
+            target_label=job.target,
+            key=job.key,
+            n_pass1=len(job.pass1_points),
+            n_pass2=len(job.pass2_points),
+            has_km15=km15_curve is not None,
+            output_file=str(output_path),
+        )
+
+        return BSAWorkerResult(
+            ok=True,
+            index=job.index,
+            target=job.target,
+            key=job.key,
+            output_path=str(output_path),
+            summary_row=summary_row,
+            cache_key=ckey,
+            cache_entry=cache_entry,
+            model_status=model_status,
+            elapsed_seconds=elapsed,
+            message=(
+                f"BSA [{job.index}/{job.total}] target={job.target}; wrote {output_path} "
+                f"({model_status}, pass1 points={len(job.pass1_points)}, pass2 points={len(job.pass2_points)}, "
+                f"elapsed={format_seconds(elapsed)})"
+            ),
+            error="",
+        )
+    except Exception:
+        elapsed = time.time() - t0
+        return BSAWorkerResult(
+            ok=False,
+            index=job.index,
+            target=job.target,
+            key=job.key,
+            output_path=job.output_path,
+            summary_row=None,
+            cache_key=ckey,
+            cache_entry=cache_entry,
+            model_status=model_status,
+            elapsed_seconds=elapsed,
+            message="",
+            error=traceback.format_exc(),
+        )
+
+
+def run_pass1_pass2_bsa_comparison(
+    pass2_csv: Path,
+    pass1_bsa_text: Path,
+    bsa_output_dir: Path,
+    pass2_label: str,
+    pass1_label: str,
+    model_cfg: ModelConfig,
+    skip_models: bool,
+    bsa_cache: Dict[str, Dict[str, List[float]]],
+    bsa_workers: int,
+    progress_every: int,
+    quiet_workers: bool,
+) -> int:
     if not pass1_bsa_text.exists():
         die(f"Pass-1 BSA text file does not exist: {pass1_bsa_text}")
 
@@ -1744,10 +1872,10 @@ def run_pass1_pass2_bsa_comparison(pass2_csv: Path, pass1_bsa_text: Path, bsa_ou
     pass2_bsa = load_pass2_bsa_from_csv(pass2_csv)
     pass1_bsa = load_pass1_bsa_text(pass1_bsa_text, pass2_bsa)
 
-    summary_rows: List[BSAComparisonResult] = []
-    total_plots = 0
-    cache_new = 0
-    model_failures = 0
+    jobs: List[BSAWorkerJob] = []
+    global_index = 0
+    n_cache_hits = 0
+    n_cache_misses = 0
 
     for target in PASS2_BSA_TARGET_COLUMNS:
         keys = sorted(set(pass1_bsa.get(target, {}).keys()) | set(pass2_bsa.get(target, {}).keys()), key=key_sort_tuple)
@@ -1760,67 +1888,118 @@ def run_pass1_pass2_bsa_comparison(pass2_csv: Path, pass1_bsa_text: Path, bsa_ou
             if not p1 and not p2:
                 continue
 
-            log(
-                f"BSA comparison: target={target}, panel {i}/{len(keys)}; "
-                f"xB=[{key.xb_min:g},{key.xb_max:g}], "
-                f"Q2=[{key.q2_min:g},{key.q2_max:g}], "
-                f"|t|=[{key.t_min:g},{key.t_max:g}], "
-                f"pass1 points={len(p1)}, pass2 points={len(p2)}"
-            )
-
-            km15_curve: Optional[BSAModelCurve] = None
-            bsa_model_status = "models skipped" if skip_models else "not requested"
+            global_index += 1
+            ckey = bsa_model_cache_key(key, target, model_cfg.phi_dense)
+            cached_model_entry = None if skip_models or not model_cfg.use_cache else bsa_cache.get(ckey)
             if not skip_models:
-                ckey = bsa_model_cache_key(key, target, model_cfg.phi_dense)
-                entry = bsa_cache.get(ckey)
-                if entry is not None:
-                    km15_curve = make_bsa_model_from_cache_entry(entry)
-                    bsa_model_status = "KM15 cache hit"
+                if cached_model_entry is None:
+                    n_cache_misses += 1
                 else:
-                    try:
-                        log(f"BSA comparison: target={target}, panel {i}/{len(keys)}; computing KM15 BSA curve.")
-                        km15_curve = compute_bsa_km15_curve_without_cache(key, target, model_cfg)
-                        bsa_cache[ckey] = make_bsa_model_cache_entry(km15_curve)
-                        cache_new += 1
-                        bsa_model_status = "KM15 computed"
-                    except Exception as exc:
-                        model_failures += 1
-                        if model_cfg.allow_missing_models:
-                            km15_curve = None
-                            bsa_model_status = "KM15 failed; plotted without model"
-                            warn(f"BSA KM15 model failed for {target}, {key}; plotting BSA points without KM15: {exc}")
-                        else:
-                            raise RuntimeError(f"BSA KM15 model failed for {target}, {key}: {exc}") from exc
+                    n_cache_hits += 1
 
             output_path = target_dir / bsa_panel_filename(target, key, i)
-            log(f"BSA comparison: target={target}, panel {i}/{len(keys)}; writing {output_path} ({bsa_model_status}).")
-            draw_one_bsa_comparison_panel(
-                output_path=output_path,
-                target=target,
-                key=key,
-                pass1_points=p1,
-                pass2_points=p2,
-                km15_curve=km15_curve,
-                pass1_label=pass1_label,
-                pass2_label=pass2_label,
-            )
-            total_plots += 1
-            log(f"BSA comparison: target={target}, panel {i}/{len(keys)}; wrote {output_path}.")
-            summary_rows.append(
-                BSAComparisonResult(
-                    target_label=target,
+            jobs.append(
+                BSAWorkerJob(
+                    index=global_index,
+                    total=0,  # filled below after all jobs are known
+                    target=target,
                     key=key,
-                    n_pass1=len(p1),
-                    n_pass2=len(p2),
-                    has_km15=km15_curve is not None,
-                    output_file=str(output_path),
+                    pass1_points=list(p1),
+                    pass2_points=list(p2),
+                    output_path=str(output_path),
+                    pass2_label=pass2_label,
+                    pass1_label=pass1_label,
+                    model_cfg=model_cfg,
+                    skip_models=skip_models,
+                    cached_model_entry=cached_model_entry,
                 )
             )
 
-    write_bsa_comparison_summary_csv(bsa_output_dir, summary_rows)
-    log(f"BSA comparison: wrote {total_plots} plot(s) under {bsa_output_dir}; new KM15 cache entries={cache_new}, model failures={model_failures}")
-    return cache_new
+    total_jobs = len(jobs)
+    for job in jobs:
+        job.total = total_jobs
 
+    if total_jobs == 0:
+        warn("BSA comparison: no panels to write.")
+        return 0
+
+    n_workers = max(1, min(int(bsa_workers), 5, total_jobs))
+    progress_every = max(1, int(progress_every))
+
+    log(
+        f"BSA comparison: starting {total_jobs} panel job(s) with {n_workers} worker(s); "
+        f"KM15 cache hits={n_cache_hits}, misses={n_cache_misses}."
+    )
+
+    summary_by_index: Dict[int, BSAComparisonResult] = {}
+    failures: List[BSAWorkerResult] = []
+    completed = 0
+    cache_new = 0
+    model_failures = 0
+    processing_t0 = time.time()
+
+    if n_workers == 1:
+        for job in jobs:
+            result = process_one_bsa_panel(job)
+            completed += 1
+
+            if result.ok:
+                if not quiet_workers:
+                    log(result.message)
+                if result.summary_row is not None:
+                    summary_by_index[result.index] = result.summary_row
+                if result.cache_key is not None and result.cache_entry is not None:
+                    bsa_cache[result.cache_key] = result.cache_entry
+                    cache_new += 1
+                if result.model_status == "KM15 failed; plotted without model":
+                    model_failures += 1
+            else:
+                failures.append(result)
+                print(result.error, file=sys.stderr)
+
+            if completed % progress_every == 0 or completed == total_jobs:
+                elapsed = time.time() - processing_t0
+                rate = completed / elapsed if elapsed > 0.0 else 0.0
+                eta = (total_jobs - completed) / rate if rate > 0.0 else 0.0
+                log(f"BSA progress: {completed}/{total_jobs} complete, failures={len(failures)}, ETA≈{format_seconds(eta)}.")
+    else:
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            future_to_index = {executor.submit(process_one_bsa_panel, job): job.index for job in jobs}
+            for future in as_completed(future_to_index):
+                result = future.result()
+                completed += 1
+
+                if result.ok:
+                    if not quiet_workers:
+                        log(result.message)
+                    if result.summary_row is not None:
+                        summary_by_index[result.index] = result.summary_row
+                    if result.cache_key is not None and result.cache_entry is not None:
+                        bsa_cache[result.cache_key] = result.cache_entry
+                        cache_new += 1
+                    if result.model_status == "KM15 failed; plotted without model":
+                        model_failures += 1
+                else:
+                    failures.append(result)
+                    print(result.error, file=sys.stderr)
+
+                if completed % progress_every == 0 or completed == total_jobs:
+                    elapsed = time.time() - processing_t0
+                    rate = completed / elapsed if elapsed > 0.0 else 0.0
+                    eta = (total_jobs - completed) / rate if rate > 0.0 else 0.0
+                    log(f"BSA progress: {completed}/{total_jobs} complete, failures={len(failures)}, ETA≈{format_seconds(eta)}.")
+
+    if failures:
+        first = failures[0]
+        die(f"{len(failures)} BSA panel job(s) failed. First failed panel={Path(first.output_path).name}. See traceback above.")
+
+    summary_rows = [summary_by_index[i] for i in sorted(summary_by_index)]
+    write_bsa_comparison_summary_csv(bsa_output_dir, summary_rows)
+    log(
+        f"BSA comparison: wrote {len(summary_rows)} plot(s) under {bsa_output_dir}; "
+        f"new KM15 cache entries={cache_new}, model failures={model_failures}."
+    )
+    return cache_new
 
 # ---------------------------------------------------------------------------
 # Worker.
@@ -2067,6 +2246,12 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--print-columns", action="store_true")
     parser.add_argument("--workers", type=int, default=5)
+    parser.add_argument(
+        "--bsa-workers",
+        type=int,
+        default=0,
+        help="Number of parallel workers for BSA KM15/model-panel production. Default 0 means use --workers. Capped at 5.",
+    )
     parser.add_argument("--progress-every", type=int, default=1)
     parser.add_argument("--quiet-workers", action="store_true")
     parser.add_argument("--verbose-worker-models", action="store_true")
@@ -2095,6 +2280,7 @@ def main() -> int:
     log(f"  e_beam                         = {args.e_beam:g} GeV")
     log(f"  log_y_min                      = {args.log_y_min:g}")
     log(f"  workers requested              = {args.workers}")
+    log(f"  BSA workers requested          = {args.bsa_workers if args.bsa_workers > 0 else args.workers}")
 
     if not args.pass2_csv.exists():
         die(f"Pass-2 CSV does not exist: {args.pass2_csv}")
@@ -2177,6 +2363,9 @@ def main() -> int:
             model_cfg=model_cfg,
             skip_models=args.skip_models,
             bsa_cache=bsa_cache,
+            bsa_workers=args.bsa_workers if args.bsa_workers > 0 else args.workers,
+            progress_every=args.progress_every,
+            quiet_workers=args.quiet_workers,
         )
 
     jobs, n_cache_hit, n_cache_miss = build_jobs(
