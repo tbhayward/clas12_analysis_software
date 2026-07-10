@@ -137,6 +137,12 @@ struct RatioPoint {
     double x = 0.0;
     double y = 0.0;
     double ey = 0.0;
+
+    // Auxiliary coordinate used for multi-dimensional diagnostic studies.
+    // For the present workflow this stores the 10.6-GeV average photon polar angle
+    // associated with the same row as the fitted ratio point. It is intentionally
+    // not used by the ordinary one-dimensional fits.
+    double g_theta = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct DirectRatioPoint {
@@ -1074,15 +1080,50 @@ static std::string csv_escape_field(const std::string& s) {
     return oss.str();
 }
 
+static bool has_complete_valid_fit_inputs(const CombinationCase& c,
+                                          const std::vector<TupleValue>& input_values,
+                                          const TupleValue& ref) {
+    // The kinematic-dependence fits are intended to characterize the four-period
+    // 10.6-GeV spread.  Do not let lower-statistics or missing-period bins enter
+    // these fit/reference studies, because they can distort the apparent
+    // variable dependence.  The global s_comb calculation itself is left
+    // unchanged and can still use bins with two or more valid inputs.
+    if (c.label != "cross section: 10.6 GeV unpol") {
+        return false;
+    }
+
+    if (input_values.size() != c.inputs.size() || c.inputs.size() != 4) {
+        return false;
+    }
+
+    if (!ref.ok || !std::isfinite(ref.value) || std::abs(ref.value) <= 0.0) {
+        return false;
+    }
+
+    for (const auto& v : input_values) {
+        if (!v.ok ||
+            !std::isfinite(v.value) ||
+            !std::isfinite(v.stat) ||
+            v.stat <= 0.0 ||
+            std::abs(v.value) <= 0.0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static void append_ratio_points_for_row(const CsvTable& table,
                                         const std::vector<std::string>& row,
                                         const CombinationCase& c,
                                         const std::vector<TupleValue>& input_values,
                                         const TupleValue& ref,
                                         std::vector<RatioPoint>& ratio_points) {
-    if (c.label != "cross section: 10.6 GeV unpol") {
+    if (!has_complete_valid_fit_inputs(c, input_values, ref)) {
         return;
     }
+
+    const double g_theta_10p6 = get_numeric_or_nan(table, row, avg_column("g_theta", "10.6 GeV"));
 
     for (const auto& var : fit_variable_configs()) {
         const std::string col = avg_column(var.column_prefix, "10.6 GeV");
@@ -1120,6 +1161,7 @@ static void append_ratio_points_for_row(const CsvTable& table,
                 p.x = x;
                 p.y = ratio;
                 p.ey = ratio_stat;
+                p.g_theta = g_theta_10p6;
                 ratio_points.push_back(p);
             }
         }
@@ -1764,6 +1806,8 @@ static std::vector<FitTaskResult> run_fit_tasks_parallel(const std::vector<FitTa
 
     std::cout << "[combination-systematics] Running kinematic-dependence fits with "
               << n_workers << " worker(s).\n";
+    std::cout << "[combination-systematics] Fit/reference inputs require all four 10.6-GeV "
+              << "period values to be valid in each bin.\n";
 
     size_t next_task = 0;
 
@@ -2636,7 +2680,9 @@ build_reference_grid(const std::map<std::string, FitResultSummary>& fits_by_peri
         return grid;
     }
 
-    if (variable.key == "e_theta" || variable.key == "p_theta" || variable.key == "g_theta") {
+    if (variable.column_prefix == "e_theta" ||
+        variable.column_prefix == "p_theta" ||
+        variable.column_prefix == "g_theta") {
         const int lo = (int)std::ceil(xmin);
         const int hi = (int)std::floor(xmax);
         for (int i = lo; i <= hi; ++i) {
@@ -2903,6 +2949,405 @@ static void draw_s_obs_canvas_for_variable(const fs::path& fit_root,
     canvas.SaveAs(out_path.string().c_str());
 }
 
+
+struct GammaThetaBinConfig {
+    std::string key;
+    std::string label;
+    std::string title;
+    double min = -std::numeric_limits<double>::infinity();
+    double max = std::numeric_limits<double>::infinity();
+};
+
+static std::vector<GammaThetaBinConfig> gamma_theta_bins_for_ptheta_study() {
+    return {
+        {"gtheta_lt_5",   "#theta_{#gamma} < 5#circ",        "gtheta < 5 deg",      -std::numeric_limits<double>::infinity(), 5.0},
+        {"gtheta_5_10",   "5#circ #leq #theta_{#gamma} < 10#circ",  "5 <= gtheta < 10 deg",   5.0, 10.0},
+        {"gtheta_10_15",  "10#circ #leq #theta_{#gamma} < 15#circ", "10 <= gtheta < 15 deg", 10.0, 15.0},
+        {"gtheta_15_20",  "15#circ #leq #theta_{#gamma} < 20#circ", "15 <= gtheta < 20 deg", 15.0, 20.0},
+        {"gtheta_ge_20",  "#theta_{#gamma} #geq 20#circ",       "gtheta >= 20 deg",    20.0, std::numeric_limits<double>::infinity()}
+    };
+}
+
+static bool point_in_gamma_theta_bin(const RatioPoint& p,
+                                     const GammaThetaBinConfig& bin) {
+    if (!std::isfinite(p.g_theta)) {
+        return false;
+    }
+
+    return p.g_theta >= bin.min && p.g_theta < bin.max;
+}
+
+static VariableConfig ptheta_variable_for_gamma_bin(const GammaThetaBinConfig& bin) {
+    VariableConfig out;
+    out.key = "p_theta_by_" + bin.key;
+    out.column_prefix = "p_theta";
+    out.title = "#theta_{p} (deg)";
+    out.plain_title = "p_theta, " + bin.title;
+    return out;
+}
+
+static std::vector<FitTask>
+build_p_theta_by_gamma_theta_fit_tasks(const std::vector<RatioPoint>& all_ratio_points,
+                                       const std::vector<GammaThetaBinConfig>& bins) {
+    std::vector<FitTask> tasks;
+
+    const std::string case_label = "cross section: 10.6 GeV unpol";
+    const std::string central_mode = "stat_weighted";
+    const std::string reference_type = "all_mean";
+
+    for (const auto& bin : bins) {
+        const VariableConfig variable = ptheta_variable_for_gamma_bin(bin);
+
+        for (const auto& period : ten6_periods()) {
+            std::vector<RatioPoint> points;
+
+            for (const auto& p : all_ratio_points) {
+                if (p.case_label != case_label ||
+                    p.central_mode != central_mode ||
+                    p.reference_type != reference_type ||
+                    p.period != period ||
+                    p.variable_key != "p_theta" ||
+                    !point_in_gamma_theta_bin(p, bin)) {
+                    continue;
+                }
+
+                points.push_back(p);
+            }
+
+            if (points.empty()) {
+                continue;
+            }
+
+            std::sort(points.begin(),
+                      points.end(),
+                      [](const RatioPoint& a, const RatioPoint& b) {
+                          return a.x < b.x;
+                      });
+
+            FitTask task;
+            task.case_label = case_label + ", " + bin.title;
+            task.central_mode = central_mode;
+            task.reference_type = reference_type;
+            task.period = period;
+            task.variable = variable;
+            task.points = std::move(points);
+
+            tasks.push_back(std::move(task));
+        }
+    }
+
+    return tasks;
+}
+
+static std::map<std::string, FitResultSummary>
+extract_final_fits_for_variable_key(const std::vector<FitTaskResult>& fit_results,
+                                    const std::string& variable_key) {
+    std::map<std::string, FitResultSummary> out;
+
+    for (const auto& result : fit_results) {
+        if (result.task.variable.key != variable_key) {
+            continue;
+        }
+
+        if (result.task.central_mode != "stat_weighted" ||
+            result.task.reference_type != "all_mean" ||
+            result.accepted.empty()) {
+            continue;
+        }
+
+        out[result.task.period] = result.accepted.back();
+    }
+
+    for (const auto& period : ten6_periods()) {
+        if (out.find(period) == out.end()) {
+            throw std::runtime_error("Missing final accepted gamma-binned p_theta fit for period " + period +
+                                     " in variable " + variable_key);
+        }
+    }
+
+    return out;
+}
+
+static std::vector<double> reference_x_values(const std::vector<ScaleReferencePoint>& reference_points) {
+    std::vector<double> x;
+    for (const auto& ref : reference_points) {
+        if (ref.n_valid >= 2 && std::isfinite(ref.theta) && std::isfinite(ref.s_obs)) {
+            x.push_back(ref.theta);
+        }
+    }
+    return x;
+}
+
+static std::vector<double> reference_y_values(const std::vector<ScaleReferencePoint>& reference_points) {
+    std::vector<double> y;
+    for (const auto& ref : reference_points) {
+        if (ref.n_valid >= 2 && std::isfinite(ref.theta) && std::isfinite(ref.s_obs)) {
+            y.push_back(ref.s_obs);
+        }
+    }
+    return y;
+}
+
+static void draw_s_obs_canvas_for_gamma_binned_ptheta(const fs::path& fit_root,
+                                                      const GammaThetaBinConfig& bin,
+                                                      const VariableConfig& variable,
+                                                      const std::vector<ScaleReferencePoint>& reference_points) {
+    const std::vector<double> x = reference_x_values(reference_points);
+    const std::vector<double> y = reference_y_values(reference_points);
+
+    if (x.empty()) {
+        std::cout << "[combination-systematics] No finite p_theta s_obs points for "
+                  << bin.title << ".\n";
+        return;
+    }
+
+    double xmin = *std::min_element(x.begin(), x.end());
+    double xmax = *std::max_element(x.begin(), x.end());
+    if (!(xmax > xmin)) {
+        xmin -= 1.0;
+        xmax += 1.0;
+    }
+
+    double ymax = 0.0;
+    for (const double v : y) {
+        if (std::isfinite(v)) {
+            ymax = std::max(ymax, v);
+        }
+    }
+    ymax = (std::isfinite(ymax) && ymax > 0.0) ? 1.20 * ymax : 1.0;
+
+    const std::string canvas_name = "c_p_theta_s_obs_dependence_" + sanitize_for_path(bin.key);
+    TCanvas canvas(canvas_name.c_str(),
+                   ("p_theta s_obs dependence, " + bin.title).c_str(),
+                   1100,
+                   850);
+    canvas.SetFillColor(kWhite);
+    set_plot_style();
+
+    std::unique_ptr<TH1D> frame(
+        make_frame("frame_" + canvas_name,
+                   "#theta_{p} (deg)",
+                   "s_{obs}",
+                   xmin,
+                   xmax,
+                   0.0,
+                   ymax)
+    );
+
+    frame->Draw("AXIS");
+
+    TGraphErrors graph((int)x.size());
+    for (int i = 0; i < (int)x.size(); ++i) {
+        graph.SetPoint(i, x[(size_t)i], y[(size_t)i]);
+        graph.SetPointError(i, 0.0, 0.0);
+    }
+
+    graph.SetMarkerStyle(20);
+    graph.SetMarkerSize(0.9);
+    graph.SetMarkerColor(kBlack);
+    graph.SetLineColor(kBlack);
+    graph.SetLineWidth(2);
+    graph.Draw("PL SAME");
+
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextSize(0.036);
+    title.SetTextAlign(22);
+    title.DrawLatex(0.50, 0.955, "p_{#theta}-dependent observed spread in #theta_{#gamma} bin");
+    title.SetTextSize(0.031);
+    title.DrawLatex(0.50, 0.915, bin.label.c_str());
+
+    TLatex note;
+    note.SetNDC();
+    note.SetTextFont(42);
+    note.SetTextSize(0.026);
+    note.SetTextAlign(13);
+    note.DrawLatex(0.19, 0.84, "s_{obs} = RMS[f_{i}(#theta_{p})/#LT f(#theta_{p})#GT - 1]");
+    note.DrawLatex(0.19, 0.80, "Only coordinates inside each period fit support are used.");
+
+    canvas.Modified();
+    canvas.Update();
+
+    const fs::path out_path = fit_root / ("p_theta_s_obs_dependence_" + sanitize_for_path(bin.key) + ".png");
+    canvas.SaveAs(out_path.string().c_str());
+}
+
+static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
+                                                      const std::vector<GammaThetaBinConfig>& bins,
+                                                      const std::map<std::string, std::vector<ScaleReferencePoint> >& references_by_bin_key) {
+    double global_xmin = std::numeric_limits<double>::infinity();
+    double global_xmax = -std::numeric_limits<double>::infinity();
+    double global_ymax = 0.0;
+
+    for (const auto& bin : bins) {
+        const auto it = references_by_bin_key.find(bin.key);
+        if (it == references_by_bin_key.end()) {
+            continue;
+        }
+
+        const std::vector<double> x = reference_x_values(it->second);
+        const std::vector<double> y = reference_y_values(it->second);
+        for (const double v : x) {
+            global_xmin = std::min(global_xmin, v);
+            global_xmax = std::max(global_xmax, v);
+        }
+        for (const double v : y) {
+            global_ymax = std::max(global_ymax, v);
+        }
+    }
+
+    if (!std::isfinite(global_xmin) || !std::isfinite(global_xmax) || global_xmax <= global_xmin) {
+        std::cout << "[combination-systematics] No finite gamma-binned p_theta s_obs points for aggregate canvas.\n";
+        return;
+    }
+
+    global_ymax = (std::isfinite(global_ymax) && global_ymax > 0.0) ? 1.20 * global_ymax : 1.0;
+
+    TCanvas canvas("c_p_theta_by_gtheta_s_obs_dependence",
+                   "p_theta s_obs dependence by photon-angle bin",
+                   1800,
+                   1050);
+    canvas.SetFillColor(kWhite);
+    canvas.Divide(3, 2, 0.001, 0.001);
+
+    for (int ib = 0; ib < (int)bins.size(); ++ib) {
+        canvas.cd(ib + 1);
+        set_plot_style();
+        gPad->SetTopMargin(0.16);
+        gPad->SetBottomMargin(0.16);
+        gPad->SetLeftMargin(0.16);
+        gPad->SetRightMargin(0.05);
+
+        const auto& bin = bins[(size_t)ib];
+        const auto it = references_by_bin_key.find(bin.key);
+
+        TH1D* frame = make_frame("frame_p_theta_by_gtheta_" + sanitize_for_path(bin.key),
+                                  "#theta_{p} (deg)",
+                                  "s_{obs}",
+                                  global_xmin,
+                                  global_xmax,
+                                  0.0,
+                                  global_ymax);
+
+        frame->GetXaxis()->SetTitleSize(0.052);
+        frame->GetYaxis()->SetTitleSize(0.052);
+        frame->GetXaxis()->SetLabelSize(0.044);
+        frame->GetYaxis()->SetLabelSize(0.044);
+        frame->Draw("AXIS");
+
+        if (it != references_by_bin_key.end()) {
+            const std::vector<double> x = reference_x_values(it->second);
+            const std::vector<double> y = reference_y_values(it->second);
+
+            if (!x.empty()) {
+                TGraphErrors* graph = new TGraphErrors((int)x.size());
+                for (int i = 0; i < (int)x.size(); ++i) {
+                    graph->SetPoint(i, x[(size_t)i], y[(size_t)i]);
+                    graph->SetPointError(i, 0.0, 0.0);
+                }
+
+                graph->SetMarkerStyle(20);
+                graph->SetMarkerSize(0.75);
+                graph->SetMarkerColor(kBlack);
+                graph->SetLineColor(kBlack);
+                graph->SetLineWidth(2);
+                graph->Draw("PL SAME");
+                gPad->Update();
+            }
+        }
+
+        TLatex label;
+        label.SetNDC();
+        label.SetTextFont(42);
+        label.SetTextSize(0.047);
+        label.SetTextAlign(22);
+        label.DrawLatex(0.52, 0.925, bin.label.c_str());
+    }
+
+    canvas.cd(6);
+    gPad->SetFillColor(kWhite);
+    gPad->Clear();
+    TLatex note;
+    note.SetNDC();
+    note.SetTextFont(42);
+    note.SetTextSize(0.040);
+    note.SetTextAlign(13);
+    note.DrawLatex(0.10, 0.82, "p_{#theta} scale-reference diagnostic");
+    note.SetTextSize(0.032);
+    note.DrawLatex(0.10, 0.72, "Ratios are fit vs #theta_{p} separately inside each #theta_{#gamma} bin.");
+    note.DrawLatex(0.10, 0.64, "The first photon-angle bin is #theta_{#gamma} < 5#circ to isolate FT-like photons.");
+    note.DrawLatex(0.10, 0.56, "Vertical scale is common across panels.");
+
+    canvas.Modified();
+    canvas.Update();
+
+    const fs::path out_path = fit_root / "p_theta_by_gtheta_s_obs_dependence.png";
+    canvas.SaveAs(out_path.string().c_str());
+}
+
+static void make_gamma_binned_ptheta_scale_reference(const std::vector<RatioPoint>& all_ratio_points,
+                                                     const fs::path& fit_root) {
+    const std::vector<GammaThetaBinConfig> bins = gamma_theta_bins_for_ptheta_study();
+    const std::vector<FitTask> tasks = build_p_theta_by_gamma_theta_fit_tasks(all_ratio_points, bins);
+
+    if (tasks.empty()) {
+        std::cout << "[combination-systematics] No p_theta-by-g_theta fit tasks could be built.\n";
+        return;
+    }
+
+    std::cout << "[combination-systematics] Gamma-binned p_theta fit tasks: "
+              << tasks.size() << "\n";
+
+    const std::vector<FitTaskResult> fit_results = run_fit_tasks_parallel(tasks);
+
+    const fs::path summary_path = fit_root / "p_theta_by_gtheta_fit_summary.csv";
+    write_fit_summary_csv(summary_path, fit_results);
+
+    std::map<std::string, std::vector<ScaleReferencePoint> > references_by_bin_key;
+
+    for (const auto& bin : bins) {
+        const VariableConfig variable = ptheta_variable_for_gamma_bin(bin);
+
+        try {
+            const std::map<std::string, FitResultSummary> fits =
+                extract_final_fits_for_variable_key(fit_results, variable.key);
+
+            const std::vector<ScaleReferencePoint> reference_points =
+                compute_scale_systematic_reference(fits, variable);
+
+            references_by_bin_key[bin.key] = reference_points;
+
+            const fs::path scale_path =
+                fit_root / ("p_theta_scale_systematic_reference_" + sanitize_for_path(bin.key) + ".csv");
+
+            write_scale_reference_csv(scale_path,
+                                      variable,
+                                      fits,
+                                      reference_points);
+
+            std::cout << "[combination-systematics] p_theta scale reference in "
+                      << bin.title << ": ";
+            print_scale_reference_summary(variable, reference_points);
+
+            draw_s_obs_canvas_for_gamma_binned_ptheta(fit_root,
+                                                      bin,
+                                                      variable,
+                                                      reference_points);
+        } catch (const std::exception& e) {
+            std::cout << "[combination-systematics] Skipping p_theta scale reference for "
+                      << bin.title << ": " << e.what() << "\n";
+        }
+    }
+
+    draw_aggregate_gamma_binned_ptheta_canvas(fit_root,
+                                              bins,
+                                              references_by_bin_key);
+
+    std::cout << "[combination-systematics] Wrote gamma-binned p_theta fit summary CSV: "
+              << summary_path.string() << "\n";
+}
+
 static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
                                      const fs::path& out_dir) {
     const fs::path fit_root = out_dir / "kinematic_dependence_fits";
@@ -2953,6 +3398,9 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
                                        variable,
                                        reference_points);
     }
+
+    make_gamma_binned_ptheta_scale_reference(all_ratio_points,
+                                             fit_root);
 
     std::cout << "[combination-systematics] Wrote kinematic fit summary CSV: "
               << summary_path.string() << "\n";
