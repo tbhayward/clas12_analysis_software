@@ -3173,6 +3173,26 @@ static void draw_s_obs_canvas_for_gamma_binned_ptheta(const fs::path& fit_root,
     canvas.SaveAs(out_path.string().c_str());
 }
 
+static int gamma_bin_color(const int ibin) {
+    static const int colors[] = {
+        kBlack,
+        kBlue + 1,
+        kRed + 1,
+        kGreen + 2,
+        kMagenta + 1,
+        kOrange + 7,
+        kCyan + 2
+    };
+    const int n = (int)(sizeof(colors) / sizeof(colors[0]));
+    return colors[ibin % n];
+}
+
+static int gamma_bin_marker(const int ibin) {
+    static const int markers[] = {20, 21, 22, 23, 33, 34, 29};
+    const int n = (int)(sizeof(markers) / sizeof(markers[0]));
+    return markers[ibin % n];
+}
+
 static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
                                                       const std::vector<GammaThetaBinConfig>& bins,
                                                       const std::map<std::string, std::vector<ScaleReferencePoint> >& references_by_bin_key) {
@@ -3189,95 +3209,110 @@ static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
         const std::vector<double> x = reference_x_values(it->second);
         const std::vector<double> y = reference_y_values(it->second);
         for (const double v : x) {
-            global_xmin = std::min(global_xmin, v);
-            global_xmax = std::max(global_xmax, v);
+            if (std::isfinite(v)) {
+                global_xmin = std::min(global_xmin, v);
+                global_xmax = std::max(global_xmax, v);
+            }
         }
         for (const double v : y) {
-            global_ymax = std::max(global_ymax, v);
+            if (std::isfinite(v)) {
+                global_ymax = std::max(global_ymax, v);
+            }
         }
     }
 
     if (!std::isfinite(global_xmin) || !std::isfinite(global_xmax) || global_xmax <= global_xmin) {
-        std::cout << "[combination-systematics] No finite gamma-binned p_theta s_obs points for aggregate canvas.\n";
+        std::cout << "[combination-systematics] No finite gamma-binned p_theta s_obs points for overlay canvas.\n";
         return;
     }
 
-    global_ymax = (std::isfinite(global_ymax) && global_ymax > 0.0) ? 1.20 * global_ymax : 1.0;
+    const double xpad = 0.04 * (global_xmax - global_xmin);
+    global_xmin -= xpad;
+    global_xmax += xpad;
+    global_ymax = (std::isfinite(global_ymax) && global_ymax > 0.0) ? 1.18 * global_ymax : 1.0;
 
     TCanvas canvas("c_p_theta_by_gtheta_s_obs_dependence",
                    "p_theta s_obs dependence by photon-angle bin",
-                   1800,
-                   1050);
+                   1200,
+                   900);
     canvas.SetFillColor(kWhite);
-    canvas.Divide(3, 2, 0.001, 0.001);
+    set_plot_style();
+    gPad->SetTopMargin(0.10);
+    gPad->SetBottomMargin(0.13);
+    gPad->SetLeftMargin(0.13);
+    gPad->SetRightMargin(0.04);
+
+    std::unique_ptr<TH1D> frame(
+        make_frame("frame_p_theta_by_gtheta_overlay",
+                   "#theta_{p} (deg)",
+                   "s_{obs}",
+                   global_xmin,
+                   global_xmax,
+                   0.0,
+                   global_ymax)
+    );
+    frame->GetXaxis()->SetTitleSize(0.045);
+    frame->GetYaxis()->SetTitleSize(0.045);
+    frame->GetXaxis()->SetLabelSize(0.038);
+    frame->GetYaxis()->SetLabelSize(0.038);
+    frame->Draw("AXIS");
+
+    TLegend legend(0.55, 0.58, 0.93, 0.88);
+    legend.SetBorderSize(1);
+    legend.SetFillColor(kWhite);
+    legend.SetTextFont(42);
+    legend.SetTextSize(0.028);
+
+    std::vector<std::unique_ptr<TGraphErrors> > graphs;
+    graphs.reserve(bins.size());
 
     for (int ib = 0; ib < (int)bins.size(); ++ib) {
-        canvas.cd(ib + 1);
-        set_plot_style();
-        gPad->SetTopMargin(0.16);
-        gPad->SetBottomMargin(0.16);
-        gPad->SetLeftMargin(0.16);
-        gPad->SetRightMargin(0.05);
-
         const auto& bin = bins[(size_t)ib];
         const auto it = references_by_bin_key.find(bin.key);
-
-        TH1D* frame = make_frame("frame_p_theta_by_gtheta_" + sanitize_for_path(bin.key),
-                                  "#theta_{p} (deg)",
-                                  "s_{obs}",
-                                  global_xmin,
-                                  global_xmax,
-                                  0.0,
-                                  global_ymax);
-
-        frame->GetXaxis()->SetTitleSize(0.052);
-        frame->GetYaxis()->SetTitleSize(0.052);
-        frame->GetXaxis()->SetLabelSize(0.044);
-        frame->GetYaxis()->SetLabelSize(0.044);
-        frame->Draw("AXIS");
-
-        if (it != references_by_bin_key.end()) {
-            const std::vector<double> x = reference_x_values(it->second);
-            const std::vector<double> y = reference_y_values(it->second);
-
-            if (!x.empty()) {
-                TGraphErrors* graph = new TGraphErrors((int)x.size());
-                for (int i = 0; i < (int)x.size(); ++i) {
-                    graph->SetPoint(i, x[(size_t)i], y[(size_t)i]);
-                    graph->SetPointError(i, 0.0, 0.0);
-                }
-
-                graph->SetMarkerStyle(20);
-                graph->SetMarkerSize(0.75);
-                graph->SetMarkerColor(kBlack);
-                graph->SetLineColor(kBlack);
-                graph->SetLineWidth(2);
-                graph->Draw("PL SAME");
-                gPad->Update();
-            }
+        if (it == references_by_bin_key.end()) {
+            continue;
         }
 
-        TLatex label;
-        label.SetNDC();
-        label.SetTextFont(42);
-        label.SetTextSize(0.047);
-        label.SetTextAlign(22);
-        label.DrawLatex(0.52, 0.925, bin.label.c_str());
+        const std::vector<double> x = reference_x_values(it->second);
+        const std::vector<double> y = reference_y_values(it->second);
+        if (x.empty()) {
+            continue;
+        }
+
+        std::unique_ptr<TGraphErrors> graph(new TGraphErrors((int)x.size()));
+        for (int i = 0; i < (int)x.size(); ++i) {
+            graph->SetPoint(i, x[(size_t)i], y[(size_t)i]);
+            graph->SetPointError(i, 0.0, 0.0);
+        }
+
+        const int color = gamma_bin_color(ib);
+        graph->SetMarkerStyle(gamma_bin_marker(ib));
+        graph->SetMarkerSize(0.85);
+        graph->SetMarkerColor(color);
+        graph->SetLineColor(color);
+        graph->SetLineWidth(2);
+        graph->Draw("PL SAME");
+        legend.AddEntry(graph.get(), bin.label.c_str(), "lp");
+        graphs.push_back(std::move(graph));
     }
 
-    canvas.cd(6);
-    gPad->SetFillColor(kWhite);
-    gPad->Clear();
+    legend.Draw();
+
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextSize(0.036);
+    title.SetTextAlign(22);
+    title.DrawLatex(0.50, 0.955, "#theta_{p}-dependent observed spread in #theta_{#gamma} bins");
+
     TLatex note;
     note.SetNDC();
     note.SetTextFont(42);
-    note.SetTextSize(0.040);
+    note.SetTextSize(0.023);
     note.SetTextAlign(13);
-    note.DrawLatex(0.10, 0.82, "p_{#theta} scale-reference diagnostic");
-    note.SetTextSize(0.032);
-    note.DrawLatex(0.10, 0.72, "Ratios are fit vs #theta_{p} separately inside each #theta_{#gamma} bin.");
-    note.DrawLatex(0.10, 0.64, "The first photon-angle bin is #theta_{#gamma} < 5#circ to isolate FT-like photons.");
-    note.DrawLatex(0.10, 0.56, "Vertical scale is common across panels.");
+    note.DrawLatex(0.16, 0.86, "s_{obs} = RMS[f_{i}(#theta_{p})/#LT f(#theta_{p})#GT - 1]");
+    note.DrawLatex(0.16, 0.82, "Each curve is fit separately inside its #theta_{#gamma} bin.");
+    note.DrawLatex(0.16, 0.78, "The #theta_{#gamma} < 5#circ bin isolates FT-like photons.");
 
     canvas.Modified();
     canvas.Update();
