@@ -62,10 +62,28 @@ struct PeriodInput {
     std::vector<std::string> columns;
 };
 
+enum class CombinationMetric {
+    RelativeRatio,
+    AbsoluteDifference
+};
+
+static bool is_absolute_metric(CombinationMetric metric) {
+    return metric == CombinationMetric::AbsoluteDifference;
+}
+
+static std::string metric_name(CombinationMetric metric) {
+    return is_absolute_metric(metric) ? "absolute_difference" : "relative_ratio";
+}
+
+static bool label_is_bsa(const std::string& label) {
+    return label.rfind("BSA:", 0) == 0;
+}
+
 struct CombinationCase {
     std::string label;
     std::string output_column;
     bool fill_output = true;
+    CombinationMetric metric = CombinationMetric::RelativeRatio;
     std::vector<PeriodInput> inputs;
 };
 
@@ -88,6 +106,7 @@ struct CombinationResult {
     std::string central_value_mode = "stat_weighted";
     std::string output_column;
     bool fill_output = false;
+    CombinationMetric metric = CombinationMetric::RelativeRatio;
 
     int valid_bins = 0;
     int ratio_points = 0;
@@ -677,199 +696,250 @@ static PeriodInput input_group(const std::string& label,
     return out;
 }
 
+static CombinationCase make_relative_case(const std::string& label,
+                                          const std::string& output_column,
+                                          bool fill_output,
+                                          std::vector<PeriodInput> inputs) {
+    CombinationCase c;
+    c.label = label;
+    c.output_column = output_column;
+    c.fill_output = fill_output;
+    c.metric = CombinationMetric::RelativeRatio;
+    c.inputs = std::move(inputs);
+    return c;
+}
+
+static CombinationCase make_absolute_case(const std::string& label,
+                                          const std::string& output_column,
+                                          bool fill_output,
+                                          std::vector<PeriodInput> inputs) {
+    CombinationCase c;
+    c.label = label;
+    c.output_column = output_column;
+    c.fill_output = fill_output;
+    c.metric = CombinationMetric::AbsoluteDifference;
+    c.inputs = std::move(inputs);
+    return c;
+}
+
 static std::vector<CombinationCase> combination_cases() {
-    return {
+    std::vector<CombinationCase> cases;
+
+    cases.push_back(make_relative_case(
+        "cross section: 10.6 GeV unpol",
+        combination_column("10.6 GeV", "unpol"),
+        true,
         {
-            "cross section: 10.6 GeV unpol",
-            combination_column("10.6 GeV", "unpol"),
-            true,
-            {
-                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
-                input_single("Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
-                input_single("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
-                input_single("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
-            }
-        },
-        {
-            "cross section: Fa18 unpol",
-            combination_column("Fa18", "unpol"),
-            true,
-            {
-                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
-                input_single("Fa18 Out", cross_section_column("Fa18 Out", "unpol"))
-            }
-        },
-        {
-            "cross section: Fa18 pos",
-            combination_column("Fa18", "pos"),
-            true,
-            {
-                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "pos")),
-                input_single("Fa18 Out", cross_section_column("Fa18 Out", "pos"))
-            }
-        },
-        {
-            "cross section: Fa18 neg",
-            combination_column("Fa18", "neg"),
-            true,
-            {
-                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "neg")),
-                input_single("Fa18 Out", cross_section_column("Fa18 Out", "neg"))
-            }
-        },
-        {
-            "cross section: Sp18 unpol",
-            combination_column("Sp18", "unpol"),
-            true,
-            {
-                input_single("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
-                input_single("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
-            }
-        },
-        {
-            "cross section: Fa18 vs Sp18 unpol",
-            "",
-            false,
-            {
-                input_group("Fa18", {
-                    cross_section_column("Fa18 Inb", "unpol"),
-                    cross_section_column("Fa18 Out", "unpol")
-                }),
-                input_group("Sp18", {
-                    cross_section_column("Sp18 Inb", "unpol"),
-                    cross_section_column("Sp18 Out", "unpol")
-                })
-            }
-        },
-        {
-            "cross section: Inb vs Out unpol",
-            "",
-            false,
-            {
-                input_group("Inb", {
-                    cross_section_column("Fa18 Inb", "unpol"),
-                    cross_section_column("Sp18 Inb", "unpol")
-                }),
-                input_group("Out", {
-                    cross_section_column("Fa18 Out", "unpol"),
-                    cross_section_column("Sp18 Out", "unpol")
-                })
-            }
-        },
-        {
-            "cross section: Fa18 Inb vs Sp18 Inb unpol",
-            "",
-            false,
-            {
-                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
-                input_single("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol"))
-            }
-        },
-        {
-            "cross section: Fa18 Out vs Sp18 Out unpol",
-            "",
-            false,
-            {
-                input_single("Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
-                input_single("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
-            }
-        },
-        {
-            "cross section: Fa18 Inb vs Sp19 Inb unpol",
-            "",
-            false,
-            {
-                input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
-                input_single("Sp19 Inb", cross_section_column("Sp19 Inb", "unpol"))
-            }
-        },
-        {
-            "BSA: 10.6 GeV",
-            bsa_combination_column("10.6 GeV"),
-            true,
-            {
-                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
-                input_single("Fa18 Out", bsa_column("Fa18 Out")),
-                input_single("Sp18 Inb", bsa_column("Sp18 Inb")),
-                input_single("Sp18 Out", bsa_column("Sp18 Out"))
-            }
-        },
-        {
-            "BSA: Fa18",
-            bsa_combination_column("Fa18"),
-            true,
-            {
-                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
-                input_single("Fa18 Out", bsa_column("Fa18 Out"))
-            }
-        },
-        {
-            "BSA: Sp18",
-            bsa_combination_column("Sp18"),
-            true,
-            {
-                input_single("Sp18 Inb", bsa_column("Sp18 Inb")),
-                input_single("Sp18 Out", bsa_column("Sp18 Out"))
-            }
-        },
-        {
-            "BSA: Fa18 vs Sp18",
-            "",
-            false,
-            {
-                input_group("Fa18", {
-                    bsa_column("Fa18 Inb"),
-                    bsa_column("Fa18 Out")
-                }),
-                input_group("Sp18", {
-                    bsa_column("Sp18 Inb"),
-                    bsa_column("Sp18 Out")
-                })
-            }
-        },
-        {
-            "BSA: Inb vs Out",
-            "",
-            false,
-            {
-                input_group("Inb", {
-                    bsa_column("Fa18 Inb"),
-                    bsa_column("Sp18 Inb")
-                }),
-                input_group("Out", {
-                    bsa_column("Fa18 Out"),
-                    bsa_column("Sp18 Out")
-                })
-            }
-        },
-        {
-            "BSA: Fa18 Inb vs Sp18 Inb",
-            "",
-            false,
-            {
-                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
-                input_single("Sp18 Inb", bsa_column("Sp18 Inb"))
-            }
-        },
-        {
-            "BSA: Fa18 Out vs Sp18 Out",
-            "",
-            false,
-            {
-                input_single("Fa18 Out", bsa_column("Fa18 Out")),
-                input_single("Sp18 Out", bsa_column("Sp18 Out"))
-            }
-        },
-        {
-            "BSA: Fa18 Inb vs Sp19 Inb",
-            "",
-            false,
-            {
-                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
-                input_single("Sp19 Inb", bsa_column("Sp19 Inb"))
-            }
+            input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+            input_single("Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
+            input_single("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
+            input_single("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
         }
-    };
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Fa18 unpol",
+        combination_column("Fa18", "unpol"),
+        true,
+        {
+            input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+            input_single("Fa18 Out", cross_section_column("Fa18 Out", "unpol"))
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Fa18 pos",
+        combination_column("Fa18", "pos"),
+        true,
+        {
+            input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "pos")),
+            input_single("Fa18 Out", cross_section_column("Fa18 Out", "pos"))
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Fa18 neg",
+        combination_column("Fa18", "neg"),
+        true,
+        {
+            input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "neg")),
+            input_single("Fa18 Out", cross_section_column("Fa18 Out", "neg"))
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Sp18 unpol",
+        combination_column("Sp18", "unpol"),
+        true,
+        {
+            input_single("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol")),
+            input_single("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Fa18 vs Sp18 unpol",
+        "",
+        false,
+        {
+            input_group("Fa18", {
+                cross_section_column("Fa18 Inb", "unpol"),
+                cross_section_column("Fa18 Out", "unpol")
+            }),
+            input_group("Sp18", {
+                cross_section_column("Sp18 Inb", "unpol"),
+                cross_section_column("Sp18 Out", "unpol")
+            })
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Inb vs Out unpol",
+        "",
+        false,
+        {
+            input_group("Inb", {
+                cross_section_column("Fa18 Inb", "unpol"),
+                cross_section_column("Sp18 Inb", "unpol")
+            }),
+            input_group("Out", {
+                cross_section_column("Fa18 Out", "unpol"),
+                cross_section_column("Sp18 Out", "unpol")
+            })
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Fa18 Inb vs Sp18 Inb unpol",
+        "",
+        false,
+        {
+            input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+            input_single("Sp18 Inb", cross_section_column("Sp18 Inb", "unpol"))
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Fa18 Out vs Sp18 Out unpol",
+        "",
+        false,
+        {
+            input_single("Fa18 Out", cross_section_column("Fa18 Out", "unpol")),
+            input_single("Sp18 Out", cross_section_column("Sp18 Out", "unpol"))
+        }
+    ));
+
+    cases.push_back(make_relative_case(
+        "cross section: Fa18 Inb vs Sp19 Inb unpol",
+        "",
+        false,
+        {
+            input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
+            input_single("Sp19 Inb", cross_section_column("Sp19 Inb", "unpol"))
+        }
+    ));
+
+    // BSA is dimensionless and crosses zero, so a ratio-to-mean definition is
+    // mathematically ill-conditioned. For BSA cases we use the same structure
+    // as the cross-section calculation, but with absolute residuals:
+    //     delta_i = A_i - <A>
+    //     s_comb = sqrt(RMS(delta_i)^2 - RMS(stat_i)^2)
+    // The resulting output-column value is an absolute A_LU uncertainty.
+    cases.push_back(make_absolute_case(
+        "BSA: 10.6 GeV",
+        bsa_combination_column("10.6 GeV"),
+        true,
+        {
+            input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+            input_single("Fa18 Out", bsa_column("Fa18 Out")),
+            input_single("Sp18 Inb", bsa_column("Sp18 Inb")),
+            input_single("Sp18 Out", bsa_column("Sp18 Out"))
+        }
+    ));
+
+    cases.push_back(make_absolute_case(
+        "BSA: Fa18",
+        bsa_combination_column("Fa18"),
+        true,
+        {
+            input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+            input_single("Fa18 Out", bsa_column("Fa18 Out"))
+        }
+    ));
+
+    cases.push_back(make_absolute_case(
+        "BSA: Sp18",
+        bsa_combination_column("Sp18"),
+        true,
+        {
+            input_single("Sp18 Inb", bsa_column("Sp18 Inb")),
+            input_single("Sp18 Out", bsa_column("Sp18 Out"))
+        }
+    ));
+
+    cases.push_back(make_absolute_case(
+        "BSA: Fa18 vs Sp18",
+        "",
+        false,
+        {
+            input_group("Fa18", {
+                bsa_column("Fa18 Inb"),
+                bsa_column("Fa18 Out")
+            }),
+            input_group("Sp18", {
+                bsa_column("Sp18 Inb"),
+                bsa_column("Sp18 Out")
+            })
+        }
+    ));
+
+    cases.push_back(make_absolute_case(
+        "BSA: Inb vs Out",
+        "",
+        false,
+        {
+            input_group("Inb", {
+                bsa_column("Fa18 Inb"),
+                bsa_column("Sp18 Inb")
+            }),
+            input_group("Out", {
+                bsa_column("Fa18 Out"),
+                bsa_column("Sp18 Out")
+            })
+        }
+    ));
+
+    cases.push_back(make_absolute_case(
+        "BSA: Fa18 Inb vs Sp18 Inb",
+        "",
+        false,
+        {
+            input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+            input_single("Sp18 Inb", bsa_column("Sp18 Inb"))
+        }
+    ));
+
+    cases.push_back(make_absolute_case(
+        "BSA: Fa18 Out vs Sp18 Out",
+        "",
+        false,
+        {
+            input_single("Fa18 Out", bsa_column("Fa18 Out")),
+            input_single("Sp18 Out", bsa_column("Sp18 Out"))
+        }
+    ));
+
+    cases.push_back(make_absolute_case(
+        "BSA: Fa18 Inb vs Sp19 Inb",
+        "",
+        false,
+        {
+            input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+            input_single("Sp19 Inb", bsa_column("Sp19 Inb"))
+        }
+    ));
+
+    return cases;
 }
 
 static std::vector<std::string> sp19_proxy_output_columns() {
@@ -1030,6 +1100,7 @@ static CombinationResult evaluate_case(const CsvTable& table,
     result.central_value_mode = "stat_weighted";
     result.output_column = c.output_column;
     result.fill_output = c.fill_output;
+    result.metric = c.metric;
 
     std::map<std::string, PeriodRatioAccumulator> acc_by_period;
 
@@ -1050,7 +1121,11 @@ static CombinationResult evaluate_case(const CsvTable& table,
             continue;
         }
 
-        if (!ref.ok || !std::isfinite(ref.value) || std::abs(ref.value) <= 0.0) {
+        if (!ref.ok || !std::isfinite(ref.value)) {
+            continue;
+        }
+
+        if (!is_absolute_metric(c.metric) && std::abs(ref.value) <= 0.0) {
             continue;
         }
 
@@ -1068,21 +1143,29 @@ static CombinationResult evaluate_case(const CsvTable& table,
         for (size_t i = 0; i < c.inputs.size(); ++i) {
             const TupleValue& v = input_values[i];
 
-            if (!v.ok || !std::isfinite(v.value) || v.stat <= 0.0) {
+            if (!v.ok || !std::isfinite(v.value) || !std::isfinite(v.stat) || v.stat <= 0.0) {
                 continue;
             }
 
-            const double ratio = v.value / ref.value;
-            const double ratio_stat = std::abs(v.stat / ref.value);
+            double metric_value = 0.0;
+            double metric_stat = 0.0;
 
-            if (std::isfinite(ratio) &&
-                std::isfinite(ratio_stat) &&
-                ratio_stat > 0.0) {
-                const double w = 1.0 / (ratio_stat * ratio_stat);
+            if (is_absolute_metric(c.metric)) {
+                metric_value = v.value - ref.value;
+                metric_stat = std::abs(v.stat);
+            } else {
+                metric_value = v.value / ref.value;
+                metric_stat = std::abs(v.stat / ref.value);
+            }
+
+            if (std::isfinite(metric_value) &&
+                std::isfinite(metric_stat) &&
+                metric_stat > 0.0) {
+                const double w = 1.0 / (metric_stat * metric_stat);
 
                 PeriodRatioAccumulator& acc = acc_by_period[c.inputs[i].period];
                 acc.sum_w += w;
-                acc.sum_wr += w * ratio;
+                acc.sum_wr += w * metric_value;
                 acc.n += 1;
 
                 ++result.ratio_points;
@@ -1099,8 +1182,8 @@ static CombinationResult evaluate_case(const CsvTable& table,
     double sum_stat2 = 0.0;
     int n_period = 0;
 
-    double min_ratio = std::numeric_limits<double>::infinity();
-    double max_ratio = -std::numeric_limits<double>::infinity();
+    double min_metric = std::numeric_limits<double>::infinity();
+    double max_metric = -std::numeric_limits<double>::infinity();
 
     for (const auto& input : c.inputs) {
         PeriodRatioSummary p;
@@ -1116,13 +1199,16 @@ static CombinationResult evaluate_case(const CsvTable& table,
             if (std::isfinite(p.mean_ratio) &&
                 std::isfinite(p.mean_ratio_stat) &&
                 p.mean_ratio_stat > 0.0) {
-                const double residual = p.mean_ratio - 1.0;
+                const double residual = is_absolute_metric(c.metric)
+                    ? p.mean_ratio
+                    : (p.mean_ratio - 1.0);
+
                 sum_obs2 += residual * residual;
                 sum_stat2 += p.mean_ratio_stat * p.mean_ratio_stat;
                 ++n_period;
 
-                min_ratio = std::min(min_ratio, p.mean_ratio);
-                max_ratio = std::max(max_ratio, p.mean_ratio);
+                min_metric = std::min(min_metric, p.mean_ratio);
+                max_metric = std::max(max_metric, p.mean_ratio);
             }
 
             result.period_summaries.push_back(p);
@@ -1139,10 +1225,10 @@ static CombinationResult evaluate_case(const CsvTable& table,
         ));
     }
 
-    if (std::isfinite(min_ratio) &&
-        std::isfinite(max_ratio) &&
-        max_ratio >= min_ratio) {
-        result.half_width = 0.5 * (max_ratio - min_ratio);
+    if (std::isfinite(min_metric) &&
+        std::isfinite(max_metric) &&
+        max_metric >= min_metric) {
+        result.half_width = 0.5 * (max_metric - min_metric);
     }
 
     return result;
@@ -1173,41 +1259,48 @@ static void write_summary_csv(const std::string& path,
         throw std::runtime_error("Could not open summary CSV: " + path);
     }
 
-    fout << "case,central value mode,output column,fill output,valid bins,ratio points,"
-         << "s_obs_period,s_comb,s_comb percent,half max width,half max width percent,s_stat_period,"
-         << "period,period ratio points,period mean ratio,period mean ratio stat\n";
+    fout << "case,central value mode,metric,output column,fill output,valid bins,points,"
+         << "s_obs,s_stat,s_comb,half_width,"
+         << "s_obs_percent_for_relative_cases,s_stat_percent_for_relative_cases,"
+         << "s_comb_percent_for_relative_cases,half_width_percent_for_relative_cases,"
+         << "period,period points,period mean metric,period mean metric stat\n";
 
     for (const auto& r : results) {
         if (r.period_summaries.empty()) {
             fout << csv_escape_field(r.label) << ","
                  << csv_escape_field(r.central_value_mode) << ","
+                 << csv_escape_field(metric_name(r.metric)) << ","
                  << csv_escape_field(r.output_column) << ","
                  << (r.fill_output ? "true" : "false") << ","
                  << r.valid_bins << ","
                  << r.ratio_points << ","
                  << format_double(r.s_obs) << ","
-                 << format_double(r.s_comb) << ","
-                 << format_double(100.0 * r.s_comb) << ","
-                 << format_double(r.half_width) << ","
-                 << format_double(100.0 * r.half_width) << ","
                  << format_double(r.s_stat_exp) << ","
-                 << ",,,\n";
+                 << format_double(r.s_comb) << ","
+                 << format_double(r.half_width) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.s_obs)) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.s_stat_exp)) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.s_comb)) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.half_width)) << ",,,,\n";
             continue;
         }
 
         for (const auto& p : r.period_summaries) {
             fout << csv_escape_field(r.label) << ","
                  << csv_escape_field(r.central_value_mode) << ","
+                 << csv_escape_field(metric_name(r.metric)) << ","
                  << csv_escape_field(r.output_column) << ","
                  << (r.fill_output ? "true" : "false") << ","
                  << r.valid_bins << ","
                  << r.ratio_points << ","
                  << format_double(r.s_obs) << ","
-                 << format_double(r.s_comb) << ","
-                 << format_double(100.0 * r.s_comb) << ","
-                 << format_double(r.half_width) << ","
-                 << format_double(100.0 * r.half_width) << ","
                  << format_double(r.s_stat_exp) << ","
+                 << format_double(r.s_comb) << ","
+                 << format_double(r.half_width) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.s_obs)) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.s_stat_exp)) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.s_comb)) << ","
+                 << (is_absolute_metric(r.metric) ? "" : format_double(100.0 * r.half_width)) << ","
                  << csv_escape_field(p.period) << ","
                  << p.n << ","
                  << format_double(p.mean_ratio) << ","
@@ -1223,9 +1316,19 @@ static void write_summary_csv(const std::string& path,
 }
 
 static void print_summary_table(const std::vector<CombinationResult>& results) {
-    std::cout << "\n[combination-systematics] Key s_comb results\n";
+    auto important = [](const CombinationResult& r) {
+        return r.fill_output ||
+               r.label == "cross section: Fa18 Inb vs Sp19 Inb unpol" ||
+               r.label == "BSA: Fa18 Inb vs Sp19 Inb" ||
+               r.label == "cross section: Fa18 vs Sp18 unpol" ||
+               r.label == "BSA: Fa18 vs Sp18" ||
+               r.label == "cross section: Inb vs Out unpol" ||
+               r.label == "BSA: Inb vs Out";
+    };
+
+    std::cout << "\n[combination-systematics] Key relative cross-section s_comb results\n";
     std::cout << std::left
-              << std::setw(42) << "case"
+              << std::setw(46) << "case"
               << std::right
               << std::setw(9) << "bins"
               << std::setw(10) << "points"
@@ -1236,21 +1339,12 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
               << "\n";
 
     for (const auto& r : results) {
-        const bool important =
-            r.fill_output ||
-            r.label == "cross section: Fa18 Inb vs Sp19 Inb unpol" ||
-            r.label == "BSA: Fa18 Inb vs Sp19 Inb" ||
-            r.label == "cross section: Fa18 vs Sp18 unpol" ||
-            r.label == "BSA: Fa18 vs Sp18" ||
-            r.label == "cross section: Inb vs Out unpol" ||
-            r.label == "BSA: Inb vs Out";
-
-        if (!important) {
+        if (!important(r) || is_absolute_metric(r.metric)) {
             continue;
         }
 
         std::cout << std::left
-                  << std::setw(42) << r.label
+                  << std::setw(46) << r.label
                   << std::right
                   << std::setw(9) << r.valid_bins
                   << std::setw(10) << r.ratio_points
@@ -1258,6 +1352,35 @@ static void print_summary_table(const std::vector<CombinationResult>& results) {
                   << std::setw(12) << std::fixed << std::setprecision(3) << 100.0 * r.s_stat_exp
                   << std::setw(12) << std::fixed << std::setprecision(3) << 100.0 * r.s_comb
                   << std::setw(12) << std::fixed << std::setprecision(3) << 100.0 * r.half_width
+                  << "\n";
+    }
+
+    std::cout << "\n[combination-systematics] Key absolute BSA s_comb results\n";
+    std::cout << std::left
+              << std::setw(46) << "case"
+              << std::right
+              << std::setw(9) << "bins"
+              << std::setw(10) << "points"
+              << std::setw(12) << "s_obs"
+              << std::setw(12) << "s_stat"
+              << std::setw(12) << "s_comb"
+              << std::setw(12) << "half"
+              << "\n";
+
+    for (const auto& r : results) {
+        if (!important(r) || !is_absolute_metric(r.metric)) {
+            continue;
+        }
+
+        std::cout << std::left
+                  << std::setw(46) << r.label
+                  << std::right
+                  << std::setw(9) << r.valid_bins
+                  << std::setw(10) << r.ratio_points
+                  << std::setw(12) << std::fixed << std::setprecision(5) << r.s_obs
+                  << std::setw(12) << std::fixed << std::setprecision(5) << r.s_stat_exp
+                  << std::setw(12) << std::fixed << std::setprecision(5) << r.s_comb
+                  << std::setw(12) << std::fixed << std::setprecision(5) << r.half_width
                   << "\n";
     }
 
@@ -2763,6 +2886,7 @@ bool combination_systematics(const std::string& csv_path,
         std::cout << "[combination-systematics] Output directory: "
                   << out_dir_string << "\n";
         std::cout << "[combination-systematics] CSV output columns filled using central mode: stat_weighted\n";
+        std::cout << "[combination-systematics] Cross sections use relative ratio spread; BSAs use absolute A_LU spread.\n";
 
         std::vector<CombinationResult> results;
         results.reserve(cases.size() + 2);
@@ -2806,6 +2930,7 @@ bool combination_systematics(const std::string& csv_path,
         sp19_xs.central_value_mode = "stat_weighted";
         sp19_xs.output_column = combination_column("Sp19 Inb", "unpol");
         sp19_xs.fill_output = true;
+        sp19_xs.metric = CombinationMetric::RelativeRatio;
         sp19_xs.s_obs = ten6_unpol_s_comb_for_fill;
         sp19_xs.s_comb = ten6_unpol_s_comb_for_fill;
         sp19_xs.half_width = ten6_unpol_s_comb_for_fill;
@@ -2821,6 +2946,7 @@ bool combination_systematics(const std::string& csv_path,
             sp19_bsa.central_value_mode = "stat_weighted";
             sp19_bsa.output_column = bsa_combination_column("Sp19 Inb");
             sp19_bsa.fill_output = true;
+            sp19_bsa.metric = CombinationMetric::AbsoluteDifference;
             sp19_bsa.s_obs = ten6_bsa_s_comb_for_fill;
             sp19_bsa.s_comb = ten6_bsa_s_comb_for_fill;
             sp19_bsa.half_width = ten6_bsa_s_comb_for_fill;
