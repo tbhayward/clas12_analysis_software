@@ -41,6 +41,8 @@ static constexpr int kMaxPolynomialOrder = 5;
 static constexpr double kMinChi2NdfImprovement = 0.01;
 static constexpr int kMaxFitWorkers = 5;
 static constexpr double kExpectedSp19OverFa18InbRatio = 0.95;
+static constexpr bool kVerboseFitOrderPrints = false;
+
 
 struct CsvTable {
     std::vector<std::string> header;
@@ -414,6 +416,40 @@ static void require_columns(const CsvTable& table,
     }
 }
 
+static std::vector<std::string> sp19_proxy_output_columns();
+
+static void ensure_column(CsvTable& table,
+                          const std::string& column,
+                          const std::string& initial_value = "") {
+    if (column.empty()) {
+        return;
+    }
+
+    if (table.index.find(column) != table.index.end()) {
+        return;
+    }
+
+    table.index[column] = (int)table.header.size();
+    table.header.push_back(column);
+
+    for (auto& row : table.rows) {
+        row.push_back(initial_value);
+    }
+}
+
+static void ensure_output_columns(CsvTable& table,
+                                  const std::vector<CombinationCase>& cases) {
+    for (const auto& c : cases) {
+        if (c.fill_output && !c.output_column.empty()) {
+            ensure_column(table, c.output_column);
+        }
+    }
+
+    for (const auto& col : sp19_proxy_output_columns()) {
+        ensure_column(table, col);
+    }
+}
+
 static bool parse_double(const std::string& raw,
                          double& out) {
     const std::string s = trim(raw);
@@ -612,6 +648,14 @@ static std::string combination_column(const std::string& label,
     return cross_section_column(label, helicity) + ", combination sys";
 }
 
+static std::string bsa_column(const std::string& label) {
+    return "BSA, counts, " + label;
+}
+
+static std::string bsa_combination_column(const std::string& label) {
+    return bsa_column(label) + ", combination sys";
+}
+
 static std::string avg_column(const std::string& variable_prefix,
                               const std::string& avg_label) {
     return variable_prefix + ", " + avg_label;
@@ -636,7 +680,7 @@ static PeriodInput input_group(const std::string& label,
 static std::vector<CombinationCase> combination_cases() {
     return {
         {
-            "10.6 GeV unpol",
+            "cross section: 10.6 GeV unpol",
             combination_column("10.6 GeV", "unpol"),
             true,
             {
@@ -647,7 +691,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Fa18 unpol",
+            "cross section: Fa18 unpol",
             combination_column("Fa18", "unpol"),
             true,
             {
@@ -656,7 +700,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Fa18 pos",
+            "cross section: Fa18 pos",
             combination_column("Fa18", "pos"),
             true,
             {
@@ -665,7 +709,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Fa18 neg",
+            "cross section: Fa18 neg",
             combination_column("Fa18", "neg"),
             true,
             {
@@ -674,7 +718,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Sp18 unpol",
+            "cross section: Sp18 unpol",
             combination_column("Sp18", "unpol"),
             true,
             {
@@ -683,7 +727,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Fa18 vs Sp18 unpol",
+            "cross section: Fa18 vs Sp18 unpol",
             "",
             false,
             {
@@ -698,7 +742,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Inb vs Out unpol",
+            "cross section: Inb vs Out unpol",
             "",
             false,
             {
@@ -713,7 +757,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Fa18 Inb vs Sp18 Inb unpol",
+            "cross section: Fa18 Inb vs Sp18 Inb unpol",
             "",
             false,
             {
@@ -722,7 +766,7 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Fa18 Out vs Sp18 Out unpol",
+            "cross section: Fa18 Out vs Sp18 Out unpol",
             "",
             false,
             {
@@ -731,12 +775,98 @@ static std::vector<CombinationCase> combination_cases() {
             }
         },
         {
-            "Fa18 Inb vs Sp19 Inb unpol",
+            "cross section: Fa18 Inb vs Sp19 Inb unpol",
             "",
             false,
             {
                 input_single("Fa18 Inb", cross_section_column("Fa18 Inb", "unpol")),
                 input_single("Sp19 Inb", cross_section_column("Sp19 Inb", "unpol"))
+            }
+        },
+        {
+            "BSA: 10.6 GeV",
+            bsa_combination_column("10.6 GeV"),
+            true,
+            {
+                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+                input_single("Fa18 Out", bsa_column("Fa18 Out")),
+                input_single("Sp18 Inb", bsa_column("Sp18 Inb")),
+                input_single("Sp18 Out", bsa_column("Sp18 Out"))
+            }
+        },
+        {
+            "BSA: Fa18",
+            bsa_combination_column("Fa18"),
+            true,
+            {
+                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+                input_single("Fa18 Out", bsa_column("Fa18 Out"))
+            }
+        },
+        {
+            "BSA: Sp18",
+            bsa_combination_column("Sp18"),
+            true,
+            {
+                input_single("Sp18 Inb", bsa_column("Sp18 Inb")),
+                input_single("Sp18 Out", bsa_column("Sp18 Out"))
+            }
+        },
+        {
+            "BSA: Fa18 vs Sp18",
+            "",
+            false,
+            {
+                input_group("Fa18", {
+                    bsa_column("Fa18 Inb"),
+                    bsa_column("Fa18 Out")
+                }),
+                input_group("Sp18", {
+                    bsa_column("Sp18 Inb"),
+                    bsa_column("Sp18 Out")
+                })
+            }
+        },
+        {
+            "BSA: Inb vs Out",
+            "",
+            false,
+            {
+                input_group("Inb", {
+                    bsa_column("Fa18 Inb"),
+                    bsa_column("Sp18 Inb")
+                }),
+                input_group("Out", {
+                    bsa_column("Fa18 Out"),
+                    bsa_column("Sp18 Out")
+                })
+            }
+        },
+        {
+            "BSA: Fa18 Inb vs Sp18 Inb",
+            "",
+            false,
+            {
+                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+                input_single("Sp18 Inb", bsa_column("Sp18 Inb"))
+            }
+        },
+        {
+            "BSA: Fa18 Out vs Sp18 Out",
+            "",
+            false,
+            {
+                input_single("Fa18 Out", bsa_column("Fa18 Out")),
+                input_single("Sp18 Out", bsa_column("Sp18 Out"))
+            }
+        },
+        {
+            "BSA: Fa18 Inb vs Sp19 Inb",
+            "",
+            false,
+            {
+                input_single("Fa18 Inb", bsa_column("Fa18 Inb")),
+                input_single("Sp19 Inb", bsa_column("Sp19 Inb"))
             }
         }
     };
@@ -744,7 +874,8 @@ static std::vector<CombinationCase> combination_cases() {
 
 static std::vector<std::string> sp19_proxy_output_columns() {
     return {
-        combination_column("Sp19 Inb", "unpol")
+        combination_column("Sp19 Inb", "unpol"),
+        bsa_combination_column("Sp19 Inb")
     };
 }
 
@@ -845,7 +976,7 @@ static void append_ratio_points_for_row(const CsvTable& table,
                                         const std::vector<TupleValue>& input_values,
                                         const TupleValue& ref,
                                         std::vector<RatioPoint>& ratio_points) {
-    if (c.label != "10.6 GeV unpol") {
+    if (c.label != "cross section: 10.6 GeV unpol") {
         return;
     }
 
@@ -1092,46 +1223,42 @@ static void write_summary_csv(const std::string& path,
 }
 
 static void print_summary_table(const std::vector<CombinationResult>& results) {
-    std::cout << "\n[combination-systematics] Summary\n";
-
+    std::cout << "\n[combination-systematics] Key s_comb results\n";
     std::cout << std::left
-              << std::setw(34) << "case"
-              << std::setw(18) << "central"
+              << std::setw(42) << "case"
               << std::right
-              << std::setw(10) << "bins"
-              << std::setw(12) << "ratios"
-              << std::setw(14) << "s_obs"
-              << std::setw(14) << "s_comb"
-              << std::setw(14) << "percent"
-              << std::setw(14) << "half_width"
-              << std::setw(14) << "half_percent"
-              << std::setw(14) << "s_stat"
+              << std::setw(9) << "bins"
+              << std::setw(10) << "points"
+              << std::setw(12) << "s_obs(%)"
+              << std::setw(12) << "s_stat(%)"
+              << std::setw(12) << "s_comb(%)"
+              << std::setw(12) << "half(%)"
               << "\n";
 
     for (const auto& r : results) {
-        std::cout << std::left
-                  << std::setw(34) << r.label
-                  << std::setw(18) << r.central_value_mode
-                  << std::right
-                  << std::setw(10) << r.valid_bins
-                  << std::setw(12) << r.ratio_points
-                  << std::setw(14) << std::setprecision(6) << r.s_obs
-                  << std::setw(14) << std::setprecision(6) << r.s_comb
-                  << std::setw(14) << std::setprecision(6) << 100.0 * r.s_comb
-                  << std::setw(14) << std::setprecision(6) << r.half_width
-                  << std::setw(14) << std::setprecision(6) << 100.0 * r.half_width
-                  << std::setw(14) << std::setprecision(6) << r.s_stat_exp
-                  << "\n";
+        const bool important =
+            r.fill_output ||
+            r.label == "cross section: Fa18 Inb vs Sp19 Inb unpol" ||
+            r.label == "BSA: Fa18 Inb vs Sp19 Inb" ||
+            r.label == "cross section: Fa18 vs Sp18 unpol" ||
+            r.label == "BSA: Fa18 vs Sp18" ||
+            r.label == "cross section: Inb vs Out unpol" ||
+            r.label == "BSA: Inb vs Out";
 
-        for (const auto& p : r.period_summaries) {
-            std::cout << "    period mean ratio "
-                      << std::left << std::setw(10) << p.period
-                      << " = " << std::right
-                      << std::setprecision(8) << p.mean_ratio
-                      << " +/- " << std::setprecision(8) << p.mean_ratio_stat
-                      << "   n=" << p.n
-                      << "\n";
+        if (!important) {
+            continue;
         }
+
+        std::cout << std::left
+                  << std::setw(42) << r.label
+                  << std::right
+                  << std::setw(9) << r.valid_bins
+                  << std::setw(10) << r.ratio_points
+                  << std::setw(12) << std::fixed << std::setprecision(3) << 100.0 * r.s_obs
+                  << std::setw(12) << std::fixed << std::setprecision(3) << 100.0 * r.s_stat_exp
+                  << std::setw(12) << std::fixed << std::setprecision(3) << 100.0 * r.s_comb
+                  << std::setw(12) << std::fixed << std::setprecision(3) << 100.0 * r.half_width
+                  << "\n";
     }
 
     std::cout << "\n";
@@ -1438,7 +1565,7 @@ static FitTaskResult run_iterative_fit_task(const FitTask& task) {
         FitResultSummary fit = weighted_polynomial_fit(task, order, previous_chi2_ndf);
         result.attempted.push_back(fit);
 
-        {
+        if (kVerboseFitOrderPrints) {
             std::lock_guard<std::mutex> lock(gPrintMutex);
 
             std::cout << "[combination-systematics][fit] "
@@ -2229,7 +2356,7 @@ static void draw_kinematic_canvas_for_variable(const fs::path& out_dir,
     title.SetTextAlign(22);
 
     std::ostringstream title_text;
-    title_text << "10.6 GeV unpol, stat weighted, "
+    title_text << "cross section: 10.6 GeV unpol, stat weighted, "
                << reference_type
                << ", kinematic dependence vs "
                << variable.plain_title;
@@ -2251,7 +2378,7 @@ static void draw_kinematic_canvas_for_variable(const fs::path& out_dir,
 static std::vector<FitTask> build_fit_tasks(const std::vector<RatioPoint>& all_ratio_points) {
     std::vector<FitTask> tasks;
 
-    const std::string case_label = "10.6 GeV unpol";
+    const std::string case_label = "cross section: 10.6 GeV unpol";
     const std::string central_mode = "stat_weighted";
     const std::string reference_type = "all_mean";
 
@@ -2289,7 +2416,7 @@ extract_final_e_theta_all_mean_fits(const std::vector<FitTaskResult>& fit_result
     std::map<std::string, FitResultSummary> out;
 
     for (const auto& result : fit_results) {
-        if (result.task.case_label != "10.6 GeV unpol") {
+        if (result.task.case_label != "cross section: 10.6 GeV unpol") {
             continue;
         }
 
@@ -2435,53 +2562,29 @@ static void write_e_theta_scale_reference_csv(const fs::path& path,
     }
 }
 
-static void print_e_theta_scale_reference(const std::map<std::string, FitResultSummary>& fits_by_period,
+static void print_e_theta_scale_reference(const std::map<std::string, FitResultSummary>&,
                                           const std::vector<ScaleReferencePoint>& reference_points) {
-    std::cout << "\n[combination-systematics] e_theta-dependent scale systematic reference\n";
-    std::cout << "[combination-systematics] Reference is computed only inside each period fit's e_theta support; "
-              << "s_comb is the RMS of f_i(theta)/<f(theta)> - 1, without subtracting polynomial-parameter errors.\n";
-
-    std::cout << std::left
-              << std::setw(10) << "theta"
-              << std::right;
-
-    for (const auto& period : ten6_periods()) {
-        std::cout << std::setw(16) << (sanitize_for_path(period) + "_f");
-    }
-
-    std::cout << std::setw(10) << "n"
-              << std::setw(14) << "mean_f"
-              << std::setw(14) << "s_obs"
-              << std::setw(14) << "s_stat"
-              << std::setw(14) << "s_comb"
-              << std::setw(14) << "percent"
-              << "\n";
+    int n_valid = 0;
+    double sum_s_comb = 0.0;
+    double max_s_comb = 0.0;
 
     for (const auto& ref : reference_points) {
-        std::cout << std::left
-                  << std::setw(10) << std::setprecision(4) << ref.theta
-                  << std::right;
-
-        for (const auto& period : ten6_periods()) {
-            const FitResultSummary& fit = fits_by_period.at(period);
-            if (theta_inside_fit_support(fit, ref.theta)) {
-                const double scale = eval_poly(fit.params, ref.theta);
-                std::cout << std::setw(16) << std::setprecision(8) << scale;
-            } else {
-                std::cout << std::setw(16) << "out";
-            }
+        if (ref.n_valid < 2 || !std::isfinite(ref.s_comb)) {
+            continue;
         }
 
-        std::cout << std::setw(10) << ref.n_valid
-                  << std::setw(14) << std::setprecision(8) << ref.mean_scale
-                  << std::setw(14) << std::setprecision(8) << ref.s_obs
-                  << std::setw(14) << std::setprecision(8) << ref.s_stat
-                  << std::setw(14) << std::setprecision(8) << ref.s_comb
-                  << std::setw(14) << std::setprecision(8) << 100.0 * ref.s_comb
-                  << "\n";
+        ++n_valid;
+        sum_s_comb += ref.s_comb;
+        max_s_comb = std::max(max_s_comb, ref.s_comb);
     }
 
-    std::cout << "\n";
+    const double mean_s_comb = n_valid > 0 ? sum_s_comb / (double)n_valid : 0.0;
+
+    std::cout << "[combination-systematics] e_theta scale reference: "
+              << n_valid << " usable points, mean s_comb="
+              << std::fixed << std::setprecision(3) << 100.0 * mean_s_comb << "%"
+              << ", max s_comb="
+              << std::fixed << std::setprecision(3) << 100.0 * max_s_comb << "%\n";
 }
 
 static void draw_e_theta_s_obs_canvas(const fs::path& fit_root,
@@ -2652,6 +2755,7 @@ bool combination_systematics(const std::string& csv_path,
         CsvTable table = read_csv_or_throw(csv_path);
         const std::vector<CombinationCase> cases = combination_cases();
 
+        ensure_output_columns(table, cases);
         validate_schema(table, cases);
 
         std::cout << "[combination-systematics] CSV rows loaded: "
@@ -2661,11 +2765,13 @@ bool combination_systematics(const std::string& csv_path,
         std::cout << "[combination-systematics] CSV output columns filled using central mode: stat_weighted\n";
 
         std::vector<CombinationResult> results;
-        results.reserve(cases.size() + 1);
+        results.reserve(cases.size() + 2);
 
         std::vector<RatioPoint> all_ratio_points;
 
         double ten6_unpol_s_comb_for_fill =
+            std::numeric_limits<double>::quiet_NaN();
+        double ten6_bsa_s_comb_for_fill =
             std::numeric_limits<double>::quiet_NaN();
 
         for (const auto& c : cases) {
@@ -2678,30 +2784,51 @@ bool combination_systematics(const std::string& csv_path,
                 fill_output_column(table, result.output_column, result.s_comb);
             }
 
-            if (c.label == "10.6 GeV unpol") {
+            if (c.label == "cross section: 10.6 GeV unpol") {
                 ten6_unpol_s_comb_for_fill = result.s_comb;
+            } else if (c.label == "BSA: 10.6 GeV") {
+                ten6_bsa_s_comb_for_fill = result.s_comb;
             }
 
             results.push_back(result);
         }
 
         if (!std::isfinite(ten6_unpol_s_comb_for_fill)) {
-            throw std::runtime_error("Could not determine 10.6 GeV unpol s_comb for Sp19 proxy fill.");
+            throw std::runtime_error("Could not determine cross-section 10.6 GeV unpol s_comb for Sp19 proxy fill.");
         }
 
-        for (const auto& col : sp19_proxy_output_columns()) {
-            fill_output_column(table, col, ten6_unpol_s_comb_for_fill);
-        }
+        fill_output_column(table,
+                           combination_column("Sp19 Inb", "unpol"),
+                           ten6_unpol_s_comb_for_fill);
 
-        CombinationResult sp19;
-        sp19.label = "Sp19 Inb unpol";
-        sp19.central_value_mode = "stat_weighted";
-        sp19.output_column = combination_column("Sp19 Inb", "unpol");
-        sp19.fill_output = true;
-        sp19.s_obs = ten6_unpol_s_comb_for_fill;
-        sp19.s_comb = ten6_unpol_s_comb_for_fill;
-        sp19.half_width = ten6_unpol_s_comb_for_fill;
-        results.push_back(sp19);
+        CombinationResult sp19_xs;
+        sp19_xs.label = "cross section: Sp19 Inb unpol proxy";
+        sp19_xs.central_value_mode = "stat_weighted";
+        sp19_xs.output_column = combination_column("Sp19 Inb", "unpol");
+        sp19_xs.fill_output = true;
+        sp19_xs.s_obs = ten6_unpol_s_comb_for_fill;
+        sp19_xs.s_comb = ten6_unpol_s_comb_for_fill;
+        sp19_xs.half_width = ten6_unpol_s_comb_for_fill;
+        results.push_back(sp19_xs);
+
+        if (std::isfinite(ten6_bsa_s_comb_for_fill)) {
+            fill_output_column(table,
+                               bsa_combination_column("Sp19 Inb"),
+                               ten6_bsa_s_comb_for_fill);
+
+            CombinationResult sp19_bsa;
+            sp19_bsa.label = "BSA: Sp19 Inb proxy";
+            sp19_bsa.central_value_mode = "stat_weighted";
+            sp19_bsa.output_column = bsa_combination_column("Sp19 Inb");
+            sp19_bsa.fill_output = true;
+            sp19_bsa.s_obs = ten6_bsa_s_comb_for_fill;
+            sp19_bsa.s_comb = ten6_bsa_s_comb_for_fill;
+            sp19_bsa.half_width = ten6_bsa_s_comb_for_fill;
+            results.push_back(sp19_bsa);
+        } else {
+            std::cout << "[combination-systematics] BSA 10.6 GeV s_comb was not finite; "
+                      << "Sp19 BSA proxy combination-sys column was left blank.\n";
+        }
 
         const std::string summary_csv =
             out_dir_string + "/combination_systematics_summary.csv";
