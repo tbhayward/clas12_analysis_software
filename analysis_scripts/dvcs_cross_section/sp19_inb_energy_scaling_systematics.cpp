@@ -22,9 +22,9 @@
 //
 // Outputs:
 //   - Adds row-level diagnostic columns to the pass-2 CSV.
-//   - Writes detailed row and binned summaries under
+//   - Writes one consolidated diagnostic CSV under
 //       output/systematics/sp19_inb_energy_scaling/
-//   - Produces PNG diagnostic plots of the energy-corrected ratios versus
+//   - Produces one PNG summary canvas with subplots versus
 //     e_theta, p_theta, g_theta, xB, Q2 and |t|.
 // -----------------------------------------------------------------------------
 
@@ -39,6 +39,7 @@
 #include <TROOT.h>
 #include <TStyle.h>
 #include <TAxis.h>
+#include <TPad.h>
 
 #include <algorithm>
 #include <cmath>
@@ -660,67 +661,225 @@ static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& 
     return out;
 }
 
-static void draw_binned_plot(const std::vector<BinnedPoint>& pts,
-                             const std::string& out_png,
-                             const std::string& title,
-                             const std::string& x_label,
-                             const std::string& y_label,
-                             double y_ref = 1.0) {
-    if (pts.empty()) return;
-    std::vector<double> x, ex, y, ey;
-    x.reserve(pts.size()); ex.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
-    for (const auto& p : pts) {
-        x.push_back(p.x);
-        ex.push_back(0.0);
-        y.push_back(p.y);
-        ey.push_back(p.ey);
-    }
+static double finite_or_nan(double x) {
+    return std::isfinite(x) ? x : std::numeric_limits<double>::quiet_NaN();
+}
 
+static void draw_sp19_kinematic_summary_canvas(
+        const std::string& out_png,
+        const std::vector<std::pair<std::string, std::string> >& variables,
+        const std::map<std::string, std::vector<BinnedPoint> >& binned_fa18,
+        const std::map<std::string, std::vector<BinnedPoint> >& binned_ten6) {
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
 
-    TCanvas c("c", "c", 1000, 760);
-    c.SetLeftMargin(0.13);
-    c.SetRightMargin(0.04);
-    c.SetBottomMargin(0.12);
-    c.SetTopMargin(0.08);
+    TCanvas c("c_sp19_scale_summary", "c_sp19_scale_summary", 1800, 1100);
+    c.Divide(3, 2, 0.005, 0.005);
 
-    TGraphErrors g((int)x.size(), x.data(), y.data(), ex.data(), ey.data());
-    g.SetTitle(title.c_str());
-    g.SetMarkerStyle(20);
-    g.SetMarkerSize(1.0);
-    g.SetLineWidth(2);
-    g.GetXaxis()->SetTitle(x_label.c_str());
-    g.GetYaxis()->SetTitle(y_label.c_str());
-    g.GetXaxis()->SetTitleSize(0.045);
-    g.GetYaxis()->SetTitleSize(0.045);
-    g.GetXaxis()->SetLabelSize(0.04);
-    g.GetYaxis()->SetLabelSize(0.04);
-    g.Draw("AP");
+    for (size_t iv = 0; iv < variables.size(); ++iv) {
+        c.cd((int)iv + 1);
+        TPad* pad = (TPad*)gPad;
+        pad->SetLeftMargin(0.13);
+        pad->SetRightMargin(0.04);
+        pad->SetBottomMargin(0.13);
+        pad->SetTopMargin(0.10);
+        pad->SetGridy(true);
 
-    double xmin = *std::min_element(x.begin(), x.end());
-    double xmax = *std::max_element(x.begin(), x.end());
-    TLine line(xmin, y_ref, xmax, y_ref);
-    line.SetLineStyle(2);
-    line.SetLineWidth(2);
-    line.Draw("same");
+        const std::string& key = variables[iv].first;
+        const std::string& label = variables[iv].second;
+        const auto it_f = binned_fa18.find(key);
+        const auto it_t = binned_ten6.find(key);
+        const std::vector<BinnedPoint> empty;
+        const auto& fa18 = (it_f == binned_fa18.end()) ? empty : it_f->second;
+        const auto& ten6 = (it_t == binned_ten6.end()) ? empty : it_t->second;
+
+        if (fa18.empty() && ten6.empty()) {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextSize(0.050);
+            lat.DrawLatex(0.20, 0.52, ("No points for " + key).c_str());
+            continue;
+        }
+
+        auto fill_vectors = [](const std::vector<BinnedPoint>& pts,
+                               std::vector<double>& x,
+                               std::vector<double>& ex,
+                               std::vector<double>& y,
+                               std::vector<double>& ey) {
+            x.clear(); ex.clear(); y.clear(); ey.clear();
+            x.reserve(pts.size()); ex.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
+            for (const auto& p : pts) {
+                x.push_back(p.x);
+                ex.push_back(0.0);
+                y.push_back(p.y);
+                ey.push_back(p.ey);
+            }
+        };
+
+        std::vector<double> xf, exf, yf, eyf, xt, ext, yt, eyt;
+        fill_vectors(fa18, xf, exf, yf, eyf);
+        fill_vectors(ten6, xt, ext, yt, eyt);
+
+        double xmin = std::numeric_limits<double>::infinity();
+        double xmax = -std::numeric_limits<double>::infinity();
+        double ymin = std::numeric_limits<double>::infinity();
+        double ymax = -std::numeric_limits<double>::infinity();
+        auto scan = [&](const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& ey) {
+            for (size_t i = 0; i < x.size(); ++i) {
+                if (!std::isfinite(x[i]) || !std::isfinite(y[i])) continue;
+                xmin = std::min(xmin, x[i]);
+                xmax = std::max(xmax, x[i]);
+                const double e = (i < ey.size() && std::isfinite(ey[i])) ? ey[i] : 0.0;
+                ymin = std::min(ymin, y[i] - e);
+                ymax = std::max(ymax, y[i] + e);
+            }
+        };
+        scan(xf, yf, eyf);
+        scan(xt, yt, eyt);
+        if (!std::isfinite(xmin) || !std::isfinite(xmax) || !(xmax > xmin)) {
+            xmin = 0.0; xmax = 1.0;
+        }
+        if (!std::isfinite(ymin) || !std::isfinite(ymax) || !(ymax > ymin)) {
+            ymin = 0.5; ymax = 1.5;
+        }
+        ymin = std::min(ymin, 1.0);
+        ymax = std::max(ymax, 1.0);
+        const double yrange = ymax - ymin;
+        ymin -= 0.15 * yrange;
+        ymax += 0.18 * yrange;
+
+        TGraphErrors* g_fa18 = nullptr;
+        TGraphErrors* g_ten6 = nullptr;
+        bool drew = false;
+
+        if (!xf.empty()) {
+            g_fa18 = new TGraphErrors((int)xf.size(), xf.data(), yf.data(), exf.data(), eyf.data());
+            g_fa18->SetTitle(("Sp19 Inb energy-corrected ratios vs " + key).c_str());
+            g_fa18->SetMarkerStyle(20);
+            g_fa18->SetMarkerSize(0.75);
+            g_fa18->SetLineWidth(2);
+            g_fa18->SetMarkerColor(kBlue + 1);
+            g_fa18->SetLineColor(kBlue + 1);
+            g_fa18->GetXaxis()->SetTitle(label.c_str());
+            g_fa18->GetYaxis()->SetTitle("Ratio");
+            g_fa18->GetXaxis()->SetTitleSize(0.045);
+            g_fa18->GetYaxis()->SetTitleSize(0.045);
+            g_fa18->GetXaxis()->SetLabelSize(0.038);
+            g_fa18->GetYaxis()->SetLabelSize(0.038);
+            g_fa18->GetYaxis()->SetRangeUser(ymin, ymax);
+            g_fa18->GetXaxis()->SetLimits(xmin, xmax);
+            g_fa18->Draw("AP");
+            drew = true;
+        }
+        if (!xt.empty()) {
+            g_ten6 = new TGraphErrors((int)xt.size(), xt.data(), yt.data(), ext.data(), eyt.data());
+            g_ten6->SetTitle(("Sp19 Inb energy-corrected ratios vs " + key).c_str());
+            g_ten6->SetMarkerStyle(21);
+            g_ten6->SetMarkerSize(0.75);
+            g_ten6->SetLineWidth(2);
+            g_ten6->SetMarkerColor(kRed + 1);
+            g_ten6->SetLineColor(kRed + 1);
+            if (!drew) {
+                g_ten6->GetXaxis()->SetTitle(label.c_str());
+                g_ten6->GetYaxis()->SetTitle("Ratio");
+                g_ten6->GetXaxis()->SetTitleSize(0.045);
+                g_ten6->GetYaxis()->SetTitleSize(0.045);
+                g_ten6->GetXaxis()->SetLabelSize(0.038);
+                g_ten6->GetYaxis()->SetLabelSize(0.038);
+                g_ten6->GetYaxis()->SetRangeUser(ymin, ymax);
+                g_ten6->GetXaxis()->SetLimits(xmin, xmax);
+                g_ten6->Draw("AP");
+                drew = true;
+            } else {
+                g_ten6->Draw("P same");
+            }
+        }
+
+        TLine* line = new TLine(xmin, 1.0, xmax, 1.0);
+        line->SetLineStyle(2);
+        line->SetLineWidth(2);
+        line->Draw("same");
+
+        TLatex lat;
+        lat.SetNDC(true);
+        lat.SetTextSize(0.050);
+        lat.DrawLatex(0.17, 0.92, key.c_str());
+
+        if (iv == 0) {
+            TLegend* leg = new TLegend(0.43, 0.74, 0.94, 0.90);
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+            leg->SetTextSize(0.034);
+            if (g_fa18) leg->AddEntry(g_fa18, "Sp19 corrected / Fa18 Inb", "lp");
+            if (g_ten6) leg->AddEntry(g_ten6, "Sp19 corrected / 10.6 GeV", "lp");
+            leg->Draw("same");
+        }
+    }
 
     c.SaveAs(out_png.c_str());
 }
 
-static void write_points_csv(const std::string& path, const std::vector<RowPoint>& pts) {
+static void write_sp19_diagnostics_csv(const std::string& path,
+                                       const std::vector<RowPoint>& pts,
+                                       const std::vector<std::pair<std::string, std::string> >& variables,
+                                       const std::map<std::string, std::vector<BinnedPoint> >& binned_fa18,
+                                       const std::map<std::string, std::vector<BinnedPoint> >& binned_ten6,
+                                       size_t cache_before,
+                                       size_t cache_after,
+                                       int n_missing_data,
+                                       int n_missing_model,
+                                       double mean_cE,
+                                       double mean_cE_rms_rel,
+                                       const std::pair<double,double>& ratio_fa18,
+                                       const std::pair<double,double>& ratio_ten6,
+                                       const std::pair<double,double>& scale_fa18,
+                                       const std::pair<double,double>& scale_ten6) {
     std::ofstream f(path);
-    if (!f.is_open()) throw std::runtime_error("Could not write: " + path);
-    f << "row,xB,Q2,t_abs,phi_deg,e_theta,p_theta,g_theta,"
+    if (!f.is_open()) throw std::runtime_error("Could not write diagnostics CSV: " + path);
+    f << "record_type,quantity,variable,bin_index,x,x_half_width,value,stat,n_points,row,"
+      << "xB,Q2,t_abs,phi_deg,e_theta,p_theta,g_theta,"
       << "Fa18_Inb,Fa18_Inb_stat,Sp19_Inb,Sp19_Inb_stat,Ten6,Ten6_stat,"
       << "energy_correction_avg,energy_correction_rms,energy_correction_rms_rel,energy_model_count,"
       << "Sp19_energy_corrected,Sp19_energy_corrected_stat,"
       << "ratio_sp19corr_over_fa18,ratio_sp19corr_over_fa18_stat,"
       << "ratio_sp19corr_over_10p6,ratio_sp19corr_over_10p6_stat,"
       << "scale_fa18_over_sp19corr,scale_fa18_over_sp19corr_stat,"
-      << "scale_10p6_over_sp19corr,scale_10p6_over_sp19corr_stat\n";
+      << "scale_10p6_over_sp19corr,scale_10p6_over_sp19corr_stat,notes\n";
+
+    auto write_global = [&](const std::string& quantity, double value, double stat, const std::string& notes) {
+        f << "global," << quantity << ",,,," << "," << value << "," << stat << ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,," << notes << "\n";
+    };
+    write_global("n_valid_rows", (double)pts.size(), 0.0, "number of rows with Fa18 Inb, Sp19 Inb, 10.6 GeV and valid model correction");
+    write_global("n_rows_missing_data", (double)n_missing_data, 0.0, "rows skipped before model correction");
+    write_global("n_rows_missing_model", (double)n_missing_model, 0.0, "rows skipped because all model corrections failed");
+    write_global("model_cache_entries_before", (double)cache_before, 0.0, "model cache size before this run");
+    write_global("model_cache_entries_after", (double)cache_after, 0.0, "model cache size after this run");
+    write_global("mean_energy_correction_factor", mean_cE, 0.0, "average of per-bin BH/VGG/KM15 average factors");
+    write_global("mean_relative_model_rms", mean_cE_rms_rel, 0.0, "average over rows of RMS(BH,VGG,KM15)/mean");
+    write_global("weighted_mean_sp19corr_over_fa18", ratio_fa18.first, ratio_fa18.second, "energy-corrected Sp19 divided by Fa18 Inb");
+    write_global("weighted_mean_sp19corr_over_10p6", ratio_ten6.first, ratio_ten6.second, "energy-corrected Sp19 divided by 10.6 GeV combined");
+    write_global("recommended_scale_sp19corr_to_fa18", scale_fa18.first, scale_fa18.second, "Fa18 Inb divided by energy-corrected Sp19");
+    write_global("recommended_scale_sp19corr_to_10p6", scale_ten6.first, scale_ten6.second, "10.6 GeV combined divided by energy-corrected Sp19");
+
+    for (const auto& kv : variables) {
+        const std::string& v = kv.first;
+        auto write_binned = [&](const std::string& quantity, const std::vector<BinnedPoint>& bins) {
+            for (size_t ib = 0; ib < bins.size(); ++ib) {
+                const auto& p = bins[ib];
+                f << "binned," << quantity << "," << v << "," << ib << ","
+                  << p.x << "," << p.ex << "," << p.y << "," << p.ey << "," << p.n
+                  << ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\n";
+            }
+        };
+        auto itf = binned_fa18.find(v);
+        if (itf != binned_fa18.end()) write_binned("ratio_sp19corr_over_fa18", itf->second);
+        auto itt = binned_ten6.find(v);
+        if (itt != binned_ten6.end()) write_binned("ratio_sp19corr_over_10p6", itt->second);
+    }
+
     for (const auto& p : pts) {
-        f << p.row_index << "," << p.xB << "," << p.Q2 << "," << p.t << "," << p.phi << ","
+        f << "row,row_values,,,,,,,," << p.row_index << ","
+          << p.xB << "," << p.Q2 << "," << p.t << "," << p.phi << ","
           << p.e_theta << "," << p.p_theta << "," << p.g_theta << ","
           << p.fa18 << "," << p.fa18_stat << "," << p.sp19 << "," << p.sp19_stat << ","
           << p.ten6 << "," << p.ten6_stat << ","
@@ -729,17 +888,7 @@ static void write_points_csv(const std::string& path, const std::vector<RowPoint
           << p.ratio_to_fa18 << "," << p.ratio_to_fa18_stat << ","
           << p.ratio_to_ten6 << "," << p.ratio_to_ten6_stat << ","
           << p.scale_to_fa18 << "," << p.scale_to_fa18_stat << ","
-          << p.scale_to_ten6 << "," << p.scale_to_ten6_stat << "\n";
-    }
-}
-
-static void write_binned_csv(const std::string& path, const std::vector<BinnedPoint>& pts,
-                             const std::string& x_name, const std::string& y_name) {
-    std::ofstream f(path);
-    if (!f.is_open()) throw std::runtime_error("Could not write: " + path);
-    f << x_name << ",x_half_width," << y_name << "," << y_name << "_stat,n_points\n";
-    for (const auto& p : pts) {
-        f << p.x << "," << p.ex << "," << p.y << "," << p.ey << "," << p.n << "\n";
+          << p.scale_to_ten6 << "," << p.scale_to_ten6_stat << ",\n";
     }
 }
 
@@ -910,7 +1059,6 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
 
         write_model_cache(cache_path, model_cache);
         write_csv_or_throw(csv_path, table);
-        write_points_csv((out_dir / "sp19_inb_energy_corrected_row_summary.csv").string(), points);
 
         const auto scale_fa18 = weighted_mean_and_error(points, "scale_to_fa18");
         const auto scale_ten6 = weighted_mean_and_error(points, "scale_to_ten6");
@@ -927,25 +1075,7 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
             mean_cE_rms_rel /= (double)points.size();
         }
 
-        {
-            std::ofstream f((out_dir / "sp19_inb_energy_scaling_global_summary.csv").string());
-            if (!f.is_open()) throw std::runtime_error("Could not write global summary CSV.");
-            f << "quantity,value,stat_or_mean_error,notes\n";
-            f << "n_valid_rows," << points.size() << ",," << "\n";
-            f << "n_rows_missing_data," << n_missing_data << ",," << "\n";
-            f << "n_rows_missing_model," << n_missing_model << ",," << "\n";
-            f << "model_cache_entries_before," << cache_before << ",," << "\n";
-            f << "model_cache_entries_after," << model_cache.size() << ",," << "\n";
-            f << "mean_energy_correction_factor," << mean_cE << ",,average of per-bin BH/VGG/KM15 average factors\n";
-            f << "mean_relative_model_rms," << mean_cE_rms_rel << ",,average over rows of RMS(BH,VGG,KM15)/mean\n";
-            f << "weighted_mean_sp19corr_over_fa18," << ratio_fa18.first << "," << ratio_fa18.second << ",energy-corrected Sp19 divided by Fa18 Inb\n";
-            f << "weighted_mean_sp19corr_over_10p6," << ratio_ten6.first << "," << ratio_ten6.second << ",energy-corrected Sp19 divided by 10.6 GeV combined\n";
-            f << "recommended_scale_sp19corr_to_fa18," << scale_fa18.first << "," << scale_fa18.second << ",Fa18 Inb divided by energy-corrected Sp19\n";
-            f << "recommended_scale_sp19corr_to_10p6," << scale_ten6.first << "," << scale_ten6.second << ",10.6 GeV combined divided by energy-corrected Sp19\n";
-        }
-
-        struct VarInfo { std::string key; std::string label; };
-        const std::vector<VarInfo> vars = {
+        const std::vector<std::pair<std::string, std::string> > vars = {
             {"e_theta", "#theta_{e} (deg)"},
             {"p_theta", "#theta_{p} (deg)"},
             {"g_theta", "#theta_{#gamma} (deg)"},
@@ -954,24 +1084,24 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
             {"t", "-t (GeV^{2})"}
         };
 
+        std::map<std::string, std::vector<BinnedPoint> > binned_fa18;
+        std::map<std::string, std::vector<BinnedPoint> > binned_ten6;
         for (const auto& v : vars) {
-            const auto b_fa18 = make_binned_points(points, v.key, "ratio_to_fa18");
-            const auto b_ten6 = make_binned_points(points, v.key, "ratio_to_ten6");
-            write_binned_csv((out_dir / ("binned_ratio_sp19corr_over_fa18_vs_" + v.key + ".csv")).string(),
-                             b_fa18, v.key, "ratio_sp19corr_over_fa18");
-            write_binned_csv((out_dir / ("binned_ratio_sp19corr_over_10p6_vs_" + v.key + ".csv")).string(),
-                             b_ten6, v.key, "ratio_sp19corr_over_10p6");
-            draw_binned_plot(b_fa18,
-                             (out_dir / ("ratio_sp19corr_over_fa18_vs_" + v.key + ".png")).string(),
-                             ("Energy-corrected Sp19 Inb / Fa18 Inb vs " + v.key).c_str(),
-                             v.label,
-                             "Sp19 Inb corrected / Fa18 Inb");
-            draw_binned_plot(b_ten6,
-                             (out_dir / ("ratio_sp19corr_over_10p6_vs_" + v.key + ".png")).string(),
-                             ("Energy-corrected Sp19 Inb / 10.6 GeV vs " + v.key).c_str(),
-                             v.label,
-                             "Sp19 Inb corrected / 10.6 GeV");
+            binned_fa18[v.first] = make_binned_points(points, v.first, "ratio_to_fa18");
+            binned_ten6[v.first] = make_binned_points(points, v.first, "ratio_to_ten6");
         }
+
+        write_sp19_diagnostics_csv((out_dir / "sp19_inb_energy_scaling_diagnostics.csv").string(),
+                                   points, vars, binned_fa18, binned_ten6,
+                                   cache_before, model_cache.size(),
+                                   n_missing_data, n_missing_model,
+                                   mean_cE, mean_cE_rms_rel,
+                                   ratio_fa18, ratio_ten6,
+                                   scale_fa18, scale_ten6);
+
+        draw_sp19_kinematic_summary_canvas(
+            (out_dir / "sp19_inb_energy_scaling_kinematic_summary.png").string(),
+            vars, binned_fa18, binned_ten6);
 
         std::cout << "[sp19-scale] Valid comparison rows: " << points.size() << "\n";
         std::cout << "[sp19-scale] Rows skipped for missing data: " << n_missing_data << "\n";
