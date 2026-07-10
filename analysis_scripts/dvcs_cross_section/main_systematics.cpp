@@ -35,6 +35,7 @@
 #include "combination_systematics.h"
 #include "pass1_systematics_import.h"
 #include "combination_point_to_point_systematics.h"
+#include "sp19_inb_energy_scaling_systematics.h"
 #include "run_period_consistency_systematics.h"
 
 namespace fs = std::filesystem;
@@ -389,6 +390,11 @@ int main(int argc, char* argv[]) {
 
         if (!combination_systematics(csv_main, "output/systematics")) {
             std::cerr << "[systematics] FATAL: combination_systematics failed.\n";
+            return 1;
+        }
+
+        if (!sp19_inb_energy_scaling_systematics(csv_main, "output/systematics")) {
+            std::cerr << "[systematics] FATAL: sp19_inb_energy_scaling_systematics failed.\n";
             return 1;
         }
 
