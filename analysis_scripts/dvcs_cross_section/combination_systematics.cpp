@@ -526,8 +526,42 @@ static TupleValue parse_tuple_value(const std::string& raw) {
         return out;
     }
 
-    if (s.front() == '(' && s.back() == ')') {
+    // Some upstream CSV writers produce ordinary tuple cells such as
+    //     (0.1, 0.02, 0)
+    // while the BSA stage can produce cells that arrive here with literal
+    // quote characters still present, for example
+    //     "(0.1,0.02,0)"
+    // Strip balanced quote layers before stripping the tuple parentheses.
+    // This keeps the parser backward compatible with the cross-section tuple
+    // columns and makes it robust to the BSA tuple columns.
+    bool changed = true;
+    while (changed && !s.empty()) {
+        changed = false;
+        s = trim(s);
+
+        if (s.size() >= 2U &&
+            ((s.front() == '"' && s.back() == '"') ||
+             (s.front() == '\'' && s.back() == '\''))) {
+            s = trim(s.substr(1, s.size() - 2));
+            changed = true;
+        }
+    }
+
+    if (s.size() >= 2U && s.front() == '(' && s.back() == ')') {
         s = trim(s.substr(1, s.size() - 2));
+    }
+
+    changed = true;
+    while (changed && !s.empty()) {
+        changed = false;
+        s = trim(s);
+
+        if (s.size() >= 2U &&
+            ((s.front() == '"' && s.back() == '"') ||
+             (s.front() == '\'' && s.back() == '\''))) {
+            s = trim(s.substr(1, s.size() - 2));
+            changed = true;
+        }
     }
 
     const std::vector<std::string> fields = split_csv_line(s);
