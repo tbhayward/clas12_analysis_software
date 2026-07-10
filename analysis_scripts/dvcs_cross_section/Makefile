@@ -34,7 +34,7 @@ NORM_SCENARIO_OBJ = $(NORM_SCENARIO_SRC:.cpp=.o)
 NORM_SCENARIO_BIN = norm_scenario_comparison
 
 # ---------- main_systematics ----------
-SYSTEMATICS_SRC = main_systematics.cpp run_period_consistency_systematics.cpp combination_systematics.cpp combination_point_to_point_systematics.cpp
+SYSTEMATICS_SRC = main_systematics.cpp pass1_systematics_import.cpp run_period_consistency_systematics.cpp combination_systematics.cpp combination_point_to_point_systematics.cpp
 SYSTEMATICS_OBJ = $(SYSTEMATICS_SRC:.cpp=.o)
 SYSTEMATICS_BIN = main_systematics
 

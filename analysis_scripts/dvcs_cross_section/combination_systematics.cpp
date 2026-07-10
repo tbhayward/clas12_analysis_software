@@ -2569,7 +2569,8 @@ static std::vector<FitTask> build_fit_tasks(const std::vector<RatioPoint>& all_r
 }
 
 static std::map<std::string, FitResultSummary>
-extract_final_e_theta_all_mean_fits(const std::vector<FitTaskResult>& fit_results) {
+extract_final_variable_all_mean_fits(const std::vector<FitTaskResult>& fit_results,
+                                     const std::string& variable_key) {
     std::map<std::string, FitResultSummary> out;
 
     for (const auto& result : fit_results) {
@@ -2585,7 +2586,7 @@ extract_final_e_theta_all_mean_fits(const std::vector<FitTaskResult>& fit_result
             continue;
         }
 
-        if (result.task.variable.key != "e_theta") {
+        if (result.task.variable.key != variable_key) {
             continue;
         }
 
@@ -2598,50 +2599,102 @@ extract_final_e_theta_all_mean_fits(const std::vector<FitTaskResult>& fit_result
 
     for (const auto& period : ten6_periods()) {
         if (out.find(period) == out.end()) {
-            throw std::runtime_error("Missing final accepted all_mean e_theta fit for period " + period);
+            throw std::runtime_error("Missing final accepted all_mean " + variable_key +
+                                     " fit for period " + period);
         }
     }
 
     return out;
 }
 
-static bool theta_inside_fit_support(const FitResultSummary& fit,
-                                     double theta) {
+static bool value_inside_fit_support(const FitResultSummary& fit,
+                                     double x) {
     if (!std::isfinite(fit.x_min) || !std::isfinite(fit.x_max)) {
         return false;
     }
 
-    return theta >= fit.x_min && theta <= fit.x_max;
+    return x >= fit.x_min && x <= fit.x_max;
+}
+
+static std::vector<double>
+build_reference_grid(const std::map<std::string, FitResultSummary>& fits_by_period,
+                     const VariableConfig& variable) {
+    double xmin = std::numeric_limits<double>::infinity();
+    double xmax = -std::numeric_limits<double>::infinity();
+
+    for (const auto& kv : fits_by_period) {
+        const FitResultSummary& fit = kv.second;
+        if (!std::isfinite(fit.x_min) || !std::isfinite(fit.x_max)) {
+            continue;
+        }
+        xmin = std::min(xmin, fit.x_min);
+        xmax = std::max(xmax, fit.x_max);
+    }
+
+    std::vector<double> grid;
+    if (!std::isfinite(xmin) || !std::isfinite(xmax) || xmax <= xmin) {
+        return grid;
+    }
+
+    if (variable.key == "e_theta" || variable.key == "p_theta" || variable.key == "g_theta") {
+        const int lo = (int)std::ceil(xmin);
+        const int hi = (int)std::floor(xmax);
+        for (int i = lo; i <= hi; ++i) {
+            grid.push_back((double)i);
+        }
+        return grid;
+    }
+
+    if (variable.key == "phi") {
+        const double step = 5.0;
+        const int n = (int)std::floor((xmax - xmin) / step);
+        for (int i = 0; i <= n; ++i) {
+            grid.push_back(xmin + step * (double)i);
+        }
+        if (grid.empty() || grid.back() < xmax) {
+            grid.push_back(xmax);
+        }
+        return grid;
+    }
+
+    const int n_grid = 80;
+    for (int i = 0; i < n_grid; ++i) {
+        const double f = (n_grid == 1) ? 0.0 : (double)i / (double)(n_grid - 1);
+        grid.push_back(xmin + f * (xmax - xmin));
+    }
+
+    return grid;
 }
 
 static std::vector<ScaleReferencePoint>
-compute_e_theta_scale_systematic_reference(const std::map<std::string, FitResultSummary>& fits_by_period) {
+compute_scale_systematic_reference(const std::map<std::string, FitResultSummary>& fits_by_period,
+                                   const VariableConfig& variable) {
     std::vector<ScaleReferencePoint> out;
 
-    for (int itheta = 8; itheta <= 30; ++itheta) {
-        const double theta = (double)itheta;
+    const std::vector<double> grid = build_reference_grid(fits_by_period, variable);
 
+    for (const double x : grid) {
         std::vector<double> scales;
 
         for (const auto& period : ten6_periods()) {
             const auto it = fits_by_period.find(period);
             if (it == fits_by_period.end()) {
-                throw std::runtime_error("Missing e_theta fit for period " + period);
+                throw std::runtime_error("Missing " + variable.key + " fit for period " + period);
             }
 
             const FitResultSummary& fit = it->second;
-            if (!theta_inside_fit_support(fit, theta)) {
+            if (!value_inside_fit_support(fit, x)) {
                 continue;
             }
 
-            const double scale = eval_poly(fit.params, theta);
+            const double scale = eval_poly(fit.params, x);
             if (std::isfinite(scale) && scale > 0.0) {
                 scales.push_back(scale);
             }
         }
 
         ScaleReferencePoint p;
-        p.theta = theta;
+        p.theta = x;
         p.n_valid = (int)scales.size();
 
         if (scales.size() >= 2U) {
@@ -2672,16 +2725,17 @@ compute_e_theta_scale_systematic_reference(const std::map<std::string, FitResult
     return out;
 }
 
-static void write_e_theta_scale_reference_csv(const fs::path& path,
-                                              const std::map<std::string, FitResultSummary>& fits_by_period,
-                                              const std::vector<ScaleReferencePoint>& reference_points) {
+static void write_scale_reference_csv(const fs::path& path,
+                                      const VariableConfig& variable,
+                                      const std::map<std::string, FitResultSummary>& fits_by_period,
+                                      const std::vector<ScaleReferencePoint>& reference_points) {
     std::ofstream fout(path);
 
     if (!fout.is_open()) {
-        throw std::runtime_error("Could not open e_theta scale reference CSV: " + path.string());
+        throw std::runtime_error("Could not open scale reference CSV: " + path.string());
     }
 
-    fout << "theta_e_deg";
+    fout << csv_escape_field(variable.plain_title);
 
     for (const auto& period : ten6_periods()) {
         fout << "," << csv_escape_field(period) << " scale"
@@ -2695,7 +2749,7 @@ static void write_e_theta_scale_reference_csv(const fs::path& path,
 
         for (const auto& period : ten6_periods()) {
             const FitResultSummary& fit = fits_by_period.at(period);
-            const bool in_range = theta_inside_fit_support(fit, ref.theta);
+            const bool in_range = value_inside_fit_support(fit, ref.theta);
             const double scale = in_range ? eval_poly(fit.params, ref.theta)
                                           : std::numeric_limits<double>::quiet_NaN();
 
@@ -2715,11 +2769,11 @@ static void write_e_theta_scale_reference_csv(const fs::path& path,
     fout.close();
 
     if (!fout) {
-        throw std::runtime_error("Failed while writing e_theta scale reference CSV: " + path.string());
+        throw std::runtime_error("Failed while writing scale reference CSV: " + path.string());
     }
 }
 
-static void print_e_theta_scale_reference(const std::map<std::string, FitResultSummary>&,
+static void print_scale_reference_summary(const VariableConfig& variable,
                                           const std::vector<ScaleReferencePoint>& reference_points) {
     int n_valid = 0;
     double sum_s_comb = 0.0;
@@ -2737,15 +2791,17 @@ static void print_e_theta_scale_reference(const std::map<std::string, FitResultS
 
     const double mean_s_comb = n_valid > 0 ? sum_s_comb / (double)n_valid : 0.0;
 
-    std::cout << "[combination-systematics] e_theta scale reference: "
+    std::cout << "[combination-systematics] " << variable.plain_title
+              << " scale reference: "
               << n_valid << " usable points, mean s_comb="
               << std::fixed << std::setprecision(3) << 100.0 * mean_s_comb << "%"
               << ", max s_comb="
               << std::fixed << std::setprecision(3) << 100.0 * max_s_comb << "%\n";
 }
 
-static void draw_e_theta_s_obs_canvas(const fs::path& fit_root,
-                                      const std::vector<ScaleReferencePoint>& reference_points) {
+static void draw_s_obs_canvas_for_variable(const fs::path& fit_root,
+                                           const VariableConfig& variable,
+                                           const std::vector<ScaleReferencePoint>& reference_points) {
     std::vector<double> x;
     std::vector<double> y;
 
@@ -2764,14 +2820,19 @@ static void draw_e_theta_s_obs_canvas(const fs::path& fit_root,
     }
 
     if (x.empty()) {
-        std::cout << "[combination-systematics] No finite e_theta s_obs points available for plotting.\n";
+        std::cout << "[combination-systematics] No finite " << variable.plain_title
+                  << " s_obs points available for plotting.\n";
         return;
     }
 
-    double xmin = 7.5;
-    double xmax = 30.5;
-    double ymax = 0.0;
+    double xmin = *std::min_element(x.begin(), x.end());
+    double xmax = *std::max_element(x.begin(), x.end());
+    if (!(xmax > xmin)) {
+        xmin -= 1.0;
+        xmax += 1.0;
+    }
 
+    double ymax = 0.0;
     for (const double v : y) {
         if (std::isfinite(v)) {
             ymax = std::max(ymax, v);
@@ -2784,16 +2845,17 @@ static void draw_e_theta_s_obs_canvas(const fs::path& fit_root,
         ymax *= 1.20;
     }
 
-    TCanvas canvas("c_e_theta_s_obs_dependence",
-                   "e_theta s_obs dependence",
+    const std::string canvas_name = "c_" + sanitize_for_path(variable.key) + "_s_obs_dependence";
+    TCanvas canvas(canvas_name.c_str(),
+                   (variable.plain_title + " s_obs dependence").c_str(),
                    1100,
                    850);
     canvas.SetFillColor(kWhite);
     set_plot_style();
 
     std::unique_ptr<TH1D> frame(
-        make_frame("frame_e_theta_s_obs_dependence",
-                   "#theta_{e} (deg)",
+        make_frame("frame_" + canvas_name,
+                   variable.title,
                    "s_{obs}",
                    xmin,
                    xmax,
@@ -2822,24 +2884,23 @@ static void draw_e_theta_s_obs_canvas(const fs::path& fit_root,
     title.SetTextFont(42);
     title.SetTextSize(0.038);
     title.SetTextAlign(22);
-    title.DrawLatex(0.50, 0.955, "e_{#theta}-dependent observed spread from run-period fits");
+    std::ostringstream title_text;
+    title_text << variable.plain_title << "-dependent observed spread from run-period fits";
+    title.DrawLatex(0.50, 0.955, title_text.str().c_str());
 
     TLatex note;
     note.SetNDC();
     note.SetTextFont(42);
     note.SetTextSize(0.026);
     note.SetTextAlign(13);
-    note.DrawLatex(0.19, 0.86, "s_{obs} = RMS[f_{i}(#theta_{e})/#LT f(#theta_{e})#GT - 1]");
-    note.DrawLatex(0.19, 0.82, "Only #theta_{e} values inside each period fit support are used.");
+    note.DrawLatex(0.19, 0.86, "s_{obs} = RMS[f_{i}(x)/#LT f(x)#GT - 1]");
+    note.DrawLatex(0.19, 0.82, "Only coordinates inside each period fit support are used.");
 
     canvas.Modified();
     canvas.Update();
 
-    const fs::path out_path = fit_root / "e_theta_s_obs_dependence.png";
+    const fs::path out_path = fit_root / (sanitize_for_path(variable.key) + "_s_obs_dependence.png");
     canvas.SaveAs(out_path.string().c_str());
-
-    std::cout << "[combination-systematics] Wrote e_theta s_obs plot: "
-              << out_path.string() << "\n";
 }
 
 static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_points,
@@ -2864,29 +2925,39 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
                                            fit_results);
     }
 
-    const std::map<std::string, FitResultSummary> e_theta_fits =
-        extract_final_e_theta_all_mean_fits(fit_results);
+    std::cout << "[combination-systematics] Scale-reference summaries from fitted period ratios:\n";
 
-    const std::vector<ScaleReferencePoint> reference_points =
-        compute_e_theta_scale_systematic_reference(e_theta_fits);
+    for (const auto& variable : fit_variable_configs()) {
+        if (variable.key == "phi") {
+            continue;
+        }
 
-    const fs::path e_theta_scale_path =
-        fit_root / "e_theta_scale_systematic_reference.csv";
+        const std::map<std::string, FitResultSummary> fits =
+            extract_final_variable_all_mean_fits(fit_results, variable.key);
 
-    write_e_theta_scale_reference_csv(e_theta_scale_path,
-                                      e_theta_fits,
-                                      reference_points);
+        const std::vector<ScaleReferencePoint> reference_points =
+            compute_scale_systematic_reference(fits, variable);
 
-    print_e_theta_scale_reference(e_theta_fits,
+        const fs::path scale_path =
+            fit_root / (sanitize_for_path(variable.key) + "_scale_systematic_reference.csv");
+
+        write_scale_reference_csv(scale_path,
+                                  variable,
+                                  fits,
                                   reference_points);
 
-    draw_e_theta_s_obs_canvas(fit_root,
-                              reference_points);
+        print_scale_reference_summary(variable,
+                                      reference_points);
+
+        draw_s_obs_canvas_for_variable(fit_root,
+                                       variable,
+                                       reference_points);
+    }
 
     std::cout << "[combination-systematics] Wrote kinematic fit summary CSV: "
               << summary_path.string() << "\n";
-    std::cout << "[combination-systematics] Wrote e_theta scale systematic reference CSV: "
-              << e_theta_scale_path.string() << "\n";
+    std::cout << "[combination-systematics] Wrote variable-dependent scale-reference CSVs under: "
+              << fit_root.string() << "\n";
 }
 
 } // namespace

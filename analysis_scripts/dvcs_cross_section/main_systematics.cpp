@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "combination_systematics.h"
+#include "pass1_systematics_import.h"
 #include "combination_point_to_point_systematics.h"
 #include "run_period_consistency_systematics.h"
 
@@ -255,7 +256,20 @@ static std::vector<std::string> combination_systematic_columns() {
         "normed cross sections, ep->epg, exp, Fa18, pos, combination sys",
         "normed cross sections, ep->epg, exp, Fa18, neg, combination sys",
         "normed cross sections, ep->epg, exp, Sp18, unpol, combination sys",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys"
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys",
+        "BSA, counts, 10.6 GeV, combination sys",
+        "BSA, counts, Fa18, combination sys",
+        "BSA, counts, Sp18, combination sys",
+        "BSA, counts, Sp19 Inb, combination sys"
+    };
+}
+
+static std::vector<std::string> pass1_fixed_systematic_columns() {
+    return {
+        "Syst. err (pi0 subtraction)",
+        "Syst. err (Acceptance)",
+        "Syst.err (Frad)",
+        "Syst.err (Fbin)"
     };
 }
 
@@ -266,7 +280,11 @@ static void validate_combination_systematics_schema(const CsvTable& table) {
 
     require_columns(table,
                     combination_systematic_columns(),
-                    "combined normed cross-section systematic outputs");
+                    "combination systematic outputs");
+
+    require_columns(table,
+                    pass1_fixed_systematic_columns(),
+                    "pass-1 fixed systematic outputs");
 }
 
 static void make_output_dirs() {
@@ -282,20 +300,14 @@ static void backup_csv_or_throw(const std::string& csv_path,
                   fs::copy_options::overwrite_existing);
 }
 
-static bool update_combination_systematics_csv_shell(const std::string& csv_path) {
+static bool validate_systematics_csv_schema(const std::string& csv_path) {
     CsvTable table = read_csv_or_throw(csv_path);
 
     validate_combination_systematics_schema(table);
 
     std::cout << "[systematics] CSV rows loaded: " << table.rows.size() << "\n";
     std::cout << "[systematics] CSV columns loaded: " << table.header.size() << "\n";
-    std::cout << "[systematics] Combination-systematics schema validation passed.\n";
-    std::cout << "[systematics] No combination-systematic values are written yet.\n";
-
-    // Keep the writer compiled and ready for future update functions.  This is
-    // intentionally disabled until the first real systematic calculation is
-    // added, so running the shell does not rewrite the CSV.
-    // write_csv_or_throw(csv_path, table);
+    std::cout << "[systematics] Schema validation passed.\n";
 
     return true;
 }
@@ -317,8 +329,16 @@ int main(int argc, char* argv[]) {
         backup_csv_or_throw(csv_main, backup_path);
         std::cout << "[systematics] Backed up CSV to " << backup_path << "\n";
 
-        if (!update_combination_systematics_csv_shell(csv_main)) {
-            std::cerr << "[systematics] FATAL: update_combination_systematics_csv_shell failed.\n";
+        if (!validate_systematics_csv_schema(csv_main)) {
+            std::cerr << "[systematics] FATAL: validate_systematics_csv_schema failed.\n";
+            return 1;
+        }
+
+        const std::string pass1_systematics_path =
+            (argc >= 3) ? std::string(argv[2]) : std::string("imports/pass1_systematic_summary.csv");
+
+        if (!import_pass1_systematics(csv_main, pass1_systematics_path)) {
+            std::cerr << "[systematics] FATAL: import_pass1_systematics failed.\n";
             return 1;
         }
 
