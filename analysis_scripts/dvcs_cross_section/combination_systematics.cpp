@@ -3175,13 +3175,13 @@ static void draw_s_obs_canvas_for_gamma_binned_ptheta(const fs::path& fit_root,
 
 static int gamma_bin_color(const int ibin) {
     static const int colors[] = {
-        kBlack,
         kBlue + 1,
         kRed + 1,
         kGreen + 2,
         kMagenta + 1,
         kOrange + 7,
-        kCyan + 2
+        kCyan + 2,
+        kViolet + 1
     };
     const int n = (int)(sizeof(colors) / sizeof(colors[0]));
     return colors[ibin % n];
@@ -3193,21 +3193,207 @@ static int gamma_bin_marker(const int ibin) {
     return markers[ibin % n];
 }
 
-static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
-                                                      const std::vector<GammaThetaBinConfig>& bins,
-                                                      const std::map<std::string, std::vector<ScaleReferencePoint> >& references_by_bin_key) {
+static double interpolate_reference_s_obs(const std::vector<ScaleReferencePoint>& reference_points,
+                                          const double x) {
+    std::vector<std::pair<double, double> > xy;
+    xy.reserve(reference_points.size());
+
+    for (const auto& ref : reference_points) {
+        if (ref.n_valid >= 2 && std::isfinite(ref.theta) && std::isfinite(ref.s_obs)) {
+            xy.emplace_back(ref.theta, ref.s_obs);
+        }
+    }
+
+    if (xy.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    std::sort(xy.begin(), xy.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    constexpr double kExactTolerance = 1.0e-9;
+    for (const auto& p : xy) {
+        if (std::abs(p.first - x) < kExactTolerance) {
+            return p.second;
+        }
+    }
+
+    if (x < xy.front().first || x > xy.back().first) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    for (size_t i = 1; i < xy.size(); ++i) {
+        const double x0 = xy[i - 1].first;
+        const double y0 = xy[i - 1].second;
+        const double x1 = xy[i].first;
+        const double y1 = xy[i].second;
+
+        if (x >= x0 && x <= x1 && x1 > x0) {
+            const double f = (x - x0) / (x1 - x0);
+            return y0 + f * (y1 - y0);
+        }
+    }
+
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+static int count_ratio_points_near_ptheta_in_gamma_bin(const std::vector<RatioPoint>& all_ratio_points,
+                                                       const GammaThetaBinConfig& bin,
+                                                       const double theta_p) {
+    int count = 0;
+
+    for (const auto& p : all_ratio_points) {
+        if (p.case_label != "cross section: 10.6 GeV unpol" ||
+            p.central_mode != "stat_weighted" ||
+            p.reference_type != "all_mean" ||
+            p.variable_key != "p_theta" ||
+            !point_in_gamma_theta_bin(p, bin) ||
+            !std::isfinite(p.x)) {
+            continue;
+        }
+
+        if (std::abs(p.x - theta_p) <= 0.5) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+static std::vector<ScaleReferencePoint>
+compute_weighted_recombined_gamma_sliced_ptheta_reference(
+    const std::vector<RatioPoint>& all_ratio_points,
+    const std::vector<GammaThetaBinConfig>& bins,
+    const std::map<std::string, std::vector<ScaleReferencePoint> >& references_by_bin_key,
+    const std::vector<ScaleReferencePoint>& inclusive_ptheta_reference_points) {
+
+    std::vector<ScaleReferencePoint> out;
+
+    for (const auto& inclusive_ref : inclusive_ptheta_reference_points) {
+        if (inclusive_ref.n_valid < 2 ||
+            !std::isfinite(inclusive_ref.theta) ||
+            !std::isfinite(inclusive_ref.s_obs)) {
+            continue;
+        }
+
+        const double theta_p = inclusive_ref.theta;
+        double weighted_sum = 0.0;
+        double weight_sum = 0.0;
+        int contributing_gamma_bins = 0;
+
+        for (const auto& bin : bins) {
+            const auto it = references_by_bin_key.find(bin.key);
+            if (it == references_by_bin_key.end()) {
+                continue;
+            }
+
+            const double sliced_s_obs = interpolate_reference_s_obs(it->second, theta_p);
+            if (!std::isfinite(sliced_s_obs)) {
+                continue;
+            }
+
+            int weight = count_ratio_points_near_ptheta_in_gamma_bin(all_ratio_points, bin, theta_p);
+            if (weight <= 0) {
+                // The fitted curve can still have support at this point even when no
+                // actual row lands in the narrow +/-0.5 deg counting window.  Give
+                // it unit weight rather than dropping it, but keep the weight small
+                // so real populated regions dominate the recombination.
+                weight = 1;
+            }
+
+            weighted_sum += (double)weight * sliced_s_obs;
+            weight_sum += (double)weight;
+            ++contributing_gamma_bins;
+        }
+
+        if (contributing_gamma_bins <= 0 || weight_sum <= 0.0) {
+            continue;
+        }
+
+        ScaleReferencePoint p;
+        p.theta = theta_p;
+        p.n_valid = contributing_gamma_bins;
+        p.mean_scale = std::numeric_limits<double>::quiet_NaN();
+        p.s_obs = weighted_sum / weight_sum;
+        p.s_stat = 0.0;
+        p.s_comb = p.s_obs;
+        out.push_back(p);
+    }
+
+    return out;
+}
+
+static void write_recombined_gamma_sliced_reference_csv(
+    const fs::path& path,
+    const std::vector<GammaThetaBinConfig>& bins,
+    const std::map<std::string, std::vector<ScaleReferencePoint> >& references_by_bin_key,
+    const std::vector<ScaleReferencePoint>& inclusive_ptheta_reference_points,
+    const std::vector<ScaleReferencePoint>& recombined_reference_points) {
+
+    std::ofstream fout(path);
+    if (!fout.is_open()) {
+        throw std::runtime_error("Could not open recombined gamma-sliced reference CSV: " + path.string());
+    }
+
+    fout << "theta_p,inclusive_s_obs,recombined_gamma_sliced_s_obs,recombined_n_gamma_bins";
+    for (const auto& bin : bins) {
+        fout << "," << csv_escape_field(bin.title + " s_obs");
+    }
+    fout << "\n";
+
+    std::map<double, ScaleReferencePoint> recombined_by_theta;
+    for (const auto& ref : recombined_reference_points) {
+        if (std::isfinite(ref.theta)) {
+            recombined_by_theta[ref.theta] = ref;
+        }
+    }
+
+    for (const auto& inclusive_ref : inclusive_ptheta_reference_points) {
+        if (inclusive_ref.n_valid < 2 ||
+            !std::isfinite(inclusive_ref.theta) ||
+            !std::isfinite(inclusive_ref.s_obs)) {
+            continue;
+        }
+
+        const double theta_p = inclusive_ref.theta;
+        const auto it_recombined = recombined_by_theta.find(theta_p);
+
+        fout << format_double(theta_p)
+             << "," << format_double(inclusive_ref.s_obs);
+
+        if (it_recombined != recombined_by_theta.end()) {
+            fout << "," << format_double(it_recombined->second.s_obs)
+                 << "," << it_recombined->second.n_valid;
+        } else {
+            fout << ",,0";
+        }
+
+        for (const auto& bin : bins) {
+            const auto it_bin = references_by_bin_key.find(bin.key);
+            const double y = (it_bin == references_by_bin_key.end())
+                                 ? std::numeric_limits<double>::quiet_NaN()
+                                 : interpolate_reference_s_obs(it_bin->second, theta_p);
+            fout << "," << format_double(y);
+        }
+
+        fout << "\n";
+    }
+}
+
+static void draw_aggregate_gamma_binned_ptheta_canvas(
+    const fs::path& fit_root,
+    const std::vector<GammaThetaBinConfig>& bins,
+    const std::map<std::string, std::vector<ScaleReferencePoint> >& references_by_bin_key,
+    const std::vector<ScaleReferencePoint>& inclusive_ptheta_reference_points,
+    const std::vector<ScaleReferencePoint>& recombined_gamma_sliced_reference_points) {
+
     double global_xmin = std::numeric_limits<double>::infinity();
     double global_xmax = -std::numeric_limits<double>::infinity();
     double global_ymax = 0.0;
 
-    for (const auto& bin : bins) {
-        const auto it = references_by_bin_key.find(bin.key);
-        if (it == references_by_bin_key.end()) {
-            continue;
-        }
-
-        const std::vector<double> x = reference_x_values(it->second);
-        const std::vector<double> y = reference_y_values(it->second);
+    auto scan_xy = [&](const std::vector<ScaleReferencePoint>& refs) {
+        const std::vector<double> x = reference_x_values(refs);
+        const std::vector<double> y = reference_y_values(refs);
         for (const double v : x) {
             if (std::isfinite(v)) {
                 global_xmin = std::min(global_xmin, v);
@@ -3218,6 +3404,16 @@ static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
             if (std::isfinite(v)) {
                 global_ymax = std::max(global_ymax, v);
             }
+        }
+    };
+
+    scan_xy(inclusive_ptheta_reference_points);
+    scan_xy(recombined_gamma_sliced_reference_points);
+
+    for (const auto& bin : bins) {
+        const auto it = references_by_bin_key.find(bin.key);
+        if (it != references_by_bin_key.end()) {
+            scan_xy(it->second);
         }
     }
 
@@ -3257,14 +3453,55 @@ static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
     frame->GetYaxis()->SetLabelSize(0.038);
     frame->Draw("AXIS");
 
-    TLegend legend(0.55, 0.58, 0.93, 0.88);
+    TLegend legend(0.50, 0.56, 0.93, 0.88);
     legend.SetBorderSize(1);
     legend.SetFillColor(kWhite);
     legend.SetTextFont(42);
-    legend.SetTextSize(0.028);
+    legend.SetTextSize(0.024);
 
     std::vector<std::unique_ptr<TGraphErrors> > graphs;
-    graphs.reserve(bins.size());
+    graphs.reserve(bins.size() + 2U);
+
+    auto make_graph = [](const std::vector<ScaleReferencePoint>& refs,
+                         const int marker,
+                         const int color,
+                         const int line_width,
+                         const int line_style) -> std::unique_ptr<TGraphErrors> {
+        const std::vector<double> x = reference_x_values(refs);
+        const std::vector<double> y = reference_y_values(refs);
+        if (x.empty()) {
+            return nullptr;
+        }
+
+        std::unique_ptr<TGraphErrors> graph(new TGraphErrors((int)x.size()));
+        for (int i = 0; i < (int)x.size(); ++i) {
+            graph->SetPoint(i, x[(size_t)i], y[(size_t)i]);
+            graph->SetPointError(i, 0.0, 0.0);
+        }
+        graph->SetMarkerStyle(marker);
+        graph->SetMarkerSize(0.85);
+        graph->SetMarkerColor(color);
+        graph->SetLineColor(color);
+        graph->SetLineWidth(line_width);
+        graph->SetLineStyle(line_style);
+        return graph;
+    };
+
+    std::unique_ptr<TGraphErrors> inclusive_graph =
+        make_graph(inclusive_ptheta_reference_points, 20, kBlack, 4, 1);
+    if (inclusive_graph) {
+        inclusive_graph->Draw("PL SAME");
+        legend.AddEntry(inclusive_graph.get(), "inclusive #theta_{p} fit", "lp");
+        graphs.push_back(std::move(inclusive_graph));
+    }
+
+    std::unique_ptr<TGraphErrors> recombined_graph =
+        make_graph(recombined_gamma_sliced_reference_points, 24, kGray + 2, 4, 2);
+    if (recombined_graph) {
+        recombined_graph->Draw("PL SAME");
+        legend.AddEntry(recombined_graph.get(), "weighted recombination of #theta_{#gamma} slices", "lp");
+        graphs.push_back(std::move(recombined_graph));
+    }
 
     for (int ib = 0; ib < (int)bins.size(); ++ib) {
         const auto& bin = bins[(size_t)ib];
@@ -3273,24 +3510,13 @@ static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
             continue;
         }
 
-        const std::vector<double> x = reference_x_values(it->second);
-        const std::vector<double> y = reference_y_values(it->second);
-        if (x.empty()) {
+        const int color = gamma_bin_color(ib);
+        std::unique_ptr<TGraphErrors> graph =
+            make_graph(it->second, gamma_bin_marker(ib), color, 2, 1);
+        if (!graph) {
             continue;
         }
 
-        std::unique_ptr<TGraphErrors> graph(new TGraphErrors((int)x.size()));
-        for (int i = 0; i < (int)x.size(); ++i) {
-            graph->SetPoint(i, x[(size_t)i], y[(size_t)i]);
-            graph->SetPointError(i, 0.0, 0.0);
-        }
-
-        const int color = gamma_bin_color(ib);
-        graph->SetMarkerStyle(gamma_bin_marker(ib));
-        graph->SetMarkerSize(0.85);
-        graph->SetMarkerColor(color);
-        graph->SetLineColor(color);
-        graph->SetLineWidth(2);
         graph->Draw("PL SAME");
         legend.AddEntry(graph.get(), bin.label.c_str(), "lp");
         graphs.push_back(std::move(graph));
@@ -3301,18 +3527,18 @@ static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
     TLatex title;
     title.SetNDC();
     title.SetTextFont(42);
-    title.SetTextSize(0.036);
+    title.SetTextSize(0.034);
     title.SetTextAlign(22);
-    title.DrawLatex(0.50, 0.955, "#theta_{p}-dependent observed spread in #theta_{#gamma} bins");
+    title.DrawLatex(0.50, 0.955, "#theta_{p}-dependent observed spread: inclusive vs #theta_{#gamma}-sliced fits");
 
     TLatex note;
     note.SetNDC();
     note.SetTextFont(42);
-    note.SetTextSize(0.023);
+    note.SetTextSize(0.021);
     note.SetTextAlign(13);
-    note.DrawLatex(0.16, 0.86, "s_{obs} = RMS[f_{i}(#theta_{p})/#LT f(#theta_{p})#GT - 1]");
-    note.DrawLatex(0.16, 0.82, "Each curve is fit separately inside its #theta_{#gamma} bin.");
-    note.DrawLatex(0.16, 0.78, "The #theta_{#gamma} < 5#circ bin isolates FT-like photons.");
+    note.DrawLatex(0.16, 0.86, "black: original inclusive #theta_{p} fit");
+    note.DrawLatex(0.16, 0.82, "gray dashed: population-weighted recombination of sliced curves");
+    note.DrawLatex(0.16, 0.78, "colored: separate #theta_{p} fits inside #theta_{#gamma} bins");
 
     canvas.Modified();
     canvas.Update();
@@ -3321,8 +3547,10 @@ static void draw_aggregate_gamma_binned_ptheta_canvas(const fs::path& fit_root,
     canvas.SaveAs(out_path.string().c_str());
 }
 
-static void make_gamma_binned_ptheta_scale_reference(const std::vector<RatioPoint>& all_ratio_points,
-                                                     const fs::path& fit_root) {
+static void make_gamma_binned_ptheta_scale_reference(
+    const std::vector<RatioPoint>& all_ratio_points,
+    const fs::path& fit_root,
+    const std::vector<ScaleReferencePoint>& inclusive_ptheta_reference_points) {
     const std::vector<GammaThetaBinConfig> bins = gamma_theta_bins_for_ptheta_study();
     const std::vector<FitTask> tasks = build_p_theta_by_gamma_theta_fit_tasks(all_ratio_points, bins);
 
@@ -3375,9 +3603,28 @@ static void make_gamma_binned_ptheta_scale_reference(const std::vector<RatioPoin
         }
     }
 
+    const std::vector<ScaleReferencePoint> recombined_gamma_sliced_reference_points =
+        compute_weighted_recombined_gamma_sliced_ptheta_reference(
+            all_ratio_points,
+            bins,
+            references_by_bin_key,
+            inclusive_ptheta_reference_points);
+
+    const fs::path recombined_path = fit_root / "p_theta_by_gtheta_recombined_reference.csv";
+    write_recombined_gamma_sliced_reference_csv(recombined_path,
+                                                bins,
+                                                references_by_bin_key,
+                                                inclusive_ptheta_reference_points,
+                                                recombined_gamma_sliced_reference_points);
+
     draw_aggregate_gamma_binned_ptheta_canvas(fit_root,
                                               bins,
-                                              references_by_bin_key);
+                                              references_by_bin_key,
+                                              inclusive_ptheta_reference_points,
+                                              recombined_gamma_sliced_reference_points);
+
+    std::cout << "[combination-systematics] Wrote p_theta gamma-sliced recombination CSV: "
+              << recombined_path.string() << "\n";
 
     std::cout << "[combination-systematics] Wrote gamma-binned p_theta fit summary CSV: "
               << summary_path.string() << "\n";
@@ -3407,6 +3654,8 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
 
     std::cout << "[combination-systematics] Scale-reference summaries from fitted period ratios:\n";
 
+    std::vector<ScaleReferencePoint> inclusive_ptheta_reference_points;
+
     for (const auto& variable : fit_variable_configs()) {
         if (variable.key == "phi") {
             continue;
@@ -3432,10 +3681,15 @@ static void make_kinematic_fit_plots(const std::vector<RatioPoint>& all_ratio_po
         draw_s_obs_canvas_for_variable(fit_root,
                                        variable,
                                        reference_points);
+
+        if (variable.key == "p_theta") {
+            inclusive_ptheta_reference_points = reference_points;
+        }
     }
 
     make_gamma_binned_ptheta_scale_reference(all_ratio_points,
-                                             fit_root);
+                                             fit_root,
+                                             inclusive_ptheta_reference_points);
 
     std::cout << "[combination-systematics] Wrote kinematic fit summary CSV: "
               << summary_path.string() << "\n";
