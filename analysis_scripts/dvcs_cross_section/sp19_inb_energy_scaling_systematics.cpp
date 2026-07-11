@@ -38,6 +38,7 @@
 #include <TLatex.h>
 #include <TROOT.h>
 #include <TStyle.h>
+#include <TMath.h>
 #include <TAxis.h>
 #include <TPad.h>
 #include <TBox.h>
@@ -119,6 +120,10 @@ struct RowPoint {
     double e_theta = 0.0;
     double p_theta = 0.0;
     double g_theta = 0.0;
+    double width_xB = 0.0;
+    double width_Q2 = 0.0;
+    double width_t = 0.0;
+    double width_phi_rad = 0.0;
     double fa18 = 0.0;
     double fa18_stat = 0.0;
     double sp19 = 0.0;
@@ -145,24 +150,21 @@ struct BinnedPoint {
     double ex = 0.0;
     double y = 0.0;
 
-    // Statistical error on the projected weighted mean.  This is usually small
-    // and is kept separately so the diagnostic CSV remains quantitatively useful.
+    // Statistical uncertainty propagated from the integrated numerator and
+    // denominator sums.  This is the plotted vertical uncertainty.
     double ey_stat = 0.0;
 
-    // RMS spread of the row-level ratios inside this one-dimensional projection
-    // bin.  This is the quantity that makes the projection-composition scatter
-    // visible.
-    double y_rms = 0.0;
+    // Optional diagnostics retained in the CSV.  The central plotted value is
+    // not the mean of row-level ratios; it is the ratio of two integrated
+    // projections, matching the integrated-cross-section study logic.
+    double row_ratio_rms = 0.0;
+    double energy_model_abs_error = 0.0;
 
-    // Average absolute contribution from the BH/VGG/KM15 energy-correction model
-    // spread inside this projection bin.
-    double ey_model = 0.0;
-
-    // Error bar used on the summary canvas.  This is intentionally not just the
-    // statistical error on the mean; it includes the row-level projected RMS and
-    // the model-correction spread so the plot does not overstate the significance
-    // of projection wiggles.
-    double ey_display = 0.0;
+    double numerator = 0.0;
+    double numerator_stat = 0.0;
+    double denominator = 0.0;
+    double denominator_stat = 0.0;
+    double integration_weight_sum = 0.0;
 
     int n = 0;
 };
@@ -181,6 +183,10 @@ struct WorkItem {
     double e_theta = 0.0;
     double p_theta = 0.0;
     double g_theta = 0.0;
+    double width_xB = 0.0;
+    double width_Q2 = 0.0;
+    double width_t = 0.0;
+    double width_phi_rad = 0.0;
     TupleValue fa18;
     TupleValue sp19;
     TupleValue ten6;
@@ -400,6 +406,21 @@ static double midpoint_from_cols(const CsvTable& t, const std::vector<std::strin
     return fallback;
 }
 
+static double width_from_cols(const CsvTable& t, const std::vector<std::string>& row,
+                              const std::string& lo_col, const std::string& hi_col,
+                              bool convert_deg_to_rad = false) {
+    double lo = 0.0, hi = 0.0;
+    if (!(get_double_col(t, row, lo_col, lo) && get_double_col(t, row, hi_col, hi))) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    double w = hi - lo;
+    if (!(std::isfinite(w) && w > 0.0)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    if (convert_deg_to_rad) w *= TMath::Pi() / 180.0;
+    return w;
+}
+
 static double get_period_or_bin_average(const CsvTable& t,
                                         const std::vector<std::string>& row,
                                         const std::string& base,
@@ -580,6 +601,10 @@ static WorkResult process_sp19_scale_item(const WorkItem& item,
     p.e_theta = item.e_theta;
     p.p_theta = item.p_theta;
     p.g_theta = item.g_theta;
+    p.width_xB = item.width_xB;
+    p.width_Q2 = item.width_Q2;
+    p.width_t = item.width_t;
+    p.width_phi_rad = item.width_phi_rad;
     p.fa18 = item.fa18.value;
     p.fa18_stat = item.fa18.stat;
     p.sp19 = item.sp19.value;
@@ -608,6 +633,28 @@ static WorkResult process_sp19_scale_item(const WorkItem& item,
     return res;
 }
 
+static double integration_weight_for_projection(const RowPoint& p,
+                                                const std::string& variable) {
+    auto valid_width = [](double w) { return std::isfinite(w) && w > 0.0; };
+    if (!(valid_width(p.width_xB) && valid_width(p.width_Q2) &&
+          valid_width(p.width_t) && valid_width(p.width_phi_rad))) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    // Match integrated_cross_section_study.py:
+    //   xB projection integrates over Q2, |t| and phi
+    //   Q2 projection integrates over xB, |t| and phi
+    //   |t| projection integrates over xB, Q2 and phi
+    //   detector-angle projections integrate over the full physics volume.
+    if (variable == "xB") return p.width_Q2 * p.width_t * p.width_phi_rad;
+    if (variable == "Q2") return p.width_xB * p.width_t * p.width_phi_rad;
+    if (variable == "t") return p.width_xB * p.width_Q2 * p.width_phi_rad;
+    if (variable == "e_theta" || variable == "p_theta" || variable == "g_theta") {
+        return p.width_xB * p.width_Q2 * p.width_t * p.width_phi_rad;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
 static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& rows,
                                                    const std::string& variable,
                                                    const std::string& quantity) {
@@ -622,30 +669,14 @@ static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& 
         if (variable == "g_theta") return p.g_theta;
         return std::numeric_limits<double>::quiet_NaN();
     };
-    auto get_y = [&](const RowPoint& p) {
-        if (quantity == "ratio_to_fa18") return p.ratio_to_fa18;
-        if (quantity == "ratio_to_ten6") return p.ratio_to_ten6;
-        if (quantity == "scale_to_fa18") return p.scale_to_fa18;
-        if (quantity == "scale_to_ten6") return p.scale_to_ten6;
-        return std::numeric_limits<double>::quiet_NaN();
-    };
-    auto get_ey_stat = [&](const RowPoint& p) {
-        if (quantity == "ratio_to_fa18") return p.ratio_to_fa18_stat;
-        if (quantity == "ratio_to_ten6") return p.ratio_to_ten6_stat;
-        if (quantity == "scale_to_fa18") return p.scale_to_fa18_stat;
-        if (quantity == "scale_to_ten6") return p.scale_to_ten6_stat;
-        return 0.0;
-    };
-    auto get_model_abs = [&](const RowPoint& p) {
-        const double y = get_y(p);
-        const double rel = (p.cE > 0.0 && std::isfinite(p.cE_rms)) ? std::fabs(p.cE_rms / p.cE) : 0.0;
-        return (std::isfinite(y) && y > 0.0) ? std::fabs(y) * rel : 0.0;
-    };
 
     for (const auto& p : rows) {
         const double x = get_x(p);
-        const double y = get_y(p);
-        if (std::isfinite(x) && std::isfinite(y) && y > 0.0) xs.push_back(x);
+        const double w = integration_weight_for_projection(p, variable);
+        if (std::isfinite(x) && std::isfinite(w) && w > 0.0 &&
+            p.sp19_corr > 0.0 && p.fa18 > 0.0 && p.ten6 > 0.0) {
+            xs.push_back(x);
+        }
     }
     if (xs.empty()) return {};
     std::sort(xs.begin(), xs.end());
@@ -658,49 +689,89 @@ static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& 
     for (int ib = 0; ib < kNBinsDiagnostic; ++ib) {
         const double lo = xmin + ib * width;
         const double hi = (ib + 1 == kNBinsDiagnostic) ? xmax + 1e-12 : xmin + (ib + 1) * width;
-        double sw = 0.0, swy = 0.0, swx = 0.0;
-        int n = 0;
-        std::vector<double> y_values;
-        std::vector<double> weights;
+
+        double sw = 0.0;
+        double swx = 0.0;
+        double numerator = 0.0;
+        double denominator = 0.0;
+        double numerator_var = 0.0;
+        double denominator_var = 0.0;
+        double row_ratio_weight_sum = 0.0;
+        double row_ratio_mean_num = 0.0;
         double model_abs_sum = 0.0;
+        int n = 0;
+
+        std::vector<double> row_ratios;
+        std::vector<double> row_ratio_weights;
+
         for (const auto& p : rows) {
             const double x = get_x(p);
-            const double y = get_y(p);
-            double ey_stat = get_ey_stat(p);
-            if (!(std::isfinite(x) && std::isfinite(y) && y > 0.0)) continue;
-            if (x < lo || x >= hi) continue;
-            if (!(std::isfinite(ey_stat) && ey_stat > 0.0)) ey_stat = 1.0;
-            const double w = 1.0 / (ey_stat * ey_stat);
+            if (!std::isfinite(x) || x < lo || x >= hi) continue;
+            const double w = integration_weight_for_projection(p, variable);
+            if (!(std::isfinite(w) && w > 0.0)) continue;
+            if (!(p.sp19_corr > 0.0 && p.fa18 > 0.0 && p.ten6 > 0.0)) continue;
+
+            double denom_value = p.fa18;
+            double denom_stat = p.fa18_stat;
+            if (quantity == "ratio_to_ten6") {
+                denom_value = p.ten6;
+                denom_stat = p.ten6_stat;
+            }
+
+            numerator += w * p.sp19_corr;
+            denominator += w * denom_value;
+            numerator_var += (w * p.sp19_corr_stat) * (w * p.sp19_corr_stat);
+            denominator_var += (w * denom_stat) * (w * denom_stat);
             sw += w;
-            swy += w * y;
             swx += w * x;
-            y_values.push_back(y);
-            weights.push_back(w);
-            model_abs_sum += get_model_abs(p);
+
+            const double row_ratio = p.sp19_corr / denom_value;
+            double row_stat = ratio_stat_error(row_ratio, p.sp19_corr, p.sp19_corr_stat, denom_value, denom_stat);
+            if (!(std::isfinite(row_stat) && row_stat > 0.0)) row_stat = 1.0;
+            const double rw = 1.0 / (row_stat * row_stat);
+            row_ratios.push_back(row_ratio);
+            row_ratio_weights.push_back(rw);
+            row_ratio_weight_sum += rw;
+            row_ratio_mean_num += rw * row_ratio;
+
+            const double rel = (p.cE > 0.0 && std::isfinite(p.cE_rms)) ? std::fabs(p.cE_rms / p.cE) : 0.0;
+            if (std::isfinite(row_ratio) && row_ratio > 0.0) model_abs_sum += std::fabs(row_ratio) * rel;
             ++n;
         }
-        if (n <= 0 || sw <= 0.0) continue;
+
+        if (n <= 0 || sw <= 0.0 || numerator <= 0.0 || denominator <= 0.0) continue;
+
         BinnedPoint bp;
         bp.x = swx / sw;
         bp.ex = 0.5 * width;
-        bp.y = swy / sw;
-        bp.ey_stat = std::sqrt(1.0 / sw);
+        bp.y = numerator / denominator;
+        bp.numerator = numerator;
+        bp.numerator_stat = std::sqrt(std::max(0.0, numerator_var));
+        bp.denominator = denominator;
+        bp.denominator_stat = std::sqrt(std::max(0.0, denominator_var));
+        bp.integration_weight_sum = sw;
         bp.n = n;
+        bp.ey_stat = ratio_stat_error(bp.y, bp.numerator, bp.numerator_stat,
+                                      bp.denominator, bp.denominator_stat);
 
-        // Weighted RMS of the row-level ratios in this projected bin.  This is a
-        // spread diagnostic, not an error on the mean.
-        double wrms_num = 0.0;
-        for (size_t i = 0; i < y_values.size(); ++i) {
-            const double d = y_values[i] - bp.y;
-            wrms_num += weights[i] * d * d;
+        // Diagnostic only: RMS of row-level ratios.  This is no longer used as
+        // the plotted uncertainty because the central value is an integrated
+        // ratio, not an average of row ratios.
+        if (row_ratio_weight_sum > 0.0) {
+            const double rmean = row_ratio_mean_num / row_ratio_weight_sum;
+            double wrms_num = 0.0;
+            for (size_t i = 0; i < row_ratios.size(); ++i) {
+                const double d = row_ratios[i] - rmean;
+                wrms_num += row_ratio_weights[i] * d * d;
+            }
+            bp.row_ratio_rms = std::sqrt(wrms_num / row_ratio_weight_sum);
         }
-        bp.y_rms = (sw > 0.0) ? std::sqrt(wrms_num / sw) : 0.0;
-        bp.ey_model = (n > 0) ? model_abs_sum / (double)n : 0.0;
-        bp.ey_display = std::sqrt(bp.ey_stat * bp.ey_stat + bp.y_rms * bp.y_rms + bp.ey_model * bp.ey_model);
+        bp.energy_model_abs_error = (n > 0) ? model_abs_sum / (double)n : 0.0;
         out.push_back(bp);
     }
     return out;
 }
+
 
 static double finite_or_nan(double x) {
     return std::isfinite(x) ? x : std::numeric_limits<double>::quiet_NaN();
@@ -727,8 +798,8 @@ static double graph_y_max_from_central(const std::vector<BinnedPoint>& pts) {
 }
 
 static double projection_band_half_height(const BinnedPoint& p) {
-    const double rms = std::isfinite(p.y_rms) ? p.y_rms : 0.0;
-    const double model = std::isfinite(p.ey_model) ? p.ey_model : 0.0;
+    const double rms = std::isfinite(p.row_ratio_rms) ? p.row_ratio_rms : 0.0;
+    const double model = std::isfinite(p.energy_model_abs_error) ? p.energy_model_abs_error : 0.0;
     return std::sqrt(rms * rms + model * model);
 }
 
@@ -780,6 +851,8 @@ static void draw_sp19_kinematic_summary_canvas(
         const std::vector<std::pair<std::string, std::string> >& variables,
         const std::map<std::string, std::vector<BinnedPoint> >& binned_fa18,
         const std::map<std::string, std::vector<BinnedPoint> >& binned_ten6) {
+    (void)binned_ten6;
+
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
 
@@ -798,12 +871,10 @@ static void draw_sp19_kinematic_summary_canvas(
         const std::string& key = variables[iv].first;
         const std::string& label = variables[iv].second;
         const auto it_f = binned_fa18.find(key);
-        const auto it_t = binned_ten6.find(key);
         const std::vector<BinnedPoint> empty;
         const auto& fa18 = (it_f == binned_fa18.end()) ? empty : it_f->second;
-        const auto& ten6 = (it_t == binned_ten6.end()) ? empty : it_t->second;
 
-        if (fa18.empty() && ten6.empty()) {
+        if (fa18.empty()) {
             TLatex lat;
             lat.SetNDC(true);
             lat.SetTextSize(0.050);
@@ -813,16 +884,12 @@ static void draw_sp19_kinematic_summary_canvas(
 
         double xmin = std::numeric_limits<double>::infinity();
         double xmax = -std::numeric_limits<double>::infinity();
-        auto scan_x = [&](const std::vector<BinnedPoint>& pts) {
-            for (const auto& p : pts) {
-                if (!std::isfinite(p.x)) continue;
-                const double ex = std::isfinite(p.ex) && p.ex > 0.0 ? p.ex : 0.0;
-                xmin = std::min(xmin, p.x - ex);
-                xmax = std::max(xmax, p.x + ex);
-            }
-        };
-        scan_x(fa18);
-        scan_x(ten6);
+        for (const auto& p : fa18) {
+            if (!std::isfinite(p.x)) continue;
+            const double ex = std::isfinite(p.ex) && p.ex > 0.0 ? p.ex : 0.0;
+            xmin = std::min(xmin, p.x - ex);
+            xmax = std::max(xmax, p.x + ex);
+        }
         if (!std::isfinite(xmin) || !std::isfinite(xmax) || !(xmax > xmin)) {
             xmin = 0.0; xmax = 1.0;
         }
@@ -830,37 +897,13 @@ static void draw_sp19_kinematic_summary_canvas(
         xmin -= 0.03 * xrange;
         xmax += 0.03 * xrange;
 
-        // The central values are the main diagnostic.  The shaded boxes show the
-        // row-level projection spread and model-correction spread, which can be
-        // large because a one-dimensional projection mixes several other
-        // kinematic and topology variables.  Use the central-value range for the
-        // frame so the trend is readable, while allowing the boxes to extend to
-        // the plot boundary if the projection spread is large.
-        double ycentral_min = std::min(graph_y_min_from_central(fa18), graph_y_min_from_central(ten6));
-        double ycentral_max = std::max(graph_y_max_from_central(fa18), graph_y_max_from_central(ten6));
-        if (!std::isfinite(ycentral_min) || !std::isfinite(ycentral_max) || !(ycentral_max > ycentral_min)) {
-            ycentral_min = 0.75;
-            ycentral_max = 1.05;
-        }
-        ycentral_min = std::min(ycentral_min, 1.0);
-        ycentral_max = std::max(ycentral_max, 1.0);
-        double ymin = std::max(0.45, ycentral_min - 0.12);
-        double ymax = std::min(1.25, ycentral_max + 0.12);
-        if (!(ymax > ymin + 0.20)) {
-            const double mid = 0.5 * (ymax + ymin);
-            ymin = mid - 0.15;
-            ymax = mid + 0.15;
-        }
-        ymin = std::min(ymin, 0.90);
-        ymax = std::max(ymax, 1.10);
-
         const std::string frame_name = "frame_sp19_scale_" + key + "_" + std::to_string(iv);
         TH1D* frame = new TH1D(frame_name.c_str(), "", 1, xmin, xmax);
         frame->SetDirectory(nullptr);
-        frame->SetMinimum(ymin);
-        frame->SetMaximum(ymax);
+        frame->SetMinimum(0.4);
+        frame->SetMaximum(1.2);
         frame->GetXaxis()->SetTitle(label.c_str());
-        frame->GetYaxis()->SetTitle("Ratio");
+        frame->GetYaxis()->SetTitle("Sp19 corr. / Fa18 Inb");
         frame->GetXaxis()->SetTitleSize(0.050);
         frame->GetYaxis()->SetTitleSize(0.050);
         frame->GetXaxis()->SetLabelSize(0.040);
@@ -873,13 +916,8 @@ static void draw_sp19_kinematic_summary_canvas(
         line->SetLineWidth(2);
         line->Draw("same");
 
-        draw_projection_boxes(fa18, kBlue + 1, 0.14, xmin, xmax);
-        draw_projection_boxes(ten6, kRed + 1, 0.14, xmin, xmax);
-
         TGraphErrors* g_fa18 = make_stat_graph(fa18, 20, kBlue + 1);
-        TGraphErrors* g_ten6 = make_stat_graph(ten6, 21, kRed + 1);
         if (g_fa18) g_fa18->Draw("P same");
-        if (g_ten6) g_ten6->Draw("P same");
 
         frame->Draw("axis same");
 
@@ -889,21 +927,12 @@ static void draw_sp19_kinematic_summary_canvas(
         lat.DrawLatex(0.16, 0.925, key.c_str());
 
         if (iv == 0) {
-            TLegend* leg = new TLegend(0.38, 0.66, 0.95, 0.90);
+            TLegend* leg = new TLegend(0.36, 0.70, 0.95, 0.90);
             leg->SetBorderSize(1);
             leg->SetFillStyle(1001);
             leg->SetFillColor(kWhite);
             leg->SetTextSize(0.030);
-            TBox* blue_box = new TBox(0.0, 0.0, 1.0, 1.0);
-            blue_box->SetFillColorAlpha(kBlue + 1, 0.18);
-            blue_box->SetLineColor(kBlue + 1);
-            TBox* red_box = new TBox(0.0, 0.0, 1.0, 1.0);
-            red_box->SetFillColorAlpha(kRed + 1, 0.18);
-            red_box->SetLineColor(kRed + 1);
-            if (g_fa18) leg->AddEntry(g_fa18, "mean: Sp19 corr / Fa18 Inb", "p");
-            if (g_ten6) leg->AddEntry(g_ten6, "mean: Sp19 corr / 10.6 GeV", "p");
-            leg->AddEntry(blue_box, "blue box: projection RMS #oplus model", "f");
-            leg->AddEntry(red_box, "red box: projection RMS #oplus model", "f");
+            if (g_fa18) leg->AddEntry(g_fa18, "integrated ratio", "p");
             leg->Draw("same");
         }
 
@@ -911,9 +940,9 @@ static void draw_sp19_kinematic_summary_canvas(
             TLatex note;
             note.SetNDC(true);
             note.SetTextSize(0.030);
-            note.DrawLatex(0.16, 0.83, "markers: weighted projected means");
-            note.DrawLatex(0.16, 0.77, "thin bars: stat. error on mean");
-            note.DrawLatex(0.16, 0.71, "boxes: row RMS + energy-model spread");
+            note.DrawLatex(0.16, 0.84, "points: ratio of integrated projections");
+            note.DrawLatex(0.16, 0.78, "bars: propagated statistical uncertainty");
+            note.DrawLatex(0.16, 0.72, "same bin-width weights as integrated study");
         }
     }
 
@@ -940,8 +969,9 @@ static void write_sp19_diagnostics_csv(const std::string& path,
 
     const std::vector<std::string> header = {
         "record_type", "quantity", "variable", "bin_index",
-        "x", "x_half_width", "value", "stat_error_on_mean", "projected_row_rms",
-        "energy_model_abs_error", "display_error", "n_points", "row",
+        "x", "x_half_width", "value", "stat_error_on_mean", "stat_error_on_integrated_ratio", "row_ratio_rms_diagnostic",
+        "energy_model_abs_error_diagnostic", "integrated_numerator", "integrated_numerator_stat",
+        "integrated_denominator", "integrated_denominator_stat", "integration_weight_sum", "n_points", "row",
         "xB", "Q2", "t_abs", "phi_deg", "e_theta", "p_theta", "g_theta",
         "Fa18_Inb", "Fa18_Inb_stat", "Sp19_Inb", "Sp19_Inb_stat", "Ten6", "Ten6_stat",
         "energy_correction_avg", "energy_correction_rms", "energy_correction_rms_rel", "energy_model_count",
@@ -995,12 +1025,16 @@ static void write_sp19_diagnostics_csv(const std::string& path,
                 set(row, "x", format_double(p.x, 12));
                 set(row, "x_half_width", format_double(p.ex, 12));
                 set(row, "value", format_double(p.y, 12));
-                set(row, "stat_error_on_mean", format_double(p.ey_stat, 12));
-                set(row, "projected_row_rms", format_double(p.y_rms, 12));
-                set(row, "energy_model_abs_error", format_double(p.ey_model, 12));
-                set(row, "display_error", format_double(p.ey_display, 12));
+                set(row, "stat_error_on_integrated_ratio", format_double(p.ey_stat, 12));
+                set(row, "row_ratio_rms_diagnostic", format_double(p.row_ratio_rms, 12));
+                set(row, "energy_model_abs_error_diagnostic", format_double(p.energy_model_abs_error, 12));
+                set(row, "integrated_numerator", format_double(p.numerator, 12));
+                set(row, "integrated_numerator_stat", format_double(p.numerator_stat, 12));
+                set(row, "integrated_denominator", format_double(p.denominator, 12));
+                set(row, "integrated_denominator_stat", format_double(p.denominator_stat, 12));
+                set(row, "integration_weight_sum", format_double(p.integration_weight_sum, 12));
                 set(row, "n_points", std::to_string(p.n));
-                set(row, "notes", "display_error=sqrt(stat_error_on_mean^2+projected_row_rms^2+energy_model_abs_error^2)");
+                set(row, "notes", "value=(sum width*Sp19_energy_corrected)/(sum width*Fa18_Inb), using the same bin-width integration logic as integrated_cross_section_study.py; RMS fields are diagnostic only");
                 emit(row);
             }
         };
@@ -1078,6 +1112,8 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
         std::cout << "[sp19-scale] Output directory: " << out_dir.string() << "\n";
         std::cout << "[sp19-scale] Beam-energy correction: " << kE10p2
                   << " GeV -> " << kE10p6 << " GeV using BH, VGG and KM15.\n";
+        std::cout << "[sp19-scale] Kinematic summary points are now ratios of bin-width-integrated projections, "
+                  << "matching integrated_cross_section_study.py.\n";
 
         CsvTable table = read_csv_or_throw(csv_path);
         require_column(table, kColFa18Inb);
@@ -1142,6 +1178,10 @@ bool sp19_inb_energy_scaling_systematics(const std::string& csv_path,
             item.e_theta = get_average_pair_or_fallback(table, row, "e_theta", "", "");
             item.p_theta = get_average_pair_or_fallback(table, row, "p_theta", "", "");
             item.g_theta = get_average_pair_or_fallback(table, row, "g_theta", "", "");
+            item.width_xB = width_from_cols(table, row, "xBmin", "xBmax");
+            item.width_Q2 = width_from_cols(table, row, "Q2min", "Q2max");
+            item.width_t = width_from_cols(table, row, "t_abs_min", "t_abs_max");
+            item.width_phi_rad = width_from_cols(table, row, "phimin", "phimax", true);
             item.fa18 = fa18;
             item.sp19 = sp19;
             item.ten6 = ten6;
