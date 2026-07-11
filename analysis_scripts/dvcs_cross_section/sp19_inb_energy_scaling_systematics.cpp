@@ -1016,29 +1016,18 @@ static void draw_sp19_kinematic_summary_canvas(
 
         frame->Draw("axis same");
 
-        if (iv == 0) {
-            TLegend* leg = new TLegend(0.36, 0.70, 0.95, 0.90);
-            leg->SetBorderSize(1);
-            leg->SetFillStyle(1001);
-            leg->SetFillColor(kWhite);
-            leg->SetTextSize(0.030);
-            if (g_fa18) leg->AddEntry(g_fa18, "ratio of integrated projections", "p");
-            TBox* model_box = new TBox(0, 0, 1, 1);
-            model_box->SetFillColorAlpha(kBlue + 1, 0.18);
-            model_box->SetLineColor(kBlue + 1);
-            leg->AddEntry(model_box, "BH/VGG/KM15 energy-scale spread", "f");
-            leg->Draw("same");
-        }
-
-        if (iv == 1) {
-            TLatex note;
-            note.SetNDC(true);
-            note.SetTextSize(0.030);
-            note.DrawLatex(0.16, 0.84, "points: ratio of integrated projections");
-            note.DrawLatex(0.16, 0.78, "bars: propagated statistical uncertainty");
-            note.DrawLatex(0.16, 0.72, "blue boxes: BH/VGG/KM15 energy-scale spread");
-            note.DrawLatex(0.16, 0.66, "same bin-width weights as integrated study");
-        }
+        TLegend* leg = new TLegend(0.48, 0.78, 0.95, 0.92);
+        leg->SetBorderSize(1);
+        leg->SetFillStyle(1001);
+        leg->SetFillColor(kWhite);
+        leg->SetTextSize(0.026);
+        leg->SetMargin(0.18);
+        if (g_fa18) leg->AddEntry(g_fa18, "ratio of integrated projections", "p");
+        TBox* model_box = new TBox(0, 0, 1, 1);
+        model_box->SetFillColorAlpha(kBlue + 1, 0.18);
+        model_box->SetLineColor(kBlue + 1);
+        leg->AddEntry(model_box, "BH/VGG/KM15 energy-scale spread", "f");
+        leg->Draw("same");
     }
 
     c.SaveAs(out_png.c_str());
