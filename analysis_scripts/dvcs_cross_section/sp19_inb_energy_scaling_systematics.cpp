@@ -142,7 +142,26 @@ struct BinnedPoint {
     double x = 0.0;
     double ex = 0.0;
     double y = 0.0;
-    double ey = 0.0;
+
+    // Statistical error on the projected weighted mean.  This is usually small
+    // and is kept separately so the diagnostic CSV remains quantitatively useful.
+    double ey_stat = 0.0;
+
+    // RMS spread of the row-level ratios inside this one-dimensional projection
+    // bin.  This is the quantity that makes the projection-composition scatter
+    // visible.
+    double y_rms = 0.0;
+
+    // Average absolute contribution from the BH/VGG/KM15 energy-correction model
+    // spread inside this projection bin.
+    double ey_model = 0.0;
+
+    // Error bar used on the summary canvas.  This is intentionally not just the
+    // statistical error on the mean; it includes the row-level projected RMS and
+    // the model-correction spread so the plot does not overstate the significance
+    // of projection wiggles.
+    double ey_display = 0.0;
+
     int n = 0;
 };
 
@@ -217,7 +236,7 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
         if (quote) {
             oss << '"';
             for (const char c : s) {
-                if (c == '"') oss << """";
+                if (c == '"') oss << "\"\"";
                 else oss << c;
             }
             oss << '"';
@@ -608,12 +627,17 @@ static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& 
         if (quantity == "scale_to_ten6") return p.scale_to_ten6;
         return std::numeric_limits<double>::quiet_NaN();
     };
-    auto get_ey = [&](const RowPoint& p) {
+    auto get_ey_stat = [&](const RowPoint& p) {
         if (quantity == "ratio_to_fa18") return p.ratio_to_fa18_stat;
         if (quantity == "ratio_to_ten6") return p.ratio_to_ten6_stat;
         if (quantity == "scale_to_fa18") return p.scale_to_fa18_stat;
         if (quantity == "scale_to_ten6") return p.scale_to_ten6_stat;
         return 0.0;
+    };
+    auto get_model_abs = [&](const RowPoint& p) {
+        const double y = get_y(p);
+        const double rel = (p.cE > 0.0 && std::isfinite(p.cE_rms)) ? std::fabs(p.cE_rms / p.cE) : 0.0;
+        return (std::isfinite(y) && y > 0.0) ? std::fabs(y) * rel : 0.0;
     };
 
     for (const auto& p : rows) {
@@ -634,19 +658,23 @@ static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& 
         const double hi = (ib + 1 == kNBinsDiagnostic) ? xmax + 1e-12 : xmin + (ib + 1) * width;
         double sw = 0.0, swy = 0.0, swx = 0.0;
         int n = 0;
-        std::vector<double> y_unweighted;
+        std::vector<double> y_values;
+        std::vector<double> weights;
+        double model_abs_sum = 0.0;
         for (const auto& p : rows) {
             const double x = get_x(p);
             const double y = get_y(p);
-            double ey = get_ey(p);
+            double ey_stat = get_ey_stat(p);
             if (!(std::isfinite(x) && std::isfinite(y) && y > 0.0)) continue;
             if (x < lo || x >= hi) continue;
-            if (!(std::isfinite(ey) && ey > 0.0)) ey = 1.0;
-            const double w = 1.0 / (ey * ey);
+            if (!(std::isfinite(ey_stat) && ey_stat > 0.0)) ey_stat = 1.0;
+            const double w = 1.0 / (ey_stat * ey_stat);
             sw += w;
             swy += w * y;
             swx += w * x;
-            y_unweighted.push_back(y);
+            y_values.push_back(y);
+            weights.push_back(w);
+            model_abs_sum += get_model_abs(p);
             ++n;
         }
         if (n <= 0 || sw <= 0.0) continue;
@@ -654,8 +682,19 @@ static std::vector<BinnedPoint> make_binned_points(const std::vector<RowPoint>& 
         bp.x = swx / sw;
         bp.ex = 0.5 * width;
         bp.y = swy / sw;
-        bp.ey = std::sqrt(1.0 / sw);
+        bp.ey_stat = std::sqrt(1.0 / sw);
         bp.n = n;
+
+        // Weighted RMS of the row-level ratios in this projected bin.  This is a
+        // spread diagnostic, not an error on the mean.
+        double wrms_num = 0.0;
+        for (size_t i = 0; i < y_values.size(); ++i) {
+            const double d = y_values[i] - bp.y;
+            wrms_num += weights[i] * d * d;
+        }
+        bp.y_rms = (sw > 0.0) ? std::sqrt(wrms_num / sw) : 0.0;
+        bp.ey_model = (n > 0) ? model_abs_sum / (double)n : 0.0;
+        bp.ey_display = std::sqrt(bp.ey_stat * bp.ey_stat + bp.y_rms * bp.y_rms + bp.ey_model * bp.ey_model);
         out.push_back(bp);
     }
     return out;
@@ -712,7 +751,7 @@ static void draw_sp19_kinematic_summary_canvas(
                 x.push_back(p.x);
                 ex.push_back(0.0);
                 y.push_back(p.y);
-                ey.push_back(p.ey);
+                ey.push_back(p.ey_display);
             }
         };
 
@@ -836,28 +875,48 @@ static void write_sp19_diagnostics_csv(const std::string& path,
                                        const std::pair<double,double>& scale_ten6) {
     std::ofstream f(path);
     if (!f.is_open()) throw std::runtime_error("Could not write diagnostics CSV: " + path);
-    f << "record_type,quantity,variable,bin_index,x,x_half_width,value,stat,n_points,row,"
-      << "xB,Q2,t_abs,phi_deg,e_theta,p_theta,g_theta,"
-      << "Fa18_Inb,Fa18_Inb_stat,Sp19_Inb,Sp19_Inb_stat,Ten6,Ten6_stat,"
-      << "energy_correction_avg,energy_correction_rms,energy_correction_rms_rel,energy_model_count,"
-      << "Sp19_energy_corrected,Sp19_energy_corrected_stat,"
-      << "ratio_sp19corr_over_fa18,ratio_sp19corr_over_fa18_stat,"
-      << "ratio_sp19corr_over_10p6,ratio_sp19corr_over_10p6_stat,"
-      << "scale_fa18_over_sp19corr,scale_fa18_over_sp19corr_stat,"
-      << "scale_10p6_over_sp19corr,scale_10p6_over_sp19corr_stat,notes\n";
+
+    const std::vector<std::string> header = {
+        "record_type", "quantity", "variable", "bin_index",
+        "x", "x_half_width", "value", "stat_error_on_mean", "projected_row_rms",
+        "energy_model_abs_error", "display_error", "n_points", "row",
+        "xB", "Q2", "t_abs", "phi_deg", "e_theta", "p_theta", "g_theta",
+        "Fa18_Inb", "Fa18_Inb_stat", "Sp19_Inb", "Sp19_Inb_stat", "Ten6", "Ten6_stat",
+        "energy_correction_avg", "energy_correction_rms", "energy_correction_rms_rel", "energy_model_count",
+        "Sp19_energy_corrected", "Sp19_energy_corrected_stat",
+        "ratio_sp19corr_over_fa18", "ratio_sp19corr_over_fa18_stat",
+        "ratio_sp19corr_over_10p6", "ratio_sp19corr_over_10p6_stat",
+        "scale_fa18_over_sp19corr", "scale_fa18_over_sp19corr_stat",
+        "scale_10p6_over_sp19corr", "scale_10p6_over_sp19corr_stat", "notes"
+    };
+    f << join_csv_row(header) << "\n";
+
+    auto blank_row = [&]() { return std::vector<std::string>(header.size(), std::string()); };
+    auto emit = [&](const std::vector<std::string>& row) { f << join_csv_row(row) << "\n"; };
+    auto set = [&](std::vector<std::string>& row, const std::string& col, const std::string& value) {
+        auto it = std::find(header.begin(), header.end(), col);
+        if (it != header.end()) row[(size_t)std::distance(header.begin(), it)] = value;
+    };
 
     auto write_global = [&](const std::string& quantity, double value, double stat, const std::string& notes) {
-        f << "global," << quantity << ",,,," << "," << value << "," << stat << ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,," << notes << "\n";
+        auto row = blank_row();
+        set(row, "record_type", "global");
+        set(row, "quantity", quantity);
+        set(row, "value", format_double(value, 12));
+        set(row, "stat_error_on_mean", format_double(stat, 12));
+        set(row, "notes", notes);
+        emit(row);
     };
-    write_global("n_valid_rows", (double)pts.size(), 0.0, "number of rows with Fa18 Inb, Sp19 Inb, 10.6 GeV and valid model correction");
-    write_global("n_rows_missing_data", (double)n_missing_data, 0.0, "rows skipped before model correction");
-    write_global("n_rows_missing_model", (double)n_missing_model, 0.0, "rows skipped because all model corrections failed");
-    write_global("model_cache_entries_before", (double)cache_before, 0.0, "model cache size before this run");
-    write_global("model_cache_entries_after", (double)cache_after, 0.0, "model cache size after this run");
-    write_global("mean_energy_correction_factor", mean_cE, 0.0, "average of per-bin BH/VGG/KM15 average factors");
-    write_global("mean_relative_model_rms", mean_cE_rms_rel, 0.0, "average over rows of RMS(BH,VGG,KM15)/mean");
-    write_global("weighted_mean_sp19corr_over_fa18", ratio_fa18.first, ratio_fa18.second, "energy-corrected Sp19 divided by Fa18 Inb");
-    write_global("weighted_mean_sp19corr_over_10p6", ratio_ten6.first, ratio_ten6.second, "energy-corrected Sp19 divided by 10.6 GeV combined");
+
+    write_global("n_valid_rows", (double)pts.size(), 0.0, "Rows with Fa18 Inb, Sp19 Inb, 10.6 GeV and valid model correction");
+    write_global("n_rows_missing_data", (double)n_missing_data, 0.0, "Rows skipped before model correction");
+    write_global("n_rows_missing_model", (double)n_missing_model, 0.0, "Rows skipped because all model corrections failed");
+    write_global("model_cache_entries_before", (double)cache_before, 0.0, "Model cache size before this run");
+    write_global("model_cache_entries_after", (double)cache_after, 0.0, "Model cache size after this run");
+    write_global("mean_energy_correction_factor", mean_cE, 0.0, "Average of per-bin BH/VGG/KM15 average factors");
+    write_global("mean_relative_model_rms", mean_cE_rms_rel, 0.0, "Average over rows of RMS(BH,VGG,KM15)/mean");
+    write_global("weighted_mean_sp19corr_over_fa18", ratio_fa18.first, ratio_fa18.second, "Energy-corrected Sp19 divided by Fa18 Inb");
+    write_global("weighted_mean_sp19corr_over_10p6", ratio_ten6.first, ratio_ten6.second, "Energy-corrected Sp19 divided by 10.6 GeV combined");
     write_global("recommended_scale_sp19corr_to_fa18", scale_fa18.first, scale_fa18.second, "Fa18 Inb divided by energy-corrected Sp19");
     write_global("recommended_scale_sp19corr_to_10p6", scale_ten6.first, scale_ten6.second, "10.6 GeV combined divided by energy-corrected Sp19");
 
@@ -866,9 +925,21 @@ static void write_sp19_diagnostics_csv(const std::string& path,
         auto write_binned = [&](const std::string& quantity, const std::vector<BinnedPoint>& bins) {
             for (size_t ib = 0; ib < bins.size(); ++ib) {
                 const auto& p = bins[ib];
-                f << "binned," << quantity << "," << v << "," << ib << ","
-                  << p.x << "," << p.ex << "," << p.y << "," << p.ey << "," << p.n
-                  << ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\n";
+                auto row = blank_row();
+                set(row, "record_type", "binned");
+                set(row, "quantity", quantity);
+                set(row, "variable", v);
+                set(row, "bin_index", std::to_string(ib));
+                set(row, "x", format_double(p.x, 12));
+                set(row, "x_half_width", format_double(p.ex, 12));
+                set(row, "value", format_double(p.y, 12));
+                set(row, "stat_error_on_mean", format_double(p.ey_stat, 12));
+                set(row, "projected_row_rms", format_double(p.y_rms, 12));
+                set(row, "energy_model_abs_error", format_double(p.ey_model, 12));
+                set(row, "display_error", format_double(p.ey_display, 12));
+                set(row, "n_points", std::to_string(p.n));
+                set(row, "notes", "display_error=sqrt(stat_error_on_mean^2+projected_row_rms^2+energy_model_abs_error^2)");
+                emit(row);
             }
         };
         auto itf = binned_fa18.find(v);
@@ -878,17 +949,38 @@ static void write_sp19_diagnostics_csv(const std::string& path,
     }
 
     for (const auto& p : pts) {
-        f << "row,row_values,,,,,,,," << p.row_index << ","
-          << p.xB << "," << p.Q2 << "," << p.t << "," << p.phi << ","
-          << p.e_theta << "," << p.p_theta << "," << p.g_theta << ","
-          << p.fa18 << "," << p.fa18_stat << "," << p.sp19 << "," << p.sp19_stat << ","
-          << p.ten6 << "," << p.ten6_stat << ","
-          << p.cE << "," << p.cE_rms << "," << ((p.cE > 0.0) ? p.cE_rms / p.cE : 0.0) << "," << p.cE_n << ","
-          << p.sp19_corr << "," << p.sp19_corr_stat << ","
-          << p.ratio_to_fa18 << "," << p.ratio_to_fa18_stat << ","
-          << p.ratio_to_ten6 << "," << p.ratio_to_ten6_stat << ","
-          << p.scale_to_fa18 << "," << p.scale_to_fa18_stat << ","
-          << p.scale_to_ten6 << "," << p.scale_to_ten6_stat << ",\n";
+        auto row = blank_row();
+        set(row, "record_type", "row");
+        set(row, "quantity", "row_values");
+        set(row, "row", std::to_string(p.row_index));
+        set(row, "xB", format_double(p.xB, 12));
+        set(row, "Q2", format_double(p.Q2, 12));
+        set(row, "t_abs", format_double(p.t, 12));
+        set(row, "phi_deg", format_double(p.phi, 12));
+        set(row, "e_theta", format_double(p.e_theta, 12));
+        set(row, "p_theta", format_double(p.p_theta, 12));
+        set(row, "g_theta", format_double(p.g_theta, 12));
+        set(row, "Fa18_Inb", format_double(p.fa18, 12));
+        set(row, "Fa18_Inb_stat", format_double(p.fa18_stat, 12));
+        set(row, "Sp19_Inb", format_double(p.sp19, 12));
+        set(row, "Sp19_Inb_stat", format_double(p.sp19_stat, 12));
+        set(row, "Ten6", format_double(p.ten6, 12));
+        set(row, "Ten6_stat", format_double(p.ten6_stat, 12));
+        set(row, "energy_correction_avg", format_double(p.cE, 12));
+        set(row, "energy_correction_rms", format_double(p.cE_rms, 12));
+        set(row, "energy_correction_rms_rel", format_double((p.cE > 0.0) ? p.cE_rms / p.cE : 0.0, 12));
+        set(row, "energy_model_count", std::to_string(p.cE_n));
+        set(row, "Sp19_energy_corrected", format_double(p.sp19_corr, 12));
+        set(row, "Sp19_energy_corrected_stat", format_double(p.sp19_corr_stat, 12));
+        set(row, "ratio_sp19corr_over_fa18", format_double(p.ratio_to_fa18, 12));
+        set(row, "ratio_sp19corr_over_fa18_stat", format_double(p.ratio_to_fa18_stat, 12));
+        set(row, "ratio_sp19corr_over_10p6", format_double(p.ratio_to_ten6, 12));
+        set(row, "ratio_sp19corr_over_10p6_stat", format_double(p.ratio_to_ten6_stat, 12));
+        set(row, "scale_fa18_over_sp19corr", format_double(p.scale_to_fa18, 12));
+        set(row, "scale_fa18_over_sp19corr_stat", format_double(p.scale_to_fa18_stat, 12));
+        set(row, "scale_10p6_over_sp19corr", format_double(p.scale_to_ten6, 12));
+        set(row, "scale_10p6_over_sp19corr_stat", format_double(p.scale_to_ten6_stat, 12));
+        emit(row);
     }
 }
 
