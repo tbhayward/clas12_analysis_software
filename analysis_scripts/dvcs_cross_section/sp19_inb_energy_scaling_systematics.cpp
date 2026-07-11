@@ -40,6 +40,8 @@
 #include <TStyle.h>
 #include <TAxis.h>
 #include <TPad.h>
+#include <TBox.h>
+#include <TH1D.h>
 
 #include <algorithm>
 #include <cmath>
@@ -704,6 +706,75 @@ static double finite_or_nan(double x) {
     return std::isfinite(x) ? x : std::numeric_limits<double>::quiet_NaN();
 }
 
+static double graph_y_min_from_central(const std::vector<BinnedPoint>& pts) {
+    double out = std::numeric_limits<double>::infinity();
+    for (const auto& p : pts) {
+        if (!std::isfinite(p.y)) continue;
+        const double e = std::isfinite(p.ey_stat) ? p.ey_stat : 0.0;
+        out = std::min(out, p.y - e);
+    }
+    return out;
+}
+
+static double graph_y_max_from_central(const std::vector<BinnedPoint>& pts) {
+    double out = -std::numeric_limits<double>::infinity();
+    for (const auto& p : pts) {
+        if (!std::isfinite(p.y)) continue;
+        const double e = std::isfinite(p.ey_stat) ? p.ey_stat : 0.0;
+        out = std::max(out, p.y + e);
+    }
+    return out;
+}
+
+static double projection_band_half_height(const BinnedPoint& p) {
+    const double rms = std::isfinite(p.y_rms) ? p.y_rms : 0.0;
+    const double model = std::isfinite(p.ey_model) ? p.ey_model : 0.0;
+    return std::sqrt(rms * rms + model * model);
+}
+
+static void draw_projection_boxes(const std::vector<BinnedPoint>& pts,
+                                  int color,
+                                  double alpha,
+                                  double xmin,
+                                  double xmax) {
+    for (const auto& p : pts) {
+        if (!(std::isfinite(p.x) && std::isfinite(p.y))) continue;
+        const double band = projection_band_half_height(p);
+        if (!(std::isfinite(band) && band > 0.0)) continue;
+        double half_width = std::isfinite(p.ex) && p.ex > 0.0 ? p.ex : 0.0;
+        if (half_width <= 0.0) half_width = 0.005 * std::max(1.0, xmax - xmin);
+        const double xlo = std::max(xmin, p.x - half_width);
+        const double xhi = std::min(xmax, p.x + half_width);
+        if (!(xhi > xlo)) continue;
+        TBox* box = new TBox(xlo, p.y - band, xhi, p.y + band);
+        box->SetFillColorAlpha(color, alpha);
+        box->SetLineColorAlpha(color, 0.0);
+        box->Draw("same");
+    }
+}
+
+static TGraphErrors* make_stat_graph(const std::vector<BinnedPoint>& pts,
+                                     int marker,
+                                     int color) {
+    std::vector<double> x, ex, y, ey;
+    x.reserve(pts.size()); ex.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
+    for (const auto& p : pts) {
+        if (!(std::isfinite(p.x) && std::isfinite(p.y))) continue;
+        x.push_back(p.x);
+        ex.push_back(0.0);
+        y.push_back(p.y);
+        ey.push_back(std::isfinite(p.ey_stat) ? p.ey_stat : 0.0);
+    }
+    if (x.empty()) return nullptr;
+    TGraphErrors* g = new TGraphErrors((int)x.size(), x.data(), y.data(), ex.data(), ey.data());
+    g->SetMarkerStyle(marker);
+    g->SetMarkerSize(0.72);
+    g->SetLineWidth(2);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    return g;
+}
+
 static void draw_sp19_kinematic_summary_canvas(
         const std::string& out_png,
         const std::vector<std::pair<std::string, std::string> >& variables,
@@ -712,16 +783,16 @@ static void draw_sp19_kinematic_summary_canvas(
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
 
-    TCanvas c("c_sp19_scale_summary", "c_sp19_scale_summary", 1800, 1100);
-    c.Divide(3, 2, 0.005, 0.005);
+    TCanvas c("c_sp19_scale_summary", "c_sp19_scale_summary", 1900, 1180);
+    c.Divide(3, 2, 0.006, 0.006);
 
     for (size_t iv = 0; iv < variables.size(); ++iv) {
         c.cd((int)iv + 1);
         TPad* pad = (TPad*)gPad;
         pad->SetLeftMargin(0.13);
         pad->SetRightMargin(0.04);
-        pad->SetBottomMargin(0.13);
-        pad->SetTopMargin(0.10);
+        pad->SetBottomMargin(0.14);
+        pad->SetTopMargin(0.12);
         pad->SetGridy(true);
 
         const std::string& key = variables[iv].first;
@@ -740,118 +811,109 @@ static void draw_sp19_kinematic_summary_canvas(
             continue;
         }
 
-        auto fill_vectors = [](const std::vector<BinnedPoint>& pts,
-                               std::vector<double>& x,
-                               std::vector<double>& ex,
-                               std::vector<double>& y,
-                               std::vector<double>& ey) {
-            x.clear(); ex.clear(); y.clear(); ey.clear();
-            x.reserve(pts.size()); ex.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
-            for (const auto& p : pts) {
-                x.push_back(p.x);
-                ex.push_back(0.0);
-                y.push_back(p.y);
-                ey.push_back(p.ey_display);
-            }
-        };
-
-        std::vector<double> xf, exf, yf, eyf, xt, ext, yt, eyt;
-        fill_vectors(fa18, xf, exf, yf, eyf);
-        fill_vectors(ten6, xt, ext, yt, eyt);
-
         double xmin = std::numeric_limits<double>::infinity();
         double xmax = -std::numeric_limits<double>::infinity();
-        double ymin = std::numeric_limits<double>::infinity();
-        double ymax = -std::numeric_limits<double>::infinity();
-        auto scan = [&](const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& ey) {
-            for (size_t i = 0; i < x.size(); ++i) {
-                if (!std::isfinite(x[i]) || !std::isfinite(y[i])) continue;
-                xmin = std::min(xmin, x[i]);
-                xmax = std::max(xmax, x[i]);
-                const double e = (i < ey.size() && std::isfinite(ey[i])) ? ey[i] : 0.0;
-                ymin = std::min(ymin, y[i] - e);
-                ymax = std::max(ymax, y[i] + e);
+        auto scan_x = [&](const std::vector<BinnedPoint>& pts) {
+            for (const auto& p : pts) {
+                if (!std::isfinite(p.x)) continue;
+                const double ex = std::isfinite(p.ex) && p.ex > 0.0 ? p.ex : 0.0;
+                xmin = std::min(xmin, p.x - ex);
+                xmax = std::max(xmax, p.x + ex);
             }
         };
-        scan(xf, yf, eyf);
-        scan(xt, yt, eyt);
+        scan_x(fa18);
+        scan_x(ten6);
         if (!std::isfinite(xmin) || !std::isfinite(xmax) || !(xmax > xmin)) {
             xmin = 0.0; xmax = 1.0;
         }
-        if (!std::isfinite(ymin) || !std::isfinite(ymax) || !(ymax > ymin)) {
-            ymin = 0.5; ymax = 1.5;
-        }
-        ymin = std::min(ymin, 1.0);
-        ymax = std::max(ymax, 1.0);
-        const double yrange = ymax - ymin;
-        ymin -= 0.15 * yrange;
-        ymax += 0.18 * yrange;
+        const double xrange = xmax - xmin;
+        xmin -= 0.03 * xrange;
+        xmax += 0.03 * xrange;
 
-        TGraphErrors* g_fa18 = nullptr;
-        TGraphErrors* g_ten6 = nullptr;
-        bool drew = false;
+        // The central values are the main diagnostic.  The shaded boxes show the
+        // row-level projection spread and model-correction spread, which can be
+        // large because a one-dimensional projection mixes several other
+        // kinematic and topology variables.  Use the central-value range for the
+        // frame so the trend is readable, while allowing the boxes to extend to
+        // the plot boundary if the projection spread is large.
+        double ycentral_min = std::min(graph_y_min_from_central(fa18), graph_y_min_from_central(ten6));
+        double ycentral_max = std::max(graph_y_max_from_central(fa18), graph_y_max_from_central(ten6));
+        if (!std::isfinite(ycentral_min) || !std::isfinite(ycentral_max) || !(ycentral_max > ycentral_min)) {
+            ycentral_min = 0.75;
+            ycentral_max = 1.05;
+        }
+        ycentral_min = std::min(ycentral_min, 1.0);
+        ycentral_max = std::max(ycentral_max, 1.0);
+        double ymin = std::max(0.45, ycentral_min - 0.12);
+        double ymax = std::min(1.25, ycentral_max + 0.12);
+        if (!(ymax > ymin + 0.20)) {
+            const double mid = 0.5 * (ymax + ymin);
+            ymin = mid - 0.15;
+            ymax = mid + 0.15;
+        }
+        ymin = std::min(ymin, 0.90);
+        ymax = std::max(ymax, 1.10);
 
-        if (!xf.empty()) {
-            g_fa18 = new TGraphErrors((int)xf.size(), xf.data(), yf.data(), exf.data(), eyf.data());
-            g_fa18->SetTitle(("Sp19 Inb energy-corrected ratios vs " + key).c_str());
-            g_fa18->SetMarkerStyle(20);
-            g_fa18->SetMarkerSize(0.75);
-            g_fa18->SetLineWidth(2);
-            g_fa18->SetMarkerColor(kBlue + 1);
-            g_fa18->SetLineColor(kBlue + 1);
-            g_fa18->GetXaxis()->SetTitle(label.c_str());
-            g_fa18->GetYaxis()->SetTitle("Ratio");
-            g_fa18->GetXaxis()->SetTitleSize(0.045);
-            g_fa18->GetYaxis()->SetTitleSize(0.045);
-            g_fa18->GetXaxis()->SetLabelSize(0.038);
-            g_fa18->GetYaxis()->SetLabelSize(0.038);
-            g_fa18->GetYaxis()->SetRangeUser(ymin, ymax);
-            g_fa18->GetXaxis()->SetLimits(xmin, xmax);
-            g_fa18->Draw("AP");
-            drew = true;
-        }
-        if (!xt.empty()) {
-            g_ten6 = new TGraphErrors((int)xt.size(), xt.data(), yt.data(), ext.data(), eyt.data());
-            g_ten6->SetTitle(("Sp19 Inb energy-corrected ratios vs " + key).c_str());
-            g_ten6->SetMarkerStyle(21);
-            g_ten6->SetMarkerSize(0.75);
-            g_ten6->SetLineWidth(2);
-            g_ten6->SetMarkerColor(kRed + 1);
-            g_ten6->SetLineColor(kRed + 1);
-            if (!drew) {
-                g_ten6->GetXaxis()->SetTitle(label.c_str());
-                g_ten6->GetYaxis()->SetTitle("Ratio");
-                g_ten6->GetXaxis()->SetTitleSize(0.045);
-                g_ten6->GetYaxis()->SetTitleSize(0.045);
-                g_ten6->GetXaxis()->SetLabelSize(0.038);
-                g_ten6->GetYaxis()->SetLabelSize(0.038);
-                g_ten6->GetYaxis()->SetRangeUser(ymin, ymax);
-                g_ten6->GetXaxis()->SetLimits(xmin, xmax);
-                g_ten6->Draw("AP");
-                drew = true;
-            } else {
-                g_ten6->Draw("P same");
-            }
-        }
+        const std::string frame_name = "frame_sp19_scale_" + key + "_" + std::to_string(iv);
+        TH1D* frame = new TH1D(frame_name.c_str(), "", 1, xmin, xmax);
+        frame->SetDirectory(nullptr);
+        frame->SetMinimum(ymin);
+        frame->SetMaximum(ymax);
+        frame->GetXaxis()->SetTitle(label.c_str());
+        frame->GetYaxis()->SetTitle("Ratio");
+        frame->GetXaxis()->SetTitleSize(0.050);
+        frame->GetYaxis()->SetTitleSize(0.050);
+        frame->GetXaxis()->SetLabelSize(0.040);
+        frame->GetYaxis()->SetLabelSize(0.040);
+        frame->GetYaxis()->SetTitleOffset(1.15);
+        frame->Draw("axis");
 
         TLine* line = new TLine(xmin, 1.0, xmax, 1.0);
         line->SetLineStyle(2);
         line->SetLineWidth(2);
         line->Draw("same");
 
+        draw_projection_boxes(fa18, kBlue + 1, 0.14, xmin, xmax);
+        draw_projection_boxes(ten6, kRed + 1, 0.14, xmin, xmax);
+
+        TGraphErrors* g_fa18 = make_stat_graph(fa18, 20, kBlue + 1);
+        TGraphErrors* g_ten6 = make_stat_graph(ten6, 21, kRed + 1);
+        if (g_fa18) g_fa18->Draw("P same");
+        if (g_ten6) g_ten6->Draw("P same");
+
+        frame->Draw("axis same");
+
         TLatex lat;
         lat.SetNDC(true);
-        lat.SetTextSize(0.050);
-        lat.DrawLatex(0.17, 0.92, key.c_str());
+        lat.SetTextSize(0.048);
+        lat.DrawLatex(0.16, 0.925, key.c_str());
 
         if (iv == 0) {
-            TLegend* leg = new TLegend(0.43, 0.74, 0.94, 0.90);
-            leg->SetBorderSize(0);
-            leg->SetFillStyle(0);
-            leg->SetTextSize(0.034);
-            if (g_fa18) leg->AddEntry(g_fa18, "Sp19 corrected / Fa18 Inb", "lp");
-            if (g_ten6) leg->AddEntry(g_ten6, "Sp19 corrected / 10.6 GeV", "lp");
+            TLegend* leg = new TLegend(0.38, 0.66, 0.95, 0.90);
+            leg->SetBorderSize(1);
+            leg->SetFillStyle(1001);
+            leg->SetFillColor(kWhite);
+            leg->SetTextSize(0.030);
+            TBox* blue_box = new TBox(0.0, 0.0, 1.0, 1.0);
+            blue_box->SetFillColorAlpha(kBlue + 1, 0.18);
+            blue_box->SetLineColor(kBlue + 1);
+            TBox* red_box = new TBox(0.0, 0.0, 1.0, 1.0);
+            red_box->SetFillColorAlpha(kRed + 1, 0.18);
+            red_box->SetLineColor(kRed + 1);
+            if (g_fa18) leg->AddEntry(g_fa18, "mean: Sp19 corr / Fa18 Inb", "p");
+            if (g_ten6) leg->AddEntry(g_ten6, "mean: Sp19 corr / 10.6 GeV", "p");
+            leg->AddEntry(blue_box, "blue box: projection RMS #oplus model", "f");
+            leg->AddEntry(red_box, "red box: projection RMS #oplus model", "f");
             leg->Draw("same");
+        }
+
+        if (iv == 1) {
+            TLatex note;
+            note.SetNDC(true);
+            note.SetTextSize(0.030);
+            note.DrawLatex(0.16, 0.83, "markers: weighted projected means");
+            note.DrawLatex(0.16, 0.77, "thin bars: stat. error on mean");
+            note.DrawLatex(0.16, 0.71, "boxes: row RMS + energy-model spread");
         }
     }
 
