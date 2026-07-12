@@ -264,8 +264,6 @@ int main(int argc, char* argv[]) {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        makeOutputDirs();
-
         try {
             std::filesystem::copy_file(
                 csv_main,
