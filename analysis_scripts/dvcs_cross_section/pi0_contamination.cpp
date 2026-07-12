@@ -41,6 +41,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
@@ -1248,7 +1249,8 @@ struct TreeDiagBranches {
         enable("theta_gamma_gamma");
         enable("theta_pi0_pi0");
 
-        tree->SetCacheSize(0);
+        tree->SetCacheSize(16LL * 1024LL * 1024LL);
+        tree->AddBranchToCache("*", true);
 
         auto bI = [&](const char* name, int* addr, bool& flag) {
             if (tree->GetBranch(name)) {
@@ -1436,21 +1438,86 @@ struct TreeDiagBranches {
     }
 };
 
-static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>& trees,
-                                            const std::string& period,
-                                            const std::string& topology,
-                                            const DiagnosticVar& varcfg,
-                                            bool eppi0_exclusive_sample,
-                                            const DiagnosticCutMap* cuts,
-                                            DiagnosticHist& hist,
-                                            int& trees_used,
-                                            long long& events_seen,
-                                            long long& events_filled) {
-    trees_used = 0;
-    events_seen = 0;
-    events_filled = 0;
+struct CompiledDiagnosticCut {
+    std::vector<std::string> aliases;
+    DiagnosticCut cut;
+};
 
-    const std::vector<std::string> aliases = diagnostic_variable_aliases(varcfg.name, eppi0_exclusive_sample);
+using CompiledDiagnosticCuts = std::vector<CompiledDiagnosticCut>;
+
+static CompiledDiagnosticCuts compile_diagnostic_cuts(
+    const DiagnosticCutMap* cuts,
+    bool eppi0_exclusive_sample) {
+    CompiledDiagnosticCuts out;
+    if (!cuts) return out;
+
+    out.reserve(cuts->size());
+    for (const auto& kv : *cuts) {
+        CompiledDiagnosticCut c;
+        c.aliases = diagnostic_variable_aliases(kv.first, eppi0_exclusive_sample);
+        c.cut = kv.second;
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
+static bool passes_compiled_diagnostic_cuts(
+    const TreeDiagBranches& branches,
+    const CompiledDiagnosticCuts& cuts) {
+    for (const CompiledDiagnosticCut& c : cuts) {
+        double value = 0.0;
+        if (!branches.value_from_aliases(c.aliases, value)) return false;
+        if (!diagnostic_within_cut(value, c.cut)) return false;
+    }
+    return true;
+}
+
+static int diagnostic_topology_index(int detector1, int detector2) {
+    if (detector1 == 1 && detector2 == 1) return 0; // (FD, FD)
+    if (detector1 == 2 && detector2 == 1) return 1; // (CD, FD)
+    if (detector1 == 2 && detector2 == 0) return 2; // (CD, FT)
+    return -1;
+}
+
+struct DiagnosticSampleResult {
+    std::vector<std::vector<DiagnosticHist>> hists;       // [topology][variable]
+    std::vector<std::vector<long long>> events_filled;    // [topology][variable]
+    int trees_used = 0;
+    long long events_seen = 0;
+};
+
+static DiagnosticSampleResult fill_all_diagnostic_hists_from_trees(
+    const std::map<std::string, TTree*>& trees,
+    const std::string& period,
+    const std::vector<DiagnosticVar>& varcfgs,
+    bool eppi0_exclusive_sample,
+    const std::array<const DiagnosticCutMap*, 3>& cuts_by_topology) {
+
+    DiagnosticSampleResult result;
+    result.hists.resize(kTopologies.size());
+    result.events_filled.resize(kTopologies.size());
+
+    for (size_t itopo = 0; itopo < kTopologies.size(); ++itopo) {
+        result.hists[itopo].reserve(varcfgs.size());
+        result.events_filled[itopo].assign(varcfgs.size(), 0);
+        for (const DiagnosticVar& varcfg : varcfgs) {
+            result.hists[itopo].emplace_back(varcfg.nbins, varcfg.xmin, varcfg.xmax);
+        }
+    }
+
+    std::vector<std::vector<std::string>> aliases_by_variable;
+    aliases_by_variable.reserve(varcfgs.size());
+    for (const DiagnosticVar& varcfg : varcfgs) {
+        aliases_by_variable.push_back(
+            diagnostic_variable_aliases(varcfg.name, eppi0_exclusive_sample));
+    }
+
+    std::array<CompiledDiagnosticCuts, 3> compiled_cuts;
+    for (size_t itopo = 0; itopo < compiled_cuts.size(); ++itopo) {
+        compiled_cuts[itopo] =
+            compile_diagnostic_cuts(cuts_by_topology[itopo], eppi0_exclusive_sample);
+    }
+
     static std::set<std::string> warned_missing;
 
     for (const auto& kv : trees) {
@@ -1459,35 +1526,55 @@ static void fill_diagnostic_hist_from_trees(const std::map<std::string, TTree*>&
 
         TreeDiagBranches branches;
         if (!branches.bind(kv.second)) {
-            const std::string warn_key = kv.first + "|" + varcfg.name + "|" + (eppi0_exclusive_sample ? "pi0" : "dvcs");
-            if (warned_missing.insert(warn_key).second) {
-                std::cout << "[pi0_contamination] diagnostic: skipping tree key='" << kv.first
-                          << "' for variable " << varcfg.name
-                          << " because required branch(es) are missing. Tried aliases="
-                          << join_aliases_for_log(aliases) << "." << std::endl;
+            for (size_t ivar = 0; ivar < varcfgs.size(); ++ivar) {
+                const std::string warn_key =
+                    kv.first + "|" + varcfgs[ivar].name + "|" +
+                    (eppi0_exclusive_sample ? "pi0" : "dvcs");
+                if (warned_missing.insert(warn_key).second) {
+                    std::cout << "[pi0_contamination] diagnostic: skipping tree key='"
+                              << kv.first << "' for variable " << varcfgs[ivar].name
+                              << " because required branch(es) are missing. Tried aliases="
+                              << join_aliases_for_log(aliases_by_variable[ivar]) << "."
+                              << std::endl;
+                }
             }
             continue;
         }
 
-        ++trees_used;
+        ++result.trees_used;
         const Long64_t n = kv.second->GetEntries();
+        result.events_seen += static_cast<long long>(n);
+
         for (Long64_t i = 0; i < n; ++i) {
             kv.second->GetEntry(i);
-            ++events_seen;
 
-            double x = 0.0;
-            int d1 = 0;
-            int d2 = 0;
-            if (!branches.get_main_value(varcfg, eppi0_exclusive_sample, x, d1, d2)) continue;
-            if (!passes_topology_ids(d1, d2, topology)) continue;
-            if (!branches.passes_global_selection(period, d1, d2)) continue;
-            if (!branches.passes_cuts(cuts, eppi0_exclusive_sample)) continue;
-            if (x < varcfg.xmin || x >= varcfg.xmax) continue;
+            const int itopo = diagnostic_topology_index(branches.detector1, branches.detector2);
+            if (itopo < 0) continue;
 
-            hist.Fill(x);
-            ++events_filled;
+            if (!branches.passes_global_selection(
+                    period, branches.detector1, branches.detector2)) {
+                continue;
+            }
+
+            if (!passes_compiled_diagnostic_cuts(
+                    branches, compiled_cuts[static_cast<size_t>(itopo)])) {
+                continue;
+            }
+
+            for (size_t ivar = 0; ivar < varcfgs.size(); ++ivar) {
+                double x = 0.0;
+                if (!branches.value_from_aliases(aliases_by_variable[ivar], x)) continue;
+
+                const DiagnosticVar& varcfg = varcfgs[ivar];
+                if (x < varcfg.xmin || x >= varcfg.xmax) continue;
+
+                result.hists[static_cast<size_t>(itopo)][ivar].Fill(x);
+                ++result.events_filled[static_cast<size_t>(itopo)][ivar];
+            }
         }
     }
+
+    return result;
 }
 
 static Triple topology_data_yield_integrated(const CSV& csv,
@@ -1704,6 +1791,15 @@ static void plot_diagnostic_overlay(const std::string& out_png,
     c.SaveAs(out_png.c_str());
 }
 
+static const DiagnosticCutMap* find_diagnostic_cut_map(
+    const DiagnosticTopoCutMap& all_cuts,
+    const std::string& prefix,
+    const std::string& period,
+    const std::string& topology) {
+    const auto it = all_cuts.find(diagnostic_cut_key(prefix, period, topology));
+    return (it == all_cuts.end()) ? nullptr : &it->second;
+}
+
 static void make_exclusivity_variable_diagnostics(
     const CSV& csv,
     const std::vector<RowBin>& bins,
@@ -1725,102 +1821,113 @@ static void make_exclusivity_variable_diagnostics(
     std::vector<DiagnosticBinRow> all_rows;
 
     for (const std::string& period : kPeriods) {
+        std::vector<DiagnosticVar> varcfgs;
+        varcfgs.reserve(kDiagnosticVars.size());
         for (const DiagnosticVar& base_varcfg : kDiagnosticVars) {
-            const DiagnosticVar varcfg = diagnostic_var_with_data_cut_range(base_varcfg, period, data_cuts);
+            varcfgs.push_back(
+                diagnostic_var_with_data_cut_range(base_varcfg, period, data_cuts));
+        }
+
+        std::array<const DiagnosticCutMap*, 3> dvcs_data_cuts{};
+        std::array<const DiagnosticCutMap*, 3> eppi0_data_cuts{};
+        std::array<const DiagnosticCutMap*, 3> dvcs_mc_cuts{};
+        std::array<const DiagnosticCutMap*, 3> eppi0_mc_cuts{};
+
+        for (size_t itopo = 0; itopo < kTopologies.size(); ++itopo) {
+            const std::string& topo = kTopologies[itopo];
+            dvcs_data_cuts[itopo] =
+                find_diagnostic_cut_map(data_cuts, "DVCS", period, topo);
+            eppi0_data_cuts[itopo] =
+                find_diagnostic_cut_map(data_cuts, "eppi0", period, topo);
+            dvcs_mc_cuts[itopo] =
+                find_diagnostic_cut_map(mc_cuts, "DVCS", period, topo);
+            eppi0_mc_cuts[itopo] =
+                find_diagnostic_cut_map(mc_cuts, "eppi0", period, topo);
+        }
+
+        // Each sample is scanned exactly once for this period. During that one
+        // pass, all three topologies and all eight diagnostic variables are
+        // filled. The previous implementation rescanned the same trees once for
+        // every topology-variable combination.
+        const DiagnosticSampleResult dvcs_result =
+            fill_all_diagnostic_hists_from_trees(
+                dvcsDataTrees, period, varcfgs, false, dvcs_data_cuts);
+        const DiagnosticSampleResult pi0_data_result =
+            fill_all_diagnostic_hists_from_trees(
+                eppi0DataTrees, period, varcfgs, true, eppi0_data_cuts);
+        const DiagnosticSampleResult pi0_rec_result =
+            fill_all_diagnostic_hists_from_trees(
+                eppi0RecMcTrees, period, varcfgs, true, eppi0_mc_cuts);
+        const DiagnosticSampleResult mis_result =
+            fill_all_diagnostic_hists_from_trees(
+                eppi0BkgTrees, period, varcfgs, false, dvcs_mc_cuts);
+
+        const bool have_all_trees =
+            dvcs_result.trees_used > 0 &&
+            pi0_data_result.trees_used > 0 &&
+            pi0_rec_result.trees_used > 0 &&
+            mis_result.trees_used > 0;
+
+        for (size_t ivar = 0; ivar < varcfgs.size(); ++ivar) {
+            const DiagnosticVar& varcfg = varcfgs[ivar];
             std::map<std::string, std::vector<DiagnosticBinRow>> rows_by_topology;
 
-            for (const std::string& topo : kTopologies) {
-                const std::string hbase = safe_file_token(period + "_" + topo + "_" + varcfg.name);
-
-                DiagnosticHist h_dvcs(varcfg.nbins, varcfg.xmin, varcfg.xmax);
-                DiagnosticHist h_pi0_data(varcfg.nbins, varcfg.xmin, varcfg.xmax);
-                DiagnosticHist h_pi0_rec(varcfg.nbins, varcfg.xmin, varcfg.xmax);
-                DiagnosticHist h_mis(varcfg.nbins, varcfg.xmin, varcfg.xmax);
-
-                int nt_dvcs = 0, nt_pi0_data = 0, nt_pi0_rec = 0, nt_mis = 0;
-                long long ns_dvcs = 0, ns_pi0_data = 0, ns_pi0_rec = 0, ns_mis = 0;
-                long long nf_dvcs = 0, nf_pi0_data = 0, nf_pi0_rec = 0, nf_mis = 0;
-
-                const std::string dvcs_cut_key = diagnostic_cut_key("DVCS", period, topo);
-                const std::string eppi0_cut_key = diagnostic_cut_key("eppi0", period, topo);
-                const DiagnosticCutMap* dvcs_data_cuts = nullptr;
-                const DiagnosticCutMap* eppi0_data_cuts = nullptr;
-                const DiagnosticCutMap* dvcs_mc_cuts = nullptr;
-                const DiagnosticCutMap* eppi0_mc_cuts = nullptr;
-                auto it_dvcs_data_cuts = data_cuts.find(dvcs_cut_key);
-                if (it_dvcs_data_cuts != data_cuts.end()) dvcs_data_cuts = &it_dvcs_data_cuts->second;
-                auto it_eppi0_data_cuts = data_cuts.find(eppi0_cut_key);
-                if (it_eppi0_data_cuts != data_cuts.end()) eppi0_data_cuts = &it_eppi0_data_cuts->second;
-                auto it_dvcs_mc_cuts = mc_cuts.find(dvcs_cut_key);
-                if (it_dvcs_mc_cuts != mc_cuts.end()) dvcs_mc_cuts = &it_dvcs_mc_cuts->second;
-                auto it_eppi0_mc_cuts = mc_cuts.find(eppi0_cut_key);
-                if (it_eppi0_mc_cuts != mc_cuts.end()) eppi0_mc_cuts = &it_eppi0_mc_cuts->second;
-
-                fill_diagnostic_hist_from_trees(dvcsDataTrees, period, topo, varcfg,
-                                                false, dvcs_data_cuts,
-                                                h_dvcs, nt_dvcs, ns_dvcs, nf_dvcs);
-                fill_diagnostic_hist_from_trees(eppi0DataTrees, period, topo, varcfg,
-                                                true, eppi0_data_cuts,
-                                                h_pi0_data, nt_pi0_data, ns_pi0_data, nf_pi0_data);
-                fill_diagnostic_hist_from_trees(eppi0RecMcTrees, period, topo, varcfg,
-                                                true, eppi0_mc_cuts,
-                                                h_pi0_rec, nt_pi0_rec, ns_pi0_rec, nf_pi0_rec);
-                fill_diagnostic_hist_from_trees(eppi0BkgTrees, period, topo, varcfg,
-                                                false, dvcs_mc_cuts,
-                                                h_mis, nt_mis, ns_mis, nf_mis);
-
-                const bool have_all_trees = (nt_dvcs > 0 && nt_pi0_data > 0 && nt_pi0_rec > 0 && nt_mis > 0);
+            for (size_t itopo = 0; itopo < kTopologies.size(); ++itopo) {
+                const std::string& topo = kTopologies[itopo];
 
                 if (!have_all_trees) {
                     std::cout << "[pi0_contamination] diagnostic: insufficient trees for "
                               << period << " " << topo << " " << varcfg.name
                               << " trees(dvcs,pi0data,pi0rec,mis)=("
-                              << nt_dvcs << "," << nt_pi0_data << "," << nt_pi0_rec << "," << nt_mis << ")."
+                              << dvcs_result.trees_used << ","
+                              << pi0_data_result.trees_used << ","
+                              << pi0_rec_result.trees_used << ","
+                              << mis_result.trees_used << ")."
                               << std::endl;
                 }
 
-                // These histograms are filled after the same period/topology/channel
-                // exclusivity-cut maps used by total_counts.cpp. They are not
-                // renormalized to CSV-integrated totals; instead this study evaluates
-                // the pi0-contamination formula directly as a function of the plotted
-                // exclusivity variable:
-                //
-                //   c(x) = Nmis_mc(x) * Npi0_data(x)
-                //        / [Npi0_rec_mc(x) * Ndvcs_data(x)]
-                //
-                // i.e. the same structure used in the main calculation, but binned
-                // in Delta_phi, pTmiss, Mx2, etc. rather than in xB, Q2, |t|, phi.
+                const DiagnosticHist& h_dvcs = dvcs_result.hists[itopo][ivar];
+                const DiagnosticHist& h_pi0_data = pi0_data_result.hists[itopo][ivar];
+                const DiagnosticHist& h_pi0_rec = pi0_rec_result.hists[itopo][ivar];
+                const DiagnosticHist& h_mis = mis_result.hists[itopo][ivar];
 
                 std::vector<DiagnosticBinRow> plot_rows;
                 plot_rows.reserve(varcfg.nbins);
                 for (int ibin = 1; ibin <= varcfg.nbins; ++ibin) {
-                    DiagnosticBinRow row = compute_diagnostic_bin(period, topo, varcfg.name, ibin,
-                                                                  h_dvcs, h_pi0_data, h_pi0_rec, h_mis);
-                    if (!have_all_trees) {
-                        row.valid = false;
-                    }
+                    DiagnosticBinRow row = compute_diagnostic_bin(
+                        period, topo, varcfg.name, ibin,
+                        h_dvcs, h_pi0_data, h_pi0_rec, h_mis);
+                    if (!have_all_trees) row.valid = false;
                     all_rows.push_back(row);
                     plot_rows.push_back(row);
                 }
+                rows_by_topology[topo] = std::move(plot_rows);
 
-                rows_by_topology[topo] = plot_rows;
-
-                std::cout << "[pi0_contamination] diagnostic " << period << " " << topo << " " << varcfg.name
+                std::cout << "[pi0_contamination] diagnostic "
+                          << period << " " << topo << " " << varcfg.name
                           << ": seen(dvcs,pi0data,pi0rec,mis)=("
-                          << ns_dvcs << "," << ns_pi0_data << "," << ns_pi0_rec << "," << ns_mis
+                          << dvcs_result.events_seen << ","
+                          << pi0_data_result.events_seen << ","
+                          << pi0_rec_result.events_seen << ","
+                          << mis_result.events_seen
                           << ") filled(dvcs,pi0data,pi0rec,mis)=("
-                          << nf_dvcs << "," << nf_pi0_data << "," << nf_pi0_rec << "," << nf_mis
+                          << dvcs_result.events_filled[itopo][ivar] << ","
+                          << pi0_data_result.events_filled[itopo][ivar] << ","
+                          << pi0_rec_result.events_filled[itopo][ivar] << ","
+                          << mis_result.events_filled[itopo][ivar]
                           << ")" << std::endl;
             }
 
-            const std::string out_png = join_path(diag_dir,
+            const std::string out_png = join_path(
+                diag_dir,
                 "pi0_contamination_vs_" + safe_file_token(varcfg.name) + "_" +
                 safe_file_token(period) + "_topologies.png");
             plot_diagnostic_overlay(out_png, period, varcfg, rows_by_topology);
         }
     }
 
-    const std::string csv_path = join_path(diag_dir, "pi0_contamination_vs_exclusivity_variables.csv");
+    const std::string csv_path =
+        join_path(diag_dir, "pi0_contamination_vs_exclusivity_variables.csv");
     write_diagnostic_csv(csv_path, all_rows);
 
     std::cout << "[pi0_contamination] Wrote exclusivity-variable contamination diagnostics under: "

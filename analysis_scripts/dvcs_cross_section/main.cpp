@@ -223,28 +223,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-    //
-    //     Eppi0NormalizationOptions norm_opts;
-    //     norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-    //     norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
-    //     norm_opts.output_dir = "output/data_mc_normalization";
-    //     norm_opts.override_to_unity = true;
-    //     norm_opts.max_workers = 7;
-    //
-    //     if (!update_eppi0_normalization_csv(csv_main,
-    //                                         dataTrees,
-    //                                         eppi0DataTrees,
-    //                                         eppi0RecMcTrees,
-    //                                         norm_opts)) {
-    //         std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
-
     // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
