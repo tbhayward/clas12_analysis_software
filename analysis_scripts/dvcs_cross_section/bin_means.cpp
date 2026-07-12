@@ -9,10 +9,10 @@
 #include "global_cuts.h"
 
 #include <TTree.h>
-#include <TStopwatch.h>
 #include <TROOT.h>          // ROOT::EnableThreadSafety
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -266,6 +266,39 @@ struct Accum {
     double mpT() const { return n ? spT / n : std::numeric_limits<double>::quiet_NaN(); }
     double mgT() const { return n ? sgT / n : std::numeric_limits<double>::quiet_NaN(); }
 };
+
+struct RowWin {
+    double xBmin = 0.0, xBmax = 0.0;
+    double Q2min = 0.0, Q2max = 0.0;
+    double tmin = 0.0, tmax = 0.0;
+    double pmin = 0.0, pmax = 0.0;
+    bool valid = false;
+};
+
+struct Interval {
+    double min = 0.0;
+    double max = 0.0;
+};
+
+struct BinLookup {
+    std::vector<RowWin> rows;
+    std::vector<int> valid_rows;
+    std::vector<Interval> x_bins;
+    std::vector<Interval> q2_bins;
+    std::vector<Interval> t_bins;
+    std::map<std::tuple<int, int, int>, std::vector<int>> rows_by_kin_bin;
+    bool indexed = true;
+};
+
+static int interval_index(const std::vector<Interval>& bins, double value) {
+    auto it = std::upper_bound(
+        bins.begin(), bins.end(), value,
+        [](double v, const Interval& bin) { return v < bin.min; });
+    if (it == bins.begin()) return -1;
+    --it;
+    return (value >= it->min && value < it->max)
+        ? static_cast<int>(it - bins.begin()) : -1;
+}
 
 // ---------- ROOT binding serialized to avoid Cling races ----------
 static std::mutex g_root_bind_mutex;
@@ -590,49 +623,64 @@ static void load_sigmas_once() {
     }
 }
 
-enum class CutMode { TwoSided, UpperOnly };
+struct ResolvedSigmaCut {
+    bool enabled = false;
+    double mean = 0.0;
+    double three_sigma = 0.0;
+};
 
-static CutMode var_mode(const std::string& var) {
-    if (var == "Emiss2" || var == "pTmiss" || var == "theta_gamma_gamma") return CutMode::UpperOnly;
-    return CutMode::TwoSided;
+struct ResolvedSigmaCuts {
+    ResolvedSigmaCut theta_gamma_gamma, pTmiss, Emiss2;
+    ResolvedSigmaCut Mx2, Mx2_1, Mx2_2, xF;
+};
+
+static ResolvedSigmaCut resolve_sigma_cut(const VarMap* vm, const char* var) {
+    ResolvedSigmaCut out;
+    if (!vm) return out;
+    const auto it = vm->find(var);
+    if (it == vm->end()) return out;
+    const Sigmas& sigma = it->second;
+    if (!std::isfinite(sigma.mean) || !std::isfinite(sigma.std) || sigma.std <= 0.0) return out;
+    out.enabled = true;
+    out.mean = sigma.mean;
+    out.three_sigma = 3.0 * sigma.std;
+    return out;
 }
 
-static bool passes_3sigma_for_topo(const std::string& period_json_tag,
-                                   Topology topo,
-                                   const BranchBinder& b) {
+static ResolvedSigmaCuts resolve_sigma_cuts(const std::string& period_json_tag,
+                                             Topology topo) {
     std::call_once(g_sigma_once, load_sigmas_once);
-    if (period_json_tag.empty()) return true;
+    const VarMap* vm = nullptr;
+    if (!period_json_tag.empty()) {
+        const std::string key = period_json_tag + "_" + std::string(topo_tag(topo));
+        const auto it = g_sigma_cache.find(key);
+        if (it != g_sigma_cache.end()) vm = &it->second;
+    }
+    ResolvedSigmaCuts cuts;
+    cuts.theta_gamma_gamma = resolve_sigma_cut(vm, "theta_gamma_gamma");
+    cuts.pTmiss = resolve_sigma_cut(vm, "pTmiss");
+    cuts.Emiss2 = resolve_sigma_cut(vm, "Emiss2");
+    cuts.Mx2 = resolve_sigma_cut(vm, "Mx2");
+    cuts.Mx2_1 = resolve_sigma_cut(vm, "Mx2_1");
+    cuts.Mx2_2 = resolve_sigma_cut(vm, "Mx2_2");
+    cuts.xF = resolve_sigma_cut(vm, "xF");
+    return cuts;
+}
 
-    const std::string key = period_json_tag + "_" + std::string(topo_tag(topo));
-    auto it = g_sigma_cache.find(key);
-    if (it == g_sigma_cache.end()) return true;
-
-    const VarMap& vm = it->second;
-    auto check = [&](const char* var, bool has_val, double val)->bool {
-        auto itv = vm.find(var);
-        if (itv == vm.end()) return true;
-        if (!has_val) return true;
-        const Sigmas s = itv->second;
-        if (!std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0) return true;
-
-        const CutMode mode = var_mode(var);
-        if (mode == CutMode::UpperOnly) {
-            return (val <= s.mean + 3.0 * s.std);
-        } else {
-            const double d = std::abs(val - s.mean);
-            return (d <= 3.0 * s.std);
-        }
-    };
-
-    const bool ok_theta = check("theta_gamma_gamma", b.has_theta_gg, b.theta_gamma_gamma);
-    const bool ok_pT    = check("pTmiss",           b.has_pT,       b.pTmiss);
-    const bool ok_Em2   = check("Emiss2",           b.has_Em2,      b.Emiss2);
-    const bool ok_Mx2   = check("Mx2",              b.has_Mx2,      b.Mx2);
-    const bool ok_Mx21  = check("Mx2_1",            b.has_Mx2_1,    b.Mx2_1);
-    const bool ok_Mx22  = check("Mx2_2",            b.has_Mx2_2,    b.Mx2_2);
-    const bool ok_xF    = check("xF",               b.has_xF,       b.xF);
-
-    return ok_theta && ok_pT && ok_Em2 && ok_Mx2 && ok_Mx21 && ok_Mx22 && ok_xF;
+static inline bool passes_upper_cut(const ResolvedSigmaCut& cut, bool has, double value) {
+    return !cut.enabled || !has || value <= cut.mean + cut.three_sigma;
+}
+static inline bool passes_two_sided_cut(const ResolvedSigmaCut& cut, bool has, double value) {
+    return !cut.enabled || !has || std::abs(value - cut.mean) <= cut.three_sigma;
+}
+static inline bool passes_3sigma(const ResolvedSigmaCuts& cuts, const BranchBinder& b) {
+    return passes_upper_cut(cuts.theta_gamma_gamma, b.has_theta_gg, b.theta_gamma_gamma) &&
+           passes_upper_cut(cuts.pTmiss, b.has_pT, b.pTmiss) &&
+           passes_upper_cut(cuts.Emiss2, b.has_Em2, b.Emiss2) &&
+           passes_two_sided_cut(cuts.Mx2, b.has_Mx2, b.Mx2) &&
+           passes_two_sided_cut(cuts.Mx2_1, b.has_Mx2_1, b.Mx2_1) &&
+           passes_two_sided_cut(cuts.Mx2_2, b.has_Mx2_2, b.Mx2_2) &&
+           passes_two_sided_cut(cuts.xF, b.has_xF, b.xF);
 }
 
 static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
@@ -651,12 +699,81 @@ static bool row_accepts_kin(const BranchBinder& b,
     return true;
 }
 
+static BinLookup build_bin_lookup(const CSV& csv) {
+    const int c_xBmin = col(csv, "xBmin"), c_xBmax = col(csv, "xBmax");
+    const int c_Q2min = col(csv, "Q2min"), c_Q2max = col(csv, "Q2max");
+    const int c_tmin = col(csv, "t_abs_min"), c_tmax = col(csv, "t_abs_max");
+    const int c_pmin = col(csv, "phimin"), c_pmax = col(csv, "phimax");
+    const int c_valid = col(csv, "valid bin");
+    auto toD = [](const std::string& text) {
+        if (text.empty()) return std::numeric_limits<double>::quiet_NaN();
+        char* end = nullptr;
+        const double value = std::strtod(text.c_str(), &end);
+        return end == text.c_str() ? std::numeric_limits<double>::quiet_NaN() : value;
+    };
+    BinLookup lookup;
+    lookup.rows.reserve(csv.rows.size());
+    for (const auto& row : csv.rows) {
+        RowWin w;
+        w.xBmin=toD(row[c_xBmin]); w.xBmax=toD(row[c_xBmax]);
+        w.Q2min=toD(row[c_Q2min]); w.Q2max=toD(row[c_Q2max]);
+        w.tmin=toD(row[c_tmin]); w.tmax=toD(row[c_tmax]);
+        w.pmin=toD(row[c_pmin]); w.pmax=toD(row[c_pmax]);
+        const std::string& v=row[c_valid];
+        w.valid=(v=="1" || v=="1.0" || v=="true" || v=="TRUE");
+        lookup.rows.push_back(w);
+        if (w.valid) {
+            lookup.valid_rows.push_back(static_cast<int>(lookup.rows.size()) - 1);
+            lookup.x_bins.push_back({w.xBmin,w.xBmax});
+            lookup.q2_bins.push_back({w.Q2min,w.Q2max});
+            lookup.t_bins.push_back({w.tmin,w.tmax});
+        }
+    }
+    auto normalize=[](std::vector<Interval>& bins) {
+        std::sort(bins.begin(),bins.end(),[](const Interval&a,const Interval&b){
+            return a.min<b.min || (a.min==b.min && a.max<b.max);
+        });
+        bins.erase(std::unique(bins.begin(),bins.end(),[](const Interval&a,const Interval&b){
+            return a.min==b.min && a.max==b.max;
+        }),bins.end());
+    };
+    normalize(lookup.x_bins); normalize(lookup.q2_bins); normalize(lookup.t_bins);
+
+    auto non_overlapping = [](const std::vector<Interval>& bins) {
+        for (std::size_t i = 1; i < bins.size(); ++i) {
+            if (bins[i].min < bins[i - 1].max) return false;
+        }
+        return true;
+    };
+    lookup.indexed = non_overlapping(lookup.x_bins) &&
+                     non_overlapping(lookup.q2_bins) &&
+                     non_overlapping(lookup.t_bins);
+    if (!lookup.indexed) {
+        print_banner("CSV kinematic intervals overlap; using exact linear row scan fallback");
+        return lookup;
+    }
+
+    for (int r=0;r<static_cast<int>(lookup.rows.size());++r) {
+        const RowWin& w=lookup.rows[static_cast<std::size_t>(r)];
+        if (!w.valid) continue;
+        const int ix=interval_index(lookup.x_bins,w.xBmin);
+        const int iq=interval_index(lookup.q2_bins,w.Q2min);
+        const int it=interval_index(lookup.t_bins,w.tmin);
+        if (ix<0 || iq<0 || it<0) {
+            std::cerr << "[bin_means] FATAL: failed to index a valid CSV bin row.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        lookup.rows_by_kin_bin[std::make_tuple(ix,iq,it)].push_back(r);
+    }
+    return lookup;
+}
+
 // ---------------- per period work ----------------
 struct PeriodResult {
     std::unordered_map<int, Accum> per_row; // row index -> Accum
 };
 
-static PeriodResult process_period(const std::string& period_key, TTree* tree, const CSV& csv) {
+static PeriodResult process_period(const std::string& period_key, TTree* tree, const BinLookup& lookup) {
     PeriodResult R;
     if (!tree) return R;
 
@@ -683,52 +800,20 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         std::exit(EXIT_FAILURE);
     }
 
-    const int c_xBmin = col(csv, "xBmin");
-    const int c_xBmax = col(csv, "xBmax");
-    const int c_Q2min = col(csv, "Q2min");
-    const int c_Q2max = col(csv, "Q2max");
-    const int c_tmin  = col(csv, "t_abs_min");
-    const int c_tmax  = col(csv, "t_abs_max");
-    const int c_pmin  = col(csv, "phimin");
-    const int c_pmax  = col(csv, "phimax");
-    const int c_valid = col(csv, "valid bin");
-
-    auto toD = [](const std::string& s)->double {
-        if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
-        char* e = nullptr; double v = std::strtod(s.c_str(), &e);
-        return (e == s.c_str()) ? std::numeric_limits<double>::quiet_NaN() : v;
-    };
-
-    struct RowWin {
-        double xBmin, xBmax, Q2min, Q2max, tmin, tmax, pmin, pmax;
-        bool valid;
-    };
-    std::vector<RowWin> rows; rows.reserve(csv.rows.size());
-    for (const auto& row : csv.rows) {
-        RowWin w;
-        w.xBmin = toD(row[c_xBmin]); w.xBmax = toD(row[c_xBmax]);
-        w.Q2min = toD(row[c_Q2min]); w.Q2max = toD(row[c_Q2max]);
-        w.tmin  = toD(row[c_tmin]);  w.tmax  = toD(row[c_tmax]);
-        w.pmin  = toD(row[c_pmin]);  w.pmax  = toD(row[c_pmax]);
-        const std::string& vs = row[c_valid];
-        w.valid = (vs == "1" || vs == "1.0" || vs == "true" || vs == "TRUE");
-        rows.push_back(w);
-    }
-
     const Long64_t N = tree->GetEntries();
     print_banner("Processing period " + period_key + " with " + std::to_string((long long)N) + " entries");
 
     const bool dbg = (std::getenv("BINMEANS_DEBUG") != nullptr);
 
+    const std::array<ResolvedSigmaCuts, 3> sigma_cuts = {{
+        resolve_sigma_cuts(tags.json_tag, Topology::FD_FD),
+        resolve_sigma_cuts(tags.json_tag, Topology::CD_FD),
+        resolve_sigma_cuts(tags.json_tag, Topology::CD_FT)
+    }};
+
     long long n_pass_global = 0;
     long long n_pass_3sig   = 0;
     long long n_used_rows   = 0;
-
-    TStopwatch sw; sw.Start();
-
-    const Long64_t cadence_by_pct = std::max<Long64_t>( (Long64_t) (0.02 * (double)N), 1 );
-    const Long64_t cadence_by_abs = 1000000;
-    const Long64_t cadence = std::min(cadence_by_pct, cadence_by_abs);
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
@@ -755,9 +840,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
         int topo_idx = b.topology_index();
         if (topo_idx < 0 || topo_idx > 2) continue;
-        Topology topo = static_cast<Topology>(topo_idx);
-
-        if (!passes_3sigma_for_topo(tags.json_tag, topo, b)) continue;
+        if (!passes_3sigma(sigma_cuts[static_cast<std::size_t>(topo_idx)], b)) continue;
         ++n_pass_3sig;
 
         const double phi_deg = b.phi_deg();
@@ -766,25 +849,36 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         const double p_theta_deg = b.p_theta_deg();
         const double g_theta_deg = b.g_theta_deg();
 
+        const double tabs = std::fabs(b.t1);
         bool used_any_row = false;
 
-        for (int r = 0; r < (int)rows.size(); ++r) {
-            const RowWin& w = rows[r];
-            if (!w.valid) continue;
-            if (!row_accepts_kin(b, w.xBmin, w.xBmax, w.Q2min, w.Q2max, w.tmin, w.tmax)) continue;
-            if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
+        auto test_rows = [&](const std::vector<int>& candidate_rows) {
+            for (int r : candidate_rows) {
+                const RowWin& w = lookup.rows[static_cast<std::size_t>(r)];
+                if (!row_accepts_kin(b, w.xBmin, w.xBmax,
+                                     w.Q2min, w.Q2max,
+                                     w.tmin, w.tmax)) continue;
+                if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
+                R.per_row[r].add(b.x, b.Q2, tabs, phi_deg,
+                                 e_theta_deg, p_theta_deg, g_theta_deg);
+                used_any_row = true;
+            }
+        };
 
-            R.per_row[r].add(b.x, b.Q2, std::fabs(b.t1), phi_deg,
-                             e_theta_deg, p_theta_deg, g_theta_deg);
-            used_any_row = true;
+        if (lookup.indexed) {
+            const int ix = interval_index(lookup.x_bins, b.x);
+            const int iq = interval_index(lookup.q2_bins, b.Q2);
+            const int it = interval_index(lookup.t_bins, tabs);
+            if (ix < 0 || iq < 0 || it < 0) continue;
+
+            const auto candidates = lookup.rows_by_kin_bin.find(std::make_tuple(ix, iq, it));
+            if (candidates == lookup.rows_by_kin_bin.end()) continue;
+            test_rows(candidates->second);
+        } else {
+            test_rows(lookup.valid_rows);
         }
+
         if (used_any_row) ++n_used_rows;
-
-        if (i == 0 || (i % cadence) == 0 || i + 1 == N) {
-            double pct = (N > 0) ? (100.0 * (double)i / (double)N) : 100.0;
-            (void)pct;
-            sw.Continue();
-        }
     }
 
     print_banner("Finished " + period_key +
@@ -964,6 +1058,8 @@ bool update_bin_means_csv(const std::string& csv_path,
     CSV csv;
     if (!load_csv(csv_path, csv)) return false;
 
+    const BinLookup bin_lookup = build_bin_lookup(csv);
+
     // Existing mean columns
     std::unordered_map<std::string,int> cxB, cQ2, ct, cphi;
     for (const auto& lab : csv_period_labels()) {
@@ -1001,7 +1097,7 @@ bool update_bin_means_csv(const std::string& csv_path,
 
     std::vector<PeriodResult> results(period_keys.size());
 
-    const int nth = std::max(1, std::min(5, max_workers));
+    const int nth = std::max(1, std::min(7, max_workers));
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(nth)
 #endif
@@ -1009,7 +1105,7 @@ bool update_bin_means_csv(const std::string& csv_path,
         const std::string& pk = period_keys[i];
         auto it = dataTrees.find(pk);
         TTree* t = (it == dataTrees.end()) ? nullptr : it->second;
-        results[i] = process_period(pk, t, csv);
+        results[i] = process_period(pk, t, bin_lookup);
     }
 
     std::unordered_map<std::string, std::unordered_map<int, Accum>> per_period_rows;
