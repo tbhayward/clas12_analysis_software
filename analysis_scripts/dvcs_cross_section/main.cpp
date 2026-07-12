@@ -4,7 +4,6 @@
 #include "periods.h"
 #include "global_cuts.h"
 #include "exclusivity_cuts.h"
-#include "q2_xb_cut_coverage.h"
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
@@ -155,18 +154,6 @@ int main(int argc, char* argv[]) {
 
         if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7)) {
             std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
-
-    // --------- Q2 vs xB coverage after global + data 3sigma DVCS cuts ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
-        const std::string out_dir = "output/q2_xb_cut_coverage";
-
-        if (!plot_q2_xb_cut_coverage(dataTrees, csv_main, cuts_json, out_dir)) {
-            std::cerr << "[main] ERROR: plot_q2_xb_cut_coverage failed.\n";
             std::exit(EXIT_FAILURE);
         }
     }
