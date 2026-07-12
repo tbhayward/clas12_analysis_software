@@ -79,21 +79,6 @@ static inline bool is_finite_nonnegative(double x) {
     return std::isfinite(x) && x >= 0.0;
 }
 
-static std::string sanitize_dir_token(const std::string& s) {
-    std::string out;
-    out.reserve(s.size());
-
-    for (char c : s) {
-        if (c == ' ') {
-            out.push_back('_');
-        } else {
-            out.push_back(c);
-        }
-    }
-
-    return out;
-}
-
 static std::string canonical_period_dir(const std::string& label) {
     if (label == "Fa18 Inb") return "Fa18_Inb";
     if (label == "Fa18 Out") return "Fa18_Out";
@@ -375,31 +360,56 @@ struct CellTriple {
     double sys = 0.0;
 };
 
-static bool parse_tuple_numbers(const std::string& s, std::vector<double>& vals) {
-    vals.clear();
+static inline void skip_tuple_delimiters(const char*& p) {
+    while (*p != '\0' &&
+           (*p == ' ' || *p == '\t' || *p == '(' || *p == ')' || *p == '"')) {
+        ++p;
+    }
+}
 
-    std::string t;
-    t.reserve(s.size());
-    for (char c : s) {
-        if (c == '(' || c == ')' || c == '"') {
-            t.push_back(' ');
-        } else {
-            t.push_back(c);
-        }
+// Parse the fixed CSV tuple format directly, without allocating a temporary
+// string, stringstream, token strings, or vector for every cell.
+static bool parse_cell_triple(const std::string& s, CellTriple& out) {
+    if (s.empty()) {
+        return false;
     }
 
-    std::stringstream ss(t);
-    std::string part;
-    while (std::getline(ss, part, ',')) {
-        char* endp = nullptr;
-        const double v = std::strtod(part.c_str(), &endp);
-        if (endp == part.c_str()) {
-            return false;
-        }
-        vals.push_back(v);
+    const char* p = s.c_str();
+    char* endp = nullptr;
+
+    skip_tuple_delimiters(p);
+    out.value = std::strtod(p, &endp);
+    if (endp == p) {
+        return false;
+    }
+    p = endp;
+
+    skip_tuple_delimiters(p);
+    if (*p != ',') {
+        return false;
+    }
+    ++p;
+
+    skip_tuple_delimiters(p);
+    out.stat = std::strtod(p, &endp);
+    if (endp == p) {
+        return false;
+    }
+    p = endp;
+
+    skip_tuple_delimiters(p);
+    if (*p != ',') {
+        return false;
+    }
+    ++p;
+
+    skip_tuple_delimiters(p);
+    out.sys = std::strtod(p, &endp);
+    if (endp == p) {
+        return false;
     }
 
-    return !vals.empty();
+    return true;
 }
 
 static CellTriple cell_triple_or_zero(const CSV& csv, int row, int col, const std::string& label) {
@@ -418,17 +428,12 @@ static CellTriple cell_triple_or_zero(const CSV& csv, int row, int col, const st
         return out;
     }
 
-    std::vector<double> vals;
-    if (!parse_tuple_numbers(cell, vals) || vals.size() < 3) {
+    if (!parse_cell_triple(cell, out)) {
         std::ostringstream ss;
         ss << "[acceptance] FATAL: expected tuple (value,stat,sys) for "
            << label << ", got '" << cell << "'.";
         fatal(ss.str());
     }
-
-    out.value = vals[0];
-    out.stat = vals[1];
-    out.sys = vals[2];
 
     if (!std::isfinite(out.value) || !std::isfinite(out.stat) || !std::isfinite(out.sys) ||
         out.stat < 0.0 || out.sys < 0.0) {
@@ -551,13 +556,6 @@ static bool valid_cell_to_bool(const std::string& s) {
     return s == "1" || s == "1.0" || s == "true" || s == "TRUE";
 }
 
-static double to_double_strict_cell(const CSV& csv,
-                                    int row,
-                                    const std::string& colname) {
-    const int c = col_strict(csv, colname);
-    return cell_value_strict(csv, row, c, colname);
-}
-
 static std::vector<RowBin> load_row_bins(const CSV& csv) {
     const int c_xBmin = col_strict(csv, "xBmin");
     const int c_xBmax = col_strict(csv, "xBmax");
@@ -626,30 +624,38 @@ static double ratio_stat(double numerator,
 
 static std::vector<AcceptancePoint> compute_acceptance_for_period(const CSV& csv,
                                                                   const std::string& period) {
-    const int c_gen = col_strict(csv, col_generated(period));
+    const std::string generated_name = col_generated(period);
+    const int c_gen = col_strict(csv, generated_name);
     const int c_acc = col_strict(csv, col_acceptance(period));
     (void)c_acc;
 
     std::vector<int> rec_cols;
+    std::vector<std::string> rec_names;
     rec_cols.reserve(topologies().size());
+    rec_names.reserve(topologies().size());
 
     for (const auto& topo : topologies()) {
-        rec_cols.push_back(col_strict(csv, col_reconstructed_current_corrected(topo, period)));
+        rec_names.push_back(col_reconstructed_current_corrected(topo, period));
+        rec_cols.push_back(col_strict(csv, rec_names.back()));
     }
 
     std::vector<AcceptancePoint> out;
     out.resize(csv.rows.size());
 
     for (int r = 0; r < (int)csv.rows.size(); ++r) {
-        const CellTriple gen = cell_triple_or_zero(csv, r, c_gen, col_generated(period));
+        const CellTriple gen = cell_triple_or_zero(csv, r, c_gen, generated_name);
 
         CellTriple rec;
         rec.value = 0.0;
         rec.stat = 0.0;
         rec.sys = 0.0;
 
-        for (int c : rec_cols) {
-            add_cell_triple(rec, cell_triple_or_zero(csv, r, c, csv.header[(size_t)c]));
+        for (size_t i = 0; i < rec_cols.size(); ++i) {
+            add_cell_triple(rec,
+                            cell_triple_or_zero(csv,
+                                                r,
+                                                rec_cols[i],
+                                                rec_names[i]));
         }
 
         AcceptancePoint p;

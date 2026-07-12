@@ -35,6 +35,7 @@
 #include <TROOT.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -50,9 +51,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace {
 
@@ -203,11 +209,18 @@ static const std::vector<std::string>& topo_dirs() {
     return v;
 }
 
-static std::string topo_dir_from_detectors(int det1, int det2) {
-    if (det1 == 1 && det2 == 1) return "FD_FD";
-    if (det1 == 2 && det2 == 1) return "CD_FD";
-    if (det1 == 2 && det2 == 0) return "CD_FT";
-    return "";
+enum class TopologyIndex : int { FD_FD = 0, CD_FD = 1, CD_FT = 2, INVALID = -1 };
+
+static TopologyIndex topology_index_from_detectors(int det1, int det2) {
+    if (det1 == 1 && det2 == 1) return TopologyIndex::FD_FD;
+    if (det1 == 2 && det2 == 1) return TopologyIndex::CD_FD;
+    if (det1 == 2 && det2 == 0) return TopologyIndex::CD_FT;
+    return TopologyIndex::INVALID;
+}
+
+static const std::array<const char*, 3>& topology_names() {
+    static const std::array<const char*, 3> names = {{"FD_FD", "CD_FD", "CD_FT"}};
+    return names;
 }
 
 // -----------------------------------------------------------------------------
@@ -353,20 +366,41 @@ struct RowBin {
 };
 
 struct RegionNormalization {
-    std::vector<double> cubic;
+    std::array<double, 4> cubic = {{0.0, 0.0, 0.0, 0.0}};
 };
 
 struct PeriodProducts {
     double epg_current_eff = std::numeric_limits<double>::quiet_NaN();
     double eppi0_current_eff = std::numeric_limits<double>::quiet_NaN();
-    std::map<std::string, RegionNormalization> regions;
+    std::array<RegionNormalization, 7> regions;
+};
+
+struct Interval {
+    double min = 0.0;
+    double max = 0.0;
 };
 
 struct AnalysisInputs {
     std::vector<RowBin> rows;
+    std::vector<int> valid_rows;
+    std::vector<Interval> x_bins;
+    std::vector<Interval> q2_bins;
+    std::vector<Interval> t_bins;
+    std::map<std::tuple<int, int, int>, std::vector<int>> rows_by_kin_bin;
+    bool indexed = true;
     std::map<std::string, PeriodProducts> products_by_period;
     std::map<std::string, std::vector<double>> contamination_by_period;
 };
+
+static int interval_index(const std::vector<Interval>& bins, double value) {
+    auto it = std::upper_bound(
+        bins.begin(), bins.end(), value,
+        [](double v, const Interval& bin) { return v < bin.min; });
+    if (it == bins.begin()) return -1;
+    --it;
+    return (value >= it->min && value < it->max)
+        ? static_cast<int>(it - bins.begin()) : -1;
+}
 
 static std::string current_eff_col(const std::string& channel,
                                    const std::string& period) {
@@ -417,6 +451,50 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
         b.phimax = to_double_strict(row[c_phimax], "phimax");
         b.valid = is_valid_cell(row[c_valid]);
         in.rows.push_back(b);
+        if (b.valid) {
+            const int row_index = static_cast<int>(in.rows.size()) - 1;
+            in.valid_rows.push_back(row_index);
+            in.x_bins.push_back({b.xBmin, b.xBmax});
+            in.q2_bins.push_back({b.Q2min, b.Q2max});
+            in.t_bins.push_back({b.tmin, b.tmax});
+        }
+    }
+
+    auto normalize_intervals = [](std::vector<Interval>& bins) {
+        std::sort(bins.begin(), bins.end(), [](const Interval& a, const Interval& b) {
+            return a.min < b.min || (a.min == b.min && a.max < b.max);
+        });
+        bins.erase(std::unique(bins.begin(), bins.end(), [](const Interval& a, const Interval& b) {
+            return a.min == b.min && a.max == b.max;
+        }), bins.end());
+    };
+    normalize_intervals(in.x_bins);
+    normalize_intervals(in.q2_bins);
+    normalize_intervals(in.t_bins);
+
+    auto non_overlapping = [](const std::vector<Interval>& bins) {
+        for (size_t i = 1; i < bins.size(); ++i) {
+            if (bins[i].min < bins[i - 1].max) return false;
+        }
+        return true;
+    };
+    in.indexed = non_overlapping(in.x_bins) &&
+                 non_overlapping(in.q2_bins) &&
+                 non_overlapping(in.t_bins);
+
+    if (in.indexed) {
+        for (int r : in.valid_rows) {
+            const RowBin& b = in.rows[static_cast<size_t>(r)];
+            const int ix = interval_index(in.x_bins, b.xBmin);
+            const int iq = interval_index(in.q2_bins, b.Q2min);
+            const int it = interval_index(in.t_bins, b.tmin);
+            if (ix < 0 || iq < 0 || it < 0) {
+                fatal("failed to index a valid CSV bin row.");
+            }
+            in.rows_by_kin_bin[std::make_tuple(ix, iq, it)].push_back(r);
+        }
+    } else {
+        std::cout << "[yield_totals] CSV kinematic intervals overlap; using exact linear row scan fallback.\n";
     }
 
     for (const std::string& period : period_order()) {
@@ -452,8 +530,9 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
                 fatal("malformed regional eppi0 normalization cubic column for period " + period + ", region " + region);
             }
             RegionNormalization rn;
-            rn.cubic.assign(cubic.begin(), cubic.begin() + 4);
-            p.regions[region] = rn;
+            for (size_t k = 0; k < 4; ++k) rn.cubic[k] = cubic[k];
+            const auto rit = std::find(normalization_regions().begin(), normalization_regions().end(), region);
+            p.regions[static_cast<size_t>(rit - normalization_regions().begin())] = rn;
         }
 
         if (!(std::isfinite(p.epg_current_eff) && p.epg_current_eff > 0.0)) {
@@ -488,11 +567,7 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
     return in;
 }
 
-static double eval_cubic(const std::vector<double>& p, double x) {
-    if (p.size() < 4) {
-        fatal("normalization cubic has fewer than 4 coefficients.");
-    }
-
+static double eval_cubic(const std::array<double, 4>& p, double x) {
     return p[0] + x * (p[1] + x * (p[2] + x * p[3]));
 }
 
@@ -509,38 +584,48 @@ static int clas12_sector_from_phi_deg(double phi_deg) {
     return 0;
 }
 
-static std::string normalization_region_for_event(double p1_theta_deg,
-                                                  double p1_phi_deg) {
+// Region indices 0..5 are FD sectors 1..6; index 6 is CD.
+static int normalization_region_index(double p1_theta_deg,
+                                      double p1_phi_deg) {
     if (p1_theta_deg >= 40.0 && p1_theta_deg < 70.0) {
-        return "CD";
+        return 6;
     }
 
     if (p1_theta_deg >= 0.0 && p1_theta_deg < 40.0) {
         const int sector = clas12_sector_from_phi_deg(p1_phi_deg);
-        if (sector >= 1 && sector <= 6) {
-            return "Sector " + std::to_string(sector);
-        }
+        if (sector >= 1 && sector <= 6) return sector - 1;
     }
 
-    return "";
+    return -1;
 }
 
-static int find_row_index(const std::vector<RowBin>& rows,
+static int find_row_index(const AnalysisInputs& inputs,
                           double x,
                           double Q2,
                           double tabs,
                           double phi_deg) {
-    for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
-        const RowBin& w = rows[r];
-        if (!w.valid) continue;
-        if (!in_range(x, w.xBmin, w.xBmax)) continue;
-        if (!in_range(Q2, w.Q2min, w.Q2max)) continue;
-        if (!in_range(tabs, w.tmin, w.tmax)) continue;
-        if (!row_accepts_phi(phi_deg, w.phimin, w.phimax)) continue;
-        return r;
-    }
+    auto test_rows = [&](const std::vector<int>& candidates) {
+        for (int r : candidates) {
+            const RowBin& w = inputs.rows[static_cast<size_t>(r)];
+            if (!in_range(x, w.xBmin, w.xBmax)) continue;
+            if (!in_range(Q2, w.Q2min, w.Q2max)) continue;
+            if (!in_range(tabs, w.tmin, w.tmax)) continue;
+            if (!row_accepts_phi(phi_deg, w.phimin, w.phimax)) continue;
+            return r;
+        }
+        return -1;
+    };
 
-    return -1;
+    if (!inputs.indexed) return test_rows(inputs.valid_rows);
+
+    const int ix = interval_index(inputs.x_bins, x);
+    const int iq = interval_index(inputs.q2_bins, Q2);
+    const int it = interval_index(inputs.t_bins, tabs);
+    if (ix < 0 || iq < 0 || it < 0) return -1;
+
+    auto found = inputs.rows_by_kin_bin.find(std::make_tuple(ix, iq, it));
+    if (found == inputs.rows_by_kin_bin.end()) return -1;
+    return test_rows(found->second);
 }
 
 // -----------------------------------------------------------------------------
@@ -771,6 +856,57 @@ static bool check_sigma(const CutVarMap& vm,
     return within_cut_window(value, it->second);
 }
 
+struct FastCut {
+    bool active = false;
+    bool upper_quantile = false;
+    double low = 0.0;
+    double high = 0.0;
+    const char* name = "";
+};
+
+struct CompiledCuts {
+    std::array<FastCut, 8> cuts;
+};
+
+static FastCut compile_one_cut(const CutVarMap& vm, const char* name) {
+    FastCut out;
+    out.name = name;
+    auto it = vm.find(name);
+    if (it == vm.end()) return out;
+    const SigmaStats& s = it->second;
+    out.active = true;
+    out.upper_quantile = (s.mode == "upper_quantile");
+    out.low = s.cut_low;
+    out.high = s.cut_high;
+    if (!out.upper_quantile && (!(std::isfinite(out.low) && std::isfinite(out.high)) || out.high <= out.low)) {
+        if (std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0) {
+            out.low = s.mean - 3.0 * s.std;
+            out.high = s.mean + 3.0 * s.std;
+        } else {
+            out.active = false;
+        }
+    }
+    return out;
+}
+
+static CompiledCuts compile_cuts(const CutVarMap& vm, bool is_eppi0) {
+    CompiledCuts out;
+    const std::array<const char*, 8> names = {{
+        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "Delta_phi", "pTmiss", "xF",
+        is_eppi0 ? "theta_pi0_pi0" : "theta_gamma_gamma"
+    }};
+    for (size_t i = 0; i < names.size(); ++i) out.cuts[i] = compile_one_cut(vm, names[i]);
+    return out;
+}
+
+static bool fast_cut_passes(const FastCut& cut, bool has_value, double value) {
+    if (!cut.active) return true;
+    if (!has_value) fatal(std::string("required sigma-cut branch missing: ") + cut.name);
+    if (!std::isfinite(value)) return false;
+    if (cut.upper_quantile) return !std::isfinite(cut.high) || value <= cut.high;
+    return value >= cut.low && value <= cut.high;
+}
+
 // -----------------------------------------------------------------------------
 // Branches/cuts
 // -----------------------------------------------------------------------------
@@ -849,7 +985,8 @@ struct Branches {
         ena("p2_theta");
         ena("p2_phi");
 
-        t->SetCacheSize(0);
+        t->SetCacheSize(16LL * 1024LL * 1024LL);
+        t->AddBranchToCache("*", true);
 
         auto bI = [&](const char* n, int* ptr, bool& flag) {
             if (t->GetBranch(n)) {
@@ -999,33 +1136,23 @@ static bool passes_global_cuts_for_event(const Branches& b,
                               cfg);
 }
 
-static bool passes_sigma_cuts_for_event(const std::string& key,
-                                        const TopoCutMap& cuts,
+static bool passes_sigma_cuts_for_event(const CompiledCuts& cuts,
                                         bool is_eppi0,
                                         const Branches& b) {
-    auto it = cuts.find(key);
-    if (it == cuts.end()) {
-        fatal("missing sigma-cut key: " + key);
-    }
-
-    const CutVarMap& vm = it->second;
-
-    if (!check_sigma(vm, "Emiss2", b.has_Emiss2, b.Emiss2)) return false;
-    if (!check_sigma(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
-    if (!check_sigma(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
-    if (!check_sigma(vm, "Mx2_2", b.has_Mx2_2, b.Mx2_2)) return false;
+    if (!fast_cut_passes(cuts.cuts[0], b.has_Emiss2, b.Emiss2)) return false;
+    if (!fast_cut_passes(cuts.cuts[1], b.has_Mx2, b.Mx2)) return false;
+    if (!fast_cut_passes(cuts.cuts[2], b.has_Mx2_1, b.Mx2_1)) return false;
+    if (!fast_cut_passes(cuts.cuts[3], b.has_Mx2_2, b.Mx2_2)) return false;
     bool has_delta_phi = false;
     const double delta_phi = b.delta_phi_value(has_delta_phi);
-    if (!check_sigma(vm, "Delta_phi", has_delta_phi, delta_phi)) return false;
-    if (!check_sigma(vm, "pTmiss", b.has_pTmiss, b.pTmiss)) return false;
-    if (!check_sigma(vm, "xF", b.has_xF, b.xF)) return false;
-
+    if (!fast_cut_passes(cuts.cuts[4], has_delta_phi, delta_phi)) return false;
+    if (!fast_cut_passes(cuts.cuts[5], b.has_pTmiss, b.pTmiss)) return false;
+    if (!fast_cut_passes(cuts.cuts[6], b.has_xF, b.xF)) return false;
     if (is_eppi0) {
-        if (!check_sigma(vm, "theta_pi0_pi0", b.has_theta_pi0_pi0, b.theta_pi0_pi0)) return false;
+        if (!fast_cut_passes(cuts.cuts[7], b.has_theta_pi0_pi0, b.theta_pi0_pi0)) return false;
     } else {
-        if (!check_sigma(vm, "theta_gamma_gamma", b.has_theta_gamma_gamma, b.theta_gamma_gamma)) return false;
+        if (!fast_cut_passes(cuts.cuts[7], b.has_theta_gamma_gamma, b.theta_gamma_gamma)) return false;
     }
-
     return true;
 }
 
@@ -1046,125 +1173,173 @@ struct Totals {
     long long eppi0_events_used = 0;
 };
 
+struct TreeTask {
+    std::string tree_key;
+    TTree* tree = nullptr;
+};
+
+struct TreeTotals {
+    PeriodTags tags;
+    bool skipped = false;
+    std::map<int, double> categorized;
+    double uncategorized = 0.0;
+    std::set<int> uncategorized_runs;
+    long long events_used = 0;
+    long long accepted = 0;
+    long long matched = 0;
+    Long64_t entries = 0;
+};
+
+static TreeTotals process_one_tree(const TreeTask& task,
+                                   bool is_eppi0,
+                                   const AnalysisInputs& inputs,
+                                   const TopoCutMap& data_cuts) {
+    TreeTotals result;
+    result.tags = parse_period_from_key(task.tree_key);
+    if (result.tags.display == "Fa18 Inb Supp") {
+        result.skipped = true;
+        return result;
+    }
+
+    auto prod_it = inputs.products_by_period.find(result.tags.display);
+    if (prod_it == inputs.products_by_period.end()) {
+        fatal("missing analysis products for period " + result.tags.display);
+    }
+    const PeriodProducts& products = prod_it->second;
+
+    auto cont_it = inputs.contamination_by_period.find(result.tags.display);
+    if (cont_it == inputs.contamination_by_period.end()) {
+        fatal("missing contamination vector for period " + result.tags.display);
+    }
+    const std::vector<double>& contamination = cont_it->second;
+
+    std::array<CompiledCuts, 3> compiled;
+    for (size_t ti = 0; ti < compiled.size(); ++ti) {
+        const std::string key = std::string(is_eppi0 ? "eppi0_" : "DVCS_") +
+                                result.tags.period_code + "_" + topology_names()[ti];
+        auto found = data_cuts.find(key);
+        if (found == data_cuts.end()) fatal("missing sigma-cut key: " + key);
+        compiled[ti] = compile_cuts(found->second, is_eppi0);
+    }
+
+    Branches b;
+    b.bind(task.tree);
+    result.entries = task.tree->GetEntries();
+
+    std::unordered_map<int, int> current_cache;
+    current_cache.reserve(256);
+    std::set<int> unresolved_runs;
+
+    const double eff = is_eppi0 ? products.eppi0_current_eff : products.epg_current_eff;
+
+    for (Long64_t i = 0; i < result.entries; ++i) {
+        if (task.tree->GetEntry(i) <= 0) continue;
+        if (!passes_global_cuts_for_event(b, result.tags)) continue;
+
+        const TopologyIndex topo = topology_index_from_detectors(b.detector1, b.detector2);
+        if (topo == TopologyIndex::INVALID) continue;
+        const size_t topo_i = static_cast<size_t>(topo);
+        if (!passes_sigma_cuts_for_event(compiled[topo_i], is_eppi0, b)) continue;
+        ++result.accepted;
+
+        const double tabs = b.t_abs();
+        const double phi = b.phi_deg();
+        const int row = find_row_index(inputs, b.x, b.Q2, tabs, phi);
+        if (row < 0) continue;
+        ++result.matched;
+
+        const double theta = b.p1_theta_deg();
+        const int region = normalization_region_index(theta, b.p1_phi_deg());
+        if (region < 0) continue;
+
+        const double r_pi0 = eval_cubic(products.regions[static_cast<size_t>(region)].cubic, theta);
+        if (!(std::isfinite(r_pi0) && r_pi0 > 0.0)) {
+            fatal("non-positive regional eppi0 normalization cubic value for period " + result.tags.display);
+        }
+
+        double final_weight = 1.0 / (eff * r_pi0);
+        if (!is_eppi0) {
+            final_weight *= (1.0 - contamination.at(static_cast<size_t>(row)));
+        }
+
+        int current = 0;
+        auto cached = current_cache.find(b.runnum);
+        if (cached != current_cache.end()) {
+            current = cached->second;
+        } else if (unresolved_runs.find(b.runnum) != unresolved_runs.end()) {
+            result.uncategorized += final_weight;
+            result.uncategorized_runs.insert(b.runnum);
+            continue;
+        } else if (resolve_current(result.tags.internal, b.runnum, current)) {
+            current_cache.emplace(b.runnum, current);
+        } else {
+            unresolved_runs.insert(b.runnum);
+            result.uncategorized += final_weight;
+            result.uncategorized_runs.insert(b.runnum);
+            continue;
+        }
+
+        result.categorized[current] += final_weight;
+        ++result.events_used;
+    }
+
+    return result;
+}
+
 static void process_tree_set(const std::map<std::string, TTree*>& trees,
                              bool is_eppi0,
                              const AnalysisInputs& inputs,
                              const TopoCutMap& data_cuts,
                              Totals& totals) {
+    std::vector<TreeTask> tasks;
+    tasks.reserve(trees.size());
     for (const auto& kv : trees) {
-        const std::string& tree_key = kv.first;
-        TTree* tree = kv.second;
-        if (!tree) {
-            continue;
-        }
+        if (kv.second) tasks.push_back({kv.first, kv.second});
+    }
 
-        PeriodTags tags = parse_period_from_key(tree_key);
-        if (tags.display == "Fa18 Inb Supp") {
-            std::cout << "[yield_totals] Skipping " << tree_key
+    std::vector<TreeTotals> results(tasks.size());
+    const int workers = std::max(1, std::min(7, static_cast<int>(tasks.size())));
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(workers)
+#endif
+    for (int i = 0; i < static_cast<int>(tasks.size()); ++i) {
+        results[static_cast<size_t>(i)] = process_one_tree(
+            tasks[static_cast<size_t>(i)], is_eppi0, inputs, data_cuts);
+    }
+
+    // Merge in original std::map task order, preserving the prior cross-tree
+    // accumulation order when more than one tree maps to the same period.
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        const TreeTotals& r = results[i];
+        if (r.skipped) {
+            std::cout << "[yield_totals] Skipping " << tasks[i].tree_key
                       << " because Fa18 Inb Supp is not part of the five-period CSV summary.\n";
             continue;
         }
 
-        auto prod_it = inputs.products_by_period.find(tags.display);
-        if (prod_it == inputs.products_by_period.end()) {
-            fatal("missing analysis products for period " + tags.display);
-        }
-        const PeriodProducts& products = prod_it->second;
-
-        auto cont_it = inputs.contamination_by_period.find(tags.display);
-        if (cont_it == inputs.contamination_by_period.end()) {
-            fatal("missing contamination vector for period " + tags.display);
-        }
-        const std::vector<double>& contamination = cont_it->second;
-
-        Branches b;
-        b.bind(tree);
-
-        const Long64_t N = tree->GetEntries();
-        long long accepted = 0;
-        long long matched = 0;
-
         std::cout << "[yield_totals] Processing " << (is_eppi0 ? "eppi0" : "DVCS")
-                  << " DATA period=" << tags.display
-                  << " entries=" << static_cast<long long>(N) << "\n";
+                  << " DATA period=" << r.tags.display
+                  << " entries=" << static_cast<long long>(r.entries) << "\n";
+        std::cout << "[yield_totals]   accepted_after_cuts=" << r.accepted
+                  << " matched_bins=" << r.matched << "\n";
 
-        for (Long64_t i = 0; i < N; ++i) {
-            if (tree->GetEntry(i) <= 0) {
-                continue;
-            }
+        auto& destination = is_eppi0
+            ? totals.eppi0_norm_by_period_current[r.tags.display]
+            : totals.dvcs_pi0_sub_by_period_current[r.tags.display];
+        for (const auto& kv : r.categorized) destination[kv.first] += kv.second;
 
-            if (!passes_global_cuts_for_event(b, tags)) {
-                continue;
-            }
-
-            const std::string topo = topo_dir_from_detectors(b.detector1, b.detector2);
-            if (topo.empty()) {
-                continue;
-            }
-
-            const std::string cut_key = std::string(is_eppi0 ? "eppi0_" : "DVCS_") +
-                                        tags.period_code + "_" + topo;
-
-            if (!passes_sigma_cuts_for_event(cut_key, data_cuts, is_eppi0, b)) {
-                continue;
-            }
-
-            ++accepted;
-
-            const int row = find_row_index(inputs.rows, b.x, b.Q2, b.t_abs(), b.phi_deg());
-            if (row < 0) {
-                continue;
-            }
-            ++matched;
-
-            const double theta = b.p1_theta_deg();
-            const std::string region = normalization_region_for_event(theta, b.p1_phi_deg());
-            if (region.empty()) {
-                continue;
-            }
-
-            auto region_it = products.regions.find(region);
-            if (region_it == products.regions.end()) {
-                fatal("missing regional eppi0 normalization cubic for period " + tags.display + ", region " + region);
-            }
-
-            const double r_pi0 = eval_cubic(region_it->second.cubic, theta);
-            if (!(std::isfinite(r_pi0) && r_pi0 > 0.0)) {
-                fatal("non-positive regional eppi0 normalization cubic value for period " + tags.display + ", region " + region);
-            }
-
-            const double eff = is_eppi0 ? products.eppi0_current_eff : products.epg_current_eff;
-            const double base_weight = 1.0 / (eff * r_pi0);
-
-            double final_weight = base_weight;
-            if (!is_eppi0) {
-                const double c = contamination.at(static_cast<size_t>(row));
-                final_weight *= (1.0 - c);
-            }
-
-            int current = 0;
-            if (!resolve_current(tags.internal, b.runnum, current)) {
-                if (is_eppi0) {
-                    totals.eppi0_uncategorized[tags.display] += final_weight;
-                    totals.eppi0_uncategorized_runs[tags.display].insert(b.runnum);
-                } else {
-                    totals.dvcs_uncategorized[tags.display] += final_weight;
-                    totals.dvcs_uncategorized_runs[tags.display].insert(b.runnum);
-                }
-                continue;
-            }
-
-            if (is_eppi0) {
-                totals.eppi0_norm_by_period_current[tags.display][current] += final_weight;
-                totals.eppi0_events_used += 1;
-            } else {
-                totals.dvcs_pi0_sub_by_period_current[tags.display][current] += final_weight;
-                totals.dvcs_events_used += 1;
-            }
+        if (is_eppi0) {
+            totals.eppi0_uncategorized[r.tags.display] += r.uncategorized;
+            totals.eppi0_uncategorized_runs[r.tags.display].insert(
+                r.uncategorized_runs.begin(), r.uncategorized_runs.end());
+            totals.eppi0_events_used += r.events_used;
+        } else {
+            totals.dvcs_uncategorized[r.tags.display] += r.uncategorized;
+            totals.dvcs_uncategorized_runs[r.tags.display].insert(
+                r.uncategorized_runs.begin(), r.uncategorized_runs.end());
+            totals.dvcs_events_used += r.events_used;
         }
-
-        std::cout << "[yield_totals]   accepted_after_cuts=" << accepted
-                  << " matched_bins=" << matched << "\n";
     }
 }
 
