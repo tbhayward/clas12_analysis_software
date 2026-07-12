@@ -106,7 +106,7 @@ struct CurrentDependenceOptions {
     //          previous behavior.
     bool use_epg_mc_current_factor_for_eppi0_bkg = true;
 
-    int max_workers = 5;
+    int max_workers = 7;
 };
 
 /**

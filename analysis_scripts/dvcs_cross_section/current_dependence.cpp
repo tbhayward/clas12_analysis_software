@@ -1225,7 +1225,8 @@ struct Branches {
         ena("p2_theta");
         ena("p2_phi");
 
-        t->SetCacheSize(0);
+        t->SetCacheSize(16LL * 1024LL * 1024LL);
+        t->AddBranchToCache("*", true);
 
         auto bI = [&](const char* name, int* addr, bool& flag) {
             if (t->GetBranch(name)) {
@@ -1466,6 +1467,43 @@ struct DataAgg {
     long long kinematic_value_count = 0;
 };
 
+struct ResolvedRunInfo {
+    bool valid = false;
+    int current = 0;
+    double charge = std::numeric_limits<double>::quiet_NaN();
+};
+
+static ResolvedRunInfo resolve_run_info_cached(
+    const PeriodTags& tags,
+    int runnum,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
+
+    ResolvedRunInfo out;
+
+    if (!resolve_current(tags.internal, runnum, out.current)) {
+        return out;
+    }
+
+    const auto charge_it = charge_map.find(runnum);
+    if (charge_it == charge_map.end()) {
+        return out;
+    }
+
+    if (!select_unpolarized_charge_for_period(
+            tags, runnum, charge_it->second,
+            use_second_column_charge_for_all_unpolarized,
+            use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+            columns_3_to_5_charge_sum_scale, out.charge)) {
+        return out;
+    }
+
+    out.valid = out.charge > 0.0;
+    return out;
+}
+
 static DataAgg process_data_tree(
     const ChannelConfig& cfg,
     const std::string& key,
@@ -1493,6 +1531,8 @@ static DataAgg process_data_tree(
     }
 
     const Long64_t N = tree->GetEntries();
+    std::unordered_map<int, ResolvedRunInfo> run_info_cache;
+    run_info_cache.reserve(256);
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
@@ -1501,31 +1541,19 @@ static DataAgg process_data_tree(
             continue;
         }
 
-        int current = 0;
-
-        if (!resolve_current(tags.internal, b.runnum, current)) {
-            continue;
+        auto cache_it = run_info_cache.find(b.runnum);
+        if (cache_it == run_info_cache.end()) {
+            cache_it = run_info_cache.emplace(
+                b.runnum,
+                resolve_run_info_cached(
+                    tags, b.runnum, charge_map,
+                    use_second_column_charge_for_all_unpolarized,
+                    use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    columns_3_to_5_charge_sum_scale)).first;
         }
 
-        auto charge_it = charge_map.find(b.runnum);
-
-        if (charge_it == charge_map.end()) {
-            continue;
-        }
-
-        double charge = std::numeric_limits<double>::quiet_NaN();
-
-        if (!select_unpolarized_charge_for_period(tags,
-                                                  b.runnum,
-                                                  charge_it->second,
-                                                  use_second_column_charge_for_all_unpolarized,
-                                                  use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-                                                  columns_3_to_5_charge_sum_scale,
-                                                  charge)) {
-            continue;
-        }
-
-        if (!(charge > 0.0)) {
+        const ResolvedRunInfo& run_info = cache_it->second;
+        if (!run_info.valid) {
             continue;
         }
 
@@ -1538,8 +1566,8 @@ static DataAgg process_data_tree(
         }
 
         out.counts_by_run[b.runnum] += 1;
-        out.current_by_run[b.runnum] = current;
-        out.charge_by_run[b.runnum] = charge;
+        out.current_by_run[b.runnum] = run_info.current;
+        out.charge_by_run[b.runnum] = run_info.charge;
     }
 
     std::cout << "[current_dependence] DATA channel=" << cfg.csv_channel
@@ -3506,6 +3534,8 @@ static KinematicAggMap process_data_tree_for_kinematic_current_diagnostics(
     }
 
     const Long64_t N = tree->GetEntries();
+    std::unordered_map<int, ResolvedRunInfo> run_info_cache;
+    run_info_cache.reserve(256);
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
@@ -3514,31 +3544,19 @@ static KinematicAggMap process_data_tree_for_kinematic_current_diagnostics(
             continue;
         }
 
-        int current = 0;
-
-        if (!resolve_current(tags.internal, b.runnum, current)) {
-            continue;
+        auto cache_it = run_info_cache.find(b.runnum);
+        if (cache_it == run_info_cache.end()) {
+            cache_it = run_info_cache.emplace(
+                b.runnum,
+                resolve_run_info_cached(
+                    tags, b.runnum, charge_map,
+                    use_second_column_charge_for_all_unpolarized,
+                    use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    columns_3_to_5_charge_sum_scale)).first;
         }
 
-        auto charge_it = charge_map.find(b.runnum);
-
-        if (charge_it == charge_map.end()) {
-            continue;
-        }
-
-        double charge = std::numeric_limits<double>::quiet_NaN();
-
-        if (!select_unpolarized_charge_for_period(tags,
-                                                  b.runnum,
-                                                  charge_it->second,
-                                                  use_second_column_charge_for_all_unpolarized,
-                                                  use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-                                                  columns_3_to_5_charge_sum_scale,
-                                                  charge)) {
-            continue;
-        }
-
-        if (!(charge > 0.0)) {
+        const ResolvedRunInfo& run_info = cache_it->second;
+        if (!run_info.valid) {
             continue;
         }
 
@@ -3565,8 +3583,8 @@ static KinematicAggMap process_data_tree_for_kinematic_current_diagnostics(
 
             DataAgg& agg = out[v.key][ibin];
             agg.counts_by_run[b.runnum] += 1;
-            agg.current_by_run[b.runnum] = current;
-            agg.charge_by_run[b.runnum] = charge;
+            agg.current_by_run[b.runnum] = run_info.current;
+            agg.charge_by_run[b.runnum] = run_info.charge;
             agg.kinematic_value_sum += value;
             agg.kinematic_value_count += 1;
         }
@@ -4651,7 +4669,7 @@ static std::vector<PeriodResult> run_channel_study(
         data_items.push_back(kv);
     }
 
-    int nth = std::max(1, std::min(5, max_workers));
+    int nth = std::max(1, std::min(7, max_workers));
     nth = std::min(nth, std::max(1, (int)data_items.size()));
 
 #ifdef _OPENMP
@@ -4714,7 +4732,7 @@ static std::vector<PeriodResult> run_channel_study(
         }
 
         std::mutex rec_mutex;
-        nth = std::max(1, std::min(5, max_workers));
+        nth = std::max(1, std::min(7, max_workers));
         nth = std::min(nth, std::max(1, (int)rec_items.size()));
 
 #ifdef _OPENMP
