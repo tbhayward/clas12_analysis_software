@@ -363,154 +363,179 @@ struct FilledHists {
     std::map<std::string, TH1D*> mc;
 };
 
-static FilledHists fillStageHists(
-    TTree* dataTree, TTree* mcTree, Topology topo, Channel ch,
-    const std::string& period_label,
-    const CutDict& cumulative, const HistList& cfg, int stage_index)
-{
-    FilledHists out;
+using FilledHistsByTopology = std::map<Topology, FilledHists>;
 
-    const std::string histTag = channelToStr(ch) + "_" + period_label + "_" + topoToKey(topo) + "_stage" + std::to_string(stage_index);
+static Topology topologyFromDetectors(int detector1, int detector2, bool& valid) {
+    valid = true;
+    if (detector1 == 1 && detector2 == 1) return Topology::FD_FD;
+    if (detector1 == 2 && detector2 == 1) return Topology::CD_FD;
+    if (detector1 == 2 && detector2 == 0) return Topology::CD_FT;
+    valid = false;
+    return Topology::FD_FD;
+}
 
-    // Create detached histograms with globally unique names.
-    for (const auto& kv : cfg) {
-        const std::string& var = kv.first; const HistCfg& hc = kv.second;
-        auto* dh = new TH1D(("data_" + histTag + "_" + var).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
-        auto* mh = new TH1D(("mc_"   + histTag + "_" + var).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
-        dh->SetDirectory(nullptr); mh->SetDirectory(nullptr);
-        dh->SetMarkerStyle(20); dh->SetMarkerSize(0.8);
-        mh->SetMarkerStyle(21); mh->SetMarkerSize(0.8);
-        out.data[var] = dh; out.mc[var] = mh;
-    }
-
-    // IMPORTANT:
-    // This module explicitly loops over Topology and already applies passesTopology().
-    // However, default_global_cuts() may have enable_topology_filter=true, and the
-    // fail-fast policy requires that we *never* call the legacy overloads in that case.
-    //
-    // Therefore we:
-    //   - make a local mutable cfg copy,
-    //   - explicitly set required_detector1/2 to match the current topo,
-    //   - and always call the topology-aware passes_global_cuts overloads.
+static GlobalCutConfig globalConfigForStageTopology(Topology topo) {
     GlobalCutConfig gcfg = default_global_cuts();
     gcfg.enable_topology_filter = true;
 
-    if (topo == Topology::FD_FD) { gcfg.required_detector1 = 1; gcfg.required_detector2 = 1; }
-    if (topo == Topology::CD_FD) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 1; }
-    if (topo == Topology::CD_FT) { gcfg.required_detector1 = 2; gcfg.required_detector2 = 0; }
+    if (topo == Topology::FD_FD) {
+        gcfg.required_detector1 = 1;
+        gcfg.required_detector2 = 1;
+    } else if (topo == Topology::CD_FD) {
+        gcfg.required_detector1 = 2;
+        gcfg.required_detector2 = 1;
+    } else {
+        gcfg.required_detector1 = 2;
+        gcfg.required_detector2 = 0;
+    }
 
-    auto passesGlobal = [&](const BranchBinder& b)->bool {
-        if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
-        if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
-        if (!(b.has_detector1 && b.has_detector2)) return false;
+    return gcfg;
+}
 
-        if (global_cuts_require_sector_phi(gcfg)) {
-            if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
-                throw std::runtime_error("[exclusivity_cuts] FATAL: sector selection requires e_phi, p1_phi, p2_phi.");
-            }
+static bool passesGlobalForStage(const BranchBinder& b,
+                                 const std::string& period_label,
+                                 const GlobalCutConfig& gcfg) {
+    if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
+    if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
+    if (!(b.has_detector1 && b.has_detector2)) return false;
+
+    if (global_cuts_require_sector_phi(gcfg)) {
+        if (!(b.has_e_phi && b.has_p1_phi && b.has_p2_phi)) {
+            throw std::runtime_error("[exclusivity_cuts] FATAL: sector selection requires e_phi, p1_phi, p2_phi.");
+        }
+    }
+
+    if (global_cuts_require_auxiliary_kinematics(gcfg)) {
+        if (!(b.has_e_theta && b.has_e_phi &&
+              b.has_p1_theta && b.has_p1_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            throw std::runtime_error("[exclusivity_cuts] FATAL: auxiliary fiducial cuts require e_theta, e_phi, p1_theta, p1_phi, p2_p, p2_theta, p2_phi.");
         }
 
-        if (global_cuts_require_auxiliary_kinematics(gcfg)) {
-            if (!(b.has_e_theta && b.has_e_phi &&
-                  b.has_p1_theta && b.has_p1_phi &&
-                  b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
-                throw std::runtime_error("[exclusivity_cuts] FATAL: auxiliary fiducial cuts require e_theta, e_phi, p1_theta, p1_phi, p2_p, p2_theta, p2_phi.");
-            }
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p1_theta, b.p1_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
+                                  gcfg);
+    }
 
-            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                      b.detector1, b.detector2,
-                                      period_label,
-                                      b.e_p, b.e_theta, b.e_phi,
-                                      b.p1_theta, b.p1_phi,
-                                      b.p2_p, b.p2_theta, b.p2_phi,
-                                      gcfg);
-        }
-
-        if (gcfg.enable_dvcsgen_ycol_cut) {
-            if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
-                  b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
-                throw std::runtime_error("[exclusivity_cuts] FATAL: dvcsgen ycol cut requires e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.");
-            }
-
-            if (global_cuts_require_sector_phi(gcfg)) {
-                return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                          b.detector1, b.detector2,
-                                          period_label,
-                                          b.e_p, b.e_theta, b.e_phi, b.p1_theta, b.p1_phi,
-                                          b.p2_p, b.p2_theta, b.p2_phi,
-                                          gcfg);
-            }
-
-            return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
-                                      b.detector1, b.detector2,
-                                      period_label,
-                                      b.e_p, b.e_theta, b.e_phi,
-                                      b.p2_p, b.p2_theta, b.p2_phi,
-                                      gcfg);
+    if (gcfg.enable_dvcsgen_ycol_cut) {
+        if (!(b.has_e_p && b.has_e_theta && b.has_e_phi &&
+              b.has_p2_p && b.has_p2_theta && b.has_p2_phi)) {
+            throw std::runtime_error("[exclusivity_cuts] FATAL: dvcsgen ycol cut requires e_p, e_theta, e_phi, p2_p, p2_theta, p2_phi.");
         }
 
         if (global_cuts_require_sector_phi(gcfg)) {
             return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                       b.detector1, b.detector2,
-                                      b.e_phi, b.p1_phi, b.p2_phi,
+                                      period_label,
+                                      b.e_p, b.e_theta, b.e_phi, b.p1_theta, b.p1_phi,
+                                      b.p2_p, b.p2_theta, b.p2_phi,
                                       gcfg);
         }
 
         return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                   b.detector1, b.detector2,
+                                  period_label,
+                                  b.e_p, b.e_theta, b.e_phi,
+                                  b.p2_p, b.p2_theta, b.p2_phi,
                                   gcfg);
+    }
+
+    if (global_cuts_require_sector_phi(gcfg)) {
+        return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                                  b.detector1, b.detector2,
+                                  b.e_phi, b.p1_phi, b.p2_phi,
+                                  gcfg);
+    }
+
+    return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
+                              b.detector1, b.detector2,
+                              gcfg);
+}
+
+static FilledHistsByTopology fillStageHistsAllTopologies(
+    TTree* dataTree, TTree* mcTree, Channel ch,
+    const std::string& period_label,
+    const std::map<Topology, CutDict>& cumulative,
+    const HistList& cfg, int stage_index)
+{
+    static const Topology topologies[] = {
+        Topology::FD_FD, Topology::CD_FD, Topology::CD_FT
     };
 
-    // Data loop
-    if (dataTree) {
-        BranchBinder b; b.bind(dataTree, ch);
-        Long64_t n = dataTree->GetEntries();
-        for (Long64_t i = 0; i < n; ++i) {
-            dataTree->GetEntry(i);
+    FilledHistsByTopology out;
+    std::map<Topology, GlobalCutConfig> globalConfigs;
 
-            // Drop excluded runs if runnum is available (GLOBAL blacklist).
-            if (b.has_runnum && is_excluded_run(b.runnum)) continue;
+    for (Topology topo : topologies) {
+        FilledHists& hists = out[topo];
+        globalConfigs.emplace(topo, globalConfigForStageTopology(topo));
 
-            if (!(b.has_detector1 && b.has_detector2)) continue;
-            if (!passesTopology(b.detector1, b.detector2, topo)) continue;
+        const std::string histTag = channelToStr(ch) + "_" + period_label + "_" +
+                                    topoToKey(topo) + "_stage" + std::to_string(stage_index);
 
-            if (!passesGlobal(b)) continue;
+        for (const auto& kv : cfg) {
+            const std::string& var = kv.first;
+            const HistCfg& hc = kv.second;
 
-            auto vals = b.valuesMap(ch);
-            if (!passes3SigmaCuts(cumulative.data, vals)) continue;
-
-            for (const auto& kv : cfg) {
-                auto it = vals.find(kv.first);
-                if (it != vals.end()) out.data[kv.first]->Fill(it->second);
-            }
+            auto* dh = new TH1D(("data_" + histTag + "_" + var).c_str(), "",
+                                hc.nbins, hc.xlow, hc.xhigh);
+            auto* mh = new TH1D(("mc_" + histTag + "_" + var).c_str(), "",
+                                hc.nbins, hc.xlow, hc.xhigh);
+            dh->SetDirectory(nullptr);
+            mh->SetDirectory(nullptr);
+            dh->SetMarkerStyle(20);
+            dh->SetMarkerSize(0.8);
+            mh->SetMarkerStyle(21);
+            mh->SetMarkerSize(0.8);
+            hists.data[var] = dh;
+            hists.mc[var] = mh;
         }
     }
 
-    // MC loop
-    if (mcTree) {
-        BranchBinder b; b.bind(mcTree, ch);
-        Long64_t n = mcTree->GetEntries();
+    auto fillTree = [&](TTree* tree, bool isData) {
+        if (!tree) return;
+
+        BranchBinder b;
+        b.bind(tree, ch);
+        const Long64_t n = tree->GetEntries();
+
         for (Long64_t i = 0; i < n; ++i) {
-            mcTree->GetEntry(i);
+            tree->GetEntry(i);
 
-            // Drop excluded runs if runnum is available (usually only for data,
-            // but this check is harmless for MC).
             if (b.has_runnum && is_excluded_run(b.runnum)) continue;
-
             if (!(b.has_detector1 && b.has_detector2)) continue;
-            if (!passesTopology(b.detector1, b.detector2, topo)) continue;
 
-            if (!passesGlobal(b)) continue;
+            bool validTopology = false;
+            const Topology topo = topologyFromDetectors(b.detector1, b.detector2, validTopology);
+            if (!validTopology) continue;
 
-            auto vals = b.valuesMap(ch);
-            if (!passes3SigmaCuts(cumulative.mc, vals)) continue;
+            const auto cfgIt = globalConfigs.find(topo);
+            if (cfgIt == globalConfigs.end()) continue;
+            if (!passesGlobalForStage(b, period_label, cfgIt->second)) continue;
 
+            const auto vals = b.valuesMap(ch);
+            const auto cumulativeIt = cumulative.find(topo);
+            if (cumulativeIt == cumulative.end()) continue;
+
+            const auto& cuts = isData ? cumulativeIt->second.data : cumulativeIt->second.mc;
+            if (!passes3SigmaCuts(cuts, vals)) continue;
+
+            FilledHists& target = out.at(topo);
+            auto& histMap = isData ? target.data : target.mc;
             for (const auto& kv : cfg) {
-                auto it = vals.find(kv.first);
-                if (it != vals.end()) out.mc[kv.first]->Fill(it->second);
+                const auto valueIt = vals.find(kv.first);
+                if (valueIt != vals.end()) {
+                    histMap.at(kv.first)->Fill(valueIt->second);
+                }
             }
         }
-    }
+    };
+
+    fillTree(dataTree, true);
+    fillTree(mcTree, false);
 
     return out;
 }
@@ -876,30 +901,46 @@ struct PeriodWork {
     TTree* eppi0_mc   = nullptr;
 };
 
-static void processOneChannelOneTopology(
-    const std::string& prettyPeriod, Channel ch, Topology topo,
+static void processOneChannelAllTopologies(
+    const std::string& prettyPeriod, Channel ch,
     const std::string& period_label,
     TTree* dataTree, TTree* mcTree,
     const std::string& outPlotDir,
-    CutDict& outCutsForTopo,
+    std::map<Topology, CutDict>& outCuts,
     double upperTailQuantile)
 {
-    auto stages = buildStages(ch);
-    auto cfg    = getHistConfigs(ch);
+    static const Topology topologies[] = {
+        Topology::FD_FD, Topology::CD_FD, Topology::CD_FT
+    };
 
-    CutDict cumulative;
-    int numStages = static_cast<int>(stages.size()) + 1;
-    for (int s = 0; s < numStages; ++s) {
-        auto H = fillStageHists(dataTree, mcTree, topo, ch, period_label, cumulative, cfg, s);
-        saveStagePlots(H, cfg, ch, prettyPeriod, topo, outPlotDir, "cut_" + std::to_string(s));
-        if (s < static_cast<int>(stages.size())) {
-            updateCumulativeCuts(H, stages[s], cumulative, upperTailQuantile);
-        }
-        for (auto& kv : H.data) delete kv.second;
-        for (auto& kv : H.mc)   delete kv.second;
+    const auto stages = buildStages(ch);
+    const auto cfg = getHistConfigs(ch);
+
+    std::map<Topology, CutDict> cumulative;
+    for (Topology topo : topologies) {
+        cumulative.emplace(topo, CutDict{});
     }
 
-    outCutsForTopo = cumulative;
+    const int numStages = static_cast<int>(stages.size()) + 1;
+    for (int s = 0; s < numStages; ++s) {
+        auto allHists = fillStageHistsAllTopologies(
+            dataTree, mcTree, ch, period_label, cumulative, cfg, s);
+
+        for (Topology topo : topologies) {
+            FilledHists& H = allHists.at(topo);
+            saveStagePlots(H, cfg, ch, prettyPeriod, topo,
+                           outPlotDir, "cut_" + std::to_string(s));
+
+            if (s < static_cast<int>(stages.size())) {
+                updateCumulativeCuts(H, stages[s], cumulative.at(topo), upperTailQuantile);
+            }
+
+            for (auto& kv : H.data) delete kv.second;
+            for (auto& kv : H.mc) delete kv.second;
+        }
+    }
+
+    outCuts = std::move(cumulative);
 }
 
 static void processPeriod(
@@ -913,25 +954,33 @@ static void processPeriod(
     TH1::AddDirectory(kFALSE);
 
     if (W.dvcs_data && W.dvcs_mc) {
-        std::string pretty = periodCode(Channel::DVCS, W.label);
-        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
-            CutDict cutsDVCS;
-            processOneChannelOneTopology(pretty, Channel::DVCS, topo, W.label,
-                                         W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS, upperTailQuantile);
+        const std::string pretty = periodCode(Channel::DVCS, W.label);
+        std::map<Topology, CutDict> cutsByTopology;
+        processOneChannelAllTopologies(pretty, Channel::DVCS, W.label,
+                                       W.dvcs_data, W.dvcs_mc, outPlotDir,
+                                       cutsByTopology, upperTailQuantile);
+
+        {
             std::lock_guard<std::mutex> lock(combined_mutex);
-            combined_out[pretty + "_" + topoToKey(topo)] = cutsDVCS;
+            for (auto& kv : cutsByTopology) {
+                combined_out[pretty + "_" + topoToKey(kv.first)] = std::move(kv.second);
+            }
         }
         std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
     }
 
     if (W.eppi0_data && W.eppi0_mc) {
-        std::string pretty = periodCode(Channel::EPPI0, W.label);
-        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
-            CutDict cutsPI0;
-            processOneChannelOneTopology(pretty, Channel::EPPI0, topo, W.label,
-                                         W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0, upperTailQuantile);
+        const std::string pretty = periodCode(Channel::EPPI0, W.label);
+        std::map<Topology, CutDict> cutsByTopology;
+        processOneChannelAllTopologies(pretty, Channel::EPPI0, W.label,
+                                       W.eppi0_data, W.eppi0_mc, outPlotDir,
+                                       cutsByTopology, upperTailQuantile);
+
+        {
             std::lock_guard<std::mutex> lock(combined_mutex);
-            combined_out[pretty + "_" + topoToKey(topo)] = cutsPI0;
+            for (auto& kv : cutsByTopology) {
+                combined_out[pretty + "_" + topoToKey(kv.first)] = std::move(kv.second);
+            }
         }
         std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
     }
@@ -1441,8 +1490,8 @@ void runAllExclusivityCuts(
         return;
     }
 
-    // Cap to at most 5 threads, and not more than number of periods.
-    int nworkers = std::max(1, std::min<int>(maxThreads, 5));
+    // Cap to at most 7 threads, and not more than number of periods.
+    int nworkers = std::max(1, std::min<int>(maxThreads, 7));
     nworkers = std::min<int>(nworkers, static_cast<int>(work.size()));
 
     std::map<std::string, CutDict> combined;

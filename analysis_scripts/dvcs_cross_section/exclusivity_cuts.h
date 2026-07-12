@@ -4,7 +4,7 @@
 // - Stagewise mu/sigma extraction.
 // - One combined JSON for all periods and topologies: output/jsons/combined_cuts.json.
 // - Optional deep diagnostic plots for MC exclusivity variables and cut boundaries.
-// - Parallelized by period with a hard cap of 5 threads.
+// - Parallelized by period with a hard cap of 7 threads.
 
 #ifndef EXCLUSIVITY_CUTS_H
 #define EXCLUSIVITY_CUTS_H
@@ -72,7 +72,7 @@ void runAllExclusivityCuts(
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
     const std::string& outJsonDir,  // base json dir ("output/jsons")
     const std::string& outPlotDir,
-    int maxThreads = 5,             // capped internally to at most 5
+    int maxThreads = 7,             // capped internally to at most 7
     const ExclusivityDiagnosticConfig& diagCfg = ExclusivityDiagnosticConfig()
 );
 

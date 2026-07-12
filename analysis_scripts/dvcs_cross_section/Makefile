@@ -13,7 +13,7 @@ DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp exclus
            cross_sections.cpp model_predictions.cpp overall_normalization_study.cpp \
            bin_centering_corrections.cpp models_vs_data_plots.cpp propagator_study.cpp \
            norm_cross_sections.cpp pass1_paper_plots.cpp branch_data_mc_comparison.cpp \
-           branch_plot_config.cpp q2_xb_cut_coverage.cpp pi0_subtracted_kinematics.cpp
+           branch_plot_config.cpp pi0_subtracted_kinematics.cpp
 
 DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
 DVCS_BIN = dvcs_analysis
