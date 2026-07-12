@@ -28,9 +28,9 @@
 //
 // Speed/stability notes:
 //   - Parallelized over independent ROOT trees/work items.
-//   - Hard cap of five workers.
+//   - Hard cap of seven workers.
 //   - ROOT branch binding is mutex-protected.
-//   - Each worker writes to local maps only; maps are merged after each tree.
+//   - Each worker writes to local storage only; results are merged after each tree.
 //   - Fast row lookup avoids scanning every CSV row for every event.
 // -----------------------------------------------------------------------------
 
@@ -58,6 +58,7 @@
 
 // C++ stdlib
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -208,20 +209,41 @@ static inline bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_
     return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
 }
 
-static inline std::string topo_dir(int det1, int det2) {
+enum class TopologyIndex : int {
+    FD_FD = 0,
+    CD_FD = 1,
+    CD_FT = 2,
+    INVALID = -1
+};
+
+static inline TopologyIndex topology_index(int det1, int det2) {
     if (det1 == 1 && det2 == 1) {
-        return "FD_FD";
+        return TopologyIndex::FD_FD;
     }
 
     if (det1 == 2 && det2 == 1) {
-        return "CD_FD";
+        return TopologyIndex::CD_FD;
     }
 
     if (det1 == 2 && det2 == 0) {
-        return "CD_FT";
+        return TopologyIndex::CD_FT;
     }
 
-    return "";
+    return TopologyIndex::INVALID;
+}
+
+static inline const std::string& topology_name(TopologyIndex topo) {
+    static const std::string kFdFd = "FD_FD";
+    static const std::string kCdFd = "CD_FD";
+    static const std::string kCdFt = "CD_FT";
+    static const std::string kInvalid;
+
+    switch (topo) {
+        case TopologyIndex::FD_FD: return kFdFd;
+        case TopologyIndex::CD_FD: return kCdFd;
+        case TopologyIndex::CD_FT: return kCdFt;
+        default:                   return kInvalid;
+    }
 }
 
 static inline std::string topo_label_for_csv(const std::string& topoDir) {
@@ -1059,7 +1081,7 @@ struct BranchBinder {
     double p2_theta = 0.0;  bool has_p2_theta = false;
     double p2_phi = 0.0;    bool has_p2_phi = false;
 
-    void bind(TTree* t) {
+    void bind(TTree* t, const WorkConfig& work_cfg) {
         if (!t) {
             return;
         }
@@ -1068,55 +1090,93 @@ struct BranchBinder {
 
         t->SetBranchStatus("*", 0);
 
+        // Use a modest per-tree read cache. Only explicitly enabled branches are
+        // added below, so generated MC does not spend I/O on reconstructed-only
+        // quantities. With seven workers this remains bounded at about 112 MiB.
+        static constexpr Long64_t kTreeCacheBytes = 16LL * 1024LL * 1024LL;
+        t->SetCacheSize(kTreeCacheBytes);
+
         auto ena = [&](const char* n) {
             if (t->GetBranch(n)) {
                 t->SetBranchStatus(n, 1);
+                t->AddBranchToCache(n, true);
             }
         };
 
-        ena("runnum");
+        const bool is_gen = (work_cfg.sample_kind == SampleKind::MC_GEN);
+        const bool is_data = (work_cfg.sample_kind == SampleKind::DATA);
 
-        ena("detector1");
-        ena("detector2");
-        ena("helicity");
-
+        // Every sample needs only these four branches for CSV-bin matching.
         ena("x");
         ena("Q2");
         ena("t1");
         ena("phi2");
-        ena("Delta_phi");
 
-        ena("open_angle_ep2");
-        ena("pTmiss");
+        if (!is_gen) {
+            const GlobalCutConfig& cfg = default_global_cuts();
 
-        ena("Emiss2");
-        ena("Mx2");
-        ena("Mx2_1");
-        ena("Mx2_2");
-        ena("xF");
-        ena("theta_gamma_gamma");
-        ena("theta_pi0_pi0");
+            ena("runnum");
+            ena("detector1");
+            ena("detector2");
 
-        ena("e_p");
-        ena("e_theta");
-        ena("e_phi");
-        ena("p1_theta");
-        ena("p1_phi");
-        ena("p2_p");
-        ena("p2_theta");
-        ena("p2_phi");
+            if (is_data) {
+                ena("helicity");
+            }
 
-        t->SetCacheSize(0);
+            // Global cuts always require open_angle_ep2. pTmiss is required by
+            // its global cut and is also one of the exclusivity variables.
+            ena("open_angle_ep2");
+            ena("pTmiss");
+
+            // Exclusivity variables used by the reconstructed data/MC cut flow.
+            ena("Emiss2");
+            ena("Mx2");
+            ena("Mx2_1");
+            ena("Mx2_2");
+            ena("Delta_phi");
+            ena("xF");
+
+            if (work_cfg.channel_cfg.channel == Channel::EPPI0) {
+                ena("theta_pi0_pi0");
+            } else {
+                ena("theta_gamma_gamma");
+            }
+
+            // Delta_phi falls back to p1_phi/p2_phi if the direct branch is
+            // absent. These phi branches are also required by sector cuts.
+            ena("p1_phi");
+            ena("p2_phi");
+
+            if (global_cuts_require_sector_phi(cfg) ||
+                global_cuts_require_auxiliary_kinematics(cfg) ||
+                cfg.enable_dvcsgen_ycol_cut) {
+                ena("e_phi");
+            }
+
+            if (global_cuts_require_auxiliary_kinematics(cfg) ||
+                cfg.enable_dvcsgen_ycol_cut) {
+                ena("e_p");
+                ena("e_theta");
+                ena("p2_p");
+                ena("p2_theta");
+            }
+
+            if (global_cuts_require_auxiliary_kinematics(cfg)) {
+                ena("p1_theta");
+            }
+        }
+
+        t->StopCacheLearningPhase();
 
         auto bI = [&](const char* n, int* a, bool& f) {
-            if (t->GetBranch(n)) {
+            if (t->GetBranch(n) && t->GetBranchStatus(n)) {
                 t->SetBranchAddress(n, a);
                 f = true;
             }
         };
 
         auto bD = [&](const char* n, double* a, bool& f) {
-            if (t->GetBranch(n)) {
+            if (t->GetBranch(n) && t->GetBranchStatus(n)) {
                 t->SetBranchAddress(n, a);
                 f = true;
             }
@@ -1228,88 +1288,80 @@ struct WorkCounts {
     CutFlowSummary flow;
 };
 
-static std::vector<std::string> sigma_variable_order(const ChannelConfig& channel_cfg) {
-    std::vector<std::string> vars;
+static const std::vector<std::string>& sigma_variable_order(const ChannelConfig& channel_cfg) {
+    static const std::vector<std::string> kDvcsVars = {
+        "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
+        "Delta_phi", "pTmiss", "xF", "theta_gamma_gamma"
+    };
 
-    vars.push_back("Emiss2");
-    vars.push_back("Mx2");
-    vars.push_back("Mx2_1");
-    vars.push_back("Mx2_2");
-    vars.push_back("Delta_phi");
-    vars.push_back("pTmiss");
-    vars.push_back("xF");
+    static const std::vector<std::string> kEppi0Vars = {
+        "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
+        "Delta_phi", "pTmiss", "xF", "theta_pi0_pi0"
+    };
 
-    if (channel_cfg.channel == Channel::EPPI0) {
-        vars.push_back("theta_pi0_pi0");
-    } else {
-        vars.push_back("theta_gamma_gamma");
-    }
-
-    return vars;
+    return (channel_cfg.channel == Channel::EPPI0) ? kEppi0Vars : kDvcsVars;
 }
 
-static inline double branch_value_for_sigma_var(const BranchBinder& b,
-                                                const std::string& var,
-                                                bool& has_val) {
+static inline double branch_value_for_sigma_index(const BranchBinder& b,
+                                                  int var_index,
+                                                  bool use_pi0_angle,
+                                                  bool& has_val) {
     has_val = true;
 
-    if (var == "Emiss2") {
-        has_val = b.has_Emiss2;
-        return b.Emiss2;
+    switch (var_index) {
+        case 0:
+            has_val = b.has_Emiss2;
+            return b.Emiss2;
+        case 1:
+            has_val = b.has_Mx2;
+            return b.Mx2;
+        case 2:
+            has_val = b.has_Mx2_1;
+            return b.Mx2_1;
+        case 3:
+            has_val = b.has_Mx2_2;
+            return b.Mx2_2;
+        case 4:
+            return b.delta_phi_value(has_val);
+        case 5:
+            has_val = b.has_pTmiss;
+            return b.pTmiss;
+        case 6:
+            has_val = b.has_xF;
+            return b.xF;
+        case 7:
+            if (use_pi0_angle) {
+                has_val = b.has_theta_pi0_pi0;
+                return b.theta_pi0_pi0;
+            }
+            has_val = b.has_theta_gamma_gamma;
+            return b.theta_gamma_gamma;
+        default:
+            has_val = false;
+            return 0.0;
     }
-
-    if (var == "Mx2") {
-        has_val = b.has_Mx2;
-        return b.Mx2;
-    }
-
-    if (var == "Mx2_1") {
-        has_val = b.has_Mx2_1;
-        return b.Mx2_1;
-    }
-
-    if (var == "Mx2_2") {
-        has_val = b.has_Mx2_2;
-        return b.Mx2_2;
-    }
-
-    if (var == "Delta_phi") {
-        return b.delta_phi_value(has_val);
-    }
-
-    if (var == "pTmiss") {
-        has_val = b.has_pTmiss;
-        return b.pTmiss;
-    }
-
-    if (var == "xF") {
-        has_val = b.has_xF;
-        return b.xF;
-    }
-
-    if (var == "theta_gamma_gamma") {
-        has_val = b.has_theta_gamma_gamma;
-        return b.theta_gamma_gamma;
-    }
-
-    if (var == "theta_pi0_pi0") {
-        has_val = b.has_theta_pi0_pi0;
-        return b.theta_pi0_pi0;
-    }
-
-    has_val = false;
-    return 0.0;
 }
 
-static inline bool passes_one_sigma_cut(const ChannelConfig& channel_cfg,
-                                        const TopoCutMap& cuts,
-                                        const std::string& key,
-                                        const BranchBinder& b,
-                                        const std::string& var) {
-    (void)channel_cfg;
+struct CompiledSigmaPlan {
+    std::array<const SigmaStats*, 8> stats{};
+    std::array<std::string, 8> names{};
+    std::string key;
+    bool use_pi0_angle = false;
+};
 
-    auto it = cuts.find(key);
+static CompiledSigmaPlan compile_sigma_plan(const ChannelConfig& channel_cfg,
+                                            const TopoCutMap& cuts,
+                                            const std::string& key) {
+    CompiledSigmaPlan plan;
+    plan.key = key;
+    plan.use_pi0_angle = (channel_cfg.channel == Channel::EPPI0);
 
+    const std::vector<std::string>& vars = sigma_variable_order(channel_cfg);
+    for (int i = 0; i < 8; ++i) {
+        plan.names[i] = vars[i];
+    }
+
+    const auto it = cuts.find(key);
     if (it == cuts.end()) {
         std::ostringstream ss;
         ss << "[total_counts] FATAL: missing 3-sigma cut key in combined_cuts.json: '"
@@ -1318,72 +1370,99 @@ static inline bool passes_one_sigma_cut(const ChannelConfig& channel_cfg,
     }
 
     const CutVarMap& vm = it->second;
-    auto iv = vm.find(var);
-
-    // If this variable is not in the cut map, it is not active for this channel/topology.
-    if (iv == vm.end()) {
-        return true;
-    }
-
-    bool has_val = false;
-    const double val = branch_value_for_sigma_var(b, var, has_val);
-
-    if (!has_val) {
-        std::ostringstream ss;
-        ss << "[total_counts] FATAL: cut key '" << key
-           << "' requires variable '" << var
-           << "', but the branch is missing in this tree.";
-        fatal(ss.str());
-    }
-
-    return within_cut_window(val, iv->second);
-}
-
-static inline bool passes_sigma_cuts(const ChannelConfig& channel_cfg,
-                                     const TopoCutMap& cuts,
-                                     const std::string& key,
-                                     const BranchBinder& b) {
-    const std::vector<std::string> vars = sigma_variable_order(channel_cfg);
-
-    for (const std::string& var : vars) {
-        if (!passes_one_sigma_cut(channel_cfg, cuts, key, b, var)) {
-            return false;
+    for (int i = 0; i < 8; ++i) {
+        const auto iv = vm.find(plan.names[i]);
+        if (iv != vm.end()) {
+            plan.stats[i] = &iv->second;
         }
     }
 
-    return true;
+    return plan;
 }
 
-static inline bool fill_sigma_cut_diagnostics(const ChannelConfig& channel_cfg,
-                                              const TopoCutMap& cuts,
-                                              const std::string& key,
-                                              const BranchBinder& b,
-                                              CutFlowSummary& flow,
-                                              const std::string& topoDir) {
-    const std::vector<std::string> vars = sigma_variable_order(channel_cfg);
+struct DenseSigmaDiagnostics {
+    std::array<long long, 8> single{};
+    std::array<long long, 8> cumulative{};
+    std::array<std::array<long long, 8>, 3> topo_single{};
+    std::array<std::array<long long, 8>, 3> topo_cumulative{};
+};
 
+static inline bool fill_sigma_cut_diagnostics_compiled(const CompiledSigmaPlan& plan,
+                                                       const BranchBinder& b,
+                                                       int topo_index_value,
+                                                       DenseSigmaDiagnostics& diag) {
     bool cumulative_ok = true;
     bool all_ok = true;
 
-    for (const std::string& var : vars) {
-        const bool pass_this = passes_one_sigma_cut(channel_cfg, cuts, key, b, var);
+    for (int i = 0; i < 8; ++i) {
+        bool pass_this = true;
+        const SigmaStats* cut = plan.stats[i];
+
+        if (cut != nullptr) {
+            bool has_val = false;
+            const double val = branch_value_for_sigma_index(
+                b, i, plan.use_pi0_angle, has_val);
+
+            if (!has_val) {
+                std::ostringstream ss;
+                ss << "[total_counts] FATAL: cut key '" << plan.key
+                   << "' requires variable '" << plan.names[i]
+                   << "', but the branch is missing in this tree.";
+                fatal(ss.str());
+            }
+
+            pass_this = within_cut_window(val, *cut);
+        }
 
         if (pass_this) {
-            ++flow.sigma_single_pass[var];
-            ++flow.topology_sigma_single_pass[topoDir][var];
+            ++diag.single[i];
+            ++diag.topo_single[topo_index_value][i];
         } else {
             all_ok = false;
         }
 
         if (cumulative_ok && pass_this) {
-            ++flow.sigma_cumulative_pass[var];
-            ++flow.topology_sigma_cumulative_pass[topoDir][var];
+            ++diag.cumulative[i];
+            ++diag.topo_cumulative[topo_index_value][i];
         } else {
             cumulative_ok = false;
         }
     }
 
     return all_ok;
+}
+
+static void materialize_sigma_diagnostics(const ChannelConfig& channel_cfg,
+                                          const DenseSigmaDiagnostics& diag,
+                                          CutFlowSummary& flow) {
+    static const std::array<TopologyIndex, 3> kTopologies = {
+        TopologyIndex::FD_FD,
+        TopologyIndex::CD_FD,
+        TopologyIndex::CD_FT
+    };
+
+    const std::vector<std::string>& vars = sigma_variable_order(channel_cfg);
+
+    for (int i = 0; i < 8; ++i) {
+        const std::string& var = vars[i];
+
+        if (diag.single[i] != 0) {
+            flow.sigma_single_pass[var] = diag.single[i];
+        }
+        if (diag.cumulative[i] != 0) {
+            flow.sigma_cumulative_pass[var] = diag.cumulative[i];
+        }
+
+        for (int ti = 0; ti < 3; ++ti) {
+            const std::string& topo = topology_name(kTopologies[ti]);
+            if (diag.topo_single[ti][i] != 0) {
+                flow.topology_sigma_single_pass[topo][var] = diag.topo_single[ti][i];
+            }
+            if (diag.topo_cumulative[ti][i] != 0) {
+                flow.topology_sigma_cumulative_pass[topo][var] = diag.topo_cumulative[ti][i];
+            }
+        }
+    }
 }
 
 static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
@@ -1486,7 +1565,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     }
 
     BranchBinder b;
-    b.bind(tree);
+    b.bind(tree, work_cfg);
 
     const bool is_gen = (work_cfg.sample_kind == SampleKind::MC_GEN);
     const bool is_data = (work_cfg.sample_kind == SampleKind::DATA);
@@ -1515,6 +1594,30 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
         }
     }
 
+    // Dense row-indexed storage avoids two unordered-map lookups for every
+    // matched event. The public/downstream representation is rebuilt once at
+    // the end of the tree, so all existing interfaces and CSV behavior remain
+    // unchanged.
+    std::vector<HelCounts> total_dense(rows.size());
+    std::array<std::vector<HelCounts>, 3> topo_dense;
+    if (!is_gen) {
+        for (auto& v : topo_dense) {
+            v.resize(rows.size());
+        }
+    }
+
+    // The sigma-cut key depends only on channel, period, and topology. Build
+    // the three strings once per tree instead of once per accepted event.
+    std::array<std::string, 3> sigma_keys;
+    std::array<CompiledSigmaPlan, 3> sigma_plans;
+    std::array<bool, 3> sigma_plan_ready{{false, false, false}};
+    DenseSigmaDiagnostics sigma_diag;
+    if (!is_gen) {
+        sigma_keys[0] = combined_cuts_key(work_cfg.channel_cfg, tags, topology_name(TopologyIndex::FD_FD));
+        sigma_keys[1] = combined_cuts_key(work_cfg.channel_cfg, tags, topology_name(TopologyIndex::CD_FD));
+        sigma_keys[2] = combined_cuts_key(work_cfg.channel_cfg, tags, topology_name(TopologyIndex::CD_FT));
+    }
+
     const Long64_t N = tree->GetEntries();
     const bool dbg = env_flag("TOTAL_COUNTS_DEBUG");
 
@@ -1527,14 +1630,20 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
 
-        std::string topoDir;
+        TopologyIndex topo = TopologyIndex::INVALID;
+        const std::string* topo_dir_ptr = nullptr;
+        int topo_idx = -1;
 
         if (!is_gen) {
-            topoDir = topo_dir(b.detector1, b.detector2);
+            topo = topology_index(b.detector1, b.detector2);
 
-            if (topoDir.empty()) {
+            if (topo == TopologyIndex::INVALID) {
                 continue;
             }
+
+            topo_idx = static_cast<int>(topo);
+            const std::string& topoDir = topology_name(topo);
+            topo_dir_ptr = &topoDir;
 
             ++out.flow.valid_topology;
             ++out.flow.topology_entries[topoDir];
@@ -1547,9 +1656,17 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
             ++out.flow.global_pass;
             ++out.flow.topology_global_pass[topoDir];
 
-            const std::string sig_key = combined_cuts_key(work_cfg.channel_cfg, tags, topoDir);
+            if (!sigma_plan_ready[topo_idx]) {
+                sigma_plans[topo_idx] = compile_sigma_plan(work_cfg.channel_cfg,
+                                                           sigma_cuts,
+                                                           sigma_keys[topo_idx]);
+                sigma_plan_ready[topo_idx] = true;
+            }
 
-            if (!fill_sigma_cut_diagnostics(work_cfg.channel_cfg, sigma_cuts, sig_key, b, out.flow, topoDir)) {
+            if (!fill_sigma_cut_diagnostics_compiled(sigma_plans[topo_idx],
+                                                     b,
+                                                     topo_idx,
+                                                     sigma_diag)) {
                 continue;
             }
 
@@ -1587,10 +1704,10 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                 continue;
             }
 
-            add_count(out.total_counts[r], split_helicity, b.helicity);
+            add_count(total_dense[r], split_helicity, b.helicity);
 
             if (!is_gen) {
-                add_count(out.topo_counts[topoDir][r], split_helicity, b.helicity);
+                add_count(topo_dense[topo_idx][r], split_helicity, b.helicity);
             }
 
             matched_any = true;
@@ -1599,7 +1716,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                 std::cout << "[total_counts][TRACE] channel=" << work_cfg.channel_cfg.csv_channel
                           << " sample=" << (is_gen ? "gen" : (is_data ? "data" : "rec"))
                           << " tree=" << tags.tree_key
-                          << " topo=" << (is_gen ? "GEN" : topoDir)
+                          << " topo=" << (is_gen ? std::string("GEN") : *topo_dir_ptr)
                           << " row=" << r
                           << " x=" << b.x
                           << " Q2=" << b.Q2
@@ -1615,7 +1732,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
             ++out.flow.matched;
 
             if (!is_gen) {
-                ++out.flow.topology_matched[topoDir];
+                ++out.flow.topology_matched[*topo_dir_ptr];
             }
         }
 
@@ -1624,7 +1741,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                       << " tree=" << tags.tree_key
                       << " i=" << (long long)i
                       << " sample=" << (is_gen ? "gen" : (is_data ? "data" : "rec"))
-                      << " topo=" << (is_gen ? "GEN" : topoDir)
+                      << " topo=" << (is_gen ? std::string("GEN") : *topo_dir_ptr)
                       << " hel=" << b.helicity
                       << " x=" << b.x
                       << " Q2=" << b.Q2
@@ -1632,6 +1749,43 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                       << " phi2(rad)=" << b.phi2
                       << " phi(deg)=" << phi_deg
                       << std::endl;
+        }
+    }
+
+    if (!is_gen) {
+        materialize_sigma_diagnostics(work_cfg.channel_cfg, sigma_diag, out.flow);
+    }
+
+    auto nonzero = [](const HelCounts& h) {
+        return h.unpol != 0.0 || h.pos != 0.0 || h.neg != 0.0;
+    };
+
+    for (int r = 0; r < (int)rows.size(); ++r) {
+        if (nonzero(total_dense[r])) {
+            out.total_counts.emplace(r, total_dense[r]);
+        }
+    }
+
+    if (!is_gen) {
+        static const std::array<TopologyIndex, 3> kTopologies = {
+            TopologyIndex::FD_FD,
+            TopologyIndex::CD_FD,
+            TopologyIndex::CD_FT
+        };
+
+        for (int ti = 0; ti < 3; ++ti) {
+            RowCounts dst;
+            for (int r = 0; r < (int)rows.size(); ++r) {
+                if (nonzero(topo_dense[ti][r])) {
+                    dst.emplace(r, topo_dense[ti][r]);
+                }
+            }
+
+            // Preserve the original behavior: a topology key exists only if at
+            // least one event matched a CSV row for that topology.
+            if (!dst.empty()) {
+                out.topo_counts.emplace(topology_name(kTopologies[ti]), std::move(dst));
+            }
         }
     }
 
@@ -1999,7 +2153,7 @@ static void print_sigma_variable_period_lines(const CountCollection& recC,
                                               const CutFlowSummary& f,
                                               const std::string& period,
                                               const std::string& topo) {
-    const std::vector<std::string> vars = sigma_variable_order(recC.work_cfg.channel_cfg);
+    const std::vector<std::string>& vars = sigma_variable_order(recC.work_cfg.channel_cfg);
 
     const double denominator = (topo == "ALL")
         ? (double)f.global_pass
@@ -2038,7 +2192,7 @@ static void print_sigma_variable_ratio_lines(const CountCollection& recC,
         return;
     }
 
-    const std::vector<std::string> vars = sigma_variable_order(recC.work_cfg.channel_cfg);
+    const std::vector<std::string>& vars = sigma_variable_order(recC.work_cfg.channel_cfg);
 
     auto denom = [&](const CutFlowSummary& f)->double {
         return (topo == "ALL")
@@ -3138,11 +3292,11 @@ bool update_total_counts_csv(const std::string& csv_path,
 
         std::mutex merge_mutex;
 
-        int nth = std::max(1, std::min(5, max_workers));
+        int nth = std::max(1, std::min(7, max_workers));
         nth = std::min(nth, (int)work_items.size());
 
         std::cout << "[total_counts] Using " << nth
-                  << " worker thread(s), capped at 5." << std::endl;
+                  << " worker thread(s), capped at 7." << std::endl;
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
