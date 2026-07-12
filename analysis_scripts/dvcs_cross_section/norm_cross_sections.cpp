@@ -52,6 +52,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -260,40 +261,44 @@ static int find_col_required(const std::vector<std::string> &header,
 static Triple parse_tuple3(const std::string &cell_raw) {
     Triple out{0.0, 0.0, 0.0};
 
-    std::string s = trim(cell_raw);
-    if (s.empty()) return out;
+    const char *p = cell_raw.c_str();
+    const char *const end = p + cell_raw.size();
 
-    if (!s.empty() && s.front() == '(' && s.back() == ')') {
-        s = trim(s.substr(1, s.size() - 2));
-        if (s.empty()) return out;
-    }
-
-    std::vector<std::string> parts;
-    std::string token;
-
-    for (size_t i = 0; i < s.size(); ++i) {
-        const char c = s[i];
-
-        if (c == ',') {
-            parts.push_back(trim(token));
-            token.clear();
-        } else {
-            token.push_back(c);
-        }
-    }
-
-    if (!token.empty() || s.find(',') != std::string::npos) {
-        parts.push_back(trim(token));
-    }
-
-    auto to_double_or_zero = [](const std::string &str) -> double {
-        if (str.empty()) return 0.0;
-        return std::atof(str.c_str());
+    auto skip_space = [&]() {
+        while (p < end && std::isspace(static_cast<unsigned char>(*p))) ++p;
     };
 
-    if (!parts.empty())    out.value = to_double_or_zero(parts[0]);
-    if (parts.size() > 1U) out.stat  = to_double_or_zero(parts[1]);
-    if (parts.size() > 2U) out.sys   = to_double_or_zero(parts[2]);
+    auto parse_one = [&](double &value) -> bool {
+        skip_space();
+        if (p >= end) return false;
+
+        char *next = nullptr;
+        const double parsed = std::strtod(p, &next);
+        if (next == p) return false;
+
+        value = parsed;
+        p = next;
+        skip_space();
+        return true;
+    };
+
+    skip_space();
+    if (p < end && *p == '(') {
+        ++p;
+        skip_space();
+    }
+
+    if (!parse_one(out.value)) return Triple{0.0, 0.0, 0.0};
+
+    if (p < end && *p == ',') {
+        ++p;
+        (void)parse_one(out.stat);
+    }
+
+    if (p < end && *p == ',') {
+        ++p;
+        (void)parse_one(out.sys);
+    }
 
     return out;
 }
@@ -349,9 +354,6 @@ static std::string tuple3_to_cell(double value, double stat, double sys) {
 
 static void ensure_dir(const fs::path &p) {
     std::error_code ec;
-
-    if (fs::exists(p, ec)) return;
-
     fs::create_directories(p, ec);
 }
 
@@ -376,8 +378,8 @@ struct TheoryCurves {
 };
 
 static std::map<size_t, TheoryCurves>
-load_theory_for_label(const std::string &label,
-                      const std::string &theory_root) {
+load_theory_file(const std::string &label,
+                 const std::string &theory_root) {
     std::map<size_t, TheoryCurves> out;
 
     const std::string energy_label = theory_energy_label_for(label);
@@ -459,6 +461,81 @@ load_theory_for_label(const std::string &label,
               << " from " << file.string() << "\n";
 
     return out;
+}
+
+struct TheoryCacheEntry {
+    fs::file_time_type modified{};
+    std::uintmax_t size = 0;
+    std::map<size_t, TheoryCurves> curves;
+};
+
+static const std::map<size_t, TheoryCurves>&
+load_theory_for_label(const std::string &label,
+                      const std::string &theory_root) {
+    static std::map<std::string, TheoryCacheEntry> cache;
+
+    const std::string energy_label = theory_energy_label_for(label);
+    const fs::path file = fs::path(theory_root) /
+                          canonical_period_dir(energy_label) /
+                          "xs_phi_all.json";
+    const std::string key = file.lexically_normal().string();
+
+    std::error_code ec_time;
+    std::error_code ec_size;
+    const fs::file_time_type modified = fs::last_write_time(file, ec_time);
+    const std::uintmax_t size = fs::file_size(file, ec_size);
+
+    auto it = cache.find(key);
+    if (it != cache.end() && !ec_time && !ec_size &&
+        it->second.modified == modified && it->second.size == size) {
+        return it->second.curves;
+    }
+
+    TheoryCacheEntry entry;
+    if (!ec_time) entry.modified = modified;
+    if (!ec_size) entry.size = size;
+    entry.curves = load_theory_file(label, theory_root);
+
+    auto inserted = cache.insert_or_assign(key, std::move(entry));
+    return inserted.first->second.curves;
+}
+
+struct CsvLinesCacheEntry {
+    fs::file_time_type modified{};
+    std::uintmax_t size = 0;
+    std::vector<std::string> lines;
+};
+
+static const std::vector<std::string>*
+load_csv_lines_cached(const std::string &csv_path) {
+    static std::map<std::string, CsvLinesCacheEntry> cache;
+
+    const fs::path path(csv_path);
+    const std::string key = path.lexically_normal().string();
+
+    std::error_code ec_time;
+    std::error_code ec_size;
+    const fs::file_time_type modified = fs::last_write_time(path, ec_time);
+    const std::uintmax_t size = fs::file_size(path, ec_size);
+
+    auto it = cache.find(key);
+    if (it != cache.end() && !ec_time && !ec_size &&
+        it->second.modified == modified && it->second.size == size) {
+        return &it->second.lines;
+    }
+
+    std::ifstream ifs(csv_path);
+    if (!ifs) return nullptr;
+
+    CsvLinesCacheEntry entry;
+    if (!ec_time) entry.modified = modified;
+    if (!ec_size) entry.size = size;
+
+    std::string line;
+    while (std::getline(ifs, line)) entry.lines.push_back(line);
+
+    auto inserted = cache.insert_or_assign(key, std::move(entry));
+    return &inserted.first->second.lines;
 }
 
 // -----------------------------------------------------------------------------
@@ -1578,22 +1655,15 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
                                           const std::string &label,
                                           const std::string &theory_json_root,
                                           const std::string &out_root_dir) {
-    std::ifstream ifs(csv_main);
+    const std::vector<std::string> *lines_ptr = load_csv_lines_cached(csv_main);
 
-    if (!ifs) {
+    if (!lines_ptr) {
         std::cerr << "[norm_cross_sections] ERROR: cannot open " << csv_main
                   << " for plotting.\n";
         return false;
     }
 
-    std::vector<std::string> lines;
-    std::string line;
-
-    while (std::getline(ifs, line)) {
-        lines.push_back(line);
-    }
-
-    ifs.close();
+    const std::vector<std::string> &lines = *lines_ptr;
 
     if (lines.empty()) {
         std::cerr << "[norm_cross_sections] ERROR: CSV " << csv_main
@@ -1750,7 +1820,7 @@ bool plot_normed_cross_sections_for_label(const std::string &csv_main,
         return true;
     }
 
-    const std::map<size_t, TheoryCurves> theory =
+    const std::map<size_t, TheoryCurves> &theory =
         load_theory_for_label(label, theory_json_root);
 
     gROOT->SetBatch(true);

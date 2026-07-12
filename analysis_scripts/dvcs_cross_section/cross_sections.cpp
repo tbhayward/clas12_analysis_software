@@ -170,9 +170,7 @@ static double eval_vgg_xs(double Ebeam,
 }
 
 static void ensure_dir(const fs::path &p) {
-    if (!fs::exists(p)) {
-        fs::create_directories(p);
-    }
+    fs::create_directories(p);
 }
 
 // -----------------------------------------------------------------------------
@@ -317,63 +315,47 @@ static std::string strip_all_outer_quotes(std::string s) {
 }
 
 static Triple parse_tuple3(const std::string &cell) {
-    Triple out;
-    out.value = 0.0;
-    out.stat  = 0.0;
-    out.sys   = 0.0;
+    Triple out{0.0, 0.0, 0.0};
 
+    // Keep the original quote/parenthesis tolerance, but parse the fixed
+    // three-number payload directly. This avoids constructing a token vector
+    // and three temporary substrings for every CSV tuple.
     std::string s = strip_all_outer_quotes(cell);
     s = trim(s);
 
-    if (s.empty()) {
-        return out;
-    }
+    if (s.empty()) return out;
 
     if (s.front() == '(' && s.back() == ')') {
         s = s.substr(1, s.size() - 2);
         s = trim(s);
-
-        if (s.empty()) {
-            return out;
-        }
+        if (s.empty()) return out;
     }
 
-    std::vector<std::string> parts;
-    std::string token;
+    const char *cursor = s.c_str();
+    char *end = nullptr;
 
-    for (char c : s) {
-        if (c == ',') {
-            parts.push_back(trim(token));
-            token.clear();
-        } else {
-            token.push_back(c);
-        }
-    }
-
-    if (!token.empty()) {
-        parts.push_back(trim(token));
-    }
-
-    auto to_double_or_zero = [](const std::string &str) -> double {
-        if (str.empty()) {
-            return 0.0;
+    auto parse_next = [&](double &value) -> bool {
+        while (*cursor != '\0' && std::isspace(static_cast<unsigned char>(*cursor))) {
+            ++cursor;
         }
 
-        return std::atof(str.c_str());
+        if (*cursor == '\0') return false;
+
+        value = std::strtod(cursor, &end);
+        if (end == cursor) return false;
+        cursor = end;
+
+        while (*cursor != '\0' && std::isspace(static_cast<unsigned char>(*cursor))) {
+            ++cursor;
+        }
+
+        if (*cursor == ',') ++cursor;
+        return true;
     };
 
-    if (!parts.empty()) {
-        out.value = to_double_or_zero(parts[0]);
-    }
-
-    if (parts.size() > 1U) {
-        out.stat = to_double_or_zero(parts[1]);
-    }
-
-    if (parts.size() > 2U) {
-        out.sys = to_double_or_zero(parts[2]);
-    }
-
+    (void)parse_next(out.value);
+    (void)parse_next(out.stat);
+    (void)parse_next(out.sys);
     return out;
 }
 
@@ -1576,6 +1558,47 @@ bool compute_cross_sections(const std::string &csv_main,
 
         write_lumi_columns_for_row(fields);
 
+        // The phase-space and diagnostic cubic volumes are identical for all
+        // labels/helicities at a given beam energy on this CSV row. Load and
+        // validate each energy lazily at most once instead of reparsing the
+        // same tuple for every cross-section column.
+        struct RowVolumeCache {
+            bool loaded = false;
+            Triple allowed{0.0, 0.0, 0.0};
+        };
+
+        RowVolumeCache volume_106;
+        RowVolumeCache volume_102;
+
+        auto row_volume_for_energy = [&](bool use_10p2,
+                                         const std::string &context) -> const Triple& {
+            RowVolumeCache &cache = use_10p2 ? volume_102 : volume_106;
+            if (cache.loaded) return cache.allowed;
+
+            const int c_vbin = use_10p2 ? c_vbin_102 : c_vbin_106;
+            const int c_cubic_vbin = use_10p2 ? c_cubic_vbin_102 : c_cubic_vbin_106;
+            const std::string energy_tag = use_10p2 ? "10.2 GeV" : "10.6 GeV";
+
+            cache.allowed = parse_required_triple_cell(
+                fields,
+                c_vbin,
+                "bin_volume, " + energy_tag,
+                context
+            );
+
+            // Preserve the original schema validation. The cubic volume is
+            // diagnostic only and is intentionally not used in sigma.
+            (void)parse_required_triple_cell(
+                fields,
+                c_cubic_vbin,
+                "cubic bin_volume, " + energy_tag,
+                context
+            );
+
+            cache.loaded = true;
+            return cache.allowed;
+        };
+
         for (const auto &L : labels) {
             const bool use_10p2 = (L == "Sp19 Inb" || L == "10.2 GeV");
 
@@ -1600,26 +1623,10 @@ bool compute_cross_sections(const std::string &csv_main,
 
                 if (Y.value <= 0.0 || !std::isfinite(Y.value)) continue;
 
-                const int c_vbin = use_10p2 ? c_vbin_102 : c_vbin_106;
-                const int c_cubic_vbin = use_10p2 ? c_cubic_vbin_102 : c_cubic_vbin_106;
-                const std::string energy_tag = use_10p2 ? "10.2 GeV" : "10.6 GeV";
-
-                const Triple Vbin = parse_required_triple_cell(
-                    fields,
-                    c_vbin,
-                    "bin_volume, " + energy_tag,
-                    "pass-2 CSV row " + std::to_string(row) + ", label " + L + ", helicity " + h
-                );
-
-                // Validate the diagnostic cubic volume for the same energy. It is not
-                // used in sigma, but it confirms this row came from the new schema
-                // and lets the CSV expose allowed/cubic volume ratios for debugging.
-                (void)parse_required_triple_cell(
-                    fields,
-                    c_cubic_vbin,
-                    "cubic bin_volume, " + energy_tag,
-                    "pass-2 CSV row " + std::to_string(row) + ", label " + L + ", helicity " + h
-                );
+                const std::string volume_context =
+                    "pass-2 CSV row " + std::to_string(row) +
+                    ", label " + L + ", helicity " + h;
+                const Triple &Vbin = row_volume_for_energy(use_10p2, volume_context);
 
                 const Triple Lumi = lumi_for_label_row(L, h, fields);
                 const double lumi_val = lumi_component_for_helicity(Lumi, h);

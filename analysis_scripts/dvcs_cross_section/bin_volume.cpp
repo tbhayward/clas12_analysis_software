@@ -303,17 +303,16 @@ static double calculate_cubic_bin_volume(double xB_min, double xB_max,
         (phi_max - phi_min);
 }
 
-static double calculate_phase_space_allowed_bin_volume(double xB_min, double xB_max,
-                                                       double Q2_min, double Q2_max,
-                                                       double t_abs_min, double t_abs_max,   // positive |t| edges
-                                                       double phi_min, double phi_max,       // radians
-                                                       double E_beam)
+static double calculate_phase_space_allowed_fraction(double xB_min, double xB_max,
+                                                     double Q2_min, double Q2_max,
+                                                     double t_abs_min, double t_abs_max,
+                                                     double E_beam)
 {
     constexpr int    n_steps = 10;
     constexpr double Mp      = 0.938272; // Proton mass (GeV)
     int valid_count = 0;
 
-    // Convert |t| edges to physical t<0 for the loop
+    // Convert |t| edges to physical t<0 for the loop.
     const double t_phys_min = -t_abs_max;
     const double t_phys_max = -t_abs_min;
 
@@ -327,34 +326,31 @@ static double calculate_phase_space_allowed_bin_volume(double xB_min, double xB_
         for (int j = 0; j < n_steps; ++j) {
             const double Q2 = Q2_min + (j + 0.5) * dQ2;
 
-            // DVCS t_min(xB,Q2) (negative)
+            // These quantities do not depend on t, so evaluate them once per
+            // (xB,Q2) grid point rather than once for all ten t samples.
+            const double y  = Q2 / (2.0 * Mp * xB * E_beam);
+            const double W2 = Mp * Mp + Q2 * (1.0 / xB - 1.0);
+            const double W  = (W2 > 0.0) ? std::sqrt(W2) : 0.0;
+            if (!(y > 0.19 && y < 0.8113919276 && W > 2.0)) {
+                continue;
+            }
+
+            // DVCS t_min(xB,Q2) (negative).
             const double sqrt_term = std::sqrt(1.0 + (4.0 * Mp * Mp * xB * xB) / Q2);
-            const double t_min_val = -Q2 * (1.0 - xB) * (1.0 - xB) / (xB * (1.0 + sqrt_term));
+            const double t_min_val = -Q2 * (1.0 - xB) * (1.0 - xB) /
+                                     (xB * (1.0 + sqrt_term));
 
             for (int k = 0; k < n_steps; ++k) {
                 const double t = t_phys_min + (k + 0.5) * dt;
-
-                // y and W cuts
-                const double y  = Q2 / (2.0 * Mp * xB * E_beam);
-                const double W2 = Mp * Mp + Q2 * (1.0 / xB - 1.0);
-                const double W  = (W2 > 0.0) ? std::sqrt(W2) : 0.0;
-
-                if (t > t_min_val && y > 0.19 && y < 0.8113919276 && W > 2.0) {
+                if (t > t_min_val) {
                     ++valid_count;
                 }
             }
         }
     }
 
-    const double fraction = (double)valid_count / (double)(n_steps * n_steps * n_steps);
-    const double cubic_volume = calculate_cubic_bin_volume(
-        xB_min, xB_max,
-        Q2_min, Q2_max,
-        t_abs_min, t_abs_max,
-        phi_min, phi_max
-    );
-
-    return cubic_volume * fraction;
+    return static_cast<double>(valid_count) /
+           static_cast<double>(n_steps * n_steps * n_steps);
 }
 
 // ---------------- helpers for deciding which rows to use ----------------
@@ -416,6 +412,22 @@ struct VolumeGroup {
     double Ebeam;             // beam energy (GeV)
 };
 
+struct PhaseSpaceCellKey {
+    double xbmin;
+    double xbmax;
+    double q2min;
+    double q2max;
+    double tmin;
+    double tmax;
+
+    bool operator<(const PhaseSpaceCellKey& other) const {
+        return std::tie(xbmin, xbmax, q2min, q2max, tmin, tmax) <
+               std::tie(other.xbmin, other.xbmax,
+                        other.q2min, other.q2max,
+                        other.tmin, other.tmax);
+    }
+};
+
 // Compute bin volumes for a given group and fill its CSV column.
 static void compute_bin_volumes_for_group(const VolumeGroup& G,
                                           CsvDoc& csv,
@@ -462,6 +474,11 @@ static void compute_bin_volumes_for_group(const VolumeGroup& G,
 
     int bins_written = 0;
 
+    // All phi rows belonging to the same (xB,Q2,|t|) cell have the same
+    // phase-space-allowed fraction. Cache the deterministic 10^3-grid result
+    // once per 3D cell and apply the row-specific phi width afterward.
+    std::map<PhaseSpaceCellKey, double> allowed_fraction_cache;
+
     for (int r = 0; r < NR; ++r) {
         if (!row_has_data[r]) continue;
 
@@ -503,13 +520,26 @@ static void compute_bin_volumes_for_group(const VolumeGroup& G,
             phi_min_rad, phi_max_rad
         );
 
-        const double V_allowed = calculate_phase_space_allowed_bin_volume(
-            xbmin, xbmax,
-            q2min, q2max,
-            tmin,  tmax,
-            phi_min_rad, phi_max_rad,
-            G.Ebeam
-        );
+        const PhaseSpaceCellKey key = {
+            xbmin, xbmax, q2min, q2max, tmin, tmax
+        };
+
+        double allowed_fraction = 0.0;
+        std::map<PhaseSpaceCellKey, double>::const_iterator fit =
+            allowed_fraction_cache.find(key);
+        if (fit == allowed_fraction_cache.end()) {
+            allowed_fraction = calculate_phase_space_allowed_fraction(
+                xbmin, xbmax,
+                q2min, q2max,
+                tmin,  tmax,
+                G.Ebeam
+            );
+            allowed_fraction_cache.emplace(key, allowed_fraction);
+        } else {
+            allowed_fraction = fit->second;
+        }
+
+        const double V_allowed = V_cubic * allowed_fraction;
 
         if (!std::isfinite(V_cubic) || !std::isfinite(V_allowed)) {
             continue;

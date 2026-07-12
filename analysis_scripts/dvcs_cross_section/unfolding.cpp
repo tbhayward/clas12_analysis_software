@@ -245,13 +245,11 @@ static std::string mean_label_for_label(const std::string& L) {
 static void ensure_dir(const std::string& p) {
     namespace fs = std::filesystem;
     std::error_code ec;
-    if (!fs::exists(p)) {
-        fs::create_directories(p, ec);
-        if (ec) {
-            std::cerr << "[unfolding] FATAL: could not create directory: "
-                      << p << " (" << ec.message() << ")\n";
-            std::exit(EXIT_FAILURE);
-        }
+    fs::create_directories(p, ec);
+    if (ec) {
+        std::cerr << "[unfolding] FATAL: could not create directory: "
+                  << p << " (" << ec.message() << ")\n";
+        std::exit(EXIT_FAILURE);
     }
 }
 
@@ -267,7 +265,9 @@ static double safe_mean(const std::vector<double>& v) {
     return n ? s / n : std::numeric_limits<double>::quiet_NaN();
 }
 
-// generic triple parser: "(value, stat, sys)"
+// Fixed triple parser for "(value, stat, sys)".
+// Parses directly from the CSV cell without constructing a whitespace-stripped
+// copy, token strings, or a temporary vector.
 static bool parse_triple(const std::string& s,
                          double& value,
                          double& stat,
@@ -277,50 +277,54 @@ static bool parse_triple(const std::string& s,
     stat  = std::numeric_limits<double>::quiet_NaN();
     sys   = std::numeric_limits<double>::quiet_NaN();
 
-    std::string trimmed;
-    trimmed.reserve(s.size());
-    for (char c : s) {
-        if (!std::isspace((unsigned char)c)) trimmed.push_back(c);
-    }
-    if (trimmed.empty()) {
-        return false;
-    }
+    const char* p = s.c_str();
+    const char* const end = p + s.size();
 
-    if (trimmed.front() == '(' && trimmed.back() == ')') {
-        trimmed = trimmed.substr(1, trimmed.size() - 2);
-    }
-
-    std::vector<std::string> parts;
-    std::string cur;
-    for (char c : trimmed) {
-        if (c == ',') {
-            parts.push_back(cur);
-            cur.clear();
-        } else {
-            cur.push_back(c);
+    auto skip_space = [&]() {
+        while (p < end && std::isspace(static_cast<unsigned char>(*p))) {
+            ++p;
         }
-    }
-    parts.push_back(cur);
+    };
 
-    if (parts.size() != 3) {
-        std::cerr << "[unfolding] ERROR: triple has "
-                  << parts.size() << " fields (expected 3): '" << s << "'\n";
+    auto parse_number = [&](double& out) -> bool {
+        skip_space();
+        char* parsed_end = nullptr;
+        out = std::strtod(p, &parsed_end);
+        if (parsed_end == p) {
+            return false;
+        }
+        p = parsed_end;
+        skip_space();
+        return true;
+    };
+
+    skip_space();
+    if (p == end) {
         return false;
     }
 
-    char* e1 = nullptr;
-    char* e2 = nullptr;
-    char* e3 = nullptr;
+    const bool parenthesized = (*p == '(');
+    if (parenthesized) {
+        ++p;
+    }
 
-    value = std::strtod(parts[0].c_str(), &e1);
-    stat  = std::strtod(parts[1].c_str(), &e2);
-    sys   = std::strtod(parts[2].c_str(), &e3);
+    if (!parse_number(value)) return false;
+    if (p >= end || *p != ',') return false;
+    ++p;
 
-    if (e1 == parts[0].c_str()) return false;
-    if (e2 == parts[1].c_str()) return false;
-    if (e3 == parts[2].c_str()) return false;
+    if (!parse_number(stat)) return false;
+    if (p >= end || *p != ',') return false;
+    ++p;
 
-    return true;
+    if (!parse_number(sys)) return false;
+
+    if (parenthesized) {
+        if (p >= end || *p != ')') return false;
+        ++p;
+        skip_space();
+    }
+
+    return p == end;
 }
 
 static std::string format_triple(double v, double s_stat, double s_sys) {
