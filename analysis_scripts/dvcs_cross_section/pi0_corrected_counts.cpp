@@ -287,15 +287,12 @@ static void ensure_dir(const std::string& p) {
     namespace fs = std::filesystem;
 
     std::error_code ec;
+    fs::create_directories(p, ec);
 
-    if (!fs::exists(p)) {
-        fs::create_directories(p, ec);
-
-        if (ec) {
-            std::cerr << "[pi0_corrected] FATAL: could not create directory: "
-                      << p << " (" << ec.message() << ")\n";
-            std::exit(EXIT_FAILURE);
-        }
+    if (ec) {
+        std::cerr << "[pi0_corrected] FATAL: could not create directory: "
+                  << p << " (" << ec.message() << ")\n";
+        std::exit(EXIT_FAILURE);
     }
 }
 
@@ -509,7 +506,20 @@ struct CellData {
     std::vector<double> tmeans;
 };
 
-static bool fill_signal_yields(CsvDoc& csv) {
+struct SignalPoint {
+    double value = 0.0;
+    double stat = 0.0;
+};
+
+using SignalCache =
+    std::unordered_map<std::string, std::vector<SignalPoint>>;
+
+static std::string signal_cache_key(const std::string& period,
+                                    const std::string& helicity) {
+    return period + "\n" + helicity;
+}
+
+static bool fill_signal_yields(CsvDoc& csv, SignalCache& signal_cache) {
     std::map<std::string,int> cont_idx;
 
     for (const auto& per : kPeriods) {
@@ -568,6 +578,15 @@ static bool fill_signal_yields(CsvDoc& csv) {
     }
 
     const int NR = csv.nrows();
+
+    signal_cache.clear();
+    for (const auto& per : kPeriods) {
+        for (const auto& hel : helicities_for_period(per)) {
+            signal_cache.emplace(signal_cache_key(per, hel),
+                                 std::vector<SignalPoint>(NR));
+        }
+    }
+
     std::size_t cells_written = 0;
 
     for (int r = 0; r < NR; ++r) {
@@ -654,6 +673,8 @@ static bool fill_signal_yields(CsvDoc& csv) {
                 const int c_sig = sig_idx[per][hel];
                 csv.rows[r][c_sig] = format_triple(S, S_stat, 0.0);
 
+                signal_cache.at(signal_cache_key(per, hel))[r] = {S, S_stat};
+
                 ++cells_written;
             }
         }
@@ -667,6 +688,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
 
 static void draw_signal_yield_canvases(const std::string& period_label,
                                        const CsvDoc& csv,
+                                       const SignalCache& signal_cache,
                                        const std::string& out_root_dir) {
     namespace fs = std::filesystem;
 
@@ -703,37 +725,22 @@ static void draw_signal_yield_canvases(const std::string& period_label,
     const int c_tabavg = csv.col_index("t_abs_avg, " + period_label);
     const int c_xbavg  = csv.col_index("xBavg, " + period_label);
 
-    const std::string cont_col_name = "contamination ratio, " + period_label;
-    const int c_contam = csv.col_index(cont_col_name);
+    const auto pos_cache_it =
+        signal_cache.find(signal_cache_key(period_label, "pos"));
+    const auto neg_cache_it =
+        signal_cache.find(signal_cache_key(period_label, "neg"));
 
-    if (c_contam < 0) {
-        std::cerr << "[pi0_corrected] FATAL: missing column '"
-                  << cont_col_name
-                  << "'. Did you run pi0_contamination?\n";
+    if (pos_cache_it == signal_cache.end() ||
+        neg_cache_it == signal_cache.end() ||
+        pos_cache_it->second.size() != static_cast<std::size_t>(csv.nrows()) ||
+        neg_cache_it->second.size() != static_cast<std::size_t>(csv.nrows())) {
+        std::cerr << "[pi0_corrected] FATAL: missing in-memory signal-yield cache for "
+                  << period_label << ".\n";
         std::exit(EXIT_FAILURE);
     }
 
-    std::map<std::string, std::map<std::string,int>> raw_idx;
-
-    for (const auto& topo : kTopos) {
-        for (const auto& hel : kHelicities) {
-            std::ostringstream name;
-
-            name << "normalized raw yield, ep->epg, " << topo
-                 << ", exp, " << period_label
-                 << ", " << hel;
-
-            const int idx = csv.col_index(name.str());
-
-            if (idx < 0) {
-                std::cerr << "[pi0_corrected] FATAL: missing normalized-raw-yield column: '"
-                          << name.str() << "'\n";
-                std::exit(EXIT_FAILURE);
-            }
-
-            raw_idx[topo][hel] = idx;
-        }
-    }
+    const std::vector<SignalPoint>& pos_signal = pos_cache_it->second;
+    const std::vector<SignalPoint>& neg_signal = neg_cache_it->second;
 
     std::set<std::pair<double,double>> xb_set;
 
@@ -871,116 +878,13 @@ static void draw_signal_yield_canvases(const std::string& period_label,
 
                     C.X.push_back(xphi);
 
-                    const std::string& cs = csv.rows[r][c_contam];
+                    const SignalPoint& pos = pos_signal[r];
+                    const SignalPoint& neg = neg_signal[r];
 
-                    double c_val  = 0.0;
-                    double c_stat = 0.0;
-                    double c_sys  = 0.0;
-
-                    if (!cs.empty()) {
-                        double cv = 0.0;
-                        double cs_stat = 0.0;
-                        double cs_sys  = 0.0;
-
-                        const bool have_cont = parse_tuple3(cs,
-                                                            cv,
-                                                            cs_stat,
-                                                            cs_sys);
-
-                        if (!have_cont) {
-                            std::cerr << "[pi0_corrected] FATAL: failed to parse contamination '"
-                                      << cs << "' for period " << period_label
-                                      << " row " << r << "\n";
-                            std::exit(EXIT_FAILURE);
-                        }
-
-                        c_val  = cv;
-                        c_stat = cs_stat;
-                        c_sys  = cs_sys;
-                    } else {
-                        c_val  = 0.0;
-                        c_stat = 0.0;
-                        c_sys  = 0.0;
-                    }
-
-                    double norm_pos = 0.0;
-                    double norm_neg = 0.0;
-                    double norm_pos_stat_var = 0.0;
-                    double norm_neg_stat_var = 0.0;
-                    double norm_pos_sys_var = 0.0;
-                    double norm_neg_sys_var = 0.0;
-
-                    for (const auto& topo : kTopos) {
-                        const int c_pos = raw_idx[topo].at("pos");
-                        const int c_neg = raw_idx[topo].at("neg");
-
-                        const std::string& s_pos = csv.rows[r][c_pos];
-                        const std::string& s_neg = csv.rows[r][c_neg];
-
-                        double vpos = 0.0;
-                        double spos = 0.0;
-                        double ypos = 0.0;
-
-                        if (!parse_tuple3_or_empty(s_pos, vpos, spos, ypos)) {
-                            std::cerr << "[pi0_corrected] FATAL: failed to parse normalized pos yield triple in '"
-                                      << "normalized raw yield, ep->epg, " << topo
-                                      << ", exp, " << period_label << ", pos"
-                                      << "' at row " << r << " value '"
-                                      << s_pos << "'\n";
-                            std::exit(EXIT_FAILURE);
-                        }
-
-                        add_tuple_in_quadrature(vpos,
-                                                spos,
-                                                ypos,
-                                                norm_pos,
-                                                norm_pos_stat_var,
-                                                norm_pos_sys_var);
-
-                        double vneg = 0.0;
-                        double sneg = 0.0;
-                        double yneg = 0.0;
-
-                        if (!parse_tuple3_or_empty(s_neg, vneg, sneg, yneg)) {
-                            std::cerr << "[pi0_corrected] FATAL: failed to parse normalized neg yield triple in '"
-                                      << "normalized raw yield, ep->epg, " << topo
-                                      << ", exp, " << period_label << ", neg"
-                                      << "' at row " << r << " value '"
-                                      << s_neg << "'\n";
-                            std::exit(EXIT_FAILURE);
-                        }
-
-                        add_tuple_in_quadrature(vneg,
-                                                sneg,
-                                                yneg,
-                                                norm_neg,
-                                                norm_neg_stat_var,
-                                                norm_neg_sys_var);
-                    }
-
-                    double S_pos = 0.0;
-                    double S_pos_stat = 0.0;
-                    double S_neg = 0.0;
-                    double S_neg_stat = 0.0;
-
-                    compute_signal_and_stat(norm_pos,
-                                            std::sqrt(std::max(0.0, norm_pos_stat_var)),
-                                            c_val,
-                                            c_stat,
-                                            S_pos,
-                                            S_pos_stat);
-
-                    compute_signal_and_stat(norm_neg,
-                                            std::sqrt(std::max(0.0, norm_neg_stat_var)),
-                                            c_val,
-                                            c_stat,
-                                            S_neg,
-                                            S_neg_stat);
-
-                    C.Yp.push_back(S_pos);
-                    C.Ym.push_back(S_neg);
-                    C.EYp.push_back(S_pos_stat);
-                    C.EYm.push_back(S_neg_stat);
+                    C.Yp.push_back(pos.value);
+                    C.Ym.push_back(neg.value);
+                    C.EYp.push_back(pos.stat);
+                    C.EYm.push_back(neg.stat);
 
                     const double q2m =
                         (c_q2avg >= 0)
@@ -995,12 +899,12 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                     C.q2means.push_back(q2m);
                     C.tmeans.push_back(tm);
 
-                    if (std::isfinite(S_pos)) {
-                        canvas_max = std::max(canvas_max, S_pos);
+                    if (std::isfinite(pos.value)) {
+                        canvas_max = std::max(canvas_max, pos.value);
                     }
 
-                    if (std::isfinite(S_neg)) {
-                        canvas_max = std::max(canvas_max, S_neg);
+                    if (std::isfinite(neg.value)) {
+                        canvas_max = std::max(canvas_max, neg.value);
                     }
                 }
             }
@@ -1155,7 +1059,9 @@ bool update_pi0_corrected_counts_csv(const std::string& csv_path,
         return false;
     }
 
-    if (!fill_signal_yields(csv)) {
+    SignalCache signal_cache;
+
+    if (!fill_signal_yields(csv, signal_cache)) {
         std::cerr << "[pi0_corrected] ERROR: fill_signal_yields failed.\n";
         return false;
     }
@@ -1172,7 +1078,7 @@ bool update_pi0_corrected_counts_csv(const std::string& csv_path,
               << " (size " << size_before << " -> " << size_after << ")\n";
 
     for (const auto& per : kPeriods) {
-        draw_signal_yield_canvases(per, csv, out_root_dir);
+        draw_signal_yield_canvases(per, csv, signal_cache, out_root_dir);
     }
 
     std::cout << "[pi0_corrected] Signal-yield plotting finished.\n";

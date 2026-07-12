@@ -36,8 +36,9 @@ struct BSAOptions {
     // with rows in Q2 and columns in |t|. Each subplot shows A_LU(phi).
     bool make_plots = true;
 
-    // Kept for compatibility with main.cpp. The current BSA stage is serial.
-    int max_workers = 1;
+    // Maximum number of independent data trees processed concurrently.
+    // Internally capped at seven workers.
+    int max_workers = 7;
 };
 
 // Recompute beam-spin asymmetries directly from helicity-split measured counts

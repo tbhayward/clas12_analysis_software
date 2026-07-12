@@ -24,7 +24,7 @@
 // Plots are compact xB-slice canvases. Each populated pad is one (Q2, |t|) bin
 // and shows A_LU(phi) with statistical error bars only. No theory curve or
 // functional fit is drawn in this stage.
-// ROOT tree loops and ROOT plotting are intentionally serial.
+// ROOT tree loops are parallelized across independent trees; ROOT plotting remains serial.
 // -----------------------------------------------------------------------------
 
 #include "bsa.h"
@@ -46,14 +46,17 @@
 
 // JSON
 #include <nlohmann/json.hpp>
+#include <omp.h>
 
 // C++ stdlib
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -160,11 +163,22 @@ static inline double phi_half_width_deg(double pmin_deg, double pmax_deg) {
     return 0.5 * (hi - lo);
 }
 
-static inline std::string topo_dir(int det1, int det2) {
-    if (det1 == 1 && det2 == 1) return "FD_FD";
-    if (det1 == 2 && det2 == 1) return "CD_FD";
-    if (det1 == 2 && det2 == 0) return "CD_FT";
-    return "";
+enum class TopologyIndex : int { FD_FD = 0, CD_FD = 1, CD_FT = 2, INVALID = -1 };
+
+static inline TopologyIndex topology_index(int det1, int det2) {
+    if (det1 == 1 && det2 == 1) return TopologyIndex::FD_FD;
+    if (det1 == 2 && det2 == 1) return TopologyIndex::CD_FD;
+    if (det1 == 2 && det2 == 0) return TopologyIndex::CD_FT;
+    return TopologyIndex::INVALID;
+}
+
+static inline const char* topology_name(TopologyIndex topo) {
+    switch (topo) {
+        case TopologyIndex::FD_FD: return "FD_FD";
+        case TopologyIndex::CD_FD: return "CD_FD";
+        case TopologyIndex::CD_FT: return "CD_FT";
+        default: return "";
+    }
 }
 
 static inline std::string period_display_from_tree_key(const std::string& tree_key) {
@@ -683,7 +697,8 @@ struct BranchBinder {
         };
         for (const char* name : names) enable(name);
 
-        t->SetCacheSize(0);
+        t->SetCacheSize(16LL * 1024LL * 1024LL);
+        t->AddBranchToCache("*", true);
 
         auto bind_int = [&](const char* name, int* ptr, bool& has) {
             if (t->GetBranch(name)) { t->SetBranchAddress(name, ptr); has = true; }
@@ -841,62 +856,158 @@ struct HelCounts {
 
 using RowCounts = std::unordered_map<int, HelCounts>;
 using PeriodCounts = std::unordered_map<std::string, RowCounts>;
+using DenseCounts = std::vector<HelCounts>;
 
 static inline void add_event(HelCounts& h, int helicity) {
     if (helicity > 0) h.plus += 1.0;
     else if (helicity < 0) h.minus += 1.0;
 }
 
+struct CompiledSigmaCut {
+    enum class Variable : int {
+        Emiss2, Mx2, Mx2_1, Mx2_2, DeltaPhi, PTmiss, XF,
+        ThetaGammaGamma, ThetaPi0Pi0
+    };
+    Variable variable;
+    const SigmaStats* stats = nullptr;
+};
+
+using CompiledSigmaCuts = std::vector<CompiledSigmaCut>;
+
+static CompiledSigmaCut::Variable sigma_variable_id(const std::string& var) {
+    if (var == "Emiss2") return CompiledSigmaCut::Variable::Emiss2;
+    if (var == "Mx2") return CompiledSigmaCut::Variable::Mx2;
+    if (var == "Mx2_1") return CompiledSigmaCut::Variable::Mx2_1;
+    if (var == "Mx2_2") return CompiledSigmaCut::Variable::Mx2_2;
+    if (var == "Delta_phi") return CompiledSigmaCut::Variable::DeltaPhi;
+    if (var == "pTmiss") return CompiledSigmaCut::Variable::PTmiss;
+    if (var == "xF") return CompiledSigmaCut::Variable::XF;
+    if (var == "theta_gamma_gamma") return CompiledSigmaCut::Variable::ThetaGammaGamma;
+    if (var == "theta_pi0_pi0") return CompiledSigmaCut::Variable::ThetaPi0Pi0;
+    fatal("[bsa] unsupported sigma-cut variable: " + var);
+    return CompiledSigmaCut::Variable::Emiss2;
+}
+
+static CompiledSigmaCuts compile_sigma_cuts(const TopoCutMap& cuts,
+                                             const std::string& key) {
+    auto it = cuts.find(key);
+    if (it == cuts.end()) fatal("[bsa] missing data cut key in combined_cuts.json: " + key);
+    CompiledSigmaCuts out;
+    out.reserve(it->second.size());
+    for (const auto& kv : it->second) {
+        out.push_back({sigma_variable_id(kv.first), &kv.second});
+    }
+    return out;
+}
+
+static inline bool passes_compiled_sigma_cuts(const CompiledSigmaCuts& cuts,
+                                               const BranchBinder& b) {
+    for (const CompiledSigmaCut& cut : cuts) {
+        bool has = true;
+        double value = 0.0;
+        switch (cut.variable) {
+            case CompiledSigmaCut::Variable::Emiss2: has = b.has_Emiss2; value = b.Emiss2; break;
+            case CompiledSigmaCut::Variable::Mx2: has = b.has_Mx2; value = b.Mx2; break;
+            case CompiledSigmaCut::Variable::Mx2_1: has = b.has_Mx2_1; value = b.Mx2_1; break;
+            case CompiledSigmaCut::Variable::Mx2_2: has = b.has_Mx2_2; value = b.Mx2_2; break;
+            case CompiledSigmaCut::Variable::DeltaPhi: value = b.delta_phi_value(has); break;
+            case CompiledSigmaCut::Variable::PTmiss: has = b.has_pTmiss; value = b.pTmiss; break;
+            case CompiledSigmaCut::Variable::XF: has = b.has_xF; value = b.xF; break;
+            case CompiledSigmaCut::Variable::ThetaGammaGamma:
+                has = b.has_theta_gamma_gamma; value = b.theta_gamma_gamma; break;
+            case CompiledSigmaCut::Variable::ThetaPi0Pi0:
+                has = b.has_theta_pi0_pi0; value = b.theta_pi0_pi0; break;
+        }
+        if (!has) fatal("[bsa] compiled sigma cut requires a missing branch");
+        if (!within_cut_window(value, *cut.stats)) return false;
+    }
+    return true;
+}
+
+struct CountTask {
+    std::string tree_key;
+    std::string period;
+    std::string period_code;
+    TTree* tree = nullptr;
+    std::array<CompiledSigmaCuts, 3> compiled_cuts;
+};
+
+struct CountTaskResult {
+    DenseCounts counts;
+    long long entries = 0;
+    long long topology = 0;
+    long long global = 0;
+    long long sigma = 0;
+    long long matched = 0;
+};
+
 static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees,
                                       const std::string& channel_name,
                                       const std::string& cut_prefix,
                                       const std::vector<RowBin>& rows,
                                       const FastBinning& fast_bins,
-                                      const TopoCutMap& sigma_cuts) {
+                                      const TopoCutMap& sigma_cuts,
+                                      int max_workers) {
     PeriodCounts out;
     for (const std::string& period : base_period_order()) out[period] = RowCounts();
 
+    std::vector<CountTask> tasks;
+    tasks.reserve(trees.size());
     for (const auto& kv : trees) {
-        const std::string& tree_key = kv.first;
-        TTree* tree = kv.second;
-        if (!tree) continue;
-
-        const std::string period = period_display_from_tree_key(tree_key);
+        if (!kv.second) continue;
+        const std::string period = period_display_from_tree_key(kv.first);
         if (period.empty()) {
             std::cout << "[bsa] Skipping non-canonical or supplemental "
-                      << channel_name << " data tree key: " << tree_key << "\n";
+                      << channel_name << " data tree key: " << kv.first << "\n";
             continue;
-        } //endif
-
-        BranchBinder b;
-        b.bind(tree);
-
-        if (!(b.has_detector1 && b.has_detector2 && b.has_helicity && b.has_x && b.has_Q2 && b.has_t1 && b.has_phi2)) {
-            fatal("[bsa] " + channel_name + " tree " + tree_key +
-                  " is missing one or more required branches: detector1, detector2, helicity, x, Q2, t1, phi2");
-        } //endif
-
+        }
         const std::string period_code = period_code_from_display(period);
-        const Long64_t n_entries = tree->GetEntries();
+        tasks.push_back({
+            kv.first,
+            period,
+            period_code,
+            kv.second,
+            {
+                compile_sigma_cuts(sigma_cuts, cut_prefix + "_" + period_code + "_FD_FD"),
+                compile_sigma_cuts(sigma_cuts, cut_prefix + "_" + period_code + "_CD_FD"),
+                compile_sigma_cuts(sigma_cuts, cut_prefix + "_" + period_code + "_CD_FT")
+            }
+        });
+    }
 
-        long long n_topology = 0;
-        long long n_global = 0;
-        long long n_sigma = 0;
-        long long n_matched = 0;
+    std::vector<CountTaskResult> results(tasks.size());
+    std::vector<std::exception_ptr> errors(tasks.size());
+    const int nthreads = std::max(1, std::min({7, max_workers, static_cast<int>(tasks.size())}));
 
-        for (Long64_t i = 0; i < n_entries; ++i) {
-            tree->GetEntry(i);
+    #pragma omp parallel for schedule(dynamic, 1) num_threads(nthreads)
+    for (int task_index = 0; task_index < static_cast<int>(tasks.size()); ++task_index) {
+        try {
+            const CountTask& task = tasks[task_index];
+            CountTaskResult local;
+            local.counts.resize(rows.size());
 
-            const std::string topo = topo_dir(b.detector1, b.detector2);
-            if (topo.empty()) continue;
-            ++n_topology;
+            BranchBinder b;
+            b.bind(task.tree);
+        if (!(b.has_detector1 && b.has_detector2 && b.has_helicity && b.has_x &&
+              b.has_Q2 && b.has_t1 && b.has_phi2)) {
+            fatal("[bsa] " + channel_name + " tree " + task.tree_key +
+                  " is missing one or more required branches: detector1, detector2, helicity, x, Q2, t1, phi2");
+        }
 
-            if (!passes_global_cuts_dispatch(b, period)) continue;
-            ++n_global;
+        local.entries = static_cast<long long>(task.tree->GetEntries());
+        for (Long64_t i = 0; i < static_cast<Long64_t>(local.entries); ++i) {
+            task.tree->GetEntry(i);
 
-            const std::string cut_key = cut_prefix + "_" + period_code + "_" + topo;
-            if (!passes_sigma_cuts(sigma_cuts, cut_key, b)) continue;
-            ++n_sigma;
+            const TopologyIndex topo = topology_index(b.detector1, b.detector2);
+            if (topo == TopologyIndex::INVALID) continue;
+            ++local.topology;
+
+            if (!passes_global_cuts_dispatch(b, task.period)) continue;
+            ++local.global;
+
+            const int topo_i = static_cast<int>(topo);
+            if (!passes_compiled_sigma_cuts(task.compiled_cuts[topo_i], b)) continue;
+            ++local.sigma;
 
             const int ix = find_axis_bin_index(fast_bins.xbins, b.x);
             if (ix < 0) continue;
@@ -908,27 +1019,46 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             const double phi_deg = b.phi_deg();
             const std::vector<int>& candidate_rows = fast_bins.rows_by_xqt[ix][iq][it];
             bool matched = false;
-
             for (int row_index : candidate_rows) {
                 const RowBin& rb = rows[row_index];
                 if (!row_accepts_phi(phi_deg, rb.pmin, rb.pmax)) continue;
-                add_event(out[period][row_index], b.helicity);
+                add_event(local.counts[row_index], b.helicity);
                 matched = true;
-            } //endfor
+            }
+            if (matched) ++local.matched;
+        }
+            results[task_index] = std::move(local);
+        } catch (...) {
+            errors[task_index] = std::current_exception();
+        }
+    }
 
-            if (matched) ++n_matched;
-        } //endfor
+    for (const std::exception_ptr& error : errors) {
+        if (error) std::rethrow_exception(error);
+    }
+
+    for (int task_index = 0; task_index < static_cast<int>(tasks.size()); ++task_index) {
+        const CountTask& task = tasks[task_index];
+        const CountTaskResult& local = results[task_index];
+        RowCounts& period_counts = out[task.period];
+        for (int r = 0; r < static_cast<int>(local.counts.size()); ++r) {
+            const HelCounts& h = local.counts[r];
+            if (h.plus == 0.0 && h.minus == 0.0) continue;
+            HelCounts& dst = period_counts[r];
+            dst.plus += h.plus;
+            dst.minus += h.minus;
+        }
 
         std::cout << "[bsa] channel=" << channel_name
-                  << " tree=" << tree_key
-                  << " period=" << period
-                  << " entries=" << static_cast<long long>(n_entries)
-                  << " topology=" << n_topology
-                  << " global=" << n_global
-                  << " sigma=" << n_sigma
-                  << " matched=" << n_matched
+                  << " tree=" << task.tree_key
+                  << " period=" << task.period
+                  << " entries=" << local.entries
+                  << " topology=" << local.topology
+                  << " global=" << local.global
+                  << " sigma=" << local.sigma
+                  << " matched=" << local.matched
                   << "\n";
-    } //endfor
+    }
 
     return out;
 }
@@ -1594,9 +1724,11 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
         const PeriodLeakRows leaks = build_pi0_leakage(csv, options);
 
         const PeriodCounts gamma_counts =
-            accumulate_counts(dvcsDataTrees, "DVCS", "DVCS", rows, fast_bins, sigma_cuts);
+            accumulate_counts(dvcsDataTrees, "DVCS", "DVCS", rows, fast_bins, sigma_cuts,
+                              options.max_workers);
         const PeriodCounts pi0_counts =
-            accumulate_counts(eppi0DataTrees, "eppi0", "eppi0", rows, fast_bins, sigma_cuts);
+            accumulate_counts(eppi0DataTrees, "eppi0", "eppi0", rows, fast_bins, sigma_cuts,
+                              options.max_workers);
 
         std::map<std::string, std::vector<AsymResult>> results;
         for (const std::string& group : output_group_order()) {
