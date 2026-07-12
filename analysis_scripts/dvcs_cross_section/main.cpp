@@ -160,7 +160,6 @@ int main(int argc, char* argv[]) {
 
     const bool use_nobkg_dvcs_mc_for_acceptance = false;
     const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
-
     // --------- Raw yields/counts into CSV + plots ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
@@ -204,7 +203,7 @@ int main(int argc, char* argv[]) {
 
         current_opts.override_to_unity = false;
         current_opts.use_second_column_charge_for_all_unpolarized = true;
-        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
+        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
         current_opts.columns_3_to_5_charge_sum_scale = 1.025;
         current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
         current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
