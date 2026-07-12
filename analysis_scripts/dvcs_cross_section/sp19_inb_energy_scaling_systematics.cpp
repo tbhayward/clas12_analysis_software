@@ -879,13 +879,14 @@ static void draw_model_band_boxes(const std::vector<BinnedPoint>& pts,
                                   int color,
                                   double alpha,
                                   double xmin,
-                                  double xmax) {
+                                  double xmax,
+                                  double width_scale = 0.36) {
     for (const auto& p : pts) {
         if (!(std::isfinite(p.x) && std::isfinite(p.y))) continue;
         const double band = model_band_half_height(p);
         if (!(std::isfinite(band) && band > 0.0)) continue;
-        double half_width = std::isfinite(p.ex) && p.ex > 0.0 ? p.ex : 0.0;
-        if (half_width <= 0.0) half_width = 0.005 * std::max(1.0, xmax - xmin);
+        double half_width = std::isfinite(p.ex) && p.ex > 0.0 ? width_scale * p.ex : 0.0;
+        if (half_width <= 0.0) half_width = 0.003 * std::max(1.0, xmax - xmin);
         const double xlo = std::max(xmin, p.x - half_width);
         const double xhi = std::min(xmax, p.x + half_width);
         if (!(xhi > xlo)) continue;
@@ -944,7 +945,6 @@ static void draw_sp19_kinematic_summary_canvas(
         const std::vector<std::pair<std::string, std::string> >& variables,
         const std::map<std::string, std::vector<BinnedPoint> >& binned_fa18,
         const std::map<std::string, std::vector<BinnedPoint> >& binned_ten6) {
-    (void)binned_ten6;
 
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
@@ -964,10 +964,12 @@ static void draw_sp19_kinematic_summary_canvas(
         const std::string& key = variables[iv].first;
         const std::string& label = variables[iv].second;
         const auto it_f = binned_fa18.find(key);
+        const auto it_t = binned_ten6.find(key);
         const std::vector<BinnedPoint> empty;
         const auto& fa18 = (it_f == binned_fa18.end()) ? empty : it_f->second;
+        const auto& ten6 = (it_t == binned_ten6.end()) ? empty : it_t->second;
 
-        if (fa18.empty()) {
+        if (fa18.empty() && ten6.empty()) {
             TLatex lat;
             lat.SetNDC(true);
             lat.SetTextSize(0.050);
@@ -977,12 +979,16 @@ static void draw_sp19_kinematic_summary_canvas(
 
         double xmin = std::numeric_limits<double>::infinity();
         double xmax = -std::numeric_limits<double>::infinity();
-        for (const auto& p : fa18) {
-            if (!std::isfinite(p.x)) continue;
-            const double ex = std::isfinite(p.ex) && p.ex > 0.0 ? p.ex : 0.0;
-            xmin = std::min(xmin, p.x - ex);
-            xmax = std::max(xmax, p.x + ex);
-        }
+        auto update_x_range = [&](const std::vector<BinnedPoint>& pts) {
+            for (const auto& p : pts) {
+                if (!std::isfinite(p.x)) continue;
+                const double ex = std::isfinite(p.ex) && p.ex > 0.0 ? p.ex : 0.0;
+                xmin = std::min(xmin, p.x - ex);
+                xmax = std::max(xmax, p.x + ex);
+            }
+        };
+        update_x_range(fa18);
+        update_x_range(ten6);
         if (!std::isfinite(xmin) || !std::isfinite(xmax) || !(xmax > xmin)) {
             xmin = 0.0; xmax = 1.0;
         }
@@ -996,7 +1002,7 @@ static void draw_sp19_kinematic_summary_canvas(
         frame->SetMinimum(0.5);
         frame->SetMaximum(1.5);
         frame->GetXaxis()->SetTitle(label.c_str());
-        frame->GetYaxis()->SetTitle("Sp19 corr. / Fa18 Inb");
+        frame->GetYaxis()->SetTitle("Ratio");
         frame->GetXaxis()->SetTitleSize(0.050);
         frame->GetYaxis()->SetTitleSize(0.050);
         frame->GetXaxis()->SetLabelSize(0.040);
@@ -1009,24 +1015,28 @@ static void draw_sp19_kinematic_summary_canvas(
         line->SetLineWidth(2);
         line->Draw("same");
 
-        draw_model_band_boxes(fa18, kBlue + 1, 0.18, xmin, xmax);
+        draw_model_band_boxes(fa18, kBlue + 1, 0.16, xmin, xmax, 0.34);
+        draw_model_band_boxes(ten6, kRed + 1, 0.16, xmin, xmax, 0.34);
 
         TGraphErrors* g_fa18 = make_stat_graph(fa18, 20, kBlue + 1);
+        TGraphErrors* g_ten6 = make_stat_graph(ten6, 21, kRed + 1);
         if (g_fa18) g_fa18->Draw("P same");
+        if (g_ten6) g_ten6->Draw("P same");
 
         frame->Draw("axis same");
 
-        TLegend* leg = new TLegend(0.48, 0.78, 0.95, 0.92);
+        TLegend* leg = new TLegend(0.46, 0.74, 0.95, 0.92);
         leg->SetBorderSize(1);
         leg->SetFillStyle(1001);
         leg->SetFillColor(kWhite);
-        leg->SetTextSize(0.026);
-        leg->SetMargin(0.18);
-        if (g_fa18) leg->AddEntry(g_fa18, "ratio of integrated projections", "p");
-        TBox* model_box = new TBox(0, 0, 1, 1);
-        model_box->SetFillColorAlpha(kBlue + 1, 0.18);
-        model_box->SetLineColor(kBlue + 1);
-        leg->AddEntry(model_box, "BH/VGG/KM15 energy-scale spread", "f");
+        leg->SetTextSize(0.022);
+        leg->SetMargin(0.16);
+        if (g_fa18) leg->AddEntry(g_fa18, "Sp19 corr. / Fa18 Inb", "p");
+        if (g_ten6) leg->AddEntry(g_ten6, "Sp19 corr. / 10.6 GeV", "p");
+        TBox* model_box_b = new TBox(0, 0, 1, 1);
+        model_box_b->SetFillColorAlpha(kBlue + 1, 0.16);
+        model_box_b->SetLineColor(kBlue + 1);
+        leg->AddEntry(model_box_b, "energy-scale spread", "f");
         leg->Draw("same");
     }
 
