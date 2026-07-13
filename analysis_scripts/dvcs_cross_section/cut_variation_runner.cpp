@@ -42,6 +42,33 @@ struct TripleCell {
     double sys = 0.0;
 };
 
+std::string normalize_csv_field(std::string field) {
+    // A correctly parsed CSV field must not retain the quote characters used
+    // solely to protect commas. Older variation files could contain one or
+    // more extra wrapper-quote layers, e.g. """(1,2,0)""". Remove only
+    // complete matching wrapper layers and collapse doubled quotes.
+    bool changed = true;
+    while (changed && field.size() >= 2) {
+        changed = false;
+        if (field.front() == '"' && field.back() == '"') {
+            field = field.substr(1, field.size() - 2);
+            std::string unescaped;
+            unescaped.reserve(field.size());
+            for (std::size_t i = 0; i < field.size(); ++i) {
+                if (field[i] == '"' && i + 1 < field.size() && field[i + 1] == '"') {
+                    unescaped.push_back('"');
+                    ++i;
+                } else {
+                    unescaped.push_back(field[i]);
+                }
+            }
+            field.swap(unescaped);
+            changed = true;
+        }
+    }
+    return field;
+}
+
 std::vector<std::string> split_csv(const std::string& line) {
     std::vector<std::string> out;
     std::string cur;
@@ -56,13 +83,13 @@ std::vector<std::string> split_csv(const std::string& line) {
                 quoted = !quoted;
             }
         } else if (c == ',' && !quoted) {
-            out.push_back(cur);
+            out.push_back(normalize_csv_field(cur));
             cur.clear();
         } else {
             cur.push_back(c);
         }
     }
-    out.push_back(cur);
+    out.push_back(normalize_csv_field(cur));
     return out;
 }
 
@@ -119,6 +146,8 @@ TripleCell parse_triple(const std::string& cell) {
     TripleCell v;
     std::string s = cell;
     s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c); }), s.end());
+    if (s.empty()) return v;
+    s = normalize_csv_field(s);
     if (s.empty()) return v;
     if (s.front() == '(' && s.back() == ')') s = s.substr(1, s.size() - 2);
     std::replace(s.begin(), s.end(), ';', ',');

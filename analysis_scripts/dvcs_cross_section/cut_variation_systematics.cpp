@@ -84,6 +84,31 @@ std::string trim(const std::string& s) {
     return s.substr(a, b - a + 1);
 }
 
+std::string normalize_csv_field(std::string field) {
+    // Remove complete wrapper-quote layers left by older CSV rewrites while
+    // preserving quotation marks that are genuinely internal to a field.
+    bool changed = true;
+    while (changed && field.size() >= 2) {
+        changed = false;
+        if (field.front() == '"' && field.back() == '"') {
+            field = field.substr(1, field.size() - 2);
+            std::string unescaped;
+            unescaped.reserve(field.size());
+            for (size_t i = 0; i < field.size(); ++i) {
+                if (field[i] == '"' && i + 1 < field.size() && field[i + 1] == '"') {
+                    unescaped.push_back('"');
+                    ++i;
+                } else {
+                    unescaped.push_back(field[i]);
+                }
+            }
+            field.swap(unescaped);
+            changed = true;
+        }
+    }
+    return field;
+}
+
 std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> out;
     std::string cur;
@@ -98,13 +123,13 @@ std::vector<std::string> split_csv_line(const std::string& line) {
                 quoted = !quoted;
             }
         } else if (c == ',' && !quoted) {
-            out.push_back(cur);
+            out.push_back(normalize_csv_field(cur));
             cur.clear();
         } else {
             cur.push_back(c);
         }
     }
-    out.push_back(cur);
+    out.push_back(normalize_csv_field(cur));
     return out;
 }
 
@@ -181,7 +206,7 @@ double to_double(const std::string& s, double fallback = 0.0) {
 
 Triple parse_triple(std::string s) {
     Triple out;
-    s = trim(s);
+    s = normalize_csv_field(trim(s));
     if (s.empty()) return out;
     while (s.size() >= 2 && ((s.front() == '(' && s.back() == ')') ||
                              (s.front() == '[' && s.back() == ']') ||
@@ -220,6 +245,66 @@ std::unordered_map<std::string, size_t> build_row_map(const CsvTable& t) {
     std::unordered_map<std::string, size_t> out;
     for (size_t i = 0; i < t.rows.size(); ++i) out[row_key(t, t.rows[i])] = i;
     return out;
+}
+
+struct VariationValidationSummary {
+    std::size_t nominal_valid = 0;
+    std::size_t variation_valid = 0;
+    std::vector<std::string> invalid_keys;
+};
+
+VariationValidationSummary validate_variation_cross_sections(
+    const CsvTable& nominal,
+    std::size_t nominal_col,
+    const CsvTable& variation,
+    std::size_t variation_col,
+    const std::unordered_map<std::string, size_t>& variation_rows) {
+
+    VariationValidationSummary summary;
+    for (const auto& row : nominal.rows) {
+        const Triple nom = parse_triple(row[nominal_col]);
+        if (!nom.ok) continue;
+        ++summary.nominal_valid;
+
+        const std::string key = row_key(nominal, row);
+        const auto it = variation_rows.find(key);
+        if (it == variation_rows.end()) {
+            if (summary.invalid_keys.size() < 8) summary.invalid_keys.push_back(key + " (missing row)");
+            continue;
+        }
+
+        const Triple varied = parse_triple(variation.rows[it->second][variation_col]);
+        if (varied.ok) {
+            ++summary.variation_valid;
+        } else if (summary.invalid_keys.size() < 8) {
+            summary.invalid_keys.push_back(key + " (unreadable cross-section tuple)");
+        }
+    }
+    return summary;
+}
+
+void require_valid_variation(const std::string& label,
+                             const VariationValidationSummary& summary) {
+    std::cout << "[cut-systematics] " << std::left << std::setw(26) << label
+              << " valid bins: " << summary.variation_valid
+              << " / " << summary.nominal_valid << '\n';
+
+    if (summary.nominal_valid == 0) {
+        throw std::runtime_error("The nominal cross-section column contains no readable tuples.");
+    }
+    if (summary.variation_valid != summary.nominal_valid) {
+        std::ostringstream message;
+        message << label << " contains " << summary.variation_valid << " readable cross sections for "
+                << summary.nominal_valid << " nominally populated bins. The nominal CSV was not modified.";
+        if (!summary.invalid_keys.empty()) {
+            message << " Example failures: ";
+            for (std::size_t i = 0; i < summary.invalid_keys.size(); ++i) {
+                if (i) message << "; ";
+                message << summary.invalid_keys[i];
+            }
+        }
+        throw std::runtime_error(message.str());
+    }
 }
 
 double barlow_value(const Triple& varied, const Triple& nominal) {
@@ -421,6 +506,22 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
         const auto map_fil = build_row_map(fi_loose);
         const auto map_fit = build_row_map(fi_tight);
 
+        // Validate all variation inputs before adding columns, calculating RMS
+        // values or writing a backup. Missing/malformed tuples must never be
+        // interpreted as zero differences or universal Barlow rejection.
+        require_valid_variation(
+            "exclusivity loose",
+            validate_variation_cross_sections(nominal, c_nom, ex_loose, c_exl, map_exl));
+        require_valid_variation(
+            "exclusivity tight",
+            validate_variation_cross_sections(nominal, c_nom, ex_tight, c_ext, map_ext));
+        require_valid_variation(
+            "fiducial loose",
+            validate_variation_cross_sections(nominal, c_nom, fi_loose, c_fil, map_fil));
+        require_valid_variation(
+            "fiducial tight",
+            validate_variation_cross_sections(nominal, c_nom, fi_tight, c_fit, map_fit));
+
         const size_t c_ex_raw = ensure_col(nominal, "Syst. err (exclusivity cuts, raw)");
         const size_t c_ex_fin = ensure_col(nominal, "Syst. err (exclusivity cuts)");
         const size_t c_fi_raw = ensure_col(nominal, "Syst. err (fiducial cuts, raw)");
@@ -474,8 +575,10 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
             r.fid_tight = parse_triple(fi_tight.rows[d->second][c_fit]);
 
             if (r.nominal.ok) {
-                r.excl_delta_loose_raw = r.excl_loose.ok ? r.excl_loose.value - r.nominal.value : 0.0;
-                r.excl_delta_tight_raw = r.excl_tight.ok ? r.excl_tight.value - r.nominal.value : 0.0;
+                // The preflight validation guarantees that all four varied
+                // tuples are readable for every nominally populated bin.
+                r.excl_delta_loose_raw = r.excl_loose.value - r.nominal.value;
+                r.excl_delta_tight_raw = r.excl_tight.value - r.nominal.value;
                 r.excl_barlow_loose = barlow_value(r.excl_loose, r.nominal);
                 r.excl_barlow_tight = barlow_value(r.excl_tight, r.nominal);
                 r.excl_keep_loose = !options.apply_barlow || r.excl_barlow_loose >= options.barlow_threshold;
@@ -484,8 +587,8 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
                 r.excl_final_abs = rms_absolute(r.excl_keep_loose ? r.excl_delta_loose_raw : 0.0,
                                                      r.excl_keep_tight ? r.excl_delta_tight_raw : 0.0);
 
-                r.fid_delta_loose_raw = r.fid_loose.ok ? r.fid_loose.value - r.nominal.value : 0.0;
-                r.fid_delta_tight_raw = r.fid_tight.ok ? r.fid_tight.value - r.nominal.value : 0.0;
+                r.fid_delta_loose_raw = r.fid_loose.value - r.nominal.value;
+                r.fid_delta_tight_raw = r.fid_tight.value - r.nominal.value;
                 r.fid_barlow_loose = barlow_value(r.fid_loose, r.nominal);
                 r.fid_barlow_tight = barlow_value(r.fid_tight, r.nominal);
                 r.fid_keep_loose = !options.apply_barlow || r.fid_barlow_loose >= options.barlow_threshold;
