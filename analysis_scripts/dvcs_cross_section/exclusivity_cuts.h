@@ -39,6 +39,10 @@ struct StagePlan { std::vector<std::string> vars; };
 struct ExclusivityDiagnosticConfig {
     bool enable = false;
 
+    // Produce the standard per-period/per-topology cut-stage comparison canvases.
+    // Keep true for the nominal extraction; disable for automatic systematic variations.
+    bool make_cut_extraction_comparison_plots = true;
+
     // Recommended default for the present DVCS acceptance investigation.
     bool include_dvcs = true;
     bool include_eppi0 = false;

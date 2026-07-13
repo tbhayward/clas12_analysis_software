@@ -908,7 +908,8 @@ static void processOneChannelAllTopologies(
     const std::string& outPlotDir,
     std::map<Topology, CutDict>& outCuts,
     double upperTailQuantile,
-    double symmetricSigmaMultiplier)
+    double symmetricSigmaMultiplier,
+    bool makeCutExtractionComparisonPlots)
 {
     static const Topology topologies[] = {
         Topology::FD_FD, Topology::CD_FD, Topology::CD_FT
@@ -929,8 +930,10 @@ static void processOneChannelAllTopologies(
 
         for (Topology topo : topologies) {
             FilledHists& H = allHists.at(topo);
-            saveStagePlots(H, cfg, ch, prettyPeriod, topo,
-                           outPlotDir, "cut_" + std::to_string(s));
+            if (makeCutExtractionComparisonPlots) {
+                saveStagePlots(H, cfg, ch, prettyPeriod, topo,
+                               outPlotDir, "cut_" + std::to_string(s));
+            }
 
             if (s < static_cast<int>(stages.size())) {
                 updateCumulativeCuts(H, stages[s], cumulative.at(topo), upperTailQuantile, symmetricSigmaMultiplier);
@@ -951,7 +954,8 @@ static void processPeriod(
     std::map<std::string, CutDict>& combined_out,
     std::mutex& combined_mutex,
     double upperTailQuantile,
-    double symmetricSigmaMultiplier)
+    double symmetricSigmaMultiplier,
+    bool makeCutExtractionComparisonPlots)
 {
     TH1::AddDirectory(kFALSE);
 
@@ -960,7 +964,8 @@ static void processPeriod(
         std::map<Topology, CutDict> cutsByTopology;
         processOneChannelAllTopologies(pretty, Channel::DVCS, W.label,
                                        W.dvcs_data, W.dvcs_mc, outPlotDir,
-                                       cutsByTopology, upperTailQuantile, symmetricSigmaMultiplier);
+                                       cutsByTopology, upperTailQuantile, symmetricSigmaMultiplier,
+                                       makeCutExtractionComparisonPlots);
 
         {
             std::lock_guard<std::mutex> lock(combined_mutex);
@@ -976,7 +981,8 @@ static void processPeriod(
         std::map<Topology, CutDict> cutsByTopology;
         processOneChannelAllTopologies(pretty, Channel::EPPI0, W.label,
                                        W.eppi0_data, W.eppi0_mc, outPlotDir,
-                                       cutsByTopology, upperTailQuantile, symmetricSigmaMultiplier);
+                                       cutsByTopology, upperTailQuantile, symmetricSigmaMultiplier,
+                                       makeCutExtractionComparisonPlots);
 
         {
             std::lock_guard<std::mutex> lock(combined_mutex);
@@ -1507,7 +1513,9 @@ void runAllExclusivityCuts(
         while (true) {
             size_t i = idx.fetch_add(1);
             if (i >= work.size()) break;
-            processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex, diagCfg.upper_tail_quantile, diagCfg.symmetric_sigma_multiplier);
+            processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex,
+                          diagCfg.upper_tail_quantile, diagCfg.symmetric_sigma_multiplier,
+                          diagCfg.make_cut_extraction_comparison_plots);
         }
     };
 

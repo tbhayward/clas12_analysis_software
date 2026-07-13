@@ -278,6 +278,8 @@ bool produce_variation(
     excl_cfg.symmetric_sigma_multiplier = spec.sigma;
     excl_cfg.upper_tail_quantile = spec.quantile;
     excl_cfg.enable = false;
+    excl_cfg.make_cut_extraction_comparison_plots =
+        options.make_exclusivity_extraction_plots;
     runAllExclusivityCuts(dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
                           json_dir.string(),
                           plots_dir.string(),
