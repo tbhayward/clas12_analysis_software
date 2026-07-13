@@ -670,7 +670,7 @@ int main(int argc, char* argv[]) {
     // and produces bin-by-bin diagnostic canvases.
     {
         AutomaticCutVariationOptions cut_variation_opts;
-        cut_variation_opts.enabled = false;
+        cut_variation_opts.enabled = true;
         cut_variation_opts.make_exclusivity_extraction_plots = false;
         cut_variation_opts.make_final_diagnostic_plots = true;
         cut_variation_opts.max_workers = 7;
