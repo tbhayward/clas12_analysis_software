@@ -32,6 +32,7 @@
 #include "pass1_paper_plots.h"
 #include "branch_data_mc_comparison.h"
 #include "pi0_subtracted_kinematics.h"
+#include "external_scripts_runner.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -160,6 +161,7 @@ int main(int argc, char* argv[]) {
 
     const bool use_nobkg_dvcs_mc_for_acceptance = false;
     const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
+
     // --------- Raw yields/counts into CSV + plots ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
@@ -222,6 +224,28 @@ int main(int argc, char* argv[]) {
             std::exit(EXIT_FAILURE);
         }
     }
+
+    // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    //
+    //     Eppi0NormalizationOptions norm_opts;
+    //     norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+    //     norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
+    //     norm_opts.output_dir = "output/data_mc_normalization";
+    //     norm_opts.override_to_unity = true;
+    //     norm_opts.max_workers = 7;
+    //
+    //     if (!update_eppi0_normalization_csv(csv_main,
+    //                                         dataTrees,
+    //                                         eppi0DataTrees,
+    //                                         eppi0RecMcTrees,
+    //                                         norm_opts)) {
+    //         std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
     {
@@ -551,7 +575,7 @@ int main(int argc, char* argv[]) {
         LumiBuildOptions lumi_opts;
 
         lumi_opts.use_second_column_charge_for_all_unpolarized = true;
-        lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = true;
+        lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
         lumi_opts.columns_3_to_5_charge_sum_scale = 1.025;
 
         LumiMap lumi_map = build_lumi_map(lumi_opts);
@@ -635,6 +659,22 @@ int main(int argc, char* argv[]) {
                           << lab << "\n";
                 return 1;
             }
+        }
+    }
+
+    // --------- External integrated and legacy cross-section studies ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        ExternalScriptOptions external_opts;
+        external_opts.scripts_directory = "external_scripts";
+        external_opts.python_executable = "python";
+        external_opts.include_bin_to_bin_systematics = true;
+        external_opts.use_simple_clas6_cross_check = true;
+
+        if (!run_external_cross_section_scripts(csv_main, external_opts)) {
+            std::cerr << "[main] FATAL: external cross-section scripts failed.\n";
+            return 1;
         }
     }
 
