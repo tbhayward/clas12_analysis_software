@@ -56,6 +56,9 @@ struct ExclusivityDiagnosticConfig {
     // default in global_cuts, so the before/after plots should normally agree.
     bool make_pTmiss_before_global_pTmiss_plots = false;
 
+    // Sigma multiplier used for centered Gaussian windows.
+    double symmetric_sigma_multiplier = 3.0;
+
     // Quantile used for pTmiss and theta_gamma_gamma/theta_pi0_pi0.
     double upper_tail_quantile = 0.99;
 

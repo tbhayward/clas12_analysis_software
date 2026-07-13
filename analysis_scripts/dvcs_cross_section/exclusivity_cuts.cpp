@@ -669,14 +669,14 @@ static double histQuantile(TH1D* h, double q) {
     return quant[0];
 }
 
-static Stats makeSymmetric3SigmaStats(TH1D* h) {
+static Stats makeSymmetricSigmaStats(TH1D* h, double sigmaMultiplier) {
     Stats s = meanStd(h);
     s.mode = "symmetric_3sigma";
     s.quantile = 0.0;
 
     if (std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0) {
-        s.cut_low = s.mean - 3.0 * s.std;
-        s.cut_high = s.mean + 3.0 * s.std;
+        s.cut_low = s.mean - sigmaMultiplier * s.std;
+        s.cut_high = s.mean + sigmaMultiplier * s.std;
     } else {
         s.cut_low = -1.0e99;
         s.cut_high =  1.0e99;
@@ -701,7 +701,7 @@ static Stats makeUpperQuantileStats(TH1D* h, double q) {
 
 // -------------------- cumulative updates --------------------
 
-static void updateCumulativeCuts(const FilledHists& H, const StagePlan& stage, CutDict& cumulative, double upperTailQuantile) {
+static void updateCumulativeCuts(const FilledHists& H, const StagePlan& stage, CutDict& cumulative, double upperTailQuantile, double symmetricSigmaMultiplier) {
     for (const std::string& var : stage.vars) {
         TH1D* dh = H.data.count(var) ? H.data.at(var) : nullptr;
         TH1D* mh = H.mc.count(var)   ? H.mc.at(var)   : nullptr;
@@ -710,8 +710,8 @@ static void updateCumulativeCuts(const FilledHists& H, const StagePlan& stage, C
             cumulative.data[var] = makeUpperQuantileStats(dh, upperTailQuantile);
             cumulative.mc[var]   = makeUpperQuantileStats(mh, upperTailQuantile);
         } else {
-            cumulative.data[var] = makeSymmetric3SigmaStats(dh);
-            cumulative.mc[var]   = makeSymmetric3SigmaStats(mh);
+            cumulative.data[var] = makeSymmetricSigmaStats(dh, symmetricSigmaMultiplier);
+            cumulative.mc[var]   = makeSymmetricSigmaStats(mh, symmetricSigmaMultiplier);
         }
     }
 }
@@ -907,7 +907,8 @@ static void processOneChannelAllTopologies(
     TTree* dataTree, TTree* mcTree,
     const std::string& outPlotDir,
     std::map<Topology, CutDict>& outCuts,
-    double upperTailQuantile)
+    double upperTailQuantile,
+    double symmetricSigmaMultiplier)
 {
     static const Topology topologies[] = {
         Topology::FD_FD, Topology::CD_FD, Topology::CD_FT
@@ -932,7 +933,7 @@ static void processOneChannelAllTopologies(
                            outPlotDir, "cut_" + std::to_string(s));
 
             if (s < static_cast<int>(stages.size())) {
-                updateCumulativeCuts(H, stages[s], cumulative.at(topo), upperTailQuantile);
+                updateCumulativeCuts(H, stages[s], cumulative.at(topo), upperTailQuantile, symmetricSigmaMultiplier);
             }
 
             for (auto& kv : H.data) delete kv.second;
@@ -949,7 +950,8 @@ static void processPeriod(
     const std::string& outPlotDir,
     std::map<std::string, CutDict>& combined_out,
     std::mutex& combined_mutex,
-    double upperTailQuantile)
+    double upperTailQuantile,
+    double symmetricSigmaMultiplier)
 {
     TH1::AddDirectory(kFALSE);
 
@@ -958,7 +960,7 @@ static void processPeriod(
         std::map<Topology, CutDict> cutsByTopology;
         processOneChannelAllTopologies(pretty, Channel::DVCS, W.label,
                                        W.dvcs_data, W.dvcs_mc, outPlotDir,
-                                       cutsByTopology, upperTailQuantile);
+                                       cutsByTopology, upperTailQuantile, symmetricSigmaMultiplier);
 
         {
             std::lock_guard<std::mutex> lock(combined_mutex);
@@ -974,7 +976,7 @@ static void processPeriod(
         std::map<Topology, CutDict> cutsByTopology;
         processOneChannelAllTopologies(pretty, Channel::EPPI0, W.label,
                                        W.eppi0_data, W.eppi0_mc, outPlotDir,
-                                       cutsByTopology, upperTailQuantile);
+                                       cutsByTopology, upperTailQuantile, symmetricSigmaMultiplier);
 
         {
             std::lock_guard<std::mutex> lock(combined_mutex);
@@ -1505,7 +1507,7 @@ void runAllExclusivityCuts(
         while (true) {
             size_t i = idx.fetch_add(1);
             if (i >= work.size()) break;
-            processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex, diagCfg.upper_tail_quantile);
+            processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex, diagCfg.upper_tail_quantile, diagCfg.symmetric_sigma_multiplier);
         }
     };
 

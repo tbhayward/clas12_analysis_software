@@ -595,6 +595,10 @@ static void add_pass1_fixed_systematic_columns(std::vector<std::string>& H) {
     H.push_back("Syst. err (Acceptance)");
     H.push_back("Syst.err (Frad)");
     H.push_back("Syst.err (Fbin)");
+    H.push_back("Syst. err (exclusivity cuts, raw)");
+    H.push_back("Syst. err (exclusivity cuts)");
+    H.push_back("Syst. err (fiducial cuts, raw)");
+    H.push_back("Syst. err (fiducial cuts)");
     H.push_back("Syst. err (point-to-point total)");
 }
 

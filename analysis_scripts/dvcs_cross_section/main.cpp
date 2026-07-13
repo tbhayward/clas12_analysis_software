@@ -33,6 +33,7 @@
 #include "branch_data_mc_comparison.h"
 #include "pi0_subtracted_kinematics.h"
 #include "external_scripts_runner.h"
+#include "cut_variation_runner.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -68,7 +69,7 @@ int main(int argc, char* argv[]) {
     global_cfg.required_detector2 = 0;  // 0 FT photon, 1 FD photon
 
     // Electron FD sector study. Electron is always FD.
-    global_cfg.enable_electron_fd_sector_filter = true;
+    global_cfg.enable_electron_fd_sector_filter = false;
     global_cfg.electron_fd_sector = 1;
 
     // Proton FD sector study. This automatically keeps only FD-FD events.
@@ -659,6 +660,33 @@ int main(int argc, char* argv[]) {
                           << lab << "\n";
                 return 1;
             }
+        }
+    }
+
+    // --------- Automatic exclusivity/fiducial cut point-to-point systematics ----------
+    // One top-level switch controls all four nonnominal selections. The runner
+    // clones the completed nominal CSV, recomputes only the cut-dependent chain,
+    // applies Barlow B >= 1, writes raw/final absolute uncertainties in nb/GeV^4,
+    // and produces bin-by-bin diagnostic canvases.
+    {
+        AutomaticCutVariationOptions cut_variation_opts;
+        cut_variation_opts.enabled = false;
+        cut_variation_opts.make_exclusivity_extraction_plots = false;
+        cut_variation_opts.make_final_diagnostic_plots = true;
+        cut_variation_opts.max_workers = 7;
+        cut_variation_opts.nominal_csv = "output/csvs/dvcs_pass2_analysis.csv";
+        cut_variation_opts.output_dir = "output/cut_variation_systematics";
+
+        if (!run_automatic_cut_variation_systematics(
+                cut_variation_opts,
+                global_cfg,
+                dataTrees, genMcTrees, recMcTrees,
+                eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+                currentStudyGenMcTrees, currentStudyRecMcTrees,
+                use_nobkg_dvcs_mc_for_acceptance,
+                use_epg_mc_current_factor_for_eppi0_bkg)) {
+            std::cerr << "[main] ERROR: automatic cut-variation systematics failed.\n";
+            return 1;
         }
     }
 
