@@ -42,6 +42,8 @@ struct Component {
     std::string column;
     std::string label;
     int marker = 20;
+    int color = 1;
+    int line_style = 1;
 };
 
 struct BinAccumulator {
@@ -132,13 +134,13 @@ static bool parse_tuple_first(const std::string& raw, double& value) {
 
 static std::vector<Component> components() {
     return {
-        {"Syst. err (pi0 subtraction)", "#pi^{0} subtraction", 20},
-        {"Syst. err (Acceptance)", "Acceptance", 21},
-        {"Syst.err (Frad)", "F_{rad}", 22},
-        {"Syst.err (Fbin)", "F_{bin}", 23},
-        {"Syst. err (exclusivity cuts)", "Exclusivity cuts", 24},
-        {"Syst. err (fiducial cuts)", "Fiducial cuts", 25},
-        {"Syst. err (point-to-point total)", "Total", 29}
+        {"Syst. err (pi0 subtraction)", "#pi^{0} subtraction", 20, kBlue + 1, 1},
+        {"Syst. err (Acceptance)", "Acceptance", 21, kRed + 1, 1},
+        {"Syst.err (Frad)", "F_{rad}", 22, kGreen + 2, 1},
+        {"Syst.err (Fbin)", "F_{bin}", 23, kMagenta + 1, 1},
+        {"Syst. err (exclusivity cuts)", "Exclusivity cuts", 24, kOrange + 7, 1},
+        {"Syst. err (fiducial cuts)", "Fiducial cuts", 25, kCyan + 2, 1},
+        {"Syst. err (point-to-point total)", "Total", 29, kBlack, 1}
     };
 }
 
@@ -188,11 +190,19 @@ static bool row_x(const CsvTable& t, const std::vector<std::string>& row,
 }
 
 static void style_pad(TPad* p) {
-    p->SetLeftMargin(0.12);
-    p->SetRightMargin(0.04);
-    p->SetBottomMargin(0.13);
-    p->SetTopMargin(0.08);
-    p->SetGridy();
+    p->SetLeftMargin(0.105);
+    p->SetRightMargin(0.025);
+    p->SetBottomMargin(0.135);
+    p->SetTopMargin(0.155);
+    p->SetGridx(false);
+    p->SetGridy(true);
+    p->SetTicks(1, 1);
+    p->SetLogy(true);
+}
+
+static double log_upper_bound(double maximum, double fallback) {
+    if (!(maximum > 0.0) || !std::isfinite(maximum)) return fallback;
+    return std::pow(10.0, std::ceil(std::log10(maximum * 1.35)));
 }
 
 static bool make_one(const CsvTable& table, const VariableSpec& var,
@@ -249,57 +259,110 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
     std::sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a.x < b.x; });
     if (points.empty()) return false;
 
-    TCanvas c(("c_syst_" + var.name).c_str(), "", 1300, 1000);
-    c.Divide(1, 2, 0.0, 0.0);
+    TCanvas c(("c_syst_" + var.name).c_str(), "", 1500, 1100);
+    c.Divide(1, 2, 0.0, 0.015);
     std::vector<std::unique_ptr<TGraphErrors> > graphs_abs;
     std::vector<std::unique_ptr<TGraphErrors> > graphs_rel;
 
     auto draw_panel = [&](int pad_index, bool relative) {
         TPad* pad = static_cast<TPad*>(c.cd(pad_index));
         style_pad(pad);
-        TLegend* leg = new TLegend(0.13, 0.64, 0.48, 0.91);
-        leg->SetBorderSize(0);
-        leg->SetFillStyle(0);
-        leg->SetNColumns(2);
 
-        double ymax = 0.0;
+        const double ymin = relative ? 1.0e-4 : 1.0e-6;
+        double observed_max = 0.0;
         for (const auto& p : points) {
-            for (double y : relative ? p.r : p.a) if (std::isfinite(y)) ymax = std::max(ymax, y);
+            const auto& values = relative ? p.r : p.a;
+            for (double y : values) {
+                if (std::isfinite(y) && y > 0.0) observed_max = std::max(observed_max, y);
+            }
         }
-        if (!(ymax > 0.0)) ymax = 1.0;
+
+        // The relative panel is intentionally capped at 100% so a handful of
+        // pathological low-cross-section bins do not destroy the useful scale.
+        const double ymax = relative ? 100.0 : log_upper_bound(observed_max, 1.0);
+
+        TLegend* leg = new TLegend(0.12, 0.835, 0.88, 0.955);
+        leg->SetBorderSize(1);
+        leg->SetLineColor(kGray + 1);
+        leg->SetFillColor(kWhite);
+        leg->SetFillStyle(1001);
+        leg->SetTextFont(42);
+        leg->SetTextSize(0.031);
+        leg->SetNColumns(4);
+        leg->SetMargin(0.18);
+        leg->SetColumnSeparation(0.08);
 
         bool first = true;
         for (size_t j = 0; j < comps.size(); ++j) {
             std::vector<double> x, y, ex, ey;
             for (const auto& p : points) {
                 const double yy = relative ? p.r[j] : p.a[j];
-                if (!std::isfinite(yy)) continue;
-                x.push_back(p.x); y.push_back(yy); ex.push_back(0.0); ey.push_back(0.0);
+                if (!std::isfinite(yy) || yy <= 0.0) continue;
+                x.push_back(p.x);
+                y.push_back(yy);
+                ex.push_back(0.0);
+                ey.push_back(0.0);
             }
-            auto g = std::make_unique<TGraphErrors>((int)x.size(), x.data(), y.data(), ex.data(), ey.data());
+            if (x.empty()) continue;
+
+            auto g = std::make_unique<TGraphErrors>(
+                static_cast<int>(x.size()), x.data(), y.data(), ex.data(), ey.data());
             g->SetMarkerStyle(comps[j].marker);
-            g->SetMarkerSize(comps[j].label == "Total" ? 1.2 : 0.9);
-            g->SetLineWidth(comps[j].label == "Total" ? 3 : 2);
+            g->SetMarkerColor(comps[j].color);
+            g->SetLineColor(comps[j].color);
+            g->SetLineStyle(comps[j].line_style);
+            g->SetMarkerSize(comps[j].label == "Total" ? 1.15 : 0.90);
+            g->SetLineWidth(comps[j].label == "Total" ? 4 : 2);
             g->SetTitle("");
+
             if (first) {
                 g->GetXaxis()->SetTitle(var.x_title.c_str());
-                g->GetYaxis()->SetTitle(relative ? "Mean systematic / |#sigma| (%)"
-                                                 : "Mean systematic (nb/GeV^{4})");
-                g->GetYaxis()->SetRangeUser(0.0, 1.25 * ymax);
-                g->Draw("APL");
+                g->GetYaxis()->SetTitle(relative
+                    ? "Mean point-to-point systematic / |#sigma| (%)"
+                    : "Mean point-to-point systematic (nb/GeV^{4})");
+                g->GetXaxis()->SetTitleFont(42);
+                g->GetYaxis()->SetTitleFont(42);
+                g->GetXaxis()->SetLabelFont(42);
+                g->GetYaxis()->SetLabelFont(42);
+                g->GetXaxis()->SetTitleSize(0.047);
+                g->GetYaxis()->SetTitleSize(0.047);
+                g->GetXaxis()->SetLabelSize(0.039);
+                g->GetYaxis()->SetLabelSize(0.039);
+                g->GetYaxis()->SetTitleOffset(1.02);
+                g->GetXaxis()->SetTitleOffset(1.08);
+                g->GetYaxis()->SetRangeUser(ymin, ymax);
+                g->GetYaxis()->SetMoreLogLabels(true);
+                g->GetYaxis()->SetNoExponent(false);
+                g->Draw("ALP");
                 first = false;
             } else {
-                g->Draw("PL SAME");
+                g->Draw("LP SAME");
             }
-            leg->AddEntry(g.get(), comps[j].label.c_str(), "pl");
+
+            leg->AddEntry(g.get(), comps[j].label.c_str(), "lp");
             if (relative) graphs_rel.push_back(std::move(g));
             else graphs_abs.push_back(std::move(g));
         }
+
         leg->Draw();
+
         TLatex latex;
         latex.SetNDC();
-        latex.SetTextSize(0.04);
-        latex.DrawLatex(0.62, 0.90, relative ? "Relative average size" : "Absolute average size");
+        latex.SetTextFont(42);
+        latex.SetTextSize(0.038);
+        latex.SetTextAlign(31);
+        latex.DrawLatex(0.975, 0.975,
+            relative ? "Relative average systematic size" : "Absolute average systematic size");
+
+        if (relative) {
+            latex.SetTextAlign(11);
+            latex.SetTextSize(0.027);
+            latex.SetTextColor(kGray + 2);
+            latex.DrawLatex(0.115, 0.785, "Values above 100% are clipped by the display range");
+            latex.SetTextColor(kBlack);
+        }
+
+        pad->RedrawAxis();
     };
 
     draw_panel(1, false);

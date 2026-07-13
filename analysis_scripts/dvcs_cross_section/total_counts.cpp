@@ -3187,13 +3187,13 @@ bool update_total_counts_csv(const std::string& csv_path,
         dvcs_data.channel_cfg = dvcs_config();
         dvcs_data.sample_kind = SampleKind::DATA;
         dvcs_data.write_data_raw_columns = true;
-        dvcs_data.make_plots = true;
+        dvcs_data.make_plots = options.make_plots;
 
         WorkConfig eppi0_data;
         eppi0_data.channel_cfg = eppi0_config();
         eppi0_data.sample_kind = SampleKind::DATA;
         eppi0_data.write_data_raw_columns = true;
-        eppi0_data.make_plots = true;
+        eppi0_data.make_plots = options.make_plots;
 
         WorkConfig dvcs_gen;
         dvcs_gen.channel_cfg = dvcs_config();
@@ -3373,8 +3373,13 @@ bool update_total_counts_csv(const std::string& csv_path,
             }
         }
 
-        std::cout << "[total_counts] Plots written under: "
-                  << normalize_total_counts_root(out_root_dir) << std::endl;
+        if (options.make_plots) {
+            std::cout << "[total_counts] Plots written under: "
+                      << normalize_total_counts_root(out_root_dir) << std::endl;
+        } else {
+            std::cout << "[total_counts] Per-bin total-count plots disabled for this run."
+                      << std::endl;
+        }
 
         return true;
     } catch (const std::exception& e) {

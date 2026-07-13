@@ -12,6 +12,11 @@ struct TotalCountsOptions {
     // overlaid files. This affects only ep->epg MC counts; data, ep->eppi0 MC,
     // and ep->eppi0->epg background MC are unchanged.
     bool use_nobkg_dvcs_mc_counts = false;
+
+    // Controls the large per-period/topology total-count canvases. Keep true
+    // for the nominal production workflow; automatic cut variations set this
+    // false because only their numerical counts are needed.
+    bool make_plots = true;
 };
 
 /**
