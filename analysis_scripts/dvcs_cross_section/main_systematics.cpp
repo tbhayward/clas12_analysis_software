@@ -37,6 +37,7 @@
 #include "combination_point_to_point_systematics.h"
 #include "sp19_inb_energy_scaling_systematics.h"
 #include "run_period_consistency_systematics.h"
+#include "systematic_projection_plots.h"
 
 namespace fs = std::filesystem;
 
@@ -400,6 +401,13 @@ int main(int argc, char* argv[]) {
 
         if (!combination_point_to_point_systematics(csv_main, "output/systematics")) {
             std::cerr << "[systematics] FATAL: combination_point_to_point_systematics failed.\n";
+            return 1;
+        }
+
+        if (!make_systematic_projection_plots(
+                csv_main,
+                "output/systematics/point_to_point_projections")) {
+            std::cerr << "[systematics] FATAL: make_systematic_projection_plots failed.\n";
             return 1;
         }
 

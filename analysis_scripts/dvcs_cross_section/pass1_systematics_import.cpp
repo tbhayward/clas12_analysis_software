@@ -308,6 +308,161 @@ struct Pass1SystValues {
     std::map<std::string, std::string> values;
 };
 
+struct KinematicPoint {
+    double xb = std::numeric_limits<double>::quiet_NaN();
+    double q2 = std::numeric_limits<double>::quiet_NaN();
+    double t = std::numeric_limits<double>::quiet_NaN();
+    double phi = std::numeric_limits<double>::quiet_NaN();
+};
+
+struct Pass1SourceRow {
+    int bin_index = 0;
+    KinematicPoint point;
+    Pass1SystValues values;
+};
+
+static KinematicPoint point_from_pass1_row(const CsvTable& table,
+                                           const std::vector<std::string>& row) {
+    KinematicPoint p;
+    p.xb = 0.5 * (to_double(get_cell(row, table, "xBmin")) +
+                  to_double(get_cell(row, table, "xBmax")));
+    p.q2 = 0.5 * (to_double(get_cell(row, table, "Q2min")) +
+                  to_double(get_cell(row, table, "Q2max")));
+    p.t = 0.5 * (to_double(get_cell(row, table, "tmin")) +
+                 to_double(get_cell(row, table, "tmax")));
+    p.phi = 0.5 * (to_double(get_cell(row, table, "phimin")) +
+                   to_double(get_cell(row, table, "phimax")));
+    return p;
+}
+
+static KinematicPoint point_from_pass2_row(const CsvTable& table,
+                                           const std::vector<std::string>& row) {
+    KinematicPoint p;
+    p.xb = 0.5 * (to_double(get_cell(row, table, "xBmin")) +
+                  to_double(get_cell(row, table, "xBmax")));
+    p.q2 = 0.5 * (to_double(get_cell(row, table, "Q2min")) +
+                  to_double(get_cell(row, table, "Q2max")));
+    p.t = 0.5 * (to_double(get_cell(row, table, "t_abs_min")) +
+                 to_double(get_cell(row, table, "t_abs_max")));
+    p.phi = 0.5 * (to_double(get_cell(row, table, "phimin")) +
+                   to_double(get_cell(row, table, "phimax")));
+    return p;
+}
+
+static bool finite_point(const KinematicPoint& p) {
+    return std::isfinite(p.xb) && std::isfinite(p.q2) &&
+           std::isfinite(p.t) && std::isfinite(p.phi);
+}
+
+static bool point_less(const KinematicPoint& a, const KinematicPoint& b) {
+    if (a.xb != b.xb) return a.xb < b.xb;
+    if (a.q2 != b.q2) return a.q2 < b.q2;
+    if (a.t != b.t) return a.t < b.t;
+    return a.phi < b.phi;
+}
+
+static double periodic_phi_delta(double a, double b) {
+    double d = std::fabs(a - b);
+    while (d >= 360.0) d -= 360.0;
+    return std::min(d, 360.0 - d);
+}
+
+static double kinematic_distance2(const KinematicPoint& a,
+                                  const KinematicPoint& b) {
+    // Scale each coordinate by a representative analysis-bin spacing so the
+    // four dimensions contribute comparably to the neighbor search.
+    const double dxb = (a.xb - b.xb) / 0.04;
+    const double dq2 = (a.q2 - b.q2) / 0.30;
+    const double dt = (a.t - b.t) / 0.20;
+    const double dphi = periodic_phi_delta(a.phi, b.phi) / 15.0;
+    return dxb*dxb + dq2*dq2 + dt*dt + dphi*dphi;
+}
+
+static bool average_neighbor_values(const Pass1SourceRow& below,
+                                    const Pass1SourceRow& above,
+                                    Pass1SystValues& out) {
+    out.values.clear();
+    for (const auto& col : pass1_systematic_component_columns()) {
+        const double lo = to_double(below.values.values.at(col));
+        const double hi = to_double(above.values.values.at(col));
+        if (!std::isfinite(lo) || !std::isfinite(hi)) {
+            return false;
+        }
+        out.values[col] = format_double(0.5 * (lo + hi));
+    }
+    out.values[pass1_systematic_total_column()] =
+        format_double(quadrature_total_from_components(out.values));
+    return true;
+}
+
+static bool interpolate_from_kinematic_neighbors(
+    const KinematicPoint& target,
+    const std::vector<Pass1SourceRow>& sources,
+    Pass1SystValues& out,
+    int& below_bin,
+    int& above_bin,
+    double& below_distance,
+    double& above_distance) {
+
+    const Pass1SourceRow* below = nullptr;
+    const Pass1SourceRow* above = nullptr;
+    double best_below = std::numeric_limits<double>::infinity();
+    double best_above = std::numeric_limits<double>::infinity();
+
+    for (const auto& src : sources) {
+        if (!finite_point(src.point)) continue;
+        const double d2 = kinematic_distance2(target, src.point);
+        if (point_less(src.point, target)) {
+            if (d2 < best_below) {
+                best_below = d2;
+                below = &src;
+            }
+        } else if (point_less(target, src.point)) {
+            if (d2 < best_above) {
+                best_above = d2;
+                above = &src;
+            }
+        }
+    }
+
+    if (!below || !above) {
+        // Edge-of-phase-space fallback: there may be no lexicographically lower
+        // or upper pass-1 bin. In that case use the two nearest kinematic
+        // neighbors overall rather than leaving the pass-2 systematic blank.
+        const Pass1SourceRow* first = nullptr;
+        const Pass1SourceRow* second = nullptr;
+        double d_first = std::numeric_limits<double>::infinity();
+        double d_second = std::numeric_limits<double>::infinity();
+        for (const auto& src : sources) {
+            if (!finite_point(src.point)) continue;
+            const double d2 = kinematic_distance2(target, src.point);
+            if (d2 < d_first) {
+                d_second = d_first;
+                second = first;
+                d_first = d2;
+                first = &src;
+            } else if (d2 < d_second) {
+                d_second = d2;
+                second = &src;
+            }
+        }
+        if (!first || !second) return false;
+        below = first;
+        above = second;
+        best_below = d_first;
+        best_above = d_second;
+    }
+
+    if (!average_neighbor_values(*below, *above, out)) return false;
+
+    below_bin = below->bin_index;
+    above_bin = above->bin_index;
+    below_distance = std::sqrt(best_below);
+    above_distance = std::sqrt(best_above);
+    return true;
+}
+
+
 static std::string make_boundary_key(double xb_min,
                                      double xb_max,
                                      double q2_min,
@@ -395,6 +550,7 @@ bool import_pass1_systematics(const std::string& csv_path,
 
         std::map<int, Pass1SystValues> by_bin_index;
         std::map<std::string, Pass1SystValues> by_boundary_key;
+        std::vector<Pass1SourceRow> interpolation_sources;
 
         for (const auto& row : pass1.rows) {
             Pass1SystValues values;
@@ -413,11 +569,27 @@ bool import_pass1_systematics(const std::string& csv_path,
             if (!key.empty()) {
                 by_boundary_key[key] = values;
             }
+
+            Pass1SourceRow source;
+            source.bin_index = bin_index;
+            source.point = point_from_pass1_row(pass1, row);
+            source.values = values;
+            interpolation_sources.push_back(source);
         }
 
         int matched_by_index = 0;
         int matched_by_boundaries = 0;
+        int interpolated = 0;
         int unmatched = 0;
+
+        const std::string audit_path = csv_path + ".interpolated_pass1_systematics.csv";
+        std::ofstream audit(audit_path);
+        if (!audit.is_open()) {
+            throw std::runtime_error("Could not open interpolation audit CSV: " + audit_path);
+        }
+        audit << "pass2_bin_index,xB_center,Q2_center,t_center,phi_center,"
+              << "below_pass1_bin,above_pass1_bin,below_scaled_distance,above_scaled_distance,"
+              << "pi0,acceptance,Frad,Fbin,total\n";
 
         for (auto& row : pass2.rows) {
             const int bin_index = to_int(get_cell(row, pass2, "bin index"));
@@ -436,9 +608,40 @@ bool import_pass1_systematics(const std::string& csv_path,
                 }
             }
 
+            Pass1SystValues interpolated_values;
+            int below_bin = 0;
+            int above_bin = 0;
+            double below_distance = std::numeric_limits<double>::quiet_NaN();
+            double above_distance = std::numeric_limits<double>::quiet_NaN();
+
             if (!values) {
-                ++unmatched;
-                continue;
+                const KinematicPoint target = point_from_pass2_row(pass2, row);
+                if (finite_point(target) &&
+                    interpolate_from_kinematic_neighbors(target,
+                                                         interpolation_sources,
+                                                         interpolated_values,
+                                                         below_bin,
+                                                         above_bin,
+                                                         below_distance,
+                                                         above_distance)) {
+                    values = &interpolated_values;
+                    ++interpolated;
+                    audit << bin_index << ','
+                          << format_double(target.xb) << ','
+                          << format_double(target.q2) << ','
+                          << format_double(target.t) << ','
+                          << format_double(target.phi) << ','
+                          << below_bin << ',' << above_bin << ','
+                          << format_double(below_distance) << ','
+                          << format_double(above_distance);
+                    for (const auto& col : pass1_systematic_destination_columns()) {
+                        audit << ',' << values->values.at(col);
+                    }
+                    audit << '\n';
+                } else {
+                    ++unmatched;
+                    continue;
+                }
             }
 
             for (const auto& col : pass1_systematic_destination_columns()) {
@@ -454,7 +657,9 @@ bool import_pass1_systematics(const std::string& csv_path,
                   << pass1_summary_path << "\n";
         std::cout << "[pass1-systematics] Rows matched by bin index: " << matched_by_index
                   << ", by boundaries: " << matched_by_boundaries
+                  << ", interpolated from nearest lower/upper kinematic neighbors: " << interpolated
                   << ", unmatched: " << unmatched << "\n";
+        std::cout << "[pass1-systematics] Interpolation audit: " << audit_path << "\n";
         std::cout << "[pass1-systematics] Filled columns:";
         for (const auto& col : pass1_systematic_destination_columns()) {
             std::cout << "\n  - " << col;
