@@ -13,7 +13,7 @@ MAIN_CPP="main.cpp"
 BUILD_CMD=(make -j8)
 
 # Command used to run the complete DVCS analysis.
-RUN_CMD=(./main)
+RUN_CMD=(./dvcs_analysis)
 
 # Final CSV produced by each analysis run.
 FINAL_CSV="output/csvs/dvcs_pass2_analysis.csv"
