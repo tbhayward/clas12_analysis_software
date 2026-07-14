@@ -8,12 +8,16 @@ Main outputs under --output-dir:
 
   cross_section_comparison/
       panels/*.png
+      xb_canvases/cross_sections/*.png
+      xb_canvases/ratios/*.png
       manifest.json
       model_curve_cache.json
 
   bsa_comparison/
       10p6_GeV_average/*.png
       10p2_GeV_Sp19_Inb/*.png
+      xb_canvases/10p6_GeV_average/*.png
+      xb_canvases/10p2_GeV_Sp19_Inb/*.png
       pass1_pass2_bsa_model_comparison_summary.csv
       bsa_km15_model_cache.json
 
@@ -823,8 +827,8 @@ def load_pass2_csv(
 
             xs = tuple_value.value
             stat = tuple_value.stat
-            point_to_point_abs = parse_float(row.get(point_to_point_col, ""))
-            total_scale_frac = parse_float(row.get(total_scale_col, ""))
+            point_to_point_abs = to_float(row.get(point_to_point_col, ""))
+            total_scale_frac = to_float(row.get(total_scale_col, ""))
             if not math.isfinite(point_to_point_abs):
                 point_to_point_abs = 0.0
             if not math.isfinite(total_scale_frac):
@@ -1539,6 +1543,239 @@ def draw_panel(panel: PanelData, curves: Optional[ModelCurves], output_path: Pat
     plt.close(fig)
 
 
+
+# ---------------------------------------------------------------------------
+# Aggregated xB canvases.
+# ---------------------------------------------------------------------------
+def xb_group_key(key: BinKey) -> Tuple[float, float]:
+    return (key.xb_min, key.xb_max)
+
+
+def xb_canvas_filename(prefix: str, xb_min: float, xb_max: float, index: int) -> str:
+    return (
+        f"{prefix}_xB_{index:02d}_"
+        f"{safe_filename_piece(xb_min)}_{safe_filename_piece(xb_max)}.png"
+    )
+
+
+def collect_figure_legend(fig, axes, ncol: int = 4) -> None:
+    handles = []
+    labels = []
+    seen = set()
+
+    for ax in axes.flat:
+        if not ax.get_visible():
+            continue
+        local_handles, local_labels = ax.get_legend_handles_labels()
+        for handle, label in zip(local_handles, local_labels):
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            handles.append(handle)
+            labels.append(label)
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.remove()
+
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 0.005),
+            ncol=max(1, min(ncol, len(labels))),
+            fontsize=8,
+            frameon=True,
+        )
+
+
+def curves_for_aggregated_panel(
+    panel: PanelData,
+    model_cfg: ModelConfig,
+    skip_models: bool,
+    cache: Dict[str, Dict[str, List[float]]],
+) -> Optional[ModelCurves]:
+    if skip_models:
+        return None
+
+    entry = cache.get(model_cache_key(panel.key, model_cfg))
+    if entry is None:
+        return None
+
+    return make_model_curves_from_cache_entry(entry)
+
+
+def group_panels_by_xb(panels: Sequence[PanelData]) -> Dict[Tuple[float, float], List[PanelData]]:
+    grouped: Dict[Tuple[float, float], List[PanelData]] = {}
+    for panel in panels:
+        grouped.setdefault(xb_group_key(panel.key), []).append(panel)
+
+    for group in grouped.values():
+        group.sort(key=lambda panel: (
+            panel.key.t_min,
+            panel.key.t_max,
+            panel.key.q2_min,
+            panel.key.q2_max,
+        ))
+
+    return grouped
+
+
+def draw_aggregated_cross_section_xb_canvases(
+    output_dir: Path,
+    panels: Sequence[PanelData],
+    pass2_label: str,
+    pass1_label: str,
+    logy: bool,
+    log_y_min: float,
+    skip_models: bool,
+    model_cfg: ModelConfig,
+    cache: Dict[str, Dict[str, List[float]]],
+) -> int:
+    grouped = group_panels_by_xb(panels)
+    if not grouped:
+        warn("Aggregated xB cross-section canvases: no panels available; skipping.")
+        return 0
+
+    cross_section_dir = output_dir / "cross_sections"
+    ratio_dir = output_dir / "ratios"
+    cross_section_dir.mkdir(parents=True, exist_ok=True)
+    ratio_dir.mkdir(parents=True, exist_ok=True)
+
+    written = 0
+    sorted_groups = sorted(grouped.items(), key=lambda item: item[0])
+
+    for xb_index, ((xb_min, xb_max), group) in enumerate(sorted_groups, start=1):
+        q2_ranges = sorted({(p.key.q2_min, p.key.q2_max) for p in group})
+        t_ranges = sorted({(p.key.t_min, p.key.t_max) for p in group})
+        if not q2_ranges or not t_ranges:
+            continue
+
+        panel_map = {
+            (
+                panel.key.q2_min,
+                panel.key.q2_max,
+                panel.key.t_min,
+                panel.key.t_max,
+            ): panel
+            for panel in group
+        }
+
+        ncols = len(q2_ranges)
+        nrows = len(t_ranges)
+        fig_width = max(8.0, 5.2 * ncols)
+        fig_height = max(6.0, 4.25 * nrows + 0.9)
+
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(fig_width, fig_height),
+            squeeze=False,
+            sharex=False,
+            sharey=False,
+        )
+        fig.suptitle(
+            rf"Pass-2 vs pass-1 cross sections: $x_B \in [{xb_min:.3g}, {xb_max:.3g}]$",
+            fontsize=15,
+        )
+
+        for irow, (t_min, t_max) in enumerate(t_ranges):
+            for icol, (q2_min, q2_max) in enumerate(q2_ranges):
+                ax = axes[irow][icol]
+                panel = panel_map.get((q2_min, q2_max, t_min, t_max))
+                if panel is None:
+                    ax.set_axis_off()
+                    continue
+
+                curves = curves_for_aggregated_panel(
+                    panel=panel,
+                    model_cfg=model_cfg,
+                    skip_models=skip_models,
+                    cache=cache,
+                )
+                draw_cross_section_axis(
+                    ax=ax,
+                    panel=panel,
+                    curves=curves,
+                    pass2_label=pass2_label,
+                    pass1_label=pass1_label,
+                    logy=logy,
+                    log_y_min=log_y_min,
+                    include_title=False,
+                )
+                ax.set_title(
+                    rf"$Q^2 \in [{q2_min:.3g}, {q2_max:.3g}]$ GeV$^2$"
+                    "\n"
+                    rf"$|t| \in [{t_min:.3g}, {t_max:.3g}]$ GeV$^2$",
+                    fontsize=9,
+                )
+                if irow != nrows - 1:
+                    ax.set_xlabel("")
+                if icol != 0:
+                    ax.set_ylabel("")
+
+        collect_figure_legend(fig, axes, ncol=5)
+        fig.tight_layout(rect=[0.0, 0.055, 1.0, 0.955])
+        xs_path = cross_section_dir / xb_canvas_filename(
+            "pass2_vs_pass1_cross_sections",
+            xb_min,
+            xb_max,
+            xb_index,
+        )
+        fig.savefig(xs_path, dpi=200)
+        plt.close(fig)
+        log(f"Aggregated xB cross-section canvas: wrote {xs_path}")
+        written += 1
+
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(fig_width, fig_height),
+            squeeze=False,
+            sharex=False,
+            sharey=False,
+        )
+        fig.suptitle(
+            rf"Pass-2 / pass-1 ratios: $x_B \in [{xb_min:.3g}, {xb_max:.3g}]$",
+            fontsize=15,
+        )
+
+        for irow, (t_min, t_max) in enumerate(t_ranges):
+            for icol, (q2_min, q2_max) in enumerate(q2_ranges):
+                ax = axes[irow][icol]
+                panel = panel_map.get((q2_min, q2_max, t_min, t_max))
+                if panel is None:
+                    ax.set_axis_off()
+                    continue
+
+                draw_ratio_axis(ax=ax, panel=panel)
+                ax.set_title(
+                    rf"$Q^2 \in [{q2_min:.3g}, {q2_max:.3g}]$ GeV$^2$"
+                    "\n"
+                    rf"$|t| \in [{t_min:.3g}, {t_max:.3g}]$ GeV$^2$",
+                    fontsize=9,
+                )
+                if irow != nrows - 1:
+                    ax.set_xlabel("")
+                if icol != 0:
+                    ax.set_ylabel("")
+
+        collect_figure_legend(fig, axes, ncol=4)
+        fig.tight_layout(rect=[0.0, 0.055, 1.0, 0.955])
+        ratio_path = ratio_dir / xb_canvas_filename(
+            "pass2_over_pass1_ratios",
+            xb_min,
+            xb_max,
+            xb_index,
+        )
+        fig.savefig(ratio_path, dpi=200)
+        plt.close(fig)
+        log(f"Aggregated xB ratio canvas: wrote {ratio_path}")
+        written += 1
+
+    return written
+
+
 # ---------------------------------------------------------------------------
 # BSA comparison and plotting.
 # ---------------------------------------------------------------------------
@@ -1630,7 +1867,7 @@ def load_pass2_bsa_from_csv(path: Path) -> Dict[str, Dict[BinKey, List[BSAPoint]
                 if not tv.ok or not math.isfinite(tv.value) or not math.isfinite(tv.stat) or tv.stat <= 0.0:
                     continue
                 eb = target_ebeam(target)
-                scale_abs = parse_float(row.get(bsa_scale_cols.get(target, ""), "")) if target in bsa_scale_cols else 0.0
+                scale_abs = to_float(row.get(bsa_scale_cols.get(target, ""), "")) if target in bsa_scale_cols else 0.0
                 if not math.isfinite(scale_abs):
                     scale_abs = 0.0
                 p = BSAPoint(phi_deg=phi, value=tv.value, stat=tv.stat, xb=xb_c, q2=q2_c, t_abs=t_c, eb=eb, source="pass2", key=key, target_label=target, scale_syst_abs=abs(scale_abs))
@@ -1808,6 +2045,163 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
+
+
+
+def draw_aggregated_bsa_xb_canvases(
+    output_dir: Path,
+    pass1_bsa: Dict[str, Dict[BinKey, List[BSAPoint]]],
+    pass2_bsa: Dict[str, Dict[BinKey, List[BSAPoint]]],
+    pass1_label: str,
+    pass2_label: str,
+    model_cfg: ModelConfig,
+    skip_models: bool,
+    bsa_cache: Dict[str, Dict[str, List[float]]],
+) -> int:
+    root_dir = output_dir / "xb_canvases"
+    root_dir.mkdir(parents=True, exist_ok=True)
+    written = 0
+
+    for target in PASS2_BSA_TARGET_COLUMNS:
+        all_keys = sorted(
+            set(pass1_bsa.get(target, {}).keys()) | set(pass2_bsa.get(target, {}).keys()),
+            key=key_sort_tuple,
+        )
+        grouped: Dict[Tuple[float, float], List[BinKey]] = {}
+        for key in all_keys:
+            grouped.setdefault(xb_group_key(key), []).append(key)
+
+        target_dir = root_dir / bsa_target_dirname(target)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        for xb_index, ((xb_min, xb_max), keys) in enumerate(sorted(grouped.items()), start=1):
+            q2_ranges = sorted({(k.q2_min, k.q2_max) for k in keys})
+            t_ranges = sorted({(k.t_min, k.t_max) for k in keys})
+            key_map = {
+                (k.q2_min, k.q2_max, k.t_min, k.t_max): k
+                for k in keys
+            }
+            if not q2_ranges or not t_ranges:
+                continue
+
+            ncols = len(q2_ranges)
+            nrows = len(t_ranges)
+            fig, axes = plt.subplots(
+                nrows,
+                ncols,
+                figsize=(max(8.0, 5.0 * ncols), max(6.0, 4.0 * nrows + 0.9)),
+                squeeze=False,
+            )
+            target_title = "10.6 GeV average" if target == "10.6 GeV" else "10.2 GeV / Sp19 Inb"
+            fig.suptitle(
+                rf"BSA comparison, {target_title}: $x_B \in [{xb_min:.3g}, {xb_max:.3g}]$",
+                fontsize=15,
+            )
+
+            for irow, (t_min, t_max) in enumerate(t_ranges):
+                for icol, (q2_min, q2_max) in enumerate(q2_ranges):
+                    ax = axes[irow][icol]
+                    key = key_map.get((q2_min, q2_max, t_min, t_max))
+                    if key is None:
+                        ax.set_axis_off()
+                        continue
+
+                    p1 = pass1_bsa.get(target, {}).get(key, [])
+                    p2 = pass2_bsa.get(target, {}).get(key, [])
+                    curve: Optional[BSAModelCurve] = None
+                    if not skip_models:
+                        entry = bsa_cache.get(bsa_model_cache_key(key, target, model_cfg.phi_dense))
+                        if entry is not None:
+                            curve = make_bsa_model_from_cache_entry(entry)
+
+                    if curve is not None:
+                        ax.plot(
+                            curve.phi,
+                            curve.km15_bsa,
+                            linewidth=2.0,
+                            linestyle="-",
+                            color=BSA_KM15_COLOR,
+                            label="KM15",
+                            zorder=3,
+                        )
+
+                    if p1:
+                        ax.errorbar(
+                            [p.phi_deg + PASS1_PHI_OFFSET_DEG for p in p1],
+                            [p.value for p in p1],
+                            yerr=[p.stat for p in p1],
+                            fmt="s",
+                            markersize=4.5,
+                            capsize=2,
+                            linewidth=1.0,
+                            linestyle="None",
+                            color=BSA_PASS1_COLOR,
+                            ecolor=BSA_PASS1_COLOR,
+                            markerfacecolor=BSA_PASS1_COLOR,
+                            markeredgecolor=BSA_PASS1_COLOR,
+                            label=f"{pass1_label} BSA",
+                            zorder=4,
+                        )
+
+                    if p2:
+                        ax.errorbar(
+                            [p.phi_deg + PASS2_PHI_OFFSET_DEG for p in p2],
+                            [p.value for p in p2],
+                            yerr=[p.stat for p in p2],
+                            fmt="o",
+                            markersize=4.5,
+                            capsize=2,
+                            linewidth=1.0,
+                            linestyle="None",
+                            color=BSA_PASS2_COLOR,
+                            ecolor=BSA_PASS2_COLOR,
+                            markerfacecolor=BSA_PASS2_COLOR,
+                            markeredgecolor=BSA_PASS2_COLOR,
+                            label=f"{pass2_label} BSA",
+                            zorder=5,
+                        )
+                        draw_scale_boxes(
+                            ax=ax,
+                            x_values=[p.phi_deg + PASS2_PHI_OFFSET_DEG for p in p2],
+                            y_values=[p.value for p in p2],
+                            scale_values=[p.scale_syst_abs for p in p2],
+                            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+                            label=f"{pass2_label}: total scale box",
+                            color=BSA_PASS2_COLOR,
+                            logy=False,
+                            log_y_min=1.0e-30,
+                        )
+
+                    ax.axhline(0.0, linewidth=1.0, linestyle="--", color="0.35", zorder=1)
+                    ax.set_xlim(0.0, 360.0)
+                    ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
+                    ax.set_ylim(-0.4, 0.4)
+                    ax.grid(True, which="major", alpha=0.25)
+                    ax.set_title(
+                        rf"$Q^2 \in [{q2_min:.3g}, {q2_max:.3g}]$ GeV$^2$"
+                        "\n"
+                        rf"$|t| \in [{t_min:.3g}, {t_max:.3g}]$ GeV$^2$",
+                        fontsize=9,
+                    )
+                    if irow == nrows - 1:
+                        ax.set_xlabel(r"$\phi$ (deg)")
+                    if icol == 0:
+                        ax.set_ylabel(r"$A_{LU}$")
+
+            collect_figure_legend(fig, axes, ncol=4)
+            fig.tight_layout(rect=[0.0, 0.055, 1.0, 0.955])
+            path = target_dir / xb_canvas_filename(
+                "pass2_vs_pass1_bsa",
+                xb_min,
+                xb_max,
+                xb_index,
+            )
+            fig.savefig(path, dpi=200)
+            plt.close(fig)
+            log(f"Aggregated xB BSA canvas: wrote {path}")
+            written += 1
+
+    return written
 
 
 def write_bsa_comparison_summary_csv(output_dir: Path, rows: Sequence[BSAComparisonResult]) -> None:
@@ -2059,8 +2453,19 @@ def run_pass1_pass2_bsa_comparison(
 
     summary_rows = [summary_by_index[i] for i in sorted(summary_by_index)]
     write_bsa_comparison_summary_csv(bsa_output_dir, summary_rows)
+    n_aggregated_bsa = draw_aggregated_bsa_xb_canvases(
+        output_dir=bsa_output_dir,
+        pass1_bsa=pass1_bsa,
+        pass2_bsa=pass2_bsa,
+        pass1_label=pass1_label,
+        pass2_label=pass2_label,
+        model_cfg=model_cfg,
+        skip_models=skip_models,
+        bsa_cache=bsa_cache,
+    )
     log(
-        f"BSA comparison: wrote {len(summary_rows)} plot(s) under {bsa_output_dir}; "
+        f"BSA comparison: wrote {len(summary_rows)} individual plot(s) and "
+        f"{n_aggregated_bsa} aggregated xB canvas(es) under {bsa_output_dir}; "
         f"new KM15 cache entries={cache_new}, model failures={model_failures}."
     )
     return cache_new
@@ -2357,11 +2762,12 @@ def main() -> int:
     base_output_dir = args.output_dir
     cross_section_dir = base_output_dir / "cross_section_comparison"
     cross_section_panels_dir = cross_section_dir / "panels"
+    cross_section_xb_canvases_dir = cross_section_dir / "xb_canvases"
     bsa_output_dir = base_output_dir / "bsa_comparison"
     global_output_dir = base_output_dir / "global_bin_number_comparison"
     diagnostics_dir = base_output_dir / "diagnostics"
 
-    for directory in [base_output_dir, cross_section_dir, cross_section_panels_dir, bsa_output_dir, global_output_dir, diagnostics_dir]:
+    for directory in [base_output_dir, cross_section_dir, cross_section_panels_dir, cross_section_xb_canvases_dir, bsa_output_dir, global_output_dir, diagnostics_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
     cross_section_cache_path = args.model_cache or (cross_section_dir / "model_curve_cache.json")
@@ -2507,6 +2913,18 @@ def main() -> int:
         first = failures[0]
         die(f"{len(failures)} panel job(s) failed. First failed panel={first.filename}. See traceback above.")
 
+    n_aggregated_xb_canvases = draw_aggregated_cross_section_xb_canvases(
+        output_dir=cross_section_xb_canvases_dir,
+        panels=panels,
+        pass2_label=args.pass2_label,
+        pass1_label=args.pass1_label,
+        logy=not args.linear_y,
+        log_y_min=args.log_y_min,
+        skip_models=args.skip_models,
+        model_cfg=model_cfg,
+        cache=xs_cache,
+    )
+
     if not args.skip_models:
         save_generic_cache(cross_section_cache_path, xs_cache, "Cross-section model cache")
         save_generic_cache(bsa_cache_path, bsa_cache, "BSA KM15 model cache")
@@ -2522,10 +2940,12 @@ def main() -> int:
     log("Final summary:")
     log(f"  output directory              = {base_output_dir.resolve()}")
     log(f"  cross-section panels          = {cross_section_panels_dir.resolve()}")
+    log(f"  aggregated xB canvases        = {cross_section_xb_canvases_dir.resolve()}")
     log(f"  BSA comparison directory      = {bsa_output_dir.resolve()}")
     log(f"  global bin-number directory   = {global_output_dir.resolve()}")
     log(f"  diagnostics directory         = {diagnostics_dir.resolve()}")
     log(f"  cross-section panels written  = {len(manifest)}")
+    log(f"  aggregated xB canvases written= {n_aggregated_xb_canvases}")
     log(f"  global bin-number plot        = {not args.no_global_bin_plot}")
     log(f"  no point-to-point systematics = {args.no_point_to_point_systematics}")
     log(f"  two-panel mode                = {args.two_panel}")
