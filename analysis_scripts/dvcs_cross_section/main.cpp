@@ -62,6 +62,11 @@ int main(int argc, char* argv[]) {
     // -------------------------------------------------------------------------
     GlobalCutConfig global_cfg;
 
+    // Integrated-analysis detector-quality exclusions for Sp18 Out. These are
+    // enabled by default in GlobalCutConfig and are automatically suspended if
+    // any topology or particle-sector study switch below is enabled.
+    global_cfg.enable_sp18_out_sector_quality_cuts = true;
+
     // Single-topology study. Enable exactly one topology by setting this true
     // and editing required_detector1/required_detector2.
     global_cfg.enable_topology_filter = false;

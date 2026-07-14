@@ -394,6 +394,7 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
     require_bool("enable_dvcsgen_ycol_cut", cfg.enable_dvcsgen_ycol_cut);
     require_number("dvcsgen_ycol_cut", cfg.dvcsgen_ycol_cut);
 
+    if (auto it = j.find("enable_sp18_out_sector_quality_cuts"); it != j.end()) cfg.enable_sp18_out_sector_quality_cuts = it->get<bool>();
     if (auto it = j.find("enable_auxiliary_fiducial_cuts"); it != j.end()) cfg.enable_auxiliary_fiducial_cuts = it->get<bool>();
     if (auto it = j.find("auxiliary_require_distinct_fd_sectors"); it != j.end()) cfg.auxiliary_require_distinct_fd_sectors = it->get<bool>();
     if (auto it = j.find("auxiliary_e_theta_min_deg"); it != j.end()) cfg.auxiliary_e_theta_min_deg = it->get<double>();
@@ -409,6 +410,15 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
     require_bool("enable_topology_filter", cfg.enable_topology_filter);
     require_int("required_detector1", cfg.required_detector1);
     require_int("required_detector2", cfg.required_detector2);
+
+    if (auto it = j.find("enable_electron_fd_sector_filter"); it != j.end()) cfg.enable_electron_fd_sector_filter = it->get<bool>();
+    if (auto it = j.find("electron_fd_sector"); it != j.end()) cfg.electron_fd_sector = it->get<int>();
+    if (auto it = j.find("enable_proton_fd_sector_filter"); it != j.end()) cfg.enable_proton_fd_sector_filter = it->get<bool>();
+    if (auto it = j.find("proton_fd_sector"); it != j.end()) cfg.proton_fd_sector = it->get<int>();
+    if (auto it = j.find("enable_proton_cd_sector_filter"); it != j.end()) cfg.enable_proton_cd_sector_filter = it->get<bool>();
+    if (auto it = j.find("proton_cd_sector"); it != j.end()) cfg.proton_cd_sector = it->get<int>();
+    if (auto it = j.find("enable_photon_fd_sector_filter"); it != j.end()) cfg.enable_photon_fd_sector_filter = it->get<bool>();
+    if (auto it = j.find("photon_fd_sector"); it != j.end()) cfg.photon_fd_sector = it->get<int>();
 
     require_int_array("excluded_runs", cfg.excluded_runs);
 
@@ -441,6 +451,8 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
               << " pTmiss_max=" << cfg.pTmiss_max << "\n";
     std::cout << "          enable_dvcsgen_ycol_cut=" << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false")
               << " dvcsgen_ycol_cut=" << cfg.dvcsgen_ycol_cut << "\n";
+    std::cout << "          enable_sp18_out_sector_quality_cuts=" << (cfg.enable_sp18_out_sector_quality_cuts ? "true" : "false")
+              << " active=" << (global_cuts_apply_sp18_out_sector_quality_cuts(cfg) ? "true" : "false") << "\n";
     std::cout << "          enable_auxiliary_fiducial_cuts=" << (cfg.enable_auxiliary_fiducial_cuts ? "true" : "false") << "\n";
     std::cout << "          enable_topology_filter=" << (cfg.enable_topology_filter ? "true" : "false")
               << " required_detector1=" << cfg.required_detector1
@@ -652,6 +664,7 @@ static int find_row_for_event(double xB,
 // The 'counts' vector must be pre-sized to NR by the caller.
 static double accumulate_counts_for_tree(const std::string& group_label,
                                          const std::string& tree_label,
+                                         const std::string& period_label,
                                          TTree* tree,
                                          const std::vector<RowBin>& bins,
                                          const std::vector<bool>& row_has_data,
@@ -705,12 +718,15 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         std::exit(EXIT_FAILURE);
     }
 
-    if (global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut) {
-        if (!tree->GetBranch(br_e_theta) || !tree->GetBranch(br_e_phi) ||
+    if (global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut ||
+        global_cuts_require_sector_phi(global_cfg)) {
+        if (!tree->GetBranch(br_e_phi) || !tree->GetBranch(br_p1_phi) || !tree->GetBranch(br_p2_phi) ||
+            ((global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut) &&
+             (!tree->GetBranch(br_e_theta) ||
             !tree->GetBranch(br_p1_theta) || !tree->GetBranch(br_p1_phi) ||
             !tree->GetBranch(br_p2_p) || !tree->GetBranch(br_p2_theta) || !tree->GetBranch(br_p2_phi) ||
-            (global_cfg.enable_dvcsgen_ycol_cut && !tree->GetBranch(br_e_p))) {
-            std::cerr << "[radcorr] FATAL: auxiliary/ycol global cuts require e_p(if ycol), e_theta, e_phi, p1_theta, p1_phi, p2_p, p2_theta, p2_phi branches in generated MC tree for "
+              (global_cfg.enable_dvcsgen_ycol_cut && !tree->GetBranch(br_e_p))))) {
+            std::cerr << "[radcorr] FATAL: active sector/auxiliary/ycol global cuts require the corresponding phi/kinematic branches in generated MC tree for "
                       << group_label << " (" << tree_label << ").\n";
             std::exit(EXIT_FAILURE);
         }
@@ -768,10 +784,16 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         if (global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut) {
             pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss,
                                              g_det1, g_det2,
-                                             10.6,
+                                             period_label,
                                              g_e_p, g_e_theta, g_e_phi,
                                              g_p1_theta, g_p1_phi,
                                              g_p2_p, g_p2_theta, g_p2_phi,
+                                             global_cfg);
+        } else if (global_cuts_require_sector_phi(global_cfg)) {
+            pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss,
+                                             g_det1, g_det2,
+                                             period_label,
+                                             g_e_phi, g_p1_phi, g_p2_phi,
                                              global_cfg);
         } else {
             pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss, g_det1, g_det2, global_cfg);
@@ -1351,8 +1373,20 @@ static void accumulate_group_type(const RCGroup& G,
         TTree* tree = itT->second;
         const std::string tree_label = P.period_label + " " + type_label;
 
+        std::string period_key;
+        if (P.period_label == "Sp18 Inb") period_key = "sp18_inb";
+        else if (P.period_label == "Sp18 Out") period_key = "sp18_out";
+        else if (P.period_label == "Fa18 Inb") period_key = "fa18_inb";
+        else if (P.period_label == "Fa18 Out") period_key = "fa18_out";
+        else if (P.period_label == "Sp19 Inb") period_key = "sp19_inb";
+        else {
+            std::cerr << "[radcorr] FATAL: unknown period label '" << P.period_label << "'.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
         double N_here = accumulate_counts_for_tree(G.label,
                                                    tree_label,
+                                                   period_key,
                                                    tree,
                                                    bins,
                                                    row_has_data,

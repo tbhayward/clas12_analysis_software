@@ -94,7 +94,6 @@ DEFAULT_KM15_CLI = str(ANALYSIS_DIR / "km15_cli.py")
 # ---------------------------------------------------------------------------
 # Analysis constants.
 # ---------------------------------------------------------------------------
-PASS2_ESTIMATED_SYSTEMATIC_FRACTION = 0.18
 PASS1_NORMALIZATION_FRACTION = 0.31
 
 PASS1_PHI_OFFSET_DEG = -1.25
@@ -135,6 +134,15 @@ PASS2_BSA_TARGET_COLUMNS = {
     "10.6 GeV": "BSA, counts, 10.6 GeV",
     "Sp19 Inb": "BSA, counts, Sp19 Inb",
 }
+PASS2_POINT_TO_POINT_TOTAL_COLUMN = "Syst. err (point-to-point total)"
+
+
+def pass2_total_scale_column(xs_column: str) -> str:
+    return f"{xs_column}, total scale sys"
+
+
+def pass2_bsa_total_scale_column(target: str) -> str:
+    return f"BSA, counts, {target}, total scale sys"
 
 # Fixed BSA plotting colors.  These are intentionally independent of which
 # series are present in a given panel, so pass-2 does not change color when
@@ -224,6 +232,7 @@ class BSAPoint:
     source: str
     key: BinKey
     target_label: str
+    scale_syst_abs: float = 0.0
 
 
 @dataclass
@@ -665,10 +674,10 @@ def compute_local_pass2_scale(period_values: Sequence[TupleValue]) -> LocalScale
 # ---------------------------------------------------------------------------
 # Uncertainty prescriptions.
 # ---------------------------------------------------------------------------
-def pass2_vertical_uncertainty(xs: float, stat: float, no_point_to_point_systematics: bool) -> float:
+def pass2_vertical_uncertainty(stat: float, point_to_point_abs: float, no_point_to_point_systematics: bool) -> float:
     if no_point_to_point_systematics:
         return abs(stat)
-    return math.sqrt(stat * stat + (PASS2_ESTIMATED_SYSTEMATIC_FRACTION * xs) ** 2)
+    return math.hypot(stat, point_to_point_abs)
 
 
 def pass1_vertical_uncertainty(xs: float, stat: float, syst: float, no_point_to_point_systematics: bool) -> float:
@@ -770,18 +779,22 @@ def load_pass2_csv(
             )
 
         required_period_cols = [pass2_period_cross_section_column(period) for period in PASS2_PERIODS_10P6_UNPOL]
-        require_columns(fieldnames, required_period_cols, "pass-2 local s_comb calculation")
+        require_columns(fieldnames, required_period_cols, "pass-2 local s_comb diagnostics")
         period_cols = {period: find_column(fieldnames, [pass2_period_cross_section_column(period)]) for period in PASS2_PERIODS_10P6_UNPOL}
+        point_to_point_col = find_column(fieldnames, [PASS2_POINT_TO_POINT_TOTAL_COLUMN])
+        total_scale_col = find_column(fieldnames, [pass2_total_scale_column(xs_col)])
 
         log(f"Pass-2: central cross-section column -> {xs_col}")
         for period in PASS2_PERIODS_10P6_UNPOL:
             log(f"Pass-2: local scale input {period:10s} -> {period_cols[period]}")
 
+        log(f"Pass-2: point-to-point total column -> {point_to_point_col}")
+        log(f"Pass-2: total scale column -> {total_scale_col}")
         if no_point_to_point_systematics:
             log("Pass-2: vertical errors -> stat only.")
         else:
-            log("Pass-2: vertical errors -> stat ⊕ 18% estimated point-to-point.")
-        log("Pass-2: external boxes -> local point-by-point s_comb(row) * xs.")
+            log("Pass-2: vertical errors -> stat ⊕ CSV point-to-point total.")
+        log("Pass-2: external boxes -> CSV total scale systematic (combination ⊕ 4.76% target/charge).")
 
         out: Dict[BinKey, List[DataPoint]] = {}
         local_rows: List[Tuple[BinKey, float, float, LocalScaleResult]] = []
@@ -810,8 +823,14 @@ def load_pass2_csv(
 
             xs = tuple_value.value
             stat = tuple_value.stat
-            point_err = pass2_vertical_uncertainty(xs=xs, stat=stat, no_point_to_point_systematics=no_point_to_point_systematics)
-            scale_abs = abs(local.s_comb * xs)
+            point_to_point_abs = parse_float(row.get(point_to_point_col, ""))
+            total_scale_frac = parse_float(row.get(total_scale_col, ""))
+            if not math.isfinite(point_to_point_abs):
+                point_to_point_abs = 0.0
+            if not math.isfinite(total_scale_frac):
+                total_scale_frac = 0.0
+            point_err = pass2_vertical_uncertainty(stat=stat, point_to_point_abs=abs(point_to_point_abs), no_point_to_point_systematics=no_point_to_point_systematics)
+            scale_abs = abs(total_scale_frac * xs)
 
             if local.s_comb > 0.0:
                 n_nonzero_local += 1
@@ -826,7 +845,7 @@ def load_pass2_csv(
                 err_high=point_err,
                 source="pass2",
                 scale_syst_abs=scale_abs,
-                scale_syst_frac=local.s_comb,
+                scale_syst_frac=total_scale_frac,
                 local_scale_n_periods=local.n_valid_periods,
                 local_scale_s_obs=local.s_obs,
                 local_scale_s_stat=local.s_stat_exp,
@@ -1444,7 +1463,7 @@ def draw_cross_section_axis(ax, panel: PanelData, curves: Optional[ModelCurves],
         yerr = [[p.err_low for p in panel.pass2], [p.err_high for p in panel.pass2]]
         container = ax.errorbar(x, y, yerr=yerr, fmt="o", markersize=5, capsize=2, linewidth=1.2, linestyle="None", label=f"{pass2_label}: vertical errors", zorder=5)
         color = container.lines[0].get_color()
-        draw_scale_boxes(ax=ax, x_values=x, y_values=y, scale_values=[p.scale_syst_abs for p in panel.pass2], half_width=SCALE_BOX_HALF_WIDTH_DEG, label=f"{pass2_label}: local $s_{{comb}}$ box", color=color, logy=logy, log_y_min=log_y_min)
+        draw_scale_boxes(ax=ax, x_values=x, y_values=y, scale_values=[p.scale_syst_abs for p in panel.pass2], half_width=SCALE_BOX_HALF_WIDTH_DEG, label=f"{pass2_label}: total scale box", color=color, logy=logy, log_y_min=log_y_min)
 
     key = panel.key
     if include_title:
@@ -1482,7 +1501,7 @@ def draw_ratio_axis(ax, panel: PanelData) -> None:
             zorder=5,
         )
         color = container.lines[0].get_color()
-        draw_scale_boxes(ax=ax, x_values=[p.phi for p in ratio_points], y_values=[p.ratio for p in ratio_points], scale_values=[p.scale_err for p in ratio_points], half_width=SCALE_BOX_HALF_WIDTH_DEG, label="scale box: local pass-2 ⊕ 31% pass-1", color=color, logy=False, log_y_min=1.0e-30)
+        draw_scale_boxes(ax=ax, x_values=[p.phi for p in ratio_points], y_values=[p.ratio for p in ratio_points], scale_values=[p.scale_err for p in ratio_points], half_width=SCALE_BOX_HALF_WIDTH_DEG, label="scale box: total pass-2 ⊕ 31% pass-1", color=color, logy=False, log_y_min=1.0e-30)
 
     ax.axhline(1.0, linewidth=1.2, linestyle="--", zorder=2)
     ymin, ymax = ratio_axis_limits([ratio_points])
@@ -1575,13 +1594,19 @@ def load_pass2_bsa_from_csv(path: Path) -> Dict[str, Dict[BinKey, List[BSAPoint]
         fieldnames = reader.fieldnames
         cols = detect_common_columns(fieldnames, "Pass-2 BSA")
         bsa_cols: Dict[str, str] = {}
+        bsa_scale_cols: Dict[str, str] = {}
         for target, candidate in PASS2_BSA_TARGET_COLUMNS.items():
             found = find_column(fieldnames, [candidate], required=False)
             if found is None:
                 warn(f"BSA pass-2: missing column '{candidate}'; target {target} will be skipped.")
                 continue
             bsa_cols[target] = found
-            log(f"BSA pass-2: target {target} -> {found}")
+            scale_found = find_column(fieldnames, [pass2_bsa_total_scale_column(target)], required=False)
+            if scale_found is None:
+                warn(f"BSA pass-2: missing total scale column for {target}; scale boxes will be zero.")
+            else:
+                bsa_scale_cols[target] = scale_found
+            log(f"BSA pass-2: target {target} -> {found}; total scale -> {scale_found}")
 
         if not bsa_cols:
             warn("BSA pass-2: no BSA columns found; skipping BSA comparison.")
@@ -1605,7 +1630,10 @@ def load_pass2_bsa_from_csv(path: Path) -> Dict[str, Dict[BinKey, List[BSAPoint]
                 if not tv.ok or not math.isfinite(tv.value) or not math.isfinite(tv.stat) or tv.stat <= 0.0:
                     continue
                 eb = target_ebeam(target)
-                p = BSAPoint(phi_deg=phi, value=tv.value, stat=tv.stat, xb=xb_c, q2=q2_c, t_abs=t_c, eb=eb, source="pass2", key=key, target_label=target)
+                scale_abs = parse_float(row.get(bsa_scale_cols.get(target, ""), "")) if target in bsa_scale_cols else 0.0
+                if not math.isfinite(scale_abs):
+                    scale_abs = 0.0
+                p = BSAPoint(phi_deg=phi, value=tv.value, stat=tv.stat, xb=xb_c, q2=q2_c, t_abs=t_c, eb=eb, source="pass2", key=key, target_label=target, scale_syst_abs=abs(scale_abs))
                 out.setdefault(target, {}).setdefault(key, []).append(p)
                 n_kept[target] += 1
 
@@ -1731,6 +1759,19 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
             markeredgecolor=BSA_PASS2_COLOR,
             label=f"{pass2_label} BSA",
             zorder=5,
+        )
+
+    if pass2_points:
+        draw_scale_boxes(
+            ax=ax,
+            x_values=[p.phi_deg + PASS2_PHI_OFFSET_DEG for p in pass2_points],
+            y_values=[p.value for p in pass2_points],
+            scale_values=[p.scale_syst_abs for p in pass2_points],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+            label=f"{pass2_label}: total scale box",
+            color=BSA_PASS2_COLOR,
+            logy=False,
+            log_y_min=1.0e-30,
         )
 
     ax.axhline(0.0, linewidth=1.0, linestyle="--", color="0.35", zorder=1)
@@ -2262,7 +2303,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--linear-y", action="store_true")
     parser.add_argument("--log-y-min", type=float, default=DEFAULT_LOG_Y_MIN)
     parser.add_argument("--two-panel", action="store_true")
-    parser.add_argument("--no-point-to-point-systematics", action="store_true", help="Use stat-only vertical error bars for pass-1 and pass-2. Scale boxes remain.")
+    parser.add_argument("--no-point-to-point-systematics", action="store_true", help="Use stat-only vertical error bars for pass-1 and pass-2. Total scale boxes remain.")
     parser.add_argument("--no-global-bin-plot", action="store_true", help="Skip the global matched-point bin-number pass-1/pass-2 comparison plot.")
     parser.add_argument("--global-ratio-y-min", type=float, default=0, help="Optional fixed y-axis minimum for the global bin-number plot.")
     parser.add_argument("--global-ratio-y-max", type=float, default=2, help="Optional fixed y-axis maximum for the global bin-number plot.")

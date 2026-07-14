@@ -442,6 +442,12 @@ static void require_columns(const CsvTable& table,
 }
 
 static std::vector<std::string> sp19_proxy_output_columns();
+static std::string cross_section_target_charge_column(const std::string& label,
+                                                      const std::string& helicity);
+static std::string cross_section_total_scale_column(const std::string& label,
+                                                    const std::string& helicity);
+static std::string bsa_beam_polarization_column(const std::string& label);
+static std::string bsa_total_scale_column(const std::string& label);
 
 static void ensure_column(CsvTable& table,
                           const std::string& column,
@@ -472,6 +478,20 @@ static void ensure_output_columns(CsvTable& table,
 
     for (const auto& col : sp19_proxy_output_columns()) {
         ensure_column(table, col);
+    }
+
+    const std::vector<std::pair<std::string, std::string> > xs_targets = {
+        {"10.6 GeV", "unpol"}, {"Fa18", "unpol"}, {"Fa18", "pos"},
+        {"Fa18", "neg"}, {"Sp18", "unpol"}, {"Sp19 Inb", "unpol"}
+    };
+    for (const auto& target : xs_targets) {
+        ensure_column(table, cross_section_target_charge_column(target.first, target.second));
+        ensure_column(table, cross_section_total_scale_column(target.first, target.second));
+    }
+
+    for (const auto& label : std::vector<std::string>{"10.6 GeV", "Fa18", "Sp18", "Sp19 Inb"}) {
+        ensure_column(table, bsa_beam_polarization_column(label));
+        ensure_column(table, bsa_total_scale_column(label));
     }
 }
 
@@ -707,12 +727,31 @@ static std::string combination_column(const std::string& label,
     return cross_section_column(label, helicity) + ", combination sys";
 }
 
+
+static std::string cross_section_target_charge_column(const std::string& label,
+                                                      const std::string& helicity) {
+    return cross_section_column(label, helicity) + ", target thickness and charge sys";
+}
+
+static std::string cross_section_total_scale_column(const std::string& label,
+                                                    const std::string& helicity) {
+    return cross_section_column(label, helicity) + ", total scale sys";
+}
+
 static std::string bsa_column(const std::string& label) {
     return "BSA, counts, " + label;
 }
 
 static std::string bsa_combination_column(const std::string& label) {
     return bsa_column(label) + ", combination sys";
+}
+
+static std::string bsa_beam_polarization_column(const std::string& label) {
+    return bsa_column(label) + ", beam polarization sys";
+}
+
+static std::string bsa_total_scale_column(const std::string& label) {
+    return bsa_column(label) + ", total scale sys";
 }
 
 static std::string avg_column(const std::string& variable_prefix,
@@ -1324,6 +1363,53 @@ static void fill_output_column(CsvTable& table,
 
     for (auto& row : table.rows) {
         row[icol] = value_string;
+    }
+}
+
+static void fill_scale_systematic_columns(CsvTable& table) {
+    static constexpr double kCrossSectionTargetChargeFraction = 0.0476;
+    static constexpr double kBsaBeamPolarizationFraction = 0.0400;
+
+    const std::vector<std::pair<std::string, std::string> > xs_targets = {
+        {"10.6 GeV", "unpol"}, {"Fa18", "unpol"}, {"Fa18", "pos"},
+        {"Fa18", "neg"}, {"Sp18", "unpol"}, {"Sp19 Inb", "unpol"}
+    };
+
+    for (const auto& target : xs_targets) {
+        const int i_comb = table.index.at(combination_column(target.first, target.second));
+        const int i_component = table.index.at(cross_section_target_charge_column(target.first, target.second));
+        const int i_total = table.index.at(cross_section_total_scale_column(target.first, target.second));
+
+        for (auto& row : table.rows) {
+            double combination = 0.0;
+            if (!parse_double(row[(size_t)i_comb], combination) || !std::isfinite(combination)) {
+                row[(size_t)i_component].clear();
+                row[(size_t)i_total].clear();
+                continue;
+            }
+            row[(size_t)i_component] = format_double(kCrossSectionTargetChargeFraction);
+            row[(size_t)i_total] = format_double(std::hypot(combination, kCrossSectionTargetChargeFraction));
+        }
+    }
+
+    for (const auto& label : std::vector<std::string>{"10.6 GeV", "Fa18", "Sp18", "Sp19 Inb"}) {
+        const int i_bsa = table.index.at(bsa_column(label));
+        const int i_comb = table.index.at(bsa_combination_column(label));
+        const int i_component = table.index.at(bsa_beam_polarization_column(label));
+        const int i_total = table.index.at(bsa_total_scale_column(label));
+
+        for (auto& row : table.rows) {
+            const TupleValue bsa = parse_tuple_value(row[(size_t)i_bsa]);
+            double combination = 0.0;
+            if (!bsa.ok || !parse_double(row[(size_t)i_comb], combination) || !std::isfinite(combination)) {
+                row[(size_t)i_component].clear();
+                row[(size_t)i_total].clear();
+                continue;
+            }
+            const double beam_abs = kBsaBeamPolarizationFraction * std::abs(bsa.value);
+            row[(size_t)i_component] = format_double(beam_abs);
+            row[(size_t)i_total] = format_double(std::hypot(combination, beam_abs));
+        }
     }
 }
 
@@ -3979,6 +4065,11 @@ bool combination_systematics(const std::string& csv_path,
 
         make_fa18_inb_sp19_inb_direct_diagnostic(table,
                                                  out_dir);
+
+        // Populate the independent normalization-scale components and the final
+        // scale totals only after the theta_p-dependent combination columns have
+        // received their final row-by-row values.
+        fill_scale_systematic_columns(table);
 
         write_csv_or_throw(csv_path, table);
 

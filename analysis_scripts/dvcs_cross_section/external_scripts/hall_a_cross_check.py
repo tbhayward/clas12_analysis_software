@@ -668,6 +668,14 @@ def pass2_cross_section_column(csv_period: str) -> str:
     return f"normed cross sections, ep->epg, exp, {csv_period}, unpol"
 
 
+def pass2_point_to_point_column() -> str:
+    return "Syst. err (point-to-point total)"
+
+
+def pass2_total_scale_column(csv_period: str) -> str:
+    return f"normed cross sections, ep->epg, exp, {csv_period}, unpol, total scale sys"
+
+
 def average_phi_column(csv_period: str) -> str:
     return f"phiavg, {csv_period}"
 
@@ -822,7 +830,9 @@ def pass2_points_for_period(
     sorted_df = selected.sort_values("phimin")
 
     for _, row in sorted_df.iterrows():
-        sigma, stat, sys_csv = parse_tuple3(row[xs_col])
+        sigma, stat, _ = parse_tuple3(row[xs_col])
+        sys_csv = parse_scalar_from_cell(row.get(pass2_point_to_point_column(), math.nan))
+        scale_frac = parse_scalar_from_cell(row.get(pass2_total_scale_column(csv_period), math.nan))
 
         if not np.isfinite(sigma):
             continue
@@ -834,6 +844,9 @@ def pass2_points_for_period(
 
         if not np.isfinite(sys_csv):
             sys_csv = 0.0
+        # endif
+        if not np.isfinite(scale_frac):
+            scale_frac = 0.0
         # endif
 
         if phi_avg_col in selected.columns:
@@ -897,13 +910,10 @@ def pass2_points_for_period(
         stat *= clas12_scale
         sys_csv *= clas12_scale
 
-        if include_clas12_estimated_sys:
-            sys_est = clas12_bin_to_bin_sys_frac * abs(sigma)
-        else:
-            sys_est = 0.0
-        # endif
-
-        sys_total = math.sqrt(sys_csv * sys_csv + sys_est * sys_est)
+        # The dedicated CSV point-to-point and total-scale columns replace the former ad hoc estimate.
+        sys_est = 0.0
+        scale_abs = abs(scale_frac * sigma)
+        sys_total = math.sqrt(sys_csv * sys_csv + scale_abs * scale_abs)
         err_total = math.sqrt(stat * stat + sys_total * sys_total)
 
         points.append(

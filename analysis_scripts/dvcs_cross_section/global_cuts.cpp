@@ -60,8 +60,20 @@ int cd_sector_from_phi_rad(double phi_rad) {
     return -1;
 }
 
+bool global_cuts_apply_sp18_out_sector_quality_cuts(const GlobalCutConfig& cfg) {
+    const bool diagnostic_study_active =
+        cfg.enable_topology_filter ||
+        cfg.enable_electron_fd_sector_filter ||
+        cfg.enable_proton_fd_sector_filter ||
+        cfg.enable_proton_cd_sector_filter ||
+        cfg.enable_photon_fd_sector_filter;
+
+    return cfg.enable_sp18_out_sector_quality_cuts && !diagnostic_study_active;
+}
+
 bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg) {
-    return cfg.enable_electron_fd_sector_filter ||
+    return global_cuts_apply_sp18_out_sector_quality_cuts(cfg) ||
+           cfg.enable_electron_fd_sector_filter ||
            cfg.enable_proton_fd_sector_filter   ||
            cfg.enable_proton_cd_sector_filter   ||
            cfg.enable_photon_fd_sector_filter   ||
@@ -146,6 +158,7 @@ std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
     if (cfg.enable_proton_cd_sector_filter)   pieces.push_back("pCDsec" + std::to_string(cfg.proton_cd_sector));
     if (cfg.enable_photon_fd_sector_filter)   pieces.push_back("gFDsec" + std::to_string(cfg.photon_fd_sector));
     if (cfg.enable_auxiliary_fiducial_cuts)   pieces.push_back("auxfid");
+    if (global_cuts_apply_sp18_out_sector_quality_cuts(cfg)) pieces.push_back("sp18out_sector_quality");
     if (pieces.empty()) return "nominal";
 
     std::ostringstream ss;
@@ -160,6 +173,24 @@ static bool passes_topology_filter(int detector1, int detector2, const GlobalCut
     validate_cfg_or_fatal(cfg);
     if (!cfg.enable_topology_filter) return true;
     return detector1 == cfg.required_detector1 && detector2 == cfg.required_detector2;
+}
+
+static bool passes_sp18_out_sector_quality_cuts(const std::string& period_label,
+                                                  int detector1,
+                                                  int detector2,
+                                                  double e_phi,
+                                                  const GlobalCutConfig& cfg) {
+    if (!global_cuts_apply_sp18_out_sector_quality_cuts(cfg)) return true;
+    if (period_label != "sp18_out") return true;
+
+    const int e_sector = fd_sector_from_phi_rad(e_phi);
+    if (e_sector < 1) return false;
+
+    if (e_sector == 3) return false;
+    if (e_sector == 5 && detector2 == 1) return false;
+    if (e_sector == 5 && detector1 == 1) return false;
+
+    return true;
 }
 
 static bool passes_sector_filters(int detector1,
@@ -425,6 +456,22 @@ bool passes_global_cuts(double t1,
                         double pTmiss,
                         int detector1,
                         int detector2,
+                        const std::string& period_label,
+                        double e_phi,
+                        double p1_phi,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg) {
+    if (!passes_sp18_out_sector_quality_cuts(period_label, detector1, detector2, e_phi, cfg)) return false;
+    return passes_global_cuts(t1, open_angle_ep2_deg, pTmiss,
+                              detector1, detector2,
+                              e_phi, p1_phi, p2_phi, cfg);
+}
+
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
                         double Ebeam,
                         double e_p,
                         double e_theta,
@@ -456,6 +503,7 @@ bool passes_global_cuts(double t1,
                         double p2_theta,
                         double p2_phi,
                         const GlobalCutConfig& cfg) {
+    if (!passes_sp18_out_sector_quality_cuts(period_label, detector1, detector2, e_phi, cfg)) return false;
     return passes_global_cuts(t1, open_angle_ep2_deg, pTmiss,
                               detector1, detector2,
                               beam_energy_for_period_label(period_label),
@@ -522,6 +570,7 @@ bool passes_global_cuts(double t1,
                         double p2_theta,
                         double p2_phi,
                         const GlobalCutConfig& cfg) {
+    if (!passes_sp18_out_sector_quality_cuts(period_label, detector1, detector2, e_phi, cfg)) return false;
     return passes_global_cuts(t1, open_angle_ep2_deg, pTmiss,
                               detector1, detector2,
                               beam_energy_for_period_label(period_label),
@@ -616,6 +665,8 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"enable_dvcsgen_ycol_cut\": " << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false") << ",\n"
         << "  \"dvcsgen_ycol_cut\": " << std::setprecision(6) << cfg.dvcsgen_ycol_cut << ",\n"
         << "  \"enable_auxiliary_fiducial_cuts\": " << (cfg.enable_auxiliary_fiducial_cuts ? "true" : "false") << ",\n"
+        << "  \"enable_sp18_out_sector_quality_cuts\": " << (cfg.enable_sp18_out_sector_quality_cuts ? "true" : "false") << ",\n"
+        << "  \"sp18_out_sector_quality_cuts_active\": " << (global_cuts_apply_sp18_out_sector_quality_cuts(cfg) ? "true" : "false") << ",\n"
         << "  \"auxiliary_require_distinct_fd_sectors\": " << (cfg.auxiliary_require_distinct_fd_sectors ? "true" : "false") << ",\n"
         << "  \"auxiliary_e_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_e_theta_min_deg << ",\n"
         << "  \"auxiliary_e_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_e_theta_max_deg << ",\n"

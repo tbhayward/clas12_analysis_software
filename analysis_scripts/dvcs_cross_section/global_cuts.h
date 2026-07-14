@@ -56,6 +56,17 @@ struct GlobalCutConfig {
 
     double auxiliary_ft_photon_p_min_GeV = 4.0;
 
+    // Sp18 Out detector-quality exclusions for the integrated production analysis.
+    // These reject:
+    //   1. every event with the electron in FD sector 3;
+    //   2. events with the electron in FD sector 5 and an FD photon;
+    //   3. events with the electron in FD sector 5 and an FD proton.
+    //
+    // The exclusions are automatically suspended whenever any topology or
+    // particle-sector study filter below is enabled, so diagnostic studies can
+    // still inspect the affected detector regions without manual reconfiguration.
+    bool enable_sp18_out_sector_quality_cuts = true;
+
     // Optional single-topology filter.
     // required_detector1/2 set as (p-region, gamma-region):
     //   FD-FD: (1, 1)
@@ -99,6 +110,7 @@ void set_default_global_cuts(const GlobalCutConfig& cfg);
 // Convenience diagnostics.
 bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg = default_global_cuts());
 bool global_cuts_require_auxiliary_kinematics(const GlobalCutConfig& cfg = default_global_cuts());
+bool global_cuts_apply_sp18_out_sector_quality_cuts(const GlobalCutConfig& cfg = default_global_cuts());
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg = default_global_cuts());
 
 // Sector helpers. Input phi is in radians.
@@ -235,6 +247,19 @@ bool passes_global_cuts(double t1,
                         double pTmiss,
                         int detector1,
                         int detector2,
+                        double e_phi,
+                        double p1_phi,
+                        double p2_phi,
+                        const GlobalCutConfig& cfg);
+
+// Period-aware sector overload. This is required for period-specific detector
+// quality exclusions even when ycol and auxiliary fiducial cuts are disabled.
+bool passes_global_cuts(double t1,
+                        double open_angle_ep2_deg,
+                        double pTmiss,
+                        int detector1,
+                        int detector2,
+                        const std::string& period_label,
                         double e_phi,
                         double p1_phi,
                         double p2_phi,

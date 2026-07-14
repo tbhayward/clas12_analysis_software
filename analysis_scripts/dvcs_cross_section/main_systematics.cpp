@@ -252,18 +252,24 @@ static std::vector<std::string> combined_normed_cross_section_columns() {
 }
 
 static std::vector<std::string> combination_systematic_columns() {
-    return {
-        "normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys",
-        "normed cross sections, ep->epg, exp, Fa18, unpol, combination sys",
-        "normed cross sections, ep->epg, exp, Fa18, pos, combination sys",
-        "normed cross sections, ep->epg, exp, Fa18, neg, combination sys",
-        "normed cross sections, ep->epg, exp, Sp18, unpol, combination sys",
-        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys",
-        "BSA, counts, 10.6 GeV, combination sys",
-        "BSA, counts, Fa18, combination sys",
-        "BSA, counts, Sp18, combination sys",
-        "BSA, counts, Sp19 Inb, combination sys"
+    std::vector<std::string> out;
+    const std::vector<std::pair<std::string, std::string> > xs_targets = {
+        {"10.6 GeV", "unpol"}, {"Fa18", "unpol"}, {"Fa18", "pos"},
+        {"Fa18", "neg"}, {"Sp18", "unpol"}, {"Sp19 Inb", "unpol"}
     };
+    for (const auto& target : xs_targets) {
+        const std::string base = "normed cross sections, ep->epg, exp, " + target.first + ", " + target.second;
+        out.push_back(base + ", combination sys");
+        out.push_back(base + ", target thickness and charge sys");
+        out.push_back(base + ", total scale sys");
+    }
+    for (const auto& label : std::vector<std::string>{"10.6 GeV", "Fa18", "Sp18", "Sp19 Inb"}) {
+        const std::string base = "BSA, counts, " + label;
+        out.push_back(base + ", combination sys");
+        out.push_back(base + ", beam polarization sys");
+        out.push_back(base + ", total scale sys");
+    }
+    return out;
 }
 
 static std::vector<std::string> pass1_fixed_systematic_columns() {

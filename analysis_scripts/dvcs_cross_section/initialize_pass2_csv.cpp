@@ -621,27 +621,32 @@ static void add_cross_section_columns_without_normed(std::vector<std::string>& H
     }
 }
 
-static void add_combination_systematic_columns(std::vector<std::string>& H) {
-    H.push_back("normed cross sections, ep->epg, exp, 10.6 GeV, unpol, combination sys");
+static void add_cross_section_scale_systematic_columns(std::vector<std::string>& H) {
+    const std::vector<std::pair<std::string, std::string> > targets = {
+        {"10.6 GeV", "unpol"},
+        {"Fa18", "unpol"},
+        {"Fa18", "pos"},
+        {"Fa18", "neg"},
+        {"Sp18", "unpol"},
+        {"Sp19 Inb", "unpol"}
+    };
 
-    H.push_back("normed cross sections, ep->epg, exp, Fa18, unpol, combination sys");
-    H.push_back("normed cross sections, ep->epg, exp, Fa18, pos, combination sys");
-    H.push_back("normed cross sections, ep->epg, exp, Fa18, neg, combination sys");
+    for (const auto& target : targets) {
+        const std::string base =
+            "normed cross sections, ep->epg, exp, " + target.first + ", " + target.second;
+        H.push_back(base + ", combination sys");
+        H.push_back(base + ", target thickness and charge sys");
+        H.push_back(base + ", total scale sys");
+    }
+}
 
-    H.push_back("normed cross sections, ep->epg, exp, Sp18, unpol, combination sys");
-
-    // Sp19 Inb is not a multi-period combination, but it is the only 10.2 GeV
-    // period and needs an explicit slot for the corresponding combination-style
-    // systematic bookkeeping used by the systematics executable.
-    H.push_back("normed cross sections, ep->epg, exp, Sp19 Inb, unpol, combination sys");
-
-    // Absolute BSA combination-systematic columns.  These are filled by
-    // main_systematics.cpp/combination_systematics.cpp after the BSA tuples have
-    // been written by the normal pass-2 workflow.
-    H.push_back("BSA, counts, 10.6 GeV, combination sys");
-    H.push_back("BSA, counts, Fa18, combination sys");
-    H.push_back("BSA, counts, Sp18, combination sys");
-    H.push_back("BSA, counts, Sp19 Inb, combination sys");
+static void add_bsa_scale_systematic_columns(std::vector<std::string>& H) {
+    for (const auto& group : std::vector<std::string>{"10.6 GeV", "Fa18", "Sp18", "Sp19 Inb"}) {
+        const std::string base = "BSA, counts, " + group;
+        H.push_back(base + ", combination sys");
+        H.push_back(base + ", beam polarization sys");
+        H.push_back(base + ", total scale sys");
+    }
 }
 
 static void add_cross_section_columns(std::vector<std::string>& H) {
@@ -649,7 +654,7 @@ static void add_cross_section_columns(std::vector<std::string>& H) {
     add_norm_columns(H);
     add_pass1_fixed_systematic_columns(H);
     add_cross_section_columns_without_normed(H, "normed ");
-    add_combination_systematic_columns(H);
+    add_cross_section_scale_systematic_columns(H);
 }
 
 static void add_bsa_columns(std::vector<std::string>& H) {
@@ -659,11 +664,10 @@ static void add_bsa_columns(std::vector<std::string>& H) {
         H.push_back(name.str());
     }
 
-    for (const auto& g : avg_groups()) {
-        std::ostringstream name;
-        name << "BSA, sigma, " << g;
-        H.push_back(name.str());
-    }
+    // Keep all BSA systematic columns after the BSA tuples.  The tuple already
+    // stores (value, stat, sys), so the former redundant "BSA, sigma" block is
+    // intentionally not part of the pass-2 schema.
+    add_bsa_scale_systematic_columns(H);
 }
 
 static void add_valid_and_prefactor_columns(std::vector<std::string>& H) {

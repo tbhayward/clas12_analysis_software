@@ -447,6 +447,7 @@ static bool passesGlobalForStage(const BranchBinder& b,
     if (global_cuts_require_sector_phi(gcfg)) {
         return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                   b.detector1, b.detector2,
+                                  period_label,
                                   b.e_phi, b.p1_phi, b.p2_phi,
                                   gcfg);
     }
@@ -1095,6 +1096,7 @@ static bool passesGlobalWithConfig(const BranchBinder& b,
     if (global_cuts_require_sector_phi(gcfg)) {
         return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                                   b.detector1, b.detector2,
+                                  period_label,
                                   b.e_phi, b.p1_phi, b.p2_phi,
                                   gcfg);
     }

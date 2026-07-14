@@ -1415,6 +1415,7 @@ struct TreeDiagBranches {
         if (global_cuts_require_sector_phi(cfg)) {
             return passes_global_cuts(t1, open_angle_ep2, pTmiss,
                                       d1, d2,
+                                      period_label_for_global_cuts(period),
                                       e_phi, p1_phi, p2_phi,
                                       cfg);
         }

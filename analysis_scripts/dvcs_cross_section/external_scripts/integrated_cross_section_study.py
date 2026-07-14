@@ -960,6 +960,14 @@ def cross_section_column(period: str) -> str:
     return f"normed cross sections, ep->epg, exp, {period}, unpol"
 
 
+def point_to_point_total_column() -> str:
+    return "Syst. err (point-to-point total)"
+
+
+def total_scale_column(period: str) -> str:
+    return f"normed cross sections, ep->epg, exp, {period}, unpol, total scale sys"
+
+
 def theta_average_column(theta_prefix: str, period: str) -> str:
     return f"{theta_prefix}, {period}"
 
@@ -1611,7 +1619,9 @@ def integrated_points_for_period(
         n_used = 0
 
         for _, row in group.iterrows():
-            value, stat, sys = parse_tuple3(row[col])
+            value, stat, _ = parse_tuple3(row[col])
+            sys = parse_scalar_from_cell(row.get(point_to_point_total_column(), math.nan))
+            scale_frac = parse_scalar_from_cell(row.get(total_scale_column(period), math.nan))
 
             if not np.isfinite(value):
                 continue
@@ -1634,6 +1644,9 @@ def integrated_points_for_period(
             if not np.isfinite(sys):
                 sys = 0.0
             # endif
+            if not np.isfinite(scale_frac):
+                scale_frac = 0.0
+            # endif
 
             model_scale = 1.0
 
@@ -1648,10 +1661,13 @@ def integrated_points_for_period(
             value *= model_scale
             stat *= abs(model_scale)
             sys *= abs(model_scale)
+            scale_abs = abs(scale_frac * value)
 
             y_sum += value * weight
             stat2_sum += (stat * weight) ** 2
-            sys2_sum += (sys * weight) ** 2
+            # Point-to-point terms are independent; the scale term is retained
+            # in the plotted total here so every final cross-check includes it.
+            sys2_sum += (math.hypot(sys, scale_abs) * weight) ** 2
             n_used += 1
         # endfor
 
@@ -2141,9 +2157,8 @@ def point_total_error(
         return stat
     # endif
 
-    sys_bin_to_bin = bin_to_bin_sys_frac * abs(point.y)
-
-    return math.sqrt(stat * stat + sys_bin_to_bin * sys_bin_to_bin)
+    # point.sys already contains the CSV point-to-point and scale-systematic contribution.
+    return math.sqrt(stat * stat + point.sys * point.sys)
 
 
 def points_to_arrays(
