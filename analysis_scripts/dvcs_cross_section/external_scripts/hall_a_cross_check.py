@@ -7,7 +7,7 @@ Standalone Hall A / CLAS12 DVCS cross-section cross-check.
 This script reads the final DVCS pass-2 analysis CSV and compares the CLAS12
 cross sections in one overlapping bin against the Hall A Kin363 cross-section
 table. It also overlays the previous pass-1 Hall B / CLAS12 Fa18 result from
-all_bin_v3.csv in the top row by default.
+all_bin_v3.csv by default.
 
 The script also makes a second 1x2 canvas comparing:
 
@@ -53,12 +53,10 @@ which corresponds nominally to:
   Q2  in [4.326, 5.761] GeV^2
   |t| in [0.40, 0.60] GeV^2
 
-The first plot is a 2x2 canvas:
+The first plot is a 1x2 canvas:
 
-  top-left:     pass-2 10.6 GeV, pass-1 Fa18, and Hall A cross sections vs phi
-  top-right:    pass-2 10.6 GeV / Hall A and pass-1 Fa18 / Hall A ratios vs phi
-  bottom-left:  individual pass-2 run-period cross sections vs phi with Hall A
-  bottom-right: individual pass-2 run-period ratios to Hall A
+  left:   pass-2 integrated 10.6 GeV, pass-1 Fa18, and Hall A cross sections vs phi
+  right:  pass-2 integrated 10.6 GeV / Hall A and pass-1 Fa18 / Hall A ratios vs phi
 
 The second plot is a 1x2 canvas:
 
@@ -76,21 +74,17 @@ For pass-2 CLAS12 / Hall B:
   the CSV columns are read as:
     (value, stat, sys_csv)
 
-  By default, this script additionally assigns a 15% estimated bin-to-bin
-  systematic:
-    sys_est = 0.15 * sigma
+  The point-to-point systematic is read directly from:
+    Syst. err (point-to-point total)
 
-  The plotted pass-2 Hall B systematic is:
-    sys_total = sqrt(sys_csv^2 + sys_est^2)
+  This is the CSV point-to-point total associated with the final integrated
+  10.6 GeV result. The script does not add an ad hoc fractional uncertainty.
 
-  The plotted pass-2 Hall B total uncertainty is:
-    err_total = sqrt(stat^2 + sys_total^2)
+  The period-dependent scale systematic is read from:
+    normed cross sections, ep->epg, exp, <period>, unpol, total scale sys
 
-  Disable the estimated 15% systematic with:
-    --no-clas12-estimated-sys
-
-  Change the estimated fraction with:
-    --clas12-bin-to-bin-sys-frac 0.15
+  The plotted pass-2 total uncertainty is:
+    err_total = sqrt(stat^2 + sys_point_to_point^2 + (scale_frac*sigma)^2)
 
 For pass-1 Fa18:
   the CSV columns are read as:
@@ -194,7 +188,6 @@ SP19_INB_EBEAM_GEV = 10.1998
 
 DEFAULT_CLAS12_SCALE = 1000.0
 DEFAULT_PASS1_SCALE = 1000.0
-DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC = 0.15
 DEFAULT_PASS1_NORM_SYS_FRAC = 0.31
 
 
@@ -211,25 +204,6 @@ FA18_INB_DISPLAY_LABEL = "Fa18 Inb"
 SP19_INB_DISPLAY_LABEL = "Sp19 Inb"
 SP19_KM15_DISPLAY_LABEL = "Sp19 Inb -> 10.604 GeV, KM15"
 
-PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD = {
-    "Sp18 Inb": "Sp18 Inb",
-    "Sp18 Out": "Sp18 Out",
-    "Fa18 Inb": "Fa18 Inb",
-    "Fa18 Out": "Fa18 Out",
-}
-
-TOP_COMPARISON_SERIES = [
-    PASS2_COMBINED_DISPLAY_LABEL,
-    PASS1_DISPLAY_LABEL,
-]
-
-BOTTOM_COMPARISON_SERIES = [
-    "Sp18 Inb",
-    "Sp18 Out",
-    "Fa18 Inb",
-    "Fa18 Out",
-]
-
 FA18_SP19_COMPARISON_SERIES = [
     FA18_INB_DISPLAY_LABEL,
     SP19_KM15_DISPLAY_LABEL,
@@ -237,10 +211,7 @@ FA18_SP19_COMPARISON_SERIES = [
 
 ALL_PASS2_CSV_PERIODS = [
     PASS2_COMBINED_CSV_PERIOD,
-    "Sp18 Inb",
-    "Sp18 Out",
     "Fa18 Inb",
-    "Fa18 Out",
     "Sp19 Inb",
 ]
 
@@ -805,8 +776,6 @@ def pass2_points_for_period(
     selected: pd.DataFrame,
     csv_period: str,
     clas12_scale: float,
-    include_clas12_estimated_sys: bool,
-    clas12_bin_to_bin_sys_frac: float,
     model_context: Optional[ModelContext] = None,
     apply_sp19_to_fa18_km15_scaling: bool = False,
 ) -> List[DataPoint]:
@@ -910,7 +879,8 @@ def pass2_points_for_period(
         stat *= clas12_scale
         sys_csv *= clas12_scale
 
-        # The dedicated CSV point-to-point and total-scale columns replace the former ad hoc estimate.
+        # The CSV point-to-point total is used directly. No ad hoc fractional
+        # bin-to-bin uncertainty is added by this script.
         sys_est = 0.0
         scale_abs = abs(scale_frac * sigma)
         sys_total = math.sqrt(sys_csv * sys_csv + scale_abs * scale_abs)
@@ -1494,8 +1464,6 @@ def print_dataset_diagnostics(
     points_by_label: dict,
     clas12_scale: float,
     pass1_scale: float,
-    include_clas12_estimated_sys: bool,
-    clas12_bin_to_bin_sys_frac: float,
     pass1_norm_sys_frac: float,
 ) -> None:
     print()
@@ -1503,11 +1471,8 @@ def print_dataset_diagnostics(
     print("  The script uses exact CSV column names, not column ordering.")
     print(f"  pass-2 clas12_scale = {clas12_scale:g}")
     print(f"  pass-1 pass1_scale  = {pass1_scale:g}")
-    print(f"  include estimated pass-2 CLAS12 sys = {include_clas12_estimated_sys}")
-
-    if include_clas12_estimated_sys:
-        print(f"  estimated pass-2 CLAS12 sys fraction = {clas12_bin_to_bin_sys_frac:.6f}")
-    # endif
+    print("  pass-2 point-to-point sys source = Syst. err (point-to-point total)")
+    print("  additional estimated pass-2 CLAS12 sys = none")
 
     print(f"  pass-1 normalization sys fraction = {pass1_norm_sys_frac:.6f}")
 
@@ -1617,8 +1582,6 @@ def make_plot(
     clas12_scale: float,
     pass1_scale: float,
     avg_period: str,
-    include_clas12_estimated_sys: bool,
-    clas12_bin_to_bin_sys_frac: float,
     pass1_norm_sys_frac: float,
 ) -> None:
     hall_a = hall_a_points()
@@ -1633,20 +1596,8 @@ def make_plot(
             selected=pass2_selected,
             csv_period=PASS2_COMBINED_CSV_PERIOD,
             clas12_scale=clas12_scale,
-            include_clas12_estimated_sys=include_clas12_estimated_sys,
-            clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
         )
     }
-
-    for display_label, csv_period in PASS2_PERIOD_DISPLAY_TO_CSV_PERIOD.items():
-        points_by_label[display_label] = pass2_points_for_period(
-            selected=pass2_selected,
-            csv_period=csv_period,
-            clas12_scale=clas12_scale,
-            include_clas12_estimated_sys=include_clas12_estimated_sys,
-            clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
-        )
-    # endfor
 
     if pass1_selected is not None:
         points_by_label[PASS1_DISPLAY_LABEL] = pass1_points(
@@ -1677,9 +1628,9 @@ def make_plot(
     hall_a_t_abs = abs(hall_a_t)
 
     fig, axes = plt.subplots(
+        1,
         2,
-        2,
-        figsize=(15.0, 10.0),
+        figsize=(15.0, 5.8),
         constrained_layout=True,
         sharex=True,
     )
@@ -1702,13 +1653,11 @@ def make_plot(
         fontsize=13,
     )
 
-    top_left = axes[0, 0]
-    top_right = axes[0, 1]
-    bottom_left = axes[1, 0]
-    bottom_right = axes[1, 1]
+    left = axes[0]
+    right = axes[1]
 
     plot_dataset(
-        ax=top_left,
+        ax=left,
         points=hall_a,
         label="Hall A",
         legend_label="Hall A",
@@ -1720,7 +1669,7 @@ def make_plot(
         # endif
 
         plot_dataset(
-            ax=top_left,
+            ax=left,
             points=points_by_label.get(label, []),
             label=label,
             legend_label=format_label_with_chi2(
@@ -1730,10 +1679,11 @@ def make_plot(
         )
     # endfor
 
-    top_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$)")
-    top_left.set_title("Cross sections: pass-2 combined and pass-1")
-    top_left.grid(True, alpha=0.25)
-    top_left.legend(fontsize=8, frameon=True)
+    left.set_xlabel(r"$\phi$ (deg)")
+    left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$)")
+    left.set_title("Cross sections: integrated pass-2 10.6 GeV and pass-1")
+    left.grid(True, alpha=0.25)
+    left.legend(fontsize=8, frameon=True)
 
     top_ratios = {}
 
@@ -1746,7 +1696,7 @@ def make_plot(
         top_ratios[label] = ratios
 
         plot_dataset(
-            ax=top_right,
+            ax=right,
             points=ratios,
             label=label,
             legend_label=format_label_with_chi2(
@@ -1756,7 +1706,7 @@ def make_plot(
         )
     # endfor
 
-    top_right.axhline(
+    right.axhline(
         1.0,
         color="0.35",
         linewidth=1.0,
@@ -1764,68 +1714,12 @@ def make_plot(
         zorder=0,
     )
 
-    top_right.set_ylabel(r"CLAS12 / Hall A")
-    top_right.set_title("Ratio to Hall A: pass-2 combined and pass-1")
-    top_right.grid(True, alpha=0.25)
-    top_right.legend(fontsize=8, frameon=True)
-    auto_ratio_ylim(top_right, top_ratios)
-
-    plot_dataset(
-        ax=bottom_left,
-        points=hall_a,
-        label="Hall A",
-        legend_label="Hall A",
-    )
-
-    for label in BOTTOM_COMPARISON_SERIES:
-        plot_dataset(
-            ax=bottom_left,
-            points=points_by_label.get(label, []),
-            label=label,
-            legend_label=format_label_with_chi2(
-                label,
-                chi2_by_label.get(label, (math.nan, 0, math.nan)),
-            ),
-        )
-    # endfor
-
-    bottom_left.set_xlabel(r"$\phi$ (deg)")
-    bottom_left.set_ylabel(r"$d^4\sigma/(dx_B\,dQ^2\,d|t|\,d\phi)$ (pb/GeV$^4$)")
-    bottom_left.set_title("Cross sections: individual pass-2 periods")
-    bottom_left.grid(True, alpha=0.25)
-    bottom_left.legend(fontsize=8, frameon=True)
-
-    bottom_ratios = {}
-
-    for label in BOTTOM_COMPARISON_SERIES:
-        ratios = ratios_by_label.get(label, [])
-        bottom_ratios[label] = ratios
-
-        plot_dataset(
-            ax=bottom_right,
-            points=ratios,
-            label=label,
-            legend_label=format_label_with_chi2(
-                label,
-                chi2_by_label.get(label, (math.nan, 0, math.nan)),
-            ),
-        )
-    # endfor
-
-    bottom_right.axhline(
-        1.0,
-        color="0.35",
-        linewidth=1.0,
-        linestyle="--",
-        zorder=0,
-    )
-
-    bottom_right.set_xlabel(r"$\phi$ (deg)")
-    bottom_right.set_ylabel(r"CLAS12 / Hall A")
-    bottom_right.set_title("Ratio to Hall A: individual pass-2 periods")
-    bottom_right.grid(True, alpha=0.25)
-    bottom_right.legend(fontsize=8, frameon=True)
-    auto_ratio_ylim(bottom_right, bottom_ratios)
+    right.set_xlabel(r"$\phi$ (deg)")
+    right.set_ylabel(r"CLAS12 / Hall A")
+    right.set_title("Ratio to Hall A: integrated pass-2 10.6 GeV and pass-1")
+    right.grid(True, alpha=0.25)
+    right.legend(fontsize=8, frameon=True)
+    auto_ratio_ylim(right, top_ratios)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1855,7 +1749,7 @@ def make_plot(
 
     print()
     print("Chi2/ndf summary against Hall A interpolation:")
-    for label in TOP_COMPARISON_SERIES + BOTTOM_COMPARISON_SERIES:
+    for label in TOP_COMPARISON_SERIES:
         if label not in chi2_by_label:
             continue
         # endif
@@ -1873,8 +1767,6 @@ def make_plot(
         points_by_label=points_by_label,
         clas12_scale=clas12_scale,
         pass1_scale=pass1_scale,
-        include_clas12_estimated_sys=include_clas12_estimated_sys,
-        clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
         pass1_norm_sys_frac=pass1_norm_sys_frac,
     )
 
@@ -1884,8 +1776,6 @@ def make_fa18_sp19_km15_plot(
     output_dir: str,
     output_name: str,
     clas12_scale: float,
-    include_clas12_estimated_sys: bool,
-    clas12_bin_to_bin_sys_frac: float,
     model_context: ModelContext,
 ) -> None:
     hall_a = hall_a_points()
@@ -1894,16 +1784,12 @@ def make_fa18_sp19_km15_plot(
         selected=pass2_selected,
         csv_period="Fa18 Inb",
         clas12_scale=clas12_scale,
-        include_clas12_estimated_sys=include_clas12_estimated_sys,
-        clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
     )
 
     sp19_scaled_points = pass2_points_for_period(
         selected=pass2_selected,
         csv_period="Sp19 Inb",
         clas12_scale=clas12_scale,
-        include_clas12_estimated_sys=include_clas12_estimated_sys,
-        clas12_bin_to_bin_sys_frac=clas12_bin_to_bin_sys_frac,
         model_context=model_context,
         apply_sp19_to_fa18_km15_scaling=model_context.enabled,
     )
@@ -2097,7 +1983,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-name",
         default=DEFAULT_OUTPUT_NAME,
-        help=f"Output PNG filename for the original 2x2 plot. Default: {DEFAULT_OUTPUT_NAME}",
+        help=f"Output PNG filename for the integrated 1x2 plot. Default: {DEFAULT_OUTPUT_NAME}",
     )
 
     parser.add_argument(
@@ -2153,25 +2039,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--no-clas12-estimated-sys",
-        action="store_true",
-        help=(
-            "Disable the extra estimated pass-2 CLAS12 bin-to-bin systematic uncertainty. "
-            "By default, the script adds a 15 percent pass-2 CLAS12 systematic in quadrature."
-        ),
-    )
-
-    parser.add_argument(
-        "--clas12-bin-to-bin-sys-frac",
-        type=float,
-        default=DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC,
-        help=(
-            "Estimated fractional pass-2 CLAS12 bin-to-bin systematic uncertainty. "
-            f"Default: {DEFAULT_CLAS12_BIN_TO_BIN_SYS_FRAC:.2f}."
-        ),
-    )
-
-    parser.add_argument(
         "--pass1-norm-sys-frac",
         type=float,
         default=DEFAULT_PASS1_NORM_SYS_FRAC,
@@ -2204,10 +2071,6 @@ def main() -> None:
         raise ValueError("--pass1-scale must be positive.")
     # endif
 
-    if args.clas12_bin_to_bin_sys_frac < 0.0:
-        raise ValueError("--clas12-bin-to-bin-sys-frac must be non-negative.")
-    # endif
-
     if args.pass1_norm_sys_frac < 0.0:
         raise ValueError("--pass1-norm-sys-frac must be non-negative.")
     # endif
@@ -2226,6 +2089,12 @@ def main() -> None:
 
     pass2_required += [
         pass2_cross_section_column(csv_period)
+        for csv_period in ALL_PASS2_CSV_PERIODS
+    ]
+
+    pass2_required.append(pass2_point_to_point_column())
+    pass2_required += [
+        pass2_total_scale_column(csv_period)
         for csv_period in ALL_PASS2_CSV_PERIODS
     ]
 
@@ -2300,14 +2169,9 @@ def main() -> None:
         print(f"  phi bins present: {len(pass1_selected)}")
     # endif
 
-    if args.no_clas12_estimated_sys:
-        print("  pass-2 CLAS12 estimated bin-to-bin systematic: disabled")
-    else:
-        print(
-            "  pass-2 CLAS12 estimated bin-to-bin systematic: "
-            f"{args.clas12_bin_to_bin_sys_frac:.6f}"
-        )
-    # endif
+    print("  pass-2 point-to-point systematic: read from CSV column")
+    print("    Syst. err (point-to-point total)")
+    print("  additional estimated pass-2 bin-to-bin systematic: none")
 
     if args.no_pass1:
         print("  pass-1 Fa18 overlay: disabled")
@@ -2324,8 +2188,6 @@ def main() -> None:
         clas12_scale=args.clas12_scale,
         pass1_scale=args.pass1_scale,
         avg_period=args.avg_period,
-        include_clas12_estimated_sys=not args.no_clas12_estimated_sys,
-        clas12_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
         pass1_norm_sys_frac=args.pass1_norm_sys_frac,
     )
 
@@ -2342,8 +2204,6 @@ def main() -> None:
             output_dir=args.output_dir,
             output_name=args.fa18_sp19_output_name,
             clas12_scale=args.clas12_scale,
-            include_clas12_estimated_sys=not args.no_clas12_estimated_sys,
-            clas12_bin_to_bin_sys_frac=args.clas12_bin_to_bin_sys_frac,
             model_context=model_context,
         )
     # endif
