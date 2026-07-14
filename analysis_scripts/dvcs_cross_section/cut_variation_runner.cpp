@@ -370,6 +370,10 @@ bool run_automatic_cut_variation_systematics(
         syst.enabled = true;
         syst.apply_barlow = true;
         syst.barlow_threshold = 1.0;
+        syst.use_pass1_tight_instability_rule =
+            options.use_pass1_tight_instability_rule;
+        syst.tight_relative_difference_threshold =
+            options.tight_relative_difference_threshold;
         syst.make_plots = options.make_final_diagnostic_plots;
         syst.write_diagnostic_csv = true;
         syst.nominal_csv = options.nominal_csv;

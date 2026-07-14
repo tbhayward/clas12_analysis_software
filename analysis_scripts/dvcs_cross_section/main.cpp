@@ -673,6 +673,8 @@ int main(int argc, char* argv[]) {
         cut_variation_opts.enabled = true;
         cut_variation_opts.make_exclusivity_extraction_plots = false;
         cut_variation_opts.make_final_diagnostic_plots = true;
+        cut_variation_opts.use_pass1_tight_instability_rule = true;
+        cut_variation_opts.tight_relative_difference_threshold = 0.50;
         cut_variation_opts.max_workers = 7;
         cut_variation_opts.nominal_csv = "output/csvs/dvcs_pass2_analysis.csv";
         cut_variation_opts.output_dir = "output/cut_variation_systematics";

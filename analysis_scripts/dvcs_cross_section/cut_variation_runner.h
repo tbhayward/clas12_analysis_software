@@ -11,6 +11,8 @@ struct AutomaticCutVariationOptions {
     bool enabled = false;
     bool make_exclusivity_extraction_plots = false;
     bool make_final_diagnostic_plots = true;
+    bool use_pass1_tight_instability_rule = true;
+    double tight_relative_difference_threshold = 0.50;
     int max_workers = 7;
     std::string nominal_csv = "output/csvs/dvcs_pass2_analysis.csv";
     std::string output_dir = "output/cut_variation_systematics";

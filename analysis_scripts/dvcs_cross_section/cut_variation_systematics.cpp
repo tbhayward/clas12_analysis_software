@@ -64,6 +64,8 @@ struct DiagnosticRow {
     double excl_barlow_tight = 0.0;
     bool excl_keep_loose = false;
     bool excl_keep_tight = false;
+    double excl_tight_relative_difference = 0.0;
+    bool excl_use_loose_only = false;
     double excl_raw_abs = 0.0;
     double excl_final_abs = 0.0;
 
@@ -73,6 +75,8 @@ struct DiagnosticRow {
     double fid_barlow_tight = 0.0;
     bool fid_keep_loose = false;
     bool fid_keep_tight = false;
+    double fid_tight_relative_difference = 0.0;
+    bool fid_use_loose_only = false;
     double fid_raw_abs = 0.0;
     double fid_final_abs = 0.0;
 };
@@ -315,8 +319,21 @@ double barlow_value(const Triple& varied, const Triple& nominal) {
     return diff / std::sqrt(denom2);
 }
 
-double rms_absolute(double d1, double d2) {
-    return std::sqrt(0.5 * (d1 * d1 + d2 * d2));
+double relative_difference(double delta, double nominal) {
+    const double denom = std::fabs(nominal);
+    if (denom <= 1e-30) {
+        return std::fabs(delta) <= 1e-30
+            ? 0.0
+            : std::numeric_limits<double>::infinity();
+    }
+    return std::fabs(delta) / denom;
+}
+
+double pass1_cut_systematic_absolute(double loose_delta,
+                                     double tight_delta,
+                                     bool use_loose_only) {
+    if (use_loose_only) return std::fabs(loose_delta);
+    return 0.5 * (std::fabs(loose_delta) + std::fabs(tight_delta));
 }
 
 std::string xbin_label(double lo, double hi) {
@@ -334,10 +351,12 @@ void write_diagnostics(const std::vector<DiagnosticRow>& rows, const std::string
         << "exclusivity tight xs,exclusivity tight stat,exclusivity loose raw delta,"
         << "exclusivity tight raw delta,exclusivity loose Barlow,exclusivity tight Barlow,"
         << "exclusivity loose retained,exclusivity tight retained,"
+        << "exclusivity tight relative difference,exclusivity loose-only prescription,"
         << "exclusivity raw systematic (nb/GeV^4),exclusivity final systematic (nb/GeV^4),"
         << "fiducial loose xs,fiducial loose stat,fiducial tight xs,fiducial tight stat,"
         << "fiducial loose raw delta,fiducial tight raw delta,fiducial loose Barlow,"
         << "fiducial tight Barlow,fiducial loose retained,fiducial tight retained,"
+        << "fiducial tight relative difference,fiducial loose-only prescription,"
         << "fiducial raw systematic (nb/GeV^4),fiducial final systematic (nb/GeV^4)\n";
     for (const auto& r : rows) {
         out << r.bin_index << ',' << csv_quote(r.bin_name) << ','
@@ -349,12 +368,14 @@ void write_diagnostics(const std::vector<DiagnosticRow>& rows, const std::string
             << r.excl_delta_loose_raw << ',' << r.excl_delta_tight_raw << ','
             << r.excl_barlow_loose << ',' << r.excl_barlow_tight << ','
             << (r.excl_keep_loose ? 1 : 0) << ',' << (r.excl_keep_tight ? 1 : 0) << ','
+            << r.excl_tight_relative_difference << ',' << (r.excl_use_loose_only ? 1 : 0) << ','
             << r.excl_raw_abs << ',' << r.excl_final_abs << ','
             << r.fid_loose.value << ',' << r.fid_loose.stat << ','
             << r.fid_tight.value << ',' << r.fid_tight.stat << ','
             << r.fid_delta_loose_raw << ',' << r.fid_delta_tight_raw << ','
             << r.fid_barlow_loose << ',' << r.fid_barlow_tight << ','
             << (r.fid_keep_loose ? 1 : 0) << ',' << (r.fid_keep_tight ? 1 : 0) << ','
+            << r.fid_tight_relative_difference << ',' << (r.fid_use_loose_only ? 1 : 0) << ','
             << r.fid_raw_abs << ',' << r.fid_final_abs << '\n';
     }
 }
@@ -420,7 +441,7 @@ void make_plots(const std::vector<DiagnosticRow>& rows, const std::string& outdi
             g1.GetXaxis()->SetTitle("Sequential bin number within x_{B} range");
             g1.GetYaxis()->SetTitle("Point-to-point systematic (nb/GeV^{4})");
             g1.Draw("APL"); g2.Draw("PL SAME");
-            TLegend l1(0.72,0.76,0.94,0.90); l1.AddEntry(&g1,"Raw RMS","lp"); l1.AddEntry(&g2,"After Barlow","lp"); l1.Draw();
+            TLegend l1(0.72,0.76,0.94,0.90); l1.AddEntry(&g1,"Raw prescription","lp"); l1.AddEntry(&g2,"After Barlow","lp"); l1.Draw();
             c.cd(2);
             TGraph f1(n, x.data(), fiRaw.data());
             TGraph f2(n, x.data(), fiFinal.data());
@@ -430,7 +451,7 @@ void make_plots(const std::vector<DiagnosticRow>& rows, const std::string& outdi
             f1.GetXaxis()->SetTitle("Sequential bin number within x_{B} range");
             f1.GetYaxis()->SetTitle("Point-to-point systematic (nb/GeV^{4})");
             f1.Draw("APL"); f2.Draw("PL SAME");
-            TLegend l2(0.72,0.76,0.94,0.90); l2.AddEntry(&f1,"Raw RMS","lp"); l2.AddEntry(&f2,"After Barlow","lp"); l2.Draw();
+            TLegend l2(0.72,0.76,0.94,0.90); l2.AddEntry(&f1,"Raw prescription","lp"); l2.AddEntry(&f2,"After Barlow","lp"); l2.Draw();
             c.SaveAs((fs::path(outdir)/(stem+"_systematics.png")).string().c_str());
         }
 
@@ -506,7 +527,7 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
         const auto map_fil = build_row_map(fi_loose);
         const auto map_fit = build_row_map(fi_tight);
 
-        // Validate all variation inputs before adding columns, calculating RMS
+        // Validate all variation inputs before adding columns or calculating systematics
         // values or writing a backup. Missing/malformed tuples must never be
         // interpreted as zero differences or universal Barlow rejection.
         require_valid_variation(
@@ -583,9 +604,18 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
                 r.excl_barlow_tight = barlow_value(r.excl_tight, r.nominal);
                 r.excl_keep_loose = !options.apply_barlow || r.excl_barlow_loose >= options.barlow_threshold;
                 r.excl_keep_tight = !options.apply_barlow || r.excl_barlow_tight >= options.barlow_threshold;
-                r.excl_raw_abs = rms_absolute(r.excl_delta_loose_raw, r.excl_delta_tight_raw);
-                r.excl_final_abs = rms_absolute(r.excl_keep_loose ? r.excl_delta_loose_raw : 0.0,
-                                                     r.excl_keep_tight ? r.excl_delta_tight_raw : 0.0);
+                r.excl_tight_relative_difference =
+                    relative_difference(r.excl_delta_tight_raw, r.nominal.value);
+                r.excl_use_loose_only = options.use_pass1_tight_instability_rule &&
+                    r.excl_tight_relative_difference > options.tight_relative_difference_threshold;
+                r.excl_raw_abs = pass1_cut_systematic_absolute(
+                    r.excl_delta_loose_raw,
+                    r.excl_delta_tight_raw,
+                    r.excl_use_loose_only);
+                r.excl_final_abs = pass1_cut_systematic_absolute(
+                    r.excl_keep_loose ? r.excl_delta_loose_raw : 0.0,
+                    r.excl_keep_tight ? r.excl_delta_tight_raw : 0.0,
+                    r.excl_use_loose_only);
 
                 r.fid_delta_loose_raw = r.fid_loose.value - r.nominal.value;
                 r.fid_delta_tight_raw = r.fid_tight.value - r.nominal.value;
@@ -593,9 +623,18 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
                 r.fid_barlow_tight = barlow_value(r.fid_tight, r.nominal);
                 r.fid_keep_loose = !options.apply_barlow || r.fid_barlow_loose >= options.barlow_threshold;
                 r.fid_keep_tight = !options.apply_barlow || r.fid_barlow_tight >= options.barlow_threshold;
-                r.fid_raw_abs = rms_absolute(r.fid_delta_loose_raw, r.fid_delta_tight_raw);
-                r.fid_final_abs = rms_absolute(r.fid_keep_loose ? r.fid_delta_loose_raw : 0.0,
-                                                    r.fid_keep_tight ? r.fid_delta_tight_raw : 0.0);
+                r.fid_tight_relative_difference =
+                    relative_difference(r.fid_delta_tight_raw, r.nominal.value);
+                r.fid_use_loose_only = options.use_pass1_tight_instability_rule &&
+                    r.fid_tight_relative_difference > options.tight_relative_difference_threshold;
+                r.fid_raw_abs = pass1_cut_systematic_absolute(
+                    r.fid_delta_loose_raw,
+                    r.fid_delta_tight_raw,
+                    r.fid_use_loose_only);
+                r.fid_final_abs = pass1_cut_systematic_absolute(
+                    r.fid_keep_loose ? r.fid_delta_loose_raw : 0.0,
+                    r.fid_keep_tight ? r.fid_delta_tight_raw : 0.0,
+                    r.fid_use_loose_only);
             }
 
             row[c_ex_raw] = format_number(r.excl_raw_abs);
@@ -625,6 +664,17 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
         if (options.make_plots) {
             make_plots(diagnostics, (fs::path(options.output_dir)/"plots").string());
         }
+
+        const auto excl_loose_only_count = std::count_if(
+            diagnostics.begin(), diagnostics.end(),
+            [](const DiagnosticRow& r) { return r.excl_use_loose_only; });
+        const auto fid_loose_only_count = std::count_if(
+            diagnostics.begin(), diagnostics.end(),
+            [](const DiagnosticRow& r) { return r.fid_use_loose_only; });
+        std::cout << "[cut-systematics] Pass-1 tight-instability rule (threshold "
+                  << 100.0 * options.tight_relative_difference_threshold
+                  << "%): exclusivity loose-only in " << excl_loose_only_count
+                  << " bins; fiducial loose-only in " << fid_loose_only_count << " bins.\n";
 
         std::cout << "[cut-systematics] Updated " << options.nominal_csv << " with raw and Barlow-filtered "
                   << "exclusivity/fiducial point-to-point systematics for " << diagnostics.size() << " bins.\n";
