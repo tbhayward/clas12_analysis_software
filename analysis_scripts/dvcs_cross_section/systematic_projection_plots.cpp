@@ -49,10 +49,8 @@ struct Component {
 struct BinAccumulator {
     double x_sum = 0.0;
     int x_count = 0;
-    std::vector<double> abs_sum;
-    std::vector<double> rel_sum;
-    std::vector<int> abs_count;
-    std::vector<int> rel_count;
+    std::vector<std::vector<double> > abs_values;
+    std::vector<std::vector<double> > rel_values;
 };
 
 static std::string trim(const std::string& s) {
@@ -205,6 +203,14 @@ static double log_upper_bound(double maximum, double fallback) {
     return std::pow(10.0, std::ceil(std::log10(maximum * 1.35)));
 }
 
+static double median(std::vector<double> values) {
+    if (values.empty()) return std::numeric_limits<double>::quiet_NaN();
+    std::sort(values.begin(), values.end());
+    const size_t n = values.size();
+    if ((n % 2U) == 1U) return values[n / 2U];
+    return 0.5 * (values[n / 2U - 1U] + values[n / 2U]);
+}
+
 static bool make_one(const CsvTable& table, const VariableSpec& var,
                      const std::string& output_dir) {
     const auto comps = components();
@@ -222,11 +228,9 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
         if (!row_x(table, row, var, x, key)) continue;
 
         auto& b = bins[key];
-        if (b.abs_sum.empty()) {
-            b.abs_sum.assign(comps.size(), 0.0);
-            b.rel_sum.assign(comps.size(), 0.0);
-            b.abs_count.assign(comps.size(), 0);
-            b.rel_count.assign(comps.size(), 0);
+        if (b.abs_values.empty()) {
+            b.abs_values.resize(comps.size());
+            b.rel_values.resize(comps.size());
         }
         b.x_sum += x;
         ++b.x_count;
@@ -234,10 +238,8 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
         for (size_t j = 0; j < comps.size(); ++j) {
             const double s = number(cell(table, row, comps[j].column));
             if (!std::isfinite(s) || s < 0.0) continue;
-            b.abs_sum[j] += s;
-            ++b.abs_count[j];
-            b.rel_sum[j] += 100.0 * s / std::fabs(xs);
-            ++b.rel_count[j];
+            b.abs_values[j].push_back(s);
+            b.rel_values[j].push_back(100.0 * s / std::fabs(xs));
         }
     }
 
@@ -251,8 +253,8 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
         p.a.resize(comps.size(), std::numeric_limits<double>::quiet_NaN());
         p.r.resize(comps.size(), std::numeric_limits<double>::quiet_NaN());
         for (size_t j = 0; j < comps.size(); ++j) {
-            if (b.abs_count[j] > 0) p.a[j] = b.abs_sum[j] / b.abs_count[j];
-            if (b.rel_count[j] > 0) p.r[j] = b.rel_sum[j] / b.rel_count[j];
+            p.a[j] = median(b.abs_values[j]);
+            p.r[j] = median(b.rel_values[j]);
         }
         points.push_back(std::move(p));
     }
@@ -268,7 +270,7 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
         TPad* pad = static_cast<TPad*>(c.cd(pad_index));
         style_pad(pad);
 
-        const double ymin = relative ? 1.0e-4 : 1.0e-6;
+        const double ymin = relative ? 1.0e-2 : 1.0e-5;
         double observed_max = 0.0;
         for (const auto& p : points) {
             const auto& values = relative ? p.r : p.a;
@@ -318,8 +320,8 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
             if (first) {
                 g->GetXaxis()->SetTitle(var.x_title.c_str());
                 g->GetYaxis()->SetTitle(relative
-                    ? "Mean point-to-point systematic / |#sigma| (%)"
-                    : "Mean point-to-point systematic (nb/GeV^{4})");
+                    ? "Median point-to-point systematic / |#sigma| (%)"
+                    : "Median point-to-point systematic (nb/GeV^{4})");
                 g->GetXaxis()->SetTitleFont(42);
                 g->GetYaxis()->SetTitleFont(42);
                 g->GetXaxis()->SetLabelFont(42);
@@ -331,7 +333,7 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
                 g->GetYaxis()->SetTitleOffset(1.02);
                 g->GetXaxis()->SetTitleOffset(1.08);
                 g->GetYaxis()->SetRangeUser(ymin, ymax);
-                g->GetYaxis()->SetMoreLogLabels(true);
+                g->GetYaxis()->SetMoreLogLabels(false);
                 g->GetYaxis()->SetNoExponent(false);
                 g->Draw("ALP");
                 first = false;
@@ -352,7 +354,7 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
         latex.SetTextSize(0.038);
         latex.SetTextAlign(31);
         latex.DrawLatex(0.975, 0.975,
-            relative ? "Relative average systematic size" : "Absolute average systematic size");
+            relative ? "Relative median systematic size" : "Absolute median systematic size");
 
         if (relative) {
             latex.SetTextAlign(11);
@@ -371,7 +373,9 @@ static bool make_one(const CsvTable& table, const VariableSpec& var,
 
     std::ofstream out(output_dir + "/point_to_point_systematics_vs_" + var.name + ".csv");
     out << "x";
-    for (const auto& comp : comps) out << ',' << comp.label << "_absolute," << comp.label << "_percent";
+    for (const auto& comp : comps) {
+        out << ',' << comp.label << "_absolute_median," << comp.label << "_relative_percent_median";
+    }
     out << '\n';
     for (const auto& p : points) {
         out << std::setprecision(12) << p.x;

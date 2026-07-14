@@ -275,12 +275,26 @@ static const std::string& pass1_systematic_total_column() {
 }
 
 static const std::vector<std::string>& pass1_systematic_destination_columns() {
+    // Only the four legacy component columns are imported from pass 1.
+    // The total must be recomputed from all available pass-2 components,
+    // including exclusivity-cut and fiducial-cut systematics.
+    static const std::vector<std::string> cols = {
+        "Syst. err (pi0 subtraction)",
+        "Syst. err (Acceptance)",
+        "Syst.err (Frad)",
+        "Syst.err (Fbin)"
+    };
+    return cols;
+}
+
+static const std::vector<std::string>& all_point_to_point_component_columns() {
     static const std::vector<std::string> cols = {
         "Syst. err (pi0 subtraction)",
         "Syst. err (Acceptance)",
         "Syst.err (Frad)",
         "Syst.err (Fbin)",
-        "Syst. err (point-to-point total)"
+        "Syst. err (exclusivity cuts)",
+        "Syst. err (fiducial cuts)"
     };
     return cols;
 }
@@ -301,6 +315,20 @@ static double quadrature_total_from_components(const std::map<std::string, std::
         any = true;
     }
     return any ? std::sqrt(sum2) : std::numeric_limits<double>::quiet_NaN();
+}
+
+static double full_point_to_point_total_from_row(const CsvTable& table,
+                                                  const std::vector<std::string>& row) {
+    double sum2 = 0.0;
+    for (const auto& col : all_point_to_point_component_columns()) {
+        const int j = column_or_throw(table, col, "point-to-point total recomputation");
+        const double v = to_double(row[(size_t)j]);
+        if (!std::isfinite(v) || v < 0.0) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        sum2 += v * v;
+    }
+    return std::sqrt(sum2);
 }
 
 struct Pass1SystValues {
@@ -533,9 +561,12 @@ static void validate_schema(const CsvTable& pass2,
     for (const auto& col : pass1_systematic_component_columns()) {
         column_or_throw(pass1, col, "pass-1 systematic source");
     }
-    for (const auto& col : pass1_systematic_destination_columns()) {
+    for (const auto& col : all_point_to_point_component_columns()) {
         column_or_throw(pass2, col, "pass-2 systematic destination");
     }
+    column_or_throw(pass2,
+                    pass1_systematic_total_column(),
+                    "pass-2 point-to-point total destination");
 }
 
 } // namespace
@@ -589,7 +620,7 @@ bool import_pass1_systematics(const std::string& csv_path,
         }
         audit << "pass2_bin_index,xB_center,Q2_center,t_center,phi_center,"
               << "below_pass1_bin,above_pass1_bin,below_scaled_distance,above_scaled_distance,"
-              << "pi0,acceptance,Frad,Fbin,total\n";
+              << "pi0,acceptance,Frad,Fbin,total_after_full_recalculation\n";
 
         for (auto& row : pass2.rows) {
             const int bin_index = to_int(get_cell(row, pass2, "bin index"));
@@ -637,7 +668,7 @@ bool import_pass1_systematics(const std::string& csv_path,
                     for (const auto& col : pass1_systematic_destination_columns()) {
                         audit << ',' << values->values.at(col);
                     }
-                    audit << '\n';
+                    // The full total is written after the destination row has been updated.
                 } else {
                     ++unmatched;
                     continue;
@@ -648,6 +679,17 @@ bool import_pass1_systematics(const std::string& csv_path,
                 const int j = column_or_throw(pass2, col, "pass-2 systematic destination");
                 const auto it_value = values->values.find(col);
                 row[(size_t)j] = (it_value == values->values.end()) ? std::string() : it_value->second;
+            }
+
+            const double full_total = full_point_to_point_total_from_row(pass2, row);
+            const int total_col = column_or_throw(
+                pass2,
+                pass1_systematic_total_column(),
+                "pass-2 point-to-point total destination");
+            row[(size_t)total_col] = format_double(full_total);
+
+            if (&interpolated_values == values) {
+                audit << ',' << format_double(full_total) << '\n';
             }
         }
 
@@ -660,11 +702,11 @@ bool import_pass1_systematics(const std::string& csv_path,
                   << ", interpolated from nearest lower/upper kinematic neighbors: " << interpolated
                   << ", unmatched: " << unmatched << "\n";
         std::cout << "[pass1-systematics] Interpolation audit: " << audit_path << "\n";
-        std::cout << "[pass1-systematics] Filled columns:";
+        std::cout << "[pass1-systematics] Imported component columns:";
         for (const auto& col : pass1_systematic_destination_columns()) {
             std::cout << "\n  - " << col;
         }
-        std::cout << "\n";
+        std::cout << "\n[pass1-systematics] Recomputed full point-to-point total from all six components, including exclusivity and fiducial cuts.\n";
 
         return true;
     } catch (const std::exception& e) {
