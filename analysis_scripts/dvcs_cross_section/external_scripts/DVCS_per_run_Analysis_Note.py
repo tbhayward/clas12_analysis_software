@@ -14,8 +14,8 @@ ROOT-tree run lacks either a positive charge or a current assignment.
 """
 
 import argparse
+import json
 import math
-import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -29,6 +29,8 @@ TREE_NAME = "PhysicsEvents"
 ROOT_DIRECTORY = Path("/volatile/clas12/thayward/DVCS_per_run_for_analysis_note")
 DEFAULT_CHARGE_FILE = Path("import/Analysis_Note_charges.txt")
 DEFAULT_OUTPUT_DIR = Path("output/dvcs_per_run_analysis_note")
+DEFAULT_COMBINED_CUTS_FILE = Path("output/jsons/combined_cuts.json")
+DEFAULT_GLOBAL_CUTS_FILE = Path("output/jsons/global_cuts_config.json")
 
 PERIOD_FILES = [
     ("rga_fa18_inb", ROOT_DIRECTORY / "rga_fa18_inb.root"),
@@ -94,6 +96,18 @@ def parse_args():
         default=DEFAULT_OUTPUT_DIR,
         help="Directory in which PNG plots are written.",
     )
+    parser.add_argument(
+        "--combined-cuts",
+        type=Path,
+        default=DEFAULT_COMBINED_CUTS_FILE,
+        help="Nominal topology/period exclusivity cuts JSON.",
+    )
+    parser.add_argument(
+        "--global-cuts",
+        type=Path,
+        default=DEFAULT_GLOBAL_CUTS_FILE,
+        help="Global analysis-cut configuration JSON.",
+    )
     return parser.parse_args()
 #enddef
 
@@ -135,7 +149,7 @@ FA18_INB_CURRENT = {
 
     # 50 nA
     5356: 50, 5357: 50, 5358: 50, 5359: 50, 5360: 50, 5361: 50,
-    5362: 50, 5366: 50,
+    5362: 50, 5366: 50, 5345: 50,
 
     # 55 nA
     5368: 55, 5369: 55, 5372: 55, 5373: 55, 5374: 55, 5375: 55,
@@ -193,13 +207,6 @@ FA18_OUT_CURRENT = {
     5610: 5,
 }
 
-TRIGGER_RANGES_SP18 = [
-    ("trigger v2-v7", 3031, 3495),
-    ("trigger v8", 3495, 3517),
-    ("trigger v9", 3517, 3548),
-    ("trigger v10", 3709, 3722),
-    ("trigger v11-v2_3", 3722, 4325),
-]
 
 
 def resolve_current(period_label, runnum):
@@ -212,6 +219,11 @@ def resolve_current(period_label, runnum):
 
     # Fa18 Inb
     if label == "rga_fa18_inb":
+        # Explicit analysis-note classification. Keep this guard separate so
+        # run 5345 cannot be lost if the surrounding current table is edited.
+        if runnum == 5345:
+            return True, 50
+        #endif
         if runnum in FA18_INB_CURRENT:
             return True, FA18_INB_CURRENT[runnum]
         #endif
@@ -347,41 +359,437 @@ def period_files(root_dir):
 #enddef
 
 
-def read_run_counts(period_label, root_path):
+def load_json_object(path, description):
+    if not path.is_file():
+        raise RuntimeError(f"Missing {description}: {path}")
+    #endif
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        #endwith
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Failed to parse {description} {path}: {exc}") from exc
+    #endtry
+
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{description} is not a JSON object: {path}")
+    #endif
+
+    return payload
+#enddef
+
+
+PERIOD_CUT_CODES = {
+    "rga_fa18_inb": "Fa18_Inb",
+    "rga_fa18_out": "Fa18_Out",
+    "rga_sp19_inb": "Sp19_Inb",
+    "rga_sp18_inb": "Sp18_Inb",
+    "rga_sp18_out": "Sp18_Out",
+}
+
+SIGMA_VARIABLES = (
+    "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
+    "Delta_phi", "pTmiss", "xF", "theta_gamma_gamma",
+)
+
+
+def topology_name(detector1, detector2):
+    result = np.full(detector1.shape, "", dtype="U5")
+    result[(detector1 == 1) & (detector2 == 1)] = "FD_FD"
+    result[(detector1 == 2) & (detector2 == 1)] = "CD_FD"
+    result[(detector1 == 2) & (detector2 == 0)] = "CD_FT"
+    return result
+#enddef
+
+
+def fd_sector_from_phi(phi_rad):
+    phi_deg = np.mod(np.degrees(phi_rad), 360.0)
+    sector = np.full(phi_deg.shape, -1, dtype=int)
+    sector[(phi_deg >= 330.0) | (phi_deg < 30.0)] = 1
+    sector[(phi_deg >= 30.0) & (phi_deg < 90.0)] = 2
+    sector[(phi_deg >= 90.0) & (phi_deg < 150.0)] = 3
+    sector[(phi_deg >= 150.0) & (phi_deg < 210.0)] = 4
+    sector[(phi_deg >= 210.0) & (phi_deg < 270.0)] = 5
+    sector[(phi_deg >= 270.0) & (phi_deg < 330.0)] = 6
+    return sector
+#enddef
+
+
+def cd_sector_from_phi(phi_rad):
+    phi_deg = np.mod(np.degrees(phi_rad), 360.0)
+    sector = np.full(phi_deg.shape, -1, dtype=int)
+    sector[(phi_deg >= 272.5) | (phi_deg < 32.5)] = 1
+    sector[(phi_deg >= 32.5) & (phi_deg < 150.5)] = 2
+    sector[(phi_deg >= 150.5) & (phi_deg < 272.5)] = 3
+    return sector
+#enddef
+
+
+def global_sector_quality_active(cfg):
+    diagnostic_active = any(
+        bool(cfg.get(name, False))
+        for name in (
+            "enable_topology_filter",
+            "enable_electron_fd_sector_filter",
+            "enable_proton_fd_sector_filter",
+            "enable_proton_cd_sector_filter",
+            "enable_photon_fd_sector_filter",
+        )
+    )
+    return bool(cfg.get("enable_sp18_out_sector_quality_cuts", False)) and not diagnostic_active
+#enddef
+
+
+def required_branches(global_cfg, tree_keys):
+    required = {
+        "runnum", "detector1", "detector2", "t1", "open_angle_ep2", "pTmiss",
+        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "xF", "theta_gamma_gamma",
+    }
+
+    if "Delta_phi" in tree_keys:
+        required.add("Delta_phi")
+    else:
+        required.update({"p1_phi", "p2_phi"})
+    #endif
+
+    needs_phi = (
+        global_sector_quality_active(global_cfg)
+        or bool(global_cfg.get("enable_electron_fd_sector_filter", False))
+        or bool(global_cfg.get("enable_proton_fd_sector_filter", False))
+        or bool(global_cfg.get("enable_proton_cd_sector_filter", False))
+        or bool(global_cfg.get("enable_photon_fd_sector_filter", False))
+        or (
+            bool(global_cfg.get("enable_auxiliary_fiducial_cuts", False))
+            and bool(global_cfg.get("auxiliary_require_distinct_fd_sectors", False))
+        )
+    )
+
+    if needs_phi:
+        required.update({"e_phi", "p1_phi", "p2_phi"})
+    #endif
+
+    if bool(global_cfg.get("enable_auxiliary_fiducial_cuts", False)):
+        required.update({"e_theta", "p1_theta", "p2_p", "p2_theta"})
+    #endif
+
+    if bool(global_cfg.get("enable_dvcsgen_ycol_cut", False)):
+        required.update({"e_p", "e_theta", "e_phi", "p2_p", "p2_theta", "p2_phi"})
+    #endif
+
+    return sorted(required)
+#enddef
+
+
+def dvcsgen_p2_pos(period_label, arrays):
+    beam_energy = {
+        "rga_sp18_inb": 10.594,
+        "rga_sp18_out": 10.594,
+        "rga_fa18_inb": 10.604,
+        "rga_fa18_out": 10.604,
+        "rga_sp19_inb": 10.1998,
+    }[period_label]
+
+    me = 0.00051099895
+    beam_pz = math.sqrt(beam_energy * beam_energy - me * me)
+    e_p = arrays["e_p"]
+    e_theta = arrays["e_theta"]
+    e_phi = arrays["e_phi"]
+    g_p = arrays["p2_p"]
+    g_theta = arrays["p2_theta"]
+    g_phi = arrays["p2_phi"]
+
+    e_px = e_p * np.sin(e_theta) * np.cos(e_phi)
+    e_py = e_p * np.sin(e_theta) * np.sin(e_phi)
+    e_pz = e_p * np.cos(e_theta)
+    e_energy = np.sqrt(e_p * e_p + me * me)
+
+    g_px = g_p * np.sin(g_theta) * np.cos(g_phi)
+    g_py = g_p * np.sin(g_theta) * np.sin(g_phi)
+    g_pz = g_p * np.cos(g_theta)
+
+    q_energy = beam_energy - e_energy
+    q_px = -e_px
+    q_py = -e_py
+    q_pz = beam_pz - e_pz
+    q2 = -(q_energy * q_energy - q_px * q_px - q_py * q_py - q_pz * q_pz)
+
+    e_dot_g = e_energy * g_p - (e_px * g_px + e_py * g_py + e_pz * g_pz)
+    result = np.full(q2.shape, np.nan, dtype=float)
+    valid = np.isfinite(q2) & (q2 > 0.0)
+    result[valid] = 2.0 * e_dot_g[valid] / q2[valid]
+    return result
+#enddef
+
+
+def apply_global_cuts(period_label, arrays, cfg):
+    detector1 = arrays["detector1"]
+    detector2 = arrays["detector2"]
+    mask = np.isfinite(arrays["t1"]) & np.isfinite(arrays["open_angle_ep2"])
+    mask &= (-arrays["t1"]) < float(cfg["t1_abs_max"])
+    mask &= arrays["open_angle_ep2"] > float(cfg["open_angle_min_deg"])
+
+    if bool(cfg.get("enable_pTmiss_cut", False)):
+        mask &= np.isfinite(arrays["pTmiss"])
+        mask &= arrays["pTmiss"] <= float(cfg["pTmiss_max"])
+    #endif
+
+    valid_topology = (
+        ((detector1 == 1) & (detector2 == 1))
+        | ((detector1 == 2) & (detector2 == 1))
+        | ((detector1 == 2) & (detector2 == 0))
+    )
+    mask &= valid_topology
+
+    if bool(cfg.get("enable_topology_filter", False)):
+        mask &= detector1 == int(cfg["required_detector1"])
+        mask &= detector2 == int(cfg["required_detector2"])
+    #endif
+
+    excluded_runs = np.asarray(cfg.get("excluded_runs", []), dtype=int)
+    if excluded_runs.size:
+        mask &= ~np.isin(arrays["runnum"], excluded_runs)
+    #endif
+
+    needs_sectors = any(
+        bool(cfg.get(name, False))
+        for name in (
+            "enable_electron_fd_sector_filter",
+            "enable_proton_fd_sector_filter",
+            "enable_proton_cd_sector_filter",
+            "enable_photon_fd_sector_filter",
+        )
+    ) or global_sector_quality_active(cfg) or (
+        bool(cfg.get("enable_auxiliary_fiducial_cuts", False))
+        and bool(cfg.get("auxiliary_require_distinct_fd_sectors", False))
+    )
+
+    if needs_sectors:
+        e_sector = fd_sector_from_phi(arrays["e_phi"])
+        p_fd_sector = fd_sector_from_phi(arrays["p1_phi"])
+        p_cd_sector = cd_sector_from_phi(arrays["p1_phi"])
+        g_sector = fd_sector_from_phi(arrays["p2_phi"])
+
+        if global_sector_quality_active(cfg) and period_label == "rga_sp18_out":
+            mask &= e_sector >= 1
+            mask &= e_sector != 3
+            mask &= ~((e_sector == 5) & (detector2 == 1))
+            mask &= ~((e_sector == 5) & (detector1 == 1))
+        #endif
+
+        if bool(cfg.get("enable_electron_fd_sector_filter", False)):
+            mask &= e_sector == int(cfg["electron_fd_sector"])
+        #endif
+        if bool(cfg.get("enable_proton_fd_sector_filter", False)):
+            mask &= detector1 == 1
+            mask &= p_fd_sector == int(cfg["proton_fd_sector"])
+        #endif
+        if bool(cfg.get("enable_proton_cd_sector_filter", False)):
+            mask &= detector1 == 2
+            mask &= p_cd_sector == int(cfg["proton_cd_sector"])
+        #endif
+        if bool(cfg.get("enable_photon_fd_sector_filter", False)):
+            mask &= detector2 == 1
+            mask &= g_sector == int(cfg["photon_fd_sector"])
+        #endif
+    #endif
+
+    if bool(cfg.get("enable_auxiliary_fiducial_cuts", False)):
+        e_theta_deg = np.degrees(arrays["e_theta"])
+        p1_theta_deg = np.degrees(arrays["p1_theta"])
+        p2_theta_deg = np.degrees(arrays["p2_theta"])
+        p2_p = arrays["p2_p"]
+
+        mask &= np.isfinite(e_theta_deg) & np.isfinite(p1_theta_deg)
+        mask &= np.isfinite(p2_theta_deg) & np.isfinite(p2_p)
+        mask &= e_theta_deg > float(cfg["auxiliary_e_theta_min_deg"])
+        mask &= (detector2 != 1) | (e_theta_deg < float(cfg["auxiliary_e_theta_max_deg"]))
+        mask &= (detector1 != 1) | (
+            (p1_theta_deg > float(cfg["auxiliary_fd_proton_theta_min_deg"]))
+            & (p1_theta_deg < float(cfg["auxiliary_fd_proton_theta_max_deg"]))
+        )
+        mask &= (detector1 != 2) | (
+            (p1_theta_deg > float(cfg["auxiliary_cd_proton_theta_min_deg"]))
+            & (p1_theta_deg < float(cfg["auxiliary_cd_proton_theta_max_deg"]))
+        )
+        mask &= np.isin(detector1, [1, 2])
+        mask &= (detector2 != 1) | (
+            (detector1 != 1) | (p2_theta_deg > float(cfg["auxiliary_fd_photon_theta_min_deg"]))
+        )
+        mask &= (detector2 != 1) | (p2_theta_deg < float(cfg["auxiliary_fd_photon_theta_max_deg"]))
+        mask &= (detector2 != 0) | (p2_p > float(cfg["auxiliary_ft_photon_p_min_GeV"]))
+        mask &= np.isin(detector2, [0, 1])
+
+        if bool(cfg.get("auxiliary_require_distinct_fd_sectors", False)):
+            mask &= e_sector >= 1
+            mask &= (detector1 != 1) | ((p_fd_sector >= 1) & (p_fd_sector != e_sector))
+            mask &= (detector2 != 1) | ((g_sector >= 1) & (g_sector != e_sector))
+            mask &= ~((detector1 == 1) & (detector2 == 1) & (p_fd_sector == g_sector))
+        #endif
+    #endif
+
+    if bool(cfg.get("enable_dvcsgen_ycol_cut", False)):
+        mask &= dvcsgen_p2_pos(period_label, arrays) > float(cfg["dvcsgen_ycol_cut"])
+    #endif
+
+    return mask
+#enddef
+
+
+def load_sigma_cuts(combined_cuts_json):
+    loaded = {}
+
+    for key, block in combined_cuts_json.items():
+        if not isinstance(block, dict) or not isinstance(block.get("data"), dict):
+            continue
+        #endif
+
+        variable_cuts = {}
+        for variable, stats in block["data"].items():
+            if not isinstance(stats, dict) or "mean" not in stats or "std" not in stats:
+                continue
+            #endif
+
+            mean = float(stats["mean"])
+            std = float(stats["std"])
+            low = float(stats.get("cut_low", float("nan")))
+            high = float(stats.get("cut_high", float("nan")))
+            mode = str(stats.get("mode", "symmetric_3sigma"))
+
+            if not (np.isfinite(low) and np.isfinite(high) and high > low):
+                if np.isfinite(mean) and np.isfinite(std) and std > 0.0:
+                    low = mean - 3.0 * std
+                    high = mean + 3.0 * std
+                #endif
+            #endif
+
+            if np.isfinite(high):
+                variable_cuts[variable] = {
+                    "mean": mean,
+                    "std": std,
+                    "cut_low": low,
+                    "cut_high": high,
+                    "mode": mode,
+                }
+            #endif
+        #endfor
+
+        if variable_cuts:
+            loaded[key] = variable_cuts
+        #endif
+    #endfor
+
+    return loaded
+#enddef
+
+
+def apply_sigma_cuts(period_label, arrays, base_mask, sigma_cuts):
+    detector1 = arrays["detector1"]
+    detector2 = arrays["detector2"]
+    topologies = topology_name(detector1, detector2)
+    final_mask = np.zeros(base_mask.shape, dtype=bool)
+    period_code = PERIOD_CUT_CODES[period_label]
+
+    delta_phi = arrays.get("Delta_phi")
+    if delta_phi is None:
+        delta_phi = np.abs((arrays["p1_phi"] - arrays["p2_phi"] + np.pi) % (2.0 * np.pi) - np.pi)
+    #endif
+
+    values = {
+        "Emiss2": arrays["Emiss2"],
+        "Mx2": arrays["Mx2"],
+        "Mx2_1": arrays["Mx2_1"],
+        "Mx2_2": arrays["Mx2_2"],
+        "Delta_phi": delta_phi,
+        "pTmiss": arrays["pTmiss"],
+        "xF": arrays["xF"],
+        "theta_gamma_gamma": arrays["theta_gamma_gamma"],
+    }
+
+    for topology in ("FD_FD", "CD_FD", "CD_FT"):
+        key = f"DVCS_{period_code}_{topology}"
+        if key not in sigma_cuts:
+            raise RuntimeError(
+                f"Missing nominal DVCS exclusivity-cut key '{key}' in combined_cuts.json."
+            )
+        #endif
+
+        topology_mask = base_mask & (topologies == topology)
+        cuts_for_topology = sigma_cuts[key]
+
+        for variable in SIGMA_VARIABLES:
+            cut = cuts_for_topology.get(variable)
+            if cut is None:
+                continue
+            #endif
+
+            variable_values = values[variable]
+            topology_mask &= np.isfinite(variable_values)
+            if cut["mode"] == "upper_quantile":
+                topology_mask &= variable_values <= cut["cut_high"]
+            else:
+                topology_mask &= variable_values >= cut["cut_low"]
+                topology_mask &= variable_values <= cut["cut_high"]
+            #endif
+        #endfor
+
+        final_mask |= topology_mask
+    #endfor
+
+    return final_mask
+#enddef
+
+
+def read_run_counts(period_label, root_path, global_cfg, sigma_cuts):
     if not root_path.is_file():
         raise RuntimeError(
             f"Missing ROOT file for {PERIOD_DISPLAY_NAMES[period_label]}: {root_path}\n"
-            "Create the analysis-note ROOT files first. The expected filenames are "
-            "rga_fa18_inb.root, rga_fa18_out.root, rga_sp18_inb.root, "
-            "rga_sp18_out.root and rga_sp19_inb.root."
+            "Create the analysis-note ROOT files first."
         )
     #endif
 
     try:
         with uproot.open(root_path) as root_file:
             if TREE_NAME not in root_file:
-                raise RuntimeError(
-                    f"Tree '{TREE_NAME}' is missing from {root_path}."
-                )
+                raise RuntimeError(f"Tree '{TREE_NAME}' is missing from {root_path}.")
             #endif
 
             tree = root_file[TREE_NAME]
-
-            if "runnum" not in tree:
+            tree_keys = set(tree.keys())
+            branches = required_branches(global_cfg, tree_keys)
+            missing = sorted(set(branches) - tree_keys)
+            if missing:
                 raise RuntimeError(
-                    f"Branch 'runnum' is missing from {root_path}:{TREE_NAME}."
+                    f"Missing branches in {root_path}:{TREE_NAME}: " + ", ".join(missing)
                 )
             #endif
 
-            run_numbers = tree["runnum"].array(library="np")
+            arrays = tree.arrays(branches, library="np")
+        #endwith
     except RuntimeError:
         raise
     except Exception as exc:
         raise RuntimeError(f"Failed to read {root_path}: {exc}") from exc
     #endtry
 
-    unique_runs, event_counts = np.unique(run_numbers, return_counts=True)
-    return {int(run): int(count) for run, count in zip(unique_runs, event_counts)}
+    global_mask = apply_global_cuts(period_label, arrays, global_cfg)
+    final_mask = apply_sigma_cuts(period_label, arrays, global_mask, sigma_cuts)
+    selected_runs = arrays["runnum"][final_mask]
+
+    unique_runs, event_counts = np.unique(selected_runs, return_counts=True)
+    run_counts = {int(run): int(count) for run, count in zip(unique_runs, event_counts)}
+
+    all_runs = np.unique(arrays["runnum"])
+    for run in all_runs:
+        run_counts.setdefault(int(run), 0)
+    #endfor
+
+    print(
+        f"  {PERIOD_DISPLAY_NAMES[period_label]}: entries={len(arrays['runnum'])}, "
+        f"global-pass={int(np.count_nonzero(global_mask))}, "
+        f"3sigma-pass={int(np.count_nonzero(final_mask))}"
+    )
+    return run_counts
 #enddef
 
 
@@ -430,76 +838,6 @@ def validate_inputs(all_run_counts, charge_map):
     #endif
 #enddef
 
-
-def compute_standardized_ylim(per_current_stats):
-    y_min_raw = float("inf")
-    y_max_raw = float("-inf")
-
-    for stats in per_current_stats.values():
-        values = stats["values"]
-        errors = stats["errors"]
-
-        if len(values) == 0:
-            continue
-        #endif
-
-        y_min_raw = min(y_min_raw, float(np.min(values - errors)))
-        y_max_raw = max(y_max_raw, float(np.max(values + errors)))
-    #endfor
-
-    if not np.isfinite(y_min_raw) or not np.isfinite(y_max_raw):
-        return 0.0, 1.0
-    #endif
-
-    span = y_max_raw - y_min_raw
-    padding = 0.06 * span if span > 0.0 else max(0.05 * abs(y_max_raw), 1.0)
-    return y_min_raw - padding, y_max_raw + padding
-#enddef
-
-
-def add_trigger_annotations(ax, x_min, x_max, y_min, y_max):
-    boundaries = set()
-
-    for _, start_run, end_run in TRIGGER_RANGES_SP18:
-        if x_min <= start_run <= x_max:
-            boundaries.add(start_run)
-        #endif
-        if x_min <= end_run <= x_max:
-            boundaries.add(end_run)
-        #endif
-    #endfor
-
-    for boundary in sorted(boundaries):
-        ax.axvline(boundary, color="0.35", linestyle="--", linewidth=1.0, zorder=1)
-    #endfor
-
-    y_text = y_max - 0.055 * (y_max - y_min)
-
-    for label, start_run, end_run in TRIGGER_RANGES_SP18:
-        visible_start = max(start_run, x_min)
-        visible_end = min(end_run, x_max)
-
-        if visible_end < visible_start:
-            continue
-        #endif
-
-        ax.text(
-            0.5 * (visible_start + visible_end),
-            y_text,
-            label,
-            ha="center",
-            va="center",
-            fontsize=9,
-            color="0.25",
-            bbox={
-                "boxstyle": "round,pad=0.15",
-                "facecolor": "white",
-                "alpha": 0.80,
-                "edgecolor": "none",
-            },
-        )
-    #endfor
-#enddef
 
 
 def build_period_statistics(period_label, run_counts, charge_map):
@@ -556,7 +894,7 @@ def build_period_statistics(period_label, run_counts, charge_map):
 #enddef
 
 
-def make_period_plot(period_label, per_current_stats, output_dir, trigger_version=False):
+def make_period_plot(period_label, per_current_stats, output_dir):
     fig, ax = plt.subplots(figsize=(12, 6.5))
     color_cycle = [f"C{index}" for index in range(10)]
     sorted_currents = sorted(per_current_stats)
@@ -609,11 +947,14 @@ def make_period_plot(period_label, per_current_stats, output_dir, trigger_versio
         ax.axhline(stats["mean"], color=color, linestyle="--", linewidth=1.2, zorder=2)
     #endfor
 
-    y_min, y_max = compute_standardized_ylim(per_current_stats)
-    ax.set_ylim(y_min, y_max)
-
-    if trigger_version:
-        add_trigger_annotations(ax, x_min, x_max, y_min, y_max)
+    if period_label.endswith("_inb"):
+        ax.set_ylim(15.0, 35.0)
+    elif period_label.endswith("_out"):
+        ax.set_ylim(65.0, 85.0)
+    else:
+        raise RuntimeError(
+            f"Cannot choose a standardized y-axis range for period '{period_label}'."
+        )
     #endif
 
     display_name = PERIOD_DISPLAY_NAMES[period_label]
@@ -639,8 +980,7 @@ def make_period_plot(period_label, per_current_stats, output_dir, trigger_versio
     ax.legend(handles, labels, title="Beam current", fontsize=10, title_fontsize=10)
     fig.tight_layout()
 
-    suffix = "_trigger" if trigger_version else ""
-    output_path = output_dir / f"dvcs_per_uC_{period_label}{suffix}.png"
+    output_path = output_dir / f"dvcs_per_uC_{period_label}.png"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {output_path}")
@@ -653,10 +993,15 @@ def main():
 
     try:
         charge_map = load_charge_map(args.charge_file)
+        combined_cuts_json = load_json_object(args.combined_cuts, "combined cuts JSON")
+        global_cfg = load_json_object(args.global_cuts, "global cuts configuration JSON")
+        sigma_cuts = load_sigma_cuts(combined_cuts_json)
         all_run_counts = {}
 
         for period_label, root_path in period_files(args.root_dir):
-            all_run_counts[period_label] = read_run_counts(period_label, root_path)
+            all_run_counts[period_label] = read_run_counts(
+                period_label, root_path, global_cfg, sigma_cuts
+            )
         #endfor
 
         validate_inputs(all_run_counts, charge_map)
@@ -666,6 +1011,8 @@ def main():
         print(f"Charge file: {args.charge_file}")
         print("Charge conversion: nC / 1000 = microC")
         print(f"ROOT directory: {args.root_dir}")
+        print(f"Global cuts: {args.global_cuts}")
+        print(f"Combined 3sigma cuts: {args.combined_cuts}")
         print(f"Output directory: {args.output_dir}")
         print("=" * 88)
 
@@ -707,11 +1054,8 @@ def main():
                 )
             #endif
 
-            make_period_plot(period_label, statistics, args.output_dir, trigger_version=False)
+            make_period_plot(period_label, statistics, args.output_dir)
 
-            if period_label in {"rga_sp18_inb", "rga_sp18_out"}:
-                make_period_plot(period_label, statistics, args.output_dir, trigger_version=True)
-            #endif
         #endfor
 
     except RuntimeError as exc:
