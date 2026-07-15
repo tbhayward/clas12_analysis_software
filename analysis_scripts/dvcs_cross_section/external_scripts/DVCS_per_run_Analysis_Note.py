@@ -941,19 +941,23 @@ def build_period_statistics(period_label, run_counts, charge_map):
         removed = np.asarray(raw["removed"], dtype=bool)
         accepted = ~removed
 
-        if not np.any(accepted):
-            raise RuntimeError(
-                f"All {current_nA} nA runs in {PERIOD_DISPLAY_NAMES[period_label]} "
-                "are marked as removed, so an accepted-run mean cannot be calculated."
-            )
-        #endif
+        n_accepted = int(np.count_nonzero(accepted))
 
-        mean = float(np.mean(values[accepted]))
-        spread = (
-            float(np.std(values[accepted], ddof=1))
-            if np.count_nonzero(accepted) > 1
-            else 0.0
-        )
+        if n_accepted > 0:
+            mean = float(np.mean(values[accepted]))
+            spread = (
+                float(np.std(values[accepted], ddof=1))
+                if n_accepted > 1
+                else 0.0
+            )
+        else:
+            # It is valid for an entire current setting to be intentionally
+            # removed from the final analysis, as for the 5 nA and 10 nA
+            # Sp19 Inb samples. Keep the points for the removed-run display,
+            # but do not define or draw an accepted-run mean.
+            mean = float("nan")
+            spread = float("nan")
+        #endif
 
         statistics[current_nA] = {
             "runs": runs,
@@ -1004,6 +1008,7 @@ def make_period_plot(period_label, per_current_stats, output_dir):
         #endif
 
         if np.any(removed):
+            removed_label = f"{current_nA} nA" if not np.any(accepted) else None
             ax.errorbar(
                 stats["runs"][removed],
                 stats["values"][removed],
@@ -1016,11 +1021,20 @@ def make_period_plot(period_label, per_current_stats, output_dir):
                 ecolor=color,
                 elinewidth=0.9,
                 capsize=0,
+                label=removed_label,
                 zorder=4,
             )
         #endif
 
-        ax.axhline(stats["mean"], color=color, linestyle="--", linewidth=1.2, zorder=2)
+        if np.isfinite(stats["mean"]):
+            ax.axhline(
+                stats["mean"],
+                color=color,
+                linestyle="--",
+                linewidth=1.2,
+                zorder=2,
+            )
+        #endif
     #endfor
 
     if period_label.endswith("_inb"):
@@ -1125,11 +1139,19 @@ def main():
                 stats = statistics[current_nA]
                 n_accepted = int(np.count_nonzero(stats["accepted"]))
                 n_removed = int(np.count_nonzero(stats["removed"]))
-                print(
-                    f"  {current_nA:>2} nA: mean = {stats['mean']:.6f} events/microC, "
-                    f"spread = {stats['spread']:.6f}, accepted = {n_accepted}, "
-                    f"removed = {n_removed}"
-                )
+                if n_accepted > 0:
+                    print(
+                        f"  {current_nA:>2} nA: mean = {stats['mean']:.6f} events/microC, "
+                        f"spread = {stats['spread']:.6f}, accepted = {n_accepted}, "
+                        f"removed = {n_removed}"
+                    )
+                else:
+                    print(
+                        f"  {current_nA:>2} nA: mean = n/a, spread = n/a, "
+                        f"accepted = 0, removed = {n_removed} "
+                        "(entire current sample intentionally removed)"
+                    )
+                #endif
             #endfor
 
             present_removed = sorted(
