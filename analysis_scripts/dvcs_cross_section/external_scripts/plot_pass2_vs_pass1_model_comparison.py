@@ -31,11 +31,10 @@ Main outputs under --output-dir:
 Cross-section panels compare pass-2 and pass-1 cross sections vs phi. They can
 include BH and KM15 cross-section curves from dvcsgen and km15_cli.py.
 
-BSA panels compare pass-2 and pass-1 BSA points vs phi. They do not fit the
-pass-1 BSA. Instead, each BSA canvas overlays the KM15 BSA prediction computed
-from helicity-dependent KM15 cross sections:
-
-    A_LU(KM15) = (sigma_plus - sigma_minus) / (sigma_plus + sigma_minus)
+BSA panels compare pass-2 and pass-1 BSA points vs phi. By default, each BSA
+panel fits only the pass-2 points to A sin(phi), reports chi2/ndf for that fit
+and reports chi2/ndf for pass-1 relative to the fixed pass-2 fit. Use
+--bsa-km15 to additionally overlay the KM15 BSA prediction.
 
 Usage:
     python3 plot_pass2_vs_pass1_model_comparison.py \
@@ -151,9 +150,12 @@ def pass2_bsa_total_scale_column(target: str) -> str:
 # Fixed BSA plotting colors.  These are intentionally independent of which
 # series are present in a given panel, so pass-2 does not change color when
 # pass-1 has no points.
-BSA_KM15_COLOR = "C0"
-BSA_PASS1_COLOR = "C1"
-BSA_PASS2_COLOR = "C2"
+FIT_COLOR = "C0"
+PASS1_COLOR = "C1"
+PASS2_COLOR = "C2"
+BSA_KM15_COLOR = "C3"
+BSA_PASS1_COLOR = PASS1_COLOR
+BSA_PASS2_COLOR = PASS2_COLOR
 
 
 def pass2_period_cross_section_column(period: str) -> str:
@@ -243,6 +245,25 @@ class BSAPoint:
 class BSAModelCurve:
     phi: List[float]
     km15_bsa: List[float]
+
+
+@dataclass
+class BSAFitResult:
+    ok: bool
+    amplitude: float = 0.0
+    amplitude_error: float = 0.0
+    pass2_chi2: float = math.nan
+    pass2_ndf: int = 0
+    pass1_chi2: float = math.nan
+    pass1_ndf: int = 0
+
+    @property
+    def pass2_chi2_ndf(self) -> float:
+        return self.pass2_chi2 / self.pass2_ndf if self.pass2_ndf > 0 else math.nan
+
+    @property
+    def pass1_chi2_ndf(self) -> float:
+        return self.pass1_chi2 / self.pass1_ndf if self.pass1_ndf > 0 else math.nan
 
 
 @dataclass
@@ -1373,14 +1394,21 @@ def draw_global_bin_ratio_plot(output_dir: Path, panels: Sequence[PanelData], pa
 
     fig_width = max(12.0, min(28.0, 7.0 + 0.006 * len(points)))
     fig, ax = plt.subplots(figsize=(fig_width, 6.8))
-    ax.plot(x, pass1_upper, linewidth=1.4, linestyle="-", label=f"{pass1_label}: 1 ± (stat ⊕ 31% norm)", zorder=3)
-    ax.plot(x, pass1_lower, linewidth=1.4, linestyle="-", label=None, zorder=3)
-    ax.errorbar(x, y_pass2, yerr=yerr_pass2, fmt="o", markersize=2.8, capsize=1.0, linewidth=0.8, linestyle="None", label=f"{pass2_label}: pass-2/pass-1, stat ⊕ local $s_{{comb}}$", zorder=5)
+    ax.plot(
+        x, pass1_upper, linewidth=1.4, linestyle="-", color=PASS1_COLOR,
+        label=rf"{pass1_label}: 1 $\pm$ (stat $\oplus$ normalization uncertainty)", zorder=3,
+    )
+    ax.plot(x, pass1_lower, linewidth=1.4, linestyle="-", color=PASS1_COLOR, label=None, zorder=3)
+    ax.errorbar(
+        x, y_pass2, yerr=yerr_pass2, fmt="o", markersize=2.8, capsize=1.0,
+        linewidth=0.8, linestyle="None", color=PASS2_COLOR, ecolor=PASS2_COLOR,
+        markerfacecolor=PASS2_COLOR, markeredgecolor=PASS2_COLOR,
+        label=rf"{pass2_label}: pass-2/pass-1, stat $\oplus$ scale uncertainty", zorder=5,
+    )
     ax.axhline(1.0, linewidth=1.1, linestyle="--", color="0.25", label="pass-1 central value", zorder=2)
 
-    ymin, ymax = global_ratio_y_limits(points, user_ymin=user_ymin, user_ymax=user_ymax)
     ax.set_xlim(0.0, float(len(points)) + 1.0)
-    ax.set_ylim(ymin, ymax)
+    ax.set_ylim(0.0, 1.0)
     ax.set_xlabel("Matched point number")
     ax.set_ylabel("Normalized cross section ratio")
     ax.set_title("Global pass-2 vs pass-1 comparison by matched point number")
@@ -1457,17 +1485,37 @@ def draw_cross_section_axis(ax, panel: PanelData, curves: Optional[ModelCurves],
         x = [p.phi + PASS1_PHI_OFFSET_DEG for p in panel.pass1]
         y = [p.xs for p in panel.pass1]
         yerr = [[p.err_low for p in panel.pass1], [p.err_high for p in panel.pass1]]
-        container = ax.errorbar(x, y, yerr=yerr, fmt="s", markersize=5, capsize=2, linewidth=1.2, linestyle="None", label=f"{pass1_label}: vertical errors", zorder=4)
-        color = container.lines[0].get_color()
-        draw_scale_boxes(ax=ax, x_values=x, y_values=y, scale_values=[p.scale_syst_abs for p in panel.pass1], half_width=SCALE_BOX_HALF_WIDTH_DEG, label=f"{pass1_label}: 31% norm box", color=color, logy=logy, log_y_min=log_y_min)
+        ax.errorbar(
+            x, y, yerr=yerr, fmt="s", markersize=5, capsize=2, linewidth=1.2,
+            linestyle="None", color=PASS1_COLOR, ecolor=PASS1_COLOR,
+            markerfacecolor=PASS1_COLOR, markeredgecolor=PASS1_COLOR,
+            label=rf"{pass1_label}: stat $\oplus$ sys", zorder=4,
+        )
+        draw_scale_boxes(
+            ax=ax, x_values=x, y_values=y,
+            scale_values=[p.scale_syst_abs for p in panel.pass1],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+            label=f"{pass1_label}: normalization uncertainty",
+            color=PASS1_COLOR, logy=logy, log_y_min=log_y_min,
+        )
 
     if panel.pass2:
         x = [p.phi + PASS2_PHI_OFFSET_DEG for p in panel.pass2]
         y = [p.xs for p in panel.pass2]
         yerr = [[p.err_low for p in panel.pass2], [p.err_high for p in panel.pass2]]
-        container = ax.errorbar(x, y, yerr=yerr, fmt="o", markersize=5, capsize=2, linewidth=1.2, linestyle="None", label=f"{pass2_label}: vertical errors", zorder=5)
-        color = container.lines[0].get_color()
-        draw_scale_boxes(ax=ax, x_values=x, y_values=y, scale_values=[p.scale_syst_abs for p in panel.pass2], half_width=SCALE_BOX_HALF_WIDTH_DEG, label=f"{pass2_label}: total scale box", color=color, logy=logy, log_y_min=log_y_min)
+        ax.errorbar(
+            x, y, yerr=yerr, fmt="o", markersize=5, capsize=2, linewidth=1.2,
+            linestyle="None", color=PASS2_COLOR, ecolor=PASS2_COLOR,
+            markerfacecolor=PASS2_COLOR, markeredgecolor=PASS2_COLOR,
+            label=rf"{pass2_label}: stat $\oplus$ sys", zorder=5,
+        )
+        draw_scale_boxes(
+            ax=ax, x_values=x, y_values=y,
+            scale_values=[p.scale_syst_abs for p in panel.pass2],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+            label=f"{pass2_label}: scale uncertainty",
+            color=PASS2_COLOR, logy=logy, log_y_min=log_y_min,
+        )
 
     key = panel.key
     if include_title:
@@ -1492,7 +1540,7 @@ def draw_cross_section_axis(ax, panel: PanelData, curves: Optional[ModelCurves],
 def draw_ratio_axis(ax, panel: PanelData) -> None:
     ratio_points = pass2_over_pass1_ratio_points(panel)
     if ratio_points:
-        container = ax.errorbar(
+        ax.errorbar(
             [p.phi for p in ratio_points],
             [p.ratio for p in ratio_points],
             yerr=[[p.stat_err_low for p in ratio_points], [p.stat_err_high for p in ratio_points]],
@@ -1501,15 +1549,27 @@ def draw_ratio_axis(ax, panel: PanelData) -> None:
             capsize=2,
             linewidth=1.2,
             linestyle="None",
-            label="pass-2 / pass-1: stat only",
+            color=PASS2_COLOR,
+            ecolor=PASS2_COLOR,
+            markerfacecolor=PASS2_COLOR,
+            markeredgecolor=PASS2_COLOR,
+            label=r"pass-2 / pass-1: stat",
             zorder=5,
         )
-        color = container.lines[0].get_color()
-        draw_scale_boxes(ax=ax, x_values=[p.phi for p in ratio_points], y_values=[p.ratio for p in ratio_points], scale_values=[p.scale_err for p in ratio_points], half_width=SCALE_BOX_HALF_WIDTH_DEG, label="scale box: total pass-2 ⊕ 31% pass-1", color=color, logy=False, log_y_min=1.0e-30)
+        draw_scale_boxes(
+            ax=ax,
+            x_values=[p.phi for p in ratio_points],
+            y_values=[p.ratio for p in ratio_points],
+            scale_values=[p.scale_err for p in ratio_points],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+            label=r"scale uncertainty: pass-2 $\oplus$ pass-1",
+            color=PASS2_COLOR,
+            logy=False,
+            log_y_min=1.0e-30,
+        )
 
-    ax.axhline(1.0, linewidth=1.2, linestyle="--", zorder=2)
-    ymin, ymax = ratio_axis_limits([ratio_points])
-    ax.set_ylim(ymin, ymax)
+    ax.axhline(1.0, linewidth=1.2, linestyle="--", color="0.25", zorder=2)
+    ax.set_ylim(0.0, 1.0)
     ax.set_xlim(0.0, 360.0)
     ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
     ax.set_xlabel(r"$\phi$ (deg)")
@@ -1939,6 +1999,124 @@ def load_pass1_bsa_text(path: Path, pass2_bsa: Dict[str, Dict[BinKey, List[BSAPo
     return out
 
 
+def fit_pass2_bsa_sin_phi(
+    pass2_points: Sequence[BSAPoint],
+    pass1_points: Sequence[BSAPoint],
+) -> BSAFitResult:
+    valid_pass2 = [
+        p for p in pass2_points
+        if math.isfinite(p.phi_deg) and math.isfinite(p.value)
+        and math.isfinite(p.stat) and p.stat > 0.0
+    ]
+    if len(valid_pass2) < 2:
+        return BSAFitResult(ok=False)
+
+    denominator = 0.0
+    numerator = 0.0
+    for point in valid_pass2:
+        sine = math.sin(math.radians(point.phi_deg))
+        weight = 1.0 / (point.stat * point.stat)
+        denominator += weight * sine * sine
+        numerator += weight * point.value * sine
+
+    if not math.isfinite(denominator) or denominator <= 0.0:
+        return BSAFitResult(ok=False)
+
+    amplitude = numerator / denominator
+    amplitude_error = 1.0 / math.sqrt(denominator)
+    pass2_chi2 = sum(
+        ((point.value - amplitude * math.sin(math.radians(point.phi_deg))) / point.stat) ** 2
+        for point in valid_pass2
+    )
+    pass2_ndf = max(0, len(valid_pass2) - 1)
+
+    valid_pass1 = [
+        p for p in pass1_points
+        if math.isfinite(p.phi_deg) and math.isfinite(p.value)
+        and math.isfinite(p.stat) and p.stat > 0.0
+    ]
+    pass1_chi2 = sum(
+        ((point.value - amplitude * math.sin(math.radians(point.phi_deg))) / point.stat) ** 2
+        for point in valid_pass1
+    )
+    pass1_ndf = len(valid_pass1)
+
+    return BSAFitResult(
+        ok=True,
+        amplitude=amplitude,
+        amplitude_error=amplitude_error,
+        pass2_chi2=pass2_chi2,
+        pass2_ndf=pass2_ndf,
+        pass1_chi2=pass1_chi2,
+        pass1_ndf=pass1_ndf,
+    )
+
+
+def format_chi2_ndf(chi2: float, ndf: int) -> str:
+    if ndf <= 0 or not math.isfinite(chi2):
+        return "N/A"
+    return f"{chi2 / ndf:.2f}"
+
+
+def draw_bsa_axis(
+    ax,
+    pass1_points: Sequence[BSAPoint],
+    pass2_points: Sequence[BSAPoint],
+    km15_curve: Optional[BSAModelCurve],
+    pass1_label: str,
+    pass2_label: str,
+    marker_size: float = 5.0,
+) -> BSAFitResult:
+    fit = fit_pass2_bsa_sin_phi(pass2_points, pass1_points)
+
+    if fit.ok:
+        phi_grid = [float(phi) for phi in range(361)]
+        fit_values = [fit.amplitude * math.sin(math.radians(phi)) for phi in phi_grid]
+        fit_label = (
+            rf"pass-2 fit: $A\sin\phi$, $\chi^2/\mathrm{{ndf}}={format_chi2_ndf(fit.pass2_chi2, fit.pass2_ndf)}$"
+            "\n"
+            rf"pass-1 vs fit: $\chi^2/\mathrm{{ndf}}={format_chi2_ndf(fit.pass1_chi2, fit.pass1_ndf)}$"
+        )
+        ax.plot(phi_grid, fit_values, linewidth=2.0, linestyle="-", color=FIT_COLOR, label=fit_label, zorder=3)
+
+    if km15_curve is not None:
+        ax.plot(
+            km15_curve.phi, km15_curve.km15_bsa, linewidth=1.8, linestyle="--",
+            color=BSA_KM15_COLOR, label="KM15", zorder=2,
+        )
+
+    if pass1_points:
+        ax.errorbar(
+            [p.phi_deg + PASS1_PHI_OFFSET_DEG for p in pass1_points],
+            [p.value for p in pass1_points],
+            yerr=[p.stat for p in pass1_points],
+            fmt="s", markersize=marker_size, capsize=2, linewidth=1.2, linestyle="None",
+            color=PASS1_COLOR, ecolor=PASS1_COLOR, markerfacecolor=PASS1_COLOR, markeredgecolor=PASS1_COLOR,
+            label=f"{pass1_label} BSA: stat", zorder=4,
+        )
+
+    if pass2_points:
+        ax.errorbar(
+            [p.phi_deg + PASS2_PHI_OFFSET_DEG for p in pass2_points],
+            [p.value for p in pass2_points],
+            yerr=[p.stat for p in pass2_points],
+            fmt="o", markersize=marker_size, capsize=2, linewidth=1.2, linestyle="None",
+            color=PASS2_COLOR, ecolor=PASS2_COLOR, markerfacecolor=PASS2_COLOR, markeredgecolor=PASS2_COLOR,
+            label=f"{pass2_label} BSA: stat", zorder=5,
+        )
+        draw_scale_boxes(
+            ax=ax,
+            x_values=[p.phi_deg + PASS2_PHI_OFFSET_DEG for p in pass2_points],
+            y_values=[p.value for p in pass2_points],
+            scale_values=[p.scale_syst_abs for p in pass2_points],
+            half_width=SCALE_BOX_HALF_WIDTH_DEG,
+            label=f"{pass2_label} BSA: scale uncertainty",
+            color=PASS2_COLOR, logy=False, log_y_min=1.0e-30,
+        )
+
+    return fit
+
+
 def bsa_panel_filename(target: str, key: BinKey, index: int) -> str:
     return (
         f"bsa_{index:03d}_{bsa_target_dirname(target)}_"
@@ -1948,68 +2126,26 @@ def bsa_panel_filename(target: str, key: BinKey, index: int) -> str:
     )
 
 
-def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, pass1_points: Sequence[BSAPoint], pass2_points: Sequence[BSAPoint], km15_curve: Optional[BSAModelCurve], pass1_label: str, pass2_label: str) -> None:
+def draw_one_bsa_comparison_panel(
+    output_path: Path,
+    target: str,
+    key: BinKey,
+    pass1_points: Sequence[BSAPoint],
+    pass2_points: Sequence[BSAPoint],
+    km15_curve: Optional[BSAModelCurve],
+    pass1_label: str,
+    pass2_label: str,
+) -> None:
     fig, ax = plt.subplots(figsize=(8.6, 6.0))
-
-    if km15_curve is not None:
-        ax.plot(
-            km15_curve.phi,
-            km15_curve.km15_bsa,
-            linewidth=2.0,
-            linestyle="-",
-            color=BSA_KM15_COLOR,
-            label="KM15",
-            zorder=3,
-        )
-
-    if pass1_points:
-        ax.errorbar(
-            [p.phi_deg + PASS1_PHI_OFFSET_DEG for p in pass1_points],
-            [p.value for p in pass1_points],
-            yerr=[p.stat for p in pass1_points],
-            fmt="s",
-            markersize=5,
-            capsize=2,
-            linewidth=1.2,
-            linestyle="None",
-            color=BSA_PASS1_COLOR,
-            ecolor=BSA_PASS1_COLOR,
-            markerfacecolor=BSA_PASS1_COLOR,
-            markeredgecolor=BSA_PASS1_COLOR,
-            label=f"{pass1_label} BSA",
-            zorder=4,
-        )
-
-    if pass2_points:
-        ax.errorbar(
-            [p.phi_deg + PASS2_PHI_OFFSET_DEG for p in pass2_points],
-            [p.value for p in pass2_points],
-            yerr=[p.stat for p in pass2_points],
-            fmt="o",
-            markersize=5,
-            capsize=2,
-            linewidth=1.2,
-            linestyle="None",
-            color=BSA_PASS2_COLOR,
-            ecolor=BSA_PASS2_COLOR,
-            markerfacecolor=BSA_PASS2_COLOR,
-            markeredgecolor=BSA_PASS2_COLOR,
-            label=f"{pass2_label} BSA",
-            zorder=5,
-        )
-
-    if pass2_points:
-        draw_scale_boxes(
-            ax=ax,
-            x_values=[p.phi_deg + PASS2_PHI_OFFSET_DEG for p in pass2_points],
-            y_values=[p.value for p in pass2_points],
-            scale_values=[p.scale_syst_abs for p in pass2_points],
-            half_width=SCALE_BOX_HALF_WIDTH_DEG,
-            label=f"{pass2_label}: total scale box",
-            color=BSA_PASS2_COLOR,
-            logy=False,
-            log_y_min=1.0e-30,
-        )
+    draw_bsa_axis(
+        ax=ax,
+        pass1_points=pass1_points,
+        pass2_points=pass2_points,
+        km15_curve=km15_curve,
+        pass1_label=pass1_label,
+        pass2_label=pass2_label,
+        marker_size=5.0,
+    )
 
     ax.axhline(0.0, linewidth=1.0, linestyle="--", color="0.35", zorder=1)
     ax.set_xlim(0.0, 360.0)
@@ -2020,23 +2156,18 @@ def draw_one_bsa_comparison_panel(output_path: Path, target: str, key: BinKey, p
     ax.grid(True, which="major", alpha=0.25)
 
     title_target = "10.6 GeV average" if target == "10.6 GeV" else "10.2 GeV / Sp19 Inb"
-    title = (
+    ax.set_title(
         f"BSA comparison, {title_target}\n"
         rf"$x_B \in [{key.xb_min:.3g}, {key.xb_max:.3g}]$, "
         rf"$Q^2 \in [{key.q2_min:.3g}, {key.q2_max:.3g}]$ (GeV$^2$), "
-        rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)"
+        rf"$|t| \in [{key.t_min:.3g}, {key.t_max:.3g}]$ (GeV$^2$)",
+        fontsize=11, pad=10,
     )
-    ax.set_title(title, fontsize=11, pad=10)
 
     text = f"pass-1 points: {len(pass1_points)}\npass-2 points: {len(pass2_points)}"
     ax.text(
-        0.02,
-        0.03,
-        text,
-        transform=ax.transAxes,
-        fontsize=8.5,
-        va="bottom",
-        ha="left",
+        0.02, 0.03, text, transform=ax.transAxes, fontsize=8.5,
+        va="bottom", ha="left",
         bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.82, "edgecolor": "0.6"},
     )
 
@@ -2114,63 +2245,15 @@ def draw_aggregated_bsa_xb_canvases(
                         if entry is not None:
                             curve = make_bsa_model_from_cache_entry(entry)
 
-                    if curve is not None:
-                        ax.plot(
-                            curve.phi,
-                            curve.km15_bsa,
-                            linewidth=2.0,
-                            linestyle="-",
-                            color=BSA_KM15_COLOR,
-                            label="KM15",
-                            zorder=3,
-                        )
-
-                    if p1:
-                        ax.errorbar(
-                            [p.phi_deg + PASS1_PHI_OFFSET_DEG for p in p1],
-                            [p.value for p in p1],
-                            yerr=[p.stat for p in p1],
-                            fmt="s",
-                            markersize=4.5,
-                            capsize=2,
-                            linewidth=1.0,
-                            linestyle="None",
-                            color=BSA_PASS1_COLOR,
-                            ecolor=BSA_PASS1_COLOR,
-                            markerfacecolor=BSA_PASS1_COLOR,
-                            markeredgecolor=BSA_PASS1_COLOR,
-                            label=f"{pass1_label} BSA",
-                            zorder=4,
-                        )
-
-                    if p2:
-                        ax.errorbar(
-                            [p.phi_deg + PASS2_PHI_OFFSET_DEG for p in p2],
-                            [p.value for p in p2],
-                            yerr=[p.stat for p in p2],
-                            fmt="o",
-                            markersize=4.5,
-                            capsize=2,
-                            linewidth=1.0,
-                            linestyle="None",
-                            color=BSA_PASS2_COLOR,
-                            ecolor=BSA_PASS2_COLOR,
-                            markerfacecolor=BSA_PASS2_COLOR,
-                            markeredgecolor=BSA_PASS2_COLOR,
-                            label=f"{pass2_label} BSA",
-                            zorder=5,
-                        )
-                        draw_scale_boxes(
-                            ax=ax,
-                            x_values=[p.phi_deg + PASS2_PHI_OFFSET_DEG for p in p2],
-                            y_values=[p.value for p in p2],
-                            scale_values=[p.scale_syst_abs for p in p2],
-                            half_width=SCALE_BOX_HALF_WIDTH_DEG,
-                            label=f"{pass2_label}: total scale box",
-                            color=BSA_PASS2_COLOR,
-                            logy=False,
-                            log_y_min=1.0e-30,
-                        )
+                    draw_bsa_axis(
+                        ax=ax,
+                        pass1_points=p1,
+                        pass2_points=p2,
+                        km15_curve=curve,
+                        pass1_label=pass1_label,
+                        pass2_label=pass2_label,
+                        marker_size=4.5,
+                    )
 
                     ax.axhline(0.0, linewidth=1.0, linestyle="--", color="0.35", zorder=1)
                     ax.set_xlim(0.0, 360.0)
@@ -2693,6 +2776,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--bsa-km15",
+        action="store_true",
+        help=(
+            "Overlay the KM15 BSA prediction. By default BSA panels show only "
+            "the pass-2 A sin(phi) fit, pass-1 data and pass-2 data."
+        ),
+    )
+
     parser.add_argument("--e-beam", type=float, default=10.604, help="Beam energy for cross-section BH/KM15 curves (GeV).")
     parser.add_argument("--dvcsgen-dir", default=os.environ.get("DVCSGEN_PATH", DEFAULT_DVCSGEN_DIR))
     parser.add_argument("--km15-cli", default=os.environ.get("KM15_CLI", DEFAULT_KM15_CLI))
@@ -2711,7 +2803,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-point-to-point-systematics", action="store_true", help="Use stat-only vertical error bars for pass-1 and pass-2. Total scale boxes remain.")
     parser.add_argument("--no-global-bin-plot", action="store_true", help="Skip the global matched-point bin-number pass-1/pass-2 comparison plot.")
     parser.add_argument("--global-ratio-y-min", type=float, default=0, help="Optional fixed y-axis minimum for the global bin-number plot.")
-    parser.add_argument("--global-ratio-y-max", type=float, default=2, help="Optional fixed y-axis maximum for the global bin-number plot.")
+    parser.add_argument("--global-ratio-y-max", type=float, default=1, help="Fixed y-axis maximum for the global bin-number plot. Default: 1.")
 
     parser.add_argument("--print-columns", action="store_true")
     parser.add_argument("--workers", type=int, default=5)
@@ -2746,6 +2838,7 @@ def main() -> int:
     log(f"  global_ratio_y_min             = {args.global_ratio_y_min}")
     log(f"  global_ratio_y_max             = {args.global_ratio_y_max}")
     log(f"  skip_models                    = {args.skip_models}")
+    log(f"  bsa_km15                       = {args.bsa_km15}")
     log(f"  e_beam                         = {args.e_beam:g} GeV")
     log(f"  log_y_min                      = {args.log_y_min:g}")
     log(f"  workers requested              = {args.workers}")
@@ -2818,7 +2911,10 @@ def main() -> int:
     bsa_cache: Dict[str, Dict[str, List[float]]] = {}
     if not args.skip_models:
         xs_cache = load_generic_cache(cross_section_cache_path, ["phi", "bh", "km15"], "Cross-section model cache") if model_cfg.use_cache else {}
-        bsa_cache = load_generic_cache(bsa_cache_path, ["phi", "km15_bsa"], "BSA KM15 model cache") if model_cfg.use_cache else {}
+        if args.bsa_km15:
+            bsa_cache = load_generic_cache(bsa_cache_path, ["phi", "km15_bsa"], "BSA KM15 model cache") if model_cfg.use_cache else {}
+        else:
+            log("BSA model setup: KM15 disabled by default; using pass-2 A sin(phi) fits.")
     else:
         log("Model setup: --skip-models provided; no BH/KM15 or BSA KM15 curves will be computed.")
 
@@ -2831,7 +2927,7 @@ def main() -> int:
             pass2_label=args.pass2_label,
             pass1_label=args.pass1_label,
             model_cfg=model_cfg,
-            skip_models=args.skip_models,
+            skip_models=(args.skip_models or not args.bsa_km15),
             bsa_cache=bsa_cache,
             bsa_workers=args.bsa_workers if args.bsa_workers > 0 else args.workers,
             progress_every=args.progress_every,
@@ -2927,7 +3023,8 @@ def main() -> int:
 
     if not args.skip_models:
         save_generic_cache(cross_section_cache_path, xs_cache, "Cross-section model cache")
-        save_generic_cache(bsa_cache_path, bsa_cache, "BSA KM15 model cache")
+        if args.bsa_km15:
+            save_generic_cache(bsa_cache_path, bsa_cache, "BSA KM15 model cache")
         log(f"Cross-section cache summary: initial hits={n_cache_hit}, initial misses={n_cache_miss}, new entries={n_new_cache_entries}.")
         log(f"BSA KM15 cache summary: new entries={bsa_new_cache_entries}.")
 
