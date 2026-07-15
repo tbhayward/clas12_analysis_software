@@ -79,6 +79,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from scipy.optimize import curve_fit
