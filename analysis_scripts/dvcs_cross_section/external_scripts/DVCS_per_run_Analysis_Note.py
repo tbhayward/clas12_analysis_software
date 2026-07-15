@@ -64,8 +64,8 @@ REMOVED_RUNS = {
         4160, 4162, 4163, 4176, 4209, 4227, 4246, 4252, 4325,
     },
     "rga_sp18_out": {
-        3267, 3867, 3877, 3879, 3882, 3923, 3927, 3929, 3947, 3951,
-        3953, 3965, 3967, 3968,
+        3215, 3218, 3219, 3222, 3267, 3867, 3877, 3879, 3882, 3923,
+        3927, 3929, 3947, 3951, 3953, 3965, 3967, 3968,
     },
 }
 
@@ -885,6 +885,31 @@ def validate_inputs(all_run_counts, charge_map):
 
 
 
+def warn_charge_runs_absent_from_root_trees(all_run_counts, charge_map):
+    """Warn about charge-table runs that appear in none of the input ROOT trees."""
+    all_root_runs = set()
+
+    for run_counts in all_run_counts.values():
+        all_root_runs.update(run_counts.keys())
+    #endfor
+
+    charge_only_runs = sorted(set(charge_map.keys()) - all_root_runs)
+
+    if not charge_only_runs:
+        return
+    #endif
+
+    print(
+        "\nWARNING: The following runs are present in "
+        "Analysis_Note_charges.txt but absent from all input ROOT trees:"
+    )
+
+    for run_number in charge_only_runs:
+        print(f"  - {run_number}")
+    #endfor
+#enddef
+
+
 def build_period_statistics(period_label, run_counts, charge_map):
     grouped = defaultdict(lambda: {"runs": [], "values": [], "errors": [], "removed": []})
     removed_for_period = REMOVED_RUNS[period_label]
@@ -1064,6 +1089,7 @@ def main():
         #endfor
 
         validate_inputs(all_run_counts, charge_map)
+        warn_charge_runs_absent_from_root_trees(all_run_counts, charge_map)
 
         print("=" * 88)
         print("DVCS per-run analysis-note plots")
