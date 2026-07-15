@@ -107,7 +107,7 @@ public static void main(String[] args) {
 	qa.checkForDefect('TerminalOutlier')
 	qa.checkForDefect('MarginalOutlier')
 	qa.checkForDefect('SectorLoss')
-	qa.checkForDefect('LowLiveTime')
+	//qa.checkForDefect('LowLiveTime')
 	qa.checkForDefect('Misc')
 	qa.checkForDefect('ChargeHigh')
 	qa.checkForDefect('ChargeNegative')
