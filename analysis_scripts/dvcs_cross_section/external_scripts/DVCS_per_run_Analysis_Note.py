@@ -886,22 +886,28 @@ def validate_inputs(all_run_counts, charge_map):
 
 
 def warn_charge_runs_absent_from_root_trees(all_run_counts, charge_map):
-    """Warn about charge-table runs that appear in none of the input ROOT trees."""
+    """Warn about positive-charge table runs absent from every input ROOT tree."""
     all_root_runs = set()
 
     for run_counts in all_run_counts.values():
         all_root_runs.update(run_counts.keys())
     #endfor
 
-    charge_only_runs = sorted(set(charge_map.keys()) - all_root_runs)
+    charge_only_runs = sorted(
+        run_number
+        for run_number, charge_uC in charge_map.items()
+        if run_number not in all_root_runs
+        and np.isfinite(charge_uC)
+        and charge_uC > 0.0
+    )
 
     if not charge_only_runs:
         return
     #endif
 
     print(
-        "\nWARNING: The following runs are present in "
-        "Analysis_Note_charges.txt but absent from all input ROOT trees:"
+        "\nWARNING: The following runs have positive charge in "
+        "Analysis_Note_charges.txt but are absent from all input ROOT trees:"
     )
 
     for run_number in charge_only_runs:
