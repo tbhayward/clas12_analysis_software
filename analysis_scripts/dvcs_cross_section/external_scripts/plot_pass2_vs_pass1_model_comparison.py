@@ -32,7 +32,7 @@ Cross-section panels compare pass-2 and pass-1 cross sections vs phi. They can
 include BH and KM15 cross-section curves from dvcsgen and km15_cli.py.
 
 BSA panels compare pass-2 and pass-1 BSA points vs phi. By default, each BSA
-panel fits only the pass-2 points to A sin(phi)/(1 + B cos(phi)), reports chi2/ndf for that fit
+panel fits only the pass-2 points to A sin(phi), reports chi2/ndf for that fit
 and reports chi2/ndf for pass-1 relative to the fixed pass-2 fit. Use
 --bsa-km15 to additionally overlay the KM15 BSA prediction.
 
@@ -79,10 +79,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from scipy.optimize import curve_fit
 
 
 # ---------------------------------------------------------------------------
@@ -254,8 +252,6 @@ class BSAFitResult:
     ok: bool
     amplitude: float = 0.0
     amplitude_error: float = 0.0
-    cosine_denominator: float = 0.0
-    cosine_denominator_error: float = 0.0
     pass2_chi2: float = math.nan
     pass2_ndf: int = 0
     pass1_chi2: float = math.nan
@@ -2003,101 +1999,52 @@ def load_pass1_bsa_text(path: Path, pass2_bsa: Dict[str, Dict[BinKey, List[BSAPo
     return out
 
 
-def bsa_fit_function(phi_deg, amplitude: float, cosine_denominator: float):
-    phi_rad = np.radians(phi_deg)
-    return amplitude * np.sin(phi_rad) / (1.0 + cosine_denominator * np.cos(phi_rad))
-
-
 def fit_pass2_bsa_sin_phi(
     pass2_points: Sequence[BSAPoint],
     pass1_points: Sequence[BSAPoint],
 ) -> BSAFitResult:
-    """
-    Fit only the pass-2 BSA points to
-
-        A sin(phi) / (1 + B cos(phi)).
-
-    The pass-1 points are not included in the fit. They are evaluated against
-    the fitted pass-2 curve only for the reported chi2/ndf.
-    """
-
     valid_pass2 = [
         p for p in pass2_points
         if math.isfinite(p.phi_deg) and math.isfinite(p.value)
         and math.isfinite(p.stat) and p.stat > 0.0
     ]
-    if len(valid_pass2) < 3:
+    if len(valid_pass2) < 2:
         return BSAFitResult(ok=False)
 
-    phi_pass2 = np.asarray([p.phi_deg for p in valid_pass2], dtype=float)
-    y_pass2 = np.asarray([p.value for p in valid_pass2], dtype=float)
-    sigma_pass2 = np.asarray([p.stat for p in valid_pass2], dtype=float)
+    denominator = 0.0
+    numerator = 0.0
+    for point in valid_pass2:
+        sine = math.sin(math.radians(point.phi_deg))
+        weight = 1.0 / (point.stat * point.stat)
+        denominator += weight * sine * sine
+        numerator += weight * point.value * sine
 
-    # Start A from the weighted one-parameter sine fit and B from zero.
-    sine = np.sin(np.radians(phi_pass2))
-    weights = 1.0 / np.square(sigma_pass2)
-    denominator = float(np.sum(weights * sine * sine))
-    amplitude_initial = (
-        float(np.sum(weights * y_pass2 * sine)) / denominator
-        if denominator > 0.0 else 0.0
-    )
-
-    try:
-        parameters, covariance = curve_fit(
-            bsa_fit_function,
-            phi_pass2,
-            y_pass2,
-            p0=[amplitude_initial, 0.0],
-            sigma=sigma_pass2,
-            absolute_sigma=True,
-            # Keep the denominator away from zero for every phi.
-            bounds=([-2.0, -0.95], [2.0, 0.95]),
-            maxfev=20000,
-        )
-    except Exception:
+    if not math.isfinite(denominator) or denominator <= 0.0:
         return BSAFitResult(ok=False)
 
-    amplitude = float(parameters[0])
-    cosine_denominator = float(parameters[1])
-
-    amplitude_error = math.nan
-    cosine_denominator_error = math.nan
-    if covariance.shape == (2, 2):
-        if math.isfinite(covariance[0, 0]) and covariance[0, 0] >= 0.0:
-            amplitude_error = math.sqrt(float(covariance[0, 0]))
-        if math.isfinite(covariance[1, 1]) and covariance[1, 1] >= 0.0:
-            cosine_denominator_error = math.sqrt(float(covariance[1, 1]))
-
-    predicted_pass2 = bsa_fit_function(
-        phi_pass2, amplitude, cosine_denominator
+    amplitude = numerator / denominator
+    amplitude_error = 1.0 / math.sqrt(denominator)
+    pass2_chi2 = sum(
+        ((point.value - amplitude * math.sin(math.radians(point.phi_deg))) / point.stat) ** 2
+        for point in valid_pass2
     )
-    pass2_chi2 = float(np.sum(np.square((y_pass2 - predicted_pass2) / sigma_pass2)))
-    pass2_ndf = max(0, len(valid_pass2) - 2)
+    pass2_ndf = max(0, len(valid_pass2) - 1)
 
     valid_pass1 = [
         p for p in pass1_points
         if math.isfinite(p.phi_deg) and math.isfinite(p.value)
         and math.isfinite(p.stat) and p.stat > 0.0
     ]
-
-    if valid_pass1:
-        phi_pass1 = np.asarray([p.phi_deg for p in valid_pass1], dtype=float)
-        y_pass1 = np.asarray([p.value for p in valid_pass1], dtype=float)
-        sigma_pass1 = np.asarray([p.stat for p in valid_pass1], dtype=float)
-        predicted_pass1 = bsa_fit_function(
-            phi_pass1, amplitude, cosine_denominator
-        )
-        pass1_chi2 = float(np.sum(np.square((y_pass1 - predicted_pass1) / sigma_pass1)))
-    else:
-        pass1_chi2 = math.nan
+    pass1_chi2 = sum(
+        ((point.value - amplitude * math.sin(math.radians(point.phi_deg))) / point.stat) ** 2
+        for point in valid_pass1
+    )
     pass1_ndf = len(valid_pass1)
 
     return BSAFitResult(
         ok=True,
         amplitude=amplitude,
         amplitude_error=amplitude_error,
-        cosine_denominator=cosine_denominator,
-        cosine_denominator_error=cosine_denominator_error,
         pass2_chi2=pass2_chi2,
         pass2_ndf=pass2_ndf,
         pass1_chi2=pass1_chi2,
@@ -2124,9 +2071,9 @@ def draw_bsa_axis(
 
     if fit.ok:
         phi_grid = [float(phi) for phi in range(361)]
-        fit_values = list(bsa_fit_function(np.asarray(phi_grid, dtype=float), fit.amplitude, fit.cosine_denominator))
+        fit_values = [fit.amplitude * math.sin(math.radians(phi)) for phi in phi_grid]
         fit_label = (
-            rf"pass-2 fit: $A\sin\phi/(1+B\cos\phi)$, $\chi^2/\mathrm{{ndf}}={format_chi2_ndf(fit.pass2_chi2, fit.pass2_ndf)}$"
+            rf"pass-2 fit: $A\sin\phi$, $\chi^2/\mathrm{{ndf}}={format_chi2_ndf(fit.pass2_chi2, fit.pass2_ndf)}$"
             "\n"
             rf"pass-1 vs fit: $\chi^2/\mathrm{{ndf}}={format_chi2_ndf(fit.pass1_chi2, fit.pass1_ndf)}$"
         )
@@ -2834,7 +2781,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Overlay the KM15 BSA prediction. By default BSA panels show only "
-            "the pass-2 A sin(phi)/(1+B cos(phi)) fit, pass-1 data and pass-2 data."
+            "the pass-2 A sin(phi) fit, pass-1 data and pass-2 data."
         ),
     )
 
@@ -2967,7 +2914,7 @@ def main() -> int:
         if args.bsa_km15:
             bsa_cache = load_generic_cache(bsa_cache_path, ["phi", "km15_bsa"], "BSA KM15 model cache") if model_cfg.use_cache else {}
         else:
-            log("BSA model setup: KM15 disabled by default; using pass-2 A sin(phi)/(1+B cos(phi)) fits.")
+            log("BSA model setup: KM15 disabled by default; using pass-2 A sin(phi) fits.")
     else:
         log("Model setup: --skip-models provided; no BH/KM15 or BSA KM15 curves will be computed.")
 
