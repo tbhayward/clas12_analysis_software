@@ -26,11 +26,13 @@ import uproot
 
 
 TREE_NAME = "PhysicsEvents"
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+ANALYSIS_DIRECTORY = SCRIPT_DIRECTORY.parent
 ROOT_DIRECTORY = Path("/volatile/clas12/thayward/DVCS_per_run_for_analysis_note")
-DEFAULT_CHARGE_FILE = Path("import/Analysis_Note_charges.txt")
-DEFAULT_OUTPUT_DIR = Path("output/dvcs_per_run_analysis_note")
-DEFAULT_COMBINED_CUTS_FILE = Path("output/jsons/combined_cuts.json")
-DEFAULT_GLOBAL_CUTS_FILE = Path("output/jsons/global_cuts_config.json")
+DEFAULT_CHARGE_FILE = SCRIPT_DIRECTORY / "import/Analysis_Note_charges.txt"
+DEFAULT_OUTPUT_DIR = ANALYSIS_DIRECTORY / "output/dvcs_per_run_analysis_note"
+DEFAULT_COMBINED_CUTS_FILE = ANALYSIS_DIRECTORY / "output/jsons/combined_cuts.json"
+DEFAULT_GLOBAL_CUTS_FILE = ANALYSIS_DIRECTORY / "output/jsons/global_cuts_config.json"
 
 PERIOD_FILES = [
     ("rga_fa18_inb", ROOT_DIRECTORY / "rga_fa18_inb.root"),
@@ -78,7 +80,7 @@ def parse_args():
         default=DEFAULT_CHARGE_FILE,
         help=(
             "Charge table containing run number in column 1 and Faraday Cup "
-            "charge in nC in column 2. Default: import/Analysis_Note_charges.txt"
+            "charge in nC in column 2. Default: <external_scripts>/import/Analysis_Note_charges.txt"
         ),
     )
     parser.add_argument(
