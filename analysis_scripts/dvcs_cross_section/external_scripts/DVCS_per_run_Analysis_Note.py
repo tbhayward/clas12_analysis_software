@@ -110,6 +110,25 @@ def parse_args():
         default=DEFAULT_GLOBAL_CUTS_FILE,
         help="Global analysis-cut configuration JSON.",
     )
+    parser.add_argument(
+        "--disable-global-kinematic-cuts",
+        action="store_true",
+        help=(
+            "Disable the global kinematic/angle cuts (|t|, opening angle, "
+            "optional pTmiss and optional dvcsgen y-column cut). Topology validity, "
+            "excluded-run handling and any configured sector-quality cuts remain active."
+        ),
+    )
+    parser.add_argument(
+        "--disable-auxiliary-fiducial-cuts",
+        action="store_true",
+        help="Disable only the auxiliary fiducial cuts, regardless of the JSON toggle.",
+    )
+    parser.add_argument(
+        "--disable-3sigma-cuts",
+        action="store_true",
+        help="Disable all topology- and period-dependent nominal 3sigma exclusivity cuts.",
+    )
     return parser.parse_args()
 #enddef
 
@@ -443,18 +462,27 @@ def global_sector_quality_active(cfg):
 #enddef
 
 
-def required_branches(global_cfg, tree_keys):
-    required = {
-        "runnum", "detector1", "detector2", "t1", "open_angle_ep2", "pTmiss",
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "xF", "theta_gamma_gamma",
-    }
+def required_branches(global_cfg, tree_keys, apply_global_kinematics, apply_auxiliary, apply_3sigma):
+    required = {"runnum", "detector1", "detector2"}
 
-    if "Delta_phi" in tree_keys:
-        required.add("Delta_phi")
-    else:
-        required.update({"p1_phi", "p2_phi"})
+    if apply_global_kinematics:
+        required.update({"t1", "open_angle_ep2"})
+        if bool(global_cfg.get("enable_pTmiss_cut", False)):
+            required.add("pTmiss")
+        #endif
     #endif
 
+    if apply_3sigma:
+        required.update({
+            "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF",
+            "theta_gamma_gamma",
+        })
+        if "Delta_phi" in tree_keys:
+            required.add("Delta_phi")
+        else:
+            required.update({"p1_phi", "p2_phi"})
+        #endif
+    #endif
     needs_phi = (
         global_sector_quality_active(global_cfg)
         or bool(global_cfg.get("enable_electron_fd_sector_filter", False))
@@ -462,7 +490,7 @@ def required_branches(global_cfg, tree_keys):
         or bool(global_cfg.get("enable_proton_cd_sector_filter", False))
         or bool(global_cfg.get("enable_photon_fd_sector_filter", False))
         or (
-            bool(global_cfg.get("enable_auxiliary_fiducial_cuts", False))
+            apply_auxiliary
             and bool(global_cfg.get("auxiliary_require_distinct_fd_sectors", False))
         )
     )
@@ -471,11 +499,11 @@ def required_branches(global_cfg, tree_keys):
         required.update({"e_phi", "p1_phi", "p2_phi"})
     #endif
 
-    if bool(global_cfg.get("enable_auxiliary_fiducial_cuts", False)):
+    if apply_auxiliary:
         required.update({"e_theta", "p1_theta", "p2_p", "p2_theta"})
     #endif
 
-    if bool(global_cfg.get("enable_dvcsgen_ycol_cut", False)):
+    if apply_global_kinematics and bool(global_cfg.get("enable_dvcsgen_ycol_cut", False)):
         required.update({"e_p", "e_theta", "e_phi", "p2_p", "p2_theta", "p2_phi"})
     #endif
 
@@ -524,16 +552,20 @@ def dvcsgen_p2_pos(period_label, arrays):
 #enddef
 
 
-def apply_global_cuts(period_label, arrays, cfg):
+def apply_global_cuts(period_label, arrays, cfg, apply_global_kinematics, apply_auxiliary):
     detector1 = arrays["detector1"]
     detector2 = arrays["detector2"]
-    mask = np.isfinite(arrays["t1"]) & np.isfinite(arrays["open_angle_ep2"])
-    mask &= (-arrays["t1"]) < float(cfg["t1_abs_max"])
-    mask &= arrays["open_angle_ep2"] > float(cfg["open_angle_min_deg"])
+    mask = np.ones(detector1.shape, dtype=bool)
 
-    if bool(cfg.get("enable_pTmiss_cut", False)):
-        mask &= np.isfinite(arrays["pTmiss"])
-        mask &= arrays["pTmiss"] <= float(cfg["pTmiss_max"])
+    if apply_global_kinematics:
+        mask &= np.isfinite(arrays["t1"]) & np.isfinite(arrays["open_angle_ep2"])
+        mask &= (-arrays["t1"]) < float(cfg["t1_abs_max"])
+        mask &= arrays["open_angle_ep2"] > float(cfg["open_angle_min_deg"])
+
+        if bool(cfg.get("enable_pTmiss_cut", False)):
+            mask &= np.isfinite(arrays["pTmiss"])
+            mask &= arrays["pTmiss"] <= float(cfg["pTmiss_max"])
+        #endif
     #endif
 
     valid_topology = (
@@ -562,7 +594,7 @@ def apply_global_cuts(period_label, arrays, cfg):
             "enable_photon_fd_sector_filter",
         )
     ) or global_sector_quality_active(cfg) or (
-        bool(cfg.get("enable_auxiliary_fiducial_cuts", False))
+        apply_auxiliary
         and bool(cfg.get("auxiliary_require_distinct_fd_sectors", False))
     )
 
@@ -596,7 +628,7 @@ def apply_global_cuts(period_label, arrays, cfg):
         #endif
     #endif
 
-    if bool(cfg.get("enable_auxiliary_fiducial_cuts", False)):
+    if apply_auxiliary:
         e_theta_deg = np.degrees(arrays["e_theta"])
         p1_theta_deg = np.degrees(arrays["p1_theta"])
         p2_theta_deg = np.degrees(arrays["p2_theta"])
@@ -630,7 +662,7 @@ def apply_global_cuts(period_label, arrays, cfg):
         #endif
     #endif
 
-    if bool(cfg.get("enable_dvcsgen_ycol_cut", False)):
+    if apply_global_kinematics and bool(cfg.get("enable_dvcsgen_ycol_cut", False)):
         mask &= dvcsgen_p2_pos(period_label, arrays) > float(cfg["dvcsgen_ycol_cut"])
     #endif
 
@@ -742,7 +774,10 @@ def apply_sigma_cuts(period_label, arrays, base_mask, sigma_cuts):
 #enddef
 
 
-def read_run_counts(period_label, root_path, global_cfg, sigma_cuts):
+def read_run_counts(
+    period_label, root_path, global_cfg, sigma_cuts,
+    apply_global_kinematics, apply_auxiliary, apply_3sigma,
+):
     if not root_path.is_file():
         raise RuntimeError(
             f"Missing ROOT file for {PERIOD_DISPLAY_NAMES[period_label]}: {root_path}\n"
@@ -758,7 +793,9 @@ def read_run_counts(period_label, root_path, global_cfg, sigma_cuts):
 
             tree = root_file[TREE_NAME]
             tree_keys = set(tree.keys())
-            branches = required_branches(global_cfg, tree_keys)
+            branches = required_branches(
+                global_cfg, tree_keys, apply_global_kinematics, apply_auxiliary, apply_3sigma
+            )
             missing = sorted(set(branches) - tree_keys)
             if missing:
                 raise RuntimeError(
@@ -774,8 +811,14 @@ def read_run_counts(period_label, root_path, global_cfg, sigma_cuts):
         raise RuntimeError(f"Failed to read {root_path}: {exc}") from exc
     #endtry
 
-    global_mask = apply_global_cuts(period_label, arrays, global_cfg)
-    final_mask = apply_sigma_cuts(period_label, arrays, global_mask, sigma_cuts)
+    global_mask = apply_global_cuts(
+        period_label, arrays, global_cfg, apply_global_kinematics, apply_auxiliary
+    )
+    if apply_3sigma:
+        final_mask = apply_sigma_cuts(period_label, arrays, global_mask, sigma_cuts)
+    else:
+        final_mask = global_mask.copy()
+    #endif
     selected_runs = arrays["runnum"][final_mask]
 
     unique_runs, event_counts = np.unique(selected_runs, return_counts=True)
@@ -789,7 +832,7 @@ def read_run_counts(period_label, root_path, global_cfg, sigma_cuts):
     print(
         f"  {PERIOD_DISPLAY_NAMES[period_label]}: entries={len(arrays['runnum'])}, "
         f"global-pass={int(np.count_nonzero(global_mask))}, "
-        f"3sigma-pass={int(np.count_nonzero(final_mask))}"
+        f"final-pass={int(np.count_nonzero(final_mask))}"
     )
     return run_counts
 #enddef
@@ -952,7 +995,7 @@ def make_period_plot(period_label, per_current_stats, output_dir):
     if period_label.endswith("_inb"):
         ax.set_ylim(0.0, 20.0)
     elif period_label.endswith("_out"):
-        ax.set_ylim(0, 1000.0)
+        ax.set_ylim(0.0, 40.0)
     else:
         raise RuntimeError(
             f"Cannot choose a standardized y-axis range for period '{period_label}'."
@@ -995,14 +1038,28 @@ def main():
 
     try:
         charge_map = load_charge_map(args.charge_file)
-        combined_cuts_json = load_json_object(args.combined_cuts, "combined cuts JSON")
         global_cfg = load_json_object(args.global_cuts, "global cuts configuration JSON")
-        sigma_cuts = load_sigma_cuts(combined_cuts_json)
+
+        apply_global_kinematics = not args.disable_global_kinematic_cuts
+        apply_auxiliary = (
+            bool(global_cfg.get("enable_auxiliary_fiducial_cuts", False))
+            and not args.disable_auxiliary_fiducial_cuts
+        )
+        apply_3sigma = not args.disable_3sigma_cuts
+
+        if apply_3sigma:
+            combined_cuts_json = load_json_object(args.combined_cuts, "combined cuts JSON")
+            sigma_cuts = load_sigma_cuts(combined_cuts_json)
+        else:
+            sigma_cuts = {}
+        #endif
+
         all_run_counts = {}
 
         for period_label, root_path in period_files(args.root_dir):
             all_run_counts[period_label] = read_run_counts(
-                period_label, root_path, global_cfg, sigma_cuts
+                period_label, root_path, global_cfg, sigma_cuts,
+                apply_global_kinematics, apply_auxiliary, apply_3sigma,
             )
         #endfor
 
@@ -1013,8 +1070,13 @@ def main():
         print(f"Charge file: {args.charge_file}")
         print("Charge conversion: nC / 1000 = microC")
         print(f"ROOT directory: {args.root_dir}")
-        print(f"Global cuts: {args.global_cuts}")
-        print(f"Combined 3sigma cuts: {args.combined_cuts}")
+        print(f"Global cuts configuration: {args.global_cuts}")
+        print(f"Apply global kinematic cuts: {apply_global_kinematics}")
+        print(f"Apply auxiliary fiducial cuts: {apply_auxiliary}")
+        print(f"Apply nominal 3sigma cuts: {apply_3sigma}")
+        if apply_3sigma:
+            print(f"Combined 3sigma cuts: {args.combined_cuts}")
+        #endif
         print(f"Output directory: {args.output_dir}")
         print("=" * 88)
 
