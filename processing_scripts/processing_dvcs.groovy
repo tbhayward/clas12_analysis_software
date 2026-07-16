@@ -163,13 +163,7 @@ public static void main(String[] args) {
 		    if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
 	    	if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
 
-	    	if (runnum == 5158 || 
-			    runnum == 5163 ||
-			    runnum == 5181 ||
-			    runnum == 5519 ||
-			    runnum == 5528 ||
-			    runnum == 5627 ||
-			    runnum == 3355 ||
+	    	if (runnum == 3355 ||
 			    runnum == 3404 ||
 			    runnum == 3408 ||
 			    runnum == 3449 ||
