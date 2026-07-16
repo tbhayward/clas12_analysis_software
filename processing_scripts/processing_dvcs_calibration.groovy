@@ -36,7 +36,7 @@ class CalibrationScript {
 
 
     // Define instance variables with default values
-    int config_run = -9999
+    int runnum = -9999
     int config_event = -9999
     int config_trigger = -9999
     double torus = -9999
@@ -104,7 +104,7 @@ class CalibrationScript {
 
     // Method to reset all variables to their default values
     void resetVariables() {
-        // config_run = -9999
+        // runnum = -9999
         // config_event = -9999
         // config_trigger = -9999
         // torus = -9999
@@ -323,14 +323,14 @@ class CalibrationScript {
                 HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
                 // collect info for QA
-                config_run = run_Bank.getInt('run', 0)
+                runnum = run_Bank.getInt('run', 0)
                 config_event = run_Bank.getInt('event', 0)
                 PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
                 // boolean process_event = filter.isValid(research_Event)
-                boolean process_event = (config_run == 11 ||  qa.pass(config_run, config_event));
-		    	if (config_run > 17768) process_event == false; // outbending RGC Sp23
-		    	if (config_run > 16600 && config_run < 16700) break; // Hall C bleedthrough
+                boolean process_event = (runnum == 11 ||  qa.pass(runnum, config_event));
+		    	if (runnum > 17768) process_event == false; // outbending RGC Sp23
+		    	if (runnum > 16600 && runnum < 16700) break; // Hall C bleedthrough
 		    	if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
 		    	if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
 		    	if (runnum == 3355 ||
@@ -420,10 +420,10 @@ class CalibrationScript {
 			        int num_p1 = research_Event.countByPid(2212);
 			        int num_p2 = research_Event.countByPid(22); 
 
-	        		// supply config_run and boolean for radiative simulation or not
-					BeamEnergy Eb = new BeamEnergy(research_Event, config_run, false);
-					// Use the input beam energy if config_run == 11, otherwise use Eb.Eb()
-					double b_energy = (config_run == 11) ? beam_energy : Eb.Eb();
+	        		// supply runnum and boolean for radiative simulation or not
+					BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+					// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+					double b_energy = (runnum == 11) ? beam_energy : Eb.Eb();
 		            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 						2212, 0, 22, 0, b_energy);
 		            // this is my class for defining all relevant kinematic variables
@@ -720,7 +720,7 @@ class CalibrationScript {
 	                    // Use a StringBuilder to append all data in a single call
 	                    StringBuilder line = new StringBuilder()
 	                    	// config
-	                    line.append(config_run).append(" ")
+	                    line.append(runnum).append(" ")
 	                        .append(config_event).append(" ")
 	                        // event
 	                        .append(event_helicity).append(" ")
