@@ -1040,7 +1040,7 @@ def make_period_plot(period_label, per_current_stats, output_dir):
     if period_label.endswith("_inb"):
         ax.set_ylim(0.0, 25.0)
     elif period_label.endswith("_out"):
-        ax.set_ylim(0.0, 40.0)
+        ax.set_ylim(0.0, 50.0)
     else:
         raise RuntimeError(
             f"Cannot choose a standardized y-axis range for period '{period_label}'."
