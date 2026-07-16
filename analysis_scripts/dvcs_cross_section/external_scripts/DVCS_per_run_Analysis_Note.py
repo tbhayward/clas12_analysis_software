@@ -52,7 +52,7 @@ PERIOD_DISPLAY_NAMES = {
 
 REMOVED_RUNS = {
     "rga_fa18_inb": {5247, 5345},
-    "rga_fa18_out": set(),
+    "rga_fa18_out": {5443},
     "rga_sp19_inb": {6616, 6618},
     "rga_sp18_inb": {
         3355, 3404, 3408, 3449, 3490, 3499, 3500, 3505, 3508, 3526,
