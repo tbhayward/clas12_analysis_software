@@ -5,7 +5,7 @@
  *
  * Normal operation:
  *   - Reads tag-1 events.
- *   - Calculates RUN::scaler charge from:
+ *   * Calculates RUN::scaler charge from:
  *
  *         max(fcupgated) - min(fcupgated)
  *
@@ -513,9 +513,7 @@ public class processing_beamCharge {
     static void printUsage() {
 
         println();
-        println(
-            "Usage:"
-        );
+        println("Usage:");
 
         println(
             "  run-groovy processing_beamCharge.groovy " +
@@ -524,9 +522,7 @@ public class processing_beamCharge {
         );
 
         println();
-        println(
-            "Examples:"
-        );
+        println("Examples:");
 
         println(
             "  run-groovy processing_beamCharge.groovy " +
@@ -1446,7 +1442,7 @@ public class processing_beamCharge {
             );
             println();
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "%-10s %15s %15s %20s %20s %20s%n",
                 "event tag",
@@ -1457,7 +1453,7 @@ public class processing_beamCharge {
                 "max-min (nC)"
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "%-10s %15s %15s %20s %20s %20s%n",
                 "---------",
@@ -1476,7 +1472,7 @@ public class processing_beamCharge {
                 ScalerStreamAccumulator tagAccumulator =
                     runAccumulator.byTag.get(tag);
 
-                printf(
+                System.out.printf(
                     Locale.US,
                     "%-10d %15d %15d %20.9f %20.9f %20.9f%n",
                     tag,
@@ -1490,7 +1486,7 @@ public class processing_beamCharge {
 
             println();
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "%-10s %15d %15d %20.9f %20.9f %20.9f%n",
                 "ALL",
@@ -1573,19 +1569,19 @@ public class processing_beamCharge {
                 lowerEndpointExtension +
                 upperEndpointExtension;
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Tag-1 minimum:                     %.9f nC%n",
                 tag1.minimum
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Tag-1 maximum:                     %.9f nC%n",
                 tag1.maximum
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Tag-1 max-min charge:              %.9f nC%n",
                 tag1Charge
@@ -1593,19 +1589,19 @@ public class processing_beamCharge {
 
             println();
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "All-tag minimum:                   %.9f nC%n",
                 allTags.minimum
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "All-tag maximum:                   %.9f nC%n",
                 allTags.maximum
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "All-tag max-min charge:            %.9f nC%n",
                 allTagCharge
@@ -1613,19 +1609,19 @@ public class processing_beamCharge {
 
             println();
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "All-tag minus tag-1 charge:        %.9f nC%n",
                 chargeDifference
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Difference relative to tag 1:      %.9f%%%n",
                 percentRelativeToTag1
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Difference relative to all tags:   %.9f%%%n",
                 percentRelativeToAll
@@ -1633,27 +1629,27 @@ public class processing_beamCharge {
 
             println();
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Lower-end extension:%n" +
                 "  tag1_min - all_min =             %.9f nC%n",
                 lowerEndpointExtension
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Upper-end extension:%n" +
                 "  all_max - tag1_max =             %.9f nC%n",
                 upperEndpointExtension
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Sum of endpoint extensions:        %.9f nC%n",
                 endpointExtensionSum
             );
 
-            printf(
+            System.out.printf(
                 Locale.US,
                 "Charge difference minus extension sum: %.12f nC%n",
                 chargeDifference -
