@@ -28,18 +28,18 @@ import uproot
 TREE_NAME = "PhysicsEvents"
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 ANALYSIS_DIRECTORY = SCRIPT_DIRECTORY.parent
-ROOT_DIRECTORY = Path("/volatile/clas12/thayward/DVCS_per_run_for_analysis_note")
+ROOT_DIRECTORY = Path("/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/")
 DEFAULT_CHARGE_FILE = SCRIPT_DIRECTORY / "import/Analysis_Note_charges.txt"
 DEFAULT_OUTPUT_DIR = ANALYSIS_DIRECTORY / "output/dvcs_per_run_analysis_note"
 DEFAULT_COMBINED_CUTS_FILE = ANALYSIS_DIRECTORY / "output/jsons/combined_cuts.json"
 DEFAULT_GLOBAL_CUTS_FILE = ANALYSIS_DIRECTORY / "output/jsons/global_cuts_config.json"
 
 PERIOD_FILES = [
-    ("rga_fa18_inb", ROOT_DIRECTORY / "rga_fa18_inb.root"),
-    ("rga_fa18_out", ROOT_DIRECTORY / "rga_fa18_out.root"),
-    ("rga_sp19_inb", ROOT_DIRECTORY / "rga_sp19_inb.root"),
-    ("rga_sp18_inb", ROOT_DIRECTORY / "rga_sp18_inb.root"),
-    ("rga_sp18_out", ROOT_DIRECTORY / "rga_sp18_out.root"),
+    ("rga_fa18_inb", ROOT_DIRECTORY / "rga_fa18_inb_epgamma.root"),
+    ("rga_fa18_out", ROOT_DIRECTORY / "rga_fa18_out_epgamma.root"),
+    ("rga_sp19_inb", ROOT_DIRECTORY / "rga_sp19_inb_epgamma.root"),
+    ("rga_sp18_inb", ROOT_DIRECTORY / "rga_sp18_inb_epgamma.root"),
+    ("rga_sp18_out", ROOT_DIRECTORY / "rga_sp18_out_epgamma.root"),
 ]
 
 PERIOD_DISPLAY_NAMES = {
