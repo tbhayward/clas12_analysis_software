@@ -51,7 +51,7 @@ PERIOD_DISPLAY_NAMES = {
 }
 
 REMOVED_RUNS = {
-    "rga_fa18_inb": {5247, 5345},
+    "rga_fa18_inb": {5247, 5345, 5418, 5419},
     "rga_fa18_out": {5443},
     "rga_sp19_inb": {6616, 6618},
     "rga_sp18_inb": {
@@ -1038,7 +1038,7 @@ def make_period_plot(period_label, per_current_stats, output_dir):
     #endfor
 
     if period_label.endswith("_inb"):
-        ax.set_ylim(0.0, 20.0)
+        ax.set_ylim(0.0, 25.0)
     elif period_label.endswith("_out"):
         ax.set_ylim(0.0, 40.0)
     else:
