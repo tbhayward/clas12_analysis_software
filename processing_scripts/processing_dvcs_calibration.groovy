@@ -263,8 +263,8 @@ class CalibrationScript {
         // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
         // load my kinematic fitter/PID
-		// GenericKinematicFitter fitter = new dvcs_fitter(10.6041);
-		GenericKinematicFitter fitter = new event_builder_fitter(10.6041);
+		GenericKinematicFitter fitter = new dvcs_fitter(10.6041);
+		// GenericKinematicFitter fitter = new event_builder_fitter(10.6041);
 		// set filter for final states
 		EventFilter filter = new EventFilter("11:2212:22:Xn");
 
@@ -274,22 +274,21 @@ class CalibrationScript {
 		qa.checkForDefect('TerminalOutlier')
 		qa.checkForDefect('MarginalOutlier')
 		qa.checkForDefect('SectorLoss')
-		// qa.checkForDefect('LowLiveTime')
+		//qa.checkForDefect('LowLiveTime')
 		qa.checkForDefect('Misc')
 		qa.checkForDefect('ChargeHigh')
 		qa.checkForDefect('ChargeNegative')
 		qa.checkForDefect('ChargeUnknown')
-		qa.checkForDefect('PossiblyNoBeam')
-		[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
-	  		6736, 6737, 6738,
-	  		6739, 6740, 6741, 6742, 6743, 6744, 6746, 6747,
-	  		6748, 6749, 6750, 6751, 6753, 6754, 6755, 6756,
-	  		6757, 											 // RGA runs FADC failure sector 6
-	  		16194, 16089, 16185, 16308, 16184, 16307, 16309, // RGC Su22 He/ET
-	  		16872, 16975, 									 // RGC Fa22 He/ET
-	  		17763, 17764, 17765, 17766, 17767, 17768,		 // RGC Sp23 He/ET
-	  		17179, 17180, 17181, 17182, 17183, 17188, 17189, // RICH off/partially down
-	  		17252
+		[ // list of runs with `Misc` that should be allowed
+			// 5418, 5419, // RGA Fa18 Inb 5nA run
+			// 5443, // RGA Fa18 Out 5nA run
+			5444, // RGA Fa18 Out 20nA run
+			// 6616, // RGA Sp19 Inb 5nA run
+			// 6618, // RGA Sp19 Inb 10nA run
+	  		6736, 6737, 6738, 6739, 6740, 6741, 
+	  			6742, 6743, 6744, 6746, 6747, 6748, 
+	  			6749, 6750, 6751, 6753, 6754, 6755, 
+	  			6756, 6757 // RGA runs FADC failure sector 6
 		].each{ run -> qa.allowMiscBit(run) }
 
         // create a StringBuilder for accumulating lines
@@ -325,16 +324,94 @@ class CalibrationScript {
 
                 // collect info for QA
                 config_run = run_Bank.getInt('run', 0)
-                if (config_run > 16600 && config_run < 16700) break; // Hall C bleedthrough
-                if (config_run == 5247) break; // sector 4 loss, should be removed by qa but maybe early events need it too?
-		    	if (config_run == 5345) break; // beam lowered to 20 nA for part of the run
                 config_event = run_Bank.getInt('event', 0)
-
                 PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
                 // boolean process_event = filter.isValid(research_Event)
                 boolean process_event = (config_run == 11 ||  qa.pass(config_run, config_event));
 		    	if (config_run > 17768) process_event == false; // outbending RGC Sp23
+		    	if (config_run > 16600 && config_run < 16700) break; // Hall C bleedthrough
+		    	if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
+		    	if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
+		    	if (runnum == 3355 ||
+				    runnum == 3404 ||
+				    runnum == 3408 ||
+				    runnum == 3449 ||
+				    runnum == 3490 ||
+				    runnum == 3499 ||
+				    runnum == 3500 ||
+				    runnum == 3505 ||
+				    runnum == 3526 ||
+				    runnum == 3527 ||
+				    runnum == 3528 ||
+				    runnum == 3529 ||
+				    runnum == 3530 ||
+				    runnum == 3531 ||
+				    runnum == 3532 ||
+				    runnum == 3533 ||
+				    runnum == 3534 ||
+				    runnum == 3535 ||
+				    runnum == 3536 ||
+				    runnum == 3538 ||
+				    runnum == 3540 ||
+				    runnum == 3544 ||
+				    runnum == 3545 ||
+				    runnum == 3547 ||
+				    runnum == 3548 ||
+				    runnum == 3709 ||
+				    runnum == 3736 ||
+				    runnum == 3793 ||
+				    runnum == 3800 ||
+				    runnum == 3801 ||
+				    runnum == 3807 ||
+				    runnum == 3508 ||
+				    runnum == 3808 ||
+				    runnum == 3809 ||
+				    runnum == 3810 ||
+				    runnum == 3813 ||
+				    runnum == 3698 ||
+				    runnum == 3814 ||
+				    runnum == 3815 ||
+				    runnum == 3817 ||
+				    runnum == 4018 ||
+				    runnum == 4059 ||
+				    runnum == 4142 ||
+				    runnum == 4145 ||
+				    runnum == 4146 ||
+				    runnum == 4159 ||
+				    runnum == 4160 ||
+				    runnum == 4162 ||
+				    runnum == 4163 ||
+				    runnum == 4176 ||
+				    runnum == 4209 ||
+				    runnum == 4227 ||
+				    runnum == 4246 ||
+				    runnum == 4252 ||
+				    runnum == 4325 ||
+				    runnum == 3867 ||
+				    runnum == 3877 ||
+				    runnum == 3882 ||
+				    runnum == 3927 ||
+				    runnum == 3215 ||
+				    runnum == 3218 ||
+				    runnum == 3219 ||
+				    runnum == 3222 ||
+				    runnum == 3951 ||
+				    runnum == 3953 ||
+				    runnum == 3965 ||
+				    runnum == 3967 ||
+				    runnum == 3968 ||
+				    runnum == 3499 ||
+				    runnum == 3712 ||
+				    runnum == 3801 ||
+				    runnum == 3807 ||
+				    runnum == 3808 ||
+				    runnum == 3267 ||
+				    runnum == 3879 ||
+				    runnum == 3923 ||
+				    runnum == 3929 ||
+				    runnum == 3947) process_event = false;
+
 		    	if (!filter.isValid(research_Event)) process_event = false;
 
                 if (process_event && banks_test(event)) {
@@ -362,25 +439,25 @@ class CalibrationScript {
 		                if (open_angle_ep2 <= 5) continue;
 
 		                Mx2 = variables.Mx2(); // missing mass
-		                if (Mx2 < -0.030 || Mx2 > 0.030) continue;
+		                if (Mx2 < -0.040 || Mx2 > 0.040) continue;
 
 		                Mx2_1 = variables.Mx2_1(); // missing mass calculated with p1
-		                if (Mx2_1 < -0.4 || Mx2_1 > 0.4) continue;
+		                if (Mx2_1 < -0.5 || Mx2_1 > 0.5) continue;
 
 		                Mx2_2 = variables.Mx2_2(); 
 		                if (Mx2_2 < 0.0 || Mx2_2 > 2.0) continue;
 
 		                xF = variables.xF(); // Feynman-x
-		                if (xF < -0.12 || xF > 0.12) continue;
+		                if (xF < -0.15 || xF > 0.15) continue;
 
 				    	Emiss2 = variables.Emiss2();
 				    	if (Emiss2 > 1) continue;
 
-				    	theta_gamma_gamma = variables.theta_gamma_gamma();
-				    	if (theta_gamma_gamma > 0.75) continue;
+				    	// theta_gamma_gamma = variables.theta_gamma_gamma();
+				    	// if (theta_gamma_gamma > 0.75) continue;
 
-				    	pTmiss = variables.pTmiss();
-				    	if (pTmiss > 0.15) continue;
+				    	// pTmiss = variables.pTmiss();
+				    	// if (pTmiss > 0.15) continue;
 
 		            }
 
@@ -392,9 +469,6 @@ class CalibrationScript {
 
                         particle_pid = rec_Bank.getInt("pid", particle_Index);
                         if (particle_pid == 0 || particle_pid == 45) { continue; }
-                        // if (particle_pid == 0 || particle_pid == 45 || particle_pid == 211 || particle_pid == -211 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2112) { continue; }
-                        // if (particle_pid == 0 || particle_pid == 45 || particle_pid == 11 || particle_pid == -11 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2212 || particle_pid == 2112) { continue; }
-                        
                         if (particle_pid == 11) { num_elec++; }
                         if (particle_pid == 22) { num_photon++; }
                         if (particle_pid == 2212) { num_proton++; }
@@ -415,37 +489,6 @@ class CalibrationScript {
 						particle_beta = rec_Bank.getFloat("beta",particle_Index);
 						particle_chi2pid = rec_Bank.getFloat("chi2pid",particle_Index);
 						particle_status = rec_Bank.getInt("status",particle_Index);
-
-						// if (event.hasBank("MC::Particle") && event.hasBank("MC::Lund")) {
-						// 	HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
-						// 	int mc_parent_index = 0;
-						// 	int scale = 2; // could fine tune
-						// 	for (int current_part = 0; current_part < lundBank.rows(); current_part++) {
-						// 		if (mc_matching_pid != -9999) { continue; }
-						// 		int pid = lundBank.getInt("pid", current_part);
-						// 		double mc_particle_px_test = lundBank.getFloat("px", current_part);
-						// 		double mc_particle_py_test = lundBank.getFloat("py", current_part);
-						// 		double mc_particle_pz_test = lundBank.getFloat("pz", current_part);
-
-						// 		double mc_phi_test = phi_calculation(mc_particle_px_test, mc_particle_py_test);
-						// 		double mc_theta_test = theta_calculation(mc_particle_px_test, mc_particle_py_test, mc_particle_pz_test);
-
-						// 		boolean matching_p1 = Math.abs(phi - mc_phi_test) < scale*3.0 && 
-						// 			Math.abs(theta - mc_theta_test) < scale*1.0;
-						// 		if (matching_p1) {
-						// 			mc_matching_pid = pid;
-						// 			mc_parent_index = lundBank.getInt("parent", current_part)-1;
-						// 			mc_particle_px = mc_particle_px_test;
-						// 			mc_particle_py = mc_particle_py_test;
-						// 			mc_particle_pz = mc_particle_pz_test;
-						// 			mc_p = Math.sqrt(mc_particle_px*mc_particle_px+
-						// 				mc_particle_py*mc_particle_py+mc_particle_pz*mc_particle_pz);
-						// 			mc_phi = mc_phi_test;
-						// 			mc_theta = mc_theta_test;
-						// 		}
-						// 	}
-						// 	mc_parent_pid = lundBank.getInt("pid", mc_parent_index);
-	                    // }
 
 	                    // =======================================
 						// NEW TRUTH MATCHING USING MC::RecMatch
