@@ -1100,14 +1100,14 @@ def process_period(
 
         selected = {"data": data_counts[topology.key], "dvcs_mc": dvcs_counts[topology.key], "pi0_mc": pi0_counts[topology.key]}
 
-        shape_output_path = output_dir / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
+        shape_output_path = output_dir / "shape_comparisons" / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
         draw_shape_canvas(
             shape_output_path, period, topology, data_hists[topology.key],
             dvcs_hists[topology.key], pi0_hists[topology.key], selected, log_y, dpi,
         )
         log(f"Wrote {shape_output_path}")
 
-        output_path = output_dir / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
+        output_path = output_dir / "template_fits" / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
         draw_fit_canvas(
             output_path, period, topology, data_hists[topology.key],
             dvcs_hists[topology.key], pi0_hists[topology.key],
@@ -1161,7 +1161,7 @@ def main() -> int:
         ))
     # endfor
 
-    csv_path = output_dir / "fit_results.csv"
+    csv_path = output_dir / "template_fits" / "fit_results.csv"
     write_results_csv(csv_path, all_rows)
     log(f"Wrote {csv_path}")
     log("All requested shape plots and fits completed")
