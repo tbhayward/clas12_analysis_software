@@ -2,9 +2,9 @@
 """
 plot_exclusivity_data_dvcs_pi0_mc.py
 
-For each of the five run periods, three detector topologies and eight
-exclusivity variables, fit the uncut DVCS-candidate data with a two-template
-mixture:
+For each of the five run periods and three detector topologies, compare the
+eight exclusivity-variable shapes and perform one simultaneous two-template
+fit across all eight projections:
 
     data = (1-f_pi0) * shifted-and-smeared DVCS MC
          + f_pi0     * eppi0 MC reconstructed as DVCS.
@@ -19,13 +19,15 @@ No exclusivity cuts are applied. The fit uses the raw binned data counts and a P
 The total expected count is fixed to the observed number of entries inside
 the plotted range, so the floated parameters describe shape only:
 
-    f_pi0        : fitted eppi0 shape fraction inside the plotted range
-    shift        : additive shift applied to the DVCS template
-    sigma_add    : extra Gaussian smearing applied to the DVCS template
+    f_pi0        : one fraction shared by all eight histograms
+    shift        : variable-specific DVCS-template shift or log-scale shift
+    sigma_add    : variable-specific additive or log-space smearing
 
-The eppi0 template is left fixed in this first implementation. Floating
-independent shift and smearing parameters for both templates is generally too
-degenerate for a one-dimensional two-template fit.
+The eppi0 template is fixed. Signed variables use additive shift plus Gaussian
+smearing. Positive-definite pTmiss and theta_gamma_gamma use log-space shift
+and smearing. The clearly unmodelled right side of Mx2_1 is displayed but
+excluded from the fit objective, and xF edge bins are excluded to reduce
+range-clipping bias.
 
 Outputs:
 
@@ -60,10 +62,13 @@ import numpy as np
 
 try:
     from scipy.ndimage import gaussian_filter1d
-    from scipy.optimize import minimize
+    from scipy.optimize import minimize, minimize_scalar
+    from scipy.special import ndtr
 except ImportError:
     gaussian_filter1d = None
     minimize = None
+    minimize_scalar = None
+    ndtr = None
 #endif
 
 try:
@@ -132,6 +137,19 @@ class FitResult:
     dvcs_component_counts: Optional[np.ndarray] = None
     pi0_component_counts: Optional[np.ndarray] = None
     transformed_dvcs_shape: Optional[np.ndarray] = None
+    fit_mask: Optional[np.ndarray] = None
+    morph_label: str = "additive"
+
+
+@dataclass
+class SharedFitSummary:
+    success: bool
+    message: str
+    f_pi0: float = math.nan
+    f_pi0_err: float = math.nan
+    deviance: float = math.nan
+    ndf: int = 0
+    variable_results: Optional[Dict[str, FitResult]] = None
 
 
 PERIODS: Tuple[PeriodConfig, ...] = (
@@ -668,14 +686,34 @@ def normalized_shape(counts: np.ndarray) -> Optional[np.ndarray]:
     return values / total
 
 
-def transform_dvcs_shape(
+def is_positive_morph_variable(variable: VariableConfig) -> bool:
+    return variable.branch in {"pTmiss", "theta_gamma_gamma"}
+
+
+def fit_mask_for_variable(variable: VariableConfig) -> np.ndarray:
+    """Bins used in the shared likelihood; all bins remain visible in plots."""
+    _, centers = bin_geometry(variable)
+    mask = np.ones(variable.bins, dtype=bool)
+
+    if variable.branch == "Mx2_1":
+        # The right-side structure is not described by either available template.
+        mask &= centers <= 0.50
+    elif variable.branch == "xF":
+        # Avoid allowing small range-clipping effects to drive the nuisance fit.
+        mask[:2] = False
+        mask[-2:] = False
+    # endif
+
+    return mask
+
+
+def transform_additive_shape(
     base_shape: np.ndarray,
     variable: VariableConfig,
     shift: float,
     sigma_add: float,
 ) -> Optional[np.ndarray]:
-    """Shift and Gaussian-smear a unit-normalized binned DVCS template."""
-
+    """Additively shift and Gaussian-smear a unit-normalized template."""
     _, centers = bin_geometry(variable)
     bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
     sigma_bins = max(0.0, sigma_add / bin_width)
@@ -702,6 +740,51 @@ def transform_dvcs_shape(
     return shifted / total
 
 
+def transform_positive_shape(
+    base_shape: np.ndarray,
+    variable: VariableConfig,
+    log_shift: float,
+    log_sigma: float,
+) -> Optional[np.ndarray]:
+    """Morph a positive template through log(x+epsilon) shift and smearing."""
+    edges, centers = bin_geometry(variable)
+    epsilon = max(0.25 * (edges[1] - edges[0]), 1.0e-8)
+    source_weights = np.asarray(base_shape, dtype=np.float64)
+    target = np.zeros(variable.bins, dtype=np.float64)
+
+    if log_sigma <= 1.0e-8:
+        transformed_centers = np.exp(np.log(centers + epsilon) + log_shift) - epsilon
+        target, _ = np.histogram(transformed_centers, bins=edges, weights=source_weights)
+    else:
+        lower_log = np.log(np.maximum(edges[:-1] + epsilon, 1.0e-15))[:, None]
+        upper_log = np.log(np.maximum(edges[1:] + epsilon, 1.0e-15))[:, None]
+        source_means = (np.log(centers + epsilon) + log_shift)[None, :]
+        probabilities = ndtr((upper_log - source_means) / log_sigma) - ndtr(
+            (lower_log - source_means) / log_sigma
+        )
+        target = probabilities @ source_weights
+    # endif
+
+    target = np.clip(target, 0.0, None)
+    total = float(np.sum(target))
+    if total <= 0.0 or not math.isfinite(total):
+        return None
+    # endif
+    return target / total
+
+
+def transform_dvcs_shape(
+    base_shape: np.ndarray,
+    variable: VariableConfig,
+    shift: float,
+    sigma_add: float,
+) -> Optional[np.ndarray]:
+    if is_positive_morph_variable(variable):
+        return transform_positive_shape(base_shape, variable, shift, sigma_add)
+    # endif
+    return transform_additive_shape(base_shape, variable, shift, sigma_add)
+
+
 def poisson_deviance(observed: np.ndarray, expected: np.ndarray) -> float:
     expected = np.clip(np.asarray(expected, dtype=np.float64), 1.0e-12, None)
     observed = np.asarray(observed, dtype=np.float64)
@@ -713,164 +796,268 @@ def poisson_deviance(observed: np.ndarray, expected: np.ndarray) -> float:
     return 2.0 * float(np.sum(terms))
 
 
-def numerical_hessian(function, point: np.ndarray, steps: np.ndarray) -> np.ndarray:
-    n_parameters = len(point)
-    hessian = np.zeros((n_parameters, n_parameters), dtype=np.float64)
-    f0 = float(function(point))
-
-    for i in range(n_parameters):
-        ei = np.zeros(n_parameters)
-        ei[i] = steps[i]
-        hessian[i, i] = (
-            float(function(point + ei)) - 2.0 * f0 + float(function(point - ei))
-        ) / (steps[i] ** 2)
-
-        for j in range(i + 1, n_parameters):
-            ej = np.zeros(n_parameters)
-            ej[j] = steps[j]
-            value = (
-                float(function(point + ei + ej))
-                - float(function(point + ei - ej))
-                - float(function(point - ei + ej))
-                + float(function(point - ei - ej))
-            ) / (4.0 * steps[i] * steps[j])
-            hessian[i, j] = value
-            hessian[j, i] = value
-        # endfor
-    # endfor
-
-    return hessian
-
-
-def fit_two_templates(
-    data_counts: np.ndarray,
-    dvcs_counts: np.ndarray,
-    pi0_counts: np.ndarray,
-    variable: VariableConfig,
+def fit_shared_two_templates(
+    data_histograms: Mapping[str, np.ndarray],
+    dvcs_histograms: Mapping[str, np.ndarray],
+    pi0_histograms: Mapping[str, np.ndarray],
     max_shift_bins: float,
     max_smear_bins: float,
     min_counts: int,
-) -> FitResult:
-    data = np.asarray(data_counts, dtype=np.float64)
-    data_total = float(np.sum(data))
-    dvcs_shape = normalized_shape(dvcs_counts)
-    pi0_shape = normalized_shape(pi0_counts)
+) -> SharedFitSummary:
+    """Fit one shared f_pi0 and variable-specific DVCS morph nuisances."""
+    prepared: Dict[str, Dict[str, object]] = {}
+    active_variables: List[VariableConfig] = []
 
-    if data_total < min_counts:
-        return FitResult(False, f"only {data_total:.0f} data entries", data_total=data_total)
+    for variable in VARIABLES:
+        data = np.asarray(data_histograms[variable.branch], dtype=np.float64)
+        dvcs_shape = normalized_shape(dvcs_histograms[variable.branch])
+        pi0_shape = normalized_shape(pi0_histograms[variable.branch])
+        data_total = float(np.sum(data))
+        if data_total < min_counts or dvcs_shape is None or pi0_shape is None:
+            continue
+        # endif
+        prepared[variable.branch] = {
+            "data": data,
+            "data_total": data_total,
+            "dvcs_shape": dvcs_shape,
+            "pi0_shape": pi0_shape,
+            "mask": fit_mask_for_variable(variable),
+        }
+        active_variables.append(variable)
+    # endfor
+
+    if not active_variables:
+        return SharedFitSummary(False, "no variables have sufficient data and MC")
     # endif
-    if dvcs_shape is None or pi0_shape is None:
-        return FitResult(False, "empty MC template", data_total=data_total)
-    # endif
 
-    bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
-    max_shift = max_shift_bins * bin_width
-    max_smear = max_smear_bins * bin_width
-    bounds = [(0.0, 1.0), (-max_shift, max_shift), (0.0, max_smear)]
+    bounds: List[Tuple[float, float]] = [(0.0, 1.0)]
+    starts_by_variable: List[Tuple[float, float]] = []
+    for variable in active_variables:
+        if is_positive_morph_variable(variable):
+            # Multiplicative scale exp(shift), with Gaussian width in log space.
+            bounds.extend([(-0.70, 0.70), (0.0, 1.00)])
+            starts_by_variable.append((0.0, 0.10))
+        else:
+            bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+            bounds.extend([
+                (-max_shift_bins * bin_width, max_shift_bins * bin_width),
+                (0.0, max_smear_bins * bin_width),
+            ])
+            starts_by_variable.append((0.0, 2.0 * bin_width))
+        # endif
+    # endfor
 
-    def expected_from_parameters(parameters: np.ndarray) -> Optional[np.ndarray]:
-        fraction, shift, sigma_add = parameters
+    def build_variable_model(
+        variable: VariableConfig,
+        fraction: float,
+        shift: float,
+        sigma_add: float,
+    ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+        info = prepared[variable.branch]
         transformed = transform_dvcs_shape(
-            dvcs_shape, variable, shift=shift, sigma_add=sigma_add
+            info["dvcs_shape"], variable, shift, sigma_add
         )
         if transformed is None:
             return None
         # endif
-        shape = (1.0 - fraction) * transformed + fraction * pi0_shape
-        shape = np.clip(shape, 0.0, None)
-        normalization = float(np.sum(shape))
+        pi0_shape = info["pi0_shape"]
+        total_shape = (1.0 - fraction) * transformed + fraction * pi0_shape
+        total_shape = np.clip(total_shape, 0.0, None)
+        normalization = float(np.sum(total_shape))
         if normalization <= 0.0:
             return None
         # endif
-        return data_total * shape / normalization
+        data_total = float(info["data_total"])
+        model = data_total * total_shape / normalization
+        dvcs_component = data_total * (1.0 - fraction) * transformed / normalization
+        pi0_component = data_total * fraction * pi0_shape / normalization
+        return model, dvcs_component, pi0_component, transformed
 
     def objective(parameters: np.ndarray) -> float:
-        expected = expected_from_parameters(parameters)
-        if expected is None or not np.all(np.isfinite(expected)):
+        fraction = float(parameters[0])
+        total_nll = 0.0
+        offset = 1
+        for variable in active_variables:
+            shift = float(parameters[offset])
+            sigma_add = float(parameters[offset + 1])
+            offset += 2
+            built = build_variable_model(variable, fraction, shift, sigma_add)
+            if built is None:
+                return 1.0e100
+            # endif
+            model = built[0]
+            info = prepared[variable.branch]
+            mask = info["mask"]
+            total_nll += 0.5 * poisson_deviance(info["data"][mask], model[mask])
+        # endfor
+        return total_nll
+
+    def variable_objective(
+        variable: VariableConfig,
+        fraction: float,
+        nuisance: np.ndarray,
+    ) -> float:
+        built = build_variable_model(
+            variable, fraction, float(nuisance[0]), float(nuisance[1])
+        )
+        if built is None:
             return 1.0e100
         # endif
-        return 0.5 * poisson_deviance(data, expected)
+        info = prepared[variable.branch]
+        mask = info["mask"]
+        return 0.5 * poisson_deviance(info["data"][mask], built[0][mask])
 
-    starts = []
-    for fraction in (0.05, 0.20, 0.40, 0.65, 0.85):
-        for shift_bins in (-3.0, 0.0, 3.0):
-            for smear_bins in (0.0, 2.0, 6.0):
-                starts.append(
-                    np.array(
-                        [fraction, shift_bins * bin_width, smear_bins * bin_width],
-                        dtype=np.float64,
-                    )
+    best_value = math.inf
+    best_parameters: Optional[np.ndarray] = None
+    best_message = "coordinate-profile fit did not run"
+
+    # The likelihood is separable by variable once f_pi0 is fixed. Alternating
+    # variable-wise nuisance fits with a one-dimensional shared-fraction update
+    # is much faster and more stable than a 17-parameter numerical-gradient fit.
+    for initial_fraction in (0.15, 0.40, 0.70):
+        fraction = initial_fraction
+        nuisances = np.asarray(starts_by_variable, dtype=np.float64)
+        previous_value = math.inf
+
+        for iteration in range(10):
+            for index, variable in enumerate(active_variables):
+                nuisance_result = minimize(
+                    lambda values, v=variable, f=fraction: variable_objective(v, f, values),
+                    nuisances[index],
+                    method="L-BFGS-B",
+                    bounds=bounds[1 + 2 * index : 1 + 2 * index + 2],
+                    options={"maxiter": 400, "ftol": 1.0e-9},
                 )
+                if nuisance_result.success and np.all(np.isfinite(nuisance_result.x)):
+                    nuisances[index] = nuisance_result.x
+                # endif
             # endfor
-        # endfor
-    # endfor
 
-    best = None
-    for start in starts:
-        result = minimize(objective, start, method="L-BFGS-B", bounds=bounds)
-        if best is None or result.fun < best.fun:
-            best = result
+            def fraction_objective(candidate_fraction: float) -> float:
+                total = 0.0
+                for index, variable in enumerate(active_variables):
+                    total += variable_objective(variable, candidate_fraction, nuisances[index])
+                # endfor
+                return total
+
+            fraction_result = minimize_scalar(
+                fraction_objective,
+                bounds=(0.0, 1.0),
+                method="bounded",
+                options={"xatol": 2.0e-5, "maxiter": 200},
+            )
+            if fraction_result.success and math.isfinite(float(fraction_result.x)):
+                fraction = float(fraction_result.x)
+            # endif
+
+            current_value = fraction_objective(fraction)
+            if abs(previous_value - current_value) <= 1.0e-7 * max(1.0, current_value):
+                break
+            # endif
+            previous_value = current_value
+        # endfor
+
+        parameters = [fraction]
+        for nuisance in nuisances:
+            parameters.extend([float(nuisance[0]), float(nuisance[1])])
+        # endfor
+        parameter_array = np.asarray(parameters, dtype=np.float64)
+        value = objective(parameter_array)
+        if value < best_value:
+            best_value = value
+            best_parameters = parameter_array
+            best_message = "coordinate-profile fit converged"
         # endif
     # endfor
 
-    if best is None or not best.success or not np.all(np.isfinite(best.x)):
-        message = "optimizer failed" if best is None else str(best.message)
-        return FitResult(False, message, data_total=data_total)
+    if best_parameters is None or not np.all(np.isfinite(best_parameters)):
+        return SharedFitSummary(False, best_message)
     # endif
 
-    fraction, shift, sigma_add = [float(value) for value in best.x]
-    transformed = transform_dvcs_shape(dvcs_shape, variable, shift, sigma_add)
-    expected = expected_from_parameters(best.x)
-    if transformed is None or expected is None:
-        return FitResult(False, "invalid fitted template", data_total=data_total)
-    # endif
+    class BestFit:
+        pass
 
-    dvcs_component = data_total * (1.0 - fraction) * transformed
-    pi0_component = data_total * fraction * pi0_shape
-    component_total = dvcs_component + pi0_component
-    if np.sum(component_total) > 0.0:
-        scale = data_total / float(np.sum(component_total))
-        dvcs_component *= scale
-        pi0_component *= scale
-        component_total *= scale
-    # endif
+    best = BestFit()
+    best.x = best_parameters
+    best.fun = best_value
+    best.message = best_message
 
-    errors = np.full(3, np.nan)
+    errors = np.full(len(best.x), np.nan)
     try:
-        steps = np.array(
-            [
-                2.0e-3,
-                max(0.05 * bin_width, 1.0e-6),
-                max(0.05 * bin_width, 1.0e-6),
-            ]
-        )
-        hessian = numerical_hessian(objective, best.x, steps)
-        covariance = np.linalg.pinv(hessian)
-        diagonal = np.diag(covariance)
-        errors = np.sqrt(np.where(diagonal >= 0.0, diagonal, np.nan))
+        fraction_step = 1.0e-3
+        f0 = float(best.x[0])
+        if fraction_step < f0 < 1.0 - fraction_step:
+            left = best.x.copy()
+            right = best.x.copy()
+            left[0] -= fraction_step
+            right[0] += fraction_step
+            curvature = (objective(left) - 2.0 * objective(best.x) + objective(right)) / (fraction_step ** 2)
+            if curvature > 0.0:
+                errors[0] = 1.0 / math.sqrt(curvature)
+            # endif
+        # endif
     except Exception:
         pass
     # endtry
 
-    nonzero_expected = int(np.count_nonzero(component_total > 1.0e-10))
-    ndf = max(0, nonzero_expected - 3)
+    fraction = float(best.x[0])
+    results: Dict[str, FitResult] = {}
+    total_deviance = 0.0
+    total_used_bins = 0
+    offset = 1
+    for variable in VARIABLES:
+        if variable.branch not in prepared:
+            results[variable.branch] = FitResult(False, "insufficient data or empty template")
+            continue
+        # endif
 
-    return FitResult(
+        shift = float(best.x[offset])
+        sigma_add = float(best.x[offset + 1])
+        shift_err = float(errors[offset])
+        sigma_err = float(errors[offset + 1])
+        offset += 2
+        built = build_variable_model(variable, fraction, shift, sigma_add)
+        info = prepared[variable.branch]
+        if built is None:
+            results[variable.branch] = FitResult(False, "invalid fitted template")
+            continue
+        # endif
+        model, dvcs_component, pi0_component, transformed = built
+        mask = np.asarray(info["mask"], dtype=bool)
+        variable_deviance = poisson_deviance(info["data"][mask], model[mask])
+        used_bins = int(np.count_nonzero(mask))
+        total_deviance += variable_deviance
+        total_used_bins += used_bins
+        results[variable.branch] = FitResult(
+            success=True,
+            message=str(best.message),
+            f_pi0=fraction,
+            f_pi0_err=float(errors[0]),
+            shift=shift,
+            shift_err=shift_err,
+            sigma_add=sigma_add,
+            sigma_add_err=sigma_err,
+            deviance=variable_deviance,
+            ndf=max(0, used_bins - 2),
+            data_total=float(info["data_total"]),
+            model_counts=model,
+            dvcs_component_counts=dvcs_component,
+            pi0_component_counts=pi0_component,
+            transformed_dvcs_shape=transformed,
+            fit_mask=mask,
+            morph_label="log-space" if is_positive_morph_variable(variable) else "additive",
+        )
+    # endfor
+
+    n_parameters = 1 + 2 * len(active_variables)
+    return SharedFitSummary(
         success=True,
         message=str(best.message),
         f_pi0=fraction,
         f_pi0_err=float(errors[0]),
-        shift=shift,
-        shift_err=float(errors[1]),
-        sigma_add=sigma_add,
-        sigma_add_err=float(errors[2]),
-        deviance=poisson_deviance(data, component_total),
-        ndf=ndf,
-        data_total=data_total,
-        model_counts=component_total,
-        dvcs_component_counts=dvcs_component,
-        pi0_component_counts=pi0_component,
-        transformed_dvcs_shape=transformed,
+        deviance=total_deviance,
+        ndf=max(0, total_used_bins - n_parameters),
+        variable_results=results,
     )
 
 
@@ -963,6 +1150,7 @@ def draw_fit_canvas(
     pi0_histograms: Mapping[str, np.ndarray],
     selected_counts: Mapping[str, int],
     fit_results: Mapping[str, FitResult],
+    shared_summary: SharedFitSummary,
     log_y: bool,
     dpi: int,
 ) -> None:
@@ -990,6 +1178,12 @@ def draw_fit_canvas(
         # endif
 
         if result.success:
+            if result.fit_mask is not None and not np.all(result.fit_mask):
+                excluded = ~result.fit_mask
+                for index in np.flatnonzero(excluded):
+                    axis.axvspan(edges[index], edges[index + 1], color="0.85", alpha=0.35, linewidth=0)
+                # endfor
+            # endif
             axis.stairs(
                 result.dvcs_component_counts, edges, color=SAMPLE_COLORS["dvcs_mc"],
                 linewidth=1.6, label="fitted DVCS component", zorder=3,
@@ -1003,9 +1197,9 @@ def draw_fit_canvas(
                 linewidth=2.0, linestyle="--", label="total two-template fit", zorder=4,
             )
             quality = (
-                rf"$f_{{\pi^0}}={result.f_pi0:.3f}$" + "\n"
+                rf"shared $f_{{\pi^0}}={result.f_pi0:.3f}$" + "\n"
                 rf"$\Delta={result.shift:.4g}$" + "\n"
-                rf"$\sigma_{{add}}={result.sigma_add:.4g}$" + "\n"
+                rf"$\sigma={result.sigma_add:.4g}$ ({result.morph_label})" + "\n"
                 f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
             )
         else:
@@ -1071,30 +1265,42 @@ def process_period(
     rows: List[Dict[str, object]] = []
 
     for topology in topologies:
-        fit_results: Dict[str, FitResult] = {}
-        for variable in VARIABLES:
-            result = fit_two_templates(
-                data_hists[topology.key][variable.branch],
-                dvcs_hists[topology.key][variable.branch],
-                pi0_hists[topology.key][variable.branch],
-                variable, max_shift_bins, max_smear_bins, fit_min_counts,
+        shared_summary = fit_shared_two_templates(
+            data_hists[topology.key],
+            dvcs_hists[topology.key],
+            pi0_hists[topology.key],
+            max_shift_bins, max_smear_bins, fit_min_counts,
+        )
+        if not shared_summary.success or shared_summary.variable_results is None:
+            raise RuntimeError(
+                f"Shared fit failed for {period.label} {topology.label}: {shared_summary.message}"
             )
-            fit_results[variable.branch] = result
+        # endif
+        fit_results = shared_summary.variable_results
+
+        for variable in VARIABLES:
+            result = fit_results[variable.branch]
             bin_width = (variable.xmax - variable.xmin) / variable.bins
+            additive = not is_positive_morph_variable(variable)
             rows.append({
                 "period": period.key, "period_label": period.label,
                 "topology": topology.key, "variable": variable.branch,
                 "success": int(result.success), "message": result.message,
+                "shared_f_pi0": shared_summary.f_pi0,
+                "shared_f_pi0_err": shared_summary.f_pi0_err,
+                "global_poisson_deviance": shared_summary.deviance,
+                "global_ndf": shared_summary.ndf,
                 "data_entries_in_range": result.data_total,
                 "dvcs_mc_entries_in_range": float(np.sum(dvcs_hists[topology.key][variable.branch])),
                 "pi0_mc_entries_in_range": float(np.sum(pi0_hists[topology.key][variable.branch])),
-                "f_pi0": result.f_pi0, "f_pi0_err": result.f_pi0_err,
-                "shift": result.shift, "shift_err": result.shift_err,
-                "shift_bins": result.shift / bin_width if result.success else math.nan,
-                "sigma_add": result.sigma_add, "sigma_add_err": result.sigma_add_err,
-                "sigma_add_bins": result.sigma_add / bin_width if result.success else math.nan,
-                "poisson_deviance": result.deviance, "ndf": result.ndf,
-                "deviance_per_ndf": result.deviance / result.ndf if result.success and result.ndf > 0 else math.nan,
+                "morph_type": result.morph_label,
+                "shift_or_log_shift": result.shift, "shift_err": result.shift_err,
+                "shift_bins": result.shift / bin_width if result.success and additive else math.nan,
+                "sigma_or_log_sigma": result.sigma_add, "sigma_err": result.sigma_add_err,
+                "sigma_bins": result.sigma_add / bin_width if result.success and additive else math.nan,
+                "fit_bins_used": int(np.count_nonzero(result.fit_mask)) if result.fit_mask is not None else 0,
+                "variable_poisson_deviance": result.deviance, "variable_ndf": result.ndf,
+                "variable_deviance_per_ndf": result.deviance / result.ndf if result.success and result.ndf > 0 else math.nan,
             })
         # endfor
 
@@ -1111,7 +1317,7 @@ def process_period(
         draw_fit_canvas(
             output_path, period, topology, data_hists[topology.key],
             dvcs_hists[topology.key], pi0_hists[topology.key],
-            selected, fit_results, log_y, dpi,
+            selected, fit_results, shared_summary, log_y, dpi,
         )
         log(f"Wrote {output_path}")
     # endfor
@@ -1133,8 +1339,8 @@ def write_results_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
 
 def main() -> int:
     args = parse_args()
-    if gaussian_filter1d is None or minimize is None:
-        raise RuntimeError("scipy is required for the two-template nuisance fit.")
+    if gaussian_filter1d is None or minimize is None or minimize_scalar is None or ndtr is None:
+        raise RuntimeError("scipy is required for the shared two-template nuisance fit.")
     # endif
     if args.max_shift_bins <= 0.0 or args.max_smear_bins <= 0.0:
         raise ValueError("--max-shift-bins and --max-smear-bins must be positive.")
@@ -1151,7 +1357,11 @@ def main() -> int:
         "Selection: topology, (-t1) < 1.0, open_angle_ep2 > 5 deg, "
         "distinct FD sectors; no exclusivity cuts"
     )
-    log("Fit: floating f_pi0 plus DVCS-template shift and added Gaussian smearing")
+    log(
+        "Fit: one shared f_pi0 per period/topology; additive morphs for signed "
+        "variables, log-space morphs for pTmiss and theta_gamma_gamma; "
+        "Mx2_1 right side and xF edge bins excluded from the likelihood"
+    )
 
     for period in periods:
         all_rows.extend(process_period(
