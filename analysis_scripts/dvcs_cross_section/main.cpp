@@ -356,22 +356,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Pi0-subtracted DVCS kinematic DATA/MC shape comparisons ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json  = "output/jsons/combined_cuts.json";
-        const std::string out_dir    = "output/pi0_subtracted_dvcs_kinematics";
+    // // --------- Pi0-subtracted DVCS kinematic DATA/MC shape comparisons ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json  = "output/jsons/combined_cuts.json";
+    //     const std::string out_dir    = "output/pi0_subtracted_dvcs_kinematics";
     
-        if (!plot_pi0_subtracted_dvcs_kinematics(csv_main,
-                                                 dataTrees,
-                                                 recMcTrees,
-                                                 cuts_json,
-                                                 out_dir,
-                                                 /*max_workers=*/7)) {
-            std::cerr << "[main] ERROR: plot_pi0_subtracted_dvcs_kinematics failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!plot_pi0_subtracted_dvcs_kinematics(csv_main,
+    //                                              dataTrees,
+    //                                              recMcTrees,
+    //                                              cuts_json,
+    //                                              out_dir,
+    //                                              /*max_workers=*/7)) {
+    //         std::cerr << "[main] ERROR: plot_pi0_subtracted_dvcs_kinematics failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // --------- Yield totals by current ----------
     {

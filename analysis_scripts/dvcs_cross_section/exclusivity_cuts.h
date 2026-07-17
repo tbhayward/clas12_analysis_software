@@ -64,7 +64,8 @@ struct ExclusivityDiagnosticConfig {
     double symmetric_sigma_multiplier = 3.0;
 
     // Quantile used for pTmiss and theta_gamma_gamma/theta_pi0_pi0.
-    double upper_tail_quantile = 0.99;
+    // double upper_tail_quantile = 0.99;
+    double upper_tail_quantile = 0.67;
 
     // If empty, defaults are chosen internally:
     // DVCS: Delta_phi, pTmiss, theta_gamma_gamma, Emiss2, Mx2_1
