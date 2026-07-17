@@ -1,50 +1,42 @@
 #!/usr/bin/env python3
 """
-plot_exclusivity_data_dvcs_pi0_mc_v1.py
+plot_exclusivity_two_template_fit_v3.py
 
-Compare uncut DVCS-candidate exclusivity-variable shapes for:
+For each of the five run periods, three detector topologies and eight
+exclusivity variables, fit the uncut DVCS-candidate data with a two-template
+mixture:
 
-  1. DVCS data (epgamma skim)
-  2. reconstructed DVCS signal MC
-  3. reconstructed eppi0 MC misidentified and processed as DVCS
+    data = (1-f_pi0) * shifted-and-smeared DVCS MC
+         + f_pi0     * eppi0 MC reconstructed as DVCS.
 
-The script produces one 4x2 canvas for every run-period/topology combination:
+The detector topology plus the minimal global preselection are required:
 
-  5 run periods x 3 topologies = 15 PNG files
+    (-t1) < 1.0
+    open_angle_ep2 > 5 degrees
+    all reconstructed FD particles occupy distinct FD sectors
 
-Only the requested detector topology is enforced. No global cuts and no
-exclusivity cuts are applied by this script.
+No exclusivity cuts are applied. The fit uses the raw binned data counts and a Poisson likelihood.
+The total expected count is fixed to the observed number of entries inside
+the plotted range, so the floated parameters describe shape only:
 
-Default normalization:
+    f_pi0        : fitted eppi0 shape fraction inside the plotted range
+    shift        : additive shift applied to the DVCS template
+    sigma_add    : extra Gaussian smearing applied to the DVCS template
 
-  Each sample is independently normalized to unit integral inside the plotted
-  range. This is the appropriate first comparison of the SHAPES. It does not
-  assume a physical relative normalization between DVCS MC and eppi0 background
-  MC.
+The eppi0 template is left fixed in this first implementation. Floating
+independent shift and smearing parameters for both templates is generally too
+degenerate for a one-dimensional two-template fit.
 
-Optional mixed template:
+Outputs:
 
-  Pass --pi0-fraction F, with 0 <= F <= 1, to additionally draw
+  * one 4x2 PNG canvas for each period/topology combination
+  * fit_results.csv containing all fitted parameters and diagnostics
 
-      (1-F) * normalized DVCS MC + F * normalized eppi0-as-DVCS MC.
-
-  This F is a shape-mixture fraction inside the plotted range. It is not
-  automatically the final contamination fraction used by the cross-section
-  analysis.
-
-Dependencies:
-
-  Python 3, numpy, matplotlib and either uproot or PyROOT
-
-Example:
-
-  python3 external_scripts/plot_exclusivity_data_dvcs_pi0_mc_v1.py
-
-  python3 external_scripts/plot_exclusivity_data_dvcs_pi0_mc_v1.py \
-      --pi0-fraction 0.15 --log-y
+Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
 """
 
 import argparse
+import csv
 import math
 import os
 import sys
@@ -66,6 +58,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 try:
+    from scipy.ndimage import gaussian_filter1d
+    from scipy.optimize import minimize
+except ImportError:
+    gaussian_filter1d = None
+    minimize = None
+#endif
+
+try:
     import uproot
 except ImportError:
     uproot = None
@@ -79,8 +79,12 @@ except ImportError:
 
 
 TREE_NAME = "PhysicsEvents"
-DEFAULT_OUTPUT_DIR = "output/exclusivity_data_dvcs_pi0_mc"
+DEFAULT_OUTPUT_DIR = "output/exclusivity_two_template_fit"
 DEFAULT_STEP_SIZE = "250 MB"
+
+T1_ABS_MAX = 1.0
+OPEN_ANGLE_MIN_DEG = 5.0
+REQUIRE_DISTINCT_FD_SECTORS = True
 
 
 @dataclass(frozen=True)
@@ -108,6 +112,25 @@ class VariableConfig:
     xmin: float
     xmax: float
     aliases: Tuple[str, ...] = ()
+
+
+@dataclass
+class FitResult:
+    success: bool
+    message: str
+    f_pi0: float = math.nan
+    f_pi0_err: float = math.nan
+    shift: float = math.nan
+    shift_err: float = math.nan
+    sigma_add: float = math.nan
+    sigma_add_err: float = math.nan
+    deviance: float = math.nan
+    ndf: int = 0
+    data_total: float = 0.0
+    model_counts: Optional[np.ndarray] = None
+    dvcs_component_counts: Optional[np.ndarray] = None
+    pi0_component_counts: Optional[np.ndarray] = None
+    transformed_dvcs_shape: Optional[np.ndarray] = None
 
 
 PERIODS: Tuple[PeriodConfig, ...] = (
@@ -200,7 +223,8 @@ SAMPLE_COLORS = {
     "data": "black",
     "dvcs_mc": "tab:blue",
     "pi0_mc": "tab:red",
-    "mixture": "tab:green",
+    "fit": "tab:green",
+    "raw_dvcs": "0.55",
 }
 
 
@@ -212,8 +236,8 @@ def log(message: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Plot uncut exclusivity-variable shapes for DVCS data, reconstructed "
-            "DVCS MC and eppi0 MC reconstructed as DVCS."
+            "Plot exclusivity-variable shapes for DVCS data, reconstructed DVCS MC "
+            "and eppi0 MC reconstructed as DVCS after the minimal global preselection."
         )
     )
     parser.add_argument(
@@ -239,13 +263,22 @@ def parse_args() -> argparse.Namespace:
         help=f"uproot iteration chunk size (default: {DEFAULT_STEP_SIZE})",
     )
     parser.add_argument(
-        "--pi0-fraction",
+        "--max-shift-bins",
         type=float,
-        default=None,
-        help=(
-            "Optionally draw a mixed normalized-MC template with this eppi0 fraction. "
-            "Must be between 0 and 1."
-        ),
+        default=12.0,
+        help="Maximum absolute DVCS-template shift in histogram bins (default: 12).",
+    )
+    parser.add_argument(
+        "--max-smear-bins",
+        type=float,
+        default=20.0,
+        help="Maximum added Gaussian smearing in histogram bins (default: 20).",
+    )
+    parser.add_argument(
+        "--fit-min-counts",
+        type=int,
+        default=100,
+        help="Minimum data entries inside a variable range required for a fit (default: 100).",
     )
     parser.add_argument(
         "--log-y",
@@ -331,11 +364,14 @@ def available_tree_branches(path: str) -> set[str]:
 def resolve_variable_branches(path: str) -> Dict[str, str]:
     branches = available_tree_branches(path)
 
-    required_topology = {"detector1", "detector2"}
-    missing_topology = sorted(required_topology - branches)
-    if missing_topology:
+    required_selection = {
+        "detector1", "detector2", "t1", "open_angle_ep2",
+        "e_phi", "p1_phi", "p2_phi",
+    }
+    missing_selection = sorted(required_selection - branches)
+    if missing_selection:
         raise KeyError(
-            f"Missing topology branches in {path}: {', '.join(missing_topology)}"
+            f"Missing selection branches in {path}: {', '.join(missing_selection)}"
         )
     # endif
 
@@ -365,6 +401,20 @@ def resolve_variable_branches(path: str) -> Dict[str, str]:
     return resolved
 
 
+def fd_sector_from_phi(phi_rad: np.ndarray) -> np.ndarray:
+    """Return the CLAS12 FD sector (1--6) from an azimuth in radians."""
+
+    phi_deg = np.mod(np.degrees(phi_rad), 360.0)
+    sector = np.full(phi_deg.shape, -1, dtype=np.int16)
+    sector[(phi_deg >= 330.0) | (phi_deg < 30.0)] = 1
+    sector[(phi_deg >= 30.0) & (phi_deg < 90.0)] = 2
+    sector[(phi_deg >= 90.0) & (phi_deg < 150.0)] = 3
+    sector[(phi_deg >= 150.0) & (phi_deg < 210.0)] = 4
+    sector[(phi_deg >= 210.0) & (phi_deg < 270.0)] = 5
+    sector[(phi_deg >= 270.0) & (phi_deg < 330.0)] = 6
+    return sector
+
+
 def empty_histograms() -> Dict[str, np.ndarray]:
     return {
         variable.branch: np.zeros(variable.bins, dtype=np.float64)
@@ -382,7 +432,10 @@ def fill_histograms_uproot(
     require_input_file(path)
     resolved = resolve_variable_branches(path)
 
-    expressions = ["detector1", "detector2"] + sorted(set(resolved.values()))
+    expressions = [
+        "detector1", "detector2", "t1", "open_angle_ep2",
+        "e_phi", "p1_phi", "p2_phi",
+    ] + sorted(set(resolved.values()))
     histograms = {topology.key: empty_histograms() for topology in topologies}
     selected_events = {topology.key: 0 for topology in topologies}
 
@@ -397,12 +450,41 @@ def fill_histograms_uproot(
     ):
         detector1 = np.asarray(arrays["detector1"])
         detector2 = np.asarray(arrays["detector2"])
+        t1 = np.asarray(arrays["t1"], dtype=np.float64)
+        open_angle = np.asarray(arrays["open_angle_ep2"], dtype=np.float64)
+
+        base_mask = (
+            np.isfinite(t1)
+            & np.isfinite(open_angle)
+            & ((-t1) < T1_ABS_MAX)
+            & (open_angle > OPEN_ANGLE_MIN_DEG)
+        )
+
+        if REQUIRE_DISTINCT_FD_SECTORS:
+            e_sector = fd_sector_from_phi(np.asarray(arrays["e_phi"], dtype=np.float64))
+            p_sector = fd_sector_from_phi(np.asarray(arrays["p1_phi"], dtype=np.float64))
+            g_sector = fd_sector_from_phi(np.asarray(arrays["p2_phi"], dtype=np.float64))
+        # endif
 
         for topology in topologies:
             mask = (
-                (detector1 == topology.detector1)
+                base_mask
+                & (detector1 == topology.detector1)
                 & (detector2 == topology.detector2)
             )
+
+            if REQUIRE_DISTINCT_FD_SECTORS:
+                mask &= e_sector >= 1
+                if topology.detector1 == 1:
+                    mask &= (p_sector >= 1) & (p_sector != e_sector)
+                # endif
+                if topology.detector2 == 1:
+                    mask &= (g_sector >= 1) & (g_sector != e_sector)
+                # endif
+                if topology.detector1 == 1 and topology.detector2 == 1:
+                    mask &= p_sector != g_sector
+                # endif
+            # endif
             selected_events[topology.key] += int(np.count_nonzero(mask))
 
             if not np.any(mask):
@@ -469,6 +551,34 @@ def fill_histograms_pyroot(
 
             if topology is None:
                 continue
+            # endif
+
+            t1 = float(getattr(event, "t1"))
+            open_angle = float(getattr(event, "open_angle_ep2"))
+            if not math.isfinite(t1) or not math.isfinite(open_angle):
+                continue
+            # endif
+            if (-t1) >= T1_ABS_MAX or open_angle <= OPEN_ANGLE_MIN_DEG:
+                continue
+            # endif
+
+            if REQUIRE_DISTINCT_FD_SECTORS:
+                sectors = [
+                    int(fd_sector_from_phi(np.asarray([float(getattr(event, "e_phi"))]))[0])
+                ]
+                if topology.detector1 == 1:
+                    sectors.append(
+                        int(fd_sector_from_phi(np.asarray([float(getattr(event, "p1_phi"))]))[0])
+                    )
+                # endif
+                if topology.detector2 == 1:
+                    sectors.append(
+                        int(fd_sector_from_phi(np.asarray([float(getattr(event, "p2_phi"))]))[0])
+                    )
+                # endif
+                if any(sector < 1 for sector in sectors) or len(set(sectors)) != len(sectors):
+                    continue
+                # endif
             # endif
 
             selected_events[topology.key] += 1
@@ -549,6 +659,221 @@ def positive_y_floor(*arrays: np.ndarray) -> Optional[float]:
     return max(minimum * 0.5, 1.0e-8)
 
 
+def normalized_shape(counts: np.ndarray) -> Optional[np.ndarray]:
+    values = np.asarray(counts, dtype=np.float64)
+    total = float(np.sum(values))
+    if total <= 0.0 or not math.isfinite(total):
+        return None
+    # endif
+    return values / total
+
+
+def transform_dvcs_shape(
+    base_shape: np.ndarray,
+    variable: VariableConfig,
+    shift: float,
+    sigma_add: float,
+) -> Optional[np.ndarray]:
+    """Shift and Gaussian-smear a unit-normalized binned DVCS template."""
+
+    _, centers = bin_geometry(variable)
+    bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+    sigma_bins = max(0.0, sigma_add / bin_width)
+
+    smeared = np.asarray(base_shape, dtype=np.float64)
+    if sigma_bins > 1.0e-10:
+        smeared = gaussian_filter1d(
+            smeared, sigma=sigma_bins, mode="constant", cval=0.0, truncate=5.0
+        )
+    # endif
+
+    shifted = np.interp(
+        centers - shift,
+        centers,
+        smeared,
+        left=0.0,
+        right=0.0,
+    )
+    shifted = np.clip(shifted, 0.0, None)
+    total = float(np.sum(shifted))
+    if total <= 0.0 or not math.isfinite(total):
+        return None
+    # endif
+    return shifted / total
+
+
+def poisson_deviance(observed: np.ndarray, expected: np.ndarray) -> float:
+    expected = np.clip(np.asarray(expected, dtype=np.float64), 1.0e-12, None)
+    observed = np.asarray(observed, dtype=np.float64)
+    positive = observed > 0.0
+    terms = expected - observed
+    terms[positive] += observed[positive] * np.log(
+        observed[positive] / expected[positive]
+    )
+    return 2.0 * float(np.sum(terms))
+
+
+def numerical_hessian(function, point: np.ndarray, steps: np.ndarray) -> np.ndarray:
+    n_parameters = len(point)
+    hessian = np.zeros((n_parameters, n_parameters), dtype=np.float64)
+    f0 = float(function(point))
+
+    for i in range(n_parameters):
+        ei = np.zeros(n_parameters)
+        ei[i] = steps[i]
+        hessian[i, i] = (
+            float(function(point + ei)) - 2.0 * f0 + float(function(point - ei))
+        ) / (steps[i] ** 2)
+
+        for j in range(i + 1, n_parameters):
+            ej = np.zeros(n_parameters)
+            ej[j] = steps[j]
+            value = (
+                float(function(point + ei + ej))
+                - float(function(point + ei - ej))
+                - float(function(point - ei + ej))
+                + float(function(point - ei - ej))
+            ) / (4.0 * steps[i] * steps[j])
+            hessian[i, j] = value
+            hessian[j, i] = value
+        # endfor
+    # endfor
+
+    return hessian
+
+
+def fit_two_templates(
+    data_counts: np.ndarray,
+    dvcs_counts: np.ndarray,
+    pi0_counts: np.ndarray,
+    variable: VariableConfig,
+    max_shift_bins: float,
+    max_smear_bins: float,
+    min_counts: int,
+) -> FitResult:
+    data = np.asarray(data_counts, dtype=np.float64)
+    data_total = float(np.sum(data))
+    dvcs_shape = normalized_shape(dvcs_counts)
+    pi0_shape = normalized_shape(pi0_counts)
+
+    if data_total < min_counts:
+        return FitResult(False, f"only {data_total:.0f} data entries", data_total=data_total)
+    # endif
+    if dvcs_shape is None or pi0_shape is None:
+        return FitResult(False, "empty MC template", data_total=data_total)
+    # endif
+
+    bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+    max_shift = max_shift_bins * bin_width
+    max_smear = max_smear_bins * bin_width
+    bounds = [(0.0, 1.0), (-max_shift, max_shift), (0.0, max_smear)]
+
+    def expected_from_parameters(parameters: np.ndarray) -> Optional[np.ndarray]:
+        fraction, shift, sigma_add = parameters
+        transformed = transform_dvcs_shape(
+            dvcs_shape, variable, shift=shift, sigma_add=sigma_add
+        )
+        if transformed is None:
+            return None
+        # endif
+        shape = (1.0 - fraction) * transformed + fraction * pi0_shape
+        shape = np.clip(shape, 0.0, None)
+        normalization = float(np.sum(shape))
+        if normalization <= 0.0:
+            return None
+        # endif
+        return data_total * shape / normalization
+
+    def objective(parameters: np.ndarray) -> float:
+        expected = expected_from_parameters(parameters)
+        if expected is None or not np.all(np.isfinite(expected)):
+            return 1.0e100
+        # endif
+        return 0.5 * poisson_deviance(data, expected)
+
+    starts = []
+    for fraction in (0.05, 0.20, 0.40, 0.65, 0.85):
+        for shift_bins in (-3.0, 0.0, 3.0):
+            for smear_bins in (0.0, 2.0, 6.0):
+                starts.append(
+                    np.array(
+                        [fraction, shift_bins * bin_width, smear_bins * bin_width],
+                        dtype=np.float64,
+                    )
+                )
+            # endfor
+        # endfor
+    # endfor
+
+    best = None
+    for start in starts:
+        result = minimize(objective, start, method="L-BFGS-B", bounds=bounds)
+        if best is None or result.fun < best.fun:
+            best = result
+        # endif
+    # endfor
+
+    if best is None or not best.success or not np.all(np.isfinite(best.x)):
+        message = "optimizer failed" if best is None else str(best.message)
+        return FitResult(False, message, data_total=data_total)
+    # endif
+
+    fraction, shift, sigma_add = [float(value) for value in best.x]
+    transformed = transform_dvcs_shape(dvcs_shape, variable, shift, sigma_add)
+    expected = expected_from_parameters(best.x)
+    if transformed is None or expected is None:
+        return FitResult(False, "invalid fitted template", data_total=data_total)
+    # endif
+
+    dvcs_component = data_total * (1.0 - fraction) * transformed
+    pi0_component = data_total * fraction * pi0_shape
+    component_total = dvcs_component + pi0_component
+    if np.sum(component_total) > 0.0:
+        scale = data_total / float(np.sum(component_total))
+        dvcs_component *= scale
+        pi0_component *= scale
+        component_total *= scale
+    # endif
+
+    errors = np.full(3, np.nan)
+    try:
+        steps = np.array(
+            [
+                2.0e-3,
+                max(0.05 * bin_width, 1.0e-6),
+                max(0.05 * bin_width, 1.0e-6),
+            ]
+        )
+        hessian = numerical_hessian(objective, best.x, steps)
+        covariance = np.linalg.pinv(hessian)
+        diagonal = np.diag(covariance)
+        errors = np.sqrt(np.where(diagonal >= 0.0, diagonal, np.nan))
+    except Exception:
+        pass
+    # endtry
+
+    nonzero_expected = int(np.count_nonzero(component_total > 1.0e-10))
+    ndf = max(0, nonzero_expected - 3)
+
+    return FitResult(
+        success=True,
+        message=str(best.message),
+        f_pi0=fraction,
+        f_pi0_err=float(errors[0]),
+        shift=shift,
+        shift_err=float(errors[1]),
+        sigma_add=sigma_add,
+        sigma_add_err=float(errors[2]),
+        deviance=poisson_deviance(data, component_total),
+        ndf=ndf,
+        data_total=data_total,
+        model_counts=component_total,
+        dvcs_component_counts=dvcs_component,
+        pi0_component_counts=pi0_component,
+        transformed_dvcs_shape=transformed,
+    )
+
+
 def draw_canvas(
     output_path: Path,
     period: PeriodConfig,
@@ -557,7 +882,7 @@ def draw_canvas(
     dvcs_histograms: Mapping[str, np.ndarray],
     pi0_histograms: Mapping[str, np.ndarray],
     selected_counts: Mapping[str, int],
-    pi0_fraction: Optional[float],
+    fit_results: Mapping[str, FitResult],
     log_y: bool,
     dpi: int,
 ) -> None:
@@ -566,75 +891,65 @@ def draw_canvas(
 
     for axis, variable in zip(flat_axes, VARIABLES):
         edges, centers = bin_geometry(variable)
-
-        data_density, data_error = normalize_density(
-            data_histograms[variable.branch], variable
-        )
-        dvcs_density, _ = normalize_density(
-            dvcs_histograms[variable.branch], variable
-        )
-        pi0_density, _ = normalize_density(
-            pi0_histograms[variable.branch], variable
-        )
+        data_counts = np.asarray(data_histograms[variable.branch], dtype=np.float64)
+        data_error = np.sqrt(data_counts)
+        dvcs_shape = normalized_shape(dvcs_histograms[variable.branch])
+        result = fit_results[variable.branch]
 
         axis.errorbar(
-            centers,
-            data_density,
-            yerr=data_error,
-            fmt="o",
-            markersize=2.4,
-            linewidth=0.8,
-            capsize=0.0,
-            color=SAMPLE_COLORS["data"],
-            label=SAMPLE_LABELS["data"],
-            zorder=4,
-        )
-        axis.stairs(
-            dvcs_density,
-            edges,
-            color=SAMPLE_COLORS["dvcs_mc"],
-            linewidth=1.8,
-            label=SAMPLE_LABELS["dvcs_mc"],
-            zorder=3,
-        )
-        axis.stairs(
-            pi0_density,
-            edges,
-            color=SAMPLE_COLORS["pi0_mc"],
-            linewidth=1.8,
-            label=SAMPLE_LABELS["pi0_mc"],
-            zorder=2,
+            centers, data_counts, yerr=data_error, fmt="o", markersize=2.4,
+            linewidth=0.8, capsize=0.0, color=SAMPLE_COLORS["data"],
+            label="DVCS data", zorder=5,
         )
 
-        mixture = None
-        if pi0_fraction is not None:
-            mixture = (1.0 - pi0_fraction) * dvcs_density + pi0_fraction * pi0_density
+        if dvcs_shape is not None:
             axis.stairs(
-                mixture,
-                edges,
-                color=SAMPLE_COLORS["mixture"],
-                linewidth=1.8,
-                linestyle="--",
-                label=rf"MC mixture ($f_{{\pi^0}}={pi0_fraction:.3f}$)",
-                zorder=5,
+                result.data_total * dvcs_shape, edges, color=SAMPLE_COLORS["raw_dvcs"],
+                linewidth=1.2, linestyle=":", label="raw DVCS MC shape", zorder=1,
             )
         # endif
 
+        if result.success:
+            axis.stairs(
+                result.dvcs_component_counts, edges, color=SAMPLE_COLORS["dvcs_mc"],
+                linewidth=1.6, label="fitted DVCS component", zorder=3,
+            )
+            axis.stairs(
+                result.pi0_component_counts, edges, color=SAMPLE_COLORS["pi0_mc"],
+                linewidth=1.6, label=r"fitted $e\pi^0$ component", zorder=2,
+            )
+            axis.stairs(
+                result.model_counts, edges, color=SAMPLE_COLORS["fit"],
+                linewidth=2.0, linestyle="--", label="total two-template fit", zorder=4,
+            )
+            quality = (
+                rf"$f_{{\pi^0}}={result.f_pi0:.3f}$" + "\n"
+                rf"$\Delta={result.shift:.4g}$" + "\n"
+                rf"$\sigma_{{add}}={result.sigma_add:.4g}$" + "\n"
+                f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
+            )
+        else:
+            quality = f"fit failed: {result.message}"
+        # endif
+
+        axis.text(
+            0.98, 0.96, quality, transform=axis.transAxes, ha="right", va="top",
+            fontsize=8.5, bbox=dict(facecolor="white", alpha=0.78, edgecolor="none"),
+        )
         axis.set_xlim(variable.xmin, variable.xmax)
         axis.set_xlabel(variable.label)
-        axis.set_ylabel("unit-normalized density")
+        axis.set_ylabel("events / bin")
         axis.grid(axis="y", alpha=0.25)
 
         if log_y:
-            arrays_for_floor = [data_density, dvcs_density, pi0_density]
-            if mixture is not None:
-                arrays_for_floor.append(mixture)
+            arrays = [data_counts]
+            if result.success:
+                arrays.extend([result.model_counts, result.dvcs_component_counts, result.pi0_component_counts])
             # endif
-
-            floor = positive_y_floor(*arrays_for_floor)
+            floor = positive_y_floor(*arrays)
             if floor is not None:
                 axis.set_yscale("log")
-                axis.set_ylim(bottom=floor)
+                axis.set_ylim(bottom=max(0.5, floor))
             # endif
         else:
             axis.set_ylim(bottom=0.0)
@@ -642,29 +957,20 @@ def draw_canvas(
     # endfor
 
     handles, labels = flat_axes[0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.955),
-        ncol=len(labels),
-        frameon=False,
-    )
-
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.955),
+               ncol=len(labels), frameon=False)
     fig.suptitle(
-        f"Exclusivity shapes before global/exclusivity cuts: "
-        f"{period.label}, {topology.label}\n"
+        f"Uncut exclusivity two-template fits: {period.label}, {topology.label}\n"
         f"topology-selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
-        f"$e\\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
-        fontsize=15,
-        y=0.995,
+        rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
+        fontsize=15, y=0.995,
     )
-
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
+
 
 
 def process_period(
@@ -672,83 +978,105 @@ def process_period(
     topologies: Sequence[TopologyConfig],
     output_dir: Path,
     step_size: str,
-    pi0_fraction: Optional[float],
+    max_shift_bins: float,
+    max_smear_bins: float,
+    fit_min_counts: int,
     log_y: bool,
     dpi: int,
-) -> None:
+) -> List[Dict[str, object]]:
     log(f"Starting period {period.label}")
-
-    data_hists, data_counts = fill_histograms_for_file(
-        period.data_file, topologies, step_size
-    )
-    dvcs_hists, dvcs_counts = fill_histograms_for_file(
-        period.dvcs_mc_file, topologies, step_size
-    )
-    pi0_hists, pi0_counts = fill_histograms_for_file(
-        period.pi0_as_dvcs_mc_file, topologies, step_size
-    )
+    data_hists, data_counts = fill_histograms_for_file(period.data_file, topologies, step_size)
+    dvcs_hists, dvcs_counts = fill_histograms_for_file(period.dvcs_mc_file, topologies, step_size)
+    pi0_hists, pi0_counts = fill_histograms_for_file(period.pi0_as_dvcs_mc_file, topologies, step_size)
+    rows: List[Dict[str, object]] = []
 
     for topology in topologies:
-        output_path = output_dir / (
-            f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
-        )
+        fit_results: Dict[str, FitResult] = {}
+        for variable in VARIABLES:
+            result = fit_two_templates(
+                data_hists[topology.key][variable.branch],
+                dvcs_hists[topology.key][variable.branch],
+                pi0_hists[topology.key][variable.branch],
+                variable, max_shift_bins, max_smear_bins, fit_min_counts,
+            )
+            fit_results[variable.branch] = result
+            bin_width = (variable.xmax - variable.xmin) / variable.bins
+            rows.append({
+                "period": period.key, "period_label": period.label,
+                "topology": topology.key, "variable": variable.branch,
+                "success": int(result.success), "message": result.message,
+                "data_entries_in_range": result.data_total,
+                "dvcs_mc_entries_in_range": float(np.sum(dvcs_hists[topology.key][variable.branch])),
+                "pi0_mc_entries_in_range": float(np.sum(pi0_hists[topology.key][variable.branch])),
+                "f_pi0": result.f_pi0, "f_pi0_err": result.f_pi0_err,
+                "shift": result.shift, "shift_err": result.shift_err,
+                "shift_bins": result.shift / bin_width if result.success else math.nan,
+                "sigma_add": result.sigma_add, "sigma_add_err": result.sigma_add_err,
+                "sigma_add_bins": result.sigma_add / bin_width if result.success else math.nan,
+                "poisson_deviance": result.deviance, "ndf": result.ndf,
+                "deviance_per_ndf": result.deviance / result.ndf if result.success and result.ndf > 0 else math.nan,
+            })
+        # endfor
 
+        output_path = output_dir / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
         draw_canvas(
-            output_path=output_path,
-            period=period,
-            topology=topology,
-            data_histograms=data_hists[topology.key],
-            dvcs_histograms=dvcs_hists[topology.key],
-            pi0_histograms=pi0_hists[topology.key],
-            selected_counts={
-                "data": data_counts[topology.key],
-                "dvcs_mc": dvcs_counts[topology.key],
-                "pi0_mc": pi0_counts[topology.key],
-            },
-            pi0_fraction=pi0_fraction,
-            log_y=log_y,
-            dpi=dpi,
+            output_path, period, topology, data_hists[topology.key],
+            dvcs_hists[topology.key], pi0_hists[topology.key],
+            {"data": data_counts[topology.key], "dvcs_mc": dvcs_counts[topology.key], "pi0_mc": pi0_counts[topology.key]},
+            fit_results, log_y, dpi,
         )
         log(f"Wrote {output_path}")
     # endfor
 
+    return rows
+
+
+def write_results_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        return
+    # endif
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    # endwith
+
 
 def main() -> int:
     args = parse_args()
-
-    if args.pi0_fraction is not None and not (0.0 <= args.pi0_fraction <= 1.0):
-        raise ValueError("--pi0-fraction must be between 0 and 1 inclusive.")
+    if gaussian_filter1d is None or minimize is None:
+        raise RuntimeError("scipy is required for the two-template nuisance fit.")
+    # endif
+    if args.max_shift_bins <= 0.0 or args.max_smear_bins <= 0.0:
+        raise ValueError("--max-shift-bins and --max-smear-bins must be positive.")
     # endif
 
     periods = selected_periods(args.period)
     topologies = selected_topologies(args.topology)
     output_dir = Path(args.output_dir)
+    all_rows: List[Dict[str, object]] = []
 
     log(f"ROOT I/O backend: {io_backend()}")
+    log(f"Producing {len(periods) * len(topologies)} fit canvases")
     log(
-        f"Producing {len(periods) * len(topologies)} canvases "
-        f"for {len(periods)} periods and {len(topologies)} topologies"
+        "Selection: topology, (-t1) < 1.0, open_angle_ep2 > 5 deg, "
+        "distinct FD sectors; no exclusivity cuts"
     )
-    log("Selection: detector topology only; no global or exclusivity cuts")
-    log("Normalization: each sample has unit integral inside each plotted range")
-
-    if args.pi0_fraction is not None:
-        log(f"Additional mixed template enabled with f_pi0={args.pi0_fraction:.6g}")
-    # endif
+    log("Fit: floating f_pi0 plus DVCS-template shift and added Gaussian smearing")
 
     for period in periods:
-        process_period(
-            period=period,
-            topologies=topologies,
-            output_dir=output_dir,
-            step_size=args.step_size,
-            pi0_fraction=args.pi0_fraction,
-            log_y=args.log_y,
-            dpi=args.dpi,
-        )
+        all_rows.extend(process_period(
+            period, topologies, output_dir, args.step_size,
+            args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
+            args.log_y, args.dpi,
+        ))
     # endfor
 
-    log("All requested canvases completed")
+    csv_path = output_dir / "fit_results.csv"
+    write_results_csv(csv_path, all_rows)
+    log(f"Wrote {csv_path}")
+    log("All requested fits completed")
     return 0
 
 
