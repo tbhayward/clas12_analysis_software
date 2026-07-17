@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_exclusivity_two_template_fit_v3.py
+plot_exclusivity_data_dvcs_pi0_mc.py
 
 For each of the five run periods, three detector topologies and eight
 exclusivity variables, fit the uncut DVCS-candidate data with a two-template
@@ -29,7 +29,8 @@ degenerate for a one-dimensional two-template fit.
 
 Outputs:
 
-  * one 4x2 PNG canvas for each period/topology combination
+  * one unit-area 4x2 shape-comparison canvas for each period/topology combination
+  * one 4x2 two-template-fit canvas for each period/topology combination
   * fit_results.csv containing all fitted parameters and diagnostics
 
 Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
@@ -79,7 +80,7 @@ except ImportError:
 
 
 TREE_NAME = "PhysicsEvents"
-DEFAULT_OUTPUT_DIR = "output/exclusivity_two_template_fit"
+DEFAULT_OUTPUT_DIR = "output/exclusivity_data_dvcs_pi0_mc"
 DEFAULT_STEP_SIZE = "250 MB"
 
 T1_ABS_MAX = 1.0
@@ -236,8 +237,7 @@ def log(message: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Plot exclusivity-variable shapes for DVCS data, reconstructed DVCS MC "
-            "and eppi0 MC reconstructed as DVCS after the minimal global preselection."
+            "Plot unit-area exclusivity shapes and two-template fits for DVCS data, reconstructed DVCS MC and eppi0 MC reconstructed as DVCS after the minimal global preselection."
         )
     )
     parser.add_argument(
@@ -874,7 +874,87 @@ def fit_two_templates(
     )
 
 
-def draw_canvas(
+
+def draw_shape_canvas(
+    output_path: Path,
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    data_histograms: Mapping[str, np.ndarray],
+    dvcs_histograms: Mapping[str, np.ndarray],
+    pi0_histograms: Mapping[str, np.ndarray],
+    selected_counts: Mapping[str, int],
+    log_y: bool,
+    dpi: int,
+) -> None:
+    """Draw the original independently unit-normalized shape comparison."""
+    fig, axes = plt.subplots(2, 4, figsize=(18.0, 8.8))
+    flat_axes = axes.ravel()
+
+    for axis, variable in zip(flat_axes, VARIABLES):
+        edges, centers = bin_geometry(variable)
+        data_shape = normalized_shape(data_histograms[variable.branch])
+        dvcs_shape = normalized_shape(dvcs_histograms[variable.branch])
+        pi0_shape = normalized_shape(pi0_histograms[variable.branch])
+
+        if data_shape is not None:
+            counts = np.asarray(data_histograms[variable.branch], dtype=np.float64)
+            total = float(np.sum(counts))
+            errors = np.sqrt(counts) / total if total > 0.0 else np.zeros_like(counts)
+            axis.errorbar(
+                centers, data_shape, yerr=errors, fmt="o", markersize=2.4,
+                linewidth=0.8, capsize=0.0, color=SAMPLE_COLORS["data"],
+                label="DVCS data", zorder=4,
+            )
+        # endif
+        if dvcs_shape is not None:
+            axis.stairs(
+                dvcs_shape, edges, color=SAMPLE_COLORS["dvcs_mc"],
+                linewidth=1.7, label="DVCS MC", zorder=3,
+            )
+        # endif
+        if pi0_shape is not None:
+            axis.stairs(
+                pi0_shape, edges, color=SAMPLE_COLORS["pi0_mc"],
+                linewidth=1.7, label=r"$e\pi^0$ MC as DVCS", zorder=2,
+            )
+        # endif
+
+        axis.set_xlim(variable.xmin, variable.xmax)
+        axis.set_xlabel(variable.label)
+        axis.set_ylabel("unit-normalized entries / bin")
+        axis.grid(axis="y", alpha=0.25)
+        if log_y:
+            floor = positive_y_floor(
+                *[array for array in (data_shape, dvcs_shape, pi0_shape) if array is not None]
+            )
+            if floor is not None:
+                axis.set_yscale("log")
+                axis.set_ylim(bottom=max(1.0e-7, floor))
+            # endif
+        else:
+            axis.set_ylim(bottom=0.0)
+        # endif
+    # endfor
+
+    handles, labels = flat_axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.955),
+        ncol=len(labels), frameon=False,
+    )
+    fig.suptitle(
+        f"Exclusivity shapes after minimal preselection: {period.label}, {topology.label}\n"
+        f"selected entries: data={selected_counts['data']:,}, "
+        f"DVCS MC={selected_counts['dvcs_mc']:,}, "
+        rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
+        fontsize=15, y=0.995,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+def draw_fit_canvas(
     output_path: Path,
     period: PeriodConfig,
     topology: TopologyConfig,
@@ -1018,12 +1098,20 @@ def process_period(
             })
         # endfor
 
+        selected = {"data": data_counts[topology.key], "dvcs_mc": dvcs_counts[topology.key], "pi0_mc": pi0_counts[topology.key]}
+
+        shape_output_path = output_dir / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
+        draw_shape_canvas(
+            shape_output_path, period, topology, data_hists[topology.key],
+            dvcs_hists[topology.key], pi0_hists[topology.key], selected, log_y, dpi,
+        )
+        log(f"Wrote {shape_output_path}")
+
         output_path = output_dir / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
-        draw_canvas(
+        draw_fit_canvas(
             output_path, period, topology, data_hists[topology.key],
             dvcs_hists[topology.key], pi0_hists[topology.key],
-            {"data": data_counts[topology.key], "dvcs_mc": dvcs_counts[topology.key], "pi0_mc": pi0_counts[topology.key]},
-            fit_results, log_y, dpi,
+            selected, fit_results, log_y, dpi,
         )
         log(f"Wrote {output_path}")
     # endfor
@@ -1058,7 +1146,7 @@ def main() -> int:
     all_rows: List[Dict[str, object]] = []
 
     log(f"ROOT I/O backend: {io_backend()}")
-    log(f"Producing {len(periods) * len(topologies)} fit canvases")
+    log(f"Producing {2 * len(periods) * len(topologies)} canvases: shape comparisons plus template fits")
     log(
         "Selection: topology, (-t1) < 1.0, open_angle_ep2 > 5 deg, "
         "distinct FD sectors; no exclusivity cuts"
@@ -1076,7 +1164,7 @@ def main() -> int:
     csv_path = output_dir / "fit_results.csv"
     write_results_csv(csv_path, all_rows)
     log(f"Wrote {csv_path}")
-    log("All requested fits completed")
+    log("All requested shape plots and fits completed")
     return 0
 
 
