@@ -139,6 +139,10 @@ class FitResult:
     transformed_dvcs_shape: Optional[np.ndarray] = None
     fit_mask: Optional[np.ndarray] = None
     morph_label: str = "additive"
+    excluded_data_counts: float = 0.0
+    excluded_model_counts: float = 0.0
+    excluded_excess_counts: float = 0.0
+    excluded_excess_fraction: float = 0.0
 
 
 @dataclass
@@ -223,8 +227,8 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig(
         "Mx2_2",
         r"$M_{x2}^2$ (GeV$^2$)",
-        100,
-        0.0,
+        120,
+        -1.5,
         3.0,
         aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
     ),
@@ -232,7 +236,7 @@ VARIABLES: Tuple[VariableConfig, ...] = (
 
 
 SAMPLE_LABELS = {
-    "data": "DVCS data",
+    "data": r"$e'p'\gamma$ data",
     "dvcs_mc": "DVCS MC",
     "pi0_mc": r"$e\pi^0$ MC as DVCS",
 }
@@ -690,13 +694,17 @@ def is_positive_morph_variable(variable: VariableConfig) -> bool:
     return variable.branch in {"pTmiss", "theta_gamma_gamma"}
 
 
-def fit_mask_for_variable(variable: VariableConfig) -> np.ndarray:
+def fit_mask_for_variable(
+    variable: VariableConfig,
+    topology: TopologyConfig,
+) -> np.ndarray:
     """Bins used in the shared likelihood; all bins remain visible in plots."""
     _, centers = bin_geometry(variable)
     mask = np.ones(variable.bins, dtype=bool)
 
-    if variable.branch == "Mx2_1":
-        # The right-side structure is not described by either available template.
+    if variable.branch == "Mx2_1" and topology.key in {"FD_FD", "CD_FD"}:
+        # The right-side structure is absent in CD-FT and is not described by
+        # either available template in topologies containing an FD photon.
         mask &= centers <= 0.50
     elif variable.branch == "xF":
         # Avoid allowing small range-clipping effects to drive the nuisance fit.
@@ -713,31 +721,36 @@ def transform_additive_shape(
     shift: float,
     sigma_add: float,
 ) -> Optional[np.ndarray]:
-    """Additively shift and Gaussian-smear a unit-normalized template."""
-    _, centers = bin_geometry(variable)
-    bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
-    sigma_bins = max(0.0, sigma_add / bin_width)
+    """Shift and Gaussian-smear a template without truncating its visible tail.
 
-    smeared = np.asarray(base_shape, dtype=np.float64)
-    if sigma_bins > 1.0e-10:
-        smeared = gaussian_filter1d(
-            smeared, sigma=sigma_bins, mode="constant", cval=0.0, truncate=5.0
+    Each source-bin probability is transported into every target bin using the
+    integrated Gaussian probability. This avoids the hard interpolation cutoff
+    that previously made some morphed Mx2_2 curves stop near -0.5 GeV^2.
+    """
+    edges, centers = bin_geometry(variable)
+    source_weights = np.asarray(base_shape, dtype=np.float64)
+
+    if sigma_add <= 1.0e-10:
+        transformed_centers = centers + shift
+        target, _ = np.histogram(
+            transformed_centers, bins=edges, weights=source_weights
         )
+    else:
+        lower = edges[:-1, None]
+        upper = edges[1:, None]
+        source_means = (centers + shift)[None, :]
+        probabilities = ndtr((upper - source_means) / sigma_add) - ndtr(
+            (lower - source_means) / sigma_add
+        )
+        target = probabilities @ source_weights
     # endif
 
-    shifted = np.interp(
-        centers - shift,
-        centers,
-        smeared,
-        left=0.0,
-        right=0.0,
-    )
-    shifted = np.clip(shifted, 0.0, None)
-    total = float(np.sum(shifted))
+    target = np.clip(target, 0.0, None)
+    total = float(np.sum(target))
     if total <= 0.0 or not math.isfinite(total):
         return None
     # endif
-    return shifted / total
+    return target / total
 
 
 def transform_positive_shape(
@@ -800,6 +813,7 @@ def fit_shared_two_templates(
     data_histograms: Mapping[str, np.ndarray],
     dvcs_histograms: Mapping[str, np.ndarray],
     pi0_histograms: Mapping[str, np.ndarray],
+    topology: TopologyConfig,
     max_shift_bins: float,
     max_smear_bins: float,
     min_counts: int,
@@ -821,7 +835,7 @@ def fit_shared_two_templates(
             "data_total": data_total,
             "dvcs_shape": dvcs_shape,
             "pi0_shape": pi0_shape,
-            "mask": fit_mask_for_variable(variable),
+            "mask": fit_mask_for_variable(variable, topology),
         }
         active_variables.append(variable)
     # endfor
@@ -1028,6 +1042,14 @@ def fit_shared_two_templates(
         used_bins = int(np.count_nonzero(mask))
         total_deviance += variable_deviance
         total_used_bins += used_bins
+        excluded = ~mask
+        excluded_data = float(np.sum(info["data"][excluded]))
+        excluded_model = float(np.sum(model[excluded]))
+        excluded_excess = excluded_data - excluded_model
+        excluded_fraction = (
+            excluded_excess / float(info["data_total"])
+            if float(info["data_total"]) > 0.0 else 0.0
+        )
         results[variable.branch] = FitResult(
             success=True,
             message=str(best.message),
@@ -1046,6 +1068,10 @@ def fit_shared_two_templates(
             transformed_dvcs_shape=transformed,
             fit_mask=mask,
             morph_label="log-space" if is_positive_morph_variable(variable) else "additive",
+            excluded_data_counts=excluded_data,
+            excluded_model_counts=excluded_model,
+            excluded_excess_counts=excluded_excess,
+            excluded_excess_fraction=excluded_fraction,
         )
     # endfor
 
@@ -1090,7 +1116,7 @@ def draw_shape_canvas(
             axis.errorbar(
                 centers, data_shape, yerr=errors, fmt="o", markersize=2.4,
                 linewidth=0.8, capsize=0.0, color=SAMPLE_COLORS["data"],
-                label="DVCS data", zorder=4,
+                label=SAMPLE_LABELS["data"], zorder=4,
             )
         # endif
         if dvcs_shape is not None:
@@ -1167,7 +1193,7 @@ def draw_fit_canvas(
         axis.errorbar(
             centers, data_counts, yerr=data_error, fmt="o", markersize=2.4,
             linewidth=0.8, capsize=0.0, color=SAMPLE_COLORS["data"],
-            label="DVCS data", zorder=5,
+            label=SAMPLE_LABELS["data"], zorder=5,
         )
 
         if dvcs_shape is not None:
@@ -1202,6 +1228,13 @@ def draw_fit_canvas(
                 rf"$\sigma={result.sigma_add:.4g}$ ({result.morph_label})" + "\n"
                 f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
             )
+            if result.excluded_data_counts > 0.0:
+                quality += (
+                    "\n"
+                    f"masked excess={result.excluded_excess_counts:.0f} "
+                    f"({100.0 * result.excluded_excess_fraction:.2f}% of data)"
+                )
+            # endif
         else:
             quality = f"fit failed: {result.message}"
         # endif
@@ -1269,6 +1302,7 @@ def process_period(
             data_hists[topology.key],
             dvcs_hists[topology.key],
             pi0_hists[topology.key],
+            topology,
             max_shift_bins, max_smear_bins, fit_min_counts,
         )
         if not shared_summary.success or shared_summary.variable_results is None:
@@ -1299,6 +1333,10 @@ def process_period(
                 "sigma_or_log_sigma": result.sigma_add, "sigma_err": result.sigma_add_err,
                 "sigma_bins": result.sigma_add / bin_width if result.success and additive else math.nan,
                 "fit_bins_used": int(np.count_nonzero(result.fit_mask)) if result.fit_mask is not None else 0,
+                "excluded_data_counts": result.excluded_data_counts,
+                "excluded_model_counts": result.excluded_model_counts,
+                "excluded_excess_counts": result.excluded_excess_counts,
+                "excluded_excess_fraction_of_data": result.excluded_excess_fraction,
                 "variable_poisson_deviance": result.deviance, "variable_ndf": result.ndf,
                 "variable_deviance_per_ndf": result.deviance / result.ndf if result.success and result.ndf > 0 else math.nan,
             })
@@ -1360,7 +1398,8 @@ def main() -> int:
     log(
         "Fit: one shared f_pi0 per period/topology; additive morphs for signed "
         "variables, log-space morphs for pTmiss and theta_gamma_gamma; "
-        "Mx2_1 right side and xF edge bins excluded from the likelihood"
+        "Mx2_1 right side excluded only for FD-FD/CD-FD; xF edge bins excluded; "
+        "masked excess reported separately"
     )
 
     for period in periods:
