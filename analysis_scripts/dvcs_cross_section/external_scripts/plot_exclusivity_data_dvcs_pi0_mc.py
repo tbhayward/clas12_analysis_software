@@ -30,6 +30,8 @@ parameters are profiled at the fitted fraction, but they do not determine
 f_pi0. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
+The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma.
+
 Outputs:
 
   * one unit-area 4x2 shape-comparison canvas for each period/topology combination
@@ -101,6 +103,8 @@ class PeriodConfig:
     data_file: str
     dvcs_mc_file: str
     pi0_as_dvcs_mc_file: str
+    eppi0_data_file: str
+    eppi0_mc_file: str
 
 
 @dataclass(frozen=True)
@@ -165,6 +169,8 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
         dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV.root",
         pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root",
+        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
+        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root",
     ),
     PeriodConfig(
         key="fa18_out",
@@ -172,6 +178,8 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
         dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV.root",
         pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root",
+        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
+        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root",
     ),
     PeriodConfig(
         key="sp19_inb",
@@ -179,6 +187,8 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
         dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV.root",
         pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root",
+        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
+        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root",
     ),
     PeriodConfig(
         key="sp18_inb",
@@ -186,6 +196,8 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root",
         dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_50nA_10594MeV.root",
         pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root",
+        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root",
+        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root",
     ),
     PeriodConfig(
         key="sp18_out",
@@ -193,6 +205,8 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root",
         dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_out_45nA_10594MeV.root",
         pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_45nA_10594MeV_epgamma.root",
+        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root",
+        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root",
     ),
 )
 
@@ -234,6 +248,18 @@ VARIABLES: Tuple[VariableConfig, ...] = (
         4.0,
         aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
     ),
+)
+
+
+PI0_VARIABLES: Tuple[VariableConfig, ...] = (
+    VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
+    VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 100, 0.0, 2.0),
+    VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
+    VariableConfig("xF", r"$x_F$", 100, -0.5, 0.2),
+    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
+    VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03),
+    VariableConfig("Mx2_1", r"$M_{x1}^2$ (GeV$^2$)", 100, -1.5, 1.5),
+    VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0),
 )
 
 
@@ -417,7 +443,7 @@ def available_tree_branches(path: str) -> set[str]:
     return branches
 
 
-def resolve_variable_branches(path: str) -> Dict[str, str]:
+def resolve_variable_branches(path: str, variables: Sequence[VariableConfig] = VARIABLES) -> Dict[str, str]:
     branches = available_tree_branches(path)
 
     required_selection = {
@@ -434,7 +460,7 @@ def resolve_variable_branches(path: str) -> Dict[str, str]:
     resolved: Dict[str, str] = {}
     missing_variables: List[str] = []
 
-    for variable in VARIABLES:
+    for variable in variables:
         candidates = (variable.branch,) + variable.aliases
         match = next((name for name in candidates if name in branches), None)
 
@@ -471,10 +497,10 @@ def fd_sector_from_phi(phi_rad: np.ndarray) -> np.ndarray:
     return sector
 
 
-def empty_histograms() -> Dict[str, np.ndarray]:
+def empty_histograms(variables: Sequence[VariableConfig] = VARIABLES) -> Dict[str, np.ndarray]:
     return {
         variable.branch: np.zeros(variable.bins, dtype=np.float64)
-        for variable in VARIABLES
+        for variable in variables
     }
 
 
@@ -483,17 +509,18 @@ def fill_histograms_uproot(
     topologies: Sequence[TopologyConfig],
     step_size: str,
     apply_mx2_1_cut: bool = False,
+    variables: Sequence[VariableConfig] = VARIABLES,
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
     """Read one ROOT file once and fill all requested topology/variable histograms."""
 
     require_input_file(path)
-    resolved = resolve_variable_branches(path)
+    resolved = resolve_variable_branches(path, variables)
 
     expressions = [
         "detector1", "detector2", "t1", "open_angle_ep2",
         "e_phi", "p1_phi", "p2_phi",
     ] + sorted(set(resolved.values()))
-    histograms = {topology.key: empty_histograms() for topology in topologies}
+    histograms = {topology.key: empty_histograms(variables) for topology in topologies}
     selected_events = {topology.key: 0 for topology in topologies}
 
     tree_spec = f"{path}:{TREE_NAME}"
@@ -554,7 +581,7 @@ def fill_histograms_uproot(
                 continue
             # endif
 
-            for variable in VARIABLES:
+            for variable in variables:
                 source_branch = resolved[variable.branch]
                 values = np.asarray(arrays[source_branch], dtype=np.float64)[mask]
                 values = values[np.isfinite(values)]
@@ -577,12 +604,13 @@ def fill_histograms_pyroot(
     topologies: Sequence[TopologyConfig],
     step_size: str,
     apply_mx2_1_cut: bool = False,
+    variables: Sequence[VariableConfig] = VARIABLES,
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
     del step_size  # PyROOT performs a direct TTree event loop.
 
     require_input_file(path)
-    resolved = resolve_variable_branches(path)
-    histograms = {topology.key: empty_histograms() for topology in topologies}
+    resolved = resolve_variable_branches(path, variables)
+    histograms = {topology.key: empty_histograms(variables) for topology in topologies}
     selected_events = {topology.key: 0 for topology in topologies}
 
     root_file = ROOT.TFile.Open(path, "READ")
@@ -654,7 +682,7 @@ def fill_histograms_pyroot(
 
             selected_events[topology.key] += 1
 
-            for variable in VARIABLES:
+            for variable in variables:
                 value = float(getattr(event, resolved[variable.branch]))
                 if not math.isfinite(value):
                     continue
@@ -683,14 +711,15 @@ def fill_histograms_for_file(
     topologies: Sequence[TopologyConfig],
     step_size: str,
     apply_mx2_1_cut: bool = False,
+    variables: Sequence[VariableConfig] = VARIABLES,
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
     backend = io_backend()
 
     if backend == "uproot":
-        return fill_histograms_uproot(path, topologies, step_size, apply_mx2_1_cut)
+        return fill_histograms_uproot(path, topologies, step_size, apply_mx2_1_cut, variables)
     # endif
 
-    return fill_histograms_pyroot(path, topologies, step_size, apply_mx2_1_cut)
+    return fill_histograms_pyroot(path, topologies, step_size, apply_mx2_1_cut, variables)
 
 
 def normalize_density(
@@ -1347,6 +1376,254 @@ def draw_fit_canvas(
 
 
 
+
+def fit_single_template(
+    data_counts: np.ndarray,
+    mc_counts: np.ndarray,
+    variable: VariableConfig,
+    topology: TopologyConfig,
+    max_shift_bins: float,
+    max_smear_bins: float,
+    min_counts: int,
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
+) -> FitResult:
+    """Fit one reconstructed-MC template to data with shift and extra smearing."""
+
+    data = np.asarray(data_counts, dtype=np.float64)
+    mc_shape = normalized_shape(mc_counts)
+    data_total = float(np.sum(data))
+    if data_total < min_counts or mc_shape is None:
+        return FitResult(False, "insufficient counts", data_total=data_total)
+    # endif
+
+    mask = fit_mask_for_variable(variable, topology)
+    bin_width = (variable.xmax - variable.xmin) / variable.bins
+    positive = is_positive_morph_variable(variable)
+    if positive:
+        bounds = [(-0.8, 0.8), (0.0, 1.2)]
+        x0 = np.asarray([0.0, 0.10], dtype=np.float64)
+    else:
+        bounds = [(-max_shift_bins * bin_width, max_shift_bins * bin_width),
+                  (0.0, max_smear_bins * bin_width)]
+        x0 = np.asarray([0.0, 0.5 * bin_width], dtype=np.float64)
+    # endif
+
+    def build(params: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        transformed = transform_dvcs_shape(mc_shape, variable, float(params[0]), float(params[1]))
+        norm = float(np.sum(transformed[mask]))
+        if norm <= 0.0:
+            return np.zeros_like(data), transformed
+        # endif
+        model = data_total * transformed / float(np.sum(transformed))
+        return model, transformed
+
+    def objective(params: np.ndarray) -> float:
+        model, _ = build(params)
+        value = poisson_deviance(data[mask], np.clip(model[mask], 1.0e-12, None))
+        if use_nuisance_penalties:
+            if positive:
+                value += (float(params[0]) / 0.20) ** 2 + (float(params[1]) / 0.40) ** 2
+            else:
+                value += (float(params[0]) / (shift_prior_bins * bin_width)) ** 2
+                value += (float(params[1]) / (smear_prior_bins * bin_width)) ** 2
+            # endif
+        # endif
+        return float(value)
+
+    result = minimize(objective, x0, method="L-BFGS-B", bounds=bounds)
+    model, transformed = build(np.asarray(result.x, dtype=np.float64))
+    nfit = int(np.count_nonzero(mask))
+    return FitResult(
+        success=bool(result.success),
+        message="one-template nuisance fit",
+        shift=float(result.x[0]),
+        sigma_add=float(result.x[1]),
+        deviance=poisson_deviance(data[mask], np.clip(model[mask], 1.0e-12, None)),
+        ndf=max(1, nfit - 2),
+        data_total=data_total,
+        model_counts=model,
+        dvcs_component_counts=model,
+        transformed_dvcs_shape=transformed,
+        fit_mask=mask,
+        morph_label="log-space" if positive else "additive",
+    )
+
+
+def draw_pi0_shape_canvas(
+    output_path: Path,
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    data_histograms: Mapping[str, np.ndarray],
+    mc_histograms: Mapping[str, np.ndarray],
+    selected_counts: Mapping[str, int],
+    log_y: bool,
+    dpi: int,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes_flat = axes.ravel()
+
+    for axis, variable in zip(axes_flat, PI0_VARIABLES):
+        edges, centers = bin_geometry(variable)
+        data_shape, data_err = normalize_density(data_histograms[variable.branch], variable)
+        mc_shape, _ = normalize_density(mc_histograms[variable.branch], variable)
+        axis.errorbar(centers, data_shape, yerr=data_err, fmt="o", markersize=3.0,
+                      color="black", label=r"$e'p'\pi^0$ data")
+        axis.stairs(mc_shape, edges, color="tab:blue", linewidth=2.0,
+                    label=r"$e'p'\pi^0$ MC")
+        axis.set_xlabel(variable.label)
+        axis.set_ylabel("unit-area density")
+        axis.grid(alpha=0.20)
+        if log_y:
+            axis.set_yscale("log")
+            floor = positive_y_floor(data_shape, mc_shape)
+            if floor is not None:
+                axis.set_ylim(bottom=floor * 0.5)
+            # endif
+        # endif
+    # endfor
+
+    fig.suptitle(
+        rf"$e'p'\pi^0$ exclusivity shapes after minimal preselection: {period.label}, {topology.label}" + "\n" +
+        rf"selected entries: data={selected_counts['data']:,}, MC={selected_counts['mc']:,}",
+        fontsize=18, y=0.985,
+    )
+    handles, labels = axes_flat[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.905), ncol=2, frameon=False)
+    fig.subplots_adjust(top=0.82, left=0.06, right=0.985, bottom=0.08, wspace=0.28, hspace=0.30)
+    fig.savefig(output_path, dpi=dpi)
+    plt.close(fig)
+
+
+def draw_pi0_fit_canvas(
+    output_path: Path,
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    data_histograms: Mapping[str, np.ndarray],
+    mc_histograms: Mapping[str, np.ndarray],
+    selected_counts: Mapping[str, int],
+    fit_results: Mapping[str, FitResult],
+    log_y: bool,
+    dpi: int,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes_flat = axes.ravel()
+
+    for axis, variable in zip(axes_flat, PI0_VARIABLES):
+        edges, centers = bin_geometry(variable)
+        data = np.asarray(data_histograms[variable.branch], dtype=np.float64)
+        raw_mc = normalized_shape(mc_histograms[variable.branch])
+        result = fit_results[variable.branch]
+        axis.errorbar(centers, data, yerr=np.sqrt(np.clip(data, 0.0, None)), fmt="o",
+                      markersize=3.0, color="black", label=r"$e'p'\pi^0$ data")
+        if raw_mc is not None:
+            axis.stairs(float(np.sum(data)) * raw_mc, edges, color="0.55", linestyle=":",
+                        linewidth=1.8, label=r"raw $e'p'\pi^0$ MC")
+        # endif
+        if result.model_counts is not None:
+            axis.stairs(result.model_counts, edges, color="tab:green", linewidth=2.2,
+                        label="shifted/smeared MC fit")
+        # endif
+        axis.text(
+            0.97, 0.95,
+            rf"$\Delta={result.shift:.4g}$" + "\n" +
+            rf"$\sigma_{{add}}={result.sigma_add:.4g}$ ({result.morph_label})" + "\n" +
+            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$",
+            transform=axis.transAxes, ha="right", va="top", fontsize=10,
+        )
+        axis.set_xlabel(variable.label)
+        axis.set_ylabel("events / bin")
+        axis.grid(alpha=0.20)
+        if log_y:
+            axis.set_yscale("log")
+            floor = positive_y_floor(data, result.model_counts if result.model_counts is not None else np.asarray([]))
+            if floor is not None:
+                axis.set_ylim(bottom=max(0.5, floor * 0.5))
+            # endif
+        # endif
+    # endfor
+
+    fig.suptitle(
+        rf"$e'p'\pi^0$ data--MC nuisance fits after minimal preselection: {period.label}, {topology.label}" + "\n" +
+        rf"selected entries: data={selected_counts['data']:,}, MC={selected_counts['mc']:,}",
+        fontsize=18, y=0.985,
+    )
+    handles, labels = axes_flat[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.905), ncol=3, frameon=False)
+    fig.subplots_adjust(top=0.82, left=0.06, right=0.985, bottom=0.08, wspace=0.28, hspace=0.30)
+    fig.savefig(output_path, dpi=dpi)
+    plt.close(fig)
+
+
+def process_pi0_period(
+    period: PeriodConfig,
+    topologies: Sequence[TopologyConfig],
+    output_dir: Path,
+    step_size: str,
+    max_shift_bins: float,
+    max_smear_bins: float,
+    fit_min_counts: int,
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
+    log_y: bool,
+    dpi: int,
+) -> List[Dict[str, object]]:
+    data_hists, data_counts = fill_histograms_for_file(
+        period.eppi0_data_file, topologies, step_size, False, PI0_VARIABLES
+    )
+    mc_hists, mc_counts = fill_histograms_for_file(
+        period.eppi0_mc_file, topologies, step_size, False, PI0_VARIABLES
+    )
+    rows: List[Dict[str, object]] = []
+
+    for topology in topologies:
+        selected = {"data": data_counts[topology.key], "mc": mc_counts[topology.key]}
+        shape_path = output_dir / "pi0_channel" / "shape_comparisons" / f"eppi0_shapes_{period.key}_{topology.key.lower()}.png"
+        draw_pi0_shape_canvas(shape_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, log_y, dpi)
+        log(f"Wrote {shape_path}")
+
+        fit_results: Dict[str, FitResult] = {}
+        for variable in PI0_VARIABLES:
+            result = fit_single_template(
+                data_hists[topology.key][variable.branch],
+                mc_hists[topology.key][variable.branch],
+                variable, topology, max_shift_bins, max_smear_bins, fit_min_counts,
+                shift_prior_bins, smear_prior_bins, use_nuisance_penalties,
+            )
+            fit_results[variable.branch] = result
+            bin_width = (variable.xmax - variable.xmin) / variable.bins
+            additive = not is_positive_morph_variable(variable)
+            rows.append({
+                "period": period.key,
+                "period_label": period.label,
+                "topology": topology.key,
+                "variable": variable.branch,
+                "success": int(result.success),
+                "message": result.message,
+                "data_entries_in_range": result.data_total,
+                "mc_entries_in_range": float(np.sum(mc_hists[topology.key][variable.branch])),
+                "morph_type": result.morph_label,
+                "shift_or_log_shift": result.shift,
+                "shift_bins": result.shift / bin_width if result.success and additive else math.nan,
+                "sigma_or_log_sigma": result.sigma_add,
+                "sigma_bins": result.sigma_add / bin_width if result.success and additive else math.nan,
+                "poisson_deviance": result.deviance,
+                "ndf": result.ndf,
+                "deviance_per_ndf": result.deviance / result.ndf if result.success and result.ndf > 0 else math.nan,
+            })
+        # endfor
+
+        fit_path = output_dir / "pi0_channel" / "template_fits" / f"eppi0_template_fit_{period.key}_{topology.key.lower()}.png"
+        draw_pi0_fit_canvas(fit_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, fit_results, log_y, dpi)
+        log(f"Wrote {fit_path}")
+    # endfor
+
+    return rows
+
 def process_period(
     period: PeriodConfig,
     topologies: Sequence[TopologyConfig],
@@ -1522,6 +1799,7 @@ def main() -> int:
     topologies = selected_topologies(args.topology)
     output_dir = Path(args.output_dir)
     all_rows: List[Dict[str, object]] = []
+    all_pi0_rows: List[Dict[str, object]] = []
     fraction_variables = args.fraction_variable or ["Mx2_2", "pTmiss", "theta_gamma_gamma"]
     if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
         raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
@@ -1546,11 +1824,20 @@ def main() -> int:
             fraction_variables, args.shift_prior_bins, args.smear_prior_bins,
             not args.disable_nuisance_penalties, args.log_y, args.dpi,
         ))
+        all_pi0_rows.extend(process_pi0_period(
+            period, topologies, output_dir, args.step_size,
+            args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
+            args.shift_prior_bins, args.smear_prior_bins,
+            not args.disable_nuisance_penalties, args.log_y, args.dpi,
+        ))
     # endfor
 
     csv_path = output_dir / "template_fits" / "fit_results.csv"
     write_results_csv(csv_path, all_rows)
     log(f"Wrote {csv_path}")
+    pi0_csv_path = output_dir / "pi0_channel" / "template_fits" / "fit_results.csv"
+    write_results_csv(pi0_csv_path, all_pi0_rows)
+    log(f"Wrote {pi0_csv_path}")
     log("All requested shape plots and fits completed")
     return 0
 
