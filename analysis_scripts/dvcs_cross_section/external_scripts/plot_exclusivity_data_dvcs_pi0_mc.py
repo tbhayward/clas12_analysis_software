@@ -15,7 +15,9 @@ The detector topology plus the minimal global preselection are required:
     open_angle_ep2 > 5 degrees
     all reconstructed FD particles occupy distinct FD sectors
 
-No exclusivity cuts are applied. The fit uses the raw binned data counts and a Poisson likelihood.
+The first-stage shape comparisons apply no exclusivity cuts. The second-stage
+DVCS shape comparisons and template fits additionally apply the topology-dependent
+Mx2_1 upper cut. The fit uses the raw binned data counts and a Poisson likelihood.
 The total expected count is fixed to the observed number of entries inside
 the plotted range, so the floated parameters describe shape only:
 
@@ -30,7 +32,7 @@ parameters are profiled at the fitted fraction, but they do not determine
 f_pi0. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
-The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma.
+The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
 
 Outputs:
 
@@ -329,6 +331,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100,
         help="Minimum data entries inside a variable range required for a fit (default: 100).",
+    )
+    parser.add_argument(
+        "--pi0-core-containment",
+        type=float,
+        default=0.90,
+        help=(
+            "MC signal containment used by the direct eppi0 data--MC core fits "
+            "(default: 0.90). Signed variables use equal tails; positive-definite "
+            "variables use the interval from the lower boundary to this quantile."
+        ),
     )
     parser.add_argument(
         "--fraction-variable",
@@ -770,7 +782,11 @@ def normalized_shape(counts: np.ndarray) -> Optional[np.ndarray]:
 
 
 def is_positive_morph_variable(variable: VariableConfig) -> bool:
-    return variable.branch in {"pTmiss", "theta_gamma_gamma"}
+    return variable.branch in {
+        "pTmiss",
+        "theta_gamma_gamma",
+        "theta_pi0_pi0",
+    }
 
 
 def mx2_1_upper_cut(topology: TopologyConfig) -> float:
@@ -1377,6 +1393,49 @@ def draw_fit_canvas(
 
 
 
+def pi0_signal_core_mask(
+    mc_counts: np.ndarray,
+    variable: VariableConfig,
+    topology: TopologyConfig,
+    containment: float,
+) -> np.ndarray:
+    """Return an MC-defined signal-core mask for the direct eppi0 fit.
+
+    Signed variables retain the central equal-tail containment interval.
+    Positive-definite variables retain the interval from the lower plot edge
+    through the requested cumulative containment. Existing variable-specific
+    edge masks are also respected.
+    """
+    counts = np.asarray(mc_counts, dtype=np.float64)
+    total = float(np.sum(counts))
+    base_mask = fit_mask_for_variable(variable, topology)
+    if total <= 0.0 or not math.isfinite(total):
+        return base_mask
+    # endif
+
+    cumulative = np.cumsum(counts) / total
+    if is_positive_morph_variable(variable):
+        lower_index = 0
+        upper_index = int(np.searchsorted(cumulative, containment, side="left"))
+    else:
+        tail = 0.5 * (1.0 - containment)
+        lower_index = int(np.searchsorted(cumulative, tail, side="left"))
+        upper_index = int(np.searchsorted(cumulative, 1.0 - tail, side="left"))
+    # endif
+
+    lower_index = max(0, min(lower_index, variable.bins - 1))
+    upper_index = max(lower_index, min(upper_index, variable.bins - 1))
+    core_mask = np.zeros(variable.bins, dtype=bool)
+    core_mask[lower_index : upper_index + 1] = True
+    core_mask &= base_mask
+
+    # Protect against very narrow or sparse MC cores.
+    if np.count_nonzero(core_mask) < 5:
+        return base_mask
+    # endif
+    return core_mask
+
+
 def fit_single_template(
     data_counts: np.ndarray,
     mc_counts: np.ndarray,
@@ -1388,8 +1447,9 @@ def fit_single_template(
     shift_prior_bins: float,
     smear_prior_bins: float,
     use_nuisance_penalties: bool,
+    core_containment: float,
 ) -> FitResult:
-    """Fit one reconstructed-MC template to data with shift and extra smearing."""
+    """Fit the MC-defined exclusive-pi0 signal core with shift and smearing."""
 
     data = np.asarray(data_counts, dtype=np.float64)
     mc_shape = normalized_shape(mc_counts)
@@ -1398,7 +1458,11 @@ def fit_single_template(
         return FitResult(False, "insufficient counts", data_total=data_total)
     # endif
 
-    mask = fit_mask_for_variable(variable, topology)
+    mask = pi0_signal_core_mask(mc_counts, variable, topology, core_containment)
+    core_data_total = float(np.sum(data[mask]))
+    if core_data_total < min_counts:
+        return FitResult(False, "insufficient counts in MC-defined signal core", data_total=data_total, fit_mask=mask)
+    # endif
     bin_width = (variable.xmax - variable.xmin) / variable.bins
     positive = is_positive_morph_variable(variable)
     if positive:
@@ -1416,7 +1480,10 @@ def fit_single_template(
         if norm <= 0.0:
             return np.zeros_like(data), transformed
         # endif
-        model = data_total * transformed / float(np.sum(transformed))
+        # Normalize to the observed yield inside the fitted signal core. The
+        # tails remain a genuine prediction rather than forcing the nuisance
+        # parameters to account for every out-of-core data event.
+        model = core_data_total * transformed / norm
         return model, transformed
 
     def objective(params: np.ndarray) -> float:
@@ -1437,7 +1504,7 @@ def fit_single_template(
     nfit = int(np.count_nonzero(mask))
     return FitResult(
         success=bool(result.success),
-        message="one-template nuisance fit",
+        message=f"MC-defined {100.0 * core_containment:.1f}% signal-core fit",
         shift=float(result.x[0]),
         sigma_add=float(result.x[1]),
         deviance=poisson_deviance(data[mask], np.clip(model[mask], 1.0e-12, None)),
@@ -1448,6 +1515,13 @@ def fit_single_template(
         transformed_dvcs_shape=transformed,
         fit_mask=mask,
         morph_label="log-space" if positive else "additive",
+        excluded_data_counts=float(np.sum(data[~mask])),
+        excluded_model_counts=float(np.sum(model[~mask])),
+        excluded_excess_counts=float(np.sum(data[~mask]) - np.sum(model[~mask])),
+        excluded_excess_fraction=(
+            float(np.sum(data[~mask]) - np.sum(model[~mask])) / data_total
+            if data_total > 0.0 else 0.0
+        ),
     )
 
 
@@ -1517,6 +1591,11 @@ def draw_pi0_fit_canvas(
         data = np.asarray(data_histograms[variable.branch], dtype=np.float64)
         raw_mc = normalized_shape(mc_histograms[variable.branch])
         result = fit_results[variable.branch]
+        if result.fit_mask is not None and not np.all(result.fit_mask):
+            for index in np.flatnonzero(~result.fit_mask):
+                axis.axvspan(edges[index], edges[index + 1], color="0.88", alpha=0.42, linewidth=0)
+            # endfor
+        # endif
         axis.errorbar(centers, data, yerr=np.sqrt(np.clip(data, 0.0, None)), fmt="o",
                       markersize=3.0, color="black", label=r"$e'p'\pi^0$ data")
         if raw_mc is not None:
@@ -1531,7 +1610,8 @@ def draw_pi0_fit_canvas(
             0.97, 0.95,
             rf"$\Delta={result.shift:.4g}$" + "\n" +
             rf"$\sigma_{{add}}={result.sigma_add:.4g}$ ({result.morph_label})" + "\n" +
-            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$",
+            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$" + "\n" +
+            f"outside-core excess={result.excluded_excess_counts:.0f}",
             transform=axis.transAxes, ha="right", va="top", fontsize=10,
         )
         axis.set_xlabel(variable.label)
@@ -1569,6 +1649,7 @@ def process_pi0_period(
     shift_prior_bins: float,
     smear_prior_bins: float,
     use_nuisance_penalties: bool,
+    pi0_core_containment: float,
     log_y: bool,
     dpi: int,
 ) -> List[Dict[str, object]]:
@@ -1593,6 +1674,7 @@ def process_pi0_period(
                 mc_hists[topology.key][variable.branch],
                 variable, topology, max_shift_bins, max_smear_bins, fit_min_counts,
                 shift_prior_bins, smear_prior_bins, use_nuisance_penalties,
+                pi0_core_containment,
             )
             fit_results[variable.branch] = result
             bin_width = (variable.xmax - variable.xmin) / variable.bins
@@ -1607,6 +1689,11 @@ def process_pi0_period(
                 "data_entries_in_range": result.data_total,
                 "mc_entries_in_range": float(np.sum(mc_hists[topology.key][variable.branch])),
                 "morph_type": result.morph_label,
+                "core_containment": pi0_core_containment,
+                "fit_bins_used": int(np.count_nonzero(result.fit_mask)) if result.fit_mask is not None else 0,
+                "outside_core_data_counts": result.excluded_data_counts,
+                "outside_core_model_counts": result.excluded_model_counts,
+                "outside_core_excess_counts": result.excluded_excess_counts,
                 "shift_or_log_shift": result.shift,
                 "shift_bins": result.shift / bin_width if result.success and additive else math.nan,
                 "sigma_or_log_sigma": result.sigma_add,
@@ -1671,7 +1758,7 @@ def process_period(
             "dvcs_mc": dvcs_uncut_counts[topology.key],
             "pi0_mc": pi0_uncut_counts[topology.key],
         }
-        uncut_path = output_dir / "shape_comparisons" / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
+        uncut_path = output_dir / "dvcs_channel" / "shape_comparisons" / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
         draw_shape_canvas(
             uncut_path, period, topology, data_uncut[topology.key],
             dvcs_uncut[topology.key], pi0_uncut[topology.key],
@@ -1685,7 +1772,7 @@ def process_period(
             "dvcs_mc": dvcs_cut_counts[topology.key],
             "pi0_mc": pi0_cut_counts[topology.key],
         }
-        cut_shape_path = output_dir / "shape_comparisons_mx2_1_cut" / f"exclusivity_shapes_mx2_1_cut_{period.key}_{topology.key.lower()}.png"
+        cut_shape_path = output_dir / "dvcs_channel" / "shape_comparisons_mx2_1_cut" / f"exclusivity_shapes_mx2_1_cut_{period.key}_{topology.key.lower()}.png"
         draw_shape_canvas(
             cut_shape_path, period, topology, data_cut[topology.key],
             dvcs_cut[topology.key], pi0_cut[topology.key],
@@ -1762,7 +1849,7 @@ def process_period(
             })
         # endfor
 
-        fit_path = output_dir / "template_fits" / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
+        fit_path = output_dir / "dvcs_channel" / "template_fits" / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
         draw_fit_canvas(
             fit_path, period, topology, data_cut[topology.key],
             dvcs_cut[topology.key], pi0_cut[topology.key],
@@ -1794,6 +1881,9 @@ def main() -> int:
     if args.max_shift_bins <= 0.0 or args.max_smear_bins <= 0.0:
         raise ValueError("--max-shift-bins and --max-smear-bins must be positive.")
     # endif
+    if not (0.50 <= args.pi0_core_containment < 1.0):
+        raise ValueError("--pi0-core-containment must satisfy 0.50 <= value < 1.0.")
+    # endif
 
     periods = selected_periods(args.period)
     topologies = selected_topologies(args.topology)
@@ -1808,12 +1898,13 @@ def main() -> int:
     log(f"ROOT I/O backend: {io_backend()}")
     log(f"Producing {3 * len(periods) * len(topologies)} canvases: uncut shapes, Mx2_1-cut shapes and template fits")
     log(
-        "Selection: topology, (-t1) < 1.0, open_angle_ep2 > 5 deg, "
-        "distinct FD sectors; no exclusivity cuts"
+        "Selection: topology, (-t1) < 1.0, open_angle_ep2 > 5 deg and "
+        "distinct FD sectors. First-stage shapes have no exclusivity cuts; "
+        "second-stage DVCS shapes and fits apply the topology-dependent Mx2_1 cut."
     )
     log(
         f"Fit: f_pi0 determined only by {fraction_variables}; all other variables are validation projections. "
-        "Additive morphs are used for signed variables and log-space morphs for pTmiss and theta_gamma_gamma; "
+        "Additive morphs are used for signed variables and log-space morphs for pTmiss, theta_gamma_gamma and theta_pi0_pi0; "
         "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
 
@@ -1828,11 +1919,12 @@ def main() -> int:
             period, topologies, output_dir, args.step_size,
             args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
             args.shift_prior_bins, args.smear_prior_bins,
-            not args.disable_nuisance_penalties, args.log_y, args.dpi,
+            not args.disable_nuisance_penalties, args.pi0_core_containment,
+            args.log_y, args.dpi,
         ))
     # endfor
 
-    csv_path = output_dir / "template_fits" / "fit_results.csv"
+    csv_path = output_dir / "dvcs_channel" / "template_fits" / "fit_results.csv"
     write_results_csv(csv_path, all_rows)
     log(f"Wrote {csv_path}")
     pi0_csv_path = output_dir / "pi0_channel" / "template_fits" / "fit_results.csv"
