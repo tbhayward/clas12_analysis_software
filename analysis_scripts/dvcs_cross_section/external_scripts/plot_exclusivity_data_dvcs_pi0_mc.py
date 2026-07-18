@@ -3,8 +3,8 @@
 plot_exclusivity_data_dvcs_pi0_mc.py
 
 For each of the five run periods and three detector topologies, compare the
-eight exclusivity-variable shapes and perform one simultaneous two-template
-fit across all eight projections:
+eight exclusivity-variable shapes and perform selected-discriminator two-template fits while keeping all eight
+projections as diagnostics:
 
     data = (1-f_pi0) * shifted-and-smeared DVCS MC
          + f_pi0     * eppi0 MC reconstructed as DVCS.
@@ -19,15 +19,16 @@ No exclusivity cuts are applied. The fit uses the raw binned data counts and a P
 The total expected count is fixed to the observed number of entries inside
 the plotted range, so the floated parameters describe shape only:
 
-    f_pi0        : one fraction shared by all eight histograms
+    f_pi0        : one fraction shared by the selected discriminator histograms
     shift        : variable-specific DVCS-template shift or log-scale shift
     sigma_add    : variable-specific additive or log-space smearing
 
 The eppi0 template is fixed. Signed variables use additive shift plus Gaussian
 smearing. Positive-definite pTmiss and theta_gamma_gamma use log-space shift
-and smearing. The clearly unmodelled right side of Mx2_1 is displayed but
-excluded from the fit objective, and xF edge bins are excluded to reduce
-range-clipping bias.
+and smearing. All non-driver variables are validation projections: their DVCS nuisance
+parameters are profiled at the fitted fraction, but they do not determine
+f_pi0. Optional Gaussian nuisance penalties discourage extreme template
+shifts and broadenings.
 
 Outputs:
 
@@ -154,6 +155,7 @@ class SharedFitSummary:
     deviance: float = math.nan
     ndf: int = 0
     variable_results: Optional[Dict[str, FitResult]] = None
+    fraction_variables: Tuple[str, ...] = ()
 
 
 PERIODS: Tuple[PeriodConfig, ...] = (
@@ -301,6 +303,38 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100,
         help="Minimum data entries inside a variable range required for a fit (default: 100).",
+    )
+    parser.add_argument(
+        "--fraction-variable",
+        choices=[v.branch for v in VARIABLES],
+        action="append",
+        help=(
+            "Variable used to determine the shared pi0 fraction. May be supplied "
+            "repeatedly. Default: Mx2_2, pTmiss and theta_gamma_gamma."
+        ),
+    )
+    parser.add_argument(
+        "--shift-prior-bins",
+        type=float,
+        default=4.0,
+        help=(
+            "Gaussian prior width for additive template shifts, in histogram bins "
+            "(default: 4). Positive-definite variables use a log-shift prior of 0.20."
+        ),
+    )
+    parser.add_argument(
+        "--smear-prior-bins",
+        type=float,
+        default=8.0,
+        help=(
+            "Half-Gaussian prior width for additive smearing, in histogram bins "
+            "(default: 8). Positive-definite variables use a log-smearing prior of 0.40."
+        ),
+    )
+    parser.add_argument(
+        "--disable-nuisance-penalties",
+        action="store_true",
+        help="Disable Gaussian penalties on DVCS-template shift and smearing nuisances.",
     )
     parser.add_argument(
         "--log-y",
@@ -843,8 +877,14 @@ def fit_shared_two_templates(
     max_shift_bins: float,
     max_smear_bins: float,
     min_counts: int,
+    fraction_variable_branches: Sequence[str],
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
 ) -> SharedFitSummary:
-    """Fit one shared f_pi0 and variable-specific DVCS morph nuisances."""
+    """Fit f_pi0 from selected projections and profile all others as validation."""
+    requested_fraction_variables = tuple(dict.fromkeys(fraction_variable_branches))
+    requested_set = set(requested_fraction_variables)
     prepared: Dict[str, Dict[str, object]] = {}
     active_variables: List[VariableConfig] = []
 
@@ -866,26 +906,41 @@ def fit_shared_two_templates(
         active_variables.append(variable)
     # endfor
 
-    if not active_variables:
-        return SharedFitSummary(False, "no variables have sufficient data and MC")
+    fraction_variables = [v for v in active_variables if v.branch in requested_set]
+    if not fraction_variables:
+        return SharedFitSummary(False, "none of the requested fraction variables has sufficient data and MC")
     # endif
 
-    bounds: List[Tuple[float, float]] = [(0.0, 1.0)]
-    starts_by_variable: List[Tuple[float, float]] = []
-    for variable in active_variables:
+    def nuisance_bounds(variable: VariableConfig) -> List[Tuple[float, float]]:
         if is_positive_morph_variable(variable):
-            # Multiplicative scale exp(shift), with Gaussian width in log space.
-            bounds.extend([(-0.70, 0.70), (0.0, 1.00)])
-            starts_by_variable.append((0.0, 0.10))
+            return [(-0.70, 0.70), (0.0, 1.00)]
+        # endif
+        bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+        return [
+            (-max_shift_bins * bin_width, max_shift_bins * bin_width),
+            (0.0, max_smear_bins * bin_width),
+        ]
+
+    def nuisance_start(variable: VariableConfig) -> np.ndarray:
+        if is_positive_morph_variable(variable):
+            return np.asarray([0.0, 0.10], dtype=np.float64)
+        # endif
+        bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+        return np.asarray([0.0, 2.0 * bin_width], dtype=np.float64)
+
+    def nuisance_penalty(variable: VariableConfig, shift: float, sigma_add: float) -> float:
+        if not use_nuisance_penalties:
+            return 0.0
+        # endif
+        if is_positive_morph_variable(variable):
+            shift_width = 0.20
+            smear_width = 0.40
         else:
             bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
-            bounds.extend([
-                (-max_shift_bins * bin_width, max_shift_bins * bin_width),
-                (0.0, max_smear_bins * bin_width),
-            ])
-            starts_by_variable.append((0.0, 2.0 * bin_width))
+            shift_width = max(shift_prior_bins * bin_width, 1.0e-12)
+            smear_width = max(smear_prior_bins * bin_width, 1.0e-12)
         # endif
-    # endfor
+        return 0.5 * (shift / shift_width) ** 2 + 0.5 * (sigma_add / smear_width) ** 2
 
     def build_variable_model(
         variable: VariableConfig,
@@ -894,15 +949,12 @@ def fit_shared_two_templates(
         sigma_add: float,
     ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         info = prepared[variable.branch]
-        transformed = transform_dvcs_shape(
-            info["dvcs_shape"], variable, shift, sigma_add
-        )
+        transformed = transform_dvcs_shape(info["dvcs_shape"], variable, shift, sigma_add)
         if transformed is None:
             return None
         # endif
         pi0_shape = info["pi0_shape"]
-        total_shape = (1.0 - fraction) * transformed + fraction * pi0_shape
-        total_shape = np.clip(total_shape, 0.0, None)
+        total_shape = np.clip((1.0 - fraction) * transformed + fraction * pi0_shape, 0.0, None)
         normalization = float(np.sum(total_shape))
         if normalization <= 0.0:
             return None
@@ -913,72 +965,48 @@ def fit_shared_two_templates(
         pi0_component = data_total * fraction * pi0_shape / normalization
         return model, dvcs_component, pi0_component, transformed
 
-    def objective(parameters: np.ndarray) -> float:
-        fraction = float(parameters[0])
-        total_nll = 0.0
-        offset = 1
-        for variable in active_variables:
-            shift = float(parameters[offset])
-            sigma_add = float(parameters[offset + 1])
-            offset += 2
-            built = build_variable_model(variable, fraction, shift, sigma_add)
-            if built is None:
-                return 1.0e100
-            # endif
-            model = built[0]
-            info = prepared[variable.branch]
-            mask = info["mask"]
-            total_nll += 0.5 * poisson_deviance(info["data"][mask], model[mask])
-        # endfor
-        return total_nll
-
-    def variable_objective(
-        variable: VariableConfig,
-        fraction: float,
-        nuisance: np.ndarray,
-    ) -> float:
-        built = build_variable_model(
-            variable, fraction, float(nuisance[0]), float(nuisance[1])
-        )
+    def variable_objective(variable: VariableConfig, fraction: float, nuisance: np.ndarray) -> float:
+        shift = float(nuisance[0])
+        sigma_add = float(nuisance[1])
+        built = build_variable_model(variable, fraction, shift, sigma_add)
         if built is None:
             return 1.0e100
         # endif
         info = prepared[variable.branch]
-        mask = info["mask"]
-        return 0.5 * poisson_deviance(info["data"][mask], built[0][mask])
+        mask = np.asarray(info["mask"], dtype=bool)
+        return (
+            0.5 * poisson_deviance(info["data"][mask], built[0][mask])
+            + nuisance_penalty(variable, shift, sigma_add)
+        )
 
     best_value = math.inf
-    best_parameters: Optional[np.ndarray] = None
-    best_message = "coordinate-profile fit did not run"
+    best_fraction = math.nan
+    best_driver_nuisances: Dict[str, np.ndarray] = {}
 
-    # The likelihood is separable by variable once f_pi0 is fixed. Alternating
-    # variable-wise nuisance fits with a one-dimensional shared-fraction update
-    # is much faster and more stable than a 17-parameter numerical-gradient fit.
-    for initial_fraction in (0.15, 0.40, 0.70):
+    for initial_fraction in (0.10, 0.30, 0.60):
         fraction = initial_fraction
-        nuisances = np.asarray(starts_by_variable, dtype=np.float64)
+        nuisances = {v.branch: nuisance_start(v) for v in fraction_variables}
         previous_value = math.inf
 
-        for iteration in range(10):
-            for index, variable in enumerate(active_variables):
-                nuisance_result = minimize(
+        for iteration in range(12):
+            for variable in fraction_variables:
+                result = minimize(
                     lambda values, v=variable, f=fraction: variable_objective(v, f, values),
-                    nuisances[index],
+                    nuisances[variable.branch],
                     method="L-BFGS-B",
-                    bounds=bounds[1 + 2 * index : 1 + 2 * index + 2],
+                    bounds=nuisance_bounds(variable),
                     options={"maxiter": 400, "ftol": 1.0e-9},
                 )
-                if nuisance_result.success and np.all(np.isfinite(nuisance_result.x)):
-                    nuisances[index] = nuisance_result.x
+                if result.success and np.all(np.isfinite(result.x)):
+                    nuisances[variable.branch] = np.asarray(result.x, dtype=np.float64)
                 # endif
             # endfor
 
             def fraction_objective(candidate_fraction: float) -> float:
-                total = 0.0
-                for index, variable in enumerate(active_variables):
-                    total += variable_objective(variable, candidate_fraction, nuisances[index])
-                # endfor
-                return total
+                return sum(
+                    variable_objective(v, candidate_fraction, nuisances[v.branch])
+                    for v in fraction_variables
+                )
 
             fraction_result = minimize_scalar(
                 fraction_objective,
@@ -989,7 +1017,6 @@ def fit_shared_two_templates(
             if fraction_result.success and math.isfinite(float(fraction_result.x)):
                 fraction = float(fraction_result.x)
             # endif
-
             current_value = fraction_objective(fraction)
             if abs(previous_value - current_value) <= 1.0e-7 * max(1.0, current_value):
                 break
@@ -997,67 +1024,80 @@ def fit_shared_two_templates(
             previous_value = current_value
         # endfor
 
-        parameters = [fraction]
-        for nuisance in nuisances:
-            parameters.extend([float(nuisance[0]), float(nuisance[1])])
-        # endfor
-        parameter_array = np.asarray(parameters, dtype=np.float64)
-        value = objective(parameter_array)
+        value = sum(variable_objective(v, fraction, nuisances[v.branch]) for v in fraction_variables)
         if value < best_value:
             best_value = value
-            best_parameters = parameter_array
-            best_message = "coordinate-profile fit converged"
+            best_fraction = fraction
+            best_driver_nuisances = {k: val.copy() for k, val in nuisances.items()}
         # endif
     # endfor
 
-    if best_parameters is None or not np.all(np.isfinite(best_parameters)):
-        return SharedFitSummary(False, best_message)
+    if not math.isfinite(best_fraction):
+        return SharedFitSummary(False, "selected-discriminator fit failed")
     # endif
 
-    class BestFit:
-        pass
+    # Profile each validation variable at the selected-discriminator fraction.
+    all_nuisances: Dict[str, np.ndarray] = {}
+    for variable in active_variables:
+        start = best_driver_nuisances.get(variable.branch, nuisance_start(variable))
+        result = minimize(
+            lambda values, v=variable: variable_objective(v, best_fraction, values),
+            start,
+            method="L-BFGS-B",
+            bounds=nuisance_bounds(variable),
+            options={"maxiter": 500, "ftol": 1.0e-10},
+        )
+        all_nuisances[variable.branch] = (
+            np.asarray(result.x, dtype=np.float64)
+            if result.success and np.all(np.isfinite(result.x))
+            else start
+        )
+    # endfor
 
-    best = BestFit()
-    best.x = best_parameters
-    best.fun = best_value
-    best.message = best_message
-
-    errors = np.full(len(best.x), np.nan)
+    fraction_error = math.nan
     try:
-        fraction_step = 1.0e-3
-        f0 = float(best.x[0])
-        if fraction_step < f0 < 1.0 - fraction_step:
-            left = best.x.copy()
-            right = best.x.copy()
-            left[0] -= fraction_step
-            right[0] += fraction_step
-            curvature = (objective(left) - 2.0 * objective(best.x) + objective(right)) / (fraction_step ** 2)
+        step = 1.0e-3
+        if step < best_fraction < 1.0 - step:
+            def profiled_driver_objective(candidate_fraction: float) -> float:
+                total = 0.0
+                for variable in fraction_variables:
+                    start = all_nuisances[variable.branch]
+                    result = minimize(
+                        lambda values, v=variable, f=candidate_fraction: variable_objective(v, f, values),
+                        start,
+                        method="L-BFGS-B",
+                        bounds=nuisance_bounds(variable),
+                        options={"maxiter": 250, "ftol": 1.0e-8},
+                    )
+                    values = result.x if result.success else start
+                    total += variable_objective(variable, candidate_fraction, values)
+                # endfor
+                return total
+            left = profiled_driver_objective(best_fraction - step)
+            center = profiled_driver_objective(best_fraction)
+            right = profiled_driver_objective(best_fraction + step)
+            curvature = (left - 2.0 * center + right) / (step ** 2)
             if curvature > 0.0:
-                errors[0] = 1.0 / math.sqrt(curvature)
+                fraction_error = 1.0 / math.sqrt(curvature)
             # endif
         # endif
     except Exception:
         pass
     # endtry
 
-    fraction = float(best.x[0])
     results: Dict[str, FitResult] = {}
-    total_deviance = 0.0
-    total_used_bins = 0
-    offset = 1
+    driver_deviance = 0.0
+    driver_bins = 0
     for variable in VARIABLES:
         if variable.branch not in prepared:
             results[variable.branch] = FitResult(False, "insufficient data or empty template")
             continue
         # endif
-
-        shift = float(best.x[offset])
-        sigma_add = float(best.x[offset + 1])
-        shift_err = float(errors[offset])
-        sigma_err = float(errors[offset + 1])
-        offset += 2
-        built = build_variable_model(variable, fraction, shift, sigma_add)
         info = prepared[variable.branch]
+        nuisance = all_nuisances[variable.branch]
+        shift = float(nuisance[0])
+        sigma_add = float(nuisance[1])
+        built = build_variable_model(variable, best_fraction, shift, sigma_add)
         if built is None:
             results[variable.branch] = FitResult(False, "invalid fitted template")
             continue
@@ -1066,25 +1106,23 @@ def fit_shared_two_templates(
         mask = np.asarray(info["mask"], dtype=bool)
         variable_deviance = poisson_deviance(info["data"][mask], model[mask])
         used_bins = int(np.count_nonzero(mask))
-        total_deviance += variable_deviance
-        total_used_bins += used_bins
+        if variable.branch in requested_set:
+            driver_deviance += variable_deviance
+            driver_bins += used_bins
+        # endif
         excluded = ~mask
         excluded_data = float(np.sum(info["data"][excluded]))
         excluded_model = float(np.sum(model[excluded]))
         excluded_excess = excluded_data - excluded_model
-        excluded_fraction = (
-            excluded_excess / float(info["data_total"])
-            if float(info["data_total"]) > 0.0 else 0.0
-        )
+        excluded_fraction = excluded_excess / float(info["data_total"]) if float(info["data_total"]) > 0.0 else 0.0
+        role = "fraction driver" if variable.branch in requested_set else "validation only"
         results[variable.branch] = FitResult(
             success=True,
-            message=str(best.message),
-            f_pi0=fraction,
-            f_pi0_err=float(errors[0]),
+            message=role,
+            f_pi0=best_fraction,
+            f_pi0_err=fraction_error,
             shift=shift,
-            shift_err=shift_err,
             sigma_add=sigma_add,
-            sigma_add_err=sigma_err,
             deviance=variable_deviance,
             ndf=max(0, used_bins - 2),
             data_total=float(info["data_total"]),
@@ -1101,15 +1139,16 @@ def fit_shared_two_templates(
         )
     # endfor
 
-    n_parameters = 1 + 2 * len(active_variables)
+    n_driver_parameters = 1 + 2 * len(fraction_variables)
     return SharedFitSummary(
         success=True,
-        message=str(best.message),
-        f_pi0=fraction,
-        f_pi0_err=float(errors[0]),
-        deviance=total_deviance,
-        ndf=max(0, total_used_bins - n_parameters),
+        message="selected-discriminator profile fit converged",
+        f_pi0=best_fraction,
+        f_pi0_err=fraction_error,
+        deviance=driver_deviance,
+        ndf=max(0, driver_bins - n_driver_parameters),
         variable_results=results,
+        fraction_variables=tuple(v.branch for v in fraction_variables),
     )
 
 
@@ -1250,7 +1289,7 @@ def draw_fit_canvas(
                 linewidth=2.0, linestyle="--", label="total two-template fit", zorder=4,
             )
             quality = (
-                rf"shared $f_{{\pi^0}}={result.f_pi0:.3f}$" + "\n"
+                rf"$f_{{\pi^0}}={result.f_pi0:.3f}$ ({result.message})" + "\n"
                 rf"$\Delta={result.shift:.4g}$" + "\n"
                 rf"$\sigma={result.sigma_add:.4g}$ ({result.morph_label})" + "\n"
                 f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
@@ -1293,6 +1332,7 @@ def draw_fit_canvas(
     handles, labels = flat_axes[0].get_legend_handles_labels()
     fig.suptitle(
         f"Two-template fits after $M_{{x1}}^2<{mx2_1_upper_cut(topology):.1f}$ GeV$^2$: {period.label}, {topology.label}\n"
+        f"fraction drivers: {', '.join(shared_summary.fraction_variables)}; "
         f"topology-selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
         rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
@@ -1315,6 +1355,10 @@ def process_period(
     max_shift_bins: float,
     max_smear_bins: float,
     fit_min_counts: int,
+    fraction_variables: Sequence[str],
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
     log_y: bool,
     dpi: int,
 ) -> List[Dict[str, object]]:
@@ -1379,6 +1423,8 @@ def process_period(
             pi0_cut[topology.key],
             topology,
             max_shift_bins, max_smear_bins, fit_min_counts,
+            fraction_variables, shift_prior_bins, smear_prior_bins,
+            use_nuisance_penalties,
         )
         if not shared_summary.success or shared_summary.variable_results is None:
             raise RuntimeError(
@@ -1386,6 +1432,17 @@ def process_period(
             )
         # endif
         fit_results = shared_summary.variable_results
+
+        # Repeat the fraction extraction one discriminator at a time. These fits
+        # diagnose whether the selected projections support a consistent mixture.
+        individual_summaries: Dict[str, SharedFitSummary] = {}
+        for branch in fraction_variables:
+            individual_summaries[branch] = fit_shared_two_templates(
+                data_cut[topology.key], dvcs_cut[topology.key], pi0_cut[topology.key],
+                topology, max_shift_bins, max_smear_bins, fit_min_counts,
+                [branch], shift_prior_bins, smear_prior_bins, use_nuisance_penalties,
+            )
+        # endfor
 
         for variable in VARIABLES:
             result = fit_results[variable.branch]
@@ -1396,6 +1453,8 @@ def process_period(
                 "topology": topology.key, "variable": variable.branch,
                 "mx2_1_upper_cut": cut_value,
                 "success": int(result.success), "message": result.message,
+                "fit_role": result.message,
+                "fraction_variables": ";".join(shared_summary.fraction_variables),
                 "shared_f_pi0": shared_summary.f_pi0,
                 "shared_f_pi0_err": shared_summary.f_pi0_err,
                 "global_poisson_deviance": shared_summary.deviance,
@@ -1415,6 +1474,14 @@ def process_period(
                 "excluded_excess_fraction_of_data": result.excluded_excess_fraction,
                 "variable_poisson_deviance": result.deviance, "variable_ndf": result.ndf,
                 "variable_deviance_per_ndf": result.deviance / result.ndf if result.success and result.ndf > 0 else math.nan,
+                **{
+                    f"individual_f_pi0_{branch}": summary.f_pi0
+                    for branch, summary in individual_summaries.items()
+                },
+                **{
+                    f"individual_f_pi0_err_{branch}": summary.f_pi0_err
+                    for branch, summary in individual_summaries.items()
+                },
             })
         # endfor
 
@@ -1455,6 +1522,10 @@ def main() -> int:
     topologies = selected_topologies(args.topology)
     output_dir = Path(args.output_dir)
     all_rows: List[Dict[str, object]] = []
+    fraction_variables = args.fraction_variable or ["Mx2_2", "pTmiss", "theta_gamma_gamma"]
+    if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
+        raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
+    # endif
 
     log(f"ROOT I/O backend: {io_backend()}")
     log(f"Producing {3 * len(periods) * len(topologies)} canvases: uncut shapes, Mx2_1-cut shapes and template fits")
@@ -1463,17 +1534,17 @@ def main() -> int:
         "distinct FD sectors; no exclusivity cuts"
     )
     log(
-        "Fit: one shared f_pi0 per period/topology; additive morphs for signed "
-        "variables, log-space morphs for pTmiss and theta_gamma_gamma; "
-        "Mx2_1 hard cut applied before second-stage shapes and fits; xF edge bins excluded; "
-        "masked excess reported separately"
+        f"Fit: f_pi0 determined only by {fraction_variables}; all other variables are validation projections. "
+        "Additive morphs are used for signed variables and log-space morphs for pTmiss and theta_gamma_gamma; "
+        "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
 
     for period in periods:
         all_rows.extend(process_period(
             period, topologies, output_dir, args.step_size,
             args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
-            args.log_y, args.dpi,
+            fraction_variables, args.shift_prior_bins, args.smear_prior_bins,
+            not args.disable_nuisance_penalties, args.log_y, args.dpi,
         ))
     # endfor
 
