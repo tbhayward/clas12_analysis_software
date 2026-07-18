@@ -947,6 +947,7 @@ def fit_shared_two_templates(
     use_nuisance_penalties: bool,
     core_containment: float,
     fraction_containment: float,
+    pi0_core_calibration: Optional[Mapping[str, Tuple[float, float]]] = None,
 ) -> SharedFitSummary:
     """Fit a shared f_pi0 while separating resolution and fraction regions.
 
@@ -993,27 +994,46 @@ def fit_shared_two_templates(
         return SharedFitSummary(False, "none of the requested fraction variables has sufficient data and MC")
     # endif
 
+    calibration = dict(pi0_core_calibration or {})
+
+    def calibration_key(variable: VariableConfig) -> str:
+        return "theta_pi0_pi0" if variable.branch == "theta_gamma_gamma" else variable.branch
+
+    def calibrated_shift_center(variable: VariableConfig) -> float:
+        entry = calibration.get(calibration_key(variable))
+        if entry is None:
+            return 0.0
+        # endif
+        value = float(entry[0])
+        return value if math.isfinite(value) else 0.0
+
     def nuisance_bounds(variable: VariableConfig) -> List[Tuple[float, float]]:
+        if variable.branch in {"Mx2", "Mx2_1"}:
+            bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+            return [(0.0, 0.0), (0.0, max_smear_bins * bin_width)]
+        # endif
         if is_positive_morph_variable(variable):
-            return [(-0.70, 0.70), (0.0, 1.00)]
+            center = calibrated_shift_center(variable)
+            return [(max(-0.70, center - 0.40), min(0.70, center + 0.40)), (0.0, 1.00)]
         # endif
         bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
-        return [
-            (-max_shift_bins * bin_width, max_shift_bins * bin_width),
-            (0.0, max_smear_bins * bin_width),
-        ]
+        center = calibrated_shift_center(variable)
+        half_range = max_shift_bins * bin_width
+        return [(center - half_range, center + half_range), (0.0, max_smear_bins * bin_width)]
 
     def nuisance_start(variable: VariableConfig) -> np.ndarray:
+        center = 0.0 if variable.branch in {"Mx2", "Mx2_1"} else calibrated_shift_center(variable)
         if is_positive_morph_variable(variable):
-            return np.asarray([0.0, 0.10], dtype=np.float64)
+            return np.asarray([center, 0.10], dtype=np.float64)
         # endif
         bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
-        return np.asarray([0.0, 2.0 * bin_width], dtype=np.float64)
+        return np.asarray([center, 2.0 * bin_width], dtype=np.float64)
 
     def nuisance_penalty(variable: VariableConfig, shift: float, sigma_add: float) -> float:
         if not use_nuisance_penalties:
             return 0.0
         # endif
+        shift_center = 0.0 if variable.branch in {"Mx2", "Mx2_1"} else calibrated_shift_center(variable)
         if is_positive_morph_variable(variable):
             shift_width = 0.20
             smear_width = 0.40
@@ -1022,7 +1042,7 @@ def fit_shared_two_templates(
             shift_width = max(shift_prior_bins * bin_width, 1.0e-12)
             smear_width = max(smear_prior_bins * bin_width, 1.0e-12)
         # endif
-        return 0.5 * (shift / shift_width) ** 2 + 0.5 * (sigma_add / smear_width) ** 2
+        return 0.5 * ((shift - shift_center) / shift_width) ** 2 + 0.5 * (sigma_add / smear_width) ** 2
 
     def build_variable_model(
         variable: VariableConfig,
@@ -1712,7 +1732,7 @@ def process_pi0_period(
     pi0_core_containment: float,
     log_y: bool,
     dpi: int,
-) -> List[Dict[str, object]]:
+) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, Tuple[float, float]]]]:
     data_hists, data_counts = fill_histograms_for_file(
         period.eppi0_data_file, topologies, step_size, False, PI0_VARIABLES
     )
@@ -1720,6 +1740,7 @@ def process_pi0_period(
         period.eppi0_mc_file, topologies, step_size, False, PI0_VARIABLES
     )
     rows: List[Dict[str, object]] = []
+    calibrations: Dict[str, Dict[str, Tuple[float, float]]] = {}
 
     for topology in topologies:
         selected = {"data": data_counts[topology.key], "mc": mc_counts[topology.key]}
@@ -1764,12 +1785,18 @@ def process_pi0_period(
             })
         # endfor
 
+        calibrations[topology.key] = {
+            branch: (result.shift, result.sigma_add)
+            for branch, result in fit_results.items()
+            if result.success and math.isfinite(result.shift)
+        }
+
         fit_path = output_dir / "pi0_channel" / "template_fits" / f"eppi0_template_fit_{period.key}_{topology.key.lower()}.png"
         draw_pi0_fit_canvas(fit_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, fit_results, log_y, dpi)
         log(f"Wrote {fit_path}")
     # endfor
 
-    return rows
+    return rows, calibrations
 
 def process_period(
     period: PeriodConfig,
@@ -1787,6 +1814,7 @@ def process_period(
     dvcs_fraction_containment: float,
     log_y: bool,
     dpi: int,
+    pi0_core_calibrations: Optional[Mapping[str, Mapping[str, Tuple[float, float]]]] = None,
 ) -> List[Dict[str, object]]:
     log(f"Starting period {period.label}")
 
@@ -1830,6 +1858,7 @@ def process_period(
             use_nuisance_penalties,
             dvcs_core_containment,
             dvcs_fraction_containment,
+            (pi0_core_calibrations or {}).get(topology.key, {}),
         )
         if not shared_summary.success or shared_summary.variable_results is None:
             raise RuntimeError(
@@ -1848,6 +1877,7 @@ def process_period(
                 use_nuisance_penalties,
                 dvcs_core_containment,
                 dvcs_fraction_containment,
+                (pi0_core_calibrations or {}).get(topology.key, {}),
             )
         # endfor
 
@@ -1966,25 +1996,28 @@ def main() -> int:
         f"Fit: f_pi0 determined only by {fraction_variables} in the "
         f"{100.0 * args.dvcs_fraction_containment:.0f}% DVCS-MC regions; nuisance morphs use "
         f"the {100.0 * args.dvcs_core_containment:.0f}% DVCS cores. All other variables are validation projections. "
-        "Additive morphs are used for signed variables and log-space morphs for pTmiss, theta_gamma_gamma and theta_pi0_pi0; "
+        "Additive morphs are used for signed variables and log-space morphs for pTmiss, theta_gamma_gamma and theta_pi0_pi0. "
+        "Mx2 and Mx2_1 DVCS shifts are fixed at zero; other shift priors are centered on direct-pi0 core calibrations. "
         "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
 
     for period in periods:
+        pi0_rows, pi0_calibrations = process_pi0_period(
+            period, topologies, output_dir, args.step_size,
+            args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
+            args.shift_prior_bins, args.smear_prior_bins,
+            not args.disable_nuisance_penalties, args.pi0_core_containment,
+            args.log_y, args.dpi,
+        )
+        all_pi0_rows.extend(pi0_rows)
+
         all_rows.extend(process_period(
             period, topologies, output_dir, args.step_size,
             args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
             fraction_variables, args.shift_prior_bins, args.smear_prior_bins,
             not args.disable_nuisance_penalties,
             args.dvcs_core_containment, args.dvcs_fraction_containment,
-            args.log_y, args.dpi,
-        ))
-        all_pi0_rows.extend(process_pi0_period(
-            period, topologies, output_dir, args.step_size,
-            args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
-            args.shift_prior_bins, args.smear_prior_bins,
-            not args.disable_nuisance_penalties, args.pi0_core_containment,
-            args.log_y, args.dpi,
+            args.log_y, args.dpi, pi0_calibrations,
         ))
     # endfor
 
