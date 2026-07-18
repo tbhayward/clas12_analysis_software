@@ -15,9 +15,10 @@ The detector topology plus the minimal global preselection are required:
     open_angle_ep2 > 5 degrees
     all reconstructed FD particles occupy distinct FD sectors
 
-The first-stage shape comparisons apply no exclusivity cuts. The second-stage
-DVCS shape comparisons and template fits additionally apply the topology-dependent
-Mx2_1 upper cut. The fit uses the raw binned data counts and a Poisson likelihood.
+No hard exclusivity cuts are applied. The DVCS nuisance parameters are fitted
+inside an MC-defined signal core, while the shared pi0 fraction is determined in
+a broader MC-defined discriminator region. Full distributions remain visible as
+validation. The fit uses raw binned data counts and a Poisson likelihood.
 The total expected count is fixed to the observed number of entries inside
 the plotted range, so the floated parameters describe shape only:
 
@@ -37,7 +38,7 @@ The script also compares reconstructed eppi0 data directly with reconstructed ep
 Outputs:
 
   * one unit-area 4x2 shape-comparison canvas for each period/topology combination
-  * one 4x2 two-template-fit canvas for each period/topology combination
+  * one 4x2 DVCS-core two-template-fit canvas for each period/topology combination
   * fit_results.csv containing all fitted parameters and diagnostics
 
 Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
@@ -331,6 +332,24 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100,
         help="Minimum data entries inside a variable range required for a fit (default: 100).",
+    )
+    parser.add_argument(
+        "--dvcs-core-containment",
+        type=float,
+        default=0.90,
+        help=(
+            "DVCS-MC containment used to determine variable-specific shift and "
+            "smearing nuisances (default: 0.90)."
+        ),
+    )
+    parser.add_argument(
+        "--dvcs-fraction-containment",
+        type=float,
+        default=0.95,
+        help=(
+            "Broader DVCS-MC containment used by the selected discriminator "
+            "histograms to determine the shared pi0 fraction (default: 0.95)."
+        ),
     )
     parser.add_argument(
         "--pi0-core-containment",
@@ -926,8 +945,16 @@ def fit_shared_two_templates(
     shift_prior_bins: float,
     smear_prior_bins: float,
     use_nuisance_penalties: bool,
+    core_containment: float,
+    fraction_containment: float,
 ) -> SharedFitSummary:
-    """Fit f_pi0 from selected projections and profile all others as validation."""
+    """Fit a shared f_pi0 while separating resolution and fraction regions.
+
+    Variable-specific DVCS shifts and smearings are fitted only in the narrower
+    DVCS-MC signal core. The shared fraction is then updated using the broader
+    containment regions of the selected discriminator variables. Validation
+    variables profile only their nuisance parameters at the fitted fraction.
+    """
     requested_fraction_variables = tuple(dict.fromkeys(fraction_variable_branches))
     requested_set = set(requested_fraction_variables)
     prepared: Dict[str, Dict[str, object]] = {}
@@ -935,18 +962,28 @@ def fit_shared_two_templates(
 
     for variable in VARIABLES:
         data = np.asarray(data_histograms[variable.branch], dtype=np.float64)
-        dvcs_shape = normalized_shape(dvcs_histograms[variable.branch])
+        dvcs_counts = np.asarray(dvcs_histograms[variable.branch], dtype=np.float64)
+        dvcs_shape = normalized_shape(dvcs_counts)
         pi0_shape = normalized_shape(pi0_histograms[variable.branch])
         data_total = float(np.sum(data))
         if data_total < min_counts or dvcs_shape is None or pi0_shape is None:
             continue
         # endif
+        core_mask = mc_signal_containment_mask(
+            dvcs_counts, variable, topology, core_containment
+        )
+        fraction_mask = mc_signal_containment_mask(
+            dvcs_counts, variable, topology, fraction_containment
+        )
+        # The fraction region must include the nuisance core.
+        fraction_mask = fraction_mask | core_mask
         prepared[variable.branch] = {
             "data": data,
             "data_total": data_total,
             "dvcs_shape": dvcs_shape,
             "pi0_shape": pi0_shape,
-            "mask": fit_mask_for_variable(variable, topology),
+            "core_mask": core_mask,
+            "fraction_mask": fraction_mask,
         }
         active_variables.append(variable)
     # endfor
@@ -1010,7 +1047,13 @@ def fit_shared_two_templates(
         pi0_component = data_total * fraction * pi0_shape / normalization
         return model, dvcs_component, pi0_component, transformed
 
-    def variable_objective(variable: VariableConfig, fraction: float, nuisance: np.ndarray) -> float:
+    def objective_for_mask(
+        variable: VariableConfig,
+        fraction: float,
+        nuisance: np.ndarray,
+        mask_name: str,
+        include_penalty: bool,
+    ) -> float:
         shift = float(nuisance[0])
         sigma_add = float(nuisance[1])
         built = build_variable_model(variable, fraction, shift, sigma_add)
@@ -1018,25 +1061,29 @@ def fit_shared_two_templates(
             return 1.0e100
         # endif
         info = prepared[variable.branch]
-        mask = np.asarray(info["mask"], dtype=bool)
-        return (
-            0.5 * poisson_deviance(info["data"][mask], built[0][mask])
-            + nuisance_penalty(variable, shift, sigma_add)
-        )
+        mask = np.asarray(info[mask_name], dtype=bool)
+        value = 0.5 * poisson_deviance(info["data"][mask], built[0][mask])
+        if include_penalty:
+            value += nuisance_penalty(variable, shift, sigma_add)
+        # endif
+        return value
 
     best_value = math.inf
     best_fraction = math.nan
     best_driver_nuisances: Dict[str, np.ndarray] = {}
 
-    for initial_fraction in (0.10, 0.30, 0.60):
+    for initial_fraction in (0.10, 0.30, 0.60, 0.85):
         fraction = initial_fraction
         nuisances = {v.branch: nuisance_start(v) for v in fraction_variables}
         previous_value = math.inf
 
-        for iteration in range(12):
+        for iteration in range(15):
+            # Resolution step: fit each DVCS nuisance only in its 90% core.
             for variable in fraction_variables:
                 result = minimize(
-                    lambda values, v=variable, f=fraction: variable_objective(v, f, values),
+                    lambda values, v=variable, f=fraction: objective_for_mask(
+                        v, f, values, "core_mask", True
+                    ),
                     nuisances[variable.branch],
                     method="L-BFGS-B",
                     bounds=nuisance_bounds(variable),
@@ -1047,9 +1094,14 @@ def fit_shared_two_templates(
                 # endif
             # endfor
 
+            # Fraction step: hold the core-derived nuisances fixed and use the
+            # broader 95% discriminator regions to update the shared fraction.
             def fraction_objective(candidate_fraction: float) -> float:
                 return sum(
-                    variable_objective(v, candidate_fraction, nuisances[v.branch])
+                    objective_for_mask(
+                        v, candidate_fraction, nuisances[v.branch],
+                        "fraction_mask", False,
+                    )
                     for v in fraction_variables
                 )
 
@@ -1069,7 +1121,10 @@ def fit_shared_two_templates(
             previous_value = current_value
         # endfor
 
-        value = sum(variable_objective(v, fraction, nuisances[v.branch]) for v in fraction_variables)
+        value = sum(
+            objective_for_mask(v, fraction, nuisances[v.branch], "fraction_mask", False)
+            for v in fraction_variables
+        )
         if value < best_value:
             best_value = value
             best_fraction = fraction
@@ -1078,15 +1133,17 @@ def fit_shared_two_templates(
     # endfor
 
     if not math.isfinite(best_fraction):
-        return SharedFitSummary(False, "selected-discriminator fit failed")
+        return SharedFitSummary(False, "selected-discriminator core/profile fit failed")
     # endif
 
-    # Profile each validation variable at the selected-discriminator fraction.
+    # Profile every validation variable in its own DVCS core at fixed f_pi0.
     all_nuisances: Dict[str, np.ndarray] = {}
     for variable in active_variables:
         start = best_driver_nuisances.get(variable.branch, nuisance_start(variable))
         result = minimize(
-            lambda values, v=variable: variable_objective(v, best_fraction, values),
+            lambda values, v=variable: objective_for_mask(
+                v, best_fraction, values, "core_mask", True
+            ),
             start,
             method="L-BFGS-B",
             bounds=nuisance_bounds(variable),
@@ -1103,24 +1160,17 @@ def fit_shared_two_templates(
     try:
         step = 1.0e-3
         if step < best_fraction < 1.0 - step:
-            def profiled_driver_objective(candidate_fraction: float) -> float:
-                total = 0.0
-                for variable in fraction_variables:
-                    start = all_nuisances[variable.branch]
-                    result = minimize(
-                        lambda values, v=variable, f=candidate_fraction: variable_objective(v, f, values),
-                        start,
-                        method="L-BFGS-B",
-                        bounds=nuisance_bounds(variable),
-                        options={"maxiter": 250, "ftol": 1.0e-8},
+            def fixed_nuisance_fraction_objective(candidate_fraction: float) -> float:
+                return sum(
+                    objective_for_mask(
+                        v, candidate_fraction, all_nuisances[v.branch],
+                        "fraction_mask", False,
                     )
-                    values = result.x if result.success else start
-                    total += variable_objective(variable, candidate_fraction, values)
-                # endfor
-                return total
-            left = profiled_driver_objective(best_fraction - step)
-            center = profiled_driver_objective(best_fraction)
-            right = profiled_driver_objective(best_fraction + step)
+                    for v in fraction_variables
+                )
+            left = fixed_nuisance_fraction_objective(best_fraction - step)
+            center = fixed_nuisance_fraction_objective(best_fraction)
+            right = fixed_nuisance_fraction_objective(best_fraction + step)
             curvature = (left - 2.0 * center + right) / (step ** 2)
             if curvature > 0.0:
                 fraction_error = 1.0 / math.sqrt(curvature)
@@ -1148,19 +1198,29 @@ def fit_shared_two_templates(
             continue
         # endif
         model, dvcs_component, pi0_component, transformed = built
-        mask = np.asarray(info["mask"], dtype=bool)
-        variable_deviance = poisson_deviance(info["data"][mask], model[mask])
-        used_bins = int(np.count_nonzero(mask))
+        display_mask = np.asarray(
+            info["fraction_mask"] if variable.branch in requested_set else info["core_mask"],
+            dtype=bool,
+        )
+        variable_deviance = poisson_deviance(info["data"][display_mask], model[display_mask])
+        used_bins = int(np.count_nonzero(display_mask))
         if variable.branch in requested_set:
             driver_deviance += variable_deviance
             driver_bins += used_bins
         # endif
-        excluded = ~mask
+        excluded = ~display_mask
         excluded_data = float(np.sum(info["data"][excluded]))
         excluded_model = float(np.sum(model[excluded]))
         excluded_excess = excluded_data - excluded_model
-        excluded_fraction = excluded_excess / float(info["data_total"]) if float(info["data_total"]) > 0.0 else 0.0
-        role = "fraction driver" if variable.branch in requested_set else "validation only"
+        excluded_fraction = (
+            excluded_excess / float(info["data_total"])
+            if float(info["data_total"]) > 0.0 else 0.0
+        )
+        role = (
+            f"fraction driver ({100.0 * fraction_containment:.0f}% region)"
+            if variable.branch in requested_set
+            else f"validation core ({100.0 * core_containment:.0f}%)"
+        )
         results[variable.branch] = FitResult(
             success=True,
             message=role,
@@ -1175,7 +1235,7 @@ def fit_shared_two_templates(
             dvcs_component_counts=dvcs_component,
             pi0_component_counts=pi0_component,
             transformed_dvcs_shape=transformed,
-            fit_mask=mask,
+            fit_mask=display_mask,
             morph_label="log-space" if is_positive_morph_variable(variable) else "additive",
             excluded_data_counts=excluded_data,
             excluded_model_counts=excluded_model,
@@ -1187,7 +1247,7 @@ def fit_shared_two_templates(
     n_driver_parameters = 1 + 2 * len(fraction_variables)
     return SharedFitSummary(
         success=True,
-        message="selected-discriminator profile fit converged",
+        message="DVCS-core nuisance / broader-region fraction fit converged",
         f_pi0=best_fraction,
         f_pi0_err=fraction_error,
         deviance=driver_deviance,
@@ -1376,7 +1436,7 @@ def draw_fit_canvas(
 
     handles, labels = flat_axes[0].get_legend_handles_labels()
     fig.suptitle(
-        f"Two-template fits after $M_{{x1}}^2<{mx2_1_upper_cut(topology):.1f}$ GeV$^2$: {period.label}, {topology.label}\n"
+        f"DVCS-core two-template fits after minimal preselection: {period.label}, {topology.label}\n"
         f"fraction drivers: {', '.join(shared_summary.fraction_variables)}; "
         f"topology-selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
@@ -1393,13 +1453,13 @@ def draw_fit_canvas(
 
 
 
-def pi0_signal_core_mask(
+def mc_signal_containment_mask(
     mc_counts: np.ndarray,
     variable: VariableConfig,
     topology: TopologyConfig,
     containment: float,
 ) -> np.ndarray:
-    """Return an MC-defined signal-core mask for the direct eppi0 fit.
+    """Return an MC-defined containment mask for a reconstructed signal template.
 
     Signed variables retain the central equal-tail containment interval.
     Positive-definite variables retain the interval from the lower plot edge
@@ -1458,7 +1518,7 @@ def fit_single_template(
         return FitResult(False, "insufficient counts", data_total=data_total)
     # endif
 
-    mask = pi0_signal_core_mask(mc_counts, variable, topology, core_containment)
+    mask = mc_signal_containment_mask(mc_counts, variable, topology, core_containment)
     core_data_total = float(np.sum(data[mask]))
     if core_data_total < min_counts:
         return FitResult(False, "insufficient counts in MC-defined signal core", data_total=data_total, fit_mask=mask)
@@ -1723,72 +1783,53 @@ def process_period(
     shift_prior_bins: float,
     smear_prior_bins: float,
     use_nuisance_penalties: bool,
+    dvcs_core_containment: float,
+    dvcs_fraction_containment: float,
     log_y: bool,
     dpi: int,
 ) -> List[Dict[str, object]]:
     log(f"Starting period {period.label}")
 
-    # Stage 1: minimal global preselection only.
-    data_uncut, data_uncut_counts = fill_histograms_for_file(
+    # Minimal global preselection only. No hard exclusivity cuts are imposed.
+    data_hists, data_counts = fill_histograms_for_file(
         period.data_file, topologies, step_size, apply_mx2_1_cut=False
     )
-    dvcs_uncut, dvcs_uncut_counts = fill_histograms_for_file(
+    dvcs_hists, dvcs_counts = fill_histograms_for_file(
         period.dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False
     )
-    pi0_uncut, pi0_uncut_counts = fill_histograms_for_file(
+    pi0_hists, pi0_counts = fill_histograms_for_file(
         period.pi0_as_dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False
-    )
-
-    # Stage 2 and fit input: apply the topology-dependent Mx2_1 upper cut.
-    data_cut, data_cut_counts = fill_histograms_for_file(
-        period.data_file, topologies, step_size, apply_mx2_1_cut=True
-    )
-    dvcs_cut, dvcs_cut_counts = fill_histograms_for_file(
-        period.dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=True
-    )
-    pi0_cut, pi0_cut_counts = fill_histograms_for_file(
-        period.pi0_as_dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=True
     )
 
     rows: List[Dict[str, object]] = []
 
     for topology in topologies:
-        uncut_selected = {
-            "data": data_uncut_counts[topology.key],
-            "dvcs_mc": dvcs_uncut_counts[topology.key],
-            "pi0_mc": pi0_uncut_counts[topology.key],
+        selected = {
+            "data": data_counts[topology.key],
+            "dvcs_mc": dvcs_counts[topology.key],
+            "pi0_mc": pi0_counts[topology.key],
         }
-        uncut_path = output_dir / "dvcs_channel" / "shape_comparisons" / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
-        draw_shape_canvas(
-            uncut_path, period, topology, data_uncut[topology.key],
-            dvcs_uncut[topology.key], pi0_uncut[topology.key],
-            uncut_selected, log_y, dpi, "minimal preselection",
+        shape_path = (
+            output_dir / "dvcs_channel" / "shape_comparisons" /
+            f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
         )
-        log(f"Wrote {uncut_path}")
-
-        cut_value = mx2_1_upper_cut(topology)
-        cut_selected = {
-            "data": data_cut_counts[topology.key],
-            "dvcs_mc": dvcs_cut_counts[topology.key],
-            "pi0_mc": pi0_cut_counts[topology.key],
-        }
-        cut_shape_path = output_dir / "dvcs_channel" / "shape_comparisons_mx2_1_cut" / f"exclusivity_shapes_mx2_1_cut_{period.key}_{topology.key.lower()}.png"
         draw_shape_canvas(
-            cut_shape_path, period, topology, data_cut[topology.key],
-            dvcs_cut[topology.key], pi0_cut[topology.key],
-            cut_selected, log_y, dpi,
-            rf"minimal preselection and $M_{{x1}}^2<{cut_value:.1f}$ GeV$^2$",
+            shape_path, period, topology, data_hists[topology.key],
+            dvcs_hists[topology.key], pi0_hists[topology.key],
+            selected, log_y, dpi, "minimal preselection",
         )
-        log(f"Wrote {cut_shape_path}")
+        log(f"Wrote {shape_path}")
 
         shared_summary = fit_shared_two_templates(
-            data_cut[topology.key],
-            dvcs_cut[topology.key],
-            pi0_cut[topology.key],
+            data_hists[topology.key],
+            dvcs_hists[topology.key],
+            pi0_hists[topology.key],
             topology,
             max_shift_bins, max_smear_bins, fit_min_counts,
             fraction_variables, shift_prior_bins, smear_prior_bins,
             use_nuisance_penalties,
+            dvcs_core_containment,
+            dvcs_fraction_containment,
         )
         if not shared_summary.success or shared_summary.variable_results is None:
             raise RuntimeError(
@@ -1797,14 +1838,16 @@ def process_period(
         # endif
         fit_results = shared_summary.variable_results
 
-        # Repeat the fraction extraction one discriminator at a time. These fits
-        # diagnose whether the selected projections support a consistent mixture.
         individual_summaries: Dict[str, SharedFitSummary] = {}
         for branch in fraction_variables:
             individual_summaries[branch] = fit_shared_two_templates(
-                data_cut[topology.key], dvcs_cut[topology.key], pi0_cut[topology.key],
-                topology, max_shift_bins, max_smear_bins, fit_min_counts,
-                [branch], shift_prior_bins, smear_prior_bins, use_nuisance_penalties,
+                data_hists[topology.key], dvcs_hists[topology.key],
+                pi0_hists[topology.key], topology,
+                max_shift_bins, max_smear_bins, fit_min_counts,
+                [branch], shift_prior_bins, smear_prior_bins,
+                use_nuisance_penalties,
+                dvcs_core_containment,
+                dvcs_fraction_containment,
             )
         # endfor
 
@@ -1813,10 +1856,14 @@ def process_period(
             bin_width = (variable.xmax - variable.xmin) / variable.bins
             additive = not is_positive_morph_variable(variable)
             rows.append({
-                "period": period.key, "period_label": period.label,
-                "topology": topology.key, "variable": variable.branch,
-                "mx2_1_upper_cut": cut_value,
-                "success": int(result.success), "message": result.message,
+                "period": period.key,
+                "period_label": period.label,
+                "topology": topology.key,
+                "variable": variable.branch,
+                "dvcs_core_containment": dvcs_core_containment,
+                "dvcs_fraction_containment": dvcs_fraction_containment,
+                "success": int(result.success),
+                "message": result.message,
                 "fit_role": result.message,
                 "fraction_variables": ";".join(shared_summary.fraction_variables),
                 "shared_f_pi0": shared_summary.f_pi0,
@@ -1824,19 +1871,22 @@ def process_period(
                 "global_poisson_deviance": shared_summary.deviance,
                 "global_ndf": shared_summary.ndf,
                 "data_entries_in_range": result.data_total,
-                "dvcs_mc_entries_in_range": float(np.sum(dvcs_cut[topology.key][variable.branch])),
-                "pi0_mc_entries_in_range": float(np.sum(pi0_cut[topology.key][variable.branch])),
+                "dvcs_mc_entries_in_range": float(np.sum(dvcs_hists[topology.key][variable.branch])),
+                "pi0_mc_entries_in_range": float(np.sum(pi0_hists[topology.key][variable.branch])),
                 "morph_type": result.morph_label,
-                "shift_or_log_shift": result.shift, "shift_err": result.shift_err,
+                "shift_or_log_shift": result.shift,
+                "shift_err": result.shift_err,
                 "shift_bins": result.shift / bin_width if result.success and additive else math.nan,
-                "sigma_or_log_sigma": result.sigma_add, "sigma_err": result.sigma_add_err,
+                "sigma_or_log_sigma": result.sigma_add,
+                "sigma_err": result.sigma_add_err,
                 "sigma_bins": result.sigma_add / bin_width if result.success and additive else math.nan,
                 "fit_bins_used": int(np.count_nonzero(result.fit_mask)) if result.fit_mask is not None else 0,
-                "excluded_data_counts": result.excluded_data_counts,
-                "excluded_model_counts": result.excluded_model_counts,
-                "excluded_excess_counts": result.excluded_excess_counts,
-                "excluded_excess_fraction_of_data": result.excluded_excess_fraction,
-                "variable_poisson_deviance": result.deviance, "variable_ndf": result.ndf,
+                "outside_region_data_counts": result.excluded_data_counts,
+                "outside_region_model_counts": result.excluded_model_counts,
+                "outside_region_excess_counts": result.excluded_excess_counts,
+                "outside_region_excess_fraction_of_data": result.excluded_excess_fraction,
+                "variable_poisson_deviance": result.deviance,
+                "variable_ndf": result.ndf,
                 "variable_deviance_per_ndf": result.deviance / result.ndf if result.success and result.ndf > 0 else math.nan,
                 **{
                     f"individual_f_pi0_{branch}": summary.f_pi0
@@ -1849,11 +1899,14 @@ def process_period(
             })
         # endfor
 
-        fit_path = output_dir / "dvcs_channel" / "template_fits" / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
+        fit_path = (
+            output_dir / "dvcs_channel" / "template_fits" /
+            f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
+        )
         draw_fit_canvas(
-            fit_path, period, topology, data_cut[topology.key],
-            dvcs_cut[topology.key], pi0_cut[topology.key],
-            cut_selected, fit_results, shared_summary, log_y, dpi,
+            fit_path, period, topology, data_hists[topology.key],
+            dvcs_hists[topology.key], pi0_hists[topology.key],
+            selected, fit_results, shared_summary, log_y, dpi,
         )
         log(f"Wrote {fit_path}")
     # endfor
@@ -1881,6 +1934,14 @@ def main() -> int:
     if args.max_shift_bins <= 0.0 or args.max_smear_bins <= 0.0:
         raise ValueError("--max-shift-bins and --max-smear-bins must be positive.")
     # endif
+    if not (0.50 <= args.dvcs_core_containment < 1.0):
+        raise ValueError("--dvcs-core-containment must satisfy 0.50 <= value < 1.0.")
+    # endif
+    if not (args.dvcs_core_containment <= args.dvcs_fraction_containment < 1.0):
+        raise ValueError(
+            "--dvcs-fraction-containment must be at least the DVCS core containment and below 1.0."
+        )
+    # endif
     if not (0.50 <= args.pi0_core_containment < 1.0):
         raise ValueError("--pi0-core-containment must satisfy 0.50 <= value < 1.0.")
     # endif
@@ -1896,14 +1957,15 @@ def main() -> int:
     # endif
 
     log(f"ROOT I/O backend: {io_backend()}")
-    log(f"Producing {3 * len(periods) * len(topologies)} canvases: uncut shapes, Mx2_1-cut shapes and template fits")
+    log(f"Producing DVCS shape and core-fit canvases plus direct-pi0 shape and core-fit canvases")
     log(
         "Selection: topology, (-t1) < 1.0, open_angle_ep2 > 5 deg and "
-        "distinct FD sectors. First-stage shapes have no exclusivity cuts; "
-        "second-stage DVCS shapes and fits apply the topology-dependent Mx2_1 cut."
+        "distinct FD sectors; no hard exclusivity cuts are applied."
     )
     log(
-        f"Fit: f_pi0 determined only by {fraction_variables}; all other variables are validation projections. "
+        f"Fit: f_pi0 determined only by {fraction_variables} in the "
+        f"{100.0 * args.dvcs_fraction_containment:.0f}% DVCS-MC regions; nuisance morphs use "
+        f"the {100.0 * args.dvcs_core_containment:.0f}% DVCS cores. All other variables are validation projections. "
         "Additive morphs are used for signed variables and log-space morphs for pTmiss, theta_gamma_gamma and theta_pi0_pi0; "
         "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
@@ -1913,7 +1975,9 @@ def main() -> int:
             period, topologies, output_dir, args.step_size,
             args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
             fraction_variables, args.shift_prior_bins, args.smear_prior_bins,
-            not args.disable_nuisance_penalties, args.log_y, args.dpi,
+            not args.disable_nuisance_penalties,
+            args.dvcs_core_containment, args.dvcs_fraction_containment,
+            args.log_y, args.dpi,
         ))
         all_pi0_rows.extend(process_pi0_period(
             period, topologies, output_dir, args.step_size,
