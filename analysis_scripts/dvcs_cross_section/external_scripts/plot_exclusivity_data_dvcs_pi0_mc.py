@@ -712,7 +712,16 @@ def is_positive_morph_variable(variable: VariableConfig) -> bool:
 
 def mx2_1_upper_cut(topology: TopologyConfig) -> float:
     """Topology-dependent hard upper cut used for the second-stage plots and fits."""
-    return 0.30 if topology.detector2 == 1 else 0.40
+    if topology.key == "FD_FD":
+        return 0.20
+    # endif
+    if topology.key == "CD_FD":
+        return 0.30
+    # endif
+    if topology.key == "CD_FT":
+        return 0.40
+    # endif
+    raise ValueError(f"Unsupported topology for Mx2_1 cut: {topology.key}")
 
 
 def fit_mask_for_variable(
@@ -1118,7 +1127,7 @@ def draw_shape_canvas(
     selection_label: str = "minimal preselection",
 ) -> None:
     """Draw the original independently unit-normalized shape comparison."""
-    fig, axes = plt.subplots(2, 4, figsize=(18.0, 8.8))
+    fig, axes = plt.subplots(2, 4, figsize=(18.0, 9.3))
     flat_axes = axes.ravel()
 
     for axis, variable in zip(flat_axes, VARIABLES):
@@ -1168,18 +1177,18 @@ def draw_shape_canvas(
     # endfor
 
     handles, labels = flat_axes[0].get_legend_handles_labels()
-    fig.legend(
-        handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.955),
-        ncol=len(labels), frameon=False,
-    )
     fig.suptitle(
         f"Exclusivity shapes after {selection_label}: {period.label}, {topology.label}\n"
         f"selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
         rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
-        fontsize=15, y=0.995,
+        fontsize=15, y=0.992,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
+    fig.legend(
+        handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.875),
+        ncol=len(labels), frameon=False,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.82))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -1198,7 +1207,7 @@ def draw_fit_canvas(
     log_y: bool,
     dpi: int,
 ) -> None:
-    fig, axes = plt.subplots(2, 4, figsize=(18.0, 8.8))
+    fig, axes = plt.subplots(2, 4, figsize=(18.0, 9.3))
     flat_axes = axes.ravel()
 
     for axis, variable in zip(flat_axes, VARIABLES):
@@ -1282,16 +1291,16 @@ def draw_fit_canvas(
     # endfor
 
     handles, labels = flat_axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.955),
-               ncol=len(labels), frameon=False)
     fig.suptitle(
         f"Two-template fits after $M_{{x1}}^2<{mx2_1_upper_cut(topology):.1f}$ GeV$^2$: {period.label}, {topology.label}\n"
         f"topology-selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
         rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
-        fontsize=15, y=0.995,
+        fontsize=15, y=0.992,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.875),
+               ncol=len(labels), frameon=False)
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.82))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
