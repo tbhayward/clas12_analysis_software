@@ -33,11 +33,11 @@ parameters are profiled at the fitted fraction, but they do not determine
 f_pi0. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
-The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The three missing-mass projections are replaced by xF, xF2 and open_angle_p1p2, while z2 replaces the original xF panel. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
+The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use xF, xF2, z2 and eta2 in place of the missing-mass projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
 
 Outputs:
 
-  * one unit-area 4x2 shape-comparison canvas for each period/topology combination
+  * one unit-area 3x4 shape-comparison canvas for each period/topology combination
   * one 4x2 DVCS-core two-template-fit canvas for each period/topology combination
   * fit_results.csv containing all fitted parameters and diagnostics
 
@@ -225,24 +225,24 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 100, 0.0, 2.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
-    VariableConfig("z2", r"$z_2$", 100, 0.0, 2.0),
+    VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("xF", r"$x_F(ep+\gamma)$", 100, -0.5, 0.2),
     VariableConfig(
         "xF2",
         r"$x_{F,2}(\gamma)$",
         100,
-        -1.0,
+        0.0,
         1.0,
         aliases=("xF_2",),
     ),
     VariableConfig(
-        "open_angle_p1p2",
-        r"$\theta_{p\gamma}^{\mathrm{lab}}$ (deg)",
+        "eta2",
+        r"$\eta_2(\gamma)$",
         100,
-        0.0,
-        180.0,
-        aliases=("open_angle_p1_p2",),
+        -1.0,
+        5.0,
+        aliases=("eta_2",),
     ),
 )
 
@@ -251,26 +251,61 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 100, 0.0, 2.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
-    VariableConfig("z2", r"$z_2$", 100, 0.0, 2.0),
+    VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("xF", r"$x_F(ep+\pi^0)$", 100, -0.5, 0.2),
     VariableConfig(
         "xF2",
         r"$x_{F,2}(\pi^0)$",
         100,
-        -1.0,
+        0.0,
         1.0,
         aliases=("xF_2",),
     ),
     VariableConfig(
-        "open_angle_p1p2",
-        r"$\theta_{p\pi^0}^{\mathrm{lab}}$ (deg)",
+        "eta2",
+        r"$\eta_2(\pi^0)$",
         100,
-        0.0,
-        180.0,
-        aliases=("open_angle_p1_p2",),
+        -1.0,
+        5.0,
+        aliases=("eta_2",),
     ),
 )
+
+
+# The nuisance/template fits continue to use the eight variables above.
+# The unit-area shape-comparison canvases additionally include the three
+# missing-mass projections and the event transverse momentum pT.
+SHAPE_ONLY_VARIABLES: Tuple[VariableConfig, ...] = (
+    VariableConfig(
+        "Mx2",
+        r"$M_x^2$ (GeV$^2$)",
+        100,
+        -0.03,
+        0.03,
+        aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0"),
+    ),
+    VariableConfig(
+        "Mx2_1",
+        r"$M_{x1}^2$ (GeV$^2$)",
+        100,
+        -1.5,
+        1.5,
+        aliases=("Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p"),
+    ),
+    VariableConfig(
+        "Mx2_2",
+        r"$M_{x2}^2$ (GeV$^2$)",
+        125,
+        -1.0,
+        4.0,
+        aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
+    ),
+    VariableConfig("pT", r"$p_T$ (GeV)", 100, 0.0, 0.3),
+)
+
+DVCS_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = VARIABLES + SHAPE_ONLY_VARIABLES
+PI0_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = PI0_VARIABLES + SHAPE_ONLY_VARIABLES
 
 
 SAMPLE_LABELS = {
@@ -813,7 +848,6 @@ def is_positive_morph_variable(variable: VariableConfig) -> bool:
         "theta_gamma_gamma",
         "theta_pi0_pi0",
         "z2",
-        "open_angle_p1p2",
     }
 
 
@@ -1299,10 +1333,10 @@ def draw_shape_canvas(
     selection_label: str = "minimal preselection",
 ) -> None:
     """Draw the original independently unit-normalized shape comparison."""
-    fig, axes = plt.subplots(2, 4, figsize=(18.0, 9.3))
+    fig, axes = plt.subplots(3, 4, figsize=(18.0, 13.0))
     flat_axes = axes.ravel()
 
-    for axis, variable in zip(flat_axes, VARIABLES):
+    for axis, variable in zip(flat_axes, DVCS_SHAPE_VARIABLES):
         edges, centers = bin_geometry(variable)
         data_shape = normalized_shape(data_histograms[variable.branch])
         dvcs_shape = normalized_shape(dvcs_histograms[variable.branch])
@@ -1360,7 +1394,7 @@ def draw_shape_canvas(
         handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.875),
         ncol=len(labels), frameon=False,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.82))
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.86))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -1624,10 +1658,10 @@ def draw_pi0_shape_canvas(
     dpi: int,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    fig, axes = plt.subplots(3, 4, figsize=(20, 14))
     axes_flat = axes.ravel()
 
-    for axis, variable in zip(axes_flat, PI0_VARIABLES):
+    for axis, variable in zip(axes_flat, PI0_SHAPE_VARIABLES):
         edges, centers = bin_geometry(variable)
         data_shape, data_err = normalize_density(data_histograms[variable.branch], variable)
         mc_shape, _ = normalize_density(mc_histograms[variable.branch], variable)
@@ -1654,7 +1688,7 @@ def draw_pi0_shape_canvas(
     )
     handles, labels = axes_flat[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.905), ncol=2, frameon=False)
-    fig.subplots_adjust(top=0.82, left=0.06, right=0.985, bottom=0.08, wspace=0.28, hspace=0.30)
+    fig.subplots_adjust(top=0.86, left=0.06, right=0.985, bottom=0.06, wspace=0.28, hspace=0.34)
     fig.savefig(output_path, dpi=dpi)
     plt.close(fig)
 
@@ -1742,10 +1776,10 @@ def process_pi0_period(
     dpi: int,
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, Tuple[float, float]]]]:
     data_hists, data_counts = fill_histograms_for_file(
-        period.eppi0_data_file, topologies, step_size, False, PI0_VARIABLES
+        period.eppi0_data_file, topologies, step_size, False, PI0_SHAPE_VARIABLES
     )
     mc_hists, mc_counts = fill_histograms_for_file(
-        period.eppi0_mc_file, topologies, step_size, False, PI0_VARIABLES
+        period.eppi0_mc_file, topologies, step_size, False, PI0_SHAPE_VARIABLES
     )
     rows: List[Dict[str, object]] = []
     calibrations: Dict[str, Dict[str, Tuple[float, float]]] = {}
@@ -1828,13 +1862,16 @@ def process_period(
 
     # Minimal global preselection only. No hard exclusivity cuts are imposed.
     data_hists, data_counts = fill_histograms_for_file(
-        period.data_file, topologies, step_size, apply_mx2_1_cut=False
+        period.data_file, topologies, step_size, apply_mx2_1_cut=False,
+        variables=DVCS_SHAPE_VARIABLES,
     )
     dvcs_hists, dvcs_counts = fill_histograms_for_file(
-        period.dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False
+        period.dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False,
+        variables=DVCS_SHAPE_VARIABLES,
     )
     pi0_hists, pi0_counts = fill_histograms_for_file(
-        period.pi0_as_dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False
+        period.pi0_as_dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False,
+        variables=DVCS_SHAPE_VARIABLES,
     )
 
     rows: List[Dict[str, object]] = []
