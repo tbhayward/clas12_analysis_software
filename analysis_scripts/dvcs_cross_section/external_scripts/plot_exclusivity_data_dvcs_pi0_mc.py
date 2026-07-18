@@ -206,7 +206,7 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 100, 0.0, 2.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
-    VariableConfig("xF", r"$x_F$", 100, -0.4, 0.2),
+    VariableConfig("xF", r"$x_F$", 100, -0.5, 0.2),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig(
         "Mx2",
@@ -227,9 +227,9 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig(
         "Mx2_2",
         r"$M_{x2}^2$ (GeV$^2$)",
-        120,
-        -1.5,
-        3.0,
+        125,
+        -1.0,
+        4.0,
         aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
     ),
 )
@@ -448,6 +448,7 @@ def fill_histograms_uproot(
     path: str,
     topologies: Sequence[TopologyConfig],
     step_size: str,
+    apply_mx2_1_cut: bool = False,
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
     """Read one ROOT file once and fill all requested topology/variable histograms."""
 
@@ -507,6 +508,12 @@ def fill_histograms_uproot(
                     mask &= p_sector != g_sector
                 # endif
             # endif
+
+            if apply_mx2_1_cut:
+                mx2_1_values = np.asarray(arrays[resolved["Mx2_1"]], dtype=np.float64)
+                mask &= np.isfinite(mx2_1_values) & (mx2_1_values < mx2_1_upper_cut(topology))
+            # endif
+
             selected_events[topology.key] += int(np.count_nonzero(mask))
 
             if not np.any(mask):
@@ -535,6 +542,7 @@ def fill_histograms_pyroot(
     path: str,
     topologies: Sequence[TopologyConfig],
     step_size: str,
+    apply_mx2_1_cut: bool = False,
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
     del step_size  # PyROOT performs a direct TTree event loop.
 
@@ -603,6 +611,13 @@ def fill_histograms_pyroot(
                 # endif
             # endif
 
+            if apply_mx2_1_cut:
+                mx2_1_value = float(getattr(event, resolved["Mx2_1"]))
+                if not math.isfinite(mx2_1_value) or mx2_1_value >= mx2_1_upper_cut(topology):
+                    continue
+                # endif
+            # endif
+
             selected_events[topology.key] += 1
 
             for variable in VARIABLES:
@@ -633,14 +648,15 @@ def fill_histograms_for_file(
     path: str,
     topologies: Sequence[TopologyConfig],
     step_size: str,
+    apply_mx2_1_cut: bool = False,
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
     backend = io_backend()
 
     if backend == "uproot":
-        return fill_histograms_uproot(path, topologies, step_size)
+        return fill_histograms_uproot(path, topologies, step_size, apply_mx2_1_cut)
     # endif
 
-    return fill_histograms_pyroot(path, topologies, step_size)
+    return fill_histograms_pyroot(path, topologies, step_size, apply_mx2_1_cut)
 
 
 def normalize_density(
@@ -694,6 +710,11 @@ def is_positive_morph_variable(variable: VariableConfig) -> bool:
     return variable.branch in {"pTmiss", "theta_gamma_gamma"}
 
 
+def mx2_1_upper_cut(topology: TopologyConfig) -> float:
+    """Topology-dependent hard upper cut used for the second-stage plots and fits."""
+    return 0.30 if topology.detector2 == 1 else 0.40
+
+
 def fit_mask_for_variable(
     variable: VariableConfig,
     topology: TopologyConfig,
@@ -702,11 +723,7 @@ def fit_mask_for_variable(
     _, centers = bin_geometry(variable)
     mask = np.ones(variable.bins, dtype=bool)
 
-    if variable.branch == "Mx2_1" and topology.key in {"FD_FD", "CD_FD"}:
-        # The right-side structure is absent in CD-FT and is not described by
-        # either available template in topologies containing an FD photon.
-        mask &= centers <= 0.50
-    elif variable.branch == "xF":
+    if variable.branch == "xF":
         # Avoid allowing small range-clipping effects to drive the nuisance fit.
         mask[:2] = False
         mask[-2:] = False
@@ -1098,6 +1115,7 @@ def draw_shape_canvas(
     selected_counts: Mapping[str, int],
     log_y: bool,
     dpi: int,
+    selection_label: str = "minimal preselection",
 ) -> None:
     """Draw the original independently unit-normalized shape comparison."""
     fig, axes = plt.subplots(2, 4, figsize=(18.0, 8.8))
@@ -1155,7 +1173,7 @@ def draw_shape_canvas(
         ncol=len(labels), frameon=False,
     )
     fig.suptitle(
-        f"Exclusivity shapes after minimal preselection: {period.label}, {topology.label}\n"
+        f"Exclusivity shapes after {selection_label}: {period.label}, {topology.label}\n"
         f"selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
         rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
@@ -1267,7 +1285,7 @@ def draw_fit_canvas(
     fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.955),
                ncol=len(labels), frameon=False)
     fig.suptitle(
-        f"Uncut exclusivity two-template fits: {period.label}, {topology.label}\n"
+        f"Two-template fits after $M_{{x1}}^2<{mx2_1_upper_cut(topology):.1f}$ GeV$^2$: {period.label}, {topology.label}\n"
         f"topology-selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
         rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
@@ -1292,16 +1310,64 @@ def process_period(
     dpi: int,
 ) -> List[Dict[str, object]]:
     log(f"Starting period {period.label}")
-    data_hists, data_counts = fill_histograms_for_file(period.data_file, topologies, step_size)
-    dvcs_hists, dvcs_counts = fill_histograms_for_file(period.dvcs_mc_file, topologies, step_size)
-    pi0_hists, pi0_counts = fill_histograms_for_file(period.pi0_as_dvcs_mc_file, topologies, step_size)
+
+    # Stage 1: minimal global preselection only.
+    data_uncut, data_uncut_counts = fill_histograms_for_file(
+        period.data_file, topologies, step_size, apply_mx2_1_cut=False
+    )
+    dvcs_uncut, dvcs_uncut_counts = fill_histograms_for_file(
+        period.dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False
+    )
+    pi0_uncut, pi0_uncut_counts = fill_histograms_for_file(
+        period.pi0_as_dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False
+    )
+
+    # Stage 2 and fit input: apply the topology-dependent Mx2_1 upper cut.
+    data_cut, data_cut_counts = fill_histograms_for_file(
+        period.data_file, topologies, step_size, apply_mx2_1_cut=True
+    )
+    dvcs_cut, dvcs_cut_counts = fill_histograms_for_file(
+        period.dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=True
+    )
+    pi0_cut, pi0_cut_counts = fill_histograms_for_file(
+        period.pi0_as_dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=True
+    )
+
     rows: List[Dict[str, object]] = []
 
     for topology in topologies:
+        uncut_selected = {
+            "data": data_uncut_counts[topology.key],
+            "dvcs_mc": dvcs_uncut_counts[topology.key],
+            "pi0_mc": pi0_uncut_counts[topology.key],
+        }
+        uncut_path = output_dir / "shape_comparisons" / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
+        draw_shape_canvas(
+            uncut_path, period, topology, data_uncut[topology.key],
+            dvcs_uncut[topology.key], pi0_uncut[topology.key],
+            uncut_selected, log_y, dpi, "minimal preselection",
+        )
+        log(f"Wrote {uncut_path}")
+
+        cut_value = mx2_1_upper_cut(topology)
+        cut_selected = {
+            "data": data_cut_counts[topology.key],
+            "dvcs_mc": dvcs_cut_counts[topology.key],
+            "pi0_mc": pi0_cut_counts[topology.key],
+        }
+        cut_shape_path = output_dir / "shape_comparisons_mx2_1_cut" / f"exclusivity_shapes_mx2_1_cut_{period.key}_{topology.key.lower()}.png"
+        draw_shape_canvas(
+            cut_shape_path, period, topology, data_cut[topology.key],
+            dvcs_cut[topology.key], pi0_cut[topology.key],
+            cut_selected, log_y, dpi,
+            rf"minimal preselection and $M_{{x1}}^2<{cut_value:.1f}$ GeV$^2$",
+        )
+        log(f"Wrote {cut_shape_path}")
+
         shared_summary = fit_shared_two_templates(
-            data_hists[topology.key],
-            dvcs_hists[topology.key],
-            pi0_hists[topology.key],
+            data_cut[topology.key],
+            dvcs_cut[topology.key],
+            pi0_cut[topology.key],
             topology,
             max_shift_bins, max_smear_bins, fit_min_counts,
         )
@@ -1319,14 +1385,15 @@ def process_period(
             rows.append({
                 "period": period.key, "period_label": period.label,
                 "topology": topology.key, "variable": variable.branch,
+                "mx2_1_upper_cut": cut_value,
                 "success": int(result.success), "message": result.message,
                 "shared_f_pi0": shared_summary.f_pi0,
                 "shared_f_pi0_err": shared_summary.f_pi0_err,
                 "global_poisson_deviance": shared_summary.deviance,
                 "global_ndf": shared_summary.ndf,
                 "data_entries_in_range": result.data_total,
-                "dvcs_mc_entries_in_range": float(np.sum(dvcs_hists[topology.key][variable.branch])),
-                "pi0_mc_entries_in_range": float(np.sum(pi0_hists[topology.key][variable.branch])),
+                "dvcs_mc_entries_in_range": float(np.sum(dvcs_cut[topology.key][variable.branch])),
+                "pi0_mc_entries_in_range": float(np.sum(pi0_cut[topology.key][variable.branch])),
                 "morph_type": result.morph_label,
                 "shift_or_log_shift": result.shift, "shift_err": result.shift_err,
                 "shift_bins": result.shift / bin_width if result.success and additive else math.nan,
@@ -1342,22 +1409,13 @@ def process_period(
             })
         # endfor
 
-        selected = {"data": data_counts[topology.key], "dvcs_mc": dvcs_counts[topology.key], "pi0_mc": pi0_counts[topology.key]}
-
-        shape_output_path = output_dir / "shape_comparisons" / f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
-        draw_shape_canvas(
-            shape_output_path, period, topology, data_hists[topology.key],
-            dvcs_hists[topology.key], pi0_hists[topology.key], selected, log_y, dpi,
-        )
-        log(f"Wrote {shape_output_path}")
-
-        output_path = output_dir / "template_fits" / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
+        fit_path = output_dir / "template_fits" / f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
         draw_fit_canvas(
-            output_path, period, topology, data_hists[topology.key],
-            dvcs_hists[topology.key], pi0_hists[topology.key],
-            selected, fit_results, shared_summary, log_y, dpi,
+            fit_path, period, topology, data_cut[topology.key],
+            dvcs_cut[topology.key], pi0_cut[topology.key],
+            cut_selected, fit_results, shared_summary, log_y, dpi,
         )
-        log(f"Wrote {output_path}")
+        log(f"Wrote {fit_path}")
     # endfor
 
     return rows
@@ -1390,7 +1448,7 @@ def main() -> int:
     all_rows: List[Dict[str, object]] = []
 
     log(f"ROOT I/O backend: {io_backend()}")
-    log(f"Producing {2 * len(periods) * len(topologies)} canvases: shape comparisons plus template fits")
+    log(f"Producing {3 * len(periods) * len(topologies)} canvases: uncut shapes, Mx2_1-cut shapes and template fits")
     log(
         "Selection: topology, (-t1) < 1.0, open_angle_ep2 > 5 deg, "
         "distinct FD sectors; no exclusivity cuts"
@@ -1398,7 +1456,7 @@ def main() -> int:
     log(
         "Fit: one shared f_pi0 per period/topology; additive morphs for signed "
         "variables, log-space morphs for pTmiss and theta_gamma_gamma; "
-        "Mx2_1 right side excluded only for FD-FD/CD-FD; xF edge bins excluded; "
+        "Mx2_1 hard cut applied before second-stage shapes and fits; xF edge bins excluded; "
         "masked excess reported separately"
     )
 
