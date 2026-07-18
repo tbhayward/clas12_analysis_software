@@ -3,7 +3,7 @@
 plot_exclusivity_data_dvcs_pi0_mc.py
 
 For each of the five run periods and three detector topologies, compare the
-eight exclusivity-variable shapes and perform selected-discriminator two-template fits while keeping all eight
+eight exclusivity/kinematic-variable shapes and perform selected-discriminator two-template fits while keeping all eight
 projections as diagnostics:
 
     data = (1-f_pi0) * shifted-and-smeared DVCS MC
@@ -33,7 +33,7 @@ parameters are profiled at the fitted fraction, but they do not determine
 f_pi0. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
-The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
+The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The three missing-mass projections are replaced by xF, xF2 and open_angle_p1p2, while z2 replaces the original xF panel. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
 
 Outputs:
 
@@ -225,31 +225,24 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 100, 0.0, 2.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
-    VariableConfig("xF", r"$x_F$", 100, -0.5, 0.2),
+    VariableConfig("z2", r"$z_2$", 100, 0.0, 2.0),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
+    VariableConfig("xF", r"$x_F(ep+\gamma)$", 100, -0.5, 0.2),
     VariableConfig(
-        "Mx2",
-        r"$M_x^2$ (GeV$^2$)",
+        "xF2",
+        r"$x_{F,2}(\gamma)$",
         100,
-        -0.03,
-        0.03,
-        aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0"),
-    ),
-    VariableConfig(
-        "Mx2_1",
-        r"$M_{x1}^2$ (GeV$^2$)",
-        100,
-        -1.5,
-        1.5,
-        aliases=("Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p"),
-    ),
-    VariableConfig(
-        "Mx2_2",
-        r"$M_{x2}^2$ (GeV$^2$)",
-        125,
         -1.0,
-        4.0,
-        aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
+        1.0,
+        aliases=("xF_2",),
+    ),
+    VariableConfig(
+        "open_angle_p1p2",
+        r"$\theta_{p\gamma}^{\mathrm{lab}}$ (deg)",
+        100,
+        0.0,
+        180.0,
+        aliases=("open_angle_p1_p2",),
     ),
 )
 
@@ -258,11 +251,25 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 100, 0.0, 2.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
-    VariableConfig("xF", r"$x_F$", 100, -0.5, 0.2),
+    VariableConfig("z2", r"$z_2$", 100, 0.0, 2.0),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
-    VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03),
-    VariableConfig("Mx2_1", r"$M_{x1}^2$ (GeV$^2$)", 100, -1.5, 1.5),
-    VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0),
+    VariableConfig("xF", r"$x_F(ep+\pi^0)$", 100, -0.5, 0.2),
+    VariableConfig(
+        "xF2",
+        r"$x_{F,2}(\pi^0)$",
+        100,
+        -1.0,
+        1.0,
+        aliases=("xF_2",),
+    ),
+    VariableConfig(
+        "open_angle_p1p2",
+        r"$\theta_{p\pi^0}^{\mathrm{lab}}$ (deg)",
+        100,
+        0.0,
+        180.0,
+        aliases=("open_angle_p1_p2",),
+    ),
 )
 
 
@@ -367,7 +374,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         help=(
             "Variable used to determine the shared pi0 fraction. May be supplied "
-            "repeatedly. Default: Mx2_2, pTmiss and theta_gamma_gamma."
+            "repeatedly. Default: pTmiss and theta_gamma_gamma."
         ),
     )
     parser.add_argument(
@@ -805,6 +812,8 @@ def is_positive_morph_variable(variable: VariableConfig) -> bool:
         "pTmiss",
         "theta_gamma_gamma",
         "theta_pi0_pi0",
+        "z2",
+        "open_angle_p1p2",
     }
 
 
@@ -848,8 +857,7 @@ def transform_additive_shape(
     """Shift and Gaussian-smear a template without truncating its visible tail.
 
     Each source-bin probability is transported into every target bin using the
-    integrated Gaussian probability. This avoids the hard interpolation cutoff
-    that previously made some morphed Mx2_2 curves stop near -0.5 GeV^2.
+    integrated Gaussian probability, avoiding hard interpolation cutoffs.
     """
     edges, centers = bin_geometry(variable)
     source_weights = np.asarray(base_shape, dtype=np.float64)
@@ -1022,7 +1030,7 @@ def fit_shared_two_templates(
         return [(center - half_range, center + half_range), (0.0, max_smear_bins * bin_width)]
 
     def nuisance_start(variable: VariableConfig) -> np.ndarray:
-        center = 0.0 if variable.branch in {"Mx2", "Mx2_1"} else calibrated_shift_center(variable)
+        center = calibrated_shift_center(variable)
         if is_positive_morph_variable(variable):
             return np.asarray([center, 0.10], dtype=np.float64)
         # endif
@@ -1033,7 +1041,7 @@ def fit_shared_two_templates(
         if not use_nuisance_penalties:
             return 0.0
         # endif
-        shift_center = 0.0 if variable.branch in {"Mx2", "Mx2_1"} else calibrated_shift_center(variable)
+        shift_center = calibrated_shift_center(variable)
         if is_positive_morph_variable(variable):
             shift_width = 0.20
             smear_width = 0.40
@@ -1981,7 +1989,7 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     all_rows: List[Dict[str, object]] = []
     all_pi0_rows: List[Dict[str, object]] = []
-    fraction_variables = args.fraction_variable or ["Mx2_2", "pTmiss", "theta_gamma_gamma"]
+    fraction_variables = args.fraction_variable or ["pTmiss", "theta_gamma_gamma"]
     if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
         raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
     # endif
@@ -1997,7 +2005,7 @@ def main() -> int:
         f"{100.0 * args.dvcs_fraction_containment:.0f}% DVCS-MC regions; nuisance morphs use "
         f"the {100.0 * args.dvcs_core_containment:.0f}% DVCS cores. All other variables are validation projections. "
         "Additive morphs are used for signed variables and log-space morphs for pTmiss, theta_gamma_gamma and theta_pi0_pi0. "
-        "Mx2 and Mx2_1 DVCS shifts are fixed at zero; other shift priors are centered on direct-pi0 core calibrations. "
+        "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
         "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
 
