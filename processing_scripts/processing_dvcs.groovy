@@ -101,6 +101,9 @@ public static void main(String[] args) {
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:2212:22:Xn"); 
 
+	EventFilter filter_piplus = new EventFilter("11:2212:22:211:Xn"); 
+	EventFilter filter_piminus = new EventFilter("11:2212:22:-211:Xn"); 
+
 	// setup QA database
 	QADB qa = new QADB("latest");
 	qa.checkForDefect('TotalOutlier')    
@@ -156,7 +159,12 @@ public static void main(String[] args) {
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // boolean process_event = filter.isValid(research_Event);
-	    	boolean process_event = filter.isValid(research_Event) && 
+	    	// boolean process_event = filter.isValid(research_Event) && 
+		    // 	(runnum == 11 ||  // MC
+		    // 	userProvidedOverride == 1 || // skip QADB
+		    // 	qa.pass(runnum, evnum));
+
+		    boolean process_event = (filter_piplus.isValid(research_Event) || filter_piminus.isValid(research_Event)) && 
 		    	(runnum == 11 ||  // MC
 		    	userProvidedOverride == 1 || // skip QADB
 		    	qa.pass(runnum, evnum));
