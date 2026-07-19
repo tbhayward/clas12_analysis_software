@@ -856,7 +856,6 @@ def is_upper_bounded_morph_variable(variable: VariableConfig) -> bool:
     return variable.branch in {
         "z2",
         "xF2",
-        "theta",
     }
 
 
@@ -977,7 +976,7 @@ def transform_upper_bounded_shape(
     """Morph an upper-edge-peaked template in log(xmax-x+epsilon).
 
     This preserves the upper plotting boundary and broadens primarily toward
-    smaller values, which is appropriate for z2, xF2 and the CM theta variable.
+    smaller values, which is appropriate for z2 and xF2.
     """
     edges, centers = bin_geometry(variable)
     upper_bound = float(variable.xmax)
@@ -1607,7 +1606,7 @@ def mc_signal_containment_mask(
     Signed variables retain the central equal-tail containment interval.
     Lower-edge-peaked variables retain the interval from the lower plot edge
     upward. Upper-edge-peaked variables retain the interval from the upper
-    plot edge downward. Existing variable-specific
+    plot edge downward. The CM theta variable uses a central additive core. Existing variable-specific
     edge masks are also respected.
     """
     counts = np.asarray(mc_counts, dtype=np.float64)
@@ -2128,7 +2127,7 @@ def main() -> int:
         f"Fit: f_pi0 determined only by {fraction_variables} in the "
         f"{100.0 * args.dvcs_fraction_containment:.0f}% DVCS-MC regions; nuisance morphs use "
         f"the {100.0 * args.dvcs_core_containment:.0f}% DVCS cores. All other variables are validation projections. "
-        "Additive morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2/theta. "
+        "Additive core morphs are used for theta and symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2. "
         "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
         "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
