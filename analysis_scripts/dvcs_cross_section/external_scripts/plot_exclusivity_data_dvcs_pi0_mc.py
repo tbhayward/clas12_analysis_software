@@ -1673,7 +1673,7 @@ def fit_single_template(
         return FitResult(False, "insufficient counts in MC-defined signal core", data_total=data_total, fit_mask=mask)
     # endif
     bin_width = (variable.xmax - variable.xmin) / variable.bins
-    positive = is_positive_morph_variable(variable)
+    positive = is_log_morph_variable(variable)
     if positive:
         bounds = [(-0.8, 0.8), (0.0, 1.2)]
         x0 = np.asarray([0.0, 0.10], dtype=np.float64)
@@ -2128,7 +2128,7 @@ def main() -> int:
         f"Fit: f_pi0 determined only by {fraction_variables} in the "
         f"{100.0 * args.dvcs_fraction_containment:.0f}% DVCS-MC regions; nuisance morphs use "
         f"the {100.0 * args.dvcs_core_containment:.0f}% DVCS cores. All other variables are validation projections. "
-        "Additive morphs are used for signed variables and log-space morphs for pTmiss, theta_gamma_gamma and theta_pi0_pi0. "
+        "Additive morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2/theta. "
         "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
         "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
