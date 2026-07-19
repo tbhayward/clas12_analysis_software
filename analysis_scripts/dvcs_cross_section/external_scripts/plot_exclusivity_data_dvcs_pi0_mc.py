@@ -16,8 +16,8 @@ The detector topology plus the minimal global preselection are required:
     all reconstructed FD particles occupy distinct FD sectors
 
 No hard exclusivity cuts are applied. The DVCS nuisance parameters are fitted
-over the full displayed ranges by default. Optional containment arguments can
-restore restricted MC-defined fit regions for cross-checks. The fit uses raw binned data counts and a Poisson likelihood.
+inside MC-defined signal regions by default: 90% for nuisance/core fits and
+95% for the shared DVCS pi0-fraction fit. The fit uses raw binned data counts and a Poisson likelihood.
 Each projection is normalized to the observed data yield inside the fit mask
 used by that projection, so the extrapolation outside the mask is a genuine
 shape validation:
@@ -40,6 +40,9 @@ Outputs:
   * one unit-area 3x4 shape-comparison canvas for each period/topology combination
   * one 4x2 DVCS-core two-template-fit canvas for each period/topology combination
   * fit_results.csv containing all fitted parameters and diagnostics
+  * compact 2x4 iterative cut-development canvases
+  * compact 2x4 post-cut summary canvases
+  * main-suite-compatible combined_cuts JSON files for 97%, 99% and 95%
 
 The five run periods are processed in parallel with at most five worker processes. Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
 """
@@ -48,6 +51,7 @@ import argparse
 import concurrent.futures
 import multiprocessing
 import csv
+import json
 import math
 import os
 import sys
@@ -391,29 +395,52 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dvcs-core-containment",
         type=float,
-        default=1.00,
+        default=0.90,
         help=(
             "DVCS-MC containment used to determine variable-specific shift and "
-            "smearing nuisances (default: 1.00, full displayed range)."
+            "smearing nuisances (default: 0.90)."
         ),
     )
     parser.add_argument(
         "--dvcs-fraction-containment",
         type=float,
-        default=1.00,
+        default=0.95,
         help=(
             "DVCS-MC containment used by the selected histograms to determine "
-            "the shared pi0 fraction (default: 1.00, full displayed range)."
+            "the shared pi0 fraction (default: 0.95)."
         ),
     )
     parser.add_argument(
         "--pi0-core-containment",
         type=float,
-        default=1.00,
+        default=0.90,
         help=(
-            "MC containment used by the direct eppi0 data--MC fits "
-            "(default: 1.00, full displayed range)."
+            "MC containment used by the direct eppi0 data--MC core fits "
+            "(default: 0.90)."
         ),
+    )
+    parser.add_argument(
+        "--cut-nominal-containment",
+        type=float,
+        default=0.97,
+        help="Nominal iterative signal containment (default: 0.97).",
+    )
+    parser.add_argument(
+        "--cut-loose-containment",
+        type=float,
+        default=0.99,
+        help="Loose iterative signal containment (default: 0.99).",
+    )
+    parser.add_argument(
+        "--cut-tight-containment",
+        type=float,
+        default=0.95,
+        help="Tight iterative signal containment (default: 0.95).",
+    )
+    parser.add_argument(
+        "--skip-iterative-cuts",
+        action="store_true",
+        help="Skip iterative exclusivity-cut development and JSON generation.",
     )
     parser.add_argument(
         "--fraction-variable",
@@ -2350,6 +2377,925 @@ def write_results_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
     # endwith
 
 
+
+@dataclass
+class IterativeCutStep:
+    iteration: int
+    variable: str
+    score: float
+    data_efficiency: float
+    dvcs_mc_efficiency: float
+    pi0_mc_efficiency: float
+    f_pi0_before: float
+    boundaries: Dict[str, Dict[str, Tuple[float, float]]]
+    before_histograms: Dict[str, np.ndarray]
+    after_histograms: Dict[str, np.ndarray]
+    fit_result: FitResult
+
+
+def period_code(period: PeriodConfig) -> str:
+    mapping = {
+        "fa18_inb": "Fa18_Inb",
+        "fa18_out": "Fa18_Out",
+        "sp18_inb": "Sp18_Inb",
+        "sp18_out": "Sp18_Out",
+        "sp19_inb": "Sp19_Inb",
+    }
+    return mapping[period.key]
+
+
+def cut_json_key(channel: str, period: PeriodConfig, topology: TopologyConfig) -> str:
+    prefix = "DVCS" if channel == "dvcs" else "eppi0"
+    return f"{prefix}_{period_code(period)}_{topology.key}"
+
+
+def containment_window_from_shape(
+    shape: np.ndarray,
+    variable: VariableConfig,
+    containment: float,
+) -> Tuple[float, float, str]:
+    """Return a one- or two-sided histogram-edge containment window."""
+    values = np.asarray(shape, dtype=np.float64)
+    total = float(np.sum(values))
+    edges, _ = bin_geometry(variable)
+    if total <= 0.0 or not math.isfinite(total):
+        return variable.xmin, variable.xmax, "quantile_window"
+    # endif
+
+    cdf = np.cumsum(values) / total
+    if is_lower_bounded_morph_variable(variable):
+        upper_index = int(np.searchsorted(cdf, containment, side="left"))
+        upper_index = max(0, min(upper_index, variable.bins - 1))
+        return variable.xmin, float(edges[upper_index + 1]), "upper_quantile"
+    # endif
+
+    if is_upper_bounded_morph_variable(variable):
+        lower_index = int(np.searchsorted(cdf, 1.0 - containment, side="left"))
+        lower_index = max(0, min(lower_index, variable.bins - 1))
+        return float(edges[lower_index]), variable.xmax, "quantile_window"
+    # endif
+
+    tail = 0.5 * (1.0 - containment)
+    lower_index = int(np.searchsorted(cdf, tail, side="left"))
+    upper_index = int(np.searchsorted(cdf, 1.0 - tail, side="left"))
+    lower_index = max(0, min(lower_index, variable.bins - 1))
+    upper_index = max(lower_index, min(upper_index, variable.bins - 1))
+    return float(edges[lower_index]), float(edges[upper_index + 1]), "quantile_window"
+
+
+def apply_window(values: np.ndarray, low: float, high: float) -> np.ndarray:
+    values = np.asarray(values)
+    return np.isfinite(values) & (values >= low) & (values <= high)
+
+
+def arrays_to_histograms(
+    arrays: Mapping[str, np.ndarray],
+    mask: np.ndarray,
+    variables: Sequence[VariableConfig],
+) -> Dict[str, np.ndarray]:
+    output: Dict[str, np.ndarray] = {}
+    for variable in variables:
+        values = np.asarray(arrays[variable.branch])[mask]
+        values = values[np.isfinite(values)]
+        output[variable.branch], _ = np.histogram(
+            values,
+            bins=variable.bins,
+            range=(variable.xmin, variable.xmax),
+        )
+        output[variable.branch] = output[variable.branch].astype(np.float64)
+    # endfor
+    return output
+
+
+def load_selected_arrays_uproot(
+    path: str,
+    topologies: Sequence[TopologyConfig],
+    step_size: str,
+    variables: Sequence[VariableConfig],
+) -> Dict[str, Dict[str, np.ndarray]]:
+    """Load minimally selected fit-variable arrays once for iterative cuts."""
+    require_input_file(path)
+    resolved = resolve_variable_branches(path, variables)
+    expressions = [
+        "detector1", "detector2", "t1", "open_angle_ep2",
+        "e_phi", "p1_phi", "p2_phi",
+    ] + sorted(set(resolved.values()))
+    pieces: Dict[str, Dict[str, List[np.ndarray]]] = {
+        topology.key: {variable.branch: [] for variable in variables}
+        for topology in topologies
+    }
+
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=step_size,
+        library="np",
+    ):
+        detector1 = np.asarray(arrays["detector1"])
+        detector2 = np.asarray(arrays["detector2"])
+        t1 = np.asarray(arrays["t1"], dtype=np.float64)
+        open_angle = np.asarray(arrays["open_angle_ep2"], dtype=np.float64)
+        base_mask = (
+            np.isfinite(t1)
+            & np.isfinite(open_angle)
+            & ((-t1) < T1_ABS_MAX)
+            & (open_angle > OPEN_ANGLE_MIN_DEG)
+        )
+        if REQUIRE_DISTINCT_FD_SECTORS:
+            e_sector = fd_sector_from_phi(np.asarray(arrays["e_phi"], dtype=np.float64))
+            p_sector = fd_sector_from_phi(np.asarray(arrays["p1_phi"], dtype=np.float64))
+            g_sector = fd_sector_from_phi(np.asarray(arrays["p2_phi"], dtype=np.float64))
+        # endif
+
+        for topology in topologies:
+            mask = (
+                base_mask
+                & (detector1 == topology.detector1)
+                & (detector2 == topology.detector2)
+            )
+            if REQUIRE_DISTINCT_FD_SECTORS:
+                mask &= e_sector >= 1
+                if topology.detector1 == 1:
+                    mask &= (p_sector >= 1) & (p_sector != e_sector)
+                # endif
+                if topology.detector2 == 1:
+                    mask &= (g_sector >= 1) & (g_sector != e_sector)
+                # endif
+                if topology.detector1 == 1 and topology.detector2 == 1:
+                    mask &= p_sector != g_sector
+                # endif
+            # endif
+            if not np.any(mask):
+                continue
+            # endif
+            for variable in variables:
+                values = np.asarray(
+                    arrays[resolved[variable.branch]],
+                    dtype=np.float32,
+                )[mask]
+                pieces[topology.key][variable.branch].append(values)
+            # endfor
+        # endfor
+    # endfor
+
+    result: Dict[str, Dict[str, np.ndarray]] = {}
+    for topology in topologies:
+        result[topology.key] = {}
+        for variable in variables:
+            chunks = pieces[topology.key][variable.branch]
+            result[topology.key][variable.branch] = (
+                np.concatenate(chunks)
+                if chunks
+                else np.asarray([], dtype=np.float32)
+            )
+        # endfor
+    # endfor
+    return result
+
+
+def load_selected_arrays_pyroot(
+    path: str,
+    topologies: Sequence[TopologyConfig],
+    step_size: str,
+    variables: Sequence[VariableConfig],
+) -> Dict[str, Dict[str, np.ndarray]]:
+    del step_size
+    require_input_file(path)
+    resolved = resolve_variable_branches(path, variables)
+    pieces: Dict[str, Dict[str, List[float]]] = {
+        topology.key: {variable.branch: [] for variable in variables}
+        for topology in topologies
+    }
+    root_file = ROOT.TFile.Open(path, "READ")
+    if not root_file or root_file.IsZombie():
+        raise OSError(f"Could not open ROOT file: {path}")
+    # endif
+    tree = root_file.Get(TREE_NAME)
+    if tree is None:
+        root_file.Close()
+        raise KeyError(f"Tree '{TREE_NAME}' not found in {path}")
+    # endif
+    try:
+        for event in tree:
+            detector1 = int(getattr(event, "detector1"))
+            detector2 = int(getattr(event, "detector2"))
+            topology = next(
+                (
+                    candidate for candidate in topologies
+                    if candidate.detector1 == detector1
+                    and candidate.detector2 == detector2
+                ),
+                None,
+            )
+            if topology is None:
+                continue
+            # endif
+            t1 = float(getattr(event, "t1"))
+            opening = float(getattr(event, "open_angle_ep2"))
+            if not math.isfinite(t1) or not math.isfinite(opening):
+                continue
+            # endif
+            if (-t1) >= T1_ABS_MAX or opening <= OPEN_ANGLE_MIN_DEG:
+                continue
+            # endif
+            if REQUIRE_DISTINCT_FD_SECTORS:
+                sectors = [int(fd_sector_from_phi(np.asarray([float(getattr(event, "e_phi"))]))[0])]
+                if topology.detector1 == 1:
+                    sectors.append(int(fd_sector_from_phi(np.asarray([float(getattr(event, "p1_phi"))]))[0]))
+                # endif
+                if topology.detector2 == 1:
+                    sectors.append(int(fd_sector_from_phi(np.asarray([float(getattr(event, "p2_phi"))]))[0]))
+                # endif
+                if any(value < 1 for value in sectors) or len(sectors) != len(set(sectors)):
+                    continue
+                # endif
+            # endif
+            for variable in variables:
+                pieces[topology.key][variable.branch].append(
+                    float(getattr(event, resolved[variable.branch]))
+                )
+            # endfor
+        # endfor
+    finally:
+        root_file.Close()
+    # endtry
+    return {
+        topology.key: {
+            variable.branch: np.asarray(
+                pieces[topology.key][variable.branch],
+                dtype=np.float32,
+            )
+            for variable in variables
+        }
+        for topology in topologies
+    }
+
+
+def load_selected_arrays_for_file(
+    path: str,
+    topologies: Sequence[TopologyConfig],
+    step_size: str,
+    variables: Sequence[VariableConfig],
+) -> Dict[str, Dict[str, np.ndarray]]:
+    if io_backend() == "uproot":
+        return load_selected_arrays_uproot(path, topologies, step_size, variables)
+    # endif
+    return load_selected_arrays_pyroot(path, topologies, step_size, variables)
+
+
+def distribution_moments(
+    shape: np.ndarray,
+    variable: VariableConfig,
+) -> Tuple[float, float]:
+    _, centers = bin_geometry(variable)
+    weights = np.asarray(shape, dtype=np.float64)
+    total = float(np.sum(weights))
+    if total <= 0.0:
+        return 0.5 * (variable.xmin + variable.xmax), 0.0
+    # endif
+    mean = float(np.sum(weights * centers) / total)
+    variance = float(np.sum(weights * (centers - mean) ** 2) / total)
+    return mean, math.sqrt(max(0.0, variance))
+
+
+def draw_iterative_cut_canvas(
+    output_path: Path,
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    channel: str,
+    steps: Sequence[IterativeCutStep],
+    summary: bool,
+    dpi: int,
+) -> None:
+    fig, axes = plt.subplots(2, 4, figsize=(20.0, 10.0))
+    flat_axes = axes.ravel()
+    variable_lookup = {
+        variable.branch: variable
+        for variable in (VARIABLES if channel == "dvcs" else PI0_VARIABLES)
+    }
+    for axis, step in zip(flat_axes, steps):
+        variable = variable_lookup[step.variable]
+        edges, centers = bin_geometry(variable)
+        histograms = step.after_histograms if summary else step.before_histograms
+        data = histograms["data"]
+        signal = histograms["signal"]
+        background = histograms.get("background")
+        axis.errorbar(
+            centers,
+            data,
+            yerr=np.sqrt(np.clip(data, 0.0, None)),
+            fmt="o",
+            markersize=2.8,
+            linewidth=0.8,
+            color="black",
+            label="data",
+            zorder=5,
+        )
+        if signal is not None:
+            signal_shape = normalized_shape(signal)
+            if signal_shape is not None:
+                axis.stairs(
+                    float(np.sum(data)) * signal_shape,
+                    edges,
+                    color="0.55",
+                    linestyle=":",
+                    linewidth=1.4,
+                    label="raw signal MC",
+                )
+            # endif
+        # endif
+        if not summary and step.fit_result.success:
+            if channel == "dvcs":
+                axis.stairs(
+                    step.fit_result.dvcs_component_counts,
+                    edges,
+                    color="tab:blue",
+                    linewidth=1.6,
+                    label="fitted DVCS",
+                )
+                axis.stairs(
+                    step.fit_result.pi0_component_counts,
+                    edges,
+                    color="tab:red",
+                    linewidth=1.6,
+                    label=r"fitted $e\pi^0$",
+                )
+                axis.stairs(
+                    step.fit_result.model_counts,
+                    edges,
+                    color="tab:green",
+                    linestyle="--",
+                    linewidth=2.0,
+                    label="total fit",
+                )
+            else:
+                axis.stairs(
+                    step.fit_result.model_counts,
+                    edges,
+                    color="tab:green",
+                    linewidth=2.0,
+                    label="morphed signal MC",
+                )
+            # endif
+        elif summary and background is not None:
+            background_shape = normalized_shape(background)
+            if background_shape is not None:
+                axis.stairs(
+                    float(np.sum(data)) * background_shape,
+                    edges,
+                    color="tab:red",
+                    linewidth=1.4,
+                    label=r"$e\pi^0$ MC",
+                )
+            # endif
+        # endif
+
+        low, high = step.boundaries["nominal"]["data"]
+        if low > variable.xmin + 1.0e-12:
+            axis.axvline(low, color="tab:purple", linewidth=1.8)
+        # endif
+        if high < variable.xmax - 1.0e-12:
+            axis.axvline(high, color="tab:purple", linewidth=1.8)
+        # endif
+        annotation = (
+            f"step {step.iteration + 1}: {step.variable}\n"
+            f"score={step.score:.3f}\n"
+            f"data cut=[{low:.5g}, {high:.5g}]\n"
+            f"MC cut=[{step.boundaries['nominal']['mc'][0]:.5g}, "
+            f"{step.boundaries['nominal']['mc'][1]:.5g}]\n"
+            f"signal eff={100.0 * step.dvcs_mc_efficiency:.1f}%"
+        )
+        if channel == "dvcs":
+            annotation += (
+                f"\npi0 eff={100.0 * step.pi0_mc_efficiency:.1f}%"
+                f"\nf_pi0={step.f_pi0_before:.3f}"
+            )
+        # endif
+        axis.text(
+            0.98,
+            0.96,
+            annotation,
+            transform=axis.transAxes,
+            ha="right",
+            va="top",
+            fontsize=8.5,
+            bbox=dict(facecolor="white", alpha=0.80, edgecolor="none"),
+        )
+        axis.set_xlim(variable.xmin, variable.xmax)
+        axis.set_ylim(bottom=0.0)
+        axis.set_xlabel(variable.label)
+        axis.set_ylabel("events / bin")
+        axis.grid(axis="y", alpha=0.22)
+    # endfor
+
+    title_channel = r"$e'p'\gamma$" if channel == "dvcs" else r"$e'p'\pi^0$"
+    title_kind = "final iterative-cut summary" if summary else "iterative cut development"
+    fig.suptitle(
+        f"{title_channel} {title_kind}: {period.label}, {topology.label}\n"
+        "automatic order; nominal signal containment = 97%",
+        fontsize=17,
+        y=0.985,
+    )
+    handles, labels = flat_axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.91),
+            ncol=min(5, len(labels)),
+            frameon=False,
+        )
+    # endif
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.86))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_cut_stats(
+    shape: np.ndarray,
+    variable: VariableConfig,
+    low: float,
+    high: float,
+    containment: float,
+    mode: str,
+    iteration: int,
+    score: float,
+) -> Dict[str, object]:
+    mean, std = distribution_moments(shape, variable)
+    return {
+        "mean": mean,
+        "std": std,
+        "cut_low": low,
+        "cut_high": high,
+        "quantile": containment,
+        "mode": mode,
+        "iteration": iteration + 1,
+        "discrimination_score": score,
+    }
+
+
+def run_dvcs_iterative_cuts(
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    arrays: Mapping[str, Mapping[str, np.ndarray]],
+    max_shift_bins: float,
+    max_smear_bins: float,
+    min_counts: int,
+    fraction_variables: Sequence[str],
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
+    core_containment: float,
+    fraction_containment: float,
+    pi0_calibration: Mapping[str, Tuple[float, float]],
+    containments: Mapping[str, float],
+) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
+    data_arrays = arrays["data"]
+    signal_arrays = arrays["signal"]
+    background_arrays = arrays["background"]
+    masks = {
+        "data": np.ones(len(next(iter(data_arrays.values()))), dtype=bool),
+        "signal": np.ones(len(next(iter(signal_arrays.values()))), dtype=bool),
+        "background": np.ones(len(next(iter(background_arrays.values()))), dtype=bool),
+    }
+    remaining = [variable.branch for variable in VARIABLES]
+    steps: List[IterativeCutStep] = []
+    json_variants: Dict[str, Dict[str, Dict[str, object]]] = {
+        name: {"data": {}, "mc": {}}
+        for name in containments
+    }
+
+    for iteration in range(len(VARIABLES)):
+        data_hists = arrays_to_histograms(data_arrays, masks["data"], VARIABLES)
+        signal_hists = arrays_to_histograms(signal_arrays, masks["signal"], VARIABLES)
+        background_hists = arrays_to_histograms(background_arrays, masks["background"], VARIABLES)
+        active_fraction_variables = [
+            branch for branch in fraction_variables if branch in remaining
+        ]
+        if not active_fraction_variables:
+            active_fraction_variables = list(remaining)
+        # endif
+        summary = fit_shared_two_templates(
+            data_hists,
+            signal_hists,
+            background_hists,
+            topology,
+            max_shift_bins,
+            max_smear_bins,
+            min_counts,
+            active_fraction_variables,
+            shift_prior_bins,
+            smear_prior_bins,
+            use_nuisance_penalties,
+            core_containment,
+            fraction_containment,
+            pi0_calibration,
+        )
+        if not summary.success or summary.variable_results is None:
+            raise RuntimeError(
+                f"Iterative DVCS fit failed for {period.label} {topology.label} "
+                f"at step {iteration + 1}: {summary.message}"
+            )
+        # endif
+
+        candidates: List[Tuple[float, VariableConfig, Dict[str, Dict[str, Tuple[float, float]]], float, float, float]] = []
+        for variable in VARIABLES:
+            if variable.branch not in remaining:
+                continue
+            # endif
+            fit_result = summary.variable_results[variable.branch]
+            if not fit_result.success or fit_result.transformed_dvcs_shape is None:
+                continue
+            # endif
+            raw_signal_shape = normalized_shape(signal_hists[variable.branch])
+            if raw_signal_shape is None:
+                continue
+            # endif
+            boundaries: Dict[str, Dict[str, Tuple[float, float]]] = {}
+            modes: Dict[str, Dict[str, str]] = {}
+            for name, containment in containments.items():
+                data_low, data_high, data_mode = containment_window_from_shape(
+                    fit_result.transformed_dvcs_shape,
+                    variable,
+                    containment,
+                )
+                mc_low, mc_high, mc_mode = containment_window_from_shape(
+                    raw_signal_shape,
+                    variable,
+                    containment,
+                )
+                boundaries[name] = {
+                    "data": (data_low, data_high),
+                    "mc": (mc_low, mc_high),
+                }
+                modes[name] = {"data": data_mode, "mc": mc_mode}
+            # endfor
+            nominal_mc_low, nominal_mc_high = boundaries["nominal"]["mc"]
+            signal_values = signal_arrays[variable.branch][masks["signal"]]
+            background_values = background_arrays[variable.branch][masks["background"]]
+            signal_pass = apply_window(signal_values, nominal_mc_low, nominal_mc_high)
+            background_pass = apply_window(background_values, nominal_mc_low, nominal_mc_high)
+            signal_eff = float(np.mean(signal_pass)) if signal_pass.size else 0.0
+            background_eff = float(np.mean(background_pass)) if background_pass.size else 1.0
+            score = max(0.0, signal_eff - background_eff)
+            data_low, data_high = boundaries["nominal"]["data"]
+            data_values = data_arrays[variable.branch][masks["data"]]
+            data_eff = float(np.mean(apply_window(data_values, data_low, data_high))) if data_values.size else 0.0
+            candidates.append(
+                (score, variable, boundaries, data_eff, signal_eff, background_eff)
+            )
+        # endfor
+        if not candidates:
+            raise RuntimeError(
+                f"No valid iterative cut candidate for {period.label} "
+                f"{topology.label} at step {iteration + 1}"
+            )
+        # endif
+        candidates.sort(key=lambda item: (-item[0], item[1].branch))
+        score, selected_variable, boundaries, data_eff, signal_eff, background_eff = candidates[0]
+        result = summary.variable_results[selected_variable.branch]
+        before_histograms = {
+            "data": data_hists[selected_variable.branch],
+            "signal": signal_hists[selected_variable.branch],
+            "background": background_hists[selected_variable.branch],
+        }
+
+        nominal_data_low, nominal_data_high = boundaries["nominal"]["data"]
+        nominal_mc_low, nominal_mc_high = boundaries["nominal"]["mc"]
+        masks["data"] &= apply_window(
+            data_arrays[selected_variable.branch],
+            nominal_data_low,
+            nominal_data_high,
+        )
+        masks["signal"] &= apply_window(
+            signal_arrays[selected_variable.branch],
+            nominal_mc_low,
+            nominal_mc_high,
+        )
+        masks["background"] &= apply_window(
+            background_arrays[selected_variable.branch],
+            nominal_mc_low,
+            nominal_mc_high,
+        )
+        after_histograms = {
+            "data": arrays_to_histograms(data_arrays, masks["data"], [selected_variable])[selected_variable.branch],
+            "signal": arrays_to_histograms(signal_arrays, masks["signal"], [selected_variable])[selected_variable.branch],
+            "background": arrays_to_histograms(background_arrays, masks["background"], [selected_variable])[selected_variable.branch],
+        }
+        steps.append(
+            IterativeCutStep(
+                iteration=iteration,
+                variable=selected_variable.branch,
+                score=score,
+                data_efficiency=data_eff,
+                dvcs_mc_efficiency=signal_eff,
+                pi0_mc_efficiency=background_eff,
+                f_pi0_before=summary.f_pi0,
+                boundaries=boundaries,
+                before_histograms=before_histograms,
+                after_histograms=after_histograms,
+                fit_result=result,
+            )
+        )
+        raw_signal_shape = normalized_shape(signal_hists[selected_variable.branch])
+        for name, containment in containments.items():
+            data_low, data_high = boundaries[name]["data"]
+            mc_low, mc_high = boundaries[name]["mc"]
+            data_mode = "upper_quantile" if is_lower_bounded_morph_variable(selected_variable) else "quantile_window"
+            mc_mode = data_mode
+            json_variants[name]["data"][selected_variable.branch] = make_cut_stats(
+                result.transformed_dvcs_shape,
+                selected_variable,
+                data_low,
+                data_high,
+                containment,
+                data_mode,
+                iteration,
+                score,
+            )
+            json_variants[name]["mc"][selected_variable.branch] = make_cut_stats(
+                raw_signal_shape,
+                selected_variable,
+                mc_low,
+                mc_high,
+                containment,
+                mc_mode,
+                iteration,
+                score,
+            )
+        # endfor
+        remaining.remove(selected_variable.branch)
+    # endfor
+    return steps, json_variants
+
+
+def run_pi0_iterative_cuts(
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    arrays: Mapping[str, Mapping[str, np.ndarray]],
+    dvcs_order: Sequence[str],
+    max_shift_bins: float,
+    max_smear_bins: float,
+    min_counts: int,
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
+    core_containment: float,
+    containments: Mapping[str, float],
+) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
+    data_arrays = arrays["data"]
+    signal_arrays = arrays["signal"]
+    masks = {
+        "data": np.ones(len(next(iter(data_arrays.values()))), dtype=bool),
+        "signal": np.ones(len(next(iter(signal_arrays.values()))), dtype=bool),
+    }
+    pi0_lookup = {variable.branch: variable for variable in PI0_VARIABLES}
+    mapped_order = [
+        "theta_pi0_pi0" if branch == "theta_gamma_gamma" else branch
+        for branch in dvcs_order
+    ]
+    steps: List[IterativeCutStep] = []
+    json_variants: Dict[str, Dict[str, Dict[str, object]]] = {
+        name: {"data": {}, "mc": {}}
+        for name in containments
+    }
+    for iteration, branch in enumerate(mapped_order):
+        variable = pi0_lookup[branch]
+        data_hist = arrays_to_histograms(data_arrays, masks["data"], [variable])[branch]
+        signal_hist = arrays_to_histograms(signal_arrays, masks["signal"], [variable])[branch]
+        fit_result = fit_single_template(
+            data_hist,
+            signal_hist,
+            variable,
+            topology,
+            max_shift_bins,
+            max_smear_bins,
+            min_counts,
+            shift_prior_bins,
+            smear_prior_bins,
+            use_nuisance_penalties,
+            core_containment,
+        )
+        if not fit_result.success or fit_result.transformed_dvcs_shape is None:
+            raise RuntimeError(
+                f"Iterative pi0 fit failed for {period.label} {topology.label} "
+                f"{branch}: {fit_result.message}"
+            )
+        # endif
+        raw_shape = normalized_shape(signal_hist)
+        boundaries: Dict[str, Dict[str, Tuple[float, float]]] = {}
+        for name, containment in containments.items():
+            data_low, data_high, _ = containment_window_from_shape(
+                fit_result.transformed_dvcs_shape,
+                variable,
+                containment,
+            )
+            mc_low, mc_high, _ = containment_window_from_shape(
+                raw_shape,
+                variable,
+                containment,
+            )
+            boundaries[name] = {
+                "data": (data_low, data_high),
+                "mc": (mc_low, mc_high),
+            }
+        # endfor
+        data_low, data_high = boundaries["nominal"]["data"]
+        mc_low, mc_high = boundaries["nominal"]["mc"]
+        current_data_values = data_arrays[branch][masks["data"]]
+        current_signal_values = signal_arrays[branch][masks["signal"]]
+        data_eff = float(np.mean(apply_window(current_data_values, data_low, data_high))) if current_data_values.size else 0.0
+        signal_eff = float(np.mean(apply_window(current_signal_values, mc_low, mc_high))) if current_signal_values.size else 0.0
+        masks["data"] &= apply_window(data_arrays[branch], data_low, data_high)
+        masks["signal"] &= apply_window(signal_arrays[branch], mc_low, mc_high)
+        after_histograms = {
+            "data": arrays_to_histograms(data_arrays, masks["data"], [variable])[branch],
+            "signal": arrays_to_histograms(signal_arrays, masks["signal"], [variable])[branch],
+        }
+        step = IterativeCutStep(
+            iteration=iteration,
+            variable=branch,
+            score=0.0,
+            data_efficiency=data_eff,
+            dvcs_mc_efficiency=signal_eff,
+            pi0_mc_efficiency=0.0,
+            f_pi0_before=0.0,
+            boundaries=boundaries,
+            before_histograms={"data": data_hist, "signal": signal_hist},
+            after_histograms=after_histograms,
+            fit_result=fit_result,
+        )
+        steps.append(step)
+        for name, containment in containments.items():
+            mode = "upper_quantile" if is_lower_bounded_morph_variable(variable) else "quantile_window"
+            json_variants[name]["data"][branch] = make_cut_stats(
+                fit_result.transformed_dvcs_shape,
+                variable,
+                boundaries[name]["data"][0],
+                boundaries[name]["data"][1],
+                containment,
+                mode,
+                iteration,
+                0.0,
+            )
+            json_variants[name]["mc"][branch] = make_cut_stats(
+                raw_shape,
+                variable,
+                boundaries[name]["mc"][0],
+                boundaries[name]["mc"][1],
+                containment,
+                mode,
+                iteration,
+                0.0,
+            )
+        # endfor
+    # endfor
+    return steps, json_variants
+
+
+def develop_iterative_cuts_for_period(
+    period: PeriodConfig,
+    topologies: Sequence[TopologyConfig],
+    output_dir: Path,
+    step_size: str,
+    max_shift_bins: float,
+    max_smear_bins: float,
+    min_counts: int,
+    fraction_variables: Sequence[str],
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
+    dvcs_core_containment: float,
+    dvcs_fraction_containment: float,
+    pi0_core_containment: float,
+    pi0_calibrations: Mapping[str, Mapping[str, Tuple[float, float]]],
+    nominal_containment: float,
+    loose_containment: float,
+    tight_containment: float,
+    dpi: int,
+) -> Tuple[Dict[str, Dict[str, object]], List[Dict[str, object]]]:
+    containments = {
+        "nominal": nominal_containment,
+        "loose": loose_containment,
+        "tight": tight_containment,
+    }
+    log(f"Loading event arrays for iterative cuts: {period.label}")
+    dvcs_arrays = {
+        "data": load_selected_arrays_for_file(period.data_file, topologies, step_size, VARIABLES),
+        "signal": load_selected_arrays_for_file(period.dvcs_mc_file, topologies, step_size, VARIABLES),
+        "background": load_selected_arrays_for_file(period.pi0_as_dvcs_mc_file, topologies, step_size, VARIABLES),
+    }
+    pi0_arrays = {
+        "data": load_selected_arrays_for_file(period.eppi0_data_file, topologies, step_size, PI0_VARIABLES),
+        "signal": load_selected_arrays_for_file(period.eppi0_mc_file, topologies, step_size, PI0_VARIABLES),
+    }
+    blocks: Dict[str, Dict[str, object]] = {name: {} for name in containments}
+    rows: List[Dict[str, object]] = []
+    for topology in topologies:
+        dvcs_topology_arrays = {
+            sample: values[topology.key]
+            for sample, values in dvcs_arrays.items()
+        }
+        dvcs_steps, dvcs_json = run_dvcs_iterative_cuts(
+            period,
+            topology,
+            dvcs_topology_arrays,
+            max_shift_bins,
+            max_smear_bins,
+            min_counts,
+            fraction_variables,
+            shift_prior_bins,
+            smear_prior_bins,
+            use_nuisance_penalties,
+            dvcs_core_containment,
+            dvcs_fraction_containment,
+            pi0_calibrations.get(topology.key, {}),
+            containments,
+        )
+        dvcs_order = [step.variable for step in dvcs_steps]
+        pi0_topology_arrays = {
+            sample: values[topology.key]
+            for sample, values in pi0_arrays.items()
+        }
+        pi0_steps, pi0_json = run_pi0_iterative_cuts(
+            period,
+            topology,
+            pi0_topology_arrays,
+            dvcs_order,
+            max_shift_bins,
+            max_smear_bins,
+            min_counts,
+            shift_prior_bins,
+            smear_prior_bins,
+            use_nuisance_penalties,
+            pi0_core_containment,
+            containments,
+        )
+        for channel, steps in (("dvcs", dvcs_steps), ("pi0", pi0_steps)):
+            development_path = (
+                output_dir / ("dvcs_channel" if channel == "dvcs" else "pi0_channel")
+                / "iterative_cut_development"
+                / f"iterative_cut_development_{period.key}_{topology.key.lower()}.png"
+            )
+            summary_path = (
+                output_dir / ("dvcs_channel" if channel == "dvcs" else "pi0_channel")
+                / "iterative_cut_summary"
+                / f"iterative_cut_summary_{period.key}_{topology.key.lower()}.png"
+            )
+            draw_iterative_cut_canvas(
+                development_path, period, topology, channel, steps, False, dpi
+            )
+            draw_iterative_cut_canvas(
+                summary_path, period, topology, channel, steps, True, dpi
+            )
+            log(f"Wrote {development_path}")
+            log(f"Wrote {summary_path}")
+            for step in steps:
+                rows.append({
+                    "channel": channel,
+                    "period": period.key,
+                    "period_label": period.label,
+                    "topology": topology.key,
+                    "iteration": step.iteration + 1,
+                    "variable": step.variable,
+                    "score": step.score,
+                    "f_pi0_before": step.f_pi0_before,
+                    "data_efficiency": step.data_efficiency,
+                    "signal_mc_efficiency": step.dvcs_mc_efficiency,
+                    "pi0_mc_efficiency": step.pi0_mc_efficiency,
+                    "nominal_data_low": step.boundaries["nominal"]["data"][0],
+                    "nominal_data_high": step.boundaries["nominal"]["data"][1],
+                    "nominal_mc_low": step.boundaries["nominal"]["mc"][0],
+                    "nominal_mc_high": step.boundaries["nominal"]["mc"][1],
+                    "loose_data_low": step.boundaries["loose"]["data"][0],
+                    "loose_data_high": step.boundaries["loose"]["data"][1],
+                    "loose_mc_low": step.boundaries["loose"]["mc"][0],
+                    "loose_mc_high": step.boundaries["loose"]["mc"][1],
+                    "tight_data_low": step.boundaries["tight"]["data"][0],
+                    "tight_data_high": step.boundaries["tight"]["data"][1],
+                    "tight_mc_low": step.boundaries["tight"]["mc"][0],
+                    "tight_mc_high": step.boundaries["tight"]["mc"][1],
+                })
+            # endfor
+        # endfor
+        for name in containments:
+            blocks[name][cut_json_key("dvcs", period, topology)] = dvcs_json[name]
+            blocks[name][cut_json_key("pi0", period, topology)] = pi0_json[name]
+        # endfor
+    # endfor
+    return blocks, rows
+
+
+def write_json(path: Path, payload: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    # endwith
+
+
 def process_period_worker(
     period: PeriodConfig,
     topologies: Sequence[TopologyConfig],
@@ -2367,7 +3313,17 @@ def process_period_worker(
     dvcs_fraction_containment: float,
     log_y: bool,
     dpi: int,
-) -> Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]:
+    cut_nominal_containment: float,
+    cut_loose_containment: float,
+    cut_tight_containment: float,
+    run_iterative_cuts: bool,
+) -> Tuple[
+    str,
+    List[Dict[str, object]],
+    List[Dict[str, object]],
+    Dict[str, Dict[str, object]],
+    List[Dict[str, object]],
+]:
     """Process one complete run period inside a worker process."""
 
     output_dir = Path(output_dir_string)
@@ -2408,8 +3364,36 @@ def process_period_worker(
         pi0_calibrations,
     )
 
+    iterative_blocks: Dict[str, Dict[str, object]] = {
+        "nominal": {}, "loose": {}, "tight": {}
+    }
+    iterative_rows: List[Dict[str, object]] = []
+    if run_iterative_cuts:
+        iterative_blocks, iterative_rows = develop_iterative_cuts_for_period(
+            period,
+            topologies,
+            output_dir,
+            step_size,
+            max_shift_bins,
+            max_smear_bins,
+            fit_min_counts,
+            fraction_variables,
+            shift_prior_bins,
+            smear_prior_bins,
+            use_nuisance_penalties,
+            dvcs_core_containment,
+            dvcs_fraction_containment,
+            pi0_core_containment,
+            pi0_calibrations,
+            cut_nominal_containment,
+            cut_loose_containment,
+            cut_tight_containment,
+            dpi,
+        )
+    # endif
+
     log(f"[worker {os.getpid()}] Finished {period.label}")
-    return period.key, dvcs_rows, pi0_rows
+    return period.key, dvcs_rows, pi0_rows, iterative_blocks, iterative_rows
 
 
 def main() -> int:
@@ -2422,6 +3406,16 @@ def main() -> int:
     # endif
     if args.workers <= 0:
         raise ValueError("--workers must be positive.")
+    # endif
+    if not (
+        0.50 <= args.cut_tight_containment
+        < args.cut_nominal_containment
+        < args.cut_loose_containment
+        <= 1.0
+    ):
+        raise ValueError(
+            "Iterative containments must satisfy 0.50 <= tight < nominal < loose <= 1.0."
+        )
     # endif
     if not (0.50 <= args.dvcs_core_containment <= 1.0):
         raise ValueError("--dvcs-core-containment must satisfy 0.50 <= value <= 1.0.")
@@ -2458,7 +3452,7 @@ def main() -> int:
         f"nuisance-region containment={100.0 * args.dvcs_core_containment:.0f}%. "
         "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2. "
         "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
-        "Full-range fitting is the default; Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
+        "Core-region fitting is the default; Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
 
     worker_count = min(args.workers, 5, len(periods))
@@ -2469,12 +3463,17 @@ def main() -> int:
 
     period_results: Dict[
         str,
-        Tuple[List[Dict[str, object]], List[Dict[str, object]]],
+        Tuple[
+            List[Dict[str, object]],
+            List[Dict[str, object]],
+            Dict[str, Dict[str, object]],
+            List[Dict[str, object]],
+        ],
     ] = {}
 
     if worker_count == 1:
         for period in periods:
-            period_key, dvcs_rows, pi0_rows = process_period_worker(
+            period_key, dvcs_rows, pi0_rows, cut_blocks, cut_rows = process_period_worker(
                 period,
                 topologies,
                 str(output_dir),
@@ -2491,8 +3490,12 @@ def main() -> int:
                 args.dvcs_fraction_containment,
                 args.log_y,
                 args.dpi,
+                args.cut_nominal_containment,
+                args.cut_loose_containment,
+                args.cut_tight_containment,
+                not args.skip_iterative_cuts,
             )
-            period_results[period_key] = (dvcs_rows, pi0_rows)
+            period_results[period_key] = (dvcs_rows, pi0_rows, cut_blocks, cut_rows)
         # endfor
     else:
         spawn_context = multiprocessing.get_context("spawn")
@@ -2519,6 +3522,10 @@ def main() -> int:
                     args.dvcs_fraction_containment,
                     args.log_y,
                     args.dpi,
+                    args.cut_nominal_containment,
+                    args.cut_loose_containment,
+                    args.cut_tight_containment,
+                    not args.skip_iterative_cuts,
                 ): period
                 for period in periods
             }
@@ -2526,24 +3533,33 @@ def main() -> int:
             for future in concurrent.futures.as_completed(future_to_period):
                 period = future_to_period[future]
                 try:
-                    period_key, dvcs_rows, pi0_rows = future.result()
+                    period_key, dvcs_rows, pi0_rows, cut_blocks, cut_rows = future.result()
                 except Exception as exc:
                     raise RuntimeError(
                         f"Worker failed for {period.label}: {exc}"
                     ) from exc
                 # endtry
 
-                period_results[period_key] = (dvcs_rows, pi0_rows)
+                period_results[period_key] = (dvcs_rows, pi0_rows, cut_blocks, cut_rows)
                 log(f"Collected results for {period.label}")
             # endfor
         # endwith
     # endif
 
-    # Preserve the configured run-period order in the combined CSV files.
+    combined_cut_blocks: Dict[str, Dict[str, object]] = {
+        "nominal": {}, "loose": {}, "tight": {}
+    }
+    iterative_rows_all: List[Dict[str, object]] = []
+
+    # Preserve the configured run-period order in the combined outputs.
     for period in periods:
-        dvcs_rows, pi0_rows = period_results[period.key]
+        dvcs_rows, pi0_rows, cut_blocks, cut_rows = period_results[period.key]
         all_rows.extend(dvcs_rows)
         all_pi0_rows.extend(pi0_rows)
+        iterative_rows_all.extend(cut_rows)
+        for name in combined_cut_blocks:
+            combined_cut_blocks[name].update(cut_blocks.get(name, {}))
+        # endfor
     # endfor
 
     csv_path = output_dir / "dvcs_channel" / "template_fits" / "fit_results.csv"
@@ -2552,6 +3568,25 @@ def main() -> int:
     pi0_csv_path = output_dir / "pi0_channel" / "template_fits" / "fit_results.csv"
     write_results_csv(pi0_csv_path, all_pi0_rows)
     log(f"Wrote {pi0_csv_path}")
+    if not args.skip_iterative_cuts:
+        iterative_csv = output_dir / "iterative_cuts" / "iterative_cut_results.csv"
+        write_results_csv(iterative_csv, iterative_rows_all)
+        log(f"Wrote {iterative_csv}")
+
+        json_dir = output_dir / "iterative_cuts" / "jsons"
+        nominal_path = json_dir / "combined_cuts_97.json"
+        loose_path = json_dir / "combined_cuts_99.json"
+        tight_path = json_dir / "combined_cuts_95.json"
+        compatibility_path = json_dir / "combined_cuts.json"
+        write_json(nominal_path, combined_cut_blocks["nominal"])
+        write_json(loose_path, combined_cut_blocks["loose"])
+        write_json(tight_path, combined_cut_blocks["tight"])
+        write_json(compatibility_path, combined_cut_blocks["nominal"])
+        log(f"Wrote {nominal_path}")
+        log(f"Wrote {loose_path}")
+        log(f"Wrote {tight_path}")
+        log(f"Wrote {compatibility_path}")
+    # endif
     log("All requested shape plots and fits completed")
     return 0
 
