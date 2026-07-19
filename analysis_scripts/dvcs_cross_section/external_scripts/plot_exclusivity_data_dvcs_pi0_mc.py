@@ -42,7 +42,10 @@ Outputs:
   * fit_results.csv containing all fitted parameters and diagnostics
   * compact 2x4 iterative cut-development canvases
   * compact 2x4 post-cut summary canvases
-  * main-suite-compatible combined_cuts JSON files for 97%, 99% and 95%
+  * one optimization-history figure and one marginal-gain figure per DVCS period/topology
+  * detailed DVCS cut-flow CSVs, a global variable-ranking CSV and plateau recommendations
+  * topology-combined optimization summaries averaged over the selected periods
+  * main-suite-compatible combined_cuts JSON files for 90%, 95% and 99%
 
 The five run periods are processed in parallel with at most five worker processes. Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
 """
@@ -2607,8 +2610,22 @@ def write_results_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
     if not rows:
         return
     # endif
+    fieldnames: List[str] = []
+    seen = set()
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen.add(key)
+                fieldnames.append(key)
+            # endif
+        # endfor
+    # endfor
     with path.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+        )
         writer.writeheader()
         writer.writerows(rows)
     # endwith
@@ -3136,6 +3153,611 @@ def draw_iterative_cut_canvas(
         )
     # endif
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.86))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+def cumulative_optimization_rows(
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    steps: Sequence[IterativeCutStep],
+) -> List[Dict[str, object]]:
+    """Build the authoritative cumulative DVCS cut flow.
+
+    The per-step efficiencies stored by the optimizer are conditional on all
+    preceding cuts. Their products therefore give the cumulative retained
+    fractions. The initial fitted pi0 fraction defines relative signal and
+    background yields for the diagnostic S/sqrt(S+B); this diagnostic does not
+    alter the automatic cut ordering.
+    """
+
+    if not steps:
+        return []
+    # endif
+
+    initial_fraction = float(np.clip(steps[0].f_pi0_before, 0.0, 1.0))
+    cumulative_data = 1.0
+    cumulative_signal = 1.0
+    cumulative_background = 1.0
+    rows: List[Dict[str, object]] = []
+
+    def make_row(
+        iteration: int,
+        variable: str,
+        local_data_efficiency: float,
+        local_signal_efficiency: float,
+        local_background_efficiency: float,
+        fraction_before: float,
+        fraction_after: float,
+        score: float,
+    ) -> Dict[str, object]:
+        signal_yield = (1.0 - initial_fraction) * cumulative_signal
+        background_yield = initial_fraction * cumulative_background
+        denominator = signal_yield + background_yield
+        significance = (
+            signal_yield / math.sqrt(denominator)
+            if denominator > 0.0
+            else 0.0
+        )
+        purity_fom = (
+            cumulative_signal / math.sqrt(max(fraction_after, 1.0e-6))
+        )
+        delta_fraction = (
+            fraction_before - fraction_after
+            if iteration > 0
+            else 0.0
+        )
+        delta_signal = (
+            1.0 - local_signal_efficiency
+            if iteration > 0
+            else 0.0
+        )
+        delta_background = (
+            1.0 - local_background_efficiency
+            if iteration > 0
+            else 0.0
+        )
+        gain_per_signal_loss = (
+            delta_fraction / delta_signal
+            if delta_signal > 1.0e-12
+            else math.nan
+        )
+        return {
+            "channel": "dvcs",
+            "period": period.key,
+            "period_label": period.label,
+            "topology": topology.key,
+            "topology_label": topology.label,
+            "iteration": iteration,
+            "variable": variable,
+            "score": score,
+            "local_data_efficiency": local_data_efficiency,
+            "local_dvcs_efficiency": local_signal_efficiency,
+            "local_pi0_efficiency": local_background_efficiency,
+            "cumulative_data_fraction": cumulative_data,
+            "cumulative_dvcs_efficiency": cumulative_signal,
+            "cumulative_pi0_efficiency": cumulative_background,
+            "f_pi0_before": fraction_before,
+            "f_pi0_after": fraction_after,
+            "delta_f_pi0": delta_fraction,
+            "delta_dvcs_efficiency": delta_signal,
+            "delta_pi0_efficiency": delta_background,
+            "delta_f_pi0_per_delta_dvcs_efficiency": gain_per_signal_loss,
+            "epsilon_dvcs_over_sqrt_f_pi0": purity_fom,
+            "relative_signal_yield": signal_yield,
+            "relative_background_yield": background_yield,
+            "s_over_sqrt_s_plus_b": significance,
+        }
+
+    rows.append(
+        make_row(
+            iteration=0,
+            variable="initial",
+            local_data_efficiency=1.0,
+            local_signal_efficiency=1.0,
+            local_background_efficiency=1.0,
+            fraction_before=initial_fraction,
+            fraction_after=initial_fraction,
+            score=0.0,
+        )
+    )
+
+    for step in steps:
+        cumulative_data *= float(np.clip(step.data_efficiency, 0.0, 1.0))
+        cumulative_signal *= float(np.clip(step.dvcs_mc_efficiency, 0.0, 1.0))
+        cumulative_background *= float(np.clip(step.pi0_mc_efficiency, 0.0, 1.0))
+        rows.append(
+            make_row(
+                iteration=step.iteration + 1,
+                variable=step.variable,
+                local_data_efficiency=step.data_efficiency,
+                local_signal_efficiency=step.dvcs_mc_efficiency,
+                local_background_efficiency=step.pi0_mc_efficiency,
+                fraction_before=step.f_pi0_before,
+                fraction_after=step.f_pi0_after,
+                score=step.score,
+            )
+        )
+    # endfor
+    return rows
+
+
+def plateau_recommendation(
+    rows: Sequence[Mapping[str, object]],
+    max_delta_fraction: float = 0.005,
+    min_signal_loss: float = 0.010,
+    consecutive_steps: int = 2,
+) -> Dict[str, object]:
+    """Return a diagnostic plateau recommendation without stopping optimization."""
+
+    cut_rows = [row for row in rows if int(row["iteration"]) > 0]
+    first_plateau = None
+    reason = "No plateau identified by the default diagnostic thresholds."
+    for start in range(0, max(0, len(cut_rows) - consecutive_steps + 1)):
+        window = cut_rows[start:start + consecutive_steps]
+        if all(
+            float(row["delta_f_pi0"]) <= max_delta_fraction
+            and float(row["delta_dvcs_efficiency"]) >= min_signal_loss
+            for row in window
+        ):
+            first_plateau = int(window[0]["iteration"]) - 1
+            reason = (
+                f"Optimization plateau recommended after iteration {first_plateau}: "
+                f"the next {consecutive_steps} cuts each reduce f_pi0 by no more than "
+                f"{100.0 * max_delta_fraction:.2f} percentage points while losing at "
+                f"least {100.0 * min_signal_loss:.1f}% of the then-surviving DVCS MC."
+            )
+            break
+        # endif
+    # endfor
+
+    return {
+        "plateau_after_iteration": (
+            first_plateau if first_plateau is not None else ""
+        ),
+        "plateau_found": first_plateau is not None,
+        "max_delta_f_pi0_threshold": max_delta_fraction,
+        "min_local_dvcs_loss_threshold": min_signal_loss,
+        "required_consecutive_steps": consecutive_steps,
+        "recommendation": reason,
+    }
+
+
+def draw_optimization_history(
+    output_path: Path,
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    rows: Sequence[Mapping[str, object]],
+    recommendation: Mapping[str, object],
+    dpi: int,
+) -> None:
+    """Draw contamination, cumulative efficiency and figure-of-merit histories."""
+
+    if not rows:
+        return
+    # endif
+
+    iterations = np.asarray([int(row["iteration"]) for row in rows], dtype=float)
+    labels = [str(row["variable"]) for row in rows]
+    f_pi0 = np.asarray([float(row["f_pi0_after"]) for row in rows])
+    data_eff = np.asarray([float(row["cumulative_data_fraction"]) for row in rows])
+    signal_eff = np.asarray([float(row["cumulative_dvcs_efficiency"]) for row in rows])
+    background_eff = np.asarray([float(row["cumulative_pi0_efficiency"]) for row in rows])
+    purity_fom = np.asarray(
+        [float(row["epsilon_dvcs_over_sqrt_f_pi0"]) for row in rows]
+    )
+    significance = np.asarray(
+        [float(row["s_over_sqrt_s_plus_b"]) for row in rows]
+    )
+    significance_rel = (
+        significance / significance[0]
+        if significance.size and significance[0] > 0.0
+        else significance
+    )
+    purity_rel = (
+        purity_fom / purity_fom[0]
+        if purity_fom.size and purity_fom[0] > 0.0
+        else purity_fom
+    )
+
+    fig, axes = plt.subplots(3, 1, figsize=(12.0, 12.0), sharex=True)
+
+    axes[0].plot(iterations, f_pi0, marker="o", linewidth=2.0)
+    axes[0].set_ylabel(r"propagated $f_{\pi^0}$")
+    axes[0].set_ylim(bottom=0.0)
+    axes[0].grid(alpha=0.25)
+
+    axes[1].plot(iterations, signal_eff, marker="o", label="DVCS MC")
+    axes[1].plot(iterations, background_eff, marker="s", label=r"$e\pi^0$ MC")
+    axes[1].plot(iterations, data_eff, marker="^", label="data")
+    axes[1].set_ylabel("cumulative retained fraction")
+    axes[1].set_ylim(0.0, 1.05)
+    axes[1].grid(alpha=0.25)
+    axes[1].legend(frameon=False, ncol=3)
+
+    axes[2].plot(
+        iterations,
+        signal_eff,
+        marker="o",
+        label=r"$\epsilon_{\mathrm{DVCS}}$",
+    )
+    axes[2].plot(
+        iterations,
+        purity_rel,
+        marker="s",
+        label=r"$[\epsilon_{\mathrm{DVCS}}/\sqrt{f_{\pi^0}}]$ / initial",
+    )
+    axes[2].plot(
+        iterations,
+        significance_rel,
+        marker="^",
+        label=r"$[S/\sqrt{S+B}]$ / initial",
+    )
+    axes[2].axhline(1.0, linewidth=1.0, linestyle="--")
+    axes[2].set_ylabel("diagnostic figure of merit")
+    axes[2].set_xlabel("automatic cut iteration")
+    axes[2].grid(alpha=0.25)
+    axes[2].legend(frameon=False, ncol=1)
+
+    for axis in axes:
+        axis.set_xticks(iterations)
+        axis.set_xticklabels(labels, rotation=35, ha="right")
+    # endfor
+
+    plateau = recommendation.get("plateau_after_iteration", "")
+    if plateau != "":
+        for axis in axes:
+            axis.axvline(float(plateau) + 0.5, linewidth=1.2, linestyle=":")
+        # endfor
+    # endif
+
+    fig.suptitle(
+        f"DVCS exclusivity optimization: {period.label}, {topology.label}\n"
+        f"{recommendation['recommendation']}",
+        fontsize=15,
+        y=0.985,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+def draw_marginal_gain_history(
+    output_path: Path,
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    rows: Sequence[Mapping[str, object]],
+    dpi: int,
+) -> None:
+    """Draw per-cut contamination reduction and conditional efficiency losses."""
+
+    cut_rows = [row for row in rows if int(row["iteration"]) > 0]
+    if not cut_rows:
+        return
+    # endif
+
+    iterations = np.asarray([int(row["iteration"]) for row in cut_rows], dtype=float)
+    labels = [str(row["variable"]) for row in cut_rows]
+    delta_fraction = np.asarray(
+        [float(row["delta_f_pi0"]) for row in cut_rows]
+    )
+    signal_loss = np.asarray(
+        [float(row["delta_dvcs_efficiency"]) for row in cut_rows]
+    )
+    background_loss = np.asarray(
+        [float(row["delta_pi0_efficiency"]) for row in cut_rows]
+    )
+
+    fig, axis_left = plt.subplots(figsize=(12.0, 6.5))
+    width = 0.36
+    axis_left.bar(
+        iterations - 0.5 * width,
+        100.0 * delta_fraction,
+        width=width,
+        label=r"$\Delta f_{\pi^0}$",
+    )
+    axis_left.set_ylabel(r"contamination reduction (percentage points)")
+    axis_left.set_xlabel("automatic cut iteration")
+    axis_left.grid(axis="y", alpha=0.25)
+
+    axis_right = axis_left.twinx()
+    axis_right.bar(
+        iterations + 0.5 * width,
+        100.0 * signal_loss,
+        width=width,
+        alpha=0.55,
+        label="conditional DVCS loss",
+    )
+    axis_right.plot(
+        iterations,
+        100.0 * background_loss,
+        marker="o",
+        linewidth=1.8,
+        label=r"conditional $e\pi^0$ loss",
+    )
+    axis_right.set_ylabel("conditional efficiency loss (%)")
+    axis_left.set_xticks(iterations)
+    axis_left.set_xticklabels(labels, rotation=35, ha="right")
+
+    handles_left, labels_left = axis_left.get_legend_handles_labels()
+    handles_right, labels_right = axis_right.get_legend_handles_labels()
+    axis_left.legend(
+        handles_left + handles_right,
+        labels_left + labels_right,
+        frameon=False,
+        ncol=3,
+        loc="upper center",
+    )
+    fig.suptitle(
+        f"Marginal cut gains: {period.label}, {topology.label}",
+        fontsize=15,
+    )
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+def write_plateau_report(
+    path: Path,
+    period: PeriodConfig,
+    topology: TopologyConfig,
+    recommendation: Mapping[str, object],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as handle:
+        handle.write(f"Period: {period.label}\n")
+        handle.write(f"Topology: {topology.label}\n")
+        handle.write(str(recommendation["recommendation"]) + "\n")
+    # endwith
+
+
+def summarize_variable_ranking(
+    cut_flow_rows: Sequence[Mapping[str, object]],
+) -> List[Dict[str, object]]:
+    """Aggregate automatic-order and marginal-performance diagnostics."""
+
+    grouped: Dict[str, List[Mapping[str, object]]] = {}
+    for row in cut_flow_rows:
+        if int(row["iteration"]) <= 0:
+            continue
+        # endif
+        grouped.setdefault(str(row["variable"]), []).append(row)
+    # endfor
+
+    summary = []
+    for variable, rows in grouped.items():
+        iterations = np.asarray([float(row["iteration"]) for row in rows])
+        delta_fraction = np.asarray([float(row["delta_f_pi0"]) for row in rows])
+        delta_signal = np.asarray(
+            [float(row["delta_dvcs_efficiency"]) for row in rows]
+        )
+        delta_background = np.asarray(
+            [float(row["delta_pi0_efficiency"]) for row in rows]
+        )
+        scores = np.asarray([float(row["score"]) for row in rows])
+        finite_ratios = np.asarray(
+            [
+                float(row["delta_f_pi0_per_delta_dvcs_efficiency"])
+                for row in rows
+                if math.isfinite(
+                    float(row["delta_f_pi0_per_delta_dvcs_efficiency"])
+                )
+            ]
+        )
+        summary.append({
+            "variable": variable,
+            "number_of_period_topology_cases": len(rows),
+            "times_ranked_first": int(np.sum(iterations == 1.0)),
+            "mean_iteration": float(np.mean(iterations)),
+            "median_iteration": float(np.median(iterations)),
+            "mean_delta_f_pi0": float(np.mean(delta_fraction)),
+            "median_delta_f_pi0": float(np.median(delta_fraction)),
+            "mean_local_dvcs_loss": float(np.mean(delta_signal)),
+            "mean_local_pi0_loss": float(np.mean(delta_background)),
+            "mean_discrimination_score": float(np.mean(scores)),
+            "mean_delta_f_pi0_per_delta_dvcs_efficiency": (
+                float(np.mean(finite_ratios))
+                if finite_ratios.size
+                else math.nan
+            ),
+        })
+    # endfor
+
+    summary.sort(
+        key=lambda row: (
+            -int(row["times_ranked_first"]),
+            float(row["mean_iteration"]),
+            -float(row["mean_delta_f_pi0"]),
+            str(row["variable"]),
+        )
+    )
+    return summary
+
+
+def draw_topology_combined_summary(
+    output_path: Path,
+    topology: TopologyConfig,
+    cut_flow_rows: Sequence[Mapping[str, object]],
+    dpi: int,
+) -> None:
+    """Average optimization curves over selected periods for one topology."""
+
+    selected = [
+        row for row in cut_flow_rows
+        if str(row["topology"]) == topology.key
+    ]
+    if not selected:
+        return
+    # endif
+
+    by_iteration: Dict[int, List[Mapping[str, object]]] = {}
+    for row in selected:
+        by_iteration.setdefault(int(row["iteration"]), []).append(row)
+    # endfor
+
+    iterations = np.asarray(sorted(by_iteration), dtype=float)
+
+    def means(field: str) -> np.ndarray:
+        return np.asarray([
+            float(np.mean([float(row[field]) for row in by_iteration[int(i)]]))
+            for i in iterations
+        ])
+
+    def stds(field: str) -> np.ndarray:
+        return np.asarray([
+            float(np.std([float(row[field]) for row in by_iteration[int(i)]], ddof=0))
+            for i in iterations
+        ])
+
+    f_mean = means("f_pi0_after")
+    f_std = stds("f_pi0_after")
+    signal_mean = means("cumulative_dvcs_efficiency")
+    signal_std = stds("cumulative_dvcs_efficiency")
+    background_mean = means("cumulative_pi0_efficiency")
+    background_std = stds("cumulative_pi0_efficiency")
+    data_mean = means("cumulative_data_fraction")
+    data_std = stds("cumulative_data_fraction")
+    significance_mean = means("s_over_sqrt_s_plus_b")
+    significance_mean = (
+        significance_mean / significance_mean[0]
+        if significance_mean.size and significance_mean[0] > 0.0
+        else significance_mean
+    )
+
+    fig, axes = plt.subplots(3, 1, figsize=(11.5, 11.5), sharex=True)
+    axes[0].errorbar(iterations, f_mean, yerr=f_std, marker="o", capsize=3)
+    axes[0].set_ylabel(r"mean propagated $f_{\pi^0}$")
+    axes[0].set_ylim(bottom=0.0)
+    axes[0].grid(alpha=0.25)
+
+    axes[1].errorbar(
+        iterations, signal_mean, yerr=signal_std,
+        marker="o", capsize=3, label="DVCS MC",
+    )
+    axes[1].errorbar(
+        iterations, background_mean, yerr=background_std,
+        marker="s", capsize=3, label=r"$e\pi^0$ MC",
+    )
+    axes[1].errorbar(
+        iterations, data_mean, yerr=data_std,
+        marker="^", capsize=3, label="data",
+    )
+    axes[1].set_ylabel("mean cumulative retained fraction")
+    axes[1].set_ylim(0.0, 1.05)
+    axes[1].grid(alpha=0.25)
+    axes[1].legend(frameon=False, ncol=3)
+
+    axes[2].plot(iterations, signal_mean, marker="o", label=r"$\epsilon_{\mathrm{DVCS}}$")
+    axes[2].plot(
+        iterations,
+        significance_mean,
+        marker="s",
+        label=r"$[S/\sqrt{S+B}]$ / initial",
+    )
+    axes[2].axhline(1.0, linewidth=1.0, linestyle="--")
+    axes[2].set_ylabel("mean diagnostic figure of merit")
+    axes[2].set_xlabel("automatic cut iteration")
+    axes[2].grid(alpha=0.25)
+    axes[2].legend(frameon=False)
+
+    fig.suptitle(
+        f"Period-averaged DVCS exclusivity optimization: {topology.label}\n"
+        "Error bars show the run-period RMS; cut identities may differ by period.",
+        fontsize=15,
+        y=0.985,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+def draw_final_cut_performance(
+    output_path: Path,
+    cut_flow_rows: Sequence[Mapping[str, object]],
+    topologies: Sequence[TopologyConfig],
+    dpi: int,
+) -> None:
+    """Compare initial/final contamination and retained fractions by topology."""
+
+    topology_rows = []
+    for topology in topologies:
+        selected = [
+            row for row in cut_flow_rows
+            if str(row["topology"]) == topology.key
+        ]
+        if not selected:
+            continue
+        # endif
+        by_case: Dict[Tuple[str, str], List[Mapping[str, object]]] = {}
+        for row in selected:
+            key = (str(row["period"]), str(row["topology"]))
+            by_case.setdefault(key, []).append(row)
+        # endfor
+        initial = []
+        final = []
+        signal = []
+        background = []
+        data = []
+        for rows in by_case.values():
+            ordered = sorted(rows, key=lambda row: int(row["iteration"]))
+            initial.append(float(ordered[0]["f_pi0_after"]))
+            final.append(float(ordered[-1]["f_pi0_after"]))
+            signal.append(float(ordered[-1]["cumulative_dvcs_efficiency"]))
+            background.append(float(ordered[-1]["cumulative_pi0_efficiency"]))
+            data.append(float(ordered[-1]["cumulative_data_fraction"]))
+        # endfor
+        topology_rows.append((
+            topology,
+            float(np.mean(initial)),
+            float(np.mean(final)),
+            float(np.mean(signal)),
+            float(np.mean(background)),
+            float(np.mean(data)),
+        ))
+    # endfor
+    if not topology_rows:
+        return
+    # endif
+
+    x = np.arange(len(topology_rows), dtype=float)
+    labels = [item[0].label for item in topology_rows]
+    initial = np.asarray([item[1] for item in topology_rows])
+    final = np.asarray([item[2] for item in topology_rows])
+    signal = np.asarray([item[3] for item in topology_rows])
+    background = np.asarray([item[4] for item in topology_rows])
+    data = np.asarray([item[5] for item in topology_rows])
+
+    fig, axes = plt.subplots(1, 2, figsize=(15.0, 6.0))
+    width = 0.34
+    axes[0].bar(x - 0.5 * width, initial, width=width, label="initial")
+    axes[0].bar(x + 0.5 * width, final, width=width, label="after all cuts")
+    axes[0].set_ylabel(r"mean propagated $f_{\pi^0}$")
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(labels)
+    axes[0].set_ylim(bottom=0.0)
+    axes[0].grid(axis="y", alpha=0.25)
+    axes[0].legend(frameon=False)
+
+    width = 0.24
+    axes[1].bar(x - width, signal, width=width, label="DVCS MC")
+    axes[1].bar(x, background, width=width, label=r"$e\pi^0$ MC")
+    axes[1].bar(x + width, data, width=width, label="data")
+    axes[1].set_ylabel("mean final retained fraction")
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(labels)
+    axes[1].set_ylim(0.0, 1.05)
+    axes[1].grid(axis="y", alpha=0.25)
+    axes[1].legend(frameon=False)
+
+    fig.suptitle(
+        "Final DVCS exclusivity-cut performance averaged over selected periods",
+        fontsize=15,
+    )
+    fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -4024,6 +4646,51 @@ def develop_iterative_cuts_for_period(
             emiss2_mean_order_penalty_weight,
         )
         dvcs_order = [step.variable for step in dvcs_steps]
+
+        cut_flow_rows = cumulative_optimization_rows(
+            period,
+            topology,
+            dvcs_steps,
+        )
+        recommendation = plateau_recommendation(cut_flow_rows)
+        history_path = (
+            output_dir / "optimization_summary"
+            / f"optimization_history_{period.key}_{topology.key.lower()}.png"
+        )
+        marginal_path = (
+            output_dir / "optimization_summary"
+            / f"marginal_gain_{period.key}_{topology.key.lower()}.png"
+        )
+        plateau_path = (
+            output_dir / "optimization_summary"
+            / f"plateau_recommendation_{period.key}_{topology.key.lower()}.txt"
+        )
+        draw_optimization_history(
+            history_path,
+            period,
+            topology,
+            cut_flow_rows,
+            recommendation,
+            dpi,
+        )
+        draw_marginal_gain_history(
+            marginal_path,
+            period,
+            topology,
+            cut_flow_rows,
+            dpi,
+        )
+        write_plateau_report(
+            plateau_path,
+            period,
+            topology,
+            recommendation,
+        )
+        rows.extend(cut_flow_rows)
+        log(f"Wrote {history_path}")
+        log(f"Wrote {marginal_path}")
+        log(f"Wrote {plateau_path}")
+
         pi0_topology_arrays = {
             sample: values[topology.key]
             for sample, values in pi0_arrays.items()
@@ -4062,6 +4729,9 @@ def develop_iterative_cuts_for_period(
             log(f"Wrote {development_path}")
             log(f"Wrote {summary_path}")
             for step in steps:
+                if channel == "dvcs":
+                    continue
+                # endif
                 rows.append({
                     "channel": channel,
                     "period": period.key,
@@ -4287,6 +4957,7 @@ def main() -> int:
             output_dir / "dvcs_channel" / "iterative_cut_summary",
             output_dir / "pi0_channel" / "iterative_cut_development",
             output_dir / "pi0_channel" / "iterative_cut_summary",
+            output_dir / "optimization_summary",
             output_dir / "iterative_cuts",
         )
         for stale_path in stale_paths:
@@ -4437,6 +5108,48 @@ def main() -> int:
         iterative_csv = output_dir / "iterative_cuts" / "iterative_cut_results.csv"
         write_results_csv(iterative_csv, iterative_rows_all)
         log(f"Wrote {iterative_csv}")
+
+        dvcs_cut_flow_rows = [
+            row for row in iterative_rows_all
+            if str(row.get("channel", "")) == "dvcs"
+        ]
+        cut_flow_csv = output_dir / "optimization_summary" / "dvcs_cut_flow.csv"
+        write_results_csv(cut_flow_csv, dvcs_cut_flow_rows)
+        log(f"Wrote {cut_flow_csv}")
+
+        ranking_rows = summarize_variable_ranking(dvcs_cut_flow_rows)
+        ranking_csv = (
+            output_dir / "optimization_summary"
+            / "variable_ranking_summary.csv"
+        )
+        write_results_csv(ranking_csv, ranking_rows)
+        log(f"Wrote {ranking_csv}")
+
+        for topology in topologies:
+            combined_path = (
+                output_dir / "optimization_summary"
+                / f"combined_{topology.key.lower()}_optimization.png"
+            )
+            draw_topology_combined_summary(
+                combined_path,
+                topology,
+                dvcs_cut_flow_rows,
+                args.dpi,
+            )
+            log(f"Wrote {combined_path}")
+        # endfor
+
+        final_performance_path = (
+            output_dir / "optimization_summary"
+            / "final_cut_performance_summary.png"
+        )
+        draw_final_cut_performance(
+            final_performance_path,
+            dvcs_cut_flow_rows,
+            topologies,
+            args.dpi,
+        )
+        log(f"Wrote {final_performance_path}")
 
         json_dir = output_dir / "iterative_cuts" / "jsons"
         nominal_path = json_dir / "combined_cuts_95.json"
