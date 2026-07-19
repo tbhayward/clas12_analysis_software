@@ -16,9 +16,8 @@ The detector topology plus the minimal global preselection are required:
     all reconstructed FD particles occupy distinct FD sectors
 
 No hard exclusivity cuts are applied. The DVCS nuisance parameters are fitted
-inside an MC-defined signal core, while the shared pi0 fraction is determined in
-a broader MC-defined discriminator region. Full distributions remain visible as
-validation. The fit uses raw binned data counts and a Poisson likelihood.
+over the full displayed ranges by default. Optional containment arguments can
+restore restricted MC-defined fit regions for cross-checks. The fit uses raw binned data counts and a Poisson likelihood.
 Each projection is normalized to the observed data yield inside the fit mask
 used by that projection, so the extrapolation outside the mask is a genuine
 shape validation:
@@ -392,29 +391,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dvcs-core-containment",
         type=float,
-        default=0.90,
+        default=1.00,
         help=(
             "DVCS-MC containment used to determine variable-specific shift and "
-            "smearing nuisances (default: 0.90)."
+            "smearing nuisances (default: 1.00, full displayed range)."
         ),
     )
     parser.add_argument(
         "--dvcs-fraction-containment",
         type=float,
-        default=0.95,
+        default=1.00,
         help=(
-            "Broader DVCS-MC containment used by the selected discriminator "
-            "histograms to determine the shared pi0 fraction (default: 0.95)."
+            "DVCS-MC containment used by the selected histograms to determine "
+            "the shared pi0 fraction (default: 1.00, full displayed range)."
         ),
     )
     parser.add_argument(
         "--pi0-core-containment",
         type=float,
-        default=0.90,
+        default=1.00,
         help=(
-            "MC signal containment used by the direct eppi0 data--MC core fits "
-            "(default: 0.90). Signed variables use equal tails; positive-definite "
-            "variables use the interval from the lower boundary to this quantile."
+            "MC containment used by the direct eppi0 data--MC fits "
+            "(default: 1.00, full displayed range)."
         ),
     )
     parser.add_argument(
@@ -2075,8 +2073,12 @@ def draw_pi0_fit_canvas(
                 else rf"$\sigma_{{add}}={result.sigma_add:.4g}$ "
                 rf"({result.morph_label})"
             ) + "\n" +
-            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$" + "\n" +
-            f"outside-core excess={result.excluded_excess_counts:.0f}",
+            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$" +
+            (
+                "\n" + f"outside-core excess={result.excluded_excess_counts:.0f}"
+                if result.fit_mask is not None and not np.all(result.fit_mask)
+                else ""
+            ),
             transform=axis.transAxes, ha="right", va="top", fontsize=10,
         )
         axis.set_xlabel(variable.label)
@@ -2421,16 +2423,17 @@ def main() -> int:
     if args.workers <= 0:
         raise ValueError("--workers must be positive.")
     # endif
-    if not (0.50 <= args.dvcs_core_containment < 1.0):
-        raise ValueError("--dvcs-core-containment must satisfy 0.50 <= value < 1.0.")
+    if not (0.50 <= args.dvcs_core_containment <= 1.0):
+        raise ValueError("--dvcs-core-containment must satisfy 0.50 <= value <= 1.0.")
     # endif
-    if not (args.dvcs_core_containment <= args.dvcs_fraction_containment < 1.0):
+    if not (args.dvcs_core_containment <= args.dvcs_fraction_containment <= 1.0):
         raise ValueError(
-            "--dvcs-fraction-containment must be at least the DVCS core containment and below 1.0."
+            "--dvcs-fraction-containment must be at least the DVCS core "
+            "containment and no greater than 1.0."
         )
     # endif
-    if not (0.50 <= args.pi0_core_containment < 1.0):
-        raise ValueError("--pi0-core-containment must satisfy 0.50 <= value < 1.0.")
+    if not (0.50 <= args.pi0_core_containment <= 1.0):
+        raise ValueError("--pi0-core-containment must satisfy 0.50 <= value <= 1.0.")
     # endif
 
     periods = selected_periods(args.period)
@@ -2450,9 +2453,9 @@ def main() -> int:
         "distinct FD sectors; no hard exclusivity cuts are applied."
     )
     log(
-        f"Fit: f_pi0 determined only by {fraction_variables} in the "
-        f"{100.0 * args.dvcs_fraction_containment:.0f}% DVCS-MC regions; nuisance morphs use "
-        f"the {100.0 * args.dvcs_core_containment:.0f}% DVCS cores. All other variables are validation projections. "
+        f"Fit: shared f_pi0 uses {fraction_variables}. "
+        f"Fraction-region containment={100.0 * args.dvcs_fraction_containment:.0f}%; "
+        f"nuisance-region containment={100.0 * args.dvcs_core_containment:.0f}%. "
         "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2. "
         "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
         "Full-range fitting is the default; Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
