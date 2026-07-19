@@ -238,10 +238,10 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     ),
     VariableConfig(
         "theta",
-        r"$\theta_2(\gamma)$ (rad)",
-        100,
+        r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)",
+        120,
         0.0,
-        0.8,
+        2.0 * math.pi,
         aliases=("theta2", "theta_2"),
     ),
 )
@@ -264,10 +264,10 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     ),
     VariableConfig(
         "theta",
-        r"$\theta_2(\pi^0)$ (rad)",
-        100,
+        r"$\theta_{p\pi^0}^{\mathrm{CM}}$ (rad)",
+        120,
         0.0,
-        0.8,
+        2.0 * math.pi,
         aliases=("theta2", "theta_2"),
     ),
 )
@@ -847,7 +847,6 @@ def is_positive_morph_variable(variable: VariableConfig) -> bool:
         "pTmiss",
         "theta_gamma_gamma",
         "theta_pi0_pi0",
-        "theta",
         "z2",
     }
 
