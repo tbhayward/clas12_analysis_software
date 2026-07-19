@@ -3,8 +3,8 @@
 plot_exclusivity_data_dvcs_pi0_mc.py
 
 For each of the five run periods and three detector topologies, compare the
-eight exclusivity/kinematic-variable shapes and perform selected-discriminator two-template fits while keeping all eight
-projections as diagnostics:
+eight exclusivity/kinematic-variable shapes and perform a shared two-template fit across all eight fitted projections by
+default, with optional configurable driver subsets:
 
     data = (1-f_pi0) * shifted-and-smeared DVCS MC
          + f_pi0     * eppi0 MC reconstructed as DVCS.
@@ -19,18 +19,19 @@ No hard exclusivity cuts are applied. The DVCS nuisance parameters are fitted
 inside an MC-defined signal core, while the shared pi0 fraction is determined in
 a broader MC-defined discriminator region. Full distributions remain visible as
 validation. The fit uses raw binned data counts and a Poisson likelihood.
-The total expected count is fixed to the observed number of entries inside
-the plotted range, so the floated parameters describe shape only:
+Each projection is normalized to the observed data yield inside the fit mask
+used by that projection, so the extrapolation outside the mask is a genuine
+shape validation:
 
-    f_pi0        : one fraction shared by the selected discriminator histograms
+    f_pi0        : one fraction shared by all selected fit histograms
     shift        : variable-specific DVCS-template shift or log-scale shift
     sigma_add    : variable-specific additive or log-space smearing
 
 The eppi0 template is fixed. Signed variables use additive shift plus Gaussian
 smearing. Positive-definite pTmiss and theta_gamma_gamma use log-space shift
-and smearing. All non-driver variables are validation projections: their DVCS nuisance
-parameters are profiled at the fitted fraction, but they do not determine
-f_pi0. Optional Gaussian nuisance penalties discourage extreme template
+and smearing. By default all eight fitted variables determine the shared fraction. When a
+restricted --fraction-variable subset is supplied, the remaining variables
+are validation projections with profiled nuisance parameters. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
 The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use xF, xF2, z2 and theta in place of the missing-mass projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
@@ -411,7 +412,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         help=(
             "Variable used to determine the shared pi0 fraction. May be supplied "
-            "repeatedly. Default: pTmiss and theta_gamma_gamma."
+            "repeatedly. Default: all eight fitted variables."
         ),
     )
     parser.add_argument(
@@ -1290,16 +1291,26 @@ def fit_shared_two_templates(
             return None
         # endif
         pi0_shape = info["pi0_shape"]
-        total_shape = np.clip((1.0 - fraction) * transformed + fraction * pi0_shape, 0.0, None)
-        normalization = float(np.sum(total_shape))
-        if normalization <= 0.0:
+        dvcs_shape_component = np.clip(
+            (1.0 - fraction) * transformed,
+            0.0,
+            None,
+        )
+        pi0_shape_component = np.clip(
+            fraction * pi0_shape,
+            0.0,
+            None,
+        )
+        total_shape = dvcs_shape_component + pi0_shape_component
+        if float(np.sum(total_shape)) <= 0.0:
             return None
         # endif
-        data_total = float(info["data_total"])
-        model = data_total * total_shape / normalization
-        dvcs_component = data_total * (1.0 - fraction) * transformed / normalization
-        pi0_component = data_total * fraction * pi0_shape / normalization
-        return model, dvcs_component, pi0_component, transformed
+        return (
+            total_shape,
+            dvcs_shape_component,
+            pi0_shape_component,
+            transformed,
+        )
 
     def objective_for_mask(
         variable: VariableConfig,
@@ -1314,7 +1325,17 @@ def fit_shared_two_templates(
         # endif
         info = prepared[variable.branch]
         mask = np.asarray(info[mask_name], dtype=bool)
-        value = 0.5 * poisson_deviance(info["data"][mask], built[0][mask])
+        total_shape = built[0]
+        shape_in_mask = float(np.sum(total_shape[mask]))
+        data_in_mask = float(np.sum(info["data"][mask]))
+        if shape_in_mask <= 0.0 or data_in_mask <= 0.0:
+            return 1.0e100
+        # endif
+        model_in_mask = data_in_mask * total_shape[mask] / shape_in_mask
+        value = 0.5 * poisson_deviance(
+            info["data"][mask],
+            model_in_mask,
+        )
         if include_penalty:
             value += nuisance_penalty(variable, nuisance)
         # endif
@@ -1454,12 +1475,28 @@ def fit_shared_two_templates(
             results[variable.branch] = FitResult(False, "invalid fitted template")
             continue
         # endif
-        model, dvcs_component, pi0_component, transformed = built
+        total_shape, dvcs_shape_component, pi0_shape_component, transformed = built
         display_mask = np.asarray(
             info["fraction_mask"] if variable.branch in requested_set else info["core_mask"],
             dtype=bool,
         )
-        variable_deviance = poisson_deviance(info["data"][display_mask], model[display_mask])
+        display_shape_sum = float(np.sum(total_shape[display_mask]))
+        display_data_sum = float(np.sum(info["data"][display_mask]))
+        if display_shape_sum <= 0.0 or display_data_sum <= 0.0:
+            results[variable.branch] = FitResult(
+                False,
+                "invalid fit-region normalization",
+            )
+            continue
+        # endif
+        scale = display_data_sum / display_shape_sum
+        model = scale * total_shape
+        dvcs_component = scale * dvcs_shape_component
+        pi0_component = scale * pi0_shape_component
+        variable_deviance = poisson_deviance(
+            info["data"][display_mask],
+            model[display_mask],
+        )
         used_bins = int(np.count_nonzero(display_mask))
         if variable.branch in requested_set:
             driver_deviance += variable_deviance
@@ -2317,7 +2354,7 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     all_rows: List[Dict[str, object]] = []
     all_pi0_rows: List[Dict[str, object]] = []
-    fraction_variables = args.fraction_variable or ["pTmiss", "theta_gamma_gamma"]
+    fraction_variables = args.fraction_variable or [variable.branch for variable in VARIABLES]
     if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
         raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
     # endif
