@@ -485,6 +485,24 @@ def parse_args() -> argparse.Namespace:
         default=180,
         help="PNG resolution in dots per inch (default: 180).",
     )
+    parser.add_argument(
+        "--max-iterative-calibration-deviance-per-ndf",
+        type=float,
+        default=25.0,
+        help=(
+            "Maximum deviance/ndf allowed for a fitted nuisance calibration "
+            "to define iterative cut boundaries. Worse fits use the raw "
+            "reconstructed signal template instead (default: 25)."
+        ),
+    )
+    parser.add_argument(
+        "--no-clean-output",
+        action="store_true",
+        help=(
+            "Keep previous iterative-cut outputs. By default they are removed "
+            "before running so aborted jobs cannot leave stale canvases."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -2394,6 +2412,7 @@ class IterativeCutStep:
     before_histograms: Dict[str, np.ndarray]
     after_histograms: Dict[str, np.ndarray]
     fit_result: FitResult
+    calibration_source: str = "fitted nuisance"
 
 
 def period_code(period: PeriodConfig) -> str:
@@ -2754,14 +2773,38 @@ def draw_iterative_cut_canvas(
         # endif
 
         low, high = step.boundaries["nominal"]["data"]
+        mc_low, mc_high = step.boundaries["nominal"]["mc"]
         if low > variable.xmin + 1.0e-12:
-            axis.axvline(low, color="tab:purple", linewidth=1.8)
+            axis.axvline(
+                low,
+                color="tab:purple",
+                linewidth=1.8,
+                label="data boundary",
+            )
         # endif
         if high < variable.xmax - 1.0e-12:
             axis.axvline(high, color="tab:purple", linewidth=1.8)
         # endif
+        if mc_low > variable.xmin + 1.0e-12:
+            axis.axvline(
+                mc_low,
+                color="tab:purple",
+                linewidth=0.9,
+                linestyle="--",
+                label="MC boundary",
+            )
+        # endif
+        if mc_high < variable.xmax - 1.0e-12:
+            axis.axvline(
+                mc_high,
+                color="tab:purple",
+                linewidth=0.9,
+                linestyle="--",
+            )
+        # endif
         annotation = (
             f"step {step.iteration + 1}: {step.variable}\n"
+            f"calibration={step.calibration_source}\n"
             f"score={step.score:.3f}\n"
             f"data cut=[{low:.5g}, {high:.5g}]\n"
             f"MC cut=[{step.boundaries['nominal']['mc'][0]:.5g}, "
@@ -2842,6 +2885,51 @@ def make_cut_stats(
         "discrimination_score": score,
     }
 
+
+
+def iterative_signal_shape(
+    raw_signal_shape: np.ndarray,
+    variable: VariableConfig,
+    fitted_result: FitResult,
+    max_deviance_per_ndf: float,
+) -> Tuple[np.ndarray, str]:
+    """Choose a stable signal template for iterative cut construction."""
+
+    raw = np.asarray(raw_signal_shape, dtype=np.float64)
+    quality = (
+        fitted_result.deviance / fitted_result.ndf
+        if fitted_result.ndf > 0 and math.isfinite(fitted_result.deviance)
+        else math.inf
+    )
+    usable = (
+        fitted_result.success
+        and math.isfinite(fitted_result.shift)
+        and math.isfinite(fitted_result.sigma_add)
+        and (
+            not is_asymmetric_additive_variable(variable)
+            or math.isfinite(fitted_result.sigma_right)
+        )
+    )
+    if not usable or quality > max_deviance_per_ndf:
+        return raw, "raw-MC fallback"
+    # endif
+
+    transformed = transform_dvcs_shape(
+        raw,
+        variable,
+        fitted_result.shift,
+        fitted_result.sigma_add,
+        (
+            fitted_result.sigma_right
+            if is_asymmetric_additive_variable(variable)
+            else None
+        ),
+    )
+    if transformed is None:
+        return raw, "raw-MC fallback"
+    # endif
+
+    return transformed, "fitted nuisance"
 
 
 def build_frozen_two_template_result(
@@ -2960,6 +3048,7 @@ def run_dvcs_iterative_cuts(
     fraction_containment: float,
     pi0_calibration: Mapping[str, Tuple[float, float]],
     containments: Mapping[str, float],
+    max_calibration_deviance_per_ndf: float,
 ) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
     """Develop matched-containment data and MC cuts with one frozen initial calibration and propagated contamination."""
 
@@ -3041,21 +3130,12 @@ def run_dvcs_iterative_cuts(
                 continue
             # endif
 
-            transformed_signal = transform_dvcs_shape(
+            transformed_signal, calibration_source = iterative_signal_shape(
                 raw_signal_shape,
                 variable,
-                frozen.shift,
-                frozen.sigma_add,
-                (
-                    frozen.sigma_right
-                    if is_asymmetric_additive_variable(variable)
-                    and math.isfinite(frozen.sigma_right)
-                    else None
-                ),
+                frozen,
+                max_calibration_deviance_per_ndf,
             )
-            if transformed_signal is None:
-                continue
-            # endif
 
             current_signal_shapes[branch] = transformed_signal
             current_background_shapes[branch] = background_shape
@@ -3116,6 +3196,7 @@ def run_dvcs_iterative_cuts(
                     transformed_signal,
                     raw_signal_shape,
                     background_shape,
+                    calibration_source,
                 )
             )
         # endfor
@@ -3138,6 +3219,7 @@ def run_dvcs_iterative_cuts(
             transformed_signal,
             raw_signal_shape,
             background_shape,
+            calibration_source,
         ) = candidates[0]
         branch = selected_variable.branch
         frozen = frozen_results[branch]
@@ -3232,21 +3314,12 @@ def run_dvcs_iterative_cuts(
                 if raw_shape is None or bkg_shape is None or not frozen_other.success:
                     continue
                 # endif
-                transformed = transform_dvcs_shape(
+                transformed, _ = iterative_signal_shape(
                     raw_shape,
                     variable,
-                    frozen_other.shift,
-                    frozen_other.sigma_add,
-                    (
-                        frozen_other.sigma_right
-                        if is_asymmetric_additive_variable(variable)
-                        and math.isfinite(frozen_other.sigma_right)
-                        else None
-                    ),
+                    frozen_other,
+                    max_calibration_deviance_per_ndf,
                 )
-                if transformed is None:
-                    continue
-                # endif
                 diagnostic_signal_shapes[variable.branch] = transformed
                 diagnostic_background_shapes[variable.branch] = bkg_shape
             # endfor
@@ -3275,6 +3348,7 @@ def run_dvcs_iterative_cuts(
                 before_histograms=before_histograms,
                 after_histograms=after_histograms,
                 fit_result=display_result,
+                calibration_source=calibration_source,
             )
         )
 
@@ -3395,6 +3469,15 @@ def run_pi0_iterative_cuts(
                 ),
             )
         # endif
+        if (
+            result.transformed_dvcs_shape is not None
+            and math.isfinite(result.shift)
+            and math.isfinite(result.sigma_add)
+        ):
+            # A finite L-BFGS-B boundary solution is usable even when SciPy's
+            # status flag is false.
+            result.success = True
+        # endif
         frozen_results[variable.branch] = result
     # endfor
 
@@ -3414,10 +3497,33 @@ def run_pi0_iterative_cuts(
         )[branch]
         raw_shape = normalized_shape(signal_hist)
         frozen = frozen_results[branch]
-        if raw_shape is None or not frozen.success:
+        if raw_shape is None:
             raise RuntimeError(
-                f"No usable direct-pi0 template for {period.label} "
+                f"Empty direct-pi0 signal template for {period.label} "
                 f"{topology.label} {branch}"
+            )
+        # endif
+        if not frozen.success:
+            frozen = FitResult(
+                success=True,
+                message="raw-template fallback",
+                shift=0.0,
+                sigma_add=0.0,
+                sigma_right=(
+                    0.0 if is_asymmetric_additive_variable(variable) else math.nan
+                ),
+                data_total=float(np.sum(data_hist)),
+                transformed_dvcs_shape=raw_shape,
+                fit_mask=np.ones(variable.bins, dtype=bool),
+                morph_label=(
+                    "asymmetric-additive"
+                    if is_asymmetric_additive_variable(variable)
+                    else "lower-log-space"
+                    if is_lower_bounded_morph_variable(variable)
+                    else "upper-log-space"
+                    if is_upper_bounded_morph_variable(variable)
+                    else "additive"
+                ),
             )
         # endif
 
@@ -3513,6 +3619,11 @@ def run_pi0_iterative_cuts(
                 before_histograms={"data": data_hist, "signal": signal_hist},
                 after_histograms=after_histograms,
                 fit_result=display_model,
+                calibration_source=(
+                    "raw-MC fallback"
+                    if frozen.message == "raw-template fallback"
+                    else "fitted nuisance"
+                ),
             )
         )
 
@@ -3566,6 +3677,7 @@ def develop_iterative_cuts_for_period(
     nominal_containment: float,
     loose_containment: float,
     tight_containment: float,
+    max_iterative_calibration_deviance_per_ndf: float,
     dpi: int,
 ) -> Tuple[Dict[str, Dict[str, object]], List[Dict[str, object]]]:
     containments = {
@@ -3605,6 +3717,7 @@ def develop_iterative_cuts_for_period(
             dvcs_fraction_containment,
             pi0_calibrations.get(topology.key, {}),
             containments,
+            max_iterative_calibration_deviance_per_ndf,
         )
         dvcs_order = [step.variable for step in dvcs_steps]
         pi0_topology_arrays = {
@@ -3657,6 +3770,7 @@ def develop_iterative_cuts_for_period(
                     "f_pi0_after": step.f_pi0_after,
                     "f_pi0_raw_propagated": step.f_pi0_raw_propagated,
                     "f_pi0_diagnostic": step.f_pi0_diagnostic,
+                    "calibration_source": step.calibration_source,
                     "data_efficiency": step.data_efficiency,
                     "signal_mc_efficiency": step.dvcs_mc_efficiency,
                     "pi0_mc_efficiency": step.pi0_mc_efficiency,
@@ -3711,6 +3825,7 @@ def process_period_worker(
     cut_nominal_containment: float,
     cut_loose_containment: float,
     cut_tight_containment: float,
+    max_iterative_calibration_deviance_per_ndf: float,
     run_iterative_cuts: bool,
 ) -> Tuple[
     str,
@@ -3783,6 +3898,7 @@ def process_period_worker(
             cut_nominal_containment,
             cut_loose_containment,
             cut_tight_containment,
+            max_iterative_calibration_deviance_per_ndf,
             dpi,
         )
     # endif
@@ -3801,6 +3917,11 @@ def main() -> int:
     # endif
     if args.workers <= 0:
         raise ValueError("--workers must be positive.")
+    # endif
+    if args.max_iterative_calibration_deviance_per_ndf <= 0.0:
+        raise ValueError(
+            "--max-iterative-calibration-deviance-per-ndf must be positive."
+        )
     # endif
     if not (
         0.50 <= args.cut_tight_containment
@@ -3833,6 +3954,24 @@ def main() -> int:
     fraction_variables = args.fraction_variable or [variable.branch for variable in VARIABLES]
     if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
         raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
+    # endif
+
+    if not args.no_clean_output:
+        import shutil
+
+        stale_paths = (
+            output_dir / "dvcs_channel" / "iterative_cut_development",
+            output_dir / "dvcs_channel" / "iterative_cut_summary",
+            output_dir / "pi0_channel" / "iterative_cut_development",
+            output_dir / "pi0_channel" / "iterative_cut_summary",
+            output_dir / "iterative_cuts",
+        )
+        for stale_path in stale_paths:
+            if stale_path.exists():
+                shutil.rmtree(stale_path)
+            # endif
+        # endfor
+        log("Removed stale iterative-cut outputs")
     # endif
 
     log(f"ROOT I/O backend: {io_backend()}")
@@ -3888,6 +4027,7 @@ def main() -> int:
                 args.cut_nominal_containment,
                 args.cut_loose_containment,
                 args.cut_tight_containment,
+                args.max_iterative_calibration_deviance_per_ndf,
                 not args.skip_iterative_cuts,
             )
             period_results[period_key] = (dvcs_rows, pi0_rows, cut_blocks, cut_rows)
@@ -3920,6 +4060,7 @@ def main() -> int:
                     args.cut_nominal_containment,
                     args.cut_loose_containment,
                     args.cut_tight_containment,
+                    args.max_iterative_calibration_deviance_per_ndf,
                     not args.skip_iterative_cuts,
                 ): period
                 for period in periods
