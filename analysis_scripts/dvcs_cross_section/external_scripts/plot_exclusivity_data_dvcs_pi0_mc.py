@@ -842,13 +842,29 @@ def normalized_shape(counts: np.ndarray) -> Optional[np.ndarray]:
     return values / total
 
 
-def is_positive_morph_variable(variable: VariableConfig) -> bool:
+def is_lower_bounded_morph_variable(variable: VariableConfig) -> bool:
+    """Variables peaked near the lower boundary with a tail toward larger values."""
     return variable.branch in {
         "pTmiss",
         "theta_gamma_gamma",
         "theta_pi0_pi0",
-        "z2",
     }
+
+
+def is_upper_bounded_morph_variable(variable: VariableConfig) -> bool:
+    """Variables peaked near the upper boundary with a tail toward smaller values."""
+    return variable.branch in {
+        "z2",
+        "xF2",
+        "theta",
+    }
+
+
+def is_log_morph_variable(variable: VariableConfig) -> bool:
+    return (
+        is_lower_bounded_morph_variable(variable)
+        or is_upper_bounded_morph_variable(variable)
+    )
 
 
 def mx2_1_upper_cut(topology: TopologyConfig) -> float:
@@ -952,14 +968,79 @@ def transform_positive_shape(
     return target / total
 
 
+def transform_upper_bounded_shape(
+    base_shape: np.ndarray,
+    variable: VariableConfig,
+    log_shift: float,
+    log_sigma: float,
+) -> Optional[np.ndarray]:
+    """Morph an upper-edge-peaked template in log(xmax-x+epsilon).
+
+    This preserves the upper plotting boundary and broadens primarily toward
+    smaller values, which is appropriate for z2, xF2 and the CM theta variable.
+    """
+    edges, centers = bin_geometry(variable)
+    upper_bound = float(variable.xmax)
+    epsilon = max(0.25 * (edges[1] - edges[0]), 1.0e-8)
+    source_weights = np.asarray(base_shape, dtype=np.float64)
+
+    source_distance = np.maximum(upper_bound - centers + epsilon, 1.0e-15)
+    source_log_means = np.log(source_distance) + log_shift
+
+    if log_sigma <= 1.0e-8:
+        transformed_distance = np.exp(source_log_means)
+        transformed_centers = upper_bound + epsilon - transformed_distance
+        target, _ = np.histogram(
+            transformed_centers,
+            bins=edges,
+            weights=source_weights,
+        )
+    else:
+        # For target x in [edge_i, edge_{i+1}], the complementary distance
+        # u=xmax+epsilon-x lies in [u_low, u_high] with reversed x ordering.
+        distance_low = np.maximum(
+            upper_bound + epsilon - edges[1:],
+            1.0e-15,
+        )[:, None]
+        distance_high = np.maximum(
+            upper_bound + epsilon - edges[:-1],
+            1.0e-15,
+        )[:, None]
+
+        lower_log = np.log(distance_low)
+        upper_log = np.log(distance_high)
+        probabilities = ndtr(
+            (upper_log - source_log_means[None, :]) / log_sigma
+        ) - ndtr(
+            (lower_log - source_log_means[None, :]) / log_sigma
+        )
+        target = probabilities @ source_weights
+    # endif
+
+    target = np.clip(target, 0.0, None)
+    total = float(np.sum(target))
+    if total <= 0.0 or not math.isfinite(total):
+        return None
+    # endif
+    return target / total
+
+
 def transform_dvcs_shape(
     base_shape: np.ndarray,
     variable: VariableConfig,
     shift: float,
     sigma_add: float,
 ) -> Optional[np.ndarray]:
-    if is_positive_morph_variable(variable):
+    if is_lower_bounded_morph_variable(variable):
         return transform_positive_shape(base_shape, variable, shift, sigma_add)
+    # endif
+    if is_upper_bounded_morph_variable(variable):
+        return transform_upper_bounded_shape(
+            base_shape,
+            variable,
+            shift,
+            sigma_add,
+        )
     # endif
     return transform_additive_shape(base_shape, variable, shift, sigma_add)
 
@@ -1054,7 +1135,7 @@ def fit_shared_two_templates(
             bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
             return [(0.0, 0.0), (0.0, max_smear_bins * bin_width)]
         # endif
-        if is_positive_morph_variable(variable):
+        if is_log_morph_variable(variable):
             center = calibrated_shift_center(variable)
             return [(max(-0.70, center - 0.40), min(0.70, center + 0.40)), (0.0, 1.00)]
         # endif
@@ -1065,7 +1146,7 @@ def fit_shared_two_templates(
 
     def nuisance_start(variable: VariableConfig) -> np.ndarray:
         center = calibrated_shift_center(variable)
-        if is_positive_morph_variable(variable):
+        if is_log_morph_variable(variable):
             return np.asarray([center, 0.10], dtype=np.float64)
         # endif
         bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
@@ -1076,7 +1157,7 @@ def fit_shared_two_templates(
             return 0.0
         # endif
         shift_center = calibrated_shift_center(variable)
-        if is_positive_morph_variable(variable):
+        if is_log_morph_variable(variable):
             shift_width = 0.20
             smear_width = 0.40
         else:
@@ -1298,7 +1379,7 @@ def fit_shared_two_templates(
             pi0_component_counts=pi0_component,
             transformed_dvcs_shape=transformed,
             fit_mask=display_mask,
-            morph_label="log-space" if is_positive_morph_variable(variable) else "additive",
+            morph_label=("lower-log-space" if is_lower_bounded_morph_variable(variable) else "upper-log-space" if is_upper_bounded_morph_variable(variable) else "additive"),
             excluded_data_counts=excluded_data,
             excluded_model_counts=excluded_model,
             excluded_excess_counts=excluded_excess,
@@ -1524,8 +1605,9 @@ def mc_signal_containment_mask(
     """Return an MC-defined containment mask for a reconstructed signal template.
 
     Signed variables retain the central equal-tail containment interval.
-    Positive-definite variables retain the interval from the lower plot edge
-    through the requested cumulative containment. Existing variable-specific
+    Lower-edge-peaked variables retain the interval from the lower plot edge
+    upward. Upper-edge-peaked variables retain the interval from the upper
+    plot edge downward. Existing variable-specific
     edge masks are also respected.
     """
     counts = np.asarray(mc_counts, dtype=np.float64)
@@ -1536,9 +1618,14 @@ def mc_signal_containment_mask(
     # endif
 
     cumulative = np.cumsum(counts) / total
-    if is_positive_morph_variable(variable):
+    if is_lower_bounded_morph_variable(variable):
         lower_index = 0
         upper_index = int(np.searchsorted(cumulative, containment, side="left"))
+    elif is_upper_bounded_morph_variable(variable):
+        lower_index = int(
+            np.searchsorted(cumulative, 1.0 - containment, side="left")
+        )
+        upper_index = variable.bins - 1
     else:
         tail = 0.5 * (1.0 - containment)
         lower_index = int(np.searchsorted(cumulative, tail, side="left"))
@@ -1801,7 +1888,7 @@ def process_pi0_period(
             )
             fit_results[variable.branch] = result
             bin_width = (variable.xmax - variable.xmin) / variable.bins
-            additive = not is_positive_morph_variable(variable)
+            additive = not is_log_morph_variable(variable)
             rows.append({
                 "period": period.key,
                 "period_label": period.label,
@@ -1929,7 +2016,7 @@ def process_period(
         for variable in VARIABLES:
             result = fit_results[variable.branch]
             bin_width = (variable.xmax - variable.xmin) / variable.bins
-            additive = not is_positive_morph_variable(variable)
+            additive = not is_log_morph_variable(variable)
             rows.append({
                 "period": period.key,
                 "period_label": period.label,
