@@ -234,7 +234,7 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
     VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
-    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 120, -1.0, 3.0),
+    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("xF", r"$x_F(ep+\gamma)$", 100, -0.5, 0.2),
     VariableConfig(
         "xF2",
@@ -260,7 +260,7 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 120, 0.0, 3.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
     VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
-    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 120, -1.0, 3.0),
+    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("xF", r"$x_F(ep+\pi^0)$", 100, -0.5, 0.2),
     VariableConfig(
         "xF2",
@@ -925,17 +925,23 @@ def is_upper_bounded_morph_variable(variable: VariableConfig) -> bool:
     }
 
 
+def is_logit_morph_variable(variable: VariableConfig) -> bool:
+    """Variables better represented by a bounded logit coordinate."""
+    return variable.branch == "z2"
+
+
 def is_log_morph_variable(variable: VariableConfig) -> bool:
     return (
         is_lower_bounded_morph_variable(variable)
         or is_upper_bounded_morph_variable(variable)
+        or is_logit_morph_variable(variable)
     )
 
 
 
 def is_asymmetric_additive_variable(variable: VariableConfig) -> bool:
     """Interior-peaked variables needing different left/right broadening."""
-    return variable.branch == "theta"
+    return variable.branch in {"theta", "xF"}
 
 
 def mx2_1_upper_cut(topology: TopologyConfig) -> float:
@@ -1084,6 +1090,44 @@ def transform_positive_shape(
     return target / total
 
 
+def transform_logit_bounded_shape(
+    base_shape: np.ndarray,
+    variable: VariableConfig,
+    logit_shift: float,
+    logit_sigma: float,
+) -> Optional[np.ndarray]:
+    """Morph a bounded template in logit((x-xmin)/(xmax-x)) space."""
+
+    edges, centers = bin_geometry(variable)
+    width = float(variable.xmax - variable.xmin)
+    epsilon = max(0.25 * (edges[1] - edges[0]), 1.0e-8)
+    source_weights = np.asarray(base_shape, dtype=np.float64)
+
+    def to_logit(values: np.ndarray) -> np.ndarray:
+        scaled = (values - variable.xmin + epsilon) / (width + 2.0 * epsilon)
+        scaled = np.clip(scaled, 1.0e-12, 1.0 - 1.0e-12)
+        return np.log(scaled / (1.0 - scaled))
+
+    source_means = to_logit(centers) + logit_shift
+    if logit_sigma <= 1.0e-8:
+        transformed_scaled = 1.0 / (1.0 + np.exp(-source_means))
+        transformed_centers = variable.xmin - epsilon + transformed_scaled * (width + 2.0 * epsilon)
+        target, _ = np.histogram(transformed_centers, bins=edges, weights=source_weights)
+    else:
+        lower_logit = to_logit(edges[:-1])[:, None]
+        upper_logit = to_logit(edges[1:])[:, None]
+        probabilities = ndtr((upper_logit - source_means[None, :]) / logit_sigma) - ndtr((lower_logit - source_means[None, :]) / logit_sigma)
+        target = probabilities @ source_weights
+    # endif
+
+    target = np.clip(target, 0.0, None)
+    total = float(np.sum(target))
+    if total <= 0.0 or not math.isfinite(total):
+        return None
+    # endif
+    return target / total
+
+
 def transform_upper_bounded_shape(
     base_shape: np.ndarray,
     variable: VariableConfig,
@@ -1160,6 +1204,9 @@ def transform_dvcs_shape(
     # endif
     if is_lower_bounded_morph_variable(variable):
         return transform_positive_shape(base_shape, variable, shift, sigma_add)
+    # endif
+    if is_logit_morph_variable(variable):
+        return transform_logit_bounded_shape(base_shape, variable, shift, sigma_add)
     # endif
     if is_upper_bounded_morph_variable(variable):
         return transform_upper_bounded_shape(
@@ -1293,10 +1340,10 @@ def fit_shared_two_templates(
         # endif
         bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
         if is_asymmetric_additive_variable(variable):
-            return np.asarray(
-                [center, 2.0 * bin_width, 0.75 * bin_width],
-                dtype=np.float64,
-            )
+            if variable.branch == "xF":
+                return np.asarray([center, 1.5 * bin_width, 1.5 * bin_width], dtype=np.float64)
+            # endif
+            return np.asarray([center, 2.0 * bin_width, 0.75 * bin_width], dtype=np.float64)
         # endif
         return np.asarray([center, 2.0 * bin_width], dtype=np.float64)
 
@@ -1326,8 +1373,11 @@ def fit_shared_two_templates(
         penalty = 0.5 * ((shift - shift_center) / shift_width) ** 2
         penalty += 0.5 * (sigma_left / smear_width) ** 2
         if is_asymmetric_additive_variable(variable):
-            # Keep the sharp high-theta edge comparatively constrained.
-            right_prior = max(0.5 * smear_width, 1.0e-12)
+            if variable.branch == "theta":
+                right_prior = max(0.5 * smear_width, 1.0e-12)
+            else:
+                right_prior = smear_width
+            # endif
             penalty += 0.5 * (sigma_right / right_prior) ** 2
         # endif
         return penalty
@@ -1670,7 +1720,7 @@ def fit_shared_two_templates(
             pi0_component_counts=pi0_component,
             transformed_dvcs_shape=transformed,
             fit_mask=display_mask,
-            morph_label=("asymmetric-additive" if is_asymmetric_additive_variable(variable) else "lower-log-space" if is_lower_bounded_morph_variable(variable) else "upper-log-space" if is_upper_bounded_morph_variable(variable) else "additive"),
+            morph_label=("asymmetric-additive" if is_asymmetric_additive_variable(variable) else "lower-log-space" if is_lower_bounded_morph_variable(variable) else "logit-space" if is_logit_morph_variable(variable) else "upper-log-space" if is_upper_bounded_morph_variable(variable) else "additive"),
             excluded_data_counts=excluded_data,
             excluded_model_counts=excluded_model,
             excluded_excess_counts=excluded_excess,
@@ -2049,7 +2099,7 @@ def fit_single_template(
                 value += (float(params[0]) / shift_width) ** 2
                 value += (float(params[1]) / smear_width) ** 2
                 if asymmetric:
-                    right_prior = max(0.5 * smear_width, 1.0e-12)
+                    right_prior = max(0.5 * smear_width, 1.0e-12) if variable.branch == "theta" else smear_width
                     value += (float(params[2]) / right_prior) ** 2
                 # endif
             # endif
@@ -2071,6 +2121,8 @@ def fit_single_template(
         morph_label = "asymmetric-additive"
     elif is_lower_bounded_morph_variable(variable):
         morph_label = "lower-log-space"
+    elif is_logit_morph_variable(variable):
+        morph_label = "logit-space"
     elif is_upper_bounded_morph_variable(variable):
         morph_label = "upper-log-space"
     else:
@@ -3696,6 +3748,8 @@ def run_pi0_iterative_cuts(
                     if is_asymmetric_additive_variable(variable)
                     else "lower-log-space"
                     if is_lower_bounded_morph_variable(variable)
+                    else "logit-space"
+                    if is_logit_morph_variable(variable)
                     else "upper-log-space"
                     if is_upper_bounded_morph_variable(variable)
                     else "additive"
@@ -3753,6 +3807,8 @@ def run_pi0_iterative_cuts(
                     if is_asymmetric_additive_variable(variable)
                     else "lower-log-space"
                     if is_lower_bounded_morph_variable(variable)
+                    else "logit-space"
+                    if is_logit_morph_variable(variable)
                     else "upper-log-space"
                     if is_upper_bounded_morph_variable(variable)
                     else "additive"
@@ -4252,7 +4308,7 @@ def main() -> int:
         f"{fraction_variables}. "
         f"Fraction-region containment={100.0 * args.dvcs_fraction_containment:.0f}%; "
         f"nuisance-region containment={100.0 * args.dvcs_core_containment:.0f}%. "
-        "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2. "
+        "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and a bounded logit morph for z2 and an upper-edge log morph for xF2. "
         "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
         "Core-region fitting is the default; Gaussian nuisance penalties are "
         + ("enabled" if not args.disable_nuisance_penalties else "disabled")
