@@ -42,10 +42,12 @@ Outputs:
   * one 4x2 DVCS-core two-template-fit canvas for each period/topology combination
   * fit_results.csv containing all fitted parameters and diagnostics
 
-Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
+The five run periods are processed in parallel with at most five worker processes. Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
 """
 
 import argparse
+import concurrent.futures
+import multiprocessing
 import csv
 import math
 import os
@@ -359,6 +361,15 @@ def parse_args() -> argparse.Namespace:
         "--step-size",
         default=DEFAULT_STEP_SIZE,
         help=f"uproot iteration chunk size (default: {DEFAULT_STEP_SIZE})",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=5,
+        help=(
+            "Number of run-period worker processes. The value is hard-capped "
+            "at 5 (default: 5)."
+        ),
     )
     parser.add_argument(
         "--max-shift-bins",
@@ -2337,6 +2348,68 @@ def write_results_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
     # endwith
 
 
+def process_period_worker(
+    period: PeriodConfig,
+    topologies: Sequence[TopologyConfig],
+    output_dir_string: str,
+    step_size: str,
+    max_shift_bins: float,
+    max_smear_bins: float,
+    fit_min_counts: int,
+    fraction_variables: Sequence[str],
+    shift_prior_bins: float,
+    smear_prior_bins: float,
+    use_nuisance_penalties: bool,
+    pi0_core_containment: float,
+    dvcs_core_containment: float,
+    dvcs_fraction_containment: float,
+    log_y: bool,
+    dpi: int,
+) -> Tuple[str, List[Dict[str, object]], List[Dict[str, object]]]:
+    """Process one complete run period inside a worker process."""
+
+    output_dir = Path(output_dir_string)
+    log(f"[worker {os.getpid()}] Starting {period.label}")
+
+    pi0_rows, pi0_calibrations = process_pi0_period(
+        period,
+        topologies,
+        output_dir,
+        step_size,
+        max_shift_bins,
+        max_smear_bins,
+        fit_min_counts,
+        shift_prior_bins,
+        smear_prior_bins,
+        use_nuisance_penalties,
+        pi0_core_containment,
+        log_y,
+        dpi,
+    )
+
+    dvcs_rows = process_period(
+        period,
+        topologies,
+        output_dir,
+        step_size,
+        max_shift_bins,
+        max_smear_bins,
+        fit_min_counts,
+        fraction_variables,
+        shift_prior_bins,
+        smear_prior_bins,
+        use_nuisance_penalties,
+        dvcs_core_containment,
+        dvcs_fraction_containment,
+        log_y,
+        dpi,
+        pi0_calibrations,
+    )
+
+    log(f"[worker {os.getpid()}] Finished {period.label}")
+    return period.key, dvcs_rows, pi0_rows
+
+
 def main() -> int:
     args = parse_args()
     if gaussian_filter1d is None or minimize is None or minimize_scalar is None or ndtr is None:
@@ -2344,6 +2417,9 @@ def main() -> int:
     # endif
     if args.max_shift_bins <= 0.0 or args.max_smear_bins <= 0.0:
         raise ValueError("--max-shift-bins and --max-smear-bins must be positive.")
+    # endif
+    if args.workers <= 0:
+        raise ValueError("--workers must be positive.")
     # endif
     if not (0.50 <= args.dvcs_core_containment < 1.0):
         raise ValueError("--dvcs-core-containment must satisfy 0.50 <= value < 1.0.")
@@ -2382,24 +2458,89 @@ def main() -> int:
         "Full-range fitting is the default; Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
 
-    for period in periods:
-        pi0_rows, pi0_calibrations = process_pi0_period(
-            period, topologies, output_dir, args.step_size,
-            args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
-            args.shift_prior_bins, args.smear_prior_bins,
-            not args.disable_nuisance_penalties, args.pi0_core_containment,
-            args.log_y, args.dpi,
-        )
-        all_pi0_rows.extend(pi0_rows)
+    worker_count = min(args.workers, 5, len(periods))
+    log(
+        f"Processing {len(periods)} run period(s) with "
+        f"{worker_count} worker process(es); hard cap = 5"
+    )
 
-        all_rows.extend(process_period(
-            period, topologies, output_dir, args.step_size,
-            args.max_shift_bins, args.max_smear_bins, args.fit_min_counts,
-            fraction_variables, args.shift_prior_bins, args.smear_prior_bins,
-            not args.disable_nuisance_penalties,
-            args.dvcs_core_containment, args.dvcs_fraction_containment,
-            args.log_y, args.dpi, pi0_calibrations,
-        ))
+    period_results: Dict[
+        str,
+        Tuple[List[Dict[str, object]], List[Dict[str, object]]],
+    ] = {}
+
+    if worker_count == 1:
+        for period in periods:
+            period_key, dvcs_rows, pi0_rows = process_period_worker(
+                period,
+                topologies,
+                str(output_dir),
+                args.step_size,
+                args.max_shift_bins,
+                args.max_smear_bins,
+                args.fit_min_counts,
+                fraction_variables,
+                args.shift_prior_bins,
+                args.smear_prior_bins,
+                not args.disable_nuisance_penalties,
+                args.pi0_core_containment,
+                args.dvcs_core_containment,
+                args.dvcs_fraction_containment,
+                args.log_y,
+                args.dpi,
+            )
+            period_results[period_key] = (dvcs_rows, pi0_rows)
+        # endfor
+    else:
+        spawn_context = multiprocessing.get_context("spawn")
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=worker_count,
+            mp_context=spawn_context,
+        ) as executor:
+            future_to_period = {
+                executor.submit(
+                    process_period_worker,
+                    period,
+                    topologies,
+                    str(output_dir),
+                    args.step_size,
+                    args.max_shift_bins,
+                    args.max_smear_bins,
+                    args.fit_min_counts,
+                    fraction_variables,
+                    args.shift_prior_bins,
+                    args.smear_prior_bins,
+                    not args.disable_nuisance_penalties,
+                    args.pi0_core_containment,
+                    args.dvcs_core_containment,
+                    args.dvcs_fraction_containment,
+                    args.log_y,
+                    args.dpi,
+                ): period
+                for period in periods
+            }
+
+            for future in concurrent.futures.as_completed(future_to_period):
+                period = future_to_period[future]
+                try:
+                    period_key, dvcs_rows, pi0_rows = future.result()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Worker failed for {period.label}: {exc}"
+                    ) from exc
+                # endtry
+
+                period_results[period_key] = (dvcs_rows, pi0_rows)
+                log(f"Collected results for {period.label}")
+            # endfor
+        # endwith
+    # endif
+
+    # Preserve the configured run-period order in the combined CSV files.
+    for period in periods:
+        dvcs_rows, pi0_rows = period_results[period.key]
+        all_rows.extend(dvcs_rows)
+        all_pi0_rows.extend(pi0_rows)
     # endfor
 
     csv_path = output_dir / "dvcs_channel" / "template_fits" / "fit_results.csv"
