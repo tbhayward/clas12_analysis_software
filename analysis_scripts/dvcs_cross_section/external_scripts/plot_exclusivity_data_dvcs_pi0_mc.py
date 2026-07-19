@@ -43,6 +43,7 @@ Outputs:
   * compact 2x4 iterative cut-development canvases
   * compact 2x4 post-cut summary canvases
   * one optimization-history figure and one marginal-gain figure per DVCS period/topology
+  * production stopping rule requiring positive pi0 discrimination and improved S/sqrt(S+B)
   * detailed DVCS cut-flow CSVs, a global variable-ranking CSV and plateau recommendations
   * topology-combined optimization summaries averaged over the selected periods
   * main-suite-compatible combined_cuts JSON files for 90%, 95% and 99%
@@ -2649,6 +2650,10 @@ class IterativeCutStep:
     after_histograms: Dict[str, np.ndarray]
     fit_result: FitResult
     calibration_source: str = "fitted nuisance"
+    accepted_for_production: bool = True
+    stop_reason: str = ""
+    fom_before: float = math.nan
+    fom_after: float = math.nan
 
 
 def period_code(period: PeriodConfig) -> str:
@@ -2985,7 +2990,11 @@ def draw_iterative_cut_canvas(
             variable.branch
             for variable in (VARIABLES if channel == "dvcs" else PI0_VARIABLES)
         ]
-        step_by_variable = {step.variable: step for step in steps}
+        production_steps = [
+            step for step in steps
+            if channel != "dvcs" or step.accepted_for_production
+        ]
+        step_by_variable = {step.variable: step for step in production_steps}
         ordered_steps = [
             step_by_variable[branch]
             for branch in template_order
@@ -3114,7 +3123,12 @@ def draw_iterative_cut_canvas(
                 f"\npi0 eff={100.0 * step.pi0_mc_efficiency:.1f}%"
                 f"\nf_pi0: {step.f_pi0_before:.3f}"
                 f" -> {step.f_pi0_after:.3f}"
+                f"\nFoM: {step.fom_before:.5g} -> {step.fom_after:.5g}"
+                f"\nproduction={'accepted' if step.accepted_for_production else 'rejected'}"
             )
+            if step.stop_reason:
+                annotation += f"\n{step.stop_reason}"
+            # endif
         # endif
         axis.text(
             0.98,
@@ -3165,11 +3179,9 @@ def cumulative_optimization_rows(
 ) -> List[Dict[str, object]]:
     """Build the authoritative cumulative DVCS cut flow.
 
-    The per-step efficiencies stored by the optimizer are conditional on all
-    preceding cuts. Their products therefore give the cumulative retained
-    fractions. The initial fitted pi0 fraction defines relative signal and
-    background yields for the diagnostic S/sqrt(S+B); this diagnostic does not
-    alter the automatic cut ordering.
+    Accepted steps update the production cumulative efficiencies. A rejected
+    stopping candidate is retained as one hypothetical final row so the reason
+    for stopping remains visible without contaminating the adopted cut flow.
     """
 
     if not steps:
@@ -3182,18 +3194,25 @@ def cumulative_optimization_rows(
     cumulative_background = 1.0
     rows: List[Dict[str, object]] = []
 
-    def make_row(
+    def build_row(
         iteration: int,
         variable: str,
         local_data_efficiency: float,
         local_signal_efficiency: float,
         local_background_efficiency: float,
+        row_data_fraction: float,
+        row_signal_efficiency: float,
+        row_background_efficiency: float,
         fraction_before: float,
         fraction_after: float,
         score: float,
+        accepted_for_production: bool,
+        stop_reason: str,
+        fom_before: float,
+        fom_after: float,
     ) -> Dict[str, object]:
-        signal_yield = (1.0 - initial_fraction) * cumulative_signal
-        background_yield = initial_fraction * cumulative_background
+        signal_yield = (1.0 - initial_fraction) * row_signal_efficiency
+        background_yield = initial_fraction * row_background_efficiency
         denominator = signal_yield + background_yield
         significance = (
             signal_yield / math.sqrt(denominator)
@@ -3201,22 +3220,16 @@ def cumulative_optimization_rows(
             else 0.0
         )
         purity_fom = (
-            cumulative_signal / math.sqrt(max(fraction_after, 1.0e-6))
+            row_signal_efficiency / math.sqrt(max(fraction_after, 1.0e-6))
         )
         delta_fraction = (
-            fraction_before - fraction_after
-            if iteration > 0
-            else 0.0
+            fraction_before - fraction_after if iteration > 0 else 0.0
         )
         delta_signal = (
-            1.0 - local_signal_efficiency
-            if iteration > 0
-            else 0.0
+            1.0 - local_signal_efficiency if iteration > 0 else 0.0
         )
         delta_background = (
-            1.0 - local_background_efficiency
-            if iteration > 0
-            else 0.0
+            1.0 - local_background_efficiency if iteration > 0 else 0.0
         )
         gain_per_signal_loss = (
             delta_fraction / delta_signal
@@ -3231,13 +3244,15 @@ def cumulative_optimization_rows(
             "topology_label": topology.label,
             "iteration": iteration,
             "variable": variable,
+            "accepted_for_production": accepted_for_production,
+            "stop_reason": stop_reason,
             "score": score,
             "local_data_efficiency": local_data_efficiency,
             "local_dvcs_efficiency": local_signal_efficiency,
             "local_pi0_efficiency": local_background_efficiency,
-            "cumulative_data_fraction": cumulative_data,
-            "cumulative_dvcs_efficiency": cumulative_signal,
-            "cumulative_pi0_efficiency": cumulative_background,
+            "cumulative_data_fraction": row_data_fraction,
+            "cumulative_dvcs_efficiency": row_signal_efficiency,
+            "cumulative_pi0_efficiency": row_background_efficiency,
             "f_pi0_before": fraction_before,
             "f_pi0_after": fraction_after,
             "delta_f_pi0": delta_fraction,
@@ -3248,79 +3263,112 @@ def cumulative_optimization_rows(
             "relative_signal_yield": signal_yield,
             "relative_background_yield": background_yield,
             "s_over_sqrt_s_plus_b": significance,
+            "fom_before": fom_before,
+            "fom_after": fom_after,
         }
 
+    initial_signal_yield = 1.0 - initial_fraction
+    initial_background_yield = initial_fraction
+    initial_fom = (
+        initial_signal_yield
+        / math.sqrt(initial_signal_yield + initial_background_yield)
+        if initial_signal_yield + initial_background_yield > 0.0
+        else 0.0
+    )
     rows.append(
-        make_row(
+        build_row(
             iteration=0,
             variable="initial",
             local_data_efficiency=1.0,
             local_signal_efficiency=1.0,
             local_background_efficiency=1.0,
+            row_data_fraction=1.0,
+            row_signal_efficiency=1.0,
+            row_background_efficiency=1.0,
             fraction_before=initial_fraction,
             fraction_after=initial_fraction,
             score=0.0,
+            accepted_for_production=True,
+            stop_reason="",
+            fom_before=initial_fom,
+            fom_after=initial_fom,
         )
     )
 
     for step in steps:
-        cumulative_data *= float(np.clip(step.data_efficiency, 0.0, 1.0))
-        cumulative_signal *= float(np.clip(step.dvcs_mc_efficiency, 0.0, 1.0))
-        cumulative_background *= float(np.clip(step.pi0_mc_efficiency, 0.0, 1.0))
+        proposed_data = cumulative_data * float(
+            np.clip(step.data_efficiency, 0.0, 1.0)
+        )
+        proposed_signal = cumulative_signal * float(
+            np.clip(step.dvcs_mc_efficiency, 0.0, 1.0)
+        )
+        proposed_background = cumulative_background * float(
+            np.clip(step.pi0_mc_efficiency, 0.0, 1.0)
+        )
         rows.append(
-            make_row(
+            build_row(
                 iteration=step.iteration + 1,
                 variable=step.variable,
                 local_data_efficiency=step.data_efficiency,
                 local_signal_efficiency=step.dvcs_mc_efficiency,
                 local_background_efficiency=step.pi0_mc_efficiency,
+                row_data_fraction=proposed_data,
+                row_signal_efficiency=proposed_signal,
+                row_background_efficiency=proposed_background,
                 fraction_before=step.f_pi0_before,
                 fraction_after=step.f_pi0_after,
                 score=step.score,
+                accepted_for_production=step.accepted_for_production,
+                stop_reason=step.stop_reason,
+                fom_before=step.fom_before,
+                fom_after=step.fom_after,
             )
         )
+        if step.accepted_for_production:
+            cumulative_data = proposed_data
+            cumulative_signal = proposed_signal
+            cumulative_background = proposed_background
+        # endif
     # endfor
     return rows
 
 
 def plateau_recommendation(
     rows: Sequence[Mapping[str, object]],
-    max_delta_fraction: float = 0.005,
-    min_signal_loss: float = 0.010,
-    consecutive_steps: int = 2,
 ) -> Dict[str, object]:
-    """Return a diagnostic plateau recommendation without stopping optimization."""
+    """Summarize the automatic production stopping decision."""
 
-    cut_rows = [row for row in rows if int(row["iteration"]) > 0]
-    first_plateau = None
-    reason = "No plateau identified by the default diagnostic thresholds."
-    for start in range(0, max(0, len(cut_rows) - consecutive_steps + 1)):
-        window = cut_rows[start:start + consecutive_steps]
-        if all(
-            float(row["delta_f_pi0"]) <= max_delta_fraction
-            and float(row["delta_dvcs_efficiency"]) >= min_signal_loss
-            for row in window
-        ):
-            first_plateau = int(window[0]["iteration"]) - 1
-            reason = (
-                f"Optimization plateau recommended after iteration {first_plateau}: "
-                f"the next {consecutive_steps} cuts each reduce f_pi0 by no more than "
-                f"{100.0 * max_delta_fraction:.2f} percentage points while losing at "
-                f"least {100.0 * min_signal_loss:.1f}% of the then-surviving DVCS MC."
-            )
-            break
-        # endif
-    # endfor
-
+    rejected = [
+        row for row in rows
+        if int(row["iteration"]) > 0
+        and not bool(row.get("accepted_for_production", True))
+    ]
+    accepted = [
+        row for row in rows
+        if int(row["iteration"]) > 0
+        and bool(row.get("accepted_for_production", True))
+    ]
+    stop_iteration = max(
+        [int(row["iteration"]) for row in accepted],
+        default=0,
+    )
+    if rejected:
+        reason = str(rejected[0].get("stop_reason", "Production stopping rule failed."))
+        recommendation = (
+            f"Production sequence stopped after iteration {stop_iteration}. {reason}"
+        )
+        found = True
+    else:
+        recommendation = (
+            f"All {stop_iteration} available cuts passed the production stopping rule."
+        )
+        found = False
+    # endif
     return {
-        "plateau_after_iteration": (
-            first_plateau if first_plateau is not None else ""
-        ),
-        "plateau_found": first_plateau is not None,
-        "max_delta_f_pi0_threshold": max_delta_fraction,
-        "min_local_dvcs_loss_threshold": min_signal_loss,
-        "required_consecutive_steps": consecutive_steps,
-        "recommendation": reason,
+        "plateau_after_iteration": stop_iteration if found else "",
+        "plateau_found": found,
+        "production_stop_after_iteration": stop_iteration,
+        "recommendation": recommendation,
     }
 
 
@@ -3405,12 +3453,36 @@ def draw_optimization_history(
         axis.set_xticklabels(labels, rotation=35, ha="right")
     # endfor
 
-    plateau = recommendation.get("plateau_after_iteration", "")
-    if plateau != "":
-        for axis in axes:
-            axis.axvline(float(plateau) + 0.5, linewidth=1.2, linestyle=":")
-        # endfor
-    # endif
+    accepted_iterations = [
+        int(row["iteration"])
+        for row in rows
+        if int(row["iteration"]) > 0
+        and bool(row.get("accepted_for_production", True))
+    ]
+    rejected_iterations = [
+        int(row["iteration"])
+        for row in rows
+        if int(row["iteration"]) > 0
+        and not bool(row.get("accepted_for_production", True))
+    ]
+    production_endpoint = max(accepted_iterations, default=0)
+    for axis in axes:
+        axis.axvline(
+            float(production_endpoint) + 0.5,
+            linewidth=1.5,
+            linestyle="-",
+            color="tab:green",
+            label="production endpoint",
+        )
+        if rejected_iterations:
+            axis.axvspan(
+                float(production_endpoint) + 0.5,
+                float(max(rejected_iterations)) + 0.5,
+                color="0.85",
+                alpha=0.55,
+            )
+        # endif
+    # endfor
 
     fig.suptitle(
         f"DVCS exclusivity optimization: {period.label}, {topology.label}\n"
@@ -3521,7 +3593,10 @@ def summarize_variable_ranking(
 
     grouped: Dict[str, List[Mapping[str, object]]] = {}
     for row in cut_flow_rows:
-        if int(row["iteration"]) <= 0:
+        if (
+            int(row["iteration"]) <= 0
+            or not bool(row.get("accepted_for_production", True))
+        ):
             continue
         # endif
         grouped.setdefault(str(row["variable"]), []).append(row)
@@ -4048,6 +4123,9 @@ def run_dvcs_iterative_cuts(
 
     frozen_results = initial_summary.variable_results
     propagated_fraction = float(initial_summary.f_pi0)
+    initial_fraction = float(np.clip(propagated_fraction, 0.0, 1.0))
+    cumulative_signal_efficiency = 1.0
+    cumulative_background_efficiency = 1.0
     remaining = [variable.branch for variable in VARIABLES]
     steps: List[IterativeCutStep] = []
     json_variants: Dict[str, Dict[str, Dict[str, object]]] = {
@@ -4204,41 +4282,84 @@ def run_dvcs_iterative_cuts(
         # variable is not allowed to manufacture an increase in pi0 contamination.
         propagated_after = min(propagated_fraction, raw_propagated)
 
+        signal_yield_before = (
+            (1.0 - initial_fraction) * cumulative_signal_efficiency
+        )
+        background_yield_before = (
+            initial_fraction * cumulative_background_efficiency
+        )
+        total_before = signal_yield_before + background_yield_before
+        fom_before = (
+            signal_yield_before / math.sqrt(total_before)
+            if total_before > 0.0
+            else 0.0
+        )
+        proposed_cumulative_signal = (
+            cumulative_signal_efficiency * signal_eff
+        )
+        proposed_cumulative_background = (
+            cumulative_background_efficiency * background_eff
+        )
+        signal_yield_after = (
+            (1.0 - initial_fraction) * proposed_cumulative_signal
+        )
+        background_yield_after = (
+            initial_fraction * proposed_cumulative_background
+        )
+        total_after = signal_yield_after + background_yield_after
+        fom_after = (
+            signal_yield_after / math.sqrt(total_after)
+            if total_after > 0.0
+            else 0.0
+        )
+        positive_discrimination = background_eff < signal_eff
+        improves_fom = fom_after > fom_before + 1.0e-12
+        accepted_for_production = positive_discrimination and improves_fom
+        stop_reasons = []
+        if not positive_discrimination:
+            stop_reasons.append(
+                "Rejected because epsilon_pi0 >= epsilon_DVCS."
+            )
+        # endif
+        if not improves_fom:
+            stop_reasons.append(
+                "Rejected because S/sqrt(S+B) did not increase."
+            )
+        # endif
+        stop_reason = " ".join(stop_reasons)
+
         nominal_data_low, nominal_data_high = boundaries["nominal"]["data"]
         nominal_mc_low, nominal_mc_high = boundaries["nominal"]["mc"]
-        masks["data"] &= apply_window(
-            data_arrays[branch],
-            nominal_data_low,
-            nominal_data_high,
-        )
-        masks["signal"] &= apply_window(
-            signal_arrays[branch],
-            nominal_mc_low,
-            nominal_mc_high,
-        )
-        masks["background"] &= apply_window(
-            background_arrays[branch],
-            nominal_mc_low,
-            nominal_mc_high,
-        )
-
+        proposed_masks = {
+            "data": masks["data"] & apply_window(
+                data_arrays[branch],
+                nominal_data_low,
+                nominal_data_high,
+            ),
+            "signal": masks["signal"] & apply_window(
+                signal_arrays[branch],
+                nominal_mc_low,
+                nominal_mc_high,
+            ),
+            "background": masks["background"] & apply_window(
+                background_arrays[branch],
+                nominal_mc_low,
+                nominal_mc_high,
+            ),
+        }
         after_histograms = {
             "data": arrays_to_histograms(
-                data_arrays, masks["data"], [selected_variable]
+                data_arrays, proposed_masks["data"], [selected_variable]
             )[branch],
             "signal": arrays_to_histograms(
-                signal_arrays, masks["signal"], [selected_variable]
+                signal_arrays, proposed_masks["signal"], [selected_variable]
             )[branch],
             "background": arrays_to_histograms(
-                background_arrays, masks["background"], [selected_variable]
+                background_arrays, proposed_masks["background"], [selected_variable]
             )[branch],
         }
 
-        remaining_after = [
-            candidate for candidate in remaining if candidate != branch
-        ]
         diagnostic_fraction = math.nan
-
         steps.append(
             IterativeCutStep(
                 iteration=iteration,
@@ -4256,9 +4377,23 @@ def run_dvcs_iterative_cuts(
                 after_histograms=after_histograms,
                 fit_result=display_result,
                 calibration_source=calibration_source,
+                accepted_for_production=accepted_for_production,
+                stop_reason=stop_reason,
+                fom_before=fom_before,
+                fom_after=fom_after,
             )
         )
 
+        if not accepted_for_production:
+            log(
+                f"Production optimization stopped for {period.label} "
+                f"{topology.label} after {iteration} accepted cuts: "
+                f"{stop_reason}"
+            )
+            break
+        # endif
+
+        masks = proposed_masks
         for name, containment in containments.items():
             data_low, data_high = boundaries[name]["data"]
             mc_low, mc_high = boundaries[name]["mc"]
@@ -4290,6 +4425,8 @@ def run_dvcs_iterative_cuts(
         # endfor
 
         propagated_fraction = propagated_after
+        cumulative_signal_efficiency = proposed_cumulative_signal
+        cumulative_background_efficiency = proposed_cumulative_background
         remaining.remove(branch)
     # endfor
 
@@ -4645,7 +4782,11 @@ def develop_iterative_cuts_for_period(
             outside_overshoot_penalty_weight,
             emiss2_mean_order_penalty_weight,
         )
-        dvcs_order = [step.variable for step in dvcs_steps]
+        dvcs_order = [
+            step.variable
+            for step in dvcs_steps
+            if step.accepted_for_production
+        ]
 
         cut_flow_rows = cumulative_optimization_rows(
             period,
