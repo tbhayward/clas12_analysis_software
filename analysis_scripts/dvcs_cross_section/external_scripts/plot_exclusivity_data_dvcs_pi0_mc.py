@@ -475,6 +475,25 @@ def parse_args() -> argparse.Namespace:
         help="Disable Gaussian penalties on DVCS-template shift and smearing nuisances.",
     )
     parser.add_argument(
+        "--outside-overshoot-penalty",
+        type=float,
+        default=0.25,
+        help=(
+            "Weight of the one-sided penalty for model counts exceeding data "
+            "outside the active fit region (default: 0.25; 0 disables it)."
+        ),
+    )
+    parser.add_argument(
+        "--emiss2-mean-order-penalty",
+        type=float,
+        default=25.0,
+        help=(
+            "Weight of the E_miss^2 physical-ordering penalty. It discourages "
+            "the morphed DVCS mean from lying farther from zero than the pi0 "
+            "background mean (default: 25; 0 disables it)."
+        ),
+    )
+    parser.add_argument(
         "--log-y",
         action="store_true",
         help="Use logarithmic y axes.",
@@ -1189,6 +1208,8 @@ def fit_shared_two_templates(
     core_containment: float,
     fraction_containment: float,
     pi0_core_calibration: Optional[Mapping[str, Tuple[float, float]]] = None,
+    outside_overshoot_penalty_weight: float = 0.25,
+    emiss2_mean_order_penalty_weight: float = 25.0,
 ) -> SharedFitSummary:
     """Fit a shared f_pi0 while separating resolution and fraction regions.
 
@@ -1366,6 +1387,65 @@ def fit_shared_two_templates(
             transformed,
         )
 
+    def physical_shape_penalty(
+        variable: VariableConfig,
+        transformed_signal: np.ndarray,
+        pi0_shape: np.ndarray,
+    ) -> float:
+        """Apply targeted physical constraints to pathological nuisance morphs."""
+
+        if (
+            variable.branch != "Emiss2"
+            or emiss2_mean_order_penalty_weight <= 0.0
+        ):
+            return 0.0
+        # endif
+
+        dvcs_mean, _ = distribution_moments(transformed_signal, variable)
+        pi0_mean, _ = distribution_moments(pi0_shape, variable)
+        bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+
+        # The DVCS signal should not be shifted farther from zero than the
+        # missing-particle pi0 background. Permit one bin of numerical tolerance.
+        violation = abs(dvcs_mean) - abs(pi0_mean) - bin_width
+        if violation <= 0.0:
+            return 0.0
+        # endif
+
+        return (
+            0.5
+            * emiss2_mean_order_penalty_weight
+            * (violation / max(bin_width, 1.0e-12)) ** 2
+        )
+
+    def outside_region_overshoot_penalty(
+        data: np.ndarray,
+        total_shape: np.ndarray,
+        active_mask: np.ndarray,
+    ) -> float:
+        """Penalize only model overshoot outside the fitted region."""
+
+        if outside_overshoot_penalty_weight <= 0.0 or np.all(active_mask):
+            return 0.0
+        # endif
+
+        shape_in_mask = float(np.sum(total_shape[active_mask]))
+        data_in_mask = float(np.sum(data[active_mask]))
+        if shape_in_mask <= 0.0 or data_in_mask <= 0.0:
+            return 0.0
+        # endif
+
+        scale = data_in_mask / shape_in_mask
+        expected = scale * total_shape
+        excluded = ~active_mask
+        excess = np.clip(expected[excluded] - data[excluded], 0.0, None)
+        variance = np.maximum(data[excluded] + 1.0, 1.0)
+        return (
+            0.5
+            * outside_overshoot_penalty_weight
+            * float(np.sum((excess ** 2) / variance))
+        )
+
     def objective_for_mask(
         variable: VariableConfig,
         fraction: float,
@@ -1390,8 +1470,23 @@ def fit_shared_two_templates(
             info["data"][mask],
             model_in_mask,
         )
+
+        # The outside-region term is one-sided: unmodelled positive data tails
+        # are tolerated, but an extrapolated model is not allowed to vastly
+        # exceed the observed data where those bins were excluded from the fit.
+        value += outside_region_overshoot_penalty(
+            info["data"],
+            total_shape,
+            mask,
+        )
+
         if include_penalty:
             value += nuisance_penalty(variable, nuisance)
+            value += physical_shape_penalty(
+                variable,
+                built[3],
+                info["pi0_shape"],
+            )
         # endif
         return value
 
@@ -2246,6 +2341,8 @@ def process_period(
     use_nuisance_penalties: bool,
     dvcs_core_containment: float,
     dvcs_fraction_containment: float,
+    outside_overshoot_penalty_weight: float,
+    emiss2_mean_order_penalty_weight: float,
     log_y: bool,
     dpi: int,
     pi0_core_calibrations: Optional[Mapping[str, Mapping[str, Tuple[float, float]]]] = None,
@@ -2296,6 +2393,8 @@ def process_period(
             dvcs_core_containment,
             dvcs_fraction_containment,
             (pi0_core_calibrations or {}).get(topology.key, {}),
+            outside_overshoot_penalty_weight,
+            emiss2_mean_order_penalty_weight,
         )
         if not shared_summary.success or shared_summary.variable_results is None:
             raise RuntimeError(
@@ -2315,6 +2414,8 @@ def process_period(
                 dvcs_core_containment,
                 dvcs_fraction_containment,
                 (pi0_core_calibrations or {}).get(topology.key, {}),
+                outside_overshoot_penalty_weight,
+                emiss2_mean_order_penalty_weight,
             )
         # endfor
 
@@ -2695,7 +2796,21 @@ def draw_iterative_cut_canvas(
         variable.branch: variable
         for variable in (VARIABLES if channel == "dvcs" else PI0_VARIABLES)
     }
-    for axis, step in zip(flat_axes, steps):
+    ordered_steps = list(steps)
+    if summary:
+        template_order = [
+            variable.branch
+            for variable in (VARIABLES if channel == "dvcs" else PI0_VARIABLES)
+        ]
+        step_by_variable = {step.variable: step for step in steps}
+        ordered_steps = [
+            step_by_variable[branch]
+            for branch in template_order
+            if branch in step_by_variable
+        ]
+    # endif
+
+    for axis, step in zip(flat_axes, ordered_steps):
         variable = variable_lookup[step.variable]
         edges, centers = bin_geometry(variable)
         histograms = step.after_histograms if summary else step.before_histograms
@@ -3049,6 +3164,8 @@ def run_dvcs_iterative_cuts(
     pi0_calibration: Mapping[str, Tuple[float, float]],
     containments: Mapping[str, float],
     max_calibration_deviance_per_ndf: float,
+    outside_overshoot_penalty_weight: float,
+    emiss2_mean_order_penalty_weight: float,
 ) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
     """Develop matched-containment data and MC cuts with one frozen initial calibration and propagated contamination."""
 
@@ -3083,6 +3200,8 @@ def run_dvcs_iterative_cuts(
         core_containment,
         fraction_containment,
         pi0_calibration,
+        outside_overshoot_penalty_weight,
+        emiss2_mean_order_penalty_weight,
     )
     if not initial_summary.success or initial_summary.variable_results is None:
         raise RuntimeError(
@@ -3678,6 +3797,8 @@ def develop_iterative_cuts_for_period(
     loose_containment: float,
     tight_containment: float,
     max_iterative_calibration_deviance_per_ndf: float,
+    outside_overshoot_penalty_weight: float,
+    emiss2_mean_order_penalty_weight: float,
     dpi: int,
 ) -> Tuple[Dict[str, Dict[str, object]], List[Dict[str, object]]]:
     containments = {
@@ -3718,6 +3839,8 @@ def develop_iterative_cuts_for_period(
             pi0_calibrations.get(topology.key, {}),
             containments,
             max_iterative_calibration_deviance_per_ndf,
+            outside_overshoot_penalty_weight,
+            emiss2_mean_order_penalty_weight,
         )
         dvcs_order = [step.variable for step in dvcs_steps]
         pi0_topology_arrays = {
@@ -3826,6 +3949,8 @@ def process_period_worker(
     cut_loose_containment: float,
     cut_tight_containment: float,
     max_iterative_calibration_deviance_per_ndf: float,
+    outside_overshoot_penalty_weight: float,
+    emiss2_mean_order_penalty_weight: float,
     run_iterative_cuts: bool,
 ) -> Tuple[
     str,
@@ -3869,6 +3994,8 @@ def process_period_worker(
         use_nuisance_penalties,
         dvcs_core_containment,
         dvcs_fraction_containment,
+        outside_overshoot_penalty_weight,
+        emiss2_mean_order_penalty_weight,
         log_y,
         dpi,
         pi0_calibrations,
@@ -3899,6 +4026,8 @@ def process_period_worker(
             cut_loose_containment,
             cut_tight_containment,
             max_iterative_calibration_deviance_per_ndf,
+            outside_overshoot_penalty_weight,
+            emiss2_mean_order_penalty_weight,
             dpi,
         )
     # endif
@@ -3922,6 +4051,12 @@ def main() -> int:
         raise ValueError(
             "--max-iterative-calibration-deviance-per-ndf must be positive."
         )
+    # endif
+    if args.outside_overshoot_penalty < 0.0:
+        raise ValueError("--outside-overshoot-penalty must be nonnegative.")
+    # endif
+    if args.emiss2_mean_order_penalty < 0.0:
+        raise ValueError("--emiss2-mean-order-penalty must be nonnegative.")
     # endif
     if not (
         0.50 <= args.cut_tight_containment
@@ -3986,7 +4121,10 @@ def main() -> int:
         f"nuisance-region containment={100.0 * args.dvcs_core_containment:.0f}%. "
         "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2. "
         "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
-        "Core-region fitting is the default; Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
+        "Core-region fitting is the default; Gaussian nuisance penalties are "
+        + ("enabled" if not args.disable_nuisance_penalties else "disabled")
+        + f"; outside overshoot penalty={args.outside_overshoot_penalty:g}"
+        + f"; Emiss2 mean-order penalty={args.emiss2_mean_order_penalty:g}"
     )
 
     worker_count = min(args.workers, 5, len(periods))
@@ -4028,6 +4166,8 @@ def main() -> int:
                 args.cut_loose_containment,
                 args.cut_tight_containment,
                 args.max_iterative_calibration_deviance_per_ndf,
+                args.outside_overshoot_penalty,
+                args.emiss2_mean_order_penalty,
                 not args.skip_iterative_cuts,
             )
             period_results[period_key] = (dvcs_rows, pi0_rows, cut_blocks, cut_rows)
@@ -4061,6 +4201,8 @@ def main() -> int:
                     args.cut_loose_containment,
                     args.cut_tight_containment,
                     args.max_iterative_calibration_deviance_per_ndf,
+                    args.outside_overshoot_penalty,
+                    args.emiss2_mean_order_penalty,
                     not args.skip_iterative_cuts,
                 ): period
                 for period in periods
