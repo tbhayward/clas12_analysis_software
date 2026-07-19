@@ -1705,7 +1705,7 @@ def draw_fit_canvas(
                 + "\n"
                 + f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
             )
-            if result.excluded_data_counts > 0.0:
+            if result.excluded_data_counts > 0.0 and result.fit_mask is not None and not np.all(result.fit_mask):
                 quality += (
                     "\n"
                     f"masked excess={result.excluded_excess_counts:.0f} "
@@ -1773,6 +1773,10 @@ def mc_signal_containment_mask(
     plot edge downward. The CM theta variable uses a central additive core. Existing variable-specific
     edge masks are also respected.
     """
+    if containment >= 0.999999:
+        return np.ones(variable.bins, dtype=bool)
+    # endif
+
     counts = np.asarray(mc_counts, dtype=np.float64)
     total = float(np.sum(counts))
     base_mask = fit_mask_for_variable(variable, topology)
@@ -1936,7 +1940,11 @@ def fit_single_template(
 
     return FitResult(
         success=bool(result.success),
-        message=f"MC-defined {100.0 * core_containment:.1f}% signal-core fit",
+        message=(
+            "full-range fit"
+            if core_containment >= 0.999999
+            else f"MC-defined {100.0 * core_containment:.1f}% signal-core fit"
+        ),
         shift=float(fitted[0]),
         sigma_add=float(fitted[1]),
         sigma_right=float(fitted[2]) if asymmetric else math.nan,
@@ -2371,7 +2379,7 @@ def main() -> int:
         f"the {100.0 * args.dvcs_core_containment:.0f}% DVCS cores. All other variables are validation projections. "
         "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2. "
         "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
-        "Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
+        "Full-range fitting is the default; Gaussian nuisance penalties are " + ("enabled" if not args.disable_nuisance_penalties else "disabled")
     )
 
     for period in periods:
