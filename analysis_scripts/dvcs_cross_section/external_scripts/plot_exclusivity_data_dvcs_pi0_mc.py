@@ -239,9 +239,9 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig(
         "theta",
         r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)",
-        120,
-        0.0,
-        2.0 * math.pi,
+        100,
+        2.0,
+        math.pi,
         aliases=("theta2", "theta_2"),
     ),
 )
@@ -265,9 +265,9 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig(
         "theta",
         r"$\theta_{p\pi^0}^{\mathrm{CM}}$ (rad)",
-        120,
-        0.0,
-        2.0 * math.pi,
+        100,
+        2.0,
+        math.pi,
         aliases=("theta2", "theta_2"),
     ),
 )
