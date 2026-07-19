@@ -422,8 +422,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cut-nominal-containment",
         type=float,
-        default=0.97,
-        help="Nominal iterative signal containment (default: 0.97).",
+        default=0.95,
+        help="Nominal iterative signal containment (default: 0.95).",
     )
     parser.add_argument(
         "--cut-loose-containment",
@@ -434,8 +434,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cut-tight-containment",
         type=float,
-        default=0.95,
-        help="Tight iterative signal containment (default: 0.95).",
+        default=0.68,
+        help="Tight iterative signal containment (default: 0.68).",
     )
     parser.add_argument(
         "--skip-iterative-cuts",
@@ -2387,6 +2387,9 @@ class IterativeCutStep:
     dvcs_mc_efficiency: float
     pi0_mc_efficiency: float
     f_pi0_before: float
+    f_pi0_after: float
+    f_pi0_raw_propagated: float
+    f_pi0_diagnostic: float
     boundaries: Dict[str, Dict[str, Tuple[float, float]]]
     before_histograms: Dict[str, np.ndarray]
     after_histograms: Dict[str, np.ndarray]
@@ -2768,8 +2771,12 @@ def draw_iterative_cut_canvas(
         if channel == "dvcs":
             annotation += (
                 f"\npi0 eff={100.0 * step.pi0_mc_efficiency:.1f}%"
-                f"\nf_pi0={step.f_pi0_before:.3f}"
+                f"\nf_pi0: {step.f_pi0_before:.3f}"
+                f" -> {step.f_pi0_after:.3f}"
             )
+            if math.isfinite(step.f_pi0_diagnostic):
+                annotation += f"\ndiagnostic refit={step.f_pi0_diagnostic:.3f}"
+            # endif
         # endif
         axis.text(
             0.98,
@@ -2792,7 +2799,7 @@ def draw_iterative_cut_canvas(
     title_kind = "final iterative-cut summary" if summary else "iterative cut development"
     fig.suptitle(
         f"{title_channel} {title_kind}: {period.label}, {topology.label}\n"
-        "automatic order; nominal signal containment = 97%",
+        "automatic order; nominal signal containment = 95%",
         fontsize=17,
         y=0.985,
     )
@@ -2836,6 +2843,108 @@ def make_cut_stats(
     }
 
 
+
+def build_frozen_two_template_result(
+    data_histogram: np.ndarray,
+    signal_shape: np.ndarray,
+    background_shape: np.ndarray,
+    fraction: float,
+    frozen_result: FitResult,
+) -> FitResult:
+    """Build a display model using frozen nuisance calibration and a fixed fraction."""
+
+    data = np.asarray(data_histogram, dtype=np.float64)
+    signal = np.asarray(signal_shape, dtype=np.float64)
+    background = np.asarray(background_shape, dtype=np.float64)
+    total_shape = np.clip(
+        (1.0 - fraction) * signal + fraction * background,
+        0.0,
+        None,
+    )
+    normalization = float(np.sum(total_shape))
+    data_total = float(np.sum(data))
+    if normalization <= 0.0 or data_total <= 0.0:
+        return FitResult(False, "invalid frozen-template model", data_total=data_total)
+    # endif
+
+    scale = data_total / normalization
+    model = scale * total_shape
+    dvcs_component = scale * (1.0 - fraction) * signal
+    pi0_component = scale * fraction * background
+    return FitResult(
+        success=True,
+        message="frozen nuisance calibration",
+        f_pi0=fraction,
+        shift=frozen_result.shift,
+        sigma_add=frozen_result.sigma_add,
+        sigma_right=frozen_result.sigma_right,
+        deviance=poisson_deviance(data, model),
+        ndf=max(1, data.size - 1),
+        data_total=data_total,
+        model_counts=model,
+        dvcs_component_counts=dvcs_component,
+        pi0_component_counts=pi0_component,
+        transformed_dvcs_shape=signal,
+        fit_mask=np.ones(data.size, dtype=bool),
+        morph_label=frozen_result.morph_label,
+    )
+
+
+def diagnostic_fraction_with_frozen_shapes(
+    data_histograms: Mapping[str, np.ndarray],
+    signal_shapes: Mapping[str, np.ndarray],
+    background_shapes: Mapping[str, np.ndarray],
+    variables: Sequence[str],
+    propagated_fraction: float,
+) -> float:
+    """Profile only f_pi0 with frozen shapes and a stabilizing propagated-f prior."""
+
+    usable = [
+        branch
+        for branch in variables
+        if branch in data_histograms
+        and branch in signal_shapes
+        and branch in background_shapes
+        and float(np.sum(data_histograms[branch])) > 0.0
+    ]
+    if not usable:
+        return math.nan
+    # endif
+
+    prior_width = max(0.05, 0.35 * max(propagated_fraction, 0.05))
+
+    def objective(candidate: float) -> float:
+        value = 0.0
+        for branch in usable:
+            data = np.asarray(data_histograms[branch], dtype=np.float64)
+            total_shape = np.clip(
+                (1.0 - candidate) * signal_shapes[branch]
+                + candidate * background_shapes[branch],
+                0.0,
+                None,
+            )
+            normalization = float(np.sum(total_shape))
+            if normalization <= 0.0:
+                return 1.0e100
+            # endif
+            model = float(np.sum(data)) * total_shape / normalization
+            value += 0.5 * poisson_deviance(data, model)
+        # endfor
+        value += 0.5 * ((candidate - propagated_fraction) / prior_width) ** 2
+        return value
+
+    result = minimize_scalar(
+        objective,
+        bounds=(0.0, 1.0),
+        method="bounded",
+        options={"xatol": 1.0e-5, "maxiter": 200},
+    )
+    if not result.success or not math.isfinite(float(result.x)):
+        return math.nan
+    # endif
+    return float(result.x)
+
+
 def run_dvcs_iterative_cuts(
     period: PeriodConfig,
     topology: TopologyConfig,
@@ -2852,6 +2961,8 @@ def run_dvcs_iterative_cuts(
     pi0_calibration: Mapping[str, Tuple[float, float]],
     containments: Mapping[str, float],
 ) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
+    """Develop cuts with one frozen initial calibration and propagated contamination."""
+
     data_arrays = arrays["data"]
     signal_arrays = arrays["signal"]
     background_arrays = arrays["background"]
@@ -2860,6 +2971,39 @@ def run_dvcs_iterative_cuts(
         "signal": np.ones(len(next(iter(signal_arrays.values()))), dtype=bool),
         "background": np.ones(len(next(iter(background_arrays.values()))), dtype=bool),
     }
+
+    initial_data_hists = arrays_to_histograms(data_arrays, masks["data"], VARIABLES)
+    initial_signal_hists = arrays_to_histograms(signal_arrays, masks["signal"], VARIABLES)
+    initial_background_hists = arrays_to_histograms(
+        background_arrays,
+        masks["background"],
+        VARIABLES,
+    )
+    initial_summary = fit_shared_two_templates(
+        initial_data_hists,
+        initial_signal_hists,
+        initial_background_hists,
+        topology,
+        max_shift_bins,
+        max_smear_bins,
+        min_counts,
+        fraction_variables,
+        shift_prior_bins,
+        smear_prior_bins,
+        use_nuisance_penalties,
+        core_containment,
+        fraction_containment,
+        pi0_calibration,
+    )
+    if not initial_summary.success or initial_summary.variable_results is None:
+        raise RuntimeError(
+            f"Initial iterative DVCS calibration failed for "
+            f"{period.label} {topology.label}: {initial_summary.message}"
+        )
+    # endif
+
+    frozen_results = initial_summary.variable_results
+    propagated_fraction = float(initial_summary.f_pi0)
     remaining = [variable.branch for variable in VARIABLES]
     steps: List[IterativeCutStep] = []
     json_variants: Dict[str, Dict[str, Dict[str, object]]] = {
@@ -2870,58 +3014,60 @@ def run_dvcs_iterative_cuts(
     for iteration in range(len(VARIABLES)):
         data_hists = arrays_to_histograms(data_arrays, masks["data"], VARIABLES)
         signal_hists = arrays_to_histograms(signal_arrays, masks["signal"], VARIABLES)
-        background_hists = arrays_to_histograms(background_arrays, masks["background"], VARIABLES)
-        active_fraction_variables = [
-            branch for branch in fraction_variables if branch in remaining
-        ]
-        if not active_fraction_variables:
-            active_fraction_variables = list(remaining)
-        # endif
-        summary = fit_shared_two_templates(
-            data_hists,
-            signal_hists,
-            background_hists,
-            topology,
-            max_shift_bins,
-            max_smear_bins,
-            min_counts,
-            active_fraction_variables,
-            shift_prior_bins,
-            smear_prior_bins,
-            use_nuisance_penalties,
-            core_containment,
-            fraction_containment,
-            pi0_calibration,
+        background_hists = arrays_to_histograms(
+            background_arrays,
+            masks["background"],
+            VARIABLES,
         )
-        if not summary.success or summary.variable_results is None:
-            raise RuntimeError(
-                f"Iterative DVCS fit failed for {period.label} {topology.label} "
-                f"at step {iteration + 1}: {summary.message}"
-            )
-        # endif
 
-        candidates: List[Tuple[float, VariableConfig, Dict[str, Dict[str, Tuple[float, float]]], float, float, float]] = []
+        current_signal_shapes: Dict[str, np.ndarray] = {}
+        current_background_shapes: Dict[str, np.ndarray] = {}
+        candidates = []
+
         for variable in VARIABLES:
-            if variable.branch not in remaining:
+            branch = variable.branch
+            if branch not in remaining:
                 continue
             # endif
-            fit_result = summary.variable_results[variable.branch]
-            if not fit_result.success or fit_result.transformed_dvcs_shape is None:
+
+            frozen = frozen_results[branch]
+            raw_signal_shape = normalized_shape(signal_hists[branch])
+            background_shape = normalized_shape(background_hists[branch])
+            if (
+                not frozen.success
+                or raw_signal_shape is None
+                or background_shape is None
+            ):
                 continue
             # endif
-            raw_signal_shape = normalized_shape(signal_hists[variable.branch])
-            if raw_signal_shape is None:
+
+            transformed_signal = transform_dvcs_shape(
+                raw_signal_shape,
+                variable,
+                frozen.shift,
+                frozen.sigma_add,
+                (
+                    frozen.sigma_right
+                    if is_asymmetric_additive_variable(variable)
+                    and math.isfinite(frozen.sigma_right)
+                    else None
+                ),
+            )
+            if transformed_signal is None:
                 continue
             # endif
+
+            current_signal_shapes[branch] = transformed_signal
+            current_background_shapes[branch] = background_shape
+
             boundaries: Dict[str, Dict[str, Tuple[float, float]]] = {}
-            modes: Dict[str, Dict[str, str]] = {}
             for name, containment in containments.items():
-                data_low, data_high, data_mode = containment_window_from_shape(
-                    fit_result.transformed_dvcs_shape,
+                data_low, data_high, _ = containment_window_from_shape(
+                    transformed_signal,
                     variable,
                     containment,
                 )
-                mc_low, mc_high, mc_mode = containment_window_from_shape(
+                mc_low, mc_high, _ = containment_window_from_shape(
                     raw_signal_shape,
                     variable,
                     containment,
@@ -2930,106 +3076,240 @@ def run_dvcs_iterative_cuts(
                     "data": (data_low, data_high),
                     "mc": (mc_low, mc_high),
                 }
-                modes[name] = {"data": data_mode, "mc": mc_mode}
             # endfor
+
             nominal_mc_low, nominal_mc_high = boundaries["nominal"]["mc"]
-            signal_values = signal_arrays[variable.branch][masks["signal"]]
-            background_values = background_arrays[variable.branch][masks["background"]]
-            signal_pass = apply_window(signal_values, nominal_mc_low, nominal_mc_high)
-            background_pass = apply_window(background_values, nominal_mc_low, nominal_mc_high)
-            signal_eff = float(np.mean(signal_pass)) if signal_pass.size else 0.0
-            background_eff = float(np.mean(background_pass)) if background_pass.size else 1.0
-            score = max(0.0, signal_eff - background_eff)
-            data_low, data_high = boundaries["nominal"]["data"]
-            data_values = data_arrays[variable.branch][masks["data"]]
-            data_eff = float(np.mean(apply_window(data_values, data_low, data_high))) if data_values.size else 0.0
+            signal_values = signal_arrays[branch][masks["signal"]]
+            background_values = background_arrays[branch][masks["background"]]
+            signal_eff = (
+                float(np.mean(apply_window(signal_values, nominal_mc_low, nominal_mc_high)))
+                if signal_values.size
+                else 0.0
+            )
+            background_eff = (
+                float(np.mean(apply_window(background_values, nominal_mc_low, nominal_mc_high)))
+                if background_values.size
+                else 1.0
+            )
+
+            nominal_data_low, nominal_data_high = boundaries["nominal"]["data"]
+            data_values = data_arrays[branch][masks["data"]]
+            data_eff = (
+                float(np.mean(apply_window(data_values, nominal_data_low, nominal_data_high)))
+                if data_values.size
+                else 0.0
+            )
+
+            # Higher score means stronger pi0 rejection at comparable signal retention.
+            score = signal_eff - background_eff
             candidates.append(
-                (score, variable, boundaries, data_eff, signal_eff, background_eff)
+                (
+                    score,
+                    variable,
+                    boundaries,
+                    data_eff,
+                    signal_eff,
+                    background_eff,
+                    transformed_signal,
+                    raw_signal_shape,
+                    background_shape,
+                )
             )
         # endfor
+
         if not candidates:
             raise RuntimeError(
                 f"No valid iterative cut candidate for {period.label} "
                 f"{topology.label} at step {iteration + 1}"
             )
         # endif
+
         candidates.sort(key=lambda item: (-item[0], item[1].branch))
-        score, selected_variable, boundaries, data_eff, signal_eff, background_eff = candidates[0]
-        result = summary.variable_results[selected_variable.branch]
+        (
+            score,
+            selected_variable,
+            boundaries,
+            data_eff,
+            signal_eff,
+            background_eff,
+            transformed_signal,
+            raw_signal_shape,
+            background_shape,
+        ) = candidates[0]
+        branch = selected_variable.branch
+        frozen = frozen_results[branch]
+
         before_histograms = {
-            "data": data_hists[selected_variable.branch],
-            "signal": signal_hists[selected_variable.branch],
-            "background": background_hists[selected_variable.branch],
+            "data": data_hists[branch],
+            "signal": signal_hists[branch],
+            "background": background_hists[branch],
         }
+        display_result = build_frozen_two_template_result(
+            data_hists[branch],
+            transformed_signal,
+            background_shape,
+            propagated_fraction,
+            frozen,
+        )
+
+        denominator = (
+            (1.0 - propagated_fraction) * signal_eff
+            + propagated_fraction * background_eff
+        )
+        raw_propagated = (
+            propagated_fraction * background_eff / denominator
+            if denominator > 0.0
+            else propagated_fraction
+        )
+        # The authoritative reported contamination is monotonic. A late weak
+        # variable is not allowed to manufacture an increase in pi0 contamination.
+        propagated_after = min(propagated_fraction, raw_propagated)
 
         nominal_data_low, nominal_data_high = boundaries["nominal"]["data"]
         nominal_mc_low, nominal_mc_high = boundaries["nominal"]["mc"]
         masks["data"] &= apply_window(
-            data_arrays[selected_variable.branch],
+            data_arrays[branch],
             nominal_data_low,
             nominal_data_high,
         )
         masks["signal"] &= apply_window(
-            signal_arrays[selected_variable.branch],
+            signal_arrays[branch],
             nominal_mc_low,
             nominal_mc_high,
         )
         masks["background"] &= apply_window(
-            background_arrays[selected_variable.branch],
+            background_arrays[branch],
             nominal_mc_low,
             nominal_mc_high,
         )
+
         after_histograms = {
-            "data": arrays_to_histograms(data_arrays, masks["data"], [selected_variable])[selected_variable.branch],
-            "signal": arrays_to_histograms(signal_arrays, masks["signal"], [selected_variable])[selected_variable.branch],
-            "background": arrays_to_histograms(background_arrays, masks["background"], [selected_variable])[selected_variable.branch],
+            "data": arrays_to_histograms(
+                data_arrays, masks["data"], [selected_variable]
+            )[branch],
+            "signal": arrays_to_histograms(
+                signal_arrays, masks["signal"], [selected_variable]
+            )[branch],
+            "background": arrays_to_histograms(
+                background_arrays, masks["background"], [selected_variable]
+            )[branch],
         }
+
+        remaining_after = [candidate for candidate in remaining if candidate != branch]
+        diagnostic_fraction = math.nan
+        if remaining_after:
+            diagnostic_data_hists = arrays_to_histograms(
+                data_arrays,
+                masks["data"],
+                VARIABLES,
+            )
+            diagnostic_signal_hists = arrays_to_histograms(
+                signal_arrays,
+                masks["signal"],
+                VARIABLES,
+            )
+            diagnostic_background_hists = arrays_to_histograms(
+                background_arrays,
+                masks["background"],
+                VARIABLES,
+            )
+            diagnostic_signal_shapes: Dict[str, np.ndarray] = {}
+            diagnostic_background_shapes: Dict[str, np.ndarray] = {}
+            for variable in VARIABLES:
+                if variable.branch not in remaining_after:
+                    continue
+                # endif
+                raw_shape = normalized_shape(
+                    diagnostic_signal_hists[variable.branch]
+                )
+                bkg_shape = normalized_shape(
+                    diagnostic_background_hists[variable.branch]
+                )
+                frozen_other = frozen_results[variable.branch]
+                if raw_shape is None or bkg_shape is None or not frozen_other.success:
+                    continue
+                # endif
+                transformed = transform_dvcs_shape(
+                    raw_shape,
+                    variable,
+                    frozen_other.shift,
+                    frozen_other.sigma_add,
+                    (
+                        frozen_other.sigma_right
+                        if is_asymmetric_additive_variable(variable)
+                        and math.isfinite(frozen_other.sigma_right)
+                        else None
+                    ),
+                )
+                if transformed is None:
+                    continue
+                # endif
+                diagnostic_signal_shapes[variable.branch] = transformed
+                diagnostic_background_shapes[variable.branch] = bkg_shape
+            # endfor
+            diagnostic_fraction = diagnostic_fraction_with_frozen_shapes(
+                diagnostic_data_hists,
+                diagnostic_signal_shapes,
+                diagnostic_background_shapes,
+                remaining_after,
+                propagated_after,
+            )
+        # endif
+
         steps.append(
             IterativeCutStep(
                 iteration=iteration,
-                variable=selected_variable.branch,
+                variable=branch,
                 score=score,
                 data_efficiency=data_eff,
                 dvcs_mc_efficiency=signal_eff,
                 pi0_mc_efficiency=background_eff,
-                f_pi0_before=summary.f_pi0,
+                f_pi0_before=propagated_fraction,
+                f_pi0_after=propagated_after,
+                f_pi0_raw_propagated=raw_propagated,
+                f_pi0_diagnostic=diagnostic_fraction,
                 boundaries=boundaries,
                 before_histograms=before_histograms,
                 after_histograms=after_histograms,
-                fit_result=result,
+                fit_result=display_result,
             )
         )
-        raw_signal_shape = normalized_shape(signal_hists[selected_variable.branch])
+
         for name, containment in containments.items():
             data_low, data_high = boundaries[name]["data"]
             mc_low, mc_high = boundaries[name]["mc"]
-            data_mode = "upper_quantile" if is_lower_bounded_morph_variable(selected_variable) else "quantile_window"
-            mc_mode = data_mode
-            json_variants[name]["data"][selected_variable.branch] = make_cut_stats(
-                result.transformed_dvcs_shape,
+            mode = (
+                "upper_quantile"
+                if is_lower_bounded_morph_variable(selected_variable)
+                else "quantile_window"
+            )
+            json_variants[name]["data"][branch] = make_cut_stats(
+                transformed_signal,
                 selected_variable,
                 data_low,
                 data_high,
                 containment,
-                data_mode,
+                mode,
                 iteration,
                 score,
             )
-            json_variants[name]["mc"][selected_variable.branch] = make_cut_stats(
+            json_variants[name]["mc"][branch] = make_cut_stats(
                 raw_signal_shape,
                 selected_variable,
                 mc_low,
                 mc_high,
                 containment,
-                mc_mode,
+                mode,
                 iteration,
                 score,
             )
         # endfor
-        remaining.remove(selected_variable.branch)
-    # endfor
-    return steps, json_variants
 
+        propagated_fraction = propagated_after
+        remaining.remove(branch)
+    # endfor
+
+    return steps, json_variants
 
 def run_pi0_iterative_cuts(
     period: PeriodConfig,
@@ -3045,6 +3325,8 @@ def run_pi0_iterative_cuts(
     core_containment: float,
     containments: Mapping[str, float],
 ) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
+    """Apply the DVCS-selected order with one frozen direct-pi0 calibration."""
+
     data_arrays = arrays["data"]
     signal_arrays = arrays["signal"]
     masks = {
@@ -3056,18 +3338,22 @@ def run_pi0_iterative_cuts(
         "theta_pi0_pi0" if branch == "theta_gamma_gamma" else branch
         for branch in dvcs_order
     ]
-    steps: List[IterativeCutStep] = []
-    json_variants: Dict[str, Dict[str, Dict[str, object]]] = {
-        name: {"data": {}, "mc": {}}
-        for name in containments
-    }
-    for iteration, branch in enumerate(mapped_order):
-        variable = pi0_lookup[branch]
-        data_hist = arrays_to_histograms(data_arrays, masks["data"], [variable])[branch]
-        signal_hist = arrays_to_histograms(signal_arrays, masks["signal"], [variable])[branch]
-        fit_result = fit_single_template(
-            data_hist,
-            signal_hist,
+
+    initial_data_hists = arrays_to_histograms(
+        data_arrays,
+        masks["data"],
+        PI0_VARIABLES,
+    )
+    initial_signal_hists = arrays_to_histograms(
+        signal_arrays,
+        masks["signal"],
+        PI0_VARIABLES,
+    )
+    frozen_results: Dict[str, FitResult] = {}
+    for variable in PI0_VARIABLES:
+        result = fit_single_template(
+            initial_data_hists[variable.branch],
+            initial_signal_hists[variable.branch],
             variable,
             topology,
             max_shift_bins,
@@ -3078,17 +3364,80 @@ def run_pi0_iterative_cuts(
             use_nuisance_penalties,
             core_containment,
         )
-        if not fit_result.success or fit_result.transformed_dvcs_shape is None:
-            raise RuntimeError(
-                f"Iterative pi0 fit failed for {period.label} {topology.label} "
-                f"{branch}: {fit_result.message}"
+        # Finite returned parameters are usable even when L-BFGS-B reports a
+        # boundary/status warning. Fall back to the raw template otherwise.
+        if (
+            result.transformed_dvcs_shape is None
+            or not math.isfinite(result.shift)
+            or not math.isfinite(result.sigma_add)
+        ):
+            raw_shape = normalized_shape(initial_signal_hists[variable.branch])
+            result = FitResult(
+                success=raw_shape is not None,
+                message="raw-template fallback",
+                shift=0.0,
+                sigma_add=0.0,
+                sigma_right=0.0 if is_asymmetric_additive_variable(variable) else math.nan,
+                data_total=float(np.sum(initial_data_hists[variable.branch])),
+                transformed_dvcs_shape=raw_shape,
+                fit_mask=np.ones(variable.bins, dtype=bool),
+                morph_label=(
+                    "asymmetric-additive"
+                    if is_asymmetric_additive_variable(variable)
+                    else "lower-log-space"
+                    if is_lower_bounded_morph_variable(variable)
+                    else "upper-log-space"
+                    if is_upper_bounded_morph_variable(variable)
+                    else "additive"
+                ),
             )
         # endif
+        frozen_results[variable.branch] = result
+    # endfor
+
+    steps: List[IterativeCutStep] = []
+    json_variants: Dict[str, Dict[str, Dict[str, object]]] = {
+        name: {"data": {}, "mc": {}}
+        for name in containments
+    }
+
+    for iteration, branch in enumerate(mapped_order):
+        variable = pi0_lookup[branch]
+        data_hist = arrays_to_histograms(
+            data_arrays, masks["data"], [variable]
+        )[branch]
+        signal_hist = arrays_to_histograms(
+            signal_arrays, masks["signal"], [variable]
+        )[branch]
         raw_shape = normalized_shape(signal_hist)
+        frozen = frozen_results[branch]
+        if raw_shape is None or not frozen.success:
+            raise RuntimeError(
+                f"No usable direct-pi0 template for {period.label} "
+                f"{topology.label} {branch}"
+            )
+        # endif
+
+        transformed = transform_dvcs_shape(
+            raw_shape,
+            variable,
+            frozen.shift,
+            frozen.sigma_add,
+            (
+                frozen.sigma_right
+                if is_asymmetric_additive_variable(variable)
+                and math.isfinite(frozen.sigma_right)
+                else None
+            ),
+        )
+        if transformed is None:
+            transformed = raw_shape
+        # endif
+
         boundaries: Dict[str, Dict[str, Tuple[float, float]]] = {}
         for name, containment in containments.items():
             data_low, data_high, _ = containment_window_from_shape(
-                fit_result.transformed_dvcs_shape,
+                transformed,
                 variable,
                 containment,
             )
@@ -3102,36 +3451,74 @@ def run_pi0_iterative_cuts(
                 "mc": (mc_low, mc_high),
             }
         # endfor
+
         data_low, data_high = boundaries["nominal"]["data"]
         mc_low, mc_high = boundaries["nominal"]["mc"]
         current_data_values = data_arrays[branch][masks["data"]]
         current_signal_values = signal_arrays[branch][masks["signal"]]
-        data_eff = float(np.mean(apply_window(current_data_values, data_low, data_high))) if current_data_values.size else 0.0
-        signal_eff = float(np.mean(apply_window(current_signal_values, mc_low, mc_high))) if current_signal_values.size else 0.0
+        data_eff = (
+            float(np.mean(apply_window(current_data_values, data_low, data_high)))
+            if current_data_values.size
+            else 0.0
+        )
+        signal_eff = (
+            float(np.mean(apply_window(current_signal_values, mc_low, mc_high)))
+            if current_signal_values.size
+            else 0.0
+        )
+
+        display_model = FitResult(
+            success=True,
+            message="frozen direct-pi0 calibration",
+            shift=frozen.shift,
+            sigma_add=frozen.sigma_add,
+            sigma_right=frozen.sigma_right,
+            data_total=float(np.sum(data_hist)),
+            model_counts=float(np.sum(data_hist)) * transformed,
+            dvcs_component_counts=float(np.sum(data_hist)) * transformed,
+            transformed_dvcs_shape=transformed,
+            fit_mask=np.ones(variable.bins, dtype=bool),
+            morph_label=frozen.morph_label,
+        )
+
         masks["data"] &= apply_window(data_arrays[branch], data_low, data_high)
         masks["signal"] &= apply_window(signal_arrays[branch], mc_low, mc_high)
         after_histograms = {
-            "data": arrays_to_histograms(data_arrays, masks["data"], [variable])[branch],
-            "signal": arrays_to_histograms(signal_arrays, masks["signal"], [variable])[branch],
+            "data": arrays_to_histograms(
+                data_arrays, masks["data"], [variable]
+            )[branch],
+            "signal": arrays_to_histograms(
+                signal_arrays, masks["signal"], [variable]
+            )[branch],
         }
-        step = IterativeCutStep(
-            iteration=iteration,
-            variable=branch,
-            score=0.0,
-            data_efficiency=data_eff,
-            dvcs_mc_efficiency=signal_eff,
-            pi0_mc_efficiency=0.0,
-            f_pi0_before=0.0,
-            boundaries=boundaries,
-            before_histograms={"data": data_hist, "signal": signal_hist},
-            after_histograms=after_histograms,
-            fit_result=fit_result,
+
+        steps.append(
+            IterativeCutStep(
+                iteration=iteration,
+                variable=branch,
+                score=0.0,
+                data_efficiency=data_eff,
+                dvcs_mc_efficiency=signal_eff,
+                pi0_mc_efficiency=0.0,
+                f_pi0_before=0.0,
+                f_pi0_after=0.0,
+                f_pi0_raw_propagated=0.0,
+                f_pi0_diagnostic=math.nan,
+                boundaries=boundaries,
+                before_histograms={"data": data_hist, "signal": signal_hist},
+                after_histograms=after_histograms,
+                fit_result=display_model,
+            )
         )
-        steps.append(step)
+
         for name, containment in containments.items():
-            mode = "upper_quantile" if is_lower_bounded_morph_variable(variable) else "quantile_window"
+            mode = (
+                "upper_quantile"
+                if is_lower_bounded_morph_variable(variable)
+                else "quantile_window"
+            )
             json_variants[name]["data"][branch] = make_cut_stats(
-                fit_result.transformed_dvcs_shape,
+                transformed,
                 variable,
                 boundaries[name]["data"][0],
                 boundaries[name]["data"][1],
@@ -3152,8 +3539,8 @@ def run_pi0_iterative_cuts(
             )
         # endfor
     # endfor
-    return steps, json_variants
 
+    return steps, json_variants
 
 def develop_iterative_cuts_for_period(
     period: PeriodConfig,
@@ -3262,6 +3649,9 @@ def develop_iterative_cuts_for_period(
                     "variable": step.variable,
                     "score": step.score,
                     "f_pi0_before": step.f_pi0_before,
+                    "f_pi0_after": step.f_pi0_after,
+                    "f_pi0_raw_propagated": step.f_pi0_raw_propagated,
+                    "f_pi0_diagnostic": step.f_pi0_diagnostic,
                     "data_efficiency": step.data_efficiency,
                     "signal_mc_efficiency": step.dvcs_mc_efficiency,
                     "pi0_mc_efficiency": step.pi0_mc_efficiency,
@@ -3574,9 +3964,9 @@ def main() -> int:
         log(f"Wrote {iterative_csv}")
 
         json_dir = output_dir / "iterative_cuts" / "jsons"
-        nominal_path = json_dir / "combined_cuts_97.json"
+        nominal_path = json_dir / "combined_cuts_95.json"
         loose_path = json_dir / "combined_cuts_99.json"
-        tight_path = json_dir / "combined_cuts_95.json"
+        tight_path = json_dir / "combined_cuts_68.json"
         compatibility_path = json_dir / "combined_cuts.json"
         write_json(nominal_path, combined_cut_blocks["nominal"])
         write_json(loose_path, combined_cut_blocks["loose"])
