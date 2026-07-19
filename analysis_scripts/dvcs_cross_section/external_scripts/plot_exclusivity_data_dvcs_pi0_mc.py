@@ -28,7 +28,7 @@ shape validation:
 
 The eppi0 template is fixed. Signed variables use additive shift plus Gaussian
 smearing. Positive-definite pTmiss and theta_gamma_gamma use log-space shift
-and smearing. By default all eight fitted variables determine the shared fraction. When a
+and smearing. By default Delta_phi, theta_gamma_gamma and pTmiss determine the shared fraction using one common in-range event population. When a
 restricted --fraction-variable subset is supplied, the remaining variables
 are validation projections with profiled nuisance parameters. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
@@ -231,10 +231,10 @@ TOPOLOGIES: Tuple[TopologyConfig, ...] = (
 
 VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
-    VariableConfig("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 100, 0.0, 2.0),
-    VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
+    VariableConfig("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0),
+    VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
     VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
-    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
+    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 120, -1.0, 3.0),
     VariableConfig("xF", r"$x_F(ep+\gamma)$", 100, -0.5, 0.2),
     VariableConfig(
         "xF2",
@@ -257,10 +257,10 @@ VARIABLES: Tuple[VariableConfig, ...] = (
 
 PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
-    VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 100, 0.0, 2.0),
-    VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 100, 0.0, 0.3),
+    VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 120, 0.0, 3.0),
+    VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
     VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
-    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
+    VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 120, -1.0, 3.0),
     VariableConfig("xF", r"$x_F(ep+\pi^0)$", 100, -0.5, 0.2),
     VariableConfig(
         "xF2",
@@ -281,7 +281,7 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
 )
 
 
-# The nuisance/template fits continue to use the eight variables above.
+# All eight variables remain available for nuisance validation and automatic cut selection, while only the configured fraction drivers determine f_pi0.
 # The unit-area shape-comparison canvases additionally include the three
 # missing-mass projections and the event transverse momentum pT.
 SHAPE_ONLY_VARIABLES: Tuple[VariableConfig, ...] = (
@@ -434,8 +434,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cut-tight-containment",
         type=float,
-        default=0.68,
-        help="Tight iterative signal containment (default: 0.68).",
+        default=0.90,
+        help="Tight iterative signal containment (default: 0.90).",
     )
     parser.add_argument(
         "--skip-iterative-cuts",
@@ -448,7 +448,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         help=(
             "Variable used to determine the shared pi0 fraction. May be supplied "
-            "repeatedly. Default: all eight fitted variables."
+            "repeatedly. Default: Delta_phi, theta_gamma_gamma and pTmiss."
         ),
     )
     parser.add_argument(
@@ -1882,7 +1882,7 @@ def draw_fit_canvas(
     handles, labels = flat_axes[0].get_legend_handles_labels()
     fig.suptitle(
         f"DVCS-core two-template fits after minimal preselection: {period.label}, {topology.label}\n"
-        f"fraction drivers: {', '.join(shared_summary.fraction_variables)}; "
+        f"fraction drivers (common population): {', '.join(shared_summary.fraction_variables)}; "
         f"topology-selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
         rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
@@ -2287,6 +2287,14 @@ def process_pi0_period(
                 "data_entries_in_range": result.data_total,
                 "mc_entries_in_range": float(np.sum(mc_hists[topology.key][variable.branch])),
                 "morph_type": result.morph_label,
+                "nuisance_boundary_flags": ";".join(
+                    nuisance_boundary_flags(
+                        result,
+                        variable,
+                        max_shift_bins,
+                        max_smear_bins,
+                    )
+                ),
                 "core_containment": pi0_core_containment,
                 "fit_bins_used": int(np.count_nonzero(result.fit_mask)) if result.fit_mask is not None else 0,
                 "outside_core_data_counts": result.excluded_data_counts,
@@ -2336,6 +2344,9 @@ def process_period(
     log_y: bool,
     dpi: int,
     pi0_core_calibrations: Optional[Mapping[str, Mapping[str, Tuple[float, float]]]] = None,
+    fraction_population_arrays: Optional[
+        Mapping[str, Mapping[str, Mapping[str, np.ndarray]]]
+    ] = None,
 ) -> List[Dict[str, object]]:
     log(f"Starting period {period.label}")
 
@@ -2372,10 +2383,41 @@ def process_period(
         )
         log(f"Wrote {shape_path}")
 
+        fit_data_hists = data_hists[topology.key]
+        fit_dvcs_hists = dvcs_hists[topology.key]
+        fit_pi0_hists = pi0_hists[topology.key]
+        common_population_counts = {
+            "data": math.nan,
+            "dvcs_mc": math.nan,
+            "pi0_mc": math.nan,
+        }
+        if fraction_population_arrays is not None:
+            fit_data_hists, data_common_mask = common_population_histograms(
+                fraction_population_arrays["data"][topology.key],
+                fraction_variables,
+                VARIABLES,
+            )
+            fit_dvcs_hists, dvcs_common_mask = common_population_histograms(
+                fraction_population_arrays["signal"][topology.key],
+                fraction_variables,
+                VARIABLES,
+            )
+            fit_pi0_hists, pi0_common_mask = common_population_histograms(
+                fraction_population_arrays["background"][topology.key],
+                fraction_variables,
+                VARIABLES,
+            )
+            common_population_counts = {
+                "data": int(np.count_nonzero(data_common_mask)),
+                "dvcs_mc": int(np.count_nonzero(dvcs_common_mask)),
+                "pi0_mc": int(np.count_nonzero(pi0_common_mask)),
+            }
+        # endif
+
         shared_summary = fit_shared_two_templates(
-            data_hists[topology.key],
-            dvcs_hists[topology.key],
-            pi0_hists[topology.key],
+            fit_data_hists,
+            fit_dvcs_hists,
+            fit_pi0_hists,
             topology,
             max_shift_bins, max_smear_bins, fit_min_counts,
             fraction_variables, shift_prior_bins, smear_prior_bins,
@@ -2396,8 +2438,8 @@ def process_period(
         individual_summaries: Dict[str, SharedFitSummary] = {}
         for branch in fraction_variables:
             individual_summaries[branch] = fit_shared_two_templates(
-                data_hists[topology.key], dvcs_hists[topology.key],
-                pi0_hists[topology.key], topology,
+                fit_data_hists, fit_dvcs_hists,
+                fit_pi0_hists, topology,
                 max_shift_bins, max_smear_bins, fit_min_counts,
                 [branch], shift_prior_bins, smear_prior_bins,
                 use_nuisance_penalties,
@@ -2408,6 +2450,33 @@ def process_period(
                 emiss2_mean_order_penalty_weight,
             )
         # endfor
+
+        individual_fraction_values = np.asarray(
+            [
+                summary.f_pi0
+                for summary in individual_summaries.values()
+                if summary.success and math.isfinite(summary.f_pi0)
+            ],
+            dtype=np.float64,
+        )
+        if individual_fraction_values.size:
+            individual_fraction_median = float(np.median(individual_fraction_values))
+            individual_fraction_mad = float(
+                np.median(
+                    np.abs(
+                        individual_fraction_values
+                        - individual_fraction_median
+                    )
+                )
+            )
+            individual_fraction_min = float(np.min(individual_fraction_values))
+            individual_fraction_max = float(np.max(individual_fraction_values))
+        else:
+            individual_fraction_median = math.nan
+            individual_fraction_mad = math.nan
+            individual_fraction_min = math.nan
+            individual_fraction_max = math.nan
+        # endif
 
         for variable in VARIABLES:
             result = fit_results[variable.branch]
@@ -2426,11 +2495,18 @@ def process_period(
                 "fraction_variables": ";".join(shared_summary.fraction_variables),
                 "shared_f_pi0": shared_summary.f_pi0,
                 "shared_f_pi0_err": shared_summary.f_pi0_err,
+                "individual_f_pi0_median": individual_fraction_median,
+                "individual_f_pi0_mad": individual_fraction_mad,
+                "individual_f_pi0_min": individual_fraction_min,
+                "individual_f_pi0_max": individual_fraction_max,
                 "global_poisson_deviance": shared_summary.deviance,
                 "global_ndf": shared_summary.ndf,
                 "data_entries_in_range": result.data_total,
-                "dvcs_mc_entries_in_range": float(np.sum(dvcs_hists[topology.key][variable.branch])),
-                "pi0_mc_entries_in_range": float(np.sum(pi0_hists[topology.key][variable.branch])),
+                "dvcs_mc_entries_in_range": float(np.sum(fit_dvcs_hists[variable.branch])),
+                "pi0_mc_entries_in_range": float(np.sum(fit_pi0_hists[variable.branch])),
+                "common_fraction_population_data": common_population_counts["data"],
+                "common_fraction_population_dvcs_mc": common_population_counts["dvcs_mc"],
+                "common_fraction_population_pi0_mc": common_population_counts["pi0_mc"],
                 "morph_type": result.morph_label,
                 "shift_or_log_shift": result.shift,
                 "shift_err": result.shift_err,
@@ -2559,6 +2635,54 @@ def containment_window_from_shape(
 def apply_window(values: np.ndarray, low: float, high: float) -> np.ndarray:
     values = np.asarray(values)
     return np.isfinite(values) & (values >= low) & (values <= high)
+
+
+def common_in_range_mask(
+    arrays: Mapping[str, np.ndarray],
+    variable_branches: Sequence[str],
+    variable_lookup: Mapping[str, VariableConfig],
+    base_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Require one common event population across the selected variables."""
+
+    if not arrays:
+        return np.asarray([], dtype=bool)
+    # endif
+
+    first = np.asarray(next(iter(arrays.values())))
+    mask = (
+        np.ones(first.size, dtype=bool)
+        if base_mask is None
+        else np.asarray(base_mask, dtype=bool).copy()
+    )
+    for branch in variable_branches:
+        variable = variable_lookup[branch]
+        values = np.asarray(arrays[branch], dtype=np.float64)
+        mask &= (
+            np.isfinite(values)
+            & (values >= variable.xmin)
+            & (values < variable.xmax)
+        )
+    # endfor
+    return mask
+
+
+def common_population_histograms(
+    arrays: Mapping[str, np.ndarray],
+    variable_branches: Sequence[str],
+    variables: Sequence[VariableConfig],
+    base_mask: Optional[np.ndarray] = None,
+) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+    """Histogram all variables after a common driver-range requirement."""
+
+    lookup = {variable.branch: variable for variable in variables}
+    mask = common_in_range_mask(
+        arrays,
+        variable_branches,
+        lookup,
+        base_mask,
+    )
+    return arrays_to_histograms(arrays, mask, variables), mask
 
 
 def arrays_to_histograms(
@@ -2922,9 +3046,6 @@ def draw_iterative_cut_canvas(
                 f"\nf_pi0: {step.f_pi0_before:.3f}"
                 f" -> {step.f_pi0_after:.3f}"
             )
-            if math.isfinite(step.f_pi0_diagnostic):
-                annotation += f"\ndiagnostic refit={step.f_pi0_diagnostic:.3f}"
-            # endif
         # endif
         axis.text(
             0.98,
@@ -2990,6 +3111,46 @@ def make_cut_stats(
         "discrimination_score": score,
     }
 
+
+
+def nuisance_boundary_flags(
+    result: FitResult,
+    variable: VariableConfig,
+    max_shift_bins: float,
+    max_smear_bins: float,
+) -> Tuple[str, ...]:
+    """Identify nuisance parameters that are effectively on a fit boundary."""
+
+    flags: List[str] = []
+    if not result.success:
+        flags.append("fit_failed")
+        return tuple(flags)
+    # endif
+
+    bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
+    if is_log_morph_variable(variable):
+        if abs(result.shift) >= 0.695:
+            flags.append("shift_bound")
+        # endif
+        if result.sigma_add >= 0.995:
+            flags.append("smear_bound")
+        # endif
+    else:
+        if abs(result.shift) >= 0.98 * max_shift_bins * bin_width:
+            flags.append("shift_bound")
+        # endif
+        if result.sigma_add >= 0.98 * max_smear_bins * bin_width:
+            flags.append("smear_bound")
+        # endif
+        if (
+            is_asymmetric_additive_variable(variable)
+            and math.isfinite(result.sigma_right)
+            and result.sigma_right <= 1.0e-8
+        ):
+            flags.append("right_width_zero")
+        # endif
+    # endif
+    return tuple(flags)
 
 
 def iterative_signal_shape(
@@ -3168,12 +3329,23 @@ def run_dvcs_iterative_cuts(
         "background": np.ones(len(next(iter(background_arrays.values()))), dtype=bool),
     }
 
-    initial_data_hists = arrays_to_histograms(data_arrays, masks["data"], VARIABLES)
-    initial_signal_hists = arrays_to_histograms(signal_arrays, masks["signal"], VARIABLES)
-    initial_background_hists = arrays_to_histograms(
-        background_arrays,
-        masks["background"],
+    initial_data_hists, initial_data_common = common_population_histograms(
+        data_arrays,
+        fraction_variables,
         VARIABLES,
+        masks["data"],
+    )
+    initial_signal_hists, initial_signal_common = common_population_histograms(
+        signal_arrays,
+        fraction_variables,
+        VARIABLES,
+        masks["signal"],
+    )
+    initial_background_hists, initial_background_common = common_population_histograms(
+        background_arrays,
+        fraction_variables,
+        VARIABLES,
+        masks["background"],
     )
     initial_summary = fit_shared_two_templates(
         initial_data_hists,
@@ -3388,56 +3560,10 @@ def run_dvcs_iterative_cuts(
             )[branch],
         }
 
-        remaining_after = [candidate for candidate in remaining if candidate != branch]
+        remaining_after = [
+            candidate for candidate in remaining if candidate != branch
+        ]
         diagnostic_fraction = math.nan
-        if remaining_after:
-            diagnostic_data_hists = arrays_to_histograms(
-                data_arrays,
-                masks["data"],
-                VARIABLES,
-            )
-            diagnostic_signal_hists = arrays_to_histograms(
-                signal_arrays,
-                masks["signal"],
-                VARIABLES,
-            )
-            diagnostic_background_hists = arrays_to_histograms(
-                background_arrays,
-                masks["background"],
-                VARIABLES,
-            )
-            diagnostic_signal_shapes: Dict[str, np.ndarray] = {}
-            diagnostic_background_shapes: Dict[str, np.ndarray] = {}
-            for variable in VARIABLES:
-                if variable.branch not in remaining_after:
-                    continue
-                # endif
-                raw_shape = normalized_shape(
-                    diagnostic_signal_hists[variable.branch]
-                )
-                bkg_shape = normalized_shape(
-                    diagnostic_background_hists[variable.branch]
-                )
-                frozen_other = frozen_results[variable.branch]
-                if raw_shape is None or bkg_shape is None or not frozen_other.success:
-                    continue
-                # endif
-                transformed, _ = iterative_signal_shape(
-                    raw_shape,
-                    variable,
-                    frozen_other,
-                )
-                diagnostic_signal_shapes[variable.branch] = transformed
-                diagnostic_background_shapes[variable.branch] = bkg_shape
-            # endfor
-            diagnostic_fraction = diagnostic_fraction_with_frozen_shapes(
-                diagnostic_data_hists,
-                diagnostic_signal_shapes,
-                diagnostic_background_shapes,
-                remaining_after,
-                propagated_after,
-            )
-        # endif
 
         steps.append(
             IterativeCutStep(
@@ -3787,6 +3913,9 @@ def develop_iterative_cuts_for_period(
     outside_overshoot_penalty_weight: float,
     emiss2_mean_order_penalty_weight: float,
     dpi: int,
+    preloaded_dvcs_arrays: Optional[
+        Mapping[str, Mapping[str, Mapping[str, np.ndarray]]]
+    ] = None,
 ) -> Tuple[Dict[str, Dict[str, object]], List[Dict[str, object]]]:
     containments = {
         "nominal": nominal_containment,
@@ -3794,11 +3923,21 @@ def develop_iterative_cuts_for_period(
         "tight": tight_containment,
     }
     log(f"Loading event arrays for iterative cuts: {period.label}")
-    dvcs_arrays = {
-        "data": load_selected_arrays_for_file(period.data_file, topologies, step_size, VARIABLES),
-        "signal": load_selected_arrays_for_file(period.dvcs_mc_file, topologies, step_size, VARIABLES),
-        "background": load_selected_arrays_for_file(period.pi0_as_dvcs_mc_file, topologies, step_size, VARIABLES),
-    }
+    dvcs_arrays = (
+        dict(preloaded_dvcs_arrays)
+        if preloaded_dvcs_arrays is not None
+        else {
+            "data": load_selected_arrays_for_file(
+                period.data_file, topologies, step_size, VARIABLES
+            ),
+            "signal": load_selected_arrays_for_file(
+                period.dvcs_mc_file, topologies, step_size, VARIABLES
+            ),
+            "background": load_selected_arrays_for_file(
+                period.pi0_as_dvcs_mc_file, topologies, step_size, VARIABLES
+            ),
+        }
+    )
     pi0_arrays = {
         "data": load_selected_arrays_for_file(period.eppi0_data_file, topologies, step_size, PI0_VARIABLES),
         "signal": load_selected_arrays_for_file(period.eppi0_mc_file, topologies, step_size, PI0_VARIABLES),
@@ -3965,6 +4104,18 @@ def process_period_worker(
         dpi,
     )
 
+    fraction_population_arrays = {
+        "data": load_selected_arrays_for_file(
+            period.data_file, topologies, step_size, VARIABLES
+        ),
+        "signal": load_selected_arrays_for_file(
+            period.dvcs_mc_file, topologies, step_size, VARIABLES
+        ),
+        "background": load_selected_arrays_for_file(
+            period.pi0_as_dvcs_mc_file, topologies, step_size, VARIABLES
+        ),
+    }
+
     dvcs_rows = process_period(
         period,
         topologies,
@@ -3984,6 +4135,7 @@ def process_period_worker(
         log_y,
         dpi,
         pi0_calibrations,
+        fraction_population_arrays,
     )
 
     iterative_blocks: Dict[str, Dict[str, object]] = {
@@ -4013,6 +4165,7 @@ def process_period_worker(
             outside_overshoot_penalty_weight,
             emiss2_mean_order_penalty_weight,
             dpi,
+            fraction_population_arrays,
         )
     # endif
 
@@ -4065,7 +4218,7 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     all_rows: List[Dict[str, object]] = []
     all_pi0_rows: List[Dict[str, object]] = []
-    fraction_variables = args.fraction_variable or [variable.branch for variable in VARIABLES]
+    fraction_variables = args.fraction_variable or ["Delta_phi", "theta_gamma_gamma", "pTmiss"]
     if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
         raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
     # endif
@@ -4095,7 +4248,8 @@ def main() -> int:
         "distinct FD sectors; no hard exclusivity cuts are applied."
     )
     log(
-        f"Fit: shared f_pi0 uses {fraction_variables}. "
+        f"Fit: shared f_pi0 uses the common in-range population of "
+        f"{fraction_variables}. "
         f"Fraction-region containment={100.0 * args.dvcs_fraction_containment:.0f}%; "
         f"nuisance-region containment={100.0 * args.dvcs_core_containment:.0f}%. "
         "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and upper-edge log morphs for z2/xF2. "
@@ -4231,7 +4385,7 @@ def main() -> int:
         json_dir = output_dir / "iterative_cuts" / "jsons"
         nominal_path = json_dir / "combined_cuts_95.json"
         loose_path = json_dir / "combined_cuts_99.json"
-        tight_path = json_dir / "combined_cuts_68.json"
+        tight_path = json_dir / "combined_cuts_90.json"
         compatibility_path = json_dir / "combined_cuts.json"
         write_json(nominal_path, combined_cut_blocks["nominal"])
         write_json(loose_path, combined_cut_blocks["loose"])
