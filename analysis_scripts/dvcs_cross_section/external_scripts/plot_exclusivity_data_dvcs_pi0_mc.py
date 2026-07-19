@@ -2961,7 +2961,7 @@ def run_dvcs_iterative_cuts(
     pi0_calibration: Mapping[str, Tuple[float, float]],
     containments: Mapping[str, float],
 ) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
-    """Develop cuts with one frozen initial calibration and propagated contamination."""
+    """Develop matched-containment data and MC cuts with one frozen initial calibration and propagated contamination."""
 
     data_arrays = arrays["data"]
     signal_arrays = arrays["signal"]
@@ -3061,6 +3061,9 @@ def run_dvcs_iterative_cuts(
             current_background_shapes[branch] = background_shape
 
             boundaries: Dict[str, Dict[str, Tuple[float, float]]] = {}
+            # Preserve the same signal survival probability in data and MC:
+            # data boundaries come from the morphed DVCS signal template, while
+            # reconstructed-MC boundaries come from the raw DVCS signal template.
             for name, containment in containments.items():
                 data_low, data_high, _ = containment_window_from_shape(
                     transformed_signal,
@@ -3435,6 +3438,8 @@ def run_pi0_iterative_cuts(
         # endif
 
         boundaries: Dict[str, Dict[str, Tuple[float, float]]] = {}
+        # Use matched containment: morphed-template boundaries for data and
+        # raw reconstructed-MC boundaries for MC.
         for name, containment in containments.items():
             data_low, data_high, _ = containment_window_from_shape(
                 transformed,
