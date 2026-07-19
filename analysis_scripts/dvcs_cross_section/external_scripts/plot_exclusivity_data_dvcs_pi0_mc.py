@@ -505,16 +505,6 @@ def parse_args() -> argparse.Namespace:
         help="PNG resolution in dots per inch (default: 180).",
     )
     parser.add_argument(
-        "--max-iterative-calibration-deviance-per-ndf",
-        type=float,
-        default=25.0,
-        help=(
-            "Maximum deviance/ndf allowed for a fitted nuisance calibration "
-            "to define iterative cut boundaries. Worse fits use the raw "
-            "reconstructed signal template instead (default: 25)."
-        ),
-    )
-    parser.add_argument(
         "--no-clean-output",
         action="store_true",
         help=(
@@ -3006,16 +2996,17 @@ def iterative_signal_shape(
     raw_signal_shape: np.ndarray,
     variable: VariableConfig,
     fitted_result: FitResult,
-    max_deviance_per_ndf: float,
 ) -> Tuple[np.ndarray, str]:
-    """Choose a stable signal template for iterative cut construction."""
+    """Use the template-fit nuisance calibration for iterative cut construction.
+
+    The raw reconstructed signal template is used only when the fitted
+    calibration is genuinely unusable: missing/nonfinite parameters or a
+    failed template transformation. Reduced deviance is intentionally not used
+    as a rejection criterion because the very large event samples make even
+    visually adequate fits yield large D/ndf values.
+    """
 
     raw = np.asarray(raw_signal_shape, dtype=np.float64)
-    quality = (
-        fitted_result.deviance / fitted_result.ndf
-        if fitted_result.ndf > 0 and math.isfinite(fitted_result.deviance)
-        else math.inf
-    )
     usable = (
         fitted_result.success
         and math.isfinite(fitted_result.shift)
@@ -3025,7 +3016,7 @@ def iterative_signal_shape(
             or math.isfinite(fitted_result.sigma_right)
         )
     )
-    if not usable or quality > max_deviance_per_ndf:
+    if not usable:
         return raw, "raw-MC fallback"
     # endif
 
@@ -3163,7 +3154,6 @@ def run_dvcs_iterative_cuts(
     fraction_containment: float,
     pi0_calibration: Mapping[str, Tuple[float, float]],
     containments: Mapping[str, float],
-    max_calibration_deviance_per_ndf: float,
     outside_overshoot_penalty_weight: float,
     emiss2_mean_order_penalty_weight: float,
 ) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
@@ -3253,7 +3243,6 @@ def run_dvcs_iterative_cuts(
                 raw_signal_shape,
                 variable,
                 frozen,
-                max_calibration_deviance_per_ndf,
             )
 
             current_signal_shapes[branch] = transformed_signal
@@ -3437,7 +3426,6 @@ def run_dvcs_iterative_cuts(
                     raw_shape,
                     variable,
                     frozen_other,
-                    max_calibration_deviance_per_ndf,
                 )
                 diagnostic_signal_shapes[variable.branch] = transformed
                 diagnostic_background_shapes[variable.branch] = bkg_shape
@@ -3796,7 +3784,6 @@ def develop_iterative_cuts_for_period(
     nominal_containment: float,
     loose_containment: float,
     tight_containment: float,
-    max_iterative_calibration_deviance_per_ndf: float,
     outside_overshoot_penalty_weight: float,
     emiss2_mean_order_penalty_weight: float,
     dpi: int,
@@ -3838,7 +3825,6 @@ def develop_iterative_cuts_for_period(
             dvcs_fraction_containment,
             pi0_calibrations.get(topology.key, {}),
             containments,
-            max_iterative_calibration_deviance_per_ndf,
             outside_overshoot_penalty_weight,
             emiss2_mean_order_penalty_weight,
         )
@@ -3948,7 +3934,6 @@ def process_period_worker(
     cut_nominal_containment: float,
     cut_loose_containment: float,
     cut_tight_containment: float,
-    max_iterative_calibration_deviance_per_ndf: float,
     outside_overshoot_penalty_weight: float,
     emiss2_mean_order_penalty_weight: float,
     run_iterative_cuts: bool,
@@ -4025,7 +4010,6 @@ def process_period_worker(
             cut_nominal_containment,
             cut_loose_containment,
             cut_tight_containment,
-            max_iterative_calibration_deviance_per_ndf,
             outside_overshoot_penalty_weight,
             emiss2_mean_order_penalty_weight,
             dpi,
@@ -4046,11 +4030,6 @@ def main() -> int:
     # endif
     if args.workers <= 0:
         raise ValueError("--workers must be positive.")
-    # endif
-    if args.max_iterative_calibration_deviance_per_ndf <= 0.0:
-        raise ValueError(
-            "--max-iterative-calibration-deviance-per-ndf must be positive."
-        )
     # endif
     if args.outside_overshoot_penalty < 0.0:
         raise ValueError("--outside-overshoot-penalty must be nonnegative.")
@@ -4165,7 +4144,6 @@ def main() -> int:
                 args.cut_nominal_containment,
                 args.cut_loose_containment,
                 args.cut_tight_containment,
-                args.max_iterative_calibration_deviance_per_ndf,
                 args.outside_overshoot_penalty,
                 args.emiss2_mean_order_penalty,
                 not args.skip_iterative_cuts,
@@ -4200,7 +4178,6 @@ def main() -> int:
                     args.cut_nominal_containment,
                     args.cut_loose_containment,
                     args.cut_tight_containment,
-                    args.max_iterative_calibration_deviance_per_ndf,
                     args.outside_overshoot_penalty,
                     args.emiss2_mean_order_penalty,
                     not args.skip_iterative_cuts,
