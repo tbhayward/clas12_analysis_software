@@ -33,7 +33,7 @@ parameters are profiled at the fitted fraction, but they do not determine
 f_pi0. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
-The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use xF, xF2, z2 and eta2 in place of the missing-mass projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
+The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use xF, xF2, z2 and theta in place of the missing-mass projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
 
 Outputs:
 
@@ -237,12 +237,12 @@ VARIABLES: Tuple[VariableConfig, ...] = (
         aliases=("xF_2",),
     ),
     VariableConfig(
-        "eta2",
-        r"$\eta_2(\gamma)$",
+        "theta",
+        r"$\theta_2(\gamma)$ (rad)",
         100,
-        -1.0,
-        5.0,
-        aliases=("eta_2",),
+        0.0,
+        0.8,
+        aliases=("theta2", "theta_2"),
     ),
 )
 
@@ -263,12 +263,12 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
         aliases=("xF_2",),
     ),
     VariableConfig(
-        "eta2",
-        r"$\eta_2(\pi^0)$",
+        "theta",
+        r"$\theta_2(\pi^0)$ (rad)",
         100,
-        -1.0,
-        5.0,
-        aliases=("eta_2",),
+        0.0,
+        0.8,
+        aliases=("theta2", "theta_2"),
     ),
 )
 
@@ -847,6 +847,7 @@ def is_positive_morph_variable(variable: VariableConfig) -> bool:
         "pTmiss",
         "theta_gamma_gamma",
         "theta_pi0_pi0",
+        "theta",
         "z2",
     }
 
@@ -1388,13 +1389,13 @@ def draw_shape_canvas(
         f"selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
         rf"$e\pi^0$ MC as DVCS={selected_counts['pi0_mc']:,}",
-        fontsize=15, y=0.992,
+        fontsize=15, y=0.975,
     )
     fig.legend(
-        handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.875),
+        handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.905),
         ncol=len(labels), frameon=False,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.86))
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.89))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -1684,11 +1685,11 @@ def draw_pi0_shape_canvas(
     fig.suptitle(
         rf"$e'p'\pi^0$ exclusivity shapes after minimal preselection: {period.label}, {topology.label}" + "\n" +
         rf"selected entries: data={selected_counts['data']:,}, MC={selected_counts['mc']:,}",
-        fontsize=18, y=0.985,
+        fontsize=17, y=0.975,
     )
     handles, labels = axes_flat[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.905), ncol=2, frameon=False)
-    fig.subplots_adjust(top=0.86, left=0.06, right=0.985, bottom=0.06, wspace=0.28, hspace=0.34)
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.915), ncol=2, frameon=False)
+    fig.subplots_adjust(top=0.885, left=0.06, right=0.985, bottom=0.06, wspace=0.28, hspace=0.34)
     fig.savefig(output_path, dpi=dpi)
     plt.close(fig)
 
