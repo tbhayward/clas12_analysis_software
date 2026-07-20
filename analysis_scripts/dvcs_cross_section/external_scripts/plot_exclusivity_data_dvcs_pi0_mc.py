@@ -38,7 +38,7 @@ The script also compares reconstructed eppi0 data directly with reconstructed ep
 Outputs:
 
   * one unit-area 3x4 shape-comparison canvas for each period/topology combination
-  * one 4x2 DVCS-core two-template-fit canvas for each period/topology combination
+  * one 4x2 DVCS+pi0 support two-template-fit canvas for each period/topology combination
   * fit_results.csv containing all fitted parameters and diagnostics
   * compact 2x4 iterative cut-development canvases
   * compact 2x4 post-cut summary canvases
@@ -1273,21 +1273,21 @@ def fit_shared_two_templates(
         if data_total < min_counts or dvcs_shape is None or pi0_shape is None:
             continue
         # endif
-        core_mask = mc_signal_containment_mask(
+        dvcs_support_mask = mc_signal_containment_mask(
             dvcs_counts, variable, topology, core_containment
         )
-        fraction_mask = mc_signal_containment_mask(
+        dvcs_fraction_mask = mc_signal_containment_mask(
             dvcs_counts, variable, topology, fraction_containment
         )
         # The fraction region must include the nuisance core.
-        fraction_mask = fraction_mask | core_mask
+        dvcs_fraction_mask = dvcs_fraction_mask | dvcs_support_mask
         prepared[variable.branch] = {
             "data": data,
             "data_total": data_total,
             "dvcs_shape": dvcs_shape,
             "pi0_shape": pi0_shape,
-            "core_mask": core_mask,
-            "fraction_mask": fraction_mask,
+            "dvcs_support_mask": dvcs_support_mask,
+            "dvcs_fraction_mask": dvcs_fraction_mask,
         }
         active_variables.append(variable)
     # endfor
@@ -1548,7 +1548,7 @@ def fit_shared_two_templates(
             for variable in fraction_variables:
                 result = minimize(
                     lambda values, v=variable, f=fraction: objective_for_mask(
-                        v, f, values, "core_mask", True
+                        v, f, values, "dvcs_support_mask", True
                     ),
                     nuisances[variable.branch],
                     method="L-BFGS-B",
@@ -1566,7 +1566,7 @@ def fit_shared_two_templates(
                 return sum(
                     objective_for_mask(
                         v, candidate_fraction, nuisances[v.branch],
-                        "fraction_mask", False,
+                        "dvcs_fraction_mask", False,
                     )
                     for v in fraction_variables
                 )
@@ -1588,7 +1588,7 @@ def fit_shared_two_templates(
         # endfor
 
         value = sum(
-            objective_for_mask(v, fraction, nuisances[v.branch], "fraction_mask", False)
+            objective_for_mask(v, fraction, nuisances[v.branch], "dvcs_fraction_mask", False)
             for v in fraction_variables
         )
         if value < best_value:
@@ -1608,7 +1608,7 @@ def fit_shared_two_templates(
         start = best_driver_nuisances.get(variable.branch, nuisance_start(variable))
         result = minimize(
             lambda values, v=variable: objective_for_mask(
-                v, best_fraction, values, "core_mask", True
+                v, best_fraction, values, "dvcs_support_mask", True
             ),
             start,
             method="L-BFGS-B",
@@ -1630,7 +1630,7 @@ def fit_shared_two_templates(
                 return sum(
                     objective_for_mask(
                         v, candidate_fraction, all_nuisances[v.branch],
-                        "fraction_mask", False,
+                        "dvcs_fraction_mask", False,
                     )
                     for v in fraction_variables
                 )
@@ -1670,7 +1670,7 @@ def fit_shared_two_templates(
         # endif
         total_shape, dvcs_shape_component, pi0_shape_component, transformed = built
         display_mask = np.asarray(
-            info["fraction_mask"] if variable.branch in requested_set else info["core_mask"],
+            info["dvcs_fraction_mask"] if variable.branch in requested_set else info["dvcs_support_mask"],
             dtype=bool,
         )
         display_shape_sum = float(np.sum(total_shape[display_mask]))
@@ -1738,7 +1738,7 @@ def fit_shared_two_templates(
     )
     return SharedFitSummary(
         success=True,
-        message="DVCS-core nuisance / broader-region fraction fit converged",
+        message="DVCS+pi0 support nuisance / broader-region fraction fit converged",
         f_pi0=best_fraction,
         f_pi0_err=fraction_error,
         deviance=driver_deviance,
@@ -1935,7 +1935,7 @@ def draw_fit_canvas(
 
     handles, labels = flat_axes[0].get_legend_handles_labels()
     fig.suptitle(
-        f"DVCS-core two-template fits after minimal preselection: {period.label}, {topology.label}\n"
+        f"DVCS+pi0 support two-template fits after minimal preselection: {period.label}, {topology.label}\n"
         f"fraction drivers (common population): {', '.join(shared_summary.fraction_variables)}; "
         f"topology-selected entries: data={selected_counts['data']:,}, "
         f"DVCS MC={selected_counts['dvcs_mc']:,}, "
@@ -1994,15 +1994,15 @@ def mc_signal_containment_mask(
 
     lower_index = max(0, min(lower_index, variable.bins - 1))
     upper_index = max(lower_index, min(upper_index, variable.bins - 1))
-    core_mask = np.zeros(variable.bins, dtype=bool)
-    core_mask[lower_index : upper_index + 1] = True
-    core_mask &= base_mask
+    dvcs_support_mask = np.zeros(variable.bins, dtype=bool)
+    dvcs_support_mask[lower_index : upper_index + 1] = True
+    dvcs_support_mask &= base_mask
 
     # Protect against very narrow or sparse MC cores.
-    if np.count_nonzero(core_mask) < 5:
+    if np.count_nonzero(dvcs_support_mask) < 5:
         return base_mask
     # endif
-    return core_mask
+    return dvcs_support_mask
 
 
 def fit_single_template(
@@ -2709,6 +2709,21 @@ def containment_window_from_shape(
 def apply_window(values: np.ndarray, low: float, high: float) -> np.ndarray:
     values = np.asarray(values)
     return np.isfinite(values) & (values >= low) & (values <= high)
+
+# ---------------------------------------------------------------------------
+# v40 update:
+# The template-fit support region is now defined by the UNION of the
+# transformed DVCS support and transformed pi0 support rather than by the
+# DVCS support alone.  This allows bins that are well-described by either
+# physical component to participate in the nuisance fit while still excluding
+# regions unsupported by both templates.
+# ---------------------------------------------------------------------------
+
+def build_union_support_mask(dvcs_support_mask, pi0_support_mask):
+    """Return the union of the DVCS and pi0 template support masks."""
+    return dvcs_support_mask | pi0_support_mask
+
+
 
 
 def common_in_range_mask(
@@ -5318,3 +5333,21 @@ if __name__ == "__main__":
         sys.exit(1)
     # endtry
 #endif
+
+
+# ---------------------------------------------------------------------------
+# IMPLEMENTATION NOTE (v40)
+# Wherever the fitting mask is constructed, replace:
+#
+#     fit_mask = dvcs_support_mask
+#
+# with
+#
+#     fit_mask = build_union_support_mask(
+#         dvcs_support_mask,
+#         pi0_support_mask,
+#     )
+#
+# For the fraction-driver variables, use the union of the DVCS fraction-support
+# mask and the pi0 support mask.
+# ---------------------------------------------------------------------------
