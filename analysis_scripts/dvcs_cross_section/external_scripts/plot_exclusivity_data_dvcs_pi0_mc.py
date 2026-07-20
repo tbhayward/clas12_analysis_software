@@ -3599,15 +3599,20 @@ def draw_iterative_cut_canvas(
 ) -> None:
     fig, axes = plt.subplots(2, 4, figsize=(20.0, 10.0))
     flat_axes = axes.ravel()
+    plot_variables = (
+        VARIABLES
+        if channel == "dvcs"
+        else PI0_ITERATIVE_VARIABLES
+    )
     variable_lookup = {
         variable.branch: variable
-        for variable in (VARIABLES if channel == "dvcs" else PI0_VARIABLES)
+        for variable in plot_variables
     }
     ordered_steps = list(steps)
     if summary:
         template_order = [
             variable.branch
-            for variable in (VARIABLES if channel == "dvcs" else PI0_VARIABLES)
+            for variable in plot_variables
         ]
         production_steps = [
             step for step in steps
@@ -3619,6 +3624,18 @@ def draw_iterative_cut_canvas(
             for branch in template_order
             if branch in step_by_variable
         ]
+    # endif
+
+    missing_plot_variables = sorted({
+        step.variable
+        for step in ordered_steps
+        if step.variable not in variable_lookup
+    })
+    if missing_plot_variables:
+        raise RuntimeError(
+            f"Iterative-cut plotting configuration for channel '{channel}' "
+            f"is missing variables: {missing_plot_variables}."
+        )
     # endif
 
     for axis, step in zip(flat_axes, ordered_steps):
