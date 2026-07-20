@@ -1060,6 +1060,54 @@ def mx2_1_upper_cut(topology: TopologyConfig) -> float:
     raise ValueError(f"Unsupported topology for Mx2_1 cut: {topology.key}")
 
 
+def left_side_fit_mask(variable: VariableConfig) -> np.ndarray:
+    """Return the strictly negative-x bins used for the Mx2_1 fit."""
+    _, centers = bin_geometry(variable)
+    return np.asarray(centers < 0.0, dtype=bool)
+
+
+def symmetrize_from_left_side(
+    shape: np.ndarray,
+    variable: VariableConfig,
+) -> np.ndarray:
+    """Reflect the negative-x side of a shape onto the positive-x side.
+
+    The negative side is retained exactly. Positive-bin values are obtained by
+    interpolation at the corresponding negative coordinate. The reflected
+    result is then renormalized to unit area.
+    """
+    values = np.asarray(shape, dtype=np.float64)
+    _, centers = bin_geometry(variable)
+    result = np.clip(values, 0.0, None).copy()
+
+    left = centers < 0.0
+    right = centers > 0.0
+    if np.count_nonzero(left) < 2:
+        return result
+    # endif
+
+    result[right] = np.interp(
+        -centers[right],
+        centers[left],
+        result[left],
+    )
+
+    zero = ~(left | right)
+    if np.any(zero):
+        result[zero] = np.interp(
+            0.0,
+            centers[left],
+            result[left],
+        )
+    # endif
+
+    total = float(np.sum(result))
+    if total > 0.0 and math.isfinite(total):
+        result /= total
+    # endif
+    return result
+
+
 def fit_mask_for_variable(
     variable: VariableConfig,
     topology: TopologyConfig,
@@ -1382,9 +1430,16 @@ def fit_shared_two_templates(
             dtype=np.float64,
         )
 
-        # Use the full configured histogram range for both templates.
-        fit_support_mask = np.ones(variable.bins, dtype=bool)
-        fraction_support_mask = np.ones(variable.bins, dtype=bool)
+        # Mx2_1 is calibrated only from its clean negative side. The fitted
+        # template is reflected symmetrically onto the positive side. All other
+        # variables use the full configured histogram range.
+        if variable.branch == "Mx2_1":
+            fit_support_mask = left_side_fit_mask(variable)
+            fraction_support_mask = fit_support_mask.copy()
+        else:
+            fit_support_mask = np.ones(variable.bins, dtype=bool)
+            fraction_support_mask = np.ones(variable.bins, dtype=bool)
+        # endif
         dvcs_core_mask = fit_support_mask.copy()
         pi0_core_mask = fit_support_mask.copy()
         dvcs_fraction_region = fraction_support_mask.copy()
@@ -1585,6 +1640,17 @@ def fit_shared_two_templates(
         )
         if transformed_dvcs is None or transformed_pi0 is None:
             return None
+        # endif
+
+        if variable.branch == "Mx2_1":
+            transformed_dvcs = symmetrize_from_left_side(
+                transformed_dvcs,
+                variable,
+            )
+            transformed_pi0 = symmetrize_from_left_side(
+                transformed_pi0,
+                variable,
+            )
         # endif
 
         dvcs_shape_component = np.clip(
@@ -1969,11 +2035,15 @@ def fit_shared_two_templates(
             excluded_excess / float(info["data_total"])
             if float(info["data_total"]) > 0.0 else 0.0
         )
-        role = (
-            "fraction driver (full range)"
-            if variable.branch in requested_set
-            else "validation (full range)"
-        )
+        if variable.branch == "Mx2_1":
+            role = "left-side fit with symmetric right-side extrapolation"
+        else:
+            role = (
+                "fraction driver (full range)"
+                if variable.branch in requested_set
+                else "validation (full range)"
+            )
+        # endif
 
         results[variable.branch] = FitResult(
             success=True,
@@ -2161,14 +2231,14 @@ def draw_fit_canvas(
         if dvcs_shape is not None:
             axis.stairs(
                 result.data_total * dvcs_shape, edges,
-                color=SAMPLE_COLORS["dvcs_mc"], linewidth=0.55,
+                color=SAMPLE_COLORS["dvcs_mc"], linewidth=0.40,
                 linestyle="--", label="raw DVCS MC shape", zorder=1,
             )
         # endif
         if pi0_shape is not None:
             axis.stairs(
                 result.data_total * pi0_shape, edges,
-                color=SAMPLE_COLORS["pi0_mc"], linewidth=0.55,
+                color=SAMPLE_COLORS["pi0_mc"], linewidth=0.40,
                 linestyle="--", label=r"raw $e\pi^0$ MC shape", zorder=1,
             )
         # endif
@@ -2527,11 +2597,15 @@ def fit_single_template(
         return FitResult(False, "insufficient counts", data_total=data_total)
     # endif
 
-    mask = mc_signal_containment_mask(
-        mc_counts,
-        variable,
-        topology,
-        core_containment,
+    mask = (
+        left_side_fit_mask(variable)
+        if variable.branch == "Mx2_1"
+        else mc_signal_containment_mask(
+            mc_counts,
+            variable,
+            topology,
+            core_containment,
+        )
     )
     core_data_total = float(np.sum(data[mask]))
     if core_data_total < min_counts:
@@ -2579,6 +2653,12 @@ def fit_single_template(
         )
         if transformed is None:
             return np.zeros_like(data), np.zeros_like(data)
+        # endif
+        if variable.branch == "Mx2_1":
+            transformed = symmetrize_from_left_side(
+                transformed,
+                variable,
+            )
         # endif
         norm = float(np.sum(transformed[mask]))
         if norm <= 0.0:
@@ -2636,9 +2716,13 @@ def fit_single_template(
     return FitResult(
         success=bool(result.success),
         message=(
-            "full-range fit"
-            if core_containment >= 0.999999
-            else f"MC-defined {100.0 * core_containment:.1f}% signal-core fit"
+            "left-side fit with symmetric right-side extrapolation"
+            if variable.branch == "Mx2_1"
+            else (
+                "full-range fit"
+                if core_containment >= 0.999999
+                else f"MC-defined {100.0 * core_containment:.1f}% signal-core fit"
+            )
         ),
         shift=float(fitted[0]),
         sigma_add=float(fitted[1]),
@@ -4581,6 +4665,14 @@ def iterative_signal_shape(
         return raw, "raw-MC fallback"
     # endif
 
+    if variable.branch == "Mx2_1":
+        transformed = symmetrize_from_left_side(
+            transformed,
+            variable,
+        )
+        return transformed, "left-side fitted nuisance, symmetric extrapolation"
+    # endif
+
     return transformed, "fitted nuisance"
 
 
@@ -4880,6 +4972,21 @@ def run_dvcs_iterative_cuts(
             )
         # endif
 
+        if iteration == 0:
+            mx2_candidates = [
+                candidate
+                for candidate in candidates
+                if candidate[1].branch == "Mx2"
+            ]
+            if not mx2_candidates:
+                raise RuntimeError(
+                    f"Mx2 is unavailable as the mandatory first exclusivity "
+                    f"cut for {period.label} {topology.label}."
+                )
+            # endif
+            candidates = mx2_candidates
+        # endif
+
         candidates.sort(key=lambda item: (-item[0], item[1].branch))
         (
             score,
@@ -4952,16 +5059,23 @@ def run_dvcs_iterative_cuts(
             if total_after > 0.0
             else 0.0
         )
+        forced_exclusivity_cut = (
+            iteration == 0
+            and branch == "Mx2"
+        )
         positive_discrimination = background_eff < signal_eff
         improves_fom = fom_after > fom_before + 1.0e-12
-        accepted_for_production = positive_discrimination and improves_fom
+        accepted_for_production = (
+            forced_exclusivity_cut
+            or (positive_discrimination and improves_fom)
+        )
         stop_reasons = []
-        if not positive_discrimination:
+        if not forced_exclusivity_cut and not positive_discrimination:
             stop_reasons.append(
                 "Rejected because epsilon_pi0 >= epsilon_DVCS."
             )
         # endif
-        if not improves_fom:
+        if not forced_exclusivity_cut and not improves_fom:
             stop_reasons.append(
                 "Rejected because S/sqrt(S+B) did not increase."
             )
