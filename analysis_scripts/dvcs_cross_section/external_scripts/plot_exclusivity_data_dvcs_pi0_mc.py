@@ -1682,10 +1682,11 @@ def fit_shared_two_templates(
     ) -> float:
         """Apply targeted physical constraints to pathological nuisance morphs."""
 
-        if (
-            variable.branch != "Emiss2"
-            or emiss2_mean_order_penalty_weight <= 0.0
-        ):
+        if emiss2_mean_order_penalty_weight <= 0.0:
+            return 0.0
+        # endif
+
+        if variable.branch not in {"Emiss2", "Mx2_2"}:
             return 0.0
         # endif
 
@@ -1693,9 +1694,16 @@ def fit_shared_two_templates(
         pi0_mean, _ = distribution_moments(pi0_shape, variable)
         bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
 
-        # The DVCS signal should not be shifted farther from zero than the
-        # missing-particle pi0 background. Permit one bin of numerical tolerance.
-        violation = abs(dvcs_mean) - abs(pi0_mean) - bin_width
+        if variable.branch == "Emiss2":
+            # The DVCS signal should not be shifted farther from zero than the
+            # missing-particle pi0 background. Permit one bin of tolerance.
+            violation = abs(dvcs_mean) - abs(pi0_mean) - bin_width
+        else:
+            # For Mx2_2, prevent the fitted DVCS distribution from moving to
+            # the right of the fitted pi0 background. Permit one bin of tolerance.
+            violation = dvcs_mean - pi0_mean - bin_width
+        # endif
+
         if violation <= 0.0:
             return 0.0
         # endif
@@ -2503,6 +2511,10 @@ def draw_fit_canvas(
         # endif
     # endfor
 
+    for axis in flat_axes[len(VARIABLES):]:
+        axis.set_visible(False)
+    # endfor
+
     handles, labels = flat_axes[0].get_legend_handles_labels()
     fig.suptitle(
         f"DVCS+pi0 support two-template fits after minimal preselection: {period.label}, {topology.label}\n"
@@ -2861,6 +2873,10 @@ def draw_pi0_fit_canvas(
                 axis.set_ylim(bottom=max(0.5, floor * 0.5))
             # endif
         # endif
+    # endfor
+
+    for axis in axes_flat[len(PI0_VARIABLES):]:
+        axis.set_visible(False)
     # endfor
 
     fig.suptitle(
@@ -4007,9 +4023,23 @@ def draw_iterative_cut_canvas(
         axis.grid(axis="y", alpha=0.22)
     # endfor
 
-    for axis in flat_axes[len(plot_entries):]:
-        axis.set_visible(False)
-    # endfor
+    if summary:
+        # The final summary contains all seven production variables, so hide
+        # only the unused eighth panel.
+        for axis in flat_axes[len(plot_entries):]:
+            axis.set_visible(False)
+        # endfor
+    else:
+        # Keep the full 2x4 development canvas visible for analysis-note
+        # formatting. Unused panels intentionally remain blank.
+        for axis in flat_axes[len(plot_entries):]:
+            axis.set_xticks([])
+            axis.set_yticks([])
+            axis.set_xlabel("")
+            axis.set_ylabel("")
+            axis.grid(False)
+        # endfor
+    # endif
 
     title_channel = (
         r"$e'p'\gamma$"
