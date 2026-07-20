@@ -256,7 +256,6 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03,
                    aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0")),
-    VariableConfig("z", r"$z$", 140, 0.2, 1.6),
     VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0,
                    aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2")),
 )
@@ -266,7 +265,6 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 120, 0.0, 3.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
-    VariableConfig("z", r"$z$", 140, 0.2, 1.6),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("xF", r"$x_F(ep+\pi^0)$", 100, -0.5, 0.2),
     VariableConfig(
@@ -289,8 +287,8 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
 
 
 # The unit-area shape-comparison canvases retain the original difficult
-# distributions for diagnostic purposes even though z2, xF and xF2 are no
-# longer used by the template fits or cut optimization.
+# distributions for diagnostic purposes even though z, z2, xF and xF2 are
+# no longer used by the template fits or cut optimization.
 DVCS_SHAPE_BASE_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig(
@@ -334,8 +332,7 @@ DVCS_SHAPE_BASE_VARIABLES: Tuple[VariableConfig, ...] = (
     ),
 )
 
-# Additional shape-comparison-only projections. The former pT panel is
-# replaced by z, using the same [0, 1.1] horizontal range as z2.
+# Additional shape-comparison-only projections, including z over [0.2, 1.6].
 SHAPE_ONLY_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig(
         "Mx2",
@@ -372,17 +369,12 @@ PI0_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
     + (
         VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
     )
-    + tuple(
-        variable
-        for variable in SHAPE_ONLY_VARIABLES
-        if variable.branch != "z"
-    )
+    + SHAPE_ONLY_VARIABLES
 )
 
 # The pi0 iterative-cut validation must be able to apply the production cut
-# order selected in the DVCS channel. That order can now contain Mx2, z or
-# Mx2_2, even though those variables are not part of the direct-pi0 nuisance-fit
-# canvas. Use a branch-deduplicated union solely for iterative-cut array loading.
+# order selected in the DVCS channel. That order can contain Mx2 or Mx2_2,
+# even though those variables are not part of the direct-pi0 nuisance-fit canvas. Use a branch-deduplicated union solely for iterative-cut array loading.
 # Direct-pi0 iterative validation follows the DVCS-selected cut order, so its
 # arrays and variable lookup must use the same keys as VARIABLES. Most branches
 # have identical names. The opening-angle analogue is theta_pi0_pi0 in the
