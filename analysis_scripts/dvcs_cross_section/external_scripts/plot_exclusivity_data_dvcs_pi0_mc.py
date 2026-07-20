@@ -289,9 +289,54 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
 )
 
 
-# All eight variables remain available for nuisance validation and automatic cut selection, while only the configured fraction drivers determine f_pi0.
-# The unit-area shape-comparison canvases additionally include the three
-# missing-mass projections and the event transverse momentum pT.
+# The unit-area shape-comparison canvases retain the original difficult
+# distributions for diagnostic purposes even though z2, xF and xF2 are no
+# longer used by the template fits or cut optimization.
+DVCS_SHAPE_BASE_VARIABLES: Tuple[VariableConfig, ...] = (
+    VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
+    VariableConfig(
+        "theta_gamma_gamma",
+        r"$\theta_{\gamma\gamma}$ (rad)",
+        120,
+        0.0,
+        3.0,
+    ),
+    VariableConfig(
+        "pTmiss",
+        r"$p_{T}^{\mathrm{miss}}$ (GeV)",
+        125,
+        0.0,
+        0.5,
+    ),
+    VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
+    VariableConfig(
+        "Emiss2",
+        r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)",
+        100,
+        -1.0,
+        2.0,
+    ),
+    VariableConfig("xF", r"$x_F(ep+\gamma)$", 100, -0.5, 0.2),
+    VariableConfig(
+        "xF2",
+        r"$x_{F,2}(\gamma)$",
+        100,
+        0.0,
+        1.0,
+        aliases=("xF_2",),
+    ),
+    VariableConfig(
+        "theta",
+        r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)",
+        100,
+        2.0,
+        math.pi,
+        aliases=("theta2", "theta_2"),
+    ),
+)
+
+# Additional shape-comparison-only projections. The former pT panel is
+# replaced by z, using the same [0, 1.1] horizontal range as z2.
 SHAPE_ONLY_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig(
         "Mx2",
@@ -317,11 +362,30 @@ SHAPE_ONLY_VARIABLES: Tuple[VariableConfig, ...] = (
         4.0,
         aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
     ),
-    VariableConfig("pT", r"$p_T$ (GeV)", 100, 0.0, 0.3),
+    VariableConfig("z", r"$z$", 100, 0.0, 1.1),
 )
 
-DVCS_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = VARIABLES + SHAPE_ONLY_VARIABLES
-PI0_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = PI0_VARIABLES + SHAPE_ONLY_VARIABLES
+DVCS_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
+    DVCS_SHAPE_BASE_VARIABLES + SHAPE_ONLY_VARIABLES
+)
+PI0_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
+    PI0_VARIABLES + SHAPE_ONLY_VARIABLES
+)
+
+# The pi0 iterative-cut validation must be able to apply the production cut
+# order selected in the DVCS channel. That order can now contain Mx2, Mx2_1 or
+# Mx2_2, even though those variables are not part of the direct-pi0 nuisance-fit
+# canvas. Use a branch-deduplicated union solely for iterative-cut array loading.
+_PI0_ITERATIVE_LOOKUP: Dict[str, VariableConfig] = {
+    variable.branch: variable
+    for variable in PI0_VARIABLES
+}
+for _variable in VARIABLES:
+    _PI0_ITERATIVE_LOOKUP.setdefault(_variable.branch, _variable)
+# endfor
+PI0_ITERATIVE_VARIABLES: Tuple[VariableConfig, ...] = tuple(
+    _PI0_ITERATIVE_LOOKUP.values()
+)
 
 
 SAMPLE_LABELS = {
@@ -2084,15 +2148,15 @@ def draw_fit_canvas(
         if dvcs_shape is not None:
             axis.stairs(
                 result.data_total * dvcs_shape, edges,
-                color=SAMPLE_COLORS["dvcs_mc"], linewidth=0.9,
+                color=SAMPLE_COLORS["dvcs_mc"], linewidth=0.55,
                 linestyle="--", label="raw DVCS MC shape", zorder=1,
             )
         # endif
         if pi0_shape is not None:
             axis.stairs(
                 result.data_total * pi0_shape, edges,
-                color=SAMPLE_COLORS["pi0_mc"], linewidth=0.9,
-                linestyle="-", label=r"raw $e\pi^0$ MC shape", zorder=1,
+                color=SAMPLE_COLORS["pi0_mc"], linewidth=0.55,
+                linestyle="--", label=r"raw $e\pi^0$ MC shape", zorder=1,
             )
         # endif
 
@@ -5302,8 +5366,18 @@ def develop_iterative_cuts_for_period(
         }
     )
     pi0_arrays = {
-        "data": load_selected_arrays_for_file(period.eppi0_data_file, topologies, step_size, PI0_VARIABLES),
-        "signal": load_selected_arrays_for_file(period.eppi0_mc_file, topologies, step_size, PI0_VARIABLES),
+        "data": load_selected_arrays_for_file(
+            period.eppi0_data_file,
+            topologies,
+            step_size,
+            PI0_ITERATIVE_VARIABLES,
+        ),
+        "signal": load_selected_arrays_for_file(
+            period.eppi0_mc_file,
+            topologies,
+            step_size,
+            PI0_ITERATIVE_VARIABLES,
+        ),
     }
     blocks: Dict[str, Dict[str, object]] = {name: {} for name in containments}
     rows: List[Dict[str, object]] = []
@@ -5386,6 +5460,21 @@ def develop_iterative_cuts_for_period(
             sample: values[topology.key]
             for sample, values in pi0_arrays.items()
         }
+
+        required_pi0_branches = set(dvcs_order)
+        for sample_name, sample_arrays in pi0_topology_arrays.items():
+            missing_branches = sorted(
+                required_pi0_branches.difference(sample_arrays.keys())
+            )
+            if missing_branches:
+                raise RuntimeError(
+                    f"pi0 iterative-cut input for {period.label} "
+                    f"{topology.label} sample '{sample_name}' is missing "
+                    f"DVCS-selected branches: {missing_branches}."
+                )
+            # endif
+        # endfor
+
         pi0_steps, pi0_json = run_pi0_iterative_cuts(
             period,
             topology,
