@@ -6,6 +6,7 @@
 
 class TTree;
 
+// Uses canonical nominal Python-optimized production exclusivity cuts.
 bool runAllBranchDataMcComparisons(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,

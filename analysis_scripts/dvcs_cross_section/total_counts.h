@@ -7,6 +7,10 @@
 class TTree;
 
 struct TotalCountsOptions {
+    // The combined-cuts JSON is expected to be produced by
+    // plot_exclusivity_data_dvcs_pi0_mc.py. Reconstructed samples apply only
+    // the production variables accepted for their period/topology. Mx2 is
+    // mandatory; any accepted cut whose ROOT branch is missing is fatal.
     // If true, DVCS generated/reconstructed MC count columns are filled from
     // no-background dvcsgen files instead of the production-current/background
     // overlaid files. This affects only ep->epg MC counts; data, ep->eppi0 MC,

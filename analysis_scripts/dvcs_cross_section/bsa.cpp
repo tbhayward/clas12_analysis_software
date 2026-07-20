@@ -7,7 +7,7 @@
 // acceptance unfolding, bin migration unfolding, radiative corrections, or
 // model bin-centering factors. It does apply:
 //   * the process-wide global cuts from global_cuts.cpp,
-//   * the data-derived exclusivity windows in output/jsons/combined_cuts.json,
+//   * the Python-optimized exclusivity windows in output/jsons/combined_cuts.json,
 //   * helicity-separated measured ep->eppi0 subtraction using the existing
 //     bin-by-bin contamination ratio and normalized-yield CSV columns.
 //
@@ -591,8 +591,16 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json) {
     if (!fin.is_open()) fatal("[bsa] cannot open combined cuts JSON: " + combined_cuts_json);
 
     nlohmann::json j;
-    fin >> j;
-    if (!j.is_object()) fatal("[bsa] combined cuts JSON is not an object: " + combined_cuts_json);
+    try {
+        fin >> j;
+    } catch (const std::exception& e) {
+        fatal("[bsa] failed to parse combined cuts JSON " +
+              combined_cuts_json + ": " + e.what());
+    }
+    if (!j.is_object()) {
+        fatal("[bsa] combined cuts JSON is not an object: " +
+              combined_cuts_json);
+    }
 
     TopoCutMap out;
 
@@ -632,7 +640,32 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json) {
             if (std::isfinite(s.cut_high)) vm.emplace(var, s);
         } //endfor
 
-        if (!vm.empty()) out.emplace(key, std::move(vm));
+        if (!vm.empty()) {
+            static const std::set<std::string> supported = {
+                "Delta_phi",
+                "theta",
+                "theta_gamma_gamma",
+                "theta_pi0_pi0",
+                "pTmiss",
+                "Emiss2",
+                "Mx2",
+                "Mx2_2"
+            };
+
+            for (const auto& kv : vm) {
+                if (supported.find(kv.first) == supported.end()) {
+                    fatal("[bsa] unsupported production exclusivity variable '" +
+                          kv.first + "' in JSON block " + key);
+                }
+            }
+
+            if (vm.find("Mx2") == vm.end()) {
+                fatal("[bsa] JSON block " + key +
+                      " does not contain the required forced-first Mx2 cut");
+            }
+
+            out.emplace(key, std::move(vm));
+        }
     } //endfor
 
     std::cout << "[bsa] Loaded " << out.size()
@@ -660,13 +693,12 @@ struct BranchBinder {
 
     double open_angle_ep2 = 0.0; bool has_open_angle = false;
     double pTmiss = 0.0; bool has_pTmiss = false;
-    double Emiss2 = 0.0; bool has_Emiss2 = false;
-    double Mx2 = 0.0; bool has_Mx2 = false;
-    double Mx2_1 = 0.0; bool has_Mx2_1 = false;
-    double Mx2_2 = 0.0; bool has_Mx2_2 = false;
-    double xF = 0.0; bool has_xF = false;
+    double theta = 0.0; bool has_theta = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
+    double Emiss2 = 0.0; bool has_Emiss2 = false;
+    double Mx2 = 0.0; bool has_Mx2 = false;
+    double Mx2_2 = 0.0; bool has_Mx2_2 = false;
 
     double e_p = 0.0; bool has_e_p = false;
     double e_theta = 0.0; bool has_e_theta = false;
@@ -690,8 +722,9 @@ struct BranchBinder {
         const char* names[] = {
             "runnum", "detector1", "detector2", "helicity",
             "x", "Q2", "t1", "phi2", "Delta_phi",
-            "open_angle_ep2", "pTmiss", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
-            "xF", "theta_gamma_gamma", "theta_pi0_pi0",
+            "open_angle_ep2", "pTmiss",
+            "theta", "theta_gamma_gamma", "theta_pi0_pi0",
+            "Emiss2", "Mx2", "Mx2_2",
             "e_p", "e_theta", "e_phi", "p1_theta", "p1_phi",
             "p2_p", "p2_theta", "p2_phi"
         };
@@ -719,13 +752,12 @@ struct BranchBinder {
         bind_double("Delta_phi", &Delta_phi, has_Delta_phi);
         bind_double("open_angle_ep2", &open_angle_ep2, has_open_angle);
         bind_double("pTmiss", &pTmiss, has_pTmiss);
-        bind_double("Emiss2", &Emiss2, has_Emiss2);
-        bind_double("Mx2", &Mx2, has_Mx2);
-        bind_double("Mx2_1", &Mx2_1, has_Mx2_1);
-        bind_double("Mx2_2", &Mx2_2, has_Mx2_2);
-        bind_double("xF", &xF, has_xF);
+        bind_double("theta", &theta, has_theta);
         bind_double("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         bind_double("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+        bind_double("Emiss2", &Emiss2, has_Emiss2);
+        bind_double("Mx2", &Mx2, has_Mx2);
+        bind_double("Mx2_2", &Mx2_2, has_Mx2_2);
         bind_double("e_p", &e_p, has_e_p);
         bind_double("e_theta", &e_theta, has_e_theta);
         bind_double("e_phi", &e_phi, has_e_phi);
@@ -754,15 +786,20 @@ static inline double branch_value_for_sigma_var(const BranchBinder& b,
                                                 const std::string& var,
                                                 bool& has_val) {
     has_val = true;
+    if (var == "Delta_phi") { return b.delta_phi_value(has_val); }
+    if (var == "theta") { has_val = b.has_theta; return b.theta; }
+    if (var == "theta_gamma_gamma") {
+        has_val = b.has_theta_gamma_gamma;
+        return b.theta_gamma_gamma;
+    }
+    if (var == "theta_pi0_pi0") {
+        has_val = b.has_theta_pi0_pi0;
+        return b.theta_pi0_pi0;
+    }
+    if (var == "pTmiss") { has_val = b.has_pTmiss; return b.pTmiss; }
     if (var == "Emiss2") { has_val = b.has_Emiss2; return b.Emiss2; }
     if (var == "Mx2") { has_val = b.has_Mx2; return b.Mx2; }
-    if (var == "Mx2_1") { has_val = b.has_Mx2_1; return b.Mx2_1; }
     if (var == "Mx2_2") { has_val = b.has_Mx2_2; return b.Mx2_2; }
-    if (var == "Delta_phi") { return b.delta_phi_value(has_val); }
-    if (var == "pTmiss") { has_val = b.has_pTmiss; return b.pTmiss; }
-    if (var == "xF") { has_val = b.has_xF; return b.xF; }
-    if (var == "theta_gamma_gamma") { has_val = b.has_theta_gamma_gamma; return b.theta_gamma_gamma; }
-    if (var == "theta_pi0_pi0") { has_val = b.has_theta_pi0_pi0; return b.theta_pi0_pi0; }
     has_val = false;
     return 0.0;
 }
@@ -866,8 +903,14 @@ static inline void add_event(HelCounts& h, int helicity) {
 
 struct CompiledSigmaCut {
     enum class Variable : int {
-        Emiss2, Mx2, Mx2_1, Mx2_2, DeltaPhi, PTmiss, XF,
-        ThetaGammaGamma, ThetaPi0Pi0
+        DeltaPhi,
+        Theta,
+        ThetaGammaGamma,
+        ThetaPi0Pi0,
+        PTmiss,
+        Emiss2,
+        Mx2,
+        Mx2_2
     };
     Variable variable;
     const SigmaStats* stats = nullptr;
@@ -876,17 +919,21 @@ struct CompiledSigmaCut {
 using CompiledSigmaCuts = std::vector<CompiledSigmaCut>;
 
 static CompiledSigmaCut::Variable sigma_variable_id(const std::string& var) {
+    if (var == "Delta_phi") return CompiledSigmaCut::Variable::DeltaPhi;
+    if (var == "theta") return CompiledSigmaCut::Variable::Theta;
+    if (var == "theta_gamma_gamma") {
+        return CompiledSigmaCut::Variable::ThetaGammaGamma;
+    }
+    if (var == "theta_pi0_pi0") {
+        return CompiledSigmaCut::Variable::ThetaPi0Pi0;
+    }
+    if (var == "pTmiss") return CompiledSigmaCut::Variable::PTmiss;
     if (var == "Emiss2") return CompiledSigmaCut::Variable::Emiss2;
     if (var == "Mx2") return CompiledSigmaCut::Variable::Mx2;
-    if (var == "Mx2_1") return CompiledSigmaCut::Variable::Mx2_1;
     if (var == "Mx2_2") return CompiledSigmaCut::Variable::Mx2_2;
-    if (var == "Delta_phi") return CompiledSigmaCut::Variable::DeltaPhi;
-    if (var == "pTmiss") return CompiledSigmaCut::Variable::PTmiss;
-    if (var == "xF") return CompiledSigmaCut::Variable::XF;
-    if (var == "theta_gamma_gamma") return CompiledSigmaCut::Variable::ThetaGammaGamma;
-    if (var == "theta_pi0_pi0") return CompiledSigmaCut::Variable::ThetaPi0Pi0;
-    fatal("[bsa] unsupported sigma-cut variable: " + var);
-    return CompiledSigmaCut::Variable::Emiss2;
+
+    fatal("[bsa] unsupported production exclusivity variable in combined cuts JSON: " + var);
+    return CompiledSigmaCut::Variable::DeltaPhi;
 }
 
 static CompiledSigmaCuts compile_sigma_cuts(const TopoCutMap& cuts,
@@ -907,17 +954,37 @@ static inline bool passes_compiled_sigma_cuts(const CompiledSigmaCuts& cuts,
         bool has = true;
         double value = 0.0;
         switch (cut.variable) {
-            case CompiledSigmaCut::Variable::Emiss2: has = b.has_Emiss2; value = b.Emiss2; break;
-            case CompiledSigmaCut::Variable::Mx2: has = b.has_Mx2; value = b.Mx2; break;
-            case CompiledSigmaCut::Variable::Mx2_1: has = b.has_Mx2_1; value = b.Mx2_1; break;
-            case CompiledSigmaCut::Variable::Mx2_2: has = b.has_Mx2_2; value = b.Mx2_2; break;
-            case CompiledSigmaCut::Variable::DeltaPhi: value = b.delta_phi_value(has); break;
-            case CompiledSigmaCut::Variable::PTmiss: has = b.has_pTmiss; value = b.pTmiss; break;
-            case CompiledSigmaCut::Variable::XF: has = b.has_xF; value = b.xF; break;
+            case CompiledSigmaCut::Variable::DeltaPhi:
+                value = b.delta_phi_value(has);
+                break;
+            case CompiledSigmaCut::Variable::Theta:
+                has = b.has_theta;
+                value = b.theta;
+                break;
             case CompiledSigmaCut::Variable::ThetaGammaGamma:
-                has = b.has_theta_gamma_gamma; value = b.theta_gamma_gamma; break;
+                has = b.has_theta_gamma_gamma;
+                value = b.theta_gamma_gamma;
+                break;
             case CompiledSigmaCut::Variable::ThetaPi0Pi0:
-                has = b.has_theta_pi0_pi0; value = b.theta_pi0_pi0; break;
+                has = b.has_theta_pi0_pi0;
+                value = b.theta_pi0_pi0;
+                break;
+            case CompiledSigmaCut::Variable::PTmiss:
+                has = b.has_pTmiss;
+                value = b.pTmiss;
+                break;
+            case CompiledSigmaCut::Variable::Emiss2:
+                has = b.has_Emiss2;
+                value = b.Emiss2;
+                break;
+            case CompiledSigmaCut::Variable::Mx2:
+                has = b.has_Mx2;
+                value = b.Mx2;
+                break;
+            case CompiledSigmaCut::Variable::Mx2_2:
+                has = b.has_Mx2_2;
+                value = b.Mx2_2;
+                break;
         }
         if (!has) fatal("[bsa] compiled sigma cut requires a missing branch");
         if (!within_cut_window(value, *cut.stats)) return false;
@@ -963,15 +1030,33 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             continue;
         }
         const std::string period_code = period_code_from_display(period);
+        auto compile_for_channel = [&](const std::string& key) {
+            CompiledSigmaCuts compiled = compile_sigma_cuts(sigma_cuts, key);
+
+            // The direct-pi0 JSON uses the logical theta_gamma_gamma name,
+            // while the corresponding ROOT branch is theta_pi0_pi0.
+            if (cut_prefix == "eppi0") {
+                for (CompiledSigmaCut& cut : compiled) {
+                    if (cut.variable ==
+                        CompiledSigmaCut::Variable::ThetaGammaGamma) {
+                        cut.variable =
+                            CompiledSigmaCut::Variable::ThetaPi0Pi0;
+                    }
+                }
+            }
+
+            return compiled;
+        };
+
         tasks.push_back({
             kv.first,
             period,
             period_code,
             kv.second,
             {
-                compile_sigma_cuts(sigma_cuts, cut_prefix + "_" + period_code + "_FD_FD"),
-                compile_sigma_cuts(sigma_cuts, cut_prefix + "_" + period_code + "_CD_FD"),
-                compile_sigma_cuts(sigma_cuts, cut_prefix + "_" + period_code + "_CD_FT")
+                compile_for_channel(cut_prefix + "_" + period_code + "_FD_FD"),
+                compile_for_channel(cut_prefix + "_" + period_code + "_CD_FD"),
+                compile_for_channel(cut_prefix + "_" + period_code + "_CD_FT")
             }
         });
     }

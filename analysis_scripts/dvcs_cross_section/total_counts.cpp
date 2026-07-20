@@ -889,7 +889,7 @@ static FastBinning build_fast_binning(const std::vector<RowBin>& rows) {
 }
 
 // -----------------------------------------------------------------------------
-// Combined 3-sigma cuts loader
+// Combined 3-exclusivity cuts loader
 // -----------------------------------------------------------------------------
 
 struct SigmaStats {
@@ -1032,7 +1032,7 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json,
         }
     }
 
-    std::cout << "[total_counts] Loaded " << sample_key << " sigma cuts for "
+    std::cout << "[total_counts] Loaded " << sample_key << " exclusivity cuts for "
               << out.size() << " topology keys from " << combined_cuts_json
               << std::endl;
 
@@ -1057,18 +1057,16 @@ struct BranchBinder {
     double Q2 = 0.0;    bool has_Q2 = false;
     double t1 = 0.0;    bool has_t1 = false;
     double phi2 = 0.0;  bool has_phi2 = false;
-    double Delta_phi = 0.0; bool has_Delta_phi = false;
-
     double open_angle_ep2 = 0.0; bool has_open_angle = false;
-    double pTmiss = 0.0;         bool has_pTmiss = false;
 
-    double Emiss2 = 0.0;            bool has_Emiss2 = false;
-    double Mx2 = 0.0;               bool has_Mx2 = false;
-    double Mx2_1 = 0.0;             bool has_Mx2_1 = false;
-    double Mx2_2 = 0.0;             bool has_Mx2_2 = false;
-    double xF = 0.0;                bool has_xF = false;
+    double Delta_phi = 0.0;         bool has_Delta_phi = false;
+    double theta = 0.0;             bool has_theta = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
+    double pTmiss = 0.0;            bool has_pTmiss = false;
+    double Emiss2 = 0.0;            bool has_Emiss2 = false;
+    double Mx2 = 0.0;               bool has_Mx2 = false;
+    double Mx2_2 = 0.0;             bool has_Mx2_2 = false;
 
     double e_p = 0.0;       bool has_e_p = false;
     double e_theta = 0.0;   bool has_e_theta = false;
@@ -1128,13 +1126,16 @@ struct BranchBinder {
             ena("open_angle_ep2");
             ena("pTmiss");
 
-            // Exclusivity variables used by the reconstructed data/MC cut flow.
+            // Production exclusivity variables emitted by the Python
+            // optimization. The direct-pi0 JSON retains the logical
+            // theta_gamma_gamma key, but its physical branch is
+            // theta_pi0_pi0.
+            ena("Delta_phi");
+            ena("theta");
+            ena("pTmiss");
             ena("Emiss2");
             ena("Mx2");
-            ena("Mx2_1");
             ena("Mx2_2");
-            ena("Delta_phi");
-            ena("xF");
 
             if (work_cfg.channel_cfg.channel == Channel::EPPI0) {
                 ena("theta_pi0_pi0");
@@ -1195,15 +1196,14 @@ struct BranchBinder {
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
 
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle);
-        bD("pTmiss",         &pTmiss,         has_pTmiss);
 
-        bD("Emiss2",            &Emiss2,            has_Emiss2);
-        bD("Mx2",               &Mx2,               has_Mx2);
-        bD("Mx2_1",             &Mx2_1,             has_Mx2_1);
-        bD("Mx2_2",             &Mx2_2,             has_Mx2_2);
-        bD("xF",                &xF,                has_xF);
+        bD("theta",             &theta,             has_theta);
         bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         bD("theta_pi0_pi0",     &theta_pi0_pi0,     has_theta_pi0_pi0);
+        bD("pTmiss",            &pTmiss,            has_pTmiss);
+        bD("Emiss2",            &Emiss2,            has_Emiss2);
+        bD("Mx2",               &Mx2,               has_Mx2);
+        bD("Mx2_2",             &Mx2_2,             has_Mx2_2);
 
         bD("e_p",     &e_p,     has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
@@ -1273,7 +1273,7 @@ struct CutFlowSummary {
     std::unordered_map<std::string, long long> topology_matched;
 
     // Diagnostic only. These are evaluated after topology + global cuts.
-    // sigma_single_pass[var] = number of events passing that one 3-sigma cut alone.
+    // sigma_single_pass[var] = number of events passing that one exclusivity cut alone.
     // sigma_cumulative_pass[var] = number of events surviving the ordered cumulative
     // sequence up to and including that variable.
     std::unordered_map<std::string, long long> sigma_single_pass;
@@ -1288,63 +1288,69 @@ struct WorkCounts {
     CutFlowSummary flow;
 };
 
-static const std::vector<std::string>& sigma_variable_order(const ChannelConfig& channel_cfg) {
-    static const std::vector<std::string> kDvcsVars = {
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
-        "Delta_phi", "pTmiss", "xF", "theta_gamma_gamma"
-    };
+static constexpr std::size_t kProductionVariableCount = 7;
 
-    static const std::vector<std::string> kEppi0Vars = {
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
-        "Delta_phi", "pTmiss", "xF", "theta_pi0_pi0"
+static const std::array<std::string, kProductionVariableCount>&
+production_variable_order() {
+    static const std::array<std::string, kProductionVariableCount> vars = {
+        "Delta_phi",
+        "theta",
+        "theta_gamma_gamma",
+        "pTmiss",
+        "Emiss2",
+        "Mx2",
+        "Mx2_2"
     };
-
-    return (channel_cfg.channel == Channel::EPPI0) ? kEppi0Vars : kDvcsVars;
+    return vars;
 }
 
-static inline double branch_value_for_sigma_index(const BranchBinder& b,
-                                                  int var_index,
-                                                  bool use_pi0_angle,
-                                                  bool& has_val) {
+static inline double branch_value_for_production_variable(
+    const BranchBinder& b,
+    const std::string& variable,
+    bool use_pi0_angle,
+    bool& has_val) {
+
     has_val = true;
 
-    switch (var_index) {
-        case 0:
-            has_val = b.has_Emiss2;
-            return b.Emiss2;
-        case 1:
-            has_val = b.has_Mx2;
-            return b.Mx2;
-        case 2:
-            has_val = b.has_Mx2_1;
-            return b.Mx2_1;
-        case 3:
-            has_val = b.has_Mx2_2;
-            return b.Mx2_2;
-        case 4:
-            return b.delta_phi_value(has_val);
-        case 5:
-            has_val = b.has_pTmiss;
-            return b.pTmiss;
-        case 6:
-            has_val = b.has_xF;
-            return b.xF;
-        case 7:
-            if (use_pi0_angle) {
-                has_val = b.has_theta_pi0_pi0;
-                return b.theta_pi0_pi0;
-            }
-            has_val = b.has_theta_gamma_gamma;
-            return b.theta_gamma_gamma;
-        default:
-            has_val = false;
-            return 0.0;
+    if (variable == "Delta_phi") {
+        return b.delta_phi_value(has_val);
     }
+    if (variable == "theta") {
+        has_val = b.has_theta;
+        return b.theta;
+    }
+    if (variable == "theta_gamma_gamma") {
+        if (use_pi0_angle) {
+            has_val = b.has_theta_pi0_pi0;
+            return b.theta_pi0_pi0;
+        }
+        has_val = b.has_theta_gamma_gamma;
+        return b.theta_gamma_gamma;
+    }
+    if (variable == "pTmiss") {
+        has_val = b.has_pTmiss;
+        return b.pTmiss;
+    }
+    if (variable == "Emiss2") {
+        has_val = b.has_Emiss2;
+        return b.Emiss2;
+    }
+    if (variable == "Mx2") {
+        has_val = b.has_Mx2;
+        return b.Mx2;
+    }
+    if (variable == "Mx2_2") {
+        has_val = b.has_Mx2_2;
+        return b.Mx2_2;
+    }
+
+    has_val = false;
+    return 0.0;
 }
 
 struct CompiledSigmaPlan {
-    std::array<const SigmaStats*, 8> stats{};
-    std::array<std::string, 8> names{};
+    std::array<const SigmaStats*, kProductionVariableCount> stats{};
+    std::array<std::string, kProductionVariableCount> names{};
     std::string key;
     bool use_pi0_angle = false;
 };
@@ -1355,65 +1361,96 @@ static CompiledSigmaPlan compile_sigma_plan(const ChannelConfig& channel_cfg,
     CompiledSigmaPlan plan;
     plan.key = key;
     plan.use_pi0_angle = (channel_cfg.channel == Channel::EPPI0);
-
-    const std::vector<std::string>& vars = sigma_variable_order(channel_cfg);
-    for (int i = 0; i < 8; ++i) {
-        plan.names[i] = vars[i];
-    }
+    plan.names = production_variable_order();
 
     const auto it = cuts.find(key);
     if (it == cuts.end()) {
         std::ostringstream ss;
-        ss << "[total_counts] FATAL: missing 3-sigma cut key in combined_cuts.json: '"
-           << key << "'";
+        ss << "[total_counts] FATAL: missing exclusivity-cut key in "
+           << "combined_cuts.json: '" << key << "'";
         fatal(ss.str());
     }
 
     const CutVarMap& vm = it->second;
-    for (int i = 0; i < 8; ++i) {
+    for (const auto& entry : vm) {
+        const auto allowed = std::find(
+            plan.names.begin(), plan.names.end(), entry.first);
+        if (allowed == plan.names.end()) {
+            std::ostringstream ss;
+            ss << "[total_counts] FATAL: cut key '" << key
+               << "' contains unsupported production variable '"
+               << entry.first << "'. Expected only Delta_phi, theta, "
+               << "theta_gamma_gamma, pTmiss, Emiss2, Mx2 and Mx2_2.";
+            fatal(ss.str());
+        }
+    }
+
+    for (std::size_t i = 0; i < kProductionVariableCount; ++i) {
         const auto iv = vm.find(plan.names[i]);
         if (iv != vm.end()) {
             plan.stats[i] = &iv->second;
         }
     }
 
+    // Mx2 is the forced first production cut in the Python optimizer and must
+    // therefore always be present. The remaining variables are optional
+    // because the optimizer stops when an additional cut no longer improves
+    // S/sqrt(S+B) with positive pi0 discrimination.
+    const auto mx2 = vm.find("Mx2");
+    if (mx2 == vm.end()) {
+        std::ostringstream ss;
+        ss << "[total_counts] FATAL: cut key '" << key
+           << "' is missing the mandatory first production cut 'Mx2'.";
+        fatal(ss.str());
+    }
+
     return plan;
 }
 
 struct DenseSigmaDiagnostics {
-    std::array<long long, 8> single{};
-    std::array<long long, 8> cumulative{};
-    std::array<std::array<long long, 8>, 3> topo_single{};
-    std::array<std::array<long long, 8>, 3> topo_cumulative{};
+    std::array<long long, kProductionVariableCount> single{};
+    std::array<long long, kProductionVariableCount> cumulative{};
+    std::array<std::array<long long, kProductionVariableCount>, 3> topo_single{};
+    std::array<std::array<long long, kProductionVariableCount>, 3> topo_cumulative{};
 };
 
-static inline bool fill_sigma_cut_diagnostics_compiled(const CompiledSigmaPlan& plan,
-                                                       const BranchBinder& b,
-                                                       int topo_index_value,
-                                                       DenseSigmaDiagnostics& diag) {
+static inline bool fill_sigma_cut_diagnostics_compiled(
+    const CompiledSigmaPlan& plan,
+    const BranchBinder& b,
+    int topo_index_value,
+    DenseSigmaDiagnostics& diag) {
+
     bool cumulative_ok = true;
     bool all_ok = true;
 
-    for (int i = 0; i < 8; ++i) {
-        bool pass_this = true;
+    for (std::size_t i = 0; i < kProductionVariableCount; ++i) {
         const SigmaStats* cut = plan.stats[i];
 
-        if (cut != nullptr) {
-            bool has_val = false;
-            const double val = branch_value_for_sigma_index(
-                b, i, plan.use_pi0_angle, has_val);
-
-            if (!has_val) {
-                std::ostringstream ss;
-                ss << "[total_counts] FATAL: cut key '" << plan.key
-                   << "' requires variable '" << plan.names[i]
-                   << "', but the branch is missing in this tree.";
-                fatal(ss.str());
-            }
-
-            pass_this = within_cut_window(val, *cut);
+        // A null entry means the Python production optimizer did not accept
+        // this variable. It is not a cut and must not alter the cumulative
+        // diagnostics.
+        if (cut == nullptr) {
+            continue;
         }
 
+        bool has_val = false;
+        const double val = branch_value_for_production_variable(
+            b, plan.names[i], plan.use_pi0_angle, has_val);
+
+        if (!has_val) {
+            std::ostringstream ss;
+            ss << "[total_counts] FATAL: cut key '" << plan.key
+               << "' requires variable '" << plan.names[i]
+               << "', but the corresponding branch is missing in this tree.";
+            if (plan.use_pi0_angle &&
+                plan.names[i] == "theta_gamma_gamma") {
+                ss << " Direct eppi0 samples require branch "
+                   << "'theta_pi0_pi0' for this logical cut.";
+            }
+            fatal(ss.str());
+        }
+
+        const bool pass_this = within_cut_window(val, *cut);
         if (pass_this) {
             ++diag.single[i];
             ++diag.topo_single[topo_index_value][i];
@@ -1432,18 +1469,20 @@ static inline bool fill_sigma_cut_diagnostics_compiled(const CompiledSigmaPlan& 
     return all_ok;
 }
 
-static void materialize_sigma_diagnostics(const ChannelConfig& channel_cfg,
-                                          const DenseSigmaDiagnostics& diag,
-                                          CutFlowSummary& flow) {
+static void materialize_sigma_diagnostics(
+    const ChannelConfig&,
+    const DenseSigmaDiagnostics& diag,
+    CutFlowSummary& flow) {
+
     static const std::array<TopologyIndex, 3> kTopologies = {
         TopologyIndex::FD_FD,
         TopologyIndex::CD_FD,
         TopologyIndex::CD_FT
     };
 
-    const std::vector<std::string>& vars = sigma_variable_order(channel_cfg);
+    const auto& vars = production_variable_order();
 
-    for (int i = 0; i < 8; ++i) {
+    for (std::size_t i = 0; i < kProductionVariableCount; ++i) {
         const std::string& var = vars[i];
 
         if (diag.single[i] != 0) {
@@ -1456,10 +1495,12 @@ static void materialize_sigma_diagnostics(const ChannelConfig& channel_cfg,
         for (int ti = 0; ti < 3; ++ti) {
             const std::string& topo = topology_name(kTopologies[ti]);
             if (diag.topo_single[ti][i] != 0) {
-                flow.topology_sigma_single_pass[topo][var] = diag.topo_single[ti][i];
+                flow.topology_sigma_single_pass[topo][var] =
+                    diag.topo_single[ti][i];
             }
             if (diag.topo_cumulative[ti][i] != 0) {
-                flow.topology_sigma_cumulative_pass[topo][var] = diag.topo_cumulative[ti][i];
+                flow.topology_sigma_cumulative_pass[topo][var] =
+                    diag.topo_cumulative[ti][i];
             }
         }
     }
@@ -2154,7 +2195,7 @@ static void print_sigma_variable_period_lines(const CountCollection& recC,
                                               const CutFlowSummary& f,
                                               const std::string& period,
                                               const std::string& topo) {
-    const std::vector<std::string>& vars = sigma_variable_order(recC.work_cfg.channel_cfg);
+    const auto& vars = production_variable_order();
 
     const double denominator = (topo == "ALL")
         ? (double)f.global_pass
@@ -2193,7 +2234,7 @@ static void print_sigma_variable_ratio_lines(const CountCollection& recC,
         return;
     }
 
-    const std::vector<std::string>& vars = sigma_variable_order(recC.work_cfg.channel_cfg);
+    const auto& vars = production_variable_order();
 
     auto denom = [&](const CutFlowSummary& f)->double {
         return (topo == "ALL")
@@ -2289,7 +2330,7 @@ static void write_reconstructed_mc_survival_csv(const std::map<std::string, Coun
                           std::numeric_limits<double>::quiet_NaN(),
                           std::numeric_limits<double>::quiet_NaN());
 
-                for (const std::string& var : sigma_variable_order(recC.work_cfg.channel_cfg)) {
+                for (const std::string& var : production_variable_order()) {
                     const long long single_count = (topo == "ALL")
                         ? flow_sigma_var_value(*f, "single", var)
                         : flow_topology_sigma_var_value(*f, topo, "single", var);
@@ -2336,7 +2377,7 @@ static void write_reconstructed_mc_survival_csv(const std::map<std::string, Coun
                 return safe_ratio((double)n, den(f));
             };
 
-            for (const std::string& var : sigma_variable_order(recC.work_cfg.channel_cfg)) {
+            for (const std::string& var : production_variable_order()) {
                 for (const std::string& mode : {std::string("single"), std::string("cumulative")}) {
                     const double rinb = safe_ratio(frac(*f_si, mode, var), frac(*f_fi, mode, var));
                     const double rout = safe_ratio(frac(*f_so, mode, var), frac(*f_fo, mode, var));
@@ -2368,7 +2409,7 @@ static void print_reconstructed_mc_survival_summary(
 
     std::cout << "\n[total_counts][REC-MC-SURVIVAL] =====================================================" << std::endl;
     std::cout << "[total_counts][REC-MC-SURVIVAL] Reconstructed-MC cut-flow diagnostic." << std::endl;
-    std::cout << "[total_counts][REC-MC-SURVIVAL] Key stages: entries -> valid topology -> global cuts -> 3sigma cuts -> matched CSV bin." << std::endl;
+    std::cout << "[total_counts][REC-MC-SURVIVAL] Key stages: entries -> valid topology -> global cuts -> 3exclusivity cuts -> matched CSV bin." << std::endl;
     std::cout << "[total_counts][REC-MC-SURVIVAL] The acceptance-like number here is final reconstructed matched counts divided by generated matched counts." << std::endl;
 
     for (const auto& kv : collections) {

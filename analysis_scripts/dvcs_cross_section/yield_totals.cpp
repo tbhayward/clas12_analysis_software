@@ -781,7 +781,11 @@ static TopoCutMap load_sigma_cuts(const std::string& path,
     }
 
     json j;
-    fin >> j;
+    try { fin >> j; }
+    catch (const std::exception& e) {
+        fatal("failed to parse combined cuts JSON " + path + ": " + e.what());
+    }
+    if (!j.is_object()) fatal("combined cuts JSON is not an object: " + path);
 
     TopoCutMap out;
 
@@ -819,7 +823,22 @@ static TopoCutMap load_sigma_cuts(const std::string& path,
         }
 
         if (!vm.empty()) {
-            out[key] = vm;
+            static const std::set<std::string> supported_variables = {
+                "Delta_phi",
+                "theta",
+                "theta_gamma_gamma",
+                "pTmiss",
+                "Emiss2",
+                "Mx2",
+                "Mx2_2"
+            };
+            for (const auto& kv : vm) {
+                if (supported_variables.find(kv.first) == supported_variables.end())
+                    fatal("cut key '" + key + "' contains unsupported production exclusivity variable '" + kv.first + "'.");
+            }
+            if (vm.find("Mx2") == vm.end())
+                fatal("cut key '" + key + "' is missing the mandatory forced-first Mx2 cut.");
+            out.emplace(key, std::move(vm));
         }
     }
 
@@ -865,7 +884,7 @@ struct FastCut {
 };
 
 struct CompiledCuts {
-    std::array<FastCut, 8> cuts;
+    std::array<FastCut, 7> cuts;
 };
 
 static FastCut compile_one_cut(const CutVarMap& vm, const char* name) {
@@ -889,11 +908,11 @@ static FastCut compile_one_cut(const CutVarMap& vm, const char* name) {
     return out;
 }
 
-static CompiledCuts compile_cuts(const CutVarMap& vm, bool is_eppi0) {
+static CompiledCuts compile_cuts(const CutVarMap& vm) {
     CompiledCuts out;
-    const std::array<const char*, 8> names = {{
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "Delta_phi", "pTmiss", "xF",
-        is_eppi0 ? "theta_pi0_pi0" : "theta_gamma_gamma"
+    const std::array<const char*, 7> names = {{
+        "Delta_phi", "theta", "theta_gamma_gamma", "pTmiss",
+        "Emiss2", "Mx2", "Mx2_2"
     }};
     for (size_t i = 0; i < names.size(); ++i) out.cuts[i] = compile_one_cut(vm, names[i]);
     return out;
@@ -927,11 +946,10 @@ struct Branches {
     double pTmiss = 0.0; bool has_pTmiss = false;
     double Delta_phi = 0.0; bool has_Delta_phi = false;
 
+    double theta = 0.0; bool has_theta = false;
     double Emiss2 = 0.0; bool has_Emiss2 = false;
     double Mx2 = 0.0; bool has_Mx2 = false;
-    double Mx2_1 = 0.0; bool has_Mx2_1 = false;
     double Mx2_2 = 0.0; bool has_Mx2_2 = false;
-    double xF = 0.0; bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
 
@@ -971,9 +989,8 @@ struct Branches {
         ena("pTmiss");
         ena("Emiss2");
         ena("Mx2");
-        ena("Mx2_1");
         ena("Mx2_2");
-        ena("xF");
+        ena("theta");
         ena("theta_gamma_gamma");
         ena("theta_pi0_pi0");
         ena("e_p");
@@ -1017,9 +1034,8 @@ struct Branches {
 
         bD("Emiss2", &Emiss2, has_Emiss2);
         bD("Mx2", &Mx2, has_Mx2);
-        bD("Mx2_1", &Mx2_1, has_Mx2_1);
         bD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bD("xF", &xF, has_xF);
+        bD("theta", &theta, has_theta);
         bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         bD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
 
@@ -1140,20 +1156,19 @@ static bool passes_global_cuts_for_event(const Branches& b,
 static bool passes_sigma_cuts_for_event(const CompiledCuts& cuts,
                                         bool is_eppi0,
                                         const Branches& b) {
-    if (!fast_cut_passes(cuts.cuts[0], b.has_Emiss2, b.Emiss2)) return false;
-    if (!fast_cut_passes(cuts.cuts[1], b.has_Mx2, b.Mx2)) return false;
-    if (!fast_cut_passes(cuts.cuts[2], b.has_Mx2_1, b.Mx2_1)) return false;
-    if (!fast_cut_passes(cuts.cuts[3], b.has_Mx2_2, b.Mx2_2)) return false;
-    bool has_delta_phi = false;
-    const double delta_phi = b.delta_phi_value(has_delta_phi);
-    if (!fast_cut_passes(cuts.cuts[4], has_delta_phi, delta_phi)) return false;
-    if (!fast_cut_passes(cuts.cuts[5], b.has_pTmiss, b.pTmiss)) return false;
-    if (!fast_cut_passes(cuts.cuts[6], b.has_xF, b.xF)) return false;
+    bool has_delta_phi=false;
+    const double delta_phi=b.delta_phi_value(has_delta_phi);
+    if (!fast_cut_passes(cuts.cuts[0],has_delta_phi,delta_phi)) return false;
+    if (!fast_cut_passes(cuts.cuts[1],b.has_theta,b.theta)) return false;
     if (is_eppi0) {
-        if (!fast_cut_passes(cuts.cuts[7], b.has_theta_pi0_pi0, b.theta_pi0_pi0)) return false;
+        if (!fast_cut_passes(cuts.cuts[2],b.has_theta_pi0_pi0,b.theta_pi0_pi0)) return false;
     } else {
-        if (!fast_cut_passes(cuts.cuts[7], b.has_theta_gamma_gamma, b.theta_gamma_gamma)) return false;
+        if (!fast_cut_passes(cuts.cuts[2],b.has_theta_gamma_gamma,b.theta_gamma_gamma)) return false;
     }
+    if (!fast_cut_passes(cuts.cuts[3],b.has_pTmiss,b.pTmiss)) return false;
+    if (!fast_cut_passes(cuts.cuts[4],b.has_Emiss2,b.Emiss2)) return false;
+    if (!fast_cut_passes(cuts.cuts[5],b.has_Mx2,b.Mx2)) return false;
+    if (!fast_cut_passes(cuts.cuts[6],b.has_Mx2_2,b.Mx2_2)) return false;
     return true;
 }
 
@@ -1220,7 +1235,7 @@ static TreeTotals process_one_tree(const TreeTask& task,
                                 result.tags.period_code + "_" + topology_names()[ti];
         auto found = data_cuts.find(key);
         if (found == data_cuts.end()) fatal("missing sigma-cut key: " + key);
-        compiled[ti] = compile_cuts(found->second, is_eppi0);
+        compiled[ti] = compile_cuts(found->second);
     }
 
     Branches b;

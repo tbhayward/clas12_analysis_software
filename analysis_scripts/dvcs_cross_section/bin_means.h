@@ -5,7 +5,7 @@
 #include <string>
 class TTree;
 
-// Update the grouped-averages columns for each period and combined groups in the CSV.
+// Update grouped averages using canonical nominal Python-optimized production cuts.
 // Returns true on success, false on non-fatal I/O failures.
 // (Schema problems will print a message and std::exit to avoid a half-written CSV.)
 bool update_bin_means_csv(const std::string& csv_path,

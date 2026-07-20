@@ -1,6 +1,5 @@
 #include "pi0_subtracted_kinematics.h"
 
-#include "exclusivity_cuts.h"
 #include "global_cuts.h"
 
 #include <TTree.h>
@@ -468,7 +467,11 @@ static std::map<std::string, CutDict> load_combined_cuts_json(const std::string&
     }
 
     nlohmann::json j;
-    fin >> j;
+    try { fin >> j; }
+    catch (const std::exception& e) {
+        fatal(std::string("[pi0_subtracted_kinematics] FATAL: failed parsing cuts JSON: ")+e.what());
+    }
+    if (!j.is_object()) fatal("[pi0_subtracted_kinematics] FATAL: cuts JSON is not an object.");
 
     std::map<std::string, CutDict> out;
 
@@ -500,6 +503,19 @@ static std::map<std::string, CutDict> load_combined_cuts_json(const std::string&
 
         fill_sample("data", cd.data);
         fill_sample("mc", cd.mc);
+        static const std::set<std::string> supported = {
+            "Delta_phi","theta","theta_gamma_gamma","pTmiss",
+            "Emiss2","Mx2","Mx2_2"
+        };
+        auto validate=[&](const std::map<std::string,Stats>& sample,const char* name) {
+            for (const auto& kv:sample)
+                if (supported.count(kv.first)==0)
+                    fatal("[pi0_subtracted_kinematics] FATAL: unsupported production variable '"+kv.first+"' in "+it.key()+"/"+name);
+            if (!sample.empty() && sample.find("Mx2")==sample.end())
+                fatal("[pi0_subtracted_kinematics] FATAL: missing mandatory Mx2 in "+it.key()+"/"+name);
+        };
+        validate(cd.data,"data");
+        validate(cd.mc,"mc");
         out[it.key()] = cd;
     }
 
@@ -522,11 +538,10 @@ struct Branches {
     double open_angle_ep2 = 0.0; bool has_open_angle_ep2 = false;
     double pTmiss = 0.0; bool has_pTmiss = false;
     double Delta_phi = 0.0; bool has_Delta_phi = false;
+    double theta = 0.0; bool has_theta = false;
     double Emiss2 = 0.0; bool has_Emiss2 = false;
     double Mx2 = 0.0; bool has_Mx2 = false;
-    double Mx2_1 = 0.0; bool has_Mx2_1 = false;
     double Mx2_2 = 0.0; bool has_Mx2_2 = false;
-    double xF = 0.0; bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
 
     double e_p = 0.0; bool has_e_p = false;
@@ -549,8 +564,8 @@ struct Branches {
         ena("runnum"); ena("detector1"); ena("detector2");
         ena("x"); ena("Q2"); ena("phi2");
         ena("t1"); ena("open_angle_ep2"); ena("pTmiss"); ena("Delta_phi");
-        ena("Emiss2"); ena("Mx2"); ena("Mx2_1"); ena("Mx2_2"); ena("xF");
-        ena("theta_gamma_gamma");
+        ena("theta"); ena("theta_gamma_gamma");
+        ena("Emiss2"); ena("Mx2"); ena("Mx2_2");
         ena("e_p"); ena("e_theta"); ena("e_phi");
         ena("p1_p"); ena("p1_theta"); ena("p1_phi");
         ena("p2_p"); ena("p2_theta"); ena("p2_phi");
@@ -580,11 +595,10 @@ struct Branches {
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
         bD("pTmiss", &pTmiss, has_pTmiss);
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bD("theta", &theta, has_theta);
         bD("Emiss2", &Emiss2, has_Emiss2);
         bD("Mx2", &Mx2, has_Mx2);
-        bD("Mx2_1", &Mx2_1, has_Mx2_1);
         bD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bD("xF", &xF, has_xF);
         bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
 
         bD("e_p", &e_p, has_e_p);
@@ -617,12 +631,11 @@ struct Branches {
     std::map<std::string, double> exclusivity_values() const {
         std::map<std::string, double> m;
         if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
+        if (has_theta) m["theta"] = theta;
         if (has_pTmiss) m["pTmiss"] = pTmiss;
         if (has_Emiss2) m["Emiss2"] = Emiss2;
         if (has_Mx2) m["Mx2"] = Mx2;
-        if (has_Mx2_1) m["Mx2_1"] = Mx2_1;
         if (has_Mx2_2) m["Mx2_2"] = Mx2_2;
-        if (has_xF) m["xF"] = xF;
         if (has_theta_gamma_gamma) m["theta_gamma_gamma"] = theta_gamma_gamma;
         return m;
     }

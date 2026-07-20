@@ -1,51 +1,9 @@
 // radiative_corrections.cpp
-// Frad from generated Born and radiative MC, written into CSV as
-// "(value, stat, sys)" triples in the columns:
-//   "Frad, 10.6 GeV"   (Sp18 Inb + Sp18 Out + Fa18 Inb + Fa18 Out,
-//                       with Fa18 Inb optionally skippable via a boolean)
-//   "Frad, 10.2 GeV"   (Sp19 Inb)
+// Frad from generated Born and radiative MC.
 //
-// Binning comes from dvcs_pass2_analysis.csv (Lee-style).
-//
-// NEW BEHAVIOR:
-//   - We now apply the DVCS global kinematic cuts from global_cuts.h
-//     to the generated Born and Radiative MC before binning and
-//     normalization:
-//         * (-t1) < t1_abs_max
-//         * open_angle_ep2 > open_angle_min_deg
-//         * pTmiss <= pTmiss_max
-//     via passes_global_cuts(..., GlobalCutConfig).
-//
-//   - We also apply a generator-level Emiss2 3-sigma cut. The Emiss2
-//     band is defined by scanning combined_cuts.json over all DVCS
-//     topology keys ("DVCS_<PeriodDir>_<TopoDir>") and taking the
-//     Emiss2 SigmaCut with the largest std in the "data" block.
-//     That SigmaCut (mean, std_max) is then used to require:
-//         |Emiss2 - mean| <= 3 * std_max
-//     for all generated Born and Radiative MC events.
-//
-//   - The global normalizations N_born and N_rad used in
-//       Frad_i = (a_i / N_born) / (b_i / N_rad)
-//     are now defined as the total number of generated events that:
-//         * pass the DVCS global cuts,
-//         * pass the Emiss2 3-sigma band, and
-//         * fall into any DVCS analysis bin (xB, Q2, |t|, phi).
-//
-// Frad is defined as Born/Rad with global MC normalizations per energy group:
-//   Frad_i = (a_i / N_born) / (b_i / N_rad) = a_i * N_rad / (b_i * N_born)
-//
-// Also produces Frad vs phi canvases per beam energy and xB bin under
-//   output/radiative_correction_plots/10.60
-//   output/radiative_correction_plots/10.2
-//
-// Parallelization:
-//   - 4 worker threads:
-//       (10.6 GeV, Born), (10.6 GeV, Rad),
-//       (10.2 GeV, Born), (10.2 GeV, Rad)
-//   - Each worker loops over its MC trees, applies DVCS global cuts
-//     AND the Emiss2 3-sigma cut, accumulates row-wise counts and a
-//     global N_total (post-cut, in-bin), then returns. CSV writes and
-//     plotting occur only after all workers complete.
+// Generated MC receives generator-applicable global cuts and the analysis-bin
+// definition only. Reconstructed-event exclusivity cuts are intentionally not
+// applied at generator level.
 
 #include "radiative_corrections.h"
 #include "global_cuts.h"
@@ -668,7 +626,6 @@ static double accumulate_counts_for_tree(const std::string& group_label,
                                          TTree* tree,
                                          const std::vector<RowBin>& bins,
                                          const std::vector<bool>& row_has_data,
-                                         const SigmaCut& emiss2_cut,
                                          const GlobalCutConfig& global_cfg,
                                          std::vector<double>& counts) {
     if (!tree) {
@@ -691,7 +648,6 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     const char* br_phi2   = "phi2";
     const char* br_oa_ep2 = "open_angle_ep2";
     const char* br_pTmiss = "pTmiss";
-    const char* br_Emiss2 = "Emiss2";
     const char* br_det1   = "detector1";
     const char* br_det2   = "detector2";
     const char* br_e_p = "e_p";
@@ -709,12 +665,11 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         !tree->GetBranch(br_phi2) ||
         !tree->GetBranch(br_oa_ep2) ||
         !tree->GetBranch(br_pTmiss) ||
-        !tree->GetBranch(br_Emiss2) ||
         !tree->GetBranch(br_det1) ||
         !tree->GetBranch(br_det2)) {
         std::cerr << "[radcorr] FATAL: missing one or more branches in generated MC tree for "
                   << group_label << " (" << tree_label
-                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss, Emiss2, detector1, detector2).\n";
+                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss, detector1, detector2).\n";
         std::exit(EXIT_FAILURE);
     }
 
@@ -738,7 +693,6 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     double g_phi2 = 0.0;
     double g_open_angle = 0.0;
     double g_pTmiss = 0.0;
-    double g_Emiss2 = 0.0;
     int g_det1 = 0;
     int g_det2 = 0;
     double g_e_p = 0.0;
@@ -756,7 +710,6 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     tree->SetBranchAddress(br_phi2, &g_phi2);
     tree->SetBranchAddress(br_oa_ep2, &g_open_angle);
     tree->SetBranchAddress(br_pTmiss, &g_pTmiss);
-    tree->SetBranchAddress(br_Emiss2, &g_Emiss2);
     tree->SetBranchAddress(br_det1, &g_det1);
     tree->SetBranchAddress(br_det2, &g_det2);
     if (tree->GetBranch(br_e_p)) tree->SetBranchAddress(br_e_p, &g_e_p);
@@ -813,22 +766,6 @@ static double accumulate_counts_for_tree(const std::string& group_label,
             continue;
         }
 
-        // Apply Emiss2 3-sigma exclusivity band.
-        if (!within_3sigma(g_Emiss2, emiss2_cut)) {
-            if (N > 0 && next_pct <= 100) {
-                double pct = 100.0 * (double)(i + 1) / (double)N;
-                while (pct >= (double)next_pct && next_pct <= 100) {
-                    std::cout << "[radcorr] Group " << group_label
-                              << ", tree " << tree_label
-                              << " progress: " << (double)next_pct << "% ("
-                              << (long long)(i + 1) << "/"
-                              << (long long)N << ")\n";
-                    next_pct += 10;
-                }
-            }
-            continue;
-        }
-
         const double xB = g_x;
         const double Q2 = g_Q2;
         const double tAbs = std::fabs(g_t1);
@@ -870,7 +807,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     std::cout << "[radcorr] Group " << group_label
               << ", tree " << tree_label
               << ": total entries = " << (long long)N
-              << " ; passed global cuts + Emiss2 3-sigma and binned (any DVCS bin) = "
+              << " ; passed global cuts and binned (any DVCS bin) = "
               << (long long)used << "\n";
 
     return (double)used;
@@ -1348,7 +1285,6 @@ static void accumulate_group_type(const RCGroup& G,
                                   const std::vector<bool>& row_has_data,
                                   const std::map<std::string, TTree*>& treeMap,
                                   bool isBorn,
-                                  const SigmaCut& emiss2_cut,
                                   const GlobalCutConfig& global_cfg,
                                   std::vector<double>& counts_out,
                                   double& Ntotal_out) {
@@ -1390,7 +1326,6 @@ static void accumulate_group_type(const RCGroup& G,
                                                    tree,
                                                    bins,
                                                    row_has_data,
-                                                   emiss2_cut,
                                                    global_cfg,
                                                    counts_out);
         Ntotal_out += N_here;
@@ -1431,15 +1366,12 @@ bool update_radiative_corrections_csv(const std::string& csv_path,
     std::vector<RowBin> bins = build_row_bins(csv);
 
     // Hard-coded paths (match your existing style here).
-    const std::string combined_cuts_json = "output/jsons/combined_cuts.json";
     const std::string global_cuts_json   = "output/jsons/global_cuts_config.json";
 
     // Load global cuts config (required by passes_global_cuts overloads).
     // NOTE: global_cuts.h does not declare a JSON loader, so we use the
     // local fail-fast loader defined above.
     const GlobalCutConfig global_cfg = load_global_cut_config(global_cuts_json);
-
-    const SigmaCut emiss2_cut = load_global_emiss2_cut(combined_cuts_json);
 
     // Define groups: 10.6 GeV and 10.2 GeV
     RCGroup g10p6;

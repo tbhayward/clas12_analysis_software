@@ -1,6 +1,5 @@
 #include "branch_data_mc_comparison.h"
 #include "branch_plot_config.h"
-#include "exclusivity_cuts.h"
 #include "global_cuts.h"
 
 #include <TTree.h>
@@ -45,6 +44,23 @@
 #endif
 
 namespace {
+
+enum class Channel { DVCS, EPPI0 };
+enum class Topology { FD_FD, CD_FD, CD_FT };
+
+struct Stats {
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std = std::numeric_limits<double>::quiet_NaN();
+    double cut_low = std::numeric_limits<double>::quiet_NaN();
+    double cut_high = std::numeric_limits<double>::quiet_NaN();
+    std::string mode;
+};
+
+struct CutDict {
+    std::map<std::string, Stats> data;
+    std::map<std::string, Stats> mc;
+};
+
 
 static constexpr bool kSkipGlobalCuts = false;
 static constexpr bool kSkipExclusivityCuts = false;
@@ -386,22 +402,22 @@ static bool topologyFromDetectors(int detector1, int detector2, Topology& topo_o
     return false;
 }
 
-static bool within3Sigma(double val, const Stats& s) {
-    if (!(std::isfinite(s.mean) && std::isfinite(s.std) && s.std > 0.0)) return true;
-    return (val >= s.mean - 3.0 * s.std) && (val <= s.mean + 3.0 * s.std);
+static bool withinProductionCut(double v,const Stats& c) {
+    if (!std::isfinite(v)) return false;
+    if (std::isfinite(c.cut_low) && v<c.cut_low) return false;
+    if (std::isfinite(c.cut_high) && v>c.cut_high) return false;
+    if (std::isfinite(c.cut_low) || std::isfinite(c.cut_high)) return true;
+    if (std::isfinite(c.mean) && std::isfinite(c.std) && c.std>0.0)
+        return v>=c.mean-3.0*c.std && v<=c.mean+3.0*c.std;
+    throw std::runtime_error("[branch_data_mc_comparison] FATAL: production cut has no valid bounds.");
 }
-
-static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
-                             const std::map<std::string, double>& values) {
-    for (const auto& kv : cuts) {
-        auto it = values.find(kv.first);
-        if (it == values.end()) {
-            std::ostringstream ss;
-            ss << "[branch_data_mc_comparison] FATAL: missing value for 3-sigma cut variable "
-               << kv.first;
-            throw std::runtime_error(ss.str());
-        }
-        if (!within3Sigma(it->second, kv.second)) return false;
+static bool passesProductionCuts(const std::map<std::string,Stats>& cuts,
+                                 const std::map<std::string,double>& values) {
+    for (const auto& kv:cuts) {
+        auto it=values.find(kv.first);
+        if (it==values.end())
+            throw std::runtime_error("[branch_data_mc_comparison] FATAL: missing branch value for "+kv.first);
+        if (!withinProductionCut(it->second,kv.second)) return false;
     }
     return true;
 }
@@ -502,9 +518,9 @@ static std::string sectorSourcePhiBranch(const std::string& branch_name) {
 
 static std::string cutModeText() {
     if (kSkipGlobalCuts && kSkipExclusivityCuts) return "No global cuts, no exclusivity cuts";
-    if (kSkipGlobalCuts && !kSkipExclusivityCuts) return "No global cuts, topology-matched 3#sigma exclusivity cuts";
+    if (kSkipGlobalCuts && !kSkipExclusivityCuts) return "No global cuts, topology-matched nominal production exclusivity cuts";
     if (!kSkipGlobalCuts && kSkipExclusivityCuts) return "Global cuts only";
-    return "Global cuts + topology-matched 3#sigma exclusivity cuts";
+    return "Global cuts + topology-matched nominal production exclusivity cuts";
 }
 
 static double eval_poly4(const double coeffs[5], double x) {
@@ -584,17 +600,31 @@ static std::map<std::string, CutDict> loadCombinedCutsJson(const std::string& pa
             for (auto vit = block[sample].begin(); vit != block[sample].end(); ++vit) {
                 const auto& obj = vit.value();
                 if (!obj.is_object()) continue;
-                if (!obj.contains("mean") || !obj.contains("std")) continue;
                 Stats s;
-                s.mean = obj["mean"].get<double>();
-                s.std = obj["std"].get<double>();
+                if (obj.contains("mean") && !obj["mean"].is_null()) s.mean=obj["mean"].get<double>();
+                if (obj.contains("std") && !obj["std"].is_null()) s.std=obj["std"].get<double>();
+                if (obj.contains("cut_low") && !obj["cut_low"].is_null()) s.cut_low=obj["cut_low"].get<double>();
+                if (obj.contains("cut_high") && !obj["cut_high"].is_null()) s.cut_high=obj["cut_high"].get<double>();
+                if (obj.contains("mode") && obj["mode"].is_string()) s.mode=obj["mode"].get<std::string>();
                 target[vit.key()] = s;
             }
         };
 
         fill("data", cd.data);
         fill("mc", cd.mc);
-
+        static const std::set<std::string> supported = {
+            "Delta_phi","theta","theta_gamma_gamma","pTmiss",
+            "Emiss2","Mx2","Mx2_2"
+        };
+        auto validate=[&](const std::map<std::string,Stats>& sample,const char* name) {
+            for (const auto& kv:sample)
+                if (supported.count(kv.first)==0)
+                    throw std::runtime_error("[branch_data_mc_comparison] FATAL: unsupported production variable '"+kv.first+"' in "+key+"/"+name);
+            if (!sample.empty() && sample.find("Mx2")==sample.end())
+                throw std::runtime_error("[branch_data_mc_comparison] FATAL: missing mandatory Mx2 in "+key+"/"+name);
+        };
+        validate(cd.data,"data");
+        validate(cd.mc,"mc");
         out[key] = cd;
     }
 
@@ -702,10 +732,8 @@ struct BranchBinder {
     double open_angle_ep2 = 0.0;    bool has_open_angle_ep2 = false;
     double Emiss2 = 0.0;            bool has_Emiss2 = false;
     double Mx2 = 0.0;               bool has_Mx2 = false;
-    double Mx2_1 = 0.0;             bool has_Mx2_1 = false;
     double Mx2_2 = 0.0;             bool has_Mx2_2 = false;
     double pTmiss = 0.0;            bool has_pTmiss = false;
-    double xF = 0.0;                bool has_xF = false;
     double Delta_phi = 0.0;         bool has_Delta_phi = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
@@ -738,11 +766,10 @@ struct BranchBinder {
         ena("open_angle_ep2");
         ena("Emiss2");
         ena("Mx2");
-        ena("Mx2_1");
         ena("Mx2_2");
         ena("pTmiss");
-        ena("xF");
         ena("Delta_phi");
+        ena("theta");
         if (ch == Channel::DVCS) ena("theta_gamma_gamma");
         else                     ena("theta_pi0_pi0");
 
@@ -780,11 +807,10 @@ struct BranchBinder {
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
         bD("Emiss2", &Emiss2, has_Emiss2);
         bD("Mx2", &Mx2, has_Mx2);
-        bD("Mx2_1", &Mx2_1, has_Mx2_1);
         bD("Mx2_2", &Mx2_2, has_Mx2_2);
         bD("pTmiss", &pTmiss, has_pTmiss);
-        bD("xF", &xF, has_xF);
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bD("theta", &theta, has_theta);
 
         if (ch == Channel::DVCS) bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         else                     bD("theta_pi0_pi0",     &theta_pi0_pi0,     has_theta_pi0_pi0);
@@ -802,16 +828,15 @@ struct BranchBinder {
     std::map<std::string, double> valuesMap(Channel ch) const {
         std::map<std::string, double> m;
         if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
+        if (has_theta) m["theta"] = theta;
         if (ch == Channel::DVCS) {
             if (has_theta_gamma_gamma) m["theta_gamma_gamma"] = theta_gamma_gamma;
         } else {
             if (has_theta_pi0_pi0) m["theta_pi0_pi0"] = theta_pi0_pi0;
         }
         if (has_pTmiss) m["pTmiss"] = pTmiss;
-        if (has_xF) m["xF"] = xF;
         if (has_Emiss2) m["Emiss2"] = Emiss2;
         if (has_Mx2) m["Mx2"] = Mx2;
-        if (has_Mx2_1) m["Mx2_1"] = Mx2_1;
         if (has_Mx2_2) m["Mx2_2"] = Mx2_2;
         return m;
     }
@@ -1230,7 +1255,7 @@ static void fillHistogramsForTreeSinglePass(
             const std::map<std::string, double> vals = b.valuesMap(ch);
             const std::map<std::string, Stats>& cut_map = use_data_cuts ? itCuts->second.data : itCuts->second.mc;
 
-            if (!passes3SigmaCuts(cut_map, vals)) continue;
+            if (!passesProductionCuts(cut_map, vals)) continue;
         }
 
         if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi2)) {

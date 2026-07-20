@@ -6,7 +6,8 @@ CXXFLAGS = $(shell root-config --cflags) -O2 -std=c++17 -pthread -fopenmp
 LDFLAGS  = $(shell root-config --libs) -lMinuit2 -pthread -fopenmp
 
 # ---------- dvcs_analysis ----------
-DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp \
+DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp \
+           python_exclusivity_runner.cpp exclusivity_cuts.cpp \
            global_cuts.cpp load_binning_scheme.cpp \
            bin_means.cpp total_counts.cpp current_dependence.cpp eppi0_normalization.cpp yield_totals.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
            bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \

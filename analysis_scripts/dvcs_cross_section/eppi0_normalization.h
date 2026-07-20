@@ -8,6 +8,7 @@ class TTree;
 
 struct Eppi0NormalizationOptions {
     std::string charge_csv_path = "imports/integrated_luminosity/global.csv";
+    // Canonical nominal (95% containment) Python-optimized production cuts.
     std::string combined_cuts_json = "output/jsons/combined_cuts.json";
     std::string output_dir = "output/data_mc_normalization";
     std::string normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";

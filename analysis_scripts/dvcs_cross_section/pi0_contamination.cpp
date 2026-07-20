@@ -869,14 +869,13 @@ using DiagnosticTopoCutMap = std::map<std::string, DiagnosticCutMap>;
 
 
 static const std::vector<DiagnosticVar> kDiagnosticVars = {
-    {"Delta_phi",           "#Delta#phi (rad)",                                   100, 2.84159, 3.44159},
+    {"Delta_phi",           "#Delta#phi (rad)",                                      100, 2.84159, 3.44159},
+    {"theta",               "#theta (rad)",                                          100, 0.0, 0.2},
     {"theta_gamma_gamma",   "#theta_{#gamma#gamma} / #theta_{#pi^{0}#pi^{0}} (rad)", 100, 0.0, 2.0},
-    {"pTmiss",              "p_{T}^{miss} (GeV)",                                 100, 0.0, 0.3},
-    {"xF",                  "x_{F}",                                              100, -0.4, 0.2},
-    {"Emiss2",              "E_{miss}^{2} (GeV^{2})",                             100, -1.0, 2.0},
-    {"Mx2",                 "M_{x}^{2} (GeV^{2})",                                100, -0.03, 0.03},
-    {"Mx2_1",               "M_{x1}^{2} (GeV^{2})",                               100, -1.5, 1.5},
-    {"Mx2_2",               "M_{x2}^{2} (GeV^{2})",                               100, 0.0, 3.0}
+    {"pTmiss",              "p_{T}^{miss} (GeV)",                                    100, 0.0, 0.3},
+    {"Emiss2",              "E_{miss}^{2} (GeV^{2})",                                100, -1.0, 2.0},
+    {"Mx2",                 "M_{x}^{2} (GeV^{2})",                                   100, -0.03, 0.03},
+    {"Mx2_2",               "M_{x2}^{2} (GeV^{2})",                                  100, 0.0, 3.0}
 };
 
 static std::string to_lower_ascii(std::string s) {
@@ -932,9 +931,6 @@ static std::vector<std::string> diagnostic_variable_aliases(const std::string& r
     // more robust if a channel-specific tree used a slightly different spelling.
     if (requested_variable == "Mx2") {
         return {"Mx2", "Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0"};
-    }
-    if (requested_variable == "Mx2_1") {
-        return {"Mx2_1", "Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p"};
     }
     if (requested_variable == "Mx2_2") {
         return {"Mx2_2", "Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"};
@@ -1201,11 +1197,10 @@ struct TreeDiagBranches {
     double p2_p = 0.0; bool has_p2_p = false;
     double p2_theta = 0.0; bool has_p2_theta = false;
 
+    double theta = 0.0; bool has_theta = false;
     double Emiss2 = 0.0; bool has_Emiss2 = false;
     double Mx2 = 0.0; bool has_Mx2 = false;
-    double Mx2_1 = 0.0; bool has_Mx2_1 = false;
     double Mx2_2 = 0.0; bool has_Mx2_2 = false;
-    double xF = 0.0; bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
 
@@ -1243,9 +1238,8 @@ struct TreeDiagBranches {
         enable("p2_theta");
         enable("Emiss2");
         enable("Mx2");
-        enable("Mx2_1");
         enable("Mx2_2");
-        enable("xF");
+        enable("theta");
         enable("theta_gamma_gamma");
         enable("theta_pi0_pi0");
 
@@ -1284,9 +1278,8 @@ struct TreeDiagBranches {
 
         bD("Emiss2", &Emiss2, has_Emiss2);
         bD("Mx2", &Mx2, has_Mx2);
-        bD("Mx2_1", &Mx2_1, has_Mx2_1);
         bD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bD("xF", &xF, has_xF);
+        bD("theta", &theta, has_theta);
         bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         bD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
 
@@ -1316,18 +1309,15 @@ struct TreeDiagBranches {
         } else if (name == "Mx2") {
             if (!has_Mx2) return false;
             value = Mx2;
-        } else if (name == "Mx2_1") {
-            if (!has_Mx2_1) return false;
-            value = Mx2_1;
         } else if (name == "Mx2_2") {
             if (!has_Mx2_2) return false;
             value = Mx2_2;
-        } else if (name == "xF") {
-            if (!has_xF) return false;
-            value = xF;
         } else if (name == "pTmiss") {
             if (!has_pTmiss) return false;
             value = pTmiss;
+        } else if (name == "theta") {
+            if (!has_theta) return false;
+            value = theta;
         } else if (name == "theta_gamma_gamma") {
             if (!has_theta_gamma_gamma) return false;
             value = theta_gamma_gamma;

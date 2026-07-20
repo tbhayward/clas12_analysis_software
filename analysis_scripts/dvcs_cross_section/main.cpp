@@ -289,7 +289,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
         }
 
-        const int max_workers = 1;
+        const int max_workers = 7;
 
         Pi0ContaminationOptions pi0_contamination_opts;
         pi0_contamination_opts.use_epg_mc_current_factor_for_eppi0_bkg =
@@ -369,7 +369,7 @@ int main(int argc, char* argv[]) {
         bsa_opts.beam_pol_sp19_inb = 0.8453;
         bsa_opts.enable_pi0_subtraction = true;
         bsa_opts.make_plots = true;
-        bsa_opts.max_workers = 1;
+        bsa_opts.max_workers = 7;
 
         if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa_opts)) {
             std::cerr << "[main] ERROR: update_bsa_counts_csv failed.\n";

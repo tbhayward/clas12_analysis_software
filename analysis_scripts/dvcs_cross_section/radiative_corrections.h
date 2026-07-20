@@ -24,6 +24,10 @@ class TTree;
 //
 // Bins come from dvcs_pass2_analysis.csv (Lee-style).
 //
+// Generated Born and radiative MC use generator-applicable global cuts and
+// analysis-bin phase space only. Reconstructed exclusivity cuts are not
+// applied at generator level.
+//
 // Returns true on success, false on any fatal failure.
 bool update_radiative_corrections_csv(
     const std::string& csv_path,

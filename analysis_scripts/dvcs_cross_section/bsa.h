@@ -10,7 +10,8 @@ struct BSAOptions {
     // Existing pass-2 analysis CSV.
     std::string csv_path = "output/csvs/dvcs_pass2_analysis.csv";
 
-    // Combined 3-sigma exclusivity cuts produced by exclusivity_cuts.cpp.
+    // Canonical nominal (95% containment) production exclusivity cuts
+    // produced by plot_exclusivity_data_dvcs_pi0_mc.py.
     std::string combined_cuts_json = "output/jsons/combined_cuts.json";
 
     // Output root. The driver writes plots under <output_root>/bsa_plots and
@@ -42,7 +43,10 @@ struct BSAOptions {
 };
 
 // Recompute beam-spin asymmetries directly from helicity-split measured counts
-// after the standard global cuts and data-derived 3-sigma exclusivity cuts.
+// after the standard global cuts and Python-optimized nominal production
+// exclusivity cuts. Supported production variables are Delta_phi, theta,
+// theta_gamma_gamma, pTmiss, Emiss2, Mx2 and Mx2_2. For direct ep->eppi0
+// trees, the logical theta_gamma_gamma cut is evaluated with theta_pi0_pi0.
 //
 // The function counts both:
 //   G+/- = measured ep->epgamma counts

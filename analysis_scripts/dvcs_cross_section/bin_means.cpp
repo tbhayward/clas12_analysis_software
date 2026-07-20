@@ -11,6 +11,8 @@
 #include <TTree.h>
 #include <TROOT.h>          // ROOT::EnableThreadSafety
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -64,7 +66,7 @@ static inline void print_status_singleline(const std::string& tag,
               << pct << "%  "
               << i << "/" << N
               << "  global=" << pass_global
-              << "  sig=" << pass_3sig
+              << "  excl=" << pass_3sig
               << "  used=" << used_rows
               << "  rate=" << std::setprecision(2) << rate << " ev/s"
               << std::endl;
@@ -316,11 +318,11 @@ struct BranchBinder {
     double t1 = 0.0;             bool has_t1 = false;
     double open_angle_ep2 = 0.0; bool has_open = false; // degrees
     double pTmiss = 0.0;         bool has_pT = false;
+    double Delta_phi = 0.0;       bool has_Delta_phi = false;
+    double theta = 0.0;           bool has_theta = false;
     double Emiss2 = 0.0;         bool has_Em2 = false;
     double Mx2 = 0.0;            bool has_Mx2 = false;
-    double Mx2_1 = 0.0;          bool has_Mx2_1 = false;
     double Mx2_2 = 0.0;          bool has_Mx2_2 = false;
-    double xF = 0.0;             bool has_xF = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gg = false;
 
     // Inputs used by global_cuts when dvcsgen ycol cut is enabled
@@ -363,9 +365,9 @@ struct BranchBinder {
         enable("pTmiss");
         enable("Emiss2");
         enable("Mx2");
-        enable("Mx2_1");
         enable("Mx2_2");
-        enable("xF");
+        enable("Delta_phi");
+        enable("theta");
         enable("theta_gamma_gamma");
 
         // Used by dvcsgen ycol cut (and now also by bin means theta averages)
@@ -404,9 +406,9 @@ struct BranchBinder {
         bindD("pTmiss",            &pTmiss,            has_pT);
         bindD("Emiss2",            &Emiss2,            has_Em2);
         bindD("Mx2",               &Mx2,               has_Mx2);
-        bindD("Mx2_1",             &Mx2_1,             has_Mx2_1);
         bindD("Mx2_2",             &Mx2_2,             has_Mx2_2);
-        bindD("xF",                &xF,                has_xF);
+        bindD("Delta_phi",         &Delta_phi,         has_Delta_phi);
+        bindD("theta",             &theta,             has_theta);
         bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
 
         bindD("e_p",     &e_p,     has_e_p);
@@ -550,138 +552,145 @@ static inline bool passes_global(const BranchBinder& b, const std::string& perio
     return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss, cfg);
 } //endfor
 
-struct Sigmas {
-    double mean = std::numeric_limits<double>::quiet_NaN();
-    double std  = std::numeric_limits<double>::quiet_NaN();
+struct ProductionCut {
+    double low = -std::numeric_limits<double>::infinity();
+    double high = std::numeric_limits<double>::infinity();
 };
-using VarMap = std::unordered_map<std::string, Sigmas>;
-static std::unordered_map<std::string, VarMap> g_sigma_cache;
-static std::once_flag g_sigma_once;
+using CutMap = std::unordered_map<std::string, ProductionCut>;
+static std::unordered_map<std::string, CutMap> g_cut_cache;
+static std::once_flag g_cut_once;
 
-static double parse_number(const std::string& s, size_t& i) {
-    while (i < s.size() && !(std::isdigit((unsigned char)s[i]) || s[i]=='-' || s[i]=='+')) ++i;
-    size_t st = i;
-    while (i < s.size() && (std::isdigit((unsigned char)s[i]) || s[i]=='.' || s[i]=='e' || s[i]=='E' || s[i]=='+' || s[i]=='-')) ++i;
-    if (st == i) return std::numeric_limits<double>::quiet_NaN();
-    return std::strtod(s.c_str() + st, nullptr);
+static const std::set<std::string>& supported_production_variables() {
+    static const std::set<std::string> vars = {
+        "Delta_phi", "theta", "theta_gamma_gamma", "pTmiss",
+        "Emiss2", "Mx2", "Mx2_2"
+    };
+    return vars;
 }
-static Sigmas extract_mean_std(const std::string& block, const std::string& var) {
-    Sigmas out;
-    size_t data_pos = block.find("\"data\"");
-    if (data_pos == std::string::npos) return out;
-    size_t var_pos = block.find("\"" + var + "\"", data_pos);
-    if (var_pos == std::string::npos) return out;
-    size_t mpos = block.find("\"mean\"", var_pos);
-    size_t spos = block.find("\"std\"",  var_pos);
-    if (mpos != std::string::npos) { size_t i = mpos; out.mean = parse_number(block, i); }
-    if (spos != std::string::npos) { size_t i = spos; out.std  = parse_number(block, i); }
-    return out;
-}
-static std::string extract_object(const std::string& full, const std::string& key) {
-    const std::string qk = "\"" + key + "\"";
-    size_t p = full.find(qk);
-    if (p == std::string::npos) return {};
-    size_t brace = full.find('{', p);
-    if (brace == std::string::npos) return {};
-    int depth = 0;
-    size_t i = brace;
-    for (; i < full.size(); ++i) {
-        if (full[i] == '{') ++depth;
-        else if (full[i] == '}') { --depth; if (depth == 0) { ++i; break; } }
+
+static ProductionCut parse_production_cut(const nlohmann::json& obj,
+                                          const std::string& key,
+                                          const std::string& variable) {
+    if (!obj.is_object()) {
+        std::cerr << "[bin_means] FATAL: malformed cut object "
+                  << key << "/" << variable << std::endl;
+        std::exit(EXIT_FAILURE);
     }
-    if (i <= brace) return {};
-    return full.substr(brace, i - brace);
+    ProductionCut c;
+    if (obj.contains("cut_low") && !obj["cut_low"].is_null())
+        c.low = obj["cut_low"].get<double>();
+    if (obj.contains("cut_high") && !obj["cut_high"].is_null())
+        c.high = obj["cut_high"].get<double>();
+    if (!std::isfinite(c.low) && !std::isfinite(c.high) &&
+        obj.contains("mean") && obj.contains("std")) {
+        const double mean=obj["mean"].get<double>();
+        const double sigma=obj["std"].get<double>();
+        if (std::isfinite(mean) && std::isfinite(sigma) && sigma>0.0) {
+            c.low=mean-3.0*sigma;
+            c.high=mean+3.0*sigma;
+        }
+    }
+    if (!(std::isfinite(c.low)||std::isfinite(c.high)) || c.low>c.high) {
+        std::cerr << "[bin_means] FATAL: invalid cut "
+                  << key << "/" << variable << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    return c;
 }
-static void load_sigmas_once() {
+
+static void load_production_cuts_once() {
     std::ifstream fin(kCutsJSON);
     if (!fin.is_open()) {
-        std::cerr << "[bin_means] WARNING: cannot open " << kCutsJSON << " — 3-sigma cuts skipped." << std::endl;
-        return;
+        std::cerr << "[bin_means] FATAL: cannot open " << kCutsJSON << std::endl;
+        std::exit(EXIT_FAILURE);
     }
-    std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+    nlohmann::json j;
+    try { fin >> j; }
+    catch (const std::exception& e) {
+        std::cerr << "[bin_means] FATAL: failed parsing " << kCutsJSON
+                  << ": " << e.what() << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    if (!j.is_object()) {
+        std::cerr << "[bin_means] FATAL: cuts JSON is not an object." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
 
-    const std::vector<std::string> P = {
-        "DVCS_Fa18_Inb", "DVCS_Fa18_Out",
-        "DVCS_Sp19_Inb", "DVCS_Sp18_Inb", "DVCS_Sp18_Out"
+    const std::vector<std::string> periods={
+        "DVCS_Fa18_Inb","DVCS_Fa18_Out","DVCS_Sp19_Inb",
+        "DVCS_Sp18_Inb","DVCS_Sp18_Out"
     };
-    const std::vector<std::string> T = { "FD_FD", "CD_FD", "CD_FT" };
-    const std::vector<std::string> VARS = {
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "theta_gamma_gamma", "xF"
-    };
-
-    for (const auto& p : P) {
-        for (const auto& t : T) {
-            const std::string key = p + "_" + std::string(t);
-            const std::string obj = extract_object(text, key);
-            if (obj.empty()) continue;
-            VarMap vm;
-            for (const auto& v : VARS) {
-                Sigmas s = extract_mean_std(obj, v);
-                if (std::isfinite(s.std)) vm[v] = s;
+    const std::vector<std::string> topologies={"FD_FD","CD_FD","CD_FT"};
+    for (const auto& period:periods) {
+        for (const auto& topology:topologies) {
+            const std::string key=period+"_"+topology;
+            if (!j.contains(key) || !j[key].is_object() ||
+                !j[key].contains("data") || !j[key]["data"].is_object()) {
+                std::cerr << "[bin_means] FATAL: missing data cut block "
+                          << key << std::endl;
+                std::exit(EXIT_FAILURE);
             }
-            if (!vm.empty()) g_sigma_cache.emplace(key, std::move(vm));
+            CutMap cuts;
+            for (auto it=j[key]["data"].begin();it!=j[key]["data"].end();++it) {
+                if (supported_production_variables().count(it.key())==0) {
+                    std::cerr << "[bin_means] FATAL: unsupported production variable "
+                              << it.key() << " in " << key << std::endl;
+                    std::exit(EXIT_FAILURE);
+                }
+                cuts.emplace(it.key(),parse_production_cut(it.value(),key,it.key()));
+            }
+            if (cuts.find("Mx2")==cuts.end()) {
+                std::cerr << "[bin_means] FATAL: missing mandatory Mx2 in "
+                          << key << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+            g_cut_cache.emplace(key,std::move(cuts));
         }
     }
 }
 
-struct ResolvedSigmaCut {
-    bool enabled = false;
-    double mean = 0.0;
-    double three_sigma = 0.0;
-};
-
-struct ResolvedSigmaCuts {
-    ResolvedSigmaCut theta_gamma_gamma, pTmiss, Emiss2;
-    ResolvedSigmaCut Mx2, Mx2_1, Mx2_2, xF;
-};
-
-static ResolvedSigmaCut resolve_sigma_cut(const VarMap* vm, const char* var) {
-    ResolvedSigmaCut out;
-    if (!vm) return out;
-    const auto it = vm->find(var);
-    if (it == vm->end()) return out;
-    const Sigmas& sigma = it->second;
-    if (!std::isfinite(sigma.mean) || !std::isfinite(sigma.std) || sigma.std <= 0.0) return out;
-    out.enabled = true;
-    out.mean = sigma.mean;
-    out.three_sigma = 3.0 * sigma.std;
-    return out;
-}
-
-static ResolvedSigmaCuts resolve_sigma_cuts(const std::string& period_json_tag,
+static const CutMap& resolve_production_cuts(const std::string& period_json_tag,
                                              Topology topo) {
-    std::call_once(g_sigma_once, load_sigmas_once);
-    const VarMap* vm = nullptr;
-    if (!period_json_tag.empty()) {
-        const std::string key = period_json_tag + "_" + std::string(topo_tag(topo));
-        const auto it = g_sigma_cache.find(key);
-        if (it != g_sigma_cache.end()) vm = &it->second;
+    std::call_once(g_cut_once,load_production_cuts_once);
+    const std::string key=period_json_tag+"_"+topo_tag(topo);
+    auto it=g_cut_cache.find(key);
+    if (it==g_cut_cache.end()) {
+        std::cerr << "[bin_means] FATAL: missing cached cuts " << key << std::endl;
+        std::exit(EXIT_FAILURE);
     }
-    ResolvedSigmaCuts cuts;
-    cuts.theta_gamma_gamma = resolve_sigma_cut(vm, "theta_gamma_gamma");
-    cuts.pTmiss = resolve_sigma_cut(vm, "pTmiss");
-    cuts.Emiss2 = resolve_sigma_cut(vm, "Emiss2");
-    cuts.Mx2 = resolve_sigma_cut(vm, "Mx2");
-    cuts.Mx2_1 = resolve_sigma_cut(vm, "Mx2_1");
-    cuts.Mx2_2 = resolve_sigma_cut(vm, "Mx2_2");
-    cuts.xF = resolve_sigma_cut(vm, "xF");
-    return cuts;
+    return it->second;
 }
 
-static inline bool passes_upper_cut(const ResolvedSigmaCut& cut, bool has, double value) {
-    return !cut.enabled || !has || value <= cut.mean + cut.three_sigma;
+static bool production_value(const BranchBinder& b,const std::string& v,
+                             bool& has,double& value) {
+    if (v=="Delta_phi") {has=b.has_Delta_phi; value=b.Delta_phi;}
+    else if (v=="theta") {has=b.has_theta; value=b.theta;}
+    else if (v=="theta_gamma_gamma") {has=b.has_theta_gg; value=b.theta_gamma_gamma;}
+    else if (v=="pTmiss") {has=b.has_pT; value=b.pTmiss;}
+    else if (v=="Emiss2") {has=b.has_Em2; value=b.Emiss2;}
+    else if (v=="Mx2") {has=b.has_Mx2; value=b.Mx2;}
+    else if (v=="Mx2_2") {has=b.has_Mx2_2; value=b.Mx2_2;}
+    else return false;
+    return true;
 }
-static inline bool passes_two_sided_cut(const ResolvedSigmaCut& cut, bool has, double value) {
-    return !cut.enabled || !has || std::abs(value - cut.mean) <= cut.three_sigma;
-}
-static inline bool passes_3sigma(const ResolvedSigmaCuts& cuts, const BranchBinder& b) {
-    return passes_upper_cut(cuts.theta_gamma_gamma, b.has_theta_gg, b.theta_gamma_gamma) &&
-           passes_upper_cut(cuts.pTmiss, b.has_pT, b.pTmiss) &&
-           passes_upper_cut(cuts.Emiss2, b.has_Em2, b.Emiss2) &&
-           passes_two_sided_cut(cuts.Mx2, b.has_Mx2, b.Mx2) &&
-           passes_two_sided_cut(cuts.Mx2_1, b.has_Mx2_1, b.Mx2_1) &&
-           passes_two_sided_cut(cuts.Mx2_2, b.has_Mx2_2, b.Mx2_2) &&
-           passes_two_sided_cut(cuts.xF, b.has_xF, b.xF);
+
+static bool passes_production_cuts(const CutMap& cuts,const BranchBinder& b) {
+    for (const auto& kv:cuts) {
+        bool has=false; double value=0.0;
+        if (!production_value(b,kv.first,has,value)) {
+            std::cerr << "[bin_means] FATAL: unsupported cached variable "
+                      << kv.first << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+        if (!has) {
+            std::cerr << "[bin_means] FATAL: missing ROOT branch required by cut "
+                      << kv.first << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+        if (!std::isfinite(value) || value<kv.second.low || value>kv.second.high)
+            return false;
+    }
+    return true;
 }
 
 static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
@@ -806,14 +815,14 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
     const bool dbg = (std::getenv("BINMEANS_DEBUG") != nullptr);
 
-    const std::array<ResolvedSigmaCuts, 3> sigma_cuts = {{
-        resolve_sigma_cuts(tags.json_tag, Topology::FD_FD),
-        resolve_sigma_cuts(tags.json_tag, Topology::CD_FD),
-        resolve_sigma_cuts(tags.json_tag, Topology::CD_FT)
+    const std::array<const CutMap*, 3> production_cuts = {{
+        &resolve_production_cuts(tags.json_tag, Topology::FD_FD),
+        &resolve_production_cuts(tags.json_tag, Topology::CD_FD),
+        &resolve_production_cuts(tags.json_tag, Topology::CD_FT)
     }};
 
     long long n_pass_global = 0;
-    long long n_pass_3sig   = 0;
+    long long n_pass_excl   = 0;
     long long n_used_rows   = 0;
 
     for (Long64_t i = 0; i < N; ++i) {
@@ -841,8 +850,8 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
         int topo_idx = b.topology_index();
         if (topo_idx < 0 || topo_idx > 2) continue;
-        if (!passes_3sigma(sigma_cuts[static_cast<std::size_t>(topo_idx)], b)) continue;
-        ++n_pass_3sig;
+        if (!passes_production_cuts(*production_cuts[static_cast<std::size_t>(topo_idx)], b)) continue;
+        ++n_pass_excl;
 
         const double phi_deg = b.phi_deg();
 
@@ -884,7 +893,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
     print_banner("Finished " + period_key +
                  "  global_pass=" + std::to_string(n_pass_global) +
-                 "  sig_pass="    + std::to_string(n_pass_3sig) +
+                 "  sig_pass="    + std::to_string(n_pass_excl) +
                  "  used="        + std::to_string(n_used_rows));
 
     return R;

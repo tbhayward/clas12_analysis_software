@@ -1040,7 +1040,18 @@ static TopoCutMap load_sigma_cuts(const std::string& path,
     }
 
     nlohmann::json j;
-    fin >> j;
+
+    try {
+        fin >> j;
+    } catch (const std::exception& e) {
+        fatal("[current_dependence] FATAL: failed to parse combined cuts JSON " +
+              path + ": " + e.what());
+    }
+
+    if (!j.is_object()) {
+        fatal("[current_dependence] FATAL: combined cuts JSON is not an object: " +
+              path);
+    }
 
     TopoCutMap out;
 
@@ -1086,7 +1097,34 @@ static TopoCutMap load_sigma_cuts(const std::string& path,
         }
 
         if (!vm.empty()) {
-            out[key] = vm;
+            static const std::set<std::string> supported_variables = {
+                "Delta_phi",
+                "theta",
+                "theta_gamma_gamma",
+                "pTmiss",
+                "Emiss2",
+                "Mx2",
+                "Mx2_2"
+            };
+
+            for (const auto& kv : vm) {
+                if (supported_variables.find(kv.first) ==
+                    supported_variables.end()) {
+                    fatal("[current_dependence] FATAL: cut key '" + key +
+                          "' contains unsupported production exclusivity "
+                          "variable '" + kv.first + "'.");
+                }
+            }
+
+            // The Python optimizer always starts with Mx2. Other variables are
+            // optional because the greedy optimization stops when no further
+            // cut improves S/sqrt(S+B).
+            if (vm.find("Mx2") == vm.end()) {
+                fatal("[current_dependence] FATAL: cut key '" + key +
+                      "' is missing the mandatory first production cut 'Mx2'.");
+            }
+
+            out.emplace(key, std::move(vm));
         }
     }
 
@@ -1129,7 +1167,12 @@ static bool check_sigma_var(const CutVarMap& vm,
 
     if (!has_value) {
         std::ostringstream ss;
-        ss << "[current_dependence] FATAL: required sigma-cut branch missing: " << var;
+        ss << "[current_dependence] FATAL: production exclusivity cut requires "
+           << "a missing ROOT branch for logical variable '" << var << "'.";
+        if (var == "theta_gamma_gamma") {
+            ss << " Direct ep->eppi0 samples require physical branch "
+               << "'theta_pi0_pi0'.";
+        }
         fatal(ss.str());
     }
 
@@ -1163,13 +1206,12 @@ struct Branches {
     double pTmiss = 0.0; bool has_pTmiss = false;
     double Delta_phi = 0.0; bool has_Delta_phi = false;
 
-    double Emiss2 = 0.0; bool has_Emiss2 = false;
-    double Mx2 = 0.0; bool has_Mx2 = false;
-    double Mx2_1 = 0.0; bool has_Mx2_1 = false;
-    double Mx2_2 = 0.0; bool has_Mx2_2 = false;
-    double xF = 0.0; bool has_xF = false;
+    double theta = 0.0; bool has_theta = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
+    double Emiss2 = 0.0; bool has_Emiss2 = false;
+    double Mx2 = 0.0; bool has_Mx2 = false;
+    double Mx2_2 = 0.0; bool has_Mx2_2 = false;
 
     double e_p = 0.0; bool has_e_p = false;
     double e_theta = 0.0; bool has_e_theta = false;
@@ -1204,15 +1246,17 @@ struct Branches {
         ena("t1");
         ena("open_angle_ep2");
         ena("pTmiss");
+        // Python-optimized production exclusivity variables. The direct-pi0
+        // JSON uses the logical theta_gamma_gamma variable, while its physical
+        // ROOT branch is theta_pi0_pi0.
         ena("Delta_phi");
-
-        ena("Emiss2");
-        ena("Mx2");
-        ena("Mx2_1");
-        ena("Mx2_2");
-        ena("xF");
+        ena("theta");
         ena("theta_gamma_gamma");
         ena("theta_pi0_pi0");
+        ena("pTmiss");
+        ena("Emiss2");
+        ena("Mx2");
+        ena("Mx2_2");
 
         ena("e_p");
         ena("e_theta");
@@ -1255,13 +1299,12 @@ struct Branches {
         bD("pTmiss", &pTmiss, has_pTmiss);
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
 
-        bD("Emiss2", &Emiss2, has_Emiss2);
-        bD("Mx2", &Mx2, has_Mx2);
-        bD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bD("xF", &xF, has_xF);
+        bD("theta", &theta, has_theta);
         bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
         bD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+        bD("Emiss2", &Emiss2, has_Emiss2);
+        bD("Mx2", &Mx2, has_Mx2);
+        bD("Mx2_2", &Mx2_2, has_Mx2_2);
 
         bD("e_p", &e_p, has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
@@ -1410,20 +1453,54 @@ static bool passes_sigma_dispatch(const ChannelConfig& cfg,
 
     const CutVarMap& vm = it->second;
 
-    if (!check_sigma_var(vm, "Emiss2", b.has_Emiss2, b.Emiss2)) return false;
-    if (!check_sigma_var(vm, "Mx2", b.has_Mx2, b.Mx2)) return false;
-    if (!check_sigma_var(vm, "Mx2_1", b.has_Mx2_1, b.Mx2_1)) return false;
-    if (!check_sigma_var(vm, "Mx2_2", b.has_Mx2_2, b.Mx2_2)) return false;
     bool has_delta_phi = false;
     const double delta_phi = b.delta_phi_value(has_delta_phi);
-    if (!check_sigma_var(vm, "Delta_phi", has_delta_phi, delta_phi)) return false;
-    if (!check_sigma_var(vm, "pTmiss", b.has_pTmiss, b.pTmiss)) return false;
-    if (!check_sigma_var(vm, "xF", b.has_xF, b.xF)) return false;
 
+    if (!check_sigma_var(vm, "Delta_phi",
+                         has_delta_phi, delta_phi)) {
+        return false;
+    }
+
+    if (!check_sigma_var(vm, "theta",
+                         b.has_theta, b.theta)) {
+        return false;
+    }
+
+    // The Python output keeps theta_gamma_gamma as the logical variable name
+    // for both channels. Direct ep->eppi0 trees store the corresponding angle
+    // in theta_pi0_pi0.
     if (cfg.channel == Channel::EPPI0) {
-        if (!check_sigma_var(vm, "theta_pi0_pi0", b.has_theta_pi0_pi0, b.theta_pi0_pi0)) return false;
+        if (!check_sigma_var(vm, "theta_gamma_gamma",
+                             b.has_theta_pi0_pi0,
+                             b.theta_pi0_pi0)) {
+            return false;
+        }
     } else {
-        if (!check_sigma_var(vm, "theta_gamma_gamma", b.has_theta_gamma_gamma, b.theta_gamma_gamma)) return false;
+        if (!check_sigma_var(vm, "theta_gamma_gamma",
+                             b.has_theta_gamma_gamma,
+                             b.theta_gamma_gamma)) {
+            return false;
+        }
+    }
+
+    if (!check_sigma_var(vm, "pTmiss",
+                         b.has_pTmiss, b.pTmiss)) {
+        return false;
+    }
+
+    if (!check_sigma_var(vm, "Emiss2",
+                         b.has_Emiss2, b.Emiss2)) {
+        return false;
+    }
+
+    if (!check_sigma_var(vm, "Mx2",
+                         b.has_Mx2, b.Mx2)) {
+        return false;
+    }
+
+    if (!check_sigma_var(vm, "Mx2_2",
+                         b.has_Mx2_2, b.Mx2_2)) {
+        return false;
     }
 
     return true;
@@ -5750,6 +5827,10 @@ bool update_current_dependence_factors_csv(
                       << "will be written to the CSV."
                       << std::endl;
         }
+
+        std::cout << "[current_dependence] Loading Python-optimized nominal "
+                  << "production exclusivity cuts from "
+                  << options.combined_cuts_json << std::endl;
 
         const TopoCutMap data_cuts =
             load_sigma_cuts(options.combined_cuts_json, "data");

@@ -3,7 +3,7 @@
 #include "acceptance.h"
 #include "cross_sections.h"
 #include "cut_variation_systematics.h"
-#include "exclusivity_cuts.h"
+#include "python_exclusivity_runner.h"
 #include "global_cuts.h"
 #include "norm_cross_sections.h"
 #include "pi0_contamination.h"
@@ -219,12 +219,18 @@ void reapply_nominal_fixed_corrections(const std::string& nominal_path,
     write_csv(varied_path, varied);
 }
 
+enum class ExclusivityCutMode {
+    ProductionTight90,
+    ProductionLoose98,
+    RefitNominal95
+};
+
 struct VariationSpec {
     std::string name;
     std::string csv_name;
-    double sigma = 3.0;
-    double quantile = 0.99;
     int fiducial_direction = 0; // -1 loose, 0 nominal, +1 tight
+    ExclusivityCutMode exclusivity_mode =
+        ExclusivityCutMode::RefitNominal95;
 };
 
 GlobalCutConfig varied_global_config(const GlobalCutConfig& nominal, int direction) {
@@ -240,6 +246,102 @@ GlobalCutConfig varied_global_config(const GlobalCutConfig& nominal, int directi
     cfg.auxiliary_cd_proton_theta_min_deg += d;
     cfg.auxiliary_cd_proton_theta_max_deg -= d;
     return cfg;
+}
+
+
+bool copy_file_checked(const fs::path& source,
+                       const fs::path& destination,
+                       const std::string& label) {
+    std::error_code error;
+    if (!fs::is_regular_file(source, error) || error) {
+        throw std::runtime_error(
+            "missing " + label + ": " + source.string());
+    }
+
+    fs::create_directories(destination.parent_path(), error);
+    if (error) {
+        throw std::runtime_error(
+            "cannot create directory " + destination.parent_path().string() +
+            ": " + error.message());
+    }
+
+    fs::copy_file(source, destination,
+                  fs::copy_options::overwrite_existing, error);
+    if (error) {
+        throw std::runtime_error(
+            "cannot copy " + label + " from " + source.string() +
+            " to " + destination.string() + ": " + error.message());
+    }
+    return true;
+}
+
+std::string prepare_exclusivity_json(
+    const VariationSpec& spec,
+    const AutomaticCutVariationOptions& options,
+    const GlobalCutConfig& cfg,
+    const fs::path& base,
+    const fs::path& json_dir) {
+
+    set_default_global_cuts(cfg);
+    write_global_cuts_config_json(json_dir.string(), cfg);
+
+    if (spec.exclusivity_mode ==
+        ExclusivityCutMode::ProductionTight90) {
+        const fs::path source =
+            fs::path(options.production_cuts_dir) /
+            "combined_cuts_90.json";
+        const fs::path destination =
+            json_dir / "combined_cuts.json";
+        copy_file_checked(source, destination,
+                          "production 90% exclusivity JSON");
+        return destination.string();
+    }
+
+    if (spec.exclusivity_mode ==
+        ExclusivityCutMode::ProductionLoose98) {
+        const fs::path source =
+            fs::path(options.production_cuts_dir) /
+            "combined_cuts_98.json";
+        const fs::path destination =
+            json_dir / "combined_cuts.json";
+        copy_file_checked(source, destination,
+                          "production 98% exclusivity JSON");
+        return destination.string();
+    }
+
+    PythonExclusivityOptions python_options;
+    python_options.enabled = true;
+    python_options.force_rerun = true;
+    python_options.python_executable = options.python_executable;
+    python_options.script_path = options.python_script_path;
+    python_options.global_cuts_json =
+        (json_dir / "global_cuts_config.json").string();
+    python_options.output_directory =
+        (base / "python_exclusivity_fit").string();
+    python_options.install_directory = json_dir.string();
+    python_options.workers =
+        std::max(1, std::min(options.max_workers, 7));
+    python_options.tight_containment =
+        options.tight_containment;
+    python_options.nominal_containment =
+        options.nominal_containment;
+    python_options.loose_containment =
+        options.loose_containment;
+
+    if (!run_python_exclusivity_analysis(python_options)) {
+        throw std::runtime_error(
+            "Python exclusivity refit failed for variation " +
+            spec.name);
+    }
+
+    const fs::path nominal_json =
+        json_dir / "combined_cuts.json";
+    if (!fs::is_regular_file(nominal_json)) {
+        throw std::runtime_error(
+            "Python exclusivity refit did not install " +
+            nominal_json.string());
+    }
+    return nominal_json.string();
 }
 
 bool produce_variation(
@@ -260,32 +362,20 @@ bool produce_variation(
 
     const fs::path base = fs::path(options.output_dir) / "variations" / spec.name;
     const fs::path json_dir = base / "jsons";
-    const fs::path plots_dir = base / "exclusivity_plots";
     const fs::path stage_out = base / "analysis_output";
     const fs::path csv_dir = fs::path(options.output_dir) / "csv";
     const fs::path csv_path = csv_dir / spec.csv_name;
     fs::create_directories(json_dir);
-    fs::create_directories(plots_dir);
     fs::create_directories(stage_out);
     fs::create_directories(csv_dir);
     fs::copy_file(options.nominal_csv, csv_path, fs::copy_options::overwrite_existing);
 
-    const GlobalCutConfig cfg = varied_global_config(nominal_global_cuts, spec.fiducial_direction);
-    set_default_global_cuts(cfg);
-    write_global_cuts_config_json(json_dir.string());
+    const GlobalCutConfig cfg =
+        varied_global_config(nominal_global_cuts,
+                             spec.fiducial_direction);
 
-    ExclusivityDiagnosticConfig excl_cfg;
-    excl_cfg.symmetric_sigma_multiplier = spec.sigma;
-    excl_cfg.upper_tail_quantile = spec.quantile;
-    excl_cfg.enable = false;
-    excl_cfg.make_cut_extraction_comparison_plots =
-        options.make_exclusivity_extraction_plots;
-    runAllExclusivityCuts(dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-                          json_dir.string(),
-                          plots_dir.string(),
-                          options.max_workers, excl_cfg);
-
-    const std::string cuts_json = (json_dir / "combined_cuts.json").string();
+    const std::string cuts_json =
+        prepare_exclusivity_json(spec, options, cfg, base, json_dir);
     TotalCountsOptions count_opts;
     count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
     count_opts.make_plots = false;
@@ -340,16 +430,42 @@ bool run_automatic_cut_variation_systematics(
 
     if (!options.enabled) return true;
     try {
+        if (!(options.tight_containment > 0.0 &&
+              options.tight_containment <
+                  options.nominal_containment &&
+              options.nominal_containment <
+                  options.loose_containment &&
+              options.loose_containment < 1.0)) {
+            throw std::runtime_error(
+                "containments must satisfy 0 < tight < nominal < loose < 1");
+        }
+        if (options.max_workers < 1) {
+            throw std::runtime_error(
+                "max_workers must be at least 1");
+        }
+
         fs::create_directories(options.output_dir);
         fs::copy_file(options.nominal_csv,
                       fs::path(options.output_dir) / "nominal_csv_before_cut_systematics.csv",
                       fs::copy_options::overwrite_existing);
 
         const std::vector<VariationSpec> variations = {
-            {"exclusivity_95", "exclusivity_95.csv", 2.0, 0.95, 0},
-            {"exclusivity_99p99", "exclusivity_99p99.csv", 4.0, 0.9999, 0},
-            {"fiducial_loose", "fiducial_loose.csv", 3.0, 0.99, -1},
-            {"fiducial_tight", "fiducial_tight.csv", 3.0, 0.99, +1}
+            {"exclusivity_loose_98",
+             "exclusivity_loose_98.csv",
+             0,
+             ExclusivityCutMode::ProductionLoose98},
+            {"exclusivity_tight_90",
+             "exclusivity_tight_90.csv",
+             0,
+             ExclusivityCutMode::ProductionTight90},
+            {"fiducial_loose",
+             "fiducial_loose.csv",
+             -1,
+             ExclusivityCutMode::RefitNominal95},
+            {"fiducial_tight",
+             "fiducial_tight.csv",
+             +1,
+             ExclusivityCutMode::RefitNominal95}
         };
 
         for (const auto& v : variations) {
@@ -377,8 +493,12 @@ bool run_automatic_cut_variation_systematics(
         syst.make_plots = options.make_final_diagnostic_plots;
         syst.write_diagnostic_csv = true;
         syst.nominal_csv = options.nominal_csv;
-        syst.exclusivity_loose_csv = (fs::path(options.output_dir) / "csv/exclusivity_95.csv").string();
-        syst.exclusivity_tight_csv = (fs::path(options.output_dir) / "csv/exclusivity_99p99.csv").string();
+        syst.exclusivity_loose_csv =
+            (fs::path(options.output_dir) /
+             "csv/exclusivity_loose_98.csv").string();
+        syst.exclusivity_tight_csv =
+            (fs::path(options.output_dir) /
+             "csv/exclusivity_tight_90.csv").string();
         syst.fiducial_loose_csv = (fs::path(options.output_dir) / "csv/fiducial_loose.csv").string();
         syst.fiducial_tight_csv = (fs::path(options.output_dir) / "csv/fiducial_tight.csv").string();
         syst.output_dir = options.output_dir;

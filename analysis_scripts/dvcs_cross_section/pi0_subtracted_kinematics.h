@@ -31,11 +31,11 @@ class TTree;
  *
  * DATA weighting, raw mode:
  *   Accepted epgamma DATA events are filled with unit weight after the same
- *   global and topology-dependent 3sigma exclusivity cuts.
+ *   global and topology-dependent nominal Python-optimized production exclusivity cuts.
  *
  * MC weighting:
  *   Reconstructed DVCS MC events are filled with unit weight after the same
- *   global and topology-dependent 3sigma exclusivity cuts. Each DATA and MC
+ *   global and topology-dependent nominal Python-optimized production exclusivity cuts. Each DATA and MC
  *   histogram is normalized to its own integral before drawing.
  *
  * Output subdirectories below out_dir:
