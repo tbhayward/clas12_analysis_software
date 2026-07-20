@@ -154,6 +154,7 @@ class FitResult:
     ndf: int = 0
     data_total: float = 0.0
     model_counts: Optional[np.ndarray] = None
+    fit_data_counts: Optional[np.ndarray] = None
     dvcs_component_counts: Optional[np.ndarray] = None
     pi0_component_counts: Optional[np.ndarray] = None
     transformed_dvcs_shape: Optional[np.ndarray] = None
@@ -1818,11 +1819,12 @@ def fit_shared_two_templates(
             deviance=variable_deviance,
             ndf=max(0, used_bins - 2),
             data_total=float(info["data_total"]),
-            model_counts=model,
-            dvcs_component_counts=dvcs_component,
-            pi0_component_counts=pi0_component,
-            transformed_dvcs_shape=transformed,
-            fit_mask=display_mask,
+            model_counts=np.asarray(model, dtype=np.float64).copy(),
+            fit_data_counts=np.asarray(info["data"], dtype=np.float64).copy(),
+            dvcs_component_counts=np.asarray(dvcs_component, dtype=np.float64).copy(),
+            pi0_component_counts=np.asarray(pi0_component, dtype=np.float64).copy(),
+            transformed_dvcs_shape=np.asarray(transformed, dtype=np.float64).copy(),
+            fit_mask=np.asarray(display_mask, dtype=bool).copy(),
             morph_label=("asymmetric-additive" if is_asymmetric_additive_variable(variable) else "lower-log-space" if is_lower_bounded_morph_variable(variable) else "logit-space" if is_logit_morph_variable(variable) else "upper-log-space" if is_upper_bounded_morph_variable(variable) else "additive"),
             excluded_data_counts=excluded_data,
             excluded_model_counts=excluded_model,
@@ -1971,6 +1973,195 @@ def draw_fit_canvas(
         # endif
 
         if result.success:
+            if result.fit_data_counts is None:
+                raise RuntimeError(
+                    f"Missing fit_data_counts for plotted panel "
+                    f"{period.label} / {topology.label} / {variable.branch}."
+                )
+            # endif
+            if result.model_counts is None or result.fit_mask is None:
+                raise RuntimeError(
+                    f"Missing plotted model or fit mask for "
+                    f"{period.label} / {topology.label} / {variable.branch}."
+                )
+            # endif
+
+            plot_data = np.asarray(data_counts, dtype=np.float64)
+            fit_data = np.asarray(result.fit_data_counts, dtype=np.float64)
+            plot_model = np.asarray(result.model_counts, dtype=np.float64)
+            plot_mask = np.asarray(result.fit_mask, dtype=bool)
+
+            expected_shape = (variable.bins,)
+            named_arrays = {
+                "plot data": plot_data,
+                "fit data": fit_data,
+                "plot model": plot_model,
+                "fit mask": plot_mask,
+            }
+            for array_name, array in named_arrays.items():
+                if array.shape != expected_shape:
+                    raise RuntimeError(
+                        f"Array-shape mismatch for {period.label} / "
+                        f"{topology.label} / {variable.branch}: "
+                        f"{array_name} has shape {array.shape}, "
+                        f"expected {expected_shape}."
+                    )
+                # endif
+            # endfor
+
+            if not np.all(np.isfinite(plot_data)):
+                raise RuntimeError(
+                    f"Non-finite plotted data values for {period.label} / "
+                    f"{topology.label} / {variable.branch}."
+                )
+            # endif
+            if not np.all(np.isfinite(fit_data)):
+                raise RuntimeError(
+                    f"Non-finite fitted data values for {period.label} / "
+                    f"{topology.label} / {variable.branch}."
+                )
+            # endif
+            if not np.all(np.isfinite(plot_model)):
+                raise RuntimeError(
+                    f"Non-finite plotted model values for {period.label} / "
+                    f"{topology.label} / {variable.branch}."
+                )
+            # endif
+            if not np.any(plot_mask):
+                raise RuntimeError(
+                    f"Empty fit mask for {period.label} / "
+                    f"{topology.label} / {variable.branch}."
+                )
+            # endif
+
+            data_difference = plot_data - fit_data
+            max_abs_data_difference = float(np.max(np.abs(data_difference)))
+            data_match_tolerance = 1.0e-12 * max(
+                1.0,
+                float(np.max(np.abs(plot_data))),
+                float(np.max(np.abs(fit_data))),
+            )
+            if max_abs_data_difference > data_match_tolerance:
+                mismatch_bins = np.flatnonzero(
+                    np.abs(data_difference) > data_match_tolerance
+                )
+                first_bins = ", ".join(str(int(index)) for index in mismatch_bins[:10])
+                raise RuntimeError(
+                    "The black histogram is not the data array used in the fit for "
+                    f"{period.label} / {topology.label} / {variable.branch}. "
+                    f"Maximum absolute bin difference={max_abs_data_difference:.12g}; "
+                    f"mismatched bins={mismatch_bins.size}; "
+                    f"first mismatched bin indices=[{first_bins}]."
+                )
+            # endif
+
+            plotted_data_fit_sum = float(np.sum(plot_data[plot_mask]))
+            plotted_model_fit_sum = float(np.sum(plot_model[plot_mask]))
+            plotted_closure = plotted_model_fit_sum - plotted_data_fit_sum
+            plotted_tolerance = 1.0e-10 * max(
+                1.0,
+                abs(plotted_data_fit_sum),
+                abs(plotted_model_fit_sum),
+            )
+            if abs(plotted_closure) > plotted_tolerance:
+                raise RuntimeError(
+                    "The exact black and green arrays passed to Matplotlib do not "
+                    "close in the fit region for "
+                    f"{period.label} / {topology.label} / {variable.branch}: "
+                    f"black integral={plotted_data_fit_sum:.12g}, "
+                    f"green integral={plotted_model_fit_sum:.12g}, "
+                    f"difference={plotted_closure:.12g}."
+                )
+            # endif
+
+            component_sum = (
+                np.asarray(result.dvcs_component_counts, dtype=np.float64)
+                + np.asarray(result.pi0_component_counts, dtype=np.float64)
+            )
+            component_closure = plot_model - component_sum
+            component_tolerance = 1.0e-12 * max(
+                1.0,
+                float(np.max(np.abs(plot_model))),
+                float(np.max(np.abs(component_sum))),
+            )
+            max_component_difference = float(np.max(np.abs(component_closure)))
+            if max_component_difference > component_tolerance:
+                raise RuntimeError(
+                    "The plotted total model is not equal to the sum of its plotted "
+                    "DVCS and pi0 components for "
+                    f"{period.label} / {topology.label} / {variable.branch}: "
+                    f"maximum absolute bin difference="
+                    f"{max_component_difference:.12g}."
+                )
+            # endif
+
+            residual = plot_model - plot_data
+            comparison_tolerance = 1.0e-12 * np.maximum(
+                1.0,
+                np.maximum(np.abs(plot_model), np.abs(plot_data)),
+            )
+            fit_indices = np.flatnonzero(plot_mask)
+            under_mask = residual[plot_mask] < -comparison_tolerance[plot_mask]
+            equal_mask = np.abs(residual[plot_mask]) <= comparison_tolerance[plot_mask]
+            over_mask = residual[plot_mask] > comparison_tolerance[plot_mask]
+            under_bins = int(np.count_nonzero(under_mask))
+            equal_bins = int(np.count_nonzero(equal_mask))
+            over_bins = int(np.count_nonzero(over_mask))
+
+            positive_data_mask = plot_mask & (plot_data > 0.0)
+            positive_under_bins = int(
+                np.count_nonzero(
+                    residual[positive_data_mask]
+                    < -comparison_tolerance[positive_data_mask]
+                )
+            )
+            positive_equal_bins = int(
+                np.count_nonzero(
+                    np.abs(residual[positive_data_mask])
+                    <= comparison_tolerance[positive_data_mask]
+                )
+            )
+            positive_over_bins = int(
+                np.count_nonzero(
+                    residual[positive_data_mask]
+                    > comparison_tolerance[positive_data_mask]
+                )
+            )
+
+            most_under_index = int(fit_indices[np.argmin(residual[plot_mask])])
+            most_over_index = int(fit_indices[np.argmax(residual[plot_mask])])
+            most_under_value = float(residual[most_under_index])
+            most_over_value = float(residual[most_over_index])
+
+            print(
+                "[plot-array-check] "
+                f"{period.label} {topology.label} {variable.branch}: "
+                f"black-fit={plotted_data_fit_sum:.12g}, "
+                f"green-fit={plotted_model_fit_sum:.12g}, "
+                f"closure={plotted_closure:.6g}; "
+                f"fit bins under/equal/over="
+                f"{under_bins}/{equal_bins}/{over_bins}; "
+                f"positive-data bins under/equal/over="
+                f"{positive_under_bins}/{positive_equal_bins}/{positive_over_bins}; "
+                f"largest deficit bin={most_under_index} "
+                f"({most_under_value:.6g}), "
+                f"largest excess bin={most_over_index} "
+                f"(+{most_over_value:.6g}); "
+                f"plot-vs-fit-data max|diff|={max_abs_data_difference:.6g}; "
+                f"model-vs-components max|diff|={max_component_difference:.6g}",
+                flush=True,
+            )
+
+            if over_bins == 0 and under_bins > 0:
+                raise RuntimeError(
+                    "Impossible integral-closure pattern detected for "
+                    f"{period.label} / {topology.label} / {variable.branch}: "
+                    f"the green model is below the black data in {under_bins} "
+                    "fit bins and above it in zero fit bins, despite a claimed "
+                    "zero integral difference."
+                )
+            # endif
+
             if result.fit_mask is not None and not np.all(result.fit_mask):
                 excluded = ~result.fit_mask
                 for index in np.flatnonzero(excluded):
@@ -2015,6 +2206,17 @@ def draw_fit_canvas(
                     f"data={result.data_total:.0f}, "
                     f"model={result.full_range_model_counts:.0f}, "
                     f"M/D={result.full_range_model_to_data:.4f}"
+                )
+                + "\n"
+                + (
+                    "drawn bins M<D/M=D/M>D: "
+                    f"{under_bins}/{equal_bins}/{over_bins}"
+                )
+                + "\n"
+                + (
+                    "positive-data bins: "
+                    f"{positive_under_bins}/{positive_equal_bins}/"
+                    f"{positive_over_bins}"
                 )
             )
             if result.excluded_data_counts > 0.0 and result.fit_mask is not None and not np.all(result.fit_mask):
