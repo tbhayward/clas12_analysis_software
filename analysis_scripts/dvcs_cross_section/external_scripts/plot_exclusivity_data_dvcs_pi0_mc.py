@@ -249,27 +249,17 @@ TOPOLOGIES: Tuple[TopologyConfig, ...] = (
 
 VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
+    VariableConfig("theta", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 2.0, math.pi,
+                   aliases=("theta2", "theta_2")),
     VariableConfig("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
-    VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
-    VariableConfig("xF", r"$x_F(ep+\gamma)$", 100, -0.5, 0.2),
-    VariableConfig(
-        "xF2",
-        r"$x_{F,2}(\gamma)$",
-        100,
-        0.0,
-        1.0,
-        aliases=("xF_2",),
-    ),
-    VariableConfig(
-        "theta",
-        r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)",
-        100,
-        2.0,
-        math.pi,
-        aliases=("theta2", "theta_2"),
-    ),
+    VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03,
+                   aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0")),
+    VariableConfig("Mx2_1", r"$M_{x1}^2$ (GeV$^2$)", 100, -1.5, 1.5,
+                   aliases=("Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p")),
+    VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0,
+                   aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2")),
 )
 
 
@@ -346,7 +336,6 @@ SAMPLE_COLORS = {
     "dvcs_mc": "tab:blue",
     "pi0_mc": "tab:red",
     "fit": "tab:green",
-    "raw_dvcs": "0.55",
 }
 
 
@@ -1316,37 +1305,13 @@ def fit_shared_two_templates(
             dtype=np.float64,
         )
 
-        dvcs_core_mask = mc_signal_containment_mask(
-            dvcs_counts,
-            variable,
-            topology,
-            core_containment,
-        )
-        pi0_core_mask = mc_signal_containment_mask(
-            pi0_counts,
-            variable,
-            topology,
-            pi0_support_core_containment,
-        )
-        fit_support_mask = dvcs_core_mask | pi0_core_mask
-
-        dvcs_fraction_region = mc_signal_containment_mask(
-            dvcs_counts,
-            variable,
-            topology,
-            fraction_containment,
-        )
-        pi0_fraction_region = mc_signal_containment_mask(
-            pi0_counts,
-            variable,
-            topology,
-            pi0_support_fraction_containment,
-        )
-        fraction_support_mask = (
-            dvcs_fraction_region
-            | pi0_fraction_region
-            | fit_support_mask
-        )
+        # Use the full configured histogram range for both templates.
+        fit_support_mask = np.ones(variable.bins, dtype=bool)
+        fraction_support_mask = np.ones(variable.bins, dtype=bool)
+        dvcs_core_mask = fit_support_mask.copy()
+        pi0_core_mask = fit_support_mask.copy()
+        dvcs_fraction_region = fraction_support_mask.copy()
+        pi0_fraction_region = fraction_support_mask.copy()
 
         prepared[variable.branch] = {
             "data": data,
@@ -1928,18 +1893,11 @@ def fit_shared_two_templates(
             if float(info["data_total"]) > 0.0 else 0.0
         )
         role = (
-            (
-                "fraction driver "
-                f"(DVCS {100.0 * fraction_containment:.0f}% "
-                f"OR pi0 {100.0 * pi0_support_fraction_containment:.0f}%)"
-            )
+            "fraction driver (full range)"
             if variable.branch in requested_set
-            else (
-                "validation support "
-                f"(DVCS {100.0 * core_containment:.0f}% "
-                f"OR pi0 {100.0 * pi0_support_core_containment:.0f}%)"
-            )
+            else "validation (full range)"
         )
+
         results[variable.branch] = FitResult(
             success=True,
             message=role,
@@ -2114,6 +2072,7 @@ def draw_fit_canvas(
         data_counts = np.asarray(data_histograms[variable.branch], dtype=np.float64)
         data_error = np.sqrt(data_counts)
         dvcs_shape = normalized_shape(dvcs_histograms[variable.branch])
+        pi0_shape = normalized_shape(pi0_histograms[variable.branch])
         result = fit_results[variable.branch]
 
         axis.errorbar(
@@ -2124,8 +2083,16 @@ def draw_fit_canvas(
 
         if dvcs_shape is not None:
             axis.stairs(
-                result.data_total * dvcs_shape, edges, color=SAMPLE_COLORS["raw_dvcs"],
-                linewidth=1.2, linestyle=":", label="raw DVCS MC shape", zorder=1,
+                result.data_total * dvcs_shape, edges,
+                color=SAMPLE_COLORS["dvcs_mc"], linewidth=0.9,
+                linestyle="--", label="raw DVCS MC shape", zorder=1,
+            )
+        # endif
+        if pi0_shape is not None:
+            axis.stairs(
+                result.data_total * pi0_shape, edges,
+                color=SAMPLE_COLORS["pi0_mc"], linewidth=0.9,
+                linestyle="-", label=r"raw $e\pi^0$ MC shape", zorder=1,
             )
         # endif
 
@@ -2319,12 +2286,6 @@ def draw_fit_canvas(
                 )
             # endif
 
-            if result.fit_mask is not None and not np.all(result.fit_mask):
-                excluded = ~result.fit_mask
-                for index in np.flatnonzero(excluded):
-                    axis.axvspan(edges[index], edges[index + 1], color="0.85", alpha=0.35, linewidth=0)
-                # endfor
-            # endif
             axis.stairs(
                 result.dvcs_component_counts, edges, color=SAMPLE_COLORS["dvcs_mc"],
                 linewidth=1.6, label="fitted DVCS component", zorder=3,
@@ -5697,11 +5658,8 @@ def main() -> int:
     all_pi0_rows: List[Dict[str, object]] = []
     fraction_variables = args.fraction_variable or ["Delta_phi", "theta_gamma_gamma", "pTmiss"]
     log(
-        "DVCS two-template support: "
-        f"nuisance/validation = DVCS {100.0 * args.dvcs_core_containment:.1f}% "
-        f"OR pi0 {100.0 * args.dvcs_pi0_core_containment:.1f}%; "
-        f"fraction drivers = DVCS {100.0 * args.dvcs_fraction_containment:.1f}% "
-        f"OR pi0 {100.0 * args.dvcs_pi0_fraction_containment:.1f}%."
+        "DVCS two-template support: full configured histogram range for "
+        "both nuisance profiling and fraction determination."
     )
     if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
         raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
