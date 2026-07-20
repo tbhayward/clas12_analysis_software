@@ -3,7 +3,7 @@
 #include "load_trees.h"
 #include "periods.h"
 #include "global_cuts.h"
-#include "exclusivity_cuts.h"
+#include "python_exclusivity_runner.h"
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
@@ -103,6 +103,36 @@ int main(int argc, char* argv[]) {
     std::cout << "[main] Global cut analysis tag: "
               << global_cuts_analysis_tag(default_global_cuts()) << std::endl;
 
+    // Record the exact global-cut configuration before the Python process is
+    // launched. The Python exclusivity stage must apply the same minimally
+    // selected event population used by every downstream C++ stage.
+    write_global_cuts_config_json("output/jsons", global_cfg);
+
+    // Run the production Python template-fit exclusivity extraction before
+    // opening the ROOT trees in the C++ process. The runner validates and
+    // installs the 90%, 95%, and 98% cut JSONs under output/jsons, with the
+    // nominal 95% result also installed as combined_cuts.json.
+    PythonExclusivityOptions exclusivity_opts;
+    exclusivity_opts.enabled = true;
+    exclusivity_opts.force_rerun = true;
+    exclusivity_opts.python_executable = "python3";
+    exclusivity_opts.script_path = "plot_exclusivity_data_dvcs_pi0_mc.py";
+    exclusivity_opts.global_cuts_json = "output/jsons/global_cuts_config.json";
+    exclusivity_opts.output_directory = "output/exclusivity_fit";
+    exclusivity_opts.install_directory = "output/jsons";
+    exclusivity_opts.workers = 7;
+    exclusivity_opts.tight_containment = 0.90;
+    exclusivity_opts.nominal_containment = 0.95;
+    exclusivity_opts.loose_containment = 0.98;
+
+    if (!run_python_exclusivity_analysis(exclusivity_opts)) {
+        std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
+        return 1;
+    }
+
+    std::cout << "[main] Python exclusivity-cut stage finished. "
+              << "Using nominal cuts from output/jsons/combined_cuts.json.\n";
+
     initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
@@ -136,15 +166,6 @@ int main(int argc, char* argv[]) {
               << currentStudyGenMcTrees.size() << std::endl;
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
-
-    // Run exclusivity cut extraction
-    // Record the exact global cuts used:
-    write_global_cuts_config_json("output/jsons");
-    runAllExclusivityCuts(
-        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 7
-    );
-    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // --------- Global bin-averaged kinematics (CSV update) ----------
     {
