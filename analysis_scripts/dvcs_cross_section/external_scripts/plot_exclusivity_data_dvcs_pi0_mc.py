@@ -33,7 +33,7 @@ restricted --fraction-variable subset is supplied, the remaining variables
 are validation projections with profiled nuisance parameters. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
-The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use xF, xF2, z2 and theta in place of the missing-mass projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
+The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use z and theta together with the remaining exclusivity projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
 
 Outputs:
 
@@ -256,8 +256,7 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03,
                    aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0")),
-    VariableConfig("Mx2_1", r"$M_{x1}^2$ (GeV$^2$)", 100, -1.5, 1.5,
-                   aliases=("Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p")),
+    VariableConfig("z", r"$z$", 120, 0.0, 1.2),
     VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0,
                    aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2")),
 )
@@ -267,7 +266,7 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 120, 0.0, 3.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
-    VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
+    VariableConfig("z", r"$z$", 120, 0.0, 1.2),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("xF", r"$x_F(ep+\pi^0)$", 100, -0.5, 0.2),
     VariableConfig(
@@ -362,18 +361,26 @@ SHAPE_ONLY_VARIABLES: Tuple[VariableConfig, ...] = (
         4.0,
         aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
     ),
-    VariableConfig("z", r"$z$", 100, 0.0, 1.1),
+    VariableConfig("z", r"$z$", 120, 0.0, 1.2),
 )
 
 DVCS_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
     DVCS_SHAPE_BASE_VARIABLES + SHAPE_ONLY_VARIABLES
 )
 PI0_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
-    PI0_VARIABLES + SHAPE_ONLY_VARIABLES
+    PI0_VARIABLES
+    + (
+        VariableConfig("z2", r"$z_2$", 100, 0.0, 1.1),
+    )
+    + tuple(
+        variable
+        for variable in SHAPE_ONLY_VARIABLES
+        if variable.branch != "z"
+    )
 )
 
 # The pi0 iterative-cut validation must be able to apply the production cut
-# order selected in the DVCS channel. That order can now contain Mx2, Mx2_1 or
+# order selected in the DVCS channel. That order can now contain Mx2, z or
 # Mx2_2, even though those variables are not part of the direct-pi0 nuisance-fit
 # canvas. Use a branch-deduplicated union solely for iterative-cut array loading.
 # Direct-pi0 iterative validation follows the DVCS-selected cut order, so its
@@ -452,10 +459,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=5,
+        default=7,
         help=(
-            "Number of run-period worker processes. The value is hard-capped "
-            "at 5 (default: 5)."
+            "Maximum number of worker processes. The value is hard-capped "
+            "at 7 (default: 7). Run-period parallelism can use at most the "
+            "number of selected periods."
         ),
     )
     parser.add_argument(
@@ -1022,6 +1030,7 @@ def is_lower_bounded_morph_variable(variable: VariableConfig) -> bool:
 def is_upper_bounded_morph_variable(variable: VariableConfig) -> bool:
     """Variables peaked near the upper boundary with a tail toward smaller values."""
     return variable.branch in {
+        "z",
         "z2",
         "xF2",
     }
@@ -1290,7 +1299,11 @@ def transform_upper_bounded_shape(
     smaller values, which is appropriate for z2 and xF2.
     """
     edges, centers = bin_geometry(variable)
-    upper_bound = float(variable.xmax)
+    upper_bound = (
+        1.0
+        if variable.branch == "z"
+        else float(variable.xmax)
+    )
     epsilon = max(0.25 * (edges[1] - edges[0]), 1.0e-8)
     source_weights = np.asarray(base_shape, dtype=np.float64)
 
@@ -2889,12 +2902,38 @@ def process_pi0_period(
     pi0_core_containment: float,
     log_y: bool,
     dpi: int,
+    preloaded_pi0_arrays: Optional[
+        Mapping[str, Mapping[str, Mapping[str, np.ndarray]]]
+    ] = None,
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, Tuple[float, float]]]]:
-    data_hists, data_counts = fill_histograms_for_file(
-        period.eppi0_data_file, topologies, step_size, False, PI0_SHAPE_VARIABLES
+    if preloaded_pi0_arrays is None:
+        direct_pi0_arrays = {
+            "data": load_selected_arrays_for_file(
+                period.eppi0_data_file,
+                topologies,
+                step_size,
+                PI0_SHAPE_VARIABLES,
+            ),
+            "signal": load_selected_arrays_for_file(
+                period.eppi0_mc_file,
+                topologies,
+                step_size,
+                PI0_SHAPE_VARIABLES,
+            ),
+        }
+    else:
+        direct_pi0_arrays = dict(preloaded_pi0_arrays)
+    # endif
+
+    data_hists, data_counts = histograms_and_counts_from_arrays(
+        direct_pi0_arrays["data"],
+        topologies,
+        PI0_SHAPE_VARIABLES,
     )
-    mc_hists, mc_counts = fill_histograms_for_file(
-        period.eppi0_mc_file, topologies, step_size, False, PI0_SHAPE_VARIABLES
+    mc_hists, mc_counts = histograms_and_counts_from_arrays(
+        direct_pi0_arrays["signal"],
+        topologies,
+        PI0_SHAPE_VARIABLES,
     )
     rows: List[Dict[str, object]] = []
     calibrations: Dict[str, Dict[str, Tuple[float, float]]] = {}
@@ -2992,18 +3031,36 @@ def process_period(
 ) -> List[Dict[str, object]]:
     log(f"Starting period {period.label}")
 
-    # Minimal global preselection only. No hard exclusivity cuts are imposed.
-    data_hists, data_counts = fill_histograms_for_file(
-        period.data_file, topologies, step_size, apply_mx2_1_cut=False,
-        variables=DVCS_SHAPE_VARIABLES,
+    # Minimal global preselection only. Reuse the arrays already loaded for
+    # common-population fitting and iterative cuts rather than rereading all
+    # three ROOT trees for histogram production.
+    if fraction_population_arrays is None:
+        fraction_population_arrays = {
+            "data": load_selected_arrays_for_file(
+                period.data_file, topologies, step_size, DVCS_SHAPE_VARIABLES
+            ),
+            "signal": load_selected_arrays_for_file(
+                period.dvcs_mc_file, topologies, step_size, DVCS_SHAPE_VARIABLES
+            ),
+            "background": load_selected_arrays_for_file(
+                period.pi0_as_dvcs_mc_file,
+                topologies,
+                step_size,
+                DVCS_SHAPE_VARIABLES,
+            ),
+        }
+    # endif
+
+    data_hists, data_counts = histograms_and_counts_from_arrays(
+        fraction_population_arrays["data"], topologies, DVCS_SHAPE_VARIABLES
     )
-    dvcs_hists, dvcs_counts = fill_histograms_for_file(
-        period.dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False,
-        variables=DVCS_SHAPE_VARIABLES,
+    dvcs_hists, dvcs_counts = histograms_and_counts_from_arrays(
+        fraction_population_arrays["signal"], topologies, DVCS_SHAPE_VARIABLES
     )
-    pi0_hists, pi0_counts = fill_histograms_for_file(
-        period.pi0_as_dvcs_mc_file, topologies, step_size, apply_mx2_1_cut=False,
-        variables=DVCS_SHAPE_VARIABLES,
+    pi0_hists, pi0_counts = histograms_and_counts_from_arrays(
+        fraction_population_arrays["background"],
+        topologies,
+        DVCS_SHAPE_VARIABLES,
     )
 
     rows: List[Dict[str, object]] = []
@@ -3479,6 +3536,58 @@ def arrays_to_histograms(
         output[variable.branch] = output[variable.branch].astype(np.float64)
     # endfor
     return output
+
+
+def histograms_and_counts_from_arrays(
+    arrays_by_topology: Mapping[str, Mapping[str, np.ndarray]],
+    topologies: Sequence[TopologyConfig],
+    variables: Sequence[VariableConfig],
+) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
+    """Build requested histograms from already selected in-memory arrays."""
+    histograms: Dict[str, Dict[str, np.ndarray]] = {}
+    selected_counts: Dict[str, int] = {}
+
+    for topology in topologies:
+        topology_arrays = arrays_by_topology[topology.key]
+        first_array = next(
+            iter(topology_arrays.values()),
+            np.asarray([], dtype=np.float32),
+        )
+        selected_counts[topology.key] = int(len(first_array))
+        histograms[topology.key] = arrays_to_histograms(
+            topology_arrays,
+            np.ones(len(first_array), dtype=bool),
+            variables,
+        )
+    # endfor
+    return histograms, selected_counts
+
+
+def pi0_iterative_arrays_from_shape_arrays(
+    arrays_by_topology: Mapping[str, Mapping[str, np.ndarray]],
+    topologies: Sequence[TopologyConfig],
+) -> Dict[str, Dict[str, np.ndarray]]:
+    """Expose direct-pi0 shape arrays under the DVCS iterative variable keys."""
+    result: Dict[str, Dict[str, np.ndarray]] = {}
+    for topology in topologies:
+        source = arrays_by_topology[topology.key]
+        result[topology.key] = {}
+        for variable in PI0_ITERATIVE_VARIABLES:
+            source_key = (
+                "theta_pi0_pi0"
+                if variable.branch == "theta_gamma_gamma"
+                else variable.branch
+            )
+            if source_key not in source:
+                raise RuntimeError(
+                    f"Cannot construct direct-pi0 iterative arrays for "
+                    f"{topology.label}: missing source key '{source_key}'."
+                )
+            # endif
+            result[topology.key][variable.branch] = source[source_key]
+        # endfor
+    # endfor
+    return result
 
 
 def load_selected_arrays_uproot(
@@ -5502,6 +5611,9 @@ def develop_iterative_cuts_for_period(
     preloaded_dvcs_arrays: Optional[
         Mapping[str, Mapping[str, Mapping[str, np.ndarray]]]
     ] = None,
+    preloaded_pi0_arrays: Optional[
+        Mapping[str, Mapping[str, Mapping[str, np.ndarray]]]
+    ] = None,
 ) -> Tuple[Dict[str, Dict[str, object]], List[Dict[str, object]]]:
     containments = {
         "nominal": nominal_containment,
@@ -5524,20 +5636,24 @@ def develop_iterative_cuts_for_period(
             ),
         }
     )
-    pi0_arrays = {
-        "data": load_selected_arrays_for_file(
-            period.eppi0_data_file,
-            topologies,
-            step_size,
-            PI0_ITERATIVE_VARIABLES,
-        ),
-        "signal": load_selected_arrays_for_file(
-            period.eppi0_mc_file,
-            topologies,
-            step_size,
-            PI0_ITERATIVE_VARIABLES,
-        ),
-    }
+    pi0_arrays = (
+        dict(preloaded_pi0_arrays)
+        if preloaded_pi0_arrays is not None
+        else {
+            "data": load_selected_arrays_for_file(
+                period.eppi0_data_file,
+                topologies,
+                step_size,
+                PI0_ITERATIVE_VARIABLES,
+            ),
+            "signal": load_selected_arrays_for_file(
+                period.eppi0_mc_file,
+                topologies,
+                step_size,
+                PI0_ITERATIVE_VARIABLES,
+            ),
+        }
+    )
     blocks: Dict[str, Dict[str, object]] = {name: {} for name in containments}
     rows: List[Dict[str, object]] = []
     for topology in topologies:
@@ -5755,6 +5871,41 @@ def process_period_worker(
     output_dir = Path(output_dir_string)
     log(f"[worker {os.getpid()}] Starting {period.label}")
 
+    # Read each ROOT tree exactly once per period. These selected arrays feed
+    # shape plots, template fits, common-population fits and iterative cuts.
+    fraction_population_arrays = {
+        "data": load_selected_arrays_for_file(
+            period.data_file, topologies, step_size, DVCS_SHAPE_VARIABLES
+        ),
+        "signal": load_selected_arrays_for_file(
+            period.dvcs_mc_file, topologies, step_size, DVCS_SHAPE_VARIABLES
+        ),
+        "background": load_selected_arrays_for_file(
+            period.pi0_as_dvcs_mc_file,
+            topologies,
+            step_size,
+            DVCS_SHAPE_VARIABLES,
+        ),
+    }
+    direct_pi0_shape_arrays = {
+        "data": load_selected_arrays_for_file(
+            period.eppi0_data_file,
+            topologies,
+            step_size,
+            PI0_SHAPE_VARIABLES,
+        ),
+        "signal": load_selected_arrays_for_file(
+            period.eppi0_mc_file,
+            topologies,
+            step_size,
+            PI0_SHAPE_VARIABLES,
+        ),
+    }
+    direct_pi0_iterative_arrays = {
+        sample: pi0_iterative_arrays_from_shape_arrays(values, topologies)
+        for sample, values in direct_pi0_shape_arrays.items()
+    }
+
     pi0_rows, pi0_calibrations = process_pi0_period(
         period,
         topologies,
@@ -5769,19 +5920,8 @@ def process_period_worker(
         pi0_core_containment,
         log_y,
         dpi,
+        direct_pi0_shape_arrays,
     )
-
-    fraction_population_arrays = {
-        "data": load_selected_arrays_for_file(
-            period.data_file, topologies, step_size, VARIABLES
-        ),
-        "signal": load_selected_arrays_for_file(
-            period.dvcs_mc_file, topologies, step_size, VARIABLES
-        ),
-        "background": load_selected_arrays_for_file(
-            period.pi0_as_dvcs_mc_file, topologies, step_size, VARIABLES
-        ),
-    }
 
     dvcs_rows = process_period(
         period,
@@ -5837,6 +5977,7 @@ def process_period_worker(
             emiss2_mean_order_penalty_weight,
             dpi,
             fraction_population_arrays,
+            direct_pi0_iterative_arrays,
         )
     # endif
 
@@ -5951,10 +6092,10 @@ def main() -> int:
         + f"; Emiss2 mean-order penalty={args.emiss2_mean_order_penalty:g}"
     )
 
-    worker_count = min(args.workers, 5, len(periods))
+    worker_count = min(max(1, int(args.workers)), 7, len(periods))
     log(
         f"Processing {len(periods)} run period(s) with "
-        f"{worker_count} worker process(es); hard cap = 5"
+        f"{worker_count} worker process(es); hard cap = 7"
     )
 
     period_results: Dict[
