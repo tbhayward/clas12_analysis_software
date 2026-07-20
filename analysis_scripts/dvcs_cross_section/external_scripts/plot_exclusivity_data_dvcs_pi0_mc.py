@@ -381,7 +381,21 @@ _PI0_ITERATIVE_LOOKUP: Dict[str, VariableConfig] = {
     for variable in PI0_VARIABLES
 }
 for _variable in VARIABLES:
-    _PI0_ITERATIVE_LOOKUP.setdefault(_variable.branch, _variable)
+    if _variable.branch == "theta_gamma_gamma":
+        # The analogous direct-pi0 branch is named theta_pi0_pi0. Load that
+        # branch but expose it under the DVCS cut-variable key so the same
+        # production cut order can be applied to the pi0 control channel.
+        _PI0_ITERATIVE_LOOKUP[_variable.branch] = VariableConfig(
+            "theta_gamma_gamma",
+            _variable.label,
+            _variable.bins,
+            _variable.xmin,
+            _variable.xmax,
+            aliases=("theta_pi0_pi0",),
+        )
+    else:
+        _PI0_ITERATIVE_LOOKUP.setdefault(_variable.branch, _variable)
+    # endif
 # endfor
 PI0_ITERATIVE_VARIABLES: Tuple[VariableConfig, ...] = tuple(
     _PI0_ITERATIVE_LOOKUP.values()
