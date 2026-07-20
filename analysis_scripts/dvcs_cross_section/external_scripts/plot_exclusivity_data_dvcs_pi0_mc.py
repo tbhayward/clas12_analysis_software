@@ -376,29 +376,28 @@ PI0_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
 # order selected in the DVCS channel. That order can now contain Mx2, Mx2_1 or
 # Mx2_2, even though those variables are not part of the direct-pi0 nuisance-fit
 # canvas. Use a branch-deduplicated union solely for iterative-cut array loading.
-_PI0_ITERATIVE_LOOKUP: Dict[str, VariableConfig] = {
-    variable.branch: variable
-    for variable in PI0_VARIABLES
-}
-for _variable in VARIABLES:
-    if _variable.branch == "theta_gamma_gamma":
-        # The analogous direct-pi0 branch is named theta_pi0_pi0. Load that
-        # branch but expose it under the DVCS cut-variable key so the same
-        # production cut order can be applied to the pi0 control channel.
-        _PI0_ITERATIVE_LOOKUP[_variable.branch] = VariableConfig(
-            "theta_gamma_gamma",
-            _variable.label,
-            _variable.bins,
-            _variable.xmin,
-            _variable.xmax,
-            aliases=("theta_pi0_pi0",),
-        )
-    else:
-        _PI0_ITERATIVE_LOOKUP.setdefault(_variable.branch, _variable)
-    # endif
-# endfor
+# Direct-pi0 iterative validation follows the DVCS-selected cut order, so its
+# arrays and variable lookup must use the same keys as VARIABLES. Most branches
+# have identical names. The opening-angle analogue is theta_pi0_pi0 in the
+# direct-pi0 trees, but it is exposed under the key theta_gamma_gamma.
 PI0_ITERATIVE_VARIABLES: Tuple[VariableConfig, ...] = tuple(
-    _PI0_ITERATIVE_LOOKUP.values()
+    VariableConfig(
+        variable.branch,
+        (
+            r"$\theta_{\pi^0\pi^0}$ (rad)"
+            if variable.branch == "theta_gamma_gamma"
+            else variable.label
+        ),
+        variable.bins,
+        variable.xmin,
+        variable.xmax,
+        aliases=(
+            ("theta_pi0_pi0",)
+            if variable.branch == "theta_gamma_gamma"
+            else variable.aliases
+        ),
+    )
+    for variable in VARIABLES
 )
 
 
@@ -5074,28 +5073,43 @@ def run_pi0_iterative_cuts(
 
     data_arrays = arrays["data"]
     signal_arrays = arrays["signal"]
+
+    required_branches = set(dvcs_order)
+    for sample_name, sample_arrays in (
+        ("data", data_arrays),
+        ("signal", signal_arrays),
+    ):
+        missing = sorted(required_branches.difference(sample_arrays.keys()))
+        if missing:
+            raise RuntimeError(
+                f"Direct-pi0 iterative input for {period.label} "
+                f"{topology.label} sample '{sample_name}' is missing "
+                f"DVCS-selected variables: {missing}."
+            )
+        # endif
+    # endfor
+
     masks = {
         "data": np.ones(len(next(iter(data_arrays.values()))), dtype=bool),
         "signal": np.ones(len(next(iter(signal_arrays.values()))), dtype=bool),
     }
-    pi0_lookup = {variable.branch: variable for variable in PI0_VARIABLES}
-    mapped_order = [
-        "theta_pi0_pi0" if branch == "theta_gamma_gamma" else branch
-        for branch in dvcs_order
-    ]
+    pi0_lookup = {
+        variable.branch: variable
+        for variable in PI0_ITERATIVE_VARIABLES
+    }
 
     initial_data_hists = arrays_to_histograms(
         data_arrays,
         masks["data"],
-        PI0_VARIABLES,
+        PI0_ITERATIVE_VARIABLES,
     )
     initial_signal_hists = arrays_to_histograms(
         signal_arrays,
         masks["signal"],
-        PI0_VARIABLES,
+        PI0_ITERATIVE_VARIABLES,
     )
     frozen_results: Dict[str, FitResult] = {}
-    for variable in PI0_VARIABLES:
+    for variable in PI0_ITERATIVE_VARIABLES:
         result = fit_single_template(
             initial_data_hists[variable.branch],
             initial_signal_hists[variable.branch],
@@ -5157,7 +5171,7 @@ def run_pi0_iterative_cuts(
         for name in containments
     }
 
-    for iteration, branch in enumerate(mapped_order):
+    for iteration, branch in enumerate(dvcs_order):
         variable = pi0_lookup[branch]
         data_hist = arrays_to_histograms(
             data_arrays, masks["data"], [variable]
