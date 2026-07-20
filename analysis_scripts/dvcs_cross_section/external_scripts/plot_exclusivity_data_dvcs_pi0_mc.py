@@ -150,6 +150,12 @@ class FitResult:
     sigma_add_err: float = math.nan
     sigma_right: float = math.nan
     sigma_right_err: float = math.nan
+    pi0_shift: float = math.nan
+    pi0_shift_err: float = math.nan
+    pi0_sigma_add: float = math.nan
+    pi0_sigma_add_err: float = math.nan
+    pi0_sigma_right: float = math.nan
+    pi0_sigma_right_err: float = math.nan
     deviance: float = math.nan
     ndf: int = 0
     data_total: float = 0.0
@@ -158,6 +164,7 @@ class FitResult:
     dvcs_component_counts: Optional[np.ndarray] = None
     pi0_component_counts: Optional[np.ndarray] = None
     transformed_dvcs_shape: Optional[np.ndarray] = None
+    transformed_pi0_shape: Optional[np.ndarray] = None
     fit_mask: Optional[np.ndarray] = None
     morph_label: str = "additive"
     excluded_data_counts: float = 0.0
@@ -1214,7 +1221,7 @@ def transform_upper_bounded_shape(
     return target / total
 
 
-def transform_dvcs_shape(
+def transform_template_shape(
     base_shape: np.ndarray,
     variable: VariableConfig,
     shift: float,
@@ -1374,7 +1381,9 @@ def fit_shared_two_templates(
         value = float(entry[0])
         return value if math.isfinite(value) else 0.0
 
-    def nuisance_bounds(variable: VariableConfig) -> List[Tuple[float, float]]:
+    def single_nuisance_bounds(
+        variable: VariableConfig,
+    ) -> List[Tuple[float, float]]:
         if variable.branch in {"Mx2", "Mx2_1"}:
             bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
             return [(0.0, 0.0), (0.0, max_smear_bins * bin_width)]
@@ -1401,7 +1410,7 @@ def fit_shared_two_templates(
             (0.0, max_smear_bins * bin_width),
         ]
 
-    def nuisance_start(variable: VariableConfig) -> np.ndarray:
+    def single_nuisance_start(variable: VariableConfig) -> np.ndarray:
         center = calibrated_shift_center(variable)
         if is_log_morph_variable(variable):
             return np.asarray([center, 0.10], dtype=np.float64)
@@ -1409,13 +1418,44 @@ def fit_shared_two_templates(
         bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
         if is_asymmetric_additive_variable(variable):
             if variable.branch == "xF":
-                return np.asarray([center, 1.5 * bin_width, 1.5 * bin_width], dtype=np.float64)
+                return np.asarray(
+                    [center, 1.5 * bin_width, 1.5 * bin_width],
+                    dtype=np.float64,
+                )
             # endif
-            return np.asarray([center, 2.0 * bin_width, 0.75 * bin_width], dtype=np.float64)
+            return np.asarray(
+                [center, 2.0 * bin_width, 0.75 * bin_width],
+                dtype=np.float64,
+            )
         # endif
         return np.asarray([center, 2.0 * bin_width], dtype=np.float64)
 
-    def nuisance_penalty(
+    def single_nuisance_size(variable: VariableConfig) -> int:
+        return 3 if is_asymmetric_additive_variable(variable) else 2
+
+    def nuisance_bounds(variable: VariableConfig) -> List[Tuple[float, float]]:
+        one_template = single_nuisance_bounds(variable)
+        return one_template + one_template
+
+    def nuisance_start(variable: VariableConfig) -> np.ndarray:
+        one_template = single_nuisance_start(variable)
+        return np.concatenate((one_template, one_template))
+
+    def split_nuisance(
+        variable: VariableConfig,
+        nuisance: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        size = single_nuisance_size(variable)
+        values = np.asarray(nuisance, dtype=np.float64)
+        if values.size != 2 * size:
+            raise ValueError(
+                f"Expected {2 * size} nuisance parameters for "
+                f"{variable.branch}, received {values.size}."
+            )
+        # endif
+        return values[:size], values[size:]
+
+    def single_nuisance_penalty(
         variable: VariableConfig,
         nuisance: np.ndarray,
     ) -> float:
@@ -1450,37 +1490,68 @@ def fit_shared_two_templates(
         # endif
         return penalty
 
+    def nuisance_penalty(
+        variable: VariableConfig,
+        nuisance: np.ndarray,
+    ) -> float:
+        dvcs_nuisance, pi0_nuisance = split_nuisance(variable, nuisance)
+        return (
+            single_nuisance_penalty(variable, dvcs_nuisance)
+            + single_nuisance_penalty(variable, pi0_nuisance)
+        )
+
     def build_variable_model(
         variable: VariableConfig,
         fraction: float,
         nuisance: np.ndarray,
-    ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> Optional[
+        Tuple[
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+        ]
+    ]:
         info = prepared[variable.branch]
-        shift = float(nuisance[0])
-        sigma_left = float(nuisance[1])
-        sigma_right = (
-            float(nuisance[2])
+        dvcs_nuisance, pi0_nuisance = split_nuisance(variable, nuisance)
+
+        dvcs_sigma_right = (
+            float(dvcs_nuisance[2])
             if is_asymmetric_additive_variable(variable)
             else None
         )
-        transformed = transform_dvcs_shape(
+        pi0_sigma_right = (
+            float(pi0_nuisance[2])
+            if is_asymmetric_additive_variable(variable)
+            else None
+        )
+
+        transformed_dvcs = transform_template_shape(
             info["dvcs_shape"],
             variable,
-            shift,
-            sigma_left,
-            sigma_right,
+            float(dvcs_nuisance[0]),
+            float(dvcs_nuisance[1]),
+            dvcs_sigma_right,
         )
-        if transformed is None:
+        transformed_pi0 = transform_template_shape(
+            info["pi0_shape"],
+            variable,
+            float(pi0_nuisance[0]),
+            float(pi0_nuisance[1]),
+            pi0_sigma_right,
+        )
+        if transformed_dvcs is None or transformed_pi0 is None:
             return None
         # endif
-        pi0_shape = info["pi0_shape"]
+
         dvcs_shape_component = np.clip(
-            (1.0 - fraction) * transformed,
+            (1.0 - fraction) * transformed_dvcs,
             0.0,
             None,
         )
         pi0_shape_component = np.clip(
-            fraction * pi0_shape,
+            fraction * transformed_pi0,
             0.0,
             None,
         )
@@ -1492,7 +1563,8 @@ def fit_shared_two_templates(
             total_shape,
             dvcs_shape_component,
             pi0_shape_component,
-            transformed,
+            transformed_dvcs,
+            transformed_pi0,
         )
 
     def physical_shape_penalty(
@@ -1593,7 +1665,7 @@ def fit_shared_two_templates(
             value += physical_shape_penalty(
                 variable,
                 built[3],
-                info["pi0_shape"],
+                built[4],
             )
         # endif
         return value
@@ -1609,7 +1681,7 @@ def fit_shared_two_templates(
             previous_value = math.inf
 
             for iteration in range(15):
-                # Resolution step: fit each DVCS nuisance in its support region.
+                # Resolution step: fit the DVCS and pi0 nuisances in the union support.
                 for variable in fraction_variables:
                     result = minimize(
                         lambda values, v=variable, f=fraction: objective_for_mask(
@@ -1762,19 +1834,35 @@ def fit_shared_two_templates(
         # endif
         info = prepared[variable.branch]
         nuisance = all_nuisances[variable.branch]
-        shift = float(nuisance[0])
-        sigma_add = float(nuisance[1])
+        dvcs_nuisance, pi0_nuisance = split_nuisance(variable, nuisance)
+
+        shift = float(dvcs_nuisance[0])
+        sigma_add = float(dvcs_nuisance[1])
         sigma_right = (
-            float(nuisance[2])
+            float(dvcs_nuisance[2])
             if is_asymmetric_additive_variable(variable)
             else math.nan
         )
+        pi0_shift = float(pi0_nuisance[0])
+        pi0_sigma_add = float(pi0_nuisance[1])
+        pi0_sigma_right = (
+            float(pi0_nuisance[2])
+            if is_asymmetric_additive_variable(variable)
+            else math.nan
+        )
+
         built = build_variable_model(variable, best_fraction, nuisance)
         if built is None:
             results[variable.branch] = FitResult(False, "invalid fitted template")
             continue
         # endif
-        total_shape, dvcs_shape_component, pi0_shape_component, transformed = built
+        (
+            total_shape,
+            dvcs_shape_component,
+            pi0_shape_component,
+            transformed_dvcs,
+            transformed_pi0,
+        ) = built
         display_mask = np.asarray(
             info["dvcs_fraction_mask"] if variable.branch in requested_set else info["dvcs_support_mask"],
             dtype=bool,
@@ -1860,14 +1948,30 @@ def fit_shared_two_templates(
             shift=shift,
             sigma_add=sigma_add,
             sigma_right=sigma_right,
+            pi0_shift=pi0_shift,
+            pi0_sigma_add=pi0_sigma_add,
+            pi0_sigma_right=pi0_sigma_right,
             deviance=variable_deviance,
-            ndf=max(0, used_bins - 2),
+            ndf=max(
+                0,
+                used_bins
+                - 2 * (
+                    3 if is_asymmetric_additive_variable(variable) else 2
+                ),
+            ),
             data_total=float(info["data_total"]),
             model_counts=np.asarray(model, dtype=np.float64).copy(),
             fit_data_counts=np.asarray(info["data"], dtype=np.float64).copy(),
             dvcs_component_counts=np.asarray(dvcs_component, dtype=np.float64).copy(),
             pi0_component_counts=np.asarray(pi0_component, dtype=np.float64).copy(),
-            transformed_dvcs_shape=np.asarray(transformed, dtype=np.float64).copy(),
+            transformed_dvcs_shape=np.asarray(
+                transformed_dvcs,
+                dtype=np.float64,
+            ).copy(),
+            transformed_pi0_shape=np.asarray(
+                transformed_pi0,
+                dtype=np.float64,
+            ).copy(),
             fit_mask=np.asarray(display_mask, dtype=bool).copy(),
             morph_label=("asymmetric-additive" if is_asymmetric_additive_variable(variable) else "lower-log-space" if is_lower_bounded_morph_variable(variable) else "logit-space" if is_logit_morph_variable(variable) else "upper-log-space" if is_upper_bounded_morph_variable(variable) else "additive"),
             excluded_data_counts=excluded_data,
@@ -1886,7 +1990,9 @@ def fit_shared_two_templates(
     n_driver_parameters = (
         (0 if fixed_fraction is not None else 1)
         + sum(
-            3 if is_asymmetric_additive_variable(variable) else 2
+            2 * (
+                3 if is_asymmetric_additive_variable(variable) else 2
+            )
             for variable in fraction_variables
         )
     )
@@ -2231,52 +2337,36 @@ def draw_fit_canvas(
                 result.model_counts, edges, color=SAMPLE_COLORS["fit"],
                 linewidth=2.0, linestyle="--", label="total two-template fit", zorder=4,
             )
-            quality = (
-                rf"$f_{{\pi^0}}={result.f_pi0:.3f}$ ({result.message})" + "\n"
-                rf"$\Delta={result.shift:.4g}$" + "\n"
-                + (
-                    rf"$\sigma_L={result.sigma_add:.4g},\ "
-                    rf"\sigma_R={result.sigma_right:.4g}$ "
-                    rf"({result.morph_label})"
-                    if is_asymmetric_additive_variable(variable)
-                    else rf"$\sigma={result.sigma_add:.4g}$ "
-                    rf"({result.morph_label})"
+            if is_asymmetric_additive_variable(variable):
+                dvcs_morph_text = (
+                    rf"DVCS: $\Delta={result.shift:.4g}$, "
+                    rf"$\sigma_L={result.sigma_add:.4g}$, "
+                    rf"$\sigma_R={result.sigma_right:.4g}$"
                 )
-                + "\n"
-                + f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
-                + "\n"
-                + (
-                    "fit integral: "
-                    f"data={result.fit_region_data_counts:.0f}, "
-                    f"model={result.fit_region_model_counts:.0f}, "
-                    f"M/D={result.fit_region_model_to_data:.6f}"
+                pi0_morph_text = (
+                    rf"$\pi^0$: $\Delta={result.pi0_shift:.4g}$, "
+                    rf"$\sigma_L={result.pi0_sigma_add:.4g}$, "
+                    rf"$\sigma_R={result.pi0_sigma_right:.4g}$"
                 )
-                + "\n"
-                + (
-                    "full range: "
-                    f"data={result.data_total:.0f}, "
-                    f"model={result.full_range_model_counts:.0f}, "
-                    f"M/D={result.full_range_model_to_data:.4f}"
+            else:
+                dvcs_morph_text = (
+                    rf"DVCS: $\Delta={result.shift:.4g}$, "
+                    rf"$\sigma={result.sigma_add:.4g}$"
                 )
-                + "\n"
-                + (
-                    "drawn bins M<D/M=D/M>D: "
-                    f"{under_bins}/{equal_bins}/{over_bins}"
-                )
-                + "\n"
-                + (
-                    "positive-data bins: "
-                    f"{positive_under_bins}/{positive_equal_bins}/"
-                    f"{positive_over_bins}"
-                )
-            )
-            if result.excluded_data_counts > 0.0 and result.fit_mask is not None and not np.all(result.fit_mask):
-                quality += (
-                    "\n"
-                    f"masked excess={result.excluded_excess_counts:.0f} "
-                    f"({100.0 * result.excluded_excess_fraction:.2f}% of data)"
+                pi0_morph_text = (
+                    rf"$\pi^0$: $\Delta={result.pi0_shift:.4g}$, "
+                    rf"$\sigma={result.pi0_sigma_add:.4g}$"
                 )
             # endif
+            quality = (
+                rf"$f_{{\pi^0}}={result.f_pi0:.3f}$ ({result.message})"
+                + "\n"
+                + dvcs_morph_text
+                + "\n"
+                + pi0_morph_text
+                + "\n"
+                + f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
+            )
         else:
             quality = f"fit failed: {result.message}"
         # endif
@@ -2442,7 +2532,7 @@ def fit_single_template(
 
     def build(params: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         sigma_right = float(params[2]) if asymmetric else None
-        transformed = transform_dvcs_shape(
+        transformed = transform_template_shape(
             mc_shape,
             variable,
             float(params[0]),
@@ -3010,6 +3100,22 @@ def process_period(
                 "sigma_right": result.sigma_right,
                 "sigma_err": result.sigma_add_err,
                 "sigma_right_err": result.sigma_right_err,
+                "pi0_shift": result.pi0_shift,
+                "pi0_shift_err": result.pi0_shift_err,
+                "pi0_sigma": result.pi0_sigma_add,
+                "pi0_sigma_err": result.pi0_sigma_add_err,
+                "pi0_sigma_right": result.pi0_sigma_right,
+                "pi0_sigma_right_err": result.pi0_sigma_right_err,
+                "pi0_shift_bins": (
+                    result.pi0_shift / bin_width
+                    if result.success and additive
+                    else math.nan
+                ),
+                "pi0_sigma_bins": (
+                    result.pi0_sigma_add / bin_width
+                    if result.success and additive
+                    else math.nan
+                ),
                 "sigma_bins": result.sigma_add / bin_width if result.success and additive else math.nan,
                 "fit_bins_used": int(np.count_nonzero(result.fit_mask)) if result.fit_mask is not None else 0,
                 "fit_region_data_counts": result.fit_region_data_counts,
@@ -4405,7 +4511,7 @@ def iterative_signal_shape(
         return raw, "raw-MC fallback"
     # endif
 
-    transformed = transform_dvcs_shape(
+    transformed = transform_template_shape(
         raw,
         variable,
         fitted_result.shift,
@@ -5054,7 +5160,7 @@ def run_pi0_iterative_cuts(
             )
         # endif
 
-        transformed = transform_dvcs_shape(
+        transformed = transform_template_shape(
             raw_shape,
             variable,
             frozen.shift,
@@ -5631,8 +5737,8 @@ def main() -> int:
         f"{fraction_variables}. "
         f"Fraction-region containment={100.0 * args.dvcs_fraction_containment:.0f}%; "
         f"nuisance-region containment={100.0 * args.dvcs_core_containment:.0f}%. "
-        "An asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and a bounded logit morph for z2 and an upper-edge log morph for xF2. "
-        "DVCS shift priors are centered on the corresponding direct-pi0 core calibrations. "
+        "Both templates are independently morphed: an asymmetric additive core morph is used for theta; ordinary additive core morphs are used for symmetric variables, lower-edge log morphs for pTmiss/theta_gamma_gamma/theta_pi0_pi0 and a bounded logit morph for z2 and an upper-edge log morph for xF2. "
+        "DVCS and pi0 template shift priors are centered on the corresponding direct-pi0 core calibrations. "
         "Core-region fitting is the default; Gaussian nuisance penalties are "
         + ("enabled" if not args.disable_nuisance_penalties else "disabled")
         + f"; outside overshoot penalty={args.outside_overshoot_penalty:g}"
