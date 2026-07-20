@@ -163,6 +163,12 @@ class FitResult:
     excluded_model_counts: float = 0.0
     excluded_excess_counts: float = 0.0
     excluded_excess_fraction: float = 0.0
+    fit_region_data_counts: float = 0.0
+    fit_region_model_counts: float = 0.0
+    fit_region_model_to_data: float = math.nan
+    fit_region_closure_difference: float = math.nan
+    full_range_model_counts: float = 0.0
+    full_range_model_to_data: float = math.nan
 
 
 @dataclass
@@ -1741,6 +1747,36 @@ def fit_shared_two_templates(
         model = scale * total_shape
         dvcs_component = scale * dvcs_shape_component
         pi0_component = scale * pi0_shape_component
+
+        fit_region_model_sum = float(np.sum(model[display_mask]))
+        fit_region_closure_difference = fit_region_model_sum - display_data_sum
+        fit_region_model_to_data = (
+            fit_region_model_sum / display_data_sum
+            if display_data_sum > 0.0
+            else math.nan
+        )
+        full_range_model_sum = float(np.sum(model))
+        full_range_model_to_data = (
+            full_range_model_sum / float(info["data_total"])
+            if float(info["data_total"]) > 0.0
+            else math.nan
+        )
+
+        closure_tolerance = 1.0e-10 * max(
+            1.0,
+            abs(display_data_sum),
+            abs(fit_region_model_sum),
+        )
+        if abs(fit_region_closure_difference) > closure_tolerance:
+            raise RuntimeError(
+                "Internal normalization-closure failure for "
+                f"{variable.branch}: data in fit region={display_data_sum:.12g}, "
+                f"model in fit region={fit_region_model_sum:.12g}, "
+                f"difference={fit_region_closure_difference:.12g}, "
+                f"scale={scale:.12g}."
+            )
+        # endif
+
         variable_deviance = poisson_deviance(
             info["data"][display_mask],
             model[display_mask],
@@ -1792,6 +1828,12 @@ def fit_shared_two_templates(
             excluded_model_counts=excluded_model,
             excluded_excess_counts=excluded_excess,
             excluded_excess_fraction=excluded_fraction,
+            fit_region_data_counts=display_data_sum,
+            fit_region_model_counts=fit_region_model_sum,
+            fit_region_model_to_data=fit_region_model_to_data,
+            fit_region_closure_difference=fit_region_closure_difference,
+            full_range_model_counts=full_range_model_sum,
+            full_range_model_to_data=full_range_model_to_data,
         )
     # endfor
 
@@ -1960,6 +2002,20 @@ def draw_fit_canvas(
                 )
                 + "\n"
                 + f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
+                + "\n"
+                + (
+                    "fit integral: "
+                    f"data={result.fit_region_data_counts:.0f}, "
+                    f"model={result.fit_region_model_counts:.0f}, "
+                    f"M/D={result.fit_region_model_to_data:.6f}"
+                )
+                + "\n"
+                + (
+                    "full range: "
+                    f"data={result.data_total:.0f}, "
+                    f"model={result.full_range_model_counts:.0f}, "
+                    f"M/D={result.full_range_model_to_data:.4f}"
+                )
             )
             if result.excluded_data_counts > 0.0 and result.fit_mask is not None and not np.all(result.fit_mask):
                 quality += (
@@ -2642,6 +2698,12 @@ def process_period(
                 "sigma_right_err": result.sigma_right_err,
                 "sigma_bins": result.sigma_add / bin_width if result.success and additive else math.nan,
                 "fit_bins_used": int(np.count_nonzero(result.fit_mask)) if result.fit_mask is not None else 0,
+                "fit_region_data_counts": result.fit_region_data_counts,
+                "fit_region_model_counts": result.fit_region_model_counts,
+                "fit_region_model_to_data": result.fit_region_model_to_data,
+                "fit_region_closure_difference": result.fit_region_closure_difference,
+                "full_range_model_counts": result.full_range_model_counts,
+                "full_range_model_to_data": result.full_range_model_to_data,
                 "outside_region_data_counts": result.excluded_data_counts,
                 "outside_region_model_counts": result.excluded_model_counts,
                 "outside_region_excess_counts": result.excluded_excess_counts,
@@ -2658,6 +2720,24 @@ def process_period(
                     for branch, summary in individual_summaries.items()
                 },
             })
+        # endfor
+
+        for variable in VARIABLES:
+            result = fit_results[variable.branch]
+            if not result.success:
+                continue
+            # endif
+            log(
+                "[normalization-check] "
+                f"{period.label} {topology.label} {variable.branch}: "
+                f"fit-region data={result.fit_region_data_counts:.6g}, "
+                f"model={result.fit_region_model_counts:.6g}, "
+                f"M/D={result.fit_region_model_to_data:.12f}, "
+                f"closure={result.fit_region_closure_difference:.6g}; "
+                f"full-range data={result.data_total:.6g}, "
+                f"model={result.full_range_model_counts:.6g}, "
+                f"M/D={result.full_range_model_to_data:.6f}"
+            )
         # endfor
 
         fit_path = (
