@@ -1278,15 +1278,17 @@ def fit_shared_two_templates(
     pi0_core_calibration: Optional[Mapping[str, Tuple[float, float]]] = None,
     outside_overshoot_penalty_weight: float = 0.25,
     emiss2_mean_order_penalty_weight: float = 25.0,
+    fixed_fraction: Optional[float] = None,
+    fixed_fraction_error: float = math.nan,
 ) -> SharedFitSummary:
-    """Fit a shared f_pi0 while separating resolution and fraction regions.
+    """Fit or profile a shared f_pi0 with separate support regions.
 
-    Variable-specific DVCS shifts and smearings are fitted in the union of the
-    DVCS-MC and pi0-MC support regions. The shared fraction is then updated in
-    the broader union-support regions of the selected discriminator variables.
-    Thus, bins are excluded only when neither modeled component has meaningful
-    support. Validation variables profile only their nuisance parameters at the
-    fitted fraction.
+    In the normal mode, the selected discriminator variables determine the
+    shared pi0 fraction. In fixed-fraction mode, that externally determined
+    fraction is held fixed while every variable profiles its nuisance
+    parameters using the histograms supplied to this call. This permits the
+    fraction to be determined from a common event population and the displayed
+    variables to be profiled on the full minimally preselected population.
     """
     requested_fraction_variables = tuple(dict.fromkeys(fraction_variable_branches))
     requested_set = set(requested_fraction_variables)
@@ -1600,68 +1602,106 @@ def fit_shared_two_templates(
     best_fraction = math.nan
     best_driver_nuisances: Dict[str, np.ndarray] = {}
 
-    for initial_fraction in (0.10, 0.30, 0.60, 0.85):
-        fraction = initial_fraction
-        nuisances = {v.branch: nuisance_start(v) for v in fraction_variables}
-        previous_value = math.inf
+    if fixed_fraction is None:
+        for initial_fraction in (0.10, 0.30, 0.60, 0.85):
+            fraction = initial_fraction
+            nuisances = {v.branch: nuisance_start(v) for v in fraction_variables}
+            previous_value = math.inf
 
-        for iteration in range(15):
-            # Resolution step: fit each DVCS nuisance only in its 90% core.
-            for variable in fraction_variables:
-                result = minimize(
-                    lambda values, v=variable, f=fraction: objective_for_mask(
-                        v, f, values, "dvcs_support_mask", True
-                    ),
-                    nuisances[variable.branch],
-                    method="L-BFGS-B",
-                    bounds=nuisance_bounds(variable),
-                    options={"maxiter": 400, "ftol": 1.0e-9},
+            for iteration in range(15):
+                # Resolution step: fit each DVCS nuisance in its support region.
+                for variable in fraction_variables:
+                    result = minimize(
+                        lambda values, v=variable, f=fraction: objective_for_mask(
+                            v, f, values, "dvcs_support_mask", True
+                        ),
+                        nuisances[variable.branch],
+                        method="L-BFGS-B",
+                        bounds=nuisance_bounds(variable),
+                        options={"maxiter": 400, "ftol": 1.0e-9},
+                    )
+                    if result.success and np.all(np.isfinite(result.x)):
+                        nuisances[variable.branch] = np.asarray(
+                            result.x,
+                            dtype=np.float64,
+                        )
+                    # endif
+                # endfor
+
+                # Fraction step: hold the nuisance parameters fixed and update
+                # the shared fraction in the broader discriminator regions.
+                def fraction_objective(candidate_fraction: float) -> float:
+                    return sum(
+                        objective_for_mask(
+                            v,
+                            candidate_fraction,
+                            nuisances[v.branch],
+                            "dvcs_fraction_mask",
+                            False,
+                        )
+                        for v in fraction_variables
+                    )
+
+                fraction_result = minimize_scalar(
+                    fraction_objective,
+                    bounds=(0.0, 1.0),
+                    method="bounded",
+                    options={"xatol": 2.0e-5, "maxiter": 200},
                 )
-                if result.success and np.all(np.isfinite(result.x)):
-                    nuisances[variable.branch] = np.asarray(result.x, dtype=np.float64)
+                if (
+                    fraction_result.success
+                    and math.isfinite(float(fraction_result.x))
+                ):
+                    fraction = float(fraction_result.x)
                 # endif
+                current_value = fraction_objective(fraction)
+                if (
+                    abs(previous_value - current_value)
+                    <= 1.0e-7 * max(1.0, current_value)
+                ):
+                    break
+                # endif
+                previous_value = current_value
             # endfor
 
-            # Fraction step: hold the core-derived nuisances fixed and use the
-            # broader 95% discriminator regions to update the shared fraction.
-            def fraction_objective(candidate_fraction: float) -> float:
-                return sum(
-                    objective_for_mask(
-                        v, candidate_fraction, nuisances[v.branch],
-                        "dvcs_fraction_mask", False,
-                    )
-                    for v in fraction_variables
+            value = sum(
+                objective_for_mask(
+                    v,
+                    fraction,
+                    nuisances[v.branch],
+                    "dvcs_fraction_mask",
+                    False,
                 )
-
-            fraction_result = minimize_scalar(
-                fraction_objective,
-                bounds=(0.0, 1.0),
-                method="bounded",
-                options={"xatol": 2.0e-5, "maxiter": 200},
+                for v in fraction_variables
             )
-            if fraction_result.success and math.isfinite(float(fraction_result.x)):
-                fraction = float(fraction_result.x)
+            if value < best_value:
+                best_value = value
+                best_fraction = fraction
+                best_driver_nuisances = {
+                    key: value.copy()
+                    for key, value in nuisances.items()
+                }
             # endif
-            current_value = fraction_objective(fraction)
-            if abs(previous_value - current_value) <= 1.0e-7 * max(1.0, current_value):
-                break
-            # endif
-            previous_value = current_value
         # endfor
-
-        value = sum(
-            objective_for_mask(v, fraction, nuisances[v.branch], "dvcs_fraction_mask", False)
-            for v in fraction_variables
-        )
-        if value < best_value:
-            best_value = value
-            best_fraction = fraction
-            best_driver_nuisances = {k: val.copy() for k, val in nuisances.items()}
+    else:
+        best_fraction = float(fixed_fraction)
+        if not math.isfinite(best_fraction) or not (0.0 <= best_fraction <= 1.0):
+            return SharedFitSummary(
+                False,
+                f"invalid fixed pi0 fraction: {fixed_fraction}",
+            )
         # endif
-    # endfor
+        best_driver_nuisances = {
+            variable.branch: nuisance_start(variable)
+            for variable in fraction_variables
+        }
+    # endif
 
     if not math.isfinite(best_fraction):
-        return SharedFitSummary(False, "selected-discriminator core/profile fit failed")
+        return SharedFitSummary(
+            False,
+            "selected-discriminator core/profile fit failed",
+        )
     # endif
 
     # Profile every validation variable in the DVCS-or-pi0 union support at fixed f_pi0.
@@ -1684,10 +1724,14 @@ def fit_shared_two_templates(
         )
     # endfor
 
-    fraction_error = math.nan
+    fraction_error = (
+        float(fixed_fraction_error)
+        if fixed_fraction is not None and math.isfinite(fixed_fraction_error)
+        else math.nan
+    )
     try:
         step = 1.0e-3
-        if step < best_fraction < 1.0 - step:
+        if fixed_fraction is None and step < best_fraction < 1.0 - step:
             def fixed_nuisance_fraction_objective(candidate_fraction: float) -> float:
                 return sum(
                     objective_for_mask(
@@ -1839,13 +1883,20 @@ def fit_shared_two_templates(
         )
     # endfor
 
-    n_driver_parameters = 1 + sum(
-        3 if is_asymmetric_additive_variable(variable) else 2
-        for variable in fraction_variables
+    n_driver_parameters = (
+        (0 if fixed_fraction is not None else 1)
+        + sum(
+            3 if is_asymmetric_additive_variable(variable) else 2
+            for variable in fraction_variables
+        )
     )
     return SharedFitSummary(
         success=True,
-        message="DVCS+pi0 support nuisance / broader-region fraction fit converged",
+        message=(
+            "full-population nuisance profile at fixed common-population f_pi0"
+            if fixed_fraction is not None
+            else "common-population DVCS+pi0 fraction fit converged"
+        ),
         f_pi0=best_fraction,
         f_pi0_err=fraction_error,
         deviance=driver_deviance,
@@ -2762,26 +2813,26 @@ def process_period(
         )
         log(f"Wrote {shape_path}")
 
-        fit_data_hists = data_hists[topology.key]
-        fit_dvcs_hists = dvcs_hists[topology.key]
-        fit_pi0_hists = pi0_hists[topology.key]
+        fraction_data_hists = data_hists[topology.key]
+        fraction_dvcs_hists = dvcs_hists[topology.key]
+        fraction_pi0_hists = pi0_hists[topology.key]
         common_population_counts = {
             "data": math.nan,
             "dvcs_mc": math.nan,
             "pi0_mc": math.nan,
         }
         if fraction_population_arrays is not None:
-            fit_data_hists, data_common_mask = common_population_histograms(
+            fraction_data_hists, data_common_mask = common_population_histograms(
                 fraction_population_arrays["data"][topology.key],
                 fraction_variables,
                 VARIABLES,
             )
-            fit_dvcs_hists, dvcs_common_mask = common_population_histograms(
+            fraction_dvcs_hists, dvcs_common_mask = common_population_histograms(
                 fraction_population_arrays["signal"][topology.key],
                 fraction_variables,
                 VARIABLES,
             )
-            fit_pi0_hists, pi0_common_mask = common_population_histograms(
+            fraction_pi0_hists, pi0_common_mask = common_population_histograms(
                 fraction_population_arrays["background"][topology.key],
                 fraction_variables,
                 VARIABLES,
@@ -2793,13 +2844,17 @@ def process_period(
             }
         # endif
 
-        shared_summary = fit_shared_two_templates(
-            fit_data_hists,
-            fit_dvcs_hists,
-            fit_pi0_hists,
+        fraction_summary = fit_shared_two_templates(
+            fraction_data_hists,
+            fraction_dvcs_hists,
+            fraction_pi0_hists,
             topology,
-            max_shift_bins, max_smear_bins, fit_min_counts,
-            fraction_variables, shift_prior_bins, smear_prior_bins,
+            max_shift_bins,
+            max_smear_bins,
+            fit_min_counts,
+            fraction_variables,
+            shift_prior_bins,
+            smear_prior_bins,
             use_nuisance_penalties,
             dvcs_core_containment,
             dvcs_fraction_containment,
@@ -2809,18 +2864,60 @@ def process_period(
             outside_overshoot_penalty_weight,
             emiss2_mean_order_penalty_weight,
         )
+        if not fraction_summary.success:
+            raise RuntimeError(
+                f"Common-population fraction fit failed for "
+                f"{period.label} {topology.label}: "
+                f"{fraction_summary.message}"
+            )
+        # endif
+
+        shared_summary = fit_shared_two_templates(
+            data_hists[topology.key],
+            dvcs_hists[topology.key],
+            pi0_hists[topology.key],
+            topology,
+            max_shift_bins,
+            max_smear_bins,
+            fit_min_counts,
+            fraction_variables,
+            shift_prior_bins,
+            smear_prior_bins,
+            use_nuisance_penalties,
+            dvcs_core_containment,
+            dvcs_fraction_containment,
+            dvcs_pi0_core_containment,
+            dvcs_pi0_fraction_containment,
+            (pi0_core_calibrations or {}).get(topology.key, {}),
+            outside_overshoot_penalty_weight,
+            emiss2_mean_order_penalty_weight,
+            fixed_fraction=fraction_summary.f_pi0,
+            fixed_fraction_error=fraction_summary.f_pi0_err,
+        )
         if not shared_summary.success or shared_summary.variable_results is None:
             raise RuntimeError(
-                f"Shared fit failed for {period.label} {topology.label}: {shared_summary.message}"
+                f"Full-population nuisance profile failed for "
+                f"{period.label} {topology.label}: "
+                f"{shared_summary.message}"
             )
         # endif
         fit_results = shared_summary.variable_results
+        log(
+            "[two-stage-fit] "
+            f"{period.label} {topology.label}: "
+            f"common-population f_pi0={fraction_summary.f_pi0:.6f} "
+            f"+/- {fraction_summary.f_pi0_err:.6f}; "
+            "all displayed nuisance fits use the full minimally "
+            "preselected population at fixed f_pi0."
+        )
 
         individual_summaries: Dict[str, SharedFitSummary] = {}
         for branch in fraction_variables:
             individual_summaries[branch] = fit_shared_two_templates(
-                fit_data_hists, fit_dvcs_hists,
-                fit_pi0_hists, topology,
+                fraction_data_hists,
+                fraction_dvcs_hists,
+                fraction_pi0_hists,
+                topology,
                 max_shift_bins, max_smear_bins, fit_min_counts,
                 [branch], shift_prior_bins, smear_prior_bins,
                 use_nuisance_penalties,
@@ -2875,9 +2972,11 @@ def process_period(
                 "success": int(result.success),
                 "message": result.message,
                 "fit_role": result.message,
-                "fraction_variables": ";".join(shared_summary.fraction_variables),
-                "shared_f_pi0": shared_summary.f_pi0,
-                "shared_f_pi0_err": shared_summary.f_pi0_err,
+                "fraction_variables": ";".join(fraction_summary.fraction_variables),
+                "shared_f_pi0": fraction_summary.f_pi0,
+                "shared_f_pi0_err": fraction_summary.f_pi0_err,
+                "fraction_fit_poisson_deviance": fraction_summary.deviance,
+                "fraction_fit_ndf": fraction_summary.ndf,
                 "individual_f_pi0_median": individual_fraction_median,
                 "individual_f_pi0_mad": individual_fraction_mad,
                 "individual_f_pi0_min": individual_fraction_min,
@@ -2885,8 +2984,21 @@ def process_period(
                 "global_poisson_deviance": shared_summary.deviance,
                 "global_ndf": shared_summary.ndf,
                 "data_entries_in_range": result.data_total,
-                "dvcs_mc_entries_in_range": float(np.sum(fit_dvcs_hists[variable.branch])),
-                "pi0_mc_entries_in_range": float(np.sum(fit_pi0_hists[variable.branch])),
+                "dvcs_mc_entries_in_range": float(
+                    np.sum(dvcs_hists[topology.key][variable.branch])
+                ),
+                "pi0_mc_entries_in_range": float(
+                    np.sum(pi0_hists[topology.key][variable.branch])
+                ),
+                "fraction_fit_data_entries_in_range": float(
+                    np.sum(fraction_data_hists[variable.branch])
+                ),
+                "fraction_fit_dvcs_mc_entries_in_range": float(
+                    np.sum(fraction_dvcs_hists[variable.branch])
+                ),
+                "fraction_fit_pi0_mc_entries_in_range": float(
+                    np.sum(fraction_pi0_hists[variable.branch])
+                ),
                 "common_fraction_population_data": common_population_counts["data"],
                 "common_fraction_population_dvcs_mc": common_population_counts["dvcs_mc"],
                 "common_fraction_population_pi0_mc": common_population_counts["pi0_mc"],
