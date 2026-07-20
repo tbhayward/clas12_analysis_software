@@ -415,6 +415,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--dvcs-pi0-core-containment",
+        type=float,
+        default=0.90,
+        help=(
+            "pi0-MC containment combined with the DVCS-MC nuisance/validation "
+            "support using a logical OR (default: 0.90)."
+        ),
+    )
+    parser.add_argument(
+        "--dvcs-pi0-fraction-containment",
+        type=float,
+        default=0.95,
+        help=(
+            "pi0-MC containment combined with the DVCS-MC fraction-driver "
+            "support using a logical OR (default: 0.95)."
+        ),
+    )
+    parser.add_argument(
         "--pi0-core-containment",
         type=float,
         default=0.90,
@@ -1248,16 +1266,20 @@ def fit_shared_two_templates(
     use_nuisance_penalties: bool,
     core_containment: float,
     fraction_containment: float,
+    pi0_support_core_containment: float,
+    pi0_support_fraction_containment: float,
     pi0_core_calibration: Optional[Mapping[str, Tuple[float, float]]] = None,
     outside_overshoot_penalty_weight: float = 0.25,
     emiss2_mean_order_penalty_weight: float = 25.0,
 ) -> SharedFitSummary:
     """Fit a shared f_pi0 while separating resolution and fraction regions.
 
-    Variable-specific DVCS shifts and smearings are fitted only in the narrower
-    DVCS-MC signal core. The shared fraction is then updated using the broader
-    containment regions of the selected discriminator variables. Validation
-    variables profile only their nuisance parameters at the fitted fraction.
+    Variable-specific DVCS shifts and smearings are fitted in the union of the
+    DVCS-MC and pi0-MC support regions. The shared fraction is then updated in
+    the broader union-support regions of the selected discriminator variables.
+    Thus, bins are excluded only when neither modeled component has meaningful
+    support. Validation variables profile only their nuisance parameters at the
+    fitted fraction.
     """
     requested_fraction_variables = tuple(dict.fromkeys(fraction_variable_branches))
     requested_set = set(requested_fraction_variables)
@@ -1273,21 +1295,54 @@ def fit_shared_two_templates(
         if data_total < min_counts or dvcs_shape is None or pi0_shape is None:
             continue
         # endif
-        dvcs_support_mask = mc_signal_containment_mask(
-            dvcs_counts, variable, topology, core_containment
+        pi0_counts = np.asarray(
+            pi0_histograms[variable.branch],
+            dtype=np.float64,
         )
-        dvcs_fraction_mask = mc_signal_containment_mask(
-            dvcs_counts, variable, topology, fraction_containment
+
+        dvcs_core_mask = mc_signal_containment_mask(
+            dvcs_counts,
+            variable,
+            topology,
+            core_containment,
         )
-        # The fraction region must include the nuisance core.
-        dvcs_fraction_mask = dvcs_fraction_mask | dvcs_support_mask
+        pi0_core_mask = mc_signal_containment_mask(
+            pi0_counts,
+            variable,
+            topology,
+            pi0_support_core_containment,
+        )
+        fit_support_mask = dvcs_core_mask | pi0_core_mask
+
+        dvcs_fraction_region = mc_signal_containment_mask(
+            dvcs_counts,
+            variable,
+            topology,
+            fraction_containment,
+        )
+        pi0_fraction_region = mc_signal_containment_mask(
+            pi0_counts,
+            variable,
+            topology,
+            pi0_support_fraction_containment,
+        )
+        fraction_support_mask = (
+            dvcs_fraction_region
+            | pi0_fraction_region
+            | fit_support_mask
+        )
+
         prepared[variable.branch] = {
             "data": data,
             "data_total": data_total,
             "dvcs_shape": dvcs_shape,
             "pi0_shape": pi0_shape,
-            "dvcs_support_mask": dvcs_support_mask,
-            "dvcs_fraction_mask": dvcs_fraction_mask,
+            "dvcs_support_mask": fit_support_mask,
+            "dvcs_fraction_mask": fraction_support_mask,
+            "dvcs_core_mask": dvcs_core_mask,
+            "pi0_core_mask": pi0_core_mask,
+            "dvcs_fraction_region": dvcs_fraction_region,
+            "pi0_fraction_region": pi0_fraction_region,
         }
         active_variables.append(variable)
     # endfor
@@ -1602,7 +1657,7 @@ def fit_shared_two_templates(
         return SharedFitSummary(False, "selected-discriminator core/profile fit failed")
     # endif
 
-    # Profile every validation variable in its own DVCS core at fixed f_pi0.
+    # Profile every validation variable in the DVCS-or-pi0 union support at fixed f_pi0.
     all_nuisances: Dict[str, np.ndarray] = {}
     for variable in active_variables:
         start = best_driver_nuisances.get(variable.branch, nuisance_start(variable))
@@ -1704,9 +1759,17 @@ def fit_shared_two_templates(
             if float(info["data_total"]) > 0.0 else 0.0
         )
         role = (
-            f"fraction driver ({100.0 * fraction_containment:.0f}% region)"
+            (
+                "fraction driver "
+                f"(DVCS {100.0 * fraction_containment:.0f}% "
+                f"OR pi0 {100.0 * pi0_support_fraction_containment:.0f}%)"
+            )
             if variable.branch in requested_set
-            else f"validation core ({100.0 * core_containment:.0f}%)"
+            else (
+                "validation support "
+                f"(DVCS {100.0 * core_containment:.0f}% "
+                f"OR pi0 {100.0 * pi0_support_core_containment:.0f}%)"
+            )
         )
         results[variable.branch] = FitResult(
             success=True,
@@ -2395,6 +2458,8 @@ def process_period(
     use_nuisance_penalties: bool,
     dvcs_core_containment: float,
     dvcs_fraction_containment: float,
+    dvcs_pi0_core_containment: float,
+    dvcs_pi0_fraction_containment: float,
     outside_overshoot_penalty_weight: float,
     emiss2_mean_order_penalty_weight: float,
     log_y: bool,
@@ -2480,6 +2545,8 @@ def process_period(
             use_nuisance_penalties,
             dvcs_core_containment,
             dvcs_fraction_containment,
+            dvcs_pi0_core_containment,
+            dvcs_pi0_fraction_containment,
             (pi0_core_calibrations or {}).get(topology.key, {}),
             outside_overshoot_penalty_weight,
             emiss2_mean_order_penalty_weight,
@@ -2501,6 +2568,8 @@ def process_period(
                 use_nuisance_penalties,
                 dvcs_core_containment,
                 dvcs_fraction_containment,
+                dvcs_pi0_core_containment,
+                dvcs_pi0_fraction_containment,
                 (pi0_core_calibrations or {}).get(topology.key, {}),
                 outside_overshoot_penalty_weight,
                 emiss2_mean_order_penalty_weight,
@@ -2719,9 +2788,6 @@ def apply_window(values: np.ndarray, low: float, high: float) -> np.ndarray:
 # regions unsupported by both templates.
 # ---------------------------------------------------------------------------
 
-def build_union_support_mask(dvcs_support_mask, pi0_support_mask):
-    """Return the union of the DVCS and pi0 template support masks."""
-    return dvcs_support_mask | pi0_support_mask
 
 
 
@@ -4077,6 +4143,8 @@ def run_dvcs_iterative_cuts(
     use_nuisance_penalties: bool,
     core_containment: float,
     fraction_containment: float,
+    pi0_support_core_containment: float,
+    pi0_support_fraction_containment: float,
     pi0_calibration: Mapping[str, Tuple[float, float]],
     containments: Mapping[str, float],
     outside_overshoot_penalty_weight: float,
@@ -4125,6 +4193,8 @@ def run_dvcs_iterative_cuts(
         use_nuisance_penalties,
         core_containment,
         fraction_containment,
+        pi0_support_core_containment,
+        pi0_support_fraction_containment,
         pi0_calibration,
         outside_overshoot_penalty_weight,
         emiss2_mean_order_penalty_weight,
@@ -4735,6 +4805,8 @@ def develop_iterative_cuts_for_period(
     use_nuisance_penalties: bool,
     dvcs_core_containment: float,
     dvcs_fraction_containment: float,
+    dvcs_pi0_core_containment: float,
+    dvcs_pi0_fraction_containment: float,
     pi0_core_containment: float,
     pi0_calibrations: Mapping[str, Mapping[str, Tuple[float, float]]],
     nominal_containment: float,
@@ -4792,6 +4864,8 @@ def develop_iterative_cuts_for_period(
             use_nuisance_penalties,
             dvcs_core_containment,
             dvcs_fraction_containment,
+            dvcs_pi0_core_containment,
+            dvcs_pi0_fraction_containment,
             pi0_calibrations.get(topology.key, {}),
             containments,
             outside_overshoot_penalty_weight,
@@ -4950,6 +5024,8 @@ def process_period_worker(
     pi0_core_containment: float,
     dvcs_core_containment: float,
     dvcs_fraction_containment: float,
+    dvcs_pi0_core_containment: float,
+    dvcs_pi0_fraction_containment: float,
     log_y: bool,
     dpi: int,
     cut_nominal_containment: float,
@@ -5012,6 +5088,8 @@ def process_period_worker(
         use_nuisance_penalties,
         dvcs_core_containment,
         dvcs_fraction_containment,
+        dvcs_pi0_core_containment,
+        dvcs_pi0_fraction_containment,
         outside_overshoot_penalty_weight,
         emiss2_mean_order_penalty_weight,
         log_y,
@@ -5039,6 +5117,8 @@ def process_period_worker(
             use_nuisance_penalties,
             dvcs_core_containment,
             dvcs_fraction_containment,
+            dvcs_pi0_core_containment,
+            dvcs_pi0_fraction_containment,
             pi0_core_containment,
             pi0_calibrations,
             cut_nominal_containment,
@@ -5094,6 +5174,21 @@ def main() -> int:
     if not (0.50 <= args.pi0_core_containment <= 1.0):
         raise ValueError("--pi0-core-containment must satisfy 0.50 <= value <= 1.0.")
     # endif
+    if not (0.50 <= args.dvcs_pi0_core_containment <= 1.0):
+        raise ValueError(
+            "--dvcs-pi0-core-containment must satisfy 0.50 <= value <= 1.0."
+        )
+    # endif
+    if not (
+        args.dvcs_pi0_core_containment
+        <= args.dvcs_pi0_fraction_containment
+        <= 1.0
+    ):
+        raise ValueError(
+            "--dvcs-pi0-fraction-containment must be at least the pi0 support "
+            "core containment and no greater than 1.0."
+        )
+    # endif
 
     periods = selected_periods(args.period)
     topologies = selected_topologies(args.topology)
@@ -5101,6 +5196,13 @@ def main() -> int:
     all_rows: List[Dict[str, object]] = []
     all_pi0_rows: List[Dict[str, object]] = []
     fraction_variables = args.fraction_variable or ["Delta_phi", "theta_gamma_gamma", "pTmiss"]
+    log(
+        "DVCS two-template support: "
+        f"nuisance/validation = DVCS {100.0 * args.dvcs_core_containment:.1f}% "
+        f"OR pi0 {100.0 * args.dvcs_pi0_core_containment:.1f}%; "
+        f"fraction drivers = DVCS {100.0 * args.dvcs_fraction_containment:.1f}% "
+        f"OR pi0 {100.0 * args.dvcs_pi0_fraction_containment:.1f}%."
+    )
     if args.shift_prior_bins <= 0.0 or args.smear_prior_bins <= 0.0:
         raise ValueError("--shift-prior-bins and --smear-prior-bins must be positive.")
     # endif
@@ -5176,6 +5278,8 @@ def main() -> int:
                 args.pi0_core_containment,
                 args.dvcs_core_containment,
                 args.dvcs_fraction_containment,
+                args.dvcs_pi0_core_containment,
+                args.dvcs_pi0_fraction_containment,
                 args.log_y,
                 args.dpi,
                 args.cut_nominal_containment,
@@ -5210,6 +5314,8 @@ def main() -> int:
                     args.pi0_core_containment,
                     args.dvcs_core_containment,
                     args.dvcs_fraction_containment,
+                    args.dvcs_pi0_core_containment,
+                    args.dvcs_pi0_fraction_containment,
                     args.log_y,
                     args.dpi,
                     args.cut_nominal_containment,
@@ -5333,21 +5439,3 @@ if __name__ == "__main__":
         sys.exit(1)
     # endtry
 #endif
-
-
-# ---------------------------------------------------------------------------
-# IMPLEMENTATION NOTE (v40)
-# Wherever the fitting mask is constructed, replace:
-#
-#     fit_mask = dvcs_support_mask
-#
-# with
-#
-#     fit_mask = build_union_support_mask(
-#         dvcs_support_mask,
-#         pi0_support_mask,
-#     )
-#
-# For the fraction-driver variables, use the union of the DVCS fraction-support
-# mask and the pi0 support mask.
-# ---------------------------------------------------------------------------
