@@ -190,6 +190,7 @@ public static void main(String[] args) {
                     // DIS (already corrected if toggle on)
                     Q2  = variables.Q2()
                     W   = variables.W()
+                    if (W > 2) continue;
                     x   = variables.x()
                     y   = variables.y()
                     Mx2 = variables.Mx2()
