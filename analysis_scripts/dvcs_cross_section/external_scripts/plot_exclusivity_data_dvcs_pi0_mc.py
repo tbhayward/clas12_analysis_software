@@ -3776,6 +3776,9 @@ def draw_iterative_cut_canvas(
     steps: Sequence[IterativeCutStep],
     summary: bool,
     dpi: int,
+    final_histograms: Optional[
+        Mapping[str, Mapping[str, np.ndarray]]
+    ] = None,
 ) -> None:
     fig, axes = plt.subplots(2, 4, figsize=(20.0, 10.0))
     flat_axes = axes.ravel()
@@ -3788,43 +3791,68 @@ def draw_iterative_cut_canvas(
         variable.branch: variable
         for variable in plot_variables
     }
-    ordered_steps = list(steps)
+
     if summary:
-        template_order = [
-            variable.branch
-            for variable in plot_variables
-        ]
+        if final_histograms is None:
+            raise RuntimeError(
+                "Final iterative-cut summary requested without final histograms."
+            )
+        # endif
         production_steps = [
-            step for step in steps
+            step
+            for step in steps
             if channel != "dvcs" or step.accepted_for_production
         ]
-        step_by_variable = {step.variable: step for step in production_steps}
-        ordered_steps = [
-            step_by_variable[branch]
-            for branch in template_order
-            if branch in step_by_variable
+        step_by_variable = {
+            step.variable: step
+            for step in production_steps
+        }
+        plot_entries = [
+            (
+                variable,
+                step_by_variable.get(variable.branch),
+                {
+                    sample: np.asarray(
+                        sample_histograms[variable.branch],
+                        dtype=np.float64,
+                    )
+                    for sample, sample_histograms in final_histograms.items()
+                },
+            )
+            for variable in plot_variables
+        ]
+    else:
+        missing_plot_variables = sorted({
+            step.variable
+            for step in steps
+            if step.variable not in variable_lookup
+        })
+        if missing_plot_variables:
+            raise RuntimeError(
+                f"Iterative-cut plotting configuration for channel "
+                f"'{channel}' is missing variables: "
+                f"{missing_plot_variables}."
+            )
+        # endif
+        plot_entries = [
+            (
+                variable_lookup[step.variable],
+                step,
+                step.before_histograms,
+            )
+            for step in steps
         ]
     # endif
 
-    missing_plot_variables = sorted({
-        step.variable
-        for step in ordered_steps
-        if step.variable not in variable_lookup
-    })
-    if missing_plot_variables:
-        raise RuntimeError(
-            f"Iterative-cut plotting configuration for channel '{channel}' "
-            f"is missing variables: {missing_plot_variables}."
-        )
-    # endif
-
-    for axis, step in zip(flat_axes, ordered_steps):
-        variable = variable_lookup[step.variable]
+    for axis, (variable, step, histograms) in zip(
+        flat_axes,
+        plot_entries,
+    ):
         edges, centers = bin_geometry(variable)
-        histograms = step.after_histograms if summary else step.before_histograms
         data = histograms["data"]
         signal = histograms["signal"]
         background = histograms.get("background")
+
         axis.errorbar(
             centers,
             data,
@@ -3836,20 +3864,20 @@ def draw_iterative_cut_canvas(
             label="data",
             zorder=5,
         )
-        if signal is not None:
-            signal_shape = normalized_shape(signal)
-            if signal_shape is not None:
-                axis.stairs(
-                    float(np.sum(data)) * signal_shape,
-                    edges,
-                    color="0.55",
-                    linestyle=":",
-                    linewidth=1.4,
-                    label="raw signal MC",
-                )
-            # endif
+
+        signal_shape = normalized_shape(signal)
+        if signal_shape is not None:
+            axis.stairs(
+                float(np.sum(data)) * signal_shape,
+                edges,
+                color="0.55",
+                linestyle=":",
+                linewidth=1.4,
+                label="raw signal MC",
+            )
         # endif
-        if not summary and step.fit_result.success:
+
+        if not summary and step is not None and step.fit_result.success:
             if channel == "dvcs":
                 axis.stairs(
                     step.fit_result.dvcs_component_counts,
@@ -3895,57 +3923,69 @@ def draw_iterative_cut_canvas(
             # endif
         # endif
 
-        low, high = step.boundaries["nominal"]["data"]
-        mc_low, mc_high = step.boundaries["nominal"]["mc"]
-        if low > variable.xmin + 1.0e-12:
-            axis.axvline(
-                low,
-                color="tab:purple",
-                linewidth=1.8,
-                label="data boundary",
-            )
-        # endif
-        if high < variable.xmax - 1.0e-12:
-            axis.axvline(high, color="tab:purple", linewidth=1.8)
-        # endif
-        if mc_low > variable.xmin + 1.0e-12:
-            axis.axvline(
-                mc_low,
-                color="tab:purple",
-                linewidth=0.9,
-                linestyle="--",
-                label="MC boundary",
-            )
-        # endif
-        if mc_high < variable.xmax - 1.0e-12:
-            axis.axvline(
-                mc_high,
-                color="tab:purple",
-                linewidth=0.9,
-                linestyle="--",
-            )
-        # endif
-        annotation = (
-            f"step {step.iteration + 1}: {step.variable}\n"
-            f"calibration={step.calibration_source}\n"
-            f"score={step.score:.3f}\n"
-            f"data cut=[{low:.5g}, {high:.5g}]\n"
-            f"MC cut=[{step.boundaries['nominal']['mc'][0]:.5g}, "
-            f"{step.boundaries['nominal']['mc'][1]:.5g}]\n"
-            f"signal eff={100.0 * step.dvcs_mc_efficiency:.1f}%"
-        )
-        if channel == "dvcs":
-            annotation += (
-                f"\npi0 eff={100.0 * step.pi0_mc_efficiency:.1f}%"
-                f"\nf_pi0: {step.f_pi0_before:.3f}"
-                f" -> {step.f_pi0_after:.3f}"
-                f"\nFoM: {step.fom_before:.5g} -> {step.fom_after:.5g}"
-                f"\nproduction={'accepted' if step.accepted_for_production else 'rejected'}"
-            )
-            if step.stop_reason:
-                annotation += f"\n{step.stop_reason}"
+        if step is not None:
+            low, high = step.boundaries["nominal"]["data"]
+            mc_low, mc_high = step.boundaries["nominal"]["mc"]
+
+            if low > variable.xmin + 1.0e-12:
+                axis.axvline(
+                    low,
+                    color="tab:purple",
+                    linewidth=1.8,
+                    label="data boundary",
+                )
             # endif
+            if high < variable.xmax - 1.0e-12:
+                axis.axvline(
+                    high,
+                    color="tab:purple",
+                    linewidth=1.8,
+                )
+            # endif
+            if mc_low > variable.xmin + 1.0e-12:
+                axis.axvline(
+                    mc_low,
+                    color="tab:purple",
+                    linewidth=0.9,
+                    linestyle="--",
+                    label="MC boundary",
+                )
+            # endif
+            if mc_high < variable.xmax - 1.0e-12:
+                axis.axvline(
+                    mc_high,
+                    color="tab:purple",
+                    linewidth=0.9,
+                    linestyle="--",
+                )
+            # endif
+
+            annotation = (
+                f"step {step.iteration + 1}: {step.variable}\n"
+                f"calibration={step.calibration_source}\n"
+                f"score={step.score:.3f}\n"
+                f"data cut=[{low:.5g}, {high:.5g}]\n"
+                f"MC cut=[{mc_low:.5g}, {mc_high:.5g}]\n"
+                f"signal eff={100.0 * step.dvcs_mc_efficiency:.1f}%"
+            )
+            if channel == "dvcs":
+                annotation += (
+                    f"\npi0 eff="
+                    f"{100.0 * step.pi0_mc_efficiency:.1f}%"
+                    f"\nf_pi0: {step.f_pi0_before:.3f}"
+                    f" -> {step.f_pi0_after:.3f}"
+                    f"\nFoM: {step.fom_before:.5g}"
+                    f" -> {step.fom_after:.5g}"
+                    f"\nproduction=accepted"
+                )
+            # endif
+        else:
+            annotation = (
+                "final distribution after all accepted cuts\n"
+                "no direct cut applied to this variable"
+            )
         # endif
+
         axis.text(
             0.98,
             0.96,
@@ -3954,7 +3994,11 @@ def draw_iterative_cut_canvas(
             ha="right",
             va="top",
             fontsize=8.5,
-            bbox=dict(facecolor="white", alpha=0.80, edgecolor="none"),
+            bbox=dict(
+                facecolor="white",
+                alpha=0.80,
+                edgecolor="none",
+            ),
         )
         axis.set_xlim(variable.xmin, variable.xmax)
         axis.set_ylim(bottom=0.0)
@@ -3963,16 +4007,39 @@ def draw_iterative_cut_canvas(
         axis.grid(axis="y", alpha=0.22)
     # endfor
 
-    title_channel = r"$e'p'\gamma$" if channel == "dvcs" else r"$e'p'\pi^0$"
-    title_kind = "final iterative-cut summary" if summary else "iterative cut development"
+    for axis in flat_axes[len(plot_entries):]:
+        axis.set_visible(False)
+    # endfor
+
+    title_channel = (
+        r"$e'p'\gamma$"
+        if channel == "dvcs"
+        else r"$e'p'\pi^0$"
+    )
+    title_kind = (
+        "final iterative-cut summary"
+        if summary
+        else "iterative cut development"
+    )
     fig.suptitle(
-        f"{title_channel} {title_kind}: {period.label}, {topology.label}\n"
+        f"{title_channel} {title_kind}: "
+        f"{period.label}, {topology.label}\n"
         "automatic order; nominal signal containment = 95%",
         fontsize=17,
         y=0.985,
     )
-    handles, labels = flat_axes[0].get_legend_handles_labels()
-    if handles:
+
+    legend_axis = next(
+        (
+            axis
+            for axis in flat_axes
+            if axis.get_visible()
+            and axis.get_legend_handles_labels()[0]
+        ),
+        None,
+    )
+    if legend_axis is not None:
+        handles, labels = legend_axis.get_legend_handles_labels()
         fig.legend(
             handles,
             labels,
@@ -3982,6 +4049,7 @@ def draw_iterative_cut_canvas(
             frameon=False,
         )
     # endif
+
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.86))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight")
@@ -4892,8 +4960,12 @@ def run_dvcs_iterative_cuts(
     containments: Mapping[str, float],
     outside_overshoot_penalty_weight: float,
     emiss2_mean_order_penalty_weight: float,
-) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
-    """Develop matched-containment data and MC cuts with one frozen initial calibration and propagated contamination."""
+) -> Tuple[
+    List[IterativeCutStep],
+    Dict[str, Dict[str, Dict[str, object]]],
+    Dict[str, Dict[str, np.ndarray]],
+]:
+    """Develop matched-containment cuts and retain all final distributions."""
 
     data_arrays = arrays["data"]
     signal_arrays = arrays["signal"]
@@ -5280,7 +5352,24 @@ def run_dvcs_iterative_cuts(
         remaining.remove(branch)
     # endfor
 
-    return steps, json_variants
+    final_histograms = {
+        "data": arrays_to_histograms(
+            data_arrays,
+            masks["data"],
+            VARIABLES,
+        ),
+        "signal": arrays_to_histograms(
+            signal_arrays,
+            masks["signal"],
+            VARIABLES,
+        ),
+        "background": arrays_to_histograms(
+            background_arrays,
+            masks["background"],
+            VARIABLES,
+        ),
+    }
+    return steps, json_variants, final_histograms
 
 def run_pi0_iterative_cuts(
     period: PeriodConfig,
@@ -5295,7 +5384,11 @@ def run_pi0_iterative_cuts(
     use_nuisance_penalties: bool,
     core_containment: float,
     containments: Mapping[str, float],
-) -> Tuple[List[IterativeCutStep], Dict[str, Dict[str, Dict[str, object]]]]:
+) -> Tuple[
+    List[IterativeCutStep],
+    Dict[str, Dict[str, Dict[str, object]]],
+    Dict[str, Dict[str, np.ndarray]],
+]:
     """Apply the DVCS-selected order with one frozen direct-pi0 calibration."""
 
     data_arrays = arrays["data"]
@@ -5569,7 +5662,19 @@ def run_pi0_iterative_cuts(
         # endfor
     # endfor
 
-    return steps, json_variants
+    final_histograms = {
+        "data": arrays_to_histograms(
+            data_arrays,
+            masks["data"],
+            PI0_ITERATIVE_VARIABLES,
+        ),
+        "signal": arrays_to_histograms(
+            signal_arrays,
+            masks["signal"],
+            PI0_ITERATIVE_VARIABLES,
+        ),
+    }
+    return steps, json_variants, final_histograms
 
 def develop_iterative_cuts_for_period(
     period: PeriodConfig,
@@ -5648,7 +5753,7 @@ def develop_iterative_cuts_for_period(
             sample: values[topology.key]
             for sample, values in dvcs_arrays.items()
         }
-        dvcs_steps, dvcs_json = run_dvcs_iterative_cuts(
+        dvcs_steps, dvcs_json, dvcs_final_histograms = run_dvcs_iterative_cuts(
             period,
             topology,
             dvcs_topology_arrays,
@@ -5737,7 +5842,7 @@ def develop_iterative_cuts_for_period(
             # endif
         # endfor
 
-        pi0_steps, pi0_json = run_pi0_iterative_cuts(
+        pi0_steps, pi0_json, pi0_final_histograms = run_pi0_iterative_cuts(
             period,
             topology,
             pi0_topology_arrays,
@@ -5762,11 +5867,29 @@ def develop_iterative_cuts_for_period(
                 / "iterative_cut_summary"
                 / f"iterative_cut_summary_{period.key}_{topology.key.lower()}.png"
             )
-            draw_iterative_cut_canvas(
-                development_path, period, topology, channel, steps, False, dpi
+            final_histograms = (
+                dvcs_final_histograms
+                if channel == "dvcs"
+                else pi0_final_histograms
             )
             draw_iterative_cut_canvas(
-                summary_path, period, topology, channel, steps, True, dpi
+                development_path,
+                period,
+                topology,
+                channel,
+                steps,
+                False,
+                dpi,
+            )
+            draw_iterative_cut_canvas(
+                summary_path,
+                period,
+                topology,
+                channel,
+                steps,
+                True,
+                dpi,
+                final_histograms=final_histograms,
             )
             log(f"Wrote {development_path}")
             log(f"Wrote {summary_path}")
