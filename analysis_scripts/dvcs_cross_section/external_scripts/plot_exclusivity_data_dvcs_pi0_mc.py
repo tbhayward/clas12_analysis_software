@@ -256,7 +256,7 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03,
                    aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0")),
-    VariableConfig("z", r"$z$", 120, 0.0, 1.2),
+    VariableConfig("z", r"$z$", 140, 0.2, 1.6),
     VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0,
                    aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2")),
 )
@@ -266,7 +266,7 @@ PI0_VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
     VariableConfig("theta_pi0_pi0", r"$\theta_{\pi^0\pi^0}$ (rad)", 120, 0.0, 3.0),
     VariableConfig("pTmiss", r"$p_{T}^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5),
-    VariableConfig("z", r"$z$", 120, 0.0, 1.2),
+    VariableConfig("z", r"$z$", 140, 0.2, 1.6),
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("xF", r"$x_F(ep+\pi^0)$", 100, -0.5, 0.2),
     VariableConfig(
@@ -361,7 +361,7 @@ SHAPE_ONLY_VARIABLES: Tuple[VariableConfig, ...] = (
         4.0,
         aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
     ),
-    VariableConfig("z", r"$z$", 120, 0.0, 1.2),
+    VariableConfig("z", r"$z$", 140, 0.2, 1.6),
 )
 
 DVCS_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
@@ -1028,9 +1028,8 @@ def is_lower_bounded_morph_variable(variable: VariableConfig) -> bool:
 
 
 def is_upper_bounded_morph_variable(variable: VariableConfig) -> bool:
-    """Variables peaked near the upper boundary with a tail toward smaller values."""
+    """Variables genuinely bounded at the upper plotting edge with a tail toward smaller values."""
     return variable.branch in {
-        "z",
         "z2",
         "xF2",
     }
@@ -1299,11 +1298,7 @@ def transform_upper_bounded_shape(
     smaller values, which is appropriate for z2 and xF2.
     """
     edges, centers = bin_geometry(variable)
-    upper_bound = (
-        1.0
-        if variable.branch == "z"
-        else float(variable.xmax)
-    )
+    upper_bound = float(variable.xmax)
     epsilon = max(0.25 * (edges[1] - edges[0]), 1.0e-8)
     source_weights = np.asarray(base_shape, dtype=np.float64)
 
