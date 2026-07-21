@@ -1946,7 +1946,7 @@ def fit_shared_two_templates(
         dvcs_mean, _ = distribution_moments(transformed_signal, variable)
         pi0_mean, _ = distribution_moments(pi0_shape, variable)
 
-        if dvcs_mean <= pi0_mean:
+        if dvcs_mean >= pi0_mean:
             return 1.0e30
 
         return 0.0
