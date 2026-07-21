@@ -5039,22 +5039,25 @@ def nuisance_boundary_flags(
     return tuple(flags)
 
 
-def iterative_signal_shape(
+def iterative_template_shapes(
     raw_signal_shape: np.ndarray,
+    raw_background_shape: np.ndarray,
     variable: VariableConfig,
     fitted_result: FitResult,
-) -> Tuple[np.ndarray, str]:
-    """Use the template-fit nuisance calibration for iterative cut construction.
+) -> Tuple[np.ndarray, np.ndarray, str]:
+    """Apply the frozen DVCS and pi0 nuisance calibrations at every cut step.
 
-    The raw reconstructed signal template is used only when the fitted
-    calibration is genuinely unusable: missing/nonfinite parameters or a
-    failed template transformation. Reduced deviance is intentionally not used
-    as a rejection criterion because the very large event samples make even
-    visually adequate fits yield large D/ndf values.
+    Each iterative stage starts from the post-cut raw DVCS and pi0 templates,
+    then reapplies the nuisance morphs obtained from the initial constrained
+    two-template calibration. A raw-template fallback is used independently
+    for a component only when that component's frozen nuisance parameters are
+    unusable or its transformation fails.
     """
 
-    raw = np.asarray(raw_signal_shape, dtype=np.float64)
-    usable = (
+    raw_signal = np.asarray(raw_signal_shape, dtype=np.float64)
+    raw_background = np.asarray(raw_background_shape, dtype=np.float64)
+
+    dvcs_usable = (
         fitted_result.success
         and math.isfinite(fitted_result.shift)
         and math.isfinite(fitted_result.sigma_add)
@@ -5063,34 +5066,96 @@ def iterative_signal_shape(
             or math.isfinite(fitted_result.sigma_right)
         )
     )
-    if not usable:
-        return raw, "raw-MC fallback"
+    pi0_usable = (
+        fitted_result.success
+        and math.isfinite(fitted_result.pi0_shift)
+        and math.isfinite(fitted_result.pi0_sigma_add)
+        and (
+            not is_asymmetric_additive_variable(variable)
+            or math.isfinite(fitted_result.pi0_sigma_right)
+        )
+    )
+
+    transformed_signal = None
+    if dvcs_usable:
+        transformed_signal = transform_template_shape(
+            raw_signal,
+            variable,
+            fitted_result.shift,
+            fitted_result.sigma_add,
+            (
+                fitted_result.sigma_right
+                if is_asymmetric_additive_variable(variable)
+                else None
+            ),
+        )
+    # endif
+    if transformed_signal is None:
+        transformed_signal = raw_signal
+        dvcs_source = "DVCS raw-MC fallback"
+    else:
+        dvcs_source = "DVCS fitted nuisance"
     # endif
 
-    transformed = transform_template_shape(
-        raw,
-        variable,
-        fitted_result.shift,
-        fitted_result.sigma_add,
-        (
-            fitted_result.sigma_right
-            if is_asymmetric_additive_variable(variable)
-            else None
-        ),
-    )
-    if transformed is None:
-        return raw, "raw-MC fallback"
+    transformed_background = None
+    if pi0_usable:
+        transformed_background = transform_template_shape(
+            raw_background,
+            variable,
+            fitted_result.pi0_shift,
+            fitted_result.pi0_sigma_add,
+            (
+                fitted_result.pi0_sigma_right
+                if is_asymmetric_additive_variable(variable)
+                else None
+            ),
+        )
+    # endif
+    if transformed_background is None:
+        transformed_background = raw_background
+        pi0_source = "pi0 raw-MC fallback"
+    else:
+        pi0_source = "pi0 fitted nuisance"
     # endif
 
     if variable.branch == "Mx2_1":
-        transformed = symmetrize_from_left_side(
-            transformed,
+        transformed_signal = symmetrize_from_left_side(
+            transformed_signal,
             variable,
         )
-        return transformed, "left-side fitted nuisance, symmetric extrapolation"
+        transformed_background = symmetrize_from_left_side(
+            transformed_background,
+            variable,
+        )
+        dvcs_source += ", symmetric extrapolation"
+        pi0_source += ", symmetric extrapolation"
     # endif
 
-    return transformed, "fitted nuisance"
+    return (
+        transformed_signal,
+        transformed_background,
+        f"{dvcs_source}; {pi0_source}",
+    )
+
+
+def iterative_mean_ordering_is_valid(
+    variable: VariableConfig,
+    transformed_signal: np.ndarray,
+    transformed_background: np.ndarray,
+) -> bool:
+    """Require the fitted DVCS mean to remain left of pi0 at every step."""
+
+    if variable.branch not in {"Emiss2", "Mx2_2"}:
+        return True
+    # endif
+
+    dvcs_mean, _ = distribution_moments(transformed_signal, variable)
+    pi0_mean, _ = distribution_moments(transformed_background, variable)
+    return (
+        math.isfinite(dvcs_mean)
+        and math.isfinite(pi0_mean)
+        and dvcs_mean < pi0_mean
+    )
 
 
 def build_frozen_two_template_result(
@@ -5127,6 +5192,9 @@ def build_frozen_two_template_result(
         shift=frozen_result.shift,
         sigma_add=frozen_result.sigma_add,
         sigma_right=frozen_result.sigma_right,
+        pi0_shift=frozen_result.pi0_shift,
+        pi0_sigma_add=frozen_result.pi0_sigma_add,
+        pi0_sigma_right=frozen_result.pi0_sigma_right,
         deviance=poisson_deviance(data, model),
         ndf=max(1, data.size - 1),
         data_total=data_total,
@@ -5134,6 +5202,7 @@ def build_frozen_two_template_result(
         dvcs_component_counts=dvcs_component,
         pi0_component_counts=pi0_component,
         transformed_dvcs_shape=signal,
+        transformed_pi0_shape=background,
         fit_mask=np.ones(data.size, dtype=bool),
         morph_label=frozen_result.morph_label,
     )
@@ -5307,23 +5376,39 @@ def run_dvcs_iterative_cuts(
 
             frozen = frozen_results[branch]
             raw_signal_shape = normalized_shape(signal_hists[branch])
-            background_shape = normalized_shape(background_hists[branch])
+            raw_background_shape = normalized_shape(background_hists[branch])
             if (
                 not frozen.success
                 or raw_signal_shape is None
-                or background_shape is None
+                or raw_background_shape is None
             ):
                 continue
             # endif
 
-            transformed_signal, calibration_source = iterative_signal_shape(
+            (
+                transformed_signal,
+                transformed_background,
+                calibration_source,
+            ) = iterative_template_shapes(
                 raw_signal_shape,
+                raw_background_shape,
                 variable,
                 frozen,
             )
 
+            # Reapply the same physical ordering constraint used by the initial
+            # fit after every preceding exclusivity cut. A candidate that no
+            # longer satisfies mean(DVCS) < mean(pi0) is not eligible.
+            if not iterative_mean_ordering_is_valid(
+                variable,
+                transformed_signal,
+                transformed_background,
+            ):
+                continue
+            # endif
+
             current_signal_shapes[branch] = transformed_signal
-            current_background_shapes[branch] = background_shape
+            current_background_shapes[branch] = transformed_background
 
             boundaries: Dict[str, Dict[str, Tuple[float, float]]] = {}
             # Preserve the same signal survival probability in data and MC:
@@ -5380,7 +5465,7 @@ def run_dvcs_iterative_cuts(
                     background_eff,
                     transformed_signal,
                     raw_signal_shape,
-                    background_shape,
+                    transformed_background,
                     calibration_source,
                 )
             )
@@ -5418,7 +5503,7 @@ def run_dvcs_iterative_cuts(
             background_eff,
             transformed_signal,
             raw_signal_shape,
-            background_shape,
+            transformed_background,
             calibration_source,
         ) = candidates[0]
         branch = selected_variable.branch
@@ -5432,7 +5517,7 @@ def run_dvcs_iterative_cuts(
         display_result = build_frozen_two_template_result(
             data_hists[branch],
             transformed_signal,
-            background_shape,
+            transformed_background,
             propagated_fraction,
             frozen,
         )
