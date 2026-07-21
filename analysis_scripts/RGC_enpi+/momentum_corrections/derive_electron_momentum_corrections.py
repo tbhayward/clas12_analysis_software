@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v11.py
+derive_electron_momentum_corrections_v12.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -1174,7 +1174,7 @@ def fit_calibration_cells(
     individual_fit_directory: Path,
 ) -> list[dict[str, Any]]:
     """
-    Fit one sector-integrated W spectrum and four equal-population theta cells.
+    Fit one sector-integrated W spectrum and equal-population theta cells.
 
     The sector-integrated fit determines sigma_W. The same sigma_W is fixed in
     each theta-cell fit, while mu_W is constrained to lie within 40 MeV of the
@@ -2164,7 +2164,9 @@ def save_run_stability_plot(
     Fit W for every individual run by default.
 
     When run_bin_width is greater than one, consecutive run-number intervals are
-    grouped. The x coordinate is the event-weighted mean run number.
+    grouped. The x coordinate is the event-weighted mean run number. A dashed
+    line in each sector's plotting color marks the arithmetic mean of that
+    sector's successfully fitted run-level peak positions.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure, axis = plt.subplots(figsize=(11.0, 6.0))
@@ -2213,7 +2215,7 @@ def save_run_stability_plot(
         # endfor
 
         if run_centers:
-            axis.errorbar(
+            errorbar_container = axis.errorbar(
                 run_centers,
                 peak_positions,
                 yerr=peak_errors,
@@ -2221,6 +2223,19 @@ def save_run_stability_plot(
                 markersize=3,
                 linewidth=0.8,
                 label=f"Sector {sector}",
+            )
+            sector_color = errorbar_container.lines[0].get_color()
+            sector_mean_peak = float(np.mean(peak_positions))
+            axis.axhline(
+                sector_mean_peak,
+                linestyle="--",
+                linewidth=1.0,
+                color=sector_color,
+                alpha=0.9,
+                label=(
+                    rf"Sector {sector} mean "
+                    rf"$\mu_W$={sector_mean_peak:.4f} GeV"
+                ),
             )
         # endif
     # endfor
@@ -2496,10 +2511,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--theta-bin-count",
         type=int,
-        default=4,
+        default=5,
         help=(
             "Number of equal-population theta bins derived independently in each "
-            "FD sector. Default: 4"
+            "FD sector. Default: 5"
         ),
     )
 
@@ -2827,7 +2842,7 @@ def main() -> int:
     print(f"Period workers used: {worker_count}")
     print("")
     print(
-        "Sector-integrated fits determine sigma_W. Four equal-population theta "
+        "Sector-integrated fits determine sigma_W. Five equal-population theta "
         "cells per sector are fit with sigma_W fixed and mu_W constrained to "
         "the integrated mean +/- 0.040 GeV. Review the fit and pull panels "
         "before selecting production corrections."
