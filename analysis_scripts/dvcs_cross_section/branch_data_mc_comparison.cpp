@@ -735,6 +735,7 @@ struct BranchBinder {
     double Mx2_2 = 0.0;             bool has_Mx2_2 = false;
     double pTmiss = 0.0;            bool has_pTmiss = false;
     double Delta_phi = 0.0;         bool has_Delta_phi = false;
+    double theta = 0.0;             bool has_theta = false;
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
 
