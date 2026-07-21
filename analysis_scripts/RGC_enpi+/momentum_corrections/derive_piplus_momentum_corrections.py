@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_piplus_momentum_corrections_v2.py
+derive_piplus_momentum_corrections_v3.py
 
 First diagnostic pass for RGC pi+ momentum corrections using inclusive
 e pi+ X data and the missing-neutron peak in
@@ -99,15 +99,15 @@ RAD2DEG = 180.0 / math.pi
 DEFAULT_INPUTS = {
     "su22": Path(
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/"
-        "rgc_su22_inb_epi+X.root"
+        "rgc_su22_inb_NH3_epi+.root"
     ),
     "fa22": Path(
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/"
-        "rgc_fa22_inb_epi+X.root"
+        "rgc_fa22_inb_NH3_epi+.root"
     ),
     "sp23": Path(
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/"
-        "rgc_sp23_inb_epi+X.root"
+        "rgc_sp23_inb_NH3_epi+.root"
     ),
 }
 
