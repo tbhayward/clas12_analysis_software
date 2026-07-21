@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v13.py
+derive_electron_momentum_corrections_v14.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -22,15 +22,17 @@ CLAS12 Forward Detector sectors using their azimuthal angle. The sector-local
 azimuth is represented on [0, 60) degrees by rotating every sector onto sector 1.
 
 Primary outputs:
-    output/electron_diagnostics/fit_results.csv
-    output/electron_diagnostics/electron_correction_cells.json
-    output/electron_diagnostics/electron_correction_models.json
-    output/electron_diagnostics/plots/*.png
+    output/electron_diagnostics/csv/fit_results_uncorrected.csv
+    output/electron_diagnostics/csv/fit_results_corrected.csv
+    output/electron_diagnostics/csv/correction_model_comparison.csv
+    output/electron_diagnostics/json/electron_correction_cells.json
+    output/electron_diagnostics/json/electron_correction_models.json
+    output/electron_diagnostics/json/closure_summary.json
+    output/electron_diagnostics/plots/<plot_category>/*.png
 
-The JSON output is provisional. It records the fitted calibration cells and a
-simple weighted polynomial model, but it is not yet intended to be consumed by
-the production analysis until the diagnostic plots and model choices have been
-reviewed.
+The workflow derives a smooth theta-dependent correction independently for
+each calibration period and FD sector, applies it event by event, recomputes W,
+and performs a closure test using exactly the same theta-bin boundaries.
 
 Dependencies:
     numpy
@@ -46,6 +48,7 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import math
+import shutil
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -1611,6 +1614,825 @@ def evaluate_provisional_model(
 
 
 # -----------------------------------------------------------------------------
+# Theta-model selection, application, and closure
+# -----------------------------------------------------------------------------
+
+def weighted_polynomial_fit(
+    theta_deg: np.ndarray,
+    correction: np.ndarray,
+    correction_error: np.ndarray,
+    degree: int,
+    error_floor: float = 2.0e-4,
+) -> dict[str, Any]:
+    """
+    Fit delta-p/p as a polynomial in theta.
+
+    An uncertainty floor of 2e-4 (0.02 percent absolute in delta-p/p) prevents
+    extremely small formal peak-fit errors from giving individual calibration
+    cells unrealistically large leverage.
+    """
+    x = np.asarray(theta_deg, dtype=float)
+    y = np.asarray(correction, dtype=float)
+    yerr = np.asarray(correction_error, dtype=float)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+    if np.count_nonzero(valid) < degree + 2:
+        return {
+            "success": False,
+            "degree": degree,
+            "status": "insufficient_points",
+            "coefficients_ascending": [],
+            "covariance": [],
+            "chi2": math.nan,
+            "ndf": 0,
+            "chi2_ndf": math.nan,
+            "aicc": math.nan,
+            "n_points": int(np.count_nonzero(valid)),
+        }
+    # endif
+
+    x = x[valid]
+    y = y[valid]
+    yerr = yerr[valid]
+    effective_error = np.where(
+        np.isfinite(yerr) & (yerr > 0.0),
+        np.maximum(yerr, error_floor),
+        error_floor,
+    )
+    weights = 1.0 / effective_error
+
+    try:
+        coefficients_descending, covariance_descending = np.polyfit(
+            x,
+            y,
+            deg=degree,
+            w=weights,
+            cov=True,
+        )
+    except (ValueError, np.linalg.LinAlgError, FloatingPointError) as exc:
+        return {
+            "success": False,
+            "degree": degree,
+            "status": f"fit_failed:{type(exc).__name__}",
+            "coefficients_ascending": [],
+            "covariance": [],
+            "chi2": math.nan,
+            "ndf": 0,
+            "chi2_ndf": math.nan,
+            "aicc": math.nan,
+            "n_points": int(x.size),
+        }
+    # endtry
+
+    prediction = np.polyval(coefficients_descending, x)
+    chi2 = float(np.sum(((y - prediction) / effective_error) ** 2))
+    parameter_count = degree + 1
+    ndf = int(x.size - parameter_count)
+    chi2_ndf = chi2 / ndf if ndf > 0 else math.nan
+
+    if x.size > parameter_count + 1:
+        aicc = (
+            chi2
+            + 2.0 * parameter_count
+            + (
+                2.0
+                * parameter_count
+                * (parameter_count + 1)
+                / (x.size - parameter_count - 1)
+            )
+        )
+    else:
+        aicc = math.inf
+    # endif
+
+    coefficients_ascending = coefficients_descending[::-1]
+    covariance_ascending = covariance_descending[::-1, ::-1]
+
+    return {
+        "success": True,
+        "degree": degree,
+        "status": "success",
+        "coefficients_ascending": coefficients_ascending.tolist(),
+        "covariance": covariance_ascending.tolist(),
+        "chi2": chi2,
+        "ndf": ndf,
+        "chi2_ndf": chi2_ndf,
+        "aicc": float(aicc),
+        "n_points": int(x.size),
+        "effective_error_floor": error_floor,
+    }
+
+
+def select_theta_correction_models(
+    period: CalibrationPeriod,
+    fit_records: list[dict[str, Any]],
+    linear_chi2_ndf_max: float = 2.5,
+    quadratic_aicc_improvement_min: float = 2.0,
+) -> list[dict[str, Any]]:
+    """
+    Fit linear and quadratic correction models and select the lowest adequate
+    order independently for every FD sector.
+
+    The linear model is selected whenever chi2/ndf <= 2.5. If it is inadequate,
+    the quadratic model is selected when available. A quadratic may also replace
+    a marginal linear fit when its AICc improves by at least 2.
+    """
+    fit_frame = pd.DataFrame(fit_records)
+    model_records: list[dict[str, Any]] = []
+
+    for sector in range(1, 7):
+        cells = fit_frame.loc[
+            (fit_frame["sector"] == sector)
+            & (fit_frame["cell_type"] == "theta")
+            & (fit_frame["success"])
+            & np.isfinite(fit_frame["mean_theta_deg"])
+            & np.isfinite(fit_frame["delta_p_over_p"])
+        ].sort_values("mean_theta_deg")
+
+        linear = weighted_polynomial_fit(
+            cells["mean_theta_deg"].to_numpy(),
+            cells["delta_p_over_p"].to_numpy(),
+            cells["delta_p_over_p_error"].to_numpy(),
+            degree=1,
+        )
+        quadratic = weighted_polynomial_fit(
+            cells["mean_theta_deg"].to_numpy(),
+            cells["delta_p_over_p"].to_numpy(),
+            cells["delta_p_over_p_error"].to_numpy(),
+            degree=2,
+        )
+
+        selected_name = "none"
+        selected = None
+        selection_reason = "no_successful_model"
+
+        if linear["success"]:
+            linear_adequate = (
+                np.isfinite(linear["chi2_ndf"])
+                and linear["chi2_ndf"] <= linear_chi2_ndf_max
+            )
+
+            quadratic_materially_better = (
+                quadratic["success"]
+                and np.isfinite(linear["aicc"])
+                and np.isfinite(quadratic["aicc"])
+                and quadratic["aicc"]
+                <= linear["aicc"] - quadratic_aicc_improvement_min
+            )
+
+            if linear_adequate and not quadratic_materially_better:
+                selected_name = "linear"
+                selected = linear
+                selection_reason = "lowest_order_adequate"
+            elif quadratic["success"]:
+                selected_name = "quadratic"
+                selected = quadratic
+                selection_reason = (
+                    "quadratic_aicc_improvement"
+                    if quadratic_materially_better
+                    else "linear_inadequate"
+                )
+            else:
+                selected_name = "linear"
+                selected = linear
+                selection_reason = "quadratic_unavailable"
+            # endif
+        elif quadratic["success"]:
+            selected_name = "quadratic"
+            selected = quadratic
+            selection_reason = "linear_unavailable"
+        # endif
+
+        theta_min = (
+            float(cells["theta_low_deg"].min())
+            if not cells.empty
+            else math.nan
+        )
+        theta_max = (
+            float(cells["theta_high_deg"].max())
+            if not cells.empty
+            else math.nan
+        )
+
+        model_records.append(
+            {
+                "period_key": period.key,
+                "period_label": period.label,
+                "sector": sector,
+                "success": selected is not None,
+                "selected_model": selected_name,
+                "selected_degree": (
+                    int(selected["degree"])
+                    if selected is not None
+                    else None
+                ),
+                "selection_reason": selection_reason,
+                "theta_valid_min_deg": theta_min,
+                "theta_valid_max_deg": theta_max,
+                "selected_coefficients_ascending": (
+                    selected["coefficients_ascending"]
+                    if selected is not None
+                    else []
+                ),
+                "selected_covariance": (
+                    selected["covariance"]
+                    if selected is not None
+                    else []
+                ),
+                "selected_chi2": (
+                    selected["chi2"] if selected is not None else math.nan
+                ),
+                "selected_ndf": (
+                    selected["ndf"] if selected is not None else 0
+                ),
+                "selected_chi2_ndf": (
+                    selected["chi2_ndf"]
+                    if selected is not None
+                    else math.nan
+                ),
+                "linear": linear,
+                "quadratic": quadratic,
+                "n_theta_cells": int(len(cells)),
+            }
+        )
+    # endfor
+
+    return model_records
+
+
+def evaluate_selected_theta_model(
+    theta_deg: np.ndarray,
+    model_record: dict[str, Any],
+) -> np.ndarray:
+    """Evaluate the selected polynomial with theta clipped to its valid range."""
+    theta = np.asarray(theta_deg, dtype=float)
+    coefficients = np.asarray(
+        model_record["selected_coefficients_ascending"],
+        dtype=float,
+    )
+
+    if coefficients.size == 0:
+        return np.full_like(theta, np.nan, dtype=float)
+    # endif
+
+    theta_clipped = np.clip(
+        theta,
+        model_record["theta_valid_min_deg"],
+        model_record["theta_valid_max_deg"],
+    )
+
+    result = np.zeros_like(theta_clipped, dtype=float)
+    for power, coefficient in enumerate(coefficients):
+        result += coefficient * theta_clipped**power
+    # endfor
+    return result
+
+
+def apply_theta_corrections(
+    frame: pd.DataFrame,
+    model_records: list[dict[str, Any]],
+) -> pd.DataFrame:
+    """
+    Apply the selected correction model event by event and recompute W.
+
+    Sign convention:
+        p_corrected = p_measured * (1 + delta_p_over_p)
+    """
+    corrected = frame.copy()
+    corrected["model_delta_p_over_p"] = np.nan
+
+    model_by_sector = {
+        int(record["sector"]): record
+        for record in model_records
+        if record["success"]
+    }
+
+    for sector, model_record in model_by_sector.items():
+        sector_mask = corrected["sector"] == sector
+        corrected.loc[
+            sector_mask,
+            "model_delta_p_over_p",
+        ] = evaluate_selected_theta_model(
+            corrected.loc[sector_mask, "e_theta_deg"].to_numpy(),
+            model_record,
+        )
+    # endfor
+
+    if corrected["model_delta_p_over_p"].isna().any():
+        missing_sectors = sorted(
+            corrected.loc[
+                corrected["model_delta_p_over_p"].isna(),
+                "sector",
+            ].unique()
+        )
+        raise RuntimeError(
+            "No selected theta correction model for sectors "
+            f"{missing_sectors}"
+        )
+    # endif
+
+    corrected["e_p_uncorrected_gev"] = corrected["e_p"]
+    corrected["e_p"] = corrected["e_p"] * (
+        1.0 + corrected["model_delta_p_over_p"]
+    )
+    corrected["e_p_corrected_gev"] = corrected["e_p"]
+
+    theta = corrected["e_theta_rad"].to_numpy()
+    momentum = corrected["e_p"].to_numpy()
+    beam_energy = corrected["beam_energy_gev"].to_numpy()
+
+    q2 = (
+        2.0
+        * beam_energy
+        * momentum
+        * (1.0 - np.cos(theta))
+    )
+    w2 = (
+        PROTON_MASS_GEV**2
+        + 2.0 * PROTON_MASS_GEV * (beam_energy - momentum)
+        - q2
+    )
+    corrected["w_corrected"] = np.sqrt(
+        np.clip(w2, a_min=0.0, a_max=None)
+    )
+    corrected["w_recalculated"] = corrected["w_corrected"]
+    return corrected
+
+
+def theta_edges_from_uncorrected_records(
+    fit_records: list[dict[str, Any]],
+    sector: int,
+) -> np.ndarray:
+    """Recover the exact original theta boundaries for one sector."""
+    sector_cells = pd.DataFrame(fit_records)
+    sector_cells = sector_cells.loc[
+        (sector_cells["sector"] == sector)
+        & (sector_cells["cell_type"] == "theta")
+    ].sort_values("theta_bin_index")
+
+    if sector_cells.empty:
+        return np.asarray([], dtype=float)
+    # endif
+
+    lows = sector_cells["theta_low_deg"].to_numpy(dtype=float)
+    final_high = float(sector_cells["theta_high_deg"].iloc[-1])
+    return np.concatenate([lows, [final_high]])
+
+
+def fit_corrected_closure_cells(
+    corrected_frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    uncorrected_records: list[dict[str, Any]],
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_integrated: int,
+    minimum_events_cell: int,
+    save_individual_fits: bool,
+    individual_fit_directory: Path,
+) -> list[dict[str, Any]]:
+    """
+    Refit corrected W using the exact theta edges from the uncorrected sample.
+    """
+    records: list[dict[str, Any]] = []
+
+    for sector in range(1, 7):
+        sector_frame = corrected_frame.loc[
+            corrected_frame["sector"] == sector
+        ].copy()
+        theta_edges = theta_edges_from_uncorrected_records(
+            uncorrected_records,
+            sector,
+        )
+
+        integrated_fit, integrated_diagnostics = fit_w_peak(
+            sector_frame["w_corrected"].to_numpy(),
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events=minimum_events_integrated,
+        )
+        integrated_record = make_fit_record(
+            period=period,
+            sector=sector,
+            cell_type="sector_integrated",
+            theta_bin_index=None,
+            theta_low_deg=float(theta_edges[0]),
+            theta_high_deg=float(theta_edges[-1]),
+            local_phi_bin_index=None,
+            local_phi_low_deg=0.0,
+            local_phi_high_deg=60.0,
+            cell_frame=sector_frame,
+            fit_result=integrated_fit,
+        )
+        integrated_record["analysis_stage"] = "corrected"
+        records.append(integrated_record)
+
+        if save_individual_fits:
+            save_peak_fit_plot(
+                output_path=individual_fit_directory
+                / f"{period.key}_sector{sector}_integrated_corrected.png",
+                diagnostics=integrated_diagnostics,
+                fit_result=integrated_fit,
+                title=(
+                    f"{period.label}, sector {sector}, corrected integrated W"
+                ),
+            )
+        # endif
+
+        for theta_index in range(len(theta_edges) - 1):
+            theta_low = float(theta_edges[theta_index])
+            theta_high = float(theta_edges[theta_index + 1])
+            if theta_index == len(theta_edges) - 2:
+                mask = (
+                    (sector_frame["e_theta_deg"] >= theta_low)
+                    & (sector_frame["e_theta_deg"] <= theta_high)
+                )
+            else:
+                mask = (
+                    (sector_frame["e_theta_deg"] >= theta_low)
+                    & (sector_frame["e_theta_deg"] < theta_high)
+                )
+            # endif
+
+            cell_frame = sector_frame.loc[mask].copy()
+            if integrated_fit.success:
+                cell_fit, diagnostics = fit_w_peak(
+                    cell_frame["w_corrected"].to_numpy(),
+                    histogram_range=histogram_range,
+                    fit_range=fit_range,
+                    histogram_bins=histogram_bins,
+                    minimum_events=minimum_events_cell,
+                    fixed_sigma_gev=integrated_fit.peak_sigma_gev,
+                    mean_center_gev=PROTON_MASS_GEV,
+                    mean_half_window_gev=0.040,
+                )
+            else:
+                cell_fit = failed_peak_fit(
+                    status="skipped_corrected_integrated_fit_failed",
+                    n_events=int(len(cell_frame)),
+                    fit_range=fit_range,
+                    fit_mode="cell_fixed_sigma",
+                    sigma_fixed=True,
+                    mean_constraint_center_gev=PROTON_MASS_GEV,
+                    mean_constraint_half_width_gev=0.040,
+                )
+                diagnostics = {
+                    "counts": np.asarray([], dtype=float),
+                    "edges": np.asarray([], dtype=float),
+                    "centers": np.asarray([], dtype=float),
+                    "fit_mask": np.asarray([], dtype=bool),
+                    "fit_centers": np.asarray([], dtype=float),
+                    "fit_counts": np.asarray([], dtype=float),
+                    "fit_errors": np.asarray([], dtype=float),
+                    "fit_model_at_centers": np.asarray([], dtype=float),
+                    "pulls": np.asarray([], dtype=float),
+                    "fit_x": np.asarray([], dtype=float),
+                    "fit_y": np.asarray([], dtype=float),
+                    "fit_signal_y": np.asarray([], dtype=float),
+                    "fit_background_y": np.asarray([], dtype=float),
+                }
+            # endif
+
+            record = make_fit_record(
+                period=period,
+                sector=sector,
+                cell_type="theta",
+                theta_bin_index=theta_index,
+                theta_low_deg=theta_low,
+                theta_high_deg=theta_high,
+                local_phi_bin_index=None,
+                local_phi_low_deg=0.0,
+                local_phi_high_deg=60.0,
+                cell_frame=cell_frame,
+                fit_result=cell_fit,
+            )
+            record["analysis_stage"] = "corrected"
+            records.append(record)
+
+            if save_individual_fits:
+                save_peak_fit_plot(
+                    output_path=individual_fit_directory
+                    / (
+                        f"{period.key}_sector{sector}_theta"
+                        f"{theta_index:02d}_corrected.png"
+                    ),
+                    diagnostics=diagnostics,
+                    fit_result=cell_fit,
+                    title=(
+                        f"{period.label}, sector {sector}, corrected theta "
+                        f"cell {theta_index + 1}/{len(theta_edges) - 1}"
+                    ),
+                )
+            # endif
+        # endfor
+    # endfor
+
+    return records
+
+
+def save_model_selection_plot(
+    period: CalibrationPeriod,
+    fit_records: list[dict[str, Any]],
+    model_records: list[dict[str, Any]],
+    output_path: Path,
+) -> None:
+    """Plot calibration cells with linear, quadratic, and selected models."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fit_frame = pd.DataFrame(fit_records)
+    model_by_sector = {
+        int(record["sector"]): record for record in model_records
+    }
+
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        constrained_layout=True,
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        cells = fit_frame.loc[
+            (fit_frame["sector"] == sector)
+            & (fit_frame["cell_type"] == "theta")
+            & (fit_frame["success"])
+        ].sort_values("mean_theta_deg")
+        model = model_by_sector[sector]
+
+        axis.errorbar(
+            cells["mean_theta_deg"],
+            100.0 * cells["delta_p_over_p"],
+            yerr=100.0 * cells["delta_p_over_p_error"],
+            fmt="o",
+            label="Fitted cells",
+        )
+
+        if model["success"]:
+            theta_grid = np.linspace(
+                model["theta_valid_min_deg"],
+                model["theta_valid_max_deg"],
+                300,
+            )
+
+            for model_name, linestyle in (
+                ("linear", "--"),
+                ("quadratic", ":"),
+            ):
+                candidate = model[model_name]
+                if not candidate["success"]:
+                    continue
+                # endif
+                coefficients = np.asarray(
+                    candidate["coefficients_ascending"],
+                    dtype=float,
+                )
+                values = np.zeros_like(theta_grid)
+                for power, coefficient in enumerate(coefficients):
+                    values += coefficient * theta_grid**power
+                # endfor
+                axis.plot(
+                    theta_grid,
+                    100.0 * values,
+                    linestyle=linestyle,
+                    linewidth=1.2,
+                    label=(
+                        f"{model_name.capitalize()} "
+                        f"($\\chi^2$/ndf={candidate['chi2_ndf']:.2f})"
+                    ),
+                )
+            # endfor
+
+            selected_values = evaluate_selected_theta_model(
+                theta_grid,
+                model,
+            )
+            axis.plot(
+                theta_grid,
+                100.0 * selected_values,
+                linewidth=2.0,
+                label=f"Selected: {model['selected_model']}",
+            )
+        # endif
+
+        axis.axhline(0.0, color="black", linestyle="--", linewidth=0.8)
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel("Mean electron theta (deg)")
+        axis.set_ylabel("Momentum correction (%)")
+        if sector == 1:
+            axis.legend(fontsize=7)
+        # endif
+    # endfor
+
+    figure.suptitle(
+        f"{period.label}: linear and quadratic theta-correction models"
+    )
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
+def save_before_after_theta_plot(
+    period: CalibrationPeriod,
+    uncorrected_records: list[dict[str, Any]],
+    corrected_records: list[dict[str, Any]],
+    output_path: Path,
+) -> None:
+    """Compare fitted W-peak residuals before and after correction."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    before = pd.DataFrame(uncorrected_records)
+    after = pd.DataFrame(corrected_records)
+
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharey=True,
+        constrained_layout=True,
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        before_cells = before.loc[
+            (before["sector"] == sector)
+            & (before["cell_type"] == "theta")
+            & (before["success"])
+        ].sort_values("mean_theta_deg")
+        after_cells = after.loc[
+            (after["sector"] == sector)
+            & (after["cell_type"] == "theta")
+            & (after["success"])
+        ].sort_values("mean_theta_deg")
+
+        axis.errorbar(
+            before_cells["mean_theta_deg"],
+            1000.0 * (
+                before_cells["peak_mean_gev"] - PROTON_MASS_GEV
+            ),
+            yerr=1000.0 * before_cells["peak_mean_error_gev"],
+            fmt="o",
+            label="Before correction",
+        )
+        axis.errorbar(
+            after_cells["mean_theta_deg"],
+            1000.0 * (
+                after_cells["peak_mean_gev"] - PROTON_MASS_GEV
+            ),
+            yerr=1000.0 * after_cells["peak_mean_error_gev"],
+            fmt="s",
+            label="After correction",
+        )
+        axis.axhline(0.0, color="black", linestyle="--", linewidth=1.0)
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel("Mean electron theta (deg)")
+        axis.set_ylabel(r"$\mu_W-m_p$ (MeV)")
+        if sector == 1:
+            axis.legend(fontsize=8)
+        # endif
+    # endfor
+
+    figure.suptitle(
+        f"{period.label}: electron momentum-correction closure versus theta"
+    )
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
+def save_before_after_integrated_w_plot(
+    uncorrected_frame: pd.DataFrame,
+    corrected_frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    histogram_bins: int,
+) -> None:
+    """Overlay sector-integrated W before and after correction."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        constrained_layout=True,
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        before = uncorrected_frame.loc[
+            uncorrected_frame["sector"] == sector,
+            "w_recalculated",
+        ].to_numpy()
+        after = corrected_frame.loc[
+            corrected_frame["sector"] == sector,
+            "w_corrected",
+        ].to_numpy()
+
+        counts_before, edges = np.histogram(
+            before,
+            bins=histogram_bins,
+            range=histogram_range,
+        )
+        counts_after, _ = np.histogram(
+            after,
+            bins=histogram_bins,
+            range=histogram_range,
+        )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        axis.step(
+            centers,
+            counts_before,
+            where="mid",
+            linewidth=1.2,
+            label="Before correction",
+        )
+        axis.step(
+            centers,
+            counts_after,
+            where="mid",
+            linewidth=1.2,
+            label="After correction",
+        )
+        axis.axvline(
+            PROTON_MASS_GEV,
+            color="black",
+            linestyle="--",
+            linewidth=1.0,
+            label=r"$m_p$" if sector == 1 else None,
+        )
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel("W (GeV)")
+        axis.set_ylabel("Counts")
+        if sector == 1:
+            axis.legend(fontsize=8)
+        # endif
+    # endfor
+
+    figure.suptitle(f"{period.label}: integrated W before and after correction")
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
+def build_closure_summary(
+    period: CalibrationPeriod,
+    uncorrected_records: list[dict[str, Any]],
+    corrected_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Calculate before/after closure metrics for every sector."""
+    before = pd.DataFrame(uncorrected_records)
+    after = pd.DataFrame(corrected_records)
+    summary: list[dict[str, Any]] = []
+
+    for sector in range(1, 7):
+        before_cells = before.loc[
+            (before["sector"] == sector)
+            & (before["cell_type"] == "theta")
+            & (before["success"])
+        ]
+        after_cells = after.loc[
+            (after["sector"] == sector)
+            & (after["cell_type"] == "theta")
+            & (after["success"])
+        ]
+
+        before_residual = (
+            before_cells["peak_mean_gev"].to_numpy() - PROTON_MASS_GEV
+        )
+        after_residual = (
+            after_cells["peak_mean_gev"].to_numpy() - PROTON_MASS_GEV
+        )
+
+        summary.append(
+            {
+                "period_key": period.key,
+                "period_label": period.label,
+                "sector": sector,
+                "n_before_cells": int(len(before_cells)),
+                "n_after_cells": int(len(after_cells)),
+                "before_mean_abs_residual_mev": (
+                    1000.0 * float(np.mean(np.abs(before_residual)))
+                    if before_residual.size
+                    else math.nan
+                ),
+                "after_mean_abs_residual_mev": (
+                    1000.0 * float(np.mean(np.abs(after_residual)))
+                    if after_residual.size
+                    else math.nan
+                ),
+                "before_rms_residual_mev": (
+                    1000.0 * float(np.sqrt(np.mean(before_residual**2)))
+                    if before_residual.size
+                    else math.nan
+                ),
+                "after_rms_residual_mev": (
+                    1000.0 * float(np.sqrt(np.mean(after_residual**2)))
+                    if after_residual.size
+                    else math.nan
+                ),
+            }
+        )
+    # endfor
+
+    return summary
+
+
+
+# -----------------------------------------------------------------------------
 # Parallel period worker
 # -----------------------------------------------------------------------------
 
@@ -1630,17 +2452,15 @@ def process_calibration_period(
     minimum_events_integrated: int,
     minimum_events_cell: int,
     save_individual_fits: bool,
-    individual_fit_directory: Path,
-    plot_directory: Path,
+    plot_directories: dict[str, Path],
     skip_run_stability: bool,
     run_bin_width: int,
 ) -> dict[str, Any]:
     """
-    Read, select, and fit one calibration period in an independent process.
+    Process one calibration period completely inside one worker.
 
-    The full selected-event DataFrame exists only inside this worker. The worker
-    uses it for the fits, integrated-W plot, and run-stability plot, then discards
-    it. Only compact fit records and status information are returned to the parent.
+    Event-level data remain local to the worker. Only compact fit, model, and
+    closure records are returned to the parent process.
     """
     tree_name = find_tree(file_path, tree_name_requested)
     branches = validate_branches(file_path, tree_name)
@@ -1672,11 +2492,14 @@ def process_calibration_period(
             "n_events": 0,
             "run_min_selected": None,
             "run_max_selected": None,
-            "fit_records": [],
+            "uncorrected_fit_records": [],
+            "corrected_fit_records": [],
+            "model_records": [],
+            "closure_records": [],
         }
     # endif
 
-    period_records = fit_calibration_cells(
+    uncorrected_records = fit_calibration_cells(
         frame=period_frame,
         period=period,
         theta_bin_count=theta_bin_count,
@@ -1686,66 +2509,151 @@ def process_calibration_period(
         minimum_events_integrated=minimum_events_integrated,
         minimum_events_cell=minimum_events_cell,
         save_individual_fits=save_individual_fits,
-        individual_fit_directory=individual_fit_directory,
+        individual_fit_directory=plot_directories[
+            "uncorrected_individual_fits"
+        ],
+    )
+    for record in uncorrected_records:
+        record["analysis_stage"] = "uncorrected"
+    # endfor
+
+    model_records = select_theta_correction_models(
+        period,
+        uncorrected_records,
+    )
+    unsuccessful_models = [
+        record["sector"]
+        for record in model_records
+        if not record["success"]
+    ]
+    if unsuccessful_models:
+        raise RuntimeError(
+            f"Unable to select correction models for sectors "
+            f"{unsuccessful_models} in {period.label}"
+        )
+    # endif
+
+    corrected_frame = apply_theta_corrections(
+        period_frame,
+        model_records,
+    )
+    corrected_records = fit_corrected_closure_cells(
+        corrected_frame=corrected_frame,
+        period=period,
+        uncorrected_records=uncorrected_records,
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_integrated=minimum_events_integrated,
+        minimum_events_cell=minimum_events_cell,
+        save_individual_fits=save_individual_fits,
+        individual_fit_directory=plot_directories[
+            "corrected_individual_fits"
+        ],
+    )
+    closure_records = build_closure_summary(
+        period,
+        uncorrected_records,
+        corrected_records,
     )
 
-    period_fit_frame = pd.DataFrame(period_records)
+    uncorrected_fit_frame = pd.DataFrame(uncorrected_records)
+    corrected_fit_frame = pd.DataFrame(corrected_records)
 
     save_period_integrated_w_plot(
         frame=period_frame,
         period=period,
-        fit_frame=period_fit_frame,
-        output_path=plot_directory / f"{period.key}_integrated_w_by_sector.png",
+        fit_frame=uncorrected_fit_frame,
+        output_path=plot_directories["uncorrected_integrated_w"]
+        / f"{period.key}_integrated_w_by_sector.png",
         histogram_range=histogram_range,
         fit_range=fit_range,
         histogram_bins=histogram_bins,
         minimum_events=minimum_events_integrated,
+        w_column="w_recalculated",
+        stage_label="before correction",
+    )
+    save_period_integrated_w_plot(
+        frame=corrected_frame,
+        period=period,
+        fit_frame=corrected_fit_frame,
+        output_path=plot_directories["corrected_integrated_w"]
+        / f"{period.key}_integrated_w_by_sector_corrected.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events=minimum_events_integrated,
+        w_column="w_corrected",
+        stage_label="after correction",
+    )
+
+    save_model_selection_plot(
+        period,
+        uncorrected_records,
+        model_records,
+        plot_directories["model_selection"]
+        / f"{period.key}_theta_model_selection.png",
+    )
+    save_before_after_theta_plot(
+        period,
+        uncorrected_records,
+        corrected_records,
+        plot_directories["closure_theta"]
+        / f"{period.key}_theta_closure.png",
+    )
+    save_before_after_integrated_w_plot(
+        period_frame,
+        corrected_frame,
+        period,
+        plot_directories["before_after_w"]
+        / f"{period.key}_integrated_w_before_after.png",
+        histogram_range,
+        histogram_bins,
     )
 
     if not skip_run_stability:
         save_run_stability_plot(
             frame=period_frame,
             period=period,
-            output_path=plot_directory / f"{period.key}_w_peak_vs_run.png",
+            output_path=plot_directories["uncorrected_run_stability"]
+            / f"{period.key}_w_peak_vs_run.png",
             run_bin_width=run_bin_width,
             histogram_range=histogram_range,
             fit_range=fit_range,
             histogram_bins=histogram_bins,
             minimum_events=minimum_events_cell,
+            w_column="w_recalculated",
+            stage_label="before correction",
+        )
+        save_run_stability_plot(
+            frame=corrected_frame,
+            period=period,
+            output_path=plot_directories["corrected_run_stability"]
+            / f"{period.key}_w_peak_vs_run_corrected.png",
+            run_bin_width=run_bin_width,
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events=minimum_events_cell,
+            w_column="w_corrected",
+            stage_label="after correction",
         )
     # endif
 
-    status_counts = period_fit_frame["status"].value_counts()
-    converged_fits = int(period_fit_frame["success"].sum())
-    quality_passed = int(
-        (
-            period_fit_frame["success"]
-            & period_fit_frame["quality_pass"]
-        ).sum()
-    )
-    quality_flagged = int(
-        (
-            period_fit_frame["success"]
-            & ~period_fit_frame["quality_pass"]
-        ).sum()
-    )
-    skipped_low_statistics = int(
-        status_counts.get("skipped_insufficient_events", 0)
-        + status_counts.get("skipped_insufficient_populated_bins", 0)
-    )
-    numerical_failures = int(
-        period_fit_frame["status"].astype(str).str.startswith(
-            "fit_failed:"
-        ).sum()
-    )
+    uncorrected_theta = uncorrected_fit_frame.loc[
+        uncorrected_fit_frame["cell_type"] == "theta"
+    ]
+    corrected_theta = corrected_fit_frame.loc[
+        corrected_fit_frame["cell_type"] == "theta"
+    ]
 
     print(
         f"[worker:{period.key}] retained {len(period_frame):,} events; "
-        f"{converged_fits} converged fits "
-        f"({quality_passed} pass automatic checks, "
-        f"{quality_flagged} flagged for manual review), "
-        f"{skipped_low_statistics} cells skipped for low statistics, "
-        f"{numerical_failures} numerical fit failures",
+        f"uncorrected theta fits "
+        f"{int(uncorrected_theta['success'].sum())}/"
+        f"{len(uncorrected_theta)}, corrected closure fits "
+        f"{int(corrected_theta['success'].sum())}/"
+        f"{len(corrected_theta)}",
         flush=True,
     )
 
@@ -1757,7 +2665,10 @@ def process_calibration_period(
         "n_events": int(len(period_frame)),
         "run_min_selected": int(period_frame["runnum"].min()),
         "run_max_selected": int(period_frame["runnum"].max()),
-        "fit_records": period_records,
+        "uncorrected_fit_records": uncorrected_records,
+        "corrected_fit_records": corrected_records,
+        "model_records": model_records,
+        "closure_records": closure_records,
     }
 
 
@@ -1911,6 +2822,8 @@ def save_period_integrated_w_plot(
     fit_range: tuple[float, float],
     histogram_bins: int,
     minimum_events: int,
+    w_column: str = "w_recalculated",
+    stage_label: str = "uncorrected",
 ) -> None:
     """Save sector-integrated W spectra with the fitted model overlaid."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1922,7 +2835,7 @@ def save_period_integrated_w_plot(
         axis = axes_flat[sector - 1]
         sector_values = frame.loc[
             frame["sector"] == sector,
-            "w_recalculated",
+            w_column,
         ].to_numpy()
 
         fit_result, diagnostics = fit_w_peak(
@@ -1987,7 +2900,9 @@ def save_period_integrated_w_plot(
         # endif
     # endfor
 
-    figure.suptitle(f"{period.label}: inclusive eX elastic-peak fits")
+    figure.suptitle(
+        f"{period.label}: inclusive eX elastic-peak fits ({stage_label})"
+    )
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
@@ -2263,6 +3178,8 @@ def save_run_stability_plot(
     fit_range: tuple[float, float],
     histogram_bins: int,
     minimum_events: int,
+    w_column: str = "w_recalculated",
+    stage_label: str = "uncorrected",
 ) -> None:
     """
     Fit W for every individual run by default.
@@ -2304,7 +3221,7 @@ def save_run_stability_plot(
             ]
 
             fit_result, _ = fit_w_peak(
-                run_frame["w_recalculated"].to_numpy(),
+                run_frame[w_column].to_numpy(),
                 histogram_range=histogram_range,
                 fit_range=fit_range,
                 histogram_bins=histogram_bins,
@@ -2360,7 +3277,7 @@ def save_run_stability_plot(
     )
     axis.set_title(
         f"{period.label}: elastic-peak stability versus run "
-        f"({point_definition})"
+        f"({point_definition}, {stage_label})"
     )
     axis.legend(ncol=2)
     figure.savefig(output_path, dpi=180)
@@ -2766,7 +3683,7 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
 
 
 def main() -> int:
-    """Run the complete diagnostic and provisional calibration workflow."""
+    """Run extraction, model selection, correction application, and closure."""
     parser = build_argument_parser()
     arguments = parser.parse_args()
 
@@ -2785,7 +3702,8 @@ def main() -> int:
     for source_key, file_path in input_files.items():
         if not file_path.is_file():
             print(
-                f"FATAL: input file for {source_key} does not exist: {file_path}",
+                f"FATAL: input file for {source_key} does not exist: "
+                f"{file_path}",
                 file=sys.stderr,
             )
             return 2
@@ -2793,31 +3711,57 @@ def main() -> int:
     # endfor
 
     output_directory = arguments.output_dir
-    plot_directory = output_directory / "plots"
-    individual_fit_directory = plot_directory / "individual_fits"
-    output_directory.mkdir(parents=True, exist_ok=True)
-    plot_directory.mkdir(parents=True, exist_ok=True)
+    csv_directory = output_directory / "csv"
+    json_directory = output_directory / "json"
+    plot_root = output_directory / "plots"
 
-    # These diagnostics were discontinued because sparse accepted-cell coverage
-    # made them more confusing than informative. Remove stale files left by
-    # earlier script versions from the stable output directory.
-    obsolete_plot_patterns = (
-        "*_correction_theta_local_phi_maps.png",
-        "*_model_residuals.png",
-        "individual_fits/*_phi*.png",
-    )
-    for obsolete_pattern in obsolete_plot_patterns:
-        for obsolete_path in plot_directory.glob(obsolete_pattern):
-            obsolete_path.unlink()
-        # endfor
+    # Rebuild generated products on every run so discontinued or renamed plots
+    # cannot survive from an older script version.
+    for generated_directory in (
+        csv_directory,
+        json_directory,
+        plot_root,
+    ):
+        if generated_directory.exists():
+            shutil.rmtree(generated_directory)
+        # endif
+        generated_directory.mkdir(parents=True, exist_ok=True)
     # endfor
 
-    obsolete_model_path = output_directory / "electron_correction_models.json"
-    if obsolete_model_path.is_file():
-        obsolete_model_path.unlink()
-    # endif
+    plot_directories = {
+        "uncorrected_individual_fits": (
+            plot_root / "uncorrected" / "individual_fits"
+        ),
+        "uncorrected_integrated_w": (
+            plot_root / "uncorrected" / "integrated_w"
+        ),
+        "uncorrected_theta_trends": (
+            plot_root / "uncorrected" / "theta_trends"
+        ),
+        "uncorrected_run_stability": (
+            plot_root / "uncorrected" / "run_stability"
+        ),
+        "model_selection": plot_root / "models",
+        "corrected_individual_fits": (
+            plot_root / "closure" / "individual_fits"
+        ),
+        "corrected_integrated_w": (
+            plot_root / "closure" / "integrated_w"
+        ),
+        "closure_theta": plot_root / "closure" / "theta_residuals",
+        "before_after_w": plot_root / "closure" / "before_after_w",
+        "corrected_run_stability": (
+            plot_root / "closure" / "run_stability"
+        ),
+    }
+    for directory in plot_directories.values():
+        directory.mkdir(parents=True, exist_ok=True)
+    # endfor
 
-    all_fit_records: list[dict[str, Any]] = []
+    all_uncorrected_records: list[dict[str, Any]] = []
+    all_corrected_records: list[dict[str, Any]] = []
+    all_model_records: list[dict[str, Any]] = []
+    all_closure_records: list[dict[str, Any]] = []
     period_results: dict[str, dict[str, Any]] = {}
 
     histogram_range = (arguments.w_hist_min, arguments.w_hist_max)
@@ -2833,11 +3777,10 @@ def main() -> int:
         future_to_period = {}
 
         for period in CALIBRATION_PERIODS:
-            file_path = input_files[period.source_key]
             future = executor.submit(
                 process_calibration_period,
                 period,
-                file_path,
+                input_files[period.source_key],
                 arguments.tree_name,
                 arguments.step_size,
                 arguments.theta_min,
@@ -2851,8 +3794,7 @@ def main() -> int:
                 arguments.minimum_events_integrated,
                 arguments.minimum_events_cell,
                 not arguments.skip_individual_fits,
-                individual_fit_directory,
-                plot_directory,
+                plot_directories,
                 arguments.skip_run_stability,
                 arguments.run_bin_width,
             )
@@ -2861,7 +3803,6 @@ def main() -> int:
 
         for future in as_completed(future_to_period):
             period = future_to_period[future]
-
             try:
                 result = future.result()
             except Exception as exc:
@@ -2874,7 +3815,14 @@ def main() -> int:
             # endtry
 
             period_results[period.key] = result
-            all_fit_records.extend(result["fit_records"])
+            all_uncorrected_records.extend(
+                result["uncorrected_fit_records"]
+            )
+            all_corrected_records.extend(
+                result["corrected_fit_records"]
+            )
+            all_model_records.extend(result["model_records"])
+            all_closure_records.extend(result["closure_records"])
 
             if result["success"]:
                 print(
@@ -2892,70 +3840,149 @@ def main() -> int:
         # endfor
     # endwith
 
-    if not all_fit_records:
+    if not all_uncorrected_records:
         print("FATAL: no calibration fits were attempted.", file=sys.stderr)
         return 3
     # endif
 
-    fit_frame = pd.DataFrame(all_fit_records)
-    fit_csv_path = output_directory / "fit_results.csv"
-    fit_frame.to_csv(fit_csv_path, index=False, float_format="%.12g")
-    print(f"[write] {fit_csv_path}")
+    uncorrected_frame = pd.DataFrame(all_uncorrected_records)
+    corrected_frame = pd.DataFrame(all_corrected_records)
+    model_frame = pd.json_normalize(all_model_records)
+    closure_frame = pd.DataFrame(all_closure_records)
 
-    cell_database = dataframe_to_cell_database(fit_frame, arguments)
-    cell_json_path = output_directory / "electron_correction_cells.json"
-    write_json(cell_json_path, cell_database)
-    print(f"[write] {cell_json_path}")
+    uncorrected_csv = csv_directory / "fit_results_uncorrected.csv"
+    corrected_csv = csv_directory / "fit_results_corrected.csv"
+    models_csv = csv_directory / "correction_model_comparison.csv"
+    closure_csv = csv_directory / "closure_summary.csv"
+
+    uncorrected_frame.to_csv(
+        uncorrected_csv,
+        index=False,
+        float_format="%.12g",
+    )
+    corrected_frame.to_csv(
+        corrected_csv,
+        index=False,
+        float_format="%.12g",
+    )
+    model_frame.to_csv(models_csv, index=False, float_format="%.12g")
+    closure_frame.to_csv(closure_csv, index=False, float_format="%.12g")
+
+    for path in (
+        uncorrected_csv,
+        corrected_csv,
+        models_csv,
+        closure_csv,
+    ):
+        print(f"[write] {path}")
+    # endfor
+
+    cell_database = dataframe_to_cell_database(
+        uncorrected_frame,
+        arguments,
+    )
+    cells_json = json_directory / "electron_correction_cells.json"
+    models_json = json_directory / "electron_correction_models.json"
+    closure_json = json_directory / "closure_summary.json"
+
+    write_json(cells_json, cell_database)
+    write_json(
+        models_json,
+        {
+            "metadata": {
+                "model_selection": (
+                    "select linear when chi2/ndf <= 2.5 unless quadratic "
+                    "improves AICc by at least 2; otherwise select quadratic"
+                ),
+                "application_sign_convention": (
+                    "p_corrected = p_measured * (1 + delta_p_over_p)"
+                ),
+                "theta_extrapolation_policy": (
+                    "theta is clipped to the fitted sector validity range"
+                ),
+            },
+            "models": all_model_records,
+        },
+    )
+    write_json(
+        closure_json,
+        {
+            "metadata": {
+                "proton_mass_gev": PROTON_MASS_GEV,
+                "theta_edges": (
+                    "exact uncorrected extraction edges reused after correction"
+                ),
+            },
+            "closure": all_closure_records,
+        },
+    )
+
+    for path in (cells_json, models_json, closure_json):
+        print(f"[write] {path}")
+    # endfor
 
     for period in CALIBRATION_PERIODS:
         save_peak_vs_theta_plot(
             period=period,
-            fit_frame=fit_frame,
-            output_path=plot_directory
+            fit_frame=uncorrected_frame,
+            output_path=plot_directories["uncorrected_theta_trends"]
             / f"{period.key}_w_peak_vs_theta.png",
         )
         save_correction_vs_theta_plot(
             period=period,
-            fit_frame=fit_frame,
-            output_path=plot_directory
+            fit_frame=uncorrected_frame,
+            output_path=plot_directories["uncorrected_theta_trends"]
             / f"{period.key}_correction_vs_theta.png",
+        )
+        save_peak_vs_theta_plot(
+            period=period,
+            fit_frame=corrected_frame,
+            output_path=plot_directories["closure_theta"]
+            / f"{period.key}_corrected_w_peak_vs_theta.png",
+        )
+        save_correction_vs_theta_plot(
+            period=period,
+            fit_frame=corrected_frame,
+            output_path=plot_directories["closure_theta"]
+            / f"{period.key}_residual_correction_vs_theta.png",
         )
     # endfor
 
-    successful_theta_cells = fit_frame.loc[
-        (fit_frame["cell_type"] == "theta")
-        & (fit_frame["success"])
+    uncorrected_theta = uncorrected_frame.loc[
+        uncorrected_frame["cell_type"] == "theta"
     ]
-    quality_pass_theta_cells = successful_theta_cells.loc[
-        successful_theta_cells["quality_pass"]
+    corrected_theta = corrected_frame.loc[
+        corrected_frame["cell_type"] == "theta"
     ]
-    quality_flagged_theta_cells = successful_theta_cells.loc[
-        ~successful_theta_cells["quality_pass"]
-    ]
-    attempted_theta_cells = fit_frame.loc[
-        fit_frame["cell_type"] == "theta"
-    ]
+    selected_model_counts = pd.Series(
+        [record["selected_model"] for record in all_model_records]
+    ).value_counts()
+
     print("")
-    print("Electron momentum-correction diagnostic complete.")
+    print("Electron momentum-correction extraction and closure complete.")
     print(
-        f"Converged theta fits: {len(successful_theta_cells):,} / "
-        f"{len(attempted_theta_cells):,}"
+        f"Uncorrected converged theta fits: "
+        f"{int(uncorrected_theta['success'].sum()):,} / "
+        f"{len(uncorrected_theta):,}"
     )
-    print(f"  Pass automatic checks: {len(quality_pass_theta_cells):,}")
     print(
-        f"  Flagged for manual review: "
-        f"{len(quality_flagged_theta_cells):,}"
+        f"Corrected closure theta fits: "
+        f"{int(corrected_theta['success'].sum()):,} / "
+        f"{len(corrected_theta):,}"
+    )
+    print(
+        "Selected models: "
+        + ", ".join(
+            f"{name}={count}"
+            for name, count in selected_model_counts.items()
+        )
     )
     print(f"Output directory: {output_directory}")
     print(f"Period workers used: {worker_count}")
     print("")
     print(
-        "Sector-integrated fits determine sigma_W. Five equal-population base "
-        "theta bins are formed per sector, then the angularly widest base bin is "
-        "split, giving six theta cells. Cells are fit with sigma_W fixed and "
-        "mu_W constrained to "
-        "the integrated mean +/- 0.040 GeV. Review the fit and pull panels "
-        "before selecting production corrections."
+        "The script stops after theta-dependent correction closure. "
+        "No local-phi correction is derived or applied."
     )
 
     return 0
