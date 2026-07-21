@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v1.py
+derive_electron_momentum_corrections_v3.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -22,10 +22,10 @@ CLAS12 Forward Detector sectors using their azimuthal angle. The sector-local
 azimuth is represented on [0, 60) degrees by rotating every sector onto sector 1.
 
 Primary outputs:
-    output/electron_diagnostics_v1/fit_results.csv
-    output/electron_diagnostics_v1/electron_correction_cells_v1.json
-    output/electron_diagnostics_v1/electron_correction_models_v1.json
-    output/electron_diagnostics_v1/plots/*.png
+    output/electron_diagnostics/fit_results.csv
+    output/electron_diagnostics/electron_correction_cells.json
+    output/electron_diagnostics/electron_correction_models.json
+    output/electron_diagnostics/plots/*.png
 
 The JSON output is provisional. It records the fitted calibration cells and a
 simple weighted polynomial model, but it is not yet intended to be consumed by
@@ -43,6 +43,7 @@ Dependencies:
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import math
 import sys
@@ -1238,6 +1239,119 @@ def evaluate_provisional_model(
     return design @ coefficients
 
 
+
+# -----------------------------------------------------------------------------
+# Parallel period worker
+# -----------------------------------------------------------------------------
+
+def process_calibration_period(
+    period: CalibrationPeriod,
+    file_path: Path,
+    tree_name_requested: str,
+    step_size: str,
+    require_fiducial_status: int | None,
+    vertex_min_cm: float,
+    vertex_max_cm: float,
+    theta_min_deg: float,
+    theta_max_deg: float,
+    w_preselection_min_gev: float,
+    w_preselection_max_gev: float,
+    theta_edges_deg: np.ndarray,
+    local_phi_edges_deg: np.ndarray,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_integrated: int,
+    minimum_events_cell: int,
+    save_individual_fits: bool,
+    individual_fit_directory: Path,
+    cache_directory: Path,
+) -> dict[str, Any]:
+    """
+    Read, select, and fit one calibration period in an independent process.
+
+    The selected event DataFrame is written to a pickle cache so that the parent
+    process does not receive a potentially very large DataFrame through the
+    multiprocessing pipe. Only compact status information and fit records are
+    returned directly.
+    """
+    tree_name = find_tree(file_path, tree_name_requested)
+    branches = validate_branches(file_path, tree_name)
+
+    print(
+        f"[worker:{period.key}] reading {file_path}:{tree_name}, "
+        f"runs {period.run_min}-{period.run_max}",
+        flush=True,
+    )
+
+    period_frame = read_selected_events(
+        file_path=file_path,
+        tree_name=tree_name,
+        branches=branches,
+        period=period,
+        step_size=step_size,
+        require_fiducial_status=require_fiducial_status,
+        vertex_min_cm=vertex_min_cm,
+        vertex_max_cm=vertex_max_cm,
+        theta_min_deg=theta_min_deg,
+        theta_max_deg=theta_max_deg,
+        w_preselection_min_gev=w_preselection_min_gev,
+        w_preselection_max_gev=w_preselection_max_gev,
+    )
+
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_directory / f"{period.key}_selected_events.pkl"
+
+    if period_frame.empty:
+        period_frame.to_pickle(cache_path)
+        return {
+            "period_key": period.key,
+            "period_label": period.label,
+            "success": False,
+            "status": "no_selected_events",
+            "n_events": 0,
+            "run_min_selected": None,
+            "run_max_selected": None,
+            "cache_path": str(cache_path),
+            "fit_records": [],
+        }
+    # endif
+
+    period_frame.to_pickle(cache_path)
+
+    period_records = fit_calibration_cells(
+        frame=period_frame,
+        period=period,
+        theta_edges_deg=theta_edges_deg,
+        local_phi_edges_deg=local_phi_edges_deg,
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_integrated=minimum_events_integrated,
+        minimum_events_cell=minimum_events_cell,
+        save_individual_fits=save_individual_fits,
+        individual_fit_directory=individual_fit_directory,
+    )
+
+    print(
+        f"[worker:{period.key}] retained {len(period_frame):,} events; "
+        f"completed {len(period_records):,} fits",
+        flush=True,
+    )
+
+    return {
+        "period_key": period.key,
+        "period_label": period.label,
+        "success": True,
+        "status": "success",
+        "n_events": int(len(period_frame)),
+        "run_min_selected": int(period_frame["runnum"].min()),
+        "run_max_selected": int(period_frame["runnum"].max()),
+        "cache_path": str(cache_path),
+        "fit_records": period_records,
+    }
+
+
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
@@ -1819,13 +1933,23 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("output/electron_diagnostics_v1"),
-        help="Output directory. Default: output/electron_diagnostics_v1",
+        default=Path("output/electron_diagnostics"),
+        help="Output directory. Default: output/electron_diagnostics",
     )
     parser.add_argument(
         "--step-size",
         default="250 MB",
         help="uproot iteration step size. Default: 250 MB",
+    )
+
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help=(
+            "Number of calibration periods processed simultaneously. "
+            "The maximum useful value is 4. Default: 4"
+        ),
     )
 
     parser.add_argument(
@@ -2009,6 +2133,17 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
         raise ValueError("--run-bin-width must be positive.")
     # endif
 
+    if arguments.workers <= 0:
+        raise ValueError("--workers must be positive.")
+    # endif
+
+    if arguments.workers > 4:
+        raise ValueError(
+            "--workers cannot exceed 4 because there are only four "
+            "independent calibration periods."
+        )
+    # endif
+
 
 def main() -> int:
     """Run the complete diagnostic and provisional calibration workflow."""
@@ -2045,65 +2180,100 @@ def main() -> int:
 
     loaded_frames: dict[str, pd.DataFrame] = {}
     all_fit_records: list[dict[str, Any]] = []
+    period_results: dict[str, dict[str, Any]] = {}
 
     histogram_range = (arguments.w_hist_min, arguments.w_hist_max)
     fit_range = (arguments.w_fit_min, arguments.w_fit_max)
+    cache_directory = output_directory / "cache"
 
-    for period in CALIBRATION_PERIODS:
-        file_path = input_files[period.source_key]
-        tree_name = find_tree(file_path, arguments.tree_name)
-        branches = validate_branches(file_path, tree_name)
+    worker_count = min(arguments.workers, len(CALIBRATION_PERIODS))
+    print(
+        f"[parallel] processing {len(CALIBRATION_PERIODS)} calibration "
+        f"periods with {worker_count} workers"
+    )
 
-        print(
-            f"[read] {period.label}: {file_path}:{tree_name}, "
-            f"runs {period.run_min}-{period.run_max}"
-        )
+    with ProcessPoolExecutor(max_workers=worker_count) as executor:
+        future_to_period = {}
 
-        period_frame = read_selected_events(
-            file_path=file_path,
-            tree_name=tree_name,
-            branches=branches,
-            period=period,
-            step_size=arguments.step_size,
-            require_fiducial_status=arguments.require_fiducial_status,
-            vertex_min_cm=arguments.vertex_min,
-            vertex_max_cm=arguments.vertex_max,
-            theta_min_deg=arguments.theta_min,
-            theta_max_deg=arguments.theta_max,
-            w_preselection_min_gev=arguments.w_preselection_min,
-            w_preselection_max_gev=arguments.w_preselection_max,
-        )
-
-        if period_frame.empty:
-            print(
-                f"WARNING: no selected events for {period.label}.",
-                file=sys.stderr,
+        for period in CALIBRATION_PERIODS:
+            file_path = input_files[period.source_key]
+            future = executor.submit(
+                process_calibration_period,
+                period,
+                file_path,
+                arguments.tree_name,
+                arguments.step_size,
+                arguments.require_fiducial_status,
+                arguments.vertex_min,
+                arguments.vertex_max,
+                arguments.theta_min,
+                arguments.theta_max,
+                arguments.w_preselection_min,
+                arguments.w_preselection_max,
+                arguments.theta_edges,
+                arguments.local_phi_edges,
+                histogram_range,
+                fit_range,
+                arguments.w_bins,
+                arguments.minimum_events_integrated,
+                arguments.minimum_events_cell,
+                arguments.save_individual_fits,
+                individual_fit_directory,
+                cache_directory,
             )
-            loaded_frames[period.key] = period_frame
+            future_to_period[future] = period
+        # endfor
+
+        for future in as_completed(future_to_period):
+            period = future_to_period[future]
+
+            try:
+                result = future.result()
+            except Exception as exc:
+                print(
+                    f"FATAL: worker failed for {period.label}: "
+                    f"{type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+                raise
+            # endtry
+
+            period_results[period.key] = result
+            all_fit_records.extend(result["fit_records"])
+
+            if result["success"]:
+                print(
+                    f"[parallel] {period.label}: retained "
+                    f"{result['n_events']:,} events; runs "
+                    f"{result['run_min_selected']}-"
+                    f"{result['run_max_selected']}"
+                )
+            else:
+                print(
+                    f"WARNING: {period.label}: {result['status']}",
+                    file=sys.stderr,
+                )
+            # endif
+        # endfor
+    # endwith
+
+    # Reload selected-event caches only after all workers complete. This avoids
+    # sending very large DataFrames through multiprocessing pipes while keeping
+    # the existing parent-process plotting workflow unchanged.
+    for period in CALIBRATION_PERIODS:
+        result = period_results.get(period.key)
+
+        if result is None:
+            loaded_frames[period.key] = pd.DataFrame()
             continue
         # endif
 
-        loaded_frames[period.key] = period_frame
-        print(
-            f"[read] {period.label}: retained {len(period_frame):,} events; "
-            f"runs {period_frame['runnum'].min()}-"
-            f"{period_frame['runnum'].max()}"
-        )
-
-        period_records = fit_calibration_cells(
-            frame=period_frame,
-            period=period,
-            theta_edges_deg=arguments.theta_edges,
-            local_phi_edges_deg=arguments.local_phi_edges,
-            histogram_range=histogram_range,
-            fit_range=fit_range,
-            histogram_bins=arguments.w_bins,
-            minimum_events_integrated=arguments.minimum_events_integrated,
-            minimum_events_cell=arguments.minimum_events_cell,
-            save_individual_fits=arguments.save_individual_fits,
-            individual_fit_directory=individual_fit_directory,
-        )
-        all_fit_records.extend(period_records)
+        cache_path = Path(result["cache_path"])
+        if cache_path.is_file():
+            loaded_frames[period.key] = pd.read_pickle(cache_path)
+        else:
+            loaded_frames[period.key] = pd.DataFrame()
+        # endif
     # endfor
 
     if not all_fit_records:
@@ -2112,17 +2282,17 @@ def main() -> int:
     # endif
 
     fit_frame = pd.DataFrame(all_fit_records)
-    fit_csv_path = output_directory / "fit_results_v1.csv"
+    fit_csv_path = output_directory / "fit_results.csv"
     fit_frame.to_csv(fit_csv_path, index=False, float_format="%.12g")
     print(f"[write] {fit_csv_path}")
 
     cell_database = dataframe_to_cell_database(fit_frame, arguments)
-    cell_json_path = output_directory / "electron_correction_cells_v1.json"
+    cell_json_path = output_directory / "electron_correction_cells.json"
     write_json(cell_json_path, cell_database)
     print(f"[write] {cell_json_path}")
 
     model_database = fit_provisional_correction_models(fit_frame)
-    model_json_path = output_directory / "electron_correction_models_v1.json"
+    model_json_path = output_directory / "electron_correction_models.json"
     write_json(model_json_path, model_database)
     print(f"[write] {model_json_path}")
 
@@ -2198,6 +2368,7 @@ def main() -> int:
         f"{len(attempted_cells):,}"
     )
     print(f"Output directory: {output_directory}")
+    print(f"Period workers used: {worker_count}")
     print("")
     print(
         "The polynomial JSON is provisional. Review the fitted W spectra, "
