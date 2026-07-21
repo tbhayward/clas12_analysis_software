@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v8.py
+derive_electron_momentum_corrections_v9.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -976,8 +976,7 @@ def make_fit_record(
 def fit_calibration_cells(
     frame: pd.DataFrame,
     period: CalibrationPeriod,
-    theta_edges_deg: np.ndarray,
-    local_phi_edges_deg: np.ndarray,
+    theta_bin_count: int,
     histogram_range: tuple[float, float],
     fit_range: tuple[float, float],
     histogram_bins: int,
@@ -986,11 +985,28 @@ def fit_calibration_cells(
     save_individual_fits: bool,
     individual_fit_directory: Path,
 ) -> list[dict[str, Any]]:
-    """Fit integrated, theta-binned, and theta/local-phi-binned W spectra."""
+    """
+    Fit one sector-integrated W spectrum and four theta-binned W spectra per
+    sector. Each theta bin is integrated over the full 0-60 degree local-phi
+    range. The theta edges are derived independently from the selected-event
+    minimum and maximum in each FD sector.
+    """
     records: list[dict[str, Any]] = []
 
     for sector in range(1, 7):
         sector_frame = frame.loc[frame["sector"] == sector].copy()
+
+        if sector_frame.empty:
+            theta_edges_deg = np.linspace(0.0, 1.0, theta_bin_count + 1)
+        else:
+            theta_min_sector = float(sector_frame["e_theta_deg"].min())
+            theta_max_sector = float(sector_frame["e_theta_deg"].max())
+            theta_edges_deg = np.linspace(
+                theta_min_sector,
+                theta_max_sector,
+                theta_bin_count + 1,
+            )
+        # endif
 
         integrated_fit, integrated_diagnostics = fit_w_peak(
             sector_frame["w_recalculated"].to_numpy(),
@@ -1008,8 +1024,8 @@ def fit_calibration_cells(
                 theta_low_deg=float(theta_edges_deg[0]),
                 theta_high_deg=float(theta_edges_deg[-1]),
                 local_phi_bin_index=None,
-                local_phi_low_deg=float(local_phi_edges_deg[0]),
-                local_phi_high_deg=float(local_phi_edges_deg[-1]),
+                local_phi_low_deg=0.0,
+                local_phi_high_deg=60.0,
                 cell_frame=sector_frame,
                 fit_result=integrated_fit,
             )
@@ -1025,13 +1041,25 @@ def fit_calibration_cells(
             )
         # endif
 
-        for theta_index in range(len(theta_edges_deg) - 1):
+        for theta_index in range(theta_bin_count):
             theta_low = float(theta_edges_deg[theta_index])
             theta_high = float(theta_edges_deg[theta_index + 1])
-            theta_frame = sector_frame.loc[
-                (sector_frame["e_theta_deg"] >= theta_low)
-                & (sector_frame["e_theta_deg"] < theta_high)
-            ].copy()
+
+            # Include the upper endpoint in the final bin so that the sector
+            # maximum is retained despite floating-point equality.
+            if theta_index == theta_bin_count - 1:
+                theta_mask = (
+                    (sector_frame["e_theta_deg"] >= theta_low)
+                    & (sector_frame["e_theta_deg"] <= theta_high)
+                )
+            else:
+                theta_mask = (
+                    (sector_frame["e_theta_deg"] >= theta_low)
+                    & (sector_frame["e_theta_deg"] < theta_high)
+                )
+            # endif
+
+            theta_frame = sector_frame.loc[theta_mask].copy()
 
             theta_fit, theta_diagnostics = fit_w_peak(
                 theta_frame["w_recalculated"].to_numpy(),
@@ -1049,8 +1077,8 @@ def fit_calibration_cells(
                     theta_low_deg=theta_low,
                     theta_high_deg=theta_high,
                     local_phi_bin_index=None,
-                    local_phi_low_deg=float(local_phi_edges_deg[0]),
-                    local_phi_high_deg=float(local_phi_edges_deg[-1]),
+                    local_phi_low_deg=0.0,
+                    local_phi_high_deg=60.0,
                     cell_frame=theta_frame,
                     fit_result=theta_fit,
                 )
@@ -1067,59 +1095,11 @@ def fit_calibration_cells(
                     fit_result=theta_fit,
                     title=(
                         f"{period.label}, sector {sector}, "
-                        f"{theta_low:.1f} <= theta_e < {theta_high:.1f} deg"
+                        f"{theta_low:.2f} <= theta_e < {theta_high:.2f} deg, "
+                        "integrated over local phi"
                     ),
                 )
             # endif
-
-            for phi_index in range(len(local_phi_edges_deg) - 1):
-                phi_low = float(local_phi_edges_deg[phi_index])
-                phi_high = float(local_phi_edges_deg[phi_index + 1])
-                cell_frame = theta_frame.loc[
-                    (theta_frame["local_phi_deg"] >= phi_low)
-                    & (theta_frame["local_phi_deg"] < phi_high)
-                ].copy()
-
-                cell_fit, cell_diagnostics = fit_w_peak(
-                    cell_frame["w_recalculated"].to_numpy(),
-                    histogram_range=histogram_range,
-                    fit_range=fit_range,
-                    histogram_bins=histogram_bins,
-                    minimum_events=minimum_events_cell,
-                )
-                records.append(
-                    make_fit_record(
-                        period=period,
-                        sector=sector,
-                        cell_type="theta_local_phi",
-                        theta_bin_index=theta_index,
-                        theta_low_deg=theta_low,
-                        theta_high_deg=theta_high,
-                        local_phi_bin_index=phi_index,
-                        local_phi_low_deg=phi_low,
-                        local_phi_high_deg=phi_high,
-                        cell_frame=cell_frame,
-                        fit_result=cell_fit,
-                    )
-                )
-
-                if save_individual_fits:
-                    save_peak_fit_plot(
-                        output_path=individual_fit_directory
-                        / (
-                            f"{period.key}_sector{sector}_theta"
-                            f"{theta_index:02d}_phi{phi_index:02d}.png"
-                        ),
-                        diagnostics=cell_diagnostics,
-                        fit_result=cell_fit,
-                        title=(
-                            f"{period.label}, sector {sector}, "
-                            f"{theta_low:.1f} <= theta_e < {theta_high:.1f} deg, "
-                            f"{phi_low:.1f} <= phi_local < {phi_high:.1f} deg"
-                        ),
-                    )
-                # endif
-            # endfor
         # endfor
     # endfor
 
@@ -1310,8 +1290,7 @@ def process_calibration_period(
     theta_max_deg: float,
     w_preselection_min_gev: float,
     w_preselection_max_gev: float,
-    theta_edges_deg: np.ndarray,
-    local_phi_edges_deg: np.ndarray,
+    theta_bin_count: int,
     histogram_range: tuple[float, float],
     fit_range: tuple[float, float],
     histogram_bins: int,
@@ -1367,8 +1346,7 @@ def process_calibration_period(
     period_records = fit_calibration_cells(
         frame=period_frame,
         period=period,
-        theta_edges_deg=theta_edges_deg,
-        local_phi_edges_deg=local_phi_edges_deg,
+        theta_bin_count=theta_bin_count,
         histogram_range=histogram_range,
         fit_range=fit_range,
         histogram_bins=histogram_bins,
@@ -2064,8 +2042,12 @@ def dataframe_to_cell_database(
             "histogram_bins": arguments.w_bins,
             "minimum_events_integrated": arguments.minimum_events_integrated,
             "minimum_events_cell": arguments.minimum_events_cell,
-            "theta_edges_deg": arguments.theta_edges.tolist(),
-            "local_phi_edges_deg": arguments.local_phi_edges.tolist(),
+            "theta_bin_count_per_sector": arguments.theta_bin_count,
+            "theta_edges_definition": (
+                "equal-width edges derived independently from the selected-"
+                "event theta minimum and maximum in each FD sector"
+            ),
+            "local_phi_treatment": "integrated over 0-60 degrees",
             "fit_model": "Gaussian elastic core + quadratic background",
         },
         "periods": {},
@@ -2186,19 +2168,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Maximum electron theta (deg). Default: 25",
     )
     parser.add_argument(
-        "--theta-bins",
-        default="5,7,9,11,13,15,17,19,21,23,25",
+        "--theta-bin-count",
+        type=int,
+        default=4,
         help=(
-            "Comma-separated electron-theta bin edges (deg). "
-            "Default: 5,7,9,11,13,15,17,19,21,23,25"
-        ),
-    )
-    parser.add_argument(
-        "--local-phi-bins",
-        default="0,20,40,60",
-        help=(
-            "Comma-separated FD local-phi bin edges (deg). "
-            "Default: 0,20,40,60"
+            "Number of equal-width theta bins derived independently between "
+            "the selected-event minimum and maximum in each FD sector. "
+            "Default: 4"
         ),
     )
 
@@ -2254,7 +2230,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--minimum-events-cell",
         type=int,
         default=200,
-        help="Minimum events for a theta or theta/local-phi fit. Default: 200",
+        help="Minimum events for a sector-specific theta-bin fit. Default: 200",
     )
     parser.add_argument(
         "--run-bin-width",
@@ -2281,14 +2257,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def validate_arguments(arguments: argparse.Namespace) -> None:
     """Validate command-line arguments and derive parsed edge arrays."""
-    arguments.theta_edges = parse_edges(arguments.theta_bins, "--theta-bins")
-    arguments.local_phi_edges = parse_edges(
-        arguments.local_phi_bins,
-        "--local-phi-bins",
-    )
-
     if arguments.theta_min >= arguments.theta_max:
         raise ValueError("--theta-min must be smaller than --theta-max.")
+    # endif
+
+    if arguments.theta_bin_count <= 0:
+        raise ValueError("--theta-bin-count must be positive.")
     # endif
 
     if arguments.w_preselection_min >= arguments.w_preselection_max:
@@ -2379,12 +2353,18 @@ def main() -> int:
     obsolete_plot_patterns = (
         "*_correction_theta_local_phi_maps.png",
         "*_model_residuals.png",
+        "individual_fits/*_phi*.png",
     )
     for obsolete_pattern in obsolete_plot_patterns:
         for obsolete_path in plot_directory.glob(obsolete_pattern):
             obsolete_path.unlink()
         # endfor
     # endfor
+
+    obsolete_model_path = output_directory / "electron_correction_models.json"
+    if obsolete_model_path.is_file():
+        obsolete_model_path.unlink()
+    # endif
 
     all_fit_records: list[dict[str, Any]] = []
     period_results: dict[str, dict[str, Any]] = {}
@@ -2413,8 +2393,7 @@ def main() -> int:
                 arguments.theta_max,
                 arguments.w_preselection_min,
                 arguments.w_preselection_max,
-                arguments.theta_edges,
-                arguments.local_phi_edges,
+                arguments.theta_bin_count,
                 histogram_range,
                 fit_range,
                 arguments.w_bins,
@@ -2477,11 +2456,6 @@ def main() -> int:
     write_json(cell_json_path, cell_database)
     print(f"[write] {cell_json_path}")
 
-    model_database = fit_provisional_correction_models(fit_frame)
-    model_json_path = output_directory / "electron_correction_models.json"
-    write_json(model_json_path, model_database)
-    print(f"[write] {model_json_path}")
-
     for period in CALIBRATION_PERIODS:
         save_peak_vs_theta_plot(
             period=period,
@@ -2504,32 +2478,19 @@ def main() -> int:
     attempted_theta_cells = fit_frame.loc[
         fit_frame["cell_type"] == "theta"
     ]
-    successful_theta_phi_cells = fit_frame.loc[
-        (fit_frame["cell_type"] == "theta_local_phi")
-        & (fit_frame["success"])
-    ]
-    attempted_theta_phi_cells = fit_frame.loc[
-        fit_frame["cell_type"] == "theta_local_phi"
-    ]
-
     print("")
     print("Electron momentum-correction diagnostic complete.")
     print(
         f"Successful theta fits: {len(successful_theta_cells):,} / "
         f"{len(attempted_theta_cells):,}"
     )
-    print(
-        f"Successful theta/local-phi fits: "
-        f"{len(successful_theta_phi_cells):,} / "
-        f"{len(attempted_theta_phi_cells):,}"
-    )
     print(f"Output directory: {output_directory}")
     print(f"Period workers used: {worker_count}")
     print("")
     print(
-        "The polynomial JSON is provisional. Review the fitted W spectra, "
-        "correction maps, run stability, and model residuals before using it "
-        "in production."
+        "This simplified pass fits four sector-specific theta bins integrated "
+        "over all local phi. Review the W-fit overlays and run stability before "
+        "using the extracted corrections."
     )
 
     return 0
