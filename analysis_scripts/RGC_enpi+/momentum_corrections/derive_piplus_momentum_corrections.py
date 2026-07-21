@@ -1,62 +1,52 @@
 #!/usr/bin/env python3
 """
-derive_piplus_momentum_corrections_v4.py
+derive_piplus_momentum_corrections_v7.py
 
-First diagnostic pass for RGC pi+ momentum corrections using inclusive
-e pi+ X data and the missing-neutron peak in
+Derive and validate FD pi+ momentum corrections for the RGC exclusive-pi+
+analysis using inclusive e pi+ X data and the missing-neutron peak
 
     Mx2(e pi+) = (p_beam + p_target - p_e' - p_pi+)^2.
 
-This stage does NOT yet derive or apply a pi+ momentum correction. It performs
-the prerequisite diagnostics in two reconstruction stages:
+The finalized electron correction is applied first.  Central-detector pions
+are excluded because the diagnostic spectra do not contain a resolvable
+missing-neutron peak.
 
-    1. no momentum corrections;
-    2. finalized electron momentum correction applied event by event.
+For each of four calibration periods and six FD sectors the script:
 
-The purpose is to establish:
+    1. forms eight equal-population pion-theta cells;
+    2. fits every Mx2 spectrum with one fixed model:
+           Gaussian signal + quadratic background;
+    3. numerically varies the pion momentum magnitude, holding direction fixed,
+       and solves for the fractional scale correction that places the fitted
+       neutron peak at m_n^2;
+    4. fits linear, quadratic, and cubic correction models versus mean pion
+       theta and selects the lowest adequate order, promoting only when AICc
+       improves materially;
+    5. applies the selected correction event by event, clamping theta to the
+       range spanned by the calibration-cell mean theta values;
+    6. repeats the integrated, theta-cell, individual-fit, and run-stability
+       studies for closure.
 
-    * the neutron-peak fit model;
-    * available statistics in FD and CD pion samples;
-    * sensible theta binning;
-    * period, sector, detector-region, and run stability;
-    * the size of the electron-correction effect before fitting pi+ corrections.
+The output explicitly compares three reconstruction stages:
 
-FD and CD pions are treated separately.
+    * no momentum corrections;
+    * electron correction only;
+    * electron plus pi+ corrections.
 
-FD:
-    * six sectors from pion phi;
-    * equal-population pion-theta cells inside each period and sector.
+The one-hadron ROOT branches p_p, p_theta, and p_phi are interpreted as pi+
+kinematics.  The detector branch identifies the pion detector, and only
+detector == 1 events enter this FD calibration.
 
-CD:
-    * integrated over azimuth at this stage;
-    * equal-population pion-theta cells inside each period.
-
-Three signal models are attempted in each Mx2 cell:
-
-    * Gaussian + quadratic background;
-    * Crystal Ball + quadratic background;
-    * common-mean double Gaussian + quadratic background.
-
-The lowest-AICc successful model is selected. Fit-quality flags are advisory.
-All individual fits include a pull panel.
-
-Expected electron-correction JSON:
-    output/electron_diagnostics/json/electron_correction_models.json
-
-The script accepts branch aliases and prints the resolved mapping before
-processing. In the one-hadron RGC trees, p_p, p_theta, and p_phi are treated
-as the pi+ momentum and angles, while detector is the pi+ detector branch.
-Mappings may still be overridden from the command line.
-
-Primary outputs:
+Primary output:
     output/piplus_diagnostics/
         csv/
         json/
         plots/
             uncorrected/
             electron_corrected/
+            electron_pion_corrected/
             comparison/
-            event_counts/
+            correction_models/
 
 Dependencies:
     numpy
@@ -1154,6 +1144,7 @@ def fit_one_model(
     }
 
 
+
 def fit_mx2_peak(
     values: np.ndarray,
     histogram_range: tuple[float, float],
@@ -1161,7 +1152,7 @@ def fit_mx2_peak(
     histogram_bins: int,
     minimum_events: int,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
-    """Fit the missing-neutron peak with all candidate models."""
+    """Fit one Mx2 spectrum with Gaussian signal plus quadratic background."""
     values = np.asarray(values, dtype=float)
     values = values[np.isfinite(values)]
 
@@ -1196,54 +1187,33 @@ def fit_mx2_peak(
                 "success": False,
                 "status": "insufficient_events",
                 "n_events": int(values.size),
-                "selected_model": None,
+                "selected_model": "gaussian",
                 "candidate_results": {},
             },
             empty_diagnostics,
         )
-    # endif
 
-    candidate_results = {
-        model_name: fit_one_model(
-            model_name,
-            centers,
-            counts,
-            fit_mask,
-            fit_range,
-        )
-        for model_name in MODEL_DEFINITIONS
-    }
-    successful = [
-        result
-        for result in candidate_results.values()
-        if result.get("success", False)
-    ]
-
-    if not successful:
+    selected = fit_one_model(
+        "gaussian",
+        centers,
+        counts,
+        fit_mask,
+        fit_range,
+    )
+    if not selected.get("success", False):
         return (
             {
                 "success": False,
-                "status": "all_models_failed",
+                "status": selected.get("status", "fit_failed"),
                 "n_events": int(values.size),
-                "selected_model": None,
-                "candidate_results": candidate_results,
+                "selected_model": "gaussian",
+                "candidate_results": {"gaussian": selected},
             },
             empty_diagnostics,
         )
-    # endif
 
-    selected = min(
-        successful,
-        key=lambda result: (
-            result["aicc"]
-            if np.isfinite(result["aicc"])
-            else math.inf
-        ),
-    )
-    model_name = selected["model"]
     parameters = np.asarray(selected["parameters"], dtype=float)
     fit_x = selected["fit_x"]
-
     diagnostics = {
         "counts": counts,
         "edges": edges,
@@ -1253,25 +1223,16 @@ def fit_mx2_peak(
         "fit_y": selected["fit_y"],
         "fit_error": selected["fit_error"],
         "fit_model": selected["fit_model"],
-        "fit_signal": signal_component(
-            model_name,
-            fit_x,
-            parameters,
-        ),
-        "fit_background": background_component(
-            model_name,
-            fit_x,
-            parameters,
-        ),
+        "fit_signal": gaussian_signal(fit_x, *parameters[:3]),
+        "fit_background": quadratic_background(fit_x, *parameters[3:6]),
         "pulls": selected["pulls"],
     }
-
     summary = {
         "success": True,
         "status": selected["status"],
         "review_reasons": selected["review_reasons"],
         "n_events": int(values.size),
-        "selected_model": model_name,
+        "selected_model": "gaussian",
         "mean_gev2": selected["mean_gev2"],
         "mean_error_gev2": selected["mean_error_gev2"],
         "chi2": selected["chi2"],
@@ -1280,9 +1241,9 @@ def fit_mx2_peak(
         "aicc": selected["aicc"],
         "peak_significance_proxy": selected["peak_significance_proxy"],
         "candidate_results": {
-            name: {
+            "gaussian": {
                 key: value
-                for key, value in result.items()
+                for key, value in selected.items()
                 if key not in {
                     "fit_x",
                     "fit_y",
@@ -1291,7 +1252,6 @@ def fit_mx2_peak(
                     "pulls",
                 }
             }
-            for name, result in candidate_results.items()
         },
     }
     return summary, diagnostics
@@ -1394,13 +1354,14 @@ def cell_record(
 
 def stage_column(stage: str) -> str:
     """Return the Mx2 column corresponding to a reconstruction stage."""
-    if stage == "uncorrected":
-        return "mx2_uncorrected_gev2"
-    # endif
-    if stage == "electron_corrected":
-        return "mx2_electron_corrected_gev2"
-    # endif
-    raise ValueError(stage)
+    mapping = {
+        "uncorrected": "mx2_uncorrected_gev2",
+        "electron_corrected": "mx2_electron_corrected_gev2",
+        "electron_pion_corrected": "mx2_electron_pion_corrected_gev2",
+    }
+    if stage not in mapping:
+        raise ValueError(stage)
+    return mapping[stage]
 
 
 def fit_region_cells(
@@ -1554,6 +1515,520 @@ def fit_region_cells(
     # endfor
 
     return records
+
+
+# -----------------------------------------------------------------------------
+# Pi+ correction extraction and smooth models
+# -----------------------------------------------------------------------------
+
+def scaled_cell_mx2(
+    cell: pd.DataFrame,
+    fractional_scale: float,
+) -> np.ndarray:
+    """Recompute Mx2 after scaling only the pion momentum magnitude."""
+    return calculate_mx2_epi(
+        cell["beam_energy_gev"].to_numpy(),
+        cell["e_p_electron_corrected_gev"].to_numpy(),
+        cell["e_theta_rad"].to_numpy(),
+        cell["e_phi_rad"].to_numpy(),
+        cell["pip_p_gev"].to_numpy() * (1.0 + fractional_scale),
+        cell["pip_theta_rad"].to_numpy(),
+        cell["pip_phi_rad"].to_numpy(),
+    )
+
+
+def solve_cell_pion_scale(
+    cell: pd.DataFrame,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events: int,
+    derivative_step: float,
+    maximum_abs_correction: float,
+    maximum_iterations: int = 3,
+) -> dict[str, Any]:
+    """
+    Numerically solve for the fractional pion momentum correction in one cell.
+
+    A Newton update is formed from finite-difference peak fits at scale +/- step.
+    The peak is refitted at each iterate.  The solution is clipped to the
+    configured physical range.
+    """
+    scale = 0.0
+    history: list[dict[str, Any]] = []
+
+    for iteration in range(maximum_iterations):
+        central_values = scaled_cell_mx2(cell, scale)
+        central_fit, _ = fit_mx2_peak(
+            central_values,
+            histogram_range,
+            fit_range,
+            histogram_bins,
+            minimum_events,
+        )
+        if not central_fit["success"]:
+            return {
+                "success": False,
+                "status": f"central_fit_failed:{central_fit['status']}",
+                "fractional_correction": math.nan,
+                "fractional_correction_error": math.nan,
+                "history": history,
+            }
+
+        plus_fit, _ = fit_mx2_peak(
+            scaled_cell_mx2(cell, scale + derivative_step),
+            histogram_range,
+            fit_range,
+            histogram_bins,
+            minimum_events,
+        )
+        minus_fit, _ = fit_mx2_peak(
+            scaled_cell_mx2(cell, scale - derivative_step),
+            histogram_range,
+            fit_range,
+            histogram_bins,
+            minimum_events,
+        )
+        if not plus_fit["success"] or not minus_fit["success"]:
+            return {
+                "success": False,
+                "status": "derivative_fit_failed",
+                "fractional_correction": math.nan,
+                "fractional_correction_error": math.nan,
+                "history": history,
+            }
+
+        derivative = (
+            plus_fit["mean_gev2"] - minus_fit["mean_gev2"]
+        ) / (2.0 * derivative_step)
+        if not np.isfinite(derivative) or abs(derivative) < 1.0e-5:
+            return {
+                "success": False,
+                "status": "invalid_mx2_scale_derivative",
+                "fractional_correction": math.nan,
+                "fractional_correction_error": math.nan,
+                "history": history,
+            }
+
+        residual = central_fit["mean_gev2"] - NEUTRON_MASS2_GEV2
+        update = -residual / derivative
+        next_scale = float(
+            np.clip(
+                scale + update,
+                -maximum_abs_correction,
+                maximum_abs_correction,
+            )
+        )
+        history.append(
+            {
+                "iteration": iteration,
+                "scale": scale,
+                "peak_mean_gev2": central_fit["mean_gev2"],
+                "peak_mean_error_gev2": central_fit["mean_error_gev2"],
+                "residual_gev2": residual,
+                "dmean_dscale_gev2": derivative,
+                "newton_update": update,
+                "next_scale": next_scale,
+            }
+        )
+        scale = next_scale
+        if abs(residual) < 5.0e-4 or abs(update) < 1.0e-5:
+            break
+
+    final_fit, _ = fit_mx2_peak(
+        scaled_cell_mx2(cell, scale),
+        histogram_range,
+        fit_range,
+        histogram_bins,
+        minimum_events,
+    )
+    if not final_fit["success"]:
+        return {
+            "success": False,
+            "status": f"final_fit_failed:{final_fit['status']}",
+            "fractional_correction": math.nan,
+            "fractional_correction_error": math.nan,
+            "history": history,
+        }
+
+    derivative = history[-1]["dmean_dscale_gev2"]
+    correction_error = (
+        final_fit["mean_error_gev2"] / abs(derivative)
+        if np.isfinite(derivative) and derivative != 0.0
+        else math.nan
+    )
+    at_limit = abs(scale) >= 0.999 * maximum_abs_correction
+    return {
+        "success": True,
+        "status": "success_at_limit" if at_limit else "success",
+        "fractional_correction": scale,
+        "fractional_correction_error": correction_error,
+        "final_peak_mean_gev2": final_fit["mean_gev2"],
+        "final_peak_mean_error_gev2": final_fit["mean_error_gev2"],
+        "final_residual_gev2": final_fit["mean_gev2"] - NEUTRON_MASS2_GEV2,
+        "dmean_dscale_gev2": derivative,
+        "history": history,
+    }
+
+
+def polynomial_design(theta_deg: np.ndarray, order: int) -> np.ndarray:
+    """Design matrix using powers of centered theta for numerical stability."""
+    theta_deg = np.asarray(theta_deg, dtype=float)
+    return np.column_stack([theta_deg**power for power in range(order + 1)])
+
+
+def fit_one_correction_polynomial(
+    theta_centered_deg: np.ndarray,
+    correction: np.ndarray,
+    correction_error: np.ndarray,
+    order: int,
+) -> dict[str, Any]:
+    """Weighted least-squares correction polynomial."""
+    design = polynomial_design(theta_centered_deg, order)
+    sigma = np.asarray(correction_error, dtype=float)
+    fallback = np.nanmedian(sigma[np.isfinite(sigma) & (sigma > 0.0)])
+    if not np.isfinite(fallback):
+        fallback = 0.002
+    sigma = np.where(np.isfinite(sigma) & (sigma > 0.0), sigma, fallback)
+    weighted_design = design / sigma[:, None]
+    weighted_y = correction / sigma
+    coefficients, _, _, _ = np.linalg.lstsq(
+        weighted_design,
+        weighted_y,
+        rcond=None,
+    )
+    prediction = design @ coefficients
+    residual = correction - prediction
+    chi2 = float(np.sum((residual / sigma) ** 2))
+    n_points = len(correction)
+    parameter_count = order + 1
+    ndf = n_points - parameter_count
+    chi2_ndf = chi2 / ndf if ndf > 0 else math.nan
+    if n_points > parameter_count + 1:
+        aicc = (
+            chi2
+            + 2.0 * parameter_count
+            + 2.0 * parameter_count * (parameter_count + 1)
+            / (n_points - parameter_count - 1)
+        )
+    else:
+        aicc = math.inf
+    covariance = np.linalg.pinv(weighted_design.T @ weighted_design)
+    return {
+        "order": order,
+        "coefficients": coefficients.tolist(),
+        "covariance": covariance.tolist(),
+        "chi2": chi2,
+        "ndf": int(ndf),
+        "chi2_ndf": chi2_ndf,
+        "aicc": aicc,
+        "adequate": bool(np.isfinite(chi2_ndf) and chi2_ndf <= 2.0),
+    }
+
+
+def select_correction_polynomial(
+    theta_deg: np.ndarray,
+    correction: np.ndarray,
+    correction_error: np.ndarray,
+    aicc_promotion_threshold: float,
+) -> dict[str, Any]:
+    """Select the lowest adequate polynomial, requiring material AICc gain."""
+    theta_deg = np.asarray(theta_deg, dtype=float)
+    theta_reference = float(np.mean(theta_deg))
+    centered = theta_deg - theta_reference
+    candidates = [
+        fit_one_correction_polynomial(
+            centered,
+            correction,
+            correction_error,
+            order,
+        )
+        for order in (1, 2, 3)
+    ]
+
+    selected = candidates[0]
+    for candidate in candidates[1:]:
+        improvement = selected["aicc"] - candidate["aicc"]
+        if (
+            (not selected["adequate"] and candidate["adequate"])
+            or improvement >= aicc_promotion_threshold
+        ):
+            selected = candidate
+        if selected["adequate"]:
+            # Once adequate, higher orders still require the stated AICc gain.
+            continue
+
+    if not any(candidate["adequate"] for candidate in candidates):
+        selected = min(candidates, key=lambda item: item["aicc"])
+
+    return {
+        "theta_reference_deg": theta_reference,
+        "selected_order": selected["order"],
+        "coefficients": selected["coefficients"],
+        "covariance": selected["covariance"],
+        "chi2": selected["chi2"],
+        "ndf": selected["ndf"],
+        "chi2_ndf": selected["chi2_ndf"],
+        "aicc": selected["aicc"],
+        "adequate": selected["adequate"],
+        "candidate_models": candidates,
+    }
+
+
+def evaluate_pion_model(
+    theta_deg: np.ndarray,
+    model: dict[str, Any],
+) -> np.ndarray:
+    """Evaluate a selected correction polynomial with boundary clamping."""
+    theta = np.asarray(theta_deg, dtype=float)
+    theta_clamped = np.clip(
+        theta,
+        float(model["theta_valid_min_deg"]),
+        float(model["theta_valid_max_deg"]),
+    )
+    centered = theta_clamped - float(model["theta_reference_deg"])
+    coefficients = np.asarray(model["coefficients"], dtype=float)
+    result = np.zeros_like(centered, dtype=float)
+    for power, coefficient in enumerate(coefficients):
+        result += coefficient * centered**power
+    return result
+
+
+def derive_fd_pion_models(
+    frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    fd_theta_bins: int,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+    derivative_step: float,
+    maximum_abs_correction: float,
+    aicc_promotion_threshold: float,
+) -> tuple[list[dict[str, Any]], dict[int, dict[str, Any]]]:
+    """Extract cell corrections and smooth models for all six FD sectors."""
+    records: list[dict[str, Any]] = []
+    models: dict[int, dict[str, Any]] = {}
+    fd = frame.loc[frame["pion_region"] == "FD"].copy()
+
+    for sector in range(1, 7):
+        sample = fd.loc[fd["pion_sector"] == sector].copy()
+        edges = equal_population_edges(
+            sample["pip_theta_deg"].to_numpy(),
+            fd_theta_bins,
+        )
+        sector_records: list[dict[str, Any]] = []
+
+        for theta_index in range(fd_theta_bins):
+            low = float(edges[theta_index])
+            high = float(edges[theta_index + 1])
+            if theta_index == fd_theta_bins - 1:
+                mask = (
+                    (sample["pip_theta_deg"] >= low)
+                    & (sample["pip_theta_deg"] <= high)
+                )
+            else:
+                mask = (
+                    (sample["pip_theta_deg"] >= low)
+                    & (sample["pip_theta_deg"] < high)
+                )
+            cell = sample.loc[mask].copy()
+            solution = solve_cell_pion_scale(
+                cell,
+                histogram_range,
+                fit_range,
+                histogram_bins,
+                minimum_events_cell,
+                derivative_step,
+                maximum_abs_correction,
+            )
+            record = {
+                "period_key": period.key,
+                "period_label": period.label,
+                "pion_sector": sector,
+                "theta_bin_index": theta_index,
+                "theta_low_deg": low,
+                "theta_high_deg": high,
+                "mean_theta_deg": float(cell["pip_theta_deg"].mean()),
+                "mean_pion_momentum_gev": float(cell["pip_p_gev"].mean()),
+                "n_events": int(len(cell)),
+                "success": bool(solution["success"]),
+                "status": solution["status"],
+                "fractional_correction": solution.get(
+                    "fractional_correction", math.nan
+                ),
+                "correction_percent": 100.0 * solution.get(
+                    "fractional_correction", math.nan
+                ),
+                "fractional_correction_error": solution.get(
+                    "fractional_correction_error", math.nan
+                ),
+                "correction_error_percent": 100.0 * solution.get(
+                    "fractional_correction_error", math.nan
+                ),
+                "final_peak_mean_gev2": solution.get(
+                    "final_peak_mean_gev2", math.nan
+                ),
+                "final_peak_mean_error_gev2": solution.get(
+                    "final_peak_mean_error_gev2", math.nan
+                ),
+                "final_residual_gev2": solution.get(
+                    "final_residual_gev2", math.nan
+                ),
+                "dmean_dscale_gev2": solution.get(
+                    "dmean_dscale_gev2", math.nan
+                ),
+                "solver_history_json": json.dumps(
+                    sanitize_json_value(solution.get("history", [])),
+                    sort_keys=True,
+                ),
+            }
+            records.append(record)
+            sector_records.append(record)
+
+        successful = [
+            record for record in sector_records
+            if record["success"]
+            and np.isfinite(record["fractional_correction"])
+        ]
+        if len(successful) < 4:
+            models[sector] = {
+                "success": False,
+                "status": "insufficient_successful_cells",
+                "period_key": period.key,
+                "pion_sector": sector,
+            }
+            continue
+
+        theta = np.asarray(
+            [record["mean_theta_deg"] for record in successful],
+            dtype=float,
+        )
+        correction = np.asarray(
+            [record["fractional_correction"] for record in successful],
+            dtype=float,
+        )
+        correction_error = np.asarray(
+            [
+                record["fractional_correction_error"]
+                for record in successful
+            ],
+            dtype=float,
+        )
+        model = select_correction_polynomial(
+            theta,
+            correction,
+            correction_error,
+            aicc_promotion_threshold,
+        )
+        model.update(
+            {
+                "success": True,
+                "status": "success",
+                "period_key": period.key,
+                "period_label": period.label,
+                "pion_sector": sector,
+                "theta_valid_min_deg": float(np.min(theta)),
+                "theta_valid_max_deg": float(np.max(theta)),
+                "n_calibration_cells": len(successful),
+            }
+        )
+        models[sector] = model
+
+    return records, models
+
+
+def apply_fd_pion_correction(
+    frame: pd.DataFrame,
+    models: dict[int, dict[str, Any]],
+) -> pd.DataFrame:
+    """Apply smooth FD correction models event by event."""
+    result = frame.copy()
+    correction = np.zeros(len(result), dtype=float)
+    fd_mask = result["pion_region"].to_numpy() == "FD"
+    sectors = result["pion_sector"].to_numpy()
+
+    for sector in range(1, 7):
+        mask = fd_mask & (sectors == sector)
+        model = models.get(sector, {})
+        if not np.any(mask):
+            continue
+        if not model.get("success", False):
+            raise RuntimeError(
+                f"No valid pion correction model for FD sector {sector}"
+            )
+        correction[mask] = evaluate_pion_model(
+            result.loc[mask, "pip_theta_deg"].to_numpy(),
+            model,
+        )
+
+    result["pion_fractional_correction"] = correction
+    result["pip_p_electron_pion_corrected_gev"] = (
+        result["pip_p_gev"].to_numpy() * (1.0 + correction)
+    )
+    result["mx2_electron_pion_corrected_gev2"] = calculate_mx2_epi(
+        result["beam_energy_gev"].to_numpy(),
+        result["e_p_electron_corrected_gev"].to_numpy(),
+        result["e_theta_rad"].to_numpy(),
+        result["e_phi_rad"].to_numpy(),
+        result["pip_p_electron_pion_corrected_gev"].to_numpy(),
+        result["pip_theta_rad"].to_numpy(),
+        result["pip_phi_rad"].to_numpy(),
+    )
+    return result
+
+
+def save_correction_model_plot(
+    period: CalibrationPeriod,
+    sector: int,
+    correction_records: pd.DataFrame,
+    model: dict[str, Any],
+    output_path: Path,
+) -> None:
+    """Plot extracted cell corrections and the selected smooth model."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cells = correction_records.loc[
+        (correction_records["period_key"] == period.key)
+        & (correction_records["pion_sector"] == sector)
+        & correction_records["success"]
+    ].sort_values("mean_theta_deg")
+
+    figure, axis = plt.subplots(figsize=(7.5, 5.4), constrained_layout=True)
+    axis.errorbar(
+        cells["mean_theta_deg"],
+        cells["correction_percent"],
+        yerr=cells["correction_error_percent"],
+        fmt="o",
+        label="Numerical cell correction",
+    )
+    if model.get("success", False):
+        theta = np.linspace(
+            model["theta_valid_min_deg"],
+            model["theta_valid_max_deg"],
+            300,
+        )
+        axis.plot(
+            theta,
+            100.0 * evaluate_pion_model(theta, model),
+            label=f"Selected order {model['selected_order']}",
+        )
+        axis.axvline(
+            model["theta_valid_min_deg"],
+            linestyle=":",
+            linewidth=0.9,
+        )
+        axis.axvline(
+            model["theta_valid_max_deg"],
+            linestyle=":",
+            linewidth=0.9,
+        )
+    axis.axhline(0.0, color="black", linestyle="--", linewidth=0.9)
+    axis.set_xlabel(r"Pion $\theta$ (deg)")
+    axis.set_ylabel(r"$\Delta p_{\pi^+}/p_{\pi^+}$ (%)")
+    axis.set_title(f"{period.label}: FD sector {sector} pion correction")
+    axis.legend(fontsize=8)
+    figure.savefig(output_path, dpi=180, bbox_inches="tight", pad_inches=0.06)
+    plt.close(figure)
 
 
 # -----------------------------------------------------------------------------
@@ -1780,7 +2255,7 @@ def save_stage_overlay_plot(
     histogram_range: tuple[float, float],
     histogram_bins: int,
 ) -> None:
-    """Overlay uncorrected and electron-corrected Mx2 distributions."""
+    """Overlay all three Mx2 reconstruction stages."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if region == "FD":
@@ -1816,6 +2291,10 @@ def save_stage_overlay_plot(
             (
                 "mx2_electron_corrected_gev2",
                 "Electron correction applied",
+            ),
+            (
+                "mx2_electron_pion_corrected_gev2",
+                r"Electron + $\pi^+$ corrections",
             ),
         ):
             counts, edges = np.histogram(
@@ -1853,7 +2332,7 @@ def save_stage_overlay_plot(
     # endfor
 
     figure.suptitle(
-        f"{period.label}: {region} pion effect of electron correction"
+        f"{period.label}: {region} momentum-correction comparison"
     )
     figure.savefig(
         output_path,
@@ -1900,6 +2379,11 @@ def save_peak_vs_theta_comparison(
                 "s",
                 "Electron correction applied",
             ),
+            (
+                "electron_pion_corrected",
+                "^",
+                r"Electron + $\pi^+$ corrections",
+            ),
         ):
             cells = fit_records.loc[
                 (fit_records["period_key"] == period.key)
@@ -1931,6 +2415,7 @@ def save_peak_vs_theta_comparison(
         )
         axis.set_xlabel(r"Mean pion $\theta$ (deg)")
         axis.set_ylabel(r"Fitted $\mu_{Mx^2}$ (GeV$^2$)")
+        axis.set_ylim(0.8, 1.0)
         if sector in (0, 1):
             axis.legend(fontsize=8)
         # endif
@@ -2108,19 +2593,41 @@ def save_run_stability(
 
         if run_centers:
             all_runs.extend(run_centers)
-            axis.errorbar(
+            plotted = axis.errorbar(
                 run_centers,
                 peak_values,
                 yerr=peak_errors,
                 fmt="o",
                 markersize=3,
                 linewidth=0.8,
-                label=(
-                    f"Sector {sector}"
-                    if region == "FD"
-                    else "CD"
-                ),
+                label=f"Sector {sector}",
             )
+            errors_array = np.asarray(peak_errors, dtype=float)
+            values_array = np.asarray(peak_values, dtype=float)
+            valid = (
+                np.isfinite(values_array)
+                & np.isfinite(errors_array)
+                & (errors_array > 0.0)
+            )
+            if np.any(valid):
+                weights = 1.0 / errors_array[valid]**2
+                weighted_mean = float(
+                    np.sum(weights * values_array[valid]) / np.sum(weights)
+                )
+                line_color = plotted.lines[0].get_color()
+                axis.axhline(
+                    weighted_mean,
+                    color=line_color,
+                    linestyle=":",
+                    linewidth=1.0,
+                    alpha=0.9,
+                )
+                for record in records:
+                    if (
+                        record["pion_sector"] == sector
+                        and record["stage"] == stage
+                    ):
+                        record["sector_weighted_mean_gev2"] = weighted_mean
         # endif
     # endfor
 
@@ -2139,6 +2646,7 @@ def save_run_stability(
     # endif
     axis.set_xlabel("Run number")
     axis.set_ylabel(r"Fitted $\mu_{Mx^2}$ (GeV$^2$)")
+    axis.set_ylim(0.8, 1.0)
     axis.set_title(
         f"{period.label}: {region} neutron-peak stability versus run "
         f"({stage.replace('_', ' ')})"
@@ -2158,10 +2666,11 @@ def save_run_stability(
 # One-period worker
 # -----------------------------------------------------------------------------
 
+
 def process_period(
     period: CalibrationPeriod,
     file_path: Path,
-    tree_name_requested: str,
+    requested_tree: str,
     branch_overrides: dict[str, str],
     electron_model_map: dict[tuple[str, int], dict[str, Any]],
     step_size: str,
@@ -2172,7 +2681,6 @@ def process_period(
     pip_theta_min_deg: float,
     pip_theta_max_deg: float,
     fd_theta_bins: int,
-    cd_theta_bins: int,
     histogram_range: tuple[float, float],
     fit_range: tuple[float, float],
     histogram_bins: int,
@@ -2180,18 +2688,20 @@ def process_period(
     minimum_events_cell: int,
     minimum_events_run: int,
     run_bin_width: int,
+    derivative_step: float,
+    maximum_abs_correction: float,
+    aicc_promotion_threshold: float,
     save_individual_fits: bool,
     skip_run_stability: bool,
     plot_directories: dict[str, Path],
 ) -> dict[str, Any]:
-    """Process one RGC period through uncorrected and electron-corrected stages."""
-    tree_name = find_tree(file_path, tree_name_requested)
+    """Process one calibration period from input through FD closure."""
+    tree_name = find_tree(file_path, requested_tree)
     branch_map = resolve_branches(
         file_path,
         tree_name,
         branch_overrides,
     )
-
     print(
         f"[worker:{period.key}] {file_path}:{tree_name}; "
         f"branches={branch_map}",
@@ -2211,17 +2721,19 @@ def process_period(
         pip_theta_min_deg,
         pip_theta_max_deg,
     )
+    frame = frame.loc[frame["pion_region"] == "FD"].copy()
     if frame.empty:
         return {
             "period_key": period.key,
             "success": False,
-            "status": "no_selected_events",
+            "status": "no_selected_fd_events",
             "fit_records": [],
             "run_records": [],
+            "correction_records": [],
+            "correction_models": {},
             "branch_map": branch_map,
             "n_events": 0,
         }
-    # endif
 
     frame = apply_electron_correction(
         frame,
@@ -2238,112 +2750,132 @@ def process_period(
         frame["pip_phi_rad"].to_numpy(),
     )
 
+    correction_records, correction_models = derive_fd_pion_models(
+        frame,
+        period,
+        fd_theta_bins,
+        histogram_range,
+        fit_range,
+        histogram_bins,
+        minimum_events_cell,
+        derivative_step,
+        maximum_abs_correction,
+        aicc_promotion_threshold,
+    )
+    invalid_sectors = [
+        sector
+        for sector, model in correction_models.items()
+        if not model.get("success", False)
+    ]
+    if invalid_sectors:
+        raise RuntimeError(
+            f"{period.label}: failed to derive correction models for "
+            f"FD sectors {invalid_sectors}"
+        )
+
+    frame = apply_fd_pion_correction(frame, correction_models)
+
+    correction_frame = pd.DataFrame(correction_records)
+    for sector in range(1, 7):
+        save_correction_model_plot(
+            period,
+            sector,
+            correction_frame,
+            correction_models[sector],
+            plot_directories["correction_models"]
+            / f"{period.key}_fd_sector{sector}_pion_correction.png",
+        )
+
     fit_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
-
-    for stage in ("uncorrected", "electron_corrected"):
-        for region in ("FD", "CD"):
-            fit_records.extend(
-                fit_region_cells(
-                    frame,
-                    period,
-                    stage,
-                    region,
-                    fd_theta_bins,
-                    cd_theta_bins,
-                    histogram_range,
-                    fit_range,
-                    histogram_bins,
-                    minimum_events_integrated,
-                    minimum_events_cell,
-                    plot_directories[
-                        f"{stage}_individual_fits"
-                    ],
-                    save_individual_fits,
-                )
-            )
-        # endfor
-    # endfor
-
-    fit_frame = pd.DataFrame(fit_records)
-
-    for stage in ("uncorrected", "electron_corrected"):
-        for region in ("FD", "CD"):
-            save_integrated_region_plot(
+    stages = (
+        "uncorrected",
+        "electron_corrected",
+        "electron_pion_corrected",
+    )
+    for stage in stages:
+        fit_records.extend(
+            fit_region_cells(
                 frame,
                 period,
                 stage,
-                region,
-                fit_frame,
-                plot_directories[f"{stage}_integrated"]
-                / f"{period.key}_{region.lower()}_integrated.png",
+                "FD",
+                fd_theta_bins,
+                2,
                 histogram_range,
+                fit_range,
                 histogram_bins,
+                minimum_events_integrated,
+                minimum_events_cell,
+                plot_directories[f"{stage}_individual_fits"],
+                save_individual_fits,
             )
-        # endfor
-    # endfor
+        )
 
-    for region in ("FD", "CD"):
-        save_stage_overlay_plot(
+    fit_frame = pd.DataFrame(fit_records)
+    for stage in stages:
+        save_integrated_region_plot(
             frame,
             period,
-            region,
-            plot_directories["comparison_overlays"]
-            / f"{period.key}_{region.lower()}_electron_effect.png",
+            stage,
+            "FD",
+            fit_frame,
+            plot_directories[f"{stage}_integrated"]
+            / f"{period.key}_fd_integrated.png",
             histogram_range,
             histogram_bins,
         )
-        save_peak_vs_theta_comparison(
-            period,
-            region,
-            fit_frame,
-            plot_directories["comparison_theta"]
-            / f"{period.key}_{region.lower()}_peak_vs_theta.png",
-        )
-        save_event_count_plot(
-            period,
-            region,
-            fit_frame,
-            plot_directories["event_counts"]
-            / f"{period.key}_{region.lower()}_theta_cell_counts.png",
-        )
-    # endfor
+
+    save_stage_overlay_plot(
+        frame,
+        period,
+        "FD",
+        plot_directories["comparison_overlays"]
+        / f"{period.key}_fd_three_stage_overlay.png",
+        histogram_range,
+        histogram_bins,
+    )
+    save_peak_vs_theta_comparison(
+        period,
+        "FD",
+        fit_frame,
+        plot_directories["comparison_theta"]
+        / f"{period.key}_fd_peak_vs_theta.png",
+    )
 
     if not skip_run_stability:
-        for stage in ("uncorrected", "electron_corrected"):
-            for region in ("FD", "CD"):
-                run_records.extend(
-                    save_run_stability(
-                        frame,
-                        period,
-                        stage,
-                        region,
-                        plot_directories[f"{stage}_run_stability"]
-                        / (
-                            f"{period.key}_{region.lower()}_"
-                            f"run_stability.png"
-                        ),
-                        histogram_range,
-                        fit_range,
-                        histogram_bins,
-                        minimum_events_run,
-                        run_bin_width,
-                    )
+        for stage in stages:
+            run_records.extend(
+                save_run_stability(
+                    frame,
+                    period,
+                    stage,
+                    "FD",
+                    plot_directories[f"{stage}_run_stability"]
+                    / f"{period.key}_fd_run_stability.png",
+                    histogram_range,
+                    fit_range,
+                    histogram_bins,
+                    minimum_events_run,
+                    run_bin_width,
                 )
-            # endfor
-        # endfor
-    # endif
+            )
 
+    model_payload = {
+        str(sector): sanitize_json_value(model)
+        for sector, model in correction_models.items()
+    }
     return {
         "period_key": period.key,
         "success": True,
         "status": "success",
         "fit_records": fit_records,
         "run_records": run_records,
+        "correction_records": correction_records,
+        "correction_models": model_payload,
         "branch_map": branch_map,
         "n_events": int(len(frame)),
-        "fd_events": int((frame["pion_region"] == "FD").sum()),
-        "cd_events": int((frame["pion_region"] == "CD").sum()),
+        "fd_events": int(len(frame)),
     }
 
 
@@ -2351,14 +2883,14 @@ def process_period(
 # Command line
 # -----------------------------------------------------------------------------
 
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Diagnose the e pi+ X missing-neutron peak before and after "
-            "application of finalized electron momentum corrections."
+            "Derive FD pi+ momentum corrections from the e pi+ X "
+            "missing-neutron peak and perform full closure."
         )
     )
-
     parser.add_argument("--su22-file", type=Path, default=DEFAULT_INPUTS["su22"])
     parser.add_argument("--fa22-file", type=Path, default=DEFAULT_INPUTS["fa22"])
     parser.add_argument("--sp23-file", type=Path, default=DEFAULT_INPUTS["sp23"])
@@ -2393,10 +2925,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--e-theta-min", type=float, default=5.0)
     parser.add_argument("--e-theta-max", type=float, default=35.0)
     parser.add_argument("--pip-theta-min", type=float, default=5.0)
-    parser.add_argument("--pip-theta-max", type=float, default=140.0)
-
+    parser.add_argument("--pip-theta-max", type=float, default=45.0)
     parser.add_argument("--fd-theta-bins", type=int, default=8)
-    parser.add_argument("--cd-theta-bins", type=int, default=5)
 
     parser.add_argument("--mx2-preselection-min", type=float, default=-0.5)
     parser.add_argument("--mx2-preselection-max", type=float, default=2.0)
@@ -2422,41 +2952,40 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=1000,
     )
     parser.add_argument("--run-bin-width", type=int, default=1)
-
     parser.add_argument(
-        "--skip-individual-fits",
-        action="store_true",
+        "--pion-scale-derivative-step",
+        type=float,
+        default=0.0025,
+        help="Finite-difference step in fractional pion momentum.",
     )
     parser.add_argument(
-        "--skip-run-stability",
-        action="store_true",
+        "--maximum-abs-pion-correction",
+        type=float,
+        default=0.10,
+        help="Maximum allowed absolute fractional pion correction.",
     )
+    parser.add_argument(
+        "--aicc-promotion-threshold",
+        type=float,
+        default=2.0,
+        help="Required AICc improvement before promoting polynomial order.",
+    )
+    parser.add_argument("--skip-individual-fits", action="store_true")
+    parser.add_argument("--skip-run-stability", action="store_true")
     return parser
 
 
 def validate_arguments(arguments: argparse.Namespace) -> None:
-    """Validate numerical command-line arguments."""
     if arguments.workers < 1:
         raise ValueError("--workers must be positive.")
-    # endif
-    if arguments.fd_theta_bins < 2:
-        raise ValueError("--fd-theta-bins must be at least 2.")
-    # endif
-    if arguments.cd_theta_bins < 2:
-        raise ValueError("--cd-theta-bins must be at least 2.")
-    # endif
-    if not (
-        arguments.mx2_preselection_min
-        < arguments.mx2_preselection_max
-    ):
+    if arguments.fd_theta_bins < 4:
+        raise ValueError("--fd-theta-bins must be at least 4.")
+    if not arguments.mx2_preselection_min < arguments.mx2_preselection_max:
         raise ValueError("Invalid Mx2 preselection range.")
-    # endif
     if not arguments.mx2_hist_min < arguments.mx2_hist_max:
         raise ValueError("Invalid Mx2 histogram range.")
-    # endif
     if not arguments.mx2_fit_min < arguments.mx2_fit_max:
         raise ValueError("Invalid Mx2 fit range.")
-    # endif
     if not (
         arguments.mx2_hist_min
         <= arguments.mx2_fit_min
@@ -2464,28 +2993,25 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
         <= arguments.mx2_hist_max
     ):
         raise ValueError("Mx2 fit range must lie inside histogram range.")
-    # endif
     if arguments.mx2_bins < 30:
         raise ValueError("--mx2-bins must be at least 30.")
-    # endif
     if arguments.run_bin_width < 1:
         raise ValueError("--run-bin-width must be positive.")
-    # endif
+    if not 0.0 < arguments.pion_scale_derivative_step < 0.02:
+        raise ValueError("Invalid --pion-scale-derivative-step.")
+    if not 0.0 < arguments.maximum_abs_pion_correction <= 0.25:
+        raise ValueError("Invalid --maximum-abs-pion-correction.")
+    if arguments.aicc_promotion_threshold < 0.0:
+        raise ValueError("--aicc-promotion-threshold cannot be negative.")
 
-
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
 
 def main() -> int:
     parser = build_argument_parser()
     arguments = parser.parse_args()
-
     try:
         validate_arguments(arguments)
     except ValueError as exc:
         parser.error(str(exc))
-    # endtry
 
     input_files = {
         "su22": arguments.su22_file,
@@ -2499,8 +3025,14 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        # endif
-    # endfor
+
+    if not arguments.electron_correction_json.is_file():
+        print(
+            "FATAL: electron correction JSON does not exist: "
+            f"{arguments.electron_correction_json}",
+            file=sys.stderr,
+        )
+        return 2
 
     branch_overrides = dict(arguments.branch)
     electron_model_map = load_electron_models(
@@ -2511,48 +3043,39 @@ def main() -> int:
     csv_directory = output_directory / "csv"
     json_directory = output_directory / "json"
     plot_root = output_directory / "plots"
-
-    for directory in (
-        csv_directory,
-        json_directory,
-        plot_root,
-    ):
+    for directory in (csv_directory, json_directory, plot_root):
         if directory.exists():
             shutil.rmtree(directory)
-        # endif
         directory.mkdir(parents=True, exist_ok=True)
-    # endfor
 
     plot_directories = {
-        "uncorrected_individual_fits": (
-            plot_root / "uncorrected" / "individual_fits"
-        ),
-        "uncorrected_integrated": (
-            plot_root / "uncorrected" / "integrated_mx2"
-        ),
-        "uncorrected_run_stability": (
-            plot_root / "uncorrected" / "run_stability"
-        ),
-        "electron_corrected_individual_fits": (
-            plot_root / "electron_corrected" / "individual_fits"
-        ),
-        "electron_corrected_integrated": (
-            plot_root / "electron_corrected" / "integrated_mx2"
-        ),
-        "electron_corrected_run_stability": (
-            plot_root / "electron_corrected" / "run_stability"
-        ),
-        "comparison_overlays": (
-            plot_root / "comparison" / "integrated_overlays"
-        ),
-        "comparison_theta": (
-            plot_root / "comparison" / "peak_vs_theta"
-        ),
-        "event_counts": plot_root / "event_counts",
+        "uncorrected_individual_fits":
+            plot_root / "uncorrected" / "individual_fits",
+        "uncorrected_integrated":
+            plot_root / "uncorrected" / "integrated_mx2",
+        "uncorrected_run_stability":
+            plot_root / "uncorrected" / "run_stability",
+        "electron_corrected_individual_fits":
+            plot_root / "electron_corrected" / "individual_fits",
+        "electron_corrected_integrated":
+            plot_root / "electron_corrected" / "integrated_mx2",
+        "electron_corrected_run_stability":
+            plot_root / "electron_corrected" / "run_stability",
+        "electron_pion_corrected_individual_fits":
+            plot_root / "electron_pion_corrected" / "individual_fits",
+        "electron_pion_corrected_integrated":
+            plot_root / "electron_pion_corrected" / "integrated_mx2",
+        "electron_pion_corrected_run_stability":
+            plot_root / "electron_pion_corrected" / "run_stability",
+        "comparison_overlays":
+            plot_root / "comparison" / "integrated_overlays",
+        "comparison_theta":
+            plot_root / "comparison" / "peak_vs_theta",
+        "correction_models":
+            plot_root / "correction_models",
     }
     for directory in plot_directories.values():
         directory.mkdir(parents=True, exist_ok=True)
-    # endfor
 
     histogram_range = (
         arguments.mx2_hist_min,
@@ -2566,6 +3089,8 @@ def main() -> int:
     worker_count = min(arguments.workers, len(CALIBRATION_PERIODS))
     all_fit_records: list[dict[str, Any]] = []
     all_run_records: list[dict[str, Any]] = []
+    all_correction_records: list[dict[str, Any]] = []
+    all_models: dict[str, Any] = {}
     period_summaries: list[dict[str, Any]] = []
 
     with ProcessPoolExecutor(max_workers=worker_count) as executor:
@@ -2586,7 +3111,6 @@ def main() -> int:
                 arguments.pip_theta_min,
                 arguments.pip_theta_max,
                 arguments.fd_theta_bins,
-                arguments.cd_theta_bins,
                 histogram_range,
                 fit_range,
                 arguments.mx2_bins,
@@ -2594,12 +3118,14 @@ def main() -> int:
                 arguments.minimum_events_cell,
                 arguments.minimum_events_run,
                 arguments.run_bin_width,
+                arguments.pion_scale_derivative_step,
+                arguments.maximum_abs_pion_correction,
+                arguments.aicc_promotion_threshold,
                 not arguments.skip_individual_fits,
                 arguments.skip_run_stability,
                 plot_directories,
             )
             future_map[future] = period
-        # endfor
 
         for future in as_completed(future_map):
             period = future_map[future]
@@ -2612,99 +3138,109 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 raise
-            # endtry
 
             all_fit_records.extend(result["fit_records"])
             all_run_records.extend(result["run_records"])
+            all_correction_records.extend(result["correction_records"])
+            all_models[period.key] = result["correction_models"]
             period_summaries.append(
                 {
                     key: value
                     for key, value in result.items()
-                    if key not in {"fit_records", "run_records"}
+                    if key not in {
+                        "fit_records",
+                        "run_records",
+                        "correction_records",
+                        "correction_models",
+                    }
                 }
             )
-
             if result["success"]:
                 print(
                     f"[complete] {period.label}: "
-                    f"{result['n_events']:,} events "
-                    f"(FD={result['fd_events']:,}, "
-                    f"CD={result['cd_events']:,})"
+                    f"{result['fd_events']:,} FD events"
                 )
             else:
                 print(
                     f"WARNING: {period.label}: {result['status']}",
                     file=sys.stderr,
                 )
-            # endif
-        # endfor
-    # endwith
 
     fit_frame = pd.DataFrame(all_fit_records)
     run_frame = pd.DataFrame(all_run_records)
+    correction_frame = pd.DataFrame(all_correction_records)
     summary_frame = pd.DataFrame(period_summaries)
 
-    fit_csv = csv_directory / "mx2_fit_results.csv"
-    run_csv = csv_directory / "mx2_run_stability.csv"
-    summary_csv = csv_directory / "period_summary.csv"
+    fit_frame.to_csv(
+        csv_directory / "mx2_fit_results.csv",
+        index=False,
+        float_format="%.12g",
+    )
+    run_frame.to_csv(
+        csv_directory / "mx2_run_stability.csv",
+        index=False,
+        float_format="%.12g",
+    )
+    correction_frame.to_csv(
+        csv_directory / "pion_correction_cells.csv",
+        index=False,
+        float_format="%.12g",
+    )
+    summary_frame.to_csv(
+        csv_directory / "period_summary.csv",
+        index=False,
+        float_format="%.12g",
+    )
 
-    fit_frame.to_csv(fit_csv, index=False, float_format="%.12g")
-    run_frame.to_csv(run_csv, index=False, float_format="%.12g")
-    summary_frame.to_csv(summary_csv, index=False, float_format="%.12g")
-
+    model_payload = {
+        "metadata": {
+            "script": "derive_piplus_momentum_corrections_v7.py",
+            "neutron_mass_gev": NEUTRON_MASS_GEV,
+            "neutron_mass2_gev2": NEUTRON_MASS2_GEV2,
+            "fit_model": "Gaussian signal plus quadratic background",
+            "detector_scope": "FD only; CD is not calibrated",
+            "electron_correction_json": str(
+                arguments.electron_correction_json
+            ),
+            "fd_theta_bins": arguments.fd_theta_bins,
+            "theta_extrapolation": (
+                "clamp to minimum/maximum calibration-cell mean theta"
+            ),
+            "mx2_histogram_range_gev2": histogram_range,
+            "mx2_fit_range_gev2": fit_range,
+            "pion_scale_derivative_step": (
+                arguments.pion_scale_derivative_step
+            ),
+            "maximum_abs_pion_correction": (
+                arguments.maximum_abs_pion_correction
+            ),
+            "aicc_promotion_threshold": (
+                arguments.aicc_promotion_threshold
+            ),
+        },
+        "periods": all_models,
+    }
     write_json(
-        json_directory / "diagnostic_summary.json",
+        json_directory / "pion_correction_models.json",
+        model_payload,
+    )
+    write_json(
+        json_directory / "analysis_summary.json",
         {
-            "metadata": {
-                "neutron_mass_gev": NEUTRON_MASS_GEV,
-                "neutron_mass2_gev2": NEUTRON_MASS2_GEV2,
-                "electron_correction_json": str(
-                    arguments.electron_correction_json
-                ),
-                "fit_models": list(MODEL_DEFINITIONS),
-                "selected_model_policy": (
-                    "minimum AICc among successful Gaussian, Crystal Ball, "
-                    "and common-mean double-Gaussian signal models"
-                ),
-                "pi_correction_status": (
-                    "not derived or applied in this diagnostic version"
-                ),
-                "fd_theta_bins": arguments.fd_theta_bins,
-                "cd_theta_bins": arguments.cd_theta_bins,
-                "mx2_histogram_range_gev2": histogram_range,
-                "mx2_fit_range_gev2": fit_range,
-            },
-            "periods": period_summaries,
+            "metadata": model_payload["metadata"],
+            "period_summaries": period_summaries,
         },
     )
 
     print("")
-    print("First-pass pi+ momentum-correction diagnostics complete.")
+    print("FD pi+ momentum-correction extraction and closure complete.")
     print(f"Output directory: {output_directory}")
-    print(f"Fit records: {len(fit_frame):,}")
+    print(f"Calibration cells: {len(correction_frame):,}")
+    print(f"Mx2 fit records: {len(fit_frame):,}")
     print(f"Run-stability records: {len(run_frame):,}")
-    if not fit_frame.empty:
-        print(
-            "Successful fits: "
-            f"{int(fit_frame['success'].sum()):,}/"
-            f"{len(fit_frame):,}"
-        )
-        selected_counts = (
-            fit_frame.loc[fit_frame["success"], "selected_model"]
-            .value_counts()
-        )
-        print(
-            "Selected fit models: "
-            + ", ".join(
-                f"{name}={count}"
-                for name, count in selected_counts.items()
-            )
-        )
-    # endif
-    print("")
     print(
-        "This version stops after comparing no correction with electron-only "
-        "correction. Inspect these outputs before deriving pi+ coefficients."
+        "Correction JSON: "
+        f"{json_directory / 'pion_correction_models.json'}"
     )
     return 0
 
