@@ -14,7 +14,7 @@ DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp \
            cross_sections.cpp model_predictions.cpp overall_normalization_study.cpp \
            bin_centering_corrections.cpp models_vs_data_plots.cpp propagator_study.cpp \
            norm_cross_sections.cpp pass1_paper_plots.cpp branch_data_mc_comparison.cpp \
-           branch_plot_config.cpp pi0_subtracted_kinematics.cpp external_scripts_runner.cpp cut_variation_systematics.cpp cut_variation_runner.cpp
+           branch_plot_config.cpp pi0_subtracted_kinematics.cpp external_scripts_runner.cpp systematics_runner.cpp cut_variation_systematics.cpp cut_variation_runner.cpp
 
 DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
 DVCS_BIN = dvcs_analysis
@@ -42,7 +42,7 @@ SYSTEMATICS_BIN = main_systematics
 # Build all by default
 all: $(DVCS_BIN) $(LEE_BIN) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_BIN)
 
-$(DVCS_BIN): $(DVCS_OBJ)
+$(DVCS_BIN): $(DVCS_OBJ) $(SYSTEMATICS_BIN)
 >$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
 
 $(LEE_BIN): $(LEE_OBJ)

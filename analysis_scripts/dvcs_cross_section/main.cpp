@@ -33,6 +33,7 @@
 #include "branch_data_mc_comparison.h"
 #include "pi0_subtracted_kinematics.h"
 #include "external_scripts_runner.h"
+#include "systematics_runner.h"
 #include "cut_variation_runner.h"
 
 int main(int argc, char* argv[]) {
@@ -714,6 +715,25 @@ int main(int argc, char* argv[]) {
                 use_nobkg_dvcs_mc_for_acceptance,
                 use_epg_mc_current_factor_for_eppi0_bkg)) {
             std::cerr << "[main] ERROR: automatic cut-variation systematics failed.\n";
+            return 1;
+        }
+    }
+
+    // --------- CSV-only systematic uncertainties ----------
+    // Run this after all nominal and cut-variation columns have been written,
+    // but before any external study reads the analysis CSV. This guarantees
+    // that the legacy/integrated scripts use systematics produced from the
+    // current analysis configuration rather than columns left by an older run.
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        SystematicsRunnerOptions systematics_opts;
+        systematics_opts.executable = "./main_systematics";
+        systematics_opts.pass1_systematics_csv =
+            "imports/pass1_systematic_summary.csv";
+
+        if (!run_main_systematics(csv_main, systematics_opts)) {
+            std::cerr << "[main] FATAL: main_systematics failed.\n";
             return 1;
         }
     }

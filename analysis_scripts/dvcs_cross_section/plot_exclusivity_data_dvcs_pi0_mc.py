@@ -33,7 +33,7 @@ restricted --fraction-variable subset is supplied, the remaining variables
 are validation projections with profiled nuisance parameters. Optional Gaussian nuisance penalties discourage extreme template
 shifts and broadenings.
 
-The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use z and theta together with the remaining exclusivity projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
+The script also compares reconstructed eppi0 data directly with reconstructed eppi0 MC using theta_pi0_pi0 in place of theta_gamma_gamma. The nuisance fits use z and theta together with the remaining exclusivity projections. The shape-comparison canvases retain those new variables and additionally show Mx2, Mx2_1, Mx2_2 and pT in a third row. Mx2_2 is diagnostic-only and is excluded from the nuisance fits and iterative exclusivity-cut optimization. The direct eppi0 nuisance fit is restricted to an MC-defined signal core so that out-of-core backgrounds and tails remain diagnostics rather than forcing excessive template morphing.
 
 Outputs:
 
@@ -294,8 +294,6 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03,
                    aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0")),
-    VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0,
-                   aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2")),
 )
 
 
@@ -411,8 +409,10 @@ PI0_SHAPE_VARIABLES: Tuple[VariableConfig, ...] = (
 )
 
 # The pi0 iterative-cut validation must be able to apply the production cut
-# order selected in the DVCS channel. That order can contain Mx2 or Mx2_2,
-# even though those variables are not part of the direct-pi0 nuisance-fit canvas. Use a branch-deduplicated union solely for iterative-cut array loading.
+# order selected in the DVCS channel. Mx2 can appear in that order even though
+# it is not part of the direct-pi0 nuisance-fit canvas. Mx2_2 is retained only
+# for shape comparison and is not eligible for fitting or cut optimization.
+# Use a branch-deduplicated union solely for iterative-cut array loading.
 # Direct-pi0 iterative validation follows the DVCS-selected cut order, so its
 # arrays and variable lookup must use the same keys as VARIABLES. Most branches
 # have identical names. The opening-angle analogue is theta_pi0_pi0 in the
@@ -1942,7 +1942,7 @@ def fit_shared_two_templates(
             return 0.0
         # endif
 
-        if variable.branch not in {"Emiss2", "Mx2_2"}:
+        if variable.branch != "Emiss2":
             return 0.0
         # endif
 
@@ -1950,15 +1950,9 @@ def fit_shared_two_templates(
         pi0_mean, _ = distribution_moments(pi0_shape, variable)
         bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
 
-        if variable.branch == "Emiss2":
-            # The DVCS signal should not be shifted farther from zero than the
-            # missing-particle pi0 background. Permit one bin of tolerance.
-            violation = abs(dvcs_mean) - abs(pi0_mean) - bin_width
-        else:
-            # For Mx2_2, prevent the fitted DVCS distribution from moving to
-            # the right of the fitted pi0 background. Permit one bin of tolerance.
-            violation = dvcs_mean - pi0_mean - bin_width
-        # endif
+        # The DVCS signal should not be shifted farther from zero than the
+        # missing-particle pi0 background. Permit one bin of tolerance.
+        violation = abs(dvcs_mean) - abs(pi0_mean) - bin_width
 
         if violation <= 0.0:
             return 0.0
