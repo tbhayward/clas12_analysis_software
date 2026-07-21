@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v4.py
+derive_electron_momentum_corrections_v5.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -1244,15 +1244,16 @@ def process_calibration_period(
     minimum_events_cell: int,
     save_individual_fits: bool,
     individual_fit_directory: Path,
-    cache_directory: Path,
+    plot_directory: Path,
+    skip_run_stability: bool,
+    run_bin_width: int,
 ) -> dict[str, Any]:
     """
     Read, select, and fit one calibration period in an independent process.
 
-    The selected event DataFrame is written to a pickle cache so that the parent
-    process does not receive a potentially very large DataFrame through the
-    multiprocessing pipe. Only compact status information and fit records are
-    returned directly.
+    The full selected-event DataFrame exists only inside this worker. The worker
+    uses it for the fits, integrated-W plot, and run-stability plot, then discards
+    it. Only compact fit records and status information are returned to the parent.
     """
     tree_name = find_tree(file_path, tree_name_requested)
     branches = validate_branches(file_path, tree_name)
@@ -1275,11 +1276,7 @@ def process_calibration_period(
         w_preselection_max_gev=w_preselection_max_gev,
     )
 
-    cache_directory.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_directory / f"{period.key}_selected_events.pkl"
-
     if period_frame.empty:
-        period_frame.to_pickle(cache_path)
         return {
             "period_key": period.key,
             "period_label": period.label,
@@ -1288,12 +1285,9 @@ def process_calibration_period(
             "n_events": 0,
             "run_min_selected": None,
             "run_max_selected": None,
-            "cache_path": str(cache_path),
             "fit_records": [],
         }
     # endif
-
-    period_frame.to_pickle(cache_path)
 
     period_records = fit_calibration_cells(
         frame=period_frame,
@@ -1309,6 +1303,30 @@ def process_calibration_period(
         individual_fit_directory=individual_fit_directory,
     )
 
+    period_fit_frame = pd.DataFrame(period_records)
+
+    save_period_integrated_w_plot(
+        frame=period_frame,
+        period=period,
+        fit_frame=period_fit_frame,
+        output_path=plot_directory / f"{period.key}_integrated_w_by_sector.png",
+        histogram_range=histogram_range,
+        histogram_bins=histogram_bins,
+    )
+
+    if not skip_run_stability:
+        save_run_stability_plot(
+            frame=period_frame,
+            period=period,
+            output_path=plot_directory / f"{period.key}_w_peak_vs_run.png",
+            run_bin_width=run_bin_width,
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events=minimum_events_cell,
+        )
+    # endif
+
     print(
         f"[worker:{period.key}] retained {len(period_frame):,} events; "
         f"completed {len(period_records):,} fits",
@@ -1323,7 +1341,6 @@ def process_calibration_period(
         "n_events": int(len(period_frame)),
         "run_min_selected": int(period_frame["runnum"].min()),
         "run_max_selected": int(period_frame["runnum"].max()),
-        "cache_path": str(cache_path),
         "fit_records": period_records,
     }
 
@@ -2122,13 +2139,11 @@ def main() -> int:
     output_directory.mkdir(parents=True, exist_ok=True)
     plot_directory.mkdir(parents=True, exist_ok=True)
 
-    loaded_frames: dict[str, pd.DataFrame] = {}
     all_fit_records: list[dict[str, Any]] = []
     period_results: dict[str, dict[str, Any]] = {}
 
     histogram_range = (arguments.w_hist_min, arguments.w_hist_max)
     fit_range = (arguments.w_fit_min, arguments.w_fit_max)
-    cache_directory = output_directory / "cache"
 
     worker_count = min(arguments.workers, len(CALIBRATION_PERIODS))
     print(
@@ -2160,7 +2175,9 @@ def main() -> int:
                 arguments.minimum_events_cell,
                 arguments.save_individual_fits,
                 individual_fit_directory,
-                cache_directory,
+                plot_directory,
+                arguments.skip_run_stability,
+                arguments.run_bin_width,
             )
             future_to_period[future] = period
         # endfor
@@ -2198,25 +2215,6 @@ def main() -> int:
         # endfor
     # endwith
 
-    # Reload selected-event caches only after all workers complete. This avoids
-    # sending very large DataFrames through multiprocessing pipes while keeping
-    # the existing parent-process plotting workflow unchanged.
-    for period in CALIBRATION_PERIODS:
-        result = period_results.get(period.key)
-
-        if result is None:
-            loaded_frames[period.key] = pd.DataFrame()
-            continue
-        # endif
-
-        cache_path = Path(result["cache_path"])
-        if cache_path.is_file():
-            loaded_frames[period.key] = pd.read_pickle(cache_path)
-        else:
-            loaded_frames[period.key] = pd.DataFrame()
-        # endif
-    # endfor
-
     if not all_fit_records:
         print("FATAL: no calibration fits were attempted.", file=sys.stderr)
         return 3
@@ -2238,20 +2236,6 @@ def main() -> int:
     print(f"[write] {model_json_path}")
 
     for period in CALIBRATION_PERIODS:
-        period_frame = loaded_frames.get(period.key, pd.DataFrame())
-        if period_frame.empty:
-            continue
-        # endif
-
-        save_period_integrated_w_plot(
-            frame=period_frame,
-            period=period,
-            fit_frame=fit_frame,
-            output_path=plot_directory
-            / f"{period.key}_integrated_w_by_sector.png",
-            histogram_range=histogram_range,
-            histogram_bins=arguments.w_bins,
-        )
         save_peak_vs_theta_plot(
             period=period,
             fit_frame=fit_frame,
@@ -2272,20 +2256,6 @@ def main() -> int:
             output_path=plot_directory
             / f"{period.key}_correction_theta_local_phi_maps.png",
         )
-
-        if not arguments.skip_run_stability:
-            save_run_stability_plot(
-                frame=period_frame,
-                period=period,
-                output_path=plot_directory
-                / f"{period.key}_w_peak_vs_run.png",
-                run_bin_width=arguments.run_bin_width,
-                histogram_range=histogram_range,
-                fit_range=fit_range,
-                histogram_bins=arguments.w_bins,
-                minimum_events=arguments.minimum_events_cell,
-            )
-        # endif
     # endfor
 
     save_model_residual_plots(
