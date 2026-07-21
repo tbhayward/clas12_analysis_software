@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v9.py
+derive_electron_momentum_corrections_v10.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -344,6 +344,8 @@ def gaussian_plus_quadratic(
 class PeakFitResult:
     success: bool
     status: str
+    quality_pass: bool
+    quality_flags: str
     n_events: int
     n_histogram_entries: int
     peak_mean_gev: float
@@ -368,6 +370,8 @@ def failed_peak_fit(
     return PeakFitResult(
         success=False,
         status=status,
+        quality_pass=False,
+        quality_flags=status,
         n_events=n_events,
         n_histogram_entries=n_histogram_entries,
         peak_mean_gev=math.nan,
@@ -610,16 +614,15 @@ def fit_w_peak(
         quality_problems.append("weak_peak")
     # endif
 
-    status = "success"
-    success = True
-    if quality_problems:
-        status = "rejected_fit_quality:" + ",".join(quality_problems)
-        success = False
-    # endif
+    quality_pass = not quality_problems
+    quality_flags = ",".join(quality_problems)
+    status = "success" if quality_pass else "success_flagged_for_review"
 
     result = PeakFitResult(
-        success=success,
+        success=True,
         status=status,
+        quality_pass=quality_pass,
+        quality_flags=quality_flags,
         n_events=n_events,
         n_histogram_entries=int(histogram_counts.sum()),
         peak_mean_gev=float(parameters[1]),
@@ -1383,15 +1386,22 @@ def process_calibration_period(
     # endif
 
     status_counts = period_fit_frame["status"].value_counts()
-    successful_fits = int(period_fit_frame["success"].sum())
+    converged_fits = int(period_fit_frame["success"].sum())
+    quality_passed = int(
+        (
+            period_fit_frame["success"]
+            & period_fit_frame["quality_pass"]
+        ).sum()
+    )
+    quality_flagged = int(
+        (
+            period_fit_frame["success"]
+            & ~period_fit_frame["quality_pass"]
+        ).sum()
+    )
     skipped_low_statistics = int(
         status_counts.get("skipped_insufficient_events", 0)
         + status_counts.get("skipped_insufficient_populated_bins", 0)
-    )
-    rejected_quality = int(
-        period_fit_frame["status"].astype(str).str.startswith(
-            "rejected_fit_quality:"
-        ).sum()
     )
     numerical_failures = int(
         period_fit_frame["status"].astype(str).str.startswith(
@@ -1401,9 +1411,10 @@ def process_calibration_period(
 
     print(
         f"[worker:{period.key}] retained {len(period_frame):,} events; "
-        f"{successful_fits} accepted fits, "
+        f"{converged_fits} converged fits "
+        f"({quality_passed} pass automatic checks, "
+        f"{quality_flagged} flagged for manual review), "
         f"{skipped_low_statistics} cells skipped for low statistics, "
-        f"{rejected_quality} fits rejected by quality checks, "
         f"{numerical_failures} numerical fit failures",
         flush=True,
     )
@@ -1633,20 +1644,38 @@ def save_peak_vs_theta_plot(
             axis.text(
                 0.5,
                 0.5,
-                "No accepted fits",
+                "No converged fits",
                 ha="center",
                 va="center",
                 transform=axis.transAxes,
             )
         else:
-            axis.errorbar(
-                cells["mean_theta_deg"],
-                cells["peak_mean_gev"],
-                yerr=cells["peak_mean_error_gev"],
-                fmt="o",
-                markersize=4,
-                linewidth=1.0,
-            )
+            clean_cells = cells.loc[cells["quality_pass"]]
+            flagged_cells = cells.loc[~cells["quality_pass"]]
+
+            if not clean_cells.empty:
+                axis.errorbar(
+                    clean_cells["mean_theta_deg"],
+                    clean_cells["peak_mean_gev"],
+                    yerr=clean_cells["peak_mean_error_gev"],
+                    fmt="o",
+                    markersize=5,
+                    linewidth=1.0,
+                    label="Passes automatic checks",
+                )
+            # endif
+
+            if not flagged_cells.empty:
+                axis.errorbar(
+                    flagged_cells["mean_theta_deg"],
+                    flagged_cells["peak_mean_gev"],
+                    yerr=flagged_cells["peak_mean_error_gev"],
+                    fmt="x",
+                    markersize=6,
+                    linewidth=1.0,
+                    label="Flagged for manual review",
+                )
+            # endif
         # endif
 
         axis.axhline(
@@ -1658,10 +1687,12 @@ def save_peak_vs_theta_plot(
         axis.set_title(f"Sector {sector}")
         axis.set_xlabel("Mean electron theta (deg)")
         axis.set_ylabel("Fitted W peak (GeV)")
+        if sector == 1 and not cells.empty:
+            axis.legend(fontsize=8)
+        # endif
     # endfor
 
     figure.suptitle(f"{period.label}: fitted elastic W peak versus electron theta")
-    figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
@@ -1698,32 +1729,52 @@ def save_correction_vs_theta_plot(
             axis.text(
                 0.5,
                 0.5,
-                "No accepted fits",
+                "No converged fits",
                 ha="center",
                 va="center",
                 transform=axis.transAxes,
             )
         else:
-            axis.errorbar(
-                cells["mean_theta_deg"],
-                100.0 * cells["delta_p_over_p"],
-                yerr=100.0 * cells["delta_p_over_p_error"],
-                fmt="o",
-                markersize=4,
-                linewidth=1.0,
-            )
+            clean_cells = cells.loc[cells["quality_pass"]]
+            flagged_cells = cells.loc[~cells["quality_pass"]]
+
+            if not clean_cells.empty:
+                axis.errorbar(
+                    clean_cells["mean_theta_deg"],
+                    100.0 * clean_cells["delta_p_over_p"],
+                    yerr=100.0 * clean_cells["delta_p_over_p_error"],
+                    fmt="o",
+                    markersize=5,
+                    linewidth=1.0,
+                    label="Passes automatic checks",
+                )
+            # endif
+
+            if not flagged_cells.empty:
+                axis.errorbar(
+                    flagged_cells["mean_theta_deg"],
+                    100.0 * flagged_cells["delta_p_over_p"],
+                    yerr=100.0 * flagged_cells["delta_p_over_p_error"],
+                    fmt="x",
+                    markersize=6,
+                    linewidth=1.0,
+                    label="Flagged for manual review",
+                )
+            # endif
         # endif
 
         axis.axhline(0.0, linestyle="--", linewidth=1.0, color="black")
         axis.set_title(f"Sector {sector}")
         axis.set_xlabel("Mean electron theta (deg)")
         axis.set_ylabel("Required momentum correction (%)")
+        if sector == 1 and not cells.empty:
+            axis.legend(fontsize=8)
+        # endif
     # endfor
 
     figure.suptitle(
         f"{period.label}: correction inferred from fitted elastic W peak"
     )
-    figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
@@ -1917,7 +1968,6 @@ def save_run_stability_plot(
         f"({point_definition})"
     )
     axis.legend(ncol=2)
-    figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
@@ -2242,9 +2292,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--save-individual-fits",
+        "--skip-individual-fits",
         action="store_true",
-        help="Save every individual calibration-cell W fit.",
+        help=(
+            "Do not save individual sector-integrated and theta-bin W-fit "
+            "overlays. They are saved by default for manual review."
+        ),
     )
     parser.add_argument(
         "--skip-run-stability",
@@ -2399,7 +2452,7 @@ def main() -> int:
                 arguments.w_bins,
                 arguments.minimum_events_integrated,
                 arguments.minimum_events_cell,
-                arguments.save_individual_fits,
+                not arguments.skip_individual_fits,
                 individual_fit_directory,
                 plot_directory,
                 arguments.skip_run_stability,
@@ -2475,22 +2528,33 @@ def main() -> int:
         (fit_frame["cell_type"] == "theta")
         & (fit_frame["success"])
     ]
+    quality_pass_theta_cells = successful_theta_cells.loc[
+        successful_theta_cells["quality_pass"]
+    ]
+    quality_flagged_theta_cells = successful_theta_cells.loc[
+        ~successful_theta_cells["quality_pass"]
+    ]
     attempted_theta_cells = fit_frame.loc[
         fit_frame["cell_type"] == "theta"
     ]
     print("")
     print("Electron momentum-correction diagnostic complete.")
     print(
-        f"Successful theta fits: {len(successful_theta_cells):,} / "
+        f"Converged theta fits: {len(successful_theta_cells):,} / "
         f"{len(attempted_theta_cells):,}"
+    )
+    print(f"  Pass automatic checks: {len(quality_pass_theta_cells):,}")
+    print(
+        f"  Flagged for manual review: "
+        f"{len(quality_flagged_theta_cells):,}"
     )
     print(f"Output directory: {output_directory}")
     print(f"Period workers used: {worker_count}")
     print("")
     print(
-        "This simplified pass fits four sector-specific theta bins integrated "
-        "over all local phi. Review the W-fit overlays and run stability before "
-        "using the extracted corrections."
+        "All numerically converged fits are retained. Automatic quality checks "
+        "are advisory and recorded in quality_pass and quality_flags. Review "
+        "the individual W-fit overlays before selecting production corrections."
     )
 
     return 0
