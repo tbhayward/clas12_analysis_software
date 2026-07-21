@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v12.py
+derive_electron_momentum_corrections_v13.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -1161,6 +1161,93 @@ def make_fit_record(
     return record
 
 
+def build_theta_edges_with_widest_bin_split(
+    theta_values_deg: np.ndarray,
+    base_bin_count: int,
+) -> tuple[np.ndarray, int]:
+    """
+    Build equal-population theta edges and split the angularly widest base bin.
+
+    First, base_bin_count quantile bins are constructed independently for one
+    FD sector. The base interval with the largest angular width is then divided
+    at the median theta value of the events inside that interval. The final
+    number of bins is therefore base_bin_count + 1.
+
+    Returns
+    -------
+    final_edges_deg
+        Strictly increasing theta-bin edges.
+    split_base_bin_index
+        Zero-based index of the base bin that was subdivided.
+    """
+    theta_values = np.asarray(theta_values_deg, dtype=float)
+    theta_values = theta_values[np.isfinite(theta_values)]
+
+    if theta_values.size == 0:
+        return np.linspace(0.0, 1.0, base_bin_count + 2), -1
+    # endif
+
+    quantiles = np.linspace(0.0, 1.0, base_bin_count + 1)
+    base_edges = np.quantile(theta_values, quantiles).astype(float)
+
+    # Guard against tied quantiles. The correction is far below detector
+    # angular resolution and only ensures valid interval construction.
+    for edge_index in range(1, len(base_edges)):
+        if base_edges[edge_index] <= base_edges[edge_index - 1]:
+            base_edges[edge_index] = base_edges[edge_index - 1] + 1.0e-6
+        # endif
+    # endfor
+
+    base_widths = np.diff(base_edges)
+    split_base_bin_index = int(np.argmax(base_widths))
+
+    split_low = float(base_edges[split_base_bin_index])
+    split_high = float(base_edges[split_base_bin_index + 1])
+
+    if split_base_bin_index == base_bin_count - 1:
+        in_split_bin = (
+            (theta_values >= split_low)
+            & (theta_values <= split_high)
+        )
+    else:
+        in_split_bin = (
+            (theta_values >= split_low)
+            & (theta_values < split_high)
+        )
+    # endif
+
+    split_values = theta_values[in_split_bin]
+    if split_values.size >= 2:
+        split_edge = float(np.median(split_values))
+    else:
+        split_edge = 0.5 * (split_low + split_high)
+    # endif
+
+    # Ensure that the inserted edge remains strictly interior.
+    epsilon = max(1.0e-6, 1.0e-6 * abs(split_high - split_low))
+    split_edge = float(
+        np.clip(
+            split_edge,
+            split_low + epsilon,
+            split_high - epsilon,
+        )
+    )
+
+    final_edges = np.insert(
+        base_edges,
+        split_base_bin_index + 1,
+        split_edge,
+    )
+
+    for edge_index in range(1, len(final_edges)):
+        if final_edges[edge_index] <= final_edges[edge_index - 1]:
+            final_edges[edge_index] = final_edges[edge_index - 1] + 1.0e-6
+        # endif
+    # endfor
+
+    return final_edges, split_base_bin_index
+
+
 def fit_calibration_cells(
     frame: pd.DataFrame,
     period: CalibrationPeriod,
@@ -1174,10 +1261,17 @@ def fit_calibration_cells(
     individual_fit_directory: Path,
 ) -> list[dict[str, Any]]:
     """
-    Fit one sector-integrated W spectrum and equal-population theta cells.
+    Fit one sector-integrated W spectrum and theta-dependent calibration cells.
+
+    For each FD sector:
+
+      1. Build theta_bin_count equal-population base bins.
+      2. Identify the base bin with the largest angular width.
+      3. Split that widest base bin at its event median.
+      4. Fit the resulting theta_bin_count + 1 cells.
 
     The sector-integrated fit determines sigma_W. The same sigma_W is fixed in
-    each theta-cell fit, while mu_W is constrained to lie within 40 MeV of the
+    every theta-cell fit, while mu_W is constrained to lie within 40 MeV of the
     integrated-sector value. All theta cells are integrated over local phi.
     """
     records: list[dict[str, Any]] = []
@@ -1186,25 +1280,15 @@ def fit_calibration_cells(
         sector_frame = frame.loc[frame["sector"] == sector].copy()
         sector_frame = sector_frame.sort_values("e_theta_deg")
 
-        if sector_frame.empty:
-            theta_edges_deg = np.linspace(0.0, 1.0, theta_bin_count + 1)
-        else:
-            quantiles = np.linspace(0.0, 1.0, theta_bin_count + 1)
-            theta_edges_deg = np.quantile(
-                sector_frame["e_theta_deg"].to_numpy(),
-                quantiles,
-            ).astype(float)
-
-            # Enforce strictly increasing edges in the unlikely event of tied
-            # quantiles. The adjustment is far below the angular resolution.
-            for edge_index in range(1, len(theta_edges_deg)):
-                if theta_edges_deg[edge_index] <= theta_edges_deg[edge_index - 1]:
-                    theta_edges_deg[edge_index] = (
-                        theta_edges_deg[edge_index - 1] + 1.0e-6
-                    )
-                # endif
-            # endfor
-        # endif
+        theta_edges_deg, split_base_bin_index = (
+            build_theta_edges_with_widest_bin_split(
+                sector_frame["e_theta_deg"].to_numpy()
+                if not sector_frame.empty
+                else np.asarray([], dtype=float),
+                theta_bin_count,
+            )
+        )
+        final_theta_bin_count = len(theta_edges_deg) - 1
 
         integrated_fit, integrated_diagnostics = fit_w_peak(
             sector_frame["w_recalculated"].to_numpy(),
@@ -1213,21 +1297,23 @@ def fit_calibration_cells(
             histogram_bins=histogram_bins,
             minimum_events=minimum_events_integrated,
         )
-        records.append(
-            make_fit_record(
-                period=period,
-                sector=sector,
-                cell_type="sector_integrated",
-                theta_bin_index=None,
-                theta_low_deg=float(theta_edges_deg[0]),
-                theta_high_deg=float(theta_edges_deg[-1]),
-                local_phi_bin_index=None,
-                local_phi_low_deg=0.0,
-                local_phi_high_deg=60.0,
-                cell_frame=sector_frame,
-                fit_result=integrated_fit,
-            )
+        integrated_record = make_fit_record(
+            period=period,
+            sector=sector,
+            cell_type="sector_integrated",
+            theta_bin_index=None,
+            theta_low_deg=float(theta_edges_deg[0]),
+            theta_high_deg=float(theta_edges_deg[-1]),
+            local_phi_bin_index=None,
+            local_phi_low_deg=0.0,
+            local_phi_high_deg=60.0,
+            cell_frame=sector_frame,
+            fit_result=integrated_fit,
         )
+        integrated_record["theta_base_bin_count"] = theta_bin_count
+        integrated_record["theta_final_bin_count"] = final_theta_bin_count
+        integrated_record["split_base_bin_index"] = split_base_bin_index
+        records.append(integrated_record)
 
         if save_individual_fits:
             save_peak_fit_plot(
@@ -1240,7 +1326,7 @@ def fit_calibration_cells(
         # endif
 
         if not integrated_fit.success:
-            for theta_index in range(theta_bin_count):
+            for theta_index in range(final_theta_bin_count):
                 theta_low = float(theta_edges_deg[theta_index])
                 theta_high = float(theta_edges_deg[theta_index + 1])
                 failed_fit = failed_peak_fit(
@@ -1250,30 +1336,36 @@ def fit_calibration_cells(
                     fit_mode="cell_fixed_sigma",
                     sigma_fixed=True,
                 )
-                records.append(
-                    make_fit_record(
-                        period=period,
-                        sector=sector,
-                        cell_type="theta",
-                        theta_bin_index=theta_index,
-                        theta_low_deg=theta_low,
-                        theta_high_deg=theta_high,
-                        local_phi_bin_index=None,
-                        local_phi_low_deg=0.0,
-                        local_phi_high_deg=60.0,
-                        cell_frame=pd.DataFrame(),
-                        fit_result=failed_fit,
-                    )
+                failed_record = make_fit_record(
+                    period=period,
+                    sector=sector,
+                    cell_type="theta",
+                    theta_bin_index=theta_index,
+                    theta_low_deg=theta_low,
+                    theta_high_deg=theta_high,
+                    local_phi_bin_index=None,
+                    local_phi_low_deg=0.0,
+                    local_phi_high_deg=60.0,
+                    cell_frame=pd.DataFrame(),
+                    fit_result=failed_fit,
                 )
+                failed_record["theta_base_bin_count"] = theta_bin_count
+                failed_record["theta_final_bin_count"] = final_theta_bin_count
+                failed_record["split_base_bin_index"] = split_base_bin_index
+                failed_record["is_split_sub_bin"] = (
+                    theta_index == split_base_bin_index
+                    or theta_index == split_base_bin_index + 1
+                )
+                records.append(failed_record)
             # endfor
             continue
         # endif
 
-        for theta_index in range(theta_bin_count):
+        for theta_index in range(final_theta_bin_count):
             theta_low = float(theta_edges_deg[theta_index])
             theta_high = float(theta_edges_deg[theta_index + 1])
 
-            if theta_index == theta_bin_count - 1:
+            if theta_index == final_theta_bin_count - 1:
                 theta_mask = (
                     (sector_frame["e_theta_deg"] >= theta_low)
                     & (sector_frame["e_theta_deg"] <= theta_high)
@@ -1296,23 +1388,35 @@ def fit_calibration_cells(
                 mean_center_gev=integrated_fit.peak_mean_gev,
                 mean_half_window_gev=0.040,
             )
-            records.append(
-                make_fit_record(
-                    period=period,
-                    sector=sector,
-                    cell_type="theta",
-                    theta_bin_index=theta_index,
-                    theta_low_deg=theta_low,
-                    theta_high_deg=theta_high,
-                    local_phi_bin_index=None,
-                    local_phi_low_deg=0.0,
-                    local_phi_high_deg=60.0,
-                    cell_frame=theta_frame,
-                    fit_result=theta_fit,
-                )
+
+            theta_record = make_fit_record(
+                period=period,
+                sector=sector,
+                cell_type="theta",
+                theta_bin_index=theta_index,
+                theta_low_deg=theta_low,
+                theta_high_deg=theta_high,
+                local_phi_bin_index=None,
+                local_phi_low_deg=0.0,
+                local_phi_high_deg=60.0,
+                cell_frame=theta_frame,
+                fit_result=theta_fit,
             )
+            theta_record["theta_base_bin_count"] = theta_bin_count
+            theta_record["theta_final_bin_count"] = final_theta_bin_count
+            theta_record["split_base_bin_index"] = split_base_bin_index
+            theta_record["is_split_sub_bin"] = (
+                theta_index == split_base_bin_index
+                or theta_index == split_base_bin_index + 1
+            )
+            records.append(theta_record)
 
             if save_individual_fits:
+                split_note = (
+                    ", split widest-bin sub-cell"
+                    if theta_record["is_split_sub_bin"]
+                    else ""
+                )
                 save_peak_fit_plot(
                     output_path=individual_fit_directory
                     / (
@@ -1322,9 +1426,9 @@ def fit_calibration_cells(
                     diagnostics=theta_diagnostics,
                     fit_result=theta_fit,
                     title=(
-                        f"{period.label}, sector {sector}, "
-                        f"equal-population theta bin {theta_index + 1}/"
-                        f"{theta_bin_count}: "
+                        f"{period.label}, sector {sector}, theta cell "
+                        f"{theta_index + 1}/{final_theta_bin_count}"
+                        f"{split_note}: "
                         f"{theta_low:.3f} <= theta_e < {theta_high:.3f} deg"
                     ),
                 )
@@ -2383,10 +2487,12 @@ def dataframe_to_cell_database(
             "histogram_bins": arguments.w_bins,
             "minimum_events_integrated": arguments.minimum_events_integrated,
             "minimum_events_cell": arguments.minimum_events_cell,
-            "theta_bin_count_per_sector": arguments.theta_bin_count,
+            "theta_base_bin_count_per_sector": arguments.theta_bin_count,
+            "theta_final_bin_count_per_sector": arguments.theta_bin_count + 1,
             "theta_edges_definition": (
-                "equal-population quantile edges derived independently in "
-                "each FD sector"
+                "equal-population quantile base bins derived independently in "
+                "each FD sector; the angularly widest base bin is split at the "
+                "median theta of events inside that base bin"
             ),
             "local_phi_treatment": "integrated over 0-60 degrees",
             "fit_model": "Gaussian elastic core + quadratic background",
@@ -2513,8 +2619,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=5,
         help=(
-            "Number of equal-population theta bins derived independently in each "
-            "FD sector. Default: 5"
+            "Number of equal-population base theta bins derived independently "
+            "in each FD sector. The angularly widest base bin is split once, "
+            "so the final number of fitted cells is this value plus one. "
+            "Default: 5"
         ),
     )
 
@@ -2842,8 +2950,10 @@ def main() -> int:
     print(f"Period workers used: {worker_count}")
     print("")
     print(
-        "Sector-integrated fits determine sigma_W. Five equal-population theta "
-        "cells per sector are fit with sigma_W fixed and mu_W constrained to "
+        "Sector-integrated fits determine sigma_W. Five equal-population base "
+        "theta bins are formed per sector, then the angularly widest base bin is "
+        "split, giving six theta cells. Cells are fit with sigma_W fixed and "
+        "mu_W constrained to "
         "the integrated mean +/- 0.040 GeV. Review the fit and pull panels "
         "before selecting production corrections."
     )
