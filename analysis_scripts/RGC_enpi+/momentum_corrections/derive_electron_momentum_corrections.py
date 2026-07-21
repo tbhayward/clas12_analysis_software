@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v3.py
+derive_electron_momentum_corrections_v4.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -80,13 +80,11 @@ DEFAULT_INPUTS = {
 }
 
 REQUIRED_BRANCHES = (
-    "fiducial_status",
     "runnum",
     "evnum",
     "e_p",
     "e_theta",
     "e_phi",
-    "vz_e",
     "W",
 )
 
@@ -618,9 +616,6 @@ def read_selected_events(
     branches: tuple[str, ...],
     period: CalibrationPeriod,
     step_size: str,
-    require_fiducial_status: int | None,
-    vertex_min_cm: float,
-    vertex_max_cm: float,
     theta_min_deg: float,
     theta_max_deg: float,
     w_preselection_min_gev: float,
@@ -644,7 +639,6 @@ def read_selected_events(
         e_p = arrays["e_p"].astype(float, copy=False)
         e_theta = arrays["e_theta"].astype(float, copy=False)
         e_phi = arrays["e_phi"].astype(float, copy=False)
-        vz_e = arrays["vz_e"].astype(float, copy=False)
         w_branch = arrays["W"].astype(float, copy=False)
 
         mask = (
@@ -653,20 +647,13 @@ def read_selected_events(
             & np.isfinite(e_p)
             & np.isfinite(e_theta)
             & np.isfinite(e_phi)
-            & np.isfinite(vz_e)
             & np.isfinite(w_branch)
             & (e_p > 0.0)
             & (e_theta * RAD2DEG >= theta_min_deg)
             & (e_theta * RAD2DEG < theta_max_deg)
-            & (vz_e >= vertex_min_cm)
-            & (vz_e <= vertex_max_cm)
             & (w_branch >= w_preselection_min_gev)
             & (w_branch <= w_preselection_max_gev)
         )
-
-        if require_fiducial_status is not None:
-            mask &= arrays["fiducial_status"] == require_fiducial_status
-        # endif
 
         if not np.any(mask):
             continue
@@ -691,16 +678,11 @@ def read_selected_events(
         frame_data: dict[str, Any] = {
             "runnum": runnum[selected_indices],
             "evnum": arrays["evnum"][selected_indices].astype(np.int64, copy=False),
-            "fiducial_status": arrays["fiducial_status"][selected_indices].astype(
-                np.int16,
-                copy=False,
-            ),
             "e_p": e_p[selected_indices],
             "e_theta_rad": e_theta[selected_indices],
             "e_theta_deg": e_theta[selected_indices] * RAD2DEG,
             "e_phi_rad": e_phi[selected_indices],
             "e_phi_deg": wrap_phi_deg(e_phi[selected_indices] * RAD2DEG),
-            "vz_e": vz_e[selected_indices],
             "w_branch": w_branch[selected_indices],
             "sector": selected_sector,
             "local_phi_deg": selected_local_phi,
@@ -1249,9 +1231,6 @@ def process_calibration_period(
     file_path: Path,
     tree_name_requested: str,
     step_size: str,
-    require_fiducial_status: int | None,
-    vertex_min_cm: float,
-    vertex_max_cm: float,
     theta_min_deg: float,
     theta_max_deg: float,
     w_preselection_min_gev: float,
@@ -1290,9 +1269,6 @@ def process_calibration_period(
         branches=branches,
         period=period,
         step_size=step_size,
-        require_fiducial_status=require_fiducial_status,
-        vertex_min_cm=vertex_min_cm,
-        vertex_max_cm=vertex_max_cm,
         theta_min_deg=theta_min_deg,
         theta_max_deg=theta_max_deg,
         w_preselection_min_gev=w_preselection_min_gev,
@@ -1823,9 +1799,6 @@ def dataframe_to_cell_database(
             ),
         },
         "selection": {
-            "fiducial_status": arguments.require_fiducial_status,
-            "vertex_min_cm": arguments.vertex_min,
-            "vertex_max_cm": arguments.vertex_max,
             "theta_min_deg": arguments.theta_min,
             "theta_max_deg": arguments.theta_max,
             "w_preselection_min_gev": arguments.w_preselection_min,
@@ -1953,27 +1926,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--require-fiducial-status",
-        type=int,
-        default=1,
-        help=(
-            "Required fiducial_status value. Use a negative value to disable "
-            "this requirement. Default: 1"
-        ),
-    )
-    parser.add_argument(
-        "--vertex-min",
-        type=float,
-        default=-10.0,
-        help="Minimum electron vertex z [cm]. Default: -10",
-    )
-    parser.add_argument(
-        "--vertex-max",
-        type=float,
-        default=5.0,
-        help="Maximum electron vertex z [cm]. Default: 5",
-    )
-    parser.add_argument(
         "--theta-min",
         type=float,
         default=5.0,
@@ -2083,14 +2035,6 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
         arguments.local_phi_bins,
         "--local-phi-bins",
     )
-
-    if arguments.require_fiducial_status < 0:
-        arguments.require_fiducial_status = None
-    # endif
-
-    if arguments.vertex_min >= arguments.vertex_max:
-        raise ValueError("--vertex-min must be smaller than --vertex-max.")
-    # endif
 
     if arguments.theta_min >= arguments.theta_max:
         raise ValueError("--theta-min must be smaller than --theta-max.")
@@ -2203,9 +2147,6 @@ def main() -> int:
                 file_path,
                 arguments.tree_name,
                 arguments.step_size,
-                arguments.require_fiducial_status,
-                arguments.vertex_min,
-                arguments.vertex_max,
                 arguments.theta_min,
                 arguments.theta_max,
                 arguments.w_preselection_min,
