@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_piplus_momentum_corrections_v3.py
+derive_piplus_momentum_corrections_v4.py
 
 First diagnostic pass for RGC pi+ momentum corrections using inclusive
 e pi+ X data and the missing-neutron peak in
@@ -44,8 +44,9 @@ Expected electron-correction JSON:
     output/electron_diagnostics/json/electron_correction_models.json
 
 The script accepts branch aliases and prints the resolved mapping before
-processing. Defaults assume common RGC naming conventions but may be overridden
-from the command line.
+processing. In the one-hadron RGC trees, p_p, p_theta, and p_phi are treated
+as the pi+ momentum and angles, while detector is the pi+ detector branch.
+Mappings may still be overridden from the command line.
 
 Primary outputs:
     output/piplus_diagnostics/
@@ -160,6 +161,7 @@ BRANCH_ALIASES = {
     "e_theta": ("e_theta", "electron_theta"),
     "e_phi": ("e_phi", "electron_phi"),
     "pip_p": (
+        "p_p",
         "pip_p",
         "pi_p",
         "piplus_p",
@@ -167,6 +169,7 @@ BRANCH_ALIASES = {
         "h_p",
     ),
     "pip_theta": (
+        "p_theta",
         "pip_theta",
         "pi_theta",
         "piplus_theta",
@@ -174,6 +177,7 @@ BRANCH_ALIASES = {
         "h_theta",
     ),
     "pip_phi": (
+        "p_phi",
         "pip_phi",
         "pi_phi",
         "piplus_phi",
