@@ -124,6 +124,21 @@ struct CsvInfo {
     std::map<std::string, WeightSummary> weight_summary_by_period;
 };
 
+struct Stats {
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std = std::numeric_limits<double>::quiet_NaN();
+    double cut_low = std::numeric_limits<double>::quiet_NaN();
+    double cut_high = std::numeric_limits<double>::quiet_NaN();
+    std::string mode = "symmetric_3sigma";
+};
+
+struct CutDict {
+    std::map<std::string, Stats> data;
+    std::map<std::string, Stats> mc;
+};
+
+
+
 static std::mutex g_root_mutex;
 
 static void fatal(const std::string& msg) {
