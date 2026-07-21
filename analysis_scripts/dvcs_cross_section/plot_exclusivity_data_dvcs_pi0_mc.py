@@ -294,6 +294,8 @@ VARIABLES: Tuple[VariableConfig, ...] = (
     VariableConfig("Emiss2", r"$E_{\mathrm{miss}}^{2}$ (GeV$^2$)", 100, -1.0, 2.0),
     VariableConfig("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03,
                    aliases=("Mx2_epg", "Mx2_eg", "Mx2_epgamma", "Mx2_epi0", "Mx2_eppi0")),
+    VariableConfig("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0,
+                   aliases=("Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2")),
 )
 
 
@@ -1936,35 +1938,20 @@ def fit_shared_two_templates(
         transformed_signal: np.ndarray,
         pi0_shape: np.ndarray,
     ) -> float:
-        """Apply targeted physical constraints to pathological nuisance morphs."""
+        """Hard ordering constraint for Emiss2 and Mx2_2."""
 
-        if emiss2_mean_order_penalty_weight <= 0.0:
+        if variable.branch not in {"Emiss2", "Mx2_2"}:
             return 0.0
-        # endif
-
-        if variable.branch != "Emiss2":
-            return 0.0
-        # endif
 
         dvcs_mean, _ = distribution_moments(transformed_signal, variable)
         pi0_mean, _ = distribution_moments(pi0_shape, variable)
-        bin_width = (variable.xmax - variable.xmin) / float(variable.bins)
 
-        # The DVCS signal should not be shifted farther from zero than the
-        # missing-particle pi0 background. Permit one bin of tolerance.
-        violation = abs(dvcs_mean) - abs(pi0_mean) - bin_width
+        if dvcs_mean <= pi0_mean:
+            return 1.0e30
 
-        if violation <= 0.0:
-            return 0.0
-        # endif
+        return 0.0
 
-        return (
-            0.5
-            * emiss2_mean_order_penalty_weight
-            * (violation / max(bin_width, 1.0e-12)) ** 2
-        )
-
-    def outside_region_overshoot_penalty(
+def outside_region_overshoot_penalty(
         data: np.ndarray,
         total_shape: np.ndarray,
         active_mask: np.ndarray,
