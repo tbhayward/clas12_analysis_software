@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_piplus_momentum_corrections_v7.py
+derive_piplus_momentum_corrections_v8.py
 
 Derive and validate FD pi+ momentum corrections for the RGC exclusive-pi+
 analysis using inclusive e pi+ X data and the missing-neutron peak
@@ -45,7 +45,9 @@ Primary output:
             uncorrected/
             electron_corrected/
             electron_pion_corrected/
-            comparison/
+            closure/
+                integrated_mx2/
+                theta_residuals/
             correction_models/
 
 Dependencies:
@@ -1978,56 +1980,134 @@ def apply_fd_pion_correction(
     return result
 
 
-def save_correction_model_plot(
+def save_period_correction_model_plot(
     period: CalibrationPeriod,
-    sector: int,
     correction_records: pd.DataFrame,
-    model: dict[str, Any],
+    models: dict[int, dict[str, Any]],
     output_path: Path,
 ) -> None:
-    """Plot extracted cell corrections and the selected smooth model."""
+    """Plot all six FD pion correction models on one standardized canvas."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    cells = correction_records.loc[
-        (correction_records["period_key"] == period.key)
-        & (correction_records["pion_sector"] == sector)
-        & correction_records["success"]
-    ].sort_values("mean_theta_deg")
 
-    figure, axis = plt.subplots(figsize=(7.5, 5.4), constrained_layout=True)
-    axis.errorbar(
-        cells["mean_theta_deg"],
-        cells["correction_percent"],
-        yerr=cells["correction_error_percent"],
-        fmt="o",
-        label="Numerical cell correction",
-    )
-    if model.get("success", False):
+    period_cells = correction_records.loc[
+        (correction_records["period_key"] == period.key)
+        & correction_records["success"]
+    ].copy()
+
+    # Establish one common vertical range for every sector in the period.
+    plotted_percent_values: list[float] = []
+    if not period_cells.empty:
+        plotted_percent_values.extend(
+            period_cells["correction_percent"]
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .tolist()
+        )
+        error = (
+            period_cells["correction_error_percent"]
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .to_numpy()
+        )
+        value = period_cells["correction_percent"].to_numpy()
+        finite = np.isfinite(value) & np.isfinite(error)
+        plotted_percent_values.extend((value[finite] - error[finite]).tolist())
+        plotted_percent_values.extend((value[finite] + error[finite]).tolist())
+
+    for sector in range(1, 7):
+        model = models.get(sector, {})
+        if not model.get("success", False):
+            continue
         theta = np.linspace(
-            model["theta_valid_min_deg"],
-            model["theta_valid_max_deg"],
+            float(model["theta_valid_min_deg"]),
+            float(model["theta_valid_max_deg"]),
             300,
         )
-        axis.plot(
-            theta,
-            100.0 * evaluate_pion_model(theta, model),
-            label=f"Selected order {model['selected_order']}",
+        plotted_percent_values.extend(
+            (100.0 * evaluate_pion_model(theta, model)).tolist()
         )
-        axis.axvline(
-            model["theta_valid_min_deg"],
-            linestyle=":",
+
+    finite_values = np.asarray(plotted_percent_values, dtype=float)
+    finite_values = finite_values[np.isfinite(finite_values)]
+    if finite_values.size:
+        y_min = float(np.min(finite_values))
+        y_max = float(np.max(finite_values))
+        span = max(y_max - y_min, 0.25)
+        padding = 0.12 * span
+        common_y_limits = (y_min - padding, y_max + padding)
+    else:
+        common_y_limits = (-2.0, 2.0)
+
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharey=True,
+        constrained_layout=True,
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        cells = period_cells.loc[
+            period_cells["pion_sector"] == sector
+        ].sort_values("mean_theta_deg")
+        model = models.get(sector, {})
+
+        axis.errorbar(
+            cells["mean_theta_deg"],
+            cells["correction_percent"],
+            yerr=cells["correction_error_percent"],
+            fmt="o",
+            label="Numerical cell correction",
+        )
+
+        if model.get("success", False):
+            theta = np.linspace(
+                float(model["theta_valid_min_deg"]),
+                float(model["theta_valid_max_deg"]),
+                300,
+            )
+            axis.plot(
+                theta,
+                100.0 * evaluate_pion_model(theta, model),
+                linewidth=1.5,
+                label=f"Selected order {model['selected_order']}",
+            )
+            axis.axvline(
+                float(model["theta_valid_min_deg"]),
+                linestyle=":",
+                linewidth=0.9,
+            )
+            axis.axvline(
+                float(model["theta_valid_max_deg"]),
+                linestyle=":",
+                linewidth=0.9,
+            )
+            axis.set_title(
+                f"Sector {sector}: order {model['selected_order']}, "
+                f"$\\chi^2$/ndf={model['chi2_ndf']:.2f}"
+            )
+        else:
+            axis.set_title(f"Sector {sector}: no valid model")
+
+        axis.axhline(
+            0.0,
+            color="black",
+            linestyle="--",
             linewidth=0.9,
         )
-        axis.axvline(
-            model["theta_valid_max_deg"],
-            linestyle=":",
-            linewidth=0.9,
-        )
-    axis.axhline(0.0, color="black", linestyle="--", linewidth=0.9)
-    axis.set_xlabel(r"Pion $\theta$ (deg)")
-    axis.set_ylabel(r"$\Delta p_{\pi^+}/p_{\pi^+}$ (%)")
-    axis.set_title(f"{period.label}: FD sector {sector} pion correction")
-    axis.legend(fontsize=8)
-    figure.savefig(output_path, dpi=180, bbox_inches="tight", pad_inches=0.06)
+        axis.set_ylim(*common_y_limits)
+        axis.set_xlabel(r"Mean pion $\theta$ (deg)")
+        axis.set_ylabel(r"$\Delta p_{\pi^+}/p_{\pi^+}$ (%)")
+        if sector == 1:
+            axis.legend(fontsize=8)
+
+    figure.suptitle(f"{period.label}: FD pion momentum-correction models")
+    figure.savefig(
+        output_path,
+        dpi=180,
+        bbox_inches="tight",
+        pad_inches=0.06,
+    )
     plt.close(figure)
 
 
@@ -2247,92 +2327,96 @@ def save_integrated_region_plot(
     plt.close(figure)
 
 
-def save_stage_overlay_plot(
+def save_three_stage_integrated_plot(
     frame: pd.DataFrame,
     period: CalibrationPeriod,
-    region: str,
+    fit_records: pd.DataFrame,
     output_path: Path,
     histogram_range: tuple[float, float],
     histogram_bins: int,
 ) -> None:
-    """Overlay all three Mx2 reconstruction stages."""
+    """Overlay all three integrated FD Mx2 stages on one six-sector canvas."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if region == "FD":
-        figure, axes = plt.subplots(
-            2,
-            3,
-            figsize=(12.8, 7.7),
-            constrained_layout=True,
-        )
-        axes_flat = axes.ravel()
-        sectors = list(range(1, 7))
-    else:
-        figure, axis = plt.subplots(
-            figsize=(8.2, 5.7),
-            constrained_layout=True,
-        )
-        axes_flat = [axis]
-        sectors = [0]
-    # endif
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharex=True,
+        constrained_layout=True,
+    )
 
-    for axis, sector in zip(axes_flat, sectors):
-        if region == "FD":
-            sample = frame.loc[
-                (frame["pion_region"] == "FD")
-                & (frame["pion_sector"] == sector)
-            ]
-        else:
-            sample = frame.loc[frame["pion_region"] == "CD"]
-        # endif
+    stage_definitions = (
+        (
+            "uncorrected",
+            "mx2_uncorrected_gev2",
+            "No corrections",
+        ),
+        (
+            "electron_corrected",
+            "mx2_electron_corrected_gev2",
+            "Electron corrected",
+        ),
+        (
+            "electron_pion_corrected",
+            "mx2_electron_pion_corrected_gev2",
+            r"Electron + $\pi^+$ corrected",
+        ),
+    )
 
-        for column, label in (
-            ("mx2_uncorrected_gev2", "No corrections"),
-            (
-                "mx2_electron_corrected_gev2",
-                "Electron correction applied",
-            ),
-            (
-                "mx2_electron_pion_corrected_gev2",
-                r"Electron + $\pi^+$ corrections",
-            ),
-        ):
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        sample = frame.loc[
+            (frame["pion_region"] == "FD")
+            & (frame["pion_sector"] == sector)
+        ]
+
+        for stage, column, base_label in stage_definitions:
             counts, edges = np.histogram(
                 sample[column].to_numpy(),
                 bins=histogram_bins,
                 range=histogram_range,
             )
             centers = 0.5 * (edges[:-1] + edges[1:])
+
+            record = fit_records.loc[
+                (fit_records["period_key"] == period.key)
+                & (fit_records["stage"] == stage)
+                & (fit_records["pion_region"] == "FD")
+                & (fit_records["pion_sector"] == sector)
+                & (fit_records["cell_type"] == "integrated")
+                & fit_records["success"]
+            ]
+            if not record.empty:
+                mean_value = float(record.iloc[0]["peak_mean_gev2"])
+                label = base_label + rf" ($\mu$={mean_value:.4f})"
+            else:
+                label = base_label
+
             axis.step(
                 centers,
                 counts,
                 where="mid",
-                linewidth=1.1,
+                linewidth=1.15,
                 label=label,
             )
-        # endfor
 
         axis.axvline(
             NEUTRON_MASS2_GEV2,
             color="black",
             linestyle="--",
             linewidth=1.0,
-            label=r"$m_n^2$" if sector in (0, 1) else None,
+            label=r"$m_n^2$" if sector == 1 else None,
         )
-        axis.set_xlim(histogram_range)
+        axis.set_xlim(*histogram_range)
         axis.margins(x=0.0, y=0.04)
-        axis.set_title(
-            f"Sector {sector}" if region == "FD" else "CD integrated"
-        )
+        axis.set_title(f"Sector {sector}")
         axis.set_xlabel(r"$M_X^2(e\pi^+)$ (GeV$^2$)")
         axis.set_ylabel("Counts")
-        if sector in (0, 1):
-            axis.legend(fontsize=8)
-        # endif
-    # endfor
+        if sector == 1:
+            axis.legend(fontsize=7.5)
 
     figure.suptitle(
-        f"{period.label}: {region} momentum-correction comparison"
+        f"{period.label}: FD integrated missing-neutron distributions"
     )
     figure.savefig(
         output_path,
@@ -2343,55 +2427,45 @@ def save_stage_overlay_plot(
     plt.close(figure)
 
 
-def save_peak_vs_theta_comparison(
+def save_theta_residual_summary(
     period: CalibrationPeriod,
-    region: str,
     fit_records: pd.DataFrame,
     output_path: Path,
 ) -> None:
-    """Plot absolute fitted neutron-peak position before and after e correction."""
+    """Compare absolute fitted neutron-peak positions for all three stages."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if region == "FD":
-        figure, axes = plt.subplots(
-            2,
-            3,
-            figsize=(13.2, 8.0),
-            sharey=True,
-            constrained_layout=True,
-        )
-        axes_flat = axes.ravel()
-        sectors = list(range(1, 7))
-    else:
-        figure, axis = plt.subplots(
-            figsize=(8.2, 5.7),
-            constrained_layout=True,
-        )
-        axes_flat = [axis]
-        sectors = [0]
-    # endif
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharey=True,
+        constrained_layout=True,
+    )
 
-    for axis, sector in zip(axes_flat, sectors):
-        for stage, marker, label in (
-            ("uncorrected", "o", "No corrections"),
-            (
-                "electron_corrected",
-                "s",
-                "Electron correction applied",
-            ),
-            (
-                "electron_pion_corrected",
-                "^",
-                r"Electron + $\pi^+$ corrections",
-            ),
-        ):
+    stage_definitions = (
+        ("uncorrected", "o", "No corrections"),
+        (
+            "electron_corrected",
+            "s",
+            "Electron corrected",
+        ),
+        (
+            "electron_pion_corrected",
+            "^",
+            r"Electron + $\pi^+$ corrected",
+        ),
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        for stage, marker, label in stage_definitions:
             cells = fit_records.loc[
                 (fit_records["period_key"] == period.key)
                 & (fit_records["stage"] == stage)
-                & (fit_records["pion_region"] == region)
+                & (fit_records["pion_region"] == "FD")
                 & (fit_records["pion_sector"] == sector)
                 & (fit_records["cell_type"] == "theta")
-                & (fit_records["success"])
+                & fit_records["success"]
             ].sort_values("mean_theta_deg")
 
             axis.errorbar(
@@ -2401,87 +2475,24 @@ def save_peak_vs_theta_comparison(
                 fmt=marker,
                 label=label,
             )
-        # endfor
 
         axis.axhline(
             NEUTRON_MASS2_GEV2,
             color="black",
             linestyle="--",
             linewidth=1.0,
-            label=r"$m_n^2$" if sector in (0, 1) else None,
+            label=r"$m_n^2$" if sector == 1 else None,
         )
-        axis.set_title(
-            f"Sector {sector}" if region == "FD" else "CD integrated"
-        )
-        axis.set_xlabel(r"Mean pion $\theta$ (deg)")
-        axis.set_ylabel(r"Fitted $\mu_{Mx^2}$ (GeV$^2$)")
         axis.set_ylim(0.8, 1.0)
-        if sector in (0, 1):
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel(r"Mean pion $\theta$ (deg)")
+        axis.set_ylabel(r"Fitted $\mu_{M_X^2}$ (GeV$^2$)")
+        if sector == 1:
             axis.legend(fontsize=8)
-        # endif
-    # endfor
 
     figure.suptitle(
-        f"{period.label}: {region} missing-neutron peak versus pion theta"
+        f"{period.label}: pion momentum-correction closure versus theta"
     )
-    figure.savefig(
-        output_path,
-        dpi=180,
-        bbox_inches="tight",
-        pad_inches=0.06,
-    )
-    plt.close(figure)
-
-
-def save_event_count_plot(
-    period: CalibrationPeriod,
-    region: str,
-    fit_records: pd.DataFrame,
-    output_path: Path,
-) -> None:
-    """Plot event counts in the proposed theta calibration cells."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    cells = fit_records.loc[
-        (fit_records["period_key"] == period.key)
-        & (fit_records["stage"] == "uncorrected")
-        & (fit_records["pion_region"] == region)
-        & (fit_records["cell_type"] == "theta")
-    ].copy()
-
-    figure, axis = plt.subplots(
-        figsize=(10.5, 5.8),
-        constrained_layout=True,
-    )
-
-    if region == "FD":
-        for sector in range(1, 7):
-            sector_cells = cells.loc[
-                cells["pion_sector"] == sector
-            ].sort_values("theta_bin_index")
-            axis.plot(
-                sector_cells["mean_theta_deg"],
-                sector_cells["n_events"],
-                "o-",
-                label=f"Sector {sector}",
-            )
-        # endfor
-    else:
-        cells = cells.sort_values("theta_bin_index")
-        axis.plot(
-            cells["mean_theta_deg"],
-            cells["n_events"],
-            "o-",
-            label="CD",
-        )
-    # endif
-
-    axis.set_xlabel(r"Mean pion $\theta$ (deg)")
-    axis.set_ylabel("Selected events")
-    axis.set_yscale("log")
-    axis.set_title(
-        f"{period.label}: {region} proposed theta-cell populations"
-    )
-    axis.legend()
     figure.savefig(
         output_path,
         dpi=180,
@@ -2776,15 +2787,13 @@ def process_period(
     frame = apply_fd_pion_correction(frame, correction_models)
 
     correction_frame = pd.DataFrame(correction_records)
-    for sector in range(1, 7):
-        save_correction_model_plot(
-            period,
-            sector,
-            correction_frame,
-            correction_models[sector],
-            plot_directories["correction_models"]
-            / f"{period.key}_fd_sector{sector}_pion_correction.png",
-        )
+    save_period_correction_model_plot(
+        period,
+        correction_frame,
+        correction_models,
+        plot_directories["correction_models"]
+        / f"{period.key}_fd_pion_correction_models.png",
+    )
 
     fit_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
@@ -2813,34 +2822,20 @@ def process_period(
         )
 
     fit_frame = pd.DataFrame(fit_records)
-    for stage in stages:
-        save_integrated_region_plot(
-            frame,
-            period,
-            stage,
-            "FD",
-            fit_frame,
-            plot_directories[f"{stage}_integrated"]
-            / f"{period.key}_fd_integrated.png",
-            histogram_range,
-            histogram_bins,
-        )
-
-    save_stage_overlay_plot(
+    save_three_stage_integrated_plot(
         frame,
         period,
-        "FD",
-        plot_directories["comparison_overlays"]
-        / f"{period.key}_fd_three_stage_overlay.png",
+        fit_frame,
+        plot_directories["integrated_mx2"]
+        / f"{period.key}_fd_integrated_three_stage.png",
         histogram_range,
         histogram_bins,
     )
-    save_peak_vs_theta_comparison(
+    save_theta_residual_summary(
         period,
-        "FD",
         fit_frame,
-        plot_directories["comparison_theta"]
-        / f"{period.key}_fd_peak_vs_theta.png",
+        plot_directories["theta_residuals"]
+        / f"{period.key}_fd_theta_residuals.png",
     )
 
     if not skip_run_stability:
@@ -3051,26 +3046,20 @@ def main() -> int:
     plot_directories = {
         "uncorrected_individual_fits":
             plot_root / "uncorrected" / "individual_fits",
-        "uncorrected_integrated":
-            plot_root / "uncorrected" / "integrated_mx2",
         "uncorrected_run_stability":
             plot_root / "uncorrected" / "run_stability",
         "electron_corrected_individual_fits":
             plot_root / "electron_corrected" / "individual_fits",
-        "electron_corrected_integrated":
-            plot_root / "electron_corrected" / "integrated_mx2",
         "electron_corrected_run_stability":
             plot_root / "electron_corrected" / "run_stability",
         "electron_pion_corrected_individual_fits":
             plot_root / "electron_pion_corrected" / "individual_fits",
-        "electron_pion_corrected_integrated":
-            plot_root / "electron_pion_corrected" / "integrated_mx2",
         "electron_pion_corrected_run_stability":
             plot_root / "electron_pion_corrected" / "run_stability",
-        "comparison_overlays":
-            plot_root / "comparison" / "integrated_overlays",
-        "comparison_theta":
-            plot_root / "comparison" / "peak_vs_theta",
+        "integrated_mx2":
+            plot_root / "closure" / "integrated_mx2",
+        "theta_residuals":
+            plot_root / "closure" / "theta_residuals",
         "correction_models":
             plot_root / "correction_models",
     }
@@ -3194,7 +3183,7 @@ def main() -> int:
 
     model_payload = {
         "metadata": {
-            "script": "derive_piplus_momentum_corrections_v7.py",
+            "script": "derive_piplus_momentum_corrections_v8.py",
             "neutron_mass_gev": NEUTRON_MASS_GEV,
             "neutron_mass2_gev2": NEUTRON_MASS2_GEV2,
             "fit_model": "Gaussian signal plus quadratic background",
