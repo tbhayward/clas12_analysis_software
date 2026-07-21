@@ -129,6 +129,7 @@ struct Stats {
     double std = std::numeric_limits<double>::quiet_NaN();
     double cut_low = std::numeric_limits<double>::quiet_NaN();
     double cut_high = std::numeric_limits<double>::quiet_NaN();
+    double quantile = 0.0;
     std::string mode = "symmetric_3sigma";
 };
 
