@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v10.py
+derive_electron_momentum_corrections_v11.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -346,6 +346,10 @@ class PeakFitResult:
     status: str
     quality_pass: bool
     quality_flags: str
+    fit_mode: str
+    sigma_fixed: bool
+    mean_constraint_center_gev: float
+    mean_constraint_half_width_gev: float
     n_events: int
     n_histogram_entries: int
     peak_mean_gev: float
@@ -353,6 +357,7 @@ class PeakFitResult:
     peak_sigma_gev: float
     peak_sigma_error_gev: float
     amplitude: float
+    amplitude_error: float
     chi2: float
     ndf: int
     chi2_ndf: float
@@ -365,6 +370,10 @@ def failed_peak_fit(
     n_events: int,
     n_histogram_entries: int = 0,
     fit_range: tuple[float, float] = (math.nan, math.nan),
+    fit_mode: str = "unknown",
+    sigma_fixed: bool = False,
+    mean_constraint_center_gev: float = math.nan,
+    mean_constraint_half_width_gev: float = math.nan,
 ) -> PeakFitResult:
     """Construct a failed fit record with NaN numerical fields."""
     return PeakFitResult(
@@ -372,6 +381,10 @@ def failed_peak_fit(
         status=status,
         quality_pass=False,
         quality_flags=status,
+        fit_mode=fit_mode,
+        sigma_fixed=sigma_fixed,
+        mean_constraint_center_gev=mean_constraint_center_gev,
+        mean_constraint_half_width_gev=mean_constraint_half_width_gev,
         n_events=n_events,
         n_histogram_entries=n_histogram_entries,
         peak_mean_gev=math.nan,
@@ -379,6 +392,7 @@ def failed_peak_fit(
         peak_sigma_gev=math.nan,
         peak_sigma_error_gev=math.nan,
         amplitude=math.nan,
+        amplitude_error=math.nan,
         chi2=math.nan,
         ndf=0,
         chi2_ndf=math.nan,
@@ -387,6 +401,23 @@ def failed_peak_fit(
     )
 
 
+def gaussian_fixed_sigma_plus_quadratic(
+    x: np.ndarray,
+    amplitude: float,
+    mean: float,
+    b0: float,
+    b1: float,
+    b2: float,
+    fixed_sigma_gev: float,
+) -> np.ndarray:
+    """Gaussian with fixed width plus a quadratic continuum."""
+    gaussian = amplitude * np.exp(
+        -0.5 * ((x - mean) / fixed_sigma_gev) ** 2
+    )
+    x_centered = x - PROTON_MASS_GEV
+    background = b0 + b1 * x_centered + b2 * x_centered**2
+    return gaussian + background
+
 
 def fit_w_peak(
     w_values: np.ndarray,
@@ -394,15 +425,17 @@ def fit_w_peak(
     fit_range: tuple[float, float],
     histogram_bins: int,
     minimum_events: int,
+    fixed_sigma_gev: float | None = None,
+    mean_center_gev: float | None = None,
+    mean_half_window_gev: float = 0.040,
 ) -> tuple[PeakFitResult, dict[str, np.ndarray]]:
     """
-    Fit the elastic peak in a W distribution.
+    Fit the elastic structure in an inclusive W spectrum.
 
-    The inclusive spectrum has a strongly varying continuum, so the histogram
-    maximum is not a reliable elastic-peak seed. A quadratic is first fit to
-    sidebands outside a narrow proton-mass region. The largest positive
-    sideband-subtracted residual initializes the Gaussian mean and amplitude.
-    The final fit is a simultaneous Gaussian plus quadratic background fit.
+    Sector-integrated spectra are fit with a floating Gaussian width. The four
+    sector-specific theta cells are then fit with sigma_W fixed to the
+    sector-integrated value and mu_W restricted to the integrated mean plus or
+    minus mean_half_window_gev. Automatic checks remain advisory.
     """
     finite_w = np.asarray(w_values, dtype=float)
     finite_w = finite_w[np.isfinite(finite_w)]
@@ -419,11 +452,29 @@ def fit_w_peak(
         "counts": histogram_counts,
         "edges": histogram_edges,
         "centers": histogram_centers,
+        "fit_mask": np.zeros_like(histogram_centers, dtype=bool),
+        "fit_centers": np.asarray([], dtype=float),
+        "fit_counts": np.asarray([], dtype=float),
+        "fit_errors": np.asarray([], dtype=float),
+        "fit_model_at_centers": np.asarray([], dtype=float),
+        "pulls": np.asarray([], dtype=float),
         "fit_x": np.asarray([], dtype=float),
         "fit_y": np.asarray([], dtype=float),
         "fit_signal_y": np.asarray([], dtype=float),
         "fit_background_y": np.asarray([], dtype=float),
     }
+
+    fit_mode = (
+        "cell_fixed_sigma"
+        if fixed_sigma_gev is not None
+        else "sector_integrated_free_sigma"
+    )
+    sigma_fixed = fixed_sigma_gev is not None
+    constraint_center = (
+        float(mean_center_gev)
+        if mean_center_gev is not None
+        else PROTON_MASS_GEV
+    )
 
     if n_events < minimum_events:
         return (
@@ -432,6 +483,10 @@ def fit_w_peak(
                 n_events=n_events,
                 n_histogram_entries=int(histogram_counts.sum()),
                 fit_range=fit_range,
+                fit_mode=fit_mode,
+                sigma_fixed=sigma_fixed,
+                mean_constraint_center_gev=constraint_center,
+                mean_constraint_half_width_gev=mean_half_window_gev,
             ),
             diagnostics,
         )
@@ -443,29 +498,70 @@ def fit_w_peak(
     )
     x_fit = histogram_centers[fit_mask]
     y_fit = histogram_counts[fit_mask].astype(float)
+    sigma_y = np.sqrt(np.maximum(y_fit, 1.0))
 
-    if x_fit.size < 10 or np.count_nonzero(y_fit) < 8:
+    diagnostics["fit_mask"] = fit_mask
+    diagnostics["fit_centers"] = x_fit
+    diagnostics["fit_counts"] = y_fit
+    diagnostics["fit_errors"] = sigma_y
+
+    minimum_fit_points = 12 if sigma_fixed else 14
+    if x_fit.size < minimum_fit_points or np.count_nonzero(y_fit) < 10:
         return (
             failed_peak_fit(
                 status="skipped_insufficient_populated_bins",
                 n_events=n_events,
                 n_histogram_entries=int(histogram_counts.sum()),
                 fit_range=fit_range,
+                fit_mode=fit_mode,
+                sigma_fixed=sigma_fixed,
+                mean_constraint_center_gev=constraint_center,
+                mean_constraint_half_width_gev=mean_half_window_gev,
             ),
             diagnostics,
         )
     # endif
 
-    mean_lower = max(fit_range[0], PROTON_MASS_GEV - 0.080)
-    mean_upper = min(fit_range[1], PROTON_MASS_GEV + 0.080)
+    if fixed_sigma_gev is not None:
+        if not np.isfinite(fixed_sigma_gev) or fixed_sigma_gev <= 0.0:
+            return (
+                failed_peak_fit(
+                    status="invalid_fixed_sigma",
+                    n_events=n_events,
+                    n_histogram_entries=int(histogram_counts.sum()),
+                    fit_range=fit_range,
+                    fit_mode=fit_mode,
+                    sigma_fixed=True,
+                    mean_constraint_center_gev=constraint_center,
+                    mean_constraint_half_width_gev=mean_half_window_gev,
+                ),
+                diagnostics,
+            )
+        # endif
+        mean_lower = max(
+            fit_range[0],
+            constraint_center - mean_half_window_gev,
+        )
+        mean_upper = min(
+            fit_range[1],
+            constraint_center + mean_half_window_gev,
+        )
+    else:
+        mean_lower = max(fit_range[0], PROTON_MASS_GEV - 0.080)
+        mean_upper = min(fit_range[1], PROTON_MASS_GEV + 0.080)
+    # endif
+
     peak_search_mask = (x_fit >= mean_lower) & (x_fit <= mean_upper)
-
-    sideband_mask = (
-        (x_fit < PROTON_MASS_GEV - 0.055)
-        | (x_fit > PROTON_MASS_GEV + 0.055)
+    sideband_exclusion = max(
+        0.045,
+        2.0 * fixed_sigma_gev if fixed_sigma_gev is not None else 0.055,
     )
-    sigma_y = np.sqrt(np.maximum(y_fit, 1.0))
+    sideband_mask = (
+        (x_fit < constraint_center - sideband_exclusion)
+        | (x_fit > constraint_center + sideband_exclusion)
+    )
 
+    background_coefficients: np.ndarray | None = None
     if np.count_nonzero(sideband_mask) >= 8:
         try:
             background_coefficients = np.polyfit(
@@ -485,12 +581,14 @@ def fit_w_peak(
             )
         # endtry
     else:
-        background_seed = np.full_like(y_fit, float(np.percentile(y_fit, 25.0)))
+        background_seed = np.full_like(
+            y_fit,
+            float(np.percentile(y_fit, 25.0)),
+        )
     # endif
 
     residual_seed = y_fit - background_seed
     search_indices = np.flatnonzero(peak_search_mask)
-
     if search_indices.size == 0:
         return (
             failed_peak_fit(
@@ -498,19 +596,20 @@ def fit_w_peak(
                 n_events=n_events,
                 n_histogram_entries=int(histogram_counts.sum()),
                 fit_range=fit_range,
+                fit_mode=fit_mode,
+                sigma_fixed=sigma_fixed,
+                mean_constraint_center_gev=constraint_center,
+                mean_constraint_half_width_gev=mean_half_window_gev,
             ),
             diagnostics,
         )
     # endif
 
     peak_index = search_indices[np.argmax(residual_seed[peak_search_mask])]
-    initial_mean = float(x_fit[peak_index])
+    initial_mean = float(np.clip(x_fit[peak_index], mean_lower, mean_upper))
     initial_amplitude = max(float(residual_seed[peak_index]), 1.0)
-    initial_sigma = 0.025
 
-    # Translate the polynomial seed from powers of (W-Mp) into the model's
-    # background coefficients b0 + b1*(W-Mp) + b2*(W-Mp)^2.
-    if np.count_nonzero(sideband_mask) >= 8 and "background_coefficients" in locals():
+    if background_coefficients is not None:
         initial_b2 = float(background_coefficients[0])
         initial_b1 = float(background_coefficients[1])
         initial_b0 = float(background_coefficients[2])
@@ -520,43 +619,117 @@ def fit_w_peak(
         initial_b2 = 0.0
     # endif
 
-    initial_parameters = (
-        initial_amplitude,
-        initial_mean,
-        initial_sigma,
-        initial_b0,
-        initial_b1,
-        initial_b2,
-    )
-
-    lower_bounds = (
-        0.0,
-        mean_lower,
-        0.006,
-        -np.inf,
-        -np.inf,
-        -np.inf,
-    )
-    upper_bounds = (
-        np.inf,
-        mean_upper,
-        0.080,
-        np.inf,
-        np.inf,
-        np.inf,
-    )
-
     try:
-        parameters, covariance = curve_fit(
-            gaussian_plus_quadratic,
-            x_fit,
-            y_fit,
-            p0=initial_parameters,
-            sigma=sigma_y,
-            absolute_sigma=True,
-            bounds=(lower_bounds, upper_bounds),
-            maxfev=100_000,
-        )
+        if fixed_sigma_gev is None:
+            initial_sigma = 0.025
+            initial_parameters = (
+                initial_amplitude,
+                initial_mean,
+                initial_sigma,
+                initial_b0,
+                initial_b1,
+                initial_b2,
+            )
+            lower_bounds = (
+                0.0,
+                mean_lower,
+                0.010,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+            )
+            upper_bounds = (
+                np.inf,
+                mean_upper,
+                0.060,
+                np.inf,
+                np.inf,
+                np.inf,
+            )
+            parameters, covariance = curve_fit(
+                gaussian_plus_quadratic,
+                x_fit,
+                y_fit,
+                p0=initial_parameters,
+                sigma=sigma_y,
+                absolute_sigma=True,
+                bounds=(lower_bounds, upper_bounds),
+                maxfev=100_000,
+            )
+            amplitude, mean, fitted_sigma, b0, b1, b2 = parameters
+            parameter_errors = np.sqrt(
+                np.clip(np.diag(covariance), 0.0, None)
+            )
+            amplitude_error = float(parameter_errors[0])
+            mean_error = float(parameter_errors[1])
+            sigma_error = float(parameter_errors[2])
+            model_at_centers = gaussian_plus_quadratic(x_fit, *parameters)
+            n_parameters = 6
+            sigma_lower = lower_bounds[2]
+            sigma_upper = upper_bounds[2]
+        else:
+            def fixed_sigma_model(
+                x: np.ndarray,
+                amplitude: float,
+                mean: float,
+                b0: float,
+                b1: float,
+                b2: float,
+            ) -> np.ndarray:
+                return gaussian_fixed_sigma_plus_quadratic(
+                    x,
+                    amplitude,
+                    mean,
+                    b0,
+                    b1,
+                    b2,
+                    fixed_sigma_gev,
+                )
+
+            initial_parameters = (
+                initial_amplitude,
+                initial_mean,
+                initial_b0,
+                initial_b1,
+                initial_b2,
+            )
+            lower_bounds = (
+                0.0,
+                mean_lower,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+            )
+            upper_bounds = (
+                np.inf,
+                mean_upper,
+                np.inf,
+                np.inf,
+                np.inf,
+            )
+            parameters, covariance = curve_fit(
+                fixed_sigma_model,
+                x_fit,
+                y_fit,
+                p0=initial_parameters,
+                sigma=sigma_y,
+                absolute_sigma=True,
+                bounds=(lower_bounds, upper_bounds),
+                maxfev=100_000,
+            )
+            amplitude, mean, b0, b1, b2 = parameters
+            fitted_sigma = float(fixed_sigma_gev)
+            parameter_errors = np.sqrt(
+                np.clip(np.diag(covariance), 0.0, None)
+            )
+            amplitude_error = float(parameter_errors[0])
+            mean_error = float(parameter_errors[1])
+            sigma_error = 0.0
+            model_at_centers = fixed_sigma_model(x_fit, *parameters)
+            n_parameters = 5
+            sigma_lower = math.nan
+            sigma_upper = math.nan
+        # endif
     except (RuntimeError, ValueError, FloatingPointError) as exc:
         return (
             failed_peak_fit(
@@ -564,52 +737,60 @@ def fit_w_peak(
                 n_events=n_events,
                 n_histogram_entries=int(histogram_counts.sum()),
                 fit_range=fit_range,
+                fit_mode=fit_mode,
+                sigma_fixed=sigma_fixed,
+                mean_constraint_center_gev=constraint_center,
+                mean_constraint_half_width_gev=mean_half_window_gev,
             ),
             diagnostics,
         )
     # endtry
 
-    parameter_errors = np.sqrt(np.clip(np.diag(covariance), 0.0, None))
-    fitted_y = gaussian_plus_quadratic(x_fit, *parameters)
-    chi2 = float(np.sum(((y_fit - fitted_y) / sigma_y) ** 2))
-    ndf = int(x_fit.size - len(parameters))
+    chi2 = float(np.sum(((y_fit - model_at_centers) / sigma_y) ** 2))
+    ndf = int(x_fit.size - n_parameters)
     chi2_ndf = chi2 / ndf if ndf > 0 else math.nan
+    pulls = (y_fit - model_at_centers) / sigma_y
 
     dense_x = np.linspace(fit_range[0], fit_range[1], 800)
     centered_dense_x = dense_x - PROTON_MASS_GEV
-    signal_y = parameters[0] * np.exp(
-        -0.5 * ((dense_x - parameters[1]) / parameters[2]) ** 2
+    signal_y = amplitude * np.exp(
+        -0.5 * ((dense_x - mean) / fitted_sigma) ** 2
     )
-    background_y = (
-        parameters[3]
-        + parameters[4] * centered_dense_x
-        + parameters[5] * centered_dense_x**2
-    )
+    background_y = b0 + b1 * centered_dense_x + b2 * centered_dense_x**2
+
+    diagnostics["fit_model_at_centers"] = model_at_centers
+    diagnostics["pulls"] = pulls
     diagnostics["fit_x"] = dense_x
     diagnostics["fit_y"] = signal_y + background_y
     diagnostics["fit_signal_y"] = signal_y
     diagnostics["fit_background_y"] = background_y
 
     quality_problems: list[str] = []
-    mean_margin = min(parameters[1] - mean_lower, mean_upper - parameters[1])
-    sigma_margin = min(parameters[2] - lower_bounds[2], upper_bounds[2] - parameters[2])
-
+    mean_margin = min(mean - mean_lower, mean_upper - mean)
     if mean_margin < 0.002:
         quality_problems.append("mean_at_bound")
     # endif
-    if sigma_margin < 0.002:
-        quality_problems.append("sigma_at_bound")
+
+    if fixed_sigma_gev is None:
+        sigma_margin = min(
+            fitted_sigma - sigma_lower,
+            sigma_upper - fitted_sigma,
+        )
+        if sigma_margin < 0.002:
+            quality_problems.append("sigma_at_bound")
+        # endif
     # endif
-    if not np.isfinite(parameter_errors[1]) or parameter_errors[1] > 0.020:
+
+    if not np.isfinite(mean_error) or mean_error > 0.020:
         quality_problems.append("poor_mean_precision")
     # endif
     if not np.isfinite(chi2_ndf) or chi2_ndf > 5.0:
         quality_problems.append("poor_chi2")
     # endif
     if (
-        not np.isfinite(parameter_errors[0])
-        or parameter_errors[0] <= 0.0
-        or parameters[0] / parameter_errors[0] < 3.0
+        not np.isfinite(amplitude_error)
+        or amplitude_error <= 0.0
+        or amplitude / amplitude_error < 3.0
     ):
         quality_problems.append("weak_peak")
     # endif
@@ -623,13 +804,18 @@ def fit_w_peak(
         status=status,
         quality_pass=quality_pass,
         quality_flags=quality_flags,
+        fit_mode=fit_mode,
+        sigma_fixed=sigma_fixed,
+        mean_constraint_center_gev=constraint_center,
+        mean_constraint_half_width_gev=mean_half_window_gev,
         n_events=n_events,
         n_histogram_entries=int(histogram_counts.sum()),
-        peak_mean_gev=float(parameters[1]),
-        peak_mean_error_gev=float(parameter_errors[1]),
-        peak_sigma_gev=float(abs(parameters[2])),
-        peak_sigma_error_gev=float(parameter_errors[2]),
-        amplitude=float(parameters[0]),
+        peak_mean_gev=float(mean),
+        peak_mean_error_gev=mean_error,
+        peak_sigma_gev=float(abs(fitted_sigma)),
+        peak_sigma_error_gev=sigma_error,
+        amplitude=float(amplitude),
+        amplitude_error=amplitude_error,
         chi2=chi2,
         ndf=ndf,
         chi2_ndf=chi2_ndf,
@@ -637,7 +823,6 @@ def fit_w_peak(
         fit_range_high_gev=fit_range[1],
     )
     return result, diagnostics
-
 
 
 # -----------------------------------------------------------------------------
@@ -989,26 +1174,36 @@ def fit_calibration_cells(
     individual_fit_directory: Path,
 ) -> list[dict[str, Any]]:
     """
-    Fit one sector-integrated W spectrum and four theta-binned W spectra per
-    sector. Each theta bin is integrated over the full 0-60 degree local-phi
-    range. The theta edges are derived independently from the selected-event
-    minimum and maximum in each FD sector.
+    Fit one sector-integrated W spectrum and four equal-population theta cells.
+
+    The sector-integrated fit determines sigma_W. The same sigma_W is fixed in
+    each theta-cell fit, while mu_W is constrained to lie within 40 MeV of the
+    integrated-sector value. All theta cells are integrated over local phi.
     """
     records: list[dict[str, Any]] = []
 
     for sector in range(1, 7):
         sector_frame = frame.loc[frame["sector"] == sector].copy()
+        sector_frame = sector_frame.sort_values("e_theta_deg")
 
         if sector_frame.empty:
             theta_edges_deg = np.linspace(0.0, 1.0, theta_bin_count + 1)
         else:
-            theta_min_sector = float(sector_frame["e_theta_deg"].min())
-            theta_max_sector = float(sector_frame["e_theta_deg"].max())
-            theta_edges_deg = np.linspace(
-                theta_min_sector,
-                theta_max_sector,
-                theta_bin_count + 1,
-            )
+            quantiles = np.linspace(0.0, 1.0, theta_bin_count + 1)
+            theta_edges_deg = np.quantile(
+                sector_frame["e_theta_deg"].to_numpy(),
+                quantiles,
+            ).astype(float)
+
+            # Enforce strictly increasing edges in the unlikely event of tied
+            # quantiles. The adjustment is far below the angular resolution.
+            for edge_index in range(1, len(theta_edges_deg)):
+                if theta_edges_deg[edge_index] <= theta_edges_deg[edge_index - 1]:
+                    theta_edges_deg[edge_index] = (
+                        theta_edges_deg[edge_index - 1] + 1.0e-6
+                    )
+                # endif
+            # endfor
         # endif
 
         integrated_fit, integrated_diagnostics = fit_w_peak(
@@ -1044,12 +1239,40 @@ def fit_calibration_cells(
             )
         # endif
 
+        if not integrated_fit.success:
+            for theta_index in range(theta_bin_count):
+                theta_low = float(theta_edges_deg[theta_index])
+                theta_high = float(theta_edges_deg[theta_index + 1])
+                failed_fit = failed_peak_fit(
+                    status="skipped_integrated_fit_failed",
+                    n_events=0,
+                    fit_range=fit_range,
+                    fit_mode="cell_fixed_sigma",
+                    sigma_fixed=True,
+                )
+                records.append(
+                    make_fit_record(
+                        period=period,
+                        sector=sector,
+                        cell_type="theta",
+                        theta_bin_index=theta_index,
+                        theta_low_deg=theta_low,
+                        theta_high_deg=theta_high,
+                        local_phi_bin_index=None,
+                        local_phi_low_deg=0.0,
+                        local_phi_high_deg=60.0,
+                        cell_frame=pd.DataFrame(),
+                        fit_result=failed_fit,
+                    )
+                )
+            # endfor
+            continue
+        # endif
+
         for theta_index in range(theta_bin_count):
             theta_low = float(theta_edges_deg[theta_index])
             theta_high = float(theta_edges_deg[theta_index + 1])
 
-            # Include the upper endpoint in the final bin so that the sector
-            # maximum is retained despite floating-point equality.
             if theta_index == theta_bin_count - 1:
                 theta_mask = (
                     (sector_frame["e_theta_deg"] >= theta_low)
@@ -1063,13 +1286,15 @@ def fit_calibration_cells(
             # endif
 
             theta_frame = sector_frame.loc[theta_mask].copy()
-
             theta_fit, theta_diagnostics = fit_w_peak(
                 theta_frame["w_recalculated"].to_numpy(),
                 histogram_range=histogram_range,
                 fit_range=fit_range,
                 histogram_bins=histogram_bins,
                 minimum_events=minimum_events_cell,
+                fixed_sigma_gev=integrated_fit.peak_sigma_gev,
+                mean_center_gev=integrated_fit.peak_mean_gev,
+                mean_half_window_gev=0.040,
             )
             records.append(
                 make_fit_record(
@@ -1098,8 +1323,9 @@ def fit_calibration_cells(
                     fit_result=theta_fit,
                     title=(
                         f"{period.label}, sector {sector}, "
-                        f"{theta_low:.2f} <= theta_e < {theta_high:.2f} deg, "
-                        "integrated over local phi"
+                        f"equal-population theta bin {theta_index + 1}/"
+                        f"{theta_bin_count}: "
+                        f"{theta_low:.3f} <= theta_e < {theta_high:.3f} deg"
                     ),
                 )
             # endif
@@ -1442,10 +1668,16 @@ def save_peak_fit_plot(
     fit_result: PeakFitResult,
     title: str,
 ) -> None:
-    """Save one W-distribution fit diagnostic with signal/background components."""
+    """Save a W-fit overlay and a pull panel for manual review."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    figure, axis = plt.subplots(figsize=(8.0, 5.5))
+    figure, (axis, pull_axis) = plt.subplots(
+        2,
+        1,
+        figsize=(8.2, 7.0),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.2, 1.0], "hspace": 0.05},
+    )
     centers = diagnostics["centers"]
     counts = diagnostics["counts"]
     errors = np.sqrt(np.maximum(counts, 1.0))
@@ -1455,7 +1687,7 @@ def save_peak_fit_plot(
         counts,
         yerr=errors,
         fmt=".",
-        markersize=3,
+        markersize=4,
         linewidth=0.8,
         label="Data",
     )
@@ -1464,7 +1696,7 @@ def save_peak_fit_plot(
         axis.plot(
             diagnostics["fit_x"],
             diagnostics["fit_y"],
-            linewidth=1.5,
+            linewidth=1.6,
             label="Total fit",
         )
         axis.plot(
@@ -1482,15 +1714,51 @@ def save_peak_fit_plot(
             linewidth=1.2,
             label="Elastic component + background",
         )
+
+        fit_centers = diagnostics["fit_centers"]
+        pulls = diagnostics["pulls"]
+        pull_axis.axhline(0.0, color="black", linewidth=1.0)
+        pull_axis.axhline(3.0, color="black", linestyle=":", linewidth=0.8)
+        pull_axis.axhline(-3.0, color="black", linestyle=":", linewidth=0.8)
+        pull_axis.plot(
+            fit_centers,
+            pulls,
+            marker="o",
+            linestyle="none",
+            markersize=3,
+        )
+        pull_axis.set_ylim(-6.0, 6.0)
+
+        sigma_description = (
+            "fixed from sector-integrated fit"
+            if fit_result.sigma_fixed
+            else "floating"
+        )
+        quality_description = (
+            "automatic checks: pass"
+            if fit_result.quality_pass
+            else f"review flags: {fit_result.quality_flags}"
+        )
         annotation = (
             f"status: {fit_result.status}\n"
             f"$\\mu_W$ = {fit_result.peak_mean_gev:.6f} +/- "
             f"{fit_result.peak_mean_error_gev:.6f} GeV\n"
-            f"sigma_W = {fit_result.peak_sigma_gev:.6f} GeV\n"
-            f"chi2/ndf = {fit_result.chi2_ndf:.2f}\n"
-            f"N = {fit_result.n_events:,}"
+            f"$\\sigma_W$ = {fit_result.peak_sigma_gev:.6f} GeV "
+            f"({sigma_description})\n"
+            f"$\\chi^2$/ndf = {fit_result.chi2_ndf:.2f}\n"
+            f"N = {fit_result.n_events:,}\n"
+            f"{quality_description}"
         )
     else:
+        pull_axis.axhline(0.0, color="black", linewidth=1.0)
+        pull_axis.text(
+            0.5,
+            0.5,
+            "Fit unavailable",
+            transform=pull_axis.transAxes,
+            ha="center",
+            va="center",
+        )
         annotation = (
             f"Fit status: {fit_result.status}\n"
             f"N = {fit_result.n_events:,}"
@@ -1501,9 +1769,9 @@ def save_peak_fit_plot(
         PROTON_MASS_GEV,
         linestyle="--",
         linewidth=1.0,
-        label="Proton mass",
+        color="black",
+        label=r"$m_p$",
     )
-    axis.set_xlabel("W (GeV)")
     axis.set_ylabel("Counts")
     axis.set_title(title)
     axis.text(
@@ -1516,9 +1784,17 @@ def save_peak_fit_plot(
         fontsize=8,
     )
     axis.legend(fontsize=8)
+
+    pull_axis.set_xlabel("W (GeV)")
+    pull_axis.set_ylabel("Pull")
+    figure.subplots_adjust(
+        left=0.11,
+        right=0.97,
+        bottom=0.10,
+        top=0.92,
+    )
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
-
 
 
 
@@ -2094,8 +2370,8 @@ def dataframe_to_cell_database(
             "minimum_events_cell": arguments.minimum_events_cell,
             "theta_bin_count_per_sector": arguments.theta_bin_count,
             "theta_edges_definition": (
-                "equal-width edges derived independently from the selected-"
-                "event theta minimum and maximum in each FD sector"
+                "equal-population quantile edges derived independently in "
+                "each FD sector"
             ),
             "local_phi_treatment": "integrated over 0-60 degrees",
             "fit_model": "Gaussian elastic core + quadratic background",
@@ -2222,9 +2498,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=4,
         help=(
-            "Number of equal-width theta bins derived independently between "
-            "the selected-event minimum and maximum in each FD sector. "
-            "Default: 4"
+            "Number of equal-population theta bins derived independently in each "
+            "FD sector. Default: 4"
         ),
     )
 
@@ -2267,8 +2542,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--w-bins",
         type=int,
-        default=180,
-        help="Number of W histogram bins. Default: 180",
+        default=60,
+        help="Number of W histogram bins. Default: 60",
     )
     parser.add_argument(
         "--minimum-events-integrated",
@@ -2279,8 +2554,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--minimum-events-cell",
         type=int,
-        default=200,
-        help="Minimum events for a sector-specific theta-bin fit. Default: 200",
+        default=2000,
+        help="Minimum events for a sector-specific theta-bin fit. Default: 2000",
     )
     parser.add_argument(
         "--run-bin-width",
@@ -2552,9 +2827,10 @@ def main() -> int:
     print(f"Period workers used: {worker_count}")
     print("")
     print(
-        "All numerically converged fits are retained. Automatic quality checks "
-        "are advisory and recorded in quality_pass and quality_flags. Review "
-        "the individual W-fit overlays before selecting production corrections."
+        "Sector-integrated fits determine sigma_W. Four equal-population theta "
+        "cells per sector are fit with sigma_W fixed and mu_W constrained to "
+        "the integrated mean +/- 0.040 GeV. Review the fit and pull panels "
+        "before selecting production corrections."
     )
 
     return 0
