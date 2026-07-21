@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v16.py
+derive_electron_momentum_corrections_v17.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -1164,54 +1164,37 @@ def make_fit_record(
     return record
 
 
-def build_theta_edges_fixed_high_angle_bin(
+def build_equal_population_theta_edges(
     theta_values_deg: np.ndarray,
-    low_angle_bin_count: int,
-    high_angle_boundary_deg: float = 15.0,
+    theta_bin_count: int,
 ) -> np.ndarray:
     """
-    Build equal-width low-angle bins and one dedicated high-angle bin.
+    Build equal-population theta-bin edges independently for one FD sector.
 
-    The low-angle region spans the observed sector minimum theta to 15 degrees.
-    A final bin spans 15 degrees to the observed sector maximum theta. With the
-    production default low_angle_bin_count=6, each sector has seven cells.
+    Quantile edges give approximately equal event statistics in every theta
+    cell. The production default is eight fitted cells per sector.
     """
     theta_values = np.asarray(theta_values_deg, dtype=float)
     theta_values = theta_values[np.isfinite(theta_values)]
 
     if theta_values.size == 0:
-        return np.linspace(0.0, 1.0, low_angle_bin_count + 2)
+        return np.linspace(0.0, 1.0, theta_bin_count + 1)
     # endif
 
-    theta_min = float(np.min(theta_values))
-    theta_max = float(np.max(theta_values))
+    quantiles = np.linspace(0.0, 1.0, theta_bin_count + 1)
+    theta_edges = np.quantile(theta_values, quantiles).astype(float)
 
-    if theta_max <= high_angle_boundary_deg:
-        return np.linspace(
-            theta_min,
-            theta_max,
-            low_angle_bin_count + 2,
-        )
-    # endif
-
-    low_edges = np.linspace(
-        theta_min,
-        high_angle_boundary_deg,
-        low_angle_bin_count + 1,
-    )
-    final_edges = np.concatenate(
-        [low_edges, np.asarray([theta_max], dtype=float)]
-    )
-
-    for edge_index in range(1, len(final_edges)):
-        if final_edges[edge_index] <= final_edges[edge_index - 1]:
-            final_edges[edge_index] = (
-                final_edges[edge_index - 1] + 1.0e-6
+    # Guard against repeated quantiles in pathological or highly discretized
+    # samples while preserving the quantile construction.
+    for edge_index in range(1, len(theta_edges)):
+        if theta_edges[edge_index] <= theta_edges[edge_index - 1]:
+            theta_edges[edge_index] = (
+                theta_edges[edge_index - 1] + 1.0e-6
             )
         # endif
     # endfor
 
-    return final_edges
+    return theta_edges
 
 def fit_calibration_cells(
     frame: pd.DataFrame,
@@ -1226,12 +1209,12 @@ def fit_calibration_cells(
     individual_fit_directory: Path,
 ) -> list[dict[str, Any]]:
     """
-    Fit one sector-integrated W spectrum and theta-dependent calibration cells.
+    Fit one sector-integrated W spectrum and equal-population theta cells.
 
-    For each FD sector, theta_bin_count equal-width bins are formed from the
-    observed minimum theta to 15 degrees, followed by one dedicated bin from
-    15 degrees to the observed maximum theta. All cells are integrated over
-    local phi.
+    For each FD sector, theta_bin_count quantile bins are constructed
+    independently. With the production default theta_bin_count=8, each sector
+    has eight approximately equal-statistics cells. All cells are integrated
+    over local phi.
     """
     records: list[dict[str, Any]] = []
 
@@ -1239,12 +1222,11 @@ def fit_calibration_cells(
         sector_frame = frame.loc[frame["sector"] == sector].copy()
         sector_frame = sector_frame.sort_values("e_theta_deg")
 
-        theta_edges_deg = build_theta_edges_fixed_high_angle_bin(
+        theta_edges_deg = build_equal_population_theta_edges(
             sector_frame["e_theta_deg"].to_numpy()
             if not sector_frame.empty
             else np.asarray([], dtype=float),
             theta_bin_count,
-            high_angle_boundary_deg=15.0,
         )
         final_theta_bin_count = len(theta_edges_deg) - 1
 
@@ -1268,9 +1250,8 @@ def fit_calibration_cells(
             cell_frame=sector_frame,
             fit_result=integrated_fit,
         )
-        integrated_record["theta_low_angle_bin_count"] = theta_bin_count
-        integrated_record["theta_final_bin_count"] = final_theta_bin_count
-        integrated_record["theta_high_angle_boundary_deg"] = 15.0
+        integrated_record["theta_bin_count"] = final_theta_bin_count
+        integrated_record["theta_binning"] = "equal_population_quantiles"
         records.append(integrated_record)
 
         if save_individual_fits:
@@ -1350,19 +1331,15 @@ def fit_calibration_cells(
                 cell_frame=theta_frame,
                 fit_result=theta_fit,
             )
-            theta_record["theta_low_angle_bin_count"] = theta_bin_count
-            theta_record["theta_final_bin_count"] = final_theta_bin_count
-            theta_record["theta_high_angle_boundary_deg"] = 15.0
-            theta_record["is_high_angle_bin"] = (
-                theta_low >= 15.0 - 1.0e-9
-            )
+            theta_record["theta_bin_count"] = final_theta_bin_count
+            theta_record["theta_binning"] = "equal_population_quantiles"
             records.append(theta_record)
 
             if save_individual_fits:
-                high_angle_note = (
-                    ", dedicated high-angle cell"
-                    if theta_record["is_high_angle_bin"]
-                    else ""
+                upper_symbol = (
+                    "<="
+                    if theta_index == final_theta_bin_count - 1
+                    else "<"
                 )
                 save_peak_fit_plot(
                     output_path=individual_fit_directory
@@ -1374,9 +1351,9 @@ def fit_calibration_cells(
                     fit_result=theta_fit,
                     title=(
                         f"{period.label}, sector {sector}, theta cell "
-                        f"{theta_index + 1}/{final_theta_bin_count}"
-                        f"{high_angle_note}: "
-                        f"{theta_low:.3f} <= theta_e < {theta_high:.3f} deg"
+                        f"{theta_index + 1}/{final_theta_bin_count}: "
+                        f"{theta_low:.3f} <= theta_e "
+                        f"{upper_symbol} {theta_high:.3f} deg"
                     ),
                 )
             # endif
@@ -1674,7 +1651,7 @@ def select_theta_correction_models(
     quadratic_aicc_improvement_min: float = 2.0,
 ) -> list[dict[str, Any]]:
     """
-    Fit linear and quadratic correction models and select the lowest adequate
+    Fit linear, quadratic, and cubic correction models and select the lowest adequate
     order independently for every FD sector.
 
     The linear model is selected whenever chi2/ndf <= 2.5. If it is inadequate,
@@ -1705,46 +1682,69 @@ def select_theta_correction_models(
             cells["delta_p_over_p_error"].to_numpy(),
             degree=2,
         )
+        cubic = weighted_polynomial_fit(
+            cells["mean_theta_deg"].to_numpy(),
+            cells["delta_p_over_p"].to_numpy(),
+            cells["delta_p_over_p_error"].to_numpy(),
+            degree=3,
+        )
 
         selected_name = "none"
         selected = None
         selection_reason = "no_successful_model"
 
-        if linear["success"]:
-            linear_adequate = (
-                np.isfinite(linear["chi2_ndf"])
-                and linear["chi2_ndf"] <= linear_chi2_ndf_max
-            )
+        candidates = [
+            ("linear", linear),
+            ("quadratic", quadratic),
+            ("cubic", cubic),
+        ]
+        successful_candidates = [
+            (name, candidate)
+            for name, candidate in candidates
+            if candidate["success"]
+        ]
 
-            quadratic_materially_better = (
-                quadratic["success"]
-                and np.isfinite(linear["aicc"])
-                and np.isfinite(quadratic["aicc"])
-                and quadratic["aicc"]
-                <= linear["aicc"] - quadratic_aicc_improvement_min
+        adequate_candidates = [
+            (name, candidate)
+            for name, candidate in successful_candidates
+            if (
+                np.isfinite(candidate["chi2_ndf"])
+                and candidate["chi2_ndf"] <= linear_chi2_ndf_max
             )
+        ]
 
-            if linear_adequate and not quadratic_materially_better:
-                selected_name = "linear"
-                selected = linear
-                selection_reason = "lowest_order_adequate"
-            elif quadratic["success"]:
-                selected_name = "quadratic"
-                selected = quadratic
-                selection_reason = (
-                    "quadratic_aicc_improvement"
-                    if quadratic_materially_better
-                    else "linear_inadequate"
-                )
-            else:
-                selected_name = "linear"
-                selected = linear
-                selection_reason = "quadratic_unavailable"
-            # endif
-        elif quadratic["success"]:
-            selected_name = "quadratic"
-            selected = quadratic
-            selection_reason = "linear_unavailable"
+        if adequate_candidates:
+            # Start with the lowest adequate order. Promote only if the next
+            # order improves AICc materially.
+            selected_name, selected = adequate_candidates[0]
+            selection_reason = "lowest_order_adequate"
+
+            for candidate_name, candidate in adequate_candidates[1:]:
+                if (
+                    np.isfinite(selected["aicc"])
+                    and np.isfinite(candidate["aicc"])
+                    and candidate["aicc"]
+                    <= selected["aicc"] - quadratic_aicc_improvement_min
+                ):
+                    selected_name = candidate_name
+                    selected = candidate
+                    selection_reason = (
+                        f"{candidate_name}_aicc_improvement"
+                    )
+                # endif
+            # endfor
+        elif successful_candidates:
+            # None is formally adequate. Choose the candidate with minimum AICc
+            # and mark the sector for review rather than forcing a quadratic.
+            selected_name, selected = min(
+                successful_candidates,
+                key=lambda item: (
+                    item[1]["aicc"]
+                    if np.isfinite(item[1]["aicc"])
+                    else math.inf
+                ),
+            )
+            selection_reason = "no_adequate_model_minimum_aicc_review"
         # endif
 
         theta_min = (
@@ -1796,6 +1796,7 @@ def select_theta_correction_models(
                 ),
                 "linear": linear,
                 "quadratic": quadratic,
+                "cubic": cubic,
                 "n_theta_cells": int(len(cells)),
             }
         )
@@ -2121,6 +2122,7 @@ def save_model_selection_plot(
             for model_name, linestyle in (
                 ("linear", "--"),
                 ("quadratic", ":"),
+                ("cubic", "-."),
             ):
                 candidate = model[model_name]
                 if not candidate["success"]:
@@ -2163,13 +2165,11 @@ def save_model_selection_plot(
         axis.set_xlabel("Mean electron theta (deg)")
         axis.set_ylabel("Momentum correction (%)")
         axis.set_ylim(-1.0, 1.0)
-        if sector == 1:
-            axis.legend(fontsize=7)
-        # endif
+        axis.legend(fontsize=7, loc="best")
     # endfor
 
     figure.suptitle(
-        f"{period.label}: linear and quadratic theta-correction models"
+        f"{period.label}: linear, quadratic, and cubic theta-correction models"
     )
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
@@ -3377,13 +3377,10 @@ def dataframe_to_cell_database(
             "histogram_bins": arguments.w_bins,
             "minimum_events_integrated": arguments.minimum_events_integrated,
             "minimum_events_cell": arguments.minimum_events_cell,
-            "theta_low_angle_bin_count_per_sector": arguments.theta_bin_count,
-            "theta_final_bin_count_per_sector": arguments.theta_bin_count + 1,
-            "theta_high_angle_boundary_deg": 15.0,
+            "theta_bin_count_per_sector": arguments.theta_bin_count,
             "theta_edges_definition": (
-                "equal-width bins from the selected sector minimum theta to "
-                "15 degrees, followed by one dedicated 15-degree-to-maximum "
-                "high-angle bin"
+                "equal-population quantile edges derived independently in "
+                "each FD sector"
             ),
             "local_phi_treatment": "integrated over 0-60 degrees",
             "fit_model": "Gaussian elastic core + quadratic background",
@@ -3508,11 +3505,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--theta-bin-count",
         type=int,
-        default=6,
+        default=8,
         help=(
-            "Number of equal-width theta bins from the selected sector minimum "
-            "theta to 15 degrees. One additional dedicated bin spans 15 degrees "
-            "to the selected sector maximum theta. Default: 6"
+            "Number of equal-population theta bins derived independently in "
+            "each FD sector. Default: 8"
         ),
     )
 
@@ -3864,8 +3860,10 @@ def main() -> int:
         {
             "metadata": {
                 "model_selection": (
-                    "select linear when chi2/ndf <= 2.5 unless quadratic "
-                    "improves AICc by at least 2; otherwise select quadratic"
+                    "fit linear, quadratic, and cubic models; select the "
+                    "lowest adequate order, promoting only for an AICc "
+                    "improvement of at least 2; if none is adequate, select "
+                    "minimum AICc and flag for review"
                 ),
                 "application_sign_convention": (
                     "p_corrected = p_measured * (1 + delta_p_over_p)"
