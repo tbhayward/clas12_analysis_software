@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v17.py
+derive_electron_momentum_corrections_v18.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -2853,6 +2853,7 @@ def save_period_integrated_w_plot(
     figure.suptitle(
         f"{period.label}: inclusive eX elastic-peak fits ({stage_label})"
     )
+    figure.subplots_adjust(hspace=0.42, wspace=0.24)
     figure.savefig(
         output_path,
         dpi=180,
@@ -3900,12 +3901,6 @@ def main() -> int:
             fit_frame=uncorrected_frame,
             output_path=plot_directories["uncorrected_theta_trends"]
             / f"{period.key}_w_peak_vs_theta.png",
-        )
-        save_peak_vs_theta_plot(
-            period=period,
-            fit_frame=corrected_frame,
-            output_path=plot_directories["closure_theta"]
-            / f"{period.key}_corrected_w_peak_vs_theta.png",
         )
     # endfor
 
