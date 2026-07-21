@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v5.py
+derive_electron_momentum_corrections_v6.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -383,6 +383,7 @@ def failed_peak_fit(
     )
 
 
+
 def fit_w_peak(
     w_values: np.ndarray,
     histogram_range: tuple[float, float],
@@ -393,9 +394,11 @@ def fit_w_peak(
     """
     Fit the elastic peak in a W distribution.
 
-    The fit uses Poisson-like uncertainties sqrt(max(N, 1)) on histogram bins.
-    A robust mode estimate initializes the Gaussian mean. The Gaussian width is
-    bounded to remain inside a physically sensible core range.
+    The inclusive spectrum has a strongly varying continuum, so the histogram
+    maximum is not a reliable elastic-peak seed. A quadratic is first fit to
+    sidebands outside a narrow proton-mass region. The largest positive
+    sideband-subtracted residual initializes the Gaussian mean and amplitude.
+    The final fit is a simultaneous Gaussian plus quadratic background fit.
     """
     finite_w = np.asarray(w_values, dtype=float)
     finite_w = finite_w[np.isfinite(finite_w)]
@@ -414,12 +417,14 @@ def fit_w_peak(
         "centers": histogram_centers,
         "fit_x": np.asarray([], dtype=float),
         "fit_y": np.asarray([], dtype=float),
+        "fit_signal_y": np.asarray([], dtype=float),
+        "fit_background_y": np.asarray([], dtype=float),
     }
 
     if n_events < minimum_events:
         return (
             failed_peak_fit(
-                status="insufficient_events",
+                status="skipped_insufficient_events",
                 n_events=n_events,
                 n_histogram_entries=int(histogram_counts.sum()),
                 fit_range=fit_range,
@@ -438,7 +443,7 @@ def fit_w_peak(
     if x_fit.size < 10 or np.count_nonzero(y_fit) < 8:
         return (
             failed_peak_fit(
-                status="insufficient_populated_bins",
+                status="skipped_insufficient_populated_bins",
                 n_events=n_events,
                 n_histogram_entries=int(histogram_counts.sum()),
                 fit_range=fit_range,
@@ -447,11 +452,42 @@ def fit_w_peak(
         )
     # endif
 
-    peak_search_mask = (
-        (x_fit >= max(fit_range[0], PROTON_MASS_GEV - 0.10))
-        & (x_fit <= min(fit_range[1], PROTON_MASS_GEV + 0.10))
+    mean_lower = max(fit_range[0], PROTON_MASS_GEV - 0.080)
+    mean_upper = min(fit_range[1], PROTON_MASS_GEV + 0.080)
+    peak_search_mask = (x_fit >= mean_lower) & (x_fit <= mean_upper)
+
+    sideband_mask = (
+        (x_fit < PROTON_MASS_GEV - 0.055)
+        | (x_fit > PROTON_MASS_GEV + 0.055)
     )
-    if not np.any(peak_search_mask):
+    sigma_y = np.sqrt(np.maximum(y_fit, 1.0))
+
+    if np.count_nonzero(sideband_mask) >= 8:
+        try:
+            background_coefficients = np.polyfit(
+                x_fit[sideband_mask] - PROTON_MASS_GEV,
+                y_fit[sideband_mask],
+                deg=2,
+                w=1.0 / sigma_y[sideband_mask],
+            )
+            background_seed = np.polyval(
+                background_coefficients,
+                x_fit - PROTON_MASS_GEV,
+            )
+        except (ValueError, np.linalg.LinAlgError, FloatingPointError):
+            background_seed = np.full_like(
+                y_fit,
+                float(np.median(y_fit[sideband_mask])),
+            )
+        # endtry
+    else:
+        background_seed = np.full_like(y_fit, float(np.percentile(y_fit, 25.0)))
+    # endif
+
+    residual_seed = y_fit - background_seed
+    search_indices = np.flatnonzero(peak_search_mask)
+
+    if search_indices.size == 0:
         return (
             failed_peak_fit(
                 status="empty_peak_search_window",
@@ -463,50 +499,48 @@ def fit_w_peak(
         )
     # endif
 
-    peak_search_indices = np.flatnonzero(peak_search_mask)
-    peak_index = peak_search_indices[np.argmax(y_fit[peak_search_mask])]
+    peak_index = search_indices[np.argmax(residual_seed[peak_search_mask])]
     initial_mean = float(x_fit[peak_index])
-
-    edge_mask = (
-        (x_fit < initial_mean - 0.06)
-        | (x_fit > initial_mean + 0.06)
-    )
-    if np.count_nonzero(edge_mask) >= 3:
-        background_initial = float(np.median(y_fit[edge_mask]))
-    else:
-        background_initial = float(np.percentile(y_fit, 20.0))
-    # endif
-
-    initial_amplitude = max(float(y_fit[peak_index]) - background_initial, 1.0)
+    initial_amplitude = max(float(residual_seed[peak_index]), 1.0)
     initial_sigma = 0.025
+
+    # Translate the polynomial seed from powers of (W-Mp) into the model's
+    # background coefficients b0 + b1*(W-Mp) + b2*(W-Mp)^2.
+    if np.count_nonzero(sideband_mask) >= 8 and "background_coefficients" in locals():
+        initial_b2 = float(background_coefficients[0])
+        initial_b1 = float(background_coefficients[1])
+        initial_b0 = float(background_coefficients[2])
+    else:
+        initial_b0 = max(float(np.median(background_seed)), 0.0)
+        initial_b1 = 0.0
+        initial_b2 = 0.0
+    # endif
 
     initial_parameters = (
         initial_amplitude,
         initial_mean,
         initial_sigma,
-        max(background_initial, 0.0),
-        0.0,
-        0.0,
+        initial_b0,
+        initial_b1,
+        initial_b2,
     )
 
     lower_bounds = (
         0.0,
-        PROTON_MASS_GEV - 0.10,
-        0.005,
+        mean_lower,
+        0.006,
         -np.inf,
         -np.inf,
         -np.inf,
     )
     upper_bounds = (
         np.inf,
-        PROTON_MASS_GEV + 0.10,
-        0.10,
+        mean_upper,
+        0.080,
         np.inf,
         np.inf,
         np.inf,
     )
-
-    sigma_y = np.sqrt(np.maximum(y_fit, 1.0))
 
     try:
         parameters, covariance = curve_fit(
@@ -517,7 +551,7 @@ def fit_w_peak(
             sigma=sigma_y,
             absolute_sigma=True,
             bounds=(lower_bounds, upper_bounds),
-            maxfev=50_000,
+            maxfev=100_000,
         )
     except (RuntimeError, ValueError, FloatingPointError) as exc:
         return (
@@ -537,15 +571,55 @@ def fit_w_peak(
     ndf = int(x_fit.size - len(parameters))
     chi2_ndf = chi2 / ndf if ndf > 0 else math.nan
 
-    diagnostics["fit_x"] = np.linspace(fit_range[0], fit_range[1], 800)
-    diagnostics["fit_y"] = gaussian_plus_quadratic(
-        diagnostics["fit_x"],
-        *parameters,
+    dense_x = np.linspace(fit_range[0], fit_range[1], 800)
+    centered_dense_x = dense_x - PROTON_MASS_GEV
+    signal_y = parameters[0] * np.exp(
+        -0.5 * ((dense_x - parameters[1]) / parameters[2]) ** 2
     )
+    background_y = (
+        parameters[3]
+        + parameters[4] * centered_dense_x
+        + parameters[5] * centered_dense_x**2
+    )
+    diagnostics["fit_x"] = dense_x
+    diagnostics["fit_y"] = signal_y + background_y
+    diagnostics["fit_signal_y"] = signal_y
+    diagnostics["fit_background_y"] = background_y
+
+    quality_problems: list[str] = []
+    mean_margin = min(parameters[1] - mean_lower, mean_upper - parameters[1])
+    sigma_margin = min(parameters[2] - lower_bounds[2], upper_bounds[2] - parameters[2])
+
+    if mean_margin < 0.002:
+        quality_problems.append("mean_at_bound")
+    # endif
+    if sigma_margin < 0.002:
+        quality_problems.append("sigma_at_bound")
+    # endif
+    if not np.isfinite(parameter_errors[1]) or parameter_errors[1] > 0.020:
+        quality_problems.append("poor_mean_precision")
+    # endif
+    if not np.isfinite(chi2_ndf) or chi2_ndf > 5.0:
+        quality_problems.append("poor_chi2")
+    # endif
+    if (
+        not np.isfinite(parameter_errors[0])
+        or parameter_errors[0] <= 0.0
+        or parameters[0] / parameter_errors[0] < 3.0
+    ):
+        quality_problems.append("weak_peak")
+    # endif
+
+    status = "success"
+    success = True
+    if quality_problems:
+        status = "rejected_fit_quality:" + ",".join(quality_problems)
+        success = False
+    # endif
 
     result = PeakFitResult(
-        success=True,
-        status="success",
+        success=success,
+        status=status,
         n_events=n_events,
         n_histogram_entries=int(histogram_counts.sum()),
         peak_mean_gev=float(parameters[1]),
@@ -560,6 +634,7 @@ def fit_w_peak(
         fit_range_high_gev=fit_range[1],
     )
     return result, diagnostics
+
 
 
 # -----------------------------------------------------------------------------
@@ -1311,7 +1386,9 @@ def process_calibration_period(
         fit_frame=period_fit_frame,
         output_path=plot_directory / f"{period.key}_integrated_w_by_sector.png",
         histogram_range=histogram_range,
+        fit_range=fit_range,
         histogram_bins=histogram_bins,
+        minimum_events=minimum_events_integrated,
     )
 
     if not skip_run_stability:
@@ -1327,9 +1404,29 @@ def process_calibration_period(
         )
     # endif
 
+    status_counts = period_fit_frame["status"].value_counts()
+    successful_fits = int(period_fit_frame["success"].sum())
+    skipped_low_statistics = int(
+        status_counts.get("skipped_insufficient_events", 0)
+        + status_counts.get("skipped_insufficient_populated_bins", 0)
+    )
+    rejected_quality = int(
+        period_fit_frame["status"].astype(str).str.startswith(
+            "rejected_fit_quality:"
+        ).sum()
+    )
+    numerical_failures = int(
+        period_fit_frame["status"].astype(str).str.startswith(
+            "fit_failed:"
+        ).sum()
+    )
+
     print(
         f"[worker:{period.key}] retained {len(period_frame):,} events; "
-        f"completed {len(period_records):,} fits",
+        f"{successful_fits} accepted fits, "
+        f"{skipped_low_statistics} cells skipped for low statistics, "
+        f"{rejected_quality} fits rejected by quality checks, "
+        f"{numerical_failures} numerical fit failures",
         flush=True,
     )
 
@@ -1349,13 +1446,14 @@ def process_calibration_period(
 # Plotting
 # -----------------------------------------------------------------------------
 
+
 def save_peak_fit_plot(
     output_path: Path,
     diagnostics: dict[str, np.ndarray],
     fit_result: PeakFitResult,
     title: str,
 ) -> None:
-    """Save one W-distribution fit diagnostic."""
+    """Save one W-distribution fit diagnostic with signal/background components."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     figure, axis = plt.subplots(figsize=(8.0, 5.5))
@@ -1373,29 +1471,50 @@ def save_peak_fit_plot(
         label="Data",
     )
 
-    if fit_result.success:
+    if diagnostics["fit_x"].size:
         axis.plot(
             diagnostics["fit_x"],
             diagnostics["fit_y"],
             linewidth=1.5,
-            label="Gaussian + quadratic fit",
+            label="Total fit",
+        )
+        axis.plot(
+            diagnostics["fit_x"],
+            diagnostics["fit_background_y"],
+            linestyle="--",
+            linewidth=1.2,
+            label="Quadratic background",
+        )
+        axis.plot(
+            diagnostics["fit_x"],
+            diagnostics["fit_signal_y"]
+            + diagnostics["fit_background_y"],
+            linestyle=":",
+            linewidth=1.2,
+            label="Elastic component + background",
         )
         annotation = (
+            f"status: {fit_result.status}\n"
             f"mu_W = {fit_result.peak_mean_gev:.6f} +/- "
             f"{fit_result.peak_mean_error_gev:.6f} GeV\n"
             f"sigma_W = {fit_result.peak_sigma_gev:.6f} GeV\n"
             f"chi2/ndf = {fit_result.chi2_ndf:.2f}\n"
-            f"N = {fit_result.n_events}"
+            f"N = {fit_result.n_events:,}"
         )
     else:
         annotation = (
             f"Fit status: {fit_result.status}\n"
-            f"N = {fit_result.n_events}"
+            f"N = {fit_result.n_events:,}"
         )
     # endif
 
-    axis.axvline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0, label="Proton mass")
-    axis.set_xlabel("W [GeV]")
+    axis.axvline(
+        PROTON_MASS_GEV,
+        linestyle="--",
+        linewidth=1.0,
+        label="Proton mass",
+    )
+    axis.set_xlabel("W (GeV)")
     axis.set_ylabel("Counts")
     axis.set_title(title)
     axis.text(
@@ -1405,11 +1524,14 @@ def save_peak_fit_plot(
         transform=axis.transAxes,
         ha="left",
         va="top",
+        fontsize=8,
     )
-    axis.legend()
+    axis.legend(fontsize=8)
     figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
+
+
 
 
 def save_period_integrated_w_plot(
@@ -1418,9 +1540,11 @@ def save_period_integrated_w_plot(
     fit_frame: pd.DataFrame,
     output_path: Path,
     histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
     histogram_bins: int,
+    minimum_events: int,
 ) -> None:
-    """Save a 2x3 sector canvas of integrated W spectra and fitted peak positions."""
+    """Save sector-integrated W spectra with the fitted model overlaid."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     figure, axes = plt.subplots(2, 3, figsize=(15.0, 9.0), sharex=True)
@@ -1433,38 +1557,73 @@ def save_period_integrated_w_plot(
             "w_recalculated",
         ].to_numpy()
 
-        axis.hist(
+        fit_result, diagnostics = fit_w_peak(
             sector_values,
-            bins=histogram_bins,
-            range=histogram_range,
-            histtype="step",
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events=minimum_events,
         )
-        axis.axvline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0)
 
-        row = fit_frame.loc[
-            (fit_frame["period_key"] == period.key)
-            & (fit_frame["sector"] == sector)
-            & (fit_frame["cell_type"] == "sector_integrated")
-        ]
+        centers = diagnostics["centers"]
+        counts = diagnostics["counts"]
+        errors = np.sqrt(np.maximum(counts, 1.0))
+        axis.errorbar(
+            centers,
+            counts,
+            yerr=errors,
+            fmt=".",
+            markersize=2,
+            linewidth=0.6,
+            label="Data",
+        )
 
-        if len(row) == 1 and bool(row.iloc[0]["success"]):
-            peak = float(row.iloc[0]["peak_mean_gev"])
-            axis.axvline(peak, linestyle="-", linewidth=1.0)
-            axis.set_title(
-                f"Sector {sector}: mu_W={peak:.5f} GeV"
+        if diagnostics["fit_x"].size:
+            axis.plot(
+                diagnostics["fit_x"],
+                diagnostics["fit_y"],
+                linewidth=1.4,
+                label="Total fit",
             )
-        else:
-            axis.set_title(f"Sector {sector}: fit unavailable")
+            axis.plot(
+                diagnostics["fit_x"],
+                diagnostics["fit_background_y"],
+                linestyle="--",
+                linewidth=1.1,
+                label="Background",
+            )
+            axis.plot(
+                diagnostics["fit_x"],
+                diagnostics["fit_signal_y"]
+                + diagnostics["fit_background_y"],
+                linestyle=":",
+                linewidth=1.1,
+                label="Elastic + background",
+            )
         # endif
 
-        axis.set_xlabel("W [GeV]")
+        axis.axvline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0)
+        if np.isfinite(fit_result.peak_mean_gev):
+            axis.set_title(
+                f"Sector {sector}: mu_W={fit_result.peak_mean_gev:.5f} GeV\n"
+                f"{fit_result.status}, chi2/ndf={fit_result.chi2_ndf:.2f}"
+            )
+        else:
+            axis.set_title(f"Sector {sector}: {fit_result.status}")
+        # endif
+
+        axis.set_xlabel("W (GeV)")
         axis.set_ylabel("Counts")
+        if sector == 1:
+            axis.legend(fontsize=8)
+        # endif
     # endfor
 
-    figure.suptitle(f"{period.label}: inclusive eX elastic-peak diagnostics")
+    figure.suptitle(f"{period.label}: inclusive eX elastic-peak fits")
     figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
+
 
 
 def save_peak_vs_theta_plot(
@@ -1497,8 +1656,8 @@ def save_peak_vs_theta_plot(
         )
         axis.axhline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0)
         axis.set_title(f"Sector {sector}")
-        axis.set_xlabel("Mean electron theta [deg]")
-        axis.set_ylabel("Fitted W peak [GeV]")
+        axis.set_xlabel("Mean electron theta (deg)")
+        axis.set_ylabel("Fitted W peak (GeV)")
     # endfor
 
     figure.suptitle(f"{period.label}: fitted elastic W peak versus electron theta")
@@ -1538,8 +1697,8 @@ def save_correction_vs_theta_plot(
         )
         axis.axhline(0.0, linestyle="--", linewidth=1.0)
         axis.set_title(f"Sector {sector}")
-        axis.set_xlabel("Mean electron theta [deg]")
-        axis.set_ylabel("Required momentum correction [%]")
+        axis.set_xlabel("Mean electron theta (deg)")
+        axis.set_ylabel("Required momentum correction (%)")
     # endfor
 
     figure.suptitle(
@@ -1613,13 +1772,20 @@ def save_correction_maps(
             vmax=global_limit,
         )
         axis.set_title(f"Sector {sector}")
-        axis.set_xlabel("Local phi [deg]")
-        axis.set_ylabel("Electron theta [deg]")
+        axis.set_xlabel("Local phi (deg)")
+        axis.set_ylabel("Electron theta (deg)")
     # endfor
 
     if last_image is not None:
-        colorbar = figure.colorbar(last_image, ax=axes_flat.tolist(), shrink=0.85)
-        colorbar.set_label("Required momentum correction [%]")
+        colorbar = figure.colorbar(
+            last_image,
+            ax=axes_flat.tolist(),
+            location="right",
+            fraction=0.025,
+            pad=0.045,
+            shrink=0.88,
+        )
+        colorbar.set_label("Required momentum correction (%)")
     # endif
 
     figure.suptitle(
@@ -1627,7 +1793,7 @@ def save_correction_maps(
     )
     figure.subplots_adjust(
         left=0.07,
-        right=0.88,
+        right=0.82,
         bottom=0.08,
         top=0.92,
         wspace=0.22,
@@ -1635,6 +1801,7 @@ def save_correction_maps(
     )
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
+
 
 
 def save_run_stability_plot(
@@ -1648,29 +1815,37 @@ def save_run_stability_plot(
     minimum_events: int,
 ) -> None:
     """
-    Fit the sector-integrated W peak in run-number bins and plot run stability.
+    Fit W for every individual run by default.
+
+    When run_bin_width is greater than one, consecutive run-number intervals are
+    grouped. The x coordinate is the event-weighted mean run number.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    run_edges = np.arange(
-        period.run_min,
-        period.run_max + run_bin_width + 1,
-        run_bin_width,
-        dtype=int,
-    )
-
     figure, axis = plt.subplots(figsize=(11.0, 6.0))
+
+    available_runs = np.sort(frame["runnum"].unique().astype(int))
 
     for sector in range(1, 7):
         run_centers: list[float] = []
         peak_positions: list[float] = []
         peak_errors: list[float] = []
-
         sector_frame = frame.loc[frame["sector"] == sector]
 
-        for run_index in range(len(run_edges) - 1):
-            run_low = int(run_edges[run_index])
-            run_high = int(run_edges[run_index + 1])
+        if run_bin_width == 1:
+            groups = [(run, run + 1) for run in available_runs]
+        else:
+            first_run = int(available_runs.min())
+            last_run = int(available_runs.max())
+            edges = np.arange(
+                first_run,
+                last_run + run_bin_width + 1,
+                run_bin_width,
+                dtype=int,
+            )
+            groups = list(zip(edges[:-1], edges[1:]))
+        # endif
+
+        for run_low, run_high in groups:
             run_frame = sector_frame.loc[
                 (sector_frame["runnum"] >= run_low)
                 & (sector_frame["runnum"] < run_high)
@@ -1706,12 +1881,21 @@ def save_run_stability_plot(
 
     axis.axhline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0)
     axis.set_xlabel("Run number")
-    axis.set_ylabel("Fitted W peak [GeV]")
-    axis.set_title(f"{period.label}: elastic-peak stability versus run")
+    axis.set_ylabel("Fitted W peak (GeV)")
+    point_definition = (
+        "individual runs"
+        if run_bin_width == 1
+        else f"{run_bin_width}-run-number groups"
+    )
+    axis.set_title(
+        f"{period.label}: elastic-peak stability versus run "
+        f"({point_definition})"
+    )
     axis.legend(ncol=2)
     figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
+
 
 
 def save_model_residual_plots(
@@ -1770,12 +1954,12 @@ def save_model_residual_plots(
             axis.set_title(
                 f"Sector {sector}, chi2/ndf={model_record['chi2_ndf']:.2f}"
             )
-            axis.set_xlabel("Mean electron theta [deg]")
-            axis.set_ylabel("Cell - model correction [%]")
+            axis.set_xlabel("Mean electron theta (deg)")
+            axis.set_ylabel("Residual: fitted cell - smooth model (%)")
         # endfor
 
         figure.suptitle(
-            f"{period.label}: residuals of provisional correction model"
+            f"{period.label}: fitted-cell residuals relative to smooth model"
         )
         figure.tight_layout()
         figure.savefig(
@@ -1946,27 +2130,27 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--theta-min",
         type=float,
         default=5.0,
-        help="Minimum electron theta [deg]. Default: 5",
+        help="Minimum electron theta (deg). Default: 5",
     )
     parser.add_argument(
         "--theta-max",
         type=float,
-        default=35.0,
-        help="Maximum electron theta [deg]. Default: 35",
+        default=25.0,
+        help="Maximum electron theta (deg). Default: 25",
     )
     parser.add_argument(
         "--theta-bins",
-        default="5,7,9,11,13,15,17,19,21,24,27,31,35",
+        default="5,7,9,11,13,15,17,19,21,23,25",
         help=(
-            "Comma-separated electron-theta bin edges [deg]. "
-            "Default: 5,7,9,11,13,15,17,19,21,24,27,31,35"
+            "Comma-separated electron-theta bin edges (deg). "
+            "Default: 5,7,9,11,13,15,17,19,21,23,25"
         ),
     )
     parser.add_argument(
         "--local-phi-bins",
         default="0,10,20,30,40,50,60",
         help=(
-            "Comma-separated FD local-phi bin edges [deg]. "
+            "Comma-separated FD local-phi bin edges (deg). "
             "Default: 0,10,20,30,40,50,60"
         ),
     )
@@ -1975,37 +2159,37 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--w-preselection-min",
         type=float,
         default=0.65,
-        help="Minimum input W retained [GeV]. Default: 0.65",
+        help="Minimum input W retained (GeV). Default: 0.65",
     )
     parser.add_argument(
         "--w-preselection-max",
         type=float,
         default=1.45,
-        help="Maximum input W retained [GeV]. Default: 1.45",
+        help="Maximum input W retained (GeV). Default: 1.45",
     )
     parser.add_argument(
         "--w-hist-min",
         type=float,
         default=0.70,
-        help="Minimum W histogram edge [GeV]. Default: 0.70",
+        help="Minimum W histogram edge (GeV). Default: 0.70",
     )
     parser.add_argument(
         "--w-hist-max",
         type=float,
         default=1.35,
-        help="Maximum W histogram edge [GeV]. Default: 1.35",
+        help="Maximum W histogram edge (GeV). Default: 1.35",
     )
     parser.add_argument(
         "--w-fit-min",
         type=float,
         default=0.82,
-        help="Minimum W fit edge [GeV]. Default: 0.82",
+        help="Minimum W fit edge (GeV). Default: 0.82",
     )
     parser.add_argument(
         "--w-fit-max",
         type=float,
         default=1.12,
-        help="Maximum W fit edge [GeV]. Default: 1.12",
+        help="Maximum W fit edge (GeV). Default: 1.12",
     )
     parser.add_argument(
         "--w-bins",
@@ -2028,8 +2212,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--run-bin-width",
         type=int,
-        default=25,
-        help="Run-number width used for stability plots. Default: 25",
+        default=1,
+        help=(
+            "Number of consecutive run numbers grouped into each stability "
+            "point. The default of 1 fits every individual run."
+        ),
     )
     parser.add_argument(
         "--save-individual-fits",
