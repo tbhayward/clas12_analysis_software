@@ -1951,7 +1951,7 @@ def fit_shared_two_templates(
 
         return 0.0
 
-def outside_region_overshoot_penalty(
+    def outside_region_overshoot_penalty(
         data: np.ndarray,
         total_shape: np.ndarray,
         active_mask: np.ndarray,
