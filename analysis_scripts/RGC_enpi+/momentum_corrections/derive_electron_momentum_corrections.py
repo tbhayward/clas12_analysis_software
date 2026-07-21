@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v6.py
+derive_electron_momentum_corrections_v8.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -1495,7 +1495,7 @@ def save_peak_fit_plot(
         )
         annotation = (
             f"status: {fit_result.status}\n"
-            f"mu_W = {fit_result.peak_mean_gev:.6f} +/- "
+            f"$\\mu_W$ = {fit_result.peak_mean_gev:.6f} +/- "
             f"{fit_result.peak_mean_error_gev:.6f} GeV\n"
             f"sigma_W = {fit_result.peak_sigma_gev:.6f} GeV\n"
             f"chi2/ndf = {fit_result.chi2_ndf:.2f}\n"
@@ -1527,7 +1527,6 @@ def save_peak_fit_plot(
         fontsize=8,
     )
     axis.legend(fontsize=8)
-    figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
@@ -1605,7 +1604,7 @@ def save_period_integrated_w_plot(
         axis.axvline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0)
         if np.isfinite(fit_result.peak_mean_gev):
             axis.set_title(
-                f"Sector {sector}: mu_W={fit_result.peak_mean_gev:.5f} GeV\n"
+                f"Sector {sector}: $\\mu_W$={fit_result.peak_mean_gev:.5f} GeV\n"
                 f"{fit_result.status}, chi2/ndf={fit_result.chi2_ndf:.2f}"
             )
         else:
@@ -1620,7 +1619,6 @@ def save_period_integrated_w_plot(
     # endfor
 
     figure.suptitle(f"{period.label}: inclusive eX elastic-peak fits")
-    figure.tight_layout()
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
@@ -1634,7 +1632,14 @@ def save_peak_vs_theta_plot(
     """Plot the fitted W peak versus electron polar angle for all sectors."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    figure, axes = plt.subplots(2, 3, figsize=(15.0, 9.0), sharex=True, sharey=True)
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+    )
     axes_flat = axes.ravel()
 
     for sector in range(1, 7):
@@ -1646,15 +1651,32 @@ def save_peak_vs_theta_plot(
             & (fit_frame["success"])
         ].sort_values("mean_theta_deg")
 
-        axis.errorbar(
-            cells["mean_theta_deg"],
-            cells["peak_mean_gev"],
-            yerr=cells["peak_mean_error_gev"],
-            fmt="o",
-            markersize=4,
+        if cells.empty:
+            axis.text(
+                0.5,
+                0.5,
+                "No accepted fits",
+                ha="center",
+                va="center",
+                transform=axis.transAxes,
+            )
+        else:
+            axis.errorbar(
+                cells["mean_theta_deg"],
+                cells["peak_mean_gev"],
+                yerr=cells["peak_mean_error_gev"],
+                fmt="o",
+                markersize=4,
+                linewidth=1.0,
+            )
+        # endif
+
+        axis.axhline(
+            PROTON_MASS_GEV,
+            linestyle="--",
             linewidth=1.0,
+            color="black",
         )
-        axis.axhline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0)
         axis.set_title(f"Sector {sector}")
         axis.set_xlabel("Mean electron theta (deg)")
         axis.set_ylabel("Fitted W peak (GeV)")
@@ -1674,7 +1696,14 @@ def save_correction_vs_theta_plot(
     """Plot provisional delta-p/p values versus electron polar angle."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    figure, axes = plt.subplots(2, 3, figsize=(15.0, 9.0), sharex=True, sharey=True)
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+    )
     axes_flat = axes.ravel()
 
     for sector in range(1, 7):
@@ -1687,15 +1716,27 @@ def save_correction_vs_theta_plot(
             & np.isfinite(fit_frame["delta_p_over_p"])
         ].sort_values("mean_theta_deg")
 
-        axis.errorbar(
-            cells["mean_theta_deg"],
-            100.0 * cells["delta_p_over_p"],
-            yerr=100.0 * cells["delta_p_over_p_error"],
-            fmt="o",
-            markersize=4,
-            linewidth=1.0,
-        )
-        axis.axhline(0.0, linestyle="--", linewidth=1.0)
+        if cells.empty:
+            axis.text(
+                0.5,
+                0.5,
+                "No accepted fits",
+                ha="center",
+                va="center",
+                transform=axis.transAxes,
+            )
+        else:
+            axis.errorbar(
+                cells["mean_theta_deg"],
+                100.0 * cells["delta_p_over_p"],
+                yerr=100.0 * cells["delta_p_over_p_error"],
+                fmt="o",
+                markersize=4,
+                linewidth=1.0,
+            )
+        # endif
+
+        axis.axhline(0.0, linestyle="--", linewidth=1.0, color="black")
         axis.set_title(f"Sector {sector}")
         axis.set_xlabel("Mean electron theta (deg)")
         axis.set_ylabel("Required momentum correction (%)")
@@ -1879,7 +1920,13 @@ def save_run_stability_plot(
         # endif
     # endfor
 
-    axis.axhline(PROTON_MASS_GEV, linestyle="--", linewidth=1.0)
+    axis.axhline(
+        PROTON_MASS_GEV,
+        linestyle="--",
+        linewidth=1.0,
+        color="black",
+        label=r"$m_p$",
+    )
     axis.set_xlabel("Run number")
     axis.set_ylabel("Fitted W peak (GeV)")
     point_definition = (
@@ -2148,10 +2195,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--local-phi-bins",
-        default="0,10,20,30,40,50,60",
+        default="0,20,40,60",
         help=(
             "Comma-separated FD local-phi bin edges (deg). "
-            "Default: 0,10,20,30,40,50,60"
+            "Default: 0,20,40,60"
         ),
     )
 
@@ -2206,8 +2253,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--minimum-events-cell",
         type=int,
-        default=500,
-        help="Minimum events for a theta or theta/local-phi fit. Default: 500",
+        default=200,
+        help="Minimum events for a theta or theta/local-phi fit. Default: 200",
     )
     parser.add_argument(
         "--run-bin-width",
@@ -2326,6 +2373,19 @@ def main() -> int:
     output_directory.mkdir(parents=True, exist_ok=True)
     plot_directory.mkdir(parents=True, exist_ok=True)
 
+    # These diagnostics were discontinued because sparse accepted-cell coverage
+    # made them more confusing than informative. Remove stale files left by
+    # earlier script versions from the stable output directory.
+    obsolete_plot_patterns = (
+        "*_correction_theta_local_phi_maps.png",
+        "*_model_residuals.png",
+    )
+    for obsolete_pattern in obsolete_plot_patterns:
+        for obsolete_path in plot_directory.glob(obsolete_pattern):
+            obsolete_path.unlink()
+        # endfor
+    # endfor
+
     all_fit_records: list[dict[str, Any]] = []
     period_results: dict[str, dict[str, Any]] = {}
 
@@ -2435,35 +2495,33 @@ def main() -> int:
             output_path=plot_directory
             / f"{period.key}_correction_vs_theta.png",
         )
-        save_correction_maps(
-            period=period,
-            fit_frame=fit_frame,
-            theta_edges_deg=arguments.theta_edges,
-            local_phi_edges_deg=arguments.local_phi_edges,
-            output_path=plot_directory
-            / f"{period.key}_correction_theta_local_phi_maps.png",
-        )
     # endfor
 
-    save_model_residual_plots(
-        fit_frame=fit_frame,
-        model_database=model_database,
-        output_directory=plot_directory,
-    )
-
-    successful_cells = fit_frame.loc[
+    successful_theta_cells = fit_frame.loc[
+        (fit_frame["cell_type"] == "theta")
+        & (fit_frame["success"])
+    ]
+    attempted_theta_cells = fit_frame.loc[
+        fit_frame["cell_type"] == "theta"
+    ]
+    successful_theta_phi_cells = fit_frame.loc[
         (fit_frame["cell_type"] == "theta_local_phi")
         & (fit_frame["success"])
     ]
-    attempted_cells = fit_frame.loc[
+    attempted_theta_phi_cells = fit_frame.loc[
         fit_frame["cell_type"] == "theta_local_phi"
     ]
 
     print("")
     print("Electron momentum-correction diagnostic complete.")
     print(
-        f"Successful theta/local-phi fits: {len(successful_cells):,} / "
-        f"{len(attempted_cells):,}"
+        f"Successful theta fits: {len(successful_theta_cells):,} / "
+        f"{len(attempted_theta_cells):,}"
+    )
+    print(
+        f"Successful theta/local-phi fits: "
+        f"{len(successful_theta_phi_cells):,} / "
+        f"{len(attempted_theta_phi_cells):,}"
     )
     print(f"Output directory: {output_directory}")
     print(f"Period workers used: {worker_count}")
