@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-apply_epi_momentum_corrections_v2.py
+apply_epi_momentum_corrections_v3.py
 
 Rewrite an existing e pi+ X ROOT tree after applying the finalized RGC
 electron and FD pi+ momentum corrections. The electron and pion directions are
@@ -53,11 +53,11 @@ For pion detector != 1, no pion calibration exists; p_p is retained unchanged.
 The electron correction is still applied.
 
 Example:
-    python3 apply_epi_momentum_corrections_v2.py \
+    python3 apply_epi_momentum_corrections_v3.py \
         input.root output_corrected.root
 
 Example without the default Mx2 skim:
-    python3 apply_epi_momentum_corrections_v2.py \
+    python3 apply_epi_momentum_corrections_v3.py \
         input.root output_corrected.root --no-mx2-skim
 
 Dependencies:
@@ -132,7 +132,10 @@ OUTPUT_BRANCH_DTYPES: dict[str, np.dtype] = {
     "DepW": np.dtype(np.float64),
 }
 
-REQUIRED_INPUT_BRANCHES = tuple(OUTPUT_BRANCH_DTYPES.keys())
+REQUIRED_INPUT_BRANCHES = tuple(
+    name for name in OUTPUT_BRANCH_DTYPES.keys()
+    if name != "tprime"
+)
 COPIED_INPUT_BRANCHES = (
     "runnum",
     "evnum",
