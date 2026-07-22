@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
+"""
+Report the percentage of e pi+ events with 8 <= e_theta <= 14 degrees
+for the four RGC calibration periods.
+
+Fa22 is stored in one ROOT file. Its two solenoid configurations are separated
+using runnum:
+    Fa22, solenoid -1: 16843-17183
+    Fa22, solenoid +1: 17185-17408
+
+The four logical periods are processed concurrently with four workers.
+"""
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 import math
 
@@ -12,15 +24,9 @@ ROOT_DIR = Path(
     "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+"
 )
 
-PERIOD_PATTERNS = {
-    "Su22 Inb": "*su22*inb*NH3_epi+.root",
-    "Fa22 Inb": "*fa22*inb*NH3_epi+.root",
-    "Fa22 Out": "*fa22*out*NH3_epi+.root",
-    "Sp23 Inb": "*sp23*inb*NH3_epi+.root",
-}
-
 TREE_NAME = "PhysicsEvents"
-BRANCH_NAME = "e_theta"
+THETA_BRANCH = "e_theta"
+RUN_BRANCH = "runnum"
 
 THETA_MIN_DEG = 8.0
 THETA_MAX_DEG = 14.0
@@ -28,82 +34,143 @@ THETA_MAX_DEG = 14.0
 N_WORKERS = 4
 STEP_SIZE = "250 MB"
 
-# "auto" detects radians versus degrees from the branch values.
-# Set explicitly to "rad" or "deg" if desired.
+# e_theta is expected to be in radians in the analysis trees.
+# Keep "auto" to verify this from the data and convert accordingly.
 INPUT_UNITS = "auto"
 
 
-def find_one_file(pattern: str) -> Path:
-    matches = sorted(ROOT_DIR.glob(pattern))
+@dataclass(frozen=True)
+class Period:
+    label: str
+    source_key: str
+    run_min: int | None = None
+    run_max: int | None = None
+
+
+PERIODS = (
+    Period("Su22", "su22"),
+    Period("Fa22, solenoid -1", "fa22", 16843, 17183),
+    Period("Fa22, solenoid +1", "fa22", 17185, 17408),
+    Period("Sp23", "sp23"),
+)
+
+
+# Several plausible filename forms are accepted. Exactly one file must be found
+# for each physical source period.
+SOURCE_PATTERNS = {
+    "su22": (
+        "*su22*NH3*epi+*.root",
+        "*Su22*NH3*epi+*.root",
+        "*su22*epi+*.root",
+    ),
+    "fa22": (
+        "*fa22*NH3*epi+*.root",
+        "*Fa22*NH3*epi+*.root",
+        "*fa22*epi+*.root",
+    ),
+    "sp23": (
+        "*sp23*NH3*epi+*.root",
+        "*Sp23*NH3*epi+*.root",
+        "*sp23*epi+*.root",
+    ),
+}
+
+
+def find_source_file(source_key: str) -> Path:
+    matches: set[Path] = set()
+
+    for pattern in SOURCE_PATTERNS[source_key]:
+        matches.update(ROOT_DIR.glob(pattern))
+
+    matches = {path.resolve() for path in matches if path.is_file()}
+
     if len(matches) != 1:
-        raise RuntimeError(
-            f"Expected exactly one file matching {pattern!r}, "
-            f"but found {len(matches)}:\n"
-            + "\n".join(f"  {path}" for path in matches)
+        formatted = "\n".join(f"  {path}" for path in sorted(matches))
+        patterns = "\n".join(
+            f"  {pattern}" for pattern in SOURCE_PATTERNS[source_key]
         )
-    return matches[0]
+        raise RuntimeError(
+            f"Expected exactly one {source_key} e pi+ ROOT file in\n"
+            f"  {ROOT_DIR}\n"
+            f"using patterns:\n{patterns}\n"
+            f"but found {len(matches)} unique files:\n{formatted}"
+        )
+
+    return next(iter(matches))
 
 
-def infer_units(sample: np.ndarray) -> str:
-    """
-    Infer whether e_theta is stored in radians or degrees.
-
-    CLAS12 electron polar angles are normally O(0.1--0.5) in radians
-    or O(5--30) in degrees. A 99th percentile below 2*pi is therefore
-    treated as radians.
-    """
-    finite = sample[np.isfinite(sample)]
+def infer_units(values: np.ndarray) -> str:
+    finite = values[np.isfinite(values)]
     if finite.size == 0:
-        raise RuntimeError("Cannot infer units from an empty/nonfinite sample.")
+        raise RuntimeError("Cannot infer e_theta units from an empty sample.")
 
     q99 = float(np.percentile(np.abs(finite), 99.0))
     return "rad" if q99 <= 2.0 * math.pi else "deg"
 
 
-def convert_to_degrees(theta: np.ndarray, units: str) -> np.ndarray:
+def to_degrees(values: np.ndarray, units: str) -> np.ndarray:
     if units == "rad":
-        return np.degrees(theta)
+        return np.degrees(values)
     if units == "deg":
-        return theta
-    raise ValueError(f"Unsupported units: {units!r}")
+        return values
+    raise ValueError(f"Unsupported angular units: {units}")
 
 
-def analyze_period(period: str, path_str: str) -> dict:
-    path = Path(path_str)
-    source = f"{path}:{TREE_NAME}"
+def analyze_period(period: Period, source_path: str) -> dict:
+    path = Path(source_path)
+    expressions = [THETA_BRANCH]
 
-    total_finite = 0
+    if period.run_min is not None:
+        expressions.append(RUN_BRANCH)
+
+    total_selected = 0
     inside = 0
+    rejected_by_run = 0
+    nonfinite = 0
 
     raw_min = math.inf
     raw_max = -math.inf
     deg_min = math.inf
     deg_max = -math.inf
 
-    sample_chunks = []
-    units = None
+    diagnostic_samples: list[np.ndarray] = []
+    diagnostic_count = 0
+    units: str | None = None
 
     for arrays in uproot.iterate(
-        source,
-        expressions=[BRANCH_NAME],
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
         step_size=STEP_SIZE,
         library="np",
     ):
-        raw = np.asarray(arrays[BRANCH_NAME], dtype=np.float64)
-        raw = raw[np.isfinite(raw)]
+        theta_raw = np.asarray(arrays[THETA_BRANCH], dtype=np.float64)
 
-        if raw.size == 0:
+        if period.run_min is not None:
+            runnum = np.asarray(arrays[RUN_BRANCH], dtype=np.int64)
+            run_mask = (
+                (runnum >= period.run_min)
+                & (runnum <= period.run_max)
+            )
+            rejected_by_run += int(np.count_nonzero(~run_mask))
+            theta_raw = theta_raw[run_mask]
+
+        finite_mask = np.isfinite(theta_raw)
+        nonfinite += int(np.count_nonzero(~finite_mask))
+        theta_raw = theta_raw[finite_mask]
+
+        if theta_raw.size == 0:
             continue
 
         if units is None:
-            if INPUT_UNITS == "auto":
-                units = infer_units(raw[: min(raw.size, 1_000_000)])
-            else:
-                units = INPUT_UNITS
+            units = (
+                infer_units(theta_raw[: min(theta_raw.size, 1_000_000)])
+                if INPUT_UNITS == "auto"
+                else INPUT_UNITS
+            )
 
-        theta_deg = convert_to_degrees(raw, units)
+        theta_deg = to_degrees(theta_raw, units)
 
-        total_finite += raw.size
+        total_selected += int(theta_deg.size)
         inside += int(
             np.count_nonzero(
                 (theta_deg >= THETA_MIN_DEG)
@@ -111,110 +178,136 @@ def analyze_period(period: str, path_str: str) -> dict:
             )
         )
 
-        raw_min = min(raw_min, float(np.min(raw)))
-        raw_max = max(raw_max, float(np.max(raw)))
+        raw_min = min(raw_min, float(np.min(theta_raw)))
+        raw_max = max(raw_max, float(np.max(theta_raw)))
         deg_min = min(deg_min, float(np.min(theta_deg)))
         deg_max = max(deg_max, float(np.max(theta_deg)))
 
-        # Keep a bounded diagnostic sample for percentiles.
-        if sum(chunk.size for chunk in sample_chunks) < 1_000_000:
-            remaining = 1_000_000 - sum(chunk.size for chunk in sample_chunks)
-            sample_chunks.append(theta_deg[:remaining])
+        if diagnostic_count < 1_000_000:
+            take = min(theta_deg.size, 1_000_000 - diagnostic_count)
+            diagnostic_samples.append(theta_deg[:take])
+            diagnostic_count += take
 
-    if total_finite == 0:
-        raise RuntimeError(f"{period}: no finite {BRANCH_NAME} values found.")
+    if total_selected == 0:
+        raise RuntimeError(
+            f"{period.label}: no finite events remained after period selection."
+        )
 
-    diagnostic_sample = np.concatenate(sample_chunks)
-    q01, q50, q99 = np.percentile(diagnostic_sample, [1.0, 50.0, 99.0])
+    sample = np.concatenate(diagnostic_samples)
+    q01, q50, q99 = np.percentile(sample, [1.0, 50.0, 99.0])
 
     return {
-        "period": period,
-        "path": str(path),
+        "label": period.label,
+        "file": str(path),
+        "run_min": period.run_min,
+        "run_max": period.run_max,
         "units": units,
         "inside": inside,
-        "total": total_finite,
-        "percent": 100.0 * inside / total_finite,
+        "total": total_selected,
+        "percent": 100.0 * inside / total_selected,
+        "rejected_by_run": rejected_by_run,
+        "nonfinite": nonfinite,
         "raw_min": raw_min,
         "raw_max": raw_max,
         "deg_min": deg_min,
         "deg_max": deg_max,
-        "deg_q01": float(q01),
-        "deg_q50": float(q50),
-        "deg_q99": float(q99),
+        "q01": float(q01),
+        "q50": float(q50),
+        "q99": float(q99),
     }
 
 
 def main() -> None:
-    jobs = []
-    for period, pattern in PERIOD_PATTERNS.items():
-        path = find_one_file(pattern)
-        jobs.append((period, path))
+    source_files = {
+        key: find_source_file(key)
+        for key in SOURCE_PATTERNS
+    }
 
-    results = {}
+    results: dict[str, dict] = {}
 
     with ProcessPoolExecutor(max_workers=N_WORKERS) as executor:
-        future_map = {
-            executor.submit(analyze_period, period, str(path)): period
-            for period, path in jobs
+        futures = {
+            executor.submit(
+                analyze_period,
+                period,
+                str(source_files[period.source_key]),
+            ): period.label
+            for period in PERIODS
         }
 
-        for future in as_completed(future_map):
-            period = future_map[future]
-            results[period] = future.result()
+        for future in as_completed(futures):
+            label = futures[future]
+            results[label] = future.result()
 
     print(
         f"\nFraction of PhysicsEvents entries with "
         f"{THETA_MIN_DEG:g} <= e_theta <= {THETA_MAX_DEG:g} degrees\n"
     )
-    print(f"{'Period':<12} {'Inside':>14} {'Total':>14} {'Percent':>12} {'Input':>8}")
-    print("-" * 68)
+    print(
+        f"{'Period':<24} {'Inside':>14} {'Total':>14} "
+        f"{'Percent':>12} {'Input':>8}"
+    )
+    print("-" * 78)
 
     combined_inside = 0
     combined_total = 0
 
-    for period in PERIOD_PATTERNS:
-        result = results[period]
+    for period in PERIODS:
+        result = results[period.label]
         combined_inside += result["inside"]
         combined_total += result["total"]
 
         print(
-            f"{period:<12} "
+            f"{period.label:<24} "
             f"{result['inside']:>14,d} "
             f"{result['total']:>14,d} "
             f"{result['percent']:>11.3f}% "
             f"{result['units']:>8}"
         )
 
-    combined_percent = 100.0 * combined_inside / combined_total
-
-    print("-" * 68)
+    print("-" * 78)
     print(
-        f"{'Combined':<12} "
+        f"{'Combined':<24} "
         f"{combined_inside:>14,d} "
         f"{combined_total:>14,d} "
-        f"{combined_percent:>11.3f}%"
+        f"{100.0 * combined_inside / combined_total:>11.3f}%"
     )
 
     print("\nDiagnostics")
     print("-----------")
-    for period in PERIOD_PATTERNS:
-        r = results[period]
-        print(f"\n{period}")
-        print(f"  File: {r['path']}")
-        print(f"  Inferred input units: {r['units']}")
+
+    for period in PERIODS:
+        result = results[period.label]
+
+        print(f"\n{period.label}")
+        print(f"  File: {result['file']}")
+
+        if result["run_min"] is not None:
+            print(
+                f"  Run selection: "
+                f"{result['run_min']}-{result['run_max']}"
+            )
+            print(
+                f"  Entries outside run range: "
+                f"{result['rejected_by_run']:,}"
+            )
+
+        print(f"  Inferred input units: {result['units']}")
         print(
-            f"  Raw range: {r['raw_min']:.6g} to {r['raw_max']:.6g}"
+            f"  Raw e_theta range: "
+            f"{result['raw_min']:.6g} to {result['raw_max']:.6g}"
         )
         print(
-            f"  Degree range: {r['deg_min']:.3f} to {r['deg_max']:.3f}"
+            f"  Converted degree range: "
+            f"{result['deg_min']:.3f} to {result['deg_max']:.3f}"
         )
         print(
-            "  Degree percentiles "
-            f"(1%, 50%, 99%): "
-            f"{r['deg_q01']:.3f}, "
-            f"{r['deg_q50']:.3f}, "
-            f"{r['deg_q99']:.3f}"
+            f"  Degree percentiles (1%, 50%, 99%): "
+            f"{result['q01']:.3f}, "
+            f"{result['q50']:.3f}, "
+            f"{result['q99']:.3f}"
         )
+        print(f"  Nonfinite selected entries: {result['nonfinite']:,}")
 
 
 if __name__ == "__main__":
