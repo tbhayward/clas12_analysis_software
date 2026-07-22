@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-apply_epi_momentum_corrections_v3.py
+apply_epi_momentum_corrections_v4.py
 
 Rewrite an existing e pi+ X ROOT tree after applying the finalized RGC
 electron and FD pi+ momentum corrections. The electron and pion directions are
@@ -36,7 +36,7 @@ tree producer.
 `phi` is the Trento pion azimuth on [0, 2 pi). `isrTheta` and `isrPhi` are
 copied without modification.
 
-By default, only corrected events satisfying Mx2 < 2 GeV^2 are written.
+By default, only corrected events satisfying Mx2 < 1.5 GeV^2 are written.
 Use --no-mx2-skim to retain every successfully reconstructed event.
 
 Momentum-model conventions reproduced from the extraction scripts:
@@ -53,11 +53,11 @@ For pion detector != 1, no pion calibration exists; p_p is retained unchanged.
 The electron correction is still applied.
 
 Example:
-    python3 apply_epi_momentum_corrections_v3.py \
+    python3 apply_epi_momentum_corrections_v4.py \
         input.root output_corrected.root
 
 Example without the default Mx2 skim:
-    python3 apply_epi_momentum_corrections_v3.py \
+    python3 apply_epi_momentum_corrections_v4.py \
         input.root output_corrected.root --no-mx2-skim
 
 Dependencies:
@@ -918,13 +918,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mx2-max",
         type=float,
-        default=2.0,
+        default=1.5,
         help="Default corrected-Mx2 skim upper limit in GeV^2.",
     )
     parser.add_argument(
         "--no-mx2-skim",
         action="store_true",
-        help="Disable the default corrected Mx2 < 2 GeV^2 skim.",
+        help="Disable the default corrected Mx2 < 1.5 GeV^2 skim.",
     )
     parser.add_argument(
         "--overwrite",
