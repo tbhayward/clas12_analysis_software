@@ -2421,15 +2421,14 @@ def save_three_stage_integrated_plot(
             color="black",
             linestyle="--",
             linewidth=1.0,
-            label=r"$m_n^2$" if sector == 1 else None,
+            label=r"$m_n^2$",
         )
         axis.set_xlim(*histogram_range)
         axis.margins(x=0.0, y=0.04)
         axis.set_title(f"Sector {sector}")
         axis.set_xlabel(r"$M_X^2(e\pi^+)$ (GeV$^2$)")
         axis.set_ylabel("Counts")
-        if sector == 1:
-            axis.legend(fontsize=7.5)
+        axis.legend(fontsize=7.5)
 
     figure.suptitle(
         f"{period.label}: FD integrated missing-neutron distributions"
@@ -2777,6 +2776,132 @@ def save_kinematic_width_summary(
     )
     figure.savefig(
         output_path, dpi=180, bbox_inches="tight", pad_inches=0.06
+    )
+    plt.close(figure)
+
+
+
+def save_integrated_xb_peak_and_width_summary(
+    frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+    bin_count: int = 8,
+) -> None:
+    """
+    Make a sector-integrated 1x2 missing-neutron closure canvas versus x_B.
+
+    All six FD pion sectors are combined before fitting in each x_B bin.
+    The left panel shows the fitted Gaussian mean and the right panel shows
+    the fitted Gaussian width for the uncorrected, electron-corrected, and
+    electron-plus-pion-corrected stages.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    sample = frame.loc[frame["pion_region"] == "FD"].copy()
+    finite_x = sample["x_b"].to_numpy(dtype=float)
+    finite_x = finite_x[np.isfinite(finite_x)]
+    edges = _diagnostic_equal_width_edges(finite_x, bin_count)
+
+    stages = (
+        (
+            "No corrections",
+            "mx2_uncorrected_gev2",
+            "o",
+        ),
+        (
+            "Electron corrected",
+            "mx2_electron_corrected_gev2",
+            "s",
+        ),
+        (
+            r"Electron + $\pi^+$ corrected",
+            "mx2_electron_pion_corrected_gev2",
+            "^",
+        ),
+    )
+
+    figure, (mean_axis, width_axis) = plt.subplots(
+        1,
+        2,
+        figsize=(13.0, 5.2),
+        constrained_layout=True,
+    )
+
+    for label, mx2_column, marker in stages:
+        x_values: list[float] = []
+        mean_values: list[float] = []
+        mean_errors: list[float] = []
+        sigma_values: list[float] = []
+        sigma_errors: list[float] = []
+
+        for index in range(len(edges) - 1):
+            low = float(edges[index])
+            high = float(edges[index + 1])
+            if index == len(edges) - 2:
+                mask = (sample["x_b"] >= low) & (sample["x_b"] <= high)
+            else:
+                mask = (sample["x_b"] >= low) & (sample["x_b"] < high)
+
+            cell = sample.loc[mask]
+            fit_result, _ = fit_mx2_peak(
+                cell[mx2_column].to_numpy(),
+                histogram_range,
+                fit_range,
+                histogram_bins,
+                minimum_events_cell,
+            )
+
+            if fit_result["success"]:
+                x_values.append(float(cell["x_b"].mean()))
+                mean_values.append(float(fit_result["mean_gev2"]))
+                mean_errors.append(float(fit_result["mean_error_gev2"]))
+                sigma_values.append(float(fit_result["sigma_gev2"]))
+                sigma_errors.append(float(fit_result["sigma_error_gev2"]))
+
+        mean_axis.errorbar(
+            x_values,
+            mean_values,
+            yerr=mean_errors,
+            fmt=marker,
+            label=label,
+        )
+        width_axis.errorbar(
+            x_values,
+            sigma_values,
+            yerr=sigma_errors,
+            fmt=marker,
+            label=label,
+        )
+
+    mean_axis.axhline(
+        NEUTRON_MASS2_GEV2,
+        color="black",
+        linestyle="--",
+        linewidth=1.0,
+        label=r"$m_n^2$",
+    )
+    mean_axis.set_xlabel(r"Mean $x_B$")
+    mean_axis.set_ylabel(r"Fitted $\mu_{M_X^2}$ (GeV$^2$)")
+    mean_axis.set_title("Missing-neutron peak position")
+    mean_axis.legend(fontsize=9)
+
+    width_axis.set_xlabel(r"Mean $x_B$")
+    width_axis.set_ylabel(r"Fitted $\sigma_{M_X^2}$ (GeV$^2$)")
+    width_axis.set_title("Missing-neutron peak resolution")
+    width_axis.legend(fontsize=9)
+
+    figure.suptitle(
+        f"{period.label}: sector-integrated missing-neutron closure versus $x_B$"
+    )
+    figure.savefig(
+        output_path,
+        dpi=180,
+        bbox_inches="tight",
+        pad_inches=0.06,
     )
     plt.close(figure)
 
@@ -3178,33 +3303,16 @@ def process_period(
         histogram_bins=histogram_bins,
         minimum_events_cell=minimum_events_cell,
     )
-    save_kinematic_residual_summary(
+    save_integrated_xb_peak_and_width_summary(
         frame=frame,
         period=period,
-        variable_column="x_b",
-        variable_label=r"Mean $x_B$",
-        binning="equal_width",
-        bin_count=8,
         output_path=plot_directories["x_residuals"]
-        / f"{period.key}_fd_xb_peak_residuals.png",
+        / f"{period.key}_fd_sector_integrated_xb_peak_and_width.png",
         histogram_range=histogram_range,
         fit_range=fit_range,
         histogram_bins=histogram_bins,
         minimum_events_cell=minimum_events_cell,
-    )
-    save_kinematic_width_summary(
-        frame=frame,
-        period=period,
-        variable_column="x_b",
-        variable_label=r"Mean $x_B$",
-        binning="equal_width",
         bin_count=8,
-        output_path=plot_directories["x_residuals"]
-        / f"{period.key}_fd_xb_peak_widths.png",
-        histogram_range=histogram_range,
-        fit_range=fit_range,
-        histogram_bins=histogram_bins,
-        minimum_events_cell=minimum_events_cell,
     )
 
     if not skip_run_stability:

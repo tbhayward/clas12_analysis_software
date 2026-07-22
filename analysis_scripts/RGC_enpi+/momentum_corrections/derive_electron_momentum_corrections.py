@@ -2680,6 +2680,125 @@ def save_before_after_kinematic_width_diagnostic(
     plt.close(figure)
 
 
+
+def save_integrated_xb_peak_and_width_diagnostic(
+    period: CalibrationPeriod,
+    uncorrected_frame: pd.DataFrame,
+    corrected_frame: pd.DataFrame,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+    bin_count: int = 8,
+) -> None:
+    """
+    Make a sector-integrated 1x2 elastic closure canvas versus x_B.
+
+    Events from all six sectors are combined before each fit. The left panel
+    shows the fitted Gaussian mean and the right panel shows the fitted
+    Gaussian width. This directly tests whether the sector-dependent electron
+    corrections improve the combined elastic resolution.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    finite_x = uncorrected_frame["x"].to_numpy(dtype=float)
+    finite_x = finite_x[np.isfinite(finite_x)]
+    edges = _strict_equal_width_edges(finite_x, bin_count)
+
+    stages = (
+        (
+            "Before correction",
+            uncorrected_frame,
+            "w_recalculated",
+            "o",
+        ),
+        (
+            "After electron correction",
+            corrected_frame,
+            "w_corrected",
+            "s",
+        ),
+    )
+
+    figure, (mean_axis, width_axis) = plt.subplots(
+        1,
+        2,
+        figsize=(13.0, 5.2),
+        constrained_layout=True,
+    )
+
+    for label, frame, w_column, marker in stages:
+        x_values: list[float] = []
+        mean_values: list[float] = []
+        mean_errors: list[float] = []
+        sigma_values: list[float] = []
+        sigma_errors: list[float] = []
+
+        for index in range(len(edges) - 1):
+            low = float(edges[index])
+            high = float(edges[index + 1])
+            if index == len(edges) - 2:
+                mask = (frame["x"] >= low) & (frame["x"] <= high)
+            else:
+                mask = (frame["x"] >= low) & (frame["x"] < high)
+
+            cell = frame.loc[mask]
+            fit_result, _ = fit_w_peak(
+                cell[w_column].to_numpy(),
+                histogram_range=histogram_range,
+                fit_range=fit_range,
+                histogram_bins=histogram_bins,
+                minimum_events=minimum_events_cell,
+                fixed_sigma_gev=None,
+            )
+
+            if fit_result.success:
+                x_values.append(float(cell["x"].mean()))
+                mean_values.append(fit_result.peak_mean_gev)
+                mean_errors.append(fit_result.peak_mean_error_gev)
+                sigma_values.append(fit_result.peak_sigma_gev)
+                sigma_errors.append(fit_result.peak_sigma_error_gev)
+
+        mean_axis.errorbar(
+            x_values,
+            mean_values,
+            yerr=mean_errors,
+            fmt=marker,
+            label=label,
+        )
+        width_axis.errorbar(
+            x_values,
+            sigma_values,
+            yerr=sigma_errors,
+            fmt=marker,
+            label=label,
+        )
+
+    mean_axis.axhline(
+        PROTON_MASS_GEV,
+        color="black",
+        linestyle="--",
+        linewidth=1.0,
+        label=r"$m_p$",
+    )
+    mean_axis.set_xlabel(r"Mean $x_B$")
+    mean_axis.set_ylabel(r"Fitted $\mu_W$ (GeV)")
+    mean_axis.set_title("Elastic peak position")
+    mean_axis.legend(fontsize=9)
+
+    width_axis.set_xlabel(r"Mean $x_B$")
+    width_axis.set_ylabel(r"Fitted $\sigma_W$ (GeV)")
+    width_axis.set_title("Elastic peak resolution")
+    width_axis.legend(fontsize=9)
+
+    figure.suptitle(
+        f"{period.label}: sector-integrated elastic closure versus $x_B$"
+    )
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
 def build_closure_summary(
     period: CalibrationPeriod,
     uncorrected_records: list[dict[str, Any]],
@@ -2965,35 +3084,17 @@ def process_calibration_period(
         minimum_events_cell=minimum_events_cell,
     )
     if "x" in period_frame.columns:
-        save_before_after_kinematic_diagnostic(
+        save_integrated_xb_peak_and_width_diagnostic(
             period=period,
             uncorrected_frame=period_frame,
             corrected_frame=corrected_frame,
-            variable_column="x",
-            variable_label=r"Mean $x_B$",
-            binning="equal_width",
-            bin_count=8,
             output_path=plot_directories["closure_x"]
-            / f"{period.key}_xb_closure.png",
+            / f"{period.key}_sector_integrated_xb_peak_and_width.png",
             histogram_range=histogram_range,
             fit_range=fit_range,
             histogram_bins=histogram_bins,
             minimum_events_cell=minimum_events_cell,
-        )
-        save_before_after_kinematic_width_diagnostic(
-            period=period,
-            uncorrected_frame=period_frame,
-            corrected_frame=corrected_frame,
-            variable_column="x",
-            variable_label=r"Mean $x_B$",
-            binning="equal_width",
             bin_count=8,
-            output_path=plot_directories["closure_x"]
-            / f"{period.key}_xb_closure_widths.png",
-            histogram_range=histogram_range,
-            fit_range=fit_range,
-            histogram_bins=histogram_bins,
-            minimum_events_cell=minimum_events_cell,
         )
 
     if not skip_run_stability:
